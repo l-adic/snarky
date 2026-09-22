@@ -19,7 +19,8 @@
 #   tools/witness_diff.sh --pair <ocaml> <ps> [labels]  diff two raw files
 #
 # Circuits: simple_chain nrr tree_proof_return two_phase_chain sideload
-#           chunks2 chunks4 recurse_over_chunks app_circuit_chunks2
+#           chunks2 chunks4 recurse_over_chunks self_recursive_chunks
+#           app_circuit_chunks2
 #
 # Prereqs: the mina submodule with its opam switch (mina/README-dev.md),
 # node 23. Seed is pinned at KIMCHI_DETERMINISTIC_SEED (default 42). A
@@ -56,6 +57,8 @@ cfg() {
       echo "dump_chunks2|pickles|Test.Pickles.Main|Chunks2|step wrap" ;;
     chunks4)
       echo "dump_chunks4|pickles|Test.Pickles.Main|Chunks4|step wrap" ;;
+    self_recursive_chunks)
+      echo "dump_self_recursive_chunks|pickles|Test.Pickles.Main|SelfRecursiveChunks|b0_step b0_wrap b1_step b1_wrap" ;;
     recurse_over_chunks)
       # OCaml's own test, not a dumper: a two-chunk system, then a second
       # system whose rule takes its proof as a prev. It runs its body twice,

@@ -13,6 +13,7 @@ import Test.Pickles.Prove.HeterogeneousPrevs as HeterogeneousPrevs
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.PaddedWideSlots as PaddedWideSlots
 import Test.Pickles.Prove.RecurseOverChunks as RecurseOverChunks
+import Test.Pickles.Prove.SelfRecursiveChunks as SelfRecursiveChunks
 import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.SimpleChainN2 as SimpleChainN2
@@ -48,6 +49,7 @@ spec = beforeAll buildSharedSrs do
   Chunks2.spec
   Chunks4.spec
   RecurseOverChunks.spec
+  SelfRecursiveChunks.spec
   SideLoadedMain.spec
   TreeProofReturn.spec
   HeterogeneousPrevs.spec
