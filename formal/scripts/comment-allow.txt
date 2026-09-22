@@ -1,0 +1,18 @@
+-- Backticked tokens a docstring may use that name no declaration. The gate
+-- (scripts/check_comments.lean) flags every other identifier-shaped token that resolves to
+-- nothing, so this file is the whole exception list: a new entry is a decision, not a way to
+-- silence the gate.
+--
+-- The column-count notations (Kimchi/Columns.lean) are scoped notations expanding to
+-- literals, so they name something real without being constants.
+batchRows
+coeffCols
+evalPts
+litRowCount
+permCols
+preIpaChals
+selCount
+sigmaRows
+szSets
+tailRowCount
+wCols

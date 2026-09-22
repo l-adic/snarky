@@ -40,6 +40,7 @@ run "axioms (snarky)" bash snarky/scripts/check_axioms.sh
 
 # Reachability from the packages' roots.txt: dead must be zero.
 run "dead code" bash scripts/deadcode.sh
+run "comments" bash scripts/check-comments.sh
 
 if [[ $FAST -eq 0 ]]; then
   run "IPA fixture" bash bulletproof-pcs/scripts/check_ipa_fixture.sh

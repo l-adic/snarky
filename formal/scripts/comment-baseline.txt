@@ -1,0 +1,11 @@
+-- The comment gate's ratchet (scripts/check_comments.lean): the violations the tree still
+-- carries, per category. A category may only shrink; the gate fails when one grows. Lower a
+-- number when a module's prose is cleaned, never raise one.
+--
+-- unresolved-names / upstream-files-in-decl-doc are the convention change of #399: a comment
+-- names this tree's code, and an upstream source file is nameable only in a module docstring.
+unresolved-names 551
+upstream-files-in-decl-doc 42
+banned-phrases 61
+oversize 56
+emphasis 6

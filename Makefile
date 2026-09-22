@@ -157,6 +157,9 @@ lean-shake: ## Check Lean imports for redundancy (mathlib shake; config formal/s
 	  Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
 	  Pickles
 
+lean-comments: ## Gate: comment ratchet (stale names, upstream citations, phrases, size)
+	bash formal/scripts/check-comments.sh
+
 lean-deadcode: ## Gate: fail on any authored Lean declaration unreachable from roots.txt
 	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/deadcode.sh
 

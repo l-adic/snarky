@@ -207,6 +207,15 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         bash scripts/deadcode.sh
 
+    # GATE: the comment ratchet — a docstring names this tree's code (an unresolved
+    # identifier is rot), an upstream source file is nameable only in a module docstring,
+    # and the phrase/size/emphasis rules of the convention hold. Counts may fall, never
+    # rise (formal/scripts/comment-baseline.txt).
+    - name: Check comments
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        bash scripts/check-comments.sh
+
     # GATE: a pickles gadget's spec is stated once, in its module — a consumer names the
     # exported shape (family or ∀-form) in a `have`, never restates it (the mirror of
     # sealing, which stops a consumer unfolding the body).
