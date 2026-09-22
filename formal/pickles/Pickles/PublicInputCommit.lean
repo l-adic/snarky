@@ -7,27 +7,25 @@ import Pickles.ListLemmas
 /-!
 # The in-circuit public-input commitment (`x_hat`)
 
-The port of PS `Pickles.PublicInputCommit.publicInputCommit` (OCaml
-`Public_input.commitment` / `lagrange_with_correction`): the per-chunk MSM that commits to
-a proof's public input, `x_hat[c] = -(Σ_leaf [scalarₗ]·baseₗ[c]) + h`.
+The port of `packages/pickles/src/Pickles/PublicInputCommit.purs`: the per-chunk MSM that
+commits to a proof's public input, `x_hat[c] = -(Σ_leaf [scalarₗ]·baseₗ[c]) + h`.
 
 The public input reaches this gadget as a flat list of size-tagged `Leaf`s — a scalar with
 its ladder width, or a 1-bit `condAdd`. Packing (a structured statement → this list) is a
 separate concern; this module's soundness claim is stated against the list, and lands on
 `Kimchi.Verifier.publicCommitment` via `publicCommitment_eq_sum`.
 
-Two gadgets share the leaf interface: `publicInputCommitFull` (the wrap side, OCaml
-`lagrange_with_correction`: corrections summed in circuit, the fold interleaved) and
-`publicInputCommitKnown` (the step side, OCaml `multiscale_known`: every ladder first, then
-one fold from the first ladder result, then the constant correction sum). Both read as
-`-(publicMsm) + h` over the circuit-side point group (`publicInputCommitFull_reads`,
-`publicInputCommitKnown_reads`).
+Two gadgets share the leaf interface: `publicInputCommitFull` (the wrap side: corrections
+summed in circuit, the fold interleaved) and `publicInputCommitKnown` (the step side, at a
+known domain: every ladder first, then one fold from the first ladder result, then the
+constant correction sum). Both read as `-(publicMsm) + h` over the circuit-side point group
+(`publicInputCommitFull_reads`, `publicInputCommitKnown_reads`).
 
-The last section is the wire crossing (glue G2, second half): `xHat_reads_publicCommitment`
-and `xHatKnown_reads_publicCommitment` cross those reads to the wire verifier's own
+The last section is the wire crossing: `xHat_reads_publicCommitment` and
+`xHatKnown_reads_publicCommitment` cross those reads to the wire verifier's own
 `Kimchi.Verifier.publicCommitment` on the commitment curve, generically over a `PastaShape`
 (the point group, the `SWPoint.equivPoint` crossing, and the group's order killing it, so the
-integer→scalar reduction is exact — no `lowest_128_bits` slack here), instantiated at
+integer→scalar reduction is exact — the read carries no slack), instantiated at
 `pastaShapeVesta` (Vesta) and `pastaShapePallas` (Pallas).
 
 The tables the gadgets take are a verifier key's data, so the module ends by computing them:
@@ -43,11 +41,11 @@ open Std.Do Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 
 /-- A size-tagged public-input leaf, the flat interface the commitment gadget folds over.
 The three scalar cases fix the `scaleFast2'` ladder width `(n, chunks, sDiv2Bits)` and carry
-the precomputed shift correction (PS `MsmTerm.correction`), a constant point per chunk that
-the read requires to be `-(2^{5·chunks})·base` — cancelling the ladder's shift so the net is
-`[scalar]·base`. `condAdd` is the 1-bit conditional-add path (a boolean statement field or a
-shifted scalar's parity), no correction. Each field is chunked (`Vector _ nc`) so the
-per-chunk accumulator runs in parallel. -/
+a precomputed shift correction, a constant point per chunk that the read requires to be
+`-(2^{5·chunks})·base` — cancelling the ladder's shift so the net is `[scalar]·base`.
+`condAdd` is the 1-bit conditional-add path (a boolean statement field or a shifted scalar's
+parity), no correction. Each field is chunked (`Vector _ nc`) so the per-chunk accumulator
+runs in parallel. -/
 inductive Leaf (F : Type) [Field F] (nc : ℕ) where
   /-- A full 255-bit field element: `(n, chunks, sDiv2Bits) = (255, 51, 254)`. -/
   | full (scalar : FVar F) (base correction : Vector (AffinePoint (FVar F)) nc)
@@ -90,16 +88,14 @@ section Fold
 
 variable {F S : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F S] [KimchiSystem F S]
 
-/-- `f` at every chunk, in chunk order: the inner loop of every chunked step below
-(OCaml `Array.map2_exn`, PS `zipWithA`). -/
+/-- `f` at every chunk, in chunk order: the inner loop of every chunked step below. -/
 private def chunkwise {β : Type} (f : Fin nc → CircuitM F S β) : CircuitM F S (Vector β nc) :=
   (Vector.ofFn id).mapM f
 
-/-- One leaf at chunk `ci` onto `acc`, aligned with OCaml/PS's `Public_input.commitment`
-fold: a scalar leaf adds its BARE `scaleFast2'` ladder (the shift `+2^{5·chunks}` is not
-cancelled here — the corrections are summed separately into the fold's initial accumulator,
-matching `wrap_verifier.ml`, where only the ladder result is added); a `condAdd` leaf
-conditionally adds its base. -/
+/-- One leaf at chunk `ci` onto `acc`: a scalar leaf adds its bare `scaleFast2'` ladder — the
+shift `+2^{5·chunks}` is not cancelled here, since `sumCorrectionsHead` sums the corrections
+separately into the fold's initial accumulator — and a `condAdd` leaf conditionally adds its
+base. -/
 private def leafStep (ci : Fin nc) (acc : AffinePoint (FVar F)) :
     Leaf F nc → CircuitM F S (AffinePoint (FVar F))
   | .full scalar base _ => do
@@ -140,9 +136,8 @@ private def addChunks (acc corr : Vector (AffinePoint (FVar F)) nc) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) :=
   chunkwise fun c => (·.p) <$> addFast .checkFinite acc[c] corr[c]
 
-/-- Sum the leaves' shift corrections onto `acc` (PS `InCircuitCorrections`'s `init`), leaf by
-leaf and each leaf chunk by chunk: each scalar leaf adds its `correction`, `condAdd`
-contributes nothing. -/
+/-- Sum the leaves' shift corrections onto `acc`, leaf by leaf and each leaf chunk by chunk:
+each scalar leaf adds its `correction`, `condAdd` contributes nothing. -/
 private def sumCorrections :
     Vector (AffinePoint (FVar F)) nc → List (Leaf F nc) →
       CircuitM F S (Vector (AffinePoint (FVar F)) nc)
@@ -164,10 +159,9 @@ def leafHasScalar : List (Leaf F nc) → Prop
   | .condAdd _ _ :: rest => leafHasScalar rest
   | _ => True
 
-/-- Head-seeded corrections sum (PS `InCircuitCorrections`'s `init`): the first scalar leaf's
-correction seeds the fold (no gate), each later scalar correction adds one per chunk (`n`
-corrections → `n−1` gates per chunk, matching OCaml). `condAdd` leaves are skipped; the
-all-`condAdd`/empty case is the unused origin. -/
+/-- Head-seeded corrections sum: the first scalar leaf's correction seeds the fold (no gate),
+each later scalar correction adds one per chunk (`n` corrections → `n−1` gates per chunk).
+`condAdd` leaves are skipped; the all-`condAdd`/empty case is the unused origin. -/
 private def sumCorrectionsHead : List (Leaf F nc) → CircuitM F S (Vector (AffinePoint (FVar F)) nc)
   | [] => pure (Vector.replicate nc ⟨.const 0, .const 0⟩)
   | .full _ _ corr :: rest => sumCorrections corr rest
@@ -175,10 +169,8 @@ private def sumCorrectionsHead : List (Leaf F nc) → CircuitM F S (Vector (Affi
   | .b10 _ _ corr :: rest => sumCorrections corr rest
   | .condAdd _ _ :: rest => sumCorrectionsHead rest
 
-/-- The boolean leaves constrain their own bits, in walk order, before any ladder runs. PS
-`PublicInputCommit (BoolVar f)` asserts the bit inside `scalarMuls` while the leaf's scale mul
-is deferred to the fold, so every such assertion precedes the adds; this pass reproduces that
-placement, and callers do not supply the constraints themselves. -/
+/-- The boolean leaves constrain their own bits, in walk order, before any ladder runs: every
+bit assertion precedes the adds, and a caller does not supply the constraints itself. -/
 private def constrainBits [BasicSystem F S] : List (Leaf F nc) → CircuitM F S PUnit
   | [] => pure PUnit.unit
   | .condAdd b _ :: rest => do
@@ -188,9 +180,8 @@ private def constrainBits [BasicSystem F S] : List (Leaf F nc) → CircuitM F S 
   | .b128 _ _ _ :: rest => constrainBits rest
   | .b10 _ _ _ :: rest => constrainBits rest
 
-/-- The public-input commitment at every chunk (PS `publicInputCommit`, OCaml
-`lagrange_with_correction`'s wrap fold): the bits, the head-seeded corrections, the ladders
-folded onto them, negate, add `h`. -/
+/-- The public-input commitment at every chunk, the wrap side's shape: the bits, the
+head-seeded corrections, the ladders folded onto them, negate, add `h`. -/
 def publicInputCommitFull (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
   constrainBits leaves
@@ -208,7 +199,7 @@ private inductive LeafInfo (F : Type) [Field F] [DecidableEq F] (d : HasCurve F)
 
 variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {d : HasCurve F}
 
-/-- The curve-point a leaf adds to the accumulator in `foldChunk`: a scalar leaf adds its BARE
+/-- The curve point a leaf adds to the accumulator in `foldChunks`: a scalar leaf adds its bare
 ladder `(2z + bit + 2^L)·T` (shift not yet cancelled); a `condAdd` adds `T` iff its bit. -/
 private def LeafInfo.delta : LeafInfo F d → d.W.Point
   | .scalar L z bb T => (2 * z + (if bb then 1 else 0) + 2 ^ L) • T
@@ -256,8 +247,8 @@ private theorem LeafInfo.sum_corrDelta_add_delta (infos : List (LeafInfo F d)) :
       rw [add_add_add_comm, corrDelta_add_delta, ih]
 
 /-- The per-leaf precondition the fold assumes: the base at chunk `ci` reads as a curve point,
-and — for a `condAdd` — its bit is boolean-valued under `V` (the boolean constraint the packing
-emits; carried as a well-formedness premise, as `checkBulletproof`'s `hbits`). -/
+and — for a `condAdd` — its bit is boolean-valued under `V`, carried as a well-formedness
+premise. -/
 def LeafPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point → Prop
   | .full _ base _, T => OnCurveAt d.W V base[ci] T
   | .b128 _ base _, T => OnCurveAt d.W V base[ci] T
@@ -408,7 +399,7 @@ private theorem corrSum_eq {V : Valuation F} {ci : Fin nc} :
       rw [hhead]
 
 omit [ToNat F] in
-/-- `chunkwise` read at one chunk: the chunk's own specification. -/
+/-- `chunkwise f` reads at chunk `ci` as `f ci` alone does; the other chunks say nothing. -/
 private theorem chunkwise_at {V : Valuation F} {β : Type}
     (f : Fin nc → CircuitM F (Builder V (KimchiConstraint F)) β) (ci : Fin nc) (Q : β → Prop)
     (h : ⦃⌜True⌝⦄ f ci ⦃⇓ r _ => ⌜Q r⌝⦄) :
@@ -496,7 +487,7 @@ private theorem leafStep_spec (ci : Fin nc) {V : Valuation F} (acc : AffinePoint
 /-- **The chunked fold reads, at each chunk, as the accumulator plus the sum of leaf deltas.**
 For a satisfying assignment, `foldChunks acc leaves` reads at chunk `ci`, at any `accv` for
 `acc[ci]`, as `accv + Σ (LeafInfo.delta)` over infos the leaves read to — provided each scalar
-leaf's ladder regime holds (`regimeOK`). By induction on `leaves`, as `sumPoints_spec`. -/
+leaf's ladder regime holds (`regimeOK`). -/
 private theorem foldChunks_spec (ci : Fin nc) {V : Valuation F} :
     ∀ (leaves : List (Leaf F nc)) (Ts : List d.W.Point) (acc : Vector (AffinePoint (FVar F)) nc),
       List.Forall₂ (LeafPre ci V) leaves Ts →
@@ -640,7 +631,7 @@ private theorem constrainBits_boolean {V : Valuation F} :
 omit [ToNat F] in
 /-- **The corrections-sum reads, at each chunk, as `accv + Σ` the correction points.** Given
 each leaf's correction reads at chunk `ci` as `cp` (`condAdd`: `0`), `sumCorrections acc leaves`
-reads at `ci` as `accv + Σ cps`. By induction on `leaves`, as `sumPoints_spec`. -/
+reads at `ci` as `accv + Σ cps`. -/
 private theorem sumCorrections_spec (ci : Fin nc) {V : Valuation F} :
     ∀ (leaves : List (Leaf F nc)) (cps : List d.W.Point) (acc : Vector (AffinePoint (FVar F)) nc),
       List.Forall₂ (CorrPre ci V) leaves cps →
@@ -968,19 +959,18 @@ theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
     hH hpre hcorr hscalar hhon
     (fun _infos hr => netDelta_sum_eq_publicMsm hcast hbit hr hpre)
 
-/-! ### The known-domain step gadget (`multiscale_known`, PS `PureCorrections`)
+/-! ### The known-domain step gadget
 
-The step verifier's `x_hat` at a known domain (`step_verifier.ml:115–174`, PS
-`publicInputCommit` in `PureCorrections` mode) emits in three phases: every leaf's bare ladder
+The step verifier's `x_hat` at a known domain emits in three phases: every leaf's bare ladder
 first, in leaf order; then the ladder results summed left to right from the first; then one
 constant, the summed shift corrections; then negate and add `h`. The corrections are constants
 summed outside the circuit (no gates), so the gadget takes their sum as a cell (`corrSum`, a
 `.const` at the deployed harness) instead of folding the leaves' correction cells as
 `publicInputCommitFull` does. A `condAdd` leaf is a conditional add at its position in the
-fold. PS seeds the fold with the first leaf's ladder result and, when the first leaf is a
-`condAdd`, with the first correction constant instead (`corrHead`) — dropping that leaf, a PS
-quirk the deployed step statement (all scalars) never reaches; the port is literal and the
-read is stated for scalar-headed lists. -/
+fold. The fold is seeded with the first leaf's ladder result and, when the first leaf is a
+`condAdd`, with the first correction constant instead (`corrHead`) — dropping that leaf, a
+quirk of the original the deployed step statement (all scalars) never reaches; the port is
+literal and the read is stated for scalar-headed lists. -/
 
 /-- Phase 1: every ladder, in leaf order; a `condAdd` leaf passes its bit and base through. -/
 private def ladders [BasicSystem F S] [KimchiSystem F S] (ci : Fin nc) :
@@ -1024,9 +1014,8 @@ private def commitKnownTail [BasicSystem F S] [KimchiSystem F S]
       let acc' ← addFast .checkFinite acc corrSum
       (·.p) <$> addFast .checkFinite ⟨acc'.p.x, CVar.negate_ acc'.p.y⟩ blindingH
 
-/-- The known-domain public-input commitment at one chunk (OCaml `multiscale_known`, PS
-`publicInputCommit` in `PureCorrections` mode): the ladders, then their fold with the constant
-corrections, negated, plus `h`. -/
+/-- The known-domain public-input commitment at one chunk: the ladders, then their fold with
+the constant corrections, negated, plus `h`. -/
 def publicInputCommitKnown [BasicSystem F S] [KimchiSystem F S] (ci : Fin nc)
     (blindingH corrHead corrSum : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
     CircuitM F S (AffinePoint (FVar F)) := do
@@ -1353,8 +1342,8 @@ end Crossing
 
 /-- **`publicCommitment`'s chunk, transported through an additive equivalence on the point
 group.** The wire's negated-scalar MSM with each Lagrange base mapped over, plus `h`. Pure
-additive-equiv algebra over `publicCommitment_eq_sum` (G1); the wire crossing instantiates it
-at `SWPoint.equivPoint`. -/
+additive-equiv algebra over `publicCommitment_eq_sum`; the wire crossing instantiates it at
+`SWPoint.equivPoint`. -/
 theorem equivPoint_publicCommitment {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ} {G : Type}
     [AddCommGroup G] (e : C.Point ≃+ G) (σ : Bulletproof.SRS C.Point)
     (cvk : Kimchi.Verifier.KimchiVK C nc)
@@ -1366,7 +1355,7 @@ theorem equivPoint_publicCommitment {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ}
   simp only [Fin.getElem_fin, Vector.getElem_ofFn, map_add, map_list_sum, List.map_map,
     Function.comp_def, map_nsmul]
 
-/-! ### The x_hat target: the gadget reads as `publicCommitment` (glue G2, piece 5) -/
+/-! ### The x_hat target: the gadget reads as `publicCommitment` -/
 
 section Generic
 
@@ -1551,9 +1540,9 @@ section Binding
 
 variable {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ}
 
-/-- The `x_hat` tables of a circuit (OCaml `lagrange_with_correction` and `multiscale_known`'s
-constant corrections): per public-input scalar its Lagrange base and its shift correction,
-chunked, and the correction seed and sum the known-domain fold takes as constants. -/
+/-- The `x_hat` tables of a circuit: per public-input scalar its Lagrange base and its shift
+correction, chunked, and the correction seed and sum the known-domain fold takes as
+constants. -/
 structure XhatTable (F : Type) [Field F] (nc : ℕ) where
   /-- The Lagrange bases, one per scalar. -/
   bases : List (Vector (AffinePoint (FVar F)) nc)
@@ -1597,7 +1586,7 @@ structure XhatBinding (s : PastaShape C) (ci : Fin nc) (V : Valuation C.BaseFiel
 /-- **The wire's `publicCommitment`, crossed, is `-(publicMsm) + h`.** The shared half of the two
 x_hat reads: `equivPoint_publicCommitment` unfolds the wire's MSM, `crossing_list` ties each
 Lagrange base to the leaf's base reading, and `neg_publicMsm_sum` moves the negation through
-the exact integer → scalar reduction (`KimchiCurve.affine_card_nsmul`). -/
+the exact integer → scalar reduction (`CommitmentCurve.affine_card_nsmul`). -/
 private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
@@ -1628,13 +1617,11 @@ private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.Bas
 
 /-- **The wrap-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The binding
 is asked for only under the boolean leaves' booleanity, which the gadget's bit pre-pass
-establishes itself (`constrainBits_boolean`): a consumer never supplies it. The
-in-circuit public-input obligation of the group half (`incrementally_verify_proof`):
-`publicInputCommitFull` commits to `pubOf leaves`, crossed to Mathlib's point group by
-`SWPoint.equivPoint`. The subtle half (the canonical decode — the ladder's top-bit pin —
-`-(Σ [scalarₗ]·baseₗ) + h`) is `publicInputCommitFull_reads`; this crosses that to the wire's
-`publicCommitment` — the integer → scalar reduction is exact
-(`KimchiCurve.affine_card_nsmul`), so the read carries no slack. -/
+establishes itself (`constrainBits_boolean`): a consumer never supplies it.
+`publicInputCommitFull_reads` carries the subtle half — the canonical decode from the ladder's
+top-bit pin, `-(Σ [scalarₗ]·baseₗ) + h`; this crosses that to the wire's `publicCommitment`
+through `SWPoint.equivPoint`, and the integer → scalar reduction is exact
+(`CommitmentCurve.affine_card_nsmul`), so the read carries no slack. -/
 theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
@@ -1669,9 +1656,9 @@ theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuat
   rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
 
 /-- **The step-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The
-known-domain shape (`publicInputCommitKnown`, OCaml `multiscale_known`): the corrections are
-constants, so their sum `corrSum` is a single constant cell the binding reads as `Σ cps`, and
-the leaves are headed by a scalar leaf. Otherwise `xHat_reads_publicCommitment`. -/
+known-domain shape (`publicInputCommitKnown`): the corrections are constants, so their sum
+`corrSum` is a single constant cell the binding reads as `Σ cps`, and the leaves are headed by
+a scalar leaf. Otherwise `xHat_reads_publicCommitment`. -/
 theorem xHatKnown_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
     {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
@@ -1740,8 +1727,7 @@ def PackedScalar.IsScalar : PackedScalar F → Prop
   | _ => True
 
 /-- The `x_hat` leaves of a packed scalar list: scalar `i` with Lagrange base `i` and its shift
-correction from the table (`lagrange_with_correction`); a boolean cell adds its base under
-the bit, with no correction. -/
+correction from the table; a boolean cell adds its base under the bit, with no correction. -/
 def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Leaf F nc) :=
   List.zipWith (fun k bc => match k with
     | .full s => Leaf.full s bc.1 bc.2
@@ -1952,7 +1938,7 @@ def XhatTable.ofKey (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.
   corrHead := Vector.replicate nc (constPt 0)
   corrSum := Vector.replicate nc (constPt 0)
 
-/-- The library's `packLeavesOf` at that table is the constant leaves. -/
+/-- `packLeavesOf` at that table is the constant leaves. -/
 theorem packLeavesOf_ofKey : ∀ (ks : List (PackedScalar C.BaseField))
     (lb : List (Vector C.Point nc)),
     packLeavesOf ks (XhatTable.ofKey ks lb) = List.zipWith constLeaf ks lb

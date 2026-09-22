@@ -38,9 +38,12 @@ category that decided it:
 
 Two rules decide most cases:
 
-* **Citation.** A sentence that survives must point at something in this module — a name, a
-  constraint, a hypothesis, a field. A sentence that cannot is deleted, or moved to the
-  module docstring if it is about the module's shape.
+* **Citation.** A sentence that survives must point at something in the TREE — a name, a
+  constraint, a hypothesis, a field — and usually in this module. One clause pointing at
+  another module's declaration is allowed when it earns its place ("the same shape as
+  `sumPoints_spec`"): the gate resolves names tree-wide, so the pointer cannot rot silently.
+  A sentence that points at nothing is deleted, or moved to the module docstring if it is
+  about the module's shape.
 * **Provenance.** An upstream identifier (`squeeze_challenge`, `Shifted_value.Type1.to_field`,
   `VBSM`) never appears. What the declaration *does* replaces it. If the module as a whole
   transcribes an upstream file, the MODULE docstring names that file, once.

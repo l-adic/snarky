@@ -12,6 +12,8 @@ skill). It fails on:
   here (see PROVENANCE). `scripts/comment-allow.txt` holds the few tokens that name something
   real without being constants — the column-count notations — and adding a line to it is a
   decision, not an escape hatch.
+* DANGLING PATHS — a path into this repository (`formal/…`, `packages/…`) that no file
+  answers. A citation of a file nobody wrote is the rot a name nobody declared is.
 * PROVENANCE — a source file of an upstream implementation (`verifier.rs`, `step_verifier.ml`,
   `RangeCheck.purs`) may be named in a MODULE docstring, to say what a module transcribes. A
   declaration docstring naming one is a violation: the declaration's prose says what its own
@@ -93,10 +95,18 @@ def backticked (s : String) : List String :=
   -- odd positions are the quoted runs
   (parts.zipIdx.filterMap fun (p, i) => if i % 2 == 1 then some p else none)
 
+/-- A path INTO this repository — `formal/…`, `packages/…`, `tools/…`. Cited in prose, it
+must exist: a citation of a file nobody wrote is the same rot as a name nobody declared. -/
+def isRepoPath (t : String) : Bool :=
+  (t.splitOn "/").length > 1 &&
+    ["formal/", "packages/", "tools/", "scripts/", ".github/"].any (fun p => t.startsWith p)
+
 /-- A source file of this repo or of an upstream implementation. Nameable in a module
 docstring (what the module transcribes), never in a declaration's. -/
 def isSourceFile (t : String) : Bool :=
-  [".rs", ".ml", ".mli", ".purs", ".lean", ".json", ".toml", ".sh"].any (fun e => t.endsWith e)
+  -- `step_verifier.ml:115-174` is a citation of `step_verifier.ml`
+  let base := (t.splitOn ":").headD t
+  [".rs", ".ml", ".mli", ".purs", ".lean", ".json", ".toml", ".sh"].any (fun e => base.endsWith e)
 
 /-- Tactic and keyword vocabulary a docstring may quote without naming a declaration. -/
 def keywords : List String :=
@@ -105,8 +115,10 @@ def keywords : List String :=
    "refine", "cases", "induction", "rw", "subst", "aesop", "norm_num", "linarith"]
 
 /-- Does this quoted run name a declaration *of this tree*? Our names are camelCase or
-UpperCamel and may be dotted; a single letter is a binder, pure snake_case is the Rust/OCaml
-convention (`x_hat`, `ft_eval0`), and the tactic words name no declaration. -/
+UpperCamel, may be dotted, and may carry underscores (`sound_point_noninf`); a single letter
+is a binder and the tactic words name no declaration. A snake_case token that resolves is
+ours; one that does not is an upstream identifier (`lagrange_with_correction`), which the
+provenance rule bans — so it is checked, not skipped. -/
 def identShaped (t : String) : Bool :=
   let ok := !t.isEmpty && 3 ≤ t.length && t.length ≤ 60 &&
     t.all (fun ch => ch.isAlphanum || ch == '.' || ch == '_' || ch == '\'' || ch == '?' ||
@@ -114,14 +126,17 @@ def identShaped (t : String) : Bool :=
     t.front.isAlpha && !keywords.contains t
   let parts := t.splitOn "."
   let dotted := parts.length > 1
-  let hasUpper := t.any (·.isUpper)
+  let hasUpper := t.any (·.isUpper) || t.any (· == '_')
   let isPath := isSourceFile t
   let numericTail := (parts.getLast!).all (·.isDigit)
   ok && (dotted || hasUpper) && !isPath && !numericTail
 
-/-- Resolve a quoted name: as written, under the declaration's namespace chain, or as the
-suffix of some declaration of ours. -/
-def resolves (env : Environment) (suffixes : Std.HashSet String) (owner : Name)
+/-- Resolve a quoted name: as written, under the declaration's namespace chain, or by
+suffix. A BARE word resolves only against this tree (`ours`): a one-word token that happens
+to match the tail of some Mathlib constant is not evidence that the comment names anything —
+that is how dead port vocabulary (`endoBase`, `toBits`) used to pass. A DOTTED name may also
+resolve upstream (`Point.some`, `SWPoint.equivPoint`), where the prefix carries the evidence. -/
+def resolves (env : Environment) (ours upstream : Std.HashSet String) (owner : Name)
     (t : String) : Bool :=
   let n := t.toName
   if env.contains n then true
@@ -131,7 +146,9 @@ def resolves (env : Environment) (suffixes : Std.HashSet String) (owner : Name)
     while pre != .anonymous do
       if env.contains (pre ++ n) then found := true
       pre := pre.getPrefix
-    if found then true else suffixes.contains t
+    if found then true
+    else if ours.contains t then true
+    else (t.splitOn ".").length > 1 && upstream.contains t
 
 end Kimchi.CheckComments
 
@@ -141,21 +158,25 @@ run_cmd do
   let userName (n : Name) : Name := (privateToUserName? n).getD n
   -- the vocabulary: every suffix of every declaration of ours, so `AccOk` resolves while
   -- `Pickles.AccOk` is live and stops resolving the moment it is deleted
-  let mut suffixes : Std.HashSet String := {}
+  let mut ours : Std.HashSet String := {}
+  let mut upstream : Std.HashSet String := {}
   -- a module of this tree is a name a comment may use (`Kimchi.Domain`, `Pickles.TwoHalves`)
   for m in env.header.moduleNames do
-    if isOurs m then suffixes := suffixes.insert m.toString
+    if isOurs m then ours := ours.insert m.toString
   for (n, _) in env.constants.toList do
     let u := userName n
+    let mine := isOurs n
     -- the last one and two components: `AccOk`, `SWPoint.equivPoint`, `Point.some`
     match u with
     | .str pre s =>
-      suffixes := suffixes.insert s
+      if mine then ours := ours.insert s
       match pre with
-      | .str _ s2 => suffixes := suffixes.insert s!"{s2}.{s}"
+      | .str _ s2 =>
+        let two := s!"{s2}.{s}"
+        if mine then ours := ours.insert two else upstream := upstream.insert two
       | _ => pure ()
     | _ => pure ()
-    if isOurs n then suffixes := suffixes.insert u.toString
+    if mine then ours := ours.insert u.toString else upstream := upstream.insert u.toString
   let allowSrc ← IO.FS.readFile "scripts/comment-allow.txt"
   let mut allow : Std.HashSet String := {}
   for l in allowSrc.splitOn "\n" do
@@ -163,6 +184,7 @@ run_cmd do
     unless t.isEmpty || t.startsWith "--" do allow := allow.insert t
   let mut stale : Array String := #[]
   let mut provenance : Array String := #[]
+  let mut dangling : Array String := #[]
   let mut phrase : Array String := #[]
   let mut oversize : Array String := #[]
   let mut emph : Array String := #[]
@@ -187,9 +209,12 @@ run_cmd do
     for t in backticked doc do
       -- a binder, or a field access on one (`cp.opening`, `s.val`)
       if binders.contains t || binders.contains ((t.splitOn ".").headD "") then continue
-      if isSourceFile t then
+      if isRepoPath t then
+        unless (← System.FilePath.pathExists (".." / t : System.FilePath)) do
+          dangling := dangling.push s!"{modOf n}\t{userName n}: `{t}`"
+      else if isSourceFile t then
         provenance := provenance.push s!"{modOf n}\t{userName n}: `{t}`"
-      else if identShaped t && !allow.contains t && !resolves env suffixes owner t then
+      else if identShaped t && !allow.contains t && !resolves env ours upstream owner t then
         stale := stale.push s!"{modOf n}\t{userName n}: `{t}`"
     let low := doc.toLower
     for (b, why) in banned do
@@ -243,8 +268,12 @@ run_cmd do
             if ws.contains b then
               phrase := phrase.push s!"{f}\tmodule doc: \"{b}\" ({why})"
           for t in backticked text do
+            if isRepoPath t then
+              unless (← System.FilePath.pathExists (".." / t : System.FilePath)) do
+                dangling := dangling.push s!"{f}\tmodule doc: `{t}`"
+              continue
             if isSourceFile t then continue
-            if identShaped t && !allow.contains t && !resolves env suffixes .anonymous t then
+            if identShaped t && !allow.contains t && !resolves env ours upstream .anonymous t then
               stale := stale.push s!"{f}\tmodule doc: `{t}`"
           i := j + 1
         else i := i + 1
@@ -253,7 +282,8 @@ run_cmd do
   -- left behind (the upstream names this tree used to cite) comes out module by module; until
   -- it does, the baseline records what is owed rather than pretending the tree is clean.
   let cats : List (String × Array String) :=
-    [ ("unresolved-names", stale), ("upstream-files-in-decl-doc", provenance),
+    [ ("unresolved-names", stale), ("dangling-paths", dangling),
+      ("upstream-files-in-decl-doc", provenance),
       ("banned-phrases", phrase), ("oversize", oversize), ("emphasis", emph) ]
   let baseSrc ← IO.FS.readFile "scripts/comment-baseline.txt"
   let mut base : Std.HashMap String Nat := {}

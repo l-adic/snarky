@@ -9,12 +9,10 @@ import Bulletproof.Protocol
 /-!
 # The executable kimchi IPA verifier, over checked records
 
-The batched IPA opening verifier of kimchi (`SRS::verify`, proof-systems
-`poly-commitment/src/ipa.rs`), composed as one executable function over a *checked* claim:
-the per-polynomial commitments, evaluation points and claimed evaluations, the combination
+The batched IPA opening verifier of kimchi, transcribed from proof-systems'
+`poly-commitment/src/ipa.rs` as one executable function over a *checked* claim: the
+per-polynomial commitments, evaluation points and claimed evaluations, the combination
 scalars, and the opening proof, against a separately supplied SRS (`Bulletproof.SRS`).
-It strengthens production's acceptance test in two declared places: the round-count pin of
-the checked records, and the final check as a conjunction (*What `verify` checks*).
 
 Everything transcript-derived — the `U` base, the round challenges, the Schnorr challenge —
 is recomputed here through the sponge layer of the `poseidon` package; nothing is taken as
@@ -29,38 +27,30 @@ the derived base to the abstract one is exactly the Fiat–Shamir assumption's j
 claimed-evaluation matrix a `Vector` of `Vector`s. Every read of the verifier, and of every
 statement over it, is total — a checked input cannot hold a ragged claim.
 
-The raw serde records (`Wire.Proof`, `Wire.Input`, every payload a `Vec`) live in the `Wire`
+The raw serde records (`Wire.Proof`, `Wire.Input`, every payload an `Array`) live in the `Wire`
 namespace below with their `check` parses. Those parses state this verifier's totality
 requirements — the round count, and `evals` square against the commitments and points — as a
 total parse, so the parse *is* the proof. Clients compose check-then-verify.
 
-Production's `SRS::verify` carries no such explicit guards; its `Vec` payloads feed the
-transcript and the batched MSM equations as they are. An oversized `lr` panics, and an
-undersized `lr` whose claim is committed over the SRS prefix is accepted. The round-count pin
-here is therefore a declared modeling *strengthening* rather than the transcription of a
-production check (external-audit W-F3). In the kimchi composition, exploiting that corner
-against a `Corresponds`-satisfying key requires a discrete-log break, so the endpoint
-exposure is priced.
-
 ## The curve bundle
 
-Generic over a single `CommitmentCurve` bundle — the Lean analogue of the Rust
-`G: CommitmentCurve` associated types: the base and scalar cardinalities with their primality
-facts, the sponge spec, the curve `E`, and the map-to-curve. The bundle carries *facts*, not
-structures: the field structures are the canonical `ZMod` instances synthesized from
+Generic over a single `CommitmentCurve` bundle, which carries *facts* rather than field
+structures: the field structures are then the canonical `ZMod` instances synthesized from
 primality, so the executable and abstract layers cannot disagree on any field operation.
-Points are the library's `SWPoint E` (`Point`), so the group structure is inherited — `+`/`0`
-and the binary-nsmul scalar action from CompElliptic's `AddCommGroup` instance, point
-equality from its `DecidableEq`.
+Points are `SWPoint E`, so `+`/`0`, the binary-nsmul scalar action and point equality are all
+inherited. `KimchiCurve` extends it with the sponges, the endomorphism and the map-to-curve.
 
-The scalar side reuses the `Bulletproof` definitions (`bPoly`, `bPolyCoefficients`,
+The scalar side reuses the abstract scheme's definitions (`bPoly`, `bPolyCoefficients`,
 `combinedB`, `combinedInnerProduct`) at the concrete scalar field. Scalars act on points as
 `z.val • _`, the ℕ-action of the group.
 
-The absorbed-scalar encoding (`shift_scalar`) is selected by the modulus comparison from the
-cardinalities — the `Shifted_value` Type1 register when the scalar modulus is below the base
-modulus, the Type2 shift otherwise — at the scalar-modulus bit size `Nat.size scalar` (the
-Rust `MODULUS_BIT_SIZE`).
+## Two declared strengthenings
+
+The acceptance test here is stricter than production's in two places, each stated where it
+lives: the round-count pin of the checked records (the note above `Proof`), and the final
+check as a conjunction rather than one randomised multi-scalar multiplication (the note above
+`verifyWith`). Acceptance here implies production's, so every statement over `verifyWith` is
+a statement about the stricter test.
 
 ## What `verify` checks
 
@@ -71,26 +61,9 @@ The two acceptance equations, at the derived challenges:
   commitments, `v` the combined inner product, and `b0` the evalscale combination of `bPoly`;
 * `sg`-correctness: `sg = ⟨bPolyCoefficients chal, g⟩`.
 
-`verifyWith` decides each equation and returns the conjunction. Production's `SRS::verify`
-does not. Over a batch of proofs `i = 0, 1, …`, with `Aᵢ` the Schnorr residual
-(`cᵢ • Qᵢ + δᵢ − z1ᵢ • sgᵢ − (z1ᵢ · b0ᵢ) • Uᵢ − z2ᵢ • H`) and `Bᵢ` the `sg` residual
-(`⟨sᵢ, g⟩ − sgᵢ`), it settles every term through one multi-scalar multiplication against zero,
-
-  `∑ᵢ (rⁱ • Aᵢ + sⁱ • Bᵢ) = 0`,
-
-`r = rand_base` and `s = sg_rand_base` sampled by the verifier. This verifier is production's
-at a one-proof batch, where both weights are `r⁰ = s⁰ = 1` and the deployed test is the single
-equation `A + B = 0`. The conjunction `A = 0 ∧ B = 0` implies it and is not implied by it. Like
-the round-count pin above, the conjunction is therefore a declared modeling *strengthening*,
-not the transcription of production's check (external-audit V-4, statement-audit M2).
-Acceptance here implies production's acceptance, and every statement over `verifyWith` —
-`Kimchi.Verifier.kimchiVerify` and what is proved of it — is a statement about the conjunction.
-
-`IpaVesta` and `IpaPallas` instantiate the two Pasta curves. Both are validated against
-production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`, which parses the
-wire records and composes check-then-verify. The fixtures do not distinguish the conjunction
-from production's test: an honest proof satisfies both equations, and the two predicates
-differ only off the honest path.
+`IpaVesta.curve` and `IpaPallas.curve` instantiate the two Pasta curves, both validated by
+`formal/bulletproof-pcs/scripts/check_ipa_fixture.lean` against production prover/verifier
+fixtures: it parses the wire records and composes check-then-verify.
 -/
 
 namespace Bulletproof.Ipa
@@ -102,11 +75,8 @@ open Poseidon Poseidon.FqSponge Bulletproof
 their primality facts, the short-Weierstrass curve over the base field, its group order, and
 the fast multi-scalar multiplication. Carrying facts rather than field structures makes every
 field operation resolve to the canonical `ZMod` instances on both the executable and abstract
-sides.
-
-The sponges, the endomorphism and the map-to-curve are on `KimchiCurve`, which extends this.
-Nothing supplies one of those in isolation: there are exactly two curves in the tree, and each
-supplies all of it at once. -/
+sides. The sponges, the endomorphism and the map-to-curve go on `KimchiCurve`, which extends
+this: there are exactly two curves in the tree, and each supplies all of it at once. -/
 structure CommitmentCurve where
   /-- The base-field cardinality; the field itself is the canonical `ZMod base`. -/
   base : ℕ
@@ -137,7 +107,7 @@ abbrev CommitmentCurve.BaseField (C : CommitmentCurve) := ZMod C.base
 /-- The scalar field — the canonical `ZMod` at the scalar cardinality. -/
 abbrev CommitmentCurve.ScalarField (C : CommitmentCurve) := ZMod C.scalar
 
-/-- The point type — the library's proof-carrying `SWPoint`, with its group structure. -/
+/-- The point type — the proof-carrying `SWPoint C.E`, with its group structure. -/
 abbrev CommitmentCurve.Point (C : CommitmentCurve) := SWPoint C.E
 
 /-- The scalar order kills the point group (Lagrange): the integer → scalar reduction of a
@@ -164,14 +134,14 @@ everything here except `frSponge`. -/
 structure KimchiCurve extends CommitmentCurve where
   /-- The Fq-sponge spec driving the verifier's Fiat–Shamir transcript. -/
   sponge : FqSponge.Spec base scalar
-  /-- The scalar-side sponge, production's `G::sponge_params()`, that kimchi's `frOracles`
-  runs. Not read by the IPA opening verifier itself. -/
+  /-- The scalar-side sponge that kimchi's `frOracles` runs. Not read by the IPA opening
+  verifier itself. -/
   frSponge : FqSponge.Spec scalar scalar
-  /-- The endomorphism the challenge expansion and the `endo_mul` ladders run on. -/
+  /-- The endomorphism the challenge expansion and the scalar-multiplication ladders run
+  on. -/
   endo : Pasta.EndoSpec E.toAffine
-  /-- The dual curve's endomorphism coefficient, an element of this curve's scalar field:
-  production's `VerifierIndex.endo` (`endos::<G::OtherCurve>().0`). A constant of the curve, so
-  a verifier key carrying any other value is malformed. -/
+  /-- The dual curve's endomorphism coefficient, as an element of this curve's scalar field.
+  A constant of the curve, so a verifier key carrying any other value is malformed. -/
   endoScalar : ZMod scalar
   /-- The SvdW map-to-curve deriving the transcript `U` base from a squeezed field element. -/
   groupMap : Poseidon.GroupMap.Spec base
@@ -183,13 +153,13 @@ the tie to this curve's point type. -/
 def KimchiCurve.toGroup (C : KimchiCurve) (t : ZMod C.base) : SWPoint C.E :=
   C.groupMap_E ▸ Poseidon.GroupMap.toGroup C.groupMap t
 
-/-- A point with its ordinate in the lower half (`lower_half_ordinate`, `ipa.rs`): the point
-itself when the ordinate's representative is at most `(p − 1)/2`, its negation otherwise. -/
+/-- A point with its ordinate in the lower half: the point itself when the ordinate's
+representative is at most `(C.base - 1) / 2`, its negation otherwise. -/
 def KimchiCurve.lowerHalf (C : KimchiCurve) (P : SWPoint C.E) : SWPoint C.E :=
   if (C.base - 1) / 2 < P.y.val then -P else P
 
-/-- The transcript's `U` base (`u_base`, `ipa.rs`): the map-to-curve of `t` with its ordinate
-in the lower half. -/
+/-- The transcript's `U` base: the map-to-curve of `t` with its ordinate in the lower
+half. -/
 def KimchiCurve.uBase (C : KimchiCurve) (t : ZMod C.base) : SWPoint C.E :=
   C.lowerHalf (C.toGroup t)
 
@@ -228,8 +198,8 @@ def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Poin
   C.fastMsm g a
 
 /-- The first `count` Lagrange-basis commitments over the domain of size `n` with generator
-`ω`, in `nc` chunks (`SRS::get_lagrange_basis`): `L_i` has coefficients `ω^{-ij}/n`, and its
-chunk `c` commits the coefficients `c · 2^k + t`, `t < 2^k`, against the SRS's generators.
+`ω`, in `nc` chunks: the `i`-th basis polynomial has coefficients `ω^{-ij}/n`, and its chunk
+`c` commits the coefficients `c · 2^k + t`, `t < 2^k`, against the SRS's generators.
 Coefficients past `n` are zero, so a domain within the SRS is one chunk. -/
 def lagrangeBasis (σ : SRS C.Point) (nc n : ℕ) (ω : C.ScalarField) (count : ℕ) :
     Array (Vector C.Point nc) :=
@@ -413,8 +383,18 @@ theorem zipWith_lagrangeCoeffs_ne_zero {F : Type*} [Field F] {k n : ℕ} {ω : F
     (by simp)] at hc0
   simp [s, hx] at hc0
 
-/-- An IPA opening proof at round count `k` — the checked form of the wire
-`OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/
+/-! ### The round count is pinned, where production's is not
+
+Production's opening verifier carries no explicit guard on the round list: its `Array`
+payloads feed the transcript and the batched equations as they are, so an oversized list
+panics, and an undersized one whose claim is committed over the SRS prefix is accepted.
+Pinning the round count to the SRS's `σ.k` in `Proof` is therefore a declared modeling
+*strengthening* rather than the transcription of a production check (external-audit W-F3).
+In the kimchi composition, exploiting that corner against a key whose commitments are the
+claimed ones requires a discrete-log break, so the endpoint exposure is priced. -/
+
+/-- An IPA opening proof at round count `k` — the checked form of the wire proof, with the
+round count pinned to the SRS's `σ.k` by the parse. -/
 structure Proof (C : KimchiCurve) (k : ℕ) where
   /-- The per-round `(L, R)` commitment pairs — a `Vector` at the checked round count `k`. -/
   lr : Vector (C.Point × C.Point) k
@@ -467,11 +447,10 @@ def combineCommitments (ξ : C.ScalarField) (cs : Array C.Point) : C.Point :=
   (cs.foldl (fun (acc : C.Point × C.ScalarField) P => (acc.1 + acc.2.val • P, acc.2 * ξ))
     (0, 1)).1
 
-/-- The transcript encoding of an absorbed scalar (`shift_scalar`,
-`poly-commitment/src/commitment.rs`): the `Shifted_value` register form at the
-scalar-modulus bit size `Nat.size scalar` (the Rust `MODULUS_BIT_SIZE`) — Type1
-(`(x − 2ᵇ − 1)/2`) when the scalar modulus is below the base modulus, the Type2 shift
-(`x − 2ᵇ`) otherwise. The branch is the Rust `n1 < n2`, decided from the cardinalities. -/
+/-- The transcript encoding of an absorbed scalar, at the scalar-modulus bit size
+`Nat.size C.scalar`: `Pasta.Shifted.shiftType1` — `(x − 2ᵇ − 1)/2` — when the scalar modulus
+is below the base modulus, `Pasta.Shifted.shiftType2` — `x − 2ᵇ` — otherwise. The branch is
+decided from the cardinalities rather than supplied. -/
 def shiftScalar (x : C.ScalarField) : C.ScalarField :=
   if C.scalar < C.base then Pasta.Shifted.shiftType1 (Nat.size C.scalar) x
   else Pasta.Shifted.shiftType2 (Nat.size C.scalar) x
@@ -482,9 +461,10 @@ private def roundStep (acc : Array Prechallenge × FqSponge.S C.base)
   let us := challengeNat C.sponge (absorbG C.sponge (absorbG C.sponge acc.2 LR.1) LR.2)
   (acc.1.push us.1, us.2)
 
-/-- The per-round prechallenge fold (the round loop of `SRS::verify`): absorb `L` and `R`,
-squeeze one 128-bit prechallenge, threading the sponge state — one push per `(L, R)`
-pair. The array-level engine of `roundChallenges`; the fold state is concrete data. -/
+/-- The per-round prechallenge fold: absorb `L` and `R`, squeeze one 128-bit prechallenge,
+threading the sponge state — one push per `(L, R)` pair. The array-level engine of
+`roundChallenges`; the fold state is concrete data, never a function, so the executable fold
+stays linear. -/
 def roundChallengesAux (s : FqSponge.S C.base) (lr : Array (C.Point × C.Point)) :
     Array Prechallenge × FqSponge.S C.base :=
   lr.foldl (roundStep C) (#[], s)
@@ -517,14 +497,13 @@ def roundChallenges (s : FqSponge.S C.base) {k : ℕ} (lr : Vector (C.Point × C
   let r := roundChallengesAux C s lr.toArray
   (⟨r.1, (roundChallengesAux_size C s lr.toArray).trans lr.size_toArray⟩, r.2)
 
-/-- What the verifier's Fiat–Shamir schedule produces from a given initial sponge state
-`s₀` (`SRS::verify`, with the sponge supplied by the caller — kimchi hands the warm
-post-`ζ` fq-sponge state here, `BatchEvaluationProof { sponge: fq_sponge, .. }`), before
-any expansion: absorb the shifted combined inner product; squeeze the `U` base's preimage
-`t`; per round absorb `L`, `R` and squeeze a 128-bit prechallenge; absorb `δ` and squeeze
-the Schnorr prechallenge. This is exactly what a circuit's group half emits
-(`Pickles.checkBulletproof`). The round prechallenges come back as a `Vector` at the
-checked round count, so every downstream read is total. -/
+/-- What the verifier's Fiat–Shamir schedule produces from a given initial sponge state `s₀`
+— kimchi hands the warm post-`ζ` fq-sponge state here — before any expansion: absorb the
+shifted combined inner product; squeeze the `U` base's preimage `t`; per round absorb `L`,
+`R` and squeeze a 128-bit prechallenge; absorb `δ` and squeeze the Schnorr prechallenge.
+This is exactly what a circuit's group half emits (`Pickles.checkBulletproof`). The round
+prechallenges come back as a `Vector` at the checked round count, so every downstream read is
+total. -/
 def ipaRunAt (s₀ : FqSponge.S C.base) (cip : C.ScalarField) (pr : Proof C k) :
     C.BaseField × Vector Prechallenge k × Prechallenge :=
   let s := absorbFr C.sponge s₀ (shiftScalar C cip)
@@ -551,12 +530,27 @@ def transcriptFrom (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
     endoExpand C.lam r.2.2.val)
 
 
-/-- The acceptance decision from a given initial sponge state `s₀`, against a library
-SRS: derive the transcript (from `s₀` — kimchi's warm start hands the post-`ζ`
-fq-sponge state, verifier.rs:1184–1193), combine the claim, and check the Schnorr and
-`sg`-correctness equations. The claim's shape is carried by its type (round count
-`σ.k`), so there are no runtime guards — rejecting ragged input is the wire parse's
-job. `σ.U` is never read — the deployed `U` is transcript-derived. -/
+/-! ### The final check is a conjunction, where production's is one randomised sum
+
+`verifyWith` decides each of the two acceptance equations and returns their conjunction.
+Production settles a whole batch of proofs through one multi-scalar multiplication against
+zero, `∑ᵢ (rⁱ • Aᵢ + sⁱ • Bᵢ) = 0`, at verifier-sampled weights, with `Aᵢ` the Schnorr
+residual (`cᵢ • Qᵢ + δᵢ − z1ᵢ • sgᵢ − (z1ᵢ · b0ᵢ) • Uᵢ − z2ᵢ • H`) and `Bᵢ` the `sg` residual
+(`⟨sᵢ, g⟩ − sgᵢ`). This verifier is production's at a one-proof batch, where both weights are
+`1` and the deployed test is the single equation `A + B = 0`. The conjunction `A = 0 ∧ B = 0`
+implies it and is not implied by it, so it is a declared modeling *strengthening* rather than
+the transcription of production's check (external-audit V-4, statement-audit M2): acceptance
+here implies production's acceptance, and every statement over `verifyWith` —
+`Kimchi.Verifier.kimchiVerify` and what is proved of it — is a statement about the
+conjunction. The opening fixtures do not distinguish the two: an honest proof satisfies both
+equations, and the predicates differ only off the honest path. -/
+
+/-- The acceptance decision at given transcript advice — the `U` base, the round challenges
+and the Schnorr challenge — against a library SRS: combine the claim, then check the Schnorr
+and `sg`-correctness equations and return their conjunction. The claim's shape is carried by
+its type (round count `σ.k`), so there are no runtime guards; rejecting ragged input is the
+wire parse's job. The SRS's own randomisation base `σ.U` is never read — the deployed `U` is
+transcript-derived, and arrives here as an argument. -/
 def verifyWith (σ : SRS C.Point) (uBase : C.Point) (chals : Vector C.ScalarField σ.k)
     (c : C.ScalarField) (inp : Input C σ.k m p) : Bool :=
   let chal : Fin σ.k → C.ScalarField := fun i => chals[i]
@@ -574,10 +568,9 @@ def verifyWith (σ : SRS C.Point) (uBase : C.Point) (chals : Vector C.ScalarFiel
   schnorr && sgOk
 
 /-- The opening acceptance at the deployed Fiat–Shamir schedule: `verifyWith` fed the
-transcript `transcriptFrom` derives by continuing the warm sponge. Definitionally the
-former body, so every existing statement about `verifyFrom` is unchanged; the split only
-names the boundary between the *derivation* (`transcriptFrom`) and the *algebra*
-(`verifyWith`), so an alternative challenge source can be supplied without touching either. -/
+transcript `transcriptFrom` derives by continuing the warm sponge. The split names the
+boundary between the *derivation* (`transcriptFrom`) and the *algebra* (`verifyWith`), so an
+alternative challenge source can be supplied without touching either. -/
 def verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Input C σ.k m p) :
     Bool :=
   let (uBase, chals, c) := transcriptFrom C s₀ inp
@@ -592,10 +585,10 @@ def verify (σ : SRS C.Point) (inp : Input C σ.k m p) : Bool :=
 /-! ## The prechallenge level
 
 `transcriptFrom` factored to the raw squeezes of the automaton, the form a circuit
-implementation of `check_bulletproof` is read against: `ipaSqueezes` is the schedule on
-`Poseidon.State`, and `ipaPrechallenges` its 128-bit packings. `schnorrAt` names the Schnorr
-equation at given advice, and `verifyWith_eq` splits `verifyWith` into it and the
-`sg`-correctness equation. -/
+implementation of the opening check (`Pickles.checkBulletproof`) is read against:
+`ipaSqueezes` is the schedule on `Poseidon.State`, and `ipaPrechallenges` its 128-bit
+packings. `schnorrAt` names the Schnorr equation at given advice, and `verifyWith_eq` splits
+`verifyWith` into it and the `sg`-correctness equation. -/
 
 /-- The absorbed limbs of a scalar (`absorbFr`'s branch made explicit): one limb when the
 scalar modulus is below the base modulus, the high bits then the low bit otherwise. -/
@@ -741,11 +734,10 @@ namespace Bulletproof.Ipa.Wire
 
 variable {C : KimchiCurve}
 
-/-- The wire opening proof (`OpeningProof`, ipa.rs): `lr` is a `Vec` — its length is
-the SRS's round count, pinned by `check`. -/
+/-- The wire opening proof as serde decodes it: `lr` is an `Array`, its length pinned to the
+SRS's round count by `check`. -/
 structure Proof (C : KimchiCurve) where
-  /-- The per-round `(L, R)` pairs — a `Vec`; its length is pinned to the round count
-  by `check`. -/
+  /-- The per-round `(L, R)` pairs, at whatever length the wire carried. -/
   lr : Array (C.Point × C.Point)
   /-- The Schnorr commitment `δ`. -/
   delta : C.Point
@@ -756,7 +748,7 @@ structure Proof (C : KimchiCurve) where
   /-- The challenge-folded commitment base. -/
   sg : C.Point
 
-/-- The wire batched claim (`BatchEvaluationProof`): every payload a `Vec`. -/
+/-- The wire batched claim: every payload an `Array`, its shape checked by `check`. -/
 structure Input (C : KimchiCurve) where
   /-- The per-polynomial commitments. -/
   commitments : Array C.Point
@@ -803,8 +795,7 @@ namespace Bulletproof.IpaVesta
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 
 /-- The Vesta bundle. The scalar modulus is below the base modulus, so scalars absorb in
-Type1 form. The scalar field is `Fp`, so `G::sponge_params()` is the `fp_kimchi`
-table. -/
+Type1 form; the scalar field is `Fp`, so the scalar-side sponge runs `fpParams`. -/
 abbrev curve : Ipa.KimchiCurve where
   base := PALLAS_SCALAR_CARD
   scalar := PALLAS_BASE_CARD
@@ -837,8 +828,7 @@ namespace Bulletproof.IpaPallas
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 
 /-- The Pallas bundle. The scalar modulus is above the base modulus, so scalars absorb in
-Type2 form (selected by the cardinalities). The scalar field is `Fq`, so
-`G::sponge_params()` is the `fq_kimchi` table. -/
+Type2 form; the scalar field is `Fq`, so the scalar-side sponge runs `fqParams`. -/
 abbrev curve : Ipa.KimchiCurve where
   base := PALLAS_BASE_CARD
   scalar := PALLAS_SCALAR_CARD

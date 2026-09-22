@@ -13,53 +13,47 @@ import Snarky.Kimchi.Circuit.Curve
 /-!
 # The EndoMul gadget
 
-Port of `Snarky.Circuit.Kimchi.EndoMul`
-(packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/EndoMul.purs): the
+Port of `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/EndoMul.purs`: the
 endomorphism-optimized scalar multiplication. `endoMul` witnesses the scalar's
-`4·rounds` bits MSB-first in ONE bulk `exists` — four per GLV round, plain field
+`4·rounds` bits MSB-first in one bulk witness — four per GLV round, plain field
 `0`/`1` values (the gate's own booleanity rows cover them) — builds the initial
 accumulator `[2](g + φ(g))` from a sealed `β·x` and two `addFast`s, threads
 `(acc, nAcc)` through `mapAccumM` with one eight-field witness per round, pins the
 scalar register to the scalar, and emits the `endoMul` constraint.
 
-Name map: PS `endo` becomes `endoMul`, the gate's own name — `endo` names the
-coefficient family here (`endoBase`, `Pasta.pallasEndo`); the coefficient
-parameter is `eb` after the PS binding. `endoInv` keeps its name: it witnesses
-`[s⁻¹]·g` (the inverse of the scalar EndoScalar decodes, computed in the OTHER
-field) over an on-curve checked point, then verifies with `endoMul` and pins to
-the input — the cross-field division gadget.
+Naming: `endo` here is the coefficient family (`Pasta.pallasEndo`), so the gadget
+carrying the gate's name is `endoMul` and its coefficient parameter is `eb`. `endoInv`
+witnesses `[s⁻¹]·g` — the inverse of the scalar `Kimchi.Gate.EndoScalar.toField`
+decodes, computed in the other field — over an on-curve checked point, then verifies
+with `endoMul` and pins to the input: the cross-field division gadget.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- PS's type-level `SizedF k` sizing renders as the explicit `rounds` parameter with
-  `4 · rounds` bits, and the bit reads go through `[ToNat F]`.
-- PS batches the whole witness chain through `mkWitnessTable`/`computeEndoChain`
-  (Montgomery-trick advice; its own comment: the emitted circuit is untouched).
-  The port computes each round's witness sequentially from the threaded variables
-  via the gate's own `Kimchi.Gate.EndoMul.build` — the same field values, and the
-  same eight-variable allocation per round in the PS record's alphabetical order
+## Deviations from the original (recorded in `formal/docs/snarky-kimchi-alignment.md`)
+
+- Type-level sizing renders as the explicit `rounds` parameter with `4 · rounds` bits,
+  and the bit reads go through `[ToNat F]`.
+- The original batches the whole witness chain (Montgomery-trick advice, leaving the
+  emitted circuit untouched). Here each round's witness is computed sequentially from
+  the threaded variables via the gate's own `Kimchi.Gate.EndoMul.build` — the same field
+  values, and the same eight-variable allocation per round, in the alphabetical order
   `(inv, nAccNext, r, s, s1, s3)`.
-- PS reads the endo coefficient off the ambient `HasEndo` class; the deep embedding
-  passes it as the `eb` parameter (the Poseidon parameter-data deviation). The law
-  layer renders the class as the explicit `HasEndo` structure — the coefficient, the
-  eigenvalue, and every curve fact the law pair consumes, with the deployed
-  dictionaries `HasEndo.pallas`/`HasEndo.vesta`.
-- `endoInv`'s checked point witness (PS `WeierstrassAffinePoint`, whose `CheckedType`
-  instance asserts on-curve) renders as the plain pair witness plus the inline
-  on-curve rows — same allocation, same three rows (`square`, `mul`,
-  `assertSquare`); the curve `W` and the scalar-field data `(q, lam')` for the
-  witness are parameters, like `eb`. Its advice computes in the OTHER field through
-  the kimchi gate model itself (`EndoScalar.toField` at `crumbsOf`, in `ZMod q`)
-  and scalar-multiplies in Mathlib's `W.Point` group, where PS calls the `curves`
-  package's Rust FFI (`Snarky.Curves.Class.scalarMul`); PS's partial `toAffine`
-  (`fromJust`) renders as a `(0, 0)` default on the off-curve/infinity paths —
-  unreachable for honest inputs, and advice-only either way.
+- The endo coefficient is the `eb` parameter rather than a field of an ambient class
+  (the Poseidon parameter-data deviation). The law layer renders that class as the
+  explicit `HasEndo` structure — the coefficient, the eigenvalue, and every curve fact
+  the law pair consumes — with the deployed dictionaries `HasEndo.pallas`/`HasEndo.vesta`.
+- `endoInv`'s checked point witness renders as the plain pair witness plus the inline
+  on-curve rows — same allocation, same three rows (`square`, `mul`, `assertSquare`);
+  the curve `W` and the scalar-field data `q`, `lam'` are parameters, like `eb`. Its
+  advice computes in the other field through the kimchi gate model itself
+  (`Kimchi.Gate.EndoScalar.toField` at `crumbsOf`, in `ZMod q`) and scalar-multiplies in
+  Mathlib's `WeierstrassCurve.Affine.Point` group, where the original calls a native
+  backend; the original's partial affine conversion renders as a `(0, 0)` default on the
+  off-curve and infinity paths — unreachable for honest inputs, and advice-only either way.
 
-The law pair reads the emitted constraints through the semantic layer, generic over
-the curve dictionary `HasEndo`: `EndoMul.endoMul_spec` (`§ Soundness` below) and
-`EndoMul.endoMul_complete_spec` (`§ Completeness plumbing` below) — both directions
-decode the scalar through one crumb list. There are no per-curve law statements: the
-laws are concretized only inside a larger circuit's instantiation, and the deployed
-dictionaries `HasEndo.pallas`/`HasEndo.vesta` are the discharge (and the exhibit
+The law pair reads the emitted constraints through the semantic layer, generic over the
+curve dictionary `HasEndo`: `endoMul_spec` (`§ Soundness` below) and `endoMul_complete`
+(`§ Completeness` below) — both directions decode the scalar through one crumb list.
+There are no per-curve law statements: the laws are concretized only inside a larger
+circuit's instantiation, and the deployed dictionaries are the discharge (and the exhibit
 that the dictionary is satisfiable at Pasta).
 -/
 
@@ -69,8 +63,7 @@ open Snarky
 
 variable {F c : Type}
 
-/-- The scalar's `4·rounds` bits MSB-first as field values, four per row (PS's
-bulk bit witness: `toBits` reversed). -/
+/-- The scalar's `4·rounds` bits MSB-first as field values, four per row. -/
 private def bitsWit [Field F] [ToNat F] (rounds : ℕ) (scalar : FVar F) :
     AsProver F (Vector (Vector F 4) rounds) := do
   let v ← AsProver.readCVar scalar
@@ -81,8 +74,8 @@ private def bitsWit [Field F] [ToNat F] (rounds : ℕ) (scalar : FVar F) :
 /-- One GLV round's witness: read the base, the threaded accumulator and register,
 and the four window bits, and build the gate's canonical row
 (`Kimchi.Gate.EndoMul.build` — two `stepWindow` double-adds, the scalar recoding,
-the distinct-point inverse). Returned in the PS record's alphabetical allocation
-order `(inv, nAccNext, r.x, r.y, s.x, s.y, s1, s3)`. -/
+the distinct-point inverse). Returned in the alphabetical allocation order
+`(inv, nAccNext, r.x, r.y, s.x, s.y, s1, s3)`. -/
 private def rowWit [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
     (bs : Vector (FVar F) 4) (st : AffinePoint (FVar F) × FVar F) :
     AsProver F (F × F × F × F × F × F × F × F) := do
@@ -114,11 +107,10 @@ def endoMulRound [Field F] [DecidableEq F] [BasicSystem F c]
            inv := w.1 } : EndoMulRound F),
         (s, w.2.1))
 
-/-- The endomorphism-optimized scalar multiplication (PS `endo`; OCaml
-`Pickles.Step_main_inputs.Ops.endo`): witness the MSB-first bits, seal `β·x` and
-build `acc = [2](g + φ(g))` with two `addFast`s, run the `rounds` window rounds
-threading `(acc, nAcc)`, pin the scalar fold, emit one `endoMul` constraint, and
-return the final accumulator. -/
+/-- The endomorphism-optimized scalar multiplication: witness the MSB-first bits, seal
+`β·x` and build `acc = [2](g + φ(g))` with two `addFast`s, run the `rounds` window rounds
+threading `(acc, nAcc)`, pin the scalar fold, emit one `endoMul` constraint, and return
+the final accumulator. -/
 def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
     (eb : F) (rounds : ℕ) (g : AffinePoint (FVar F))
     (scalar : SizedF (4 * rounds) (FVar F)) :
@@ -136,17 +128,15 @@ def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
 
 `endoInv`'s advice scalar-multiplies in Mathlib's proven group — the same
 `WeierstrassCurve.Affine.Point` the gadget laws are stated over (`nsmulBinRec`
-underneath, so a 255-bit multiple is a binary ladder) — where PS calls the
-`curves` package's Rust FFI (`Snarky.Curves.Class.scalarMul`). Advice-only: the
-emitted circuit never depends on these values holding anything; the on-curve and
-`endoMul`-verification rows are the contract. -/
+underneath, so a 255-bit multiple is a binary ladder). Advice-only: the emitted circuit
+never depends on these values holding anything; the on-curve and `endoMul`-verification
+rows are the contract. -/
 
 /-- `endoInv`'s result witness: read the point and the 128-bit challenge, decode the
 effective scalar in the scalar field `ZMod q` — the kimchi gate model itself,
 `EndoScalar.toField` at the challenge's canonical crumbs and the scalar-field
 eigenvalue `lam'` — and hand back `[s⁻¹]·g` computed in `W.Point`. Off-curve reads
-and the point at infinity fall back to `(0, 0)` (PS's partial `toAffine`/`fromJust`
-path) — unreachable for honest inputs. -/
+and the point at infinity fall back to `(0, 0)` — unreachable for honest inputs. -/
 private def endoInvWit [Field F] [DecidableEq F] [ToNat F]
     (W : WeierstrassCurve.Affine F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
     (g : AffinePoint (FVar F)) (scalar : FVar F) :
@@ -168,13 +158,11 @@ private def endoInvWit [Field F] [DecidableEq F] [ToNat F]
     | .some x y _ => pure (x, y)
   else pure (0, 0)
 
-/-- Cross-field division by the decoded challenge (PS `endoInv`; OCaml
-`Pickles.Step_verifier`'s `Scalar_challenge.endo_inv`): witness `[s⁻¹]·g` on-curve
-— the pair witness plus the inline on-curve rows, PS's checked
-`WeierstrassAffinePoint` exists — verify `endoMul result scalar = g`, and return
-the witnessed point. `W` is the (short-Weierstrass) curve, whose `a₄`/`a₆` are the
-check's coefficients — PS's `curveParams`; `(q, lam')` are the scalar-field order
-and eigenvalue the advice decodes through. -/
+/-- Cross-field division by the decoded challenge: witness `[s⁻¹]·g` on-curve — the pair
+witness plus the inline on-curve rows — verify `endoMul result scalar = g`, and return the
+witnessed point. `W` is the (short-Weierstrass) curve, whose `a₄`/`a₆` are the check's
+coefficients; `q` and `lam'` are the scalar-field order and eigenvalue the advice decodes
+through. -/
 def endoInv [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
     (eb : F) (W : WeierstrassCurve.Affine F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
     (g : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
@@ -204,14 +192,13 @@ open Std.Do WeierstrassCurve.Affine
 
 namespace EndoMul
 
-/-! ## Soundness
+/-! ### The chain reading
 
-The payload reads each row's output cells off the NEXT round — the two-row gate's
+The payload reads each row's output cells off the next round — the two-row gate's
 convention — so `readChain` lays the round list out as the model's witness list, and
 three of the four conditions a run needs hold by construction: the links are the shared
 cells, and the closing accumulators are the payload's finals. What the trace has to
 supply is the base and the seeds. -/
-
 
 /-- The round list as the model's witness list: each row's output cells come from the
 next round's input cells, the last row's from the finals. -/
@@ -908,7 +895,7 @@ private def bitsOf [Field F] (rounds k i : ℕ) : F × F × F × F :=
 open Kimchi.Gate.EndoScalar in
 /-- An integer of the shape the sound law hands back — `s = B + A·λ`, bounded by
 `3·2^64`, pinned in `F` to the canonical 64-crumb decomposition (a 128-bit
-challenge is 64 two-bit crumbs; `3·2^64 = 3·4^32` at 32 rounds) — IS the prechallenge's
+challenge is 64 two-bit crumbs; `3·2^64 = 3·4^32` at 32 rounds) — is the prechallenge's
 `endoExpandZ`, via the `d.char_big` window. Modulus-free: consumers cast the one integer
 into whichever scalar field acts. -/
 private theorem decomposition_eq_endoExpandZ [Field F] [DecidableEq F]
@@ -946,10 +933,10 @@ private theorem decomposition_eq_endoExpandZ [Field F] [DecidableEq F]
 
 open Kimchi.Gate.EndoScalar in
 /-- **Completeness**, at the deployed thirty-two rounds — the sixty-four crumbs of a
-128-bit challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand. On a
-base on the curve and a scalar faithful to a representative of that width the honest run
-succeeds, and the result is the base multiplied by that representative's decoded integer —
-the multiplier `endoMul_spec` names, in the same modulus-free currency. -/
+128-bit challenge, the width the `SizedF 128` operand fixes. On a base on the curve and a
+scalar faithful to a representative of that width the honest run succeeds, and the result
+is the base multiplied by that representative's decoded integer — the multiplier
+`endoMul_spec` names, in the same modulus-free currency. -/
 theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (d : HasEndo F) (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
     (xv yv sv : F) (hT : d.W.Nonsingular xv yv)
@@ -1234,7 +1221,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       rw [Kimchi.Gate.EndoMul.crumbList_ofBits 32 (ToNat.toNat sv) W ?_]
       intro r _
       cases r <;> exact ⟨rfl, rfl, rfl, rfl⟩
-    -- the accumulators, under their bounds, ARE the prechallenge's decoded integer
+    -- the accumulators, under their bounds, are the prechallenge's decoded integer
     rw [← decomposition_eq_endoExpandZ d (ToNat.toNat sv) hsab (h4 ▸ hAle) (h4 ▸ hBle)
       (hcl ▸ hAval) (hcl ▸ hBval)]
     exact ⟨scoped_affinePoint.mpr ⟨hinv.2.1, hinv.2.2.1⟩, hfin,
@@ -1242,9 +1229,9 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
 
 open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 /-- **Soundness**, at the deployed thirty-two rounds — the sixty-four crumbs of a 128-bit
-challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand. Any satisfying
-valuation reads the scalar as a prechallenge below that width, and the result as the base
-multiplied by that prechallenge's decoded integer.
+challenge, the width the `SizedF 128` operand fixes. Any satisfying valuation reads the
+scalar as a prechallenge below that width, and the result as the base multiplied by that
+prechallenge's decoded integer.
 
 The integer is modulus-free: the crumbs the gate exposes are pinned to their own base-4
 value, and the accumulator bounds identify the decomposition with its ℤ shadow through
@@ -1312,7 +1299,7 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
 /-! ## `endoInv`: the division gadget's law pair
 
 The gadget witnesses the quotient and verifies it by multiplying back, so both laws
-run through `endoMul`'s: soundness reads the on-curve rows at the WITNESSED point to
+run through `endoMul`'s: soundness reads the on-curve rows at the witnessed point to
 discharge `endoMul_spec`'s hypothesis there, and the two pins carry the product to the
 input; completeness supplies the honest quotient and lands `endoMul_complete`'s
 conclusion on it. The multiplier is `endoMul`'s own — one `endoExpandZ` integer,
@@ -1353,13 +1340,12 @@ open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 open Kimchi.Gate.VarBaseMul (eq_inv_smul_of_smul_eq) in
 /-- **Soundness.** Under any satisfying valuation, an input reading as a curve point is
 the result scaled by the challenge's decoded integer — so the result is that integer's
-inverse residue acting on the input, the PS defining equation
-`endoInv g a ~ scalarMul (recip (toFieldPure a endoScalar)) g`.
+inverse residue acting on the input.
 
-The on-curve rows discharge `endoMul_spec`'s hypothesis at the WITNESSED point — the
+The on-curve rows discharge `endoMul_spec`'s hypothesis at the witnessed point — the
 gadget's design point — with smoothness (`d.delta_ne`) upgrading their equation to
 nonsingularity, and the two pins carry the product to the input. The advice parameters
-`(q, hq, lam')` are universally quantified: soundness never consults the witness. -/
+`q`, `hq` and `lam'` are universally quantified: soundness never consults the witness. -/
 theorem endoInv_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasEndo F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
     (g : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
@@ -1440,15 +1426,14 @@ theorem toField_crumbsOf_eq_endoExpandZ [Field F] [DecidableEq F] (d : HasEndo F
 
 open WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 open Kimchi.Gate.VarBaseMul (smul_eq_smul_of_zmod_eq) in
-/-- **Completeness**, at the honest advice — the gadget instantiated in its own scalar
-field (`q := W.order`, `λ' := λ mod q`). On an input reading as a curve point and a
-challenge faithful and within the deployed width, the run succeeds, every row it emits
-is satisfied, and the result reads as `[s⁻¹]·g` for `s` the challenge's decoded integer:
-the PS witness's defining equation, in the residue `endoInv_spec` inverts.
+/-- **Completeness**, at the honest advice — the gadget instantiated in its own scalar field
+(`q := W.order`, `λ' := λ mod q`). On an input reading as a curve point and a challenge
+faithful and within the deployed width, the run succeeds and the result reads as `[s⁻¹]·g`
+for `s` the challenge's decoded integer — the residue `endoInv_spec` inverts.
 
-The run cannot fail: `s` is a unit modulo the order (`endoExpandZ_ne_zero`), so the
-quotient is a genuine affine point — the on-curve rows pass on it — and multiplying it
-back by `s` returns the input, which is what the two pins need. -/
+The run cannot fail: `s` is a unit modulo the order (`endoExpandZ_ne_zero`), so the quotient
+is a genuine affine point, the on-curve rows pass on it, and multiplying it back by `s`
+returns the input, which is what the two pins need. -/
 theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (d : HasEndo F) (g : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
     (xv yv sv : F) (hG : d.W.Nonsingular xv yv)
@@ -1648,16 +1633,12 @@ theorem vesta_endoMul_complete {t : AffinePoint (FVar Fq)} {cv : FVar Fq} {xv yv
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
   WeierstrassCurve.Affine in
 /-- **The deployed challenge leg.** At Vesta, the generic law's output on a scalar cell
-reading as a prechallenge `n < 2^128` says the result is the base point scaled by the
-wire's challenge — the Fq-sponge's endo-expansion of `n`, acting through the point
-group's `Fp`-module structure.
+reading as a prechallenge `n < 2^128` says the result is the base point scaled by the wire's
+challenge — the Fq-sponge's endo-expansion of `n`, acting through the point group's
+`Fp`-module structure. The generic post names its own prechallenge; below `|Fq|` the
+scalar's reading determines it, and its decoded integer is that expansion.
 
-The generic post names its own prechallenge, pinned only through the scalar's reading in
-`Fq`; below `|Fq|` that reading determines it, and the decoded integer is then the
-expansion the sponge computes. Neither step is visible here: a consumer supplies a
-reading and a bound, and receives the scalar action it needs.
-
-Stated on the generic law's OUTPUT rather than as a triple, because a consumer reaches it
+Stated on the generic law's output rather than as a triple, because a consumer reaches it
 holding that output — its own program walk has already passed the call. -/
 theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
     {cv : FVar Fq} {n : ℕ} (hn : n < 2 ^ 128) (hread : cv.val V = ((n : ℕ) : Fq))
