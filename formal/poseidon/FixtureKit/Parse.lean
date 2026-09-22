@@ -51,11 +51,6 @@ def parsePair {α : Type} (f : Json → Except String α) (j : Json) :
   unless a.size = 2 do throw "expected a two-element array"
   return (← f a[0]!, ← f a[1]!)
 
-/-- A `[x, y]` coordinate pair, uninspected. -/
-def parsePoint {F : Type} (f : Json → Except String F) (j : Json) :
-    Except String (F × F) :=
-  parsePair f j
-
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- A coordinate pair as a point on `E`: on the curve or the `(0, 0)` identity sentinel,
 with the `Valid` proof carried in the `SWPoint` (decided disjunct-wise). -/

@@ -877,7 +877,7 @@ above.
   the register of some satisfying run, so at a *fixed* row shape the accepted set is exactly
   `[0, 4 ^ (c(m+1)))`. `§ The 128-bit range check` below carries the deployed shape and the three
   scope limits.
-* `Chain128`, `Chain128.range`, `Chain128.exists_of_lt` — the deployed eight-row shape
+* `Chain128`, `Chain128.range`, `chain_range_complete_128` — the deployed eight-row shape
   (`RangeCheck.purs`'s `rangeCheck128`) packaged once, with the check's two directions read
   through it. `§ The packaged 128-bit range check` below.
 * `fp_rangeCheck128_sound`, `fp_rangeCheck128_complete`, `fq_rangeCheck128_sound`,
@@ -1095,7 +1095,7 @@ theorem chain_range_complete_128 (k : ℕ) (hk : k < 2 ^ 128) :
     `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/RangeCheck.purs`'s
     `rangeCheck128 = void ∘ EndoScalar.toField @8` is the deployed 128-bit range check: an
     eight-row `EndoScalar` chain run only for its constraint. `Chain128` packages
-    `chain_range_128`'s hypothesis list once; `Chain128.range` and `Chain128.exists_of_lt`
+    `chain_range_128`'s hypothesis list once; `Chain128.range` and `chain_range_complete_128`
     are the check's two directions, and `§ The range check at the deployed Pasta fields`
     closes their field hypotheses at `Fp` and `Fq`. (`RangeCheck.purs` also composes two of
     these checks into its `lowest128Bits'` split of a squeezed challenge; that composition
@@ -1105,7 +1105,7 @@ theorem chain_range_complete_128 (k : ℕ) (hk : k < 2 ^ 128) :
 /-- The eight-row `EndoScalar` chain with output register `v`: `chain_range_128`'s hypothesis
     list — every row holds, the accumulators thread from the canonical `(a, b, n) = (2, 2, 0)`,
     each row carries eight crumbs — closed off by `(w 7).n8 = v`. Packaged once so the range
-    check's statements stay readable. `Chain128.range` and `Chain128.exists_of_lt` are its two
+    check's statements stay readable. `Chain128.range` and `chain_range_complete_128` are its two
     directions. -/
 def Chain128 (w : ℕ → Witness F) (v : F) : Prop :=
   Chain w 7 ∧ (∀ i, i ≤ 7 → (w i).crumbs.length = 8) ∧ (w 7).n8 = v
@@ -1118,12 +1118,6 @@ theorem Chain128.range {w : ℕ → Witness F} {v : F} (hw : Chain128 w v)
   obtain ⟨hchain, hwidth, hv⟩ := hw
   obtain ⟨k, hk, hn⟩ := chain_range_128 w h2 h3 hchain hwidth
   exact ⟨k, hk, by rw [← hv, hn]⟩
-
-/-- Every natural below `2¹²⁸` is the register of some satisfying chain —
-    `chain_range_complete_128` read through `Chain128`. Needs no field non-degeneracy. -/
-theorem Chain128.exists_of_lt (k : ℕ) (hk : k < 2 ^ 128) :
-    ∃ w : ℕ → Witness F, Chain128 w (k : F) :=
-  chain_range_complete_128 k hk
 
 variable [DecidableEq F]
 
@@ -1160,7 +1154,7 @@ theorem endoScalar_unique {p : ℕ} [CharP F p] (lam : F) (m : ℕ) (w w' : ℕ 
 
     The per-curve entry points — the pattern `Gate/Semantics/EndoMul.lean` and
     `Gate/Semantics/VarBaseMul.lean` use for their capstones. `Chain128.range` and
-    `Chain128.exists_of_lt` at the two fields the circuit runs over, with the
+    `chain_range_complete_128` at the two fields the circuit runs over, with the
     non-degeneracy hypotheses `(2 : F) ≠ 0` / `(3 : F) ≠ 0` discharged rather than
     assumed, so nothing here carries a field hypothesis at all. `Fp` and `Fq` are
     `CompElliptic.Fields.Pasta`'s `abbrev`s down to `ZMod PALLAS_BASE_CARD` and
@@ -1178,7 +1172,7 @@ theorem fp_rangeCheck128_sound {v : Fp} {w : ℕ → Witness Fp} (hw : Chain128 
     register of some satisfying chain. -/
 theorem fp_rangeCheck128_complete (k : ℕ) (hk : k < 2 ^ 128) :
     ∃ w : ℕ → Witness Fp, Chain128 w (k : Fp) :=
-  Chain128.exists_of_lt k hk
+  chain_range_complete_128 k hk
 
 /-- **The deployed range check is sound at `Fq`**, the Pallas scalar field — the other
     half of the Pasta cycle. -/
@@ -1190,7 +1184,7 @@ theorem fq_rangeCheck128_sound {v : Fq} {w : ℕ → Witness Fq} (hw : Chain128 
     cycle. -/
 theorem fq_rangeCheck128_complete (k : ℕ) (hk : k < 2 ^ 128) :
     ∃ w : ℕ → Witness Fq, Chain128 w (k : Fq) :=
-  Chain128.exists_of_lt k hk
+  chain_range_complete_128 k hk
 
 /-! ## The wire recoding is the gate recoding
 

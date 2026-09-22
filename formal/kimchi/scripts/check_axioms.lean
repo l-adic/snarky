@@ -56,7 +56,6 @@ def roots : List Name :=
     -- per-field entry points, every field hypothesis discharged
     `Kimchi.Gate.EndoScalar.Chain128,
     `Kimchi.Gate.EndoScalar.Chain128.range,
-    `Kimchi.Gate.EndoScalar.Chain128.exists_of_lt,
     `Kimchi.Gate.EndoScalar.fp_rangeCheck128_sound,
     `Kimchi.Gate.EndoScalar.fp_rangeCheck128_complete,
     `Kimchi.Gate.EndoScalar.fq_rangeCheck128_sound,

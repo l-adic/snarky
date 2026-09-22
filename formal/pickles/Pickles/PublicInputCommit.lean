@@ -1996,12 +1996,6 @@ def XhatTable.ofKeyKnown (ks : List (PackedScalar C.BaseField))
        | _, _ => 0)
     corrSum := Vector.ofFn fun ci => constPt (corrSumPt ks lb ci) }
 
-/-- The library's `packLeavesOf` at that table is the constant leaves. -/
-theorem packLeavesOf_ofKeyKnown (ks : List (PackedScalar C.BaseField))
-    (lb : List (Vector C.Point nc)) :
-    packLeavesOf ks (XhatTable.ofKeyKnown ks lb) = List.zipWith constLeaf ks lb :=
-  packLeavesOf_ofKey ks lb
-
 /-- A scalar's constant leaf is trivially bit-boolean. -/
 theorem bitBoolean_constLeaf_of_isScalar (ks : List (PackedScalar C.BaseField))
     (lb : List (Vector C.Point nc)) (hks : ∀ k ∈ ks, k.IsScalar) :

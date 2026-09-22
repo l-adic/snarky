@@ -484,16 +484,4 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
 
 attribute [irreducible] lowestWit split128Below lowest128Bits'
 
-/-! ## `lowest128Bits`
-
-OCaml's `squeeze_challenge` flavour: `lowest128Bits'` with the low half checked, so its
-laws are the section above's at `constrainLowBits := true`. -/
-
-/-- OCaml `squeeze_challenge`'s flavor: both halves checked (PS `lowest128Bits`). -/
-def lowest128Bits [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
-    [KimchiSystem F c] (endo x : FVar F) : CircuitM F c (SizedF 128 (FVar F)) :=
-  lowest128Bits' true endo x
-
-attribute [irreducible] lowest128Bits
-
 end Snarky.Kimchi

@@ -46,7 +46,6 @@ Snarky.Kimchi.EndoMul.vesta_endoMul_read
 Snarky.Kimchi.groupMapCircuit_onCurve_spec
 Snarky.Kimchi.RandomOracle.hash2_spec
 Snarky.Kimchi.RandomOracle.hashVec_spec
-Snarky.Kimchi.lowest128Bits
 Snarky.Kimchi.rangeCheck128_spec
 Snarky.Kimchi.SpongeVar.Reads.readsAt
 Snarky.Kimchi.joinField
@@ -60,7 +59,6 @@ Snarky.Assignments.le_extendFresh
 Snarky.AsProver.bind_eq
 Snarky.AsProver.map_eq
 Snarky.AsProver.pure_eq
-Snarky.LawfulIfThenElse.ofShape
 Snarky.false_val
 Snarky.instLawfulIfThenElseBoolVar
 Snarky.instLawfulIfThenElseFVar

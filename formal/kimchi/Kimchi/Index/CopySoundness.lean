@@ -52,18 +52,18 @@ theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin wCols → 
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))))
     (hγ : γ ∉ badGammas
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))) β)
     (zg : Polynomial F)
     (hdvd : ∀ s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows zg
       (idx.permWitnessPoly wTab)
@@ -76,7 +76,7 @@ theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin wCols → 
   have h := copy_soundness_wired_of_dvd idx.omega_prim (Nat.pos_of_neZero n)
     (by have := idx.zk_three; omega : 2 ≤ idx.zkRows)
     idx.zk_le (idx.permWitnessPoly wTab) idx.shifts idx.shifts_coset idx.wiringPerm
-    idx.wiringPerm_regionPreserving β γ hβ hγ zg hdvd c
+    idx.wiring_region β γ hβ hγ zg hdvd c
   rw [show idx.wiringPerm (embCell idx.zkRows c) = idx.wiringMap (embCell idx.zkRows c)
       from rfl] at h
   rw [eval_permWitnessPoly] at h

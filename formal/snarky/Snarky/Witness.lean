@@ -246,13 +246,6 @@ variable {a va b vb : Type}
             (by rwa [CircuitType.reads_ofEquiv, Equiv.apply_symm_apply])
           rwa [Equiv.apply_symm_apply] at h) st hpre }
 
-/-- A shape's check, through its decomposition at the value and at the bundle. -/
-@[reducible] def CheckedType.ofShape [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
-    {S T : Type → Type} {val var : Type} [CircuitType F (T val) (T var)]
-    [CheckedType F c (T val) (T var)] (e : ∀ a, S a ≃ T a) :
-    @CheckedType F c (S val) (S var) _ _ _ _ _ (CircuitType.ofShape e) :=
-  CheckedType.ofEquiv (e val) (e var)
-
 end Equiv
 
 end Instances

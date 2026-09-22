@@ -189,7 +189,7 @@ coordinates satisfy `C`'s equation. -/
 private def entryOnCurve (C : Ipa.KimchiCurve) (e : Json) : Except String Bool := do
   let vkJ ← Json.parse (← (← e.getObjVal? "vk").getStr?)
   let sigma ← (← vkJ.getObjVal? "evals").getObjVal? "sigmaComm"
-  let comms ← parseArrOf (parseArrOf (parsePoint (base C))) sigma
+  let comms ← parseArrOf (parseArrOf (parsePair (base C))) sigma
   let some p := comms[0]?.bind (·[0]?) | throw "sigmaComm: no commitment"
   return decide (OnCurve C.E.A C.E.B p)
 

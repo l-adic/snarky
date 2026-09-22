@@ -214,7 +214,7 @@ theorem verifyProofAt_reads {ks nc : ℕ} {V : Valuation Fp} (E : Env IpaPallas.
       = List.zipWith (constLeaf (C := IpaPallas.curve)) statement.packed
         E.cvk.lagrangeBasis.toList := by
     unfold stepLeavesAt packLeaves xhatTableAt
-    exact packLeavesOf_ofKeyKnown (C := IpaPallas.curve) _ _
+    exact packLeavesOf_ofKey (C := IpaPallas.curve) _ _
   have hlb : E.cvk.lagrangeBasis.toList ≠ [] := by
     have := E.lagrange_pos
     intro h0

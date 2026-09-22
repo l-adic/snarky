@@ -157,10 +157,6 @@ def wiringMap (idx : Index F n) : Fin permCols × Fin n → Fin permCols × Fin 
 noncomputable def wiringPerm (idx : Index F n) : Equiv.Perm (Fin permCols × Fin n) :=
   Equiv.ofBijective _ idx.wiring_bijective
 
-theorem wiringPerm_regionPreserving (idx : Index F n) :
-    RegionPreserving idx.zkRows idx.wiringPerm :=
-  idx.wiring_region
-
 /-! ## Derived columns: row forms -/
 
 /-- The coefficient table — the `qTab` the quotient layer's `rowEnv` consumes. -/

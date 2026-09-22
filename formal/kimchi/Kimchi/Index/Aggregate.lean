@@ -346,18 +346,18 @@ private theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCo
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))))
     (hγ : γ ∉ badGammas
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))) β)
     (zg : Polynomial F)
     (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab zg β γ s) :
     ∀ c : Fin permCols × Fin (n - idx.zkRows),
@@ -389,18 +389,18 @@ private theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publi
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))))
     (hγ : γ ∉ badGammas
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))) β)
     (zg : Polynomial F)
     (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab zg β γ s) :
     ∀ c : Fin permCols × Fin n, cellValue wTab (idx.wiringMap c) = cellValue wTab c := by
@@ -467,18 +467,18 @@ private theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.pub
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))))
     (hγ : γ ∉ badGammas
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))) β)
     (zg : Polynomial F)
     (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab zg β γ s) :
     Satisfies idx pub wTab := by
@@ -503,18 +503,18 @@ theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → 
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))))
     (hγ : γ ∉ badGammas
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
       (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+          idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
             * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+              ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))) β)
     (zg : Polynomial F)
     (α : F)
     (hα : α ∉ badAlphas (idx.fullFamily pub wTab zg β γ) idx.omega n)
@@ -678,7 +678,7 @@ private theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → 
     idx.zk_le _ _ idx.shifts β γ
     (fun j hj => sigmaSide_eval_ne_zero idx.omega_prim hnd hj)
     (prod_shiftSide_eq_prod_sigmaSide idx.omega_prim _ idx.shifts idx.wiringPerm
-      idx.wiringPerm_regionPreserving β γ hcopy')
+      idx.wiring_region β γ hcopy')
 
 omit [DecidableEq F] in
 /-- The gate members of the full family: the entries below `gateAlphaCount`. -/
@@ -778,9 +778,9 @@ theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
     have hcard₂ : Multiset.card
         (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
           ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-            idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
               * idx.omega
-                ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ)))
+                ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ)))
           = 7 * (n - idx.zkRows) := by
       rw [Multiset.card_map]
       show (Finset.univ : Finset (Fin permCols × Fin (n - idx.zkRows))).card = _
@@ -794,9 +794,9 @@ theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
             idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
         (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
           ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-            idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
               * idx.omega
-                ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+                ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ))))
       (by
         refine lt_of_le_of_lt (card_badBetas_le _ _) ?_
         rw [hcard₁, hcard₂]
@@ -808,9 +808,9 @@ theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
             idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
         (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
           ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-            idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            idx.shifts (restrictCells idx.wiringPerm idx.wiring_region c).1
               * idx.omega
-                ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ)))
+                ^ ((restrictCells idx.wiringPerm idx.wiring_region c).2 : ℕ)))
         (b a))
       (by
         refine lt_of_le_of_lt (card_badGammas_le _ _ _) ?_

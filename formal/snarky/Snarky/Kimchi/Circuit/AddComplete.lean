@@ -124,11 +124,11 @@ def AddAux.equiv (a : Type) : AddAux a ≃ a × a × a where
   right_inv _ := rfl
 
 instance instCircuitTypeAddAux : CircuitType F (AddAux F) (AddAux (FVar F)) :=
-  CircuitType.ofShape AddAux.equiv
+  CircuitType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
 
 instance instCheckedTypeAddAux [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
     CheckedType F c (AddAux F) (AddAux (FVar F)) :=
-  CheckedType.ofShape AddAux.equiv
+  CheckedType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
 
 /-- An auxiliary bundle is in scope when its three columns are. -/
 @[simp] theorem scoped_addAux {st : ProverState F} {a : AddAux (FVar F)} :

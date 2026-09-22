@@ -249,15 +249,6 @@ structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
 def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
     (cvk : KimchiVK C nc) : ℕ := 2 ^ cvk.domainLog2
 
-/-- The fr-sponge spec of a commitment curve: the curve's scalar-side Poseidon
-parameters (`C.frSponge.params`, production's `G::sponge_params()`) with `lam := 0` —
-deliberately dead: the fr-sponge path never endo-expands through its own spec.
-`frOracles` expands its two squeezed prechallenges at `C.lam` (the eigenvalue
-lives on the fq-side spec), and `frDigest`'s `challengeFq`/`challengeNat` never read
-`lam`, so the slot is unused and zeroed. -/
-def frSpec (C : Ipa.KimchiCurve) : FqSponge.Spec C.scalar C.scalar :=
-  C.frSponge
-
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record — the wire form
 of production's `Constants { mds: G::sponge_params().mds, .. }` (the scalar-side table,
 per curve). Consumed by the verifiers' `ftEval0` and pinned to `idx.mds` by the wire
@@ -279,8 +270,8 @@ def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
 that absorbed every old accumulator's challenges in order. At no accumulators it is the
 constant `frDigest (frSpec C) FqSponge.init`. -/
 def recDigest {k : ℕ} (us : Array (Vector C.ScalarField k)) : C.ScalarField :=
-  frDigest C (frSpec C)
-    (absorbFq (frSpec C) FqSponge.init (us.toList.map Vector.toList).flatten)
+  frDigest C C.frSponge
+    (absorbFq C.frSponge FqSponge.init (us.toList.map Vector.toList).flatten)
 
 /-- The cast of the fq-sponge digest into the scalar field (`DefaultFqSponge::digest`,
 sponge.rs:388–397, `from_bigint`): the representative, or **zero when the value does not
@@ -475,7 +466,7 @@ recursion digest `recDigest` of the proof's old accumulators' challenges, then s
 two 128-bit prechallenges. Every squeeze is `challengeNat`. -/
 def frRun {nc k : ℕ} (cp : KimchiProof C nc k)
     (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) : FrRun :=
-  let sp := frSpec C
+  let sp := C.frSponge
   let s := absorbFq sp FqSponge.init
     (frTranscript fqDig (recDigest C (cp.olds.map (·.u))) cp.ftEval1 pubEvals cp.evals)
   let (xi, s) := challengeNat sp s
