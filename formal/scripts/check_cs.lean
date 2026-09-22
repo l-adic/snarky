@@ -799,30 +799,32 @@ packing's booleanity checks, emitted (in walk order) before the gadget. -/
 abbrev XhatCurve := Bulletproof.IpaVesta.curve
 
 open CompElliptic.Curves.Pasta.Fast.Projective.Core.PPoint in
-/-- The shift correction `-(2^L)·P` at a Lagrange base `P`, as a one-chunk constant point:
+/-- The shift correction `-(2^L)·P` at a Lagrange base chunk `P`, as a constant point:
 `smulFast` computes `[2^L]·P` (the ladder shift `L = 5·chunks`), negated coordinatewise
 (`(x, -y)` on `y² = x³ + 5`). Matches PS `scalarMulLeaf`'s `-pow2pow(base, 5·nChunks)`. -/
-def xhatCorr (L : ℕ) (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
+def xhatCorr (L : ℕ) (P : XhatCurve.Point) : AffinePoint (FVar Fq) :=
   let Q := smulFast XhatCurve.E (by decide) (by decide) (2 ^ L) P
-  #v[⟨.const Q.x, .const (-Q.y)⟩]
+  ⟨.const Q.x, .const (-Q.y)⟩
 
-/-- A Lagrange base `P` as a one-chunk constant point. -/
-def xhatBase (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
-  #v[⟨.const P.x, .const P.y⟩]
+/-- A Lagrange base chunk `P` as a constant point. -/
+def xhatBase (P : XhatCurve.Point) : AffinePoint (FVar Fq) := ⟨.const P.x, .const P.y⟩
 
-/-- `xhat_wrap_circuit`: `Pickles.publicInputCommitFull` over the 34-leaf list — the boolean
-leaves constrain their own bits inside the gadget — `full` at {0,2,4,6,8,10,32,33}
-(`L = 255`), `b128` at {11..30} (`L = 130`), `condAdd` at {1,3,5,7,9,31}; leaf `i` reads
-input `i` and Lagrange base `pts[i]`. -/
-def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
-    (input : Vector (FVar Fq) 34) : CircuitM Fq Cq PUnit := do
+/-- `xhat_wrap_circuit` (one chunk) and `xhat_wrap_chunks2_circuit` (two):
+`Pickles.publicInputCommitFull` over the 34-leaf list — the boolean leaves constrain their own
+bits inside the gadget — `full` at {0,2,4,6,8,10,32,33} (`L = 255`), `b128` at {11..30}
+(`L = 130`), `condAdd` at {1,3,5,7,9,31}; leaf `i` reads input `i` and Lagrange base `pts[i]`,
+at `nc` chunks. -/
+def xhatWrapCircuit {nc : ℕ} (pts : Array (Vector XhatCurve.Point nc))
+    (h : AffinePoint (FVar Fq)) (input : Vector (FVar Fq) 34) : CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
-  let pt (i : ℕ) : XhatCurve.Point :=
-    pts[i]?.getD (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
-  let full (i : ℕ) : Pickles.Leaf Fq 1 := .full (get i) (xhatBase (pt i)) (xhatCorr 255 (pt i))
-  let b128 (i : ℕ) : Pickles.Leaf Fq 1 := .b128 (get i) (xhatBase (pt i)) (xhatCorr 130 (pt i))
-  let cond (i : ℕ) : Pickles.Leaf Fq 1 := .condAdd (.unchecked (get i)) (xhatBase (pt i))
-  let leaves : List (Pickles.Leaf Fq 1) :=
+  let pt (i : ℕ) : Vector XhatCurve.Point nc :=
+    pts[i]?.getD (Vector.replicate nc (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero
+      XhatCurve.E))
+  let base (i : ℕ) := (pt i).map xhatBase
+  let full (i : ℕ) : Pickles.Leaf Fq nc := .full (get i) (base i) ((pt i).map (xhatCorr 255))
+  let b128 (i : ℕ) : Pickles.Leaf Fq nc := .b128 (get i) (base i) ((pt i).map (xhatCorr 130))
+  let cond (i : ℕ) : Pickles.Leaf Fq nc := .condAdd (.unchecked (get i)) (base i)
+  let leaves : List (Pickles.Leaf Fq nc) :=
     [ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8, cond 9, full 10 ]
       ++ (List.range 20).map (fun j => b128 (11 + j))
       ++ [ cond 31, full 32, full 33 ]
@@ -839,6 +841,23 @@ def xhatPoints (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) :
   let parsed : Except String (Array C.Point × C.Point) := do
     let j ← Json.parse raw
     let lagr ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt C) (← j.getObjVal? "lagrange")
+    let h ← Bulletproof.Fixture.parsePt C (← j.getObjVal? "h")
+    pure (lagr, h)
+  match parsed with
+  | .ok (lagr, h) => return (lagr, ⟨.const h.x, .const h.y⟩)
+  | .error e => throw (IO.userError s!"{path}: {e}")
+
+/-- `xhatPoints` for a chunked export (`{lagrange : [[[x,y]×nc]×n], h : [x,y]}`): each base as
+its `nc` chunks. -/
+def xhatPointsChunks (C : Bulletproof.Ipa.KimchiCurve) (nc : ℕ) (path : System.FilePath) :
+    IO (Array (Vector C.Point nc) × AffinePoint (FVar C.BaseField)) := do
+  let raw ← IO.FS.readFile path
+  let chunks (j : Json) : Except String (Vector C.Point nc) := do
+    let pts ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt C) j
+    if h : pts.size = nc then pure ⟨pts, h⟩ else throw s!"{pts.size} chunks, expected {nc}"
+  let parsed : Except String (Array (Vector C.Point nc) × C.Point) := do
+    let j ← Json.parse raw
+    let lagr ← FixtureKit.parseArrOf chunks (← j.getObjVal? "lagrange")
     let h ← Bulletproof.Fixture.parsePt C (← j.getObjVal? "h")
     pure (lagr, h)
   match parsed with
@@ -1285,6 +1304,7 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
 /-- The targets baked over a Lagrange export, each present only when its export is (a
 narrowed local PS run regenerates one column's exports; the unfiltered run has all). -/
 def xhatTargets (wrap : Option (Array XhatCurve.Point × AffinePoint (FVar Fq)))
+    (wrap2 : Option (Array (Vector XhatCurve.Point 2) × AffinePoint (FVar Fq)))
     (step : Option (Array XhatStepCurve.Point × AffinePoint (FVar Fp)))
     (ivpStep : Option (Array XhatStepCurve.Point × AffinePoint (FVar Fp))) :
     List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
@@ -1296,7 +1316,11 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × AffinePoint (FVar Fq)))
     ("step_verify_circuit",
       stepTarget (a := Vector Fp 268) (b := PUnit) (stepVerifyCircuit pts h)))
   ++ (wrap.toList.map fun (pts, h) =>
-    ("xhat_wrap_circuit", wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts h)))
+    ("xhat_wrap_circuit",
+      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit (pts.map (#v[·])) h)))
+  ++ (wrap2.toList.map fun (pts, h) =>
+    ("xhat_wrap_chunks2_circuit",
+      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts h)))
   ++ (wrap.toList.map fun (pts, h) =>
     ("ivp_wrap_circuit", wrapTarget (a := Vector Fq 177) (b := PUnit) (ivpWrapCircuit pts h)))
   ++ (wrap.toList.map fun (pts, h) =>
@@ -1326,9 +1350,11 @@ def main : IO Unit := do
   -- The `x_hat` Lagrange dumps sit in the results dir beside the comparison dumps (they
   -- carry no `purescript` field and no manifest entry, so the other consumers skip them).
   let xhatWrap ← optionalExport filter (dir / "xhat_wrap_lagrange.json") (xhatPoints XhatCurve)
+  let xhatWrap2 ← optionalExport filter (dir / "xhat_wrap_chunks2_lagrange.json")
+    (xhatPointsChunks XhatCurve 2)
   let xhatStep ← optionalExport filter (dir / "xhat_step_lagrange.json") (xhatPoints XhatStepCurve)
   let ivpStep ← optionalExport filter (dir / "ivp_step_lagrange.json") (xhatPoints XhatStepCurve)
-  let selected := (targets hStep hWrap ++ xhatTargets xhatWrap xhatStep ivpStep).filter
+  let selected := (targets hStep hWrap ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep).filter
     fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0
