@@ -252,7 +252,8 @@ def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record — the wire form
 of production's `Constants { mds: G::sponge_params().mds, .. }` (the scalar-side table,
 per curve). Consumed by the verifiers' `ftEval0` and pinned to `idx.mds` by the wire
-correspondence. -/
+correspondence. `Gate.Poseidon.mdsOfParams` is the same repackaging behind the gate
+semantics' wholesale `import Mathlib`, which this tree keeps out of the executable path. -/
 def mdsOfParams {F : Type*} (p : Poseidon.Params F) : Gate.Poseidon.Mds F :=
   ⟨p.mds.1.1, p.mds.1.2.1, p.mds.1.2.2,
    p.mds.2.1.1, p.mds.2.1.2.1, p.mds.2.1.2.2,

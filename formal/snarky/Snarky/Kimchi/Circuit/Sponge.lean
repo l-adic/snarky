@@ -74,6 +74,11 @@ def ReadsAt [Add F] [Mul F] [Zero F] (V : Valuation F) (sv : SpongeVar F)
     (s : Poseidon.State F) : Prop :=
   CircuitType.readVal (val := Poseidon.Triple F) V sv.state = s.state ∧ sv.mode = s.mode
 
+/-- The fresh circuit sponge reads as the fresh value sponge. -/
+theorem ReadsAt.init [Field F] {V : Valuation F} :
+    ReadsAt V (SpongeVar.init (F := F)) (Poseidon.init (F := F)) :=
+  ⟨rfl, rfl⟩
+
 /-- The sponge's reading at a table: in scope, and reading this value sponge. -/
 def Reads [Add F] [Mul F] [Zero F] (st : ProverState F) (sv : SpongeVar F)
     (s : Poseidon.State F) : Prop :=

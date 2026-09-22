@@ -1,6 +1,7 @@
 import Kimchi.Columns
 import Kimchi.Domain
 import Kimchi.GrandProduct
+import Kimchi.Shifted
 
 /-!
 # The permutation argument: constraints and quotient soundness
@@ -70,10 +71,6 @@ noncomputable def shiftSide (w : Fin permCols → Polynomial F)
 /-- The σ-side row product `∏ᵢ (wᵢ + γ + β·σᵢ)`. -/
 noncomputable def sigmaSide (w σ : Fin permCols → Polynomial F) (β γ : F) : Polynomial F :=
   ∏ i, (w i + C γ + C β * σ i)
-
-/-- The next-row view `z(ωX)` of the accumulator. -/
-noncomputable def shiftRow (ω : F) (z : Polynomial F) : Polynomial F :=
-  z.comp (C ω * X)
 
 /-- The indicator of row `r`, whose `columnPoly` is the Lagrange basis `L_r`. -/
 def rowIndicator {n : ℕ} (r : Fin n) : Fin n → F :=
@@ -206,7 +203,7 @@ theorem lagNumer_mul_sub {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
 noncomputable def constraints {n : ℕ} (ω : F) (zkRows : ℕ) (z : Polynomial F)
     (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F) (r₀ r₁ : Fin n) :
     Fin 3 → Polynomial F :=
-  ![zkpm ω n zkRows * (z * shiftSide w shifts β γ - shiftRow ω z * sigmaSide w σ β γ),
+  ![zkpm ω n zkRows * (z * shiftSide w shifts β γ - Kimchi.shift ω z * sigmaSide w σ β γ),
     (z - 1) * lagNumer ω r₀,
     (z - 1) * lagNumer ω r₁]
 
@@ -263,7 +260,7 @@ private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
     (z : Polynomial F) (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F)
     (h : zH F n ∣ zkpm ω n zkRows
-      * (z * shiftSide w shifts β γ - shiftRow ω z * sigmaSide w σ β γ))
+      * (z * shiftSide w shifts β γ - Kimchi.shift ω z * sigmaSide w σ β γ))
     {i : ℕ} (hi : i < n - zkRows) :
     z.eval (ω ^ (i + 1)) * (sigmaSide w σ β γ).eval (ω ^ i)
       = z.eval (ω ^ i) * (shiftSide w shifts β γ).eval (ω ^ i) := by
@@ -271,8 +268,8 @@ private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω
   rw [eval_mul] at hrow
   have h2 := (mul_eq_zero.mp hrow).resolve_left (zkpm_eval_ne_zero hω hzk2 hzkn hi)
   rw [eval_sub, eval_mul, eval_mul, sub_eq_zero] at h2
-  have hcomp : (shiftRow ω z).eval (ω ^ i) = z.eval (ω ^ (i + 1)) := by
-    rw [shiftRow, eval_comp, eval_mul, eval_C, eval_X, ← pow_succ']
+  have hcomp : (Kimchi.shift ω z).eval (ω ^ i) = z.eval (ω ^ (i + 1)) := by
+    rw [Kimchi.shift, eval_comp, eval_mul, eval_C, eval_X, ← pow_succ']
   rw [hcomp] at h2
   exact h2.symm
 
@@ -355,9 +352,9 @@ theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
       simp only [not_or] at hmask
       obtain ⟨hm0, hm1, hm2⟩ := hmask
       have hi1 : i + 1 < n := by omega
-      have hcomp : (shiftRow ω (columnPoly ω (fun i : Fin n => zrow (i : ℕ)))).eval (ω ^ i)
+      have hcomp : (Kimchi.shift ω (columnPoly ω (fun i : Fin n => zrow (i : ℕ)))).eval (ω ^ i)
           = (columnPoly ω (fun i : Fin n => zrow (i : ℕ))).eval (ω ^ (i + 1)) := by
-        rw [shiftRow, eval_comp, eval_mul, eval_C, eval_X, ← pow_succ']
+        rw [Kimchi.shift, eval_comp, eval_mul, eval_C, eval_X, ← pow_succ']
       rw [eval_sub, eval_mul, eval_mul, hcomp, hzeval i hi, hzeval (i + 1) hi1]
       refine mul_eq_zero_of_right _ (sub_eq_zero.mpr ?_)
       rcases Nat.lt_or_ge i (n - zkRows) with hlt | hge

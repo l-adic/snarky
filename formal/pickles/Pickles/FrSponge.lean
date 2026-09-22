@@ -91,11 +91,6 @@ def squeezeXiR [ToNat F] {nc : ℕ} (p : Poseidon.Params F) (digestBefore : FVar
 
 variable {V : Valuation F}
 
-omit [DecidableEq F] in
-/-- The fresh circuit sponge reads as the fresh value sponge. -/
-private theorem readsAt_init : SpongeVar.ReadsAt V (SpongeVar.init (F := F)) Poseidon.init :=
-  ⟨rfl, rfl⟩
-
 /-- Absorbing a list reads as the value absorb of the readings. -/
 theorem absorbList_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) :
@@ -130,7 +125,7 @@ theorem challengeDigest_spec (p : Poseidon.Params F)
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   mvcgen [ha, hsq]
   rename_i _ _ _ habs _ _ hsqz
-  exact (hsqz _ (habs _ readsAt_init)).1
+  exact (hsqz _ (habs _ SpongeVar.ReadsAt.init)).1
 
 /-- The guarded entries read entrywise once the mask does. -/
 private theorem maskedEntries_forall₂ {mask : List (BoolVar F)} {ms : List Bool}
@@ -243,7 +238,7 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   have hS : SpongeVar.ReadsAt V svB (Poseidon.absorb p Poseidon.init
       (frTranscript (digestBefore.val V) dv (ftEval1.val V)
         (pub.map fun v => v.map (·.val V)) (evals.map fun v => v.map (·.val V)))) := by
-    have h := hB _ (hA _ readsAt_init)
+    have h := hB _ (hA _ SpongeVar.ReadsAt.init)
     have hcons : frTranscript digestBefore d ftEval1 pub evals
         = digestBefore :: (frTranscript digestBefore d ftEval1 pub evals).tail := rfl
     rw [← hdv, ← map_val_frTranscript, hcons, List.map_cons, Poseidon.absorb, List.foldl_cons]

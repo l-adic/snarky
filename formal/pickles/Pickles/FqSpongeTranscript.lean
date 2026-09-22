@@ -209,11 +209,6 @@ private theorem coords_of_reads_cols :
   | _ :: _, _ :: _, .cons h hs => by
     simp only [List.map_cons, coords_of_reads h, coords_of_reads_cols hs]
 
-omit [DecidableEq F] in
-/-- The fresh circuit sponge reads as the fresh value sponge. -/
-private theorem readsAt_init : SpongeVar.ReadsAt V (SpongeVar.init (F := F)) Poseidon.init :=
-  ⟨rfl, rfl⟩
-
 /-- Absorbing a point reads as absorbing its coordinates. -/
 theorem absorbPoint_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
@@ -340,7 +335,7 @@ theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠
   mvcgen [h0, hpts, hx, hpts, hcols, hpre, hsq]
   rename_i _ svA _ hA svB _ hB xh _ hxh svC _ hC svD _ hD pβ _ pγ _ svE _ hE pα _ hα svF _ hF
     pζ _ hζ pd _ hdig hβ hγ
-  have s1 := hA _ readsAt_init
+  have s1 := hA _ SpongeVar.ReadsAt.init
   have s2 := hB _ s1
   have s3 := hC _ s2
   have s4 := hD _ s3
