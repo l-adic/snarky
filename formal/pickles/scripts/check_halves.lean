@@ -58,6 +58,10 @@ Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
 `wrap-group`, `verify`, `carry`, `theorem` (the default is all seven). Every lane over a
 step proof runs at the entry's chunk count (`step`, `verify`, `wrap-group`, `theorem`, `carry`);
 a wrap proof is one chunk.
+
+The runs go to `HALVES_JOBS` workers (default 4), after a warm-up that builds every SRS, Lagrange
+memo and environment they read; each run's output is printed whole, in the order above. The
+`kimchiVerify` and `sgOk` verdicts several lanes ask of one proof are computed once (`Memo`).
 -/
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
@@ -365,13 +369,46 @@ def checkedAt (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cach
   if h : nc = 1 then return (h ▸ cvk, h ▸ cp)
   else throw (IO.userError s!"the entry runs at {nc} chunks; this lane is one-chunk")
 
+/-- The verdicts several lanes share, computed once per run: `kimchiVerify` and `sgOk` each
+run the `2^k`-point `sg` MSM, and the `verify`, `theorem` and `carry` lanes ask for the same
+proof's. In memory for the life of the process, so nothing outlives the proofs it was computed
+on. Keyed by everything the verdict reads: the curve, the SRS round count, the entry, and the
+public input by value — the `theorem` lane rebuilds the public input, and a rebuilt input that
+differs from the entry's must miss rather than reuse the `verify` lane's verdict. `accOk` is
+not memoised: the `carry` lane checks it against `sgOk`, which only means something when the
+two are computed apart. -/
+structure Memo where
+  /-- `kimchiVerify`, per proof and public input. -/
+  verify : IO.Ref (Std.HashMap String Bool)
+  /-- `sgOk`, per proof and public input. -/
+  sg : IO.Ref (Std.HashMap String Bool)
+
+/-- A fresh memo. -/
+def Memo.new : IO Memo := do
+  return { verify := ← IO.mkRef {}, sg := ← IO.mkRef {} }
+
+/-- The memo key of an entry's verdict at a public input. -/
+def memoKey (C : Ipa.KimchiCurve) (name : String) (k : ℕ) (e : Cache.Entry C)
+    (pub : Array C.ScalarField) : String :=
+  s!"{name}/{k}/{e.vkDigest}/{e.publicInputKey}/{pub.toList.map (·.val)}"
+
+/-- A verdict from `ref`, computed and stored on a miss. Two workers missing at once both
+compute it, and agree. -/
+def memoized (ref : IO.Ref (Std.HashMap String Bool)) (key : String) (compute : Unit → Bool) :
+    IO Bool := do
+  if let some b := (← ref.get)[key]? then return b
+  let b := compute ()
+  ref.modify (·.insert key b)
+  return b
+
 /-- The wire verifier on a cache entry, against the curve's SRS cut to the proof's round
 count. -/
 def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) : IO Bool := do
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (memo : Memo) (e : Cache.Entry C) : IO Bool := do
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
   let ⟨_, cvk, cp⟩ ← checkedAny C name σ e
-  return Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
+  memoized memo.verify (memoKey C name σ.k e e.publicInput) fun _ =>
+    Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
 
 /-- The environment of an entry's key at its SRS, built once per key. Deciding
 `Env.Invariants` computes the key's Lagrange points from the SRS — the one costly invariant —
@@ -414,7 +451,7 @@ def envFor1 (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option
 and the last two agreeing, as `sgOk_iff_accOk` says they must under `Carry`. -/
 def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point)))
-    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env C nc)))
+    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env C nc))) (memo : Memo)
     (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
   let ⟨_, E⟩ ← envFor C name sqrt loaded envs pred
   unless succ.proof.opening.lr.size = E.σ.k do
@@ -422,10 +459,12 @@ def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Op
   let cp ← checkedFor C name E pred
   let ⟨_, _, cp'⟩ ← checkedAny C name E.σ succ
   if h : slot < cp'.olds.size then
-    -- `carry` and `sgOk` share the predecessor's transcript (`carrySgOk_eq`); `accOk` is
-    -- the successor's own accumulator and stays a computation of its own, since its
-    -- agreeing with `sgOk` is what the carry says
-    let (c, s) := Pickles.carrySgOk E.σ E.cvk cp pred.publicInput cp' ⟨slot, h⟩
+    -- `sgOk` is the predecessor's shared verdict (`memo`); `accOk` is the successor's own
+    -- accumulator and stays a computation of its own, since its agreeing with `sgOk` is what
+    -- the carry says
+    let c := Pickles.carry E.σ E.cvk cp pred.publicInput cp' ⟨slot, h⟩
+    let s ← memoized memo.sg (memoKey C name E.σ.k pred pred.publicInput) fun _ =>
+      Pickles.sgOk E.σ E.cvk cp pred.publicInput
     let a := Pickles.accOk E.σ cp'.olds[slot]
     IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
     return c && a && s && (s == a)
@@ -463,7 +502,7 @@ constrained by the `x_hat` gadget, the mask by the branch data's input check —
 of rows are among the ones decided here. -/
 def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.Entry CS))
     (loaded : IO.Ref (List (ℕ × SRS CS.Point)))
-    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env CS nc))) : IO Bool := do
+    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env CS nc))) (memo : Memo) : IO Bool := do
   let ⟨nc, E⟩ ← envFor CS "vesta" vestaBase.sqrt? loaded envs s
   let σ := E.σ
   let cvk := E.cvk
@@ -500,8 +539,10 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let msgOk := decide (digest = wst.proofState.messagesForNextWrapProof)
     let guards := decide (¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨
       cp.olds.size ≠ cvk.prevChallenges))
-    let sg' := Pickles.sgOk E.σ E.cvk cp pub
-    let kv := Kimchi.Verifier.kimchiVerify CS σ cvk cp pub
+    let sg' ← memoized memo.sg (memoKey CS "vesta" σ.k s pub) fun _ =>
+      Pickles.sgOk E.σ E.cvk cp pub
+    let kv ← memoized memo.verify (memoKey CS "vesta" σ.k s pub) fun _ =>
+      Kimchi.Verifier.kimchiVerify CS σ cvk cp pub
     -- `havoid`, the theorem's own hypothesis, decided on the key's Lagrange points
     let avoidOk := @decide (E.σ.Avoids E.lagrangeRelations)
       (E.decidableAvoids Pickles.pastaShapeVesta)
@@ -561,7 +602,7 @@ decided on a step entry's slot and the wrap entry that slot verified — the twi
   must verify. -/
 def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
     (loaded : IO.Ref (List (ℕ × SRS CW.Point)))
-    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env CW nc))) : IO Bool := do
+    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env CW nc))) (memo : Memo) : IO Bool := do
   let E ← envFor1 CW "pallas" pallasBase.sqrt? loaded envs w
   let σ := E.σ
   let cvk := E.cvk
@@ -580,8 +621,10 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
     (Pickles.decidableAvoidsStepRelations E stVar)
   let guards := decide (¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨
     cp.olds.size ≠ cvk.prevChallenges))
-  let sg' := Pickles.sgOk E.σ E.cvk cp pub
-  let kv := Kimchi.Verifier.kimchiVerify CW σ cvk cp pub
+  let sg' ← memoized memo.sg (memoKey CW "pallas" σ.k w pub) fun _ =>
+    Pickles.sgOk E.σ E.cvk cp pub
+  let kv ← memoized memo.verify (memoKey CW "pallas" σ.k w pub) fun _ =>
+    Kimchi.Verifier.kimchiVerify CW σ cvk cp pub
   IO.println s!"    env=true rounds={σ.k} key=2^{cvk.domainLog2} pub={pubOk} \
     ({pub.size} cells + 10 zeros) offBand={offOk} avoids={avoidOk} guards={guards} \
     sgOk={sg'} kimchiVerify={kv}"
@@ -616,6 +659,35 @@ def padOk (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C
   if h : slot < cp.olds.size then return Pickles.accOk σ cp.olds[slot]
   else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
 
+/-- `jobs` on `n` workers, each job's output captured on its worker thread (stdout is per
+thread) and printed in job order as soon as the jobs before it are done; the verdicts, in
+order. A job that throws prints its error and fails. -/
+def runPool (n : ℕ) (jobs : Array (IO Bool)) : IO (Array Bool) := do
+  let work ← jobs.mapM fun job => do
+    let p ← IO.Promise.new (α := String × Bool)
+    pure (job, p)
+  let next ← IO.mkRef 0
+  let worker : IO Unit := do
+    repeat
+      let i ← next.modifyGet fun i => (i, i + 1)
+      if h : i < work.size then
+        let (job, p) := work[i]
+        let r ← IO.FS.withIsolatedStreams do
+          try job catch e => do
+            IO.println s!"  ✗ {e}"
+            pure false
+        p.resolve r
+      else break
+  let tasks ← (List.range (max n 1)).mapM fun _ => IO.asTask worker
+  let mut oks := #[]
+  for (_, p) in work do
+    let (out, ok) ← IO.wait p.result!
+    IO.print out
+    oks := oks.push ok
+  for t in tasks do
+    if let .error e ← IO.wait t then throw e
+  return oks
+
 def main : IO Unit := do
   let path := (← IO.getEnv "PROOF_CACHE").getD
     "../packages/pickles/test/fixtures/proof-cache/SimpleChain.json"
@@ -630,13 +702,28 @@ def main : IO Unit := do
   let halves := lanes.splitOn ","
   let on (h : String) : Bool := halves.contains h
   let limit := ((← IO.getEnv "LIMIT").bind String.toNat?).getD wraps.size
+  let nJobs := ((← IO.getEnv "HALVES_JOBS").bind String.toNat?).getD 4
   let vestaSRS ← IO.mkRef ([] : List (ℕ × SRS CS.Point))
   let pallasSRS ← IO.mkRef ([] : List (ℕ × SRS CW.Point))
   let vestaEnvs ← IO.mkRef ([] : List (String × (nc : ℕ) × Pickles.Env CS nc))
   let pallasEnvs ← IO.mkRef ([] : List (String × (nc : ℕ) × Pickles.Env CW nc))
+  let memo ← Memo.new
+  -- The warm-up: every SRS, Lagrange memo and environment the jobs read is built here, one
+  -- at a time, so the workers only read shared data (and never write a memo file at once).
+  let t0 ← IO.monoMsNow
+  let needEnvs := on "theorem" || on "carry"
+  for s in steps do
+    let σ ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS s.proof.opening.lr.size
+    let _ ← checkedAny CS "vesta" σ s
+    if needEnvs then discard <| envFor CS "vesta" vestaBase.sqrt? vestaSRS vestaEnvs s
+  for w in wraps do
+    let σ ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS w.proof.opening.lr.size
+    let _ ← checkedAny CW "pallas" σ w
+    if needEnvs then discard <| envFor CW "pallas" pallasBase.sqrt? pallasSRS pallasEnvs w
+  IO.println s!"warm-up: {(← IO.monoMsNow) - t0} ms; {nJobs} worker(s)"
   let mut allOk := true
-  let mut runs := 0
-  -- One timed run of a half, its verdict folded into `allOk`.
+  let mut jobs : Array (IO Bool) := #[]
+  -- One timed run of a half.
   let report (what : String) (run : IO (Bool × List (String × ℕ))) : IO Bool := do
     let t0 ← IO.monoMsNow
     let (sat, bits) ← run
@@ -660,41 +747,37 @@ def main : IO Unit := do
         continue
     let pair := s!"wrap→step {d.take 10}…"
     if on "step" then
-      let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS s.proof.opening.lr.size
-      let ⟨nc, cvkS, cpS⟩ ← checkedAny CS "vesta" σS s
-      let inp ← match stepFopInput w cpS with
-        | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
-      let ok ← report s!"step half on {pair} (domain 2^{s.vk.domainLog2}, {nc} chunk(s), \
-          zk_rows {cvkS.zkRows})"
-        (runStep cvkS.zkRows ⟨s.vk.domainLog2, s.vk.omega⟩ inp)
-      runs := runs + 1
-      unless ok do allOk := false
+      jobs := jobs.push do
+        let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS s.proof.opening.lr.size
+        let ⟨nc, cvkS, cpS⟩ ← checkedAny CS "vesta" σS s
+        let inp ← match stepFopInput w cpS with
+          | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
+        report s!"step half on {pair} (domain 2^{s.vk.domainLog2}, {nc} chunk(s), \
+            zk_rows {cvkS.zkRows})"
+          (runStep cvkS.zkRows ⟨s.vk.domainLog2, s.vk.omega⟩ inp)
     if on "verify" then
-      let t0 ← IO.monoMsNow
-      let stepOk ← verifies CS "vesta" vestaBase.sqrt? vestaSRS s
-      let wrapOk ← verifies CW "pallas" pallasBase.sqrt? pallasSRS w
-      let t1 ← IO.monoMsNow
-      IO.println s!"  {if stepOk ∧ wrapOk then "✓" else "✗"} kimchiVerify on {pair}: \
-        step={stepOk} wrap={wrapOk} {t1 - t0} ms"
-      runs := runs + 1
-      unless stepOk ∧ wrapOk do allOk := false
+      jobs := jobs.push do
+        let t0 ← IO.monoMsNow
+        let stepOk ← verifies CS "vesta" vestaBase.sqrt? vestaSRS memo s
+        let wrapOk ← verifies CW "pallas" pallasBase.sqrt? pallasSRS memo w
+        let t1 ← IO.monoMsNow
+        IO.println s!"  {if stepOk ∧ wrapOk then "✓" else "✗"} kimchiVerify on {pair}: \
+          step={stepOk} wrap={wrapOk} {t1 - t0} ms"
+        return stepOk ∧ wrapOk
     if on "theorem" then
-      let ok ← reportBool s!"theorem hypotheses on {pair}"
-        (theoremHyps w s steps vestaSRS vestaEnvs)
-      runs := runs + 1
-      unless ok do allOk := false
+      jobs := jobs.push <| reportBool s!"theorem hypotheses on {pair}"
+        (theoremHyps w s steps vestaSRS vestaEnvs memo)
     if on "wrap-group" then
-      let n := (s.publicInput.size - 1) / (18 + Pickles.WrapIPARounds)
-      let r := s.proof.opening.lr.size
-      let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS r
-      let ⟨nc, cvkS, cpS⟩ ← checkedAny CS "vesta" σS s
-      let ginp ← match wrapGroupInput w s n (σS.g ⟨0, Nat.two_pow_pos _⟩) cpS with
-        | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok i => pure i
-      let basis ← basisFor CS "vesta" σS nc s
-      let ok ← report s!"wrap group half on {pair} ({n} slot(s), {r} rounds, {nc} chunk(s))"
-        (runGroupWrap cvkS basis σS.h ginp)
-      runs := runs + 1
-      unless ok do allOk := false
+      jobs := jobs.push do
+        let n := (s.publicInput.size - 1) / (18 + Pickles.WrapIPARounds)
+        let r := s.proof.opening.lr.size
+        let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS r
+        let ⟨nc, cvkS, cpS⟩ ← checkedAny CS "vesta" σS s
+        let ginp ← match wrapGroupInput w s n (σS.g ⟨0, Nat.two_pow_pos _⟩) cpS with
+          | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok i => pure i
+        let basis ← basisFor CS "vesta" σS nc s
+        report s!"wrap group half on {pair} ({n} slot(s), {r} rounds, {nc} chunk(s))"
+          (runGroupWrap cvkS basis σS.h ginp)
   for s in steps.toList.take limit do
     for (ref, slot) in s.prevs.toList.zipIdx do
       let some (d, pi) := ref | continue
@@ -706,28 +789,24 @@ def main : IO Unit := do
       let pair := s!"step→wrap {d.take 10}… (slot {slot})"
       let r := w.proof.opening.lr.size
       if on "wrap" then
-        let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
-        let (_, cpW) ← checkedAt CW "pallas" σW w
-        let inp ← match wrapFopInput s slot cpW with
-          | .error e => throw (IO.userError s!"wrap input: {e}") | .ok i => pure i
-        let ok ← report s!"wrap half on {pair} (domain 2^{w.vk.domainLog2}, {r} rounds)"
-          (runWrap w.vk.domainLog2 inp)
-        runs := runs + 1
-        unless ok do allOk := false
+        jobs := jobs.push do
+          let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
+          let (_, cpW) ← checkedAt CW "pallas" σW w
+          let inp ← match wrapFopInput s slot cpW with
+            | .error e => throw (IO.userError s!"wrap input: {e}") | .ok i => pure i
+          report s!"wrap half on {pair} (domain 2^{w.vk.domainLog2}, {r} rounds)"
+            (runWrap w.vk.domainLog2 inp)
       if on "step-group" then
-        let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
-        let (cvkW, cpW) ← checkedAt CW "pallas" σW w
-        let ginp ← match stepGroupInput w s slot (σW.g ⟨0, Nat.two_pow_pos _⟩) cpW with
-          | .error e => throw (IO.userError s!"step group input: {e}") | .ok i => pure i
-        let basis := (← basisFor CW "pallas" σW 1 w).map (·[(0 : Fin 1)])
-        let ok ← report s!"step group half on {pair}" (runGroup cvkW basis σW.h ginp)
-        runs := runs + 1
-        unless ok do allOk := false
+        jobs := jobs.push do
+          let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
+          let (cvkW, cpW) ← checkedAt CW "pallas" σW w
+          let ginp ← match stepGroupInput w s slot (σW.g ⟨0, Nat.two_pow_pos _⟩) cpW with
+            | .error e => throw (IO.userError s!"step group input: {e}") | .ok i => pure i
+          let basis := (← basisFor CW "pallas" σW 1 w).map (·[(0 : Fin 1)])
+          report s!"step group half on {pair}" (runGroup cvkW basis σW.h ginp)
       if on "theorem" then
-        let ok ← reportBool s!"theorem hypotheses on {pair}"
-          (wrapTheoremHyps w s slot pallasSRS pallasEnvs)
-        runs := runs + 1
-        unless ok do allOk := false
+        jobs := jobs.push <| reportBool s!"theorem hypotheses on {pair}"
+          (wrapTheoremHyps w s slot pallasSRS pallasEnvs memo)
   if on "carry" then
     -- Wrap k−1 → wrap k through the step between them: the step's slot `j` is the wrap's
     -- accumulator `pad + j`; the pads in front and the base-case slots are unlinked.
@@ -737,36 +816,28 @@ def main : IO Unit := do
       let tag := s!"wrap {w.vkDigest.take 10}…/{w.publicInputKey.take 10}…"
       let pad := w.proof.prevChallenges.size - s.prevs.size
       for j in List.range pad do
-        let ok ← reportBool s!"pad accumulator {j} of {tag}: AccOk"
+        jobs := jobs.push <| reportBool s!"pad accumulator {j} of {tag}: AccOk"
           (padOk CW "pallas" pallasBase.sqrt? pallasSRS w j)
-        runs := runs + 1
-        unless ok do allOk := false
       for (ref, j) in s.prevs.toList.zipIdx do
         match ref with
         | none =>
-          let ok ← reportBool s!"base-case accumulator {pad + j} of {tag}: AccOk"
+          jobs := jobs.push <| reportBool s!"base-case accumulator {pad + j} of {tag}: AccOk"
             (padOk CW "pallas" pallasBase.sqrt? pallasSRS w (pad + j))
-          runs := runs + 1
-          unless ok do allOk := false
         | some (d', pi') =>
           let some w' := wraps.find? (fun w => w.vkDigest = d' ∧ w.publicInputKey = pi')
             | IO.println s!"  ✗ {tag}: its predecessor wrap {d'.take 10}… is not in the file"
               allOk := false
               continue
-          let ok ← reportBool s!"carry wrap→wrap into accumulator {pad + j} of {tag}"
-            (carriesInto CW "pallas" pallasBase.sqrt? pallasSRS pallasEnvs w' w (pad + j))
-          runs := runs + 1
-          unless ok do allOk := false
+          jobs := jobs.push <| reportBool s!"carry wrap→wrap into accumulator {pad + j} of {tag}"
+            (carriesInto CW "pallas" pallasBase.sqrt? pallasSRS pallasEnvs memo w' w (pad + j))
     -- Step k−1 → step k through the wrap between them: slot `j` is accumulator `j`.
     for s in steps.toList.take limit do
       let tag := s!"step {s.vkDigest.take 10}…/{s.publicInputKey.take 10}…"
       for (ref, j) in s.prevs.toList.zipIdx do
         match ref with
         | none =>
-          let ok ← reportBool s!"base-case accumulator {j} of {tag}: AccOk"
+          jobs := jobs.push <| reportBool s!"base-case accumulator {j} of {tag}: AccOk"
             (padOk CS "vesta" vestaBase.sqrt? vestaSRS s j)
-          runs := runs + 1
-          unless ok do allOk := false
         | some (d, pi) =>
           let some w' := wraps.find? (fun w => w.vkDigest = d ∧ w.publicInputKey = pi)
             | IO.println s!"  ✗ {tag} slot {j}: its wrap {d.take 10}… is not in the file"
@@ -781,11 +852,10 @@ def main : IO Unit := do
                 the file"
               allOk := false
               continue
-          let ok ← reportBool s!"carry step→step into accumulator {j} of {tag}"
-            (carriesInto CS "vesta" vestaBase.sqrt? vestaSRS vestaEnvs s' s j)
-          runs := runs + 1
-          unless ok do allOk := false
-  unless runs > 0 do throw (IO.userError "no linked pairs to run")
-  unless allOk do throw (IO.userError "check-halves FAILED")
-  IO.println s!"✓ {runs} run(s): every table satisfies its system, every bit reads 1, \
+          jobs := jobs.push <| reportBool s!"carry step→step into accumulator {j} of {tag}"
+            (carriesInto CS "vesta" vestaBase.sqrt? vestaSRS vestaEnvs memo s' s j)
+  unless jobs.size > 0 do throw (IO.userError "no linked pairs to run")
+  let oks ← runPool nJobs jobs
+  unless allOk && oks.all id do throw (IO.userError "check-halves FAILED")
+  IO.println s!"✓ {jobs.size} run(s): every table satisfies its system, every bit reads 1, \
     kimchiVerify accepts every proof, every accumulator is carried"

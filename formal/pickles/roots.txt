@@ -308,10 +308,6 @@ Pickles.StepStatement.packed
 Pickles.sgOk_iff_accOk
 Pickles.accOk_iff
 Pickles.carry_iff
--- `carrySgOk` is the pair of the two mirrors on one transcript run, which
--- pickles/scripts/check_halves.lean calls so its carry lane runs the predecessor's transcript
--- once; `carrySgOk_eq` says it is that pair, so the reflections above still speak for it.
-Pickles.carrySgOk_eq
 Pickles.twoHalves_kimchiVerify
 Pickles.twoHalves_schnorr
 Pickles.twoHalves_kimchiVerify_vesta
