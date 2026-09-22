@@ -258,7 +258,7 @@ the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
 def runGroup {ks kw : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Array CW.Point)
     (h : CW.Point) (inp : Pickles.StepGroup ks kw Fp Bool) : IO (Bool × List (String × ℕ)) :=
   runHalf (a := Pickles.StepGroup ks kw Fp Bool) Kimchi.Fixture.PS.fpSide
-    (groupStepOn vk (stepXhatTable basis) (xhatStepCell h)) (fun b => [("success", b)]) inp
+    (groupStepOn vk basis h) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group half on its records: the step key's commitments as constants,
 the Lagrange bases, the SRS's blinding base. -/

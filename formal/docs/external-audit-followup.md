@@ -1452,13 +1452,15 @@ this; it is a kimchi gate-semantics lane and touches nothing here.
 
 ### O-3 — the randomized final check
 
-**Audit ID:** V-4. **Deferred; no further work planned.** Production verifies one rng-weighted MSM
-(`r₁·A + r₂·B = 0`, fresh `thread_rng`, `ipa.rs:249–254`); the Lean verifier checks the two bracket
-equations as a deterministic conjunction (`Bulletproof/Wire.lean:254–268`). Lean-accept implies
-production-accept with probability 1 — the conservative direction for soundness — and the
-difference is a declared deviation in `Verifier/Kimchi.lean`'s preamble alongside the
-singleton-`batch_verify` note. Recorded here only so a future reader does not rediscover it as a
-finding.
+**Audit ID:** V-4. **Deferred; no further work planned.** Production settles one MSM over the
+batch, `∑ᵢ (rⁱ·Aᵢ + sⁱ·Bᵢ) = 0` with `Aᵢ` the Schnorr residual, `Bᵢ` the `sg` residual and `r`,
+`s` fresh `thread_rng` weights (`ipa.rs`, `SRS::verify`); the Lean verifier checks the two bracket
+equations as a conjunction (`Ipa.verifyWith`, `Bulletproof/Wire.lean`). At the one-proof batch the
+Lean verifier models, both weights are `1` and production's test is `A + B = 0`. Lean-accept
+implies production-accept — the conservative direction for soundness — and not conversely. The
+difference is a declared modeling strengthening in `Bulletproof/Wire.lean`'s header (*What
+`verify` checks*) and in `Verifier/Kimchi.lean`'s preamble alongside the singleton-`batch_verify`
+note. Recorded here only so a future reader does not rediscover it as a finding.
 
 **Accepted residual (not work):** lean4checker replays declarations through the kernel but does not
 recompute the per-module axiom tables `collectAxioms` reads. Inherent to the tool; documented at

@@ -148,18 +148,31 @@ def decidableAvoidsStepRelations {ks : ℕ} (E : Env IpaPallas.curve 1)
     List.decidableBAll _ _
   decidable_of_iff _ (avoids_stepRelationsAt_iff E statement).symm
 
-/-- `verify` at an environment: the deployed Pallas scalar ops, endomorphism, sponge, group
-map and square root, the SRS blinding base as a constant cell, and the `x_hat` table the
-key's. -/
+/-- `verify` at its constants as data: the deployed Pallas scalar ops, endomorphism, sponge,
+group map and square root, the blinding base `h` as a constant cell, and the `x_hat` table
+that of the Lagrange points `lagrange`. The CS-equality corpus pins this gadget, at its dump's
+points. -/
+def verifyProofWith {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : ℕ}
+    (h : IpaPallas.curve.Point) (lagrange : List (Vector IpaPallas.curve.Point 1))
+    (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (cells : IvpInput k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
+    CircuitM Fp c (BoolVar Fp) :=
+  verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params
+    (.const ((Pasta.vestaLam : ℤ) : Fp)) groupMapParamsPallas pallasBase.sqrt? (constPt h)
+    (XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed lagrange) spongeAfterIndex
+    isBaseCase statement u cells
+
+/-- `verify` at an environment: `verifyProofWith` at the SRS blinding base and the key's
+Lagrange points. -/
 def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : ℕ}
     (E : Env IpaPallas.curve 1) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
-  verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params
-    (.const ((Pasta.vestaLam : ℤ) : Fp)) groupMapParamsPallas pallasBase.sqrt? (constPt E.σ.h)
-    (xhatTableAt E statement) spongeAfterIndex isBaseCase statement u cells
+  verifyProofWith E.σ.h E.cvk.lagrangeBasis.toList spongeAfterIndex isBaseCase statement u cells
 
 /-- **`verify` at an environment reads as the group half at the packed statement.** The table
 is the key's, so what `XhatTable.Bound` asks beyond the environment's invariants is the band

@@ -13,6 +13,8 @@ The batched IPA opening verifier of kimchi (`SRS::verify`, proof-systems
 `poly-commitment/src/ipa.rs`), composed as one executable function over a *checked* claim:
 the per-polynomial commitments, evaluation points and claimed evaluations, the combination
 scalars, and the opening proof, against a separately supplied SRS (`Bulletproof.SRS`).
+It strengthens production's acceptance test in two declared places: the round-count pin of
+the checked records, and the final check as a conjunction (*What `verify` checks*).
 
 Everything transcript-derived — the `U` base, the round challenges, the Schnorr challenge —
 is recomputed here through the sponge layer of the `poseidon` package; nothing is taken as
@@ -70,9 +72,26 @@ The two acceptance equations, at the derived challenges:
   commitments, `v` the combined inner product, and `b0` the evalscale combination of `bPoly`;
 * `sg`-correctness: `sg = ⟨bPolyCoefficients chal, g⟩`.
 
+`verifyWith` decides each equation and returns the conjunction. Production's `SRS::verify`
+does not. Over a batch of proofs `i = 0, 1, …`, with `Aᵢ` the Schnorr residual
+(`cᵢ • Qᵢ + δᵢ − z1ᵢ • sgᵢ − (z1ᵢ · b0ᵢ) • Uᵢ − z2ᵢ • H`) and `Bᵢ` the `sg` residual
+(`⟨sᵢ, g⟩ − sgᵢ`), it settles every term through one multi-scalar multiplication against zero,
+
+  `∑ᵢ (rⁱ • Aᵢ + sⁱ • Bᵢ) = 0`,
+
+`r = rand_base` and `s = sg_rand_base` sampled by the verifier. This verifier is production's
+at a one-proof batch, where both weights are `r⁰ = s⁰ = 1` and the deployed test is the single
+equation `A + B = 0`. The conjunction `A = 0 ∧ B = 0` implies it and is not implied by it. Like
+the round-count pin above, the conjunction is therefore a declared modeling *strengthening*,
+not the transcription of production's check (external-audit V-4, statement-audit M2).
+Acceptance here implies production's acceptance, and every statement over `verifyWith` —
+`Kimchi.Verifier.kimchiVerify` and what is proved of it — is a statement about the conjunction.
+
 `IpaVesta` and `IpaPallas` instantiate the two Pasta curves. Both are validated against
 production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`, which parses the
-wire records and composes check-then-verify.
+wire records and composes check-then-verify. The fixtures do not distinguish the conjunction
+from production's test: an honest proof satisfies both equations, and the two predicates
+differ only off the honest path.
 -/
 
 namespace Bulletproof.Ipa
