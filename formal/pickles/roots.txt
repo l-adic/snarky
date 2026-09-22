@@ -309,8 +309,6 @@ Pickles.accOk_iff
 Pickles.carry_iff
 Pickles.twoHalves_kimchiVerify
 Pickles.twoHalves_schnorr
-Pickles.twoHalves_kimchiVerify_vesta
-Pickles.twoHalves_kimchiVerify_pallas
 Pickles.ScalarHalf.wrap_olds
 Pickles.vesta_claim_tie
 Pickles.MaxProofsVerified

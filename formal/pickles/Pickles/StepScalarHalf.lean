@@ -100,10 +100,11 @@ private theorem flatten_zipWith_val {V : Valuation Fp} :
   | m :: ms, cs :: css => by cases m <;> simp [flatten_zipWith_val ms css]
 
 /-- **Running the step circuit's scalar half, a step proof's remaining half decides
-`kimchiVerify`.** `twoHalves_kimchiVerify_vesta` as a triple about the scalar circuit, with
-the wrap circuit's group half assumed (`wrapVerifyAt_reads` produces it). What the circuit's
-parameters and domain list owe is the environment's and the bundle's; what is left is about
-cells: the mask is boolean, the `domain_log2` cell holds the key's, and the ties. -/
+`kimchiVerify`.** `twoHalves_kimchiVerify` at a step proof as a triple about the scalar
+circuit, with the wrap circuit's group half assumed (`wrapVerifyAt_reads` produces it). What
+the circuit's parameters and domain list owe is the environment's and the bundle's; what is
+left is about cells: the mask is boolean, the `domain_log2` cell holds the key's, and the
+ties. -/
 theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc : ℕ}
     (E : Env IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc E.σ.k)
@@ -195,8 +196,8 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc : ℕ}
     rw [habs]
     rfl
   rw [hn, hω, hdv] at hread
-  rw [← twoHalves_kimchiVerify_vesta E cp pub hguard Vg claimsG successG hg Vs claimsS evals
-    mask prevChallenges o hread ht hf]
+  rw [← twoHalves_kimchiVerify E (by norm_num [PALLAS_SCALAR_CARD])
+    (by norm_num [PALLAS_BASE_CARD]) cp pub hguard _ successG hg _ o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
 /-! ## The circuit of its input

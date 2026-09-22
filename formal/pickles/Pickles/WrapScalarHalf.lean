@@ -61,7 +61,7 @@ private theorem vanishingAt_spec {V : Valuation Fq} (log2 : ℕ) (z : FVar Fq) :
   simp [ht]
 
 /-- **Running the wrap circuit's scalar half, a wrap proof's remaining half decides
-`kimchiVerify`.** `twoHalves_kimchiVerify_pallas` as a triple about the scalar circuit,
+`kimchiVerify`.** `twoHalves_kimchiVerify` at a wrap proof as a triple about the scalar circuit,
 with the step circuit's group half assumed (`verifyProof_step_reads` produces it). What the
 circuit's parameters and domain owe is the environment's; what is left is the ties. -/
 theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
@@ -139,8 +139,8 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
     rw [ScalarHalf.wrap_maskVals]
     simp
   rw [hdv, hmask] at hread
-  rw [← twoHalves_kimchiVerify_pallas E cp pub hguard Vg claimsG successG hg Vs claimsS evals
-    prevChallenges o hread ht hf]
+  rw [← twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD])
+    (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
 /-! ## The circuit of its input -/

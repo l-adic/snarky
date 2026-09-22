@@ -63,8 +63,7 @@ converse — the wire accepting at honest claims makes the bits read `1` — nee
 comparison to be exact: `xiCorrect` compares the claim against the low half of a split of
 the fr-sponge's squeeze, and only where the circuit range-checks that low half is the split
 canonical. Both circuits do (`squeeze_challenge`), so the statement is an equivalence at a
-step proof (`twoHalves_kimchiVerify_vesta`) and at a wrap proof
-(`twoHalves_kimchiVerify_pallas`).
+step proof and at a wrap proof.
 
 ## What this is not
 
@@ -90,11 +89,10 @@ wrap side's instance is at one chunk, production's invariant for a wrap proof.
 
 * `twoHalves_schnorr`: the two bits read `1` exactly when the claims are honest and the
   wire's Schnorr equation holds; `twoHalves_kimchiVerify`: with the deferred `sg` equation,
-  exactly when `kimchiVerify` accepts at honest claims; at a step proof (Vesta commitments:
-  the wrap circuit's group half, then the step circuit's scalar half)
-  `twoHalves_kimchiVerify_vesta`, with the claim tie unfolded (`vesta_claim_tie`); at a wrap
-  proof (Pallas commitments: the step circuit's group half, then the wrap circuit's scalar
-  half) `twoHalves_kimchiVerify_pallas`.
+  exactly when `kimchiVerify` accepts at honest claims. Each side's scalar-half triple
+  (`finalizeOtherProofStepAt_kimchiVerify_vesta`,
+  `finalizeOtherProofWrapAt_kimchiVerify_pallas`) instantiates it at its curve and its
+  circuits' halves; the claim tie at a step proof is `vesta_claim_tie`.
 
 ## Implementation notes
 
@@ -879,42 +877,6 @@ theorem vesta_claim_tie {Vg : Valuation Fq} {Vs : Valuation Fp}
   · intro h
     rw [h]
 
-/-- **A step proof's two halves accept exactly when `kimchiVerify` does at honest claims.** The
-wrap circuit's group half, then the step circuit's scalar half, tied, with the guards. -/
-theorem twoHalves_kimchiVerify_vesta {nc : ℕ}
-    (E : Env IpaVesta.curve nc)
-    (cp : KimchiProof IpaVesta.curve nc E.σ.k)
-    (pub : Array Fp)
-    (hguard : Guards IpaVesta.curve E.cvk cp pub)
-    -- the wrap circuit: its valuation, its statement's claims, its success bit, its read
-    (Vg : Valuation Fq)
-    (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (successG : BoolVar Fq)
-    (hg : (GroupHalf.wrap Vg claimsG).Reads E cp pub successG)
-    -- the next step circuit: its valuation, its cells, its output, its read
-    (Vs : Valuation Fp)
-    (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    (evals : ChunkedEvals nc (FVar Fp))
-    (mask : Vector (BoolVar Fp) MaxProofsVerified)
-    (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) MaxProofsVerified)
-    (outS : FopOutput Fp)
-    (hs : FopVerifyReads (p := IpaVesta.curve.scalar)
-      (FopParams.ofEnv E Linearization.fpTokens) true E.cvk.n E.cvk.omega
-      (recDigest IpaVesta.curve (cp.olds.map (·.u)))
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges).maskVals
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals claimsS
-      evals IpaVesta.curve.lam (fopStep Vs).read (fopStep Vs).unshiftV Vs outS)
-    -- across the two
-    (ht : HalvesTies (GroupHalf.wrap Vg claimsG)
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges))
-    (hf : FopTies E cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges)) :
-    ((↑successG : CVar Fq).val Vg = 1 ∧ (↑outS.finalized : CVar Fp).val Vs = 1)
-        ∧ SgOk E.σ E.cvk cp pub
-      ↔ kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
-        (ScalarHalf.step Vs claimsS evals mask prevChallenges).ClaimsHonest E cp pub :=
-  twoHalves_kimchiVerify E (by norm_num [PALLAS_SCALAR_CARD]) (by norm_num [PALLAS_BASE_CARD])
-    cp pub hguard _ successG hg _ outS hs ht hf
-
 end StepProof
 
 /-! ## At a wrap proof: Pallas commitments
@@ -985,43 +947,6 @@ theorem ScalarHalf.wrap_olds {k nc : ℕ} (V : Valuation Fq)
       rw [List.length_cons, List.replicate_succ, List.zipWith_cons_cons, List.flatten_cons,
         if_pos rfl, List.singleton_append, ih]
   rw [ScalarHalf.wrap_maskVals, hkeep _ _ (by simp [ScalarHalf.prevVals])]
-
-/-- **A wrap proof's two halves accept exactly when `kimchiVerify` does at honest claims.** The
-step circuit's group half, then the wrap circuit's scalar half, tied, with the guards. -/
-theorem twoHalves_kimchiVerify_pallas {nc : ℕ}
-    (E : Env IpaPallas.curve nc)
-    (cp : KimchiProof IpaPallas.curve nc E.σ.k)
-    (pub : Array Fq)
-    (hguard : Guards IpaPallas.curve E.cvk cp pub)
-    -- the step circuit: its valuation, its statement's claims, its success bit, its read
-    (Vg : Valuation Fp)
-    (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
-      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (successG : BoolVar Fp)
-    (hg : (GroupHalf.step Vg claimsG).Reads E cp pub successG)
-    -- the next wrap circuit: its valuation, its cells, its output, its read
-    (Vs : Valuation Fq)
-    (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : ChunkedEvals nc (FVar Fq))
-    (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified)
-    (outS : FopOutput Fq)
-    (hs : FopVerifyReads (p := IpaPallas.curve.scalar)
-      (FopParams.ofEnv E Linearization.fqTokens) true E.cvk.n E.cvk.omega
-      (recDigest IpaPallas.curve (cp.olds.map (·.u)))
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges).maskVals
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals claimsS
-      evals IpaPallas.curve.lam
-      (fopWrap Vs).read (fopWrap Vs).unshiftV Vs outS)
-    -- across the two
-    (ht : HalvesTies (GroupHalf.step Vg claimsG)
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges))
-    (hf : FopTies E cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
-    ((↑successG : CVar Fp).val Vg = 1 ∧ (↑outS.finalized : CVar Fq).val Vs = 1)
-        ∧ SgOk E.σ E.cvk cp pub
-      ↔ kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
-        (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp pub :=
-  twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD]) (by norm_num [PALLAS_SCALAR_CARD])
-    cp pub hguard _ successG hg _ outS hs ht hf
 
 end WrapProof
 
