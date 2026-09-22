@@ -180,8 +180,29 @@ def wrapPublicInput {ks n : ℕ} (E : Env IpaVesta.curve) (V : Valuation Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : Array Fp :=
   pubOf IpaVesta.curve V (wrapLeavesAt E statement)
 
-/-- The wrap circuit's verify block at an environment: the deployed Vesta constants, the SRS
-blinding base as a constant cell, and `x_hat` from the packed step statement. -/
+/-- The wrap circuit's verify block at its constants as data: the deployed Vesta constants, the
+blinding base `h` as a constant cell, and `x_hat` from the packed step statement at the table
+of the Lagrange points `lagrange`. The CS-equality corpus pins this gadget, at its dump's
+points. -/
+def wrapVerifyWith {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k : ℕ}
+    (h : IpaVesta.curve.Point) (lagrange : List (Vector IpaVesta.curve.Point 1))
+    (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+    (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
+    (claimedMsgDigest : FVar Fq)
+    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (cells : IvpInput k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
+  wrapVerify IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
+    (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h)
+    spongeAfterIndex
+    (do
+      let P ← publicInputCommitFull (0 : Fin 1) (constPt h)
+        (packLeavesOf statement.packed (XhatTable.ofKey statement.packed lagrange))
+      pure [P])
+    msgSponge newBpChallenges claimedMsgDigest u cells
+
+/-- The wrap circuit's verify block at an environment: `wrapVerifyWith` at the SRS blinding
+base and the key's Lagrange points. -/
 def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k : ℕ}
     (E : Env IpaVesta.curve)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
@@ -190,13 +211,8 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k : ℕ
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
-  wrapVerify IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
-    (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt E.σ.h)
-    spongeAfterIndex
-    (do
-      let P ← publicInputCommitFull (0 : Fin 1) (constPt E.σ.h) (wrapLeavesAt E statement)
-      pure [P])
-    msgSponge newBpChallenges claimedMsgDigest u cells
+  wrapVerifyWith E.σ.h E.cvk.lagrangeBasis.toList statement spongeAfterIndex msgSponge
+    newBpChallenges claimedMsgDigest u cells
 
 /-- A packed step statement opens with a full scalar: a slot's split `cip`, or with no slot
 the `messages_for_next_step_proof` digest. -/

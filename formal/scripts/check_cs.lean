@@ -786,7 +786,7 @@ def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
 `xhat_wrap_lagrange.json`, `IpaPallas` for `xhat_step_lagrange.json`. The corrections are
 derived in-circuit. -/
 def xhatPoints (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) :
-    IO (Array C.Point × AffinePoint (FVar C.BaseField)) := do
+    IO (Array C.Point × C.Point) := do
   let raw ← IO.FS.readFile path
   let parsed : Except String (Array C.Point × C.Point) := do
     let j ← Json.parse raw
@@ -794,7 +794,7 @@ def xhatPoints (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) :
     let h ← Bulletproof.Fixture.parsePt C (← j.getObjVal? "h")
     pure (lagr, h)
   match parsed with
-  | .ok (lagr, h) => return (lagr, ⟨.const h.x, .const h.y⟩)
+  | .ok r => return r
   | .error e => throw (IO.userError s!"{path}: {e}")
 
 /-! ### The step side (`xhat_step_circuit`)
@@ -998,16 +998,15 @@ def stepVerifyCells (get : ℕ → FVar Fp) :
       opening := { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
                    z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 } }
 
-/-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProof` on the step
-side over the parsed statement, unfinalized proof and cells. -/
-def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
+/-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProofWith` — the gadget
+`verifyProofAt` is at an environment's data — at the dump's points, over the parsed statement,
+unfinalized proof and cells. -/
+def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point)
     (input : Vector (FVar Fp) 268) : CircuitM Fp C PUnit := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let sv ← dummyIndexSponge
-  let _ ← Pickles.verifyProof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
-    Bulletproof.IpaVesta.curve.frSponge.params (.const endoVestaLam) Pickles.groupMapParamsPallas
-    (fun _ => none) h (stepXhatTable pts) sv (.unchecked (get 265)) (stepVerifyStatement get)
-    (stepVerifyUnfinalized get) (stepVerifyCells get)
+  let _ ← Pickles.verifyProofWith h (oneChunk pts) sv (.unchecked (get 265))
+    (stepVerifyStatement get) (stepVerifyUnfinalized get) (stepVerifyCells get)
   pure PUnit.unit
 
 /-! ## The wrap side's `incrementally_verify_proof`
@@ -1081,7 +1080,8 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
   let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
     let P ← Pickles.publicInputCommitFull (0 : Fin 1) h
-      (wrapLeaves pts (wrapStepStatement get).packed)
+      (Pickles.packLeavesOf (wrapStepStatement get).packed
+        (Pickles.XhatTable.ofKey (wrapStepStatement get).packed (oneChunk pts)))
     pure [P]
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
@@ -1094,7 +1094,8 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
 
 /-! ## The wrap circuit's verify block
 
-Transcribes `Pickles.CircuitDiffs.PureScript.WrapVerify`: `Pickles.wrapVerify` over the same
+Transcribes `Pickles.CircuitDiffs.PureScript.WrapVerify`: `Pickles.wrapVerifyWith` — the gadget
+`wrapVerifyAt` is at an environment's data — at the dump's points, over the same
 177-cell IVP layout as `ivp_wrap_circuit`, now with one real accumulator — `sg_old` at 194
 under a constant keep bit — followed by the claimed `messages_for_next_wrap_proof` digest at
 177 and the new round challenges at 178-192 (193 is unused: the OCaml dump computes the
@@ -1108,19 +1109,13 @@ def wrapMsgSponge : SpongeVar Fq :=
     ⟨(0, 0, 0), .absorbed 0⟩ dummyWrapChallenges)
 
 /-- `wrap_verify_circuit`. -/
-def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
+def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : XhatCurve.Point)
     (input : Vector (FVar Fq) 196) : CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let dv := wrapIvpDv get
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
-  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    let P ← Pickles.publicInputCommitFull (0 : Fin 1) h
-      (wrapLeaves pts (wrapStepStatement get).packed)
-    pure [P]
-  Pickles.wrapVerify Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
-    Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
-    vestaBase.sqrt? h sv computeXHat wrapMsgSponge
+  Pickles.wrapVerifyWith h (oneChunk pts) (wrapStepStatement get) sv wrapMsgSponge
     [(List.range 15).map fun j => get (178 + j)] (get 177)
     { deferredValues := dv, shouldFinalize := .unchecked (.const 1)
       spongeDigestBeforeEvaluations := get 176 }
@@ -1236,21 +1231,25 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
 
 /-- The targets baked over a Lagrange export, each present only when its export is (a
 narrowed local PS run regenerates one column's exports; the unfiltered run has all). -/
-def xhatTargets (wrap : Option (Array XhatCurve.Point × AffinePoint (FVar Fq)))
-    (step : Option (Array XhatStepCurve.Point × AffinePoint (FVar Fp)))
-    (ivpStep : Option (Array XhatStepCurve.Point × AffinePoint (FVar Fp))) :
+def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
+    (step : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
+    (ivpStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point)) :
     List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
   (step.toList.map fun (pts, h) =>
-    ("xhat_step_circuit", stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts h)))
+    ("xhat_step_circuit",
+      stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts (xhatStepCell h))))
   ++ (ivpStep.toList.map fun (pts, h) =>
-    ("ivp_step_circuit", stepTarget (a := Vector Fp 175) (b := PUnit) (ivpStepCircuit pts h)))
+    ("ivp_step_circuit",
+      stepTarget (a := Vector Fp 175) (b := PUnit) (ivpStepCircuit pts (xhatStepCell h))))
   ++ (ivpStep.toList.map fun (pts, h) =>
     ("step_verify_circuit",
       stepTarget (a := Vector Fp 268) (b := PUnit) (stepVerifyCircuit pts h)))
   ++ (wrap.toList.map fun (pts, h) =>
-    ("xhat_wrap_circuit", wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts h)))
+    ("xhat_wrap_circuit",
+      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts (xhatWrapCell h))))
   ++ (wrap.toList.map fun (pts, h) =>
-    ("ivp_wrap_circuit", wrapTarget (a := Vector Fq 177) (b := PUnit) (ivpWrapCircuit pts h)))
+    ("ivp_wrap_circuit",
+      wrapTarget (a := Vector Fq 177) (b := PUnit) (ivpWrapCircuit pts (xhatWrapCell h))))
   ++ (wrap.toList.map fun (pts, h) =>
     ("wrap_verify_circuit", wrapTarget (a := Vector Fq 196) (b := PUnit) (wrapVerifyCircuit pts h)))
 
