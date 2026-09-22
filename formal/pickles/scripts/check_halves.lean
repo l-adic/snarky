@@ -55,9 +55,9 @@ on a proof the real prover made.
 Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
 `SimpleChain.json`. `SRS_CACHE_DIR` and `LAGRANGE_CACHE_DIR` relocate the two caches.
 `HALVES` narrows the run to a comma-separated subset of `step`, `wrap`, `step-group`,
-`wrap-group`, `verify`, `carry`, `theorem` (the default is all seven). The `step`,
-`verify` and `wrap-group` lanes run at the entry's chunk count; the others, whose environment
-fixes one chunk, reject a chunked entry.
+`wrap-group`, `verify`, `carry`, `theorem` (the default is all seven). Every lane over a
+step proof runs at the entry's chunk count (`step`, `verify`, `wrap-group`, `theorem`, `carry`);
+a wrap proof is one chunk.
 -/
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
@@ -82,16 +82,6 @@ the two mask bits in slot order. The mask reads slot `i` as "at least `2 − i` 
 the real accumulators sit in the LAST slots and padding goes in front; a step statement of
 `n ≤ 2` slots reads the last `n` bits. -/
 def unpackBranchData (bd : ℕ) : ℕ × Vector ℕ 2 := (bd / 4, #v[bd % 2, (bd / 2) % 2])
-
-/-- A finalized proof's evaluations off its checked wire record, at one chunk: `ft(ζω)`, the
-carried public pair, the record. -/
-def allEvalsOf (C : Ipa.KimchiCurve) {k : ℕ} (cp : Kimchi.Verifier.KimchiProof C 1 k) :
-    Except String (Pickles.AllEvals C.ScalarField) := do
-  let pub ← match cp.pubEvals with
-    | .carried pe => pure (pe.map fun (v : Vector C.ScalarField 1) => v[0])
-    | .barycentric _ => throw "the proof carries no public evaluations (one-chunk wire form)"
-  return { ftEval1 := cp.ftEval1, pub
-           evals := cp.evals.map fun (v : Vector C.ScalarField 1) => v[0] }
 
 /-- A finalized proof's evaluations off its checked wire record at `nc` chunks: `ft(ζω)`,
 the carried public chunks, the record's chunks. -/
@@ -336,7 +326,7 @@ def wrapFopInput (s : Cache.Entry CS) (slot : ℕ) {k : ℕ}
   let prev : Vector (Vector Fq k) Pickles.MaxProofsVerified ←
     if h : accs.size = Pickles.MaxProofsVerified then pure ⟨accs, h⟩
     else throw s!"wrap accumulators: {accs.size}, expected {Pickles.MaxProofsVerified}"
-  return { claims := u, evals := ← allEvalsOf CW cpW, prev }
+  return { claims := u, evals := ← chunkedEvalsOf CW cpW, prev }
 
 /-- The curve's SRS cut to `k` rounds, loaded from `srs-cache/<name>.srs` once per `k`
 (decompressing the file's points dominates a load). -/
@@ -386,32 +376,50 @@ def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Optio
 `Env.Invariants` computes the key's Lagrange points from the SRS — the one costly invariant —
 so the environment is kept and handed back for every later entry under the same key. -/
 def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (envs : IO.Ref (List (String × Pickles.Env C 1)))
-    (e : Cache.Entry C) : IO (Pickles.Env C 1) := do
+    (loaded : IO.Ref (List (ℕ × SRS C.Point)))
+    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env C nc)))
+    (e : Cache.Entry C) : IO ((nc : ℕ) × Pickles.Env C nc) := do
   let key := s!"{e.vkDigest}/{e.proof.opening.lr.size}/{e.publicInput.size}"
   if let some E := (← envs.get).lookup key then return E
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let (cvk, _) ← checkedAt C name σ e
+  let ⟨nc, cvk, _⟩ ← checkedAny C name σ e
   if hE : Pickles.Env.Invariants σ cvk then
-    let E : Pickles.Env C 1 := Pickles.Env.ofInvariants σ cvk hE
-    envs.modify ((key, E) :: ·)
-    return E
+    let E : Pickles.Env C nc := Pickles.Env.ofInvariants σ cvk hE
+    envs.modify ((key, ⟨nc, E⟩) :: ·)
+    return ⟨nc, E⟩
   else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
     endo is not the curve's, zk_rows < 3 or above the domain, the generator is not primitive \
     on the domain, there is no round, the blinding base is the identity, there is no \
     Lagrange basis or one larger than the domain, or the Lagrange basis is not the SRS's")
 
+/-- An entry's checked proof at its environment's chunk count. -/
+def checkedFor (C : Ipa.KimchiCurve) (name : String) {nc : ℕ} (E : Pickles.Env C nc)
+    (e : Cache.Entry C) : IO (Kimchi.Verifier.KimchiProof C nc E.σ.k) := do
+  let ⟨nc', _, cp⟩ ← checkedAny C name E.σ e
+  if h : nc' = nc then return h ▸ cp
+  else throw (IO.userError s!"the entry runs at {nc'} chunks, its environment at {nc}")
+
+/-- `envFor` for a lane whose environment is one chunk. -/
+def envFor1 (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point)))
+    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env C nc)))
+    (e : Cache.Entry C) : IO (Pickles.Env C 1) := do
+  let ⟨nc, E⟩ ← envFor C name sqrt loaded envs e
+  if h : nc = 1 then return h ▸ E
+  else throw (IO.userError s!"the entry runs at {nc} chunks; this lane is one-chunk")
+
 /-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on
 `C`: `Carry` decided on the two checked proofs, `AccOk` on the accumulator, `sgOk` on `pred`,
 and the last two agreeing, as `sgOk_iff_accOk` says they must under `Carry`. -/
 def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (envs : IO.Ref (List (String × Pickles.Env C 1)))
+    (loaded : IO.Ref (List (ℕ × SRS C.Point)))
+    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env C nc)))
     (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
-  let E ← envFor C name sqrt loaded envs pred
+  let ⟨_, E⟩ ← envFor C name sqrt loaded envs pred
   unless succ.proof.opening.lr.size = E.σ.k do
     throw (IO.userError s!"round counts differ: {E.σ.k} and {succ.proof.opening.lr.size}")
-  let (_, cp) ← checkedAt C name E.σ pred
-  let (_, cp') ← checkedAt C name E.σ succ
+  let cp ← checkedFor C name E pred
+  let ⟨_, _, cp'⟩ ← checkedAny C name E.σ succ
   if h : slot < cp'.olds.size then
     -- `carry` and `sgOk` share the predecessor's transcript (`carrySgOk_eq`); `accOk` is
     -- the successor's own accumulator and stays a computation of its own, since its
@@ -424,8 +432,8 @@ def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Op
 
 /-- `Leaf.offBand` at a scalar order, decided: a full leaf's value avoids the sixteen values
 around `2·(scalar − 2^254)` at which the ladder degenerates. -/
-def offBandB {p : ℕ} [Fact p.Prime] (scalar : ℕ) (V : Valuation (ZMod p)) :
-    Pickles.Leaf (ZMod p) 1 → Bool
+def offBandB {p nc : ℕ} [Fact p.Prime] (scalar : ℕ) (V : Valuation (ZMod p)) :
+    Pickles.Leaf (ZMod p) nc → Bool
   | .full s _ _ =>
     let v := (s.val V).val
     let δ := scalar - 2 ^ 254
@@ -454,11 +462,11 @@ constrained by the `x_hat` gadget, the mask by the branch data's input check —
 of rows are among the ones decided here. -/
 def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.Entry CS))
     (loaded : IO.Ref (List (ℕ × SRS CS.Point)))
-    (envs : IO.Ref (List (String × Pickles.Env CS 1))) : IO Bool := do
-  let E ← envFor CS "vesta" vestaBase.sqrt? loaded envs s
+    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env CS nc))) : IO Bool := do
+  let ⟨nc, E⟩ ← envFor CS "vesta" vestaBase.sqrt? loaded envs s
   let σ := E.σ
   let cvk := E.cvk
-  let (_, cp) ← checkedAt CS "vesta" σ s
+  let cp ← checkedFor CS "vesta" E s
   do
     let cands := (steps.toList.map fun t =>
       (⟨t.vk.domainLog2, t.vk.omega⟩ : Pickles.KnownDomain Fp)).eraseDups
@@ -504,15 +512,13 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     -- `hsatS`: the theorem's scalar circuit, as `compile` builds it — the input's check (the
     -- branch data's; the rest of the input is unchecked) and then `scalarCircuit`, which
     -- asserts `finalized`
-    let (u, _, mask, prev, d) ← match stepFopInput w cp with
+    let (u, ev, mask, prev, d) ← match stepFopInput w cp with
       | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
-    let ev ← match allEvalsOf CS cp with
-      | .error e => throw (IO.userError s!"step evaluations: {e}") | .ok r => pure r
-    let sinp : Pickles.StepProof.ScalarIn σ.k :=
+    let sinp : Pickles.StepProof.ScalarIn σ.k nc :=
       { branch := ⟨d, mask⟩, fop := ⟨{ claims := u, evals := ev, prev }⟩ }
-    let (satS, _) ← runHalf (a := Pickles.StepProof.ScalarIn σ.k) Kimchi.Fixture.PS.fpSide
-      (fun (v : Pickles.StepProof.ScalarVar σ.k) => do
-        CheckedType.check (c := KimchiConstraint Fp) (val := Pickles.StepProof.ScalarIn σ.k) v
+    let (satS, _) ← runHalf (a := Pickles.StepProof.ScalarIn σ.k nc) Kimchi.Fixture.PS.fpSide
+      (fun (v : Pickles.StepProof.ScalarVar σ.k nc) => do
+        CheckedType.check (c := KimchiConstraint Fp) (val := Pickles.StepProof.ScalarIn σ.k nc) v
         Pickles.StepProof.scalarCircuit E doms v)
       (fun _ => []) sinp
     IO.println s!"    scalarCircuit (input check, body, finalized asserted): satisfies={satS}"
@@ -526,9 +532,9 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       st.proofState.unfinalizedProofs.map fun u =>
         u.deferredValues.bulletproofChallenges.map fun c =>
           Poseidon.FqSponge.endoExpand (F := Fq) (IpaPallas.curve.lam : Fq) c.val.val
-    let (satG, _) ← runHalf (a := Pickles.StepProof.GroupIn σ.k Pickles.WrapIPARounds n 1)
+    let (satG, _) ← runHalf (a := Pickles.StepProof.GroupIn σ.k Pickles.WrapIPARounds n nc)
       Kimchi.Fixture.PS.fqSide
-      (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n 1) => do
+      (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n nc) => do
         let sv ← wrapIndexSponge s.vk
         Pickles.StepProof.groupCircuit E (keyComms xhatWrapCell s.vk) sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
@@ -553,8 +559,8 @@ decided on a step entry's slot and the wrap entry that slot verified — the twi
   must verify. -/
 def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
     (loaded : IO.Ref (List (ℕ × SRS CW.Point)))
-    (envs : IO.Ref (List (String × Pickles.Env CW 1))) : IO Bool := do
-  let E ← envFor CW "pallas" pallasBase.sqrt? loaded envs w
+    (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env CW nc))) : IO Bool := do
+  let E ← envFor1 CW "pallas" pallasBase.sqrt? loaded envs w
   let σ := E.σ
   let cvk := E.cvk
   let (_, cp) ← checkedAt CW "pallas" σ w
@@ -603,7 +609,7 @@ own. -/
 def padOk (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) (slot : ℕ) : IO Bool := do
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let (_, cp) ← checkedAt C name σ e
+  let ⟨_, _, cp⟩ ← checkedAny C name σ e
   if h : slot < cp.olds.size then return Pickles.accOk σ cp.olds[slot]
   else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
 
@@ -623,8 +629,8 @@ def main : IO Unit := do
   let limit := ((← IO.getEnv "LIMIT").bind String.toNat?).getD wraps.size
   let vestaSRS ← IO.mkRef ([] : List (ℕ × SRS CS.Point))
   let pallasSRS ← IO.mkRef ([] : List (ℕ × SRS CW.Point))
-  let vestaEnvs ← IO.mkRef ([] : List (String × Pickles.Env CS 1))
-  let pallasEnvs ← IO.mkRef ([] : List (String × Pickles.Env CW 1))
+  let vestaEnvs ← IO.mkRef ([] : List (String × (nc : ℕ) × Pickles.Env CS nc))
+  let pallasEnvs ← IO.mkRef ([] : List (String × (nc : ℕ) × Pickles.Env CW nc))
   let mut allOk := true
   let mut runs := 0
   -- One timed run of a half, its verdict folded into `allOk`.

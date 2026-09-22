@@ -93,10 +93,10 @@ structure InputReads (E : Env IpaPallas.curve 1) (cp : KimchiProof IpaPallas.cur
   olds : CommReads IpaPallas.curve Vg g.sgOld (cp.olds.map (·.sg)).toList
   /-- `ft(ζω)`. -/
   ftEval1 : s.evals.ftEval1.val Vs = cp.ftEval1
-  /-- The proof's evaluations, as its one-chunk vectors. -/
-  evals : s.evals.evals.map (fun x => #v[x.val Vs]) = cp.evals
-  /-- The public evaluations are the run's (`runPubEvals`). -/
-  pubEvals : s.evals.pub.map (fun x => #v[x.val Vs])
+  /-- The proof's evaluations, chunk by chunk. -/
+  evals : s.evals.evals.map (fun v => v.map (·.val Vs)) = cp.evals
+  /-- The public evaluations are the run's (`runPubEvals`), chunk by chunk. -/
+  pubEvals : s.evals.pub.map (fun v => v.map (·.val Vs))
     = runPubEvals IpaPallas.curve E.σ E.cvk cp pub
   /-- The previous challenges are the old accumulators', in order. -/
   prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
@@ -110,9 +110,7 @@ variable {E : Env IpaPallas.curve 1} {cp : KimchiProof IpaPallas.curve 1 E.σ.k}
 /-- The scalar half's proof ties are the input's readings. -/
 private theorem InputReads.fopTies (hin : InputReads E cp pub Vg Vs g s) :
     FopTies E cp pub (s.half Vs) :=
-  ⟨hin.prevChallenges, hin.ftEval1,
-    (AllEvals.toChunked_evals_map s.evals _).trans hin.evals,
-    (AllEvals.toChunked_pub_map s.evals _).trans hin.pubEvals⟩
+  ⟨hin.prevChallenges, hin.ftEval1, hin.evals, hin.pubEvals⟩
 
 /-- The base field's characteristic exceeds the group half's absorb count. -/
 private theorem char_guard (m : ℕ) (hm : m ≤ 53) (h0 : (m : Fp) = 0) : m = 0 := by

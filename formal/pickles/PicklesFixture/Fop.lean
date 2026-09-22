@@ -29,8 +29,8 @@ selector pairs, `ft(ζω)`, the two `rounds`-entry previous-challenge vectors, a
 before evaluations last. -/
 def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ → FVar (ZMod p))
     (base : ℕ) (rounds : ℕ := 16) :
-    UnfinalizedProof rounds (FVar (ZMod p)) (BoolVar (ZMod p)) sf × AllEvals (FVar (ZMod p)) × List
-    (List (FVar (ZMod p))) :=
+    UnfinalizedProof rounds (FVar (ZMod p)) (BoolVar (ZMod p)) sf ×
+      Pickles.ChunkedEvals 1 (FVar (ZMod p)) × List (List (FVar (ZMod p))) :=
   let (pub, evals) := evalsAt get base
   let u : UnfinalizedProof rounds (FVar (ZMod p)) (BoolVar (ZMod p)) sf :=
     { deferredValues :=
@@ -41,7 +41,8 @@ def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ →
           bulletproofChallenges := Vector.ofFn fun i => ⟨get (10 + i)⟩ }
       shouldFinalize := true_
       spongeDigestBeforeEvaluations := get (base + 89 + 2 * rounds) }
-  let w : AllEvals (FVar (ZMod p)) := { ftEval1 := get (base + 88), pub, evals }
+  let w : Pickles.ChunkedEvals 1 (FVar (ZMod p)) :=
+    ⟨get (base + 88), pub.map (#v[·]), evals.map (#v[·])⟩
   (u, w, prevChallengesOf get (base + 89) rounds)
 
 /-- The step side's parameters: the Vesta fr-sponge, `λ`, the `Fp` linearization and the
@@ -58,7 +59,7 @@ def fopStepHarnessAt (domains : List (Pickles.KnownDomain Fp)) (input : Vector (
     CircuitM Fp C (Pickles.FopOutput Fp) := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type1.mk get 29
-  Pickles.finalizeOtherProofStep fopStepParams domains u w.toChunked
+  Pickles.finalizeOtherProofStep fopStepParams domains u w
     [.unchecked (get 26), .unchecked (get 27)] prev (get 28)
 
 /-- `finalize_other_proof_step_circuit`: the dump's one known domain of `log2 = 16`. -/

@@ -143,29 +143,6 @@ def ProofEvaluations.map {α β : Type*} (f : α → β) (e : ProofEvaluations �
   emulSelector := e.emulSelector.map f
   endomulScalarSelector := e.endomulScalarSelector.map f
 
-instance : Functor PointEvaluations where
-  map := PointEvaluations.map
-
-instance : LawfulFunctor PointEvaluations where
-  map_const := rfl
-  id_map _ := rfl
-  comp_map _ _ _ := rfl
-
-instance : Functor ProofEvaluations where
-  map := ProofEvaluations.map
-
-instance : LawfulFunctor ProofEvaluations where
-  map_const := rfl
-  id_map := fun {α} e => by
-    have h : PointEvaluations.map (id : α → α) = id :=
-      funext fun p => LawfulFunctor.id_map (f := PointEvaluations) p
-    cases e; simp [Functor.map, ProofEvaluations.map, h]
-  comp_map f g e := by
-    have h : ∀ p, PointEvaluations.map g (PointEvaluations.map f p)
-        = PointEvaluations.map (g ∘ f) p :=
-      fun p => (LawfulFunctor.comp_map (f := PointEvaluations) f g p).symm
-    cases e; simp [Functor.map, ProofEvaluations.map, Vector.map_map, Function.comp_def, h]
-
 /-- The fr-sponge transcript (verifier.rs:284–405) as the list absorbed, every entry widened
 to the column's chunk vector: the fq-sponge digest, the recursion digest, `ft(ζω)`, the
 two public chunk vectors, then per column the `ζ`-chunk vector and the `ζω`-chunk vector

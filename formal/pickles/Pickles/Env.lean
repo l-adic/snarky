@@ -132,6 +132,22 @@ theorem Env.domain_le {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : E.cvk.n ≤ 
     · rw [← pow_add, Nat.sub_add_cancel (not_lt.1 h)]
   rwa [← E.nc_eq] at key
 
+/-- There is a chunk. -/
+theorem Env.nc_pos {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : 0 < nc := by
+  have h : 0 < (if E.cvk.domainLog2 < E.σ.k then 1 else 2 ^ (E.cvk.domainLog2 - E.σ.k)) := by
+    split_ifs <;> positivity
+  rwa [← E.nc_eq] at h
+
+/-- The chunk count is at most the domain size. -/
+theorem Env.nc_le_n {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : nc ≤ E.cvk.n := by
+  have h : (if E.cvk.domainLog2 < E.σ.k then 1 else 2 ^ (E.cvk.domainLog2 - E.σ.k))
+      ≤ E.cvk.n := by
+    rw [KimchiVK.n]
+    split_ifs
+    · exact Nat.one_le_two_pow
+    · exact Nat.pow_le_pow_right two_pos (Nat.sub_le _ _)
+  rwa [← E.nc_eq] at h
+
 /-- Every chunk meets the domain: chunk `c` starts below `n`. -/
 theorem Env.chunk_lt {C : KimchiCurve} {nc : ℕ} (E : Env C nc) (c : Fin nc) :
     c.val * 2 ^ E.σ.k < E.cvk.n := by

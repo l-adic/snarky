@@ -59,23 +59,24 @@ open CompElliptic.CurveForms.ShortWeierstrass
 namespace StepProof
 
 /-- The group circuit's input cells: fixed by the input type. -/
-abbrev groupInput (k kw n : ℕ) : GroupVar k kw n 1 := inputVar (F := Fq) (a := GroupIn k kw n 1)
+abbrev groupInput (k kw n nc : ℕ) : GroupVar k kw n nc :=
+  inputVar (F := Fq) (a := GroupIn k kw n nc)
 
 /-- The scalar circuit's input cells: fixed by the input type. -/
-abbrev scalarInput (k : ℕ) : ScalarVar k := inputVar (F := Fp) (a := ScalarIn k)
+abbrev scalarInput (k nc : ℕ) : ScalarVar k nc := inputVar (F := Fp) (a := ScalarIn k nc)
 
 section Hyp
 
-variable {kw n : ℕ}
+variable {kw n nc : ℕ}
 
 /-- The input cells that hold the wire's objects read as them: the step statement as the
 public input, the proof cells as the proof's commitments and opening, the `sg` cells under
 their keep bits as the old accumulators' commitments; the branch's domain as the key's, the
 evaluation cells as the proof's evaluations, the kept previous challenges as the old
 accumulators'. -/
-structure InputReads (E : Env IpaVesta.curve 1) (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
+structure InputReads (E : Env IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc E.σ.k)
     (pub : Array Fp) (domains : KnownDomains E) (Vg : Valuation Fq) (Vs : Valuation Fp)
-    (g : GroupVar E.σ.k kw n 1) (s : ScalarVar E.σ.k) : Prop where
+    (g : GroupVar E.σ.k kw n nc) (s : ScalarVar E.σ.k nc) : Prop where
   /-- The step statement's cells are the public input. -/
   statement : wrapPublicInput E Vg g.stepStatement = pub
   /-- The witness commitments. -/
@@ -104,33 +105,46 @@ structure InputReads (E : Env IpaVesta.curve 1) (cp : KimchiProof IpaVesta.curve
   domain : s.branch.domainLog2.val Vs = (domains.keyLog2 : Fp)
   /-- `ft(ζω)`. -/
   ftEval1 : s.evals.ftEval1.val Vs = cp.ftEval1
-  /-- The proof's evaluations, as its one-chunk vectors. -/
-  evals : s.evals.evals.map (fun x => #v[x.val Vs]) = cp.evals
-  /-- The public evaluations are the run's (`runPubEvals`). -/
-  pubEvals : s.evals.pub.map (fun x => #v[x.val Vs])
+  /-- The proof's evaluations, chunk by chunk. -/
+  evals : s.evals.evals.map (fun v => v.map (·.val Vs)) = cp.evals
+  /-- The public evaluations are the run's (`runPubEvals`), chunk by chunk. -/
+  pubEvals : s.evals.pub.map (fun v => v.map (·.val Vs))
     = runPubEvals IpaVesta.curve E.σ E.cvk cp pub
   /-- The kept previous challenges are the old accumulators', in order. -/
   prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
       (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
 
-variable {E : Env IpaVesta.curve 1} {cp : KimchiProof IpaVesta.curve 1 E.σ.k} {pub : Array Fp}
-  {domains : KnownDomains E} {Vg : Valuation Fq} {Vs : Valuation Fp}
-  {g : GroupVar E.σ.k kw n 1} {s : ScalarVar E.σ.k}
+variable {E : Env IpaVesta.curve nc} {cp : KimchiProof IpaVesta.curve nc E.σ.k}
+  {pub : Array Fp} {domains : KnownDomains E} {Vg : Valuation Fq} {Vs : Valuation Fp}
+  {g : GroupVar E.σ.k kw n nc} {s : ScalarVar E.σ.k nc}
   {keyCells : List (List (AffinePoint (FVar Fq)))} {spongeAfterIndex : SpongeVar Fq}
 
 /-- The scalar half's proof ties are the input's readings. -/
 private theorem InputReads.fopTies (hin : InputReads E cp pub domains Vg Vs g s) :
     FopTies E cp pub (s.half Vs) :=
-  ⟨hin.prevChallenges, hin.ftEval1,
-    (AllEvals.toChunked_evals_map s.evals _).trans hin.evals,
-    (AllEvals.toChunked_pub_map s.evals _).trans hin.pubEvals⟩
+  ⟨hin.prevChallenges, hin.ftEval1, hin.evals, hin.pubEvals⟩
+
+/-- A step key has at most `2^32` chunks: its domain size divides `|Fp| − 1`, whose two-adic
+part is `2^32`, and the chunk count is at most the domain size. -/
+private theorem nc_le (E : Env IpaVesta.curve nc) : nc ≤ 2 ^ 32 := by
+  have hω0 : E.cvk.omega ≠ 0 := E.omega_prim.ne_zero (by rw [KimchiVK.n]; positivity)
+  have hn : E.cvk.n ∣ PALLAS_BASE_CARD - 1 :=
+    E.omega_prim.dvd_of_pow_eq_one _ (ZMod.pow_card_sub_one_eq_one hω0)
+  have hd : E.cvk.domainLog2 ≤ 32 := by
+    by_contra h
+    have h33 : 2 ^ 33 ∣ PALLAS_BASE_CARD - 1 :=
+      (Nat.pow_dvd_pow 2 (show 33 ≤ E.cvk.domainLog2 by omega)).trans hn
+    exact absurd h33 (by norm_num [PALLAS_BASE_CARD])
+  calc nc ≤ E.cvk.n := E.nc_le_n
+    _ = 2 ^ E.cvk.domainLog2 := rfl
+    _ ≤ 2 ^ 32 := Nat.pow_le_pow_right two_pos hd
 
 /-- The base field's characteristic exceeds the group half's absorb count. -/
-private theorem char_guard (m : ℕ) (hm : m ≤ 53) (h0 : (m : Fq) = 0) : m = 0 := by
+private theorem char_guard (m : ℕ) (hm : m ≤ 5 + 48 * 2 ^ 32) (h0 : (m : Fq) = 0) : m = 0 := by
   have hd : PALLAS_SCALAR_CARD ∣ m := (ZMod.natCast_eq_zero_iff m PALLAS_SCALAR_CARD).mp h0
   exact Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hm (by norm_num [PALLAS_SCALAR_CARD]))
 
-private theorem sgOld_length_le (g : GroupVar E.σ.k kw n 1) : g.sgOld.length ≤ 2 := by
+private theorem sgOld_length_le (g : GroupVar E.σ.k kw n nc) : g.sgOld.length ≤ 2 := by
   simp only [GroupVar.sgOld, List.length_map, List.length_zip, List.length_drop,
     Vector.length_toList, MaxProofsVerified]
   omega
@@ -154,7 +168,7 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
           index := hvk.index, coefficients := hvk.coefficients, sigma := hvk.sigma
           sigmaLast := hvk.sigmaLast, z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
           lr := hin.lr, delta := hin.delta, sg := hin.sg }
-      nc_pos := Nat.one_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
+      nc_pos := E.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
     intro m hm
     have hm' : m ∈ g.sgOld := hm
@@ -164,7 +178,9 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
   case tne =>
     intro he
     have he' : g.tComm = [] := he
-    simpa [GroupVar.tComm] using congrArg List.length he'
+    have hl := congrArg List.length he'
+    simp [GroupVar.tComm] at hl
+    exact E.nc_pos.ne' hl
   case lrne =>
     intro he
     have he' : g.opening.lr.toList = [] := he
@@ -177,9 +193,10 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
     have h1 : (g.cells keyCells).sgOld.length ≤ 2 := sgOld_length_le g
     have hl := ivpInputOf_lengths g.val.group.statement.proofState.deferredValues.toDeferredValues
       g.sgOld keyCells g.val.group.proof
-    have h2 : (g.cells keyCells).wComm.flatten.length = 15 := hl.1
-    have h3 : (g.cells keyCells).zComm.length = 1 := hl.2.1
-    have h4 : (g.cells keyCells).tComm.length = 7 := hl.2.2
+    have h2 : (g.cells keyCells).wComm.flatten.length = 15 * nc := hl.1
+    have h3 : (g.cells keyCells).zComm.length = nc := hl.2.1
+    have h4 : (g.cells keyCells).tComm.length = 7 * nc := hl.2.2
+    have h5 := nc_le E
     omega
 
 end Hyp
@@ -192,9 +209,9 @@ verify block and the step circuit's scalar half, each compiled over its input an
 with the inputs reading as the wire's proof (`InputReads`), the key cells as the key
 (`VkReads`) and the two circuits holding one set of deferred claims (`HalvesTies`): under the
 proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
-theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
-    (E : Env IpaVesta.curve 1)
-    (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
+theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
+    (E : Env IpaVesta.curve nc)
+    (cp : KimchiProof IpaVesta.curve nc E.σ.k)
     (pub : Array Fp)
     (domains : KnownDomains E)
     -- the group circuit's constants
@@ -203,20 +220,20 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     (msgSponge : SpongeVar Fq)
     -- the group circuit: the wrap verify block, compiled over its input, satisfied
     (Vg : Valuation Fq)
-    (hsatG : ∀ con ∈ (compile (a := GroupIn E.σ.k kw n 1) (b := Unit)
+    (hsatG : ∀ con ∈ (compile (a := GroupIn E.σ.k kw n nc) (b := Unit)
         (groupCircuit (c := Builder Vg (KimchiConstraint Fq)) E keyCells spongeAfterIndex
           msgSponge)).constraints, ConstraintHolds.Holds Vg con)
     -- the scalar circuit: the step finalize, compiled over its input, satisfied
     (Vs : Valuation Fp)
-    (hsatS : ∀ con ∈ (compile (a := ScalarIn E.σ.k) (b := Unit)
+    (hsatS : ∀ con ∈ (compile (a := ScalarIn E.σ.k nc) (b := Unit)
         (scalarCircuit (c := Builder Vs (KimchiConstraint Fp)) E domains)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the input cells read as the wire's
-    (hin : InputReads E cp pub domains Vg Vs (groupInput E.σ.k kw n) (scalarInput E.σ.k))
+    (hin : InputReads E cp pub domains Vg Vs (groupInput E.σ.k kw n nc) (scalarInput E.σ.k nc))
     -- the key cells read as the key
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the two circuits hold one set of deferred claims
-    (ht : HalvesTies ((groupInput E.σ.k kw n).half Vg) ((scalarInput E.σ.k).half Vs))
+    (ht : HalvesTies ((groupInput E.σ.k kw n nc).half Vg) ((scalarInput E.σ.k nc).half Vs))
     -- the SRS has no relation at the `x_hat` table's coefficient vectors
     (havoid : E.σ.Avoids E.lagrangeRelations)
     -- of the proof itself
@@ -230,13 +247,13 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
     (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex msgSponge
-      (groupInput E.σ.k kw n) havoid hivp) _
+      (groupInput E.σ.k kw n nc) havoid hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
-  have hmask := BranchData.mask_boolean (V := Vs) (scalarInput E.σ.k).branch
-    (CheckedType.check_sound Vs (scalarInput E.σ.k) _
+  have hmask := BranchData.mask_boolean (V := Vs) (scalarInput E.σ.k nc).branch
+    (CheckedType.check_sound Vs (scalarInput E.σ.k nc) _
       fun con hc => hsatS con (mem_compile_of_mem_check hc)).1
   exact (builder_spec_iff _ _).mp
-    (scalarCircuit_reads E cp _ hguard Vs domains (scalarInput E.σ.k) hmask hdom Vg _ v hv hv1
+    (scalarCircuit_reads E cp _ hguard Vs domains (scalarInput E.σ.k nc) hmask hdom Vg _ v hv hv1
       ht hf hsg) _
     fun con hc => hsatS con (mem_compile_of_mem_body hc)
 

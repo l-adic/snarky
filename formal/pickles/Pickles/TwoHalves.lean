@@ -965,16 +965,15 @@ present: the wrap circuit has no mask (`finalizeOtherProofWrap` absorbs every sl
 half's is the constant `true_` cell at every slot. -/
 def ScalarHalf.wrap {k : ℕ} (V : Valuation Fq)
     (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : AllEvals (FVar Fq))
+    (evals : ChunkedEvals 1 (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
     ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k 1 :=
-  ⟨V, fopWrap V, claims, evals.toChunked, Vector.replicate MaxProofsVerified true_,
-    prevChallenges⟩
+  ⟨V, fopWrap V, claims, evals, Vector.replicate MaxProofsVerified true_, prevChallenges⟩
 
 /-- The wrap half's mask reads all-true. -/
 theorem ScalarHalf.wrap_maskVals {k : ℕ} (V : Valuation Fq)
     (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : AllEvals (FVar Fq))
+    (evals : ChunkedEvals 1 (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
     (ScalarHalf.wrap V claims evals prevChallenges).maskVals
       = List.replicate MaxProofsVerified true := by
@@ -985,7 +984,7 @@ theorem ScalarHalf.wrap_maskVals {k : ℕ} (V : Valuation Fq)
 old accumulators' challenges, in order. -/
 theorem ScalarHalf.wrap_olds {k : ℕ} (V : Valuation Fq)
     (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : AllEvals (FVar Fq))
+    (evals : ChunkedEvals 1 (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified)
     (olds : List (List Fq)) :
     ((List.zipWith (fun m cv => if m then [cv] else [])
@@ -1020,7 +1019,7 @@ theorem twoHalves_kimchiVerify_pallas
     -- the next wrap circuit: its valuation, its cells, its output, its read
     (Vs : Valuation Fq)
     (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : AllEvals (FVar Fq))
+    (evals : ChunkedEvals 1 (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
     (hs : FopVerifyReads (p := IpaPallas.curve.scalar)
@@ -1028,7 +1027,7 @@ theorem twoHalves_kimchiVerify_pallas
       (recDigest IpaPallas.curve (cp.olds.map (·.u)))
       (ScalarHalf.wrap Vs claimsS evals prevChallenges).maskVals
       (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals claimsS
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges).evals IpaPallas.curve.lam
+      evals IpaPallas.curve.lam
       (fopWrap Vs).read (fopWrap Vs).unshiftV Vs outS)
     -- across the two
     (ht : HalvesTies (GroupHalf.step Vg claimsG)

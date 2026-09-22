@@ -46,8 +46,8 @@ recomputes each from the evaluations and compares.
 The circuit and its readings are polymorphic in the chunk count: each column's chunks read
 as `combineAt` at the evaluation points raised to `2^k` (`combineEvals`, the chunk combination
 `KimchiProof.linEvals` performs), the public chunks as `combineAt` at `ζ^(2^srs)`, and the
-batch as every chunk's row (`chunkRows`). A one-chunk consumer hands its evaluations over as
-`AllEvals.toChunked`. The wrap side is always one chunk. `zkRows` is a parameter throughout.
+batch as every chunk's row (`chunkRows`). The wrap side is always one chunk. `zkRows` is a
+parameter throughout.
 Known-domains mode only; the side-loaded path is a separate port.
 -/
 
@@ -58,35 +58,6 @@ open scoped Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
   {k : ℕ}
-
-/-- The evaluations of the proof under finalization (PS `AllEvals`, OCaml
-`Plonk_types.All_evals`, the `prev_proof_evals` witness): `ft(ζω)`, the public pair and
-the proof's evaluations at `ζ` and `ζω`. -/
-structure AllEvals (f : Type) where
-  /-- `ft(ζω)`. -/
-  ftEval1 : f
-  /-- The public-input polynomial at `ζ` and `ζω`. -/
-  pub : PointEvaluations f
-  /-- The proof's evaluations. -/
-  evals : ProofEvaluations f
-
-/-- The one-chunk evaluations as `ChunkedEvals` at one chunk: each value its own chunk. -/
-def AllEvals.toChunked {f : Type} (w : AllEvals f) : ChunkedEvals 1 f :=
-  ⟨w.ftEval1, w.pub.map (#v[·]), w.evals.map (#v[·])⟩
-
-/-- The one-chunk record's evaluation readings are its values, each its own chunk. -/
-theorem AllEvals.toChunked_evals_map {f g : Type} (w : AllEvals f) (h : f → g) :
-    (w.toChunked.evals.map fun v => v.map h) = w.evals.map fun x => #v[h x] := by
-  have := (LawfulFunctor.comp_map (f := ProofEvaluations) (fun x : f => #v[x]) (Vector.map h)
-    w.evals).symm
-  rw [show (Vector.map h ∘ fun x : f => #v[x]) = fun x => #v[h x] from
-    funext fun x => by simp] at this
-  exact this
-
-/-- The one-chunk record's public readings are its values, each its own chunk. -/
-theorem AllEvals.toChunked_pub_map {f g : Type} (w : AllEvals f) (h : f → g) :
-    (w.toChunked.pub.map fun v => v.map h) = w.pub.map fun x => #v[h x] := by
-  simp [AllEvals.toChunked, PointEvaluations.map]
 
 /-- The side-independent parameters (PS `Params`, less the domains): the fr-sponge, the
 scalar endomorphism `λ` the 128-bit expansions use, the linearization's endomorphism
@@ -295,7 +266,8 @@ and the caller's vanishing polynomial. -/
 def finalizeOtherProofWrap (P : FopParams F) (gen : F) (domainLog2 : ℕ)
     (vanishing : FVar F → CircuitM F c (FVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F)))
-    (w : AllEvals (FVar F)) (prev : List (List (FVar F))) : CircuitM F c (FopOutput F) := do
+    (w : ChunkedEvals 1 (FVar F)) (prev : List (List (FVar F))) :
+    CircuitM F c (FopOutput F) := do
   let endoVar : FVar F := .const P.endoLam
   let pl := u.deferredValues.plonk
   let zeta ← EndoScalar.toField 8 pl.zeta.val endoVar
@@ -306,7 +278,7 @@ def finalizeOtherProofWrap (P : FopParams F) (gen : F) (domainLog2 : ℕ)
   let zetaToDomain ← sealVar pl.zetaToDomainSize.val
   let zetaToSrs ← sealVar pl.zetaToSrsLength.val
   finalizeOtherProofCore P wrapShiftOps true (challengeDigest P.sponge prev) (.const gen)
-    domainLog2 vanishing (prev.map fun _ => true_) u w.toChunked prev zeta alpha beta gamma
+    domainLog2 vanishing (prev.map fun _ => true_) u w prev zeta alpha beta gamma
     ⟨perm⟩
     ⟨zetaToSrs⟩ ⟨zetaToDomain⟩
 
@@ -1093,7 +1065,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (h3zk : 3 ≤ P.zkRows) (gen : F) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
     (domainLog2 : ℕ) (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) (w : AllEvals (FVar F))
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) (w : ChunkedEvals 1 (FVar F))
     (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
     (hft : FtEval0Hyp V P n gen) :
@@ -1104,7 +1076,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       FopReads P true n gen
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (prev.flatten.map (·.val V)))).1
-        (prev.map fun _ => true) cvs u w.toChunked (endoExpand P.endoLam z₀.val)
+        (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀.val)
         (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
         (u.deferredValues.plonk.perm.val.val V)
@@ -1123,7 +1095,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     finalizeOtherProofCore_spec h2 h3 hinj hsw P hsize h3zk n hzk wrapShiftOps
       wrapShiftOps.reading u ⟨perm⟩ ⟨zetaToSrs⟩ ⟨zetaToDomain⟩ true _ _ hd (.const gen)
       (fun _ => hω) domainLog2
-      vanishing (fun _ => hvan) _ _ hm w.toChunked (Or.inl rfl) prev cvs hprev zeta alpha beta
+      vanishing (fun _ => hvan) _ _ hm w (Or.inl rfl) prev cvs hprev zeta alpha beta
       gamma hft
   -- `hd` is a fully applied triple over a concrete circuit (see `finalizeOtherProofCore_spec`)
   clear hd
@@ -1213,7 +1185,8 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (h3zk : 3 ≤ P.zkRows) (gen : Fq) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
     (domainLog2 : ℕ) (vanishing : FVar Fq → CircuitM Fq (Builder V (KimchiConstraint Fq)) (FVar Fq))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) (w : AllEvals (FVar Fq))
+    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (w : ChunkedEvals 1 (FVar Fq))
     (prev : List (List (FVar Fq)))
     (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen domainLog2
@@ -1221,7 +1194,7 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     ⦃⇓ o _ => ⌜FopVerifyReads P true n gen
       (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
         (prev.flatten.map (·.val V)))).1
-      (prev.map fun _ => true) cvs u w.toChunked P.endoLam (fun x => x.val.val V)
+      (prev.map fun _ => true) cvs u w P.endoLam (fun x => x.val.val V)
       (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
   builder_spec_imp _ _ _
     (finalizeOtherProofWrap_spec (by decide) (by decide) (castInj128_of_lt _ (by decide))
