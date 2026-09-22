@@ -23,13 +23,6 @@ roots are the axiom gate's four results, and the whole package — the token lan
 machine, the certificates — must stay reachable from them. That also discharges the
 kimchi lemmas (`Evals.map` and the naturality laws) whose only consumer is pickles.
 
-Deferral: `scripts/deferred.txt` names declarations excluded from the dead check, each
-because the core swap took away its consumer while the replacement consumer does not exist
-yet. A deferral is not a claim that the declaration is dead — it is a claim that its status
-is not yet decidable, with the work that decides it named in that file. The gate FAILS on a
-stale deferral in either direction: a line naming something absent from the environment, or
-a line naming something that has since become reachable. So the list can only shrink.
-
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
 import Kimchi
@@ -188,13 +181,6 @@ run_cmd do
   for (n, exempt) in surface do
     if !exempt && (corpus.splitOn n.getString!).length ≤ 1 then
       unanchored := unanchored.push n
-  -- the deferral: declarations the core swap orphaned, whose live/dead status the Schnorr
-  -- verifier-faithfulness arc will settle (scripts/deferred.txt records the reason and the
-  -- exit condition). Named by user-facing name, so a private declaration matches too.
-  let mut deferred : NameSet := ∅
-  for line in (← IO.FS.readFile "scripts/deferred.txt").splitOn "\n" do
-    let t := line.trim
-    unless t.isEmpty || t.startsWith "--" do deferred := deferred.insert t.toName
   let live := Kimchi.DeadCode.reachable env roots
   -- all authored declarations under the dead-zero contract
   let authored : Array Name :=
@@ -202,33 +188,17 @@ run_cmd do
       if Kimchi.DeadCode.isAudited n && !Kimchi.DeadCode.isAuxiliary env n then acc.push n
       else acc)
     |>.qsort (·.toString < ·.toString)
-  let userName (n : Name) : Name := (privateToUserName? n).getD n
-  let isDeferred (n : Name) : Bool := deferred.contains (userName n)
-  let dead := authored.filter fun n => !live.contains n && !isDeferred n
-  -- a deferral that is now reachable, or that names nothing audited at all, has done its
-  -- job or never had one: either way the line must go
-  let creditedDeferrals := authored.filter fun n => live.contains n && isDeferred n
-  let named : NameSet := authored.foldl (fun acc n => acc.insert (userName n)) ∅
-  let staleDeferrals := deferred.toList.filter (!named.contains ·) |>.toArray
+  let dead := authored.filter (!live.contains ·)
   IO.println s!"roots: {roots.size} resolved, {missing.size} missing"
   for n in missing do IO.println s!"  ⚠ root not in env: {n}"
-  for n in staleDeferrals do
-    IO.println s!"  ⚠ deferral not in environment (drop the line): {n}"
-  for n in creditedDeferrals do
-    IO.println s!"  ⚠ deferral is now reachable (drop the line): {n}"
   for n in unanchored do
     IO.println s!"  ⚠ script-surface root not found in any scripts/ file: {n}"
-  let deferredHere := authored.filter fun n => !live.contains n && isDeferred n
   IO.println s!"authored decls (audited packages): {authored.size}   \
-live: {authored.size - dead.size - deferredHere.size}   \
-deferred: {deferredHere.size}   dead: {dead.size}"
+live: {authored.size - dead.size}   dead: {dead.size}"
   if dead.isEmpty then IO.println "── no dead code ──"
   else
     IO.println "── dead (authored, unreachable from roots) ──"
     for n in dead do IO.println s!"  {n}"
-  IO.println s!"deferred (scripts/deferred.txt): {deferred.size}"
-  unless missing.isEmpty && unanchored.isEmpty && dead.isEmpty
-      && staleDeferrals.isEmpty && creditedDeferrals.isEmpty do
+  unless missing.isEmpty && unanchored.isEmpty && dead.isEmpty do
     throwError "dead-code gate FAILED: {dead.size} dead, {missing.size} missing roots, \
-{unanchored.size} unanchored script-surface roots, \
-{staleDeferrals.size + creditedDeferrals.size} stale deferrals"
+{unanchored.size} unanchored script-surface roots"

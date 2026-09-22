@@ -110,24 +110,6 @@ def prove : CircuitM F c α → Nat → Assignments F → Except EvalError (Prov
 
 /-! ## Interpreter laws -/
 
-/-- A run keeps the table's domain at its counter. -/
-private theorem prove_dom {m : CircuitM F c α} {nv : Nat}
-    {env : Assignments F} {o : Proved F α} (hd : env.Dom nv)
-    (h : prove m nv env = .ok o) : o.assignments.Dom o.nextVar := by
-  induction m generalizing nv env with
-  | pure a =>
-    simp only [prove, Except.ok.injEq] at h
-    subst h
-    exact hd
-  | addConstraintOp con k ih =>
-    simp only [prove] at h
-    exact ih hd h
-  | existsOp n wit k ih =>
-    simp only [prove] at h
-    split at h
-    · cases h
-    · next xs _ => exact ih _ (by simpa using hd.extendList xs.toList) h
-
 /-- A run only extends the table. -/
 private theorem prove_le {m : CircuitM F c α} {nv : Nat}
     {env : Assignments F} {o : Proved F α} (hd : env.Dom nv)
@@ -216,11 +198,6 @@ def alloc (st : ProverState F) {n : Nat} (xs : Vector F n) : ProverState F :=
 private theorem get_eq [Zero F] (st : ProverState F) {v : Variable} (hv : v ∈ st) :
     st.env v = some (st.env.get v) :=
   st.dom.get_eq hv
-
-/-- Allocation only grows the table. -/
-theorem le_alloc (st : ProverState F) {n : Nat} (xs : Vector F n) :
-    st.env.Le (st.alloc xs).env :=
-  st.dom.le_extendList _
 
 /-- A variable in scope reads the same in any extension. -/
 private theorem get_of_le [Zero F] {st st' : ProverState F} (hle : st.env.Le st'.env)
@@ -509,14 +486,6 @@ theorem CircuitType.reads_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {
   rw [← Vector.eq_iff_flatten_eq]
   simp only [Vector.ext_iff, Vector.getElem_map]
 
-theorem CircuitType.readVal_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {n : Nat}
-    {V : Valuation F} {vs : Vector va n} :
-    CircuitType.readVal (val := Vector a n) V vs
-      = mapVec (fun v => CircuitType.readVal (val := a) V v) vs := by
-  simp only [CircuitType.readVal, CircuitType.varToFields_vector, CircuitType.fieldsToValue_vector,
-    mapVec_eq_map, Vector.map_flatten, chunkVec_flatten, Vector.map_map]
-  rfl
-
 theorem CircuitType.scoped_ofEquiv [inst : CircuitType F a va] (ev : b ≃ a) (ew : vb ≃ va)
     {st : ProverState F} {v : vb} :
     @CircuitType.Scoped F b vb (CircuitType.ofEquiv ev ew) st v ↔
@@ -526,11 +495,6 @@ theorem CircuitType.reads_ofEquiv [Add F] [Mul F] [Zero F] [inst : CircuitType F
     (ev : b ≃ a) (ew : vb ≃ va) {V : Valuation F} {v : vb} {x : b} :
     @CircuitType.Reads F b vb _ _ (CircuitType.ofEquiv ev ew) V v x ↔
       CircuitType.Reads V (ew v) (ev x) := Iff.rfl
-
-theorem CircuitType.readVal_ofEquiv [Add F] [Mul F] [Zero F] [inst : CircuitType F a va]
-    (ev : b ≃ a) (ew : vb ≃ va) {V : Valuation F} {v : vb} :
-    @CircuitType.readVal F b vb _ _ (CircuitType.ofEquiv ev ew) V v
-      = ev.symm (CircuitType.readVal V (ew v)) := rfl
 
 end Formers
 
@@ -627,21 +591,6 @@ def Mono (P : ProverState F → Prop) : Prop :=
 /-- A state-independent fact is monotone — a context's constant conjuncts. -/
 @[complete_mono] theorem Mono.const {p : Prop} : Mono (F := F) fun _ => p :=
   fun _ _ _ _ h => h
-
-/-- A pinned allocation bound is monotone — the state-pinning idiom's first half. -/
-@[complete_mono] theorem Mono.nv_le {k : ℕ} : Mono (F := F) fun st => k ≤ st.nv :=
-  fun _ _ hnv _ h => Nat.le_trans h hnv
-
-/-- A pinned table extension is monotone — the state-pinning idiom's second half. -/
-@[complete_mono] theorem Mono.env_le {e : Assignments F} :
-    Mono (F := F) fun st => e.Le st.env :=
-  fun _ _ _ hle h => h.trans hle
-
-/-- A guarded monotone fact is monotone — the shape of a conditional grant, such as
-a law's "where the sum is finite the result reads it". -/
-@[complete_mono] theorem Mono.imp {p : Prop} {Q : ProverState F → Prop}
-    (hQ : Mono (F := F) Q) : Mono (F := F) fun st => p → Q st :=
-  fun _ _ hnv hle h hp => hQ _ _ hnv hle (h hp)
 
 /-- A reading is monotone. -/
 @[complete_mono]

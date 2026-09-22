@@ -1909,15 +1909,6 @@ theorem chain_accN {c : WeierstrassCurve.Affine F} {T : c.Point} (m : ℕ)
     simp only [List.foldl_cons, List.foldl_nil]
     ring
 
-/-- `runBits` only reads the run below `m`. -/
-theorem runBits_congr (g g' : ℕ → Witness F) (m : ℕ)
-    (h : ∀ i, i < m → g i = g' i) : runBits g m = runBits g' m := by
-  induction m with
-  | zero => rfl
-  | succ k ih =>
-    rw [runBits_succ, runBits_succ, ih (fun i hi => h i (by omega)),
-      h k (by omega)]
-
 /-- On boolean bits the field fold is the cast of the ℤ-decode. -/
 theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
     bitsRegister l = ((bitsVal l : ℤ) : F) := by
@@ -2197,19 +2188,6 @@ variable (xT yT x0 y0 n0 : F) (bs : ℕ → F)
 
 omit [DecidableEq F]
 
-theorem chainBuild_succ_x0 (i : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs (i + 1)).x0 = (chainBuild xT yT x0 y0 n0 bs i).x5 :=
-  rfl
-
-theorem chainBuild_succ_y0 (i : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs (i + 1)).y0 = (chainBuild xT yT x0 y0 n0 bs i).y5 :=
-  rfl
-
-theorem chainBuild_succ_n (i : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs (i + 1)).n
-      = (chainBuild xT yT x0 y0 n0 bs i).nPrime :=
-  rfl
-
 /-- The row's fixed cells: the base is the argument and the five bits are the
 stream's window `5m … 5m+4`. -/
 theorem chainBuild_fields (m : ℕ) :
@@ -2221,18 +2199,6 @@ theorem chainBuild_fields (m : ℕ) :
     ∧ (chainBuild xT yT x0 y0 n0 bs m).b3 = bs (5 * m + 3)
     ∧ (chainBuild xT yT x0 y0 n0 bs m).b4 = bs (5 * m + 4) := by
   cases m <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-theorem accX_chainBuild (m : ℕ) :
-    accX (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).x0 := by
-  cases m <;> rfl
-
-theorem accY_chainBuild (m : ℕ) :
-    accY (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).y0 := by
-  cases m <;> rfl
-
-theorem accN_chainBuild (m : ℕ) :
-    accN (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).n := by
-  cases m <;> rfl
 
 end ChainFields
 

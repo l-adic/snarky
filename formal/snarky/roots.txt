@@ -101,7 +101,6 @@ Snarky.ProverState.instMembershipVariable
 Snarky.ProverState.ext
 Snarky.ProverState.ext_iff
 Snarky.ProverState.get_alloc
-Snarky.ProverState.le_alloc
 Snarky.AsProver.run
 Snarky.AsProver.run_pure
 Snarky.AsProver.run_read
@@ -149,8 +148,6 @@ Snarky.CircuitType.ReadsAs.mono
 Snarky.CircuitType.reads_iff
 Snarky.CircuitType.readVal_fvar
 Snarky.CircuitType.readVal_prod
-Snarky.CircuitType.readVal_vector
-Snarky.CircuitType.readVal_ofEquiv
 Snarky.CircuitType.scoped_fvar
 Snarky.CircuitType.scoped_boolVar
 Snarky.CircuitType.scoped_unchecked
@@ -478,12 +475,6 @@ Snarky.Kimchi.PlonkReductionM
 -- Seam-walk simp fodder (Constraint/Reduction.lean): rfl-lemmas the walks consume
 -- through simp, which applies them definitionally — no proof term records them, so
 -- they are rooted as simp-set surface.
-Snarky.Kimchi.PlonkBuilder.pure_apply
-Snarky.Kimchi.PlonkProver.pure_apply
-Snarky.Kimchi.createInternalB_apply
-Snarky.Kimchi.createInternal_builder
-Snarky.Kimchi.addGeneric_prover
-Snarky.Kimchi.addEquals_prover
 Snarky.Kimchi.reduceAffineExpression
 Snarky.Kimchi.reduceToVariable
 Snarky.Kimchi.reduceAsBuilder
@@ -733,6 +724,3 @@ Snarky.Tactic.lawProgramHead
 
 -- The @[complete_mono] vocabulary consumed only through the walker's attribute
 -- table, which the reachability pass cannot see.
-Snarky.Mono.nv_le
-Snarky.Mono.env_le
-Snarky.Mono.imp

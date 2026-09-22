@@ -776,16 +776,6 @@ theorem Chain.ofList (W : WeierstrassCurve.Affine F) (endo : F) (T φT : W.Point
     exact (hlink.getElem i hi).2
 
 omit [DecidableEq F] in
-/-- The crumb stream of a run given as a list: its rows' window crumbs, concatenated. -/
-theorem crumbList_getD (l : List (Witness F)) (d : Witness F) :
-    crumbList (fun i => l.getD i d) l.length
-      = l.flatMap fun w => [w.b2 + 2 * w.b1, w.b4 + 2 * w.b3] := by
-  rw [crumbList, List.flatMap_def, List.flatMap_def]
-  congr 1
-  refine List.ext_getElem (by simp) fun i _ h2 => ?_
-  simp only [List.getElem_map, List.getElem_range]
-  rw [List.getD_eq_getElem _ _ (by simpa using h2)]
-
 omit [DecidableEq F] in
 /-- A run given as a list closes at its last row's outputs. -/
 theorem acc_getD_length (l : List (Witness F)) (hne : l ≠ []) (d : Witness F) :
