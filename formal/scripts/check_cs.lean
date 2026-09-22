@@ -695,6 +695,61 @@ def finalizeOtherProofStepCircuit (input : Vector (FVar Fp) 151) : CircuitM Fp C
   let _ ← fopStepHarness input
   pure PUnit.unit
 
+open Pickles Kimchi.Verifier in
+/-- The step side over the chunked flat layout at `nc` chunks: the 151-cell layout with each
+evaluation widened to its chunks — from 29, 44 columns of `2 · nc` cells (the `ζ` chunks, then
+the `ζω` chunks) in the order public, `w`, coefficients, `z`, `σ`, the six selectors — then
+`ft(ζω)`, the two previous-challenge vectors and the digest before evaluations. `zk_rows`
+follows the chunk count. At `nc = 1` this is the 151-cell layout. -/
+def fopStepChunkedHarnessAt (nc : ℕ) (domains : List (Pickles.KnownDomain Fp)) {n : ℕ}
+    (input : Vector (FVar Fp) n) : CircuitM Fp C (Pickles.FopOutput Fp) := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let column (k : ℕ) : PointEvaluations (Vector (FVar Fp) nc) :=
+    ⟨Vector.ofFn fun c => get (29 + 2 * nc * k + c),
+     Vector.ofFn fun c => get (29 + 2 * nc * k + nc + c)⟩
+  let tail := 29 + 88 * nc
+  let (u, _, _) := PicklesFixture.fopInputsOf Type1.mk get 29
+  let u := { u with spongeDigestBeforeEvaluations := get (tail + 33) }
+  let w : ChunkedEvals nc (FVar Fp) :=
+    { ftEval1 := get tail
+      pub := column 0
+      evals :=
+        { w := Vector.ofFn fun j => column (1 + j)
+          coefficients := Vector.ofFn fun j => column (16 + j)
+          z := column 31
+          s := Vector.ofFn fun j => column (32 + j)
+          genericSelector := column 38
+          poseidonSelector := column 39
+          completeAddSelector := column 40
+          mulSelector := column 41
+          emulSelector := column 42
+          endomulScalarSelector := column 43 } }
+  Pickles.finalizeOtherProofStepChunked
+    { PicklesFixture.fopStepParams with zkRows := (16 * nc + 5) / 7 }
+    domains u w [.unchecked (get 26), .unchecked (get 27)]
+    (PicklesFixture.prevChallengesOf get (tail + 1))
+    (get 28)
+
+/-- `finalize_other_proof_chunks2_step_circuit`: the dump's 239 cells at two chunks and one
+known domain of `log2 = 16`. -/
+def fopStepChunks2Harness (input : Vector (FVar Fp) 239) :
+    CircuitM Fp C (Pickles.FopOutput Fp) :=
+  fopStepChunkedHarnessAt 2 [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] input
+
+/-- `finalize_other_proof_chunks2_step_circuit` as a comparison target: the step side over
+a two-chunk step proof, output discarded. -/
+def finalizeOtherProofChunks2StepCircuit (input : Vector (FVar Fp) 239) :
+    CircuitM Fp C PUnit := do
+  let _ ← fopStepChunks2Harness input
+  pure PUnit.unit
+
+/-- The chunked step side at one chunk, compared against `finalize_other_proof_step_circuit`:
+at `nc = 1` it is the one-chunk circuit. -/
+def finalizeOtherProofChunked1StepCircuit (input : Vector (FVar Fp) 151) :
+    CircuitM Fp C PUnit := do
+  let _ ← fopStepChunkedHarnessAt 1 [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] input
+  pure PUnit.unit
+
 /-- `finalize_other_proof_wrap_circuit` as a comparison target: the harness, output
 discarded. -/
 def finalizeOtherProofWrapCircuit (input : Vector (FVar Fq) 148) : CircuitM Fq Cq PUnit := do
@@ -1212,6 +1267,10 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       stepTarget (a := Vector Fp 170) (b := PUnit) (checkBulletproofStepCircuit hStep)),
     ("finalize_other_proof_step_circuit",
       stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
+    ("finalize_other_proof_step_circuit",
+      stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofChunked1StepCircuit),
+    ("finalize_other_proof_chunks2_step_circuit",
+      stepTarget (a := Vector Fp 239) (b := PUnit) finalizeOtherProofChunks2StepCircuit),
     ("ftcomm_step_circuit", stepTarget (a := Vector Fp 20) (b := PUnit) ftcommStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),

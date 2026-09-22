@@ -22,6 +22,7 @@ squeeze the two prechallenges `ξ` and `r` as 128-bit values.
 * `squeezeXiR`: the schedule of `Kimchi.Verifier.frTranscript`, the challenge digest
   computed between its first two absorbs, then two squeezes each split by
   `lowest128Bits'`.
+* `squeezeXiRChunked`: the same schedule at any chunk count, every chunk absorbed.
 
 ## Main results
 
@@ -91,6 +92,22 @@ def squeezeXiR [ToNat F] (p : Poseidon.Params F) (digestBefore : FVar F)
   let sv ← SpongeVar.absorb p SpongeVar.init digestBefore
   let d ← digest
   let sv ← absorbList p sv (frTail d ftEval1 pub evals)
+  let (x₁, sv) ← SpongeVar.squeeze p sv
+  let xi ← lowest128Bits' xiConstrainLowBits endo x₁
+  let (x₂, _) ← SpongeVar.squeeze p sv
+  let r ← lowest128Bits' true endo x₂
+  pure (xi, r)
+
+/-- `squeezeXiR` at `nc` chunks per column: the schedule of `Kimchi.Verifier.frTranscript` at
+the same width, every chunk absorbed — a column's `ζ` chunks, then its `ζω` chunks. -/
+def squeezeXiRChunked [ToNat F] {nc : ℕ} (p : Poseidon.Params F) (digestBefore : FVar F)
+    (digest : CircuitM F c (FVar F)) (ftEval1 : FVar F)
+    (pub : PointEvaluations (Vector (FVar F) nc)) (evals : ProofEvaluations (Vector (FVar F) nc))
+    (endo : FVar F) (xiConstrainLowBits : Bool) :
+    CircuitM F c (SizedF 128 (FVar F) × SizedF 128 (FVar F)) := do
+  let sv ← SpongeVar.absorb p SpongeVar.init digestBefore
+  let d ← digest
+  let sv ← absorbList p sv (frTranscript digestBefore d ftEval1 pub evals).tail
   let (x₁, sv) ← SpongeVar.squeeze p sv
   let xi ← lowest128Bits' xiConstrainLowBits endo x₁
   let (x₂, _) ← SpongeVar.squeeze p sv
