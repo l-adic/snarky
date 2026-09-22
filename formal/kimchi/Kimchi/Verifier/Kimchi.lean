@@ -84,8 +84,8 @@ def PointEvaluations.toVector {F : Type*} (e : PointEvaluations F) : Vector F ev
 
 /-- The proof's claimed evaluations, one `PointEvaluations` per column family, generic in
 the per-point payload `E`: `Array F` on the wire (chunk vectors of unchecked length),
-`Vector F nc` after the parse. The fixed column counts (15 witness, 6 evaluated σ, 15
-coefficient) are type-level. -/
+`Vector F nc` after the parse. The fixed column counts (`wCols` witness, `sigmaRows` evaluated σ,
+`coeffCols` coefficient) are type-level. -/
 structure ProofEvaluations (E : Type*) where
   /-- The 15 witness-column evaluation pairs, `w[i] = (wᵢ(ζ), wᵢ(ζω))`. -/
   w : Vector (PointEvaluations E) wCols

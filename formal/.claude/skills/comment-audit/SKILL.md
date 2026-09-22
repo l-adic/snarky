@@ -46,7 +46,8 @@ Two rules decide most cases:
   about the module's shape.
 * **Provenance.** An upstream identifier (`squeeze_challenge`, `Shifted_value.Type1.to_field`,
   `VBSM`) never appears. What the declaration *does* replaces it. If the module as a whole
-  transcribes an upstream file, the MODULE docstring names that file, once.
+  transcribes an upstream file, the MODULE docstring (the first `/-! … -/`) names that file,
+  once; a section note does not.
 
 ## The procedure
 
@@ -60,7 +61,7 @@ Two rules decide most cases:
 
 ## Acceptance conditions
 
-A pass is finished when all four hold:
+A pass is finished when all five hold:
 
 ```sh
 cd formal
@@ -68,6 +69,7 @@ scripts/prose-only.sh <the module's path>   # 1. every code line untouched
 lake build <the module's library>           # 2. it still builds
 scripts/check-comments.sh                   # 3. the gate passes, this module's counts lower
 scripts/check-style.sh <the module's path>  # 4. the formatter contract holds
+kimchi/scripts/check_shape_literals.sh      # 5. no bare dimension literal, prose included
 ```
 
 The gate and the queue read DECLARATION docstrings from the compiled environment, so neither
