@@ -2,9 +2,9 @@
 # The shape-literal gate: no bare structural dimension may appear in a TYPE position.
 #
 # The kimchi shape constants (Kimchi/Columns.lean) name every structural dimension
-# (wCols, permCols, coeffCols, selCount, sigmaRows, litRowCount, tailRowCount,
-# batchRows, evalPts). This check enforces their use across the Kimchi/ library tree
-# (minus Gate/), the KimchiFixture decoders, and the scripts/*.lean fixture drivers:
+# (wCols, permCols, coeffCols, sigmaRows, litRowCount, tailRowCount, evalPts). This check
+# enforces their use across the Kimchi/ library tree (minus Gate/), the KimchiFixture
+# decoders, and the scripts/*.lean fixture drivers:
 # any bare 6/7/15/43/44 in a type-shaped position — `Fin N` (including the
 # parenthesized `Fin (N)`), a `finRange N`, a `Vector` dimension, a `parseSized`
 # dimension, `.take 6`, or an `N * nc` stream size — fails the gate. A scanned

@@ -5,14 +5,10 @@
 --
 -- The column-count notations (Kimchi/Columns.lean) are scoped notations expanding to
 -- literals, so they name something real without being constants.
-batchRows
 coeffCols
 evalPts
 litRowCount
 permCols
-preIpaChals
-selCount
 sigmaRows
-szSets
 tailRowCount
 wCols
