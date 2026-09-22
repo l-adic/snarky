@@ -4,22 +4,20 @@ import KimchiFixture.PS
 /-!
 # The PureScript proof cache, decoded
 
-`packages/pickles/test/fixtures/proof-cache/*.json` is the pickles test suite's memo of
-every kimchi proof it produced: `{ "<vkDigest>": { "<publicInput>": Entry } }` with
-`Entry = { vk, proof, step? }` — the verification key's JSON, the proof's serde JSON and,
-on a wrap proof, the key of the step proof it wrapped. This module reads that file into
-the wire records `kimchiVerify` and the circuit halves take.
+The pickles test suite memoises every kimchi proof it produces under
+`packages/pickles/test/fixtures/proof-cache/`, in the format of
+`packages/snarky-kimchi/src/Snarky/Backend/Kimchi/ProofCache.purs`:
+`{ "<vkDigest>": { "<publicInput>": entry } }`. An entry holds the verification key's JSON,
+the proof's serde JSON, and links to the proofs it is built on (`step` on a wrap proof,
+`prevs` on a step proof). This module reads a file into `Entry` records.
 
-Two encodings meet here, both PureScript's own:
+Two encodings meet here:
 
-* the verification key is `vkRawToJson`'s shape — camelCase, points as uncompressed
-  `[x, y]` little-endian hex pairs, commitments as arrays of them;
-* the proof is arkworks serde — snake_case, points **compressed**: 33 bytes of hex, the
-  `x` coordinate then a flag byte (`0x80` the larger root, `0x00` the smaller, `0x40`
-  the identity). Decompression is a Tonelli–Shanks root, supplied per curve.
-
-Neither `endo` nor `lagrangeBasis` is on the wire. `endo` is a curve constant; the
-Lagrange basis is SRS-derived and left empty here — the verifier driver fills it.
+* the verification key is camelCase, with points as uncompressed `[x, y]` little-endian hex
+  pairs;
+* the proof is arkworks serde: snake_case, with points compressed to 33 bytes of hex, the
+  `x` coordinate then a flag byte (`0x80` the larger root, `0x00` the smaller, `0x40` the
+  identity). The square root that decompresses is a parameter, supplied per curve.
 -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Wire
@@ -53,7 +51,7 @@ private def chunks (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.BaseFi
     (j : Json) : Except String (Array C.Point) := do
   parseArrOf (pointCompressed C sqrt) (← j.getObjVal? "chunks")
 
-/-- A serde evaluation pair: `{ zeta: [chunks], zeta_omega: [chunks] }`. -/
+/-- A serde evaluation pair: `{ zeta: [scalar, …], zeta_omega: [scalar, …] }`. -/
 private def evalPair (C : Ipa.KimchiCurve) (j : Json) :
     Except String (PointEvaluations (Array C.ScalarField)) := do
   return { zeta := ← parseArrOf (scalar C) (← j.getObjVal? "zeta")
@@ -78,7 +76,7 @@ def parseProof (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.BaseField)
       mulSelector := ← pe (← ev.getObjVal? "mul_selector")
       emulSelector := ← pe (← ev.getObjVal? "emul_selector")
       endomulScalarSelector := ← pe (← ev.getObjVal? "endomul_scalar_selector") }
-  -- Absent public evaluations (the one-chunk form) are `null` on the serde wire.
+  -- The public evaluations are optional; serde writes an absent one as `null`.
   let pubEvals ← match (ev.getObjVal? "public").toOption with
     | some Json.null | none => pure none
     | some pj => some <$> pe pj
@@ -102,14 +100,14 @@ def parseProof (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.BaseField)
                         chals := ← parseArrOf (scalar C) (← r.getObjVal? "chals") })
              (← j.getObjVal? "prev_challenges") }
 
-/-- A natural written as a JSON number (`vkRawToJson`'s counts) or as a numeral string. -/
+/-- A natural written as a JSON number or as a numeral string. -/
 private def natJ (j : Json) : Except String ℕ :=
   match j.getNat? with
   | .ok n => pure n
   | .error _ => parseNat j
 
-/-- The verification key's JSON (`vkRawToJson`) as the kimchi key wire record, at a given
-digest and endo. `lagrangeBasis` is left empty: it is SRS-derived, not wire data. -/
+/-- The verification key's JSON as the kimchi key wire record. `endo` and `digest` are not
+on the wire; `lagrangeBasis` is left empty for the caller to derive from the SRS. -/
 def parseVK (C : Ipa.KimchiCurve) (endo : C.ScalarField) (digest : C.BaseField) (j : Json) :
     Except String (KimchiVK C) := do
   let dom ← j.getObjVal? "domain"
@@ -184,7 +182,7 @@ private def parseEntry (C : Ipa.KimchiCurve) (endo : C.ScalarField)
            vk := ← parseVK C endo (d : C.BaseField) vkJ
            proof := ← parseProof C sqrt proofJ, step, prevs }
 
-/-- Whether a cache entry's key is committed on `C`: its first permutation commitment's
+/-- Whether a cache entry's verification key lies on `C`: its first σ commitment's
 coordinates satisfy `C`'s equation. -/
 private def entryOnCurve (C : Ipa.KimchiCurve) (e : Json) : Except String Bool := do
   let vkJ ← Json.parse (← (← e.getObjVal? "vk").getStr?)
@@ -193,11 +191,9 @@ private def entryOnCurve (C : Ipa.KimchiCurve) (e : Json) : Except String Bool :
   let some p := comms[0]?.bind (·[0]?) | throw "sigmaComm: no commitment"
   return decide (OnCurve C.E.A C.E.B p)
 
-/-- A cache file at a curve. A file holds a chain's step proofs, committed on one Pasta
-curve, and its wrap proofs, committed on the other; a bucket whose key is not committed
-on `C` (`entryOnCurve`, decided on its first entry) is the other curve's and is skipped.
-The result is the entries at `C` and the count of buckets skipped, so a caller can check
-the split it expects. -/
+/-- A cache file's entries at `C`, and the count of buckets skipped. Step and wrap proofs
+are committed on different Pasta curves; a bucket whose first entry fails `entryOnCurve` is
+the other curve's and is skipped. -/
 def parseFile (C : Ipa.KimchiCurve) (endo : C.ScalarField)
     (sqrt : C.BaseField → Option C.BaseField) (raw : String) :
     Except String (Array (Entry C) × ℕ) := do

@@ -1,43 +1,36 @@
 import Pasta.Basic
 
 /-!
-# The kimchi `CompleteAdd` gate
+# The kimchi complete-addition gate
 
-Complete elliptic-curve point addition: the gate's 7 constraints, and the theorem
-that they implement Mathlib's affine group law.
+Complete elliptic-curve point addition: the gate's 7 constraints over one row.
 
 Transcribed from proof-systems `.../complete_add.rs`: the column layout
-(cols 0–10: x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv) and the 7 `constraint_checks`.
+(cols 0–10: x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv) and the 7 constraints.
 
-The trusted ORACLE is Mathlib's affine elliptic-curve group law
-(`WeierstrassCurve.Affine.slope / addX / addY`). With the Pasta-shape curve
-(`a₁ = a₂ = a₃ = a₄ = 0`) Mathlib's formulas collapse to exactly the gate's identities:
+The reference is Mathlib's affine group law (`WeierstrassCurve.Affine.slope / addX / addY`).
+On a curve with `a₁ = a₂ = a₃ = a₄ = 0` its formulas are the gate's identities:
 
-    slope (doubling) = 3x₁²/(2y₁)      ← gate c3 doubling: 2·s·y₁ = 3x₁²
-    addX             = ℓ² − x₁ − x₂     ← gate c4: x₁+x₂+x₃ = s²
-    addY             = ℓ(x₁ − x₃) − y₁  ← gate c5: y₃ = s(x₁−x₃) − y₁
+    slope (doubling) = 3x₁²/(2y₁)      ← c3 doubling: 2·s·y₁ = 3x₁²
+    addX             = ℓ² − x₁ − x₂     ← c4: x₁+x₂+x₃ = s²
+    addY             = ℓ(x₁ − x₃) − y₁  ← c5: y₃ = s(x₁−x₃) − y₁
 
-and the sum of two affine points has coordinates `(addX, addY)`
-(`Point.add_some`), so matching those formulas = computing the group sum.
+and the sum of two affine points has coordinates `(addX, addY)` (`Point.add_some`).
 
 ## Main results
 
-The gate computes addition in Mathlib's proven elliptic-curve group `W.Point`. This file
-carries the constraint model; the theorems below are proved in
-`Kimchi/Gate/Semantics/AddComplete.lean`:
-* `sound` — SOUNDNESS, both cases in one statement: for a satisfying witness the
-  sum `(x₁,y₁) + (x₂,y₂)` is the group element the gate encodes — `0` when `inf = 1`,
-  else the affine output `(x₃, y₃)` — using that `inf` is boolean (`inf_boolean`). It
-  splits into the per-case `sound_point_noninf` / `sound_point_inf`.
-* `build` / `complete_build` — COMPLETENESS, constructive: the canonical row the honest
-  prover fills, and the theorem that it satisfies the gate for on-curve inputs
-  (`y₁ ≠ 0`), casing internally on whether the sum is finite or `∞`. `complete` is the
+This file carries the constraint model; `Kimchi/Gate/Semantics/AddComplete.lean` proves:
+* `sound` — for a satisfying witness, the sum `(x₁,y₁) + (x₂,y₂)` in
+  `WeierstrassCurve.Affine.Point` is `0` when `inf = 1`, else `(x₃, y₃)`; it combines
+  `sound_point_noninf`, `sound_point_inf` and `inf_boolean`.
+* `build` / `complete_build` — the canonical row the honest prover fills, and the theorem
+  that it satisfies the gate for on-curve inputs with `y₁ ≠ 0`; `complete` is the
   existential corollary.
 -/
 
 namespace Kimchi.Gate.AddComplete
 
-/-- The CompleteAdd witness columns (cols 0–10). -/
+/-- The gate's witness columns (cols 0–10). -/
 structure Witness (F : Type*) where
   /-- The x-coordinate of the first addend `P₁` (column 0). -/
   x1 : F
@@ -64,9 +57,8 @@ structure Witness (F : Type*) where
 
 variable {F : Type*}
 
-/-- Map a function across every witness cell. Instantiating at a ring homomorphism moves a
-    witness between rings — in particular between `Witness (Polynomial F)` (the column
-    polynomials of the quotient layer) and `Witness F` (their values at a domain node). -/
+/-- Map a function across every witness cell; at a ring homomorphism it moves a witness
+    between rings, e.g. from column polynomials to their values at a domain node. -/
 def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
   x1 := f w.x1
   y1 := f w.y1
@@ -80,20 +72,18 @@ def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
   infZ := f w.infZ
   x21Inv := f w.x21Inv
 
-/-! ## The 7 constraints, transcribed from `complete_add.rs`.
+/-! ## The 7 constraints
 
-The constraint left-hand sides live here once, as ring elements (`constraints`); the
-relational spec (`Holds`), the executable checker (`ok`), and the quotient layer's constraint
-polynomials (which read the same list over `F[X]`) are all defined from them. `CommRing`
-suffices — no division appears (the inverse is *witnessed* as `x21Inv`, the whole point of
-the gate). -/
+The constraint left-hand sides live once, in `constraints`; `Holds`, `ok` and the quotient
+layer's constraint polynomials (the same list over `F[X]`) are defined from them. `CommRing`
+suffices: the only inverse, of `x₂ − x₁`, is witnessed as `x21Inv`. -/
 
-/-- The gate's 7 constraint expressions — the single transcription. -/
+/-- The gate's 7 constraint expressions. -/
 def constraints [CommRing F] (w : Witness F) : List F :=
   let x21  := w.x2 - w.x1
   let y21  := w.y2 - w.y1
   let x1sq := w.x1 * w.x1
-  -- zero_check(x21, x21Inv, sameX): constrains `sameX = (x1 == x2)`
+  -- c1, c2: `sameX = (x1 == x2)`, via the witnessed inverse `x21Inv`
   [ w.x21Inv * x21 - (1 - w.sameX)                                             -- c1
   , w.sameX * x21                                                              -- c2
   -- slope: sameX ? (2·s·y₁ = 3x₁²)  :  ((x₂−x₁)·s = y₂−y₁)
@@ -105,7 +95,7 @@ def constraints [CommRing F] (w : Witness F) : List F :=
   , y21 * (w.sameX - w.inf)                                                    -- c6
   , y21 * w.infZ - w.inf ]                                                     -- c7
 
-/-- RELATIONAL spec: all 7 constraint expressions vanish. -/
+/-- The relational spec: all 7 constraint expressions vanish. -/
 def Holds [CommRing F] (w : Witness F) : Prop :=
   ∀ e ∈ constraints w, e = 0
 
@@ -113,16 +103,16 @@ instance [CommRing F] [DecidableEq F] (w : Witness F) : Decidable (Holds w) := b
   unfold Holds
   infer_instance
 
-/-- EXECUTABLE checker — runnable on a concrete witness. -/
+/-- The executable checker, runnable on a concrete witness. -/
 def ok [CommRing F] [DecidableEq F] (w : Witness F) : Bool :=
   (constraints w).all (· == 0)
 
-/-- Reflection: the checker faithfully decides the relational constraints. -/
+/-- The checker decides `Holds`. -/
 theorem ok_iff [CommRing F] [DecidableEq F] (w : Witness F) :
     ok w = true ↔ Holds w := by
   simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
 
-/-- `Holds` as the readable 7-conjunction (what the faithfulness proofs destructure). -/
+/-- `Holds` as the conjunction c1–c7, the form the semantics proofs use. -/
 theorem holds_iff [CommRing F] (w : Witness F) :
     Holds w ↔
       (w.x21Inv * (w.x2 - w.x1) - (1 - w.sameX) = 0)                           -- c1
@@ -136,10 +126,9 @@ theorem holds_iff [CommRing F] (w : Witness F) :
   simp only [Holds, constraints, List.forall_mem_cons, List.not_mem_nil, false_implies,
     implies_true, and_true]
 
-/-- The constraint expressions commute with ring homomorphisms (applied cellwise via
-    `Witness.map`). At `f = eval (ω^i) : F[X] →+* F` this turns the quotient layer's
-    constraint polynomials' values at a domain node into the gate constraints of that
-    node's row witness. -/
+/-- The constraint expressions commute with ring homomorphisms applied cellwise. At
+    evaluation at a domain node, the constraint polynomials' values there are the gate
+    constraints of that node's row. -/
 theorem constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S)
     (w : Witness R) :
     (constraints w).map f = constraints (w.map f) := by

@@ -5,8 +5,8 @@ import Snarky.Prover
 
 `CheckedType` pairs an encoding with the constraint circuit enforcing its
 well-formedness; `witness` allocates a bundle, runs the prover's advice, and emits the
-check. Its laws — the soundness contract and the completeness law, the two directions of
-one statement about the same rows — are the leaf interface every gadget builds on.
+check. Its soundness and completeness laws, two readings of the same rows, are the leaf
+interface every gadget builds on.
 -/
 
 namespace Snarky
@@ -18,7 +18,7 @@ completed to a run that does (`check_complete`). The value type is a parameter b
 the laws speak of the encoding. -/
 class CheckedType (F c val var : Type) [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     [CircuitType F val var] where
-  /-- The circuit that constrains the bundle to well-formed values (PS `check`). -/
+  /-- The circuit that constrains the bundle to well-formed values. -/
   check : var → CircuitM F c PUnit
   /-- What the check's rows force about the bundle under a valuation. -/
   post : Valuation F → var → Prop
@@ -26,20 +26,18 @@ class CheckedType (F c val var : Type) [Add F] [Mul F] [Zero F] [One F] [BasicSy
   check_sound : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (V : Valuation F) (v : var)
     (nv : Nat),
     (∀ con ∈ (build (check v) nv).constraints, ConstraintHolds.Holds V con) → post V v
-  /-- The prover's law: from a scoped bundle reading as an admissible value — one whose
-  every reading already satisfies `post`, the hypothesis spelled out because the class
-  cannot name `CheckedType.Valid` from inside itself — the check runs, and its rows are
-  satisfied at every extension of the state it runs to. The check MAY allocate
-  auxiliaries of its own, which is why its landing state is part of the conclusion. -/
+  /-- The prover's law: from a scoped bundle reading as an admissible value, the check runs
+  and its rows hold at every extension of its landing state. Admissibility is spelled out
+  because the class cannot name `CheckedType.Valid`; the landing state is part of the
+  conclusion because the check may allocate auxiliaries. -/
   check_complete : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (v : var) (a : val),
     (∀ (V : Valuation F) (w : var), CircuitType.Reads V w a → post V w) →
     Complete (F := F) (c := c) (fun st => CircuitType.ReadsAs (val := val) st v a)
       (check v) fun _ _ => True
 
-/-- The values a check admits: those whose every bundle reading satisfies what the rows
-force. Not a field but a definition — `post` pulled back along the reading — so a type's
-admissible values can never be fewer than its own constraints allow, and no completeness
-law can rest on anything a verifier does not itself check. -/
+/-- The values a check admits: those whose every bundle reading satisfies `post`. A
+definition rather than a field, so no completeness law can assume more than the type's
+own rows force. -/
 def CheckedType.Valid {F c val var : Type} [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     [CircuitType F val var] [CheckedType F c val var] (a : val) : Prop :=
   ∀ (V : Valuation F) (w : var), CircuitType.Reads V w a →
@@ -49,8 +47,7 @@ section Instances
 
 variable {F c : Type}
 
-/-- A field element carries no well-formedness constraint (PS `CheckedType` instance for
-`FVar`: `check = const (pure unit)`). -/
+/-- A field element carries no well-formedness constraint. -/
 instance instCheckedTypeFVar [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
     CheckedType F c F (FVar F) where
   check _ := .pure PUnit.unit
@@ -252,9 +249,9 @@ end Instances
 
 /-! ## Admissibility, at the concrete types and the formers
 
-Every type below admits every value — their checks force nothing about the decoded
-value, only that the wires lie in the encoding's image. A type whose rows do constrain
-the value (a curve point's on-curve rows) proves its own characterization instead. -/
+The concrete types below admit every value: their checks force only that the wires lie in
+the encoding's image. The formers reduce admissibility to their components'. A type whose
+rows constrain the value (a curve point's on-curve rows) proves its own characterization. -/
 
 section Valid
 
@@ -301,7 +298,7 @@ variable {a va b vb : Type}
     obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hw)
     exact h i hi V ws[i] (hws i hi)
 
-/-- Admissibility travels through a decomposition. -/
+/-- Admissibility transfers along the isomorphism. -/
 @[simp] theorem valid_ofEquiv [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     [CircuitType F a va] [S : CheckedType F c a va] (ev : b ≃ a) (ew : vb ≃ va) {x : b} :
     @CheckedType.Valid F c b vb _ _ _ _ _ (CircuitType.ofEquiv ev ew)
@@ -323,12 +320,9 @@ section Combinators
 
 variable {F c val var : Type}
 
-/-- Witness a typed value — the existential introduction of prover-supplied data, the
-circuit model's nondeterminism primitive (OCaml `exists`; o1js `Provable.witness`).
-The circuit asserts "there exist `size` field values for this bundle": the builder
-allocates the variables and emits the type's `check` constraints; only prover runs
-execute `compute`, whose output is — in the NP sense — the witness justifying the
-existential. Renamed because `exists` is Lean's `∃` keyword. -/
+/-- Witness a typed value, the circuit's nondeterminism primitive. The builder allocates
+`CircuitType.size` variables for the bundle and emits the type's `CheckedType.check` rows;
+only prover runs execute `compute`, whose output is the witness to that existential. -/
 def witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [inst : CircuitType F val var]
     [CheckedType F c val var] (compute : AsProver F val) : CircuitM F c var :=
   .existsOp inst.size (inst.valueToFields <$> compute) fun vs => do
@@ -336,9 +330,9 @@ def witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [inst : CircuitTy
     CheckedType.check (c := c) (val := val) v
     pure v
 
-/-- Read a typed variable bundle back to its value during a prover run. The
-length check is dynamic (it always succeeds) to keep the definition kernel-reducible
-without a `mapM`-length lemma. -/
+/-- Read a typed variable bundle back to its value during a prover run. The length check
+is dynamic (it always succeeds) to keep the definition kernel-reducible without a
+`List.mapM` length lemma. -/
 def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver F val := do
   let fields ← (inst.varToFields v).toList.mapM AsProver.readCVar
   if h : fields.length = inst.size then
@@ -347,7 +341,7 @@ def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver 
     AsProver.throw "readVar: size mismatch"
 
 open Std.Do in
-/-- A witness grants its type's contract. -/
+/-- A witnessed bundle satisfies its type's `CheckedType.post` wherever the rows hold. -/
 @[spec] theorem witness_spec {V : Valuation F} [Add F] [Mul F] [Zero F] [One F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     [CircuitType F val var] [S : CheckedType F (Builder V c) val var] (compute : AsProver F val) :
@@ -371,7 +365,7 @@ theorem run_mapM_readCVar [Add F] [Mul F] [Zero F] {st : ProverState F} :
       run_mapM_readCVar fun cv hcv => h cv (List.mem_cons_of_mem _ hcv), AsProver.run_pure,
       List.map_cons]
 
-/-- A scoped bundle reads as its reading. -/
+/-- `readVar` of a scoped bundle returns its `CircuitType.readVal`. -/
 @[simp] theorem readVar_run [Add F] [Mul F] [Zero F] [CircuitType F val var] {st : ProverState F}
     {v : var} (hs : CircuitType.Scoped (val := val) st v) :
     (readVar (val := val) v).run st.env = .ok (CircuitType.readVal st.env.get v) := by
@@ -379,15 +373,12 @@ theorem run_mapM_readCVar [Add F] [Mul F] [Zero F] {st : ProverState F} :
   rw [dif_pos (by simp)]
   rfl
 
-/-- **The witness rule** — the one place the representation stack is crossed, and the
-leaf every gadget's completeness law builds on. A witness computation that succeeds at
-the entry table yields a run — the bundle allocated at the counter with the value's
-encoding, closing wherever the type's check of that fresh, honest allocation closes —
-whose fresh cells read as the computed value and whose rows are the type's check rows,
-satisfied at any extension. Admissibility is what the type's own rows force
-(`CheckedType.Valid`), so the hypothesis restricts the honest prover's domain to exactly
-what the circuit accepts. The allocation's two order facts are `Complete.frame`'s
-business, so they are not part of the rule. -/
+/-- **The witness rule**, the leaf every gadget's completeness law builds on. A computation
+that succeeds at the entry state with an admissible value yields a run whose fresh bundle
+reads as that value and whose rows, the type's check rows, hold at any extension.
+Admissibility (`CheckedType.Valid`) is what the type's own rows force, so the hypothesis
+restricts the honest prover to exactly what the circuit accepts. The allocation's order
+facts are left to `Complete.frame`. -/
 theorem Complete.witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] [inst : CircuitType F val var]
     [CheckedType F c val var] (compute : AsProver F val) (v : val)
