@@ -1,313 +1,82 @@
--- Library API root set for the kimchi package.
+-- API root set for the kimchi package. Consumed by the workspace dead-code gate
+-- (formal/scripts/deadcode.sh): every authored declaration must be reachable from the union
+-- of the packages' manifests, or it is deleted.
 --
--- The curated top-level surface the library exists to provide. Lean has no export-list
--- mechanism (everything non-`private` is visible once imported), so this manifest — not the
--- type system — defines the public API. It is the root set for dead-code analysis:
---
---   a declaration in `Kimchi.*` is LIVE iff it is in the transitive constant-dependency
---   closure of these roots; anything compiled but outside that closure is dead.
---
--- The list is a MINIMAL GENERATING SET: a result reachable from a listed root is deliberately
--- not listed (e.g. `zH_dvd_iff` is live through `Lift.Argument.bridge`, and each gate's
--- `Argument` family through `Protocol.Linearization`'s `gateLinearization`).
--- `scripts/check_axioms.lean` separately pins the existence and axiom closure of the headline
--- theorems, including ones unlisted here.
---
--- NOTE on what this package now is. `Kimchi.Verifier.kimchiVerify` is a SPECIFICATION — the
--- transcription of proof-systems' `kimchi/src/verifier.rs`, and the anchor a circuit
--- implementation is proved faithful to — not a theorem-bearing object. The probabilistic
--- soundness development that once sat above it (`Verifier/KnowledgeSoundness.lean`,
--- `Verifier/Capstone/`, `Verifier/Forking/`, `Verifier/Reduction/`) was retired; see git log
--- for the tree. Nothing here should be read as a soundness claim about the deployed verifier.
---
--- Format: one fully-qualified declaration name per line; `--` lines and blanks are ignored.
---
--- Note: the `kimchi-demo` executable (Main.lean) is a SEPARATE build root; it and the
--- inline `#eval`/`example` regression demos consume the `eg*` defs rooted at the end of
--- this file — those consumers are invisible to the constant walk, so the defs are rooted
--- explicitly.
+-- A root is here for one of four reasons, and the sections say which: it is a capstone
+-- (pickles), a gate's faithfulness or completeness result, an arithmetization result, or a
+-- name one of the CI check scripts consumes (the `script-surface` blocks, whose entries the
+-- gate additionally checks appear in some scripts/ file).
 
--- Generic gate
-Kimchi.Gate.Generic.sound
-Kimchi.Gate.Generic.complete
-Kimchi.Gate.satisfies_iff
-
--- Complete addition
+-- Completeness: the honest prover can always fill a satisfying witness. Kept for every
+-- gadget, including those no circuit here consumes yet.
 Kimchi.Gate.AddComplete.complete
-Kimchi.Gate.AddComplete.sound
-
--- Variable-base scalar multiplication: the gate completeness and the two deployed circuit
--- entry points (the gate soundness is live through `varBaseMul_scaleFast2`)
-Kimchi.Gate.VarBaseMul.complete
-Kimchi.Gate.VarBaseMul.varBaseMul_off
-Kimchi.Gate.VarBaseMul.runBits
-Kimchi.Gate.VarBaseMul.runBits_length
-Kimchi.Gate.VarBaseMul.bitsRegister
-Kimchi.Gate.VarBaseMul.bitsVal
-Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal
-Kimchi.Gate.VarBaseMul.accN
-Kimchi.Gate.VarBaseMul.chain_accN
-Kimchi.Gate.VarBaseMul.runBits_bool
-Kimchi.Gate.VarBaseMul.chain_complete
-Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
-Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
-Kimchi.Gate.VarBaseMul.mem_forbiddenValues_of_dvd
-
--- Endo-scalar decomposition (circuit): over a multi-row run of sequential gates, the effective
--- scalar a·λ + b (sound), the honest prover fills the run (complete), and the decomposition is
--- unique under the bit-size/field-size bound (so challenge ↦ a·λ + b is well defined). The
--- per-gate `sound`/`complete` are live through `endoScalar_unique`/`chain_complete`.
-Kimchi.Gate.EndoScalar.chain_toField
-Kimchi.Gate.EndoScalar.chain_complete
--- zero-crumb decompositions: simp-set surface (consumed by simpa in snarky walks)
-Kimchi.Gate.EndoScalar.crumbsOf_zero
-Kimchi.Gate.EndoScalar.decomposeA_nil
-Kimchi.Gate.EndoScalar.decomposeB_nil
-Kimchi.Gate.EndoScalar.nReconstruct_nil
-Kimchi.Gate.EndoScalar.endoScalar_unique
-
--- The 128-bit range check (`RangeCheck.purs`'s `rangeCheck128 = void ∘ EndoScalar.toField @8`):
--- the same gate read for its BOUND rather than its decomposition. A satisfying m+1-row run of
--- uniform width c pins its register to the image of a natural < 4^(c(m+1)) — at the deployed 8
--- rows of 8 crumbs, < 2^128 — uniquely so under the no-wrap bound. The converse holds too: every
--- natural in range IS the register of some satisfying run, at the single-witness shape
--- (`range_complete`) and at the multi-row shape (`chain_range_complete`), so at a fixed row shape
--- the bound and its converse jointly pin the accepted set to exactly [0, 4^(c(m+1))).
--- Minimal set: `chain_range` is live through both `chain_range_128` and `chain_range_unique`,
--- and `chain_range_complete` through `chain_range_complete_128`; `range_complete` reaches the
--- digit-expansion kernel instead.
-Kimchi.Gate.EndoScalar.chain_range_128
-Kimchi.Gate.EndoScalar.chain_range_unique
-Kimchi.Gate.EndoScalar.range_complete
-Kimchi.Gate.EndoScalar.chain_range_complete_128
-
--- That range check at the two deployed Pasta fields (`Chain128` packages the eight-row shape):
--- sound — a satisfying chain pins its register to the cast of a natural < 2^128 — and complete
--- — every such natural is the register of some satisfying chain — with every field hypothesis
--- discharged at Fp and Fq. `Chain128` and its two directions are live through these four.
-Kimchi.Gate.EndoScalar.fp_rangeCheck128_sound
-Kimchi.Gate.EndoScalar.fp_rangeCheck128_complete
-Kimchi.Gate.EndoScalar.fq_rangeCheck128_sound
-Kimchi.Gate.EndoScalar.fq_rangeCheck128_complete
-
--- GLV endomorphism scalar multiplication (gate)
-Kimchi.Gate.EndoMul.sound
-Kimchi.Gate.EndoMul.complete
-
--- EndoMul at the real Pasta curves: the deployed entry points. The prover supplies only the gate
--- constraint Holds per row + base + threading + initial conditions; the eigenvalue is discharged
--- via the CM axiom and the per-row hxne is *derived* from the GLV bound (not assumed). The
--- field-generic circuit capstone `endoMul` is live through both.
-Kimchi.Gate.EndoMul.pallas_endoMul
-Kimchi.Gate.EndoMul.vesta_endoMul
--- The produce chain: the honest walk's conditional completeness, generic and deployed.
-Kimchi.Gate.EndoMul.chain_complete
 Kimchi.Gate.EndoMul.pallas_chain_complete
 Kimchi.Gate.EndoMul.vesta_chain_complete
-
--- Poseidon gate: a satisfying row computes the 5-round permutation.
-Kimchi.Gate.Poseidon.sound
-Kimchi.Gate.Poseidon.complete
-
--- Poseidon gate-to-sponge faithfulness: an eleven-row chain computes `Poseidon.blockCipher`,
--- the 55-round `mina_poseidon` permutation the duplex sponge runs, at the deployed
--- `fq_kimchi` / `fp_kimchi` parameters. The oracle is EXTERNAL to this gate — it is
--- fixture-validated against recorded production traces by
--- `poseidon/scripts/check_sponge_vectors.sh` — where `sound` above only compares the row
--- against `perm`, which the gate file itself defines. The chain machinery (`rounds`,
--- `Chain`, `chain_blockCipher`, `buildChain`) is live through these four.
-Kimchi.Gate.Poseidon.fq_poseidonChain_blockCipher
-Kimchi.Gate.Poseidon.fp_poseidonChain_blockCipher
-Kimchi.Gate.Poseidon.fq_poseidonChain_complete
+Kimchi.Gate.EndoScalar.fp_rangeCheck128_complete
+Kimchi.Gate.EndoScalar.fq_rangeCheck128_complete
+Kimchi.Gate.EndoScalar.range_complete
+Kimchi.Gate.Generic.complete
 Kimchi.Gate.Poseidon.fp_poseidonChain_complete
+Kimchi.Gate.Poseidon.fq_poseidonChain_complete
+Kimchi.Gate.VarBaseMul.complete
 
--- THE ARITHMETIZATION — what the verifier's commitments commit to.
---
--- The verifier opens commitments; it never handles raw polynomials. This layer is the other
--- side of that: how a constraint system becomes the polynomial family the commitments are
--- taken over, and what divisibility of that family means about the circuit.
---
--- `satisfies_iff_fullFamily_dvd` is the headline and the only result in the tree linking
--- `Index.Satisfies` (the circuit) to the committed polynomials: a witness table satisfies the
--- index iff, at every nondegenerate challenge pair, some accumulator makes every member of
--- the family divisible by `Z_H`. Its engine — `zH_dvd_iff`, `dvd_separation`, the `Argument`
--- lifts, `gateMember`, `fullFamily`, `pubPoly` — is live through it.
---
--- NOTE on `dvd_separation` and the SZ layer: the bad sets are EXPLICIT FINITE SETS with
--- proved cardinality bounds, and the statements quantify over challenges outside them. That
--- is deterministic algebra (a Vandermonde / too-many-roots argument), not a probabilistic
--- claim. It is unrelated to the retired knowledge-soundness development, which is what the
--- probabilistic reading belonged to; see docs/soundness-line-retirement.md.
-Kimchi.Index.satisfies_iff_fullFamily_dvd
-
--- The same arithmetization at an EVALUATION check rather than a divisibility one: one
--- accepting check of the aggregate against `t·Z_H`, at an α outside `badAlphas` and a ζ
--- outside `badZetas`, implies the witness satisfies the index. This is what makes "verify at
--- a single point" legitimate, and it is what the Schwartz–Zippel layer
--- (`SchwartzZippel.lean`, `Aggregate.lean`) exists to support: both bad sets are explicit and
--- carry proved cardinality bounds, so the statement quantifies over good challenges rather
--- than over a distribution. The QUANTITATIVE side of the ζ bound needed the degree accounting
--- of the former `Index/Degree.lean`, which went with the ideal-protocol layer; what is kept
--- here is the qualitative theorem.
-Kimchi.Index.satisfies_of_evalCheck
-
--- The bad sets' cardinality bounds, rooted as the anti-vacuity companions of the entry
--- above: `α ∉ badAlphas` says nothing if `badAlphas` could be the whole field. These pin the
--- α bad set at `≤ n·(K−1)` and the ζ bad set at `≤ D`, which is what makes the exclusion a
--- genuine restriction and gives the counting its probabilistic *reading* — which is a remark
--- about the statements, never part of one.
-Kimchi.card_badAlphas_le
-Kimchi.card_badZetas_le
-Kimchi.SZ.card_badComb_le
-
--- The index's derived columns — the selectors, σ address columns and coefficient columns the
--- verifying key commits to, and the agreement between the σ interpolants and the wiring.
--- `check_index_fixture.sh` replays these on production data.
-Kimchi.Index.selectorPoly
-Kimchi.Index.coeffPoly
-Kimchi.Index.coeffRow
-Kimchi.Index.sigmaPoly
-Kimchi.Index.sigmaAddrRow
-Kimchi.Index.sigmaPoly_eq_wiring
-Kimchi.sigmaPermCol
-
--- The column encoding: interpolants, their degree bound, and the self-evaluation identity.
-Kimchi.degree_columnPoly_lt
-Kimchi.columnPoly_eval_self
-
--- Permutation-side identities not reached from the copy conclusion: the Lagrange numerator's
--- division-free form (the boundary pins read it) and the indicator decomposition.
-Kimchi.Permutation.lagNumer_mul_sub
-Kimchi.Permutation.columnPoly_eq_sum_indicator
-
--- The α-layout of the linearization: the aggregate combination read as an indexed sum.
-Kimchi.Protocol.Linearization.alphaCombo_eq_sum_getD
-
--- The five members of `ftEval0` as separate objects, and the equation assembling them.
--- The members themselves are live through `ftEval0` and so stay unlisted; the equation is
--- rooted because it has no consumer HERE — it is the seam a circuit-side development
--- assembles across, discharging each member against its own name.
-Kimchi.Protocol.Linearization.ftEval0_eq
-
--- The permutation argument's own conclusion: grand products agreeing at one good challenge
--- pair force the witness to take equal values across every wire of the unmasked region.
--- `copy_soundness_of_dvd`'s abstract core and the GrandProduct multiset layer are live
--- through the index-level form.
-Kimchi.Index.copy_soundness_of_dvd
-
--- What it means for a witness table to satisfy an index: the definition (no hand-written
--- checker — `decide` is the checker, via the derived `Decidable` instance rooted in the
--- script-surface block below). Reachable from the characterization, rooted anyway as the
--- landing point for any future statement relating a compiled constraint system to the
--- circuit a verifying key describes.
-Kimchi.Index.Satisfies
-
--- The generic gate's reflection pair and the public-input fold.
-Kimchi.Gate.Generic.holds_iff
-Kimchi.Gate.Generic.withPublic_holds_iff
-
--- What it means for a witness table to satisfy an index: the definition (no hand-written
--- checker — `decide` is the checker, via the derived `Decidable` instance rooted in the
--- script-surface block below). The landing point for any future statement relating a
--- compiled constraint system to the circuit a verifying key describes.
-Kimchi.Index.Satisfies
-
--- The verifier's body in closed form (`Verifier/Reflect.lean`): every intermediate of
--- `kimchiVerify` as a named total function of the checked records. These lost their only
--- in-tree consumer when the soundness development was retired, and are rooted deliberately
--- rather than deleted: they are THE SPEC ANCHORS a circuit implementation of the verifier is
--- proved faithful to (see the in-circuit-verifier arc). Stating a fragment's soundness
--- against `runOracles`/`runFrOracles`/`runPScalar`/`runFtComm` needs no new spec object, which is
--- exactly what this layer exists for. The seven public forms reach the private ladder
--- (`runZeta*`, `runFComm`, `runFtEval0P`, `runLinEvals`, `runInputP`) through the closure.
-Kimchi.Verifier.runOracles
-Kimchi.Verifier.runPubEvals
-Kimchi.Verifier.runFrOracles
-Kimchi.Verifier.runPScalar
-Kimchi.Verifier.runFtComm
-Kimchi.Verifier.runStreamP
-Kimchi.Verifier.runInput
-
--- The fr-sponge seam the circuit side lands on: `frOracles` as the low 128 bits of the two
--- raw squeezes over `frTranscript` (`frPrechallenges`, the form `Pickles.FopReadsWire` lands on).
-Kimchi.Verifier.frOracles_eq_frPrechallenges
-
--- The public-input-commitment MSM re-association the pickles x_hat glue lands on:
--- `publicCommitment` as a per-chunk `(… .map …).sum + h`, an order-free fold rewrite.
--- Consumed from pickles (the x_hat side lemma).
-Kimchi.Verifier.publicCommitment_eq_sum
-
--- Zero cells appended to a nonempty public input, within the size guard, change nothing the
--- verifier computes. A deployed statement layout can end in cells that are constant zero and
--- that no circuit reads (the wrap statement's feature flags and lookup option, with every
--- feature off); this is why a circuit-side statement names only the cells it reads
--- (pickles, `stepPublicInput`).
-
--- The executable verifier, the wire parsers, and the rest of the surface the fixture
--- drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
--- proofs; the parsers turn dumped wire data into the checked records; the certificates
--- and row forms are what `check_perm_fixture.sh` decides on production data). Nothing in
--- the library consumes these -- the scripts do, so the dead-code driver additionally
--- checks each name in this block appears in a scripts/ file (`-- synthesis` lines are
--- exempt: instances are found by class resolution, not by name).
--- script-surface:begin
-Kimchi.Verifier.kimchiVerify
-Kimchi.Verifier.Wire.KimchiProof.check
-Kimchi.Verifier.Wire.KimchiVK.check
--- The PureScript proof cache, decoded into the wire records: consumed by
--- kimchi/scripts/check_cache_decode.lean and pickles/scripts/check_halves.lean.
-Kimchi.Fixture.Cache.parseFile
-Kimchi.Fixture.Cache.Entry
-Kimchi.Fixture.Cache.parseVK
-Kimchi.Fixture.Cache.parseProof
-Kimchi.Verifier.Wire.runNc
-Kimchi.Fixture.parseVK
-Kimchi.Fixture.parseKimchiProof
-Kimchi.Fixture.parseComm
-Kimchi.Fixture.PS.Instance
-Kimchi.Fixture.PS.build
-Kimchi.Fixture.PS.parseComparison?
-Kimchi.Fixture.PS.parseComparisonCs?
-Kimchi.Fixture.PS.fpSide -- the step column's constants, scripts/check_cs.lean and check_ps_witness.lean
-Kimchi.Fixture.PS.fqSide -- the wrap column's constants, scripts/check_cs.lean
-Kimchi.Index.build?
-Kimchi.Index.instDecidableSatisfies -- synthesis: decide (Satisfies ..) in check_ps_witness.lean
-Kimchi.Permutation.primitiveRootCertificate
-Kimchi.Permutation.cosetShiftsCertificate
-Kimchi.Permutation.shiftSideRow
-Kimchi.Permutation.sigmaSideRow
--- script-surface:end
-
--- What the executable checks MEAN. The fixture drivers run the decidable forms; these are
--- the theorems that give those runs semantic content, rooted alongside them: the gate
--- reflection bridges (`ok = true` iff the gate's relational spec `Holds`), and the
--- permutation certificate bridges (a passing certificate implies the specification Prop).
--- The `ok` checkers themselves are live through their `ok_iff` statements.
+-- Gate faithfulness: the boolean checker reflects the constraint relation (`ok_iff`), the
+-- constraints compute the intended operation (`sound`), and the deployed per-curve entry
+-- points those fold up to.
 Kimchi.Gate.AddComplete.ok_iff
 Kimchi.Gate.EndoMul.ok_iff
 Kimchi.Gate.EndoScalar.ok_iff
+Kimchi.Gate.satisfies_iff
 Kimchi.Gate.Poseidon.ok_iff
+Kimchi.Gate.EndoMul.pallas_endoMul
+Kimchi.Gate.EndoMul.sound
+Kimchi.Gate.EndoMul.vesta_endoMul
+Kimchi.Gate.EndoScalar.chain_range_unique
+Kimchi.Gate.EndoScalar.chain_toField
+Kimchi.Gate.EndoScalar.crumbsOf_zero
+Kimchi.Gate.EndoScalar.decomposeA_nil
+Kimchi.Gate.EndoScalar.decomposeB_nil
+Kimchi.Gate.EndoScalar.endoScalar_unique
+Kimchi.Gate.EndoScalar.fp_rangeCheck128_sound
+Kimchi.Gate.EndoScalar.fq_rangeCheck128_sound
+Kimchi.Gate.EndoScalar.nReconstruct_nil
+Kimchi.Gate.Generic.sound
+Kimchi.Gate.Poseidon.fp_poseidonChain_blockCipher
+Kimchi.Gate.Poseidon.fq_poseidonChain_blockCipher
+Kimchi.Gate.VarBaseMul.mem_forbiddenValues_of_dvd
+Kimchi.Gate.VarBaseMul.runBits_length
+Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
+Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
 Kimchi.Gate.VarBaseMul.ok_iff
-Kimchi.Permutation.isPrimitiveRoot_of_certificate
-Kimchi.Permutation.cosetShifts_of_certificate
+
+-- The arithmetization: satisfiability against the committed polynomial family, the
+-- permutation argument and the Schwartz-Zippel separation.
+Kimchi.columnPoly_eval_self
+Kimchi.Index.satisfies_iff_fullFamily_dvd
+Kimchi.Index.satisfies_of_evalCheck
+Kimchi.Index.coeffPoly
+Kimchi.Index.selectorPoly
+Kimchi.Index.sigmaPoly_eq_wiring
+Kimchi.sigmaPermCol
+Kimchi.Permutation.columnPoly_eq_sum_indicator
+Kimchi.Permutation.lagNumer_mul_sub
 Kimchi.Permutation.shiftSide_eval_row
 Kimchi.Permutation.sigmaSide_eval_row
+Kimchi.card_badAlphas_le
+Kimchi.card_badZetas_le
 
--- Demo defs consumed by the kimchi-demo executable (Main.lean) and the files' own
--- `#eval`/`example` regression sections — consumers the constant walk cannot see.
-
--- Bit-vector values (Kimchi/Bits.lean): the one ℕ reading of an LSB-first bit list,
--- shared by the gate semantics and the circuit DSL's canonicity locks. The consumer is
--- the snarky package, so the walk inside kimchi cannot see it.
-Kimchi.natLsbVal
-Kimchi.natLsbVal_lt
-Kimchi.natLsbVal_ofFn_testBit
-Kimchi.natLsbVal_take_drop
-Kimchi.natLsbVal_eq_zero
-Kimchi.natLsbVal_lt_of_drop_false
-
--- The EndoScalar recoding, for the circuit layer: base-4 digit recovery (the
--- decomposition a satisfying gate exposes is unique) and the identity of the wire
--- sponge's endo-expansion with the gate's recoding. Both consumed from snarky.
-Kimchi.Gate.EndoScalar.endoExpand_eq_toField
-Kimchi.Gate.VarBaseMul.bitsVal_eq_natLsbVal
+-- Consumed by the CI check scripts rather than by the library.
+-- script-surface:begin
+Kimchi.Index.instDecidableSatisfies -- synthesis: found by class resolution, never by name
+Kimchi.Verifier.Wire.KimchiProof.check
+Kimchi.Verifier.Wire.KimchiVK.check
+Kimchi.Verifier.Wire.runNc
+Kimchi.Fixture.Cache.parseFile
+Kimchi.Fixture.parseKimchiProof
+Kimchi.Fixture.parseVK
+Kimchi.Fixture.PS.build
+Kimchi.Fixture.PS.fpSide
+Kimchi.Fixture.PS.fqSide
+Kimchi.Fixture.PS.parseComparison?
+Kimchi.Fixture.PS.parseComparisonCs?
+-- script-surface:end

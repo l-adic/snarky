@@ -15,13 +15,20 @@ The gate additionally checks each such name textually appears in some scripts/ f
 blocks cannot rot into general exemption dumps. A trailing `-- synthesis: ...` comment
 exempts a line from the textual check (instances are found by class resolution, not by name).
 
-Every package is audited. `snarky/roots.txt` declares the DSL's port surface (the
-PS-export mirrors, the Lean-only laws, and the exhibits), so `Snarky.*` declarations sit
-under the same dead-zero contract as the rest of the tree; its internal machinery must stay
-reachable from that declared surface. `pickles/roots.txt` is the tightest manifest: its
-roots are the axiom gate's four results, and the whole package — the token language, the
-machine, the certificates — must stay reachable from them. That also discharges the
-kimchi lemmas (`Evals.map` and the naturality laws) whose only consumer is pickles.
+Every package is audited. A root is in a manifest for one of four reasons, and the manifests'
+sections say which:
+
+* the two pickles capstones (`stepProof_kimchiVerify_vesta`, `wrapProof_kimchiVerify_pallas`),
+  from which the whole in-circuit verifier must stay reachable;
+* a gadget's soundness or completeness result — kept even where nothing consumes it yet, so
+  that a gadget and its proofs stand or fall together;
+* a name one of the CI check scripts consumes (the `script-surface` blocks);
+* a declaration the walk cannot see: an `rfl` simp lemma (used from the simp set, it leaves
+  no constant in a proof term), a coercion instance the elaborator applies, or tactic code.
+  These are rooted by hand, in a block that says so.
+
+`pasta/roots.txt` has no roots of its own: the trust base is reached through the packages
+above it.
 
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/

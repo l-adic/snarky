@@ -1,48 +1,17 @@
--- API root set for the poseidon package (the sponge specification + fixture kit).
--- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh). Everything here
--- is specification (validated against proof-systems vectors by scripts/), not theorems.
+-- API root set for the poseidon package: the permutation, the duplex sponge, the FqSponge
+-- consumer layer and the SvdW map-to-curve, plus the shared fixture kit.
 
--- The permutation/duplex automaton and the production parameter tables. Triple is
--- the width-3 state vocabulary; fullRounds the tables' 55-round length.
-Poseidon.Triple
-Poseidon.fullRounds
-Poseidon.init
-Poseidon.absorb
-Poseidon.squeeze
-Poseidon.squeezeN
-Poseidon.fqParams
-Poseidon.fpParams
-
--- The field-pair FqSponge consumer layer, instantiated per curve.
-Poseidon.FqVesta.spec
-Poseidon.FqPallas.spec
-
--- script-surface:begin
--- The production sponge's named squeeze operations (`challenge`, `squeeze_challenge`):
--- `challengeNat` cast, resp. endo-expanded. The verifier's schedules apply those steps
--- themselves (`Kimchi.Verifier.fqRun`, `FqRun.expand`); these stay as the operations the
--- trace fixtures are replayed against by scripts/check_fq_sponge.lean.
-Poseidon.FqSponge.challenge
-Poseidon.FqSponge.squeezeChallenge
--- script-surface:end
-
--- The SvdW map-to-curve.
-Poseidon.GroupMapVesta.toGroup
-Poseidon.GroupMapPallas.toGroup
-
--- The block-mode hash, validated against the duplex automaton by hash_eq_squeeze.
-Poseidon.RandomOracle.initialState
-Poseidon.RandomOracle.update
-Poseidon.RandomOracle.digest
-Poseidon.RandomOracle.hash
+-- Invisible to the reachability walk, so rooted by hand: `rfl` simp lemmas (used from the
+-- simp set, they leave no constant in a proof term), coercion instances the elaborator
+-- applies, and the tactic implementations the completeness proofs call.
 Poseidon.RandomOracle.hash_eq_squeeze
 
--- The shared fixture kit (JSON decoders + the cases-x-ops trace driver).
-FixtureKit.parseNat
-FixtureKit.parseZMod
-FixtureKit.parseArrOf
-FixtureKit.parsePair
-FixtureKit.parsePoint
-FixtureKit.parseSWPoint
-FixtureKit.Trace.run
+-- Consumed by the CI check scripts rather than by the library.
+-- script-surface:begin
 FixtureKit.Trace.check
+Poseidon.squeezeN
+Poseidon.FqSponge.challenge
+Poseidon.FqSponge.squeezeChallenge
+Poseidon.GroupMapPallas.toGroup
+Poseidon.GroupMapVesta.toGroup
+-- script-surface:end

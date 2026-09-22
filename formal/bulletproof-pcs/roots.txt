@@ -1,80 +1,20 @@
--- API root set for the bulletproof-pcs package (the IPA polynomial commitment).
--- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh), which unions
--- every package's roots.txt. The axiom audit lives in scripts/check_axioms.lean.
---
--- This package is a SPECIFICATION: the abstract scheme and the executable Pasta wire
--- verifier, with no soundness claim attached. The soundness development it once carried
--- (abstract opening soundness, binding, and the forking/knowledge-soundness layer over
--- Zcash/ironwood) was retired; see git log for the tree.
+-- API root set for the bulletproof-pcs package: the IPA commitment and its executable Pasta
+-- wire verifier. A specification, no soundness claim; what is not consumed by the pickles
+-- capstones through `Pickles`, or by a check script, is not kept.
 
--- The executable wire verifier: the cold entry point, and the warm-sponge restart that
--- `Kimchi.Verifier.kimchiVerify` finishes on.
-Bulletproof.Ipa.verify
-Bulletproof.Ipa.verifyFrom
-Bulletproof.Ipa.verifyWith
-
--- The Fiat-Shamir transcript the verifier derives its challenges from.
-Bulletproof.Ipa.transcriptFrom
-Bulletproof.Ipa.roundChallenges
-Bulletproof.Ipa.shiftScalar
-
--- The prechallenge level of the transcript and the Schnorr equation at given advice, the
--- forms a circuit implementation of `check_bulletproof` is read against.
-Bulletproof.Ipa.ipaSqueezes
-Bulletproof.Ipa.ipaPrechallenges
-Bulletproof.Ipa.ipaRound_foldl
-Bulletproof.Ipa.schnorrAt
-Bulletproof.Ipa.verifyWith_eq
-
--- The batch layer the verifier reads its claims through, and the MSM underneath it.
-Bulletproof.Ipa.cipOf
-Bulletproof.Ipa.combineCommitments
-Bulletproof.Ipa.msm
-Bulletproof.Ipa.Input.pointFn
-Bulletproof.Ipa.Input.evalFn
-
--- The abstract scheme the wire verifier is stated over: commitment, the two opening
--- relations, the pointwise and batched acceptance predicates, and the challenge
--- polynomial.
-Bulletproof.commitGen
-Bulletproof.combinedInnerProduct
-Bulletproof.combinedB
-Bulletproof.bPoly
-Bulletproof.bPolyCoefficients
-
--- The chunk layer, and the identities that give it content: a chunked commitment and a
--- chunked inner product agree with their flattenings, and a combined evaluation vector
--- pairs as the r-weighted sum of point evaluations.
-
--- Polynomial chunking: a chunk evaluates as the slice it was cut from, a polynomial is
--- the weighted sum of its chunks, and the assembly round-trips within its degree bound.
-
--- The two deployed curve dictionaries the wire verifier is instantiated at, and their
--- point abbrevs. Consumed by downstream packages (kimchi instantiates `IpaVesta.curve`),
--- so the walk inside this package cannot see them.
-Bulletproof.IpaVesta.curve
-Bulletproof.IpaPallas.curve
-
--- The surface the fixture drivers and check gates exercise. Nothing in the library
--- consumes these -- the scripts do, so the dead-code driver additionally checks each
--- name in this block appears in a scripts/ file (`-- synthesis` lines are exempt:
--- instances are found by class resolution, not by name).
+-- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
-Bulletproof.Fixture.parseSRS
-Bulletproof.Fixture.parseSRSAt
-Bulletproof.Fixture.parsePt
-Bulletproof.Fixture.parseRaw
-Bulletproof.Fixture.parseRawBatch
+Bulletproof.Ipa.Wire.Input.check
+Bulletproof.Ipa.verify
 Bulletproof.Fixture.Raw.toInput
 Bulletproof.Fixture.RawBatch.toFlatInput
+Bulletproof.Fixture.lagrangeBasisCached
+Bulletproof.Fixture.parseRaw
+Bulletproof.Fixture.parseRawBatch
+Bulletproof.Fixture.parseSRS
 Bulletproof.Fixture.recombinePoint
 Bulletproof.Fixture.recombineScalar
 Bulletproof.Fixture.segmentCombinePoint
 Bulletproof.Fixture.segmentCombineScalar
--- The SRS the PureScript suite proves against, read off its file, and the Lagrange basis a
--- wire key needs computed from it: consumed by pickles/scripts/check_halves.lean.
 Bulletproof.Fixture.SRSLoader.loadSRS
-Bulletproof.Fixture.lagrangeBasisCached
-Bulletproof.Ipa.Wire.Proof.check
-Bulletproof.Ipa.Wire.Input.check
 -- script-surface:end
