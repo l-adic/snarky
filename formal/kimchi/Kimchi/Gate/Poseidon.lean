@@ -1,31 +1,20 @@
 import Mathlib
 
-/-! # The kimchi `Poseidon` gate (5 rounds per row).
+/-! # The kimchi `Poseidon` gate
 
-Transcribed from proof-systems `.../polynomials/poseidon.rs` (15 constraints = 5 rounds × 3
-state elements). Each round maps the 3-element state through
-`state' = MDS · sbox(state) + roundConstants`, with the S-box `sbox(x) = x⁷` (Pasta
-`PERM_SBOX = 7`) and a 3×3 `MDS` matrix carried as a PARAMETER (`Mds F`): production
-evaluates the gate with `G::sponge_params().mds`, a DIFFERENT table per curve (`fp_kimchi`
-for Vesta proofs, `fq_kimchi` for Pallas proofs), so the matrix is gate data, not gate
-constants — exactly like `EndoMul`'s endomorphism coefficient. The five rounds chain
-`s0 → s1 → s2 → s3 → s4 → s5`, so one gate row applies five permutation rounds.
+Transcribed from proof-systems `kimchi/src/circuits/polynomials/poseidon.rs`. One row applies
+five rounds of the Poseidon permutation to a 3-element state, chaining the states `s0` through
+`s5`; each round is `round`, the S-box `sbox` followed by the MDS matrix and the round
+constants. The gate has 15 constraints, three per round.
 
-At the row level the spec is internal: soundness (`sound`) is that a satisfying witness's output
-state is the 5-round permutation `perm` of its input state — `perm` being defined in this file —
-and completeness (`complete`) is that the honest witness built by iterating `round` satisfies the
-constraints. One layer up the gate *does* have an external spec, and it is not a Mathlib
-structure but production data. `Gate/Semantics/Poseidon.lean` proves that the deployed
-**eleven-row chain** computes `Poseidon.blockCipher` at the `fq_kimchi` / `fp_kimchi` parameters:
-the 55-round `mina_poseidon` permutation the duplex sponge runs, which `Poseidon.FqSponge` drives
-to produce every Fiat–Shamir challenge, and which `poseidon/scripts/check_sponge_vectors.sh`
-validates against recorded production traces. `55 = 11 × 5` exactly, so the eleven rows of five
-rounds cover the permutation with no ragged tail.
+The MDS matrix is a parameter (`Mds`), not a constant: production evaluates the gate at a
+different matrix per curve, carried as `Kimchi.Index.mds`. The round constants `rc` are the
+gate's coefficient row.
 
-The witness holds the six 3-element states `s0 .. s5` (`s0` = input, `s5` = output); the 15
-round constants are the gate's coefficient row, supplied as `rc : Fin 5 → F × F × F`. The
-mapping of these states/constants onto the dumped 15-column row is a *checker* concern and lives
-with the ingestion layer, not here. -/
+The states' layout over the current and next rows, and the constants' over the coefficient
+cells, are `Kimchi.Lift.Gate.Poseidon.cellMap` and `Kimchi.Lift.Gate.Poseidon.rcMap`.
+`Gate/Semantics/Poseidon.lean` proves a satisfying row computes `perm`, and that the deployed
+eleven-row chain computes `Poseidon.blockCipher`. -/
 
 namespace Kimchi.Gate.Poseidon
 
@@ -33,8 +22,7 @@ variable {F : Type*}
 
 /-! ## The 3×3 MDS matrix, as gate data. -/
 
-/-- The 3×3 MDS matrix of the round function — per-curve data
-(`G::sponge_params().mds`), one named field per entry. -/
+/-- The 3×3 MDS matrix of the round function, one field per entry. -/
 structure Mds (F : Type*) where
   /-- The MDS matrix entry at row 0, column 0. -/
   m00 : F
@@ -69,7 +57,7 @@ def Mds.map {R S : Type*} (f : R → S) (M : Mds R) : Mds S where
 
 /-! ## The round function and the 5-round permutation. -/
 
-/-- The S-box: `x ↦ x⁷` (Pasta `PERM_SBOX = 7`). -/
+/-- The S-box `x ↦ x⁷`. -/
 def sbox [CommRing F] (x : F) : F := x ^ 7
 
 /-- One full round: `state' = MDS · sbox(state) + roundConstants`. -/
@@ -122,9 +110,8 @@ def constraints [CommRing F] (M : Mds F) (rc : Fin 5 → F × F × F) (w : Witne
     w.s5.1 - (round M w.s4 (rc 4)).1, w.s5.2.1 - (round M w.s4 (rc 4)).2.1,
     w.s5.2.2 - (round M w.s4 (rc 4)).2.2 ]
 
-/-- Naturality of the constraint list: a ring hom `f` distributes over all 15 constraint
-    expressions, so mapping `f` over `constraints rc w` equals the constraints of the mapped
-    round constants and mapped witness. -/
+/-- Naturality: mapping a ring hom `f` over `constraints` gives the constraints at the mapped
+    matrix, round constants and witness. -/
 theorem constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S)
     (M : Mds R) (rc : Fin 5 → R × R × R) (w : Witness R) :
     (constraints M rc w).map f
@@ -132,7 +119,7 @@ theorem constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S)
           (Witness.map f w) := by
   simp [constraints, round, sbox, Witness.map, Mds.map]
 
-/-- RELATIONAL spec: all 15 constraint expressions vanish. -/
+/-- The relational spec: every constraint expression vanishes. -/
 def Holds [CommRing F] (M : Mds F) (rc : Fin 5 → F × F × F) (w : Witness F) : Prop :=
   ∀ e ∈ constraints M rc w, e = 0
 

@@ -3,30 +3,23 @@ import Kimchi.Permutation.Copy
 /-!
 # The wiring instantiation: discharging the copy-soundness hypotheses
 
-`Permutation.copy_soundness_of_dvd` consumes three per-index facts: injectivity of
-the cell addressing, the row semantics of the sigma polynomials, and a wiring permutation
-of the unmasked region. This file produces all three from the data a kimchi index
-actually carries:
+`Permutation.copy_soundness_of_dvd` consumes three per-index facts: injective cell
+addressing, the row semantics of the sigma polynomials, and a wiring permutation of the
+unmasked region. This file produces all three from the data a kimchi index carries:
 
-* **Addressing** (`addr`, `addr_injective`): a cell `(i, j)` of the full `7 × n` grid has
-  the address `shiftᵢ · ωʲ`. Injectivity follows from the shifts being nonzero and
-  representing *distinct cosets* of `⟨ω⟩` (`CosetShifts` — the specification kimchi's
-  `Shifts::new` sampling enforces: `shiftᵢ = shiftⱼ · ωᵉ` only for `i = j`).
+* **Addressing** (`addr`): cell `(i, j)` of the full `permCols × n` grid lives at
+  `shiftᵢ · ωʲ`. It is injective when the shifts are nonzero and represent distinct cosets
+  of `⟨ω⟩` (`CosetShifts`).
+* **The wiring** (`restrictCells`): a full-grid permutation that preserves the unmasked
+  region (`RegionPreserving`) restricts to a permutation of the unmasked cells.
+* **The sigma columns** (`sigmaPoly`): interpolants of the committed σ cells, so their row
+  semantics is definitional on the whole domain.
 
-* **The wiring** (`restrictCells`): the index wires the full grid, and kimchi's wiring
-  never crosses into the zero-knowledge rows; a full-grid permutation preserving the
-  unmasked region (`RegionPreserving`) restricts to a permutation of the unmasked cells,
-  intertwining the embedding (`embCell_restrictCells`).
-
-* **The sigma columns** (`sigmaPoly`, `eval_sigmaPoly`): the index's sigma polynomials
-  are the interpolants of the wired-to addresses (`columnPoly` through the domain), so
-  their row semantics is definitional on the whole domain.
-
-The headline `Permutation.copy_soundness_wired_of_dvd` composes these through the copy
-core: for an index — coset shifts, a region-preserving wiring, interpolated sigma
-columns — and an accepted quotient check at a single challenge pair `(β, γ)` avoiding
-the counted bad sets, the witness takes equal values across every wire of the unmasked
-region.
+The headline `copy_soundness_wired_of_dvd` composes these: for an accepted quotient check
+at one challenge pair `(β, γ)` avoiding the counted bad sets, the witness takes equal values
+across every wire of the unmasked region. The completeness section proves the grand
+products agree on a copy-invariant witness and that a nondegenerate challenge grid exists;
+the last section gives the executable row forms and certificates the fixture check runs.
 -/
 
 namespace Kimchi.Permutation
@@ -43,15 +36,14 @@ variable {F : Type*} [Field F]
 def addr {n : ℕ} (ω : F) (shifts : Fin permCols → F) (c : Fin permCols × Fin n) : F :=
   shifts c.1 * ω ^ (c.2 : ℕ)
 
-/-- The coset specification of the shifts (`Shifts::new`): each is nonzero, and they
-represent pairwise-distinct cosets of `⟨ω⟩` — one shift is a `⟨ω⟩`-multiple of another
-only trivially. -/
+/-- The coset specification of the shifts: each is nonzero, and `shiftᵢ = shiftⱼ · ωᵉ` only
+for `i = j`. -/
 structure CosetShifts (ω : F) (shifts : Fin permCols → F) : Prop where
   ne_zero : ∀ i, shifts i ≠ 0
   coset_distinct : ∀ i j : Fin permCols, ∀ e : ℕ, shifts i = shifts j * ω ^ e → i = j
 
-/-- **Cell addresses are injective.** Distinct cosets separate the columns; primitive-root
-power injectivity separates the rows within a coset. -/
+/-- Cell addresses are injective: distinct cosets separate the columns, powers of the
+primitive root separate the rows. -/
 private theorem addr_injective {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
     {shifts : Fin permCols → F}
     (hs : CosetShifts ω shifts) :
@@ -123,19 +115,16 @@ private theorem embCell_restrictCells (σpFull : Equiv.Perm (Fin permCols × Fin
 
 /-! ## The sigma columns -/
 
-/-- The committed σ-cell value at row `j`: the wired-to address, ZEROED on the interior
-mask rows `[n − zkRows + 2, n − 1)` — production "Zero out the sigmas in the zk rows,
-to ensure that the permutation aggregation is quasi-random for those rows"
-(constraints.rs:538–544). These are exactly the rows where the three-factor
-`permutation_vanishing_polynomial` lets the recurrence run through the mask; the range
-is EMPTY at `zkRows = 3`, which is what kept every `zkRows = 3` fixture blind to it. -/
+/-- The committed σ-cell value at row `j`: the wired-to address, zeroed on the interior
+mask rows `[n − zkRows + 2, n − 1)`. These are the mask rows where the recurrence still
+holds, since `zkpm` has only three roots; the range is empty at `zkRows = 3`. -/
 private def sigmaCell (ω : F) (zkRows : ℕ) (shifts : Fin permCols → F)
     (σpFull : Equiv.Perm (Fin permCols × Fin n)) (i : Fin permCols) (j : Fin n) : F :=
   if n - zkRows + 2 ≤ (j : ℕ) ∧ (j : ℕ) < n - 1 then 0
   else addr ω shifts (σpFull (i, j))
 
-/-- The index's sigma polynomials: the interpolants, through the domain, of the
-committed σ cells — the wired-to addresses with the interior mask rows zeroed. -/
+/-- The index's sigma polynomials: the interpolants of the committed σ cells over the
+domain. -/
 noncomputable def sigmaPoly (ω : F) (zkRows : ℕ) (shifts : Fin permCols → F)
     (σpFull : Equiv.Perm (Fin permCols × Fin n)) : Fin permCols → Polynomial F :=
   fun i => columnPoly ω (fun j : Fin n => sigmaCell ω zkRows shifts σpFull i j)
@@ -148,8 +137,7 @@ private theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (zkRows : �
       = sigmaCell ω zkRows shifts σpFull i j :=
   eval_columnPoly hω _ j
 
-/-- On the unmasked region the committed cell *is* the wired-to address (the zeroing
-range starts at `n − zkRows + 2`). -/
+/-- On the unmasked region the committed cell is the wired-to address. -/
 private theorem sigmaCell_unmasked {ω : F} {zkRows : ℕ} {shifts : Fin permCols → F}
     {σpFull : Equiv.Perm (Fin permCols × Fin n)} {i : Fin permCols} {j : Fin n}
     (hj : (j : ℕ) < n - zkRows) :
@@ -158,17 +146,11 @@ private theorem sigmaCell_unmasked {ω : F} {zkRows : ℕ} {shifts : Fin permCol
 
 /-! ## Completeness: nondegenerate challenges and the grand-product identity -/
 
-/-- **Challenge nondegeneracy.** No σ-side factor vanishes on ANY row: at `(β, γ)`,
-every cell has `w(c) + γ + β·σcell(c) ≠ 0`, where `σcell` is the COMMITTED cell
-(`sigmaCell`) — the wired-to address on most rows, but ZERO on the interior mask rows
-`[n − zkRows + 2, n − 1)`, where the factor degenerates to `w(c) + γ`. The honest
-accumulator divides by these factors — and with the three-factor `zkpm` the recurrence
-(hence the division) runs through the interior zero-knowledge rows too, so the whole
-grid is quantified, not just the unmasked region: the degenerate rows are exactly the
-newly-included masked ones. Each factor is affine-linear in `(β, γ)`, so the degenerate
-pairs lie on at most `7·n` lines — the small bad locus a Fiat–Shamir sample misses. The
-shift side needs no such hypothesis: once the grand products agree, its nonvanishing
-follows from the σ side's. -/
+/-- **Challenge nondegeneracy.** At `(β, γ)` every cell of the full grid has a nonzero
+σ-side factor `w(c) + γ + β·sigmaCell(c)`. The honest accumulator divides by these factors,
+and its recurrence runs through the interior mask rows (where `sigmaCell` is zero), so the
+whole grid is quantified. Each factor is affine in `(β, γ)`, so the degenerate pairs lie on
+at most `permCols · n` lines. The shift side needs no such hypothesis. -/
 def Nondegenerate (ω : F) (zkRows : ℕ) (w : Fin permCols → Polynomial F) (shifts : Fin permCols → F)
     (σpFull : Equiv.Perm (Fin permCols × Fin n)) (β γ : F) : Prop :=
   ∀ c : Fin permCols × Fin n,
@@ -190,11 +172,9 @@ theorem sigmaSide_eval_ne_zero {ω : F} (hω : IsPrimitiveRoot ω n) {zkRows : �
   rw [hs]
   exact hnd (i, ⟨j, hj⟩)
 
-/-- **The grand products agree on a copy-invariant witness** — the completeness
-direction of the multiset argument, by pure reindexing: with `w(σ c) = w(c)` on the
-unmasked region, the σ-side factor at `c` *is* the shift-side factor at `σ c`, and the
-cell product transports along the wiring permutation (`Equiv.prod_comp`). No challenge
-grid and no Vandermonde content — pointwise in `(β, γ)`. -/
+/-- **The grand products agree on a copy-invariant witness**, at every `(β, γ)`. With
+`w(σ c) = w(c)` on the unmasked region, the σ-side factor at `c` is the shift-side factor at
+`σ c`, so the product reindexes along the wiring (`Equiv.prod_comp`). -/
 theorem prod_shiftSide_eq_prod_sigmaSide {ω : F} (hω : IsPrimitiveRoot ω n)
     (w : Fin permCols → Polynomial F) (shifts : Fin permCols → F)
     (σpFull : Equiv.Perm (Fin permCols × Fin n)) (hp : RegionPreserving zkRows σpFull)
@@ -264,11 +244,9 @@ private theorem exists_injective_avoiding {F : Type*} [Fintype F] [DecidableEq F
   · have hmem : ((e.symm i : t) : F) ∈ t := (e.symm i).2
     exact (Finset.mem_sdiff.mp (ht hmem)).2
 
-/-- **A nondegenerate challenge grid exists** in a large enough field. Each cell
-forbids exactly one `γ` per `β` (the factor is affine-linear in `γ`), so with
-`K = 7·n`: any `K + 1` distinct `β`'s, and `K + 1` distinct `γ`'s dodging the at most
-`(K+1)·K` bad values, give a fully nondegenerate grid — possible once
-`(K+1)² ≤ |F|`. -/
+/-- **A nondegenerate challenge grid exists** once `(K+1)² ≤ |F|`, with `K = 7·n` the cell
+count. Each cell forbids one `γ` per `β`, so `K + 1` distinct `β`s and `K + 1` distinct
+`γ`s dodging the at most `(K+1)·K` bad values suffice. -/
 theorem exists_nondegenerate_grid {F : Type*} [Field F] [Fintype F] [DecidableEq F]
     {n : ℕ} {ω : F} (zkRows : ℕ)
     (w : Fin permCols → Polynomial F) (shifts : Fin permCols → F)
@@ -304,19 +282,16 @@ theorem exists_nondegenerate_grid {F : Type*} [Field F] [Fintype F] [DecidableEq
 
 /-! ## Executable row forms and certificates
 
-The fixture check (`scripts/check_perm_fixture.lean`) replays the argument on production
-data. So that it exercises *these* definitions rather than a parallel copy, the row-level
-forms and the hypothesis certificates live here, each with a proved bridge: the row forms
-are the polynomial definitions evaluated (`shiftSide_eval_row`/`sigmaSide_eval_row`), and
-the decidable certificates imply the specification `Prop`s
-(`cosetShifts_of_certificate`, `isPrimitiveRoot_of_certificate`). -/
+The permutation fixture check replays the argument on production data through these
+definitions. The row forms are the polynomial definitions evaluated
+(`shiftSide_eval_row`, `sigmaSide_eval_row`); the decidable certificates imply the
+specification predicates (`cosetShifts_of_certificate`, `isPrimitiveRoot_of_certificate`). -/
 
-/-- The shift-side row factor product, executably: `∏ᵢ (wᵢ + γ + β·shiftᵢ·x)` over row
-values. -/
+/-- The shift-side row product `∏ᵢ (wᵢ + γ + β·shiftᵢ·x)` over row values. -/
 def shiftSideRow (wRow : Fin permCols → F) (shifts : Fin permCols → F) (β γ x : F) : F :=
   ∏ i, (wRow i + γ + β * shifts i * x)
 
-/-- The σ-side row factor product, executably: `∏ᵢ (wᵢ + γ + β·σᵢ)` over row values. -/
+/-- The σ-side row product `∏ᵢ (wᵢ + γ + β·σᵢ)` over row values. -/
 def sigmaSideRow (wRow σRow : Fin permCols → F) (β γ : F) : F :=
   ∏ i, (wRow i + γ + β * σRow i)
 
@@ -337,9 +312,8 @@ def cosetShiftsCertificate [DecidableEq F] (shifts : Fin permCols → F) (n : �
   decide ((∀ i, shifts i ≠ 0)
     ∧ ∀ i j : Fin permCols, i ≠ j → (shifts i * (shifts j)⁻¹) ^ n ≠ 1)
 
-/-- The certificate implies the coset specification: a relation `shiftᵢ = shiftⱼ·ωᵉ`
-raises to `(shiftᵢ/shiftⱼ)ⁿ = (ωⁿ)ᵉ = 1`, which the certificate excludes off the
-diagonal. -/
+/-- The coset certificate implies `CosetShifts`: `shiftᵢ = shiftⱼ·ωᵉ` gives
+`(shiftᵢ/shiftⱼ)ⁿ = 1`, which the certificate excludes for `i ≠ j`. -/
 theorem cosetShifts_of_certificate [DecidableEq F] {ω : F} {n : ℕ}
     (hω : IsPrimitiveRoot ω n) {shifts : Fin permCols → F}
     (h : cosetShiftsCertificate shifts n = true) : CosetShifts ω shifts := by
@@ -355,9 +329,8 @@ theorem cosetShifts_of_certificate [DecidableEq F] {ω : F} {n : ℕ}
 def primitiveRootCertificate [DecidableEq F] (ω : F) (n : ℕ) : Bool :=
   decide (ω ^ n = 1 ∧ ω ^ (n / 2) ≠ 1)
 
-/-- For `n = 2^k`, the certificate implies primitivity: the order of `ω` divides `2^k`,
-hence is a two-power; were it proper it would divide `n/2`, contradicting the
-certificate. -/
+/-- For `n = 2^k`, the certificate implies primitivity: the order of `ω` is a power of two
+dividing `n`, and a proper one would divide `n/2`. -/
 theorem isPrimitiveRoot_of_certificate [DecidableEq F] {ω : F} {n k : ℕ}
     (hn : n = 2 ^ k) (h : primitiveRootCertificate ω n = true) :
     IsPrimitiveRoot ω n := by
@@ -377,8 +350,7 @@ theorem isPrimitiveRoot_of_certificate [DecidableEq F] {ω : F} {n k : ℕ}
   have hord : orderOf ω = n := by rw [hordm, hmk, hn]
   exact hord ▸ IsPrimitiveRoot.orderOf ω
 
-/-- The certificate with the two-power fact existential — the form a deserializer
-decides. -/
+/-- `isPrimitiveRoot_of_certificate` with the two-power exponent existential. -/
 theorem isPrimitiveRoot_of_certificate' [DecidableEq F] {ω : F} {n : ℕ}
     (hn : ∃ k, n = 2 ^ k) (h : primitiveRootCertificate ω n = true) :
     IsPrimitiveRoot ω n := by
@@ -387,11 +359,9 @@ theorem isPrimitiveRoot_of_certificate' [DecidableEq F] {ω : F} {n : ℕ}
 
 /-! ## The headline -/
 
-/-- **Copy soundness from the index data, divisibility form.** For coset shifts, a
-region-preserving full-grid wiring, and sigma columns interpolating the wired-to
-addresses: if at a single challenge pair `(β, γ)` — avoiding the counted `badBetas` /
-`badGammas` sets of the cells' `(value, address)` pair multisets — the prover supplies
-an accumulator whose three permutation constraints are divisible by `Z_H`, then the
+/-- **Copy soundness from the index data, divisibility form.** For coset shifts and a
+region-preserving wiring: if at one `(β, γ)` outside `badBetas`/`badGammas` of the cells'
+`(value, address)` multisets, `zH` divides all three permutation constraints, then the
 witness takes equal values across every wire of the unmasked region. -/
 theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveRoot ω n)
     (hn : 0 < n) (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
