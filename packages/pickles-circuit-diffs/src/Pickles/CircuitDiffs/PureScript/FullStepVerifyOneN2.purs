@@ -29,6 +29,7 @@ import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
+import Pickles.PlonkChecks (singleChunkEvals)
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (ChunkedCommitment(..))
@@ -110,7 +111,7 @@ fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
               (Vector.generate \j -> asSizedF128 (at (proofStateBase + 10 + getFinite j))) :: Vector 16 _
           , spongeDigest: at (proofStateBase + 29)
           }
-      , allEvals:
+      , chunkedEvals: singleChunkEvals
           { ftEval1: at (evalsBase + 88)
           , publicEvals: { zeta: at evalsBase, omegaTimesZeta: at (evalsBase + 1) }
           , witnessEvals: (Vector.generate (evalPair (evalsBase + 2))) :: Vector 15 _

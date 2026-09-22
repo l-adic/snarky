@@ -18,9 +18,11 @@ module Pickles.Step.FinalizeOtherProof
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable as Foldable1
 import Data.Tuple (Tuple(..), fst)
@@ -33,9 +35,9 @@ import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precom
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
-import Pickles.PlonkChecks (buildEvalList, buildEvalPoint, combinedInnerProduct, extractEvalFields, knownDomainVanishingPolynomial, knownDomainWhiches, maskedChallengeDigest, omegaPowers, permContributionCircuit, permScalarCircuit, squeezeXiR, zkPolynomial)
+import Pickles.PlonkChecks (buildEvalListChunked, buildEvalPoint, collapseChunkedEvalsCircuit, combinedInnerProduct, extractChunkedEvalFields, hornerChunks, knownDomainVanishingPolynomial, knownDomainWhiches, maskedChallengeDigest, omegaPowers, permContributionCircuit, permScalarCircuit, squeezeXiRChunked, zkPolynomial)
 import Pickles.Pseudo as Pseudo
-import Pickles.Types (Evals)
+import Pickles.Types (ChunkedEvals)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
@@ -83,9 +85,10 @@ data DomainSel f
 type Input n d f sf b =
   { -- | The deferred values, from the proof's public input.
     unfinalized :: UnfinalizedProof d f sf b
-  -- | The proof's polynomial evaluations, as private witness. The
-  -- | opening proof belongs to `incrementally_verify_proof`, not here.
-  , allEvals :: Evals f
+  -- | Every chunk of the proof's polynomial evaluations, as private
+  -- | witness. The opening proof belongs to
+  -- | `incrementally_verify_proof`, not here.
+  , chunkedEvals :: ChunkedEvals f
   -- | Proofs-verified mask, for the CIP and the challenge digest.
   , mask :: Vector n b
   -- | The previous proofs' bulletproof challenges, already expanded
@@ -125,7 +128,7 @@ finalizeOtherProofCircuit
   -> Params nd f r2
   -> Input n d (FVar f) sf (BoolVar f)
   -> Snarky f (KimchiConstraint f) r (Output d f)
-finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
+finalizeOtherProofCircuit ops params { unfinalized, chunkedEvals, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
   -- Each candidate domain past the first costs one extra `equals_`
   -- for its mask bit and one extra multiplication in the
   -- vanishing-polynomial mask.
@@ -203,10 +206,10 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
   ---------------------------------------------------------------------------
   -- Sponge: absorb the digests and the evaluations, squeeze xi and r.
   ---------------------------------------------------------------------------
-  { xi: xiActual, r: rActual } <- squeezeXiR
+  { xi: xiActual, r: rActual } <- squeezeXiRChunked
     { spongeDigestBeforeEvaluations: unfinalized.spongeDigestBeforeEvaluations
     , challengeDigest: maskedChallengeDigest mask prevChallenges
-    , allEvals
+    , chunkedEvals
     , endo: endoVar
     }
   xiCorrect <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
@@ -214,12 +217,12 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
   r <- toField @8 rActual endoVar
 
   ---------------------------------------------------------------------------
-  -- The values are discarded; what matters is the `Square`
-  -- constraints they emit. The exponent is `srsLengthLog2`, not
-  -- `domainLog2`.
+  -- Recombine each evaluation's chunks at the two points raised to
+  -- the SRS length. The exponent is `srsLengthLog2`, not `domainLog2`.
   ---------------------------------------------------------------------------
-  void $ pow2PowSquare zeta params.srsLengthLog2
-  void $ pow2PowSquare zetaw params.srsLengthLog2
+  zetaPow <- pow2PowSquare zeta params.srsLengthLog2
+  zetaOmegaPow <- pow2PowSquare zetaw params.srsLengthLog2
+  allEvals <- collapseChunkedEvalsCircuit { zetaPow, zetaOmegaPow } chunkedEvals
 
   ---------------------------------------------------------------------------
   -- PlonK env and ft_eval0. The alpha powers are shared with
@@ -228,8 +231,6 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
   -- `zetaToNMinus1`, then the terms.
   ---------------------------------------------------------------------------
   let
-    pEval0 = allEvals.publicEvals.zeta
-
     evalPoint = buildEvalPoint
       { witnessEvals: allEvals.witnessEvals
       , coeffEvals: map _.zeta allEvals.coeffEvals
@@ -281,6 +282,21 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
     a21 = alphaPow 21
     a22 = alphaPow 22
     a23 = alphaPow 23
+
+  -- The public evaluation at `zeta`, its chunks recombined at
+  -- `zeta^(2^srsLengthLog2)`. With one chunk nothing is emitted here
+  -- and the power is first computed at the plonk check below; with
+  -- more it is computed here, and the plonk check reuses it.
+  { pEval0, zetaToSrsHere } <-
+    let
+      publicZeta = map _.zeta chunkedEvals.publicEvals
+    in
+      if NEA.length publicZeta == 1 then
+        pure { pEval0: NEA.head publicZeta, zetaToSrsHere: Nothing }
+      else do
+        zetaToSrs <- pow_ zeta (Int.pow 2 params.srsLengthLog2)
+        folded <- hornerChunks zetaToSrs publicZeta
+        pure { pEval0: folded, zetaToSrsHere: Just zetaToSrs }
 
   -- The permutation half of `ft_eval0`. `permContributionCircuit` is
   -- shared with the wrap verifier, and `omegaToMinusZkRows` is the
@@ -339,17 +355,17 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
   actualCip <- combinedInnerProduct
     { xi
     , r
-    , evalsZeta: buildEvalList
+    , evalsZeta: buildEvalListChunked
         { sgEvals: Vector.zipWith Tuple mask sgZeta
-        , publicInput: allEvals.publicEvals.zeta
+        , publicInput: map _.zeta chunkedEvals.publicEvals
         , ftEval: ftEval0
-        , evals: extractEvalFields _.zeta allEvals
+        , evals: extractChunkedEvalFields _.zeta chunkedEvals
         }
-    , evalsZetaw: buildEvalList
+    , evalsZetaw: buildEvalListChunked
         { sgEvals: Vector.zipWith Tuple mask sgZetaw
-        , publicInput: allEvals.publicEvals.omegaTimesZeta
-        , ftEval: allEvals.ftEval1
-        , evals: extractEvalFields _.omegaTimesZeta allEvals
+        , publicInput: map _.omegaTimesZeta chunkedEvals.publicEvals
+        , ftEval: chunkedEvals.ftEval1
+        , evals: extractChunkedEvalFields _.omegaTimesZeta chunkedEvals
         }
     }
   let expectedCip = ops.unshift deferred.combinedInnerProduct
@@ -382,7 +398,9 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
     , alphaPow21: a21
     }
 
-  actualZetaToSrs <- label "perm_pow_zeta_srs" $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
+  actualZetaToSrs <- case zetaToSrsHere of
+    Just zetaToSrs -> pure zetaToSrs
+    Nothing -> label "perm_pow_zeta_srs" $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
 
   -- The three scalars `ft_comm` scales by, each against its claim
   -- (`Plonk_checks.checked`): `perm`, `zeta^(2^srsLengthLog2)`, `zeta^n`.

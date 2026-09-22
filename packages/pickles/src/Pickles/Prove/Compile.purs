@@ -82,7 +82,7 @@ import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
-import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval)
+import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval, padChunkedEvals, singleChunkEvals)
 import Pickles.ProofsVerified (boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
@@ -208,7 +208,7 @@ type ProveError = EvaluationError
 type SlotCompileEntry :: Int -> Type
 type SlotCompileEntry slotNc =
   { fopDomainLog2s :: Array Int
-  , fopZkRows :: Int
+  , numChunks :: Int
   , vkBlueprint :: SlotVkBlueprint slotNc
   }
 
@@ -282,7 +282,7 @@ slotCompileEntry
   -> SlotCompileEntry slotNc
 slotCompileEntry cfg selfStepDomainLog2s slot =
   { fopDomainLog2s: slotSourceDomainLog2s cfg.branchCount selfStepDomainLog2s slot
-  , fopZkRows: zkRowsForNumChunks (slotNumChunks cfg.stepNumChunks slot)
+  , numChunks: slotNumChunks cfg.stepNumChunks slot
   , vkBlueprint: blueprint
   }
   where
@@ -492,8 +492,8 @@ consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
           , perSlotFopDomainLog2s:
               headFopDomainLog2s
                 :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
-          , perSlotFopZkRows:
-              headEntry.fopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
+          , perSlotNumChunks:
+              headEntry.numChunks :< restShape.stepProveCtx.srsData.perSlotNumChunks
           , perSlotVkBlueprints:
               headEntry.vkBlueprint
                 /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
@@ -551,6 +551,7 @@ consMkStepAdvice
      , slotStepDomainLog2 :: Int
      , slotStepZkRows :: Int
      , slotWrapZkRows :: Int
+     , slotStepNumChunks :: Int
      }
   -> headVkCell
   -- | This slot's advice element, from its statement: the statement
@@ -600,7 +601,7 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
     , wrapPublicInput: slotData.wrapPublicInputArr
     , prevChalPolys: slotData.prevChalPolys
     , wrapPlonkRaw: slotData.wrapPlonkRaw
-    , wrapPrevEvals: slotData.wrapPrevEvals
+    , wrapPrevEvalsChunked: slotData.wrapPrevEvalsChunked
     , wrapBranchData: slotData.wrapBranchData
     , wrapSpongeDigest: slotData.wrapSpongeDigest
     , mustVerify: slotData.mustVerify
@@ -676,7 +677,10 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
           }
 
         fopProofState = Dummy.stepDummyUnfinalizedProof @w bcd
-          { domainLog2: Dummy.wrapDomainLog2ForProofsVerified slotW }
+          { domainLog2: slotParams.slotStepDomainLog2
+          , zkRows: slotParams.slotStepZkRows
+          , numChunks: slotParams.slotStepNumChunks
+          }
           (map SizedF.wrapF bcd.ipaStepChallenges)
 
         baseCaseWrapPI = dummyWrapTockPublicInput @w
@@ -702,7 +706,7 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
             , gamma: bcd.proofDummy.plonk.gamma
             , zeta: bcd.proofDummy.plonk.zeta
             }
-        , wrapPrevEvals: bcd.proofDummy.prevEvals
+        , wrapPrevEvalsChunked: padChunkedEvals slotParams.slotStepNumChunks (singleChunkEvals bcd.proofDummy.prevEvals)
         , wrapBranchData:
             -- `domainLog2` of a wrap statement's branch data holds the
             -- prev's step domain, not its wrap domain; that is what
@@ -715,7 +719,7 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
         , wrapOwnPaddedBpChals:
             Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
         , fopState: fopProofState
-        , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
+        , stepAdvicePrevEvals: padChunkedEvals slotParams.slotStepNumChunks (singleChunkEvals bcd.proofDummy.prevEvals)
         , kimchiPrevChallengesExpanded: dummyIpaChallenges.stepExpanded
         , prevChallengesForStepHash:
             Vector.replicate dummyIpaChallenges.stepExpanded
@@ -816,13 +820,13 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
             , gamma: SizedF.unwrapF prevDv.plonk.gamma
             , zeta: SizedF.unwrapF prevDv.plonk.zeta
             }
-        , wrapPrevEvals: prevData.prevEvals
+        , wrapPrevEvalsChunked: prevData.proof.prevEvalsChunked
         , wrapBranchData: prevData.proof.branchData
         , wrapSpongeDigest: prevData.proof.spongeDigestBeforeEvaluations
         , mustVerify: true
         , wrapOwnPaddedBpChals: prevData.padded.msgWrapChallengesPadded
         , fopState
-        , stepAdvicePrevEvals: prevData.prevEvals
+        , stepAdvicePrevEvals: prevData.proof.prevEvalsChunked
         , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
         , prevChallengesForStepHash: prevData.padded.oldBulletproofChallengesPadded
         }
@@ -1293,7 +1297,7 @@ instance CompilableSpec Unit Unit 0 Unit Unit Unit Unit where
             { blindingH:
                 coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
             , perSlotFopDomainLog2s: Vector.nil
-            , perSlotFopZkRows: Vector.nil
+            , perSlotNumChunks: Vector.nil
             , perSlotVkBlueprints: unit
             }
         , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
@@ -1457,6 +1461,7 @@ instance
         -- domain dispatch varies the domain log2, not the chunk count.
         , slotStepZkRows: zkRowsForNumChunks 1
         , slotWrapZkRows: zkRowsForNumChunks 1
+        , slotStepNumChunks: 1
         }
         where
         bundle = SideloadBundle.requireBundle headVk
@@ -1483,6 +1488,7 @@ instance
         , slotStepZkRows:
             zkRowsForNumChunks (RuntimeSlot.slotNumChunks cfg.stepNumChunks runtimeSlot)
         , slotWrapZkRows: zkRowsForNumChunks 1
+        , slotStepNumChunks: RuntimeSlot.slotNumChunks cfg.stepNumChunks runtimeSlot
         }
 
   shapeProveData cfg wrapCR sideInfo (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
@@ -3317,11 +3323,10 @@ compileMulti handler cfg rules = do
   -- Step 4: shared verifier + tag.
   unique <- newUnique
   let
-    -- The wrap circuit's own domain log2, which the verifier needs;
-    -- the wrap circuit body itself picks per-branch lagrange bases
-    -- through `perBranchLagrangeAt` instead.
-    wrapDomainLog2 =
-      wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
+    -- The wrap circuit's own domain log2, checked above against the
+    -- circuit that was built. An `External` slot over this system
+    -- reads its lagrange basis at this domain.
+    wrapDomainLog2 = actualWrapDomainLog2
 
     verifier = mkVerifier
       { wrapVK: wrapResult.verifierIndex

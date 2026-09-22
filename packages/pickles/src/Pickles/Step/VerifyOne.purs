@@ -26,7 +26,7 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (ChunkedCommitment, StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.Types (ChunkedCommitment, ChunkedEvals, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -73,15 +73,7 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
       , bulletproofChallenges :: Vector tickD (SizedF 128 fv)
       , spongeDigest :: fv
       }
-  , allEvals ::
-      { ftEval1 :: fv
-      , publicEvals :: { zeta :: fv, omegaTimesZeta :: fv }
-      , witnessEvals :: Vector 15 { zeta :: fv, omegaTimesZeta :: fv }
-      , coeffEvals :: Vector 15 { zeta :: fv, omegaTimesZeta :: fv }
-      , zEvals :: { zeta :: fv, omegaTimesZeta :: fv }
-      , sigmaEvals :: Vector 6 { zeta :: fv, omegaTimesZeta :: fv }
-      , indexEvals :: Vector 6 { zeta :: fv, omegaTimesZeta :: fv }
-      }
+  , chunkedEvals :: ChunkedEvals fv
   -- Carried over from the proofs this one itself verified.
   , prevChallenges :: Vector n (Vector tickD fv)
   , prevSgs :: Vector n (AffinePoint fv)
@@ -165,7 +157,7 @@ verifyOne fopParams input ivpParams = do
         , shouldFinalize: coerce (const_ one :: FVar StepField)
         , spongeDigestBeforeEvaluations: ps.spongeDigest
         }
-    , allEvals: input.allEvals
+    , chunkedEvals: input.chunkedEvals
     , mask: input.proofMask
     , prevChallenges: input.prevChallenges
     , domainLog2Var: input.branchData.domainLog2

@@ -86,7 +86,7 @@ compileStepMainTwoPhaseChainMakeZero params = do
           makeZeroRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
-          , perSlotFopZkRows: Vector.nil
+          , perSlotNumChunks: Vector.nil
           , perSlotVkBlueprints: unit
           }
           dummyWrapSg

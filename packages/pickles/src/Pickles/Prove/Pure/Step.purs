@@ -19,6 +19,7 @@ module Pickles.Prove.Pure.Step
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Foldable (for_)
 import Data.Newtype (over, unwrap)
 import Data.Reflectable (class Reflectable)
@@ -29,12 +30,12 @@ import Pickles.DeferredValues (BranchData, PlonkInCircuit, PlonkMinimal, ScalarC
 import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (absorbEvals)
-import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
+import Pickles.PlonkChecks (absorbChunkedEvals, collapseChunkedEvals, mapChunkedEvals)
+import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, combinedInnerProductBatchChunked, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Types as Step
-import Pickles.Types (AllocEvals, ChunkedCommitment(..), Evals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, Evals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, domainGenerator, proofOpeningPrechallenges, proofOraclesRec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofData)
@@ -58,13 +59,10 @@ type ExpandDeferredInput n d =
   { zkRows :: Int
   , srsLengthLog2 :: Int
 
-  -- Collapsed evals; the caller recombines chunks upstream via
-  -- `collapseChunkedEvals`.
-  , allEvals :: Evals StepField
-  -- Public-input evaluation at `zeta`, as a chunk array — a singleton
-  -- at `num_chunks = 1`. Passed unfolded because `ftEval0` folds it
-  -- at `zeta^(2^srsLengthLog2)`.
-  , pEval0Chunks :: Array StepField
+  -- Every chunk of the proof's evaluations. The fr-sponge and the
+  -- combined inner product read the chunks; the plonk scalars and
+  -- `ftEval0` read their recombination at `zeta^(2^srsLengthLog2)`.
+  , chunkedEvals :: ChunkedEvals StepField
 
   , oldBulletproofChallenges :: Vector n (Vector d (SizedF 128 (F StepField)))
 
@@ -120,12 +118,19 @@ expandDeferred input =
     expandChal :: SizedF 128 (F StepField) -> StepField
     expandChal c = toFieldPure (unwrapF c) input.endo
 
+    collapsedEvals = collapseChunkedEvals
+      { rounds: input.srsLengthLog2
+      , zeta: zetaField
+      , zetaOmega: zetaw
+      }
+      input.chunkedEvals
+
     derivePlonkInput =
       { plonkMinimal: input.plonkMinimal
-      , w: map _.zeta (Vector.take @7 input.allEvals.witnessEvals)
-      , sigma: map _.zeta input.allEvals.sigmaEvals
-      , zZeta: input.allEvals.zEvals.zeta
-      , zOmegaTimesZeta: input.allEvals.zEvals.omegaTimesZeta
+      , w: map _.zeta (Vector.take @7 collapsedEvals.witnessEvals)
+      , sigma: map _.zeta collapsedEvals.sigmaEvals
+      , zZeta: collapsedEvals.zEvals.zeta
+      , zOmegaTimesZeta: collapsedEvals.zEvals.omegaTimesZeta
       , shifts: input.shifts
       , generator: input.generator
       , domainLog2: input.domainLog2
@@ -138,8 +143,8 @@ expandDeferred input =
 
     ftEval0Input =
       { plonkMinimal: input.plonkMinimal
-      , allEvals: input.allEvals
-      , pEval0Chunks: input.pEval0Chunks
+      , allEvals: collapsedEvals
+      , pEval0Chunks: map _.zeta (NEA.toArray input.chunkedEvals.publicEvals)
       , shifts: input.shifts
       , generator: input.generator
       , domainLog2: input.domainLog2
@@ -166,7 +171,7 @@ expandDeferred input =
     mainSqueezes = evalPureSpongeM initialSponge do
       absorb input.spongeDigestBeforeEvaluations
       absorb challengesDigest
-      absorbEvals input.allEvals
+      absorbChunkedEvals input.chunkedEvals
       xiRaw <- squeezeScalarChallengePure
       rRaw <- squeezeScalarChallengePure
       pure { xiRaw, rRaw }
@@ -178,10 +183,10 @@ expandDeferred input =
     zetaw = zetaField * input.generator
 
     cipInputRec =
-      { allEvals: input.allEvals
-      , publicEvals: input.allEvals.publicEvals
+      { allEvals: input.chunkedEvals
+      , publicEvals: input.chunkedEvals.publicEvals
       , ftEval0: stepFtEval0
-      , ftEval1: input.allEvals.ftEval1
+      , ftEval1: input.chunkedEvals.ftEval1
       , oldBulletproofChallenges: prevExpanded
       , xi: xiExpanded
       , r: rExpanded
@@ -189,7 +194,7 @@ expandDeferred input =
       , zetaw
       }
 
-    cipActual = combinedInnerProductBatch cipInputRec
+    cipActual = combinedInnerProductBatchChunked cipInputRec
 
     ownExpanded = map expandChal input.rawBulletproofChallenges
 
@@ -235,10 +240,8 @@ type ExpandProofInput n nwp wrapVkChunks =
   , zkRows :: Int
   , srsLengthLog2 :: Int
 
-  -- Evaluations from the wrap proof, collapsed upstream via
-  -- `collapseChunkedEvals`.
-  , allEvals :: Evals StepField
-  , pEval0Chunks :: Array StepField
+  -- Every chunk of the evaluations the wrap proof carries.
+  , chunkedEvals :: ChunkedEvals StepField
 
   , oldBulletproofChallenges :: Vector n (Vector StepIPARounds (SizedF 128 (F StepField)))
 
@@ -310,10 +313,6 @@ type ExpandProofInput n nwp wrapVkChunks =
   , wrapLinearizationPoly :: LinearizationPoly WrapField
 
   -- ===== `perProofWitness` =====
-
-  -- The wrap proof's embedded `prev_evals`: evaluations of the step
-  -- proof it wraps.
-  , stepProofPrevEvals :: AllocEvals (F StepField)
 
   -- Step-side previous bp challenges, already endo-expanded and
   -- padded with dummies to `n` by the caller.
@@ -387,8 +386,7 @@ expandProof input =
     deferredStep = expandDeferred
       { zkRows: input.zkRows
       , srsLengthLog2: input.srsLengthLog2
-      , allEvals: input.allEvals
-      , pEval0Chunks: input.pEval0Chunks
+      , chunkedEvals: input.chunkedEvals
       , oldBulletproofChallenges: input.oldBulletproofChallenges
       , plonkMinimal: input.plonkMinimal
       , rawBulletproofChallenges: input.rawBulletproofChallenges
@@ -643,7 +641,7 @@ expandProof input =
     perProofWitness = Step.PerProofWitness
       { wrapProof: wrapProofKimchi
       , proofState
-      , prevEvals: input.stepProofPrevEvals
+      , prevEvals: mapChunkedEvals F input.chunkedEvals
       , prevChallenges: Vector.toUnfoldable (map UnChecked input.stepPrevChallenges)
       , prevSgs: Vector.toUnfoldable (map mkPallasPt input.stepPrevSgsPadded)
       }
