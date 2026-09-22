@@ -4,8 +4,8 @@
 --
 -- unresolved-names / upstream-files-in-decl-doc are the convention change of #399: a comment
 -- names this tree's code, and an upstream source file is nameable only in a module docstring.
-unresolved-names 499
-upstream-files-in-decl-doc 42
-banned-phrases 61
-oversize 56
-emphasis 6
+unresolved-names 486
+upstream-files-in-decl-doc 41
+banned-phrases 13
+oversize 43
+emphasis 4

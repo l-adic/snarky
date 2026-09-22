@@ -66,10 +66,18 @@ def moduleCap : Nat := 60
 author, and the tracker. -/
 def banned : List (String × String) :=
   [ ("used to", "history"), ("previously", "history"), ("no longer", "history"),
-    ("formerly", "history"), ("originally", "history"), ("we ", "first person"),
-    ("our ", "first person"), ("TODO", "tracker"), ("FIXME", "tracker"),
-    ("XXX", "tracker"), ("HACK", "tracker"), ("obviously", "hedge"),
-    ("clearly ", "hedge"), ("simply ", "hedge") ]
+    ("formerly", "history"), ("originally", "history"), ("obviously", "hedge") ]
+
+/-- Banned as WORDS, not as substrings: `our` must not fire on "four", `we` on "between". -/
+def bannedWords : List (String × String) :=
+  [ ("we", "first person"), ("our", "first person"), ("ours", "first person"),
+    ("todo", "tracker"), ("fixme", "tracker"), ("xxx", "tracker"), ("hack", "tracker"),
+    ("clearly", "hedge"), ("simply", "hedge") ]
+
+/-- The words of a comment, punctuation and markup stripped. -/
+def words (s : String) : List String :=
+  (s.toLower.map (fun ch => if ch.isAlphanum then ch else ' ')).splitOn " "
+    |>.filter (!·.isEmpty)
 
 /-- Our packages' namespace roots. -/
 def ourRoots : List Name :=
@@ -187,6 +195,10 @@ run_cmd do
     for (b, why) in banned do
       if (low.splitOn b).length > 1 then
         phrase := phrase.push s!"{modOf n}\t{userName n}: \"{b}\" ({why})"
+    let ws := words doc
+    for (b, why) in bannedWords do
+      if ws.contains b then
+        phrase := phrase.push s!"{modOf n}\t{userName n}: \"{b}\" ({why})"
     let lines := (doc.splitOn "\n").length
     if lines > declCap then
       oversize := oversize.push s!"{modOf n}\t{userName n}: {lines} lines (cap {declCap})"
@@ -225,6 +237,10 @@ run_cmd do
           let low := text.toLower
           for (b, why) in banned do
             if (low.splitOn b).length > 1 then
+              phrase := phrase.push s!"{f}\tmodule doc: \"{b}\" ({why})"
+          let ws := words text
+          for (b, why) in bannedWords do
+            if ws.contains b then
               phrase := phrase.push s!"{f}\tmodule doc: \"{b}\" ({why})"
           for t in backticked text do
             if isSourceFile t then continue

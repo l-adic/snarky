@@ -60,22 +60,17 @@ Two rules decide most cases:
 A pass is finished when all four hold:
 
 ```sh
-# 1. prose only — this prints nothing
-git diff --no-ext-diff -U0 -- '<the module>' | grep '^[+-]' | grep -v '^[+-][+-]' \
-  | grep -vE '^[+-] *(--|/-|\*|[A-Za-z`*(])' 
-
-# 2. the module still builds
-cd formal && lake build <the module's library>
-
-# 3. the gate passes, with this module's counts lower
-cd formal && scripts/check-comments.sh
-
-# 4. the formatter contract holds
-cd formal && scripts/check-style.sh
+cd formal
+scripts/prose-only.sh <the module's path>   # 1. every code line untouched
+lake build <the module's library>           # 2. it still builds
+scripts/check-comments.sh                   # 3. the gate passes, this module's counts lower
+scripts/check-style.sh                      # 4. the formatter contract holds
 ```
 
 Condition 1 is the discipline that makes the pass reviewable: a comment pass that changes a
-proof is two changes, and the second one hides in the first.
+proof is two changes, and the second one hides in the first. `prose-only.sh` compares the file
+against its committed version with the comments stripped, so re-wrapping, blank lines and
+git's choice of diff algorithm cannot register — only a changed code line can.
 
 ## What not to do
 
@@ -87,3 +82,12 @@ proof is two changes, and the second one hides in the first.
 * Do not grow `formal/scripts/comment-allow.txt`. It holds the column-count notations; a new
   entry needs the user's agreement, since it widens the gate's vocabulary for the whole tree.
 * Do not touch a second module's prose because it is adjacent. Queue it.
+
+## Two things the gate cannot see
+
+* A `--` body comment is invisible to the gate (it reads docstrings). The convention still
+  applies to it; a pass reads the module, not just the queue.
+* In a `/-! … -/` note the declaration's binders are no longer in scope for the gate, so a
+  backticked binder with a capital in it (`hkL`) reads as an unresolved name. Moving a caveat
+  out of a docstring means naming the binder in prose ("the register bound") rather than
+  quoting it.
