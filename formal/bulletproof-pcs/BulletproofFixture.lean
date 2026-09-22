@@ -127,8 +127,7 @@ def recombinePoint (C : Ipa.KimchiCurve) (y : C.ScalarField)
     (chunks : Array C.Point) : C.Point :=
   Ipa.msm C (fun i : Fin chunks.size => chunks.getD i 0) (fun i => y ^ (i : ℕ))
 
-/-- Evaluation recombination, executably: `∑ i, yⁱ · eᵢ` — `eval_eq_sum_chunkPoly`'s
-formula. The identity at one chunk. -/
+/-- Evaluation recombination, executably: `∑ i, yⁱ · eᵢ`. The identity at one chunk. -/
 def recombineScalar (C : Ipa.KimchiCurve) (y : C.ScalarField)
     (chunks : Array C.ScalarField) : C.ScalarField :=
   (List.range chunks.size).foldr (fun i acc => y ^ i * chunks.getD i 0 + acc) 0
@@ -185,7 +184,7 @@ def parseRawBatch (C : Ipa.KimchiCurve) (curveName : String) (j : Json) :
 
 /-- The chunked batch's segment-stream commitment combination (`combine_commitments` at
 `rand_base = 1`), executably: polynomial-outer, chunk-inner, one consecutive `ξ` power
-per segment — `chunkedCombinedCommitment`'s formula. -/
+per segment. -/
 def segmentCombinePoint (C : Ipa.KimchiCurve) (ξ : C.ScalarField)
     (comms : Array (Array C.Point)) : C.Point :=
   (comms.foldl (fun acc chunks =>
@@ -194,8 +193,8 @@ def segmentCombinePoint (C : Ipa.KimchiCurve) (ξ : C.ScalarField)
     ((0 : C.Point), (1 : C.ScalarField))).1
 
 /-- The chunked combined inner product (`combined_inner_product`), executably: segment
-`(i, c)` contributes its evalscale-combined point values at the segment's `ξ` power —
-`chunkedCombinedInnerProduct`'s formula. `evals` is `[poly][point][chunk]`. -/
+`(i, c)` contributes its evalscale-combined point values at the segment's `ξ` power.
+`evals` is `[poly][point][chunk]`. -/
 def segmentCombineScalar (C : Ipa.KimchiCurve) (ξ r : C.ScalarField)
     (evals : Array (Array (Array C.ScalarField))) : C.ScalarField :=
   (evals.foldl (fun (acc : C.ScalarField × C.ScalarField) perPoint =>

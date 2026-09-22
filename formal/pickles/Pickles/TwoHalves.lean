@@ -67,8 +67,8 @@ step proof and at a wrap proof.
 
 ## What this is not
 
-The chain: `sgOk` is a hypothesis here (pickles defers it to the next proof's batch
-opening — `Carry` names the handover and `sgOk_iff_accOk` transports the equation), the
+The chain: `SgOk` is a hypothesis here (pickles defers it to the next proof's batch
+opening), the
 message digests are two entries of `pub` like any other, and the packing of statements across
 the cycle is `verify`'s. This is the per-proof checkpoint, at the key's chunk count; the
 wrap side's instance is at one chunk, production's invariant for a wrap proof.
@@ -383,65 +383,29 @@ def sgOk {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C
   let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
   decide (run.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i]))
 
-/-- `sgOk` reflects `SgOk`. -/
-theorem sgOk_iff {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField) : sgOk σ cvk cp pub = true ↔ SgOk σ cvk cp pub := by
-  simp [sgOk, SgOk]
-
 /-! ## The deferred obligation, carried
 
 Pickles never checks `SgOk` on the proof itself. The proof's `(sg, round challenges)` becomes
 an old accumulator of the next proof on the same curve, whose batch opens it; the circuit in
 between, on the other curve, computes the challenges and passes them through its statement.
-`Carry` names that handover, and `sgOk_iff_accOk` says the deferred equation is then an
-equation on the next proof's input alone. -/
+`carry` decides that handover on two proofs, and `accOk` the deferred equation on the
+accumulator alone. -/
 
-/-- The accumulator equation on an old accumulator alone: its commitment is the challenge
-polynomial of its round challenges over the SRS — `SgOk` with the proof's opening and
-transcript replaced by what the next proof carries. -/
-def AccOk (σ : SRS C.Point) (a : Accumulator C σ.k) : Prop :=
-  a.sg = msm C σ.g (bPolyCoefficients fun i => a.u[i])
-
-/-- The decidable mirror of `AccOk`. -/
+/-- Whether an old accumulator's commitment is the challenge polynomial of its round challenges
+over the SRS: `SgOk` with the proof's opening and transcript replaced by what the next proof
+carries. -/
 def accOk (σ : SRS C.Point) (a : Accumulator C σ.k) : Bool :=
   decide (a.sg = msm C σ.g (bPolyCoefficients fun i => a.u[i]))
 
-/-- `accOk` reflects `AccOk`. -/
-theorem accOk_iff (σ : SRS C.Point) (a : Accumulator C σ.k) : accOk σ a = true ↔ AccOk σ a := by
-  simp [accOk, AccOk]
-
-/-- `cp'` carries `cp`'s deferred obligation as its old accumulator `i`: the accumulator's
-commitment is `cp`'s opening's `sg`, its challenges the wire's round challenges of `cp` — the
-vector `SgOk` commits. Pickles forces this through the message digests of the statements
-between the two proofs; here it is the named hypothesis. -/
-def Carry {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField)
-    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) : Prop :=
-  let run := runInput C σ cvk cp pub
-  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
-  cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1
-
-/-- The decidable mirror of `Carry`. -/
+/-- Whether `cp'` carries `cp`'s deferred obligation as its old accumulator `i`: the
+accumulator's commitment is `cp`'s opening's `sg`, its challenges the wire's round challenges
+of `cp`. -/
 def carry {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField)
     {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) : Bool :=
   let run := runInput C σ cvk cp pub
   let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
   decide (cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1)
-
-/-- `carry` reflects `Carry`. -/
-theorem carry_iff {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField) {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) :
-    carry σ cvk cp pub cp' i = true ↔ Carry σ cvk cp pub cp' i := by
-  simp [carry, Carry]
-
-/-- **The deferred obligation transports.** Under `Carry`, `cp`'s `SgOk` is the accumulator
-equation of what `cp'` carries: checkable on `cp'`'s input, without `cp`. -/
-theorem sgOk_iff_accOk {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField) {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size)
-    (h : Carry σ cvk cp pub cp' i) : SgOk σ cvk cp pub ↔ AccOk σ cp'.olds[i] := by
-  obtain ⟨hsg, hu⟩ := h
-  simp only [SgOk, AccOk, hsg, hu]
 
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
@@ -833,7 +797,7 @@ half runs first, in the wrap circuit (over `Fq`, `wrapSide`, the claims as `Type
 its scalar half one circuit later, in the next step circuit (over `Fp`, `fopStep`, the claims
 as `Type1 (FVar Fp)`, carried through the wrap statement). The sides fix everything but the
 cells; what is left to see is the claim tie, which unfolds to *one integer carried in two
-fields* (`vesta_claim_tie`): the `Fp` cell's value is the `Fq` cell's value as an integer.
+fields*: the `Fp` cell's value is the `Fq` cell's value as an integer.
 There is no canonicity condition (`wrapSide.Canon` is trivial). -/
 
 section StepProof
@@ -861,21 +825,6 @@ def ScalarHalf.step {k nc : ℕ} (V : Valuation Fp)
     (prevChallenges : Vector (Vector (FVar Fp) k) MaxProofsVerified) :
     ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) k nc :=
   ⟨V, fopStep V, claims, evals, mask, prevChallenges⟩
-
-/-- At a step proof the claim tie is the `Fp` cell's value equal to the `Fq` cell's value as
-an integer: both sides unshift at `255` bits, and the unshift is injective. -/
-theorem vesta_claim_tie {Vg : Valuation Fq} {Vs : Valuation Fp}
-    (x : Type1 (FVar Fp))
-    (y : Type1 (FVar Fq)) :
-    (fopStep Vs).decode x = (wrapSide Vg).decode y ↔ x.val.val Vs = ((y.val.val Vg).val : Fp) := by
-  simp only [FopSide.decode, fopStep, stepShiftOps.reading, wrapSide, wrapDecode,
-    Type1.fromShifted, Pasta.Shifted.unshiftType1]
-  constructor
-  · intro h
-    have h2 : (2 : Fp) ≠ 0 := by decide
-    exact mul_left_cancel₀ h2 (add_right_cancel (add_right_cancel h))
-  · intro h
-    rw [h]
 
 end StepProof
 

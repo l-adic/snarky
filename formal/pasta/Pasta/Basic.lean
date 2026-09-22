@@ -15,8 +15,6 @@ base-field size.
 - `pallas_card` / `vesta_card` — those orders, in Mathlib's `Nat.card (Point …)` form,
   reached through the transport in `§ Bridge to Mathlib's Affine.Point` below.
 - `Fact` instances for primality and for the short-Weierstrass shape `a₁ = a₂ = a₃ = 0`.
-- `vestaPointModule` / `pallasPointModule` — each point group as a module over its scalar
-  field.
 - `pastaFieldBits` — the base-field bit width, and the register range-check bound derived
   from it.
 
@@ -166,35 +164,12 @@ theorem zsmul_eq_val_nsmul {G : Type*} [AddCommGroup G] (n : ℕ) [NeZero n] [Mo
   conv_lhs => rw [← ZMod.natCast_zmod_val ((z : ZMod n))]
   rw [Nat.cast_smul_eq_nsmul]
 
-/-- The Vesta point group as a module over its scalar field. -/
-instance vestaPointModule : Module Fp (SWPoint vestaCurve) :=
-  AddCommGroup.zmodModule fun P => by
-    rw [← Vesta.card_eq]
-    exact card_nsmul_eq_zero'
-
-/-- The Pallas point group as a module over its scalar field. -/
-instance pallasPointModule : Module Fq (SWPoint pallasCurve) :=
-  AddCommGroup.zmodModule fun P => by
-    rw [← Pallas.card_eq]
-    exact card_nsmul_eq_zero'
-
-/-- The module action is the ℕ-action at the canonical representative — the form the
-executable verifiers compute with. -/
-theorem vesta_smul_val (z : Fp) (P : SWPoint vestaCurve) : z • P = z.val • P :=
-  rfl
-
 /-- The same action on Mathlib's carrier, where the gate theorems live: `equivPoint`
 transports the module structure. -/
 instance vestaAffineModule : Module Fp vestaCurve.toAffine.Point :=
   AddCommGroup.zmodModule fun Q => by
     rw [← (SWPoint.equivPoint vestaCurve).apply_symm_apply Q, ← map_nsmul, ← Vesta.card_eq,
       card_nsmul_eq_zero', map_zero]
-
-/-- `equivPoint` respects the scalar action: both carriers act by the canonical
-representative. -/
-theorem vesta_equivPoint_smul (z : Fp) (P : SWPoint vestaCurve) :
-    SWPoint.equivPoint vestaCurve (z • P) = z • SWPoint.equivPoint vestaCurve P :=
-  map_nsmul _ _ _
 
 /-! ## Scalar multiples of a point of prime order
 
@@ -243,9 +218,5 @@ lemma zsmul_eq_zero_iff_order_dvd {F : Type*} [Field F] [DecidableEq F]
     · exact absurd (AddMonoid.addOrderOf_eq_one_iff.mp h1) hT
     · exact h1
   rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
-
-/-- The Pallas twin of `vesta_smul_val`. -/
-theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=
-  rfl
 
 end Pasta

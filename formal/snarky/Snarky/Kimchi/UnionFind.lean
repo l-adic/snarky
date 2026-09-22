@@ -13,8 +13,8 @@ because the representative choice is observable through `rootOf` until the wirin
 shown to consume only the partition (recorded hypothesis, validated at the CS-equality
 step of `formal/docs/snarky-kimchi-alignment.md`).
 
-Name map: `fresh` → `empty` (pure value, no allocation), `find`/`union`/`rootOf`/
-`equivalenceClasses` keep their names; `ensure` stays the internal growth step. The
+Name map: `fresh` → `empty` (pure value, no allocation), `find`/`union`/`rootOf` keep
+their names; `ensure` stays the internal growth step. The
 `Effect`/`ST` wrappers disappear; `find` and `union` return the grown structure instead.
 
 Everything is structural (`Array` get/set, fuel-bounded root chase), so the module is
@@ -81,25 +81,6 @@ view the wiring pass consumes. -/
 def rootOf (uf : UnionFind) : Array Nat :=
   (List.range uf.parent.size).map (fun i => rootLoop uf.parent.size i uf.parent)
     |>.toArray
-
-/-- Insert `i` into the class list of `root` inside an assoc list sorted by root — the
-structural stand-in for PS's `Map.insertWith append` (ascending-key iteration falls out
-of keeping the list sorted; `List.mergeSort` would be kernel-opaque). -/
-private def insertGrouped (root i : Nat) :
-    List (Nat × List Nat) → List (Nat × List Nat)
-  | [] => [(root, [i])]
-  | (r, ms) :: rest =>
-    if root = r then (r, ms ++ [i]) :: rest
-    else if root < r then (root, [i]) :: (r, ms) :: rest
-    else (r, ms) :: insertGrouped root i rest
-
-/-- Equivalence classes, each ascending, ordered by root (PS `equivalenceClasses`, whose
-`Map.values` iterates keys ascending). Test-path only in PS; here it also feeds the
-`decide` examples below. -/
-def equivalenceClasses (uf : UnionFind) : List (List Nat) :=
-  let grouped := (uf.rootOf.toList.zipIdx).foldl
-    (fun acc (ri : Nat × Nat) => insertGrouped ri.1 ri.2 acc) []
-  grouped.map (·.2)
 
 end UnionFind
 

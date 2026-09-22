@@ -56,10 +56,6 @@ Snarky.CVar.ScopedBy.scale_
 Snarky.CVar.ScopedBy.sub_
 Snarky.CVar.ScopedBy.reduce
 Snarky.AsProver.readCVar
-Snarky.instDecidableEqCVar
-Snarky.instReprCVar
-Snarky.instDecidableEqAffineExpression
-Snarky.instReprAffineExpression
 
 -- The assignment table (Assignments.lean): the partial table, its domain and extension
 -- order, and the extension operations the prover fills through.
@@ -227,7 +223,6 @@ Snarky.CheckedType.ofShape
 Snarky.checkAll
 Snarky.instCheckedTypeFVar
 Snarky.instCheckedTypeBool
-Snarky.instCheckedTypeUnit
 Snarky.instCheckedTypeUnChecked
 Snarky.instCheckedTypeProd
 Snarky.instCheckedTypeVector
@@ -282,8 +277,6 @@ Snarky.Basic.Holds
 Snarky.instBasicSystemBasic
 Snarky.instConstraintHoldsBasic
 Snarky.instLawfulBasicSystemBasic
-Snarky.instDecidableEqBasic
-Snarky.instReprBasic
 
 -- The DSL: field operations (DSL/Field.lean), each with its law pair — every valuation
 -- satisfying the emitted rows pins the result, and the honest run succeeds and reads
@@ -414,7 +407,6 @@ Snarky.ToNat
 Snarky.instToNatZMod
 Snarky.LawfulToNat
 Snarky.SizedF
-Snarky.SizedF.Fits
 Snarky.sealVar
 Snarky.sealVar_spec
 Snarky.sealVar_complete
@@ -442,14 +434,6 @@ Snarky.Complete.pure_of
 
 -- The exhibits (Examples/Point.lean): a two-field bundle carried through the whole
 -- interface — encoding, check, and mux — as the worked instance of `ofEquiv`.
-Snarky.Point
-Snarky.Point.equiv
-Snarky.instCircuitTypePoint
-Snarky.scoped_point
-Snarky.reads_point
-Snarky.instCheckedTypePoint
-Snarky.instIfThenElsePoint
-Snarky.instLawfulIfThenElsePoint
 
 -- The shifted scalar carriers (Types/Shifted.lean): the wrappers the varBaseMul ladders
 -- consume, with their decodes, plus the deployed Pasta codec — an `Fp` scalar carried
@@ -464,38 +448,13 @@ Snarky.Type2
 Snarky.Type2.fromShifted
 Snarky.Type2.val_fromShiftedCircuit
 Snarky.Type1.equivCarrier
-Snarky.Type1.equivCarrier_apply
-Snarky.Type1.equivCarrier_symm_apply
 Snarky.instCircuitTypeType1
-Snarky.scoped_type1
-Snarky.reads_type1
-Snarky.Type1.toShifted
 Snarky.Type1.toScalarZ
-Snarky.Type1.toScalar
-Snarky.Type1.toScalar_toShifted
-Snarky.instCheckedTypeType1
-Snarky.Type1.zeroCarrier
-Snarky.Type1.toScalar_eq_zero_iff_dvd
-Snarky.Type1.toScalar_eq_zero_iff
 Snarky.SplitField
-Snarky.SplitField.fromShifted
 
 -- The curve-tagged point (Snarky/Kimchi/Circuit/CurvePoint.lean): the phantom tag a
 -- statement carries where its wire refinement is a genuine curve point, with the Vesta
 -- instantiation, the encoding, and the on-curve check whose rows make the tag real.
-Snarky.Kimchi.CurvePoint
-Snarky.Kimchi.CurvePoint.equivPoint
-Snarky.Kimchi.CurvePoint.equivPoint_apply
-Snarky.Kimchi.CurvePoint.equivPoint_symm_apply
-Snarky.Kimchi.VestaPoint
-Snarky.Kimchi.instCurvePointCircuitType
-Snarky.Kimchi.scoped_curvePoint
-Snarky.Kimchi.reads_curvePoint
-Snarky.Kimchi.CurvePoint.check
-Snarky.Kimchi.CurvePoint.check_spec
-Snarky.Kimchi.CurvePoint.check_complete
-Snarky.Kimchi.instCurvePointCheckedType
-Snarky.Kimchi.valid_curvePoint
 
 -- The kimchi data layer (Snarky/Kimchi/{UnionFind,Constraint/Types}.lean): the pure
 -- union-find and the row/state types the reduction emits into. `egUF` is the
@@ -504,10 +463,6 @@ Snarky.Kimchi.UnionFind.empty
 Snarky.Kimchi.UnionFind.find
 Snarky.Kimchi.UnionFind.union
 Snarky.Kimchi.UnionFind.rootOf
-Snarky.Kimchi.UnionFind.equivalenceClasses
-Snarky.Kimchi.egUF
-Snarky.Kimchi.instDecidableEqUnionFind
-Snarky.Kimchi.instReprUnionFind
 Snarky.Kimchi.GenericPlonkConstraint
 Snarky.Kimchi.AuxState
 Snarky.Kimchi.initialAuxState
@@ -567,10 +522,6 @@ Snarky.Kimchi.KimchiGate
 Snarky.Kimchi.KimchiConstraint.reduce
 Snarky.Kimchi.instToKimchiRowsKimchiGate
 Snarky.Kimchi.instBasicSystemKimchiConstraint
-Snarky.Kimchi.instDecidableEqKimchiConstraint
-Snarky.Kimchi.instReprKimchiConstraint
-Snarky.Kimchi.instDecidableEqKimchiGate
-Snarky.Kimchi.instReprKimchiGate
 
 -- The kimchi constraint semantics (Snarky/Kimchi/Semantics.lean): the reading the gadget
 -- laws are stated against — the per-constructor Holds, its ConstraintHolds packaging, and
@@ -591,10 +542,6 @@ Snarky.Kimchi.assembleGates
 Snarky.Kimchi.makePublicInputRows
 Snarky.Kimchi.makeGateData
 Snarky.Kimchi.makeWitness
-Snarky.Kimchi.instDecidableEqWire
-Snarky.Kimchi.instReprWire
-Snarky.Kimchi.instDecidableEqAssembledGate
-Snarky.Kimchi.instReprAssembledGate
 
 -- script-surface:begin
 -- The whole-circuit kimchi entry points (Snarky/Kimchi/Backend/Compile.lean): their

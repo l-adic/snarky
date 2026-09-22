@@ -2,7 +2,6 @@ import Bulletproof.Wire
 import Kimchi.Protocol.Linearization
 import Kimchi.Columns
 import Poseidon.FqSponge
-import Kimchi.Index.Basic
 
 /-!
 # The kimchi verifier body over the checked records
@@ -72,8 +71,7 @@ Every deferral is declared here.
   verifier.rs:816–820, re-checked :835–838). The wire key here carries no count, so
   `kimchiVerify` substitutes the two bounds the body needs — the public input against
   the Lagrange table and against the domain — so the Lagrange MSM and the barycentric
-  sums read only genuine entries. The exact-length pin is recovered at the soundness
-  layer: the capstones fix `pub.size = idx.publicCount` through `pubView`.
+  sums read only genuine entries.
 -/
 
 namespace Kimchi.Verifier
@@ -418,18 +416,6 @@ def fqSqueezes {F : Type*} [Field F] (p : Poseidon.Params F) (indexDigest : F)
   let sqζ := Poseidon.squeeze p (pts sqα.2 tComm)
   ((sqβ.1, sqγ.1, sqα.1, sqζ.1), (Poseidon.squeeze p sqζ.2).1, sqζ.2)
 
-/-- The fq-sponge's four 128-bit prechallenges over the commitments, as naturals (the
-values `challenge`/`squeezeChallenge` pack from `fqSqueezes`), with the digest element and
-the pre-digest state. `fqOracles` is their cast, expansion and digest cast
-(`fqOracles_eq_fqPrechallenges`). -/
-def fqPrechallenges {p : ℕ} [Field (ZMod p)] (params : Poseidon.Params (ZMod p))
-    (indexDigest : ZMod p) (recursion pubComm : List (ZMod p × ZMod p))
-    (wComm : List (List (ZMod p × ZMod p))) (zComm tComm : List (ZMod p × ZMod p)) :
-    (ℕ × ℕ × ℕ × ℕ) × ZMod p × Poseidon.State (ZMod p) :=
-  let r := fqSqueezes params indexDigest recursion pubComm wComm zComm tComm
-  ((r.1.1.val % 2 ^ 128, r.1.2.1.val % 2 ^ 128, r.1.2.2.1.val % 2 ^ 128,
-    r.1.2.2.2.val % 2 ^ 128), r.2.1, r.2.2)
-
 /-- A commitment's chunk coordinates, in chunk order. -/
 def coords {n : ℕ} (v : Vector C.Point n) : List (C.BaseField × C.BaseField) :=
   v.toList.map fun P => (P.x, P.y)
@@ -453,25 +439,6 @@ private theorem foldl_cols {nc : ℕ} (cols : List (Vector C.Point nc))
   induction cols generalizing st with
   | nil => rfl
   | cons col cols ih => simp only [List.foldl_cons, List.map_cons, foldl_absorbG, ih]
-
-/-- `fqOracles` through `fqPrechallenges`: `β, γ` the cast prechallenges (`challenge`),
-`α, ζ` their endo-expansions (`squeezeChallenge`), the digest the `from_bigint` cast of the
-digest element (zero when it does not fit), and the warm state the pre-digest state with an
-empty limb buffer. -/
-theorem fqOracles_eq_fqPrechallenges {nc k : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc k) (publicComm : Vector C.Point nc) :
-    fqOracles C cvk cp publicComm =
-      let r := fqPrechallenges C.sponge.params cvk.digest
-        ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y)) (coords C publicComm)
-        (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
-        (cp.tComm.toList.map fun P => (P.x, P.y))
-      ⟨(r.1.1 : C.ScalarField), (r.1.2.1 : C.ScalarField), endoExpand C.lam r.1.2.2.1,
-        endoExpand C.lam r.1.2.2.2,
-        (if r.2.1.val < C.scalar then ((r.2.1.val : ℕ) : C.ScalarField) else 0),
-        ⟨r.2.2, []⟩⟩ := by
-  simp only [fqOracles, FqRun.expand, fqRun, castDigest, fqPrechallenges, fqSqueezes, coords,
-    absorbFq, FqSponge.init, ← Vector.foldl_toList, ← Array.foldl_toList, foldl_absorbG,
-    foldl_cols, challengeNat_fresh, challengeFq, List.foldl_map]
 
 /-- The raw run `fqRun` through `fqSqueezes` on the automaton, field by field: each
 prechallenge is the packing of its squeeze, the digest element the digest squeeze, the warm
@@ -626,89 +593,7 @@ theorem publicCommitment_eq_sum {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C 
   refine congrArg Vector.ofFn (funext fun c => ?_)
   rw [← Array.foldl_toList, ← List.foldl_map, foldl_add_eq, _root_.zero_add]
 
-/-! ### Trailing zero cells
-
-A zero cell of the public input adds nothing to the public commitment or to the public
-evaluations, so zero cells appended to a nonempty input change nothing the verifier computes
-(`kimchiVerify_append_zeros`, below the verifier). A deployed statement layout can end in
-cells that are constant zero and that no circuit reads; this is what lets a circuit-side
-statement name only the cells it reads. -/
-
-private theorem foldl_zeros_fst {F : Type*} [Field F] (omega pt : F) :
-    ∀ (m : ℕ) (acc : F × F),
-      ((List.replicate m (0 : F)).foldl (fun (acc : F × F) pi =>
-        (acc.1 + -(pt - acc.2)⁻¹ * pi * acc.2, acc.2 * omega)) acc).1 = acc.1
-  | 0, _ => rfl
-  | m + 1, acc => by
-      rw [List.replicate_succ, List.foldl_cons, foldl_zeros_fst omega pt m]
-      simp
-
-private theorem pubDot_append_zeros {F : Type*} [Field F] (omega pt : F) (pub : Array F)
-    (m : ℕ) : pubDot omega pt (pub ++ Array.replicate m 0) = pubDot omega pt pub := by
-  unfold pubDot
-  rw [← Array.foldl_toList, ← Array.foldl_toList, Array.toList_append, List.foldl_append,
-    Array.toList_replicate, foldl_zeros_fst]
-
-private theorem publicEvalChunks_append_zeros {C : Ipa.KimchiCurve} {nc k : ℕ}
-    (cp : KimchiProof C nc k) (n : ℕ) (omega zeta zetaOmega zetaN zetaOmegaN : C.ScalarField)
-    (pub : Array C.ScalarField) (m : ℕ) (hne : pub.size ≠ 0) :
-    publicEvalChunks cp n omega zeta zetaOmega zetaN zetaOmegaN (pub ++ Array.replicate m 0)
-      = publicEvalChunks cp n omega zeta zetaOmega zetaN zetaOmegaN pub := by
-  unfold publicEvalChunks publicEvals
-  rw [if_neg hne, if_neg (by rw [Array.size_append]; omega), pubDot_append_zeros,
-    pubDot_append_zeros]
-
-private theorem sum_zip_zeros {nc : ℕ} (c : Fin nc) :
-    ∀ (L : List (Vector C.Point nc)) (m : ℕ),
-      ((L.zip (List.replicate m (0 : C.ScalarField))).map
-        fun Pp => (-Pp.2).val • Pp.1[c]).sum = 0
-  | [], _ => by simp
-  | _ :: _, 0 => by simp
-  | _ :: L, m + 1 => by
-      rw [List.replicate_succ, List.zip_cons_cons, List.map_cons, List.sum_cons,
-        sum_zip_zeros c L m]
-      simp
-
-private theorem sum_zip_append_zeros {nc : ℕ} (c : Fin nc) (m : ℕ) :
-    ∀ (P : List C.ScalarField) (L : List (Vector C.Point nc)),
-      (((L.take (P.length + m)).zip (P ++ List.replicate m 0)).map
-          fun Pp => (-Pp.2).val • Pp.1[c]).sum
-        = (((L.take P.length).zip P).map fun Pp => (-Pp.2).val • Pp.1[c]).sum
-  | [], L => by simpa using sum_zip_zeros C c (L.take m) m
-  | _ :: _, [] => by simp
-  | p :: P, l :: L => by
-      have ih := sum_zip_append_zeros c m P L
-      rw [List.length_cons, Nat.add_right_comm, List.take_succ_cons, List.cons_append,
-        List.zip_cons_cons, List.map_cons, List.sum_cons, ih, List.take_succ_cons,
-        List.zip_cons_cons, List.map_cons, List.sum_cons]
-
-private theorem publicCommitment_append_zeros {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (pub : Array C.ScalarField) (m : ℕ) (hne : pub.size ≠ 0) :
-    publicCommitment C σ cvk (pub ++ Array.replicate m 0) = publicCommitment C σ cvk pub := by
-  rw [publicCommitment_eq_sum C σ cvk pub hne,
-    publicCommitment_eq_sum C σ cvk _ (by rw [Array.size_append]; omega)]
-  refine congrArg Vector.ofFn (funext fun c => ?_)
-  congr 1
-  have := sum_zip_append_zeros C c m pub.toList cvk.lagrangeBasis.toList
-  simpa [Array.toList_zip, Array.toList_extract, Array.size_append] using this
-
 /-! ## The stream combinators -/
-
-/-- Reading a flattened uniform block vector: block `q`, offset `r` sits at
-`q·n + r`. The general read behind every tail-region access of the batch stream. -/
-theorem flatten_read {α : Type*} {m n : ℕ} (v : Vector (Vector α n) m) (q r : ℕ)
-    (hq : q < m) (hr : r < n) :
-    v.flatten[q * n + r]'(by
-      calc q * n + r < (q + 1) * n := by rw [Nat.succ_mul]; omega
-        _ ≤ m * n := Nat.mul_le_mul_right n hq)
-      = (v[q]'hq)[r]'hr := by
-  have hdiv : (q * n + r) / n = q := by
-    rw [Nat.mul_comm q n, Nat.mul_add_div (by omega : 0 < n), Nat.div_eq_of_lt hr]
-    omega
-  have hmod : (q * n + r) % n = r := by
-    rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hr]
-  rw [Vector.getElem_flatten]
-  simp only [hdiv, hmod]
 
 /-- One logical batch row's per-chunk segment triples: the chunk commitments zipped
 with the per-chunk claims at `(ζ, ζω)`. -/
@@ -719,8 +604,7 @@ def zipSeg {nc : ℕ} (comm : Vector C.Point nc)
 
 /-- The literal single-column head block of the batch tail, in `to_batch` order: the
 accumulator `z` and the six selectors — the `litRowCount` rows whose commitments are
-single named record fields. The ONE place this vector literal is written; every read
-of the head region goes through `tailRows_read_lit` below. -/
+single named record fields. The one place this vector literal is written. -/
 def litRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
     Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount :=
   ⟨#[zipSeg C cp.zComm cp.evals.z,
@@ -749,58 +633,6 @@ reflection layer (`Capstone/Reflection.lean`) consumes these for every stream re
 section TailReads
 
 variable {nc k : ℕ} {cvk : KimchiVK C nc} {cp : KimchiProof C nc k}
-
-/-- Tail row `j < 7` is the `j`-th literal row (`z` + the six selectors). -/
-theorem tailRows_read_lit (j : ℕ) (hj : j < litRowCount) :
-    (tailRowsOf C cvk cp)[j]'(by omega) = (litRowsOf C cvk cp)[j]'hj := by
-  show (litRowsOf C cvk cp
-      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-        (fun x => zipSeg C x.1 x.2))[j]'(by omega) = _
-  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
-    dif_pos (by omega), Vector.getElem_append, dif_pos hj]
-
-/-- Tail row `7 + q` is witness column `q`'s row. -/
-theorem tailRows_read_w (q : ℕ) (hq : q < wCols) :
-    (tailRowsOf C cvk cp)[7 + q]'(by omega)
-      = zipSeg C (cp.wComm[q]'hq) (cp.evals.w[q]'hq) := by
-  show (litRowsOf C cvk cp
-      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-        (fun x => zipSeg C x.1 x.2))[7 + q]'(by omega) = _
-  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
-    dif_pos (by omega), Vector.getElem_append, dif_neg (by omega)]
-  simp only [show 7 + q - 7 = q from by omega, Vector.getElem_map, Vector.getElem_zip]
-
-/-- Tail row `22 + q` is coefficient column `q`'s row. -/
-theorem tailRows_read_c (q : ℕ) (hq : q < coeffCols) :
-    (tailRowsOf C cvk cp)[22 + q]'(by omega)
-      = zipSeg C (cvk.coefficientsComm[q]'hq) (cp.evals.coefficients[q]'hq) := by
-  show (litRowsOf C cvk cp
-      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-        (fun x => zipSeg C x.1 x.2))[22 + q]'(by omega) = _
-  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
-    dif_neg (by omega)]
-  simp only [show 22 + q - (7 + 15) = q from by omega, Vector.getElem_map,
-    Vector.getElem_zip]
-
-/-- Tail row `37 + q` is the `q`-th σ row. -/
-theorem tailRows_read_s (q : ℕ) (hq : q < sigmaRows) :
-    (tailRowsOf C cvk cp)[37 + q]'(by omega)
-      = zipSeg C (cvk.sigmaComm[q]'(by omega)) (cp.evals.s[q]'hq) := by
-  show (litRowsOf C cvk cp
-      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-        (fun x => zipSeg C x.1 x.2))[37 + q]'(by omega) = _
-  rw [Vector.getElem_append, dif_neg (by omega)]
-  simp only [show 37 + q - (7 + 15 + 15) = q from by omega, Vector.getElem_map,
-    Vector.getElem_zip, Vector.getElem_take]
-  rfl
 
 end TailReads
 
@@ -865,31 +697,6 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
         proof := cp.opening }
     Ipa.verifyFrom C σ o.warm inp
 
-/-- Zero cells appended to a nonempty public input, within the size guard, do not change the
-verdict. -/
-theorem kimchiVerify_append_zeros {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (m : ℕ) (hne : pub.size ≠ 0)
-    (hL : pub.size + m ≤ cvk.lagrangeBasis.size) (hn : pub.size + m ≤ cvk.n) :
-    kimchiVerify C σ cvk cp (pub ++ Array.replicate m 0) = kimchiVerify C σ cvk cp pub := by
-  have g1 : ¬ cvk.lagrangeBasis.size < (pub ++ Array.replicate m 0).size := by
-    rw [Array.size_append, Array.size_replicate]; omega
-  have g2 : ¬ cvk.n < (pub ++ Array.replicate m (0 : C.ScalarField)).size := by
-    rw [Array.size_append, Array.size_replicate]; omega
-  have g1' : ¬ cvk.lagrangeBasis.size < pub.size := by omega
-  have g2' : ¬ cvk.n < pub.size := by omega
-  have he := fun (n : ℕ) (a b c d e : C.ScalarField) =>
-    publicEvalChunks_append_zeros cp n a b c d e pub m hne
-  unfold kimchiVerify
-  simp only [g1, g2, g1', g2', decide_false, Bool.false_or,
-    publicCommitment_append_zeros C σ cvk pub m hne, he]
-
 /-! ## The public-input view -/
-
-/-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
-model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the
-view reads only genuine entries). The wire-to-abstract public view. -/
-def pubView {F : Type*} [Field F] {n : ℕ} (idx : Index F n) (pub : Array F) :
-    Fin idx.publicCount → F :=
-  fun i => pub.getD (i : ℕ) 0
 
 end Kimchi.Verifier

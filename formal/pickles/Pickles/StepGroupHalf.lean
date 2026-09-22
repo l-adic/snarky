@@ -70,9 +70,7 @@ A deployed wrap proof's public input carries ten more cells after these: eight f
 and the lookup option's flag and scalar challenge (`composition_types.ml`,
 `Wrap.Statement.In_circuit.spec`; PS `Pickles.Wrap.Types.StatementPacked`). With every optional
 feature off, which is the modeled fragment, they are constant zero and no circuit reads them,
-so the packing leaves them out. They change nothing the verifier computes
-(`Kimchi.Verifier.kimchiVerify_append_zeros`): a check against a deployed proof drops them, or
-appends them by that lemma. -/
+so the packing leaves them out, and a check against a deployed proof drops them. -/
 def stepPublicInput {ks nc : ℕ} (E : Env IpaPallas.curve nc) (V : Valuation Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : Array Fq :=
   pubOf IpaPallas.curve V (stepLeavesAt E statement)

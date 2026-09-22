@@ -28,10 +28,6 @@ WeierstrassCurve.Affine.order
 CompElliptic.CurveForms.ShortWeierstrass.SWCurve.toAffine
 
 -- The point-group module structure and its computational reading.
-Pasta.vestaPointModule
-Pasta.pallasPointModule
-Pasta.vesta_smul_val
-Pasta.pallas_smul_val
 Pasta.zsmul_eq_val_nsmul
 
 -- The curve's endomorphism as the wire states it: the coefficient `β`, the eigenvalue `λ`,

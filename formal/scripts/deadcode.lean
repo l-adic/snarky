@@ -45,7 +45,6 @@ import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
-import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Semantics
 import Pickles
 -- The fixture-decoding libraries are not part of any package's main library, so import them

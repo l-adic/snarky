@@ -1896,9 +1896,7 @@ end DeployedStep
 open Kimchi.Verifier Bulletproof.Ipa in
 /-- `CheckBulletproofReads` at a deployed field, against the wire verifier: with `(t, us, c)`
 the verifier's `ipaPrechallenges`, `t` reads exactly, and each round prechallenge and `c`,
-once read as a prechallenge, is its counterpart
-(`transcriptFrom_eq_ipaPrechallenges` carries these to `transcriptFrom`'s `U` base, round
-challenges and Schnorr challenge). -/
+once read as a prechallenge, is its counterpart. -/
 def CheckBulletproofReadsWire {p : ℕ} [Fact p.Prime] (params : Poseidon.Params (ZMod p))
     (s₀ : Poseidon.State (ZMod p)) (cipLimbs : List (ZMod p))
     (lrv : List (AffinePoint (ZMod p) × AffinePoint (ZMod p))) (δv : AffinePoint (ZMod p))

@@ -1,6 +1,3 @@
-import Mathlib.Algebra.Field.Basic
-import Mathlib.Data.ZMod.Basic
-import Mathlib.Data.Fin.VecNotation
 import Mathlib.Tactic
 
 /-! # The generic gate

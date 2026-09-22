@@ -24,17 +24,14 @@ expanded here.
   `squeeze_challenge` (low bits constrained) and `squeeze_scalar` (not).
 * `fqSpongeTranscript`: the schedule, with the `x_hat` computation an action run after the
   `sg_old` absorbs, as the verifiers do.
-* `FqTranscriptReads`, `FqTranscriptReadsWire`: the reading of the outputs against the wire
-  verifier's `Kimchi.Verifier.fqSqueezes`, and its deployed-field form against
-  `fqPrechallenges`.
+* `FqTranscriptReads`: the reading of the outputs against the wire verifier's
+  `Kimchi.Verifier.fqSqueezes`.
 
 ## Main results
 
 * `fqSpongeTranscript_spec`: the four outputs are the low halves of the wire verifier's four
   raw squeezes (`Low128`), `β, γ` below `2¹²⁸`, the digest reads as the digest element and
   the returned sponge as the pre-digest state.
-* `FqTranscriptReads.wire`: at a prime field, `β, γ` are the verifier's prechallenges, and so
-  are `α, ζ` once identified with 128-bit claims.
 -/
 
 namespace Pickles
@@ -814,36 +811,7 @@ theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
 /-! ## The wire reading -/
 
 open Kimchi.Verifier in
-/-- `FqTranscriptReads` at a deployed field, against the wire verifier: with `pre` the
-verifier's `fqPrechallenges`, `β` and `γ` read as its first two, and `α`, `ζ`, once read as
-prechallenges, are its last two; the digest reads as the digest element and the sponge as the
-pre-digest state (`fqOracles_eq_fqPrechallenges` carries these to `fqOracles`). -/
-def FqTranscriptReadsWire {p : ℕ} [Fact p.Prime] (params : Poseidon.Params (ZMod p))
-    (indexDigest : ZMod p) (sgOld xv : List (AffinePoint (ZMod p)))
-    (wComm : List (List (AffinePoint (ZMod p)))) (zComm tComm : List (AffinePoint (ZMod p)))
-    (V : Valuation (ZMod p)) (o : FqTranscriptOutput (ZMod p)) : Prop :=
-  let pre := fqPrechallenges params indexDigest (sgOld.map pointCoords) (xv.map pointCoords)
-    (wComm.map (·.map pointCoords)) (zComm.map pointCoords) (tComm.map pointCoords)
-  (∃ b₀, Reads128 V o.beta b₀ ∧ b₀.val = pre.1.1) ∧
-  (∃ g₀, Reads128 V o.gamma g₀ ∧ g₀.val = pre.1.2.1) ∧
-  (∀ a₀, Reads128 V o.alpha a₀ → a₀.val = pre.1.2.2.1) ∧
-  (∀ z₀, Reads128 V o.zeta z₀ → z₀.val = pre.1.2.2.2) ∧
-  List.Forall₂ (CircuitType.Reads V) o.xHat xv ∧
-  o.digest.val V = pre.2.1 ∧ SpongeVar.ReadsAt V o.sponge pre.2.2
-
 open Kimchi.Verifier in
-/-- At a prime field, the exact reading is the wire reading (`Low128.exact`). -/
-theorem FqTranscriptReads.wire {p : ℕ} [Fact p.Prime]
-    {params : Poseidon.Params (ZMod p)} {indexDigest : ZMod p}
-    {sgOld xv : List (AffinePoint (ZMod p))} {wComm : List (List (AffinePoint (ZMod p)))}
-    {zComm tComm : List (AffinePoint (ZMod p))}
-    {V : Valuation (ZMod p)} {o : FqTranscriptOutput (ZMod p)}
-    (h : FqTranscriptReads params indexDigest sgOld xv wComm zComm tComm V o) :
-    FqTranscriptReadsWire params indexDigest sgOld xv wComm zComm tComm V o := by
-  obtain ⟨lβ, lγ, lα, lζ, ⟨b₀, hbv⟩, ⟨g₀, hgv⟩, hxh, hd, hs⟩ := h
-  exact ⟨⟨b₀, hbv, (lβ.exact hbv).symm⟩, ⟨g₀, hgv, (lγ.exact hgv).symm⟩,
-    fun _ hav => (lα.exact hav).symm, fun _ hzv => (lζ.exact hzv).symm, hxh, hd, hs⟩
-
 /-! The gadgets are sealed after their reads: a consumer composes `fqSpongeTranscript_reads`,
 `fqSpongeTranscriptOpt_reads` and `assertPlonkChallenges_spec`, never the bodies. -/
 attribute [irreducible] absorbPoint absorbPoints absorbColumns squeezePrechallenge

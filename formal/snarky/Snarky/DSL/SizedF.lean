@@ -5,9 +5,7 @@ import Snarky.DSL.Field
 # Sized field elements
 
 A value tagged with a type-level bit width. The tag is a contract, not an invariant: the
-wrapped value is promised to fit in `n` bits, and the laws consuming a `SizedF` take that
-promise as their `SizedF.Fits` hypothesis. The bit combinators and the check emitted when
-a `SizedF` is witnessed arrive with their consumers.
+wrapped value is promised to fit in `n` bits.
 -/
 
 namespace Snarky
@@ -29,11 +27,5 @@ instance instToNatZMod (p : Nat) : ToNat (ZMod p) := ⟨ZMod.val⟩
 structure SizedF (n : Nat) (α : Type u) where
   /-- The wrapped value. -/
   val : α
-
-/-- The contract at a valuation: the wrapped variable reads to a value that fits the
-tagged width. -/
-def SizedF.Fits {F : Type} [Add F] [Mul F] [ToNat F] {n : Nat} (s : SizedF n (FVar F))
-    (V : Valuation F) : Prop :=
-  ToNat.toNat (s.val.val V) < 2 ^ n
 
 end Snarky

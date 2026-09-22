@@ -51,6 +51,7 @@ Kimchi.Gate.VarBaseMul.runBits_bool
 Kimchi.Gate.VarBaseMul.chain_complete
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
+Kimchi.Gate.VarBaseMul.mem_forbiddenValues_of_dvd
 
 -- Endo-scalar decomposition (circuit): over a multi-row run of sequential gates, the effective
 -- scalar a·λ + b (sound), the honest prover fills the run (complete), and the decomposition is
@@ -230,7 +231,6 @@ Kimchi.Verifier.runInput
 -- The fr-sponge seam the circuit side lands on: `frOracles` as the low 128 bits of the two
 -- raw squeezes over `frTranscript` (`frPrechallenges`, the form `Pickles.FopReadsWire` lands on).
 Kimchi.Verifier.frOracles_eq_frPrechallenges
-Kimchi.Verifier.fqOracles_eq_fqPrechallenges
 
 -- The public-input-commitment MSM re-association the pickles x_hat glue lands on:
 -- `publicCommitment` as a per-chunk `(… .map …).sum + h`, an order-free fold rewrite.
@@ -242,7 +242,6 @@ Kimchi.Verifier.publicCommitment_eq_sum
 -- that no circuit reads (the wrap statement's feature flags and lookup option, with every
 -- feature off); this is why a circuit-side statement names only the cells it reads
 -- (pickles, `stepPublicInput`).
-Kimchi.Verifier.kimchiVerify_append_zeros
 
 -- The executable verifier, the wire parsers, and the rest of the surface the fixture
 -- drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
@@ -296,12 +295,6 @@ Kimchi.Permutation.sigmaSide_eval_row
 
 -- Demo defs consumed by the kimchi-demo executable (Main.lean) and the files' own
 -- `#eval`/`example` regression sections — consumers the constant walk cannot see.
-Kimchi.Gate.egGood
-Kimchi.Gate.egBad
-Kimchi.Gate.AddComplete.egDouble
-Kimchi.Gate.Poseidon.egMds
-Kimchi.Gate.Poseidon.egPoseidon
-Kimchi.Gate.VarBaseMul.egVBM
 
 -- Bit-vector values (Kimchi/Bits.lean): the one ℕ reading of an LSB-first bit list,
 -- shared by the gate semantics and the circuit DSL's canonicity locks. The consumer is
@@ -309,12 +302,7 @@ Kimchi.Gate.VarBaseMul.egVBM
 Kimchi.natLsbVal
 Kimchi.natLsbVal_lt
 Kimchi.natLsbVal_ofFn_testBit
-Kimchi.natLsbVal_append_singleton
-Kimchi.ofFn_val_eq_map_range
-Kimchi.natLsbVal_testBit_range
-Kimchi.natLsbVal_take_testBit_range
 Kimchi.natLsbVal_take_drop
-Kimchi.natLsbVal_take_eq_mod
 Kimchi.natLsbVal_eq_zero
 Kimchi.natLsbVal_lt_of_drop_false
 

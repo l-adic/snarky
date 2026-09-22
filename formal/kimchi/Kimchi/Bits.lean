@@ -51,37 +51,6 @@ theorem natLsbVal_ofFn_testBit :
     cases htb : m.testBit 0 <;> rw [htb] at hbit <;> simp [Nat.bit] at hbit <;>
       simp <;> omega
 
-/-- Appending a bit adds it at the top weight. -/
-theorem natLsbVal_append_singleton (l : List Bool) (b : Bool) :
-    natLsbVal (l ++ [b]) = natLsbVal l + b.toNat * 2 ^ l.length := by
-  induction l with
-  | nil => simp [natLsbVal]
-  | cons a l ih =>
-    simp only [List.cons_append, natLsbVal, ih, List.length_cons, pow_succ]
-    ring
-
-/-- An `ofFn` over `Fin n` reading a function of the index is the range map. -/
-theorem ofFn_val_eq_map_range {α : Type*} (g : Nat → α) (n : Nat) :
-    (List.ofFn fun i : Fin n => g i.val) = (List.range n).map g := by
-  apply List.ext_getElem (by simp)
-  intro i h1 h2
-  simp
-
-/-- A number below `2^n` is the Horner fold of its first `n` bits, range-map form. -/
-theorem natLsbVal_testBit_range {m n : Nat} (h : m < 2 ^ n) :
-    natLsbVal ((List.range n).map m.testBit) = m := by
-  rw [← ofFn_val_eq_map_range]
-  exact natLsbVal_ofFn_testBit n m h
-
-/-- The low `k` bits of a number's `n`-bit range map spell its residue mod `2^k`. -/
-theorem natLsbVal_take_testBit_range (m : Nat) {n k : Nat} (hk : k ≤ n) :
-    natLsbVal (((List.range n).map m.testBit).take k) = m % 2 ^ k := by
-  rw [← List.map_take, List.take_range, Nat.min_eq_left hk]
-  rw [show (List.range k).map m.testBit = (List.range k).map (m % 2 ^ k).testBit from
-    List.map_congr_left fun i hi => by
-      rw [Nat.testBit_mod_two_pow, decide_eq_true (List.mem_range.mp hi), Bool.true_and]]
-  exact natLsbVal_testBit_range (Nat.mod_lt _ (Nat.two_pow_pos k))
-
 /-- The Horner value splits at any position: low bits plus the shifted high bits. -/
 theorem natLsbVal_take_drop : ∀ (k : Nat) (l : List Bool),
     natLsbVal l = natLsbVal (l.take k) + 2 ^ k * natLsbVal (l.drop k) := by
@@ -95,13 +64,6 @@ theorem natLsbVal_take_drop : ∀ (k : Nat) (l : List Bool),
     | cons b bs =>
       simp only [List.take_succ_cons, List.drop_succ_cons, natLsbVal, ih bs, pow_succ]
       ring
-
-/-- The low `k` bits' value is the residue mod `2^k`. -/
-theorem natLsbVal_take_eq_mod (k : Nat) (l : List Bool) :
-    natLsbVal (l.take k) = natLsbVal l % 2 ^ k := by
-  rw [natLsbVal_take_drop k l, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt]
-  exact lt_of_lt_of_le (natLsbVal_lt _)
-    (Nat.pow_le_pow_right (by norm_num) (List.length_take_le k l))
 
 /-- All-false bits carry the value zero. -/
 theorem natLsbVal_eq_zero : ∀ {l : List Bool}, (∀ b ∈ l, b = false) → natLsbVal l = 0 := by

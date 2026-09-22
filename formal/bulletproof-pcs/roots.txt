@@ -14,7 +14,6 @@ Bulletproof.Ipa.verifyFrom
 Bulletproof.Ipa.verifyWith
 
 -- The Fiat-Shamir transcript the verifier derives its challenges from.
-Bulletproof.Ipa.transcript
 Bulletproof.Ipa.transcriptFrom
 Bulletproof.Ipa.roundChallenges
 Bulletproof.Ipa.shiftScalar
@@ -24,7 +23,6 @@ Bulletproof.Ipa.shiftScalar
 Bulletproof.Ipa.ipaSqueezes
 Bulletproof.Ipa.ipaPrechallenges
 Bulletproof.Ipa.ipaRound_foldl
-Bulletproof.Ipa.transcriptFrom_eq_ipaPrechallenges
 Bulletproof.Ipa.schnorrAt
 Bulletproof.Ipa.verifyWith_eq
 
@@ -32,56 +30,30 @@ Bulletproof.Ipa.verifyWith_eq
 Bulletproof.Ipa.cipOf
 Bulletproof.Ipa.combineCommitments
 Bulletproof.Ipa.msm
-Bulletproof.Ipa.Input.commitmentFn
 Bulletproof.Ipa.Input.pointFn
 Bulletproof.Ipa.Input.evalFn
 
 -- The abstract scheme the wire verifier is stated over: commitment, the two opening
 -- relations, the pointwise and batched acceptance predicates, and the challenge
 -- polynomial.
-Bulletproof.commit
 Bulletproof.commitGen
-Bulletproof.commitₗ
-Bulletproof.innerProduct
-Bulletproof.evalVector
-Bulletproof.openingRelation
-Bulletproof.openingRelationB
-Bulletproof.VerifierAcceptsAt
-Bulletproof.BatchAccepts
-Bulletproof.recombine
-Bulletproof.combinedCommitment
 Bulletproof.combinedInnerProduct
 Bulletproof.combinedB
-Bulletproof.combinedEvalVector
 Bulletproof.bPoly
 Bulletproof.bPolyCoefficients
 
 -- The chunk layer, and the identities that give it content: a chunked commitment and a
 -- chunked inner product agree with their flattenings, and a combined evaluation vector
 -- pairs as the r-weighted sum of point evaluations.
-Bulletproof.chunkedCombinedCommitment
-Bulletproof.chunkedCombinedInnerProduct
-Bulletproof.chunkedCombinedCommitment_eq_flat
-Bulletproof.chunkedCombinedInnerProduct_eq_flat
-Bulletproof.innerProduct_combinedEvalVector
 
 -- Polynomial chunking: a chunk evaluates as the slice it was cut from, a polynomial is
 -- the weighted sum of its chunks, and the assembly round-trips within its degree bound.
-Bulletproof.chunkCoeffs
-Bulletproof.chunkPoly
-Bulletproof.chunkPoly_eval
-Bulletproof.eval_eq_sum_chunkPoly
-Bulletproof.assemblePoly
-Bulletproof.chunkCoeffs_assemblePoly
-Bulletproof.assemblePoly_natDegree_lt
 
 -- The two deployed curve dictionaries the wire verifier is instantiated at, and their
 -- point abbrevs. Consumed by downstream packages (kimchi instantiates `IpaVesta.curve`),
 -- so the walk inside this package cannot see them.
 Bulletproof.IpaVesta.curve
-Bulletproof.IpaVesta.Point
 Bulletproof.IpaPallas.curve
-Bulletproof.IpaPallas.Point
 
 -- The surface the fixture drivers and check gates exercise. Nothing in the library
 -- consumes these -- the scripts do, so the dead-code driver additionally checks each

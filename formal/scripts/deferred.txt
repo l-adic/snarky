@@ -97,10 +97,4 @@ Snarky.prove_dom
 -- The verifier's segment-stream position reads (`Verifier/Kimchi.lean`) and the
 -- wire-to-abstract public view. The capstones consumed these; the group fragment of an
 -- in-circuit verifier is the plausible next consumer.
-Kimchi.Verifier.flatten_read
-Kimchi.Verifier.tailRows_read_lit
-Kimchi.Verifier.tailRows_read_w
-Kimchi.Verifier.tailRows_read_c
-Kimchi.Verifier.tailRows_read_s
-Kimchi.Verifier.pubView
 

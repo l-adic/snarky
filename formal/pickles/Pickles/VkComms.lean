@@ -59,19 +59,4 @@ def sigmaLast (k : VkComms nc f) : Vector f nc :=
 
 end VkComms
 
-/-- A key's commitments are its permutation, coefficient and selector columns. -/
-def VkComms.equivProd (nc : ℕ) (f : Type) :
-    VkComms nc f ≃
-      Vector (Vector f nc) permCols × Vector (Vector f nc) coeffCols × Vector f nc ×
-        Vector f nc × Vector f nc × Vector f nc × Vector f nc × Vector f nc :=
-  ⟨fun k => (k.sigmaComm, k.coefficientsComm, k.genericComm, k.poseidonComm,
-      k.completeAddComm, k.mulComm, k.emulComm, k.endomulScalarComm),
-   fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1,
-     p.2.2.2.2.2.2.2⟩,
-   fun _ => rfl, fun _ => rfl⟩
-
-instance instVkCommsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
-    CircuitType F (VkComms nc v) (VkComms nc w) :=
-  CircuitType.ofEquiv (VkComms.equivProd nc v) (VkComms.equivProd nc w)
-
 end Pickles

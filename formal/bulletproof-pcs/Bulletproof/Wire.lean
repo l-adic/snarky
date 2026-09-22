@@ -55,8 +55,7 @@ equality from its `DecidableEq`.
 
 The scalar side reuses the `Bulletproof` definitions (`bPoly`, `bPolyCoefficients`,
 `combinedB`, `combinedInnerProduct`) at the concrete scalar field. Scalars act on points as
-`z.val • _`, the ℕ-action of the group; `Bulletproof.Reflection` relates this verifier to the
-`Prop`-level `BatchAccepts`.
+`z.val • _`, the ℕ-action of the group.
 
 The absorbed-scalar encoding (`shift_scalar`) is selected by the modulus comparison from the
 cardinalities — the `Shifted_value` Type1 register when the scalar modulus is below the base
@@ -448,11 +447,6 @@ structure Input (C : KimchiCurve) (k m p : ℕ) where
 
 variable {k m p : ℕ}
 
-/-- The commitments as the `Fin`-indexed function of the abstract claim. -/
-def Input.commitmentFn {C : KimchiCurve} (inp : Input C k m p) :
-    Fin m → C.Point :=
-  fun i => inp.commitments[i]
-
 /-- The evaluation points as the `Fin`-indexed function of the abstract claim. -/
 def Input.pointFn {C : KimchiCurve} (inp : Input C k m p) :
     Fin p → C.ScalarField :=
@@ -468,8 +462,7 @@ def Input.evalFn {C : KimchiCurve} (inp : Input C k m p) :
 def cipOf {C : KimchiCurve} (inp : Input C k m p) : C.ScalarField :=
   combinedInnerProduct inp.polyscale inp.evalscale inp.evalFn
 
-/-- The polyscale combination `∑ i, ξ^i • Cᵢ` of the commitments — the group-side mirror
-of `Bulletproof.combinedCommitment`, by a running power. -/
+/-- The polyscale combination `∑ i, ξ^i • Cᵢ` of the commitments, by a running power. -/
 def combineCommitments (ξ : C.ScalarField) (cs : Array C.Point) : C.Point :=
   (cs.foldl (fun (acc : C.Point × C.ScalarField) P => (acc.1 + acc.2.val • P, acc.2 * ξ))
     (0, 1)).1
@@ -557,12 +550,6 @@ def transcriptFrom (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
   (C.uBase r.1, r.2.1.map (fun u => endoExpand C.lam u.val),
     endoExpand C.lam r.2.2.val)
 
-/-- The standalone verifier's Fiat–Shamir schedule: `transcriptFrom` at the fresh
-sponge `FqSponge.init` — the cold start. -/
-def transcript (inp : Input C k m p) :
-    C.Point × Vector C.ScalarField k × C.ScalarField :=
-  transcriptFrom C FqSponge.init inp
-
 
 /-- The acceptance decision from a given initial sponge state `s₀`, against a library
 SRS: derive the transcript (from `s₀` — kimchi's warm start hands the post-`ζ`
@@ -606,10 +593,9 @@ def verify (σ : SRS C.Point) (inp : Input C σ.k m p) : Bool :=
 
 `transcriptFrom` factored to the raw squeezes of the automaton, the form a circuit
 implementation of `check_bulletproof` is read against: `ipaSqueezes` is the schedule on
-`Poseidon.State`, `ipaPrechallenges` its 128-bit packings, and
-`transcriptFrom_eq_ipaPrechallenges` identifies `transcriptFrom`'s outputs with their
-map-to-curve and endo-expansions. `schnorrAt` names the Schnorr equation at given advice,
-`verifyWith_eq` splits `verifyWith` into it and the `sg`-correctness equation. -/
+`Poseidon.State`, and `ipaPrechallenges` its 128-bit packings. `schnorrAt` names the Schnorr
+equation at given advice, and `verifyWith_eq` splits `verifyWith` into it and the
+`sg`-correctness equation. -/
 
 /-- The absorbed limbs of a scalar (`absorbFr`'s branch made explicit): one limb when the
 scalar modulus is below the base modulus, the high bits then the low bit otherwise. -/
@@ -654,8 +640,7 @@ def ipaSqueezes {F : Type*} [Field F] (p : Poseidon.Params F) (s₀ : Poseidon.S
   (sqT.1, r.1, (Poseidon.squeeze p (Poseidon.absorb p r.2 [delta.1, delta.2])).1)
 
 /-- The 128-bit prechallenges of the opening transcript: `t` raw, each round's and `c`'s
-squeeze mod `2^128` (`challengeNat`). `transcriptFrom` is their map-to-curve and
-endo-expansions (`transcriptFrom_eq_ipaPrechallenges`). -/
+squeeze mod `2^128` (`challengeNat`). -/
 def ipaPrechallenges {p : ℕ} [Field (ZMod p)] (params : Poseidon.Params (ZMod p))
     (s₀ : Poseidon.State (ZMod p)) (cipLimbs : List (ZMod p))
     (lr : List ((ZMod p × ZMod p) × (ZMod p × ZMod p))) (delta : ZMod p × ZMod p) :
@@ -725,31 +710,6 @@ theorem ipaRunAt_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (cip : C.
     rw [h1]
     simp only [List.map_map, Function.comp_def, packRaw]
   · simp only [absorbG, absorbFq, challengeNat_fresh]
-
-/-- `ipaRun` from a warm state with an empty limb buffer is `ipaPrechallenges` on the
-automaton: `ipaRunAt_eq_ipaPrechallenges` at the verifier's own inner product. -/
-theorem ipaRun_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (inp : Input C k m p) :
-    let r := ipaPrechallenges C.sponge.params st (scalarLimbs C (shiftScalar C (cipOf inp)))
-      (inp.proof.lr.toList.map (coordsPair C)) (inp.proof.delta.x, inp.proof.delta.y)
-    (ipaRun C ⟨st, []⟩ inp).1 = r.1 ∧
-    (ipaRun C ⟨st, []⟩ inp).2.1.toList.map Subtype.val = r.2.1 ∧
-    (ipaRun C ⟨st, []⟩ inp).2.2.val = r.2.2 :=
-  ipaRunAt_eq_ipaPrechallenges C st (cipOf inp) inp.proof
-
-/-- `transcriptFrom` from a warm state with an empty limb buffer, through
-`ipaPrechallenges`: the `U` base is `uBase` of `t`, the round challenges and `c` the
-endo-expansions of the packed squeezes. -/
-theorem transcriptFrom_eq_ipaPrechallenges (st : Poseidon.State C.BaseField)
-    (inp : Input C k m p) :
-    let r := ipaPrechallenges C.sponge.params st (scalarLimbs C (shiftScalar C (cipOf inp)))
-      (inp.proof.lr.toList.map (coordsPair C)) (inp.proof.delta.x, inp.proof.delta.y)
-    (transcriptFrom C ⟨st, []⟩ inp).1 = C.uBase r.1 ∧
-    (transcriptFrom C ⟨st, []⟩ inp).2.1.toList = r.2.1.map (endoExpand C.lam) ∧
-    (transcriptFrom C ⟨st, []⟩ inp).2.2 = endoExpand C.lam r.2.2 := by
-  obtain ⟨h1, h2, h3⟩ := ipaRun_eq_ipaPrechallenges C st inp
-  simp only [transcriptFrom]
-  refine ⟨by rw [h1], ?_, by rw [h3]⟩
-  simp only [Vector.toList_map, ← h2, List.map_map, Function.comp_def]
 
 /-- The Schnorr equation of the opening at given advice: `verifyWith`'s first conjunct
 with the combined inner product `cip` and the challenge-polynomial evaluation `b` as
@@ -870,9 +830,6 @@ abbrev curve : Ipa.KimchiCurve where
         (List.ofFn fun i => ((a i).val, g i))]
     simp [List.map_ofFn, List.sum_ofFn]
 
-/-- The Vesta point type. -/
-abbrev Point := curve.Point
-
 end Bulletproof.IpaVesta
 
 namespace Bulletproof.IpaPallas
@@ -906,8 +863,5 @@ abbrev curve : Ipa.KimchiCurve where
     rw [CompElliptic.Curves.Pasta.Fast.MsmProjPallas.pippengerProjScatterPar_eq_msm 8 (by decide)
         (List.ofFn fun i => ((a i).val, g i))]
     simp [List.map_ofFn, List.sum_ofFn]
-
-/-- The Pallas point type. -/
-abbrev Point := curve.Point
 
 end Bulletproof.IpaPallas

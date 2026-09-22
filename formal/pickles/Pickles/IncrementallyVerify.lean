@@ -37,8 +37,7 @@ assumes: the cells read as the wire's key, proof and claims.
 reading, the decode, the group facts, the endomorphism and map-to-curve data, the absorbed
 limbs and the two group bridges a side supplies, from which its opening check reads as the
 wire's (`IvpSide.opening_reads`); `wrapSide` and `stepSide` are the two
-deployed values and `incrementallyVerifyProof_wrap_reads` / `incrementallyVerifyProof_step_reads`
-the read at each. The step side's claimed `cip` absorbs canonically because its own ladder
+deployed values. The step side's claimed `cip` absorbs canonically because its own ladder
 (`scaleByCip`) range-checks the halved limb to 253 bits (`IvpSide.absorb_limbs`): at 254, one
 bit more than the honest half takes, a non-canonical claim would absorb limbs the wire does
 not.
@@ -284,12 +283,12 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
 expands) and `r` its IPA run from the warm post-`ζ` state at the claimed `cip` (`ipaRunAt`,
 the claim in place of the wire's `cipOf`): (1) the digest cell is the wire's digest element;
 (2) the claimed `β`, `γ` read as `pre`'s prechallenges, and the claimed `α`, `ζ`, once read as
-prechallenges, are `pre`'s (the transcript range-checks the first two,
-`FqTranscriptReadsWire`); (3) where the claimed `perm`, `ζ^{2^k}`, `ζⁿ` decode to the wire's —
-they enter `ft_comm` alone, so (1) and (2) hold without them, which is what lets the scalar
-half's permutation check supply the first — for any prechallenge `ξ₀` the claimed `ξ` reads as,
-the returned round prechallenges read as `r`'s, and, with `U` the `uBase` of `r`'s `t` and
-`c₀` `r`'s Schnorr prechallenge, the success bit reads `1` exactly when
+prechallenges, are `pre`'s (the transcript range-checks the first two); (3) where the claimed
+`perm`, `ζ^{2^k}`, `ζⁿ` decode to the wire's — they enter `ft_comm` alone, so (1) and (2) hold
+without them, which is what lets the scalar half's permutation check supply the first — for
+any prechallenge `ξ₀` the claimed `ξ` reads as, the returned round prechallenges read as
+`r`'s, and, with `U` the `uBase` of `r`'s `t` and `c₀` `r`'s Schnorr prechallenge, the success
+bit reads `1` exactly when
 `Ipa.schnorrAt` holds at `U`, the expansions of `ns` and `c₀`, the claimed `cip` and `b`, the
 wire's batch stream combined at `ξ₀`'s expansion, and the proof's opening. (The witnesses are
 stated under the `ξ` reading because the opening check's read is; they do not depend on it.) -/
@@ -868,50 +867,6 @@ attribute [irreducible] incrementallyVerifyProof
 /-! ## The deployed sides -/
 
 section Sides
-
-/-- **The wrap side's group half reads as the wire's**: `incrementallyVerifyProof_reads` at
-`wrapSide` — the conditional sponge, every `sg_old` under a keep bit, every claim canonical. -/
-theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
-    (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
-    (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
-    (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
-    (spongeAfterIndex : SpongeVar Fq)
-    (computeXHat : CircuitM Fq (Builder V (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
-    (inp : IvpInput σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (oldsW : List (IpaVesta.curve.Point × Bool))
-    (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
-      ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
-    (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH
-      (SWPoint.equivPoint IpaVesta.curve.E σ.h))
-    (h : IvpHyps (wrapSide V) σ cvk cp pub true spongeAfterIndex inp oldsW) :
-    ⦃⌜True⌝⦄
-    incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params endo
-      groupMapParamsVesta sqrtF true blindingH spongeAfterIndex computeXHat inp
-    ⦃⇓ o _ => ⌜IvpReads (wrapSide V) σ cvk cp pub inp.toIvpClaims o⌝⦄ :=
-  incrementallyVerifyProof_reads (wrapSide V) σ cvk cp pub endo sqrtF true blindingH
-    spongeAfterIndex computeXHat inp oldsW hXhat hh h
-
-/-- **The step side's group half reads as the wire's**: `incrementallyVerifyProof_reads` at
-`stepSide` — the plain sponge, no `sg_old` masked, the claimed `cip` canonical. -/
-theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
-    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
-    (cp : KimchiProof IpaPallas.curve nc σ.k) (pub : Array Fq)
-    (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
-    (spongeAfterIndex : SpongeVar Fp)
-    (computeXHat : CircuitM Fp (Builder V (KimchiConstraint Fp)) (List (AffinePoint (FVar Fp))))
-    (inp : IvpInput σ.k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (oldsW : List (IpaPallas.curve.Point × Bool))
-    (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
-      ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk pub).toList⌝⦄)
-    (hh : OnCurveAt IpaPallas.curve.E.toAffine V blindingH
-      (SWPoint.equivPoint IpaPallas.curve.E σ.h))
-    (h : IvpHyps (stepSide V) σ cvk cp pub false spongeAfterIndex inp oldsW) :
-    ⦃⌜True⌝⦄
-    incrementallyVerifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params endo
-      groupMapParamsPallas sqrtF false blindingH spongeAfterIndex computeXHat inp
-    ⦃⇓ o _ => ⌜IvpReads (stepSide V) σ cvk cp pub inp.toIvpClaims o⌝⦄ :=
-  incrementallyVerifyProof_reads (stepSide V) σ cvk cp pub endo sqrtF false blindingH
-    spongeAfterIndex computeXHat inp oldsW hXhat hh h
 
 end Sides
 

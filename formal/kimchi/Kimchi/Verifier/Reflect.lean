@@ -21,7 +21,7 @@ open Bulletproof
 namespace Kimchi.Verifier
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Poseidon Poseidon.FqSponge Bulletproof Kimchi.Index
+open Poseidon Poseidon.FqSponge Bulletproof
 open Kimchi.Protocol.Linearization Polynomial
 open Kimchi.Verifier
 

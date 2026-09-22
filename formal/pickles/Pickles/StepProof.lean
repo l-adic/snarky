@@ -17,7 +17,7 @@ the run's own scalars, and `sg` is the challenge polynomial's commitment
 scalars; the scalar circuit proves the claimed scalars are the run's; the ties say the two
 circuits speak of one set of claims. The guards are the environment's, and the `sg` equation
 is the one check no circuit performs — pickles defers it to the next proof's accumulator
-(`SgOk`, `sgOk_iff_accOk`).
+(`SgOk`).
 
 The two halves run in different circuits over different fields, so neither is a triple's
 program here: each is compiled (`Snarky.compile`) over its input and appears as its

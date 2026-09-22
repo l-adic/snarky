@@ -22,7 +22,6 @@ def roots : List Name :=
   [ `Pasta.pallas_card, `Pasta.vesta_card,
     `Pasta.pallas_order_prime, `Pasta.vesta_order_prime,
     `Pasta.pallas_glv_no_short_relation, `Pasta.vesta_glv_no_short_relation,
-    `Pasta.vesta_smul_val, `Pasta.pallas_smul_val,
     `Pasta.Shifted.unshiftType1_shiftType1, `Pasta.Shifted.shiftType1_unshiftType1,
     `Pasta.Shifted.shiftType2_unshiftType2,
     `Pasta.pallas_eigen, `Pasta.vesta_eigen ]

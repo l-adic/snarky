@@ -80,14 +80,6 @@ instance instCheckedTypeBool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     rw [CVar.val_of_le hle (hs _ (List.mem_cons_self ..)), hv]
     cases a <;> simp [bit]
 
-/-- The empty bundle needs no check. -/
-instance instCheckedTypeUnit [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
-    CheckedType F c Unit Unit where
-  check _ := .pure PUnit.unit
-  post _ _ := True
-  check_sound := by intros; trivial
-  check_complete _ _ _ := Complete.pure
-
 section Product
 
 variable {a va b vb : Type}

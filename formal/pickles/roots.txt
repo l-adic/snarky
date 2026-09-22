@@ -80,7 +80,6 @@ Pickles.fqSpongeTranscript_spec
 Pickles.optSqueezePrechallenge_spec
 Pickles.fqSpongeTranscriptOpt_spec
 Pickles.assertPlonkChallenges_spec
-Pickles.FqTranscriptReads.wire
 
 -- script-surface:begin
 -- The environment's invariants as a decidable predicate, and the environment built from
@@ -103,6 +102,12 @@ Pickles.decidableAvoidsStepRelations
 -- by name, so it is rooted beside the predicate rather than anchored in a script.
 Pickles.Env.decidableInvariants
 -- script-surface:begin
+-- The deferred `sg` obligation, decided (TwoHalves.lean): pickles/scripts/check_halves.lean
+-- runs `carry`, `accOk` and `sgOk` on the proof cache, pickles/scripts/check_sg_ok.lean runs
+-- `sgOk` on a deployed wrap proof.
+Pickles.sgOk
+Pickles.accOk
+Pickles.carry
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
 -- transcription of the PureScript `Cip` harness.
 Pickles.buildEvalList
@@ -127,7 +132,6 @@ Pickles.instStepStatementCircuitType -- synthesis: `CircuitType` resolution at t
 Pickles.instFopInputCircuitType -- synthesis: `CircuitType` resolution at the records
 Pickles.instBulletproofOpeningCircuitType -- synthesis: `CircuitType` resolution at the records
 Pickles.instIvpProofCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instVkCommsCircuitType -- synthesis: `CircuitType` resolution at the records
 Pickles.instWrapGroupCircuitType -- synthesis: `CircuitType` resolution at the records
 Pickles.instStepGroupCircuitType -- synthesis: `CircuitType` resolution at the records
 Pickles.StepProof.instGroupInputCircuitType -- synthesis: `CircuitType` resolution at the records
@@ -137,22 +141,6 @@ Pickles.StepProof.instScalarInputCircuitType -- synthesis: `CircuitType` resolut
 -- The token alphabet (Linearization/Types.lean): the PS `Types.purs` transcription's
 -- derived instances — comparable and printable, as the PureScript's `Eq`/`Show` are.
 -- Consumed by `decide` and `#eval` at the REPL and by the fixture drivers' diagnostics.
-Pickles.Linearization.instDecidableEqCurrOrNext
-Pickles.Linearization.instReprCurrOrNext
-Pickles.Linearization.instDecidableEqGateType
-Pickles.Linearization.instReprGateType
-Pickles.Linearization.instDecidableEqLookupPattern
-Pickles.Linearization.instReprLookupPattern
-Pickles.Linearization.instDecidableEqColumn
-Pickles.Linearization.instReprColumn
-Pickles.Linearization.instDecidableEqConstantTerm
-Pickles.Linearization.instReprConstantTerm
-Pickles.Linearization.instDecidableEqChallengeTerm
-Pickles.Linearization.instReprChallengeTerm
-Pickles.Linearization.instDecidableEqFeatureFlag
-Pickles.Linearization.instReprFeatureFlag
-Pickles.Linearization.instDecidableEqPolishToken
-Pickles.Linearization.instReprPolishToken
 
 -- `rfl` simp lemmas: the `EvalState.map` position law (Linearization/Map.lean) and the
 -- `Evals.toEnv` projections (Linearization/Spec.lean). Fired by `simp` in the simulation
@@ -252,8 +240,6 @@ Pickles.ftComm_reads
 -- deployed instantiations.
 Pickles.incrementallyVerifyProof
 Pickles.incrementallyVerifyProof_reads
-Pickles.incrementallyVerifyProof_wrap_reads
-Pickles.incrementallyVerifyProof_step_reads
 
 -- The two halves of one proof (TwoHalves.lean): the group half (`incrementally_verify_proof`,
 -- in the circuit that receives the proof) then the scalar half (`finalize_other_proof`, one
@@ -262,7 +248,6 @@ Pickles.incrementallyVerifyProof_step_reads
 -- claim tie unfolded; the recursion constants of the statement records. `sgOk_iff` is the decidable mirror of the deferred `sg` conjunct the
 -- checkpoint carries as a hypothesis — the form the terminator runs out of circuit, and the
 -- root `sgOk` itself is reachable from (scripts/check_sg_ok.lean runs it on a wire proof).
-Pickles.sgOk_iff
 
 -- The records as circuit inputs: each record's product decomposition, whose `@[simps apply]`
 -- projection lemma is the record's whole reading API — `simp [reads_simps]` decomposes a
@@ -270,30 +255,6 @@ Pickles.sgOk_iff
 -- circuits' input bundles beside the circuit that takes each (Verify.lean, VkComms.lean,
 -- WrapVerify.lean, StepGroupHalf.lean, StepScalarHalf.lean). The instances are script-surface
 -- roots: class resolution finds them.
-Snarky.SizedF.equivVal_apply
-Snarky.Type1.equivVal_apply
-Snarky.Type2.equivVal_apply
-Snarky.SplitField.equivProd_apply
-Kimchi.Verifier.PointEvaluations.equivProd_apply
-Kimchi.Verifier.ProofEvaluations.equivProd_apply
-Pickles.ChunkedEvals.equivProd_apply
-Pickles.PlonkInCircuit.equivProd_apply
-Pickles.DeferredValues.equivProd_apply
-Pickles.UnfinalizedProof.equivProd_apply
-Pickles.BranchData.equivProd_apply
-Pickles.WrapDeferredValues.equivProd_apply
-Pickles.WrapProofState.equivProd_apply
-Pickles.WrapStatement.equivProd_apply
-Pickles.StepProofState.equivProd_apply
-Pickles.StepStatement.equivProd_apply
-Pickles.FopInput.equivProd_apply
-Pickles.BulletproofOpening.equivProd_apply
-Pickles.IvpProof.equivProd_apply
-Pickles.VkComms.equivProd_apply
-Pickles.WrapGroup.equivProd_apply
-Pickles.StepGroup.equivProd_apply
-Pickles.StepProof.GroupInput.equivProd_apply
-Pickles.StepProof.ScalarInput.equivProd_apply
 -- The step statement's packing (Verify.lean, beside `WrapStatement.packed`, which `verifyProof`
 -- reaches): the `x_hat` walk of a step statement and its boolean cells. Its consumer today
 -- is the wrap circuit's group half in the fixture library (`PicklesFixture.groupWrapOn`); the
@@ -304,13 +265,9 @@ Pickles.StepStatement.packed
 -- challenges — and `sgOk_iff_accOk` transports the deferred equation to that accumulator
 -- alone (`AccOk`), the form a verifier checks without the proof. `accOk_iff`, `carry_iff`
 -- reflect the decidable mirrors pickles/scripts/check_halves.lean runs on the proof cache.
-Pickles.sgOk_iff_accOk
-Pickles.accOk_iff
-Pickles.carry_iff
 Pickles.twoHalves_kimchiVerify
 Pickles.twoHalves_schnorr
 Pickles.ScalarHalf.wrap_olds
-Pickles.vesta_claim_tie
 Pickles.MaxProofsVerified
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
