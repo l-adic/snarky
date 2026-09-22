@@ -57,8 +57,10 @@ def sigmaBatch (k : VkComms nc f) : List (Vector f nc) :=
 def sigmaLast (k : VkComms nc f) : Vector f nc :=
   k.sigmaComm[6]
 
+end VkComms
+
 /-- A key's commitments are its permutation, coefficient and selector columns. -/
-def equivProd (nc : ℕ) (f : Type) :
+@[simps apply] def VkComms.equivProd (nc : ℕ) (f : Type) :
     VkComms nc f ≃
       Vector (Vector f nc) permCols × Vector (Vector f nc) coeffCols × Vector f nc ×
         Vector f nc × Vector f nc × Vector f nc × Vector f nc × Vector f nc :=
@@ -68,25 +70,8 @@ def equivProd (nc : ℕ) (f : Type) :
      p.2.2.2.2.2.2.2⟩,
    fun _ => rfl, fun _ => rfl⟩
 
-end VkComms
-
 instance instVkCommsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
     CircuitType F (VkComms nc v) (VkComms nc w) :=
   CircuitType.ofEquiv (VkComms.equivProd nc v) (VkComms.equivProd nc w)
-
-@[simp] theorem scoped_vkComms {F v w : Type} {nc : ℕ} [CircuitType F v w]
-    {st : ProverState F} {x : VkComms nc w} :
-    CircuitType.Scoped (val := VkComms nc v) st x ↔
-      CircuitType.Scoped
-        (val := Vector (Vector v nc) permCols × Vector (Vector v nc) coeffCols × Vector v nc ×
-          Vector v nc × Vector v nc × Vector v nc × Vector v nc × Vector v nc) st
-        (VkComms.equivProd nc w x) :=
-  CircuitType.scoped_ofEquiv _ _
-
-@[simp] theorem reads_vkComms {F v w : Type} {nc : ℕ} [Add F] [Mul F] [Zero F]
-    [CircuitType F v w] {V : Valuation F} {x : VkComms nc w} {a : VkComms nc v} :
-    CircuitType.Reads V x a ↔
-      CircuitType.Reads V (VkComms.equivProd nc w x) (VkComms.equivProd nc v a) :=
-  CircuitType.reads_ofEquiv _ _
 
 end Pickles

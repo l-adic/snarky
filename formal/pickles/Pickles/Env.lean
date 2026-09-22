@@ -121,17 +121,6 @@ def Env.ofInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : Kimc
     h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
     h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2⟩
 
-/-- The key's domain is within its chunks: `n ≤ nc · 2^k`. -/
-theorem Env.domain_le {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : E.cvk.n ≤ nc * 2 ^ E.σ.k := by
-  have key : E.cvk.n ≤ (if E.cvk.domainLog2 < E.σ.k then 1
-      else 2 ^ (E.cvk.domainLog2 - E.σ.k)) * 2 ^ E.σ.k := by
-    rw [KimchiVK.n]
-    split_ifs with h
-    · rw [one_mul]
-      exact Nat.pow_le_pow_right two_pos h.le
-    · rw [← pow_add, Nat.sub_add_cancel (not_lt.1 h)]
-  rwa [← E.nc_eq] at key
-
 /-- There is a chunk. -/
 theorem Env.nc_pos {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : 0 < nc := by
   have h : 0 < (if E.cvk.domainLog2 < E.σ.k then 1 else 2 ^ (E.cvk.domainLog2 - E.σ.k)) := by
@@ -161,6 +150,22 @@ theorem Env.chunk_lt {C : KimchiCurve} {nc : ℕ} (E : Env C nc) (c : Fin nc) :
           Nat.mul_lt_mul_of_pos_right hc (by positivity)
       _ = 2 ^ E.cvk.domainLog2 := by rw [← pow_add, Nat.sub_add_cancel (not_lt.1 h)]
 
+/-- Every chunk holds `min (2^k) n` domain points: the domain's points from chunk `c`'s start
+on number at least the SRS size, or the whole domain at one chunk. -/
+theorem Env.chunk_add_le {C : KimchiCurve} {nc : ℕ} (E : Env C nc) (c : Fin nc) :
+    c.val * 2 ^ E.σ.k + min (2 ^ E.σ.k) E.cvk.n ≤ E.cvk.n := by
+  have hc : c.val < (if E.cvk.domainLog2 < E.σ.k then 1
+      else 2 ^ (E.cvk.domainLog2 - E.σ.k)) := E.nc_eq ▸ c.isLt
+  rw [KimchiVK.n]
+  split_ifs at hc with h
+  · rw [Nat.lt_one_iff.1 hc, zero_mul, Nat.zero_add]
+    exact Nat.min_le_right _ _
+  · calc c.val * 2 ^ E.σ.k + min (2 ^ E.σ.k) (2 ^ E.cvk.domainLog2)
+        ≤ (c.val + 1) * 2 ^ E.σ.k := by rw [Nat.succ_mul]; omega
+      _ ≤ 2 ^ (E.cvk.domainLog2 - E.σ.k) * 2 ^ E.σ.k :=
+          Nat.mul_le_mul_right _ hc
+      _ = 2 ^ E.cvk.domainLog2 := by rw [← pow_add, Nat.sub_add_cancel (not_lt.1 h)]
+
 /-! ### The relations the environment's SRS avoids -/
 
 /-- The Lagrange relations of an environment: the coefficient vectors of every chunk of the
@@ -184,21 +189,6 @@ theorem Env.lagrangeBasis_toList {C : KimchiCurve} {nc : ℕ} (E : Env C nc) :
   ext c hc
   rw [Vector.getElem_ofFn]
   exact getElem_lagrangeBasis C E.σ nc E.cvk.n E.cvk.omega _ i hs ⟨c, hc⟩
-
-/-- At one chunk the Lagrange relations are the polynomials' coefficient vectors. -/
-theorem Env.lagrangeRelations_one {C : KimchiCurve} (E : Env C 1) :
-    E.lagrangeRelations = (List.range E.cvk.lagrangeBasis.size).map fun i =>
-      lagrangeCoeffs E.σ.k E.cvk.n E.cvk.omega i 0 := by
-  simp [Env.lagrangeRelations, List.finRange_succ, ← List.map_eq_flatMap]
-
-/-- At one chunk the key's Lagrange points are the commitments to the Lagrange relations. -/
-theorem Env.lagrangeBasis_toList_one {C : KimchiCurve} (E : Env C 1) :
-    E.cvk.lagrangeBasis.toList = E.lagrangeRelations.map fun a => #v[msm C E.σ.g a] := by
-  rw [E.lagrangeBasis_toList, E.lagrangeRelations_one, List.map_map]
-  refine List.map_congr_left fun i _ => ?_
-  ext c hc
-  obtain rfl : c = 0 := by omega
-  simp
 
 theorem Env.natCast_n_ne_zero {C : KimchiCurve} {nc : ℕ} (s : PastaShape C) (E : Env C nc) :
     ((E.cvk.n : ℕ) : C.ScalarField) ≠ 0 := by

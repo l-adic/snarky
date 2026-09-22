@@ -150,7 +150,7 @@ structure IvpProof (k nc : ℕ) (f sf : Type) where
   opening : BulletproofOpening k f sf
 
 /-- A proof is its witness commitments, `z_comm`, its quotient chunks and its opening. -/
-def IvpProof.equivProd (k nc : ℕ) (f sf : Type) :
+@[simps apply] def IvpProof.equivProd (k nc : ℕ) (f sf : Type) :
     IvpProof k nc f sf ≃
       Vector (Vector (AffinePoint f) nc) wCols × Vector (AffinePoint f) nc ×
         Vector (AffinePoint f) (7 * nc) × BulletproofOpening k f sf :=
@@ -160,22 +160,6 @@ def IvpProof.equivProd (k nc : ℕ) (f sf : Type) :
 instance instIvpProofCircuitType {F sv sf : Type} {k nc : ℕ} [CircuitType F sv sf] :
     CircuitType F (IvpProof k nc F sv) (IvpProof k nc (FVar F) sf) :=
   CircuitType.ofEquiv (IvpProof.equivProd k nc F sv) (IvpProof.equivProd k nc (FVar F) sf)
-
-@[simp] theorem scoped_ivpProof {F sv sf : Type} {k nc : ℕ} [CircuitType F sv sf]
-    {st : ProverState F} {x : IvpProof k nc (FVar F) sf} :
-    CircuitType.Scoped (val := IvpProof k nc F sv) st x ↔
-      CircuitType.Scoped (val := Vector (Vector (AffinePoint F) nc) wCols ×
-        Vector (AffinePoint F) nc × Vector (AffinePoint F) (7 * nc) ×
-        BulletproofOpening k F sv) st (IvpProof.equivProd k nc (FVar F) sf x) :=
-  CircuitType.scoped_ofEquiv _ _
-
-@[simp] theorem reads_ivpProof {F sv sf : Type} {k nc : ℕ} [Add F] [Mul F] [Zero F]
-    [CircuitType F sv sf] {V : Valuation F} {x : IvpProof k nc (FVar F) sf}
-    {a : IvpProof k nc F sv} :
-    CircuitType.Reads V x a ↔
-      CircuitType.Reads V (IvpProof.equivProd k nc (FVar F) sf x)
-        (IvpProof.equivProd k nc F sv a) :=
-  CircuitType.reads_ofEquiv _ _
 
 /-- The group half's input from a proof's deferred values (its claims), the `sg_old` points
 under their keep bits, a key's commitments and the proof. -/
