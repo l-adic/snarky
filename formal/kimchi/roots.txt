@@ -59,7 +59,6 @@ Kimchi.Index.selectorPoly
 Kimchi.Index.sigmaPoly_eq_wiring
 Kimchi.sigmaPermCol
 Kimchi.Permutation.columnPoly_eq_sum_indicator
-Kimchi.Permutation.lagNumer_mul_sub
 Kimchi.Permutation.shiftSide_eval_row
 Kimchi.Permutation.sigmaSide_eval_row
 Kimchi.card_badAlphas_le
