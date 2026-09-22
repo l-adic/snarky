@@ -1,7 +1,6 @@
 import Mathlib.Algebra.Field.Defs
 import Mathlib.Data.Fin.VecNotation
 import CompElliptic.Fields.Pasta
-import Pasta.CompElliptic
 import Poseidon.ConstantsFq
 import Poseidon.ConstantsFp
 

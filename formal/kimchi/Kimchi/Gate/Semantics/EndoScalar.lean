@@ -1,5 +1,5 @@
 import Kimchi.Gate.EndoScalar
-import Pasta.CompElliptic
+import CompElliptic.Fields.Pasta
 import Poseidon.FqSponge
 
 /-! # EndoScalar semantics
@@ -26,7 +26,7 @@ import Poseidon.FqSponge
       `4 ^ (c(m+1))`. `chain_range_128` and `chain_range_complete_128` fix the deployed shape.
     * `fp_rangeCheck128_sound`, `fp_rangeCheck128_complete`, `fq_rangeCheck128_sound`,
       `fq_rangeCheck128_complete` — the deployed check at the two Pasta fields, every field
-      hypothesis discharged; this is why `Pasta.CompElliptic` is imported.
+      hypothesis discharged; this is why `CompElliptic.Fields.Pasta` is imported.
     * `endoExpand_eq_toField` — the sponge's window recoding is `toField` at the challenge's
       canonical crumbs.
 

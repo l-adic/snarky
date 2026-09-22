@@ -3,7 +3,6 @@ import CompElliptic.CurveForms.ShortWeierstrass
 import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.PastaOrder
 import CompElliptic.Fields.Pasta
-import Pasta.CompElliptic
 
 /-!
 # The Pasta group orders

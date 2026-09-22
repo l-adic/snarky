@@ -1,6 +1,6 @@
 import Mathlib.Algebra.Ring.Defs
 import Mathlib.Data.ZMod.Basic
-import Pasta.CompElliptic
+import CompElliptic.Fields.Pasta
 import Pasta.Shifted
 import Snarky.Witness
 
