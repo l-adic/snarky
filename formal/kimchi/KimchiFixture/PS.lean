@@ -2,7 +2,6 @@ import CompElliptic.Fields.Pasta
 import Kimchi.Index.Satisfies
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Wire
-import Kimchi.Verifier.Kimchi
 import FixtureKit.Parse
 import Pasta.Endo
 import Lean.Data.Json
