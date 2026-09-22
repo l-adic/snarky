@@ -350,32 +350,69 @@ theorem lagrangeCoeffs_ne_zero {F : Type*} [Field F] (k n : ℕ) (ω : F) (i c :
   have := congrFun h ⟨0, by positivity⟩
   simp [lagrangeCoeffs, hc, hF, hω] at this
 
-/-- The `i`-th Lagrange polynomial of a domain within the SRS at `1`: its coefficients sum to
-`δ_{i0}`. -/
-theorem sum_lagrangeCoeffs {F : Type*} [Field F] (k n : ℕ) (ω : F)
-    (hω : IsPrimitiveRoot ω n) (hle : n ≤ 2 ^ k) (hF : (n : F) ≠ 0) (i : ℕ) (hi : i < n) :
-    ∑ j, lagrangeCoeffs k n ω i 0 j = if i = 0 then 1 else 0 := by
-  have h1 : ∑ j, lagrangeCoeffs k n ω i 0 j
-      = ∑ j ∈ Finset.range n, (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j := by
-    unfold lagrangeCoeffs
-    simp only [zero_mul, _root_.zero_add]
-    rw [Fin.sum_univ_eq_sum_range (fun j => if j < n then (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j else 0),
-      ← Finset.sum_subset (Finset.range_subset_range.2 hle)]
-    · exact Finset.sum_congr rfl fun j hj => by simp [Finset.mem_range.1 hj]
-    · intro j _ hj
-      simp [Finset.mem_range.not.1 hj]
-  rw [h1, ← Finset.mul_sum]
-  split_ifs with h0
-  · subst h0
-    simp [hF]
-  · have hx : ω⁻¹ ^ i ≠ 1 := by
-      rw [inv_pow, Ne, inv_eq_one]
-      exact hω.pow_ne_one_of_pos_of_lt (Nat.pos_of_ne_zero h0).ne' hi
-    have hxn : (ω⁻¹ ^ i) ^ n = 1 := by
-      rw [← pow_mul, mul_comm, pow_mul, inv_pow, hω.pow_eq_one, inv_one, one_pow]
-    have := geom_sum_mul (ω⁻¹ ^ i) n
-    rw [hxn, sub_self] at this
-    rw [(mul_eq_zero.1 this).resolve_right (sub_ne_zero.2 hx), mul_zero]
+private theorem sum_zipWith_range' {F : Type*} [Field F] {m : ℕ} (L : ℕ → Fin m → F) :
+    ∀ (a : List F) (start len : ℕ),
+      (List.zipWith (fun x v => x • v) a ((List.range' start len).map L)).sum
+        = ∑ i ∈ Finset.range (min a.length len), a.getD i 0 • L (start + i)
+  | [], _, _ => by simp
+  | _ :: _, _, 0 => by simp
+  | x :: a, start, len + 1 => by
+      rw [List.range'_succ, List.map_cons, List.zipWith_cons_cons, List.sum_cons,
+        sum_zipWith_range' L a (start + 1) len, List.length_cons, Nat.succ_min_succ,
+        Finset.sum_range_succ']
+      simp [_root_.add_comm, _root_.add_left_comm]
+
+open Polynomial in
+/-- A combination of chunk `c` of the Lagrange coefficient vectors with a nonzero leading
+coefficient is nonzero, when the chunk holds at least as many domain points as the
+combination has terms: its entries are the combination's polynomial at distinct points. -/
+theorem zipWith_lagrangeCoeffs_ne_zero {F : Type*} [Field F] {k n : ℕ} {ω : F}
+    (hω : IsPrimitiveRoot ω n) (hF : (n : F) ≠ 0) (c size : ℕ) (x : F) (a : List F)
+    (hx : x ≠ 0) (hsize : 0 < size)
+    (hroom : c * 2 ^ k + min (a.length + 1) size ≤ n)
+    (hk : min (a.length + 1) size ≤ 2 ^ k) :
+    (List.zipWith (fun x v => x • v) (x :: a)
+      ((List.range size).map fun i => lagrangeCoeffs k n ω i c)).sum ≠ 0 := by
+  classical
+  set t := min (a.length + 1) size with ht
+  have ht0 : 0 < t := by omega
+  set s : Fin t → F := fun i => (x :: a).getD i 0
+  intro h0
+  rw [List.range_eq_range', sum_zipWith_range'] at h0
+  simp only [List.length_cons, _root_.zero_add] at h0
+  rw [← ht, Finset.sum_range (fun i => (x :: a).getD i 0 • lagrangeCoeffs k n ω i c)] at h0
+  set P : Polynomial F := ∑ i : Fin t, Polynomial.C (s i) * Polynomial.X ^ (i : ℕ)
+  have hω' := hω.inv
+  have heval : ∀ j : Fin t, P.eval (ω⁻¹ ^ (c * 2 ^ k + j)) = 0 := by
+    intro j
+    have hj : (j : ℕ) < 2 ^ k := lt_of_lt_of_le j.isLt hk
+    have hin : c * 2 ^ k + j < n := by omega
+    have := congrFun h0 ⟨j, hj⟩
+    simp only [Finset.sum_apply, Pi.smul_apply, smul_eq_mul, Pi.zero_apply, lagrangeCoeffs,
+      if_pos hin] at this
+    have hsum : (n : F)⁻¹ * P.eval (ω⁻¹ ^ (c * 2 ^ k + j)) = 0 := by
+      rw [← this, eval_finsetSum, Finset.mul_sum]
+      refine Finset.sum_congr rfl fun i _ => ?_
+      simp only [eval_mul, eval_C, eval_pow, eval_X, s]
+      rw [← pow_mul, ← pow_mul, mul_comm (c * 2 ^ k + j : ℕ)]
+      ring
+    simpa [hF] using hsum
+  have hinj : Function.Injective fun j : Fin t => ω⁻¹ ^ (c * 2 ^ k + (j : ℕ)) := by
+    intro i j hij
+    have hi : c * 2 ^ k + (i : ℕ) < n := by omega
+    have hj : c * 2 ^ k + (j : ℕ) < n := by omega
+    exact Fin.ext (by have := hω'.pow_inj hi hj hij; omega)
+  have hdeg : P.natDegree < Fintype.card (Fin t) := by
+    rw [Fintype.card_fin]
+    by_cases hP : P = 0
+    · rw [hP, natDegree_zero]; exact ht0
+    · exact (natDegree_lt_iff_degree_lt hP).2 (degree_sum_fin_lt s)
+  have hP := eq_zero_of_natDegree_lt_card_of_eval_eq_zero P hinj heval hdeg
+  have hc0 := congrArg (coeff · 0) hP
+  simp only [P, finsetSum_coeff, coeff_C_mul_X_pow, coeff_zero] at hc0
+  rw [Finset.sum_eq_single ⟨0, ht0⟩ (fun b _ hb => if_neg fun h => hb (Fin.ext h.symm))
+    (by simp)] at hc0
+  simp [s, hx] at hc0
 
 /-- An IPA opening proof at round count `k` — the checked form of the wire
 `OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/

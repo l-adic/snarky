@@ -2114,34 +2114,6 @@ theorem corrSumPt_map_msm {m : ℕ} (g : Fin m → C.Point) :
       rw [ih, corrPt_eq_smul]
       simp [Ipa.msm_eq]
 
-private theorem sum_corrCoeffs_range' {m N : ℕ} (L : ℕ → Fin m → C.ScalarField)
-    (hL : ∀ i, 0 < i → i < N → ∑ j, L i j = 0) :
-    ∀ (ks : List (PackedScalar C.BaseField)) (s len : ℕ), 0 < s → s + len ≤ N →
-      ∑ j, corrCoeffs ks ((List.range' s len).map L) j = 0
-  | [], _, _, _, _ => by simp [corrCoeffs]
-  | _ :: _, _, 0, _, _ => by simp [corrCoeffs]
-  | k :: ks, s, len + 1, hs, hle => by
-      have ih := sum_corrCoeffs_range' L hL ks (s + 1) len (by omega) (by omega)
-      simp only [corrCoeffs, List.range'_succ, List.map_cons, List.zipWith_cons_cons,
-        List.sum_cons, Pi.add_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_add_distrib,
-        ← Finset.mul_sum] at ih ⊢
-      rw [ih, hL s hs (by omega)]
-      simp
-
-/-- The correction sum's coefficients sum to the first leaf's shift coefficient, where the
-first vector's sum to one and the later ones' to zero. -/
-theorem sum_corrCoeffs {m N : ℕ} (L : ℕ → Fin m → C.ScalarField) (h0 : ∑ j, L 0 j = 1)
-    (hL : ∀ i, 0 < i → i < N → ∑ j, L i j = 0) (k : PackedScalar C.BaseField)
-    (ks : List (PackedScalar C.BaseField)) (size : ℕ) (hpos : 0 < size) (hle : size ≤ N) :
-    ∑ j, corrCoeffs (k :: ks) ((List.range size).map L) j = shiftCoeff k := by
-  obtain ⟨len, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hpos.ne'
-  have ih := sum_corrCoeffs_range' L hL ks 1 len one_pos (by omega)
-  rw [List.range_eq_range', List.range'_succ]
-  simp only [corrCoeffs, List.map_cons, List.zipWith_cons_cons, List.sum_cons, Pi.add_apply,
-    Pi.smul_apply, smul_eq_mul, Finset.sum_add_distrib, ← Finset.mul_sum] at ih ⊢
-  rw [ih, h0]
-  simp
-
 end OfKey
 
 /-! The gadgets are sealed after their reads: a consumer composes `publicInputCommitFull_reads`,

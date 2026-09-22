@@ -94,7 +94,7 @@ def stepIndexSponge (key : VkComms 1 (AffinePoint (FVar Fp))) : CircuitM Fp C (S
 blinding base, the claims from the unfinalized proof, every `sg_old` unmasked. Returns the
 success bit; the digest and round-challenge assertions are the gadget's constraints. -/
 def groupStepOn (key : VkComms 1 (AffinePoint (FVar Fp))) (basis : Array XhatStepCurve.Point)
-    (blindingH : XhatStepCurve.Point) {ks kw : ℕ} (v : StepGroup ks kw (FVar Fp) (BoolVar Fp)) :
+    (blindingH : XhatStepCurve.Point) {ks kw : ℕ} (v : StepGroup ks kw 1 (FVar Fp) (BoolVar Fp)) :
     CircuitM Fp C (BoolVar Fp) := do
   let sv ← stepIndexSponge key
   verifyProofWith blindingH (oneChunk basis) sv v.isBaseCase v.statement v.claims
