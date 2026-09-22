@@ -105,7 +105,7 @@ structure InputReads (E : Env IpaPallas.curve 1) (cp : KimchiProof IpaPallas.cur
 variable {E : Env IpaPallas.curve 1} {cp : KimchiProof IpaPallas.curve 1 E.σ.k} {pub : Array Fq}
   {Vg : Valuation Fp} {Vs : Valuation Fq}
   {g : GroupVar ks E.σ.k} {s : ScalarVar E.σ.k}
-  {keyCells : List (List (AffinePoint (FVar Fp)))} {spongeAfterIndex : SpongeVar Fp}
+  {keyCells : VkComms 1 (AffinePoint (FVar Fp))} {spongeAfterIndex : SpongeVar Fp}
 
 /-- The scalar half's proof ties are the input's readings. -/
 private theorem InputReads.fopTies (hin : InputReads E cp pub Vg Vs g s) :
@@ -130,8 +130,8 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
     { idx := hvk.idx, mask := ?mask
       ties :=
         { olds := ⟨?olds, ?kept⟩, w := hin.w, z := hin.z, t := hin.t
-          index := hvk.index, coefficients := hvk.coefficients, sigma := hvk.sigma
-          sigmaLast := hvk.sigmaLast, z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
+          key := hvk.key
+          z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
           lr := hin.lr, delta := hin.delta, sg := hin.sg }
       nc_pos := Nat.one_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
@@ -182,7 +182,7 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq)
     -- the group circuit's constants
-    (keyCells : List (List (AffinePoint (FVar Fp))))
+    (keyCells : VkComms 1 (AffinePoint (FVar Fp)))
     (spongeAfterIndex : SpongeVar Fp)
     -- the group circuit: the step circuit's verify, compiled over its input, satisfied
     (Vg : Valuation Fp)

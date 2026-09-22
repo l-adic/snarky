@@ -22,6 +22,7 @@ import Pickles.FtComm
 import Pickles.IncrementallyVerify
 import Pickles.TwoHalves
 import Pickles.Verify
+import Pickles.VkComms
 import Pickles.MessageHash
 import Pickles.StepGroupHalf
 import Pickles.StepProof

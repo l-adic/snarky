@@ -118,9 +118,9 @@ def StepStatement.packed {n : ℕ}
 /-- The group half's input with its claims taken from an unfinalized proof
 (`step_verifier.ml:1366–1385`): `xi`, `combined_inner_product`, `b` and the plonk claims
 of `unfinalized.deferred_values`; the key, proof and `sg_old` cells as given. -/
-def IvpInput.withClaims {sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf)
+def IvpInput.withClaims {sf : Type} (inp : IvpInput k nc (FVar F) (BoolVar F) sf)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) :
-    IvpInput k (FVar F) (BoolVar F) sf :=
+    IvpInput k nc (FVar F) (BoolVar F) sf :=
   let dv := u.deferredValues
   { inp with
     plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
@@ -135,13 +135,6 @@ end Pack
 section Records
 
 open Kimchi
-
-/-- The key's cells as the group half's key records: `σ₆`, the six selectors, the 15
-coefficients, `σ₀…σ₅`. -/
-private def keyRecords {F : Type} (comms : List (List (AffinePoint (FVar F)))) :
-    List (AffinePoint (FVar F)) × List (List (AffinePoint (FVar F))) ×
-      List (List (AffinePoint (FVar F))) × List (List (AffinePoint (FVar F))) :=
-  (comms.getD 6 [], comms.drop 22, (comms.drop 7).take 15, comms.take 6)
 
 /-- A proof at `nc` chunks as the group half reads it, polymorphic in its cells like the
 statement records. `IvpInput` holds the commitments as chunk lists; this is their sized form,
@@ -188,14 +181,13 @@ instance instIvpProofCircuitType {F sv sf : Type} {k nc : ℕ} [CircuitType F sv
 under their keep bits, a key's commitments and the proof. -/
 def ivpInputOf {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
     (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
-    (comms : List (List (AffinePoint (FVar F)))) (pr : IvpProof k nc (FVar F) sf) :
-    IvpInput k (FVar F) (BoolVar F) sf :=
-  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords comms
+    (key : VkComms nc (AffinePoint (FVar F))) (pr : IvpProof k nc (FVar F) sf) :
+    IvpInput k nc (FVar F) (BoolVar F) sf :=
   { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
       dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
     xi := dv.xi
     deferred := ⟨dv.combinedInnerProduct, dv.b⟩
-    sgOld, sigmaLast, indexComms, coefficientsComm, sigmaComm
+    sgOld, key
     wComm := pr.wComm.toList.map (·.toList)
     zComm := pr.zComm.toList
     tComm := pr.tComm.toList
@@ -205,32 +197,23 @@ def ivpInputOf {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
 `7 · nc` quotient chunks. -/
 theorem ivpInputOf_lengths {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
     (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
-    (comms : List (List (AffinePoint (FVar F)))) (pr : IvpProof k nc (FVar F) sf) :
-    (ivpInputOf dv sgOld comms pr).wComm.flatten.length = wCols * nc ∧
-      (ivpInputOf dv sgOld comms pr).zComm.length = nc ∧
-      (ivpInputOf dv sgOld comms pr).tComm.length = 7 * nc := by
+    (key : VkComms nc (AffinePoint (FVar F))) (pr : IvpProof k nc (FVar F) sf) :
+    (ivpInputOf dv sgOld key pr).wComm.flatten.length = wCols * nc ∧
+      (ivpInputOf dv sgOld key pr).zComm.length = nc ∧
+      (ivpInputOf dv sgOld key pr).tComm.length = 7 * nc := by
   simp [ivpInputOf, List.length_flatten, List.map_map, Function.comp_def]
   omega
 
-/-- The circuit's key cells read as the key. The cells are in the index digest's order —
-`σ₀…σ₆`, the 15 coefficient commitments, the six selectors, as `keyRecords` splits them — and
-the sponge after the index digest squeezes to the key's digest. -/
+/-- The circuit's key cells read as the key (`KeyReads`), and the sponge after the index
+digest squeezes to the key's digest. -/
 structure VkReads {C : KimchiCurve} {nc : ℕ} (cvk : KimchiVK C nc) (V : Valuation C.BaseField)
     (spongeAfterIndex : SpongeVar C.BaseField)
-    (keyCells : List (List (AffinePoint (FVar C.BaseField)))) : Prop where
+    (keyCells : VkComms nc (AffinePoint (FVar C.BaseField))) : Prop where
   /-- The sponge after the index digest squeezes to the key's digest. -/
   idx : ∃ st : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex st ∧
     (Poseidon.squeeze C.sponge.params st).1 = cvk.digest
-  /-- The six selector commitments. -/
-  index : ColumnsRead C V (keyCells.drop 22)
-    [cvk.genericComm, cvk.poseidonComm, cvk.completeAddComm, cvk.mulComm, cvk.emulComm,
-     cvk.endomulScalarComm]
-  /-- The coefficient commitments. -/
-  coefficients : ColumnsRead C V ((keyCells.drop 7).take 15) cvk.coefficientsComm.toList
-  /-- The permutation commitments `σ₀…σ₅`. -/
-  sigma : ColumnsRead C V (keyCells.take 6) (cvk.sigmaComm.take sigmaRows).toList
-  /-- The last permutation commitment `σ₆`. -/
-  sigmaLast : CommReads C V (keyCells.getD 6 []) (cvk.sigmaComm[6]).toList
+  /-- The key's commitments. -/
+  key : KeyReads C V keyCells cvk
 
 end Records
 
@@ -239,7 +222,7 @@ end Records
 section Gadget
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
-  {ks k : ℕ}
+  {ks k nc : ℕ}
 
 /-- `Step_verifier.verify` (`step_verifier.ml:1340`): `x_hat` from the packed statement
 (`publicInputCommitKnown`, chunk by chunk, with the constant correction seed and sum), the
@@ -252,7 +235,7 @@ def verifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F) (p : Pos
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
     (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (cells : IvpInput k (FVar F) (BoolVar F) sf) : CircuitM F c (BoolVar F) := do
+    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) : CircuitM F c (BoolVar F) := do
   let leaves := packLeaves statement tab
   let computeXHat : CircuitM F c (List (AffinePoint (FVar F))) :=
     (List.finRange nc).mapM fun ci =>
@@ -271,7 +254,7 @@ end Gadget
 
 section Read
 
-variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks : ℕ}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks nc : ℕ}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- The group half's claim cells from a `DeferredValues` record: the plonk claims, `ξ`, and
@@ -325,7 +308,7 @@ theorem verifyProof_reads
     (statement : WrapStatement ks (FVar C.BaseField) (BoolVar C.BaseField)
       (Type1 (FVar C.BaseField)))
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (cells : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (cells : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     -- the values the premises speak about: the base-case bit, the `sg_old` points under their
     -- bits
     (base : Bool)
@@ -402,7 +385,7 @@ theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (tab : XhatTable Fp nc) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (cells : IvpInput σ.k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (base : Bool) (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V isBaseCase base)
     (htab : tab.Bound pastaShapePallas V σ cvk blindingH (packLeaves statement tab))

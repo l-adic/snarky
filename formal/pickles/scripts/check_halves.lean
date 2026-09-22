@@ -255,19 +255,20 @@ def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : Pickles.WrapFop k) : IO (Bool ×
 
 /-- The step circuit's group half on its records: the wrap key's commitments as constants,
 the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
-def runGroup {ks kw : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Array CW.Point)
+def runGroup {ks kw : ℕ} (cvk : Kimchi.Verifier.KimchiVK CW 1) (basis : Array CW.Point)
     (h : CW.Point) (inp : Pickles.StepGroup ks kw Fp Bool) : IO (Bool × List (String × ℕ)) :=
   runHalf (a := Pickles.StepGroup ks kw Fp Bool) Kimchi.Fixture.PS.fpSide
-    (groupStepOn vk basis h) (fun b => [("success", b)]) inp
+    (groupStepOn (keyCellsOf xhatStepCell cvk) basis h) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group half on its records: the step key's commitments as constants,
 the Lagrange bases, the SRS's blinding base. -/
-def runGroupWrap {ks kw n nc : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CS)
+def runGroupWrap {ks kw n nc : ℕ} (cvk : Kimchi.Verifier.KimchiVK CS nc)
     (basis : Array (Vector CS.Point nc)) (h : CS.Point)
     (inp : Pickles.WrapGroup ks kw n nc Fq Bool) :
     IO (Bool × List (String × ℕ)) :=
   runHalf (a := Pickles.WrapGroup ks kw n nc Fq Bool) Kimchi.Fixture.PS.fqSide
-    (groupWrapOn vk basis (xhatWrapCell h)) (fun b => [("success", b)]) inp
+    (groupWrapOn (keyCellsOf xhatWrapCell cvk) basis (xhatWrapCell h)) (fun b => [("success", b)])
+    inp
 
 /-- The wrap circuit's group-half input from a wrap entry, the step entry it wrapped and the
 checked step proof at `ks` rounds, at the step statement's `n` slots: the wrap statement,
@@ -535,8 +536,9 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let (satG, _) ← runHalf (a := Pickles.StepProof.GroupIn σ.k Pickles.WrapIPARounds n nc)
       Kimchi.Fixture.PS.fqSide
       (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n nc) => do
-        let sv ← wrapIndexSponge s.vk
-        Pickles.StepProof.groupCircuit E (keyComms xhatWrapCell s.vk) sv
+        let key := keyCellsOf xhatWrapCell E.cvk
+        let sv ← wrapIndexSponge key
+        Pickles.StepProof.groupCircuit E key sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
       (fun _ => []) ⟨{ group := ginp, newBp }⟩
     IO.println s!"    groupCircuit: satisfies={satG}"
@@ -598,8 +600,9 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   let (satG, _) ← runHalf (a := Pickles.WrapProof.GroupIn Pickles.StepIPARounds σ.k)
     Kimchi.Fixture.PS.fpSide
     (fun (v : Pickles.WrapProof.GroupVar Pickles.StepIPARounds σ.k) => do
-      let sv ← stepIndexSponge w.vk
-      Pickles.WrapProof.groupCircuit E (keyComms xhatStepCell w.vk) sv v)
+      let key := keyCellsOf xhatStepCell E.cvk
+      let sv ← stepIndexSponge key
+      Pickles.WrapProof.groupCircuit E key sv v)
     (fun _ => []) ⟨ginp⟩
   IO.println s!"    groupCircuit: satisfies={satG}"
   return pubOk && offOk && avoidOk && guards && sg' && kv && satS && satG
@@ -684,12 +687,12 @@ def main : IO Unit := do
       let n := (s.publicInput.size - 1) / (18 + Pickles.WrapIPARounds)
       let r := s.proof.opening.lr.size
       let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS r
-      let ⟨nc, _, cpS⟩ ← checkedAny CS "vesta" σS s
+      let ⟨nc, cvkS, cpS⟩ ← checkedAny CS "vesta" σS s
       let ginp ← match wrapGroupInput w s n (σS.g ⟨0, Nat.two_pow_pos _⟩) cpS with
         | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok i => pure i
       let basis ← basisFor CS "vesta" σS nc s
       let ok ← report s!"wrap group half on {pair} ({n} slot(s), {r} rounds, {nc} chunk(s))"
-        (runGroupWrap s.vk basis σS.h ginp)
+        (runGroupWrap cvkS basis σS.h ginp)
       runs := runs + 1
       unless ok do allOk := false
   for s in steps.toList.take limit do
@@ -713,11 +716,11 @@ def main : IO Unit := do
         unless ok do allOk := false
       if on "step-group" then
         let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
-        let (_, cpW) ← checkedAt CW "pallas" σW w
+        let (cvkW, cpW) ← checkedAt CW "pallas" σW w
         let ginp ← match stepGroupInput w s slot (σW.g ⟨0, Nat.two_pow_pos _⟩) cpW with
           | .error e => throw (IO.userError s!"step group input: {e}") | .ok i => pure i
         let basis := (← basisFor CW "pallas" σW 1 w).map (·[(0 : Fin 1)])
-        let ok ← report s!"step group half on {pair}" (runGroup w.vk basis σW.h ginp)
+        let ok ← report s!"step group half on {pair}" (runGroup cvkW basis σW.h ginp)
         runs := runs + 1
         unless ok do allOk := false
       if on "theorem" then

@@ -285,6 +285,8 @@ Pickles.reads_fopInput
 Pickles.scoped_fopInput
 Pickles.reads_ivpProof
 Pickles.scoped_ivpProof
+Pickles.reads_vkComms
+Pickles.scoped_vkComms
 Pickles.reads_wrapGroup
 Pickles.scoped_wrapGroup
 Pickles.reads_stepGroup

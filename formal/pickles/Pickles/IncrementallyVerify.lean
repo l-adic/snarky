@@ -1,4 +1,5 @@
 import Pickles.FtComm
+import Pickles.VkComms
 import Pickles.FqSpongeTranscript
 import Kimchi.Columns
 import Pickles.ListLemmas
@@ -96,21 +97,13 @@ structure IvpClaims (f sf : Type) where
 
 /-- What the group half consumes (PS `IncrementallyVerifyProofInput`; the OCaml arguments
 `sg_old`, `plonk`, `xi`, `advice`, `verification_key`, `messages`, `opening`): the claims,
-and every commitment as its chunk list, in the key's and proof's column order. -/
-structure IvpInput (k : ℕ) (f bc sf : Type) extends IvpClaims f sf where
+the key's commitments at `nc` chunks, and the proof's commitments as chunk lists. -/
+structure IvpInput (k nc : ℕ) (f bc sf : Type) extends IvpClaims f sf where
   /-- The previous proofs' challenge-polynomial commitments, each under its keep bit on the
   wrap side (`Opt.Maybe (keep, p)`) and unmasked on the step side (padded with dummies). -/
   sgOld : List (Option bc × AffinePoint f)
-  /-- The key's last permutation commitment `σ₆`, absorbed in the index digest and read by
-  `ft_comm` — not a batch base. -/
-  sigmaLast : List (AffinePoint f)
-  /-- The key's six selector commitments: generic, poseidon, complete-add, mul, emul,
-  endomul-scalar. -/
-  indexComms : List (List (AffinePoint f))
-  /-- The key's fifteen coefficient commitments. -/
-  coefficientsComm : List (List (AffinePoint f))
-  /-- The key's permutation commitments `σ₀…σ₅`. -/
-  sigmaComm : List (List (AffinePoint f))
+  /-- The verifier key's commitments. -/
+  key : VkComms nc (AffinePoint f)
   /-- The proof's fifteen witness commitments. -/
   wComm : List (List (AffinePoint f))
   /-- The proof's permutation-accumulator commitment. -/
@@ -122,19 +115,21 @@ structure IvpInput (k : ℕ) (f bc sf : Type) extends IvpClaims f sf where
 
 /-- The shifted scalars the circuit scales by: the three of `ft_comm` and the four of the
 opening check. -/
-def IvpInput.shifted {F sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf) : List sf :=
+def IvpInput.shifted {F sf : Type} {nc : ℕ} (inp : IvpInput k nc (FVar F) (BoolVar F) sf) :
+    List sf :=
   [inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize,
    inp.deferred.combinedInnerProduct, inp.deferred.b, inp.opening.z1, inp.opening.z2]
 
 /-- The batch bases in `to_batch` order (`step_verifier.ml:745–759`, `wrap_verifier.ml:1458–1490`):
 `sg_old` under its masks, then unmasked `x_hat`, `ft_comm`, `z`, the six selectors, the
 witness columns, the coefficients and `σ₀…σ₅`, each commitment's chunks adjacent. -/
-def IvpInput.bases {F sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf)
+def IvpInput.bases {F sf : Type} {nc : ℕ} (inp : IvpInput k nc (FVar F) (BoolVar F) sf)
     (xHat : List (AffinePoint (FVar F)))
     (ftc : AffinePoint (FVar F)) : List (AffinePoint (FVar F) × Option (BoolVar F)) :=
   inp.sgOld.map (fun m => (m.2, m.1))
-    ++ (xHat ++ [ftc] ++ inp.zComm ++ inp.indexComms.flatten ++ inp.wComm.flatten
-        ++ inp.coefficientsComm.flatten ++ inp.sigmaComm.flatten).map (fun P => (P, none))
+    ++ (xHat ++ [ftc] ++ inp.zComm ++ (inp.key.selectors.map Vector.toList).flatten
+        ++ inp.wComm.flatten ++ (inp.key.coefficientsComm.toList.map Vector.toList).flatten
+        ++ (inp.key.sigmaBatch.map Vector.toList).flatten).map (fun P => (P, none))
 
 /-- `incrementally_verify_proof`: squeeze the index digest from the copied
 `sponge_after_index`; the fq-sponge transcript — on the wrap side (`optSponge`) `x_hat` first
@@ -147,7 +142,7 @@ def incrementallyVerifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEnd
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (optSponge : Bool) (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
     (computeXHat : CircuitM F c (List (AffinePoint (FVar F))))
-    (inp : IvpInput k (FVar F) (BoolVar F) sf) :
+    {nc : ℕ} (inp : IvpInput k nc (FVar F) (BoolVar F) sf) :
     CircuitM F c (IvpOutput F) := do
   let (indexDigest, _) ← SpongeVar.squeeze p spongeAfterIndex
   let tr ←
@@ -159,7 +154,7 @@ def incrementallyVerifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEnd
       fqSpongeTranscript p endo indexDigest (inp.sgOld.map (·.2)) computeXHat inp.wComm
         inp.zComm inp.tComm
   assertPlonkChallenges tr inp.plonk.chals
-  let ftc ← ftComm ops inp.sigmaLast inp.tComm inp.plonk.perm inp.plonk.zetaToSrsLength
+  let ftc ← ftComm ops inp.key.sigmaLast.toList inp.tComm inp.plonk.perm inp.plonk.zetaToSrsLength
     inp.plonk.zetaToDomainSize
   let o ← checkBulletproof ops e p endo gm sqrtF tr.sponge (inp.bases tr.xHat ftc)
     ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
@@ -179,6 +174,64 @@ def ColumnsRead (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
     (cols : List (List (AffinePoint (FVar C.BaseField)))) (Ps : List (Vector C.Point nc)) :
     Prop :=
   List.Forall₂ (fun col P => CommReads C V col P.toList) cols Ps
+
+/-- A key's commitment cells read as the key's commitments, field by field. -/
+structure KeyReads (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
+    (key : VkComms nc (AffinePoint (FVar C.BaseField))) (cvk : KimchiVK C nc) : Prop where
+  /-- The permutation commitments `σ₀…σ₆`. -/
+  sigma : ∀ i : Fin permCols, CommReads C V key.sigmaComm[i].toList cvk.sigmaComm[i].toList
+  /-- The coefficient commitments. -/
+  coefficients : ∀ i : Fin coeffCols,
+    CommReads C V key.coefficientsComm[i].toList cvk.coefficientsComm[i].toList
+  /-- The generic selector's commitment. -/
+  generic : CommReads C V key.genericComm.toList cvk.genericComm.toList
+  /-- The poseidon selector's commitment. -/
+  poseidon : CommReads C V key.poseidonComm.toList cvk.poseidonComm.toList
+  /-- The complete-add selector's commitment. -/
+  completeAdd : CommReads C V key.completeAddComm.toList cvk.completeAddComm.toList
+  /-- The variable-base-mul selector's commitment. -/
+  mul : CommReads C V key.mulComm.toList cvk.mulComm.toList
+  /-- The endo-mul selector's commitment. -/
+  emul : CommReads C V key.emulComm.toList cvk.emulComm.toList
+  /-- The endo-mul-scalar selector's commitment. -/
+  endomulScalar : CommReads C V key.endomulScalarComm.toList cvk.endomulScalarComm.toList
+
+/-- Vectors of columns read entrywise read as their lists of columns. -/
+private theorem columnsRead_of_forall {nc m : ℕ}
+    {cells : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m}
+    {Ps : Vector (Vector C.Point nc) m}
+    (h : ∀ i : Fin m, CommReads C V cells[i].toList Ps[i].toList) :
+    ColumnsRead C V (cells.toList.map Vector.toList) Ps.toList :=
+  List.forall₂_iff_get.mpr ⟨by simp, fun i h₁ h₂ => by
+    simpa using h ⟨i, by simpa using h₂⟩⟩
+
+/-- The selector cells read as the key's selectors, in batch order. -/
+theorem KeyReads.selectorsRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
+    {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
+    ColumnsRead C V (key.selectors.map Vector.toList)
+      [cvk.genericComm, cvk.poseidonComm, cvk.completeAddComm, cvk.mulComm, cvk.emulComm,
+       cvk.endomulScalarComm] :=
+  .cons h.generic (.cons h.poseidon (.cons h.completeAdd (.cons h.mul (.cons h.emul
+    (.cons h.endomulScalar .nil)))))
+
+/-- The coefficient cells read as the key's coefficients. -/
+theorem KeyReads.coefficientsRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
+    {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
+    ColumnsRead C V (key.coefficientsComm.toList.map Vector.toList) cvk.coefficientsComm.toList :=
+  columnsRead_of_forall h.coefficients
+
+/-- The batch's permutation cells read as the key's `σ₀…σ₅`. -/
+theorem KeyReads.sigmaBatchRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
+    {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
+    ColumnsRead C V (key.sigmaBatch.map Vector.toList) (cvk.sigmaComm.take sigmaRows).toList :=
+  columnsRead_of_forall (cells := key.sigmaComm.take sigmaRows) fun i => by
+    simpa using h.sigma ⟨i, lt_of_lt_of_le i.isLt (Nat.min_le_right _ _)⟩
+
+/-- The `σ₆` cells read as the key's `σ₆`. -/
+theorem KeyReads.sigmaLastRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
+    {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
+    CommReads C V key.sigmaLast.toList cvk.sigmaComm[6].toList :=
+  h.sigma 6
 
 /-- The `sg_old` cells read as the proof's old accumulators: they read as the points `oldsW`
 under their keep bits, and the kept points are the old accumulators' commitments, in order. -/
@@ -201,7 +254,7 @@ their decodes; `perm`, `ζ^{2^k}`, `ζⁿ` enter only `ft_comm`, so their being 
 premise of the read's opening clause (`IvpReads`), not of its transcript clauses. -/
 structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool)) : Prop where
   /-- The `sg_old` cells read as the proof's old accumulators, through `oldsW`. -/
   olds : OldsRead V inp.sgOld cp oldsW
@@ -211,16 +264,8 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   z : CommReads C V inp.zComm cp.zComm.toList
   /-- The quotient chunks. -/
   t : CommReads C V inp.tComm cp.tComm.toList
-  /-- The six selector commitments, in `to_batch` order. -/
-  index : ColumnsRead C V inp.indexComms
-    [cvk.genericComm, cvk.poseidonComm, cvk.completeAddComm, cvk.mulComm, cvk.emulComm,
-     cvk.endomulScalarComm]
-  /-- The coefficient commitments. -/
-  coefficients : ColumnsRead C V inp.coefficientsComm cvk.coefficientsComm.toList
-  /-- The permutation commitments `σ₀…σ₅`. -/
-  sigma : ColumnsRead C V inp.sigmaComm (cvk.sigmaComm.take sigmaRows).toList
-  /-- The last permutation commitment `σ₆`. -/
-  sigmaLast : CommReads C V inp.sigmaLast (cvk.sigmaComm[6]).toList
+  /-- The key's commitments. -/
+  key : KeyReads C V inp.key cvk
   /-- The opening's `z₁` decodes to the proof's. -/
   z1 : S.decode inp.opening.z1 = cp.opening.z1
   /-- The opening's `z₂` decodes to the proof's. -/
@@ -284,7 +329,7 @@ wider than the absorb count. -/
 structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (optSponge : Bool)
     (spongeAfterIndex : SpongeVar C.BaseField)
-    (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool)) : Prop where
   /-- The sponge after the index digest squeezes to the key's digest. -/
   idx : ∃ s : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex s ∧
@@ -456,7 +501,7 @@ private theorem streamBv_last {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc
 private theorem bases_reads {nc : ℕ} {sf : Type}
     {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
     {S : IvpSide C V ops} {σ : SRS C.Point} {cvk : KimchiVK C nc} {cp : KimchiProof C nc σ.k}
-    {pub : Array C.ScalarField} {inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf}
+    {pub : Array C.ScalarField} {inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf}
     {oldsW : List (C.Point × Bool)}
     (hties : IvpTies S σ cvk cp pub inp oldsW) {xHat : List (AffinePoint (FVar C.BaseField))}
     (hx : CommReads C V xHat (publicCommitment C σ cvk pub).toList)
@@ -466,10 +511,10 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
       ((streamBv σ cvk cp pub oldsW).map fun b => (SWPoint.equivPoint C.E b.1, b.2)) := by
   unfold IvpInput.bases streamBv restOf
   rw [tailRows_comms]
-  have hi := hties.index.masked
+  have hi := hties.key.selectorsRead.masked
   have hw := hties.w.masked
-  have hc := hties.coefficients.masked
-  have hs := hties.sigma.masked
+  have hc := hties.key.coefficientsRead.masked
+  have hs := hties.key.sigmaBatchRead.masked
   simp only [List.map_append, List.map_map, List.append_assoc, List.map_cons, List.map_nil,
     Function.comp_def] at hi hw hc hs ⊢
   refine List.rel_append hties.olds.cells ?_
@@ -604,11 +649,12 @@ already the key's), the plonk claims asserted equal to the squeezes, `ft_comm` r
 opening check read, the output satisfies `IvpReads`. -/
 private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (oldsW : List (C.Point × Bool))
+    (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (oldsW : List (C.Point × Bool))
     (blindingH : AffinePoint (FVar C.BaseField)) (hties : IvpTies S σ cvk cp pub inp oldsW)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (hlrne : inp.opening.lr.toList ≠ [])
-    (hσlen : inp.sigmaLast.toArray.size = nc) (tr : FqTranscriptOutput C.BaseField)
+    (tr : FqTranscriptOutput C.BaseField)
     (hx : CommReads C V tr.xHat (publicCommitment C σ cvk pub).toList)
     (hFq : FqTranscriptReads C.sponge.params cvk.digest ((cp.olds.map (·.sg)).toList.map wirePt)
       ((publicCommitment C σ cvk pub).toList.map wirePt)
@@ -620,7 +666,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
       inp.plonk.chals.zeta.val.val V = tr.zeta.val.val V)
     (ftc : AffinePoint (FVar C.BaseField))
     (hft : FtCommReads S σ cvk cp pub ftc inp.plonk.perm inp.plonk.zetaToSrsLength
-      inp.plonk.zetaToDomainSize ⟨inp.sigmaLast.toArray, hσlen⟩ inp.tComm)
+      inp.plonk.zetaToDomainSize inp.key.sigmaLast inp.tComm)
     (o : CheckBulletproofOutput C.BaseField)
     (hcb : S.OpeningReads tr.sponge (inp.bases tr.xHat ftc)
       ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩ o) :
@@ -677,7 +723,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
         inp.opening.z1, inp.opening.z2]).subset hx
     have hftc := hft hperm hzetaM hzetaN
       (hties.claimOk _ (hmem _ (by simp))) (hties.claimOk _ (hmem _ (by simp)))
-      (hties.claimOk _ (hmem _ (by simp))) (by simpa using hties.sigmaLast) hties.t
+      (hties.claimOk _ (hmem _ (by simp))) hties.key.sigmaLastRead hties.t
     -- the bases read as the stream bases; the opening's points as the proof's
     have hb := bases_reads hties hx hftc
     have hbne : inp.bases tr.xHat ftc ≠ [] := by simp [IvpInput.bases]
@@ -722,7 +768,8 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
     (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
       (List (AffinePoint (FVar C.BaseField))))
-    (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (oldsW : List (C.Point × Bool))
+    (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
@@ -734,14 +781,10 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
   obtain ⟨hIdx, hmask, hties, hnc, htne, hlrne, hchar⟩ := h
-  have hσlen : inp.sigmaLast.toArray.size = nc := by
-    have := hties.sigmaLast.length_eq
-    simpa using this
   have hasrt := fun (tr : FqTranscriptOutput C.BaseField) =>
     assertPlonkChallenges_spec (V := V) tr inp.plonk.chals
   have hft := ftComm_reads S σ cvk cp pub inp.plonk.perm inp.plonk.zetaToSrsLength
-    inp.plonk.zetaToDomainSize ⟨inp.sigmaLast.toArray, hσlen⟩ inp.tComm hnc htne
-  simp only [Vector.toList_mk] at hft
+    inp.plonk.zetaToDomainSize inp.key.sigmaLast inp.tComm hnc htne
   have hcb := fun (sv : SpongeVar C.BaseField)
     (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField))) =>
     S.opening_reads endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
@@ -792,7 +835,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rw [← hties.olds.kept, List.filter_map, List.map_map, List.map_map]
       rfl
     rw [hkept] at hFq
-    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne hσlen tr
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne tr
       (htr'.1 ▸ hx) hFq hasrt' ftc hft' o hcb'
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
@@ -813,7 +856,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rfl
     have hFq := htr'.2 _ _ _ _ hsgv hties.w.reads hties.z.reads hties.t.reads
     rw [hd, hkept] at hFq
-    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne hσlen tr htr'.1
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne tr htr'.1
       hFq hasrt' ftc hft' o hcb'
 
 end Assembly
@@ -834,7 +877,7 @@ theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
     (spongeAfterIndex : SpongeVar Fq)
     (computeXHat : CircuitM Fq (Builder V (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
-    (inp : IvpInput σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (inp : IvpInput σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (oldsW : List (IpaVesta.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
@@ -856,7 +899,7 @@ theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
     (spongeAfterIndex : SpongeVar Fp)
     (computeXHat : CircuitM Fp (Builder V (KimchiConstraint Fp)) (List (AffinePoint (FVar Fp))))
-    (inp : IvpInput σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (inp : IvpInput σ.k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (oldsW : List (IpaPallas.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk pub).toList⌝⦄)

@@ -117,7 +117,7 @@ structure InputReads (E : Env IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curv
 variable {E : Env IpaVesta.curve nc} {cp : KimchiProof IpaVesta.curve nc E.σ.k}
   {pub : Array Fp} {domains : KnownDomains E} {Vg : Valuation Fq} {Vs : Valuation Fp}
   {g : GroupVar E.σ.k kw n nc} {s : ScalarVar E.σ.k nc}
-  {keyCells : List (List (AffinePoint (FVar Fq)))} {spongeAfterIndex : SpongeVar Fq}
+  {keyCells : VkComms nc (AffinePoint (FVar Fq))} {spongeAfterIndex : SpongeVar Fq}
 
 /-- The scalar half's proof ties are the input's readings. -/
 private theorem InputReads.fopTies (hin : InputReads E cp pub domains Vg Vs g s) :
@@ -165,8 +165,8 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
     { idx := hvk.idx, mask := ?mask
       ties :=
         { olds := holds, w := hin.w, z := hin.z, t := hin.t
-          index := hvk.index, coefficients := hvk.coefficients, sigma := hvk.sigma
-          sigmaLast := hvk.sigmaLast, z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
+          key := hvk.key
+          z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
           lr := hin.lr, delta := hin.delta, sg := hin.sg }
       nc_pos := E.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
@@ -215,7 +215,7 @@ theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
     (pub : Array Fp)
     (domains : KnownDomains E)
     -- the group circuit's constants
-    (keyCells : List (List (AffinePoint (FVar Fq))))
+    (keyCells : VkComms nc (AffinePoint (FVar Fq)))
     (spongeAfterIndex : SpongeVar Fq)
     (msgSponge : SpongeVar Fq)
     -- the group circuit: the wrap verify block, compiled over its input, satisfied

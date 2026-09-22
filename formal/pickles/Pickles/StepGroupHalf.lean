@@ -157,7 +157,7 @@ def verifyProofWith {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : �
     (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
+    (cells : IvpInput k 1 (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
   verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params
     (.const ((Pasta.vestaLam : ℤ) : Fp)) groupMapParamsPallas pallasBase.sqrt? (constPt h)
@@ -170,7 +170,7 @@ def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : ℕ}
     (E : Env IpaPallas.curve 1) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
+    (cells : IvpInput k 1 (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
   verifyProofWith E.σ.h E.cvk.lagrangeBasis.toList spongeAfterIndex isBaseCase statement u cells
 
@@ -185,7 +185,7 @@ theorem verifyProofAt_reads {ks : ℕ} {V : Valuation Fp} (E : Env IpaPallas.cur
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput E.σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (cells : IvpInput E.σ.k 1 (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V isBaseCase false)
     (hoff : ∀ leaf ∈ stepLeavesAt E statement, Leaf.offBand IpaPallas.curve.scalar V leaf)
@@ -265,8 +265,8 @@ def GroupVar.shifted (g : GroupVar ks k) :
    dv.b, g.opening.z1, g.opening.z2]
 /-- What `incrementallyVerifyProof` consumes: the claims, every `sg_old` unmasked, the key's
 cells, the proof. -/
-def GroupVar.cells (keyCells : List (List (AffinePoint (FVar Fp)))) (g : GroupVar ks k) :
-    IvpInput k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+def GroupVar.cells (keyCells : VkComms 1 (AffinePoint (FVar Fp))) (g : GroupVar ks k) :
+    IvpInput k 1 (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   ivpInputOf g.claims.deferredValues (g.sgOld.map (none, ·)) keyCells g.val.proof
 /-- The group circuit as a `GroupHalf`. -/
 abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k) :
@@ -278,7 +278,7 @@ abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k) :
 asserted on the cells `verify` scales — the seven shifted scalars and the `x_hat` full leaves
 (`Pickles.LadderBand`; a harness assertion, not part of the shared gadget). -/
 def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaPallas.curve 1)
-    (keyCells : List (List (AffinePoint (FVar Fp)))) (spongeAfterIndex : SpongeVar Fp)
+    (keyCells : VkComms 1 (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks k) : CircuitM Fp c Unit := do
   assertClaimsOffBandStep g.shifted
   assertLeavesOffBand IpaPallas.curve.scalar (stepLeavesAt E g.statement)
@@ -288,7 +288,7 @@ def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaP
 /-- **The group circuit's read**: the group half's read at a bit that reads `1`. -/
 theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
-    (keyCells : List (List (AffinePoint (FVar Fp)))) (spongeAfterIndex : SpongeVar Fp)
+    (keyCells : VkComms 1 (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks E.σ.k)
     (hbase : CircuitType.Reads V g.isBaseCase false)
     (havoid : E.σ.Avoids (stepRelationsAt E g.statement))

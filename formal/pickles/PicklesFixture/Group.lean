@@ -55,31 +55,37 @@ def oneChunk {C : Bulletproof.Ipa.KimchiCurve} (pts : Array C.Point) : List (Vec
 
 /-! ## A verified key as constants -/
 
-/-- A key's commitments as constant cells, in the index digest's order: `σ₀…σ₆`, the 15
-coefficient commitments, the six selectors (generic, poseidon, complete-add, mul, emul,
-endomul-scalar) — each a chunk list. -/
-def keyComms {C : Bulletproof.Ipa.KimchiCurve} {F : Type}
-    (cell : C.Point → AffinePoint (FVar F)) (vk : Wire.KimchiVK C) :
-    List (List (AffinePoint (FVar F))) :=
-  let chunks (c : Array C.Point) : List (AffinePoint (FVar F)) := c.toList.map cell
-  vk.sigmaComm.toList.map chunks ++ vk.coefficientsComm.toList.map chunks
-    ++ [vk.genericComm, vk.poseidonComm, vk.completeAddComm, vk.mulComm, vk.emulComm,
-        vk.endomulScalarComm].map chunks
+/-- A checked key's commitments as constant cells. -/
+def keyCellsOf {C : Bulletproof.Ipa.KimchiCurve} {F : Type} {nc : ℕ}
+    (cell : C.Point → AffinePoint (FVar F)) (cvk : Kimchi.Verifier.KimchiVK C nc) :
+    VkComms nc (AffinePoint (FVar F)) :=
+  ⟨cvk.sigmaComm.map (·.map cell), cvk.coefficientsComm.map (·.map cell),
+   cvk.genericComm.map cell, cvk.poseidonComm.map cell, cvk.completeAddComm.map cell,
+   cvk.mulComm.map cell, cvk.emulComm.map cell, cvk.endomulScalarComm.map cell⟩
+
+/-- A key's commitments in the index digest's absorb order (`VerifierIndex::digest`):
+`σ₀…σ₆`, the fifteen coefficients, then the six selectors. -/
+def digestOrder {nc : ℕ} {f : Type} (k : VkComms nc f) : List (Vector f nc) :=
+  k.sigmaComm.toList ++ k.coefficientsComm.toList ++ k.selectors
+
+/-- Every commitment of a key record the same point: the constant key of the CS dumps. -/
+def VkComms.replicate {nc : ℕ} {f : Type} (P : Vector f nc) : VkComms nc f :=
+  ⟨Vector.replicate _ P, Vector.replicate _ P, P, P, P, P, P, P⟩
 
 /-- The sponge after a key's index digest (`VerifierIndex::digest`): every commitment's
-chunks, `x` then `y`, absorbed into the fresh sponge. -/
+chunks in `digestOrder`, `x` then `y`, absorbed into the fresh sponge. -/
 def indexSponge {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
-    [KimchiSystem F c] (p : Poseidon.Params F) (comms : List (List (AffinePoint (FVar F)))) :
+    [KimchiSystem F c] {nc : ℕ} (p : Poseidon.Params F) (key : VkComms nc (AffinePoint (FVar F))) :
     CircuitM F c (SpongeVar F) :=
-  comms.flatten.foldlM
+  ((digestOrder key).map Vector.toList).flatten.foldlM
     (fun sv P => do
       let sv ← SpongeVar.absorb p sv P.x
       SpongeVar.absorb p sv P.y)
     SpongeVar.init
 
 /-- The sponge after the wrap key's index digest, at the step field. -/
-def stepIndexSponge (vk : Wire.KimchiVK XhatStepCurve) : CircuitM Fp C (SpongeVar Fp) :=
-  indexSponge Bulletproof.IpaVesta.curve.frSponge.params (keyComms xhatStepCell vk)
+def stepIndexSponge (key : VkComms 1 (AffinePoint (FVar Fp))) : CircuitM Fp C (SpongeVar Fp) :=
+  indexSponge Bulletproof.IpaVesta.curve.frSponge.params key
 
 /-! ## The step circuit's group half, on a wrap proof -/
 
@@ -87,13 +93,12 @@ def stepIndexSponge (vk : Wire.KimchiVK XhatStepCurve) : CircuitM Fp C (SpongeVa
 `Pickles.verifyProof` at the deployed parameters over the records, the `x_hat` tables and the
 blinding base, the claims from the unfinalized proof, every `sg_old` unmasked. Returns the
 success bit; the digest and round-challenge assertions are the gadget's constraints. -/
-def groupStepOn (vk : Wire.KimchiVK XhatStepCurve) (basis : Array XhatStepCurve.Point)
+def groupStepOn (key : VkComms 1 (AffinePoint (FVar Fp))) (basis : Array XhatStepCurve.Point)
     (blindingH : XhatStepCurve.Point) {ks kw : ℕ} (v : StepGroup ks kw (FVar Fp) (BoolVar Fp)) :
     CircuitM Fp C (BoolVar Fp) := do
-  let sv ← stepIndexSponge vk
+  let sv ← stepIndexSponge key
   verifyProofWith blindingH (oneChunk basis) sv v.isBaseCase v.statement v.claims
-    (ivpInputOf v.claims.deferredValues (v.sgOld.toList.map (none, ·)) (keyComms xhatStepCell vk)
-      v.proof)
+    (ivpInputOf v.claims.deferredValues (v.sgOld.toList.map (none, ·)) key v.proof)
 
 /-! ## The wrap circuit's group half, on a step proof -/
 
@@ -104,8 +109,9 @@ abbrev XhatWrapCurve := Bulletproof.IpaVesta.curve
 def xhatWrapCell (P : XhatWrapCurve.Point) : AffinePoint (FVar Fq) := ⟨.const P.x, .const P.y⟩
 
 /-- The sponge after the step key's index digest, at the wrap field. -/
-def wrapIndexSponge (vk : Wire.KimchiVK XhatWrapCurve) : CircuitM Fq Cq (SpongeVar Fq) :=
-  indexSponge Bulletproof.IpaVesta.curve.sponge.params (keyComms xhatWrapCell vk)
+def wrapIndexSponge {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq))) :
+    CircuitM Fq Cq (SpongeVar Fq) :=
+  indexSponge Bulletproof.IpaVesta.curve.sponge.params key
 
 /-- The wrap circuit's group half on its records: the step key's index sponge, the step
 statement's `x_hat` over its packed leaves at the Lagrange bases (whose boolean leaves
@@ -113,11 +119,11 @@ constrain their own bits) with the blinding base, `Pickles.incrementallyVerifyPr
 the conditional sponge at the deployed parameters with each `sg_old` under its keep bit,
 the last `n` of the branch data's mask — then the block's assertions: the digest against the wrap
 statement's claim, each round challenge against its claim. Returns the success bit. -/
-def groupWrapOn {nc : ℕ} (vk : Wire.KimchiVK XhatWrapCurve)
+def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
     (basis : Array (Vector XhatWrapCurve.Point nc)) (blindingH : AffinePoint (FVar Fq))
     {ks kw n : ℕ} (v : WrapGroup ks kw n nc (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
-  let sv ← wrapIndexSponge vk
+  let sv ← wrapIndexSponge key
   let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=
     Vector.toList <$> publicInputCommitFull blindingH
       (packLeavesOf v.stepStatement.packed
@@ -128,7 +134,7 @@ def groupWrapOn {nc : ℕ} (vk : Wire.KimchiVK XhatWrapCurve)
     Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) groupMapParamsVesta
     vestaBase.sqrt? true blindingH sv computeXHat
     (ivpInputOf dv.toDeferredValues ((mask.zip v.sgOld.toList).map fun (m, P) => (some m, P))
-      (keyComms xhatWrapCell vk) v.proof)
+      key v.proof)
   assertEqual v.statement.proofState.spongeDigestBeforeEvaluations o.spongeDigest
   for c in dv.bulletproofChallenges.toList.zip o.bulletproofChallenges do
     assertEqual c.1.val c.2.val
