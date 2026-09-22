@@ -7,21 +7,22 @@ set_option mvcgen.warning false
 /-!
 # The conditional sponge
 
-Port of the PureScript `Pickles.OptSponge` (OCaml `opt_sponge.ml`): a sponge absorbing a
-data-dependent subset of its inputs, each guarded by a bit, in a fixed number of
-permutations. The position within the rate block is a circuit bit; inputs are consumed in
-pairs, each pair adding its kept entries at the tracked positions and permuting where a
-block fills, with the last unpaired entry and the final permutation handled after.
+Transcribes `OptSponge.purs` (OCaml `opt_sponge.ml`): a sponge absorbing a data-dependent
+subset of its inputs, each guarded by a bit, in a fixed number of permutations. The position
+within the rate block is a circuit bit; inputs are consumed in pairs, each pair permuting at
+most once, with the last unpaired entry and the final permutation handled after.
 
 ## Main definitions
 
-* `OptSponge.squeeze`: consume the guarded inputs from a fresh sponge and read slot `0`
-  after the final permutation.
+* `OptSponge.squeeze`: consume the guarded inputs from a fresh sponge and read slot `0`.
+* `OptSponge.OptSpongeVar`, `OptSponge.optSqueeze`: the same sponge with a phase, for
+  interleaved absorbs and squeezes.
 
 ## Main results
 
 * `OptSponge.squeeze_spec`: the output reads as the first squeeze of the value sponge that
   absorbed exactly the kept inputs, in order.
+* `OptSponge.optSqueeze_spec`: each squeeze reads as the value sponge's, by phase.
 
 ## Implementation notes
 
@@ -40,7 +41,7 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem 
 
 namespace OptSponge
 
-/-- Add `x` into the rate slot the bit `pos` selects, by one `r1cs` row per slot. -/
+/-- Add `x` into the rate slot the bit `pos` selects, by one `r1cs` constraint per slot. -/
 private def addIn (st : SpongeState F) (pos : BoolVar F) (x : FVar F) :
     CircuitM F c (SpongeState F) := do
   let flag0 := Snarky.not pos
@@ -66,7 +67,8 @@ private def condPermute (p : Poseidon.Params F) (permute : BoolVar F) (st : Spon
   let s2 ← selectField permute permuted.s2 st.s2
   pure ⟨s0, s1, s2⟩
 
-/-- Consume one pair of guarded inputs (OCaml `consume_pairs`' fold body). -/
+/-- Consume one pair of guarded inputs at position `pos`, permuting at most once; returns the
+state and the next position. -/
 private def consumePair (p : Poseidon.Params F) (st : SpongeState F) (pos : BoolVar F)
     (e₁ e₂ : BoolVar F × FVar F) : CircuitM F c (SpongeState F × BoolVar F) := do
   let (b, x) := e₁
@@ -107,9 +109,9 @@ private def pairUp {α : Type} : List α → List (α × α) × Option α
 /-- The fresh state. -/
 private def initState : SpongeState F := ⟨.const 0, .const 0, .const 0⟩
 
-/-- Consume the guarded inputs from the state `st` at position `pos` (OCaml `consume`, PS
-`consume`): the pairs, then the unpaired entry if any, then a permutation where the block is
-non-empty or — where `needsFinalPermuteIfEmpty` — nothing at all was kept. -/
+/-- Consume the guarded inputs from `st` at position `pos`: the pairs, then the unpaired entry
+if any, then a permutation where the block is non-empty or, under `needsFinalPermuteIfEmpty`,
+nothing was kept. -/
 def consume (p : Poseidon.Params F) (st : SpongeState F) (pos : BoolVar F)
     (needsFinalPermuteIfEmpty : Bool) (input : List (BoolVar F × FVar F)) :
     CircuitM F c (SpongeState F) := do
@@ -130,9 +132,8 @@ def consume (p : Poseidon.Params F) (st : SpongeState F) (pos : BoolVar F)
       if needsFinalPermuteIfEmpty then Snarky.any [pos, b, emptyInput] else Snarky.any [pos, b]
     condPermute p shouldPermute st'
 
-/-- Consume the guarded inputs from a fresh sponge and read slot `0` after the final
-permutation (PS `squeeze create`, so the start position is `0` and an empty absorb still
-permutes). -/
+/-- Consume the guarded inputs from a fresh sponge at position `0`, permuting even when
+nothing was kept, and read slot `0`. -/
 def squeeze (p : Poseidon.Params F) (input : List (BoolVar F × FVar F)) :
     CircuitM F c (FVar F) := do
   let final ← consume p initState false_ true input
@@ -141,46 +142,45 @@ def squeeze (p : Poseidon.Params F) (input : List (BoolVar F × FVar F)) :
 
 /-! ## The phase machine -/
 
-/-- The conditional sponge's phase (PS `OptSpongePhase`, OCaml `Opt_sponge.sponge_state`):
-absorbing, with the pending guarded inputs most recent first and the position the block
-restarts at; or squeezed, at the next slot to read. -/
+/-- The conditional sponge's phase. -/
 inductive Phase (F : Type)
-  /-- Accumulating guarded inputs, consumed at the next squeeze. -/
+  /-- Accumulating guarded inputs, most recent first, to be consumed from position `nextIndex`
+  at the next squeeze. -/
   | absorbing (nextIndex : BoolVar F) (pending : List (BoolVar F × FVar F))
   /-- Squeezing, at the next slot to read. -/
   | squeezed (n : Fin 3)
 
-/-- The conditional sponge with its phase (PS `OptSpongeState`, OCaml `Opt_sponge.t`). -/
+/-- The conditional sponge with its phase. -/
 structure OptSpongeVar (F : Type) where
   /-- The width-3 state. -/
   state : SpongeState F
   /-- The phase. -/
   phase : Phase F
-  /-- Whether the next consume permutes an empty block (OCaml
-  `needs_final_permute_if_empty`). -/
+  /-- Whether the next consume permutes when no input was kept. -/
   needsFinalPermuteIfEmpty : Bool
 
 omit [DecidableEq F] in
-/-- The fresh conditional sponge (OCaml `create`, PS `runOptSpongeM`'s start). -/
+/-- The fresh conditional sponge: zero state, absorbing from position `0`, permuting even when
+nothing is kept. -/
 def create : OptSpongeVar F := ⟨initState, .absorbing false_ [], true⟩
 
 omit [DecidableEq F] in
-/-- Absorb a guarded input (PS `optAbsorb`, OCaml `absorb`): onto the pending list, or a new
-block at position `0` after a squeeze. No rows. -/
+/-- Absorb a guarded input: onto the pending list, or a new block at position `0` after a
+squeeze. -/
 def optAbsorb (ov : OptSpongeVar F) (e : BoolVar F × FVar F) : OptSpongeVar F :=
   match ov.phase with
   | .absorbing i xs => { ov with phase := .absorbing i (e :: xs) }
   | .squeezed _ => { ov with phase := .absorbing false_ [e] }
 
-/-- Read slot `n`. Emits nothing. -/
+/-- The slot of `st` at an index. -/
 private def slotVar (st : SpongeState F) : Fin 3 → FVar F
   | ⟨0, _⟩ => st.s0
   | ⟨1, _⟩ => st.s1
   | ⟨_ + 2, _⟩ => st.s2
 
-/-- Squeeze (PS `optSqueeze`, OCaml `squeeze`): squeezed, the next slot, permuting first when
-the block is exhausted; absorbing, consume the pending inputs oldest first, then slot `0`,
-now squeezed at slot `1` with the empty-block permute re-armed. -/
+/-- Squeeze: when squeezed, the next slot, permuting first when the block is exhausted; when
+absorbing, consume the pending inputs oldest first and read slot `0`, now squeezed at slot `1`
+with the empty-input permute set. -/
 def optSqueeze (p : Poseidon.Params F) (ov : OptSpongeVar F) :
     CircuitM F c (FVar F × OptSpongeVar F) :=
   match ov.phase with
@@ -193,8 +193,8 @@ def optSqueeze (p : Poseidon.Params F) (ov : OptSpongeVar F) :
     let st ← consume p ov.state i ov.needsFinalPermuteIfEmpty xs.reverse
     pure (st.s0, ⟨st, .squeezed 1, true⟩)
 
-/-- Hand the sponge to the plain sponge (PS `toRegularSponge`, wrap_verifier.ml's `S.make`):
-squeezed at its slot; absorbing, at a fresh block. -/
+/-- The plain sponge on the same state: squeezed at its slot; absorbing, at a fresh block,
+dropping any pending inputs. -/
 def toRegularSponge (ov : OptSpongeVar F) : SpongeVar F :=
   match ov.phase with
   | .squeezed n => ⟨ov.state, .squeezed n⟩
@@ -216,10 +216,9 @@ private def optFinalState (p : Poseidon.Params F) (os : Poseidon.Triple F × Boo
     (empty : Bool) : Poseidon.Triple F :=
   if empty || os.2 then Poseidon.blockCipher p os.1 else os.1
 
-/-- The conditional sponge implements the value sponge: at position `1` the states agree and
-the value sponge has one element in its block; at position `0` either both are at a fresh
-block, or the value sponge's block is full and the conditional sponge holds its
-permutation. -/
+/-- The invariant tying the conditional sponge to the value sponge: at position `1` the states
+agree and the value block holds one element; at position `0` either both are at a fresh
+block, or the value block is full and the conditional sponge holds its permutation. -/
 private def Rel (p : Poseidon.Params F) (os : Poseidon.Triple F × Bool) (ps : Poseidon.State F) :
     Prop :=
   if os.2 then ps.mode = .absorbed 1 ∧ os.1 = ps.state
@@ -230,9 +229,9 @@ omit [DecidableEq F] in
 private theorem rel_init (p : Poseidon.Params F) : Rel p ((0, 0, 0), false) Poseidon.init :=
   Or.inl ⟨rfl, rfl⟩
 
-/-- A start for `consume`: the invariant, or a sponge just squeezed — at position `0`, the
-states equal — whose next kept element restarts the block at slot `0`
-(`Poseidon.absorb1`'s `.squeezed` branch) exactly as the invariant's fresh block does. -/
+/-- A start for `consume`: the invariant, or position `0` against a just-squeezed value sponge
+with equal states. `Poseidon.absorb1` restarts a squeezed sponge's block at slot `0`, as the
+invariant's fresh block does. -/
 private def RelStart (p : Poseidon.Params F) (os : Poseidon.Triple F × Bool)
     (ps : Poseidon.State F) : Prop :=
   Rel p os ps ∨ (os.2 = false ∧ (∃ n, ps.mode = .squeezed n) ∧ os.1 = ps.state)
@@ -282,7 +281,7 @@ private theorem relStart_step (p : Poseidon.Params F) {os : Poseidon.Triple F ×
     · exact Or.inl (by simp [optAbsorb1, Rel, Poseidon.absorb1, hn])
 
 omit [DecidableEq F] in
-/-- The start along a whole input. -/
+/-- `RelStart` survives a whole input. -/
 private theorem relStart_fold (p : Poseidon.Params F) :
     ∀ (xs : List (Bool × F)) {os : Poseidon.Triple F × Bool} {ps : Poseidon.State F},
       RelStart p os ps →
@@ -563,9 +562,8 @@ private theorem pairUp_forall₂ :
   | _ :: _ :: _, [_], h => nomatch (List.forall₂_cons.mp h).2
 
 omit [DecidableEq F] in
-/-- The unpaired entry's absorb and final permutation, as the circuit computes them: the
-entry is added at the tracked position and the block permuted where the position, the
-guard, or emptiness demands. A kept entry rules out emptiness. -/
+/-- The unpaired entry's absorb and final permutation, as the circuit computes them, is
+`optFinalState` after `optAbsorb1`, given that a kept entry rules out emptiness. -/
 private theorem optFinalState_leftover (p : Poseidon.Params F) (stv : Poseidon.Triple F)
     (posb bb e : Bool) (xv : F) (hbe : bb = true → e = false) :
     (if posb || bb || e then
@@ -634,12 +632,10 @@ private theorem guard_bit :
   | [], _ :: _, h, _, _ => nomatch h
   | _ :: _, [], h, _, _ => nomatch h
 
-/-- Under any valuation satisfying the emitted constraints, `consume` from a start reading as
-`RelStart` at the position bit's reading, with the `i`-th guarded input reading as `(bᵢ, xᵢ)`
-and either some input kept or the start at an empty block, ends in the state the value
-sponge that absorbed exactly the kept inputs has after its squeeze:
-`squeeze(absorb(ps, [xᵢ | bᵢ = 1]))`'s state. Stated at `needsFinalPermuteIfEmpty = true`, the
-only flag the verifiers use. -/
+/-- Under any valuation satisfying the emitted constraints, `consume` from a start in `RelStart`
+with `ps`, with the `i`-th guarded input reading as `(bᵢ, xᵢ)` and either some input kept or
+`ps` at an empty block, ends in the state of `squeeze(absorb(ps, [xᵢ | bᵢ = 1]))`. Stated with
+the empty-input permute on, as every caller runs it. -/
 theorem consume_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
@@ -809,7 +805,7 @@ theorem squeeze_spec (p : Poseidon.Params F)
 
 omit [DecidableEq F] in
 /-- A squeezed conditional sponge reads as a value sponge: the states agree, the slot is the
-mode's, and the empty-block permute is armed. -/
+mode's, and the empty-input permute is on. -/
 def SqueezedReads (V : Valuation F) (ov : OptSpongeVar F) (ps : Poseidon.State F) : Prop :=
   ∃ n, ov.phase = .squeezed n ∧
     CircuitType.readVal (val := Poseidon.Triple F) V ov.state = ps.state ∧
@@ -817,7 +813,7 @@ def SqueezedReads (V : Valuation F) (ov : OptSpongeVar F) (ps : Poseidon.State F
 
 omit [DecidableEq F] in
 /-- An absorbing conditional sponge reads as a start `ps₀` at the position bit's reading
-`ib`, its pending inputs (oldest first) reading as `pend`, the empty-block permute armed. -/
+`ib`, its pending inputs (oldest first) reading as `pend`, the empty-input permute on. -/
 def AbsorbingReads (p : Poseidon.Params F) (V : Valuation F) (ov : OptSpongeVar F) (ib : Bool)
     (ps₀ : Poseidon.State F) (pend : List (Bool × F)) : Prop :=
   ∃ i xs, ov.phase = .absorbing i xs ∧ (↑i : CVar F).val V = bit ib ∧

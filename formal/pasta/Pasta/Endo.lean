@@ -18,16 +18,12 @@ scalar multiplication be split into two half-width ones.
   `pallasLam` / `vestaLam`.
 - `pallas_glv_no_short_relation` / `vesta_glv_no_short_relation` — no nonzero `(a, b)` with
   `|a|, |b| ≤ 2¹²⁶` satisfies `a + b·λ ≡ 0` modulo the group order.
+- `pallas_combo_off_targets` / `vesta_combo_off_targets` — a bounded two-base accumulator
+  avoids `±T`, `±φT`. `pallasEndoSpec` / `vestaEndoSpec` bundle all of the above.
 
 The eigenvalue relation is checked at the standard generator only (`§ The computational
 anchors` below), then extended to every point: `φ` is additive, the group is cyclic of prime
-order, and `toPt` transports the result to Mathlib's point group.
-
-## Public surface
-
-`pallasEndo` / `vestaEndo`, `pallasLam` / `vestaLam`, the anchors `pallas_lam_nsmul_Gpt` /
-`vesta_lam_nsmul_Gpt`, `pallas_eigen` / `vesta_eigen`, and `pallas_glv_no_short_relation` /
-`vesta_glv_no_short_relation`. Everything else is `private`.
+order, and `ShortWeierstrass.toPt` transports the result to Mathlib's point group.
 -/
 
 namespace Pasta
@@ -49,7 +45,7 @@ private theorem pallas_endo_cube : pallasEndo ^ 3 = 1 := by decide
 
 /-- The Vesta base-field endomorphism coefficient `β`: a primitive cube root of unity,
     so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. It is also the SvdW map-to-curve
-    parameter `(√-3 − 1)/2` (`Poseidon.GroupMapVesta`). -/
+    parameter `(√-3 − 1)/2` (`GroupMapVesta.spec`). -/
 def vestaEndo : Fq :=
   2942865608506852014473558576493638302197734138389222805617480874486368177743
 
@@ -57,14 +53,13 @@ def vestaEndo : Fq :=
 private theorem vesta_endo_cube : vestaEndo ^ 3 = 1 := by decide
 
 
-/-- The scalar eigenvalue `λ` of the Pallas endomorphism `φ` — a primitive cube root of
-    unity in the scalar field (`endo_scalar`, `Snarky.Curves.PastaCurve`). -/
+/-- The scalar eigenvalue `λ` of the Pallas endomorphism `φ`: a primitive cube root of unity
+    in the scalar field. -/
 def pallasLam : ℤ :=
   26005156700822196841419187675678338661165322343552424574062261873906994770353
 
-/-- The scalar eigenvalue `λ` of the Vesta endomorphism `φ` — a primitive cube root of
-    unity in the scalar field (`endo_scalar`); also the `λ` of the Fiat–Shamir challenge
-    expansion (proof-systems `endos::<Vesta>().1`). -/
+/-- The scalar eigenvalue `λ` of the Vesta endomorphism `φ`: a primitive cube root of unity
+    in the scalar field. -/
 def vestaLam : ℤ :=
   8503465768106391777493614032514048814691664078728891710322960303815233784505
 
@@ -91,8 +86,8 @@ private lemma endoPair_branch {β lam x₁ x₂ y₁ : F} (hβ : β ^ 3 = 1) :
 
 /-- `φ` is additive on raw coordinates: for any `β` with `β³ = 1`, `φ(p + q) = φ(p) + φ(q)`,
     where `+` is the complete short-Weierstrass addition with curve coefficient `a = 0`.
-    Pure field algebra over the five branches of `add`, stepped through in the body; the
-    junk cases with vanishing denominators hold because division is total. -/
+    Field algebra over the five branches of `add`, stepped through in the body; the
+    vanishing-denominator cases hold because division is total. -/
 private theorem endoPair_add {β : F} (hβ : β ^ 3 = 1) (p q : F × F) :
     endoPair β (add (0 : F) p q) = add 0 (endoPair β p) (endoPair β q) := by
   have hβ0 : β ≠ 0 := by
@@ -192,10 +187,9 @@ private def endoHom (E : SWCurve F) (hA : E.A = 0) {β : F} (hβ : β ^ 3 = 1) :
 
 /-! ## The computational anchors — `λ • G = φ(G)` at the standard generator
 
-One `native_decide` certificate per curve, and the only two in the workspace packages. The
-axiom gates trust a certificate by its defining module — an upstream CompElliptic module, or
-this file — rather than by name, which could be forged from inside a matching `namespace`
-block. -/
+One `native_decide` certificate per curve. The axiom gates trust a certificate by its defining
+module — an upstream CompElliptic module, or this file — rather than by name, which could be
+forged from inside a matching `namespace` block. -/
 
 /-- **The Pallas eigenvalue anchor.** `λ • G = φ(G)` at the standard generator
     (`.toNat` puts the `ℤ` eigenvalue in `nsmul` position). -/
@@ -210,8 +204,8 @@ theorem vesta_lam_nsmul_Gpt :
 
 /-! ## The transport homomorphism into Mathlib's point group -/
 
-/-- CompElliptic's `toPt` transport, bundled as an `AddMonoidHom` from `SWPoint E` to
-    Mathlib's affine point group of `E.toAffine`. -/
+/-- `ShortWeierstrass.toPt` bundled as an `AddMonoidHom` from `SWPoint E` to Mathlib's affine
+    point group of `E.toAffine`. -/
 private noncomputable def toPtHom (E : SWCurve F) : SWPoint E →+ Point E.toAffine where
   toFun P := toPt E.A E.B (P.x, P.y)
   map_zero' := toPt_zero E.B_nonzero
@@ -219,7 +213,8 @@ private noncomputable def toPtHom (E : SWCurve F) : SWPoint E →+ Point E.toAff
 
 /-! ## The anchors extend to every point -/
 
-/-- The Pallas eigenvalue relation on `SWPoint`: `φ(P) = [λ]·P` for every point. -/
+/-- The Pallas eigenvalue relation on CompElliptic's point group: `φ(P) = [λ]·P` for every
+    point. -/
 private theorem pallas_endoHom_eq_lam_smul (P : SWPoint Pallas.curve) :
     endoHom Pallas.curve rfl pallas_endo_cube P = pallasLam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Pallas.Gpt :=
@@ -228,7 +223,7 @@ private theorem pallas_endoHom_eq_lam_smul (P : SWPoint Pallas.curve) :
   rw [← hk, map_zsmul, ← pallas_lam_nsmul_Gpt,
     ← natCast_zsmul, ← natCast_zsmul, ← mul_smul, ← mul_smul, mul_comm]
 
-/-- The Vesta eigenvalue relation on `SWPoint`: `φ(P) = [λ]·P` for every point. -/
+/-- The Vesta twin of `pallas_endoHom_eq_lam_smul`. -/
 private theorem vesta_endoHom_eq_lam_smul (P : SWPoint Vesta.curve) :
     endoHom Vesta.curve rfl vesta_endo_cube P = vestaLam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Vesta.Gpt :=
@@ -357,8 +352,7 @@ private theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
 /-- **No short relation in the Pallas GLV lattice.** For `(a, b) ≠ 0` with
     `|a|, |b| ≤ 2¹²⁶`, `a + b·λ ≢ 0 (mod order)`. The bound is `2¹²⁶` and not `2¹²⁷` because
     the shortest lattice vector has sup-norm `≈ 9.82·10³⁷`, which lies between the two.
-    `EndoMul` needs only `< 2¹²⁴`, and uses this to keep its accumulator off `±T` and
-    `±φT`. -/
+    `pallas_combo_off_targets` builds on it. -/
 theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
     ¬ (Pallas.curve.toAffine.order : ℤ) ∣ (a + b * pallasLam) := by
@@ -459,11 +453,9 @@ theorem vesta_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
 /-! ## The endomorphism, as the wire states it -/
 
 /-- A curve's GLV endomorphism: the coefficient `β` with `φ(x, y) = (β·x, y)`, its scalar
-eigenvalue `λ`, and the two facts that make the ladder sound — that `φ` maps the curve to
-itself, and that the bounded two-base accumulator stays off `±T`, `±φT`.
-
-The circuit twin is `Snarky.Kimchi.HasEndo`, which adds only what the gate semantics need on
-top of a `HasCurve`. There are exactly two of these, `vestaEndoSpec` and `pallasEndoSpec`. -/
+eigenvalue `λ`, and the GLV facts the ladder consumes. `Snarky.Kimchi.HasEndo` carries one,
+plus the field and order facts the gate semantics need. The two instances are
+`vestaEndoSpec` and `pallasEndoSpec`. -/
 structure EndoSpec {F : Type*} [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) where
   /-- The endomorphism coefficient `β`: `φ(x, y) = (β·x, y)`. -/
   coeff : F

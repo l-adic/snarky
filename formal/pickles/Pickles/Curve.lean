@@ -5,19 +5,18 @@ import Pasta.Basic
 /-!
 # The gadget layer's curve dictionary of a commitment curve
 
-The gadget theorems (`Snarky.Kimchi.*`) are stated over `HasCurve F`, a Mathlib affine curve
-with the four facts the gate semantics consume; the wire verifier is stated over
-`CommitmentCurve`, CompElliptic's `SWCurve` with its scalar order. The two describe one curve:
-`C.E.toAffine` is the affine form and `SWPoint.equivPoint` the group isomorphism. This module
-is the map from the second to the first, so an assembly stated over a `CommitmentCurve` derives
-its gadget dictionary instead of asking for the coupling as fields.
+The gadget theorems are stated over `HasCurve`, a Mathlib affine curve with the four facts the
+gate semantics consume; the wire verifier is stated over `CommitmentCurve`, a
+`ShortWeierstrass.SWCurve` with its scalar order. The two describe one curve, related by
+`WeierstrassCurve.toAffine` and the group isomorphism `SWPoint.equivPoint`. This module maps
+the second to the first, so an assembly over a `CommitmentCurve` derives its gadget dictionary
+instead of taking the coupling as fields.
 
 ## Main definitions
 
-* `HasCurve.ofCommitmentCurve` — the dictionary of a commitment curve, at the bounds `2 < base`
-  and `2 < scalar` that rule out characteristic `2` and a 2-torsion group.
+* `HasCurve.ofCommitmentCurve` — the dictionary of a commitment curve.
 * `PastaShape` — the deployed shape of a commitment curve, with `PastaShape.d` its curve
-  dictionary and `PastaShape.e` its endomorphism dictionary. `pastaShapeVesta` and
+  dictionary and `PastaShape.e` its endomorphism dictionary; `pastaShapeVesta` and
   `pastaShapePallas` are the two witnesses.
 
 ## Main results
@@ -41,20 +40,19 @@ theorem _root_.Bulletproof.Ipa.CommitmentCurve.affine_card_nsmul (C : Commitment
     (X : C.E.toAffine.Point) : C.scalar • X = 0 := by
   rw [← C.order_eq]; exact card_nsmul_eq_zero'
 
-/-- Mathlib's affine group as a module over the scalar field, the twin of
-`CommitmentCurve.pointModule` on the carrier the gadget theorems live on. Derived from
-`affine_card_nsmul`, so the two carriers of one group both have the scalar action. -/
+/-- Mathlib's affine group as a module over the scalar field: the twin of
+`CommitmentCurve.pointModule` on the gadget theorems' carrier. -/
 instance _root_.Bulletproof.Ipa.CommitmentCurve.affineModule (C : CommitmentCurve) :
     Module C.ScalarField C.E.toAffine.Point :=
   AddCommGroup.zmodModule C.affine_card_nsmul
 
 /-- The gadget layer's curve dictionary of a commitment curve: the affine form of `C.E`, short
-by `C.a_zero`, of prime order by `C.card`, and off characteristic `2` and 2-torsion by the two
-bounds.
+by `C.a_zero`, of prime order by `C.card`, and off characteristic `2` and 2-torsion by the
+bounds `hbase` and `hscalar`.
 
-Reducible, and a structure literal: consumers state their premises over `d.W`, and instance
-search runs at reducible transparency, so `d.W` has to reduce to `C.E.toAffine` there. The
-projection is iota on the literal, so the proof fields are never forced. -/
+Reducible, and a structure literal: consumers state premises over `HasCurve.W`, and instance
+search runs at reducible transparency, so that projection must reduce to `C.E.toAffine`
+there, by iota on the literal, without forcing the proof fields. -/
 @[reducible] def _root_.Snarky.Kimchi.HasCurve.ofCommitmentCurve
     (C : CommitmentCurve) (hbase : 2 < C.base) (hscalar : 2 < C.scalar) :
     HasCurve C.BaseField where
@@ -69,15 +67,13 @@ projection is iota on the literal, so the proof fields are never forced. -/
     rw [ZMod.natCast_eq_zero_iff] at h2
     exact absurd (Nat.le_of_dvd (by norm_num) h2) (by omega)
 
-/-- The deployed shape of a commitment curve: the base field's width, and the scalar order's —
-255 bits, below `2^254 + 2^253`, and `1 mod 4`. Facts about `C` alone, so the sides of the
-cycle state them once here rather than each restating them. Not fields of `CommitmentCurve`:
-a commitment curve in general has no 255-bit scalar order, and the wire package is generic
-over any of them. -/
+/-- The deployed shape of a curve: the base field's width, and the scalar order's — 255 bits,
+below `2^254 + 2^253`, and `1 mod 4`. Kept off `CommitmentCurve`, which the wire package
+states for any curve. -/
 structure PastaShape (C : KimchiCurve) : Prop where
   /-- The base field has more than 254 bits: a `2^254`-bounded integer casts faithfully. -/
   base_big : 2 ^ 254 < C.base
-  /-- The base field has at most 255 bits: the canonical 128-bit split reads below `2^256`. -/
+  /-- The base field has at most 255 bits, inside `SplitWidth`'s `2^256`. -/
   base_lt : C.base < 2 ^ 255
   /-- The scalar order has 255 bits. -/
   scalar_lo : 2 ^ 254 < C.scalar
@@ -86,17 +82,14 @@ structure PastaShape (C : KimchiCurve) : Prop where
   /-- The scalar order is `1 mod 4`, as the one-wrap ladder regime asks. -/
   scalar_mod : C.scalar % 4 = 1
 
-/-- The gadget dictionary at a shaped curve: the 254-bit bounds weakened to the `2 <` ones
-`HasCurve.ofCommitmentCurve` asks for. -/
+/-- The gadget dictionary of a shaped curve: `HasCurve.ofCommitmentCurve` at its bounds. -/
 @[reducible] def PastaShape.d {C : KimchiCurve} (s : PastaShape C) :
     HasCurve C.BaseField :=
   HasCurve.ofCommitmentCurve C.toCommitmentCurve (lt_trans (by norm_num) s.base_big)
     (lt_trans (by norm_num) s.scalar_lo)
 
-/-- The endomorphism dictionary of a shaped commitment curve: the curve's own `Pasta.EndoSpec`
-on top of `PastaShape.d`, with the smoothness, characteristic and order facts the `endoMul`
-laws need read off the shape. The endomorphism's mathematics is stated once, on the wire; this
-is only the gadget layer's view of it. -/
+/-- The endomorphism dictionary of a shaped curve: the curve's own `Pasta.EndoSpec` on top of
+`PastaShape.d`, with the smoothness, characteristic and order facts read off the shape. -/
 @[reducible] def PastaShape.e {C : KimchiCurve} (s : PastaShape C) : HasEndo C.BaseField where
   toHasCurve := s.d
   spec := C.endo
@@ -143,7 +136,8 @@ theorem PastaShape.scalar_three_ne {C : KimchiCurve} (s : PastaShape C) :
   have := s.scalar_lo
   omega
 
-/-- Vesta has the shape: base `PALLAS_SCALAR_CARD`, scalar order `PALLAS_BASE_CARD`. -/
+/-- Vesta has the shape: base `Pasta.PALLAS_SCALAR_CARD`, scalar order
+`Pasta.PALLAS_BASE_CARD`. -/
 theorem pastaShapeVesta : PastaShape Bulletproof.IpaVesta.curve where
   base_big := by norm_num [PALLAS_SCALAR_CARD]
   base_lt := by norm_num [PALLAS_SCALAR_CARD]
@@ -151,7 +145,8 @@ theorem pastaShapeVesta : PastaShape Bulletproof.IpaVesta.curve where
   scalar_hi := by norm_num [PALLAS_BASE_CARD]
   scalar_mod := by norm_num [PALLAS_BASE_CARD]
 
-/-- Pallas has the shape: base `PALLAS_BASE_CARD`, scalar order `PALLAS_SCALAR_CARD`. -/
+/-- Pallas has the shape: base `Pasta.PALLAS_BASE_CARD`, scalar order
+`Pasta.PALLAS_SCALAR_CARD`. -/
 theorem pastaShapePallas : PastaShape Bulletproof.IpaPallas.curve where
   base_big := by norm_num [PALLAS_BASE_CARD]
   base_lt := by norm_num [PALLAS_BASE_CARD]
