@@ -724,7 +724,7 @@ def fopStepChunkedHarnessAt (nc : ℕ) (domains : List (Pickles.KnownDomain Fp))
           mulSelector := column 41
           emulSelector := column 42
           endomulScalarSelector := column 43 } }
-  Pickles.finalizeOtherProofStepChunked
+  Pickles.finalizeOtherProofStep
     { PicklesFixture.fopStepParams with zkRows := (16 * nc + 5) / 7 }
     domains u w [.unchecked (get 26), .unchecked (get 27)]
     (PicklesFixture.prevChallengesOf get (tail + 1))
@@ -741,13 +741,6 @@ a two-chunk step proof, output discarded. -/
 def finalizeOtherProofChunks2StepCircuit (input : Vector (FVar Fp) 239) :
     CircuitM Fp C PUnit := do
   let _ ← fopStepChunks2Harness input
-  pure PUnit.unit
-
-/-- The chunked step side at one chunk, compared against `finalize_other_proof_step_circuit`:
-at `nc = 1` it is the one-chunk circuit. -/
-def finalizeOtherProofChunked1StepCircuit (input : Vector (FVar Fp) 151) :
-    CircuitM Fp C PUnit := do
-  let _ ← fopStepChunkedHarnessAt 1 [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] input
   pure PUnit.unit
 
 /-- `finalize_other_proof_wrap_circuit` as a comparison target: the harness, output
@@ -1267,8 +1260,6 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       stepTarget (a := Vector Fp 170) (b := PUnit) (checkBulletproofStepCircuit hStep)),
     ("finalize_other_proof_step_circuit",
       stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
-    ("finalize_other_proof_step_circuit",
-      stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofChunked1StepCircuit),
     ("finalize_other_proof_chunks2_step_circuit",
       stepTarget (a := Vector Fp 239) (b := PUnit) finalizeOtherProofChunks2StepCircuit),
     ("ftcomm_step_circuit", stepTarget (a := Vector Fp 20) (b := PUnit) ftcommStepCircuit),

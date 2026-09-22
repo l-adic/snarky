@@ -58,7 +58,7 @@ def fopStepHarnessAt (domains : List (Pickles.KnownDomain Fp)) (input : Vector (
     CircuitM Fp C (Pickles.FopOutput Fp) := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type1.mk get 29
-  Pickles.finalizeOtherProofStep fopStepParams domains u w
+  Pickles.finalizeOtherProofStep fopStepParams domains u w.toChunked
     [.unchecked (get 26), .unchecked (get 27)] prev (get 28)
 
 /-- `finalize_other_proof_step_circuit`: the dump's one known domain of `log2 = 16`. -/
@@ -112,7 +112,7 @@ abbrev StepFopVar (k : ℕ) : Type :=
 def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) {k : ℕ} (v : StepFopVar k) :
     CircuitM Fp C (Pickles.FopOutput Fp) :=
   let (u, w, mask, prev, domainLog2) := v
-  Pickles.finalizeOtherProofStep fopStepParams domains u w mask.toList
+  Pickles.finalizeOtherProofStep fopStepParams domains u w.toChunked mask.toList
     (prev.toList.map (·.toList)) domainLog2
 
 /-- The step side on its records at the dump's one known domain of `log2 = 16`. -/

@@ -19,10 +19,9 @@ squeeze the two prechallenges `ξ` and `r` as 128-bit values.
 * `challengeDigest`: a fresh sponge absorbing every previous challenge, squeezed once.
 * `maskedChallengeDigest`: the step side's digest, the conditional sponge over the
   challenges guarded by their proof's mask bit.
-* `squeezeXiR`: the schedule of `Kimchi.Verifier.frTranscript`, the challenge digest
-  computed between its first two absorbs, then two squeezes each split by
+* `squeezeXiR`: the schedule of `Kimchi.Verifier.frTranscript` at any chunk count, the
+  challenge digest computed between its first two absorbs, then two squeezes each split by
   `lowest128Bits'`.
-* `squeezeXiRChunked`: the same schedule at any chunk count, every chunk absorbed.
 
 ## Main results
 
@@ -69,38 +68,12 @@ def maskedChallengeDigest (p : Poseidon.Params F) (mask : List (BoolVar F))
     (prev : List (List (FVar F))) : CircuitM F c (FVar F) :=
   OptSponge.squeeze p (maskedEntries mask prev)
 
-/-- The transcript after the digest before evaluations: `frTranscript` from its second
-entry, at one chunk per column. -/
-private def frTail (recDigest ftEval1 : FVar F) (pub : PointEvaluations (FVar F))
-    (evals : ProofEvaluations (FVar F)) : List (FVar F) :=
-  let pt := fun (e : PointEvaluations (FVar F)) => [e.zeta, e.zetaOmega]
-  [recDigest, ftEval1, pub.zeta, pub.zetaOmega]
-    ++ pt evals.z ++ pt evals.genericSelector ++ pt evals.poseidonSelector
-    ++ pt evals.completeAddSelector ++ pt evals.mulSelector ++ pt evals.emulSelector
-    ++ pt evals.endomulScalarSelector
-    ++ (evals.w.toList.map pt).flatten ++ (evals.coefficients.toList.map pt).flatten
-    ++ (evals.s.toList.map pt).flatten
-
-/-- The fr-sponge schedule: absorb `digestBefore`, run `digest` and absorb its result,
-absorb `ft(ζω)`, the public pair and every column pair, then squeeze `ξ` and `r`, each
-split to its low 128 bits — `ξ` with the low bits constrained iff `xiConstrainLowBits`,
-`r` always. -/
-def squeezeXiR [ToNat F] (p : Poseidon.Params F) (digestBefore : FVar F)
-    (digest : CircuitM F c (FVar F)) (ftEval1 : FVar F) (pub : PointEvaluations (FVar F))
-    (evals : ProofEvaluations (FVar F)) (endo : FVar F) (xiConstrainLowBits : Bool) :
-    CircuitM F c (SizedF 128 (FVar F) × SizedF 128 (FVar F)) := do
-  let sv ← SpongeVar.absorb p SpongeVar.init digestBefore
-  let d ← digest
-  let sv ← absorbList p sv (frTail d ftEval1 pub evals)
-  let (x₁, sv) ← SpongeVar.squeeze p sv
-  let xi ← lowest128Bits' xiConstrainLowBits endo x₁
-  let (x₂, _) ← SpongeVar.squeeze p sv
-  let r ← lowest128Bits' true endo x₂
-  pure (xi, r)
-
-/-- `squeezeXiR` at `nc` chunks per column: the schedule of `Kimchi.Verifier.frTranscript` at
-the same width, every chunk absorbed — a column's `ζ` chunks, then its `ζω` chunks. -/
-def squeezeXiRChunked [ToNat F] {nc : ℕ} (p : Poseidon.Params F) (digestBefore : FVar F)
+/-- The fr-sponge schedule at `nc` chunks per column: absorb `digestBefore`, run `digest` and
+absorb its result, then the rest of `Kimchi.Verifier.frTranscript` at the same width — `ft(ζω)`,
+the public chunks and every column's chunks, a column's `ζ` chunks before its `ζω` chunks — then
+squeeze `ξ` and `r`, each split to its low 128 bits — `ξ` with the low bits constrained iff
+`xiConstrainLowBits`, `r` always. -/
+def squeezeXiR [ToNat F] {nc : ℕ} (p : Poseidon.Params F) (digestBefore : FVar F)
     (digest : CircuitM F c (FVar F)) (ftEval1 : FVar F)
     (pub : PointEvaluations (Vector (FVar F) nc)) (evals : ProofEvaluations (Vector (FVar F) nc))
     (endo : FVar F) (xiConstrainLowBits : Bool) :
@@ -223,13 +196,14 @@ theorem maskedChallengeDigest_spec (p : Poseidon.Params F)
   exact h
 
 omit [DecidableEq F] in
-/-- The circuit transcript reads as `frTranscript` at one chunk per column. -/
-private theorem map_val_frTail (digestBefore recDigest ftEval1 : FVar F)
-    (pub : PointEvaluations (FVar F)) (evals : ProofEvaluations (FVar F)) :
-    (digestBefore :: frTail recDigest ftEval1 pub evals).map (·.val V)
+/-- The circuit transcript reads as `frTranscript` of the readings: the transcript is natural
+in its entries. -/
+private theorem map_val_frTranscript {nc : ℕ} (digestBefore recDigest ftEval1 : FVar F)
+    (pub : PointEvaluations (Vector (FVar F) nc)) (evals : ProofEvaluations (Vector (FVar F) nc)) :
+    (frTranscript digestBefore recDigest ftEval1 pub evals).map (·.val V)
       = frTranscript (digestBefore.val V) (recDigest.val V) (ftEval1.val V)
-          (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]) := by
-  simp [frTail, frTranscript, PointEvaluations.map, ProofEvaluations.map, List.map_flatten,
+          (pub.map fun v => v.map (·.val V)) (evals.map fun v => v.map (·.val V)) := by
+  simp [frTranscript, PointEvaluations.map, ProofEvaluations.map, List.map_flatten,
     Function.comp_def, Vector.toList_map, List.map_map]
 
 /-- Under any valuation satisfying the emitted constraints, with `digest` reading as `dv`
@@ -243,15 +217,15 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (digestBefore : FVar F) (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (dv : F) (hd : ⦃⌜True⌝⦄ digest ⦃⇓ d _ => ⌜d.val V = dv⌝⦄)
-    (ftEval1 : FVar F) (pub : PointEvaluations (FVar F)) (evals : ProofEvaluations (FVar F))
-    (endo : FVar F) (xiConstrainLowBits : Bool) :
+    {nc : ℕ} (ftEval1 : FVar F) (pub : PointEvaluations (Vector (FVar F) nc))
+    (evals : ProofEvaluations (Vector (FVar F) nc)) (endo : FVar F) (xiConstrainLowBits : Bool) :
     ⦃⌜True⌝⦄
     squeezeXiR (c := Builder V (KimchiConstraint F)) p digestBefore digest ftEval1 pub evals
       endo xiConstrainLowBits
     ⦃⇓ out _ => ⌜
       let sq := frSqueezes p
         (frTranscript (digestBefore.val V) dv (ftEval1.val V)
-          (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]))
+          (pub.map fun v => v.map (·.val V)) (evals.map fun v => v.map (·.val V)))
       let x₁ := sq.1
       let x₂ := sq.2
       Low128 V x₁ out.1 ∧ Low128 V x₂ out.2 ∧
@@ -259,17 +233,20 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
         (∃ m : Prechallenge, Reads128 V out.2 m)⌝⦄ := by
   simp only [squeezeXiR]
   have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init digestBefore
-  have ha := fun sv d => absorbList_spec (V := V) p hsize sv (frTail d ftEval1 pub evals)
+  have ha := fun sv d => absorbList_spec (V := V) p hsize sv
+    (frTranscript digestBefore d ftEval1 pub evals).tail
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   have hlo := fun b x => builder_spec_and _ _ _ (lowest128Bits'_spec (V := V) h2 h3 b endo x)
     (lowest128Bits'_below (V := V) h2 h3 hsw.inj hsw.modulus_lt b endo x)
   mvcgen [h0, hd, ha, hsq, hlo]
-  rename_i _ _ _ hA _ _ hdv svB _ hB _ _ hsq1 _ _ hlo1 _ _ hsq2 _ _ hlo2
+  rename_i _ _ _ hA d _ hdv svB _ hB _ _ hsq1 _ _ hlo1 _ _ hsq2 _ _ hlo2
   have hS : SpongeVar.ReadsAt V svB (Poseidon.absorb p Poseidon.init
       (frTranscript (digestBefore.val V) dv (ftEval1.val V)
-        (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]))) := by
+        (pub.map fun v => v.map (·.val V)) (evals.map fun v => v.map (·.val V)))) := by
     have h := hB _ (hA _ readsAt_init)
-    rw [← hdv, ← map_val_frTail, List.map_cons, Poseidon.absorb, List.foldl_cons]
+    have hcons : frTranscript digestBefore d ftEval1 pub evals
+        = digestBefore :: (frTranscript digestBefore d ftEval1 pub evals).tail := rfl
+    rw [← hdv, ← map_val_frTranscript, hcons, List.map_cons, Poseidon.absorb, List.foldl_cons]
     rw [Poseidon.absorb] at h
     exact h
   obtain ⟨hx1, hs1⟩ := hsq1 _ hS

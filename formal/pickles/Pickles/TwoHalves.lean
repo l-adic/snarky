@@ -318,7 +318,7 @@ private theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128
     {Sc : ScalarHalf C sf' E.σ.k} {out : FopOutput C.ScalarField}
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
       true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
-      Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
+      Sc.maskVals Sc.prevVals Sc.claims Sc.evals.toChunked C.lam
       Sc.side.read Sc.side.unshiftV Sc.V out)
     (ht : HalvesTies G Sc) : Sc.XiExact E cp out := by
   have hinjS := castInj128_of_lt _ hscalar
@@ -328,7 +328,9 @@ private theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128
   obtain ⟨a₀', z₀', hαS, hζS, hs⟩ := hs
   obtain rfl := Reads128.unique hinjS hαSa hαS
   obtain rfl := Reads128.unique hinjS hζSz hζS
-  simp only [FopReadsWire, FopParams.ofEnv] at hs
+  simp only [FopReadsWire, FopParams.ofEnv, AllEvals.toChunked_evals_map,
+    AllEvals.toChunked_pub_map] at hs
+  simp only [AllEvals.toChunked] at hs
   obtain ⟨ξ₀', -, -, hξS, -, -, -, hex, -, -⟩ := hs
   intro ξ₀ hξ hpre
   obtain rfl := Reads128.unique hinjS hξ hξS
@@ -455,6 +457,15 @@ theorem sgOk_iff_accOk (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof
 
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
+/-- One-chunk columns' rows are the heads' rows. -/
+private theorem flatMap_chunkRows_one {F : Type} [Zero F] (e : ProofEvaluations (Vector F 1)) :
+    (evalRows e).flatMap chunkRows = evalRows (e.map (·.toList.headD 0)) := by
+  have hc : (chunkRows : PointEvaluations (Vector F 1) → _)
+      = fun c => [c.map (·.toList.headD 0)] :=
+    funext fun c => by rw [chunkRows_one]; simp only [PointEvaluations.map, vec1_headD]
+  rw [hc, ← List.map_eq_flatMap]
+  simp [evalRows, ProofEvaluations.map, Vector.toList_map]
+
 /-- The chunk combination of one chunk is the chunk. -/
 private theorem combineAt_one {F : Type} [Field F] (xM : F) (v : Vector F 1) :
     combineAt xM v.toArray = v[0] := by
@@ -522,7 +533,7 @@ private theorem tailRows_toList {C : KimchiCurve} {k : ℕ} (cvk : KimchiVK C 1)
 `finalize_other_proof` combines — the kept challenge-polynomial rows, the public row, the
 `ft` row, the 43 evaluation rows — projected to `(ζ, ζω)` pairs, is the run's segment stream
 so projected: the old accumulators' rows, the public chunk, the `ft` segment, the tail rows. -/
-private theorem rows_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+private theorem rows_eq_heads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (ms : List Bool) (cvs : List (List C.ScalarField))
     (holds : (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten
       = (cp.olds.map (·.u.toList)).toList) :
@@ -555,6 +566,31 @@ private theorem rows_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C
   erw [hz _ cp.evals.s.toList]
   · rfl
   · simp
+
+/-- `rows_eq` in the chunk-row form `finalize_other_proof` combines: at one chunk the chunk
+rows are the pairs, and the recombination points do not matter. -/
+private theorem rows_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+    (ms : List Bool) (cvs : List (List C.ScalarField))
+    (holds : (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten
+      = (cp.olds.map (·.u.toList)).toList) (xM xOM ft1 : C.ScalarField)
+    (hft : ft1 = cp.ftEval1) :
+    let pe := runPubEvals C E.σ E.cvk cp pub
+    let o := runOracles C E.σ E.cvk cp pub
+    (sgRows ms (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) o.zeta)
+        (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) (o.zeta * E.cvk.omega))
+      ++ chunkRows pe
+      ++ ⟨ftEval0 E.cvk.n E.cvk.zkRows E.cvk.omega (fun i => E.cvk.shifts[i]) E.cvk.endo
+              (mdsOfParams C.frSponge.params) o.alpha o.beta o.gamma o.zeta
+              (combineAt xM pe.zeta.toArray) (linEvals (combineEvals xM xOM cp.evals)),
+            ft1⟩
+        :: (evalRows cp.evals).flatMap chunkRows).map PointEvaluations.toVector
+    = ((runStreamP C E.σ E.cvk cp pub pe).map
+        (fun r => (#v[r.2.1, r.2.2] : Vector C.ScalarField evalPts))).toList := by
+  intro pe o
+  subst hft
+  rw [chunkRows_one, combineAt_one, combineEvals_one, flatMap_chunkRows_one, List.append_assoc,
+    List.singleton_append]
+  exact rows_eq_heads E cp pub ms cvs holds
 
 /-! ### Reading the cells through the ties -/
 
@@ -596,7 +632,7 @@ theorem twoHalves_schnorr
     (out : FopOutput C.ScalarField)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
       true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
-      Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
+      Sc.maskVals Sc.prevVals Sc.claims Sc.evals.toChunked C.lam
       Sc.side.read Sc.side.unshiftV Sc.V out)
     -- across the two
     (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc) :
@@ -629,7 +665,8 @@ theorem twoHalves_schnorr
   obtain ⟨a₀', z₀', hαS, hζS, hs⟩ := hs
   obtain rfl := Reads128.unique hinjS hαSa hαS
   obtain rfl := Reads128.unique hinjS hζSz hζS
-  simp only [FopReadsWire, FopChecks, FopParams.ofEnv, FopSide.unshiftV_read] at hs
+  simp only [FopReadsWire, FopChecks, FopParams.ofEnv, FopSide.unshiftV_read,
+    AllEvals.toChunked_evals_map, AllEvals.toChunked_pub_map] at hs
   obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiF, -, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
   obtain rfl : ξ₀ = ξ₀' := Reads128.unique hinjS hξSx hξS
   -- the scalar half's inputs are the run's
@@ -654,18 +691,8 @@ theorem twoHalves_schnorr
   have hd : Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
       = (runOracles C E.σ E.cvk cp pub).digest := by
     rw [ht.digest, hdig, ← hdE]; rfl
-  -- the evaluation values are the proof's heads: the functor law, `headD 0 ∘ #v[·]` being `id`
-  have hev : Sc.evals.evals.map (·.val Sc.V) = cp.evals.map (·.toList.headD 0) := by
-    rw [← hf.evals]
-    show ProofEvaluations.map _ _
-      = (·.toList.headD 0) <$> (fun x => #v[x.val Sc.V]) <$> Sc.evals.evals
-    rw [← LawfulFunctor.comp_map]
-    rfl
-  have hpz : Sc.evals.pub.zeta.val Sc.V = (runPubEvals C E.σ E.cvk cp pub).zeta[0] := by
-    rw [← hf.pubEvals]; rfl
-  have hpzo : Sc.evals.pub.zetaOmega.val Sc.V = (runPubEvals C E.σ E.cvk cp pub).zetaOmega[0] := by
-    rw [← hf.pubEvals]; rfl
-  rw [hd, hf.ftEval1, hf.pubEvals, hf.evals] at hr' hxiF
+  have hft1 : Sc.evals.toChunked.ftEval1.val Sc.V = cp.ftEval1 := hf.ftEval1
+  rw [hd, hft1, hf.pubEvals, hf.evals] at hr' hxiF
   have hr : endoExpand C.lam r'.val = run.evalscale := by
     show _ = (frOracles C cp _ _).r
     rw [frOracles_eq_frPrechallenges, hr']
@@ -688,7 +715,7 @@ theorem twoHalves_schnorr
     rw [frOracles_eq_frPrechallenges]
   -- the permutation check reads the transcript's challenges and the evaluations, not the
   -- opening: it gives the scalar half's `perm`, and the claim tie the group half's
-  rw [hζ, hα, hβ, hγ, hev] at hpermC
+  rw [hζ, hα, hβ, hγ, hf.evals, combineEvals_one] at hpermC
   have hplonkIff : (↑out.plonkOk : CVar C.ScalarField).val Sc.V = 1
       ↔ Sc.side.decode Sc.claims.deferredValues.plonk.perm = runPScalar C E.σ E.cvk cp pub ∧
         Sc.side.decode Sc.claims.deferredValues.plonk.zetaToSrsLength
@@ -739,14 +766,15 @@ theorem twoHalves_schnorr
     (List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
       (List.map_injective_iff.mpr hinjG.prechallenge_injective (hmsG.symm.trans (hbpc'.trans hns)))
   -- the four checks, in wire terms
-  rw [hζ, hα, hβ, hγ, hev, hpz, hpzo, hf.ftEval1] at hcipC
+  rw [hζ, hα, hβ, hγ, AllEvals.toChunked_evals_map, AllEvals.toChunked_pub_map, hf.evals,
+    hf.pubEvals] at hcipC
   rw [hζ] at hbC
   have hcipIff : endoExpand C.lam ξ₀.val = run.polyscale →
       ((↑out.cipCorrect : CVar C.ScalarField).val Sc.V = 1
         ↔ Sc.side.decode Sc.claims.deferredValues.combinedInnerProduct = cipOf run) := by
     intro hξv
     simp only [hcipC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
-    rw [hξv, hr, cip_congr _ _ _ _ (rows_eq E cp pub _ _ hf.olds)]
+    rw [hξv, hr, cip_congr _ _ _ _ (rows_eq E cp pub _ _ hf.olds _ _ _ hft1)]
     exact Iff.rfl
   have hbIff : (↑out.bCorrect : CVar C.ScalarField).val Sc.V = 1
       ↔ Sc.side.decode Sc.claims.deferredValues.b
@@ -811,7 +839,7 @@ theorem twoHalves_kimchiVerify
     (out : FopOutput C.ScalarField)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
       true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
-      Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
+      Sc.maskVals Sc.prevVals Sc.claims Sc.evals.toChunked C.lam
       Sc.side.read Sc.side.unshiftV Sc.V out)
     -- across the two
     (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc) :
@@ -902,8 +930,8 @@ theorem twoHalves_kimchiVerify_vesta
       (FopParams.ofEnv E Linearization.fpTokens) true E.cvk.n E.cvk.omega
       (recDigest IpaVesta.curve (cp.olds.map (·.u)))
       (ScalarHalf.step Vs claimsS evals mask prevChallenges).maskVals
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals claimsS evals
-      IpaVesta.curve.lam (fopStep Vs).read (fopStep Vs).unshiftV Vs outS)
+      (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals claimsS
+      evals.toChunked IpaVesta.curve.lam (fopStep Vs).read (fopStep Vs).unshiftV Vs outS)
     -- across the two
     (ht : HalvesTies (GroupHalf.wrap Vg claimsG)
       (ScalarHalf.step Vs claimsS evals mask prevChallenges))
@@ -1009,8 +1037,8 @@ theorem twoHalves_kimchiVerify_pallas
       (FopParams.ofEnv E Linearization.fqTokens) true E.cvk.n E.cvk.omega
       (recDigest IpaPallas.curve (cp.olds.map (·.u)))
       (ScalarHalf.wrap Vs claimsS evals prevChallenges).maskVals
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals claimsS evals
-      IpaPallas.curve.lam
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals claimsS
+      evals.toChunked IpaPallas.curve.lam
       (fopWrap Vs).read (fopWrap Vs).unshiftV Vs outS)
     -- across the two
     (ht : HalvesTies (GroupHalf.step Vg claimsG)

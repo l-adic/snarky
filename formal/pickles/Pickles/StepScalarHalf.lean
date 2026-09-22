@@ -63,7 +63,7 @@ def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {
     (mask : Vector (BoolVar Fp) MaxProofsVerified)
     (prevChallenges : Vector (Vector (FVar Fp) k) MaxProofsVerified) (domainLog2Var : FVar Fp) :
     CircuitM Fp c (FopOutput Fp) :=
-  finalizeOtherProofStep (FopParams.ofEnv E Linearization.fpTokens) domains.list u w
+  finalizeOtherProofStep (FopParams.ofEnv E Linearization.fpTokens) domains.list u w.toChunked
     mask.toList (prevChallenges.toList.map Vector.toList) domainLog2Var
 
 /-- A list of cells read, element by element, is the list of their values. -/
@@ -163,7 +163,8 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta
     (FopParams.ofEnv E Linearization.fpTokens) hP IpaVesta.curve.frSponge.hsize E.zkRows_ge
     domains.list domains.nodup
     (fun d hd => ⟨domains.zkRows_le d hd, domains.generator_pow d hd⟩) claimsS
-    evals mask.toList _ hm (prevChallenges.toList.map Vector.toList) _ hprev hlen domainLog2Var
+    evals.toChunked mask.toList _ hm (prevChallenges.toList.map Vector.toList) _ hprev hlen
+    domainLog2Var
   simp only [finalizeOtherProofStepAt]
   refine builder_spec_imp _ _ _ hspec ?_
   rintro o ⟨d₀, hd₀, hL, hread⟩

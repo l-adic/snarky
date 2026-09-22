@@ -107,12 +107,6 @@ Pickles.Env.decidableInvariants
 -- transcription of the PureScript `Cip` harness.
 Pickles.buildEvalList
 -- script-surface:end
--- script-surface:begin
--- The step finalize over a chunked step proof (FinalizeOtherProof.lean): consumed by
--- scripts/check_cs.lean's transcription of the PureScript `FopStepChunks2` harness. No
--- reading is proved of it yet; its spec is what will root it beside the one-chunk side's.
-Pickles.finalizeOtherProofStepChunked
--- script-surface:end
 
 -- The token alphabet (Linearization/Types.lean): the PS `Types.purs` transcription's
 -- derived instances — comparable and printable, as the PureScript's `Eq`/`Show` are.
