@@ -147,6 +147,7 @@ foreign import vestaSrsBlindingGenerator :: CRS PallasG -> AffinePoint Fp
 -- variants remove the "numPublic" parameter at call sites — the walk fetches
 -- commitments on demand from kimchi's cached basis.
 foreign import pallasSrsLagrangeCommitmentAt :: CRS VestaG -> Int -> Int -> AffinePoint Fq
+foreign import pallasSrsLagrangeCommitmentChunksAt :: CRS VestaG -> Int -> Int -> Array (AffinePoint Fq)
 foreign import vestaSrsLagrangeCommitmentAt :: CRS PallasG -> Int -> Int -> AffinePoint Fp
 
 --------------------------------------------------------------------------------
@@ -759,7 +760,7 @@ spec bundle =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
-        exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat wrapSrsData)
+        exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat @1 wrapSrsData)
         -- Dump the 34 Lagrange bases + blinding `h` (the SRS constants baked into
         -- `xhat_wrap_circuit`) so the Lean `check_cs` harness can reproduce the gadget:
         -- Lean cannot compute Lagrange commitments (no SRS/FFI); it derives the corrections
@@ -777,6 +778,30 @@ spec bundle =
               [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
             lagr = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs 16 i)
           FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_lagrange.json")
+            (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
+        -- `xhat_wrap_circuit` at a 2^17 domain over the same 2^16 SRS: every Lagrange base
+        -- is two chunks, and the gadget folds one accumulator per chunk.
+        let
+          chunks2At :: Int -> Vector 2 (AffinePoint Fq)
+          chunks2At i = case Vector.toVector @2 (pallasSrsLagrangeCommitmentChunksAt srs 17 i) of
+            Just v -> v
+            Nothing -> unsafeCrashWith ("xhat_wrap_chunks2: Lagrange base " <> show i <> " is not two chunks")
+          wrapSrsDataChunks2 =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i -> (coerce (chunks2At i) :: Vector 2 (AffinePoint (F Fq)))
+            , blindingH: wrapSrsData.blindingH
+            }
+        exactMatchEff "xhat_wrap_chunks2_circuit" (fromCompiledCircuit =<< compileXhat @2 wrapSrsDataChunks2)
+        -- The chunked twin of `xhat_wrap_lagrange.json`: each of the 34 bases as its two
+        -- chunks, for the Lean `check_cs` harness.
+        it "dumps the xhat_wrap_chunks2 Lagrange bases for the Lean check_cs harness" $ liftEffect do
+          let
+            ptToJson :: AffinePoint Fq -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+
+            lagr :: Array (Array (Array String))
+            lagr = Array.range 0 33 <#> \i -> ptToJson <$> Vector.toUnfoldable (chunks2At i)
+          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_chunks2_lagrange.json")
             (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
         exactMatchEff "check_bulletproof_wrap_circuit" (fromCompiledCircuit =<< compileCheckBulletproofWrap wrapSrsData.blindingH)
       describe "IVP" do
