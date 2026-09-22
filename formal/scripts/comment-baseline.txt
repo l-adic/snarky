@@ -1,13 +1,7 @@
--- The comment gate's ratchet (scripts/check_comments.lean): the violations the tree still
--- carries, per category. A category may only shrink; the gate fails when one grows. Lower a
--- number when a module's prose is cleaned, never raise one.
---
--- The counts moved up once, when the gate learned to see what it had been missing: snake_case
--- upstream identifiers, bare port vocabulary that resolved by colliding with a Mathlib tail,
--- file citations carrying a line range, and paths into this repository that no file answers.
--- Three of those four were found by the passes that cleared the first modules.
-unresolved-names 8
-dangling-paths 1
+-- The comment gate's ratchet (scripts/check_comments.lean): the violations the tree carries,
+-- per category. Every category is at zero, so the gate fails on any new violation.
+unresolved-names 0
+dangling-paths 0
 upstream-files-outside-module-doc 0
 banned-phrases 0
 oversize 0
