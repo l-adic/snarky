@@ -255,10 +255,4 @@ def build [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F) : Witness F :=
   , n, nPrime := b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * n))))
   , b0, b1, b2, b3, b4, s0, s1, s2, s3, s4 }
 
-section BuildFields
-
-variable [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F)
-
-end BuildFields
-
 end Kimchi.Gate.VarBaseMul
