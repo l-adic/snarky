@@ -338,6 +338,8 @@ jobs:
   halves:
     name: Circuit halves on the cached proofs (${{ matrix.cache }})
     needs: build
+    # On main only: each file runs ten to fifteen minutes, too long for every pull request.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest-large
     strategy:
       # One job per proof-cache file, side by side: a file is ten to fifteen minutes, and one

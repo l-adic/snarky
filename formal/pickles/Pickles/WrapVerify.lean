@@ -57,7 +57,7 @@ def wrapVerify {sf : Type} {k : ℕ} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (computeXHat : CircuitM F c (List (AffinePoint (FVar F)))) (msgSponge : SpongeVar F)
     (newBpChallenges : List (List (FVar F))) (claimedMsgDigest : FVar F)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (cells : IvpInput k (FVar F) (BoolVar F) sf) : CircuitM F c PUnit := do
+    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) : CircuitM F c PUnit := do
   let o ← incrementallyVerifyProof ops e p endo gm sqrtF true blindingH spongeAfterIndex
     computeXHat (cells.withClaims u)
   assert o.success
@@ -94,7 +94,7 @@ theorem wrapVerify_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (msgSponge : SpongeVar C.BaseField) (newBpChallenges : List (List (FVar C.BaseField)))
     (claimedMsgDigest : FVar C.BaseField)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (cells : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (cells : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
@@ -149,7 +149,7 @@ private theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (cells : IvpInput σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (oldsW : List (IpaVesta.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
@@ -191,7 +191,7 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc 
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
+    (cells : IvpInput k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
   wrapVerify IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
     (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h)
     spongeAfterIndex
@@ -208,7 +208,7 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc : 
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
+    (cells : IvpInput k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
   wrapVerifyWith E.σ.h E.cvk.lagrangeBasis.toList statement spongeAfterIndex msgSponge
     newBpChallenges claimedMsgDigest u cells
 
@@ -239,7 +239,7 @@ theorem wrapVerifyAt_reads {ks n nc : ℕ} {V : Valuation Fq}
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (cells : IvpInput E.σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (hoff : ∀ leaf ∈ wrapLeavesAt E statement, Leaf.offBand IpaVesta.curve.scalar V leaf)
     (havoid : E.σ.Avoids E.lagrangeRelations)
     (hivp : ∃ oldsW, IvpHyps (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V statement) true
@@ -431,8 +431,8 @@ def GroupVar.shifted (g : GroupVar k kw n nc) : List (Type1 (FVar Fq)) :=
 
 /-- What `incrementallyVerifyProof` consumes: the claims, the accumulators, the key's cells, the
 proof. -/
-def GroupVar.cells (keyCells : List (List (AffinePoint (FVar Fq)))) (g : GroupVar k kw n nc) :
-    IvpInput k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
+def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fq))) (g : GroupVar k kw n nc) :
+    IvpInput k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
   ivpInputOf g.val.group.statement.proofState.deferredValues.toDeferredValues g.sgOld keyCells
     g.val.group.proof
 
@@ -446,7 +446,7 @@ cells the block scales — the seven shifted scalars and the `x_hat` full leaves
 `wrapVerifyAt` at the input's statement, claims, accumulators and proof, the key's cells and
 the two sponges constants of the circuit. -/
 def groupCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
-    (E : Env Bulletproof.IpaVesta.curve nc) (keyCells : List (List (AffinePoint (FVar Fq))))
+    (E : Env Bulletproof.IpaVesta.curve nc) (keyCells : VkComms nc (AffinePoint (FVar Fq)))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n nc) : CircuitM Fq c Unit := do
   assertClaimsOffBandWrap g.shifted
   assertLeavesOffBand Bulletproof.IpaVesta.curve.scalar (wrapLeavesAt E g.stepStatement)
@@ -461,7 +461,7 @@ ones the ladder read speaks about, which the assertion supplies — a valuation 
 circuit reads as `VerifyReads` with its success bit `1`. -/
 theorem groupCircuit_reads {V : Valuation Fq} (E : Env Bulletproof.IpaVesta.curve nc)
     (cp : Kimchi.Verifier.KimchiProof Bulletproof.IpaVesta.curve nc E.σ.k)
-    (keyCells : List (List (AffinePoint (FVar Fq)))) (spongeAfterIndex msgSponge : SpongeVar Fq)
+    (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
     (g : GroupVar E.σ.k kw n nc) (havoid : E.σ.Avoids E.lagrangeRelations)
     (hivp : (∀ x ∈ g.shifted, (wrapSide V).ClaimOk x) →
       ∃ oldsW, IvpHyps (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V g.stepStatement) true

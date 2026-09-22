@@ -958,8 +958,9 @@ def dummyWrapSg : AffinePoint (FVar Fp) :=
    .const 2694491010813221541025626495812026140144933943906714931997499229912601205355⟩
 
 /-- The dummy key's commitments (PS `Common`): `σ₀…σ₆`, the 15 coefficient commitments and
-the six index commitments, each one chunk at the generator — 28 copies of it. -/
-def dummyKeyComms : List (List (AffinePoint (FVar Fp))) := List.replicate 28 [pallasGenerator]
+the six index commitments, each one chunk at the generator. -/
+def dummyKeyComms : Pickles.VkComms 1 (AffinePoint (FVar Fp)) :=
+  VkComms.replicate #v[pallasGenerator]
 
 /-- The sponge after the dummy key's index digest. -/
 def dummyIndexSponge : CircuitM Fp C (SpongeVar Fp) :=
@@ -968,7 +969,7 @@ def dummyIndexSponge : CircuitM Fp C (SpongeVar Fp) :=
 /-- The group half's cells from the 175-input layout at `get`: the claims and the opening
 from the inputs, the key's commitments and `sg_old` dummy constants. -/
 def ivpStepInput (get : ℕ → FVar Fp) :
-    Pickles.IvpInput Pickles.WrapIPARounds (FVar Fp) (BoolVar Fp)
+    Pickles.IvpInput Pickles.WrapIPARounds 1 (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
@@ -1052,7 +1053,7 @@ def stepVerifyStatement (get : ℕ → FVar Fp) :
 /-- The group half's cells from the 268-input layout: the wrap proof block at 0, the key and
 `sg_old` dummies; the claim cells are `verify`'s to substitute. -/
 def stepVerifyCells (get : ℕ → FVar Fp) :
-    Pickles.IvpInput Pickles.WrapIPARounds (FVar Fp) (BoolVar Fp)
+    Pickles.IvpInput Pickles.WrapIPARounds 1 (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
@@ -1095,7 +1096,8 @@ and the claimed digest at 176. -/
 
 /-- The dummy key's commitments on the wrap side (PS `dummyVestaPt`, the Vesta generator):
 `σ₀…σ₆`, the 15 coefficient commitments and the six index commitments, one chunk each. -/
-def dummyWrapKeyComms : List (List (AffinePoint (FVar Fq))) := List.replicate 28 [vestaGenerator]
+def dummyWrapKeyComms : Pickles.VkComms 1 (AffinePoint (FVar Fq)) :=
+  VkComms.replicate #v[vestaGenerator]
 
 /-- The step statement of the wrap-side harnesses, one slot at 15 rounds, from `get`. -/
 def wrapStepStatement (get : ℕ → FVar Fq) :
