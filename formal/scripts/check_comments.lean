@@ -134,6 +134,9 @@ run_cmd do
   -- the vocabulary: every suffix of every declaration of ours, so `AccOk` resolves while
   -- `Pickles.AccOk` is live and stops resolving the moment it is deleted
   let mut suffixes : Std.HashSet String := {}
+  -- a module of this tree is a name a comment may use (`Kimchi.Domain`, `Pickles.TwoHalves`)
+  for m in env.header.moduleNames do
+    if isOurs m then suffixes := suffixes.insert m.toString
   for (n, _) in env.constants.toList do
     let u := userName n
     -- the last one and two components: `AccOk`, `SWPoint.equivPoint`, `Point.some`
@@ -155,6 +158,10 @@ run_cmd do
   let mut phrase : Array String := #[]
   let mut oversize : Array String := #[]
   let mut emph : Array String := #[]
+  let modOf (n : Name) : String :=
+    match env.getModuleIdxFor? n with
+    | some i => (env.header.moduleNames[i.toNat]!).toString
+    | none => "?"
   let mut docs := 0
   for (n, _) in env.constants.toList do
     unless isOurs n do continue
@@ -173,19 +180,19 @@ run_cmd do
       -- a binder, or a field access on one (`cp.opening`, `s.val`)
       if binders.contains t || binders.contains ((t.splitOn ".").headD "") then continue
       if isSourceFile t then
-        provenance := provenance.push s!"{userName n}: `{t}`"
+        provenance := provenance.push s!"{modOf n}\t{userName n}: `{t}`"
       else if identShaped t && !allow.contains t && !resolves env suffixes owner t then
-        stale := stale.push s!"{userName n}: `{t}`"
+        stale := stale.push s!"{modOf n}\t{userName n}: `{t}`"
     let low := doc.toLower
     for (b, why) in banned do
       if (low.splitOn b).length > 1 then
-        phrase := phrase.push s!"{userName n}: \"{b}\" ({why})"
+        phrase := phrase.push s!"{modOf n}\t{userName n}: \"{b}\" ({why})"
     let lines := (doc.splitOn "\n").length
     if lines > declCap then
-      oversize := oversize.push s!"{userName n}: {lines} lines (cap {declCap})"
+      oversize := oversize.push s!"{modOf n}\t{userName n}: {lines} lines (cap {declCap})"
     let bolds := ((doc.splitOn "**").length - 1) / 2
     if bolds > 1 then
-      emph := emph.push s!"{userName n}: {bolds} bolded runs"
+      emph := emph.push s!"{modOf n}\t{userName n}: {bolds} bolded runs"
   -- module and section docstrings: read from the sources, since they attach to no declaration
   let pkgs := ["pasta", "poseidon", "bulletproof-pcs", "kimchi", "snarky", "pickles"]
   let rec walk (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -214,15 +221,15 @@ run_cmd do
           modDocs := modDocs + 1
           let text := String.intercalate "\n" blk.toList
           if blk.size > moduleCap then
-            oversize := oversize.push s!"{f} (module doc): {blk.size} lines (cap {moduleCap})"
+            oversize := oversize.push s!"{f}\tmodule doc: {blk.size} lines (cap {moduleCap})"
           let low := text.toLower
           for (b, why) in banned do
             if (low.splitOn b).length > 1 then
-              phrase := phrase.push s!"{f} (module doc): \"{b}\" ({why})"
+              phrase := phrase.push s!"{f}\tmodule doc: \"{b}\" ({why})"
           for t in backticked text do
             if isSourceFile t then continue
             if identShaped t && !allow.contains t && !resolves env suffixes .anonymous t then
-              stale := stale.push s!"{f} (module doc): `{t}`"
+              stale := stale.push s!"{f}\tmodule doc: `{t}`"
           i := j + 1
         else i := i + 1
   IO.println s!"docstrings checked: {docs} declaration, {modDocs} module/section"
