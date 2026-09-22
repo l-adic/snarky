@@ -203,7 +203,7 @@ instance
 -- | A proof's protocol commitments, as allocated in the per-proof
 -- | witness. The wire order is `wComm`, `zComm`, `tComm`.
 -- |
--- | `n` is the commitment's `num_chunks` (`docs/chunking.md`): 15
+-- | `n` is the commitment's `num_chunks`: 15
 -- | witness polynomials at `n` chunks each, one `z`, and the quotient
 -- | polynomial's 7 pieces at `n` chunks each. The nesting is for
 -- | reading; `CircuitType` flattens `tComm` to one `7 * n` vector.

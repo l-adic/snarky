@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Fixture-provenance gate (external-audit A-7): every committed fixture is pinned by
+# Fixture-provenance gate: every committed fixture is pinned by
 # sha256 to a manifest that also records the proof-systems revision it was regenerated
 # from. CI checks out without submodules and never regenerates, so without this pin one
 # PR could move the model and its fixtures together ("fixture-side accommodation") with
-# nothing noticing. The audit closed that gap once by regenerating byte-identical
-# artifacts from the pinned checkout; this gate keeps the pin explicit between
-# regenerations.
+# nothing noticing. This gate keeps the pin explicit between regenerations.
 #
 #   check_fixtures_manifest.sh            check hashes against the manifest
 #   check_fixtures_manifest.sh --regen    re-pin (run after a deliberate regeneration

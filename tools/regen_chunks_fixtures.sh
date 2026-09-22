@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate chunked-circuit fixtures for chunking implementation work
-# (docs/chunking.md Phase 0).
+# Regenerate the chunked-circuit fixtures.
 #
 # These fixtures are NOT committed to git — the chunks2 step CS alone is
 # ~56MB (the application body forces a 2^16-row circuit; chunks4/8 push

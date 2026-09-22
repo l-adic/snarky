@@ -268,7 +268,7 @@ def build {p : ℕ} [Fact p.Prime] (side : Side p) (raw : Raw (ZMod p)) :
   let n := 2 ^ Nat.clog 2 (rows + zkRows)
   let omega := side.omega n
   -- Synthesized generator-power shifts, *not* production's Blake2b-sampled ones — sound for
-  -- this driver's purpose (the laws it decides are shift-set-generic; external-audit A-15).
+  -- this driver's purpose (the laws it decides are shift-set-generic).
   let shifts : Fin permCols → ZMod p := fun i => (powMod side.generator (i : ℕ) p : ℕ)
   let gates ← gateTable raw n
   match Index.build? gates raw.publicInputSize zkRows omega side.endo side.mds shifts with

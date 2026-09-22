@@ -89,7 +89,7 @@ def runChunked (C : Ipa.KimchiCurve)
     let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
       | some v => pure v
       | none => throw "field max_poly_size is not a numeral"
-    -- `Nat.log2` truncates a non-two-power `max_poly_size` (external-audit C-4);
+    -- `Nat.log2` truncates a non-two-power `max_poly_size`;
     -- production domains are radix-2, so fixture values are exact powers.
     let σ ← parseSRSAt C (Nat.log2 mps) j
     let proof ← Kimchi.Fixture.parseKimchiProof C j
@@ -118,7 +118,7 @@ def runChunked (C : Ipa.KimchiCurve)
             { proof.evals.z with zeta := proof.evals.z.zeta.modify c (· + 1) }
           else
             { proof.evals.z with zetaOmega := proof.evals.z.zetaOmega.modify c (· + 1) } } }
-    -- The empty quotient commitment (audit O-2), used twice below: once as a
+    -- The empty quotient commitment, used twice below: once as a
     -- verify-level corruption, once as the parse-side non-vacuity control for it.
     let emptyT : Wire.KimchiProof C := { proof with tComm := #[] }
     -- verify-level corruptions: each mutant still parses; the verdict must flip.
@@ -204,7 +204,7 @@ def runChunked (C : Ipa.KimchiCurve)
         (twoChunk.check nc σ.k).isNone)
     for (name, rejected) in parses do
       IO.println s!"  {if rejected then "✓ none" else "✗ parsed (BUG)"}: {name}"
-    -- Non-vacuity of the emptied-quotient corruption above (audit O-2). `verify` is
+    -- Non-vacuity of the emptied-quotient corruption above. `verify` is
     -- check-then-verify, so a parse rejection would flip that verdict for the WRONG
     -- reason. Production bounds `t_comm.len()` from above only (verifier.rs:260), so the
     -- empty quotient must PARSE here and its rejection must be the ft identity's — the
@@ -240,8 +240,8 @@ def main : IO Unit := do
   -- nc = 2 on both curves.
   run CV s!"{dir}/kimchi_proof_vesta_nc2.json" true
   run CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
-  -- Live EndoMul + VarBaseMul selectors at an empty public input (the audit's C-3 /
-  -- V-1 mask): acceptance here pins the α-weighted constraint order and the
+  -- Live EndoMul + VarBaseMul selectors at an empty public input (both are zero in
+  -- every other fixture): acceptance here pins the α-weighted constraint order and the
   -- scalar-register sign of both scalar-multiplication gates, and exercises the
   -- empty-public branch (public commitment = the all-ones blinding mask).
   run CV s!"{dir}/kimchi_proof_vesta_emul.json" false

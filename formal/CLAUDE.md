@@ -39,19 +39,17 @@ tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interprete
 mirroring `Snarky.Backend.Builder`/`Prover`, whole-circuit `compile`/`solve` with the
 seam law `solve_complete` (a successful solve satisfies every compiled constraint and
 decodes the public slots as declared), and the Lean-only laws beside their
-subjects: interpreter laws in `Backend/{Builder,Prover}` (witness-independence,
+subjects: interpreter laws in `Snarky/{Builder,Prover}` (witness-independence,
 builder/prover allocation agreement, completeness — a successful prover run satisfies
 every built constraint, plus the bind-composition laws) and per-gadget
-soundness/completeness beside each gadget in `Circuit/DSL/{Field,Boolean,Assert,Bits}`.
+soundness/completeness beside each gadget in `Snarky/DSL/{Field,Boolean,Assert,Bits}`.
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
-`Mathlib.Algebra.Ring.Defs` + `Mathlib.Tactic.Ring` in `Snarky/Circuit/CVar.lean` for the
+`Mathlib.Algebra.Ring.Defs` in `Snarky/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete
 backends live in downstream files (see `Snarky/Constraint/Basic.lean` for the concrete
 `Basic` model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
 core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
-— use `Snarky.mapVec` from `Snarky/Types/Vector.lean`). The package is aligned with the
-PureScript original module by module; `formal/docs/snarky-ps-alignment.md` records the
-completed sign-off walk.
+— use `Snarky.mapVec` from `Snarky/Types/Vector.lean`).
 
 Build: `make lean-build` (from the parent repo root), which runs
 `lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Pickles`
@@ -72,7 +70,7 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the certified point counts and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
 | `poseidon/` | `Poseidon`, `FixtureKit` | the Poseidon permutation + duplex sponge over both Pasta base fields, the `FqSponge` consumer layer, SvdW map-to-curve; plus the shared JSON-fixture/trace kit. Own fixtures + check scripts (`poseidon/scripts/`) |
 | `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: the abstract scheme and the executable Pasta wire verifier (Poseidon-driven), which `kimchiVerify` finishes on; IPA fixtures + check script. A specification, no soundness claim |
-| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier, its run functions, the wire parse); plus the fixture-decoding lib, kept out of `Kimchi` |
+| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/Linearization` (the verifier's scalar side in closed form), `Verifier/` (the executable verifier, its run functions, the wire parse); plus the fixture-decoding lib, kept out of `Kimchi` |
 | `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
 | `pickles/` | `Pickles` | the in-circuit kimchi verifier, so far its linearization slice: the `PolishToken` language and stack-machine interpreter, the reflection certificate identifying the deployed token stream with `gateLinearization`, the circuit reading proved to compute it, the `ft_eval0` gadget (`Pickles/FtEval0.lean`) proved to compute `ftEval0`, and the scalar-side gadgets (`Pickles/{IPA,CombinedInnerProduct,PermScalar,OptSponge,FrSponge,Domain,Pseudo}.lean`: the challenge polynomials, `b_correct`, the combined inner product, the permutation scalar, the conditional sponge, the fr-sponge schedule with both challenge digests, and the domain scalars, proved to read as the `Bulletproof`/`Linearization`/`Poseidon`/`frTranscript` quantities), the group side's fq-sponge transcript `Pickles/FqSpongeTranscript.lean` on either sponge (the wrap side's on the conditional sponge, `sg_old` under its mask; both proved to read as the wire verifier's `fqSqueezes`, at the deployed fields its `fqPrechallenges`), the opening check `Pickles/CheckBulletproof.lean` (CS-matched on both sides; its transcript half proved to read as the wire verifier's `ipaSqueezes` from the warm sponge, at the deployed fields its `ipaPrechallenges`, which `transcriptFrom_eq_ipaPrechallenges` places as `transcriptFrom`'s challenges), and their assembly `Pickles/FinalizeOtherProof.lean` (both sides, CS-matched to the production dumps, each proved to read as `FopReads`: the claimed scalars against the wire verifier's `frSqueezes` and its `ftEval0`/`combinedInnerProduct`/`combinedB`/`permScalar`; at the deployed fields `FopReadsWire`: `ξ`, `r` are the verifier's `frPrechallenges` — `frOracles`' own, `frOracles_eq_frPrechallenges`). Requires snarky + kimchi + poseidon; own axiom gate, and the ONLY `native_decide` site in the tree outside CompElliptic and `Pasta/Endo.lean`. The token modules `Linearization/{Fp,Fq}.lean` are codegen output (`scripts/gen_tokens.lean`, via `make gen-linearization-lean`), committed because formal/'s CI checks out without the mina submodule |
 
@@ -153,11 +151,9 @@ Above the gate stack, the library has grown these further trees:
   `Index.satisfies_iff_fullFamily_dvd` — the only result linking `Index.Satisfies` to the
   committed polynomial family. **The SZ layer is deterministic algebra**, not a probabilistic
   claim: the bad sets are explicit and their cardinalities are proved, so the statements
-  quantify over challenges outside them. Do not confuse it with the retired
-  knowledge-soundness development — `docs/soundness-line-retirement.md` records that
-  distinction, and an earlier pass deleted this layer by conflating the two before reverting.
-  What IS retired above it: the *ideal* polynomial protocol (`Protocol/{Accepts,Equation}`,
-  `Index/Degree`), whose bridge to the deployed verifier went with the forking tree.
+  quantify over challenges outside them. It is not part of the retired knowledge-soundness
+  development and is not to be deleted with it; `docs/soundness-line-retirement.md` states
+  the distinction.
 - **`Kimchi/Verifier/`** — the executable kimchi verifier and its reflection into named
   run functions. The kimchi-proof JSON decoders live in `kimchi/KimchiFixture/`,
   its OWN library (`KimchiFixture`) sitting beside the `Kimchi/` tree, deliberately NOT

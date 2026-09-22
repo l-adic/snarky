@@ -91,7 +91,7 @@ formalization-side count, distinct from the incidental sevens `permCols` and
 `litRowCount`. -/
 scoped notation "szSets" => (7 : Nat)
 
-/-! The derivation checks the module docstring promises (external-audit A-12): each derived
+/-! The derivation checks the module docstring promises: each derived
 constant is kernel-checked against its defining arithmetic. -/
 example : sigmaRows = permCols - 1 := rfl
 example : litRowCount = 1 + selCount := rfl

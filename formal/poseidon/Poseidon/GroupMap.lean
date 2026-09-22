@@ -81,7 +81,7 @@ def curveEqn (spec : Spec q) (x : ZMod q) : ZMod q := x ^ 3 + spec.E.B
 the Tonelli–Shanks representative's, which matches arkworks' current convention by
 construction and is pinned by the group-map vectors rather than derived. So an arkworks
 sqrt-convention change on a proof-systems bump would flip the derived `U` base, and would
-surface only as a fixture mismatch (external-audit A-14). -/
+surface only as a fixture mismatch. -/
 def getY (spec : Spec q) (x : ZMod q) : Option (ZMod q) :=
   spec.sqrt.sqrt? (curveEqn spec x)
 

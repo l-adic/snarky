@@ -164,8 +164,7 @@ absorbPointEval pe = do
 -- `e[0], …, e[n-1]` with
 --   P(x) = e[0] + e[1]·x^N + … + e[n-1]·x^((n-1)·N)
 -- for `N = 2^rounds` the SRS-poly size. These recombine the chunks at
--- an evaluation point `pt` into the single scalar `P(pt)`. Background:
--- `docs/chunking.md`.
+-- an evaluation point `pt` into the single scalar `P(pt)`.
 
 -- | Horner combine of `n` chunked evaluations: `Σ_{i<n} e[i] * ptN^i`,
 -- | where `ptN = pt^(2^rounds)`. At `n = 1` the identity.

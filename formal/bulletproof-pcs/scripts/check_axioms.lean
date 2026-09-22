@@ -64,7 +64,7 @@ def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than by
-    name prefix (external-audit A-8; see kimchi's gate for the full note). -/
+    name prefix, which is forgeable (see kimchi's gate for the full note). -/
 def isTrustedNativeDecide (env : Environment) (ax : Name) : Bool :=
   (ax.toString.splitOn "native_decide").length > 1 &&
     match env.getModuleFor? ax with

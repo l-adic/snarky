@@ -8,10 +8,7 @@
 # any bare 6/7/15/43/44 in a type-shaped position — `Fin N` (including the
 # parenthesized `Fin (N)`), a `finRange N`, a `Vector` dimension, a `parseSized`
 # dimension, `.take 6`, or an `N * nc` stream size — fails the gate. A scanned
-# file-count floor (> 18; the tree holds 23 today) guards against a renamed tree
-# passing vacuously. The floor was > 30 against a ~38-file tree; it was recalibrated
-# when the probabilistic soundness line and the Schwartz–Zippel layer were retired
-# (docs/soundness-line-retirement.md), which removed 15 files from this scan set.
+# file-count floor (> 18) guards against a renamed tree passing vacuously.
 #
 # Deliberately OUT of scope (the audited policy):
 #   * Kimchi/Gate/** — gate-internal constants (S-box exponent, crumb counts,

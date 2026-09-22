@@ -389,7 +389,7 @@ Production's opening verifier carries no explicit guard on the round list: its `
 payloads feed the transcript and the batched equations as they are, so an oversized list
 panics, and an undersized one whose claim is committed over the SRS prefix is accepted.
 Pinning the round count to the SRS's `σ.k` in `Proof` is therefore a declared modeling
-*strengthening* rather than the transcription of a production check (external-audit W-F3).
+*strengthening* rather than the transcription of a production check.
 In the kimchi composition, exploiting that corner against a key whose commitments are the
 claimed ones requires a discrete-log break, so the endpoint exposure is priced. -/
 
@@ -539,7 +539,7 @@ residual (`cᵢ • Qᵢ + δᵢ − z1ᵢ • sgᵢ − (z1ᵢ · b0ᵢ) • U�
 (`⟨sᵢ, g⟩ − sgᵢ`). This verifier is production's at a one-proof batch, where both weights are
 `1` and the deployed test is the single equation `A + B = 0`. The conjunction `A = 0 ∧ B = 0`
 implies it and is not implied by it, so it is a declared modeling *strengthening* rather than
-the transcription of production's check (external-audit V-4, statement-audit M2): acceptance
+the transcription of production's check: acceptance
 here implies production's acceptance, and every statement over `verifyWith` —
 `Kimchi.Verifier.kimchiVerify` and what is proved of it — is a statement about the
 conjunction. The opening fixtures do not distinguish the two: an honest proof satisfies both

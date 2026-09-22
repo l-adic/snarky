@@ -13,11 +13,10 @@ lintDriverArgs = ["Pickles"]
 # which are the specs every law here lands on. No new spec objects: a fragment's
 # soundness is stated against the run function it implements.
 #
-# The statement shape is Schnorr's, at scale: every satisfying valuation of the compiled
-# constraints certifies the wire computation, and the honest run completes. It is
-# RELATIVE faithfulness — it neither assumes nor establishes that the wire verifier is
-# sound. See formal/docs/circuit-verifier-faithfulness.md for the fragment
-# decomposition, and docs/soundness-line-retirement.md for why soundness is out of scope.
+# Every satisfying valuation of the compiled constraints certifies the wire computation,
+# and the honest run completes. It is RELATIVE faithfulness — it neither assumes nor
+# establishes that the wire verifier is sound. See formal/docs/soundness-line-retirement.md
+# for why soundness is out of scope.
 
 [[require]]
 name = "snarky"

@@ -180,7 +180,7 @@ fn emit_fq_sponge<P: ark_ec::short_weierstrass::SWCurveConfig>(
         "squeeze_challenge",
         "challenge",
     ]);
-    // The identity-absorb position probe (external-audit V-2): a further absorb after
+    // The identity-absorb position probe: a further absorb after
     // `absorb_g_inf`, then a challenge. The identity is absorbed as TWO zeros
     // (sponge.rs:335-339), so the following absorb lands one duplex slot later than a
     // one-zero encoding would put it -- this is the only shape class that distinguishes

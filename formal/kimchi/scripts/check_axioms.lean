@@ -118,7 +118,7 @@ def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
-    by name prefix (external-audit A-8: the name is forgeable from inside a
+    by name prefix (the name is forgeable from inside a
     `namespace CompElliptic` block in this tree — and this tree does author declarations
     in that namespace — while the defining module is not: tree files keep their own
     module names regardless of the namespaces they open). Trusted: any `native_decide`

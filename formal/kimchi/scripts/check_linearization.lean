@@ -38,9 +38,8 @@ def parsePE (j : Json) : Except String (F × F) := do
 
 /-- One linearization fixture, adjudicated field by field. `liveGates` names the gates whose
 combined-constraint target must be NON-ZERO in this fixture — without it a `0 = 0` agreement
-would read as a passing per-gate check (external-audit R-1: the mixed circuit's `emul`/`mul`
-selectors are identically zero, so exactly the two gates finding V-1 concerned were adjudicated
-vacuously). -/
+would read as a passing per-gate check (the mixed circuit's `emul`/`mul` selectors are
+identically zero, so those two gates would be adjudicated vacuously). -/
 def runFixture (path : String) (liveGates : List String) : IO Unit := do
   let raw ← IO.FS.readFile path
   let r : Except String Bool := do
@@ -167,7 +166,7 @@ def main : IO Unit := do
   runFixture s!"{dir}/linearization_vesta.json"
     ["generic", "poseidon", "completeAdd", "endoScalar"]
   -- The scalar-multiplication circuit: varBaseMul and endoMul are live here, and nowhere
-  -- else (external-audit R-1). This is what adjudicates those two gates' α-weighted
+  -- else. This is what adjudicates those two gates' α-weighted
   -- constraint order gate-by-gate rather than only through whole-proof acceptance.
   runFixture s!"{dir}/linearization_vesta_emul.json" ["varBaseMul", "endoMul"]
   IO.println "✓ the closed-form linearization matches the production scalar side (zkpm, \

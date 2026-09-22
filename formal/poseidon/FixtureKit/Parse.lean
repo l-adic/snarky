@@ -25,14 +25,14 @@ def parseNat (j : Json) : Except String ℕ := do
   | some n => .ok n
   | none => .error s!"not a decimal natural: {s.take 40}"
 
-/- Decoder hygiene note (external-audit C-4): these decoders read the fields they need and
+/- Decoder hygiene note: these decoders read the fields they need and
 *drop* unknown keys, so an out-of-fragment payload is parsed-and-dropped rather than
 rejected, and acceptance is then unreachable only through transcript divergence. The drivers
 consume `fixture-dump` output, where no such payloads occur. -/
 
 /-- A decimal string as an element of `ZMod n`, *rejecting* non-canonical numerals (`≥ n`).
 This aligns with arkworks' serde, which errors on out-of-range field elements rather than
-reducing them (external-audit C-4). At `n = 0` every numeral is rejected; no fixture uses
+reducing them. At `n = 0` every numeral is rejected; no fixture uses
 `ZMod 0`. -/
 def parseZMod {n : ℕ} (j : Json) : Except String (ZMod n) := do
   let v ← parseNat j

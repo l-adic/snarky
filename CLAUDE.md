@@ -68,7 +68,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 node_modules/spago/README.md
 ```
 
-**Project conventions** — See `.claude/skills/project-developer-guide/` for testing patterns, FFI conventions, and other project-specific practices.
+**Project conventions** — Skills live beside the code they govern: `formal/.claude/skills/` (Lean comment style and audit) and `packages/pickles/.claude/skills/` (PureScript comment style).
 
 ## Project Structure
 

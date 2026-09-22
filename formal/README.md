@@ -39,7 +39,8 @@ pure aggregator that owns no library.
 - `kimchi/` (libs `Kimchi`, `KimchiFixture`) — the kimchi protocol: gates, index,
   arithmetization, and the executable verifier with its body in closed form
 - `snarky/` (lib `Snarky`) — the deep-embedded circuit DSL and its kimchi bridge
-- `docs/` — design notes, the audit record, and the follow-up register
+- `docs/` — the negative controls and standing invariants, the completeness guide, and
+  why soundness is out of scope
 - `scripts/` — workspace-wide gates (style, dead code, kernel replay, sorry census); each
   package additionally owns its own `scripts/` (axiom gate, fixture checks, `roots.txt`)
 - `references/` — PDFs, papers, and informal notes backing the formalization

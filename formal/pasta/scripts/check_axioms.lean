@@ -32,7 +32,7 @@ def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
-    by name prefix (external-audit A-8: the name is forgeable from inside a
+    by name prefix (the name is forgeable from inside a
     `namespace CompElliptic` block; the module is not). Trusted: upstream CompElliptic
     modules, and `Pasta/Endo.lean` — the one tree file declared to hold the two GLV
     eigenvalue anchors (`Pasta.{pallas,vesta}_lam_nsmul_Gpt`). -/
