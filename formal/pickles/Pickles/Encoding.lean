@@ -9,14 +9,13 @@ import Pickles.CheckBulletproof
 
 Every record a pickles gadget takes is polymorphic in its cell type: `UnfinalizedProof k F
 Bool (Type1 F)` holds a proof's deferred values, `UnfinalizedProof k (FVar F) (BoolVar F)
-(Type1 (FVar F))` holds the cells a circuit reads them from. `CircuitType` relates the two,
-derived record by record from the product decomposition (`CircuitType.ofEquiv`), so a
-value is seeded and a bundle allocated the way any input is — and a fixture supplies the
-gadget's own record, never a flat layout.
+(Type1 (FVar F))` the cells a circuit reads them from. `CircuitType` relates the two, derived
+record by record from the product decomposition (`CircuitType.ofEquiv`), so a record is seeded
+and allocated like any input.
 
-The leaves: a `SizedF`, `Type1`, `Type2` wrapper is its one cell; a `SplitField` its half and
-parity; a `PointEvaluations` its two cells; the round-challenge and
-`(L, R)` vectors are vectors, so the `Vector` former applies.
+The leaves: a `SizedF`, `Type1` or `Type2` is its one cell; a `SplitField` its half and
+parity; a `PointEvaluations` its two cells; the round-challenge and `(L, R)` vectors take the
+`Vector` former.
 -/
 
 namespace Pickles
@@ -149,16 +148,13 @@ instance instBranchDataCircuitType {F f w b vb : Type} [CircuitType F f w] [Circ
     CircuitType F (BranchData f b) (BranchData w vb) :=
   CircuitType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
 
-/-- The branch data's check: its cells' own, through the same decomposition — nothing on
-`domain_log2`, the boolean constraint on each mask bit. That is the first line of PureScript's
-`CheckedType (AllocBranchData …)` (`check (branchTuple r)`, `Pickles/Step/Types.purs`).
+/-- The branch data's check, through the same decomposition: nothing on the log2, the
+boolean constraint on each mask bit.
 
-Two differences from that instance, neither of which a statement about the mask depends on.
-PureScript's check goes on to range-check `domain_log2` by expanding its 16 bits through the
-endo (`EndoScalar.toField @1`); `toField_spec` is proved at 8 rows only, so that line is not
-here and this check emits fewer rows than the deployed one. And PureScript allocates the two
-mask bits before `domain_log2`, where this record's decomposition puts `domain_log2` first:
-an order of variables, which a byte comparison against a dump would see. -/
+The deployed check also range-checks the log2 by expanding its 16 bits through the endo at one
+row; `toField_spec` is proved at 8 rows only, so that check is absent here and this one emits
+fewer rows. The deployed allocation also puts the mask bits before the log2, a variable order
+a dump comparison would see. -/
 instance instBranchDataCheckedType {F c f w b vb : Type} [Add F] [Mul F] [Zero F] [One F]
     [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
     [CheckedType F c b vb] : CheckedType F c (BranchData f b) (BranchData w vb) :=
@@ -224,8 +220,8 @@ instance instStepStatementCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [Cir
 
 /-! ## The scalar half's input -/
 
-/-- What a circuit's scalar half is given for one slot: its deferred claims, the evaluations,
-and the previous challenges, one vector per slot. -/
+/-- What a circuit's scalar half is given for one slot: its deferred claims, the evaluations
+and the previous challenges. -/
 structure FopInput (k nc : ℕ) (f bc sf : Type) where
   /-- The slot's deferred claims. -/
   claims : UnfinalizedProof k f bc sf
