@@ -4,7 +4,7 @@ Dead-code gate for the workspace.
 Lean has no export-list mechanism, so the packages' `roots.txt` manifests *define* the public
 API surface. This script treats their union as the root set: it imports the libraries, walks
 the constant-dependency graph (each declaration's type + value), and FAILS (nonzero exit) if
-any authored declaration — kimchi, pasta, poseidon, bulletproof-pcs, snarky, schnorr,
+any authored declaration — kimchi, pasta, poseidon, bulletproof-pcs, snarky,
 pickles, and the fixture libs — is not reachable from the roots. Auto-generated decls
 (recursors, constructors, projections, derive/`match_` auxiliaries, syntax parser
 descriptors) are excluded: they are noise, not authored code.
@@ -47,7 +47,6 @@ import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Semantics
-import Schnorr
 import Pickles
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
@@ -131,7 +130,7 @@ def isOurs (n : Name) : Bool :=
   let n := (privateToUserName? n).getD n
   (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
     || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n || (`Snarky).isPrefixOf n
-    || (`Schnorr).isPrefixOf n || (`Pickles).isPrefixOf n
+    || (`Pickles).isPrefixOf n
 
 /-- Is `n` under the dead-zero contract? Everything traversable — all five packages
     declare their surface. -/
@@ -155,7 +154,7 @@ end Kimchi.DeadCode
 run_cmd do
   let env ← getEnv
   let manifests := ["kimchi/roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
-    "bulletproof-pcs/roots.txt", "snarky/roots.txt", "schnorr/roots.txt",
+    "bulletproof-pcs/roots.txt", "snarky/roots.txt",
     "pickles/roots.txt"]
   -- parse the manifests: one fully-qualified name per line, optional trailing `-- comment`;
   -- `--` lines and blanks are ignored; `script-surface` markers delimit the script surface
@@ -178,7 +177,7 @@ run_cmd do
         if inSurface then surface := surface.push (n, note.startsWith "synthesis")
   -- the script corpus: every file under the packages' scripts/ dirs (this analyzer excluded)
   let scriptDirs := ["scripts", "pasta/scripts", "poseidon/scripts",
-    "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts", "schnorr/scripts",
+    "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts",
     "pickles/scripts"]
   let mut corpus := ""
   for d in scriptDirs do
