@@ -8,31 +8,25 @@ import Poseidon.GroupMap
 /-!
 # The BW19 hash-to-curve gadget
 
-Port of `Snarky.Circuit.Kimchi.GroupMap`
-(packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/GroupMap.purs; mina
-`group_map/bw19.ml`; Wahby–Boneh 2019, https://eprint.iacr.org/2019/403): map a
-field element onto a curve `y² = x³ + b`. Three candidate abscissae are computed
-from the `setup()` parameters; per candidate, `sqrtFlagged` witnesses a
-residuosity flag and a root of either the candidate ordinate square or its
-non-residue twist; at least one flag is asserted set, and the point is the
-first-flagged candidate, selected by mutually exclusive boolean products.
+Port of packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/GroupMap.purs (after mina's
+`group_map/bw19.ml`; Wahby–Boneh 2019, https://eprint.iacr.org/2019/403): map a field
+element onto a curve `y² = x³ + b`. The circuit computes three candidate abscissae; per
+candidate, `sqrtFlagged` witnesses a residuosity flag and a root of either the candidate's
+ordinate square or its non-residue twist. At least one flag is asserted set, and the result
+is the first-flagged candidate, selected by mutually exclusive boolean products.
 
-The value level (`potentialXs`, `groupMapPure`) is identified with the wire verifier's
-fixture-validated map: `groupMapPure_toGroup` proves it computes
-`Poseidon.GroupMap.toGroup` — the `U`-base derivation the kimchi verifier runs — at any
-wire `Spec`. The generic laws quote the module's own pure model; the wire section
-restates them with the wire map itself as the spec.
+The pure model (`potentialXs`, `groupMapPure`) computes the wire map
+`Poseidon.GroupMap.toGroup` at any wire `Spec` (`groupMapPure_toGroup`). The generic laws
+are stated against the pure model; the wire section restates them against `toGroup`.
 
-Deviations from the PS original:
-- PS `groupMapParams` builds the parameter record from the `HasBW19` FFI and a
-  non-residue search; the port takes `GroupMapParams` as data — the deployed
-  values live with their curves (the poseidon package's `setup()` constants).
-- PS's advice consults the `HasSqrt` class; the port threads an explicit
-  `sqrtF : F → Option F` — like `endoInv`'s advice parameters, soundness never
-  consults it, and completeness states the coherence it needs.
-- PS's advice throws on an impossible root (`unsafeThrow`); the port is total
-  (`Option.getD 0`, the pure map falling back to `(0, 0)`) — unreachable for
-  honest inputs, where a flagged candidate always has its root.
+## Implementation notes
+
+- The parameters are data (`GroupMapParams`); the deployed values live with their curves
+  in the poseidon package.
+- The advice is an explicit `sqrtF : F → Option F`. Soundness never consults it;
+  completeness states the coherence it needs.
+- The port is total: a missing root reads as `0` and the pure map falls back to `(0, 0)`,
+  both unreachable for honest inputs.
 -/
 
 namespace Snarky.Kimchi
@@ -41,9 +35,8 @@ open Snarky Std.Do
 
 variable {F c : Type}
 
-/-- The BW19 `setup()` parameters (PS `GroupMapParams`): the seed `u`, its curve
-image `f(u) = u³ + b`, the square-root and inverse constants, the curve constant,
-and a known quadratic non-residue for the flagged-root trick. -/
+/-- The map's parameters: the seed `u`, `f(u) = u³ + b`, the square-root and inverse
+constants, the curve constant, and a known quadratic non-residue for the flagged root. -/
 structure GroupMapParams (F : Type) where
   /-- The SvdW seed `u`. -/
   u : F
@@ -60,10 +53,9 @@ structure GroupMapParams (F : Type) where
   /-- A known quadratic non-residue. -/
   nonResidue : F
 
-/-- The three candidate abscissae (PS `potentialXs`): one of them is the abscissa
-of a curve point — Shallue–van de Woestijne's theorem, which the laws take as a
-hypothesis rather than prove. Division is the field's total one (`0⁻¹ = 0`),
-matching the gadget's `div`. -/
+/-- The three candidate abscissae: one of them is the abscissa of a curve point
+(Shallue–van de Woestijne, which the laws take as a hypothesis). Division is the field's
+total one (`0⁻¹ = 0`). -/
 def potentialXs [Field F] (params : GroupMapParams F) (t : F) : F × F × F :=
   let t2 := t * t
   let alphaInv := (t2 + params.fu) * t2
@@ -76,16 +68,13 @@ def potentialXs [Field F] (params : GroupMapParams F) (t : F) : F × F × F :=
   let x3 := params.u - (t2PlusFu * t2PlusFu) * t2Inv * params.inv3U2
   (x1, x2, x3)
 
-/-- The curve's ordinate square `x³ + b` (PS's local `ySquared`): the per-candidate
-test value — `groupMapPure`'s branch scrutinee and the completeness law's SvdW
-vocabulary. -/
+/-- The ordinate square `x³ + b`, each candidate's test value. -/
 def ySquared [Field F] (params : GroupMapParams F) (x : F) : F :=
   x * x * x + params.b
 
-/-- The pure map (PS `groupMap`): the first candidate whose ordinate square has a
-root under `sqrtF`, as a coordinate pair. The no-candidate branch returns `(0, 0)`
-(PS throws) — unreachable when some candidate is a square and `sqrtF` is total on
-squares. -/
+/-- The pure map: the first candidate whose ordinate square has a root under `sqrtF`, as a
+coordinate pair; `(0, 0)` when none does, unreachable when some candidate is a square and
+`sqrtF` is total on squares. -/
 def groupMapPure [Field F] (sqrtF : F → Option F) (params : GroupMapParams F)
     (t : F) : F × F :=
   let (x1, x2, x3) := potentialXs params t
@@ -112,9 +101,9 @@ private def sqrtWit [Field F] (sqrtF : F → Option F) (x : FVar F) :
   let v ← AsProver.readCVar x
   pure ((sqrtF v).getD 0)
 
-/-- In-circuit square root with a residuosity flag (PS `sqrtFlagged`): witness the
-flag, select the operand or its non-residue twist, witness a root, and pin it with
-one `square` row — `y² = if isQR then x else nonResidue·x`. -/
+/-- In-circuit square root with a residuosity flag: witness the flag, select the operand or
+its non-residue twist, witness a root, and pin it with one `square` row —
+`y² = if isQR then x else nonResidue·x`. -/
 private def sqrtFlagged [Field F] [DecidableEq F] [BasicSystem F c]
     (sqrtF : F → Option F) (nonResidue : F) (x : FVar F) :
     CircuitM F c (FVar F × BoolVar F) := do
@@ -142,10 +131,8 @@ where the flag is set, to its non-residue twist where it is clear. -/
   refine ⟨bb, hbb, ?_⟩
   rw [hsq, hsel bb hbb, CVar.val_scale_]
 
-/-- The in-circuit BW19 map (PS `groupMapCircuit`): the candidate abscissae from
-seven `mul`s and one `div`, a flagged root per candidate, at least one flag
-asserted set, and the first-flagged candidate selected by mutually exclusive
-boolean products. -/
+/-- The in-circuit map: the candidate abscissae, a flagged root per candidate, at least one
+flag asserted set, and the first-flagged candidate selected by boolean products. -/
 def groupMapCircuit [Field F] [DecidableEq F] [BasicSystem F c]
     (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
     CircuitM F c (AffinePoint (FVar F)) := do
@@ -190,10 +177,9 @@ def groupMapCircuit [Field F] [DecidableEq F] [BasicSystem F c]
 
 open Std.Do in
 /-- **Soundness.** Any satisfying valuation reads the result as an on-curve pair
-(`y² = x³ + b`) whose abscissa is one of the three `potentialXs` candidates at the
-operand: the constraints force a set flag, the first-flag selectors are mutually
-exclusive boolean products, and the selected branch's `sqrtFlagged` root is the
-ordinate. The advice is universally quantified — soundness never consults it. -/
+(`y² = x³ + b`) whose abscissa is one of the three `potentialXs` candidates: a flag is
+forced set, the selectors pick one branch, and that branch's root is the ordinate. The
+advice is universally quantified. -/
 theorem groupMapCircuit_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
@@ -334,9 +320,8 @@ theorem groupMapCircuit_first_spec {V : Valuation F} [Field F] [DecidableEq F]
 
 /-! ## Completeness
 
-The honest run, step by step in the DSL's reading currency: each gate's law takes its
-operands' readings and gives the result's, and `CircuitType.ReadsAs.mono` carries a
-reading past the gates that follow. -/
+The honest run, step by step: each gate's completeness law takes its operands' readings
+(`CircuitType.ReadsAs`) to the result's. -/
 
 /-- The ordinate-square block's honest run: two `mul`s and a constant add. -/
 @[complete_law] private theorem ySquared_complete [Field F] [DecidableEq F] [BasicSystem F c]
@@ -355,7 +340,7 @@ reading past the gates that follow. -/
       CircuitType.reads_fvar.mpr (by
         rw [CVar.val_add_, CircuitType.reads_fvar.mp h.2.2]; rfl)⟩
 
-/-- **The flagged root's honest run.** With genuine roots, and a rootless operand's
+/-- The flagged root's honest run. With genuine roots, and a rootless operand's
 non-residue twist rooted, the run accepts: the flag reads the operand's residuosity and
 the value reads the advice's root of the flag-selected operand. -/
 @[complete_law] private theorem sqrtFlagged_complete [Field F] [DecidableEq F] [BasicSystem F c]
@@ -424,8 +409,7 @@ the value reads the advice's root of the flag-selected operand. -/
         (assertSquare_complete (c := c) sqrtVal xOrMx _ _ hsq)))
     fun _ => Complete.pure_of fun _ h => ⟨h.2.2, h.2.1⟩
 
-/-- At least one flag set makes the asserted flag sum nonzero — where the characteristic
-is neither `2` nor `3`, which is what prices the sums `2` and `3`. -/
+/-- At least one flag set makes the flag sum nonzero, given `2 ≠ 0` and `3 ≠ 0`. -/
 private theorem flagSum [Field F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
     ∀ a b c : Bool, (a = true ∨ b = true ∨ c = true) →
       (bit a : F) + bit b + bit c ≠ 0 := by
@@ -437,10 +421,9 @@ private theorem flagSum [Field F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
       | (rw [show (1 : F) + 1 + 1 = 3 from by norm_num]; exact h3)
 
 /-- **Completeness.** The honest run accepts and its result reads the pure map's point.
-The hypotheses: the operand reads a value whose `alphaInv` product is nonzero (the `div`
-divisor); some candidate's ordinate square has a root — Shallue–van de Woestijne, taken
-as a hypothesis; `sqrtF`'s roots are genuine; a rootless value's non-residue twist has a
-root; and `2, 3 ≠ 0` price the flag-sum assertion. -/
+Hypotheses: the `div` divisor `(t² + f(u))·t²` is nonzero; some candidate's ordinate
+square has a root (Shallue–van de Woestijne); `sqrtF`'s roots are genuine; a rootless
+value's non-residue twist has a root; and `2, 3 ≠ 0` keep the flag sum nonzero. -/
 theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
     (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) (tv : F)
@@ -490,8 +473,7 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.ReadsAs (val := Bool) s (Snarky.not b) (!bb) := fun h =>
     ⟨CircuitType.scoped_boolVar.mpr (not_scoped (CircuitType.scoped_boolVar.mp h.1)),
       CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.2))⟩
-  -- the raw↔spec identifications: the arithmetic residue of the deferred style,
-  -- hoisted above the walk so the leaked VCs capture them too
+  -- the candidate identifications, stated before the walk so every goal it leaves has them
   have e1 : params.sqrtNeg3U2MinusUOver2 -
       tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv))) * params.sqrtNeg3U2
       = (potentialXs params tv).1 := by simp [potentialXs]
@@ -528,15 +510,12 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-! ## The wire-protocol spec
 
-`Poseidon.GroupMap.toGroup` is the map the kimchi verifier actually runs: the executable
-IPA wire verifier derives the per-proof `U` base with it (`Bulletproof/Wire.lean`), and
-the knowledge-soundness capstones quote it. This section takes it as the circuit's
-specification, in the canonical `ZMod q` world (`Fact q.Prime`) the deployed Pasta specs
-live in: `GroupMapParams.ofSpec` reads a wire `Spec` as this module's parameter record,
-`groupMapPure_toGroup` identifies the module's pure model with the wire map, and the two
-laws below restate soundness against the wire curve predicate (`OnCurve`) and
-completeness against `toGroup` itself, the advice instantiated with the spec's own
-Tonelli–Shanks root and its coherence hypotheses discharged. -/
+`Poseidon.GroupMap.toGroup` is the wire map-to-curve: the wire verifier's `U` base is its
+lower-half representative (`Bulletproof.Ipa.KimchiCurve.uBase`). This section takes it as
+the circuit's specification over `ZMod q`: `GroupMapParams.ofSpec` reads a wire `Spec` as
+this module's parameters, and the laws below restate soundness against the wire curve
+predicate and against `toGroup` up to sign, and completeness against `toGroup` with the
+spec's own Tonelli–Shanks root as advice. -/
 
 section Wire
 
@@ -544,9 +523,8 @@ open CompElliptic.Fields CompElliptic.CurveForms.ShortWeierstrass
 
 variable {q : ℕ} [Fact q.Prime]
 
-/-- This module's parameters, read off a wire `Poseidon.GroupMap.Spec`. Every field comes
-from the spec, the non-residue the in-circuit flagged-root trick needs included: there is
-one map-to-curve per curve, and the spec is where it lives. -/
+/-- This module's parameters, read off a wire `Poseidon.GroupMap.Spec`, the non-residue
+included. -/
 def GroupMapParams.ofSpec (spec : _root_.Poseidon.GroupMap.Spec q) :
     GroupMapParams (ZMod q) where
   u := spec.u
@@ -577,9 +555,8 @@ theorem ySquared_ofSpec (spec : _root_.Poseidon.GroupMap.Spec q) (x : ZMod q) :
   simp only [ySquared, _root_.Poseidon.GroupMap.curveEqn, GroupMapParams.ofSpec]
   ring
 
-/-- **The wire identification**: at a wire `Spec`, with the spec's own Tonelli–Shanks
-root as advice, the module's pure model computes the wire map's point — coordinate for
-coordinate, first-flagged candidate for first-flagged candidate. -/
+/-- **Wire identification.** At a wire `Spec`, with the spec's own Tonelli–Shanks root as
+advice, the pure model computes `toGroup`'s point. -/
 theorem groupMapPure_toGroup (spec : _root_.Poseidon.GroupMap.Spec q) (t : ZMod q) :
     groupMapPure spec.sqrt.sqrt? (.ofSpec spec) t
       = ((_root_.Poseidon.GroupMap.toGroup spec t).x,
@@ -595,9 +572,8 @@ theorem groupMapPure_toGroup (spec : _root_.Poseidon.GroupMap.Spec q) (t : ZMod 
     simp [groupMapPure, potentialXs_ofSpec, *]
 
 /-- A rootless value's non-residue twist has a root: two non-squares multiply to a
-square (`FiniteField.pow_dichotomy`), and `sqrt?` is complete on squares. The discharge
-of `groupMapCircuit_complete_spec`'s twist hypothesis at a genuine Tonelli–Shanks
-root. -/
+square (`FiniteField.pow_dichotomy`), and `sqrt?` is complete on squares. Discharges
+`groupMapCircuit_complete`'s twist hypothesis. -/
 private theorem sqrt?_twist {F : Type} [Field F] [Fintype F] [DecidableEq F]
     (d : TonelliShanks F) (hchar : ringChar F ≠ 2)
     {nr : F} (hnr0 : nr ≠ 0) (hnr : ¬IsSquare nr) :
@@ -622,9 +598,9 @@ private theorem sqrt?_twist {F : Type} [Field F] [Fintype F] [DecidableEq F]
   rfl
 
 open Std.Do in
-/-- **Wire-level soundness**: any satisfying valuation reads the result as a point of the
-wire spec's curve — `OnCurve`, the verifier's own predicate — at one of the SvdW candidate
-abscissae. The advice is universally quantified: soundness never consults it. -/
+/-- **Wire-level soundness.** Any satisfying valuation reads the result as a point of the
+wire spec's curve (`CompElliptic.CurveForms.ShortWeierstrass.OnCurve`) at one of the
+candidate abscissae. The advice is universally quantified. -/
 theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} {c : Type}
     [BasicSystem (ZMod q) c] [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
     (spec : _root_.Poseidon.GroupMap.Spec q)
@@ -646,13 +622,12 @@ theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} {c : Type}
   linear_combination hy
 
 open WeierstrassCurve.Affine in
-/-- **Wire-level completeness**: the honest run lands on the wire map itself — the result
-reads `Poseidon.GroupMap.toGroup`, the map the verifier runs to derive the per-proof `U`
-base. `groupMapCircuit_complete` at a wire `Spec`: the advice is the spec's own
-Tonelli–Shanks root, root-genuineness is `sqrt?_mul_self`, twist-totality is `sqrt?_twist`
-at a genuine non-residue, `2 ≠ 0` comes from `q ≠ 2`, and the pure model is rewritten by
-`groupMapPure_toGroup`. The SvdW disjunction (as `IsSquare`) and the operand's
-nondegeneracy remain, with `q ≠ 3` pricing the flag-sum assertion. -/
+/-- **Wire-level completeness.** The honest run's result reads
+`Poseidon.GroupMap.toGroup`'s point: `groupMapCircuit_complete` with the spec's own
+Tonelli–Shanks root as advice, its root and twist hypotheses discharged
+(`CompElliptic.Fields.TonelliShanks.sqrt?_mul_self`, `sqrt?_twist`) and `2 ≠ 0` from
+`q ≠ 2`. The candidate disjunction (as `IsSquare`) and the nonzero `div` divisor remain,
+with `q ≠ 3` for the flag sum. -/
 theorem groupMapCircuit_toGroup_complete {c : Type} [BasicSystem (ZMod q) c]
     [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
     (spec : _root_.Poseidon.GroupMap.Spec q) (t : FVar (ZMod q))
@@ -721,10 +696,9 @@ private theorem getY_eq_none_iff (spec : _root_.Poseidon.GroupMap.Spec q) (x : Z
     · exact absurd ⟨y, (TonelliShanks.sqrt?_mul_self spec.sqrt hy).symm⟩ hnsq
 
 open Std.Do in
-/-- **Wire-level soundness**: at a wire `Spec` with a genuine non-residue and no candidate
-ordinate square zero, any satisfying valuation reads the result as the wire map's point
-`toGroup`, up to the sign of the ordinate — the constraints pin the root's square, not
-its sign. The advice is universally quantified. -/
+/-- **Wire-level soundness, up to sign.** When no ordinate square vanishes (`hnz`), any
+satisfying valuation reads the result as `toGroup`'s point up to the ordinate's sign: the
+constraints pin the root's square, not its sign. The advice is universally quantified. -/
 theorem groupMapCircuit_toGroup_spec {V : Valuation (ZMod q)} {c : Type}
     [BasicSystem (ZMod q) c] [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
     (spec : _root_.Poseidon.GroupMap.Spec q)

@@ -5,10 +5,10 @@ import Pickles.Curve
 import Pickles.ListLemmas
 
 /-!
-# The in-circuit public-input commitment (`x_hat`)
+# The in-circuit public-input commitment
 
 The port of `packages/pickles/src/Pickles/PublicInputCommit.purs`: the per-chunk MSM that
-commits to a proof's public input, `x_hat[c] = -(Σ_leaf [scalarₗ]·baseₗ[c]) + h`.
+commits to a proof's public input, at chunk `c` `-(Σ_leaf [scalarₗ]·baseₗ[c]) + h`.
 
 The public input reaches this gadget as a flat list of size-tagged `Leaf`s — a scalar with
 its ladder width, or a 1-bit `condAdd`. Packing (a structured statement → this list) is a
@@ -123,7 +123,7 @@ private def foldChunks :
       foldChunks acc' rest
 
 /-- The public-input commitment from the corrections' sum `init`, per chunk: fold the leaves'
-ladders, then negate and add the blinding `h` — `x_hat[c] = -(Σ [scalar]·base[c]) + h`. The
+ladders, then negate and add the blinding `h` — `-(Σ [scalar]·base[c]) + h`. The
 fold's bare-ladder shifts cancel against `init` in the spec. -/
 private def publicInputCommitChunks (init : Vector (AffinePoint (FVar F)) nc)
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
@@ -938,7 +938,7 @@ its `hfull`/`hmsm` premises discharged publicly: the regime from `hregime` (`reg
 the MSM identity from `netDelta_sum_eq_publicMsm` (needing `hcast`, `hbit`; the canonical decode
 is the ladder's own top-bit pin, no premise). The output reads unconditionally as
 `-(Σ [scalarₗ]·baseₗ) + h`, the shape the wire's `publicCommitment` has. The clean public seam
-the `x_hat` wire crossing consumes — no private `LeafInfo`/`LeafReads`. -/
+the wire crossing consumes — no private `LeafInfo`/`LeafReads`. -/
 theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts cps : List d.W.Point) (Hv : d.W.Point)
@@ -961,7 +961,7 @@ theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
 
 /-! ### The known-domain step gadget
 
-The step verifier's `x_hat` at a known domain emits in three phases: every leaf's bare ladder
+The step verifier's commitment at a known domain emits in three phases: every leaf's bare ladder
 first, in leaf order; then the ladder results summed left to right from the first; then one
 constant, the summed shift corrections; then negate and add `h`. The corrections are constants
 summed outside the circuit (no gates), so the gadget takes their sum as a cell (`corrSum`, a
@@ -1301,7 +1301,7 @@ theorem publicInputCommitKnown_reads (ci : Fin nc) {V : Valuation F}
 
 end Fold
 
-/-! ## The `x_hat` wire crossing
+/-! ## The wire crossing
 
 The gadget reads land at `-(publicMsm) + h` over Mathlib's point group of the commitment
 curve; this section crosses that to the wire verifier's `publicCommitment` on the commitment
@@ -1355,7 +1355,7 @@ theorem equivPoint_publicCommitment {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ}
   simp only [Fin.getElem_fin, Vector.getElem_ofFn, map_add, map_list_sum, List.map_map,
     Function.comp_def, map_nsmul]
 
-/-! ### The x_hat target: the gadget reads as `publicCommitment` -/
+/-! ### The gadget reads as `publicCommitment` -/
 
 section Generic
 
@@ -1425,8 +1425,7 @@ def xhatBandDelta (p : ℕ) : ℕ := p - 2 ^ 254
 
 /-- A full leaf's scalar value avoids the sixteen values `2z + bb`, `z ∈ [δ−2, δ+5]`, at which
 the ladder degenerates; the narrow leaves and `condAdd` carry `True`. The concrete, decidable
-form of `Leaf.regimeFull` at a Pasta order `p` — the exact completeness gap of the deployed
-gadget. -/
+form of `Leaf.regimeFull` at a Pasta order `p`. -/
 def Leaf.offBand (p : ℕ) (V : Valuation F) : Leaf F nc → Prop
   | .full s _ _ =>
       ToNat.toNat (s.val V) < 2 * xhatBandDelta p - 4 ∨
@@ -1540,7 +1539,7 @@ section Binding
 
 variable {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ}
 
-/-- The `x_hat` tables of a circuit: per public-input scalar its Lagrange base and its shift
+/-- A circuit's commitment tables: per public-input scalar its Lagrange base and its shift
 correction, chunked, and the correction seed and sum the known-domain fold takes as
 constants. -/
 structure XhatTable (F : Type) [Field F] (nc : ℕ) where
@@ -1584,7 +1583,7 @@ structure XhatBinding (s : PastaShape C) (ci : Fin nc) (V : Valuation C.BaseFiel
       (SWPoint.equivPoint C.E ((cvk.lagrangeBasis[i]'(lt_of_lt_of_le hi hsize))[ci]))
 
 /-- **The wire's `publicCommitment`, crossed, is `-(publicMsm) + h`.** The shared half of the two
-x_hat reads: `equivPoint_publicCommitment` unfolds the wire's MSM, `crossing_list` ties each
+gadget reads: `equivPoint_publicCommitment` unfolds the wire's MSM, `crossing_list` ties each
 Lagrange base to the leaf's base reading, and `neg_publicMsm_sum` moves the negation through
 the exact integer → scalar reduction (`CommitmentCurve.affine_card_nsmul`). -/
 private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
@@ -1615,7 +1614,7 @@ private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.Bas
   rw [equivPoint_publicCommitment (SWPoint.equivPoint C.E) σ cvk (pubOf C V leaves) ci hne',
     crossing_list (SWPoint.equivPoint C.E) ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
 
-/-- **The wrap-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The binding
+/-- **The wrap-side gadget reads as the wire verifier's `publicCommitment`.** The binding
 is asked for only under the boolean leaves' booleanity, which the gadget's bit pre-pass
 establishes itself (`constrainBits_boolean`): a consumer never supplies it.
 `publicInputCommitFull_reads` carries the subtle half — the canonical decode from the ladder's
@@ -1655,7 +1654,7 @@ theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuat
       hbind.blinding hbind.pre hbind.corr hscalar hbind.hon) fun r hr => ?_
   rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
 
-/-- **The step-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The
+/-- **The step-side gadget reads as the wire verifier's `publicCommitment`.** The
 known-domain shape (`publicInputCommitKnown`): the corrections are constants, so their sum
 `corrSum` is a single constant cell the binding reads as `Σ cps`, and the leaves are headed by
 a scalar leaf. Otherwise `xHat_reads_publicCommitment`. -/
@@ -1683,7 +1682,7 @@ theorem xHatKnown_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
       hbind.blinding hbind.pre hbind.corr hC hhead hbind.hon) fun r hr => ?_
   rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
 
-/-- An `x_hat` table is bound to the verifier key at the leaves it serves: chunk by chunk, the
+/-- A commitment table is bound to the verifier key at the leaves it serves: chunk by chunk, the
 leaves' `XhatBinding` at some base and correction points with the correction sum reading as
 their sum, and the tables nonempty (the known-domain fold is seeded by the first leaf). -/
 structure XhatTable.Bound (s : PastaShape C) (V : Valuation C.BaseField)
@@ -1726,7 +1725,7 @@ def PackedScalar.IsScalar : PackedScalar F → Prop
   | .bit _ => False
   | _ => True
 
-/-- The `x_hat` leaves of a packed scalar list: scalar `i` with Lagrange base `i` and its shift
+/-- The commitment leaves of a packed scalar list: scalar `i` with Lagrange base `i` and its shift
 correction from the table; a boolean cell adds its base under the bit, with no correction. -/
 def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Leaf F nc) :=
   List.zipWith (fun k bc => match k with
@@ -1737,7 +1736,7 @@ def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Lea
 
 end Packed
 
-/-! ## The `x_hat` table of a key
+/-! ## The table of a key
 
 The Lagrange bases and shift corrections are data of the verifier key, so the table is
 computed from it as constant cells rather than taken as an argument and then assumed to be
@@ -1928,7 +1927,7 @@ private def shiftBits : PackedScalar C.BaseField → Option ℕ
   | .b10 _ => some 10
   | .bit _ => none
 
-/-- The `x_hat` table computed from the key's Lagrange points, at a statement's packing. A
+/-- The commitment table computed from the key's Lagrange points, at a statement's packing. A
 boolean leaf's correction slot is never read (`packLeavesOf` drops it); it holds the base. -/
 def XhatTable.ofKey (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)) :
     XhatTable C.BaseField nc where
@@ -1970,7 +1969,7 @@ def corrSumPt (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point 
     (ci : Fin nc) : C.Point :=
   (List.zipWith (fun k Ps => corrPt k Ps[ci]) ks lb).sum
 
-/-- The `x_hat` table of the known-domain fold, computed from the key's Lagrange points: the
+/-- The table of the known-domain fold, computed from the key's Lagrange points: the
 bases and corrections of `XhatTable.ofKey`, the fold's seed the first correction, its constant
 the correction sum. -/
 def XhatTable.ofKeyKnown (ks : List (PackedScalar C.BaseField))
