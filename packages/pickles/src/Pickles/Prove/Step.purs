@@ -57,7 +57,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
-import Pickles.Constants (zkRowsForNumChunks)
+import Pickles.Constants (zkRowsByDefault, zkRowsForNumChunks)
 import Pickles.DeferredValues (BranchData) as VT
 import Pickles.DeferredValues (UnfinalizedProof)
 import Pickles.Dummy (dummyIpaChallenges)
@@ -211,7 +211,7 @@ buildStepAdvice input =
     dummyFop
       :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
     dummyFop = stepDummyUnfinalizedProof @len bcd
-      { domainLog2: wrapDomainLog2ForProofsVerified mrw }
+      { domainLog2: wrapDomainLog2ForProofsVerified mrw, zkRows: zkRowsByDefault, numChunks: 1 }
       (map SizedF.wrapF bcd.ipaStepChallenges)
 
     dummyBranch =

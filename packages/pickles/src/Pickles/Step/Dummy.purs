@@ -30,6 +30,8 @@ module Pickles.Step.Dummy
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldl)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -46,7 +48,7 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.PlonkChecks (FrSpongeInput, buildChallenges, buildEvalPoint, frSpongeChallengesPure, permContribution, permScalar)
+import Pickles.PlonkChecks (buildChallenges, buildEvalPoint, frSpongeChallengesPureChunked, padChunkedEvals, permContribution, permScalar, singleChunkEvals)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Sponge (initialSponge)
 import Pickles.Types (Evals, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
@@ -504,32 +506,35 @@ stepDummyUnfinalizedProof
    . Reflectable n Int
   => Shifted (F StepField) sf
   => BaseCaseDummies
-  -> { domainLog2 :: Int }
+  -> { domainLog2 :: Int, zkRows :: Int, numChunks :: Int }
   -> Vector d (SizedF 128 (F StepField))
   -> UnfinalizedProof d (F StepField) sf Boolean
-stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
+stepDummyUnfinalizedProof bcd { domainLog2, zkRows, numChunks } bpChals =
   let
     mostRecentWidth = reflectType (Proxy @n)
     p = bcd.proofDummy.plonk
+    -- Every chunk past the first is zero, so the recombined value of
+    -- each column is its first chunk: only the fr-sponge and the
+    -- combined inner product see the extra chunks.
     evals = bcd.proofDummy.prevEvals
+    chunkedEvals = padChunkedEvals numChunks (singleChunkEvals evals)
     Curves.EndoScalar stepEndoScalar = (Curves.endoScalar)
 
     alphaExpanded = toFieldPure p.alpha stepEndoScalar
     betaExpanded = SizedF.toField p.beta :: StepField
     gammaExpanded = SizedF.toField p.gamma :: StepField
     zetaExpanded = toFieldPure p.zeta stepEndoScalar
-    -- `domainLog2` is the previous proof's wrap domain — a step circuit
-    -- verifies wrap proofs — and a wrap proof is always one chunk.
-    zkRows = zkRowsByDefault
     omega = (domainGenerator domainLog2)
     n = pow2 domainLog2
     zetaw = zetaExpanded * omega
     zetaToNMinus1 = Curves.pow zetaExpanded n - one
-    omegaM1 = recip omega
-    omegaM2 = omegaM1 * omegaM1
-    omegaM3 = omegaM2 * omegaM1
-    zkPoly = (zetaExpanded - omegaM1) * (zetaExpanded - omegaM2) * (zetaExpanded - omegaM3)
+    -- `(zeta - omega^-1)(zeta - omega^-(zkRows-1))(zeta - omega^-zkRows)`,
+    -- at the `zkRows` of the step proof whose evaluations these are.
     omegaToMinusZkRows = Curves.pow omega (n - BigInt.fromInt zkRows)
+    omegaToMinusZkPlus1 = Curves.pow omega (n - BigInt.fromInt (zkRows - 1))
+    zkPoly = (zetaExpanded - recip omega)
+      * (zetaExpanded - omegaToMinusZkPlus1)
+      * (zetaExpanded - omegaToMinusZkRows)
 
     expandedBpChals :: Vector StepIPARounds StepField
     expandedBpChals = map (\c -> toFieldPure c stepEndoScalar) (map coerceViaBits bcd.ipaStepChallenges)
@@ -543,14 +548,12 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
       in
         (PureSponge.squeeze spongeN).result
 
-    frInput :: FrSpongeInput StepField
-    frInput =
-      { evals
+    frResult = frSpongeChallengesPureChunked
+      { evals: chunkedEvals
       , fqDigest: zero
       , prevChallengeDigest: challengesDigest
       , endo: stepEndoScalar
       }
-    frResult = frSpongeChallengesPure frInput
 
     permInput =
       { w: map _.zeta (Vector.take @7 evals.witnessEvals)
@@ -596,17 +599,25 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     ftPointEval :: PointEval StepField
     ftPointEval = { zeta: ftEval0Value, omegaTimesZeta: evals.ftEval1 }
 
-    allEvals45 :: Vector 45 (PointEval StepField)
-    allEvals45 =
-      (evals.publicEvals :< ftPointEval :< evals.zEvals :< Vector.nil)
-        `Vector.append` evals.indexEvals
-        `Vector.append` evals.witnessEvals
-        `Vector.append` evals.coeffEvals
-        `Vector.append` evals.sigmaEvals
+    -- The batch in the verifier's order, each column contributing all
+    -- its chunks: public, `ft`, `z`, index, witness, coefficients,
+    -- sigma.
+    columnChunks :: forall m. Vector m (NonEmptyArray (PointEval StepField)) -> Array (PointEval StepField)
+    columnChunks = Array.concatMap NEA.toArray <<< Vector.toUnfoldable
+
+    allEvalsChunked :: Array (PointEval StepField)
+    allEvalsChunked =
+      NEA.toArray chunkedEvals.publicEvals
+        <> [ ftPointEval ]
+        <> NEA.toArray chunkedEvals.zEvals
+        <> columnChunks chunkedEvals.indexEvals
+        <> columnChunks chunkedEvals.witnessEvals
+        <> columnChunks chunkedEvals.coeffEvals
+        <> columnChunks chunkedEvals.sigmaEvals
 
     sgPointEval :: PointEval StepField
     sgPointEval = { zeta: bPoly expandedBpChals zetaExpanded, omegaTimesZeta: bPoly expandedBpChals zetaw }
-    cipAllEvals = Array.replicate mostRecentWidth sgPointEval <> Array.fromFoldable allEvals45
+    cipAllEvals = Array.replicate mostRecentWidth sgPointEval <> allEvalsChunked
     cipStep { result, scale } ev =
       let
         term = ev.zeta + frResult.evalscale * ev.omegaTimesZeta

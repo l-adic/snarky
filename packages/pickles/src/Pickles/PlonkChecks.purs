@@ -25,6 +25,7 @@ module Pickles.PlonkChecks
   , collapseChunkedEvalsCircuit
   , hornerChunks
   , singleChunkEvals
+  , padChunkedEvals
   , mapChunkedEvals
   -- * Domain scalars
   , omegaPowers
@@ -54,6 +55,7 @@ module Pickles.PlonkChecks
   , maskedChallengeDigest
   , squeezeXiR
   , squeezeXiRChunked
+  , frSpongeChallengesPureChunked
   , FrSpongeInput
   , frSpongeChallengesPure
   ) where
@@ -233,6 +235,22 @@ singleChunkEvals e =
   , coeffEvals: map NEA.singleton e.coeffEvals
   , sigmaEvals: map NEA.singleton e.sigmaEvals
   }
+
+-- | `ChunkedEvals` padded with zero chunks to `numChunks` per column.
+padChunkedEvals :: forall f. Semiring f => Int -> ChunkedEvals f -> ChunkedEvals f
+padChunkedEvals numChunks e =
+  { ftEval1: e.ftEval1
+  , publicEvals: pad e.publicEvals
+  , zEvals: pad e.zEvals
+  , indexEvals: map pad e.indexEvals
+  , witnessEvals: map pad e.witnessEvals
+  , coeffEvals: map pad e.coeffEvals
+  , sigmaEvals: map pad e.sigmaEvals
+  }
+  where
+  pad chunks =
+    NEA.appendArray chunks
+      (Array.replicate (numChunks - NEA.length chunks) { zeta: zero, omegaTimesZeta: zero })
 
 -- | Collapse every chunked evaluation of a `ChunkedEvals` via
 -- | `collapsePointEval`, giving one value per polynomial.
@@ -1020,6 +1038,27 @@ frSpongeChallengesPure input =
       xi = toFieldPure (coerceViaBits rawXi) input.endo
       evalscale = toFieldPure (coerceViaBits rawR) input.endo
 
+    pure { rawXi, xi, rawR, evalscale }
+
+-- | `frSpongeChallengesPure` over evaluations of any chunk count: every
+-- | chunk is absorbed, as the verifier's transcript absorbs them.
+frSpongeChallengesPureChunked
+  :: forall f
+   . PrimeField f
+  => PoseidonField f
+  => FieldSizeInBits f 255
+  => { evals :: ChunkedEvals f, fqDigest :: f, prevChallengeDigest :: f, endo :: f }
+  -> FrSpongeChallenges f
+frSpongeChallengesPureChunked input =
+  evalPureSpongeM initialSponge do
+    absorb input.fqDigest
+    absorb input.prevChallengeDigest
+    absorbChunkedEvals input.evals
+    rawXi <- squeezeScalarChallengePure
+    rawR <- squeezeScalarChallengePure
+    let
+      xi = toFieldPure (coerceViaBits rawXi) input.endo
+      evalscale = toFieldPure (coerceViaBits rawR) input.endo
     pure { rawXi, xi, rawR, evalscale }
 
 -- | Absorb the `z`, selector, witness, coefficient and sigma

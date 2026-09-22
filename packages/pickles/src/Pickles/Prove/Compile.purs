@@ -82,7 +82,7 @@ import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
-import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval, singleChunkEvals)
+import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval, padChunkedEvals, singleChunkEvals)
 import Pickles.ProofsVerified (boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
@@ -551,6 +551,7 @@ consMkStepAdvice
      , slotStepDomainLog2 :: Int
      , slotStepZkRows :: Int
      , slotWrapZkRows :: Int
+     , slotStepNumChunks :: Int
      }
   -> headVkCell
   -- | This slot's advice element, from its statement: the statement
@@ -676,7 +677,10 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
           }
 
         fopProofState = Dummy.stepDummyUnfinalizedProof @w bcd
-          { domainLog2: Dummy.wrapDomainLog2ForProofsVerified slotW }
+          { domainLog2: slotParams.slotStepDomainLog2
+          , zkRows: slotParams.slotStepZkRows
+          , numChunks: slotParams.slotStepNumChunks
+          }
           (map SizedF.wrapF bcd.ipaStepChallenges)
 
         baseCaseWrapPI = dummyWrapTockPublicInput @w
@@ -702,7 +706,7 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
             , gamma: bcd.proofDummy.plonk.gamma
             , zeta: bcd.proofDummy.plonk.zeta
             }
-        , wrapPrevEvalsChunked: singleChunkEvals bcd.proofDummy.prevEvals
+        , wrapPrevEvalsChunked: padChunkedEvals slotParams.slotStepNumChunks (singleChunkEvals bcd.proofDummy.prevEvals)
         , wrapBranchData:
             -- `domainLog2` of a wrap statement's branch data holds the
             -- prev's step domain, not its wrap domain; that is what
@@ -715,7 +719,7 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
         , wrapOwnPaddedBpChals:
             Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
         , fopState: fopProofState
-        , stepAdvicePrevEvals: singleChunkEvals bcd.proofDummy.prevEvals
+        , stepAdvicePrevEvals: padChunkedEvals slotParams.slotStepNumChunks (singleChunkEvals bcd.proofDummy.prevEvals)
         , kimchiPrevChallengesExpanded: dummyIpaChallenges.stepExpanded
         , prevChallengesForStepHash:
             Vector.replicate dummyIpaChallenges.stepExpanded
@@ -1457,6 +1461,7 @@ instance
         -- domain dispatch varies the domain log2, not the chunk count.
         , slotStepZkRows: zkRowsForNumChunks 1
         , slotWrapZkRows: zkRowsForNumChunks 1
+        , slotStepNumChunks: 1
         }
         where
         bundle = SideloadBundle.requireBundle headVk
@@ -1483,6 +1488,7 @@ instance
         , slotStepZkRows:
             zkRowsForNumChunks (RuntimeSlot.slotNumChunks cfg.stepNumChunks runtimeSlot)
         , slotWrapZkRows: zkRowsForNumChunks 1
+        , slotStepNumChunks: RuntimeSlot.slotNumChunks cfg.stepNumChunks runtimeSlot
         }
 
   shapeProveData cfg wrapCR sideInfo (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
