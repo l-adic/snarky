@@ -4,13 +4,38 @@ import Poseidon.FqSponge
 
 /-! # EndoScalar semantics
 
-    The row runs Halo's Algorithm 2, with soundness and completeness in bare-table form; the
-    multi-row chain composes rows into the effective scalar `a·λ + b`.
+    An `EndoScalar` row runs Halo's Algorithm 2: it folds eight base-4 crumbs of a challenge
+    into the accumulators `(a, b, n)`. This file composes rows into the effective scalar
+    `a·λ + b`, and reads the same gate a second way, as a 128-bit range check. It transcribes
+    the multi-row layout of `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/EndoScalar.purs`
+    and the range check of `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/RangeCheck.purs`,
+    which lays a value over an eight-row chain and discards the effective scalar.
 
-    Beyond the per-row development the file has three parts: `§ Supporting development`,
-    `§ The effective scalar `a·λ + b``, and `§ The range check at the deployed Pasta fields`
-    — the last discharging the range check's field hypotheses at `Fp` and `Fq`, which is
-    why `Pasta.CompElliptic` is imported. -/
+    ## Main results
+
+    * `complete`, `sound` — one row: the honest witness satisfies the gate, and a satisfying
+      row runs Algorithm 2 with the bare tables `cFunc`/`dFunc`.
+    * `chain_toField` — a satisfying run of `m + 1` rows threaded from `(2, 2, 0)` outputs the
+      effective scalar of its whole crumb stream, and its register reconstructs the challenge.
+    * `chain_complete` — for any rows of valid crumbs, the honest prover threads `build` into
+      a satisfying run.
+    * `endoScalar_unique` — under the no-wrap bound `4 ^ #crumbs ≤ p` the effective scalar
+      depends only on the challenge, not on the witness.
+    * `chain_range`, `chain_range_unique`, `chain_range_complete` — the range check: at a fixed
+      row shape the accepted registers are exactly the casts of the naturals below
+      `4 ^ (c(m+1))`. `chain_range_128` and `chain_range_complete_128` fix the deployed shape.
+    * `fp_rangeCheck128_sound`, `fp_rangeCheck128_complete`, `fq_rangeCheck128_sound`,
+      `fq_rangeCheck128_complete` — the deployed check at the two Pasta fields, every field
+      hypothesis discharged; this is why `Pasta.CompElliptic` is imported.
+    * `endoExpand_eq_toField` — the sponge's window recoding is `toField` at the challenge's
+      canonical crumbs.
+
+    ## Implementation notes
+
+    The `a`/`b` constraints use interpolating cubics `cPoly`/`dPoly`. On valid crumbs they
+    equal the bare tables, which needs `2, 3 ≠ 0`, true on both Pasta fields. Threading rows is
+    folding the concatenated crumb stream (`chain_decompose`), so the multi-row layout adds
+    nothing to the arithmetic. -/
 
 namespace Kimchi.Gate.EndoScalar
 
@@ -26,8 +51,8 @@ theorem complete (a0 b0 n0 : F) (crumbs : List F)
 
 /-! ## The bare-table form of the folds.
 
-    The `a`/`b` constraints use the interpolating cubics; on valid crumbs they run
-    the same fold with the bare `c_func`/`d_func` tables. -/
+    The `a`/`b` constraints use the interpolating cubics `cPoly`/`dPoly`; on valid crumbs
+    they run the same fold as the bare tables `cFunc`/`dFunc`. -/
 
 /-- Replacing the per-crumb function leaves the `2·acc + f x` fold unchanged when
     the two functions agree on every crumb. -/
@@ -42,12 +67,10 @@ private theorem foldl_table {φ ψ : F → F} :
 
 variable [DecidableEq F]
 
-/-- `c_func` as the bare `(0,0,−1,1)` table — public, as the `a`-fold every deployed
-prover runs (OCaml `Pickles.Scalar_challenge` and its PS port). -/
+/-- The bare `a`-table: `(0, 0, −1, 1)` at the crumbs `0, 1, 2, 3`, and `0` off them. -/
 def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
 
-/-- `d_func` as the bare `(−1,1,0,0)` table — public, as the `b`-fold every deployed
-prover runs. -/
+/-- The bare `b`-table: `(−1, 1, 0, 0)` at the crumbs `0, 1, 2, 3`, and `0` off them. -/
 def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
 
 /-- The `a`-table's value at each crumb; the characteristic hypotheses separate the
@@ -93,10 +116,9 @@ private theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
   · rw [d2, g2]
   · rw [d3, g3]
 
-/-- **Soundness.** A satisfying row genuinely runs Halo's Algorithm 2: the crumbs are valid 2-bit
-    values, and the `a`/`b`/`n` accumulators are the Algorithm-2 folds — with the `a`/`b` folds
-    using the *literal* `c_func`/`d_func` lookup tables (the cubics in `Holds` interpolate them, so
-    `2,3 ≠ 0` — true on the Pasta scalar fields). -/
+/-- **Soundness.** A satisfying row runs Halo's Algorithm 2: the crumbs are valid 2-bit values,
+    and the `a`/`b`/`n` accumulators are its folds, the `a`/`b` folds over the bare tables
+    `cFunc`/`dFunc`. The cubics in `Holds` interpolate those tables, which needs `2, 3 ≠ 0`. -/
 theorem sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (w : Witness F) (h : Holds w) :
     (∀ x ∈ w.crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
@@ -115,69 +137,8 @@ end Kimchi.Gate.EndoScalar
 /-!
 ## Supporting development
 
-The endo-scalar decomposition composes `Kimchi.Gate.EndoScalar` rows into the effective
-scalar `a·λ + b`. A challenge is processed eight crumbs at a time, each row threading the
-`(a, b, n)` accumulators; the result is the effective scalar `a·λ + b` together with the raw
-register `n`, which the wrapper asserts equals the input challenge. This module collects the
-definitions and lemmas on which the three headline theorems (`chain_toField`, `chain_complete`,
-`endoScalar_unique`, in `Kimchi.Gate.EndoScalar`) rest. It mirrors the OCaml/PureScript
-`to_field_checked'`, which runs `mapAccumM` over the row chunks.
-
-### Multi-row composition
-
-A challenge wider than one row's eight crumbs is laid out over several `EndoScalar` rows, each
-row's output accumulators feeding the next. Every accumulator update is a `List.foldl`, so the
-whole run is a single fold over the concatenated crumb stream (`List.foldl_append`). A single
-`Witness` already folds a whole multi-row challenge; chaining rows adds nothing to the
-arithmetic.
-
-* `decomposeA`, `decomposeB`, `nReconstruct`, `toField` — the Algorithm-2 accumulators and the
-  effective scalar, as field-valued folds over the crumb stream.
-* `decomposeA_append`, `decomposeB_append`, `nReconstruct_append` — each fold resumes across a
-  row boundary from the partial value of the earlier rows.
-* `nReconstruct_append_pos` — the same boundary read *positionally* instead: the earlier rows'
-  reconstruction shifted up by one base-4 place per later crumb, as a separate summand. This is
-  what a chunking argument needs, and unlike the `ℕ` shadow it costs no crumb validity.
-* `chainCrumbs`, `chain_decompose` — the concatenated crumbs of the first `m` rows, and the fact
-  that a threaded run of `m + 1` rows computes the single base-4 decomposition of that stream.
-* `chainCrumbs_length` — the stream of an `m`-row run of uniform width `c` has `c * m` crumbs; the
-  width arithmetic behind the range check's `4 ^ (c · #rows)` budget.
-* `chainBuild`, `chainCrumbs_chainBuild` — the honest threaded witness, built from the gate's
-  `build`, and the fact that its crumb stream is the concatenation of the rows it was built from
-  (threading moves the accumulators, never the crumbs).
-* `crumbsOf`, `crumbsOf_length`, `crumbsOf_valid`, `nReconstruct_crumbsOf` — the fixed-width base-4
-  digit expansion of a natural, most significant crumb first, and the fact that it inverts the
-  register fold modulo `4 ^ width`. This is the honest prover's crumb list for a *given* value, and
-  what makes the range check non-vacuous (`range_complete`).
-* `nReconstruct_rowsOf` — the same inversion one level up, at a row rather than a crumb: chunking
-  a natural over `m + 1` rows of width `c`, most significant row first, reconstructs it modulo the
-  run's budget `4 ^ (c(m+1))`. This is what makes the *multi-row* range check non-vacuous
-  (`chain_range_complete`).
-
-### Uniqueness under the no-wrap bound
-
-The decomposition is a well-defined function of the challenge alone once a challenge determines
-its crumbs. This holds because the crumbs are base-4 digits (each in `{0,1,2,3}`, by
-`Gate.sound`) and the reconstruction does not wrap: the challenge's bit-width stays below the
-field size, encoded as `4 ^ #crumbs ≤ p`. For the deployed 128-bit challenge this is
-`4 ^ 64 = 2 ^ 128`, comfortably under the ≈ 2²⁵⁴ Pasta order. This is the EndoScalar analogue of
-`varBaseMul`'s `5 m ≤ pastaFieldBits` no-wrap bound.
-
-The positional-arithmetic kernel — `digit`, `valNat`, `euclid_split`, `valNat_inj` — is pure
-base-4 number theory, independent of the gate, the curve, and the circuit folds. Each crumb is a
-2-bit value in `{0,1,2,3}`; a crumb list reconstructs to a challenge base-4 (MSB-first), and that
-decoding is injective once it stays below the field size.
-
-* `digit`, `valNat` — the `ℕ` digit a crumb stands for and the `ℕ` shadow of `nReconstruct`.
-* `digit_cast` — on a valid crumb the `ℕ` digit casts back to the field element.
-* `valNat_append` — the base-4 value splits at a list boundary, the earlier crumbs shifted up by
-  one place per later crumb. The `ℕ` engine of the positional arithmetic, and the shadow of
-  `nReconstruct_append_pos`.
-* `valNat_cons`, `valNat_lt` — the Horner step of the base-4 value and its `< 4 ^ len` bound.
-* `euclid_split` — Euclidean digit recovery: `high · M + low` with `low < M` determines both.
-* `valNat_inj` — same-length valid crumb lists with equal value are equal.
-* `nReconstruct_eq_valNat`, `nReconstruct_inj` — the bridge from the field register to its `ℕ`
-  shadow, and the resulting injectivity of base-4 decoding under the no-wrap bound.
+The accumulator folds, their `ℤ`-shadows, the multi-row reconstruction, the fixed-width digit
+expansion and the base-4 uniqueness kernel, on which the chain theorems below rest.
 -/
 
 namespace Kimchi.Gate.EndoScalar
@@ -186,10 +147,9 @@ open Kimchi.Gate.EndoScalar
 
 variable {F : Type*} [Field F]
 
-/-- The Algorithm-2 accumulator fold, once: double and add the step's contribution,
-    from the canonical init `2`. All decompose accumulators are instances — at `F`
-    with `cPoly`/`dPoly` (the gate's registers), at `ZMod order` (the decoded
-    challenge), and at ℤ with the digit tables (the shadow, `decomposeAInt` below). -/
+/-- The Algorithm-2 accumulator fold: double and add the step's contribution, from the
+    canonical init `2`. `decomposeA`/`decomposeB` are its instances at `F` with `cPoly`/`dPoly`,
+    and `decomposeAInt`/`decomposeBInt` at ℤ with the digit tables. -/
 def decomposeFold {α R : Type*} [Semiring R] (step : α → R) (xs : List α) : R :=
   xs.foldl (fun a x => 2 * a + step x) 2
 
@@ -199,9 +159,8 @@ def decomposeA (crumbs : List F) : F := decomposeFold (fun x => cPoly x) crumbs
 /-- The `b`-accumulator (`b := 2b + dPoly x`). -/
 def decomposeB (crumbs : List F) : F := decomposeFold (fun x => dPoly x) crumbs
 
-/-- The raw challenge reconstructed from its base-4 crumbs (`n := 4n + x`), the
-    gate's `n` register — public, as the reconstruction the wrapper pins to the
-    input challenge. -/
+/-- The raw challenge reconstructed from its base-4 crumbs (`n := 4n + x`): the gate's `n`
+    register. -/
 def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
 
 /-- Zero crumbs decompose to the inits: the empty fold is its seed. -/
@@ -211,8 +170,8 @@ def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
 
 @[simp] theorem nReconstruct_nil : nReconstruct (F := F) [] = 0 := rfl
 
-/-- The effective scalar the gate outputs: `a·λ + b` (`λ` the endomorphism
-    eigenvalue). This is the pure `to_field` of the challenge. -/
+/-- The effective scalar the gate outputs: `a·λ + b`, with `λ` the endomorphism
+    eigenvalue. -/
 def toField (crumbs : List F) (lam : F) : F :=
   decomposeA crumbs * lam + decomposeB crumbs
 
@@ -222,8 +181,7 @@ def toField (crumbs : List F) (lam : F) : F :=
     folds cannot be read over ℤ directly. On genuine base-4 digits they are integer tables,
     and the folds have exact ℤ-shadows: `decomposeAInt`/`decomposeBInt`/`toIntZ` over the
     pre-cast digit list. The cast lemmas below say each field-side fold is the image of its
-    shadow — which is what lets a bounded fold value be read in a SECOND field (the scalar
-    field) once a char-window argument pins the integer. -/
+    shadow, so one integer value can be read in a second field. -/
 
 /-- `cPoly`'s digit table `(0, 0, −1, 1)`, over ℤ. -/
 def cInt : ℕ → ℤ
@@ -237,8 +195,8 @@ def dInt : ℕ → ℤ
   | 1 => 1
   | _ => 0
 
-/-- The ℤ-shadow of `decomposeA`, over the pre-cast digits: the same fold at the
-    initial ring, where the polynomial's digit values are the integer table. -/
+/-- The ℤ-shadow of `decomposeA`: the same fold over the pre-cast digits, with `cPoly`'s
+    digit values as the integer table `cInt`. -/
 def decomposeAInt (ds : List ℕ) : ℤ := decomposeFold cInt ds
 
 /-- The ℤ-shadow of `decomposeB`. -/
@@ -290,8 +248,8 @@ theorem decomposeB_digits (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (fun d hd => dPoly_digit h2 h3 hd) ds h 2
   simpa [decomposeB, decomposeBInt, decomposeFold] using this
 
-/-- `toField` over cast digits at a cast eigenvalue is the cast of `toIntZ` — the two-field
-    bridge: one integer scalar, read in any field with `2, 3` invertible. -/
+/-- `toField` over cast digits at a cast eigenvalue is the cast of `toIntZ`: one integer
+    scalar, read in any field with `2, 3` invertible. -/
 theorem toField_digits (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (ds : List ℕ) (h : ∀ d ∈ ds, d < 4) (lam : ℤ) :
     toField (ds.map (Nat.cast : ℕ → F)) ((lam : ℤ) : F) = ((toIntZ ds lam : ℤ) : F) := by
@@ -324,9 +282,8 @@ private theorem foldInt_bounds {cz : ℕ → ℤ} (hc : ∀ d, |cz d| ≤ 1) (ds
     · nlinarith [hlo, habs.1, hpow]
     · nlinarith [hhi, habs.2, hpow]
 
-/-- The `a`-shadow's window: from the init `2`, the fold lands in
-    `[2^n + 1, 3·2^n − 1]` (`n` the digit count) — positive and, for the deployed
-    64 digits, far under the off-targets box. -/
+/-- The `a`-shadow's window: from the init `2`, the fold lands in `[2^n + 1, 3·2^n − 1]`,
+    with `n` the digit count. -/
 theorem decomposeAInt_bounds (ds : List ℕ) :
     2 ^ ds.length + 1 ≤ decomposeAInt ds ∧ decomposeAInt ds ≤ 3 * 2 ^ ds.length - 1 := by
   obtain ⟨hlo, hhi⟩ := foldInt_bounds cInt_abs_le ds 2 (by norm_num)
@@ -340,11 +297,11 @@ theorem decomposeBInt_bounds (ds : List ℕ) :
   unfold decomposeBInt decomposeFold
   constructor <;> omega
 
-/-! ## Multi-row composition: threading rows is folding the concatenated crumbs.
+/-! ## Multi-row composition: threading rows is folding the concatenated crumbs
 
     A challenge wider than one row's eight crumbs is laid out over several `EndoScalar` rows,
-    each row's output accumulators feeding the next. Because every accumulator update is a
-    `List.foldl`, the whole run is one fold over the concatenated crumbs. -/
+    each row's output accumulators feeding the next. Every accumulator update is a
+    `List.foldl`, so the whole run is one fold over the concatenated crumbs. -/
 
 /-- Resuming the `a`-fold across a row boundary: `decomposeA (xs ++ ys)` continues the
     single decomposition from `decomposeA xs`. -/
@@ -362,12 +319,11 @@ private theorem nReconstruct_append (xs ys : List F) :
     nReconstruct (xs ++ ys) = ys.foldl (fun n x => 4 * n + x) (nReconstruct xs) := by
   simp only [nReconstruct, List.foldl_append]
 
-/-- The *positional* form of the same append: the earlier rows contribute their reconstruction
-    shifted up by one base-4 place per later crumb. `nReconstruct_append` resumes the fold and so
-    keeps the tail in fold form; chunking a value into rows needs the two halves as separate
-    summands, which is this. The field twin of `valNat_append`, and — the whole point of stating it
-    here rather than transporting through `nReconstruct_eq_valNat` — it needs neither crumb validity
-    nor `[DecidableEq F]`, so it applies to the raw register at every call site. -/
+/-- The positional form of `nReconstruct_append`: the earlier rows contribute their
+    reconstruction shifted up by one base-4 place per later crumb, as a separate summand, which
+    is what chunking a value into rows needs. The field twin of `valNat_append`, stated here
+    rather than transported through `nReconstruct_eq_valNat` because it then needs neither crumb
+    validity nor `[DecidableEq F]`. -/
 private theorem nReconstruct_append_pos (xs ys : List F) :
     nReconstruct (xs ++ ys) = nReconstruct xs * 4 ^ ys.length + nReconstruct ys := by
   induction ys generalizing xs with
@@ -398,10 +354,8 @@ private theorem chainCrumbs_succ (w : ℕ → Witness F) (m : ℕ) :
     List.flatMap_nil, List.append_nil]
 
 omit [Field F] in
-/-- The total crumb width of a uniform-width run: `m` rows of `c` crumbs each concatenate to
-    `c * m` crumbs. This is what converts the stream-level budget `valNat_lt` into the deployed
-    `4 ^ (c · #rows)` bound of the range check — at the deployed shape, eight rows of eight
-    crumbs give `4 ^ 64 = 2 ^ 128`. -/
+/-- A uniform-width run of `m` rows of `c` crumbs has `c * m` crumbs. This converts the
+    stream-level budget `valNat_lt` into the range check's `4 ^ (c · #rows)` bound. -/
 theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
     ∀ m, (∀ i, i < m → (w i).crumbs.length = c) → (chainCrumbs w m).length = c * m := by
   intro m
@@ -414,9 +368,7 @@ theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
     ring
 
 /-- A satisfying `m + 1`-row run: every row holds, the first opens at the canonical
-    accumulators, and each row's outputs are the next row's inputs. The three conditions a
-    chain of gates has — initial condition, linkage, and the gate at every step — named once
-    instead of spelled out in each theorem that assumes them. -/
+    accumulators, and each row's outputs are the next row's inputs. -/
 structure Chain (w : ℕ → Witness F) (m : ℕ) : Prop where
   /-- Every row of the run satisfies the gate. -/
   holds : ∀ i, i ≤ m → Holds (w i)
@@ -439,12 +391,9 @@ theorem Chain.mono {w : ℕ → Witness F} {m n : ℕ} (h : Chain w n) (hmn : m 
     fun i hi => h.aStep i (by omega), fun i hi => h.bStep i (by omega),
     fun i hi => h.nStep i (by omega)⟩
 
-/-- **Sequential-gate reconstruction.** A run of `m + 1` `EndoScalar` rows (indices `0..m`),
-    each satisfying `Holds`, threaded so every row's output `(a8, b8, n8)` is the next row's
-    input `(a0, b0, n0)` and the first starts at the canonical `(2, 2, 0)`, computes the single
-    Algorithm-2 decomposition of its whole concatenated crumb stream — exactly as a one-row
-    `Holds` over `chainCrumbs w (m + 1)` would. The multi-row layout adds nothing to the
-    arithmetic, as for `varBaseMul`'s `gateLadder` over its rows. -/
+/-- **Sequential-gate reconstruction.** A `Chain` of `m + 1` rows computes the single
+    Algorithm-2 decomposition of its concatenated crumb stream `chainCrumbs w (m + 1)`, exactly
+    as one row over that stream would. -/
 theorem chain_decompose : ∀ (m : ℕ) (w : ℕ → Witness F), Chain w m →
     (w m).a8 = decomposeA (chainCrumbs w (m + 1))
       ∧ (w m).b8 = decomposeB (chainCrumbs w (m + 1))
@@ -467,11 +416,10 @@ theorem chain_decompose : ∀ (m : ℕ) (w : ℕ → Witness F), Chain w m →
 
 /-! ## A run given as a list
 
-    A circuit builds its rows as a finite list, not as a function on `ℕ`; `Chain.ofList` is
-    that caller's constructor — the same three conditions, spelled over the list — and the two
-    identities below say what the chain theorems' conclusions read as there. The indexed form
-    stays primary: a generated table (`chainBuild`, `chain_range_complete`'s formula in `i`) has
-    no list to speak of. -/
+    A circuit builds its rows as a finite list, not as a function on `ℕ`. `Chain.ofList` is
+    that caller's constructor, and the two identities below say what the chain theorems'
+    conclusions read as there. The indexed form stays primary: a generated table (`chainBuild`)
+    has no list to speak of. -/
 
 /-- The chain a caller holding a finite run builds: every row holds, adjacent rows link, and
     the first row opens at the canonical accumulators. -/
@@ -514,13 +462,10 @@ theorem getD_length_sub_one (l : List (Witness F)) (hne : l ≠ []) (d : Witness
   rw [List.getD_eq_getElem _ _ (by omega)]
   exact (List.getLast_eq_getElem hne).symm
 
-/-! ## Completeness: the honest prover fills a multi-row run.
+/-! ## Completeness: the honest prover fills a multi-row run
 
-    The gate's `complete` precondition is per-row crumb validity — independent of the threaded
-    accumulators — so the honest builder threads with no global side-condition. Contrast the EC
-    gates, whose ladder completeness must propagate non-exceptional points across rows; that is
-    why `varBaseMul`'s circuit carries no free completeness while EndoScalar, being curve- and
-    exception-free, does. -/
+    The precondition of `complete` is per-row crumb validity, independent of the threaded
+    accumulators, so the honest builder threads with no global side-condition. -/
 
 /-- The honest multi-row witness: thread the gate's `build` from the canonical `(2, 2, 0)`,
     each row started from the previous row's output accumulators. -/
@@ -530,10 +475,8 @@ def chainBuild (rows : ℕ → List F) : ℕ → Witness F
     let prev := chainBuild rows i
     build prev.a8 prev.b8 prev.n8 (rows (i + 1))
 
-/-- The honest witness carries exactly the crumbs it was built from, so its concatenated stream is
-    the concatenation of the given rows. Threading changes the accumulators, never the crumbs
-    (`build`'s `crumbs` field is its argument), which is what lets a chunking of the value be read
-    back off the chain as one crumb list. -/
+/-- The honest witness's crumb stream is the concatenation of the given rows: threading
+    changes the accumulators, never the crumbs. -/
 theorem chainCrumbs_chainBuild (rows : ℕ → List F) (m : ℕ) :
     chainCrumbs (chainBuild rows) m = (List.range m).flatMap rows :=
   List.flatMap_congr fun i _ => by cases i <;> rfl
@@ -541,14 +484,12 @@ theorem chainCrumbs_chainBuild (rows : ℕ → List F) (m : ℕ) :
 /-! ### The digit expansion
 
     `crumbsOf` runs the register fold backwards: it turns a natural into the crumb list that
-    reconstructs to it, at a fixed width. It is what makes the range check `chain_range` say
-    something — without it the bound would also hold of a circuit satisfiable at no value at all.
-    It is pure `ℕ → List F` digit arithmetic, independent of the gate and of the row layout. -/
+    reconstructs to it, at a fixed width. It is the honest prover's crumb list for a given
+    value, which makes the range check non-vacuous (`range_complete`). -/
 
-/-- The width-`c` base-4 expansion of a natural, most significant crumb first: peel `k % 4` and
-    recurse on `k / 4`. High crumbs are padded with `0`, and whatever of `k` sits at or above
-    `4 ^ c` is discarded. Mathlib's `Nat.digits` will not do here: it is least-significant-first
-    and unpadded, so pinning the width back to `c` costs more than this peel. -/
+/-- The width-`c` base-4 expansion of a natural, most significant crumb first. High crumbs are
+    padded with `0`, and whatever of `k` sits at or above `4 ^ c` is discarded. `Nat.digits` is
+    least-significant-first and unpadded, so pinning its width back to `c` costs more. -/
 def crumbsOf : ℕ → ℕ → List F
   | 0, _ => []
   | c + 1, k => crumbsOf c (k / 4) ++ [((k % 4 : ℕ) : F)]
@@ -607,8 +548,7 @@ theorem crumbsOf_valid (c k : ℕ) :
       rcases h4 with h | h | h | h <;> rw [h] <;> norm_num
 
 /-- The expansion inverts the register fold: reconstructing `crumbsOf c k` recovers `k` modulo the
-    width budget `4 ^ c`, hence `k` itself below the budget. The Horner step is core's
-    `Nat.mod_mul` at `a = 4`, `b = 4 ^ c`, carried into `F` by `nReconstruct_append`. -/
+    width budget `4 ^ c`, hence `k` itself below the budget. -/
 theorem nReconstruct_crumbsOf (c k : ℕ) :
     nReconstruct (crumbsOf (F := F) c k) = ((k % 4 ^ c : ℕ) : F) := by
   induction c generalizing k with
@@ -624,16 +564,9 @@ theorem nReconstruct_crumbsOf (c k : ℕ) :
     ring
 
 /-- **Row chunking.** Laying a natural out over `m + 1` rows of width `c`, most significant row
-    first — row `i` carrying the width-`c` expansion of `k / 4 ^ (c · (m − i))` — reconstructs to
-    `k` modulo the whole run's budget `4 ^ (c(m+1))`. This is `nReconstruct_crumbsOf` one level up:
-    the same Horner peel, at a row rather than a crumb, and the ingredient that turns the
-    single-witness `range_complete` into the multi-row `chain_range_complete`.
-
-    The induction is on the row count generalizing `k`, the step splitting the last (least
-    significant) row off with `List.range_succ`; the remaining rows are the same layout of
-    `k / 4 ^ c`, because `k / 4 ^ (c · (m + 1 − i)) = (k / 4 ^ c) / 4 ^ (c · (m − i))` for `i ≤ m`.
-    The two halves recombine by the positional `nReconstruct_append_pos`, against core's
-    `Nat.mod_mul` at `a = 4 ^ c`, `b = 4 ^ (c(m+1))`. -/
+    first, with row `i` carrying the width-`c` expansion of `k / 4 ^ (c · (m − i))`,
+    reconstructs to `k` modulo the run's budget `4 ^ (c(m+1))`. This is `nReconstruct_crumbsOf`
+    at a row rather than a crumb, and what `chain_range_complete` rests on. -/
 private theorem nReconstruct_rowsOf (c : ℕ) : ∀ (m k : ℕ),
     nReconstruct ((List.range (m + 1)).flatMap
         (fun i => crumbsOf (F := F) c (k / 4 ^ (c * (m - i)))))
@@ -647,7 +580,8 @@ private theorem nReconstruct_rowsOf (c : ℕ) : ∀ (m k : ℕ),
     exact nReconstruct_crumbsOf c k
   | succ m ih =>
     intro k
-    -- peel the least significant row; the rest is the same layout of `k / 4 ^ c`
+    -- peel the least significant row; the rest is the same layout of `k / 4 ^ c`, and the
+    -- halves recombine by `nReconstruct_append_pos`
     have hsplit : (List.range (m + 1 + 1)).flatMap
           (fun i => crumbsOf (F := F) c (k / 4 ^ (c * (m + 1 - i))))
         = (List.range (m + 1)).flatMap
@@ -668,15 +602,14 @@ private theorem nReconstruct_rowsOf (c : ℕ) : ∀ (m k : ℕ),
     push_cast
     ring
 
-/-! ## Uniqueness of the decomposition under the bit-size/field-size bound.
+/-! ## Uniqueness of the decomposition under the no-wrap bound
 
-    The reconstruction is pinned to the folds of the witness crumbs. The honest meaning —
-    `challenge ↦ a·λ + b` is a well-defined function — needs that a challenge determines its
-    crumbs. This holds because the crumbs are base-4 digits (each in `{0,1,2,3}`, by
-    `Gate.sound`) and the reconstruction does not wrap: the challenge's bit-width stays below the
-    field size, `4 ^ #crumbs ≤ p`. The positional-arithmetic kernel below — `digit`, `valNat`,
-    `euclid_split`, `valNat_inj` — is pure base-4 number theory; the bridge `nReconstruct_eq_valNat`
-    ties it to the field-valued register. -/
+    For `challenge ↦ a·λ + b` to be a well-defined function, a challenge must determine its
+    crumbs. It does: the crumbs are base-4 digits (by `sound`), and the reconstruction does not
+    wrap when `4 ^ #crumbs ≤ p`. At the deployed 64 crumbs that budget is `4 ^ 64 = 2 ^ 128`,
+    far under the Pasta orders of about `2 ^ 254`. The kernel below (`digit`, `valNat`,
+    `euclid_split`, `valNat_inj`) is pure base-4 number theory; `nReconstruct_eq_valNat` ties
+    it to the field-valued register. -/
 
 variable [DecidableEq F]
 
@@ -707,9 +640,8 @@ private theorem digit_cast (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
       if_neg (fun h => h1 (by linear_combination h)), if_pos rfl, Nat.cast_ofNat]
 
 /-- Splitting the base-4 value at a list boundary: the earlier crumbs contribute their value
-    shifted up by one place per later crumb. The `ℕ` engine of the positional arithmetic — the
-    Horner step `valNat_cons` is its `xs := [x]` case, and it is the shadow of
-    `nReconstruct_append_pos`. -/
+    shifted up by one place per later crumb. The Horner step `valNat_cons` is its singleton
+    case, and it is the `ℕ` shadow of `nReconstruct_append_pos`. -/
 private theorem valNat_append (xs ys : List F) :
     valNat (xs ++ ys) = valNat xs * 4 ^ ys.length + valNat ys := by
   induction ys generalizing xs with
@@ -741,7 +673,7 @@ private theorem valNat_lt (xs : List F) : valNat xs < 4 ^ xs.length := by
 
 omit [Field F] [DecidableEq F] in
 /-- Euclidean split at base `M`: a low part below `M` and a high digit are uniquely
-    recoverable from `high · M + low`. The base-4 digit-recovery step. -/
+    recoverable from `high · M + low`. -/
 private theorem euclid_split {a b c d M : ℕ} (hb : b < M) (hd : d < M)
     (h : a * M + b = c * M + d) : a = c ∧ b = d := by
   have hM : 0 < M := lt_of_le_of_lt (Nat.zero_le b) hb
@@ -752,7 +684,7 @@ private theorem euclid_split {a b c d M : ℕ} (hb : b < M) (hd : d < M)
   have hac : a = c := by rw [← ha, ← hc, h]
   subst hac; exact ⟨rfl, by omega⟩
 
-/-- Nat-level base-4 uniqueness: valid same-length crumb lists with equal `valNat` are
+/-- Base-4 uniqueness over `ℕ`: valid same-length crumb lists with equal `valNat` are
     equal. The crumbs being digits `< 4` makes each `valNat_cons` layer a `euclid_split`. -/
 private theorem valNat_inj (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs ys : List F)
     (hx : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
@@ -773,8 +705,7 @@ private theorem valNat_inj (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs ys : Li
       rw [hxy, ih ys (fun z hz => hx z (by simp [hz])) (fun z hz => hy z (by simp [hz]))
         hlen htail]
 
-/-- The field reconstruction is the cast of its `ℕ` shadow `valNat`, on valid crumbs. The
-    bridge from the base-4 kernel to the circuit's field-valued register. -/
+/-- On valid crumbs the field reconstruction is the cast of its `ℕ` shadow `valNat`. -/
 private theorem nReconstruct_eq_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : List F)
     (hv : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
     nReconstruct xs = ((valNat xs : ℕ) : F) := by
@@ -817,17 +748,16 @@ private theorem crumbsOf_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
       show (4 * valNat l + digit v) % 4 = digit v by omega,
       ih hvl, digit_cast h2 h3 (hv v (by simp))]
 
-/-- **Base-4 decoding is onto.** A valid crumb list IS the canonical expansion of a
-    natural below its width's budget — so a consumer holding crumbs the gate exposed may
-    speak of the challenge they spell instead. -/
+/-- **Base-4 decoding is onto.** A valid crumb list is the canonical expansion `crumbsOf` of a
+    natural below its width's budget, so a consumer holding the gate's crumbs may speak of the
+    challenge they spell instead. -/
 theorem eq_crumbsOf (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : List F)
     (hv : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
     ∃ n : ℕ, n < 4 ^ xs.length ∧ xs = crumbsOf xs.length n :=
   ⟨valNat xs, valNat_lt xs, (crumbsOf_valNat h2 h3 xs hv).symm⟩
 
-/-- **Base-4 digit recovery.** Same-length valid crumb lists whose reconstruction fits the
-    field (`4 ^ len ≤ p`) and that reconstruct to the same challenge are equal — the
-    decomposition a satisfying gate exposes is the *unique* one. -/
+/-- **Base-4 digit recovery.** Same-length valid crumb lists that fit the field
+    (`4 ^ len ≤ p`) and reconstruct to the same challenge are equal. -/
 private theorem nReconstruct_inj {p : ℕ} [CharP F p] (xs ys : List F)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hx : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
@@ -848,42 +778,8 @@ end Kimchi.Gate.EndoScalar
 /-!
 ## The effective scalar `a·λ + b`
 
-The endo-scalar decomposition composes `Kimchi.Gate.EndoScalar` rows into the effective scalar
-`a·λ + b`. A challenge is processed eight crumbs at a time, each row threading the `(a, b, n)`
-accumulators; the result is the effective scalar `a·λ + b` and the raw register `n`, which the
-wrapper asserts equals the input challenge. The construction follows the OCaml/PureScript
-`to_field_checked'`, which runs `mapAccumM` over the row chunks.
-
-This module states the three headline theorems about the effective scalar, and — reading the same
-gate for its *bound* rather than for its decomposition — the six theorems of the deployed 128-bit
-range check. Their supporting development, the accumulator folds, the multi-row reconstruction, the
-base-4 uniqueness kernel and the fixed-width digit expansion, lives in `§ Supporting development`
-above.
-
-* `chain_toField` — a satisfying run of `m + 1` sequential gate rows, threaded from the canonical
-  init `(a, b, n) = (2, 2, 0)` (`varBaseMul`'s multi-row shape), outputs the effective scalar
-  `a·λ + b` and the register reconstructing the whole challenge (a single row is the `m = 0` case).
-* `chain_complete` — the completeness counterpart: for any rows of valid crumbs the honest prover
-  threads the gate's `build` into a satisfying run, with no global side-condition, since the gate's
-  completeness precondition is per-row.
-* `endoScalar_unique` — self-contained soundness. Under the no-wrap bound `4 ^ #crumbs ≤ p` (the
-  challenge's bit-size below the field size), the base-4 decomposition is unique, so the effective
-  scalar `a·λ + b` is a well-defined function of the challenge alone, independent of the prover's
-  witness.
-* `chain_range`, `chain_range_128`, `chain_range_unique`, `range_complete`,
-  `chain_range_complete`, `chain_range_complete_128` — the range check the gate *also* implements.
-  A satisfying `m + 1`-row run of uniform width `c` pins its register to the cast of a natural
-  below `4 ^ (c(m+1))`, uniquely so under the no-wrap bound; and conversely every such natural is
-  the register of some satisfying run, so at a *fixed* row shape the accepted set is exactly
-  `[0, 4 ^ (c(m+1)))`. `§ The 128-bit range check` below carries the deployed shape and the three
-  scope limits.
-* `Chain128`, `Chain128.range`, `chain_range_complete_128` — the deployed eight-row shape
-  (`RangeCheck.purs`'s `rangeCheck128`) packaged once, with the check's two directions read
-  through it. `§ The packaged 128-bit range check` below.
-* `fp_rangeCheck128_sound`, `fp_rangeCheck128_complete`, `fq_rangeCheck128_sound`,
-  `fq_rangeCheck128_complete` — the deployed range check at the two Pasta fields, every field
-  hypothesis discharged. `§ The range check at the deployed Pasta fields`, the last section of
-  the file.
+The chain theorems about the effective scalar (`chain_toField`, `chain_complete`,
+`endoScalar_unique`), and the range check the same gate implements.
 -/
 
 namespace Kimchi.Gate.EndoScalar
@@ -893,19 +789,16 @@ open Kimchi.Gate.EndoScalar
 variable {F : Type*} [Field F]
 
 /-- The effective scalar of a multi-row run: `a·λ + b` over the whole challenge, with the
-    register reconstructing the full concatenated crumb stream. The wrapper asserts that
-    register equals the input challenge. -/
+    register reconstructing the full concatenated crumb stream. -/
 theorem chain_toField (lam : F) (m : ℕ) (w : ℕ → Witness F) (h : Chain w m) :
     (w m).a8 * lam + (w m).b8 = toField (chainCrumbs w (m + 1)) lam
       ∧ (w m).n8 = nReconstruct (chainCrumbs w (m + 1)) := by
   obtain ⟨hA, hB, hN⟩ := chain_decompose m w h
   exact ⟨by rw [hA, hB, toField], hN⟩
 
-/-- **Completeness.** For any rows of valid crumbs, the threaded honest witness `chainBuild`
-    satisfies the entire multi-row run — every row `Holds`, the first starts at `(2, 2, 0)`, the
-    accumulators thread, and each row carries the given crumbs. Feeding this into `chain_toField`
-    shows the honest prover computes the challenge's effective scalar. The threading and init are
-    definitional; the only real input is `Gate.complete` per row. -/
+/-- **Completeness.** For any rows of valid crumbs, the threaded honest witness `chainBuild` is a
+    `Chain` whose rows carry the given crumbs. The threading and init are definitional; the only
+    real input is `complete` per row. -/
 theorem chain_complete (m : ℕ) (rows : ℕ → List F)
     (hvalid : ∀ i, i ≤ m → ∀ x ∈ rows i, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
     Chain (chainBuild rows) m ∧ (∀ i, i ≤ m → (chainBuild rows i).crumbs = rows i) := by
@@ -921,66 +814,39 @@ theorem chain_complete (m : ℕ) (rows : ℕ → List F)
 
 /-! ## The 128-bit range check
 
-    `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/RangeCheck.purs` range-checks a value to 128
-    bits by `rangeCheck128 endo v = void $ EndoScalar.toField @8 v endo`: lay the value out over an
-    eight-row `EndoScalar` chain and discard the effective scalar, keeping only the constraints. The
-    soundness argument is that such a chain cannot represent a value `≥ 2¹²⁸`, and the theorems
-    below are that argument. The width comes from `Circuit/Kimchi/EndoScalar.purs`'s
-    `Mul 16 rows nBits`: `@8` is 8 rows × 8 crumbs = 64 crumbs = 128 bits. Gate origin
-    `kimchi/src/circuits/polynomials/endomul_scalar.rs`.
+    The deployed range check lays a value over an eight-row `EndoScalar` chain and keeps only
+    the constraints: eight rows of eight crumbs are 64 crumbs, 128 bits. No new constraint is
+    involved. Each crumb lies in `{0,1,2,3}` by `crumb_iff`, and the register is the base-4
+    Horner fold from `n₀ = 0`, so it is the image of a natural below `4 ^ #crumbs`.
 
-    No new constraint is involved. The range check *is* the gate already modelled here, read for
-    its bound instead of for its decomposition. Each crumb lies in `{0,1,2,3}` by `crumb_iff`, and
-    the register is the base-4 Horner fold from `n₀ = 0`, so it is the image of a natural below
-    `4 ^ #crumbs`.
+    * `chain_range` — the bound, at the multi-row shape; `chain_range_128` at eight by eight.
+    * `chain_range_unique` — under the no-wrap bound the natural is unique.
+    * `range_complete` — every value in range is achieved by a single witness.
+    * `chain_range_complete` — the exact converse of `chain_range` at the multi-row shape;
+      `chain_range_complete_128` at eight by eight.
 
-    * `chain_range` — the bound, at the deployed multi-row shape.
-    * `chain_range_128` — the deployed instance, eight rows of eight crumbs.
-    * `chain_range_unique` — the sharp form: under the no-wrap bound the natural is unique.
-    * `range_complete` — non-vacuity at a single witness: every value in range is achieved.
-    * `chain_range_complete` — non-vacuity at the multi-row shape, the exact converse of
-      `chain_range` (its conclusion is `chain_range`'s hypothesis list verbatim).
-    * `chain_range_complete_128` — that converse at the deployed eight-by-eight shape.
-
-    `chain_range` and `chain_range_complete` compose on one run, and together they are an *iff*:
-    at row shape `(m, c)` the accepted registers are exactly the casts of the naturals below
-    `4 ^ (c(m+1))` — at the deployed shape, `chain_range_128` and `chain_range_complete_128` say a
-    register has a satisfying eight-row `EndoScalar` witness iff it is the cast of a natural
-    `< 2¹²⁸`. The two directions do not carry the same hypotheses: left-to-right the bound rules
-    out representing a larger value, and needs `h2 : (2 : F) ≠ 0` and `h3 : (3 : F) ≠ 0` (which is
-    what lets a crumb's base-4 digit be read back — see `chain_range` below); right-to-left nothing
-    in range is rejected, and that direction needs neither.
+    `chain_range` and `chain_range_complete` compose on one run, and together they are an
+    *iff*: at row shape `(m, c)` the accepted registers are exactly the casts of the naturals
+    below `4 ^ (c(m+1))`. The bound direction needs `(2 : F) ≠ 0` and `(3 : F) ≠ 0`, which let
+    a crumb's base-4 digit be read back; the converse needs neither.
 
     ### What the range check does not cover
 
-    Three numbered entries live here; the declarations below point at this list rather than
-    restating it.
+    1. `chain_range`'s bound is informative only when `4 ^ width ≤ p`. Over a smaller field
+       every element is the image of some natural below the budget, so the statement is true
+       but says nothing. `chain_range_unique` is the form that assumes the bound.
+    2. Both the bound and its converse fix one width `c` for every row; a run of ragged row
+       widths is not covered. The deployed circuit's rows are uniform by construction, so this
+       is a gap in generality, not in coverage of the deployed shape.
+    3. What the checked register is used for downstream is outside this file. The deployed
+       split of a squeezed challenge into two range-checked halves is modelled in
+       `Snarky.Kimchi.Circuit.RangeCheck`. -/
 
-    1. `chain_range`'s bound is informative only when `4 ^ width ≤ p`. Over a field smaller than
-       the budget every element is the image of some natural below the budget, so the statement is
-       true but says nothing. `chain_range_unique` is the form that assumes the bound.
-    2. Completeness exists in both shapes — `range_complete` at a single witness of width `N` from
-       *arbitrary* input accumulators, `chain_range_complete` at the multi-row shape from the
-       canonical `(2, 2, 0)` — so with `chain_range` the accepted set is exactly
-       `[0, 4 ^ (c(m+1)))`. What neither statement mentions is a run of *ragged* row widths: both
-       the bound and its converse fix one width `c` for every row. The deployed circuit never emits
-       a ragged run — `EndoScalar.purs`'s nibbles are `Vector rows (Vector 8 (FVar f))`, uniform by
-       construction — so this is a gap in generality, not in coverage of the deployed shape.
-    3. What the checked register is used for downstream — it becomes the challenge fed to
-       `EndoScalar`/`EndoMul`, and `RangeCheck.purs`'s `lowest128Bits'` composes two of these
-       checks into its split of a squeezed challenge — is outside this file. The split's affine
-       relation `x = lo + 2¹²⁸ · hi` is deliberately not modelled: the load-bearing deployed use
-       of the gate-as-range-check is the bound itself. -/
-
-/-- **The range check.** A satisfying `EndoScalar` run of `m + 1` rows, each carrying `c` crumbs
-    and threaded from the canonical `(a, b, n) = (2, 2, 0)`, has an output register equal to the
-    cast of a natural `< 4 ^ (c · (m + 1))`. Equivalently: nothing outside `[0, 4 ^ width)` has a
-    satisfying witness, which is what `rangeCheck128` relies on.
-
-    Hypotheses are `chain_toField`'s verbatim plus the uniform row width `hwidth`, so the chain
-    theorems compose on one run; `h2` and `h3` are what let a crumb's base-4 digit be read back.
-    The bound is informative only under `4 ^ width ≤ p` — see limit 1 of
-    `§ What the range check does not cover`. -/
+/-- **The range check.** A `Chain` of `m + 1` rows, each carrying `c` crumbs (`hwidth`), has an
+    output register equal to the cast of a natural `< 4 ^ (c · (m + 1))`. The hypotheses are
+    `chain_toField`'s plus `hwidth`, so the chain theorems compose on one run; `h2` and `h3` let
+    a crumb's base-4 digit be read back. The bound is informative only under `4 ^ width ≤ p`
+    (limit 1 of `§ What the range check does not cover`). -/
 theorem chain_range (m c : ℕ) (w : ℕ → Witness F) (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (h : Chain w m) (hwidth : ∀ i, i ≤ m → (w i).crumbs.length = c) :
     ∃ k : ℕ, k < 4 ^ (c * (m + 1)) ∧ (w m).n8 = (k : F) := by
@@ -1000,12 +866,9 @@ theorem chain_range (m c : ℕ) (w : ℕ → Witness F) (h2 : (2 : F) ≠ 0) (h3
   · rw [← hlen]; exact valNat_lt _
   · rw [hN, nReconstruct_eq_valNat h2 h3 _ hvalid]
 
-/-- `chain_range` at the shape the circuit emits: eight rows (`m = 7`) of eight crumbs (`c = 8`),
-    where `4 ^ 64 = 2 ^ 128`. Same hypotheses, specialised. This is what `RangeCheck.purs`'s
-    `rangeCheck128` rests on — a value with a satisfying eight-row `EndoScalar` witness is the cast
-    of a natural below `2¹²⁸`. `lowest128Bits'` is not a caller of `rangeCheck128` but a sibling
-    consumer of the same primitive, inlining `EndoScalar.toField @8` twice; this theorem is one of
-    those two inlinings, and `§ The lowest-128-bits split` composes them. -/
+/-- `chain_range` at the deployed shape, eight rows (`m = 7`) of eight crumbs (`c = 8`), where
+    `4 ^ 64 = 2 ^ 128`: a value with a satisfying eight-row witness is the cast of a natural
+    below `2¹²⁸`. -/
 theorem chain_range_128 (w : ℕ → Witness F) (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (h : Chain w 7) (hwidth : ∀ i, i ≤ 7 → (w i).crumbs.length = 8) :
     ∃ k : ℕ, k < 2 ^ 128 ∧ (w 7).n8 = (k : F) := by
@@ -1014,13 +877,10 @@ theorem chain_range_128 (w : ℕ → Witness F) (h2 : (2 : F) ≠ 0) (h3 : (3 : 
   rw [show (2 : ℕ) ^ 128 = 4 ^ (8 * (7 + 1)) by rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]]
   exact hk
 
-/-- **The sharp range check.** Under the no-wrap bound `4 ^ width ≤ p` the natural the register
-    represents is unique, so the run pins the register to a *value* in `[0, 4 ^ width)` rather than
-    to a residue class. This is the statement that rules out representing a value `≥ 2¹²⁸` by
-    wrapping, and the counterpart of the PureScript `Compare nBits n LT` side-condition on
-    `toField`. The bound `hp` is `endoScalar_unique`'s, and at the deployed width `4 ^ 64 = 2 ^ 128`
-    sits far under the ≈2²⁵⁴ Pasta orders. Existence is `chain_range`; uniqueness is
-    `CharP.natCast_injOn_Iio`, both candidates being below `p` by `hp`. -/
+/-- **The sharp range check.** Under the no-wrap bound `hp : 4 ^ width ≤ p` the natural the
+    register represents is unique, so the run pins the register to a value in `[0, 4 ^ width)`
+    rather than to a residue class. This rules out representing a value `≥ 2¹²⁸` by wrapping.
+    Existence is `chain_range`; uniqueness is `CharP.natCast_injOn_Iio`. -/
 theorem chain_range_unique {p : ℕ} [CharP F p] (m c : ℕ) (w : ℕ → Witness F)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (h : Chain w m)
     (hwidth : ∀ i, i ≤ m → (w i).crumbs.length = c)
@@ -1032,16 +892,10 @@ theorem chain_range_unique {p : ℕ} [CharP F p] (m c : ℕ) (w : ℕ → Witnes
   exact CharP.natCast_injOn_Iio F p (Set.mem_Iio.mpr (lt_of_lt_of_le hj hp))
     (Set.mem_Iio.mpr (lt_of_lt_of_le hk hp)) (by rw [← hjn, ← hn])
 
-/-- **Non-vacuity.** Every value in range is achieved: for `k < 4 ^ N` the honest prover fills a
-    satisfying witness of width `N` whose register is `k`, from any input accumulators `(a0, b0)`.
-    Without this, `chain_range`'s bound would also hold of a circuit satisfiable at no value at all;
-    with it, the two say the accepted range is exactly `[0, 4 ^ N)`.
-
-    The witness is `build` on the digit expansion `crumbsOf N k`, whose register fold at `n0 = 0`
-    *is* `nReconstruct`, so the content is `nReconstruct_crumbsOf`. This is the single-witness
-    shape, and it is the more general one in the accumulators: `a0`, `b0` are arbitrary, where the
-    multi-row `chain_range_complete` starts from the canonical `(2, 2, 0)`. See limit 2 of
-    `§ What the range check does not cover` for what the pair still leaves open. -/
+/-- **Non-vacuity.** For `k < 4 ^ N` the honest prover fills a satisfying witness of width `N`
+    whose register is `k`, from any input accumulators `a0`, `b0`. Without this, `chain_range`'s
+    bound would also hold of a circuit satisfiable at no value at all. The witness is `build` on
+    `crumbsOf N k`, so the content is `nReconstruct_crumbsOf`. -/
 theorem range_complete (N k : ℕ) (hk : k < 4 ^ N) (a0 b0 : F) :
     ∃ w : Witness F, Holds w ∧ w.a0 = a0 ∧ w.b0 = b0 ∧ w.n0 = 0
       ∧ w.crumbs.length = N ∧ w.n8 = (k : F) := by
@@ -1051,18 +905,10 @@ theorem range_complete (N k : ℕ) (hk : k < 4 ^ N) (a0 b0 : F) :
   rw [nReconstruct_crumbsOf, Nat.mod_eq_of_lt hk]
 
 /-- **Multi-row non-vacuity.** The exact converse of `chain_range`: for `k < 4 ^ (c(m+1))` the
-    honest prover fills an entire satisfying `m + 1`-row run of uniform width `c`, threaded from
-    the canonical `(a, b, n) = (2, 2, 0)`, whose output register is `k`. The conclusion is
-    `chain_range`'s hypothesis list verbatim, so the two compose on one run and jointly say the
-    accepted set is *exactly* `[0, 4 ^ (c(m+1)))` — the bound is achieved at every value in range
-    and at no other.
-
-    Where `range_complete` fills one witness carrying all the crumbs, this one chunks: row `i`
-    carries the width-`c` expansion of `k / 4 ^ (c · (m − i))`, most significant row first. The
-    rows are `chain_complete`'s honest `chainBuild`, whose crumb stream is the concatenation of
-    those chunks (`chainCrumbs_chainBuild`) and reconstructs to `k` by `nReconstruct_rowsOf`.
-    Completeness needs no field non-degeneracy — no `h2`/`h3` and no `[DecidableEq F]` — exactly as
-    for `range_complete` and `chain_complete`. -/
+    honest prover fills a `Chain` of `m + 1` rows of uniform width `c` whose output register is
+    `k`. The conclusion is `chain_range`'s hypothesis list, so the two compose on one run. The
+    rows are `chainBuild` over the row chunks of `k`, which reconstruct to `k` by
+    `nReconstruct_rowsOf`; no field non-degeneracy is needed. -/
 theorem chain_range_complete (m c k : ℕ) (hk : k < 4 ^ (c * (m + 1))) :
     ∃ w : ℕ → Witness F,
       Chain w m ∧ (∀ i, i ≤ m → (w i).crumbs.length = c) ∧ (w m).n8 = (k : F) := by
@@ -1073,15 +919,10 @@ theorem chain_range_complete (m c k : ℕ) (hk : k < 4 ^ (c * (m + 1))) :
   obtain ⟨-, -, hN⟩ := chain_decompose m _ hchain
   rw [hN, chainCrumbs_chainBuild, nReconstruct_rowsOf, Nat.mod_eq_of_lt hk]
 
-/-- `chain_range_complete` at the shape the circuit emits: eight rows (`m = 7`) of eight crumbs
-    (`c = 8`), where `4 ^ 64 = 2 ^ 128`. Paired with `chain_range_128` this is the deployed
-    statement an auditor should read — an eight-row `EndoScalar` chain accepts a register **iff**
-    it is the cast of a natural below `2¹²⁸`, the left-to-right half under `chain_range_128`'s
-    `h2 : (2 : F) ≠ 0` and `h3 : (3 : F) ≠ 0` and this half under neither. That *iff* is exactly
-    what `RangeCheck.purs`'s `rangeCheck128 endo v = void $ EndoScalar.toField @8 v endo` is asked
-    to mean. Gate origin `kimchi/src/circuits/polynomials/endomul_scalar.rs`; the eight-row width
-    is `Circuit/Kimchi/EndoScalar.purs`'s `Mul 16 rows nBits` at `@8`, and its uniform eight-crumb
-    rows are that module's `nibblesByRow : Vector rows (Vector 8 (FVar f))`. -/
+/-- `chain_range_complete` at the deployed shape, eight rows (`m = 7`) of eight crumbs
+    (`c = 8`): every natural below `2¹²⁸` is the register of a satisfying eight-row run. With
+    `chain_range_128` it says an eight-row chain accepts a register iff it is the cast of a
+    natural below `2¹²⁸`. -/
 theorem chain_range_complete_128 (k : ℕ) (hk : k < 2 ^ 128) :
     ∃ w : ℕ → Witness F,
       Chain w 7 ∧ (∀ i, i ≤ 7 → (w i).crumbs.length = 8) ∧ (w 7).n8 = (k : F) := by
@@ -1092,26 +933,17 @@ theorem chain_range_complete_128 (k : ℕ) (hk : k < 2 ^ 128) :
 
 /-! ### The packaged 128-bit range check
 
-    `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/RangeCheck.purs`'s
-    `rangeCheck128 = void ∘ EndoScalar.toField @8` is the deployed 128-bit range check: an
-    eight-row `EndoScalar` chain run only for its constraint. `Chain128` packages
-    `chain_range_128`'s hypothesis list once; `Chain128.range` and `chain_range_complete_128`
-    are the check's two directions, and `§ The range check at the deployed Pasta fields`
-    closes their field hypotheses at `Fp` and `Fq`. (`RangeCheck.purs` also composes two of
-    these checks into its `lowest128Bits'` split of a squeezed challenge; that composition
-    and what its halves feed are downstream of this file — limit 3 of `§ What the range
-    check does not cover`.) -/
+    `Chain128` packages `chain_range_128`'s hypothesis list once; `Chain128.range` and
+    `chain_range_complete_128` are the check's two directions, and
+    `§ The range check at the deployed Pasta fields` closes their field hypotheses. -/
 
-/-- The eight-row `EndoScalar` chain with output register `v`: `chain_range_128`'s hypothesis
-    list — every row holds, the accumulators thread from the canonical `(a, b, n) = (2, 2, 0)`,
-    each row carries eight crumbs — closed off by `(w 7).n8 = v`. Packaged once so the range
-    check's statements stay readable. `Chain128.range` and `chain_range_complete_128` are its two
-    directions. -/
+/-- The eight-row `EndoScalar` chain with output register `v`: a `Chain` of eight rows of
+    eight crumbs each, whose last register is `v`. -/
 def Chain128 (w : ℕ → Witness F) (v : F) : Prop :=
   Chain w 7 ∧ (∀ i, i ≤ 7 → (w i).crumbs.length = 8) ∧ (w 7).n8 = v
 
-/-- A range-checked register is the cast of a natural below `2¹²⁸` — `chain_range_128` read
-    through `Chain128`. `h2` and `h3` are what let a crumb's base-4 digit be read back. -/
+/-- A range-checked register is the cast of a natural below `2¹²⁸`: `chain_range_128` read
+    through `Chain128`. -/
 theorem Chain128.range {w : ℕ → Witness F} {v : F} (hw : Chain128 w v)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
     ∃ k : ℕ, k < 2 ^ 128 ∧ v = (k : F) := by
@@ -1121,14 +953,10 @@ theorem Chain128.range {w : ℕ → Witness F} {v : F} (hw : Chain128 w v)
 
 variable [DecidableEq F]
 
-/-- **Self-contained circuit soundness.** Two multi-row `EndoScalar` runs of the same crumb
-    width that decode to the same challenge produce the *same* effective scalar `a·λ + b`.
-
-    Combined with `chain_toField`, this is the honest statement that the gate realizes a
-    well-defined function `challenge ↦ a·λ + b`: it depends only on the challenge, not on the
-    prover's witness. The hypotheses are exactly `varBaseMul`'s shape — a chain over `m + 1`
-    rows threaded from `(2, 2, 0)`, plus the no-wrap bound `4 ^ width ≤ p` tying the challenge's
-    bit size to the field size. -/
+/-- **Self-contained circuit soundness.** Two `Chain`s of `m + 1` rows with the same crumb
+    width that decode to the same challenge produce the same effective scalar `a·λ + b`, given
+    the no-wrap bound `hbound : 4 ^ width ≤ p`. With `chain_toField`, the gate realizes a
+    well-defined function `challenge ↦ a·λ + b`, independent of the prover's witness. -/
 theorem endoScalar_unique {p : ℕ} [CharP F p] (lam : F) (m : ℕ) (w w' : ℕ → Witness F)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (h : Chain w m) (h' : Chain w' m)
@@ -1152,13 +980,10 @@ theorem endoScalar_unique {p : ℕ} [CharP F p] (lam : F) (m : ℕ) (w w' : ℕ 
 
 /-! ## The range check at the deployed Pasta fields
 
-    The per-curve entry points — the pattern `Gate/Semantics/EndoMul.lean` and
-    `Gate/Semantics/VarBaseMul.lean` use for their capstones. `Chain128.range` and
-    `chain_range_complete_128` at the two fields the circuit runs over, with the
-    non-degeneracy hypotheses `(2 : F) ≠ 0` / `(3 : F) ≠ 0` discharged rather than
-    assumed, so nothing here carries a field hypothesis at all. `Fp` and `Fq` are
-    `CompElliptic.Fields.Pasta`'s `abbrev`s down to `ZMod PALLAS_BASE_CARD` and
-    `ZMod PALLAS_SCALAR_CARD`, so decidability closes both. -/
+    `Chain128.range` and `chain_range_complete_128` at the two fields the circuit runs over,
+    with `(2 : F) ≠ 0` and `(3 : F) ≠ 0` discharged by `decide`, so nothing here carries a field
+    hypothesis. `Fp` and `Fq` are CompElliptic's Pasta fields, reducible to `ZMod` of a
+    concrete prime. -/
 
 open CompElliptic.Fields.Pasta
 
@@ -1174,14 +999,14 @@ theorem fp_rangeCheck128_complete (k : ℕ) (hk : k < 2 ^ 128) :
     ∃ w : ℕ → Witness Fp, Chain128 w (k : Fp) :=
   chain_range_complete_128 k hk
 
-/-- **The deployed range check is sound at `Fq`**, the Pallas scalar field — the other
-    half of the Pasta cycle. -/
+/-- **The deployed range check is sound at `Fq`**, the Pallas scalar field: a satisfying
+    eight-row chain pins its register to the cast of a natural below `2¹²⁸`. -/
 theorem fq_rangeCheck128_sound {v : Fq} {w : ℕ → Witness Fq} (hw : Chain128 w v) :
     ∃ k : ℕ, k < 2 ^ 128 ∧ v = (k : Fq) :=
   hw.range (by decide) (by decide)
 
-/-- **The deployed range check is complete at `Fq`** — the other half of the Pasta
-    cycle. -/
+/-- **The deployed range check is complete at `Fq`**: every natural below `2¹²⁸` is the
+    register of some satisfying chain. -/
 theorem fq_rangeCheck128_complete (k : ℕ) (hk : k < 2 ^ 128) :
     ∃ w : ℕ → Witness Fq, Chain128 w (k : Fq) :=
   chain_range_complete_128 k hk
@@ -1249,9 +1074,8 @@ private theorem endoExpand_fold (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
         norm_num [cInt, dInt]
 
 /-- The ℤ-shadow of the sponge's endo expansion: the effective scalar of a 128-bit
-    prechallenge before any modulus, `a·λ + b` over its sixty-four base-4 digits. This is
-    the currency the `EndoMul` laws hand back — the point's multiplier is an integer, and
-    at Pasta the field it is read in is not the field its crumbs live in. -/
+    prechallenge before any modulus, `a·λ + b` over its sixty-four base-4 digits. An integer,
+    because at Pasta the field the multiplier is read in is not the field its crumbs live in. -/
 def endoExpandZ (lam : ℤ) (chal : ℕ) : ℤ := toIntZ (digitsOf 64 chal) lam
 
 /-- `endoExpand` at a challenge is `toField` at its canonical crumb list — the two

@@ -3,22 +3,26 @@ import Poseidon.Basic
 
 /-! # Poseidon semantics
 
-    Two layers. **Per row**: the gate computes the 5-round permutation `perm` (soundness), and
-    the honest witness satisfies it (completeness). That spec is internal — `perm` is defined in
-    `Kimchi/Gate/Poseidon.lean` — so on its own it checks the gate against itself.
+    The Poseidon gate proved faithful to the sponge permutation, in two layers.
 
-    **Per eleven-row chain**: the deployed block computes `Poseidon.blockCipher`, the 55-round
-    `mina_poseidon` permutation the duplex sponge runs, at the production `fq_kimchi` /
-    `fp_kimchi` parameters. That spec is *external* and is pinned to recorded production traces
-    by `poseidon/scripts/check_sponge_vectors.sh`, which is what makes it a faithfulness oracle
-    in the sense the elliptic-curve gates get from Mathlib's group law. `55 = 11 × 5` exactly, so
-    the deployed block is eleven rows of five rounds with no ragged tail.
+    Per row, a satisfying row computes the five-round permutation `perm` (`sound`) and the
+    honest witness satisfies the gate (`complete`). `perm` is defined beside the gate, so on its
+    own this layer checks the gate against itself.
 
-    Contents, bottom-up: the ℕ-indexed round iterate `rounds` and its algebra; `mdsOfParams` /
-    `round_eq_fullRound` (the two round functions are the same map) and `blockCipher_eq_rounds`
-    (the sponge's whole-table fold *is* that iterate); the `Chain` predicate with `chain_rounds`
-    / `chain_blockCipher` and the honest `buildChain` companion; and the deployed per-curve
-    entry points `fq_/fp_poseidonChain_blockCipher` with their completeness twins. -/
+    Per eleven-row chain, the deployed block computes `Poseidon.blockCipher`, the 55-round
+    permutation the duplex sponge runs, at the production parameter sets `Poseidon.fqParams`
+    and `Poseidon.fpParams`. That spec is external: `poseidon/scripts/check_sponge_vectors.sh`
+    pins it to recorded production traces, which makes it a faithfulness oracle in the way
+    Mathlib's group law is one for the elliptic-curve gates. The chain's shape is read off
+    `packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/Poseidon.purs`, the PureScript that
+    emits the rows (see `§ The row chain`).
+
+    Contents, bottom-up: the ℕ-indexed round iterate `rounds` and its algebra; `mdsOfParams`
+    and `round_eq_fullRound` (the two round functions are the same map) and
+    `blockCipher_eq_rounds` (the sponge's whole-table fold is that iterate); the `Chain`
+    predicate with `chain_rounds` and `chain_blockCipher`, and the honest `buildChain`
+    companion; and the per-curve entry points `fq_poseidonChain_blockCipher` and
+    `fp_poseidonChain_blockCipher` with their completeness twins. -/
 
 namespace Kimchi.Gate.Poseidon
 
@@ -26,7 +30,8 @@ variable {F : Type*}
 
 /-! ## Soundness: a satisfying row computes the permutation. -/
 
-/-- Each round's three componentwise constraints assemble into `sᵢ₊₁ = round(sᵢ, rcᵢ)`. -/
+/-- Two triples whose componentwise differences vanish are equal; `sound` uses it to assemble
+    each round's three constraints into one state equation. -/
 private theorem step_eq [CommRing F] {a b : F × F × F}
     (h1 : a.1 - b.1 = 0) (h2 : a.2.1 - b.2.1 = 0) (h3 : a.2.2 - b.2.2 = 0) : a = b :=
   Prod.ext (sub_eq_zero.mp h1) (Prod.ext (sub_eq_zero.mp h2) (sub_eq_zero.mp h3))
@@ -56,8 +61,8 @@ def build [CommRing F] (M : Mds F) (s0 : F × F × F) (rc : Fin 5 → F × F × 
   let s4 := round M s3 (rc 3)
   { s0, s1, s2, s3, s4, s5 := round M s4 (rc 4) }
 
-/-- **Completeness of the Poseidon gate.** The honest witness (`build`) satisfies all 15
-    constraints — unconditionally (the permutation is total). -/
+/-- **Completeness of the Poseidon gate.** The honest witness `build` satisfies every
+    constraint, with no precondition on the input state. -/
 theorem complete [CommRing F] (M : Mds F) (s0 : F × F × F) (rc : Fin 5 → F × F × F) :
     Holds M rc (build M s0 rc) := by
   intro e he
@@ -115,28 +120,21 @@ theorem perm_eq_rounds [CommRing F] (M : Mds F) (s : F × F × F) (rc : Fin 5 �
 
 /-! ## The production sponge permutation as the gate's external spec.
 
-    Everything above checks the gate against `perm`, which `Kimchi/Gate/Poseidon.lean` defines
-    three declarations before `sound` uses it: the gate defines the permutation it is proved to
-    compute. This section replaces that with an **external** oracle. `Poseidon.blockCipher`
-    (`poseidon/Poseidon/Basic.lean`) is the 55-round `mina_poseidon` permutation
-    (`permutation.rs` `poseidon_block_cipher`) the duplex sponge runs on every rate crossing,
-    which `Poseidon.FqSponge` drives to produce every Fiat–Shamir challenge the kimchi verifier
-    reads, and which `poseidon/scripts/check_sponge_vectors.sh` validates against recorded
-    production `mina_poseidon` absorb/squeeze traces. Proving the gate chain computes *that*
-    function is a link to production data rather than to another Lean definition.
+    Everything above checks the gate against `perm`, which the gate module itself defines.
+    This section relates the gate to `Poseidon.blockCipher` instead: the external oracle of the
+    module docstring, and the permutation `Poseidon.FqSponge` drives to produce every
+    Fiat–Shamir challenge the kimchi verifier reads.
 
-    The two round functions are literally the same map, packaged differently: the gate carries
-    the MDS matrix as nine named fields and adds the constants first, the sponge carries it as
-    three rows and adds them last. `mdsOfParams` is the repackaging and `round_eq_fullRound` is
-    the identity, which is an `add_comm` away from `rfl`. -/
+    The two round functions are the same map, packaged differently: the gate carries the MDS
+    matrix as nine named fields and writes the constant as the first summand, the sponge carries
+    it as three rows and writes the constant last. `mdsOfParams` is the repackaging and
+    `round_eq_fullRound` is the identity. -/
 
 section Sponge
 
 variable [Field F]
 
-/-- The gate's nine-field MDS matrix, read off a sponge parameter set. The gate takes the
-    matrix as data (`G::sponge_params().mds`, a different table per curve) and the sponge
-    carries the same table as three rows, so this is a repackaging and nothing more. -/
+/-- The gate's nine-field MDS matrix, read off a sponge parameter set's three rows. -/
 def mdsOfParams (p : Poseidon.Params F) : Mds F where
   m00 := p.mds.1.1
   m01 := p.mds.1.2.1
@@ -148,18 +146,17 @@ def mdsOfParams (p : Poseidon.Params F) : Mds F where
   m21 := p.mds.2.2.2.1
   m22 := p.mds.2.2.2.2
 
-/-- **The gate's round function is the sponge's round function.** Same S-box (`x ^ 7` on both
-    sides — Pasta `PERM_SBOX = 7`), same MDS row indexing, constants added after the MDS pass
-    on both sides, no initial ARK on either; the two differ only in argument order and in how
-    the matrix is packaged. Everything downstream is this identity plus bookkeeping. -/
+/-- **The gate's round function is the sponge's round function.** Both apply the S-box
+    `x ^ 7`, multiply by the MDS matrix with the same row indexing and add the round constant
+    afterwards; they differ only in argument order and in how the matrix is packaged. -/
 theorem round_eq_fullRound (p : Poseidon.Params F) (s r : F × F × F) :
     round (mdsOfParams p) s r = Poseidon.fullRound p.mds r s := by
   simp only [round, Poseidon.fullRound, sbox, _root_.Poseidon.sbox, mdsOfParams, Prod.mk.injEq]
   refine ⟨by ring, by ring, by ring⟩
 
 /-- A parameter set's round constants as an ℕ-indexed family, reading `(0, 0, 0)` out of
-    range. Stated with `Array.getD` rather than `a[i]!` deliberately: `getD` takes the default
-    as an argument, so it needs no `Inhabited F` instance on a bare field. -/
+    range. It uses `Array.getD`, which takes the default as an argument, so no `Inhabited F`
+    instance is needed on a bare field. -/
 def paramsRc (p : Poseidon.Params F) (i : ℕ) : F × F × F :=
   p.roundConstants.getD i (0, 0, 0)
 
@@ -189,9 +186,8 @@ private theorem foldl_fullRound_eq_rounds (p : Poseidon.Params F) :
 
 /-- **The sponge permutation is the gate's iterate.** `Poseidon.blockCipher p` is exactly
     `p.roundConstants.size` rounds of the gate's round function at `mdsOfParams p`, reading the
-    constants off `paramsRc p`. This is the bridge the chain theorems below compose with: it
-    turns the sponge's whole-table `Array.foldl` into the ℕ-indexed iterate a row chain
-    produces. -/
+    constants off `paramsRc p`. `chain_blockCipher` composes with it to land a row chain on the
+    sponge. -/
 theorem blockCipher_eq_rounds (p : Poseidon.Params F) (s : F × F × F) :
     Poseidon.blockCipher p s = rounds (mdsOfParams p) (paramsRc p) p.roundConstants.size s := by
   have h : ∀ i (hi : i < p.roundConstants.toList.length),
@@ -208,39 +204,36 @@ end Sponge
 
 /-! ## The row chain.
 
-    The deployed circuit is read off the PureScript that emits it.
-    `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/Poseidon.purs` witnesses 55 round outputs,
-    prepends the caller's input state and returns `state[55]`, so the Poseidon block is 56
-    states and 55 rounds. `packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/Poseidon.purs`
-    splits the first 55 states into eleven chunks of five (`Vector.chunks @5`), emits one
-    `PoseidonGate` row per chunk with coefficients `getRoundConstants (5i) … (5i+4)` in round
-    order, and appends a final `Zero` row carrying `state[55]`. `55 = 11 × 5` exactly, so the
-    chain is eleven rows with no ragged tail.
+    The deployed block is 56 states and 55 rounds: the caller's input state followed by 55
+    witnessed round outputs. The PureScript named in the module docstring splits the first 55
+    states into eleven chunks of five, emits one Poseidon gate row per chunk whose coefficient
+    cells hold round constants `5i … 5i+4` in round order, and appends a final zero row carrying
+    the last state. `55 = 11 × 5` exactly, so the chain is eleven rows with no ragged tail.
 
     `Chain` is that shape as a predicate; `chain_rounds` folds it into the ℕ-indexed iterate and
     `chain_blockCipher` lands it on the sponge permutation. `buildChain` is the honest prover's
-    table and `buildChain_chain` says it satisfies the predicate — without that pair the chain
-    theorems would be statements about a set nobody has shown to be non-empty. -/
+    table and `buildChain_chain` says it satisfies the predicate, so the chain theorems do not
+    quantify over an empty set. -/
 
 /-- An `n`-row Poseidon chain: each row satisfies the gate at its own block of five round
     constants, and consecutive rows are linked through the state. -/
 structure Chain [CommRing F] (M : Mds F) (rc : ℕ → F × F × F) (w : ℕ → Witness F) (n : ℕ) :
     Prop where
-  /-- Row `i` satisfies the gate at the round constants of its own block — `rc (5i + j)` for
-      `j < 5`, which is what `Constraint/Kimchi/Poseidon.purs` writes into row `i`'s
-      coefficient cells. -/
+  /-- Row `i` satisfies the gate at the round constants of its own block, `rc (5i + j)` for
+      `j < 5`. -/
   holds : ∀ i < n, Holds M (fun j : Fin 5 => rc (5 * i + (j : ℕ))) (w i)
   /-- Row `i`'s output state is row `i + 1`'s input state. This is kimchi's two-row Poseidon
       convention: the output register `s5` is read off the *next* row. -/
   link : ∀ i, i + 1 < n → (w i).s5 = (w (i + 1)).s0
 
-/-- A prefix of a chain is a chain. Used to feed the induction in `chain_rounds`. -/
+/-- A prefix of a chain is a chain; the induction behind `chain_rounds` steps through the
+    prefixes with it. -/
 theorem Chain.mono [CommRing F] {M : Mds F} {rc : ℕ → F × F × F} {w : ℕ → Witness F} {m n : ℕ}
     (h : Chain M rc w n) (hmn : m ≤ n) : Chain M rc w m :=
   ⟨fun i hi => h.holds i (lt_of_lt_of_le hi hmn),
    fun i hi => h.link i (lt_of_lt_of_le hi hmn)⟩
 
-/-- `chain_rounds` in the shape the induction runs in. -/
+/-- `chain_rounds` at `n = m + 1`, the shape the induction runs in. -/
 private theorem chain_rounds_succ [CommRing F] (M : Mds F) (rc : ℕ → F × F × F)
     (w : ℕ → Witness F) (m : ℕ) (h : Chain M rc w (m + 1)) :
     (w m).s5 = rounds M rc (5 * (m + 1)) (w 0).s0 := by
@@ -267,15 +260,11 @@ theorem chain_rounds [CommRing F] (M : Mds F) (rc : ℕ → F × F × F) (w : �
   obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
   simpa using chain_rounds_succ M rc w m h
 
-/-- **A satisfying chain computes the production sponge permutation.** The payoff of the
-    section: when the chain's MDS matrix and round constants are the ones a `Poseidon.Params`
-    set carries, and the table has exactly `5n` entries, the chain's last output register is
-    `Poseidon.blockCipher` of its first input state — the permutation `mina_poseidon` runs, not
-    a permutation this file defines.
-
-    The parameters enter as **data**: `M` is `mdsOfParams p` and the constants agree with
-    `paramsRc p` below `5n`. That a real index carries those same values is an ingestion-layer
-    fact, not proved here; the `Chain` hypothesis is what a satisfying witness table supplies. -/
+/-- **A satisfying chain computes the sponge permutation.** When the chain's MDS matrix is
+    `mdsOfParams p`, its round constants agree with `paramsRc p` below `5n` and the table has
+    exactly `5n` entries, the last row's output register is `Poseidon.blockCipher p` of the
+    first row's input state. The parameters enter as hypotheses: that a real index carries
+    these values is not proved here. -/
 theorem chain_blockCipher [Field F] (p : Poseidon.Params F) (rc : ℕ → F × F × F)
     (w : ℕ → Witness F) (n : ℕ) (h : Chain (mdsOfParams p) rc w n) (hn : 0 < n)
     (hsize : p.roundConstants.size = 5 * n) (hrc : ∀ i < 5 * n, rc i = paramsRc p i) :
@@ -318,53 +307,46 @@ theorem buildChain_blockCipher [Field F] (p : Poseidon.Params F) (rc : ℕ → F
 
 /-! ## The deployed per-curve entry points.
 
-    The eleven-row chain at the two parameter sets kimchi actually runs: `fq_kimchi` over the
-    Vesta base field (the sponge of proofs over Vesta) and `fp_kimchi` over the Pallas base
-    field. `Fq`/`Fp` are `CompElliptic.Fields.Pasta` `abbrev`s down to `ZMod`, so the `Field`
-    instance is found by instance search and no characteristic is threaded by hand.
+    The eleven-row chain at the two parameter sets kimchi runs: `Poseidon.fqParams` over the
+    Vesta base field and `Poseidon.fpParams` over the Pallas base field. `Fq` and `Fp` are
+    `abbrev`s down to `ZMod`, so the `Field` instance comes from instance search.
 
-    **What is gained.** The gate is no longer checked against a permutation it defines itself.
-    Eleven satisfying rows compute `Poseidon.blockCipher` at the production `fq_kimchi` /
-    `fp_kimchi` tables — the same function the duplex sponge runs on every rate crossing, the
-    same function `Poseidon.FqSponge` drives to produce every Fiat–Shamir challenge, and the
-    same function `poseidon/scripts/check_sponge_vectors.sh` validates against recorded
-    `mina_poseidon` traces. That driver is what makes this a link to production rather than to
-    another Lean definition.
+    What is gained: eleven satisfying rows compute `Poseidon.blockCipher` at the production
+    tables, the permutation the trace check of the module docstring pins to recorded data,
+    rather than a permutation the gate module defines.
 
-    **What is assumed.** The MDS matrix and the round constants enter as **data**: the theorems
-    are stated at `mdsOfParams fqParams` and at constants agreeing with `paramsRc fqParams`.
-    That the index a real proof carries holds those same values is an ingestion-layer fact this
-    file does not prove. The `Chain` hypothesis is what a satisfying witness table supplies —
-    eleven rows holding, linked through the state.
+    What is assumed: the MDS matrix and the round constants enter as data, `mdsOfParams` of the
+    parameter set and constants agreeing with its `paramsRc`. That the index a real proof
+    carries holds those values is not proved here. The `Chain` hypothesis is what a satisfying
+    witness table supplies: eleven rows holding, linked through the state.
 
-    **What is not claimed.** Nothing about the sponge's absorb/squeeze automaton, the
-    rate/capacity discipline, or the challenge derivation — only the permutation. And nothing
-    about security: this is a faithfulness result, not a hardness one. -/
+    What is not claimed: anything about the sponge's absorb/squeeze automaton, its
+    rate/capacity discipline or the challenge derivation, only the permutation; and nothing
+    about security, since this is a faithfulness result, not a hardness one. -/
 
 section Deployed
 
 open CompElliptic.Fields.Pasta
 
-/-- The `fq_kimchi` round-constant table has `5 × 11` entries, so eleven five-round rows cover
-    the permutation exactly with no ragged tail. `Array.size_map` carries the count off the
-    generated `FqKimchi.roundConstants`, so only the array *spine* is reduced and no 254-bit
-    numeral is ever evaluated. -/
+/-- The round-constant table of `Poseidon.fqParams` has `5 × 11` entries, so eleven five-round
+    rows cover the permutation exactly. The count is carried off the generated table by
+    `Array.size_map`, so no 254-bit constant is evaluated. -/
 theorem fqParams_size : Poseidon.fqParams.roundConstants.size = 5 * 11 := by
   show (Poseidon.FqKimchi.roundConstants.map _).size = 5 * 11
   rw [Array.size_map]
   rfl
 
-/-- The `fp_kimchi` round-constant table has `5 × 11` entries — the Pallas-side twin of
-    `fqParams_size`. -/
+/-- The round-constant table of `Poseidon.fpParams` has `5 × 11` entries; the Pallas-side
+    twin of `fqParams_size`. -/
 theorem fpParams_size : Poseidon.fpParams.roundConstants.size = 5 * 11 := by
   show (Poseidon.FpKimchi.roundConstants.map _).size = 5 * 11
   rw [Array.size_map]
   rfl
 
 /-- **The deployed Vesta-side Poseidon chain computes the production sponge permutation.**
-    Eleven satisfying gate rows at the `fq_kimchi` MDS matrix and round constants carry the
-    first row's input state to `Poseidon.blockCipher fqParams` of it. See the section preamble
-    for what this does and does not establish. -/
+    Eleven satisfying gate rows at the MDS matrix and round constants of `Poseidon.fqParams`
+    carry the first row's input state to its `Poseidon.blockCipher`. The section note says
+    what this does and does not establish. -/
 theorem fq_poseidonChain_blockCipher (rc : ℕ → Fq × Fq × Fq) (w : ℕ → Witness Fq)
     (hrc : ∀ i < 5 * 11, rc i = paramsRc Poseidon.fqParams i)
     (h : Chain (mdsOfParams Poseidon.fqParams) rc w 11) :
@@ -372,17 +354,17 @@ theorem fq_poseidonChain_blockCipher (rc : ℕ → Fq × Fq × Fq) (w : ℕ → 
   chain_blockCipher Poseidon.fqParams rc w 11 h (by omega) fqParams_size hrc
 
 /-- **The deployed Pallas-side Poseidon chain computes the production sponge permutation** —
-    the twin of `fq_poseidonChain_blockCipher` at `fp_kimchi`. -/
+    the twin of `fq_poseidonChain_blockCipher` at `Poseidon.fpParams`. -/
 theorem fp_poseidonChain_blockCipher (rc : ℕ → Fp × Fp × Fp) (w : ℕ → Witness Fp)
     (hrc : ∀ i < 5 * 11, rc i = paramsRc Poseidon.fpParams i)
     (h : Chain (mdsOfParams Poseidon.fpParams) rc w 11) :
     (w 10).s5 = Poseidon.blockCipher Poseidon.fpParams (w 0).s0 :=
   chain_blockCipher Poseidon.fpParams rc w 11 h (by omega) fpParams_size hrc
 
-/-- **Completeness at `fq_kimchi`.** For every input state an eleven-row satisfying chain
-    exists, its first row carries that state, and its last output register is
-    `Poseidon.blockCipher fqParams` of it. Without this `fq_poseidonChain_blockCipher` would be
-    a statement about a set nobody has shown to be non-empty. -/
+/-- **Completeness at `Poseidon.fqParams`.** For every input state an eleven-row satisfying
+    chain exists, its first row carries that state, and its last output register is the
+    state's `Poseidon.blockCipher`; so the hypotheses of `fq_poseidonChain_blockCipher` are
+    satisfiable. -/
 theorem fq_poseidonChain_complete (s0 : Fq × Fq × Fq) :
     ∃ w : ℕ → Witness Fq,
       Chain (mdsOfParams Poseidon.fqParams) (paramsRc Poseidon.fqParams) w 11
@@ -392,7 +374,7 @@ theorem fq_poseidonChain_complete (s0 : Fq × Fq × Fq) :
     buildChain_chain _ _ _ _, buildChain_s0 _ _ _,
     buildChain_blockCipher Poseidon.fqParams _ s0 11 (by omega) fqParams_size fun _ _ => rfl⟩
 
-/-- **Completeness at `fp_kimchi`** — the twin of `fq_poseidonChain_complete`. -/
+/-- **Completeness at `Poseidon.fpParams`**: the twin of `fq_poseidonChain_complete`. -/
 theorem fp_poseidonChain_complete (s0 : Fp × Fp × Fp) :
     ∃ w : ℕ → Witness Fp,
       Chain (mdsOfParams Poseidon.fpParams) (paramsRc Poseidon.fpParams) w 11

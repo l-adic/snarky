@@ -42,6 +42,11 @@ for line in sys.stdin:
 bad=0
 for f in "$@"; do
   rel="${f#formal/}"
+  # an unreadable file strips to nothing on both sides and would pass: refuse it
+  if [ ! -f "$rel" ]; then echo "✗ $rel: no such file"; bad=1; continue; fi
+  if ! git cat-file -e "$base:./$rel" 2>/dev/null; then
+    echo "✗ $rel: not in $base (a new file is not a prose-only change)"; bad=1; continue
+  fi
   a=$(git show "$base:./$rel" 2>/dev/null | strip)
   b=$(strip < "$rel")
   if [ "$a" != "$b" ]; then

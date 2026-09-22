@@ -5,38 +5,40 @@ import Pickles.Statement
 import Pickles.Encoding
 
 /-!
-# `verify` (the step side)
+# `verifyProof` (the step side)
 
-The port of OCaml `Step_verifier.verify` (`step_verifier.ml:1340–1413`), the `verify` call of
-PS `Pickles.Step.VerifyOne.verifyOne`.
+The group-half check of one wrap proof, as the step circuit runs it, transcribed from the OCaml
+step verifier (`step_verifier.ml`).
 
-`verify` is the group half with its public input fixed: the wrap statement is packed into the
-`x_hat` leaves (`Spec.pack`, PS `packStatement`), `incrementally_verify_proof` runs with the
-claims of the unfinalized proof (`xi`, `combined_inner_product`, `b`, `plonk`), and its two
-outputs other than the success bit are asserted against that proof: the digest equals the
-claimed `sponge_digest_before_evaluations`, and each returned round prechallenge equals the
-claimed one — except in the base case, where the claim is compared with itself.
+`verifyProof` is the group half with its public input fixed: the wrap statement is packed into
+public-input leaves (`WrapStatement.packed`, `packLeaves`), `incrementallyVerifyProof` runs
+with the claims of the unfinalized proof (`ξ`, the combined inner product, `b`, the plonk
+claims), and its two outputs other than the success bit are asserted against that proof: the
+digest equals the claimed `spongeDigestBeforeEvaluations`, and each returned round
+prechallenge equals the claimed one — except in the base case, where the claim is compared
+with itself.
 
 The two circuits that touch one proof, the group half here and the scalar half
-(`finalize_other_proof`) one circuit later over the other field, compose to the wire
-verifier in `Pickles.TwoHalves`; `Step_main.verify_one`, which runs them on two different
-proofs in one circuit, is not ported.
+(`finalizeOtherProofStep`) one circuit later over the other field, compose to the wire
+verifier in `Pickles.TwoHalves`. The upstream step circuit runs the two halves on two
+different proofs in one circuit; that composition is not ported.
 
 ## Main definitions
 
-* `WrapStatement.packed`, `packLeaves`: the wrap statement as the `x_hat` leaf list;
-* `verifyProof`: `Step_verifier.verify`.
+* `WrapStatement.packed`, `packLeaves`: the wrap statement as the public-input leaf list;
+* `StepStatement.packed`: the step statement as packed scalars;
+* `IvpInput.withClaims`, `ivpInputOf`: the group half's input from a proof's claims;
+* `verifyProof`: the gadget.
 
 ## Main results
 
-* `VerifyReads` / `verifyProof_reads`: on any group side and `x_hat` side, `verify` reads as
-  the group half's `IvpReads` at the public input `pubOf (packLeaves statement)`, the wire's
-  public input being the packed statement, with the claimed digest equal to the wire's digest
-  element and, off the base case, the claimed round prechallenges equal to the returned ones
-  pair by pair (hence, through `IvpReads`, the wire's). The `x_hat`
-  chunks read through `xHatKnown_reads_publicCommitment` at the tables' binding
-  (`XhatTable.Bound`), the group half through `incrementallyVerifyProof_reads` at `IvpHyps`,
-  and the assertion loop by its invariant. `verifyProof_step_reads` is the step side.
+* `VerifyReads` / `verifyProof_reads`: on any group side and curve shape, `verifyProof` reads
+  as the group half's `IvpReads` at the public input `pubOf (packLeaves statement)`, with the
+  claimed digest equal to the wire's digest element and, off the base case, the claimed round
+  prechallenges equal to the returned ones pair by pair. The public-input chunks read through
+  `xHatKnown_reads_publicCommitment` at the tables' binding (`XhatTable.Bound`), the group half
+  through `incrementallyVerifyProof_reads` at `IvpHyps`, and the assertion loop by its
+  invariant. `verifyProof_step_reads` is the step side.
 -/
 
 namespace Pickles
@@ -51,19 +53,19 @@ section Pack
 
 variable {F : Type} [Field F] [DecidableEq F] {nc k : ℕ}
 
-/-- `Branch_data.pack`: `4·domain_log2 + m₀ + 2·m₁`, a 10-bit value (PS `packStatement`). A
-missing mask bit reads as `0`. -/
+/-- The branch data as one 10-bit value `4·domainLog2 + m₀ + 2·m₁`, over the mask bits `m₀`,
+`m₁`. A missing mask bit reads as `0`. -/
 def BranchData.packed (bd : BranchData (FVar F) (BoolVar F)) : FVar F :=
   let bit (i : ℕ) : CVar F := match bd.proofsVerifiedMask.toList[i]? with
     | some b => (↑b : CVar F)
     | none => .const 0
   CVar.add_ (CVar.scale_ 4 bd.domainLog2) (CVar.add_ (bit 0) (CVar.scale_ 2 (bit 1)))
 
-/-- `Spec.pack (Wrap.Statement.In_circuit.to_data statement)` (PS `packStatement`), in walk
-order: the five shifted scalars `cip, b, ζ^{2^k}, ζⁿ, perm` (full), `β, γ` (128), `α, ζ, ξ`
-(128), the three digests `sponge_digest, msg_wrap, msg_step` (full), the round challenges
-(128), the packed branch data (10). The shifted scalars are the step proof's `Fp` values in
-their `Type1` representative, a full field element each. -/
+/-- The wrap statement as packed scalars, in packing order: the five shifted scalars
+`cip, b, ζ^{2^k}, ζⁿ, perm` (full), `β, γ, α, ζ, ξ` (128), the sponge digest and the two
+message digests (full), the round challenges (128), the packed branch data (10). The shifted
+scalars are the step proof's `Fp` values in their `Type1` representative, a full field element
+each. -/
 def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
     List (PackedScalar F) :=
   let dv := st.proofState.deferredValues
@@ -86,15 +88,15 @@ theorem WrapStatement.packed_isScalar
     true_and]
   rintro a (⟨c, -, rfl⟩ | rfl) <;> trivial
 
-/-- The `x_hat` leaves of a wrap statement: `packLeavesOf` its packing. -/
+/-- The public-input leaves of a wrap statement: `packLeavesOf` its packing. -/
 def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (tab : XhatTable F nc) : List (Leaf F nc) :=
   packLeavesOf st.packed tab
 
-/-- `Spec.pack` of a step statement (PS `PackedStepPublicInput`), in walk order: per slot, the
-five split claims `cip, b, ζ^{2^k}, ζⁿ, perm` as a full half and a boolean parity, the digest
-full, `β, γ, α, ζ, ξ` and the `k` round challenges 128-bit, `should_finalize` boolean; then
-`messages_for_next_step_proof` and the slots' `messages_for_next_wrap_proof` digests, full. -/
+/-- The step statement as packed scalars, in packing order: per slot, the five split claims
+`cip, b, ζ^{2^k}, ζⁿ, perm` as a full half and a boolean parity, the digest full, `β, γ, α, ζ, ξ`
+and the `k` round challenges 128-bit, `shouldFinalize` boolean; then the
+`messagesForNextStepProof` digest and the slots' `messagesForNextWrapProof` digests, full. -/
 def StepStatement.packed {n : ℕ}
     (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
     List (PackedScalar F) :=
@@ -115,9 +117,9 @@ def StepStatement.packed {n : ℕ}
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full
 
-/-- The group half's input with its claims taken from an unfinalized proof
-(`step_verifier.ml:1366–1385`): `xi`, `combined_inner_product`, `b` and the plonk claims
-of `unfinalized.deferred_values`; the key, proof and `sg_old` cells as given. -/
+/-- The group half's input with its claims taken from an unfinalized proof: `xi`,
+`combinedInnerProduct`, `b` and the plonk claims of its deferred values; the key, proof and
+`sgOld` cells as given. -/
 def IvpInput.withClaims {sf : Type} (inp : IvpInput k nc (FVar F) (BoolVar F) sf)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) :
     IvpInput k nc (FVar F) (BoolVar F) sf :=
@@ -149,7 +151,8 @@ structure IvpProof (k nc : ℕ) (f sf : Type) where
   /-- The opening, at `k` rounds. -/
   opening : BulletproofOpening k f sf
 
-/-- A proof is its witness commitments, `z_comm`, its quotient chunks and its opening. -/
+/-- A proof is its witness commitments, `zComm`, its quotient chunks and its opening; the
+circuit type `instIvpProofCircuitType` is carried along this. -/
 def IvpProof.equivProd (k nc : ℕ) (f sf : Type) :
     IvpProof k nc f sf ≃
       Vector (Vector (AffinePoint f) nc) wCols × Vector (AffinePoint f) nc ×
@@ -161,8 +164,8 @@ instance instIvpProofCircuitType {F sv sf : Type} {k nc : ℕ} [CircuitType F sv
     CircuitType F (IvpProof k nc F sv) (IvpProof k nc (FVar F) sf) :=
   CircuitType.ofEquiv (IvpProof.equivProd k nc F sv) (IvpProof.equivProd k nc (FVar F) sf)
 
-/-- The group half's input from a proof's deferred values (its claims), the `sg_old` points
-under their keep bits, a key's commitments and the proof. -/
+/-- The group half's input from a proof's deferred values (its claims), the old accumulator
+points under their keep bits (`sgOld`), a key's commitments and the proof. -/
 def ivpInputOf {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
     (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
     (key : VkComms nc (AffinePoint (FVar F))) (pr : IvpProof k nc (FVar F) sf) :
@@ -208,11 +211,12 @@ section Gadget
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
   {ks k nc : ℕ}
 
-/-- `Step_verifier.verify` (`step_verifier.ml:1340`): `x_hat` from the packed statement
+/-- One proof's group-half check: the public-input commitment from the packed statement
 (`publicInputCommitKnown`, chunk by chunk, with the constant correction seed and sum), the
-group half at the unfinalized proof's claims, then the two assertions: the digest equals the
-claimed `sponge_digest_before_evaluations`; each returned round prechallenge equals the
-claimed one, the claim compared with itself in the base case. Returns the success bit. -/
+group half at the unfinalized proof's claims (`IvpInput.withClaims`), then the two assertions:
+the digest equals the claimed `spongeDigestBeforeEvaluations`; each returned round
+prechallenge equals the claimed one, the claim compared with itself in the base case. Returns
+the success bit. -/
 def verifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F) (p : Poseidon.Params F)
     (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) {nc : ℕ} (tab : XhatTable F nc)
@@ -249,12 +253,12 @@ def DeferredValues.toIvpClaims {F sf : Type} {k : ℕ} (dv : DeferredValues k (F
     dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩,
    dv.xi, ⟨dv.combinedInnerProduct, dv.b⟩⟩
 
-/-- `verify`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
+/-- `verifyProof`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
 input `pub`, whose success bit is the returned bit, whose digest cell reads as the claimed
-`sponge_digest_before_evaluations` (so the claim is the wire's digest element), and whose
-round prechallenges read as the claimed ones off the base case, pair by pair over the zip
-(the gadget compares the two lists as far as both reach; their lengths are the statement's
-and the opening's, not the gadget's), so the claims are the wire's `ipaRunAt` prechallenges. -/
+`spongeDigestBeforeEvaluations` (so the claim is the wire's digest element), and whose round
+prechallenges read as the claimed ones off the base case, pair by pair over the zip. The gadget
+compares the two lists as far as both reach; their lengths are the statement's and the
+opening's, not the gadget's. -/
 def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (base : Bool)
@@ -266,11 +270,11 @@ def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
     (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges,
       p.1.val.val V = p.2.val.val V)
 
-/-- **`verify` reads as the group half at the packed statement, on either side.** On the group
-side `S` and the `x_hat` side `X`: the wire's public input is `pubOf (packLeaves statement)`,
-the statement's scalars reduced to the scalar field; the `x_hat` tables are bound to the key
-at those leaves (`XhatTable.Bound`); the group half's premises hold at the claims-substituted
-cells (`IvpHyps`). -/
+/-- **`verifyProof` reads as the group half at the packed statement, on either side.** On the
+group side `S` and the curve shape `X`: the wire's public input is
+`pubOf (packLeaves statement)`, the statement's scalars reduced to the scalar field; the
+public-input commitment tables are bound to the key at those leaves (`XhatTable.Bound`); the
+group half's premises hold at the claims-substituted cells (`IvpHyps`). -/
 theorem verifyProof_reads
     {nc : ℕ}
     (S : IvpSide C V ops)
@@ -283,7 +287,7 @@ theorem verifyProof_reads
     (endo : FVar C.BaseField)
     (sqrtF : C.BaseField → Option C.BaseField)
     (blindingH : AffinePoint (FVar C.BaseField))
-    -- the `x_hat` tables
+    -- the public-input commitment tables
     (tab : XhatTable C.BaseField nc)
     -- the cells: the sponge after the index digest, the base-case bit, the wrap statement,
     -- the unfinalized proof it is checked against, the group half's commitment cells
@@ -293,8 +297,8 @@ theorem verifyProof_reads
       (Type1 (FVar C.BaseField)))
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (cells : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    -- the values the premises speak about: the base-case bit, the `sg_old` points under their
-    -- bits
+    -- the values the premises speak about: the base-case bit, the old accumulator points under
+    -- their bits
     (base : Bool)
     (oldsW : List (C.Point × Bool))
     -- the base-case bit's reading, the tables bound to the key at the packed statement's
@@ -314,7 +318,7 @@ theorem verifyProof_reads
     obtain ⟨b, bs, hb⟩ := List.exists_cons_of_ne_nil hbases
     obtain ⟨c', cs, hc⟩ := List.exists_cons_of_ne_nil hcorrs
     simp [packLeaves, packLeavesOf, WrapStatement.packed, leafHeadScalar, hb, hc]
-  -- `x_hat`, chunk by chunk, reads as the wire's public commitment, crossed to `C.E`
+  -- the public-input commitment, chunk by chunk, reads as the wire's, crossed to `C.E`
   have hXhat : ⦃⌜True⌝⦄
       (List.finRange nc).mapM (fun ci => publicInputCommitKnown
         (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH tab.corrHead[ci]
@@ -360,7 +364,7 @@ end Read
 
 section StepRead
 
-/-- **`verify` reads as the group half on the step side**: `verifyProof_reads` at `stepSide`
+/-- **`verifyProof` reads as the group half on the step side**: `verifyProof_reads` at `stepSide`
 and `pastaShapePallas`. -/
 theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)

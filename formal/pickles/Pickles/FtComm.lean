@@ -2,29 +2,25 @@ import Pickles.CheckBulletproof
 import Kimchi.Verifier.Reflect
 
 /-!
-# The `ft_comm` commitment (`Common.ft_comm`)
+# The linearization commitment of the group half
 
-The port of PS `Pickles.FtComm.ftComm` (OCaml `Common.ft_comm`, `common.ml:307–326`), called by
-both verifiers (`step_verifier.ml:724` at `scale_fast2`, `wrap_verifier.ml:1428` at
-`scale_fast`): the linearization commitment the group half constructs from the verification
-key's last permutation commitment `σ₆`, the proof's quotient chunks `t_comm`, and the shifted
-deferred claims `perm`, `ζ^{2^k}` (`zeta_to_srs_length`) and `ζⁿ` (`zeta_to_domain_size`):
+A transcription of the linearization-commitment step of `common.ml`, which both in-circuit
+verifiers call, each at its own scaling ladder. From the verification key's last permutation
+commitment `σ₆`, the proof's quotient chunks `t`, and three shifted deferred claims (the
+permutation scalar `perm`, `ζ^{2^k}` and `ζⁿ`) the gadget `ftComm` constructs
 
-  `ft_comm = scale (reduce σ₆) perm + reduce t_comm + negate (scale (reduce t_comm) ζⁿ)`
+  `scale (reduce σ₆) perm + reduce t + negate (scale (reduce t) ζⁿ)`
 
-where `reduce` is the `ζ^{2^k}`-Horner collapse of a chunk array (`reduce_chunks`). The
-emission order follows OCaml's right-to-left argument evaluation: reduce `σ₆`, scale by `perm`,
-reduce `t_comm`, scale by `ζⁿ` and negate, then `f_comm + reduced_t`, then `+ negated`.
+where `reduce` is the `ζ^{2^k}`-Horner collapse of a chunk list (`hornerReduce`). The emission
+order is the original's right-to-left argument evaluation: the `ζⁿ` scale comes before either
+addition, and each collapse scales its last chunk first.
 
-The gadget is generic in the side's shifted-scalar operations (`IpaScalarOps`); so is its read,
-in the side interface `IvpSide` of `Pickles.CheckBulletproof` — the ladder reading
-(`IpaScalarOps.Reading`), the scalar-field decode of a shifted claim with the law tying a
-ladder witness's integer decode to it, and the curve's group facts are what `ft_comm` uses of
-it. `FtCommReads` is the leg's read: the constructed cell crosses to the wire's `runFtComm`
-(`combine(ζ^{2^k}, perm·σ₆) − (ζⁿ − 1)·combine(ζ^{2^k}, t_comm)`), given the claims decode to
-the wire's scalars, each a claim the ladder read speaks about (`IvpSide.ClaimOk`: well-formed,
-and its witnesses in the ladder regime — the forbidden-band premise of the `scale_fast` family),
-and the commitment cells read as the key's / proof's commitments.
+The gadget is generic in the side's shifted-scalar operations (`IpaScalarOps`). Its read uses
+the side interface `IvpSide`: the ladder reading (`IpaScalarOps.Reading`), the scalar-field
+decode of a shifted claim with the law tying a witness's integer decode to it, and the curve's
+group facts. `FtCommReads` states the read and `ftComm_reads` proves it: the constructed cell
+crosses to the wire's `runFtComm`, given the claims decode to the wire's scalars and satisfy
+`IvpSide.ClaimOk`, and the commitment cells read as the key's and the proof's commitments.
 -/
 
 namespace Pickles
@@ -39,10 +35,8 @@ section Gadget
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
 
-/-- `reduce_chunks` (`common.ml:311–318`): the `z`-Horner collapse of the chunks `c₀, …, cₙ₋₁`
-— `res := cₙ₋₁; for i = n−2 downto 0: res := cᵢ + scale res z`. Recursively
-`c₀ + scale (reduce [c₁, …]) z`, whose evaluation emits the innermost (last-chunk) scale first,
-as the OCaml loop does. The empty list is the unused origin. -/
+/-- The `z`-Horner collapse of the chunks `c₀, …, cₙ₋₁`: `c₀ + scale (hornerReduce [c₁, …]) z`,
+so the innermost (last-chunk) scale is emitted first. The empty list gives the unused origin. -/
 def hornerReduce {sf : Type} (ops : IpaScalarOps F c sf) (z : sf) :
     List (AffinePoint (FVar F)) → CircuitM F c (AffinePoint (FVar F))
   | [] => pure ⟨.const 0, .const 0⟩
@@ -52,10 +46,9 @@ def hornerReduce {sf : Type} (ops : IpaScalarOps F c sf) (z : sf) :
       let s ← ops.scaleByShifted r z
       (·.p) <$> addFast .checkFinite chunk s
 
-/-- `Common.ft_comm`: reduce `σ₆` and scale by `perm`; reduce `t_comm`; scale that by `ζⁿ` and
-negate (the outer `+`'s right argument, evaluated first); then `f_comm + reduced_t`, then
-`+ negated`. The negation is the pure `y ↦ −y` (OCaml `Inner_curve.negate`, PS
-`Curves.negate`). -/
+/-- The linearization commitment: collapse `sigmaLast` and scale by `perm`; collapse `tComm` and
+scale that by `zetaToDomainSize`; add the first two, then add the negated third. The `ζⁿ` scale
+is emitted before either addition. The negation is the pure `y ↦ −y` (`CVar.negate_`). -/
 def ftComm {sf : Type} (ops : IpaScalarOps F c sf)
     (sigmaLast tComm : List (AffinePoint (FVar F)))
     (perm zetaToSrsLength zetaToDomainSize : sf) : CircuitM F c (AffinePoint (FVar F)) := do
@@ -75,15 +68,16 @@ section Side
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
-/-- A commitment cell list reads as a wire commitment list, pointwise through `equivPoint`. -/
+/-- A commitment cell list reads as a wire commitment list, pointwise through
+`SWPoint.equivPoint`. -/
 def CommReads (C : KimchiCurve) (V : Valuation C.BaseField)
     (cells : List (AffinePoint (FVar C.BaseField))) (Ps : List C.Point) : Prop :=
   List.Forall₂ (fun cell P => OnCurveAt C.E.toAffine V cell (SWPoint.equivPoint C.E P)) cells Ps
 
-/-- The `ft_comm` read: given the claims decode to the wire's permutation scalar and `ζ` powers
-(each a claim the ladder read speaks about), and the `σ₆` chunk cells and `t_comm` cells read as
-the verification key's and the proof's commitments, the constructed cell crosses to `runFtComm`
-(`combine(ζ^{2^k}, perm·σ₆) − (ζⁿ − 1)·combine(ζ^{2^k}, t_comm)`). -/
+/-- The read of `ftComm`: given the three claims decode to the wire's permutation scalar and `ζ`
+powers and satisfy `IvpSide.ClaimOk`, and `sigma6Cells` and `tCommCells` read as the key's `σ₆`
+and the proof's quotient commitments, `ftCommCell` crosses to `runFtComm`, which is
+`combine(ζ^{2^k}, perm·σ₆) − (ζⁿ − 1)·combine(ζ^{2^k}, t)`. -/
 def FtCommReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (ftCommCell : AffinePoint (FVar C.BaseField)) (permCell zetaMCell zetaNCell : sf)
@@ -127,7 +121,7 @@ private theorem hornerVal_map_smul (C : KimchiCurve) (ξ s : C.ScalarField)
       congr 1
       exact smul_comm _ _ _
 
-/-- `equivPoint` carries the wire's Horner fold to `hornerVal` over the mapped points. -/
+/-- `SWPoint.equivPoint` carries the wire's Horner fold to `hornerVal` over the mapped points. -/
 private theorem equivPoint_hornerVal (C : KimchiCurve) (ξ : C.ScalarField)
     (cs : List C.Point) :
     (SWPoint.equivPoint C.E) (cs.foldr (fun P acc => P + ξ.val • acc) 0)
@@ -200,12 +194,11 @@ private theorem OnCurveAt.congr_pt {F : Type} [Field F] [DecidableEq F]
     (h : OnCurveAt W V c P) (e : P = Q) : OnCurveAt W V c Q :=
   e ▸ h
 
-/-- **The `ft_comm` gadget reads as the wire's `runFtComm`.** On either side, on the `σ₆` chunk
-cells and the `t_comm` cells, the gadget's output satisfies `FtCommReads`. Needs a chunk on each
-side (the empty collapse is the unused origin). Each `scale` reads through the side's
-`IpaScalarOps.Reading`, each collapse through `hornerReduce_reads`; the wire's `runFtComm` is
-then the same expression, `combineCommitments` being Horner (`combineCommitments_eq_foldr`) and
-`equivPoint` carrying it across. -/
+/-- **`ftComm` reads as the wire's `runFtComm`.** On either side, the output satisfies
+`FtCommReads`, given a chunk in each list (the empty collapse is the unused origin). Each scale
+reads through `IpaScalarOps.Reading`, each collapse through `hornerReduce_reads`; the wire side
+is the same expression, since `combineCommitments` is Horner (`combineCommitments_eq_foldr`) and
+`SWPoint.equivPoint` carries it across. -/
 theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (permCell zetaMCell zetaNCell : sf)
     (sigma6Cells : Vector (AffinePoint (FVar C.BaseField)) nc)
@@ -244,7 +237,7 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   obtain ⟨wP, hpreP, hptP⟩ := hscP' hokP.1 _ hRσ
   have hF := hptP (hokP.2 wP hpreP)
   rw [S.scale_val hpreP hperm] at hF
-  -- the t_comm leg: collapse, scale by `ζⁿ`, negate
+  -- the quotient leg: collapse, scale by `ζⁿ`, negate
   have hRt := hht' _ hzM hokM _ ht.forall₂
   obtain ⟨wN, hpreN, hptN⟩ := hscN' hokN.1 _ hRt
   have hZ := hptN (hokN.2 wN hpreN)
@@ -255,7 +248,7 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   have h2 := hadd2 _ _ h1 hnegZ
   -- the wire's `runFtComm`, crossed, is the same expression: unfold it and name its closed
   -- forms, collapse the two `combineCommitments` via `combineCommitments_eq_foldr` on their
-  -- list forms (`Array.toArray_toList`, `Vector.toArray_map`), push `equivPoint` through to
+  -- list forms (`Array.toArray_toList`, `Vector.toArray_map`), push `SWPoint.equivPoint` to
   -- `hornerVal`, pull the `perm` scaling out, split `ζⁿ − 1`, and match `h2`.
   simp only [runFtComm, runFComm]
   rw [hζM, hsP, hζN]
