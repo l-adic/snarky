@@ -115,14 +115,15 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     xiRaw = SizedF.toField xiActual
     rRaw = SizedF.toField rActual
 
-  -- Recombining chunked evaluations is a Horner fold in `zeta^n`, which
-  -- is why the reference computes both powers at this point. This port
-  -- collapses the evaluations out of circuit, in
-  -- `Pickles.Prove.Pure.Wrap`, so nothing here reads the results — but
-  -- the Square constraints are part of the circuit, so the calls stay.
+  -- Recombining chunked evaluations is a Horner fold in
+  -- `zeta^(2^srsLengthLog2)`, the chunk size, which is why the reference
+  -- computes both powers at this point. This port collapses the
+  -- evaluations out of circuit, in `Pickles.Prove.Pure.Wrap`, so nothing
+  -- here reads the results — but the Square constraints are part of the
+  -- circuit, so the calls stay.
   label "step5_pow2pows" do
-    void $ pow2PowSquare zeta domainLog2
-    void $ pow2PowSquare zetaw domainLog2
+    void $ pow2PowSquare zeta params.srsLengthLog2
+    void $ pow2PowSquare zetaw params.srsLengthLog2
 
   let
     pEval0 = allEvals.publicEvals.zeta
