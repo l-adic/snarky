@@ -22,7 +22,8 @@ skill). It fails on:
   as it stands; the git log owns the past and the issue tracker owns the future.
 * OVERSIZE — a declaration docstring longer than `declCap` lines, or a module/section docstring
   longer than `moduleCap`. The overflow belongs in a `/-! ## … -/` section, or nowhere.
-* EMPHASIS — more than one bolded run in a declaration docstring, or one that does not open it.
+* EMPHASIS — more than one bolded run in a declaration docstring, or one that does not open it
+  (a label, not stress).
   A label on everything is a label on nothing.
 
 It also REPORTS (never fails) the comment-heaviest modules, as the queue for a judgement pass.
@@ -166,14 +167,20 @@ run_cmd do
   for (n, _) in env.constants.toList do
     let u := userName n
     let mine := isOurs n
-    -- the last one and two components: `AccOk`, `SWPoint.equivPoint`, `Point.some`
+    -- the last one, two and three components: `AccOk`, `SWPoint.equivPoint`,
+    -- `Wire.KimchiProof.check`
     match u with
     | .str pre s =>
       if mine then ours := ours.insert s
       match pre with
-      | .str _ s2 =>
+      | .str pre2 s2 =>
         let two := s!"{s2}.{s}"
         if mine then ours := ours.insert two else upstream := upstream.insert two
+        match pre2 with
+        | .str _ s3 =>
+          let three := s!"{s3}.{two}"
+          if mine then ours := ours.insert three else upstream := upstream.insert three
+        | _ => pure ()
       | _ => pure ()
     | _ => pure ()
     if mine then ours := ours.insert u.toString else upstream := upstream.insert u.toString
@@ -230,6 +237,8 @@ run_cmd do
     let bolds := ((doc.splitOn "**").length - 1) / 2
     if bolds > 1 then
       emph := emph.push s!"{modOf n}\t{userName n}: {bolds} bolded runs"
+    else if bolds == 1 && !doc.trimLeft.startsWith "**" then
+      emph := emph.push s!"{modOf n}\t{userName n}: a bolded run that does not open the docstring"
   -- module and section docstrings: read from the sources, since they attach to no declaration
   let pkgs := ["pasta", "poseidon", "bulletproof-pcs", "kimchi", "snarky", "pickles"]
   let rec walk (p : System.FilePath) : IO (Array System.FilePath) := do

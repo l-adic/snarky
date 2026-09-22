@@ -67,8 +67,14 @@ cd formal
 scripts/prose-only.sh <the module's path>   # 1. every code line untouched
 lake build <the module's library>           # 2. it still builds
 scripts/check-comments.sh                   # 3. the gate passes, this module's counts lower
-scripts/check-style.sh                      # 4. the formatter contract holds
+scripts/check-style.sh <the module's path>  # 4. the formatter contract holds
 ```
+
+The gate and the queue read DECLARATION docstrings from the compiled environment, so neither
+sees an edit until step 2 has run; module docstrings they read from source. When several
+passes share a worktree, run 1 and 4 per file and leave 2 and 3 to one central run after all
+of them — concurrent builds contend, and a whole-tree check fails on another pass's
+in-flight line.
 
 Condition 1 is the discipline that makes the pass reviewable: a comment pass that changes a
 proof is two changes, and the second one hides in the first. `prose-only.sh` compares the file
