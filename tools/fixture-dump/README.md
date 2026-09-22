@@ -48,14 +48,6 @@ Every kimchi-proof fixture carries the proof's old accumulators (`prev_challenge
 `{comm, chals}` record each — empty in the non-recursive ones) and the key's accumulator
 count (`prev_challenges_count`).
 
-> **Caveat (`sponge_dump`'s Lean output):** the generated-constants half of
-> `sponge_dump` predates the `formal/` package split — it still writes
-> `PoseidonConstantsF{q,p}.lean` under a `Kimchi.Sponge.*` namespace, while the
-> committed files are `formal/poseidon/Poseidon/Constants{Fq,Fp}.lean` under
-> `Poseidon.*`. On regeneration, rename the files and namespaces to match the
-> committed layout (the constant values are what the regeneration refreshes). The
-> JSON vector output is current.
-
 ## What each binary emits
 
 Paths below are relative to `formal/`.

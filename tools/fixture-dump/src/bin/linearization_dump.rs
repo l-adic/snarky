@@ -18,7 +18,7 @@
 //!   (selector × Σ αᵏ·cₖ), asserted at dump time to sum to `constant_term`.
 //!
 //! The Lean side recomputes each output from the recorded inputs with its closed-form
-//! transcriptions (the `Argument` constraint lists of `formal/Kimchi/Quotient/`) — the
+//! transcriptions (the `Argument` constraint lists of `formal/kimchi/Kimchi/Lift.lean`) — the
 //! token stream never appears in a Lean statement; it is adjudicated here, by value.
 
 use ark_ff::Zero;
