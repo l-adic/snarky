@@ -62,7 +62,7 @@ abbrev scalarInput (k : ℕ) : ScalarVar k := inputVar (F := Fq) (a := ScalarIn 
 public input, the slot as one that must verify, the proof cells as the proof's commitments and
 opening, the `sg` cells as the old accumulators' commitments; the evaluation cells as the
 proof's evaluations, the previous challenges as the old accumulators'. -/
-structure InputReads (E : Env IpaPallas.curve) (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
+structure InputReads (E : Env IpaPallas.curve 1) (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq) (Vg : Valuation Fp) (Vs : Valuation Fq)
     (g : GroupVar ks E.σ.k) (s : ScalarVar E.σ.k) : Prop where
   /-- The wrap statement's cells are the public input. -/
@@ -93,16 +93,16 @@ structure InputReads (E : Env IpaPallas.curve) (cp : KimchiProof IpaPallas.curve
   olds : CommReads IpaPallas.curve Vg g.sgOld (cp.olds.map (·.sg)).toList
   /-- `ft(ζω)`. -/
   ftEval1 : s.evals.ftEval1.val Vs = cp.ftEval1
-  /-- The proof's evaluations, as its one-chunk vectors. -/
-  evals : s.evals.evals.map (fun x => #v[x.val Vs]) = cp.evals
-  /-- The public evaluations are the run's (`runPubEvals`). -/
-  pubEvals : s.evals.pub.map (fun x => #v[x.val Vs])
+  /-- The proof's evaluations, chunk by chunk. -/
+  evals : s.evals.evals.map (fun v => v.map (·.val Vs)) = cp.evals
+  /-- The public evaluations are the run's (`runPubEvals`), chunk by chunk. -/
+  pubEvals : s.evals.pub.map (fun v => v.map (·.val Vs))
     = runPubEvals IpaPallas.curve E.σ E.cvk cp pub
   /-- The previous challenges are the old accumulators', in order. -/
   prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
       (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
 
-variable {E : Env IpaPallas.curve} {cp : KimchiProof IpaPallas.curve 1 E.σ.k} {pub : Array Fq}
+variable {E : Env IpaPallas.curve 1} {cp : KimchiProof IpaPallas.curve 1 E.σ.k} {pub : Array Fq}
   {Vg : Valuation Fp} {Vs : Valuation Fq}
   {g : GroupVar ks E.σ.k} {s : ScalarVar E.σ.k}
   {keyCells : List (List (AffinePoint (FVar Fp)))} {spongeAfterIndex : SpongeVar Fp}
@@ -162,13 +162,11 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
     have h1 : (g.cells keyCells).sgOld.length = 2 := by
       show (g.sgOld.map (none, ·)).length = 2
       simp [GroupVar.sgOld, MaxProofsVerified]
-    have h2 : (g.cells keyCells).wComm.flatten.length = 15 := by
-      show g.wComm.flatten.length = 15
-      rw [GroupVar.wComm, length_flatten_singletons, Vector.length_toList]
-    have h3 : (g.cells keyCells).zComm.length = 1 := rfl
-    have h4 : (g.cells keyCells).tComm.length = 7 := by
-      show g.tComm.length = 7
-      simp [GroupVar.tComm]
+    have hl := ivpInputOf_lengths g.claims.deferredValues (g.sgOld.map (none, ·)) keyCells
+      g.val.proof
+    have h2 : (g.cells keyCells).wComm.flatten.length = 15 := hl.1
+    have h3 : (g.cells keyCells).zComm.length = 1 := hl.2.1
+    have h4 : (g.cells keyCells).tComm.length = 7 := hl.2.2
     omega
 
 end WrapProof
@@ -180,7 +178,7 @@ the inputs reading as the wire's proof (`InputReads`), the key cells as the key 
 and the two circuits holding one set of deferred claims (`HalvesTies`): under the proof's
 `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
 theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
-    (E : Env IpaPallas.curve)
+    (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq)
     -- the group circuit's constants

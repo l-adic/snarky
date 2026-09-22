@@ -695,6 +695,54 @@ def finalizeOtherProofStepCircuit (input : Vector (FVar Fp) 151) : CircuitM Fp C
   let _ ← fopStepHarness input
   pure PUnit.unit
 
+open Pickles Kimchi.Verifier in
+/-- The step side over the chunked flat layout at `nc` chunks: the 151-cell layout with each
+evaluation widened to its chunks — from 29, 44 columns of `2 · nc` cells (the `ζ` chunks, then
+the `ζω` chunks) in the order public, `w`, coefficients, `z`, `σ`, the six selectors — then
+`ft(ζω)`, the two previous-challenge vectors and the digest before evaluations. `zk_rows`
+follows the chunk count. At `nc = 1` this is the 151-cell layout. -/
+def fopStepChunkedHarnessAt (nc : ℕ) (domains : List (Pickles.KnownDomain Fp)) {n : ℕ}
+    (input : Vector (FVar Fp) n) : CircuitM Fp C (Pickles.FopOutput Fp) := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let column (k : ℕ) : PointEvaluations (Vector (FVar Fp) nc) :=
+    ⟨Vector.ofFn fun c => get (29 + 2 * nc * k + c),
+     Vector.ofFn fun c => get (29 + 2 * nc * k + nc + c)⟩
+  let tail := 29 + 88 * nc
+  let (u, _, _) := PicklesFixture.fopInputsOf Type1.mk get 29
+  let u := { u with spongeDigestBeforeEvaluations := get (tail + 33) }
+  let w : ChunkedEvals nc (FVar Fp) :=
+    { ftEval1 := get tail
+      pub := column 0
+      evals :=
+        { w := Vector.ofFn fun j => column (1 + j)
+          coefficients := Vector.ofFn fun j => column (16 + j)
+          z := column 31
+          s := Vector.ofFn fun j => column (32 + j)
+          genericSelector := column 38
+          poseidonSelector := column 39
+          completeAddSelector := column 40
+          mulSelector := column 41
+          emulSelector := column 42
+          endomulScalarSelector := column 43 } }
+  Pickles.finalizeOtherProofStep
+    { PicklesFixture.fopStepParams with zkRows := (16 * nc + 5) / 7 }
+    domains u w [.unchecked (get 26), .unchecked (get 27)]
+    (PicklesFixture.prevChallengesOf get (tail + 1))
+    (get 28)
+
+/-- `finalize_other_proof_chunks2_step_circuit`: the dump's 239 cells at two chunks and one
+known domain of `log2 = 16`. -/
+def fopStepChunks2Harness (input : Vector (FVar Fp) 239) :
+    CircuitM Fp C (Pickles.FopOutput Fp) :=
+  fopStepChunkedHarnessAt 2 [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] input
+
+/-- `finalize_other_proof_chunks2_step_circuit` as a comparison target: the step side over
+a two-chunk step proof, output discarded. -/
+def finalizeOtherProofChunks2StepCircuit (input : Vector (FVar Fp) 239) :
+    CircuitM Fp C PUnit := do
+  let _ ← fopStepChunks2Harness input
+  pure PUnit.unit
+
 /-- `finalize_other_proof_wrap_circuit` as a comparison target: the harness, output
 discarded. -/
 def finalizeOtherProofWrapCircuit (input : Vector (FVar Fq) 148) : CircuitM Fq Cq PUnit := do
@@ -751,34 +799,36 @@ packing's booleanity checks, emitted (in walk order) before the gadget. -/
 abbrev XhatCurve := Bulletproof.IpaVesta.curve
 
 open CompElliptic.Curves.Pasta.Fast.Projective.Core.PPoint in
-/-- The shift correction `-(2^L)·P` at a Lagrange base `P`, as a one-chunk constant point:
+/-- The shift correction `-(2^L)·P` at a Lagrange base chunk `P`, as a constant point:
 `smulFast` computes `[2^L]·P` (the ladder shift `L = 5·chunks`), negated coordinatewise
 (`(x, -y)` on `y² = x³ + 5`). Matches PS `scalarMulLeaf`'s `-pow2pow(base, 5·nChunks)`. -/
-def xhatCorr (L : ℕ) (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
+def xhatCorr (L : ℕ) (P : XhatCurve.Point) : AffinePoint (FVar Fq) :=
   let Q := smulFast XhatCurve.E (by decide) (by decide) (2 ^ L) P
-  #v[⟨.const Q.x, .const (-Q.y)⟩]
+  ⟨.const Q.x, .const (-Q.y)⟩
 
-/-- A Lagrange base `P` as a one-chunk constant point. -/
-def xhatBase (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
-  #v[⟨.const P.x, .const P.y⟩]
+/-- A Lagrange base chunk `P` as a constant point. -/
+def xhatBase (P : XhatCurve.Point) : AffinePoint (FVar Fq) := ⟨.const P.x, .const P.y⟩
 
-/-- `xhat_wrap_circuit`: `Pickles.publicInputCommitFull` over the 34-leaf list — the boolean
-leaves constrain their own bits inside the gadget — `full` at {0,2,4,6,8,10,32,33}
-(`L = 255`), `b128` at {11..30} (`L = 130`), `condAdd` at {1,3,5,7,9,31}; leaf `i` reads
-input `i` and Lagrange base `pts[i]`. -/
-def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
-    (input : Vector (FVar Fq) 34) : CircuitM Fq Cq PUnit := do
+/-- `xhat_wrap_circuit` (one chunk) and `xhat_wrap_chunks2_circuit` (two):
+`Pickles.publicInputCommitFull` over the 34-leaf list — the boolean leaves constrain their own
+bits inside the gadget — `full` at {0,2,4,6,8,10,32,33} (`L = 255`), `b128` at {11..30}
+(`L = 130`), `condAdd` at {1,3,5,7,9,31}; leaf `i` reads input `i` and Lagrange base `pts[i]`,
+at `nc` chunks. -/
+def xhatWrapCircuit {nc : ℕ} (pts : Array (Vector XhatCurve.Point nc))
+    (h : AffinePoint (FVar Fq)) (input : Vector (FVar Fq) 34) : CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
-  let pt (i : ℕ) : XhatCurve.Point :=
-    pts[i]?.getD (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
-  let full (i : ℕ) : Pickles.Leaf Fq 1 := .full (get i) (xhatBase (pt i)) (xhatCorr 255 (pt i))
-  let b128 (i : ℕ) : Pickles.Leaf Fq 1 := .b128 (get i) (xhatBase (pt i)) (xhatCorr 130 (pt i))
-  let cond (i : ℕ) : Pickles.Leaf Fq 1 := .condAdd (.unchecked (get i)) (xhatBase (pt i))
-  let leaves : List (Pickles.Leaf Fq 1) :=
+  let pt (i : ℕ) : Vector XhatCurve.Point nc :=
+    pts[i]?.getD (Vector.replicate nc (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero
+      XhatCurve.E))
+  let base (i : ℕ) := (pt i).map xhatBase
+  let full (i : ℕ) : Pickles.Leaf Fq nc := .full (get i) (base i) ((pt i).map (xhatCorr 255))
+  let b128 (i : ℕ) : Pickles.Leaf Fq nc := .b128 (get i) (base i) ((pt i).map (xhatCorr 130))
+  let cond (i : ℕ) : Pickles.Leaf Fq nc := .condAdd (.unchecked (get i)) (base i)
+  let leaves : List (Pickles.Leaf Fq nc) :=
     [ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8, cond 9, full 10 ]
       ++ (List.range 20).map (fun j => b128 (11 + j))
       ++ [ cond 31, full 32, full 33 ]
-  let _ ← Pickles.publicInputCommitFull (0 : Fin 1) h leaves
+  let _ ← Pickles.publicInputCommitFull h leaves
   pure PUnit.unit
 
 /-- The Lagrange bases and blinding `h` of an `x_hat` circuit, from its circuit-diffs export
@@ -795,6 +845,23 @@ def xhatPoints (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) :
     pure (lagr, h)
   match parsed with
   | .ok r => return r
+  | .error e => throw (IO.userError s!"{path}: {e}")
+
+/-- `xhatPoints` for a chunked export (`{lagrange : [[[x,y]×nc]×n], h : [x,y]}`): each base as
+its `nc` chunks. -/
+def xhatPointsChunks (C : Bulletproof.Ipa.KimchiCurve) (nc : ℕ) (path : System.FilePath) :
+    IO (Array (Vector C.Point nc) × C.Point) := do
+  let raw ← IO.FS.readFile path
+  let chunks (j : Json) : Except String (Vector C.Point nc) := do
+    let pts ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt C) j
+    if h : pts.size = nc then pure ⟨pts, h⟩ else throw s!"{pts.size} chunks, expected {nc}"
+  let parsed : Except String (Array (Vector C.Point nc) × C.Point) := do
+    let j ← Json.parse raw
+    let lagr ← FixtureKit.parseArrOf chunks (← j.getObjVal? "lagrange")
+    let h ← Bulletproof.Fixture.parsePt C (← j.getObjVal? "h")
+    pure (lagr, h)
+  match parsed with
+  | .ok (lagr, h) => return (lagr, h)
   | .error e => throw (IO.userError s!"{path}: {e}")
 
 /-! ### The step side (`xhat_step_circuit`)
@@ -913,8 +980,8 @@ def ivpStepInput (get : ℕ → FVar Fp) :
       combinedInnerProduct := shifted 40, b := shifted 42, xi := ⟨get 44⟩
       bulletproofChallenges := Vector.ofFn fun j => ⟨get (45 + j)⟩ }
   Pickles.ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
-    { wComm := Vector.ofFn fun j => pt (60 + 2 * j)
-      zComm := pt 90
+    { wComm := Vector.ofFn fun j => #v[pt (60 + 2 * j)]
+      zComm := #v[pt 90]
       tComm := Vector.ofFn fun j => pt (92 + 2 * j)
       opening := { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
                    z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 } }
@@ -992,8 +1059,8 @@ def stepVerifyCells (get : ℕ → FVar Fp) :
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
   Pickles.ivpInputOf (stepVerifyUnfinalized get).deferredValues
     [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
-    { wComm := Vector.ofFn fun j => pt (2 * j)
-      zComm := pt 30
+    { wComm := Vector.ofFn fun j => #v[pt (2 * j)]
+      zComm := #v[pt 30]
       tComm := Vector.ofFn fun j => pt (32 + 2 * j)
       opening := { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
                    z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 } }
@@ -1061,9 +1128,9 @@ def wrapIvpDv (get : ℕ → FVar Fq) : Pickles.DeferredValues 16 (FVar Fq) (Typ
 at 60, `z_comm` at 90, the 7 `t_comm` points at 92, `δ` at 106, `sg` at 108, the 16 `(L, R)`
 pairs at 110, `z₁`, `z₂` at 174-175. -/
 def wrapIvpProof (pt : ℕ → AffinePoint (FVar Fq)) (get : ℕ → FVar Fq) :
-    Pickles.IvpProof 16 (FVar Fq) (Type1 (FVar Fq)) :=
-  { wComm := Vector.ofFn fun j => pt (60 + 2 * j)
-    zComm := pt 90
+    Pickles.IvpProof 16 1 (FVar Fq) (Type1 (FVar Fq)) :=
+  { wComm := Vector.ofFn fun j => #v[pt (60 + 2 * j)]
+    zComm := #v[pt 90]
     tComm := Vector.ofFn fun j => pt (92 + 2 * j)
     opening := { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
                  z1 := ⟨get 174⟩, z2 := ⟨get 175⟩, delta := pt 106, sg := pt 108 } }
@@ -1078,11 +1145,10 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let dv := wrapIvpDv get
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
-  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    let P ← Pickles.publicInputCommitFull (0 : Fin 1) h
+  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=
+    Vector.toList <$> Pickles.publicInputCommitFull h
       (Pickles.packLeavesOf (wrapStepStatement get).packed
         (Pickles.XhatTable.ofKey (wrapStepStatement get).packed (oneChunk pts)))
-    pure [P]
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
     vestaBase.sqrt? true h sv computeXHat
@@ -1207,6 +1273,8 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       stepTarget (a := Vector Fp 170) (b := PUnit) (checkBulletproofStepCircuit hStep)),
     ("finalize_other_proof_step_circuit",
       stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
+    ("finalize_other_proof_chunks2_step_circuit",
+      stepTarget (a := Vector Fp 239) (b := PUnit) finalizeOtherProofChunks2StepCircuit),
     ("ftcomm_step_circuit", stepTarget (a := Vector Fp 20) (b := PUnit) ftcommStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
@@ -1232,6 +1300,7 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
 /-- The targets baked over a Lagrange export, each present only when its export is (a
 narrowed local PS run regenerates one column's exports; the unfiltered run has all). -/
 def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
+    (wrap2 : Option (Array (Vector XhatCurve.Point 2) × XhatCurve.Point))
     (step : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
     (ivpStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point)) :
     List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
@@ -1246,6 +1315,10 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
       stepTarget (a := Vector Fp 268) (b := PUnit) (stepVerifyCircuit pts h)))
   ++ (wrap.toList.map fun (pts, h) =>
     ("xhat_wrap_circuit",
+      wrapTarget (a := Vector Fq 34) (b := PUnit)
+        (xhatWrapCircuit (pts.map (#v[·])) (xhatWrapCell h))))
+  ++ (wrap2.toList.map fun (pts, h) =>
+    ("xhat_wrap_chunks2_circuit",
       wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts (xhatWrapCell h))))
   ++ (wrap.toList.map fun (pts, h) =>
     ("ivp_wrap_circuit",
@@ -1277,9 +1350,11 @@ def main : IO Unit := do
   -- The `x_hat` Lagrange dumps sit in the results dir beside the comparison dumps (they
   -- carry no `purescript` field and no manifest entry, so the other consumers skip them).
   let xhatWrap ← optionalExport filter (dir / "xhat_wrap_lagrange.json") (xhatPoints XhatCurve)
+  let xhatWrap2 ← optionalExport filter (dir / "xhat_wrap_chunks2_lagrange.json")
+    (xhatPointsChunks XhatCurve 2)
   let xhatStep ← optionalExport filter (dir / "xhat_step_lagrange.json") (xhatPoints XhatStepCurve)
   let ivpStep ← optionalExport filter (dir / "ivp_step_lagrange.json") (xhatPoints XhatStepCurve)
-  let selected := (targets hStep hWrap ++ xhatTargets xhatWrap xhatStep ivpStep).filter
+  let selected := (targets hStep hWrap ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep).filter
     fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0

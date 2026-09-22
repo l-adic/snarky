@@ -28,18 +28,19 @@ open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 /-- The wrap side's input at `k` rounds, as values. -/
-abbrev WrapFop (k : ℕ) : Type := FopInput k Fq Bool (Type2 Fq)
+abbrev WrapFop (k : ℕ) : Type := FopInput k 1 Fq Bool (Type2 Fq)
 
 /-- The wrap side's input at `k` rounds, as cells. -/
-abbrev WrapFopVar (k : ℕ) : Type := FopInput k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))
+abbrev WrapFopVar (k : ℕ) : Type := FopInput k 1 (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))
 
 /-- The wrap circuit's scalar half at an environment: `finalize_other_proof`'s wrap side with
 the verifier key's parameters and domain — its generator a constant, `ζⁿ − 1` by `pow2PowMul`
 at the key's `log2` — the `Fq` token stream, and the previous-challenge cells at their static
 size. -/
 def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {k : ℕ}
-    (E : Env IpaPallas.curve)
-    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) (w : AllEvals (FVar Fq))
+    (E : Env IpaPallas.curve 1)
+    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (w : ChunkedEvals 1 (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
     CircuitM Fq c (FopOutput Fq) :=
   finalizeOtherProofWrap (FopParams.ofEnv E Linearization.fqTokens) E.cvk.omega
@@ -65,14 +66,14 @@ private theorem vanishingAt_spec {V : Valuation Fq} (log2 : ℕ) (z : FVar Fq) :
 with the step circuit's group half assumed (`verifyProof_step_reads` produces it). What the
 circuit's parameters and domain owe is the environment's; what is left is the ties. -/
 theorem finalizeOtherProofWrapAt_kimchiVerify_pallas
-    (E : Env IpaPallas.curve)
+    (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq)
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
     -- the wrap circuit: its valuation and its cells
     (Vs : Valuation Fq)
     (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : AllEvals (FVar Fq))
+    (evals : ChunkedEvals 1 (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified)
     -- the step circuit's group half, and its asserted bit
     (Vg : Valuation Fp)
@@ -159,25 +160,25 @@ abbrev ScalarVar (k : ℕ) : Type := UnChecked (WrapFopVar k)
 def ScalarVar.claims (s : ScalarVar k) :
     UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)) := s.val.claims
 /-- The evaluation cells. -/
-def ScalarVar.evals (s : ScalarVar k) : AllEvals (FVar Fq) := s.val.evals
+def ScalarVar.evals (s : ScalarVar k) : ChunkedEvals 1 (FVar Fq) := s.val.evals
 /-- The previous challenges, one vector per slot. -/
 def ScalarVar.prev (s : ScalarVar k) : Vector (Vector (FVar Fq) k) MaxProofsVerified :=
   s.val.prev
 /-- The scalar circuit as a `ScalarHalf`. -/
 abbrev ScalarVar.half (V : Valuation Fq) (s : ScalarVar k) :
-    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k :=
+    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k 1 :=
   ScalarHalf.wrap V s.claims s.evals s.prev
 
 /-- The wrap circuit's scalar half as a circuit of its input, `finalized` asserted: the
 deployed `finalized ∨ ¬should_finalize` at a slot that is finalized. -/
 def scalarCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
-    (E : Env IpaPallas.curve) (s : ScalarVar E.σ.k) : CircuitM Fq c Unit := do
+    (E : Env IpaPallas.curve 1) (s : ScalarVar E.σ.k) : CircuitM Fq c Unit := do
   let o ← finalizeOtherProofWrapAt E s.claims s.evals s.prev
   assert o.finalized
 
 /-- **The scalar circuit's read.** With the step circuit's group half and the ties, a valuation
 satisfying the body makes `kimchiVerify` accept once `SgOk` holds. -/
-theorem scalarCircuit_reads (E : Env IpaPallas.curve)
+theorem scalarCircuit_reads (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k) (pub : Array Fq)
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
     (Vs : Valuation Fq) (s : ScalarVar E.σ.k)

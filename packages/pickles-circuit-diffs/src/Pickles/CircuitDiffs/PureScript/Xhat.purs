@@ -7,6 +7,7 @@ module Pickles.CircuitDiffs.PureScript.Xhat
 import Prelude
 
 import Data.Fin (getFinite)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (tuple3, tuple6)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -26,8 +27,9 @@ import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
-type XhatParams f =
-  { lagrangeAt :: LagrangeBaseLookup 1 f
+-- | The Lagrange bases at `nc` chunks each, and the blinding `h`.
+type XhatParams nc f =
+  { lagrangeAt :: LagrangeBaseLookup nc f
   , blindingH :: AffinePoint (F f)
   }
 
@@ -62,14 +64,15 @@ parseXhatInput inputs =
     fromPackedTuple stmtTuple
 
 xhatCircuit
-  :: forall pi r
+  :: forall @nc pi r
    . PrimeField WrapField
+  => Reflectable nc Int
   => PublicInputCommit pi WrapField
-  => XhatParams WrapField
+  => XhatParams nc WrapField
   -> pi
-  -> Snarky WrapField (KimchiConstraint WrapField) r (Vector 1 (AffinePoint (FVar WrapField)))
+  -> Snarky WrapField (KimchiConstraint WrapField) r (Vector nc (AffinePoint (FVar WrapField)))
 xhatCircuit { lagrangeAt, blindingH } publicInput =
-  publicInputCommit @1
+  publicInputCommit @nc
     { curveParams: curveParams (Proxy @VestaG)
     , lagrangeAt
     , blindingH
@@ -77,7 +80,13 @@ xhatCircuit { lagrangeAt, blindingH } publicInput =
     }
     publicInput
 
-compileXhat :: XhatParams WrapField -> Effect (CompiledCircuit WrapField)
+-- | The comparison target at `nc` chunks per Lagrange base: `xhat_wrap_circuit` at one,
+-- | `xhat_wrap_chunks2_circuit` at two.
+compileXhat
+  :: forall @nc
+   . Reflectable nc Int
+  => XhatParams nc WrapField
+  -> Effect (CompiledCircuit WrapField)
 compileXhat srsData =
   compile noAdvice (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\inputs -> void $ xhatCircuit srsData (parseXhatInput inputs))
+    (\inputs -> void $ xhatCircuit @nc srsData (parseXhatInput inputs))

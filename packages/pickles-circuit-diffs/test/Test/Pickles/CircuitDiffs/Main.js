@@ -40,6 +40,14 @@ export const pallasSrsLagrangeCommitmentAt = (crs) => (domainLog2) => (i) => {
   return { x: fqFromBytes(p.x), y: fqFromBytes(p.y) };
 };
 
+// Every chunk of a Lagrange-basis commitment, in chunk order: a domain above the SRS
+// commits each basis polynomial in `domainSize / srsSize` chunks.
+export const pallasSrsLagrangeCommitmentChunksAt = (crs) => (domainLog2) => (i) => {
+  const domainSize = 1 << domainLog2;
+  const pc = k.caml_fp_srs_lagrange_commitment(crs.srs, domainSize, i);
+  return pc.unshifted.map((p) => ({ x: fqFromBytes(p.x), y: fqFromBytes(p.y) }));
+};
+
 export const vestaSrsLagrangeCommitmentAt = (crs) => (domainLog2) => (i) => {
   const domainSize = 1 << domainLog2;
   const pc = k.caml_fq_srs_lagrange_commitment(crs.srs, domainSize, i);

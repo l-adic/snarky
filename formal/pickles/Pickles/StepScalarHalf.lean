@@ -25,7 +25,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 candidate list with what every honest list satisfies — distinct sizes, each generator of its
 order, each domain holding the zero-knowledge rows — and the key's own domain among them, at
 its `log2`. -/
-structure KnownDomains (E : Env IpaVesta.curve) where
+structure KnownDomains {nc : ℕ} (E : Env IpaVesta.curve nc) where
   /-- The candidates. -/
   list : List (KnownDomain Fp)
   /-- Distinct sizes, as the circuit compares them. -/
@@ -44,7 +44,7 @@ structure KnownDomains (E : Env IpaVesta.curve) where
 /-- The bundle of a candidate list and the key's `log2`, where its facts hold: each is
 decidable, so a driver checks them once on the domains a proof cache uses. The generator
 orders are checked by squaring (`powPow2`). -/
-def KnownDomains.ofList? (E : Env IpaVesta.curve) (list : List (KnownDomain Fp))
+def KnownDomains.ofList? {nc : ℕ} (E : Env IpaVesta.curve nc) (list : List (KnownDomain Fp))
     (keyLog2 : ℕ) : Option (KnownDomains E) :=
   if h : (list.map fun d => (d.log2 : Fp)).Nodup ∧
       (∀ d ∈ list, powPow2 d.generator d.log2 = 1) ∧
@@ -57,9 +57,10 @@ def KnownDomains.ofList? (E : Env IpaVesta.curve) (list : List (KnownDomain Fp))
 /-- The step circuit's scalar half at an environment: `finalize_other_proof`'s step side with
 the verifier key's parameters, the `Fp` token stream, and the mask and previous-challenge
 cells at their static sizes. -/
-def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {k : ℕ}
-    (E : Env IpaVesta.curve) (domains : KnownDomains E)
-    (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) (w : AllEvals (FVar Fp))
+def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {k nc : ℕ}
+    (E : Env IpaVesta.curve nc) (domains : KnownDomains E)
+    (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (w : ChunkedEvals nc (FVar Fp))
     (mask : Vector (BoolVar Fp) MaxProofsVerified)
     (prevChallenges : Vector (Vector (FVar Fp) k) MaxProofsVerified) (domainLog2Var : FVar Fp) :
     CircuitM Fp c (FopOutput Fp) :=
@@ -103,16 +104,16 @@ private theorem flatten_zipWith_val {V : Valuation Fp} :
 the wrap circuit's group half assumed (`wrapVerifyAt_reads` produces it). What the circuit's
 parameters and domain list owe is the environment's and the bundle's; what is left is about
 cells: the mask is boolean, the `domain_log2` cell holds the key's, and the ties. -/
-theorem finalizeOtherProofStepAt_kimchiVerify_vesta
-    (E : Env IpaVesta.curve)
-    (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
+theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc : ℕ}
+    (E : Env IpaVesta.curve nc)
+    (cp : KimchiProof IpaVesta.curve nc E.σ.k)
     (pub : Array Fp)
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
     -- the step circuit: its valuation, its cells, the domains it may select from
     (Vs : Valuation Fp)
     (domains : KnownDomains E)
     (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    (evals : AllEvals (FVar Fp))
+    (evals : ChunkedEvals nc (FVar Fp))
     (mask : Vector (BoolVar Fp) MaxProofsVerified)
     (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) MaxProofsVerified)
     (domainLog2Var : FVar Fp)
@@ -163,7 +164,8 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta
     (FopParams.ofEnv E Linearization.fpTokens) hP IpaVesta.curve.frSponge.hsize E.zkRows_ge
     domains.list domains.nodup
     (fun d hd => ⟨domains.zkRows_le d hd, domains.generator_pow d hd⟩) claimsS
-    evals mask.toList _ hm (prevChallenges.toList.map Vector.toList) _ hprev hlen domainLog2Var
+    evals mask.toList _ hm (prevChallenges.toList.map Vector.toList) _ hprev hlen
+    domainLog2Var
   simp only [finalizeOtherProofStepAt]
   refine builder_spec_imp _ _ _ hspec ?_
   rintro o ⟨d₀, hd₀, hL, hread⟩
@@ -221,68 +223,70 @@ namespace StepProof
 
 /-- The step circuit's scalar-half input, polymorphic in its cells: the slot's branch data,
 checked on input, and the scalar half's own input, unchecked. -/
-structure ScalarInput (k : ℕ) (f b : Type) where
+structure ScalarInput (k nc : ℕ) (f b : Type) where
   /-- The slot's branch data: the mask and the domain's `log2`. -/
   branch : BranchData f b
-  /-- The slot's claims, the evaluations and the previous challenges. -/
-  fop : UnChecked (FopInput k f b (Type1 f))
+  /-- The slot's claims, the evaluations at `nc` chunks and the previous challenges. -/
+  fop : UnChecked (FopInput k nc f b (Type1 f))
 
 /-- A scalar-half input is its branch data and the rest. -/
-def ScalarInput.equivProd (k : ℕ) (f b : Type) :
-    ScalarInput k f b ≃ BranchData f b × UnChecked (FopInput k f b (Type1 f)) :=
+def ScalarInput.equivProd (k nc : ℕ) (f b : Type) :
+    ScalarInput k nc f b ≃ BranchData f b × UnChecked (FopInput k nc f b (Type1 f)) :=
   ⟨fun i => (i.branch, i.fop), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
-instance instScalarInputCircuitType {F f w b vb : Type} {k : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] : CircuitType F (ScalarInput k f b) (ScalarInput k w vb) :=
-  CircuitType.ofEquiv (ScalarInput.equivProd k f b) (ScalarInput.equivProd k w vb)
+instance instScalarInputCircuitType {F f w b vb : Type} {k nc : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] : CircuitType F (ScalarInput k nc f b) (ScalarInput k nc w vb) :=
+  CircuitType.ofEquiv (ScalarInput.equivProd k nc f b) (ScalarInput.equivProd k nc w vb)
 
 /-- The input's check is the branch data's: the rest is unchecked. -/
-instance instScalarInputCheckedType {F c f w b vb : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+instance instScalarInputCheckedType {F c f w b vb : Type} {k nc : ℕ} [Add F] [Mul F] [Zero F]
     [One F] [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
-    [CheckedType F c b vb] : CheckedType F c (ScalarInput k f b) (ScalarInput k w vb) :=
-  CheckedType.ofEquiv (ScalarInput.equivProd k f b) (ScalarInput.equivProd k w vb)
+    [CheckedType F c b vb] : CheckedType F c (ScalarInput k nc f b) (ScalarInput k nc w vb) :=
+  CheckedType.ofEquiv (ScalarInput.equivProd k nc f b) (ScalarInput.equivProd k nc w vb)
 
-@[simp] theorem scoped_scalarInput {F f w b vb : Type} {k : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] {st : ProverState F} {x : ScalarInput k w vb} :
-    CircuitType.Scoped (val := ScalarInput k f b) st x ↔
-      CircuitType.Scoped (val := BranchData f b × UnChecked (FopInput k f b (Type1 f))) st
-        (ScalarInput.equivProd k w vb x) :=
+@[simp] theorem scoped_scalarInput {F f w b vb : Type} {k nc : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] {st : ProverState F} {x : ScalarInput k nc w vb} :
+    CircuitType.Scoped (val := ScalarInput k nc f b) st x ↔
+      CircuitType.Scoped (val := BranchData f b × UnChecked (FopInput k nc f b (Type1 f))) st
+        (ScalarInput.equivProd k nc w vb x) :=
   CircuitType.scoped_ofEquiv _ _
 
-@[simp] theorem reads_scalarInput {F f w b vb : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
-    [CircuitType F f w] [CircuitType F b vb] {V : Valuation F} {x : ScalarInput k w vb}
-    {a : ScalarInput k f b} :
+@[simp] theorem reads_scalarInput {F f w b vb : Type} {k nc : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F f w] [CircuitType F b vb] {V : Valuation F} {x : ScalarInput k nc w vb}
+    {a : ScalarInput k nc f b} :
     CircuitType.Reads V x a ↔
-      CircuitType.Reads V (ScalarInput.equivProd k w vb x) (ScalarInput.equivProd k f b a) :=
+      CircuitType.Reads V (ScalarInput.equivProd k nc w vb x) (ScalarInput.equivProd k nc f b a) :=
   CircuitType.reads_ofEquiv _ _
 
 /-- The scalar circuit's input, as values. -/
-abbrev ScalarIn (k : ℕ) : Type := ScalarInput k Fp Bool
+abbrev ScalarIn (k nc : ℕ) : Type := ScalarInput k nc Fp Bool
 
 /-- `ScalarIn`, as cells. -/
-abbrev ScalarVar (k : ℕ) : Type := ScalarInput k (FVar Fp) (BoolVar Fp)
+abbrev ScalarVar (k nc : ℕ) : Type := ScalarInput k nc (FVar Fp) (BoolVar Fp)
 
 /-- The slot's deferred claims. -/
-def ScalarVar.claims {k : ℕ} (s : ScalarVar k) :
+def ScalarVar.claims {k nc : ℕ} (s : ScalarVar k nc) :
     UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) := s.fop.val.claims
 
 /-- The evaluation cells. -/
-def ScalarVar.evals {k : ℕ} (s : ScalarVar k) : AllEvals (FVar Fp) := s.fop.val.evals
+def ScalarVar.evals {k nc : ℕ} (s : ScalarVar k nc) : ChunkedEvals nc (FVar Fp) :=
+  s.fop.val.evals
 
 /-- The previous challenges, one vector per slot. -/
-def ScalarVar.prev {k : ℕ} (s : ScalarVar k) : Vector (Vector (FVar Fp) k) MaxProofsVerified :=
+def ScalarVar.prev {k nc : ℕ} (s : ScalarVar k nc) :
+    Vector (Vector (FVar Fp) k) MaxProofsVerified :=
   s.fop.val.prev
 
 /-- The scalar circuit as a `ScalarHalf`. -/
-abbrev ScalarVar.half {k : ℕ} (V : Valuation Fp) (s : ScalarVar k) :
-    ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) k :=
+abbrev ScalarVar.half {k nc : ℕ} (V : Valuation Fp) (s : ScalarVar k nc) :
+    ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) k nc :=
   ScalarHalf.step V s.claims s.evals s.branch.proofsVerifiedMask s.prev
 
 /-- The step circuit's scalar half as a circuit of its input: the body pipes the input to the
 gadget and asserts `finalized` — the deployed `finalized ∨ ¬should_finalize` at a slot that is
 finalized. -/
 def scalarCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
-    (E : Env IpaVesta.curve) (domains : KnownDomains E) (s : ScalarVar E.σ.k) :
+    {nc : ℕ} (E : Env IpaVesta.curve nc) (domains : KnownDomains E) (s : ScalarVar E.σ.k nc) :
     CircuitM Fp c Unit := do
   let o ← finalizeOtherProofStepAt E domains s.claims s.evals s.branch.proofsVerifiedMask s.prev
     s.branch.domainLog2
@@ -292,10 +296,10 @@ def scalarCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
 circuit's group half and the ties, a valuation satisfying the body makes `kimchiVerify`
 accept once `SgOk` holds: `finalizeOtherProofStepAt_kimchiVerify_vesta` with `finalized`
 asserted by the circuit rather than assumed of its output. -/
-theorem scalarCircuit_reads
-    (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1 E.σ.k) (pub : Array Fp)
+theorem scalarCircuit_reads {nc : ℕ}
+    (E : Env IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc E.σ.k) (pub : Array Fp)
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
-    (Vs : Valuation Fp) (domains : KnownDomains E) (s : ScalarVar E.σ.k)
+    (Vs : Valuation Fp) (domains : KnownDomains E) (s : ScalarVar E.σ.k nc)
     (hmask : ∀ b ∈ s.branch.proofsVerifiedMask.toList,
       (↑b : CVar Fp).val Vs = 0 ∨ (↑b : CVar Fp).val Vs = 1)
     (hdom : s.branch.domainLog2.val Vs = (domains.keyLog2 : Fp))

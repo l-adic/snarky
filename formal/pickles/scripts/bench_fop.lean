@@ -19,21 +19,21 @@ open Snarky Pickles PicklesFixture CompElliptic.Fields.Pasta
 
 /-- A placeholder input at the deployed round count: every cell zero but the domain the step
 side is compiled at. -/
-def dummyInput : StepFop StepIPARounds :=
-  let z : StepFop StepIPARounds :=
-    CircuitType.fieldsToValue (Vector.replicate (CircuitType.size Fp (StepFop StepIPARounds)) 0)
+def dummyInput : StepFop StepIPARounds 1 :=
+  let z : StepFop StepIPARounds 1 :=
+    CircuitType.fieldsToValue (Vector.replicate (CircuitType.size Fp (StepFop StepIPARounds 1)) 0)
   (z.1, z.2.1, z.2.2.1, z.2.2.2.1, 16)
 
 def main : IO Unit := do
-  let nv := CircuitType.size Fp (StepFop StepIPARounds)
-  let iv : StepFopVar StepIPARounds := inputVar (F := Fp) (a := StepFop StepIPARounds)
+  let nv := CircuitType.size Fp (StepFop StepIPARounds 1)
+  let iv : StepFopVar StepIPARounds 1 := inputVar (F := Fp) (a := StepFop StepIPARounds 1)
   let m := fopStepOn iv
   IO.println s!"input cells: {nv}"
   let t0 ← IO.monoMsNow
   let built := build m nv
   IO.println s!"build: {built.constraints.length} constraints, {built.nextVar} variables"
   let t1 ← IO.monoMsNow
-  let st := seed (F := Fp) (avar := StepFopVar StepIPARounds) dummyInput
+  let st := seed (F := Fp) (avar := StepFopVar StepIPARounds 1) dummyInput
   match prove m st.nv st.env with
   | .error e =>
     let t2 ← IO.monoMsNow

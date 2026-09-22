@@ -113,16 +113,15 @@ constrain their own bits) with the blinding base, `Pickles.incrementallyVerifyPr
 the conditional sponge at the deployed parameters with each `sg_old` under its keep bit,
 the last `n` of the branch data's mask — then the block's assertions: the digest against the wrap
 statement's claim, each round challenge against its claim. Returns the success bit. -/
-def groupWrapOn (vk : Wire.KimchiVK XhatWrapCurve) (basis : Array XhatWrapCurve.Point)
-    (blindingH : AffinePoint (FVar Fq)) {ks kw n : ℕ}
-    (v : WrapGroup ks kw n (FVar Fq) (BoolVar Fq)) :
+def groupWrapOn {nc : ℕ} (vk : Wire.KimchiVK XhatWrapCurve)
+    (basis : Array (Vector XhatWrapCurve.Point nc)) (blindingH : AffinePoint (FVar Fq))
+    {ks kw n : ℕ} (v : WrapGroup ks kw n nc (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
   let sv ← wrapIndexSponge vk
-  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    let P ← publicInputCommitFull (0 : Fin 1) blindingH
+  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=
+    Vector.toList <$> publicInputCommitFull blindingH
       (packLeavesOf v.stepStatement.packed
-        (XhatTable.ofKey v.stepStatement.packed (oneChunk basis)))
-    pure [P]
+        (XhatTable.ofKey v.stepStatement.packed basis.toList))
   let dv := v.statement.proofState.deferredValues
   let mask := dv.branchData.proofsVerifiedMask.toList.drop (MaxProofsVerified - n)
   let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta

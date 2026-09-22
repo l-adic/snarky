@@ -8,6 +8,7 @@ import Pickles.OptSponge
 import Pickles.FrSponge
 import Pickles.Pseudo
 import Pickles.Domain
+import Pickles.Chunks
 import Pickles.Statement
 import Pickles.FinalizeOtherProof
 import Pickles.FqSpongeTranscript

@@ -156,26 +156,28 @@ instance instProofEvaluationsCircuitType {F v w : Type} [CircuitType F v w] :
       CircuitType.Reads V (ProofEvaluations.equivProd w x) (ProofEvaluations.equivProd v a) :=
   CircuitType.reads_ofEquiv _ _
 
-/-- The finalized proof's evaluations: `ft(ζω)`, the public pair, the record. -/
-def AllEvals.equivProd (f : Type) : AllEvals f ≃ f × PointEvaluations f × ProofEvaluations f :=
+/-- The chunked evaluations: `ft(ζω)`, the public chunks, the record's chunks. -/
+def ChunkedEvals.equivProd (nc : ℕ) (f : Type) :
+    ChunkedEvals nc f ≃ f × PointEvaluations (Vector f nc) × ProofEvaluations (Vector f nc) :=
   ⟨fun e => (e.ftEval1, e.pub, e.evals), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
    fun _ => rfl⟩
 
-instance instAllEvalsCircuitType {F v w : Type} [CircuitType F v w] :
-    CircuitType F (AllEvals v) (AllEvals w) :=
-  CircuitType.ofEquiv (AllEvals.equivProd v) (AllEvals.equivProd w)
+instance instChunkedEvalsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
+    CircuitType F (ChunkedEvals nc v) (ChunkedEvals nc w) :=
+  CircuitType.ofEquiv (ChunkedEvals.equivProd nc v) (ChunkedEvals.equivProd nc w)
 
-@[simp] theorem scoped_allEvals {F v w : Type} [CircuitType F v w] {st : ProverState F}
-    {x : AllEvals w} :
-    CircuitType.Scoped (val := AllEvals v) st x ↔
-      CircuitType.Scoped (val := v × PointEvaluations v × ProofEvaluations v) st
-        (AllEvals.equivProd w x) :=
+@[simp] theorem scoped_chunkedEvals {F v w : Type} {nc : ℕ} [CircuitType F v w]
+    {st : ProverState F} {x : ChunkedEvals nc w} :
+    CircuitType.Scoped (val := ChunkedEvals nc v) st x ↔
+      CircuitType.Scoped
+        (val := v × PointEvaluations (Vector v nc) × ProofEvaluations (Vector v nc)) st
+        (ChunkedEvals.equivProd nc w x) :=
   CircuitType.scoped_ofEquiv _ _
 
-@[simp] theorem reads_allEvals {F v w : Type} [Add F] [Mul F] [Zero F] [CircuitType F v w]
-    {V : Valuation F} {x : AllEvals w} {a : AllEvals v} :
+@[simp] theorem reads_chunkedEvals {F v w : Type} {nc : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F v w] {V : Valuation F} {x : ChunkedEvals nc w} {a : ChunkedEvals nc v} :
     CircuitType.Reads V x a ↔
-      CircuitType.Reads V (AllEvals.equivProd w x) (AllEvals.equivProd v a) :=
+      CircuitType.Reads V (ChunkedEvals.equivProd nc w x) (ChunkedEvals.equivProd nc v a) :=
   CircuitType.reads_ofEquiv _ _
 
 /-! ## The deferred values -/
@@ -444,38 +446,40 @@ instance instStepStatementCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [Cir
 
 /-- What a circuit's scalar half is given for one slot: its deferred claims, the evaluations,
 and the previous challenges, one vector per slot. -/
-structure FopInput (k : ℕ) (f bc sf : Type) where
+structure FopInput (k nc : ℕ) (f bc sf : Type) where
   /-- The slot's deferred claims. -/
   claims : UnfinalizedProof k f bc sf
-  /-- The evaluation cells. -/
-  evals : AllEvals f
+  /-- The evaluation cells, at `nc` chunks. -/
+  evals : ChunkedEvals nc f
   /-- The previous challenges, one vector per slot. -/
   prev : Vector (Vector f k) MaxProofsVerified
 
 /-- A scalar half's input is its claims, its evaluations and its previous challenges. -/
-def FopInput.equivProd (k : ℕ) (f bc sf : Type) :
-    FopInput k f bc sf ≃
-      UnfinalizedProof k f bc sf × AllEvals f × Vector (Vector f k) MaxProofsVerified :=
+def FopInput.equivProd (k nc : ℕ) (f bc sf : Type) :
+    FopInput k nc f bc sf ≃
+      UnfinalizedProof k f bc sf × ChunkedEvals nc f × Vector (Vector f k) MaxProofsVerified :=
   ⟨fun i => (i.claims, i.evals, i.prev), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
    fun _ => rfl⟩
 
-instance instFopInputCircuitType {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
+instance instFopInputCircuitType {F f w b vb sv sf : Type} {k nc : ℕ} [CircuitType F f w]
     [CircuitType F b vb] [CircuitType F sv sf] :
-    CircuitType F (FopInput k f b sv) (FopInput k w vb sf) :=
-  CircuitType.ofEquiv (FopInput.equivProd k f b sv) (FopInput.equivProd k w vb sf)
+    CircuitType F (FopInput k nc f b sv) (FopInput k nc w vb sf) :=
+  CircuitType.ofEquiv (FopInput.equivProd k nc f b sv) (FopInput.equivProd k nc w vb sf)
 
-@[simp] theorem scoped_fopInput {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] [CircuitType F sv sf] {st : ProverState F} {x : FopInput k w vb sf} :
-    CircuitType.Scoped (val := FopInput k f b sv) st x ↔
-      CircuitType.Scoped (val := UnfinalizedProof k f b sv × AllEvals f ×
-        Vector (Vector f k) MaxProofsVerified) st (FopInput.equivProd k w vb sf x) :=
+@[simp] theorem scoped_fopInput {F f w b vb sv sf : Type} {k nc : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] {st : ProverState F}
+    {x : FopInput k nc w vb sf} :
+    CircuitType.Scoped (val := FopInput k nc f b sv) st x ↔
+      CircuitType.Scoped (val := UnfinalizedProof k f b sv × ChunkedEvals nc f ×
+        Vector (Vector f k) MaxProofsVerified) st (FopInput.equivProd k nc w vb sf x) :=
   CircuitType.scoped_ofEquiv _ _
 
-@[simp] theorem reads_fopInput {F f w b vb sv sf : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+@[simp] theorem reads_fopInput {F f w b vb sv sf : Type} {k nc : ℕ} [Add F] [Mul F] [Zero F]
     [CircuitType F f w] [CircuitType F b vb] [CircuitType F sv sf] {V : Valuation F}
-    {x : FopInput k w vb sf} {a : FopInput k f b sv} :
+    {x : FopInput k nc w vb sf} {a : FopInput k nc f b sv} :
     CircuitType.Reads V x a ↔
-      CircuitType.Reads V (FopInput.equivProd k w vb sf x) (FopInput.equivProd k f b sv a) :=
+      CircuitType.Reads V (FopInput.equivProd k nc w vb sf x)
+        (FopInput.equivProd k nc f b sv a) :=
   CircuitType.reads_ofEquiv _ _
 
 /-! ## The opening -/

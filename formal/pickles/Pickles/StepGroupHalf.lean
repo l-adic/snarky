@@ -29,7 +29,7 @@ structure StepGroup (ks kw : ℕ) (f b : Type) where
   /-- The unfinalized proof the wrap proof is checked against: the step statement's slot. -/
   claims : UnfinalizedProof kw f b (Type2 (SplitField f b))
   /-- The wrap proof. -/
-  proof : IvpProof kw f (Type2 (SplitField f b))
+  proof : IvpProof kw 1 f (Type2 (SplitField f b))
   /-- The wrap proof's two `sg_old`. -/
   sgOld : Vector (AffinePoint f) MaxProofsVerified
   /-- `is_base_case`: the negation of the slot's `must_verify`. -/
@@ -40,7 +40,7 @@ structure StepGroup (ks kw : ℕ) (f b : Type) where
 def StepGroup.equivProd (ks kw : ℕ) (f b : Type) :
     StepGroup ks kw f b ≃
       WrapStatement ks f b (Type1 f) × UnfinalizedProof kw f b (Type2 (SplitField f b)) ×
-        IvpProof kw f (Type2 (SplitField f b)) × Vector (AffinePoint f) MaxProofsVerified × b :=
+        IvpProof kw 1 f (Type2 (SplitField f b)) × Vector (AffinePoint f) MaxProofsVerified × b :=
   ⟨fun g => (g.statement, g.claims, g.proof, g.sgOld, g.isBaseCase),
    fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2⟩, fun _ => rfl, fun _ => rfl⟩
 
@@ -54,7 +54,7 @@ instance instStepGroupCircuitType {F : Type} {ks kw : ℕ} [CircuitType F Bool (
     CircuitType.Scoped (val := StepGroup ks kw F Bool) st x ↔
       CircuitType.Scoped (val := WrapStatement ks F Bool (Type1 F) ×
         UnfinalizedProof kw F Bool (Type2 (SplitField F Bool)) ×
-        IvpProof kw F (Type2 (SplitField F Bool)) × Vector (AffinePoint F) MaxProofsVerified ×
+        IvpProof kw 1 F (Type2 (SplitField F Bool)) × Vector (AffinePoint F) MaxProofsVerified ×
         Bool) st (StepGroup.equivProd ks kw (FVar F) (BoolVar F) x) :=
   CircuitType.scoped_ofEquiv _ _
 
@@ -69,12 +69,12 @@ instance instStepGroupCircuitType {F : Type} {ks kw : ℕ} [CircuitType F Bool (
 /-- The step circuit's `x_hat` table at an environment: computed from the key's Lagrange points
 at the wrap statement's packing (`XhatTable.ofKeyKnown`). It reads the packing's kinds, never
 its cells. -/
-private def xhatTableAt {ks : ℕ} (E : Env IpaPallas.curve)
+private def xhatTableAt {ks : ℕ} (E : Env IpaPallas.curve 1)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : XhatTable Fp 1 :=
   XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList
 
 /-- The `x_hat` leaves at an environment: the packed wrap statement over the key's table. -/
-def stepLeavesAt {ks : ℕ} (E : Env IpaPallas.curve)
+def stepLeavesAt {ks : ℕ} (E : Env IpaPallas.curve 1)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : List (Leaf Fp 1) :=
   packLeaves statement (xhatTableAt E statement)
 
@@ -88,14 +88,14 @@ feature off, which is the modeled fragment, they are constant zero and no circui
 so the packing leaves them out. They change nothing the verifier computes
 (`Kimchi.Verifier.kimchiVerify_append_zeros`): a check against a deployed proof drops them, or
 appends them by that lemma. -/
-def stepPublicInput {ks : ℕ} (E : Env IpaPallas.curve) (V : Valuation Fp)
+def stepPublicInput {ks : ℕ} (E : Env IpaPallas.curve 1) (V : Valuation Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : Array Fq :=
   pubOf IpaPallas.curve V (stepLeavesAt E statement)
 
 /-- The relations the step circuit's `x_hat` needs the SRS to avoid: the coefficients of the
 constant the known-domain fold adds (the sum of the leaves' shift corrections), then the
 Lagrange vectors. It reads the packing's kinds, never its cells. -/
-def stepRelationsAt {ks : ℕ} (E : Env IpaPallas.curve)
+def stepRelationsAt {ks : ℕ} (E : Env IpaPallas.curve 1)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
     List (Fin (2 ^ E.σ.k) → IpaPallas.curve.ScalarField) :=
   corrCoeffs (C := IpaPallas.curve) statement.packed E.lagrangeRelations :: E.lagrangeRelations
@@ -103,43 +103,45 @@ def stepRelationsAt {ks : ℕ} (E : Env IpaPallas.curve)
 /-- The fold's constant is a finite point where the SRS avoids its relation. The coefficient
 vector is nonzero: its coefficients sum to the first leaf's shift, the Lagrange polynomials
 past the first vanishing at `1`. -/
-private theorem corrSumPt_ne_zero {ks : ℕ} (E : Env IpaPallas.curve)
+private theorem corrSumPt_ne_zero {ks : ℕ} (E : Env IpaPallas.curve 1)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (h : E.σ.Avoids (stepRelationsAt E statement)) :
     corrSumPt (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList 0 ≠ 0 := by
-  rw [E.lagrangeBasis_toList, corrSumPt_map_msm]
+  rw [E.lagrangeBasis_toList_one, corrSumPt_map_msm]
   refine h _ List.mem_cons_self fun h0 => ?_
   obtain ⟨k, rest, hk⟩ := List.exists_cons_of_ne_nil
     (l := statement.packed) (by simp [WrapStatement.packed])
+  have hdom : E.cvk.n ≤ 2 ^ E.σ.k := by simpa using E.domain_le
   have hsum := sum_corrCoeffs (C := IpaPallas.curve) (N := E.cvk.n)
-    (lagrangeCoeffs E.σ.k E.cvk.n E.cvk.omega)
-    (by rw [sum_lagrangeCoeffs _ _ _ E.omega_prim E.domain_le
+    (fun i => lagrangeCoeffs E.σ.k E.cvk.n E.cvk.omega i 0)
+    (by rw [sum_lagrangeCoeffs _ _ _ E.omega_prim hdom
       (E.natCast_n_ne_zero pastaShapePallas) 0 (by rw [KimchiVK.n]; positivity)]; simp)
     (fun i hi hin => by
-      rw [sum_lagrangeCoeffs _ _ _ E.omega_prim E.domain_le
+      rw [sum_lagrangeCoeffs _ _ _ E.omega_prim hdom
         (E.natCast_n_ne_zero pastaShapePallas) i hin, if_neg hi.ne'])
     k rest E.cvk.lagrangeBasis.size E.lagrange_pos E.lagrange_le
-  rw [← hk, ← Env.lagrangeRelations, h0] at hsum
+  rw [← hk, ← Env.lagrangeRelations_one, h0] at hsum
   exact shiftCoeff_ne_zero pastaShapePallas k
     (statement.packed_isScalar k (hk ▸ List.mem_cons_self)) (by simpa using hsum.symm)
 
 /-- Whether the SRS avoids the step relations, read off the key: the correction sum's
 commitment is the sum of the key's shifted Lagrange points (`corrSumPt_map_msm`), the Lagrange
 vectors' the points themselves. -/
-private theorem avoids_stepRelationsAt_iff {ks : ℕ} (E : Env IpaPallas.curve)
+private theorem avoids_stepRelationsAt_iff {ks : ℕ} (E : Env IpaPallas.curve 1)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
     E.σ.Avoids (stepRelationsAt E statement)
       ↔ corrSumPt (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList 0 ≠ 0
         ∧ ∀ Ps ∈ E.cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0 := by
-  refine ⟨fun h => ⟨corrSumPt_ne_zero E statement h, E.lagrange_ne pastaShapePallas
-    fun a ha => h a (List.mem_cons_of_mem _ ha)⟩, fun ⟨hsum, hL⟩ a ha hne => ?_⟩
+  refine ⟨fun h => ⟨corrSumPt_ne_zero E statement h, fun Ps hPs => E.lagrange_ne pastaShapePallas
+    (fun a ha => h a (List.mem_cons_of_mem _ ha)) Ps hPs 0⟩, fun ⟨hsum, hL⟩ a ha hne => ?_⟩
   rcases List.mem_cons.1 ha with rfl | ha
-  · rwa [E.lagrangeBasis_toList, corrSumPt_map_msm] at hsum
-  · exact (E.avoids_lagrangeRelations_iff pastaShapePallas).2 hL a ha hne
+  · rwa [E.lagrangeBasis_toList_one, corrSumPt_map_msm] at hsum
+  · exact (E.avoids_lagrangeRelations_iff pastaShapePallas).2
+      (fun Ps hPs c => Fin.fin_one_eq_zero c ▸ hL Ps hPs) a ha hne
 
 /-- Decided on the key's points, with no commitment recomputed; the bounded `∀` is pinned to
 the list walk, as in `Env.decidableAvoids`. -/
-def decidableAvoidsStepRelations {ks : ℕ} (E : Env IpaPallas.curve)
+def decidableAvoidsStepRelations {ks : ℕ} (E : Env IpaPallas.curve 1)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
     Decidable (E.σ.Avoids (stepRelationsAt E statement)) :=
   haveI : Decidable (∀ Ps ∈ E.cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0) :=
@@ -165,7 +167,7 @@ def verifyProofWith {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : �
 /-- `verify` at an environment: `verifyProofWith` at the SRS blinding base and the key's
 Lagrange points. -/
 def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : ℕ}
-    (E : Env IpaPallas.curve) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+    (E : Env IpaPallas.curve 1) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
@@ -177,7 +179,7 @@ is the key's, so what `XhatTable.Bound` asks beyond the environment's invariants
 (`hoff`) and that the Lagrange points and the constant correction sum are finite points: the
 deployed fold adds the sum with `addFast`. No invariant of the key gives these; they are
 relations the SRS avoids (`havoid`, `stepRelationsAt`). -/
-theorem verifyProofAt_reads {ks : ℕ} {V : Valuation Fp} (E : Env IpaPallas.curve)
+theorem verifyProofAt_reads {ks : ℕ} {V : Valuation Fp} (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
@@ -207,10 +209,8 @@ theorem verifyProofAt_reads {ks : ℕ} {V : Valuation Fp} (E : Env IpaPallas.cur
   have htab : (xhatTableAt E statement).Bound pastaShapePallas V E.σ E.cvk (constPt E.σ.h)
       (packLeaves statement (xhatTableAt E statement)) := by
     have hb := bound_ofKeyKnown (V := V) pastaShapePallas E.σ E.cvk statement.packed E.h_ne
-      (fun Ps h ci => by
-        rw [Fin.fin_one_eq_zero ci]
-        exact E.lagrange_ne pastaShapePallas (fun a ha => havoid a (List.mem_cons_of_mem _ ha))
-          Ps h)
+      (fun Ps h ci => E.lagrange_ne pastaShapePallas
+        (fun a ha => havoid a (List.mem_cons_of_mem _ ha)) Ps h ci)
       (by simp [WrapStatement.packed]) hlb
       (bitBoolean_constLeaf_of_isScalar _ _ statement.packed_isScalar) (hleaves ▸ hoff)
       (fun ci => by rw [Fin.fin_one_eq_zero ci]; exact corrSumPt_ne_zero E statement havoid)
@@ -243,9 +243,10 @@ def GroupVar.claims (g : GroupVar ks k) :
 def GroupVar.isBaseCase (g : GroupVar ks k) : BoolVar Fp := g.val.isBaseCase
 /-- The wrap proof's witness commitments, one chunk each. -/
 def GroupVar.wComm (g : GroupVar ks k) : List (List (AffinePoint (FVar Fp))) :=
-  g.val.proof.wComm.toList.map ([·])
+  g.val.proof.wComm.toList.map (·.toList)
 /-- The wrap proof's permutation-accumulator commitment. -/
-def GroupVar.zComm (g : GroupVar ks k) : List (AffinePoint (FVar Fp)) := [g.val.proof.zComm]
+def GroupVar.zComm (g : GroupVar ks k) : List (AffinePoint (FVar Fp)) :=
+  g.val.proof.zComm.toList
 /-- The wrap proof's quotient chunks. -/
 def GroupVar.tComm (g : GroupVar ks k) : List (AffinePoint (FVar Fp)) :=
   g.val.proof.tComm.toList
@@ -276,7 +277,7 @@ abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k) :
 `(verified ∧ finalized) ∨ ¬must_verify` at a slot that must verify. Before it, the ladder band
 asserted on the cells `verify` scales — the seven shifted scalars and the `x_hat` full leaves
 (`Pickles.LadderBand`; a harness assertion, not part of the shared gadget). -/
-def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaPallas.curve)
+def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaPallas.curve 1)
     (keyCells : List (List (AffinePoint (FVar Fp)))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks k) : CircuitM Fp c Unit := do
   assertClaimsOffBandStep g.shifted
@@ -285,7 +286,7 @@ def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaP
   assert v
 
 /-- **The group circuit's read**: the group half's read at a bit that reads `1`. -/
-theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve)
+theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (keyCells : List (List (AffinePoint (FVar Fp)))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks E.σ.k)

@@ -172,6 +172,33 @@ theorem builder_spec_mapM {V : Valuation F} [ConstraintHolds F c] {α β γ : Ty
     rename_i r _ hr rs _ hrs
     exact .cons hr hrs
 
+/-- A specification of `f <$> m` is one of `m` read through `f`. -/
+theorem builder_spec_of_map {V : Valuation F} [ConstraintHolds F c] {α β : Type}
+    (m : CircuitM F (Builder V c) α) (f : α → β) (post : β → Prop)
+    (h : ⦃⌜True⌝⦄ (f <$> m) ⦃⇓ r _ => ⌜post r⌝⦄) : ⦃⌜True⌝⦄ m ⦃⇓ r _ => ⌜post (f r)⌝⦄ := by
+  rw [builder_spec_iff] at h ⊢
+  intro nv hsat
+  have hb := h nv (by
+    rw [CircuitM.map_eq, build_bind]
+    simpa [build] using hsat)
+  rw [CircuitM.map_eq, build_bind] at hb
+  simpa [build] using hb
+
+/-- A vector `mapM` of specifications: each entry's result satisfies its own entry's
+specification. -/
+theorem builder_spec_vector_mapM_get {V : Valuation F} [ConstraintHolds F c] {α β : Type}
+    {m : ℕ} (f : α → CircuitM F (Builder V c) β) (Q : α → β → Prop)
+    (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜Q a r⌝⦄) (v : Vector α m) :
+    ⦃⌜True⌝⦄ v.mapM f ⦃⇓ rs _ => ⌜∀ i : Fin m, Q v[i] rs[i]⌝⦄ := by
+  have hl := builder_spec_mapM f (fun r a => Q a r) id hf v.toList
+  have heq : (fun rs : Vector β m => rs.toList) <$> v.mapM f = v.toList.mapM f := by
+    rw [← Vector.toList_toArray, ← Array.toList_mapM, ← Vector.toArray_mapM, ← comp_map]
+    rfl
+  rw [← heq] at hl
+  refine builder_spec_imp _ _ _ (builder_spec_of_map _ _ _ hl) fun rs h i => ?_
+  have hg := (List.forall₂_iff_get.mp h).2 i (by simp) (by simp)
+  simpa using hg
+
 /-! ## The lawful-backend interface -/
 
 /-- A backend whose reading of the `BasicSystem` primitives means what `Basic` means:
