@@ -802,8 +802,6 @@ theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
 
 /-! ## Sealing -/
 
-open Kimchi.Verifier in
-open Kimchi.Verifier in
 /-! The gadgets are sealed after their reads: a consumer composes `fqSpongeTranscript_reads`,
 `fqSpongeTranscriptOpt_reads` and `assertPlonkChallenges_spec`, never the bodies. -/
 attribute [irreducible] absorbPoint absorbPoints absorbColumns squeezePrechallenge

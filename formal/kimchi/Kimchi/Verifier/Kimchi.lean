@@ -584,12 +584,6 @@ def tailRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
   ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
   ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map (fun x => zipSeg C x.1 x.2)
 
-section TailReads
-
-variable {nc k : ℕ} {cvk : KimchiVK C nc} {cp : KimchiProof C nc k}
-
-end TailReads
-
 /-! ## The verifier -/
 
 /-- **The verifier body over checked records**, for one proof at the basic gate set. It

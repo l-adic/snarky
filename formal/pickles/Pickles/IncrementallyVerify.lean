@@ -244,7 +244,7 @@ column, the opening's `z₁`, `z₂` decode to the proof's, every shifted scalar
 to nothing here: `ξ`, `cip`, `b` are scaled by as claimed, and `perm`, `ζ^{2^k}`, `ζⁿ` enter
 only `ftComm`, so their being the wire's is a premise of `IvpReads`' opening clause. -/
 structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (cp : KimchiProof C nc σ.k)
     (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool)) : Prop where
   /-- The old-accumulator cells read as the proof's old accumulators, through `oldsW`. -/
@@ -330,7 +330,7 @@ structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   /-- Every old-accumulator cell carries a keep bit exactly on the conditional sponge. -/
   mask : ∀ m ∈ inp.sgOld, m.1.isSome = optSponge
   /-- The cells read as the wire's key and proof. -/
-  ties : IvpTies S σ cvk cp pub inp oldsW
+  ties : IvpTies S σ cvk cp inp oldsW
   /-- At least one chunk. -/
   nc_pos : 0 < nc
   /-- At least one quotient chunk. -/
@@ -498,7 +498,7 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
     {S : IvpSide C V ops} {σ : SRS C.Point} {cvk : KimchiVK C nc} {cp : KimchiProof C nc σ.k}
     {pub : Array C.ScalarField} {inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf}
     {oldsW : List (C.Point × Bool)}
-    (hties : IvpTies S σ cvk cp pub inp oldsW) {xHat : List (AffinePoint (FVar C.BaseField))}
+    (hties : IvpTies S σ cvk cp inp oldsW) {xHat : List (AffinePoint (FVar C.BaseField))}
     (hx : CommReads C V xHat (publicCommitment C σ cvk pub).toList)
     {ftc : AffinePoint (FVar C.BaseField)}
     (hf : OnCurveAt C.E.toAffine V ftc (SWPoint.equivPoint C.E (runFtComm C σ cvk cp pub))) :
@@ -647,7 +647,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool))
-    (blindingH : AffinePoint (FVar C.BaseField)) (hties : IvpTies S σ cvk cp pub inp oldsW)
+    (blindingH : AffinePoint (FVar C.BaseField)) (hties : IvpTies S σ cvk cp inp oldsW)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (hlrne : inp.opening.lr.toList ≠ [])
     (tr : FqTranscriptOutput C.BaseField)
@@ -860,9 +860,5 @@ end Assembly
 /-! The gadget is sealed after its read: a consumer composes `incrementallyVerifyProof_reads`,
 never the body. -/
 attribute [irreducible] incrementallyVerifyProof
-
-section Sides
-
-end Sides
 
 end Pickles
