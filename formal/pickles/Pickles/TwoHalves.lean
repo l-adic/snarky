@@ -946,17 +946,17 @@ def GroupHalf.step {k : ℕ} (V : Valuation Fp)
 round count `k` of the finalized proof's SRS (`WrapIPARounds` when deployed), every slot
 present: the wrap circuit has no mask (`finalizeOtherProofWrap` absorbs every slot), so the
 half's is the constant `true_` cell at every slot. -/
-def ScalarHalf.wrap {k : ℕ} (V : Valuation Fq)
+def ScalarHalf.wrap {k nc : ℕ} (V : Valuation Fq)
     (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : ChunkedEvals 1 (FVar Fq))
+    (evals : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
-    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k 1 :=
+    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k nc :=
   ⟨V, fopWrap V, claims, evals, Vector.replicate MaxProofsVerified true_, prevChallenges⟩
 
 /-- The wrap half's mask reads all-true. -/
-theorem ScalarHalf.wrap_maskVals {k : ℕ} (V : Valuation Fq)
+theorem ScalarHalf.wrap_maskVals {k nc : ℕ} (V : Valuation Fq)
     (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : ChunkedEvals 1 (FVar Fq))
+    (evals : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
     (ScalarHalf.wrap V claims evals prevChallenges).maskVals
       = List.replicate MaxProofsVerified true := by
@@ -965,9 +965,9 @@ theorem ScalarHalf.wrap_maskVals {k : ℕ} (V : Valuation Fq)
 
 /-- At the wrap half the `olds` tie keeps every slot: the previous-challenge cells read as the
 old accumulators' challenges, in order. -/
-theorem ScalarHalf.wrap_olds {k : ℕ} (V : Valuation Fq)
+theorem ScalarHalf.wrap_olds {k nc : ℕ} (V : Valuation Fq)
     (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : ChunkedEvals 1 (FVar Fq))
+    (evals : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified)
     (olds : List (List Fq)) :
     ((List.zipWith (fun m cv => if m then [cv] else [])
@@ -988,9 +988,9 @@ theorem ScalarHalf.wrap_olds {k : ℕ} (V : Valuation Fq)
 
 /-- **A wrap proof's two halves accept exactly when `kimchiVerify` does at honest claims.** The
 step circuit's group half, then the wrap circuit's scalar half, tied, with the guards. -/
-theorem twoHalves_kimchiVerify_pallas
-    (E : Env IpaPallas.curve 1)
-    (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
+theorem twoHalves_kimchiVerify_pallas {nc : ℕ}
+    (E : Env IpaPallas.curve nc)
+    (cp : KimchiProof IpaPallas.curve nc E.σ.k)
     (pub : Array Fq)
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
     -- the step circuit: its valuation, its statement's claims, its success bit, its read
@@ -1002,7 +1002,7 @@ theorem twoHalves_kimchiVerify_pallas
     -- the next wrap circuit: its valuation, its cells, its output, its read
     (Vs : Valuation Fq)
     (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : ChunkedEvals 1 (FVar Fq))
+    (evals : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
     (hs : FopVerifyReads (p := IpaPallas.curve.scalar)

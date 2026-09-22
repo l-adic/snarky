@@ -54,7 +54,7 @@ variable {ks : ℕ}
 /-- The group circuit's input cells. -/
 abbrev groupInput (ks k : ℕ) : GroupVar ks k := inputVar (F := Fp) (a := GroupIn ks k)
 /-- The scalar circuit's input cells. -/
-abbrev scalarInput (k : ℕ) : ScalarVar k := inputVar (F := Fq) (a := ScalarIn k)
+abbrev scalarInput (k : ℕ) : ScalarVar k 1 := inputVar (F := Fq) (a := ScalarIn k 1)
 
 /-! ## The hypotheses, and the statement -/
 
@@ -64,7 +64,7 @@ opening, the `sg` cells as the old accumulators' commitments; the evaluation cel
 proof's evaluations, the previous challenges as the old accumulators'. -/
 structure InputReads (E : Env IpaPallas.curve 1) (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq) (Vg : Valuation Fp) (Vs : Valuation Fq)
-    (g : GroupVar ks E.σ.k) (s : ScalarVar E.σ.k) : Prop where
+    (g : GroupVar ks E.σ.k) (s : ScalarVar E.σ.k 1) : Prop where
   /-- The wrap statement's cells are the public input. -/
   statement : stepPublicInput E Vg g.statement = pub
   /-- The slot must verify: `is_base_case` reads `false`. -/
@@ -104,7 +104,7 @@ structure InputReads (E : Env IpaPallas.curve 1) (cp : KimchiProof IpaPallas.cur
 
 variable {E : Env IpaPallas.curve 1} {cp : KimchiProof IpaPallas.curve 1 E.σ.k} {pub : Array Fq}
   {Vg : Valuation Fp} {Vs : Valuation Fq}
-  {g : GroupVar ks E.σ.k} {s : ScalarVar E.σ.k}
+  {g : GroupVar ks E.σ.k} {s : ScalarVar E.σ.k 1}
   {keyCells : VkComms 1 (AffinePoint (FVar Fp))} {spongeAfterIndex : SpongeVar Fp}
 
 /-- The scalar half's proof ties are the input's readings. -/
@@ -191,7 +191,7 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
           spongeAfterIndex)).constraints, ConstraintHolds.Holds Vg con)
     -- the scalar circuit: the wrap finalize, compiled over its input, satisfied
     (Vs : Valuation Fq)
-    (hsatS : ∀ con ∈ (compile (a := ScalarIn E.σ.k) (b := Unit)
+    (hsatS : ∀ con ∈ (compile (a := ScalarIn E.σ.k 1) (b := Unit)
         (scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the input cells read as the wire's

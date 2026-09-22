@@ -261,12 +261,12 @@ def finalizeOtherProofStep {nc : ℕ} (P : FopParams F) (domains : List (KnownDo
 
 /-- The wrap side (PS `wrapFinalizeOtherProofCircuit`): `ζ`, `γ`, `β`, `α` in that order with
 `γ`, `β` sealed, the three shifted plonk claims sealed, then the core at the constant
-generator with the plain challenge digest, `ξ` by `squeeze_challenge`, the `ζ^(2^log2)` rows
+generator with the plain challenge digest, `ξ` by `squeeze_challenge`, the `ζ^(2^srs)` rows
 and the caller's vanishing polynomial. -/
-def finalizeOtherProofWrap (P : FopParams F) (gen : F) (domainLog2 : ℕ)
+def finalizeOtherProofWrap {nc : ℕ} (P : FopParams F) (gen : F)
     (vanishing : FVar F → CircuitM F c (FVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F)))
-    (w : ChunkedEvals 1 (FVar F)) (prev : List (List (FVar F))) :
+    (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F))) :
     CircuitM F c (FopOutput F) := do
   let endoVar : FVar F := .const P.endoLam
   let pl := u.deferredValues.plonk
@@ -278,7 +278,7 @@ def finalizeOtherProofWrap (P : FopParams F) (gen : F) (domainLog2 : ℕ)
   let zetaToDomain ← sealVar pl.zetaToDomainSize.val
   let zetaToSrs ← sealVar pl.zetaToSrsLength.val
   finalizeOtherProofCore P wrapShiftOps true (challengeDigest P.sponge prev) (.const gen)
-    domainLog2 vanishing (prev.map fun _ => true_) u w prev zeta alpha beta gamma
+    P.srsLengthLog2 vanishing (prev.map fun _ => true_) u w prev zeta alpha beta gamma
     ⟨perm⟩
     ⟨zetaToSrs⟩ ⟨zetaToDomain⟩
 
@@ -1063,13 +1063,13 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (hinj : CastInj128 F) (hsw : SplitWidth F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (gen : F) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
-    (domainLog2 : ℕ) (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
+    (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) (w : ChunkedEvals 1 (FVar F))
-    (prev : List (List (FVar F)))
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) {nc : ℕ}
+    (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
     (hft : FtEval0Hyp V P n gen) :
-    ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F)) P gen domainLog2
+    ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F)) P gen
       vanishing u w prev
     ⦃⇓ o _ => ⌜∃ a₀ z₀ : Prechallenge,
       Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
@@ -1094,8 +1094,8 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   have hcore := fun (zeta alpha beta gamma perm zetaToSrs zetaToDomain : FVar F) =>
     finalizeOtherProofCore_spec h2 h3 hinj hsw P hsize h3zk n hzk wrapShiftOps
       wrapShiftOps.reading u ⟨perm⟩ ⟨zetaToSrs⟩ ⟨zetaToDomain⟩ true _ _ hd (.const gen)
-      (fun _ => hω) domainLog2
-      vanishing (fun _ => hvan) _ _ hm w (Or.inl rfl) prev cvs hprev zeta alpha beta
+      (fun _ => hω) P.srsLengthLog2
+      vanishing (fun _ => hvan) _ _ hm w (Or.inr rfl) prev cvs hprev zeta alpha beta
       gamma hft
   -- `hd` is a fully applied triple over a concrete circuit (see `finalizeOtherProofCore_spec`)
   clear hd
@@ -1183,13 +1183,13 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (hP : P.endo = Pasta.vestaEndo ∧ P.mds = symMdsQ ∧ P.toks = fqTokens)
     (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (gen : Fq) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
-    (domainLog2 : ℕ) (vanishing : FVar Fq → CircuitM Fq (Builder V (KimchiConstraint Fq)) (FVar Fq))
+    (vanishing : FVar Fq → CircuitM Fq (Builder V (KimchiConstraint Fq)) (FVar Fq))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (w : ChunkedEvals 1 (FVar Fq))
+    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) {nc : ℕ}
+    (w : ChunkedEvals nc (FVar Fq))
     (prev : List (List (FVar Fq)))
     (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
-    ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen domainLog2
+    ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen
       vanishing u w prev
     ⦃⇓ o _ => ⌜FopVerifyReads P true n gen
       (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
@@ -1199,7 +1199,7 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
   builder_spec_imp _ _ _
     (finalizeOtherProofWrap_spec (by decide) (by decide) (castInj128_of_lt _ (by decide))
       (SplitWidth.zmod (by decide) (by decide)) P hsize
-      h3zk gen n hzk hω domainLog2 vanishing hvan u w prev cvs hprev
+      h3zk gen n hzk hω vanishing hvan u w prev cvs hprev
       fun ulb inp ext α ζ htab hζ hzk' hz1 hω' => by
         obtain ⟨he, hmds, ht⟩ := hP
         rw [he, hmds, ht]

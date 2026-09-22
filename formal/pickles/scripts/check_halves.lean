@@ -254,8 +254,8 @@ def runStep {k nc : ℕ} (zkRows : ℕ) (dom : Pickles.KnownDomain Fp) (inp : St
   runHalf (a := StepFop k nc) Kimchi.Fixture.PS.fpSide (fopStepOnAt zkRows [dom]) fopBits inp
 
 /-- The wrap half on its records at a domain. -/
-def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : Pickles.WrapFop k) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := Pickles.WrapFop k) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2) fopBits inp
+def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : Pickles.WrapFop k 1) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := Pickles.WrapFop k 1) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2) fopBits inp
 
 /-- The step circuit's group half on its records: the wrap key's commitments as constants,
 the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
@@ -310,7 +310,7 @@ proof that slot verified, at the wrap proof's `k` rounds: the slot of the step s
 (`stepStatementOf`) with each split claim as its `Type2` register `2·half + parity`, the
 evaluations and the `MaxProofsVerified` accumulators off the wrap proof. -/
 def wrapFopInput (s : Cache.Entry CS) (slot : ℕ) {k : ℕ}
-    (cpW : Kimchi.Verifier.KimchiProof CW 1 k) : Except String (Pickles.WrapFop k) := do
+    (cpW : Kimchi.Verifier.KimchiProof CW 1 k) : Except String (Pickles.WrapFop k 1) := do
   let n := (s.publicInput.size - 1) / (18 + k)
   let st ← stepStatementOf toWrap k n s.publicInput
   let some u2 := st.proofState.unfinalizedProofs.toList[slot]? | throw s!"slot {slot} of {n}"
@@ -631,8 +631,8 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   -- `hsatS`: the theorem's scalar circuit, which asserts `finalized`
   let finp ← match wrapFopInput s slot cp with
     | .error e => throw (IO.userError s!"wrap input: {e}") | .ok r => pure r
-  let (satS, _) ← runHalf (a := Pickles.WrapProof.ScalarIn σ.k) Kimchi.Fixture.PS.fqSide
-    (fun (v : Pickles.WrapProof.ScalarVar σ.k) => Pickles.WrapProof.scalarCircuit E v)
+  let (satS, _) ← runHalf (a := Pickles.WrapProof.ScalarIn σ.k 1) Kimchi.Fixture.PS.fqSide
+    (fun (v : Pickles.WrapProof.ScalarVar σ.k 1) => Pickles.WrapProof.scalarCircuit E v)
     (fun _ => []) ⟨finp⟩
   IO.println s!"    scalarCircuit (finalized asserted): satisfies={satS}"
   -- `hsatG`: the theorem's group circuit — `verify` with its success bit asserted — on the
