@@ -143,8 +143,6 @@ expansion and the base-4 uniqueness kernel, on which the chain theorems below re
 
 namespace Kimchi.Gate.EndoScalar
 
-open Kimchi.Gate.EndoScalar
-
 variable {F : Type*} [Field F]
 
 /-- The Algorithm-2 accumulator fold: double and add the step's contribution, from the
@@ -724,7 +722,6 @@ private theorem nReconstruct_eq_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   have := gen xs 0 hv
   simpa [nReconstruct, valNat] using this
 
-
 /-- The canonical expansion inverts the base-4 value: `crumbsOf` at a valid list's own
     width and value returns the list. -/
 private theorem crumbsOf_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
@@ -783,8 +780,6 @@ The chain theorems about the effective scalar (`chain_toField`, `chain_complete`
 -/
 
 namespace Kimchi.Gate.EndoScalar
-
-open Kimchi.Gate.EndoScalar
 
 variable {F : Type*} [Field F]
 

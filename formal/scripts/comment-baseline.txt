@@ -8,7 +8,7 @@
 -- Three of those four were found by the passes that cleared the first modules.
 unresolved-names 628
 dangling-paths 20
-upstream-files-in-decl-doc 29
+upstream-files-outside-module-doc 49
 banned-phrases 13
 oversize 20
 emphasis 6

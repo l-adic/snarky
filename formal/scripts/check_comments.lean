@@ -15,9 +15,9 @@ skill). It fails on:
 * DANGLING PATHS — a path into this repository (`formal/…`, `packages/…`) that no file
   answers. A citation of a file nobody wrote is the rot a name nobody declared is.
 * PROVENANCE — a source file of an upstream implementation (`verifier.rs`, `step_verifier.ml`,
-  `RangeCheck.purs`) may be named in a MODULE docstring, to say what a module transcribes. A
-  declaration docstring naming one is a violation: the declaration's prose says what its own
-  code does.
+  `RangeCheck.purs`) may be named in a module's MODULE docstring — its first `/-! … -/` — to
+  say what the module transcribes. A declaration docstring or a later section note naming one
+  is a violation: that prose says what this tree's code does.
 * BANNED PHRASES — history narration, first person, and trackers. A comment describes the code
   as it stands; the git log owns the past and the issue tracker owns the future.
 * OVERSIZE — a declaration docstring longer than `declCap` lines, or a module/section docstring
@@ -255,9 +255,13 @@ run_cmd do
       let src ← IO.FS.readFile f
       let lines := src.splitOn "\n"
       let mut i := 0
+      -- the first `/-!` block is the module docstring; later ones are section notes
+      let mut firstBlock := true
       while i < lines.length do
         let l := lines[i]!
         if l.trim.startsWith "/-!" then
+          let isModuleDoc := firstBlock
+          firstBlock := false
           let mut blk := #[l]
           let mut j := i
           while j < lines.length do
@@ -277,6 +281,11 @@ run_cmd do
             if ws.contains b then
               phrase := phrase.push s!"{f}\tmodule doc: \"{b}\" ({why})"
           for t in backticked text do
+            -- an upstream source file is nameable in the module docstring only; this tree's
+            -- own files (`formal/…`) are nameable anywhere
+            let upstreamFile := isSourceFile t && !t.startsWith "formal/"
+            if upstreamFile && !isModuleDoc then
+              provenance := provenance.push s!"{f}\tsection note: `{t}`"
             if isRepoPath t then
               unless (← System.FilePath.pathExists (".." / t : System.FilePath)) do
                 dangling := dangling.push s!"{f}\tmodule doc: `{t}`"
@@ -292,7 +301,7 @@ run_cmd do
   -- it does, the baseline records what is owed rather than pretending the tree is clean.
   let cats : List (String × Array String) :=
     [ ("unresolved-names", stale), ("dangling-paths", dangling),
-      ("upstream-files-in-decl-doc", provenance),
+      ("upstream-files-outside-module-doc", provenance),
       ("banned-phrases", phrase), ("oversize", oversize), ("emphasis", emph) ]
   let baseSrc ← IO.FS.readFile "scripts/comment-baseline.txt"
   let mut base : Std.HashMap String Nat := {}

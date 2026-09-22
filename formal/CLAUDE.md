@@ -92,9 +92,9 @@ half of the comment convention; the judgement half is the `proof-comment-style` 
 docstring names THIS tree's code: an identifier-shaped backticked token that resolves to
 nothing is rot (the exception list, `scripts/comment-allow.txt`, holds the column-count
 notations and nothing else). An upstream source file — `verifier.rs`, `step_verifier.ml`,
-`RangeCheck.purs` — may be named in a MODULE docstring, to say what the module transcribes;
-a declaration docstring naming one is a violation, because a declaration's prose says what
-its own code does. The gate also bans history narration, first person and trackers, caps a
+`RangeCheck.purs` — may be named in a module's MODULE docstring (its first `/-! … -/`), to say
+what the module transcribes; a declaration docstring or a later section note naming one is a
+violation, because that prose says what this tree's code does. The gate also bans history narration, first person and trackers, caps a
 declaration docstring at 8 lines and a module docstring at 60, and allows one bolded label
 per docstring. Counts run against a ratchet (`scripts/comment-baseline.txt`): a category may
 fall, never rise. `COMMENT_GATE_LIST=1` lists every violation.

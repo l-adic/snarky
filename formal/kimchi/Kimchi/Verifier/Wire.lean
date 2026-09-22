@@ -29,7 +29,6 @@ open Bulletproof
 namespace Kimchi.Verifier.Wire
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Bulletproof
 open Kimchi.Verifier (PointEvaluations ProofEvaluations PubEvalSrc)
 
 variable (C : Ipa.KimchiCurve)
@@ -197,17 +196,3 @@ def runNc (σ : SRS C.Point) (vk : KimchiVK C) : ℕ :=
   if vk.domainLog2 < σ.k then 1 else 2 ^ (vk.domainLog2 - σ.k)
 
 end Kimchi.Verifier.Wire
-
-/-! ## The Pasta instantiations -/
-
-namespace Kimchi.Verifier.Wire.KimchiVesta
-
-open Kimchi.Verifier Bulletproof
-
-end Kimchi.Verifier.Wire.KimchiVesta
-
-namespace Kimchi.Verifier.Wire.KimchiPallas
-
-open Kimchi.Verifier Bulletproof
-
-end Kimchi.Verifier.Wire.KimchiPallas
