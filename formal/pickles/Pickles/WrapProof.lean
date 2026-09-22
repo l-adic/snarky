@@ -162,13 +162,11 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
     have h1 : (g.cells keyCells).sgOld.length = 2 := by
       show (g.sgOld.map (none, ·)).length = 2
       simp [GroupVar.sgOld, MaxProofsVerified]
-    have h2 : (g.cells keyCells).wComm.flatten.length = 15 := by
-      show g.wComm.flatten.length = 15
-      rw [GroupVar.wComm, length_flatten_singletons, Vector.length_toList]
-    have h3 : (g.cells keyCells).zComm.length = 1 := rfl
-    have h4 : (g.cells keyCells).tComm.length = 7 := by
-      show g.tComm.length = 7
-      simp [GroupVar.tComm]
+    have hl := ivpInputOf_lengths g.claims.deferredValues (g.sgOld.map (none, ·)) keyCells
+      g.val.proof
+    have h2 : (g.cells keyCells).wComm.flatten.length = 15 := hl.1
+    have h3 : (g.cells keyCells).zComm.length = 1 := hl.2.1
+    have h4 : (g.cells keyCells).tComm.length = 7 := hl.2.2
     omega
 
 end WrapProof

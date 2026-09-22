@@ -106,32 +106,29 @@ def groupStepOn (vk : Wire.KimchiVK XhatStepCurve) (tab : XhatTable Fp 1)
 /-- The Vesta curve of the wrap-side `x_hat` Lagrange bases (Fq coordinates). -/
 abbrev XhatWrapCurve := Bulletproof.IpaVesta.curve
 
-open CompElliptic.Curves.Pasta.Fast.Projective.Core.PPoint in
-/-- The shift correction `-(2^L)·P` at a Lagrange base `P`, as a one-chunk constant point:
-`[2^L]·P` negated coordinatewise. -/
-def xhatWrapCorr (L : ℕ) (P : XhatWrapCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
-  let Q := smulFast XhatWrapCurve.E (by decide) (by decide) (2 ^ L) P
-  #v[⟨.const Q.x, .const (-Q.y)⟩]
-
 /-- A native Vesta point as a constant cell at the wrap field. -/
 def xhatWrapCell (P : XhatWrapCurve.Point) : AffinePoint (FVar Fq) := ⟨.const P.x, .const P.y⟩
 
-/-- A native Vesta point as a one-chunk constant point at the wrap field. -/
-def xhatWrapBase (P : XhatWrapCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
-  #v[xhatWrapCell P]
+open CompElliptic.Curves.Pasta.Fast.Projective.Core.PPoint in
+/-- The shift correction `-(2^L)·P` at a Lagrange base's chunk `P`, as a constant cell:
+`[2^L]·P` negated coordinatewise. -/
+def xhatWrapCorr (L : ℕ) (P : XhatWrapCurve.Point) : AffinePoint (FVar Fq) :=
+  let Q := smulFast XhatWrapCurve.E (by decide) (by decide) (2 ^ L) P
+  ⟨.const Q.x, .const (-Q.y)⟩
 
-/-- The `x_hat` leaves of a packed scalar list at the Lagrange bases `pts`: leaf `i` at base
-`i`, its correction at the kind's ladder width (255 full, 130 for 128 bits, 10 bits — and a
-boolean cell has none). -/
-def wrapLeaves (pts : Array XhatWrapCurve.Point) (ks : List (PackedScalar Fq)) :
-    List (Leaf Fq 1) :=
+/-- The `x_hat` leaves of a packed scalar list at the Lagrange bases `pts`, `nc` chunks each:
+leaf `i` at base `i`, its correction at the kind's ladder width (255 full, 130 for 128 bits,
+10 bits — and a boolean cell has none), chunk by chunk. -/
+def wrapLeaves {nc : ℕ} (pts : Array (Vector XhatWrapCurve.Point nc))
+    (ks : List (PackedScalar Fq)) : List (Leaf Fq nc) :=
   ks.zipIdx.map fun (k, i) =>
-    let P := pts[i]?.getD 0
+    let P := pts[i]?.getD (Vector.replicate nc 0)
+    let base := P.map xhatWrapCell
     match k with
-    | .full s => .full s (xhatWrapBase P) (xhatWrapCorr 255 P)
-    | .b128 s => .b128 s (xhatWrapBase P) (xhatWrapCorr 130 P)
-    | .b10 s => .b10 s (xhatWrapBase P) (xhatWrapCorr 10 P)
-    | .bit b => .condAdd b (xhatWrapBase P)
+    | .full s => .full s base (P.map (xhatWrapCorr 255))
+    | .b128 s => .b128 s base (P.map (xhatWrapCorr 130))
+    | .b10 s => .b10 s base (P.map (xhatWrapCorr 10))
+    | .bit b => .condAdd b base
 
 /-- The sponge after the step key's index digest, at the wrap field. -/
 def wrapIndexSponge (vk : Wire.KimchiVK XhatWrapCurve) : CircuitM Fq Cq (SpongeVar Fq) :=
@@ -143,9 +140,9 @@ constrain their own bits) with the blinding base, `Pickles.incrementallyVerifyPr
 the conditional sponge at the deployed parameters with each `sg_old` under its keep bit,
 the last `n` of the branch data's mask — then the block's assertions: the digest against the wrap
 statement's claim, each round challenge against its claim. Returns the success bit. -/
-def groupWrapOn (vk : Wire.KimchiVK XhatWrapCurve) (basis : Array XhatWrapCurve.Point)
-    (blindingH : AffinePoint (FVar Fq)) {ks kw n : ℕ}
-    (v : WrapGroup ks kw n (FVar Fq) (BoolVar Fq)) :
+def groupWrapOn {nc : ℕ} (vk : Wire.KimchiVK XhatWrapCurve)
+    (basis : Array (Vector XhatWrapCurve.Point nc)) (blindingH : AffinePoint (FVar Fq))
+    {ks kw n : ℕ} (v : WrapGroup ks kw n nc (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
   let sv ← wrapIndexSponge vk
   let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=

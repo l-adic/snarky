@@ -80,13 +80,6 @@ theorem flatten_singletons {α β : Type} (f : α → β) :
     ∀ l : List α, (l.map fun x => [f x]).flatten = l.map f := fun l => by
   induction l <;> simp_all
 
-/-- Flattening a list's singletons keeps its length. -/
-theorem length_flatten_singletons {α : Type} (l : List α) :
-    (l.map ([·])).flatten.length = l.length := by
-  induction l with
-  | nil => rfl
-  | cons a t ih => simpa using ih
-
 /-- A flattened vector of vectors, as a list, is the flattened list of their lists. -/
 theorem toList_flatten' {α : Type} {m n : ℕ} (v : Vector (Vector α n) m) :
     v.flatten.toList = (v.toList.map Vector.toList).flatten := by

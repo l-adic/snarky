@@ -59,7 +59,7 @@ open CompElliptic.CurveForms.ShortWeierstrass
 namespace StepProof
 
 /-- The group circuit's input cells: fixed by the input type. -/
-abbrev groupInput (k kw n : ℕ) : GroupVar k kw n := inputVar (F := Fq) (a := GroupIn k kw n)
+abbrev groupInput (k kw n : ℕ) : GroupVar k kw n 1 := inputVar (F := Fq) (a := GroupIn k kw n 1)
 
 /-- The scalar circuit's input cells: fixed by the input type. -/
 abbrev scalarInput (k : ℕ) : ScalarVar k := inputVar (F := Fp) (a := ScalarIn k)
@@ -75,7 +75,7 @@ evaluation cells as the proof's evaluations, the kept previous challenges as the
 accumulators'. -/
 structure InputReads (E : Env IpaVesta.curve 1) (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (pub : Array Fp) (domains : KnownDomains E) (Vg : Valuation Fq) (Vs : Valuation Fp)
-    (g : GroupVar E.σ.k kw n) (s : ScalarVar E.σ.k) : Prop where
+    (g : GroupVar E.σ.k kw n 1) (s : ScalarVar E.σ.k) : Prop where
   /-- The step statement's cells are the public input. -/
   statement : wrapPublicInput E Vg g.stepStatement = pub
   /-- The witness commitments. -/
@@ -115,7 +115,7 @@ structure InputReads (E : Env IpaVesta.curve 1) (cp : KimchiProof IpaVesta.curve
 
 variable {E : Env IpaVesta.curve 1} {cp : KimchiProof IpaVesta.curve 1 E.σ.k} {pub : Array Fp}
   {domains : KnownDomains E} {Vg : Valuation Fq} {Vs : Valuation Fp}
-  {g : GroupVar E.σ.k kw n} {s : ScalarVar E.σ.k}
+  {g : GroupVar E.σ.k kw n 1} {s : ScalarVar E.σ.k}
   {keyCells : List (List (AffinePoint (FVar Fq)))} {spongeAfterIndex : SpongeVar Fq}
 
 /-- The scalar half's proof ties are the input's readings. -/
@@ -128,7 +128,7 @@ private theorem char_guard (m : ℕ) (hm : m ≤ 53) (h0 : (m : Fq) = 0) : m = 0
   have hd : PALLAS_SCALAR_CARD ∣ m := (ZMod.natCast_eq_zero_iff m PALLAS_SCALAR_CARD).mp h0
   exact Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hm (by norm_num [PALLAS_SCALAR_CARD]))
 
-private theorem sgOld_length_le (g : GroupVar E.σ.k kw n) : g.sgOld.length ≤ 2 := by
+private theorem sgOld_length_le (g : GroupVar E.σ.k kw n 1) : g.sgOld.length ≤ 2 := by
   simp only [GroupVar.sgOld, List.length_map, List.length_zip, List.length_drop,
     Vector.length_toList, MaxProofsVerified]
   omega
@@ -173,13 +173,11 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
     intro m hm h0
     refine char_guard m (le_trans hm ?_) h0
     have h1 : (g.cells keyCells).sgOld.length ≤ 2 := sgOld_length_le g
-    have h2 : (g.cells keyCells).wComm.flatten.length = 15 := by
-      show g.wComm.flatten.length = 15
-      rw [GroupVar.wComm, length_flatten_singletons, Vector.length_toList]
-    have h3 : (g.cells keyCells).zComm.length = 1 := rfl
-    have h4 : (g.cells keyCells).tComm.length = 7 := by
-      show g.tComm.length = 7
-      simp [GroupVar.tComm]
+    have hl := ivpInputOf_lengths g.val.group.statement.proofState.deferredValues.toDeferredValues
+      g.sgOld keyCells g.val.group.proof
+    have h2 : (g.cells keyCells).wComm.flatten.length = 15 := hl.1
+    have h3 : (g.cells keyCells).zComm.length = 1 := hl.2.1
+    have h4 : (g.cells keyCells).tComm.length = 7 := hl.2.2
     omega
 
 end Hyp
@@ -203,7 +201,7 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     (msgSponge : SpongeVar Fq)
     -- the group circuit: the wrap verify block, compiled over its input, satisfied
     (Vg : Valuation Fq)
-    (hsatG : ∀ con ∈ (compile (a := GroupIn E.σ.k kw n) (b := Unit)
+    (hsatG : ∀ con ∈ (compile (a := GroupIn E.σ.k kw n 1) (b := Unit)
         (groupCircuit (c := Builder Vg (KimchiConstraint Fq)) E keyCells spongeAfterIndex
           msgSponge)).constraints, ConstraintHolds.Holds Vg con)
     -- the scalar circuit: the step finalize, compiled over its input, satisfied

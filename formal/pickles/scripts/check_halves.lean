@@ -55,9 +55,9 @@ on a proof the real prover made.
 Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
 `SimpleChain.json`. `SRS_CACHE_DIR` and `LAGRANGE_CACHE_DIR` relocate the two caches.
 `HALVES` narrows the run to a comma-separated subset of `step`, `wrap`, `step-group`,
-`wrap-group`, `verify`, `carry`, `theorem` (the default is all seven). The `step` and
-`verify` lanes run at the entry's chunk count; the others, whose environment fixes one chunk,
-reject a chunked entry.
+`wrap-group`, `verify`, `carry`, `theorem` (the default is all seven). The `step`,
+`verify` and `wrap-group` lanes run at the entry's chunk count; the others, whose environment
+fixes one chunk, reject a chunked entry.
 -/
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
@@ -153,17 +153,17 @@ def stepStatementOf {F : Type} [Field F] (conv : Fp → F) (k n : ℕ) (c : Arra
                            messagesForNextStepProof := g (n * slotSize) }
            messagesForNextWrapProof := Vector.ofFn fun i => g (n * slotSize + 1 + i) }
 
-/-- A checked one-chunk proof's cells for a group half: its commitments as affine points, the
-opening with `z₁`, `z₂` through `shift` (the side's shifted register). -/
-def ivpProofOf (C : Ipa.KimchiCurve) {k : ℕ} {sf : Type} (shift : C.ScalarField → sf)
-    (cp : Kimchi.Verifier.KimchiProof C 1 k) :
-    Except String (Pickles.IvpProof k C.BaseField sf) := do
+/-- A checked proof's cells for a group half at its `nc` chunks: its commitments as affine
+points, the opening with `z₁`, `z₂` through `shift` (the side's shifted register). -/
+def ivpProofOf (C : Ipa.KimchiCurve) {k nc : ℕ} {sf : Type} (shift : C.ScalarField → sf)
+    (cp : Kimchi.Verifier.KimchiProof C nc k) :
+    Except String (Pickles.IvpProof k nc C.BaseField sf) := do
   let pt (P : C.Point) : AffinePoint C.BaseField := ⟨P.x, P.y⟩
-  let tComm : Vector (AffinePoint C.BaseField) 7 ←
-    if h : cp.tComm.size = 7 then pure ⟨cp.tComm.map pt, by simp [h]⟩
-    else throw s!"t_comm: {cp.tComm.size} chunks, expected 7"
-  return { wComm := cp.wComm.map fun (v : Vector C.Point 1) => pt v[0]
-           zComm := pt cp.zComm[0]
+  let tComm : Vector (AffinePoint C.BaseField) (7 * nc) ←
+    if h : cp.tComm.size = 7 * nc then pure ⟨cp.tComm.map pt, by simp [h]⟩
+    else throw s!"t_comm: {cp.tComm.size} chunks, expected {7 * nc}"
+  return { wComm := cp.wComm.map (·.map pt)
+           zComm := cp.zComm.map pt
            tComm
            opening := { lr := cp.opening.lr.map fun q => (pt q.1, pt q.2)
                         z1 := shift cp.opening.z1, z2 := shift cp.opening.z2
@@ -174,8 +174,8 @@ slots (`unpackBranchData`), `pad` in front of them. A proof carries one accumula
 predecessor of its rule, which a statement padded to the system's width exceeds — a
 heterogeneous system has rules with fewer predecessors than slots — and a padding slot's
 keep bit is off, so its point is never absorbed; it only has to be a point. -/
-def sgOldOf (C : Ipa.KimchiCurve) {k : ℕ} (m : ℕ) (pad : C.Point)
-    (cp : Kimchi.Verifier.KimchiProof C 1 k) :
+def sgOldOf (C : Ipa.KimchiCurve) {k nc : ℕ} (m : ℕ) (pad : C.Point)
+    (cp : Kimchi.Verifier.KimchiProof C nc k) :
     Except String (Vector (AffinePoint C.BaseField) m) :=
   let pt (P : C.Point) : AffinePoint C.BaseField := ⟨P.x, P.y⟩
   let sgs := cp.olds.map fun a => pt a.sg
@@ -272,18 +272,20 @@ def runGroup {ks kw : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Arra
 
 /-- The wrap circuit's group half on its records: the step key's commitments as constants,
 the Lagrange bases, the SRS's blinding base. -/
-def runGroupWrap {ks kw n : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CS) (basis : Array CS.Point)
-    (h : CS.Point) (inp : Pickles.WrapGroup ks kw n Fq Bool) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := Pickles.WrapGroup ks kw n Fq Bool) Kimchi.Fixture.PS.fqSide
+def runGroupWrap {ks kw n nc : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CS)
+    (basis : Array (Vector CS.Point nc)) (h : CS.Point)
+    (inp : Pickles.WrapGroup ks kw n nc Fq Bool) :
+    IO (Bool × List (String × ℕ)) :=
+  runHalf (a := Pickles.WrapGroup ks kw n nc Fq Bool) Kimchi.Fixture.PS.fqSide
     (groupWrapOn vk basis (xhatWrapCell h)) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group-half input from a wrap entry, the step entry it wrapped and the
 checked step proof at `ks` rounds, at the step statement's `n` slots: the wrap statement,
 the step statement carried by value into the wrap field, the step proof (`z₁`, `z₂` as their
 Type1 registers `(s − 2^255 − 1)/2`), its `n` accumulators' `sg`. -/
-def wrapGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (n : ℕ) (pad : CS.Point) {ks : ℕ}
-    (cpS : Kimchi.Verifier.KimchiProof CS 1 ks) :
-    Except String (Pickles.WrapGroup ks Pickles.WrapIPARounds n Fq Bool) := do
+def wrapGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (n : ℕ) (pad : CS.Point)
+    {ks nc : ℕ} (cpS : Kimchi.Verifier.KimchiProof CS nc ks) :
+    Except String (Pickles.WrapGroup ks Pickles.WrapIPARounds n nc Fq Bool) := do
   let statement ← wrapStatementOf id ks w.publicInput
   let st ← stepStatementOf toWrap Pickles.WrapIPARounds n s.publicInput
   let pr ← ivpProofOf CS (fun z => ⟨toWrap (Pasta.Shifted.shiftType1 255 z)⟩) cpS
@@ -524,9 +526,9 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       st.proofState.unfinalizedProofs.map fun u =>
         u.deferredValues.bulletproofChallenges.map fun c =>
           Poseidon.FqSponge.endoExpand (F := Fq) (IpaPallas.curve.lam : Fq) c.val.val
-    let (satG, _) ← runHalf (a := Pickles.StepProof.GroupIn σ.k Pickles.WrapIPARounds n)
+    let (satG, _) ← runHalf (a := Pickles.StepProof.GroupIn σ.k Pickles.WrapIPARounds n 1)
       Kimchi.Fixture.PS.fqSide
-      (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n) => do
+      (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n 1) => do
         let sv ← wrapIndexSponge s.vk
         Pickles.StepProof.groupCircuit E (keyComms xhatWrapCell s.vk) sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
@@ -676,11 +678,11 @@ def main : IO Unit := do
       let n := (s.publicInput.size - 1) / (18 + Pickles.WrapIPARounds)
       let r := s.proof.opening.lr.size
       let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS r
-      let (_, cpS) ← checkedAt CS "vesta" σS s
+      let ⟨nc, _, cpS⟩ ← checkedAny CS "vesta" σS s
       let ginp ← match wrapGroupInput w s n (σS.g ⟨0, Nat.two_pow_pos _⟩) cpS with
         | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok i => pure i
-      let basis := (← basisFor CS "vesta" σS 1 s).map (·[(0 : Fin 1)])
-      let ok ← report s!"wrap group half on {pair} ({n} slot(s), {r} rounds)"
+      let basis ← basisFor CS "vesta" σS nc s
+      let ok ← report s!"wrap group half on {pair} ({n} slot(s), {r} rounds, {nc} chunk(s))"
         (runGroupWrap s.vk basis σS.h ginp)
       runs := runs + 1
       unless ok do allOk := false

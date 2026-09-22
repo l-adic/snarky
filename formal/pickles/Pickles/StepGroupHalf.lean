@@ -29,7 +29,7 @@ structure StepGroup (ks kw : ℕ) (f b : Type) where
   /-- The unfinalized proof the wrap proof is checked against: the step statement's slot. -/
   claims : UnfinalizedProof kw f b (Type2 (SplitField f b))
   /-- The wrap proof. -/
-  proof : IvpProof kw f (Type2 (SplitField f b))
+  proof : IvpProof kw 1 f (Type2 (SplitField f b))
   /-- The wrap proof's two `sg_old`. -/
   sgOld : Vector (AffinePoint f) MaxProofsVerified
   /-- `is_base_case`: the negation of the slot's `must_verify`. -/
@@ -40,7 +40,7 @@ structure StepGroup (ks kw : ℕ) (f b : Type) where
 def StepGroup.equivProd (ks kw : ℕ) (f b : Type) :
     StepGroup ks kw f b ≃
       WrapStatement ks f b (Type1 f) × UnfinalizedProof kw f b (Type2 (SplitField f b)) ×
-        IvpProof kw f (Type2 (SplitField f b)) × Vector (AffinePoint f) MaxProofsVerified × b :=
+        IvpProof kw 1 f (Type2 (SplitField f b)) × Vector (AffinePoint f) MaxProofsVerified × b :=
   ⟨fun g => (g.statement, g.claims, g.proof, g.sgOld, g.isBaseCase),
    fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2⟩, fun _ => rfl, fun _ => rfl⟩
 
@@ -54,7 +54,7 @@ instance instStepGroupCircuitType {F : Type} {ks kw : ℕ} [CircuitType F Bool (
     CircuitType.Scoped (val := StepGroup ks kw F Bool) st x ↔
       CircuitType.Scoped (val := WrapStatement ks F Bool (Type1 F) ×
         UnfinalizedProof kw F Bool (Type2 (SplitField F Bool)) ×
-        IvpProof kw F (Type2 (SplitField F Bool)) × Vector (AffinePoint F) MaxProofsVerified ×
+        IvpProof kw 1 F (Type2 (SplitField F Bool)) × Vector (AffinePoint F) MaxProofsVerified ×
         Bool) st (StepGroup.equivProd ks kw (FVar F) (BoolVar F) x) :=
   CircuitType.scoped_ofEquiv _ _
 
@@ -230,9 +230,10 @@ def GroupVar.claims (g : GroupVar ks k) :
 def GroupVar.isBaseCase (g : GroupVar ks k) : BoolVar Fp := g.val.isBaseCase
 /-- The wrap proof's witness commitments, one chunk each. -/
 def GroupVar.wComm (g : GroupVar ks k) : List (List (AffinePoint (FVar Fp))) :=
-  g.val.proof.wComm.toList.map ([·])
+  g.val.proof.wComm.toList.map (·.toList)
 /-- The wrap proof's permutation-accumulator commitment. -/
-def GroupVar.zComm (g : GroupVar ks k) : List (AffinePoint (FVar Fp)) := [g.val.proof.zComm]
+def GroupVar.zComm (g : GroupVar ks k) : List (AffinePoint (FVar Fp)) :=
+  g.val.proof.zComm.toList
 /-- The wrap proof's quotient chunks. -/
 def GroupVar.tComm (g : GroupVar ks k) : List (AffinePoint (FVar Fp)) :=
   g.val.proof.tComm.toList
