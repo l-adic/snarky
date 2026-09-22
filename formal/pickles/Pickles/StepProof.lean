@@ -16,38 +16,32 @@ the run's own scalars, and `sg` is the challenge polynomial's commitment
 (`kimchiVerify_reflects`, `verifyWith`). The group circuit proves the equation at the claimed
 scalars; the scalar circuit proves the claimed scalars are the run's; the ties say the two
 circuits speak of one set of claims. The guards are the environment's, and the `sg` equation
-is the one check no circuit performs — pickles defers it to the next proof's accumulator
-(`SgOk`).
+is the one check no circuit performs: it is deferred to the next proof's accumulator (`SgOk`).
 
-The two halves run in different circuits over different fields, so neither is a triple's
-program here: each is compiled (`Snarky.compile`) over its input and appears as its
-constraint system, satisfied by its own valuation — what a triple unfolds to
-(`builder_spec_iff`). An input's check is among the compiled rows, so the mask's booleanity
-is a consequence of satisfaction, as it is in `Step.Main`, which checks the branch data where
-it allocates it.
+The two halves run in different circuits over different fields, so each is compiled
+(`Snarky.compile`) over its input and appears as its constraint system, satisfied by its own
+valuation (`builder_spec_iff`). The input's check is among the compiled rows, so the mask's
+booleanity follows from satisfaction (`BranchData.mask_boolean`).
 
 ## The hypotheses
 
-* `InputReads`: the input cells that hold the wire's objects read as them — the step
-  statement as the public input, the proof cells as the proof, the accumulator cells as the
-  old accumulators, the evaluation cells as the evaluations, the branch's domain as the key's;
+* `StepProof.InputReads`: the input cells read as the wire's objects — the step statement as
+  the public input, the proof cells as the proof, the `sg` cells as the old accumulators, the
+  evaluation cells as the evaluations, the branch's domain as the key's;
 * `VkReads`: the circuit's key cells read as the key;
 * `HalvesTies`: the two circuits hold one set of deferred claims;
-* what is no hypothesis, because a circuit enforces it: the three scalars `ft_comm` scales by
-  — the permutation scalar, `ζ^(2^k)`, `ζⁿ` — which the scalar circuit compares at the
-  transcript's challenges (the group read gives those before it opens, `IvpReads`, and
-  `HalvesTies` carries them across the field crossing); and the ladder's band, which the group
-  circuit asserts on the cells it scales — the shifted claims and the `x_hat` full leaves
-  (`Pickles.LadderBand`), an assertion of this harness rather than of the shared gadget;
+* no hypothesis where a circuit enforces it: the three scalars `ftComm` scales by, which the
+  scalar circuit checks and `HalvesTies` carries over; and the ladder's band, which the group
+  circuit asserts on the shifted claims and the full public-input leaves
+  (`Pickles.LadderBand`), a harness assertion rather than the shared gadget's;
 * `havoid`: the SRS avoids the key's Lagrange relations (`SRS.Avoids`,
-  `Env.lagrangeRelations`). The `x_hat` table is the key's Lagrange points, commitments
-  against the SRS; that they are finite points is that the SRS has no relation at their
-  coefficient vectors, which no invariant gives;
+  `Env.lagrangeRelations`). The key's Lagrange points are commitments against the SRS, finite
+  exactly when the SRS has no relation at their coefficient vectors, which no invariant gives;
 * `Guards` and `SgOk`, of the proof itself.
 
 The layered hypotheses the halves' reads consume (`IvpHyps`, `IvpTies`, `FopTies`) are built
-from these in the proof; the shape guards among them (`mask`, `nc_pos`, `t_ne`,
-`lr_ne`, `char`) are proved — `lr_ne` from the environment's `rounds_pos`.
+from these in the proof; the shape guards among them (`mask`, `nc_pos`, `t_ne`, `lr_ne`,
+`char`) are proved.
 -/
 
 namespace Pickles
@@ -58,11 +52,11 @@ open CompElliptic.CurveForms.ShortWeierstrass
 
 namespace StepProof
 
-/-- The group circuit's input cells: fixed by the input type. -/
+/-- The group circuit's input cells. -/
 abbrev groupInput (k kw n nc : ℕ) : GroupVar k kw n nc :=
   inputVar (F := Fq) (a := GroupIn k kw n nc)
 
-/-- The scalar circuit's input cells: fixed by the input type. -/
+/-- The scalar circuit's input cells. -/
 abbrev scalarInput (k nc : ℕ) : ScalarVar k nc := inputVar (F := Fp) (a := ScalarIn k nc)
 
 section Hyp
@@ -149,10 +143,8 @@ private theorem sgOld_length_le (g : GroupVar E.σ.k kw n nc) : g.sgOld.length �
     Vector.length_toList, MaxProofsVerified]
   omega
 
-/-- The group half's hypotheses: the readings from `InputReads` and `VkReads`, the claims no
-circuit enforces from their own hypotheses, the shape guards proved — every `sg` cell carries
-a keep bit, the claim is canonical on the wrap side, one chunk, seven quotient chunks, a round,
-and at most `53` absorbed cells. -/
+/-- The group half's hypotheses, from the readings (`InputReads`, `VkReads`) and the shifted
+claims' `IvpSide.ClaimOk`, with the shape guards proved. -/
 private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     (hclaimOk : ∀ x ∈ g.shifted, (wrapSide Vg).ClaimOk x) :
@@ -234,7 +226,7 @@ theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the two circuits hold one set of deferred claims
     (ht : HalvesTies ((groupInput E.σ.k kw n nc).half Vg) ((scalarInput E.σ.k nc).half Vs))
-    -- the SRS has no relation at the `x_hat` table's coefficient vectors
+    -- the SRS avoids the key's Lagrange relations
     (havoid : E.σ.Avoids E.lagrangeRelations)
     -- of the proof itself
     (hguard : Guards IpaVesta.curve E.cvk cp pub)

@@ -7,10 +7,10 @@ import Kimchi.Shifted
 # The permutation argument: constraints and quotient soundness
 
 The kimchi permutation constraints as polynomial data (proof-systems `permutation.rs`), and
-their soundness: if `Z_H` divides all three, then on the unmasked rows the accumulator meets
+their soundness: if `zH` divides all three, then on the unmasked rows the accumulator meets
 the hypotheses of `prod_eq_of_accumulator`, so the shift-side and σ-side grand products agree.
 
-The constraints, with `L_r` the Lagrange basis at row `r`:
+The constraints:
 
 * `zkpm · (z · ∏ᵢ (wᵢ + γ + β·shiftᵢ·X) - z(ωX) · ∏ᵢ (wᵢ + γ + β·σᵢ))` — the accumulator
   recurrence, gated off the three roots of `zkpm`: the two rows whose successor accumulator
@@ -52,7 +52,7 @@ noncomputable def shiftSide (w : Fin permCols → Polynomial F)
 noncomputable def sigmaSide (w σ : Fin permCols → Polynomial F) (β γ : F) : Polynomial F :=
   ∏ i, (w i + C γ + C β * σ i)
 
-/-- The indicator of row `r`, whose `columnPoly` is the Lagrange basis `L_r`. -/
+/-- The indicator of row `r`, whose `columnPoly` is the Lagrange basis at row `r`. -/
 def rowIndicator {n : ℕ} (r : Fin n) : Fin n → F :=
   fun j => if j = r then 1 else 0
 
@@ -125,7 +125,7 @@ private theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
   simp only [eval_mul, eval_sub, eval_X, eval_C]
   rcases hi with h | h | h <;> subst h <;> simp
 
-/-- A Lagrange-gated pin: if `Z_H ∣ (z - 1) · lagNumer r` then the accumulator is `1`
+/-- A Lagrange-gated pin: if `zH F n ∣ (z - 1) · lagNumer r` then the accumulator is `1`
 at row `r` — the numerator's value at its own node is `n·ω^{−r} ≠ 0` (a primitive root
 forces `(n : F) ≠ 0`), so the pin factor must vanish. -/
 private theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
@@ -163,7 +163,7 @@ private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω
 
 /-! ## The headline -/
 
-/-- **Permutation quotient soundness.** If `Z_H` divides each of the three permutation
+/-- **Permutation quotient soundness.** If `zH` divides each of the three permutation
 constraints, the accumulator telescopes over the unmasked rows: the shift-side and σ-side
 grand products agree there. -/
 theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
@@ -179,7 +179,7 @@ theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
   · exact fun j hj => step_of_aggregation hω hn hzk2 hzkn z w σ shifts β γ (hdvd 0) hj
 /-- **Permutation completeness.** If the σ-side row products are nonzero on every row and
 the grand products agree over the unmasked rows, some accumulator makes all three
-constraints divisible by `Z_H`: the converse of `soundness_of_dvd`, pointwise in `(β, γ)`.
+constraints divisible by `zH`: the converse of `soundness_of_dvd`, pointwise in `(β, γ)`.
 The accumulator is `accumulator_of_prod_eq`'s running ratio up to row `n − zkRows`, `1` on
 the next two rows, then the ratio restarted; the recurrence is live inside the mask, hence
 nonvanishing on every row. -/

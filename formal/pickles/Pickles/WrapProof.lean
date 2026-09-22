@@ -18,30 +18,28 @@ valuation (`builder_spec_iff`).
 
 ## The hypotheses
 
-* `WrapProof.InputReads`: the input cells that hold the wire's objects read as them — the wrap
-  statement as the public input, the slot as one that must verify, the proof cells as the
-  proof, the `sg` cells as the old accumulators, the evaluation cells as the evaluations;
+* `WrapProof.InputReads`: the input cells read as the wire's objects — the wrap statement as
+  the public input, the slot as one that must verify, the proof cells as the proof, the `sg`
+  cells as the old accumulators, the evaluation cells as the evaluations;
 * `VkReads`: the circuit's key cells read as the key;
 * `HalvesTies`: the two circuits hold one set of deferred claims;
-* what is no hypothesis, because a circuit enforces it: the three scalars `ft_comm` scales by
-  (the scalar circuit compares each, `HalvesTies` carries them over); the claimed `cip`
-  absorbing as its canonical representative (its own ladder, `scaleByCip`, pins the half one
-  bit narrower); and the ladder's band, which the group circuit asserts on the cells it
-  scales — the shifted claims and the `x_hat` full leaves (`Pickles.LadderBand`), an assertion
-  of this harness rather than of the shared gadget;
-* `havoid`: the SRS avoids the `x_hat` relations (`SRS.Avoids`, `stepRelationsAt`). The table
-  is computed from the key (`xhatTableAt`), and its points are commitments against the SRS;
-  that the Lagrange points and each chunk of the constant correction sum the fold adds are
-  finite points is that the SRS has no relation at their coefficient vectors, which no
+* no hypothesis where a circuit enforces it: the three scalars `ftComm` scales by, which the
+  scalar circuit checks and `HalvesTies` carries over; the claimed `cip` absorbing as its
+  canonical representative, which its own ladder (`scaleByCip`) pins; and the ladder's band,
+  which the group circuit asserts on the shifted claims and the full public-input leaves
+  (`Pickles.LadderBand`), a harness assertion rather than the shared gadget's;
+* `havoid`: the SRS avoids the public-input relations (`SRS.Avoids`, `stepRelationsAt`). The
+  Lagrange points and each chunk of the correction sum the fold adds are commitments against
+  the SRS, finite exactly when the SRS has no relation at their coefficient vectors, which no
   invariant gives;
 * `hsmall`: the wrap statement packs no more leaves than the SRS has points, so each chunk of
   the correction sum has nonzero coefficients;
 * `Guards` and `SgOk`, of the proof itself.
 
-Against the step proof's statement: no domain cell (the wrap circuit's domain is a constant)
-and every `sg` slot kept. The layered hypotheses the halves' reads consume (`IvpHyps`,
-`IvpTies`, `FopTies`) are built from these in the proof; the shape guards among them (`mask`,
-`nc_pos`, `t_ne`, `lr_ne`, `char`) are proved.
+Unlike the step proof's statement, there is no domain cell (the wrap circuit's domain is a
+constant) and every `sg` slot is kept. The layered hypotheses the halves' reads consume
+(`IvpHyps`, `IvpTies`, `FopTies`) are built from these in the proof; the shape guards among
+them (`mask`, `nc_pos`, `t_ne`, `lr_ne`, `char`) are proved.
 -/
 
 namespace Pickles
@@ -70,7 +68,7 @@ structure InputReads (E : Env IpaPallas.curve nc) (cp : KimchiProof IpaPallas.cu
     (g : GroupVar ks E.σ.k nc) (s : ScalarVar E.σ.k nc) : Prop where
   /-- The wrap statement's cells are the public input. -/
   statement : stepPublicInput E Vg g.statement = pub
-  /-- The slot must verify: `is_base_case` reads `false`. -/
+  /-- The slot must verify: its base-case bit reads `false`. -/
   mustVerify : CircuitType.Reads Vg g.isBaseCase false
   /-- The witness commitments. -/
   w : ColumnsRead IpaPallas.curve Vg g.wComm cp.wComm.toList
@@ -135,8 +133,8 @@ private theorem char_guard (m : ℕ) (hm : m ≤ 5 + 48 * 2 ^ 32) (h0 : (m : Fp)
   have hd : PALLAS_BASE_CARD ∣ m := (ZMod.natCast_eq_zero_iff m PALLAS_BASE_CARD).mp h0
   exact Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hm (by norm_num [PALLAS_BASE_CARD]))
 
-/-- The group half's hypotheses: the readings from `InputReads` and `VkReads`, what no circuit
-enforces from its own hypotheses, the shape guards proved. -/
+/-- The group half's hypotheses, from the readings (`InputReads`, `VkReads`) and the shifted
+claims' `IvpSide.ClaimOk`, with the shape guards proved. -/
 private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     (hclaimOk : ∀ x ∈ g.shifted, (stepSide Vg).ClaimOk x) :
@@ -221,8 +219,8 @@ theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the two circuits hold one set of deferred claims
     (ht : HalvesTies ((groupInput ks E.σ.k nc).half Vg) ((scalarInput E.σ.k nc).half Vs))
-    -- the statement packs no more leaves than the SRS has points, and the SRS has no relation
-    -- at the `x_hat` table's coefficient vectors
+    -- the statement packs no more leaves than the SRS has points, and the SRS avoids the
+    -- public-input relations
     (hsmall : (groupInput ks E.σ.k nc).statement.packed.length ≤ 2 ^ E.σ.k)
     (havoid : E.σ.Avoids (stepRelationsAt E (groupInput ks E.σ.k nc).statement))
     -- of the proof itself

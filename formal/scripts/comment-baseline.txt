@@ -6,7 +6,7 @@
 -- upstream identifiers, bare port vocabulary that resolved by colliding with a Mathlib tail,
 -- file citations carrying a line range, and paths into this repository that no file answers.
 -- Three of those four were found by the passes that cleared the first modules.
-unresolved-names 123
+unresolved-names 94
 dangling-paths 12
 upstream-files-outside-module-doc 4
 banned-phrases 2
