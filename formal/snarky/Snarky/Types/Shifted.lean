@@ -16,7 +16,7 @@ representation used when the scalar field is no larger than the circuit field;
 half and a parity bit, standing for `2·sDiv2 + sOdd + 2^n`; `scaleFast2`'s ladder
 consumes it.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - The carriers ported are the `Type1` newtype and the `SplitField` pair the `varBaseMul`
   laws speak about, and the `Type2` newtype the pickles verifiers unshift their deferred
   values through, each with its `fromShifted` decode; the circuit-side decodes

@@ -10,8 +10,8 @@ therefore every subsequent union decision and every `find` result is identical w
 without it. What must be mirrored exactly is the union-by-rank rule itself (smaller rank
 under larger; on a tie the SECOND root is pointed at the first, whose rank bumps),
 because the representative choice is observable through `rootOf` until the wiring pass is
-shown to consume only the partition (recorded hypothesis, validated at the CS-equality
-step of `formal/docs/snarky-kimchi-alignment.md`).
+shown to consume only the partition — a hypothesis the CS-equality check
+(`formal/scripts/check_cs.lean`) pins, since the wiring it compares depends on the choice.
 
 Name map: `fresh` → `empty` (pure value, no allocation), `find`/`union`/`rootOf` keep
 their names; `ensure` stays the internal growth step. The

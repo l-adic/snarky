@@ -20,7 +20,7 @@ Name map: `EndoScalarRound`, `EndoScalar`, and `reduce` keep their names (the
 latter namespaced as `EndoScalar.reduce`/`EndoScalarRound.reduce`, one per PS
 declaration level).
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - PS's per-module `Rows` newtype over an array renders as the bare
   `List (KimchiRow F)` with the identity `ToKimchiRows` instance (`Constraint/Types`).
 - PS `traverse` over the round array renders as the structural fold it denotes, and

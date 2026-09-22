@@ -110,7 +110,7 @@ def isSourceFile (t : String) : Bool :=
 
 /-- Tactic and keyword vocabulary a docstring may quote without naming a declaration. -/
 def keywords : List String :=
-  ["simp", "rfl", "decide", "omega", "ring", "mvcgen", "native_decide", "sorry", "none",
+  ["simp", "rfl", "decide", "omega", "ring", "mvcgen", "native_decide", "none",
    "some", "true", "false", "this", "fun", "let", "have", "show", "calc", "exact", "apply",
    "refine", "cases", "induction", "rw", "subst", "aesop", "norm_num", "linarith"]
 

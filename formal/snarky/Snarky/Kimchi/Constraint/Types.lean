@@ -18,7 +18,7 @@ deprecated command token in Lean 4); `GateKind`'s constructors drop to lowerCame
 `PoseidonGate` → `.poseidon`, `VarBaseMul` → `.varBaseMul`, `EndoMul` → `.endoMul`,
 `EndoScalar` → `.endoScalar`, `Zero` → `.zero`), matching `Kimchi.GateType`'s style.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - `KimchiRow.coeffs` stays a `List F` of UNFIXED length, exactly PS's `Array f`, because
   the length is semantic, not a register file: the EC and `zero` reducers emit EMPTY
   coefficient arrays (those gates have no coefficients), Poseidon emits exactly 15 (the

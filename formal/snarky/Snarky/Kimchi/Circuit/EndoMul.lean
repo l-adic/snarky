@@ -27,7 +27,7 @@ witnesses `[s⁻¹]·g` — the inverse of the scalar `Kimchi.Gate.EndoScalar.to
 decodes, computed in the other field — over an on-curve checked point, then verifies
 with `endoMul` and pins to the input: the cross-field division gadget.
 
-## Deviations from the original (recorded in `formal/docs/snarky-kimchi-alignment.md`)
+## Deviations from the original
 
 - Type-level sizing renders as the explicit `rounds` parameter with `4 · rounds` bits,
   and the bit reads go through `[ToNat F]`.

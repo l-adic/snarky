@@ -15,7 +15,7 @@ contract: the states in index order, each triple left to right.
 Name map: `PoseidonConstraint` and `reduce` keep their names; `addRoundState`
 and the final row stay named helpers.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - PS reads the round constants off the ambient `PoseidonField` class at reduction
   time; a deep embedding has no ambient dictionary, so the payload carries the
   permutation's parameter set — the MDS matrix rows and the constant table — as

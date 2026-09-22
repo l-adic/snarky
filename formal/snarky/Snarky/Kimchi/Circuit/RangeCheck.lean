@@ -19,7 +19,7 @@ One section per gadget: the definition, its soundness spec, its completeness law
 then the definition is sealed `irreducible`. The pure split stays transparent — the
 statements speak about it.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - PS's type-level `FieldSizeInBits f 255` constraint renders as no hypothesis: the
   gadget emits the same ops at any field, and the laws carry the width facts they
   need (`toField_spec`'s `4^64 = 2^128` budget, the split's faithfulness).

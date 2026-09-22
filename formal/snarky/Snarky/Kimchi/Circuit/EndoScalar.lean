@@ -21,7 +21,7 @@ Name map: `toField`, `toFieldChecked'`, `toFieldPure` keep their names, namespac
 `EndoScalar` after the PS module's qualified use. `expandToEndoScalar` is
 pickles-layer (cross-field transport) and is not ported.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - PS's type-level `SizedF nBits` sizing renders as the explicit `rows` parameter
   with `16 · rows` bits, and the bit reads go through `[ToNat F]`.
 - PS's record `exists` allocates its fields alphabetically; the per-row witness is

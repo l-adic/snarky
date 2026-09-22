@@ -18,7 +18,7 @@ their names; the result record is `AddResult`; the witness
 computations are named (`AddFast.sameXWit`, …) in the manner of the base `Field`
 gadgets.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - `AffinePoint`'s `CircuitType`/`CheckedType` instances live here, beside their first
   Lean consumer — the PS home (`Snarky.Data.EllipticCurve`, package snarky-curves) is
   outside this port. The encoding is the PS generic one, `[x, y]`, checks free.

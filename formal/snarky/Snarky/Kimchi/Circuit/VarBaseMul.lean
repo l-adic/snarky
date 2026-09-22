@@ -32,7 +32,7 @@ then the definition is sealed `irreducible`. Nothing below a section reasons abo
 circuit's body — the round reaches the ladder as `scaleRound_spec`/`scaleRound_complete`,
 the ladder reaches the wrappers as `varBaseMul_spec`/`varBaseMul_complete`.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - PS batches the whole witness chain through `mkWitnessTable`/`computeVbmChain`
   (`doubleAddChain`'s projective walk with Montgomery batch inversion); the port
   computes each bit step sequentially from the threaded variables via the gate

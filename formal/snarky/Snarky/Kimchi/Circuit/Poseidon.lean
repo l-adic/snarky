@@ -18,7 +18,7 @@ round renders as the gate's canonical iterate `Kimchi.Gate.Poseidon.rounds` — 
 same field values (`round_eq_fullRound`), and the form the gate's chain lemmas
 certify — with output `i` the `(i + 1)`-round prefix.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - PS's ambient `PoseidonField` class arrives as the explicit parameter
   `p : Poseidon.Params F`, whose data the emitted payload carries (the payload-data
   deviation in `Constraint/Poseidon.lean`).

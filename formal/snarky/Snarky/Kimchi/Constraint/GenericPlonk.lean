@@ -14,7 +14,7 @@ operands degenerated to constants.
 Name map: `reduce` keeps its name; the case dispatch keeps PS's coefficient
 patterns verbatim.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - The three all-constant contradiction sites (`r1cs`, `square`, `boolean`) throw in PS;
   the total Lean rendering emits the corresponding unsatisfiable generic row
   (`c = lhs − rhs`), the same move `Reduction.lean`'s equality op makes.

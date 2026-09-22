@@ -20,7 +20,7 @@ module, Lean by the payload's namespace). The PS anonymous point records render 
 reduces onto, defined here generically so both use one record. `reduceAffinePoint`
 stays a named helper.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - PS re-declares an identical `Rows` newtype (one row, singleton `toKimchiRows`); Lean
   reuses `Snarky.Kimchi.Rows`, which is that type.
 

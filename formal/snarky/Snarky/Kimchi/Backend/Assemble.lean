@@ -20,7 +20,7 @@ placement/class stores imperatively and then SORTS each class's cells; `wireMap`
 collects the classes in row-major order, which is that sorted order, and maps each
 cell to its cyclic successor.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - `Wire` is a plain `(row, col)` record (the PS type is an FFI constructor); a cell
   outside every wired class targets itself, as in PS's `wireNew i j` default.
 - Only permutation columns `0 … 6` wire (PS filters `j < 7`); the PS `i * 16 + j`

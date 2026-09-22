@@ -20,7 +20,7 @@ Name map: PS `Round` becomes `EndoMulRound` (the bare name is too generic for
 the flat namespace); `EndoMul` and `reduce` keep their names; `finalZeroRow` stays
 the named helper.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - The round's `s` and `nAccNext` fields are carried but NOT reduced, exactly as in
   PS: the gate is two-row, and a round's outputs are read from the NEXT row (the
   following round's `p`/`nAcc` cells, or the trailing `zero` row).

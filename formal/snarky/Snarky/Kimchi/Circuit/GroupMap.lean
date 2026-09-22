@@ -23,7 +23,7 @@ fixture-validated map: `groupMapPure_toGroup` proves it computes
 wire `Spec`. The generic laws quote the module's own pure model; the wire section
 restates them with the wire map itself as the spec.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - PS `groupMapParams` builds the parameter record from the `HasBW19` FFI and a
   non-residue search; the port takes `GroupMapParams` as data — the deployed
   values live with their curves (the poseidon package's `setup()` constants).

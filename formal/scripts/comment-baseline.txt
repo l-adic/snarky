@@ -7,7 +7,7 @@
 -- file citations carrying a line range, and paths into this repository that no file answers.
 -- Three of those four were found by the passes that cleared the first modules.
 unresolved-names 986
-dangling-paths 41
+dangling-paths 23
 upstream-files-in-decl-doc 42
 banned-phrases 15
 oversize 37

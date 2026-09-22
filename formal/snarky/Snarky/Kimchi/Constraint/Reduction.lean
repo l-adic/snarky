@@ -18,7 +18,7 @@ Name map: every PS export keeps its name (`PlonkReductionM` with its three metho
 private helper. `addEqualsConstraint`'s anonymous record argument gets the Lean name
 `EqualsConstraint`. PS `incrementVariable` is `+ 1` (as in the base interpreters).
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - `PlonkBuilder` is `StateM`, `PlonkProver` is `StateT _ (Except EvalError)`: PS
   hand-rolls both monads over `Effect`, but the `Effect` existed only for the mutable
   union-find and assignment store, both pure here, and the hand-rolling was a measured

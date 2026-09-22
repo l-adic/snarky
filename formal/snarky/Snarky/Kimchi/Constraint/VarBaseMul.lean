@@ -21,7 +21,7 @@ Name map: `ScaleRound`, `VarBaseMul`, `reduce` keep their names (namespaced);
 `AffinePoint` is `Constraint/AddComplete.lean`'s record — the PS import from
 `Snarky.Data.EllipticCurve` resolves to it.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - The width-fixed vectors (`Vector 6` accumulators, `Vector 5` bits/slopes) render as
   NAMED FIELDS (`acc0 … acc5`, `bit0 … bit4`, `slope0 … slope4`) — the same choice
   `Kimchi.Gate.VarBaseMul.Witness` makes for its columns. The widths are gate
