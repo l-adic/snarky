@@ -308,6 +308,7 @@ variable {k kw n nc : ℕ}
 /-- The group circuit's input, polymorphic in its cells: the group half and the slots'
 expanded round challenges the message hash absorbs. -/
 structure GroupInput (k kw n nc : ℕ) (f b : Type) where
+  /-- The group half. -/
   group : WrapGroup k kw n nc f b
   /-- The slots' expanded round challenges. -/
   newBp : Vector (Vector f kw) n
