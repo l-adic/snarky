@@ -4,11 +4,10 @@ import Snarky.Kimchi.Constraint.Reduction
 /-!
 # The Basic-constraint reducer
 
-Port of `Snarky.Constraint.Kimchi.GenericPlonk`
-(packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/GenericPlonk.purs): `reduce`, the
-fan-out from the DSL's four `Basic` constraints to `PlonkReductionM` emissions. Each
+Port of packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/GenericPlonk.purs: `reduce`,
+the fan-out from the DSL's four `Basic` constraints to `PlonkReductionM` emissions. Each
 operand is reduced to `c·v` form first (in PS source order — emission order is fixture
-bytes, K2), then one generic or equals constraint is emitted, dispatching on which
+bytes), then one generic or equals constraint is emitted, dispatching on which
 operands degenerated to constants.
 
 Name map: `reduce` keeps its name; the case dispatch keeps PS's coefficient
@@ -23,14 +22,8 @@ Deviations from the PS original:
   prover interpreter SUCCEEDS where PS's would crash — the emission is a no-op there
   (the kimchi prover checks nothing per constraint).
 
-No semantics is stated here: the meaning of the emitted encodings and the
-faithfulness of this reducer are deliberately not part of this package; the
-byte-equality corpus is the oracle.
-
-The PS test surface (`test/Test/Snarky/Circuit/Kimchi/GenericTest.purs`) exercises
-the circuit layer end to end (an EC-addition circuit compiled through this reducer);
-there are no module-level QuickCheck rows. The `decide` examples below stand in: one
-emission per `Basic` constructor, traced, and a prover run.
+No semantics is stated here: `Snarky.Kimchi.Semantics` gives the emitted encodings their
+meaning, and the byte-equality corpus checks this reducer.
 -/
 
 namespace Snarky.Kimchi
@@ -39,9 +32,8 @@ open Snarky
 
 variable {F : Type} {m : Type → Type}
 
-/-- Reduce one `Basic` constraint to its kimchi emissions (PS `reduce`): reduce every
-operand to `c·v` form, then emit the one generic (or equals) constraint for the
-surviving shape. The coefficient patterns are PS's, case for case. -/
+/-- Reduce one `Basic` constraint to its kimchi emissions: reduce every operand to
+`c·v` form, then emit the one generic (or equals) constraint for the surviving shape. -/
 def reduce [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
     [PlonkReductionM F m] : Basic F → m Unit
   | .r1cs left right output => do

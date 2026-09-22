@@ -41,15 +41,13 @@ def Generic.constraints {R : Type*} [CommRing R] (g : Generic R) : List R :=
   [ g.q 0 * g.w 0 + g.q 1 * g.w 1 + g.q 2 * g.w 2 + g.q 3 * (g.w 0 * g.w 1) + g.q 4
   , g.q 5 * g.w 3 + g.q 6 * g.w 4 + g.q 7 * g.w 5 + g.q 8 * (g.w 3 * g.w 4) + g.q 9 ]
 
-/-- Relational spec — both constraint expressions vanish (a `Prop`). -/
+/-- Relational spec: both constraint expressions vanish. -/
 def Generic.Holds (g : Generic F) : Prop :=
   ∀ e ∈ g.constraints, e = 0
 
-/-- The row with a public input folded in: kimchi's row check subtracts `public[row]`
-from the *first* operation's constraint (`verify_generic`:
-`sum + mul + c_coeff − public = 0`), which is the plain constraint of the row whose first
-constant coefficient — `q 4` in the packed `[l, r, o, m, c | l', r', o', m', c']`
-layout — absorbs the public value. -/
+/-- The row with a public input folded in: kimchi's row check subtracts the row's public
+value from the *first* constraint, which is the plain constraint of the row whose first
+constant coefficient `q 4` absorbs that value. -/
 def Generic.withPublic (g : Generic F) (p : F) : Generic F :=
   ⟨Function.update g.q 4 (g.q 4 - p), g.w⟩
 

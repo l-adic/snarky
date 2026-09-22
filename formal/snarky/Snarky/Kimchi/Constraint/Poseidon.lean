@@ -4,32 +4,23 @@ import Snarky.Kimchi.Constraint.Reduction
 /-!
 # The Poseidon reducer
 
-Port of `Snarky.Constraint.Kimchi.Poseidon`
-(packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/Poseidon.purs): the sponge-state
-payload — 56 three-element states covering the 55-round permutation — and `reduce`:
-eleven `poseidon` rows of five states each in the PERMUTED register order
-`s0 s4 s1 s2 s3`, with each row's fifteen round constants as its coefficient row, plus
-a trailing `zero` row carrying the output state. The reduction ORDER is the byte
-contract: the states in index order, each triple left to right.
+Transcribes packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/Poseidon.purs: the
+sponge-state payload (56 three-element states covering the 55-round permutation) and
+`reduce`: eleven `poseidon` rows of five states each in the permuted register order
+`s0 s4 s1 s2 s3`, with each row's round constants as its coefficient row, plus a trailing
+`zero` row carrying the output state. The reduction order is the byte contract: the states
+in index order, each triple left to right.
 
-Name map: `PoseidonConstraint` and `reduce` keep their names; `addRoundState`
-and the final row stay named helpers.
+## Implementation notes
 
-Deviations from the PS original:
-- PS reads the round constants off the ambient `PoseidonField` class at reduction
-  time; a deep embedding has no ambient dictionary, so the payload carries the
-  permutation's parameter set — the MDS matrix rows and the constant table — as
-  data, and `reduce` reads the coefficient rows off the payload. The constants are
-  the coefficient content of the emitted rows; the matrix is the rest of the same
-  parameter record and travels with them.
-- `Vector 56 (Vector 3 _)` renders as a TRIPLE LIST (the width is an emitter
-  invariant, not a type index): at 168 operands the per-operand law template of
-  steps 4–7 cannot fit the heartbeat budget, and the list shape is what the
-  recursion below is structural over. The chunking (`splitAt`/`chunks`)
-  becomes the structural recursion `rowsFromStates`, which greedily chunks five
-  states per row and turns a single trailing state into the `zero` row; 2–4-state
-  tails (unrepresentable in PS's types) emit nothing.
-- PS's `Rows` newtype over `Vector 12` renders as the bare row list.
+- The payload carries the permutation's parameter set (the MDS matrix rows and the
+  constant table) as data, and `reduce` reads the coefficient rows off it; the matrix is
+  unused by the reduction.
+- The states are a list of triples, not a length-indexed vector: at 168 operands a
+  per-operand law template cannot fit the heartbeat budget, and the list shape is what
+  `rowsFromStates` recurses over. It chunks five states per row and turns a single
+  trailing state into the `zero` row; a two-to-four-state tail emits nothing.
+- The rows are a bare list.
 
 No semantics is stated here, and the constraint layer stays free of `Kimchi`
 imports; the byte-equality corpus is the oracle.
@@ -39,10 +30,9 @@ namespace Snarky.Kimchi
 
 open Snarky
 
-/-- The Poseidon block constraint (PS `PoseidonConstraint`): the 56 chained
-three-element sponge states, input first, permutation output last, together with
-the permutation's parameter set (the payload-data deviation in the module
-docstring). -/
+/-- The Poseidon block constraint: the 56 chained three-element sponge states, input
+first, permutation output last, together with the permutation's parameter set (the
+payload-data deviation in the module docstring). -/
 structure PoseidonConstraint (F : Type u) where
   /-- The rows of the round function's 3×3 MDS matrix, top to bottom. -/
   mds : (F × F × F) × (F × F × F) × (F × F × F)
@@ -64,7 +54,7 @@ private def reduceState [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
   let c ← reduceToVariable t.2.2
   pure (a, b, c)
 
-/-- Pin the states in index order (the PS nested `traverse` as the structural fold). -/
+/-- Pin the states in index order. -/
 private def reduceStates [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
     [PlonkReductionM F m] :
     List (FVar F × FVar F × FVar F) → m (List (Variable × Variable × Variable))
@@ -74,9 +64,8 @@ private def reduceStates [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F
     let vs ← reduceStates ts
     pure (v :: vs)
 
-/-- One `poseidon` row (PS `addRoundState`): the chunk's five states in the permuted
-register order `s0 s4 s1 s2 s3`, and rounds `5k … 5k+4`'s constants as the
-coefficient row. -/
+/-- One `poseidon` row: the chunk's five states in the permuted register order
+`s0 s4 s1 s2 s3`, and rounds `5k … 5k+4`'s constants as the coefficient row. -/
 private def addRoundState (rc : ℕ → F × F × F) (k : ℕ)
     (q0 q1 q2 q3 q4 : Variable × Variable × Variable) : KimchiRow F :=
   { kind := .poseidon,
@@ -111,9 +100,8 @@ private def rowsFromStates (rc : ℕ → F × F × F) :
     addRoundState rc k q0 q1 q2 q3 q4 :: rowsFromStates rc (k + 1) rest
   | _, _ => []
 
-/-- Reduce a Poseidon block (PS `reduce`): pin every state, then lay out the eleven
-rows and the trailing `zero` row, with the payload's constant table as the
-coefficient source. -/
+/-- Reduce a Poseidon block: pin every state, then lay out the eleven rows and the
+trailing `zero` row, with the payload's constant table as the coefficient source. -/
 def PoseidonConstraint.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] (c : PoseidonConstraint F) :
     m (List (KimchiRow F)) := do

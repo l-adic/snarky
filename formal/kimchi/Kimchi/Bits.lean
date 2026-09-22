@@ -26,7 +26,7 @@ theorem natLsbVal_lt : ∀ l : List Bool, natLsbVal l < 2 ^ l.length := by
     simp only [natLsbVal, List.length_cons, pow_succ]
     cases b <;> simp only [Bool.toNat_false, Bool.toNat_true] <;> omega
 
-/-- The Horner form reconstructs a number from its bits, `ofFn` form. -/
+/-- The Horner form reconstructs a number from its bits, `List.ofFn` form. -/
 theorem natLsbVal_ofFn_testBit :
     ∀ (n m : Nat), m < 2 ^ n →
       natLsbVal (List.ofFn fun i : Fin n => m.testBit i.val) = m := by

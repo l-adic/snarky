@@ -12,7 +12,7 @@ boundary has one reading relation for them, `Reads128`, and the wire verifier's
 prechallenge is met through it:
 
 * `Reads128 V u m` — the 128-bit circuit value `u` reads as the prechallenge `m`;
-* `Low128 V x u` — the `lowest_128_bits` relation between a raw squeeze `x` and its low
+* `Low128 V x u` — the `lowest128Bits'` relation between a raw squeeze `x` and its low
   half `u`: a 128-bit reading `lo` of `u` splits `x = lo + 2¹²⁸·hi` below the modulus, so at
   a prime field it is the verifier's prechallenge (`Low128.exact`), at the widths
   `SplitWidth` names;
@@ -52,7 +52,7 @@ omit [DecidableEq F] in
 theorem SplitWidth.three_ne [ToNat F] (hsw : SplitWidth F) : (3 : F) ≠ 0 := fun h =>
   absurd (hsw.inj 3 0 (by norm_num) (by norm_num) (by simpa using h)) (by norm_num)
 
-/-- A raw squeeze and a 128-bit circuit value in the `lowest_128_bits` relation: a reading
+/-- A raw squeeze and a 128-bit circuit value in the `lowest128Bits'` relation: a reading
 `lo < 2¹²⁸` of the value is the low half of a split `x = lo + 2¹²⁸·hi` below the field's
 modulus, so of the canonical representative. -/
 def Low128 [ToNat F] (V : Valuation F) (x : F) (u : SizedF 128 (FVar F)) : Prop :=

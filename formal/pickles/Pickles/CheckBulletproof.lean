@@ -96,7 +96,7 @@ def IpaEndo.vesta : IpaEndo Fq where
     Bulletproof.IpaVesta.curve.toCommitmentCurve).symm
 
 /-- The two deferred scalars of the opening check, public input of the previous proof: used
-in the Schnorr equation here, certified by the next circuit's `finalizeOtherProof`. -/
+in the Schnorr equation here, certified by the next circuit's `finalizeOtherProofCore`. -/
 structure BulletproofDeferred (sf : Type) where
   /-- The deferred combined inner product, shifted. -/
   combinedInnerProduct : sf
@@ -1038,7 +1038,7 @@ def IvpCurve.e {C : KimchiCurve} (S : IvpCurve C) : IpaEndo C.BaseField where
   q := C.scalar
   q_eq := (CommitmentCurve.order_eq C.toCommitmentCurve).symm
 
-/-- The bundle's curve is the wire curve, now by construction. -/
+/-- The bundle's curve is the wire curve, by construction. -/
 theorem IvpCurve.eW {C : KimchiCurve} (S : IvpCurve C) : S.e.d.W = C.E.toAffine := rfl
 
 /-- What a side supplies beyond its curve: how its shifted-scalar ladder reads (`R`); the

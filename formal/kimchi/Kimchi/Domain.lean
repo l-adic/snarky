@@ -3,8 +3,8 @@ import Mathlib
 /-!
 # Evaluation domain and vanishing–divisibility
 
-This file is the **polynomial-algebra substrate** of kimchi's quotient/vanishing argument.
-It is **commitment-free**: everything lives over an abstract field `[Field F]`, with a
+This file is the polynomial-algebra substrate of kimchi's quotient/vanishing argument.
+It is commitment-free: everything lives over an abstract field `[Field F]`, with a
 primitive `n`-th root of unity supplied as a hypothesis (`ω : F`,
 `hω : IsPrimitiveRoot ω n`, together with `0 < n`). There is no group, no SRS, no
 Fiat–Shamir. The Pasta instantiation (constructing `ω` for a concrete field) is out of scope.
@@ -19,7 +19,7 @@ Source: kimchi `domains.rs` (`EvaluationDomains::d1`, the size-`n` radix-2 domai
 
 * `zH` — the vanishing polynomial `X^n - 1`.
 * `zH_eq_prod` — its cyclotomic factorization `∏_{i<n} (X - ω^i)`.
-* `zH_dvd_iff` — `Z_H ∣ E ↔ E` vanishes on the whole domain.
+* `zH_dvd_iff` — `zH ∣ E` iff `E` vanishes on the whole domain.
 * `columnPoly` — the degree-`<n` Lagrange interpolant of a column `v : Fin n → F`.
 * `eval_columnPoly` — the interpolant reproduces its column on `H`.
 * `eq_of_eval_eq_on_domain` — uniqueness of degree-`<n` interpolants.
@@ -35,11 +35,11 @@ variable {F : Type*} [Field F] {n : ℕ} {ω : F}
 
 /-! ## The vanishing polynomial -/
 
-/-- The vanishing polynomial of the size-`n` domain: `Z_H = X^n - 1 ∈ F[X]`. -/
+/-- The vanishing polynomial of the size-`n` domain: `X^n - 1 ∈ F[X]`. -/
 noncomputable def zH (F : Type*) [Field F] (n : ℕ) : Polynomial F := X ^ n - 1
 
-/-- **Factorization of `Z_H`.** For a primitive `n`-th root of unity `ω` with `0 < n`,
-`Z_H = ∏_{i<n} (X - ω^i)`. -/
+/-- **Factorization of `zH`.** For a primitive `n`-th root of unity `ω` with `0 < n`,
+`zH = ∏_{i<n} (X - ω^i)`. -/
 private theorem zH_eq_prod (hω : IsPrimitiveRoot ω n) (hn : 0 < n) :
     zH F n = ∏ i ∈ Finset.range n, (X - C (ω ^ i)) := by
   unfold zH
@@ -48,8 +48,8 @@ private theorem zH_eq_prod (hω : IsPrimitiveRoot ω n) (hn : 0 < n) :
 
 /-! ## Vanishing ⟺ divisibility -/
 
-/-- **`Z_H` divides `E` iff `E` vanishes on the domain.** Under a primitive-root hypothesis
-and `0 < n`, `Z_H ∣ E ↔ ∀ i < n, E(ω^i) = 0`. -/
+/-- **`zH` divides `E` iff `E` vanishes on the domain.** Under a primitive-root hypothesis
+and `0 < n`, `zH ∣ E ↔ ∀ i < n, E(ω^i) = 0`. -/
 theorem zH_dvd_iff (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (E : Polynomial F) :
     zH F n ∣ E ↔ ∀ i < n, E.eval (ω ^ i) = 0 := by
   constructor

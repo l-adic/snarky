@@ -6,7 +6,7 @@ import Lean.Data.Json
 # JSON decoders for proof-systems fixtures
 
 The shared vocabulary of the fixture and vector files in each package's `fixtures/`
-directory, produced by `tools/fixture-dump` and consumed by the `scripts/check_*` drivers.
+directory, produced by `tools/fixture-dump` and consumed by each package's check drivers.
 Field elements are canonical decimal strings, affine points are two-element coordinate
 arrays, and `(0, 0)` is the identity sentinel where a decoder admits it.
 
@@ -25,15 +25,12 @@ def parseNat (j : Json) : Except String ℕ := do
   | some n => .ok n
   | none => .error s!"not a decimal natural: {s.take 40}"
 
-/- Decoder hygiene note: these decoders read the fields they need and
-*drop* unknown keys, so an out-of-fragment payload is parsed-and-dropped rather than
-rejected, and acceptance is then unreachable only through transcript divergence. The drivers
-consume `fixture-dump` output, where no such payloads occur. -/
+/- Decoders built on these read the keys they need and drop the rest: an unknown key is
+ignored, not rejected. The drivers consume `fixture-dump` output, which carries none. -/
 
 /-- A decimal string as an element of `ZMod n`, *rejecting* non-canonical numerals (`≥ n`).
-This aligns with arkworks' serde, which errors on out-of-range field elements rather than
-reducing them. At `n = 0` every numeral is rejected; no fixture uses
-`ZMod 0`. -/
+This matches the upstream deserializer, which errors on an out-of-range field element
+rather than reducing it. At `n = 0` every numeral is rejected. -/
 def parseZMod {n : ℕ} (j : Json) : Except String (ZMod n) := do
   let v ← parseNat j
   if v < n then return (v : ZMod n)
@@ -53,7 +50,7 @@ def parsePair {α : Type} (f : Json → Except String α) (j : Json) :
 
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- A coordinate pair as a point on `E`: on the curve or the `(0, 0)` identity sentinel,
-with the `Valid` proof carried in the `SWPoint` (decided disjunct-wise). -/
+with the validity proof carried in the point (decided disjunct-wise). -/
 def swPointOfCoords {F : Type} [Field F] [DecidableEq F] (E : SWCurve F) (p : F × F) :
     Except String (SWPoint E) :=
   if h : OnCurve E.A E.B p then return ⟨p.1, p.2, Or.inl h⟩

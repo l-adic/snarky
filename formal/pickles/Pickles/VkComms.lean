@@ -5,7 +5,7 @@ import Kimchi.Columns
 /-!
 # A verifier key's commitments as a record
 
-The group half reads a verifier key's commitments: the index digest absorbs every one, `ft_comm`
+The group half reads a verifier key's commitments: the index digest absorbs every one, `ftComm`
 scales the last permutation column, and the opening batch takes the rest. `VkComms nc f` holds
 them by name, `nc` chunks each, polymorphic in its cells like the statement records: at
 `AffinePoint (FVar F)` it is the cells a circuit holds, as constants or as an input (its
@@ -13,7 +13,7 @@ them by name, `nc` chunks each, polymorphic in its cells like the statement reco
 
 The orders the group half reads the key in are defined here, once each: the batch's
 selectors (`selectors`: generic, poseidon, complete-add, mul, emul, endomul-scalar) and
-permutation columns (`sigmaBatch`: `σ₀…σ₅`), and `ft_comm`'s `σ₆` (`sigmaLast`).
+permutation columns (`sigmaBatch`: `σ₀…σ₅`), and `ftComm`'s `σ₆` (`sigmaLast`).
 -/
 
 namespace Pickles
@@ -53,7 +53,7 @@ def selectors (k : VkComms nc f) : List (Vector f nc) :=
 def sigmaBatch (k : VkComms nc f) : List (Vector f nc) :=
   (k.sigmaComm.take sigmaRows).toList
 
-/-- The last permutation commitment `σ₆`, which `ft_comm` scales. -/
+/-- The last permutation commitment `σ₆`, which `ftComm` scales. -/
 def sigmaLast (k : VkComms nc f) : Vector f nc :=
   k.sigmaComm[6]
 

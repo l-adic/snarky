@@ -7,26 +7,21 @@ import Kimchi.Gate.Semantics.Poseidon
 /-!
 # The Poseidon gadget
 
-Port of `Snarky.Circuit.Kimchi.Poseidon`
-(packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/Poseidon.purs): witness the 55 round
-outputs of the permutation in ONE bulk `exists` — the traversal lives inside the
-witness computation, so the circuit itself is three binds — emit the block constraint
+Transcribes packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/Poseidon.purs: witness the
+55 round outputs of the permutation in one bulk witness step (the traversal lives inside
+the witness computation, so the circuit itself is three binds), emit the block constraint
 over the 56 chained states, and return the output state.
 
-Name map: `poseidon` keeps its name; the `exists` body's `scanl` of the production
-round renders as the gate's canonical iterate `Kimchi.Gate.Poseidon.rounds` — the
-same field values (`round_eq_fullRound`), and the form the gate's chain lemmas
-certify — with output `i` the `(i + 1)`-round prefix.
+## Implementation notes
 
-Deviations from the PS original:
-- PS's ambient `PoseidonField` class arrives as the explicit parameter
-  `p : Poseidon.Params F`, whose data the emitted payload carries (the payload-data
-  deviation in `Constraint/Poseidon.lean`).
-- PS's width-3 `Vector` states render as the nominal `SpongeState` (cells `s0`/`s1`/
-  `s2`), reading as the value side's `Poseidon.Triple`; the constraint payload's rows
-  stay bare triples (`SpongeState.cells`).
-- The PS `label "poseidon"` wrapper is dropped (labels are not threaded —
-  `Kimchi/Constraint.lean`'s deviation ledger).
+- The round outputs are the gate's iterate `Kimchi.Gate.Poseidon.rounds`, with output `i`
+  the `(i + 1)`-round prefix; `round_eq_fullRound` identifies it with the sponge's round.
+- The parameters arrive as an explicit `p : Poseidon.Params F`, whose data the emitted
+  payload carries.
+- The states are the nominal `SpongeState` (cells `s0`/`s1`/`s2`), reading as
+  `Poseidon.Triple`; the constraint payload's rows stay bare triples
+  (`SpongeState.cells`).
+- Labels are not threaded.
 -/
 
 namespace Snarky.Kimchi
@@ -35,8 +30,8 @@ open Snarky
 
 variable {F c : Type}
 
-/-- The width-3 Poseidon state as circuit variables (PS `Vector 3 (FVar f)`). Reads
-as the value side's `Poseidon.Triple` through its `CircuitType` instance. -/
+/-- The width-3 Poseidon state as circuit variables. Reads as the value side's
+`Poseidon.Triple` through its `CircuitType` instance. -/
 structure SpongeState (F : Type) where
   /-- Rate slot 0. -/
   s0 : FVar F
@@ -106,9 +101,8 @@ instance instCheckedTypeSpongeState [Add F] [Mul F] [Zero F] [One F] [BasicSyste
     {v : Poseidon.Triple F} :
     CheckedType.Valid (F := F) (c := c) (var := SpongeState F) v := fun _ _ _ => trivial
 
-/-- The Poseidon permutation gadget (PS `poseidon`): one bulk witness of the round
-outputs, one block constraint over the 56 chained states at `p`'s data, the last
-state returned. -/
+/-- The Poseidon permutation gadget: one bulk witness of the round outputs, one block
+constraint over the 56 chained states at `p`'s data, the last state returned. -/
 def poseidon [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params F)
     (initialState : SpongeState F) : CircuitM F c (SpongeState F) := do
   let roundOutputs ← witness (val := Vector (Poseidon.Triple F) 55) (advice p initialState)
@@ -118,7 +112,7 @@ def poseidon [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params
   pure roundOutputs[54]
 where
   /-- The advice: the 55 round outputs, oldest first — the traversal lives here, so
-  the circuit itself is one witness and one row. -/
+  the circuit itself is one witness and one constraint. -/
   advice (p : Poseidon.Params F) (s : SpongeState F) :
       AsProver F (Vector (Poseidon.Triple F) 55) := do
     let s0 ← AsProver.readCVar s.s0
@@ -172,9 +166,9 @@ private theorem chainHolds_window [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
 open Std.Do in
 /-- **The gadget is sound**: under any satisfying valuation, at a full-size constant
 table, the returned state reads as `Poseidon.blockCipher` of the input state's
-reading — the fixture-validated production permutation. The row carries the whole
-chain, so the proof assembles its five-apart windows into the gate tower's `Chain`
-and applies `chain_blockCipher`. -/
+reading — the fixture-validated production permutation. The constraint carries the
+whole chain, so the proof assembles its five-apart windows into the gate tower's
+`Chain` and applies `chain_blockCipher`. -/
 @[spec] theorem poseidon_spec {V : Valuation F} [Field F] [DecidableEq F]
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (s : SpongeState F) :
@@ -264,7 +258,7 @@ private theorem chainHolds_of_succ [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
 
 /-- The rounds trajectory checks: a state list whose entries are the round
 function's iterates satisfies the checker's window fold. The fold speaks
-window-indexed `getD` cells; the trajectory speaks the round function — this is the
+window-indexed cells; the trajectory speaks the round function — this is the
 honest witness's face of the checker, converted once. -/
 private theorem chainHolds_rounds [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (s0 : F × F × F) :
@@ -293,7 +287,7 @@ private theorem chainHolds_rounds [Field F] [DecidableEq F] (p : Poseidon.Params
 
 
 /-- **The gadget is complete**: from a scoped input state that reads `sv`, the run
-succeeds — no domain conditions — its row holds at every extension of the final
+succeeds — no domain conditions — its constraint holds at every extension of the final
 table, and the output reads back as `Poseidon.blockCipher p sv`.
 
 The advice is the gate's canonical iterate, so the emitted chain is

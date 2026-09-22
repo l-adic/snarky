@@ -4,7 +4,7 @@ namespace Snarky
 
 universe u
 
-/-- The constraint constructors every backend supplies (PS `class BasicSystem f c`). -/
+/-- The constraint constructors every backend supplies. -/
 class BasicSystem (F c : Type u) where
   /-- The rank-1 constraint `left * right = output`. -/
   r1cs : (left right output : CVar F) → c

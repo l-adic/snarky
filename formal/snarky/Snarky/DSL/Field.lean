@@ -10,10 +10,9 @@ namespace Snarky
 
 variable {F c : Type}
 
-/-- Invert a field variable: witness the inverse, pin it with `x · xInv = 1` (PS `inv_`).
-A nonzero constant folds to its constant inverse with no constraint. PS throws at
-construction on a constant zero; here it takes the witnessed path, where the witness
-fails and the row `0 · xInv = 1` is unsatisfiable. -/
+/-- Invert a field variable: witness the inverse, pin it with `x · xInv = 1`. A nonzero
+constant folds to its constant inverse with no constraint; a constant zero takes the
+witnessed path, where the witness fails and the row `0 · xInv = 1` is unsatisfiable. -/
 def inv [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
   let witnessed : CircuitM F c (FVar F) := do
     let xInv ← witness (val := F) (advice x)
@@ -41,8 +40,8 @@ open Std.Do in
     | exact mul_inv_cancel₀ ‹_›
 
 /-- `inv`'s completeness law: where the operand reads nonzero the run succeeds — the
-advice's throw is exactly the zero reading — the row it built is satisfied at every
-extension of the final table, and the result is scoped. -/
+advice's throw is exactly the zero reading — any row it built is satisfied at every
+extension of the final table, and the result reads `xv⁻¹`. -/
 theorem inv_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) (hne : xv ≠ 0) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (inv (c := c) x)
@@ -119,8 +118,8 @@ open Std.Do in
       | (rename_i h
          exact ((LawfulBasicSystem.holds_r1cs V _ _ _).mp h).symm)
 
-/-- `mul`'s completeness law: from operands that read `xv` and `yv` the run succeeds, the
-row it built is satisfied at every extension of the final table, and the result reads
+/-- `mul`'s completeness law: from operands that read `xv` and `yv` the run succeeds,
+any row it built is satisfied at every extension of the final table, and the result reads
 their product — scope and reading together, as `CircuitType.ReadsAs` carries them. -/
 @[complete_law] theorem mul_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F) :
@@ -191,9 +190,9 @@ open Std.Do in
       | (rename_i h
          exact ((LawfulBasicSystem.holds_square V _ _).mp h).symm)
 
-/-- `square`'s completeness law: from a state with a scoped operand the run succeeds, the
-row it built is satisfied at every extension of the final table, and the result is
-scoped. -/
+/-- `square`'s completeness law: from an operand that reads `xv` the run succeeds, any row
+it built is satisfied at every extension of the final table, and the result reads
+`xv * xv`. -/
 theorem square_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (square (c := c) x)
@@ -240,8 +239,8 @@ divisor, so the field's total division is the honest reading with no side condit
   rw [hmul, div_eq_mul_inv, inv_eq_of_mul_eq_one_right hinv]
 
 /-- `div`'s completeness law: where the divisor reads nonzero the run succeeds, the rows
-its calls built are satisfied at every extension of the final table, and the result is
-scoped — `inv`'s and `mul`'s laws composed, neither reopened. -/
+its calls built are satisfied at every extension of the final table, and the result reads
+`xv / yv` — `inv`'s and `mul`'s laws composed, neither reopened. -/
 @[complete_law] theorem div_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
     (hne : yv ≠ 0) :
@@ -304,9 +303,9 @@ open Std.Do in
     · exact h0
     · exact absurd h0 h
 
-/-- `isZero`'s completeness law: from a state with a scoped operand the run succeeds, the
-rows it built are satisfied at every extension of the final table, and the result is a
-scoped bundle that reads as a bit — the bit taken straight off the witnessed value. -/
+/-- `isZero`'s completeness law: from an operand that reads `xv` the run succeeds, any
+rows it built are satisfied at every extension of the final table, and the result reads
+the bit `decide (xv = 0)`. -/
 theorem isZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (isZero (c := c) x)

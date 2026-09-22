@@ -10,6 +10,6 @@ The dump comparison (`formal/scripts/check_cs.lean`) and the satisfiability chec
 the same production dumps and call the same library gadgets on them. What they share lives
 here: the input layouts, the production constants, and the gadget harnesses.
 
-Kept out of the `Pickles` library, as `KimchiFixture` is kept out of `Kimchi` — checking
-against recorded data is not part of the development.
+Kept out of the `Pickles` library, as the kimchi fixture library is kept out of `Kimchi`:
+checking against recorded data is not part of the development.
 -/

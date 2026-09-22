@@ -7,10 +7,10 @@ set_option mvcgen.warning false
 /-!
 # The permutation scalar in circuit
 
-Port of the PureScript `Pickles.PlonkChecks.Permutation.permScalarCircuit`: the scalar of
-the permutation commitment in the linearization,
-`−z(ζω) · β · α²¹ · zkpm(ζ) · ∏_{i<6} (γ + β·σᵢ + wᵢ)`, as the verifiers recompute it for the
-`perm_correct` check against the deferred claim.
+Port of the permutation scalar in `packages/pickles/src/Pickles/PlonkChecks.purs`: the scalar
+of the permutation commitment in the linearization,
+`−z(ζω) · β · α²¹ · zkpm(ζ) · ∏_{i<6} (γ + β·σᵢ + wᵢ)`, as the verifiers recompute it to check
+the deferred claim.
 
 ## Main definitions
 

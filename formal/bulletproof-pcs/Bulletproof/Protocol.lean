@@ -4,7 +4,7 @@ import Mathlib
 # The kimchi IPA polynomial commitment: its algebra
 
 The curve-generic pieces of the inner-product-argument commitment that the executable wire
-verifier (`Bulletproof.Ipa`) is stated with, over a scalar field `F` and an `F`-module `G`
+verifier (`Bulletproof.Wire`) is stated with, over a scalar field `F` and an `F`-module `G`
 (the curve group, written additively): the structured reference string, the generator
 commitment and its linearity, the challenge polynomial `b` with its coefficient vector, and
 the batched opening's two scalar combiners. Throughout, `k` is the number of IPA rounds, so
@@ -57,9 +57,7 @@ def bPolyCoefficients {k : ℕ} (chal : Fin k → F) : Fin (2 ^ k) → F :=
 /-- Combined inner product: the aggregated claimed evaluation. Each polynomial `i`
 contributes one segment scaled by `ξ ^ i`; within a segment, the point-values are
 read as coefficients of a polynomial in `r` and evaluated at `r`,
-`combinedInnerProduct ξ r e = ∑ i, ξ ^ i * (∑ j, e i j * r ^ j)`.
-
-Over the segment entries the general exponent `k * n + i` reads `i`. -/
+`combinedInnerProduct ξ r e = ∑ i, ξ ^ i * (∑ j, e i j * r ^ j)`. -/
 def combinedInnerProduct (ξ r : F) {n m : ℕ} (e : Fin n → Fin m → F) : F :=
   ∑ i : Fin n, ξ ^ (i : ℕ) * (∑ j : Fin m, e i j * r ^ (j : ℕ))
 

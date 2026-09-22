@@ -25,8 +25,8 @@ import Poseidon.FqSponge
       row shape the accepted registers are exactly the casts of the naturals below
       `4 ^ (c(m+1))`. `chain_range_128` and `chain_range_complete_128` fix the deployed shape.
     * `fp_rangeCheck128_sound`, `fp_rangeCheck128_complete`, `fq_rangeCheck128_sound`,
-      `fq_rangeCheck128_complete` — the deployed check at the two Pasta fields, every field
-      hypothesis discharged; this is why `CompElliptic.Fields.Pasta` is imported.
+      `fq_rangeCheck128_complete` — the deployed check at CompElliptic's two Pasta fields,
+      every field hypothesis discharged.
     * `endoExpand_eq_toField` — the sponge's window recoding is `toField` at the challenge's
       canonical crumbs.
 

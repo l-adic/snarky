@@ -44,7 +44,7 @@ to the executable verifier:
   arithmetization as MODELLING: the index as data, what it means for a witness table to
   satisfy it (`Index.Satisfies`), the wiring and σ-columns, and the polynomial lift
   (`Lift.Argument.bridge` — a gate's constraints hold at every row iff its lift is divisible
-  by `Z_H`), which is what the verifier's commitments commit to.
+  by `zH`), which is what the verifier's commitments commit to.
 - `Kimchi/Protocol/Linearization.lean` — the verifier's scalar side in closed form
   (`ftEval0`, `permScalar`, `zkpmEval`) over the gate constraint families.
 - `Kimchi/Verifier/` — the executable verifier transcribed from proof-systems
@@ -53,18 +53,17 @@ to the executable verifier:
   (`Verifier/Wire.lean`).
 
 The headline object is `Kimchi.Verifier.kimchiVerify`: the deployed kimchi verifier, as a
-total executable function of the checked records. It is a **specification** — the
+total executable function of the checked records. It is a specification — the
 transcription proof-systems' `kimchi/src/verifier.rs` is measured against, and the anchor
 downstream circuit implementations are proved faithful to. It is not accompanied by a
-soundness claim: the probabilistic soundness development this package once carried was
-retired (see the module preamble of `Kimchi/Verifier/Kimchi.lean` for what the verifier
-does and does not model, and `git log` for the retired tree).
+soundness claim; the module preamble of `Kimchi/Verifier/Kimchi.lean` says what the
+verifier does and does not model.
 
-**The modelled fragment excludes lookups and optional gates.** Recursion's old
+The modelled fragment excludes lookups and optional gates. Recursion's old
 accumulators are on the wire and validated on a deployed pickles wrap proof, and
 production's sub-SRS one-chunk regime is in scope. The canonical statement of that scope,
 with every declared deviation from
 `verifier.rs`, is the `## Scope` section of `Kimchi/Verifier/Kimchi.lean`'s preamble. The
 package declares no axioms: every rooted result reduces to the standard logical axioms plus
-the Pasta trust base, which `scripts/check_axioms.sh` enforces.
+the Pasta trust base, which the axiom check scripts/check_axioms.sh enforces.
 -/

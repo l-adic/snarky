@@ -9,7 +9,7 @@ set_option mvcgen.warning false
 /-!
 # The fr-sponge in circuit
 
-Port of the PureScript `Pickles.PlonkChecks.challengeDigest` and `squeezeXiR`: the digest
+Port of the fr-sponge gadgets of `packages/pickles/src/Pickles/PlonkChecks.purs`: the digest
 of the previous proofs' bulletproof challenges, and the verifier's fr-sponge schedule —
 absorb the digest before evaluations, the challenge digest and every evaluation, then
 squeeze the two prechallenges `ξ` and `r` as 128-bit values.
@@ -61,9 +61,8 @@ private def maskedEntries {β α : Type} : List β → List (List α) → List (
   | b :: bs, cs :: css => cs.map (b, ·) ++ maskedEntries bs css
   | _, _ => []
 
-/-- The step side's digest of the previous proofs' challenges (PS `maskedChallengeDigest`):
-the conditional sponge over the challenges, each guarded by its proof's mask bit, squeezed
-once. -/
+/-- The step side's digest of the previous proofs' challenges: the conditional sponge over the
+challenges, each guarded by its proof's mask bit, squeezed once. -/
 def maskedChallengeDigest (p : Poseidon.Params F) (mask : List (BoolVar F))
     (prev : List (List (FVar F))) : CircuitM F c (FVar F) :=
   OptSponge.squeeze p (maskedEntries mask prev)

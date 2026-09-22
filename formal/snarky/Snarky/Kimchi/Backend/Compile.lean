@@ -119,16 +119,14 @@ def gateDataOf [Field F] [DecidableEq F] {α : Type} (kb : KimchiBuilt F α)
   let assembled := makeGateData pubVars rows kb.aux.wireState.unionFind
   (assembled.1, assembled.2.1, pubVars)
 
-/-- The full pure pipeline: compile, dispatch the gates to rows, and assemble —
-returning the rows (public rows included), the gate table, and the public variables —
-the list, not just its length, since the public slots are not a prefix of the
-numbering here.
+/-- The full pure pipeline: compile, dispatch the gates to rows, and assemble. Returns
+the rows (public rows included), the gate table, and the public variables as a list,
+since the public slots are not a prefix of the numbering here.
 
-The public interface is the input slots followed by the output slots, as the source
-has it: `A.size + B.size` public rows in that order. The output slots are the ones
-the compiled program witnessed, so their ids sit above the circuit's rather than
-between its inputs and its body — a renaming, which the assembly resolves through
-the wiring. -/
+The public rows are the input slots then the output slots, `A.size + B.size` of them.
+The compiled program witnessed the output slots, so their ids sit above the circuit's
+rather than between its inputs and its body; the assembly resolves that renaming
+through the wiring. -/
 def kimchiGateData [Field F] [DecidableEq F] [A : CircuitType F a avar]
     [CheckedType F (KimchiConstraint F) a avar] [B : CircuitType F b bvar]
     (main : avar → CircuitM F (KimchiConstraint F) bvar) :

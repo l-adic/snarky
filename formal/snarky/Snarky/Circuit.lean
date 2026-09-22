@@ -9,7 +9,7 @@ abbrev Variable := Nat
 inductive EvalError where
   /-- A variable was read before being assigned. -/
   | unassigned (v : Variable)
-  /-- A witness computation failed with a message (PS `throwAsProver`). -/
+  /-- A witness computation failed with a message. -/
   | custom (msg : String)
   deriving Repr
 
@@ -29,10 +29,10 @@ so the tree is backend-agnostic; the two interpreters are `build` and `prove`. -
 inductive CircuitM (F c : Type u) (α : Type v) : Type (max u v) where
   /-- Return a value (the monad's `pure`). -/
   | pure (a : α)
-  /-- Emit a constraint (PS `addConstraintOp`). -/
+  /-- Emit a constraint. -/
   | addConstraintOp (con : c) (k : CircuitM F c α)
   /-- Allocate `n` fresh variables, to be assigned by the witness computation `wit` during
-  prover runs (PS `existsOp`). The builder ignores `wit`. -/
+  prover runs. The builder ignores `wit`. -/
   | existsOp (n : Nat) (wit : AsProver F (Vector F n)) (k : Vector Variable n → CircuitM F c α)
 
 end Snarky
@@ -84,7 +84,7 @@ instance : LawfulMonad (AsProver F) :=
   LawfulMonad.mk' _ (id_map := bind_pure') (pure_bind := fun _ _ => rfl)
     (bind_assoc := bind_assoc')
 
-/-- Fail with a message (PS `throwAsProver`). -/
+/-- Fail with a message. -/
 def throw (msg : String) : AsProver F α := .fail (.custom msg)
 
 end AsProver
@@ -131,7 +131,7 @@ end CircuitM
 
 variable {F c : Type u}
 
-/-- Emit one constraint (PS `addConstraint`). -/
+/-- Emit one constraint. -/
 def addConstraint (con : c) : CircuitM F c PUnit :=
   .addConstraintOp con (.pure PUnit.unit)
 

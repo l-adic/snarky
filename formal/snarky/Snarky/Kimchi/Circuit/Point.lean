@@ -6,9 +6,9 @@ import Snarky.DSL.Boolean
 # Point-level gadgets and readings
 
 Small point-level pieces the group-side gadgets compose, beside `OnCurveAt`: a point read
-off cells is nonzero, `select` at a point (PS `if_` at `AffinePoint`, in OCaml's reverse
-array order) with its reading, `addFast` at `checkFinite` read as the group sum, and the
-ladder dictionary at deployed Pallas with the one-wrap regime of both Pasta curves.
+off cells is nonzero, `select` at a point (`y` before `x`, the upstream emission order)
+with its reading, `addFast` at `checkFinite` read as the group sum, and the ladder's
+one-wrap regime at both Pasta curves.
 -/
 
 namespace Snarky.Kimchi
@@ -24,8 +24,7 @@ theorem OnCurveAt.ne_zero [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine
   obtain ⟨hns, rfl⟩ := h
   exact Point.some_ne_zero hns
 
-/-- Points select coordinatewise, `y` before `x` (PS `if_` at `AffinePoint`, OCaml's reverse
-array order). -/
+/-- Points select coordinatewise, `y` before `x` (the upstream emission order). -/
 instance instIfThenElseAffinePoint [Field F] [DecidableEq F] [BasicSystem F c] :
     IfThenElse F c (AffinePoint (FVar F)) where
   select b t e := do

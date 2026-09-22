@@ -2,13 +2,11 @@
 # The linearization token language
 
 The `PolishToken` alphabet of kimchi's linearization, transcribed from
-`packages/pickles-linearization-types/src/Pickles/Linearization/Types.purs`, itself the
-PureScript image of proof-systems' `kimchi::circuits::expr::PolishToken`. A linearization
-is a reverse-Polish program over this alphabet. It is dumped from Rust into
-`packages/pickles-codegen/rust/output/{fp,fq}.json`, from which both the PureScript modules
-`Pickles.Linearization.{Pallas,Vesta}` and the Lean modules `Linearization/{Fp,Fq}.lean`
-(via `scripts/gen_tokens.lean`) are generated, so the two transcriptions are independent
-and a disagreement between them is detectable.
+`packages/pickles-linearization-types/src/Pickles/Linearization/Types.purs`. A linearization
+is a reverse-Polish program over this alphabet. The codegen's JSON dump of it is the one
+origin of both the PureScript token modules and `Pickles.Linearization.Fp` /
+`Pickles.Linearization.Fq` (written by `formal/pickles/scripts/gen_tokens.lean`), so the two
+transcriptions are independent and a disagreement between them is detectable.
 
 The program is a stack machine rather than an expression tree: `dup`, `store` and `load`
 give sharing, and a feature-flag conditional is laid out as
@@ -77,9 +75,9 @@ inductive LookupPattern where
 
 /-- A column of the evaluation table, as a cell reference names it. -/
 inductive Column where
-  /-- Witness column `i` (the deployed streams use `i < 15`). -/
+  /-- Witness column `i` (the deployed streams use `i < wCols`). -/
   | witness (i : Nat)
-  /-- Coefficient column `i` (the deployed streams use `i < 15`). -/
+  /-- Coefficient column `i` (the deployed streams use `i < coeffCols`). -/
   | coefficient (i : Nat)
   /-- The selector column of gate `g`. -/
   | index (g : GateType)
@@ -107,7 +105,8 @@ inductive ConstantTerm where
 
 /-- A verifier challenge the stream can push. -/
 inductive ChallengeTerm where
-  /-- The constraint-aggregation challenge `α`; kimchi emits it only as `Expr::Pow(alpha, n)`. -/
+  /-- The constraint-aggregation challenge `α`; the stream only raises it to
+  a power. -/
   | alpha
   /-- The permutation challenge `β`. -/
   | beta

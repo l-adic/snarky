@@ -30,12 +30,10 @@ variable {F : Type*}
 
     The content is that the fused `s2 = u/t` formula — which skips the
     intermediate `Y` of `input + Q` — equals the slope of the SECOND addition, so
-    the block is exactly the composite of two Mathlib affine additions. This
-    builds on the already-proven `Kimchi.Gate.AddComplete`, whose `sound_point_*`
-    theorems characterize one such addition. The non-degeneracy hypotheses
-    `xi ≠ xb` (first addition non-vertical) and `2·xi + xb − s1² ≠ 0` (i.e.
-    `t ≠ 0`, second addition non-vertical) are exactly when the two divisions are
-    defined. -/
+    the block is exactly the composite of two Mathlib affine additions, each closed by
+    `secant_add`. The non-degeneracy hypotheses `xi ≠ xb` (first addition non-vertical)
+    and `2·xi + xb − s1² ≠ 0` (i.e. `t ≠ 0`, second addition non-vertical) are exactly
+    when the two divisions are defined. -/
 
 section Soundness
 
@@ -269,7 +267,7 @@ theorem sound
   have hQ2 := signed_target_nonsingular W ha hT (bool_of_sq hbit2.bool)
   have hQ3 := signed_target_nonsingular W ha hT (bool_of_sq hbit3.bool)
   have hQ4 := signed_target_nonsingular W ha hT (bool_of_sq hbit4.bool)
-  -- the Q-point sum from the already-proven nat-smul gate soundness
+  -- the Q-point sum from the nat-smul gate soundness `gate_scalarMul`
   have main := gate_scalarMul W ha w h0 h1 h2 h3 h4 h5 hQ0 hQ1 hQ2 hQ3 hQ4
     hxne0 hxne1 hxne2 hxne3 hxne4 htne0 htne1 htne2 htne3 htne4 h
   obtain ⟨e0, q0, he0, hd0⟩ := signed_target W ha hT hQ0 (bool_of_sq hbit0.bool)
@@ -378,10 +376,9 @@ group algebra. This section gathers the definitions and lemmas on which the depl
 theorems rest — the curve-specialized `varBaseMul_scaleFast1` and `varBaseMul_scaleFast2`, and the
 two generic roots `varBaseMul_subwrap_correct` and `varBaseMul_forbidden_correct`.
 
-### Correspondence to the PureScript circuit
+### Correspondence to the circuit
 
-The hypotheses are exactly the constraints the circuit emits
-(`packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/VarBaseMul.purs`):
+The hypotheses are exactly the constraints the circuit emits:
 
 * `P 0 = 2·T` ← the accumulator is initialized to the doubled base;
 * `N 0 = 0` ← the register starts at zero and advances by `n' = 2·n + b` per bit;
@@ -389,9 +386,9 @@ The hypotheses are exactly the constraints the circuit emits
 * `N m` holds the caller's shifted register ← asserted equal to the caller's scalar.
 
 The two circuit entry points appear here as `scalarMul_shifted` (the core `varBaseMul`, computing
-`[2·t + 2^n + 1]·g`) and `scalarMul_type2` (`scaleFast2`, the parity split). This is an audit-level
-correspondence: the model's hypotheses match the PureScript constraints by inspection, not by a
-mechanized extraction.
+`[2·t + 2^n + 1]·g`) and `scalarMul_type2` (`scaleFast2`, the parity split). This match is by
+inspection. The circuit's own laws `varBaseMul_spec` and `varBaseMul_complete` are proved against
+the gate's `Holds`, through `varBaseMul_off` and `chain_complete` here.
 
 ### Contents
 
@@ -407,10 +404,9 @@ mechanized extraction.
 * the soundness folds (`gate_chain_produce`, `gateStep_chain`) and the two regime roots
   `varBaseMul_forbidden_correct` / `varBaseMul_subwrap_correct`.
 
-The `scalarMul_shifted` headline closes the loop with proof-systems: at the real init `P 0 = 2·T`,
-`N 0 = 0`, the scalar `(n : F) = 2·(N m) + 2^(5m) + 1` is the pickles Type1 unshift `unshiftType1`
-and reproduces the reference value `[1 + 2^numBits + 2·n_bits]·BasePoint` from `varbasemul.rs`'s own
-test, so the circuit computes `[s]·T` for the caller's scalar `s` once it is fed the shifted scalar.
+The `scalarMul_shifted` headline: at the real init `P 0 = 2·T`, `N 0 = 0`, the scalar
+`(n : F) = 2·(N m) + 2^(5m) + 1` is the Type1 unshift `unshiftType1`, so the circuit computes
+`[s]·T` for the caller's scalar `s` once it is fed the shifted scalar.
 
 ### The number-theoretic ladder kernel
 
@@ -1002,7 +998,7 @@ private theorem scalarMul_baseMul
         (n : F) = unshiftType1 (5·m) (N m) = 2·(N m) + 2^(5m) + 1.
 
     So feeding the gate the Type1-shifted scalar `t = shift(s)` (`N m = t`) makes it
-    compute `[s]·T`; the upstream anchor for that shift is in the section preamble. -/
+    compute `[s]·T`. -/
 private theorem scalarMul_shifted
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F)
@@ -2378,14 +2374,14 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
 `scaleFast2` (the Pallas direction, below) range-checks the register, so its soundness is the
 field-bound route (inlined into `varBaseMul_scaleFast2`). `scaleFast1` (the Vesta direction;
 scalar field < circuit field) range-checks nothing and instead guards with a forbidden-value check.
-Its soundness splits by chunk count `m` (`bitsUsed = 5m ≤ FieldSizeInBits = pastaFieldBits`): for
-`m ≤ 50` the ladder fits below the order and every row is non-degenerate unconditionally
-(`varBaseMul_subwrap_correct`); only the full width `m = 51` is the one-wrap case that needs the
-forbidden band (`varBaseMul_forbidden_correct`).
+Its soundness splits by chunk count `m` (`5m ≤ pastaFieldBits`): for `m ≤ 50` the ladder fits
+below the order and every row is non-degenerate unconditionally (`varBaseMul_subwrap_correct`);
+only the full width `m = 51` is the one-wrap case that needs the forbidden band
+(`varBaseMul_forbidden_correct`).
 
 The full-width `m = 51` case excludes the COMPLETE forbidden band, which is *stronger* than mina's
-incomplete runtime guard; the faithfulness caveat is in `§ Soundness: avoiding ±T makes
-    every row non-degenerate`. -/
+incomplete runtime guard; the faithfulness caveat is in `§ Soundness: avoiding ±T makes every
+row non-degenerate`. -/
 
 /-- **Type1 scalar multiplication on the real Vesta curve, correct and sound at any `m ≤ 51`.**
     The only hypothesis on the bit count is `hbits`. The forbidden-band exclusion `hnf` is

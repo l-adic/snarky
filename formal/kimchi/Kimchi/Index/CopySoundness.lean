@@ -39,8 +39,8 @@ open Kimchi.Permutation in
 /-- **Copy soundness at the index, divisibility form.** For the index's wiring, shifts,
 and sigma columns (all bundled laws): if at a single challenge pair `(β, γ)` — avoiding
 the counted `badBetas` / `badGammas` sets — the prover supplies an accumulator whose
-three permutation constraints are divisible by
-`Z_H`, the witness takes equal values across every wire of the unmasked region. This is
+three permutation constraints are divisible by `zH`, the witness takes equal values
+across every wire of the unmasked region. This is
 the copy fragment of `Satisfies` there; the masked rows are outside the argument's grip
 by design (zkpm gating), and honest witnesses satisfy them because masked rows are
 identity-wired. -/

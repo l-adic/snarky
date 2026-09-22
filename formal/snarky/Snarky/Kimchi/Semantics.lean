@@ -8,23 +8,27 @@ import Kimchi.Gate.EndoMul
 /-!
 # The kimchi constraint semantics
 
-The two readings of `KimchiConstraint` — the layer gadget laws are stated against,
-with no rows, reduction, or wiring in sight. The soundness side reads a constraint at
-a total valuation (`Holds`); the prover side checks it on the prover's partial table
-(`check`). In both, `.basic` is the reference `Basic` reading — so the
-`LawfulBasicSystem` and `LawfulChecker` instances below transfer every backend-generic
-base gadget law, sound and complete, to this backend — and the landed gate payloads
-read as the verified gates' own predicates/`ok` at the payload's operand values: one
-witness record for `.addComplete` (`read`/`eval`, one field per gate column), a chain
-of five-round windows over the state list for `.poseidon` (`chainHolds`/`chainOk` at
-the payload's parameter data), one witness record per round for `.endoScalar` and for
-`.varBaseMul` (the scale round carries all 26 gate cells itself, output accumulator
-and register included, so no successor read is needed), a successor chain over the
-round list for `.endoMul` (each round's output cells read from the NEXT round's
-`p`/`nAcc`, the last from the payload finals — the two-row gate's next-row read,
-value-level); a value missing from the table rejects. `.pad` reads vacuously (a
-padding row asserts nothing): the reading is deliberately per-constructor, and a
-vacuous case marks a constructor outside the landed gadget surface.
+The reading of `KimchiConstraint` at a total valuation (`KimchiConstraint.Holds`): the
+layer the gadget laws, sound and complete, are stated against, with no rows, reduction,
+or wiring in sight. `.basic` is the reference `Basic` reading, so the
+`LawfulBasicSystem` instance below transfers every backend-generic base gadget law to
+this backend.
+
+The landed gate payloads read as the verified gates' own predicates at the payload's
+operand values:
+- `.addComplete`: one witness record (`AddComplete.read`, one field per gate column);
+- `.poseidon`: a chain of five-round windows over the state list (`Poseidon.chainHolds`
+  at the payload's parameter data);
+- `.endoScalar`, `.varBaseMul`: one witness record per round (the scale round carries
+  all 26 gate cells itself, output accumulator and register included, so no successor
+  read is needed);
+- `.endoMul`: a successor chain over the round list (each round's output cells read
+  from the NEXT round's `p`/`nAcc`, the last from the payload finals — the two-row
+  gate's next-row read, value-level).
+
+`.pad` reads vacuously (a padding row asserts nothing): the reading is deliberately
+per-constructor, and a vacuous case marks a constructor outside the landed gadget
+surface.
 -/
 
 namespace Snarky.Kimchi
@@ -194,10 +198,10 @@ instance KimchiConstraint.instLawfulBasicSystem :
 
 /-- The kimchi constraint vocabulary, as a class over the carrier. NOT a backend
 seam: kimchi is the terminal constraint layer, and the two instances below — the sum
-itself and its prover tag — are the only two that will ever exist. The class exists
-because a completeness triple must elaborate the gadget body at the prover tag, so
-the gadget definitions are polymorphic between exactly these two carriers. One
-method per landed gadget law. -/
+itself and its soundness tag `Builder V c` — are the only two. The class exists
+because a soundness triple elaborates the gadget body at the soundness tag, so the
+gadget definitions are polymorphic between exactly these two carriers. One method
+per landed gadget law. -/
 class KimchiSystem (F c : Type) where
   /-- Embed a complete-addition payload. -/
   addComplete : AddComplete F → c

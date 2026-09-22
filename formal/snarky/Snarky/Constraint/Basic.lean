@@ -8,10 +8,9 @@ booleanity rows. It instantiates the three class layers — the constructors
 (`BasicSystem`), the semantics (`ConstraintHolds`) and the agreement between them
 (`LawfulBasicSystem`) — so the gadget libraries' laws hold of something.
 
-The semantics is a `Prop` over the total reading, not a decision over a partial table:
-the prover fills the table and the constraints are read afterwards, so a row is never
-"unsatisfied because unassigned". A decidable mirror arrives with a consumer that needs
-to run the check.
+The semantics is a proposition over the total reading, not a decision over a partial
+table: the prover fills the table and the constraints are read afterwards, so a row is
+never "unsatisfied because unassigned".
 -/
 
 namespace Snarky

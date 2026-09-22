@@ -52,11 +52,11 @@ open CPoly Bulletproof Kimchi.Protocol.Linearization Pickles.Linearization
 
 variable {K : Type} [Field K] [BEq K] [LawfulBEq K]
 
-/-- One formal variable per environment input: 15 witness cells at `ζ`, 15 at `ζω`, 15
-coefficients, the six modelled gates' selectors, then `α`, `β`, `γ`, the joint combiner,
-the zero-knowledge vanishing evaluation, and the permutation columns `z`, `z(ζω)` and the
-six `σ` evaluations. The permutation columns are unread by both sides; giving them
-variables lets the transported evaluations be literally `e`. -/
+/-- One formal variable per environment input: `wCols` witness cells at `ζ`, `wCols` at
+`ζω`, `coeffCols` coefficients, the six modelled gates' selectors, then `α`, `β`, `γ`, the
+joint combiner, the zero-knowledge vanishing evaluation, and the permutation columns `z`,
+`z(ζω)` and the `sigmaRows` `σ` evaluations. The permutation columns are unread by both
+sides; giving them variables lets the transported evaluations be literally `e`. -/
 private abbrev NV : ℕ := 64
 
 /-- The polynomial algebra the identity is decided in. -/
@@ -206,8 +206,8 @@ private theorem of_certificate (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K)
   simp only [_root_.map_zero, LookupEvals.map_zero (_root_.map_zero _)] at hm
   rw [hm, hcert, gateLinearization_map, hα, hE]
 
-/-- The largest exponent at which either deployed stream reads the α-table. The PureScript
-table (`Pickles.Linearization.Env.AlphaPowersLen`) holds `71` entries. -/
+/-- The largest exponent at which either deployed stream reads the α-table. The production
+table holds `71` entries. -/
 def alphaBound : Nat := 31
 
 /-! ## The two deployed streams -/

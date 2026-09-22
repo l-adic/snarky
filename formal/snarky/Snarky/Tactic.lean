@@ -7,20 +7,20 @@ import Snarky.Prover
 /-!
 # The completeness walker
 
-`complete_walk` mechanizes the straight-line portion of a `_complete` proof: on a
-goal `Complete pre (g₁ >>= fun x₁ => …) post` it walks the bind chain, and at each
-bind it selects the gadget's registered `@[complete_law]`, synthesizes the frame's
-`Mono` witness from the `@[complete_mono]` vocabulary, discharges the adapter by
-search over the context — pinning the law's witness values by unification, so the
-laws are applied with no value arguments at all — absorbs `assumption`-shaped side
-conditions, and defers the rest as verification conditions behind the main goal.
-It stops at the chain's `pure` (or at a bind with no registered law), leaving the
-main goal first and the deferred conditions after it: what remains is the
-value-level postcondition and the leaked side conditions — arithmetic and state
-guarantees, no prover plumbing.
+The tactic complete_walk (`walk`) mechanizes the straight-line portion of a `_complete`
+proof: on a goal `Complete pre (g₁ >>= fun x₁ => …) post` it walks the bind chain, and
+at each bind it selects the gadget's registered `@[complete_law]`, synthesizes the
+frame's `Mono` witness from the `@[complete_mono]` vocabulary, discharges the adapter by
+search over the context — pinning the law's witness values by unification, so the laws
+are applied with no value arguments at all — absorbs `assumption`-shaped side
+conditions, and defers the rest as verification conditions behind the main goal. It
+stops at the chain's `pure` (or at a bind with no registered law), leaving the main goal
+first and the deferred conditions after it: what remains is the value-level
+postcondition and the leaked side conditions — arithmetic and state guarantees, no
+prover plumbing.
 
-The per-step kernel is the `Complete.seq`/`Complete.imp` shape every hand
-conversion used, with its holes solved in dependency order: the law's `apply`
+The per-step kernel is the `Complete.seq`/`Complete.imp` shape of a hand-written
+proof, with its holes solved in dependency order: the law's `apply`
 pins the program (values stay metavariables), the adapter's search pins the
 values, and only then is the continuation entered, with a fully concrete type.
 A destructuring bind (`let (a, b) ← …`) is followed by splitting the introduced
@@ -111,8 +111,8 @@ def completeStep (x : Ident) : TacticM Unit := withFreshMacroScope do
 
 /-- From a goal `Complete pre prog post`, the continuation of `prog`'s head bind,
 or `none` when `prog` is not a bind (the walk's stop condition). Reduction is
-`whnfCore` only — matches on introduced pairs reduce, gadget definitions never
-unfold, so the walk cannot fall into an unregistered gadget's body. -/
+`Lean.Meta.whnfCore` only — matches on introduced pairs reduce, gadget definitions
+never unfold, so the walk cannot fall into an unregistered gadget's body. -/
 def extractCont (ty : Expr) : MetaM (Option Expr) := do
   let ty := (← instantiateMVars ty).cleanupAnnotations
   unless ty.getAppFn.isConstOf ``Snarky.Complete do return none

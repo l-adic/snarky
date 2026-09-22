@@ -4,7 +4,7 @@ import FixtureKit.Trace
 /-!
 # FixtureKit — shared JSON decoders and the trace-check driver
 
-Root module of the `FixtureKit` library: the shared vocabulary of the proof-systems fixture
+Root module of the FixtureKit library: the shared vocabulary of the proof-systems fixture
 files (canonical-decimal field elements, coordinate-pair points), and the cases-×-ops trace
 driver the `check_*` scripts build on.
 
