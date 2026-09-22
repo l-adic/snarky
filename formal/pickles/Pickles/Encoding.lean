@@ -178,6 +178,30 @@ instance instAllEvalsCircuitType {F v w : Type} [CircuitType F v w] :
       CircuitType.Reads V (AllEvals.equivProd w x) (AllEvals.equivProd v a) :=
   CircuitType.reads_ofEquiv _ _
 
+/-- The chunked evaluations: `ft(ζω)`, the public chunks, the record's chunks. -/
+def ChunkedEvals.equivProd (nc : ℕ) (f : Type) :
+    ChunkedEvals nc f ≃ f × PointEvaluations (Vector f nc) × ProofEvaluations (Vector f nc) :=
+  ⟨fun e => (e.ftEval1, e.pub, e.evals), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
+   fun _ => rfl⟩
+
+instance instChunkedEvalsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
+    CircuitType F (ChunkedEvals nc v) (ChunkedEvals nc w) :=
+  CircuitType.ofEquiv (ChunkedEvals.equivProd nc v) (ChunkedEvals.equivProd nc w)
+
+@[simp] theorem scoped_chunkedEvals {F v w : Type} {nc : ℕ} [CircuitType F v w]
+    {st : ProverState F} {x : ChunkedEvals nc w} :
+    CircuitType.Scoped (val := ChunkedEvals nc v) st x ↔
+      CircuitType.Scoped
+        (val := v × PointEvaluations (Vector v nc) × ProofEvaluations (Vector v nc)) st
+        (ChunkedEvals.equivProd nc w x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_chunkedEvals {F v w : Type} {nc : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F v w] {V : Valuation F} {x : ChunkedEvals nc w} {a : ChunkedEvals nc v} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (ChunkedEvals.equivProd nc w x) (ChunkedEvals.equivProd nc v a) :=
+  CircuitType.reads_ofEquiv _ _
+
 /-! ## The deferred values -/
 
 /-- The plonk claims are the four prechallenges and the three shifted scalars, in field

@@ -256,6 +256,8 @@ Pickles.reads_proofEvaluations
 Pickles.scoped_proofEvaluations
 Pickles.reads_allEvals
 Pickles.scoped_allEvals
+Pickles.reads_chunkedEvals
+Pickles.scoped_chunkedEvals
 Pickles.reads_plonkInCircuit
 Pickles.scoped_plonkInCircuit
 Pickles.reads_deferredValues

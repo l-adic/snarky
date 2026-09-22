@@ -91,33 +91,34 @@ def fopWrapHarness (input : Vector (FVar Fq) 148) : CircuitM Fq Cq (Pickles.FopO
 
 /-! ## The gadgets' records as the input
 
-The step side's input is the unfinalized proof at `k` rounds, the evaluations, the mask, the
-`MaxProofsVerified` previous-challenge vectors and `domain_log2`; the wrap side's the
-unfinalized proof, the evaluations and the previous challenges (`Pickles.FopInput`). Each is
+The step side's input is the unfinalized proof at `k` rounds, the evaluations at `nc` chunks,
+the mask, the `MaxProofsVerified` previous-challenge vectors and `domain_log2`; the wrap side's
+the unfinalized proof, the evaluations and the previous challenges (`Pickles.FopInput`). Each is
 built from the gadget's own records, so its `CircuitType` instance is the records'
 (`Pickles.Encoding`) and the harness passes the allocated bundle to the gadget as it is. -/
 
-/-- The step side's input at `k` rounds, as values. -/
-abbrev StepFop (k : ℕ) : Type :=
-  Pickles.UnfinalizedProof k Fp Bool (Type1 Fp) × Pickles.AllEvals Fp ×
+/-- The step side's input at `k` rounds and `nc` chunks, as values. -/
+abbrev StepFop (k nc : ℕ) : Type :=
+  Pickles.UnfinalizedProof k Fp Bool (Type1 Fp) × Pickles.ChunkedEvals nc Fp ×
     Vector Bool Pickles.MaxProofsVerified × Vector (Vector Fp k) Pickles.MaxProofsVerified × Fp
 
-/-- The step side's input at `k` rounds, as cells. -/
-abbrev StepFopVar (k : ℕ) : Type :=
-  Pickles.UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) × Pickles.AllEvals (FVar Fp) ×
-    Vector (BoolVar Fp) Pickles.MaxProofsVerified ×
+/-- The step side's input at `k` rounds and `nc` chunks, as cells. -/
+abbrev StepFopVar (k nc : ℕ) : Type :=
+  Pickles.UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) ×
+    Pickles.ChunkedEvals nc (FVar Fp) × Vector (BoolVar Fp) Pickles.MaxProofsVerified ×
     Vector (Vector (FVar Fp) k) Pickles.MaxProofsVerified × FVar Fp
 
-/-- The step side on its records at given known domains. -/
-def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) {k : ℕ} (v : StepFopVar k) :
-    CircuitM Fp C (Pickles.FopOutput Fp) :=
+/-- The step side on its records at the step key's `zk_rows` and given known domains. -/
+def fopStepOnAt (zkRows : ℕ) (domains : List (Pickles.KnownDomain Fp)) {k nc : ℕ}
+    (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp) :=
   let (u, w, mask, prev, domainLog2) := v
-  Pickles.finalizeOtherProofStep fopStepParams domains u w.toChunked mask.toList
+  Pickles.finalizeOtherProofStep { fopStepParams with zkRows } domains u w mask.toList
     (prev.toList.map (·.toList)) domainLog2
 
-/-- The step side on its records at the dump's one known domain of `log2 = 16`. -/
-def fopStepOn {k : ℕ} (v : StepFopVar k) : CircuitM Fp C (Pickles.FopOutput Fp) :=
-  fopStepOnAt [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] v
+/-- The step side on its records at the dump's one known domain of `log2 = 16` and
+`zk_rows = 3`. -/
+def fopStepOn {k nc : ℕ} (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp) :=
+  fopStepOnAt 3 [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] v
 
 /-- The wrap side on its records at a constant domain: the domain's generator, `ζⁿ − 1` by
 `pow2PowMul`. -/

@@ -55,7 +55,9 @@ on a proof the real prover made.
 Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
 `SimpleChain.json`. `SRS_CACHE_DIR` and `LAGRANGE_CACHE_DIR` relocate the two caches.
 `HALVES` narrows the run to a comma-separated subset of `step`, `wrap`, `step-group`,
-`wrap-group`, `verify`, `carry`, `theorem` (the default is all seven).
+`wrap-group`, `verify`, `carry`, `theorem` (the default is all seven). The `step` and
+`verify` lanes run at the entry's chunk count; the others, whose environment fixes one chunk,
+reject a chunked entry.
 -/
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
@@ -90,6 +92,15 @@ def allEvalsOf (C : Ipa.KimchiCurve) {k : ℕ} (cp : Kimchi.Verifier.KimchiProof
     | .barycentric _ => throw "the proof carries no public evaluations (one-chunk wire form)"
   return { ftEval1 := cp.ftEval1, pub
            evals := cp.evals.map fun (v : Vector C.ScalarField 1) => v[0] }
+
+/-- A finalized proof's evaluations off its checked wire record at `nc` chunks: `ft(ζω)`,
+the carried public chunks, the record's chunks. -/
+def chunkedEvalsOf (C : Ipa.KimchiCurve) {nc k : ℕ} (cp : Kimchi.Verifier.KimchiProof C nc k) :
+    Except String (Pickles.ChunkedEvals nc C.ScalarField) := do
+  let pub ← match cp.pubEvals with
+    | .carried pe => pure pe
+    | .barycentric _ => throw "the proof carries no public evaluations (one-chunk wire form)"
+  return ⟨cp.ftEval1, pub, cp.evals⟩
 
 /-- A wrap statement off a wrap proof's public input, carried into `F` by `conv`
 (`Pickles.WrapStatement.packed`'s order): `cip, b, ζ^{2^k}, ζⁿ, perm` at 0–4, `β, γ` at 5–6,
@@ -178,8 +189,8 @@ it wrapped, at the step proof's `k` rounds: the unfinalized proof off the wrap s
 (`wrapStatementOf`), the evaluations off the step proof, the mask and `domain_log2` off the
 branch data, and the step proof's accumulators' challenges in the LAST slots
 (`unpackBranchData`), a zero vector in an absent one, which its mask bit leaves unread. -/
-def stepFopInput (w : Cache.Entry CW) {k : ℕ} (cpS : Kimchi.Verifier.KimchiProof CS 1 k) :
-    Except String (StepFop k) := do
+def stepFopInput (w : Cache.Entry CW) {k nc : ℕ} (cpS : Kimchi.Verifier.KimchiProof CS nc k) :
+    Except String (StepFop k nc) := do
   let st ← wrapStatementOf toStep k w.publicInput
   let dv := st.proofState.deferredValues
   let u : Pickles.UnfinalizedProof k Fp Bool (Type1 Fp) :=
@@ -191,7 +202,8 @@ def stepFopInput (w : Cache.Entry CW) {k : ℕ} (cpS : Kimchi.Verifier.KimchiPro
   let prev : Vector (Vector Fp k) Pickles.MaxProofsVerified ←
     if h : slots.length = Pickles.MaxProofsVerified then pure ⟨slots.toArray, by simp [h]⟩
     else throw s!"accumulators: {accs.length}, more than {Pickles.MaxProofsVerified}"
-  return (u, ← allEvalsOf CS cpS, dv.branchData.proofsVerifiedMask, prev, dv.branchData.domainLog2)
+  return (u, ← chunkedEvalsOf CS cpS, dv.branchData.proofsVerifiedMask, prev,
+    dv.branchData.domainLog2)
 
 /-- One run of a half on its input: `build` and `prove` the harness on it, read
 the named bits off the table, and decide whether the table satisfies the assembled system. -/
@@ -243,9 +255,9 @@ def fopBits {F : Type} (o : Pickles.FopOutput F) : List (String × BoolVar F) :=
    ("cipCorrect", o.cipCorrect), ("plonkOk", o.plonkOk)]
 
 /-- The step half on its records at a known domain. -/
-def runStep {k : ℕ} (dom : Pickles.KnownDomain Fp) (inp : StepFop k) :
+def runStep {k nc : ℕ} (zkRows : ℕ) (dom : Pickles.KnownDomain Fp) (inp : StepFop k nc) :
     IO (Bool × List (String × ℕ)) :=
-  runHalf (a := StepFop k) Kimchi.Fixture.PS.fpSide (fopStepOnAt [dom]) fopBits inp
+  runHalf (a := StepFop k nc) Kimchi.Fixture.PS.fpSide (fopStepOnAt zkRows [dom]) fopBits inp
 
 /-- The wrap half on its records at a domain. -/
 def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : Pickles.WrapFop k) : IO (Bool × List (String × ℕ)) :=
@@ -345,27 +357,55 @@ def basisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache
       e.vk.omega e.publicInput.size
   else throw (IO.userError s!"domain 2^{e.vk.domainLog2} above the SRS at 2^{σ.k}")
 
+/-- The first `count` Lagrange commitments over a domain of `n = nc · 2^k` points, each in
+`nc` chunks (`SRS::get_lagrange_basis` above the SRS): chunk `j` of `L_i` commits its
+coefficients `ω^{-i(j·2^k + t)}/n`, `t < 2^k`, against the SRS's generators. -/
+def lagrangeBasisChunks (C : Ipa.KimchiCurve) (σ : SRS C.Point) (n : ℕ) (ω : C.ScalarField)
+    (count : ℕ) : Array (Array C.Point) :=
+  let m := 2 ^ σ.k
+  let ninv : C.ScalarField := (n : C.ScalarField)⁻¹
+  (Array.range count).map fun i =>
+    let r := ω⁻¹ ^ i
+    (Array.range (n / m)).map fun j =>
+      let coeffs : Array C.ScalarField := Id.run do
+        let mut acc := Array.mkEmpty m
+        let mut c := ninv * r ^ (j * m)
+        for _ in [0:m] do
+          acc := acc.push c
+          c := c * r
+        return acc
+      Ipa.msm C σ.g fun t => coeffs.getD t 0
+
+/-- An entry's Lagrange commitments at `σ`, as the key carries them: one chunk each for a
+domain within the SRS (memoised, `basisFor`), `n / 2^k` chunks above it. -/
+def chunkedBasisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
+    IO (Array (Array C.Point)) := do
+  if e.vk.domainLog2 ≤ σ.k then return (← basisFor C name σ e).map (#[·])
+  return lagrangeBasisChunks C σ (2 ^ e.vk.domainLog2) e.vk.omega e.publicInput.size
+
 /-- A cache entry's checked wire records at the SRS `σ`, its key completed with the Lagrange
-basis: the records checked at one chunk (the run's chunk count, which the halves fix) and
-`σ`'s round count. -/
+basis: the records checked at the run's chunk count and `σ`'s round count. -/
+def checkedAny (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
+    IO ((nc : ℕ) × Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc σ.k) := do
+  let vk := { e.vk with lagrangeBasis := ← chunkedBasisFor C name σ e }
+  let nc := Kimchi.Verifier.Wire.runNc C σ vk
+  match vk.check nc, e.proof.check nc σ.k with
+  | some cvk, some cp => return ⟨nc, cvk, cp⟩
+  | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
+
+/-- `checkedAny` at one chunk, the chunk count the halves' environment fixes. -/
 def checkedAt (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
     IO (Kimchi.Verifier.KimchiVK C 1 × Kimchi.Verifier.KimchiProof C 1 σ.k) := do
-  let basis ← basisFor C name σ e
-  let vk := { e.vk with lagrangeBasis := basis.map (#[·]) }
-  let nc := Kimchi.Verifier.Wire.runNc C σ vk
-  if h : nc = 1 then
-    match (h ▸ vk.check nc : Option (Kimchi.Verifier.KimchiVK C 1)),
-          (h ▸ e.proof.check nc σ.k : Option (Kimchi.Verifier.KimchiProof C 1 σ.k)) with
-    | some cvk, some cp => return (cvk, cp)
-    | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
-  else throw (IO.userError s!"the entry runs at {nc} chunks; the halves are one-chunk")
+  let ⟨nc, cvk, cp⟩ ← checkedAny C name σ e
+  if h : nc = 1 then return (h ▸ cvk, h ▸ cp)
+  else throw (IO.userError s!"the entry runs at {nc} chunks; this lane is one-chunk")
 
 /-- The wire verifier on a cache entry, against the curve's SRS cut to the proof's round
 count. -/
 def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) : IO Bool := do
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let (cvk, cp) ← checkedAt C name σ e
+  let ⟨_, cvk, cp⟩ ← checkedAny C name σ e
   return Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
 
 /-- The environment of an entry's key at its SRS, built once per key. Deciding
@@ -490,8 +530,10 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     -- `hsatS`: the theorem's scalar circuit, as `compile` builds it — the input's check (the
     -- branch data's; the rest of the input is unchecked) and then `scalarCircuit`, which
     -- asserts `finalized`
-    let (u, ev, mask, prev, d) ← match stepFopInput w cp with
+    let (u, _, mask, prev, d) ← match stepFopInput w cp with
       | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
+    let ev ← match allEvalsOf CS cp with
+      | .error e => throw (IO.userError s!"step evaluations: {e}") | .ok r => pure r
     let sinp : Pickles.StepProof.ScalarIn σ.k :=
       { branch := ⟨d, mask⟩, fop := ⟨{ claims := u, evals := ev, prev }⟩ }
     let (satS, _) ← runHalf (a := Pickles.StepProof.ScalarIn σ.k) Kimchi.Fixture.PS.fpSide
@@ -636,11 +678,12 @@ def main : IO Unit := do
     let pair := s!"wrap→step {d.take 10}…"
     if on "step" then
       let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS s.proof.opening.lr.size
-      let (_, cpS) ← checkedAt CS "vesta" σS s
+      let ⟨nc, cvkS, cpS⟩ ← checkedAny CS "vesta" σS s
       let inp ← match stepFopInput w cpS with
         | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
-      let ok ← report s!"step half on {pair} (domain 2^{s.vk.domainLog2})"
-        (runStep ⟨s.vk.domainLog2, s.vk.omega⟩ inp)
+      let ok ← report s!"step half on {pair} (domain 2^{s.vk.domainLog2}, {nc} chunk(s), \
+          zk_rows {cvkS.zkRows})"
+        (runStep cvkS.zkRows ⟨s.vk.domainLog2, s.vk.omega⟩ inp)
       runs := runs + 1
       unless ok do allOk := false
     if on "verify" then
