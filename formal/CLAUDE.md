@@ -131,9 +131,6 @@ described are gone; their content lives in `Gate/` + `Gate/Semantics/` + the pas
 | **Arithmetization** | `kimchi/Kimchi/{Index,Permutation,Lift,Domain,Aggregate,SchwartzZippel,GrandProduct,Protocol/Linearization}` | the index as data, `Index.Satisfies`, the wiring and σ columns, the polynomial lift, satisfiability ↔ divisibility (`satisfies_iff_fullFamily_dvd`), copy soundness, and the verifier's scalar side in closed form |
 | **Verifier** | `kimchi/Kimchi/Verifier/` | the executable verifier (`Kimchi.lean`), its body in closed form (`Reflect.lean`), and the serde wire boundary with its parse (`Wire.lean`) |
 
-`Main.lean` + `Kimchi/Gate/Generic.lean` are a runnable demo of "ingest a (gate, witness)
-and run the verified checker".
-
 Above the gate stack, the library has grown these further trees:
 
 - The arithmetization, as top-level modules rather than a directory: `Kimchi/Domain.lean`
@@ -180,10 +177,9 @@ Each modelled gate is two files:
 
 ## How a gate is modelled
 
-There are **two gate idioms**, split by purpose — *runnable demo* vs *proof-oriented*. Both are
-algebraic; neither is a concrete-integer model.
+There are **two gate idioms**. Both are algebraic; neither is a concrete-integer model.
 
-**(1) The generic gate, which is also the runnable demo** (`Gate/Generic.lean`) — a row is 15
+**(1) The generic gate** (`Gate/Generic.lean`) — a row is 15
 coefficient cells and 15 witness cells over a field, and one `constraints` list over any
 `[CommRing R]` is the single transcription everything else reads:
 
@@ -203,9 +199,7 @@ theorem satisfies_iff [DecidableEq F] (rows) : satisfies rows = true ↔ Satisfi
 ```
 
 Plus `Generic.map` (the functorial relabelling the polynomial lift instantiates at a ring hom) and
-`Generic.withPublic` (fold a public input into `q 4`). `satisfies` at `ZMod 17` is what `Main.lean`
-prints and what the file's own two `#eval`s report; it's the bridge to the JSON the PureScript
-dumpers emit.
+`Generic.withPublic` (fold a public input into `q 4`).
 
 **(2) The algebraic EC gates** (`Gate/AddComplete.lean`, `VarBaseMul.lean`, `EndoMul.lean`,
 `EndoScalar.lean`) — each gate is a `Witness (F : Type*)` structure (one named field per
@@ -355,7 +349,7 @@ op type, a decoder, and a `step : state -> op -> state x Bool`.
   (the gate's source, column layout and constraint transcription); keep those accurate,
   and write new code to the Mathlib standard.
 - **Files are split into `/-! ## … -/` sections** (constraint model → reflection → soundness →
-  completeness → runnable `#eval` example → supporting lemmas). Keep section docstrings in sync
+  completeness → supporting lemmas). Keep section docstrings in sync
   with reality (see below).
 - **Each modelled gate is two files** (see "The gate/semantics module convention" above):
   the constraint model in `Kimchi/Gate/{Name}.lean` and the multi-row development in

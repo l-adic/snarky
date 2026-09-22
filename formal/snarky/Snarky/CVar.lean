@@ -12,7 +12,6 @@ inductive CVar (F : Type u) where
   | const (c : F)
   | add (a b : CVar F)
   | scale (k : F) (x : CVar F)
-  deriving Repr, DecidableEq
 
 /-- A single field element as a circuit value (PS `FVar f` is a wrapped `CVar`). -/
 abbrev FVar (F : Type u) := CVar F
@@ -128,7 +127,6 @@ structure AffineExpression (F : Type u) where
   /-- The coefficient terms `(xᵢ, aᵢ)`, in strictly ascending variable order with at most
   one term per variable. -/
   terms : List (Variable × F)
-  deriving Repr, DecidableEq
 
 namespace AffineExpression
 

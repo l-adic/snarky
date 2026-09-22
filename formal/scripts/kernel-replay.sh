@@ -43,8 +43,6 @@ fi
 scripts/prune-stale-oleans.sh
 
 # The workspace library roots — keep in sync with lintDriverArgs in lakefile.toml.
-# (The kimchi-demo executable root `Main` is not replayed: CI builds only the
-# libraries, and the demo is not part of the trust surface.)
 lake env "$dir/.lake/build/bin/lean4checker" \
   "--num-workers=${LEAN4CHECKER_WORKERS:-2}" \
   Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \

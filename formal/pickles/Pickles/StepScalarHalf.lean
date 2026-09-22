@@ -231,7 +231,7 @@ structure ScalarInput (k nc : ℕ) (f b : Type) where
   fop : UnChecked (FopInput k nc f b (Type1 f))
 
 /-- A scalar-half input is its branch data and the rest. -/
-@[simps apply] def ScalarInput.equivProd (k nc : ℕ) (f b : Type) :
+def ScalarInput.equivProd (k nc : ℕ) (f b : Type) :
     ScalarInput k nc f b ≃ BranchData f b × UnChecked (FopInput k nc f b (Type1 f)) :=
   ⟨fun i => (i.branch, i.fop), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 

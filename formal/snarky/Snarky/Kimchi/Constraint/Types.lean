@@ -90,7 +90,6 @@ inductive GateKind where
   | endoScalar
   /-- The zero gate — unconstrained rows (final states, padding). -/
   | zero
-  deriving Repr, DecidableEq
 
 /-- One emitted gate row (PS `KimchiRow`): the gate tag, the 15 witness-cell variable
 slots, and the coefficient row. -/
@@ -103,7 +102,6 @@ structure KimchiRow (F : Type u) where
   /-- The coefficient row. Deliberately length-unfixed, as in PS — the fixtures record
   varying lengths (see the module docstring). -/
   coeffs : List F
-  deriving Repr, DecidableEq
 
 /-- The wire-placement state (PS `KimchiWireRow`): which variables the reduction
 allocated internally, the union-find whose partition becomes the wiring permutation, and

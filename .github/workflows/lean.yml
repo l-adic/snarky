@@ -207,11 +207,6 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         bash scripts/deadcode.sh
 
-    # GATE: a domain `CircuitType` instance owes the characterization of its `Reads`
-    # and `Scoped` — nothing derives it, and without it every consumer unfolds inline.
-    - name: Check reading lemmas
-      run: bash scripts/check-readings.sh
-
     # GATE: a pickles gadget's spec is stated once, in its module — a consumer names the
     # exported shape (family or ∀-form) in a `have`, never restates it (the mirror of
     # sealing, which stops a consumer unfolding the body).

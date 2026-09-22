@@ -306,7 +306,7 @@ structure WrapGroup (ks kw n nc : ℕ) (f b : Type) where
   sgOld : Vector (AffinePoint f) n
 
 /-- A wrap-side group half is its two statements, the proof and the accumulators' `sg`. -/
-@[simps apply] def WrapGroup.equivProd (ks kw n nc : ℕ) (f b : Type) :
+def WrapGroup.equivProd (ks kw n nc : ℕ) (f b : Type) :
     WrapGroup ks kw n nc f b ≃
       WrapStatement ks f b (Type1 f) × StepStatement kw n f b (Type2 (SplitField f b)) ×
         IvpProof ks nc f (Type1 f) × Vector (AffinePoint f) n :=
@@ -331,7 +331,7 @@ structure GroupInput (k kw n nc : ℕ) (f b : Type) where
   newBp : Vector (Vector f kw) n
 
 /-- A group input is the group half and the expanded round challenges. -/
-@[simps apply] def GroupInput.equivProd (k kw n nc : ℕ) (f b : Type) :
+def GroupInput.equivProd (k kw n nc : ℕ) (f b : Type) :
     GroupInput k kw n nc f b ≃ WrapGroup k kw n nc f b × Vector (Vector f kw) n :=
   ⟨fun g => (g.group, g.newBp), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 

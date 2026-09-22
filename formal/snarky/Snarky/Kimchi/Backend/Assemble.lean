@@ -46,7 +46,6 @@ structure Wire where
   row : Nat
   /-- The target column. -/
   col : Nat
-  deriving Repr, DecidableEq
 
 /-- One assembled gate row: the tag, the seven wiring targets, and the coefficient
 row — the shape the circuit-diffs schema records per row. -/
@@ -57,7 +56,6 @@ structure AssembledGate (F : Type u) where
   wires : Vector Wire 7
   /-- The coefficient row. -/
   coeffs : List F
-  deriving Repr, DecidableEq
 
 /-- The wire map (PS `makeWireMapping`): every wired permutation cell `(row, col)`,
 `col < 7`, to the next cell of its variable's class, the last wrapping to the first.

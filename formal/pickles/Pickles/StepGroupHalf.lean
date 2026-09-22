@@ -37,7 +37,7 @@ structure StepGroup (ks kw nc : ℕ) (f b : Type) where
 
 /-- A step-side group half is the statement, the slot's claims, the proof, its `sg_old` and
 `is_base_case`. -/
-@[simps apply] def StepGroup.equivProd (ks kw nc : ℕ) (f b : Type) :
+def StepGroup.equivProd (ks kw nc : ℕ) (f b : Type) :
     StepGroup ks kw nc f b ≃
       WrapStatement ks f b (Type1 f) × UnfinalizedProof kw f b (Type2 (SplitField f b)) ×
         IvpProof kw nc f (Type2 (SplitField f b)) × Vector (AffinePoint f) MaxProofsVerified ×

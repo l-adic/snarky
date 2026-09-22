@@ -115,7 +115,7 @@ scalar field, transport across the boundary by canonical representative (PS
 `toBigInt`/`fromBigInt`), and decode by the same `fromShifted` operator read over `ℤ`. -/
 
 /-- The carrier is phantom: a `Type1` is its representative. -/
-@[simps apply symm_apply] def Type1.equivCarrier {α : Type} : Type1 α ≃ α where
+def Type1.equivCarrier {α : Type} : Type1 α ≃ α where
   toFun t := t.val
   invFun v := ⟨v⟩
   left_inv _ := rfl

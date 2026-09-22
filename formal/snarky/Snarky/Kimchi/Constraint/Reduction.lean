@@ -185,7 +185,6 @@ def reduceToVariable [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [M
 structure Rows (F : Type u) where
   /-- The wrapped row. -/
   row : KimchiRow F
-  deriving Repr, DecidableEq
 
 instance : ToKimchiRows F (Rows F) where
   toKimchiRows r := [r.row]

@@ -33,7 +33,7 @@ structure CurvePoint (a b : F) (α : Type) where
   point : AffinePoint α
 
 /-- The tag is phantom: a tagged point is its point. -/
-@[simps apply symm_apply] def CurvePoint.equivPoint {a b : F} {α : Type} :
+def CurvePoint.equivPoint {a b : F} {α : Type} :
     CurvePoint a b α ≃ AffinePoint α where
   toFun p := p.point
   invFun p := ⟨p⟩

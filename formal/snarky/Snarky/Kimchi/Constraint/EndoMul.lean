@@ -69,7 +69,6 @@ structure EndoMulRound (F : Type u) where
   bit3 : FVar F
   /-- The witnessed distinct-point inverse. -/
   inv : FVar F
-  deriving Repr, DecidableEq
 
 /-- An endomorphism-optimized scalar multiplication (PS `EndoMul`): the rounds, the
 final accumulator and scalar the trailing `zero` row carries, and the endomorphism
@@ -85,7 +84,6 @@ structure EndoMul (F : Type u) where
   ignores it (the row has no coefficient cells), and the semantics reads the gate
   at it. -/
   endo : F
-  deriving Repr, DecidableEq
 
 variable {F : Type} {m : Type → Type}
 

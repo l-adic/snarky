@@ -81,7 +81,6 @@ structure ScaleRound (F : Type u) where
   nNext : FVar F
   /-- The base point `T`. -/
   base : AffinePoint (FVar F)
-  deriving Repr, DecidableEq
 
 /-- A variable-base scalar multiplication: its rounds in row order (PS `VarBaseMul`). -/
 abbrev VarBaseMul (F : Type u) := List (ScaleRound F)

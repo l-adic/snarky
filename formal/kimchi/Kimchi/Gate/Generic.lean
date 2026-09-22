@@ -114,25 +114,4 @@ theorem satisfies_iff [DecidableEq F] (rows : List (Generic F)) :
     satisfies rows = true ↔ Satisfies rows := by
   simp [satisfies, Satisfies, List.all_eq_true, Generic.ok_iff]
 
-/-! ## Runnable example over `ZMod 17`
-
-A row whose first half asserts `w₀ · w₁ = w₂` (as `w₂ − w₀·w₁ = 0`: coefficients
-`q₂ = 1`, `q₃ = -1`) and whose second half is the trivial `0 = 0`. -/
-
-instance : Fact (Nat.Prime 17) := ⟨by norm_num⟩
-
-/-- Coefficient cells asserting `w₀ · w₁ = w₂` on the first half, trivial on the second. -/
-private def egQ : Fin 15 → ZMod 17 := ![0, 0, 1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-
-/-- A satisfying row: `3 · 4 = 12` in `ZMod 17`. -/
-def egGood : Generic (ZMod 17) :=
-  { q := egQ, w := ![3, 4, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
-
-/-- A failing row: `3 · 4 ≠ 13`. -/
-def egBad : Generic (ZMod 17) :=
-  { q := egQ, w := ![3, 4, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
-
-#eval satisfies [egGood]   -- true
-#eval satisfies [egBad]    -- false
-
 end Kimchi.Gate

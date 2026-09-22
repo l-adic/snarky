@@ -60,7 +60,7 @@ def sigmaLast (k : VkComms nc f) : Vector f nc :=
 end VkComms
 
 /-- A key's commitments are its permutation, coefficient and selector columns. -/
-@[simps apply] def VkComms.equivProd (nc : ℕ) (f : Type) :
+def VkComms.equivProd (nc : ℕ) (f : Type) :
     VkComms nc f ≃
       Vector (Vector f nc) permCols × Vector (Vector f nc) coeffCols × Vector f nc ×
         Vector f nc × Vector f nc × Vector f nc × Vector f nc × Vector f nc :=

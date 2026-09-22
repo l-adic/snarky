@@ -80,7 +80,6 @@ inductive KimchiConstraint (F : Type u) where
   circuits push row counts past a domain boundary with it. No Lean circuit emits
   it. -/
   | pad (vs : Vector (FVar F) 7)
-  deriving Repr, DecidableEq
 
 /-- The emitted-gate sum (PS `KimchiGate`): what one constraint reduces to — the
 per-gate row carriers, or nothing (`Basic` constraints emit through the batching
@@ -100,7 +99,6 @@ inductive KimchiGate (F : Type u) where
   | endoMul (rs : List (KimchiRow F))
   /-- No direct rows (a reduced `Basic` constraint). -/
   | noOp
-  deriving Repr, DecidableEq
 
 /-- Row dispatch (the PS `ToKimchiRows (KimchiGate f)` instance). -/
 instance : ToKimchiRows F (KimchiGate F) where

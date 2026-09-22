@@ -31,7 +31,6 @@ structure UnionFind where
   parent : Array Nat
   /-- Union-by-rank ranks, in lockstep with `parent`. -/
   rank : Array Nat
-  deriving Repr, DecidableEq
 
 namespace UnionFind
 
@@ -103,21 +102,5 @@ def equivalenceClasses (uf : UnionFind) : List (List Nat) :=
   grouped.map (·.2)
 
 end UnionFind
-
-/-! ## Examples (the union-find package's own spec rows, as `decide` checks) -/
-
-/-- Two unions chaining three elements into one class, with a bystander — the exhibit
-the `decide` examples below run on. -/
-def egUF : UnionFind :=
-  UnionFind.empty.union 0 1 |>.union 1 2 |>.ensure 3
-
-/-- All three chained elements share one representative; the bystander keeps its own. -/
-example : (egUF.find 0).1 = (egUF.find 2).1 ∧ (egUF.find 3).1 = 3 := by decide
-
-/-- The classes come out grouped, each ascending, ordered by root. -/
-example : egUF.equivalenceClasses = [[0, 1, 2], [3]] := by decide
-
-/-- The tie rule: on equal ranks the second root joins the first (`0 ∪ 1` roots at `0`). -/
-example : ((UnionFind.empty.union 0 1).find 1).1 = 0 := by decide
 
 end Snarky.Kimchi

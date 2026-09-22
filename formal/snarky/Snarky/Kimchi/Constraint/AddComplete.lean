@@ -39,7 +39,6 @@ structure AffinePoint (α : Type u) where
   x : α
   /-- The y-coordinate. -/
   y : α
-  deriving Repr, DecidableEq
 
 /-- The complete-addition constraint payload (PS `AddComplete`): `p1 + p2 = p3` with
 the auxiliary columns the gate's constraints consume. The field roles mirror
@@ -61,7 +60,6 @@ structure AddComplete (F : Type u) where
   infZ : FVar F
   /-- The witnessed inverse of `x₂ − x₁` when nonzero. -/
   x21Inv : FVar F
-  deriving Repr, DecidableEq
 
 variable {F : Type} {m : Type → Type}
 

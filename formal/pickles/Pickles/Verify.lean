@@ -150,7 +150,7 @@ structure IvpProof (k nc : ℕ) (f sf : Type) where
   opening : BulletproofOpening k f sf
 
 /-- A proof is its witness commitments, `z_comm`, its quotient chunks and its opening. -/
-@[simps apply] def IvpProof.equivProd (k nc : ℕ) (f sf : Type) :
+def IvpProof.equivProd (k nc : ℕ) (f sf : Type) :
     IvpProof k nc f sf ≃
       Vector (Vector (AffinePoint f) nc) wCols × Vector (AffinePoint f) nc ×
         Vector (AffinePoint f) (7 * nc) × BulletproofOpening k f sf :=

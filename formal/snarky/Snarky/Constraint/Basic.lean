@@ -30,7 +30,6 @@ inductive Basic (F : Type u) where
   | square (a sq : CVar F)
   /-- Booleanity: the expression reads `0` or `1`. -/
   | boolean (x : CVar F)
-  deriving Repr, DecidableEq
 
 /-- Each constructor is its own row. -/
 instance instBasicSystemBasic : BasicSystem F (Basic F) where

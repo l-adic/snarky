@@ -52,7 +52,6 @@ structure PoseidonConstraint (F : Type u) where
   rc : List (F × F × F)
   /-- The states in round order, each a width-3 triple. -/
   state : List (FVar F × FVar F × FVar F)
-  deriving Repr, DecidableEq
 
 variable {F : Type} {m : Type → Type}
 

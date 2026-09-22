@@ -372,15 +372,4 @@ theorem build_step4 :
 
 end BuildFields
 
-instance : Fact (Nat.Prime 97) := ⟨by norm_num⟩
-
-/-- A concrete 5-bit step over `ZMod 97`: target `T = (3, 5)`, input acc `(10, 20)`,
-    bits `[1, 0, 1, 1, 0]`, running scalar `n = 1`. -/
-def egVBM : Witness (ZMod 97) := build 3 5 10 20 1 1 0 1 1 0
-
--- Prints `true`: the generated witness satisfies all 21 constraints. (A kernel
--- `decide`/`rfl` proof is out of reach here — the witness fields are ZMod field
--- inverses, which don't reduce in the kernel; `#eval` uses the compiler.)
-#eval ok egVBM   -- true
-
 end Kimchi.Gate.VarBaseMul

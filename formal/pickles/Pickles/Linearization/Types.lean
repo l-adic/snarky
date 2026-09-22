@@ -35,7 +35,6 @@ inductive CurrOrNext where
   | curr
   /-- Its successor, used by the multi-row gates. -/
   | next
-  deriving DecidableEq, Repr
 
 /-- The gate whose selector polynomial an `index` column reads. Gates outside the modelled
 fragment occur in the deployed stream inside feature-flagged branches. -/
@@ -64,7 +63,6 @@ inductive GateType where
   | xor16
   /-- 64-bit rotation. -/
   | rot64
-  deriving DecidableEq, Repr
 
 /-- The lookup families a lookup selector can name. Outside the modelled fragment. -/
 inductive LookupPattern where
@@ -76,7 +74,6 @@ inductive LookupPattern where
   | rangeCheck
   /-- The foreign-field-multiplication lookup pattern. -/
   | foreignFieldMul
-  deriving DecidableEq, Repr
 
 /-- A column of the evaluation table, as a cell reference names it. -/
 inductive Column where
@@ -98,7 +95,6 @@ inductive Column where
   | lookupRuntimeSelector
   /-- The selector column of lookup family `p`. -/
   | lookupKindIndex (p : LookupPattern)
-  deriving DecidableEq, Repr
 
 /-- A constant the stream can push: a curve/field parameter or a numeric literal. -/
 inductive ConstantTerm where
@@ -108,7 +104,6 @@ inductive ConstantTerm where
   | mds (row col : Nat)
   /-- A numeric literal, decoded from the JSON's `"0x…"` string (see the preamble). -/
   | literal (value : Nat)
-  deriving DecidableEq, Repr
 
 /-- A verifier challenge the stream can push. -/
 inductive ChallengeTerm where
@@ -120,7 +115,6 @@ inductive ChallengeTerm where
   | gamma
   /-- The lookup joint combiner. Outside the modelled fragment. -/
   | jointCombiner
-  deriving DecidableEq, Repr
 
 /-- An optional-feature predicate guarding a `skipIf`/`skipIfNot` branch. Every flag is
 disabled in the modelled fragment. -/
@@ -147,7 +141,6 @@ inductive FeatureFlag where
   | tableWidth (n : Nat)
   /-- There are `n` lookups per row. -/
   | lookupsPerRow (n : Nat)
-  deriving DecidableEq, Repr
 
 /-- One instruction of a linearization program. -/
 inductive PolishToken where
@@ -180,6 +173,5 @@ inductive PolishToken where
   | skipIf (f : FeatureFlag) (n : Nat)
   /-- Skip the next `n` tokens when feature `f` is disabled: the then-branch marker. -/
   | skipIfNot (f : FeatureFlag) (n : Nat)
-  deriving DecidableEq, Repr
 
 end Pickles.Linearization

@@ -52,7 +52,6 @@ structure EndoScalarRound (F : Type u) where
   b8 : FVar F
   /-- The MSB-first 2-bit crumbs, eight per row. -/
   xs : Vector (FVar F) 8
-  deriving Repr, DecidableEq
 
 /-- A challenge decomposition: its rounds in row order (PS `EndoScalar`). -/
 abbrev EndoScalar (F : Type u) := List (EndoScalarRound F)
