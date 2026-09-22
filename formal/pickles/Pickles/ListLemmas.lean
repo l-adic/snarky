@@ -73,12 +73,7 @@ theorem forall₂_zipWith {α β γ δ : Type} (R : γ → δ → Prop) (f : α 
       exact List.Forall₂.cons (h (k, P) (by simp))
         (forall₂_zipWith R f g ks lb fun p hp => h p (by simp [hp]))
 
-/-! ## Singletons and flattening -/
-
-/-- Flattening the singletons of a list's images is mapping the list. -/
-theorem flatten_singletons {α β : Type} (f : α → β) :
-    ∀ l : List α, (l.map fun x => [f x]).flatten = l.map f := fun l => by
-  induction l <;> simp_all
+/-! ## Flattening -/
 
 /-- A flattened vector of vectors, as a list, is the flattened list of their lists. -/
 theorem toList_flatten' {α : Type} {m n : ℕ} (v : Vector (Vector α n) m) :
@@ -87,13 +82,6 @@ theorem toList_flatten' {α : Type} {m n : ℕ} (v : Vector (Vector α n) m) :
   rfl
 
 /-! ## Vectors -/
-
-/-- The head of a one-entry vector's list. -/
-theorem vec1_headD {α : Type} (v : Vector α 1) (d : α) : v.toList.headD d = v[0] := by
-  obtain ⟨⟨l⟩, h⟩ := v
-  simp at h
-  match l, h with
-  | [a], _ => rfl
 
 /-- An entry of a mapped vector, at a `Fin` index. -/
 theorem getElem_map_fin {α β : Type} {n : ℕ} (f : α → β) (Ps : Vector α n) (ci : Fin n) :

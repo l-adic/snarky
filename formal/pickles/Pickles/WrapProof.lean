@@ -110,7 +110,9 @@ variable {E : Env IpaPallas.curve 1} {cp : KimchiProof IpaPallas.curve 1 E.σ.k}
 /-- The scalar half's proof ties are the input's readings. -/
 private theorem InputReads.fopTies (hin : InputReads E cp pub Vg Vs g s) :
     FopTies E cp pub (s.half Vs) :=
-  ⟨hin.prevChallenges, hin.ftEval1, hin.evals, hin.pubEvals⟩
+  ⟨hin.prevChallenges, hin.ftEval1,
+    (AllEvals.toChunked_evals_map s.evals _).trans hin.evals,
+    (AllEvals.toChunked_pub_map s.evals _).trans hin.pubEvals⟩
 
 /-- The base field's characteristic exceeds the group half's absorb count. -/
 private theorem char_guard (m : ℕ) (hm : m ≤ 53) (h0 : (m : Fp) = 0) : m = 0 := by

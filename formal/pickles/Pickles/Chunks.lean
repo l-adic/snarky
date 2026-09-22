@@ -309,11 +309,4 @@ theorem combineEvals_one (x y : F) (e : ProofEvaluations (Vector F 1)) :
   simp only [combineEvals, hf]
   rfl
 
-/-- One chunk's rows are its single pair. -/
-theorem chunkRows_one {α : Type} (e : PointEvaluations (Vector α 1)) :
-    chunkRows e = [⟨e.zeta[0], e.zetaOmega[0]⟩] := by
-  obtain ⟨⟨⟨la⟩, hza⟩, ⟨⟨lb⟩, hzb⟩⟩ := e
-  match la, lb, hza, hzb with
-  | [a], [b], _, _ => simp [chunkRows]
-
 end Pickles
