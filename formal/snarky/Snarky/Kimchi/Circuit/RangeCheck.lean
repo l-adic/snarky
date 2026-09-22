@@ -5,27 +5,17 @@ import Snarky.DSL.SizedF
 /-!
 # Range checks built on the EndoScalar gate
 
-Port of `Snarky.Circuit.Kimchi.RangeCheck`
-(packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/RangeCheck.purs): `toField` at 8
-rows decomposes a 128-bit value across 16-bit rows, which doubles as a 128-bit range
-check — cheaper than bit unpacking. `rangeCheck128` asserts the fit and discards the
-decomposition; `split128Below` splits a field element into 128-bit halves,
-range-checks the high half and — under `constrainLowBits` — the low one (OCaml
-`squeeze_challenge` vs `squeeze_scalar`), pins the recombination and its comparison
-against a bound, and returns the low half. `lowest128Bits'` is that split below the field
-modulus, so the halves are the canonical representative's.
+Transcribes packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/RangeCheck.purs.
+`EndoScalar.toField` at 8 rows decomposes its operand into 128 bits, so it doubles as a
+128-bit range check. `rangeCheck128` asserts the fit and discards the decomposition.
+`split128Below` splits a field element into 128-bit halves, range-checks the high half (and the
+low one when asked), pins the recombination below a bound, and returns the low half.
+`lowest128Bits'` is that split below the field modulus, so the halves are the canonical
+representative's.
 
-One section per gadget: the definition, its soundness spec, its completeness law, and
-then the definition is sealed `irreducible`. The pure split stays transparent — the
-statements speak about it.
-
-Deviations from the PS original:
-- PS's type-level `FieldSizeInBits f 255` constraint renders as no hypothesis: the
-  gadget emits the same ops at any field, and the laws carry the width facts they
-  need (`toField_spec`'s `4^64 = 2^128` budget, the split's faithfulness).
-- PS's `SizedF.fromField` advice partiality (`unsafePartial fromJust`) is total
-  here: the split representatives are casts of reduced naturals, in range by
-  construction.
+Each gadget is followed by its soundness spec and completeness law, then sealed `irreducible`;
+the pure split `lowest128BitsPure` stays transparent, since the statements speak about it. No
+law assumes a field width up front: each carries the width facts it needs.
 -/
 
 namespace Snarky.Kimchi
@@ -36,8 +26,8 @@ variable {F c : Type}
 
 /-! ## The 128-bit range check -/
 
-/-- 128-bit range assert (PS `rangeCheck128`): the `toField` decomposition at 8 rows
-IS the check; the reconstruction result is discarded. -/
+/-- 128-bit range assert: the `EndoScalar.toField` decomposition is the check; its result is
+discarded. -/
 def rangeCheck128 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (endo : FVar F) (v : SizedF 128 (FVar F)) :
     CircuitM F c PUnit := do
@@ -74,28 +64,21 @@ theorem rangeCheck128_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat 
 
 attribute [irreducible] rangeCheck128
 
-/-! ## The split
+/-! ## The split -/
 
-The low half of a field element, with the high half range-checked and — under
-`constrainLowBits` — the low one too. `lowest128BitsPure` is the value the honest run
-lands on, so it stays transparent. -/
-
-/-- The pure split (PS `lowest128BitsPure`): the low half of the canonical
-representative. -/
+/-- The pure split: the low half of the canonical representative. -/
 def lowest128BitsPure [Field F] [ToNat F] (x : F) : SizedF 128 F :=
   ⟨((ToNat.toNat x % 2 ^ 128 : ℕ) : F)⟩
 
-/-- The split advice (PS's `exists` body): the value's canonical representative,
-split at `2^128` — low half first, matching OCaml's `Typ.(field * field)`. -/
+/-- The split advice: the canonical representative split at `2^128`, low half first. -/
 private def lowestWit [Field F] [ToNat F] (x : FVar F) : AsProver F (F × F) := do
   let xv ← AsProver.readCVar x
   pure (((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))
 
-/-- The field's modulus, read off the field (PS `modulus @f`): the canonical representative
-of `-1`, plus one. -/
+/-- The field's modulus: the canonical representative of `-1`, plus one. -/
 def fieldModulus (F : Type) [Field F] [ToNat F] : ℕ := ToNat.toNat (-1 : F) + 1
 
-/-- The limb comparison (PS `assertSplitBelow`): `lo + 2^128·hi < bound` for 128-bit limbs,
+/-- The limb comparison: `lo + 2^128·hi < bound` for 128-bit limbs,
 as one range-checked difference — where `hi` equals the bound's high limb, `bound_lo − 1 − lo`;
 elsewhere `bound_hi − 1 − hi`. A negative difference wraps past `2^128` and fails, so the
 first case pins `lo < bound_lo` and the second `hi < bound_hi`. -/
@@ -109,9 +92,8 @@ private def assertSplitBelow [Field F] [DecidableEq F] [ToNat F] [BasicSystem F 
   let _ ← EndoScalar.toField (c := c) 8 d endo
   pure ⟨⟩
 
-/-- The split below a bound (PS `split128Below`): witness `x = lo + 2^128·hi`, range-check
-`hi` and, under `constrainLowBits`, `lo`, pin the recombination and the limb comparison
-`lo + 2^128·hi < bound`, and return the low half. -/
+/-- The split below a bound: witness `x = lo + 2^128·hi`, range-check `hi` (and `lo` under
+`constrainLowBits`), pin the recombination and `lo + 2^128·hi < bound`, and return `lo`. -/
 def split128Below [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (constrainLowBits : Bool) (endo : FVar F) (bound : ℕ) (x : FVar F) :
     CircuitM F c (SizedF 128 (FVar F)) := do
@@ -124,15 +106,14 @@ def split128Below [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   assertSplitBelow endo lohi.val.1 lohi.val.2 bound
   pure ⟨lohi.val.1⟩
 
-/-- Extract the lowest 128 bits (PS `lowest128Bits'`; OCaml `lowest_128_bits`): the split
-below the field modulus, so the low half is that of the canonical representative. -/
+/-- The lowest 128 bits: the split below the field modulus, so the low half is the canonical
+representative's. -/
 def lowest128Bits' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (constrainLowBits : Bool) (endo x : FVar F) :
     CircuitM F c (SizedF 128 (FVar F)) :=
   split128Below constrainLowBits endo (fieldModulus F) x
 
-/-- The limb comparison's constraints are satisfiable under any valuation the walk reaches:
-its triple carries no postcondition. -/
+/-- The limb comparison with a trivial postcondition, for callers' `mvcgen` to step over. -/
 private theorem assertSplitBelow_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo lo hi : FVar F) (bound : ℕ) :
     ⦃⌜True⌝⦄
@@ -217,8 +198,8 @@ theorem fieldModulus_eq_card [Field F] [ToNat F] [LawfulToNat F] :
   omega
 
 /-- **Completeness** (`assertSplitBelow`): the honest run accepts on limbs whose
-recombination lies below the bound, where the bound's high limb fits in 128 bits and every
-number below the bound is its own cast's representative. -/
+recombination lies below the bound, where the bound is below `2^256` and at most the field's
+cardinality. -/
 @[complete_law]
 private theorem assertSplitBelow_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo lo hi : FVar F) (bound lov hiv : ℕ) (ev : F)
@@ -301,8 +282,8 @@ private theorem assertSplitBelow_complete [Field F] [DecidableEq F] [ToNat F] [L
 attribute [irreducible] assertSplitBelow
 
 /-- **Soundness** (`split128Below`): the operand reads as `lo + 2^128·hi` for the returned low
-half and SOME high half below `2^128`; the low half is below `2^128` exactly when
-`constrainLowBits` asked for it — OCaml's `squeeze_challenge` / `squeeze_scalar` split. -/
+half and some high half below `2^128`; under `constrainLowBits` the low half is below `2^128`
+too. -/
 theorem split128Below_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (constrainLowBits : Bool) (endo : FVar F)
     (bound : ℕ) (x : FVar F) :
@@ -330,10 +311,8 @@ theorem split128Below_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
       ⟨nh, hnhlt, hnh⟩, fun hc => absurd hc hfalse⟩
 
 /-- **Soundness, below the bound** (`split128Below`): where naturals below `2^130` cast
-injectively and the bound fits in 256 bits, a low half reading as a 128-bit natural `l`
-splits the operand below the bound, `x = l + 2^128·h` with `h < 2^128` and
-`l + 2^128·h < bound`. At the field's modulus this makes `l` the canonical
-representative's low half. -/
+injectively and the bound is below `2^256`, a low half reading as a 128-bit natural `l` gives
+`x = l + 2^128·h` with `h < 2^128` and `l + 2^128·h < bound`. -/
 theorem split128Below_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hinj : ∀ a b : ℕ, a < 2 ^ 130 → b < 2 ^ 130 → (a : F) = b → a = b)
@@ -373,8 +352,7 @@ theorem lowest128Bits'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F
   split128Below_spec h2 h3 constrainLowBits endo (fieldModulus F) x
 
 /-- **Soundness, canonical** (`lowest128Bits'`): `split128Below_below` at the field's
-modulus — a low half reading as a 128-bit natural is the low half of a split below the
-modulus, so of the operand's canonical representative. -/
+modulus, so a low half reading as a 128-bit natural is the canonical representative's. -/
 theorem lowest128Bits'_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hinj : ∀ a b : ℕ, a < 2 ^ 130 → b < 2 ^ 130 → (a : F) = b → a = b)
@@ -387,8 +365,8 @@ theorem lowest128Bits'_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat 
   split128Below_below h2 h3 hinj constrainLowBits endo (fieldModulus F) hmod x
 
 /-- **Completeness** (`lowest128Bits'`): the honest run accepts and the result reads the
-pure split's low half. The field fits in 256 bits, and both halves' representatives must
-survive the cast — the round-trip the split's advice relies on. -/
+pure split's low half. The field is below `2^256`, and both halves' representatives survive
+the cast. -/
 theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (constrainLowBits : Bool) (endo x : FVar F)
     (xv ev : F) (hcard : LawfulToNat.card (F := F) < 2 ^ 256)
