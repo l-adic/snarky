@@ -198,19 +198,6 @@ theorem collapseColumn_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasic
   simp [combineColumn, PointEvaluations.map, ha, hb, Vector.toList, ← Array.toList_map]
 
 omit [Field F] [DecidableEq F] [BasicSystem F c] in
-/-- A specification of `f <$> m` is one of `m` read through `f`. -/
-private theorem builder_spec_of_map {V : Valuation F} [ConstraintHolds F c] {α β : Type}
-    (m : CircuitM F (Builder V c) α) (f : α → β) (post : β → Prop)
-    (h : ⦃⌜True⌝⦄ (f <$> m) ⦃⇓ r _ => ⌜post r⌝⦄) : ⦃⌜True⌝⦄ m ⦃⇓ r _ => ⌜post (f r)⌝⦄ := by
-  rw [builder_spec_iff] at h ⊢
-  intro nv hsat
-  have hb := h nv (by
-    rw [CircuitM.map_eq, build_bind]
-    simpa [build] using hsat)
-  rw [CircuitM.map_eq, build_bind] at hb
-  simpa [build] using hb
-
-omit [Field F] [DecidableEq F] [BasicSystem F c] in
 /-- A vector `mapM` of specifications: the results read, entrywise, as the targets. -/
 private theorem builder_spec_vector_mapM {V : Valuation F} [ConstraintHolds F c]
     {α β γ : Type} {m : ℕ} (f : α → CircuitM F (Builder V c) β) (g : β → γ) (Q : α → γ)

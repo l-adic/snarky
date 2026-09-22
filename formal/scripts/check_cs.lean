@@ -826,7 +826,7 @@ def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
     [ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8, cond 9, full 10 ]
       ++ (List.range 20).map (fun j => b128 (11 + j))
       ++ [ cond 31, full 32, full 33 ]
-  let _ ← Pickles.publicInputCommitFull (0 : Fin 1) h leaves
+  let _ ← Pickles.publicInputCommitFull h leaves
   pure PUnit.unit
 
 /-- The Lagrange bases and blinding `h` of an `x_hat` circuit, from its circuit-diffs export
@@ -1127,10 +1127,9 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let dv := wrapIvpDv get
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
-  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    let P ← Pickles.publicInputCommitFull (0 : Fin 1) h
+  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=
+    Vector.toList <$> Pickles.publicInputCommitFull h
       (wrapLeaves pts (wrapStepStatement get).packed)
-    pure [P]
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
     vestaBase.sqrt? true h sv computeXHat
@@ -1162,10 +1161,9 @@ def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let dv := wrapIvpDv get
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
-  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    let P ← Pickles.publicInputCommitFull (0 : Fin 1) h
+  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=
+    Vector.toList <$> Pickles.publicInputCommitFull h
       (wrapLeaves pts (wrapStepStatement get).packed)
-    pure [P]
   Pickles.wrapVerify Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
     vestaBase.sqrt? h sv computeXHat wrapMsgSponge

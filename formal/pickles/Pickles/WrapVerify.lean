@@ -193,9 +193,7 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k : ℕ
   wrapVerify IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
     (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt E.σ.h)
     spongeAfterIndex
-    (do
-      let P ← publicInputCommitFull (0 : Fin 1) (constPt E.σ.h) (wrapLeavesAt E statement)
-      pure [P])
+    (Vector.toList <$> publicInputCommitFull (constPt E.σ.h) (wrapLeavesAt E statement))
     msgSponge newBpChallenges claimedMsgDigest u cells
 
 /-- A packed step statement opens with a full scalar: a slot's split `cip`, or with no slot
@@ -241,10 +239,11 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
       = List.zipWith constLeaf statement.packed E.cvk.lagrangeBasis.toList := by
     unfold wrapLeavesAt
     exact packLeavesOf_ofKey (C := IpaVesta.curve) _ _
-  -- the binding, under the boolean leaves' booleanity: the `x_hat` read supplies that
-  have hbind := fun hb : ∀ leaf ∈ wrapLeavesAt E statement, leaf.bitBoolean V =>
-    xhatBinding_const (V := V) pastaShapeVesta (0 : Fin 1) E.σ E.cvk statement.packed E.h_ne
-      (fun Ps h => E.lagrange_ne pastaShapeVesta havoid Ps h 0) (hleaves ▸ hb) (hleaves ▸ hoff)
+  -- the binding at each chunk, under the boolean leaves' booleanity: the `x_hat` read
+  -- supplies that
+  have hbind := fun (ci : Fin 1) (hb : ∀ leaf ∈ wrapLeavesAt E statement, leaf.bitBoolean V) =>
+    xhatBinding_const (V := V) pastaShapeVesta ci E.σ E.cvk statement.packed E.h_ne
+      (fun Ps h => E.lagrange_ne pastaShapeVesta havoid Ps h ci) (hleaves ▸ hb) (hleaves ▸ hoff)
   have hscalar : leafHasScalar (wrapLeavesAt E statement) := by
     obtain ⟨x, rest, hx⟩ := statement.packed_head
     obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
@@ -255,23 +254,17 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
     rw [hleaves, hx, hlb]
     simp [constLeaf, leafHasScalar]
   have hX : ⦃⌜True⌝⦄
-      (do
-        let P ← publicInputCommitFull (S := Builder V (KimchiConstraint Fq)) (0 : Fin 1)
-          (constPt E.σ.h) (wrapLeavesAt E statement)
-        pure [P])
+      (Vector.toList <$> publicInputCommitFull (S := Builder V (KimchiConstraint Fq))
+        (constPt E.σ.h) (wrapLeavesAt E statement))
       ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve E.σ E.cvk
         (wrapPublicInput E V statement)).toList⌝⦄ := by
-    have h0 := xHat_reads_publicCommitment pastaShapeVesta (0 : Fin 1) E.σ E.cvk
-      (constPt E.σ.h) (wrapLeavesAt E statement) _ _ (fun hb => hleaves ▸ hbind hb) hscalar
-    have hl : ∀ pc : Vector IpaVesta.curve.Point 1, pc.toList = [pc[(0 : Fin 1)]] := by
-      intro pc
-      apply List.ext_getElem <;> simp
-      rintro i rfl
-      rfl
+    have h0 := builder_spec_forall _ (fun _ : Fin 1 => True) _ fun ci _ =>
+      xHat_reads_publicCommitment pastaShapeVesta ci E.σ E.cvk (constPt E.σ.h)
+        (wrapLeavesAt E statement) _ _ (fun hb => hleaves ▸ hbind ci hb) hscalar
     mvcgen -trivial [h0]
-    rename_i r _ hr
-    rw [CommReads, hl]
-    exact List.Forall₂.cons hr List.Forall₂.nil
+    intro hr
+    exact List.forall₂_iff_get.mpr ⟨by simp [wrapPublicInput], fun i h₁ h₂ => by
+      simpa [wrapPublicInput] using hr ⟨i, by simpa using h₁⟩⟩
   exact wrapVerify_wrap_reads E.σ E.cvk cp _ _ _ _ spongeAfterIndex _ msgSponge newBpChallenges
     claimedMsgDigest u cells oldsW hX (onCurveAt_constPt E.σ.h E.h_ne) hivp
 

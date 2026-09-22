@@ -148,9 +148,9 @@ def groupWrapOn (vk : Wire.KimchiVK XhatWrapCurve) (basis : Array XhatWrapCurve.
     (v : WrapGroup ks kw n (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
   let sv ← wrapIndexSponge vk
-  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    let P ← publicInputCommitFull (0 : Fin 1) blindingH (wrapLeaves basis v.stepStatement.packed)
-    pure [P]
+  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=
+    Vector.toList <$> publicInputCommitFull blindingH
+      (wrapLeaves basis v.stepStatement.packed)
   let dv := v.statement.proofState.deferredValues
   let mask := dv.branchData.proofsVerifiedMask.toList.drop (MaxProofsVerified - n)
   let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta
