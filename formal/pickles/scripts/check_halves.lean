@@ -347,48 +347,20 @@ def srsAt (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C
   return σ
 
 /-- The Lagrange basis an entry's key needs — as many as its public input has cells — at its
-domain, computed from `σ` and memoised per curve and domain under `lagrange-cache/`. -/
-def basisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
-    IO (Array C.Point) := do
+domain and `nc` chunks, computed from `σ` and memoised per curve, domain and chunk count under
+`lagrange-cache/`. -/
+def basisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (nc : ℕ)
+    (e : Cache.Entry C) : IO (Array (Vector C.Point nc)) := do
   let memoDir := (← IO.getEnv "LAGRANGE_CACHE_DIR").getD "lagrange-cache"
-  let n := 2 ^ e.vk.domainLog2
-  if h : n ≤ 2 ^ σ.k then
-    Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-2^{e.vk.domainLog2}.json" σ n h
-      e.vk.omega e.publicInput.size
-  else throw (IO.userError s!"domain 2^{e.vk.domainLog2} above the SRS at 2^{σ.k}")
-
-/-- The first `count` Lagrange commitments over a domain of `n = nc · 2^k` points, each in
-`nc` chunks (`SRS::get_lagrange_basis` above the SRS): chunk `j` of `L_i` commits its
-coefficients `ω^{-i(j·2^k + t)}/n`, `t < 2^k`, against the SRS's generators. -/
-def lagrangeBasisChunks (C : Ipa.KimchiCurve) (σ : SRS C.Point) (n : ℕ) (ω : C.ScalarField)
-    (count : ℕ) : Array (Array C.Point) :=
-  let m := 2 ^ σ.k
-  let ninv : C.ScalarField := (n : C.ScalarField)⁻¹
-  (Array.range count).map fun i =>
-    let r := ω⁻¹ ^ i
-    (Array.range (n / m)).map fun j =>
-      let coeffs : Array C.ScalarField := Id.run do
-        let mut acc := Array.mkEmpty m
-        let mut c := ninv * r ^ (j * m)
-        for _ in [0:m] do
-          acc := acc.push c
-          c := c * r
-        return acc
-      Ipa.msm C σ.g fun t => coeffs.getD t 0
-
-/-- An entry's Lagrange commitments at `σ`, as the key carries them: one chunk each for a
-domain within the SRS (memoised, `basisFor`), `n / 2^k` chunks above it. -/
-def chunkedBasisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
-    IO (Array (Array C.Point)) := do
-  if e.vk.domainLog2 ≤ σ.k then return (← basisFor C name σ e).map (#[·])
-  return lagrangeBasisChunks C σ (2 ^ e.vk.domainLog2) e.vk.omega e.publicInput.size
+  Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-2^{e.vk.domainLog2}-{nc}c.json" σ nc
+    (2 ^ e.vk.domainLog2) e.vk.omega e.publicInput.size
 
 /-- A cache entry's checked wire records at the SRS `σ`, its key completed with the Lagrange
 basis: the records checked at the run's chunk count and `σ`'s round count. -/
 def checkedAny (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
     IO ((nc : ℕ) × Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc σ.k) := do
-  let vk := { e.vk with lagrangeBasis := ← chunkedBasisFor C name σ e }
-  let nc := Kimchi.Verifier.Wire.runNc C σ vk
+  let nc := Kimchi.Verifier.Wire.runNc C σ e.vk
+  let vk := { e.vk with lagrangeBasis := (← basisFor C name σ nc e).map Vector.toArray }
   match vk.check nc, e.proof.check nc σ.k with
   | some cvk, some cp => return ⟨nc, cvk, cp⟩
   | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
@@ -412,14 +384,14 @@ def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Optio
 `Env.Invariants` computes the key's Lagrange points from the SRS — the one costly invariant —
 so the environment is kept and handed back for every later entry under the same key. -/
 def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (envs : IO.Ref (List (String × Pickles.Env C)))
-    (e : Cache.Entry C) : IO (Pickles.Env C) := do
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (envs : IO.Ref (List (String × Pickles.Env C 1)))
+    (e : Cache.Entry C) : IO (Pickles.Env C 1) := do
   let key := s!"{e.vkDigest}/{e.proof.opening.lr.size}/{e.publicInput.size}"
   if let some E := (← envs.get).lookup key then return E
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
   let (cvk, _) ← checkedAt C name σ e
   if hE : Pickles.Env.Invariants σ cvk then
-    let E : Pickles.Env C := Pickles.Env.ofInvariants σ cvk hE
+    let E : Pickles.Env C 1 := Pickles.Env.ofInvariants σ cvk hE
     envs.modify ((key, E) :: ·)
     return E
   else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
@@ -431,7 +403,7 @@ def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
 `C`: `Carry` decided on the two checked proofs, `AccOk` on the accumulator, `sgOk` on `pred`,
 and the last two agreeing, as `sgOk_iff_accOk` says they must under `Carry`. -/
 def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (envs : IO.Ref (List (String × Pickles.Env C)))
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (envs : IO.Ref (List (String × Pickles.Env C 1)))
     (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
   let E ← envFor C name sqrt loaded envs pred
   unless succ.proof.opening.lr.size = E.σ.k do
@@ -480,7 +452,7 @@ constrained by the `x_hat` gadget, the mask by the branch data's input check —
 of rows are among the ones decided here. -/
 def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.Entry CS))
     (loaded : IO.Ref (List (ℕ × SRS CS.Point)))
-    (envs : IO.Ref (List (String × Pickles.Env CS))) : IO Bool := do
+    (envs : IO.Ref (List (String × Pickles.Env CS 1))) : IO Bool := do
   let E ← envFor CS "vesta" vestaBase.sqrt? loaded envs s
   let σ := E.σ
   let cvk := E.cvk
@@ -579,7 +551,7 @@ decided on a step entry's slot and the wrap entry that slot verified — the twi
   must verify. -/
 def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
     (loaded : IO.Ref (List (ℕ × SRS CW.Point)))
-    (envs : IO.Ref (List (String × Pickles.Env CW))) : IO Bool := do
+    (envs : IO.Ref (List (String × Pickles.Env CW 1))) : IO Bool := do
   let E ← envFor CW "pallas" pallasBase.sqrt? loaded envs w
   let σ := E.σ
   let cvk := E.cvk
@@ -649,8 +621,8 @@ def main : IO Unit := do
   let limit := ((← IO.getEnv "LIMIT").bind String.toNat?).getD wraps.size
   let vestaSRS ← IO.mkRef ([] : List (ℕ × SRS CS.Point))
   let pallasSRS ← IO.mkRef ([] : List (ℕ × SRS CW.Point))
-  let vestaEnvs ← IO.mkRef ([] : List (String × Pickles.Env CS))
-  let pallasEnvs ← IO.mkRef ([] : List (String × Pickles.Env CW))
+  let vestaEnvs ← IO.mkRef ([] : List (String × Pickles.Env CS 1))
+  let pallasEnvs ← IO.mkRef ([] : List (String × Pickles.Env CW 1))
   let mut allOk := true
   let mut runs := 0
   -- One timed run of a half, its verdict folded into `allOk`.
@@ -707,7 +679,7 @@ def main : IO Unit := do
       let (_, cpS) ← checkedAt CS "vesta" σS s
       let ginp ← match wrapGroupInput w s n (σS.g ⟨0, Nat.two_pow_pos _⟩) cpS with
         | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok i => pure i
-      let basis ← basisFor CS "vesta" σS s
+      let basis := (← basisFor CS "vesta" σS 1 s).map (·[(0 : Fin 1)])
       let ok ← report s!"wrap group half on {pair} ({n} slot(s), {r} rounds)"
         (runGroupWrap s.vk basis σS.h ginp)
       runs := runs + 1
@@ -736,7 +708,7 @@ def main : IO Unit := do
         let (_, cpW) ← checkedAt CW "pallas" σW w
         let ginp ← match stepGroupInput w s slot (σW.g ⟨0, Nat.two_pow_pos _⟩) cpW with
           | .error e => throw (IO.userError s!"step group input: {e}") | .ok i => pure i
-        let basis ← basisFor CW "pallas" σW w
+        let basis := (← basisFor CW "pallas" σW 1 w).map (·[(0 : Fin 1)])
         let ok ← report s!"step group half on {pair}" (runGroup w.vk basis σW.h ginp)
         runs := runs + 1
         unless ok do allOk := false

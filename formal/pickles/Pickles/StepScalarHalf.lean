@@ -25,7 +25,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 candidate list with what every honest list satisfies — distinct sizes, each generator of its
 order, each domain holding the zero-knowledge rows — and the key's own domain among them, at
 its `log2`. -/
-structure KnownDomains (E : Env IpaVesta.curve) where
+structure KnownDomains (E : Env IpaVesta.curve 1) where
   /-- The candidates. -/
   list : List (KnownDomain Fp)
   /-- Distinct sizes, as the circuit compares them. -/
@@ -44,7 +44,7 @@ structure KnownDomains (E : Env IpaVesta.curve) where
 /-- The bundle of a candidate list and the key's `log2`, where its facts hold: each is
 decidable, so a driver checks them once on the domains a proof cache uses. The generator
 orders are checked by squaring (`powPow2`). -/
-def KnownDomains.ofList? (E : Env IpaVesta.curve) (list : List (KnownDomain Fp))
+def KnownDomains.ofList? (E : Env IpaVesta.curve 1) (list : List (KnownDomain Fp))
     (keyLog2 : ℕ) : Option (KnownDomains E) :=
   if h : (list.map fun d => (d.log2 : Fp)).Nodup ∧
       (∀ d ∈ list, powPow2 d.generator d.log2 = 1) ∧
@@ -58,7 +58,7 @@ def KnownDomains.ofList? (E : Env IpaVesta.curve) (list : List (KnownDomain Fp))
 the verifier key's parameters, the `Fp` token stream, and the mask and previous-challenge
 cells at their static sizes. -/
 def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {k : ℕ}
-    (E : Env IpaVesta.curve) (domains : KnownDomains E)
+    (E : Env IpaVesta.curve 1) (domains : KnownDomains E)
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) (w : AllEvals (FVar Fp))
     (mask : Vector (BoolVar Fp) MaxProofsVerified)
     (prevChallenges : Vector (Vector (FVar Fp) k) MaxProofsVerified) (domainLog2Var : FVar Fp) :
@@ -104,7 +104,7 @@ the wrap circuit's group half assumed (`wrapVerifyAt_reads` produces it). What t
 parameters and domain list owe is the environment's and the bundle's; what is left is about
 cells: the mask is boolean, the `domain_log2` cell holds the key's, and the ties. -/
 theorem finalizeOtherProofStepAt_kimchiVerify_vesta
-    (E : Env IpaVesta.curve)
+    (E : Env IpaVesta.curve 1)
     (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (pub : Array Fp)
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
@@ -283,7 +283,7 @@ abbrev ScalarVar.half {k : ℕ} (V : Valuation Fp) (s : ScalarVar k) :
 gadget and asserts `finalized` — the deployed `finalized ∨ ¬should_finalize` at a slot that is
 finalized. -/
 def scalarCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
-    (E : Env IpaVesta.curve) (domains : KnownDomains E) (s : ScalarVar E.σ.k) :
+    (E : Env IpaVesta.curve 1) (domains : KnownDomains E) (s : ScalarVar E.σ.k) :
     CircuitM Fp c Unit := do
   let o ← finalizeOtherProofStepAt E domains s.claims s.evals s.branch.proofsVerifiedMask s.prev
     s.branch.domainLog2
@@ -294,7 +294,7 @@ circuit's group half and the ties, a valuation satisfying the body makes `kimchi
 accept once `SgOk` holds: `finalizeOtherProofStepAt_kimchiVerify_vesta` with `finalized`
 asserted by the circuit rather than assumed of its output. -/
 theorem scalarCircuit_reads
-    (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1 E.σ.k) (pub : Array Fp)
+    (E : Env IpaVesta.curve 1) (cp : KimchiProof IpaVesta.curve 1 E.σ.k) (pub : Array Fp)
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
     (Vs : Valuation Fp) (domains : KnownDomains E) (s : ScalarVar E.σ.k)
     (hmask : ∀ b ∈ s.branch.proofsVerifiedMask.toList,

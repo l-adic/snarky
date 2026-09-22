@@ -231,17 +231,26 @@ The Lagrange-basis commitments a kimchi key carries are SRS-derived
 private def pointJson {C : Ipa.KimchiCurve} (p : C.Point) : Json :=
   Json.arr #[Json.str (toString p.x.val), Json.str (toString p.y.val)]
 
-/-- `lagrangeBasis`, memoised at `path` as a JSON array of `[x, y]` pairs: read back when
-the file holds at least `count` points, computed and written otherwise. The basis is
-fixed by the curve and the domain, which the caller's path names. -/
+/-- One chunked commitment off the memo: its chunks as `[x, y]` pairs, `nc` of them. -/
+private def parseChunks (C : Ipa.KimchiCurve) (nc : ℕ) (j : Json) :
+    Except String (Vector C.Point nc) := do
+  let pts ← parseArrOf (parsePt C) j
+  if h : pts.size = nc then return ⟨pts, h⟩
+  else throw s!"a memoised commitment of {pts.size} chunks, expected {nc}"
+
+/-- `lagrangeBasis` at `nc` chunks, memoised at `path` as a JSON array of commitments, each an
+array of `[x, y]` pairs: read back when the file holds at least `count` commitments of `nc`
+chunks, computed and written otherwise. The basis is fixed by the curve, the domain and the
+SRS size, which the caller's path names. -/
 def lagrangeBasisCached (C : Ipa.KimchiCurve) (path : System.FilePath) (σ : SRS C.Point)
-    (n : ℕ) (hn : n ≤ 2 ^ σ.k) (ω : C.ScalarField) (count : ℕ) : IO (Array C.Point) := do
+    (nc n : ℕ) (ω : C.ScalarField) (count : ℕ) : IO (Array (Vector C.Point nc)) := do
   if ← path.pathExists then
-    if let .ok pts := Json.parse (← IO.FS.readFile path) >>= parseArrOf (parsePt C) then
+    if let .ok pts := Json.parse (← IO.FS.readFile path) >>= parseArrOf (parseChunks C nc) then
       if count ≤ pts.size then return pts.extract 0 count
-  let pts := Ipa.lagrangeBasis C σ n hn ω count
+  let pts := Ipa.lagrangeBasis C σ nc n ω count
   if let some dir := path.parent then IO.FS.createDirAll dir
-  IO.FS.writeFile path (Json.arr (pts.map pointJson)).compress
+  IO.FS.writeFile path
+    (Json.arr (pts.map fun v => Json.arr (v.toArray.map pointJson))).compress
   return pts
 
 end Bulletproof.Fixture

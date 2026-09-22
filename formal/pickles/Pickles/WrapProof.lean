@@ -62,7 +62,7 @@ abbrev scalarInput (k : ℕ) : ScalarVar k := inputVar (F := Fq) (a := ScalarIn 
 public input, the slot as one that must verify, the proof cells as the proof's commitments and
 opening, the `sg` cells as the old accumulators' commitments; the evaluation cells as the
 proof's evaluations, the previous challenges as the old accumulators'. -/
-structure InputReads (E : Env IpaPallas.curve) (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
+structure InputReads (E : Env IpaPallas.curve 1) (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq) (Vg : Valuation Fp) (Vs : Valuation Fq)
     (g : GroupVar ks E.σ.k) (s : ScalarVar E.σ.k) : Prop where
   /-- The wrap statement's cells are the public input. -/
@@ -102,7 +102,7 @@ structure InputReads (E : Env IpaPallas.curve) (cp : KimchiProof IpaPallas.curve
   prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
       (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
 
-variable {E : Env IpaPallas.curve} {cp : KimchiProof IpaPallas.curve 1 E.σ.k} {pub : Array Fq}
+variable {E : Env IpaPallas.curve 1} {cp : KimchiProof IpaPallas.curve 1 E.σ.k} {pub : Array Fq}
   {Vg : Valuation Fp} {Vs : Valuation Fq}
   {g : GroupVar ks E.σ.k} {s : ScalarVar E.σ.k}
   {keyCells : List (List (AffinePoint (FVar Fp)))} {spongeAfterIndex : SpongeVar Fp}
@@ -180,7 +180,7 @@ the inputs reading as the wire's proof (`InputReads`), the key cells as the key 
 and the two circuits holding one set of deferred claims (`HalvesTies`): under the proof's
 `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
 theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
-    (E : Env IpaPallas.curve)
+    (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq)
     -- the group circuit's constants

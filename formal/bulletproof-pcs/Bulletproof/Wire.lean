@@ -210,22 +210,26 @@ def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Poin
   C.fastMsm g a
 
 /-- The first `count` Lagrange-basis commitments over the domain of size `n` with generator
-`ω`, at one chunk (`SRS::get_lagrange_basis` for a domain within the SRS): `L_i` has
-coefficients `ω^{-ik}/n`, committed against the first `n` generators. -/
-def lagrangeBasis (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k)
-    (ω : C.ScalarField) (count : ℕ) : Array C.Point :=
-  let g : Fin n → C.Point := fun k => σ.g ⟨k, by omega⟩
+`ω`, in `nc` chunks (`SRS::get_lagrange_basis`): `L_i` has coefficients `ω^{-ij}/n`, and its
+chunk `c` commits the coefficients `c · 2^k + t`, `t < 2^k`, against the SRS's generators.
+Coefficients past `n` are zero, so a domain within the SRS is one chunk. -/
+def lagrangeBasis (σ : SRS C.Point) (nc n : ℕ) (ω : C.ScalarField) (count : ℕ) :
+    Array (Vector C.Point nc) :=
+  let K := 2 ^ σ.k
   let ninv : C.ScalarField := (n : C.ScalarField)⁻¹
   (Array.range count).map fun i =>
     let r := ω⁻¹ ^ i
-    let coeffs : Array C.ScalarField := Id.run do
-      let mut acc := Array.mkEmpty n
-      let mut c := ninv
-      for _ in [0:n] do
-        acc := acc.push c
-        c := c * r
-      return acc
-    msm C g fun k => coeffs.getD k 0
+    Vector.ofFn fun c : Fin nc =>
+      let len := min K (n - c * K)
+      let g : Fin len → C.Point := fun t => σ.g ⟨t, by omega⟩
+      let coeffs : Array C.ScalarField := Id.run do
+        let mut acc := Array.mkEmpty len
+        let mut c := ninv * r ^ (c.val * K)
+        for _ in [0:len] do
+          acc := acc.push c
+          c := c * r
+        return acc
+      msm C g fun t => coeffs.getD t 0
 
 /-! ### The SRS relations a statement names
 
@@ -241,10 +245,10 @@ def _root_.Bulletproof.SRS.Avoids {C : KimchiCurve} (σ : SRS C.Point)
     (R : List (Fin (2 ^ σ.k) → C.ScalarField)) : Prop :=
   ∀ a ∈ R, a ≠ 0 → msm C σ.g a ≠ 0
 
-/-- The coefficients of the `i`-th Lagrange polynomial of the domain of size `n` with generator
-`ω`, `ω^{-ij}/n` at `j < n`, padded with zeros to an SRS of `2 ^ k` generators. -/
-def lagrangeCoeffs {F : Type*} [Field F] (k n : ℕ) (ω : F) (i : ℕ) : Fin (2 ^ k) → F :=
-  fun j => if j.val < n then (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j.val else 0
+/-- The coefficients of chunk `c` of the `i`-th Lagrange polynomial of the domain of size `n`
+with generator `ω`: `ω^{-im}/n` at `m = c · 2^k + j` for `m < n`, and zero past the domain. -/
+def lagrangeCoeffs {F : Type*} [Field F] (k n : ℕ) (ω : F) (i c : ℕ) : Fin (2 ^ k) → F :=
+  fun j => if c * 2 ^ k + j.val < n then (n : F)⁻¹ * (ω⁻¹ ^ i) ^ (c * 2 ^ k + j.val) else 0
 
 /-- The wire's multi-scalar multiplication is the abstract scheme's generator commitment, as a
 linear map: its linearity is `map_zero`, `map_add`, `map_smul`. -/
@@ -301,30 +305,41 @@ private theorem msm_pad (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k) (a : 
           (fun j => (if j < n then a j else 0) • G j) _).symm.trans
         (Finset.sum_congr rfl fun j _ => (hr j).symm)
 
-/-- The Lagrange points are the commitments to the Lagrange coefficients. -/
-theorem getElem_lagrangeBasis (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k)
-    (ω : C.ScalarField) (count i : ℕ) (hi : i < (lagrangeBasis C σ n hn ω count).size) :
-    (lagrangeBasis C σ n hn ω count)[i] = msm C σ.g (lagrangeCoeffs σ.k n ω i) := by
-  simp only [lagrangeBasis, Array.getElem_map, Array.getElem_range, geom_loop]
-  unfold lagrangeCoeffs
-  rw [← msm_pad C σ n hn fun j => (n : C.ScalarField)⁻¹ * (ω⁻¹ ^ i) ^ j]
+/-- The Lagrange points are the commitments to the Lagrange coefficients, chunk by chunk. -/
+theorem getElem_lagrangeBasis (σ : SRS C.Point) (nc n : ℕ) (ω : C.ScalarField) (count i : ℕ)
+    (hi : i < (lagrangeBasis C σ nc n ω count).size) (c : Fin nc) :
+    (lagrangeBasis C σ nc n ω count)[i][c] = msm C σ.g (lagrangeCoeffs σ.k n ω i c) := by
+  simp only [lagrangeBasis, Array.getElem_map, Array.getElem_range, Fin.getElem_fin,
+    Vector.getElem_ofFn, geom_loop]
+  rw [msm_pad C σ (min (2 ^ σ.k) (n - c * 2 ^ σ.k)) (by omega) fun t =>
+    if t < min (2 ^ σ.k) (n - c * 2 ^ σ.k) then
+      (n : C.ScalarField)⁻¹ * (ω⁻¹ ^ i) ^ (c.val * 2 ^ σ.k) * (ω⁻¹ ^ i) ^ t else 0]
   congr 1
   funext j
-  simp [j.isLt]
+  unfold lagrangeCoeffs
+  have hj := j.isLt
+  by_cases h : c * 2 ^ σ.k + j.val < n
+  · have h' : j.val < min (2 ^ σ.k) (n - c * 2 ^ σ.k) := by omega
+    simp only [h, h', if_true, pow_add, mul_assoc]
+  · have h' : ¬ j.val < min (2 ^ σ.k) (n - c * 2 ^ σ.k) := by omega
+    simp only [h, h', if_false]
 
-theorem lagrangeCoeffs_ne_zero {F : Type*} [Field F] (k n : ℕ) (ω : F) (i : ℕ) (hn : 0 < n)
-    (hF : (n : F) ≠ 0) : lagrangeCoeffs k n ω i ≠ 0 := by
+/-- A chunk of a Lagrange polynomial that meets the domain is nonzero. -/
+theorem lagrangeCoeffs_ne_zero {F : Type*} [Field F] (k n : ℕ) (ω : F) (i c : ℕ)
+    (hc : c * 2 ^ k < n) (hω : ω ≠ 0) (hF : (n : F) ≠ 0) : lagrangeCoeffs k n ω i c ≠ 0 := by
   intro h
   have := congrFun h ⟨0, by positivity⟩
-  simp [lagrangeCoeffs, hn, hF] at this
+  simp [lagrangeCoeffs, hc, hF, hω] at this
 
-/-- The `i`-th Lagrange polynomial at `1`: its coefficients sum to `δ_{i0}`. -/
+/-- The `i`-th Lagrange polynomial of a domain within the SRS at `1`: its coefficients sum to
+`δ_{i0}`. -/
 theorem sum_lagrangeCoeffs {F : Type*} [Field F] (k n : ℕ) (ω : F)
     (hω : IsPrimitiveRoot ω n) (hle : n ≤ 2 ^ k) (hF : (n : F) ≠ 0) (i : ℕ) (hi : i < n) :
-    ∑ j, lagrangeCoeffs k n ω i j = if i = 0 then 1 else 0 := by
-  have h1 : ∑ j, lagrangeCoeffs k n ω i j
+    ∑ j, lagrangeCoeffs k n ω i 0 j = if i = 0 then 1 else 0 := by
+  have h1 : ∑ j, lagrangeCoeffs k n ω i 0 j
       = ∑ j ∈ Finset.range n, (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j := by
     unfold lagrangeCoeffs
+    simp only [zero_mul, _root_.zero_add]
     rw [Fin.sum_univ_eq_sum_range (fun j => if j < n then (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j else 0),
       ← Finset.sum_subset (Finset.range_subset_range.2 hle)]
     · exact Finset.sum_congr rfl fun j hj => by simp [Finset.mem_range.1 hj]

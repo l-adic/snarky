@@ -73,7 +73,7 @@ public input, the proof cells as the proof's commitments and opening, the `sg` c
 their keep bits as the old accumulators' commitments; the branch's domain as the key's, the
 evaluation cells as the proof's evaluations, the kept previous challenges as the old
 accumulators'. -/
-structure InputReads (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
+structure InputReads (E : Env IpaVesta.curve 1) (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (pub : Array Fp) (domains : KnownDomains E) (Vg : Valuation Fq) (Vs : Valuation Fp)
     (g : GroupVar E.σ.k kw n) (s : ScalarVar E.σ.k) : Prop where
   /-- The step statement's cells are the public input. -/
@@ -113,7 +113,7 @@ structure InputReads (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1
   prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
       (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
 
-variable {E : Env IpaVesta.curve} {cp : KimchiProof IpaVesta.curve 1 E.σ.k} {pub : Array Fp}
+variable {E : Env IpaVesta.curve 1} {cp : KimchiProof IpaVesta.curve 1 E.σ.k} {pub : Array Fp}
   {domains : KnownDomains E} {Vg : Valuation Fq} {Vs : Valuation Fp}
   {g : GroupVar E.σ.k kw n} {s : ScalarVar E.σ.k}
   {keyCells : List (List (AffinePoint (FVar Fq)))} {spongeAfterIndex : SpongeVar Fq}
@@ -193,7 +193,7 @@ with the inputs reading as the wire's proof (`InputReads`), the key cells as the
 (`VkReads`) and the two circuits holding one set of deferred claims (`HalvesTies`): under the
 proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
 theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
-    (E : Env IpaVesta.curve)
+    (E : Env IpaVesta.curve 1)
     (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (pub : Array Fp)
     (domains : KnownDomains E)

@@ -38,7 +38,7 @@ the verifier key's parameters and domain — its generator a constant, `ζⁿ �
 at the key's `log2` — the `Fq` token stream, and the previous-challenge cells at their static
 size. -/
 def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {k : ℕ}
-    (E : Env IpaPallas.curve)
+    (E : Env IpaPallas.curve 1)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) (w : AllEvals (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
     CircuitM Fq c (FopOutput Fq) :=
@@ -65,7 +65,7 @@ private theorem vanishingAt_spec {V : Valuation Fq} (log2 : ℕ) (z : FVar Fq) :
 with the step circuit's group half assumed (`verifyProof_step_reads` produces it). What the
 circuit's parameters and domain owe is the environment's; what is left is the ties. -/
 theorem finalizeOtherProofWrapAt_kimchiVerify_pallas
-    (E : Env IpaPallas.curve)
+    (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq)
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
@@ -171,13 +171,13 @@ abbrev ScalarVar.half (V : Valuation Fq) (s : ScalarVar k) :
 /-- The wrap circuit's scalar half as a circuit of its input, `finalized` asserted: the
 deployed `finalized ∨ ¬should_finalize` at a slot that is finalized. -/
 def scalarCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
-    (E : Env IpaPallas.curve) (s : ScalarVar E.σ.k) : CircuitM Fq c Unit := do
+    (E : Env IpaPallas.curve 1) (s : ScalarVar E.σ.k) : CircuitM Fq c Unit := do
   let o ← finalizeOtherProofWrapAt E s.claims s.evals s.prev
   assert o.finalized
 
 /-- **The scalar circuit's read.** With the step circuit's group half and the ties, a valuation
 satisfying the body makes `kimchiVerify` accept once `SgOk` holds. -/
-theorem scalarCircuit_reads (E : Env IpaPallas.curve)
+theorem scalarCircuit_reads (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k) (pub : Array Fq)
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
     (Vs : Valuation Fq) (s : ScalarVar E.σ.k)

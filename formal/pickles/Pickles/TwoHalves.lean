@@ -196,7 +196,7 @@ def ScalarHalf.prevVals {C : KimchiCurve} {sf : Type} {k : ℕ} (Sc : ScalarHalf
 /-- `finalize_other_proof`'s parameters from the environment: the fr-sponge, the eigenvalue,
 the MDS matrix, the key's endo coefficient, coset shifts and `zk_rows`, the SRS's round
 count, and the side's tokens. -/
-def FopParams.ofEnv {C : KimchiCurve} (E : Env C) (toks : Array Linearization.PolishToken) :
+def FopParams.ofEnv {C : KimchiCurve} (E : Env C 1) (toks : Array Linearization.PolishToken) :
     FopParams C.ScalarField :=
   { sponge := C.frSponge.params
     endoLam := C.lam
@@ -216,7 +216,7 @@ variable {C : KimchiCurve} {sf sf' : Type}
 /-- The group half's read (`verify`'s): some `incrementally_verify_proof` output satisfying
 `IvpReads` at the half's side and claim cells, whose success bit is the exported one and whose
 digest and round prechallenges the statement's claims equal — `verify`'s two assertions. -/
-def GroupHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+def GroupHalf.Reads (E : Env C 1) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (G : GroupHalf C sf E.σ.k) (success : BoolVar C.BaseField) : Prop :=
   VerifyReads G.side E.σ E.cvk cp pub G.claims false success
 
@@ -226,7 +226,7 @@ digest — makes `xiCorrect` read `1`. The read gives this (`xiExact_of_constrai
 the circuit range-checks the low half of the `ξ` split: unchecked, the prover could witness a
 low half at or above `2¹²⁸` whose split still lies below the modulus, and `xiCorrect` would
 read `0` at a claim equal to the wire's `ξ`. -/
-private def ScalarHalf.XiExact (E : Env C) (cp : KimchiProof C 1 E.σ.k)
+private def ScalarHalf.XiExact (E : Env C 1) (cp : KimchiProof C 1 E.σ.k)
     (Sc : ScalarHalf C sf' E.σ.k)
     (out : FopOutput C.ScalarField) : Prop :=
   let pre := frPrechallenges C.frSponge.params
@@ -297,7 +297,7 @@ structure HalvesTies {k : ℕ} (G : GroupHalf C sf k) (Sc : ScalarHalf C sf' k) 
 
 /-- What the scalar half's cells are on the wire: its evaluation, mask and previous-challenge
 cells are the proof's — prover-supplied cells against the wire objects the verifier judges. -/
-structure FopTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+structure FopTies (E : Env C 1) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (Sc : ScalarHalf C sf' E.σ.k) : Prop where
   /-- The kept previous challenges are the old accumulators' challenges, in order. -/
   olds : (List.zipWith (fun m cv => if m then [cv] else []) Sc.maskVals
@@ -313,7 +313,7 @@ structure FopTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Scala
 /-- The low half of the `ξ` split being range-checked, the read makes the `ξ` comparison
 exact: the `α`, `ζ` cells read as prechallenges (the ties' shared readings), and the read's
 converse clause is `XiExact` at the claim the `ξ` cell reads. -/
-private theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.scalar)
+private theorem ScalarHalf.xiExact_of_constrained (E : Env C 1) (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C 1 E.σ.k) {G : GroupHalf C sf E.σ.k}
     {Sc : ScalarHalf C sf' E.σ.k} {out : FopOutput C.ScalarField}
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
@@ -340,7 +340,7 @@ private theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128
 `combinedB` at the run's round challenges, the permutation scalar is `runPScalar`, and the
 `ξ` cell reads as the run's fr-sponge `ξ` prechallenge. What the scalar half's `finalized`
 bit asserts, in wire terms. -/
-private def ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+private def ClaimsHonest (E : Env C 1) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (cipV bV permV zetaMV zetaNV : C.ScalarField) (V : Valuation C.ScalarField)
     (xi : SizedF 128 (FVar C.ScalarField)) : Prop :=
   let run := runInput C E.σ E.cvk cp pub
@@ -356,7 +356,7 @@ private def ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array 
 
 /-- The claims of a scalar half, as `ClaimsHonest` reads them: the five shifted claims
 through the side's decode, the `ξ` cell at the half's valuation. -/
-def ScalarHalf.ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+def ScalarHalf.ClaimsHonest (E : Env C 1) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (Sc : ScalarHalf C sf' E.σ.k) : Prop :=
   let dv := Sc.claims.deferredValues
   Pickles.ClaimsHonest E cp pub (Sc.side.decode dv.combinedInnerProduct) (Sc.side.decode dv.b)
@@ -533,7 +533,7 @@ private theorem tailRows_toList {C : KimchiCurve} {k : ℕ} (cvk : KimchiVK C 1)
 `finalize_other_proof` combines — the kept challenge-polynomial rows, the public row, the
 `ft` row, the 43 evaluation rows — projected to `(ζ, ζω)` pairs, is the run's segment stream
 so projected: the old accumulators' rows, the public chunk, the `ft` segment, the tail rows. -/
-private theorem rows_eq_heads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+private theorem rows_eq_heads (E : Env C 1) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (ms : List Bool) (cvs : List (List C.ScalarField))
     (holds : (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten
       = (cp.olds.map (·.u.toList)).toList) :
@@ -569,7 +569,7 @@ private theorem rows_eq_heads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : A
 
 /-- `rows_eq` in the chunk-row form `finalize_other_proof` combines: at one chunk the chunk
 rows are the pairs, and the recombination points do not matter. -/
-private theorem rows_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+private theorem rows_eq (E : Env C 1) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (ms : List Bool) (cvs : List (List C.ScalarField))
     (holds : (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten
       = (cp.olds.map (·.u.toList)).toList) (xM xOM ft1 : C.ScalarField)
@@ -605,7 +605,7 @@ private theorem combinedB_toList {F : Type} [Field F] {k m : ℕ} (v : Vector F 
   rfl
 
 /-- The run's evaluation points, as `finalize_other_proof` lists them. -/
-private theorem pointFn_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) :
+private theorem pointFn_eq (E : Env C 1) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) :
     (runInput C E.σ E.cvk cp pub).pointFn
       = ![(runOracles C E.σ E.cvk cp pub).zeta,
           (runOracles C E.σ E.cvk cp pub).zeta * E.cvk.omega] := by
@@ -618,7 +618,7 @@ holds at the wire's transcript — `verifyWith`'s first conjunct. The two `ζ` p
 permutation scalar are no hypotheses: the scalar half compares all three with the transcript's
 values, and their ties carry them to the group half's cells. -/
 theorem twoHalves_schnorr
-    (E : Env C)
+    (E : Env C 1)
     (hbase : 2 ^ 128 < C.base)
     (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C 1 E.σ.k)
@@ -824,7 +824,7 @@ and the scalar half reading at their cells, tied, and the guards, the success bi
 own values. (`kimchiVerify` recomputes the claims and never sees the cells, so the
 honest-claims conjunct is what `finalized` adds.) -/
 theorem twoHalves_kimchiVerify
-    (E : Env C)
+    (E : Env C 1)
     (hbase : 2 ^ 128 < C.base)
     (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C 1 E.σ.k)
@@ -910,7 +910,7 @@ theorem vesta_claim_tie {Vg : Valuation Fq} {Vs : Valuation Fp}
 /-- **A step proof's two halves accept exactly when `kimchiVerify` does at honest claims.** The
 wrap circuit's group half, then the step circuit's scalar half, tied, with the guards. -/
 theorem twoHalves_kimchiVerify_vesta
-    (E : Env IpaVesta.curve)
+    (E : Env IpaVesta.curve 1)
     (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (pub : Array Fp)
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
@@ -1017,7 +1017,7 @@ theorem ScalarHalf.wrap_olds {k : ℕ} (V : Valuation Fq)
 /-- **A wrap proof's two halves accept exactly when `kimchiVerify` does at honest claims.** The
 step circuit's group half, then the wrap circuit's scalar half, tied, with the guards. -/
 theorem twoHalves_kimchiVerify_pallas
-    (E : Env IpaPallas.curve)
+    (E : Env IpaPallas.curve 1)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq)
     (hguard : Guards IpaPallas.curve E.cvk cp pub)

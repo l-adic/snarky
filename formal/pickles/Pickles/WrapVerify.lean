@@ -168,14 +168,14 @@ private theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
 /-! ## The block at an environment -/
 
 /-- The step statement's `x_hat` leaves at the key's own table. -/
-def wrapLeavesAt {ks n : ℕ} (E : Env IpaVesta.curve)
+def wrapLeavesAt {ks n : ℕ} (E : Env IpaVesta.curve 1)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : List (Leaf Fq 1) :=
   packLeavesOf statement.packed (XhatTable.ofKey statement.packed E.cvk.lagrangeBasis.toList)
 
 /-- The public input the wrap circuit's statement packs to, under a valuation: what the
 verified step proof's public input must be. -/
-def wrapPublicInput {ks n : ℕ} (E : Env IpaVesta.curve) (V : Valuation Fq)
+def wrapPublicInput {ks n : ℕ} (E : Env IpaVesta.curve 1) (V : Valuation Fq)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : Array Fp :=
   pubOf IpaVesta.curve V (wrapLeavesAt E statement)
@@ -183,7 +183,7 @@ def wrapPublicInput {ks n : ℕ} (E : Env IpaVesta.curve) (V : Valuation Fq)
 /-- The wrap circuit's verify block at an environment: the deployed Vesta constants, the SRS
 blinding base as a constant cell, and `x_hat` from the packed step statement. -/
 def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k : ℕ}
-    (E : Env IpaVesta.curve)
+    (E : Env IpaVesta.curve 1)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
@@ -219,7 +219,7 @@ What is left is what no table can give — the statement's full scalars avoid th
 sixteen-value band, and the group half's cells are the proof's. The statement's boolean cells
 being boolean is not left: the `x_hat` gadget constrains them itself. -/
 theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
-    (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
+    (E : Env IpaVesta.curve 1) (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
@@ -244,7 +244,7 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
   -- the binding, under the boolean leaves' booleanity: the `x_hat` read supplies that
   have hbind := fun hb : ∀ leaf ∈ wrapLeavesAt E statement, leaf.bitBoolean V =>
     xhatBinding_const (V := V) pastaShapeVesta (0 : Fin 1) E.σ E.cvk statement.packed E.h_ne
-      (E.lagrange_ne pastaShapeVesta havoid) (hleaves ▸ hb) (hleaves ▸ hoff)
+      (fun Ps h => E.lagrange_ne pastaShapeVesta havoid Ps h 0) (hleaves ▸ hb) (hleaves ▸ hoff)
   have hscalar : leafHasScalar (wrapLeavesAt E statement) := by
     obtain ⟨x, rest, hx⟩ := statement.packed_head
     obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
@@ -436,7 +436,7 @@ cells the block scales — the seven shifted scalars and the `x_hat` full leaves
 `wrapVerifyAt` at the input's statement, claims, accumulators and proof, the key's cells and
 the two sponges constants of the circuit. -/
 def groupCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
-    (E : Env Bulletproof.IpaVesta.curve) (keyCells : List (List (AffinePoint (FVar Fq))))
+    (E : Env Bulletproof.IpaVesta.curve 1) (keyCells : List (List (AffinePoint (FVar Fq))))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n) : CircuitM Fq c Unit := do
   assertClaimsOffBandWrap g.shifted
   assertLeavesOffBand Bulletproof.IpaVesta.curve.scalar (wrapLeavesAt E g.stepStatement)
@@ -449,7 +449,7 @@ off the ladder's band, so the verify block's read needs neither as a hypothesis:
 avoiding the Lagrange relations and the group half's cells the proof's — given the claims are
 ones the ladder read speaks about, which the assertion supplies — a valuation satisfying the
 circuit reads as `VerifyReads` with its success bit `1`. -/
-theorem groupCircuit_reads {V : Valuation Fq} (E : Env Bulletproof.IpaVesta.curve)
+theorem groupCircuit_reads {V : Valuation Fq} (E : Env Bulletproof.IpaVesta.curve 1)
     (cp : Kimchi.Verifier.KimchiProof Bulletproof.IpaVesta.curve 1 E.σ.k)
     (keyCells : List (List (AffinePoint (FVar Fq)))) (spongeAfterIndex msgSponge : SpongeVar Fq)
     (g : GroupVar E.σ.k kw n) (havoid : E.σ.Avoids E.lagrangeRelations)
