@@ -272,16 +272,10 @@ theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
 theorem monotone_onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {p : AffinePoint (FVar F)} {P : W.Point} :
     Monotone fun st : ProverState F => OnCurveAs W st p P := by
-  intro st st' hle h
-  obtain ⟨hsc, n, rfl⟩ := h
+  rintro st st' hle ⟨hsc, hon⟩
+  refine ⟨hsc.mono (ProverState.nv_le_of_le hle), ?_⟩
   rw [scoped_affinePoint] at hsc
-  have hnv := ProverState.nv_le_of_le hle
-  refine ⟨scoped_affinePoint.mpr ⟨hsc.1.mono hnv, hsc.2.mono hnv⟩, ?_, ?_⟩
-  · rw [CVar.val_of_le hle hsc.1, CVar.val_of_le hle hsc.2]
-    exact n
-  · congr 1
-    · rw [CVar.val_of_le hle hsc.1]
-    · rw [CVar.val_of_le hle hsc.2]
+  rwa [OnCurveAt, CVar.val_of_le hle hsc.1, CVar.val_of_le hle hsc.2]
 
 open WeierstrassCurve.Affine in
 /-- On a short curve a point with `y = 0` is 2-torsion. The gate's slope divides by `2y₁`;
