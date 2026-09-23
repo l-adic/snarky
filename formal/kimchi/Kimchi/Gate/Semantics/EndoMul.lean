@@ -1624,10 +1624,38 @@ open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta
 
 /-! ## `endoMul` at the curves -/
 
+/-- `endoMul_off` over an endomorphism dictionary: a run from `P₀ = 2(T + φT)` computes
+    `[s]·T` with `s = EndoScalar.toField (crumbList g m) λ`. The base, the eigenvalue and the
+    off-targets fact come from the rows and `E`; each curve's entry point instantiates it. -/
+theorem endoMul_of_endoSpec {F : Type*} [Field F] [DecidableEq F]
+    (W : WeierstrassCurve.Affine F)
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)] (E : EndoSpec W)
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2)
+    (m : ℕ) (hbits : 4 * m ≤ 244) (g : ℕ → Witness F) (T φT : W.Point)
+    (hholds : ∀ i, i < m → Holds E.coeff (g i))
+    (hbase : ∀ i, i ≤ m → Kimchi.Gate.AddComplete.IsPoint W (g i).xT (g i).yT T)
+    (hbaseEndo : ∀ i, i ≤ m →
+      Kimchi.Gate.AddComplete.IsPoint W (E.coeff * (g i).xT) (g i).yT φT)
+    (hlink : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
+    (hP0ns : W.Nonsingular (g 0).xP (g 0).yP)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT) :
+    ∃ (hfin : W.Nonsingular (accX g m) (accY g m)) (s : ℤ),
+      Point.some _ _ hfin = s • T
+        ∧ (s : F) = Kimchi.Gate.EndoScalar.toField (crumbList g m) (E.lam : F) := by
+  obtain ⟨hTns, hTeq⟩ := hbase 0 (Nat.zero_le m)
+  obtain ⟨hφTns, hφTeq⟩ := hbaseEndo 0 (Nat.zero_le m)
+  have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
+  have heig : φT = E.lam • T := by rw [hφTeq, hTeq]; exact E.eigen hTns
+  obtain ⟨hfin, s, -, -, hpt, -, -, -, -, -, hcast⟩ :=
+    endoMul_off W h2 h3 hodd E.coeff T φT
+      (fun a b ha' hb hba hbb => E.off_targets ha' hb hba hbb hTne heig)
+      m hbits g hholds hbase hbaseEndo hlink hP0ns hP0 E.lam heig
+  exact ⟨hfin, s, hpt, hcast⟩
+
 /-- **EndoMul at Pallas.** A Pallas run from `P₀ = 2(T + φT)` computes `[s]·T` with
     `s = EndoScalar.toField (crumbList g m) λ`, given `4·m ≤ 244` (the deployed 128-bit
-    challenge has `m = 32`). `endoMul_off` at `pallas_combo_off_targets`, with the eigenvalue
-    from `pallas_eigen` and the odd order from `pallas_card`. -/
+    challenge has `m = 32`). `endoMul_of_endoSpec` at `pallasEndoSpec`, with the odd order
+    from `pallas_card`. -/
 theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     (g : ℕ → Witness Fp) (T φT : Pallas.curve.toAffine.Point)
     (hholds : ∀ i, i < m → Holds pallasEndo (g i))
@@ -1640,17 +1668,9 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX g m) (accY g m)) (s : ℤ),
       Point.some _ _ hfin = s • T
         ∧ (s : Fp)
-            = Kimchi.Gate.EndoScalar.toField (crumbList g m) (pallasLam : Fp) := by
-  have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [pallas_card]; decide
-  obtain ⟨hTns, hTeq⟩ := hbase 0 (Nat.zero_le m)
-  obtain ⟨hφTns, hφTeq⟩ := hbaseEndo 0 (Nat.zero_le m)
-  have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
-  have heig : φT = pallasLam • T := by rw [hφTeq, hTeq]; exact pallas_eigen hTns
-  obtain ⟨hfin, s, -, -, hpt, -, -, -, -, -, hcast⟩ :=
-    endoMul_off Pallas.curve.toAffine (by decide) (by decide) hodd pallasEndo T φT
-      (fun a b ha' hb hba hbb => pallas_combo_off_targets ha' hb hba hbb hTne heig)
-      m hbits g hholds hbase hbaseEndo hlink hP0ns hP0 pallasLam heig
-  exact ⟨hfin, s, hpt, hcast⟩
+            = Kimchi.Gate.EndoScalar.toField (crumbList g m) (pallasLam : Fp) :=
+  endoMul_of_endoSpec Pallas.curve.toAffine pallasEndoSpec (by decide) (by decide)
+    (by rw [pallas_card]; decide) m hbits g T φT hholds hbase hbaseEndo hlink hP0ns hP0
 
 /-- **EndoMul at Vesta** — the other half of the 2-cycle, identical modulo `vesta_*`. -/
 theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
@@ -1665,17 +1685,9 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     ∃ (hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m)) (s : ℤ),
       Point.some _ _ hfin = s • T
         ∧ (s : Fq)
-            = Kimchi.Gate.EndoScalar.toField (crumbList g m) (vestaLam : Fq) := by
-  have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [vesta_card]; decide
-  obtain ⟨hTns, hTeq⟩ := hbase 0 (Nat.zero_le m)
-  obtain ⟨hφTns, hφTeq⟩ := hbaseEndo 0 (Nat.zero_le m)
-  have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
-  have heig : φT = vestaLam • T := by rw [hφTeq, hTeq]; exact vesta_eigen hTns
-  obtain ⟨hfin, s, -, -, hpt, -, -, -, -, -, hcast⟩ :=
-    endoMul_off Vesta.curve.toAffine (by decide) (by decide) hodd vestaEndo T φT
-      (fun a b ha' hb hba hbb => vesta_combo_off_targets ha' hb hba hbb hTne heig)
-      m hbits g hholds hbase hbaseEndo hlink hP0ns hP0 vestaLam heig
-  exact ⟨hfin, s, hpt, hcast⟩
+            = Kimchi.Gate.EndoScalar.toField (crumbList g m) (vestaLam : Fq) :=
+  endoMul_of_endoSpec Vesta.curve.toAffine vestaEndoSpec (by decide) (by decide)
+    (by rw [vesta_card]; decide) m hbits g T φT hholds hbase hbaseEndo hlink hP0ns hP0
 
 /-! ## The produce chain at the curves -/
 
