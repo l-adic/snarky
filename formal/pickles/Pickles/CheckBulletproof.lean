@@ -767,8 +767,8 @@ theorem IpaScalarOps.Reading.scale_reads {sf : Type}
 
 /-- Under any valuation satisfying the emitted constraints, with `u`, the combined
 commitment, the pairs, `δ`, `sg` and `h` reading as points, the scaled scalars well-formed and
-their witnesses in regime (`hreg`; at the deployed curves: the decode avoids
-`forbiddenValues`), the challenges read as some `ns`, `c` as some `c₀`, each scaled scalar
+their witnesses in regime (`hreg`; at the deployed curves: the ladder's top is below
+`4·order − 4`), the challenges read as some `ns`, `c` as some `c₀`, each scaled scalar
 through some witness of the side's `Reading`, and the success bit reads `1` exactly when
 `SchnorrPoint` holds at those readings. -/
 theorem ipaFinalCheck_spec {sf : Type}
@@ -1089,8 +1089,8 @@ theorem IvpCurve.two_torsion_free (S : IvpCurve C) (P : C.E.toAffine.Point) (hne
   S.shape.d.two_torsion_free P hne
 
 /-- A shifted claim the ladder read speaks about: well-formed for the side, and every witness
-reading it in the ladder's regime (at the deployed curves: the decode avoids
-`forbiddenValues`). -/
+reading it in the ladder's regime (at the deployed curves: the ladder's top is below
+`4·order − 4`). -/
 def IvpSide.ClaimOk (S : IvpSide C V ops) (x : sf) : Prop :=
   S.R.WellFormed x ∧ ∀ w, S.R.Pre x w → S.R.Reg w
 

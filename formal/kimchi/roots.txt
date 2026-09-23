@@ -35,7 +35,6 @@ Kimchi.Gate.EndoScalar.fq_rangeCheck128_sound
 Kimchi.Gate.EndoScalar.nReconstruct_nil
 Kimchi.Gate.Poseidon.fp_poseidonChain_blockCipher
 Kimchi.Gate.Poseidon.fq_poseidonChain_blockCipher
-Kimchi.Gate.VarBaseMul.mem_forbiddenValues_of_dvd
 Kimchi.Gate.VarBaseMul.runBits_length
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2

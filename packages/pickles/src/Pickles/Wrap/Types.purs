@@ -90,9 +90,8 @@ instance
 -- | allocation; the consumer that needs the 128-bit invariant
 -- | re-establishes it, as `Scalar_challenge.to_field_checked` does at
 -- | endo-expansion time. The 5 fp fields stay `sf` (`Type1 (FVar f)` in
--- | circuit) so their `CheckedType` instance runs the
--- | forbidden-shifted-values check; digests and branch data are plain
--- | `f` and get no check.
+-- | circuit); digests and branch data are plain `f`. None of them gets
+-- | an allocation check.
 newtype StatementPacked :: Int -> Type -> Type -> Type -> Type
 newtype StatementPacked d sf f b = StatementPacked
   { -- combined_inner_product, b, zetaToSrsLength, zetaToDomainSize, perm

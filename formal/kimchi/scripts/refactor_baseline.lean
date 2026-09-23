@@ -17,7 +17,7 @@ def roots : List Name :=
     `Kimchi.Gate.AddComplete.complete_inf, `Kimchi.Gate.AddComplete.complete,
     `Kimchi.Gate.AddComplete.sound,
     `Kimchi.Gate.VarBaseMul.sound, `Kimchi.Gate.VarBaseMul.complete,
-    `Kimchi.Gate.VarBaseMul.varBaseMul_forbidden_correct,
+    `Kimchi.Gate.VarBaseMul.varBaseMul_bounded_correct,
     `Kimchi.Gate.VarBaseMul.varBaseMul_subwrap_correct,
     `Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1,
     `Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2,

@@ -692,7 +692,11 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
       obtain ⟨hfin', hpt, -⟩ :=
         Kimchi.Gate.VarBaseMul.varBaseMul_off d.W l.length g T
           (gateLadder g (5 * l.length)) hgH hgB hgL hgI d.two_ne d.odd rfl
-          (by rw [hs]; exact hregime)
+          (by
+            rw [hs]
+            rcases hregime with h | h
+            · exact Or.inl h
+            · exact Or.inr h)
       have hns : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V) := by
         rw [← hfinx, ← hfiny]
         exact hfin'
@@ -883,7 +887,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F))
     (xv yv sv : F) (hT : d.W.Nonsingular xv yv)
     (hfits : ToNat.toNat sv < 2 ^ (5 * chunks))
-    (hregime : d.LadderRegime (5 * chunks)
+    (hregime : d.LadderCompleteRegime (5 * chunks)
       (Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
@@ -1072,7 +1076,11 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       Kimchi.Gate.VarBaseMul.bitsVal_testBit (ToNat.toNat sv) (5 * chunks) hfits]
   have hwalkHolds : ∀ i : ℕ, i < chunks → Kimchi.Gate.VarBaseMul.Holds (W i) := by
     have h := Kimchi.Gate.VarBaseMul.chain_complete d.W d.two_ne d.odd chunks hT bsOf
-      hbsbool 0 hP0ns hP0eq.symm (by rw [← hWdef, hgl]; exact hregime)
+      hbsbool 0 hP0ns hP0eq.symm (by
+        rw [← hWdef, hgl]
+        rcases hregime with h | h
+        · exact Or.inl h
+        · exact Or.inr h)
     rw [← hWdef] at h
     exact h
   -- the rounds' readings are the walk's rows, at any table past the bits
@@ -1184,7 +1192,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       rw [hbsOf,
         Kimchi.Gate.VarBaseMul.bitsVal_testBit (ToNat.toNat sv) (5 * chunks) hfits]
         at hpoint
-      exact ⟨scoped_affinePoint.mpr ⟨hinv.2.1, hinv.2.2.1⟩, hpoint hregime⟩
+      exact ⟨scoped_affinePoint.mpr ⟨hinv.2.1, hinv.2.2.1⟩, hpoint hregime.toLadderRegime⟩
 
 attribute [irreducible] lsbBitsWit varBaseMul
 
@@ -1277,7 +1285,7 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) (xv yv sv : F)
     (hT : d.W.Nonsingular xv yv) (hfits : ToNat.toNat sv < 2 ^ (5 * chunks))
     (hfits1 : n ≤ 5 * chunks → ToNat.toNat sv < 2 ^ (5 * chunks - 1))
-    (hregime : d.LadderRegime (5 * chunks)
+    (hregime : d.LadderCompleteRegime (5 * chunks)
       (Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
@@ -1461,7 +1469,7 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F)
     (xv yv sv : F) (bb : Bool) (hT : d.W.Nonsingular xv yv)
     (hfits : ToNat.toNat sv < 2 ^ sDiv2Bits)
-    (hregime : d.LadderRegime (5 * chunks)
+    (hregime : d.LadderCompleteRegime (5 * chunks)
       (Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
@@ -1478,7 +1486,11 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- the difference is finite: the regime keeps the result off the base
   have hoff : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) ≠ 0 :=
     Kimchi.Gate.VarBaseMul.ladder_off_base d.W (Point.some_ne_zero hT) (5 * chunks)
-      (ToNat.toNat sv) (by positivity) (by exact_mod_cast hfits') hregime
+      (ToNat.toNat sv) (by positivity) (by exact_mod_cast hfits') (by
+        rcases hregime with h | ⟨hL, h1, h2, -, -, h5, -, h7, -⟩
+        · exact Or.inl h
+        · refine Or.inr ⟨by omega, h1, h2, ?_, ?_⟩ <;>
+            simpa only [Pasta.Shifted.unshiftType1] using ‹_›)
   have hsum : ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
       • Point.some _ _ hT + -Point.some _ _ hT) ≠ 0 := by
     rw [show ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
@@ -1811,7 +1823,7 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hsplit : sDiv2Bits ≤ 5 * chunks) (base : AffinePoint (FVar F)) (s : FVar F)
     (xv yv sval : F) (hT : d.W.Nonsingular xv yv)
     (hfits : ToNat.toNat (splitField sval).1 < 2 ^ scaleFast2'Width n sDiv2Bits)
-    (hregime : d.LadderRegime (5 * chunks)
+    (hregime : d.LadderCompleteRegime (5 * chunks)
       (Pasta.Shifted.unshiftType1 (5 * chunks) ((ToNat.toNat (splitField sval).1 : ℤ)))) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
@@ -1837,14 +1849,15 @@ attribute [irreducible] scaleFast2'
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul
   WeierstrassCurve.Affine in
-/-- **Completeness at Vesta.** On an on-curve base and a `Type1` carrier off the ladder's
-forbidden band, the run succeeds and the result is the base times the carrier's decode. The
-width and regime hold for free: the carrier is below `2^255`, and the band exclusion is
-the regime. -/
+/-- **Completeness at Vesta.** On an on-curve base and a `Type1` carrier whose decode is none
+of the three tops at which an accumulator reaches `O`, the run succeeds and the result is the
+base times the carrier's decode. The width and the bound hold for free: the carrier is a field
+element. -/
 @[complete_law]
 theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FVar Fq)}
     {xv yv : Fq} {Z : Type1 Fq} (hT : Vesta.curve.toAffine.Nonsingular xv yv)
-    (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
+    (hz1 : Z.toScalarZ ≠ 2 * PALLAS_BASE_CARD - 1) (hz2 : Z.toScalarZ ≠ 2 * PALLAS_BASE_CARD + 1)
+    (hz3 : Z.toScalarZ ≠ 3 * PALLAS_BASE_CARD) :
     Complete (F := Fq) (c := KimchiConstraint Fq)
       (fun st => OnCurveAs Vesta.curve.toAffine st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := Fq) st sv.val Z.val)
@@ -1859,19 +1872,23 @@ theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FV
   have hfits : ToNat.toNat Z.val < 2 ^ (5 * 51) := by
     rw [hval]
     exact lt_of_lt_of_le (ZMod.val_lt _) (by decide)
+  have hzb : Z.toScalarZ < 4 * PALLAS_BASE_CARD - 4 := by
+    have hv : ((Z.val.val : ℕ) : ℤ) < PALLAS_SCALAR_CARD := by exact_mod_cast ZMod.val_lt Z.val
+    simp only [Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1]
+    norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD] at hv ⊢
+    omega
   exact hdec ▸ varBaseMul_complete HasCurve.vesta 255 51 (by norm_num) base sv xv yv Z.val hT
-    hfits (hdec ▸ HasCurve.vesta_ladderRegime Z.toScalarZ hband)
+    hfits (hdec ▸ HasCurve.vesta_ladderCompleteRegime Z.toScalarZ hzb hz1 hz2 hz3)
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul in
-/-- **Soundness at Vesta.** From `varBaseMul_spec`'s output on a `Type1` carrier off the
-ladder's forbidden band, whose witnessed bits read as a value below the scalar order, the
-result is the base times the carrier's decode. The bit bound makes the ladder's integer the
-carrier's canonical representative, and the band exclusion discharges the regime. Stated on
-the law's output, as `vesta_endoMul_read` is: a consumer holds that output. -/
+/-- **Soundness at Vesta.** From `varBaseMul_spec`'s output on a `Type1` carrier whose
+witnessed bits read as a value below the scalar order, the result is the base times the
+carrier's decode. The bit bound makes the ladder's integer the carrier's canonical
+representative, which is a field element and so below the regime's bound. Stated on the law's
+output, as `vesta_endoMul_read` is: a consumer holds that output. -/
 theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
     {sv : Type1 (FVar Fq)} {r : VarBaseMulResult 255 Fq} {Z : Type1 Fq}
     (hread : sv.val.val V = Z.val)
-    (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD)
     (h : ∀ T : HasCurve.vesta.W.Point, OnCurveAt HasCurve.vesta.W V base T →
       ∃ bs : Vector Bool (5 * 51),
         (∀ i (hi : i < 5 * 51), (r.lsbBits[i]'(by omega)).val V = bit bs[i]) ∧
@@ -1896,7 +1913,12 @@ theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
   have hZ : Z.toScalarZ
       = Pasta.Shifted.unshiftType1 (5 * 51) (Kimchi.natLsbVal bs.toList : ℤ) := by
     simp only [Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1, hval]
+  have hzb : Z.toScalarZ < 4 * PALLAS_BASE_CARD - 4 := by
+    have hv : ((Z.val.val : ℕ) : ℤ) < PALLAS_SCALAR_CARD := by exact_mod_cast ZMod.val_lt Z.val
+    simp only [Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1]
+    norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD] at hv ⊢
+    omega
   rw [hZ]
-  exact hact (hZ ▸ HasCurve.vesta_ladderRegime Z.toScalarZ hband)
+  exact hact (hZ ▸ HasCurve.vesta_ladderRegime Z.toScalarZ hzb)
 
 end Snarky.Kimchi
