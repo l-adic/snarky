@@ -10,16 +10,20 @@
 #   - every file ends with exactly one newline
 #
 # Usage:
-#   check-style.sh        # check only; non-zero exit on any violation
-#   check-style.sh --fix  # auto-correct the mechanical issues
-#                         #   (trailing whitespace + final newline; the rest are
-#                         #    reported for you to fix by hand)
+#   check-style.sh              # check the whole tree; non-zero exit on any violation
+#   check-style.sh <file>...    # check only these files (paths relative to formal/) — the
+#                               #   mode for one agent's pass in a shared worktree, where
+#                               #   another pass's in-flight line must not fail it
+#   check-style.sh --fix        # auto-correct the mechanical issues
+#                               #   (trailing whitespace + final newline; the rest are
+#                               #    reported for you to fix by hand)
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 2   # -> formal/
 
 fix=0
-[ "${1:-}" = "--fix" ] && fix=1
+[ "${1:-}" = "--fix" ] && { fix=1; shift; }
+only=("$@")
 
 # Collect our own source files (skip the Lake build dir, the vendored CompElliptic dependency
 # submodule, .archon-seed/, which holds read-only copies of upstream sources staged for the
@@ -34,11 +38,15 @@ fix=0
 # written once per snapshotting iteration, so without it the printed file count drifts upward
 # over time (and a snapshot taken mid-edit can fail the gate for a reason outside the tree).
 files=()
+if [ "${#only[@]}" -gt 0 ]; then
+  for f in "${only[@]}"; do files+=("./${f#./}"); done
+else
 while IFS= read -r f; do files+=("$f"); done \
   < <(find . -name '*.lean' \
         -not -path '*/.lake/*' -not -path './vendor/*' -not -path './.archon-seed/*' \
         -not -path './.archon/*' \
         -not -path './pickles/Pickles/Linearization/F[pq].lean' | sort)
+fi
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "no .lean files found under formal/"

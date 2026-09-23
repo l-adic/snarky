@@ -4,17 +4,16 @@ import Snarky.Kimchi.Constraint.Reduction
 /-!
 # The Basic-constraint reducer
 
-Port of `Snarky.Constraint.Kimchi.GenericPlonk`
-(packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/GenericPlonk.purs): `reduce`, the
-fan-out from the DSL's four `Basic` constraints to `PlonkReductionM` emissions. Each
+Port of packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/GenericPlonk.purs: `reduce`,
+the fan-out from the DSL's four `Basic` constraints to `PlonkReductionM` emissions. Each
 operand is reduced to `c·v` form first (in PS source order — emission order is fixture
-bytes, K2), then one generic or equals constraint is emitted, dispatching on which
+bytes), then one generic or equals constraint is emitted, dispatching on which
 operands degenerated to constants.
 
 Name map: `reduce` keeps its name; the case dispatch keeps PS's coefficient
 patterns verbatim.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+Deviations from the PS original:
 - The three all-constant contradiction sites (`r1cs`, `square`, `boolean`) throw in PS;
   the total Lean rendering emits the corresponding unsatisfiable generic row
   (`c = lhs − rhs`), the same move `Reduction.lean`'s equality op makes.
@@ -23,14 +22,8 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   prover interpreter SUCCEEDS where PS's would crash — the emission is a no-op there
   (the kimchi prover checks nothing per constraint).
 
-No semantics is stated here: the meaning of the emitted encodings and the
-faithfulness of this reducer are deliberately not part of this package; the
-byte-equality corpus is the oracle.
-
-The PS test surface (`test/Test/Snarky/Circuit/Kimchi/GenericTest.purs`) exercises
-the circuit layer end to end (an EC-addition circuit compiled through this reducer);
-there are no module-level QuickCheck rows. The `decide` examples below stand in: one
-emission per `Basic` constructor, traced, and a prover run.
+No semantics is stated here: `Snarky.Kimchi.Semantics` gives the emitted encodings their
+meaning, and the byte-equality corpus checks this reducer.
 -/
 
 namespace Snarky.Kimchi
@@ -39,9 +32,8 @@ open Snarky
 
 variable {F : Type} {m : Type → Type}
 
-/-- Reduce one `Basic` constraint to its kimchi emissions (PS `reduce`): reduce every
-operand to `c·v` form, then emit the one generic (or equals) constraint for the
-surviving shape. The coefficient patterns are PS's, case for case. -/
+/-- Reduce one `Basic` constraint to its kimchi emissions: reduce every operand to
+`c·v` form, then emit the one generic (or equals) constraint for the surviving shape. -/
 def reduce [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
     [PlonkReductionM F m] : Basic F → m Unit
   | .r1cs left right output => do
@@ -122,30 +114,5 @@ def reduce [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] [Mon
       addGenericPlonkConstraint
         { cl := -x.2, vl := some v, cr := 0, vr := some v, co := 0, vo := none,
           m := x.2 * x.2, c := 0 }
-
-/-- The `Basic` reducer is a seam: the branches consume reduced results, which agree,
-and every tail is counter-inert. -/
-theorem reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
-    [DecidableEq F] (c : Basic F) :
-    Seam (reduce (m := PlonkBuilder F) c) (reduce (m := PlonkProver F) c) := by
-  rcases c with ⟨l, r, o⟩ | ⟨a, b⟩ | ⟨a, b⟩ | v <;> simp only [reduce]
-  · refine Seam.bind (reduceAffineExpression_seam _) fun l' => ?_
-    refine Seam.bind (reduceAffineExpression_seam _) fun r' => ?_
-    refine Seam.bind (reduceAffineExpression_seam _) fun o' => ?_
-    rcases l'.1 with _ | vl <;> rcases r'.1 with _ | vr <;> rcases o'.1 with _ | vo
-    all_goals try exact addGeneric_seam _
-    exact Seam.ite (fun _ => Seam.pure _) fun _ => addGeneric_seam _
-  · refine Seam.bind (reduceAffineExpression_seam _) fun l' => ?_
-    refine Seam.bind (reduceAffineExpression_seam _) fun r' => ?_
-    exact addEquals_seam _
-  · refine Seam.bind (reduceAffineExpression_seam _) fun x => ?_
-    refine Seam.bind (reduceAffineExpression_seam _) fun y => ?_
-    rcases x.1 with _ | x1 <;> rcases y.1 with _ | x2
-    all_goals try exact addGeneric_seam _
-    exact Seam.ite (fun _ => Seam.pure _) fun _ => addGeneric_seam _
-  · refine Seam.bind (reduceAffineExpression_seam _) fun x => ?_
-    rcases x.1 with _ | xv
-    · exact Seam.ite (fun _ => Seam.pure _) fun _ => addGeneric_seam _
-    · exact addGeneric_seam _
 
 end Snarky.Kimchi

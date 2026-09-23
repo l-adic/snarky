@@ -3,7 +3,6 @@ import CompElliptic.CurveForms.ShortWeierstrass
 import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.PastaOrder
 import CompElliptic.Fields.Pasta
-import Pasta.CompElliptic
 
 /-!
 # The Pasta group orders
@@ -12,13 +11,12 @@ The Pallas group has prime order `q = PALLAS_SCALAR_CARD`; the Vesta group has p
 `p = PALLAS_BASE_CARD`. That is the Pasta cycle: each curve's order is the other's
 base-field size.
 
-- `pallas_card` / `vesta_card` — those orders, in Mathlib's `Nat.card (Point …)` form,
-  reached through the transport in `§ Bridge to Mathlib's Affine.Point` below.
+- `pallas_card` / `vesta_card` — those orders as `Nat.card` of Mathlib's point group,
+  through the bridge section below.
 - `Fact` instances for primality and for the short-Weierstrass shape `a₁ = a₂ = a₃ = 0`.
-- `vestaPointModule` / `pallasPointModule` — each point group as a module over its scalar
-  field.
-- `pastaFieldBits` — the base-field bit width, and the register range-check bound derived
-  from it.
+- `pastaFieldBits` — the base-field bit width.
+- `smul_ne_zero_of_lt` / `zsmul_eq_zero_iff_order_dvd` — scalar multiples in a group of prime
+  order.
 
 `WeierstrassCurve.Affine.order` and `SWCurve.toAffine` are the vocabulary the kimchi EC
 gates are stated in.
@@ -39,14 +37,11 @@ abbrev SWCurve.toAffine {F : Type*} [Field F] (C : SWCurve F) : WeierstrassCurve
 
 /-! ### Bridge to Mathlib's `Affine.Point`
 
-`SWPoint E` and Mathlib's `Point (toW E.A E.B)` are two representations of the same group.
-CompElliptic's `SWPoint` is the computable one, with `DecidableEq` and an executable scalar
-mul; Mathlib's inductive `Point` is the one carrying the proven `AddCommGroup`. The
-transport maps `toPt` / `ofPt` are mutually inverse on valid coordinates, so they package
-into an `Equiv`. That is what carries the `SWPoint`-native order theory
-(`CompElliptic.CurveOrder`, `Curves.PastaOrder`) over to `Nat.card (Point …)`, the form
-`pallas_card` / `vesta_card` are stated in. Upstream CompElliptic does not carry this
-bridge; it lives here. -/
+CompElliptic's points are computable, with decidable equality and an executable scalar
+multiplication; Mathlib's inductive `Point` carries the proven `AddCommGroup`. The coordinate
+transports are mutually inverse on valid coordinates and package into the additive
+equivalence `SWPoint.equivPoint`, which carries CompElliptic's point counts (`Pallas.card_eq`,
+`Vesta.card_eq`) over to `Nat.card (Point …)`. -/
 
 open WeierstrassCurve.Affine
 
@@ -65,9 +60,8 @@ theorem toPt_ofPt {F : Type*} [Field F] [DecidableEq F] {a b : F} (hb : b ≠ 0)
   | zero => exact toPt_zero hb
   | some x y h => exact toPt_some (equation_toW.mp h.left)
 
-/-- `SWPoint E` is additively equivalent to Mathlib's affine point group
-`Point (toW E.A E.B)`, via the coordinate transport `toPt` / `ofPt`; `toPt_add` carries
-the group structure across. -/
+/-- `SWPoint E` is additively equivalent to Mathlib's `Point (toW E.A E.B)`, via the
+coordinate transports `toPt` / `ofPt`. -/
 noncomputable def SWPoint.equivPoint {F : Type*} [Field F] [DecidableEq F] (E : SWCurve F) :
     SWPoint E ≃+ Point (toW E.A E.B) :=
   haveI := instIsElliptic E
@@ -94,9 +88,8 @@ theorem SWPoint.mk_ne_zero {F : Type*} [Field F] {E : SWCurve F} {x y : F}
   simp only [OnCurve] at h
   exact E.B_nonzero (by simpa using h.symm)
 
-/-- At on-curve coordinates `equivPoint` lands on `Point.some` at the same pair —
-with `onCurve_of_ne_zero`, the reading of any nonzero `SWPoint` into the gate
-theorems' vocabulary. -/
+/-- At on-curve coordinates `equivPoint` lands on `Point.some` at the same pair; with
+`onCurve_of_ne_zero` this reads any nonzero point into the gate theorems' vocabulary. -/
 theorem SWPoint.equivPoint_eq_some {F : Type*} [Field F] [DecidableEq F] {E : SWCurve F}
     (P : SWPoint E) (h : OnCurve E.A E.B (P.x, P.y)) :
     SWPoint.equivPoint E P = Point.some P.x P.y (nonsingular_toW h) :=
@@ -121,13 +114,11 @@ theorem vesta_card : Vesta.curve.toAffine.order = PALLAS_BASE_CARD := by
   rw [SWPoint.card_eq_point Vesta.curve] at h
   exact h
 
-/-- The Pasta base-field bit width — the circuit's `FieldSizeInBits`, which bounds
-    `bitsUsed = 5·m`. The width one below it, `pastaFieldBits - 1`, is `scaleFast2`'s
-    range-check width `sDiv2Bits` (`Snarky.Circuit.Kimchi.VarBaseMul`). -/
+/-- The Pasta base-field bit width. It bounds the variable-base-mul ladder's `5·m` bits; one
+    below it is the register bound of `varBaseMul_scaleFast2`. -/
 abbrev pastaFieldBits : ℕ := 255
 
-/-- The register range-check bound `2 ^ (pastaFieldBits - 1) ≤ PALLAS_BASE_CARD`, used by
-    `scaleFast2`. -/
+/-- The register bound of `varBaseMul_scaleFast2` is below the Pallas base-field size. -/
 lemma two_pow_le_pallas_base : 2 ^ (pastaFieldBits - 1) ≤ PALLAS_BASE_CARD := by
   norm_num [PALLAS_BASE_CARD]
 
@@ -153,54 +144,28 @@ open CompElliptic.Curves.Pasta.Vesta renaming curve → vestaCurve
 open CompElliptic.Curves.Pasta.Pallas renaming curve → pallasCurve
 open CompElliptic.Fields.Pasta
 
-/-- In a `ZMod n`-module, an integer acts as its residue's canonical representative. This is
-the integer-to-scalar reduction the in-circuit readers perform when a gadget's integer decode
-meets the wire verifier's scalar-field action, which computes with `ZMod.val`.
+/-- In a `ZMod n`-module, an integer acts as its residue's canonical representative (its
+`ZMod.val`): the step from a gadget's integer decode to a scalar-field action.
 
-Stated over the module instance rather than over a bare `∀ x, n • x = 0`: the killing fact is
-what builds the instance (`AddCommGroup.zmodModule`), so a consumer that has the instance
-should not have to thread the fact as well. -/
+Stated over the module instance, not a bare `∀ x, n • x = 0`: that fact is what builds the
+instance (`AddCommGroup.zmodModule`), so a consumer holding the instance need not thread it. -/
 theorem zsmul_eq_val_nsmul {G : Type*} [AddCommGroup G] (n : ℕ) [NeZero n] [Module (ZMod n) G]
     (z : ℤ) (x : G) : z • x = ((z : ZMod n).val : ℕ) • x := by
   rw [← Int.cast_smul_eq_zsmul (ZMod n) z x]
   conv_lhs => rw [← ZMod.natCast_zmod_val ((z : ZMod n))]
   rw [Nat.cast_smul_eq_nsmul]
 
-/-- The Vesta point group as a module over its scalar field. -/
-instance vestaPointModule : Module Fp (SWPoint vestaCurve) :=
-  AddCommGroup.zmodModule fun P => by
-    rw [← Vesta.card_eq]
-    exact card_nsmul_eq_zero'
-
-/-- The Pallas point group as a module over its scalar field. -/
-instance pallasPointModule : Module Fq (SWPoint pallasCurve) :=
-  AddCommGroup.zmodModule fun P => by
-    rw [← Pallas.card_eq]
-    exact card_nsmul_eq_zero'
-
-/-- The module action is the ℕ-action at the canonical representative — the form the
-executable verifiers compute with. -/
-theorem vesta_smul_val (z : Fp) (P : SWPoint vestaCurve) : z • P = z.val • P :=
-  rfl
-
-/-- The same action on Mathlib's carrier, where the gate theorems live: `equivPoint`
-transports the module structure. -/
+/-- Vesta's Mathlib point group as an `Fp`-module: `Vesta.card_eq`, carried across
+`SWPoint.equivPoint`, kills every point by `p`. -/
 instance vestaAffineModule : Module Fp vestaCurve.toAffine.Point :=
   AddCommGroup.zmodModule fun Q => by
     rw [← (SWPoint.equivPoint vestaCurve).apply_symm_apply Q, ← map_nsmul, ← Vesta.card_eq,
       card_nsmul_eq_zero', map_zero]
 
-/-- `equivPoint` respects the scalar action: both carriers act by the canonical
-representative. -/
-theorem vesta_equivPoint_smul (z : Fp) (P : SWPoint vestaCurve) :
-    SWPoint.equivPoint vestaCurve (z • P) = z • SWPoint.equivPoint vestaCurve P :=
-  map_nsmul _ _ _
-
 /-! ## Scalar multiples of a point of prime order
 
-Two facts about any short-Weierstrass curve of prime order, used wherever a run has to know
-that an accumulator has not collapsed onto the base or onto zero. They are pure group theory:
-nothing here mentions a gate, a circuit or a sponge. -/
+Two facts about any short-Weierstrass curve of prime order, used wherever a scalar-mul run
+must know its accumulator has not collapsed onto the base or onto zero. -/
 
 /-- **Core non-degeneracy.** With prime `order`, a nonzero point times a scalar strictly
 between `0` and `order` is nonzero. -/
@@ -227,9 +192,8 @@ lemma smul_ne_zero_of_lt {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassC
   rw [h_contra, hord, smul_zero, smul_zero, _root_.add_zero] at h_decomp
   exact hT h_decomp
 
-/-- **Prime order ⇒ full order.** For a nonzero point `T`, a scalar multiple `m • T` vanishes
-iff `order ∣ m`. (`order` is prime and `order • T = 0`, so `addOrderOf T ∣ order`; nonzero `T`
-rules out `addOrderOf T = 1`, hence it equals `order`.) -/
+/-- **Prime order is full order.** For a nonzero point `T`, `m • T` vanishes iff `order ∣ m`:
+`addOrderOf T` divides the prime `order` and is not `1`, so it is `order`. -/
 lemma zsmul_eq_zero_iff_order_dvd {F : Type*} [Field F] [DecidableEq F]
     (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
@@ -243,9 +207,5 @@ lemma zsmul_eq_zero_iff_order_dvd {F : Type*} [Field F] [DecidableEq F]
     · exact absurd (AddMonoid.addOrderOf_eq_one_iff.mp h1) hT
     · exact h1
   rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
-
-/-- The Pallas twin of `vesta_smul_val`. -/
-theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=
-  rfl
 
 end Pasta

@@ -70,7 +70,6 @@ def roots : List Name :=
     `Pickles.optSqueezePrechallenge_spec,
     `Pickles.fqSpongeTranscriptOpt_spec,
     `Pickles.assertPlonkChallenges_spec,
-    `Pickles.FqTranscriptReads.wire,
     `Pickles.absorbList_spec,
     `Pickles.extractScalarChallenges_spec,
     `Pickles.checkBulletproof_spec,
@@ -86,8 +85,6 @@ def roots : List Name :=
     `Pickles.stepSide,
     `Pickles.ftComm_reads,
     `Pickles.incrementallyVerifyProof_reads,
-    `Pickles.incrementallyVerifyProof_wrap_reads,
-    `Pickles.incrementallyVerifyProof_step_reads,
     `Pickles.stepProof_kimchiVerify_vesta,
     `Pickles.wrapProof_kimchiVerify_pallas ]
 
@@ -100,8 +97,6 @@ resting on CompElliptic's order and primality certificates. -/
 def deployedRoots : List Name :=
   [ `Pickles.wrapSide,
     `Pickles.stepSide,
-    `Pickles.incrementallyVerifyProof_wrap_reads,
-    `Pickles.incrementallyVerifyProof_step_reads,
     `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,
     `Pickles.Reflect.evaluate_fpTokens,

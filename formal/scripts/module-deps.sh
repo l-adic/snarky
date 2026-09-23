@@ -28,12 +28,10 @@ declare -A pkg_color=(
 )
 
 srcs() { # $1 = package dir -- library sources only
-  # Excludes: build/script drivers, the fixture library (`KimchiFixture{.lean,/}`,
-  # test-only), and executable entry points (`Main.lean`, the kimchi-demo) — none are
-  # library API.
+  # Excludes: build/script drivers and the fixture library (`KimchiFixture{.lean,/}`,
+  # test-only) — neither is library API.
   find "$1" -name '*.lean' -not -path '*/.lake/*' -not -path '*/scripts/*' \
-    -not -path '*/KimchiFixture/*' -not -name 'KimchiFixture.lean' \
-    -not -name 'Main.lean' | sort
+    -not -path '*/KimchiFixture/*' -not -name 'KimchiFixture.lean' | sort
 }
 
 mod_of() { # $1 = package dir, $2 = file path -> module name

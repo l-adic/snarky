@@ -5,7 +5,7 @@ import Pasta.Shifted
 /-!
 # Pasta — the Pasta curves' trust base
 
-Root module of the `Pasta` library:
+Root module of the Pasta library:
 
 - `Pasta/Basic.lean` — the group orders and their primality, the bridge to Mathlib's point
   group, and the module structure over each scalar field.

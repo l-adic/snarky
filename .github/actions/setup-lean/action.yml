@@ -11,7 +11,7 @@ inputs:
       Space-separated lake targets to build (from `formal/`, the aggregator workspace).
     required: false
     default: >-
-      Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr
+      Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
       KimchiFixture Pickles
 outputs:
   cache-key:
@@ -51,8 +51,7 @@ runs:
         export PATH="$HOME/.elan/bin:$PATH"
         # Restore dependencies FROM THE COMMITTED MANIFEST (`lake-manifest.json`), so CI
         # builds the pinned revisions rather than whatever `lake update` resolves at run
-        # time — the external audit's §2.1 observation that `lake update mathlib` made the
-        # dependency set a moving target. If the manifest and lakefile.toml genuinely
+        # time, which would make the dependency set a moving target. If the manifest and lakefile.toml genuinely
         # disagree, that is a repo-state error and should fail here rather than be
         # silently re-resolved; the fallback re-resolves and SAYS SO, so the drift is
         # visible in the log instead of invisible.

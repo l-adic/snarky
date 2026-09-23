@@ -1,4 +1,3 @@
-import Snarky.Encoding.Simps
 import Snarky.Prover
 import Snarky.Witness
 import Pickles.Statement
@@ -10,18 +9,13 @@ import Pickles.CheckBulletproof
 
 Every record a pickles gadget takes is polymorphic in its cell type: `UnfinalizedProof k F
 Bool (Type1 F)` holds a proof's deferred values, `UnfinalizedProof k (FVar F) (BoolVar F)
-(Type1 (FVar F))` holds the cells a circuit reads them from. `CircuitType` relates the two,
-derived record by record from the product decomposition (`CircuitType.ofEquiv`), so a
-value is seeded and a bundle allocated the way any input is — and a fixture supplies the
-gadget's own record, never a flat layout.
+(Type1 (FVar F))` the cells a circuit reads them from. `CircuitType` relates the two, derived
+record by record from the product decomposition (`CircuitType.ofEquiv`), so a record is seeded
+and allocated like any input.
 
-Each decomposition carries `@[simps apply]`: with the `reads_simps` set
-(`Snarky.Encoding.Simps`), `simp [reads_simps] at h` turns a record's `Reads` into its
-leaves' readings, nested records included, so no record states a reading lemma of its own.
-
-The leaves: a `SizedF`, `Type1`, `Type2` wrapper is its one cell; a `SplitField` its half and
-parity; a `PointEvaluations` its two cells; the round-challenge and
-`(L, R)` vectors are vectors, so the `Vector` former applies.
+The leaves: a `SizedF`, `Type1` or `Type2` is its one cell; a `SplitField` its half and
+parity; a `PointEvaluations` its two cells; the round-challenge and `(L, R)` vectors take the
+`Vector` former.
 -/
 
 namespace Pickles
@@ -31,7 +25,7 @@ open Snarky Kimchi Kimchi.Verifier
 /-! ## The cell wrappers -/
 
 /-- A `SizedF` is its cell. -/
-@[simps apply] def _root_.Snarky.SizedF.equivVal (n : ℕ) (α : Type) : SizedF n α ≃ α :=
+def _root_.Snarky.SizedF.equivVal (n : ℕ) (α : Type) : SizedF n α ≃ α :=
   ⟨SizedF.val, SizedF.mk, fun _ => rfl, fun _ => rfl⟩
 
 instance instSizedFCircuitType {F v w : Type} {n : ℕ} [CircuitType F v w] :
@@ -39,7 +33,7 @@ instance instSizedFCircuitType {F v w : Type} {n : ℕ} [CircuitType F v w] :
   CircuitType.ofEquiv (SizedF.equivVal n v) (SizedF.equivVal n w)
 
 /-- A `Type1` is its cell. -/
-@[simps apply] def _root_.Snarky.Type1.equivVal (α : Type) : Type1 α ≃ α :=
+def _root_.Snarky.Type1.equivVal (α : Type) : Type1 α ≃ α :=
   ⟨Type1.val, Type1.mk, fun _ => rfl, fun _ => rfl⟩
 
 instance instType1CircuitType {F v w : Type} [CircuitType F v w] :
@@ -47,7 +41,7 @@ instance instType1CircuitType {F v w : Type} [CircuitType F v w] :
   CircuitType.ofEquiv (Type1.equivVal v) (Type1.equivVal w)
 
 /-- A `Type2` is its cell. -/
-@[simps apply] def _root_.Snarky.Type2.equivVal (α : Type) : Type2 α ≃ α :=
+def _root_.Snarky.Type2.equivVal (α : Type) : Type2 α ≃ α :=
   ⟨Type2.val, Type2.mk, fun _ => rfl, fun _ => rfl⟩
 
 instance instType2CircuitType {F v w : Type} [CircuitType F v w] :
@@ -55,7 +49,7 @@ instance instType2CircuitType {F v w : Type} [CircuitType F v w] :
   CircuitType.ofEquiv (Type2.equivVal v) (Type2.equivVal w)
 
 /-- A split scalar is its half and its parity. -/
-@[simps apply] def _root_.Snarky.SplitField.equivProd (α β : Type) : SplitField α β ≃ α × β :=
+def _root_.Snarky.SplitField.equivProd (α β : Type) : SplitField α β ≃ α × β :=
   ⟨fun s => (s.sDiv2, s.sOdd), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
 instance instSplitFieldCircuitType {F a va b vb : Type} [CircuitType F a va]
@@ -65,7 +59,7 @@ instance instSplitFieldCircuitType {F a va b vb : Type} [CircuitType F a va]
 /-! ## The evaluations -/
 
 /-- An evaluation pair is its two entries. -/
-@[simps apply] def _root_.Kimchi.Verifier.PointEvaluations.equivProd (α : Type) :
+def _root_.Kimchi.Verifier.PointEvaluations.equivProd (α : Type) :
     PointEvaluations α ≃ α × α :=
   ⟨fun e => (e.zeta, e.zetaOmega), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
@@ -74,7 +68,7 @@ instance instPointEvaluationsCircuitType {F v w : Type} [CircuitType F v w] :
   CircuitType.ofEquiv (PointEvaluations.equivProd v) (PointEvaluations.equivProd w)
 
 /-- The evaluation record is its ten families, in field order. -/
-@[simps apply] def _root_.Kimchi.Verifier.ProofEvaluations.equivProd (α : Type) :
+def _root_.Kimchi.Verifier.ProofEvaluations.equivProd (α : Type) :
     ProofEvaluations α ≃
       Vector (PointEvaluations α) wCols × PointEvaluations α ×
         Vector (PointEvaluations α) sigmaRows × Vector (PointEvaluations α) coeffCols ×
@@ -92,7 +86,7 @@ instance instProofEvaluationsCircuitType {F v w : Type} [CircuitType F v w] :
   CircuitType.ofEquiv (ProofEvaluations.equivProd v) (ProofEvaluations.equivProd w)
 
 /-- The chunked evaluations: `ft(ζω)`, the public chunks, the record's chunks. -/
-@[simps apply] def ChunkedEvals.equivProd (nc : ℕ) (f : Type) :
+def ChunkedEvals.equivProd (nc : ℕ) (f : Type) :
     ChunkedEvals nc f ≃ f × PointEvaluations (Vector f nc) × ProofEvaluations (Vector f nc) :=
   ⟨fun e => (e.ftEval1, e.pub, e.evals), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
    fun _ => rfl⟩
@@ -105,7 +99,7 @@ instance instChunkedEvalsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v 
 
 /-- The plonk claims are the four prechallenges and the three shifted scalars, in field
 order. -/
-@[simps apply] def PlonkInCircuit.equivProd (f sf : Type) :
+def PlonkInCircuit.equivProd (f sf : Type) :
     PlonkInCircuit f sf ≃
       SizedF 128 f × SizedF 128 f × SizedF 128 f × SizedF 128 f × sf × sf × sf where
   toFun p := (p.alpha, p.beta, p.gamma, p.zeta, p.perm, p.zetaToSrsLength, p.zetaToDomainSize)
@@ -119,7 +113,7 @@ instance instPlonkInCircuitCircuitType {F f w sv sf : Type} [CircuitType F f w]
 
 /-- The deferred values are the plonk claims, `cip`, `ξ`, the `k` round challenges and `b`, in
 field order. -/
-@[simps apply] def DeferredValues.equivProd (k : ℕ) (f sf : Type) :
+def DeferredValues.equivProd (k : ℕ) (f sf : Type) :
     DeferredValues k f sf ≃
       PlonkInCircuit f sf × sf × SizedF 128 f × Vector (SizedF 128 f) k × sf where
   toFun d := (d.plonk, d.combinedInnerProduct, d.xi, d.bulletproofChallenges, d.b)
@@ -132,7 +126,7 @@ instance instDeferredValuesCircuitType {F f w sv sf : Type} {k : ℕ} [CircuitTy
   CircuitType.ofEquiv (DeferredValues.equivProd k f sv) (DeferredValues.equivProd k w sf)
 
 /-- An unfinalized proof is its deferred values, its finalize bit and its digest. -/
-@[simps apply] def UnfinalizedProof.equivProd (k : ℕ) (f bc sf : Type) :
+def UnfinalizedProof.equivProd (k : ℕ) (f bc sf : Type) :
     UnfinalizedProof k f bc sf ≃ DeferredValues k f sf × bc × f :=
   ⟨fun u => (u.deferredValues, u.shouldFinalize, u.spongeDigestBeforeEvaluations),
    fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl, fun _ => rfl⟩
@@ -145,7 +139,7 @@ instance instUnfinalizedProofCircuitType {F f w b vb sv sf : Type} {k : ℕ} [Ci
 /-! ## The wrap statement -/
 
 /-- The branch data is the domain's `log2` and the mask. -/
-@[simps apply] def BranchData.equivProd (f bc : Type) :
+def BranchData.equivProd (f bc : Type) :
     BranchData f bc ≃ f × Vector bc MaxProofsVerified :=
   ⟨fun d => (d.domainLog2, d.proofsVerifiedMask), fun p => ⟨p.1, p.2⟩, fun _ => rfl,
    fun _ => rfl⟩
@@ -154,23 +148,20 @@ instance instBranchDataCircuitType {F f w b vb : Type} [CircuitType F f w] [Circ
     CircuitType F (BranchData f b) (BranchData w vb) :=
   CircuitType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
 
-/-- The branch data's check: its cells' own, through the same decomposition — nothing on
-`domain_log2`, the boolean constraint on each mask bit. That is the first line of PureScript's
-`CheckedType (AllocBranchData …)` (`check (branchTuple r)`, `Pickles/Step/Types.purs`).
+/-- The branch data's check, through the same decomposition: nothing on the log2, the
+boolean constraint on each mask bit.
 
-Two differences from that instance, neither of which a statement about the mask depends on.
-PureScript's check goes on to range-check `domain_log2` by expanding its 16 bits through the
-endo (`EndoScalar.toField @1`); `toField_spec` is proved at 8 rows only, so that line is not
-here and this check emits fewer rows than the deployed one. And PureScript allocates the two
-mask bits before `domain_log2`, where this record's decomposition puts `domain_log2` first:
-an order of variables, which a byte comparison against a dump would see. -/
+The deployed check also range-checks the log2 by expanding its 16 bits through the endo at one
+row; `toField_spec` is proved at 8 rows only, so that check is absent here and this one emits
+fewer rows. The deployed allocation also puts the mask bits before the log2, a variable order
+a dump comparison would see. -/
 instance instBranchDataCheckedType {F c f w b vb : Type} [Add F] [Mul F] [Zero F] [One F]
     [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
     [CheckedType F c b vb] : CheckedType F c (BranchData f b) (BranchData w vb) :=
   CheckedType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
 
 /-- A wrap statement's deferred values are the deferred values and the branch data. -/
-@[simps apply] def WrapDeferredValues.equivProd (k : ℕ) (f bc sf : Type) :
+def WrapDeferredValues.equivProd (k : ℕ) (f bc sf : Type) :
     WrapDeferredValues k f bc sf ≃ DeferredValues k f sf × BranchData f bc :=
   ⟨fun d => (d.toDeferredValues, d.branchData), fun p => ⟨p.1, p.2⟩, fun _ => rfl,
    fun _ => rfl⟩
@@ -182,7 +173,7 @@ instance instWrapDeferredValuesCircuitType {F f w b vb sv sf : Type} {k : ℕ}
     (WrapDeferredValues.equivProd k w vb sf)
 
 /-- A wrap proof state is its deferred values and its two digests. -/
-@[simps apply] def WrapProofState.equivProd (k : ℕ) (f bc sf : Type) :
+def WrapProofState.equivProd (k : ℕ) (f bc sf : Type) :
     WrapProofState k f bc sf ≃ WrapDeferredValues k f bc sf × f × f :=
   ⟨fun s => (s.deferredValues, s.spongeDigestBeforeEvaluations, s.messagesForNextWrapProof),
    fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl, fun _ => rfl⟩
@@ -193,7 +184,7 @@ instance instWrapProofStateCircuitType {F f w b vb sv sf : Type} {k : ℕ} [Circ
   CircuitType.ofEquiv (WrapProofState.equivProd k f b sv) (WrapProofState.equivProd k w vb sf)
 
 /-- A wrap statement is its proof state and the step-message digest. -/
-@[simps apply] def WrapStatement.equivProd (k : ℕ) (f bc sf : Type) :
+def WrapStatement.equivProd (k : ℕ) (f bc sf : Type) :
     WrapStatement k f bc sf ≃ WrapProofState k f bc sf × f :=
   ⟨fun s => (s.proofState, s.messagesForNextStepProof), fun p => ⟨p.1, p.2⟩, fun _ => rfl,
    fun _ => rfl⟩
@@ -206,7 +197,7 @@ instance instWrapStatementCircuitType {F f w b vb sv sf : Type} {k : ℕ} [Circu
 /-! ## The step statement -/
 
 /-- A step proof state is its slots and the step-message digest. -/
-@[simps apply] def StepProofState.equivProd (k n : ℕ) (f bc sf : Type) :
+def StepProofState.equivProd (k n : ℕ) (f bc sf : Type) :
     StepProofState k n f bc sf ≃ Vector (UnfinalizedProof k f bc sf) n × f :=
   ⟨fun s => (s.unfinalizedProofs, s.messagesForNextStepProof), fun p => ⟨p.1, p.2⟩,
    fun _ => rfl, fun _ => rfl⟩
@@ -217,7 +208,7 @@ instance instStepProofStateCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [Ci
   CircuitType.ofEquiv (StepProofState.equivProd k n f b sv) (StepProofState.equivProd k n w vb sf)
 
 /-- A step statement is its proof state and the slots' wrap-message digests. -/
-@[simps apply] def StepStatement.equivProd (k n : ℕ) (f bc sf : Type) :
+def StepStatement.equivProd (k n : ℕ) (f bc sf : Type) :
     StepStatement k n f bc sf ≃ StepProofState k n f bc sf × Vector f n :=
   ⟨fun s => (s.proofState, s.messagesForNextWrapProof), fun p => ⟨p.1, p.2⟩, fun _ => rfl,
    fun _ => rfl⟩
@@ -229,8 +220,8 @@ instance instStepStatementCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [Cir
 
 /-! ## The scalar half's input -/
 
-/-- What a circuit's scalar half is given for one slot: its deferred claims, the evaluations,
-and the previous challenges, one vector per slot. -/
+/-- What a circuit's scalar half is given for one slot: its deferred claims, the evaluations
+and the previous challenges. -/
 structure FopInput (k nc : ℕ) (f bc sf : Type) where
   /-- The slot's deferred claims. -/
   claims : UnfinalizedProof k f bc sf
@@ -240,7 +231,7 @@ structure FopInput (k nc : ℕ) (f bc sf : Type) where
   prev : Vector (Vector f k) MaxProofsVerified
 
 /-- A scalar half's input is its claims, its evaluations and its previous challenges. -/
-@[simps apply] def FopInput.equivProd (k nc : ℕ) (f bc sf : Type) :
+def FopInput.equivProd (k nc : ℕ) (f bc sf : Type) :
     FopInput k nc f bc sf ≃
       UnfinalizedProof k f bc sf × ChunkedEvals nc f × Vector (Vector f k) MaxProofsVerified :=
   ⟨fun i => (i.claims, i.evals, i.prev), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
@@ -254,7 +245,7 @@ instance instFopInputCircuitType {F f w b vb sv sf : Type} {k nc : ℕ} [Circuit
 /-! ## The opening -/
 
 /-- An opening is its `(L, R)` rounds, the two shifted scalars, `δ` and `sg`. -/
-@[simps apply] def BulletproofOpening.equivProd (k : ℕ) (f sf : Type) :
+def BulletproofOpening.equivProd (k : ℕ) (f sf : Type) :
     BulletproofOpening k f sf ≃
       Vector (AffinePoint f × AffinePoint f) k × sf × sf × AffinePoint f × AffinePoint f :=
   ⟨fun o => (o.lr, o.z1, o.z2, o.delta, o.sg), fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2⟩,

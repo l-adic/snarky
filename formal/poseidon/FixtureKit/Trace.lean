@@ -4,10 +4,11 @@ import FixtureKit.Parse
 # The trace-vector check harness
 
 The driver for the trace-vector file format: an object with a `cases` array, each case an
-`ops` array of state-machine operations (the shape `sponge_dump` records). A check supplies
-the op decoder, an initial state, and a step function returning the next state and that
-op's verdict; the state and op types are abstract. Consumers:
-`scripts/check_sponge_vectors.lean`, `scripts/check_fq_sponge.lean`.
+`ops` array of state-machine operations, the shape the sponge dump records. A check
+supplies the op decoder, an initial state, and a step function returning the next state and
+that op's verdict; the state and op types are abstract. Consumers:
+`formal/poseidon/scripts/check_sponge_vectors.lean`,
+`formal/poseidon/scripts/check_fq_sponge.lean`.
 -/
 
 namespace FixtureKit.Trace

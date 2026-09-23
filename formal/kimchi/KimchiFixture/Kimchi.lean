@@ -5,24 +5,18 @@ import FixtureKit.Parse
 import Lean.Data.Json
 
 /-!
-# Chunked kimchi wire-proof fixture ingestion
+# Kimchi wire-proof fixture decoders
 
-Decoders for the CHUNKED kimchi proof + verifier-key records
-(`Kimchi/Verifier/Kimchi.lean`), reading both fixture formats:
+Decoders for the wire records `KimchiProof` and `KimchiVK` (`Kimchi/Verifier/Wire.lean`), reading
+two fixture formats:
 
-* the chunked format (`kimchi_proof_{vesta,pallas}_nc2.json`, from `tools/fixture-dump`'s
-  `kimchi_proof_dump_nc2`): every commitment a chunk ARRAY of points, every evaluation
-  `[[ζ-chunks], [ζω-chunks]]`, plus the proof-carried `evals_public`;
-* the one-chunk format (`kimchi_proof_vesta.json`): bare points and `[ζ, ζω]` scalar
-  pairs, decoded as singleton chunk vectors — so the one-chunk fixture runs through the
-  chunked verifier (the no-regression adjudication).
+* chunked (`kimchi_proof_{vesta,pallas}_nc2.json`, from `tools/fixture-dump`): every commitment
+  an array of chunk points, every evaluation `[[ζ-chunks], [ζω-chunks]]`, plus the public-input
+  evaluations;
+* one-chunk (`kimchi_proof_vesta.json`): bare points and `[ζ, ζω]` scalar pairs, decoded as
+  singleton chunk vectors, with no public-input evaluations.
 
-Both carry the proof's old accumulators (`prev_challenges`, `{comm, chals}` records) and
-the key's accumulator count (`prev_challenges_count`).
-
-The two are distinguished per field by the first element's shape (coordinate/value
-strings vs nested arrays); `evals_public` is absent in the one-chunk format and decodes
-to `none`.
+Each field's format is read off its first element: a string, or a nested array.
 -/
 
 open Bulletproof
@@ -33,16 +27,16 @@ open FixtureKit
 
 open Lean Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Wire
 
-/-- A chunked commitment: a bare `[x, y]` point (one-chunk format — first element a
-coordinate string) as a singleton, else an array of points. -/
+/-- A commitment: a bare `[x, y]` point (one-chunk format) as a singleton, else an array of
+points. -/
 def parseComm (C : Ipa.KimchiCurve) (j : Json) : Except String (Array C.Point) := do
   match (← j.getArr?).toList with
   | [] => throw "empty commitment"
   | Json.str _ :: _ => return #[← parsePt C j]
   | _ => parseArrOf (parsePt C) j
 
-/-- A chunked evaluation pair: `[ζ, ζω]` value strings (one-chunk format) as singleton
-chunk vectors, else `[[ζ-chunks], [ζω-chunks]]`. -/
+/-- An evaluation pair: `[ζ, ζω]` (one-chunk format) as singletons, else
+`[[ζ-chunks], [ζω-chunks]]`. -/
 private def parseEval (C : Ipa.KimchiCurve) (j : Json) :
     Except String (Kimchi.Verifier.PointEvaluations (Array C.ScalarField)) := do
   let a ← j.getArr?
@@ -56,22 +50,19 @@ private def parseEval (C : Ipa.KimchiCurve) (j : Json) :
              zetaOmega := ← parseArrOf (parseZMod (n := C.scalar)) a[1]! }
 
 
-/-- A wire old accumulator: `{comm, chals}`, the commitment a chunk vector (either
-format) and the challenges a scalar array. -/
+/-- An old accumulator: a commitment and its challenges. -/
 private def parseRecursionChallenge (C : Ipa.KimchiCurve) (j : Json) :
     Except String (RecursionChallenge C) := do
   return { comm := ← parseComm C (← j.getObjVal? "comm")
            chals := ← parseArrOf (parseZMod (n := C.scalar)) (← j.getObjVal? "chals") }
 
-/-- Parse an array and check the serde-fixed dimension (`[T; N]` rejects wrong lengths
-at deserialization). -/
+/-- The array as a `Vector` of length `m`; any other length is an error naming the field. -/
 def parseSized {α : Type} (nm : String) (m : ℕ) (a : Array α) :
     Except String (Vector α m) :=
   if h : a.size = m then pure ⟨a, h⟩
   else throw s!"{nm}: expected {m} entries, got {a.size}"
 
-/-- The chunked kimchi proof wire record. `evals_public` is optional wire data: absent
-(the one-chunk format) decodes to `none`. -/
+/-- The kimchi proof wire record; absent public-input evaluations decode to `none`. -/
 def parseKimchiProof (C : Ipa.KimchiCurve) (j : Json) :
     Except String (KimchiProof C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
@@ -102,9 +93,8 @@ def parseKimchiProof (C : Ipa.KimchiCurve) (j : Json) :
            prevChallenges := ← parseArrOf (parseRecursionChallenge C)
              (← fld "prev_challenges") }
 
-/-- The chunked verifier key (SRS excluded — parse it with `parseSRSAt` at
-`Nat.log2 max_poly_size`). The fr-sponge parameters are not wire data: they live on
-the commitment curve (`C.frSponge.params`). -/
+/-- The verifier key, without the SRS (`parseSRSAt`) or the fr-sponge parameters
+(`C.frSponge`). -/
 def parseVK (C : Ipa.KimchiCurve) (j : Json) :
     Except String (KimchiVK C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k

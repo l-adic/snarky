@@ -4,15 +4,14 @@ import Pickles.TwoHalves
 /-!
 # The step circuit's scalar half, at an environment
 
-`finalizeOtherProofStep` with its parameters fixed to the verifier key's
-(`FopParams.ofEnv`) and the deployed `Fp` linearization, and the capstone that runs it: the
-scalar-side counterpart of `wrapVerifyAt_reads`. The two halves of a step proof's
-verification run in different circuits over different fields, so no one triple covers both;
-each side gets a triple about its own circuit, with the other half assumed.
+`finalizeOtherProofStep` with its parameters fixed to the verifier key's (`FopParams.ofEnv`)
+and the deployed `Fp` linearization, and the capstone that runs it: the scalar-side counterpart
+of `wrapVerifyAt_reads`. The two halves of a step proof's verification run in different
+circuits over different fields, so each side gets a triple about its own circuit, with the
+other half assumed.
 
 `StepProof.scalarCircuit` is the gadget as a circuit of its input (`StepProof.ScalarIn`) with
-`finalized`
-asserted: what the top-level statement compiles (`stepProof_kimchiVerify_vesta`).
+`finalized` asserted: what the top-level statement compiles (`stepProof_kimchiVerify_vesta`).
 -/
 
 namespace Pickles
@@ -21,10 +20,9 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- The domains a step circuit's scalar half may select from, at an environment: the
-candidate list with what every honest list satisfies — distinct sizes, each generator of its
-order, each domain holding the zero-knowledge rows — and the key's own domain among them, at
-its `log2`. -/
+/-- The domains the step circuit's scalar half may select from: distinct sizes, each
+generator of its order, each domain holding the zero-knowledge rows, and the key's own domain
+among them. -/
 structure KnownDomains {nc : ℕ} (E : Env IpaVesta.curve nc) where
   /-- The candidates. -/
   list : List (KnownDomain Fp)
@@ -41,9 +39,9 @@ structure KnownDomains {nc : ℕ} (E : Env IpaVesta.curve nc) where
   /-- The key's domain is a candidate. -/
   key_mem : (⟨keyLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ list
 
-/-- The bundle of a candidate list and the key's `log2`, where its facts hold: each is
-decidable, so a driver checks them once on the domains a proof cache uses. The generator
-orders are checked by squaring (`powPow2`). -/
+/-- A candidate list and the key's `log2` as `KnownDomains`, when its facts hold: each is
+decidable, so a driver checks them once. The generator orders are checked by squaring
+(`powPow2`). -/
 def KnownDomains.ofList? {nc : ℕ} (E : Env IpaVesta.curve nc) (list : List (KnownDomain Fp))
     (keyLog2 : ℕ) : Option (KnownDomains E) :=
   if h : (list.map fun d => (d.log2 : Fp)).Nodup ∧
@@ -54,9 +52,8 @@ def KnownDomains.ofList? {nc : ℕ} (E : Env IpaVesta.curve nc) (list : List (Kn
       keyLog2, h.2.2.2.1, h.2.2.2.2⟩
   else none
 
-/-- The step circuit's scalar half at an environment: `finalize_other_proof`'s step side with
-the verifier key's parameters, the `Fp` token stream, and the mask and previous-challenge
-cells at their static sizes. -/
+/-- `finalizeOtherProofStep` with the verifier key's parameters, the `Fp` token stream, and
+the mask and previous-challenge cells at their static sizes. -/
 def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {k nc : ℕ}
     (E : Env IpaVesta.curve nc) (domains : KnownDomains E)
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
@@ -86,9 +83,8 @@ private theorem map_map_val_of_forall₂ {V : Valuation Fp} {css : List (List (F
     simp only [List.map_cons, ih, List.cons.injEq, and_true]
     exact map_val_of_forall₂_reads hc
 
-/-- The mask keeps the same elements whether it selects the challenge lists themselves or
-singletons of them: the circuit absorbs the concatenation of the kept cells' values, the
-`olds` tie states the kept lists. -/
+/-- The mask keeps the same values whether it selects the challenge lists or singletons of
+them: the circuit absorbs the first form, `FopTies.olds` states the second. -/
 private theorem flatten_zipWith_val {V : Valuation Fp} :
     ∀ (ms : List Bool) (css : List (List (FVar Fp))),
       (List.zipWith (fun m cs => if m = true then cs.map (fun x => CVar.val x V) else [])
@@ -99,11 +95,11 @@ private theorem flatten_zipWith_val {V : Valuation Fp} :
   | _ :: _, [] => rfl
   | m :: ms, cs :: css => by cases m <;> simp [flatten_zipWith_val ms css]
 
-/-- **Running the step circuit's scalar half, a step proof's remaining half decides
-`kimchiVerify`.** `twoHalves_kimchiVerify_vesta` as a triple about the scalar circuit, with
-the wrap circuit's group half assumed (`wrapVerifyAt_reads` produces it). What the circuit's
-parameters and domain list owe is the environment's and the bundle's; what is left is about
-cells: the mask is boolean, the `domain_log2` cell holds the key's, and the ties. -/
+/-- **The step circuit's scalar half decides `kimchiVerify`.** `twoHalves_kimchiVerify` as a
+triple about the scalar circuit, with the wrap circuit's group half assumed
+(`wrapVerifyAt_reads` produces it): `SgOk` with `finalized` set is equivalent to `kimchiVerify`
+accepting with the claims honest. The parameters and domains are discharged by `E` and
+`domains`; the cells owe a boolean mask, the key's domain `log2`, and the ties. -/
 theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc : ℕ}
     (E : Env IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc E.σ.k)
@@ -117,7 +113,7 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc : ℕ}
     (mask : Vector (BoolVar Fp) MaxProofsVerified)
     (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) MaxProofsVerified)
     (domainLog2Var : FVar Fp)
-    -- the mask cells are boolean, and the `domain_log2` cell holds the key's
+    -- the mask cells are boolean, and the domain cell holds the key's `log2`
     (hmask : ∀ b ∈ mask.toList, (↑b : CVar Fp).val Vs = 0 ∨ (↑b : CVar Fp).val Vs = 1)
     (hdom : domainLog2Var.val Vs = (domains.keyLog2 : Fp))
     -- the wrap circuit's group half, and its asserted bit
@@ -195,20 +191,18 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc : ℕ}
     rw [habs]
     rfl
   rw [hn, hω, hdv] at hread
-  rw [← twoHalves_kimchiVerify_vesta E cp pub hguard Vg claimsG successG hg Vs claimsS evals
-    mask prevChallenges o hread ht hf]
+  rw [← twoHalves_kimchiVerify E (by norm_num [PALLAS_SCALAR_CARD])
+    (by norm_num [PALLAS_BASE_CARD]) cp pub hguard _ successG hg _ o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
 /-! ## The circuit of its input
 
-`Step.Main` witnesses a slot's branch data — the mask and the domain's `log2` — with its
-check, and hands the checked cells to `finalize_other_proof`, which never re-checks them. So
-the gadget's read owes the mask's booleanity to whoever calls it. `scalarCircuit` is the
-gadget as a circuit of its input, the branch data a checked component of it: compiled
-(`Snarky.compile`), the branch data's check is among its rows, and the booleanity follows
-from satisfaction instead of being assumed. The gadget beneath is untouched. -/
+The gadget does not check its mask cells, so its read assumes them boolean. `scalarCircuit`
+takes the slot's branch data as a checked component of its input: compiled (`Snarky.compile`),
+the branch data's check is among its rows, and booleanity follows from satisfaction
+(`BranchData.mask_boolean`). -/
 
-/-- What the branch data's check forces of the mask: every bit is boolean. -/
+/-- The branch data's check makes every mask bit boolean. -/
 theorem BranchData.mask_boolean {V : Valuation Fp} (bd : BranchData (FVar Fp) (BoolVar Fp))
     (h : CheckedType.post (c := Builder V (KimchiConstraint Fp)) (val := BranchData Fp Bool)
       V bd) :
@@ -230,7 +224,7 @@ structure ScalarInput (k nc : ℕ) (f b : Type) where
   fop : UnChecked (FopInput k nc f b (Type1 f))
 
 /-- A scalar-half input is its branch data and the rest. -/
-@[simps apply] def ScalarInput.equivProd (k nc : ℕ) (f b : Type) :
+def ScalarInput.equivProd (k nc : ℕ) (f b : Type) :
     ScalarInput k nc f b ≃ BranchData f b × UnChecked (FopInput k nc f b (Type1 f)) :=
   ⟨fun i => (i.branch, i.fop), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
@@ -268,9 +262,8 @@ abbrev ScalarVar.half {k nc : ℕ} (V : Valuation Fp) (s : ScalarVar k nc) :
     ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) k nc :=
   ScalarHalf.step V s.claims s.evals s.branch.proofsVerifiedMask s.prev
 
-/-- The step circuit's scalar half as a circuit of its input: the body pipes the input to the
-gadget and asserts `finalized` — the deployed `finalized ∨ ¬should_finalize` at a slot that is
-finalized. -/
+/-- The step circuit's scalar half as a circuit of its input: the gadget, then `finalized`
+asserted, as at a slot whose `shouldFinalize` is set. -/
 def scalarCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
     {nc : ℕ} (E : Env IpaVesta.curve nc) (domains : KnownDomains E) (s : ScalarVar E.σ.k nc) :
     CircuitM Fp c Unit := do
@@ -278,10 +271,9 @@ def scalarCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
     s.branch.domainLog2
   assert o.finalized
 
-/-- **The body's read.** With the mask boolean, the `domain_log2` cell the key's, the wrap
-circuit's group half and the ties, a valuation satisfying the body makes `kimchiVerify`
-accept once `SgOk` holds: `finalizeOtherProofStepAt_kimchiVerify_vesta` with `finalized`
-asserted by the circuit rather than assumed of its output. -/
+/-- **The body's read.** A valuation satisfying the body makes `kimchiVerify` accept, under
+`SgOk` and the hypotheses of `finalizeOtherProofStepAt_kimchiVerify_vesta`, with `finalized`
+asserted by the circuit rather than assumed. -/
 theorem scalarCircuit_reads {nc : ℕ}
     (E : Env IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc E.σ.k) (pub : Array Fp)
     (hguard : Guards IpaVesta.curve E.cvk cp pub)

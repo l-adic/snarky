@@ -4,8 +4,8 @@ namespace Snarky
 
 universe u
 
-/-- A partial assignment of field values to variables — the prover's witness table
-(PS `Assignments f`, as a pure dense store instead of the mutable write-once one).
+/-- A partial assignment of field values to variables — the prover's witness table, as a
+pure dense store.
 
 Variables allocate sequentially, so the table is dense and indexed by the variable
 itself: a lookup is one array access, and a write at the counter is one push. The

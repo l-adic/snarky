@@ -10,8 +10,7 @@ import Lean.Data.Json
 (`Pickles.twoHalves_kimchiVerify`) carries as a hypothesis rather than discharging: no circuit
 computes it, because pickles defers it. A chain only ever terminates after a wrap, so it is the
 out-of-circuit verifier of the final wrap proof that checks it, and this driver runs that check
-in the form the verifier would — `Pickles.sgOk`, the decidable mirror tied to `SgOk` by
-`Pickles.sgOk_iff`.
+in the form the verifier would — `Pickles.sgOk`, the decidable form of `SgOk`.
 
 The fixture is `kimchi_proof_pallas_pickles.json`, a deployed pickles wrap proof (OCaml through
 the Rust prover, `simple_chain`'s second wrap) with its two old accumulators, at the wrap domain

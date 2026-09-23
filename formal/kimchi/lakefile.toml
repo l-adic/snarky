@@ -2,7 +2,7 @@ name = "kimchi"
 # Share the aggregator workspace's dependency checkouts (one Mathlib for every
 # package workspace — the editor opens files with the package as the root).
 packagesDir = "../.lake/packages"
-defaultTargets = ["Kimchi", "KimchiFixture", "kimchi-demo"]
+defaultTargets = ["Kimchi", "KimchiFixture"]
 # `lake lint` (standalone): Batteries' env-linter suite over this package's library
 # roots. The nolints baseline is scripts/nolints.json (kept in sync with the workspace
 # copy at ../scripts/nolints.json).
@@ -59,10 +59,6 @@ name = "Kimchi"
 name = "KimchiFixture"
 globs = ["KimchiFixture", "KimchiFixture.+"]
 
-
-[[lean_exe]]
-name = "kimchi-demo"
-root = "Main"
 
 # The two heavy fixture drivers, compiled: native they run ~2x faster than interpreted,
 # and since CompElliptic's fintypePoints initializer was made lazy they peak under 1 GB

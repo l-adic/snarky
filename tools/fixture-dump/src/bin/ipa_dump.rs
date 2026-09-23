@@ -5,8 +5,8 @@
 //! commitments, the evaluation points and claimed evaluations (uncombined), the combination
 //! scalars `polyscale`/`evalscale`, and the opening proof (`lr`, `delta`, `z1`, `z2`, `sg`).
 //! Nothing transcript-derived is recorded — the Lean side re-derives the `U` base and every
-//! Fiat-Shamir challenge through its sponge layer (`formal/Kimchi/Sponge`) inside the
-//! executable verifier (`formal/Kimchi/Verifier/Ipa.lean`).
+//! Fiat-Shamir challenge through its sponge layer (`formal/poseidon`) inside the
+//! executable verifier (`formal/bulletproof-pcs/Bulletproof/Wire.lean`).
 //!
 //! The proof is produced by the production `SRS::commit`/`SRS::open` and asserted accepted
 //! by the production batched `SRS::verify`, following the harness of poly-commitment's

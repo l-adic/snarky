@@ -6,14 +6,10 @@ import Snarky.BasicSystem
 /-!
 # The weakest-precondition interpretation of `build`
 
-The soundness reading of a circuit, packaged for `Std.Do`: a circuit is a program whose
-only effect is to assume facts about an ambient valuation — each emitted constraint is
-an assumption on it. `Builder V c` tags the constraint type with the valuation, so
-`wp⟦x⟧ Q` at `nv` is "if every constraint `build x nv` emits holds under `V`, then `Q`
-holds of the built result at the advanced counter". The counter is the program's only
-state. `WPMonad` is the composition seam: `wp_bind` is `build_bind` plus currying the
-split satisfaction hypothesis; through it the framework's triples and `mvcgen` apply to
-`CircuitM`.
+The soundness reading of a circuit as a `Std.Do.WP` instance: each emitted constraint is an
+assumption on an ambient valuation `V`, and the allocation counter is the only state. The tag
+`Builder V c` selects this reading. The `Std.Do.WPMonad` instance lets the framework's triples
+and `mvcgen` apply to `CircuitM`; the `builder_spec_*` lemmas are combinators it lacks.
 -/
 
 namespace Snarky
@@ -30,11 +26,10 @@ class ConstraintHolds (F c : Type) where
   /-- The constraint value is satisfied under the valuation. -/
   Holds : Valuation F → c → Prop
 
-/-- The soundness tag: the constraint type indexed by the valuation. A program enters
-the soundness reading by naming the tag — `g (c := Builder V c)` — and every sub-call of
-its body elaborates at the same `V`. `Builder V c` is `c` under a name instance search
-will not unfold, so the reading has its own `WP` shape while the body keeps the generic
-`Monad` instance; the resulting term is definitionally a `CircuitM F c` program. -/
+/-- The soundness tag: `c` indexed by the valuation. A program enters the soundness reading as
+`g (c := Builder V c)`, and every sub-call elaborates at the same `V`. Instance search does not
+unfold `Builder`, so it gets its own `WP` instance while the body keeps the generic `Monad`
+instance; the term is definitionally a `CircuitM F c` program. -/
 def Builder (_ : Valuation F) (c : Type) := c
 
 instance [inst : ConstraintHolds F c] : ConstraintHolds F (Builder V c) := inst
@@ -54,8 +49,8 @@ instance Builder.instWP {V : Valuation F} [ConstraintHolds F c] :
       simp [SPred.and, imp_and]
   }
 
-/-- `wp` is a monad morphism: `pure` emits nothing, and a sequence's constraints
-concatenate (`build_bind`), the satisfaction hypothesis currying across the split. -/
+/-- `wp` is a monad morphism: `pure` emits nothing, and a sequence's constraints concatenate
+(`build_bind`), so the satisfaction hypothesis curries across the split. -/
 instance Builder.instWPMonad {V : Valuation F} [ConstraintHolds F c] :
     WPMonad (CircuitM F (Builder V c)) (.arg Nat .pure) where
   wp_pure a := by
@@ -85,9 +80,8 @@ theorem builder_spec_iff {V : Valuation F} [ConstraintHolds F c] {α : Type}
   · intro h nv _ hsat
     exact h nv hsat
 
-/-- A specification whose hypotheses concern values fixed before the run may carry them
-into the postcondition: `wp` is deterministic, so a family of triples indexed by such
-hypotheses is one triple with the family's conclusion universally quantified. -/
+/-- A family of triples indexed by hypotheses on values fixed before the run is one triple
+whose postcondition quantifies over them. -/
 theorem builder_spec_forall {V : Valuation F} [ConstraintHolds F c] {α ι : Type}
     (g : CircuitM F (Builder V c) α) (P : ι → Prop) (post : ι → α → Prop)
     (h : ∀ x, P x → ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜post x r⌝⦄) :
@@ -96,19 +90,17 @@ theorem builder_spec_forall {V : Valuation F} [ConstraintHolds F c] {α ι : Typ
   intro nv hsat x hx
   exact (builder_spec_iff g (post x)).mp (h x hx) nv hsat
 
-/-- Every program satisfies the trivial specification: the reading of a sub-circuit whose
-outputs a statement does not mention. -/
+/-- Every program satisfies the trivial specification; used for a sub-circuit whose outputs a
+statement does not mention. -/
 theorem builder_spec_true {V : Valuation F} [ConstraintHolds F c] {α : Type}
     (g : CircuitM F (Builder V c) α) : ⦃⌜True⌝⦄ g ⦃⇓ _ _ => ⌜True⌝⦄ := by
   rw [builder_spec_iff]
   intro _ _
   trivial
 
-/-- What a program's prefix establishes may be assumed of the whole. A sequence's rows are
-its prefix's followed by the rest's (`build_bind`), so a valuation satisfying the whole
-satisfies the prefix, and the prefix's conclusion holds of it: a gadget that opens by
-constraining its inputs proves the rest of its specification under those constraints' reading,
-and a consumer need not supply it. -/
+/-- What a program's prefix establishes may be assumed while proving the whole: a valuation
+satisfying the whole satisfies the prefix (`build_bind`). A gadget that opens by constraining
+its inputs proves the rest of its specification under that reading. -/
 theorem builder_spec_bind_assume {V : Valuation F} [ConstraintHolds F c] {α β : Type}
     (x : CircuitM F (Builder V c) α) (f : α → CircuitM F (Builder V c) β) (Q : Prop)
     (post : β → Prop) (hx : ⦃⌜True⌝⦄ x ⦃⇓ _ _ => ⌜Q⌝⦄)
@@ -120,9 +112,8 @@ theorem builder_spec_bind_assume {V : Valuation F} [ConstraintHolds F c] {α β 
     hsat con (by rw [build_bind]; exact List.mem_append_left _ hc)
   exact (builder_spec_iff _ post).mp (h hQ) nv hsat
 
-/-- A prefix that establishes a fact, then a tail whose specification may use it: the
-composition's specification is the tail's. What an assertion run before a gadget buys — the
-gadget's read, with the assertion's conclusion as a premise in hand. -/
+/-- A prefix establishing `Q`, then a tail whose specification assumes `Q`: the composition
+meets the tail's specification. -/
 theorem builder_spec_bind_of {V : Valuation F} [ConstraintHolds F c] {α β : Type}
     (x : CircuitM F (Builder V c) α) (f : α → CircuitM F (Builder V c) β) (Q : Prop)
     (post : β → Prop) (hx : ⦃⌜True⌝⦄ x ⦃⇓ _ _ => ⌜Q⌝⦄)
@@ -137,8 +128,7 @@ theorem builder_spec_bind_of {V : Valuation F} [ConstraintHolds F c] {α β : Ty
   rw [build_bind]
   exact this
 
-/-- Two specifications of one program conjoin: `wp` is deterministic, so both conclusions hold
-of the one result. -/
+/-- Two specifications of one program conjoin. -/
 theorem builder_spec_and {V : Valuation F} [ConstraintHolds F c] {α : Type}
     (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (hp : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r⌝⦄)
     (hq : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜Q r⌝⦄) : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r ∧ Q r⌝⦄ := by
@@ -154,9 +144,8 @@ theorem builder_spec_imp {V : Valuation F} [ConstraintHolds F c] {α : Type}
   intro nv hsat
   exact hpq _ ((builder_spec_iff g P).mp h nv hsat)
 
-/-- A `mapM` of specifications: each element's result reads against its own target, so the
-list of results reads against the list of targets. The `List.mapM` combinator `mvcgen` lacks
-(it has `forIn`). -/
+/-- A `List.mapM` of specifications: the results relate pointwise (`R`) to the mapped targets.
+`mvcgen` has no `List.mapM` spec. -/
 theorem builder_spec_mapM {V : Valuation F} [ConstraintHolds F c] {α β γ : Type}
     (f : α → CircuitM F (Builder V c) β) (R : β → γ → Prop) (Q : α → γ)
     (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜R r (Q a)⌝⦄) :
@@ -184,7 +173,7 @@ theorem builder_spec_of_map {V : Valuation F} [ConstraintHolds F c] {α β : Typ
   rw [CircuitM.map_eq, build_bind] at hb
   simpa [build] using hb
 
-/-- A vector `mapM` of specifications: each entry's result satisfies its own entry's
+/-- A `Vector.mapM` of specifications: each entry's result satisfies its entry's
 specification. -/
 theorem builder_spec_vector_mapM_get {V : Valuation F} [ConstraintHolds F c] {α β : Type}
     {m : ℕ} (f : α → CircuitM F (Builder V c) β) (Q : α → β → Prop)
@@ -201,9 +190,8 @@ theorem builder_spec_vector_mapM_get {V : Valuation F} [ConstraintHolds F c] {α
 
 /-! ## The lawful-backend interface -/
 
-/-- A backend whose reading of the `BasicSystem` primitives means what `Basic` means:
-each row holds exactly when its identity does — soundness reads rows off, completeness
-puts them in. -/
+/-- A backend whose `BasicSystem` primitives hold exactly when their identities do, as for
+`Basic`: soundness reads rows off, completeness puts them in. -/
 class LawfulBasicSystem (F c : Type) [Add F] [Mul F] [Zero F] [One F]
     [BasicSystem F c] [ConstraintHolds F c] : Prop where
   /-- `equal` holds exactly when the sides read equal. -/

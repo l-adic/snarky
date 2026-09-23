@@ -14,9 +14,9 @@ commute with the homomorphism.
 
 ## Implementation notes
 
-Every operation of `toEnv` is a ring operation or an `algebraMap`, so each case of the
-induction is one of `map_add`, `map_mul`, `map_pow` or `φ.commutes`. The induction is on
-the fuel and never mentions the token array's contents.
+Every operation of `toEnv` is a ring operation or the image of a constant of `F`, so each
+case of the induction is a homomorphism law or `φ.commutes`. The induction is on the fuel
+and holds for every token array.
 -/
 
 namespace Pickles.Linearization

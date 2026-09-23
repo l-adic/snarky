@@ -26,10 +26,9 @@ open Kimchi.Lift
 open Kimchi.Lift.Gate
 
 -- The evaluation record and the two functions that read it need no division, so they are
--- stated over a commutative ring: that is what lets them be instantiated at a polynomial
--- algebra, which `Kimchi.Lift.Argument.constraints` already supports and
--- `Pickles.Linearization.Spec.gateLinearizationAt` exploits. Everything below `Evals`
--- keeps `Field` — `Argument` itself requires one, and `ftEval0` divides.
+-- stated over a commutative ring and can be instantiated at a polynomial algebra, as
+-- `Kimchi.Lift.Argument.constraints` can. Everything below `Evals` keeps `Field` —
+-- `Argument` itself requires one, and `ftEval0` divides.
 variable {F : Type*} [CommRing F]
 
 /-- The combined evaluations the scalar side reads: each column at `ζ`, with the witness
@@ -118,14 +117,9 @@ variable {F : Type u} [Field F]
 
 /-- The gate linearization: each gate's α-weighted constraint list, evaluated at the
 cell environment and weighted by its evaluated selector. Gates share the alpha pool, so
-every list starts at `α⁰`.
-
-Read at an arbitrary `F`-algebra `R`, which is the freedom
-`Kimchi.Lift.Argument.constraints` already offers (`∀ {R} [CommRing R] [Algebra F R]`) and
-which a reflection proof needs in order to run the gates at a polynomial algebra. The gate
-PARAMETERS stay at `F` — they build the `Argument`s themselves — while the evaluations live
-at `R`. At `R := F` this is the ordinary scalar-side linearization, so `ftEval0` and the
-fixture drivers read it unchanged. -/
+every list starts at `α⁰`. The evaluations live at an `F`-algebra `R` (a reflection proof
+runs the gates at a polynomial algebra); the gate parameters stay at `F`, since they build
+the `Argument`s. At `R := F` this is the scalar-side linearization `ftEval0` reads. -/
 def gateLinearization {R : Type u} [CommRing R] [Algebra F R] (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F) (α : R) (e : Evals R) : R :=
   e.genericSelector * alphaCombo α ((Generic.argument (F := F)).constraints (evalEnv e))
@@ -170,30 +164,28 @@ def permScalar (β γ α zkpmZ : F) (e : Evals F) : F :=
   -(e.zOmega * β * α ^ 21 * zkpmZ
     * ∏ i : Fin sigmaRows, (γ + β * e.s i + e.w (sigmaCol i)))
 
-/-- The permutation vanishing polynomial at a point:
-`zkpm(ζ) = (ζ − ω^{n−zkRows})(ζ − ω^{n−zkRows+1})(ζ − ω^{n−1})` — production's
-three-factor `permutation_vanishing_polynomial` (permutation.rs:105–121), which
-coincides with the full `∏_{[n−zkRows, n)}` window only at `zkRows = 3`. -/
+/-- The permutation mask `Kimchi.Permutation.zkpm` at a point:
+`zkpm(ζ) = (ζ − ω^{n−zkRows})(ζ − ω^{n−zkRows+1})(ζ − ω^{n−1})`, three factors at any
+`zkRows`; it coincides with the full `∏_{[n−zkRows, n)}` window only at `zkRows = 3`. -/
 def zkpmEval (n zkRows : ℕ) (ω ζ : F) : F :=
   (ζ - ω ^ (n - zkRows)) * (ζ - ω ^ (n - zkRows + 1)) * (ζ - ω ^ (n - 1))
 
 /-! ### The members of `ftEval0`
 
-`ftEval0` is a sum of five terms, and each is an object in its own right: an implementation
-computes them separately, and a statement that a circuit computes one of them needs that one
-to be nameable. They were local `let`s until this was needed, which made only the total
-addressable. The names follow the specification's, where the ζ-evaluated members carry a
-subscript distinguishing them from the row-level products of `Kimchi.Permutation`. -/
+`ftEval0` is a sum of five terms, each named so that a statement that a circuit computes one
+of them can cite it. The ζ-evaluated members end in "Eval", distinguishing them from the
+row-level products `Kimchi.Permutation.shiftSide` and `Kimchi.Permutation.sigmaSide`. -/
 
-/-- The σ-side product of the permutation recurrence at `ζ`, over the SIX evaluated σ
-columns. The seventh is not evaluated: the recurrence's full product is split there, this
-factor staying in `ftEval0` while `permScalar` carries the rest onto the σ₆ commitment. -/
+/-- The σ-side product of the permutation recurrence at `ζ`, over the `sigmaRows` evaluated
+σ columns. The last permutation column's σ is not evaluated: its factor stays in `ftEval0`
+while `permScalar` carries the rest onto the σ₆ commitment. -/
 def sigmaSideEval (α β γ zkpmZ : F) (e : Evals F) : F :=
   ((e.w 6 + γ) * e.zOmega * α ^ 21 * zkpmZ)
     * ∏ i : Fin sigmaRows, (β * e.s i + e.w (sigmaCol i) + γ)
 
-/-- The shift-side product of the permutation recurrence at `ζ`, over all seven permutation
-columns — the coset shifts being verifier-key data, the record determines it outright. -/
+/-- The shift-side product of the permutation recurrence at `ζ`, over all `permCols`
+permutation columns — the coset shifts being verifier-key data, the record determines it
+outright. -/
 def shiftSideEval (α β γ ζ zkpmZ : F) (shifts : Fin permCols → F) (e : Evals F) : F :=
   (α ^ 21 * zkpmZ * e.z)
     * ∏ i : Fin permCols, (γ + β * ζ * shifts i + e.w (permCol i))
@@ -216,8 +208,8 @@ def ftEval0 (n zkRows : ℕ) (ω : F) (shifts : Fin permCols → F) (endo : F)
     + boundaryEval n zkRows ω ζ α e - gateLinearization endo mds α e
 
 /-- **The decomposition**, definitionally. An implementation that computes the members
-separately assembles `ftEval0` by this equation, with each member discharged against its own
-name; the gate member is `gateLinearization`, which already had one. -/
+separately assembles `ftEval0` by this equation, each member discharged against its own
+name; the gate member is `gateLinearization`. -/
 theorem ftEval0_eq (n zkRows : ℕ) (ω : F) (shifts : Fin permCols → F) (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ ζ pubEval : F) (e : Evals F) :
     ftEval0 n zkRows ω shifts endo mds α β γ ζ pubEval e

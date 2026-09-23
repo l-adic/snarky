@@ -7,19 +7,19 @@ import Pickles.Pseudo
 set_option mvcgen.warning false
 
 /-!
-# The domain scalars of `finalize_other_proof`
+# Domain scalars
 
-Port of the PureScript `Pickles.PlonkChecks.Domain`: the negative powers of the domain
-generator and the permutation vanishing polynomial (OCaml `plonk_checks.ml`
-`scalars_env`), the step side's known-domain selection and vanishing polynomial (OCaml
-`step_verifier.ml`, `pseudo.ml`), and the wrap side's `ζ^(2^k)` by multiplication.
+The domain arithmetic of `finalizeOtherProofCore` and its callers, transcribing
+`plonk_checks.ml`, `step_verifier.ml` and `pseudo.ml`: the negative powers of the domain
+generator, the permutation vanishing polynomial, the step side's known-domain selection and
+vanishing polynomial, and `ζ^(2^k)` by squaring and by multiplication.
 
 ## Main definitions
 
 * `omegaPowers`: `ω⁻¹`, `ω^{−(zkRows−1)}`, `ω^{−zkRows}`, generic in `zkRows`.
 * `zkPolynomial`: `(ζ − ω⁻¹)(ζ − ω^{−(zkRows−1)})(ζ − ω^{−zkRows})`.
 * `knownDomainWhiches`, `knownDomainVanishingPolynomial`: the selector bits from the
-  runtime `domain_log2`, and `ζⁿ − 1` for the selected domain.
+  runtime domain log2, and `ζⁿ − 1` for the selected domain.
 * `buildPow2PowsArray`, `pow2PowSquare`, `pow2PowMul`: `ζ^(2^i)` by squaring and by
   multiplication.
 
@@ -54,9 +54,8 @@ private def omegaLoop (om1 : FVar F) : ℕ → FVar F → CircuitM F c (FVar F)
     let next ← mul term om1
     omegaLoop om1 k next
 
-/-- The negative generator powers (plonk_checks.ml:248–264): `ω⁻¹ = 1/gen`, `ω⁻² = ω⁻¹ · ω⁻¹`
-(OCaml's `square x = x * x`, an R1CS row), `zkRows − 3` further multiplications by `ω⁻¹`
-reaching `ω^{−(zkRows−1)}`, and one more for `ω^{−zkRows}`. -/
+/-- The negative generator powers: `ω⁻¹` by one `inv`, `ω⁻²` by one `mul`, `zkRows − 3` further
+multiplications by `ω⁻¹` reaching `ω^{−(zkRows−1)}`, and one more for `ω^{−zkRows}`. -/
 def omegaPowers (generator : FVar F) (zkRows : ℕ) : CircuitM F c (OmegaPowers F) := do
   let om1 ← inv generator
   let om2 ← mul om1 om1
@@ -65,7 +64,7 @@ def omegaPowers (generator : FVar F) (zkRows : ℕ) : CircuitM F c (OmegaPowers 
   pure ⟨om1, omZkP1, omZk⟩
 
 /-- The permutation vanishing polynomial at `ζ`,
-`(ζ − ω⁻¹)(ζ − ω^{−(zkRows−1)})(ζ − ω^{−zkRows})` (plonk_checks.ml:273–279): two rows. -/
+`(ζ − ω⁻¹)(ζ − ω^{−(zkRows−1)})(ζ − ω^{−zkRows})`, in two `mul` rows. -/
 def zkPolynomial (zeta : FVar F) (o : OmegaPowers F) : CircuitM F c (FVar F) := do
   let t1 ← mul (CVar.sub_ zeta o.omegaToMinus1) (CVar.sub_ zeta o.omegaToZkPlus1)
   mul t1 (CVar.sub_ zeta o.omegaToZk)
@@ -78,15 +77,14 @@ private def whichesGo (domainLog2Var : FVar F) : List ℕ → CircuitM F c (List
     let tail ← whichesGo domainLog2Var rest
     pure (b :: tail)
 
-/-- Which known domain is the prev proof's: one `equals` of the runtime `domain_log2`
-against each domain's, emitted last-to-first (OCaml's right-to-left `Vector.map`,
-step_verifier.ml:880–893), the bits in domain order. -/
+/-- Which known domain the previous proof uses: one `equals` of the runtime domain log2
+against each candidate, emitted last-to-first, the bits returned in candidate order. -/
 def knownDomainWhiches (domainLog2Var : FVar F) (log2s : List ℕ) :
     CircuitM F c (List (BoolVar F)) := do
   let rev ← whichesGo domainLog2Var log2s.reverse
   pure rev.reverse
 
-/-- `[x, x², x⁴, …, x^(2^maxLog2)]` by `maxLog2` `square` rows (pseudo.ml:119–123). -/
+/-- `[x, x², x⁴, …, x^(2^n)]` by `n` `square` rows. -/
 def buildPow2PowsArray (x : FVar F) : ℕ → CircuitM F c (Array (FVar F))
   | 0 => pure #[x]
   | k + 1 => do
@@ -94,24 +92,22 @@ def buildPow2PowsArray (x : FVar F) : ℕ → CircuitM F c (Array (FVar F))
     let sq ← square (arr.back?.getD x)
     pure (arr.push sq)
 
-/-- `x^(2^n)` by `n` `mul` rows (OCaml `plonk_checks.ml` `pow2pow`, `acc * acc`). -/
+/-- `x^(2^n)` by `n` `mul` rows. -/
 def pow2PowMul (x : FVar F) : ℕ → CircuitM F c (FVar F)
   | 0 => pure x
   | k + 1 => do
     let acc ← pow2PowMul x k
     mul acc acc
 
-/-- `x^(2^n)` by `n` `square` rows (PS `Pickles.Util.Pow2.pow2PowSquare`, OCaml
-`step_verifier.ml`'s `pow2_pow`). -/
+/-- `x^(2^n)` by `n` `square` rows. -/
 def pow2PowSquare (x : FVar F) : ℕ → CircuitM F c (FVar F)
   | 0 => pure x
   | k + 1 => do
     let acc ← pow2PowSquare x k
     square acc
 
-/-- `ζⁿ − 1` for the selected known domain (`Pseudo.Domain.to_domain`'s
-`vanishing_polynomial`, pseudo.ml:118–127): the table `ζ^(2^i)` for `i ≤ maxLog2` by
-squaring, the entry at each domain's log2 selected by the which bits, minus one, sealed. -/
+/-- `ζⁿ − 1` for the selected known domain: the table `ζ^(2^i)` for `i ≤ maxLog2`, the
+domains' entries summed under their which bits, minus one, sealed. -/
 def knownDomainVanishingPolynomial (whiches : List (BoolVar F)) (log2s : List ℕ)
     (maxLog2 : ℕ) (zeta : FVar F) : CircuitM F c (FVar F) := do
   let pow2Pows ← buildPow2PowsArray zeta maxLog2
@@ -163,8 +159,8 @@ theorem omegaPowers_spec (generator : FVar F) (zkRows : ℕ) (h3 : 3 ≤ zkRows)
     congr 1
     omega
 
-/-- Under any valuation the polynomial reads as `(ζ − o₁)(ζ − o₂)(ζ − o₃)` over the three
-power readings. -/
+/-- Under any valuation the output reads as the product of `ζ` minus each of the three
+powers. -/
 theorem zkPolynomial_spec (zeta : FVar F) (o : OmegaPowers F) :
     ⦃⌜True⌝⦄ zkPolynomial (c := Builder V c) zeta o
     ⦃⇓ r _ => ⌜r.val V = (zeta.val V - o.omegaToMinus1.val V)
@@ -220,8 +216,8 @@ private theorem whichesGo_spec (domainLog2Var : FVar F) :
     · rw [if_pos h.symm, if_pos h]
     · rw [if_neg (fun h' => h h'.symm), if_neg h]
 
-/-- Under any valuation, with the runtime `domain_log2` reading as `L`, the `i`-th bit reads
-as `[L = log2ᵢ]`. -/
+/-- Under any valuation, with the runtime domain log2 reading as `L`, the `i`-th bit reads as
+`[L = log2ᵢ]`. -/
 theorem knownDomainWhiches_spec (domainLog2Var : FVar F) (log2s : List ℕ) :
     ⦃⌜True⌝⦄ knownDomainWhiches (c := Builder V c) domainLog2Var log2s
     ⦃⇓ r _ => ⌜r.map (fun b : BoolVar F => (↑b : CVar F).val V)

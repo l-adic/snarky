@@ -4,39 +4,27 @@ import Snarky.Kimchi.Constraint.Reduction
 /-!
 # The EndoScalar reducer
 
-Port of `Snarky.Constraint.Kimchi.EndoScalar`
-(packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/EndoScalar.purs): the per-round
-challenge-decomposition payload — six accumulator operands and eight crumb operands —
-and `reduce`, one fourteen-cell `endoScalar` row per round.
+Port of packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/EndoScalar.purs: the per-round
+challenge-decomposition payload — six accumulator operands and eight crumb operands — and
+`reduce`, one `endoScalar` row per round.
 
-The per-round reduction ORDER is the byte contract and is OCaml's right-to-left
-record evaluation (`Endoscale_scalar_round.map`): the crumbs `xs` first (in index
-order), then `b8, a8, b0, a0, n8, n0`. PS's own comment records why it matters beyond
-cell numbering: `b0` and `a0` are both the constant `2` in a challenge's first round,
-so whichever reduces first creates the pinned variable and the second WIRES to it
-through the builder's constant cache.
+The reduction order is the byte contract: the crumbs in index order, then
+`b8, a8, b0, a0, n8, n0`. It matters beyond cell numbering: `b0` and `a0` are both the
+constant `2` in a challenge's first round, so whichever reduces first creates the pinned
+variable and the other wires to it through the builder's constant cache.
 
-Name map: `EndoScalarRound`, `EndoScalar`, and `reduce` keep their names (the
-latter namespaced as `EndoScalar.reduce`/`EndoScalarRound.reduce`, one per PS
-declaration level).
+The rounds and the crumbs are reduced by explicit recursion and eight explicit steps, not a
+vector-level map, so the reduction stays kernel-reducible and peelable.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- PS's per-module `Rows` newtype over an array renders as the bare
-  `List (KimchiRow F)` with the identity `ToKimchiRows` instance (`Constraint/Types`).
-- PS `traverse` over the round array renders as the structural fold it denotes, and
-  the `traverse` over the width-8 crumb vector as its eight applications in index
-  order — kernel-reducible and peelable where `Vector`-level `mapM` is neither.
-
-No row-shape law is stated here: the constraint layer stays free of `Kimchi`
-imports.
+No row-shape law is stated here: the constraint layer imports nothing from the kimchi package.
 -/
 
 namespace Snarky.Kimchi
 
 open Snarky
 
-/-- One challenge-decomposition round (PS `EndoScalarRound`): the three accumulator
-pairs and the eight 2-bit crumbs, mirroring `Kimchi.Gate.EndoScalar.Witness`. -/
+/-- One challenge-decomposition round: the three accumulator pairs and the eight 2-bit crumbs,
+as in `Kimchi.Gate.EndoScalar.Witness`. -/
 structure EndoScalarRound (F : Type u) where
   /-- The input `n` accumulator. -/
   n0 : FVar F
@@ -52,16 +40,13 @@ structure EndoScalarRound (F : Type u) where
   b8 : FVar F
   /-- The MSB-first 2-bit crumbs, eight per row. -/
   xs : Vector (FVar F) 8
-  deriving Repr, DecidableEq
 
-/-- A challenge decomposition: its rounds in row order (PS `EndoScalar`). -/
+/-- A challenge decomposition: its rounds in row order. -/
 abbrev EndoScalar (F : Type u) := List (EndoScalarRound F)
 
 variable {F : Type} {m : Type → Type}
 
-/-- Reduce one round to its `endoScalar` row (PS `reduceRound`): crumbs first in index
-order, then `b8, a8, b0, a0, n8, n0` (OCaml right-to-left), cells laid out
-`[n0, n8, a0, b0, a8, b8, x₀ … x₇]`. -/
+/-- Reduce one round to its `endoScalar` row, in the module docstring's order. -/
 def EndoScalarRound.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] (c : EndoScalarRound F) : m (KimchiRow F) := do
   let x0 ← reduceToVariable c.xs[0]
@@ -84,8 +69,7 @@ def EndoScalarRound.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq
                     none]⟩, by simp⟩,
          coeffs := [] }
 
-/-- Reduce a decomposition roundwise, in row order (PS `reduce`, its `traverse` as the
-structural fold). -/
+/-- Reduce a decomposition round by round, in row order. -/
 def EndoScalar.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] : EndoScalar F → m (List (KimchiRow F))
   | [] => pure []
@@ -93,31 +77,5 @@ def EndoScalar.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     let row ← c.reduce
     let rest ← EndoScalar.reduce cs
     pure (row :: rest)
-
-/-- The round reducer is a seam: fourteen pinned operands, one row. -/
-private theorem EndoScalarRound.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
-    [DecidableEq F]
-    (c : EndoScalarRound F) :
-    Seam (EndoScalarRound.reduce (m := PlonkBuilder F) c)
-      (EndoScalarRound.reduce (m := PlonkProver F) c) := by
-  unfold EndoScalarRound.reduce
-  repeat first
-    | exact Seam.pure _
-    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
-
-/-- The challenge-decomposition reducer is a seam: the roundwise fold composes. -/
-theorem EndoScalar.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
-    [DecidableEq F] (c : EndoScalar F) :
-    Seam (EndoScalar.reduce (m := PlonkBuilder F) c)
-      (EndoScalar.reduce (m := PlonkProver F) c) := by
-  induction c with
-  | nil =>
-    simp only [EndoScalar.reduce]
-    exact Seam.pure _
-  | cons c cs ih =>
-    simp only [EndoScalar.reduce]
-    refine Seam.bind (EndoScalarRound.reduce_seam c) fun _ => ?_
-    refine Seam.bind ih fun _ => ?_
-    exact Seam.pure _
 
 end Snarky.Kimchi

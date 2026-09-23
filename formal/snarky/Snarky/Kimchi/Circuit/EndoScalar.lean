@@ -9,29 +9,16 @@ import Snarky.Traverse
 /-!
 # The EndoScalar gadget
 
-Port of `Snarky.Circuit.Kimchi.EndoScalar`
-(packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/EndoScalar.purs): the GLV challenge
-decomposition. `toFieldChecked'` witnesses the scalar's 2-bit crumbs in ONE bulk
-`exists` — eight per row, MSB-first — then threads the three accumulators through
-`mapAccumM`, one `(a8, b8, n8)` witness per row, and emits the `endoScalar` round
-list; `toField` pins the reconstruction `n` to the scalar and returns the affine
-`a·endo + b`. `toFieldPure` is the constant-space model of the same fold.
+Transcribes `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/EndoScalar.purs`: the GLV
+challenge decomposition. `toFieldChecked'` witnesses the scalar's 2-bit crumbs in one bulk
+witness, eight per row, MSB-first, as the gate model's base-4 expansion
+`Kimchi.Gate.EndoScalar.crumbsOf`. It then threads the three accumulators through
+`mapAccumM`, witnessing each row's `(a8, b8, n8)` as the gate's canonical
+`Kimchi.Gate.EndoScalar.build`, and emits one `endoScalar` constraint over the rounds.
+`toField` pins the reconstruction `n` to the scalar and returns `a·endo + b`.
 
-Name map: `toField`, `toFieldChecked'`, `toFieldPure` keep their names, namespaced
-`EndoScalar` after the PS module's qualified use. `expandToEndoScalar` is
-pickles-layer (cross-field transport) and is not ported.
-
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- PS's type-level `SizedF nBits` sizing renders as the explicit `rows` parameter
-  with `16 · rows` bits, and the bit reads go through `[ToNat F]`.
-- PS's record `exists` allocates its fields alphabetically; the per-row witness is
-  the ordered triple `(a8, b8, n8)`, the same allocation spelled explicitly.
-- PS spells a crumb as a pair of `toBits` bits; the witness writes the gate model's own
-  base-4 expansion (`Kimchi.Gate.EndoScalar.crumbsOf`) — the same values, in the form
-  the gate's completeness and reconstruction laws are stated over.
-- PS's `aF`/`bF` fold the bare tables; the row witness computes the gate's canonical
-  `Kimchi.Gate.EndoScalar.build` instead — the same field values on the honest (valid)
-  crumbs, and the form the gate's completeness certifies.
+The bit width is the explicit `rows` parameter, `16 · rows` bits; the deployed width is
+eight rows, a 128-bit challenge.
 -/
 
 namespace Snarky.Kimchi.EndoScalar
@@ -51,9 +38,8 @@ private def crumbsWit [Field F] [ToNat F] (rows : ℕ) (scalar : FVar F) :
   let v ← AsProver.readCVar scalar
   pure (crumbsVec (rows * 8) (ToNat.toNat v))
 
-/-- One row's accumulator witness: read the threaded registers and the row's eight
-crumbs, and take the gate's canonical row's outputs
-(`Kimchi.Gate.EndoScalar.build`), in the allocation order `(a8, b8, n8)`. -/
+/-- One row's accumulator witness: the outputs `(a8, b8, n8)` of the gate's canonical row
+`Kimchi.Gate.EndoScalar.build` on the threaded registers and the row's eight crumbs. -/
 private def rowWit [Field F] [DecidableEq F] (xs : Vector (FVar F) 8)
     (st : FVar F × FVar F × FVar F) : AsProver F (F × F × F) := do
   let a0 ← AsProver.readCVar st.1
@@ -63,10 +49,8 @@ private def rowWit [Field F] [DecidableEq F] (xs : Vector (FVar F) 8)
   let w := Kimchi.Gate.EndoScalar.build a0 b0 n0 vals
   pure (w.a8, w.b8, w.n8)
 
-/-- The gate emitter (PS `toFieldChecked'`; OCaml
-`Pickles.Scalar_challenge.to_field_checked'`): the bulk crumb witness, the
-accumulator rounds, one `endoScalar` constraint — returning the raw `(a, b, n)`
-accumulators with no wrapper constraints. -/
+/-- The gate emitter: the bulk crumb witness, the accumulator rounds and one `endoScalar`
+constraint, returning the raw `(a, b, n)` accumulators. -/
 def toFieldChecked' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
     (rows : ℕ) (scalar : FVar F) :
     CircuitM F c (FVar F × FVar F × FVar F) := do
@@ -83,9 +67,8 @@ where
     pure ({ n0 := st.2.2, n8 := w.2.2, a0 := st.1, a8 := w.1,
             b0 := st.2.1, b8 := w.2.1, xs }, (w.1, w.2.1, w.2.2))
 
-/-- The checked decomposition (PS `toField`; OCaml `to_field_checked`): the gate,
-the pin `n = scalar`, and the affine reconstruction `a·endo + b` — folded
-constraint-free when the endo coefficient is a constant. -/
+/-- The checked decomposition: the gate, the pin `n = scalar`, and `a·endo + b`, which
+costs no constraint when `endo` is a constant. -/
 def toField [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
     (rows : ℕ) (scalar endo : FVar F) : CircuitM F c (FVar F) := do
   let (a, b, n) ← toFieldChecked' (c := c) rows scalar
@@ -98,12 +81,12 @@ def toField [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
 
 /-! ## Soundness
 
-The loop's content is `mapAccumM_spec`'s: the step's grant, chained. What is left to
-the gadget is wiring — reading the chain off as the indexed run the gate model's
-`chain_decompose` consumes, which owns the fold arithmetic. -/
+`mapAccumM_spec` chains the step's grant. The gadget only reads that chain off as the
+indexed run `Kimchi.Gate.EndoScalar.chain_decompose` consumes; the fold arithmetic is
+the gate model's. -/
 
 /-- The step's grant: the round is built from the accumulators either side of it, over
-the row it was handed. Structural — no valuation appears. -/
+the row it was handed. -/
 private def Threads (st : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8)
     (r : EndoScalarRound F) (st' : FVar F × FVar F × FVar F) : Prop :=
   (r.a0 = st.1 ∧ r.b0 = st.2.1 ∧ r.n0 = st.2.2) ∧
@@ -123,10 +106,9 @@ private theorem chain_rows :
     obtain ⟨r, tail, _, rfl, ⟨-, -, rfl⟩, hrest⟩ := h
     rw [List.map_cons, chain_rows hrest]
 
-/-- A threaded trace, as a list: adjacent rounds share their accumulator variables, the
-first opens at the seed accumulators, and the last closes at the final ones — the three
-conditions `Kimchi.Gate.EndoScalar.Chain.ofList` asks for, extracted without touching a
-valuation. -/
+/-- A threaded trace's wiring: adjacent rounds share their accumulator variables, the
+first opens at the seeds, and the last closes at the final ones — the three conditions
+`Kimchi.Gate.EndoScalar.Chain.ofList` asks for. -/
 private theorem threads_wiring :
     ∀ {pref : List (Vector (FVar F) 8)} {st fin : FVar F × FVar F × FVar F}
       {r₀ : EndoScalarRound F} {rs : List (EndoScalarRound F)},
@@ -151,10 +133,9 @@ private theorem threads_wiring :
       rw [List.getLast_cons (by simp)]
       exact ihlast
 
-/-- A satisfied trace from the canonical seeds computes the gate tower's chain: the
-wiring instantiates `chain_decompose`'s indexed run at the rounds' readings, so the
-final accumulators read as the decompositions of the concatenated crumb stream. The
-gadget contributes wiring; the fold arithmetic is the tower's. -/
+/-- A satisfied trace from the canonical seeds: its crumbs are valid, eight per row, and
+the final accumulators read as the Algorithm-2 decompositions of the concatenated crumb
+stream. -/
 private theorem chain_sound [Field F] [DecidableEq F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (V : Valuation F)
     {pref : List (Vector (FVar F) 8)} {fin : FVar F × FVar F × FVar F}
@@ -225,8 +206,8 @@ open Std.Do in
   mvcgen
 
 open Std.Do in
-/-- **Soundness.** Any satisfying valuation exhibits a valid crumb list of the row
-width whose Algorithm-2 decompositions are the three accumulators returned. -/
+/-- **Soundness.** Any satisfying valuation exhibits valid crumbs, eight per row, whose
+Algorithm-2 decompositions are the three accumulators returned. -/
 @[spec] private theorem toFieldChecked'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) :
     ⦃⌜True⌝⦄
@@ -247,10 +228,9 @@ width whose Algorithm-2 decompositions are the three accumulators returned. -/
   exact ⟨_, hv, by simpa using hlen, hA, hB, hN⟩
 
 open Std.Do in
-/-- **Soundness of the wrapper**, at the deployed eight rows — the sixty-four crumbs of a
-128-bit challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand. Any
-satisfying valuation reads the scalar as a prechallenge of that width, and the result as
-the sponge's endo-expansion of it. -/
+/-- **Soundness of the wrapper**, at the deployed eight rows: any satisfying valuation
+reads the scalar as some `n < 2 ^ 128`, and the result as `Poseidon.FqSponge.endoExpand`
+of `n`. -/
 @[spec] theorem toField_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) :
     ⦃⌜True⌝⦄
@@ -289,10 +269,8 @@ the sponge's endo-expansion of it. -/
 
 /-! ## Completeness
 
-The honest run's rows are the gate's canonical ones — each accumulator witness is
-`Kimchi.Gate.EndoScalar.build`'s outputs — so every row holds by the gate's own
-`complete` on valid crumbs, and the trace reads as the decomposition of the scalar's
-crumb stream. The loop is `mapAccumM_complete`'s. -/
+Each accumulator witness is `Kimchi.Gate.EndoScalar.build`'s outputs, so every row holds by
+`Kimchi.Gate.EndoScalar.complete` on valid crumbs; `mapAccumM_complete` chains the rows. -/
 
 /-- The rows the loop is handed: crumb variables in scope, reading as valid 2-bit
 values. -/
@@ -325,8 +303,7 @@ private theorem AccInv.mono [Field F] {st₁ : ProverState F} (acc : FVar F × F
     h.2.1.mono hnv, h.2.2.1.mono hnv, h.2.2.2.mono hnv⟩
 
 /-- A grant's row still holds at any extension of its table: its cells are in scope, so
-their readings — and with them the row — do not move. Only the table's reading grows,
-so this is the piece of the grant's transport the emitted row's obligation needs. -/
+their readings do not move. The emitted constraint's obligation needs exactly this. -/
 private theorem RowGrant.holds_of_le [Field F] [DecidableEq F]
     {acc : FVar F × FVar F × FVar F} {xs : Vector (FVar F) 8} {r : EndoScalarRound F}
     {acc' : FVar F × FVar F × FVar F} {st st' : ProverState F} (hle : st.env.Le st'.env)
@@ -343,8 +320,7 @@ private theorem RowGrant.holds_of_le [Field F] [DecidableEq F]
   rw [hread]
   exact hholds
 
-/-- A row's grant survives the table's growth: its cells are in scope, so their
-readings — and with them the row — do not move. -/
+/-- A row's grant survives the table's growth. -/
 private theorem RowGrant.mono [Field F] [DecidableEq F] (acc : FVar F × FVar F × FVar F)
     (xs : Vector (FVar F) 8) (r : EndoScalarRound F) (acc' : FVar F × FVar F × FVar F)
     {st st' : ProverState F} (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env)
@@ -452,9 +428,8 @@ private theorem chainAt_facts [Field F] [DecidableEq F] {st₂ stf : ProverState
     · exact RowGrant.holds_of_le hle hgrant
     · exact hholds r' hr'
 
-/-- **Completeness.** From a readable scalar the honest run succeeds, its rows hold at
-every extension, and the three accumulators read as the Algorithm-2 decompositions of
-the scalar's own crumb stream. -/
+/-- **Completeness.** From a readable scalar the honest run succeeds and the three
+accumulators read as the Algorithm-2 decompositions of the scalar's own crumbs. -/
 @[complete_law]
 private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) (sv : F) :
@@ -547,10 +522,9 @@ private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
       ⟨CircuitType.scoped_fvar.mpr hinv₂.2.2.1, CircuitType.reads_fvar.mpr hB⟩,
       ⟨CircuitType.scoped_fvar.mpr hinv₂.2.2.2, CircuitType.reads_fvar.mpr hN⟩⟩
 
-/-- **Completeness of the wrapper**, at the deployed eight rows — the sixty-four crumbs
-of a 128-bit challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand.
-On a scalar faithful to a representative of that width the honest run succeeds and the
-result reads as the sponge's endo-expansion of it. -/
+/-- **Completeness of the wrapper**, at the deployed eight rows: on a scalar whose
+`ToNat` reading is below `2 ^ 128`, the honest run succeeds and the result reads as
+`Poseidon.FqSponge.endoExpand` of it. -/
 @[complete_law]
 theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) (sv ev : F)
@@ -572,8 +546,7 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       LawfulToNat.cast_toNat]
   simp only [toField]
   complete_walk
-  -- the walk stops at `assertEqual`: its precondition holds only through `hnv`'s
-  -- rewrite, which is content, not unification's business
+  -- the walk stops at `assertEqual`: its precondition holds only through `hnv`'s rewrite
   refine Complete.seq (by complete_mono_tac)
     (Complete.imp (fun st h => ⟨hnv ▸ h.2.2.2, h.1.1⟩) (fun _ _ h => h)
       (assertEqual_complete (c := KimchiConstraint F) _ scalar sv))

@@ -4,40 +4,29 @@ import Kimchi.Gate.Poseidon
 /-!
 # The kimchi index: the circuit as data
 
-A kimchi circuit as the constraint system carries it (`ConstraintSystem`,
-proof-systems `circuits/constraints.rs`): a gate table — one `GateRow` per domain row,
-with its gate type, its fifteen coefficient cells, and its seven wire pointers — plus the
-domain generator, the coset shifts, the base-field endomorphism coefficient, and the
-zero-knowledge and public-input row counts. The index carries its laws: a value of
-`Index F n` is wellformed by construction (primitive generator, coset shifts, bounded
-row regions, a region-preserving bijective wiring), in the manner of `SWPoint`. On
-concrete data every law is decidable — the generator and shift conditions through the
-certificates of `Kimchi/Permutation/Wiring.lean`, the rest by `Fintype` instances — so
-parsers construct indices by deciding, never by trusting.
+A kimchi circuit as the constraint system carries it (proof-systems
+`circuits/constraints.rs`): a gate table — one `GateRow` per domain row, with its gate type,
+coefficient cells and wire pointers — plus the domain generator, the coset shifts, the
+base-field endomorphism coefficient, the Poseidon MDS matrix, and the zero-knowledge and
+public-input row counts. A value of `Index F n` carries its laws (primitive generator, coset
+shifts, bounded row regions, a region-preserving bijective wiring), so it is wellformed by
+construction. On concrete data every law is decidable, and `build?` constructs an index by
+deciding them.
 
-**One stored representation.** The table is `Fin`-indexed data; the satisfiability
-predicate (`Satisfies`) and every proof consume it directly. Everything else is a
-*derived view* with its bridge proved at the definition site:
+## One stored representation
 
-* the **coefficient table** (`coeffTable`) — the `qTab` that the quotient layer's
-  `rowEnv` consumes: a `GateRow`'s coefficients become `ArgumentEnv.coeff` there. The
-  stored row and the evaluation environment share nothing else: `ArgumentEnv` is a
-  per-row view of witness *and* coefficients at evaluation time; `GateRow` is the static
-  circuit datum (type, coefficients, wiring);
-* the **row forms** (`selectorRow`, `coeffRow`, `sigmaAddrRow`) — computable functions
-  read off the table: the 0/1 indicator of a gate type, the coefficient columns, and the
-  wired-to addresses of the permutation;
-* the **interpolants** (`selectorPoly`, `coeffPoly`, `sigmaPoly`) — the `columnPoly`
-  images of the row forms, the polynomials the quotient layer consumes; each evaluates
-  back to its row form on the domain, and the sigma interpolants are exactly the wiring
-  instantiation's (`sigmaPoly_eq_wiring`, definitional);
-* the **wiring permutation** (`wiringPerm`) — the stored successor map is kimchi's
-  encoding of the wiring (each cell points to the next cell of its copy cycle); it is a
-  permutation by the index's own law, and its underlying function is the stored map,
-  definitionally.
+The table is `Fin`-indexed data; `Satisfies` and every proof consume it directly. Everything
+else is a derived view, bridged at its definition:
 
-Gate types are the formalized six plus `zero` (no constraint — padding and wiring-only
-rows). Flagged optional gates (range check, foreign field, lookups) are out of scope.
+* `coeffTable` — the coefficient table, read as `ArgumentEnv.coeff` by the quotient layer;
+* the row forms `selectorRow`, `coeffRow`, `sigmaAddrRow` — a gate type's 0/1 indicator, a
+  coefficient column, and a committed σ column;
+* the interpolants `selectorPoly`, `coeffPoly`, `sigmaPoly` — the `columnPoly` images of the
+  row forms; the sigma ones are the wiring instantiation's (`sigmaPoly_eq_wiring`);
+* `wiringPerm` — the stored successor map as a permutation.
+
+Gate types are the six formalized gates plus `zero` (padding and wiring-only rows). The
+optional gates (range check, foreign field, lookups) are out of scope.
 -/
 
 namespace Kimchi.Index
@@ -55,38 +44,28 @@ inductive GateType where
   | endoScalar
   deriving DecidableEq, Inhabited, Fintype
 
-/-- The gate types whose constraints read the *next* row as well as their own
-(`witness_next` in kimchi's `ArgumentEnv`; the `cellMap cur nxt` transcriptions in the
-quotient layer). Everything else is single-row. -/
+/-- The gate types whose constraints also read the next row (`ArgumentEnv.witnessNext`). -/
 private def GateType.twoRow : GateType → Bool
   | .poseidon | .varBaseMul | .endoMul => true
   | _ => false
 
-/-- One row of the gate table: the gate type, the fifteen coefficient cells, and the
-seven wire pointers (each permuted cell names the next cell of its copy cycle —
-kimchi's cyclic-successor encoding of the wiring). The coefficients feed
-`ArgumentEnv.coeff` through `rowEnv` when the row is evaluated. -/
+/-- One row of the gate table: its gate type, coefficient cells and wire pointers. -/
 structure GateRow (F : Type*) (n : ℕ) where
   /-- The row's gate type. -/
   typ : GateType
-  /-- The row's coefficient cells (`coeffCols`), read as `ArgumentEnv.coeff` through
-  `rowEnv`. -/
+  /-- The row's coefficient cells (`coeffCols`), read as `ArgumentEnv.coeff`. -/
   coeffs : Fin coeffCols → F
   /-- The row's wire pointers (`permCols`): each permuted cell names the next cell of its
   copy cycle. -/
   wires : Fin permCols → Fin permCols × Fin n
 
-/-- The wiring as a map on cells, read off a gate table: the stored successor
-pointers. -/
+/-- A gate table's wire pointers as a map on cells. -/
 private def wiringMapOf {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n)
     (c : Fin permCols × Fin n) : Fin permCols × Fin n :=
   (gates c.2).wires c.1
 
-/-- The index: the gate table and the domain/permutation constants
-(`ConstraintSystem`), carrying its laws — a value of this type is wellformed by
-construction. On concrete data every law is decidable (the generator and shift
-conditions through the `Wiring.lean` certificates), so parsers decide them rather than
-assume them. -/
+/-- The index: the gate table and the domain and permutation constants, carrying their
+laws. `build?` decides the laws on concrete data. -/
 structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   /-- The gate table: one `GateRow` per domain row. -/
   gates : Fin n → GateRow F n
@@ -96,23 +75,18 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   zkRows : ℕ
   /-- The domain generator, a primitive `n`-th root of unity (`omega_prim`). -/
   omega : F
-  /-- The base-field endomorphism coefficient `β` (a primitive cube root of unity —
-  `pallasEndo`/`vestaEndo` at Pasta): kimchi's `cs.endo`, consumed by the `EndoMul`
-  gate. The scalar-field eigenvalue `λ` is challenge-expansion data (the sponge's
-  `Spec.lam`), not index data. -/
+  /-- The base-field endomorphism coefficient `β`, a primitive cube root of unity
+  (`pallasEndo`/`vestaEndo` at Pasta), read by the `EndoMul` gate. The scalar-field
+  eigenvalue `λ` (`EndoSpec.lam`) is challenge-expansion data, not index data. -/
   endoBase : F
-  /-- The Poseidon-round MDS matrix — per-curve data like `endoBase`: production
-  evaluates the gate expression with `G::sponge_params().mds`, the PROOF curve's
-  scalar-side table (`fp_kimchi` for Vesta proofs, `fq_kimchi` for Pallas proofs).
-  Data only, no law — the wire correspondence pins it to the deployed table. -/
+  /-- The Poseidon gate's MDS matrix: per-curve data, the proof curve's scalar-side sponge
+  table. No law constrains it here. -/
   mds : Gate.Poseidon.Mds F
   /-- The permutation coset shifts, one per permuted column (`shifts_coset`). -/
   shifts : Fin permCols → F
   omega_prim : IsPrimitiveRoot omega n
-  /-- Production's zero-knowledge row count is `(16·nc + 5)/7` (constraints.rs:979),
-  which is at least `3` at every chunk count `nc ≥ 1`. The permutation argument's
-  three-factor mask needs at least `2`, and the aggregate degree
-  accounting needs `3 ≤ n` — both covered by the production bound. -/
+  /-- Production's zero-knowledge row count `(16·nc + 5)/7` is at least `3` at every chunk
+  count `nc ≥ 1`; the permutation argument's three-factor mask needs at least `2`. -/
   zk_three : 3 ≤ zkRows
   zk_le : zkRows ≤ n
   public_le : publicCount ≤ n - zkRows
@@ -120,27 +94,21 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   wiring_bijective : Function.Bijective (wiringMapOf gates)
   wiring_region : ∀ c : Fin permCols × Fin n,
     ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows)
-  /-- The public region is kimchi's public-input gadget: the first `publicCount` rows
-  are generic gates (`gate.rs` places `GenericGateSpec::Pub` rows first)… -/
+  /-- The first `publicCount` rows are the public-input rows: generic gates… -/
   public_generic : ∀ i : Fin n, (i : ℕ) < publicCount → (gates i).typ = .generic
-  /-- …carrying the `Pub` coefficient row — `1` in the first cell, `0` elsewhere
-  (`generic.rs`: `coeffs[0] = F::one()` over zeros) — so the slot-`0` aggregate member
-  pins the first witness column to the public input there… -/
+  /-- …with coefficients `1` in the first cell and `0` elsewhere, so the slot-`0` aggregate
+  member pins the first witness column to the public input there… -/
   public_coeffs : ∀ i : Fin n, (i : ℕ) < publicCount →
     ∀ c : Fin coeffCols, (gates i).coeffs c = if c = 0 then 1 else 0
-  /-- …and the masked rows are identity-wired: the zero-knowledge rows carry no copy
-  constraints, so `Satisfies`' whole-grid copy conjunct closes over them trivially… -/
+  /-- …and the masked rows are identity-wired, so `Satisfies`' whole-grid copy conjunct
+  holds on them trivially… -/
   masked_identity : ∀ c : Fin permCols × Fin n, n - zkRows ≤ ((c.2 : ℕ)) →
     wiringMapOf gates c = c
-  /-- …and carry no gates either: kimchi's gate table stops at the circuit, so no
-  constraint *sits on* a masked row — the gate members vanish there because the
-  selectors do, whatever the cells hold… -/
+  /-- …and carry no gate, so every selector, and with it every gate member, vanishes
+  there… -/
   masked_zero : ∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero
-  /-- …and no constraint *reads into* the mask from outside: a two-row gate at the
-  last unmasked row would have the first masked row in its footprint. With
-  `masked_identity`, `public_le`, and `masked_zero`, this closes the last read edge
-  into the mask — the constraint system's whole footprint is the unmasked region,
-  so `Satisfies` depends only on the unmasked rows. -/
+  /-- …and the last unmasked row holds no two-row gate, whose footprint would reach the
+  first masked row. Together these make `Satisfies` depend only on the unmasked rows. -/
   masked_boundary : ∀ i : Fin n, (i : ℕ) + 1 = n - zkRows →
     (gates i).typ.twoRow = false
 
@@ -153,22 +121,17 @@ def wiringMap (idx : Index F n) : Fin permCols × Fin n → Fin permCols × Fin 
 
 /-! ## The wiring permutation -/
 
-/-- The wiring as a permutation — the proofs' view of the stored successor map. -/
+/-- The wiring map as a permutation of the cells. -/
 noncomputable def wiringPerm (idx : Index F n) : Equiv.Perm (Fin permCols × Fin n) :=
   Equiv.ofBijective _ idx.wiring_bijective
 
-theorem wiringPerm_regionPreserving (idx : Index F n) :
-    RegionPreserving idx.zkRows idx.wiringPerm :=
-  idx.wiring_region
-
 /-! ## Derived columns: row forms -/
 
-/-- The coefficient table — the `qTab` the quotient layer's `rowEnv` consumes. -/
+/-- The coefficient table: each row's coefficient cells. -/
 def coeffTable (idx : Index F n) : Fin n → Fin coeffCols → F :=
   fun i => (idx.gates i).coeffs
 
-/-- The boundary row of the unmasked region, `n − zkRows` — the `rowLast` argument of
-the permutation constraints. -/
+/-- The first masked row, `n − zkRows`: the end row passed to `Permutation.constraints`. -/
 def unmaskedEnd (idx : Index F n) : Fin n :=
   ⟨n - idx.zkRows, by have := idx.zk_three; have := idx.zk_le; omega⟩
 
@@ -180,10 +143,8 @@ def selectorRow (idx : Index F n) (g : GateType) : Fin n → F :=
 def coeffRow (idx : Index F n) (c : Fin coeffCols) : Fin n → F :=
   fun i => idx.coeffTable i c
 
-/-- The `col`-th sigma column over the rows: the COMMITTED σ cell — the address of the
-wired-to cell, ZEROED on the interior mask rows `[n − zkRows + 2, n − 1)` (production
-"Zero out the sigmas in the zk rows", constraints.rs:538–544; the rows where the
-three-factor permutation mask lets the recurrence run; empty range at `zkRows = 3`). -/
+/-- The `col`-th committed σ column: the address of the wired-to cell, zeroed on the
+interior mask rows `[n − zkRows + 2, n − 1)` as in `Permutation.sigmaPoly`. -/
 def sigmaAddrRow (idx : Index F n) (col : Fin permCols) : Fin n → F :=
   fun i => if n - idx.zkRows + 2 ≤ (i : ℕ) ∧ (i : ℕ) < n - 1 then 0
     else addr idx.omega idx.shifts (idx.wiringMap (col, i))
@@ -202,8 +163,7 @@ noncomputable def coeffPoly (idx : Index F n) (c : Fin coeffCols) : Polynomial F
 noncomputable def sigmaPoly (idx : Index F n) (col : Fin permCols) : Polynomial F :=
   columnPoly idx.omega (idx.sigmaAddrRow col)
 
-/-- The index's sigma interpolants are the wiring instantiation's, at the derived
-permutation — definitionally: the stored successor map underlies both. -/
+/-- The sigma interpolants are `Permutation.sigmaPoly` at `wiringPerm`, definitionally. -/
 theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin permCols) :
     idx.sigmaPoly col
       = Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm col :=
@@ -212,8 +172,8 @@ theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin permCols) :
 /-- The index of a cell in the wiring tables: column-major, `c·n + i`. -/
 private def cellIdx {n : ℕ} (c : Fin permCols × Fin n) : ℕ := (c.1 : ℕ) * n + (c.2 : ℕ)
 
-/-- The predecessor table of a gate table's wiring: at each cell's index, the cell whose
-pointer names it — one pass over the cells. A cell nothing points to has no entry. -/
+/-- The predecessor table of a gate table's wiring, built in one pass: at each cell's
+index, the cell whose pointer names it, if any. -/
 private def wiringPredTable {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n) :
     Array (Option (Fin permCols × Fin n)) :=
   (List.finRange n).foldl
@@ -226,12 +186,11 @@ private def wiringPred {n : ℕ} (tab : Array (Option (Fin permCols × Fin n)))
     (y : Fin permCols × Fin n) : Fin permCols × Fin n :=
   ((tab[cellIdx y]?).bind id).getD y
 
-/-- Construct an index from raw data by *deciding* every law — the deserialization
-boundary: the generator and shift laws through the `Wiring.lean` certificates, the
-wiring's bijectivity through its predecessor table (the two round trips with the stored
-map, decided cell by cell — linear, where deciding `Bijective` outright compares every
-pair of cells), the rest by their `Fintype`/`Decidable` instances. `none` exactly when
-some law fails. -/
+/-- Construct an index from raw data by deciding every law: the generator and shift laws
+through `primitiveRootCertificate` and `cosetShiftsCertificate`, the wiring's bijectivity
+through two round trips with its predecessor table (linear in the cells, where deciding
+`Function.Bijective` outright is quadratic), the rest by their decidability instances.
+`none` exactly when a law fails or `n` is not a power of two. -/
 def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows : ℕ)
     (omega endoBase : F) (mds : Gate.Poseidon.Mds F) (shifts : Fin permCols → F) :
     Option (Index F n) :=

@@ -22,7 +22,6 @@ def roots : List Name :=
   [ `Pasta.pallas_card, `Pasta.vesta_card,
     `Pasta.pallas_order_prime, `Pasta.vesta_order_prime,
     `Pasta.pallas_glv_no_short_relation, `Pasta.vesta_glv_no_short_relation,
-    `Pasta.vesta_smul_val, `Pasta.pallas_smul_val,
     `Pasta.Shifted.unshiftType1_shiftType1, `Pasta.Shifted.shiftType1_unshiftType1,
     `Pasta.Shifted.shiftType2_unshiftType2,
     `Pasta.pallas_eigen, `Pasta.vesta_eigen ]
@@ -33,7 +32,7 @@ def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
-    by name prefix (external-audit A-8: the name is forgeable from inside a
+    by name prefix (the name is forgeable from inside a
     `namespace CompElliptic` block; the module is not). Trusted: upstream CompElliptic
     modules, and `Pasta/Endo.lean` — the one tree file declared to hold the two GLV
     eigenvalue anchors (`Pasta.{pallas,vesta}_lam_nsmul_Gpt`). -/

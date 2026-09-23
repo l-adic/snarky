@@ -6,8 +6,7 @@ import Mathlib.Data.Vector.Basic
 
 Facts about `List`, `List.Forall₂` and `Vector` that mention no pickles type: what a circuit
 that walks two cell lists in step establishes about them as lists, and how one-entry and
-flattened vectors read as lists. Each was a private lemma of the module that first needed it;
-they live here so that a second consumer does not restate them.
+flattened vectors read as lists.
 -/
 
 namespace Pickles
@@ -62,7 +61,7 @@ theorem forall₂_zip_right {α β γ : Type} {R : β → γ → Prop} :
   | [], _ :: _, _, hl, _ => absurd hl (by simp)
   | _ :: _, [], _, hl, _ => absurd hl (by simp)
 
-/-- Two `zipWith`s of the same lists are related where their entries are, pair by pair. -/
+/-- Two `List.zipWith`s of the same lists are related where their entries are, pair by pair. -/
 theorem forall₂_zipWith {α β γ δ : Type} (R : γ → δ → Prop) (f : α → β → γ) (g : α → β → δ) :
     ∀ (ks : List α) (lb : List β), (∀ p ∈ ks.zip lb, R (f p.1 p.2) (g p.1 p.2)) →
       List.Forall₂ R (List.zipWith f ks lb) (List.zipWith g ks lb)

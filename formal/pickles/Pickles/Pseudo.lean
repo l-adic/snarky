@@ -32,7 +32,7 @@ private def products : List (BoolVar F × FVar F) → CircuitM F c (List (FVar F
     let t ← mul (↑b) x
     pure (t :: tail)
 
-/-- The mask-select `∑ᵢ bᵢ · xᵢ` (PS `Pseudo.mask`): one `mul` row per entry, the sum an
+/-- The mask-select `∑ᵢ bᵢ · xᵢ`: one `mul` row per entry, the sum an
 affine combination. -/
 def mask (bits : List (BoolVar F)) (xs : List (FVar F)) : CircuitM F c (FVar F) := do
   let terms ← products (bits.zip xs)

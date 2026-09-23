@@ -5,7 +5,7 @@ import Poseidon.FqSponge
 # The SvdW map-to-curve
 
 The Shallue–van de Woestijne (SvdW) map from a curve's base field onto the curve,
-transcribed from proof-systems `groupmap/src/lib.rs` (`BWParameters::to_group`) and generic
+transcribed from proof-systems `groupmap/src/lib.rs` and generic
 over the field. The kimchi verifier uses it to derive the per-proof `U` base: it squeezes a
 base-field element from the transcript and maps it here.
 
@@ -25,8 +25,8 @@ matching the Rust `unwrap_or(zero)` and `ZMod`'s `0⁻¹ = 0`. The candidate abs
 * `x₃ = u − (t² + f(u))³·α·(3u²)⁻¹`,
 
 and at least one of them is the abscissa of a curve point. The image is the first
-`(xᵢ, √(xᵢ³ + B))` that exists, returned as an `SWPoint`; it is on-curve by construction,
-because the square roots are CompElliptic's self-validating Tonelli–Shanks.
+`(xᵢ, √(xᵢ³ + B))` that exists, returned as a short-Weierstrass point; it is on-curve by
+construction, because the square roots are CompElliptic's self-validating Tonelli–Shanks.
 
 That some candidate always lands on the curve is Shallue and van de Woestijne's theorem, and
 is not proved here. The Rust panics when none does; this branch returns the identity
@@ -34,9 +34,9 @@ is not proved here. The Rust panics when none does; this branch returns the iden
 
 ## The Pasta instantiations
 
-`GroupMapVesta` and `GroupMapPallas` instantiate the two Pasta curves, both `y² = x³ + 5`
-with seed `u = 1` and `f(u) = 6`. Both are validated against production `to_group` vectors by
-`scripts/check_fq_sponge.lean`.
+`GroupMapVesta.spec` and `GroupMapPallas.spec` instantiate the two Pasta curves, both
+`y² = x³ + 5` with seed `u = 1` and `f(u) = 6`. Both are validated against production map
+vectors by `formal/poseidon/scripts/check_fq_sponge.lean`.
 -/
 
 namespace Poseidon
@@ -77,15 +77,15 @@ variable {q : ℕ} [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod q)]
 /-- The curve equation right-hand side `f(x) = x³ + B`. -/
 def curveEqn (spec : Spec q) (x : ZMod q) : ZMod q := x ^ 3 + spec.E.B
 
-/-- `√(f(x))`, when `x` is the abscissa of a curve point (`get_y`). The *sign* of the root is
+/-- `√(f(x))`, when `x` is the abscissa of a curve point. The *sign* of the root is
 the Tonelli–Shanks representative's, which matches arkworks' current convention by
 construction and is pinned by the group-map vectors rather than derived. So an arkworks
 sqrt-convention change on a proof-systems bump would flip the derived `U` base, and would
-surface only as a fixture mismatch (external-audit A-14). -/
+surface only as a fixture mismatch. -/
 def getY (spec : Spec q) (x : ZMod q) : Option (ZMod q) :=
   spec.sqrt.sqrt? (curveEqn spec x)
 
-/-- The three SvdW candidate abscissae for `t` (`potential_xs`). -/
+/-- The three SvdW candidate abscissae for `t`. -/
 def potentialXs (spec : Spec q) (t : ZMod q) : ZMod q × ZMod q × ZMod q :=
   let t2 := t ^ 2
   let alpha := (t2 * (t2 + spec.fu))⁻¹
@@ -94,7 +94,8 @@ def potentialXs (spec : Spec q) (t : ZMod q) : ZMod q × ZMod q × ZMod q :=
   let x3 := spec.u - (t2 + spec.fu) ^ 2 * (alpha * (t2 + spec.fu)) * spec.invThreeUSquared
   (x1, x2, x3)
 
-/-- A found candidate is on the curve: `sqrt?` is self-validating (`sqrt?_mul_self`), so
+/-- A found candidate is on the curve: `sqrt?` is self-validating
+(`CompElliptic.Fields.TonelliShanks.sqrt?_mul_self`), so
 `getY spec x = some y` means `y² = f(x)`. -/
 private theorem onCurve_of_getY (spec : Spec q) {x y : ZMod q} (h : getY spec x = some y) :
     OnCurve spec.E.A spec.E.B (x, y) := by
@@ -102,7 +103,7 @@ private theorem onCurve_of_getY (spec : Spec q) {x y : ZMod q} (h : getY spec x 
   show y ^ 2 = x ^ 3 + spec.E.A * x + spec.E.B
   rw [spec.hA, zero_mul, _root_.add_zero, pow_two, hy, curveEqn]
 
-/-- The map-to-curve (`to_group`): the first candidate abscissa on the curve, with its
+/-- The map-to-curve: the first candidate abscissa on the curve, with its
 square root — a point correct by construction (`onCurve_of_getY`). The no-candidate
 branch returns the identity `𝒪 = (0, 0)`. -/
 def toGroup (spec : Spec q) (t : ZMod q) : SWPoint spec.E :=

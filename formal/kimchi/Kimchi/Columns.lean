@@ -1,101 +1,72 @@
 /-!
 # The kimchi shape constants
 
-Every structural dimension of the kimchi wire and batch, named at its production
-origin. The names are **scoped notations expanding to the literals** — deliberately
-not `def`s or `abbrev`s: the elaborated terms are the bare numerals, so bound
-arithmetic (`omega`, `interval_cases`, `decide`) and every existing proof see exactly
-the literals they need. Only the source names the dimension: the notations carry no
-unexpander, so goals print the bare `7`s and `15`s. That is deliberate — the same
-numeral serves several roles (`7` is `permCols` and `litRowCount`, `15` is `wCols`
-and `coeffCols`), so any name a delaborator picked for a goal's `7` would be a guess,
-and often the wrong one. Each derived constant carries an `rfl` theorem machine-checking
-its derivation, so the connection to the primitive constants is kernel-checked, not prose.
+Every structural dimension of the kimchi wire and batch, named once. The names are scoped
+notations expanding to the literals, not `def`s: the elaborated terms are bare numerals, so
+bound arithmetic and existing proofs see exactly the literals they need. The notations carry
+no unexpander, so goals print bare `7`s and `15`s: one numeral serves several roles (`7` is
+`permCols` and `litRowCount`), and a name printed for a goal's `7` would be a guess. Each
+derived constant is checked against its derivation by an `rfl` example at the end of the file.
 
 ## The primitives
 
-* `wCols = 15` — production `COLUMNS` (proof-systems `circuits/wires.rs`): the
-  witness columns, and equally the per-gate coefficient cells.
-* `permCols = 7` — production `PERMUTS` (`circuits/wires.rs`): the wired columns —
-  seven wire pointers per row, seven σ polynomials, seven coset shifts.
-* `selCount = 6` — the transcribed basic gate set (generic, poseidon, completeAdd,
-  varBaseMul, endoMul, endoScalar). This is a *scope choice* of the formalization, not
-  a production constant: production carries further selectors behind optional-gate
-  flags, all declared deferrals here.
-* `evalPts = 2` — the two evaluation points of every batch row, `(ζ, ζω)`.
+The first two transcribe proof-systems' `circuits/wires.rs`.
+
+* `wCols = 15` — the witness columns; the per-gate coefficient cells number the same.
+* `permCols = 7` — the wired columns: seven wire pointers per row, seven σ polynomials,
+  seven coset shifts.
+* `evalPts = 2` — the evaluation points of every batch row, `ζ` and `ζω`.
+* `quotChunks = 7` — the quotient commitment's chunks per run chunk: the combined constraint
+  has degree below `8n`, so the quotient by `zH` has degree below `7n`. The prover commits it
+  in seven chunks per run chunk and `verifier.rs` bounds it by the same. Numerically equal to
+  `permCols`, but a different quantity.
 
 ## The derived batch layout
 
-From `to_batch` (verifier.rs).
+The batch order transcribes `verifier.rs`.
 
-* `sigmaRows = permCols − 1 = 6` — the σ columns *in the batch*: production commits
-  seven σ polynomials but batches only the first six (`sigma_comm[PERMUTS − 1]` is
-  consumed by the linearization instead). Distinct from `selCount` even though both
-  are `6`.
-* `litRowCount = 1 + selCount = 7` — the literal single-column rows of the batch
-  tail: the accumulator `z` plus the six selectors. Distinct from `permCols` even
-  though both are `7` (and distinct from the Poseidon S-box exponent and the
-  AddComplete constraint count, two further incidental sevens).
-* `tailRowCount = litRowCount + wCols + coeffCols + sigmaRows = 43` — the batch rows
-  after the public row and the ft row: `z`, the selectors, the witness columns, the
-  coefficient columns, the six σ columns.
-* `batchRows = 1 + tailRowCount = 44` — the abstract batch: the public row joins at
-  chunking (its claims are proof-carried, bound through the opening), the ft row is
-  consumed separately by the `_ft` terminals.
+* `sigmaRows = permCols − 1 = 6` — the σ columns in the batch; the last σ polynomial is
+  consumed by the linearization instead.
+* `litRowCount = 7` — the single-column batch rows: the permutation accumulator `z` and the
+  six selectors of the transcribed basic gate set (generic, poseidon, completeAdd,
+  varBaseMul, endoMul, endoScalar). The selector count is a scope choice of the
+  formalization, not a production constant: optional gates are out of scope.
+* `tailRowCount = litRowCount + wCols + coeffCols + sigmaRows = 43` — the batch rows after
+  the public row and the ft row.
 
-The flat segment stream of a run is `nc + 1 + tailRowCount · nc` segments: the
-public row's `nc` chunks, the single-chunk ft row, then `nc` chunks per tail row.
+A run's flat segment stream is its old accumulators' rows, then `nc + 1 + tailRowCount · nc`
+segments: the public row's `nc` chunks, the ft row, then `nc` chunks per tail row.
 -/
 
 namespace Kimchi
 
-/-- Production `COLUMNS = 15`: the witness columns (= the coefficient cells). -/
+/-- The witness columns. -/
 scoped notation "wCols" => (15 : Nat)
 
-/-- Production `PERMUTS = 7`: the wired columns (wire pointers, σ, shifts). -/
+/-- The wired columns, each with a wire pointer, a σ polynomial and a coset shift. -/
 scoped notation "permCols" => (7 : Nat)
 
-/-- The coefficient cells per row — production types this at `COLUMNS` too
-(`coefficients_comm : [PolyComm; COLUMNS]`, one coefficient per witness column);
-named separately because it counts a different batch region than the witness rows. -/
+/-- The coefficient cells per row, one per witness column; named apart from `wCols` because
+it counts a different batch region. -/
 scoped notation "coeffCols" => (15 : Nat)
-
-/-- The transcribed basic gate set (a scope choice — see the module docstring). -/
-scoped notation "selCount" => (6 : Nat)
 
 /-- The two evaluation points of every batch row, `(ζ, ζω)`. -/
 scoped notation "evalPts" => (2 : Nat)
 
-/-- The σ columns in the batch: `permCols − 1` (the seventh is linearized away). -/
+/-- The quotient commitment's chunks per run chunk. -/
+scoped notation "quotChunks" => (7 : Nat)
+
+/-- The σ columns in the batch: `permCols − 1`, the last is linearized away. -/
 scoped notation "sigmaRows" => (6 : Nat)
 
-/-- The literal single-column batch rows: `z` + the six selectors. -/
+/-- The single-column batch rows: `z` and the six basic-gate selectors. -/
 scoped notation "litRowCount" => (7 : Nat)
 
 /-- The batch rows after the public and ft rows. -/
 scoped notation "tailRowCount" => (43 : Nat)
 
-/-- The abstract batch rows (public row included, ft row excluded). -/
-scoped notation "batchRows" => (44 : Nat)
-
-/-- The six pre-IPA squeezes of a kimchi run — `β, γ, α, ζ`, then the batching scalars
-`polyscale` and `evalscale`: the challenge tuple the knowledge-soundness game hands a run
-(`Verifier/KnowledgeSoundness.lean`'s `Squeeze` minus the IPA rounds and the Schnorr
-squeeze). A formalization-side count, and a third incidental six, distinct from `selCount`
-and `sigmaRows`. -/
-scoped notation "preIpaChals" => (6 : Nat)
-
-/-- The counted Schwartz–Zippel exclusion sets of the knowledge-soundness endpoint —
-`szBudget`'s seven summands, the seven disjuncts of `arm4_hits_badChallenge`. A
-formalization-side count, distinct from the incidental sevens `permCols` and
-`litRowCount`. -/
-scoped notation "szSets" => (7 : Nat)
-
-/-! The derivation checks the module docstring promises (external-audit A-12): each derived
-constant is kernel-checked against its defining arithmetic. -/
+/-! Each derived constant against its derivation. -/
 example : sigmaRows = permCols - 1 := rfl
-example : litRowCount = 1 + selCount := rfl
 example : tailRowCount = litRowCount + wCols + coeffCols + sigmaRows := rfl
-example : batchRows = 1 + tailRowCount := rfl
 
 end Kimchi

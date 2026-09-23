@@ -261,8 +261,8 @@ open Std.Do in
 /-! ## A concrete environment
 
 The circuit's inputs are variables already allocated by the caller, the proof's
-evaluations and challenges, together with the precomputed table of α-powers that
-`precomputeAlphaPowers` builds in the PureScript. -/
+evaluations and challenges, together with the precomputed table of α-powers
+(`precomputeAlphaPowers`). -/
 
 /-- All lookup columns as the circuit constant zero. -/
 def lookupZero [Zero F] : Kimchi.Protocol.Linearization.LookupEvals (FVar F) where
@@ -416,7 +416,7 @@ private def alphaGo (alpha : FVar F) :
     let next ← mul alpha prev
     alphaGo alpha n next (acc.push next)
 
-/-- The precomputed table `[1, α, α², …, α^70]` (PS `precomputeAlphaPowers`): 69 rows, and
+/-- The precomputed table `[1, α, α², …, α^70]`: 69 rows, and
 the reason the interpreter's `alphaPow` is a lookup rather than an exponentiation. -/
 def precomputeAlphaPowers (alpha : FVar F) : CircuitM F c (Array (FVar F)) :=
   alphaGo alpha 69 alpha #[.const 1, alpha]

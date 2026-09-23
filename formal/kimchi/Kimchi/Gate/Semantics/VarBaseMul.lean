@@ -30,12 +30,10 @@ variable {F : Type*}
 
     The content is that the fused `s2 = u/t` formula — which skips the
     intermediate `Y` of `input + Q` — equals the slope of the SECOND addition, so
-    the block is exactly the composite of two Mathlib affine additions. This
-    builds on the already-proven `Kimchi.Gate.AddComplete`, whose `sound_point_*`
-    theorems characterize one such addition. The non-degeneracy hypotheses
-    `xi ≠ xb` (first addition non-vertical) and `2·xi + xb − s1² ≠ 0` (i.e.
-    `t ≠ 0`, second addition non-vertical) are exactly when the two divisions are
-    defined. -/
+    the block is exactly the composite of two Mathlib affine additions, each closed by
+    `secant_add`. The non-degeneracy hypotheses `xi ≠ xb` (first addition non-vertical)
+    and `2·xi + xb − s1² ≠ 0` (i.e. `t ≠ 0`, second addition non-vertical) are exactly
+    when the two divisions are defined. -/
 
 section Soundness
 
@@ -48,10 +46,9 @@ variable [Field F] [DecidableEq F]
     and `ℓ, x₃, y₃` are the secant slope and resulting coordinates, then their
     group sum is the nonsingular point `(x₃, y₃)`.
 
-    This is the secant specialization of
-    `Kimchi.Gate.AddComplete.sound_point_noninf` (its first slope branch); unlike that
-    theorem it carries no `y₁ ≠ 0` hypothesis, since the doubling branch is
-    excluded by `x₁ ≠ x₂`. -/
+    The secant specialization of `Kimchi.Gate.AddComplete.sound_point_noninf` (its first
+    slope branch); unlike that theorem it carries no `y₁ ≠ 0` hypothesis, since the
+    doubling branch is excluded by `x₁ ≠ x₂`. -/
 lemma secant_add
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     {x1 y1 x2 y2 : F}
@@ -79,22 +76,14 @@ lemma secant_add
   exact ⟨WeierstrassCurve.Affine.nonsingular_add h1 h2 hfin,
          WeierstrassCurve.Affine.Point.add_some hfin⟩
 
-/-- Per-bit soundness. A single-bit block that
-    satisfies `singleBitHolds` computes `output = (input + Q) + input` in the
-    group, where `Q = (xb, (2b−1)·yb)` is the sign-selected target. The output is
-    a genuine nonsingular curve point (hence the `∃ hO`, mirroring
-    `Kimchi.Gate.AddComplete.sound_point_noninf`).
+/-- Per-bit soundness: a block satisfying `singleBitHolds` computes, in the curve group,
+    `output = (input + Q) + input` for the sign-selected target `Q = (xb, (2b−1)·yb)`.
 
     The block is exactly the composite of two affine additions: `R := I + Q`
-    (first slope `s1`, non-vertical since `xi ≠ xb`) followed by `O := R + I`
-    (second slope `s2 = u/t`, non-vertical since `t = 2·xi + xb − s1² ≠ 0`). The
-    fused `s2 = u/t` formula skips the intermediate `Y` of `R`; we recover it from
-    the `xo`/`yo` constraints, then close with `secant_add` twice.
+    then `O := R + I`, which `secant_add` closes once the `xo`/`yo` constraints give `R`.
 
     No booleanity hypothesis on `b` is needed: the algebraic argument holds for
-    arbitrary `b`, since `Q`'s validity as a curve point is supplied directly by
-    `hQ`. (At the gate level the `b ∈ {0,1}` constraint is what makes
-    `Q = (2b−1)·target` equal `±target`.) -/
+    arbitrary `b`, since `hQ` supplies `Q`'s validity as a curve point. -/
 private theorem singleBit_sound
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (b xb yb s1 xi yi xo yo : F)
@@ -141,19 +130,14 @@ private theorem singleBit_sound
     secant_add W ⟨ha1, ha2, ha3⟩ hR hI hrxne hs2 hxo hyo
   exact ⟨hO, by rw [hAdd1, hAdd2]⟩
 
-/-- Full-gate scalar multiplication. Chaining `singleBit_sound` across all five
-    blocks, a satisfying gate computes the double-and-add accumulation
+/-- Full-gate scalar multiplication: chaining `singleBit_sound` across the five blocks, a
+    satisfying gate accumulates in the curve group
 
         P₅ = 32·P₀ + 16·Q₀ + 8·Q₁ + 4·Q₂ + 2·Q₃ + Q₄
 
-    in the curve group, where `Pᵢ = (xᵢ, yᵢ)` is the accumulator chain and
-    `Qᵢ = (xT, (2bᵢ−1)·yT)` is the sign-selected target for bit `i` (so `Qᵢ = ±T`
-    when `bᵢ ∈ {0,1}`). This is exactly variable-base scalar multiplication by the
-    signed-binary digits `b₀..b₄`. The companion `decompHolds` constraint records
-    the same digits in the scalar register `n → n' = 32n + 16b₀ + ⋯ + b₄`.
+    for the accumulator chain `Pᵢ` and the sign-selected targets `Qᵢ = (xT, (2bᵢ−1)·yT)`.
 
-    `Pᵢ` nonsingularity and the per-step non-degeneracy (`xᵢ ≠ xT`, `tᵢ ≠ 0`) are
-    hypotheses; booleanity of each `bᵢ` is available from `Holds` if needed. -/
+    Nonsingularity and non-degeneracy are hypotheses; `decompHolds` records the digits. -/
 private theorem gate_scalarMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) (w : Witness F)
     (h0 : W.Nonsingular w.x0 w.y0) (h1 : W.Nonsingular w.x1 w.y1)
@@ -250,15 +234,14 @@ lemma signed_target
     rw [one_zsmul]
     exact some_eq_some W hQ hT (by ring)
 
-/-- The bridge to the integer-scalar form. A
-    satisfying gate computes `P₅ = 32·P₀ + c·T` for an integer `c` — the gate's
-    signed 5-bit value `c = 16(2b₀−1) + 8(2b₁−1) + 4(2b₂−1) + 2(2b₃−1) + (2b₄−1)`.
+/-- The bridge to the integer-scalar form: a satisfying gate computes `P₅ = 32·P₀ + c·T`
+    for the gate's signed 5-bit value
+    `c = 16(2b₀−1) + 8(2b₁−1) + 4(2b₂−1) + 2(2b₃−1) + (2b₄−1)`.
 
-    This folds `gate_scalarMul`'s point sum `16·Q₀ + ⋯ + Q₄` into `c·T`: each
-    `Qᵢ = (xT, (2bᵢ−1)·yT)` is `±T` once `bᵢ ∈ {0,1}` (booleanity, available from
-    the `b·b − b = 0` constraint inside `Holds`), since on a short curve negation
-    is `y ↦ −y`. This is exactly the per-gate relation `chain_scalarMul` consumes,
-    so it closes the gap between one gate and the arbitrary-length chain. -/
+    This folds `gate_scalarMul`'s point sum into `c·T`: each `Qᵢ` is `±T` once `bᵢ` is
+    boolean, which the `b·b − b = 0` constraint inside `Holds` supplies. It is the
+    per-gate relation `chain_scalarMul` consumes, closing the gap between one gate and
+    the arbitrary-length chain. -/
 theorem sound
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) (w : Witness F)
     (h0 : W.Nonsingular w.x0 w.y0) (h1 : W.Nonsingular w.x1 w.y1)
@@ -284,7 +267,7 @@ theorem sound
   have hQ2 := signed_target_nonsingular W ha hT (bool_of_sq hbit2.bool)
   have hQ3 := signed_target_nonsingular W ha hT (bool_of_sq hbit3.bool)
   have hQ4 := signed_target_nonsingular W ha hT (bool_of_sq hbit4.bool)
-  -- the Q-point sum from the already-proven nat-smul gate soundness
+  -- the Q-point sum from the nat-smul gate soundness `gate_scalarMul`
   have main := gate_scalarMul W ha w h0 h1 h2 h3 h4 h5 hQ0 hQ1 hQ2 hQ3 hQ4
     hxne0 hxne1 hxne2 hxne3 hxne4 htne0 htne1 htne2 htne3 htne4 h
   obtain ⟨e0, q0, he0, hd0⟩ := signed_target W ha hT hQ0 (bool_of_sq hbit0.bool)
@@ -389,25 +372,23 @@ Variable-base scalar multiplication composes `Kimchi.Gate.VarBaseMul` gate rows:
 back to back, each consuming five bits of the scalar, with gate `i`'s output accumulator feeding
 gate `i + 1`'s input and its scalar register threading alongside. Each gate's `sound` supplies the
 per-step relation `P_{i+1} = 32·P_i + cᵢ·T`, and folding that recurrence over the `m` rows is pure
-group algebra. This module gathers the definitions and lemmas on which the deployed correctness
-theorems rest — the curve-specialized `varBaseMul_scaleFast1` and `varBaseMul_scaleFast2` (in
-`Kimchi.Gate.VarBaseMul`) and the two generic roots `varBaseMul_subwrap_correct` and
-`varBaseMul_forbidden_correct` it exposes here.
+group algebra. This section gathers the definitions and lemmas on which the deployed correctness
+theorems rest — the curve-specialized `varBaseMul_scaleFast1` and `varBaseMul_scaleFast2`, and the
+two generic roots `varBaseMul_subwrap_correct` and `varBaseMul_forbidden_correct`.
 
-### Correspondence to the PureScript circuit
+### Correspondence to the circuit
 
-The hypotheses are exactly the constraints `Snarky.Circuit.Kimchi.VarBaseMul` emits
-(`packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/VarBaseMul.purs`):
+The hypotheses are exactly the constraints the circuit emits:
 
-* `P 0 = 2·T` ← `addFast CheckFinite base base` (acc := `[2]·base`);
-* `N 0 = 0` ← `nAccPrev: const_ zero`; per-bit `n' = 2·n + b` ← `foldl (\a b -> double a + b)`;
-* `q_j = (xT, (2·b − 1)·yT)` ← `Q = (xBase, (2·b − 1)·yBase)` (`computeVbmChain`);
-* `N m` holds the caller's shifted register ← `assertEqual_ nAcc t`.
+* `P 0 = 2·T` ← the accumulator is initialized to the doubled base;
+* `N 0 = 0` ← the register starts at zero and advances by `n' = 2·n + b` per bit;
+* `q_j = (xT, (2·b − 1)·yT)` ← each row's target is the sign-selected base;
+* `N m` holds the caller's shifted register ← asserted equal to the caller's scalar.
 
 The two circuit entry points appear here as `scalarMul_shifted` (the core `varBaseMul`, computing
-`[2·t + 2^n + 1]·g`) and `scalarMul_type2` (`scaleFast2`, the parity split). This is an audit-level
-correspondence: the model's hypotheses match the PureScript constraints by inspection, not by a
-mechanized extraction.
+`[2·t + 2^n + 1]·g`) and `scalarMul_type2` (`scaleFast2`, the parity split). This match is by
+inspection. The circuit's own laws `varBaseMul_spec` and `varBaseMul_complete` are proved against
+the gate's `Holds`, through `varBaseMul_off` and `chain_complete` here.
 
 ### Contents
 
@@ -415,18 +396,17 @@ mechanized extraction.
   `chain_sum_bound`) and the folded scalar-multiplication theorems (`scalarMul`,
   `scalarMul_baseMul`, `scalarMul_shifted`, `scalarMul_type2`);
 * the per-row hypothesis bundles `NonDegen` (the non-vertical side conditions) and `GateStep`;
-* the number-theoretic ladder kernel (`Kimchi.Gate.VarBaseMul.Ladder`): the double-and-add
-  ladder's bounds, the forbidden-band / forbidden-residue characterization of degenerate finals,
-  and the unconditional sub-wrap non-degeneracy;
+* the number-theoretic ladder kernel (`ladder_nondegen_tight`, `ladder_subwrap_nondegen`): the
+  double-and-add ladder's bounds, the forbidden-band / forbidden-residue characterization of
+  degenerate finals, and the unconditional sub-wrap non-degeneracy;
 * the group-order non-degeneracy toolkit (`smul_ne_zero_of_lt`, `x_ne_xT_of_ne_base`,
   `tne_of_holds`): the partial accumulators stay away from `±T`;
 * the soundness folds (`gate_chain_produce`, `gateStep_chain`) and the two regime roots
   `varBaseMul_forbidden_correct` / `varBaseMul_subwrap_correct`.
 
-The `scalarMul_shifted` headline closes the loop with proof-systems: at the real init `P 0 = 2·T`,
-`N 0 = 0`, the scalar `(n : F) = 2·(N m) + 2^(5m) + 1` is verbatim `Shifted_value.Type1.to_field`
-and reproduces the reference value `[1 + 2^numBits + 2·n_bits]·BasePoint` from `varbasemul.rs`'s own
-test, so the circuit computes `[s]·T` for the caller's scalar `s` once it is fed the shifted scalar.
+The `scalarMul_shifted` headline: at the real init `P 0 = 2·T`, `N 0 = 0`, the scalar
+`(n : F) = 2·(N m) + 2^(5m) + 1` is the Type1 unshift `unshiftType1`, so the circuit computes
+`[s]·T` for the caller's scalar `s` once it is fed the shifted scalar.
 
 ### The number-theoretic ladder kernel
 
@@ -476,7 +456,7 @@ private lemma ladder_size (q L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
   intro j hj
   have h_bounds : 2 ^ j + 1 ≤ k j ∧ k j ≤ 3 * 2 ^ j - 1 :=
     ladder_bounds L k ε hk0 hε hrec j (by linarith)
-  -- From `hreg₁`, we have `8 * 2^(L - 4) < q`.
+  -- `hreg₁` gives `8 * 2^(L - 4) < q`.
   have h_q_bound : 8 * 2 ^ (L - 4) < q := by
     rcases L with (_ | _ | _ | _ | L) <;> simp_all +decide [pow_succ']
     linarith
@@ -495,12 +475,10 @@ private lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
   · contradiction;
   · grind +splitImp
 
-/-- The exact forbidden scalar residues for the Pasta VarBaseMul gate (verified by
-    exhaustive computation, and identical for both Pasta scalar fields): the small
-    scalars whose double-and-add drives the accumulator onto `±T` in the final
-    doublings. For ANY prime `q ≡ 1 (mod 4)` in the one-wrap regime, the actual
-    reachable degenerate set is a subset of these, so excluding them is sound; for the
-    Pasta primes it is exactly this set. -/
+/-- The forbidden scalar residues for the VarBaseMul gate: the small scalars whose
+    double-and-add drives the accumulator onto `±T` in the final doublings. For any prime
+    `q ≡ 1 (mod 4)` in the one-wrap regime every reachable degenerate final lands on one of
+    them (`degenerate_input_forces_forbidden`), so excluding them is sound. -/
 def forbiddenResidues : List ℤ := [0, 1, -1, 2, -2, 3, -3, 5, 7, 9, 11]
 
 /-- Depth-1 input (`L = j + 1`): every degeneracy branch lands on a forbidden residue. -/
@@ -644,8 +622,8 @@ private lemma degen_d3 (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
 
 /-- **Core of the tight bound.** A degenerate input `k j` (`j < L`) propagates forward to
     a final value `k L ≡ t (mod q)` for some `t ∈ forbiddenResidues`. Inputs at depth
-    `d = L - j ≥ 4` cannot be degenerate (`ladder_size`); for `d ≤ 3` the four degeneracy
-    branches either land on an explicit forbidden residue, or are ruled out by a size /
+    `d = L - j ≥ 4` cannot be degenerate (`ladder_size`); at `d ≤ 3` each degeneracy
+    branch either lands on an explicit forbidden residue, or is ruled out by a size /
     parity / `q ≡ 1 (mod 4)` argument. -/
 private lemma degenerate_input_forces_forbidden (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
@@ -715,36 +693,33 @@ private lemma ladder_subwrap_nondegen (q L : ℕ) (hsub : 3 * 2 ^ L ≤ q)
     have hle := Int.le_of_dvd (by nlinarith [hlo, hjpos]) hdvd <;>
     nlinarith [hhi, h6, hle, hjpos, hlo]
 
-/--
-**x-condition non-degeneracy from the register/magnitude bound** (pure number theory,
-    orthogonal to the t-condition `tne_of_holds`). The deployed circuit's register is a
-    valid field element `< baseFieldOrder`, so the ladder top is bounded:
-    `k L < 2·baseFieldOrder + 2^L`. The only x-condition accumulator values are
-    `k ≡ ±1 (mod order)`, whose smallest ODD representatives are `2·order ± 1` (the even
-    reps `order ± 1` are unreachable since every `k j` with `1 ≤ j` is odd, `ladder_odd`).
-    The regime `baseFieldOrder + 2^(L-1) < 2·order` (the Pasta `2δ > δ'` fact) puts those
-    above the bounded range, so no INPUT `k j` (`j < L`) is `≡ ±1 (mod order)` — i.e. no
-    accumulator equals `±T`. (No constraints, no curve, no forbidden set.)
+/-! ## Why each side condition is needed
 
-    ## Why each side condition is needed
+    Each hypothesis of `ladder_x_nondegen` below is necessary — without it a concrete
+    degenerate input exists:
 
-    Each of the three hypotheses is necessary — without it a concrete degenerate input exists:
-
-    * `hodd : Odd order` — when `order` is even the even representatives `order ± 1` of
+    * `hodd` (`order` odd) — when `order` is even the even representatives `order ± 1` of
       `±1 (mod order)` are reachable. With `ladder_odd` (every `k j`, `1 ≤ j`, is odd)
       it rules out the even reps and forces the odd reps `2·order ± 1`. The real `order`
       is prime, hence odd.
-    * `hbound : baseFieldOrder + 2^(L-1) + 2 ≤ 2·order` — for `j = L - 1` the `+1` branch
+    * `hbound` (`baseFieldOrder + 2^(L-1) + 2 ≤ 2·order`) — at `j = L - 1` the `+1` branch
       (`k (L-1) = 2·order - 1`) gives `k L = 4·order - 2 + ε ≥ 4·order - 3`, which the
       slacker bound `baseFieldOrder + 2^(L-1) < 2·order` (`k L < 4·order - 2`) fails to
       exclude (e.g. `order = 5, baseFieldOrder = 5, L = 3`); tightening the slack by `2`
       (`k L < 4·order - 4`) closes it.
-    * `horder : 3 < order` — for `order = 3, L = 2` the input `k 0 = 2` satisfies
+    * `horder` (`3 < order`) — at `order = 3, L = 2` the input `k 0 = 2` satisfies
       `order ∣ (k 0 + 1) = 3`.
 
-    All three hold comfortably for the real Pasta parameters (`L = 255`,
-    `order ≈ 2^254 + 4.56·10^37` a large prime, `2δ > δ'`).
--/
+    All three hold for the real Pasta parameters (`L = 255`, `order` a 255-bit prime). -/
+
+/-- **x-condition non-degeneracy from the register bound.** The deployed circuit's register
+    is a valid field element below the base-field order, so the ladder top obeys
+    `k L < 2·baseFieldOrder + 2^L`. The only accumulator values failing the x-condition are
+    `k ≡ ±1 (mod order)`, whose smallest odd representatives are `2·order ± 1` (`ladder_odd`
+    rules out the even ones); the regime `baseFieldOrder + 2^(L-1) < 2·order` puts those
+    above the bounded range, so no input `k j` (`j < L`) is `≡ ±1 (mod order)` — no
+    accumulator equals `±T`. Pure number theory, orthogonal to the t-condition
+    `tne_of_holds`; the note above prices the three side conditions. -/
 private theorem ladder_x_nondegen (order baseFieldOrder L : ℕ)
     (hreg₁ : 2 ^ (L - 1) < order)
     (hodd : Odd order) (horder : 3 < order)
@@ -813,9 +788,8 @@ variable {F : Type*} [Field F] [DecidableEq F]
         P_m = 32^m·P₀ + (∑_{i<m} 32^(m-1-i)·cᵢ)·T
 
     — i.e. `m` chained `VarBaseMul` gates compute variable-base scalar
-    multiplication by the `5m`-bit scalar `k = ∑_{i<m} 32^(m-1-i)·cᵢ` (plus the
-    carried `32^m·P₀`). The per-gate relation is supplied by `sound`
-    after folding its `Qⱼ` points into `±T` via booleanity. -/
+    multiplication by the `5m`-bit signed-digit scalar `k`, plus the carried `32^m·P₀`.
+    `sound` supplies the per-gate relation, after folding its `Qⱼ` points into `±T`. -/
 private theorem chain_scalarMul
     (W : WeierstrassCurve.Affine F)
     (m : ℕ) (P : ℕ → W.Point) (T : W.Point) (c : ℕ → ℤ)
@@ -909,11 +883,11 @@ private structure NonDegen (g : Witness F) : Prop where
   t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
   t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
 
-/-- A full per-gate step: the nonsingular accumulator points `a0..a5`, the base `hT`, the gate
-    constraints `holds`, and the `NonDegen` side conditions, in one flat bundle. The register
-    subsystem `scalarMul` / `scalarMul_type2` consumes all of these via the gate `sound`. The
-    deployed entry points derive a `GateStep` per row from `Holds` plus threading, via
-    `gateStep_chain`. -/
+/-- A full per-gate step: the nonsingular accumulator points `a0` through `a5`, the base `hT`,
+    the gate constraints `holds`, and the `NonDegen` side conditions, in one flat bundle. The
+    register subsystem `scalarMul` / `scalarMul_type2` consumes all of these via the gate
+    `sound`. The deployed entry points derive a `GateStep` per row from `Holds` plus threading,
+    via `gateStep_chain`. -/
 private structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   a0 : W.Nonsingular g.x0 g.y0
   a1 : W.Nonsingular g.x1 g.y1
@@ -956,18 +930,14 @@ private structure Chain (W : WeierstrassCurve.Affine F) (g : ℕ → Witness F) 
   /-- Row `i` closes at register `N (i + 1)`. -/
   regOut : ∀ i, i < m → N (i + 1) = (g i).nPrime
 
-/-- The computation the circuit provides. `m` chained `VarBaseMul` gates over a
-    shared target `T`, threading BOTH the accumulator points `P` (gate `i`'s input
-    `P i`, output `P (i+1)`) AND the scalar register `N` (input `N i = (g i).n`,
-    output `N (i+1) = (g i).nPrime`), compute
+/-- The computation the circuit provides: `m` chained `VarBaseMul` gates over a shared target
+    `T`, threading both the accumulator points `P` and the scalar register `N`, compute
 
         P m = 32^m·P₀ + k·T   with   (k : F) = 2·N m − 2·32^m·N 0 − (32^m − 1),
 
-    i.e. the output point is the carried `32^m·P₀` plus `k·T`, where the integer
-    scalar `k` is pinned to what the scalar register computed (`N 0 → N m`) — in
-    signed-digit form. The proof folds the point chain with `chain_scalarMul` and
-    the register chain with `chain_register`, both fed by the gate's
-    `sound`. -/
+    so the integer scalar `k` is pinned to what the register computed, in signed-digit form.
+    The proof folds the point chain with `chain_scalarMul` and the register chain with
+    `chain_register`, both fed by the gate's `sound`. -/
 private theorem scalarMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F)
@@ -992,17 +962,14 @@ private theorem scalarMul
   · exact chain_register m N c hc₂
   · exact chain_sum_bound m c hc₃
 
-/-- Clean variable-base scalar multiplication. When the accumulator is
-    initialized to a multiple of the base (`P 0 = a · T`, `a : ℤ` — the circuit
-    inits to `[2]T`), the carried `32^m·P₀` term is absorbed and the output is a
-    SINGLE scalar multiple of the base:
+/-- Clean variable-base scalar multiplication. When the accumulator is initialized to a
+    multiple of the base (`P 0 = a · T`, the circuit's init being `[2]T`), the carried
+    `32^m·P₀` term is absorbed and the output is a single scalar multiple of the base:
 
         P m = n · T   for an explicit integer `n`,
 
-    with `(n : F) = 32^m·a + 2·N m − 2·32^m·N 0 − (32^m − 1)`. So `m` chained
-    `VarBaseMul` gates compute `[n]·T`: variable-base scalar multiplication of the
-    base point `T`, the scalar `n` determined by the init `a` and the scalar
-    register (`N 0 → N m`), in signed-digit form. -/
+    with `(n : F) = 32^m·a + 2·N m − 2·32^m·N 0 − (32^m − 1)`: the scalar is fixed by the
+    init `a` and the register (`N 0 → N m`), in signed-digit form. -/
 private theorem scalarMul_baseMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F)
@@ -1024,21 +991,14 @@ private theorem scalarMul_baseMul
 
 /-! ## Matching the real circuit: scalar-mul by the pickles Type1 unshift -/
 
-/-- The circuit computes `[s]·T` for the pickles-unshifted scalar `s`. At the real
-    circuit's parameters — accumulator initialized to `[2]·T` (`P 0 = 2·T`) and
-    scalar register started at `0` (`N 0 = 0`) — the `m` gates (processing `5m`
-    bits) compute `P m = n·T` where the scalar is exactly the pickles Type1
-    unshift of the final register value:
+/-- The circuit computes `[s]·T` for the unshifted scalar `s`. At the real circuit's
+    parameters — accumulator initialized to `[2]·T`, register started at `0` — the `m`
+    gates compute `P m = n·T` for the Type1 unshift of the final register value:
 
         (n : F) = unshiftType1 (5·m) (N m) = 2·(N m) + 2^(5m) + 1.
 
-    This closes the loop: `2·t + 2^numBits + 1` is verbatim
-    `Shifted_value.Type1.to_field`, and it reproduces the kimchi reference value
-    `[1 + 2^numBits + 2·n_bits]·BasePoint` asserted in proof-systems
-    `varbasemul.rs`'s own test. So feeding the gate the Type1-shifted scalar
-    `t = shift(s)` (`N m = t`) makes it compute `[s]·T` — variable-base scalar
-    multiplication by the original scalar `s`, the cross-field shift being the
-    pickles `Shifted_value` contract. -/
+    So feeding the gate the Type1-shifted scalar `t = shift(s)` (`N m = t`) makes it
+    compute `[s]·T`. -/
 private theorem scalarMul_shifted
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F)
@@ -1169,15 +1129,10 @@ lemma y_ne_zero_of_odd_order (c : WeierstrassCurve.Affine F)
     exact_mod_cast this
   exact Pasta.smul_ne_zero_of_lt c hPne (by norm_num) hlt h2P
 
-/-- **t-condition self-enforcement.** The gate constraints together with prime order
-    already force `t ≠ 0` — the forbidden check is *not* needed for the second-addition
-    non-degeneracy. If `t = 2·xi + xb − s1² = 0`, then the `xo` constraint
-    `u² − t²·(…) = 0` collapses to `u² = 0`, i.e. `u = 2·yi − t·s1 = 2·yi = 0`, so
-    `yi = 0` — and an odd-prime-order curve has no such point
-    (`y_ne_zero_of_odd_order`). Contradiction.
+/-! ## Why the t-condition needs an odd order
 
-    The hypothesis `c.order ≠ 2` (equivalently, the prime `order` is odd) is genuinely
-    required, not a convenience: the degenerate branch is real whenever the input point is
+    The odd-order hypothesis of `tne_of_holds` below is genuinely required, not a
+    convenience: the degenerate branch is real whenever the input point is
     2-torsion. Over `ZMod 7` with the curve `y² = x³ + 6` — whose group is `(ℤ/2)²`, of
     order `4` — the input point `(xi, yi) = (1, 0)` is nonsingular and
     `singleBitHolds 0 5 0 0 1 0 0 0` holds, yet `2·xi + xb − s1² = 2·1 + 5 − 0 = 7 = 0`.
@@ -1185,6 +1140,13 @@ lemma y_ne_zero_of_odd_order (c : WeierstrassCurve.Affine F)
     is exactly the `order = 2` case, which this hypothesis rules out. The Pasta `order` is a
     255-bit prime, so it holds there — but it follows neither from `order` being prime (`2`
     is prime) nor from the short shape, so it is taken separately. -/
+
+/-- **t-condition self-enforcement.** The gate constraints together with prime order already
+    force `t ≠ 0` — the forbidden check is not needed for the second addition's
+    non-degeneracy. If `t = 2·xi + xb − s1² = 0` the `xo` constraint `u² − t²·(…) = 0`
+    collapses to `u² = 0`, i.e. `u = 2·yi = 0`, so `yi = 0`; an odd-prime-order curve has no
+    such point (`y_ne_zero_of_odd_order`). The `c.order ≠ 2` hypothesis is genuinely
+    required, not a convenience — see the note above. -/
 private lemma tne_of_holds (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
@@ -1220,10 +1182,10 @@ not assumed: from `Holds` per row plus the base, threading, and initial accumula
 conclude correctness — `varBaseMul_subwrap_correct` unconditionally below the order,
 `varBaseMul_forbidden_correct` at the one-wrap width. -/
 
-/-- The forbidden set for VarBaseMul non-degeneracy: the EXACT Pasta reachable
-    degenerate residues `forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. Sound for any
-    prime `order ≡ 1 (mod 4)` (the actual degenerate set is `⊆` these), and exactly tight
-    for the Pasta primes. -/
+/-- The forbidden set for VarBaseMul non-degeneracy: the scalars congruent modulo `order` to
+    one of `Ladder.forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. Sound for any prime
+    `order ≡ 1 (mod 4)`, the reachable degenerate set being contained in it
+    (`Ladder.degenerate_input_forces_forbidden`). -/
 def forbiddenValues (order : ℕ) : Set ℤ :=
   {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
 
@@ -1310,11 +1272,11 @@ def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
 private lemma gateRegister_succ (g : ℕ → Witness F) (j : ℕ) :
     gateRegister g (j + 1) = 2 * gateRegister g j + ubit g j := rfl
 
-/-- **Signed ladder ↔ unsigned register bridge.** The signed double-and-add top is the `Type1`
-    unshift of the unsigned register it encodes, as an honest **ℤ** identity (no booleanity needed —
-    the signed digits are `2·ubit − 1`): `gateLadder g L = 2·gateRegister g L + 2^L + 1`. This links
-    the non-degeneracy path (`gateLadder`) to the scalar-register path: a range-check
-    `gateRegister < 2^k` directly bounds the ladder top, hence the deployed `hkL`. -/
+/-- **Signed ladder to unsigned register bridge.** The signed double-and-add top is the Type1
+    unshift of the unsigned register it encodes, as an honest ℤ identity (no booleanity needed —
+    the signed digits are `2·ubit − 1`): `gateLadder g L = 2·gateRegister g L + 2^L + 1`. This
+    links the non-degeneracy path (`gateLadder`) to the scalar-register path: a range-check on
+    `gateRegister` bounds the ladder top, which is how `varBaseMul_scaleFast2` gets it. -/
 lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
     gateLadder g L = 2 * gateRegister g L + 2 ^ L + 1 := by
   induction L with
@@ -1446,9 +1408,10 @@ private lemma gate_block_produce (c : WeierstrassCurve.Affine F)
     rw [hOeq4, e_eq_gateBitSign g (5 * i + 4) gb4 (bit hsb4.bool) hef4 hepm4 h2, ← gateLadder_succ]
   exact ⟨⟨hx0, hx1, hx2, hx3, hx4, ht0, ht1, ht2, ht3, ht4⟩, hO4, by rw [hTeq]; exact ha5⟩
 
-/-- Like `gate_block_produce`, but returns all five derived accumulator points `a1..a5` (not just
-    `a5`), so the register subsystem (`scalarMul` / `scalarMul_type2`, which consume the whole
-    `GateStep` bundle) can be fed the full per-row data. Same five-`gate_step_advance'` chain. -/
+/-- Like `gate_block_produce`, but returns all five derived accumulator points `a1` through
+    `a5` (not just the last), so the register subsystem (`scalarMul` / `scalarMul_type2`, which
+    consume the whole `GateStep` bundle) can be fed the full per-row data. Same five-step
+    `gate_step_advance'` chain. -/
 private lemma gate_block_full (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] (g : ℕ → Witness F) (i : ℕ)
@@ -1526,11 +1489,9 @@ def accY (g : ℕ → Witness F) : ℕ → F
     nonsingularity (row 0), the column threading (`(g (i+1)).x0 = (g i).x5`), and the initial
     accumulator `2·T`, the chain derives every intermediate point's nonsingularity
     (`gate_block_produce`) and concludes the final accumulator equals `s·T` with every row
-    `NonDegen`. The prover supplies only `Holds` and the threading; the accumulator nonsingularity
-    is derived. The proof inducts on `k ≤ m`, carrying the invariant
-    `∃ hk, Point.some _ _ hk = gateLadder g (5·k) • T`: the base case is `hP0ns`/`hP0`
-    (`gateLadder g 0 = 2`), and each step feeds the threaded input (base transported to row `k` via
-    `hbase`) to `gate_block_produce`. -/
+    `NonDegen`. The prover supplies only `Holds` and the threading. The induction on `k ≤ m`
+    carries the invariant `∃ hk, Point.some _ _ hk = gateLadder g (5·k) • T`, stepped through
+    in the body. -/
 private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
     (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hTne : T ≠ 0)
@@ -1593,7 +1554,7 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
   exact ⟨hfin, by rw [hs]; exact hPfin, hNDfin⟩
 
 /-- **`GateStep`-producing fold.** From `Holds` per row, the base, the threading, and the initial
-    accumulator `2·T`, derives the full per-row `GateStep` bundle (every `a0..a5`, via
+    accumulator `2·T`, derives the full per-row `GateStep` bundle (every accumulator point, via
     `gate_block_full`) together with the threaded point sequence `P` — exactly the inputs the
     register subsystem (`scalarMul` / `scalarMul_type2`) consumes. The `scaleFast2` analog of
     `gate_chain_produce`. -/
@@ -1747,11 +1708,10 @@ each at its concrete curve:
   range-checks the high half, so soundness is the field-bound route.
 
 A bare `varBaseMul` is never deployed on its own — only these two — so the field-bound Pallas
-correctness is *inlined* into `scaleFast2`. The `Fact`s
-are discharged from `Pasta`, the prime-order one through `pallas_card` / `vesta_card`. Those
-are theorems, resting on CompElliptic's machine-checked point-count certificates rather than
-on any axiom, and these corollaries are where that per-curve trust enters; the abstract
-development is independent of it.
+correctness is *inlined* into `scaleFast2`. The `Fact`s are discharged from the pasta package,
+the prime-order one through `pallas_card` / `vesta_card`. Those are theorems, resting on
+CompElliptic's machine-checked point-count certificates rather than on any axiom, and these
+corollaries are where that per-curve trust enters; the abstract development is independent of it.
 -/
 
 namespace Kimchi.Gate.VarBaseMul
@@ -1908,15 +1868,6 @@ theorem chain_accN {c : WeierstrassCurve.Affine F} {T : c.Point} (m : ℕ)
     rw [List.foldl_append]
     simp only [List.foldl_cons, List.foldl_nil]
     ring
-
-/-- `runBits` only reads the run below `m`. -/
-theorem runBits_congr (g g' : ℕ → Witness F) (m : ℕ)
-    (h : ∀ i, i < m → g i = g' i) : runBits g m = runBits g' m := by
-  induction m with
-  | zero => rfl
-  | succ k ih =>
-    rw [runBits_succ, runBits_succ, ih (fun i hi => h i (by omega)),
-      h k (by omega)]
 
 /-- On boolean bits the field fold is the cast of the ℤ-decode. -/
 theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
@@ -2122,7 +2073,7 @@ init accumulator through a flat bit stream, five bits per row. `chain_complete` 
 conditional completeness — under either ladder regime, every generated row satisfies the
 gate. The non-degeneracy is PRODUCED forward, not read off an accepted run: the
 accumulator entering bit step `j` is the ladder multiple `[gateLadder g j]·T`, the regime
-prices all four degeneracy residues at every step (`ladder_subwrap_nondegen` /
+prices every degeneracy residue at every step (`ladder_subwrap_nondegen` /
 `ladder_nondegen_tight`), and each generated step's two secant denominators are derived
 from those residues before the step is certified (`step_produce`). -/
 
@@ -2197,19 +2148,6 @@ variable (xT yT x0 y0 n0 : F) (bs : ℕ → F)
 
 omit [DecidableEq F]
 
-theorem chainBuild_succ_x0 (i : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs (i + 1)).x0 = (chainBuild xT yT x0 y0 n0 bs i).x5 :=
-  rfl
-
-theorem chainBuild_succ_y0 (i : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs (i + 1)).y0 = (chainBuild xT yT x0 y0 n0 bs i).y5 :=
-  rfl
-
-theorem chainBuild_succ_n (i : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs (i + 1)).n
-      = (chainBuild xT yT x0 y0 n0 bs i).nPrime :=
-  rfl
-
 /-- The row's fixed cells: the base is the argument and the five bits are the
 stream's window `5m … 5m+4`. -/
 theorem chainBuild_fields (m : ℕ) :
@@ -2221,18 +2159,6 @@ theorem chainBuild_fields (m : ℕ) :
     ∧ (chainBuild xT yT x0 y0 n0 bs m).b3 = bs (5 * m + 3)
     ∧ (chainBuild xT yT x0 y0 n0 bs m).b4 = bs (5 * m + 4) := by
   cases m <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-theorem accX_chainBuild (m : ℕ) :
-    accX (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).x0 := by
-  cases m <;> rfl
-
-theorem accY_chainBuild (m : ℕ) :
-    accY (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).y0 := by
-  cases m <;> rfl
-
-theorem accN_chainBuild (m : ℕ) :
-    accN (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).n := by
-  cases m <;> rfl
 
 end ChainFields
 
@@ -2246,7 +2172,7 @@ theorem runBits_chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
   obtain ⟨-, -, h0, h1, h2, h3, h4⟩ := chainBuild_fields xT yT x0 y0 n0 bs i
   rw [h0, h1, h2, h3, h4]
 
-/-- One honest bit step: at an accumulator `[k]·T` whose four degeneracy residues the
+/-- One honest bit step: at an accumulator `[k]·T` whose degeneracy residues the
 regime has priced away, the generated `stepBit` values satisfy the bit block and the
 output is the nonsingular `[2k + bitSign b]·T`. The two secant denominators are derived,
 not assumed: `xi ≠ xT` from `k ≢ ±1`, and the second denominator from the intermediate
@@ -2448,25 +2374,23 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
 `scaleFast2` (the Pallas direction, below) range-checks the register, so its soundness is the
 field-bound route (inlined into `varBaseMul_scaleFast2`). `scaleFast1` (the Vesta direction;
 scalar field < circuit field) range-checks nothing and instead guards with a forbidden-value check.
-Its soundness splits by chunk count `m` (`bitsUsed = 5m ≤ FieldSizeInBits = pastaFieldBits`): for
-`m ≤ 50` the ladder fits below the order and every row is non-degenerate unconditionally
-(`varBaseMul_subwrap_correct`); only the full width `m = 51` is the one-wrap case that needs the
-forbidden band (`varBaseMul_forbidden_correct`).
+Its soundness splits by chunk count `m` (`5m ≤ pastaFieldBits`): for `m ≤ 50` the ladder fits
+below the order and every row is non-degenerate unconditionally (`varBaseMul_subwrap_correct`);
+only the full width `m = 51` is the one-wrap case that needs the forbidden band
+(`varBaseMul_forbidden_correct`).
 
 The full-width `m = 51` case excludes the COMPLETE forbidden band, which is *stronger* than mina's
-incomplete runtime guard; the faithfulness caveat is in `§ Soundness: avoiding `±T` makes
-    every row non-degenerate`. -/
+incomplete runtime guard; the faithfulness caveat is in `§ Soundness: avoiding ±T makes every
+row non-degenerate`. -/
 
-/-- **scaleFast1 / Type1 on the real Vesta curve: correct + sound for any chunk count `m ∈ 1..51`.**
-    The single hypothesis on the bit count is `hbits : 5 * m ≤ pastaFieldBits`
-    (`bitsUsed ≤ FieldSizeInBits`). The forbidden-band exclusion `hnf` is required **only at the
-    full width** `5m = pastaFieldBits` — a conditional hypothesis — because every smaller chunk
-    count is in the sub-wrap regime and is sound with no guard at all. The proof dispatches:
-    `5m ≤ pastaFieldBits - 5` → `varBaseMul_subwrap_correct` (`3·2^(5m) ≤ PALLAS_BASE_CARD` by
-    computation); `5m = pastaFieldBits` → `varBaseMul_forbidden_correct`
-    (one-wrap, regime bounds + `order ≡ 1 mod 4` discharged from the cardinal). See
-    `§ Soundness: avoiding `±T` makes every row non-degenerate` for the band-vs-deployed-check
-    faithfulness caveat. -/
+/-- **Type1 scalar multiplication on the real Vesta curve, correct and sound at any `m ≤ 51`.**
+    The only hypothesis on the bit count is `hbits`. The forbidden-band exclusion `hnf` is
+    required only at the full width `5m = pastaFieldBits`, because every smaller chunk count is
+    in the sub-wrap regime and is sound with no guard at all. The proof dispatches:
+    `5m ≤ pastaFieldBits - 5` to `varBaseMul_subwrap_correct` (`3·2^(5m) ≤ PALLAS_BASE_CARD` by
+    computation), `5m = pastaFieldBits` to `varBaseMul_forbidden_correct` (one-wrap, its regime
+    bounds discharged from the cardinal). The band-vs-deployed-check faithfulness caveat is in
+    the soundness section above. -/
 theorem varBaseMul_scaleFast1
     (m : ℕ) (g : ℕ → Witness Fq)
     (T : Vesta.curve.toAffine.Point) (s : ℤ) (hrun : Run Vesta.curve.toAffine T g m)
@@ -2510,23 +2434,19 @@ theorem varBaseMul_scaleFast1
 `scaleFast2 base {sDiv2, sOdd}` does not call `varBaseMul` directly. It runs the inner
 `varBaseMul base (Type1 sDiv2)`, asserts the high bits of the decomposition zero — forcing
 `sDiv2 < 2^(pastaFieldBits-1)` — and applies the parity correction `if sOdd then g else g − base`.
-So the inner register is `sDiv2 < 2^(pastaFieldBits-1) < p`, which discharges `hkL` via the
+So the inner register is `sDiv2 < 2^(pastaFieldBits-1) < p`, which bounds the ladder top via the
 signed-ladder/register bridge (`gateLadder_eq_register`): no separate range hypothesis beyond
 `sDiv2`'s bound. The field-bound non-degeneracy at Pallas is inlined below — a bare `varBaseMul` is
 never a deployed entry point on its own. The split itself is modeled by `scalarMul_type2`. -/
 
-/-- **scaleFast2 on the real Pallas curve.** The Type2 entry point: the scalar is split
-    `s = 2·sDiv2 + sOdd`, the register `N` holds `sDiv2` (range-checked to
-    `gateRegister g (5m) < 2^(pastaFieldBits-1)` — the deployed `sDiv2 < 2^(pastaFieldBits-1)`), and
-    the `m` gates run the inner `varBaseMul`. The prover supplies only the gate `Holds` per row +
-    base + threading + the initial accumulator + the parity bit `sOdd ∈ {0,1}`; the final
-    accumulator `Point.some _ _ hfin` (its nonsingularity *derived*, like `endoMul`) and the scalar
-    `n` are *exposed in the conclusion*. The parity correction is stated on that accumulator:
+/-- **Type2 scalar multiplication on the real Pallas curve.** The scalar is split
+    `s = 2·sDiv2 + sOdd`, the register `N` holds `sDiv2` (range-checked by `hsDiv2`), and the
+    `m` gates run the inner ladder. The prover supplies only the per-row `Holds`, the base,
+    the threading, the initial accumulator and the parity bit; the final accumulator's
+    nonsingularity is derived, and the correction is stated on it:
     `if sOdd then P m else P m − T = [n]·T`, with `(n : F) = unshiftType2 (5m) (N m) sOdd =
     2·(N m) + sOdd + 2^(5m)`. Non-degeneracy comes from the range-check
-    (`sDiv2 < 2^(pastaFieldBits-1) ≤ p` ⟹ `hkL` via `gateLadder_eq_register`), feeding
-    `gateStep_chain` for the derived `GateStep`s; `scalarMul_type2` then supplies the split +
-    correction — matching the PureScript `scaleFast2` exactly. -/
+    through `gateLadder_eq_register`, feeding `gateStep_chain` and `scalarMul_type2`. -/
 theorem varBaseMul_scaleFast2
     (m : ℕ) (hm : 0 < m) (g : ℕ → Witness Fp)
     (T : Pallas.curve.toAffine.Point) (N : ℕ → Fp)

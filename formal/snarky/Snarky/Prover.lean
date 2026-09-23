@@ -19,9 +19,8 @@ universe u v
 
 variable {F c : Type u} {α : Type v}
 
-/-- Run a witness computation against an assignment (PS `runAsProver`, minus `Effect`):
-a read of an assigned variable continues with its value; one of an unassigned
-variable, or a `fail`, ends the run. -/
+/-- Run a witness computation against an assignment: a read of an assigned variable
+continues with its value; a read of an unassigned variable, or a `fail`, ends the run. -/
 def AsProver.run {α : Type u} : AsProver F α → Assignments F → Except EvalError α
   | .pure a, _ => .ok a
   | .read v k, env =>
@@ -56,20 +55,19 @@ variable {α β : Type u}
 
 end AsProver
 
-/-- The prover's output: the computation's result, the final next-variable counter, and
-the final assignment — the mirror of `Built`, with the witness table where the builder
-has the constraints. -/
+/-- The prover's output: the result, the final counter and the final assignment — the
+mirror of `Built`, with the witness table in place of the constraints. -/
 structure Proved (F : Type u) (α : Type v) where
   /-- The computation's result value. -/
   result : α
-  /-- The next-variable counter after the run — in lockstep with `Built.nextVar`. -/
+  /-- The next-variable counter after the run, in lockstep with `Built.nextVar`. -/
   nextVar : Nat
-  /-- The final assignment: every variable the run allocated, mapped to its witness value. -/
+  /-- The final assignment. -/
   assignments : Assignments F
 
 /-- Interpret a circuit as a prover run: allocate variables in lockstep with `build` and
-run witness computations to fill the assignment. Constraints are passed over — judging
-the table is not the prover's job. Succeeds iff every witness computation succeeds. -/
+run the witness computations to fill the assignment, skipping constraints. Succeeds iff
+every witness computation succeeds. -/
 def prove : CircuitM F c α → Nat → Assignments F → Except EvalError (Proved F α)
   | .pure a, nv, env => .ok ⟨a, nv, env⟩
   | .addConstraintOp _ k, nv, env => prove k nv env
@@ -110,24 +108,6 @@ def prove : CircuitM F c α → Nat → Assignments F → Except EvalError (Prov
 
 /-! ## Interpreter laws -/
 
-/-- A run keeps the table's domain at its counter. -/
-private theorem prove_dom {m : CircuitM F c α} {nv : Nat}
-    {env : Assignments F} {o : Proved F α} (hd : env.Dom nv)
-    (h : prove m nv env = .ok o) : o.assignments.Dom o.nextVar := by
-  induction m generalizing nv env with
-  | pure a =>
-    simp only [prove, Except.ok.injEq] at h
-    subst h
-    exact hd
-  | addConstraintOp con k ih =>
-    simp only [prove] at h
-    exact ih hd h
-  | existsOp n wit k ih =>
-    simp only [prove] at h
-    split at h
-    · cases h
-    · next xs _ => exact ih _ (by simpa using hd.extendList xs.toList) h
-
 /-- A run only extends the table. -/
 private theorem prove_le {m : CircuitM F c α} {nv : Nat}
     {env : Assignments F} {o : Proved F α} (hd : env.Dom nv)
@@ -165,8 +145,7 @@ private theorem prove_nv_le {m : CircuitM F c α}
     · cases h
     · exact Nat.le_trans (Nat.le_add_right nv n) (ih _ h)
 
-/-- Lockstep: a run's result and counter are the builder's. Public because the
-whole-circuit layer reads a solve's result off the compiled system. -/
+/-- Lockstep: a run's result and counter are the builder's. -/
 theorem prove_build_agrees {m : CircuitM F c α}
     {nv : Nat} {env : Assignments F} {o : Proved F α} (h : prove m nv env = .ok o) :
     o.result = (build m nv).result ∧ o.nextVar = (build m nv).nextVar := by
@@ -188,27 +167,26 @@ theorem prove_build_agrees {m : CircuitM F c α}
 
 /-! ## The prover state -/
 
-/-- A prover state: the allocation counter, the table, and the invariant relating them —
-the table is defined exactly below the counter. Two states with the same counter and
-table are equal (`ProverState.ext`): the invariant is not data. -/
+/-- A prover state: the counter, the table, and the invariant that the table is defined
+exactly below the counter. The invariant is a proof, so `ProverState.ext` compares only
+counter and table. -/
 @[ext] structure ProverState (F : Type u) where
   /-- The next-variable counter. -/
   nv : Nat
   /-- The witness table filled so far. -/
   env : Assignments F
-  /-- The table is defined exactly below the counter — carried, never re-proved. -/
+  /-- The table is defined exactly below the counter. -/
   dom : env.Dom nv
 
 namespace ProverState
 
-/-- What a run returns, read off a state: the result, and the state's counter and
-table. -/
+/-- A run's output ending at this state with result `a`. -/
 abbrev out (st : ProverState F) (a : α) : Proved F α := ⟨a, st.nv, st.env⟩
 
-/-- `v ∈ st`: the variable is in scope — allocated by this state or one before it. -/
+/-- `v ∈ st`: the variable is below the counter. -/
 instance : Membership Variable (ProverState F) := ⟨fun st v => v < st.nv⟩
 
-/-- The state after allocating `xs` at the counter: the one way a run makes a new state. -/
+/-- The state after allocating `xs` at the counter. -/
 def alloc (st : ProverState F) {n : Nat} (xs : Vector F n) : ProverState F :=
   ⟨st.nv + n, st.env.extendList st.nv xs.toList, by simpa using st.dom.extendList xs.toList⟩
 
@@ -216,11 +194,6 @@ def alloc (st : ProverState F) {n : Nat} (xs : Vector F n) : ProverState F :=
 private theorem get_eq [Zero F] (st : ProverState F) {v : Variable} (hv : v ∈ st) :
     st.env v = some (st.env.get v) :=
   st.dom.get_eq hv
-
-/-- Allocation only grows the table. -/
-theorem le_alloc (st : ProverState F) {n : Nat} (xs : Vector F n) :
-    st.env.Le (st.alloc xs).env :=
-  st.dom.le_extendList _
 
 /-- A variable in scope reads the same in any extension. -/
 private theorem get_of_le [Zero F] {st st' : ProverState F} (hle : st.env.Le st'.env)
@@ -232,10 +205,8 @@ private theorem get_of_le [Zero F] {st st' : ProverState F} (hle : st.env.Le st'
     (v : Variable) :
     (st.alloc xs).env.get v = (st.env.extendList st.nv xs.toList).get v := rfl
 
-/-- Preserving every assignment forces the counter along: each table is defined exactly
-below its own counter, so a slot live at the smaller frontier is live — hence below the
-counter — in the extension. What lets a fact quantified over `env.Le` extensions alone
-still transport counter-indexed structure. -/
+/-- Extending the table advances the counter: every slot defined below the old counter
+stays defined, hence below the new one. -/
 theorem nv_le_of_env_le {st st' : ProverState F} (hle : st.env.Le st'.env) :
     st.nv ≤ st'.nv := by
   rcases Nat.lt_or_ge st'.nv st.nv with h | h
@@ -263,7 +234,7 @@ def CVar.Scoped (st : ProverState F) (x : CVar F) : Prop := x.ScopedBy (· ∈ s
 @[simp] theorem CVar.scoped_scale (st : ProverState F) (k : F) (y : CVar F) :
     (CVar.scale k y).Scoped st ↔ y.Scoped st := Iff.rfl
 
-/-- The folds are scope-preserving. -/
+/-! The constant-folding constructors preserve scope. -/
 
 @[simp] theorem CVar.Scoped.add_ {st : ProverState F} [Add F] {a b : CVar F} (ha : a.Scoped st)
     (hb : b.Scoped st) : (CVar.add_ a b).Scoped st :=
@@ -278,7 +249,7 @@ def CVar.Scoped (st : ProverState F) (x : CVar F) : Prop := x.ScopedBy (· ∈ s
     (CVar.sub_ a b).Scoped st :=
   CVar.ScopedBy.sub_ ha hb
 
-/-- Scope survives any run: the counter only advances. -/
+/-- Scope survives any advance of the counter. -/
 theorem CVar.Scoped.mono {st st' : ProverState F} (hnv : st.nv ≤ st'.nv) {x : CVar F}
     (h : x.Scoped st) : x.Scoped st' := by
   induction x with
@@ -297,11 +268,11 @@ theorem CVar.val_of_le [Add F] [Mul F] [Zero F] {st st' : ProverState F}
   | add a b iha ihb => simp only [CVar.val, iha hx.1, ihb hx.2]
   | scale k y ih => simp only [CVar.val, ih hx]
 
-/-- The equations `Except.bind` computes by. -/
+/-- `Except.bind` on `ok` applies the continuation. -/
 @[simp] theorem except_bind_ok {ε α β : Type} (a : α) (f : α → Except ε β) :
     (Except.ok a).bind f = f a := rfl
 
-/-- A scoped expression reads as its total reading. -/
+/-- Reading a scoped expression succeeds with its total reading. -/
 @[simp] theorem AsProver.readCVar_run [Add F] [Mul F] [Zero F] {st : ProverState F} {x : CVar F}
     (hx : x.Scoped st) : (AsProver.readCVar x).run st.env = .ok (x.val st.env.get) := by
   induction x with
@@ -320,22 +291,20 @@ variable {F val var : Type}
 def CircuitType.Scoped [CircuitType F val var] (st : ProverState F) (v : var) : Prop :=
   ∀ cv ∈ (CircuitType.varToFields (val := val) v).toList, cv.Scoped st
 
-/-- A scoped bundle stays scoped as the table grows. -/
+/-- A scoped bundle stays scoped as the counter advances. -/
 theorem CircuitType.Scoped.mono [CircuitType F val var] {st st' : ProverState F}
     (hnv : st.nv ≤ st'.nv) {v : var} (h : CircuitType.Scoped (val := val) st v) :
     CircuitType.Scoped (val := val) st' v :=
   fun cv hcv => (h cv hcv).mono hnv
 
-/-- The bundle's fields read as the encoding of `a` on the table — the operand
-contract: vacuous information at `FVar` (every field element encodes), booleanity at
-`BoolVar`. Producers establish it; consumers assume it. -/
+/-- The operand contract: the bundle's fields read as the encoding of `a`. Vacuous at
+`FVar`, booleanity at `BoolVar`. Producers establish it; consumers assume it. -/
 def CircuitType.Reads [Add F] [Mul F] [inst : CircuitType F val var]
     (V : Valuation F) (v : var) (a : val) : Prop :=
   mapVec (·.val V) (inst.varToFields v) = inst.valueToFields a
 
-/-- A value's constant bundle: its encoding, materialized as constant expressions. Every
-value has one, and it reads as that value at every table — which is what makes
-admissibility (`CheckedType.Valid`) readable off a former factor by factor. -/
+/-- A value's constant bundle: its encoding as constant expressions. It reads as the
+value at every valuation, which lets `CheckedType.Valid` split factor by factor. -/
 def CircuitType.constVar [inst : CircuitType F val var] (a : val) : var :=
   inst.fieldsToVar (mapVec CVar.const (inst.valueToFields a))
 
@@ -349,9 +318,8 @@ theorem CircuitType.reads_constVar [Add F] [Mul F] [inst : CircuitType F val var
   simp only [getElem_mapVec]
   rfl
 
-/-- A bundle read: in scope, and reading as this value. The two travel as one — at any
-later table the same bundle reads the same value — which is what a multi-stage
-completeness proof carries from stage to stage. -/
+/-- A bundle in scope and reading as this value. It survives table growth
+(`CircuitType.ReadsAs.mono`), so completeness proofs carry it between stages. -/
 def CircuitType.ReadsAs [Add F] [Mul F] [Zero F] [CircuitType F val var]
     (st : ProverState F) (r : var) (v : val) : Prop :=
   CircuitType.Scoped (val := val) st r ∧ CircuitType.Reads st.env.get r v
@@ -377,8 +345,8 @@ def CircuitType.WellFormed [Add F] [Mul F] [CircuitType F val var]
     (V : Valuation F) (v : var) : Prop :=
   ∃ a, CircuitType.Reads (val := val) V v a
 
-/-- The operand contract, split: an encoding-faithful reading is a well-formed bundle
-whose decoded value is the value read. -/
+/-- The operand contract, split: a bundle reads as `a` iff it is well formed and
+decodes to `a`. -/
 theorem CircuitType.reads_iff [Add F] [Mul F] [Zero F] [inst : CircuitType F val var]
     {V : Valuation F} {v : var} {a : val} :
     CircuitType.Reads V v a ↔
@@ -395,7 +363,7 @@ theorem CircuitType.reads_iff [Add F] [Mul F] [Zero F] [inst : CircuitType F val
     rw [← hv, hval h']
     exact h'
 
-/-- A read survives the table's growth: scope carries the value with it. -/
+/-- A bundle read survives the table's growth. -/
 theorem CircuitType.ReadsAs.mono [Add F] [Mul F] [Zero F] [CircuitType F val var]
     {st st' : ProverState F} {r : var} {v : val} (hnv : st.nv ≤ st'.nv)
     (hle : st.env.Le st'.env) (h : CircuitType.ReadsAs st r v) :
@@ -442,12 +410,12 @@ theorem CircuitType.ReadsAs.mono [Add F] [Mul F] [Zero F] [CircuitType F val var
     show (#v[(↑b : CVar F).val V] : Vector F 1) = #v[bit bb]
     rw [h]
 
-/-- The wrapper is invisible to scope. -/
+/-- `UnChecked` is invisible to scope. -/
 @[simp] theorem CircuitType.scoped_unchecked [CircuitType F val var] {st : ProverState F}
     {v : var} : CircuitType.Scoped (val := UnChecked val) st ⟨v⟩ ↔
       CircuitType.Scoped (val := val) st v := Iff.rfl
 
-/-- The wrapper is invisible to the reading. -/
+/-- `UnChecked` is invisible to the reading. -/
 @[simp] theorem CircuitType.reads_unchecked [Add F] [Mul F] [Zero F] [CircuitType F val var]
     {V : Valuation F} {v : var} {x : val} :
     CircuitType.Reads V (UnChecked.mk v) (UnChecked.mk x) ↔ CircuitType.Reads V v x := Iff.rfl
@@ -509,14 +477,6 @@ theorem CircuitType.reads_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {
   rw [← Vector.eq_iff_flatten_eq]
   simp only [Vector.ext_iff, Vector.getElem_map]
 
-theorem CircuitType.readVal_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {n : Nat}
-    {V : Valuation F} {vs : Vector va n} :
-    CircuitType.readVal (val := Vector a n) V vs
-      = mapVec (fun v => CircuitType.readVal (val := a) V v) vs := by
-  simp only [CircuitType.readVal, CircuitType.varToFields_vector, CircuitType.fieldsToValue_vector,
-    mapVec_eq_map, Vector.map_flatten, chunkVec_flatten, Vector.map_map]
-  rfl
-
 theorem CircuitType.scoped_ofEquiv [inst : CircuitType F a va] (ev : b ≃ a) (ew : vb ≃ va)
     {st : ProverState F} {v : vb} :
     @CircuitType.Scoped F b vb (CircuitType.ofEquiv ev ew) st v ↔
@@ -526,11 +486,6 @@ theorem CircuitType.reads_ofEquiv [Add F] [Mul F] [Zero F] [inst : CircuitType F
     (ev : b ≃ a) (ew : vb ≃ va) {V : Valuation F} {v : vb} {x : b} :
     @CircuitType.Reads F b vb _ _ (CircuitType.ofEquiv ev ew) V v x ↔
       CircuitType.Reads V (ew v) (ev x) := Iff.rfl
-
-theorem CircuitType.readVal_ofEquiv [Add F] [Mul F] [Zero F] [inst : CircuitType F a va]
-    (ev : b ≃ a) (ew : vb ≃ va) {V : Valuation F} {v : vb} :
-    @CircuitType.readVal F b vb _ _ (CircuitType.ofEquiv ev ew) V v
-      = ev.symm (CircuitType.readVal V (ew v)) := rfl
 
 end Formers
 
@@ -543,12 +498,12 @@ private def Runs (g : CircuitM F c α) (st : ProverState F) (a : α)
     (st' : ProverState F) : Prop :=
   prove g st.nv st.env = .ok (st'.out a)
 
-/-- Every run only extends the table. -/
+/-- A run only extends the table. -/
 private theorem Runs.le {g : CircuitM F c α} {st st' : ProverState F} {a : α}
     (h : Runs g st a st') : st.env.Le st'.env :=
   prove_le st.dom h
 
-/-- Every run only advances the counter. -/
+/-- A run only advances the counter. -/
 private theorem Runs.nv_le {g : CircuitM F c α} {st st' : ProverState F} {a : α}
     (h : Runs g st a st') : st.nv ≤ st'.nv :=
   prove_nv_le h
@@ -565,25 +520,23 @@ section CompleteDef
 
 variable {F c : Type} {α : Type v}
 
-/-- The rows the builder emits from the run's initial counter, satisfied at the total
-reading of the run's final table — the half of completeness the run itself does not
-judge. -/
+/-- The rows the builder emits from the initial counter hold at the final table's total
+reading. -/
 private def Sat [Zero F] [ConstraintHolds F c] (g : CircuitM F c α) (st st' : ProverState F) :
     Prop :=
   ∀ con ∈ (build g st.nv).constraints, ConstraintHolds.Holds st'.env.get con
 
-/-- The completeness statement: from every state satisfying `pre`, the run succeeds, the
-rows it built are satisfied at every extension of its final table — the quantifier is
-monotonicity collected where it is provable, at the concrete rows — and its result and
-final state satisfy `post`. -/
+/-- From every state satisfying `pre`, the run succeeds, its rows hold at every
+extension of its final table, and its result and final state satisfy `post`. Quantifying
+over extensions is what lets `Complete.bind` sequence with no side condition. -/
 def Complete [Zero F] [ConstraintHolds F c] (pre : ProverState F → Prop)
     (g : CircuitM F c α) (post : α → ProverState F → Prop) : Prop :=
   ∀ st, pre st → ∃ a st', Runs g st a st' ∧
     (∀ {stf : ProverState F}, st'.nv ≤ stf.nv → st'.env.Le stf.env → Sat g st stf) ∧
     post a st'
 
-/-- Rows of a sequence are satisfied when the head's and — in lockstep through the
-head's run — the tail's are. -/
+/-- A sequence's rows hold when the head's hold and the tail's hold from the head's
+final state. -/
 private theorem Sat.bind [Zero F] [ConstraintHolds F c] {β : Type v} {g : CircuitM F c α}
     {k : α → CircuitM F c β} {st st₁ stf : ProverState F} {a : α}
     (hrun : Runs g st a st₁) (h₁ : Sat g st stf) (h₂ : Sat (k a) st₁ stf) :
@@ -597,9 +550,8 @@ private theorem Sat.bind [Zero F] [ConstraintHolds F c] {β : Type v} {g : Circu
   · exact h₁ con h
   · exact h₂ con h
 
-/-- The two order facts of a completeness law's run component — the counter and the
-table only grow — for the seam proofs that destructure `Complete` directly and cannot
-name the run's own projections. -/
+/-- A run only advances the counter and extends the table: the public form of the order
+lemmas, for proofs that destructure `Complete`. -/
 theorem run_le {g : CircuitM F c α} {st st' : ProverState F} {a : α}
     (h : Runs g st a st') : st.nv ≤ st'.nv ∧ st.env.Le st'.env :=
   ⟨h.nv_le, h.le⟩
@@ -614,34 +566,18 @@ private theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : Prove
   intro con hcon
   simp [build] at hcon
 
-/-- A state predicate that survives the table's growth. The ambient context of a
-multi-stage completeness proof is one of these, built up conjunct by conjunct. -/
+/-- A state predicate that survives the table's growth. -/
 def Mono (P : ProverState F → Prop) : Prop :=
   ∀ st st' : ProverState F, st.nv ≤ st'.nv → st.env.Le st'.env → P st → P st'
 
-/-- Conjunction of monotone facts is monotone — how a context accumulates. -/
+/-- A conjunction of monotone facts is monotone. -/
 @[complete_mono] theorem Mono.and [Zero F] {P Q : ProverState F → Prop} (hP : Mono (F := F) P)
     (hQ : Mono (F := F) Q) : Mono (F := F) fun st => P st ∧ Q st :=
   fun _ _ hnv hle h => ⟨hP _ _ hnv hle h.1, hQ _ _ hnv hle h.2⟩
 
-/-- A state-independent fact is monotone — a context's constant conjuncts. -/
+/-- A state-independent fact is monotone. -/
 @[complete_mono] theorem Mono.const {p : Prop} : Mono (F := F) fun _ => p :=
   fun _ _ _ _ h => h
-
-/-- A pinned allocation bound is monotone — the state-pinning idiom's first half. -/
-@[complete_mono] theorem Mono.nv_le {k : ℕ} : Mono (F := F) fun st => k ≤ st.nv :=
-  fun _ _ hnv _ h => Nat.le_trans h hnv
-
-/-- A pinned table extension is monotone — the state-pinning idiom's second half. -/
-@[complete_mono] theorem Mono.env_le {e : Assignments F} :
-    Mono (F := F) fun st => e.Le st.env :=
-  fun _ _ _ hle h => h.trans hle
-
-/-- A guarded monotone fact is monotone — the shape of a conditional grant, such as
-a law's "where the sum is finite the result reads it". -/
-@[complete_mono] theorem Mono.imp {p : Prop} {Q : ProverState F → Prop}
-    (hQ : Mono (F := F) Q) : Mono (F := F) fun st => p → Q st :=
-  fun _ _ hnv hle h hp => hQ _ _ hnv hle (h hp)
 
 /-- A reading is monotone. -/
 @[complete_mono]
@@ -655,9 +591,8 @@ theorem Mono.forall₂ [Add F] [Mul F] [Zero F] {val var : Type} [CircuitType F 
     Mono (F := F) fun st => List.Forall₂ (CircuitType.ReadsAs st) xs vs :=
   fun _ _ hnv hle h => h.imp fun _ _ hr => hr.mono hnv hle
 
-/-- Sequencing: the tail runs from what the head established. The monadic bind, with no
-side condition — the head's post IS the tail's pre, and it is stated at the head's own
-final state, so nothing has to cross the run. -/
+/-- Sequencing: the head's post is the tail's pre, stated at the head's final state, so
+no side condition is needed. -/
 theorem Complete.bind [Zero F] [ConstraintHolds F c] {β : Type v}
     {pre : ProverState F → Prop} {g : CircuitM F c α} {mid : α → ProverState F → Prop}
     {k : α → CircuitM F c β} {post : β → ProverState F → Prop}
@@ -670,16 +605,14 @@ theorem Complete.bind [Zero F] [ConstraintHolds F c] {β : Type v}
     Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
       (hsat₂ hnv hle), hpost⟩
 
-/-- A precondition nothing satisfies is complete for any program — what a branch the
-precondition rules out is discharged by. -/
+/-- A precondition nothing satisfies is complete for any program; it discharges the
+branches the precondition rules out. -/
 theorem Complete.of_false [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
     {g : CircuitM F c α} {post : α → ProverState F → Prop} (h : ∀ st, ¬ pre st) :
     Complete pre g post := fun st hst => absurd hst (h st)
 
-/-- A precondition that determines a parameter: if every state satisfying it fixes some
-`i`, and the program is complete from each `P i`, it is complete from the precondition.
-The dual of `of_false` — that one handles a precondition no state satisfies, this one a
-precondition whose states carry a value the law is indexed by. -/
+/-- If every state satisfying `pre` satisfies some `P i`, and the program is complete
+from each `P i`, it is complete from `pre`. -/
 theorem Complete.instantiate [Zero F] [ConstraintHolds F c] {ι : Type}
     {pre : ProverState F → Prop} {P : ι → ProverState F → Prop} {g : CircuitM F c α}
     {post : α → ProverState F → Prop} (h : ∀ st, pre st → ∃ i, P i st)
@@ -690,8 +623,8 @@ theorem Complete.instantiate [Zero F] [ConstraintHolds F c] {ι : Type}
 theorem Mono.scoped [Zero F] {x : CVar F} : Mono (F := F) fun st => x.Scoped st :=
   fun _ _ hnv _ h => h.mono hnv
 
-/-- The frame rule: a monotone fact the program does not disturb crosses it. This is the
-only rule that needs monotonicity — sequencing itself does not. -/
+/-- The frame rule: a monotone fact crosses the program. The one rule that needs
+monotonicity. -/
 theorem Complete.frame [Zero F] [ConstraintHolds F c] {pre R : ProverState F → Prop}
     {g : CircuitM F c α} {post : α → ProverState F → Prop}
     (hR : Mono (F := F) R) (h : Complete pre g post) :
@@ -709,10 +642,9 @@ theorem Complete.imp [Zero F] [ConstraintHolds F c] {pre pre' : ProverState F �
   obtain ⟨a, st₁, hrun, hsat, hp⟩ := h st (hpre st hst)
   exact ⟨a, st₁, hrun, hsat, hpost a st₁ hp⟩
 
-/-- Sequencing that keeps what it had. The tail runs from everything the head established
-AND everything the head's own precondition already guaranteed — so a multi-stage proof
-never names its context: the context IS the precondition, and it accumulates one conjunct
-per stage. The monotone hypothesis is what lets the precondition cross the head's run. -/
+/-- Sequencing that keeps the precondition: the tail runs from the head's post and the
+head's precondition, which crosses the head's run because it is monotone. A multi-stage
+proof's context is its precondition, growing one conjunct per stage. -/
 theorem Complete.seq [Zero F] [ConstraintHolds F c] {β : Type v}
     {pre : ProverState F → Prop} {g : CircuitM F c α} {mid : α → ProverState F → Prop}
     {k : α → CircuitM F c β} {post : β → ProverState F → Prop}
@@ -724,23 +656,20 @@ theorem Complete.seq [Zero F] [ConstraintHolds F c] {β : Type v}
       (Complete.frame hpre hg))
     hk
 
-/-- `pure` at a postcondition the entry state already satisfies — the tail of a `bind`
-chain, where the value is in hand and nothing more is emitted. -/
+/-- `pure` at a postcondition the entry state already satisfies. -/
 theorem Complete.pure_of [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
     {a : α} {post : α → ProverState F → Prop} (h : ∀ st, pre st → post a st) :
     Complete pre (pure a : CircuitM F c α) post :=
   fun st hst => ⟨a, st, rfl, fun _ _ => Sat.pure, h st hst⟩
 
-/-- A program that emits no rows and allocates nothing is complete from every state.
-In the law table this is what lets the walk step over a `pure` bound mid-chain — the
-residue of a statement-position `if` branch. -/
+/-- `pure` is complete from every state. As an `@[complete_law]` it lets the walk step over
+a `pure` mid-chain, such as the residue of an `if` branch. -/
 @[complete_law]
 theorem Complete.pure [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop} {a : α} :
     Complete pre (pure a : CircuitM F c α) fun _ _ => True :=
   fun st _ => ⟨a, st, rfl, fun _ _ => Sat.pure, trivial⟩
 
-/-- `addConstraint`'s one row is satisfied exactly by its identity — the row obligation
-is the caller's contribution. -/
+/-- `addConstraint`'s one row holds when its constraint holds. -/
 private theorem Sat.addConstraint [Zero F] [ConstraintHolds F c] {con : c} {st stf : ProverState F}
     (h : ConstraintHolds.Holds stf.env.get con) : Sat (Snarky.addConstraint con) st stf := by
   intro c' hc'
@@ -748,9 +677,8 @@ private theorem Sat.addConstraint [Zero F] [ConstraintHolds F c] {con : c} {st s
   subst hc'
   exact h
 
-/-- One emitted row: the prover allocates nothing and cannot fail, so the state is
-unchanged and the precondition survives. The row's obligation is the caller's, and it is
-owed at every extension of the table — which is what `Sat`'s quantifier asks for. -/
+/-- One emitted row: the state is unchanged and the precondition survives. The caller
+owes the row at every extension of the table. -/
 theorem Complete.addConstraint [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
     {con : c} (h : ∀ st, pre st → ∀ stf : ProverState F, st.env.Le stf.env →
       ConstraintHolds.Holds stf.env.get con) :
@@ -771,9 +699,8 @@ variable {F c : Type} {α : Type}
 /-- A program, read at the soundness tag. -/
 abbrev atBuilder (V : Valuation F) (g : CircuitM F c α) : CircuitM F (Builder V c) α := g
 
-/-- A soundness law at every valuation, read at the table a run built and satisfied, is
-a fact about the run's result. What lets a completeness law state its result's reading
-without re-deriving it: the value comes from the operation's own spec. -/
+/-- A soundness law at every valuation, read at the final table of a run whose rows
+hold, is a fact about the run's result. -/
 theorem runs_post [Zero F] [ConstraintHolds F c]
     {g : CircuitM F c α} {post : Valuation F → α → Prop}
     (hspec : ∀ V : Valuation F, ⦃⌜True⌝⦄ atBuilder V g ⦃⇓ r _ => ⌜post V r⌝⦄)
@@ -786,7 +713,7 @@ theorem runs_post [Zero F] [ConstraintHolds F c]
   exact hb fun con hcon => hsat con hcon
 
 /-- A completeness law's post, strengthened by the gadget's soundness law read at the
-final table — the reading recovered, not restated. -/
+final table. -/
 theorem Complete.post [Zero F] [ConstraintHolds F c]
     {pre : ProverState F → Prop} {g : CircuitM F c α} {Q : α → ProverState F → Prop}
     {post : Valuation F → α → Prop}

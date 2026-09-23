@@ -11,7 +11,7 @@ invariant under the wiring permutation — the copy constraints.
 
 Two strata:
 
-* **The abstract core** (`values_eq_of_multiset_eq`, `copy_soundness`): cells with an
+* The abstract core (`Kimchi.GrandProduct.copy_soundness`, imported): cells with an
   *injective* address map and a permutation `σp`. Equality of the multisets of
   `(value, address)` pairs — the own-address tagging against the wired-to-address
   tagging — forces `v ∘ σp = v`, by membership alone: the pair `(v c, addr (σp c))`
@@ -19,7 +19,7 @@ Two strata:
   `σp c`. The single-challenge form feeds `multiset_eq_of_prod_eval` (the grand-product
   Schwartz–Zippel core) with the product equality at one good pair `(β, γ)` and descends.
 
-* **The kimchi headline** (`Permutation.copy_soundness_of_dvd`): the per-challenge
+* The kimchi headline, here (`Permutation.copy_soundness_of_dvd`): the per-challenge
   quotient-argument hypotheses — at a single good challenge pair `(β, γ)` the prover supplies an
   accumulator `zg` and the three permutation constraints pass the derandomized
   quotient checks (`Permutation.soundness_of_dvd`) — composed with the
@@ -39,8 +39,8 @@ open Polynomial
 
 variable {F : Type*} [Field F]
 
-/-- The row products evaluate to cell products: `shiftSide` at `ωʲ` is the product over
-the columns of the own-address pair factors. -/
+/-- `shiftSide` evaluates to the product over the columns of the own-address pair
+factors. -/
 theorem shiftSide_eval (w : Fin permCols → Polynomial F) (shifts : Fin permCols → F)
     (β γ : F) (x : F) :
     (shiftSide w shifts β γ).eval x = ∏ i, ((w i).eval x + γ + β * shifts i * x) := by
@@ -51,13 +51,11 @@ theorem sigmaSide_eval (w σ : Fin permCols → Polynomial F) (β γ : F) (x : F
   simp [sigmaSide, eval_prod]
 
 /-- **Copy soundness of the kimchi permutation argument, divisibility form.** Fix the
-committed data — the witness columns `w`, the sigma columns `σpoly` (whose row semantics
-is the wiring: at row `j`, `σᵢ(ωʲ)` is the address of the cell that `(i, j)` is wired
-to), the coset shifts with injective cell addressing on the unmasked region. If at a
-**single good challenge pair** `(β, γ)` — avoiding the small bad sets of the cell's
-`(value, address)` pair multisets — the prover supplies an accumulator `zg` whose three
-permutation constraints are divisible by `Z_H`, then the witness values are invariant under
-the wiring on the unmasked region: for every cell `c`, `w(σp c) = w(c)`. -/
+witness columns `w`, the sigma columns `σpoly` (at row `j`, `σᵢ(ωʲ)` is the address of the
+cell `(i, j)` is wired to), and coset shifts with injective cell addressing on the unmasked
+region. If at a single challenge pair `(β, γ)` outside `badBetas` / `badGammas` of the cells'
+`(value, address)` multisets an accumulator `zg`'s three permutation constraints are all
+divisible by `zH`, then `w(σp c) = w(c)` for every unmasked cell `c`. -/
 theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)

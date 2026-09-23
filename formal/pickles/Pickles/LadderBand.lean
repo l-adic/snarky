@@ -6,35 +6,27 @@ import Snarky.Witness
 /-!
 # The ladder's forbidden band, asserted on the cells that are scaled
 
-`VarBaseMul` adds incompletely, so a ladder run is the scalar multiplication it names only off
-the forbidden band `Kimchi.Gate.VarBaseMul.forbiddenValues`: eleven residues of the ladder's
-top modulo the group order, exact at the Pasta primes (`varBaseMul_forbidden_correct`). The
-band is a property of a cell together with the ladder it feeds. This module asserts it on
-exactly those cells: the shifted scalars a group half scales by, and the full leaves of the
-`x_hat` commitment.
-
-The deployed circuits check something of this kind where `step_main` / `wrap_main` allocate
-the shifted-scalar type (`forbidden_shifted_values`, `impls.ml`), at two residues on the step
-side and none on the wrap side; upstream marks its list incomplete. The assertions here are
-the complete list. They are for the harness circuits around the shared gadgets
-(`StepProof.groupCircuit`, `WrapProof.groupCircuit`), which the deployed mains are not ported
-to; the gadgets themselves, and their CS-equality with the PureScript, are untouched.
+`VarBaseMul` adds incompletely: a ladder run computes the scalar multiplication it names when
+its top avoids the forbidden band `Kimchi.Gate.VarBaseMul.forbiddenValues`, eleven residues
+modulo the group order (`varBaseMul_forbidden_correct`). This module asserts the band on the
+cells that feed a ladder: the shifted scalars a group half scales by, and the full leaves of
+the public-input commitment. The harness circuits `StepProof.groupCircuit` and
+`WrapProof.groupCircuit` make these assertions alongside the shared gadgets.
 
 ## Main definitions
 
 * `assertNotIn`: a cell is none of the listed constants;
-* `bandInputs`: the ladder inputs below `2²⁵⁴` whose top meets the band of a group of a Pasta
-  order — eleven integers;
+* `bandInputs`: the eleven ladder inputs below `2²⁵⁴` whose top meets the band;
 * `assertClaimsOffBandWrap`, `assertClaimsOffBandStep`: the assertion on a side's shifted
   scalars (the step side's also makes each parity cell boolean);
-* `assertLeavesOffBand`: the assertion on the full leaves of an `x_hat` leaf list.
+* `assertLeavesOffBand`: the assertion on the full leaves of a public-input leaf list.
 
 ## Main results
 
 * `not_forbidden_of_not_bandInputs`: off `bandInputs`, the ladder's top is off the band;
-* `assertClaimsOffBandWrap_spec`, `assertClaimsOffBandStep_spec`: the asserted scalars are
-  claims the ladder read speaks about (`IvpSide.ClaimOk`);
-* `assertLeavesOffBand_spec`: the asserted leaves are off the `x_hat` window (`Leaf.offBand`).
+* `assertClaimsOffBandWrap_spec`, `assertClaimsOffBandStep_spec`: the asserted scalars satisfy
+  `IvpSide.ClaimOk`;
+* `assertLeavesOffBand_spec`: the asserted leaves satisfy `Leaf.offBand`.
 -/
 
 namespace Pickles
@@ -52,7 +44,7 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 def assertNotIn (x : FVar F) (cs : List F) : CircuitM F c PUnit :=
   cs.forM fun v => assertNotEqual x (.const v)
 
-/-- `assertNotIn` forces the cell to read as none of the constants. -/
+/-- The cell reads as none of the constants. -/
 theorem assertNotIn_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (cs : List F) :
     ⦃⌜True⌝⦄ assertNotIn (c := Builder V c) x cs ⦃⇓ _ _ => ⌜∀ v ∈ cs, x.val V ≠ v⌝⦄ :=
@@ -64,17 +56,16 @@ end NotIn
 
 /-! ## The ladder inputs on the band -/
 
-/-- The ladder inputs `0 ≤ z < 2²⁵⁴` whose one-wrap top `2z + 2²⁵⁵ + 1` meets the forbidden band
-of a group of order `q`: with `δ = q − 2²⁵⁴`, the eight `δ − 2 … δ + 5` (the odd residues, two
-orders up) and the three around `2²⁵³ + (3δ − 1)/2` (the even ones, three orders up). -/
+/-- The ladder inputs `0 ≤ z < 2²⁵⁴` whose top `2z + 2²⁵⁵ + 1` meets the forbidden band of a
+group of order `q`: with `δ = q − 2²⁵⁴`, the eight `δ − 2 … δ + 5` (odd residues, two orders
+up) and the three around `2²⁵³ + (3δ − 1)/2` (even residues, three orders up). -/
 def bandInputs (q : ℕ) : List ℤ :=
   let δ : ℤ := q - 2 ^ 254
   let m : ℤ := 2 ^ 253 + (3 * δ - 1) / 2
   [δ - 2, δ - 1, δ, δ + 1, δ + 2, δ + 3, δ + 4, δ + 5, m - 1, m, m + 1]
 
-/-- The arithmetic behind `bandInputs`, with `H = 2²⁵³` opaque so that every step is linear: a
-ladder input whose top is a forbidden residue modulo an odd `q` between `2H + 12` and `3H` is
-one of the eleven. -/
+/-- The arithmetic behind `bandInputs`, with `H = 2²⁵³` opaque so every step is linear: an
+input whose top is a forbidden residue modulo an odd `q ∈ (2H + 12, 3H)` is one of eleven. -/
 private theorem band_arith (H q z t k : ℤ) (h0 : 0 ≤ z) (hlt : z < 2 * H) (hq : 2 * H + 12 < q)
     (hq' : q < 3 * H) (hodd : q % 2 = 1)
     (ht : t = 0 ∨ t = 1 ∨ t = -1 ∨ t = 2 ∨ t = -2 ∨ t = 3 ∨ t = -3 ∨ t = 5 ∨ t = 7 ∨ t = 9 ∨
@@ -139,7 +130,7 @@ def assertClaimsOffBandStep [BasicSystem Fp c]
     CheckedType.check (F := Fp) (val := Bool) x.val.sOdd
     assertNotIn x.val.sDiv2 stepBandCells
 
-/-- The asserted wrap-side scalars are claims the ladder read speaks about. -/
+/-- The asserted wrap-side scalars satisfy `IvpSide.ClaimOk`. -/
 theorem assertClaimsOffBandWrap_spec {V : Valuation Fq} (xs : List (Type1 (FVar Fq))) :
     ⦃⌜True⌝⦄ assertClaimsOffBandWrap (c := Builder V (KimchiConstraint Fq)) xs
     ⦃⇓ _ _ => ⌜∀ x ∈ xs, (wrapSide V).ClaimOk x⌝⦄ := by
@@ -156,7 +147,7 @@ theorem assertClaimsOffBandWrap_spec {V : Valuation Fq} (xs : List (Type1 (FVar 
     List.mem_map_of_mem (f := (Int.cast : ℤ → Fq)) hmem
   exact hne _ hcell hz.symm
 
-/-- The asserted step-side scalars are claims the ladder read speaks about. -/
+/-- The asserted step-side scalars satisfy `IvpSide.ClaimOk`. -/
 theorem assertClaimsOffBandStep_spec {V : Valuation Fp}
     (xs : List (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     ⦃⌜True⌝⦄ assertClaimsOffBandStep (c := Builder V (KimchiConstraint Fp)) xs
@@ -186,26 +177,26 @@ theorem assertClaimsOffBandStep_spec {V : Valuation Fp}
 
 end Claims
 
-/-! ## The full leaves of an `x_hat` commitment -/
+/-! ## The full leaves of the public-input commitment -/
 
 section Leaves
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] {nc : ℕ}
 
-/-- The sixteen cell values of the `x_hat` band window `[2δ − 4, 2δ + 11]`, `δ = p − 2²⁵⁴`. -/
+/-- The sixteen cell values of the window `[2δ − 4, 2δ + 11]`, `δ = xhatBandDelta p`. -/
 def xhatBandCells (p : ℕ) : List F :=
   (List.range 16).map fun i => ((2 * xhatBandDelta p - 4 + i : ℕ) : F)
 
-/-- A leaf's full scalar cell, if it is a full leaf. -/
+/-- A full leaf's scalar cell. -/
 def Leaf.fullScalar? : Leaf F nc → Option (FVar F)
   | .full s _ _ => some s
   | _ => none
 
-/-- The assertion on a leaf list: each full leaf's scalar cell is off the `x_hat` window. -/
+/-- Each full leaf's scalar cell is off the window `xhatBandCells`. -/
 def assertLeavesOffBand (p : ℕ) (leaves : List (Leaf F nc)) : CircuitM F c PUnit :=
   (leaves.filterMap Leaf.fullScalar?).forM fun s => assertNotIn s (xhatBandCells p)
 
-/-- The asserted leaves are off the `x_hat` window. -/
+/-- The asserted leaves satisfy `Leaf.offBand`. -/
 theorem assertLeavesOffBand_spec {V : Valuation F} [ConstraintHolds F c]
     [LawfulBasicSystem F c] [LawfulToNat F] (p : ℕ) (leaves : List (Leaf F nc)) :
     ⦃⌜True⌝⦄ assertLeavesOffBand (c := Builder V c) p leaves

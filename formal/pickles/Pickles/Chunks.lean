@@ -10,15 +10,14 @@ set_option mvcgen.warning false
 A polynomial of degree above the SRS size is committed in chunks, and each of its evaluations
 arrives as one value per chunk. Kimchi's verifier recombines the chunks at the evaluation point
 raised to the SRS length (`combineAt`, as `KimchiProof.linEvals` does per column). This module is
-that recombination as a circuit (the PureScript `Pickles.PlonkChecks` chunk helpers, OCaml
-`step_verifier.ml`'s `actual_evaluation`), with its reading.
+that recombination as a circuit, with its reading; it transcribes the chunk helpers of
+`PlonkChecks.purs` and `step_verifier.ml`.
 
 ## Main definitions
 
 * `ChunkedEvals`: a proof's evaluations at `nc` chunks per column.
 * `hornerChunks`: `∑ᵢ chunks[i] · ptⁱ` in circuit.
-* `collapseColumn`, `collapseEvals`: every column recombined, in the emission order the
-  reference circuit fixes.
+* `collapseColumn`, `collapseEvals`: every column recombined, in a fixed emission order.
 * `publicFold`, `zetaToSrsOr`: the public chunks folded at `ζ^(2^srs)`, and that power shared
   with the plonk check.
 * `combineColumn`, `combineEvals`, `chunkRows`: the recombination on values, and a column's
@@ -39,8 +38,8 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-! ## The circuit -/
 
-/-- The evaluations of a proof at `nc` chunks per column (PS `ChunkedEvals`): `ft(ζω)`, the
-public chunks and the proof's evaluation chunks at `ζ` and `ζω`. -/
+/-- The evaluations of a proof at `nc` chunks per column: `ft(ζω)`, the public chunks and the
+proof's evaluation chunks at `ζ` and `ζω`. -/
 structure ChunkedEvals (nc : ℕ) (f : Type) where
   /-- `ft(ζω)`. -/
   ftEval1 : f
@@ -73,9 +72,8 @@ private def collapseColumnsRev {nc m : ℕ} (zetaPow zetaOmegaPow : FVar F)
   let r ← v.reverse.mapM (collapseColumn zetaPow zetaOmegaPow)
   pure r.reverse
 
-/-- Every column of a chunked batch recombined (PS `collapseChunkedEvalsCircuit`). The
-emission order is fixed: the six selectors, `σ`, `z`, the coefficients, the witness columns,
-each vector from its last column to its first. -/
+/-- Every column of a chunked batch recombined, in a fixed emission order: the selectors, `σ`,
+`z`, the coefficients, the witness columns, each vector from its last column to its first. -/
 def collapseEvals {nc : ℕ} (zetaPow zetaOmegaPow : FVar F)
     (e : ProofEvaluations (Vector (FVar F) nc)) : CircuitM F c (ProofEvaluations (FVar F)) := do
   let endomulScalarSelector ← collapseColumn zetaPow zetaOmegaPow e.endomulScalarSelector
@@ -91,9 +89,8 @@ def collapseEvals {nc : ℕ} (zetaPow zetaOmegaPow : FVar F)
   pure ⟨w, z, s, coefficients, genericSelector, poseidonSelector, completeAddSelector,
     mulSelector, emulSelector, endomulScalarSelector⟩
 
-/-- The public evaluation at `ζ` (the `p_eval0` of `ft_eval0`): the one chunk as it is, or the
-chunks folded at `ζ^(2^srs)` computed here and returned beside the fold, for the plonk check to
-reuse. -/
+/-- The public evaluation at `ζ`: the one chunk as it is, or the chunks folded at `ζ^(2^srs)`,
+with that power returned beside the fold for `zetaToSrsOr` to reuse. -/
 def publicFold (srsLengthLog2 : ℕ) (zeta : FVar F) :
     List (FVar F) → CircuitM F c (FVar F × Option (FVar F))
   | [x] => pure (x, none)
@@ -114,8 +111,8 @@ def combineColumn {nc : ℕ} (xζ xζω : F) (e : PointEvaluations (Vector F nc)
     PointEvaluations F :=
   ⟨combineAt xζ e.zeta.toArray, combineAt xζω e.zetaOmega.toArray⟩
 
-/-- Every column of a chunked batch recombined at `xζ` and `xζω` (the verifier's
-`evals.combine`, `KimchiProof.linEvals`'s per-column combination). -/
+/-- Every column of a chunked batch recombined at `xζ` and `xζω`: `KimchiProof.linEvals`'s
+per-column combination. -/
 def combineEvals {nc : ℕ} (xζ xζω : F) (e : ProofEvaluations (Vector F nc)) :
     ProofEvaluations F where
   w := e.w.map (combineColumn xζ xζω)
@@ -198,7 +195,7 @@ theorem collapseColumn_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasic
   simp [combineColumn, PointEvaluations.map, ha, hb, Vector.toList, ← Array.toList_map]
 
 omit [Field F] [DecidableEq F] [BasicSystem F c] in
-/-- A vector `mapM` of specifications: the results read, entrywise, as the targets. -/
+/-- `Vector.mapM` of specified steps: the results read, entrywise, as the targets. -/
 private theorem builder_spec_vector_mapM {V : Valuation F} [ConstraintHolds F c]
     {α β γ : Type} {m : ℕ} (f : α → CircuitM F (Builder V c) β) (g : β → γ) (Q : α → γ)
     (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜g r = Q a⌝⦄) (v : Vector α m) :

@@ -33,8 +33,8 @@ abbrev WrapFop (k nc : ℕ) : Type := FopInput k nc Fq Bool (Type2 Fq)
 /-- The wrap side's input at `k` rounds and `nc` chunks, as cells. -/
 abbrev WrapFopVar (k nc : ℕ) : Type := FopInput k nc (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))
 
-/-- The wrap circuit's scalar half at an environment: `finalize_other_proof`'s wrap side with
-the verifier key's parameters and domain — its generator a constant, `ζⁿ − 1` by `pow2PowMul`
+/-- The wrap circuit's scalar half at an environment: `finalizeOtherProofWrap` with the
+verifier key's parameters and domain — its generator a constant, `ζⁿ − 1` by `pow2PowMul`
 at the key's `log2` — the `Fq` token stream, and the previous-challenge cells at their static
 size. -/
 def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {k nc : ℕ}
@@ -61,7 +61,7 @@ private theorem vanishingAt_spec {V : Valuation Fq} (log2 : ℕ) (z : FVar Fq) :
   simp [ht]
 
 /-- **Running the wrap circuit's scalar half, a wrap proof's remaining half decides
-`kimchiVerify`.** `twoHalves_kimchiVerify_pallas` as a triple about the scalar circuit,
+`kimchiVerify`.** `twoHalves_kimchiVerify` at a wrap proof as a triple about the scalar circuit,
 with the step circuit's group half assumed (`verifyProof_step_reads` produces it). What the
 circuit's parameters and domain owe is the environment's; what is left is the ties. -/
 theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
@@ -139,8 +139,8 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
     rw [ScalarHalf.wrap_maskVals]
     simp
   rw [hdv, hmask] at hread
-  rw [← twoHalves_kimchiVerify_pallas E cp pub hguard Vg claimsG successG hg Vs claimsS evals
-    prevChallenges o hread ht hf]
+  rw [← twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD])
+    (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
 /-! ## The circuit of its input -/
@@ -168,8 +168,8 @@ abbrev ScalarVar.half (V : Valuation Fq) (s : ScalarVar k nc) :
     ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k nc :=
   ScalarHalf.wrap V s.claims s.evals s.prev
 
-/-- The wrap circuit's scalar half as a circuit of its input, `finalized` asserted: the
-deployed `finalized ∨ ¬should_finalize` at a slot that is finalized. -/
+/-- The wrap circuit's scalar half as a circuit of its input, `finalized` asserted, as at a
+slot whose `shouldFinalize` is set. -/
 def scalarCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
     (E : Env IpaPallas.curve nc) (s : ScalarVar E.σ.k nc) : CircuitM Fq c Unit := do
   let o ← finalizeOtherProofWrapAt E s.claims s.evals s.prev

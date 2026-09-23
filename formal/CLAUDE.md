@@ -39,22 +39,20 @@ tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interprete
 mirroring `Snarky.Backend.Builder`/`Prover`, whole-circuit `compile`/`solve` with the
 seam law `solve_complete` (a successful solve satisfies every compiled constraint and
 decodes the public slots as declared), and the Lean-only laws beside their
-subjects: interpreter laws in `Backend/{Builder,Prover}` (witness-independence,
+subjects: interpreter laws in `Snarky/{Builder,Prover}` (witness-independence,
 builder/prover allocation agreement, completeness — a successful prover run satisfies
 every built constraint, plus the bind-composition laws) and per-gadget
-soundness/completeness beside each gadget in `Circuit/DSL/{Field,Boolean,Assert,Bits}`.
+soundness/completeness beside each gadget in `Snarky/DSL/{Field,Boolean,Assert,Bits}`.
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
-`Mathlib.Algebra.Ring.Defs` + `Mathlib.Tactic.Ring` in `Snarky/Circuit/CVar.lean` for the
+`Mathlib.Algebra.Ring.Defs` in `Snarky/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete
 backends live in downstream files (see `Snarky/Constraint/Basic.lean` for the concrete
 `Basic` model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
 core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
-— use `Snarky.mapVec` from `Snarky/Types/Vector.lean`). The package is aligned with the
-PureScript original module by module; `formal/docs/snarky-ps-alignment.md` records the
-completed sign-off walk.
+— use `Snarky.mapVec` from `Snarky/Types/Vector.lean`).
 
 Build: `make lean-build` (from the parent repo root), which runs
-`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr Pickles`
+`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Pickles`
 in `formal/`; CI runs the same list plus `KimchiFixture`. From `formal/` you must name that
 target list yourself — **bare `lake build` here is not a build gate**: the root package is a
 pure aggregator that owns no library and declares no `defaultTargets`, so it reports
@@ -72,10 +70,9 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the certified point counts and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
 | `poseidon/` | `Poseidon`, `FixtureKit` | the Poseidon permutation + duplex sponge over both Pasta base fields, the `FqSponge` consumer layer, SvdW map-to-curve; plus the shared JSON-fixture/trace kit. Own fixtures + check scripts (`poseidon/scripts/`) |
 | `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: the abstract scheme and the executable Pasta wire verifier (Poseidon-driven), which `kimchiVerify` finishes on; IPA fixtures + check script. A specification, no soundness claim |
-| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier, its run functions, the wire parse); plus the fixture-decoding lib, kept out of `Kimchi` |
+| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/Linearization` (the verifier's scalar side in closed form), `Verifier/` (the executable verifier, its run functions, the wire parse); plus the fixture-decoding lib, kept out of `Kimchi` |
 | `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
 | `pickles/` | `Pickles` | the in-circuit kimchi verifier, so far its linearization slice: the `PolishToken` language and stack-machine interpreter, the reflection certificate identifying the deployed token stream with `gateLinearization`, the circuit reading proved to compute it, the `ft_eval0` gadget (`Pickles/FtEval0.lean`) proved to compute `ftEval0`, and the scalar-side gadgets (`Pickles/{IPA,CombinedInnerProduct,PermScalar,OptSponge,FrSponge,Domain,Pseudo}.lean`: the challenge polynomials, `b_correct`, the combined inner product, the permutation scalar, the conditional sponge, the fr-sponge schedule with both challenge digests, and the domain scalars, proved to read as the `Bulletproof`/`Linearization`/`Poseidon`/`frTranscript` quantities), the group side's fq-sponge transcript `Pickles/FqSpongeTranscript.lean` on either sponge (the wrap side's on the conditional sponge, `sg_old` under its mask; both proved to read as the wire verifier's `fqSqueezes`, at the deployed fields its `fqPrechallenges`), the opening check `Pickles/CheckBulletproof.lean` (CS-matched on both sides; its transcript half proved to read as the wire verifier's `ipaSqueezes` from the warm sponge, at the deployed fields its `ipaPrechallenges`, which `transcriptFrom_eq_ipaPrechallenges` places as `transcriptFrom`'s challenges), and their assembly `Pickles/FinalizeOtherProof.lean` (both sides, CS-matched to the production dumps, each proved to read as `FopReads`: the claimed scalars against the wire verifier's `frSqueezes` and its `ftEval0`/`combinedInnerProduct`/`combinedB`/`permScalar`; at the deployed fields `FopReadsWire`: `ξ`, `r` are the verifier's `frPrechallenges` — `frOracles`' own, `frOracles_eq_frPrechallenges`). Requires snarky + kimchi + poseidon; own axiom gate, and the ONLY `native_decide` site in the tree outside CompElliptic and `Pasta/Endo.lean`. The token modules `Linearization/{Fp,Fq}.lean` are codegen output (`scripts/gen_tokens.lean`, via `make gen-linearization-lean`), committed because formal/'s CI checks out without the mina submodule |
-| `schnorr/` | `Schnorr` | the verifier-faithfulness exemplar: a Schnorr identification protocol over Vesta as a wire verifier, and (arriving) its in-circuit implementation with the laws tying the two. Requires snarky + poseidon; own axiom gate. NOT a PS port — no byte-parity obligation |
 
 No package is privileged: `formal/` itself is a pure aggregator workspace (its lakefile
 owns no libraries, only requires). Each package builds standalone from its own directory
@@ -87,6 +84,21 @@ the packages' manifests), `scripts/module-deps.sh` (the dependency-graph artifac
 `make lean-dep-graph`), `scripts/prune-stale-oleans.sh` (garbage-collect build artifacts
 of deleted/renamed modules — run it after branch switches), and
 `scripts/kernel-replay.sh` (the lean4checker kernel-replay gate).
+
+**The comment gate** (`scripts/check-comments.sh`, `make lean-comments`) fixes the objective
+half of the comment convention; the judgement half is the `proof-comment-style` skill. A
+docstring names THIS tree's code: an identifier-shaped backticked token that resolves to
+nothing is rot (the exception list, `scripts/comment-allow.txt`, holds the column-count
+notations and nothing else). An upstream source file — `verifier.rs`, `step_verifier.ml`,
+`RangeCheck.purs` — may be named in a module's MODULE docstring (its first `/-! … -/`), to say
+what the module transcribes; a declaration docstring or a later section note naming one is a
+violation, because that prose says what this tree's code does. The same holds for naming the
+upstream languages (PureScript, PS, OCaml, Rust) in prose; the fixture libraries, which decode
+upstream dumps, are exempt. The gate also bans history narration, first person and trackers,
+caps a declaration docstring at 8 lines and a module docstring at 60, and allows at most one
+bolded label, which must open the docstring. Every category is at zero in
+`scripts/comment-baseline.txt`, so any new violation fails the gate. `COMMENT_GATE_LIST=1`
+lists every violation.
 
 Three further quality gates are community tools, all CI-enforced:
 
@@ -132,9 +144,6 @@ described are gone; their content lives in `Gate/` + `Gate/Semantics/` + the pas
 | **Arithmetization** | `kimchi/Kimchi/{Index,Permutation,Lift,Domain,Aggregate,SchwartzZippel,GrandProduct,Protocol/Linearization}` | the index as data, `Index.Satisfies`, the wiring and σ columns, the polynomial lift, satisfiability ↔ divisibility (`satisfies_iff_fullFamily_dvd`), copy soundness, and the verifier's scalar side in closed form |
 | **Verifier** | `kimchi/Kimchi/Verifier/` | the executable verifier (`Kimchi.lean`), its body in closed form (`Reflect.lean`), and the serde wire boundary with its parse (`Wire.lean`) |
 
-`Main.lean` + `Kimchi/Gate/Generic.lean` are a runnable demo of "ingest a (gate, witness)
-and run the verified checker".
-
 Above the gate stack, the library has grown these further trees:
 
 - The arithmetization, as top-level modules rather than a directory: `Kimchi/Domain.lean`
@@ -145,11 +154,9 @@ Above the gate stack, the library has grown these further trees:
   `Index.satisfies_iff_fullFamily_dvd` — the only result linking `Index.Satisfies` to the
   committed polynomial family. **The SZ layer is deterministic algebra**, not a probabilistic
   claim: the bad sets are explicit and their cardinalities are proved, so the statements
-  quantify over challenges outside them. Do not confuse it with the retired
-  knowledge-soundness development — `docs/soundness-line-retirement.md` records that
-  distinction, and an earlier pass deleted this layer by conflating the two before reverting.
-  What IS retired above it: the *ideal* polynomial protocol (`Protocol/{Accepts,Equation}`,
-  `Index/Degree`), whose bridge to the deployed verifier went with the forking tree.
+  quantify over challenges outside them. It is not part of the retired knowledge-soundness
+  development and is not to be deleted with it; `docs/soundness-line-retirement.md` states
+  the distinction.
 - **`Kimchi/Verifier/`** — the executable kimchi verifier and its reflection into named
   run functions. The kimchi-proof JSON decoders live in `kimchi/KimchiFixture/`,
   its OWN library (`KimchiFixture`) sitting beside the `Kimchi/` tree, deliberately NOT
@@ -181,10 +188,9 @@ Each modelled gate is two files:
 
 ## How a gate is modelled
 
-There are **two gate idioms**, split by purpose — *runnable demo* vs *proof-oriented*. Both are
-algebraic; neither is a concrete-integer model.
+There are **two gate idioms**. Both are algebraic; neither is a concrete-integer model.
 
-**(1) The generic gate, which is also the runnable demo** (`Gate/Generic.lean`) — a row is 15
+**(1) The generic gate** (`Gate/Generic.lean`) — a row is 15
 coefficient cells and 15 witness cells over a field, and one `constraints` list over any
 `[CommRing R]` is the single transcription everything else reads:
 
@@ -204,9 +210,7 @@ theorem satisfies_iff [DecidableEq F] (rows) : satisfies rows = true ↔ Satisfi
 ```
 
 Plus `Generic.map` (the functorial relabelling the polynomial lift instantiates at a ring hom) and
-`Generic.withPublic` (fold a public input into `q 4`). `satisfies` at `ZMod 17` is what `Main.lean`
-prints and what the file's own two `#eval`s report; it's the bridge to the JSON the PureScript
-dumpers emit.
+`Generic.withPublic` (fold a public input into `q 4`).
 
 **(2) The algebraic EC gates** (`Gate/AddComplete.lean`, `VarBaseMul.lean`, `EndoMul.lean`,
 `EndoScalar.lean`) — each gate is a `Witness (F : Type*)` structure (one named field per
@@ -298,7 +302,7 @@ the tree now needs either.
 - Introduce NO axioms. A genuinely unprovable fact becomes a *hypothesis* of the statements
   that need it, never an `axiom`.
 - The CI gates (`.github/workflows/lean.yml`) audit every package's surface
-  (`*/scripts/check_axioms.sh` — kimchi, pasta, poseidon, bulletproof-pcs, snarky, schnorr) and fail
+  (`*/scripts/check_axioms.sh` — kimchi, pasta, poseidon, bulletproof-pcs, snarky, pickles) and fail
   on `sorryAx` or any stray axiom; the sorry census pins the whole tree.
 - **Avoid `native_decide` in our own proofs** — use `decide` or `reduce_mod_char`. The gates
   trust `native_decide` certificates by DEFINING MODULE (upstream CompElliptic, plus
@@ -317,7 +321,6 @@ kimchi/scripts/check_axioms.sh               # kimchi's rooted results reduce to
 pasta/scripts/check_axioms.sh                # the derived trust base (no eigen)
 bulletproof-pcs/scripts/check_axioms.sh      # the PCS definitional surface (standard axioms only)
 snarky/scripts/check_axioms.sh               # the DSL interpreter laws (standard axioms only)
-schnorr/scripts/check_axioms.sh              # the exemplar's wire surface (standard axioms only)
 poseidon/scripts/check_sponge_vectors.sh     # Poseidon automaton vs mina_poseidon traces (Fq and Fp)
 poseidon/scripts/check_fq_sponge.sh          # FqSponge op traces + group_map vectors (both curves)
 bulletproof-pcs/scripts/check_ipa_fixture.sh # the executable IPA verifiers accept wire data
@@ -352,12 +355,13 @@ op type, a decoder, and a `step : state -> op -> state x Bool`.
   `# Title`, a short description, then `## Main definitions`, `## Main results` and
   `## Implementation notes` as warranted; design rationale lives there or in the commit
   message. A declaration docstring is one to three declarative sentences saying what the
-  declaration is or states, with no headline emphasis (no bold sentences, no capitals for
-  stress). The gate files under `Kimchi/Gate/` predate this and carry longer preambles
+  declaration is or states, with no bold sentences and no capitals for stress. A milestone
+  theorem may open with one bolded role label (`**The body's read.**`); defs and supporting
+  lemmas carry none. The gate files under `Kimchi/Gate/` predate this and carry longer preambles
   (the gate's source, column layout and constraint transcription); keep those accurate,
   and write new code to the Mathlib standard.
 - **Files are split into `/-! ## … -/` sections** (constraint model → reflection → soundness →
-  completeness → runnable `#eval` example → supporting lemmas). Keep section docstrings in sync
+  completeness → supporting lemmas). Keep section docstrings in sync
   with reality (see below).
 - **Each modelled gate is two files** (see "The gate/semantics module convention" above):
   the constraint model in `Kimchi/Gate/{Name}.lean` and the multi-row development in

@@ -4,34 +4,18 @@ import Poseidon.RandomOracle
 /-!
 # The in-circuit block-mode hash
 
-Port of `Snarky.Circuit.RandomOracle`
-(packages/random-oracle/src/Snarky/Circuit/RandomOracle.purs), the circuit twin of
-`Poseidon/RandomOracle.lean`: chunk the input into rate-2 blocks (constant-zero pads,
-one zero block for empty input), add each block into the state and permute, read
-slot 0. Unlike the duplex sponge there is no seal — blocks feed bare `add_` sums
-straight into the permutation gadget, as the PS source does.
+Transcribes packages/random-oracle/src/Snarky/Circuit/RandomOracle.purs, the circuit twin of
+`Poseidon.RandomOracle`: chunk the input into rate-2 blocks (constant-zero pads, one zero
+block for empty input), add each block into the state and permute, read slot 0. Unlike the
+in-circuit duplex sponge nothing is sealed: blocks feed bare `CVar.add_` sums straight into
+the `poseidon` gadget.
 
-The chunking is metadata (list structure over `FVar`s), so a hash of `n` variables
-emits exactly the `poseidon` blocks — `⌈n/2⌉` of them, or one for `n = 0` — and
-nothing else.
+Chunking is metadata (list structure over `FVar`s), so hashing `n` variables emits only the
+`poseidon` blocks: `⌈n/2⌉` of them, or one for `n = 0`.
 
-Name map: `update`/`hash2`/`hashVec` keep their names; PS `initialState` stays private
-as `initState` (PS does not export it); the private helpers mirror the value module's
-`toBlocks`/`chunk`/`addBlock`. The state is the gadget's `SpongeState` and blocks are
-pairs, both read by their `CircuitType` instances; a list of operands is read entrywise
-by `List.Forall₂`.
-
-Deviations from the PS original:
-- PS's ambient `PoseidonField` class arrives as the explicit `p : Poseidon.Params F`.
-- PS's width-3 / width-2 `Vector`s render as `SpongeState` and the pair; PS `Array`
-  inputs render as `List`.
-- The `Digest` newtype with its `CircuitType`/`CheckedType`/`AssertEqual` instances,
-  and the `Hashable`/`HashInput` classes with `hashOf`, are not ported: they are PS
-  generic-deriving and dispatch ergonomics; the operations are the port surface, and
-  Lean callers apply them directly (digests are bare `FVar`s).
-- PS's pad-then-`Vector.chunk` chunking renders as the structural recursion
-  `chunkVar`, preserving the odd-tail pad and the empty-input rule — matching the
-  value module's rendering.
+The state is the gadget's `SpongeState` and blocks are pairs; input lists are read
+entrywise by `List.Forall₂`. The upstream digest newtype and hashing classes are not
+ported: digests are bare `FVar`s.
 -/
 
 namespace Snarky.Kimchi
@@ -44,29 +28,27 @@ namespace RandomOracle
 
 /-! ## The block decomposition
 
-Metadata: no rows. Each piece is aligned with its `Poseidon.RandomOracle` counterpart
-twice — at the total reading, which soundness quotes, and at `CircuitType.ReadsAs`,
-which completeness carries. -/
+Metadata: no rows. Each piece matches its `Poseidon.RandomOracle` counterpart twice: at the
+total reading, for soundness, and at `CircuitType.ReadsAs`, for completeness. -/
 
-/-- The fresh state (PS `initialState`, unexported there): constant-zero cells. -/
+/-- The fresh state: constant-zero cells. -/
 private def initState [Zero F] : SpongeState F :=
   ⟨.const 0, .const 0, .const 0⟩
 
-/-- Rate-2 chunks with a constant-zero odd-tail pad — `Poseidon.RandomOracle.chunk`
-over circuit variables. -/
+/-- `Poseidon.RandomOracle.chunk` over circuit variables: rate-2 chunks, constant-zero
+odd-tail pad. -/
 private def chunkVar [Zero F] : List (FVar F) → List (FVar F × FVar F)
   | [] => []
   | [x] => [(x, .const 0)]
   | x :: y :: rest => (x, y) :: chunkVar rest
 
-/-- The block decomposition — `Poseidon.RandomOracle.toBlocks` over circuit
-variables: rate-2 chunks, one constant-zero block for empty input. -/
+/-- `Poseidon.RandomOracle.toBlocks` over circuit variables: one constant-zero block for
+empty input, `chunkVar` otherwise. -/
 private def toBlocksVar [Zero F] : List (FVar F) → List (FVar F × FVar F)
   | [] => [(.const 0, .const 0)]
   | xs => chunkVar xs
 
-/-- Add a block into the rate slots (PS `addBlock`): bare `add_` sums, no seal, no
-constraints. -/
+/-- Add a block into the rate slots: bare `CVar.add_` sums, no seal. -/
 private def addBlockVar [Add F] (st : SpongeState F) (b : FVar F × FVar F) :
     SpongeState F :=
   ⟨CVar.add_ st.s0 b.1, CVar.add_ st.s1 b.2, st.s2⟩
@@ -99,7 +81,7 @@ private theorem toBlocksVar_readVal [Field F] (V : Valuation F) :
   | [x] => chunkVar_readVal V [x]
   | x :: y :: rest => chunkVar_readVal V (x :: y :: rest)
 
-/-- Read inputs chunk to read blocks: the constant pads read as the value pads. -/
+/-- Read inputs chunk to read blocks; the constant pads read as the value pads. -/
 private theorem chunkVar_readsAs [Field F] {st : ProverState F} :
     ∀ {xs : List (FVar F)} {vs : List F},
       List.Forall₂ (CircuitType.ReadsAs (val := F) st) xs vs →
@@ -141,7 +123,7 @@ attribute [irreducible] chunkVar toBlocksVar
 
 /-! ## One block -/
 
-/-- Absorb one block (PS `updateBlock`): add into the rate slots, permute. -/
+/-- Absorb one block: add into the rate slots, permute. -/
 private def updateBlock [Field F] [BasicSystem F c] [KimchiSystem F c]
     (p : Poseidon.Params F) (st : SpongeState F) (b : FVar F × FVar F) :
     CircuitM F c (SpongeState F) :=
@@ -198,7 +180,7 @@ attribute [irreducible] addBlockVar updateBlock
 
 /-! ## The block fold -/
 
-/-- Fold the input into the state block by block (PS `update`). -/
+/-- Fold the input into the state block by block. -/
 def update [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params F)
     (st : SpongeState F) (xs : List (FVar F)) :
     CircuitM F c (SpongeState F) :=
@@ -291,7 +273,7 @@ attribute [irreducible] update
 
 /-! ## Hashing two elements -/
 
-/-- Hash exactly two elements (PS `hash2`): one block, one permutation. -/
+/-- Hash exactly two elements: one block, one permutation. -/
 def hash2 [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params F)
     (a b : FVar F) : CircuitM F c (FVar F) := do
   let st ← updateBlock p initState (a, b)
@@ -343,7 +325,7 @@ attribute [irreducible] hash2
 
 /-! ## Hashing a list -/
 
-/-- Hash a list of elements (PS `hashVec`): update the fresh state, read slot 0. -/
+/-- Hash a list: `update` the fresh state, read slot 0. -/
 def hashVec [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params F)
     (xs : List (FVar F)) : CircuitM F c (FVar F) := do
   let st ← update p initState xs

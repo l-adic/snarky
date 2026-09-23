@@ -1,791 +1,106 @@
--- API root set for the snarky package (the deep-embedded circuit DSL).
--- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh). The axiom audit
--- lives in scripts/check_axioms.lean (the interpreter laws and the gadget laws).
+-- API root set for the snarky package: the circuit-building DSL and its kimchi bridge.
 --
--- The declared surface is the PORT surface: the Lean counterparts of the PS module
--- exports (each module docstring's D7 name map), the Lean-only laws the embedding exists
--- to state, and the `Examples` exhibits. Internal machinery — witness cores, private
--- lemmas, the reduction pipeline's helpers — is deliberately NOT rooted: it must stay
--- reachable from this surface, which is what keeps the dead-zero contract meaningful for
--- this package. `Snarky.*` declarations are audited by the workspace pass like every
--- other package's.
+-- The gadget specs and completeness results are the package's surface — a gadget's
+-- completeness is kept even where nothing consumes it yet. The `simp`-invisible block holds
+-- lemmas the reachability walk cannot see: an `rfl` simp lemma used from the simp set, a
+-- coercion instance applied by the elaborator, and the tactic code the completeness proofs
+-- run.
 
+-- Completeness: the honest prover can always fill a satisfying witness. Kept for every
+-- gadget, including those no circuit here consumes yet.
+Snarky.solve_complete
+Snarky.assertAll_complete
+Snarky.assertAny_complete
+Snarky.assertExactlyOne_complete
+Snarky.assertNotEqual_complete
+Snarky.assert_complete
+Snarky.unpack_complete
+Snarky.all_complete
+Snarky.any_complete
+Snarky.xor_complete
+Snarky.pow_complete
+Snarky.Kimchi.EndoMul.endoInv_complete
+Snarky.Kimchi.EndoMul.vesta_endoMul_complete
+Snarky.Kimchi.groupMapCircuit_toGroup_complete
+Snarky.Kimchi.RandomOracle.hash2_complete
+Snarky.Kimchi.RandomOracle.hashVec_complete
+Snarky.Kimchi.lowest128Bits'_complete
+Snarky.Kimchi.rangeCheck128_complete
+Snarky.Kimchi.SpongeVar.absorb_complete
+Snarky.Kimchi.SpongeVar.squeeze_complete
+Snarky.Kimchi.scaleFast1_complete
+Snarky.Kimchi.scaleFast2'_complete
+Snarky.Kimchi.vesta_varBaseMul_complete
+Snarky.Tactic.completeStep
 
--- The op tree (Circuit.lean): the two syntaxes — the circuit monad whose only effects are
--- allocation and emission, and the prover's read/fail language — with their monad
--- instances and the eliminators the interpreters case on.
-Snarky.Variable
-Snarky.EvalError
-Snarky.AsProver
-Snarky.AsProver.throw
-Snarky.AsProver.instMonad
-Snarky.AsProver.instLawfulMonad
-Snarky.AsProver.bind_eq
-Snarky.AsProver.pure_eq
-Snarky.AsProver.map_eq
-Snarky.AsProver.ctorElim
-Snarky.CircuitM
-Snarky.CircuitM.instMonad
-Snarky.CircuitM.instLawfulMonad
-Snarky.CircuitM.map_eq
-Snarky.CircuitM.ctorElim
-Snarky.addConstraint
-Snarky.instReprEvalError
+-- The circuit gadgets and their specs: what a gadget emits, read back at a valuation.
+Snarky.assertAll_spec
+Snarky.assertAny_spec
+Snarky.assertEq_spec
+Snarky.assertExactlyOne_spec
+Snarky.CVar.Scoped.packLow
+Snarky.packLow_val
+Snarky.unpack_spec
+Snarky.Kimchi.HasEndo.pallas
+Snarky.Kimchi.EndoMul.vesta_endoMul_read
+Snarky.Kimchi.groupMapCircuit_onCurve_spec
+Snarky.Kimchi.RandomOracle.hash2_spec
+Snarky.Kimchi.RandomOracle.hashVec_spec
+Snarky.Kimchi.rangeCheck128_spec
+Snarky.Kimchi.SpongeVar.Reads.readsAt
+Snarky.Kimchi.joinField
+Snarky.Kimchi.vesta_varBaseMul_read
 
--- The CVar layer (CVar.lean): the affine expression tree, the fold spellings (`_`-suffixed
--- against the raw-constructor clash), the valuation reading, the affine-reduction pipeline
--- with its correctness law, and the scope predicate the reduction respects.
-Snarky.CVar
-Snarky.FVar
-Snarky.CVar.add_
-Snarky.CVar.scale_
-Snarky.CVar.sub_
-Snarky.CVar.negate_
-Snarky.CVar.val
-Snarky.CVar.val_add_
-Snarky.CVar.val_scale_
-Snarky.CVar.val_sub_
-Snarky.CVar.val_negate_
-Snarky.AffineExpression
-Snarky.AffineExpression.val
-Snarky.CVar.reduceToAffineExpression
-Snarky.CVar.reduce_val
-Snarky.CVar.ScopedBy
-Snarky.CVar.ScopedBy.add_
-Snarky.CVar.ScopedBy.scale_
-Snarky.CVar.ScopedBy.sub_
-Snarky.CVar.ScopedBy.reduce
-Snarky.AsProver.readCVar
-Snarky.instDecidableEqCVar
-Snarky.instReprCVar
-Snarky.instDecidableEqAffineExpression
-Snarky.instReprAffineExpression
-
--- The assignment table (Assignments.lean): the partial table, its domain and extension
--- order, and the extension operations the prover fills through.
-Snarky.Assignments
-Snarky.Assignments.instCoeFunForallVariableOption -- elaboration: `a v` on the dense table
-Snarky.Assignments.empty
-Snarky.Assignments.get
-Snarky.Assignments.extend
-Snarky.Assignments.extendFresh
-Snarky.Assignments.extendList
-Snarky.Assignments.Dom
-Snarky.Assignments.Le
-Snarky.Assignments.Le.refl
-Snarky.Assignments.Le.trans
-Snarky.Assignments.get_of_le
-Snarky.Assignments.empty_dom
+-- Invisible to the reachability walk, so rooted by hand: `rfl` simp lemmas (used from the
+-- simp set, they leave no constant in a proof term), coercion instances the elaborator
+-- applies, and the tactic implementations the completeness proofs call.
+Snarky.Assignments.instCoeFunForallVariableOption
 Snarky.Assignments.le_extendFresh
-Snarky.Assignments.extendList_get
-Snarky.Assignments.Dom.get_eq
-Snarky.Assignments.Dom.extendList
-Snarky.Assignments.Dom.le_extendList
-
--- The constraint builder (Builder.lean): the interpreter that allocates and emits, its
--- output record, the public slot range, and the composition law.
-Snarky.build
-Snarky.Built
-Snarky.allocRange
-Snarky.getElem_allocRange
-Snarky.build_bind
-
--- The witness prover (Prover.lean): the interpreter that fills the table, the run relation
--- and the satisfaction relation it leaves behind, the completeness predicate every gadget
--- law is stated in, and the reading vocabulary — a bundle is SCOPED when its variables are
--- below the counter and READS when the table decodes it, transported across a later run by
--- `ReadsAs.mono`.
-Snarky.prove
-Snarky.Proved
-Snarky.ProverState
-Snarky.ProverState.alloc
-Snarky.ProverState.dom
-Snarky.ProverState.out
-Snarky.ProverState.instMembershipVariable
-Snarky.ProverState.ext
-Snarky.ProverState.ext_iff
-Snarky.ProverState.get_alloc
-Snarky.ProverState.le_alloc
-Snarky.AsProver.run
-Snarky.AsProver.run_pure
-Snarky.AsProver.run_read
-Snarky.AsProver.run_bind
-Snarky.AsProver.readCVar_run
-Snarky.atBuilder
-Snarky.except_bind_ok
-Snarky.prove_pure
-Snarky.prove_pure'
-Snarky.prove_bind
-Snarky.prove_addConstraint
-Snarky.prove_build_agrees
-Snarky.runs_post
-Snarky.run_le
-Snarky.Complete
-Snarky.Complete.post
-Snarky.Complete.bind
-Snarky.Complete.frame
-Snarky.Complete.addConstraint
-Snarky.Complete.pure
-Snarky.Complete.of_false
-Snarky.Complete.instantiate
-Snarky.Complete.witness
-Snarky.Mono.forall₂
-Snarky.Mono.scoped
-Snarky.ProverState.nv_le_of_env_le
-Snarky.CVar.Scoped
-Snarky.CVar.Scoped.mono
-Snarky.CVar.Scoped.add_
-Snarky.CVar.Scoped.scale_
-Snarky.CVar.Scoped.sub_
-Snarky.CVar.scoped_var
-Snarky.CVar.scoped_const
-Snarky.CVar.scoped_add
-Snarky.CVar.scoped_scale
-Snarky.CVar.val_of_le
-Snarky.CircuitType.readVal
-Snarky.CircuitType.Scoped
-Snarky.CircuitType.Reads
-Snarky.CircuitType.ReadsAs
-Snarky.CircuitType.WellFormed
-Snarky.CircuitType.Scoped.mono
-Snarky.CircuitType.Reads.of_le
-Snarky.CircuitType.ReadsAs.mono
-Snarky.CircuitType.reads_iff
-Snarky.CircuitType.readVal_fvar
-Snarky.CircuitType.readVal_prod
-Snarky.CircuitType.readVal_vector
-Snarky.CircuitType.readVal_ofEquiv
-Snarky.CircuitType.scoped_fvar
-Snarky.CircuitType.scoped_boolVar
-Snarky.CircuitType.scoped_unchecked
-Snarky.CircuitType.scoped_unit
-Snarky.CircuitType.scoped_prod
-Snarky.CircuitType.scoped_vector
-Snarky.CircuitType.scoped_ofEquiv
-Snarky.CircuitType.reads_fvar
-Snarky.CircuitType.reads_boolVar
-Snarky.CircuitType.reads_unchecked
-Snarky.CircuitType.reads_unit
-Snarky.CircuitType.reads_prod
-Snarky.CircuitType.reads_vector
-Snarky.CircuitType.reads_ofEquiv
-
--- The soundness tag (WP.lean): the total valuation, the backend's reading of one
--- constraint value, the tag that puts a program in the soundness reading, its `Std.Do`
--- instances, the triple's plain form, and the lawful-backend interface transferring every
--- backend-generic law.
-Snarky.Valuation
-Snarky.ConstraintHolds
-Snarky.Builder
-Snarky.Builder.instWP
-Snarky.Builder.instWPMonad
-Snarky.instConstraintHoldsBuilder
-Snarky.instBasicSystemBuilder
-Snarky.instLawfulBasicSystemBuilder
-Snarky.builder_spec_iff
-Snarky.builder_spec_forall
-Snarky.builder_spec_imp
-Snarky.builder_spec_true
-Snarky.addConstraint_spec
-Snarky.LawfulBasicSystem
-
--- Typed encodings (Encoding.lean): the bidirectional value/bundle encoding, the concrete
--- instances, the transport along an equivalence, and the boolean wrapper's surface.
-Snarky.CircuitType
-Snarky.CircuitType.ofEquiv
-Snarky.CircuitType.ofShape
-Snarky.instCircuitTypeFVar
-Snarky.instCircuitTypeBool
-Snarky.instCircuitTypeUnit
-Snarky.instCircuitTypeUnChecked
-Snarky.instCircuitTypeProd
-Snarky.instCircuitTypeVector
-Snarky.CircuitType.size_prod
-Snarky.CircuitType.size_vector
-Snarky.CircuitType.valueToFields_unit
-Snarky.CircuitType.valueToFields_prod
-Snarky.CircuitType.valueToFields_vector
+Snarky.AsProver.bind_eq
+Snarky.AsProver.map_eq
+Snarky.AsProver.pure_eq
+Snarky.false_val
+Snarky.instLawfulIfThenElseBoolVar
+Snarky.instLawfulIfThenElseFVar
+Snarky.instLawfulIfThenElseProd
+Snarky.instLawfulIfThenElseUnit
+Snarky.instLawfulIfThenElseVector
+Snarky.select_fvar
+Snarky.true_val
 Snarky.CircuitType.fieldsToValue_prod
 Snarky.CircuitType.fieldsToValue_vector
-Snarky.CircuitType.varToFields_unit
-Snarky.CircuitType.varToFields_prod
-Snarky.CircuitType.varToFields_vector
 Snarky.CircuitType.fieldsToVar_fvar
-Snarky.BoolVar
-Snarky.BoolVar.toCVar
-Snarky.BoolVar.unchecked
-Snarky.BoolVar.coe_unchecked
+Snarky.CircuitType.size_prod
+Snarky.CircuitType.size_vector
+Snarky.CircuitType.valueToFields_prod
+Snarky.CircuitType.valueToFields_unit
+Snarky.CircuitType.valueToFields_vector
+Snarky.CircuitType.varToFields_prod
+Snarky.CircuitType.varToFields_unit
+Snarky.CircuitType.varToFields_vector
 Snarky.instCoeBoolVarCVar
-Snarky.UnChecked
-Snarky.bit
-
--- The witness combinator (Witness.lean): the checked-encoding class, its instances, the
--- allocator, and its law triple — the leaf interface every gadget builds on.
-Snarky.CheckedType
-Snarky.CheckedType.ofEquiv
-Snarky.CheckedType.ofShape
-Snarky.checkAll
-Snarky.instCheckedTypeFVar
-Snarky.instCheckedTypeBool
-Snarky.instCheckedTypeUnit
-Snarky.instCheckedTypeUnChecked
-Snarky.instCheckedTypeProd
-Snarky.instCheckedTypeVector
-Snarky.readVar
-Snarky.readVar_run
-Snarky.run_mapM_readCVar
-Snarky.witness
-Snarky.witness_spec
-
--- Sized vectors (Types/Vector.lean): the kernel-reducible map, the prefix at a definite
--- length, and the split/chunk algebra the bit gadgets index through.
-Snarky.mapVec
-Snarky.splitVec
-Snarky.takeVec
-Snarky.chunkVec
-Snarky.getElem_mapVec
-Snarky.toList_mapVec
-Snarky.mapVec_append
-Snarky.splitVec_append
-Snarky.append_splitVec
-Snarky.append_inj_iff
-Snarky.getElem_takeVec
-Snarky.getElem_chunkVec
-Snarky.chunkVec_flatten
-Snarky.flatten_chunkVec
-Snarky.flatten_map_chunkVec
-Snarky.toList_flatten
-Snarky.vector_singleton_eta
-
--- The traversal combinators (Traverse.lean): the ladder walks the gadgets fold through,
--- each with its law pair, and the chain relations their invariants are stated in.
-Snarky.mapAccumM
-Snarky.zipWithVecM
-Snarky.Chain
-Snarky.ChainAt
-Snarky.Chain.of_nil_out
-Snarky.ChainAt.length
-Snarky.ChainAt.mono
-Snarky.forM_spec
-Snarky.forM_complete
-Snarky.mapAccumM_spec
-Snarky.mapAccumM_complete
-Snarky.zipWithVecM_spec
-Snarky.zipWithVecM_complete
-
--- The backend interface (BasicSystem.lean) and the concrete Basic model
--- (Constraint/Basic.lean): the four primitive rows, their identities, and the derive
--- surface the `decide` examples resolve.
-Snarky.BasicSystem
-Snarky.Basic
-Snarky.Basic.Holds
-Snarky.instBasicSystemBasic
-Snarky.instConstraintHoldsBasic
-Snarky.instLawfulBasicSystemBasic
-Snarky.instDecidableEqBasic
-Snarky.instReprBasic
-
--- The DSL: field operations (DSL/Field.lean), each with its law pair — every valuation
--- satisfying the emitted rows pins the result, and the honest run succeeds and reads
--- correctly.
-Snarky.sum
-Snarky.sum_eval
-Snarky.CVar.Scoped.sum
-Snarky.equals
-Snarky.equals_spec
-Snarky.equals_complete
-Snarky.isZero
-Snarky.isZero_spec
-Snarky.isZero_complete
-Snarky.neq
-Snarky.neq_spec
-Snarky.neq_complete
-Snarky.mul
-Snarky.mul_spec
-Snarky.mul_complete
-Snarky.inv
-Snarky.inv_spec
-Snarky.inv_complete
-Snarky.div
-Snarky.div_spec
-Snarky.div_complete
-Snarky.square
-Snarky.square_spec
-Snarky.square_complete
-Snarky.pow
-Snarky.pow_spec
-Snarky.pow_complete
-
--- The DSL: boolean operations (DSL/Boolean.lean) — the constants with their readings, the
--- connectives and list folds with their law pairs, and the mux class with its instances
--- (found by class resolution, not by name) and its two laws.
-Snarky.true_
-Snarky.false_
-Snarky.not
-Snarky.true_val
-Snarky.false_val
-Snarky.not_val
-Snarky.true_scoped
-Snarky.false_scoped
-Snarky.not_scoped
-Snarky.sum_of_bits
-Snarky.and
-Snarky.and_spec
-Snarky.and_complete
-Snarky.or
-Snarky.or_spec
-Snarky.or_complete
-Snarky.xor
-Snarky.xor_spec
-Snarky.xor_complete
-Snarky.any
-Snarky.any_spec
-Snarky.any_complete
-Snarky.all
-Snarky.all_spec
-Snarky.all_complete
-Snarky.selectField
-Snarky.selectField_spec
-Snarky.selectField_complete
-Snarky.select_fvar
-Snarky.IfThenElse
-Snarky.IfThenElse.ofEquiv
-Snarky.IfThenElse.ofShape
-Snarky.LawfulIfThenElse
-Snarky.LawfulIfThenElse.ofEquiv
-Snarky.LawfulIfThenElse.ofShape
-Snarky.LawfulIfThenElse.select_sound
-Snarky.LawfulIfThenElse.select_complete
-Snarky.instIfThenElseFVar
-Snarky.instIfThenElseBoolVar
-Snarky.instIfThenElseUnit
-Snarky.instIfThenElseProd
-Snarky.instIfThenElseVector
-Snarky.instLawfulIfThenElseFVar
-Snarky.instLawfulIfThenElseBoolVar
-Snarky.instLawfulIfThenElseUnit
-Snarky.instLawfulIfThenElseProd
-Snarky.instLawfulIfThenElseVector
-
--- The DSL: assertions (DSL/Assert.lean), each with its law pair.
-Snarky.assert
-Snarky.assert_spec
-Snarky.assert_complete
-Snarky.assertEq
-Snarky.assertEq_spec
-Snarky.assertEq_complete
-Snarky.assertEqual
-Snarky.assertEqual_spec
-Snarky.assertEqual_complete
-Snarky.assertNonZero
-Snarky.assertNonZero_spec
-Snarky.assertNonZero_complete
-Snarky.assertNotEqual
-Snarky.assertNotEqual_spec
-Snarky.assertNotEqual_complete
-Snarky.assertSquare
-Snarky.assertSquare_spec
-Snarky.assertSquare_complete
-Snarky.assertAny
-Snarky.assertAny_spec
-Snarky.assertAny_complete
-Snarky.assertAll
-Snarky.assertAll_spec
-Snarky.assertAll_complete
-Snarky.assertExactlyOne
-Snarky.assertExactlyOne_spec
-Snarky.assertExactlyOne_complete
-
--- The DSL: bit decomposition (DSL/Bits.lean) and the seal (DSL/Utils.lean) — the pure
--- pack/unpack pair with its round trip, the in-circuit unpack with its law pair, and the
--- width interface the decomposition is indexed by (DSL/SizedF.lean).
-Snarky.pack
-Snarky.pack_val
-Snarky.CVar.Scoped.pack
-Snarky.packLow
-Snarky.packLow_val
-Snarky.CVar.Scoped.packLow
-Snarky.natLsbVal_unpackPure
-Snarky.unpackPure
-Snarky.unpack
-Snarky.unpack_spec
-Snarky.unpack_complete
-Snarky.ToNat
-Snarky.instToNatZMod
-Snarky.LawfulToNat
-Snarky.SizedF
-Snarky.SizedF.Fits
-Snarky.sealVar
-Snarky.sealVar_spec
-Snarky.sealVar_complete
-
--- Whole-circuit compilation (Compile.lean): the entry points, the public input bundle with
--- its reading, and the seam law — a body that is complete solves, and the table it produces
--- satisfies every compiled row and reads the input and output at the public slots.
-Snarky.compileBody
-Snarky.compile
-Snarky.seed
-Snarky.solve
-Snarky.inputVar
-Snarky.scoped_inputVar
-Snarky.reads_inputVar
-Snarky.bodyStart
-Snarky.mem_compile_of_mem_check
-Snarky.mem_compile_of_mem_body
-Snarky.solve_complete
-Snarky.Complete.imp
-Snarky.Complete.seq
-Snarky.Mono
-Snarky.Mono.and
-Snarky.Mono.readsAs
-Snarky.Complete.pure_of
-
--- The exhibits (Examples/Point.lean): a two-field bundle carried through the whole
--- interface — encoding, check, and mux — as the worked instance of `ofEquiv`.
-Snarky.Point
-Snarky.Point.equiv
-Snarky.instCircuitTypePoint
-Snarky.scoped_point
-Snarky.reads_point
-Snarky.instCheckedTypePoint
-Snarky.instIfThenElsePoint
-Snarky.instLawfulIfThenElsePoint
-
--- The shifted scalar carriers (Types/Shifted.lean): the wrappers the varBaseMul ladders
--- consume, with their decodes, plus the deployed Pasta codec — an `Fp` scalar carried
--- `Type1` in `Fq`, encoded by field arithmetic and decoded through the same `fromShifted`
--- operator read over the integers. The `simps` projections are simp-set surface: simp
--- applies them definitionally, so no proof term records them.
-Snarky.Type1
-Snarky.Type1.fromShifted
-Snarky.Type1.val_fromShiftedCircuit
-Snarky.Type1.val_ofFieldCircuit
-Snarky.Type2
-Snarky.Type2.fromShifted
-Snarky.Type2.val_fromShiftedCircuit
-Snarky.Type1.equivCarrier
-Snarky.Type1.equivCarrier_apply
-Snarky.Type1.equivCarrier_symm_apply
-Snarky.instCircuitTypeType1
-Snarky.scoped_type1
-Snarky.reads_type1
-Snarky.Type1.toShifted
-Snarky.Type1.toScalarZ
-Snarky.Type1.toScalar
-Snarky.Type1.toScalar_toShifted
-Snarky.instCheckedTypeType1
-Snarky.Type1.zeroCarrier
-Snarky.Type1.toScalar_eq_zero_iff_dvd
-Snarky.Type1.toScalar_eq_zero_iff
-Snarky.SplitField
-Snarky.SplitField.fromShifted
-
--- The curve-tagged point (Snarky/Kimchi/Circuit/CurvePoint.lean): the phantom tag a
--- statement carries where its wire refinement is a genuine curve point, with the Vesta
--- instantiation, the encoding, and the on-curve check whose rows make the tag real.
-Snarky.Kimchi.CurvePoint
-Snarky.Kimchi.CurvePoint.equivPoint
-Snarky.Kimchi.CurvePoint.equivPoint_apply
-Snarky.Kimchi.CurvePoint.equivPoint_symm_apply
-Snarky.Kimchi.VestaPoint
-Snarky.Kimchi.instCurvePointCircuitType
-Snarky.Kimchi.scoped_curvePoint
-Snarky.Kimchi.reads_curvePoint
-Snarky.Kimchi.CurvePoint.check
-Snarky.Kimchi.CurvePoint.check_spec
-Snarky.Kimchi.CurvePoint.check_complete
-Snarky.Kimchi.instCurvePointCheckedType
-Snarky.Kimchi.valid_curvePoint
-
--- The kimchi data layer (Snarky/Kimchi/{UnionFind,Constraint/Types}.lean): the pure
--- union-find and the row/state types the reduction emits into. `egUF` is the
--- union-find exhibit (anonymous `decide` consumers), plus the derive surface.
-Snarky.Kimchi.UnionFind.empty
-Snarky.Kimchi.UnionFind.find
-Snarky.Kimchi.UnionFind.union
-Snarky.Kimchi.UnionFind.rootOf
-Snarky.Kimchi.UnionFind.equivalenceClasses
-Snarky.Kimchi.egUF
-Snarky.Kimchi.instDecidableEqUnionFind
-Snarky.Kimchi.instReprUnionFind
-Snarky.Kimchi.GenericPlonkConstraint
-Snarky.Kimchi.AuxState
-Snarky.Kimchi.initialAuxState
-Snarky.Kimchi.GateKind
-Snarky.Kimchi.KimchiRow
-Snarky.Kimchi.KimchiWireRow
-Snarky.Kimchi.ToKimchiRows
-
--- The reduction layer (Snarky/Kimchi/Constraint/Reduction.lean): the op vocabulary,
--- the two reduction algorithms, and the builder/prover instances.
-Snarky.Kimchi.PlonkReductionM
-
--- Seam-walk simp fodder (Constraint/Reduction.lean): rfl-lemmas the walks consume
--- through simp, which applies them definitionally — no proof term records them, so
--- they are rooted as simp-set surface.
-Snarky.Kimchi.PlonkBuilder.pure_apply
-Snarky.Kimchi.PlonkProver.pure_apply
-Snarky.Kimchi.createInternalB_apply
-Snarky.Kimchi.createInternal_builder
-Snarky.Kimchi.addGeneric_prover
-Snarky.Kimchi.addEquals_prover
-Snarky.Kimchi.reduceAffineExpression
-Snarky.Kimchi.reduceToVariable
-Snarky.Kimchi.reduceAsBuilder
-Snarky.Kimchi.reduceAsProver
-Snarky.Kimchi.PlonkBuilder
-Snarky.Kimchi.PlonkProver
-Snarky.Kimchi.EqualsConstraint
-Snarky.Kimchi.mkPadRow
-Snarky.Kimchi.finalizeGateQueue
-
--- The per-gate constraint payloads and reducers
--- (Snarky/Kimchi/Constraint/{GenericPlonk,AddComplete,EndoScalar,VarBaseMul,EndoMul,
--- Poseidon}.lean): each payload record with its reducer.
-Snarky.Kimchi.reduce
-Snarky.Kimchi.AddComplete
-Snarky.Kimchi.AddComplete.reduce
-Snarky.Kimchi.AffinePoint
-Snarky.Kimchi.EndoScalarRound
-Snarky.Kimchi.EndoScalarRound.reduce
-Snarky.Kimchi.EndoScalar
-Snarky.Kimchi.EndoScalar.reduce
-Snarky.Kimchi.ScaleRound
-Snarky.Kimchi.VarBaseMul
-Snarky.Kimchi.VarBaseMul.reduce
-Snarky.Kimchi.EndoMulRound
-Snarky.Kimchi.EndoMul
-Snarky.Kimchi.EndoMul.reduce
-Snarky.Kimchi.PoseidonConstraint
-Snarky.Kimchi.PoseidonConstraint.reduce
-
--- The kimchi constraint type and its interpreters (Snarky/Kimchi/Constraint.lean):
--- the constraint and gate sums with their dispatch/BasicSystem instances and the one
--- reduction dispatch.
-Snarky.Kimchi.KimchiConstraint
-Snarky.Kimchi.KimchiGate
-Snarky.Kimchi.KimchiConstraint.reduce
-Snarky.Kimchi.instToKimchiRowsKimchiGate
-Snarky.Kimchi.instBasicSystemKimchiConstraint
-Snarky.Kimchi.instDecidableEqKimchiConstraint
-Snarky.Kimchi.instReprKimchiConstraint
-Snarky.Kimchi.instDecidableEqKimchiGate
-Snarky.Kimchi.instReprKimchiGate
-
--- The kimchi constraint semantics (Snarky/Kimchi/Semantics.lean): the reading the gadget
--- laws are stated against — the per-constructor Holds, its ConstraintHolds packaging, and
--- the lawful-backend instance that transfers every backend-generic base gadget law, sound
--- and complete, to this backend.
-Snarky.Kimchi.AddComplete.read
-Snarky.Kimchi.KimchiConstraint.Holds
-Snarky.Kimchi.KimchiConstraint.instConstraintHolds
-Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem
-
--- The CS assembly (Snarky/Kimchi/Backend/Assemble.lean): the wire/gate data records,
--- the wiring pass, the public-input rows, the assembled gate data, and the witness
--- table, plus the derive surface the seam script's comparisons resolve.
-Snarky.Kimchi.Wire
-Snarky.Kimchi.AssembledGate
-Snarky.Kimchi.wireMap
-Snarky.Kimchi.assembleGates
-Snarky.Kimchi.makePublicInputRows
-Snarky.Kimchi.makeGateData
-Snarky.Kimchi.makeWitness
-Snarky.Kimchi.instDecidableEqWire
-Snarky.Kimchi.instReprWire
-Snarky.Kimchi.instDecidableEqAssembledGate
-Snarky.Kimchi.instReprAssembledGate
-
--- script-surface:begin
--- The whole-circuit kimchi entry points (Snarky/Kimchi/Backend/Compile.lean): their
--- consumer is scripts/check_cs_basic.lean, invisible to any constant walk.
-Snarky.Kimchi.kimchiSolve
-Snarky.Kimchi.kimchiGateData
--- The circuit-side shifted decodes (Types/Shifted.lean): consumed by scripts/check_cs.lean's
--- pickles sub-circuit transcriptions, which unshift the deferred claims they compare.
-Snarky.Type1.fromShiftedCircuit
-Snarky.Type1.ofFieldCircuit
-Snarky.Type2.fromShiftedCircuit
--- script-surface:end
-
--- The complete-addition gadget (Snarky/Kimchi/Circuit/AddComplete.lean): the point bundle's
--- instance surface, the advice record, the seal, the on-curve side condition the operand
--- laws take, and the gadget's law pair.
-Snarky.Kimchi.instCircuitTypeAffinePointFVar
-Snarky.Kimchi.instCheckedTypeAffinePointFVar
-Snarky.Kimchi.scoped_affinePoint
-Snarky.Kimchi.reads_affinePoint
-Snarky.Kimchi.AddAux
-Snarky.Kimchi.AddAux.equiv
-Snarky.Kimchi.instCircuitTypeAddAux
-Snarky.Kimchi.instCheckedTypeAddAux
-Snarky.Kimchi.scoped_addAux
-Snarky.Kimchi.reads_addAux
-Snarky.Kimchi.OnCurveAs
-Snarky.Kimchi.OnCurveAt
-Snarky.Kimchi.OnCurveAs.mono
-Snarky.Kimchi.Mono.onCurveAs
-Snarky.Kimchi.OnCurveAt.neg
-Snarky.Kimchi.OnCurveAt.ne_zero
-Snarky.Kimchi.instIfThenElseAffinePoint
-Snarky.Kimchi.select_affinePoint_spec
-Snarky.Kimchi.addFast_checkFinite_spec
-Snarky.Kimchi.HasCurve.vesta_ladderRegime
-Snarky.Kimchi.HasCurve.pallas_ladderRegime
-Snarky.Kimchi.OnCurveAt.congr_simp
-Snarky.Kimchi.Finiteness
-Snarky.Kimchi.instDecidableEqFiniteness
-Snarky.Kimchi.AddResult
-Snarky.Kimchi.sealPoint
-Snarky.Kimchi.sealPoint_spec
-Snarky.Kimchi.sealPoint_complete
-Snarky.Kimchi.addFast
-Snarky.Kimchi.addFast_spec
-Snarky.Kimchi.addFast_complete
-Snarky.Kimchi.infColumn_spec
-
--- The Poseidon gadget (Snarky/Kimchi/Circuit/Poseidon.lean): the sponge-state bundle with
--- its instance surface and reading equations, and the gadget's law pair.
-Snarky.Kimchi.SpongeState
-Snarky.Kimchi.SpongeState.cells
-Snarky.Kimchi.instCircuitTypeSpongeState
-Snarky.Kimchi.instCheckedTypeSpongeState
 Snarky.Kimchi.readVal_spongeState
-Snarky.Kimchi.scoped_spongeState
-Snarky.Kimchi.reads_spongeState
-Snarky.Kimchi.poseidon
-Snarky.Kimchi.Poseidon.poseidon_spec
-Snarky.Kimchi.Poseidon.poseidon_complete
-
--- The in-circuit duplex sponge (Snarky/Kimchi/Circuit/Sponge.lean): the port surface of PS
--- Snarky.Circuit.RandomOracle.Sponge (absorb / squeeze / initialState / spongeFromConstants)
--- with its own reading vocabulary — the state is a mode plus a triple, so it reads as a pair
--- of facts rather than through one `CircuitType` — and the law pair per op.
-Snarky.Kimchi.SpongeVar
-Snarky.Kimchi.SpongeVar.init
-Snarky.Kimchi.SpongeVar.ofConstants
-Snarky.Kimchi.SpongeVar.ReadsAt
-Snarky.Kimchi.SpongeVar.Reads
-Snarky.Kimchi.SpongeVar.Reads.mono
-Snarky.Kimchi.SpongeVar.Reads.readsAt
-Snarky.Kimchi.SpongeVar.absorb
-Snarky.Kimchi.SpongeVar.absorb_spec
-Snarky.Kimchi.SpongeVar.absorb_complete
-Snarky.Kimchi.SpongeVar.squeeze
-Snarky.Kimchi.SpongeVar.squeeze_spec
-Snarky.Kimchi.SpongeVar.squeeze_complete
-
--- The in-circuit block-mode hash (Snarky/Kimchi/Circuit/RandomOracle.lean): the port
--- surface of PS Snarky.Circuit.RandomOracle (update / hash2 / hashVec) and its law
--- pair per op; the input readings are the generic `CircuitType.ReadsAs` vocabulary.
-Snarky.Kimchi.RandomOracle.update
-Snarky.Kimchi.RandomOracle.update_spec
-Snarky.Kimchi.RandomOracle.update_complete
-Snarky.Kimchi.RandomOracle.hash2
-Snarky.Kimchi.RandomOracle.hash2_spec
-Snarky.Kimchi.RandomOracle.hash2_complete
-Snarky.Kimchi.RandomOracle.hashVec
-Snarky.Kimchi.RandomOracle.hashVec_spec
-Snarky.Kimchi.RandomOracle.hashVec_complete
-
--- The endoscalar gadget (Snarky/Kimchi/Circuit/EndoScalar.lean): the crumb recoding, both
--- entry points, and their law pairs.
-Snarky.Kimchi.EndoScalar.toField
-Snarky.Kimchi.EndoScalar.toField_spec
-Snarky.Kimchi.EndoScalar.toField_complete
-Snarky.Kimchi.EndoScalar.toFieldChecked'
-
--- The curve dictionaries (Snarky/Kimchi/Circuit/Curve.lean): what the group-side laws close
--- over, with the deployed Pasta values, which are the discharge artifacts AND the exhibit
--- that each dictionary is satisfiable.
-Snarky.Kimchi.HasCurve
-Snarky.Kimchi.HasCurve.vesta
-Snarky.Kimchi.HasCurve.pallas
-Snarky.Kimchi.HasEndo
-Snarky.Kimchi.HasEndo.pallas
-Snarky.Kimchi.HasEndo.vesta
-
--- The endomul gadget (Snarky/Kimchi/Circuit/EndoMul.lean): the ladder step, the gadget and
--- its inverse-direction wrapper, and a law pair each.
-Snarky.Kimchi.endoMulRound
-Snarky.Kimchi.endoMul
-Snarky.Kimchi.endoInv
-Snarky.Kimchi.EndoMul.endoMul_spec
-Snarky.Kimchi.EndoMul.vesta_endoMul_read
-Snarky.Kimchi.EndoMul.vesta_endoMul_complete
-Snarky.Kimchi.EndoMul.endoMul_complete
-Snarky.Kimchi.EndoMul.endoInv_spec
-Snarky.Kimchi.EndoMul.endoInv_complete
-
--- The variable-base multiplication gadget (Snarky/Kimchi/Circuit/VarBaseMul.lean): the
--- ladder step, the gadget with its result record, the scaleFast wrappers and the shifted
--- carriers they split through, each with its law pair.
-Snarky.Kimchi.scaleRound
-Snarky.Kimchi.VarBaseMulResult
-Snarky.Kimchi.varBaseMul
-Snarky.Kimchi.varBaseMul_spec
-Snarky.Kimchi.vesta_varBaseMul_read
-Snarky.Kimchi.vesta_varBaseMul_complete
-Snarky.Kimchi.varBaseMul_complete
-Snarky.Kimchi.splitField
-Snarky.Kimchi.joinField
-Snarky.Kimchi.splitFieldVar
-Snarky.Kimchi.splitFieldVar_spec
-Snarky.Kimchi.splitFieldVar_complete
-Snarky.Kimchi.scaleFast1
-Snarky.Kimchi.scaleFast1_spec
-Snarky.Kimchi.scaleFast1_complete
-Snarky.Kimchi.scaleFast2
-Snarky.Kimchi.scaleFast2_spec
-Snarky.Kimchi.scaleFast2_complete
-Snarky.Kimchi.scaleFast2'
-Snarky.Kimchi.scaleFast2'_spec
-Snarky.Kimchi.scaleFast2'_complete
-
--- The range check (Snarky/Kimchi/Circuit/RangeCheck.lean): the pure low-128 truncation, the
--- in-circuit check and the truncating gadget, each with its law pair.
-Snarky.Kimchi.lowest128BitsPure
-Snarky.Kimchi.rangeCheck128
-Snarky.Kimchi.rangeCheck128_spec
-Snarky.Kimchi.rangeCheck128_complete
-Snarky.Kimchi.lowest128Bits
-Snarky.Kimchi.lowest128Bits'
-Snarky.Kimchi.lowest128Bits'_spec
-Snarky.Kimchi.lowest128Bits'_complete
-
--- The group map (Snarky/Kimchi/Circuit/GroupMap.lean): the parameter record with its
--- derivation from a curve spec, the pure map with its landing law, and the circuit with its
--- law pair and the on-curve corollary.
-Snarky.Kimchi.GroupMapParams
-Snarky.Kimchi.GroupMapParams.ofSpec
-Snarky.Kimchi.potentialXs
-Snarky.Kimchi.potentialXs_ofSpec
-Snarky.Kimchi.ySquared
-Snarky.Kimchi.ySquared_ofSpec
-Snarky.Kimchi.groupMapPure
-Snarky.Kimchi.groupMapPure_toGroup
-Snarky.Kimchi.groupMapCircuit
-Snarky.Kimchi.groupMapCircuit_spec
-Snarky.Kimchi.groupMapCircuit_first_spec
-Snarky.Kimchi.groupMapCircuit_toGroup_spec
-Snarky.Kimchi.groupMapCircuit_complete
-Snarky.Kimchi.groupMapCircuit_onCurve_spec
-Snarky.Kimchi.groupMapCircuit_toGroup_complete
-
--- The completeness walker (Tactic.lean): the tactic entry point and its per-step kernel.
--- Tactic implementations are invoked through syntax, not proof terms, so the reachability
--- pass cannot see their use sites; the walk is the surface, and the kernel and its
--- expression analysis hang from it.
--- (`walk` is a partial def — opaque to the pass — so its callees are rooted alongside it.)
-Snarky.Tactic.walk
-Snarky.Tactic.completeStep
-Snarky.Tactic.extractCont
+Snarky.AsProver.run_pure
+Snarky.CVar.scoped_add
+Snarky.CVar.scoped_scale
+Snarky.CircuitType.readVal_fvar
+Snarky.CircuitType.scoped_ofEquiv
+Snarky.ProverState.get_alloc
+Snarky.except_bind_ok
+Snarky.prove_addConstraint
+Snarky.prove_pure
+Snarky.prove_pure'
 Snarky.Tactic.altBinderNames
-Snarky.Tactic.stepName
+Snarky.Tactic.extractCont
 Snarky.Tactic.lawProgramHead
+Snarky.Tactic.stepName
+Snarky.Tactic.walk
 
--- The @[complete_mono] vocabulary consumed only through the walker's attribute
--- table, which the reachability pass cannot see.
-Snarky.Mono.nv_le
-Snarky.Mono.env_le
-Snarky.Mono.imp
+-- Consumed by the CI check scripts rather than by the library.
+-- script-surface:begin
+Snarky.instReprEvalError -- synthesis: found by class resolution, never by name
+Snarky.Kimchi.makeWitness
+Snarky.Kimchi.kimchiGateData
+Snarky.Kimchi.kimchiSolve
+Snarky.Kimchi.SpongeVar.ofConstants
+-- script-surface:end

@@ -257,13 +257,6 @@ instance, derived from its product decomposition. -/
   value_roundTrip x := by simp [inst.value_roundTrip]
   var_roundTrip f := by simp [inst.var_roundTrip]
 
-/-- A shape over leaf types — a struct polymorphic in its entries — decomposed once,
-`S a ≃ T a` at every `a`: its encoding at a leaf is the decomposition's, applied at the
-value and at the bundle. -/
-@[reducible] def CircuitType.ofShape {S T : Type u → Type u} {val var : Type u}
-    [CircuitType F (T val) (T var)] (e : ∀ a, S a ≃ T a) : CircuitType F (S val) (S var) :=
-  CircuitType.ofEquiv (e val) (e var)
-
 end Equiv
 
 end Snarky

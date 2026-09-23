@@ -48,14 +48,6 @@ Every kimchi-proof fixture carries the proof's old accumulators (`prev_challenge
 `{comm, chals}` record each — empty in the non-recursive ones) and the key's accumulator
 count (`prev_challenges_count`).
 
-> **Caveat (`sponge_dump`'s Lean output):** the generated-constants half of
-> `sponge_dump` predates the `formal/` package split — it still writes
-> `PoseidonConstantsF{q,p}.lean` under a `Kimchi.Sponge.*` namespace, while the
-> committed files are `formal/poseidon/Poseidon/Constants{Fq,Fp}.lean` under
-> `Poseidon.*`. On regeneration, rename the files and namespaces to match the
-> committed layout (the constant values are what the regeneration refreshes). The
-> JSON vector output is current.
-
 ## What each binary emits
 
 Paths below are relative to `formal/`.
@@ -96,7 +88,7 @@ Paths below are relative to `formal/`.
 | artifact | contents | checked by |
 |---|---|---|
 | `kimchi/fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints). Live gate terms: generic, poseidon, completeAdd, endoScalar | `kimchi/scripts/check_linearization.sh` |
-| `kimchi/fixtures/linearization_vesta_emul.json` | the same scalar-side record over the SCALAR-MULTIPLICATION circuit (`emul_circuit`, the one `kimchi_proof_dump_emul` proves). Live gate terms: **varBaseMul, endoMul** — the two whose per-gate targets are identically zero in the mixed-gate fixture, so without this one their checks read `0 = 0` (external-audit R-1). Every gate is now live in at least one linearization fixture, and the driver FAILS if a gate it is meant to exercise has a zero target | `kimchi/scripts/check_linearization.sh` |
+| `kimchi/fixtures/linearization_vesta_emul.json` | the same scalar-side record over the SCALAR-MULTIPLICATION circuit (`emul_circuit`, the one `kimchi_proof_dump_emul` proves). Live gate terms: **varBaseMul, endoMul** — the two whose per-gate targets are identically zero in the mixed-gate fixture, so without this one their checks read `0 = 0`. Every gate is now live in at least one linearization fixture, and the driver FAILS if a gate it is meant to exercise has a zero target | `kimchi/scripts/check_linearization.sh` |
 | `kimchi/fixtures/linearization_pallas.json` | the Pallas twin of the mixed-gate record (`mixed_circuit_fq`, same construction over `Fq`): the scalar side of a proof verified in Pallas's scalar field. Live gate terms: generic, poseidon, completeAdd, endoScalar. This is what anchors the `Fq` token stream's endomorphism constant and MDS matrix, which EndoScalar's field-dependent literals make observable | `pickles/scripts/check_polish.lean` |
 
 `kimchi_proof_dump` (two serializations of ONE proof — a complete kimchi wire proof + verifier key over the mixed-gate circuit, same seed and domain-sized SRS as `linearization_vesta.json`: all commitments, uncombined evaluations, opening proof, public input, and the VK data incl. Lagrange-basis commitments, both endo coefficients, and the verifier-index digest):
@@ -121,7 +113,7 @@ a Lean-side divergence layer by layer). They are debugging aids, gitignored
 
 | artifact | contents | checked by |
 |---|---|---|
-| `kimchi/fixtures/kimchi_proof_vesta_emul.json` | a proof over a circuit with LIVE `EndoMul` and `VarBaseMul` rows (an 8-bit endo scalar and a 10-bit variable-base scalar, witnesses from production's own `endosclmul::gen_witness` / `varbasemul::witness`) and an EMPTY public input. Every other proof fixture has `emul_selector ≡ 0` and `mul_selector ≡ 0`, which is what let the audit's V-1 (EndoMul constraint order/sign) hide under green drivers; this proof's acceptance pins the α-weighted constraint order of both scalar-multiplication gates and the empty-public commitment branch. The unused selector/coefficient VK commitments are zero polynomials, encoded as the `(0, 0)` identity sentinel. | `kimchi/scripts/check_kimchi_verifier.sh` |
+| `kimchi/fixtures/kimchi_proof_vesta_emul.json` | a proof over a circuit with LIVE `EndoMul` and `VarBaseMul` rows (an 8-bit endo scalar and a 10-bit variable-base scalar, witnesses from production's own `endosclmul::gen_witness` / `varbasemul::witness`) and an EMPTY public input. Every other proof fixture has `emul_selector ≡ 0` and `mul_selector ≡ 0`, so a mis-ordered or mis-signed EndoMul constraint list passes them; this proof's acceptance pins the α-weighted constraint order of both scalar-multiplication gates and the empty-public commitment branch. The unused selector/coefficient VK commitments are zero polynomials, encoded as the `(0, 0)` identity sentinel. | `kimchi/scripts/check_kimchi_verifier.sh` |
 
 `kimchi_proof_dump_pickles` (nothing generated: a side-loaded pickles fixture re-encoded —
 `proof.serde.json` / `vk.serde.json` as OCaml wrote them through the Rust prover, plus
@@ -136,7 +128,7 @@ own, and the production verifier must accept):
 
 `sponge_dump`'s fq-sponge traces include the identity-absorb position probe
 `[absorb_g_inf, absorb_fr, challenge]` — the shape class that distinguishes the two-zero
-identity absorb from a one-zero encoding (audit V-2); an immediate squeeze cannot.
+identity absorb from a one-zero encoding; an immediate squeeze cannot.
 
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the

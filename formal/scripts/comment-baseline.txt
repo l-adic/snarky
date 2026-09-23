@@ -1,0 +1,9 @@
+-- The comment gate's ratchet (scripts/check_comments.lean): the violations the tree carries,
+-- per category. Every category is at zero, so the gate fails on any new violation.
+unresolved-names 0
+dangling-paths 0
+upstream-files-outside-module-doc 0
+banned-phrases 0
+oversize 0
+emphasis 0
+foreign-languages 0

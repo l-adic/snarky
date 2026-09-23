@@ -6,13 +6,24 @@ import Pasta.Endo
 
 /-! # EndoMul semantics
 
-One gate row computes the GLV combination `4·P + c₁·T + c₂·φ(T)`, with soundness and
-completeness. The multi-row chain folds those rows into the endomorphism-accelerated scalar
-multiplication `endoMul`.
+A run of `EndoMul` rows computes the endomorphism-accelerated (GLV) scalar multiplication
+`[s]·T`, where `s` is the scalar `EndoScalar` decodes from the rows' crumbs.
 
-Beyond the per-row development, the file has two parts: `§ Supporting development` (the GLV
-point fold, the `EndoMul ∘ EndoScalar` recoding kernel, and the non-degeneracy lemmas) and
-`§ The deployed circuit` (the per-curve entry points). -/
+## Main results
+
+* `sound` / `complete` — one row computes `S = 4·P + c₁·T + c₂·φ(T)`, and the generated row
+  `build` satisfies the gate.
+* `endoMul` — a `Chain` of rows from `P₀ = 2(T + φT)` computes `[s]·T` with
+  `s = EndoScalar.toField (crumbList g m) λ`, given each row's first-addition condition.
+* `endoMul_off` — the same, with that condition derived from an off-targets fact.
+* `chain_complete` — every row of the honest walk `chainBuild` satisfies the gate.
+* `{pallas,vesta}_endoMul`, `{pallas,vesta}_chain_complete` — the deployed entry points.
+
+## Implementation notes
+
+A `Chain` asks for the gate constraint per row, the base point and the column threading, but
+for no intermediate accumulator on the curve: the gate's secant additions return each output
+point on the curve (`gate_advance`). -/
 
 namespace Kimchi.Gate.EndoMul
 
@@ -21,16 +32,15 @@ open WeierstrassCurve.Affine
 variable {F : Type*} [Field F] [DecidableEq F]
 
 omit [DecidableEq F] in
-/-- Booleanity: the constraint `b·(b−1) = 0` forces `b ∈ {0,1}` (field = domain). -/
+/-- `b·(b−1) = 0` forces `b = 0` or `b = 1`. -/
 private theorem bool_of_mul {b : F} (h : b * (b - 1) = 0) : b = 0 ∨ b = 1 := by
   rcases mul_eq_zero.mp h with h | h
   · exact Or.inl h
   · exact Or.inr (by linear_combination h)
 
 omit [DecidableEq F] in
-/-- The distinct-point check discharges the non-degeneracy both windows need:
-    `(xP − xR)·(xR − xS)·inv = 1` makes both factors units, so `xP ≠ xR` (first
-    window, `R ≠ −P`) and `xR ≠ xS` (second window, `S ≠ −R`). -/
+/-- The distinct-point constraint `(xP − xR)·(xR − xS)·inv = 1` gives `xP ≠ xR` and
+    `xR ≠ xS`, the non-degeneracy of the first and second windows. -/
 private theorem distinctPoints (endo : F) (w : Witness F) (h : Holds endo w) :
     w.xP ≠ w.xR ∧ w.xR ≠ w.xS := by
   rw [holds_iff] at h
@@ -39,11 +49,9 @@ private theorem distinctPoints (endo : F) (w : Witness F) (h : Holds endo w) :
   · rw [hc, sub_self, zero_mul, zero_mul] at hinv; exact one_ne_zero hinv.symm
   · rw [hc, sub_self, mul_zero, zero_mul] at hinv; exact one_ne_zero hinv.symm
 
-/-- GLV target selection. A window's target
-    `Q = ((1 + (endo−1)·b₁)·xT, (2·b₂−1)·yT)` with `b₁, b₂ ∈ {0,1}` is `±T` (when
-    `b₁ = 0`, so `xq = xT`) or `±φ(T)` (when `b₁ = 1`, so `xq = endo·xT`), where
-    `φ(T) = (endo·xT, yT)`. Reuses `Kimchi.Gate.VarBaseMul.signed_target` with base `T` or
-    `φ(T)`. -/
+/-- A window's target `Q = ((1 + (endo−1)·b₁)·xT, (2·b₂−1)·yT)` with boolean bits is `±T`
+    when `b₁ = 0` and `±φ(T)` when `b₁ = 1`, where `φ(T) = (endo·xT, yT)`; the sign is
+    `2·b₂ − 1`. -/
 private theorem selectQ (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {endo b1 b2 xT yT : F}
     (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
@@ -52,24 +60,21 @@ private theorem selectQ (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.
     (∃ e : ℤ, Point.some _ _ hQ = e • Point.some _ _ hT ∧ (e : F) = 2 * b2 - 1)
       ∨ (∃ e : ℤ, Point.some _ _ hQ = e • Point.some _ _ hφT ∧ (e : F) = 2 * b2 - 1) := by
   rcases hb1 with rfl | rfl
-  · -- `b₁ = 0`: the `x`-coordinate `(1 + (endo-1)*0)*xT` collapses to `xT`,
-    -- so `Q = ±T` via `signed_target` with base `T`.
+  · -- `b₁ = 0`: `xq = xT`, so `Q = ±T`.
     left
     have hx : (1 + (endo - 1) * 0) * xT = xT := by ring
     obtain ⟨e, he, hef, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hT (hx ▸ hQ) hb2
     exact ⟨e, (AddComplete.some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
-  · -- `b₁ = 1`: the `x`-coordinate `(1 + (endo-1)*1)*xT` collapses to `endo*xT`,
-    -- so `Q = ±φ(T)` via `signed_target` with base `φ(T)`.
+  · -- `b₁ = 1`: `xq = endo·xT`, so `Q = ±φ(T)`.
     right
     have hx : (1 + (endo - 1) * 1) * xT = endo * xT := by ring
     obtain ⟨e, he, hef, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hx ▸ hQ) hb2
     exact ⟨e, (AddComplete.some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
 
 omit [DecidableEq F] in
-/-- A window target `Q = ((1 + (endo−1)·b₁)·xT, (2·b₂−1)·yT)` is nonsingular whenever the base
-    `T` and its endo-image `φ(T) = (endo·xT, yT)` are: `b₁` selects the base, `b₂` the sign. So
-    the target's nonsingularity need never be assumed — it follows from `hT`/`hφT` and the bits'
-    booleanity (the EndoMul analog of VarBaseMul's `signed_target_nonsingular`). -/
+/-- A window target is nonsingular when the base `T` and `φ(T) = (endo·xT, yT)` are:
+    `b₁` selects the base and `b₂` the sign. The analog of VarBaseMul's
+    `signed_target_nonsingular`. -/
 private theorem target_nonsingular (W : WeierstrassCurve.Affine F)
     (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {endo b1 b2 xT yT : F} (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
@@ -82,8 +87,8 @@ private theorem target_nonsingular (W : WeierstrassCurve.Affine F)
     exact Kimchi.Gate.VarBaseMul.signed_target_nonsingular W ha hφT hb2
 
 omit [DecidableEq F] in
-/-- Both window targets are nonsingular, read off the bases `hT`/`hφT` and the four bits'
-    booleanity in `Holds` — so a row's targets are derived, not assumed. -/
+/-- Both window targets of a satisfying row are nonsingular when the base and its
+    endomorphism image are. -/
 private theorem targets_nonsingular (W : WeierstrassCurve.Affine F)
     (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     (endo : F) (w : Witness F) (h : Holds endo w)
@@ -95,19 +100,14 @@ private theorem targets_nonsingular (W : WeierstrassCurve.Affine F)
   exact ⟨target_nonsingular W ha hT hφT (bool_of_mul hb1) (bool_of_mul hb2),
          target_nonsingular W ha hT hφT (bool_of_mul hb3) (bool_of_mul hb4)⟩
 
-/-- One window's `(P + Q) + P` double-and-add. The three EC constraints — the
-    first-addition slope `s` and the `xR`/`yR` relations — together with the
-    non-degeneracy `xP ≠ xq` (first slope), `2·xP − s² + xq ≠ 0` (second addition
-    `M + P`, `M = P + Q`), and `xR ≠ xP` force `R = (P + Q) + P`. General in `Q`, so
-    it serves both windows of the row. Closes with `Kimchi.Gate.VarBaseMul.secant_add` twice,
-    recovering the eliminated intermediate `M` (cf. VarBaseMul's `singleBit_sound`).
-
-    `xR ≠ xP` is essential: `hc2` and `hc3` share a `(xP − xR)` factor, so without
-    it they also admit the spurious `R = −P` (`xR = xP`, `yR = −yP`) — e.g. on
-    `y² = x³ + 1`, `P=(0,1)`, `Q=(2,3)`, `s=1` satisfies every constraint yet
-    `(P+Q)+P = (2,−3) ≠ (0,−1)`. The gate's distinct-point constraint supplies it
-    (via `distinctPoints`); it is a per-window parameter here because the two
-    windows need `xR ≠ xP` and `xS ≠ xR` respectively. -/
+-- `xR ≠ xP` is essential: `hc2` and `hc3` share a factor `xP − xR`, so without it they also
+-- admit `R = −P`. On `y² = x³ + 1`, `P = (0, 1)`, `Q = (2, 3)`, `s = 1` satisfies every
+-- constraint, yet `(P + Q) + P = (2, −3) ≠ (0, −1)`.
+/-- One window's double-and-add: the slope constraint and the `xR`/`yR` relations force
+    `R = (P + Q) + P`, given `xP ≠ xq`, `2·xP − s² + xq ≠ 0` and `xR ≠ xP` (see the note
+    above). General in `Q`, so it serves both windows; the two additions are
+    `Kimchi.Gate.VarBaseMul.secant_add`. The gate's distinct-point constraint supplies
+    `xR ≠ xP` through `distinctPoints`. -/
 private theorem block_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {xq yq xP yP s xR yR : F}
     (hP : W.Nonsingular xP yP) (hQ : W.Nonsingular xq yq) (hR : W.Nonsingular xR yR)
@@ -159,13 +159,10 @@ private theorem block_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 �
     Kimchi.Gate.VarBaseMul.secant_add W ⟨ha1, ha2, ha3⟩ hM hP hMxne hs2 hxR_eq hyR_eq
   rw [hAdd1, hAdd2]
 
-/-- Per-row soundness: a satisfying row's two windows compute the double-and-add
-    chain `R = (P + Q₁) + P` then `S = (R + Q₂) + R`, where `Q₁, Q₂` are the gate's
-    endo-and-sign-selected targets. The distinct-point constraint (via
-    `distinctPoints`) supplies each window's `xR ≠ xP` / `xS ≠ xR`; the per-slope
-    non-degeneracies `xP ≠ xq` and `2·xP − s² + xq ≠ 0` are the remaining honest-
-    witness conditions (as in VarBaseMul). Identify `Q₁, Q₂` as `±T` / `±φ(T)` with
-    `selectQ` to feed the GLV accumulation. -/
+/-- Per-row soundness: a satisfying row computes `R = (P + Q₁) + P` and
+    `S = (R + Q₂) + R`, where `Q₁`, `Q₂` are its window targets. The distinct-point
+    constraint supplies `xR ≠ xP` and `xS ≠ xR`; each window's `xP ≠ xq` and
+    `2·xP − s² + xq ≠ 0` stay hypotheses. -/
 private theorem row_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     (endo : F) (w : Witness F) (h : Holds endo w)
     (hP : W.Nonsingular w.xP w.yP) (hR : W.Nonsingular w.xR w.yR)
@@ -184,10 +181,9 @@ private theorem row_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ 
   exact ⟨block_sound W ha hP hQ1 hR hxne1 htne1 (Ne.symm hxPxR) hs1 hc2_1 hc3_1,
          block_sound W ha hR hQ2 hS hxne2 htne2 (Ne.symm hxRxS) hs2 hc2_2 hc3_2⟩
 
-/-- The per-row GLV contribution, as integer scalar multiples of the two bases.
-    Folding `row_sound`'s `S = (R+Q₂)+R`, `R = (P+Q₁)+P` gives `S = 4·P + 2·Q₁ + Q₂`;
-    `selectQ` makes each `Qⱼ` a signed `T` or `φ(T)`, so `S = 4·P + c₁·T + c₂·φ(T)`
-    for integers `c₁, c₂` (the gate's exposed interface, consumed by the chain). -/
+/-- The per-row GLV contribution: a satisfying row gives `S = 4·P + c₁·T + c₂·φ(T)` for
+    integers `c₁`, `c₂`. `row_sound` gives `S = 4·P + 2·Q₁ + Q₂`, and `selectQ` makes each
+    target a signed `T` or `φ(T)`. -/
 theorem sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     (endo : F) (w : Witness F) (h : Holds endo w)
     (hT : W.Nonsingular w.xT w.yT) (hφT : W.Nonsingular (endo * w.xT) w.yT)
@@ -218,18 +214,15 @@ theorem sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 �
     · exact ⟨e2, 2 * e1, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
     · exact ⟨0, 2 * e1 + e2, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
 
-/-! ## Completeness: the witness generator satisfies the constraints
+/-! ## Completeness
 
-`sound` shows a satisfying row computes the GLV double-and-add. Completeness is the converse —
-the honest computation yields a satisfying witness: the generated row (`build`) satisfies `Holds`,
-under the same per-window non-degeneracy `sound` needs (`xP ≠ xq`, `t ≠ 0`) plus the distinct-point
-conditions `xP ≠ xR`, `xR ≠ xS` that supply the gate's `inv` witness. Purely algebraic — no curve
-membership. Each window is the same `(P+Q)+P` step as VarBaseMul's `singleBit`. -/
+The generated row `build` satisfies `Holds` under the per-window non-degeneracy `sound` also
+needs (`xP ≠ xq` and `2·xP − s² + xq ≠ 0`), plus `xP ≠ xR` and `xR ≠ xS`, which make the `inv`
+cell well-defined. Purely algebraic: no curve membership is used. -/
 
 omit [DecidableEq F] in
-/-- One window's two cleared EC constraints (the `xR`/`yR` relations) hold for any
-    `(s1, s2, xR, yR)` linked by the generation relations — slopes in multiplicative form, so it
-    is pure polynomial algebra. -/
+/-- One window's `xR`/`yR` constraints hold for any `(s1, s2, xR, yR)` linked by the
+    generation relations, with the slopes in multiplicative form. -/
 private theorem window_holds (xq xP yP s1 s2 xR yR : F)
     (hs2 : (2 * xP - s1 ^ 2 + xq) * s2 = 2 * yP - (2 * xP - s1 ^ 2 + xq) * s1)
     (hxR : xR = s2 ^ 2 - s1 ^ 2 + xq)
@@ -249,8 +242,8 @@ private def stepWindow (xq yq xP yP : F) : F × F × F :=
   (s1, xR, (xP - xR) * s2 - yP)
 
 omit [DecidableEq F] in
-/-- The generated window satisfies the window's slope + `xR` + `yR` constraints, given the two
-    non-degeneracy conditions (`xP ≠ xq` and `t ≠ 0`) — the denominators in `stepWindow`. -/
+/-- The generated window satisfies the window's three constraints when `stepWindow`'s two
+    denominators, `xq − xP` and `2·xP − s1² + xq`, are nonzero. -/
 private theorem stepWindow_holds (xq yq xP yP : F) (hxne : xP ≠ xq)
     (htne : 2 * xP - (stepWindow xq yq xP yP).1 ^ 2 + xq ≠ 0) :
     ((xq - xP) * (stepWindow xq yq xP yP).1 = yq - yP)
@@ -276,9 +269,9 @@ private theorem stepWindow_holds (xq yq xP yP : F) (hxne : xP ≠ xq)
     ((xP - (s2 ^ 2 - s1 ^ 2 + xq)) * s2 - yP) hs2m rfl rfl⟩
 
 omit [DecidableEq F] in
-/-- Build the canonical satisfying row from the base `T = (xT, yT)`, input accumulator
-    `P = (xP, yP)`, scalar register `n`, the four bits, and the endomorphism coefficient. The two
-    windows are generated by `stepWindow`; `inv` witnesses the distinct-point product. -/
+/-- The canonical row for base `T = (xT, yT)`, input accumulator `P = (xP, yP)`, register
+    `n` and the four bits: both windows come from `stepWindow`, and `inv` inverts the
+    distinct-point product. -/
 def build (endo xT yT xP yP n b1 b2 b3 b4 : F) : Witness F :=
   let w1 := stepWindow ((1 + (endo - 1) * b1) * xT) ((2 * b2 - 1) * yT) xP yP
   let w2 := stepWindow ((1 + (endo - 1) * b3) * xT) ((2 * b4 - 1) * yT) w1.2.1 w1.2.2
@@ -290,11 +283,9 @@ def build (endo xT yT xP yP n b1 b2 b3 b4 : F) : Witness F :=
   , inv := 1 / ((xP - w1.2.1) * (w1.2.1 - w2.2.1)) }
 
 omit [DecidableEq F] in
-/-- **Completeness of the EndoMul gate.** The witness the honest prover constructs (`build`)
-    satisfies all 12 constraints (`Holds`), given booleanity of the four bits and the per-window
-    non-degeneracy (`xP ≠ xq`, `t ≠ 0` for each window) plus the distinct-point conditions
-    (`xP ≠ xR`, `xR ≠ xS`) that the `inv` constraint encodes. Conditional, as expected for an
-    incomplete-addition gate; the scalar-register constraint holds by construction. -/
+/-- **Completeness of the EndoMul gate.** The generated row `build` satisfies `Holds`, given
+    boolean bits, each window's `xP ≠ xq` and `2·xP − s² + xq ≠ 0`, and the distinct-point
+    conditions `xP ≠ xR`, `xR ≠ xS`. The register constraint holds by construction. -/
 theorem complete (endo xT yT xP yP n b1 b2 b3 b4 : F)
     (w : Witness F) (hw : w = build endo xT yT xP yP n b1 b2 b3 b4)
     (hb1 : b1 * (b1 - 1) = 0) (hb2 : b2 * (b2 - 1) = 0)
@@ -327,60 +318,10 @@ theorem complete (endo xT yT xP yP n b1 b2 b3 b4 : F)
 
 end Kimchi.Gate.EndoMul
 
-/-!
-## Supporting development
+/-! ## The multi-row chain
 
-Endomorphism-optimized (GLV) scalar multiplication composes `Kimchi.Gate.EndoMul` rows into a
-full scalar multiplication of the base point. Each row contributes `S = 4·P + c₁·T + c₂·φ(T)` (the
-gate's `sound`), so chaining `m` rows folds into `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)`; on the Pasta
-endomorphism `φ(T) = [λ]·T` this collapses to a single scalar multiple of `T`. This module collects
-the definitions and lemmas on which the curve-specialized entry points (`{pallas,vesta}_endoMul`,
-in `Kimchi.Gate.EndoMul`) rest, together with the generic capstone `endoMul`.
-
-The circuit is stated so the prover supplies only
-
-* `Holds endo (g i)` at every step (the gate constraint),
-* the **base** nonsingularity `hT`/`hφT` (one-time, row 0 — genuinely external),
-* the **initial** accumulator `P₀ = 2(T + φT)` (one-time),
-* the **threading** of columns (`(g (i+1)).xP = (g i).xS`, base shared).
-
-Every intermediate accumulator's nonsingularity is *derived* — the gate's secant additions hand
-back the output point on-curve (`gate_advance`), threaded through the chain — so there is no
-per-row hypothesis bundle, only a coordinate side-condition `hxne` discharged at the curve layer.
-
-### The `EndoMul ∘ EndoScalar` recoding kernel
-
-EndoMul's per-window GLV digits coincide with EndoScalar's Algorithm-2 `cPoly`/`dPoly` digits over
-the shared challenge crumbs. This is the technical bridge between the two gates — pure digit/crumb
-bookkeeping, independent of the GLV point-fold.
-
-* `recoding_digit` — the per-window correspondence: an `EndoMul` window's bits map to the
-  `EndoScalar` crumb on which `cPoly`/`dPoly` reproduce the GLV window digit.
-* `sum_reindex` — the row↔crumb reindexing lifting the per-window identity to the fold.
-* `aDigit` / `bDigit` — the `cPoly` / `dPoly` digit of crumb `j` built from the rows.
-* `crumbList` / `decompose_crumbList` — the `2m`-crumb list the rows feed to `EndoScalar`, and the
-  init-aligned bridge to its `decomposeA`/`decomposeB`.
-
-### Non-degeneracy
-
-The per-row non-degeneracy facts the soundness needs, generic over the curve:
-
-* `block_tne` — each `(P+Q)+P` block's *second*-addition condition `htne ≠ 0` is self-enforced by
-  the gate constraints (the EndoMul analog of VarBaseMul's `tne_of_holds`).
-* `combo_off_targets` — the geometric core of the *first*-addition condition `hxne`: a bounded
-  two-base combination `[a]·T + [b]·φT` avoids `±T`/`±φT`.
-* `selectQ'` — a bounded variant of `Gate.EndoMul.selectQ` that also returns the sign `e = ±1`.
-
-### The GLV scalar-multiplication chain
-
-The point-level fold and the capstone:
-
-* `chain_endo` — the two-base group fold (pure group algebra).
-* `gate_advance` — one `EndoMul` row, with the output point's nonsingularity *produced*, not given.
-* `endoMul_ab` — the GLV-recoding chain: the coefficients `(k₂, k₁)` are `EndoScalar`'s `a`, `b`.
-* `endoMul` — the capstone: the rows compute `[s]·T`, `s = EndoScalar.toField (crumbList g m) λ`.
-* `accumulator_chain` — discharges the per-row `hxne` from the GLV short-basis bound.
--/
+Chaining `m` rows folds into `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)`; the eigenvalue `φ(T) = [λ]·T`
+collapses this to one multiple of `T`. -/
 namespace Kimchi.Gate.EndoMul
 
 open Kimchi.Gate.EndoMul WeierstrassCurve.Affine
@@ -388,26 +329,18 @@ open Kimchi.Gate.EndoScalar (cPoly dPoly)
 
 variable {F : Type*} [Field F] [DecidableEq F]
 
-/-! ## The `EndoMul ∘ EndoScalar` recoding kernel -/
+/-! ## The `EndoMul ∘ EndoScalar` recoding kernel
+
+EndoMul's per-window GLV digits are EndoScalar's `cPoly`/`dPoly` digits over the same crumbs,
+so the run's two coefficients are `EndoScalar.decomposeA`/`EndoScalar.decomposeB` of
+`crumbList`. -/
 
 omit [DecidableEq F] in
 open Kimchi.Gate.EndoScalar in
-/-- The recoding correspondence (per window). An `EndoMul` window's bits `(b₁, b₂)`
-    map to the `EndoScalar` crumb `x = b₂ + 2·b₁` (the crumb's `bitEven`/`bitOdd` are
-    the sign/base-selector — `EndoScalar`'s nybble is `bitEven + 2·bitOdd`). On it,
-    `EndoScalar`'s Algorithm-2 digit polynomials equal `EndoMul`'s GLV window digit:
-
-        cPoly x = (2·b₂ − 1)·b₁          dPoly x = (2·b₂ − 1)·(1 − b₁)
-
-    where `2·b₂ − 1` is the sign (as in `selectQ`) and `b₁` selects the base — so
-    `cPoly` lands on the `φ(T)`/λ component (`EndoScalar`'s `a`, `EndoMul`'s `k₂`)
-    and `dPoly` on the `T`/1 component (`EndoScalar`'s `b`, `EndoMul`'s `k₁`). This
-    is the heart of `EndoMul ∘ EndoScalar`: the two gates assign the SAME signed
-    base to each 2-bit window. Folding these matched digits — with `EndoMul`'s ×4
-    per row = ×2 per window matching `EndoScalar`'s ×2 per crumb, and the inits
-    aligned (`EndoMul`'s `4^m·P₀` carry ↔ `EndoScalar`'s `a=b=2`) — yields
-    `(k₂, k₁) = (a, b)`, i.e. `endoMul`'s scalar equals
-    `EndoScalar.toField challenge λ`. -/
+/-- The recoding correspondence for one window: on the crumb `x = b₂ + 2·b₁`,
+    `cPoly x = (2·b₂ − 1)·b₁` and `dPoly x = (2·b₂ − 1)·(1 − b₁)`. The sign is `2·b₂ − 1`
+    and `b₁` selects the base, so `cPoly` is the `φ(T)` coefficient and `dPoly` the `T`
+    coefficient: both gates assign the same signed base to each window. -/
 private theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 : F}
     (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :
     cPoly (b2 + 2 * b1) = (2 * b2 - 1) * b1
@@ -424,12 +357,8 @@ private theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 
   · exact ⟨by rw [show (1:F) + 2 * 1 = 3 by ring, c3]; ring,
            by rw [show (1:F) + 2 * 1 = 3 by ring, d3]; ring⟩
 
-/-- The row↔crumb sum reindexing — the structural core of the fold-level recoding.
-    `EndoMul`'s `m` rows weight each row's 2-crumb contribution `2·g(2i) + g(2i+1)`
-    by `4^(m-1-i)`; flattening to `EndoScalar`'s `2m` crumbs weights crumb `j` by
-    `2^(2m-1-j)`. The two agree (the row's `×4 = ×2` twice splits across its two
-    crumbs). Over any `CommRing` — used at `ℤ` (the GLV coefficients) and `F` (the
-    `cPoly`/`dPoly` digits). -/
+/-- The row-to-crumb reindexing: weighting row `i`'s pair `2·g(2i) + g(2i+1)` by
+    `4^(m-1-i)` is weighting crumb `j` by `2^(2m-1-j)`. Over any `CommRing`. -/
 private theorem sum_reindex {R : Type*} [CommRing R] (m : ℕ) (g : ℕ → R) :
     ∑ i ∈ Finset.range m, (4 : R) ^ (m - 1 - i) * (2 * g (2 * i) + g (2 * i + 1))
       = ∑ j ∈ Finset.range (2 * m), (2 : R) ^ (2 * m - 1 - j) * g j := by
@@ -454,23 +383,20 @@ private theorem sum_reindex {R : Type*} [CommRing R] (m : ℕ) (g : ℕ → R) :
     ring
 
 open Kimchi.Gate.EndoScalar (cPoly) in
-/-- `EndoScalar`'s `a`-digit (`cPoly`, the `φ(T)`/λ component) of crumb `j` built from
-    the rows `g`: crumb `2i` is row `i`'s first window `(b₂,b₁)`, crumb `2i+1` its
-    second `(b₄,b₃)`. -/
+/-- The `cPoly` digit (the `φ(T)` coefficient) of crumb `j`: crumb `2i` is row `i`'s first
+    window, crumb `2i+1` its second. -/
 private def aDigit (g : ℕ → Witness F) (j : ℕ) : F :=
   if j % 2 = 0 then cPoly ((g (j / 2)).b2 + 2 * (g (j / 2)).b1)
   else cPoly ((g (j / 2)).b4 + 2 * (g (j / 2)).b3)
 
 open Kimchi.Gate.EndoScalar (dPoly) in
-/-- `EndoScalar`'s `b`-digit (`dPoly`, the `T`/1 component) of crumb `j`. -/
+/-- The `dPoly` digit (the `T` coefficient) of crumb `j`. -/
 private def bDigit (g : ℕ → Witness F) (j : ℕ) : F :=
   if j % 2 = 0 then dPoly ((g (j / 2)).b2 + 2 * (g (j / 2)).b1)
   else dPoly ((g (j / 2)).b4 + 2 * (g (j / 2)).b3)
 
-/-- The `2m`-crumb list the rows feed to `EndoScalar`: row `i` contributes its two
-    windows `[b₂+2·b₁, b₄+2·b₃]` in order, so `crumbList[2i] = aDigit/bDigit`'s crumb
-    `2i` and `crumbList[2i+1]` crumb `2i+1`. Public: the `endoMul` conclusions decode
-    the run's scalar as `EndoScalar.toField` of this list, so consumers name it. -/
+/-- The `2m` crumbs the rows feed to `EndoScalar`: row `i` contributes
+    `[b₂ + 2·b₁, b₄ + 2·b₃]`. The `endoMul` conclusions decode the scalar from this list. -/
 def crumbList (g : ℕ → Witness F) (m : ℕ) : List F :=
   (List.range m).flatMap fun i => [(g i).b2 + 2 * (g i).b1, (g i).b4 + 2 * (g i).b3]
 
@@ -493,9 +419,8 @@ theorem crumbList_length (g : ℕ → Witness F) (m : ℕ) :
     omega
 
 omit [DecidableEq F] in
-/-- Every crumb of a satisfying run is 2-bit: the bits are boolean by the gate's own
-    booleanity constraints, so each window crumb `b_even + 2·b_odd` is `0`, `1`, `2`,
-    or `3` — the validity `EndoScalar`'s decode lemmas precondition on. -/
+/-- Every crumb of a satisfying run is `0`, `1`, `2` or `3`, since the gate forces its bits
+    boolean: the validity `EndoScalar`'s decode lemmas assume. -/
 theorem crumbList_valid (endo : F) (m : ℕ) (g : ℕ → Witness F)
     (hholds : ∀ i, i < m → Holds endo (g i)) :
     ∀ x ∈ crumbList g m, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
@@ -514,8 +439,8 @@ theorem crumbList_valid (endo : F) (m : ℕ) (g : ℕ → Witness F)
   · rcases hb3 with h3 | h3 <;> rcases hb4 with h4 | h4 <;> rw [h3, h4] <;> norm_num
 
 omit [DecidableEq F] in
-/-- A natural's low base-4 digit, cast to the field, as its two bits — the shape a
-    window's second crumb `b₄ + 2·b₃` takes at bit values. -/
+/-- A natural's low base-4 digit, cast to the field, is `bit 0 + 2·bit 1`: the shape of a
+    window crumb at bit values. -/
 private theorem cast_mod_four (k : ℕ) :
     ((k % 4 : ℕ) : F)
       = (if k.testBit 0 then (1 : F) else 0) + 2 * (if k.testBit 1 then 1 else 0) := by
@@ -528,12 +453,10 @@ private theorem cast_mod_four (k : ℕ) :
     simp [h0, h1, he, he'] <;> norm_num
 
 omit [DecidableEq F] in
-/-- **The bit-to-crumb bridge.** When each row's four bits are the scalar's bits
-    MSB-first — row `r` holding bits `4m−1−4r` down to `4m−4−4r`, the prover's bulk
-    bit witness — the run's crumb list is exactly the width-`2m` base-4 expansion
-    `EndoScalar.crumbsOf` of the scalar. This is what turns the register chain
-    (`chain_nAcc`) into the scalar reconstruction and the decoded scalar
-    (`endoMul_off`'s `toField`) into `toField` at the canonical crumbs. -/
+/-- **The bit-to-crumb bridge.** When row `r` holds the scalar's bits `4m−1−4r` down to
+    `4m−4−4r`, the crumb list is the width-`2m` base-4 expansion `EndoScalar.crumbsOf` of the
+    scalar. It turns `chain_nAcc` into scalar reconstruction, and `endoMul_off`'s decoded
+    scalar into `toField` at the canonical crumbs. -/
 theorem crumbList_ofBits (m n : ℕ) (g : ℕ → Witness F)
     (hb : ∀ r, r < m →
       (g r).b1 = (if n.testBit (4 * m - 1 - 4 * r) then (1 : F) else 0)
@@ -591,10 +514,9 @@ theorem crumbList_ofBits (m n : ℕ) (g : ℕ → Witness F)
     simp [List.append_assoc]
 
 omit [DecidableEq F] in
-/-- The init bridge: `EndoScalar`'s `decomposeA`/`decomposeB` over the crumb
-    list (folded from the `a = b = 2` init) is its `2·4^m` carry plus the
-    Algorithm-2 digit sums — exactly `endoMul_ab`'s `(k₂:F)` / `(k₁:F)`. By induction
-    on `m` (each row appends 2 crumbs; `List.foldl_append`). -/
+/-- `EndoScalar`'s `decomposeA`/`decomposeB` over the crumb list are the `2·4^m` carry of
+    their `a = b = 2` start plus the `aDigit`/`bDigit` digit sums, the forms `endoMul_ab`
+    produces. -/
 private theorem decompose_crumbList (g : ℕ → Witness F) (m : ℕ) :
     Kimchi.Gate.EndoScalar.decomposeA (crumbList g m)
         = 2 * (4 : F) ^ m + ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * aDigit g j
@@ -616,16 +538,13 @@ private theorem decompose_crumbList (g : ℕ → Witness F) (m : ℕ) :
 
 /-! ## Non-degeneracy
 
-The first-addition condition `hxne` is `Pᵢ ∉ {±T, ±φT}` (same `x` ⟺ `±` point). Writing the
-accumulator as `[a]·T + [b]·φT` and collapsing with the eigenvalue `φT = [λ]·T`, this reduces to
-`a + b·λ ≢ {±1, ±λ} (mod order)` — four "no short relation" facts, supplied for the small
-accumulator coefficients by the GLV bound (`Pasta.pallas_glv_no_short_relation`). The
-second-addition condition is self-enforced by the gate constraints. -/
+A window's first-addition condition `hxne` says the accumulator is none of `±T`, `±φT`; for a
+bounded two-base accumulator, `{pallas,vesta}_combo_off_targets` supply it. The second-addition
+condition is enforced by the gate itself (`block_tne`). -/
 
-/-- One block's second-addition non-degeneracy, self-enforced. If `2·xI − s² + xq = 0`, the
-    block constraint `(2·xI − s² + xq)·(…) = (xI − xO)·(2·yI)` gives `(xI − xO)·(2·yI) = 0`;
-    with `xI ≠ xO` and char ≠ 2 this forces `yI = 0`, making `I` 2-torsion — ruled out on an
-    odd-prime-order group. (The EndoMul analog of VarBaseMul's `tne_of_holds`.) -/
+/-- A window's second-addition condition enforces itself: if `2·xI − s² + xq = 0`, then `hc`
+    gives `(xI − xO)·2·yI = 0`, so `yI = 0` and `I` has order `2`, impossible in an
+    odd-prime-order group. The analog of VarBaseMul's `tne_of_holds`. -/
 private theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) (h2 : (2 : F) ≠ 0) (hodd : W.order ≠ 2)
     {xI yI xO yO s xq : F} (hI : W.Nonsingular xI yI) (hxne : xI ≠ xO)
@@ -651,9 +570,7 @@ private theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.ord
     exact_mod_cast this
   exact Pasta.smul_ne_zero_of_lt W hPne (by norm_num) hlt h2P
 
-/-- A bounded variant of `Gate.EndoMul.selectQ` that additionally returns the integer fact
-    `e = 1 ∨ e = -1` (the sign), which `selectQ` discards. Same case split, threading the fourth
-    component of `Kimchi.Gate.VarBaseMul.signed_target`. -/
+/-- `selectQ` with the sign as the integer fact `e = 1 ∨ e = -1`. -/
 private theorem selectQ' (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {endo b1 b2 xT yT : F}
     (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
@@ -675,7 +592,7 @@ private theorem selectQ' (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W
 
 /-- The two-base GLV fold: chaining `P_{i+1} = 4·P_i + c₁ᵢ·T + c₂ᵢ·φT` over `m` rows
     gives `P_m = 4^m·P₀ + (∑ 4^(m-1-i)·c₁ᵢ)·T + (∑ 4^(m-1-i)·c₂ᵢ)·φT`. Pure group
-    algebra (cf. VarBaseMul's `chain_scalarMul`, here with a second base). -/
+    algebra: VarBaseMul's `chain_scalarMul` with a second base. -/
 private theorem chain_endo (W : WeierstrassCurve.Affine F)
     (m : ℕ) (P : ℕ → W.Point) (T φT : W.Point) (c1 c2 : ℕ → ℤ)
     (hstep : ∀ i, i < m → P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT) :
@@ -703,28 +620,26 @@ private theorem chain_endo (W : WeierstrassCurve.Affine F)
     rw [hs, ih', hsum c1, hsum c2, pow_succ']
     module
 
-/-- Output-accumulator coordinates after `k` rows: row 0's input `xP`/`yP` when `k = 0`, else
-    row `(k-1)`'s output `xS`/`yS` (so `accX g m` is the final accumulator's `x`). -/
+/-- The accumulator's `x` after `k` rows: row `0`'s input `xP` when `k = 0`, else row
+    `k-1`'s output `xS`. -/
 def accX (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).xP
   | k + 1 => (g k).xS
 
-/-- The `y`-companion of `accX`: row 0's input `yP` when `k = 0`, else row `(k-1)`'s
-    output `yS`. -/
+/-- The accumulator's `y` after `k` rows, as `accX`. -/
 def accY (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).yP
   | k + 1 => (g k).yS
 
-/-- The scalar-register companion of `accX`/`accY`: row 0's input register `n` when
-    `k = 0`, else row `(k-1)`'s output `nPrime`. -/
+/-- The scalar register after `k` rows: row `0`'s input `n` when `k = 0`, else row
+    `k-1`'s output `nPrime`. -/
 def accN (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).n
   | k + 1 => (g k).nPrime
 
 omit [DecidableEq F] in
-/-- A run of `m` `EndoMul` rows: every row satisfies the gate, every row reads the same base
-    point, and each row's output accumulator is the next row's input. The gate's two-row
-    convention puts the output in the NEXT row's `P` columns, which is what `link` says. -/
+/-- A run of `m` `EndoMul` rows: every row satisfies the gate and reads the same base point,
+    and each row's output accumulator and register are the next row's inputs. -/
 structure Chain (W : WeierstrassCurve.Affine F) (endo : F) (T φT : W.Point)
     (g : ℕ → Witness F) (m : ℕ) : Prop where
   /-- Every row of the run satisfies the gate. -/
@@ -742,12 +657,11 @@ structure Chain (W : WeierstrassCurve.Affine F) (endo : F) (T φT : W.Point)
 omit [DecidableEq F] in
 /-! ## A run given as a list
 
-    A circuit builds its rows as a finite list, not as a function on `ℕ`; `Chain.ofList` is
-    that caller's constructor, and the identities below say what the run's accumulators and
-    crumb stream read as there. -/
+A circuit builds its rows as a list; `Chain.ofList` makes a run of one, and
+`acc_getD_length` reads off its final accumulator and register. -/
 
-/-- The run a caller holding a finite list of rows builds: every row holds, every row reads
-    the base of row `0`, and adjacent rows link on both accumulators. -/
+/-- A list of rows, padded by `d`, is a run when every row holds, every row and `d` read the
+    base, and adjacent rows link accumulator and register. -/
 theorem Chain.ofList (W : WeierstrassCurve.Affine F) (endo : F) (T φT : W.Point)
     (l : List (Witness F)) (d : Witness F)
     (hholds : ∀ w ∈ l, Holds endo w)
@@ -776,18 +690,8 @@ theorem Chain.ofList (W : WeierstrassCurve.Affine F) (endo : F) (T φT : W.Point
     exact (hlink.getElem i hi).2
 
 omit [DecidableEq F] in
-/-- The crumb stream of a run given as a list: its rows' window crumbs, concatenated. -/
-theorem crumbList_getD (l : List (Witness F)) (d : Witness F) :
-    crumbList (fun i => l.getD i d) l.length
-      = l.flatMap fun w => [w.b2 + 2 * w.b1, w.b4 + 2 * w.b3] := by
-  rw [crumbList, List.flatMap_def, List.flatMap_def]
-  congr 1
-  refine List.ext_getElem (by simp) fun i _ h2 => ?_
-  simp only [List.getElem_map, List.getElem_range]
-  rw [List.getD_eq_getElem _ _ (by simpa using h2)]
-
 omit [DecidableEq F] in
-/-- A run given as a list closes at its last row's outputs. -/
+/-- A run given as a list ends at its last row's outputs. -/
 theorem acc_getD_length (l : List (Witness F)) (hne : l ≠ []) (d : Witness F) :
     accX (fun i => l.getD i d) l.length = (l.getLast hne).xS
       ∧ accY (fun i => l.getD i d) l.length = (l.getLast hne).yS
@@ -807,11 +711,9 @@ theorem acc_getD_length (l : List (Witness F)) (hne : l ≠ []) (d : Witness F) 
     rw [hlast]
 
 omit [DecidableEq F] in
-/-- **The register chain.** Across a register-threaded run the scalar register folds the
-    crumb list: the final register is `EndoScalar.nReconstruct` of the run's crumbs over
-    the shifted initial register. Row `i`'s decomposition
-    `n' = 16·n + 8·b₁ + 4·b₂ + 2·b₃ + b₄` is two base-4 fold steps on its crumbs
-    `[b₂+2·b₁, b₄+2·b₃]`; only that conjunct of `Holds` is read. -/
+/-- **The register chain.** The final register is the initial one times `4^(2m)` plus
+    `EndoScalar.nReconstruct` of the crumb list: each row's
+    `n' = 16·n + 8·b₁ + 4·b₂ + 2·b₃ + b₄` is two base-4 steps over its crumbs. -/
 theorem chain_nAcc (W : WeierstrassCurve.Affine F) (endo : F) (T φT : W.Point) (m : ℕ)
     (g : ℕ → Witness F) (hchain : Chain W endo T φT g m) :
     accN g m = accN g 0 * 4 ^ (2 * m) + Kimchi.Gate.EndoScalar.nReconstruct (crumbList g m) := by
@@ -836,10 +738,8 @@ theorem chain_nAcc (W : WeierstrassCurve.Affine F) (endo : F) (T φT : W.Point) 
     rw [hdec, hn, ihm, happ, show 2 * (m + 1) = 2 * m + 2 by ring, pow_add]
     ring
 
-/-- **Producing variant of `Gate.EndoMul.block_sound`.** Same `(P+Q)+P` window algebra, but the
-    output accumulator's nonsingularity (`hR`) is *produced* (existential) via `secant_add`,
-    rather than consumed as a hypothesis. This is the producer that `gate_advance` / the chain
-    proofs call to derive per-row nonsingularity. -/
+/-- `block_sound` with the output's nonsingularity produced rather than assumed; the chain
+    proofs derive each accumulator's nonsingularity through it. -/
 private theorem block_produce (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     {xq yq xP yP s xR yR : F}
     (hP : W.Nonsingular xP yP) (hQ : W.Nonsingular xq yq)
@@ -883,12 +783,10 @@ private theorem block_produce (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 �
     Kimchi.Gate.VarBaseMul.secant_add W ⟨ha1, ha2, ha3⟩ hM hP hMxne hs2 hxR_eq hyR_eq
   exact ⟨hR', by rw [hAdd1, hAdd2]⟩
 
-/-- **The producing gate step.** Given the input accumulator on-curve (`hP`), the base
-    (`hT`/`hφT`), the row constraints (`Holds`), and the two first-addition non-degeneracies
-    (`hxne1`/`hxne2` — the second-addition `htne`s are self-enforced via `block_tne`), the
-    gate *produces* the output point on-curve (`hS`, existential — via the secant additions, not
-    assumed) together with the GLV contribution. The `(c1, c2)` digit identities are the GLV
-    window digits, plus the `|·| ≤ 3` bound used by the accumulator invariant. -/
+/-- One row, producing: from an on-curve input accumulator, the base, `Holds` and the
+    first-addition conditions `hxne1`, `hxne2`, the row's output is on the curve and equals
+    `4·P + c1·T + c2·φT`, with `c1`, `c2` the GLV window digits and `|c1|, |c2| ≤ 3`. The
+    second-addition conditions come from `block_tne`. -/
 private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2)
@@ -914,7 +812,7 @@ private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.
   have hb2 := bool_of_mul hb2c
   have hb3 := bool_of_mul hb3c
   have hb4 := bool_of_mul hb4c
-  -- window 1: produce `hR` (the self-enforced second-addition non-degeneracy via `block_tne`)
+  -- window 1: produce `hR`
   have htne1 := block_tne W ha h2 hodd hP hxPxR hc2_1
   obtain ⟨hR, hReq⟩ :=
     block_produce W ha hP hQ1 hxne1 htne1 (Ne.symm hxPxR) hs1 hc2_1 hc3_1
@@ -996,11 +894,10 @@ private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.
     · rcases he1pm with rfl | rfl <;> rcases he2pm with rfl | rfl <;> decide
     · rcases he1pm with rfl | rfl <;> rcases he2pm with rfl | rfl <;> decide
 
-/-- **The GLV-recoding chain.** `m` `EndoMul` rows over `Holds` (with base + threading + initial +
-    the per-row `hxne`) compute the final accumulator `= 4^m·P₀ + k₁·T + k₂·φT`; the field casts of
-    the GLV coefficients `(k₂, k₁)` are exactly `EndoScalar`'s Algorithm-2 `a`, `b` digit-sums over
-    the shared crumbs. Every intermediate accumulator's nonsingularity is *derived* via
-    `gate_advance`, so the prover supplies only `Holds`. -/
+/-- The GLV-recoding chain: a run with each row's `hxne` computes
+    `4^m·P₀ + k₁·T + k₂·φT`, where `k₂` and `k₁` cast to the field are the `aDigit` and
+    `bDigit` digit sums, and `|k₁|, |k₂| ≤ 4^m − 1`. Each accumulator's nonsingularity is
+    derived through `gate_advance`. -/
 private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
@@ -1040,7 +937,7 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
   set P : ℕ → W.Point := fun k => if hk : k ≤ m then Point.some _ _ (key k hk) else 0 with hPdef
   have hPval : ∀ k (hk : k ≤ m), P k = Point.some _ _ (key k hk) := by
     intro k hk; rw [hPdef]; exact dif_pos hk
-  -- per-row GLV contribution, read straight off `gate_advance` (no bundle, no `endoMul`)
+  -- per-row GLV contribution, from `gate_advance`
   have hrow : ∀ i, i < m → ∃ c1 c2 : ℤ,
       P (i + 1) = (4 : ℤ) • P i + c1 • T + c2 • φT
         ∧ (c1 : F) = 2 * dPoly ((g i).b2 + 2 * (g i).b1) + dPoly ((g i).b4 + 2 * (g i).b3)
@@ -1062,7 +959,7 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
   choose! c1 c2 hc using hrow
   have hstep : ∀ i, i < m → P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT :=
     fun i hi => (hc i hi).1
-  -- fold the chain and identify the scalar with `EndoScalar.toField`
+  -- fold the chain and identify the coefficients with the digit sums
   set k1 := ∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * c1 i with hk1def
   set k2 := ∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * c2 i with hk2def
   have hPm : P m = (4 : ℤ) ^ m • P 0 + k1 • T + k2 • φT := chain_endo W m P T φT c1 c2 hstep
@@ -1118,12 +1015,10 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
   rw [← hPval m (le_refl m), hPm, hPval 0 (Nat.zero_le m),
     AddComplete.some_congr W (key 0 (Nat.zero_le m)) hP0ns rfl rfl]
 
-/-- **EndoMul — the capstone.** At the real init `P₀ = 2(T + φT)` and eigenvalue `φT = [λ]·T`, the
-    rows compute the final accumulator `= [s]·T` with `s = EndoScalar.toField (crumbList g m) λ`:
-    EndoMul multiplies the base by exactly the scalar EndoScalar decodes. The prover supplies only
-    `Holds` per row + base + threading + initial; the intermediate nonsingularity is derived and
-    `hxne` is the lone coordinate side-condition (the curve layer discharges it via
-    `accumulator_chain`). Specializes to the curves as `{pallas,vesta}_endoMul`. -/
+/-- **EndoMul — the capstone.** From `P₀ = 2(T + φT)` with eigenvalue `φT = [λ]·T`, a run
+    computes `[s]·T` with `s = EndoScalar.toField (crumbList g m) λ`: EndoMul multiplies the
+    base by the scalar EndoScalar decodes. Each row's first-addition condition `hxne` is the
+    one side condition; `endoMul_off` discharges it. -/
 theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
@@ -1155,10 +1050,9 @@ theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
   · simp +decide [EndoScalar.toField, hk1, hk2]
     rw [decompose_crumbList g m |>.1, decompose_crumbList g m |>.2]; ring
 
-/-- **Producing variant.** Given the bounded input accumulator form `[a]·T + [b]·φT` and a
-    window's constraints, derives the window's first-addition non-degeneracy `hxne` and
-    advances to the next bounded form, handing back the on-curve output point — the output
-    accumulator's nonsingularity `hO` is *produced* (via `block_produce`) rather than consumed. -/
+/-- One window of a run: from an input accumulator `[a]·T + [b]·φT` with `2 ≤ a, b < 2^126`
+    and the window's constraints, `off` gives the first-addition condition, and the output is
+    on the curve as `[a']·T + [b']·φT` with `a'`, `b'` within `1` of `2·a`, `2·b`. -/
 private theorem one_window_produce (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     (T φT : W.Point)
@@ -1209,11 +1103,10 @@ private theorem one_window_produce (W : WeierstrassCurve.Affine F)
     · exact ⟨2 * a, 2 * b - 1, by rw [hO_eq, hIeq, hQe, ← hφTeq]; module,
         by omega, by omega, by omega, by omega⟩
 
-/-- **Deriving `hxne` from the GLV bound.** The fused induction: from the leaner hypotheses + the
-    GLV off-targets fact `off` (`= combo_off_targets`), each accumulator point is `[A]·T + [B]·φT`
-    with `A, B ∈ [4ⁱ+1, 3·4ⁱ−1]` (so `< 2¹²⁶`), which yields the per-row first-addition
-    non-degeneracy `hxne`. The nonsingularity is derived inside the same induction (via
-    `gate_advance`), not consumed from a bundle. -/
+/-- Each row's first-addition condition `hxne`, from the off-targets fact `off`: by induction
+    the accumulator after `i` rows is `[A]·T + [B]·φT` with `A, B ∈ [4ⁱ+1, 3·4ⁱ−1]`, below
+    `2¹²⁶` under `hbits`. The same induction derives each accumulator's nonsingularity
+    (`one_window_produce`). -/
 private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     (h2 : (2 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
@@ -1234,8 +1127,7 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
     cases k with
     | zero => exact ⟨rfl, rfl⟩
     | succ j => exact hthread j hk
-  -- the fused invariant: each step's accumulator is `[A]·T + [B]·φT`, bounded; nonsingularity
-  -- is produced (`one_window_produce`) rather than consumed from a bundle.
+  -- the invariant: each step's accumulator is `[A]·T + [B]·φT`, bounded, and nonsingular
   have inv : ∀ i, i ≤ m → ∃ (hPi : W.Nonsingular (accX g i) (accY g i)) (A B : ℤ),
       Point.some _ _ hPi = A • T + B • φT
         ∧ (4 : ℤ) ^ i + 1 ≤ A ∧ A ≤ 3 * 4 ^ i - 1
@@ -1249,7 +1141,7 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
       intro hi
       have hi' : i < m := by omega
       obtain ⟨hPi', A, B, hPeq, hAlo, hAhi, hBlo, hBhi⟩ := ih (by omega)
-      -- power bookkeeping (verbatim from `accumulator_chain`)
+      -- power bookkeeping
       have h2i : 2 * i ≤ 120 := by omega
       have h4i : (4 : ℤ) ^ i ≤ 2 ^ 120 := by
         calc (4 : ℤ) ^ i = 2 ^ (2 * i) := by rw [pow_mul]; norm_num
@@ -1338,13 +1230,10 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
       hARlo2 hARlt hBRlo2 hBRlt (Ne.symm hxRxS) htne2 hs3 hc2_3 hc3_3
   exact ⟨hxne1, hxne2⟩
 
-/-- **EndoMul, generic over the off-targets fact.** The capstone `endoMul` with its per-row
-    first-addition non-degeneracy discharged from the GLV accumulator bound
-    (`accumulator_chain`): a threaded run of valid rows from `P₀ = 2(T + φT)` computes the
-    final accumulator `= [s]·T` with `s = EndoScalar.toField (crumbList g m) λ`. The
-    curve-specific inputs are exactly `off` — a bounded nonzero two-base accumulator
-    `[a]·T + [b]·φT` avoids `±T`, `±φT` (`{pallas,vesta}_combo_off_targets`) — and the
-    eigenvalue `heig`; the deployed `{pallas,vesta}_endoMul` are its instantiations. -/
+/-- **EndoMul, generic over the off-targets fact.** `endoMul` with each row's `hxne`
+    discharged by `accumulator_chain`. The curve-specific inputs are `off` (a bounded
+    two-base accumulator with nonzero coefficients avoids `±T`, `±φT`; see
+    `{pallas,vesta}_combo_off_targets`) and the eigenvalue `heig`. -/
 theorem endoMul_off (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
@@ -1369,14 +1258,10 @@ theorem endoMul_off (W : WeierstrassCurve.Affine F)
 
 /-! ## The produce chain
 
-The honest walk: `chainBuild` threads the gate's canonical row (`build`) from the init
-accumulator, each row's inputs the previous row's outputs. `chain_complete` is its
-conditional completeness — given the off-targets fact, every row of the walk from
-`P₀ = 2(T + φT)` satisfies the gate. The non-degeneracy is PRODUCED forward: the same
-bounded two-base invariant as `accumulator_chain`, but on the generated rows — each
-window's denominators, and the distinct-point conditions feeding the `inv` cell, are
-derived from the invariant before the row is certified (`window_produce`), not read
-off an accepted run. -/
+The honest walk `chainBuild` threads the canonical row `build` from the initial accumulator.
+Given the off-targets fact, `chain_complete` says every row of the walk from `P₀ = 2(T + φT)`
+satisfies the gate: `accumulator_chain`'s invariant, carried on the generated rows, supplies
+each window's denominators and distinct-point condition (`window_produce`). -/
 
 /-- A positively-weighted bounded two-base combination is nonzero: were
     `[a]·T + [b]·φT = 0`, then `[a+1]·T + [b]·φT = T`, which `off` forbids. -/
@@ -1394,12 +1279,10 @@ theorem combo_ne_zero {W : WeierstrassCurve.Affine F} {T φT : W.Point}
   exact (off (a + 1) b (by omega) (by omega)
     (by rw [abs_of_pos (by omega)]; omega) (by rw [abs_of_pos (by omega)]; omega)).1 hshift
 
-/-- The geometric core of the honest window: for on-curve `I` and target `Q` with
-    distinct `x`, the generated `stepWindow` is well-defined and computes
-    `O = (I + Q) + I` — the second denominator and the distinct-point condition are
-    derived from the two-base representations (`I ≠ ±M`, `I ≠ ±O`: an affine point is
-    never `0`, and the negation cases are the supplied nonzero combinations). The two
-    additions are `secant_add` at `stepWindow`'s own formulas. -/
+/-- The honest window's geometry: for on-curve `I` and target `Q` with distinct `x`,
+    `stepWindow`'s second denominator is nonzero, its output `x` differs from `xI`, and it
+    computes `O = (I + Q) + I`. With `M = I + Q`, the cases `M = −I` and `O = −I` are ruled
+    out by `h2ne` and `h3ne`; `M = I` and `O = I` would make `Q` or `M` zero. -/
 private theorem window_produce_core (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     {T φT : W.Point} {xq yq xI yI : F}
@@ -1496,15 +1379,10 @@ private theorem window_produce_core (W : WeierstrassCurve.Affine F)
       _ = (2 * a + c) • T + (2 * b + d) • φT := by rw [hIeq, hQeq]; module
   exact ⟨htne, hxIO, hO, hOrep⟩
 
-/-- **Honest one-window producer.** From an on-curve input accumulator in bounded
-    two-base form and a boolean bit pair, the generated window (`stepWindow` at the
-    bit-selected target) is well-defined and correct: the two denominators are
-    nonzero, the output's `x` differs from the input's (the distinct-point condition
-    feeding the `inv` cell), and the output point is on-curve in shifted bounded
-    two-base form. The mirror of `one_window_produce` for the honest direction: the
-    window equations come from `stepWindow`'s formulas (via `secant_add` twice, in
-    `window_produce_core`), the side conditions from the invariant + `off` — an affine
-    point is never `0`, so only the negation cases price through `combo_ne_zero`. -/
+/-- One honest window: from an on-curve input `[a]·T + [b]·φT` with `2 ≤ a, b < 2^124` and
+    boolean bits, the generated window has both denominators nonzero and output `x` distinct
+    from the input's, and its output is on the curve as `[a']·T + [b']·φT` with `a'`, `b'`
+    within `1` of `2·a`, `2·b`. The honest counterpart of `one_window_produce`. -/
 private theorem window_produce (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     (T φT : W.Point)
@@ -1584,10 +1462,10 @@ private theorem window_produce (W : WeierstrassCurve.Affine F)
     exact ⟨hxne, htne, hxIO, hO, 2 * a + 0, 2 * b + -1, hOrep,
       by omega, by omega, by omega, by omega⟩
 
-/-- **Honest one-row producer.** The canonical row (`build`) at an on-curve bounded
-    input accumulator with boolean bits satisfies the gate, and its output accumulator
-    is on-curve in 4×-shifted bounded two-base form — `window_produce` twice, the six
-    derived side conditions feeding the gate's conditional `complete`. -/
+/-- One honest row: `build` at an on-curve input `[a]·T + [b]·φT` with `2 ≤ a, b < 2^122` and
+    boolean bits satisfies the gate, and its output is on the curve as `[a']·T + [b']·φT`
+    with `a'`, `b'` within `3` of `4·a`, `4·b`. `window_produce` twice supplies `complete`'s
+    side conditions. -/
 private theorem row_produce (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     (T φT : W.Point)
@@ -1623,10 +1501,8 @@ private theorem row_produce (W : WeierstrassCurve.Affine F)
       hxne1 htne1 hxne2 htne2 hxPR hxRS,
     hS, aS, bS, hSeq, by omega, by omega, by omega, by omega⟩
 
-/-- The honest walk: thread the gate's canonical row (`build`) from the init
-    accumulator and register — row `i + 1`'s inputs are row `i`'s outputs, the bits
-    from the stream `bs`. The prover's per-row witness computation traces this chain
-    exactly. -/
+/-- The honest walk: row `i + 1` is `build` at row `i`'s outputs and the bits `bs (i + 1)`;
+    row `0` starts from the initial accumulator and register. -/
 def chainBuild (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F) : ℕ → Witness F
   | 0 => build endo xT yT xP0 yP0 n0 (bs 0).1 (bs 0).2.1 (bs 0).2.2.1 (bs 0).2.2.2
   | i + 1 =>
@@ -1636,8 +1512,8 @@ def chainBuild (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F) : ℕ
       (bs (i + 1)).1 (bs (i + 1)).2.1 (bs (i + 1)).2.2.1 (bs (i + 1)).2.2.2
 
 omit [DecidableEq F] in
-/-- The walk from row `1` on is the walk from row `0`'s outputs at the shifted bits — what
-    a caller reading the run off one round at a time needs to step its induction. -/
+/-- The walk from row `1` on is the walk from row `0`'s outputs with the bits shifted by
+    one. -/
 theorem chainBuild_shift (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F) :
     ∀ j : ℕ, chainBuild endo xT yT xP0 yP0 n0 bs (j + 1)
       = chainBuild endo xT yT (chainBuild endo xT yT xP0 yP0 n0 bs 0).xS
@@ -1650,9 +1526,7 @@ theorem chainBuild_shift (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F �
     rfl
 
 omit [DecidableEq F] in
-/-- Every row of the walk is the canonical row at its own threaded inputs — the
-    rebuild identity that identifies a prover's per-row `build` calls with the
-    walk. -/
+/-- Every row of the walk is `build` at its own input columns. -/
 theorem chainBuild_eta (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F)
     (i : ℕ) :
     chainBuild endo xT yT xP0 yP0 n0 bs i
@@ -1662,12 +1536,10 @@ theorem chainBuild_eta (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × 
           (bs i).1 (bs i).2.1 (bs i).2.2.1 (bs i).2.2.2 := by
   cases i <;> rfl
 
-/-- **The produce chain** — conditional completeness of the honest walk, generic over
-    the off-targets fact: from `P₀ = 2(T + φT)` and boolean bits, every row of
-    `chainBuild` satisfies the gate. The fused induction carries `accumulator_chain`'s
-    bounded two-base invariant on the GENERATED rows — `row_produce` certifies each row
-    and advances the representation, so the non-degeneracy is produced forward along
-    the walk rather than read off an accepted run. -/
+/-- **The produce chain.** Given the off-targets fact, every row of `chainBuild` from
+    `P₀ = 2(T + φT)` with boolean bits satisfies the gate. The induction carries
+    `accumulator_chain`'s bounded two-base invariant on the generated rows, with
+    `row_produce` certifying each row. -/
 theorem chain_complete (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     (T φT : W.Point)
@@ -1735,62 +1607,23 @@ theorem chain_complete (W : WeierstrassCurve.Affine F)
 
 end Kimchi.Gate.EndoMul
 
-/-!
-## The deployed circuit
+/-! ## The deployed circuit
 
-Endomorphism-optimized (GLV) scalar multiplication, instantiated at the real Pasta curves (the
-analog of `VarBaseMul`'s `scaleFast` entry points). A run of `Kimchi.Gate.EndoMul` rows over a base
-point `T` computes `[s]·T`, where `s` is the scalar `EndoScalar` decodes from the row crumbs. The
-generic capstone `Kimchi.Gate.EndoMul.endoMul` and its supporting development — the GLV point
-fold, the `EndoMul ∘ EndoScalar` recoding kernel, and the non-degeneracy lemmas — are
-`§ Supporting development` above.
-
-This module exposes the deployed entry points at each concrete curve, both instantiations of
-`endoMul_off` — the capstone with `hxne` pre-discharged, generic over the off-targets fact. The
-prover supplies only the gate constraint `Holds` per row, the base nonsingularity (row 0 —
-genuinely external), the column threading, and the initial accumulator `P₀ = 2(T + φT)`. Every
-intermediate accumulator's nonsingularity is *derived* (`endoMul`), and the per-row
-first-addition non-degeneracy `hxne` is *derived* — not assumed — from the GLV short-basis
-bound. The prime-order / `hodd` / short-shape facts come from `Pasta`, and the eigenvalue
-`φT = [λ]·T` is discharged by the proved `Pasta.{pallas,vesta}_eigen`.
-
-### Main results
-
-* `{pallas,vesta}_combo_off_targets` — the GLV off-targets fact (the `hxne` core): a bounded
-  nonzero two-base accumulator `[a]·T + [b]·φT` avoids `±T`, `±φT`.
-* `{pallas,vesta}_endoMul` — the capstone at each curve: a run of valid (`Holds`) rows computes the
-  final accumulator `= [s]·T` with `s = EndoScalar.toField (crumbList g m) λ`.
-* `{pallas,vesta}_chain_complete` — the produce chain at each curve: every row of the honest walk
-  (`chainBuild`) from `P₀ = 2(T + φT)` satisfies the gate.
--/
+The Pallas and Vesta entry points instantiate `endoMul_off` and `chain_complete` with the
+off-targets facts `{pallas,vesta}_combo_off_targets` and the eigenvalues
+`{pallas,vesta}_eigen`. -/
 
 namespace Kimchi.Gate.EndoMul
 
 open Kimchi.Gate.EndoMul Pasta WeierstrassCurve.Affine
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta
 
-/-! ## GLV non-degeneracy: the two-base accumulator avoids the targets
+/-! ## `endoMul` at the curves -/
 
-A two-base combination `[a]·T + [b]·φT` with coefficients inside the GLV bound (`< 2¹²⁶`,
-comfortably above any `4^m` a `< 254`-bit challenge reaches) and nonzero is none of `±T`, `±φT`.
-This is the consumer of `*_glv_no_short_relation` — the geometric core that, threaded through the
-per-row accumulators (`accumulator_chain`), discharges the per-row `hxne`. -/
-
-/-! ## `endoMul` at the curves
-
-The deployed entry points: a run of valid (`Holds`) rows + base + threading + initial `P₀`
-computes `[s]·T`. The per-row `hxne` is discharged internally from the GLV bound
-(`accumulator_chain`); the intermediate-point nonsingularity is derived (`endoMul`). -/
-
-/-- **EndoMul at Pallas.** A run of `m ≥ 1` `EndoMul` rows over Pallas, threaded from the init
-    `P₀ = 2(T + φT)`, computes the final accumulator `= [s]·T` with
-    `s = EndoScalar.toField (crumbList g m) λ`. The prover supplies only the gate constraint
-    `Holds` per row, the base nonsingularity `hT`/`hφT` (row 0 — genuinely external), the column
-    threading, the initial `P₀`, and the bit bound `4·m ≤ 244` (the deployed 128-bit challenge is
-    `m = 32`, far under). `endoMul_off` at `off := pallas_combo_off_targets`: every
-    intermediate accumulator's nonsingularity is *derived*, the per-row `hxne` from the GLV
-    short-basis bound, the eigenvalue from `pallas_eigen`, and the odd-prime-order
-    conditions from `Pasta`. -/
+/-- **EndoMul at Pallas.** A Pallas run from `P₀ = 2(T + φT)` computes `[s]·T` with
+    `s = EndoScalar.toField (crumbList g m) λ`, given `4·m ≤ 244` (the deployed 128-bit
+    challenge has `m = 32`). `endoMul_off` at `pallas_combo_off_targets`, with the eigenvalue
+    from `pallas_eigen` and the odd order from `pallas_card`. -/
 theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     (g : ℕ → Witness Fp) (T φT : Pallas.curve.toAffine.Point)
     (hchain : Chain Pallas.curve.toAffine pallasEndo T φT g m)
@@ -1838,12 +1671,7 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
       m hbits g hchain hP0ns hP0 vestaLam heig
   exact ⟨hfin, s, hpt, hcast⟩
 
-/-! ## The produce chain at the curves
-
-The deployed completeness entry points: from an on-curve base, boolean bits, and the
-honest init `P₀ = 2(T + φT)`, every row of the honest walk (`chainBuild`) satisfies the
-gate — `chain_complete` with the off-targets fact discharged by
-`{pallas,vesta}_combo_off_targets` and the eigenvalue by `{pallas,vesta}_eigen`. -/
+/-! ## The produce chain at the curves -/
 
 /-- **The produce chain at Pallas.** Every row of the honest walk from
     `P₀ = 2(T + φT)` over an on-curve Pallas base with boolean bits satisfies the

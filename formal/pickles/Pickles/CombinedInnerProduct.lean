@@ -9,15 +9,15 @@ set_option mvcgen.warning false
 /-!
 # The combined inner product in circuit
 
-Port of the PureScript `Pickles.PlonkChecks.CombinedInnerProduct`: the verifier's
-recomputation of the batched opening's claimed evaluation
+Port of the combined inner product of `packages/pickles/src/Pickles/PlonkChecks.purs`: the
+verifier's recomputation of the batched opening's claimed evaluation
 `∑ⱼ ξʲ fⱼ(ζ) + r · ∑ⱼ ξʲ fⱼ(ζω)` from the proof's evaluations. Each point's sum is a Horner
 fold over the batch, whose entries carry a bit keeping them in the batch; an entry whose
 bit is clear leaves the batch, so the powers of `ξ` count the kept entries.
 
 ## Main definitions
 
-* `buildEvalList`: the batch in order, `sg_evals, public, ft, z, selectors, w, coeffs, s`.
+* `buildEvalList`: the batch in order, `sgEvals, public, ft, z, selectors, w, coeffs, s`.
 * `combinedInnerProduct`: the two folds and their `r`-combination, the `ζω` fold first.
 * `keptEvals`: the evaluations a read batch keeps.
 

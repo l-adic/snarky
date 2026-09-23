@@ -4,65 +4,45 @@ import Snarky.Kimchi.Constraint
 /-!
 # The constraint-system assembly
 
-Port of the pure fragment of `Snarky.Backend.Kimchi`
-(packages/snarky-kimchi/src/Snarky/Backend/Kimchi.purs): rows plus the wire state
-become the gate table the fixtures record — public-input rows prepended, the
-union-find partition laid out as cyclic wiring, coefficients carried per row, and the
-witness table read off the assignments. The napi handoff
-(`makeConstraintSystemWithPrevChallenges`'s carried `prevChallengesCount`/
-`maxPolySize`, the `Gate`/`Wire` FFI constructors) is out (K1); the assembled shape
-here is the circuit-diffs JSON schema `KimchiFixture.PS.Raw` decodes — the D-K3
-comparison seam.
+Transcribes the pure fragment of packages/snarky-kimchi/src/Snarky/Backend/Kimchi.purs:
+the built rows and the union-find become the gate table the circuit-diffs fixtures
+record. Public-input rows are prepended, each variable class is wired as a cycle over its
+cells, and the witness table is read off the assignments. The handoff to the native
+constraint-system builder is out of scope.
 
-Name map: `makePublicInputRows`, `makeGateData`, `makeWitness` keep their names;
-`makeWireMapping`/`makeGates` become `wireMap`/`assembleGates` — the PS `ST`-pass builds
-placement/class stores imperatively and then SORTS each class's cells; `wireMap`
-collects the classes in row-major order, which is that sorted order, and maps each
-cell to its cyclic successor.
+Departures from the transcribed file:
+- `Wire` is a plain `(row, col)` record; a cell outside every wired class targets itself.
+- `makeWitness` returns the row-major register table; the fixture schema records its
+  transpose. A missing assignment reads `0` where the original throws.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- `Wire` is a plain `(row, col)` record (the PS type is an FFI constructor); a cell
-  outside every wired class targets itself, as in PS's `wireNew i j` default.
-- Only permutation columns `0 … 6` wire (PS filters `j < 7`); the PS `i * 16 + j`
-  frozen-store keying is an indexing artifact and drops out of the functional form.
-- `makeWitness` produces the ROW-major register table (PS builds the transpose,
-  `Vector 15 (Array f)` column-major, which is what the fixture schema records —
-  the comparison seam transposes); missing assignments read `0` where PS throws
-  (total rendering; the prover laws discharge assignedness on the reachable path).
-
-The round-trip check against `Kimchi.Index.build?` and the fixture byte-comparison
-live in `formal/scripts/check_cs.lean`; this module is the pure data path it
-exercises.
+scripts/check_cs.lean runs this module's output through `Kimchi.Index.build?` and compares
+it with the fixtures.
 -/
 
 namespace Snarky.Kimchi
 
 open Snarky
 
-/-- A wiring target: the cell `(row, col)` this cell is permuted to (the PS FFI
-`Wire`, as data). -/
+/-- A wiring target: the cell `(row, col)` a permutation cell is wired to. -/
 structure Wire where
   /-- The target row. -/
   row : Nat
   /-- The target column. -/
   col : Nat
-  deriving Repr, DecidableEq
 
-/-- One assembled gate row: the tag, the seven wiring targets, and the coefficient
-row — the shape the circuit-diffs schema records per row. -/
+/-- One assembled gate row, as the fixtures record it: the tag, the wiring targets, and
+the coefficients. -/
 structure AssembledGate (F : Type u) where
   /-- The gate tag. -/
   kind : GateKind
-  /-- The seven permutation-cell wiring targets. -/
+  /-- The wiring target of each permutation cell. -/
   wires : Vector Wire 7
   /-- The coefficient row. -/
   coeffs : List F
-  deriving Repr, DecidableEq
 
-/-- The wire map (PS `makeWireMapping`): every wired permutation cell `(row, col)`,
-`col < 7`, to the next cell of its variable's class, the last wrapping to the first.
-One pass over the rows collects each class's cells; row-major discovery is already the
-ascending cell order PS sorts into, so no class needs a sort. -/
+/-- The wire map: each wired permutation cell `(row, col)` goes to the next cell of its
+variable's class, the last wrapping to the first. Cells are collected in row-major
+order, which is already ascending, so no class needs a sort. -/
 def wireMap (roots : Array Variable) (rows : List (KimchiRow F)) :
     Std.HashMap (Nat × Nat) Wire := Id.run do
   let mut classes : Std.HashMap Variable (Array (Nat × Nat)) := {}
@@ -83,8 +63,8 @@ def wireMap (roots : Array Variable) (rows : List (KimchiRow F)) :
       m := m.insert cells[k]! ⟨t.1, t.2⟩
   return m
 
-/-- Assemble the gate table (PS `makeGates`): per row the tag, the seven wiring
-targets (a cell outside every class targets itself), and the coefficients. -/
+/-- The gate table: per row the tag, each permutation cell's wiring target (itself when
+outside every class), and the coefficients. -/
 def assembleGates (roots : Array Variable) (rows : List (KimchiRow F)) :
     List (AssembledGate F) :=
   let wm := wireMap roots rows
@@ -95,8 +75,8 @@ def assembleGates (roots : Array Variable) (rows : List (KimchiRow F)) :
                   target i 6]⟩, by simp⟩,
       coeffs := row.coeffs }
 
-/-- The public-input rows (PS `makePublicInputRows`): one generic row per public
-variable, coefficient `1` on the first cell. -/
+/-- The public-input rows: one generic row per public variable, coefficient `1` on its
+first cell. -/
 def makePublicInputRows [Zero F] [One F] (publicInputs : List Variable) :
     List (KimchiRow F) :=
   publicInputs.map fun v =>
@@ -105,8 +85,8 @@ def makePublicInputRows [Zero F] [One F] (publicInputs : List Variable) :
                  none, none, none, none, none]⟩, by simp⟩,
       coeffs := [1, 0, 0, 0, 0] }
 
-/-- The assembled circuit data (PS `makeGateData`): public-input rows prepended, the
-union-find resolved to roots, the gate table with its wiring. -/
+/-- The assembled circuit data: the rows with public-input rows prepended, their gate
+table wired through the union-find's roots, and the public-input count. -/
 def makeGateData [Zero F] [One F] (publicInputs : List Variable)
     (constraints : List (KimchiRow F)) (uf : UnionFind) :
     List (KimchiRow F) × List (AssembledGate F) × Nat :=
@@ -114,11 +94,10 @@ def makeGateData [Zero F] [One F] (publicInputs : List Variable)
   let gates := assembleGates (UnionFind.rootOf uf) rows
   (rows, gates, publicInputs.length)
 
-/-- The witness table (PS `makeWitness`), row-major as the fixture schema records
-it: each row's fifteen register values and the public-input values. Total where PS
-throws on a missing assignment: an absent or unassigned cell reads `0`. No stated
-law discharges assignedness of built rows, so a `0` cell can also be an unassigned
-one — the corpus's byte comparison is the only check. -/
+/-- The witness table, row-major: each row's register values, and the public-input
+values. An absent or unassigned cell reads `0`. No stated law makes the built rows'
+cells assigned, so a `0` may hide an unassigned cell; the fixture witness comparison is
+the only check. -/
 def makeWitness [Zero F] (A : Assignments F) (rows : List (KimchiRow F))
     (publicInputs : List Variable) : List (Vector F 15) × List F :=
   (rows.map fun row =>

@@ -5,43 +5,28 @@ import Snarky.Kimchi.Constraint.Reduction
 /-!
 # The VarBaseMul reducer
 
-Port of `Snarky.Constraint.Kimchi.VarBaseMul`
-(packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/VarBaseMul.purs): the per-round
-scale payload — six accumulator points, five bits, five slopes, the two scalar
-registers, and the base point — and `reduce`, one `varBaseMul`/`zero` ROW PAIR per
-round (the gate's constraints span both rows).
+Transcribes `packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/VarBaseMul.purs`: the
+per-round payload `ScaleRound`, and `VarBaseMul.reduce`, which emits one `varBaseMul`/`zero`
+row pair per round (the gate's constraints span both rows).
 
-The per-round reduction ORDER is the byte contract: accumulators pointwise in
-index order, then bits, slopes, `nPrev`, `nNext`, and the base LAST. Unlike
-AddComplete's `reduce_curve_point`, this module's local point reducer runs `x` BEFORE
-`y` (PS `reducePointToVariable` is a `do`-block, not an OCaml record map — no
-right-to-left reversal), so points here are pinned x-first.
+The operand order is the byte contract: accumulators in index order, then bits, slopes,
+`nPrev`, `nNext`, and the base last. Each point is pinned `x` first, unlike
+`AddComplete.reduce`, which pins `y` first.
 
-Name map: `ScaleRound`, `VarBaseMul`, `reduce` keep their names (namespaced);
-`AffinePoint` is `Constraint/AddComplete.lean`'s record — the PS import from
-`Snarky.Data.EllipticCurve` resolves to it.
+The accumulators, bits and slopes are named fields (`acc0 … acc5`, `bit0 … bit4`,
+`slope0 … slope4`), as in `Kimchi.Gate.VarBaseMul.Witness`, not indexed vectors: indexed
+access re-runs its bounds tactic at every elaboration site, which over twenty-six operands
+exceeds the heartbeat budget.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- The width-fixed vectors (`Vector 6` accumulators, `Vector 5` bits/slopes) render as
-  NAMED FIELDS (`acc0 … acc5`, `bit0 … bit4`, `slope0 … slope4`) — the same choice
-  `Kimchi.Gate.VarBaseMul.Witness` makes for its columns. The widths are gate
-  constants, and named fields keep every operand access a plain projection: indexed
-  `Vector` access re-runs its bounds tactic at every elaboration site, which summed
-  over twenty-six operands in statements and proofs blows the heartbeat budget.
-- PS's `Rows` newtype over `Array (Vector 2 row)` renders as the bare pair list
-  `List (KimchiRow F × KimchiRow F)` with the concatenating `ToKimchiRows` instance
-  below; the width-fixed `traverse`s unroll to their applications in index order.
-
-No row-shape law is stated here: the constraint layer stays free of `Kimchi`
-imports.
+No row-shape law is stated here: the constraint layer imports nothing from the kimchi package.
 -/
 
 namespace Snarky.Kimchi
 
 open Snarky
 
-/-- One scale round (PS `ScaleRound`): the accumulators `P₀ … P₅`, the five bits and
-five slopes, the scalar registers, and the base point `T`. -/
+/-- One scale round: five scalar bits move the accumulator from `acc0` to `acc5` against
+the base `T`, and the scalar register from `nPrev` to `nNext`. -/
 structure ScaleRound (F : Type u) where
   /-- Accumulator point `P0` (input). -/
   acc0 : AffinePoint (FVar F)
@@ -81,20 +66,18 @@ structure ScaleRound (F : Type u) where
   nNext : FVar F
   /-- The base point `T`. -/
   base : AffinePoint (FVar F)
-  deriving Repr, DecidableEq
 
-/-- A variable-base scalar multiplication: its rounds in row order (PS `VarBaseMul`). -/
+/-- A variable-base scalar multiplication: its rounds in row order. -/
 abbrev VarBaseMul (F : Type u) := List (ScaleRound F)
 
-/-- A pair list flattens pairwise, in order — the row-pair emitters' carrier (PS
-`Rows` over `Array (Vector 2 _)`, its `concatMap`). -/
+/-- A pair list flattens pairwise, in order; the carrier of the row-pair emitters. -/
 instance : ToKimchiRows F (List (KimchiRow F × KimchiRow F)) where
   toKimchiRows rs := rs.flatMap fun p => [p.1, p.2]
 
 variable {F : Type} {m : Type → Type}
 
-/-- Reduce one round to its `varBaseMul`/`zero` row pair (PS `reduceRound` +
-`makeRows`): accumulators pointwise x-first, then bits, slopes, registers, base. -/
+/-- Reduce one round to its `varBaseMul`/`zero` row pair: accumulators x-first, then bits,
+slopes, registers, base. -/
 def ScaleRound.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] (c : ScaleRound F) :
     m (KimchiRow F × KimchiRow F) := do
@@ -135,8 +118,7 @@ def ScaleRound.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
                      some vs4, none, none, none]⟩, by simp⟩,
           coeffs := [] })
 
-/-- Reduce a multiplication roundwise, in row order (PS `reduce`, its `traverse` as
-the structural fold). -/
+/-- Reduce a multiplication round by round, in row order. -/
 def VarBaseMul.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] :
     VarBaseMul F → m (List (KimchiRow F × KimchiRow F))
@@ -145,30 +127,5 @@ def VarBaseMul.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     let pair ← c.reduce
     let rest ← VarBaseMul.reduce cs
     pure (pair :: rest)
-
-/-- The round reducer is a seam: twenty-six pinned operands, one row pair. -/
-private theorem ScaleRound.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
-    [DecidableEq F] (c : ScaleRound F) :
-    Seam (ScaleRound.reduce (m := PlonkBuilder F) c)
-      (ScaleRound.reduce (m := PlonkProver F) c) := by
-  unfold ScaleRound.reduce
-  repeat first
-    | exact Seam.pure _
-    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
-
-/-- The scalar-multiplication reducer is a seam: the roundwise fold composes. -/
-theorem VarBaseMul.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
-    [DecidableEq F] (c : VarBaseMul F) :
-    Seam (VarBaseMul.reduce (m := PlonkBuilder F) c)
-      (VarBaseMul.reduce (m := PlonkProver F) c) := by
-  induction c with
-  | nil =>
-    simp only [VarBaseMul.reduce]
-    exact Seam.pure _
-  | cons c cs ih =>
-    simp only [VarBaseMul.reduce]
-    refine Seam.bind (ScaleRound.reduce_seam c) fun _ => ?_
-    refine Seam.bind ih fun _ => ?_
-    exact Seam.pure _
 
 end Snarky.Kimchi

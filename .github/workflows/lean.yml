@@ -20,8 +20,7 @@ on:
       - '.github/actions/setup-lean/**'
   # Every pull request that touches formal/, whatever its base — a branch filter here
   # would leave a STACKED PR (one targeting a feature branch) with no Lean gate at all,
-  # which is how an unaudited formal/ change reaches a base branch. Flagged as an
-  # unnumbered observation in the external audit's §2.1.
+  # which is how an unchecked formal/ change reaches a base branch.
   pull_request:
     paths:
       - 'formal/**'
@@ -64,12 +63,12 @@ jobs:
     - name: Shape-literal gate
       run: bash kimchi/scripts/check_shape_literals.sh
 
-    # GATE (A-1): the sorry census — `lake build` treats `sorry` as a warning, and the
+    # GATE: the sorry census — `lake build` treats `sorry` as a warning, and the
     # axiom gates only see rooted closures; the census pins the whole tree.
     - name: Check the sorry census
       run: bash scripts/check_sorry_census.sh
 
-    # GATE (external-audit A-7): every committed fixture is sha256-pinned to a manifest
+    # GATE: every committed fixture is sha256-pinned to a manifest
     # recording the proof-systems revision it was regenerated from. CI never
     # regenerates (no submodule), so this is what makes fixture-side accommodation
     # visible in review.
@@ -136,10 +135,10 @@ jobs:
       uses: ./.github/actions/setup-lean
 
     # `lake build` succeeds even with `sorry` (it's only a warning), so gate
-    # explicitly: every headline theorem — and, per external-audit A-2, the whole
-    # Tier-2/3 faithfulness and anti-vacuity surface, which nothing consumes — must
-    # reduce to the standard logical axioms plus the certified upstream
-    # `native_decide` witnesses (discriminated by defining module, per A-8). This
+    # explicitly: every headline theorem — and the whole faithfulness and anti-vacuity
+    # surface, which nothing consumes — must reduce to the standard logical axioms plus
+    # the certified upstream `native_decide` witnesses (discriminated by defining module,
+    # since a name prefix is forgeable). This
     # catches a `sorryAx` AND any other stray axiom. Roots/allowlist in the script.
     - name: Verify headline proofs use only the allowed axioms
       run: |
@@ -147,9 +146,9 @@ jobs:
         lake env lean kimchi/scripts/check_axioms.lean
 
     # Per-package trust-surface gates: each package audits the axiom closure of its own
-    # surface (pasta: the derived trust base; poseidon: the sponge layer the whole
-    # random-oracle idealisation concerns — external-audit A-5; bulletproof-pcs: the
-    # PCS knowledge-soundness surface, no Fiat-Shamir axiom). Run from the root
+    # surface (pasta: the derived trust base; poseidon: the sponge layer every verifier
+    # challenge is read through; bulletproof-pcs: the PCS definitional surface). Run from
+    # the root
     # workspace.
     - name: Gate the pasta, poseidon and bulletproof-pcs trust surfaces
       run: |
@@ -173,12 +172,6 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake env lean pickles/scripts/check_axioms.lean
 
-    # The schnorr exemplar's wire surface (standard axioms only).
-    - name: Gate the schnorr exemplar
-      run: |
-        export PATH="$HOME/.elan/bin:$PATH"
-        lake env lean schnorr/scripts/check_axioms.lean
-
     # Batteries' `@[env_linter]` suite (docBlame, unusedArguments, synTaut, …) over
     # every library root. One runLinter process per module — a single multi-module run
     # accumulates each module's import environment and gets OOM-killed. Keep the list
@@ -188,7 +181,7 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
-                 Bulletproof BulletproofFixture Schnorr Pickles PicklesFixture; do
+                 Bulletproof BulletproofFixture Pickles PicklesFixture; do
           lake exe runLinter "$m" || exit 1
         done
 
@@ -203,7 +196,7 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake exe shake --cfg "$PWD/scripts/noshake.json" \
           Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
-          Bulletproof BulletproofFixture Schnorr Pickles PicklesFixture
+          Bulletproof BulletproofFixture Pickles PicklesFixture
 
     # GATE: every authored declaration must be reachable from the union of the packages'
     # roots.txt API manifests, and every script-surface root must appear in a scripts/
@@ -213,10 +206,14 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         bash scripts/deadcode.sh
 
-    # GATE: a domain `CircuitType` instance owes the characterization of its `Reads`
-    # and `Scoped` — nothing derives it, and without it every consumer unfolds inline.
-    - name: Check reading lemmas
-      run: bash scripts/check-readings.sh
+    # GATE: the comment ratchet — a docstring names this tree's code (an unresolved
+    # identifier is rot), an upstream source file is nameable only in a module docstring,
+    # and the phrase/size/emphasis rules of the convention hold. Counts may fall, never
+    # rise (formal/scripts/comment-baseline.txt).
+    - name: Check comments
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        bash scripts/check-comments.sh
 
     # GATE: a pickles gadget's spec is stated once, in its module — a consumer names the
     # exported shape (family or ∀-form) in a `have`, never restates it (the mirror of
@@ -306,7 +303,8 @@ jobs:
     # The composed executable verifier against complete production wire proofs
     # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_emul}.json from
     # the kimchi_proof_dump binaries — the emul one carries live EndoMul/VarBaseMul
-    # selectors and an empty public input; see the audit's V-1/C-3. The pickles wrap
+    # selectors and an empty public input, the only fixture where those gates' constraint
+    # order is adjudicated. The pickles wrap
     # fixture runs here too — its 2^15-point opening check is ~16 s now that the opening
     # MSM uses CompElliptic's fast projective Pippenger). Interpreted via `lean --run`
     # (the script has no `#eval`); the whole matrix is fast, and compiled would fit the
@@ -420,10 +418,9 @@ jobs:
     # The script prunes stale oleans first (deleted/renamed modules linger in the
     # cached build dirs and would otherwise be replayed too).
     #
-    # Runs on PRs as well as pushes (external-audit A-6: PR-only merging meant a
-    # tampered olean could land before any replay). The sweep costs ~15
-    # runner-minutes per run; the cache below keeps the checker build warm. NOTE
-    # (also A-6): lean4checker replays declarations through the kernel — it does not
+    # Runs on PRs as well as pushes, so a tampered olean cannot land before a replay.
+    # The sweep costs ~15 runner-minutes per run; the cache below keeps the checker
+    # build warm. lean4checker replays declarations through the kernel — it does not
     # recompute the per-module axiom tables `collectAxioms` reads; the axiom gates
     # trust those tables, and this workflow builds the tree's own oleans from source.
     - name: Cache the lean4checker build

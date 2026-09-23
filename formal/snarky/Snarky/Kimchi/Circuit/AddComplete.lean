@@ -6,36 +6,22 @@ import Kimchi.Gate.Semantics.AddComplete
 /-!
 # The complete-addition gadget
 
-Port of `Snarky.Circuit.Kimchi.AddComplete`
-(packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/AddComplete.purs): `addFast` seals
-the two operand points, witnesses the gate's seven auxiliary columns in allocation
-order (`sameX`, the mode-dependent `inf`, `infZ`, `x21Inv`, `s`, `x3`, `y3` — fixture
-bytes), and emits one `KimchiConstraint.addComplete`. The finite mode is
-`addFast .checkFinite`; OCaml spells it as that function's default argument.
+Transcribes packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/AddComplete.purs. `addFast`
+seals the two operand points, witnesses the gate's auxiliary columns and the sum, and emits
+one `addComplete` constraint; `Finiteness` picks whether the infinity flag is the constant
+`0` or witnessed.
 
-Name map: `sealPoint`, `Finiteness` (constructors lowerCamel) and `addFast` keep
-their names; the result record is `AddResult`; the witness
-computations are named (`AddFast.sameXWit`, …) in the manner of the base `Field`
-gadgets.
+The point bundle's `CircuitType`/`CheckedType` instances live here, beside their first
+consumer: the encoding is `[x, y]`, with no check. The gadget definitions are polymorphic
+over the carrier through `KimchiSystem`, so one definition serves the soundness reading at
+`KimchiConstraint` and the completeness reading at its prover tag.
 
-Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- `AffinePoint`'s `CircuitType`/`CheckedType` instances live here, beside their first
-  Lean consumer — the PS home (`Snarky.Data.EllipticCurve`, package snarky-curves) is
-  outside this port. The encoding is the PS generic one, `[x, y]`, checks free.
-- Labels are not threaded (the base embedding's `labelOp` is inert; PS wraps
-  `add_fast`/`seal_point`).
-- The gadget definitions are polymorphic over the carrier through `KimchiSystem`
-  (`Snarky/Kimchi/Semantics.lean`) so one definition serves the soundness reading at
-  `KimchiConstraint` and the completeness reading at its prover tag (PS writes the
-  gadget at the concrete sum).
+## Main results
 
-The law pair reads the one emitted constraint through the semantic layer:
-`AddFast.addFast_spec` (any satisfying valuation reads the output as the EC group
-sum, via the verified gate's `sound`) and `AddFast.addFast_complete_spec` (the
-honest `KimchiProverC` run accepts on-curve operands — the witness computations fill
-the row the gate's completeness algebra certifies). `addFast_checkFinite_spec` is
-the pinned-mode soundness form: the flag is the constant `0`, so the sum reads as
-the finite branch with no disjunction.
+* `addFast_spec`: any satisfying valuation reads the output as the group sum, through the
+  verified gate's `Kimchi.Gate.AddComplete.sound`.
+* `addFast_complete`: the honest run accepts on-curve operands and reads the finite sum;
+  its advice fills the gate's canonical row, `Kimchi.Gate.AddComplete.build`.
 -/
 
 namespace Snarky.Kimchi
@@ -44,8 +30,7 @@ open Snarky
 
 variable {F c : Type}
 
-/-- Point bundles encode coordinatewise, `[x, y]` (the PS generic instance in
-`Snarky.Data.EllipticCurve`; see the module docstring). -/
+/-- Point bundles encode coordinatewise, `[x, y]`. -/
 instance : CircuitType F (AffinePoint F) (AffinePoint (FVar F)) where
   size := 2
   valueToFields p := #v[p.x, p.y]
@@ -59,7 +44,7 @@ instance : CircuitType F (AffinePoint F) (AffinePoint (FVar F)) where
     | 0, _ => rfl
     | 1, _ => rfl
 
-/-- A point's coordinates carry no check of their own (PS `genericCheck`). -/
+/-- A point's coordinates carry no check of their own. -/
 instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
     CheckedType F c (AffinePoint F) (AffinePoint (FVar F)) where
   check _ := pure PUnit.unit
@@ -89,16 +74,15 @@ instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
     show (#v[p.x.val V, p.y.val V] : Vector F 2) = #v[a.x, a.y]
     rw [hx, hy]
 
-/-- Seal a point coordinatewise, `y` before `x` — OCaml's `seal` maps over the tuple
-right to left (PS `sealPoint` preserves the order; emission order is fixture bytes). -/
+/-- Seal a point coordinatewise, `y` before `x`: the order is part of the emitted rows. -/
 def sealPoint [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
     (p : AffinePoint (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
   let y ← sealVar p.y
   let x ← sealVar p.x
   pure ⟨x, y⟩
 
-/-- The finiteness mode (OCaml `add_fast ?check_finite`): `checkFinite` pins the
-infinity flag to the constant `0` with no witness; `dontCheckFinite` witnesses it. -/
+/-- The finiteness mode: `checkFinite` pins the infinity flag to the constant `0` with no
+witness; `dontCheckFinite` witnesses it. -/
 inductive Finiteness where
   /-- The sum is asserted finite: `inf` is the constant zero. -/
   | checkFinite
@@ -106,8 +90,8 @@ inductive Finiteness where
   | dontCheckFinite
   deriving DecidableEq
 
-/-- The gate's three auxiliary scalar columns. Witnessed together because they are one
-row's worth of advice, computed from the same four operand readings. -/
+/-- The gate's three auxiliary scalar columns, witnessed together: one advice computation
+from the same four operand readings. -/
 structure AddAux (a : Type) where
   /-- The value pinning the infinity flag. -/
   infZ : a
@@ -116,7 +100,7 @@ structure AddAux (a : Type) where
   /-- The addition slope. -/
   s : a
 
-/-- The auxiliary columns, as a triple — the encoding lays them out in gate order. -/
+/-- The auxiliary columns as a triple, in allocation order (not the gate's column order). -/
 def AddAux.equiv (a : Type) : AddAux a ≃ a × a × a where
   toFun c := (c.infZ, c.x21Inv, c.s)
   invFun c := ⟨c.1, c.2.1, c.2.2⟩
@@ -124,11 +108,11 @@ def AddAux.equiv (a : Type) : AddAux a ≃ a × a × a where
   right_inv _ := rfl
 
 instance instCircuitTypeAddAux : CircuitType F (AddAux F) (AddAux (FVar F)) :=
-  CircuitType.ofShape AddAux.equiv
+  CircuitType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
 
 instance instCheckedTypeAddAux [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
     CheckedType F c (AddAux F) (AddAux (FVar F)) :=
-  CheckedType.ofShape AddAux.equiv
+  CheckedType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
 
 /-- An auxiliary bundle is in scope when its three columns are. -/
 @[simp] theorem scoped_addAux {st : ProverState F} {a : AddAux (FVar F)} :
@@ -158,10 +142,9 @@ structure AddResult (F : Type) where
   /-- The infinity flag: constant `false` under `checkFinite`, else witnessed. -/
   isInfinity : BoolVar F
 
-/-- Complete addition with explicit finiteness control (OCaml
-`add_fast ~check_finite`): seal both points, witness the gate's auxiliary columns in
-allocation order — `sameX`, the mode-dependent `inf`, `infZ`, `x21Inv`, the slope,
-then the output point — and emit one `addComplete` constraint. -/
+/-- Complete addition under a finiteness mode: seal both points, witness `sameX`, the
+mode-dependent `inf`, `infZ`, `x21Inv`, the slope and the output point in that order, and
+emit one `addComplete` constraint. -/
 def addFast [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
     (finiteness : Finiteness) (p1' p2' : AffinePoint (FVar F)) :
     CircuitM F c (AddResult F) := do
@@ -177,9 +160,8 @@ def addFast [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
       sameX := sameX.toCVar, s := aux.s, infZ := aux.infZ, x21Inv := aux.x21Inv })
   pure ⟨p3, inf⟩
 where
-  /-- The infinity column: the constant `false` where the sum is asserted finite,
-  otherwise witnessed. Named rather than matched inline, so the mode choice is one
-  circuit and the gadget's body stays a chain of binds. -/
+  /-- The infinity column: the constant `false` under `checkFinite`, otherwise witnessed.
+  A named circuit, so the gadget's body stays a chain of binds. -/
   infColumn (finiteness : Finiteness) (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) :
       CircuitM F c (BoolVar F) :=
     match finiteness with
@@ -199,10 +181,9 @@ where
     let y1 ← AsProver.readCVar p1.y
     let y2 ← AsProver.readCVar p2.y
     pure ⟨sx && !(decide (y1 = y2))⟩
-  /-- The three auxiliary columns, from one reading of the operands: the value pinning
-  the infinity flag (`0` on equal y-coordinates, else the inverse of `y₂ − y₁` where the
-  x-coordinates coincide), the inverse pinning `sameX`, and the slope — tangent where the
-  x-coordinates coincide, secant otherwise. -/
+  /-- The three auxiliary columns from one reading of the operands: the value pinning the
+  infinity flag, the inverse pinning `sameX`, and the slope (tangent on equal
+  x-coordinates, secant otherwise). -/
   auxAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F (AddAux F) := do
     let sx ← readVar (val := Bool) sameX
     let x1 ← AsProver.readCVar p1.x
@@ -212,8 +193,7 @@ where
     pure ⟨if y1 = y2 then 0 else if sx then (y2 - y1)⁻¹ else 0,
           if sx then 0 else (x2 - x1)⁻¹,
           if sx then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1)⟩
-  /-- The sum: `x₃ = s² − (x₁ + x₂)` and `y₃ = s·(x₁ − x₃) − y₁`, witnessed as the
-  one point the gate's last two columns hold. -/
+  /-- The sum from the slope: `x₃ = s² − (x₁ + x₂)`, `y₃ = s·(x₁ − x₃) − y₁`. -/
   sumAdvice (p1 p2 : AffinePoint (FVar F)) (s : FVar F) : AsProver F (AffinePoint F) := do
     let sv ← AsProver.readCVar s
     let x1 ← AsProver.readCVar p1.x
@@ -236,23 +216,22 @@ open Std.Do in
   mvcgen
 
 open WeierstrassCurve.Affine in
-/-- A circuit point reads as a curve point: its coordinates read as a nonsingular pair,
-and the point they name is this one. Value-level, for the specs. -/
+/-- A circuit point reads, under `V`, as the curve point `P`: its coordinates are a
+nonsingular pair naming `P`. -/
 def OnCurveAt [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (V : Valuation F)
     (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
   Kimchi.Gate.AddComplete.IsPoint W (p.x.val V) (p.y.val V) P
 
 open WeierstrassCurve.Affine in
-/-- …and in scope, so the same curve point is read at every later table. Carrying the
-pair is what keeps a multi-stage proof from rebuilding the point at each stage. -/
+/-- `OnCurveAt` at the table's valuation, with the point in scope, so the same curve point
+is read at every later table (`OnCurveAs.mono`). -/
 def OnCurveAs [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : ProverState F)
     (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
   CircuitType.Scoped (val := AffinePoint F) st p ∧ OnCurveAt W st.env.get p P
 
 open WeierstrassCurve.Affine in
-/-- Introduction: cells reading as coordinates known on the curve read as that point.
-This is how a consumer holding a `CheckedType`'s on-curve grant enters the curve
-vocabulary, without ever naming `Point.some` at the cells' own coordinates. -/
+/-- Cells reading as a nonsingular pair `(x, y)` read as that curve point, so a consumer
+never names `Point.some` at the cells' own coordinates. -/
 theorem OnCurveAt.of_reads [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {V : Valuation F} {p : AffinePoint (FVar F)} {x y : F}
     (hx : p.x.val V = x) (hy : p.y.val V = y) (h : W.Nonsingular x y) :
@@ -260,9 +239,8 @@ theorem OnCurveAt.of_reads [Field F] [DecidableEq F] {W : WeierstrassCurve.Affin
   subst hx; subst hy; exact ⟨h, rfl⟩
 
 open WeierstrassCurve.Affine in
-/-- The curve point a reading names is unique, up to the cells' readings: two curve reads
-whose coordinates agree name the same point. This is the elimination a consumer wants
-where a circuit's `assertEqual` rows pin two results together. -/
+/-- Two curve reads whose coordinates agree name the same point: the elimination for
+`assertEqual` rows pinning two results together. -/
 theorem OnCurveAt.eq [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {V : Valuation F} {p q : AffinePoint (FVar F)} {P Q : W.Point}
     (h : OnCurveAt W V p P) (h' : OnCurveAt W V q Q)
@@ -272,8 +250,8 @@ theorem OnCurveAt.eq [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
   exact Kimchi.Gate.AddComplete.some_congr W n n' hx hy
 
 open WeierstrassCurve.Affine in
-/-- Negating the `y` coordinate reads as the negated curve point: under the short shape
-`negY x y = −y`, which is what the pure `CVar.negate_` computes. -/
+/-- Negating the `y` cell with `CVar.negate_` reads as the negated curve point, since
+`negY x y = −y` when `a₁ = a₃ = 0`. -/
 theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     (ha : W.a₁ = 0 ∧ W.a₃ = 0) {V : Valuation F} {p : AffinePoint (FVar F)} {P : W.Point}
     (h : OnCurveAt W V p P) :
@@ -289,7 +267,7 @@ theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     simp only [Point.some.injEq]
     exact ⟨trivial, by rw [CVar.val_negate_]; exact hneg⟩
 
-/-- A curve read survives the table's growth — with the same curve point. -/
+/-- A curve read survives the table's growth, with the same curve point. -/
 theorem OnCurveAs.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {st st' : ProverState F} {p : AffinePoint (FVar F)} {P : W.Point}
     (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : OnCurveAs W st p P) :
@@ -304,9 +282,8 @@ theorem OnCurveAs.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     · rw [CVar.val_of_le hle hsc.2]
 
 open WeierstrassCurve.Affine in
-/-- On a short curve an operand whose `y` vanishes is its own negation, hence 2-torsion.
-The gate's slope divides by `2y₁`; this is that side condition's point-currency form,
-and the two laws below take it that way so no caller of the addition handles a
+/-- On a short curve a point with `y = 0` is 2-torsion. The gate's slope divides by `2y₁`;
+the laws below take that side condition as `P + P ≠ 0`, so no caller handles a
 coordinate. -/
 theorem two_torsion_of_y_eq_zero [Field F] [DecidableEq F]
     {W : WeierstrassCurve.Affine F} (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
@@ -319,9 +296,8 @@ theorem two_torsion_of_y_eq_zero [Field F] [DecidableEq F]
   ring
 
 open Std.Do in
-/-- The infinity column grants nothing where the flag is witnessed — what it reads is
-pinned by the gate's row, not by how it was produced — but under `checkFinite` it is the
-constant `false`, which is what rules the infinite branch out. -/
+/-- Under `checkFinite` the infinity column reads `0`, which rules out the infinite branch;
+a witnessed flag is pinned only by the gate's row. -/
 @[spec] theorem infColumn_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
     (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) :
@@ -333,11 +309,11 @@ constant `false`, which is what rules the infinite branch out. -/
   · simp
 
 open Std.Do WeierstrassCurve.Affine in
-/-- **`addFast`'s soundness.** Any valuation satisfying the emitted row reads the
-result as the group sum: either the flag is set and the sum is the point at infinity,
-or the flag is clear and the output point is the sum. The gate's own `sound` does the
-work; the gadget's part is that the payload's reading is the operands' — the seals
-preserve them — and the witnessed columns are whatever the row constrains them to be. -/
+/-- **`addFast`'s soundness.** Any valuation satisfying the emitted row reads the result
+as the group sum, for operands with `P + P ≠ 0`: either the flag is `1` and `P + Q = 0`,
+or the flag is `0` and the output point reads as `P + Q`. Under `checkFinite` the flag
+reads `0`. `Kimchi.Gate.AddComplete.sound` does the work; the seals preserve the
+operands' readings. -/
 @[spec] theorem addFast_spec {V : Valuation F} [Field F] [DecidableEq F]
     (fin : Finiteness) (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
@@ -365,7 +341,7 @@ preserve them — and the witnessed columns are whatever the row constrains them
 
 /-! ## Completeness -/
 
-/-- A curve read is monotone — the `Mono` form, for a context that carries points. -/
+/-- `OnCurveAs.mono` in `Mono` form, for a context that carries points. -/
 @[complete_mono] theorem Mono.onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {p : AffinePoint (FVar F)} {P : W.Point} :
     Snarky.Mono (F := F) fun st => OnCurveAs W st p P :=
@@ -398,10 +374,9 @@ table, and the sealed point is scoped and reads as the operand. -/
       reads_affinePoint.mpr ⟨CircuitType.reads_fvar.mp h.2.2,
         CircuitType.reads_fvar.mp h.1.2.2⟩⟩
 
-/-- The infinity column's completeness law: under `checkFinite` the flag is the constant
-`false` and nothing is emitted; under `dontCheckFinite` it is witnessed from the
-operands' readings. Either way the result reads the mode's flag value, so the row
-obligation downstream treats the two modes as one reading. -/
+/-- The infinity column's completeness law: the result reads `false` under `checkFinite`
+(nothing emitted) and the honest flag otherwise, so the row obligation downstream treats
+both modes as one reading. -/
 @[complete_law] theorem infColumn_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
     (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) (b : Bool) (y1 y2 : F) :
@@ -433,15 +408,11 @@ obligation downstream treats the two modes as one reading. -/
       CircuitType.reads_fvar.mp h.2.1.2, CircuitType.reads_fvar.mp h.2.2.2]
 
 open WeierstrassCurve.Affine in
-/-- **`addFast`'s completeness.** From operands lying on the curve, with `y₁ ≠ 0` and —
-in the `checkFinite` mode — a finite sum, the run succeeds, the row it emits is satisfied
-at every extension of the final table, the result is scoped, and where the sum is finite
-the result READS it — the gadget's own soundness spec at the honest table, so a caller
-never rebuilds the point.
-
-The row's satisfaction is the verified gate's own completeness: the advice computes
-exactly `Kimchi.Gate.AddComplete.build`'s canonical row, so the reading of
-the emitted payload IS that row and `complete_build` discharges it. -/
+/-- **`addFast`'s completeness.** For on-curve operands with `P + P ≠ 0` (and, under
+`checkFinite`, `P + Q ≠ 0`), the run succeeds, its row holds at every extension of the
+final table, the result is scoped, and a finite sum is read as `P + Q` (`addFast_spec` at
+the honest table). The emitted row reads as `Kimchi.Gate.AddComplete.build`'s canonical
+row, which `Kimchi.Gate.AddComplete.complete_build` satisfies. -/
 @[complete_law]
 theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)

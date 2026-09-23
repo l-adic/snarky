@@ -4,43 +4,28 @@ import Mathlib
 # The kimchi `EndoScalar` gate
 
 The endomorphism-scalar gate, transcribed from proof-systems
-`kimchi/src/circuits/polynomials/endomul_scalar.rs` (and the PureScript
-`Snarky.Circuit.Kimchi.EndoScalar`). Unlike the EC gates this one is PURE FIELD
-ARITHMETIC: it decomposes a scalar challenge into the field element it represents
-under the curve endomorphism, ready for `EndoMul` to multiply by.
+`kimchi/src/circuits/polynomials/endomul_scalar.rs`. It is field arithmetic only: it decodes a
+scalar challenge into the scalar `EndoMul` effectively multiplies by.
 
-Each row runs 8 iterations of "Algorithm 2" from the Halo paper (p. 29). The
-challenge is read MSB-first in 2-bit *crumbs* `x ∈ {0,1,2,3}`; the state `(a,b,n)`
-(initialized to `(2,2,0)`) updates per crumb as
+A row runs eight steps of Algorithm 2 of the Halo paper (p. 29). The challenge is read
+MSB-first in 2-bit *crumbs* `x ∈ {0,1,2,3}`, and the state `(a, b, n)`, starting at
+`(2, 2, 0)`, updates per crumb as
 
-    n := 4·n + x        a := 2·a + c_func(x)        b := 2·b + d_func(x)
+    n := 4·n + x        a := 2·a + c(x)        b := 2·b + d(x)
 
-and the effective scalar is `a·λ + b` (`λ` = the scalar-field endomorphism
-eigenvalue), with `n` asserted equal to the input challenge. The two crumb
-functions are the `{0,1,2,3} → value` tables
-
-    c_func = (0, 0, −1, 1)        d_func = (−1, 1, 0, 0)
-
-which the circuit implements as the interpolating cubics (so a single polynomial
-identity covers all four cases).
+where `c = (0, 0, −1, 1)` and `d = (−1, 1, 0, 0)` are tables on the four crumbs. The circuit
+enforces their interpolating cubics `cPoly`/`dPoly`, so one polynomial identity covers every
+crumb. Columns 0–5 hold n0, n8, a0, b0, a8, b8 and columns 6–13 the eight crumbs.
 
 ## Main results
 
-* `crumb_iff` — the range constraint `x(x−1)(x−2)(x−3) = 0` holds iff
-  `x ∈ {0,1,2,3}` (in any field).
-* `cPoly_table` / `dPoly_table` — the Halo interpolating cubics `cPoly` / `dPoly`
-  agree with the `c_func` / `d_func` tables on every crumb (char ≠ 2,3).
+* `crumb_iff` — the range constraint `x(x−1)(x−2)(x−3) = 0` holds iff `x ∈ {0,1,2,3}`.
+* `cPoly_table`, `dPoly_table` — the cubics agree with the tables on every crumb (char ≠ 2, 3).
+* `constraints_map` — the constraint list commutes with `F`-algebra homs.
+* `holds_iff`, `ok_iff` — the constraint model as a conjunction and as a checker.
 
-* `sound` / `complete` — a satisfying row genuinely runs Halo's Algorithm 2: the crumbs are
-  valid 2-bit values and the `a`/`b`/`n` accumulators are the Algorithm-2 folds, the `a`/`b`
-  folds using the *literal* `c_func`/`d_func` tables (the cubics in `Holds` interpolate them).
-  Conversely the honest prover's witness (`build`) satisfies the constraints for any valid crumbs.
-
-## Supporting development
-
-The constraint model (`Witness` / `Holds` / `ok` / `ok_iff`) is here. The cubic↔table bridge
-(`cFunc` / `dFunc`, `cPoly_eq_cFunc` / `dPoly_eq_dFunc`, `foldl_table`), the effective scalar
-`a·λ + b`, and the multi-row composition all live in `Kimchi.Gate.Semantics.EndoScalar`.
+Soundness and completeness of a row (`sound`, `complete`), the effective scalar `a·λ + b`
+and the multi-row composition are in `Kimchi.Gate.Semantics.EndoScalar`.
 -/
 
 namespace Kimchi.Gate.EndoScalar
@@ -49,34 +34,28 @@ universe u
 
 variable {F : Type u} [Field F]
 
-/-- `c_func`'s interpolating cubic `⅔x³ − 5⁄2x² + 11⁄6x` (Lagrange over
-    `(0,0),(1,0),(2,−1),(3,1)`). The gate enforces this polynomial; `cPoly_table`
-    shows it equals the intended `(0,0,−1,1)` table on crumbs.
-
-    Stated over an arbitrary commutative `F`-algebra `R`: the field constants become their
-    `algebraMap F R` images, so the quotient layer can read the gate over `R`. At `R = F` the
-    algebra map is the identity and this is the original field polynomial. -/
+/-- The cubic `⅔x³ − 5⁄2x² + 11⁄6x` interpolating the table `(0, 0, −1, 1)` on the crumbs
+    (`cPoly_table`). It is stated over a commutative `F`-algebra `R`, the field constants
+    mapped in by `algebraMap F R`, so the quotient layer can read the gate over `R`. -/
 def cPoly {R : Type u} [CommRing R] (x : R) (F : Type u := R) [Field F] [Algebra F R] : R :=
   algebraMap F R (2 / 3) * x ^ 3 - algebraMap F R (5 / 2) * x ^ 2 + algebraMap F R (11 / 6) * x
 
-/-- `d_func = c_func + (−x² + 3x − 1)`; on crumbs it is the `(−1,1,0,0)` table.
-    Read over an arbitrary commutative `F`-algebra `R` (see `cPoly`). -/
+/-- `cPoly x − x² + 3x − 1`, the cubic interpolating the table `(−1, 1, 0, 0)` on the crumbs
+    (`dPoly_table`). Over an `F`-algebra `R`, as `cPoly`. -/
 def dPoly {R : Type u} [CommRing R] (x : R) (F : Type u := R) [Field F] [Algebra F R] : R :=
   cPoly x (F := F) + (-x ^ 2 + 3 * x - 1)
 
-/-- The crumb-range polynomial `x(x−1)(x−2)(x−3)` — zero exactly on `{0,1,2,3}`.
-    Its coefficients are integers, so it needs no algebra map: it reads over any commutative
-    ring `R`. -/
+/-- The crumb-range polynomial `x(x−1)(x−2)(x−3)`. Its coefficients are integers, so it
+    reads over any commutative ring. -/
 def crumbPoly {R : Type*} [CommRing R] (x : R) : R := x * (x - 1) * (x - 2) * (x - 3)
 
-/-- The range constraint vanishes iff the crumb is a genuine 2-bit value. Holds in
-    any field (an integral domain): a product is zero iff a factor is. -/
+/-- The range constraint vanishes iff the crumb is a 2-bit value, in any field. -/
 theorem crumb_iff (x : F) :
     crumbPoly x = 0 ↔ x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
   simp only [crumbPoly, mul_eq_zero, sub_eq_zero, or_assoc]
 
-/-- The interpolating cubic `cPoly` reproduces the `c_func = (0,0,−1,1)` table on
-    every crumb (needs `2,3 ≠ 0`, true on the Pasta scalar fields). -/
+/-- `cPoly` takes the values `(0, 0, −1, 1)` on the crumbs, given `2, 3 ≠ 0` (true on both
+    Pasta fields). -/
 theorem cPoly_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
     cPoly (0 : F) = 0 ∧ cPoly (1 : F) = 0
       ∧ cPoly (2 : F) = -1 ∧ cPoly (3 : F) = 1 := by
@@ -85,7 +64,7 @@ theorem cPoly_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
   refine ⟨?_, ?_, ?_, ?_⟩ <;> ·
     simp only [cPoly, Algebra.algebraMap_eq_smul_one, smul_eq_mul, mul_one]; field_simp; ring
 
-/-- `dPoly` reproduces the `d_func = (−1,1,0,0)` table on every crumb. -/
+/-- `dPoly` takes the values `(−1, 1, 0, 0)` on the crumbs, given `2, 3 ≠ 0`. -/
 theorem dPoly_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
     dPoly (0 : F) = -1 ∧ dPoly (1 : F) = 1
       ∧ dPoly (2 : F) = 0 ∧ dPoly (3 : F) = 0 := by
@@ -98,9 +77,9 @@ theorem dPoly_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
 
 /-! ## The gate's constraint model. -/
 
-/-- One `EndoScalar` row: the input/output `(a,b,n)` accumulators and the crumbs
-    (the deployed gate carries 8; kept as a `List`, since the fold is uniform in the
-    count — so one `Witness` can equally model a whole multi-row challenge). -/
+/-- One `EndoScalar` row: the input and output `(a, b, n)` accumulators and the crumbs. The
+    deployed gate carries eight crumbs; a `List` keeps the fold uniform in the count, so one
+    `Witness` can also model a whole multi-row challenge. -/
 structure Witness (F : Type*) where
   /-- The input `a` accumulator (`2` at the start of a challenge). -/
   a0 : F
@@ -108,24 +87,20 @@ structure Witness (F : Type*) where
   b0 : F
   /-- The input `n` accumulator (`0` at the start of a challenge). -/
   n0 : F
-  /-- The output `a` accumulator, after folding `a := 2·a + c_func(x)` over the crumbs. -/
+  /-- The output `a` accumulator, after folding `a := 2·a + cPoly x` over the crumbs. -/
   a8 : F
-  /-- The output `b` accumulator, after folding `b := 2·b + d_func(x)` over the crumbs. -/
+  /-- The output `b` accumulator, after folding `b := 2·b + dPoly x` over the crumbs. -/
   b8 : F
   /-- The output `n` accumulator, after folding `n := 4·n + x` over the crumbs. -/
   n8 : F
-  /-- The MSB-first 2-bit crumbs of the challenge (the deployed gate carries 8 per row). -/
+  /-- The MSB-first 2-bit crumbs of the challenge. -/
   crumbs : List F
 
-/-- The gate constraint expressions (11 at the deployed 8-crumb width: `3 + #crumbs`) — the
-    single transcription: the three accumulator folds (`n := 4n+x`, `a := 2a + cPoly x`,
-    `b := 2b + dPoly x`) closing at `a8,b8,n8`, and the range polynomial per crumb. Oriented
-    as production writes them (`expected − actual`, `endomul_scalar.rs` `constraint_checks`)
-    so the α-weighted verifier linearization matches by value, not just by vanishing. The
-    relational spec (`Holds`) and the checker (`ok`) are read from this list. Stated over an
-    arbitrary commutative `F`-algebra `R` — `cPoly`/`dPoly` carry field-constant coefficients
-    mapped in through `algebraMap F R`; at `R = F` this is the original field reading, and the
-    `R`-generic form is what the quotient layer's `Argument` instance consumes. -/
+/-- The gate's constraint expressions: the `n`, `a` and `b` folds closing at `n8`, `a8` and
+    `b8`, then the range polynomial of each crumb. Each fold is written `expected − actual`,
+    as the deployed gate writes it, so the α-weighted linearization matches by value, not just
+    by vanishing. `Holds` and `ok` both read this list. It is stated over an `F`-algebra `R`,
+    as `cPoly`, for the quotient layer's `Argument` instance. -/
 def constraints {R : Type u} [CommRing R] (w : Witness R) (F : Type u := R) [Field F]
     [Algebra F R] : List R :=
   [ w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0 - w.n8
@@ -133,9 +108,7 @@ def constraints {R : Type u} [CommRing R] (w : Witness R) (F : Type u := R) [Fie
   , w.crumbs.foldl (fun acc x => 2 * acc + dPoly x (F := F)) w.b0 - w.b8 ]
   ++ w.crumbs.map crumbPoly
 
-/-- Push a carrier map `f : R → S` through a witness, cell by cell (the six accumulator cells
-    and every crumb). The vehicle for the `Argument` naturality: an `F`-algebra hom commutes
-    with the constraint list (see `constraints_map`). -/
+/-- Apply `f : R → S` to every cell of a witness: the six accumulators and every crumb. -/
 def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
   a0 := f w.a0
   b0 := f w.b0
@@ -145,25 +118,22 @@ def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
   n8 := f w.n8
   crumbs := w.crumbs.map f
 
-/-- `f` commutes with the interpolating cubic `cPoly`: an `F`-algebra hom fixes the
-    `algebraMap F _` coefficients (`AlgHom.commutes`) and preserves powers/products. -/
+/-- An `F`-algebra hom commutes with `cPoly`: it fixes the `algebraMap F _` coefficients. -/
 private theorem cPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) (x : R) : f (cPoly x (F := F)) = cPoly (f x) (F := F) := by
   simp only [cPoly, map_sub, map_add, map_mul, map_pow, AlgHom.commutes]
 
-/-- `f` commutes with `dPoly` (`cPoly` plus an integer-coefficient tail `−x²+3x−1`). -/
+/-- An `F`-algebra hom commutes with `dPoly`. -/
 private theorem dPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) (x : R) : f (dPoly x (F := F)) = dPoly (f x) (F := F) := by
   simp only [dPoly, map_add, map_sub, map_neg, map_mul, map_pow, map_ofNat, map_one, cPoly_map f]
 
-/-- `f` commutes with the crumb-range polynomial `crumbPoly` (integer coefficients only). -/
+/-- An `F`-algebra hom commutes with `crumbPoly`. -/
 private theorem crumbPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) (x : R) : f (crumbPoly x) = crumbPoly (f x) := by
   simp only [crumbPoly, map_mul, map_sub, map_ofNat, map_one]
 
-/-- `f` distributes through the `n`-accumulator fold `n := 4·n + x` (induction on the crumbs,
-    the shape of `foldl_table`; the base is `map f [] = []`, the step pushes `f` past one
-    update via `map_add`/`map_mul`/`map_ofNat`). -/
+/-- An `F`-algebra hom distributes through the `n` fold `n := 4·n + x`. -/
 private theorem foldl_map_n {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) :
     ∀ (xs : List R) (init : R),
@@ -174,7 +144,7 @@ private theorem foldl_map_n {R S : Type u} [CommRing R] [CommRing S] [Algebra F 
     simp only [List.foldl_cons, List.map_cons]
     rw [foldl_map_n f ys (4 * init + y), map_add, map_mul, map_ofNat]
 
-/-- `f` distributes through the `a`-accumulator fold `a := 2·a + cPoly x`. -/
+/-- An `F`-algebra hom distributes through the `a` fold `a := 2·a + cPoly x`. -/
 private theorem foldl_map_c {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) :
     ∀ (xs : List R) (init : R),
@@ -185,7 +155,7 @@ private theorem foldl_map_c {R S : Type u} [CommRing R] [CommRing S] [Algebra F 
     simp only [List.foldl_cons, List.map_cons]
     rw [foldl_map_c f ys (2 * init + cPoly y (F := F)), map_add, map_mul, map_ofNat, cPoly_map f]
 
-/-- `f` distributes through the `b`-accumulator fold `b := 2·b + dPoly x`. -/
+/-- An `F`-algebra hom distributes through the `b` fold `b := 2·b + dPoly x`. -/
 private theorem foldl_map_d {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) :
     ∀ (xs : List R) (init : R),
@@ -196,11 +166,9 @@ private theorem foldl_map_d {R S : Type u} [CommRing R] [CommRing S] [Algebra F 
     simp only [List.foldl_cons, List.map_cons]
     rw [foldl_map_d f ys (2 * init + dPoly y (F := F)), map_add, map_mul, map_ofNat, dPoly_map f]
 
-/-- **Naturality.** An `F`-algebra hom `f : R →ₐ[F] S` commutes with the constraint list:
-    mapping `f` over `constraints w` is `constraints (Witness.map f w)`. `f` commutes with
-    `cPoly`/`dPoly` (it fixes the `algebraMap F _` coefficients and preserves powers/products)
-    and with `crumbPoly`, and distributes through the accumulator folds by induction on the
-    crumb list (the shape of `foldl_table`). This is what makes the gate an `Argument` instance. -/
+/-- **Naturality.** An `F`-algebra hom `f` commutes with the constraint list: mapping `f`
+    over `constraints w` gives `constraints (Witness.map f w)`. This makes the gate an
+    `Argument` instance. -/
 theorem constraints_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) (w : Witness R) :
     (constraints (F := F) w).map f = constraints (F := F) (Witness.map f w) := by
@@ -210,7 +178,7 @@ theorem constraints_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [
   rw [List.map_map, List.map_map]
   exact List.map_congr_left fun x _ => crumbPoly_map f x
 
-/-- RELATIONAL spec: all constraint expressions vanish. -/
+/-- The relational spec: every constraint expression vanishes. -/
 def Holds (w : Witness F) : Prop :=
   ∀ e ∈ constraints w, e = 0
 
@@ -218,16 +186,15 @@ instance [DecidableEq F] (w : Witness F) : Decidable (Holds w) := by
   unfold Holds
   infer_instance
 
-/-- EXECUTABLE checker: every constraint expression evaluates to zero. -/
+/-- The executable checker: every constraint expression evaluates to zero. -/
 def ok [DecidableEq F] (w : Witness F) : Bool :=
   (constraints w).all (· == 0)
 
-/-- Reflection: the checker faithfully decides the constraints. -/
+/-- The checker decides `Holds`. -/
 theorem ok_iff [DecidableEq F] (w : Witness F) : ok w = true ↔ Holds w := by
   simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
 
-/-- `Holds` as the readable conjunction: the three folds close and every crumb is in
-    range. -/
+/-- `Holds` as a conjunction: the three folds close and every crumb is in range. -/
 theorem holds_iff (w : Witness F) :
     Holds w ↔
       w.n8 = w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0
@@ -242,8 +209,8 @@ theorem holds_iff (w : Witness F) :
   · rintro ⟨h1, h2, h3, h4⟩
     exact ⟨h1.symm, h2.symm, h3.symm, h4⟩
 
-/-- Build the canonical satisfying row from valid crumbs and the input accumulators: the three
-    outputs are the accumulator folds, run on the given crumbs. -/
+/-- The honest prover's row: the outputs are the three folds of the inputs over `crumbs`. It
+    satisfies the gate when every crumb is a 2-bit value (`complete`). -/
 def build (a0 b0 n0 : F) (crumbs : List F) : Witness F :=
   { a0, b0, n0
   , n8 := crumbs.foldl (fun acc x => 4 * acc + x) n0

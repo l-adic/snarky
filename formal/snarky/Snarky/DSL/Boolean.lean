@@ -254,13 +254,6 @@ instance instIfThenElseVector {va : Type} {n : Nat} [IfThenElse F c va] :
     IfThenElse F c (Vector va n) where
   select s v w := zipWithVecM (select s) v w
 
-/-- A bundle isomorphic to one that selects, selects through the isomorphism. -/
-@[reducible] def IfThenElse.ofEquiv {va vb : Type} [S : IfThenElse F c va] (ew : vb ≃ va) :
-    IfThenElse F c vb where
-  select b t e := do
-    let r ← S.select b (ew t) (ew e)
-    pure (ew.symm r)
-
 /-! ### Selection's laws
 
 The laws are per shape, like the definition. A bundle carries them through
@@ -420,45 +413,6 @@ instance instLawfulIfThenElseVector [CircuitType F a va] [IfThenElse F c va]
       CircuitType.reads_vector.mpr fun i hi => ?_⟩
     have h := (hrs ⟨i, hi⟩).2
     cases bb <;> exact h
-
-/-- A bundle isomorphic to one whose selection is lawful, selects lawfully through the
-isomorphism. -/
-theorem LawfulIfThenElse.ofEquiv [CircuitType F a va] [IfThenElse F c va]
-    [S : LawfulIfThenElse F c a va] (ev : b ≃ a) (ew : vb ≃ va) :
-    @LawfulIfThenElse F c b vb _ _ _ (CircuitType.ofEquiv ev ew) (IfThenElse.ofEquiv ew) :=
-  letI : CircuitType F b vb := CircuitType.ofEquiv ev ew
-  letI : IfThenElse F c vb := IfThenElse.ofEquiv ew
-  { select_sound := fun V s t e tv ev' bb ht he hb => by
-      have h := (builder_spec_iff _ _).mp
-        (S.select_sound (c := c) V s (ew t) (ew e) (ev tv) (ev ev') bb ht he hb)
-      refine (builder_spec_iff _ _).mpr fun nv hsat => ?_
-      replace hsat : ∀ con ∈ (build (IfThenElse.select (c := c) s (ew t) (ew e) >>= fun r =>
-          (pure (ew.symm r) : CircuitM F c vb)) nv).constraints,
-          ConstraintHolds.Holds V con := hsat
-      show CircuitType.Reads V (ew (build (IfThenElse.select (c := c) s (ew t) (ew e) >>= fun r =>
-        (pure (ew.symm r) : CircuitM F c vb)) nv).result) (ev (if bb then tv else ev'))
-      simp only [build_bind, build, List.append_nil, Equiv.apply_symm_apply] at hsat ⊢
-      cases bb <;> simpa using h nv hsat
-    select_complete := fun s t e bb tv ev' => by
-      refine Complete.bind (S.select_complete (c := c) s (ew t) (ew e) bb (ev tv) (ev ev'))
-        fun r => Complete.pure_of fun _ hr => ?_
-      show CircuitType.Scoped (val := a) _ (ew (ew.symm r)) ∧
-        CircuitType.Reads _ (ew (ew.symm r)) (ev (if bb then tv else ev'))
-      rw [Equiv.apply_symm_apply]
-      refine ⟨hr.1, ?_⟩
-      cases bb <;> exact hr.2 }
-
-/-- A shape selects through its decomposition, laws and all. -/
-@[reducible] def IfThenElse.ofShape {S T : Type → Type} {var : Type}
-    [IfThenElse F c (T var)] (e : ∀ a, S a ≃ T a) : IfThenElse F c (S var) :=
-  IfThenElse.ofEquiv (e var)
-
-/-- A shape's selection laws, through its decomposition. -/
-theorem LawfulIfThenElse.ofShape {S T : Type → Type} {val var : Type}
-    [CircuitType F (T val) (T var)] [IfThenElse F c (T var)]
-    [LawfulIfThenElse F c (T val) (T var)] (e : ∀ a, S a ≃ T a) :
-    @LawfulIfThenElse F c (S val) (S var) _ _ _ (CircuitType.ofShape e) (IfThenElse.ofShape e) :=
-  LawfulIfThenElse.ofEquiv (e val) (e var)
 
 end Lawful
 

@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import PicklesFixture
 import Pickles.TwoHalves
 import Pickles.StepProof
@@ -39,11 +40,11 @@ round count) and the Lagrange basis computed from it, memoised under `lagrange-c
 
 The carry (e): a proof's deferred `sg` obligation is an old accumulator of the next proof on
 its curve — wrap k−1's in wrap k's, through the step between them; step k−1's in step k's,
-through the wrap between them. Per linked pair, `Pickles.Carry` is decided on the two checked
+through the wrap between them. Per linked pair, `Pickles.carry` is decided on the two checked
 proofs (the accumulator is the predecessor's `sg` with the wire's round challenges of the
-predecessor), `AccOk` on the accumulator, `sgOk` on the predecessor, and the two verdicts
-must agree (`sgOk_iff_accOk` on the data). An unlinked accumulator — a front pad, a
-base-case slot — must satisfy `AccOk` on its own: the dummy's `sg` commits the dummy
+predecessor), `Pickles.accOk` on the accumulator, `Pickles.sgOk` on the predecessor, and the
+two verdicts must agree. An unlinked accumulator — a front pad, a base-case slot — must
+satisfy `accOk` on its own: the dummy's `sg` commits the dummy
 challenges. So no accumulator in the file is taken from the prover's list on trust.
 
 The theorems (f): per wrap→step pair the hypotheses of `Pickles.stepProof_kimchiVerify_vesta`
@@ -66,6 +67,7 @@ memo and environment they read; each run's output is printed whole, in the order
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
 open CompElliptic.Fields.Pasta
+open scoped Kimchi
 
 /-- Wrap proofs: Pallas commitments, statement cells in the wrap field. -/
 abbrev CW := IpaPallas.curve
@@ -153,9 +155,9 @@ def ivpProofOf (C : Ipa.KimchiCurve) {k nc : ℕ} {sf : Type} (shift : C.ScalarF
     (cp : Kimchi.Verifier.KimchiProof C nc k) :
     Except String (Pickles.IvpProof k nc C.BaseField sf) := do
   let pt (P : C.Point) : AffinePoint C.BaseField := ⟨P.x, P.y⟩
-  let tComm : Vector (AffinePoint C.BaseField) (7 * nc) ←
-    if h : cp.tComm.size = 7 * nc then pure ⟨cp.tComm.map pt, by simp [h]⟩
-    else throw s!"t_comm: {cp.tComm.size} chunks, expected {7 * nc}"
+  let tComm : Vector (AffinePoint C.BaseField) (quotChunks * nc) ←
+    if h : cp.tComm.size = quotChunks * nc then pure ⟨cp.tComm.map pt, by simp [h]⟩
+    else throw s!"t_comm: {cp.tComm.size} chunks, expected {quotChunks * nc}"
   return { wComm := cp.wComm.map (·.map pt)
            zComm := cp.zComm.map pt
            tComm
@@ -447,8 +449,8 @@ def envFor1 (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option
   else throw (IO.userError s!"the entry runs at {nc} chunks; this lane is one-chunk")
 
 /-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on
-`C`: `Carry` decided on the two checked proofs, `AccOk` on the accumulator, `sgOk` on `pred`,
-and the last two agreeing, as `sgOk_iff_accOk` says they must under `Carry`. -/
+`C`: `carry` decided on the two checked proofs, `accOk` on the accumulator, `sgOk` on `pred`,
+and the last two agreeing. -/
 def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point)))
     (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env C nc))) (memo : Memo)
@@ -614,7 +616,7 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
       (Type1 (FVar Fp)) := CircuitType.constVar (F := Fp) wst
   let V : Valuation Fp := fun _ => 0
   let pub := Pickles.stepPublicInput E V stVar
-  -- the wire's input is the cells read, then ten zero cells (`kimchiVerify_append_zeros`)
+  -- the wire's input is the cells read, then ten zero cells
   let pubOk := decide (pub ++ Array.replicate 10 0 = w.publicInput)
   let offOk := (Pickles.stepLeavesAt E stVar).all (offBandB CW.scalar V)
   let smallOk := decide (stVar.packed.length ≤ 2 ^ E.σ.k)
@@ -653,7 +655,7 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   IO.println s!"    groupCircuit: satisfies={satG}"
   return pubOk && offOk && smallOk && avoidOk && guards && sg' && kv && satS && satG
 
-/-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `AccOk` on its
+/-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `accOk` on its
 own. -/
 def padOk (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) (slot : ℕ) : IO Bool := do

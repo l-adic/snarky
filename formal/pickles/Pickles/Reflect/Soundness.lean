@@ -13,8 +13,7 @@ The in-circuit reading of a deployed token stream computes the gate contribution
   valuation of the constraints the in-circuit interpreter emits reads its output as
   `gateLinearization` at the readings of the circuit's inputs.
 * `circuit_gateLinearization_fp`, `circuit_gateLinearization_fq`: the two deployed
-  streams, one per side of the cycle. These are the results the package stands behind and
-  the axiom gate roots; everything else is in their closure.
+  streams, one per side of the cycle; both are roots of the pickles axiom gate.
 
 ## Implementation notes
 
@@ -22,10 +21,10 @@ The composition is `evaluate_spec` (the emitted constraints pin the pure value),
 `inputs_circuitCompatible` (the circuit environment computes the pure one at its own
 readings), `evaluate_congr` twice (the run reads the α-table only where the stream looks,
 and never reaches the Lagrange basis, so the table is the powers of `α` and the gadget
-drops out), and the stream's reflection endpoint from `Certificate.lean`. Nothing in it is
-field-specific or specialised: the generic theorem takes the stream, the feature predicate,
-the endpoint and the decided reachability fact as hypotheses, and only the two corollaries
-fix them.
+drops out), and the stream's reflection endpoint from `Pickles.Reflect.Certificate`.
+Nothing in it is field-specific: the generic theorem takes the stream, the feature
+predicate, the endpoint and the decided reachability fact as hypotheses, and only the two
+corollaries fix them.
 
 This is relative faithfulness: the circuit computes what the wire protocol computes.
 Whether the wire protocol is sound is out of scope (`formal/docs/soundness-line-retirement.md`),
@@ -88,8 +87,8 @@ theorem circuit_gateLinearization {F c : Type} [Field F] [DecidableEq F]
 /-! ## The deployed streams
 
 One corollary per side of the cycle, each supplying its endpoint and reachability fact
-from `Certificate.lean` under the modelled feature predicate, every feature disabled. A
-precomputed α-table of length `alphaBound + 1` is all a caller owes. -/
+from `Pickles.Reflect.Certificate` under the modelled feature predicate, every feature
+disabled. A precomputed α-table of length `alphaBound + 1` is all a caller owes. -/
 
 /-- The `Fp` stream in circuit computes the gate contribution to `ftEval0`. -/
 theorem circuit_gateLinearization_fp {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]

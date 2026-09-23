@@ -2,13 +2,11 @@
 # The linearization token language
 
 The `PolishToken` alphabet of kimchi's linearization, transcribed from
-`packages/pickles-linearization-types/src/Pickles/Linearization/Types.purs`, itself the
-PureScript image of proof-systems' `kimchi::circuits::expr::PolishToken`. A linearization
-is a reverse-Polish program over this alphabet. It is dumped from Rust into
-`packages/pickles-codegen/rust/output/{fp,fq}.json`, from which both the PureScript modules
-`Pickles.Linearization.{Pallas,Vesta}` and the Lean modules `Linearization/{Fp,Fq}.lean`
-(via `scripts/gen_tokens.lean`) are generated, so the two transcriptions are independent
-and a disagreement between them is detectable.
+`packages/pickles-linearization-types/src/Pickles/Linearization/Types.purs`. A linearization
+is a reverse-Polish program over this alphabet. The codegen's JSON dump of it is the one
+origin of both the PureScript token modules and `Pickles.Linearization.Fp` /
+`Pickles.Linearization.Fq` (written by `formal/pickles/scripts/gen_tokens.lean`), so the two
+transcriptions are independent and a disagreement between them is detectable.
 
 The program is a stack machine rather than an expression tree: `dup`, `store` and `load`
 give sharing, and a feature-flag conditional is laid out as
@@ -35,7 +33,6 @@ inductive CurrOrNext where
   | curr
   /-- Its successor, used by the multi-row gates. -/
   | next
-  deriving DecidableEq, Repr
 
 /-- The gate whose selector polynomial an `index` column reads. Gates outside the modelled
 fragment occur in the deployed stream inside feature-flagged branches. -/
@@ -64,7 +61,6 @@ inductive GateType where
   | xor16
   /-- 64-bit rotation. -/
   | rot64
-  deriving DecidableEq, Repr
 
 /-- The lookup families a lookup selector can name. Outside the modelled fragment. -/
 inductive LookupPattern where
@@ -76,13 +72,12 @@ inductive LookupPattern where
   | rangeCheck
   /-- The foreign-field-multiplication lookup pattern. -/
   | foreignFieldMul
-  deriving DecidableEq, Repr
 
 /-- A column of the evaluation table, as a cell reference names it. -/
 inductive Column where
-  /-- Witness column `i` (the deployed streams use `i < 15`). -/
+  /-- Witness column `i` (the deployed streams use `i < wCols`). -/
   | witness (i : Nat)
-  /-- Coefficient column `i` (the deployed streams use `i < 15`). -/
+  /-- Coefficient column `i` (the deployed streams use `i < coeffCols`). -/
   | coefficient (i : Nat)
   /-- The selector column of gate `g`. -/
   | index (g : GateType)
@@ -98,7 +93,6 @@ inductive Column where
   | lookupRuntimeSelector
   /-- The selector column of lookup family `p`. -/
   | lookupKindIndex (p : LookupPattern)
-  deriving DecidableEq, Repr
 
 /-- A constant the stream can push: a curve/field parameter or a numeric literal. -/
 inductive ConstantTerm where
@@ -108,11 +102,11 @@ inductive ConstantTerm where
   | mds (row col : Nat)
   /-- A numeric literal, decoded from the JSON's `"0x…"` string (see the preamble). -/
   | literal (value : Nat)
-  deriving DecidableEq, Repr
 
 /-- A verifier challenge the stream can push. -/
 inductive ChallengeTerm where
-  /-- The constraint-aggregation challenge `α`; kimchi emits it only as `Expr::Pow(alpha, n)`. -/
+  /-- The constraint-aggregation challenge `α`; the stream only raises it to
+  a power. -/
   | alpha
   /-- The permutation challenge `β`. -/
   | beta
@@ -120,7 +114,6 @@ inductive ChallengeTerm where
   | gamma
   /-- The lookup joint combiner. Outside the modelled fragment. -/
   | jointCombiner
-  deriving DecidableEq, Repr
 
 /-- An optional-feature predicate guarding a `skipIf`/`skipIfNot` branch. Every flag is
 disabled in the modelled fragment. -/
@@ -147,7 +140,6 @@ inductive FeatureFlag where
   | tableWidth (n : Nat)
   /-- There are `n` lookups per row. -/
   | lookupsPerRow (n : Nat)
-  deriving DecidableEq, Repr
 
 /-- One instruction of a linearization program. -/
 inductive PolishToken where
@@ -180,6 +172,5 @@ inductive PolishToken where
   | skipIf (f : FeatureFlag) (n : Nat)
   /-- Skip the next `n` tokens when feature `f` is disabled: the then-branch marker. -/
   | skipIfNot (f : FeatureFlag) (n : Nat)
-  deriving DecidableEq, Repr
 
 end Pickles.Linearization

@@ -3,60 +3,36 @@ import Kimchi.Gate.VarBaseMul
 /-!
 # The kimchi `EndoMul` gate
 
-The endomorphism-optimized variable-base scalar-multiplication gate, transcribed
-from proof-systems `kimchi/src/circuits/polynomials/endosclmul.rs` (the
-`EC_endoscale` point constraint) and the PureScript `Snarky.Circuit.Kimchi.EndoMul`.
+The endomorphism-optimized variable-base scalar-multiplication gate, transcribed from
+proof-systems `kimchi/src/circuits/polynomials/endosclmul.rs` and snarky-kimchi's
+`EndoMul.purs`.
 
-It is VarBaseMul's `(P + Q) + P` double-and-add, but each 2-bit window selects `Q`
-from `{T, −T, φ(T), −φ(T)}` — the GLV optimization — using the curve endomorphism
+It is VarBaseMul's `(P + Q) + P` double-and-add, but each 2-bit window selects `Q` from
+`{T, −T, φ(T), −φ(T)}` (the GLV optimization), using the curve endomorphism
 
       φ(x, y) = (endo · x, y)      (endo a primitive cube root of unity, φ(T) = [λ]T)
 
-so that `[k]T = [k₁]T + [k₂]·φ(T)` with `k₁, k₂` half-width. Each row processes 4
-bits = two windows `P → R → S`:
+so that `[k]T = [k₁]T + [k₂]·φ(T)` with `k₁, k₂` half-width. Each row processes 4 bits, two
+windows `P → R → S`:
 
-* `Q₁ = (xq₁, yq₁)`, `xq₁ = (1 + (endo−1)·b₁)·xT` (= `xT` or `endo·xT`),
-  `yq₁ = (2·b₂ − 1)·yT` (sign) — so `b₁` picks `T` vs `φ(T)`, `b₂` the sign.
+* `Q₁ = (xq₁, yq₁)` with `xq₁ = (1 + (endo−1)·b₁)·xT` and `yq₁ = (2·b₂ − 1)·yT`: `b₁` picks
+  `T` or `φ(T)`, `b₂` the sign.
 * `Q₂ = (xq₂, yq₂)` likewise from `(b₃, b₄)`.
 
-The register threads `n' = 16·n + 8·b₁ + 4·b₂ + 2·b₃ + b₄`, and the accumulator is
-initialized to `2·(T + φ(T))` to dodge the point at infinity.
+The register threads `n' = 16·n + 8·b₁ + 4·b₂ + 2·b₃ + b₄`, and the accumulator starts at
+`2·(T + φ(T))` to avoid the point at infinity.
 
-We model the UPSTREAM-FIXED gate: 12 constraints, including the distinct-point check
-`(xP − xR)·(xR − xS)·inv = 1` (o1-labs/proof-systems@64129ce4) which pins the
-accumulator away from `−P` / `−R`. The pre-fix gate without it is underconstrained
-(it admits the spurious `R = −P`) — see `block_sound` / `distinctPoints`.
+## The distinct-point check
 
-The EC core (`(P + Q) + P` per window) reuses `Kimchi.Gate.Semantics.VarBaseMul`'s
-`secant_add` (general affine addition) and `signed_target` (the `±` selection); the
-new ingredients are the endomorphism base-choice and the GLV `[k₁]T + [k₂]φ(T)`
-accumulation.
+The modeled gate has 12 constraints, the last being `(xP − xR)·(xR − xS)·inv = 1`
+(o1-labs/proof-systems@64129ce4). It forces `xR ≠ xP` and `xS ≠ xR`; without it the
+window constraints also admit the spurious `R = −P`.
 
-## Main results
+## Contents
 
-These are proved in `Kimchi/Gate/Semantics/EndoMul.lean`; all but `sound` are `private`
-there.
-
-* `selectQ` — GLV target selection: a window's `Q` is `±T` (when `b₁ = 0`) or `±φ(T)` (when
-  `b₁ = 1`), via `Kimchi.Gate.VarBaseMul.signed_target` with base `T` or `φ(T)`.
-* `block_sound` — one window's `(P + Q) + P` double-and-add, via
-  `Kimchi.Gate.VarBaseMul.secant_add`
-  twice (general in `Q`; carries the `xR ≠ xP` non-degeneracy the modeled gate
-  revision needs — see its docstring + the upstream fix it references).
-* `row_sound` / `sound` — the per-row two-window chain `R = (P+Q₁)+P`,
-  `S = (R+Q₂)+R`, exposed as `S = 4·P + c₁·T + c₂·φ(T)` (integers `c₁, c₂`) — the
-  GLV interface the circuit folds.
-
-## Supporting development
-
-The constraint model `Witness` / `Holds`, the booleanity helper `bool_of_mul`, the
-distinct-point lemma `distinctPoints` (which discharges `block_sound`'s
-non-degeneracy at the row level), and the `some_congr` point congruence. The GLV
-accumulation `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)`, its eigenvalue collapse, and the
-recoding correspondence with EndoScalar live in `Kimchi.Gate.Semantics.EndoMul`,
-culminating in `endoMul`: per 2-bit window
-the two gates assign the same signed base, so `EndoMul` multiplies the base by exactly
-the scalar `EndoScalar` decodes.
+This file is the transcription: `Witness`, `constraints`, `Holds`, its checker `ok`, and
+`constraints_map`. Soundness (`sound`, `endoMul`) and completeness (`complete`) are proved in
+`Kimchi.Gate.Semantics.EndoMul`, reusing VarBaseMul's `secant_add` and `signed_target`.
 -/
 
 namespace Kimchi.Gate.EndoMul
@@ -101,12 +77,12 @@ structure Witness (F : Type*) where
   xS : F
   /-- The y-coordinate of the output accumulator `S = (R + Q₂) + R`. -/
   yS : F
-  /-- The witnessed inverse of `(xP − xR)·(xR − xS)` — the upstream-fix distinct-point check. -/
+  /-- The witnessed inverse of `(xP − xR)·(xR − xS)`, for the distinct-point check. -/
   inv : F
 
-/-- Map a function across every witness cell. Instantiating at a ring homomorphism moves a
-    witness between rings — in particular between `Witness (Polynomial F)` (the column
-    polynomials of the quotient layer) and `Witness F` (their values at a domain node). -/
+/-- Map a function across every witness cell. At a ring homomorphism this moves a witness
+    between `Witness (Polynomial F)` (the quotient layer's column polynomials) and `Witness F`
+    (their values at a domain node). -/
 def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
   xT := f w.xT
   yT := f w.yT
@@ -126,16 +102,12 @@ def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
   yS := f w.yS
   inv := f w.inv
 
-/-- The 12 constraint expressions, **in production's list order** (`endosclmul.rs:524–549`):
-    4 booleanity checks, two `(P+Q)+P` blocks (3 each, with `Q` the endo-and-sign-selected
-    target), the scalar-register decomposition, and the distinct-point check — the single
-    transcription, from which the relational spec (`Holds`), the quotient layer's constraint
-    polynomials, and the linearization's positional `α`-weighting are all read. The order and
-    the scalar-register sign are load-bearing: `combine_constraints` weights position `k` by
-    `α^k`, so any deviation changes the linearization's constant term on EndoMul-active rows.
-    `endo` is the base-field endomorphism coefficient.
-    (The distinct-point check is the upstream fix o1-labs/proof-systems@64129ce4 — see
-    `block_sound` / `distinctPoints`; the pre-fix gate without it is underconstrained.) -/
+/-- The 12 constraint expressions, in the deployed gate's order: four booleanity checks, two
+    `(P + Q) + P` windows (three each, `Q` the endo-and-sign-selected target), the
+    scalar-register decomposition, and the distinct-point check. `Holds`, the quotient layer
+    and the linearization all read this one list. The order and the register's sign are
+    load-bearing: `alphaCombo` weights position `k` by `α^k`. `endo` is the base-field
+    endomorphism coefficient. -/
 def constraints {R : Type*} [CommRing R] (endo : R) (w : Witness R) : List R :=
   let xq1 := (1 + (endo - 1) * w.b1) * w.xT
   let yq1 := (2 * w.b2 - 1) * w.yT
@@ -156,10 +128,9 @@ def constraints {R : Type*} [CommRing R] (endo : R) (w : Witness R) : List R :=
   , (2 * w.xR - w.s3 ^ 2 + xq2) * ((w.xR - w.xS) * w.s3 + w.yS + w.yR)
       - (w.xR - w.xS) * (2 * w.yR)
   , (w.yS + w.yR) ^ 2 - (w.xR - w.xS) ^ 2 * (w.s3 ^ 2 - xq2 + w.xS)
-  -- scalar register (production's sign: accumulator minus the next register)
+  -- scalar register: accumulator minus the next register
   , (16 * w.n + 8 * w.b1 + 4 * w.b2 + 2 * w.b3 + w.b4) - w.nPrime
-  -- distinct-point check (upstream fix): `inv` witnesses `(xP−xR)·(xR−xS)` is a
-  -- unit, forcing `xP ≠ xR` and `xR ≠ xS` (no degenerate `R = −P` / `S = −R`)
+  -- distinct-point check: `inv` makes `(xP−xR)·(xR−xS)` a unit
   , (w.xP - w.xR) * (w.xR - w.xS) * w.inv - 1 ]
 
 /-- RELATIONAL spec: all 12 constraint expressions vanish. -/
@@ -209,9 +180,8 @@ theorem holds_iff (endo : F) (w : Witness F) :
     exact ⟨hb1, hb2, hb3, hb4, h1, h2, h3, h4, h5, h6, hn.symm, hinv⟩
 
 omit [DecidableEq F] in
-/-- The constraint expressions commute with ring homomorphisms (applied cellwise via
-    `Witness.map`, with the `endo` parameter transported): `constraints` is a natural
-    transformation over commutative rings. -/
+/-- `constraints` commutes with ring homomorphisms, applied cellwise by `Witness.map` and
+    to `endo`. -/
 theorem constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S)
     (endo : R) (w : Witness R) :
     (constraints endo w).map f = constraints (f endo) (w.map f) := by

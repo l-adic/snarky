@@ -2,32 +2,21 @@ import CompElliptic.Fields.Pasta
 import Kimchi.Index.Satisfies
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Wire
-import Kimchi.Verifier.Kimchi
 import FixtureKit.Parse
 import Pasta.Endo
 import Lean.Data.Json
 
 /-!
-# Ingesting PureScript harness witness exports
+# Ingesting PureScript circuit dumps
 
-Decoders for the JSON the PureScript circuit-diff harness writes to
-`packages/pickles-circuit-diffs/circuits/results/` — the comparison's `purescript` side
-carries the compiled gate list and, when the harness ran witness generation, a solved
-witness (`witness`/`publicInputs`, 32-byte little-endian hex; gate coefficients are the
-comparison format's signed decimals). This is the PureScript sibling of the proof-systems
-decoders alongside it — the target model is shared, only
-the element encodings differ, so the decoders here compose over the same combinators.
+Decoders for the comparison JSON the PureScript circuit-diff harness writes. Its PureScript
+side carries the compiled gate list and, when the harness ran witness generation, a solved
+witness. Field elements are 32-byte little-endian hex; gate coefficients are signed decimals.
 
-The dump carries no domain data, so ingestion synthesizes it and lets `Index.build?`
-decide every law: rows pad to the smallest two-power holding the gates plus the
-zero-knowledge rows (padding rows are constraint-free `zero` gates, identity-wired,
-witnessed by zeros), `ω = g^((p−1)/n)` from the field's multiplicative generator, and
-the coset shifts are small generator powers. A wrong synthesis cannot be trusted into
-an index — `build?` returns `none` and the check fails loudly.
-
-Executable costs are quadratic in the padded domain (the wiring-bijectivity decision and
-the copy-constraint sweep are `7n × 7n`-ish), which is fine for the gate-gadget dumps
-this ingests; whole-circuit dumps would need a smarter checker.
+The dump carries no domain data, so `build` synthesizes it and lets `Index.build?` decide
+every law: rows pad to the smallest two-power holding the gates plus `zkRows`, and `ω` and
+the coset shifts are powers of the field's multiplicative generator. A wrong synthesis makes
+`Index.build?` return `none`, and ingestion fails.
 -/
 
 namespace Kimchi.Fixture.PS
@@ -36,7 +25,7 @@ open FixtureKit
 
 open Lean Kimchi Kimchi.Index CompElliptic.Fields.Pasta
 
-/-! ## Element decoders (the PureScript encodings) -/
+/-! ## Element decoders -/
 
 /-- A hex digit's value. -/
 private def hexVal? (c : Char) : Option ℕ :=
@@ -71,7 +60,7 @@ private def parseSignedDecimal {m : ℕ} (j : Json) : Except String (ZMod m) := 
   | some v => return if neg then -(v : ZMod m) else (v : ZMod m)
   | none => throw s!"not a signed decimal: {s.take 40}"
 
-/-- The harness's gate-kind tags (`gateKindToString`). -/
+/-- The harness's gate-kind tags. -/
 private def parseGateKind : String → Except String GateType
   | "Zero" => .ok .zero
   | "Generic" => .ok .generic
@@ -96,12 +85,10 @@ structure Raw (F : Type) where
   coeffs : Array (Array F)
   /-- The per-row wire targets, `(column, row)` per column position. -/
   wires : Array (Array (ℕ × ℕ))
-  /-- The raw variable id in each register cell, `none` for an empty cell (the dump's
-  `variables` arrays, `-1` encoding absence): the allocation-order contract — cell
-  values and wire cycles are allocation-order-insensitive, so only these ids pin the
-  shared counter's numbering. -/
+  /-- The variable id in each register cell, `none` for an empty cell. Cell values and
+  wire cycles do not depend on allocation order; only these ids pin it. -/
   vars : Array (Array (Option ℕ))
-  /-- The solved witness rows, one register array per row. -/
+  /-- The solved witness, one array per register column. -/
   witness : Array (Array F)
   /-- The public-input values. -/
   pub : Array F
@@ -115,8 +102,7 @@ private def parseVarId (j : Json) : Except String (Option ℕ) := do
   let i ← j.getInt?
   return if i < 0 then none else some i.toNat
 
-/-- The gate table of a comparison JSON's PureScript side — the shared parse under
-both entry points below. -/
+/-- The gate table of a comparison JSON's PureScript side, with the witness fields empty. -/
 private def parseGates {m : ℕ} (ps : Json) : Except String (Raw (ZMod m)) := do
   let gatesJ ← (← ps.getObjVal? "gates").getArr?
   let typs ← gatesJ.mapM fun g => do parseGateKind (← (← g.getObjVal? "kind").getStr?)
@@ -145,12 +131,8 @@ def parseComparison? {m : ℕ} (j : Json) : Except String (Option (Raw (ZMod m))
       witness := ← parseArrOf (parseArrOf parseHexLE) (← w.getObjVal? "witness")
       pub := ← parseArrOf parseHexLE (← w.getObjVal? "publicInputs") }
 
-/-- Like `parseComparison?`, but a comparison without a witness parses too (empty
-`witness`/`pub`): the constraint-system side — gate types, coefficients, wires,
-per-cell variable ids, public size — is present in every dump, witness-carrying or
-not. The CS-equality corpus reads through this entry so witness-less circuits still
-prove constraint equivalence; `parseComparison?` keeps its witness-only contract for
-the witness checker, which globs the results directory and skips on `none`. -/
+/-- Like `parseComparison?`, but a comparison without a witness parses too, with empty
+`witness` and `pub`: every dump carries the constraint-system fields. -/
 def parseComparisonCs? {m : ℕ} (j : Json) : Except String (Option (Raw (ZMod m))) := do
   let .ok ps := j.getObjVal? "purescript" | return none
   let raw ← parseGates ps
@@ -172,7 +154,7 @@ def zkRows : ℕ := 3
 generator (`ω` and the coset shifts are its powers), the curve's endomorphism coefficient
 and the Poseidon MDS matrix. -/
 structure Side (p : ℕ) where
-  /-- The multiplicative generator (proof-systems `fp.rs`/`fq.rs` GENERATOR). -/
+  /-- The field's multiplicative generator. -/
   generator : ℕ
   /-- The endomorphism coefficient of the curve whose base field this is. -/
   endo : ZMod p
@@ -196,32 +178,29 @@ private def powMod (b : ℕ) : ℕ → ℕ → ℕ
     if (e + 1) % 2 = 0 then h * h % m else h * h % m * (b % m) % m
 decreasing_by omega
 
-/-- The generator of the domain of size `n`: `g^((p − 1)/n)`. At `n = 2^32` this is arkworks'
-`TWO_ADIC_ROOT_OF_UNITY` (`g^((p−1)/2^s)` with `s = 32` for both Pasta fields), so at
-`n = 2^k` it is that root raised to `2^(32 − k)`, the PureScript `domainGenerator`. -/
+/-- The generator of the domain of size `n`: `g^((p − 1)/n)` for `g` the side's `generator`.
+At `n = 2^k` it is the field's `2^32`-th root of unity `g^((p − 1)/2^32)` raised to
+`2^(32 − k)`, since both Pasta fields have two-adicity `32`. -/
 def Side.omega {p : ℕ} (side : Side p) (n : ℕ) : ZMod p :=
   (powMod side.generator ((p - 1) / n) p : ℕ)
 
 /-! ## Ingestion into the index model -/
 
-/-- A solved witness at domain size `n`: the public input and the 15-column register
-table — the decoded `WitnessExport`, and exactly the assignment arguments of
-`Satisfies`. -/
+/-- A solved witness at domain size `n`: the public input and the register table, the
+assignment arguments of `Satisfies`. -/
 structure Witness (F : Type) (n publicCount : ℕ) where
   /-- The public-input values. -/
   pub : Fin publicCount → F
   /-- The register table, one row per domain point. -/
   tab : Fin n → Fin wCols → F
 
-/-- A dumped circuit ingested into the index model: the index (constructed by decision)
-and the dumped witness, at the padded two-power domain bundled as `n` (the domain size
-is computed from the dump, so the existential is carried as a field, in the manner of
-the index's own laws). Consumers state their own propositions about it
-(`Satisfies inst.idx inst.wit.pub inst.wit.tab`), the way the fixture scripts do. -/
+/-- A dumped circuit ingested into the index model: the index and the dumped witness at
+the padded domain size `n`, which is computed from the dump and so carried as a field.
+Consumers state their own propositions, e.g. `Satisfies inst.idx inst.wit.pub inst.wit.tab`. -/
 structure Instance (F : Type) [Field F] where
   /-- The padded two-power domain size. -/
   n : ℕ
-  /-- The domain size is positive (carried, since `n` is computed from the dump). -/
+  /-- The domain size is positive. -/
   nz : NeZero n
   /-- The index constructed from the dump by decision (`Index.build?`). -/
   idx : Index F n
@@ -252,11 +231,9 @@ private def gateTable {F : Type} [Field F] (raw : Raw F) (n : ℕ) :
     return fun i => gateRows[(i : ℕ)]'(by omega)
   else throw "padded gate table size mismatch"
 
-/-- Ingest a parsed export: validate its shape, pad to the smallest two-power domain
-holding the gates plus the zero-knowledge rows, synthesize `ω = g^((p−1)/n)` and
-generator-power coset shifts, and construct the index with `Index.build?` — every
-synthesized law is decided on the data, so a wrong synthesis is a loud failure here,
-never a trusted fact downstream. -/
+/-- Ingest a parsed dump: check its array sizes, pad and synthesize the domain (see the
+module docstring), and construct the index with `Index.build?`. A wrong synthesis fails
+here, never downstream. -/
 def build {p : ℕ} [Fact p.Prime] (side : Side p) (raw : Raw (ZMod p)) :
     Except String (Instance (ZMod p)) := do
   let rows := raw.typs.size
@@ -267,8 +244,8 @@ def build {p : ℕ} [Fact p.Prime] (side : Side p) (raw : Raw (ZMod p)) :
   unless raw.publicInputSize ≤ rows do throw "more public inputs than rows"
   let n := 2 ^ Nat.clog 2 (rows + zkRows)
   let omega := side.omega n
-  -- Synthesized generator-power shifts, *not* production's Blake2b-sampled ones — sound for
-  -- this driver's purpose (the laws it decides are shift-set-generic; external-audit A-15).
+  -- Generator powers, not the deployed sampled shifts: `Index.build?` decides the coset law
+  -- for any shift set.
   let shifts : Fin permCols → ZMod p := fun i => (powMod side.generator (i : ℕ) p : ℕ)
   let gates ← gateTable raw n
   match Index.build? gates raw.publicInputSize zkRows omega side.endo side.mds shifts with

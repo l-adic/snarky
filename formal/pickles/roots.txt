@@ -1,162 +1,16 @@
--- API root set for the pickles package (the in-circuit kimchi verifier, so far its
--- linearization slice). Consumed by the workspace dead-code pass
--- (formal/scripts/deadcode.sh); the axiom audit is pickles/scripts/check_axioms.lean.
+-- API root set for the pickles package: the in-circuit kimchi verifier.
 --
--- The roots ARE the axiom gate's roots: the two linearization circuit theorems, one per
--- side of the cycle, the two reflection endpoints they rest on, and the two ft_eval0
--- circuit theorems built on them. Everything else the package proves or defines — the
--- token language, the machine, its simulation laws, the environments, the certificates,
--- the gadget — must stay reachable from these six, which is what keeps the dead-zero
--- contract meaningful here.
-Pickles.Reflect.circuit_gateLinearization_fp
-Pickles.Reflect.circuit_gateLinearization_fq
-Pickles.Reflect.evaluate_fpTokens
-Pickles.Reflect.evaluate_fqTokens
-Pickles.ftEval0Circuit_spec_fp
-Pickles.ftEval0Circuit_spec_fq
+-- The two capstones are the package's reason to exist; everything the gadgets, the token
+-- machine and the certificates prove must stay reachable from them, from the linearization
+-- reflection, or from a check script (the `script-surface` blocks).
 
--- The scalar-side gadgets, field-generic (no per-side constants enter them): the
--- challenge polynomials, the endomorphism expansion of the challenges, the `b_correct`
--- check, the combined inner product, the permutation scalar, the fr-sponge schedule and
--- the conditional sponge behind the step side's masked challenge digest, each proved to
--- read as the `Bulletproof`, `FqSponge`, `Poseidon` or `Kimchi.Protocol.Linearization`
--- quantity the wire verifier uses.
-Pickles.challengePolyEvals_spec
-Pickles.computeChallenges_spec
-Pickles.bCorrectCircuit_spec
-Pickles.combinedInnerProduct_spec_cip
-Pickles.permScalarCircuit_spec
-Pickles.challengeDigest_spec
-Pickles.squeezeXiR_spec
-Pickles.OptSponge.squeeze_spec
-Pickles.OptSponge.optSqueeze_spec
-Pickles.maskedChallengeDigest_spec
+-- The capstones: a proof of each kind is verified by its two circuits. Everything the
+-- package proves stays reachable from these two.
+Pickles.stepProof_kimchiVerify_vesta
+Pickles.wrapProof_kimchiVerify_pallas
 
--- The domain scalars of `finalize_other_proof` (Domain.lean, Pseudo.lean) and the α-power
--- table (Linearization/Circuit.lean): the generator powers generic in `zk_rows`, the
--- permutation vanishing polynomial and its identification with `zkpmEval`, the step
--- side's domain selection and `ζⁿ − 1`, the `ζ^(2^i)` tables, the mask-select.
-Pickles.Linearization.precomputeAlphaPowers_spec
-Pickles.Pseudo.mask_spec
-Pickles.omegaPowers_spec
-Pickles.zkPolynomial_spec
-Pickles.zkPolynomial_eq_zkpmEval
-Pickles.knownDomainWhiches_spec
-Pickles.knownDomainVanishingPolynomial_spec
-Pickles.buildPow2PowsArray_spec
-Pickles.pow2PowSquare_spec
-Pickles.pow2PowMul_spec
-
--- The statement records (Statement.lean): the two public inputs, transcribed from the
--- PureScript `Pickles.Types` — the vocabulary the boundary glue is stated over.
-Pickles.PlonkInCircuit
-Pickles.DeferredValues
-Pickles.UnfinalizedProof
-Pickles.BranchData
-Pickles.WrapDeferredValues
-Pickles.WrapProofState
-Pickles.WrapStatement
-Pickles.StepProofState
-Pickles.StepStatement
-
--- `finalize_other_proof` (FinalizeOtherProof.lean): the shared body and the two sides, each
--- read as `FopReads` — the claimed scalars against the wire verifier's `frSqueezes` (at the
--- circuit's recursion digest, in the relational low-128-bit form) and its `ftEval0`,
--- `combinedInnerProduct`, `combinedB` and `permScalar` quantities; at the deployed fields
--- as `FopReadsWire`: `ξ`, `r` the verifier's `frPrechallenges` (`frOracles`' own,
--- `Kimchi.Verifier.frOracles_eq_frPrechallenges`) up to the `lowest_128_bits` slack.
-Pickles.finalizeOtherProofCore_spec
-Pickles.finalizeOtherProofStep_spec
-Pickles.finalizeOtherProofWrap_spec
-Pickles.finalizeOtherProofStep_spec_fp
-Pickles.finalizeOtherProofWrap_spec_fq
-
--- The group side's fq-sponge transcript (FqSpongeTranscript.lean): the prechallenge squeeze
--- and the schedule of `incrementally_verify_proof` on either sponge (the wrap side's on the
--- conditional sponge, `sg_old` under its mask), read as the wire verifier's `fqSqueezes`,
--- and at the deployed fields as its `fqPrechallenges` up to the `lowest_128_bits` slack.
-Pickles.squeezePrechallenge_spec
-Pickles.fqSpongeTranscript_spec
-Pickles.optSqueezePrechallenge_spec
-Pickles.fqSpongeTranscriptOpt_spec
-Pickles.assertPlonkChallenges_spec
-Pickles.FqTranscriptReads.wire
-
--- script-surface:begin
--- The environment's invariants as a decidable predicate, and the environment built from
--- them (Env.lean): pickles/scripts/check_halves.lean checks them once on the key and
--- SRS it loaded, which is what lets a driver construct an `Env` at all.
-Pickles.Env.Invariants
-Pickles.Env.ofInvariants
--- The domain bundle built from data (StepScalarHalf.lean): check_halves.lean forms it from
--- the step domains a proof cache uses and the key's `log2`, deciding its facts once; the
--- generator orders by squaring (`powPow2`), since the generic power recurses as deep as its
--- exponent.
-Pickles.KnownDomains.ofList?
--- Whether the SRS avoids the key's Lagrange relations (Env.lean), decided on the key's
--- own Lagrange points: check_halves.lean decides the top-level statement's `havoid` with it.
-Pickles.Env.decidableAvoids
--- Its twin at the step relations (StepGroupHalf.lean): the wrap proof's statement's `havoid`.
-Pickles.decidableAvoidsStepRelations
--- script-surface:end
--- The instance that decides them: reached by instance resolution at the driver's `if`, never
--- by name, so it is rooted beside the predicate rather than anchored in a script.
-Pickles.Env.decidableInvariants
--- script-surface:begin
--- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
--- transcription of the PureScript `Cip` harness.
-Pickles.buildEvalList
--- The records' `CircuitType` instances: the drivers seed and allocate the gadgets' records
--- through them (pickles/scripts/check_halves.lean, bench_fop.lean).
-Pickles.instType1CircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instSizedFCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instType2CircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instSplitFieldCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instPointEvaluationsCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instProofEvaluationsCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instChunkedEvalsCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instPlonkInCircuitCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instDeferredValuesCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instUnfinalizedProofCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instBranchDataCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instWrapDeferredValuesCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instWrapProofStateCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instWrapStatementCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instStepProofStateCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instStepStatementCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instFopInputCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instBulletproofOpeningCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instIvpProofCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instVkCommsCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instWrapGroupCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.instStepGroupCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.StepProof.instGroupInputCircuitType -- synthesis: `CircuitType` resolution at the records
-Pickles.StepProof.instScalarInputCircuitType -- synthesis: `CircuitType` resolution at the records
--- script-surface:end
-
--- The token alphabet (Linearization/Types.lean): the PS `Types.purs` transcription's
--- derived instances — comparable and printable, as the PureScript's `Eq`/`Show` are.
--- Consumed by `decide` and `#eval` at the REPL and by the fixture drivers' diagnostics.
-Pickles.Linearization.instDecidableEqCurrOrNext
-Pickles.Linearization.instReprCurrOrNext
-Pickles.Linearization.instDecidableEqGateType
-Pickles.Linearization.instReprGateType
-Pickles.Linearization.instDecidableEqLookupPattern
-Pickles.Linearization.instReprLookupPattern
-Pickles.Linearization.instDecidableEqColumn
-Pickles.Linearization.instReprColumn
-Pickles.Linearization.instDecidableEqConstantTerm
-Pickles.Linearization.instReprConstantTerm
-Pickles.Linearization.instDecidableEqChallengeTerm
-Pickles.Linearization.instReprChallengeTerm
-Pickles.Linearization.instDecidableEqFeatureFlag
-Pickles.Linearization.instReprFeatureFlag
-Pickles.Linearization.instDecidableEqPolishToken
-Pickles.Linearization.instReprPolishToken
-
--- `rfl` simp lemmas: the `EvalState.map` position law (Linearization/Map.lean) and the
--- `Evals.toEnv` projections (Linearization/Spec.lean). Fired by `simp` in the simulation
--- proofs as definitional rewrites, which leave no proof term for the walk to see.
+-- The linearization reflection: the certificate identifying the deployed token stream with
+-- `gateLinearization`, and the environment transport its proof runs on.
 Pickles.Linearization.map_position
 Kimchi.Protocol.Linearization.Evals.toEnv_add
 Kimchi.Protocol.Linearization.Evals.toEnv_alphaPow
@@ -172,173 +26,25 @@ Kimchi.Protocol.Linearization.Evals.toEnv_pow
 Kimchi.Protocol.Linearization.Evals.toEnv_sub
 Kimchi.Protocol.Linearization.Evals.toEnv_unnormalizedLagrangeBasis
 Kimchi.Protocol.Linearization.Evals.toEnv_vanishes
--- The scalar half's refold of the gadget's two claim functions into the side's decode
--- (TwoHalves.lean): fired by `simp only` in the two halves' proof, likewise a definitional
--- rewrite that leaves no proof term.
+Pickles.Reflect.circuit_gateLinearization_fp
+Pickles.Reflect.circuit_gateLinearization_fq
+
+-- Invisible to the reachability walk, so rooted by hand: `rfl` simp lemmas (used from the
+-- simp set, they leave no constant in a proof term), coercion instances the elaborator
+-- applies, and the tactic implementations the completeness proofs call.
 Pickles.FopSide.unshiftV_read
 
--- The group side's opening check (CheckBulletproof.lean): the absorbed limbs, the round
--- prechallenges and `check_bulletproof`'s transcript half, read as the wire verifier's
--- `ipaSqueezes` from the warm sponge, and at the deployed fields as its `ipaPrechallenges`
--- up to the `lowest_128_bits` slack; the algebra half, the success bit read as the Schnorr
--- equation over the gadgets' group (`SchnorrPoint`) at the combined commitment
--- (`hornerCombine`) and the challenge fold (`lrSum`); the two transports of that equation to
--- the wire group, generic at any shaped curve; the curve interface `IvpCurve` and the
--- side interface `IvpSide` over it, with the opening read `IvpSide.opening_reads` giving the
--- success bit as the wire's `schnorrAt` on any side, and the two deployed sides `wrapSide`
--- and `stepSide`.
-Pickles.absorbList_spec
-Pickles.extractScalarChallenges_spec
-Pickles.checkBulletproof_spec
-Pickles.CheckBulletproofReads.wire
-Pickles.combinePolynomials_spec
-Pickles.bulletReduce_spec
-Pickles.ipaFinalCheck_spec
-Pickles.checkBulletproof_spec_success
-Pickles.schnorrPoint_iff_schnorrAt
-Pickles.hornerCombine_eq
-Pickles.IvpSide.opening_reads
-Pickles.wrapSide
-Pickles.stepSide
-Pickles.wrap_scale_reads
-Pickles.step_scale_reads
-Pickles.groupMap_reads
-Pickles.PastaShape.curveEqn_ne_zero
-Pickles.IpaScalarOps.step
-Pickles.IpaScalarOps.wrap
-Pickles.IpaEndo.pallas
-Pickles.IpaEndo.vesta
-
--- The in-circuit public-input commitment (x_hat) gadgets, consumed by the check_cs harness —
--- the wrap side's `publicInputCommitFull` (corrections summed in circuit) and the step side's
--- `publicInputCommitKnown` (OCaml `multiscale_known`: constant correction sum) — and their
--- faithfulness theorems (the honest one-chunk MSM reads as `-(Σ netDelta) + h` under the seed
--- condition), axiom-audited like the other gadget specs. The reading vocabulary and the
--- fold/corrections lemmas they rest on stay private but reachable from the specs.
-Pickles.publicInputCommitFull
-Pickles.publicInputCommitFull_spec
-Pickles.publicInputCommitKnown
-Pickles.publicInputCommitKnown_spec
--- The regime-discharge bridge a consumer uses to satisfy the spec's `∀ i, regimeOK`
--- conditional: the leaves' reads plus the unconditional narrow-width subwrap bounds
--- (`ladderRegime_subwrap`, reachable from here) give each leaf's `LadderRegime`.
-Pickles.LeafReads.regimeOK
--- The public seam of the x_hat reads: either gadget's output reads as `-(publicMsm) + h`, and
--- the wire crossing ties that to the verifier's `publicCommitment` on the commitment curve,
--- generically over a `PastaShape` (the curve's own deployed shape; the point group and its
--- crossing are the commitment curve's own too, `Pickles.Curve`), instantiated at Vesta
--- (`pastaShapeVesta`) and Pallas (`pastaShapePallas`).
-Pickles.publicInputCommitFull_reads
-Pickles.publicInputCommitKnown_reads
-Pickles.xHat_reads_publicCommitment
-Pickles.xHatKnown_reads_publicCommitment
-Pickles.pastaShapeVesta
-Pickles.pastaShapePallas
-
--- The `ft_comm` gadget (FtComm.lean, `Common.ft_comm`), generic in the side's shifted-scalar
--- operations, and its read: on any side (`IvpSide` — the ladder reading and the claim decode,
--- over an `IvpCurve` carrying the curve's group facts) the cell crosses to the wire's
--- `runFtComm`, given the
--- claims decode to the wire's scalars and the `σ₆`/`t_comm` cells read as the commitments.
-Pickles.ftComm
-Pickles.ftComm_reads
-
--- The group half (IncrementallyVerify.lean, `incrementally_verify_proof`): the index-digest
--- squeeze, the fq-sponge transcript, the plonk-claim assertions, `ft_comm`, the `to_batch`
--- bases and `check_bulletproof`, one gadget on either side; its read `IvpReads` on any side
--- (`IvpSide`) — the digest is the wire's `fqRun` digest element, the plonk claims and the round
--- prechallenges are its fq / IPA prechallenges up to the `lowest_128_bits` slack, and the
--- success bit is the Schnorr equation over the wire's batch stream `runInput` — and the two
--- deployed instantiations.
-Pickles.incrementallyVerifyProof
-Pickles.incrementallyVerifyProof_reads
-Pickles.incrementallyVerifyProof_wrap_reads
-Pickles.incrementallyVerifyProof_step_reads
-
--- The two halves of one proof (TwoHalves.lean): the group half (`incrementally_verify_proof`,
--- in the circuit that receives the proof) then the scalar half (`finalize_other_proof`, one
--- circuit later over the other field), read as `kimchiVerify` at honest claims given the
--- deferred `sg` equation — the per-proof checkpoint, at one chunk; at a step proof with the
--- claim tie unfolded; the recursion constants of the statement records. `sgOk_iff` is the decidable mirror of the deferred `sg` conjunct the
--- checkpoint carries as a hypothesis — the form the terminator runs out of circuit, and the
--- root `sgOk` itself is reachable from (scripts/check_sg_ok.lean runs it on a wire proof).
-Pickles.sgOk_iff
-
--- The records as circuit inputs: each record's product decomposition, whose `@[simps apply]`
--- projection lemma is the record's whole reading API — `simp [reads_simps]` decomposes a
--- `Reads` through it (Snarky.Encoding.Simps). The statement records are in Encoding.lean; the
--- circuits' input bundles beside the circuit that takes each (Verify.lean, VkComms.lean,
--- WrapVerify.lean, StepGroupHalf.lean, StepScalarHalf.lean). The instances are script-surface
--- roots: class resolution finds them.
-Snarky.SizedF.equivVal_apply
-Snarky.Type1.equivVal_apply
-Snarky.Type2.equivVal_apply
-Snarky.SplitField.equivProd_apply
-Kimchi.Verifier.PointEvaluations.equivProd_apply
-Kimchi.Verifier.ProofEvaluations.equivProd_apply
-Pickles.ChunkedEvals.equivProd_apply
-Pickles.PlonkInCircuit.equivProd_apply
-Pickles.DeferredValues.equivProd_apply
-Pickles.UnfinalizedProof.equivProd_apply
-Pickles.BranchData.equivProd_apply
-Pickles.WrapDeferredValues.equivProd_apply
-Pickles.WrapProofState.equivProd_apply
-Pickles.WrapStatement.equivProd_apply
-Pickles.StepProofState.equivProd_apply
-Pickles.StepStatement.equivProd_apply
-Pickles.FopInput.equivProd_apply
-Pickles.BulletproofOpening.equivProd_apply
-Pickles.IvpProof.equivProd_apply
-Pickles.VkComms.equivProd_apply
-Pickles.WrapGroup.equivProd_apply
-Pickles.StepGroup.equivProd_apply
-Pickles.StepProof.GroupInput.equivProd_apply
-Pickles.StepProof.ScalarInput.equivProd_apply
--- The step statement's packing (Verify.lean, beside `WrapStatement.packed`, which `verifyProof`
--- reaches): the `x_hat` walk of a step statement and its boolean cells. Its consumer today
--- is the wrap circuit's group half in the fixture library (`PicklesFixture.groupWrapOn`); the
--- wrap main is the library consumer to come.
-Pickles.StepStatement.packed
--- The chain: `Carry` names what pickles forces through its message digests — the next
--- same-curve proof's old accumulator `i` is this proof's `sg` with the wire's round
--- challenges — and `sgOk_iff_accOk` transports the deferred equation to that accumulator
--- alone (`AccOk`), the form a verifier checks without the proof. `accOk_iff`, `carry_iff`
--- reflect the decidable mirrors pickles/scripts/check_halves.lean runs on the proof cache.
-Pickles.sgOk_iff_accOk
-Pickles.accOk_iff
-Pickles.carry_iff
-Pickles.twoHalves_kimchiVerify
-Pickles.twoHalves_schnorr
-Pickles.twoHalves_kimchiVerify_vesta
-Pickles.twoHalves_kimchiVerify_pallas
-Pickles.ScalarHalf.wrap_olds
-Pickles.vesta_claim_tie
-Pickles.MaxProofsVerified
+-- Consumed by the CI check scripts rather than by the library.
+-- script-surface:begin
+Pickles.buildEvalList
+Pickles.Env.decidableAvoids
+Pickles.Env.decidableInvariants -- synthesis: found by class resolution, never by name
+Pickles.Env.ofInvariants
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
-
--- The top-level statement for a wrap proof (WrapProof.lean), the twin of the step proof's
--- below: a valuation satisfying the step circuit's `verify` (`WrapProof.groupCircuit`,
--- StepGroupHalf.lean), a valuation satisfying the next wrap circuit's scalar half with
--- `finalized` set (`WrapProof.scalarCircuit`, WrapScalarHalf.lean), the readings of their
--- inputs as the wire's proof (`WrapProof.InputReads`), of the key cells as the key (`VkReads`),
--- the SRS avoiding the `x_hat` relations (`SRS.Avoids`), and the claim ties (`HalvesTies`),
--- make `kimchiVerify` accept. Unlike the wrap block, `verify` computes `x_hat` itself from the
--- key's Lagrange tables, so the public input is the packed statement's, and the whole
--- `PublicInputCommit.lean` chain hangs off it (`verifyProof_step_reads`); the scalar half
--- (`finalizeOtherProofWrapAt_kimchiVerify_pallas`) runs at the key's own constant domain.
-Pickles.wrapProof_kimchiVerify_pallas
-
--- The top-level statement for a step proof (StepProof.lean): a valuation satisfying the wrap
--- circuit's verify block (`StepProof.groupCircuit`, WrapVerify.lean), a valuation satisfying the next
--- step circuit's scalar half with `finalized` set (`StepProof.scalarCircuit`, StepScalarHalf.lean), the
--- readings of their inputs as the wire's proof (`InputReads`), of the key cells as the key
--- (`VkReads`), and the claim ties between them (`HalvesTies`), make `kimchiVerify` accept.
--- Both circuits appear as their compiled constraint systems, so the group half
--- (`wrapVerifyAt_reads`, down to `publicInputCommitFull` and the key's own `x_hat` table) and
--- the scalar half (`finalizeOtherProofStepAt_kimchiVerify_vesta`, down to the linearization
--- reflection) are both beneath it. What the statement no longer assumes lives in `Env` (the
--- key's and SRS's invariants) and `KnownDomains` (the domain list's). That the key's Lagrange
--- points are finite points is no invariant: it is the SRS avoiding their relations
--- (`SRS.Avoids`, `Env.lagrangeRelations`).
-Pickles.stepProof_kimchiVerify_vesta
+Pickles.decidableAvoidsStepRelations
+Pickles.KnownDomains.ofList?
+Pickles.accOk
+Pickles.carry
+Pickles.sgOk
+-- script-surface:end

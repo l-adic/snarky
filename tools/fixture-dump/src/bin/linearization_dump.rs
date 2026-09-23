@@ -18,7 +18,7 @@
 //!   (selector × Σ αᵏ·cₖ), asserted at dump time to sum to `constant_term`.
 //!
 //! The Lean side recomputes each output from the recorded inputs with its closed-form
-//! transcriptions (the `Argument` constraint lists of `formal/Kimchi/Quotient/`) — the
+//! transcriptions (the `Argument` constraint lists of `formal/kimchi/Kimchi/Lift.lean`) — the
 //! token stream never appears in a Lean statement; it is adjudicated here, by value.
 
 use ark_ff::Zero;
@@ -304,7 +304,7 @@ fn main() {
     let out_dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_string());
     // The shared mixed-gate circuit — same seed as `kimchi_proof_dump`, so the two
     // fixtures describe the same proof. Its `emul`/`mul` selectors are identically zero,
-    // so its per-gate targets for those two gates are `0 = 0` (external-audit R-1).
+    // so its per-gate targets for those two gates are `0 = 0`.
     {
         let rng = &mut ChaCha20Rng::from_seed([71u8; 32]);
         let (gates, witness, pub0) = mixed_circuit(rng);
@@ -319,7 +319,7 @@ fn main() {
     }
     // The scalar-multiplication circuit (same one `kimchi_proof_dump_emul` proves): LIVE
     // EndoMul and VarBaseMul selectors, so the per-gate combined-constraint targets for
-    // exactly the two gates finding V-1 concerned are non-zero and adjudicated
+    // those two gates are non-zero and adjudicated
     // gate-by-gate, rather than only end-to-end through whole-proof acceptance.
     {
         let rng = &mut ChaCha20Rng::from_seed([83u8; 32]);

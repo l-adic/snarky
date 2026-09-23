@@ -12,22 +12,21 @@ import Pickles.Chunks
 set_option mvcgen.warning false
 
 /-!
-# `finalize_other_proof`
+# Finalizing the other proof
 
-Port of the PureScript `Pickles.Step.FinalizeOtherProof` and `Pickles.Wrap.FinalizeOtherProof`
-(OCaml `step_verifier.ml`, `wrap_verifier.ml`): the circuit that checks the scalar-side
-values a proof defers to the other field. `kimchiVerify` computes those values itself; the
+Port of `packages/pickles/src/Pickles/Step/FinalizeOtherProof.purs` and
+`packages/pickles/src/Pickles/Wrap/FinalizeOtherProof.purs` (after OCaml `step_verifier.ml`,
+`wrap_verifier.ml`): the circuit that checks the scalar-side values a proof defers to the
+other field. `kimchiVerify` computes those values itself; the
 group circuit cannot, so it takes them as claims from the public input and this circuit
 recomputes each from the evaluations and compares.
 
 ## Main definitions
 
 * `finalizeOtherProofCore`: the shared body from the expanded challenges on, at `nc` chunks
-  per evaluation (`ChunkedEvals`) — `ζω`, the challenge polynomials, the fr-sponge over every
-  chunk, the `ζ^(2^k)` rows and each column recombined at them (`collapseEvals`), the α-table,
-  the generator powers, the zk polynomial, `ζⁿ − 1`, `ft_eval0` with the public chunks folded
-  in, the combined inner product over every chunk, `b`, the permutation scalar, and the four
-  checks combined.
+  per evaluation (`ChunkedEvals`): `ξ`, the combined inner product, `b` and the permutation
+  scalar recomputed from the evaluations (`ftEval0Circuit` with the public chunks folded in),
+  each checked against its claim, and the four checks combined.
 * `finalizeOtherProofStep`, `finalizeOtherProofWrap`: each side's prelude — the challenge
   expansions in the side's order, the wrap side's seals, the step side's known-domain
   selection — and the side's shifted-value conventions (`FopShiftOps`, at the side's
@@ -46,9 +45,8 @@ recomputes each from the evaluations and compares.
 The circuit and its readings are polymorphic in the chunk count: each column's chunks read
 as `combineAt` at the evaluation points raised to `2^k` (`combineEvals`, the chunk combination
 `KimchiProof.linEvals` performs), the public chunks as `combineAt` at `ζ^(2^srs)`, and the
-batch as every chunk's row (`chunkRows`). The wrap side is always one chunk. `zkRows` is a
-parameter throughout.
-Known-domains mode only; the side-loaded path is a separate port.
+batch as every chunk's row (`chunkRows`). `zkRows` is a parameter throughout.
+Known-domains mode only; the side-loaded path is not modelled.
 -/
 
 namespace Pickles
@@ -59,10 +57,9 @@ open scoped Kimchi
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
   {k : ℕ}
 
-/-- The side-independent parameters (PS `Params`, less the domains): the fr-sponge, the
-scalar endomorphism `λ` the 128-bit expansions use, the linearization's endomorphism
-coefficient, MDS matrix and token stream, the coset shifts, `srs_length_log2` and
-`zk_rows`. -/
+/-- The side-independent parameters: the fr-sponge, the scalar endomorphism `λ` the 128-bit
+expansions use, the linearization's endomorphism coefficient, MDS matrix and token stream, the
+coset shifts, the SRS length's `log2` and the zero-knowledge row count. -/
 structure FopParams (F : Type) where
   /-- The fr-sponge parameters. -/
   sponge : Poseidon.Params F
@@ -76,20 +73,20 @@ structure FopParams (F : Type) where
   toks : Array PolishToken
   /-- The coset shifts. -/
   shifts : Fin permCols → F
-  /-- `srs_length_log2`. -/
+  /-- `log2` of the SRS length. -/
   srsLengthLog2 : ℕ
-  /-- `zk_rows`. -/
+  /-- The number of zero-knowledge rows. -/
   zkRows : ℕ
 
-/-- The side's shifted-value conventions (PS `FopShiftOps`): the decode of a claim, and the
-comparison of a claim with a computed scalar. -/
+/-- The side's shifted-value conventions: the decode of a claim, and the comparison of a
+claim with a computed scalar. -/
 structure FopShiftOps (F c sf : Type) where
   /-- The decode of a shifted claim. -/
   unshift : sf → FVar F
   /-- The comparison of a shifted claim with a computed scalar. -/
   shiftedEqual : sf → FVar F → CircuitM F c (BoolVar F)
 
-/-- The result (PS `Output`): the four checks and their conjunction, the raw and the expanded
+/-- The result: the four checks and their conjunction, the raw and the expanded
 bulletproof challenges. -/
 structure FopOutput (F : Type) where
   /-- All four checks. -/
@@ -129,8 +126,8 @@ def evalRows {α : Type} (e : ProofEvaluations α) : List (PointEvaluations α) 
   e.z :: [e.genericSelector, e.poseidonSelector, e.completeAddSelector, e.mulSelector,
     e.emulSelector, e.endomulScalarSelector] ++ e.w.toList ++ e.coefficients.toList ++ e.s.toList
 
-/-- `Plonk_checks.checked`'s comparison: each of the three scalars `ft_comm` scales by — the
-permutation scalar, `ζ^(2^srs)` and `ζⁿ` — against its claim, and the conjunction. -/
+/-- The three plonk comparisons: each computed scalar — the permutation scalar, `ζ^(2^srs)` and
+`ζⁿ` at the call site — against its shifted claim by `shiftedEqual`, and the conjunction. -/
 def plonkScalarsEqual {sf : Type} (ops : FopShiftOps F c sf) (perm zetaToSrs zetaToDomain : sf)
     (actualPerm actualZetaToSrs actualZetaToDomain : FVar F) : CircuitM F c (BoolVar F) := do
   let permOk ← ops.shiftedEqual perm actualPerm
@@ -149,14 +146,11 @@ def buildEvalListChunked (sgEvals : List (BoolVar F × FVar F)) (publicInput : L
     (ftEval : FVar F) (evals : List (FVar F)) : List (BoolVar F × FVar F) :=
   sgEvals ++ publicInput.map (true_, ·) ++ (true_, ftEval) :: evals.map (true_, ·)
 
-/-- The shared body from the expanded challenges on (PS steps 3–14 on either side), at `nc`
-chunks per evaluation: `ζω`, the challenge polynomials at `ζω` then `ζ`, the fr-sponge over
-every chunk with `ξ` compared to its claim, `ξ` and `r` expanded, the `ζ^(2^k)` rows of both
-points and each column's chunks recombined at them, the α-table, the generator powers, the zk
-polynomial, `ζⁿ − 1`, the public chunks folded at `ζ^(2^srs)`, `ft_eval0`, the combined inner
-product over every chunk against its claim, the challenges expanded and `b` against its claim,
-the permutation scalar, `ζ^(2^srs)` (the fold's, when there is more than one chunk), the three
-shifted comparisons (`plonkScalarsEqual`), and the conjunction. -/
+/-- The shared body from the expanded challenges on, at `nc` chunks per evaluation: it
+recomputes `ξ` from the fr-sponge over every chunk, the combined inner product over every
+chunk, `b` and the permutation scalar, compares each with its claim (the shifted claims through
+`ops`, the plonk ones by `plonkScalarsEqual`), and returns the four bits and their
+conjunction. Each column's chunks are recombined at the `ζ^(2^k)` rows (`collapseEvals`). -/
 def finalizeOtherProofCore {sf : Type} {nc : ℕ} (P : FopParams F) (ops : FopShiftOps F c sf)
     (xiConstrainLowBits : Bool) (digest : CircuitM F c (FVar F)) (gen : FVar F)
     (pow2Log2 : ℕ) (vanishing : FVar F → CircuitM F c (FVar F)) (mask : List (BoolVar F))
@@ -219,7 +213,7 @@ def finalizeOtherProofCore {sf : Type} {nc : ℕ} (P : FopParams F) (ops : FopSh
   pure ⟨finalized, xiCorrect, bCorrect, cipCorrect, plonkOk,
     u.deferredValues.bulletproofChallenges.toList, expanded⟩
 
-/-- A known domain the prev proof may have: its `log2` and generator. -/
+/-- A known domain the previous proof may have: its `log2` and generator. -/
 structure KnownDomain (F : Type) where
   /-- `log2` of the domain size. -/
   log2 : ℕ
@@ -239,10 +233,10 @@ def wrapShiftOps : FopShiftOps F c (Type2 (FVar F)) where
   unshift x := Type2.fromShiftedCircuit 255 x
   shiftedEqual claimed actual := equals (Type2.fromShiftedCircuit 255 claimed) actual
 
-/-- The step side (PS `finalizeOtherProofCircuit`, known-domains mode): `ζ` then `α`
-expanded, the domain selected from the runtime `domain_log2` and its generator
-mask-selected, then the core with the masked challenge digest, `ξ` by `squeeze_challenge`,
-the `ζ^(2^srs)` rows and the known-domain vanishing polynomial. -/
+/-- The step side, known-domains mode: `ζ` then `α` expanded, the generator mask-selected
+among `domains` by the runtime `domainLog2Var`, then `finalizeOtherProofCore` with the masked
+challenge digest, the `ξ` low half constrained, the `ζ^(2^srs)` rows and the known-domain
+vanishing polynomial. -/
 def finalizeOtherProofStep {nc : ℕ} (P : FopParams F) (domains : List (KnownDomain F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type1 (FVar F))) (w : ChunkedEvals nc (FVar F))
     (mask : List (BoolVar F))
@@ -259,10 +253,10 @@ def finalizeOtherProofStep {nc : ℕ} (P : FopParams F) (domains : List (KnownDo
     gen P.srsLengthLog2 (knownDomainVanishingPolynomial whiches log2s maxLog2) mask u w prev
     zeta alpha pl.beta.val pl.gamma.val pl.perm pl.zetaToSrsLength pl.zetaToDomainSize
 
-/-- The wrap side (PS `wrapFinalizeOtherProofCircuit`): `ζ`, `γ`, `β`, `α` in that order with
-`γ`, `β` sealed, the three shifted plonk claims sealed, then the core at the constant
-generator with the plain challenge digest, `ξ` by `squeeze_challenge`, the `ζ^(2^srs)` rows
-and the caller's vanishing polynomial. -/
+/-- The wrap side: `ζ`, `γ`, `β`, `α` in that order with `γ`, `β` sealed, the three shifted
+plonk claims sealed, then `finalizeOtherProofCore` at the constant generator with the plain
+challenge digest, the `ξ` low half constrained, the `ζ^(2^srs)` rows and the caller's
+vanishing polynomial. -/
 def finalizeOtherProofWrap {nc : ℕ} (P : FopParams F) (gen : F)
     (vanishing : FVar F → CircuitM F c (FVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F)))
@@ -309,8 +303,8 @@ private theorem keptEvals_zip :
     cases m <;> simp [keptEvals, sgRows] at this ⊢ <;> exact this
 
 omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- The kept rows of the masked challenge lists are the kept lists, mapped: `sgRows` over two
-images of one list of challenge lists is the kept challenge lists under both maps. -/
+/-- `sgRows` over two images of one list of challenge lists is the mask-kept challenge lists
+under both maps. -/
 theorem sgRows_kept (f g : List F → F) :
     ∀ (ms : List Bool) (cvs : List (List F)),
       sgRows ms (cvs.map f) (cvs.map g)
@@ -348,15 +342,12 @@ private theorem four_bits {α : Type} (v : α → F) (b₁ b₂ b₃ b₄ : α) 
 
 open Kimchi.Protocol.Linearization Bulletproof Classical in
 /-- The readings of the claim checks at effective challenges `ξ`, `r` and challenge readings
-`cs`: with `ev` the evaluation chunks, `e` their recombination at `ζ^(2^srs)` and
-`(ζω)^(2^srs)` (`combineEvals`), `p₀` the public chunks recombined at `ζ^(2^srs)`,
-`ft₀ = ftEval0 n zkRows ω shifts endo mds α β γ ζ p₀ e` and the read batch `rows` (the kept
-`(b_j(ζ), b_j(ζω))` for `m_j = 1`, then every public chunk's row, `(ft₀, ft(ζω))`, and every
-evaluation chunk's row, column by column), `cipCorrect = [unshift(cip claim) =
-combinedInnerProduct ξ r rows]`, `bCorrect = [unshift(b claim) = combinedB cs r (ζ, ζω)]`,
-`plonkOk = [unshift(permV) = permScalar β γ α (zkpmEval n zkRows ω ζ) e ∧
-unshift(zetaMV) = ζ^(2^srs) ∧ unshift(zetaNV) = ζⁿ]`, `finalized` the conjunction of the four bits
-reading `1`, and the expanded challenges read `cs`. -/
+`cs`: each of `cipCorrect`, `bCorrect`, `plonkOk` reads as the indicator that the decoded claims
+equal `combinedInnerProduct` over the read batch, `combinedB`, and `permScalar`, `ζ^(2^srs)`,
+`ζⁿ`; `finalized` reads as the conjunction of the four bits; the expanded challenges read as
+`cs`. The evaluations are recombined at `ζ^(2^srs)` and `(ζω)^(2^srs)` (`combineEvals`), and the
+batch is the mask-kept challenge-polynomial rows (`sgRows`), every public chunk's row,
+`(ft₀, ft(ζω))` with `ft₀` the `ftEval0` value, and every evaluation chunk's row. -/
 def FopChecks {nc : ℕ} (P : FopParams F) (n : ℕ) (ω : F) (ms : List Bool) (cvs : List (List F))
     (w : ChunkedEvals nc (FVar F)) (ζ α β γ permV zetaMV zetaNV cipV bV : F) (unshiftV : F → F)
     (V : Valuation F) (o : FopOutput F) (ξ r : F) (cs : List F) : Prop :=
@@ -383,18 +374,13 @@ def FopChecks {nc : ℕ} (P : FopParams F) (n : ℕ) (ω : F) (ms : List Bool) (
   List.Forall₂ (CircuitType.Reads V) o.expandedChallenges cs
 
 open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
-/-- The reading of `finalize_other_proof`'s outputs (`finalizeOtherProofCore_spec`): with
-`ζ, α, β, γ` the expanded challenges, `permV` the permutation claim's inner value, `dv` the
-challenge digest, `ω` of order dividing `n`, the mask `ms`, the previous challenges `cvs`, and
-`(x₁, x₂) = frSqueezes P.sponge (frTranscript d dv ft(ζω) pub e)` the wire verifier's two raw
-fr-sponge squeezes (the elements behind `frOracles`' `(v, u)`, `frOracles_eq_frPrechallenges`):
-there are the prechallenge `ξ₀` the `ξ` claim reads as, the recomputed low half `ξ'` of `x₁`
-(a prechallenge where constrained; any reading of it below `2¹²⁸` splits `x₁` below the
-modulus), the prechallenge `r'` splitting `x₂` below the modulus, and the prechallenges `ĉᵢ`
-the challenge claims read as, such that `xiCorrect = [ξ' = ξ₀]`
-and `FopChecks` holds at
-`ξ = endoExpand λ ξ₀`, `r = endoExpand λ r'` and the expanded challenges `endoExpand λ ĉᵢ`.
-`FopReads.wire` reads this against the wire verifier's prechallenges at a deployed field. -/
+/-- The exact reading of `finalizeOtherProofCore`'s outputs: with `(x₁, x₂)` the wire
+verifier's two raw fr-sponge squeezes (`frSqueezes` of `frTranscript`), there are the
+prechallenge `ξ₀` the `ξ` claim reads as, the recomputed low half `ξ'` of `x₁`, a prechallenge
+`r'` splitting `x₂` below the modulus and the prechallenges `ĉ` of the challenge claims, such
+that `xiCorrect` reads `[ξ' = ξ₀]` and `FopChecks` holds at `endoExpand` of `ξ₀`, `r'` and each `ĉ`.
+`ξ'` is a prechallenge under `xiConstrainLowBits`, and any reading of it below `2¹²⁸` splits `x₁`
+below the modulus. `FopReads.wire` restates this against the verifier's prechallenges. -/
 def FopReads {sf : Type} {nc : ℕ} (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ)
     (ω dv : F) (ms : List Bool) (cvs : List (List F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) (w : ChunkedEvals nc (FVar F))
@@ -420,15 +406,13 @@ def FopReads {sf : Type} {nc : ℕ} (P : FopParams F) (xiConstrainLowBits : Bool
         (endoExpand P.endoLam r'.val) (ĉ.map fun c => endoExpand P.endoLam c.val)
 
 open Kimchi.Protocol.Linearization Poseidon.FqSponge in
-/-- `FopReads` at a deployed field, against the wire verifier: with
-`pre = frPrechallenges P.sponge (frTranscript d dv ft(ζω) pub e)` the verifier's two
-prechallenges (`frOracles_eq_frPrechallenges` expands them to `frOracles`' `(v, u)`), the
-`r` the checks use is `pre.2`, `xiCorrect` is a bit and, when it reads `1`, the `ξ` claim is
-`pre.1` — and, where the side constrains the split's low half (`xiConstrainLowBits`), the
-converse: a `ξ` claim equal to `pre.1` makes `xiCorrect` read `1` — and `FopChecks` holds at
-the endo-expansions of the `ξ` claim, of `r` and of the challenge claims. Without the
-constraint the recomputed low half may sit at or above `2¹²⁸` (the split still below the
-modulus), so a claim equal to `pre.1` can read `xiCorrect = 0`. -/
+/-- `FopReads` at a prime field, against the verifier's two prechallenges `pre` (`frPrechallenges`,
+`frOracles`' own by `frOracles_eq_frPrechallenges`): the `r` the checks use is `pre.2`;
+`xiCorrect` is a bit, and reading `1` it makes the `ξ` claim `pre.1`; under
+`xiConstrainLowBits`, conversely, a `ξ` claim equal to `pre.1` reads `xiCorrect = 1`; and
+`FopChecks` holds at the endo-expansions of the `ξ` claim, of `r` and of the challenge claims.
+Without the constraint the recomputed low half may sit at or above `2¹²⁸`, so a claim equal to
+`pre.1` can read `xiCorrect = 0`. -/
 def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} {nc : ℕ} (P : FopParams (ZMod p))
     (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : List Bool)
     (cvs : List (List (ZMod p))) (u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf)
@@ -487,7 +471,7 @@ theorem FopReads.wire {p : ℕ} [Fact p.Prime] {sf : Type} {nc : ℕ}
     exact congrArg Nat.cast hpre
 
 open Kimchi.Protocol.Linearization in
-/-- The `ft_eval0` gadget's reading at the domain size `n`, generator `ω` and the parameters'
+/-- `ftEval0Circuit`'s reading at the domain size `n`, generator `ω` and the parameters'
 linearization (`ftEval0Circuit_spec_fp`/`_fq` at the deployed fields): with the α-table
 reading as the powers of `α` and the permutation inputs reading as `ζ`, `zkpmEval`, `ζⁿ − 1`
 and `ω^(n − zkRows)`, the output reads as `ftEval0`. -/
@@ -614,28 +598,11 @@ theorem chunkRows_map {α : Type} {nc : ℕ} (e : PointEvaluations (Vector α nc
     simp [chunkRows, Vector.toList_zipWith]
 
 open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
-/-- Under any valuation satisfying the emitted constraints, with `ω` the generator's reading
-(non-zero by its `inv` row, and then of order dividing `n`), the mask reading as `m_j`, the
-previous challenges as `c_j`, the evaluations as `e`, `ζ, α, β, γ` the expanded challenges,
-the shifted claims read through `R` (`unshift` its decode of a reading) and
-`(x₁, x₂) = frSqueezes P.sponge (frTranscript d digest ft(ζω) pub e)` the wire verifier's
-two raw fr-sponge squeezes:
-
-* `ξ̂ < 2¹²⁸` is the `ξ` claim, `ξ' + 2¹²⁸·h₁ = x₁` the recomputed low half (below `2¹²⁸` where
-  constrained), `r' + 2¹²⁸·h₂ = x₂` with `r' < 2¹²⁸`, and `ĉᵢ < 2¹²⁸` the challenge claims;
-* `ξ = endoExpand λ ξ̂`, `r = endoExpand λ r'`, `ft₀ = ftEval0 n zkRows ω shifts endo mds α β γ ζ
-  pub(ζ) e`, and the read batch `rows` is the kept `(b_j(ζ), b_j(ζω))` for `m_j = 1`, then
-  `(pub(ζ), pub(ζω))`, `(ft₀, ft(ζω))`, and the evaluation rows;
-
-the check bits read as
-
-* `xiCorrect = [ξ' = ξ̂]`,
-* `cipCorrect = [unshift(cip claim) = combinedInnerProduct ξ r rows]`,
-* `bCorrect = [unshift(b claim) = combinedB (endoExpand λ ĉ) r (ζ, ζω)]`,
-* `plonkOk = [unshift(perm claim) = permScalar β γ α (zkpmEval n zkRows ω ζ) e]`,
-* `finalized` as their conjunction,
-
-and the expanded challenges read as `endoExpand λ ĉᵢ`. -/
+/-- Under any valuation satisfying the emitted constraints, the generator reads non-zero and the
+outputs read as `FopReads`, with `ω` the generator's reading (of order dividing `n` by `hω`),
+the mask and the previous challenges reading as `ms` and `cvs`, the digest as `dv`, and the
+shifted claims through the side's reading `R`. The side condition `hpow` fixes the point the
+evaluation chunks recombine at: one chunk, or the `ζ^(2^srs)` rows. -/
 theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hinj : CastInj128 F) (hsw : SplitWidth F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
@@ -721,7 +688,7 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   case h2 => exact h2
   case h3 => exact h3
   case h3 => exact h3
-  -- the `ft_eval0` premises and the characteristic bound of `all`, in whatever order they come
+  -- the `FtEval0Hyp` premises and the characteristic bound of `all`, in whatever order they come
   all_goals try (first
     | exact ‹_ ∧ ∀ k ≤ 70, _›.2
     | rfl
@@ -941,7 +908,7 @@ def wrapShiftOps.reading {V : Valuation F} :
 
 open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 /-- The step side: under any valuation satisfying the emitted constraints, the runtime
-`domain_log2` reads as one of the known domains' — `d₀`, of size `n = 2^log2` and generator
+`domainLog2Var` reads as one of the known domains' — `d₀`, of size `n = 2^log2` and generator
 `ω` — and with `â, ẑ < 2¹²⁸` the `α, ζ` claims, the outputs read as `FopReads` at `ζ = endoExpand
 λ ẑ`, `α = endoExpand λ â`, `β, γ` the raw claims, the digest of the mask-kept previous
 challenges, `ξ` constrained below `2¹²⁸`, and the Type1 decode of the shifted claims. -/
@@ -1112,14 +1079,13 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   exact hreads
 
 open Poseidon.FqSponge in
-/-- **`finalize_other_proof`'s read**, the shape both deployed specs conclude: the `α` and
-`ζ` claims read as prechallenges, and the outputs read as `FopReadsWire` at their endo-
-expansions, with `β`, `γ` and the three shifted claims taken from the unfinalized proof's own
-cells — the shifted ones through the side's claim reading `read` (`FopShiftOps.Reading.read`).
-The parameters the two sides differ in are arguments: the low-half flag, the domain `(n, ω)`,
-the recursion digest `dv`, the predecessor mask `ms`, the reading and the shift decode. The
-eigenvalue the claims expand at is an argument too, `P.endoLam` at the deployed specs: a
-consumer that knows it by another name states the read at that name. -/
+/-- **The deployed read**, the shape both deployed specs conclude: the `α` and `ζ` claims read
+as prechallenges, and the outputs read as `FopReadsWire` at their endo-expansions, with `β`,
+`γ` and the three shifted claims taken from the unfinalized proof's own cells, the shifted ones
+through the side's claim reading `read` (`FopShiftOps.Reading.read`). The parameters the two
+sides differ in are arguments: the low-half flag, the domain `(n, ω)`, the recursion digest
+`dv`, the predecessor mask `ms`, the reading and the shift decode. So is the eigenvalue
+`endoLam` the claims expand at, `P.endoLam` at the deployed specs. -/
 def FopVerifyReads {p : ℕ} [Fact p.Prime] {sf : Type} {nc : ℕ} (P : FopParams (ZMod p))
     (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : List Bool)
     (cvs : List (List (ZMod p))) (u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf)
@@ -1142,7 +1108,7 @@ section Deployed
 open Pickles.Reflect Kimchi.Protocol.Linearization Poseidon.FqSponge
 
 /-- `finalizeOtherProofStep_spec` at the step field over the deployed `Fp` linearization
-(`Pasta.pallasEndo`, `symMds`, `fpTokens`), its `ft_eval0` hypothesis discharged by
+(`Pasta.pallasEndo`, `symMds`, `fpTokens`), its `FtEval0Hyp` hypothesis discharged by
 `ftEval0Circuit_spec_fp`. -/
 theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
     (hP : P.endo = Pasta.pallasEndo ∧ P.mds = symMds ∧ P.toks = fpTokens)
@@ -1177,7 +1143,7 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
       ⟨d₀, hd₀, hL, a₀, z₀, haval, hzval, hr.wire⟩
 
 /-- `finalizeOtherProofWrap_spec` at the wrap field over the deployed `Fq` linearization
-(`Pasta.vestaEndo`, `symMdsQ`, `fqTokens`), its `ft_eval0` hypothesis discharged by
+(`Pasta.vestaEndo`, `symMdsQ`, `fqTokens`), its `FtEval0Hyp` hypothesis discharged by
 `ftEval0Circuit_spec_fq`. -/
 theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (hP : P.endo = Pasta.vestaEndo ∧ P.mds = symMdsQ ∧ P.toks = fqTokens)

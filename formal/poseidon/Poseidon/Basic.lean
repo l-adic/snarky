@@ -1,7 +1,6 @@
 import Mathlib.Algebra.Field.Defs
 import Mathlib.Data.Fin.VecNotation
 import CompElliptic.Fields.Pasta
-import Pasta.CompElliptic
 import Poseidon.ConstantsFq
 import Poseidon.ConstantsFp
 
@@ -9,18 +8,16 @@ import Poseidon.ConstantsFp
 # The kimchi Poseidon sponge
 
 The Poseidon permutation and the duplex sponge automaton of kimchi's Fiat–Shamir transform,
-transcribed from proof-systems `mina_poseidon` (`permutation.rs`, `poseidon.rs`,
-`PlonkSpongeConstantsKimchi`). The parameter set is width 3, rate 2, capacity 1, with 55 full
-rounds, an `x^7` S-box, a full 3 × 3 MDS matrix, and no initial ARK (no round-constant
-addition before the first round). The absorb/squeeze automaton tracks a mode `absorbed n` /
-`squeezed n` with `n ≤ rate`; crossing the rate boundary, or switching direction into
-`squeezed`, runs the permutation.
+transcribed from proof-systems' Poseidon crate (`permutation.rs`, `poseidon.rs`). The
+parameter set is width 3, rate 2, capacity 1, with 55 full rounds, an `x^7` S-box, a full
+3 × 3 MDS matrix, and no initial ARK (no round-constant addition before the first round).
+The automaton tracks a mode `absorbed n` / `squeezed n` with `n ≤ rate`; crossing the rate
+boundary, or switching direction into `squeezed`, runs the permutation.
 
 Everything is executable. `fqParams` and `fpParams` instantiate the sponge at the Vesta and
-Pallas base fields from the generated `fq_kimchi` / `fp_kimchi` tables
-(`Poseidon/ConstantsFq.lean`, `Poseidon/ConstantsFp.lean`) — the sponges of kimchi proofs
-over Vesta and Pallas respectively. Both are validated against `mina_poseidon`
-absorb/squeeze traces by `scripts/check_sponge_vectors.lean`.
+Pallas base fields from the generated tables of `Poseidon/ConstantsFq.lean` and
+`Poseidon/ConstantsFp.lean`. Both are checked against upstream absorb/squeeze traces by
+`poseidon/scripts/check_sponge_vectors.lean`.
 
 ## Why the state is a triple
 
@@ -29,12 +26,9 @@ compiler eta-expands function-valued definitions, and under that a fold of round
 re-evaluates its whole prefix at every component lookup — exponentially in the round count.
 Constructor arguments are forced at construction, which keeps the fold linear.
 
-## What is assumed elsewhere
+## What is not claimed
 
-This is the *definitional* layer of the Fiat–Shamir instantiation: it fixes what the
-challenges are, not that they are secure. That they behave as the soundness theorems need is
-carried by the consumers, as the uniform challenge table of their forking games, with the
-identification to this sponge recorded in `Bulletproof.Forking` and in kimchi's `FSFaithful`.
+This module fixes what the Fiat–Shamir challenges are, not that they are secure.
 -/
 
 namespace Poseidon
@@ -43,25 +37,25 @@ variable {F : Type*} [Field F]
 
 /-! ## The permutation -/
 
-/-- A width-3 state: the components `(s₀, s₁, s₂)`. -/
+/-- A width-3 Poseidon state. -/
 abbrev Triple (F : Type*) := F × F × F
 
-/-- The deployed round count: both parameter tables below (`fpKimchi`, `fqKimchi`)
-carry 55 constant triples, one per full round. -/
+/-- The deployed round count: `fqParams` and `fpParams` carry one constant triple per full
+round. -/
 abbrev fullRounds : Nat := 55
 
-/-- Poseidon parameters: one constant triple per round, and the MDS matrix as three rows. -/
+/-- Poseidon parameters: a round-constant table and an MDS matrix. -/
 structure Params (F : Type*) where
   /-- One constant triple per round, added after that round's MDS pass (no initial ARK). -/
   roundConstants : Array (Triple F)
-  /-- The full 3 × 3 MDS matrix, as three rows. -/
+  /-- The MDS matrix, as three rows. -/
   mds : Triple (Triple F)
 
 /-- The S-box `x ↦ x^7`. -/
 def sbox (x : F) : F := x ^ 7
 
 /-- One full round: S-box every state element, apply the MDS matrix, add the round
-constants (`permutation.rs` `full_round`). -/
+constants. -/
 def fullRound (mds : Triple (Triple F)) (rc : Triple F) (s : Triple F) : Triple F :=
   let t0 := sbox s.1; let t1 := sbox s.2.1; let t2 := sbox s.2.2
   let m0 := mds.1; let m1 := mds.2.1; let m2 := mds.2.2
@@ -69,15 +63,14 @@ def fullRound (mds : Triple (Triple F)) (rc : Triple F) (s : Triple F) : Triple 
    m1.1 * t0 + m1.2.1 * t1 + m1.2.2 * t2 + rc.2.1,
    m2.1 * t0 + m2.2.1 * t1 + m2.2.2 * t2 + rc.2.2)
 
-/-- The Poseidon permutation: the full rounds folded over the round-constant table
-(`permutation.rs` `poseidon_block_cipher`, no initial ARK). -/
+/-- The Poseidon permutation: `fullRound` folded over the round-constant table, with no
+initial ARK. -/
 def blockCipher (p : Params F) (s : Triple F) : Triple F :=
   p.roundConstants.foldl (fun s rc => fullRound p.mds rc s) s
 
 /-! ## The duplex automaton -/
 
-/-- The sponge direction and intra-block position: `absorbed n` after `n` absorptions into
-the current block, `squeezed n` after `n` squeezes from the current block (`n ≤ 2`). -/
+/-- The sponge direction and the position within the current block. -/
 inductive SpongeMode
   /-- `n` absorptions into the current block. -/
   | absorbed (n : Fin 3)
@@ -107,8 +100,8 @@ def addSlot (s : Triple F) (n : Fin 3) (x : F) : Triple F :=
 /-- The fresh sponge: zero state, `absorbed 0`. -/
 def init : State F := ⟨(0, 0, 0), .absorbed 0⟩
 
-/-- Absorb one field element (`poseidon.rs` `absorb`): add into the next rate slot,
-permuting first when the rate is full; absorbing after a squeeze restarts at slot 0. -/
+/-- Absorb one field element: add it into the next rate slot, permuting first when the rate
+is full; absorbing after a squeeze restarts at slot 0 without permuting. -/
 def absorb1 (p : Params F) (sp : State F) (x : F) : State F :=
   match sp.mode with
   | .absorbed n =>
@@ -123,8 +116,8 @@ def absorb1 (p : Params F) (sp : State F) (x : F) : State F :=
 def absorb (p : Params F) (sp : State F) (xs : List F) : State F :=
   xs.foldl (absorb1 p) sp
 
-/-- Squeeze one field element (`poseidon.rs` `squeeze`): read the next rate slot, permuting
-first when entering squeeze mode or when the rate is exhausted. -/
+/-- Squeeze one field element: read the next rate slot, permuting first when entering
+squeeze mode or when the rate is exhausted. -/
 def squeeze (p : Params F) (sp : State F) : F × State F :=
   match sp.mode with
   | .squeezed n =>
@@ -148,8 +141,8 @@ def squeezeN (p : Params F) (sp : State F) : ℕ → List F × State F
 /-! ## The Pasta instantiations -/
 
 open CompElliptic.Fields.Pasta in
-/-- The `fq_kimchi` parameters over the Vesta base field, from the generated constant
-tables. -/
+/-- The parameters over the Vesta base field, from `FqKimchi.roundConstants` and
+`FqKimchi.mds`. -/
 def fqParams : Params Fq where
   roundConstants := FqKimchi.roundConstants.map fun row =>
     (((row[0]! : ℕ) : Fq), ((row[1]! : ℕ) : Fq),
@@ -161,8 +154,8 @@ def fqParams : Params Fq where
     | m => (m[0]!, m[1]!, m[2]!)
 
 open CompElliptic.Fields.Pasta in
-/-- The `fp_kimchi` parameters over the Pallas base field, from the generated constant
-tables. -/
+/-- The parameters over the Pallas base field, from `FpKimchi.roundConstants` and
+`FpKimchi.mds`. -/
 def fpParams : Params Fp where
   roundConstants := FpKimchi.roundConstants.map fun row =>
     (((row[0]! : ℕ) : Fp), ((row[1]! : ℕ) : Fp),

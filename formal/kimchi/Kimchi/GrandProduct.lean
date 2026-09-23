@@ -1,31 +1,28 @@
 import Mathlib
 
 /-!
-# The grand-product core: linear-factor multisets and two-variable pinning
+# The grand-product core: linear-factor multisets
 
-Polynomial-algebra infrastructure for the kimchi permutation argument (proof-systems
-`permutation.rs`): the permutation accumulator telescopes into an equality of grand products
-`∏ (wᵢ + β·posᵢ + γ) = ∏ (wᵢ + β·σ(pos)ᵢ + γ)` at the challenges `β, γ`, and the soundness
-core — proved here — is that such an equality forces the multisets of pairs `(wᵢ, posᵢ)` to
-coincide. This is **pure algebra**: no protocol content whatsoever (no `Z_H`, no domain `H`,
-no root of unity `ω`, no gate). It has no project dependencies at all — `Mathlib` is its
-only import.
+Polynomial algebra for the kimchi permutation argument (proof-systems `permutation.rs`). The
+permutation accumulator telescopes into an equality of grand products
+`∏ (wᵢ + β·posᵢ + γ) = ∏ (wᵢ + β·σ(pos)ᵢ + γ)`; this module proves that such an equality, at one
+`(β, γ)` outside two explicit finite sets, forces the multisets of pairs `(wᵢ, posᵢ)` to
+coincide. No domain, root of unity or gate appears, and the only import is Mathlib.
 
-We work in the two-variable polynomial ring `F[β][γ] := Polynomial (Polynomial F)` with inner
-variable `β` and outer variable `γ`, over an abstract field `F`. A pair `(w, a) ∈ F × F` gives
-rise to a monic linear **pair factor** `γ + w + a·β`; the multiset product of these factors is
-what the permutation accumulator forces to agree on both sides.
+Every result is an implication about explicit challenges outside finite sets whose sizes are
+proved; no probability or hardness assumption enters.
+
+The pair `(w, a)` gives the pair factor `γ + w + a·β`, a monic linear polynomial in `γ` over
+`F[β]`, modelled as `Polynomial (Polynomial F)` with outer variable `γ` and inner variable `β`.
 
 ## Contents
 
-* `pairFactor` — the monic linear pair factor `X + C (C p.1 + C p.2 * X)`.
-* `eval2` — two-variable evaluation `(P.eval (C g)).eval b`.
-* `multiset_eq_of_pairFactor_prod_eq` — equal products of pair factors force equal multisets
-  (unique factorisation of monic linear factors over the domain `Polynomial F`).
-* `badBetas` / `badGammas` (with `card_badBetas_le` / `card_badGammas_le`) — the counting
-  Schwartz–Zippel bad sets for the two challenges.
-* `multiset_eq_of_prod_eval` — the headline: field-level products agreeing at one `(β, γ)`
-  outside the bad sets force multiset equality.
+* `badBetas` / `badGammas`, with `card_badBetas_le` / `card_badGammas_le`: the bad challenge
+  sets, each of size at most `max |m₁| |m₂|`.
+* `copy_soundness`: products over the cells agreeing at one good `(β, γ)` force the values to be
+  invariant under the wiring.
+* `prod_eq_of_accumulator` / `accumulator_of_prod_eq`: an accumulator pinned to `1` at both ends
+  telescopes into a grand-product equality, and conversely.
 -/
 
 namespace Kimchi.GrandProduct
@@ -36,23 +33,18 @@ variable {F : Type*} [Field F]
 
 /-! ## The pair factor and two-variable evaluation -/
 
-/-- **Grand-product pair factor.** For a pair `p = (p.1, p.2) ∈ F × F` the monic linear factor
-`X + C (C p.1 + C p.2 * X) ∈ Polynomial (Polynomial F)`, where the outer `X` is the `γ` variable,
-the inner `X` is the `β` variable, and the two `C`s are the inner/outer constant embeddings. As
-an element of `F[β][γ]` this is `γ + p.1 + p.2·β`. -/
+/-- The pair factor `γ + p.1 + p.2·β` of `p`: the outer `X` is `γ`, the inner `X` is `β`. -/
 private noncomputable def pairFactor (p : F × F) : Polynomial (Polynomial F) :=
   Polynomial.X + Polynomial.C (Polynomial.C p.1 + Polynomial.C p.2 * Polynomial.X)
 
-/-- **Two-variable evaluation.** For `b g : F` and `P ∈ Polynomial (Polynomial F)`, substitute
-the outer variable `γ := g` (landing in `Polynomial F`), then the inner variable `β := b`. Thus
-`eval2 b g P` is the value of `P` at `β = b`, `γ = g`. -/
+/-- The value of `P` at `β = b`, `γ = g`: outer variable first, then inner. -/
 private noncomputable def eval2 (b g : F) (P : Polynomial (Polynomial F)) : F :=
   (P.eval (Polynomial.C g)).eval b
 
 /-! ## The core: equal products force equal multisets -/
 
-/-- **Unique factorisation of pair factors.** If the products of pair factors over two multisets
-of pairs agree in `Polynomial (Polynomial F)`, then the multisets are equal. -/
+/-- Equal products of pair factors force equal multisets: each factor is `X - C r` with `r`
+injective in the pair, so the root multisets agree. -/
 private theorem multiset_eq_of_pairFactor_prod_eq (m₁ m₂ : Multiset (F × F))
     (h : (m₁.map pairFactor).prod = (m₂.map pairFactor).prod) : m₁ = m₂ := by
   -- `r p` is the (negated) constant so that `pairFactor p = X - C (r p)`.
@@ -87,10 +79,9 @@ private theorem multiset_eq_of_pairFactor_prod_eq (m₁ m₂ : Multiset (F × F)
       Polynomial.roots_multiset_prod_X_sub_C] at this
   exact Multiset.map_injective hrinj hroots
 
-/-! ## Two-variable identity pinning on a grid -/
+/-! ## Evaluation and degree bounds -/
 
-/-- **Evaluation bridge.** `eval2 b g P` equals the outer evaluation at `g` of `P` after mapping
-the inner coefficients through `evalRingHom b`. Both sides equal `∑ₖ (P.coeff k)(b)·gᵏ`. -/
+/-- `eval2 b g` is evaluation at `g` after specialising every coefficient at `β = b`. -/
 private lemma eval2_eq_eval_map (b g : F) (P : Polynomial (Polynomial F)) :
     eval2 b g P = (P.map (Polynomial.evalRingHom b)).eval g := by
   rw [eval2, Polynomial.eval_map]
@@ -100,11 +91,7 @@ private lemma eval2_eq_eval_map (b g : F) (P : Polynomial (Polynomial F)) :
   rw [← Polynomial.coe_evalRingHom, Polynomial.hom_eval₂]
   simp
 
-/-! ## The headline: grid products force multiset equality -/
-
-/-- **(a) Evaluation bridge for the product.** Evaluating the pair-factor product at `(b, g)`
-gives the field-level product `∏ (g + p.1 + p.2·b)`. `eval2 b g` is a ring-hom composite, so it
-commutes with the multiset product and acts factor-by-factor. -/
+/-- The pair-factor product evaluates at `(b, g)` to the field product `∏ (g + p.1 + p.2·b)`. -/
 private lemma eval2_prod_pairFactor (b g : F) (m : Multiset (F × F)) :
     eval2 b g (m.map pairFactor).prod = (m.map (fun p => g + p.1 + p.2 * b)).prod := by
   -- `eval2 b g` is the ring hom `(evalRingHom b).comp (evalRingHom (C g))`.
@@ -118,8 +105,7 @@ private lemma eval2_prod_pairFactor (b g : F) (m : Multiset (F × F)) :
     pairFactor, Polynomial.eval_add, Polynomial.eval_X, Polynomial.eval_C, Polynomial.eval_mul]
   ring
 
-/-- **(b) Outer-degree bound.** The pair-factor product has outer degree at most `|m|`, since each
-factor is monic linear in the outer variable. -/
+/-- The pair-factor product has outer degree at most `|m|`. -/
 private lemma natDegree_prod_pairFactor (m : Multiset (F × F)) :
     (m.map pairFactor).prod.natDegree ≤ Multiset.card m := by
   refine le_trans (Polynomial.natDegree_multiset_prod_le _) ?_
@@ -132,9 +118,8 @@ private lemma natDegree_prod_pairFactor (m : Multiset (F × F)) :
   rw [hconst]
   simp
 
-/-- **(c) Inner coefficient-degree bound.** Every coefficient of the pair-factor product has inner
-degree at most `|m|`. Multiset induction: multiplying by one more factor `(X + C r)` (inner degree
-of `r` ≤ 1) raises the coefficient's inner degree by at most one. -/
+/-- Every coefficient of the pair-factor product has inner degree at most `|m|`: each factor
+raises it by at most one. -/
 private lemma natDegree_coeff_prod_pairFactor (m : Multiset (F × F)) :
     ∀ k, ((m.map pairFactor).prod.coeff k).natDegree ≤ Multiset.card m := by
   induction m using Multiset.induction with
@@ -167,38 +152,27 @@ private lemma natDegree_coeff_prod_pairFactor (m : Multiset (F × F)) :
       have := ih k
       omega
 
-/-! ## Mathlib supplement — single-challenge Schwartz–Zippel (β,γ collapse)
+/-! ## Counting Schwartz–Zippel for `β` and `γ`
 
-The single-challenge (counting) Schwartz–Zippel argument for the β,γ collapse, in place of a
-two-variable injective grid. Working in `F[β][γ]` with
-`Δ := (m₁.map pairFactor).prod - (m₂.map pairFactor).prod`, a *good* pair `(β,γ)` — one avoiding
-two explicitly-small bad sets — already forces the two grand products to agree, hence the pair
-multisets to coincide. Bad β's are the roots of the outer (γ-leading) coefficient of `Δ`; bad γ's
-(given β) are the roots of `Δ` specialised at `β`. Both bad sets are empty when `m₁ = m₂`, so the
-`∉ bad…` hypotheses are never vacuous. Mirrors `Kimchi/SchwartzZippel.lean`'s α-collapse.
+`Δ` is the difference of the two pair-factor products. A bad `β` is a root of `Δ`'s leading
+coefficient in `γ`; a bad `γ`, given `β`, is a root of `Δ` specialised at `β`. Both sets are
+empty when `m₁ = m₂`. The same shape as `dvd_separation`'s single-challenge `α`.
 -/
 
-/-- The difference of the two grand products in `F[β][γ]` (outer variable `γ`, inner `β`).
-`Δ = 0 ↔ m₁ = m₂` via `multiset_eq_of_pairFactor_prod_eq`; its outer-leading coefficient and its
-`β`-specialisation drive the bad-set definitions below. -/
+/-- `Δ`, the difference of the two pair-factor products; it vanishes only when `m₁ = m₂`
+(`multiset_eq_of_pairFactor_prod_eq`). -/
 private noncomputable def gpDiff (m₁ m₂ : Multiset (F × F)) : Polynomial (Polynomial F) :=
   (m₁.map pairFactor).prod - (m₂.map pairFactor).prod
 
 section
 variable [DecidableEq F]
 
-/-- **Bad β.** Those `β` at which the γ-polynomial of `m₁` minus that of `m₂` collapses to zero
-even though `m₁ ≠ m₂`: concretely the roots of `Δ`'s outer-leading (γ-degree) coefficient, a
-nonzero inner β-polynomial when `Δ ≠ 0`. EMPTY when `m₁ = m₂`, keeping the hypotheses
-satisfiable — the β-axis of the grand-product collapse. -/
+/-- The bad `β`s: the roots of `Δ`'s leading coefficient in `γ`, or empty when `m₁ = m₂`. -/
 noncomputable def badBetas (m₁ m₂ : Multiset (F × F)) : Finset F :=
   if m₁ = m₂ then ∅ else (gpDiff m₁ m₂).leadingCoeff.roots.toFinset
 
-/-- **Card bound for bad β** — at most `max |m₁| |m₂|`. The empty case is trivial; otherwise the
-distinct roots of `Δ.leadingCoeff` number at most its degree, and `Δ.leadingCoeff = Δ.coeff
-Δ.natDegree` is a coefficient of a degree-`Δ` polynomial, each coefficient of inner degree
-`≤ max |m₁| |m₂|` via `natDegree_coeff_prod_pairFactor`; the bound is what keeps `∉ badBetas`
-non-vacuous. -/
+/-- At most `max |m₁| |m₂|` bad `β`s: the leading coefficient is a coefficient of `Δ`, of inner
+degree at most that (`natDegree_coeff_prod_pairFactor`). -/
 theorem card_badBetas_le (m₁ m₂ : Multiset (F × F)) :
     (badBetas m₁ m₂).card ≤ max (Multiset.card m₁) (Multiset.card m₂) := by
   have hcoeff : ∀ k, ((gpDiff m₁ m₂).coeff k).natDegree
@@ -215,16 +189,13 @@ theorem card_badBetas_le (m₁ m₂ : Multiset (F × F)) :
     refine le_trans (Polynomial.card_roots' _) ?_
     exact hcoeff _
 
-/-- **Bad γ at a good β.** The roots of `Δ` specialised at `β` (the γ-polynomial `Δ.map
-(evalRingHom β)`), which is nonzero when `β ∉ badBetas`. EMPTY when `m₁ = m₂` — the γ-axis
-of the grand-product collapse. -/
+/-- The bad `γ`s at `β`: the roots of `Δ` specialised at `β`, or empty when `m₁ = m₂`. The
+specialisation is nonzero when `β ∉ badBetas`. -/
 noncomputable def badGammas (m₁ m₂ : Multiset (F × F)) (β : F) : Finset F :=
   if m₁ = m₂ then ∅ else ((gpDiff m₁ m₂).map (Polynomial.evalRingHom β)).roots.toFinset
 
-/-- **Card bound for bad γ** — at most `max |m₁| |m₂|`, for every `β`. The specialised polynomial
-has degree at most `Δ.natDegree ≤ max |m₁| |m₂|` (via `natDegree_map_le` and
-`natDegree_prod_pairFactor`), so its distinct roots number no more, which keeps `∉ badGammas`
-non-vacuous. -/
+/-- At most `max |m₁| |m₂|` bad `γ`s for every `β`: specialising does not raise the outer degree,
+which `natDegree_prod_pairFactor` bounds. -/
 theorem card_badGammas_le (m₁ m₂ : Multiset (F × F)) (β : F) :
     (badGammas m₁ m₂ β).card ≤ max (Multiset.card m₁) (Multiset.card m₂) := by
   unfold badGammas
@@ -237,12 +208,8 @@ theorem card_badGammas_le (m₁ m₂ : Multiset (F × F)) (β : F) :
     refine le_trans (Polynomial.natDegree_sub_le _ _) ?_
     exact max_le_max (natDegree_prod_pairFactor m₁) (natDegree_prod_pairFactor m₂)
 
-/-- **The grand product at *one* `(β,γ)`** — the counting-form headline. If the
-field-level products `∏ (γ + p.1 + p.2·β)` over `m₁` and `m₂` agree at a single good pair `(β,γ)`
-(β outside `badBetas`, γ outside `badGammas … β`), then `m₁ = m₂`. Iterated univariate SZ: a good
-β keeps the γ-specialisation `Δ.map (evalRingHom β)` nonzero, a good γ is not among its roots, yet
-the product equality forces `(Δ.map (evalRingHom β)).eval γ = 0` — contradiction unless `Δ = 0`,
-i.e. `m₁ = m₂`. The single-challenge grand-product core. -/
+/-- Field products `∏ (γ + p.1 + p.2·β)` over `m₁` and `m₂` agreeing at one `(β, γ)` outside
+`badBetas` and `badGammas` force `m₁ = m₂`. Stepped through in the body. -/
 private theorem multiset_eq_of_prod_eval (m₁ m₂ : Multiset (F × F)) (β γ : F)
     (hβ : β ∉ badBetas m₁ m₂) (hγ : γ ∉ badGammas m₁ m₂ β)
     (h : (m₁.map (fun p => γ + p.1 + p.2 * β)).prod
@@ -292,13 +259,11 @@ open Polynomial
 
 variable {F : Type*} [Field F]
 
-/-! ## The abstract core -/
+/-! ## Copy soundness -/
 
 omit [Field F] in
-/-- **Values from multisets.** If the multiset of `(value, own address)` pairs equals the
-multiset of `(value, wired-to address)` pairs and addresses are injective, values are
-invariant under the wiring: the pair `(v c, addr (σp c))` occurs among the own-address
-pairs, and its address pins its cell to `σp c`. -/
+/-- Equal multisets of `(value, own address)` and `(value, wired-to address)` pairs, with
+injective addresses, make the values invariant under the wiring `σp`. -/
 private theorem values_eq_of_multiset_eq {cells : Type*} [Fintype cells]
     (v addr : cells → F) (haddr : Function.Injective addr) (σp : Equiv.Perm cells)
     (h : (Finset.univ.val.map fun c => (v c, addr c))
@@ -313,13 +278,10 @@ private theorem values_eq_of_multiset_eq {cells : Type*} [Fintype cells]
   have h₁ := congrArg Prod.fst hc₁
   rwa [h₂] at h₁
 
-/-- **Copy soundness, field level.** Products of `(γ + value + address·β)` over the cells
-agreeing at a **single good challenge pair** `(β, γ)` — own addresses on the left,
-wired-to addresses on the right — force the values to be invariant under the wiring.
-The single-challenge Schwartz–Zippel core (`multiset_eq_of_prod_eval`) turns the product
-equality into multiset equality once `β` and `γ` avoid the proved-small bad sets
-`badBetas`/`badGammas` of the `(value, address)` pair multisets; injective addressing then
-descends to the values. -/
+/-- **Copy soundness, field level.** If `∏ (γ + value + address·β)` over the cells agrees with
+own addresses and with wired-to addresses at one `(β, γ)` outside `badBetas` / `badGammas`, the
+values are invariant under the wiring `σp`. `multiset_eq_of_prod_eval` gives equal pair
+multisets; injective addressing descends that to the values. -/
 theorem copy_soundness [DecidableEq F] {cells : Type*} [Fintype cells]
     (β γ : F)
     (v addr : cells → F) (haddr : Function.Injective addr) (σp : Equiv.Perm cells)
@@ -342,10 +304,8 @@ variable {F : Type*} [Field F]
 
 /-! ## The permutation accumulator telescopes into a grand-product equality
 
-Pure finite induction over indexed families — no domain, root of unity, or polynomials. An
-accumulator column pinned to `1` at both ends with the division-free recurrence
-`z(k+1)·denₖ = z(k)·numₖ` forces `∏ num = ∏ den`; the converse builds the running-ratio column
-under nonzero denominators. The kimchi-facing wire constraints instantiate these downstream. -/
+Finite induction over indexed families, with no polynomials. The permutation argument's wire
+constraints instantiate both directions. -/
 
 /-- **Accumulator telescoping.** An accumulator pinned to `1` at both ends of a row range
 and satisfying the division-free recurrence `z(k+1) · denₖ = z(k) · numₖ` on it forces the
@@ -372,12 +332,9 @@ theorem prod_eq_of_accumulator {m : ℕ} (num den z : ℕ → F)
   rw [hm, one_mul] at h
   exact h.symm
 
-/-- **Accumulator construction** — the converse of `prod_eq_of_accumulator`, and the
-completeness direction's witness. With nonzero denominators and agreeing grand
-products, the running-ratio column `z k = (∏_{j<k} num) / (∏_{j<k} den)` is an
-accumulator: pinned to `1` at both ends and satisfying the division-free recurrence.
-This is the one place the nonzero-denominator hypothesis is genuinely needed — the
-soundness direction (`prod_eq_of_accumulator`) is division-free. -/
+/-- **Accumulator construction**, the converse of `prod_eq_of_accumulator`: with nonzero
+denominators and agreeing grand products, the running ratio
+`z k = (∏_{j<k} num) / (∏_{j<k} den)` is an accumulator. Only this direction divides. -/
 theorem accumulator_of_prod_eq {m : ℕ} (num den : ℕ → F)
     (hden : ∀ k < m, den k ≠ 0)
     (hprod : ∏ k ∈ Finset.range m, num k = ∏ k ∈ Finset.range m, den k) :

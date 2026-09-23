@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import KimchiFixture.Kimchi
 import Kimchi.Verifier.Wire
 import Lean.Data.Json
@@ -56,6 +57,7 @@ flattening of the batch, the `ft_comm` double collapse, the carried-public prece
 either reproduces production's accept bit here or fails. -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
+open scoped Kimchi
 
 /-- The client-side composition: parse the wire records at the run's chunk count and
 hand the checked records to the protocol verifier —
@@ -89,7 +91,7 @@ def runChunked (C : Ipa.KimchiCurve)
     let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
       | some v => pure v
       | none => throw "field max_poly_size is not a numeral"
-    -- `Nat.log2` truncates a non-two-power `max_poly_size` (external-audit C-4);
+    -- `Nat.log2` truncates a non-two-power `max_poly_size`;
     -- production domains are radix-2, so fixture values are exact powers.
     let σ ← parseSRSAt C (Nat.log2 mps) j
     let proof ← Kimchi.Fixture.parseKimchiProof C j
@@ -118,7 +120,7 @@ def runChunked (C : Ipa.KimchiCurve)
             { proof.evals.z with zeta := proof.evals.z.zeta.modify c (· + 1) }
           else
             { proof.evals.z with zetaOmega := proof.evals.z.zetaOmega.modify c (· + 1) } } }
-    -- The empty quotient commitment (audit O-2), used twice below: once as a
+    -- The empty quotient commitment, used twice below: once as a
     -- verify-level corruption, once as the parse-side non-vacuity control for it.
     let emptyT : Wire.KimchiProof C := { proof with tComm := #[] }
     -- verify-level corruptions: each mutant still parses; the verdict must flip.
@@ -126,12 +128,12 @@ def runChunked (C : Ipa.KimchiCurve)
     -- The nc-specific high-chunk corruption (the second ft_comm collapse group). Kept
     -- even under `heavy`, so the nc > 2 run is non-vacuous.
     if 1 < nc then
-      unless proof.tComm.size = 7 * nc do
-        throw (IO.userError s!"{path}: expected a full quotient ({7 * nc} chunks), \
+      unless proof.tComm.size = quotChunks * nc do
+        throw (IO.userError s!"{path}: expected a full quotient ({quotChunks * nc} chunks), \
           got {proof.tComm.size} — the high-chunk corruption would be a no-op")
       corrupts := corrupts.push
-        (s!"corrupted t comm (chunk {7 * nc - 1}, second collapse group)",
-          !verify { proof with tComm := proof.tComm.modify (7 * nc - 1) (· + σ.h) })
+        (s!"corrupted t comm (chunk {quotChunks * nc - 1}, second collapse group)",
+          !verify { proof with tComm := proof.tComm.modify (quotChunks * nc - 1) (· + σ.h) })
     -- The full verify-based matrix — skipped when `heavy` (see the def docstring).
     unless heavy do
       corrupts := corrupts.push ("corrupted z eval (ζ, chunk 0)", !verify (bumpZ true 0))
@@ -204,7 +206,7 @@ def runChunked (C : Ipa.KimchiCurve)
         (twoChunk.check nc σ.k).isNone)
     for (name, rejected) in parses do
       IO.println s!"  {if rejected then "✓ none" else "✗ parsed (BUG)"}: {name}"
-    -- Non-vacuity of the emptied-quotient corruption above (audit O-2). `verify` is
+    -- Non-vacuity of the emptied-quotient corruption above. `verify` is
     -- check-then-verify, so a parse rejection would flip that verdict for the WRONG
     -- reason. Production bounds `t_comm.len()` from above only (verifier.rs:260), so the
     -- empty quotient must PARSE here and its rejection must be the ft identity's — the
@@ -240,8 +242,8 @@ def main : IO Unit := do
   -- nc = 2 on both curves.
   run CV s!"{dir}/kimchi_proof_vesta_nc2.json" true
   run CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
-  -- Live EndoMul + VarBaseMul selectors at an empty public input (the audit's C-3 /
-  -- V-1 mask): acceptance here pins the α-weighted constraint order and the
+  -- Live EndoMul + VarBaseMul selectors at an empty public input (both are zero in
+  -- every other fixture): acceptance here pins the α-weighted constraint order and the
   -- scalar-register sign of both scalar-multiplication gates, and exercises the
   -- empty-public branch (public commitment = the all-ones blinding mask).
   run CV s!"{dir}/kimchi_proof_vesta_emul.json" false

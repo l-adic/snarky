@@ -25,8 +25,7 @@ The `SZ` section is the field-level vocabulary, one row at a time:
   roots of its (nonzero) combining polynomial.
 * `SZ.card_badComb_le` — **counting SZ**: at most `K − 1` challenges hide a nonzero vector.
 * `SZ.eq_zero_of_comb_eq_zero` — **the combination lemma**: a good challenge annihilating
-  the combination annihilates every entry. This is the atomic "one good challenge suffices"
-  step; it replaces every Vandermonde-over-an-injective-family argument.
+  the combination annihilates every entry.
 
 The main section assembles the rows of the evaluation domain:
 
@@ -35,13 +34,13 @@ The main section assembles the rows of the evaluation domain:
 * `card_badAlphas_le` — the bad set has at most `n · (K − 1)` elements.
 * `dvd_separation` — single-challenge α-separation: divisibility of the α-aggregate for
   *one* good `α` separates across the individual constraint polynomials.
-* `badZetas` — the bad ζ for a claimed quotient `C = t · Z_H`: empty when they agree, else
-  the roots of `C − t · Z_H`.
+* `badZetas` — the bad ζ for a claimed quotient `C = t · zH`: empty when they agree, else
+  the roots of `C − t · zH`.
 * `card_badZetas_le` — **counting SZ, ζ-axis**: at most `D` bad ζ when both sides have degree
   `≤ D`.
-* `zH_dvd_of_eval` — a single good ζ pins `C = t · Z_H`, hence `Z_H ∣ C`.
-* `dvd_of_evalCheck` — the composed pinning–separation engine, with the α-, ζ- and
-  quotient-families all collapsed to a single `α`, a single ζ, and a single quotient `t`.
+* `zH_dvd_of_eval` — a single good ζ pins `C = t · zH`, hence `zH ∣ C`.
+* `dvd_of_evalCheck` — pinning composed with separation, at a single `α`, a single ζ and a
+  single quotient `t`.
 -/
 
 namespace Kimchi
@@ -118,9 +117,9 @@ theorem card_badComb_le {K : ℕ} (c : Fin K → F) : (badComb c).card ≤ K - 1
   · refine le_trans (Multiset.toFinset_card_le _) ?_
     exact le_trans (Polynomial.card_roots' _) (natDegree_combPoly_le c)
 
-/-- **The combination lemma** — the atomic "one good challenge suffices" step; replaces every
-Vandermonde-over-an-injective-family argument. If a challenge outside `badComb c`
-annihilates the α-combination of the vector `c`, then `c` is the zero vector. -/
+/-- **The combination lemma** — the atomic "one good challenge suffices" step. If a
+challenge outside `badComb c` annihilates the α-combination of the vector `c`, then `c` is
+the zero vector. -/
 theorem eq_zero_of_comb_eq_zero {K : ℕ} (c : Fin K → F) (α : F)
     (hα : α ∉ badComb c) (hzero : ∑ k : Fin K, α ^ (k : ℕ) * c k = 0) : ∀ k, c k = 0 := by
   by_contra hne
@@ -151,9 +150,9 @@ theorem card_badAlphas_le {K : ℕ} (C : Fin K → Polynomial F) (ω : F) (n : �
   refine le_trans (Finset.sum_le_sum fun i _ => SZ.card_badComb_le _) ?_
   rw [Finset.sum_const, Finset.card_univ, Fintype.card_fin, smul_eq_mul]
 
-/-- **α-separation, single-challenge form** — replaces `dvd_separation`'s injective-α family.
-If `Z_H` divides the α-aggregate for ONE challenge `α` outside `badAlphas C ω n`, then `Z_H`
-divides each individual constraint polynomial. Argue pointwise on the domain: at each node
+/-- **α-separation, single-challenge form.** If `zH` divides the α-aggregate for ONE
+challenge `α` outside `badAlphas C ω n`, then `zH` divides each individual constraint
+polynomial. Argue pointwise on the domain: at each node
 `ω^i` the aggregate's value is the α-combination of the row vector `k ↦ (C k)(ω^i)`, and a
 good `α` annihilating the combination annihilates every entry. -/
 theorem dvd_separation {K n : ℕ} [NeZero n] {ω : F}
@@ -212,8 +211,8 @@ private theorem zH_dvd_of_eval {n : ℕ} (C t : Polynomial F) (ζ : F)
   rw [this]; exact dvd_mul_left _ _
 
 /-- **`dvd_of_evalCheck`, single-challenge form.** One α, one ζ, *one* quotient `t`. A good ζ
-outside `badZetas (aggregate α C) t n` at which the aggregate agrees with `t · Z_H` pins
-`aggregate α C = t · Z_H` via `zH_dvd_of_eval`, and `dvd_separation` separates across
+outside `badZetas (aggregate α C) t n` at which the aggregate agrees with `t · zH` pins
+`aggregate α C = t · zH` via `zH_dvd_of_eval`, and `dvd_separation` separates across
 the constraint indices. -/
 theorem dvd_of_evalCheck {K n : ℕ} [NeZero n] {ω : F} (hω : IsPrimitiveRoot ω n)
     (C : Fin K → Polynomial F)

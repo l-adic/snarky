@@ -8,7 +8,7 @@ import CompPoly.Multivariate.Operations
 The reflection route runs the gate constraints at `R := CMvPolynomial n (ZMod p)` and
 decides the resulting polynomial identity by computation. CompPoly's `Algebra` instance is
 `noncomputable`, which a compiled decision cannot use, though only its proof fields go
-through the noncomputable `polyEquiv`; its data is `C`, which computes. This module
+through the noncomputable `CPoly.polyEquiv`; its data is `C`, which computes. This module
 re-derives the same instance, reusing CompPoly's proofs, without the marker.
 
 ## Main definitions
@@ -39,7 +39,8 @@ instance (priority := high) instAlgebraComp : Algebra R (CMvPolynomial n R) :=
 /-! ## Evaluation as an algebra homomorphism
 
 `Kimchi.Lift.Argument.constraints_map` is stated along an `F`-algebra homomorphism; this
-packages CompPoly's `eval₂Hom` with `aeval_C` as its `commutes'` field. -/
+packages CompPoly's `eval₂Hom` with `CPoly.CMvPolynomial.aeval_C` as its `commutes'`
+field. -/
 
 /-- Evaluation at a point, as an `R`-algebra homomorphism out of the polynomial algebra. -/
 noncomputable def aevalAlgHom {n : ℕ} {σ : Type*} [CommRing σ] [Algebra R σ]

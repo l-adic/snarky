@@ -56,7 +56,6 @@ def roots : List Name :=
     -- per-field entry points, every field hypothesis discharged
     `Kimchi.Gate.EndoScalar.Chain128,
     `Kimchi.Gate.EndoScalar.Chain128.range,
-    `Kimchi.Gate.EndoScalar.Chain128.exists_of_lt,
     `Kimchi.Gate.EndoScalar.fp_rangeCheck128_sound,
     `Kimchi.Gate.EndoScalar.fp_rangeCheck128_complete,
     `Kimchi.Gate.EndoScalar.fq_rangeCheck128_sound,
@@ -102,7 +101,6 @@ def roots : List Name :=
     `Kimchi.Index.copy_soundness_of_dvd,
     `Kimchi.Verifier.kimchiVerify,
     `Kimchi.Verifier.frOracles_eq_frPrechallenges,
-    `Kimchi.Verifier.fqOracles_eq_fqPrechallenges,
     `Kimchi.Verifier.Wire.KimchiProof.check,
     `Kimchi.Verifier.Wire.KimchiVK.check,
     `Kimchi.Verifier.publicCommitment_eq_sum ]
@@ -120,7 +118,7 @@ def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
-    by name prefix (external-audit A-8: the name is forgeable from inside a
+    by name prefix (the name is forgeable from inside a
     `namespace CompElliptic` block in this tree — and this tree does author declarations
     in that namespace — while the defining module is not: tree files keep their own
     module names regardless of the namespaces they open). Trusted: any `native_decide`

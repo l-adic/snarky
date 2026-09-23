@@ -1,5 +1,5 @@
 //! A complete kimchi wire proof + verifier key as a JSON fixture for the Lean
-//! executable verifier (`formal/Kimchi/Verifier/Kimchi.lean`, checked by
+//! executable verifier (`formal/kimchi/Kimchi/Verifier/Kimchi.lean`, checked by
 //! `formal/scripts/check_kimchi_verifier.lean`).
 //!
 //! The proof is over the shared mixed-gate circuit (`fixture_dump::mixed_circuit`),

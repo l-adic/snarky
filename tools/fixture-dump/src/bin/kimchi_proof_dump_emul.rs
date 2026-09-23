@@ -1,11 +1,11 @@
 //! A kimchi wire proof + verifier key over a circuit with LIVE `EndoMul` and
 //! `VarBaseMul` rows, and an EMPTY public input — the two coverage gaps of the mixed
-//! circuit (external-audit findings C-3 and V-1's mask; `docs/external-audit-report.md`).
+//! circuit.
 //!
 //! Every other committed proof fixture has `emul_selector ≡ 0` and `mul_selector ≡ 0`,
 //! so the α-weighted EndoMul and VarBaseMul summands of the linearization's constant
 //! term contribute nothing there: a verifier with those constraint lists mis-ordered
-//! (the audit's V-1) still accepted every fixture. This proof's circuit is two EndoMul
+//! still accepted every fixture. This proof's circuit is two EndoMul
 //! rows (an 8-bit endo scalar), their shared accumulator row, and two
 //! `VarBaseMul`/`Zero` pairs (a 10-bit scalar) — both selectors are live at ζ, so the
 //! Lean verifier's acceptance pins the exact constraint order and the scalar-register

@@ -1,51 +1,6 @@
--- API root set for the pasta package (the Pasta curve trust base).
--- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh), which unions
--- every package's roots.txt.
-
--- The GLV constants and derived primitive-cube-root facts.
-Pasta.pallasEndo
-Pasta.vestaEndo
-Pasta.pallasLam
-Pasta.vestaLam
-
--- The package declares no axioms; the curve trust is native_decide certificates alone.
+-- API root set for the pasta package: the curve trust base (certified orders, the GLV
+-- constants, the point-group instances, the wire scalar-shift algebra).
 --
--- The CM eigenvalue relations, group orders, primality, GLV short-basis bounds, the
--- field-bit width.
-Pasta.pallas_eigen
-Pasta.vesta_eigen
-Pasta.pallas_card
-Pasta.vesta_card
-Pasta.pallas_order_prime
-Pasta.vesta_order_prime
-Pasta.pallas_glv_no_short_relation
-Pasta.vesta_glv_no_short_relation
-Pasta.pastaFieldBits
-Pasta.two_pow_le_pallas_base
-
--- The generic EC order/shape vocabulary (the statement language of the kimchi EC gates).
-WeierstrassCurve.Affine.order
-CompElliptic.CurveForms.ShortWeierstrass.SWCurve.toAffine
-
--- The point-group module structure and its computational reading.
-Pasta.vestaPointModule
-Pasta.pallasPointModule
-Pasta.vesta_smul_val
-Pasta.pallas_smul_val
-Pasta.zsmul_eq_val_nsmul
-
--- The curve's endomorphism as the wire states it: the coefficient `β`, the eigenvalue `λ`,
--- and the two facts the GLV ladder rests on, with the two deployed witnesses. The circuit
--- twin is `Snarky.Kimchi.HasEndo`, which is built from one of these.
-Pasta.EndoSpec
-Pasta.vestaEndoSpec
-Pasta.pallasEndoSpec
-
--- The wire scalar-shift algebra and its round-trips.
-Pasta.Shifted.shiftType1
-Pasta.Shifted.unshiftType1
-Pasta.Shifted.shiftType2
-Pasta.Shifted.unshiftType2
-Pasta.Shifted.unshiftType1_shiftType1
-Pasta.Shifted.shiftType1_unshiftType1
-Pasta.Shifted.shiftType2_unshiftType2
+-- The package has no roots of its own: everything it proves is reached from the packages
+-- above it — the kimchi gates and arithmetization, the snarky gadgets, the pickles
+-- capstones — or from a CI check script through them.

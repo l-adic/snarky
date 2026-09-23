@@ -25,30 +25,26 @@ The interpreter for `PolishToken` programs, ported from
 
 ## Implementation notes
 
-The PureScript has two interpreters, `evaluate` and `evaluateM`, because it cannot cheaply
-abstract over the monad. Here there is one, so "the circuit interpreter agrees with the
-pure one" is a statement about environments rather than about two control flows. The two
-optimisations that distinguish `evaluateM` are relocated: the Alpha+Pow peephole (an
-`alpha` followed by `pow n` reads the precomputed `α^n` instead of exponentiating) is part
-of the machine, and the `ζⁿ - 1` memo is the circuit environment's own business, which is
-why `unnormalizedLagrangeBasis` is monadic.
+One interpreter serves both readings, so "the circuit interpreter agrees with the pure
+one" is a statement about environments, not about two control flows. The Alpha+Pow
+peephole (an `alpha` followed by `pow n` reads the precomputed `α^n`) is part of the
+machine; `unnormalizedLagrangeBasis` belongs to the environment, and is monadic because
+the circuit's emits constraints.
 
-The deployed interpreter is total by defaulting: a stack underflow, an out-of-range `load`
-or a position past the end of the program advances silently, and the answer is the top of
-the stack or zero. That is modelled as is, since the object of study is the program that
-ships.
+The machine is total by defaulting, as the deployed one is: a stack underflow, an
+out-of-range `load` or a position past the end advances silently, and the answer is the top
+of the stack or zero.
 
-`SkipIfNot` re-enters the loop at nested bounds and jumps advance by a count carried in
-the token, so the recursion is not structural. The loop takes a fuel budget instead of a
-well-founded measure, which would obstruct kernel reduction; `evaluate` supplies
-`toks.size`, which suffices because the position strictly increases along every path.
+`skipIfNot` re-enters the loop at nested bounds, so the recursion is not structural. The
+loop takes fuel instead of a well-founded measure, which would obstruct kernel reduction;
+`evaluate` supplies the program length, which suffices because the position strictly
+increases along every path.
 -/
 
 namespace Pickles.Linearization
 
-/-- The machine's operations at a carrier `F` and a monad `m`, unifying the PureScript
-`Env a` and `EnvM f n`. Affine operations are pure, since they are free in circuit;
-constraint-emitting ones are monadic. -/
+/-- The machine's operations at a carrier `F` and a monad `m`. Affine operations are pure,
+since they are free in circuit; constraint-emitting ones are monadic. -/
 structure Env (m : Type → Type) (F : Type) where
   /-- Addition. -/
   add : F → F → F
@@ -89,7 +85,7 @@ and a program counter. -/
 structure EvalState (F : Type) where
   /-- The operand stack; the top is the last element. -/
   stack : Array F
-  /-- The store, appended to by `Store` and indexed by `Load`. -/
+  /-- The store, appended to by `PolishToken.store` and indexed by `PolishToken.load`. -/
   store : Array F
   /-- The index of the next token to execute. -/
   position : Nat
@@ -169,14 +165,14 @@ def evalChallenge (env : Env m F) : ChallengeTerm → F
 def topOrZero (env : Env m F) (s : EvalState F) : F :=
   s.stack.back?.getD (env.literal 0)
 
-/-- The length of a disabled branch: the count carried by the `SkipIf` marker at
+/-- The length of a disabled branch: the count carried by the `skipIf` marker at
 `trueEnd`, or zero when there is none. -/
 private def falseCount (toks : Array PolishToken) (trueEnd : Nat) : Nat :=
   match toks[trueEnd]? with
   | some (.skipIf _ c) => c
   | _ => 0
 
-/-- Execute `toks` from `s.position` until `endPos`, within a fuel budget.
+/-- Execute `toks` from the state's position up to an end position, within a fuel budget.
 
 In the `skipIfNot` case the marker is followed by `n` tokens of enabled branch, a `skipIf`
 marker, then the disabled branch. Both branches run from the same starting state and
@@ -193,11 +189,9 @@ def evalLoop [Monad m] (env : Env m F) (toks : Array PolishToken) :
         | .constant c =>
             evalLoop env toks fuel endPos (push (evalConstant env c) (advance s))
         | .challenge .alpha =>
-            -- The Alpha+Pow peephole. Rust's `to_polish` only ever emits `Alpha` as part
-            -- of `Expr::Pow(alpha, n)`, so the pair fuses to one table lookup; the
-            -- fallback is defensive and fires on no deployed stream. It is what keeps the
-            -- α-sites free in circuit — 95 of the 474 rows at the deployed length — and it
-            -- is value-preserving wherever `alphaPow n` reads as `α^n`.
+            -- The Alpha+Pow peephole: `alpha` then `pow n` is one α-table lookup, which
+            -- keeps the α-sites free in circuit. Every deployed `alpha` is followed by a
+            -- `pow`, so the fallback never fires there.
             match toks[s.position + 1]? with
             | some (.pow n) =>
                 evalLoop env toks fuel endPos
@@ -261,8 +255,8 @@ def evalLoop [Monad m] (env : Env m F) (toks : Array PolishToken) :
                 pure (topOrZero env s₁))
             evalLoop env toks fuel endPos (push res { s with position := falseEnd })
 
-/-- Run a whole program: the value it leaves on top of the stack, or zero. The fuel budget
-is the program length, which suffices because the position strictly increases. -/
+/-- Run a whole program: the value it leaves on top of the stack, or zero. Fuel is the
+program length (see the module docstring). -/
 def evaluate [Monad m] (env : Env m F) (toks : Array PolishToken) : m F := do
   let s ← evalLoop env toks toks.size toks.size EvalState.init
   pure (topOrZero env s)
@@ -276,8 +270,8 @@ are a property of the program and the predicate: `visited` walks the array with
 visited positions, and only through the operation the token there invokes; `evaluate_congr`
 makes that precise. -/
 
-/-- The positions a run under the feature predicate `feat` visits, from `pos` up to
-`endPos` within `fuel` steps. Mirrors `evalLoop`. -/
+/-- The positions a run under the feature predicate `feat` visits, from a start position up
+to an end position within a fuel budget. Mirrors `evalLoop`. -/
 private def visited (toks : Array PolishToken) (feat : FeatureFlag → Bool) :
     Nat → Nat → Nat → List Nat
   | 0, _, _ => []

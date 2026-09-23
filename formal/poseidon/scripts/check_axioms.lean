@@ -1,9 +1,8 @@
 /-
 Axiom-closure gate for the poseidon package — the Poseidon permutation, the duplex sponge,
-the curve-generic Fq-sponge consumer layer, and the SvdW map-to-curve. This is the object
-the whole random-oracle idealisation concerns (the game's uniform table is identified with
-THESE reads by `FSFaithful`), so its surface gets its own gate rather than being audited
-only where a kimchi or bulletproof root happens to reach it (external-audit finding A-5).
+the curve-generic Fq-sponge consumer layer, and the SvdW map-to-curve. Every verifier
+challenge is read through this surface, so it gets its own gate rather than being audited
+only where a kimchi or bulletproof root happens to reach it.
 
 Everything here is executable specification; the gate pins existence and that no axiom —
 in particular no `sorryAx` and no tree-local `native_decide` — enters the closures. The

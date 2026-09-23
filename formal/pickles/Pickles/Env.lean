@@ -22,7 +22,8 @@ theorems share.
 
 ## Main results
 
-* `Env.domain_le`: the key's domain is within its chunks;
+* `Env.chunk_lt`, `Env.chunk_add_le`: every chunk starts within the domain and holds
+  `min (2^k) n` of its points;
 * `Env.lagrange_ne`: where the SRS avoids the Lagrange relations, every chunk of the key's
   Lagrange points is a finite point;
 * `Env.avoids_lagrangeRelations_iff`, `Env.decidableAvoids`: whether it does is decided on
@@ -30,9 +31,9 @@ theorems share.
 
 ## Implementation notes
 
-The chunk count is a parameter, pinned to the run's (`nc_eq`, production's `runNc`): one
-chunk for a domain within the SRS, `n / 2^k` above it. One chunk is production's invariant for
-a wrap proof (PS `WrapVkChunks = 1`); a step proof may be chunked. `zk_rows` is kept generic
+The chunk count is a parameter, pinned to the run's (`nc_eq`, `Wire.runNc`): one chunk for a
+domain within the SRS, `n / 2^k` above it. One chunk is production's invariant for a wrap
+proof; a step proof may be chunked. The zero-knowledge row count is kept generic
 (`zkRows_ge`), never fixed at its one-chunk value.
 -/
 
@@ -66,10 +67,10 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   σ : SRS C.Point
   /-- The verifier key, at `nc` chunks. -/
   cvk : KimchiVK C nc
-  /-- The key's endomorphism coefficient is the curve's: production derives it from the curve
-  (`endos::<G::OtherCurve>()`), never from the key's own data. -/
+  /-- The key's endomorphism coefficient is the curve's: production derives it from the curve,
+  never from the key's own data. -/
   endo_eq : cvk.endo = C.endoScalar
-  /-- At least three zero-knowledge rows (`zk_rows = 3` at one chunk; kept generic). -/
+  /-- At least three zero-knowledge rows (exactly three at one chunk; kept generic). -/
   zkRows_ge : 3 ≤ cvk.zkRows
   /-- The key's domain holds its zero-knowledge rows. -/
   zkRows_le : cvk.zkRows ≤ cvk.n
@@ -87,12 +88,12 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   lagrange_pos : 0 < cvk.lagrangeBasis.size
   /-- The Lagrange basis is within the domain: a public input is a segment of a column. -/
   lagrange_le : cvk.lagrangeBasis.size ≤ cvk.n
-  /-- The chunk count is the run's (production's `runNc`, `Wire.runNc`): one chunk for a
-  domain below the SRS, the domain's multiple of the SRS otherwise. -/
+  /-- The chunk count is the run's (`Wire.runNc`): one chunk for a domain below the SRS, the
+  domain's multiple of the SRS otherwise. -/
   nc_eq : nc = if cvk.domainLog2 < σ.k then 1 else 2 ^ (cvk.domainLog2 - σ.k)
   /-- The key's Lagrange points are the SRS's: the chunked commitments to its domain's
-  Lagrange polynomials (`Ipa.lagrangeBasis`, production's `SRS::get_lagrange_basis`). A key
-  carries them, but they are no data of the circuit. -/
+  Lagrange polynomials (`Ipa.lagrangeBasis`). A key carries them, but they are no data of the
+  circuit. -/
   lagrange_eq : cvk.lagrangeBasis = Ipa.lagrangeBasis C σ nc cvk.n cvk.omega cvk.lagrangeBasis.size
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks

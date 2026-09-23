@@ -15,14 +15,14 @@ cd "$(dirname "$0")/.."
 # `FSFaithful` hypothesis in Verifier/Forking/Bridge.lean, not as an open proof.
 expected=''
 
-# Scope includes the fixture-decoding libraries and every scripts/ driver (external-audit
-# A-1: the artifact checks run through exactly that code, so a sorry there voids them).
+# Scope includes the fixture-decoding libraries and every scripts/ driver (the artifact
+# checks run through exactly that code, so a sorry there voids them).
 # Prose mentions are filtered: a real `sorry` is never backticked and never sits after
 # a line-comment marker.
 actual=$(grep -rn '\bsorry\b' \
   bulletproof-pcs/Bulletproof bulletproof-pcs/BulletproofFixture.lean \
   bulletproof-pcs/scripts kimchi/Kimchi kimchi/KimchiFixture kimchi/KimchiFixture.lean \
-  kimchi/Main.lean kimchi/scripts pasta pickles poseidon snarky scripts \
+  kimchi/scripts pasta pickles poseidon snarky scripts \
   --include='*.lean' \
   | grep -Fv -- '`sorry`' | grep -vE -- '--.*\bsorry\b' \
   | cut -d: -f1,2 | sort || true)

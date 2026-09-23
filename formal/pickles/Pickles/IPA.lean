@@ -11,7 +11,7 @@ set_option mvcgen.warning false
 Port of the PureScript `Pickles.IPA` scalar gadgets: the challenge polynomial
 `b(c, X) = ∏_{i<k} (1 + cᵢ · X^{2^{k−1−i}})` of `k` challenges `c₀, …, c_{k−1}` evaluated at
 a point, its evaluation for every previous proof, the endomorphism expansion of the
-bulletproof challenges, and the `b_correct` check `b = b(c, ζ) + r · b(c, ζω)`.
+bulletproof challenges, and the check `b = b(c, ζ) + r · b(c, ζω)`.
 
 ## Main definitions
 
@@ -69,9 +69,8 @@ def challengePolyEvals (pt : FVar F) : List (List (FVar F)) → CircuitM F c (Li
     let b ← bPolyCircuit chals pt
     pure (b :: later)
 
-/-- The bulletproof challenges expanded through the endomorphism `endo` (OCaml
-`compute_challenges`): `EndoScalar.toField` on each, the last challenge first and the results
-in vector order. -/
+/-- The bulletproof challenges expanded through the endomorphism `endo`: `EndoScalar.toField`
+on each, the last challenge first and the results in vector order. -/
 def computeChallenges [ToNat F] [Snarky.Kimchi.KimchiSystem F c] (endo : FVar F) :
     List (FVar F) → CircuitM F c (List (FVar F))
   | [] => pure []

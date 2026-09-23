@@ -1,27 +1,28 @@
+import Kimchi.Columns
 import Kimchi.Verifier.Kimchi
 
 /-!
-# The wire boundary: serde-typed records and the check parse
+# The wire boundary: serde-typed records and their parse
 
-The ONLY module that speaks the raw wire types, and it exports exactly one thing: a
-proven parser. The wire records mirror the serde layer of proof-systems — the fixed
-`[T; N]` dimensions are `Vector`s (serde rejects wrong lengths at deserialization),
-chunk payloads are unchecked `Array`s (`PolyComm.elems` is `Vec<G>`) — and
-`KimchiProof.check` / `KimchiVK.check` are the verifier's own family of length checks
-(`check_proof_evals_len` at `chunk_size`, the `t` bound, the `nc > 1`
-public-evaluation requirement) factored as a total parse into the CHECKED records
-(`Kimchi.Verifier.KimchiProof`/`KimchiVK`, which carry the chunk count in their
-types). A checked record cannot hold a ragged proof — the parse IS the proof.
+The records here mirror proof-systems' serde records for the kimchi proof and verifier key.
+Fixed dimensions are `Vector`s, since serde rejects a wrong length at deserialization;
+per-chunk payloads are unchecked `Array`s. `KimchiProof.check` and `KimchiVK.check` parse
+them into the checked records `Kimchi.Verifier.KimchiProof` and `Kimchi.Verifier.KimchiVK`,
+which carry the chunk count in their types, so a checked record cannot hold a ragged proof.
 
-There is deliberately no verifier here: clients (the fixture drivers, any host) parse
-at the run's chunk count (`runNc`) and call the
-protocol verifier `Kimchi.Verifier.kimchiVerify` on the parsed records themselves —
-check-then-verify is the client's one-line composition. On the fields production
-checks — the evaluation lengths and the `t` bound — rejecting ragged input is the
-same observable behavior as production's `Err` returns; on `w_comm`/`z_comm`, which
-production never length-checks, the parse is a declared strengthening (see
-`KimchiProof.check`). The protocol and soundness layers never import this module: no
-statement above the boundary can depend on unchecked data.
+## What the parse checks
+
+The parse transcribes the length checks of `kimchi/src/verifier.rs`: every evaluation vector
+at the run's chunk count, the quotient's chunk bound, and carried public evaluations beyond
+one chunk. On those, rejecting ragged input matches the upstream verifier's error returns.
+It also pins lengths the upstream verifier never checks; the note above `KimchiProof.check`
+lists these strengthenings.
+
+## Clients
+
+There is no verifier here. A client parses at the run's chunk count (`runNc`) and calls
+`Kimchi.Verifier.kimchiVerify` on the checked records. `Kimchi.Verifier.Kimchi` does not
+import this module, so the verifier body reads checked data only.
 -/
 
 open Bulletproof
@@ -29,103 +30,84 @@ open Bulletproof
 namespace Kimchi.Verifier.Wire
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Bulletproof
 open Kimchi.Verifier (PointEvaluations ProofEvaluations PubEvalSrc)
 
 variable (C : Ipa.KimchiCurve)
 
 /-! ## The wire records -/
 
-/-- A wire polynomial commitment: the per-chunk commitment vector (`PolyComm.elems`,
-`Vec<G>`). serde imposes NO length here — the chunk count is a verify-time check
-(`checkChunks` against the run's `chunk_size`). -/
+/-- A wire polynomial commitment: its per-chunk points, of unchecked length. `checkChunks`
+validates the count against the run's chunk count. -/
 private abbrev PolyComm (C : Ipa.KimchiCurve) := Array C.Point
 
-/-- A wire old accumulator (`RecursionChallenge`, proof.rs): the previous opening's
-commitment as a chunk vector and its expanded round challenges, both unchecked. -/
+/-- A wire old accumulator: the previous opening's commitment as a chunk vector and its
+expanded round challenges, both unchecked. -/
 structure RecursionChallenge (C : Ipa.KimchiCurve) where
-  /-- The commitment (`comm`); the parse pins it to one chunk. -/
+  /-- The commitment; the parse pins it to one chunk. -/
   comm : PolyComm C
-  /-- The round challenges (`chals`); the parse pins them to the SRS's round count. -/
+  /-- The round challenges; the parse pins them to the opening's round count. -/
   chals : Array C.ScalarField
 
-/-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
-basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. Lookup
-data are absent — a declared deferral. -/
+/-- The kimchi proof wire record for the basic gate set: fixed dimensions are `Vector`s,
+chunk payloads unchecked arrays. It carries no lookup data. -/
 structure KimchiProof (C : Ipa.KimchiCurve) where
-  /-- The 15 witness-column commitments (`w_comm: [PolyComm; COLUMNS]`). -/
+  /-- The 15 witness-column commitments. -/
   wComm : Vector (PolyComm C) wCols
-  /-- The permutation-aggregation commitment (`z_comm`). -/
+  /-- The permutation-aggregation commitment. -/
   zComm : PolyComm C
-  /-- The quotient commitment (`t_comm`); its chunk count is checked `≤ 7 · nc`
-  (verifier.rs:260–264). -/
+  /-- The quotient commitment; the parse bounds it to seven chunks per run chunk. -/
   tComm : PolyComm C
   /-- The claimed evaluations, per column family and per chunk. -/
   evals : ProofEvaluations (Array C.ScalarField)
-  /-- The carried public evaluations (production's `evals.public`, proof.rs:52 —
-  `public` is a Lean keyword; carried at proof level rather than inside `evals`, a
-  flattening choice only): REQUIRED when `nc > 1`; when present they take precedence
-  over the barycentric computation at any `nc` (verifier.rs:332). -/
+  /-- The carried public evaluations, held beside `evals` rather than inside it because the
+  natural field name is a Lean keyword. The parse requires them beyond one chunk; when
+  present they replace the barycentric computation at any chunk count. -/
   pubEvals : Option (PointEvaluations (Array C.ScalarField))
-  /-- `ft(ζω)` (Maller's optimization; proof.rs:170) — the ft row is single-chunk. -/
+  /-- `ft(ζω)` (Maller's optimization) — the ft row is single-chunk. -/
   ftEval1 : C.ScalarField
-  /-- The batched IPA opening proof — the serde wire form; its round count is checked
-  against the SRS's `σ.k` by the parse. -/
+  /-- The batched IPA opening proof in its wire form; the parse checks its round count. -/
   opening : Ipa.Wire.Proof C
-  /-- The old accumulators (`prev_challenges`), unchecked. -/
+  /-- The old accumulators, unchecked. -/
   prevChallenges : Array (RecursionChallenge C)
 
-/-- The kimchi verifier index wire record (`VerifierIndex`, verifier_index.rs): fixed
-dimensions serde-typed (`sigma_comm: [PolyComm; PERMUTS]`,
-`coefficients_comm: [PolyComm; COLUMNS]`, `shift: [F; PERMUTS]`), chunk payloads
-unchecked arrays. The SRS stays separate and universal; `nc` is derived in
-the client from the domain and the SRS width (`chunk_size = d1 / max_poly_size`,
-verifier.rs:145–152). -/
+/-- The kimchi verifier-key wire record: fixed dimensions are `Vector`s, chunk payloads
+unchecked arrays. The SRS stays separate; a client derives the chunk count from the domain
+and the SRS (`runNc`). -/
 structure KimchiVK (C : Ipa.KimchiCurve) where
   /-- The domain size exponent: `n = 2 ^ domainLog2`. -/
   domainLog2 : ℕ
-  /-- The domain generator `ω` (`domain.group_gen`). -/
+  /-- The domain generator `ω`. -/
   omega : C.ScalarField
-  /-- The 7 permutation commitments (`sigma_comm`). -/
+  /-- The 7 permutation commitments. -/
   sigmaComm : Vector (PolyComm C) permCols
-  /-- The 15 coefficient commitments (`coefficients_comm`). -/
+  /-- The 15 coefficient commitments. -/
   coefficientsComm : Vector (PolyComm C) coeffCols
-  -- The six selector commitments of the transcribed basic gate set — production's
-  -- `{generic, psm, complete_add, mul, emul, endomul_scalar}_comm`
-  -- (`VerifierIndex`, verifier_index.rs). The field names here follow production's,
-  -- EXCEPT the poseidon selector: production calls it `psm_comm`, and the fixture
-  -- decoder handles that naming mismatch (`parseVK` reads the `psm_comm` key into
-  -- `poseidonComm`).
-  /-- The generic selector's commitment (`generic_comm`). -/
+  /-- The generic selector's commitment. -/
   genericComm : PolyComm C
-  /-- The poseidon selector's commitment — production's `psm_comm` (the one selector
-  whose wire name differs; the decoder maps it). -/
+  /-- The poseidon selector's commitment, the one selector whose wire key differs from its
+  field name; the fixture decoder maps it. -/
   poseidonComm : PolyComm C
-  /-- The completeAdd selector's commitment (`complete_add_comm`). -/
+  /-- The completeAdd selector's commitment. -/
   completeAddComm : PolyComm C
-  /-- The varBaseMul selector's commitment (`mul_comm`). -/
+  /-- The varBaseMul selector's commitment. -/
   mulComm : PolyComm C
-  /-- The endoMul selector's commitment (`emul_comm`). -/
+  /-- The endoMul selector's commitment. -/
   emulComm : PolyComm C
-  /-- The endoScalar selector's commitment (`endomul_scalar_comm`). -/
+  /-- The endoScalar selector's commitment. -/
   endomulScalarComm : PolyComm C
-  /-- The 7 permutation shifts (`shift`). -/
+  /-- The 7 permutation shifts. -/
   shifts : Vector C.ScalarField permCols
-  /-- The number of zero-knowledge rows (`zk_rows`) — nc-dependent in production
-  (constraints.rs:774–784), carried as data here. -/
+  /-- The number of zero-knowledge rows, carried as data rather than derived from the chunk
+  count. -/
   zkRows : ℕ
-  /-- The accumulator count the key was built with (`prev_challenges`). -/
+  /-- The accumulator count the key was built with. -/
   prevChallenges : ℕ
-  /-- `verifier_index.endo`, the `ft_eval0` endo coefficient — *not* serialized data
-  (production marks it `#[serde(skip)]` and recomputes it as `G::other_curve_endo()`,
-  i.e. `endos::<OtherG>().0`, the OTHER curve's base-field endo — verifier_index.rs:140;
-  the endpoints pin it to `idx.endoBase` via `Corresponds`); a model input like `digest`. -/
+  /-- The endomorphism coefficient `ftEval0` reads: not serialized, a model input like
+  `digest`. -/
   endo : C.ScalarField
-  /-- The precomputed `VerifierIndex::digest()` — an input here. -/
+  /-- The precomputed key digest, an input rather than computed from the key. -/
   digest : C.BaseField
-  /-- The Lagrange-basis commitments — SRS-derived data (`get_lagrange_basis`
-  computes them from the SRS, chunking every basis polynomial over a sub-domain
-  SRS); a model input like `digest`. -/
+  /-- The Lagrange-basis commitments: SRS-derived data, a model input like `digest`. -/
   lagrangeBasis : Array (PolyComm C)
 
 /-- A chunk vector validated to the run's chunk count. -/
@@ -137,7 +119,7 @@ private def checkPointEvals {F : Type*} (nc : ℕ) (e : PointEvaluations (Array 
     Option (PointEvaluations (Vector F nc)) := do
   return { zeta := ← checkChunks nc e.zeta, zetaOmega := ← checkChunks nc e.zetaOmega }
 
-/-- Validate every evaluation pair of the record (`check_proof_evals_len`'s sweep). -/
+/-- Validate every evaluation pair of the record. -/
 private def checkEvals {F : Type*} (nc : ℕ) (e : ProofEvaluations (Array F)) :
     Option (ProofEvaluations (Vector F nc)) := do
   return { w := ← e.w.mapM (checkPointEvals nc)
@@ -151,38 +133,38 @@ private def checkEvals {F : Type*} (nc : ℕ) (e : ProofEvaluations (Array F)) :
            emulSelector := ← checkPointEvals nc e.emulSelector
            endomulScalarSelector := ← checkPointEvals nc e.endomulScalarSelector }
 
-/-- **The proof check**, at the run's chunk count `nc` and the SRS's round count `k`
-(the opening's `lr` length). Production's two length checks are transcribed: the
-evaluation sweep (`check_proof_evals_len` at `expected_size` — exactly this `nc` —
-verifier.rs:640–642, called at `chunk_size`, :831) and the quotient bound
-`t_comm.len() ≤ 7 · chunk_size` (`IncorrectCommitmentLength`, verifier.rs:260–266).
-Pinning `w_comm`/`z_comm` to `nc` chunks is a declared modeling STRENGTHENING:
-production never checks those chunk counts (ragged commitment vectors flow into the
-batch equations rather than `Err`-ing), but the checked record is uniform by type, so
-the parse fixes them. Fidelity direction: a production-accepted run with a ragged
-`w_comm` would have no Lean counterpart — such a run would fail the batched opening
-anyway, but that is an argument, not a check. One further declared strengthening of
-the same kind: `KimchiVK.check` pins every VK-side committed column to `nc` chunks,
-which production likewise never checks (honest keys are uniform; external-audit W-F4).
+/-! ## The parse's strengthenings
 
-The quotient commitment is NOT pinned non-empty. An earlier revision guarded
-`0 < t_comm.size` to match a `htpos` hypothesis the endpoints then carried; that
-hypothesis has since been retired (external-audit O-2), so the empty quotient — which
-production accepts, `verifier.rs:260` bounding `t_comm.len()` from above only — now
-parses and is governed by the knowledge-soundness endpoints like any other run. -/
+The upstream verifier checks two lengths: every evaluation vector against the chunk count,
+and the quotient commitment's chunk count from above. The parse also pins the witness and
+permutation-aggregation commitments to the run's chunk count, which upstream never checks:
+ragged vectors there flow into the batch equations instead of being rejected. The checked
+record is uniform by type, so an upstream-accepted run with ragged commitments has no Lean
+counterpart. Such a run should fail the batched opening, but that is an argument, not a
+check. `KimchiVK.check` pins every committed column of the key the same way, which upstream
+likewise never checks; honest keys are uniform.
+
+The quotient commitment is not pinned non-empty: upstream bounds its chunk count from above
+only, so the empty quotient parses.
+-/
+
+/-- **The proof check**, at the run's chunk count `nc` and the SRS's round count `k`. Every
+evaluation vector must have `nc` chunks and the quotient at most `quotChunks * nc`; the witness and
+permutation-aggregation commitments must have `nc` chunks, each old accumulator one chunk
+and `k` challenges, and the opening `k` rounds. Public evaluations are required unless
+`nc = 1`. The pins upstream does not check are the strengthenings in the note above. -/
 def KimchiProof.check {C : Ipa.KimchiCurve} (nc k : ℕ) (p : KimchiProof C) :
     Option (Kimchi.Verifier.KimchiProof C nc k) := do
   let wComm ← p.wComm.mapM (checkChunks nc)
   let zComm ← checkChunks nc p.zComm
   let opening ← p.opening.check k
-  if htc : p.tComm.size ≤ 7 * nc then
+  if htc : p.tComm.size ≤ quotChunks * nc then
     let evals ← checkEvals nc p.evals
     let pubEvals ← match p.pubEvals with
       | some pe => (checkPointEvals nc pe).map .carried
       | none => if h : nc = 1 then some (.barycentric h) else none
-    -- an accumulator is one chunk at `k` round challenges (`RecursionChallenge::evals`
-    -- at `max_poly_size = 2^k`, the deployed case; the two-chunk split of a larger
-    -- challenge polynomial is not transcribed)
+    -- an accumulator is one chunk at `k` round challenges, the deployed case; splitting a
+    -- challenge polynomial longer than the SRS into several chunks is not transcribed
     let olds ← p.prevChallenges.mapM fun rc => do
       let comm ← checkChunks 1 rc.comm
       let u ← checkChunks k rc.chals
@@ -191,10 +173,9 @@ def KimchiProof.check {C : Ipa.KimchiCurve} (nc k : ℕ) (p : KimchiProof C) :
              ftEval1 := p.ftEval1, opening := opening, olds }
   else none
 
-/-- **The key check**: every committed column validated to `nc` chunks. The Lagrange
-basis is validated in FULL (production computes it from the SRS, where the chunking is
-structural — `get_lagrange_basis` chunks every basis polynomial identically; a wire
-key with ragged Lagrange data corresponds to no SRS and is rejected). -/
+/-- **The key check**: every committed column validated to `nc` chunks, the Lagrange basis
+included in full. The basis is SRS-derived and chunked uniformly, so ragged basis data
+is rejected. -/
 def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
     Option (Kimchi.Verifier.KimchiVK C nc) := do
   return { domainLog2 := vk.domainLog2, omega := vk.omega
@@ -210,25 +191,9 @@ def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
            endo := vk.endo, digest := vk.digest
            lagrangeBasis := ← vk.lagrangeBasis.mapM (checkChunks nc) }
 
-/-- The run's chunk count, from the domain and SRS widths — production's formula
-(verifier.rs:145–152): one chunk when the domain is below the SRS (the sub-SRS regime
-every small circuit lives in), else `d1 / max_poly_size`. The count clients `check`
-against. -/
+/-- The run's chunk count, the upstream verifier's formula: one chunk when the domain is no
+larger than the SRS, else the domain size over the SRS size. Clients parse at this count. -/
 def runNc (σ : SRS C.Point) (vk : KimchiVK C) : ℕ :=
   if vk.domainLog2 < σ.k then 1 else 2 ^ (vk.domainLog2 - σ.k)
 
 end Kimchi.Verifier.Wire
-
-/-! ## The Pasta instantiations -/
-
-namespace Kimchi.Verifier.Wire.KimchiVesta
-
-open Kimchi.Verifier Bulletproof
-
-end Kimchi.Verifier.Wire.KimchiVesta
-
-namespace Kimchi.Verifier.Wire.KimchiPallas
-
-open Kimchi.Verifier Bulletproof
-
-end Kimchi.Verifier.Wire.KimchiPallas

@@ -32,9 +32,7 @@ def roots : List Name :=
     `Bulletproof.Ipa.verify,
     `Bulletproof.Ipa.verifyFrom,
     `Bulletproof.Ipa.verifyWith,
-    `Bulletproof.Ipa.transcript,
     `Bulletproof.Ipa.transcriptFrom,
-    `Bulletproof.Ipa.transcriptFrom_eq_ipaPrechallenges,
     `Bulletproof.Ipa.verifyWith_eq,
     `Bulletproof.Ipa.roundChallenges,
     -- the serde wire boundary and its parse
@@ -45,28 +43,13 @@ def roots : List Name :=
     `Bulletproof.Ipa.combineCommitments,
     `Bulletproof.Ipa.msm,
     -- the algebraic scheme the wire verifier is stated over
-    `Bulletproof.commit,
     `Bulletproof.commitGen,
-    `Bulletproof.openingRelation,
-    `Bulletproof.openingRelationB,
-    `Bulletproof.VerifierAcceptsAt,
-    `Bulletproof.BatchAccepts,
-    `Bulletproof.combinedCommitment,
     `Bulletproof.combinedInnerProduct,
-    `Bulletproof.combinedEvalVector,
     `Bulletproof.bPoly,
     `Bulletproof.bPolyCoefficients,
     -- the chunk layer, and the two flattening identities that give it content
-    `Bulletproof.chunkedCombinedCommitment,
-    `Bulletproof.chunkedCombinedInnerProduct,
-    `Bulletproof.chunkedCombinedCommitment_eq_flat,
-    `Bulletproof.chunkedCombinedInnerProduct_eq_flat,
-    `Bulletproof.innerProduct_combinedEvalVector,
     -- the polynomial chunking the commitment layer rests on
-    `Bulletproof.chunkPoly_eval,
-    `Bulletproof.eval_eq_sum_chunkPoly,
-    `Bulletproof.chunkCoeffs_assemblePoly,
-    `Bulletproof.assemblePoly_natDegree_lt ]
+     ]
 
 /-- The standard logical axioms, and nothing else — `native_decide` certificates are
     admitted separately, by defining module, in `isTrustedNativeDecide` below.
@@ -81,7 +64,7 @@ def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than by
-    name prefix (external-audit A-8; see kimchi's gate for the full note). -/
+    name prefix, which is forgeable (see kimchi's gate for the full note). -/
 def isTrustedNativeDecide (env : Environment) (ax : Name) : Bool :=
   (ax.toString.splitOn "native_decide").length > 1 &&
     match env.getModuleFor? ax with

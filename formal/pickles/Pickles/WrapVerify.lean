@@ -6,42 +6,31 @@ import Pickles.Encoding
 import Pickles.LadderBand
 
 /-!
-# `Wrap.Main`'s verify block
+# The wrap circuit's verify block
 
-The port of PS `Pickles.Wrap.Verify.wrapVerify`, the wrap circuit's group half over the step
-proof it verifies. It is `incrementally_verify_proof` on the conditional sponge plus the four
-assertions the block makes:
+Transcribed from `Pickles/Wrap/Verify.purs`. `wrapVerify` is the wrap circuit's group half over
+the step proof it verifies: `incrementallyVerifyProof` on the conditional sponge, then four
+assertions:
 
-* the opening's success bit holds outright — the wrap side has no `should_finalize` to defer
-  it to, unlike `Step_verifier.verify`, which returns the bit;
-* the accumulator advice hashes to the `messages_for_next_wrap_proof` digest the statement
-  claims (`hashMessagesForNextWrapProof`), which is what binds this proof's `sg` and round
-  challenges to the statement the next proof verifies;
-* the fq digest equals the claimed `sponge_digest_before_evaluations`;
-* each returned round prechallenge equals its claim, pair by pair over the zip.
+* the opening's success bit holds outright, where `verifyProof` on the step side returns it;
+* the accumulator advice hashes to the statement's claimed digest
+  (`hashMessagesForNextWrapProof`), binding this proof's `sg` and round challenges to the
+  statement the next proof verifies;
+* the fq digest equals the claimed `spongeDigestBeforeEvaluations`;
+* each returned round prechallenge equals its claim.
 
-The message sponge is the caller's, as in PureScript: the deployed block starts it from the
-checkpoint that has already absorbed the dummy padding, so those absorptions stay out of the
-circuit.
+The message sponge is the caller's: the deployed block starts it from the checkpoint that has
+already absorbed the dummy padding, so those absorptions stay out of the circuit.
 
-`wrapVerify_reads` is the block's reading, the wrap-side counterpart of `verifyProof_reads`:
-the group half at `IvpHyps` through `incrementallyVerifyProof_reads`, the assertion loop by
-its invariant, and the success bit through `assert_spec`, so the read comes out as
-`VerifyReads` at a bit that reads `1` rather than at a returned bit. The digest assertion is
-read trivially (`builder_spec_true`): it ties the claimed digest to advice no statement of the
-group half mentions.
+`wrapVerify_reads` is the block's read, the counterpart of `verifyProof_reads` with the success
+bit forced to `1`. `wrapVerifyAt` fixes the environment: the SRS blinding base as a constant
+cell, and the public-input commitment `publicInputCommitFull` over the packed step statement at
+the key's Lagrange table (`XhatTable.ofKey`). Its read `wrapVerifyAt_reads` proves the table's
+reading from the environment rather than assuming it.
 
-`wrapVerify_wrap_reads` is that read at the deployed Vesta constants. `wrapVerifyAt` is the
-block at an environment — the blinding base the SRS's, as a constant cell, and `x_hat`
-computed the one way the deployed circuit computes it, `publicInputCommitFull` over the packed
-step statement at the key's own Lagrange table (`XhatTable.ofKey`) — and `wrapVerifyAt_reads`
-its read: the public input is then the packed statement's (`wrapPublicInput`), and what the
-table reads as is proved from the environment's invariants rather than assumed.
-
-`StepProof.groupCircuit` is the block as a circuit of its input (`StepProof.GroupIn`): the two
-statements, the step proof, its accumulators' `sg` and the slots' expanded challenges are the
-input's, the key's cells and the two sponges the circuit's constants. It is what the top-level
-statement compiles (`stepProof_kimchiVerify_vesta`).
+`StepProof.groupCircuit` is the block as a circuit of its input (`StepProof.GroupIn`), with the
+key's cells and the two sponges as constants; the top-level statement
+(`stepProof_kimchiVerify_vesta`) compiles it.
 -/
 
 namespace Pickles
@@ -78,13 +67,11 @@ open CompElliptic.CurveForms.ShortWeierstrass
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
-/-- **`Wrap.Main`'s verify block reads as the group half, with its success bit forced.** On the
-group side `S`, with `x_hat` bound to the wire's public commitment and the group half's
-premises at the claims-substituted cells, the block's output satisfies `VerifyReads` at some
-bit, and that bit reads `1` — the block asserts it rather than returning it, so a satisfying
-valuation has it set. The message digest is read trivially: the block's own assertion ties the
-claimed digest to the advice it hashes, which no statement of the group half mentions. This is
-what discharges the wrap capstone's group-half hypothesis. -/
+/-- **The verify block reads as the group half, with its success bit forced.** On side `S`, with
+`computeXHat` reading as the wire's public commitment and `IvpHyps` at the claims-substituted
+cells, the output satisfies `VerifyReads` at a bit that reads `1`, since the block asserts it.
+The message-digest assertion is read trivially: no statement of the group half mentions the
+advice it hashes. -/
 theorem wrapVerify_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
@@ -137,9 +124,8 @@ open Std.Do Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 open CompElliptic.CurveForms.ShortWeierstrass
 
-/-- **`Wrap.Main`'s verify block reads as the group half on the wrap side**: `wrapVerify_reads`
-at `wrapSide` and the deployed Vesta constants — the conditional sponge, `sg_old` under its
-mask, the `Type1` claims. The wrap-side counterpart of `verifyProof_step_reads`. -/
+/-- `wrapVerify_reads` at `wrapSide` and the deployed Vesta constants; the counterpart of
+`verifyProof_step_reads`. -/
 private theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
@@ -167,23 +153,22 @@ private theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
 
 /-! ## The block at an environment -/
 
-/-- The step statement's `x_hat` leaves at the key's own table. -/
+/-- The step statement's public-input leaves at the key's own Lagrange table. -/
 def wrapLeavesAt {ks n nc : ℕ} (E : Env IpaVesta.curve nc)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : List (Leaf Fq nc) :=
   packLeavesOf statement.packed (XhatTable.ofKey statement.packed E.cvk.lagrangeBasis.toList)
 
-/-- The public input the wrap circuit's statement packs to, under a valuation: what the
-verified step proof's public input must be. -/
+/-- The public input the step statement packs to under `V`: what the verified step proof's
+public input must be. -/
 def wrapPublicInput {ks n nc : ℕ} (E : Env IpaVesta.curve nc) (V : Valuation Fq)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : Array Fp :=
   pubOf IpaVesta.curve V (wrapLeavesAt E statement)
 
-/-- The wrap circuit's verify block at its constants as data: the deployed Vesta constants, the
-blinding base `h` as a constant cell, and `x_hat` from the packed step statement at the table
-of the Lagrange points `lagrange`, `nc` chunks each. The CS-equality corpus pins this gadget,
-at its dumps' points. -/
+/-- The verify block at the deployed Vesta constants, the blinding base `h` as a constant cell,
+and the public-input commitment of the packed step statement at the Lagrange points `lagrange`.
+The CS-equality corpus pins this gadget at its dumps' points. -/
 def wrapVerifyWith {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc : ℕ}
     (h : IpaVesta.curve.Point) (lagrange : List (Vector IpaVesta.curve.Point nc))
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
@@ -199,8 +184,7 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc 
       (packLeavesOf statement.packed (XhatTable.ofKey statement.packed lagrange)))
     msgSponge newBpChallenges claimedMsgDigest u cells
 
-/-- The wrap circuit's verify block at an environment: `wrapVerifyWith` at the SRS blinding
-base and the key's Lagrange points. -/
+/-- `wrapVerifyWith` at the environment's SRS blinding base and the key's Lagrange points. -/
 def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc : ℕ}
     (E : Env IpaVesta.curve nc)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
@@ -212,8 +196,8 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc : 
   wrapVerifyWith E.σ.h E.cvk.lagrangeBasis.toList statement spongeAfterIndex msgSponge
     newBpChallenges claimedMsgDigest u cells
 
-/-- A packed step statement opens with a full scalar: a slot's split `cip`, or with no slot
-the `messages_for_next_step_proof` digest. -/
+/-- A packed step statement opens with a full scalar: the first slot's combined inner product,
+or with no slot the `messagesForNextStepProof` digest. -/
 private theorem StepStatement.packed_head {ks n : ℕ}
     (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) :
     ∃ x rest, st.packed = .full x :: rest := by
@@ -226,12 +210,11 @@ private theorem StepStatement.packed_head {ks n : ℕ}
     simp only [List.flatMap_cons, List.append_assoc, List.cons_append]
     exact ⟨_, _, rfl⟩
 
-/-- **The block at an environment reads as the group half at the packed statement.** What
-`wrapVerify_wrap_reads` takes as premises about `x_hat` and the blinding cell is proved
-here from the environment: the table is the key's by construction (`xhatBinding_const`).
-What is left is what no table can give — the statement's full scalars avoid the ladder's
-sixteen-value band, and the group half's cells are the proof's. The statement's boolean cells
-being boolean is not left: the `x_hat` gadget constrains them itself. -/
+/-- **The block at an environment reads as the group half at the packed statement.** The
+public-input and blinding-cell premises of `wrapVerify_wrap_reads` are proved from the
+environment (`xhatBinding_const`). Left as hypotheses: the full leaves are off the ladder's band
+(`Leaf.offBand`), the SRS avoids the Lagrange relations, and `IvpHyps`. The boolean leaves'
+booleanity is not left: the commitment gadget constrains it. -/
 theorem wrapVerifyAt_reads {ks n nc : ℕ} {V : Valuation Fq}
     (E : Env IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc E.σ.k)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
@@ -255,8 +238,8 @@ theorem wrapVerifyAt_reads {ks n nc : ℕ} {V : Valuation Fq}
       = List.zipWith constLeaf statement.packed E.cvk.lagrangeBasis.toList := by
     unfold wrapLeavesAt
     exact packLeavesOf_ofKey (C := IpaVesta.curve) _ _
-  -- the binding at each chunk, under the boolean leaves' booleanity: the `x_hat` read
-  -- supplies that
+  -- the binding at each chunk, under the boolean leaves' booleanity, which the commitment's
+  -- read supplies
   have hbind := fun (ci : Fin nc) (hb : ∀ leaf ∈ wrapLeavesAt E statement, leaf.bitBoolean V) =>
     xhatBinding_const (V := V) pastaShapeVesta ci E.σ E.cvk statement.packed E.h_ne
       (fun Ps h => E.lagrange_ne pastaShapeVesta havoid Ps h ci) (hleaves ▸ hb) (hleaves ▸ hoff)
@@ -306,7 +289,7 @@ structure WrapGroup (ks kw n nc : ℕ) (f b : Type) where
   sgOld : Vector (AffinePoint f) n
 
 /-- A wrap-side group half is its two statements, the proof and the accumulators' `sg`. -/
-@[simps apply] def WrapGroup.equivProd (ks kw n nc : ℕ) (f b : Type) :
+def WrapGroup.equivProd (ks kw n nc : ℕ) (f b : Type) :
     WrapGroup ks kw n nc f b ≃
       WrapStatement ks f b (Type1 f) × StepStatement kw n f b (Type2 (SplitField f b)) ×
         IvpProof ks nc f (Type1 f) × Vector (AffinePoint f) n :=
@@ -322,16 +305,16 @@ namespace StepProof
 
 variable {k kw n nc : ℕ}
 
-/-- The group circuit's input, polymorphic in its cells: the wrap circuit's group half of the
-step proof, and the slots' expanded round challenges the message hash absorbs. -/
+/-- The group circuit's input, polymorphic in its cells: the group half and the slots'
+expanded round challenges the message hash absorbs. -/
 structure GroupInput (k kw n nc : ℕ) (f b : Type) where
-  /-- The wrap statement, the step statement, the step proof, its accumulators' `sg`. -/
+  /-- The group half. -/
   group : WrapGroup k kw n nc f b
   /-- The slots' expanded round challenges. -/
   newBp : Vector (Vector f kw) n
 
 /-- A group input is the group half and the expanded round challenges. -/
-@[simps apply] def GroupInput.equivProd (k kw n nc : ℕ) (f b : Type) :
+def GroupInput.equivProd (k kw n nc : ℕ) (f b : Type) :
     GroupInput k kw n nc f b ≃ WrapGroup k kw n nc f b × Vector (Vector f kw) n :=
   ⟨fun g => (g.group, g.newBp), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
@@ -357,7 +340,7 @@ def GroupVar.stepStatement (g : GroupVar k kw n nc) :
 def GroupVar.newBp (g : GroupVar k kw n nc) : List (List (FVar Fq)) :=
   g.val.newBp.toList.map (·.toList)
 
-/-- The wrap statement's `messages_for_next_wrap_proof` digest. -/
+/-- The wrap statement's `messagesForNextWrapProof` digest. -/
 def GroupVar.msgDigest (g : GroupVar k kw n nc) : FVar Fq :=
   g.val.group.statement.proofState.messagesForNextWrapProof
 
@@ -409,11 +392,9 @@ def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fq))) (g : GroupVar
 abbrev GroupVar.half (V : Valuation Fq) (g : GroupVar k kw n nc) :
     GroupHalf Bulletproof.IpaVesta.curve (Type1 (FVar Fq)) k := GroupHalf.wrap V g.claims
 
-/-- The wrap circuit's verify block as a circuit of its input: the ladder band asserted on the
-cells the block scales — the seven shifted scalars and the `x_hat` full leaves
-(`Pickles.LadderBand`; a harness assertion, not part of the shared gadget) — then
-`wrapVerifyAt` at the input's statement, claims, accumulators and proof, the key's cells and
-the two sponges constants of the circuit. -/
+/-- The verify block as a circuit of its input: the shifted scalars and the public-input full
+leaves asserted off the ladder's band (a harness assertion, not part of the shared gadget), then
+`wrapVerifyAt` on the input, with the key's cells and the two sponges as constants. -/
 def groupCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
     (E : Env Bulletproof.IpaVesta.curve nc) (keyCells : VkComms nc (AffinePoint (FVar Fq)))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n nc) : CircuitM Fq c Unit := do
@@ -423,11 +404,9 @@ def groupCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
     (g.cells keyCells)
 
 open Std.Do in
-/-- **The group circuit's read.** Its assertions put the shifted scalars and the `x_hat` leaves
-off the ladder's band, so the verify block's read needs neither as a hypothesis: with the SRS
-avoiding the Lagrange relations and the group half's cells the proof's — given the claims are
-ones the ladder read speaks about, which the assertion supplies — a valuation satisfying the
-circuit reads as `VerifyReads` with its success bit `1`. -/
+/-- **The group circuit's read.** Its band assertions supply the leaves' off-band premise and
+the claims' `IvpSide.ClaimOk`, which `IvpHyps` may assume. With the SRS avoiding the Lagrange
+relations, a satisfying valuation reads as `VerifyReads` with its success bit `1`. -/
 theorem groupCircuit_reads {V : Valuation Fq} (E : Env Bulletproof.IpaVesta.curve nc)
     (cp : Kimchi.Verifier.KimchiProof Bulletproof.IpaVesta.curve nc E.σ.k)
     (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
@@ -453,8 +432,7 @@ end StepProof
 
 end Records
 
-/-! The gadgets are sealed after their reads: a consumer composes `wrapVerify_reads` and
-`wrapVerifyAt_reads`, never the bodies. -/
+/-! Sealed after their reads: a consumer composes `wrapVerify_reads` and `wrapVerifyAt_reads`. -/
 attribute [irreducible] wrapVerify wrapVerifyAt
 
 end Pickles

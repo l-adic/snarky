@@ -29,7 +29,7 @@ run() {
 run "style (<=100 cols, no trailing ws/tabs, final newline)" bash scripts/check-style.sh
 run "sorry census" bash scripts/check_sorry_census.sh
 # Builds. The shared workspace means one Mathlib for every package.
-run "build" lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr
+run "build" lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Pickles
 
 # Trust boundary, per package.
 run "axioms (bulletproof-pcs)" bash bulletproof-pcs/scripts/check_axioms.sh
@@ -37,10 +37,10 @@ run "axioms (kimchi)" bash kimchi/scripts/check_axioms.sh
 run "axioms (pasta)" bash pasta/scripts/check_axioms.sh
 run "axioms (poseidon)" bash poseidon/scripts/check_axioms.sh
 run "axioms (snarky)" bash snarky/scripts/check_axioms.sh
-run "axioms (schnorr)" bash schnorr/scripts/check_axioms.sh
 
 # Reachability from the packages' roots.txt: dead must be zero.
 run "dead code" bash scripts/deadcode.sh
+run "comments" bash scripts/check-comments.sh
 
 if [[ $FAST -eq 0 ]]; then
   run "IPA fixture" bash bulletproof-pcs/scripts/check_ipa_fixture.sh
@@ -49,7 +49,7 @@ if [[ $FAST -eq 0 ]]; then
   # gets OOM-killed (see the CAVEAT in lakefile.toml) — run one linter process per root, as CI does.
   run "env linters (one process per root)" bash -c '
     for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
-             Schnorr; do
+             Pickles PicklesFixture; do
       lake exe runLinter "$m" || exit 1
     done'
 fi

@@ -4,8 +4,10 @@ import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Point
 /-! # AddComplete semantics
 
     The gate computes affine point addition in Mathlib's elliptic-curve group law: the
-    field-level soundness and completeness, the point-level payoff they add up to, and a
-    runnable example. -/
+    field-level soundness and completeness, and the point-level statement they add up to.
+    The addition is proved inline against Mathlib's affine formulas
+    (`WeierstrassCurve.Affine.addX` and its siblings), not through `secant_add`, which the
+    other EC gates share. -/
 
 namespace Kimchi.Gate.AddComplete
 
@@ -50,7 +52,7 @@ theorem sound_noninf
     (w : Witness F)
     (_hon1 : W.Equation w.x1 w.y1) (_hon2 : W.Equation w.x2 w.y2)
     (h : Holds w) (hinf : w.inf = 0)
-    -- the prime-order side-conditions the Rust comments call out
+    -- side-conditions the prime-order curves meet: no 2-torsion, characteristic ≠ 2
     (hy1 : w.y1 ≠ 0) (h2 : (2 : F) ≠ 0) :
     w.s = W.slope w.x1 w.x2 w.y1 w.y2
     ∧ w.x3 = W.addX w.x1 w.x2 w.s
@@ -190,17 +192,15 @@ end Faithfulness
 /-! ## Main theorems: the gate computes `Point` addition.
 
     The coordinate theorems above are the *inputs* to this section. Combined with
-    `add_some`, they upgrade "the output columns equal the addition formulas" into
-    a statement about Mathlib's **proven** elliptic-curve group `W.Point` — which
-    certifies the output is a genuine curve point and lets all downstream EC
-    reasoning use the group axioms (associativity, inverses, `n • P`) instead of
-    re-deriving field identities.
+    `Point.add_some`, they upgrade "the output columns equal the addition formulas" into
+    a statement about Mathlib's elliptic-curve group — which certifies the output is a
+    genuine curve point and lets downstream EC reasoning use the group axioms
+    (associativity, inverses, `n • P`) instead of re-deriving field identities.
 
-    We take the inputs' nonsingularity as hypotheses (`h1`, `h2`); when these are
-    instantiated at the Pasta curves they hold for every on-curve point, since
-    those curves are nonsingular. The two cases — finite sum and the point at
-    infinity (`inf = 1`) — are exhaustive: the constraints force `inf` to match
-    the geometry (`inf = 1 ↔ x₁ = x₂ ∧ y₁ = -y₂`). -/
+    The inputs' nonsingularity is a hypothesis (`h1`, `h2`); at the Pasta curves it holds
+    for every on-curve point, since those curves are nonsingular. The two cases — finite
+    sum and the point at infinity (`inf = 1`) — are exhaustive: the constraints force `inf`
+    to match the geometry (`inf = 1 ↔ x₁ = x₂ ∧ y₁ = -y₂`). -/
 
 section Point
 
@@ -310,22 +310,5 @@ theorem sound
   · exact Or.inl ⟨hinf, sound_point_inf W w h1 h2 hcons hinf⟩
 
 end Point
-
-/-! ## A concrete, runnable example.
-
-    Curve `y² = x³ + 4` over `ZMod 17`. Double the point `(0, 2)`:
-    tangent is horizontal (slope 0), so `2·(0,2) = (0,-2) = (0,15)`.
-    Same-x doubling ⇒ `sameX = 1`, `s = 0`, `x21Inv = 0`, `inf = 0`. -/
-
-/-- The doubling witness of the example above: `2·(0,2) = (0,15)` on `y² = x³ + 4` over
-`ZMod 17`. -/
-def egDouble : Witness (ZMod 17) :=
-  { x1 := 0, y1 := 2, x2 := 0, y2 := 2, x3 := 0, y3 := 15
-  , inf := 0, sameX := 1, s := 0, infZ := 0, x21Inv := 0 }
-
-#eval ok egDouble   -- expect true
-
-example : Holds egDouble := by
-  rw [← ok_iff]; rfl
 
 end Kimchi.Gate.AddComplete
