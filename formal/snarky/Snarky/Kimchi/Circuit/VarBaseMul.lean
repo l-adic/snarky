@@ -133,13 +133,18 @@ namespace VarBaseMul
 
 variable {F c : Type}
 
-/-- The round is wired to the base, the accumulators either side of it, and the row's five
-bits. No valuation appears. -/
+/-- A round against its row: it reads the base and the row's five bits. -/
+private def RowIn (base : AffinePoint (FVar F)) (bs : Vector (FVar F) 5) (r : ScaleRound F) :
+    Prop :=
+  r.base = base ∧ r.bit0 = bs[0] ∧ r.bit1 = bs[1] ∧ r.bit2 = bs[2] ∧ r.bit3 = bs[3] ∧
+    r.bit4 = bs[4]
+
+/-- The round reads the accumulator `st`, writes `st'`, and is wired to the base and the row's
+five bits. No valuation appears. -/
 private def Threads (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 5) (r : ScaleRound F)
     (st' : AffinePoint (FVar F) × FVar F) : Prop :=
-  r.base = base ∧ (r.acc0 = st.1 ∧ r.nPrev = st.2) ∧ (r.acc5 = st'.1 ∧ r.nNext = st'.2) ∧
-    (r.bit0 = bs[0] ∧ r.bit1 = bs[1] ∧ r.bit2 = bs[2] ∧ r.bit3 = bs[3] ∧ r.bit4 = bs[4])
+  (r.acc0, r.nPrev) = st ∧ (r.acc5, r.nNext) = st' ∧ RowIn base bs r
 
 open Std.Do in
 /-- The round a call returns is wired to its inputs and outputs (`Threads`). -/
@@ -437,7 +442,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
     simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hC1 hC2 hC3 hC4 hC5
     simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hD1 hD2 hD3 hD4 hD5
     refine ⟨⟨hext, hC5.2.2.2.1, hC5.2.2.2.2, hC0⟩,
-      ⟨rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
+      ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
     · intro cv hcv
       simp only [cells, List.mem_cons, List.not_mem_nil, or_false] at hcv
       rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
@@ -526,76 +531,58 @@ namespace VarBaseMul
 
 variable {F c : Type}
 
+/-- A trace, read through `chain_iff`: each round against its row, adjacent rounds linking,
+and the ends. -/
+private theorem threads_facts {base : AffinePoint (FVar F)}
+    {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+    {rounds : List (ScaleRound F)} (h : Chain (Threads base) st pref rounds fin) :
+    List.Forall₂ (RowIn base) pref rounds ∧
+      rounds.IsChain (fun y y' => (y'.acc0, y'.nPrev) = (y.acc5, y.nNext)) ∧
+      (∀ y ∈ rounds.head?, (y.acc0, y.nPrev) = st) ∧
+      (rounds.getLast?.map fun r => (r.acc5, r.nNext)).getD st = fin :=
+  (chain_iff (fun r : ScaleRound F => (r.acc0, r.nPrev)) (fun r => (r.acc5, r.nNext))
+    (RowIn base) fun _ _ _ _ => Iff.rfl).mp h
+
 /-- Every round of a trace reads the same base. -/
-private theorem threads_base {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      Chain (Threads base) st pref rounds fin → ∀ r ∈ rounds, r.base = base
-  | _, _, [], _, h, r, hr => by rw [h.1] at hr; simp at hr
-  | _, _, _ :: _, _, h, r, hr => by
-    obtain ⟨r', tail, mid, rfl, hgrant, hrest⟩ := h
-    rcases List.mem_cons.mp hr with rfl | hr
-    · exact hgrant.1
-    · exact threads_base hrest r hr
+private theorem threads_base {base : AffinePoint (FVar F)} {st fin : AffinePoint (FVar F) × FVar F}
+    {pref : List (Vector (FVar F) 5)} {rounds : List (ScaleRound F)}
+    (h : Chain (Threads base) st pref rounds fin) : ∀ r ∈ rounds, r.base = base := by
+  have hF := (threads_facts h).1
+  clear h
+  induction hF with
+  | nil => simp
+  | cons hq _ ih => simpa [hq.1] using ih
 
 /-- A trace's first round opens at the seed accumulators. -/
-private theorem threads_head {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {r₀ : ScaleRound F} {rs : List (ScaleRound F)},
-      Chain (Threads base) st pref (r₀ :: rs) fin → r₀.acc0 = st.1 ∧ r₀.nPrev = st.2
-  | _, _, [], _, _, h => absurd h.1 (by simp)
-  | _, _, _ :: _, _, _, h => by
-    obtain ⟨r', tail, mid, heq, hgrant, -⟩ := h
-    injection heq with hr _
-    subst hr
-    exact hgrant.2.1
+private theorem threads_head {base : AffinePoint (FVar F)} {st fin : AffinePoint (FVar F) × FVar F}
+    {pref : List (Vector (FVar F) 5)} {r₀ : ScaleRound F} {rs : List (ScaleRound F)}
+    (h : Chain (Threads base) st pref (r₀ :: rs) fin) : r₀.acc0 = st.1 ∧ r₀.nPrev = st.2 :=
+  Prod.ext_iff.mp ((threads_facts h).2.2.1 r₀ (by simp))
 
 /-- A trace's rounds link: each opens where the previous closed. -/
-private theorem threads_link {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      Chain (Threads base) st pref rounds fin →
-      rounds.IsChain fun a b => b.acc0 = a.acc5 ∧ b.nPrev = a.nNext
-  | _, _, [], _, h => by rw [h.1]; simp
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
-    refine (threads_link hrest).cons ?_
-    cases tail with
-    | nil => simp
-    | cons r' ts =>
-      obtain ⟨hp, hn⟩ := threads_head hrest
-      simp only [List.head?_cons, Option.mem_def, Option.some.injEq, forall_eq']
-      exact ⟨by rw [hp, hgrant.2.2.1.1], by rw [hn, hgrant.2.2.1.2]⟩
+private theorem threads_link {base : AffinePoint (FVar F)} {st fin : AffinePoint (FVar F) × FVar F}
+    {pref : List (Vector (FVar F) 5)} {rounds : List (ScaleRound F)}
+    (h : Chain (Threads base) st pref rounds fin) :
+    rounds.IsChain fun a b => b.acc0 = a.acc5 ∧ b.nPrev = a.nNext :=
+  (threads_facts h).2.1.imp fun _ _ e => Prod.ext_iff.mp e
 
 /-- A trace closes at its last round's outputs. -/
-private theorem threads_last {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {r₀ : ScaleRound F} {rs : List (ScaleRound F)},
-      Chain (Threads base) st pref (r₀ :: rs) fin →
-      ((r₀ :: rs).getLast (by simp)).acc5 = fin.1
-        ∧ ((r₀ :: rs).getLast (by simp)).nNext = fin.2
-  | _, _, [], _, _, h => absurd h.1 (by simp)
-  | _, _, _ :: _, r₀, rs, h => by
-    obtain ⟨r, tail, mid, heq, hgrant, hrest⟩ := h
-    injection heq with hr ht
-    subst hr ht
-    cases rs with
-    | nil =>
-      obtain ⟨-, rfl⟩ := Chain.of_nil_out hrest
-      exact hgrant.2.2.1
-    | cons r₁ ts =>
-      rw [List.getLast_cons (by simp)]
-      exact threads_last hrest
+private theorem threads_last {base : AffinePoint (FVar F)} {st fin : AffinePoint (FVar F) × FVar F}
+    {pref : List (Vector (FVar F) 5)} {r₀ : ScaleRound F} {rs : List (ScaleRound F)}
+    (h : Chain (Threads base) st pref (r₀ :: rs) fin) :
+    ((r₀ :: rs).getLast (by simp)).acc5 = fin.1
+      ∧ ((r₀ :: rs).getLast (by simp)).nNext = fin.2 := by
+  have hL := (threads_facts h).2.2.2
+  simp only [List.getLast?_eq_some_getLast (l := r₀ :: rs) (by simp), Option.map_some,
+    Option.getD_some] at hL
+  exact Prod.ext_iff.mp hL
 
 /-- A trace's rounds are as many as the rows it traversed. -/
-private theorem threads_length {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      Chain (Threads base) st pref rounds fin → rounds.length = pref.length
-  | _, _, [], _, h => by rw [h.1]; rfl
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r', tail, mid, rfl, -, hrest⟩ := h
-    rw [List.length_cons, List.length_cons, threads_length hrest]
+private theorem threads_length {base : AffinePoint (FVar F)}
+    {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+    {rounds : List (ScaleRound F)} (h : Chain (Threads base) st pref rounds fin) :
+    rounds.length = pref.length :=
+  (threads_facts h).1.length_eq.symm
 
 /-- Flattening a list's five-wide windows recovers the list. -/
 private theorem flatMap_window {α : Type} (dflt : α) (c : ℕ) (l : List α)
@@ -628,19 +615,19 @@ private theorem flatMap_window_map {α β : Type} (f : α → β) (dflt : α) (c
     ← List.map_flatMap, flatMap_window dflt c l hl]
 
 /-- A trace's rounds carry the bits of the rows it traversed. -/
-private theorem threads_rows [Field F] {base : AffinePoint (FVar F)} {V : Valuation F} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      Chain (Threads base) st pref rounds fin →
-      roundBits V rounds
-        = pref.flatMap fun w =>
-            [w[0].val V, w[1].val V, w[2].val V, w[3].val V, w[4].val V]
-  | _, _, [], _, h => by rw [h.1]; rfl
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
-    obtain ⟨-, -, -, hb0, hb1, hb2, hb3, hb4⟩ := hgrant
-    rw [roundBits, List.flatMap_cons, ← roundBits, threads_rows hrest,
-      List.flatMap_cons, hb0, hb1, hb2, hb3, hb4]
+private theorem threads_rows [Field F] {base : AffinePoint (FVar F)} {V : Valuation F}
+    {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+    {rounds : List (ScaleRound F)} (h : Chain (Threads base) st pref rounds fin) :
+    roundBits V rounds
+      = pref.flatMap fun w => [w[0].val V, w[1].val V, w[2].val V, w[3].val V, w[4].val V] := by
+  have hF := (threads_facts h).1
+  clear h
+  induction hF with
+  | nil => rfl
+  | cons hq _ ih =>
+    obtain ⟨-, hb0, hb1, hb2, hb3, hb4⟩ := hq
+    rw [roundBits, List.flatMap_cons, ← roundBits, ih, List.flatMap_cons, hb0, hb1, hb2, hb3,
+      hb4]
 
 open Kimchi.Gate.VarBaseMul (Run runBits bitsRegister bitsVal accX accY accN gateLadder) in
 /-- A satisfied trace from the doubled seed is one of the model's runs (`Run.ofList`):
@@ -782,8 +769,9 @@ private theorem grants_walk [Field F] [DecidableEq F] (base : AffinePoint (FVar 
     obtain ⟨rfl, -⟩ := h
     simp at hi
   | bs, acc, fin, x :: rest, rounds, h, hrows, hbits, i, hi => by
-    obtain ⟨r, tail, mid, rfl, ⟨hb, ⟨ha0, hn0⟩, ⟨hr5, hrnn⟩, hb0, hb1, hb2, hb3, hb4⟩, hrest⟩ :=
-      h
+    obtain ⟨r, tail, mid, rfl, ⟨hin, hout, hb, hb0, hb1, hb2, hb3, hb4⟩, hrest⟩ := h
+    obtain ⟨ha0, hn0⟩ : r.acc0 = acc.1 ∧ r.nPrev = acc.2 := Prod.ext_iff.mp hin
+    obtain ⟨hr5, hrnn⟩ : r.acc5 = mid.1 ∧ r.nNext = mid.2 := Prod.ext_iff.mp hout
     have hread := (hrows r (by simp)).2
     rw [hb, ha0, hn0, hb0, hb1, hb2, hb3, hb4] at hread
     have h0 : ∀ (j : ℕ) (hj : j < 5), bs j = ((x[j]'hj)).val stf.env.get := by

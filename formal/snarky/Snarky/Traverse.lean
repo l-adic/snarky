@@ -1,4 +1,5 @@
 import Snarky.Prover
+import Mathlib.Data.List.Chain
 
 /-!
 # Traversing a vector in the circuit monad
@@ -132,6 +133,39 @@ theorem Chain.of_nil_out {s α β : Type} {R : s → α → β → s → Prop} :
   | _, _, _ :: _, h => by
     obtain ⟨y, ys', -, heq, -, -⟩ := h
     exact nomatch heq
+
+/-- A trace whose steps record the states they read and wrote is its outputs' facts, their
+links, and its ends. -/
+theorem chain_iff {s α β : Type} {R : s → α → β → s → Prop} (inp out : β → s)
+    (Q : α → β → Prop) (hR : ∀ a x y b, R a x y b ↔ inp y = a ∧ out y = b ∧ Q x y) :
+    ∀ {init fin : s} {xs : List α} {ys : List β},
+      Chain R init xs ys fin ↔
+        List.Forall₂ Q xs ys ∧ ys.IsChain (fun y y' => inp y' = out y) ∧
+          (∀ y ∈ ys.head?, inp y = init) ∧ (ys.getLast?.map out).getD init = fin
+  | init, fin, [], ys => by
+    cases ys with
+    | nil => simp [Chain]
+    | cons y ys => simp [Chain]
+  | init, fin, x :: xs, ys => by
+    cases ys with
+    | nil => simp [Chain]
+    | cons y ys =>
+      have ih := @chain_iff s α β R inp out Q hR (out y) fin xs ys
+      simp only [Chain, List.cons.injEq, hR]
+      constructor
+      · rintro ⟨y', ys', mid, ⟨rfl, rfl⟩, ⟨hin, rfl, hq⟩, hrest⟩
+        obtain ⟨hF, hC, hH, hL⟩ := ih.mp hrest
+        refine ⟨List.Forall₂.cons hq hF, List.isChain_cons.mpr ⟨hH, hC⟩, by simpa using hin, ?_⟩
+        cases ys with
+        | nil => simpa using hL
+        | cons z zs => simpa [List.getLast?_cons] using hL
+      · rintro ⟨hF, hC, hH, hL⟩
+        obtain ⟨hq, hF'⟩ := List.forall₂_cons.mp hF
+        obtain ⟨hH', hC'⟩ := List.isChain_cons.mp hC
+        refine ⟨y, ys, out y, ⟨rfl, rfl⟩, ⟨by simpa using hH, rfl, hq⟩, ih.mpr ⟨hF', hC', hH', ?_⟩⟩
+        cases ys with
+        | nil => simpa using hL
+        | cons z zs => simpa [List.getLast?_cons] using hL
 
 open Std.Do in
 /-- `mapAccumM`'s soundness: a per-step relation, established by the step's own spec,

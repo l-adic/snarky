@@ -89,22 +89,22 @@ the gate model's. -/
 the row it was handed. -/
 private def Threads (st : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8)
     (r : EndoScalarRound F) (st' : FVar F × FVar F × FVar F) : Prop :=
-  (r.a0 = st.1 ∧ r.b0 = st.2.1 ∧ r.n0 = st.2.2) ∧
-    (r.a8 = st'.1 ∧ r.b8 = st'.2.1 ∧ r.n8 = st'.2.2) ∧ r.xs = xs
+  (r.a0, r.b0, r.n0) = st ∧ (r.a8, r.b8, r.n8) = st' ∧ r.xs = xs
 
 /-- The crumb stream a round list carries, MSB-first: the rounds' rows concatenated. -/
 private def roundCrumbs [Field F] (V : Valuation F) (rounds : List (EndoScalarRound F)) : List F :=
   rounds.flatMap fun r => r.xs.toList.map (·.val V)
 
 /-- A trace's rounds carry the rows it was handed. -/
-private theorem chain_rows :
-    ∀ {st fin : FVar F × FVar F × FVar F} {xs : List (Vector (FVar F) 8)}
-      {rounds : List (EndoScalarRound F)},
-      Chain Threads st xs rounds fin → rounds.map (·.xs) = xs
-  | _, _, [], _, h => by rw [h.1]; rfl
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r, tail, _, rfl, ⟨-, -, rfl⟩, hrest⟩ := h
-    rw [List.map_cons, chain_rows hrest]
+private theorem chain_rows {st fin : FVar F × FVar F × FVar F} {xs : List (Vector (FVar F) 8)}
+    {rounds : List (EndoScalarRound F)} (h : Chain Threads st xs rounds fin) :
+    rounds.map (·.xs) = xs := by
+  have hF := ((chain_iff _ _ (fun (x : Vector (FVar F) 8) (r : EndoScalarRound F) => r.xs = x)
+    fun _ _ _ _ => Iff.rfl).mp h).1
+  clear h
+  induction hF with
+  | nil => rfl
+  | cons hq _ ih => simp [hq, ih]
 
 /-- A threaded trace's wiring: adjacent rounds share their accumulator variables, the
 first opens at the seeds, and the last closes at the final ones — the three conditions
@@ -118,20 +118,12 @@ private theorem threads_wiring :
         ((r₀ :: rs).getLast (by simp)).a8 = fin.1 ∧
         ((r₀ :: rs).getLast (by simp)).b8 = fin.2.1 ∧
         ((r₀ :: rs).getLast (by simp)).n8 = fin.2.2
-  | [], _, _, _, _, h => absurd h.1 (by simp)
-  | _ :: rest, st, fin, r₀, rs, h => by
-    obtain ⟨r, tail, mid, heq, ⟨⟨e1, e2, e3⟩, ⟨d1, d2, d3⟩, -⟩, hrest⟩ := h
-    injection heq with hr ht
-    subst hr ht
-    cases rs with
-    | nil =>
-      obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hrest
-      exact ⟨List.isChain_singleton _, ⟨e1, e2, e3⟩, d1, d2, d3⟩
-    | cons r₁ ts =>
-      obtain ⟨ihlink, ⟨f1, f2, f3⟩, ihlast⟩ := threads_wiring hrest
-      refine ⟨ihlink.cons (by simp [f1, f2, f3, d1, d2, d3]), ⟨e1, e2, e3⟩, ?_⟩
-      rw [List.getLast_cons (by simp)]
-      exact ihlast
+  | _, st, fin, r₀, rs, h => by
+    obtain ⟨-, hC, hH, hL⟩ := (chain_iff _ _
+      (fun (x : Vector (FVar F) 8) (r : EndoScalarRound F) => r.xs = x) fun _ _ _ _ => Iff.rfl).mp h
+    simp only [Prod.ext_iff] at hC hH hL
+    refine ⟨hC.imp fun _ _ e => ⟨e.1, e.2.1, e.2.2⟩, hH r₀ (by simp), ?_⟩
+    simpa [List.getLast?_eq_some_getLast (l := r₀ :: rs) (by simp)] using hL
 
 /-- A satisfied trace from the canonical seeds: its crumbs are valid, eight per row, and
 the final accumulators read as the Algorithm-2 decompositions of the concatenated crumb
@@ -370,7 +362,7 @@ private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : Prover
     have hcr : xs.toList.map (·.val st.env.get) = xs.toList.map (·.val st₁.env.get) :=
       List.map_congr_left fun cv hcv => CVar.val_of_le hP.1 (hx cv hcv).1
     refine ⟨⟨hP.1, hscW.1, hscW.2.1, hscW.2.2⟩,
-      ⟨⟨rfl, rfl, rfl⟩, ⟨rfl, rfl, rfl⟩, rfl⟩, ?_, ?_⟩
+      ⟨rfl, rfl, rfl⟩, ?_, ?_⟩
     · intro cv hcv
       simp only [List.mem_cons] at hcv
       rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | hcv

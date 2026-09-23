@@ -297,47 +297,54 @@ private theorem readChain_getLast [Field F] (V : Valuation F) (fin : F × F × F
     · exact h2
     · exact h3
 
-/-- The step's grant: the round is built from the base, the accumulators either side of
-it, and the row's bits. Structural — no valuation appears. -/
+/-- A round against its row: it reads the base and the row's four bits. -/
+private def RowIn (t : AffinePoint (FVar F)) (bs : Vector (FVar F) 4) (r : EndoMulRound F) :
+    Prop :=
+  r.t = t ∧ r.bit0 = bs[0] ∧ r.bit1 = bs[1] ∧ r.bit2 = bs[2] ∧ r.bit3 = bs[3]
+
+/-- The round reads the accumulator `st`, writes `st'`, and is wired to the base and the row's
+four bits. Structural — no valuation appears. -/
 private def Threads (t : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 4) (r : EndoMulRound F)
     (st' : AffinePoint (FVar F) × FVar F) : Prop :=
-  r.t = t ∧ (r.p = st.1 ∧ r.nAcc = st.2) ∧ (r.s = st'.1 ∧ r.nAccNext = st'.2) ∧
-    (r.bit0 = bs[0] ∧ r.bit1 = bs[1] ∧ r.bit2 = bs[2] ∧ r.bit3 = bs[3])
+  (r.p, r.nAcc) = st ∧ (r.s, r.nAccNext) = st' ∧ RowIn t bs r
+
+/-- A trace, read through `chain_iff`: each round against its row, adjacent rounds linking,
+and the ends. -/
+private theorem threads_facts {t : AffinePoint (FVar F)}
+    {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+    {rounds : List (EndoMulRound F)} (h : Chain (Threads t) st pref rounds fin) :
+    List.Forall₂ (RowIn t) pref rounds ∧
+      rounds.IsChain (fun y y' => (y'.p, y'.nAcc) = (y.s, y.nAccNext)) ∧
+      (∀ y ∈ rounds.head?, (y.p, y.nAcc) = st) ∧
+      (rounds.getLast?.map fun r => (r.s, r.nAccNext)).getD st = fin :=
+  (chain_iff (fun r : EndoMulRound F => (r.p, r.nAcc)) (fun r => (r.s, r.nAccNext))
+    (RowIn t) fun _ _ _ _ => Iff.rfl).mp h
 
 /-- Every round of a trace reads the same base. -/
-private theorem threads_base {t : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
-      {rounds : List (EndoMulRound F)},
-      Chain (Threads t) st pref rounds fin → ∀ r ∈ rounds, r.t = t
-  | _, _, [], _, h, r, hr => by rw [h.1] at hr; simp at hr
-  | _, _, _ :: _, _, h, r, hr => by
-    obtain ⟨r', tail, mid, rfl, hgrant, hrest⟩ := h
-    rcases List.mem_cons.mp hr with rfl | hr
-    · exact hgrant.1
-    · exact threads_base hrest r hr
+private theorem threads_base {t : AffinePoint (FVar F)}
+    {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+    {rounds : List (EndoMulRound F)} (h : Chain (Threads t) st pref rounds fin) :
+    ∀ r ∈ rounds, r.t = t := by
+  have hF := (threads_facts h).1
+  clear h
+  induction hF with
+  | nil => simp
+  | cons hq _ ih => simpa [hq.1] using ih
 
 /-- A trace's first round opens at the seed accumulators. -/
-private theorem threads_head {t : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
-      {r₀ : EndoMulRound F} {rs : List (EndoMulRound F)},
-      Chain (Threads t) st pref (r₀ :: rs) fin → r₀.p = st.1 ∧ r₀.nAcc = st.2
-  | _, _, [], _, _, h => by exact absurd h.1 (by simp)
-  | _, _, _ :: _, _, _, h => by
-    obtain ⟨r', tail, mid, heq, hgrant, -⟩ := h
-    injection heq with hr _
-    subst hr
-    exact hgrant.2.1
+private theorem threads_head {t : AffinePoint (FVar F)}
+    {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+    {r₀ : EndoMulRound F} {rs : List (EndoMulRound F)}
+    (h : Chain (Threads t) st pref (r₀ :: rs) fin) : r₀.p = st.1 ∧ r₀.nAcc = st.2 :=
+  Prod.ext_iff.mp ((threads_facts h).2.2.1 r₀ (by simp))
 
 /-- A trace's rounds are as many as the rows it traversed. -/
-private theorem threads_length {t : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
-      {rounds : List (EndoMulRound F)},
-      Chain (Threads t) st pref rounds fin → rounds.length = pref.length
-  | _, _, [], _, h => by rw [h.1]; rfl
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r', tail, mid, rfl, -, hrest⟩ := h
-    rw [List.length_cons, List.length_cons, threads_length hrest]
+private theorem threads_length {t : AffinePoint (FVar F)}
+    {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+    {rounds : List (EndoMulRound F)} (h : Chain (Threads t) st pref rounds fin) :
+    rounds.length = pref.length :=
+  (threads_facts h).1.length_eq.symm
 
 open Std.Do in
 /-- The step's spec: the round it emits is wired to the base, the accumulators either
@@ -636,7 +643,7 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
     simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hscW
     simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrdW
     refine ⟨⟨hP.1, hscW.2.2.2.2.1, hscW.2.2.2.2.2.1, hscW.2.1⟩,
-      ⟨rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
+      ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
     · intro cv hcv
       simp only [cells, List.mem_cons, List.not_mem_nil, or_false] at hcv
       rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
@@ -692,7 +699,9 @@ private theorem grants_walk [Field F] [DecidableEq F] (eb : F) (t : AffinePoint 
     obtain ⟨rfl, -⟩ := h
     simp at hi
   | bs, acc, fin, x :: rest, rounds, h, hrows, hbits, i, hi => by
-    obtain ⟨r, tail, mid, rfl, ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, hb0, hb1, hb2, hb3⟩, hrest⟩ := h
+    obtain ⟨r, tail, mid, rfl, ⟨hin, hout, hrt, hb0, hb1, hb2, hb3⟩, hrest⟩ := h
+    obtain ⟨hrp, hrn⟩ : r.p = acc.1 ∧ r.nAcc = acc.2 := Prod.ext_iff.mp hin
+    obtain ⟨hrs, hrnn⟩ : r.s = mid.1 ∧ r.nAccNext = mid.2 := Prod.ext_iff.mp hout
     have hread := (hrows r (by simp)).2
     rw [hrt, hrp, hrn, hb0, hb1, hb2, hb3] at hread
     have hrow : EndoMulRound.readWith stf.env.get r (r.s.x.val stf.env.get)
@@ -758,7 +767,9 @@ private theorem grants_fin [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (
     obtain ⟨-, rfl⟩ := h
     exact ⟨rfl, rfl, rfl⟩
   | bs, acc, fin, x :: rest, rounds, h, hrows, hbits => by
-    obtain ⟨r, tail, mid, rfl, ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, hb0, hb1, hb2, hb3⟩, hrest⟩ := h
+    obtain ⟨r, tail, mid, rfl, ⟨hin, hout, hrt, hb0, hb1, hb2, hb3⟩, hrest⟩ := h
+    obtain ⟨hrp, hrn⟩ : r.p = acc.1 ∧ r.nAcc = acc.2 := Prod.ext_iff.mp hin
+    obtain ⟨hrs, hrnn⟩ : r.s = mid.1 ∧ r.nAccNext = mid.2 := Prod.ext_iff.mp hout
     have hread := (hrows r (by simp)).2
     rw [hrt, hrp, hrn, hb0, hb1, hb2, hb3] at hread
     have hrow : EndoMulRound.readWith stf.env.get r (r.s.x.val stf.env.get)
@@ -818,7 +829,8 @@ private theorem chainHolds_of_walk [Field F] [DecidableEq F] (eb : F)
     obtain ⟨rfl, -⟩ := h
     trivial
   | acc, fin, x :: rest, rounds, h, hwalk, hholds => by
-    obtain ⟨r, tail, mid, rfl, ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, -⟩, hrest⟩ := h
+    obtain ⟨r, tail, mid, rfl, ⟨-, hout, -⟩, hrest⟩ := h
+    obtain ⟨hrs, hrnn⟩ : r.s = mid.1 ∧ r.nAccNext = mid.2 := Prod.ext_iff.mp hout
     match tail, hrest with
     | [], hrest' =>
       obtain ⟨-, hmid⟩ := Chain.of_nil_out hrest'
