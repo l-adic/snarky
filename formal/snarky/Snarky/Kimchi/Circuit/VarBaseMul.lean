@@ -51,21 +51,6 @@ variable {F c : Type}
 
 open Std.Do WeierstrassCurve.Affine
 
-/-! ## The ladder regime at Vesta -/
-
-open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
-/-- At Vesta, a `Type1` carrier off the ladder's forbidden band is in the one-wrap
-regime: the order lies between `2^254` and `2^255` and is `1 mod 4`. -/
-private theorem vesta_ladderRegime (t : Type1 Fq)
-    (hband : t.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
-    HasCurve.vesta.LadderRegime 255 t.toScalarZ := by
-  have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
-  refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
-  · decide
-  · decide
-  · decide
-  · exact hband
-
 /-! ## The round
 
 One 5-bit row. Its soundness law is the wiring (`Threads`); its completeness law adds that
@@ -1913,7 +1898,7 @@ theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FV
     rw [hval]
     exact lt_of_lt_of_le (ZMod.val_lt _) (by decide)
   exact hdec ▸ varBaseMul_complete HasCurve.vesta 255 51 (by norm_num) base sv xv yv Z.val hT
-    hfits (hdec ▸ vesta_ladderRegime Z hband)
+    hfits (hdec ▸ HasCurve.vesta_ladderRegime Z.toScalarZ hband)
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul in
 /-- **Soundness at Vesta.** From `varBaseMul_spec`'s output on a `Type1` carrier off the
@@ -1950,6 +1935,6 @@ theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
       = Pasta.Shifted.unshiftType1 (5 * 51) (Kimchi.natLsbVal bs.toList : ℤ) := by
     simp only [Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1, hval]
   rw [hZ]
-  exact hact (hZ ▸ vesta_ladderRegime Z hband)
+  exact hact (hZ ▸ HasCurve.vesta_ladderRegime Z.toScalarZ hband)
 
 end Snarky.Kimchi

@@ -144,6 +144,29 @@ open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
   odd := by rw [pallas_card]; decide
   two_ne := by decide
 
+open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
+/-- At Vesta, a ladder integer off the forbidden band is in the one-wrap regime at 255
+bits: the deployed order sits in the band and is `1 mod 4`. -/
+theorem HasCurve.vesta_ladderRegime (z : ℤ)
+    (hband : z ∉ forbiddenValues PALLAS_BASE_CARD) : HasCurve.vesta.LadderRegime 255 z := by
+  have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+  refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
+  · decide
+  · decide
+  · decide
+  · exact hband
+
+open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
+/-- At Pallas, likewise. -/
+theorem HasCurve.pallas_ladderRegime (z : ℤ)
+    (hband : z ∉ forbiddenValues PALLAS_SCALAR_CARD) : HasCurve.pallas.LadderRegime 255 z := by
+  have hOv : HasCurve.pallas.W.order = PALLAS_SCALAR_CARD := Pasta.pallas_card
+  refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
+  · decide
+  · decide
+  · decide
+  · exact hband
+
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The endomorphism dictionary at deployed Pallas: `Pasta.pallasEndoSpec` over
 `HasCurve.pallas`, and the field and order facts on top of it. -/
