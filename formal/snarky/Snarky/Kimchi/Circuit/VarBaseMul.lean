@@ -156,13 +156,6 @@ open Std.Do in
 private def BitRow [Field F] (st₁ : ProverState F) (bs : Vector (FVar F) 5) : Prop :=
   ∀ v ∈ bs.toList, v.Scoped st₁
 
-/-- The ladder's accumulator invariant: the table has only grown since the bits were
-witnessed, and the accumulator's three variables are in scope. -/
-private def AccInv [Field F] (st₁ : ProverState F)
-    (acc : AffinePoint (FVar F) × FVar F) (st : ProverState F) : Prop :=
-  (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
-    acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st
-
 /-- A round's cells. -/
 private def cells [Field F] (r : ScaleRound F) : List (CVar F) :=
   [r.base.x, r.base.y, r.acc0.x, r.acc0.y, r.acc1.x, r.acc1.y, r.acc2.x, r.acc2.y,
@@ -182,21 +175,13 @@ private def RowGrant [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
           (bs[0].val st.env.get) (bs[1].val st.env.get) (bs[2].val st.env.get)
           (bs[3].val st.env.get) (bs[4].val st.env.get)
 
-/-- Scope and the table's growth survive further growth. -/
-private theorem AccInv.mono [Field F] {st₁ : ProverState F}
-    (acc : AffinePoint (FVar F) × FVar F) {st st' : ProverState F}
-    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : AccInv st₁ acc st) :
-    AccInv st₁ acc st' :=
-  ⟨⟨Nat.le_trans h.1.1 hnv, h.1.2.trans hle⟩,
-    h.2.1.mono hnv, h.2.2.1.mono hnv, h.2.2.2.mono hnv⟩
-
 /-- A row's grant survives the table's growth: the wiring says the operands are the
 round's own cells, and those are in scope, so nothing in the reading moves. -/
-private theorem RowGrant.mono [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
+private theorem monotone_rowGrant [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
     (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) (r : ScaleRound F)
-    (acc' : AffinePoint (FVar F) × FVar F) {st st' : ProverState F}
-    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env)
-    (h : RowGrant base acc bs r acc' st) : RowGrant base acc bs r acc' st' := by
+    (acc' : AffinePoint (FVar F) × FVar F) : Monotone (RowGrant base acc bs r acc') := by
+  intro st st' hle h
+  have hnv := ProverState.nv_le_of_le hle
   obtain ⟨hthr, hsc, hread⟩ := h
   obtain ⟨hb, ⟨ha0, hn0⟩, hout, hb0, hb1, hb2, hb3, hb4⟩ := hthr
   refine ⟨⟨hb, ⟨ha0, hn0⟩, hout, hb0, hb1, hb2, hb3, hb4⟩,
@@ -242,14 +227,16 @@ keeps the accumulator invariant. -/
 private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverState F)
     (base : AffinePoint (FVar F)) (hbase : base.x.Scoped st₁ ∧ base.y.Scoped st₁)
     (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) (hbs : BitRow st₁ bs) :
-    Complete (F := F) (c := KimchiConstraint F) (AccInv st₁ acc)
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
       (scaleRound (c := KimchiConstraint F) base acc bs)
-      (fun p st' => AccInv st₁ p.2 st' ∧ RowGrant base acc bs p.1 p.2 st') := by
+      (fun p st' => (st₁ ≤ st' ∧ p.2.1.x.Scoped st' ∧ p.2.1.y.Scoped st' ∧ p.2.2.Scoped st') ∧
+        RowGrant base acc bs p.1 p.2 st') := by
   simp only [scaleRound]
   -- the ten cell readings at the entry table index the law
   refine Complete.instantiate
     (ι := F × F × F × F × F × F × F × F × F × F)
-    (P := fun v st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+    (P := fun v st => st₁ ≤ st ∧
       CircuitType.ReadsAs (val := F) st base.x v.1 ∧
       CircuitType.ReadsAs (val := F) st base.y v.2.1 ∧
       CircuitType.ReadsAs (val := F) st acc.1.x v.2.2.1 ∧
@@ -262,14 +249,17 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
       CircuitType.ReadsAs (val := F) st (bs[4]'(by omega)) v.2.2.2.2.2.2.2.2.2)
     (fun st h => ?_) fun v => ?_
   · have hb : ∀ (i : ℕ) (hi : i < 5), (bs[i]'hi).Scoped st :=
-      fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono h.1.1
+      fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono
+        (ProverState.nv_le_of_le h.1)
     exact ⟨(base.x.val st.env.get, base.y.val st.env.get, acc.1.x.val st.env.get,
         acc.1.y.val st.env.get, acc.2.val st.env.get, (bs[0]'(by omega)).val st.env.get,
         (bs[1]'(by omega)).val st.env.get, (bs[2]'(by omega)).val st.env.get,
         (bs[3]'(by omega)).val st.env.get, (bs[4]'(by omega)).val st.env.get),
       h.1,
-      ⟨CircuitType.scoped_fvar.mpr (hbase.1.mono h.1.1), CircuitType.reads_fvar.mpr rfl⟩,
-      ⟨CircuitType.scoped_fvar.mpr (hbase.2.mono h.1.1), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hbase.1.mono (ProverState.nv_le_of_le h.1)),
+        CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hbase.2.mono (ProverState.nv_le_of_le h.1)),
+        CircuitType.reads_fvar.mpr rfl⟩,
       ⟨CircuitType.scoped_fvar.mpr h.2.1, CircuitType.reads_fvar.mpr rfl⟩,
       ⟨CircuitType.scoped_fvar.mpr h.2.2.1, CircuitType.reads_fvar.mpr rfl⟩,
       ⟨CircuitType.scoped_fvar.mpr h.2.2.2, CircuitType.reads_fvar.mpr rfl⟩,
@@ -279,7 +269,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
       ⟨CircuitType.scoped_fvar.mpr (hb 3 (by omega)), CircuitType.reads_fvar.mpr rfl⟩,
       ⟨CircuitType.scoped_fvar.mpr (hb 4 (by omega)), CircuitType.reads_fvar.mpr rfl⟩⟩
   obtain ⟨xB, yB, x0, y0, n0, b0, b1, b2, b3, b4⟩ := v
-  have hMP : Mono (F := F) fun st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+  have hMP : Monotone fun st => st₁ ≤ st ∧
       CircuitType.ReadsAs (val := F) st base.x xB ∧
       CircuitType.ReadsAs (val := F) st base.y yB ∧
       CircuitType.ReadsAs (val := F) st acc.1.x x0 ∧
@@ -290,11 +280,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
       CircuitType.ReadsAs (val := F) st (bs[2]'(by omega)) b2 ∧
       CircuitType.ReadsAs (val := F) st (bs[3]'(by omega)) b3 ∧
       CircuitType.ReadsAs (val := F) st (bs[4]'(by omega)) b4 :=
-    Mono.and (fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩)
-      (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.readsAs Mono.readsAs)))))))))
+    by complete_mono_tac
   set W := Kimchi.Gate.VarBaseMul.build xB yB x0 y0 n0 b0 b1 b2 b3 b4 with hW
   -- the register advice
   refine Complete.bind
@@ -318,7 +304,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 0
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?run1, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs hMP)
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs hMP)
         (Complete.witness (bitWit base (bs[0]'(by omega)) acc.1)
           (W.s0, W.s0 * W.s0,
             2 * W.y0 / (2 * W.x0 + W.xT - W.s0 * W.s0) - W.s0, W.x1, W.y1) (by simp))))
@@ -340,7 +326,8 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 1
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?run2, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs hMP))
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs (monotone_and
+        CircuitType.monotone_readsAs hMP))
         (Complete.witness (bitWit base (bs[1]'(by omega)) ⟨ox0, oy0⟩)
           (W.s1, W.s1 * W.s1,
             2 * W.y1 / (2 * W.x1 + W.xT - W.s1 * W.s1) - W.s1, W.x2, W.y2) (by simp))))
@@ -364,8 +351,9 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 2
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?run3, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs hMP)))
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs (monotone_and
+        CircuitType.monotone_readsAs
+          (monotone_and CircuitType.monotone_readsAs hMP)))
         (Complete.witness (bitWit base (bs[2]'(by omega)) ⟨ox1, oy1⟩)
           (W.s2, W.s2 * W.s2,
             2 * W.y2 / (2 * W.x2 + W.xT - W.s2 * W.s2) - W.s2, W.x3, W.y3) (by simp))))
@@ -389,8 +377,10 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 3
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?run4, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs hMP))))
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs (monotone_and
+        CircuitType.monotone_readsAs
+          (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
+            hMP))))
         (Complete.witness (bitWit base (bs[3]'(by omega)) ⟨ox2, oy2⟩)
           (W.s3, W.s3 * W.s3,
             2 * W.y3 / (2 * W.x3 + W.xT - W.s3 * W.s3) - W.s3, W.x4, W.y4) (by simp))))
@@ -414,8 +404,10 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 4
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?run5, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs hMP)))))
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs (monotone_and
+        CircuitType.monotone_readsAs
+          (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
+            (monotone_and CircuitType.monotone_readsAs hMP)))))
         (Complete.witness (bitWit base (bs[4]'(by omega)) ⟨ox3, oy3⟩)
           (W.s4, W.s4 * W.s4,
             2 * W.y4 / (2 * W.x4 + W.xT - W.s4 * W.s4) - W.s4, W.x5, W.y5) (by simp))))
@@ -1021,7 +1013,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           (lsbBits[i]'hi).val st₂.env.get
             = if (ToNat.toNat sv).testBit i then 1 else 0) ∧
       base.x.Scoped st₂ ∧ base.y.Scoped st₂})
-    (P := fun i st => (i.1.nv ≤ st.nv ∧ i.1.env.Le st.env) ∧
+    (P := fun i st => i.1 ≤ st ∧
       CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ ∧
       CircuitType.ReadsAs (val := F) st scalar.val sv)
     (fun st h => ⟨⟨st, fun i hi =>
@@ -1029,18 +1021,17 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           by simpa using
             CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp h.2.2 i hi)⟩,
         (scoped_affinePoint.mp h.1.2.1).1, (scoped_affinePoint.mp h.1.2.1).2⟩,
-      ⟨Nat.le_refl _, Assignments.Le.refl _⟩, h.1.2, h.1.1.2⟩)
+      le_rfl, h.1.2, h.1.1.2⟩)
     fun i => ?_
   obtain ⟨st₂, hbitfacts, hsx₂, hsy₂⟩ := i
-  have hextM : Mono (F := F) fun st => st₂.nv ≤ st.nv ∧ st₂.env.Le st.env :=
-    fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩
   -- the doubled seed, by hand: `complete_walk` must not invent its finiteness and
   -- torsion side conditions
   refine Complete.bind
     (Complete.imp
       (fun st h => ⟨⟨hTread h.2.1, hTread h.2.1, h2T, fun _ => h2T⟩, h⟩)
       (fun _ _ h => h)
-      (Complete.frame (Mono.and hextM (Mono.and Mono.readsAs Mono.readsAs))
+      (Complete.frame (monotone_and monotone_le (monotone_and CircuitType.monotone_readsAs
+        CircuitType.monotone_readsAs))
         (addFast_complete .checkFinite d.W
           ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne base base
           (Point.some _ _ hT) (Point.some _ _ hT))))
@@ -1049,7 +1040,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   refine Complete.instantiate
     (ι := {q : F × F // ∃ h : d.W.Nonsingular q.1 q.2,
       Point.some _ _ hT + Point.some _ _ hT = Point.some q.1 q.2 h})
-    (P := fun q st => (st₂.nv ≤ st.nv ∧ st₂.env.Le st.env) ∧
+    (P := fun q st => st₂ ≤ st ∧
       CircuitType.ReadsAs (val := F) st p.p.x q.1.1 ∧
       CircuitType.ReadsAs (val := F) st p.p.y q.1.2 ∧
       CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ ∧
@@ -1095,7 +1086,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     intro k hk
     rw [hentry k hk]
     exact (hbitfacts _ (by omega)).1
-  have hbitVal : ∀ (stf : ProverState F), st₂.env.Le stf.env →
+  have hbitVal : ∀ (stf : ProverState F), st₂ ≤ stf →
       ∀ (k : ℕ), k < 5 * chunks →
         (msb.getD k (CVar.const 0)).val stf.env.get = bsOf k := by
     intro stf hlef k hk
@@ -1115,12 +1106,14 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         CircuitType.scoped_fvar.mp h.2.2.1.1, trivial⟩, h⟩)
       (fun _ _ h => h)
       (Complete.frame
-        (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs Mono.readsAs))))
+        (monotone_and monotone_le
+          (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
+            (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs))))
         (mapAccumM_complete (F := F) (c := KimchiConstraint F)
-          (scaleRound base) (VarBaseMul.BitRow st₂) (fun _ => VarBaseMul.AccInv st₂)
-          (VarBaseMul.RowGrant base) (fun _ => VarBaseMul.AccInv.mono)
-          (VarBaseMul.RowGrant.mono base)
+          (scaleRound base) (VarBaseMul.BitRow st₂)
+          (fun _ acc st => st₂ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
+          (VarBaseMul.RowGrant base) (fun _ _ => by complete_mono_tac)
+          (VarBaseMul.monotone_rowGrant base)
           (fun acc x _ hx =>
             VarBaseMul.scaleRound_complete st₂ base ⟨hsx₂, hsy₂⟩ acc x hx)
           (p.p, CVar.const 0) ((List.range chunks).map window) hP)))
@@ -1160,7 +1153,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [← hWdef] at h
     exact h
   -- the rounds' readings are the walk's rows, at any table past the bits
-  have hbitsRead : ∀ (stf : ProverState F), st₂.env.Le stf.env →
+  have hbitsRead : ∀ (stf : ProverState F), st₂ ≤ stf →
       ∀ (i : ℕ) (hi : i < ((List.range chunks).map window).length) (j : ℕ) (hj : j < 5),
         bsOf (5 * i + j)
           = ((((List.range chunks).map window)[i]'hi)[j]'hj).val stf.env.get := by
@@ -1172,8 +1165,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     simp only [hwindow, Vector.getElem_ofFn]
     exact (hbitVal stf hlef (5 * i + j) (by omega)).symm
   -- every row of a granting trace holds, at any extension of its table
-  have hpayAt : ∀ (st stf : ProverState F), st.env.Le stf.env →
-      (st₂.nv ≤ st.nv ∧ st₂.env.Le st.env) →
+  have hpayAt : ∀ (st stf : ProverState F), st ≤ stf → st₂ ≤ st →
       CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ →
       CircuitType.ReadsAs (val := F) st p.p.x x0 →
       CircuitType.ReadsAs (val := F) st p.p.y y0 →
@@ -1181,20 +1173,19 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         ((List.range chunks).map window) rounds fin →
       ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read stf.env.get r) := by
     intro st stf hle hext hseal hp2x hp2y hchain r hr
-    have hnv := ProverState.nv_le_of_env_le hle
     have hlenR : rounds.length = chunks := by rw [ChainAt.length hchain, hpreflen]
-    have hchain' := ChainAt.mono (VarBaseMul.RowGrant.mono base) hnv hle hchain
-    have hseal' := CircuitType.ReadsAs.mono hnv hle hseal
-    have hp2x' := CircuitType.ReadsAs.mono hnv hle hp2x
-    have hp2y' := CircuitType.ReadsAs.mono hnv hle hp2y
+    have hchain' := monotone_chainAt (VarBaseMul.monotone_rowGrant base) hle hchain
+    have hseal' := CircuitType.monotone_readsAs hle hseal
+    have hp2x' := CircuitType.monotone_readsAs hle hp2x
+    have hp2y' := CircuitType.monotone_readsAs hle hp2y
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hr
     rw [VarBaseMul.grants_walk base stf hchain'
-        (fun k hk t ht => hbitsRead stf (hext.2.trans hle) k hk t ht) i hi,
+        (fun k hk t ht => hbitsRead stf (hext.trans hle) k hk t ht) i hi,
       hWat stf (hscoords hseal').1 (hscoords hseal').2
         (CircuitType.reads_fvar.mp hp2x'.2) (CircuitType.reads_fvar.mp hp2y'.2)]
     exact hwalkHolds i (by rw [← hlenR]; exact hi)
   -- the bit stream a granting trace carries
-  have hroundBits : ∀ (stf : ProverState F), st₂.env.Le stf.env →
+  have hroundBits : ∀ (stf : ProverState F), st₂ ≤ stf →
       Chain (VarBaseMul.Threads base) (p.p, CVar.const 0)
         ((List.range chunks).map window) rounds fin →
       VarBaseMul.roundBits stf.env.get rounds = (List.range (5 * chunks)).map bsOf := by
@@ -1227,11 +1218,11 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           CircuitType.reads_fvar.mpr ?pin⟩, h.2.2.2.2.2⟩, h⟩)
       (fun _ _ h => h)
       (Complete.frame
-        (Mono.and (Mono.and (fun _ _ hnv hle h => VarBaseMul.AccInv.mono _ hnv hle h)
-            (fun _ _ hnv hle h =>
-              ChainAt.mono (VarBaseMul.RowGrant.mono base) hnv hle h))
-          (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.readsAs Mono.readsAs)))))
+        (monotone_and (monotone_and (by complete_mono_tac)
+            (monotone_chainAt (VarBaseMul.monotone_rowGrant base)))
+          (monotone_and monotone_le
+            (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
+              (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)))))
         (assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val sv)))
     fun _ => Complete.pure_of fun st h => ?post
   case pin =>
@@ -1239,9 +1230,9 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     obtain ⟨-, -, hreg, -⟩ :=
       VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
         (VarBaseMul.ChainAt.threads hchain)
-        (hpayAt st st (Assignments.Le.refl _) hext hseal hp2x hp2y hchain)
+        (hpayAt st st le_rfl hext hseal hp2x hp2y hchain)
         (hTread hseal).2 (hP0at hp2x hp2y)
-    rw [hreg, hroundBits st hext.2 (VarBaseMul.ChainAt.threads hchain), hregSv]
+    rw [hreg, hroundBits st hext (VarBaseMul.ChainAt.threads hchain), hregSv]
   case post =>
     obtain ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ := h
     refine ⟨?_, ?_⟩
@@ -1249,19 +1240,20 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
         CircuitType.reads_vector.mpr fun i hi => ?_⟩
       · rw [getElem_mapVec]
-        exact CircuitType.scoped_boolVar.mpr ((hbitfacts i hi).1.mono hext.1)
+        exact CircuitType.scoped_boolVar.mpr
+          ((hbitfacts i hi).1.mono (ProverState.nv_le_of_le hext))
       · rw [getElem_mapVec]
         refine CircuitType.reads_boolVar.mpr ?_
         show (lsbBits[i]'hi).val st.env.get = _
-        rw [CVar.val_of_le hext.2 (hbitfacts i hi).1, (hbitfacts i hi).2]
+        rw [CVar.val_of_le hext (hbitfacts i hi).1, (hbitfacts i hi).2]
         simp [bit]
     · -- the point, from `run_sound` on the trace
       obtain ⟨-, -, -, hpoint⟩ :=
         VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
           (VarBaseMul.ChainAt.threads hchain)
-          (hpayAt st st (Assignments.Le.refl _) hext hseal hp2x hp2y hchain)
+          (hpayAt st st le_rfl hext hseal hp2x hp2y hchain)
           (hTread hseal).2 (hP0at hp2x hp2y)
-      rw [hroundBits st hext.2 (VarBaseMul.ChainAt.threads hchain), hpreflen] at hpoint
+      rw [hroundBits st hext (VarBaseMul.ChainAt.threads hchain), hpreflen] at hpoint
       rw [hbsOf,
         Kimchi.Gate.VarBaseMul.bitsVal_testBit (ToNat.toNat sv) (5 * chunks) hfits]
         at hpoint
@@ -1394,13 +1386,13 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       show (BoolVar.unchecked (r.lsbBits[5 * chunks - 1 + i]'hi')).toCVar.val st.env.get = 0
       rw [CircuitType.reads_boolVar.mp hval]
       simp [hbit, bit]
-    have hpinM : Mono (F := F) fun st => ∀ x ∈ r.lsbBits.toList.drop (5 * chunks - 1),
+    have hpinM : Monotone fun st => ∀ x ∈ r.lsbBits.toList.drop (5 * chunks - 1),
         x.Scoped st ∧ x.val st.env.get = 0 :=
-      fun _ _ hnv hle h x hx => ⟨(h x hx).1.mono hnv,
+      fun _ _ hle h x hx => ⟨(h x hx).1.mono (ProverState.nv_le_of_le hle),
         by rw [CVar.val_of_le hle (h x hx).1]; exact (h x hx).2⟩
     refine Complete.bind
       (Complete.imp (fun st h => ⟨hpinval h.1, h.2⟩) (fun _ _ h => h.2)
-        (Complete.frame Mono.onCurveAs
+        (Complete.frame monotone_onCurveAs
           (forM_complete (F := F) (c := KimchiConstraint F)
             (fun b : FVar F => assertEqual b (CVar.const 0))
             (fun b => b ∈ r.lsbBits.toList.drop (5 * chunks - 1))
@@ -1578,7 +1570,7 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- the ladder
   refine Complete.bind
     (Complete.imp (fun _ h => ⟨⟨h.1, h.2.1⟩, h.1, h.2.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.onCurveAs Mono.readsAs)
+      (Complete.frame (monotone_and monotone_onCurveAs CircuitType.monotone_readsAs)
         (varBaseMul_complete d n chunks hn base ⟨sDiv2⟩ xv yv sv hT hfits' hregime)))
     fun r => ?_
   -- the ladder's point never vanishes
@@ -1615,15 +1607,16 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     show (BoolVar.unchecked (r.lsbBits[sDiv2Bits + i]'hi')).toCVar.val st.env.get = 0
     rw [CircuitType.reads_boolVar.mp hval]
     simp [hbit, bit]
-  have hpinM : Mono (F := F) fun st => ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
+  have hpinM : Monotone fun st => ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
       x.Scoped st ∧ x.val st.env.get = 0 :=
-    fun _ _ hnv hle h x hx => ⟨(h x hx).1.mono hnv,
+    fun _ _ hle h x hx => ⟨(h x hx).1.mono (ProverState.nv_le_of_le hle),
       by rw [CVar.val_of_le hle (h x hx).1]; exact (h x hx).2⟩
   -- pin the high bits
   refine Complete.bind
     (Complete.imp (fun st h => ⟨hpinval h.1.1, h.1.2, h.2.1, h.2.2⟩) (fun _ _ h => h)
       (Complete.frame
-        (Mono.and Mono.onCurveAs (Mono.and Mono.onCurveAs Mono.readsAs))
+        (monotone_and monotone_onCurveAs
+          (monotone_and monotone_onCurveAs CircuitType.monotone_readsAs))
         (forM_complete (F := F) (c := KimchiConstraint F)
           (fun b : FVar F => assertEqual b (CVar.const 0))
           (fun b => b ∈ r.lsbBits.toList.drop sDiv2Bits)
@@ -1646,7 +1639,7 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun st h => ⟨⟨h.2.1, hnegT h.2.2.1,
         d.two_torsion_free _ (hGneAt h.2.1), fun _ => hsum⟩, h.2.1, h.2.2.2⟩)
       (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.onCurveAs Mono.readsAs)
+      (Complete.frame (monotone_and monotone_onCurveAs CircuitType.monotone_readsAs)
         (addFast_complete .checkFinite d.W
           ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne r.g
           ⟨base.x, CVar.negate_ base.y⟩
@@ -1690,14 +1683,15 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun st h => ⟨⟨h.2.2.2.2, h.2.1, h.2.2.2.1⟩, h.1, h.2.2.1, h.2.2.2.2⟩)
       (fun _ _ h => h)
       (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
+        (monotone_and CircuitType.monotone_readsAs
+          (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs))
         (selectField_complete (c := KimchiConstraint F) sOdd r.g.y q.p.y bb gy qy)))
     fun yr => ?_
   refine Complete.bind
     (Complete.imp
       (fun st h => ⟨⟨h.2.2.2, h.2.1, h.2.2.1⟩, h.1⟩)
       (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
+      (Complete.frame CircuitType.monotone_readsAs
         (selectField_complete (c := KimchiConstraint F) sOdd r.g.x q.p.x bb gx qx)))
     fun xr => Complete.pure_of fun st h => ?post
   case post =>
@@ -1785,7 +1779,7 @@ theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem 
   simp only [splitFieldVar]
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?wrun, h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
+      (Complete.frame CircuitType.monotone_readsAs
         (Complete.witness (splitFieldWit s)
           ((splitField sval).1, (splitField sval).2) (by simp))))
     fun w => ?_
@@ -1818,7 +1812,7 @@ theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem 
             rw [CVar.val_add_, CVar.val_scale_, (hw h.1).2.1, (hw h.1).2.2.2,
               hjoin])⟩⟩, h.1⟩)
       (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
+      (Complete.frame CircuitType.monotone_readsAs
         (assertEqual_complete (c := c) s (CVar.add_ (CVar.scale_ 2 wD) ↑wO) sval)))
     fun _ => Complete.pure_of fun st h =>
       ⟨⟨CircuitType.scoped_fvar.mpr (hw h.2).1,
@@ -1905,7 +1899,7 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   simp only [scaleFast2']
   refine Complete.bind
     (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
-      (Complete.frame Mono.onCurveAs
+      (Complete.frame monotone_onCurveAs
         (splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval)))
     fun w =>
       Complete.imp (fun _ h => ⟨h.2, h.1.1, h.1.2⟩) (fun _ _ h => h)

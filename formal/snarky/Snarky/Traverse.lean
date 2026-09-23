@@ -69,10 +69,10 @@ section Complete
 variable [Zero F] [ConstraintHolds F c] {α β γ : Type}
 
 private theorem zipGo_complete (f : α → β → CircuitM F c γ) (pre : ProverState F → Prop)
-    (hpre : Mono (F := F) pre) :
+    (hpre : Monotone pre) :
     ∀ (n : Nat) (xs : Fin n → α) (ys : Fin n → β)
       (post : Fin n → γ → ProverState F → Prop),
-      (∀ (i : Fin n) (a : γ), Mono (F := F) (post i a)) →
+      (∀ (i : Fin n) (a : γ), Monotone (post i a)) →
       (∀ i : Fin n, Complete pre (f (xs i) (ys i)) (post i)) →
       Complete pre (zipGo f n xs ys) (fun rs st' => ∀ i : Fin n, post i rs[i] st')
   | 0, _, _, _, _, _ => Complete.pure_of fun _ _ i => i.elim0
@@ -85,8 +85,7 @@ private theorem zipGo_complete (f : α → β → CircuitM F c γ) (pre : Prover
       fun init => Complete.bind
         (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
           (Complete.frame
-            (show Mono (F := F) fun st => ∀ i : Fin n, post i.castSucc init[i] st from
-              fun _ _ hnv hle h i => hmono i.castSucc init[i] _ _ hnv hle (h i))
+            (Monotone.forall fun i : Fin n => hmono i.castSucc init[i])
             (hf (Fin.last n))))
         fun last => Complete.pure_of fun _ h i => by
           refine Fin.lastCases ?_ (fun j => ?_) i
@@ -97,7 +96,7 @@ private theorem zipGo_complete (f : α → β → CircuitM F c γ) (pre : Prover
 the entries' postconditions transport along the table's growth. -/
 theorem zipWithVecM_complete {n : Nat} (f : α → β → CircuitM F c γ) (xs : Vector α n)
     (ys : Vector β n) (pre : ProverState F → Prop) (post : Fin n → γ → ProverState F → Prop)
-    (hpre : Mono (F := F) pre) (hpost : ∀ (i : Fin n) (a : γ), Mono (F := F) (post i a))
+    (hpre : Monotone pre) (hpost : ∀ (i : Fin n) (a : γ), Monotone (post i a))
     (hf : ∀ i : Fin n, Complete pre (f xs[i] ys[i]) (post i)) :
     Complete pre (zipWithVecM f xs ys) (fun rs st' => ∀ i : Fin n, post i rs[i] st') :=
   zipGo_complete f pre hpre n _ _ post hpost hf
@@ -177,16 +176,14 @@ theorem ChainAt.length {s α β : Type} {out : s → α → β → s → ProverS
 
 /-- A trace transports to a later table when its grants do — what a ladder needs to
 judge the row it emits after the loop. -/
-theorem ChainAt.mono {s α β : Type} {out : s → α → β → s → ProverState F → Prop}
-    (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s) {st st' : ProverState F},
-      st.nv ≤ st'.nv → st.env.Le st'.env → out acc x y acc' st → out acc x y acc' st')
-    {st st' : ProverState F} (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) :
+theorem monotone_chainAt {s α β : Type} {out : s → α → β → s → ProverState F → Prop}
+    (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s), Monotone (out acc x y acc')) :
     ∀ {init fin : s} {xs : List α} {ys : List β},
-      ChainAt out st init xs ys fin → ChainAt out st' init xs ys fin
-  | _, _, [], _, h => h
-  | _, _, _ :: _, _, h => by
+      Monotone fun st : ProverState F => ChainAt out st init xs ys fin
+  | _, _, [], _ => fun _ _ _ h => h
+  | _, _, _ :: _, _ => fun _ _ hle h => by
     obtain ⟨y, ys', mid, rfl, hgrant, hrest⟩ := h
-    exact ⟨y, ys', mid, rfl, hout _ _ _ _ hnv hle hgrant, ChainAt.mono hout hnv hle hrest⟩
+    exact ⟨y, ys', mid, rfl, hout _ _ _ _ hle hgrant, monotone_chainAt hout hle hrest⟩
 
 /-- `mapAccumM`'s completeness: a step's law, an accumulator invariant and a grant that
 survives the table's growth compose into the whole ladder's. The caller writes the step
@@ -200,10 +197,8 @@ theorem mapAccumM_complete [Zero F] [ConstraintHolds F c] {s α β : Type}
     (f : s → α → CircuitM F c (β × s)) (P : α → Prop)
     (inv : List α → s → ProverState F → Prop)
     (out : s → α → β → s → ProverState F → Prop)
-    (hinv : ∀ (xs : List α) (acc : s) {st st' : ProverState F}, st.nv ≤ st'.nv →
-      st.env.Le st'.env → inv xs acc st → inv xs acc st')
-    (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s) {st st' : ProverState F},
-      st.nv ≤ st'.nv → st.env.Le st'.env → out acc x y acc' st → out acc x y acc' st')
+    (hinv : ∀ (xs : List α) (acc : s), Monotone (inv xs acc))
+    (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s), Monotone (out acc x y acc'))
     (hstep : ∀ (acc : s) (x : α) (xs : List α), P x →
       Complete (inv (x :: xs) acc) (f acc x)
         (fun p st' => inv xs p.2 st' ∧ out acc x p.1 p.2 st')) :
@@ -214,7 +209,7 @@ theorem mapAccumM_complete [Zero F] [ConstraintHolds F c] {s α β : Type}
   | init, x :: xs, hP =>
     Complete.bind (hstep init x xs (hP x (by simp)))
       fun p => Complete.bind
-        (Complete.frame (fun _ _ hnv hle h => hout _ _ _ _ hnv hle h)
+        (Complete.frame (hout _ _ _ _)
           (mapAccumM_complete f P inv out hinv hout hstep p.2 xs
             fun y hy => hP y (by simp [hy])))
         fun q => Complete.pure_of fun _ h =>

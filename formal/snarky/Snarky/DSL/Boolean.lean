@@ -137,7 +137,8 @@ private theorem selectField.core_complete [Field F] [DecidableEq F] [BasicSystem
   simp only [selectField.core]
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs (monotone_and
+        CircuitType.monotone_readsAs CircuitType.monotone_readsAs))
         (Complete.witness (selectField.advice b t e) (if bb then tv else ev) (by simp))))
     (fun r => Complete.bind (Complete.addConstraint ?_)
       fun _ => Complete.pure_of fun _ h => h.1)
@@ -364,11 +365,13 @@ instance instLawfulIfThenElseProd [CircuitType F a va] [CircuitType F b vb] [IfT
     refine Complete.bind
       (Complete.imp (fun _ h => ⟨⟨h.1, psnd h.2.1, psnd h.2.2⟩, h.1, pfst h.2.1, pfst h.2.2⟩)
         (fun _ _ h => h)
-        (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
+        (Complete.frame (monotone_and CircuitType.monotone_readsAs (monotone_and
+          CircuitType.monotone_readsAs CircuitType.monotone_readsAs))
           (B.select_complete (c := c) s t.2 e.2 bb tv.2 ev.2)))
       fun r₂ => Complete.bind
         (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
-          (Complete.frame Mono.readsAs (A.select_complete (c := c) s t.1 e.1 bb tv.1 ev.1)))
+          (Complete.frame CircuitType.monotone_readsAs (A.select_complete
+            (c := c) s t.1 e.1 bb tv.1 ev.1)))
         fun r₁ => Complete.pure_of fun _ h => ?_
     refine ⟨CircuitType.scoped_prod.mpr ⟨h.1.1, h.2.1⟩, CircuitType.reads_prod.mpr ?_⟩
     cases bb <;> exact ⟨h.1.2, h.2.2⟩
@@ -398,9 +401,9 @@ instance instLawfulIfThenElseVector [CircuitType F a va] [IfThenElse F c va]
           CircuitType.ReadsAs (val := Vector a n) st e ev)
         (fun i r st' => CircuitType.ReadsAs (val := a) st' r
           (if bb then tv[i.val] else ev[i.val]))
-        (fun {_ _} hnv hle h => ⟨h.1.mono hnv hle,
-          CircuitType.ReadsAs.mono hnv hle h.2.1, CircuitType.ReadsAs.mono hnv hle h.2.2⟩)
-        (fun _ {_ _ _} hnv hle h => CircuitType.ReadsAs.mono hnv hle h)
+        (monotone_and CircuitType.monotone_readsAs
+          (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs))
+        (fun _ _ => CircuitType.monotone_readsAs)
         (fun i st' h => S.select_complete (c := c) s t[i.val] e[i.val] bb tv[i.val]
           ev[i.val] st'
           ⟨h.1,
@@ -645,7 +648,7 @@ private theorem xor.core_complete [Field F] [DecidableEq F] [BasicSystem F c]
   simp only [Snarky.xor.core]
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
         (Complete.witness (Snarky.xor.advice a b) (bit (ab ^^ bb)) (by simp))))
     (fun r => Complete.bind (Complete.addConstraint ?_)
       fun _ => Complete.pure_of fun _ h =>
@@ -851,10 +854,10 @@ theorem any_complete [Field F] [DecidableEq F] [BasicSystem F c]
   refine ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mpr hsc,
     CircuitType.reads_boolVar.mpr ?_⟩
   have hval := runs_post (fun V => any_spec (c := c) (V := V) xs hchar) hrun
-    (hsat (Nat.le_refl _) (Assignments.Le.refl _))
+    (hsat le_rfl)
   have hread : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = bit (f b) := fun b hb =>
     CircuitType.reads_boolVar.mp
-      (CircuitType.ReadsAs.mono (run_le hrun).1 (run_le hrun).2 (hF b hb)).2
+      (CircuitType.monotone_readsAs (run_le hrun) (hF b hb)).2
   have hbits : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = 0 ∨
       (↑b : CVar F).val st₁.env.get = 1 := by
     intro b hb
@@ -1000,10 +1003,10 @@ theorem all_complete [Field F] [DecidableEq F] [BasicSystem F c]
   refine ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mpr hsc,
     CircuitType.reads_boolVar.mpr ?_⟩
   have hval := runs_post (fun V => all_spec (c := c) (V := V) xs hchar) hrun
-    (hsat (Nat.le_refl _) (Assignments.Le.refl _))
+    (hsat le_rfl)
   have hread : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = bit (f b) := fun b hb =>
     CircuitType.reads_boolVar.mp
-      (CircuitType.ReadsAs.mono (run_le hrun).1 (run_le hrun).2 (hF b hb)).2
+      (CircuitType.monotone_readsAs (run_le hrun) (hF b hb)).2
   have hbits : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = 0 ∨
       (↑b : CVar F).val st₁.env.get = 1 := by
     intro b hb

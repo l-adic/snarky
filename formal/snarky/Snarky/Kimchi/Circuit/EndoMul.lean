@@ -502,13 +502,6 @@ model's `chain_complete` on the honest walk, which the run's readings are shown 
 private def BitRow (st₁ : ProverState F) (bs : Vector (FVar F) 4) : Prop :=
   ∀ v ∈ bs.toList, v.Scoped st₁
 
-/-- The ladder's accumulator invariant: the table has only grown since the bits were
-witnessed, and the accumulator's three variables are in scope. -/
-private def AccInv (st₁ : ProverState F) (acc : AffinePoint (FVar F) × FVar F)
-    (st : ProverState F) : Prop :=
-  (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
-    acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st
-
 /-- A round's cells. -/
 private def cells (r : EndoMulRound F) : List (CVar F) :=
   [r.t.x, r.t.y, r.p.x, r.p.y, r.nAcc, r.nAccNext, r.r.x, r.r.y, r.s.x, r.s.y,
@@ -528,21 +521,13 @@ private def RowGrant [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F
           (bs[0].val st.env.get) (bs[1].val st.env.get) (bs[2].val st.env.get)
           (bs[3].val st.env.get)
 
-/-- Scope and the table's growth survive further growth. -/
-private theorem AccInv.mono [Field F] {st₁ : ProverState F}
-    (acc : AffinePoint (FVar F) × FVar F) {st st' : ProverState F}
-    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : AccInv st₁ acc st) :
-    AccInv st₁ acc st' :=
-  ⟨⟨Nat.le_trans h.1.1 hnv, h.1.2.trans hle⟩,
-    h.2.1.mono hnv, h.2.2.1.mono hnv, h.2.2.2.mono hnv⟩
-
 /-- A row's grant survives the table's growth: the wiring says the operands are the
 round's own cells, and those are in scope, so nothing in the reading moves. -/
-private theorem RowGrant.mono [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
+private theorem monotone_rowGrant [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
     (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (r : EndoMulRound F)
-    (acc' : AffinePoint (FVar F) × FVar F) {st st' : ProverState F}
-    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env)
-    (h : RowGrant eb t acc bs r acc' st) : RowGrant eb t acc bs r acc' st' := by
+    (acc' : AffinePoint (FVar F) × FVar F) : Monotone (RowGrant eb t acc bs r acc') := by
+  intro st st' hle h
+  have hnv := ProverState.nv_le_of_le hle
   obtain ⟨hthr, hsc, hread⟩ := h
   obtain ⟨hrt, ⟨hrp, hrn⟩, hout, hb0, hb1, hb2, hb3⟩ := hthr
   refine ⟨⟨hrt, ⟨hrp, hrn⟩, hout, hb0, hb1, hb2, hb3⟩,
@@ -583,14 +568,16 @@ accumulators it was handed, so the run succeeds and its reading is that row. -/
 private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverState F)
     (eb : F) (t : AffinePoint (FVar F)) (ht : t.x.Scoped st₁ ∧ t.y.Scoped st₁)
     (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (hbs : BitRow st₁ bs) :
-    Complete (F := F) (c := KimchiConstraint F) (AccInv st₁ acc)
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
       (Snarky.Kimchi.endoMulRound (c := KimchiConstraint F) eb t acc bs)
-      (fun p st' => AccInv st₁ p.2 st' ∧ RowGrant eb t acc bs p.1 p.2 st') := by
+      (fun p st' => (st₁ ≤ st' ∧ p.2.1.x.Scoped st' ∧ p.2.1.y.Scoped st' ∧ p.2.2.Scoped st') ∧
+        RowGrant eb t acc bs p.1 p.2 st') := by
   simp only [endoMulRound]
   -- the nine cell readings at the entry table index the law
   refine Complete.instantiate
     (ι := F × F × F × F × F × F × F × F × F)
-    (P := fun v st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+    (P := fun v st => st₁ ≤ st ∧
       CircuitType.ReadsAs (val := F) st t.x v.1 ∧
       CircuitType.ReadsAs (val := F) st t.y v.2.1 ∧
       CircuitType.ReadsAs (val := F) st acc.1.x v.2.2.1 ∧
@@ -602,14 +589,17 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
       CircuitType.ReadsAs (val := F) st (bs[3]'(by omega)) v.2.2.2.2.2.2.2.2)
     (fun st h => ?_) fun v => ?_
   · have hb : ∀ (i : ℕ) (hi : i < 4), (bs[i]'hi).Scoped st :=
-      fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono h.1.1
+      fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono
+        (ProverState.nv_le_of_le h.1)
     exact ⟨(t.x.val st.env.get, t.y.val st.env.get, acc.1.x.val st.env.get,
         acc.1.y.val st.env.get, acc.2.val st.env.get, (bs[0]'(by omega)).val st.env.get,
         (bs[1]'(by omega)).val st.env.get, (bs[2]'(by omega)).val st.env.get,
         (bs[3]'(by omega)).val st.env.get),
       h.1,
-      ⟨CircuitType.scoped_fvar.mpr (ht.1.mono h.1.1), CircuitType.reads_fvar.mpr rfl⟩,
-      ⟨CircuitType.scoped_fvar.mpr (ht.2.mono h.1.1), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (ht.1.mono (ProverState.nv_le_of_le h.1)),
+        CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (ht.2.mono (ProverState.nv_le_of_le h.1)),
+        CircuitType.reads_fvar.mpr rfl⟩,
       ⟨CircuitType.scoped_fvar.mpr h.2.1, CircuitType.reads_fvar.mpr rfl⟩,
       ⟨CircuitType.scoped_fvar.mpr h.2.2.1, CircuitType.reads_fvar.mpr rfl⟩,
       ⟨CircuitType.scoped_fvar.mpr h.2.2.2, CircuitType.reads_fvar.mpr rfl⟩,
@@ -622,10 +612,7 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?run, h⟩) (fun _ _ h => h)
       (Complete.frame
-        (Mono.and (fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩)
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-              (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs)))))))))
+        (by complete_mono_tac)
         (Complete.witness (rowWit eb t bs acc)
           (W.inv, W.nPrime, W.xR, W.yR, W.xS, W.yS, W.s1, W.s3) (by simp))))
     fun w => Complete.pure_of fun st h => ?post
@@ -1001,7 +988,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           ((bits[i]'hi)[j]'hj).val st₁.env.get
             = if (ToNat.toNat sv).testBit (4 * 32 - 1 - (4 * i + j)) then 1 else 0) ∧
       t.x.Scoped st₁ ∧ t.y.Scoped st₁})
-    (P := fun i st => (i.1.nv ≤ st.nv ∧ i.1.env.Le st.env) ∧
+    (P := fun i st => i.1 ≤ st ∧
       OnCurveAs d.W st t (Point.some _ _ hT) ∧
       CircuitType.ReadsAs (val := F) st scalar.val sv)
     (fun st h => ?inst1) fun i => ?_
@@ -1011,15 +998,13 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           (CircuitType.scoped_vector.mp (CircuitType.scoped_vector.mp h.2.1 i hi) j hj),
           ?_⟩,
         (scoped_affinePoint.mp h.1.1.1).1, (scoped_affinePoint.mp h.1.1.1).2⟩,
-      ⟨Nat.le_refl _, Assignments.Le.refl _⟩, h.1.1, h.1.2⟩
+      le_rfl, h.1.1, h.1.2⟩
     have hv := CircuitType.reads_fvar.mp
       (CircuitType.reads_vector.mp (CircuitType.reads_vector.mp h.2.2 i hi) j hj)
     simpa using hv
   obtain ⟨st₁, hbitfacts, htx₁, hty₁⟩ := i
-  have hextM : Mono (F := F) fun st => st₁.nv ≤ st.nv ∧ st₁.env.Le st.env :=
-    fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩
   -- the rows' bits, at any table past the witness
-  have hbitsRead : ∀ (stf : ProverState F), st₁.env.Le stf.env →
+  have hbitsRead : ∀ (stf : ProverState F), st₁ ≤ stf →
       ∀ i (hi : i < bits.toList.length),
         (((bits.toList[i]'hi)[0]'(by omega)).val stf.env.get,
           ((bits.toList[i]'hi)[1]'(by omega)).val stf.env.get,
@@ -1065,7 +1050,8 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         d.two_torsion_free _ (Point.some_ne_zero hT), fun _ => hTφ⟩,
         h.1.1, h.1.2.1, h.1.2.2⟩)
       (fun _ _ h => h)
-      (Complete.frame (Mono.and hextM (Mono.and Mono.onCurveAs Mono.readsAs))
+      (Complete.frame
+        (monotone_and monotone_le (monotone_and monotone_onCurveAs CircuitType.monotone_readsAs))
         (addFast_complete .checkFinite d.W
           ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩
           (Point.some _ _ hT) (Point.some _ _ hφT))))
@@ -1076,7 +1062,8 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun st h => ⟨⟨h.1.2.2 hTφ, h.1.2.2 hTφ, h2P1, fun _ => h2P1⟩,
         h.2.1, h.2.2.1, h.2.2.2⟩)
       (fun _ _ h => h)
-      (Complete.frame (Mono.and hextM (Mono.and Mono.onCurveAs Mono.readsAs))
+      (Complete.frame
+        (monotone_and monotone_le (monotone_and monotone_onCurveAs CircuitType.monotone_readsAs))
         (addFast_complete .checkFinite d.W
           ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p
           (Point.some _ _ hT + Point.some _ _ hφT)
@@ -1087,7 +1074,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (ι := {q : F × F // ∃ h : d.W.Nonsingular q.1 q.2,
       Point.some _ _ hT + Point.some _ _ hφT
         + (Point.some _ _ hT + Point.some _ _ hφT) = Point.some q.1 q.2 h})
-    (P := fun q st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+    (P := fun q st => st₁ ≤ st ∧
       CircuitType.ReadsAs (val := F) st p2.p.x q.1.1 ∧
       CircuitType.ReadsAs (val := F) st p2.p.y q.1.2 ∧
       OnCurveAs d.W st t (Point.some _ _ hT) ∧
@@ -1152,11 +1139,11 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         CircuitType.scoped_fvar.mp h.2.2.1.1, trivial⟩, h⟩)
       (fun _ _ h => h)
       (Complete.frame
-        (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.onCurveAs Mono.readsAs))))
+        (by complete_mono_tac)
         (mapAccumM_complete (F := F) (c := KimchiConstraint F)
-          (Snarky.Kimchi.endoMulRound d.endo t) (BitRow st₁) (fun _ => AccInv st₁)
-          (RowGrant d.endo t) (fun _ => AccInv.mono) (RowGrant.mono d.endo t)
+          (Snarky.Kimchi.endoMulRound d.endo t) (BitRow st₁)
+          (fun _ acc st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
+          (RowGrant d.endo t) (fun _ _ => by complete_mono_tac) (monotone_rowGrant d.endo t)
           (fun acc x _ hx => endoMulRound_complete st₁ d.endo t ⟨htx₁, hty₁⟩ acc x hx)
           (p2.p, .const 0) bits.toList hP)))
     fun loop => ?_
@@ -1168,15 +1155,14 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           CircuitType.reads_fvar.mpr ?pin⟩, h.2.2.2.2.2⟩, h⟩)
       (fun _ _ h => h)
       (Complete.frame
-        (Mono.and (Mono.and (fun _ _ hnv hle h => AccInv.mono _ hnv hle h)
-            (fun _ _ hnv hle h => ChainAt.mono (RowGrant.mono d.endo t) hnv hle h))
-          (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.onCurveAs Mono.readsAs)))))
+        (monotone_and (monotone_and (by complete_mono_tac)
+            (monotone_chainAt (monotone_rowGrant d.endo t)))
+          (by complete_mono_tac))
         (assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val sv)))
     fun _ => ?_
   case pin =>
     obtain ⟨⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ := h
-    obtain ⟨-, -, hfn⟩ := grants_fin d.endo t st hchain (hbitsRead st hext.2)
+    obtain ⟨-, -, hfn⟩ := grants_fin d.endo t st hchain (hbitsRead st hext)
     rw [hfn, hWat st (htcoords hOnT).1 (htcoords hOnT).2
       (CircuitType.reads_fvar.mp hp2x.2) (CircuitType.reads_fvar.mp hp2y.2), hlenB, hreg]
   -- the one `endoMul` row, and the returned accumulator
@@ -1184,19 +1170,18 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     fun _ => Complete.pure_of fun st h => ?post
   case row =>
     rintro st ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ stf hle
-    have hnv := ProverState.nv_le_of_env_le hle
     have hlenR : rounds.length = 32 := by rw [ChainAt.length hchain, hlenB]
-    have hchain' := ChainAt.mono (RowGrant.mono d.endo t) hnv hle hchain
-    have hOnT' := OnCurveAs.mono hnv hle hOnT
-    have hp2x' := CircuitType.ReadsAs.mono hnv hle hp2x
-    have hp2y' := CircuitType.ReadsAs.mono hnv hle hp2y
+    have hchain' := monotone_chainAt (monotone_rowGrant d.endo t) hle hchain
+    have hOnT' := monotone_onCurveAs hle hOnT
+    have hp2x' := CircuitType.monotone_readsAs hle hp2x
+    have hp2y' := CircuitType.monotone_readsAs hle hp2y
     have hwalk : ∀ i (hi : i < rounds.length),
         EndoMulRound.readWith stf.env.get (rounds[i]'hi)
             ((rounds[i]'hi).s.x.val stf.env.get) ((rounds[i]'hi).s.y.val stf.env.get)
             ((rounds[i]'hi).nAccNext.val stf.env.get) = W i := by
       intro i hi
       have hgw := grants_walk d.endo t stf hchain'
-        (hbitsRead stf (hext.2.trans hle)) i hi
+        (hbitsRead stf (hext.trans hle)) i hi
       rwa [hWat stf (htcoords hOnT').1 (htcoords hOnT').2
         (CircuitType.reads_fvar.mp hp2x'.2) (CircuitType.reads_fvar.mp hp2y'.2)] at hgw
     exact chainHolds_of_walk d.endo t stf W hchain' hwalk
@@ -1204,7 +1189,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   case post =>
     -- the point conclusion, off the model's own chain theorem
     obtain ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ := h
-    obtain ⟨hfx, hfy, -⟩ := grants_fin d.endo t st hchain (hbitsRead st hext.2)
+    obtain ⟨hfx, hfy, -⟩ := grants_fin d.endo t st hchain (hbitsRead st hext)
     rw [hWat st (htcoords hOnT).1 (htcoords hOnT).2 (CircuitType.reads_fvar.mp hp2x.2)
       (CircuitType.reads_fvar.mp hp2y.2), hlenB] at hfx hfy
     obtain ⟨hfin', sc, A, B, hseq, hsab, hAle, hBle, hAval, hBval, -⟩ :=
@@ -1495,10 +1480,10 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [dif_pos hG, toField_crumbsOf_eq_endoExpandZ d, ← hkdef, ← hGdef, hpteq]
     rfl
   -- the ambient context: the input's reading, and what each stage adds to it
-  have mT : Mono (F := F) (fun _ : ProverState F => True) := fun _ _ _ _ _ => trivial
-  have m₀ : Mono (F := F) fun st =>
+  have mT : Monotone (fun _ : ProverState F => True) := monotone_const
+  have m₀ : Monotone fun st =>
       OnCurveAs d.W st g G ∧ CircuitType.ReadsAs (val := F) st scalar.val sv :=
-    (Mono.onCurveAs (W := d.W) (p := g) (P := G)).and Mono.readsAs
+    monotone_and (monotone_onCurveAs (W := d.W) (p := g) (P := G)) CircuitType.monotone_readsAs
   refine Complete.seq m₀
     (witnessAt_complete (c := KimchiConstraint F) (val := F × F) _ (px, py) (by simp) hread)
     fun rp => ?_
@@ -1516,17 +1501,17 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [CircuitType.scoped_prod] at hsc
     rw [CircuitType.reads_prod] at hrd
     exact ⟨hsc.2, hrd.2⟩
-  have m₁ := m₀.and (Mono.readsAs (val := F × F) (v := rp) (a := (px, py)))
+  have m₁ := monotone_and m₀ (CircuitType.monotone_readsAs (val := F × F) (v := rp) (a := (px, py)))
   -- `x²`
   refine Complete.seq m₁
     (Complete.imp (fun st h => hrpx st h.2) (fun _ _ h => h)
       (square_complete (c := KimchiConstraint F) rp.1 px)) fun x2 => ?_
-  have m₂ := m₁.and (Mono.readsAs (v := x2) (a := px * px))
+  have m₂ := monotone_and m₁ (CircuitType.monotone_readsAs (v := x2) (a := px * px))
   -- `x³`
   refine Complete.seq m₂
     (Complete.imp (fun st h => ⟨h.2, hrpx st h.1.2⟩) (fun _ _ h => h)
       (mul_complete (c := KimchiConstraint F) x2 rp.1 (px * px) px)) fun x3 => ?_
-  have m₃ := m₂.and (Mono.readsAs (v := x3) (a := px * px * px))
+  have m₃ := monotone_and m₂ (CircuitType.monotone_readsAs (v := x3) (a := px * px * px))
   -- the on-curve row
   refine Complete.seq m₃
     (Complete.imp
@@ -1544,7 +1529,7 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (assertSquare_complete (c := KimchiConstraint F) rp.2
         (CVar.add_ (CVar.add_ x3 (CVar.scale_ d.W.a₄ rp.1)) (.const d.W.a₆))
         py (px * px * px + d.W.a₄ * px + d.W.a₆) hEq)) fun _ => ?_
-  have m₄ := m₃.and mT
+  have m₄ := monotone_and m₃ mT
   -- the multiply-back
   refine Complete.seq m₄
     (Complete.imp
@@ -1556,7 +1541,7 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         h.1.1.1.1.2⟩)
       (fun _ _ h => h)
       (endoMul_complete d ⟨rp.1, rp.2⟩ scalar px py sv hpns hfits)) fun computed => ?_
-  have m₅ := m₄.and (Mono.onCurveAs (W := d.W) (p := computed)
+  have m₅ := monotone_and m₄ (monotone_onCurveAs (W := d.W) (p := computed)
     (P := endoExpandZ d.lam (ToNat.toNat sv) • Point.some px py hpns))
   -- the two pins: the product reads as the input point
   have hcx : ∀ st : ProverState F,
@@ -1583,7 +1568,7 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun st h => ⟨(hcx st h.2 h.1.1.1.1.1.1).1, (hcx st h.2 h.1.1.1.1.1.1).2.1⟩)
       (fun _ _ h => h)
       (assertEqual_complete (c := KimchiConstraint F) computed.x g.x xv)) fun _ => ?_
-  have m₆ := m₅.and mT
+  have m₆ := monotone_and m₅ mT
   refine Complete.seq m₆
     (Complete.imp
       (fun st h => ⟨(hcx st h.1.2 h.1.1.1.1.1.1.1).2.2.1,

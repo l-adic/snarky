@@ -235,7 +235,7 @@ private theorem foldBlocks_complete [Field F] [DecidableEq F] (p : Poseidon.Para
       exact Complete.bind
         (Complete.imp (fun _ h => ⟨⟨h.1, (List.forall₂_cons.mp h.2).1⟩,
             (List.forall₂_cons.mp h.2).2⟩) (fun _ _ h => h)
-          (Complete.frame Mono.forall₂ (updateBlock_complete p hsize st b sv bv)))
+          (Complete.frame CircuitType.monotone_forall₂ (updateBlock_complete p hsize st b sv bv)))
         fun r => foldBlocks_complete p hsize bs bvs r _
 
 open Std.Do in

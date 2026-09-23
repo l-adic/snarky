@@ -368,7 +368,7 @@ the value reads the advice's root of the flag-selected operand. -/
   -- the residuosity flag
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?qrun, h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
+      (Complete.frame CircuitType.monotone_readsAs
         (Complete.witness (isQRWit sqrtF x) ((sqrtF xv).isSome) (by simp))))
     fun isQR => ?_
   case qrun =>
@@ -385,14 +385,14 @@ the value reads the advice's root of the flag-selected operand. -/
           CircuitType.reads_fvar.mpr (by
             rw [CVar.val_scale_, CircuitType.reads_fvar.mp h.2.2])⟩⟩, h.1⟩)
       (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
+      (Complete.frame CircuitType.monotone_readsAs
         (selectField_complete (c := c) isQR x (CVar.scale_ nonResidue x)
           (sqrtF xv).isSome xv (nonResidue * xv))))
     fun xOrMx => ?_
   -- the root
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?rrun, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
         (Complete.witness (sqrtWit sqrtF xOrMx)
           ((sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0)
           (by simp))))
@@ -405,7 +405,7 @@ the value reads the advice's root of the flag-selected operand. -/
   -- the square row
   refine Complete.bind
     (Complete.imp (fun st h => ⟨⟨h.1, h.2.1⟩, h.1, h.2.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
         (assertSquare_complete (c := c) sqrtVal xOrMx _ _ hsq)))
     fun _ => Complete.pure_of fun _ h => ⟨h.2.2, h.2.1⟩
 

@@ -71,10 +71,11 @@ private theorem sealVar.core_complete [Field F] [DecidableEq F] [BasicSystem F c
   simp only [sealVar.core]
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs (Complete.witness (readVar (val := F) x) xv (by simp))))
+      (Complete.frame CircuitType.monotone_readsAs (Complete.witness (readVar (val := F) x) xv
+        (by simp))))
     fun r => Complete.bind
       (Complete.imp (fun _ h => ⟨⟨h.2, h.1⟩, h.1⟩) (fun _ _ h => h)
-        (Complete.frame Mono.readsAs (assertEqual_complete (c := c) x r xv)))
+        (Complete.frame CircuitType.monotone_readsAs (assertEqual_complete (c := c) x r xv)))
       fun _ => Complete.pure_of fun _ h => h.2
   · simp [readVar_run h.1, CircuitType.readVal_fvar, CircuitType.reads_fvar.mp h.2]
 

@@ -46,7 +46,7 @@ theorem assertEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.ReadsAs (val := F) st y v)
       (assertEqual (c := c) x y) (fun _ _ => True) := by
   have hrow : ∀ st : ProverState F, (CircuitType.ReadsAs (val := F) st x v ∧
-      CircuitType.ReadsAs (val := F) st y v) → ∀ stf : ProverState F, st.env.Le stf.env →
+      CircuitType.ReadsAs (val := F) st y v) → ∀ stf : ProverState F, st ≤ stf →
       ConstraintHolds.Holds stf.env.get (BasicSystem.equal (c := c) x y) := by
     rintro st ⟨⟨hx, hvx⟩, ⟨hy, hvy⟩⟩ stf hle
     rw [CircuitType.scoped_fvar] at hx hy
@@ -497,9 +497,10 @@ theorem assertEq_complete [Field F] [DecidableEq F] [BasicSystem F c] [Constrain
       (fun st => CircuitType.Scoped (val := val) st t ∧ CircuitType.Scoped (val := val) st e ∧
         CircuitType.Reads st.env.get t a ∧ CircuitType.Reads st.env.get e a)
       (fun _ _ _ => True)
-      (fun {_ _} hnv hle h => ⟨CircuitType.Scoped.mono hnv h.1,
-        CircuitType.Scoped.mono hnv h.2.1, h.2.2.1.of_le h.1 hle, h.2.2.2.of_le h.2.1 hle⟩)
-      (fun _ {_ _ _} _ _ _ => trivial)
+      (fun _ _ hle h => ⟨CircuitType.Scoped.mono (ProverState.nv_le_of_le hle) h.1,
+        CircuitType.Scoped.mono (ProverState.nv_le_of_le hle) h.2.1, h.2.2.1.of_le h.1 hle,
+        h.2.2.2.of_le h.2.1 hle⟩)
+      (fun _ _ => monotone_const)
       (fun i st' h => by
         have h₁ := congrArg (fun v : Vector F (CircuitType.size F val) => v[i.val]) h.2.2.1
         have h₂ := congrArg (fun v : Vector F (CircuitType.size F val) => v[i.val]) h.2.2.2

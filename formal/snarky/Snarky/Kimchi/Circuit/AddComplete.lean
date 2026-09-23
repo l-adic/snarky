@@ -224,7 +224,7 @@ def OnCurveAt [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (V : Val
 
 open WeierstrassCurve.Affine in
 /-- `OnCurveAt` at the table's valuation, with the point in scope, so the same curve point
-is read at every later table (`OnCurveAs.mono`). -/
+is read at every later table (`monotone_onCurveAs`). -/
 def OnCurveAs [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : ProverState F)
     (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
   CircuitType.Scoped (val := AffinePoint F) st p ∧ OnCurveAt W st.env.get p P
@@ -268,12 +268,14 @@ theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     exact ⟨trivial, by rw [CVar.val_negate_]; exact hneg⟩
 
 /-- A curve read survives the table's growth, with the same curve point. -/
-theorem OnCurveAs.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
-    {st st' : ProverState F} {p : AffinePoint (FVar F)} {P : W.Point}
-    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : OnCurveAs W st p P) :
-    OnCurveAs W st' p P := by
+@[complete_mono]
+theorem monotone_onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    {p : AffinePoint (FVar F)} {P : W.Point} :
+    Monotone fun st : ProverState F => OnCurveAs W st p P := by
+  intro st st' hle h
   obtain ⟨hsc, n, rfl⟩ := h
   rw [scoped_affinePoint] at hsc
+  have hnv := ProverState.nv_le_of_le hle
   refine ⟨scoped_affinePoint.mpr ⟨hsc.1.mono hnv, hsc.2.mono hnv⟩, ?_, ?_⟩
   · rw [CVar.val_of_le hle hsc.1, CVar.val_of_le hle hsc.2]
     exact n
@@ -340,12 +342,6 @@ operands' readings. -/
   · exact Or.inr ⟨hinf, h3, hsum⟩
 
 /-! ## Completeness -/
-
-/-- `OnCurveAs.mono` in `Mono` form, for a context that carries points. -/
-@[complete_mono] theorem Mono.onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
-    {p : AffinePoint (FVar F)} {P : W.Point} :
-    Snarky.Mono (F := F) fun st => OnCurveAs W st p P :=
-  fun _ _ hnv hle h => OnCurveAs.mono hnv hle h
 
 /-- Sealing a point: the run succeeds, its rows hold at every extension of the final
 table, and the sealed point is scoped and reads as the operand. -/
@@ -578,7 +574,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
   refine Complete.imp (fun st h => ⟨h, h.1, h.2.1, h.2.2.1⟩) (fun r st' h => ?_)
     (Complete.post (fun V => addFast_spec (V := V) fin W ha htwo p1' p2')
       (Complete.frame
-        (Mono.and Mono.onCurveAs (Mono.and Mono.onCurveAs fun _ _ _ _ h => h)) hbase))
+        (monotone_and monotone_onCurveAs (monotone_and monotone_onCurveAs monotone_const)) hbase))
   obtain ⟨⟨⟨hscP, hscI⟩, hp1, hp2, hPP⟩, hspec⟩ := h
   refine ⟨hscP, hscI, fun hPQ => ?_⟩
   rcases hspec.2 P Q hp1.2 hp2.2 hPP with ⟨-, hzero⟩ | ⟨-, hon⟩

@@ -49,7 +49,7 @@ def ofConstants (s : Poseidon.State F) : SpongeVar F :=
 A circuit sponge implements a value sponge when its cells read that sponge's cells and
 the modes agree; the mode is metadata, so it must match exactly. `ReadsAt` is the
 soundness side (a valuation), `Reads` the completeness side (scope and reading, carried
-forward by `Reads.mono`), as with `OnCurveAt`/`OnCurveAs`. -/
+forward by `monotone_reads`), as with `OnCurveAt`/`OnCurveAs`. -/
 
 /-- The sponge's reading under a valuation: cells and mode. -/
 def ReadsAt [Add F] [Mul F] [Zero F] (V : Valuation F) (sv : SpongeVar F)
@@ -67,15 +67,9 @@ def Reads [Add F] [Mul F] [Zero F] (st : ProverState F) (sv : SpongeVar F)
   CircuitType.ReadsAs (val := Poseidon.Triple F) st sv.state s.state ∧ sv.mode = s.mode
 
 /-- A sponge's reading survives the table's growth. -/
-theorem Reads.mono [Add F] [Mul F] [Zero F] {st st' : ProverState F} {sv : SpongeVar F}
-    {s : Poseidon.State F} (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env)
-    (h : Reads st sv s) : Reads st' sv s :=
-  ⟨CircuitType.ReadsAs.mono hnv hle h.1, h.2⟩
-
-/-- A sponge's reading is monotone — `Reads.mono`, as walker vocabulary. -/
-@[complete_mono] theorem Mono.spongeReads [Add F] [Mul F] [Zero F] {sv : SpongeVar F}
-    {s : Poseidon.State F} : Snarky.Mono (F := F) fun st => Reads st sv s :=
-  fun _ _ hnv hle h => h.mono hnv hle
+@[complete_mono] theorem monotone_reads [Add F] [Mul F] [Zero F] {sv : SpongeVar F}
+    {s : Poseidon.State F} : Monotone fun st : ProverState F => Reads st sv s :=
+  fun _ _ hle h => ⟨CircuitType.monotone_readsAs hle h.1, h.2⟩
 
 /-- A table reading is a valuation reading at that table. -/
 theorem Reads.readsAt [Add F] [Mul F] [Zero F] {st : ProverState F} {sv : SpongeVar F}

@@ -60,7 +60,7 @@ def roots : List Name :=
     `Snarky.CVar.val_of_le,
     `Snarky.CircuitType.Reads.of_le,
     `Snarky.CircuitType.Scoped.mono,
-    `Snarky.CircuitType.ReadsAs.mono,
+    `Snarky.CircuitType.monotone_readsAs,
 
     -- The leaf interface every gadget builds on.
     `Snarky.witness_spec,

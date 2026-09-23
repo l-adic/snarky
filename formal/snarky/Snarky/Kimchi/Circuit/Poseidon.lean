@@ -312,7 +312,7 @@ theorem poseidon_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     exact ⟨⟨h.1.1, h.1.2.1, h.1.2.2⟩, h.2.1, h.2.2.1, h.2.2.2⟩
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
+      (Complete.frame CircuitType.monotone_readsAs
         (Complete.witness (poseidon.advice p s)
           (Vector.ofFn fun i : Fin 55 => rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) sv)
           (by simp))))

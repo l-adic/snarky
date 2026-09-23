@@ -132,13 +132,13 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
     simp only [compileBody]
     refine Complete.bind
       (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => h)
-        (Complete.frame Mono.readsAs
+        (Complete.frame CircuitType.monotone_readsAs
           (CheckedType.check_complete (c := c) (val := a)
             (inputVar (F := F) (a := a)) input hinput)))
       fun _ => ?_
     refine Complete.bind
       (Complete.imp (fun _ h => ⟨h.2, h.2⟩) (fun _ _ h => h)
-        (Complete.frame Mono.readsAs hmain))
+        (Complete.frame CircuitType.monotone_readsAs hmain))
       fun out => ?_
     -- the body's output value, named off its well-formedness
     refine Complete.instantiate (ι := b)
@@ -148,7 +148,7 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
       fun v => ?_
     refine Complete.bind
       (Complete.imp (fun st h => ⟨?wrun, h⟩) (fun _ _ h => h)
-        (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+        (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
           (Complete.witness
             (do let x ← readVar (val := b) out; pure (UnChecked.mk x))
             (UnChecked.mk v) (by simp))))
@@ -163,7 +163,8 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
           h.2.1.2, CircuitType.reads_unchecked.mp h.1.2⟩, h⟩)
         (fun _ _ h => h)
         (Complete.frame
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
+          (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
+            CircuitType.monotone_readsAs))
           (assertEq_complete (c := c) (val := b) out pub.val v)))
       fun _ => Complete.pure_of fun st h =>
         ⟨v, h.2.2.1.1, h.2.2.1.2, CircuitType.scoped_unchecked.mp h.2.1.1,
@@ -180,7 +181,7 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
       | Except.error e => Except.error e
       | Except.ok outVal => Except.ok (outVal, st'.env)) = Except.ok (v, st'.env)
     rw [readVar_run hsc1, (reads_iff.mp hrd1).2]
-  · exact hsat (Nat.le_refl _) (Assignments.Le.refl _)
+  · exact hsat le_rfl
   · rw [← hres]
     exact hrd1
   · rw [← hres]
