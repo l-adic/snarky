@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import KimchiFixture.Kimchi
 import Kimchi.Verifier.Wire
 import Lean.Data.Json
@@ -56,6 +57,7 @@ flattening of the batch, the `ft_comm` double collapse, the carried-public prece
 either reproduces production's accept bit here or fails. -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
+open scoped Kimchi
 
 /-- The client-side composition: parse the wire records at the run's chunk count and
 hand the checked records to the protocol verifier —
@@ -126,12 +128,12 @@ def runChunked (C : Ipa.KimchiCurve)
     -- The nc-specific high-chunk corruption (the second ft_comm collapse group). Kept
     -- even under `heavy`, so the nc > 2 run is non-vacuous.
     if 1 < nc then
-      unless proof.tComm.size = 7 * nc do
-        throw (IO.userError s!"{path}: expected a full quotient ({7 * nc} chunks), \
+      unless proof.tComm.size = quotChunks * nc do
+        throw (IO.userError s!"{path}: expected a full quotient ({quotChunks * nc} chunks), \
           got {proof.tComm.size} — the high-chunk corruption would be a no-op")
       corrupts := corrupts.push
-        (s!"corrupted t comm (chunk {7 * nc - 1}, second collapse group)",
-          !verify { proof with tComm := proof.tComm.modify (7 * nc - 1) (· + σ.h) })
+        (s!"corrupted t comm (chunk {quotChunks * nc - 1}, second collapse group)",
+          !verify { proof with tComm := proof.tComm.modify (quotChunks * nc - 1) (· + σ.h) })
     -- The full verify-based matrix — skipped when `heavy` (see the def docstring).
     unless heavy do
       corrupts := corrupts.push ("corrupted z eval (ζ, chunk 0)", !verify (bumpZ true 0))

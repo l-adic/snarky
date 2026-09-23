@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Pickles.IncrementallyVerify
 import Pickles.FinalizeOtherProof
 import Pickles.PublicInputCommit
@@ -46,6 +47,7 @@ namespace Pickles
 open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 open CompElliptic.CurveForms.ShortWeierstrass
+open scoped Kimchi
 
 /-! ## Packing the wrap statement -/
 
@@ -147,7 +149,7 @@ structure IvpProof (k nc : ℕ) (f sf : Type) where
   /-- The permutation accumulator's commitment, `nc` chunks. -/
   zComm : Vector (AffinePoint f) nc
   /-- The `7 · nc` quotient chunks. -/
-  tComm : Vector (AffinePoint f) (7 * nc)
+  tComm : Vector (AffinePoint f) (quotChunks * nc)
   /-- The opening, at `k` rounds. -/
   opening : BulletproofOpening k f sf
 
@@ -156,7 +158,7 @@ circuit type `instIvpProofCircuitType` is carried along this. -/
 def IvpProof.equivProd (k nc : ℕ) (f sf : Type) :
     IvpProof k nc f sf ≃
       Vector (Vector (AffinePoint f) nc) wCols × Vector (AffinePoint f) nc ×
-        Vector (AffinePoint f) (7 * nc) × BulletproofOpening k f sf :=
+        Vector (AffinePoint f) (quotChunks * nc) × BulletproofOpening k f sf :=
   ⟨fun p => (p.wComm, p.zComm, p.tComm, p.opening), fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2⟩,
    fun _ => rfl, fun _ => rfl⟩
 
@@ -187,7 +189,7 @@ theorem ivpInputOf_lengths {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FV
     (key : VkComms nc (AffinePoint (FVar F))) (pr : IvpProof k nc (FVar F) sf) :
     (ivpInputOf dv sgOld key pr).wComm.flatten.length = wCols * nc ∧
       (ivpInputOf dv sgOld key pr).zComm.length = nc ∧
-      (ivpInputOf dv sgOld key pr).tComm.length = 7 * nc := by
+      (ivpInputOf dv sgOld key pr).tComm.length = quotChunks * nc := by
   simp [ivpInputOf, List.length_flatten, List.map_map, Function.comp_def]
   omega
 

@@ -16,6 +16,10 @@ The first two transcribe proof-systems' `circuits/wires.rs`.
 * `permCols = 7` — the wired columns: seven wire pointers per row, seven σ polynomials,
   seven coset shifts.
 * `evalPts = 2` — the evaluation points of every batch row, `ζ` and `ζω`.
+* `quotChunks = 7` — the quotient commitment's chunks per run chunk: the combined constraint
+  has degree below `8n`, so the quotient by `zH` has degree below `7n`. The prover commits it
+  in seven chunks per run chunk and `verifier.rs` bounds it by the same. Numerically equal to
+  `permCols`, but a different quantity.
 
 ## The derived batch layout
 
@@ -48,6 +52,9 @@ scoped notation "coeffCols" => (15 : Nat)
 
 /-- The two evaluation points of every batch row, `(ζ, ζω)`. -/
 scoped notation "evalPts" => (2 : Nat)
+
+/-- The quotient commitment's chunks per run chunk. -/
+scoped notation "quotChunks" => (7 : Nat)
 
 /-- The σ columns in the batch: `permCols − 1`, the last is linearized away. -/
 scoped notation "sigmaRows" => (6 : Nat)

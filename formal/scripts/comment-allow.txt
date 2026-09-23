@@ -9,6 +9,7 @@ coeffCols
 evalPts
 litRowCount
 permCols
+quotChunks
 sigmaRows
 tailRowCount
 wCols

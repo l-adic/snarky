@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import PicklesFixture
 import Pickles.TwoHalves
 import Pickles.StepProof
@@ -66,6 +67,7 @@ memo and environment they read; each run's output is printed whole, in the order
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
 open CompElliptic.Fields.Pasta
+open scoped Kimchi
 
 /-- Wrap proofs: Pallas commitments, statement cells in the wrap field. -/
 abbrev CW := IpaPallas.curve
@@ -153,9 +155,9 @@ def ivpProofOf (C : Ipa.KimchiCurve) {k nc : ℕ} {sf : Type} (shift : C.ScalarF
     (cp : Kimchi.Verifier.KimchiProof C nc k) :
     Except String (Pickles.IvpProof k nc C.BaseField sf) := do
   let pt (P : C.Point) : AffinePoint C.BaseField := ⟨P.x, P.y⟩
-  let tComm : Vector (AffinePoint C.BaseField) (7 * nc) ←
-    if h : cp.tComm.size = 7 * nc then pure ⟨cp.tComm.map pt, by simp [h]⟩
-    else throw s!"t_comm: {cp.tComm.size} chunks, expected {7 * nc}"
+  let tComm : Vector (AffinePoint C.BaseField) (quotChunks * nc) ←
+    if h : cp.tComm.size = quotChunks * nc then pure ⟨cp.tComm.map pt, by simp [h]⟩
+    else throw s!"t_comm: {cp.tComm.size} chunks, expected {quotChunks * nc}"
   return { wComm := cp.wComm.map (·.map pt)
            zComm := cp.zComm.map pt
            tComm

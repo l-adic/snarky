@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Kimchi.Verifier.Kimchi
 
 /-!
@@ -148,7 +149,7 @@ only, so the empty quotient parses.
 -/
 
 /-- **The proof check**, at the run's chunk count `nc` and the SRS's round count `k`. Every
-evaluation vector must have `nc` chunks and the quotient at most `7 * nc`; the witness and
+evaluation vector must have `nc` chunks and the quotient at most `quotChunks * nc`; the witness and
 permutation-aggregation commitments must have `nc` chunks, each old accumulator one chunk
 and `k` challenges, and the opening `k` rounds. Public evaluations are required unless
 `nc = 1`. The pins upstream does not check are the strengthenings in the note above. -/
@@ -157,7 +158,7 @@ def KimchiProof.check {C : Ipa.KimchiCurve} (nc k : ℕ) (p : KimchiProof C) :
   let wComm ← p.wComm.mapM (checkChunks nc)
   let zComm ← checkChunks nc p.zComm
   let opening ← p.opening.check k
-  if htc : p.tComm.size ≤ 7 * nc then
+  if htc : p.tComm.size ≤ quotChunks * nc then
     let evals ← checkEvals nc p.evals
     let pubEvals ← match p.pubEvals with
       | some pe => (checkPointEvals nc pe).map .carried

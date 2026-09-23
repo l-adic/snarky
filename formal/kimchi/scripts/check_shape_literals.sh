@@ -2,9 +2,9 @@
 # The shape-literal gate: no bare structural dimension may appear in a TYPE position.
 #
 # The kimchi shape constants (Kimchi/Columns.lean) name every structural dimension
-# (wCols, permCols, coeffCols, sigmaRows, litRowCount, tailRowCount, evalPts). This check
-# enforces their use across the Kimchi/ library tree (minus Gate/), the KimchiFixture
-# decoders, and the scripts/*.lean fixture drivers:
+# (wCols, permCols, coeffCols, sigmaRows, litRowCount, tailRowCount, evalPts, quotChunks).
+# This check enforces their use across the Kimchi/ library tree (minus Gate/), the
+# KimchiFixture decoders, and the scripts/*.lean fixture drivers:
 # any bare 6/7/15/43/44 in a type-shaped position — `Fin N` (including the
 # parenthesized `Fin (N)`), a `finRange N`, a `Vector` dimension, a `parseSized`
 # dimension, `.take 6`, or an `N * nc` stream size — fails the gate. A scanned
@@ -43,7 +43,7 @@ pats = [r'Fin (15|7|6|44|43)\b|Fin \((15|7|6|44|43)\)',
         r'Vector\b[^\n]*?[^\^\w](15|7|6|43|44)\b',
         r'\.take 6\b',
         r'parseSized "[^"]*" (15|7|6)\b|parseSized "[^"]*" \((15|7|6)\)',
-        r'(44|43) \* nc\b']
+        r'(44|43|7) \* nc\b']
 bad = 0
 for path in files:
     for ln, line in enumerate(open(path), 1):

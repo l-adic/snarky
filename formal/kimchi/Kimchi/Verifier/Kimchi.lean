@@ -178,7 +178,7 @@ structure KimchiProof (C : Ipa.KimchiCurve) (nc k : ℕ) where
   zComm : Vector C.Point nc
   /-- The quotient chunks: genuinely variable-length, so the bound is carried. -/
   tComm : Array C.Point
-  tComm_le : tComm.size ≤ 7 * nc
+  tComm_le : tComm.size ≤ quotChunks * nc
   /-- The claimed evaluations, per column family and per chunk. -/
   evals : ProofEvaluations (Vector C.ScalarField nc)
   /-- The public-evaluation source: carried pairs, or the barycentric fallback at `nc = 1`. -/

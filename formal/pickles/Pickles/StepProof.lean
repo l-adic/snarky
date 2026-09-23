@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Pickles.StepScalarHalf
 import Pickles.WrapVerify
 import Snarky.Compile
@@ -49,6 +50,7 @@ namespace Pickles
 open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 open CompElliptic.CurveForms.ShortWeierstrass
+open scoped Kimchi
 
 namespace StepProof
 
@@ -187,7 +189,7 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
       g.sgOld keyCells g.val.group.proof
     have h2 : (g.cells keyCells).wComm.flatten.length = 15 * nc := hl.1
     have h3 : (g.cells keyCells).zComm.length = nc := hl.2.1
-    have h4 : (g.cells keyCells).tComm.length = 7 * nc := hl.2.2
+    have h4 : (g.cells keyCells).tComm.length = quotChunks * nc := hl.2.2
     have h5 := nc_le E
     omega
 

@@ -244,18 +244,18 @@ private theorem exists_injective_avoiding {F : Type*} [Fintype F] [DecidableEq F
   · have hmem : ((e.symm i : t) : F) ∈ t := (e.symm i).2
     exact (Finset.mem_sdiff.mp (ht hmem)).2
 
-/-- **A nondegenerate challenge grid exists** once `(K+1)² ≤ |F|`, with `K = 7·n` the cell
+/-- **A nondegenerate challenge grid exists** once `(K+1)² ≤ |F|`, with `K = permCols · n` the cell
 count. Each cell forbids one `γ` per `β`, so `K + 1` distinct `β`s and `K + 1` distinct
 `γ`s dodging the at most `(K+1)·K` bad values suffice. -/
 theorem exists_nondegenerate_grid {F : Type*} [Field F] [Fintype F] [DecidableEq F]
     {n : ℕ} {ω : F} (zkRows : ℕ)
     (w : Fin permCols → Polynomial F) (shifts : Fin permCols → F)
     (σpFull : Equiv.Perm (Fin permCols × Fin n))
-    (hF : (7 * n + 1) * (7 * n + 1) ≤ Fintype.card F) :
-    ∃ b g : Fin (7 * n + 1) → F,
+    (hF : (permCols * n + 1) * (permCols * n + 1) ≤ Fintype.card F) :
+    ∃ b g : Fin (permCols * n + 1) → F,
       Function.Injective b ∧ Function.Injective g
         ∧ ∀ a c, Nondegenerate ω zkRows w shifts σpFull (b a) (g c) := by
-  set K := 7 * n with hK
+  set K := permCols * n with hK
   obtain ⟨b, hb, -⟩ := exists_injective_avoiding (∅ : Finset F) (K + 1)
     (by simpa using le_trans (Nat.le_mul_of_pos_right _ (by omega)) hF)
   set Bad : Finset F := (Finset.univ : Finset (Fin (K + 1))).biUnion fun a =>
