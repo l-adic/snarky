@@ -57,7 +57,8 @@ theorem inv_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (fun a st' => CircuitType.ReadsAs (val := F) st' a xv⁻¹) := by
     refine Complete.bind
       (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame Mono.readsAs (Complete.witness (inv.advice x) xv⁻¹ (by simp))))
+        (Complete.frame CircuitType.monotone_readsAs (Complete.witness (inv.advice x) xv⁻¹
+          (by simp))))
       (fun r => Complete.bind (Complete.addConstraint ?_)
         fun _ => Complete.pure_of fun _ h => h.1)
     · rintro st ⟨hr, hxr⟩ stf hle
@@ -145,7 +146,7 @@ their product — scope and reading together, as `CircuitType.ReadsAs` carries t
           simp [CVar.val, mul_comm])⟩
   · refine Complete.bind
       (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+        (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
           (Complete.witness (mul.advice x y) (xv * yv) (by simp))))
       (fun r => Complete.bind (Complete.addConstraint ?_)
         fun _ => Complete.pure_of fun _ h => h.1)
@@ -206,7 +207,8 @@ theorem square_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.reads_fvar.mpr (by rw [← hrd h]; rfl)⟩
   · refine Complete.bind
       (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame Mono.readsAs (Complete.witness (square.advice x) (xv * xv) (by simp))))
+        (Complete.frame CircuitType.monotone_readsAs (Complete.witness (square.advice x) (xv * xv)
+          (by simp))))
       (fun r => Complete.bind (Complete.addConstraint ?_)
         fun _ => Complete.pure_of fun _ h => h.1)
     · simp [square.advice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1), hrd h]
@@ -250,7 +252,7 @@ its calls built are satisfied at every extension of the final table, and the res
   simp only [div]
   exact Complete.bind
     (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs (inv_complete (c := c) y yv hne)))
+      (Complete.frame CircuitType.monotone_readsAs (inv_complete (c := c) y yv hne)))
     fun r => Complete.imp (fun _ h => ⟨h.2, h.1⟩)
       (fun _ _ h => by rwa [div_eq_mul_inv]) (mul_complete (c := c) x r xv yv⁻¹)
 
@@ -323,11 +325,11 @@ theorem isZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
     by_cases hz : a = 0 <;> simp [hz, bit]
   · refine Complete.bind
       (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame Mono.readsAs
+        (Complete.frame CircuitType.monotone_readsAs
           (Complete.witness (isZero.bitAdvice x) (if xv = 0 then 1 else 0) (by simp))))
       (fun r => Complete.bind
         (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-          (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+          (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
             (Complete.witness (isZero.invAdvice x) (if xv = 0 then 0 else xv⁻¹) (by simp))))
         (fun rInv => Complete.bind (Complete.addConstraint ?_)
           fun _ => Complete.bind (Complete.addConstraint ?_)
@@ -560,7 +562,7 @@ private theorem powGo_complete [Field F] [DecidableEq F] [BasicSystem F c]
         CircuitType.ReadsAs (val := F) st y p.2) ∧ x.Scoped st)
       (fun st h => ⟨⟨_, _⟩, ⟨(hval x st h.1).choose_spec, (hval y st h.2).choose_spec⟩, h.1⟩)
       fun p => Complete.imp (fun _ h => h) (fun _ _ h => ⟨CircuitType.scoped_fvar.mp h.1.1, h.2⟩)
-        (Complete.frame Mono.scoped (mul_complete (c := c) x y p.1 p.2))
+        (Complete.frame CVar.monotone_scoped (mul_complete (c := c) x y p.1 p.2))
   intro fuel
   induction fuel with
   | zero =>
@@ -580,7 +582,7 @@ private theorem powGo_complete [Field F] [DecidableEq F] [BasicSystem F c]
         (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => h) (hmul x x))
         fun sq => Complete.bind
           (Complete.imp (fun _ h => h) (fun _ _ h => h)
-            (Complete.frame Mono.scoped (ih sq ((m + 2) / 2))))
+            (Complete.frame CVar.monotone_scoped (ih sq ((m + 2) / 2))))
           fun y => ?_
       by_cases hpar : (m + 2) % 2 = 0
       · rw [if_pos hpar]
@@ -600,8 +602,8 @@ theorem pow_complete [Field F] [DecidableEq F] [BasicSystem F c]
   obtain ⟨r, st₁, hrun, hsat, hsc⟩ := powGo_complete (c := c) n x n st hx
   refine ⟨r, st₁, hrun, hsat, hsc, ?_⟩
   have hval := runs_post (fun V => pow_spec (c := c) (V := V) x n) hrun
-    (hsat (Nat.le_refl _) (Assignments.Le.refl _))
-  rw [hval, CVar.val_of_le (run_le hrun).2 hx]
+    (hsat le_rfl)
+  rw [hval, CVar.val_of_le (run_le hrun) hx]
 
 attribute [irreducible] pow
 

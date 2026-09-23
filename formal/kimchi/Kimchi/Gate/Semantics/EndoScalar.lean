@@ -365,83 +365,63 @@ theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
       hc k (Nat.lt_succ_self k)]
     ring
 
-/-- A satisfying `m + 1`-row run: every row holds, the first opens at the canonical
-    accumulators, and each row's outputs are the next row's inputs. -/
-structure Chain (w : ℕ → Witness F) (m : ℕ) : Prop where
-  /-- Every row of the run satisfies the gate. -/
-  holds : ∀ i, i ≤ m → Holds (w i)
-  /-- The `a` accumulator opens at `2`. -/
-  a0 : (w 0).a0 = 2
-  /-- The `b` accumulator opens at `2`. -/
-  b0 : (w 0).b0 = 2
-  /-- The register opens at `0`. -/
-  n0 : (w 0).n0 = 0
-  /-- Each row's `a` output is the next row's input. -/
-  aStep : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8
-  /-- Each row's `b` output is the next row's input. -/
-  bStep : ∀ i, i < m → (w (i + 1)).b0 = (w i).b8
-  /-- Each row's register output is the next row's input. -/
-  nStep : ∀ i, i < m → (w (i + 1)).n0 = (w i).n8
-
-/-- A prefix of a chain is a chain — what feeds the induction in `chain_decompose`. -/
-theorem Chain.mono {w : ℕ → Witness F} {m n : ℕ} (h : Chain w n) (hmn : m ≤ n) : Chain w m :=
-  ⟨fun i hi => h.holds i (by omega), h.a0, h.b0, h.n0,
-    fun i hi => h.aStep i (by omega), fun i hi => h.bStep i (by omega),
-    fun i hi => h.nStep i (by omega)⟩
-
-/-- **Sequential-gate reconstruction.** A `Chain` of `m + 1` rows computes the single
+/-- **Sequential-gate reconstruction.** A run of `m + 1` rows computes the single
     Algorithm-2 decomposition of its concatenated crumb stream `chainCrumbs w (m + 1)`, exactly
     as one row over that stream would. -/
-theorem chain_decompose : ∀ (m : ℕ) (w : ℕ → Witness F), Chain w m →
+theorem chain_decompose : ∀ (m : ℕ) (w : ℕ → Witness F), (∀ i, i ≤ m → Holds (w i)) →
+    (w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0 →
+    (∀ i, i < m → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+      (w (i + 1)).n0 = (w i).n8) →
     (w m).a8 = decomposeA (chainCrumbs w (m + 1))
       ∧ (w m).b8 = decomposeB (chainCrumbs w (m + 1))
       ∧ (w m).n8 = nReconstruct (chainCrumbs w (m + 1))
-  | 0, w, h => by
-    obtain ⟨hn, ha, hb, _⟩ := (holds_iff _).mp (h.holds 0 (le_refl 0))
+  | 0, w, hholds, hopen, _ => by
+    obtain ⟨hn, ha, hb, _⟩ := (holds_iff _).mp (hholds 0 (le_refl 0))
     rw [chainCrumbs_succ, chainCrumbs_zero, List.nil_append]
     refine ⟨?_, ?_, ?_⟩
-    · rw [ha, h.a0, decomposeA, decomposeFold]
-    · rw [hb, h.b0, decomposeB, decomposeFold]
-    · rw [hn, h.n0, nReconstruct]
-  | k + 1, w, h => by
-    obtain ⟨ihA, ihB, ihN⟩ := chain_decompose k w (h.mono (by omega))
-    obtain ⟨hn, ha, hb, _⟩ := (holds_iff _).mp (h.holds (k + 1) (le_refl _))
+    · rw [ha, hopen.1, decomposeA, decomposeFold]
+    · rw [hb, hopen.2.1, decomposeB, decomposeFold]
+    · rw [hn, hopen.2.2, nReconstruct]
+  | k + 1, w, hholds, hopen, hlink => by
+    obtain ⟨ihA, ihB, ihN⟩ := chain_decompose k w (fun i hi => hholds i (by omega)) hopen
+      (fun i hi => hlink i (by omega))
+    obtain ⟨hn, ha, hb, _⟩ := (holds_iff _).mp (hholds (k + 1) (le_refl _))
     rw [chainCrumbs_succ]
     refine ⟨?_, ?_, ?_⟩
-    · rw [ha, h.aStep k (Nat.lt_succ_self k), ihA, decomposeA_append]
-    · rw [hb, h.bStep k (Nat.lt_succ_self k), ihB, decomposeB_append]
-    · rw [hn, h.nStep k (Nat.lt_succ_self k), ihN, nReconstruct_append]
+    · rw [ha, (hlink k (Nat.lt_succ_self k)).1, ihA, decomposeA_append]
+    · rw [hb, (hlink k (Nat.lt_succ_self k)).2.1, ihB, decomposeB_append]
+    · rw [hn, (hlink k (Nat.lt_succ_self k)).2.2, ihN, nReconstruct_append]
 
 /-! ## A run given as a list
 
-    A circuit builds its rows as a finite list, not as a function on `ℕ`. `Chain.ofList` is
-    that caller's constructor, and the two identities below say what the chain theorems'
-    conclusions read as there. The indexed form stays primary: a generated table (`chainBuild`)
-    has no list to speak of. -/
+    A circuit builds its rows as a finite list, not as a function on `ℕ`. `isChain_getD` reads
+    the list's `List.IsChain` as the indexed run facts, and the two identities below say what
+    the chain theorems' conclusions read as there. The indexed form stays primary: a generated
+    table (`chainBuild`) has no list to speak of. -/
 
-/-- The chain a caller holding a finite run builds: every row holds, adjacent rows link, and
-    the first row opens at the canonical accumulators. -/
-theorem Chain.ofList (l : List (Witness F)) (hne : l ≠ [])
+/-- A finite run as an indexed one: every row holds, adjacent rows link, and the first row
+    opens at the canonical accumulators. -/
+theorem isChain_getD (l : List (Witness F)) (hne : l ≠ [])
     (hholds : ∀ w ∈ l, Holds w)
     (hlink : l.IsChain fun a b => b.a0 = a.a8 ∧ b.b0 = a.b8 ∧ b.n0 = a.n8)
     (ha0 : (l.head hne).a0 = 2) (hb0 : (l.head hne).b0 = 2) (hn0 : (l.head hne).n0 = 0) :
-    Chain (fun i => l.getD i (l.head hne)) (l.length - 1) := by
+    (∀ i, i ≤ l.length - 1 → Holds (l.getD i (l.head hne))) ∧
+      ((l.getD 0 (l.head hne)).a0 = 2 ∧ (l.getD 0 (l.head hne)).b0 = 2 ∧
+        (l.getD 0 (l.head hne)).n0 = 0) ∧
+      (∀ i, i < l.length - 1 →
+        (l.getD (i + 1) (l.head hne)).a0 = (l.getD i (l.head hne)).a8 ∧
+        (l.getD (i + 1) (l.head hne)).b0 = (l.getD i (l.head hne)).b8 ∧
+        (l.getD (i + 1) (l.head hne)).n0 = (l.getD i (l.head hne)).n8) := by
   have hlen : 0 < l.length := List.length_pos_iff.mpr hne
   have hget : ∀ i (hi : i < l.length), l.getD i (l.head hne) = l[i] :=
     fun i hi => List.getD_eq_getElem _ _ hi
   have hhead : l.head hne = l[0]'hlen := List.head_eq_getElem hne
-  refine ⟨fun i hi => ?_, ?_, ?_, ?_, fun i hi => ?_, fun i hi => ?_, fun i hi => ?_⟩
+  refine ⟨fun i hi => ?_, ?_, fun i hi => ?_⟩
   · rw [hget i (by omega)]
     exact hholds _ (List.getElem_mem _)
-  · rw [hget 0 hlen, ← hhead]; exact ha0
-  · rw [hget 0 hlen, ← hhead]; exact hb0
-  · rw [hget 0 hlen, ← hhead]; exact hn0
+  · simp only [hget 0 hlen, ← hhead]; exact ⟨ha0, hb0, hn0⟩
   · rw [hget (i + 1) (by omega), hget i (by omega)]
-    exact (hlink.getElem i (by omega)).1
-  · rw [hget (i + 1) (by omega), hget i (by omega)]
-    exact (hlink.getElem i (by omega)).2.1
-  · rw [hget (i + 1) (by omega), hget i (by omega)]
-    exact (hlink.getElem i (by omega)).2.2
+    exact hlink.getElem i (by omega)
 
 /-- The crumb stream of a run given as a list: its rows' crumbs, concatenated. -/
 theorem chainCrumbs_getD (l : List (Witness F)) (d : Witness F) :
@@ -785,19 +765,28 @@ variable {F : Type*} [Field F]
 
 /-- The effective scalar of a multi-row run: `a·λ + b` over the whole challenge, with the
     register reconstructing the full concatenated crumb stream. -/
-theorem chain_toField (lam : F) (m : ℕ) (w : ℕ → Witness F) (h : Chain w m) :
+theorem chain_toField (lam : F) (m : ℕ) (w : ℕ → Witness F)
+    (hholds : ∀ i, i ≤ m → Holds (w i))
+    (hopen : (w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0)
+    (hlink : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+      (w (i + 1)).n0 = (w i).n8) :
     (w m).a8 * lam + (w m).b8 = toField (chainCrumbs w (m + 1)) lam
       ∧ (w m).n8 = nReconstruct (chainCrumbs w (m + 1)) := by
-  obtain ⟨hA, hB, hN⟩ := chain_decompose m w h
+  obtain ⟨hA, hB, hN⟩ := chain_decompose m w hholds hopen hlink
   exact ⟨by rw [hA, hB, toField], hN⟩
 
 /-- **Completeness.** For any rows of valid crumbs, the threaded honest witness `chainBuild` is a
-    `Chain` whose rows carry the given crumbs. The threading and init are definitional; the only
+    run whose rows carry the given crumbs. The threading and init are definitional; the only
     real input is `complete` per row. -/
 theorem chain_complete (m : ℕ) (rows : ℕ → List F)
     (hvalid : ∀ i, i ≤ m → ∀ x ∈ rows i, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    Chain (chainBuild rows) m ∧ (∀ i, i ≤ m → (chainBuild rows i).crumbs = rows i) := by
-  refine ⟨⟨?_, rfl, rfl, rfl, fun i _ => rfl, fun i _ => rfl, fun i _ => rfl⟩, ?_⟩
+    (∀ i, i ≤ m → Holds (chainBuild rows i)) ∧
+      ((chainBuild rows 0).a0 = 2 ∧ (chainBuild rows 0).b0 = 2 ∧ (chainBuild rows 0).n0 = 0) ∧
+      (∀ i, i < m → (chainBuild rows (i + 1)).a0 = (chainBuild rows i).a8 ∧
+        (chainBuild rows (i + 1)).b0 = (chainBuild rows i).b8 ∧
+        (chainBuild rows (i + 1)).n0 = (chainBuild rows i).n8) ∧
+      (∀ i, i ≤ m → (chainBuild rows i).crumbs = rows i) := by
+  refine ⟨?_, ⟨rfl, rfl, rfl⟩, fun i _ => ⟨rfl, rfl, rfl⟩, ?_⟩
   · intro i hi
     cases i with
     | zero => exact complete 2 2 0 (rows 0) (hvalid 0 hi)
@@ -837,24 +826,28 @@ theorem chain_complete (m : ℕ) (rows : ℕ → List F)
        split of a squeezed challenge into two range-checked halves is modelled in
        `Snarky.Kimchi.Circuit.RangeCheck`. -/
 
-/-- **The range check.** A `Chain` of `m + 1` rows, each carrying `c` crumbs (`hwidth`), has an
+/-- **The range check.** A run of `m + 1` rows, each carrying `c` crumbs (`hwidth`), has an
     output register equal to the cast of a natural `< 4 ^ (c · (m + 1))`. The hypotheses are
     `chain_toField`'s plus `hwidth`, so the chain theorems compose on one run; `h2` and `h3` let
     a crumb's base-4 digit be read back. The bound is informative only under `4 ^ width ≤ p`
     (limit 1 of `§ What the range check does not cover`). -/
 theorem chain_range (m c : ℕ) (w : ℕ → Witness F) (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (h : Chain w m) (hwidth : ∀ i, i ≤ m → (w i).crumbs.length = c) :
+    (hholds : ∀ i, i ≤ m → Holds (w i))
+    (hopen : (w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0)
+    (hlink : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+      (w (i + 1)).n0 = (w i).n8)
+    (hwidth : ∀ i, i ≤ m → (w i).crumbs.length = c) :
     ∃ k : ℕ, k < 4 ^ (c * (m + 1)) ∧ (w m).n8 = (k : F) := by
   -- the `ℕ` shadow `valNat` needs `DecidableEq F`; obtaining it here keeps it off the statement
   classical
-  obtain ⟨-, -, hN⟩ := chain_decompose m w h
+  obtain ⟨-, -, hN⟩ := chain_decompose m w hholds hopen hlink
   -- crumb validity of the whole stream, from `holds_iff` + `crumb_iff` (not `sound`, which
   -- would drag `DecidableEq F` in through its `cFunc`/`dFunc` tables)
   have hvalid : ∀ x ∈ chainCrumbs w (m + 1), x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
     intro x hxmem
     simp only [chainCrumbs, List.mem_flatMap, List.mem_range] at hxmem
     obtain ⟨i, hi, hxi⟩ := hxmem
-    exact (crumb_iff x).mp (((holds_iff (w i)).mp (h.holds i (by omega))).2.2.2 x hxi)
+    exact (crumb_iff x).mp (((holds_iff (w i)).mp (hholds i (by omega))).2.2.2 x hxi)
   have hlen : (chainCrumbs w (m + 1)).length = c * (m + 1) :=
     chainCrumbs_length c w (m + 1) fun i hi => hwidth i (by omega)
   refine ⟨valNat (chainCrumbs w (m + 1)), ?_, ?_⟩
@@ -865,9 +858,13 @@ theorem chain_range (m c : ℕ) (w : ℕ → Witness F) (h2 : (2 : F) ≠ 0) (h3
     `4 ^ 64 = 2 ^ 128`: a value with a satisfying eight-row witness is the cast of a natural
     below `2¹²⁸`. -/
 theorem chain_range_128 (w : ℕ → Witness F) (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (h : Chain w 7) (hwidth : ∀ i, i ≤ 7 → (w i).crumbs.length = 8) :
+    (hholds : ∀ i, i ≤ 7 → Holds (w i))
+    (hopen : (w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0)
+    (hlink : ∀ i, i < 7 → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+      (w (i + 1)).n0 = (w i).n8)
+    (hwidth : ∀ i, i ≤ 7 → (w i).crumbs.length = 8) :
     ∃ k : ℕ, k < 2 ^ 128 ∧ (w 7).n8 = (k : F) := by
-  obtain ⟨k, hk, hn⟩ := chain_range 7 8 w h2 h3 h hwidth
+  obtain ⟨k, hk, hn⟩ := chain_range 7 8 w h2 h3 hholds hopen hlink hwidth
   refine ⟨k, ?_, hn⟩
   rw [show (2 : ℕ) ^ 128 = 4 ^ (8 * (7 + 1)) by rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]]
   exact hk
@@ -877,11 +874,15 @@ theorem chain_range_128 (w : ℕ → Witness F) (h2 : (2 : F) ≠ 0) (h3 : (3 : 
     rather than to a residue class. This rules out representing a value `≥ 2¹²⁸` by wrapping.
     Existence is `chain_range`; uniqueness is `CharP.natCast_injOn_Iio`. -/
 theorem chain_range_unique {p : ℕ} [CharP F p] (m c : ℕ) (w : ℕ → Witness F)
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (h : Chain w m)
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hholds : ∀ i, i ≤ m → Holds (w i))
+    (hopen : (w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0)
+    (hlink : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+      (w (i + 1)).n0 = (w i).n8)
     (hwidth : ∀ i, i ≤ m → (w i).crumbs.length = c)
     (hp : (4 : ℕ) ^ (c * (m + 1)) ≤ p) :
     ∃! k : ℕ, k < 4 ^ (c * (m + 1)) ∧ (w m).n8 = (k : F) := by
-  obtain ⟨k, hk, hn⟩ := chain_range m c w h2 h3 h hwidth
+  obtain ⟨k, hk, hn⟩ := chain_range m c w h2 h3 hholds hopen hlink hwidth
   refine ⟨k, ⟨hk, hn⟩, ?_⟩
   rintro j ⟨hj, hjn⟩
   exact CharP.natCast_injOn_Iio F p (Set.mem_Iio.mpr (lt_of_lt_of_le hj hp))
@@ -900,18 +901,22 @@ theorem range_complete (N k : ℕ) (hk : k < 4 ^ N) (a0 b0 : F) :
   rw [nReconstruct_crumbsOf, Nat.mod_eq_of_lt hk]
 
 /-- **Multi-row non-vacuity.** The exact converse of `chain_range`: for `k < 4 ^ (c(m+1))` the
-    honest prover fills a `Chain` of `m + 1` rows of uniform width `c` whose output register is
+    honest prover fills a run of `m + 1` rows of uniform width `c` whose output register is
     `k`. The conclusion is `chain_range`'s hypothesis list, so the two compose on one run. The
     rows are `chainBuild` over the row chunks of `k`, which reconstruct to `k` by
     `nReconstruct_rowsOf`; no field non-degeneracy is needed. -/
 theorem chain_range_complete (m c k : ℕ) (hk : k < 4 ^ (c * (m + 1))) :
     ∃ w : ℕ → Witness F,
-      Chain w m ∧ (∀ i, i ≤ m → (w i).crumbs.length = c) ∧ (w m).n8 = (k : F) := by
-  obtain ⟨hchain, hcrumbs⟩ :=
+      (∀ i, i ≤ m → Holds (w i)) ∧ ((w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0) ∧
+        (∀ i, i < m → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+          (w (i + 1)).n0 = (w i).n8) ∧
+        (∀ i, i ≤ m → (w i).crumbs.length = c) ∧ (w m).n8 = (k : F) := by
+  obtain ⟨hholds, hopen, hlink, hcrumbs⟩ :=
     chain_complete (F := F) m (fun i => crumbsOf c (k / 4 ^ (c * (m - i))))
       (fun i _ => crumbsOf_valid c _)
-  refine ⟨_, hchain, fun i hi => by rw [hcrumbs i hi]; exact crumbsOf_length c _, ?_⟩
-  obtain ⟨-, -, hN⟩ := chain_decompose m _ hchain
+  refine ⟨_, hholds, hopen, hlink, fun i hi => by rw [hcrumbs i hi]; exact crumbsOf_length c _,
+    ?_⟩
+  obtain ⟨-, -, hN⟩ := chain_decompose m _ hholds hopen hlink
   rw [hN, chainCrumbs_chainBuild, nReconstruct_rowsOf, Nat.mod_eq_of_lt hk]
 
 /-- `chain_range_complete` at the deployed shape, eight rows (`m = 7`) of eight crumbs
@@ -920,7 +925,10 @@ theorem chain_range_complete (m c k : ℕ) (hk : k < 4 ^ (c * (m + 1))) :
     natural below `2¹²⁸`. -/
 theorem chain_range_complete_128 (k : ℕ) (hk : k < 2 ^ 128) :
     ∃ w : ℕ → Witness F,
-      Chain w 7 ∧ (∀ i, i ≤ 7 → (w i).crumbs.length = 8) ∧ (w 7).n8 = (k : F) := by
+      (∀ i, i ≤ 7 → Holds (w i)) ∧ ((w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0) ∧
+        (∀ i, i < 7 → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+          (w (i + 1)).n0 = (w i).n8) ∧
+        (∀ i, i ≤ 7 → (w i).crumbs.length = 8) ∧ (w 7).n8 = (k : F) := by
   refine chain_range_complete 7 8 k ?_
   rw [show (4 : ℕ) ^ (8 * (7 + 1)) = 2 ^ 128 by
     rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]]
@@ -932,35 +940,45 @@ theorem chain_range_complete_128 (k : ℕ) (hk : k < 2 ^ 128) :
     `chain_range_complete_128` are the check's two directions, and
     `§ The range check at the deployed Pasta fields` closes their field hypotheses. -/
 
-/-- The eight-row `EndoScalar` chain with output register `v`: a `Chain` of eight rows of
+/-- The eight-row `EndoScalar` chain with output register `v`: a run of eight rows of
     eight crumbs each, whose last register is `v`. -/
 def Chain128 (w : ℕ → Witness F) (v : F) : Prop :=
-  Chain w 7 ∧ (∀ i, i ≤ 7 → (w i).crumbs.length = 8) ∧ (w 7).n8 = v
+  (∀ i, i ≤ 7 → Holds (w i)) ∧ ((w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0) ∧
+    (∀ i, i < 7 → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+      (w (i + 1)).n0 = (w i).n8) ∧
+    (∀ i, i ≤ 7 → (w i).crumbs.length = 8) ∧ (w 7).n8 = v
 
 /-- A range-checked register is the cast of a natural below `2¹²⁸`: `chain_range_128` read
     through `Chain128`. -/
 theorem Chain128.range {w : ℕ → Witness F} {v : F} (hw : Chain128 w v)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
     ∃ k : ℕ, k < 2 ^ 128 ∧ v = (k : F) := by
-  obtain ⟨hchain, hwidth, hv⟩ := hw
-  obtain ⟨k, hk, hn⟩ := chain_range_128 w h2 h3 hchain hwidth
+  obtain ⟨hholds, hopen, hlink, hwidth, hv⟩ := hw
+  obtain ⟨k, hk, hn⟩ := chain_range_128 w h2 h3 hholds hopen hlink hwidth
   exact ⟨k, hk, by rw [← hv, hn]⟩
 
 variable [DecidableEq F]
 
-/-- **Self-contained circuit soundness.** Two `Chain`s of `m + 1` rows with the same crumb
+/-- **Self-contained circuit soundness.** Two runs of `m + 1` rows with the same crumb
     width that decode to the same challenge produce the same effective scalar `a·λ + b`, given
     the no-wrap bound `hbound : 4 ^ width ≤ p`. With `chain_toField`, the gate realizes a
     well-defined function `challenge ↦ a·λ + b`, independent of the prover's witness. -/
 theorem endoScalar_unique {p : ℕ} [CharP F p] (lam : F) (m : ℕ) (w w' : ℕ → Witness F)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (h : Chain w m) (h' : Chain w' m)
+    (hholds : ∀ i, i ≤ m → Holds (w i))
+    (hopen : (w 0).a0 = 2 ∧ (w 0).b0 = 2 ∧ (w 0).n0 = 0)
+    (hlink : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8 ∧ (w (i + 1)).b0 = (w i).b8 ∧
+      (w (i + 1)).n0 = (w i).n8)
+    (hholds' : ∀ i, i ≤ m → Holds (w' i))
+    (hopen' : (w' 0).a0 = 2 ∧ (w' 0).b0 = 2 ∧ (w' 0).n0 = 0)
+    (hlink' : ∀ i, i < m → (w' (i + 1)).a0 = (w' i).a8 ∧ (w' (i + 1)).b0 = (w' i).b8 ∧
+      (w' (i + 1)).n0 = (w' i).n8)
     (hwidth : (chainCrumbs w (m + 1)).length = (chainCrumbs w' (m + 1)).length)
     (hbound : (4 : ℕ) ^ (chainCrumbs w (m + 1)).length ≤ p)
     (hchal : (w m).n8 = (w' m).n8) :
     (w m).a8 * lam + (w m).b8 = (w' m).a8 * lam + (w' m).b8 := by
-  obtain ⟨hA, hB, hN⟩ := chain_decompose m w h
-  obtain ⟨hA', hB', hN'⟩ := chain_decompose m w' h'
+  obtain ⟨hA, hB, hN⟩ := chain_decompose m w hholds hopen hlink
+  obtain ⟨hA', hB', hN'⟩ := chain_decompose m w' hholds' hopen' hlink'
   -- both runs' crumbs are valid 2-bit values, and reconstruct to the shared challenge
   have hvalid : ∀ (u : ℕ → Witness F), (∀ i, i ≤ m → Holds (u i)) →
       ∀ x ∈ chainCrumbs u (m + 1), x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
@@ -970,7 +988,7 @@ theorem endoScalar_unique {p : ℕ} [CharP F p] (lam : F) (m : ℕ) (w w' : ℕ 
     exact (sound h2 h3 (u i) (hu i (by omega))).1 x hxi
   have hcrumbs : chainCrumbs w (m + 1) = chainCrumbs w' (m + 1) :=
     nReconstruct_inj (chainCrumbs w (m + 1)) (chainCrumbs w' (m + 1)) h2 h3
-      (hvalid w h.holds) (hvalid w' h'.holds) hwidth hbound (by rw [← hN, ← hN', hchal])
+      (hvalid w hholds) (hvalid w' hholds') hwidth hbound (by rw [← hN, ← hN', hchal])
   rw [hA, hB, hA', hB', hcrumbs]
 
 /-! ## The range check at the deployed Pasta fields

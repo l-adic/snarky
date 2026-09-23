@@ -59,7 +59,7 @@ never unfolds a sponge run: `runOracles` and `transcriptFrom` are projected to t
 The group read's opening clause assumes the three scalars the `ft` commitment scales by are the
 run's (`IvpReads`). They are supplied here: the scalar half's `plonkOk` compares them with the
 transcript's values, which the group read gives without the opening, and the ties
-(`HalvesTies.perm`, `zetaM`, `zetaN`) carry them to the group half's cells.
+(`HalvesTies`: both halves read one `dv`) carry them to the group half's cells.
 -/
 
 namespace Pickles
@@ -187,53 +187,47 @@ section Ties
 
 variable {C : KimchiCurve} {sf sf' : Type}
 
-/-- The two halves' claim cells carry one value across the field crossing: the shifted claims
-decode alike on both sides, the prechallenge cells read one prechallenge, and the fq digest
-crosses as `castDigest` (zero when it does not fit the scalar field: a completeness gap, not a
-soundness one). The protocol enforces these through the public-input commitment binding the
-statement into the proof; no circuit computes them, so they are hypotheses here. -/
-structure HalvesTies {k nc : ℕ} (G : GroupHalf C sf k) (Sc : ScalarHalf C sf' k nc) : Prop where
-  /-- `α`: the two cells read one prechallenge. -/
-  alpha : ∃ a₀ : Prechallenge,
-    Reads128 G.V G.claims.deferredValues.plonk.alpha a₀ ∧
-    Reads128 Sc.V Sc.claims.deferredValues.plonk.alpha a₀
-  /-- `ζ`, likewise. -/
-  zeta : ∃ z₀ : Prechallenge,
-    Reads128 G.V G.claims.deferredValues.plonk.zeta z₀ ∧
-    Reads128 Sc.V Sc.claims.deferredValues.plonk.zeta z₀
-  /-- `β`, likewise. -/
-  beta : ∃ b₀ : Prechallenge,
-    Reads128 G.V G.claims.deferredValues.plonk.beta b₀ ∧
-    Reads128 Sc.V Sc.claims.deferredValues.plonk.beta b₀
-  /-- `γ`, likewise. -/
-  gamma : ∃ g₀ : Prechallenge,
-    Reads128 G.V G.claims.deferredValues.plonk.gamma g₀ ∧
-    Reads128 Sc.V Sc.claims.deferredValues.plonk.gamma g₀
-  /-- `ξ`, likewise. -/
-  xi : ∃ ξ₀ : Prechallenge,
-    Reads128 G.V G.claims.deferredValues.xi ξ₀ ∧
-    Reads128 Sc.V Sc.claims.deferredValues.xi ξ₀
-  /-- The `cip` claim decodes to the same scalar on both sides. -/
-  cip : Sc.side.decode Sc.claims.deferredValues.combinedInnerProduct
-    = G.side.decode G.claims.deferredValues.combinedInnerProduct
-  /-- The `b` claim, likewise. -/
-  b : Sc.side.decode Sc.claims.deferredValues.b = G.side.decode G.claims.deferredValues.b
-  /-- The permutation-scalar claim, likewise. -/
-  perm : Sc.side.decode Sc.claims.deferredValues.plonk.perm
-    = G.side.decode G.claims.deferredValues.plonk.perm
-  /-- The `ζ^(2^k)` claim, likewise. -/
-  zetaM : Sc.side.decode Sc.claims.deferredValues.plonk.zetaToSrsLength
-    = G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength
-  /-- The `ζⁿ` claim, likewise. -/
-  zetaN : Sc.side.decode Sc.claims.deferredValues.plonk.zetaToDomainSize
-    = G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize
-  /-- The round challenges: the two cell lists read one prechallenge list. -/
-  chals : ∃ ms : List Prechallenge,
-    List.Forall₂ (Reads128 G.V) G.claims.deferredValues.bulletproofChallenges.toList ms ∧
-    List.Forall₂ (Reads128 Sc.V) Sc.claims.deferredValues.bulletproofChallenges.toList ms
-  /-- The fq digest: the scalar half's cell is the cast of the group half's. -/
-  digest : Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
-    = castDigest C (G.claims.spongeDigestBeforeEvaluations.val G.V)
+/-- A half's deferred-claim cells read, under its valuation `V` and decoding `decode`, as the
+deferred values `dv`: the prechallenge cells read as `dv`'s prechallenges, and the shifted cells
+decode to `dv`'s scalars. -/
+structure DvReads {K σ : Type} [Field K] [DecidableEq K] {k : ℕ} (V : Valuation K)
+    (decode : sf → σ) (c : DeferredValues k (FVar K) sf)
+    (dv : DeferredValues k Prechallenge σ) : Prop where
+  /-- `α`. -/
+  alpha : Reads128 V c.plonk.alpha dv.plonk.alpha.val
+  /-- `β`. -/
+  beta : Reads128 V c.plonk.beta dv.plonk.beta.val
+  /-- `γ`. -/
+  gamma : Reads128 V c.plonk.gamma dv.plonk.gamma.val
+  /-- `ζ`. -/
+  zeta : Reads128 V c.plonk.zeta dv.plonk.zeta.val
+  /-- The permutation scalar. -/
+  perm : decode c.plonk.perm = dv.plonk.perm
+  /-- `ζ^(2^k)`. -/
+  zetaM : decode c.plonk.zetaToSrsLength = dv.plonk.zetaToSrsLength
+  /-- `ζⁿ`. -/
+  zetaN : decode c.plonk.zetaToDomainSize = dv.plonk.zetaToDomainSize
+  /-- The combined inner product. -/
+  cip : decode c.combinedInnerProduct = dv.combinedInnerProduct
+  /-- `ξ`. -/
+  xi : Reads128 V c.xi dv.xi.val
+  /-- The round challenges. -/
+  chals : List.Forall₂ (Reads128 V) c.bulletproofChallenges.toList
+    (dv.bulletproofChallenges.toList.map (·.val))
+  /-- `b`. -/
+  b : decode c.b = dv.b
+
+/-- The two halves' claim cells carry one value across the field crossing: both read as one
+deferred-values record, and the fq digest crosses as `castDigest` (zero when it does not fit
+the scalar field: a completeness gap, not a soundness one). The protocol enforces these through
+the public-input commitment binding the statement into the proof; no circuit computes them, so
+they are hypotheses here. -/
+def HalvesTies {k nc : ℕ} (G : GroupHalf C sf k) (Sc : ScalarHalf C sf' k nc) : Prop :=
+  (∃ dv : DeferredValues k Prechallenge C.ScalarField,
+    DvReads G.V G.side.decode G.claims.deferredValues dv ∧
+      DvReads Sc.V Sc.side.decode Sc.claims.deferredValues dv) ∧
+    Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
+      = castDigest C (G.claims.spongeDigestBeforeEvaluations.val G.V)
 
 /-- The scalar half's evaluation, mask and previous-challenge cells are the proof's. -/
 structure FopTies {nc : ℕ} (E : Env C nc) (cp : KimchiProof C nc E.σ.k) (pub : Array C.ScalarField)
@@ -261,8 +255,11 @@ private theorem ScalarHalf.xiExact_of_constrained {nc : ℕ} (E : Env C nc)
       Sc.side.read Sc.side.unshiftV Sc.V out)
     (ht : HalvesTies G Sc) : Sc.XiExact E cp out := by
   have hinjS := castInj128_of_lt _ hscalar
-  obtain ⟨a₀, -, hαSa⟩ := ht.alpha
-  obtain ⟨z₀, -, hζSz⟩ := ht.zeta
+  obtain ⟨⟨dv, -, hSdv⟩, -⟩ := ht
+  have hαSa := hSdv.alpha
+  have hζSz := hSdv.zeta
+  generalize dv.plonk.alpha.val = a₀ at hαSa
+  generalize dv.plonk.zeta.val = z₀ at hζSz
   simp only [FopVerifyReads] at hs
   obtain ⟨a₀', z₀', hαS, hζS, hs⟩ := hs
   obtain rfl := Reads128.unique hinjS hαSa hαS
@@ -518,11 +515,31 @@ theorem twoHalves_schnorr
   have hinjS := castInj128_of_lt _ hscalar
   have hxi := ScalarHalf.xiExact_of_constrained E hscalar cp hs ht
   -- the shared prechallenges
-  obtain ⟨a₀, hαGa, hαSa⟩ := ht.alpha
-  obtain ⟨z₀, hζGz, hζSz⟩ := ht.zeta
-  obtain ⟨b₀, hβGb, hβSb⟩ := ht.beta
-  obtain ⟨g₀, hγGg, hγSg⟩ := ht.gamma
-  obtain ⟨ξ₀, hξGx, hξSx⟩ := ht.xi
+  obtain ⟨⟨dv, hGdv, hSdv⟩, htdig⟩ := ht
+  have htperm := hSdv.perm.trans hGdv.perm.symm
+  have htzetaM := hSdv.zetaM.trans hGdv.zetaM.symm
+  have htzetaN := hSdv.zetaN.trans hGdv.zetaN.symm
+  have htcip := hSdv.cip.trans hGdv.cip.symm
+  have htb := hSdv.b.trans hGdv.b.symm
+  have hmsG := hGdv.chals
+  have hmsS := hSdv.chals
+  have hαGa := hGdv.alpha
+  have hαSa := hSdv.alpha
+  have hζGz := hGdv.zeta
+  have hζSz := hSdv.zeta
+  have hβGb := hGdv.beta
+  have hβSb := hSdv.beta
+  have hγGg := hGdv.gamma
+  have hγSg := hSdv.gamma
+  have hξGx := hGdv.xi
+  have hξSx := hSdv.xi
+  generalize dv.plonk.alpha.val = a₀ at hαGa hαSa
+  generalize dv.plonk.zeta.val = z₀ at hζGz hζSz
+  generalize dv.plonk.beta.val = b₀ at hβGb hβSb
+  generalize dv.plonk.gamma.val = g₀ at hγGg hγSg
+  generalize dv.xi.val = ξ₀ at hξGx hξSx
+  generalize dv.bulletproofChallenges.toList.map (·.val) = ms at hmsG hmsS
+  clear hGdv hSdv
   -- the group half's read: `α`, `ζ` are the wire's through the shared readings
   obtain ⟨o, hx, hsucc, hdig, hbpc⟩ := hg
   simp only [IvpReads, DeferredValues.toIvpClaims] at hx
@@ -558,7 +575,7 @@ theorem twoHalves_schnorr
     exact hγSg
   have hd : Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
       = (runOracles C E.σ E.cvk cp pub).digest := by
-    rw [ht.digest, hdig, ← hdE]; rfl
+    rw [htdig, hdig, ← hdE]; rfl
   rw [hd, hf.ftEval1, hf.pubEvals, hf.evals] at hr' hxiF
   have hr : endoExpand C.lam r'.val = run.evalscale := by
     show _ = (frOracles C cp _ _).r
@@ -603,7 +620,7 @@ theorem twoHalves_schnorr
           = runZetaM C E.σ E.cvk cp pub ∧
         Sc.side.decode Sc.claims.deferredValues.plonk.zetaToDomainSize
           = runZetaN C E.σ E.cvk cp pub) → False := fun h =>
-      hG ⟨ht.perm.symm.trans h.1, ht.zetaM.symm.trans h.2.1, ht.zetaN.symm.trans h.2.2⟩
+      hG ⟨htperm.symm.trans h.1, htzetaM.symm.trans h.2.1, htzetaN.symm.trans h.2.2⟩
     refine ⟨fun hA => absurd (hplonkIff.mp ?_) hGof,
       fun hB => absurd ⟨hB.1.2.2.1, hB.1.2.2.2.1, hB.1.2.2.2.2.1⟩ hGof⟩
     have hA2 := hA.2
@@ -621,7 +638,6 @@ theorem twoHalves_schnorr
   subst hch
   rw [hsucc] at hiff
   -- the round challenges: the cell lists' readings are equations of lists
-  obtain ⟨ms, hmsG, hmsS⟩ := ht.chals
   -- `verify` compares the claimed challenges with the returned ones entry by entry off the
   -- base case; both lists have the SRS's round count, so the ties give the lists
   have hbpc' : G.claims.deferredValues.bulletproofChallenges.toList.map (·.val.val G.V)
@@ -667,9 +683,9 @@ theorem twoHalves_schnorr
     have hξv := hξrun hxiV
     have hcip' := (hcipIff hξv).1 hcip
     have hcipG : G.side.decode G.claims.deferredValues.combinedInnerProduct = cipOf run :=
-      ht.cip.symm.trans hcip'
+      htcip.symm.trans hcip'
     rw [hcipG] at hiff hb
-    rw [hξv, ← ht.b, hb] at hiff
+    rw [hξv, ← htb, hb] at hiff
     exact ⟨⟨hcip', hb, hperm, hzM, hzN, hxiV⟩, hiff.1 hsG⟩
   · -- the converse: the exact `ξ` comparison turns the honest claim into the bit
     rintro ⟨⟨hcip, hb, hperm, hzM, hzN, hxiV⟩, hschnorr⟩
@@ -679,9 +695,9 @@ theorem twoHalves_schnorr
     have hxiC := hxi m hm hmv
     have hξv := hξrun ⟨m, hm, hmv⟩
     have hcipG : G.side.decode G.claims.deferredValues.combinedInnerProduct = cipOf run :=
-      ht.cip.symm.trans hcip
+      htcip.symm.trans hcip
     rw [hcipG] at hiff ⊢
-    rw [hξv, ← ht.b, hb] at hiff
+    rw [hξv, ← htb, hb] at hiff
     exact ⟨hiff.2 hschnorr, hxiC, hb, (hcipIff hξv).2 hcip, hperm, hzM, hzN⟩
 
 /-- **The two halves accept exactly when the wire verifier does at honest claims, given the

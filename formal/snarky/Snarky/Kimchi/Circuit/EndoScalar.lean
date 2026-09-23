@@ -89,26 +89,26 @@ the gate model's. -/
 the row it was handed. -/
 private def Threads (st : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8)
     (r : EndoScalarRound F) (st' : FVar F × FVar F × FVar F) : Prop :=
-  (r.a0 = st.1 ∧ r.b0 = st.2.1 ∧ r.n0 = st.2.2) ∧
-    (r.a8 = st'.1 ∧ r.b8 = st'.2.1 ∧ r.n8 = st'.2.2) ∧ r.xs = xs
+  (r.a0, r.b0, r.n0) = st ∧ (r.a8, r.b8, r.n8) = st' ∧ r.xs = xs
 
 /-- The crumb stream a round list carries, MSB-first: the rounds' rows concatenated. -/
 private def roundCrumbs [Field F] (V : Valuation F) (rounds : List (EndoScalarRound F)) : List F :=
   rounds.flatMap fun r => r.xs.toList.map (·.val V)
 
 /-- A trace's rounds carry the rows it was handed. -/
-private theorem chain_rows :
-    ∀ {st fin : FVar F × FVar F × FVar F} {xs : List (Vector (FVar F) 8)}
-      {rounds : List (EndoScalarRound F)},
-      Chain Threads st xs rounds fin → rounds.map (·.xs) = xs
-  | _, _, [], _, h => by rw [h.1]; rfl
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r, tail, _, rfl, ⟨-, -, rfl⟩, hrest⟩ := h
-    rw [List.map_cons, chain_rows hrest]
+private theorem chain_rows {st fin : FVar F × FVar F × FVar F} {xs : List (Vector (FVar F) 8)}
+    {rounds : List (EndoScalarRound F)} (h : Chain Threads st xs rounds fin) :
+    rounds.map (·.xs) = xs := by
+  have hF := ((chain_iff _ _ (fun (x : Vector (FVar F) 8) (r : EndoScalarRound F) => r.xs = x)
+    fun _ _ _ _ => Iff.rfl).mp h).1
+  clear h
+  induction hF with
+  | nil => rfl
+  | cons hq _ ih => simp [hq, ih]
 
 /-- A threaded trace's wiring: adjacent rounds share their accumulator variables, the
 first opens at the seeds, and the last closes at the final ones — the three conditions
-`Kimchi.Gate.EndoScalar.Chain.ofList` asks for. -/
+`Kimchi.Gate.EndoScalar.isChain_getD` asks for. -/
 private theorem threads_wiring :
     ∀ {pref : List (Vector (FVar F) 8)} {st fin : FVar F × FVar F × FVar F}
       {r₀ : EndoScalarRound F} {rs : List (EndoScalarRound F)},
@@ -118,20 +118,12 @@ private theorem threads_wiring :
         ((r₀ :: rs).getLast (by simp)).a8 = fin.1 ∧
         ((r₀ :: rs).getLast (by simp)).b8 = fin.2.1 ∧
         ((r₀ :: rs).getLast (by simp)).n8 = fin.2.2
-  | [], _, _, _, _, h => absurd h.1 (by simp)
-  | _ :: rest, st, fin, r₀, rs, h => by
-    obtain ⟨r, tail, mid, heq, ⟨⟨e1, e2, e3⟩, ⟨d1, d2, d3⟩, -⟩, hrest⟩ := h
-    injection heq with hr ht
-    subst hr ht
-    cases rs with
-    | nil =>
-      obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hrest
-      exact ⟨List.isChain_singleton _, ⟨e1, e2, e3⟩, d1, d2, d3⟩
-    | cons r₁ ts =>
-      obtain ⟨ihlink, ⟨f1, f2, f3⟩, ihlast⟩ := threads_wiring hrest
-      refine ⟨ihlink.cons (by simp [f1, f2, f3, d1, d2, d3]), ⟨e1, e2, e3⟩, ?_⟩
-      rw [List.getLast_cons (by simp)]
-      exact ihlast
+  | _, st, fin, r₀, rs, h => by
+    obtain ⟨-, hC, hH, hL⟩ := (chain_iff _ _
+      (fun (x : Vector (FVar F) 8) (r : EndoScalarRound F) => r.xs = x) fun _ _ _ _ => Iff.rfl).mp h
+    simp only [Prod.ext_iff] at hC hH hL
+    refine ⟨hC.imp fun _ _ e => ⟨e.1, e.2.1, e.2.2⟩, hH r₀ (by simp), ?_⟩
+    simpa [List.getLast?_eq_some_getLast (l := r₀ :: rs) (by simp)] using hL
 
 /-- A satisfied trace from the canonical seeds: its crumbs are valid, eight per row, and
 the final accumulators read as the Algorithm-2 decompositions of the concatenated crumb
@@ -163,15 +155,15 @@ private theorem chain_sound [Field F] [DecidableEq F]
       intro w hw
       obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hw
       exact hHolds r hr
-    obtain ⟨hA, hB, hN⟩ := Kimchi.Gate.EndoScalar.chain_decompose _ _
-      (Kimchi.Gate.EndoScalar.Chain.ofList _ hne hholds
+    obtain ⟨hrows, hopen, hlink'⟩ := Kimchi.Gate.EndoScalar.isChain_getD _ hne hholds
         ((List.isChain_map _).mpr
           (hlink.imp fun a b hab =>
             ⟨congrArg (·.val V) hab.1, congrArg (·.val V) hab.2.1,
               congrArg (·.val V) hab.2.2⟩))
         (by simp [EndoScalarRound.read, h01, CVar.val])
         (by simp [EndoScalarRound.read, h02, CVar.val])
-        (by simp [EndoScalarRound.read, h03, CVar.val]))
+        (by simp [EndoScalarRound.read, h03, CVar.val])
+    obtain ⟨hA, hB, hN⟩ := Kimchi.Gate.EndoScalar.chain_decompose _ _ hrows hopen hlink'
     rw [Nat.sub_add_cancel (by simp), Kimchi.Gate.EndoScalar.chainCrumbs_getD,
       Kimchi.Gate.EndoScalar.getD_length_sub_one _ hne, List.getLast_map] at hA hB hN
     have hstream : ((r₀ :: rs).map (EndoScalarRound.read V)).flatMap (·.crumbs)
@@ -279,61 +271,40 @@ private def CrumbRow [Field F] (st₁ : ProverState F) (xs : Vector (FVar F) 8) 
     (cv.val st₁.env.get = 0 ∨ cv.val st₁.env.get = 1 ∨
       cv.val st₁.env.get = 2 ∨ cv.val st₁.env.get = 3)
 
-/-- The loop's accumulator invariant: the table has only grown since the crumbs were
-witnessed, and the three accumulators are in scope. -/
-private def AccInv [Field F] (st₁ : ProverState F) (acc : FVar F × FVar F × FVar F)
-    (st : ProverState F) : Prop :=
-  (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
-    acc.1.Scoped st ∧ acc.2.1.Scoped st ∧ acc.2.2.Scoped st
-
-/-- The step's grant at a table: the round is wired to the accumulators either side,
-its cells are in scope, and its row holds. -/
-private def RowGrant [Field F] [DecidableEq F] (acc : FVar F × FVar F × FVar F)
-    (xs : Vector (FVar F) 8) (r : EndoScalarRound F)
-    (acc' : FVar F × FVar F × FVar F) (st : ProverState F) : Prop :=
-  Threads acc xs r acc' ∧
-    (∀ cv ∈ r.a8 :: r.b8 :: r.n8 :: r.a0 :: r.b0 :: r.n0 :: r.xs.toList, cv.Scoped st) ∧
+/-- A round at a table: its cells are in scope, and its row holds. -/
+private def RowOk [Field F] [DecidableEq F] (r : EndoScalarRound F) (st : ProverState F) :
+    Prop :=
+  (∀ cv ∈ r.a8 :: r.b8 :: r.n8 :: r.a0 :: r.b0 :: r.n0 :: r.xs.toList, cv.Scoped st) ∧
     Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read st.env.get r)
-
-/-- Scope and the table's growth survive further growth. -/
-private theorem AccInv.mono [Field F] {st₁ : ProverState F} (acc : FVar F × FVar F × FVar F)
-    {st st' : ProverState F} (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env)
-    (h : AccInv st₁ acc st) : AccInv st₁ acc st' :=
-  ⟨⟨Nat.le_trans h.1.1 hnv, h.1.2.trans hle⟩,
-    h.2.1.mono hnv, h.2.2.1.mono hnv, h.2.2.2.mono hnv⟩
 
 /-- A grant's row still holds at any extension of its table: its cells are in scope, so
 their readings do not move. The emitted constraint's obligation needs exactly this. -/
-private theorem RowGrant.holds_of_le [Field F] [DecidableEq F]
-    {acc : FVar F × FVar F × FVar F} {xs : Vector (FVar F) 8} {r : EndoScalarRound F}
-    {acc' : FVar F × FVar F × FVar F} {st st' : ProverState F} (hle : st.env.Le st'.env)
-    (h : RowGrant acc xs r acc' st) :
+private theorem RowOk.holds_of_le [Field F] [DecidableEq F] {r : EndoScalarRound F}
+    {st st' : ProverState F} (hle : st ≤ st') (h : RowOk r st) :
     Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read st'.env.get r) := by
-  obtain ⟨-, hsc, hholds⟩ := h
+  obtain ⟨hsc, hholds⟩ := h
   have hread : EndoScalarRound.read st'.env.get r = EndoScalarRound.read st.env.get r := by
-    simp only [EndoScalarRound.read,
-      CVar.val_of_le hle (hsc r.a8 (by simp)), CVar.val_of_le hle (hsc r.b8 (by simp)),
-      CVar.val_of_le hle (hsc r.n8 (by simp)), CVar.val_of_le hle (hsc r.a0 (by simp)),
-      CVar.val_of_le hle (hsc r.b0 (by simp)), CVar.val_of_le hle (hsc r.n0 (by simp))]
+    simp (disch := (apply hsc; simp)) only [EndoScalarRound.read, CVar.val_of_le hle]
     congr 1
     exact List.map_congr_left fun cv hcv => CVar.val_of_le hle (hsc cv (by simp [hcv]))
   rw [hread]
   exact hholds
 
-/-- A row's grant survives the table's growth. -/
-private theorem RowGrant.mono [Field F] [DecidableEq F] (acc : FVar F × FVar F × FVar F)
-    (xs : Vector (FVar F) 8) (r : EndoScalarRound F) (acc' : FVar F × FVar F × FVar F)
-    {st st' : ProverState F} (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env)
-    (h : RowGrant acc xs r acc' st) : RowGrant acc xs r acc' st' :=
-  ⟨h.1, fun cv hcv => (h.2.1 cv hcv).mono hnv, RowGrant.holds_of_le hle h⟩
+/-- A round's fact survives the table's growth. -/
+private theorem monotone_rowOk [Field F] [DecidableEq F] (r : EndoScalarRound F) :
+    Monotone (RowOk r) :=
+  fun _ _ hle h =>
+    ⟨fun cv hcv => (h.1 cv hcv).mono (ProverState.nv_le_of_le hle), RowOk.holds_of_le hle h⟩
 
 /-- The step's completeness: the accumulator witness is the gate's canonical row's
 outputs, so the row it closes holds by the gate's own `complete`. -/
 private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : ProverState F)
     (acc : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8) (hx : CrumbRow st₁ xs) :
-    Complete (F := F) (c := KimchiConstraint F) (AccInv st₁ acc)
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => st₁ ≤ st ∧ acc.1.Scoped st ∧ acc.2.1.Scoped st ∧ acc.2.2.Scoped st)
       (toFieldChecked'.row (c := KimchiConstraint F) acc xs)
-      (fun p st' => AccInv st₁ p.2 st' ∧ RowGrant acc xs p.1 p.2 st') := by
+      (fun p st' => (st₁ ≤ st' ∧ p.2.1.Scoped st' ∧ p.2.2.1.Scoped st' ∧ p.2.2.2.Scoped st') ∧
+        Threads acc xs p.1 p.2 ∧ RowOk p.1 st') := by
   have hvalid : ∀ x ∈ xs.toList.map (·.val st₁.env.get),
       x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
     intro x hxm
@@ -342,7 +313,7 @@ private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : Prover
   simp only [toFieldChecked'.row]
   -- the accumulators' entry readings index the law
   refine Complete.instantiate (ι := F × F × F)
-    (P := fun v st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+    (P := fun v st => st₁ ≤ st ∧
       CircuitType.ReadsAs (val := F) st acc.1 v.1 ∧
       CircuitType.ReadsAs (val := F) st acc.2.1 v.2.1 ∧
       CircuitType.ReadsAs (val := F) st acc.2.2 v.2.2)
@@ -356,8 +327,9 @@ private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : Prover
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?run, h⟩) (fun _ _ h => h)
       (Complete.frame
-        (Mono.and (fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩)
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs)))
+        (monotone_and monotone_le
+          (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
+            CircuitType.monotone_readsAs)))
         (Complete.witness (rowWit xs acc)
           ((Kimchi.Gate.EndoScalar.build a0 b0 n0
               (xs.toList.map (·.val st₁.env.get))).a8,
@@ -368,9 +340,10 @@ private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : Prover
           (by simp))))
     fun w => Complete.pure_of fun st h => ?post
   case run =>
-    have hxsc : ∀ cv ∈ xs.toList, cv.Scoped st := fun cv hcv => ((hx cv hcv).1).mono h.1.1
+    have hxsc : ∀ cv ∈ xs.toList, cv.Scoped st := fun cv hcv => ((hx cv hcv).1).mono
+      (ProverState.nv_le_of_le h.1)
     have hcr : xs.toList.map (·.val st.env.get) = xs.toList.map (·.val st₁.env.get) :=
-      List.map_congr_left fun cv hcv => CVar.val_of_le h.1.2 (hx cv hcv).1
+      List.map_congr_left fun cv hcv => CVar.val_of_le h.1 (hx cv hcv).1
     simp only [rowWit, AsProver.bind_eq, AsProver.run_bind,
       AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1.1),
       AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.1.1),
@@ -384,9 +357,9 @@ private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : Prover
     simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hscW
     simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrdW
     have hcr : xs.toList.map (·.val st.env.get) = xs.toList.map (·.val st₁.env.get) :=
-      List.map_congr_left fun cv hcv => CVar.val_of_le hP.1.2 (hx cv hcv).1
+      List.map_congr_left fun cv hcv => CVar.val_of_le hP.1 (hx cv hcv).1
     refine ⟨⟨hP.1, hscW.1, hscW.2.1, hscW.2.2⟩,
-      ⟨⟨rfl, rfl, rfl⟩, ⟨rfl, rfl, rfl⟩, rfl⟩, ?_, ?_⟩
+      ⟨rfl, rfl, rfl⟩, ?_, ?_⟩
     · intro cv hcv
       simp only [List.mem_cons] at hcv
       rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | hcv
@@ -396,7 +369,7 @@ private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : Prover
       · exact CircuitType.scoped_fvar.mp hP.2.1.1
       · exact CircuitType.scoped_fvar.mp hP.2.2.1.1
       · exact CircuitType.scoped_fvar.mp hP.2.2.2.1
-      · exact ((hx cv hcv).1).mono hP.1.1
+      · exact ((hx cv hcv).1).mono (ProverState.nv_le_of_le hP.1)
     · have hread : EndoScalarRound.read st.env.get
           { n0 := acc.2.2, n8 := wn, a0 := acc.1, a8 := wa, b0 := acc.2.1, b8 := wb, xs }
           = Kimchi.Gate.EndoScalar.build a0 b0 n0
@@ -407,26 +380,6 @@ private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : Prover
         rfl
       rw [hread]
       exact Kimchi.Gate.EndoScalar.complete a0 b0 n0 _ hvalid
-
-/-- The loop's grants, read off: the wiring, and every row holding at any extension of
-the table the trace was judged at. -/
-private theorem chainAt_facts [Field F] [DecidableEq F] {st₂ stf : ProverState F}
-    (hle : st₂.env.Le stf.env) :
-    ∀ {init fin : FVar F × FVar F × FVar F} {xs : List (Vector (FVar F) 8)}
-      {rounds : List (EndoScalarRound F)},
-      ChainAt RowGrant st₂ init xs rounds fin →
-      Chain Threads init xs rounds fin ∧
-        ∀ r ∈ rounds, Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read stf.env.get r)
-  | _, _, [], _, h => by
-    obtain ⟨rfl, rfl⟩ := h
-    exact ⟨⟨rfl, rfl⟩, by simp⟩
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
-    obtain ⟨hchain, hholds⟩ := chainAt_facts hle hrest
-    refine ⟨⟨r, tail, mid, rfl, hgrant.1, hchain⟩, fun r' hr' => ?_⟩
-    rcases List.mem_cons.mp hr' with rfl | hr'
-    · exact RowGrant.holds_of_le hle hgrant
-    · exact hholds r' hr'
 
 /-- **Completeness.** From a readable scalar the honest run succeeds and the three
 accumulators read as the Algorithm-2 decompositions of the scalar's own crumbs. -/
@@ -462,13 +415,13 @@ private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
         (cvars[i]'hi).val st₁.env.get
           = (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (rows * 8)
               (ToNat.toNat sv)).getD i 0})
-    (P := fun i st => i.1.nv ≤ st.nv ∧ i.1.env.Le st.env)
+    (P := fun i st => i.1 ≤ st)
     (fun st h =>
       ⟨⟨st, fun i hi =>
         ⟨CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp h.1 i hi),
           by simpa [crumbsVec] using
             CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp h.2 i hi)⟩⟩,
-        Nat.le_refl _, Assignments.Le.refl _⟩)
+        le_rfl⟩)
     fun i => ?_
   obtain ⟨st₁, hentry⟩ := i
   have hP : ∀ x ∈ (chunkVec cvars).toList, CrumbRow st₁ x := by
@@ -483,8 +436,12 @@ private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
   refine Complete.bind
     (Complete.imp (fun st h => ⟨h, trivial, trivial, trivial⟩) (fun _ _ h => h)
       (mapAccumM_complete (F := F) (c := KimchiConstraint F) toFieldChecked'.row
-        (CrumbRow st₁) (fun _ => AccInv st₁) RowGrant
-        (fun _ => AccInv.mono (st₁ := st₁)) RowGrant.mono
+        (CrumbRow st₁)
+        (fun _ acc st => st₁ ≤ st ∧ acc.1.Scoped st ∧ acc.2.1.Scoped st ∧ acc.2.2.Scoped st)
+        Threads RowOk
+        (fun _ _ => monotone_and monotone_le (monotone_and CVar.monotone_scoped
+          (monotone_and CVar.monotone_scoped CVar.monotone_scoped)))
+        monotone_rowOk
         (fun acc x _ hx => row_complete st₁ acc x hx)
         (.const 2, .const 2, .const 0) (chunkVec cvars).toList hP))
     fun p => ?_
@@ -492,11 +449,11 @@ private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
   refine Complete.bind (Complete.addConstraint ?row)
     fun _ => Complete.pure_of fun st h => ?post
   case row =>
-    rintro st ⟨-, hchainAt⟩ stf hle
-    exact (chainAt_facts hle hchainAt).2
+    rintro st ⟨-, -, hrows⟩ stf hle
+    exact fun r hr => RowOk.holds_of_le hle (hrows r hr)
   case post =>
-    obtain ⟨hinv₂, hchainAt⟩ := h
-    obtain ⟨hchain, hholds⟩ := chainAt_facts (Assignments.Le.refl _) hchainAt
+    obtain ⟨hinv₂, hchain, hrows⟩ := h
+    have hholds := fun r hr => (hrows r hr).2
     obtain ⟨-, -, hA, hB, hN⟩ := chain_sound h2 h3 st.env.get hchain hholds
     have hcrumbs : roundCrumbs st.env.get rounds
         = Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv) := by
@@ -515,7 +472,7 @@ private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
       have hi : i < rows * 8 := by
         simpa [Kimchi.Gate.EndoScalar.crumbsOf_length] using h2
       simp only [List.getElem_map, Vector.getElem_toList]
-      rw [CVar.val_of_le hinv₂.1.2 (hentry i hi).1, (hentry i hi).2]
+      rw [CVar.val_of_le hinv₂.1 (hentry i hi).1, (hentry i hi).2]
       exact List.getD_eq_getElem _ _ h2
     rw [← hcrumbs]
     exact ⟨⟨CircuitType.scoped_fvar.mpr hinv₂.2.1, CircuitType.reads_fvar.mpr hA⟩,

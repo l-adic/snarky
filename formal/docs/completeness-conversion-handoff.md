@@ -16,18 +16,20 @@ seed and destructure the existential. `snarky/roots.txt` and
 
 ## The rules
 
-All in `Snarky/Prover.lean` except `Complete.witness` (`Snarky/Witness.lean`) and
-`Mono.onCurveAs` (`Snarky/Kimchi/Circuit/AddComplete.lean`).
+All in `Snarky/Prover.lean` except `Complete.witness` (`Snarky/Witness.lean`).
+`ProverState` is ordered by table growth (`st ≤ st'` is `st.env.Le st'.env`), and a
+precondition the frame carries is Mathlib's `Monotone`.
 
 ```
 interpretation   Complete.pure_of   Complete.addConstraint   Complete.witness
 structural       Complete.bind      Complete.imp             Complete.frame
 precondition     Complete.of_false  Complete.instantiate
-Mono vocabulary  Mono.and  Mono.readsAs  Mono.forall₂  Mono.scoped  Mono.onCurveAs
+monotonicity     monotone_and  monotone_const  monotone_le  Monotone.ball  (Mathlib)
+                 CircuitType.monotone_readsAs  CVar.monotone_scoped  monotone_onCurveAs
 ```
 
 `Complete.seq` is derived (`bind ∘ imp ∘ frame`). Prefer `bind` + `frame` in new work;
-`seq` fuses them and forces `Mono` on the caller.
+`seq` fuses them and forces `Monotone` on the caller.
 
 ## The shape of a conversion
 
@@ -40,7 +42,7 @@ the row needs them and the witness rule does not carry them:
   simp only [gadget]
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+      (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
         (Complete.witness (gadget.advice x y) VALUE (by simp))))
     (fun r => Complete.bind (Complete.addConstraint ?_)
       fun _ => Complete.pure_of fun _ h => h.1)
@@ -56,7 +58,7 @@ the row needs them and the witness rule does not carry them:
 
 ```lean
   exact Complete.bind
-    (Complete.imp ADAPTER (fun _ _ h => h) (Complete.frame Mono.readsAs (first_complete …)))
+    (Complete.imp ADAPTER (fun _ _ h => h) (Complete.frame CircuitType.monotone_readsAs (first_complete …)))
     fun r => Complete.imp ADAPTER POST (second_complete …)
 ```
 
@@ -68,19 +70,18 @@ out. See `foldBlocks_complete` (`Snarky/Kimchi/Circuit/RandomOracle.lean`).
 value the law is indexed by. See `powGo_complete` (`Snarky/DSL/Field.lean`) and
 `xor.core_complete` (`Snarky/DSL/Boolean.lean`).
 
-**A loop whose invariants pin a state.** `EndoScalar`'s `AccInv`/`CrumbRow` are indexed
-by the crumb witness's landing table `st₁`. `instantiate` handles states as well as
-values: index over a `ProverState`-subtype whose property carries the pinned cells'
-scope and readings, with `P i st := i.1.nv ≤ st.nv ∧ i.1.env.Le st.env`, discharged at
-the current state with `⟨st, facts⟩` and two `refl`s. `EndoMul` uses it twice — the
+**A loop whose invariants pin a state.** `EndoScalar`'s loop invariant and `CrumbRow` are
+indexed by the crumb witness's landing table `st₁`. `instantiate` handles states as well
+as values: index over a `ProverState`-subtype whose property carries the pinned cells'
+scope and readings, with `P i st := i.1 ≤ st`, discharged at the current state with
+`⟨st, facts⟩` and `le_rfl`. `EndoMul` uses it twice — the
 bits' landing table, then the walk's seed coordinates (with the point they name as the
 subtype property).
 
-An `addConstraint` row obligation quantifies over `env.Le` extensions only, but
-`ProverState.nv_le_of_env_le` (in `Prover.lean`) recovers `nv_le` from the states'
-`dom` invariants, so ordinary `.mono` transports still work there (`EndoMul`'s row
-case). `EndoScalar` instead splits `RowGrant.holds_of_le` out of its `mono`; prefer the
-lemma in new work.
+An `addConstraint` row obligation quantifies over extensions `st ≤ stf`;
+`ProverState.nv_le_of_le` recovers the counter from the states' `dom` invariants. A
+loop's per-round fact is round-local (the ladders' `RowOk`), so its monotonicity carries
+it to any extension (`EndoScalar` splits `RowOk.holds_of_le` out for the row case).
 
 Two elaboration rules of thumb from `EndoMul`: keep every `Complete.imp` post-map the
 identity `(fun _ _ h => h)` and extract in the next stage's pre-map (a non-trivial
@@ -106,12 +107,11 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
   use, and track the mid-shape per step while writing; the projection paths are the
   whole difficulty.
 
-- A `Mono` witness whose predicate is itself a `∀` needs its type pinned. A lambda like
-  `fun _ _ hnv hle h x hx => …` is ambiguous while the frame's `R` is a metavariable —
-  hoist it into a `have hM : Mono (F := F) fun st => ∀ x ∈ …` first (`VarBaseMul`'s
-  `hpinM`). Deeply conjunctive contexts read better with the base `Mono` named once
-  (`scaleRound_complete`'s `hMP`) and per-step wrappers `Mono.and Mono.readsAs hMP`
-  inline.
+- A `Monotone` witness whose predicate is itself a `∀` needs its type pinned. A lambda
+  like `fun _ _ hle h x hx => …` is ambiguous while the frame's `R` is a metavariable —
+  hoist it into a `have hM : Monotone fun st => ∀ x ∈ …` first (`VarBaseMul`'s `hpinM`).
+  So does `by complete_mono_tac` as a frame argument: it runs before `R` is known, so
+  pass the explicit term, or name the witness first.
 
 - The precondition of a framed law is sometimes a conjunction and sometimes curried:
   `rintro st ⟨hr, hx⟩ stf hle` vs `rintro st hr hx stf hle`. Read the goal.
@@ -133,7 +133,7 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
 
 `Snarky/Tactic.lean` mechanizes the straight-line shape: `complete_walk` walks a
 `Complete pre (g₁ >>= …) post` goal bind by bind, at each step selecting the gadget's
-`@[complete_law]`, synthesizing the frame's `Mono` witness from `@[complete_mono]`
+`@[complete_law]`, synthesizing the frame's `Monotone` witness from `@[complete_mono]`
 (both label attributes, `Snarky/Tactic/Attr.lean`; downstream files extend the tables
 by tagging), and discharging the adapter by search, which pins the law's witness values
 by unification, so laws carry no value arguments. It absorbs `assumption`-shaped side
@@ -195,9 +195,9 @@ strongest postcondition, and it mentions `Runs`, so it cannot be written outside
 `Prover.lean`. Each gadget law instead supplies a value-level postcondition phrased in
 `ReadsAs` / `OnCurveAs`, and nothing guarantees it is strong enough for a given consumer.
 A law whose postcondition is too weak must be restated, not worked around by unfolding.
-The `Mono` vocabulary (`Mono.readsAs`, `Mono.onCurveAs`, `Mono.forall₂`, `Mono.const`)
-and the per-proof reading adapters are this debt: each is a postcondition shape or a
-bridge between two shapes. The remedy is stating each law at the type its gadget
+The per-predicate monotonicity facts (`CircuitType.monotone_readsAs`, `monotone_onCurveAs`,
+`CircuitType.monotone_forall₂`) and the per-proof reading adapters are this debt: each is
+a postcondition shape or a bridge between two shapes. The remedy is stating each law at the type its gadget
 operates on.
 
 The rule set is not proven minimal; `of_false` and `instantiate` are duals of other

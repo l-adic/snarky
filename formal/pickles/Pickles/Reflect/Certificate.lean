@@ -210,6 +210,30 @@ private theorem of_certificate (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K)
 table holds `71` entries. -/
 def alphaBound : Nat := 31
 
+/-- A stream certified over the polynomial algebra, and reading the α-table at exponents
+at most `alphaBound` and never the Lagrange basis, computes the gate linearization at every
+evaluation record, every choice of challenges, and every Lagrange basis. -/
+private theorem evaluate_of_certificate (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K)
+    (toks : Array PolishToken)
+    (hcert : (evaluate (symEnv endo mds) toks : MPoly K)
+      = gateLinearization endo mds (xv 51) symEvals)
+    (hreads : ∀ i ∈ visitedAll toks (fun _ => false), readsWithin toks alphaBound i = true)
+    (α β γ jc van : K) (ulb : Bool → Int → K) (e : Evals K) :
+    (evaluate (e.toEnv endo mds (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
+      (fun _ => false)) toks : K)
+      = gateLinearization endo mds α e := by
+  have hvis : ∀ i ∈ visitedAll toks (fun _ => false),
+      (e.toEnv endo mds (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
+        (fun _ => false)).agreeAt
+      (e.toEnv endo mds (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
+        (fun _ => false)) toks i :=
+    fun i hi => Evals.toEnv_agreeAt endo mds (fun n => α ^ n) β γ jc van ulb
+      LookupEvals.zero (fun _ => false) e (fun n => α ^ n) (fun _ _ => 0) toks i
+      (fun _ _ => rfl) (readsWithin_noUlb (hreads i hi))
+  rw [evaluate_congr _ _ toks (fun _ => false) hvis (fun _ _ _ => rfl)
+    (fun _ _ _ => rfl) rfl]
+  exact of_certificate _ _ _ hcert α β γ jc van e
+
 /-! ## The two deployed streams -/
 
 /-- Vesta's scalar field, where a Pallas proof is verified. -/
@@ -240,18 +264,9 @@ every choice of challenges, and every Lagrange basis. -/
 theorem evaluate_fpTokens (α β γ jc van : Fp) (ulb : Bool → Int → Fp) (e : Evals Fp) :
     (evaluate (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
       (fun _ => false)) fpTokens : Fp)
-      = gateLinearization Pasta.pallasEndo symMds α e := by
-  have hvis : ∀ i ∈ visitedAll fpTokens (fun _ => false),
-      (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
-        (fun _ => false)).agreeAt
-      (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
-        (fun _ => false)) fpTokens i :=
-    fun i hi => Evals.toEnv_agreeAt Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb
-      LookupEvals.zero (fun _ => false) e (fun n => α ^ n) (fun _ _ => 0) fpTokens i
-      (fun _ _ => rfl) (readsWithin_noUlb (fpTokens_reads i hi))
-  rw [evaluate_congr _ _ fpTokens (fun _ => false) hvis (fun _ _ _ => rfl)
-    (fun _ _ _ => rfl) rfl]
-  exact of_certificate _ _ _ fp_reflects α β γ jc van e
+      = gateLinearization Pasta.pallasEndo symMds α e :=
+  evaluate_of_certificate Pasta.pallasEndo symMds fpTokens fp_reflects fpTokens_reads
+    α β γ jc van ulb e
 
 /-- Pallas's scalar field, where a Vesta proof is verified. -/
 abbrev Fq := IpaPallas.curve.ScalarField
@@ -281,17 +296,8 @@ every choice of challenges, and every Lagrange basis. -/
 theorem evaluate_fqTokens (α β γ jc van : Fq) (ulb : Bool → Int → Fq) (e : Evals Fq) :
     (evaluate (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
       (fun _ => false)) fqTokens : Fq)
-      = gateLinearization Pasta.vestaEndo symMdsQ α e := by
-  have hvis : ∀ i ∈ visitedAll fqTokens (fun _ => false),
-      (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
-        (fun _ => false)).agreeAt
-      (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
-        (fun _ => false)) fqTokens i :=
-    fun i hi => Evals.toEnv_agreeAt Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb
-      LookupEvals.zero (fun _ => false) e (fun n => α ^ n) (fun _ _ => 0) fqTokens i
-      (fun _ _ => rfl) (readsWithin_noUlb (fqTokens_reads i hi))
-  rw [evaluate_congr _ _ fqTokens (fun _ => false) hvis (fun _ _ _ => rfl)
-    (fun _ _ _ => rfl) rfl]
-  exact of_certificate _ _ _ fq_reflects α β γ jc van e
+      = gateLinearization Pasta.vestaEndo symMdsQ α e :=
+  evaluate_of_certificate Pasta.vestaEndo symMdsQ fqTokens fq_reflects fqTokens_reads
+    α β γ jc van ulb e
 
 end Pickles.Reflect

@@ -1,4 +1,5 @@
 import Snarky.Prover
+import Mathlib.Data.List.Chain
 
 /-!
 # Traversing a vector in the circuit monad
@@ -69,10 +70,10 @@ section Complete
 variable [Zero F] [ConstraintHolds F c] {α β γ : Type}
 
 private theorem zipGo_complete (f : α → β → CircuitM F c γ) (pre : ProverState F → Prop)
-    (hpre : Mono (F := F) pre) :
+    (hpre : Monotone pre) :
     ∀ (n : Nat) (xs : Fin n → α) (ys : Fin n → β)
       (post : Fin n → γ → ProverState F → Prop),
-      (∀ (i : Fin n) (a : γ), Mono (F := F) (post i a)) →
+      (∀ (i : Fin n) (a : γ), Monotone (post i a)) →
       (∀ i : Fin n, Complete pre (f (xs i) (ys i)) (post i)) →
       Complete pre (zipGo f n xs ys) (fun rs st' => ∀ i : Fin n, post i rs[i] st')
   | 0, _, _, _, _, _ => Complete.pure_of fun _ _ i => i.elim0
@@ -85,8 +86,7 @@ private theorem zipGo_complete (f : α → β → CircuitM F c γ) (pre : Prover
       fun init => Complete.bind
         (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
           (Complete.frame
-            (show Mono (F := F) fun st => ∀ i : Fin n, post i.castSucc init[i] st from
-              fun _ _ hnv hle h i => hmono i.castSucc init[i] _ _ hnv hle (h i))
+            (Monotone.forall fun i : Fin n => hmono i.castSucc init[i])
             (hf (Fin.last n))))
         fun last => Complete.pure_of fun _ h i => by
           refine Fin.lastCases ?_ (fun j => ?_) i
@@ -97,7 +97,7 @@ private theorem zipGo_complete (f : α → β → CircuitM F c γ) (pre : Prover
 the entries' postconditions transport along the table's growth. -/
 theorem zipWithVecM_complete {n : Nat} (f : α → β → CircuitM F c γ) (xs : Vector α n)
     (ys : Vector β n) (pre : ProverState F → Prop) (post : Fin n → γ → ProverState F → Prop)
-    (hpre : Mono (F := F) pre) (hpost : ∀ (i : Fin n) (a : γ), Mono (F := F) (post i a))
+    (hpre : Monotone pre) (hpost : ∀ (i : Fin n) (a : γ), Monotone (post i a))
     (hf : ∀ i : Fin n, Complete pre (f xs[i] ys[i]) (post i)) :
     Complete pre (zipWithVecM f xs ys) (fun rs st' => ∀ i : Fin n, post i rs[i] st') :=
   zipGo_complete f pre hpre n _ _ post hpost hf
@@ -134,6 +134,39 @@ theorem Chain.of_nil_out {s α β : Type} {R : s → α → β → s → Prop} :
     obtain ⟨y, ys', -, heq, -, -⟩ := h
     exact nomatch heq
 
+/-- A trace whose steps record the states they read and wrote is its outputs' facts, their
+links, and its ends. -/
+theorem chain_iff {s α β : Type} {R : s → α → β → s → Prop} (inp out : β → s)
+    (Q : α → β → Prop) (hR : ∀ a x y b, R a x y b ↔ inp y = a ∧ out y = b ∧ Q x y) :
+    ∀ {init fin : s} {xs : List α} {ys : List β},
+      Chain R init xs ys fin ↔
+        List.Forall₂ Q xs ys ∧ ys.IsChain (fun y y' => inp y' = out y) ∧
+          (∀ y ∈ ys.head?, inp y = init) ∧ (ys.getLast?.map out).getD init = fin
+  | init, fin, [], ys => by
+    cases ys with
+    | nil => simp [Chain]
+    | cons y ys => simp [Chain]
+  | init, fin, x :: xs, ys => by
+    cases ys with
+    | nil => simp [Chain]
+    | cons y ys =>
+      have ih := @chain_iff s α β R inp out Q hR (out y) fin xs ys
+      simp only [Chain, List.cons.injEq, hR]
+      constructor
+      · rintro ⟨y', ys', mid, ⟨rfl, rfl⟩, ⟨hin, rfl, hq⟩, hrest⟩
+        obtain ⟨hF, hC, hH, hL⟩ := ih.mp hrest
+        refine ⟨List.Forall₂.cons hq hF, List.isChain_cons.mpr ⟨hH, hC⟩, by simpa using hin, ?_⟩
+        cases ys with
+        | nil => simpa using hL
+        | cons z zs => simpa [List.getLast?_cons] using hL
+      · rintro ⟨hF, hC, hH, hL⟩
+        obtain ⟨hq, hF'⟩ := List.forall₂_cons.mp hF
+        obtain ⟨hH', hC'⟩ := List.isChain_cons.mp hC
+        refine ⟨y, ys, out y, ⟨rfl, rfl⟩, ⟨by simpa using hH, rfl, hq⟩, ih.mpr ⟨hF', hC', hH', ?_⟩⟩
+        cases ys with
+        | nil => simpa using hL
+        | cons z zs => simpa [List.getLast?_cons] using hL
+
 open Std.Do in
 /-- `mapAccumM`'s soundness: a per-step relation, established by the step's own spec,
 holds along the whole trace. The caller supplies `R` and gets the chain — no bespoke
@@ -154,71 +187,35 @@ theorem mapAccumM_spec {V : Valuation F} {s α β : Type} [ConstraintHolds F c]
     rename_i p _ hp q _ hq
     exact ⟨p.1, q.1, p.2, rfl, hp, hq⟩
 
-/-- The trace, read at one table: every step's grant evaluated at the same state,
-rather than at the state that step ended in. This is what a ladder's caller needs —
-the row it emits after the loop is judged at the end, so the loop's facts must arrive
-there. `mapAccumM_complete` does that transport once. -/
-def ChainAt {s α β : Type} (out : s → α → β → s → ProverState F → Prop)
-    (stf : ProverState F) : s → List α → List β → s → Prop
-  | init, [], ys, fin => ys = [] ∧ init = fin
-  | init, x :: xs, ys, fin =>
-    ∃ (y : β) (ys' : List β) (mid : s),
-      ys = y :: ys' ∧ out init x y mid stf ∧ ChainAt out stf mid xs ys' fin
-
-/-- A trace has as many outputs as it had inputs. -/
-theorem ChainAt.length {s α β : Type} {out : s → α → β → s → ProverState F → Prop}
-    {st : ProverState F} :
-    ∀ {init fin : s} {xs : List α} {ys : List β},
-      ChainAt out st init xs ys fin → ys.length = xs.length
-  | _, _, [], _, h => by rw [h.1]; rfl
-  | _, _, _ :: _, _, h => by
-    obtain ⟨y, ys', _, rfl, -, hrest⟩ := h
-    rw [List.length_cons, List.length_cons, ChainAt.length hrest]
-
-/-- A trace transports to a later table when its grants do — what a ladder needs to
-judge the row it emits after the loop. -/
-theorem ChainAt.mono {s α β : Type} {out : s → α → β → s → ProverState F → Prop}
-    (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s) {st st' : ProverState F},
-      st.nv ≤ st'.nv → st.env.Le st'.env → out acc x y acc' st → out acc x y acc' st')
-    {st st' : ProverState F} (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) :
-    ∀ {init fin : s} {xs : List α} {ys : List β},
-      ChainAt out st init xs ys fin → ChainAt out st' init xs ys fin
-  | _, _, [], _, h => h
-  | _, _, _ :: _, _, h => by
-    obtain ⟨y, ys', mid, rfl, hgrant, hrest⟩ := h
-    exact ⟨y, ys', mid, rfl, hout _ _ _ _ hnv hle hgrant, ChainAt.mono hout hnv hle hrest⟩
-
-/-- `mapAccumM`'s completeness: a step's law, an accumulator invariant and a grant that
-survives the table's growth compose into the whole ladder's. The caller writes the step
-and gets the loop — including every step's grant at the final table, which is where the
-emitted row is judged.
-
-The invariant is indexed by what is left to traverse, so a ladder whose steps are only
-satisfiable at their own position — every EC gate — can say where it has got to. A
-position-free invariant ignores the argument. -/
+/-- `mapAccumM`'s completeness: a step's law, an accumulator invariant indexed by what is
+left to traverse, and a per-step fact compose into the loop's. The fact splits into its
+wiring (`wire`, stateless) and a fact about the output at the table (`row`, monotone); the
+loop returns the wiring as a `Chain` and every output's fact at the final table, where an
+emitted row is judged. -/
 theorem mapAccumM_complete [Zero F] [ConstraintHolds F c] {s α β : Type}
     (f : s → α → CircuitM F c (β × s)) (P : α → Prop)
     (inv : List α → s → ProverState F → Prop)
-    (out : s → α → β → s → ProverState F → Prop)
-    (hinv : ∀ (xs : List α) (acc : s) {st st' : ProverState F}, st.nv ≤ st'.nv →
-      st.env.Le st'.env → inv xs acc st → inv xs acc st')
-    (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s) {st st' : ProverState F},
-      st.nv ≤ st'.nv → st.env.Le st'.env → out acc x y acc' st → out acc x y acc' st')
+    (wire : s → α → β → s → Prop) (row : β → ProverState F → Prop)
+    (hinv : ∀ (xs : List α) (acc : s), Monotone (inv xs acc))
+    (hrow : ∀ y : β, Monotone (row y))
     (hstep : ∀ (acc : s) (x : α) (xs : List α), P x →
       Complete (inv (x :: xs) acc) (f acc x)
-        (fun p st' => inv xs p.2 st' ∧ out acc x p.1 p.2 st')) :
+        (fun p st' => inv xs p.2 st' ∧ wire acc x p.1 p.2 ∧ row p.1 st')) :
     ∀ (init : s) (xs : List α), (∀ x ∈ xs, P x) →
       Complete (inv xs init) (mapAccumM f init xs)
-        (fun p st' => inv [] p.2 st' ∧ ChainAt out st' init xs p.1 p.2)
-  | init, [], _ => Complete.pure_of fun _ h => ⟨h, rfl, rfl⟩
+        (fun p st' => inv [] p.2 st' ∧ Chain wire init xs p.1 p.2 ∧ ∀ y ∈ p.1, row y st')
+  | init, [], _ => Complete.pure_of fun _ h => ⟨h, ⟨rfl, rfl⟩, by simp⟩
   | init, x :: xs, hP =>
     Complete.bind (hstep init x xs (hP x (by simp)))
       fun p => Complete.bind
-        (Complete.frame (fun _ _ hnv hle h => hout _ _ _ _ hnv hle h)
-          (mapAccumM_complete f P inv out hinv hout hstep p.2 xs
+        (Complete.frame (monotone_and monotone_const (hrow p.1))
+          (mapAccumM_complete f P inv wire row hinv hrow hstep p.2 xs
             fun y hy => hP y (by simp [hy])))
         fun q => Complete.pure_of fun _ h =>
-          ⟨h.1.1, p.1, q.1, p.2, rfl, h.2, h.1.2⟩
+          ⟨h.1.1, ⟨p.1, q.1, p.2, rfl, h.2.1, h.1.2.1⟩, by
+            rintro y (_ | ⟨_, hy⟩)
+            · exact h.2.2
+            · exact h.1.2.2 y hy⟩
 
 open Std.Do in
 /-- `List.forM`'s soundness: a per-entry postcondition, established by the entry's own

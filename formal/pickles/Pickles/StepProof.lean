@@ -75,26 +75,8 @@ structure InputReads (E : Env IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curv
     (g : GroupVar E.σ.k kw n nc) (s : ScalarVar E.σ.k nc) : Prop where
   /-- The step statement's cells are the public input. -/
   statement : wrapPublicInput E Vg g.stepStatement = pub
-  /-- The witness commitments. -/
-  w : ColumnsRead IpaVesta.curve Vg g.wComm cp.wComm.toList
-  /-- The permutation accumulator's commitment. -/
-  z : CommReads IpaVesta.curve Vg g.zComm cp.zComm.toList
-  /-- The quotient chunks. -/
-  t : CommReads IpaVesta.curve Vg g.tComm cp.tComm.toList
-  /-- The opening's `(L, R)` pairs. -/
-  lr : List.Forall₂ (PairReads IpaVesta.curve.E.toAffine Vg) g.opening.lr.toList
-    (cp.opening.lr.toList.map fun q =>
-      (SWPoint.equivPoint IpaVesta.curve.E q.1, SWPoint.equivPoint IpaVesta.curve.E q.2))
-  /-- The opening's `δ`. -/
-  delta : OnCurveAt IpaVesta.curve.E.toAffine Vg g.opening.delta
-    (SWPoint.equivPoint IpaVesta.curve.E cp.opening.delta)
-  /-- The opening's `sg`. -/
-  sg : OnCurveAt IpaVesta.curve.E.toAffine Vg g.opening.sg
-    (SWPoint.equivPoint IpaVesta.curve.E cp.opening.sg)
-  /-- The opening's `z₁`. -/
-  z1 : (wrapSide Vg).decode g.opening.z1 = cp.opening.z1
-  /-- The opening's `z₂`. -/
-  z2 : (wrapSide Vg).decode g.opening.z2 = cp.opening.z2
+  /-- The proof's cells read as the proof's. -/
+  proof : ProofReads (wrapSide Vg) g.wComm g.zComm g.tComm g.opening cp
   /-- The `sg` cells under their keep bits; the kept ones are the old accumulators'. -/
   olds : ∃ oldsW, OldsRead Vg g.sgOld cp oldsW
   /-- The branch's domain is the key's. -/
@@ -158,10 +140,9 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
   refine ⟨oldsW,
     { idx := hvk.idx, mask := ?mask
       ties :=
-        { olds := holds, w := hin.w, z := hin.z, t := hin.t
+        { olds := holds, proof := hin.proof
           key := hvk.key
-          z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
-          lr := hin.lr, delta := hin.delta, sg := hin.sg }
+          claimOk := hclaimOk }
       nc_pos := E.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
     intro m hm

@@ -10,7 +10,7 @@ import Snarky.Prover
 The tactic complete_walk (`walk`) mechanizes the straight-line portion of a `_complete`
 proof: on a goal `Complete pre (g₁ >>= fun x₁ => …) post` it walks the bind chain, and
 at each bind it selects the gadget's registered `@[complete_law]`, synthesizes the
-frame's `Mono` witness from the `@[complete_mono]` vocabulary, discharges the adapter by
+frame's `Monotone` witness from the `@[complete_mono]` vocabulary, discharges the adapter by
 search over the context — pinning the law's witness values by unification, so the laws
 are applied with no value arguments at all — absorbs `assumption`-shaped side
 conditions, and defers the rest as verification conditions behind the main goal. It
@@ -36,7 +36,7 @@ namespace Snarky.Tactic
 
 open Lean Meta Elab Tactic
 
-/-- Assemble a `Mono` witness for the step's precondition from the
+/-- Assemble a `Monotone` witness for the step's precondition from the
 `@[complete_mono]` vocabulary, at reducible transparency so the `ReadsAs`-style
 abbreviations stay opaque atoms. -/
 macro "complete_mono_tac" : tactic =>
@@ -94,7 +94,7 @@ elab "complete_apply_law" : tactic => do
   throwError "complete_apply_law: no @[complete_law] lemma applies to this program"
 
 /-- One step of the walk, introducing the bind's value as `x`: the proven kernel
-shape, its holes solved in dependency order (`Mono` witness, law, adapter, side
+shape, its holes solved in dependency order (`Monotone` witness, law, adapter, side
 conditions, continuation). `case'` lets the law's value goals and deferred side
 conditions rejoin the goal list instead of demanding closure inside the step. -/
 def completeStep (x : Ident) : TacticM Unit := withFreshMacroScope do

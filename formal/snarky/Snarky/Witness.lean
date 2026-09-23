@@ -110,7 +110,7 @@ instance instCheckedTypeProd [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
           ⟨⟨(CircuitType.scoped_prod.mp h.1).1, (CircuitType.reads_prod.mp h.2).1⟩,
             (CircuitType.scoped_prod.mp h.1).2, (CircuitType.reads_prod.mp h.2).2⟩)
         (fun _ _ h => h)
-        (Complete.frame Mono.readsAs
+        (Complete.frame CircuitType.monotone_readsAs
           (CheckedType.check_complete (c := c) (val := a) v x hx)))
       fun _ => Complete.imp (fun _ h => h.2) (fun _ _ _ => trivial)
         (CheckedType.check_complete (c := c) (val := b) w y hy)
@@ -181,10 +181,11 @@ private theorem checkAll_complete [ConstraintHolds F c] [LawfulBasicSystem F c] 
         (h v (List.mem_cons_self ..)).choose_spec.2,
         fun w hw => h w (List.mem_cons_of_mem _ hw)⟩)
       fun i => ?_
-    have hM : Mono (F := F) fun st => ∀ w ∈ l, ∃ x : a,
+    have hM : Monotone fun st : ProverState F => ∀ w ∈ l, ∃ x : a,
         CheckedType.Valid (F := F) (c := c) (var := va) x ∧
         CircuitType.ReadsAs (val := a) st w x :=
-      fun _ _ hnv hle h w hw => (h w hw).imp fun x hx => ⟨hx.1, hx.2.mono hnv hle⟩
+      fun _ _ hle h w hw => (h w hw).imp fun x hx =>
+        ⟨hx.1, CircuitType.monotone_readsAs hle hx.2⟩
     refine Complete.bind
       (Complete.frame hM (CheckedType.check_complete (c := c) (val := a) v i.1 i.2))
       fun _ => Complete.imp (fun _ h => h.2) (fun _ _ _ => trivial)
@@ -407,7 +408,7 @@ theorem Complete.witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
       (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))) v hv
       (st.alloc (inst.valueToFields v)) ⟨hscope, hreads⟩
   refine ⟨inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)), st', ?_, ?_,
-    hscope.mono (run_le hcheck).1, hreads.of_le hscope (run_le hcheck).2⟩
+    hscope.mono (ProverState.nv_le_of_le (run_le hcheck)), hreads.of_le hscope (run_le hcheck)⟩
   · -- the run: the computation, the allocation, then wherever the check closed
     show prove _ st.nv st.env = _
     simp only [_root_.Snarky.witness, prove, AsProver.map_eq, AsProver.run_bind, h,
@@ -417,9 +418,9 @@ theorem Complete.witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
         (st.nv + inst.size) (st.env.extendList st.nv (inst.valueToFields v).toList)
         = .ok (st'.out PUnit.unit) from hcheck]
   · -- the rows: exactly the type's check rows, satisfied at any extension
-    intro stf hnv' hle' con hcon
+    intro stf hle' con hcon
     simp only [_root_.Snarky.witness, build, build_bind, List.append_nil] at hcon
-    exact hsat hnv' hle' con hcon
+    exact hsat hle' con hcon
 
 end Combinators
 

@@ -213,7 +213,7 @@ theorem unpack_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [Bas
   simp only [unpack]
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
+      (Complete.frame CircuitType.monotone_readsAs
         (Complete.witness (unpack.advice v n) (unpackPure vv n) (by simp))))
     (fun r => Complete.bind (Complete.addConstraint ?_)
       fun _ => Complete.pure_of fun _ h => h.1)

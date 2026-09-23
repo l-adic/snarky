@@ -128,15 +128,4 @@ instance [CommRing F] [DecidableEq F] (M : Mds F) (rc : Fin 5 → F × F × F) (
   unfold Holds
   infer_instance
 
-/-- Executable checker: every constraint expression is zero. -/
-def ok [CommRing F] [DecidableEq F] (M : Mds F) (rc : Fin 5 → F × F × F) (w : Witness F) :
-    Bool :=
-  (constraints M rc w).all (· == 0)
-
-/-- Reflection: the `Bool` checker agrees with the relational spec. -/
-theorem ok_iff [CommRing F] [DecidableEq F] (M : Mds F) (rc : Fin 5 → F × F × F)
-    (w : Witness F) :
-    ok M rc w = true ↔ Holds M rc w := by
-  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
-
 end Kimchi.Gate.Poseidon

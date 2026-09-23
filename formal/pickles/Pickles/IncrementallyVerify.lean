@@ -237,6 +237,31 @@ structure OldsRead {nc k : ℕ} (V : Valuation C.BaseField)
   /-- The kept points are the proof's old accumulators' commitments, in order. -/
   kept : (oldsW.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList
 
+/-- A proof's cells read as the wire proof `cp`: the witness, permutation and quotient
+commitment columns read as the proof's, the opening's `(L, R)`, `δ` and `sg` cells read as its
+points, and its `z₁`, `z₂` decode to its scalars. -/
+structure ProofReads {nc k : ℕ} (S : IvpSide C V ops)
+    (wComm : List (List (AffinePoint (FVar C.BaseField))))
+    (zComm tComm : List (AffinePoint (FVar C.BaseField)))
+    (opening : BulletproofOpening k (FVar C.BaseField) sf) (cp : KimchiProof C nc k) : Prop where
+  /-- The witness commitments. -/
+  w : ColumnsRead C V wComm cp.wComm.toList
+  /-- The permutation accumulator's commitment. -/
+  z : CommReads C V zComm cp.zComm.toList
+  /-- The quotient chunks. -/
+  t : CommReads C V tComm cp.tComm.toList
+  /-- The `(L, R)` cells read as the proof's pairs. -/
+  lr : List.Forall₂ (PairReads C.E.toAffine V) opening.lr.toList
+    (cp.opening.lr.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2))
+  /-- The `δ` cell reads as the proof's. -/
+  delta : OnCurveAt C.E.toAffine V opening.delta (SWPoint.equivPoint C.E cp.opening.delta)
+  /-- The `sg` cell reads as the proof's. -/
+  sg : OnCurveAt C.E.toAffine V opening.sg (SWPoint.equivPoint C.E cp.opening.sg)
+  /-- The opening's `z₁` decodes to the proof's. -/
+  z1 : S.decode opening.z1 = cp.opening.z1
+  /-- The opening's `z₂` decodes to the proof's. -/
+  z2 : S.decode opening.z2 = cp.opening.z2
+
 /-- What the group half's read assumes of its cells, read as the wire's key `cvk` and proof
 `cp`: the kept old accumulators are the proof's, each commitment column reads as its wire
 column, the opening's `z₁`, `z₂` decode to the proof's, every shifted scalar satisfies
@@ -249,27 +274,12 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
     (oldsW : List (C.Point × Bool)) : Prop where
   /-- The old-accumulator cells read as the proof's old accumulators, through `oldsW`. -/
   olds : OldsRead V inp.sgOld cp oldsW
-  /-- The witness commitments. -/
-  w : ColumnsRead C V inp.wComm cp.wComm.toList
-  /-- The permutation accumulator's commitment. -/
-  z : CommReads C V inp.zComm cp.zComm.toList
-  /-- The quotient chunks. -/
-  t : CommReads C V inp.tComm cp.tComm.toList
+  /-- The proof's cells read as the proof's. -/
+  proof : ProofReads S inp.wComm inp.zComm inp.tComm inp.opening cp
   /-- The key's commitments. -/
   key : KeyReads C V inp.key cvk
-  /-- The opening's `z₁` decodes to the proof's. -/
-  z1 : S.decode inp.opening.z1 = cp.opening.z1
-  /-- The opening's `z₂` decodes to the proof's. -/
-  z2 : S.decode inp.opening.z2 = cp.opening.z2
   /-- Every shifted scalar the circuit scales by is a claim the ladder read speaks about. -/
   claimOk : ∀ x ∈ inp.shifted, S.ClaimOk x
-  /-- The `(L, R)` cells read as the proof's pairs. -/
-  lr : List.Forall₂ (PairReads C.E.toAffine V) inp.opening.lr.toList
-    (cp.opening.lr.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2))
-  /-- The `δ` cell reads as the proof's. -/
-  delta : OnCurveAt C.E.toAffine V inp.opening.delta (SWPoint.equivPoint C.E cp.opening.delta)
-  /-- The `sg` cell reads as the proof's. -/
-  sg : OnCurveAt C.E.toAffine V inp.opening.sg (SWPoint.equivPoint C.E cp.opening.sg)
 
 /-! The read's opening clause. The claimed `perm`, `ζ^{2^k}` and `ζⁿ` enter the linearization
 commitment alone, so the digest and plonk clauses of `IvpReads` hold without them; this is what
@@ -507,7 +517,7 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
   unfold IvpInput.bases streamBv restOf
   rw [tailRows_comms]
   have hi := hties.key.selectorsRead.masked
-  have hw := hties.w.masked
+  have hw := hties.proof.w.masked
   have hc := hties.key.coefficientsRead.masked
   have hs := hties.key.sigmaBatchRead.masked
   simp only [List.map_append, List.map_map, List.append_assoc, List.map_cons, List.map_nil,
@@ -515,7 +525,7 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
   refine List.rel_append hties.olds.cells ?_
   refine List.rel_append hx.masked ?_
   refine List.rel_append (.cons ⟨hf, rfl⟩ .nil) ?_
-  refine List.rel_append hties.z.masked ?_
+  refine List.rel_append hties.proof.z.masked ?_
   refine List.rel_append hi ?_
   refine List.rel_append hw ?_
   exact List.rel_append hc hs
@@ -719,7 +729,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
         inp.opening.z1, inp.opening.z2]).subset hx
     have hftc := hft hperm hzetaM hzetaN
       (hties.claimOk _ (hmem _ (by simp))) (hties.claimOk _ (hmem _ (by simp)))
-      (hties.claimOk _ (hmem _ (by simp))) hties.key.sigmaLastRead hties.t
+      (hties.claimOk _ (hmem _ (by simp))) hties.key.sigmaLastRead hties.proof.t
     -- the bases read as the stream bases; the opening's points as the proof's
     have hb := bases_reads hties hx hftc
     have hbne : inp.bases tr.xHat ftc ≠ [] := by simp [IvpInput.bases]
@@ -730,13 +740,13 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
         inp.opening.z1, inp.opening.z2]).subset hxs)
     obtain ⟨U, ns, c₀, chals, hU, hns, hc, hchals, ⟨wc, hwc⟩, hiff⟩ :=
       hcb.2 _ hb hbne (streamBv_last σ cvk cp pub oldsW) hclaims ξ₀ hξ σ cp.opening.lr
-        cp.opening.delta cp.opening.sg hties.lr hlrne hties.delta hties.sg hh
+        cp.opening.delta cp.opening.sg hties.proof.lr hlrne hties.proof.delta hties.proof.sg hh
     have hlrv : List.Forall₂ (CircuitType.Reads V) inp.opening.lr.toList
         (cp.opening.lr.toList.map fun q => (wirePt q.1, wirePt q.2)) :=
       List.forall₂_map_right_iff.2
-        ((List.forall₂_map_right_iff.1 hties.lr).imp fun _ _ h => pairReads_reads h)
+        ((List.forall₂_map_right_iff.1 hties.proof.lr).imp fun _ _ h => pairReads_reads h)
     have hδv : CircuitType.Reads V inp.opening.delta (wirePt cp.opening.delta) :=
-      reads_affinePoint.mpr (onCurveAt_equivPoint_coords hties.delta)
+      reads_affinePoint.mpr (onCurveAt_equivPoint_coords hties.proof.delta)
     -- the opening transcript, from the warm sponge
     have hT := CheckBulletproofReads.wire (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
     -- the wire's IPA run at the claimed `cip` is the opening check's transcript
@@ -750,7 +760,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     · exact List.map_injective_iff.mpr Subtype.val_injective
         ((forall₂_exact hT.2.1 hns).trans h2.symm)
     · exact success_eq S σ cvk cp pub oldsW hties.olds.kept inp.opening.z1 inp.opening.z2
-        hties.z1 hties.z2 U chals _ _ _ _ _ hiff
+        hties.proof.z1 hties.proof.z2 U chals _ _ _ _ _ hiff
 
 /-! ## The read theorem -/
 
@@ -808,7 +818,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       intro h
       apply htne
       rw [List.map_eq_nil_iff] at h
-      exact List.eq_nil_of_length_eq_zero (hties.t.length_eq.trans (by rw [h]; rfl))
+      exact List.eq_nil_of_length_eq_zero (hties.proof.t.length_eq.trans (by rw [h]; rfl))
     have hchar' : ∀ k : ℕ, k ≤ 1 + 2 * ((oldsW.map fun b => (b.2, wirePt b.1)).length
         + ((publicCommitment C σ cvk pub).toList.map wirePt).length
         + (cp.wComm.toList.map fun P => P.toList.map wirePt).flatten.length
@@ -817,12 +827,13 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       intro k hk
       refine hchar k ?_
       have h1 := hsgv.length_eq
-      have h2 := (List.rel_flatten hties.w.reads).length_eq
-      have h3 := hties.z.length_eq
-      have h4 := hties.t.length_eq
+      have h2 := (List.rel_flatten hties.proof.w.reads).length_eq
+      have h3 := hties.proof.z.length_eq
+      have h4 := hties.proof.t.length_eq
       simp only [List.length_map, Vector.length_toList] at h1 h2 h3 h4 hk ⊢
       omega
-    have hFq := htr'.2 _ _ _ _ _ hsgv hx.reads hties.w.reads hties.z.reads hties.t.reads hzne
+    have hFq := htr'.2 _ _ _ _ _ hsgv hx.reads hties.proof.w.reads hties.proof.z.reads
+      hties.proof.t.reads hzne
       htne' hchar'
     rw [hd] at hFq
     -- the kept old-accumulator readings are the olds' `sg`
@@ -850,7 +861,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     have hkept : oldsW.map (fun b => wirePt b.1) = (cp.olds.map (·.sg)).toList.map wirePt := by
       rw [← hties.olds.kept, List.filter_eq_self.2 hall, List.map_map]
       rfl
-    have hFq := htr'.2 _ _ _ _ hsgv hties.w.reads hties.z.reads hties.t.reads
+    have hFq := htr'.2 _ _ _ _ hsgv hties.proof.w.reads hties.proof.z.reads hties.proof.t.reads
     rw [hd, hkept] at hFq
     exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne tr htr'.1
       hFq hasrt' ftc hft' o hcb'

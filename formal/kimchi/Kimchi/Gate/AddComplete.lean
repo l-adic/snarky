@@ -74,7 +74,7 @@ def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
 
 /-! ## The 7 constraints
 
-The constraint left-hand sides live once, in `constraints`; `Holds`, `ok` and the quotient
+The constraint left-hand sides live once, in `constraints`; `Holds` and the quotient
 layer's constraint polynomials (the same list over `F[X]`) are defined from them. `CommRing`
 suffices: the only inverse, of `x₂ − x₁`, is witnessed as `x21Inv`. -/
 
@@ -102,15 +102,6 @@ def Holds [CommRing F] (w : Witness F) : Prop :=
 instance [CommRing F] [DecidableEq F] (w : Witness F) : Decidable (Holds w) := by
   unfold Holds
   infer_instance
-
-/-- The executable checker, runnable on a concrete witness. -/
-def ok [CommRing F] [DecidableEq F] (w : Witness F) : Bool :=
-  (constraints w).all (· == 0)
-
-/-- The checker decides `Holds`. -/
-theorem ok_iff [CommRing F] [DecidableEq F] (w : Witness F) :
-    ok w = true ↔ Holds w := by
-  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
 
 /-- `Holds` as the conjunction c1–c7, the form the semantics proofs use. -/
 theorem holds_iff [CommRing F] (w : Witness F) :

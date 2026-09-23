@@ -192,9 +192,9 @@ whole chain, so the proof assembles its five-apart windows into the gate tower's
     ⟨vs.getD (5 * k) (0, 0, 0), vs.getD (5 * k + 1) (0, 0, 0),
      vs.getD (5 * k + 2) (0, 0, 0), vs.getD (5 * k + 3) (0, 0, 0),
      vs.getD (5 * k + 4) (0, 0, 0), vs.getD (5 * k + 5) (0, 0, 0)⟩
-  have hch : Kimchi.Gate.Poseidon.Chain (Kimchi.Gate.Poseidon.mdsOfParams p)
-      (fun i => p.roundConstants.toList.getD i (0, 0, 0)) w 11 := by
-    refine ⟨fun i hi => ?_, fun i _ => rfl⟩
+  have hholds : ∀ i < 11, Kimchi.Gate.Poseidon.Holds (Kimchi.Gate.Poseidon.mdsOfParams p)
+      (fun j : Fin 5 => p.roundConstants.toList.getD (5 * i + (j : ℕ)) (0, 0, 0)) (w i) := by
+    intro i hi
     have hw := chainHolds_window i 0 vs hchain (by omega)
     rw [Nat.zero_add] at hw
     exact hw
@@ -204,7 +204,8 @@ whole chain, so the proof assembles its five-apart windows into the gate tower's
     simp [Kimchi.Gate.Poseidon.paramsRc, List.getD_eq_getElem?_getD,
       Array.getD_eq_getD_getElem?]
   have hbc := Kimchi.Gate.Poseidon.chain_blockCipher p
-    (fun i => p.roundConstants.toList.getD i (0, 0, 0)) w 11 hch (by omega) hsize hrc
+    (fun i => p.roundConstants.toList.getD i (0, 0, 0)) w 11 hholds (fun _ _ => rfl) (by omega)
+    hsize hrc
   have h0 : (w 0).s0 = (s.s0.val V, s.s1.val V, s.s2.val V) := rfl
   have h55 : (w 10).s5
       = (outs[54].s0.val V, outs[54].s1.val V, outs[54].s2.val V) := by
@@ -312,7 +313,7 @@ theorem poseidon_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     exact ⟨⟨h.1.1, h.1.2.1, h.1.2.2⟩, h.2.1, h.2.2.1, h.2.2.2⟩
   refine Complete.bind
     (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
+      (Complete.frame CircuitType.monotone_readsAs
         (Complete.witness (poseidon.advice p s)
           (Vector.ofFn fun i : Fin 55 => rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) sv)
           (by simp))))
