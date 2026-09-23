@@ -195,40 +195,6 @@ spec cfg = do
         circuit2
       liftEffect $ verifyCircuit { s: builtState, gen, solver }
 
-  {-
-    -- Forbidden Type2 values cause "Division by zero" in the Rust FFI during scalar multiplication
-    -- (the forbidden value check constraints are added but the FFI computation fails first)
-    it "rejects forbidden Type2 values" $ unsafePartial do
-      let
-        circuit2M
-          :: forall r
-           . PrimeField Pallas.BaseField
-          => Tuple (AffinePoint (FVar Pallas.BaseField)) (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
-          -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) r (AffinePoint (FVar Pallas.BaseField))
-        circuit2M = uncurry \p t -> scaleFast2 @51 @254 p t
-
-        -- Generator that picks from forbidden values
-        genForbidden :: Gen (Tuple (AffinePoint Pallas.BaseField) (Type2 (F Pallas.BaseField) Boolean))
-        genForbidden = do
-          p <- EC.genAffinePoint (Proxy @Pallas.G)
-          { sDiv2, sOdd } <- elements (fromJust $ NEA.fromArray forbiddenType2Values)
-          pure $ Tuple p (Type2 { sDiv2, sOdd })
-
-      -- Run in Effect to catch JS FFI exception as test failure
-      try
-        ( circuitTestM' @Pallas.BaseField { handler: noAdvice, beforeEach: pure unit }
-            cfg
-            ( NEA.singleton
-                { testFunction: (unsatisfied :: _ -> Expectation (AffinePoint Pallas.BaseField))
-                , input: QuickCheck 10 genForbidden
-                }
-            )
-            circuit2M
-        ) >>= case _ of
-        Left err | String.contains (String.Pattern "Division by zero") (message err) -> pure unit
-        Left err -> fail $ "Unexpected error: " <> message err
-        Right _ -> fail "Expected Division by zero error but test passed"
--}
   -- scaleFast2': takes a raw field element, splits it, then computes [s + 2^n] * base
   describe "VarBaseMul scaleFast2' (Pallas circuit)" do
     it "scaleFast2' circuit matches [s + 2^n] * base" $ unsafePartial do

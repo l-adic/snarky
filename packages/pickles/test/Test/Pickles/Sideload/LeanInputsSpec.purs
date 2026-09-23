@@ -72,7 +72,7 @@ spec = describe "Pickles.Sideload.LeanInputs" do
     -- The digest production's verifier recomputes from this key, against the
     -- value Rust recorded for it in `formal/kimchi/fixtures/kimchi_proof_pallas_pickles.json`.
     dec (verifierIndexDigest fixture.verifier.wrapVK) `shouldEqual`
-      "10521184009960764796373857699166393054512144287977711121535841589195586435481"
+      "12760373514751767122302416749453903344252347690628646567123715200989337323184"
     present <- liftEffect $ exists path
     if present then do
       text <- liftEffect $ readTextFile UTF8 path

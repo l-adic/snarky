@@ -2,7 +2,7 @@
 # tools/fixture-dump against the mina submodule at the revision below.
 # Re-pin with scripts/check_fixtures_manifest.sh --regen after a deliberate
 # regeneration; a hash mismatch otherwise means a fixture was edited by hand.
-# mina-submodule: b2d8f8800f7ffd6c1d5a5fa3bcb7492e7462d1dc
+# mina-submodule: c49fa6a32a252f28d4d159357bb10fa66e03e304
 00edf3eb8c19ac47272bdaf8545fc0029e4c46d6c12ae4d9dbe91372a9adbe98  bulletproof-pcs/fixtures/ipa_batch_pallas.json
 b0e1c5ee68cb15677e35847e960b7330635738a0cec12190e2479ccf43cf7e2d  bulletproof-pcs/fixtures/ipa_batch_vesta.json
 40aa14a23ff8632c251cdaaef3621653d5ea818b8ce6e39b6c0a8f13824e52ed  bulletproof-pcs/fixtures/ipa_chunked2_pallas.json
@@ -20,7 +20,7 @@ e32f63c9c226cc0bb023eea011eba0d84e53fc5b42bcb1bd679214965b2526cd  bulletproof-pc
 53dff7fecfc19e09f18d77dc5c852d07dc1937ae39ff1a418735d0096eb477f8  kimchi/fixtures/index_vesta.json
 2899123ee53d64ee9e46824e812808ded73bba1e8c5f04ab78815016fb302121  kimchi/fixtures/index_vesta_nc2.json
 4dd867065cd2c924d754ff6ef0c4cfd71bad60dd20b1d66bb88800d95ca502a7  kimchi/fixtures/kimchi_proof_pallas_nc2.json
-51289d608ee03e854517d6bf4803ed6e464ba38b9b531f22d552d8e2de333b77  kimchi/fixtures/kimchi_proof_pallas_pickles.json
+dd0eda2a3d1140b1de69d278df62a910fe767daaaf28046f18e72f5400af1c5a  kimchi/fixtures/kimchi_proof_pallas_pickles.json
 edc93ac951179b78a3fd9294e748c4559650fee5c963bcab003d58ef59f5c4bf  kimchi/fixtures/kimchi_proof_vesta.json
 083d89cd1b77008858cf1b5049a49f681914da142420b260050e4c90c8c53e82  kimchi/fixtures/kimchi_proof_vesta_emul.json
 29dd26e53b60e72fcc2d5c57a615478d4e4550ab809586977d653125203debd0  kimchi/fixtures/kimchi_proof_vesta_nc2.json
