@@ -30,9 +30,8 @@ open WeierstrassCurve.Affine
 
 variable {F : Type}
 
-/-- The curve dictionary the `VarBaseMul` laws close over (the PureScript ambient
-`WeierstrassCurve` class): the curve, its Pasta short shape, and the group facts the
-ladder's gate-semantics theorems consume. -/
+/-- The curve dictionary the `VarBaseMul` laws close over: the curve, its Pasta short
+shape, and the group facts the ladder's gate-semantics theorems consume. -/
 structure HasCurve (F : Type) [Field F] [DecidableEq F] where
   /-- The curve the base point and accumulators live on. -/
   W : WeierstrassCurve.Affine F

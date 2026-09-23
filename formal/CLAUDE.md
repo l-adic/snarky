@@ -92,10 +92,13 @@ nothing is rot (the exception list, `scripts/comment-allow.txt`, holds the colum
 notations and nothing else). An upstream source file — `verifier.rs`, `step_verifier.ml`,
 `RangeCheck.purs` — may be named in a module's MODULE docstring (its first `/-! … -/`), to say
 what the module transcribes; a declaration docstring or a later section note naming one is a
-violation, because that prose says what this tree's code does. The gate also bans history narration, first person and trackers, caps a
-declaration docstring at 8 lines and a module docstring at 60, and allows one bolded label
-per docstring. Counts run against a ratchet (`scripts/comment-baseline.txt`): a category may
-fall, never rise. `COMMENT_GATE_LIST=1` lists every violation.
+violation, because that prose says what this tree's code does. The same holds for naming the
+upstream languages (PureScript, PS, OCaml, Rust) in prose; the fixture libraries, which decode
+upstream dumps, are exempt. The gate also bans history narration, first person and trackers,
+caps a declaration docstring at 8 lines and a module docstring at 60, and allows at most one
+bolded label, which must open the docstring. Every category is at zero in
+`scripts/comment-baseline.txt`, so any new violation fails the gate. `COMMENT_GATE_LIST=1`
+lists every violation.
 
 Three further quality gates are community tools, all CI-enforced:
 
@@ -352,8 +355,9 @@ op type, a decoder, and a `step : state -> op -> state x Bool`.
   `# Title`, a short description, then `## Main definitions`, `## Main results` and
   `## Implementation notes` as warranted; design rationale lives there or in the commit
   message. A declaration docstring is one to three declarative sentences saying what the
-  declaration is or states, with no headline emphasis (no bold sentences, no capitals for
-  stress). The gate files under `Kimchi/Gate/` predate this and carry longer preambles
+  declaration is or states, with no bold sentences and no capitals for stress. A milestone
+  theorem may open with one bolded role label (`**The body's read.**`); defs and supporting
+  lemmas carry none. The gate files under `Kimchi/Gate/` predate this and carry longer preambles
   (the gate's source, column layout and constraint transcription); keep those accurate,
   and write new code to the Mathlib standard.
 - **Files are split into `/-! ## … -/` sections** (constraint model → reflection → soundness →

@@ -90,8 +90,8 @@ private def PoseidonConstraint.finalRow (s : Variable × Variable × Variable) :
 
 /-- Chunk the pinned states into rows: five per `poseidon` row, greedily (`k` counts
 rows for the constant offsets); a single trailing state becomes the `zero` row.
-A 2–4-state tail (unrepresentable in PS's types, unreachable from the deployed
-`11 × 5 + 1` emitter) emits nothing after the full chunks. -/
+A 2–4-state tail (unreachable from the deployed `11 × 5 + 1` emitter) emits nothing
+after the full chunks. -/
 private def rowsFromStates (rc : ℕ → F × F × F) :
     ℕ → List (Variable × Variable × Variable) → List (KimchiRow F)
   | _, [] => []

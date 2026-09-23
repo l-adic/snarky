@@ -6,3 +6,4 @@ upstream-files-outside-module-doc 0
 banned-phrases 0
 oversize 0
 emphasis 0
+foreign-languages 0

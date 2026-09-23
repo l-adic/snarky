@@ -205,7 +205,7 @@ end Sponge
 /-! ## The row chain.
 
     The deployed block is 56 states and 55 rounds: the caller's input state followed by 55
-    witnessed round outputs. The PureScript named in the module docstring splits the first 55
+    witnessed round outputs. The emitter splits the first 55
     states into eleven chunks of five, emits one Poseidon gate row per chunk whose coefficient
     cells hold round constants `5i … 5i+4` in round order, and appends a final zero row carrying
     the last state. `55 = 11 × 5` exactly, so the chain is eleven rows with no ragged tail.

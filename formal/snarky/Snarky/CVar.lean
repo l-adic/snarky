@@ -6,14 +6,14 @@ namespace Snarky
 
 universe u
 
-/-- An affine expression over variables (PS `CVar f`). -/
+/-- An affine expression over variables. -/
 inductive CVar (F : Type u) where
   | var (v : Variable)
   | const (c : F)
   | add (a b : CVar F)
   | scale (k : F) (x : CVar F)
 
-/-- A single field element as a circuit value (PS `FVar f` is a wrapped `CVar`). -/
+/-- A single field element as a circuit value. -/
 abbrev FVar (F : Type u) := CVar F
 
 variable {F : Type u}
@@ -30,7 +30,7 @@ def CVar.scale_ [Zero F] [One F] [DecidableEq F] (k : F) (x : CVar F) : CVar F :
   else if k = 1 then x
   else .scale k x
 
-/-- Negation (PS `negate_`): scaling by `-1`. -/
+/-- Negation: scaling by `-1`. -/
 def CVar.negate_ [Zero F] [One F] [Neg F] [DecidableEq F] (x : CVar F) : CVar F :=
   scale_ (-1) x
 
@@ -40,8 +40,8 @@ def CVar.sub_ [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] :
   | .const a, .const b => .const (a - b)
   | a, b => add_ a (scale_ (-1) b)
 
-/-- Read the value of an affine expression from the current assignments (PS
-`readCVar`): read its variables and combine. -/
+/-- Read the value of an affine expression from the current assignments: read its
+variables and combine. -/
 def AsProver.readCVar [Add F] [Mul F] : CVar F → AsProver F F
   | .var v => .read v .pure
   | .const k => .pure k

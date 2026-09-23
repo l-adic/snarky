@@ -77,6 +77,20 @@ def bannedWords : List (String × String) :=
     ("todo", "tracker"), ("fixme", "tracker"), ("xxx", "tracker"), ("hack", "tracker"),
     ("clearly", "hedge"), ("simply", "hedge") ]
 
+/-- Upstream languages. A module's first docstring may name them, to say what the module
+transcribes; a declaration docstring or a section note describes this tree's code. -/
+def foreignWords : List String := ["ps", "purescript", "ocaml", "rust"]
+
+/-- The fixture libraries decode upstream dumps, so they may name the upstream language
+anywhere. -/
+def isFixtureModule (m : String) : Bool :=
+  ["KimchiFixture", "PicklesFixture", "BulletproofFixture", "FixtureKit"].any (m.startsWith ·)
+
+/-- A comment's prose: every backticked span dropped, since code there may bind any name. -/
+def prose (s : String) : String :=
+  String.join ((s.splitOn "`").zipIdx.filterMap fun (p, i) =>
+    if i % 2 == 0 then some p else none)
+
 /-- The words of a comment, punctuation and markup stripped. -/
 def words (s : String) : List String :=
   (s.toLower.map (fun ch => if ch.isAlphanum then ch else ' ')).splitOn " "
@@ -195,6 +209,7 @@ run_cmd do
   let mut phrase : Array String := #[]
   let mut oversize : Array String := #[]
   let mut emph : Array String := #[]
+  let mut foreign : Array String := #[]
   let modOf (n : Name) : String :=
     match env.getModuleIdxFor? n with
     | some i => (env.header.moduleNames[i.toNat]!).toString
@@ -233,6 +248,11 @@ run_cmd do
     for (b, why) in bannedWords do
       if ws.contains b then
         phrase := phrase.push s!"{modOf n}\t{userName n}: \"{b}\" ({why})"
+    unless isFixtureModule (modOf n) do
+      let pw := words (prose doc)
+      for w in foreignWords do
+        if pw.contains w then
+          foreign := foreign.push s!"{modOf n}\t{userName n}: \"{w}\""
     let lines := (doc.splitOn "\n").length
     if lines > declCap then
       oversize := oversize.push s!"{modOf n}\t{userName n}: {lines} lines (cap {declCap})"
@@ -282,6 +302,11 @@ run_cmd do
           for (b, why) in bannedWords do
             if ws.contains b then
               phrase := phrase.push s!"{f}\tmodule doc: \"{b}\" ({why})"
+          unless isModuleDoc || (f.toString.splitOn "Fixture").length > 1 do
+            let pw := words (prose text)
+            for w in foreignWords do
+              if pw.contains w then
+                foreign := foreign.push s!"{f}\tsection note: \"{w}\""
           for t in backticked text do
             -- an upstream source file is nameable in the module docstring only; this tree's
             -- own files (`formal/…`) are nameable anywhere
@@ -304,7 +329,8 @@ run_cmd do
   let cats : List (String × Array String) :=
     [ ("unresolved-names", stale), ("dangling-paths", dangling),
       ("upstream-files-outside-module-doc", provenance),
-      ("banned-phrases", phrase), ("oversize", oversize), ("emphasis", emph) ]
+      ("banned-phrases", phrase), ("oversize", oversize), ("emphasis", emph),
+      ("foreign-languages", foreign) ]
   let baseSrc ← IO.FS.readFile "scripts/comment-baseline.txt"
   let mut base : Std.HashMap String Nat := {}
   for l in baseSrc.splitOn "\n" do
