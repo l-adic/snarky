@@ -2,8 +2,7 @@ import Mathlib.Tactic
 
 /-! # The generic gate
 
-    Two linear-plus-bilinear constraints on one row, the "all rows hold" relation, and the
-    executable checker that decides it.
+    Two linear-plus-bilinear constraints on one row.
 
     kimchi has a single generic gate — the *double* generic gate (`generic.rs`,
     `CONSTRAINTS = 2`). One row carries 15 witness cells `w` and 15 coefficient
@@ -35,7 +34,7 @@ def Generic.map {R S : Type*} (f : R → S) (g : Generic R) : Generic S :=
   ⟨f ∘ g.q, f ∘ g.w⟩
 
 /-- The two constraint expressions, as ring elements — the single transcription; the relational
-    spec (`Holds`), the checker (`ok`), and the quotient layer's constraint polynomials are all
+    spec (`Holds`) and the quotient layer's constraint polynomials are all
     read from it. -/
 def Generic.constraints {R : Type*} [CommRing R] (g : Generic R) : List R :=
   [ g.q 0 * g.w 0 + g.q 1 * g.w 1 + g.q 2 * g.w 2 + g.q 3 * (g.w 0 * g.w 1) + g.q 4
@@ -85,28 +84,11 @@ theorem Generic.withPublic_holds_iff (g : Generic F) (p : F) :
   · rintro ⟨h1, h2⟩
     exact ⟨by linear_combination h1, h2⟩
 
-/-- Executable checker — every constraint expression evaluates to zero. -/
-def Generic.ok [DecidableEq F] (g : Generic F) : Bool :=
-  g.constraints.all (· == 0)
-
-theorem Generic.ok_iff [DecidableEq F] (g : Generic F) : g.ok = true ↔ g.Holds := by
-  simp only [Generic.ok, Generic.Holds, List.all_eq_true, beq_iff_eq]
-
 /-- Naturality: the constraint expressions commute with ring homomorphisms applied cellwise
     via `Generic.map`. At `f = eval (ω^i) : F[X] →+* F` this turns the quotient layer's
     constraint polynomials' values at a domain node into the gate constraints of that row. -/
 theorem Generic.constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S)
     (g : Generic R) : g.constraints.map f = (g.map f).constraints := by
   simp [Generic.constraints, Generic.map]
-
-/-- A generic circuit is a list of rows; it holds when every row does. -/
-def Satisfies (rows : List (Generic F)) : Prop := ∀ g ∈ rows, g.Holds
-
-/-- Executable checker for a whole circuit. -/
-def satisfies [DecidableEq F] (rows : List (Generic F)) : Bool := rows.all (·.ok)
-
-theorem satisfies_iff [DecidableEq F] (rows : List (Generic F)) :
-    satisfies rows = true ↔ Satisfies rows := by
-  simp [satisfies, Satisfies, List.all_eq_true, Generic.ok_iff]
 
 end Kimchi.Gate

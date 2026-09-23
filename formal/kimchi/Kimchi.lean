@@ -5,7 +5,6 @@ import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.EndoScalar
 import Kimchi.Gate.EndoMul
 import Kimchi.Gate.Poseidon
-import Kimchi.Gate.Semantics.Generic
 import Kimchi.Gate.Semantics.AddComplete
 import Kimchi.Gate.Semantics.VarBaseMul
 import Kimchi.Gate.Semantics.EndoScalar
@@ -37,7 +36,7 @@ Root module of the `Kimchi` library. The development runs bottom-up, from a sing
 to the executable verifier:
 
 - `Kimchi/Gate/` — each modelled gate as a constraint predicate over a witness structure
-  (`Holds` / `ok` / `ok_iff`), proved faithful to Mathlib's elliptic-curve group law.
+  (`Holds`), proved faithful to Mathlib's elliptic-curve group law.
 - `Kimchi/Gate/Semantics/` — the multi-row development: ladders, GLV accumulation, and the
   per-curve deployed entry points (`pallas_endoMul`, `varBaseMul_scaleFast2`, and the rest).
 - `Kimchi/Index/`, `Kimchi/Permutation/`, `Kimchi/Lift.lean`, `Kimchi/Domain.lean` — the

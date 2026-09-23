@@ -33,7 +33,7 @@ Witness layout (cols 0–14):
 The accumulator runs (x0,y0) → … → (x5,y5) against the fixed target (xT,yT); s0…s4 are the
 per-bit `s1` slopes and b0…b4 the bits.
 
-This file holds the constraint model (`Witness`, `Holds`, the checker `ok`) and the witness
+This file holds the constraint model (`Witness`, `Holds`) and the witness
 generator `build`. Soundness (`Kimchi.Gate.VarBaseMul.sound`: a satisfying gate computes
 `P₅ = 32·P₀ + c·T` for an integer `c`), completeness and the multi-row chain live in
 `Kimchi.Gate.Semantics.VarBaseMul`.
@@ -131,7 +131,7 @@ def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
 /-! ## The constraint expressions
 
 The 21 constraint left-hand sides are defined once, as ring elements (`constraints`). The
-relational spec `Holds`, the checker `ok` and the quotient layer's constraint polynomials
+relational spec `Holds` and the quotient layer's constraint polynomials
 (the same list over `F[X]`) all read them. -/
 
 /-- The 4 cleared constraint expressions of one bit block: boolean, `s1`, `xo`, `yo`. `b` is
@@ -208,16 +208,6 @@ theorem holds_iff [CommRing F] (w : Witness F) :
       ∧ singleBitHolds w.b4 w.xT w.yT w.s4 w.x4 w.y4 w.x5 w.y5 := by
   simp only [Holds, constraints, decompHolds, singleBitHolds, List.forall_mem_cons,
     List.forall_mem_append, and_assoc]
-
-/-- The executable checker: every constraint expression evaluates to zero. -/
-def ok [CommRing F] [DecidableEq F] (w : Witness F) : Bool :=
-  (constraints w).all (· == 0)
-
-/-! ## Reflection: the checker faithfully decides the constraints. -/
-
-theorem ok_iff [CommRing F] [DecidableEq F] (w : Witness F) :
-    ok w = true ↔ Holds w := by
-  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
 
 /-- The constraint expressions commute with ring homomorphisms applied cellwise via
     `Witness.map`. At `f = eval (ω^i)` this reads the quotient layer's constraint polynomials at

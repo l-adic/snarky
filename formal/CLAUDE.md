@@ -32,7 +32,7 @@ seen the Clean framework, forget its vocabulary here — none of it applies.
 
 A second library lives in its own package **`snarky/`** (namespace `Snarky.*`, package
 `snarky`, which *requires kimchi* — its `Snarky.Kimchi.*` bridge interprets reified
-circuits against the verified generic-gate checker): a deep-embedded Lean port of the
+circuits against the kimchi gates' `Holds` predicates): a deep-embedded Lean port of the
 PureScript circuit-building DSL (`packages/snarky`). It models how constraint systems
 are *constructed*, complementing `Kimchi`'s constraint-systems-as-data view: a reified op
 tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interpreters
@@ -139,7 +139,7 @@ described are gone; their content lives in `Gate/` + `Gate/Semantics/` + the pas
 
 | Layer | Dir | Models |
 | --- | --- | --- |
-| **Gate** | `kimchi/Kimchi/Gate/` | one gate row as a constraint predicate (`Holds`/`ok`/`ok_iff`), proved to compute the intended EC/permutation operation |
+| **Gate** | `kimchi/Kimchi/Gate/` | one gate row as a constraint predicate (`Holds`), proved to compute the intended EC/permutation operation |
 | **Semantics** | `kimchi/Kimchi/Gate/Semantics/` | multi-row chains (ladders, GLV accumulation) and the per-curve deployed entry points, with pasta's certified orders/eigenvalues in place of the old axioms |
 | **Arithmetization** | `kimchi/Kimchi/{Index,Permutation,Lift,Domain,Aggregate,SchwartzZippel,GrandProduct,Protocol/Linearization}` | the index as data, `Index.Satisfies`, the wiring and σ columns, the polynomial lift, satisfiability ↔ divisibility (`satisfies_iff_fullFamily_dvd`), copy soundness, and the verifier's scalar side in closed form |
 | **Verifier** | `kimchi/Kimchi/Verifier/` | the executable verifier (`Kimchi.lean`), its body in closed form (`Reflect.lean`), and the serde wire boundary with its parse (`Wire.lean`) |
@@ -179,8 +179,8 @@ exponential.
 
 Each modelled gate is two files:
 
-- **`Kimchi/Gate/{Name}.lean`** — the constraint model (`Witness`/`Holds`/`ok`/`ok_iff`)
-  and the per-row soundness/completeness.
+- **`Kimchi/Gate/{Name}.lean`** — the constraint model (`Witness`/`Holds`, with a `Decidable`
+  instance) and the per-row soundness/completeness.
 - **`Kimchi/Gate/Semantics/{Name}.lean`** — the multi-row development (recurrence folds,
   ladder/recoding kernels, non-degeneracy toolkit) up to the per-Pasta-curve deployed
   entry points (`pallas_endoMul`, `varBaseMul_scaleFast1`, …), tracked by
@@ -202,11 +202,7 @@ structure Generic (F : Type*) where
 def Generic.constraints [CommRing R] (g : Generic R) : List R := …  -- the two packed equations
 def Generic.Holds (g : Generic F) : Prop := ∀ e ∈ g.constraints, e = 0
 theorem Generic.holds_iff (g : Generic F) : g.Holds ↔ (… ∧ …)   -- the two cell equations
-def Generic.ok [DecidableEq F] (g : Generic F) : Bool := …
-theorem Generic.ok_iff [DecidableEq F] (g : Generic F) : g.ok = true ↔ g.Holds
-def Satisfies (rows : List (Generic F)) : Prop := ∀ g ∈ rows, g.Holds
-def satisfies [DecidableEq F] (rows : List (Generic F)) : Bool := rows.all (·.ok)
-theorem satisfies_iff [DecidableEq F] (rows) : satisfies rows = true ↔ Satisfies rows
+instance [DecidableEq F] (g : Generic F) : Decidable g.Holds
 ```
 
 Plus `Generic.map` (the functorial relabelling the polynomial lift instantiates at a ring hom) and
@@ -220,13 +216,15 @@ circuit column, mirroring the `.purs` column layout), plus:
 structure Witness (F : Type*) where
   x1 y1 x2 y2 x3 y3 s inf : F        -- columns, named to match AddComplete.purs
 
-def Holds [CommRing F] (w : Witness F) : Prop := …  -- the gate's constraints, as a ∧-conjunction
-def ok    [CommRing F] [DecidableEq F] (w : Witness F) : Bool := …
-theorem ok_iff (w : Witness F) : ok w = true ↔ Holds w := by simp [...]
+def constraints [CommRing F] (w : Witness F) : List F := …  -- the constraint polynomials
+def Holds [CommRing F] (w : Witness F) : Prop := ∀ e ∈ constraints w, e = 0
+instance [CommRing F] [DecidableEq F] (w : Witness F) : Decidable (Holds w)
+theorem holds_iff (w : Witness F) : Holds w ↔ (… ∧ …)   -- the constraints as named equations
 ```
 
-`Holds` is the **relational spec** (a `Prop`); `ok` is the decidable `Bool` mirror; `ok_iff`
-is the reflection bridge. Write new gates in this shape.
+`Holds` is the **relational spec** (a `Prop`): the gate's polynomials all vanish. The
+`Decidable` instance lets `decide` settle it on a concrete witness; there is no separate
+`Bool` checker. Write new gates in this shape.
 
 ## The faithfulness pattern (the heart of the project)
 
@@ -234,12 +232,11 @@ For each algebraic gate, prove a progression that ends at **Mathlib's group law*
 Poseidon, whose external oracle is not an EC one: its progression ends at `Poseidon.blockCipher`,
 the fixture-validated production sponge permutation (`Gate/Semantics/Poseidon.lean`):
 
-1. **Reflection** — `ok_iff : ok w = true ↔ Holds w`. Boolean checker ↔ relational spec.
-2. **Soundness** — `sound_* : Holds w → (the field-level slope/coordinate identities)`.
+1. **Soundness** — `sound_* : Holds w → (the field-level slope/coordinate identities)`.
    The constraints pin `s = W.slope …`, `x3 = W.addX …`, etc.
-3. **Point soundness** — `sound_point_* : Holds w → ∃ h3, Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3`.
+2. **Point soundness** — `sound_point_* : Holds w → ∃ h3, Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3`.
    This is the payoff: the gate computes addition **in Mathlib's proven elliptic-curve group**.
-4. **Completeness** — `complete_* : (curve preconditions) → ∃ w, Holds w ∧ (outputs are the group sum)`.
+3. **Completeness** — `complete_* : (curve preconditions) → ∃ w, Holds w ∧ (outputs are the group sum)`.
    The honest prover can always fill a satisfying witness.
 
 Representative signatures (verbatim shape):
@@ -346,7 +343,7 @@ op type, a decoder, and a `step : state -> op -> state x Bool`.
 ## Conventions
 
 - **Namespacing** matches the path: `Kimchi.Gate.*`, `Kimchi.Index.*`, `Kimchi.Verifier.*`.
-- **Theorem names**: `ok_iff` (reflection), `sound_*` / `sound_point_*` (soundness),
+- **Theorem names**: `holds_iff` (the constraints as equations), `sound_*` / `sound_point_*` (soundness),
   `complete_*` (completeness), `*_faithful` (the full bridge), `chain_*` / `gate_*` (folded
   results), `*_scalar` (scalar-field analogue).
 - **`F p` / `ZMod p`** for the field; `[Field F] [DecidableEq F]` (add `[CharP F p]` when the

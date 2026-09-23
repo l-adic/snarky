@@ -22,7 +22,7 @@ crumb. Columns 0–5 hold n0, n8, a0, b0, a8, b8 and columns 6–13 the eight cr
 * `crumb_iff` — the range constraint `x(x−1)(x−2)(x−3) = 0` holds iff `x ∈ {0,1,2,3}`.
 * `cPoly_table`, `dPoly_table` — the cubics agree with the tables on every crumb (char ≠ 2, 3).
 * `constraints_map` — the constraint list commutes with `F`-algebra homs.
-* `holds_iff`, `ok_iff` — the constraint model as a conjunction and as a checker.
+* `holds_iff` — the constraint model as a conjunction.
 
 Soundness and completeness of a row (`sound`, `complete`), the effective scalar `a·λ + b`
 and the multi-row composition are in `Kimchi.Gate.Semantics.EndoScalar`.
@@ -99,7 +99,7 @@ structure Witness (F : Type*) where
 /-- The gate's constraint expressions: the `n`, `a` and `b` folds closing at `n8`, `a8` and
     `b8`, then the range polynomial of each crumb. Each fold is written `expected − actual`,
     as the deployed gate writes it, so the α-weighted linearization matches by value, not just
-    by vanishing. `Holds` and `ok` both read this list. It is stated over an `F`-algebra `R`,
+    by vanishing. `Holds` reads this list. It is stated over an `F`-algebra `R`,
     as `cPoly`, for the quotient layer's `Argument` instance. -/
 def constraints {R : Type u} [CommRing R] (w : Witness R) (F : Type u := R) [Field F]
     [Algebra F R] : List R :=
@@ -185,14 +185,6 @@ def Holds (w : Witness F) : Prop :=
 instance [DecidableEq F] (w : Witness F) : Decidable (Holds w) := by
   unfold Holds
   infer_instance
-
-/-- The executable checker: every constraint expression evaluates to zero. -/
-def ok [DecidableEq F] (w : Witness F) : Bool :=
-  (constraints w).all (· == 0)
-
-/-- The checker decides `Holds`. -/
-theorem ok_iff [DecidableEq F] (w : Witness F) : ok w = true ↔ Holds w := by
-  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
 
 /-- `Holds` as a conjunction: the three folds close and every crumb is in range. -/
 theorem holds_iff (w : Witness F) :

@@ -30,7 +30,7 @@ window constraints also admit the spurious `R = −P`.
 
 ## Contents
 
-This file is the transcription: `Witness`, `constraints`, `Holds`, its checker `ok`, and
+This file is the transcription: `Witness`, `constraints`, `Holds`, and
 `constraints_map`. Soundness (`sound`, `endoMul`) and completeness (`complete`) are proved in
 `Kimchi.Gate.Semantics.EndoMul`, reusing VarBaseMul's `secant_add` and `signed_target`.
 -/
@@ -140,14 +140,6 @@ def Holds (endo : F) (w : Witness F) : Prop :=
 instance [DecidableEq F] (endo : F) (w : Witness F) : Decidable (Holds endo w) := by
   unfold Holds
   infer_instance
-
-/-- EXECUTABLE checker — runnable on a concrete witness. -/
-def ok (endo : F) (w : Witness F) : Bool :=
-  (constraints endo w).all (· == 0)
-
-/-- Reflection: the checker faithfully decides the relational constraints. -/
-theorem ok_iff (endo : F) (w : Witness F) : ok endo w = true ↔ Holds endo w := by
-  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
 
 omit [DecidableEq F] in
 /-- `Holds` as the readable 12-conjunction (what the soundness proofs destructure). -/

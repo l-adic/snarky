@@ -15,19 +15,12 @@ Kimchi.Gate.EndoMul.vesta_chain_complete
 Kimchi.Gate.EndoScalar.fp_rangeCheck128_complete
 Kimchi.Gate.EndoScalar.fq_rangeCheck128_complete
 Kimchi.Gate.EndoScalar.range_complete
-Kimchi.Gate.Generic.complete
 Kimchi.Gate.Poseidon.fp_poseidonChain_complete
 Kimchi.Gate.Poseidon.fq_poseidonChain_complete
 Kimchi.Gate.VarBaseMul.complete
 
--- Gate faithfulness: the boolean checker reflects the constraint relation (`ok_iff`), the
--- constraints compute the intended operation (`sound`), and the deployed per-curve entry
--- points those fold up to.
-Kimchi.Gate.AddComplete.ok_iff
-Kimchi.Gate.EndoMul.ok_iff
-Kimchi.Gate.EndoScalar.ok_iff
-Kimchi.Gate.satisfies_iff
-Kimchi.Gate.Poseidon.ok_iff
+-- Gate faithfulness: the constraints compute the intended operation (`sound`), and the
+-- deployed per-curve entry points those fold up to.
 Kimchi.Gate.EndoMul.pallas_endoMul
 Kimchi.Gate.EndoMul.sound
 Kimchi.Gate.EndoMul.vesta_endoMul
@@ -40,14 +33,12 @@ Kimchi.Gate.EndoScalar.endoScalar_unique
 Kimchi.Gate.EndoScalar.fp_rangeCheck128_sound
 Kimchi.Gate.EndoScalar.fq_rangeCheck128_sound
 Kimchi.Gate.EndoScalar.nReconstruct_nil
-Kimchi.Gate.Generic.sound
 Kimchi.Gate.Poseidon.fp_poseidonChain_blockCipher
 Kimchi.Gate.Poseidon.fq_poseidonChain_blockCipher
 Kimchi.Gate.VarBaseMul.mem_forbiddenValues_of_dvd
 Kimchi.Gate.VarBaseMul.runBits_length
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
-Kimchi.Gate.VarBaseMul.ok_iff
 
 -- The arithmetization: satisfiability against the committed polynomial family, the
 -- permutation argument and the Schwartz-Zippel separation.

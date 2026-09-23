@@ -28,10 +28,9 @@ namespace Kimchi.CheckAxioms
     (a `native_decide` outside the trusted certificates, say) hides in the
     executable path. -/
 def roots : List Name :=
-  [ `Kimchi.Gate.Generic.sound, `Kimchi.Gate.Generic.complete,
-    `Kimchi.Gate.AddComplete.sound_noninf, `Kimchi.Gate.AddComplete.complete_build,
+  [ `Kimchi.Gate.AddComplete.sound_noninf, `Kimchi.Gate.AddComplete.complete_build,
     `Kimchi.Gate.AddComplete.sound_point_noninf, `Kimchi.Gate.AddComplete.sound_point_inf,
-    `Kimchi.Gate.AddComplete.ok_iff, `Kimchi.Gate.AddComplete.inf_boolean,
+    `Kimchi.Gate.AddComplete.inf_boolean,
     `Kimchi.Gate.AddComplete.complete,
     `Kimchi.Gate.AddComplete.sound,
     `Kimchi.Gate.VarBaseMul.sound, `Kimchi.Gate.VarBaseMul.complete,
