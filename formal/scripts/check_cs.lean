@@ -1249,6 +1249,28 @@ def hashMessagesWrapCircuit (input : Vector (FVar Fq) 33) : CircuitM Fq Cq PUnit
     ⟨get 30, get 31⟩
   assertEqual digest (get 32)
 
+/-! ## The step proof's accumulator digest
+
+Transcribes `Pickles.CircuitDiffs.PureScript.HashMessagesStep`: the digest the step circuit
+commits its predecessors' accumulator advice to, on the plain sponge
+(`Pickles.hashMessagesForNextStepProof`, OCaml `step_verifier.ml:1167-1188`), with no
+application state, asserted against the claimed digest. The layout is 91 cells: the key's 28
+one-chunk commitments at 0-55 (`σ₀…σ₆`, the 15 coefficients, the six selectors, each `x, y`),
+then two proofs of 17 cells from 56 (`sg`, then 15 challenges), the claim at 90. -/
+
+/-- `hash_messages_for_next_step_proof_circuit`. -/
+def hashMessagesStepCircuit (input : Vector (FVar Fp) 91) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : Vector (AffinePoint (FVar Fp)) 1 := #v[⟨get (2 * i), get (2 * i + 1)⟩]
+  let vk : Pickles.VkComms 1 (AffinePoint (FVar Fp)) :=
+    ⟨Vector.ofFn fun j => pt j, Vector.ofFn fun j => pt (7 + j), pt 22, pt 23, pt 24, pt 25,
+      pt 26, pt 27⟩
+  let proof (i : ℕ) : AffinePoint (FVar Fp) × List (FVar Fp) :=
+    (⟨get (56 + 17 * i), get (57 + 17 * i)⟩, (List.range 15).map fun j => get (58 + 17 * i + j))
+  let digest ← Pickles.hashMessagesForNextStepProof Bulletproof.IpaPallas.curve.sponge.params
+    vk [] [proof 0, proof 1]
+  assertEqual digest (get 90)
+
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
 blinding bases. -/
 def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
@@ -1367,6 +1389,8 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       (pseudoChooseCircuit 3 [13, 14, 15])),
     ("pseudo_to_domain_wrap_circuit",
       wrapTarget (a := Vector Fq 2) (b := PUnit) pseudoToDomainWrapCircuit),
+    ("hash_messages_for_next_step_proof_circuit",
+      stepTarget (a := Vector Fp 91) (b := PUnit) hashMessagesStepCircuit),
     ("hash_messages_for_next_wrap_proof_circuit",
       wrapTarget (a := Vector Fq 33) (b := PUnit) hashMessagesWrapCircuit) ]
 

@@ -164,6 +164,18 @@ omit [DecidableEq F] in
 nothing is kept. -/
 def create : OptSpongeVar F := ⟨initState, .absorbing false_ [], true⟩
 
+/-- A plain sponge as the conditional sponge on the same state: squeezed at the same slot;
+absorbed at position `0` or `1`, absorbing from there; with both rate slots filled, permuted
+first, which alone clears the empty-input permute. -/
+def ofSponge (p : Poseidon.Params F) (sv : SpongeVar F) : CircuitM F c (OptSpongeVar F) :=
+  match sv.mode with
+  | .squeezed n => pure ⟨sv.state, .squeezed n, true⟩
+  | .absorbed ⟨0, _⟩ => pure ⟨sv.state, .absorbing false_ [], true⟩
+  | .absorbed ⟨1, _⟩ => pure ⟨sv.state, .absorbing true_ [], true⟩
+  | .absorbed ⟨_ + 2, _⟩ => do
+    let st ← poseidon p sv.state
+    pure ⟨st, .absorbing false_ [], false⟩
+
 omit [DecidableEq F] in
 /-- Absorb a guarded input: onto the pending list, or a new block at position `0` after a
 squeeze. -/
