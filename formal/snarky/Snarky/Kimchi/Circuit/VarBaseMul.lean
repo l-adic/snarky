@@ -142,10 +142,6 @@ open Std.Do in
   simp only [scaleRound, Threads]
   mvcgen
 
-/-- The rows the ladder is handed: five bit variables in scope. -/
-private def BitRow [Field F] (st₁ : ProverState F) (bs : Vector (FVar F) 5) : Prop :=
-  ∀ v ∈ bs.toList, v.Scoped st₁
-
 /-- A round's cells. -/
 private def cells [Field F] (r : ScaleRound F) : List (CVar F) :=
   [r.base.x, r.base.y, r.acc0.x, r.acc0.y, r.acc1.x, r.acc1.y, r.acc2.x, r.acc2.y,
@@ -167,51 +163,17 @@ private def RowOk [Field F] [DecidableEq F] (r : ScaleRound F) (st : ProverState
 round's own cells, and those are in scope, so nothing in the reading moves. -/
 private theorem monotone_rowOk [Field F] [DecidableEq F] (r : ScaleRound F) :
     Monotone (RowOk r) := by
-  intro st st' hle h
-  have hnv := ProverState.nv_le_of_le hle
-  obtain ⟨hsc, hread⟩ := h
-  refine ⟨fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
-  have hcell : ∀ cv ∈ cells r, cv.val st'.env.get = cv.val st.env.get :=
-    fun cv hcv => CVar.val_of_le hle (hsc cv hcv)
-  have hread' : ScaleRound.read st'.env.get r = ScaleRound.read st.env.get r := by
-    simp only [ScaleRound.read, hcell r.base.x (by simp [cells]),
-      hcell r.base.y (by simp [cells]),
-      hcell r.acc0.x (by simp [cells]),
-      hcell r.acc0.y (by simp [cells]),
-      hcell r.acc1.x (by simp [cells]),
-      hcell r.acc1.y (by simp [cells]),
-      hcell r.acc2.x (by simp [cells]),
-      hcell r.acc2.y (by simp [cells]),
-      hcell r.acc3.x (by simp [cells]),
-      hcell r.acc3.y (by simp [cells]),
-      hcell r.acc4.x (by simp [cells]),
-      hcell r.acc4.y (by simp [cells]),
-      hcell r.acc5.x (by simp [cells]),
-      hcell r.acc5.y (by simp [cells]),
-      hcell r.bit0 (by simp [cells]),
-      hcell r.bit1 (by simp [cells]),
-      hcell r.bit2 (by simp [cells]),
-      hcell r.bit3 (by simp [cells]),
-      hcell r.bit4 (by simp [cells]),
-      hcell r.slope0 (by simp [cells]),
-      hcell r.slope1 (by simp [cells]),
-      hcell r.slope2 (by simp [cells]),
-      hcell r.slope3 (by simp [cells]),
-      hcell r.slope4 (by simp [cells]),
-      hcell r.nPrev (by simp [cells]),
-      hcell r.nNext (by simp [cells])]
-  rw [hread', hread,
-    hcell r.base.x (by simp [cells]), hcell r.base.y (by simp [cells]),
-    hcell r.acc0.x (by simp [cells]), hcell r.acc0.y (by simp [cells]),
-    hcell r.nPrev (by simp [cells]), hcell r.bit0 (by simp [cells]),
-    hcell r.bit1 (by simp [cells]), hcell r.bit2 (by simp [cells]),
-    hcell r.bit3 (by simp [cells]), hcell r.bit4 (by simp [cells])]
+  rintro st st' hle ⟨hsc, hread⟩
+  refine ⟨fun cv hcv => (hsc cv hcv).mono (ProverState.nv_le_of_le hle), ?_⟩
+  simp (disch := (apply hsc; simp [cells])) only [ScaleRound.read, CVar.val_of_le hle]
+  simpa only [ScaleRound.read] using hread
 
 /-- The honest round is wired to its inputs (`Threads`), reads as the gate's canonical row at
 them (`RowOk`), and keeps the accumulator invariant. -/
 private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverState F)
     (base : AffinePoint (FVar F)) (hbase : base.x.Scoped st₁ ∧ base.y.Scoped st₁)
-    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) (hbs : BitRow st₁ bs) :
+    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5)
+    (hbs : CircuitType.Scoped (val := Vector F 5) st₁ bs) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
       (scaleRound (c := KimchiConstraint F) base acc bs)
@@ -234,7 +196,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
       CircuitType.ReadsAs (val := F) st (bs[4]'(by omega)) v.2.2.2.2.2.2.2.2.2)
     (fun st h => ?_) fun v => ?_
   · have hb : ∀ (i : ℕ) (hi : i < 5), (bs[i]'hi).Scoped st :=
-      fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono
+      fun i hi => (CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp hbs i hi)).mono
         (ProverState.nv_le_of_le h.1)
     exact ⟨(base.x.val st.env.get, base.y.val st.env.get, acc.1.x.val st.env.get,
         acc.1.y.val st.env.get, acc.2.val st.env.get, (bs[0]'(by omega)).val st.env.get,
@@ -1054,11 +1016,11 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [hentry k hk, CVar.val_of_le hlef (hbitfacts _ (by omega)).1,
       (hbitfacts _ (by omega)).2]
   -- the ladder
-  have hP : ∀ x ∈ (List.range chunks).map window, VarBaseMul.BitRow st₂ x := by
-    intro x hx v hv
+  have hP : ∀ x ∈ (List.range chunks).map window, CircuitType.Scoped (val := Vector F 5) st₂ x := by
+    intro x hx
     obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hx
-    obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
     have hi' : i < chunks := by simpa using hi
+    refine CircuitType.scoped_vector.mpr fun j hj => CircuitType.scoped_fvar.mpr ?_
     simp only [hwindow, Vector.getElem_ofFn]
     exact hbitSc (5 * i + j) (by omega)
   refine Complete.bind
@@ -1071,7 +1033,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
             (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs))))
         (mapAccumM_complete (F := F) (c := KimchiConstraint F)
-          (scaleRound base) (VarBaseMul.BitRow st₂)
+          (scaleRound base) (CircuitType.Scoped (val := Vector F 5) st₂)
           (fun _ acc st => st₂ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
           (VarBaseMul.Threads base) VarBaseMul.RowOk (fun _ _ => by complete_mono_tac)
           VarBaseMul.monotone_rowOk

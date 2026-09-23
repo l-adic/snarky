@@ -505,10 +505,6 @@ completeness needs nothing of the accumulator but that it is readable. Every row
 judged at the one `endoMul` constraint after the loop, and what discharges it is the
 model's `chain_complete` on the honest walk, which the run's readings are shown to be. -/
 
-/-- The rows the ladder is handed: four bit variables in scope. -/
-private def BitRow (st₁ : ProverState F) (bs : Vector (FVar F) 4) : Prop :=
-  ∀ v ∈ bs.toList, v.Scoped st₁
-
 /-- A round's cells. -/
 private def cells (r : EndoMulRound F) : List (CVar F) :=
   [r.t.x, r.t.y, r.p.x, r.p.y, r.nAcc, r.nAccNext, r.r.x, r.r.y, r.s.x, r.s.y,
@@ -530,46 +526,17 @@ private def RowOk [Field F] [DecidableEq F] (eb : F) (r : EndoMulRound F) (st : 
 reading moves. -/
 private theorem monotone_rowOk [Field F] [DecidableEq F] (eb : F) (r : EndoMulRound F) :
     Monotone (RowOk eb r) := by
-  intro st st' hle h
-  have hnv := ProverState.nv_le_of_le hle
-  obtain ⟨hsc, hread⟩ := h
-  refine ⟨fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
-  have hcell : ∀ cv ∈ cells r, cv.val st'.env.get = cv.val st.env.get :=
-    fun cv hcv => CVar.val_of_le hle (hsc cv hcv)
-  have hread' : EndoMulRound.readWith st'.env.get r (r.s.x.val st'.env.get)
-        (r.s.y.val st'.env.get) (r.nAccNext.val st'.env.get)
-      = EndoMulRound.readWith st.env.get r (r.s.x.val st.env.get)
-        (r.s.y.val st.env.get) (r.nAccNext.val st.env.get) := by
-    simp only [EndoMulRound.readWith,
-      hcell r.t.x (by simp [cells]),
-      hcell r.t.y (by simp [cells]),
-      hcell r.p.x (by simp [cells]),
-      hcell r.p.y (by simp [cells]),
-      hcell r.nAcc (by simp [cells]),
-      hcell r.nAccNext (by simp [cells]),
-      hcell r.r.x (by simp [cells]),
-      hcell r.r.y (by simp [cells]),
-      hcell r.s.x (by simp [cells]),
-      hcell r.s.y (by simp [cells]),
-      hcell r.s1 (by simp [cells]),
-      hcell r.s3 (by simp [cells]),
-      hcell r.inv (by simp [cells]),
-      hcell r.bit0 (by simp [cells]),
-      hcell r.bit1 (by simp [cells]),
-      hcell r.bit2 (by simp [cells]),
-      hcell r.bit3 (by simp [cells])]
-  rw [hread', hread,
-    hcell r.t.x (by simp [cells]), hcell r.t.y (by simp [cells]),
-    hcell r.p.x (by simp [cells]), hcell r.p.y (by simp [cells]),
-    hcell r.nAcc (by simp [cells]), hcell r.bit0 (by simp [cells]),
-    hcell r.bit1 (by simp [cells]), hcell r.bit2 (by simp [cells]),
-    hcell r.bit3 (by simp [cells])]
+  rintro st st' hle ⟨hsc, hread⟩
+  refine ⟨fun cv hcv => (hsc cv hcv).mono (ProverState.nv_le_of_le hle), ?_⟩
+  simp (disch := (apply hsc; simp [cells])) only [EndoMulRound.readWith, CVar.val_of_le hle]
+  simpa only [EndoMulRound.readWith] using hread
 
 /-- The step's completeness: the round's advice is the gate's canonical row at the
 accumulators it was handed, so the run succeeds and its reading is that row. -/
 private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverState F)
     (eb : F) (t : AffinePoint (FVar F)) (ht : t.x.Scoped st₁ ∧ t.y.Scoped st₁)
-    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (hbs : BitRow st₁ bs) :
+    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4)
+    (hbs : CircuitType.Scoped (val := Vector F 4) st₁ bs) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
       (Snarky.Kimchi.endoMulRound (c := KimchiConstraint F) eb t acc bs)
@@ -591,7 +558,7 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
       CircuitType.ReadsAs (val := F) st (bs[3]'(by omega)) v.2.2.2.2.2.2.2.2)
     (fun st h => ?_) fun v => ?_
   · have hb : ∀ (i : ℕ) (hi : i < 4), (bs[i]'hi).Scoped st :=
-      fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono
+      fun i hi => (CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp hbs i hi)).mono
         (ProverState.nv_le_of_le h.1)
     exact ⟨(t.x.val st.env.get, t.y.val st.env.get, acc.1.x.val st.env.get,
         acc.1.y.val st.env.get, acc.2.val st.env.get, (bs[0]'(by omega)).val st.env.get,
@@ -1005,11 +972,11 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     simp only [Vector.getElem_toList, bitsOf]
     rw [hentry 0 (by omega), hentry 1 (by omega), hentry 2 (by omega), hentry 3 (by omega)]
     simp
-  have hP : ∀ x ∈ bits.toList, BitRow st₁ x := by
-    intro x hx v hv
+  have hP : ∀ x ∈ bits.toList, CircuitType.Scoped (val := Vector F 4) st₁ x := by
+    intro x hx
     obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
-    obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
-    exact (hbitfacts i hi j hj).1
+    exact CircuitType.scoped_vector.mpr fun j hj =>
+      CircuitType.scoped_fvar.mpr (hbitfacts i hi j hj).1
   -- the sealed `β·x`: the bridge reads the scaled abscissa off the on-curve fact,
   -- and the walk pins the value through it
   have hscaleR : ∀ {st : ProverState F}, OnCurveAs d.W st t (Point.some _ _ hT) →
@@ -1125,7 +1092,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (Complete.frame
         (by complete_mono_tac)
         (mapAccumM_complete (F := F) (c := KimchiConstraint F)
-          (Snarky.Kimchi.endoMulRound d.endo t) (BitRow st₁)
+          (Snarky.Kimchi.endoMulRound d.endo t) (CircuitType.Scoped (val := Vector F 4) st₁)
           (fun _ acc st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
           (Threads t) (RowOk d.endo) (fun _ _ => by complete_mono_tac) (monotone_rowOk d.endo)
           (fun acc x _ hx => endoMulRound_complete st₁ d.endo t ⟨htx₁, hty₁⟩ acc x hx)

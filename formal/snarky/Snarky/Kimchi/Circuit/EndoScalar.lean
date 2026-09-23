@@ -284,10 +284,7 @@ private theorem RowOk.holds_of_le [Field F] [DecidableEq F] {r : EndoScalarRound
     Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read st'.env.get r) := by
   obtain ⟨hsc, hholds⟩ := h
   have hread : EndoScalarRound.read st'.env.get r = EndoScalarRound.read st.env.get r := by
-    simp only [EndoScalarRound.read,
-      CVar.val_of_le hle (hsc r.a8 (by simp)), CVar.val_of_le hle (hsc r.b8 (by simp)),
-      CVar.val_of_le hle (hsc r.n8 (by simp)), CVar.val_of_le hle (hsc r.a0 (by simp)),
-      CVar.val_of_le hle (hsc r.b0 (by simp)), CVar.val_of_le hle (hsc r.n0 (by simp))]
+    simp (disch := (apply hsc; simp)) only [EndoScalarRound.read, CVar.val_of_le hle]
     congr 1
     exact List.map_congr_left fun cv hcv => CVar.val_of_le hle (hsc cv (by simp [hcv]))
   rw [hread]
