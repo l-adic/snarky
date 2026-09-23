@@ -210,42 +210,28 @@ end Sponge
     cells hold round constants `5i … 5i+4` in round order, and appends a final zero row carrying
     the last state. `55 = 11 × 5` exactly, so the chain is eleven rows with no ragged tail.
 
-    `Chain` is that shape as a predicate; `chain_rounds` folds it into the ℕ-indexed iterate and
-    `chain_blockCipher` lands it on the sponge permutation. `buildChain` is the honest prover's
-    table and `buildChain_chain` says it satisfies the predicate, so the chain theorems do not
-    quantify over an empty set. -/
-
-/-- An `n`-row Poseidon chain: each row satisfies the gate at its own block of five round
-    constants, and consecutive rows are linked through the state. -/
-structure Chain [CommRing F] (M : Mds F) (rc : ℕ → F × F × F) (w : ℕ → Witness F) (n : ℕ) :
-    Prop where
-  /-- Row `i` satisfies the gate at the round constants of its own block, `rc (5i + j)` for
-      `j < 5`. -/
-  holds : ∀ i < n, Holds M (fun j : Fin 5 => rc (5 * i + (j : ℕ))) (w i)
-  /-- Row `i`'s output state is row `i + 1`'s input state. This is kimchi's two-row Poseidon
-      convention: the output register `s5` is read off the *next* row. -/
-  link : ∀ i, i + 1 < n → (w i).s5 = (w (i + 1)).s0
-
-/-- A prefix of a chain is a chain; the induction behind `chain_rounds` steps through the
-    prefixes with it. -/
-theorem Chain.mono [CommRing F] {M : Mds F} {rc : ℕ → F × F × F} {w : ℕ → Witness F} {m n : ℕ}
-    (h : Chain M rc w n) (hmn : m ≤ n) : Chain M rc w m :=
-  ⟨fun i hi => h.holds i (lt_of_lt_of_le hi hmn),
-   fun i hi => h.link i (lt_of_lt_of_le hi hmn)⟩
+    A run of `n` rows is two facts: row `i` satisfies the gate at its own block of five round
+    constants, `rc (5i + j)` for `j < 5`, and row `i`'s output register `s5` is row `i + 1`'s
+    input `s0` (kimchi's two-row Poseidon convention). `chain_rounds` folds such a run into the
+    ℕ-indexed iterate and `chain_blockCipher` lands it on the sponge permutation. `buildChain`
+    is the honest prover's table and `buildChain_chain` says it satisfies both facts, so the
+    chain theorems do not quantify over an empty set. -/
 
 /-- `chain_rounds` at `n = m + 1`, the shape the induction runs in. -/
 private theorem chain_rounds_succ [CommRing F] (M : Mds F) (rc : ℕ → F × F × F)
-    (w : ℕ → Witness F) (m : ℕ) (h : Chain M rc w (m + 1)) :
+    (w : ℕ → Witness F) (m : ℕ)
+    (hholds : ∀ i < m + 1, Holds M (fun j : Fin 5 => rc (5 * i + (j : ℕ))) (w i))
+    (hlink : ∀ i, i + 1 < m + 1 → (w i).s5 = (w (i + 1)).s0) :
     (w m).s5 = rounds M rc (5 * (m + 1)) (w 0).s0 := by
   induction m with
   | zero =>
-    have hs := sound M (fun j : Fin 5 => rc (5 * 0 + (j : ℕ))) (w 0) (h.holds 0 (by omega))
+    have hs := sound M (fun j : Fin 5 => rc (5 * 0 + (j : ℕ))) (w 0) (hholds 0 (by omega))
     rw [hs, perm_eq_rounds M (w 0).s0 _ rc fun j => by simp]
   | succ k ih =>
-    have hprev := ih (h.mono (by omega))
-    have hlink := h.link k (by omega)
+    have hprev := ih (fun i hi => hholds i (by omega)) (fun i hi => hlink i (by omega))
+    have hlink := hlink k (by omega)
     have hs := sound M (fun j : Fin 5 => rc (5 * (k + 1) + (j : ℕ))) (w (k + 1))
-      (h.holds (k + 1) (by omega))
+      (hholds (k + 1) (by omega))
     have hsplit : 5 * (k + 1 + 1) = 5 * (k + 1) + 5 := by ring
     rw [hsplit, rounds_add, ← hprev, hs,
       perm_eq_rounds M (w (k + 1)).s0 _ (fun i => rc (5 * (k + 1) + i)) fun j => rfl, ← hlink]
@@ -255,10 +241,11 @@ private theorem chain_rounds_succ [CommRing F] (M : Mds F) (rc : ℕ → F × F 
     the first row's input. Each step applies `sound` to one row, `perm_eq_rounds` to read its
     five-round conclusion as an iterate, and `rounds_add` to splice that onto the prefix. -/
 theorem chain_rounds [CommRing F] (M : Mds F) (rc : ℕ → F × F × F) (w : ℕ → Witness F) (n : ℕ)
-    (h : Chain M rc w n) (hn : 0 < n) :
+    (hholds : ∀ i < n, Holds M (fun j : Fin 5 => rc (5 * i + (j : ℕ))) (w i))
+    (hlink : ∀ i, i + 1 < n → (w i).s5 = (w (i + 1)).s0) (hn : 0 < n) :
     (w (n - 1)).s5 = rounds M rc (5 * n) (w 0).s0 := by
   obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
-  simpa using chain_rounds_succ M rc w m h
+  simpa using chain_rounds_succ M rc w m hholds hlink
 
 /-- **A satisfying chain computes the sponge permutation.** When the chain's MDS matrix is
     `mdsOfParams p`, its round constants agree with `paramsRc p` below `5n` and the table has
@@ -266,10 +253,12 @@ theorem chain_rounds [CommRing F] (M : Mds F) (rc : ℕ → F × F × F) (w : �
     first row's input state. The parameters enter as hypotheses: that a real index carries
     these values is not proved here. -/
 theorem chain_blockCipher [Field F] (p : Poseidon.Params F) (rc : ℕ → F × F × F)
-    (w : ℕ → Witness F) (n : ℕ) (h : Chain (mdsOfParams p) rc w n) (hn : 0 < n)
+    (w : ℕ → Witness F) (n : ℕ)
+    (hholds : ∀ i < n, Holds (mdsOfParams p) (fun j : Fin 5 => rc (5 * i + (j : ℕ))) (w i))
+    (hlink : ∀ i, i + 1 < n → (w i).s5 = (w (i + 1)).s0) (hn : 0 < n)
     (hsize : p.roundConstants.size = 5 * n) (hrc : ∀ i < 5 * n, rc i = paramsRc p i) :
     (w (n - 1)).s5 = Poseidon.blockCipher p (w 0).s0 := by
-  rw [chain_rounds _ rc w n h hn, blockCipher_eq_rounds, hsize,
+  rw [chain_rounds _ rc w n hholds hlink hn, blockCipher_eq_rounds, hsize,
     rounds_congr _ rc (paramsRc p) (5 * n) hrc]
 
 /-! ## Completeness: the honest chain. -/
@@ -290,9 +279,10 @@ theorem buildChain_s0 [CommRing F] (M : Mds F) (rc : ℕ → F × F × F) (s0 : 
     satisfying chain: the honest table. Each row satisfies the gate by `complete`, and the link
     hypothesis holds by construction because row `i + 1` is built from row `i`'s output. -/
 theorem buildChain_chain [CommRing F] (M : Mds F) (rc : ℕ → F × F × F) (s0 : F × F × F)
-    (n : ℕ) : Chain M rc (buildChain M rc s0) n where
-  holds i _ := by cases i <;> exact complete _ _ _
-  link _ _ := rfl
+    (n : ℕ) :
+    (∀ i < n, Holds M (fun j : Fin 5 => rc (5 * i + (j : ℕ))) (buildChain M rc s0 i)) ∧
+      ∀ i, i + 1 < n → (buildChain M rc s0 i).s5 = (buildChain M rc s0 (i + 1)).s0 :=
+  ⟨fun i _ => by cases i <;> exact complete _ _ _, fun _ _ => rfl⟩
 
 /-- **Completeness against the sponge permutation.** The honest `n`-row table's last output
     register is `Poseidon.blockCipher p` of the input state it was built from, so the set
@@ -302,7 +292,7 @@ theorem buildChain_blockCipher [Field F] (p : Poseidon.Params F) (rc : ℕ → F
     (hrc : ∀ i < 5 * n, rc i = paramsRc p i) :
     (buildChain (mdsOfParams p) rc s0 (n - 1)).s5 = Poseidon.blockCipher p s0 := by
   have := chain_blockCipher p rc (buildChain (mdsOfParams p) rc s0) n
-    (buildChain_chain _ _ _ _) hn hsize hrc
+    (buildChain_chain _ _ _ _).1 (buildChain_chain _ _ _ _).2 hn hsize hrc
   rwa [buildChain_s0] at this
 
 /-! ## The deployed per-curve entry points.
@@ -317,7 +307,7 @@ theorem buildChain_blockCipher [Field F] (p : Poseidon.Params F) (rc : ℕ → F
 
     What is assumed: the MDS matrix and the round constants enter as data, `mdsOfParams` of the
     parameter set and constants agreeing with its `paramsRc`. That the index a real proof
-    carries holds those values is not proved here. The `Chain` hypothesis is what a satisfying
+    carries holds those values is not proved here. The run hypotheses are what a satisfying
     witness table supplies: eleven rows holding, linked through the state.
 
     What is not claimed: anything about the sponge's absorb/squeeze automaton, its
@@ -349,17 +339,21 @@ theorem fpParams_size : Poseidon.fpParams.roundConstants.size = 5 * 11 := by
     what this does and does not establish. -/
 theorem fq_poseidonChain_blockCipher (rc : ℕ → Fq × Fq × Fq) (w : ℕ → Witness Fq)
     (hrc : ∀ i < 5 * 11, rc i = paramsRc Poseidon.fqParams i)
-    (h : Chain (mdsOfParams Poseidon.fqParams) rc w 11) :
+    (hholds : ∀ i < 11,
+      Holds (mdsOfParams Poseidon.fqParams) (fun j : Fin 5 => rc (5 * i + (j : ℕ))) (w i))
+    (hlink : ∀ i, i + 1 < 11 → (w i).s5 = (w (i + 1)).s0) :
     (w 10).s5 = Poseidon.blockCipher Poseidon.fqParams (w 0).s0 :=
-  chain_blockCipher Poseidon.fqParams rc w 11 h (by omega) fqParams_size hrc
+  chain_blockCipher Poseidon.fqParams rc w 11 hholds hlink (by omega) fqParams_size hrc
 
 /-- **The deployed Pallas-side Poseidon chain computes the production sponge permutation** —
     the twin of `fq_poseidonChain_blockCipher` at `Poseidon.fpParams`. -/
 theorem fp_poseidonChain_blockCipher (rc : ℕ → Fp × Fp × Fp) (w : ℕ → Witness Fp)
     (hrc : ∀ i < 5 * 11, rc i = paramsRc Poseidon.fpParams i)
-    (h : Chain (mdsOfParams Poseidon.fpParams) rc w 11) :
+    (hholds : ∀ i < 11,
+      Holds (mdsOfParams Poseidon.fpParams) (fun j : Fin 5 => rc (5 * i + (j : ℕ))) (w i))
+    (hlink : ∀ i, i + 1 < 11 → (w i).s5 = (w (i + 1)).s0) :
     (w 10).s5 = Poseidon.blockCipher Poseidon.fpParams (w 0).s0 :=
-  chain_blockCipher Poseidon.fpParams rc w 11 h (by omega) fpParams_size hrc
+  chain_blockCipher Poseidon.fpParams rc w 11 hholds hlink (by omega) fpParams_size hrc
 
 /-- **Completeness at `Poseidon.fqParams`.** For every input state an eleven-row satisfying
     chain exists, its first row carries that state, and its last output register is the
@@ -367,21 +361,25 @@ theorem fp_poseidonChain_blockCipher (rc : ℕ → Fp × Fp × Fp) (w : ℕ → 
     satisfiable. -/
 theorem fq_poseidonChain_complete (s0 : Fq × Fq × Fq) :
     ∃ w : ℕ → Witness Fq,
-      Chain (mdsOfParams Poseidon.fqParams) (paramsRc Poseidon.fqParams) w 11
+      (∀ i < 11, Holds (mdsOfParams Poseidon.fqParams)
+          (fun j : Fin 5 => paramsRc Poseidon.fqParams (5 * i + (j : ℕ))) (w i))
+        ∧ (∀ i, i + 1 < 11 → (w i).s5 = (w (i + 1)).s0)
         ∧ (w 0).s0 = s0
         ∧ (w 10).s5 = Poseidon.blockCipher Poseidon.fqParams s0 :=
   ⟨buildChain (mdsOfParams Poseidon.fqParams) (paramsRc Poseidon.fqParams) s0,
-    buildChain_chain _ _ _ _, buildChain_s0 _ _ _,
+    (buildChain_chain _ _ _ _).1, (buildChain_chain _ _ _ _).2, buildChain_s0 _ _ _,
     buildChain_blockCipher Poseidon.fqParams _ s0 11 (by omega) fqParams_size fun _ _ => rfl⟩
 
 /-- **Completeness at `Poseidon.fpParams`**: the twin of `fq_poseidonChain_complete`. -/
 theorem fp_poseidonChain_complete (s0 : Fp × Fp × Fp) :
     ∃ w : ℕ → Witness Fp,
-      Chain (mdsOfParams Poseidon.fpParams) (paramsRc Poseidon.fpParams) w 11
+      (∀ i < 11, Holds (mdsOfParams Poseidon.fpParams)
+          (fun j : Fin 5 => paramsRc Poseidon.fpParams (5 * i + (j : ℕ))) (w i))
+        ∧ (∀ i, i + 1 < 11 → (w i).s5 = (w (i + 1)).s0)
         ∧ (w 0).s0 = s0
         ∧ (w 10).s5 = Poseidon.blockCipher Poseidon.fpParams s0 :=
   ⟨buildChain (mdsOfParams Poseidon.fpParams) (paramsRc Poseidon.fpParams) s0,
-    buildChain_chain _ _ _ _, buildChain_s0 _ _ _,
+    (buildChain_chain _ _ _ _).1, (buildChain_chain _ _ _ _).2, buildChain_s0 _ _ _,
     buildChain_blockCipher Poseidon.fpParams _ s0 11 (by omega) fpParams_size fun _ _ => rfl⟩
 
 end Deployed

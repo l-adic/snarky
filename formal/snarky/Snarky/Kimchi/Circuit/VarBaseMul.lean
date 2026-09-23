@@ -495,7 +495,8 @@ attribute [irreducible] nAccWit bitWit scaleRound
 
 A `ScaleRound` carries all 26 of its cells, outputs included, so the constraint reads each
 round on its own. The trace only has to say that every round shares the base, opens where the
-previous one closed, and starts at the doubled seed: what `Kimchi.Gate.VarBaseMul.Run` asks.
+previous one closed, and starts at the doubled seed: what `Kimchi.Gate.VarBaseMul.varBaseMul_off`
+asks of its run.
 
 The loop emits no row of its own; every row is judged at the one `varBaseMul` constraint
 after it. On the honest side that constraint holds by the model's `chain_complete`, since the
@@ -629,8 +630,8 @@ private theorem threads_rows [Field F] {base : AffinePoint (FVar F)} {V : Valuat
     rw [roundBits, List.flatMap_cons, ← roundBits, ih, List.flatMap_cons, hb0, hb1, hb2, hb3,
       hb4]
 
-open Kimchi.Gate.VarBaseMul (Run runBits bitsRegister bitsVal accX accY accN gateLadder) in
-/-- A satisfied trace from the doubled seed is one of the model's runs (`Run.ofList`):
+open Kimchi.Gate.VarBaseMul (runBits bitsRegister bitsVal accX accY accN gateLadder) in
+/-- A satisfied trace from the doubled seed is one of the model's runs (`isChain_getD`):
 its bits are bits, the register reads as their value (`chain_accN`), and under the regime
 the result is the base times their Type1 decode (`varBaseMul_off`). -/
 private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuation F)
@@ -676,8 +677,8 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
       show Kimchi.Gate.AddComplete.IsPoint d.W (r.base.x.val V) (r.base.y.val V) T
       rw [VarBaseMul.threads_base hthr' r hr]
       exact hT
-    have hrun : Run d.W T g l.length :=
-      Kimchi.Gate.VarBaseMul.Run.ofList d.W T l dflt
+    obtain ⟨hgH, hgB, hgL, hgN⟩ :=
+      Kimchi.Gate.VarBaseMul.isChain_getD d.W T l dflt
         (fun w hw => by
           obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (hl ▸ hw)
           exact hpay r hr)
@@ -689,11 +690,11 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
           exact ⟨⟨congrArg (·.val V) (congrArg AffinePoint.x hab.1),
             congrArg (·.val V) (congrArg AffinePoint.y hab.1)⟩,
             congrArg (·.val V) hab.2⟩)
-        (by
-          obtain ⟨hp0, -⟩ := VarBaseMul.threads_head hthr'
-          show Kimchi.Gate.AddComplete.IsPoint d.W (r₀.acc0.x.val V) (r₀.acc0.y.val V) _
-          rw [hp0]
-          exact hP0)
+    have hgI : Kimchi.Gate.AddComplete.IsPoint d.W (g 0).x0 (g 0).y0 ((2 : ℤ) • T) := by
+      obtain ⟨hp0, -⟩ := VarBaseMul.threads_head hthr'
+      show Kimchi.Gate.AddComplete.IsPoint d.W (r₀.acc0.x.val V) (r₀.acc0.y.val V) _
+      rw [hp0]
+      exact hP0
     -- the run's bit stream is the rounds'
     have hbits : runBits g l.length = roundBits V (r₀ :: rs) := by
       rw [hg, Kimchi.Gate.VarBaseMul.runBits_getD, hl, roundBits, List.flatMap_map]
@@ -725,11 +726,11 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
       rw [hn0]
       simp [CVar.val]
     have hreg : fin.2.val V = bitsRegister (roundBits V (r₀ :: rs)) := by
-      rw [← hfinn, Kimchi.Gate.VarBaseMul.chain_accN l.length g hrun, hzero, mul_zero,
+      rw [← hfinn, Kimchi.Gate.VarBaseMul.chain_accN l.length g hgH hgN, hzero, mul_zero,
         zero_add, hbits]
     refine ⟨?_, ?_, hreg, fun hregime => ?_⟩
     · rw [← hbits]
-      exact Kimchi.Gate.VarBaseMul.runBits_bool l.length g hrun.holds
+      exact Kimchi.Gate.VarBaseMul.runBits_bool l.length g hgH
     · rw [← VarBaseMul.threads_length hthr', roundBits, List.length_flatMap]
       simp
       omega
@@ -743,7 +744,8 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
           Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hbits]
       obtain ⟨hfin', hpt, -⟩ :=
         Kimchi.Gate.VarBaseMul.varBaseMul_off d.W l.length g T
-          (gateLadder g (5 * l.length)) hrun d.two_ne d.odd rfl (by rw [hs]; exact hregime)
+          (gateLadder g (5 * l.length)) hgH hgB hgL hgI d.two_ne d.odd rfl
+          (by rw [hs]; exact hregime)
       have hns : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V) := by
         rw [← hfinx, ← hfiny]
         exact hfin'

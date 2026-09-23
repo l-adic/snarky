@@ -108,7 +108,7 @@ private theorem chain_rows {st fin : FVar F × FVar F × FVar F} {xs : List (Vec
 
 /-- A threaded trace's wiring: adjacent rounds share their accumulator variables, the
 first opens at the seeds, and the last closes at the final ones — the three conditions
-`Kimchi.Gate.EndoScalar.Chain.ofList` asks for. -/
+`Kimchi.Gate.EndoScalar.isChain_getD` asks for. -/
 private theorem threads_wiring :
     ∀ {pref : List (Vector (FVar F) 8)} {st fin : FVar F × FVar F × FVar F}
       {r₀ : EndoScalarRound F} {rs : List (EndoScalarRound F)},
@@ -155,15 +155,15 @@ private theorem chain_sound [Field F] [DecidableEq F]
       intro w hw
       obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hw
       exact hHolds r hr
-    obtain ⟨hA, hB, hN⟩ := Kimchi.Gate.EndoScalar.chain_decompose _ _
-      (Kimchi.Gate.EndoScalar.Chain.ofList _ hne hholds
+    obtain ⟨hrows, hopen, hlink'⟩ := Kimchi.Gate.EndoScalar.isChain_getD _ hne hholds
         ((List.isChain_map _).mpr
           (hlink.imp fun a b hab =>
             ⟨congrArg (·.val V) hab.1, congrArg (·.val V) hab.2.1,
               congrArg (·.val V) hab.2.2⟩))
         (by simp [EndoScalarRound.read, h01, CVar.val])
         (by simp [EndoScalarRound.read, h02, CVar.val])
-        (by simp [EndoScalarRound.read, h03, CVar.val]))
+        (by simp [EndoScalarRound.read, h03, CVar.val])
+    obtain ⟨hA, hB, hN⟩ := Kimchi.Gate.EndoScalar.chain_decompose _ _ hrows hopen hlink'
     rw [Nat.sub_add_cancel (by simp), Kimchi.Gate.EndoScalar.chainCrumbs_getD,
       Kimchi.Gate.EndoScalar.getD_length_sub_one _ hne, List.getLast_map] at hA hB hN
     have hstream : ((r₀ :: rs).map (EndoScalarRound.read V)).flatMap (·.crumbs)

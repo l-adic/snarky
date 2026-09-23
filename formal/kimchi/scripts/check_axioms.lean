@@ -81,8 +81,6 @@ def roots : List Name :=
     `Kimchi.Gate.Poseidon.round_eq_fullRound,
     `Kimchi.Gate.Poseidon.paramsRc,
     `Kimchi.Gate.Poseidon.blockCipher_eq_rounds,
-    `Kimchi.Gate.Poseidon.Chain,
-    `Kimchi.Gate.Poseidon.Chain.mono,
     `Kimchi.Gate.Poseidon.chain_rounds,
     `Kimchi.Gate.Poseidon.chain_blockCipher,
     `Kimchi.Gate.Poseidon.buildChain,
