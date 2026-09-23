@@ -163,29 +163,24 @@ private def cells [Field F] (r : ScaleRound F) : List (CVar F) :=
     r.bit0, r.bit1, r.bit2, r.bit3, r.bit4,
     r.slope0, r.slope1, r.slope2, r.slope3, r.slope4, r.nPrev, r.nNext]
 
-/-- `Threads`, plus: the round's cells are in scope, and it reads as the gate's canonical
-row at its inputs. -/
-private def RowGrant [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
-    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) (r : ScaleRound F)
-    (acc' : AffinePoint (FVar F) × FVar F) (st : ProverState F) : Prop :=
-  Threads base acc bs r acc' ∧ (∀ cv ∈ cells r, cv.Scoped st) ∧
+/-- A round at a table: its cells are in scope, and it reads as the gate's canonical row at
+its own inputs. -/
+private def RowOk [Field F] [DecidableEq F] (r : ScaleRound F) (st : ProverState F) : Prop :=
+  (∀ cv ∈ cells r, cv.Scoped st) ∧
     ScaleRound.read st.env.get r
-      = Kimchi.Gate.VarBaseMul.build (base.x.val st.env.get) (base.y.val st.env.get)
-          (acc.1.x.val st.env.get) (acc.1.y.val st.env.get) (acc.2.val st.env.get)
-          (bs[0].val st.env.get) (bs[1].val st.env.get) (bs[2].val st.env.get)
-          (bs[3].val st.env.get) (bs[4].val st.env.get)
+      = Kimchi.Gate.VarBaseMul.build (r.base.x.val st.env.get) (r.base.y.val st.env.get)
+          (r.acc0.x.val st.env.get) (r.acc0.y.val st.env.get) (r.nPrev.val st.env.get)
+          (r.bit0.val st.env.get) (r.bit1.val st.env.get) (r.bit2.val st.env.get)
+          (r.bit3.val st.env.get) (r.bit4.val st.env.get)
 
 /-- A row's grant survives the table's growth: the wiring says the operands are the
 round's own cells, and those are in scope, so nothing in the reading moves. -/
-private theorem monotone_rowGrant [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
-    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) (r : ScaleRound F)
-    (acc' : AffinePoint (FVar F) × FVar F) : Monotone (RowGrant base acc bs r acc') := by
+private theorem monotone_rowOk [Field F] [DecidableEq F] (r : ScaleRound F) :
+    Monotone (RowOk r) := by
   intro st st' hle h
   have hnv := ProverState.nv_le_of_le hle
-  obtain ⟨hthr, hsc, hread⟩ := h
-  obtain ⟨hb, ⟨ha0, hn0⟩, hout, hb0, hb1, hb2, hb3, hb4⟩ := hthr
-  refine ⟨⟨hb, ⟨ha0, hn0⟩, hout, hb0, hb1, hb2, hb3, hb4⟩,
-    fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
+  obtain ⟨hsc, hread⟩ := h
+  refine ⟨fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
   have hcell : ∀ cv ∈ cells r, cv.val st'.env.get = cv.val st.env.get :=
     fun cv hcv => CVar.val_of_le hle (hsc cv hcv)
   have hread' : ScaleRound.read st'.env.get r = ScaleRound.read st.env.get r := by
@@ -215,15 +210,15 @@ private theorem monotone_rowGrant [Field F] [DecidableEq F] (base : AffinePoint 
       hcell r.slope4 (by simp [cells]),
       hcell r.nPrev (by simp [cells]),
       hcell r.nNext (by simp [cells])]
-  rw [hread', hread, ← hb, ← ha0, ← hn0, ← hb0, ← hb1, ← hb2, ← hb3, ← hb4,
+  rw [hread', hread,
     hcell r.base.x (by simp [cells]), hcell r.base.y (by simp [cells]),
     hcell r.acc0.x (by simp [cells]), hcell r.acc0.y (by simp [cells]),
     hcell r.nPrev (by simp [cells]), hcell r.bit0 (by simp [cells]),
     hcell r.bit1 (by simp [cells]), hcell r.bit2 (by simp [cells]),
     hcell r.bit3 (by simp [cells]), hcell r.bit4 (by simp [cells])]
 
-/-- The honest round returns the gate's canonical row at its inputs (`RowGrant`), and
-keeps the accumulator invariant. -/
+/-- The honest round is wired to its inputs (`Threads`), reads as the gate's canonical row at
+them (`RowOk`), and keeps the accumulator invariant. -/
 private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverState F)
     (base : AffinePoint (FVar F)) (hbase : base.x.Scoped st₁ ∧ base.y.Scoped st₁)
     (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) (hbs : BitRow st₁ bs) :
@@ -231,7 +226,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
       (fun st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
       (scaleRound (c := KimchiConstraint F) base acc bs)
       (fun p st' => (st₁ ≤ st' ∧ p.2.1.x.Scoped st' ∧ p.2.1.y.Scoped st' ∧ p.2.2.Scoped st') ∧
-        RowGrant base acc bs p.1 p.2 st') := by
+        Threads base acc bs p.1 p.2 ∧ RowOk p.1 st') := by
   simp only [scaleRound]
   -- the ten cell readings at the entry table index the law
   refine Complete.instantiate
@@ -775,7 +770,7 @@ private theorem grants_walk [Field F] [DecidableEq F] (base : AffinePoint (FVar 
     (stf : ProverState F) :
     ∀ {bs : ℕ → F} {acc fin : AffinePoint (FVar F) × FVar F}
       {pref : List (Vector (FVar F) 5)} {rounds : List (ScaleRound F)},
-      ChainAt (RowGrant base) stf acc pref rounds fin →
+      Chain (Threads base) acc pref rounds fin → (∀ r ∈ rounds, RowOk r stf) →
       (∀ i (hi : i < pref.length) (j : ℕ) (hj : j < 5),
         bs (5 * i + j) = ((pref[i]'hi)[j]'hj).val stf.env.get) →
       ∀ i (hi : i < rounds.length),
@@ -783,11 +778,14 @@ private theorem grants_walk [Field F] [DecidableEq F] (base : AffinePoint (FVar 
           = Kimchi.Gate.VarBaseMul.chainBuild (base.x.val stf.env.get)
               (base.y.val stf.env.get) (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get)
               (acc.2.val stf.env.get) bs i
-  | _, _, _, [], _, h, _, i, hi => by
+  | _, _, _, [], _, h, _, _, i, hi => by
     obtain ⟨rfl, -⟩ := h
     simp at hi
-  | bs, acc, fin, x :: rest, rounds, h, hbits, i, hi => by
-    obtain ⟨r, tail, mid, rfl, ⟨⟨-, -, ⟨hr5, hrnn⟩, -⟩, -, hread⟩, hrest⟩ := h
+  | bs, acc, fin, x :: rest, rounds, h, hrows, hbits, i, hi => by
+    obtain ⟨r, tail, mid, rfl, ⟨hb, ⟨ha0, hn0⟩, ⟨hr5, hrnn⟩, hb0, hb1, hb2, hb3, hb4⟩, hrest⟩ :=
+      h
+    have hread := (hrows r (by simp)).2
+    rw [hb, ha0, hn0, hb0, hb1, hb2, hb3, hb4] at hread
     have h0 : ∀ (j : ℕ) (hj : j < 5), bs j = ((x[j]'hj)).val stf.env.get := by
       intro j hj
       have hb := hbits 0 (by simp) j hj
@@ -805,6 +803,7 @@ private theorem grants_walk [Field F] [DecidableEq F] (base : AffinePoint (FVar 
     | succ j =>
       have hj : j < tail.length := by simpa using hi
       have hshift := grants_walk base stf (bs := fun n => bs (n + 5)) hrest
+        (fun r' hr' => hrows r' (by simp [hr']))
         (fun k hk t ht => by
           have hb := hbits (k + 1) (by simpa using hk) t ht
           rw [show 5 * (k + 1) + t = 5 * k + t + 5 from by omega] at hb
@@ -834,19 +833,6 @@ private theorem grants_walk [Field F] [DecidableEq F] (base : AffinePoint (FVar 
         rw [hrnn]
       rw [show ((r :: tail)[j + 1]'hi) = tail[j]'hj from rfl, hshift,
         Kimchi.Gate.VarBaseMul.chainBuild_shift, hmx, hmy, hmn]
-
-/-- A trace of `RowGrant`s is a trace of `Threads`. -/
-private theorem ChainAt.threads [Field F] [DecidableEq F] {base : AffinePoint (FVar F)}
-    {stf : ProverState F} :
-    ∀ {acc fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      ChainAt (RowGrant base) stf acc pref rounds fin →
-      Chain (Threads base) acc pref rounds fin
-  | _, _, [], _, h => ⟨h.1, h.2⟩
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r, tail, mid, rfl, hg, hrest⟩ := h
-    exact ⟨r, tail, mid, rfl, hg.1, ChainAt.threads hrest⟩
-
 
 end VarBaseMul
 
@@ -1112,8 +1098,8 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         (mapAccumM_complete (F := F) (c := KimchiConstraint F)
           (scaleRound base) (VarBaseMul.BitRow st₂)
           (fun _ acc st => st₂ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
-          (VarBaseMul.RowGrant base) (fun _ _ => by complete_mono_tac)
-          (VarBaseMul.monotone_rowGrant base)
+          (VarBaseMul.Threads base) VarBaseMul.RowOk (fun _ _ => by complete_mono_tac)
+          VarBaseMul.monotone_rowOk
           (fun acc x _ hx =>
             VarBaseMul.scaleRound_complete st₂ base ⟨hsx₂, hsy₂⟩ acc x hx)
           (p.p, CVar.const 0) ((List.range chunks).map window) hP)))
@@ -1169,17 +1155,19 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ →
       CircuitType.ReadsAs (val := F) st p.p.x x0 →
       CircuitType.ReadsAs (val := F) st p.p.y y0 →
-      ChainAt (VarBaseMul.RowGrant base) st (p.p, CVar.const 0)
+      Chain (VarBaseMul.Threads base) (p.p, CVar.const 0)
         ((List.range chunks).map window) rounds fin →
+      (∀ r ∈ rounds, VarBaseMul.RowOk r st) →
       ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read stf.env.get r) := by
-    intro st stf hle hext hseal hp2x hp2y hchain r hr
-    have hlenR : rounds.length = chunks := by rw [ChainAt.length hchain, hpreflen]
-    have hchain' := monotone_chainAt (VarBaseMul.monotone_rowGrant base) hle hchain
+    intro st stf hle hext hseal hp2x hp2y hchain hrows r hr
+    have hlenR : rounds.length = chunks := by
+      rw [VarBaseMul.threads_length hchain, hpreflen]
     have hseal' := CircuitType.monotone_readsAs hle hseal
     have hp2x' := CircuitType.monotone_readsAs hle hp2x
     have hp2y' := CircuitType.monotone_readsAs hle hp2y
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hr
-    rw [VarBaseMul.grants_walk base stf hchain'
+    rw [VarBaseMul.grants_walk base stf hchain
+        (fun r' hr' => VarBaseMul.monotone_rowOk r' hle (hrows r' hr'))
         (fun k hk t ht => hbitsRead stf (hext.trans hle) k hk t ht) i hi,
       hWat stf (hscoords hseal').1 (hscoords hseal').2
         (CircuitType.reads_fvar.mp hp2x'.2) (CircuitType.reads_fvar.mp hp2y'.2)]
@@ -1209,8 +1197,8 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- the one `varBaseMul` row
   refine Complete.bind (Complete.addConstraint ?row) fun _ => ?_
   case row =>
-    rintro st ⟨⟨-, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ stf hle
-    exact hpayAt st stf hle hext hseal hp2x hp2y hchain
+    rintro st ⟨⟨-, hchain, hrows⟩, hext, hp2x, hp2y, hseal, -⟩ stf hle
+    exact hpayAt st stf hle hext hseal hp2x hp2y hchain hrows
   -- the register pin, and the returned point
   refine Complete.bind
     (Complete.imp
@@ -1219,22 +1207,24 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun _ _ h => h)
       (Complete.frame
         (monotone_and (monotone_and (by complete_mono_tac)
-            (monotone_chainAt (VarBaseMul.monotone_rowGrant base)))
+            (monotone_and monotone_const
+              (show Monotone fun st => ∀ r ∈ rounds, VarBaseMul.RowOk r st from
+                fun _ _ hle h r hr => VarBaseMul.monotone_rowOk r hle (h r hr))))
           (monotone_and monotone_le
             (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
               (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)))))
         (assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val sv)))
     fun _ => Complete.pure_of fun st h => ?post
   case pin =>
-    obtain ⟨⟨-, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ := h
+    obtain ⟨⟨-, hchain, hrows⟩, hext, hp2x, hp2y, hseal, -⟩ := h
     obtain ⟨-, -, hreg, -⟩ :=
       VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
-        (VarBaseMul.ChainAt.threads hchain)
-        (hpayAt st st le_rfl hext hseal hp2x hp2y hchain)
+        hchain
+        (hpayAt st st le_rfl hext hseal hp2x hp2y hchain hrows)
         (hTread hseal).2 (hP0at hp2x hp2y)
-    rw [hreg, hroundBits st hext (VarBaseMul.ChainAt.threads hchain), hregSv]
+    rw [hreg, hroundBits st hext hchain, hregSv]
   case post =>
-    obtain ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ := h
+    obtain ⟨-, ⟨hinv, hchain, hrows⟩, hext, hp2x, hp2y, hseal, -⟩ := h
     refine ⟨?_, ?_⟩
     · -- the returned bits read as the scalar's
       refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
@@ -1250,10 +1240,10 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     · -- the point, from `run_sound` on the trace
       obtain ⟨-, -, -, hpoint⟩ :=
         VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
-          (VarBaseMul.ChainAt.threads hchain)
-          (hpayAt st st le_rfl hext hseal hp2x hp2y hchain)
+          hchain
+          (hpayAt st st le_rfl hext hseal hp2x hp2y hchain hrows)
           (hTread hseal).2 (hP0at hp2x hp2y)
-      rw [hroundBits st hext (VarBaseMul.ChainAt.threads hchain), hpreflen] at hpoint
+      rw [hroundBits st hext hchain, hpreflen] at hpoint
       rw [hbsOf,
         Kimchi.Gate.VarBaseMul.bitsVal_testBit (ToNat.toNat sv) (5 * chunks) hfits]
         at hpoint

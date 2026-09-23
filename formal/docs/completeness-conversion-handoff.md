@@ -78,11 +78,10 @@ scope and readings, with `P i st := i.1 ≤ st`, discharged at the current state
 bits' landing table, then the walk's seed coordinates (with the point they name as the
 subtype property).
 
-An `addConstraint` row obligation quantifies over `env.Le` extensions only, but
-`ProverState.nv_le_of_env_le` (in `Prover.lean`) recovers `nv_le` from the states'
-`dom` invariants, so ordinary `.mono` transports still work there (`EndoMul`'s row
-case). `EndoScalar` instead splits `RowGrant.holds_of_le` out of its `mono`; prefer the
-lemma in new work.
+An `addConstraint` row obligation quantifies over extensions `st ≤ stf`;
+`ProverState.nv_le_of_le` recovers the counter from the states' `dom` invariants. A
+loop's per-round fact is round-local (the ladders' `RowOk`), so its monotonicity carries
+it to any extension (`EndoScalar` splits `RowOk.holds_of_le` out for the row case).
 
 Two elaboration rules of thumb from `EndoMul`: keep every `Complete.imp` post-map the
 identity `(fun _ _ h => h)` and extract in the next stage's pre-map (a non-trivial

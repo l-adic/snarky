@@ -507,31 +507,26 @@ private def cells (r : EndoMulRound F) : List (CVar F) :=
   [r.t.x, r.t.y, r.p.x, r.p.y, r.nAcc, r.nAccNext, r.r.x, r.r.y, r.s.x, r.s.y,
     r.s1, r.s3, r.inv, r.bit0, r.bit1, r.bit2, r.bit3]
 
-/-- The step's grant at a table: the round is wired to the base, the accumulators either
-side and the row's bits; its cells are in scope; and its reading is the gate's canonical
-row at its own inputs. -/
-private def RowGrant [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
-    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (r : EndoMulRound F)
-    (acc' : AffinePoint (FVar F) × FVar F) (st : ProverState F) : Prop :=
-  Threads t acc bs r acc' ∧ (∀ cv ∈ cells r, cv.Scoped st) ∧
+/-- A round at a table: its cells are in scope, and its reading is the gate's canonical row at
+its own inputs. -/
+private def RowOk [Field F] [DecidableEq F] (eb : F) (r : EndoMulRound F) (st : ProverState F) :
+    Prop :=
+  (∀ cv ∈ cells r, cv.Scoped st) ∧
     EndoMulRound.readWith st.env.get r (r.s.x.val st.env.get) (r.s.y.val st.env.get)
         (r.nAccNext.val st.env.get)
-      = Kimchi.Gate.EndoMul.build eb (t.x.val st.env.get) (t.y.val st.env.get)
-          (acc.1.x.val st.env.get) (acc.1.y.val st.env.get) (acc.2.val st.env.get)
-          (bs[0].val st.env.get) (bs[1].val st.env.get) (bs[2].val st.env.get)
-          (bs[3].val st.env.get)
+      = Kimchi.Gate.EndoMul.build eb (r.t.x.val st.env.get) (r.t.y.val st.env.get)
+          (r.p.x.val st.env.get) (r.p.y.val st.env.get) (r.nAcc.val st.env.get)
+          (r.bit0.val st.env.get) (r.bit1.val st.env.get) (r.bit2.val st.env.get)
+          (r.bit3.val st.env.get)
 
-/-- A row's grant survives the table's growth: the wiring says the operands are the
-round's own cells, and those are in scope, so nothing in the reading moves. -/
-private theorem monotone_rowGrant [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
-    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (r : EndoMulRound F)
-    (acc' : AffinePoint (FVar F) × FVar F) : Monotone (RowGrant eb t acc bs r acc') := by
+/-- A round's fact survives the table's growth: its cells are in scope, so nothing in the
+reading moves. -/
+private theorem monotone_rowOk [Field F] [DecidableEq F] (eb : F) (r : EndoMulRound F) :
+    Monotone (RowOk eb r) := by
   intro st st' hle h
   have hnv := ProverState.nv_le_of_le hle
-  obtain ⟨hthr, hsc, hread⟩ := h
-  obtain ⟨hrt, ⟨hrp, hrn⟩, hout, hb0, hb1, hb2, hb3⟩ := hthr
-  refine ⟨⟨hrt, ⟨hrp, hrn⟩, hout, hb0, hb1, hb2, hb3⟩,
-    fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
+  obtain ⟨hsc, hread⟩ := h
+  refine ⟨fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
   have hcell : ∀ cv ∈ cells r, cv.val st'.env.get = cv.val st.env.get :=
     fun cv hcv => CVar.val_of_le hle (hsc cv hcv)
   have hread' : EndoMulRound.readWith st'.env.get r (r.s.x.val st'.env.get)
@@ -556,7 +551,7 @@ private theorem monotone_rowGrant [Field F] [DecidableEq F] (eb : F) (t : Affine
       hcell r.bit1 (by simp [cells]),
       hcell r.bit2 (by simp [cells]),
       hcell r.bit3 (by simp [cells])]
-  rw [hread', hread, ← hrt, ← hrp, ← hrn, ← hb0, ← hb1, ← hb2, ← hb3,
+  rw [hread', hread,
     hcell r.t.x (by simp [cells]), hcell r.t.y (by simp [cells]),
     hcell r.p.x (by simp [cells]), hcell r.p.y (by simp [cells]),
     hcell r.nAcc (by simp [cells]), hcell r.bit0 (by simp [cells]),
@@ -572,7 +567,7 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
       (fun st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
       (Snarky.Kimchi.endoMulRound (c := KimchiConstraint F) eb t acc bs)
       (fun p st' => (st₁ ≤ st' ∧ p.2.1.x.Scoped st' ∧ p.2.1.y.Scoped st' ∧ p.2.2.Scoped st') ∧
-        RowGrant eb t acc bs p.1 p.2 st') := by
+        Threads t acc bs p.1 p.2 ∧ RowOk eb p.1 st') := by
   simp only [endoMulRound]
   -- the nine cell readings at the entry table index the law
   refine Complete.instantiate
@@ -675,37 +670,13 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
       rw [hW]
       rfl
 
-/-- A trace with no rounds traversed no rows. -/
-private theorem ChainAt.of_nil_out [Field F] [DecidableEq F] {eb : F}
-    {t : AffinePoint (FVar F)} {stf : ProverState F} :
-    ∀ {acc fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)},
-      ChainAt (RowGrant eb t) stf acc pref [] fin → pref = [] ∧ acc = fin
-  | _, _, [], h => ⟨rfl, h.2⟩
-  | _, _, _ :: _, h => by
-    obtain ⟨y, ys', -, heq, -, -⟩ := h
-    exact nomatch heq
-
-/-- A trace's first round opens at the accumulators it was given. -/
-private theorem chainAt_head [Field F] [DecidableEq F] {eb : F} {t : AffinePoint (FVar F)}
-    {stf : ProverState F} :
-    ∀ {acc fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
-      {r₀ : EndoMulRound F} {rs : List (EndoMulRound F)},
-      ChainAt (RowGrant eb t) stf acc pref (r₀ :: rs) fin →
-      r₀.p = acc.1 ∧ r₀.nAcc = acc.2
-  | _, _, [], _, _, h => absurd h.1 (by simp)
-  | _, _, _ :: _, _, _, h => by
-    obtain ⟨r, tail, mid, heq, hgrant, -⟩ := h
-    injection heq with hr _
-    subst hr
-    exact hgrant.1.2.1
-
 /-- The trace's readings are the model's honest walk: round `i` reads as `chainBuild`'s
 row `i`, from the accumulator the trace opened on and the bits it was handed. -/
 private theorem grants_walk [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
     (stf : ProverState F) :
     ∀ {bs : ℕ → F × F × F × F} {acc fin : AffinePoint (FVar F) × FVar F}
       {pref : List (Vector (FVar F) 4)} {rounds : List (EndoMulRound F)},
-      ChainAt (RowGrant eb t) stf acc pref rounds fin →
+      Chain (Threads t) acc pref rounds fin → (∀ r ∈ rounds, RowOk eb r stf) →
       (∀ i (hi : i < pref.length),
         (((pref[i]'hi)[0]'(by omega)).val stf.env.get,
           ((pref[i]'hi)[1]'(by omega)).val stf.env.get,
@@ -717,12 +688,13 @@ private theorem grants_walk [Field F] [DecidableEq F] (eb : F) (t : AffinePoint 
             ((rounds[i]'hi).nAccNext.val stf.env.get)
           = Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get) (t.y.val stf.env.get)
               (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get) bs i
-  | _, _, _, [], _, h, _, i, hi => by
+  | _, _, _, [], _, h, _, _, i, hi => by
     obtain ⟨rfl, -⟩ := h
     simp at hi
-  | bs, acc, fin, x :: rest, rounds, h, hbits, i, hi => by
-    obtain ⟨r, tail, mid, rfl, ⟨⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, hb0, hb1, hb2, hb3⟩, -, hread⟩,
-      hrest⟩ := h
+  | bs, acc, fin, x :: rest, rounds, h, hrows, hbits, i, hi => by
+    obtain ⟨r, tail, mid, rfl, ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, hb0, hb1, hb2, hb3⟩, hrest⟩ := h
+    have hread := (hrows r (by simp)).2
+    rw [hrt, hrp, hrn, hb0, hb1, hb2, hb3] at hread
     have hrow : EndoMulRound.readWith stf.env.get r (r.s.x.val stf.env.get)
         (r.s.y.val stf.env.get) (r.nAccNext.val stf.env.get)
         = Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get) (t.y.val stf.env.get)
@@ -735,7 +707,7 @@ private theorem grants_walk [Field F] [DecidableEq F] (eb : F) (t : AffinePoint 
     | zero => exact hrow
     | succ j =>
       have hj : j < tail.length := by simpa using hi
-      have hshift := grants_walk eb t stf hrest
+      have hshift := grants_walk eb t stf hrest (fun r' hr' => hrows r' (by simp [hr']))
         (fun k hk => hbits (k + 1) (by simpa using hk)) j hj
       have hxS : (Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get)
             (t.y.val stf.env.get) (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get)
@@ -764,7 +736,7 @@ private theorem grants_fin [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (
     (stf : ProverState F) :
     ∀ {bs : ℕ → F × F × F × F} {acc fin : AffinePoint (FVar F) × FVar F}
       {pref : List (Vector (FVar F) 4)} {rounds : List (EndoMulRound F)},
-      ChainAt (RowGrant eb t) stf acc pref rounds fin →
+      Chain (Threads t) acc pref rounds fin → (∀ r ∈ rounds, RowOk eb r stf) →
       (∀ i (hi : i < pref.length),
         (((pref[i]'hi)[0]'(by omega)).val stf.env.get,
           ((pref[i]'hi)[1]'(by omega)).val stf.env.get,
@@ -782,17 +754,18 @@ private theorem grants_fin [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (
           = Kimchi.Gate.EndoMul.accN (Kimchi.Gate.EndoMul.chainBuild eb
               (t.x.val stf.env.get) (t.y.val stf.env.get) (acc.1.x.val stf.env.get)
               (acc.1.y.val stf.env.get) (acc.2.val stf.env.get) bs) pref.length
-  | _, _, _, [], _, h, _ => by
+  | _, _, _, [], _, h, _, _ => by
     obtain ⟨-, rfl⟩ := h
     exact ⟨rfl, rfl, rfl⟩
-  | bs, acc, fin, x :: rest, rounds, h, hbits => by
-    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
-    obtain ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, hb0, hb1, hb2, hb3⟩ := hgrant.1
+  | bs, acc, fin, x :: rest, rounds, h, hrows, hbits => by
+    obtain ⟨r, tail, mid, rfl, ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, hb0, hb1, hb2, hb3⟩, hrest⟩ := h
+    have hread := (hrows r (by simp)).2
+    rw [hrt, hrp, hrn, hb0, hb1, hb2, hb3] at hread
     have hrow : EndoMulRound.readWith stf.env.get r (r.s.x.val stf.env.get)
         (r.s.y.val stf.env.get) (r.nAccNext.val stf.env.get)
         = Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get) (t.y.val stf.env.get)
             (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get) bs 0 := by
-      rw [hgrant.2.2]
+      rw [hread]
       show _ = Kimchi.Gate.EndoMul.build _ _ _ _ _ _ (bs 0).1 (bs 0).2.1 (bs 0).2.2.1 (bs 0).2.2.2
       rw [← hbits 0 (by simp)]
       rfl
@@ -818,7 +791,7 @@ private theorem grants_fin [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (
       show _ = r.nAccNext.val stf.env.get
       rw [hrnn]
     obtain ⟨hx, hy, hn⟩ := grants_fin eb t stf (bs := fun n => bs (n + 1)) hrest
-      (fun k hk => hbits (k + 1) (by simpa using hk))
+      (fun r' hr' => hrows r' (by simp [hr'])) (fun k hk => hbits (k + 1) (by simpa using hk))
     rw [hx, hy, hn, hmx, hmy, hmn]
     refine ⟨?_, ?_, ?_⟩ <;>
       cases rest with
@@ -833,7 +806,7 @@ private theorem chainHolds_of_walk [Field F] [DecidableEq F] (eb : F)
     (t : AffinePoint (FVar F)) (stf : ProverState F) (W : ℕ → Kimchi.Gate.EndoMul.Witness F) :
     ∀ {acc fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
       {rounds : List (EndoMulRound F)},
-      ChainAt (RowGrant eb t) stf acc pref rounds fin →
+      Chain (Threads t) acc pref rounds fin →
       (∀ i (hi : i < rounds.length),
         EndoMulRound.readWith stf.env.get (rounds[i]'hi)
             ((rounds[i]'hi).s.x.val stf.env.get) ((rounds[i]'hi).s.y.val stf.env.get)
@@ -845,11 +818,10 @@ private theorem chainHolds_of_walk [Field F] [DecidableEq F] (eb : F)
     obtain ⟨rfl, -⟩ := h
     trivial
   | acc, fin, x :: rest, rounds, h, hwalk, hholds => by
-    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
-    obtain ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, -⟩ := hgrant.1
+    obtain ⟨r, tail, mid, rfl, ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, -⟩, hrest⟩ := h
     match tail, hrest with
     | [], hrest' =>
-      obtain ⟨-, hmid⟩ := ChainAt.of_nil_out hrest'
+      obtain ⟨-, hmid⟩ := Chain.of_nil_out hrest'
       have h0 := hwalk 0 (by simp)
       simp only [List.getElem_cons_zero] at h0
       show Kimchi.Gate.EndoMul.Holds eb _
@@ -858,7 +830,7 @@ private theorem chainHolds_of_walk [Field F] [DecidableEq F] (eb : F)
         show (mid.2.val stf.env.get) = r.nAccNext.val stf.env.get by rw [hrnn], h0]
       exact hholds 0 (by simp)
     | r' :: ts, hrest' =>
-      obtain ⟨hr'p, hr'n⟩ := chainAt_head hrest'
+      obtain ⟨hr'p, hr'n⟩ := threads_head hrest'
       have h0 := hwalk 0 (by simp)
       simp only [List.getElem_cons_zero] at h0
       refine ⟨?_, ?_⟩
@@ -1143,7 +1115,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         (mapAccumM_complete (F := F) (c := KimchiConstraint F)
           (Snarky.Kimchi.endoMulRound d.endo t) (BitRow st₁)
           (fun _ acc st => st₁ ≤ st ∧ acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
-          (RowGrant d.endo t) (fun _ _ => by complete_mono_tac) (monotone_rowGrant d.endo t)
+          (Threads t) (RowOk d.endo) (fun _ _ => by complete_mono_tac) (monotone_rowOk d.endo)
           (fun acc x _ hx => endoMulRound_complete st₁ d.endo t ⟨htx₁, hty₁⟩ acc x hx)
           (p2.p, .const 0) bits.toList hP)))
     fun loop => ?_
@@ -1156,22 +1128,23 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun _ _ h => h)
       (Complete.frame
         (monotone_and (monotone_and (by complete_mono_tac)
-            (monotone_chainAt (monotone_rowGrant d.endo t)))
+            (monotone_and monotone_const
+              (show Monotone fun st => ∀ r ∈ rounds, RowOk d.endo r st from
+                fun _ _ hle h r hr => monotone_rowOk d.endo r hle (h r hr))))
           (by complete_mono_tac))
         (assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val sv)))
     fun _ => ?_
   case pin =>
-    obtain ⟨⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ := h
-    obtain ⟨-, -, hfn⟩ := grants_fin d.endo t st hchain (hbitsRead st hext)
+    obtain ⟨⟨hinv, hchain, hrows⟩, hext, hp2x, hp2y, hOnT, hscal⟩ := h
+    obtain ⟨-, -, hfn⟩ := grants_fin d.endo t st hchain hrows (hbitsRead st hext)
     rw [hfn, hWat st (htcoords hOnT).1 (htcoords hOnT).2
       (CircuitType.reads_fvar.mp hp2x.2) (CircuitType.reads_fvar.mp hp2y.2), hlenB, hreg]
   -- the one `endoMul` row, and the returned accumulator
   refine Complete.bind (Complete.addConstraint ?row)
     fun _ => Complete.pure_of fun st h => ?post
   case row =>
-    rintro st ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ stf hle
-    have hlenR : rounds.length = 32 := by rw [ChainAt.length hchain, hlenB]
-    have hchain' := monotone_chainAt (monotone_rowGrant d.endo t) hle hchain
+    rintro st ⟨-, ⟨hinv, hchain, hrows⟩, hext, hp2x, hp2y, hOnT, hscal⟩ stf hle
+    have hlenR : rounds.length = 32 := by rw [threads_length hchain, hlenB]
     have hOnT' := monotone_onCurveAs hle hOnT
     have hp2x' := CircuitType.monotone_readsAs hle hp2x
     have hp2y' := CircuitType.monotone_readsAs hle hp2y
@@ -1180,16 +1153,16 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
             ((rounds[i]'hi).s.x.val stf.env.get) ((rounds[i]'hi).s.y.val stf.env.get)
             ((rounds[i]'hi).nAccNext.val stf.env.get) = W i := by
       intro i hi
-      have hgw := grants_walk d.endo t stf hchain'
-        (hbitsRead stf (hext.trans hle)) i hi
+      have hgw := grants_walk d.endo t stf hchain
+        (fun r hr => monotone_rowOk d.endo r hle (hrows r hr)) (hbitsRead stf (hext.trans hle)) i hi
       rwa [hWat stf (htcoords hOnT').1 (htcoords hOnT').2
         (CircuitType.reads_fvar.mp hp2x'.2) (CircuitType.reads_fvar.mp hp2y'.2)] at hgw
-    exact chainHolds_of_walk d.endo t stf W hchain' hwalk
+    exact chainHolds_of_walk d.endo t stf W hchain hwalk
       (fun i hi => hwalkHolds i (by rw [← hlenR]; exact hi))
   case post =>
     -- the point conclusion, off the model's own chain theorem
-    obtain ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ := h
-    obtain ⟨hfx, hfy, -⟩ := grants_fin d.endo t st hchain (hbitsRead st hext)
+    obtain ⟨-, ⟨hinv, hchain, hrows⟩, hext, hp2x, hp2y, hOnT, hscal⟩ := h
+    obtain ⟨hfx, hfy, -⟩ := grants_fin d.endo t st hchain hrows (hbitsRead st hext)
     rw [hWat st (htcoords hOnT).1 (htcoords hOnT).2 (CircuitType.reads_fvar.mp hp2x.2)
       (CircuitType.reads_fvar.mp hp2y.2), hlenB] at hfx hfy
     obtain ⟨hfin', sc, A, B, hseq, hsab, hAle, hBle, hAval, hBval, -⟩ :=
