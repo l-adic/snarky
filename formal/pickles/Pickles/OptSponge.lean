@@ -23,6 +23,8 @@ most once, with the last unpaired entry and the final permutation handled after.
 * `OptSponge.squeeze_spec`: the output reads as the first squeeze of the value sponge that
   absorbed exactly the kept inputs, in order.
 * `OptSponge.optSqueeze_spec`: each squeeze reads as the value sponge's, by phase.
+* `OptSponge.optSqueeze_absorbing_spec`, `OptSponge.ofSponge_spec`: a squeeze after a
+  plain sponge's handover reads as the plain sponge's squeeze of the kept inputs.
 
 ## Implementation notes
 
@@ -109,6 +111,17 @@ private def pairUp {α : Type} : List α → List (α × α) × Option α
 /-- The fresh state. -/
 private def initState : SpongeState F := ⟨.const 0, .const 0, .const 0⟩
 
+/-- The final permutation's bit with no unpaired entry: the position, or, under
+`needsFinalPermuteIfEmpty`, an empty input. -/
+private def finalBit (nf : Bool) (emptyInput pos : BoolVar F) : CircuitM F c (BoolVar F) :=
+  if nf then Snarky.or emptyInput pos else pure pos
+
+/-- The final permutation's bit after the unpaired entry `b`: the position or `b`, or, under
+`needsFinalPermuteIfEmpty`, an empty input. -/
+private def finalBitLeftover (nf : Bool) (emptyInput pos b : BoolVar F) :
+    CircuitM F c (BoolVar F) :=
+  if nf then Snarky.any [pos, b, emptyInput] else Snarky.any [pos, b]
+
 /-- Consume the guarded inputs from `st` at position `pos`: the pairs, then the unpaired entry
 if any, then a permutation where the block is non-empty or, under `needsFinalPermuteIfEmpty`,
 nothing was kept. -/
@@ -121,15 +134,13 @@ def consume (p : Poseidon.Params F) (st : SpongeState F) (pos : BoolVar F)
   let emptyInput := Snarky.not anyKept
   match leftover with
   | none => do
-    let shouldPermute ←
-      if needsFinalPermuteIfEmpty then Snarky.or emptyInput pos else pure pos
+    let shouldPermute ← finalBit needsFinalPermuteIfEmpty emptyInput pos
     condPermute p shouldPermute st
   | some (b, x) => do
     let _ ← Snarky.xor pos b
     let xb ← mul x (↑b)
     let st' ← addIn st pos xb
-    let shouldPermute ←
-      if needsFinalPermuteIfEmpty then Snarky.any [pos, b, emptyInput] else Snarky.any [pos, b]
+    let shouldPermute ← finalBitLeftover needsFinalPermuteIfEmpty emptyInput pos b
     condPermute p shouldPermute st'
 
 /-- Consume the guarded inputs from a fresh sponge at position `0`, permuting even when
@@ -355,12 +366,13 @@ omit [DecidableEq F] in
 /-- The final state agrees with the value sponge's state after its squeeze. -/
 private theorem optFinalState_eq_squeeze (p : Poseidon.Params F)
     {os : Poseidon.Triple F × Bool} {ps : Poseidon.State F} (h : Rel p os ps) (empty : Bool)
-    (he : empty = true ↔ ps.mode = .absorbed 0) :
+    (he : os.2 = false → (empty = true ↔ ps.mode = .absorbed 0)) :
     optFinalState p os empty = (Poseidon.squeeze p ps).2.state := by
   obtain ⟨st, pos⟩ := os
   obtain ⟨pst, mode⟩ := ps
   cases pos
-  · simp only [Rel, Bool.false_eq_true, ite_false] at h
+  · replace he := he rfl
+    simp only [Rel, Bool.false_eq_true, ite_false] at h
     rcases h with ⟨hm, hs⟩ | ⟨hm, hs⟩
     · subst hm hs
       have : empty = true := he.mpr rfl
@@ -427,6 +439,67 @@ private theorem condPermute_spec (p : Poseidon.Params F)
   simp only [readVal_spongeState] at hP ⊢
   rw [h0 pb hp, h1 pb hp, h2 pb hp]
   cases pb <;> simp [hP]
+
+/-- `finalBit` reads as the position, or an empty input under the flag. -/
+private theorem finalBit_spec (nf : Bool) (e pos : BoolVar F) :
+    ⦃⌜True⌝⦄ finalBit (c := Builder V (KimchiConstraint F)) nf e pos
+    ⦃⇓ r _ => ⌜∀ eb pb : Bool, (↑e : CVar F).val V = bit eb → (↑pos : CVar F).val V = bit pb →
+      (↑r : CVar F).val V = bit ((eb && nf) || pb)⌝⦄ := by
+  cases nf
+  · simp only [finalBit]
+    mvcgen
+    intro eb pb _ hp
+    simpa using hp
+  · simp only [finalBit, if_true]
+    have ho := Snarky.or_spec (V := V) (c := KimchiConstraint F) e pos
+    mvcgen [ho]
+    intro h eb pb he hp
+    simpa using h eb pb he hp
+
+/-- `finalBitLeftover` reads as the position or the entry's bit, or an empty input under the
+flag. -/
+private theorem finalBitLeftover_spec (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
+    (nf : Bool) (e pos b : BoolVar F) :
+    ⦃⌜True⌝⦄ finalBitLeftover (c := Builder V (KimchiConstraint F)) nf e pos b
+    ⦃⇓ r _ => ⌜∀ eb pb bb : Bool, (↑e : CVar F).val V = bit eb →
+      (↑pos : CVar F).val V = bit pb → (↑b : CVar F).val V = bit bb →
+      (↑r : CVar F).val V = bit (pb || bb || (eb && nf))⌝⦄ := by
+  have hchar : ∀ l : List (BoolVar F), l.length ≤ 3 → ∀ k ≤ l.length, (k : F) = 0 → k = 0 :=
+    fun l hl k hk h0 => hall k 0 (le_trans hk hl) (by omega) (by simpa using h0)
+  have bit01 : ∀ bb : Bool, (bit bb : F) = 0 ∨ (bit bb : F) = 1 := fun bb => by
+    cases bb <;> simp [bit]
+  cases nf
+  · simp only [finalBitLeftover]
+    have ha := Snarky.any_spec (V := V) (c := KimchiConstraint F) [pos, b]
+      (hchar _ (by simp))
+    mvcgen [ha]
+    all_goals first | (intro _; exact hchar _ (by simp)) | skip
+    intro h eb pb bb _ hp hb
+    rw [h (by
+      intro q hq
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+      rcases hq with rfl | rfl
+      · rw [hp]; exact bit01 _
+      · rw [hb]; exact bit01 _)]
+    simp only [List.mem_cons, List.not_mem_nil, or_false, exists_eq_or_imp, exists_eq_left,
+      hp, hb]
+    cases pb <;> cases bb <;> simp [bit]
+  · simp only [finalBitLeftover, if_true]
+    have ha := Snarky.any_spec (V := V) (c := KimchiConstraint F) [pos, b, e]
+      (hchar _ (by simp))
+    mvcgen [ha]
+    all_goals first | (intro _; exact hchar _ (by simp)) | skip
+    intro h eb pb bb he hp hb
+    rw [h (by
+      intro q hq
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+      rcases hq with rfl | rfl | rfl
+      · rw [hp]; exact bit01 _
+      · rw [hb]; exact bit01 _
+      · rw [he]; exact bit01 _)]
+    simp only [List.mem_cons, List.not_mem_nil, or_false, exists_eq_or_imp, exists_eq_left,
+      hp, hb, he]
+    cases pb <;> cases bb <;> cases eb <;> simp [bit]
 
 /-- Two guarded absorbs, as the pair step computes them. -/
 private def optAbsorb2 (p : Poseidon.Params F) (os : Poseidon.Triple F × Bool)
@@ -590,7 +663,7 @@ private theorem optFinalState_leftover (p : Poseidon.Params F) (stv : Poseidon.T
 
 omit [DecidableEq F] in
 /-- Absorbing from an absorbing sponge leaves it absorbing. -/
-private theorem absorb_mode_absorbed (p : Poseidon.Params F) :
+theorem absorb_mode_absorbed (p : Poseidon.Params F) :
     ∀ (xs : List F) (sp : Poseidon.State F), (∃ m, sp.mode = .absorbed m) →
       ∃ m, (Poseidon.absorb p sp xs).mode = .absorbed m
   | [], sp, h => h
@@ -644,20 +717,33 @@ private theorem guard_bit :
   | [], _ :: _, h, _, _ => nomatch h
   | _ :: _, [], h, _, _ => nomatch h
 
+omit [DecidableEq F] in
+/-- Dropped inputs leave the value model where it was. -/
+private theorem foldl_optAbsorb1_dropped (p : Poseidon.Params F) :
+    ∀ (xs : List (Bool × F)) (os : Poseidon.Triple F × Bool), (∀ v ∈ xs, v.1 = false) →
+      xs.foldl (optAbsorb1 p) os = os
+  | [], _, _ => rfl
+  | e :: xs, os, h => by
+    have he : e.1 = false := h e (List.mem_cons_self ..)
+    simp only [List.foldl_cons, optAbsorb1, he, Bool.false_eq_true, ite_false]
+    exact foldl_optAbsorb1_dropped p xs os fun v hv => h v (List.mem_cons_of_mem _ hv)
+
 /-- Under any valuation satisfying the emitted constraints, `consume` from a start in `RelStart`
-with `ps`, with the `i`-th guarded input reading as `(bᵢ, xᵢ)` and either some input kept or
-`ps` at an empty block, ends in the state of `squeeze(absorb(ps, [xᵢ | bᵢ = 1]))`. Stated with
-the empty-input permute on, as every caller runs it. -/
+with `ps`, with the `i`-th guarded input reading as `(bᵢ, xᵢ)`, ends in the state of
+`squeeze(absorb(ps, [xᵢ | bᵢ = 1]))`, given some input kept or, with none kept, `ps` absorbing
+and, at position `0`, the empty-input permute `nf` on exactly when `ps` is at an empty
+block. -/
 theorem consume_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
-    (st : SpongeState F) (pos : BoolVar F) (input : List (BoolVar F × FVar F))
+    (st : SpongeState F) (pos : BoolVar F) (nf : Bool) (input : List (BoolVar F × FVar F))
     (xs : List (Bool × F)) (hx : List.Forall₂ (CircuitType.Reads V) input xs)
     (hchar : ∀ k : ℕ, k ≤ input.length → (k : F) = 0 → k = 0) :
-    ⦃⌜True⌝⦄ consume (c := Builder V (KimchiConstraint F)) p st pos true input
+    ⦃⌜True⌝⦄ consume (c := Builder V (KimchiConstraint F)) p st pos nf input
     ⦃⇓ r _ => ⌜∀ (pb : Bool) (ps : Poseidon.State F), (↑pos : CVar F).val V = bit pb →
       RelStart p (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) ps →
-      ((∃ v ∈ xs, v.1 = true) ∨ ps.mode = .absorbed 0) →
+      ((∃ v ∈ xs, v.1 = true) ∨ ((∀ n, ps.mode ≠ .squeezed n) ∧
+        (pb = false → (nf = true ↔ ps.mode = .absorbed 0)))) →
       CircuitType.readVal (val := Poseidon.Triple F) V r
         = (Poseidon.squeeze p (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2)))).2.state⌝⦄ := by
   have hbool := guard_bit input xs hx
@@ -666,7 +752,8 @@ theorem consume_spec (p : Poseidon.Params F)
     (by simpa using hchar)
   have hpairs := consumePairs_spec (V := V) p hsize hall
   have hcp := condPermute_spec (V := V) p hsize
-  have hany3 := Snarky.any_spec (V := V) (c := KimchiConstraint F)
+  have hfb := finalBit_spec (V := V) nf
+  have hfbl := finalBitLeftover_spec (V := V) hall nf
   obtain ⟨hpF, hlF⟩ := pairUp_forall₂ input xs hx
   have hmem := pairUp_snd_mem xs
   rcases hpu : pairUp input with ⟨pairs, leftover⟩
@@ -674,40 +761,57 @@ theorem consume_spec (p : Poseidon.Params F)
   rw [hpu] at hpF hlF
   rw [hpx] at hpF hlF hmem
   have hP := hpairs pairs vpairs st pos hpF
-  have hchar3 : ∀ l : List (BoolVar F), l.length = 3 →
-      ∀ k ≤ l.length, (k : F) = 0 → k = 0 := by
-    intro l hl k hk h0
-    exact hall k 0 (hl ▸ hk) (by omega) (by simpa using h0)
-  have bit01 : ∀ bb : Bool, (bit bb : F) = 0 ∨ (bit bb : F) = 1 := fun bb => by
-    cases bb <;> simp [bit]
   have hanyChar : ∀ k ≤ (input.map (·.1)).length, (k : F) = 0 → k = 0 := by simpa using hchar
   -- the fold's invariant and the emptiness reading, at the start the caller provides
   have hend : ∀ (pb : Bool) (ps : Poseidon.State F),
       RelStart p (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) ps →
-      ((∃ v ∈ xs, v.1 = true) ∨ ps.mode = .absorbed 0) →
+      ((∃ v ∈ xs, v.1 = true) ∨ ((∀ n, ps.mode ≠ .squeezed n) ∧
+        (pb = false → (nf = true ↔ ps.mode = .absorbed 0)))) →
       Rel p (xs.foldl (optAbsorb1 p) (CircuitType.readVal (val := Poseidon.Triple F) V st, pb))
           (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2))) ∧
-        ((!xs.any (·.1)) = true ↔
-          (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2))).mode = .absorbed 0) := by
+        ((xs.foldl (optAbsorb1 p) (CircuitType.readVal (val := Poseidon.Triple F) V st, pb)).2
+            = false →
+          (((!xs.any (·.1)) && nf) = true ↔
+            (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2))).mode = .absorbed 0)) := by
     intro pb ps hstart hne
     have hrel0 := relStart_fold p xs hstart
     have hne' : (∃ v ∈ xs, v.1 = true) ↔ (xs.filter (·.1)).map (·.2) ≠ [] := by
       simp [List.filter_eq_nil_iff]
-    rcases hne with hne | h0
-    · have hk := hne'.mp hne
-      refine ⟨rel_of_relStart p hrel0 (absorb_mode_ne_squeezed p ps _ hk), ?_⟩
-      have := absorb_mode_ne p ps _ hk
-      simp only [Bool.not_eq_true', List.any_eq_false, this, iff_false]
-      simp only [not_forall, not_not]
-      obtain ⟨v, hv, h⟩ := hne
-      exact ⟨v, hv, h⟩
-    · refine ⟨rel_of_relStart p hrel0 fun n hn => ?_, ?_⟩
-      · by_cases hk : (xs.filter (·.1)).map (·.2) = []
-        · rw [hk] at hn
-          simp [Poseidon.absorb, h0] at hn
-        · exact absorb_mode_ne_squeezed p ps _ hk n hn
-      · rw [absorb_mode_eq_zero_iff p ps h0]
-        simp [List.any_eq_false, List.filter_eq_nil_iff]
+    by_cases hk : ∃ v ∈ xs, v.1 = true
+    · have hk' := hne'.mp hk
+      refine ⟨rel_of_relStart p hrel0 (absorb_mode_ne_squeezed p ps _ hk'), fun _ => ?_⟩
+      have := absorb_mode_ne p ps _ hk'
+      have hany : xs.any (·.1) = true := by
+        obtain ⟨v, hv, h⟩ := hk
+        exact List.any_eq_true.mpr ⟨v, hv, h⟩
+      simp only [hany, Bool.not_true, Bool.false_and, Bool.false_eq_true, this]
+    · have hdrop : ∀ v ∈ xs, v.1 = false := fun v hv => by
+        cases h : v.1
+        · rfl
+        · exact absurd ⟨v, hv, h⟩ hk
+      have hnil : (xs.filter (·.1)).map (·.2) = [] := by
+        by_contra h; exact hk (hne'.mpr h)
+      obtain ⟨hsq, hpos0⟩ := hne.resolve_left hk
+      have hfold := foldl_optAbsorb1_dropped p xs
+        (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) hdrop
+      rw [hnil] at hrel0 ⊢
+      simp only [Poseidon.absorb, List.foldl_nil] at hrel0 ⊢
+      refine ⟨rel_of_relStart p hrel0 hsq, fun hp => ?_⟩
+      rw [hfold] at hp
+      have hany : xs.any (·.1) = false := List.any_eq_false.mpr fun v hv => by
+        simp [hdrop v hv]
+      simp only [hany, Bool.not_false, Bool.true_and]
+      exact hpos0 hp
+  have hAnyV : ∀ anyK : BoolVar F, ((∀ b ∈ input.map (fun q : BoolVar F × FVar F => q.1),
+      (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
+      (↑anyK : CVar F).val V = if ∃ b ∈ input.map (fun q : BoolVar F × FVar F => q.1),
+        (↑b : CVar F).val V = 1 then 1 else 0) →
+      (↑anyK : CVar F).val V = bit (xs.any (·.1)) := by
+    intro anyK hAny
+    rw [hAny hbool]
+    by_cases h : ∃ v ∈ xs, v.1 = true
+    · rw [if_pos (hex.mpr h)]; simp [bit, List.any_eq_true, h]
+    · rw [if_neg (fun h' => h (hex.mp h'))]; simp [bit, List.any_eq_true, h]
   simp only [consume, hpu]
   cases leftover with
   | none =>
@@ -715,22 +819,18 @@ theorem consume_spec (p : Poseidon.Params F)
     have hfold := foldl_pairUp p xs
     rw [hpx] at hfold
     simp only at hfold
-    mvcgen [hP, hany, hcp]
-    rename_i _ acc _ hAcc anyK _ _ hAny sp _ hOr fin _
+    mvcgen [hP, hany, hcp, hfb]
+    rename_i _ acc _ hAcc anyK _ hAny sp _ hOr fin _
     intro hFin pb ps hp hstart hne
     obtain ⟨hst, hpos⟩ := hAcc pb hp
     obtain ⟨hrel, hempty⟩ := hend pb ps hstart hne
-    have hAnyV : (↑anyK : CVar F).val V = bit (xs.any (·.1)) := by
-      rw [hAny hbool]
-      by_cases h : ∃ v ∈ xs, v.1 = true
-      · rw [if_pos (hex.mpr h)]; simp [bit, List.any_eq_true, h]
-      · rw [if_neg (fun h' => h (hex.mp h'))]; simp [bit, List.any_eq_true, h]
-    have hE := not_val hAnyV
+    have hE := not_val (hAnyV anyK hAny)
     have hSp := hOr _ _ hE hpos
     have hF := hFin _ hSp
     rw [hF, hst]
     show optFinalState p (List.foldl (optAbsorb2 p)
-      (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) vpairs) (!xs.any (·.1)) = _
+      (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) vpairs)
+        ((!xs.any (·.1)) && nf) = _
     rw [hfold _]
     exact optFinalState_eq_squeeze p hrel _ hempty
   | some e =>
@@ -744,47 +844,26 @@ theorem consume_spec (p : Poseidon.Params F)
     have hfold := foldl_pairUp p xs
     rw [hpx] at hfold
     simp only at hfold
-    have hbe : bb = true → (!xs.any (·.1)) = false := fun h => by
-      simp only [Bool.not_eq_false', List.any_eq_true]
-      exact ⟨(bb, xv), hmem _ rfl, h⟩
-    mvcgen [hP, hany, hcp, addIn_spec]
-    all_goals first | exact hchar3 _ rfl | exact hanyChar | skip
-    rename_i _ acc _ hAcc anyK _ hAny _ _ _ xb _ hxb st' _ _ hSt sp _ hAny3 fin _
+    have hbe : bb = true → ((!xs.any (·.1)) && nf) = false := fun h => by
+      have : xs.any (·.1) = true := List.any_eq_true.mpr ⟨(bb, xv), hmem _ rfl, h⟩
+      simp [this]
+    mvcgen [hP, hany, hcp, addIn_spec, hfbl]
+    rename_i _ acc _ hAcc anyK _ hAny _ _ _ xb _ hxb st' _ hSt sp _ hAny3 fin _
     intro hFin pb ps hp hstart hne
     obtain ⟨hst, hpos⟩ := hAcc pb hp
     obtain ⟨hrel, hempty⟩ := hend pb ps hstart hne
-    have hAnyV : (↑anyK : CVar F).val V = bit (xs.any (·.1)) := by
-      rw [hAny hbool]
-      by_cases h : ∃ v ∈ xs, v.1 = true
-      · rw [if_pos (hex.mpr h)]; simp [bit, List.any_eq_true, h]
-      · rw [if_neg (fun h' => h (hex.mp h'))]; simp [bit, List.any_eq_true, h]
-    have hE := not_val hAnyV
+    have hE := not_val (hAnyV anyK hAny)
     rw [hb, hxv] at hxb
     have hS := hSt _ hpos
     rw [hst, hxb] at hS
-    have hSp : (↑sp : CVar F).val V
-        = bit ((List.foldl (optAbsorb2 p)
-            (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) vpairs).2 || bb
-            || !xs.any (·.1)) := by
-      rw [hAny3 ?_]
-      · generalize (List.foldl (optAbsorb2 p)
-          (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) vpairs).2 = fp at hpos ⊢
-        simp only [List.mem_cons, List.not_mem_nil, or_false, exists_eq_or_imp, exists_eq_left,
-          hpos, hb, hE]
-        cases fp <;> cases bb <;> cases xs.any (·.1) <;> simp [bit]
-      · intro q hq
-        simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
-        rcases hq with rfl | rfl | rfl
-        · rw [hpos]; exact bit01 _
-        · rw [hb]; exact bit01 _
-        · rw [hE]; exact bit01 _
+    have hSp := hAny3 _ _ _ hE hpos hb
     have hF := hFin _ hSp
     rw [hF, hS]
     have hfold' := hfold (CircuitType.readVal (val := Poseidon.Triple F) V st, pb)
     generalize List.foldl (optAbsorb2 p)
       (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) vpairs = fd at hfold' ⊢
     obtain ⟨fst, fpos⟩ := fd
-    rw [optFinalState_leftover p fst fpos bb (!xs.any (·.1)) xv hbe, hfold']
+    rw [optFinalState_leftover p fst fpos bb ((!xs.any (·.1)) && nf) xv hbe, hfold']
     exact optFinalState_eq_squeeze p hrel _ hempty
 
 /-- Under any valuation the squeeze reads as the first squeeze of the value sponge that
@@ -799,14 +878,15 @@ theorem squeeze_spec (p : Poseidon.Params F)
     ⦃⌜True⌝⦄ squeeze (c := Builder V (KimchiConstraint F)) p input
     ⦃⇓ d _ => ⌜d.val V = (Poseidon.squeeze p
       (Poseidon.absorb p Poseidon.init ((xs.filter (·.1)).map (·.2)))).1⌝⦄ := by
-  have hc := consume_spec (V := V) p hsize hall initState false_ input xs hx hchar
+  have hc := consume_spec (V := V) p hsize hall initState false_ true input xs hx hchar
   simp only [squeeze]
   mvcgen [hc]
   rename_i _ fin _ hfin
   have hf : (↑(false_ : BoolVar F) : CVar F).val V = bit false := by simp [false_, bit]
   have hinit : CircuitType.readVal (val := Poseidon.Triple F) V initState = (0, 0, 0) := by
     simp [initState, readVal_spongeState]
-  have hF := hfin false Poseidon.init hf (by rw [hinit]; exact Or.inl (rel_init p)) (Or.inr rfl)
+  have hF := hfin false Poseidon.init hf (by rw [hinit]; exact Or.inl (rel_init p))
+    (Or.inr ⟨fun n h => (nomatch h), fun _ => iff_of_true trivial rfl⟩)
   have hs0 : fin.s0.val V = (CircuitType.readVal (val := Poseidon.Triple F) V fin).1 := by
     simp [readVal_spongeState]
   rw [hs0, hF]
@@ -825,12 +905,13 @@ def SqueezedReads (V : Valuation F) (ov : OptSpongeVar F) (ps : Poseidon.State F
 
 omit [DecidableEq F] in
 /-- An absorbing conditional sponge reads as a start `ps₀` at the position bit's reading
-`ib`, its pending inputs (oldest first) reading as `pend`, the empty-input permute on. -/
+`ib`, its pending inputs (oldest first) reading as `pend`, the empty-input permute `nf` (on
+unless given). -/
 def AbsorbingReads (p : Poseidon.Params F) (V : Valuation F) (ov : OptSpongeVar F) (ib : Bool)
-    (ps₀ : Poseidon.State F) (pend : List (Bool × F)) : Prop :=
+    (ps₀ : Poseidon.State F) (pend : List (Bool × F)) (nf : Bool := true) : Prop :=
   ∃ i xs, ov.phase = .absorbing i xs ∧ (↑i : CVar F).val V = bit ib ∧
     RelStart p (CircuitType.readVal (val := Poseidon.Triple F) V ov.state, ib) ps₀ ∧
-    List.Forall₂ (CircuitType.Reads V) xs.reverse pend ∧ ov.needsFinalPermuteIfEmpty = true
+    List.Forall₂ (CircuitType.Reads V) xs.reverse pend ∧ ov.needsFinalPermuteIfEmpty = nf
 
 omit [BasicSystem F c] [KimchiSystem F c] in
 /-- The fresh conditional sponge reads as the fresh value sponge with nothing pending. -/
@@ -842,10 +923,10 @@ theorem create_reads (p : Poseidon.Params F) :
 omit [BasicSystem F c] [KimchiSystem F c] in
 /-- Absorbing while absorbing appends to the pending readings. -/
 theorem optAbsorb_reads_absorbing {p : Poseidon.Params F} {ov : OptSpongeVar F} {ib : Bool}
-    {ps₀ : Poseidon.State F} {pend : List (Bool × F)}
-    (h : AbsorbingReads p V ov ib ps₀ pend) {e : BoolVar F × FVar F} {v : Bool × F}
+    {ps₀ : Poseidon.State F} {pend : List (Bool × F)} {nf : Bool}
+    (h : AbsorbingReads p V ov ib ps₀ pend nf) {e : BoolVar F × FVar F} {v : Bool × F}
     (he : CircuitType.Reads V e v) :
-    AbsorbingReads p V (optAbsorb ov e) ib ps₀ (pend ++ [v]) := by
+    AbsorbingReads p V (optAbsorb ov e) ib ps₀ (pend ++ [v]) nf := by
   obtain ⟨i, xs, hph, hi, hrel, hxs, hnf⟩ := h
   refine ⟨i, e :: xs, by simp [optAbsorb, hph], hi, by simpa [optAbsorb, hph] using hrel, ?_,
     by simpa [optAbsorb, hph] using hnf⟩
@@ -922,14 +1003,17 @@ private theorem optSqueeze_spec_squeezed (p : Poseidon.Params F)
     · simp [Poseidon.squeeze, hn]
     · simp [Poseidon.squeeze, hn]
 
-/-- Squeezing an absorbing sponge consumes the pending inputs and reads as the value squeeze
-of the start after absorbing the kept ones, given some kept input or a start at an empty
-block. -/
-private theorem optSqueeze_spec_absorbing (p : Poseidon.Params F)
+/-- Under any valuation satisfying the emitted constraints, squeezing an absorbing sponge
+consumes the pending inputs and reads as the value squeeze of the start after absorbing the
+kept ones, given some kept input or, with none kept, a start that is absorbing and, at
+position `0`, has the empty-input permute on exactly at an empty block. -/
+theorem optSqueeze_absorbing_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k) (ov : OptSpongeVar F) (ib : Bool)
-    (ps₀ : Poseidon.State F) (pend : List (Bool × F)) (h : AbsorbingReads p V ov ib ps₀ pend)
-    (hne : (∃ v ∈ pend, v.1 = true) ∨ ps₀.mode = .absorbed 0)
+    (ps₀ : Poseidon.State F) (pend : List (Bool × F)) (nf : Bool)
+    (h : AbsorbingReads p V ov ib ps₀ pend nf)
+    (hne : (∃ v ∈ pend, v.1 = true) ∨ ((∀ n, ps₀.mode ≠ .squeezed n) ∧
+      (ib = false → (nf = true ↔ ps₀.mode = .absorbed 0))))
     (hchar : ∀ k : ℕ, k ≤ pend.length → (k : F) = 0 → k = 0) :
     ⦃⌜True⌝⦄ optSqueeze (c := Builder V (KimchiConstraint F)) p ov
     ⦃⇓ r _ => ⌜r.1.val V
@@ -941,14 +1025,17 @@ private theorem optSqueeze_spec_absorbing (p : Poseidon.Params F)
   simp only at hph hrel hnf
   subst hph hnf
   have hlen : xs.reverse.length = pend.length := List.Forall₂.length_eq hxs
-  have hc := consume_spec (V := V) p hsize hall st i xs.reverse pend hxs (by rwa [hlen])
+  have hc := consume_spec (V := V) p hsize hall st i nf xs.reverse pend hxs (by rwa [hlen])
   have habs : ∃ m, (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2))).mode = .absorbed m := by
-    rcases hne with hne | h0
+    rcases hne with hne | ⟨hsq, -⟩
     · exact absorb_mode_absorbed_of_ne_nil p ps₀ _ (by
         simp only [ne_eq, List.map_eq_nil_iff, List.filter_eq_nil_iff, not_forall, not_not]
         obtain ⟨v, hv, hb⟩ := hne
         exact ⟨v, hv, hb⟩)
-    · exact absorb_mode_absorbed p _ ps₀ ⟨0, h0⟩
+    · refine absorb_mode_absorbed p _ ps₀ ?_
+      cases hm : ps₀.mode with
+      | absorbed m => exact ⟨m, rfl⟩
+      | squeezed n => exact absurd hm (hsq n)
   simp only [optSqueeze]
   mvcgen [hc]
   rename_i st' _ hst'
@@ -981,7 +1068,9 @@ theorem optSqueeze_spec (p : Poseidon.Params F)
   intro nv hsat
   exact ⟨fun ps h => (builder_spec_iff _ _).mp (optSqueeze_spec_squeezed p hsize ov ps h) nv hsat,
     fun ib ps₀ pend h hne hchar => (builder_spec_iff _ _).mp
-      (optSqueeze_spec_absorbing p hsize hall ov ib ps₀ pend h hne hchar) nv hsat⟩
+      (optSqueeze_absorbing_spec p hsize hall ov ib ps₀ pend true h
+        (hne.imp_right fun h0 => ⟨fun n hn => by simp [h0] at hn, fun _ => by simp [h0]⟩)
+        hchar) nv hsat⟩
 
 omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- The plain sponge a squeezed conditional sponge hands over reads as the same value
@@ -990,6 +1079,51 @@ theorem toRegularSponge_reads {ov : OptSpongeVar F} {ps : Poseidon.State F}
     (h : SqueezedReads V ov ps) : SpongeVar.ReadsAt V (toRegularSponge ov) ps := by
   obtain ⟨n, hph, hst, hm, -⟩ := h
   exact ⟨by simpa [toRegularSponge, hph] using hst, by simp [toRegularSponge, hph, hm]⟩
+
+/-- Under any valuation satisfying the emitted constraints, the conditional sponge `ofSponge`
+builds from an absorbing plain sponge reads as absorbing from the same value sponge with
+nothing pending, its empty-input permute on at an empty block. -/
+theorem ofSponge_spec (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F) :
+    ⦃⌜True⌝⦄ ofSponge (c := Builder V (KimchiConstraint F)) p sv
+    ⦃⇓ ov _ => ⌜∀ s : Poseidon.State F, SpongeVar.ReadsAt V sv s →
+      (∀ n, s.mode ≠ .squeezed n) → ∃ ib nf, AbsorbingReads p V ov ib s [] nf ∧
+        (ib = false → (nf = true ↔ s.mode = .absorbed 0))⌝⦄ := by
+  obtain ⟨st, mode⟩ := sv
+  cases mode with
+  | squeezed n =>
+    simp only [ofSponge]
+    mvcgen
+    intro s hs hsq
+    exact absurd hs.2.symm (hsq n)
+  | absorbed m =>
+    match m with
+    | ⟨0, _⟩ =>
+      simp only [ofSponge]
+      mvcgen
+      intro s hs _
+      obtain ⟨hst, hm⟩ := hs
+      refine ⟨false, true, ⟨false_, [], rfl, by simp [false_, bit], ?_, .nil, rfl⟩,
+        fun _ => iff_of_true rfl hm.symm⟩
+      exact Or.inl (by simp [Rel, ← hm, hst])
+    | ⟨1, _⟩ =>
+      simp only [ofSponge]
+      mvcgen
+      intro s hs _
+      obtain ⟨hst, hm⟩ := hs
+      refine ⟨true, true, ⟨true_, [], rfl, by simp [true_, bit], ?_, .nil, rfl⟩,
+        fun h => absurd h (by simp)⟩
+      exact Or.inl (by simp [Rel, ← hm, hst])
+    | ⟨2, _⟩ =>
+      simp only [ofSponge]
+      have hp := Poseidon.poseidon_spec (V := V) p hsize st
+      mvcgen [hp]
+      rename_i st' _ hst'
+      intro s hs _
+      obtain ⟨hst, hm⟩ := hs
+      refine ⟨false, false, ⟨false_, [], rfl, by simp [false_, bit], ?_, .nil, rfl⟩,
+        fun _ => ⟨fun h => absurd h (by simp), fun h => absurd (hm.trans h) (by simp)⟩⟩
+      exact Or.inl (by simp [Rel, ← hm, hst', hst])
 
 /-! The gadgets are sealed after their specs: a consumer composes `squeeze_spec` and
 `optSqueeze_spec`, never the bodies. -/
