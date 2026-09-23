@@ -884,7 +884,7 @@ private structure NonDegen (g : Witness F) : Prop where
   t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
 
 /-- A full per-gate step: the nonsingular accumulator points `a0` through `a5`, the base `hT`,
-    the gate constraints `holds`, and the `NonDegen` side conditions, in one flat bundle. The
+    the gate constraints `holds`, and the `NonDegen` side conditions `nd`, in one bundle. The
     register subsystem `scalarMul` / `scalarMul_type2` consumes all of these via the gate
     `sound`. The deployed entry points derive a `GateStep` per row from `Holds` plus threading,
     via `gateStep_chain`. -/
@@ -897,16 +897,7 @@ private structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Pro
   a5 : W.Nonsingular g.x5 g.y5
   hT : W.Nonsingular g.xT g.yT
   holds : Holds g
-  x0 : g.x0 ≠ g.xT
-  x1 : g.x1 ≠ g.xT
-  x2 : g.x2 ≠ g.xT
-  x3 : g.x3 ≠ g.xT
-  x4 : g.x4 ≠ g.xT
-  t0 : 2 * g.x0 + g.xT - g.s0 * g.s0 ≠ 0
-  t1 : 2 * g.x1 + g.xT - g.s1 * g.s1 ≠ 0
-  t2 : 2 * g.x2 + g.xT - g.s2 * g.s2 ≠ 0
-  t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
-  t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
+  nd : NonDegen g
 
 /-! ## Main theorem: variable-base scalar multiplication -/
 
@@ -938,8 +929,9 @@ private theorem scalarMul
     choose! c hc₁ hc₂ hc₃ using fun i hi => sound W ha (g i)
       (gs i hi).a0 (gs i hi).a1 (gs i hi).a2 (gs i hi).a3 (gs i hi).a4 (gs i hi).a5
       (gs i hi).hT
-      (gs i hi).x0 (gs i hi).x1 (gs i hi).x2 (gs i hi).x3 (gs i hi).x4
-      (gs i hi).t0 (gs i hi).t1 (gs i hi).t2 (gs i hi).t3 (gs i hi).t4 (gs i hi).holds
+      (gs i hi).nd.x0 (gs i hi).nd.x1 (gs i hi).nd.x2 (gs i hi).nd.x3 (gs i hi).nd.x4
+      (gs i hi).nd.t0 (gs i hi).nd.t1 (gs i hi).nd.t2 (gs i hi).nd.t3 (gs i hi).nd.t4
+      (gs i hi).holds
     refine ⟨c, ?_, ?_, ?_⟩ <;> intros i hi <;> simp_all +decide only
     rw [hT i hi]
   refine ⟨∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i, ?_, ?_, ?_⟩
@@ -1611,8 +1603,7 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
           (fun ℓ _ => hND (5 * j + ℓ) (by omega))
       -- the full per-row `GateStep` bundle at row `j`
       have hGSj : GateStep c (g j) :=
-        ⟨ha0ns_j, a1, a2, a3, a4, a5, hTns_j, hholds j hj',
-          nd.x0, nd.x1, nd.x2, nd.x3, nd.x4, nd.t0, nd.t1, nd.t2, nd.t3, nd.t4⟩
+        ⟨ha0ns_j, a1, a2, a3, a4, a5, hTns_j, hholds j hj', nd⟩
       -- `accX g (j+1) = (g j).x5` and `gateLadder g (5*(j+1)) = gateLadder g (5*j+5)` defeq
       refine ⟨a5, ?_, ?_⟩
       · rw [show 5 * (j + 1) = 5 * j + 5 from by ring]; exact ha5eq
