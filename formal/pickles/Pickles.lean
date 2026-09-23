@@ -27,6 +27,7 @@ import Pickles.MessageHash
 import Pickles.StepGroupHalf
 import Pickles.StepProof
 import Pickles.StepScalarHalf
+import Pickles.VerifyOne
 import Pickles.WrapProof
 import Pickles.WrapScalarHalf
 import Pickles.WrapVerify
