@@ -72,26 +72,8 @@ structure InputReads (E : Env IpaPallas.curve nc) (cp : KimchiProof IpaPallas.cu
   statement : stepPublicInput E Vg g.statement = pub
   /-- The slot must verify: its base-case bit reads `false`. -/
   mustVerify : CircuitType.Reads Vg g.isBaseCase false
-  /-- The witness commitments. -/
-  w : ColumnsRead IpaPallas.curve Vg g.wComm cp.wComm.toList
-  /-- The permutation accumulator's commitment. -/
-  z : CommReads IpaPallas.curve Vg g.zComm cp.zComm.toList
-  /-- The quotient chunks. -/
-  t : CommReads IpaPallas.curve Vg g.tComm cp.tComm.toList
-  /-- The opening's `(L, R)` pairs. -/
-  lr : List.Forall₂ (PairReads IpaPallas.curve.E.toAffine Vg) g.opening.lr.toList
-    (cp.opening.lr.toList.map fun q =>
-      (SWPoint.equivPoint IpaPallas.curve.E q.1, SWPoint.equivPoint IpaPallas.curve.E q.2))
-  /-- The opening's `δ`. -/
-  delta : OnCurveAt IpaPallas.curve.E.toAffine Vg g.opening.delta
-    (SWPoint.equivPoint IpaPallas.curve.E cp.opening.delta)
-  /-- The opening's `sg`. -/
-  sg : OnCurveAt IpaPallas.curve.E.toAffine Vg g.opening.sg
-    (SWPoint.equivPoint IpaPallas.curve.E cp.opening.sg)
-  /-- The opening's `z₁`. -/
-  z1 : (stepSide Vg).decode g.opening.z1 = cp.opening.z1
-  /-- The opening's `z₂`. -/
-  z2 : (stepSide Vg).decode g.opening.z2 = cp.opening.z2
+  /-- The proof's cells read as the proof's. -/
+  proof : ProofReads (stepSide Vg) g.wComm g.zComm g.tComm g.opening cp
   /-- The `sg` cells are the old accumulators', every slot kept. -/
   olds : CommReads IpaPallas.curve Vg g.sgOld (cp.olds.map (·.sg)).toList
   /-- `ft(ζω)`. -/
@@ -147,10 +129,9 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
   refine ⟨(cp.olds.map (·.sg)).toList.map (·, true),
     { idx := hvk.idx, mask := ?mask
       ties :=
-        { olds := ⟨?olds, ?kept⟩, w := hin.w, z := hin.z, t := hin.t
+        { olds := ⟨?olds, ?kept⟩, proof := hin.proof
           key := hvk.key
-          z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
-          lr := hin.lr, delta := hin.delta, sg := hin.sg }
+          claimOk := hclaimOk }
       nc_pos := E.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
     intro m hm
