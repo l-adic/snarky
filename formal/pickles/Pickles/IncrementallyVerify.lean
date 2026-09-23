@@ -1,5 +1,6 @@
 import Pickles.FtComm
 import Pickles.VkComms
+import Pickles.Env
 import Pickles.FqSpongeTranscript
 import Kimchi.Columns
 import Pickles.ListLemmas
@@ -529,6 +530,42 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
   refine List.rel_append hi ?_
   refine List.rel_append hw ?_
   exact List.rel_append hc hs
+
+/-- Cells read as commitments have the commitments' coordinates. -/
+private theorem CommReads.coords :
+    ∀ {cells : List (AffinePoint (FVar C.BaseField))} {Ps : List C.Point},
+      CommReads C V cells Ps →
+      cells.flatMap (fun P => [P.x.val V, P.y.val V]) = Ps.flatMap fun P => [P.x, P.y]
+  | [], [], .nil => rfl
+  | _ :: _, _ :: _, .cons h hs => by
+    obtain ⟨hx, hy⟩ := onCurveAt_equivPoint_coords h
+    simp only [List.flatMap_cons, hx, hy, CommReads.coords hs]
+
+/-- Columns read as commitments have the commitments' coordinates. -/
+private theorem ColumnsRead.coords {nc : ℕ} :
+    ∀ {cols : List (List (AffinePoint (FVar C.BaseField)))} {Ps : List (Vector C.Point nc)},
+      ColumnsRead C V cols Ps →
+      cols.flatMap (fun col => col.flatMap fun P => [P.x.val V, P.y.val V])
+        = Ps.flatMap (fun v => v.toList.flatMap fun P => [P.x, P.y])
+  | [], [], .nil => rfl
+  | col :: cols, v :: Ps, .cons hc hs => by
+    simp only [List.flatMap_cons, ColumnsRead.coords hs, CommReads.coords hc]
+
+/-- Key cells reading as the key have its coordinates, in absorb order. -/
+theorem KeyReads.indexCoords {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
+    {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
+    key.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V])
+      = cvk.comms.indexPoints.flatMap fun P => [P.x, P.y] := by
+  have hc : ColumnsRead C V
+      ((key.sigmaComm.toList ++ key.coefficientsComm.toList ++ key.selectors).map Vector.toList)
+      (cvk.sigmaComm.toList ++ cvk.coefficientsComm.toList ++ cvk.comms.selectors) := by
+    simp only [List.map_append]
+    exact List.rel_append (List.rel_append (columnsRead_of_forall h.sigma) h.coefficientsRead)
+      h.selectorsRead
+  have := ColumnsRead.coords hc
+  simp only [List.flatMap_map] at this
+  simp only [VkComms.indexPoints, List.flatMap_assoc]
+  exact this
 
 end Helpers
 

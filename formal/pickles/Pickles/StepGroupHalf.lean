@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Pickles.Encoding
 import Pickles.ShiftedClaims
 import Pickles.TwoHalves
@@ -226,6 +227,96 @@ theorem verifyProofAt_reads {ks nc : ℕ} {V : Valuation Fp} (E : Env IpaPallas.
   exact verifyProof_step_reads (V := V) E.σ E.cvk cp (.const ((Pasta.vestaLam : ℤ) : Fp))
     pallasBase.sqrt? (constPt E.σ.h) (xhatTableAt E statement) spongeAfterIndex isBaseCase
     statement u cells false oldsW hbase htab hivp
+
+/-- A wrap key has at most `2^32` chunks: its domain size divides `|Fq| − 1`, whose two-adic
+part is `2^32`, and the chunk count is at most the domain size. -/
+private theorem nc_le {nc : ℕ} (E : Env IpaPallas.curve nc) : nc ≤ 2 ^ 32 := by
+  have hω0 : E.cvk.omega ≠ 0 := E.omega_prim.ne_zero (by rw [KimchiVK.n]; positivity)
+  have hn : E.cvk.n ∣ PALLAS_SCALAR_CARD - 1 :=
+    E.omega_prim.dvd_of_pow_eq_one _ (ZMod.pow_card_sub_one_eq_one hω0)
+  have hd : E.cvk.domainLog2 ≤ 32 := by
+    by_contra h
+    have h33 : 2 ^ 33 ∣ PALLAS_SCALAR_CARD - 1 :=
+      (Nat.pow_dvd_pow 2 (show 33 ≤ E.cvk.domainLog2 by omega)).trans hn
+    exact absurd h33 (by norm_num [PALLAS_SCALAR_CARD])
+  calc nc ≤ E.cvk.n := E.nc_le_n
+    _ = 2 ^ E.cvk.domainLog2 := rfl
+    _ ≤ 2 ^ 32 := Nat.pow_le_pow_right two_pos hd
+
+/-- The base field's characteristic exceeds the group half's absorb count. -/
+private theorem char_guard (m : ℕ) (hm : m ≤ 5 + 48 * 2 ^ 32) (h0 : (m : Fp) = 0) : m = 0 := by
+  have hd : PALLAS_BASE_CARD ∣ m := (ZMod.natCast_eq_zero_iff m PALLAS_BASE_CARD).mp h0
+  exact Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hm (by norm_num [PALLAS_BASE_CARD]))
+
+open scoped Kimchi in
+/-- The step side's group-half hypotheses at an unmasked `sg` list of at most two points, from
+the proof cells reading as `cp`'s, the `sg` cells as its old accumulators', the key cells and
+the sponge after the key as `VkReads`, and the shifted claims' `IvpSide.ClaimOk`, with the
+shape guards proved. -/
+theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {E : Env IpaPallas.curve nc}
+    {cp : KimchiProof IpaPallas.curve nc E.σ.k} {pub : Array Fq}
+    {keyCells : VkComms nc (AffinePoint (FVar Fp))} {spongeAfterIndex : SpongeVar Fp}
+    (claims : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (sgOld : List (AffinePoint (FVar Fp)))
+    (proof : IvpProof E.σ.k nc (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (hlen : sgOld.length ≤ 2)
+    (hproof : ProofReads (stepSide V) (proof.wComm.toList.map (·.toList)) proof.zComm.toList
+      proof.tComm.toList proof.opening cp)
+    (holds : CommReads IpaPallas.curve V sgOld (cp.olds.map (·.sg)).toList)
+    (hvk : VkReads E.cvk V spongeAfterIndex keyCells)
+    (hclaimOk : ∀ x ∈ (ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
+      proof).shifted, (stepSide V).ClaimOk x) :
+    ∃ oldsW, IvpHyps (stepSide V) E.σ E.cvk cp pub false spongeAfterIndex
+      ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells proof).withClaims claims)
+      oldsW := by
+  refine ⟨(cp.olds.map (·.sg)).toList.map (·, true),
+    { idx := hvk.idx, mask := ?mask
+      ties :=
+        { olds := ⟨?olds, ?kept⟩, proof := hproof
+          key := hvk.key
+          claimOk := hclaimOk }
+      nc_pos := E.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
+  case mask =>
+    intro m hm
+    have hm' : m ∈ sgOld.map (none, ·) := hm
+    simp only [List.mem_map] at hm'
+    obtain ⟨q, -, rfl⟩ := hm'
+    rfl
+  case olds =>
+    show List.Forall₂ (MaskedBaseReads IpaPallas.curve.E.toAffine V)
+      ((sgOld.map (none, ·)).map fun m => (m.2, m.1)) _
+    simp only [List.map_map, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+    exact holds.imp fun _ _ h => ⟨h, rfl⟩
+  case kept => simp [List.filter_map, Function.comp_def]
+  case tne =>
+    intro he
+    have he' : proof.tComm.toList = [] := he
+    have hlen := congrArg List.length he'
+    simp at hlen
+    exact absurd hlen (Nat.pos_iff_ne_zero.mp E.nc_pos)
+  case lrne =>
+    intro he
+    have he' : proof.opening.lr.toList = [] := he
+    have hlen := congrArg List.length he'
+    rw [Vector.length_toList, List.length_nil] at hlen
+    exact absurd hlen (Nat.pos_iff_ne_zero.mp E.rounds_pos)
+  case char =>
+    intro m hm h0
+    refine char_guard m (le_trans hm ?_) h0
+    have h1 : ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
+        proof).withClaims claims).sgOld.length ≤ 2 := by
+      show (sgOld.map (none, ·)).length ≤ 2
+      simpa using hlen
+    have hl := ivpInputOf_lengths claims.deferredValues (sgOld.map (none, ·)) keyCells proof
+    have h2 : ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
+        proof).withClaims claims).wComm.flatten.length = 15 * nc := hl.1
+    have h3 : ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
+        proof).withClaims claims).zComm.length = nc := hl.2.1
+    have h4 : ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
+        proof).withClaims claims).tComm.length = quotChunks * nc := hl.2.2
+    have h5 := nc_le E
+    omega
 
 /-! ## The circuit of its input -/
 
