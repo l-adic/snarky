@@ -1641,8 +1641,6 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
       Point.some _ _ hfin = s • T
         ∧ (s : Fp)
             = Kimchi.Gate.EndoScalar.toField (crumbList g m) (pallasLam : Fp) := by
-  haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-      ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [pallas_card]; decide
   obtain ⟨hTns, hTeq⟩ := hbase 0 (Nat.zero_le m)
   obtain ⟨hφTns, hφTeq⟩ := hbaseEndo 0 (Nat.zero_le m)
@@ -1668,8 +1666,6 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
       Point.some _ _ hfin = s • T
         ∧ (s : Fq)
             = Kimchi.Gate.EndoScalar.toField (crumbList g m) (vestaLam : Fq) := by
-  haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-      ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [vesta_card]; decide
   obtain ⟨hTns, hTeq⟩ := hbase 0 (Nat.zero_le m)
   obtain ⟨hφTns, hφTeq⟩ := hbaseEndo 0 (Nat.zero_le m)
@@ -1696,8 +1692,6 @@ theorem pallas_chain_complete (m : ℕ) (hbits : 4 * m ≤ 244)
     (hP0eq : Point.some _ _ hP0
       = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT) :
     ∀ i, i < m → Holds pallasEndo (chainBuild pallasEndo xT yT xP0 yP0 n0 bs i) := by
-  haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-      ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
   have hTne : Point.some _ _ hT ≠ 0 := Point.some_ne_zero hT
   have heig : Point.some _ _ hφT = pallasLam • Point.some _ _ hT := pallas_eigen hT
   exact chain_complete Pallas.curve.toAffine (Point.some _ _ hT) (Point.some _ _ hφT)
@@ -1716,8 +1710,6 @@ theorem vesta_chain_complete (m : ℕ) (hbits : 4 * m ≤ 244)
     (hP0eq : Point.some _ _ hP0
       = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT) :
     ∀ i, i < m → Holds vestaEndo (chainBuild vestaEndo xT yT xP0 yP0 n0 bs i) := by
-  haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-      ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
   have hTne : Point.some _ _ hT ≠ 0 := Point.some_ne_zero hT
   have heig : Point.some _ _ hφT = vestaLam • Point.some _ _ hT := vesta_eigen hT
   exact chain_complete Vesta.curve.toAffine (Point.some _ _ hT) (Point.some _ _ hφT)

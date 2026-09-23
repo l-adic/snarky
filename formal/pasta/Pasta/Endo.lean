@@ -483,8 +483,6 @@ def vestaEndoSpec : EndoSpec Vesta.curve.toAffine where
   off_targets := fun {_ _} ha hb hba hbb {_ _} hTne heig =>
     vesta_combo_off_targets ha hb hba hbb hTne heig
   lam_succ_smul := fun T hTne => by
-    haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-        ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
     exact smul_ne_zero_of_lt Vesta.curve.toAffine hTne (by norm_num [vestaLam])
       (by rw [vesta_card]; norm_num [vestaLam])
 
@@ -497,8 +495,6 @@ def pallasEndoSpec : EndoSpec Pallas.curve.toAffine where
   off_targets := fun {_ _} ha hb hba hbb {_ _} hTne heig =>
     pallas_combo_off_targets ha hb hba hbb hTne heig
   lam_succ_smul := fun T hTne => by
-    haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-        ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
     exact smul_ne_zero_of_lt Pallas.curve.toAffine hTne (by norm_num [pallasLam])
       (by rw [pallas_card]; norm_num [pallasLam])
 
