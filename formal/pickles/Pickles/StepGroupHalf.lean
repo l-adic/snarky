@@ -1,5 +1,5 @@
 import Pickles.Encoding
-import Pickles.LadderBand
+import Pickles.ShiftedClaims
 import Pickles.TwoHalves
 
 /-!
@@ -182,9 +182,9 @@ def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k nc : �
   verifyProofWith E.σ.h E.cvk.lagrangeBasis.toList spongeAfterIndex isBaseCase statement u cells
 
 /-- **`verifyProofAt` reads as the group half at the packed statement's public input.** The
-table is the key's, so `XhatTable.Bound` needs beyond the environment's invariants only the
-band (`hoff`) and that the Lagrange points and the constant correction sum are finite, since
-the fold adds the sum with `addFast`. No invariant of the key gives these; they are relations
+table is the key's, so `XhatTable.Bound` needs beyond the environment's invariants only that
+the Lagrange points and the constant correction sum are finite, since the fold adds the sum
+with `addFast`. No invariant of the key gives these; they are relations
 the SRS avoids (`havoid`, `stepRelationsAt`). -/
 theorem verifyProofAt_reads {ks nc : ℕ} {V : Valuation Fp} (E : Env IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc E.σ.k)
@@ -195,7 +195,6 @@ theorem verifyProofAt_reads {ks nc : ℕ} {V : Valuation Fp} (E : Env IpaPallas.
     (cells : IvpInput E.σ.k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V isBaseCase false)
-    (hoff : ∀ leaf ∈ stepLeavesAt E statement, Leaf.offBand IpaPallas.curve.scalar V leaf)
     (hsmall : statement.packed.length ≤ 2 ^ E.σ.k)
     (havoid : E.σ.Avoids (stepRelationsAt E statement))
     (hivp : IvpHyps (stepSide V) E.σ E.cvk cp (stepPublicInput E V statement) false
@@ -220,7 +219,7 @@ theorem verifyProofAt_reads {ks nc : ℕ} {V : Valuation Fp} (E : Env IpaPallas.
       (fun Ps h ci => E.lagrange_ne pastaShapePallas
         (fun a ha => havoid a (List.mem_append_right _ ha)) Ps h ci)
       (by simp [WrapStatement.packed]) hlb
-      (bitBoolean_constLeaf_of_isScalar _ _ statement.packed_isScalar) (hleaves ▸ hoff)
+      (bitBoolean_constLeaf_of_isScalar _ _ statement.packed_isScalar)
       (corrSumPt_ne_zero E statement hsmall havoid)
     rw [← hleaves] at hb
     exact hb
@@ -280,14 +279,13 @@ abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k nc) :
     GroupHalf IpaPallas.curve (Type2 (SplitField (FVar Fp) (BoolVar Fp))) k :=
   GroupHalf.step V g.claims
 
-/-- `verifyProofAt` as a circuit of its input, its success bit asserted. Before it, the ladder
-band is asserted on the cells the gadget scales: the seven shifted scalars and the full
-public-input leaves (`Pickles.LadderBand`), an assertion of this harness, not of the gadget. -/
+/-- `verifyProofAt` as a circuit of its input, its success bit asserted. Before it, the shifted
+scalars' parity cells are asserted boolean (`assertClaimBitsStep`), the allocation check the
+deployed circuit's split type makes and this harness's unchecked input lacks. -/
 def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaPallas.curve nc)
     (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks k nc) : CircuitM Fp c Unit := do
-  assertClaimsOffBandStep g.shifted
-  assertLeavesOffBand IpaPallas.curve.scalar (stepLeavesAt E g.statement)
+  assertClaimBitsStep g.shifted
   let v ← verifyProofAt E spongeAfterIndex g.isBaseCase g.statement g.claims (g.cells keyCells)
   assert v
 
@@ -308,14 +306,11 @@ theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve nc)
       (g.half V).Reads E cp (stepPublicInput E V g.statement) v ∧
         (↑v : CVar Fp).val V = 1⌝⦄ := by
   simp only [groupCircuit]
-  refine builder_spec_bind_of _ _ _ _ (assertClaimsOffBandStep_spec (V := V) g.shifted)
+  refine builder_spec_bind_of _ _ _ _ (assertClaimBitsStep_spec (V := V) g.shifted)
     fun hclaimOk _ => ?_
-  refine builder_spec_bind_of _ _ _ _
-    (assertLeavesOffBand_spec (V := V) IpaPallas.curve.scalar (stepLeavesAt E g.statement))
-    fun hoff _ => ?_
   obtain ⟨oldsW, hivp⟩ := hivp hclaimOk
   have hv := verifyProofAt_reads (V := V) E cp spongeAfterIndex g.isBaseCase g.statement
-    g.claims (g.cells keyCells) oldsW hbase hoff hsmall havoid hivp
+    g.claims (g.cells keyCells) oldsW hbase hsmall havoid hivp
   mvcgen -trivial [hv]
   rename_i v _ hr _ _
   intro h1

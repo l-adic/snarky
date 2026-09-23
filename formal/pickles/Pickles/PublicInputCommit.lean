@@ -62,11 +62,10 @@ section Reads
 
 variable {F : Type} [Field F] [DecidableEq F] [ToNat F]
 
-/-- **Narrow ladders need no forbidden-band exclusion.** When the ladder width `L` is small
-enough that `3·2^L ≤ order`, `scaleFast2'`'s regime holds for EVERY witness — the subwrap
-disjunct of `LadderRegime`, with no `z ∉ forbiddenValues` condition. This covers the `b128`
-(L = 5·26 = 130) and `b10` (L = 5·2 = 10) leaves against the ~2^254 Pasta order; only the
-full 255-bit leaf reaches the one-wrap case and carries the band. -/
+/-- **Narrow ladders are in regime.** When the ladder width `L` is small enough that
+`3·2^L ≤ order`, `scaleFast2'`'s regime holds for EVERY witness — the subwrap disjunct of
+`LadderRegime`. This covers the `b128` (L = 5·26 = 130) and `b10` (L = 5·2 = 10) leaves
+against the ~2^254 Pasta order; only the full 255-bit leaf reaches the one-wrap case. -/
 private theorem ladderRegime_subwrap {F : Type} [Field F] [DecidableEq F] (d : HasCurve F)
     (L : ℕ) (z : ℤ) (h : 3 * 2 ^ L ≤ d.W.order) : d.LadderRegime L z := by
   unfold HasCurve.LadderRegime
@@ -207,7 +206,7 @@ private def LeafInfo.delta : LeafInfo F d → d.W.Point
 
 /-- The ladder regime a scalar leaf's contribution is valid under (`True` for `condAdd`). At
 the deployed layer this is discharged by `ladderRegime_subwrap` for the narrow leaves and by
-the forbidden-band exclusion for the full-width leaf. -/
+the top bound for the full-width leaf (`PastaShape.regime`). -/
 private def LeafInfo.regimeOK : LeafInfo F d → Prop
   | .scalar L z _ _ => d.LadderRegime L (Pasta.Shifted.unshiftType1 L z)
   | .cond _ _ => True
@@ -287,8 +286,8 @@ private def LeafReads (ci : Fin nc) (V : Valuation F) : Leaf F nc → LeafInfo F
 omit [ToNat F] in
 /-- **Regime discharge per width.** A leaf's `regimeOK` follows from the subwrap bounds for the
 narrow widths (`b128` at `L = 130`, `b10` at `L = 10`, via `ladderRegime_subwrap`) and a
-supplied full-width regime (`hfull`, discharged at the deployed curve from the forbidden-band
-exclusion). `condAdd` is trivial. -/
+supplied full-width regime (`hfull`, discharged at the deployed curve from the top
+bound). `condAdd` is trivial. -/
 theorem LeafReads.regimeOK {V : Valuation F} {ci : Fin nc}
     {leaf : Leaf F nc} {info : LeafInfo F d}
     (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
@@ -310,7 +309,7 @@ theorem LeafReads.regimeOK {V : Valuation F} {ci : Fin nc}
 
 omit [ToNat F] in
 /-- **The regime discharge, lifted to the whole leaf list.** Every info a leaf list reads to
-is in regime, off the narrow subwrap bounds and a single full-width forbidden-band premise
+is in regime, off the narrow subwrap bounds and a single full-width regime premise
 (supplied at the deployed curve). The list form `publicInputCommitFull_spec`'s regime premise
 wants. -/
 private theorem leafReads_regimeOK_all {V : Valuation F} {ci : Fin nc}
@@ -746,7 +745,7 @@ theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
 
 /-- **The net read, premises discharged.** `publicInputCommitFull_spec` with its seed
 (`corrSum_eq`, from honest corrections) and regime (`leafReads_regimeOK_all`, from the width
-bounds and the full-width band premise) supplied: the output reads unconditionally at chunk
+bounds and the full-width regime premise) supplied: the output reads unconditionally at chunk
 `ci` as `-(Σ netDelta) + h`, the honest MSM. The last step before the wire crossing
 (`publicCommitment`). -/
 private theorem publicInputCommitFull_net (ci : Fin nc) {V : Valuation F}
@@ -1271,7 +1270,7 @@ theorem publicInputCommitKnown_spec (ci : Fin nc) {V : Valuation F}
 
 /-- **The known-domain gadget reads as `-(publicMsm) + h`.** `publicInputCommitKnown_spec` with
 its seed (from honest corrections, `corrSum_eq`, and the correction sum reading as `Σ cps`) and
-regime (`leafReads_regimeOK_all` from the width bounds and the full-width band premise)
+regime (`leafReads_regimeOK_all` from the width bounds and the full-width regime premise)
 discharged, and the net-delta sum identified with `publicMsm` — the same public seam as
 `publicInputCommitFull_reads`, so the wire crossing consumes either gadget. -/
 theorem publicInputCommitKnown_reads (ci : Fin nc) {V : Valuation F}
@@ -1417,21 +1416,6 @@ private theorem crossing_list {C : Bulletproof.Ipa.KimchiCurve} {d : HasCurve F}
       List.getElem_zip, List.getElem_toArray, Nat.zero_add]
     rw [htie i hil]
 
-/-! ### The full leaf's regime: a sixteen-value window -/
-
-/-- `δ = p − 2^254`, with `p` the point-group order: the pinned full-leaf ladder top
-`2z + 2^255 + 1` meets the forbidden band exactly at `z ∈ [δ−2, δ+5]`. -/
-def xhatBandDelta (p : ℕ) : ℕ := p - 2 ^ 254
-
-/-- A full leaf's scalar value avoids the sixteen values `2z + bb`, `z ∈ [δ−2, δ+5]`, at which
-the ladder degenerates; the narrow leaves and `condAdd` carry `True`. The concrete, decidable
-form of `Leaf.regimeFull` at a Pasta order `p`. -/
-def Leaf.offBand (p : ℕ) (V : Valuation F) : Leaf F nc → Prop
-  | .full s _ _ =>
-      ToNat.toNat (s.val V) < 2 * xhatBandDelta p - 4 ∨
-        2 * xhatBandDelta p + 11 < ToNat.toNat (s.val V)
-  | _ => True
-
 end Generic
 
 section SideFacts
@@ -1460,78 +1444,23 @@ theorem PastaShape.order_big (s : PastaShape C) : 3 * 2 ^ 130 ≤ s.d.W.order :=
   rw [show s.d.W.order = C.scalar from C.order_eq]
   exact le_trans (by norm_num) s.scalar_lo.le
 
-/-- **The pinned full-leaf ladder is in regime off the window.** With the order `p` in
-`(2^254, 2^254 + 2^253)`, for `0 ≤ z < 2^253` the top `2z + 2^255 + 1` lies in `(p, 3p)`, so it
-is a forbidden residue `t ∈ [-3, 11]` only as `t + 2p`; that pins the value `2z + bb` into
-`[2δ − 4, 2δ + 11]`, `δ = p − 2^254` — the sixteen-value window `Leaf.offBand` excludes. -/
+/-- **The pinned full-leaf ladder is in regime.** With the order `p` in
+`(2^254, 2^254 + 2^253)`, for `0 ≤ z < 2^253` the top `2z + 2^255 + 1` is below `2^256`, which is
+below `4p - 4`: no accumulator of the ladder meets `±T`, whatever the leaf. -/
 theorem PastaShape.regime (s : PastaShape C) {nc : ℕ} (V : Valuation C.BaseField)
-    (leaf : Leaf C.BaseField nc) (h : leaf.offBand C.scalar V) : Leaf.regimeFull s.d V leaf := by
+    (leaf : Leaf C.BaseField nc) : Leaf.regimeFull s.d V leaf := by
   cases leaf with
   | full sc base corr =>
-      intro z bb h0 hlt hval
-      have hb01 : (0 : ℤ) ≤ (if bb then 1 else 0) ∧ (if bb then (1 : ℤ) else 0) ≤ 1 := by
-        cases bb <;> simp
-      have h253 : (2 : ℤ) ^ 253
-          = 14474011154664524427946373126085988481658748083205070504932198000989141204992 := by
-        norm_num
-      have h254 : (2 : ℤ) ^ 254
-          = 28948022309329048855892746252171976963317496166410141009864396001978282409984 := by
-        norm_num
-      have h255 : (2 : ℤ) ^ 255
-          = 57896044618658097711785492504343953926634992332820282019728792003956564819968 := by
-        norm_num
+      intro z bb h0 hlt _
       have hlo : (2 : ℤ) ^ 254 < C.scalar := by exact_mod_cast s.scalar_lo
-      have hhi : (C.scalar : ℤ) < 2 ^ 254 + 2 ^ 253 := by exact_mod_cast s.scalar_hi
-      have hlo' := s.scalar_lo
-      have hδ : (xhatBandDelta C.scalar : ℤ) = C.scalar - 2 ^ 254 := by
-        unfold xhatBandDelta; omega
-      rw [h253] at hlt hhi
-      rw [h254] at hlo hhi hδ
-      have hv : (ToNat.toNat (sc.val V) : ℤ) = 2 * z + (if bb then 1 else 0) := by
-        rw [← hval]
-        exact xhatSide_cast s _ (by omega) (by omega)
-      simp only [Leaf.offBand] at h
-      refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [show s.d.W.order = C.scalar from C.order_eq]
+      refine Or.inr ⟨?_, ?_, ?_⟩ <;> rw [show s.d.W.order = C.scalar from C.order_eq]
       · simpa using s.scalar_lo
-      · exact lt_trans s.scalar_hi (by norm_num)
-      · exact s.scalar_mod
-      · intro hmem
-        simp only [Kimchi.Gate.VarBaseMul.forbiddenValues, Set.mem_setOf_eq,
-          Kimchi.Gate.VarBaseMul.Ladder.forbiddenResidues, List.mem_cons, List.mem_nil_iff,
-          or_false, Pasta.Shifted.unshiftType1] at hmem
-        obtain ⟨t, ht, k, hk⟩ := hmem
-        rw [h255] at hk
-        -- the residues lie in `[-3, 11]`; that is all the bound argument needs (no `omega`:
-        -- it enumerates the 253-bit range)
-        have htb : -3 ≤ t ∧ t ≤ 11 := by
-          rcases ht with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-            norm_num
-        -- the multiplier is 2: the top lies in `(p, 3p)`
-        have hp0 : (0 : ℤ) ≤ C.scalar := by positivity
-        have hk1 : 2 ≤ k := by
-          by_contra hle
-          have : (C.scalar : ℤ) * k ≤ C.scalar * 1 :=
-            mul_le_mul_of_nonneg_left (by omega) hp0
-          linarith
-        have hk2 : k ≤ 2 := by
-          by_contra hle
-          have : (C.scalar : ℤ) * 3 ≤ C.scalar * k :=
-            mul_le_mul_of_nonneg_left (by omega) hp0
-          linarith
-        have hk : k = 2 := le_antisymm hk2 hk1
-        subst hk
-        -- the value then sits in the window
-        rcases h with h | h
-        · have h' : (ToNat.toNat (sc.val V) : ℤ) < 2 * (xhatBandDelta C.scalar : ℤ) - 4 := by
-            have h4 : 4 ≤ 2 * xhatBandDelta C.scalar := by unfold xhatBandDelta; omega
-            omega
-          linarith
-        · have h' : 2 * (xhatBandDelta C.scalar : ℤ) + 11 < ToNat.toNat (sc.val V) := by
-            exact_mod_cast h
-          linarith
-  | b128 _ _ _ => trivial
-  | b10 _ _ _ => trivial
-  | condAdd _ _ => trivial
+      · exact lt_trans (by norm_num) s.scalar_lo
+      · simp only [Pasta.Shifted.unshiftType1]
+        have h253 : (2 : ℤ) ^ 253 * 2 = 2 ^ 254 := by norm_num
+        have h255 : (2 : ℤ) ^ 255 = 2 * 2 ^ 254 := by norm_num
+        linarith
+  | _ => trivial
 
 end SideFacts
 
@@ -1555,8 +1484,8 @@ structure XhatTable (F : Type) [Field F] (nc : ℕ) where
 /-- The binding the deferred packing item discharges — everything the faithfulness read needs
 of the outside world, in public terms (no `LeafInfo`/`LeafReads`). The scalar-side alias
 (circuit field → scalar field) is absorbed into `pubOf`, and the fold premises
-(`pre`/`corr`/`hon`) are exactly the gadget reads', with the regime premise narrowed to the
-sixteen-value window `offBand` (`PastaShape.regime`). `Ts` are the leaves' base points, `cps`
+(`pre`/`corr`/`hon`) are exactly the gadget reads'; the regime holds for every leaf
+(`PastaShape.regime`). `Ts` are the leaves' base points, `cps`
 their correction points. The gadget-specific seed facts (`leafHasScalar` for the wrap fold,
 `leafHeadScalar` and the constant correction sum for the known-domain fold) stay beside the
 read they serve. -/
@@ -1572,8 +1501,6 @@ structure XhatBinding (s : PastaShape C) (ci : Fin nc) (V : Valuation C.BaseFiel
   corr : List.Forall₂ (CorrPre ci V) leaves cps
   /-- Each leaf's correction is the honest shift `-(2^L)·base`. -/
   hon : ∀ leaf ∈ leaves, CorrHonest s.d ci V leaf
-  /-- Each full leaf's value avoids the sixteen-value band window (`Leaf.offBand`). -/
-  offBand : ∀ leaf ∈ leaves, Leaf.offBand C.scalar V leaf
   /-- There are at least as many Lagrange bases as public-input leaves. -/
   hsize : leaves.length ≤ cvk.lagrangeBasis.size
   /-- Each leaf's chunk base reads as the verifier's Lagrange base at that index — the walk-order
@@ -1650,7 +1577,7 @@ theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuat
       (SWPoint.equivPoint C.E σ.h)
       (xhatSide_cast s) (xhatSide_bit s) s.order_big
       (le_trans (by norm_num) s.order_big)
-      (fun leaf hl => s.regime V leaf (hbind.offBand leaf hl))
+      (fun leaf _ => s.regime V leaf)
       hbind.blinding hbind.pre hbind.corr hscalar hbind.hon) fun r hr => ?_
   rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
 
@@ -1678,7 +1605,7 @@ theorem xHatKnown_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
       (SWPoint.equivPoint C.E σ.h)
       (xhatSide_cast s) (xhatSide_bit s) s.order_big
       (le_trans (by norm_num) s.order_big)
-      (fun leaf hl => s.regime V leaf (hbind.offBand leaf hl))
+      (fun leaf _ => s.regime V leaf)
       hbind.blinding hbind.pre hbind.corr hC hhead hbind.hon) fun r hr => ?_
   rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
 
@@ -1881,15 +1808,14 @@ points as bases, their honest shifts as corrections, the SRS blinding base — s
 `XhatBinding` given only what is not table bookkeeping: the blinding base and the Lagrange
 points are finite (at the `(0, 0)` sentinel no cell reads as the point, so this is necessary
 too), the boolean leaves are boolean — which `xHat_reads_publicCommitment` supplies from the
-gadget's own bit pre-pass — and `offBand`. -/
+gadget's own bit pre-pass. -/
 theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (ks : List (PackedScalar C.BaseField))
     (hh : σ.h ≠ 0)
     (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[ci] ≠ 0)
 
     (hbits : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList, leaf.bitBoolean V)
-    (hoff : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList,
-      Leaf.offBand C.scalar V leaf) :
+ :
     XhatBinding s ci V σ cvk (constPt σ.h)
       (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)
       (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks cvk.lagrangeBasis.toList)
@@ -1910,7 +1836,6 @@ theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.1 hl
     rw [List.getElem_zipWith]
     exact corrHonest_const s ci _ _ (hL _ (List.getElem_mem _))
-  offBand := hoff
   hsize := by simp [List.length_zipWith]
   bases := by
     intro i hi
@@ -2018,8 +1943,7 @@ theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (cvk : KimchiVK C
     (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, ∀ ci : Fin nc, Ps[ci] ≠ 0)
     (hks : ks ≠ []) (hlb : cvk.lagrangeBasis.toList ≠ [])
     (hbits : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList, leaf.bitBoolean V)
-    (hoff : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList,
-      Leaf.offBand C.scalar V leaf)
+
     (hsum : ∀ ci : Fin nc, corrSumPt ks cvk.lagrangeBasis.toList ci ≠ 0) :
     (XhatTable.ofKeyKnown ks cvk.lagrangeBasis.toList).Bound s V σ cvk (constPt σ.h)
       (List.zipWith constLeaf ks cvk.lagrangeBasis.toList) where
@@ -2028,7 +1952,7 @@ theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (cvk : KimchiVK C
         cvk.lagrangeBasis.toList,
       List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks cvk.lagrangeBasis.toList,
       fun ci => ⟨?_, ?_⟩⟩
-    · have hb := xhatBinding_const (V := V) s ci σ cvk ks hh (fun Ps h => hL Ps h ci) hbits hoff
+    · have hb := xhatBinding_const (V := V) s ci σ cvk ks hh (fun Ps h => hL Ps h ci) hbits
       simpa only [List.map_zipWith] using hb
     · have hc : (XhatTable.ofKeyKnown ks cvk.lagrangeBasis.toList).corrSum[ci]
           = constPt (corrSumPt ks cvk.lagrangeBasis.toList ci) := by

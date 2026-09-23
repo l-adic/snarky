@@ -26,9 +26,9 @@ valuation (`builder_spec_iff`).
 * `HalvesTies`: the two circuits hold one set of deferred claims;
 * no hypothesis where a circuit enforces it: the three scalars `ftComm` scales by, which the
   scalar circuit checks and `HalvesTies` carries over; the claimed `cip` absorbing as its
-  canonical representative, which its own ladder (`scaleByCip`) pins; and the ladder's band,
-  which the group circuit asserts on the shifted claims and the full public-input leaves
-  (`Pickles.LadderBand`), a harness assertion rather than the shared gadget's;
+  canonical representative, which its own ladder (`scaleByCip`) pins; and the parity cells
+  of the split shifted claims, which the group circuit asserts boolean
+  (`assertClaimBitsStep`);
 * `havoid`: the SRS avoids the public-input relations (`SRS.Avoids`, `stepRelationsAt`). The
   Lagrange points and each chunk of the correction sum the fold adds are commitments against
   the SRS, finite exactly when the SRS has no relation at their coefficient vectors, which no

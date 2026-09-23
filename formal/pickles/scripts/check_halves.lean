@@ -472,16 +472,6 @@ def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Op
     return c && a && s && (s == a)
   else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
 
-/-- `Leaf.offBand` at a scalar order, decided: a full leaf's value avoids the sixteen values
-around `2·(scalar − 2^254)` at which the ladder degenerates. -/
-def offBandB {p nc : ℕ} [Fact p.Prime] (scalar : ℕ) (V : Valuation (ZMod p)) :
-    Pickles.Leaf (ZMod p) nc → Bool
-  | .full s _ _ =>
-    let v := (s.val V).val
-    let δ := scalar - 2 ^ 254
-    decide (v < 2 * δ - 4 ∨ 2 * δ + 11 < v)
-  | _ => true
-
 /-- The hypotheses of `Pickles.stepProof_kimchiVerify_vesta` that are facts about data,
 decided on a wrap entry and the step entry it wrapped — so the theorem's assumptions are
 shown to hold together on a proof the real prover made, and its conclusion is checked at the
@@ -491,8 +481,7 @@ public input it names:
 * the file's step domains form a `KnownDomains` with this key's among them, and the wrap
   statement's `domain_log2` is the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
-  public input (`wrapPublicInput`), and its full scalars are off the band (what the group
-  circuit's own assertion needs to be satisfiable);
+  public input (`wrapPublicInput`);
 * the SRS avoids the key's Lagrange relations (`havoid`), decided on the key's Lagrange
   points (`Env.decidableAvoids`), which the environment's invariants tie to the SRS;
 * the wrap statement's `messages_for_next_wrap_proof` is the digest `wrapVerifyAt` asserts:
@@ -529,7 +518,6 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let V : Valuation Fq := fun _ => 0
     let pub := Pickles.wrapPublicInput E V stVar
     let pubOk := decide (pub = s.publicInput)
-    let offOk := (Pickles.wrapLeavesAt E stVar).all (offBandB CS.scalar V)
     -- the message digest `wrapVerifyAt` asserts
     let params := IpaVesta.curve.sponge.params
     let expanded := st.proofState.unfinalizedProofs.toList.map fun u =>
@@ -550,7 +538,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       (E.decidableAvoids Pickles.pastaShapeVesta)
     IO.println s!"    env=true rounds={σ.k} domains={cands.map (·.log2)} \
       key=2^{doms.keyLog2} hdom={hdom} \
-      pub={pubOk} ({pub.size} cells) offBand={offOk} avoids={avoidOk} msgDigest={msgOk} \
+      pub={pubOk} ({pub.size} cells) avoids={avoidOk} msgDigest={msgOk} \
       guards={guards} \
       sgOk={sg'} kimchiVerify={kv}"
     -- `hsatS`: the theorem's scalar circuit, as `compile` builds it — the input's check (the
@@ -585,7 +573,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
       (fun _ => []) ⟨{ group := ginp, newBp }⟩
     IO.println s!"    groupCircuit: satisfies={satG}"
-    return hdom && pubOk && offOk && msgOk && guards && sg' && kv && avoidOk && satS && satG
+    return hdom && pubOk && msgOk && guards && sg' && kv && avoidOk && satS && satG
 
 /-- The hypotheses of `Pickles.wrapProof_kimchiVerify_pallas` that are facts about data,
 decided on a step entry's slot and the wrap entry that slot verified — the twin of
@@ -594,8 +582,7 @@ decided on a step entry's slot and the wrap entry that slot verified — the twi
 * the environment's invariants hold of the wrap key and its SRS (`Env.Invariants`);
 * the packed wrap statement, carried into the step field, reads back as the cells of the wrap
   proof's public input that a circuit reads (`stepPublicInput`), the wire's ten further cells
-  are zero, and its full scalars are off the band (what the group circuit's own assertion
-  needs to be satisfiable);
+  are zero;
 * the SRS avoids the step relations (`havoid`), decided on the key's Lagrange points
   (`decidableAvoidsStepRelations`);
 * `Guards`, `SgOk`, and the conclusion `kimchiVerify`, at that public input;
@@ -618,7 +605,6 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   let pub := Pickles.stepPublicInput E V stVar
   -- the wire's input is the cells read, then ten zero cells
   let pubOk := decide (pub ++ Array.replicate 10 0 = w.publicInput)
-  let offOk := (Pickles.stepLeavesAt E stVar).all (offBandB CW.scalar V)
   let smallOk := decide (stVar.packed.length ≤ 2 ^ E.σ.k)
   let avoidOk := if hs : stVar.packed.length ≤ 2 ^ E.σ.k then
     @decide (E.σ.Avoids (Pickles.stepRelationsAt E stVar))
@@ -631,7 +617,7 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   let kv ← memoized memo.verify (memoKey CW "pallas" σ.k w pub) fun _ =>
     Kimchi.Verifier.kimchiVerify CW σ cvk cp pub
   IO.println s!"    env=true rounds={σ.k} key=2^{cvk.domainLog2} pub={pubOk} \
-    ({pub.size} cells + 10 zeros) offBand={offOk} small={smallOk} avoids={avoidOk} guards={guards} \
+    ({pub.size} cells + 10 zeros) small={smallOk} avoids={avoidOk} guards={guards} \
     sgOk={sg'} kimchiVerify={kv}"
   -- `hsatS`: the theorem's scalar circuit, which asserts `finalized`
   let finp ← match wrapFopInput s slot cp with
@@ -653,7 +639,7 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
       Pickles.WrapProof.groupCircuit E key sv v)
     (fun _ => []) ⟨ginp⟩
   IO.println s!"    groupCircuit: satisfies={satG}"
-  return pubOk && offOk && smallOk && avoidOk && guards && sg' && kv && satS && satG
+  return pubOk && smallOk && avoidOk && guards && sg' && kv && satS && satG
 
 /-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `accOk` on its
 own. -/

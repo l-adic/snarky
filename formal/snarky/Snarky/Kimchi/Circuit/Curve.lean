@@ -44,16 +44,32 @@ structure HasCurve (F : Type) [Field F] [DecidableEq F] where
   /-- The field does not have characteristic `2`. -/
   two_ne : (2 : F) ≠ 0
 
-/-- The regime the ladder's non-degeneracy pricing needs, at `L` bits over the
-dictionary's order: EITHER the whole ladder fits below the order (subwrap — no
-condition on the scalar), OR the one-wrap band holds and the scalar's Type1 decode
-`z` avoids the forbidden residues. `varBaseMul_off`'s dichotomy, at the law's
-list-level decode. -/
+/-- The regime in which a ladder over `L` bits computes its scalar, for the scalar's Type1
+decode `z`: the whole ladder fits below the order (subwrap), or the top is below `4q - 4` over
+an order `q` above `2^(L-1)`, where no accumulator meets `±T`. Every Pasta ladder is below the
+bound: a pinned one tops out under `2^(L+1)`, an unpinned one reads a field element.
+`varBaseMul_off`'s cases, at the law's list-level decode. -/
 def HasCurve.LadderRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
     (z : ℤ) : Prop :=
+  3 * 2 ^ L ≤ d.W.order ∨ (2 ^ (L - 1) < d.W.order ∧ 3 < d.W.order ∧ z < 4 * d.W.order - 4)
+
+/-- The regime in which the honest ladder over `L` bits has a satisfying witness: subwrap, or
+the soundness bound over an order `q` in `(2^(L-1), 2^L)` with `3q < 2^(L+1)` and the top off
+the three values `2q - 1`, `2q + 1`, `3q` at which an accumulator reaches `O`.
+`chain_complete`'s cases. -/
+def HasCurve.LadderCompleteRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
+    (z : ℤ) : Prop :=
   3 * 2 ^ L ≤ d.W.order ∨
-    (2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ d.W.order % 4 = 1 ∧
-      z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order)
+    (3 ≤ L ∧ 2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ 3 * d.W.order < 2 ^ (L + 1) ∧
+      3 < d.W.order ∧ z < 4 * d.W.order - 4 ∧
+      z ≠ 2 * d.W.order - 1 ∧ z ≠ 2 * d.W.order + 1 ∧ z ≠ 3 * d.W.order)
+
+/-- A ladder that is satisfiable honestly also computes its scalar. -/
+theorem HasCurve.LadderCompleteRegime.toLadderRegime [Field F] [DecidableEq F] {d : HasCurve F}
+    {L : ℕ} {z : ℤ} (h : d.LadderCompleteRegime L z) : d.LadderRegime L z := by
+  rcases h with h | ⟨-, h1, -, -, h3, hz, -⟩
+  · exact Or.inl h
+  · exact Or.inr ⟨h1, h3, hz⟩
 
 open WeierstrassCurve.Affine in
 /-- No point of the group is 2-torsion: the order is an odd prime, so doubling kills only
@@ -144,28 +160,29 @@ open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
   odd := by rw [pallas_card]; decide
   two_ne := by decide
 
-open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
-/-- At Vesta, a ladder integer off the forbidden band is in the one-wrap regime at 255
-bits: the deployed order sits in the band and is `1 mod 4`. -/
-theorem HasCurve.vesta_ladderRegime (z : ℤ)
-    (hband : z ∉ forbiddenValues PALLAS_BASE_CARD) : HasCurve.vesta.LadderRegime 255 z := by
+open CompElliptic.Fields.Pasta in
+/-- At Vesta, every 255-bit ladder below `4·|Vesta| - 4` computes its scalar. -/
+theorem HasCurve.vesta_ladderRegime (z : ℤ) (hz : z < 4 * PALLAS_BASE_CARD - 4) :
+    HasCurve.vesta.LadderRegime 255 z := by
   have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
-  refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
-  · decide
-  · decide
-  · decide
-  · exact hband
+  refine Or.inr ⟨?_, ?_, ?_⟩ <;> rw [hOv] <;> first | decide | exact hz
 
-open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
+open CompElliptic.Fields.Pasta in
 /-- At Pallas, likewise. -/
-theorem HasCurve.pallas_ladderRegime (z : ℤ)
-    (hband : z ∉ forbiddenValues PALLAS_SCALAR_CARD) : HasCurve.pallas.LadderRegime 255 z := by
+theorem HasCurve.pallas_ladderRegime (z : ℤ) (hz : z < 4 * PALLAS_SCALAR_CARD - 4) :
+    HasCurve.pallas.LadderRegime 255 z := by
   have hOv : HasCurve.pallas.W.order = PALLAS_SCALAR_CARD := Pasta.pallas_card
-  refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
-  · decide
-  · decide
-  · decide
-  · exact hband
+  refine Or.inr ⟨?_, ?_, ?_⟩ <;> rw [hOv] <;> first | decide | exact hz
+
+open CompElliptic.Fields.Pasta in
+/-- At Vesta, the honest 255-bit ladder below `4·|Vesta| - 4` is satisfiable off its three
+`O` tops. -/
+theorem HasCurve.vesta_ladderCompleteRegime (z : ℤ) (hz : z < 4 * PALLAS_BASE_CARD - 4)
+    (h1 : z ≠ 2 * PALLAS_BASE_CARD - 1) (h2 : z ≠ 2 * PALLAS_BASE_CARD + 1)
+    (h3 : z ≠ 3 * PALLAS_BASE_CARD) : HasCurve.vesta.LadderCompleteRegime 255 z := by
+  have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+  refine Or.inr ⟨by norm_num, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> rw [hOv] <;>
+    first | decide | assumption
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The endomorphism dictionary at deployed Pallas: `Pasta.pallasEndoSpec` over

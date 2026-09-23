@@ -37,6 +37,7 @@ Snarky.Tactic.completeStep
 Snarky.assertAll_spec
 Snarky.assertAny_spec
 Snarky.assertEq_spec
+Snarky.assertNotEqual_spec
 Snarky.assertExactlyOne_spec
 Snarky.CVar.Scoped.packLow
 Snarky.packLow_val

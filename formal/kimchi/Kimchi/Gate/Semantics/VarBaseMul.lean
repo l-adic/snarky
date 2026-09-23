@@ -374,7 +374,7 @@ gate `i + 1`'s input and its scalar register threading alongside. Each gate's `s
 per-step relation `P_{i+1} = 32·P_i + cᵢ·T`, and folding that recurrence over the `m` rows is pure
 group algebra. This section gathers the definitions and lemmas on which the deployed correctness
 theorems rest — the curve-specialized `varBaseMul_scaleFast1` and `varBaseMul_scaleFast2`, and the
-two generic roots `varBaseMul_subwrap_correct` and `varBaseMul_forbidden_correct`.
+two generic roots `varBaseMul_subwrap_correct` and `varBaseMul_bounded_correct`.
 
 ### Correspondence to the circuit
 
@@ -396,13 +396,13 @@ the gate's `Holds`, through `varBaseMul_off` and `chain_complete` here.
   `chain_sum_bound`) and the folded scalar-multiplication theorems (`scalarMul`,
   `scalarMul_baseMul`, `scalarMul_shifted`, `scalarMul_type2`);
 * the per-row hypothesis bundles `NonDegen` (the non-vertical side conditions) and `GateStep`;
-* the number-theoretic ladder kernel (`ladder_nondegen_tight`, `ladder_subwrap_nondegen`): the
-  double-and-add ladder's bounds, the forbidden-band / forbidden-residue characterization of
-  degenerate finals, and the unconditional sub-wrap non-degeneracy;
+* the number-theoretic ladder kernel (`ladder_x_nondegen`, `ladder_subwrap_nondegen`,
+  `ladder_bounded_no_zero`): the double-and-add ladder's bounds, the first-addition
+  non-degeneracy below `4·q − 4`, and the tops at which a second addition meets `O`;
 * the group-order non-degeneracy toolkit (`smul_ne_zero_of_lt`, `x_ne_xT_of_ne_base`,
   `tne_of_holds`): the partial accumulators stay away from `±T`;
 * the soundness folds (`gate_chain_produce`, `gateStep_chain`) and the two regime roots
-  `varBaseMul_forbidden_correct` / `varBaseMul_subwrap_correct`.
+  `varBaseMul_bounded_correct` / `varBaseMul_subwrap_correct`.
 
 The `scalarMul_shifted` headline: at the real init `P 0 = 2·T`, `N 0 = 0`, the scalar
 `(n : F) = 2·(N m) + 2^(5m) + 1` is the Type1 unshift `unshiftType1`, so the circuit computes
@@ -411,16 +411,14 @@ The `scalarMul_shifted` headline: at the real init `P 0 = 2·T`, `N 0 = 0`, the 
 ### The number-theoretic ladder kernel
 
 The non-degeneracy of every partial accumulator reduces to a pure statement about the integer
-double-and-add ladder `k 0 = 2`, `k (j + 1) = 2·k j + εⱼ` with signs `εⱼ ∈ {-1, 1}`. The degenerate
-finals are not characterized by `k L + 2^L ≡ ±1 (mod q)`; they form a small band around the
-multiples of `q`, on `k L` itself. A degenerate input `k j` propagates forward through `d = L − j`
-doublings to `k L = 2^d·k j + T` with `|T| ≤ 2^d − 1`; a size argument confines degeneracy to the
-top three inputs (`d ≤ 3`), so every reachable degenerate final satisfies `k L ≡ t (mod q)` for some
-`|t| ≤ 15`. For a prime `q ≡ 1 (mod 4)` the band shrinks to the eleven explicit residues
-`forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}` (`ladder_nondegen_tight`). When the whole ladder
-fits below the modulus (`3·2^L ≤ q`) no input is degenerate at all (`ladder_subwrap_nondegen`). The
-lower regime bound `2^(L-1) < q` situates the one-wrap regime; for the real parameters `L = 255`,
-`q ≈ 2^254`, the band's 31 residues are a vanishing fraction of `q`.
+double-and-add ladder `k 0 = 2`, `k (j + 1) = 2·k j + εⱼ` with signs `εⱼ ∈ {-1, 1}`. A row's
+first addition is vertical exactly when `k j ≡ ±1 (mod q)`; its second addition meets `O`
+exactly when `2·k j + εⱼ ≡ 0`, which the gate's constraints already rule out (`tne_of_holds`).
+When the whole ladder fits below the modulus (`3·2^L ≤ q`) no input is degenerate at all
+(`ladder_subwrap_nondegen`). In the one-wrap regime `2^(L-1) < q` no input is `≡ ±1` once the
+top is below `4·q − 4` (`ladder_x_nondegen`), a bound every Pasta ladder meets. Completeness
+also needs every second addition off `O`, which fails only at the tops `2q ± 1` and `3q`
+(`ladder_bounded_no_zero`).
 -/
 
 namespace Kimchi.Gate.VarBaseMul.Ladder
@@ -445,26 +443,6 @@ private lemma ladder_step (L : ℕ) (k ε : ℕ → ℤ)
   induction d <;> simp_all +decide [pow_succ']
   grind +qlia
 
-/-- Non-degeneracy of the "deep" inputs (`d = L - j ≥ 4`) by a pure size argument:
-    `k j` and `2·k j` are then strictly between `1` and `q - 1`. -/
-private lemma ladder_size (q L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
-    (hreg₁ : 2 ^ (L - 1) < q)
-    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
-    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
-    ∀ j, j + 4 ≤ L → ¬ (q : ℤ) ∣ (k j - 1) ∧ ¬ (q : ℤ) ∣ (k j + 1)
-                ∧ ¬ (q : ℤ) ∣ (2 * k j - 1) ∧ ¬ (q : ℤ) ∣ (2 * k j + 1) := by
-  intro j hj
-  have h_bounds : 2 ^ j + 1 ≤ k j ∧ k j ≤ 3 * 2 ^ j - 1 :=
-    ladder_bounds L k ε hk0 hε hrec j (by linarith)
-  -- `hreg₁` gives `8 * 2^(L - 4) < q`.
-  have h_q_bound : 8 * 2 ^ (L - 4) < q := by
-    rcases L with (_ | _ | _ | _ | L) <;> simp_all +decide [pow_succ']
-    linarith
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> intro h <;>
-    have := Int.le_of_dvd (by linarith [pow_pos (zero_lt_two' ℤ) j]) h <;>
-    nlinarith [pow_pos (zero_lt_two' ℤ) j,
-      pow_le_pow_right₀ (by decide : 1 ≤ 2) (show j ≤ L - 4 by omega)]
-
 /-- Every accumulator after the first step is odd (each step adds `ε ∈ {-1,1}`). -/
 private lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
@@ -475,202 +453,8 @@ private lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
   · contradiction;
   · grind +splitImp
 
-/-- The forbidden scalar residues for the VarBaseMul gate: the small scalars whose
-    double-and-add drives the accumulator onto `±T` in the final doublings. For any prime
-    `q ≡ 1 (mod 4)` in the one-wrap regime every reachable degenerate final lands on one of
-    them (`degenerate_input_forces_forbidden`), so excluding them is sound. -/
-def forbiddenResidues : List ℤ := [0, 1, -1, 2, -2, 3, -3, 5, 7, 9, 11]
-
-/-- Depth-1 input (`L = j + 1`): every degeneracy branch lands on a forbidden residue. -/
-private lemma degen_d1 (q L : ℕ)
-    (k ε : ℕ → ℤ)
-    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
-    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) (j : ℕ) (hj : j < L) (hL : L = j + 1)
-    (hdeg : (q : ℤ) ∣ (k j - 1) ∨ (q : ℤ) ∣ (k j + 1) ∨ (q : ℤ) ∣ (2 * k j - 1)
-              ∨ (q : ℤ) ∣ (2 * k j + 1)) :
-    ∃ t ∈ forbiddenResidues, (q : ℤ) ∣ (k L - t) := by
-  obtain h | h | h | h := hdeg;
-  · rcases hε j hj with ( hε | hε ) <;> simp_all +decide;
-    · exact ⟨ 3, by decide, by convert h.mul_left 2 using 1; ring ⟩;
-    · exact ⟨ 1, by decide, by convert h.mul_left 2 using 1; ring ⟩;
-  · rcases hε j hj with ( hε | hε ) <;> simp_all +decide;
-    · exact ⟨ -1, by decide, by convert h.mul_left 2 using 1; ring ⟩;
-    · exact ⟨ -3, by decide, by convert h.mul_left 2 using 1; ring ⟩;
-  · rcases hε j hj with ( hε | hε ) <;> simp_all +decide;
-    · exact ⟨ 2, by decide, by convert h using 1; ring ⟩;
-    · exact ⟨ 0, by decide, by simpa using h ⟩;
-  · cases hε j hj <;> simp_all +decide;
-    · exact ⟨ 0, by decide, by simpa using h ⟩;
-    · exact ⟨ -2, by decide, by convert h using 1; ring ⟩
-
-/-- Depth-2 input (`L = j + 2`). Branches `q∣(k j-1)` and `q∣(2 k j-1)` land on forbidden
-    residues; `q∣(k j+1)` is impossible by parity+size; `q∣(2 k j+1)` is impossible by
-    `q ≡ 1 (mod 4)`. -/
-private lemma degen_d2 (q L : ℕ) (hq4 : q % 4 = 1)
-    (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
-    (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
-    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
-    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) (j : ℕ) (hj : j < L) (hL : L = j + 2)
-    (hdeg : (q : ℤ) ∣ (k j - 1) ∨ (q : ℤ) ∣ (k j + 1) ∨ (q : ℤ) ∣ (2 * k j - 1)
-              ∨ (q : ℤ) ∣ (2 * k j + 1)) :
-    ∃ t ∈ forbiddenResidues, (q : ℤ) ∣ (k L - t) := by
-  obtain h | h | h | h := hdeg;
-  · rcases hε j hj with ha | ha <;>
-      rcases hε ( j + 1 ) ( by linarith ) with hb | hb <;> simp_all +decide;
-    · exact ⟨ 7, by decide, by convert h.mul_left 4 using 1; ring ⟩;
-    · use 5;
-      exact ⟨ by decide, by convert h.mul_left 4 using 1; ring ⟩;
-    · exact ⟨ 3, by decide, by convert h.mul_left 4 using 1; ring ⟩;
-    · exact ⟨ 1, by decide, by convert h.mul_left 4 using 1; ring ⟩;
-  · -- From hb, `0 < k j + 1 ≤ 3*2^j` and `2*q > 4*2^j > 3*2^j`, so `0 < k j + 1 < 2*q`;
-    -- `Int.le_of_dvd` forces `k j + 1 = q` (the only positive multiple below `2q`).
-    have h_eq_q : k j + 1 = q := by
-      have h_eq_q : 0 < k j + 1 ∧ k j + 1 < 2 * q := by
-        have h_bound : 0 < k j + 1 ∧ k j + 1 ≤ 3 * 2 ^ j := by
-          have := ladder_bounds L k ε hk0 hε hrec j ( by linarith )
-          norm_num at * ; constructor <;> linarith;
-        simp_all +decide [ pow_succ' ];
-        linarith;
-      obtain ⟨ a, ha ⟩ := h; nlinarith [ show a = 1 by nlinarith ] ;
-    obtain ⟨ m, hm ⟩ := ladder_odd L k ε hε hrec j ( by
-      grind ) ( by
-      grind );
-    omega;
-  · -- `q ∣ 2 * k j - 1` propagates to `q ∣ k L - t` for some `t ∈ forbiddenResidues`.
-    have h_div : (q : ℤ) ∣ k L - (2 * ε j + ε (j + 1) + 2) := by
-      convert h.mul_left 2 using 1
-      rw [ hL, hrec _ ( by linarith ), hrec _ ( by linarith ) ] ; ring;
-    cases hε j hj <;> cases hε ( j + 1 ) ( by linarith ) <;>
-      simp_all +decide only [forbiddenResidues];
-    · exact ⟨ 5, by decide, h_div ⟩;
-    · exact ⟨ 3, by decide, h_div ⟩;
-    · exact ⟨ 1, by decide, h_div ⟩;
-    · exact ⟨ _, by decide, h_div ⟩;
-  · -- `2 k j + 1` is odd and `0 < 2 k j + 1 < 3q`; writing `2 k j + 1 = q * c`, the range
-    -- gives `c ∈ {1,2}`, and `c = 2` is even, so `c = 1`, i.e. `2 k j + 1 = q`.
-    obtain ⟨c, hc⟩ := h
-    have hc_val : c = 1 := by
-      have hc_val : c = 1 ∨ c = 2 := by
-        have hc_val : 0 < c ∧ c < 3 := by
-          have hc_bounds : 0 < 2 * k j + 1 ∧ 2 * k j + 1 < 3 * q := by
-            have := ladder_bounds L k ε hk0 hε hrec j ( by linarith )
-            simp_all +decide [ pow_succ' ]
-            constructor <;> linarith [ pow_pos ( zero_lt_two' ℤ ) j ];
-          have hq2 : 2 ≤ q := by
-            have h1 := Nat.one_le_pow (L - 1) 2 (by norm_num)
-            omega
-          constructor <;> nlinarith only [ hc, hc_bounds, hq2 ];
-        cases hc_val ; interval_cases c <;> trivial;
-      grind +qlia;
-    obtain ⟨ m, hm ⟩ := ladder_odd L k ε hε hrec j ( by
-      grind +qlia ) ( by
-      linarith );
-    grind
-
-/-- Depth-3 input (`L = j + 3`). Branch `q∣(2 k j-1)` lands on a forbidden residue;
-    `q∣(k j±1)` are impossible by size; `q∣(2 k j+1)` is impossible by `q ≡ 1 (mod 4)`
-    (or, when `j = 0`, forces `q = 5`, where forbiddenResidues covers every residue). -/
-private lemma degen_d3 (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
-    (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
-    (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
-    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
-    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) (j : ℕ) (hj : j < L) (hL : L = j + 3)
-    (hdeg : (q : ℤ) ∣ (k j - 1) ∨ (q : ℤ) ∣ (k j + 1) ∨ (q : ℤ) ∣ (2 * k j - 1)
-              ∨ (q : ℤ) ∣ (2 * k j + 1)) :
-    ∃ t ∈ forbiddenResidues, (q : ℤ) ∣ (k L - t) := by
-  rcases j with ( _ | j ) <;> simp_all +decide;
-  · interval_cases q <;> simp_all +decide;
-    rcases hε 0 ( by decide ) with ha | ha <;>
-      rcases hε 1 ( by decide ) with hb | hb <;>
-      rcases hε 2 ( by decide ) with hc | hc <;> simp +decide only [ha, hb, hc];
-  · rcases hdeg with ( h | h | h | h );
-    · have h_bounds : 2 ^ (j + 1) + 1 ≤ k (j + 1) ∧ k (j + 1) ≤ 3 * 2 ^ (j + 1) - 1 := by
-        apply ladder_bounds (j + 3) k ε hk0 (fun j hj => hε j (by linarith))
-          (fun j hj => hrec j (by linarith)) (j + 1) (by linarith);
-      nlinarith [ Int.le_of_dvd ( by linarith [ pow_pos ( zero_lt_two' ℤ ) ( j + 1 ) ] ) h,
-        pow_succ' ( 2 : ℤ ) j, pow_succ' ( 2 : ℤ ) ( j + 1 ), pow_succ' ( 2 : ℤ ) ( j + 2 ),
-        pow_succ' ( 2 : ℤ ) ( j + 3 ) ];
-    · obtain ⟨ m, hm ⟩ := h;
-      have h_bounds : 2 ^ (j + 1) + 1 ≤ k (j + 1) ∧ k (j + 1) ≤ 3 * 2 ^ (j + 1) - 1 := by
-        apply ladder_bounds (j + 3) k ε hk0 (fun j hj => hε j (by linarith))
-          (fun j hj => hrec j (by linarith)) (j + 1) (by linarith);
-      rcases lt_trichotomy m 0 with hm' | rfl | hm' <;> norm_num [ pow_succ' ] at * <;> nlinarith;
-    · obtain ⟨ m, hm ⟩ := h;
-      rcases hε ( j + 1 ) ( by linarith ) with ha | ha <;>
-        rcases hε ( j + 2 ) ( by linarith ) with hb | hb <;>
-        rcases hε ( j + 3 ) ( by linarith ) with hc | hc <;> simp_all +decide [ pow_succ' ];
-      all_goals rw [ sub_eq_iff_eq_add ] at hm; norm_num [ hm, ha, hb, hc ] ; ring_nf ;
-      all_goals norm_num [ forbiddenResidues ];
-      all_goals norm_num [ dvd_mul_of_dvd_left ] ;
-    · obtain ⟨ m, hm ⟩ := h;
-      rcases lt_trichotomy m 1 with hm' | rfl | hm';
-      · have h_contra : k (j + 1) ≥ 2 ^ (j + 1) + 1 := by
-          apply (ladder_bounds (j + 3) k ε hk0 (fun j hj => hε j (by linarith))
-            (fun j hj => hrec j (by linarith)) (j + 1) (by linarith)).left;
-        nlinarith [ pow_pos ( zero_lt_two' ℤ ) ( j + 1 ), pow_succ' ( 2 : ℤ ) ( j + 1 ),
-          pow_succ' ( 2 : ℤ ) ( j + 2 ), pow_succ' ( 2 : ℤ ) ( j + 3 ) ];
-      · obtain ⟨ m, hm ⟩ :=
-          ladder_odd ( j + 4 ) k ε hε hrec ( j + 1 ) ( by linarith ) ( by linarith )
-        simp_all +decide [ parity_simps ];
-        omega;
-      · have := ladder_bounds ( j + 4 ) k ε hk0 ( fun i hi => hε i ( by linarith ) )
-          ( fun i hi => hrec i ( by linarith ) ) ( j + 1 ) ( by linarith )
-        norm_num [ pow_succ' ] at *
-        nlinarith [ Int.mul_ediv_add_emod ( 2 * k ( j + 1 ) + 1 ) q,
-          Int.emod_nonneg ( 2 * k ( j + 1 ) + 1 ) ( Nat.cast_ne_zero.mpr hq.ne_zero ),
-          Int.emod_lt_of_pos ( 2 * k ( j + 1 ) + 1 ) ( Nat.cast_pos.mpr hq.pos ) ] ;
-
-/-- **Core of the tight bound.** A degenerate input `k j` (`j < L`) propagates forward to
-    a final value `k L ≡ t (mod q)` for some `t ∈ forbiddenResidues`. Inputs at depth
-    `d = L - j ≥ 4` cannot be degenerate (`ladder_size`); at `d ≤ 3` each degeneracy
-    branch either lands on an explicit forbidden residue, or is ruled out by a size /
-    parity / `q ≡ 1 (mod 4)` argument. -/
-private lemma degenerate_input_forces_forbidden (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
-    (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
-    (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
-    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
-    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) (j : ℕ) (hj : j < L)
-    (hdeg : (q : ℤ) ∣ (k j - 1) ∨ (q : ℤ) ∣ (k j + 1) ∨ (q : ℤ) ∣ (2 * k j - 1)
-              ∨ (q : ℤ) ∣ (2 * k j + 1)) :
-    ∃ t ∈ forbiddenResidues, (q : ℤ) ∣ (k L - t) := by
-  by_cases hsize : j + 4 ≤ L
-  · exfalso
-    obtain ⟨h1, h2, h3, h4⟩ := ladder_size q L k ε hk0 hreg₁ hε hrec j hsize
-    rcases hdeg with h | h | h | h
-    · exact h1 h
-    · exact h2 h
-    · exact h3 h
-    · exact h4 h
-  · have hcase : L = j + 1 ∨ L = j + 2 ∨ L = j + 3 := by omega
-    rcases hcase with hL | hL | hL
-    · exact degen_d1 q L k ε hε hrec j hj hL hdeg
-    · exact degen_d2 q L hq4 hreg₁ hreg₂ k ε hk0 hε hrec j hj hL hdeg
-    · exact degen_d3 q L hq hq4 hreg₁ hreg₂ k ε hk0 hε hrec j hj hL hdeg
-
-/-- **Tight (exact-set) form.** The same double-and-add ladder, but for a prime
-    `q ≡ 1 (mod 4)` the forbidden set shrinks from the `[-15,15]` band to the explicit
-    11 residues `forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. The `q ≡ 1 (mod 4)`
-    hypothesis closes the `2·k ≡ -1` degeneracy branch (`(q-1)/2` is even, so it is not a
-    reachable odd accumulator at the deep inputs), which is what would otherwise add the
-    residues `-5, -7, -9, -11`. If `s = k L` avoids these 11 residues, every input
-    `k j` (`j < L`) is non-degenerate. -/
-private theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
-    (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
-    (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
-    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
-    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j)
-    (hnf : ∀ t ∈ forbiddenResidues, ¬ (q : ℤ) ∣ (k L - t)) :
-    ∀ j, j < L → ¬ (q : ℤ) ∣ (k j - 1) ∧ ¬ (q : ℤ) ∣ (k j + 1)
-                ∧ ¬ (q : ℤ) ∣ (2 * k j - 1) ∧ ¬ (q : ℤ) ∣ (2 * k j + 1) := by
-  intro j hj
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> intro hdvd <;>
-    obtain ⟨t, ht, htd⟩ :=
-      degenerate_input_forces_forbidden q L hq hq4 hreg₁ hreg₂ k ε hk0 hε hrec j hj
-        (by tauto) <;>
-    exact hnf t ht htd
-
 /-- **Sub-wrap non-degeneracy.** When the whole ladder fits below the modulus (`3·2^L ≤ q`), every
-    input is non-degenerate *unconditionally* — no primality, no `q ≡ 1 (mod 4)`, no forbidden set.
+    input is non-degenerate *unconditionally*, with no primality or scalar condition.
     The envelope `2^j + 1 ≤ k j ≤ 3·2^j - 1` (`ladder_bounds`) places each of `k j ± 1` and
     `2·k j ± 1` strictly inside `(0, q)`, so none can be a multiple of `q`. This is the small-`L`
     regime (`5m ≤ bitlength(order) - 1`), where the scalar is too small to ever drive an
@@ -774,6 +558,176 @@ private theorem ladder_x_nondegen (order baseFieldOrder L : ℕ)
           (show j ≤ L - 1 from Nat.le_sub_one_of_lt hj)]
     · grind
 
+/-! ## A pinned top bit
+
+    When the ladder's input has top bit 0 its first sign is `-1`, and every later value is odd
+    and below `2^(j+1)`. At an odd order above `2^(L-1)` this leaves no room for `k ≡ ±1`
+    (`ladder_x_nondegen` at the register bound `2^(L-1)`), and it puts every multiple of the
+    order out of reach except at the last two steps. -/
+
+/-- Under first sign `-1`, the values from step 1 on are odd and in `[2^j + 1, 2^(j+1) - 1]`. -/
+private lemma ladder_bounds_topbit0 (L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2) (hε0 : ε 0 = -1)
+    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
+    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
+    ∀ j, 1 ≤ j → j ≤ L → 2 ^ j + 1 ≤ k j ∧ k j ≤ 2 ^ (j + 1) - 1 ∧ k j % 2 = 1 := by
+  intro j hj1 hjL
+  induction j with
+  | zero => omega
+  | succ j ih =>
+    rcases Nat.eq_zero_or_pos j with rfl | hjpos
+    · have := hrec 0 (by omega); rw [hk0, hε0] at this; rw [this]; norm_num
+    · obtain ⟨h1, h2, h3⟩ := ih hjpos (by omega)
+      have hr := hrec j (by omega)
+      rcases hε j (by omega) with he | he <;> rw [hr, he] <;> refine ⟨?_, ?_, ?_⟩ <;>
+        rw [pow_succ] at * <;> omega
+
+/-- **No accumulator is `O` at a pinned top, bar three tops.** Under first sign `-1` and an
+    odd order `q` in `(2^(L-1), 2^L)`, a multiple of `q` among `k 1, …, k L` forces the top
+    `k L` to be `2q - 1`, `2q + 1` (from `k (L-1) = q`) or `3q`. -/
+private lemma ladder_topbit_no_zero (q L : ℕ) (hL : 1 ≤ L) (hqodd : q % 2 = 1)
+    (hq : 2 ^ (L - 1) < q) (hq' : q < 2 ^ L) (k ε : ℕ → ℤ) (hk0 : k 0 = 2) (hε0 : ε 0 = -1)
+    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
+    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j)
+    (hs : k L ≠ 2 * q - 1 ∧ k L ≠ 2 * q + 1 ∧ k L ≠ 3 * q) :
+    ∀ j, 1 ≤ j → j ≤ L → ¬ (q : ℤ) ∣ k j := by
+  intro j hj1 hjL ⟨t, ht⟩
+  have hqZ : (2 : ℤ) ^ (L - 1) < q := by exact_mod_cast hq
+  have hqZ' : (q : ℤ) < 2 ^ L := by exact_mod_cast hq'
+  have hq2 : (q : ℤ) % 2 = 1 := by exact_mod_cast hqodd
+  have hL2 : (2 : ℤ) ^ L = 2 * 2 ^ (L - 1) := by rw [← pow_succ']; congr 1; omega
+  obtain ⟨h1, h2, h3⟩ := ladder_bounds_topbit0 L k ε hk0 hε0 hε hrec j hj1 hjL
+  have hjpos : (0 : ℤ) < 2 ^ j := by positivity
+  have htpos : 0 < t := by
+    by_contra h; push_neg at h; nlinarith [hqZ, pow_pos (show (0:ℤ) < 2 by norm_num) (L - 1)]
+  rcases Nat.lt_or_ge j (L - 1) with hlt | hge
+  · -- `k j < 2^(j+1) ≤ 2^(L-1) < q`
+    have hp : (2 : ℤ) ^ (j + 1) ≤ 2 ^ (L - 1) := pow_le_pow_right₀ (by norm_num) (by omega)
+    nlinarith
+  · rcases Nat.lt_or_ge j L with hlt' | hge'
+    · -- `j = L - 1`: `k j < 2^L < 2q`, so `k j = q` and `k L = 2q ± 1`
+      have hj : j = L - 1 := by omega
+      subst hj
+      have hp : (2 : ℤ) ^ (L - 1 + 1) = 2 ^ L := by congr 1; omega
+      have ht1 : t = 1 := by nlinarith
+      subst ht1
+      have hr := hrec (L - 1) (by omega)
+      rw [show L - 1 + 1 = L by omega, ht] at hr
+      rcases hε (L - 1) (by omega) with he | he <;> rw [he] at hr
+      · exact hs.2.1 (by rw [hr]; ring)
+      · exact hs.1 (by rw [hr]; ring)
+    · -- `j = L`: `2^L < k L < 2^(L+1) < 4q`, odd, so `k L = 3q`
+      have hj : j = L := by omega
+      subst hj
+      have hp : (2 : ℤ) ^ (j + 1) = 2 * 2 ^ j := by rw [pow_succ]; ring
+      have ht4 : t < 4 := by nlinarith
+      have ht2 : 1 < t := by nlinarith
+      have htodd : t % 2 = 1 := by
+        have : (q * t) % 2 = 1 := by rw [← ht]; exact h3
+        rcases Int.emod_two_eq_zero_or_one t with h | h
+        · rw [Int.mul_emod, h] at this; simp at this
+        · exact h
+      have ht3 : t = 3 := by omega
+      exact hs.2.2 (by rw [ht, ht3]; ring)
+
+/-- Under first sign `+1`, the values from step 1 on are odd and in `[2^(j+1) + 1, 3·2^j - 1]`. -/
+private lemma ladder_bounds_topbit1 (L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2) (hε0 : ε 0 = 1)
+    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
+    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
+    ∀ j, 1 ≤ j → j ≤ L → 2 ^ (j + 1) + 1 ≤ k j ∧ k j ≤ 3 * 2 ^ j - 1 ∧ k j % 2 = 1 := by
+  intro j hj1 hjL
+  induction j with
+  | zero => omega
+  | succ j ih =>
+    rcases Nat.eq_zero_or_pos j with rfl | hjpos
+    · have := hrec 0 (by omega); rw [hk0, hε0] at this; rw [this]; norm_num
+    · obtain ⟨h1, h2, h3⟩ := ih hjpos (by omega)
+      have hr := hrec j (by omega)
+      rcases hε j (by omega) with he | he <;> rw [hr, he] <;> refine ⟨?_, ?_, ?_⟩ <;>
+        rw [pow_succ] at * <;> omega
+
+/-- **No accumulator is `O` below `4q - 4`, bar three tops.** For an odd order `q` with
+    `2^(L-1) < q < 2^L` and `3q < 2^(L+1)`, a ladder whose top is below `4q - 4` and is none of
+    `2q - 1`, `2q + 1`, `3q` has no multiple of `q` among `k 1, …, k L`. First sign `-1` is
+    `ladder_topbit_no_zero`; under first sign `+1` a multiple of `q` forces the top to at least
+    `4q - 3`, or to `5q`. -/
+private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 = 1)
+    (hq : 2 ^ (L - 1) < q) (hq' : q < 2 ^ L) (hq3 : 3 * q < 2 ^ (L + 1))
+    (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
+    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
+    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j)
+    (htop : k L < 4 * q - 4)
+    (hs : k L ≠ 2 * q - 1 ∧ k L ≠ 2 * q + 1 ∧ k L ≠ 3 * q) :
+    ∀ j, 1 ≤ j → j ≤ L → ¬ (q : ℤ) ∣ k j := by
+  rcases hε 0 (by omega) with hε0 | hε0
+  · intro j hj1 hjL ⟨t, ht⟩
+    have hqZ : (2 : ℤ) ^ (L - 1) < q := by exact_mod_cast hq
+    have hqZ' : (q : ℤ) < 2 ^ L := by exact_mod_cast hq'
+    have hq3Z : 3 * (q : ℤ) < 2 ^ (L + 1) := by exact_mod_cast hq3
+    have hq2 : (q : ℤ) % 2 = 1 := by exact_mod_cast hqodd
+    have hqpos : (0 : ℤ) < q := by linarith [pow_pos (show (0 : ℤ) < 2 by norm_num) (L - 1)]
+    have hL2 : (2 : ℤ) ^ L = 2 * 2 ^ (L - 1) := by rw [← pow_succ']; congr 1; omega
+    obtain ⟨h1, h2, h3⟩ := ladder_bounds_topbit1 L k ε hk0 hε0 hε hrec j hj1 hjL
+    have htpos : 0 < t := by
+      by_contra hc; push_neg at hc
+      have : (q : ℤ) * t ≤ 0 := mul_nonpos_of_nonneg_of_nonpos hqpos.le hc
+      linarith [pow_pos (show (0 : ℤ) < 2 by norm_num) (j + 1)]
+    have htodd : t % 2 = 1 := by
+      have : ((q : ℤ) * t) % 2 = 1 := by rw [← ht]; exact h3
+      rcases Int.emod_two_eq_zero_or_one t with h | h
+      · rw [Int.mul_emod, h] at this; simp at this
+      · exact h
+    rcases Nat.lt_or_ge j (L - 2) with hlt | hge
+    · -- `k j < 3·2^j ≤ 3·2^(L-3) < 2^(L-1) < q`
+      have hp : (2 : ℤ) ^ j ≤ 2 ^ (L - 3) := pow_le_pow_right₀ (by norm_num) (by omega)
+      have hp3 : (2 : ℤ) ^ (L - 1) = 4 * 2 ^ (L - 3) := by
+        rw [show L - 1 = (L - 3) + 2 by omega, pow_add]; ring
+      have : (q : ℤ) * t ≥ q := le_mul_of_one_le_right hqpos.le (by omega)
+      linarith
+    · rcases Nat.lt_or_ge j (L - 1) with hlt' | hge'
+      · -- `j = L - 2`: `k j = q`, and two more steps put the top at `4q ± 1` or `4q ± 3`
+        have hj : j = L - 2 := by omega
+        subst hj
+        have hp : (2 : ℤ) ^ (L - 2) * 2 = 2 ^ (L - 1) := by
+          rw [← pow_succ]; congr 1; omega
+        have ht1 : t = 1 := by
+          have : (q : ℤ) * t < 3 * q := by
+            have : (2 : ℤ) ^ (L - 2) ≤ 2 ^ (L - 1) := pow_le_pow_right₀ (by norm_num) (by omega)
+            nlinarith
+          have ht3 : t < 3 := by
+            by_contra hc; push_neg at hc
+            have : (q : ℤ) * 3 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
+            linarith
+          omega
+        subst ht1
+        have hr1 := hrec (L - 2) (by omega)
+        have hr2 := hrec (L - 2 + 1) (by omega)
+        rw [show L - 2 + 1 + 1 = L by omega] at hr2
+        rw [ht, mul_one] at hr1
+        rcases hε (L - 2) (by omega) with e1 | e1 <;>
+          rcases hε (L - 2 + 1) (by omega) with e2 | e2 <;> rw [e1] at hr1 <;>
+          rw [e2, hr1] at hr2 <;> linarith
+      · rcases Nat.lt_or_ge j L with hlt'' | hge''
+        · -- `j = L - 1`: `k j ∈ (2^L, 3·2^(L-1))` holds no odd multiple of `q`
+          have hj : j = L - 1 := by omega
+          subst hj
+          have hp : (2 : ℤ) ^ (L - 1 + 1) = 2 ^ L := by congr 1; omega
+          have ht2 : 1 < t := by nlinarith
+          have ht3 : t < 3 := by
+            by_contra hc; push_neg at hc
+            have : (q : ℤ) * 3 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
+            linarith
+          omega
+        · -- `j = L`: `k L ∈ (2^(L+1), 4q - 4)`: `3q < 2^(L+1)` and `5q > 4q`
+          have hj : j = L := by omega
+          subst hj
+          have ht1 : 3 < t := by nlinarith
+          have ht5 : t < 4 := by
+            by_contra hc; push_neg at hc
+            have : (q : ℤ) * 4 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
+            linarith
+          omega
+  · exact ladder_topbit_no_zero q L (by omega) hqodd hq hq' k ε hk0 hε0 hε hrec hs
+
 end Kimchi.Gate.VarBaseMul.Ladder
 
 namespace Kimchi.Gate.VarBaseMul
@@ -868,9 +822,7 @@ private theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m �
 
 /-- The per-gate NON-DEGENERACY side conditions: the additions are non-vertical
     (`xⱼ ≠ xT`) and the second additions are non-vertical (`tⱼ ≠ 0`). For the kimchi
-    VarBaseMul gate these are exactly what the deployed guards (`scaleFast1`'s forbidden-value
-    check, `scaleFast2`'s register range-check) are supposed to secure for ANY satisfying
-    witness (their soundness). -/
+    VarBaseMul gate the soundness theorems secure them for ANY satisfying witness. -/
 private structure NonDegen (g : Witness F) : Prop where
   x0 : g.x0 ≠ g.xT
   x1 : g.x1 ≠ g.xT
@@ -1134,9 +1086,9 @@ lemma y_ne_zero_of_odd_order (c : WeierstrassCurve.Affine F)
     is prime) nor from the short shape, so it is taken separately. -/
 
 /-- **t-condition self-enforcement.** The gate constraints together with prime order already
-    force `t ≠ 0` — the forbidden check is not needed for the second addition's
-    non-degeneracy. If `t = 2·xi + xb − s1² = 0` the `xo` constraint `u² − t²·(…) = 0`
-    collapses to `u² = 0`, i.e. `u = 2·yi = 0`, so `yi = 0`; an odd-prime-order curve has no
+    force `t ≠ 0`, so the second addition's non-degeneracy needs no scalar condition. If
+    `t = 2·xi + xb − s1² = 0` the `xo` constraint `u² − t²·(…) = 0` collapses to `u² = 0`,
+    i.e. `u = 2·yi = 0`, so `yi = 0`; an odd-prime-order curve has no
     such point (`y_ne_zero_of_odd_order`). The `c.order ≠ 2` hypothesis is genuinely
     required, not a convenience — see the note above. -/
 private lemma tne_of_holds (c : WeierstrassCurve.Affine F)
@@ -1165,55 +1117,65 @@ private lemma tne_of_holds (c : WeierstrassCurve.Affine F)
 /-! ## Soundness: avoiding `±T` makes every row non-degenerate
 
 The kimchi VarBaseMul gate uses incomplete addition, so each row needs its additions to be
-non-vertical (`NonDegen`). The complete obstruction is the forbidden band `s ∈ [-15, 15] (mod
-order)` — equivalently the eleven residues `forbiddenValues order` for a prime `order ≡ 1 (mod 4)`.
-Excluding it makes every satisfying witness's rows non-degenerate, the guarantee the deployed
-two-residue runtime check does not by itself provide. The accumulator nonsingularity is derived,
-not assumed: from `Holds` per row plus the base, threading, and initial accumulator `2·T`,
-`gate_chain_produce` and `gateStep_chain` produce the whole point sequence, and the two regime roots
-conclude correctness — `varBaseMul_subwrap_correct` unconditionally below the order,
-`varBaseMul_forbidden_correct` at the one-wrap width. -/
-
-/-- The forbidden set for VarBaseMul non-degeneracy: the scalars congruent modulo `order` to
-    one of `Ladder.forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. Sound for any prime
-    `order ≡ 1 (mod 4)`, the reachable degenerate set being contained in it
-    (`Ladder.degenerate_input_forces_forbidden`). -/
-def forbiddenValues (order : ℕ) : Set ℤ :=
-  {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
-
-/-- `0` is a forbidden residue: a scalar the order divides is in the band — the
-degenerate final `[s]·T = 0`. -/
-theorem mem_forbiddenValues_of_dvd (order : ℕ) {s : ℤ} (h : (order : ℤ) ∣ s) :
-    s ∈ forbiddenValues order :=
-  ⟨0, by decide, by simpa using h⟩
-
-/-- `1` is a forbidden residue: a scalar `≡ 1 (mod order)` is in the band. The
-membership an off-band caller inverts to keep its final accumulator away from the
-base (`[s]·T = T` forces `order ∣ s − 1`). -/
-theorem mem_forbiddenValues_of_dvd_sub_one (order : ℕ) {s : ℤ}
-    (h : (order : ℤ) ∣ (s - 1)) : s ∈ forbiddenValues order :=
-  ⟨1, by decide, h⟩
-
+non-vertical (`NonDegen`). The second additions are forced by the constraints; the first ones
+need the ladder off `±1 (mod order)`, which holds below the order and, at the one-wrap width,
+whenever the top is below `4·order − 4`. The accumulator nonsingularity is derived, not assumed:
+from `Holds` per row plus the base, threading, and initial accumulator `2·T`,
+`gate_chain_produce` and `gateStep_chain` produce the whole point sequence, and the two regime
+roots conclude correctness — `varBaseMul_subwrap_correct` below the order,
+`varBaseMul_bounded_correct` at the one-wrap width. -/
 
 /-- **Off the base.** Under either ladder regime the run's scalar does not fix the base:
-`[2z + 2^L]·T ≠ 0`, i.e. `[2z + 2^L + 1]·T ≠ T`. Subwrap prices it by size, the one-wrap
-band by the forbidden residue `1`. What the parity fold's finite subtraction asks. -/
+`[2z + 2^L]·T ≠ 0`, i.e. `[2z + 2^L + 1]·T ≠ T`. Both regimes price it by size: in the
+one-wrap regime the only even multiple of the order in range is `2·order`. What the parity
+fold's finite subtraction asks. -/
 theorem ladder_off_base (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
     {T : c.Point} (hT : T ≠ 0) (L : ℕ) (z : ℤ) (h0 : 0 ≤ z) (hlt : z < 2 ^ L)
     (hregime : 3 * 2 ^ L ≤ c.order ∨
-      (2 ^ (L - 1) < c.order ∧ c.order < 2 ^ L ∧ c.order % 4 = 1 ∧
-        (2 * z + 2 ^ L + 1) ∉ forbiddenValues c.order)) :
+      (0 < L ∧ 2 ^ (L - 1) < c.order ∧ c.order < 2 ^ L ∧ 2 * z + 2 ^ L + 1 < 4 * c.order - 4 ∧
+        2 * z + 2 ^ L + 1 ≠ 2 * c.order + 1)) :
     (2 * z + 2 ^ L) • T ≠ 0 := by
   have hpow : (0 : ℤ) < 2 ^ L := by positivity
-  rcases hregime with hsub | ⟨-, -, -, hnf⟩
+  rcases hregime with hsub | ⟨hL, hq1, hq2, htop, hne⟩
+  rotate_right
+  · -- `q ∣ 2z + 2^L ∈ [2^L, 4q)` with `q ∈ (2^(L-1), 2^L)` and `2z + 2^L` even: only `2q`
+    intro h
+    obtain ⟨t, ht⟩ := (Pasta.zsmul_eq_zero_iff_order_dvd c hT _).mp h
+    have hq1Z : (2 : ℤ) ^ (L - 1) < c.order := by exact_mod_cast hq1
+    have hq2Z : (c.order : ℤ) < 2 ^ L := by exact_mod_cast hq2
+    have hL2 : (2 : ℤ) ^ L = 2 * 2 ^ (L - 1) := by rw [← pow_succ']; congr 1; omega
+    have hev : (2 * z + 2 ^ L) % 2 = 0 := by rw [hL2]; omega
+    have hodd : (c.order : ℤ) % 2 = 1 := by
+      have := (Fact.out : Nat.Prime c.order).eq_one_or_self_of_dvd 2
+      rcases Nat.even_or_odd c.order with ⟨r, hr⟩ | ⟨r, hr⟩
+      · have h2 : 2 ∣ c.order := ⟨r, by omega⟩
+        rcases this h2 with h | h
+        · omega
+        · rw [← h] at hq1; have : (2 : ℕ) ^ (L - 1) ≥ 1 := Nat.one_le_two_pow; omega
+      · omega
+    have hpL1 : (0 : ℤ) < 2 ^ (L - 1) := by positivity
+    have hqpos : (0 : ℤ) < c.order := by linarith
+    have htpos : 0 < t := by
+      by_contra hc; push_neg at hc
+      have : (c.order : ℤ) * t ≤ 0 := mul_nonpos_of_nonneg_of_nonpos hqpos.le hc
+      linarith
+    have ht3 : t < 4 := by
+      by_contra hc; push_neg at hc
+      have : (c.order : ℤ) * 4 ≤ c.order * t := mul_le_mul_of_nonneg_left hc hqpos.le
+      linarith
+    have htev : t % 2 = 0 := by
+      rcases Int.emod_two_eq_zero_or_one t with h' | h'
+      · exact h'
+      · exfalso
+        have : ((c.order : ℤ) * t) % 2 = 1 := by rw [Int.mul_emod, hodd, h']; rfl
+        omega
+    have ht2 : t = 2 := by omega
+    exact hne (by rw [ht, ht2]; ring)
   · refine Pasta.smul_ne_zero_of_lt c hT (by omega) ?_
     have h3 : (3 : ℤ) * 2 ^ L ≤ (c.order : ℤ) := by exact_mod_cast hsub
     have : (2 : ℤ) ^ L = 2 ^ L := rfl
     omega
-  · intro h
-    exact hnf (mem_forbiddenValues_of_dvd_sub_one c.order
-      (by simpa using (Pasta.zsmul_eq_zero_iff_order_dvd c hT _).mp h))
 
 /-- The raw bit processed at sub-step `j`: bit `j % 5` of gate `j / 5`. -/
 private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
@@ -1495,9 +1457,7 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
     (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
     (hND : ∀ n, n < 5 * m →
-        ¬ (c.order : ℤ) ∣ (gateLadder g n - 1) ∧ ¬ (c.order : ℤ) ∣ (gateLadder g n + 1)
-          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g n - 1)
-          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g n + 1))
+        ¬ (c.order : ℤ) ∣ (gateLadder g n - 1) ∧ ¬ (c.order : ℤ) ∣ (gateLadder g n + 1))
     (hs : s = gateLadder g (5 * m)) :
     ∃ hfin : c.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
@@ -1534,7 +1494,7 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
         rw [AddComplete.some_congr c ha0ns_j hk hx0 hy0]; exact hPk
       obtain ⟨hNDj, ha5ns, ha5eq⟩ :=
         gate_block_produce c g j h2 hTne hTns_j hTeq_j ha0ns_j (hholds j hj') ha0_j hodd
-          (fun ℓ _ => ⟨(hND (5 * j + ℓ) (by omega)).1, (hND (5 * j + ℓ) (by omega)).2.1⟩)
+          (fun ℓ _ => hND (5 * j + ℓ) (by omega))
       -- `accX g (j+1) = (g j).x5` and `gateLadder g (5*(j+1)) = gateLadder g (5*j+5)` defeq
       refine ⟨ha5ns, ?_, ?_⟩
       · rw [show 5 * (j + 1) = 5 * j + 5 from by ring]; exact ha5eq
@@ -1629,34 +1589,7 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
   · simp only [dif_pos (Nat.zero_le m)]
     rw [(hkf 0 (Nat.zero_le m)).1]; simp only [Nat.mul_zero, gateLadder_zero]
 
-/-- **VarBaseMul correctness and soundness via the forbidden band.** For any witness satisfying the
-    gate constraints (`Holds` per row) at the real init `P₀ = 2·T`, in the one-wrap regime, if the
-    ladder top `s` avoids the forbidden band `forbiddenValues order`, the `m` rows compute the final
-    accumulator `= s·T` and every row is `NonDegen`. The prover supplies only `Holds`, base,
-    threading, and the initial accumulator; `gate_chain_produce` derives the accumulator
-    nonsingularity. -/
-theorem varBaseMul_forbidden_correct (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
-    (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hTne : T ≠ 0)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hTns : c.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
-    (hP0ns : c.Nonsingular (g 0).x0 (g 0).y0) (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
-    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
-    (hreg₁ : 2 ^ (5 * m - 1) < c.order) (hreg₂ : c.order < 2 ^ (5 * m))
-    (hq4 : c.order % 4 = 1)
-    (hs : s = gateLadder g (5 * m)) (hnf : s ∉ forbiddenValues c.order) :
-    ∃ hfin : c.Nonsingular (accX g m) (accY g m),
-      Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  have hnf' : ∀ t ∈ Ladder.forbiddenResidues, ¬ (c.order : ℤ) ∣ (gateLadder g (5 * m) - t) := by
-    intro t ht hdvd; exact hnf ⟨t, ht, by rw [hs]; exact hdvd⟩
-  exact gate_chain_produce c m g T s hTne hholds hTns hTeq hbase hthread hP0ns hP0 h2 hodd
-    (Ladder.ladder_nondegen_tight c.order (5 * m) (Fact.out : Nat.Prime c.order) hq4 hreg₁ hreg₂
-      (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
-      (fun j _ => gateLadder_succ g j) hnf') hs
-
-/-- **VarBaseMul correctness and soundness in the sub-wrap regime — no forbidden check.** When
+/-- **VarBaseMul correctness and soundness in the sub-wrap regime.** When
     `3·2^(5m) ≤ order` the whole ladder fits below the order, so every row is `NonDegen`
     unconditionally. The prover supplies only `Holds`, base, threading, and the initial
     accumulator. -/
@@ -1673,9 +1606,46 @@ theorem varBaseMul_subwrap_correct (c : WeierstrassCurve.Affine F)
     ∃ hfin : c.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
   gate_chain_produce c m g T s hTne hholds hTns hTeq hbase hthread hP0ns hP0 h2 hodd
-    (Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub
-      (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
-      (fun j _ => gateLadder_succ g j)) hs
+    (fun n hn =>
+      have h := Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub
+        (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j) n hn
+      ⟨h.1, h.2.1⟩) hs
+
+/-- **VarBaseMul correctness below `4·order - 4`.** When the ladder's top is below
+    `4·order - 4` and the order is an odd number above `2^(5m-1)`, no accumulator meets `±T`:
+    `Ladder.ladder_x_nondegen` at the register bound `2·order - 2^(5m-1) - 2`. The
+    second addition needs nothing (`tne_of_holds`). Every Pasta ladder is below the bound: a
+    pinned one has top below `2^(5m+1)`, an unpinned one reads a field element. -/
+theorem varBaseMul_bounded_correct (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hholds : ∀ i, i < m → Holds (g i))
+    (hTns : c.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
+    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
+    (hP0ns : c.Nonsingular (g 0).x0 (g 0).y0) (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    (hreg₁ : 2 ^ (5 * m - 1) < c.order) (h3 : 3 < c.order)
+    (hs : s = gateLadder g (5 * m)) (htop : s < 4 * c.order - 4) :
+    ∃ hfin : c.Nonsingular (accX g m) (accY g m),
+      Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
+  gate_chain_produce c m g T s hTne hholds hTns hTeq hbase hthread hP0ns hP0 h2 hodd
+    (fun n hn =>
+      have hm : 1 ≤ m := by omega
+      have htop' : gateLadder g (5 * m) < 4 * c.order - 4 := hs ▸ htop
+      Ladder.ladder_x_nondegen c.order (2 * c.order - 2 ^ (5 * m - 1) - 2) (5 * m) hreg₁
+        ((Fact.out : Nat.Prime c.order).odd_of_ne_two hodd) h3 (by omega)
+        (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j) (by
+          have hpow : (2 : ℕ) ^ (5 * m) = 2 * 2 ^ (5 * m - 1) := by
+            rw [← pow_succ']; congr 1; omega
+          have hB : ((2 * c.order - 2 ^ (5 * m - 1) - 2 : ℕ) : ℤ)
+              = 2 * c.order - 2 ^ (5 * m - 1) - 2 := by
+            rw [Nat.cast_sub (by omega), Nat.cast_sub (by omega)]; push_cast; ring
+          rw [hB]
+          have : (2 : ℤ) ^ (5 * m) = 2 * 2 ^ (5 * m - 1) := by exact_mod_cast hpow
+          linarith) n hn) hs
 
 end Kimchi.Gate.VarBaseMul
 
@@ -1687,14 +1657,14 @@ development — the accumulator and register recurrence folds, the number-theore
 the group-order non-degeneracy toolkit, and the abstract soundness — is `§ Supporting
 development` above.
 
-The generic soundness theorems `varBaseMul_subwrap_correct` and `varBaseMul_forbidden_correct` are
+The generic soundness theorems `varBaseMul_subwrap_correct` and `varBaseMul_bounded_correct` are
 proved over any `WeierstrassCurve.Affine` carrying the short-shape and prime-order `Fact`s, and are
 `#print axioms`-clean. This module exposes the two directions the deployed circuit actually uses,
 each at its concrete curve:
 
 * `varBaseMul_scaleFast1` — `scaleFast1` / Type1 (Vesta): the scalar field is smaller
-  than the circuit field, so there is no register range-check; soundness comes from the forbidden
-  band (full width) or the sub-wrap regime (below it).
+  than the circuit field, so there is no register range-check; soundness comes from the top
+  bound (full width) or the sub-wrap regime (below it).
 * `varBaseMul_scaleFast2` — `scaleFast2` / Type2 (Pallas): the caller splits the scalar and
   range-checks the high half, so soundness is the field-bound route.
 
@@ -1714,7 +1684,7 @@ open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Pasta.Shifted Pasta
 
 The circuit layer's law statements expose the wired bits as a LIST and speak about
 its two folds: `bitsRegister` (the field-side scalar register the gadget pins) and
-`bitsVal` (the exact ℤ-decode the forbidden-band condition prices through the Type1
+`bitsVal` (the exact ℤ-decode the regime conditions price through the Type1
 unshift). The bridges identify them with the run-level `gateRegister` and the
 register chain, so `varBaseMul_off`'s conclusion lands on list vocabulary. -/
 
@@ -1731,7 +1701,7 @@ pins (`n' = 2·n + b` per bit). -/
 def bitsRegister (bs : List F) : F := bs.foldl (fun a b => 2 * a + b) 0
 
 /-- The exact ℤ-decode of a bit list (a bit counts iff it is `1`) — the shadow
-`bitsRegister` casts on genuine bits, and what the forbidden-band condition speaks
+`bitsRegister` casts on genuine bits, and what the regime conditions speak
 about through the Type1 unshift. -/
 def bitsVal (bs : List F) : ℤ := bs.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) 0
 
@@ -2007,12 +1977,11 @@ theorem acc_getD_length {F : Type*} [Field F] [DecidableEq F] (l : List (Witness
   · show (l.getD k dflt).nPrime = _
     rw [hlast]
 
-/-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
-    `varBaseMul_forbidden_correct` behind one regime dichotomy, for generic (dictionary)
-    callers: EITHER the whole ladder fits below the order (`3·2^(5m) ≤ order`, no
-    condition on the scalar), OR the one-wrap band holds and the scalar's ladder decode
-    avoids the forbidden residues. The deployed `varBaseMul_scaleFast{1,2}` below stay
-    the per-curve certificates. -/
+/-- **The generic entry point.** `varBaseMul_subwrap_correct` and
+    `varBaseMul_bounded_correct` behind one regime dichotomy, for generic (dictionary)
+    callers: EITHER the whole ladder fits below the order (`3·2^(5m) ≤ order`), OR the
+    order is above `2^(5m-1)` and the ladder's top is below `4·order − 4`. The deployed
+    `varBaseMul_scaleFast{1,2}` below stay the per-curve certificates. -/
 theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
     (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
@@ -2024,8 +1993,7 @@ theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
     (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
     (hs : s = gateLadder g (5 * m))
     (hregime : 3 * 2 ^ (5 * m) ≤ c.order ∨
-      (2 ^ (5 * m - 1) < c.order ∧ c.order < 2 ^ (5 * m) ∧ c.order % 4 = 1 ∧
-        s ∉ forbiddenValues c.order)) :
+      (2 ^ (5 * m - 1) < c.order ∧ 3 < c.order ∧ s < 4 * c.order - 4)) :
     ∃ hfin : c.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
   obtain ⟨hTns, hTeq⟩ := hbase 0 (Nat.zero_le m)
@@ -2033,11 +2001,11 @@ theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
   have hbaseEq : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT := fun i hi =>
     Kimchi.Gate.AddComplete.IsPoint.coords_eq (hbase i (le_of_lt hi)) (hbase 0 (Nat.zero_le m))
-  rcases hregime with hsub | ⟨hr1, hr2, hq4, hnf⟩
+  rcases hregime with hsub | ⟨hr1, h3, htop⟩
   · exact varBaseMul_subwrap_correct c m g T s hTne hholds hTns hTeq hbaseEq hlink
       hP0ns hP0.symm h2 hodd hsub hs
-  · exact varBaseMul_forbidden_correct c m g T s hTne hholds hTns hTeq hbaseEq hlink
-      hP0ns hP0.symm h2 hodd hr1 hr2 hq4 hs hnf
+  · exact varBaseMul_bounded_correct c m g T s hTne hholds hTns hTeq hbaseEq hlink
+      hP0ns hP0.symm h2 hodd hr1 h3 hs htop
 
 /-! ## The produce chain
 
@@ -2047,7 +2015,8 @@ conditional completeness — under either ladder regime, every generated row sat
 gate. The non-degeneracy is PRODUCED forward, not read off an accepted run: the
 accumulator entering bit step `j` is the ladder multiple `[gateLadder g j]·T`, the regime
 prices every degeneracy residue at every step (`ladder_subwrap_nondegen` /
-`ladder_nondegen_tight`), and each generated step's two secant denominators are derived
+`ladder_x_nondegen` with `ladder_bounded_no_zero`), and each generated step's two secant
+denominators are derived
 from those residues before the step is certified (`step_produce`). -/
 
 variable {F : Type*} [Field F] [DecidableEq F]
@@ -2149,7 +2118,7 @@ theorem runBits_chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
 regime has priced away, the generated `stepBit` values satisfy the bit block and the
 output is the nonsingular `[2k + bitSign b]·T`. The two secant denominators are derived,
 not assumed: `xi ≠ xT` from `k ≢ ±1`, and the second denominator from the intermediate
-`I + Q ≠ ±I`, i.e. `2k ≢ ∓1` (stepped through in the body). -/
+`I + Q ≠ -I`, i.e. the output `[2k + bitSign b]·T` is not `O`. -/
 private lemma step_produce (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
     (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
@@ -2158,7 +2127,7 @@ private lemma step_produce (c : WeierstrassCurve.Affine F)
     (hI : c.Nonsingular xi yi) (hbit : b = 0 ∨ b = 1)
     {k : ℤ} (hIk : Point.some _ _ hI = k • Point.some _ _ hTns)
     (hq1 : ¬((c.order : ℤ) ∣ (k - 1))) (hq2 : ¬((c.order : ℤ) ∣ (k + 1)))
-    (hq3 : ¬((c.order : ℤ) ∣ (2 * k - 1))) (hq4 : ¬((c.order : ℤ) ∣ (2 * k + 1))) :
+    (hq3 : ¬((c.order : ℤ) ∣ (2 * k + bitSign b))) :
     singleBitHolds b xT yT (stepBit b xT yT xi yi).1 xi yi
         (stepBit b xT yT xi yi).2.1 (stepBit b xT yT xi yi).2.2
     ∧ ∃ hO : c.Nonsingular (stepBit b xT yT xi yi).2.1 (stepBit b xT yT xi yi).2.2,
@@ -2166,7 +2135,7 @@ private lemma step_produce (c : WeierstrassCurve.Affine F)
   have hshort : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0 := Fact.out
   -- the sign-selected target `Q = ±T` and its scalar
   have hQ : c.Nonsingular xT ((2 * b - 1) * yT) := signed_target_nonsingular c hshort hTns hbit
-  obtain ⟨e, heQ, -, hepm⟩ := signed_target c hshort hTns hQ hbit
+  obtain ⟨e, heQ, heF, hepm⟩ := signed_target c hshort hTns hQ hbit
   -- first denominator: `xi ≠ xT` from `k ≢ ±1`
   have hxne : xi ≠ xT := by
     apply x_ne_xT_of_ne_base c hI hTns
@@ -2205,9 +2174,8 @@ private lemma step_produce (c : WeierstrassCurve.Affine F)
           = (k + e) • Point.some _ _ hTns + k • Point.some _ _ hTns := by module
         _ = 0 := h'
     have hdvd := (zsmul_eq_zero_iff_order_dvd c hTne _).1 hz
-    rcases hepm with rfl | rfl
-    · exact hq4 hdvd
-    · exact hq3 (by rwa [show 2 * k + (-1 : ℤ) = 2 * k - 1 from by ring] at hdvd)
+    rw [e_eq_bitSign hbit heF hepm h2] at hdvd
+    exact hq3 hdvd
   have hxMne : s1 * s1 - xi - xT ≠ xi := x_ne_xT_of_ne_base c hM hI hMneI hMnegI
   have htne : t ≠ 0 := by
     rw [htdef]
@@ -2242,25 +2210,30 @@ private lemma row_produce (c : WeierstrassCurve.Affine F)
     (hk5 : k (j + 5) = 2 * k (j + 4) + bitSign b4)
     (hq : ∀ l, j ≤ l → l < j + 5 →
       ¬((c.order : ℤ) ∣ (k l - 1)) ∧ ¬((c.order : ℤ) ∣ (k l + 1))
-      ∧ ¬((c.order : ℤ) ∣ (2 * k l - 1)) ∧ ¬((c.order : ℤ) ∣ (2 * k l + 1))) :
+      ∧ ¬((c.order : ℤ) ∣ k (l + 1))) :
     Holds (build xT yT x0 y0 n b0 b1 b2 b3 b4)
     ∧ ∃ h5 : c.Nonsingular (build xT yT x0 y0 n b0 b1 b2 b3 b4).x5
         (build xT yT x0 y0 n b0 b1 b2 b3 b4).y5,
         Point.some _ _ h5 = k (j + 5) • Point.some _ _ hTns := by
-  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq j le_rfl (by omega)
-  obtain ⟨hh0, hO1, hP1⟩ := step_produce c h2 hodd hTns hTne hI hb0 hIk hd1 hd2 hd3 hd4
+  obtain ⟨hd1, hd2, hd3⟩ := hq j le_rfl (by omega)
+  obtain ⟨hh0, hO1, hP1⟩ := step_produce c h2 hodd hTns hTne hI hb0 hIk hd1 hd2
+    (by rwa [← hk1])
   rw [← hk1] at hP1
-  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 1) (by omega) (by omega)
-  obtain ⟨hh1, hO2, hP2⟩ := step_produce c h2 hodd hTns hTne hO1 hb1 hP1 hd1 hd2 hd3 hd4
+  obtain ⟨hd1, hd2, hd3⟩ := hq (j + 1) (by omega) (by omega)
+  obtain ⟨hh1, hO2, hP2⟩ := step_produce c h2 hodd hTns hTne hO1 hb1 hP1 hd1 hd2
+    (by rwa [← hk2])
   rw [← hk2] at hP2
-  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 2) (by omega) (by omega)
-  obtain ⟨hh2, hO3, hP3⟩ := step_produce c h2 hodd hTns hTne hO2 hb2 hP2 hd1 hd2 hd3 hd4
+  obtain ⟨hd1, hd2, hd3⟩ := hq (j + 2) (by omega) (by omega)
+  obtain ⟨hh2, hO3, hP3⟩ := step_produce c h2 hodd hTns hTne hO2 hb2 hP2 hd1 hd2
+    (by rwa [← hk3])
   rw [← hk3] at hP3
-  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 3) (by omega) (by omega)
-  obtain ⟨hh3, hO4, hP4⟩ := step_produce c h2 hodd hTns hTne hO3 hb3 hP3 hd1 hd2 hd3 hd4
+  obtain ⟨hd1, hd2, hd3⟩ := hq (j + 3) (by omega) (by omega)
+  obtain ⟨hh3, hO4, hP4⟩ := step_produce c h2 hodd hTns hTne hO3 hb3 hP3 hd1 hd2
+    (by rwa [← hk4])
   rw [← hk4] at hP4
-  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 4) (by omega) (by omega)
-  obtain ⟨hh4, hO5, hP5⟩ := step_produce c h2 hodd hTns hTne hO4 hb4 hP4 hd1 hd2 hd3 hd4
+  obtain ⟨hd1, hd2, hd3⟩ := hq (j + 4) (by omega) (by omega)
+  obtain ⟨hh4, hO5, hP5⟩ := step_produce c h2 hodd hTns hTne hO4 hb4 hP4 hd1 hd2
+    (by rwa [← hk5])
   rw [← hk5] at hP5
   exact ⟨(holds_iff _).mpr
     ⟨by simp only [decompHolds, decompCons, build]; ring, hh0, hh1, hh2, hh3, hh4⟩,
@@ -2268,12 +2241,11 @@ private lemma row_produce (c : WeierstrassCurve.Affine F)
 
 /-- **Completeness of the honest ladder.** From the doubled init `P₀ = [2]·T`, under
 either ladder regime — subwrap (`3·2^(5m) ≤ order`, no condition on the bits) or the
-one-wrap band with the walk's ladder value `gateLadder (chainBuild …) (5m)` avoiding
-the forbidden residues — every generated row satisfies the gate. The regime dichotomy
-is `varBaseMul_off`'s, at the honest values, and stated in its vocabulary: the walk's
-gate bits are the stream (`gateBit_chainBuild`), so the sound side's `gateLadder` is
-the honest ladder and `gateLadder_eq_register` is the decode a caller discharges the
-band condition with. -/
+one-wrap regime with the walk's ladder value `gateLadder (chainBuild …) (5m)` below
+`4·order − 4` and not `2·order ± 1` or `3·order` — every generated row satisfies the gate.
+The walk's gate bits are the stream (`gateBit_chainBuild`), so `gateLadder` is the honest
+ladder and `gateLadder_eq_register` is the decode a caller discharges the top conditions
+with. -/
 theorem chain_complete (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
     (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2) (m : ℕ)
@@ -2282,26 +2254,53 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
     {x0 y0 : F} (n0 : F) (hP0 : c.Nonsingular x0 y0)
     (hP0eq : Point.some _ _ hP0 = (2 : ℤ) • Point.some _ _ hTns)
     (hregime : 3 * 2 ^ (5 * m) ≤ c.order ∨
-      (2 ^ (5 * m - 1) < c.order ∧ c.order < 2 ^ (5 * m) ∧ c.order % 4 = 1 ∧
-        gateLadder (chainBuild xT yT x0 y0 n0 bs) (5 * m) ∉ forbiddenValues c.order)) :
+      (3 ≤ 5 * m ∧ 2 ^ (5 * m - 1) < c.order ∧ c.order < 2 ^ (5 * m) ∧
+        3 * c.order < 2 ^ (5 * m + 1) ∧ 3 < c.order ∧
+        gateLadder (chainBuild xT yT x0 y0 n0 bs) (5 * m) < 4 * c.order - 4 ∧
+        gateLadder (chainBuild xT yT x0 y0 n0 bs) (5 * m) ≠ 2 * c.order - 1 ∧
+        gateLadder (chainBuild xT yT x0 y0 n0 bs) (5 * m) ≠ 2 * c.order + 1 ∧
+        gateLadder (chainBuild xT yT x0 y0 n0 bs) (5 * m) ≠ 3 * c.order)) :
     ∀ i, i < m → Holds (chainBuild xT yT x0 y0 n0 bs i) := by
   have hTne : Point.some _ _ hTns ≠ 0 := Point.some_ne_zero hTns
   set g := chainBuild xT yT x0 y0 n0 bs with hg
-  -- the regime prices all four degeneracy residues at every bit step
+  -- the regime keeps every accumulator off `±T` and every output off `O`
   have hquad : ∀ j, j < 5 * m →
       ¬((c.order : ℤ) ∣ (gateLadder g j - 1)) ∧ ¬((c.order : ℤ) ∣ (gateLadder g j + 1))
-      ∧ ¬((c.order : ℤ) ∣ (2 * gateLadder g j - 1))
-      ∧ ¬((c.order : ℤ) ∣ (2 * gateLadder g j + 1)) := by
-    rcases hregime with hsub | ⟨hr1, hr2, hq4, hnf⟩
-    · exact Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub (gateLadder g)
-        (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
-        (fun j _ => gateLadder_succ g j)
-    · refine Ladder.ladder_nondegen_tight c.order (5 * m)
-        (Fact.out : Nat.Prime c.order) hq4 hr1 hr2 (gateLadder g)
-        (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
-        (fun j _ => gateLadder_succ g j) ?_
-      intro t ht hdvd
-      exact hnf ⟨t, ht, hdvd⟩
+      ∧ ¬((c.order : ℤ) ∣ gateLadder g (j + 1)) := by
+    have hfour : ∀ j, j < 5 * m →
+        ¬((c.order : ℤ) ∣ (gateLadder g j - 1)) ∧ ¬((c.order : ℤ) ∣ (gateLadder g j + 1))
+        ∧ ¬((c.order : ℤ) ∣ (2 * gateLadder g j - 1))
+        ∧ ¬((c.order : ℤ) ∣ (2 * gateLadder g j + 1)) →
+        ¬((c.order : ℤ) ∣ (gateLadder g j - 1)) ∧ ¬((c.order : ℤ) ∣ (gateLadder g j + 1))
+        ∧ ¬((c.order : ℤ) ∣ gateLadder g (j + 1)) := by
+      intro j _ ⟨h1, h2, h3, h4⟩
+      refine ⟨h1, h2, ?_⟩
+      rw [gateLadder_succ]
+      rcases gateBitSign_eq g j with he | he <;> rw [he]
+      · exact h4
+      · rwa [show 2 * gateLadder g j + -1 = 2 * gateLadder g j - 1 by ring]
+    rcases hregime with hsub | ⟨hm, hr1, hr2, hr3, h3, htop, hs1, hs2, hs3⟩
+    · exact fun j hj => hfour j hj (Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub
+        (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j) j hj)
+    · have hodd' : c.order % 2 = 1 :=
+        Nat.odd_iff.mp ((Fact.out : Nat.Prime c.order).odd_of_ne_two hodd)
+      have hx := Ladder.ladder_bounded_no_zero c.order (5 * m) hm hodd' hr1 hr2 hr3
+        (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j) htop ⟨hs1, hs2, hs3⟩
+      have hnd := Ladder.ladder_x_nondegen c.order (2 * c.order - 2 ^ (5 * m - 1) - 2) (5 * m)
+        hr1 ((Fact.out : Nat.Prime c.order).odd_of_ne_two hodd) h3 (by omega)
+        (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j) (by
+        have hpow : (2 : ℕ) ^ (5 * m) = 2 * 2 ^ (5 * m - 1) := by
+          rw [← pow_succ']; congr 1; omega
+        have hB : ((2 * c.order - 2 ^ (5 * m - 1) - 2 : ℕ) : ℤ)
+            = 2 * c.order - 2 ^ (5 * m - 1) - 2 := by
+          rw [Nat.cast_sub (by omega), Nat.cast_sub (by omega)]; push_cast; ring
+        rw [hB]
+        have : (2 : ℤ) ^ (5 * m) = 2 * 2 ^ (5 * m - 1) := by exact_mod_cast hpow
+        linarith)
+      exact fun j hj => ⟨(hnd j hj).1, (hnd j hj).2, hx (j + 1) (by omega) (by omega)⟩
   -- rows hold and the accumulator threads as the ladder multiple
   have main : ∀ i, i ≤ m →
       (∀ i', i' < i → Holds (chainBuild xT yT x0 y0 n0 bs i'))
@@ -2342,28 +2341,20 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
         exact ⟨h5, h5eq⟩
   exact (main m le_rfl).1
 
-/-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
+/-! ## The `scaleFast1` / Type1 direction: soundness via the top bound (Vesta)
 
 `scaleFast2` (the Pallas direction, below) range-checks the register, so its soundness is the
 field-bound route (inlined into `varBaseMul_scaleFast2`). `scaleFast1` (the Vesta direction;
-scalar field < circuit field) range-checks nothing and instead guards with a forbidden-value check.
-Its soundness splits by chunk count `m` (`5m ≤ pastaFieldBits`): for `m ≤ 50` the ladder fits
-below the order and every row is non-degenerate unconditionally (`varBaseMul_subwrap_correct`);
-only the full width `m = 51` is the one-wrap case that needs the forbidden band
-(`varBaseMul_forbidden_correct`).
-
-The full-width `m = 51` case excludes the COMPLETE forbidden band, which is *stronger* than mina's
-incomplete runtime guard; the faithfulness caveat is in `§ Soundness: avoiding ±T makes every
-row non-degenerate`. -/
+scalar field < circuit field) range-checks nothing. Its soundness splits by chunk count `m`
+(`5m ≤ pastaFieldBits`): for `m ≤ 50` the ladder fits below the order and every row is
+non-degenerate unconditionally (`varBaseMul_subwrap_correct`); at the full width `m = 51` the
+pinned top bit keeps the ladder's top below `4·order − 4` (`varBaseMul_bounded_correct`). -/
 
 /-- **Type1 scalar multiplication on the real Vesta curve, correct and sound at any `m ≤ 51`.**
-    The only hypothesis on the bit count is `hbits`. The forbidden-band exclusion `hnf` is
-    required only at the full width `5m = pastaFieldBits`, because every smaller chunk count is
-    in the sub-wrap regime and is sound with no guard at all. The proof dispatches:
-    `5m ≤ pastaFieldBits - 5` to `varBaseMul_subwrap_correct` (`3·2^(5m) ≤ PALLAS_BASE_CARD` by
-    computation), `5m = pastaFieldBits` to `varBaseMul_forbidden_correct` (one-wrap, its regime
-    bounds discharged from the cardinal). The band-vs-deployed-check faithfulness caveat is in
-    the soundness section above. -/
+    Below the full width every chunk count is in the sub-wrap regime (`3·2^(5m) ≤ order`) and
+    needs nothing. At the full width `5m = pastaFieldBits` the deployed circuit pins the top
+    bit, so the register is below `2^(pastaFieldBits-1)` (`hpin`) and no accumulator meets `±T`
+    (`varBaseMul_bounded_correct`): no scalar is excluded. -/
 theorem varBaseMul_scaleFast1
     (m : ℕ) (g : ℕ → Witness Fq)
     (T : Vesta.curve.toAffine.Point) (s : ℤ)
@@ -2373,7 +2364,7 @@ theorem varBaseMul_scaleFast1
     (hinit : Kimchi.Gate.AddComplete.IsPoint Vesta.curve.toAffine (g 0).x0 (g 0).y0 ((2 : ℤ) • T))
     (hbits : 5 * m ≤ pastaFieldBits)
     (hs : s = gateLadder g (5 * m))
-    (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
+    (hpin : 5 * m = pastaFieldBits → gateRegister g (5 * m) < 2 ^ (pastaFieldBits - 1)) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
   obtain ⟨hTns, hTeq⟩ := hbase 0 (Nat.zero_le m)
@@ -2393,15 +2384,19 @@ theorem varBaseMul_scaleFast1
       Nat.pow_le_pow_right (by norm_num) (by have : pastaFieldBits = 255 := rfl; omega)
     have : (3 : ℕ) * 2 ^ (pastaFieldBits - 5) ≤ PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
     omega
-  · -- one-wrap: `5m = pastaFieldBits` exactly.
+  · -- the full width `5m = pastaFieldBits`: the pinned top bit.
     have hfull : 5 * m = pastaFieldBits := by omega
-    exact varBaseMul_forbidden_correct Vesta.curve.toAffine m g T s hTne hholds hTns hTeq hbaseEq
-      hlink hP0ns hP0
-      (by decide) hodd
+    have hR := hpin hfull
+    refine varBaseMul_bounded_correct Vesta.curve.toAffine m g T s hTne hholds hTns hTeq hbaseEq
+      hlink hP0ns hP0 (by decide) hodd
       (by rw [Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
-      (by rw [Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
-      (by rw [Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD])
-      hs (hnf hfull)
+      (by rw [Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD]) hs ?_
+    rw [hs, gateLadder_eq_register, hfull, Pasta.vesta_card]
+    rw [hfull] at hR
+    have : pastaFieldBits = 255 := rfl
+    rw [this] at hR ⊢
+    norm_num [PALLAS_BASE_CARD] at hR ⊢
+    linarith
 
 /-! ## scaleFast2 / Type2: the parity-split entry point (Pallas direction)
 

@@ -32,9 +32,8 @@ booleanity follows from satisfaction (`BranchData.mask_boolean`).
 * `VkReads`: the circuit's key cells read as the key;
 * `HalvesTies`: the two circuits hold one set of deferred claims;
 * no hypothesis where a circuit enforces it: the three scalars `ftComm` scales by, which the
-  scalar circuit checks and `HalvesTies` carries over; and the ladder's band, which the group
-  circuit asserts on the shifted claims and the full public-input leaves
-  (`Pickles.LadderBand`), a harness assertion rather than the shared gadget's;
+  scalar circuit checks and `HalvesTies` carries over. No scalar a ladder reads is excluded:
+  every ladder top is below `4·order − 4` (`wrapSide_claimOk`);
 * `havoid`: the SRS avoids the key's Lagrange relations (`SRS.Avoids`,
   `Env.lagrangeRelations`). The key's Lagrange points are commitments against the SRS, finite
   exactly when the SRS has no relation at their coefficient vectors, which no invariant gives;
