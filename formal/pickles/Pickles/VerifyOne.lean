@@ -342,19 +342,27 @@ theorem verifyOne_reads (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curve nc
       List.append_assoc]
     simp only [Poseidon.absorb, List.foldl_append]
 
-/-- What a verified slot certifies: for any wrap proof `cp` the slot's cells read as (the
-masks and previous challenges as `ms`, `cvs`, the key cells as the key, the proof and `sg`
-cells as `cp`'s), the group half accepts `cp` at the slot's public input. -/
+/-- A slot's cells hold the wire proof `cp`: its mask cells read as `ms`, its
+previous-challenge cells as `cvs`, the key cells as the key, its proof cells as `cp`'s
+commitments and opening, and its `sg` cells as `cp`'s old accumulators. -/
+def VerifyOneInput.WireReads (E : Env IpaPallas.curve nc) (V : Valuation Fp)
+    (vk : VkComms nc (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks E.σ.k nc w)
+    (cp : KimchiProof IpaPallas.curve nc E.σ.k) (ms : List Bool) (cvs : List (List Fp)) :
+    Prop :=
+  List.Forall₂ (CircuitType.Reads V) inp.proofMask.toList ms ∧
+    List.Forall₂ (List.Forall₂ (CircuitType.Reads V))
+      (inp.prevChallenges.toList.map Vector.toList) cvs ∧
+    KeyReads IpaPallas.curve V vk E.cvk ∧
+    ProofReads (stepSide V) (inp.proof.wComm.toList.map (·.toList))
+      inp.proof.zComm.toList inp.proof.tComm.toList inp.proof.opening cp ∧
+    CommReads IpaPallas.curve V inp.sgOld.toList (cp.olds.map (·.sg)).toList
+
+/-- What a verified slot certifies: for any wire proof `cp` the slot's cells hold, the group
+half accepts `cp` at the slot's public input. -/
 def VerifyOneInput.SlotReads (E : Env IpaPallas.curve nc) (V : Valuation Fp)
     (vk : VkComms nc (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks E.σ.k nc w) : Prop :=
     ∀ (cp : KimchiProof IpaPallas.curve nc E.σ.k) (ms : List Bool) (cvs : List (List Fp)),
-      List.Forall₂ (CircuitType.Reads V) inp.proofMask.toList ms →
-      List.Forall₂ (List.Forall₂ (CircuitType.Reads V))
-        (inp.prevChallenges.toList.map Vector.toList) cvs →
-      KeyReads IpaPallas.curve V vk E.cvk →
-      ProofReads (stepSide V) (inp.proof.wComm.toList.map (·.toList))
-        inp.proof.zComm.toList inp.proof.tComm.toList inp.proof.opening cp →
-      CommReads IpaPallas.curve V inp.sgOld.toList (cp.olds.map (·.sg)).toList →
+      inp.WireReads E V vk cp ms cvs →
       ∃ v : BoolVar Fp,
         (GroupHalf.step V inp.unfinalized).Reads E cp (inp.publicInputAt E V ms) v ∧
           (↑v : CVar Fp).val V = 1
@@ -375,7 +383,7 @@ theorem verifyOne_slotReads (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curv
         inp.proof).shifted, (stepSide V).ClaimOk x) →
       inp.SlotReads E V vk⌝⦄ := by
   rw [builder_spec_iff]
-  intro nv hsat hmv h1 hclaimOk cp ms cvs hm hprev hkey hproof holds
+  intro nv hsat hmv h1 hclaimOk cp ms cvs ⟨hm, hprev, hkey, hproof, holds⟩
   obtain ⟨msg, v, hmsg, hvr, hv1, -⟩ := (builder_spec_iff _ _).mp
     (verifyOne_reads E Es D hw vk inp cp ms hm cvs hprev hkey hproof holds hclaimOk hsmall
       havoid) nv hsat hmv h1

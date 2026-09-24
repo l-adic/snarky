@@ -17,6 +17,8 @@ against that domain and asserts the slot finalized or was not to be.
 * `pinWrapDomainIndex`: one slot's pin against the branches' compile-time indices.
 * `selectDomain`: one slot's domain from its index.
 * `WrapFinalizeSlot`: one slot's cells and compile-time pins.
+* `wrapDomainLog2s`: the wrap domains a slot can be finalized at.
+* `wrapFinalizeCircuit`: the block as a circuit of its input (`WrapFinalizeIn`).
 * `wrapFinalizePrevProofs`: the pins, left to right; the domains, right to left; the finalize
   bodies with their assertions, left to right.
 
@@ -57,11 +59,11 @@ def selectDomain (gen : ℕ → F) (log2s : List ℕ) (index : FVar F) :
 /-- One slot of the finalize block: its wrap domain index cell, its column of compile-time
 domain indices over the branches (`none` for a side-loaded predecessor), and the finalized
 proof's unfinalized claims, evaluations and padded previous challenges. -/
-structure WrapFinalizeSlot (k nc : ℕ) (F : Type) where
+structure WrapFinalizeSlot (branches k nc : ℕ) (F : Type) where
   /-- The wrap domain index cell. -/
   domainIndex : FVar F
   /-- Each branch's compile-time domain index for this slot. -/
-  pins : List (Option ℕ)
+  pins : Vector (Option ℕ) branches
   /-- The finalized proof's unfinalized claims. -/
   unfinalized : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))
   /-- Its evaluations. -/
@@ -69,15 +71,21 @@ structure WrapFinalizeSlot (k nc : ℕ) (F : Type) where
   /-- Its padded previous challenges. -/
   prevChallenges : Vector (Vector (FVar F) k) MaxProofsVerified
 
+/-- The wrap domains a slot's index selects among, by `log2`: those of the wrap circuits
+verifying 0, 1 and 2 previous proofs. -/
+def wrapDomainLog2s : List ℕ := [13, 14, 15]
+
 /-- The wrap circuit's finalize block over its slots: the pins, left to right; the domains, right
-to left, among `log2s` with generators `gen`; the finalize bodies with their assertions, left
-to right. Returns each slot's finalize output. -/
-def wrapFinalizePrevProofs {k nc : ℕ} (P : FopParams F) (gen : ℕ → F) (log2s : List ℕ)
-    (whichBranch : List (BoolVar F)) (slots : List (WrapFinalizeSlot k nc F)) :
+to left, among `wrapDomainLog2s` with generators `gen`; the finalize bodies with their
+assertions, left to right. Returns each slot's finalize output. -/
+def wrapFinalizePrevProofs {branches mpv k nc : ℕ} (P : FopParams F) (gen : ℕ → F)
+    (whichBranch : Vector (BoolVar F) branches)
+    (slots : Vector (WrapFinalizeSlot branches k nc F) mpv) :
     CircuitM F c (List (FopOutput F)) := do
-  slots.forM fun sl => pinWrapDomainIndex whichBranch sl.pins sl.domainIndex
-  let rev ← (slots.map (·.domainIndex)).reverse.mapM (selectDomain gen log2s)
-  (rev.reverse.zip slots).mapM fun (d, sl) => do
+  slots.toList.forM fun sl =>
+    pinWrapDomainIndex whichBranch.toList sl.pins.toList sl.domainIndex
+  let rev ← (slots.toList.map (·.domainIndex)).reverse.mapM (selectDomain gen wrapDomainLog2s)
+  (rev.reverse.zip slots.toList).mapM fun (d, sl) => do
     let o ← finalizeOtherProofWrap P d.generator d.vanishingPolynomial sl.unfinalized sl.evals
       (sl.prevChallenges.toList.map Vector.toList)
     assertAny [o.finalized, Snarky.not sl.unfinalized.shouldFinalize]
@@ -231,11 +239,31 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 variable {nc : ℕ}
 
+/-- The finalize block's input, as values: the branch bits and, per slot, its wrap domain index
+and its finalize input. Nothing in it is checked on input. -/
+abbrev WrapFinalizeIn (branches w k nc : ℕ) : Type :=
+  UnChecked (Vector Bool branches × Vector (Fq × WrapFop k nc) w)
+
+/-- `WrapFinalizeIn`, as cells. -/
+abbrev WrapFinalizeInVar (branches w k nc : ℕ) : Type :=
+  UnChecked (Vector (BoolVar Fq) branches × Vector (FVar Fq × WrapFopVar k nc) w)
+
+/-- The input's slots, each with its column of compile-time pins. -/
+def WrapFinalizeInVar.slots {branches w k : ℕ} (x : WrapFinalizeInVar branches w k nc)
+    (pins : Vector (Vector (Option ℕ) branches) w) : Vector (WrapFinalizeSlot branches k nc Fq) w :=
+  Vector.zipWith (fun s p => ⟨s.1, p, s.2.claims, s.2.evals, s.2.prev⟩) x.val.2 pins
+
+/-- The finalize block as a circuit of its input, at compile-time pins `pins`. -/
+def wrapFinalizeCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {branches w k : ℕ}
+    (P : FopParams Fq) (gen : ℕ → Fq) (pins : Vector (Vector (Option ℕ) branches) w)
+    (x : WrapFinalizeInVar branches w k nc) : CircuitM Fq c Unit := do
+  let _ ← wrapFinalizePrevProofs P gen x.val.1 (x.slots pins)
+
 /-- A finalize slot reads as a wrap proof's scalar half: for any wrap proof and public input
 under the guards, a step circuit's group half accepting it at asserted success, the ties and
 the deferred `sg` equation make `kimchiVerify` accept. -/
 def WrapFinalizeSlot.ScalarReads (E : Env IpaPallas.curve nc) (Vs : Valuation Fq)
-    (sl : WrapFinalizeSlot E.σ.k nc Fq) : Prop :=
+    {branches : ℕ} (sl : WrapFinalizeSlot branches E.σ.k nc Fq) : Prop :=
   ∀ (cp : KimchiProof IpaPallas.curve nc E.σ.k) (pub : Array Fq),
     Guards IpaPallas.curve E.cvk cp pub →
     ∀ (Vg : Valuation Fp)
@@ -251,7 +279,8 @@ def WrapFinalizeSlot.ScalarReads (E : Env IpaPallas.curve nc) (Vs : Valuation Fq
 cell reading as the key's and a vanishing polynomial reading `ζⁿ − 1` at the key's size reads,
 once `finalized` is `1`, as the slot's scalar half. -/
 theorem finalizeOtherProofWrap_scalarReads (E : Env IpaPallas.curve nc) (Vs : Valuation Fq)
-    (sl : WrapFinalizeSlot E.σ.k nc Fq) (gen : FVar Fq) (hgen : gen.val Vs = E.cvk.omega)
+    {branches : ℕ} (sl : WrapFinalizeSlot branches E.σ.k nc Fq) (gen : FVar Fq)
+    (hgen : gen.val Vs = E.cvk.omega)
     (vanishing : FVar Fq → CircuitM Fq (Builder Vs (KimchiConstraint Fq)) (FVar Fq))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ E.cvk.n - 1⌝⦄) :
     ⦃⌜True⌝⦄
@@ -307,7 +336,8 @@ theorem finalizeOtherProofWrap_scalarReads (E : Env IpaPallas.curve nc) (Vs : Va
 slot's domain reading as the key's (its generator `ω`, its vanishing polynomial `ζⁿ − 1`) and
 `shouldFinalize` set, the slot reads as its scalar half. -/
 theorem wrapFinalizeBody_spec (E : Env IpaPallas.curve nc) (Vs : Valuation Fq)
-    (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) (sl : WrapFinalizeSlot E.σ.k nc Fq) :
+    (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) {branches : ℕ}
+    (sl : WrapFinalizeSlot branches E.σ.k nc Fq) :
     ⦃⌜True⌝⦄
     (do
       let o ← finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
@@ -362,44 +392,68 @@ private theorem forall₂_map_zip {α β δ : Type} {R : δ → β → Prop} {f 
 valuation satisfying the emitted constraints, with the branch bits reading as the indicator of
 `b`, every slot that branch `b` compiled for the key's domain (index `j` of `log2s`, generator
 `ω`, size `n`) and whose `shouldFinalize` is set reads as its scalar half. -/
-theorem wrapFinalizePrevProofs_reads (E : Env IpaPallas.curve nc) (Vs : Valuation Fq)
-    (gen : ℕ → Fq) (log2s : List ℕ) (whichBranch : List (BoolVar Fq))
-    (slots : List (WrapFinalizeSlot E.σ.k nc Fq)) (b j : ℕ)
-    (hbits : whichBranch.map (fun x : BoolVar Fq => (↑x : CVar Fq).val Vs)
-      = (List.range whichBranch.length).map fun l => if l = b then (1 : Fq) else 0)
-    (hpins : ∀ sl ∈ slots, sl.pins.length = whichBranch.length)
-    (hj : j < log2s.length) (hgen : gen log2s[j] = E.cvk.omega) (hn : 2 ^ log2s[j] = E.cvk.n)
-    (hinj : ∀ l < log2s.length, (j : Fq) = l → j = l) :
+theorem wrapFinalizePrevProofs_reads
+    {branches mpv : ℕ}
+    (E : Env IpaPallas.curve nc)
+    (Vs : Valuation Fq)
+    (gen : ℕ → Fq)
+    (whichBranch : Vector (BoolVar Fq) branches)
+    (slots : Vector (WrapFinalizeSlot branches E.σ.k nc Fq) mpv)
+    (b : Fin branches) (j : ℕ)
+    (hbits : CircuitType.Reads Vs whichBranch (Vector.ofFn fun l => decide (l = b)))
+    (hdom : wrapDomainLog2s[j]? = some E.cvk.domainLog2)
+    (hgen : gen E.cvk.domainLog2 = E.cvk.omega) :
     ⦃⌜True⌝⦄
     wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen log2s whichBranch slots
-    ⦃⇓ _ _ => ⌜∀ sl ∈ slots, sl.pins[b]? = some (some j) →
-      (↑sl.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 → sl.ScalarReads E Vs⌝⦄ := by
+      (FopParams.ofEnv E Linearization.fqTokens) gen whichBranch slots
+    ⦃⇓ _ _ => ⌜∀ i : Fin mpv, slots[i].pins[b] = some j →
+      (↑slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
+      slots[i].ScalarReads E Vs⌝⦄ := by
+  -- the branch bits, as readings
+  have hbits' : whichBranch.toList.map (fun x : BoolVar Fq => (↑x : CVar Fq).val Vs)
+      = (List.range branches).map fun l => if l = b.val then (1 : Fq) else 0 := by
+    refine List.ext_getElem (by simp) fun l h1 h2 => ?_
+    have hl : l < branches := by simpa using h2
+    have hr := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hbits l hl)
+    simp only [Vector.getElem_ofFn] at hr
+    simp only [List.getElem_map, Vector.getElem_toList, List.getElem_range, hr]
+    by_cases h : l = b.val <;> simp [h, bit, Fin.ext_iff]
+  -- the key's domain is candidate `j` of the table
+  obtain ⟨hj, hjv⟩ := List.getElem?_eq_some_iff.mp hdom
+  have hn : 2 ^ wrapDomainLog2s[j] = E.cvk.n := by rw [hjv]; rfl
+  have hgen' : gen wrapDomainLog2s[j] = E.cvk.omega := by rw [hjv]; exact hgen
+  have hinj : ∀ l < wrapDomainLog2s.length, (j : Fq) = l → j = l := by
+    intro l hl h
+    have hj3 : j < 3 := hj
+    have hl3 : l < 3 := hl
+    have := congrArg ZMod.val h
+    rwa [ZMod.val_natCast_of_lt (by norm_num [PALLAS_SCALAR_CARD]; omega),
+      ZMod.val_natCast_of_lt (by norm_num [PALLAS_SCALAR_CARD]; omega)] at this
   simp only [wrapFinalizePrevProofs]
   -- each slot's pin: on a slot branch `b` compiled for `j`, the index reads as `j`
   have hpin := forM_spec (V := Vs) (c := KimchiConstraint Fq)
-    (fun sl : WrapFinalizeSlot E.σ.k nc Fq => pinWrapDomainIndex whichBranch sl.pins sl.domainIndex)
-    (fun sl => sl.pins.length = whichBranch.length → sl.pins[b]? = some (some j) →
-      sl.domainIndex.val Vs = (j : Fq))
+    (fun sl : WrapFinalizeSlot branches E.σ.k nc Fq =>
+      pinWrapDomainIndex whichBranch.toList sl.pins.toList sl.domainIndex)
+    (fun sl => sl.pins.toList[b.val]? = some (some j) → sl.domainIndex.val Vs = (j : Fq))
     (fun sl => by
-      by_cases h : sl.pins.length = whichBranch.length ∧ sl.pins[b]? = some (some j)
-      · refine builder_spec_imp _ _ _ (pinWrapDomainIndex_spec whichBranch sl.pins
-          sl.domainIndex b j (by rw [h.1]; exact hbits) h.2) ?_
-        intro _ hr _ _
+      by_cases h : sl.pins.toList[b.val]? = some (some j)
+      · refine builder_spec_imp _ _ _ (pinWrapDomainIndex_spec whichBranch.toList sl.pins.toList
+          sl.domainIndex b j (by simpa using hbits') h) ?_
+        intro _ hr _
         exact hr
       · refine builder_spec_imp _ _ _ (builder_spec_true _) ?_
-        intro _ _ h1 h2
-        exact absurd ⟨h1, h2⟩ h)
+        intro _ _ h'
+        exact absurd h' h)
   -- each slot's domain: an index reading as `j` selects the key's domain
   have hdom := builder_spec_mapM (V := Vs) (c := KimchiConstraint Fq)
-    (selectDomain gen log2s)
+    (selectDomain gen wrapDomainLog2s)
     (fun (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) (index : FVar Fq) =>
-      index.val Vs = (j : Fq) → d.generator.val Vs = gen log2s[j] ∧ ∀ zeta : FVar Fq,
+      index.val Vs = (j : Fq) → d.generator.val Vs = gen wrapDomainLog2s[j] ∧ ∀ zeta : FVar Fq,
         ⦃⌜True⌝⦄ d.vanishingPolynomial zeta
-        ⦃⇓ r _ => ⌜r.val Vs = zeta.val Vs ^ 2 ^ log2s[j] - 1⌝⦄) id
+        ⦃⇓ r _ => ⌜r.val Vs = zeta.val Vs ^ 2 ^ wrapDomainLog2s[j] - 1⌝⦄) id
     (fun index => by
       by_cases h : index.val Vs = (j : Fq)
-      · refine builder_spec_imp _ _ _ (selectDomain_spec gen log2s index j hj h hinj) ?_
+      · refine builder_spec_imp _ _ _ (selectDomain_spec gen wrapDomainLog2s index j hj h hinj) ?_
         intro _ hr _
         exact hr
       · refine builder_spec_imp _ _ _ (builder_spec_true _) ?_
@@ -407,7 +461,8 @@ theorem wrapFinalizePrevProofs_reads (E : Env IpaPallas.curve nc) (Vs : Valuatio
         exact absurd h' h)
   -- each slot's body
   have hbody := builder_spec_mapM (V := Vs) (c := KimchiConstraint Fq)
-    (fun (p : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq)) × WrapFinalizeSlot E.σ.k nc Fq) =>
+    (fun (p : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq)) ×
+        WrapFinalizeSlot branches E.σ.k nc Fq) =>
       do
         let o ← finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.ofEnv E Linearization.fqTokens) p.1.generator p.1.vanishingPolynomial
@@ -420,15 +475,16 @@ theorem wrapFinalizePrevProofs_reads (E : Env IpaPallas.curve nc) (Vs : Valuatio
     (fun p => wrapFinalizeBody_spec E Vs p.1 p.2)
   mvcgen [hpin, hdom, hbody]
   rename_i hpinP rev _ hrev _ _
-  intro hos sl hsl hpb hsf
-  have hidx := hpinP sl hsl (hpins sl hsl) hpb
+  intro hos i hpb hsf
+  have hsl : slots[i] ∈ slots.toList := by simp
+  have hidx := hpinP _ hsl (by simpa using hpb)
   rw [List.map_id] at hrev
   rw [← List.reverse_reverse rev] at hrev
   have hrev' := List.forall₂_reverse_iff.mp hrev
-  obtain ⟨d, hdz, hd⟩ := forall₂_map_zip hrev' sl hsl
+  obtain ⟨d, hdz, hd⟩ := forall₂_map_zip hrev' _ hsl
   obtain ⟨hg, hv⟩ := hd hidx
-  obtain ⟨_, -, hR⟩ := forall₂_map_zip (f := id) hos (d, sl) hdz
-  exact hR (hg.trans hgen) (fun z => builder_spec_imp _ _ _ (hv z) fun r hr => by rw [hr, hn])
+  obtain ⟨_, -, hR⟩ := forall₂_map_zip (f := id) hos (d, slots[i]) hdz
+  exact hR (hg.trans hgen') (fun z => builder_spec_imp _ _ _ (hv z) fun r hr => by rw [hr, hn])
     hsf
 
 end Capstone
