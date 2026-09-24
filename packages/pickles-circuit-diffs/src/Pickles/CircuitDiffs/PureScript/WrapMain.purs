@@ -9,7 +9,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMain
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -18,6 +17,7 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (StepMainSimpleChainParams, compileStepMainSimpleChain)
 import Pickles.Field (StepField, WrapField)
+import Pickles.ProofsVerified (ProofsVerified(..))
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
@@ -38,7 +38,7 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
   realStepVK <- deriveStepVKFromCompiled @1 @1 vestaSrs stepArt.stepCs
   let
 
-    config :: WrapMainConfig 1 1
+    config :: WrapMainConfig 1 1 1
     config =
       { stepWidths: 1 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
@@ -46,8 +46,7 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+      , prevWrapDomainPins: (Just N1 :< Vector.nil) :< Vector.nil
       }
   -- mpv=1, slot 0 width=1; slots derived from PrevsSpec via funcdep.
   let

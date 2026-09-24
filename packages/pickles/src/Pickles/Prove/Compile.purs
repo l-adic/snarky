@@ -57,15 +57,16 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array.NonEmpty as NonEmptyArray
-import Data.Either (Either(..))
+import Data.Either (Either(..), either, note)
 import Data.Enum (fromEnum)
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int.Bits as Int.Bits
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, over, unwrap, wrap)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Traversable (traverse)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -83,7 +84,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval, padChunkedEvals, singleChunkEvals)
-import Pickles.ProofsVerified (boolVecToProofsVerified)
+import Pickles.ProofsVerified (ProofsVerified(..), allPossibleDomainLog2s, boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
@@ -110,7 +111,8 @@ import Pickles.Prove.Step
   , mkDummyMsgWrapHash
   )
 import Pickles.Prove.Wrap
-  ( WrapCompileResult
+  ( WrapBranchData
+  , WrapCompileResult
   , buildWrapAdvice
   , buildWrapMainConfigMulti
   , wrapCompile
@@ -125,6 +127,7 @@ import Pickles.Step.Dummy
   ( baseCaseDummies
   , computeDummySgValues
   , dummyWrapProof
+  , proofsVerifiedForWrapDomainLog2
   , wrapDomainLog2ForProofsVerified
   , wrapDummyUnfinalizedProof
   )
@@ -300,7 +303,7 @@ slotCompileEntry cfg selfStepDomainLog2s slot =
     -- A side-loaded slot's wrap domain is not known until prove time,
     -- so it carries all three bases and muxes in-circuit instead.
     RuntimeSlot.SideLoadedSource ->
-      BlueprintSideLoaded (map lagrangeAt (13 :< 14 :< 15 :< Vector.nil))
+      BlueprintSideLoaded (map (lagrangeAt <<< getFinite) allPossibleDomainLog2s)
 
 -- | Opaque runtime identity token. Each `newUnique` allocates a
 -- | globally fresh value, equal only to itself; `Tag` carries one as
@@ -457,15 +460,37 @@ runtimeSlotOf localMpv key =
 -- | A side-loaded slot's wrap domain log2, decoded from its runtime
 -- | VK descriptor's length-3 one-hot `actualWrapDomainSize` vector.
 bundleWrapDomainLog2 :: forall nc. SideloadBundle.Bundle nc -> Int
-bundleWrapDomainLog2 bundle =
-  Dummy.wrapDomainLog2ForProofsVerified
-    ( fromEnum
-        ( boolVecToProofsVerified
-            ( case SideloadBundle.projectVk bundle of
-                SLVK.VerificationKey vkRec -> vkRec.actualWrapDomainSize
-            )
-        )
+bundleWrapDomainLog2 =
+  Dummy.wrapDomainLog2ForProofsVerified <<< fromEnum <<< bundleWrapDomain
+
+-- | A side-loaded key's wrap domain, as the `proofs_verified` that
+-- | indexes it.
+bundleWrapDomain :: forall nc. SideloadBundle.Bundle nc -> ProofsVerified
+bundleWrapDomain bundle =
+  boolVecToProofsVerified
+    ( case SideloadBundle.projectVk bundle of
+        SLVK.VerificationKey vkRec -> vkRec.actualWrapDomainSize
     )
+
+-- | The wrap domain the wrap circuit pins a slot's finalize check to:
+-- | the compile's own for `Self`, the imported tag's for `External`;
+-- | `Nothing` for a side-loaded slot, whose domain arrives with its
+-- | runtime key. A wrap domain outside the table fails the compile, as
+-- | OCaml's `domain_index` does.
+slotWrapDomainPin :: Int -> SlotWrapKey -> Either String (Maybe ProofsVerified)
+slotWrapDomainPin selfWrapDomainLog2 = case _ of
+  Self -> Just <$> known selfWrapDomainLog2
+  External vks -> Just <$> known vks.wrapDomainLog2
+  SideLoadedKey -> Right Nothing
+  where
+  known log2 = note
+    ("compileMulti: a prev slot's wrap domain log2 " <> show log2 <> " is not a wrap domain")
+    (proofsVerifiedForWrapDomainLog2 log2)
+
+-- | The wrap domain a padding slot is pinned to and the prover supplies
+-- | for it: OCaml's `Tock.Field.one` in `Wrap_domain_indices`.
+paddingWrapDomain :: ProofsVerified
+paddingWrapDomain = N1
 
 -- | One slot's contribution to `shapeCompileData`: its per-slot
 -- | entries spliced onto the tail, plus the rule-wide fields.
@@ -845,7 +870,7 @@ consShapeProveData
   => Add restMpv 1 mpv
   => { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
   -> { slotWrapVK :: VerifierIndex PallasG WrapField
-     , slotWrapDomainLog2 :: Int
+     , slotWrapDomain :: ProofsVerified
      , slotWidth :: Int
      , slotPad :: Int
      }
@@ -862,11 +887,8 @@ consShapeProveData srs slotParams sideInfo headSlot restProveData =
   , prevUnfinalizedProofs: headUnfinalizedWrap :< restProveData.prevUnfinalizedProofs
   , prevStepAccs: slotData.prevStepAcc :< restProveData.prevStepAccs
   , prevEvals: slotData.headPrevEvals :< restProveData.prevEvals
-  -- The index is into `Pickles.Prove.Wrap`'s
-  -- `allPossibleDomainLog2s = [13, 14, 15]`, hence `log2 - 13`.
   , prevWrapDomainIndices:
-      F (Curves.fromInt (slotParams.slotWrapDomainLog2 - 13) :: WrapField)
-        :< restProveData.prevWrapDomainIndices
+      slotParams.slotWrapDomain :< restProveData.prevWrapDomainIndices
   , kimchiPrevEntries:
       { sgX: (unwrap headChalPolyComm).x
       , sgY: (unwrap headChalPolyComm).y
@@ -1028,7 +1050,9 @@ consShapeProveData srs slotParams sideInfo headSlot restProveData =
           { rounds: reflectType (Proxy :: Proxy WrapIPARounds)
           , zeta: prevWrapOracles.zeta
           , zetaOmega:
-              prevWrapOracles.zeta * domainGenerator slotParams.slotWrapDomainLog2
+              prevWrapOracles.zeta
+                * domainGenerator
+                    (wrapDomainLog2ForProofsVerified (fromEnum slotParams.slotWrapDomain))
           }
         prevWrapData = vestaProofData @WrapIPARounds prevData.proof.wrapProof
         prevHeadPrevEvals = AllocEvals
@@ -1118,7 +1142,7 @@ type ShapeProveData mpv =
         (PerProofUnfinalized WrapIPARounds (Type2 (F WrapField)) (F WrapField) Boolean)
   , prevStepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
   , prevEvals :: Vector mpv (AllocEvals (F WrapField))
-  , prevWrapDomainIndices :: Vector mpv (F WrapField)
+  , prevWrapDomainIndices :: Vector mpv ProofsVerified
   , kimchiPrevEntries ::
       Vector mpv
         { sgX :: StepField
@@ -1148,7 +1172,6 @@ type PadProveDataDummies =
         Boolean
   , dummyPrevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
   , dummyPrevEvals :: AllocEvals (F WrapField)
-  , dummyPrevWrapDomainIdx :: F WrapField
   , dummyKimchiPrevEntry ::
       { sgX :: StepField
       , sgY :: StepField
@@ -1194,7 +1217,7 @@ padShapeProveData dummies slotWidths sd =
       Vector.append (Vector.replicate @mpvPad dummies.dummyPrevEvals)
         sd.prevEvals
   , prevWrapDomainIndices:
-      Vector.append (Vector.replicate @mpvPad dummies.dummyPrevWrapDomainIdx)
+      Vector.append (Vector.replicate @mpvPad paddingWrapDomain)
         sd.prevWrapDomainIndices
   , kimchiPrevEntries:
       Vector.append (Vector.replicate @mpvPad dummies.dummyKimchiPrevEntry)
@@ -1277,11 +1300,12 @@ class
          }
 
   -- | The rule's wrap-stage data, assembled slot by slot from the
-  -- | prevs and the step-advice side info.
+  -- | prevs, the step-advice side info and the slots' wrap-domain pins.
   shapeProveData
     :: CompileConfig mpv
     -> WrapCompileResult
     -> ShapeProveSideInfo mpv
+    -> Vector mpv (Maybe ProofsVerified)
     -> prevsCarrier
     -> vkCarrier
     -> ShapeProveData mpv
@@ -1348,7 +1372,7 @@ instance CompilableSpec Unit Unit 0 Unit Unit Unit Unit where
         , prevProofRefs: []
         }
 
-  shapeProveData _ _ _ _ _ =
+  shapeProveData _ _ _ _ _ _ =
     { prevSgs: Vector.nil
     , prevStepChallenges: Vector.nil
     , msgWrapChallenges: Vector.nil
@@ -1491,26 +1515,27 @@ instance
         , slotStepNumChunks: RuntimeSlot.slotNumChunks cfg.stepNumChunks runtimeSlot
         }
 
-  shapeProveData cfg wrapCR sideInfo (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
+  shapeProveData cfg wrapCR sideInfo pins (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
     consShapeProveData cfg.srs slotParams sideInfo headSlot
-      (shapeProveData @rest restCfg wrapCR restSideInfo restPrevs restVkCarrier)
+      (shapeProveData @rest restCfg wrapCR restSideInfo restPins restPrevs restVkCarrier)
     where
     { head: headSlotWrapKey, tail: restSlotVKs } = Vector.uncons cfg.perSlotImportedVKs
     restCfg = cfg { perSlotImportedVKs = restSlotVKs }
+    { head: headPin, tail: restPins } = Vector.uncons pins
 
     -- A `Self` slot verifies a proof of this same system, so it reads
-    -- this compile's own wrap VK and domain; an `External` slot reads
-    -- the imported compile's, which that compile stored; a side-loaded
-    -- slot reads both off the runtime bundle.
+    -- this compile's own wrap VK; an `External` slot reads the imported
+    -- compile's, which that compile stored; a side-loaded slot reads
+    -- it off the runtime bundle. The wrap domain is the one the wrap
+    -- circuit pins, and the bundle's where the circuit leaves it free.
     slotParams =
       { slotWrapVK: case headSlotWrapKey of
           Self -> wrapCR.verifierIndex
           External vks -> vks.wrapCompileResult.verifierIndex
           SideLoadedKey -> SideloadBundle.verifierIndex (SideloadBundle.requireBundle headVk)
-      , slotWrapDomainLog2: case headSlotWrapKey of
-          External vks -> vks.wrapDomainLog2
-          SideLoadedKey -> bundleWrapDomainLog2 (SideloadBundle.requireBundle headVk)
-          Self -> cfg.selfWrapDomainLog2
+      , slotWrapDomain: case headPin of
+          Just pinned -> pinned
+          Nothing -> bundleWrapDomain (SideloadBundle.requireBundle headVk)
       , slotWidth: reflectType (Proxy @n)
       , slotPad: reflectType (Proxy @slotPad)
       }
@@ -1797,14 +1822,14 @@ class
 
   -- | The per-branch step results, in the shape
   -- | `buildWrapMainConfigMulti` takes: each branch's `mpv`, its step
-  -- | domain log2 and its step VK.
+  -- | domain log2, its step VK, and each prev slot's wrap-domain pin
+  -- | given the compile's own wrap domain log2. `Left` names a slot
+  -- | whose wrap domain has no pin.
   buildWrapPerBranchVec
-    :: perBranchStepCompileResults
-    -> Vector branches
-         { mpv :: Int
-         , stepDomainLog2 :: Int
-         , stepVK :: VerifierIndex VestaG StepField
-         }
+    :: Int
+    -> rulesCarrier
+    -> perBranchStepCompileResults
+    -> Either String (Vector branches (WrapBranchData mpvMax))
 
 instance
   CompilableRulesSpec RulesNil
@@ -1825,7 +1850,7 @@ instance
   extractStepCompileFns _ = unit
   runStepCompiles _ _ _ = pure unit
   extractStepProveFns _ = unit
-  buildWrapPerBranchVec _ = Vector.nil
+  buildWrapPerBranchVec _ _ _ = Right Vector.nil
 
 instance
   ( CompilableRulesSpec rest inputVal outputVal
@@ -1839,6 +1864,9 @@ instance
       restStepProveFns
       r
   , Add restBranches 1 branches
+  -- The rule's slots front-padded to the wrap circuit's `mpvMax`.
+  , Add mpvPad ruleMpv mpvMax
+  , Reflectable mpvPad Int
   , SlotWidths prevsSpec
   , StepSlotsCarrier
       prevsSpec
@@ -1964,29 +1992,33 @@ instance
       restCtxs
       restEntries
     pure (headResult /\ tailResults)
-  buildWrapPerBranchVec (headResult /\ restResults) =
+  buildWrapPerBranchVec selfWrapDomainLog2 (RuleEntry r /\ restEntries) (headResult /\ restResults) = do
+    pins <- traverse (slotWrapDomainPin selfWrapDomainLog2) r.slotVKs
     let
       headRecord =
         { mpv: reflectType (Proxy :: Proxy ruleMpv)
         , stepDomainLog2: proverIndexDomainLog2 headResult.proverIndex
         , stepVK: headResult.verifierIndex
+        , prevWrapDomainPins:
+            Vector.append (Vector.replicate @mpvPad (Just paddingWrapDomain)) pins
         }
-      restVec = buildWrapPerBranchVec
-        @rest
-        @inputVal
-        @outputVal
-        @topBranches
-        @restBranches
-        @mpvMax
-        @restCarrier
-        @restStepCompileFns
-        @restCtxs
-        @restStepCompileResults
-        @restStepProveFns
-        @r
-        restResults
-    in
-      headRecord :< restVec
+    restVec <- buildWrapPerBranchVec
+      @rest
+      @inputVal
+      @outputVal
+      @topBranches
+      @restBranches
+      @mpvMax
+      @restCarrier
+      @restStepCompileFns
+      @restCtxs
+      @restStepCompileResults
+      @restStepProveFns
+      @r
+      selfWrapDomainLog2
+      restEntries
+      restResults
+    pure (headRecord :< restVec)
   extractStepProveFns (RuleEntry r /\ rest) =
     r.stepProveFn
       /\ extractStepProveFns
@@ -2096,11 +2128,10 @@ class
     -> Int
     -> CompileMultiConfig
     -> WrapCompileResult
-    -> Vector vecLen
-         { mpv :: Int
-         , stepDomainLog2 :: Int
-         , stepVK :: VerifierIndex VestaG StepField
-         }
+    -> Vector vecLen (WrapBranchData mpvMax)
+    -- ^ every branch's wrap data
+    -> Vector branches (Vector mpvMax (Maybe ProofsVerified))
+    -- ^ the wrap-domain pins of this and the later branches
     -> Vector topBranches Int
     -> perBranchStepCompileResults
     -> rulesCarrier
@@ -2213,7 +2244,7 @@ instance
   where
   prePassDomainLog2s _ _ _ _ _ = pure Vector.nil
   runMultiCompile _ _ _ _ _ = pure unit
-  buildBranchProvers _ _ _ _ _ _ _ _ = pure unit
+  buildBranchProvers _ _ _ _ _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal
@@ -2402,10 +2433,12 @@ instance
     cfg
     wrapResult
     perBranchVec
+    pins
     allStepDomainLog2s
     (headStepCR /\ restStepResults)
     (headEntry /\ restEntries) = do
     let
+      { head: headPins, tail: restPins } = Vector.uncons pins
       thisBranch = branchIdx
       -- `branchIdx` is the recursion depth, so it indexes this
       -- branch's own entry of the full step-domain vector.
@@ -2430,6 +2463,7 @@ instance
           cfg
           wrapResult
           perBranchVec
+          headPins
           allStepDomainLog2s
           headStepCR
           headLog2
@@ -2454,6 +2488,7 @@ instance
       cfg
       wrapResult
       perBranchVec
+      restPins
       allStepDomainLog2s
       restStepResults
       restEntries
@@ -2765,13 +2800,11 @@ runMultiProverBody
   -- ^ branchIdx — baked into the wrap statement's `whichBranch`.
   -> CompileMultiConfig
   -> WrapCompileResult
-  -> Vector branches
-       { mpv :: Int
-       , stepDomainLog2 :: Int
-       , stepVK :: VerifierIndex VestaG StepField
-       }
+  -> Vector branches (WrapBranchData mpvMax)
   -- ^ the same per-branch vector wrap compile was given, from which
   --   the wrap solver rebuilds the same `WrapMainConfig`
+  -> Vector mpvMax (Maybe ProofsVerified)
+  -- ^ this branch's wrap-domain pins, padding slots first
   -> Vector topBranches Int
   -- ^ every branch's step domain log2, which gives this rule's
   --   `finalizeOtherProofCircuit` its dispatch table for `Self` slots
@@ -2789,6 +2822,7 @@ runMultiProverBody
   cfg
   wrapResult
   perBranchVec
+  branchPins
   allStepDomainLog2s
   stepCR
   selfStepDomainLog2
@@ -2826,6 +2860,7 @@ runMultiProverBody
       }
     proveData = shapeProveData @prevsSpec perRuleCfg wrapResult
       proveDataSideInfo
+      (Vector.drop @mpvPad branchPins)
       prevs
       sideloadedVKs
 
@@ -2889,10 +2924,6 @@ runMultiProverBody
           WeierstrassAffinePoint
             { x: F (unwrap dummyStepSgInWrapField).x, y: F (unwrap dummyStepSgInWrapField).y }
       , dummyPrevEvals: dummyPrevEvalsMax
-      -- A padded slot's wrap-domain index is `one`, not zero: the
-      -- wrap circuit expects index 1 of `[13, 14, 15]` — its own
-      -- domain — for a dummy slot.
-      , dummyPrevWrapDomainIdx: F one
       , dummyKimchiPrevEntry:
           { sgX: (unwrap dummyWrapSgInStepField).x
           , sgY: (unwrap dummyWrapSgInStepField).y
@@ -3042,7 +3073,7 @@ runMultiProverBody
         -- branch's index as `whichBranch`.
         wrapCtx =
           { wrapMainConfig:
-              buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
+              buildWrapMainConfigMulti @branches @mpvMax cfg.srs.vestaSrs
                 { perBranch: perBranchVec
                 }
           , crs: cfg.srs.pallasSrs
@@ -3060,7 +3091,9 @@ runMultiProverBody
               , prevStepAccs: proveDataMax.prevStepAccs
               , prevOldBpChals: proveDataMax.slotsValue
               , prevEvals: proveDataMax.prevEvals
-              , prevWrapDomainIndices: proveDataMax.prevWrapDomainIndices
+              , prevWrapDomainIndices:
+                  map (\pv -> F (Curves.fromInt (fromEnum pv) :: WrapField))
+                    proveDataMax.prevWrapDomainIndices
               }
           , debug: cfg.debug
           , proofCache: cfg.proofCache
@@ -3241,25 +3274,29 @@ compileMulti handler cfg rules = do
     Nothing -> pure unit
 
   let
-    perBranchVec = buildWrapPerBranchVec
-      @rs
-      @inputVal
-      @outputVal
-      @branches
-      @branches
-      @mpvMax
-      @rulesCarrier
-      @stepCompileFnsCarrier
-      @perBranchCtxsCarrier
-      @perBranchStepCompileResults
-      @stepProveFnsCarrier
-      @r
-      stepResults
+    selfWrapDomainLog2 =
+      resolveSelfWrapDomainLog2 (reflectType (Proxy :: Proxy mpvMax)) cfg.wrapDomainOverride
+  perBranchVec <- either Exc.throw pure $ buildWrapPerBranchVec
+    @rs
+    @inputVal
+    @outputVal
+    @branches
+    @branches
+    @mpvMax
+    @rulesCarrier
+    @stepCompileFnsCarrier
+    @perBranchCtxsCarrier
+    @perBranchStepCompileResults
+    @stepProveFnsCarrier
+    @r
+    selfWrapDomainLog2
+    rules
+    stepResults
 
   -- Step 2: shared wrap compile across all branches.
   wrapResult <- wrapCompile @branches @mpvMax @stepChunks
     { wrapMainConfig:
-        buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
+        buildWrapMainConfigMulti @branches @mpvMax cfg.srs.vestaSrs
           { perBranch: perBranchVec }
     , crs: cfg.srs.pallasSrs
     , slotWidths:
@@ -3280,17 +3317,14 @@ compileMulti handler cfg rules = do
   -- circuit that was actually built, and say which is which.
   let
     actualWrapDomainLog2 = ProofFFI.proverIndexDomainLog2 wrapResult.proverIndex
-    assumedWrapDomainLog2 = case cfg.wrapDomainOverride of
-      Just o -> o
-      Nothing -> wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
   -- `Exc.throw`, not `unsafeThrow`: the latter throws as soon as it is
   -- evaluated, which in a strict language is before `when` inspects the
   -- condition.
-  when (actualWrapDomainLog2 /= assumedWrapDomainLog2)
+  when (actualWrapDomainLog2 /= selfWrapDomainLog2)
     $ Exc.throw
     $ "compileMulti: this circuit was compiled for proofs using the wrap "
         <> "domain of size "
-        <> show assumedWrapDomainLog2
+        <> show selfWrapDomainLog2
         <> ", but the actual wrap domain size for the circuit has size "
         <> show actualWrapDomainLog2
         <> ". Set wrapDomainOverride to the correct domain size."
@@ -3316,6 +3350,7 @@ compileMulti handler cfg rules = do
     cfg
     wrapResult
     perBranchVec
+    (map _.prevWrapDomainPins perBranchVec)
     log2s
     stepResults
     rules

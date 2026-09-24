@@ -30,7 +30,7 @@ abbrev CP := IpaPallas.curve
 
 /-- The digest Rust recorded for simple_chain's wrap key — the entry under test. -/
 def wrapDigest : String :=
-  "12760373514751767122302416749453903344252347690628646567123715200989337323184"
+  "25629655396369961296688068589313572471108266300021582633277927409322125787567"
 
 /-- A point list as coordinate pairs, for comparison. -/
 def ptCoords (ps : Array CP.Point) : List (CP.BaseField × CP.BaseField) :=

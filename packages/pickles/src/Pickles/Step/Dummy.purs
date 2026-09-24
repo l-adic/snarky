@@ -12,6 +12,7 @@ module Pickles.Step.Dummy
   , mkDummyPerProofUnfinalized
   , stepDummyUnfinalizedProof
   , wrapDomainLog2ForProofsVerified
+  , proofsVerifiedForWrapDomainLog2
   , DummyEvals
   , PlonkChals
   , UnfinalizedConstantDummy
@@ -32,8 +33,10 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
+import Data.Enum (enumFromTo, fromEnum)
+import Data.Fin (finite, getFinite)
 import Data.Foldable (foldl)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -49,6 +52,7 @@ import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unno
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks (buildChallenges, buildEvalPoint, frSpongeChallengesPureChunked, padChunkedEvals, permContribution, permScalar, singleChunkEvals)
+import Pickles.ProofsVerified (ProofsVerified, allPossibleDomainLog2s)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Sponge (initialSponge)
 import Pickles.Types (Evals, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
@@ -652,11 +656,16 @@ stepDummyUnfinalizedProof bcd { domainLog2, zkRows, numChunks } bpChals =
 
 -- | The wrap-domain log2 for a given `max_proofs_verified`.
 wrapDomainLog2ForProofsVerified :: Int -> Int
-wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
-  0 -> 13
-  1 -> 14
-  2 -> 15
-  _ -> unsafeCrashWith "wrapDomainLog2: proofs_verified must be 0, 1, or 2"
+wrapDomainLog2ForProofsVerified proofsVerified = case finite proofsVerified of
+  Just i -> getFinite (Vector.index allPossibleDomainLog2s i)
+  Nothing -> unsafeCrashWith "wrapDomainLog2: proofs_verified must be 0, 1, or 2"
+
+-- | The inverse of `wrapDomainLog2ForProofsVerified`; `Nothing` for a
+-- | log2 outside its table.
+proofsVerifiedForWrapDomainLog2 :: Int -> Maybe ProofsVerified
+proofsVerifiedForWrapDomainLog2 log2 =
+  Array.find (\pv -> wrapDomainLog2ForProofsVerified (fromEnum pv) == log2)
+    (enumFromTo bottom top)
 
 -- | The kimchi-level wrap proof body of a base case.
 -- |

@@ -12,7 +12,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -41,7 +40,7 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
   realStepVK <- deriveStepVKFromCompiled @1 @0 vestaSrs stepArt.stepCs
   let
 
-    config :: WrapMainConfig 1 1
+    config :: WrapMainConfig 1 0 1
     config =
       { stepWidths: 0 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
@@ -49,8 +48,7 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+      , prevWrapDomainPins: Vector.nil :< Vector.nil
       }
   -- mpv=0: no prev slots, so no per-slot widths.
   let

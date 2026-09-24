@@ -15,7 +15,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainChunks2
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -49,7 +48,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
   realStepVK <- deriveStepVKFromCompiled @2 @0 vestaSrs stepArt.stepCs
   let
 
-    config :: WrapMainConfig 1 2
+    config :: WrapMainConfig 1 0 2
     config =
       { stepWidths: 0 :< Vector.nil
       -- WrapMainConfig.domainLog2s is the STEP proof's domain log2,
@@ -87,8 +86,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
                     <> ", expected 2)"
       , perBranchLagrangeAt: Nothing
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+      , prevWrapDomainPins: Vector.nil :< Vector.nil
       }
   -- mpv=0: no prev slots, so no per-slot widths. The
   -- @2 stepChunks type-app drives the wrap IVP's chunked w/z/t MSM

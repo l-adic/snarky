@@ -16,7 +16,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainSideLoadedMain
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -45,7 +44,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   realStepVK <- deriveStepVKFromCompiled @1 @1 vestaSrs stepArt.stepCs
   let
 
-    config :: WrapMainConfig 1 1
+    config :: WrapMainConfig 1 1 1
     config =
       { stepWidths: 1 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
@@ -53,8 +52,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+      , prevWrapDomainPins: (Nothing :< Vector.nil) :< Vector.nil
       }
   -- mpv=1, single side-loaded slot with bound 2 (the side-loaded
   -- prev's `max_proofs_verified = N2` upper bound). Slots derived

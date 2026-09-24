@@ -3,6 +3,7 @@
 module Pickles.ProofsVerified
   ( ProofsVerified(..)
   , ProofsVerifiedCount
+  , allPossibleDomainLog2s
   , proofsVerifiedToBoolVec
   , boolVecToProofsVerified
   ) where
@@ -11,6 +12,7 @@ import Prelude
 
 import Data.Enum (class BoundedEnum, class Enum)
 import Data.Enum.Generic (genericCardinality, genericFromEnum, genericPred, genericSucc, genericToEnum)
+import Data.Fin (Finite, reflectFinite)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Vector (Vector, (:<))
@@ -24,6 +26,14 @@ data ProofsVerified = N0 | N1 | N2
 -- | one-hot bool vectors and the per-domain tables indexed by a
 -- | side-loaded VK's `actualWrapDomainSize`.
 type ProofsVerifiedCount = 3
+
+-- | Every wrap domain's log2, indexed by `proofs_verified`: OCaml's
+-- | `Wrap_verifier.all_possible_domains`. The `Finite 16` bound is
+-- | `1 + WrapIPARounds`, since a wrap domain is at most the wrap SRS
+-- | size `2^WrapIPARounds`.
+allPossibleDomainLog2s :: Vector ProofsVerifiedCount (Finite 16)
+allPossibleDomainLog2s =
+  reflectFinite @13 :< reflectFinite @14 :< reflectFinite @15 :< Vector.nil
 
 derive instance Eq ProofsVerified
 derive instance Ord ProofsVerified

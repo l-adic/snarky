@@ -15,6 +15,7 @@ module Pickles.Prove.Wrap
   , wrapSolveAndProve
   , extractStepVKComms
   , stepVkForCircuit
+  , WrapBranchData
   , buildWrapMainConfigMulti
   ) where
 
@@ -31,7 +32,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -42,6 +43,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
+import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (AllocEvals, ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments, verifierIndexDigest)
@@ -206,7 +208,7 @@ buildWrapAdvice input =
 -- | and the packed wrap statement from `assembleWrapMainInput`, which
 -- | drives both the `CircuitType` shape check and the solver input.
 type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
-  { wrapMainConfig :: WrapMainConfig branches stepChunks
+  { wrapMainConfig :: WrapMainConfig branches mpv stepChunks
   , crs :: CRS PallasG
   , publicInput ::
       Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
@@ -235,7 +237,7 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
 -- | without the solver-only fields (`publicInput`, `advice`).
 type WrapCompileContext :: Int -> Int -> Int -> Type
 type WrapCompileContext branches mpv stepChunks =
-  { wrapMainConfig :: WrapMainConfig branches stepChunks
+  { wrapMainConfig :: WrapMainConfig branches mpv stepChunks
   , crs :: CRS PallasG
   -- | One `max_local_max_proofs_verified` per slot, in slot order.
   , slotWidths :: Vector mpv Int
@@ -540,6 +542,17 @@ stepVkForCircuit vk =
     , endomulScalarComm: cpChunk vk.endomulScalarComm
     }
 
+-- | What the wrap circuit takes from one step branch: the rule's own
+-- | `mpv`, its step domain log2 and step VK, and the wrap-domain pin of
+-- | each of the circuit's `mpvMax` slots.
+type WrapBranchData :: Int -> Type
+type WrapBranchData mpvMax =
+  { mpv :: Int
+  , stepDomainLog2 :: Int
+  , stepVK :: VerifierIndex VestaG StepField
+  , prevWrapDomainPins :: Vector mpvMax (Maybe ProofsVerified)
+  }
+
 -- | The `WrapMainConfig` for a set of step branches, which the wrap
 -- | circuit's `Pseudo.choose whichBranch` machinery dispatches over at
 -- | proof time.
@@ -553,19 +566,13 @@ stepVkForCircuit vk =
 -- | `lagrangeAt` is unused — filled from the head branch's domain only
 -- | to satisfy the type.
 buildWrapMainConfigMulti
-  :: forall @branches @stepChunks branchesPred
+  :: forall @branches @mpv @stepChunks branchesPred
    . Reflectable branches Int
   => Reflectable stepChunks Int
   => Add 1 branchesPred branches
   => CRS VestaG
-  -> { perBranch ::
-         Vector branches
-           { mpv :: Int
-           , stepDomainLog2 :: Int
-           , stepVK :: VerifierIndex VestaG StepField
-           }
-     }
-  -> WrapMainConfig branches stepChunks
+  -> { perBranch :: Vector branches (WrapBranchData mpv) }
+  -> WrapMainConfig branches mpv stepChunks
 buildWrapMainConfigMulti vestaSrs { perBranch } =
   let
     domainLog2s = map _.stepDomainLog2 perBranch
@@ -617,7 +624,6 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     , perBranchLagrangeAt:
         if allEqual then Nothing else Just perBranchLookup
     , blindingH: (coerce (srsBlindingGenerator vestaSrs :: AffinePoint WrapField)) :: AffinePoint (F WrapField)
-    , allPossibleDomainLog2s:
-        unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+    , prevWrapDomainPins: map _.prevWrapDomainPins perBranch
     }
 

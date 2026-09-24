@@ -13,7 +13,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -44,7 +43,7 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
   realStepVK <- deriveStepVKFromCompiled @1 @0 vestaSrs stepArt.stepCs
   let
 
-    config :: WrapMainConfig 1 1
+    config :: WrapMainConfig 1 0 1
     config =
       -- N=0 NRR: single branch, step_widths=[0]. `domainLog2s` is the
       -- STEP CS's evaluation-domain log2, derived from the step
@@ -55,8 +54,7 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+      , prevWrapDomainPins: Vector.nil :< Vector.nil
       }
   -- mpv=0, no per_proofs; slots derived from Unit via funcdep.
   let
