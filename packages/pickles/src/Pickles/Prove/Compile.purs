@@ -144,7 +144,6 @@ import Pickles.Verify
   , mkVerifier
   , prevProofDataOf
   , verify
-  , wrapPublicInput
   , wrapPublicInputVP
   )
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -178,7 +177,7 @@ import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (fromShifted, toShifted) as Kimchi
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Snarky.Circuit.Types (class CircuitType, fieldsToValue, valueToFields)
+import Snarky.Circuit.Types (class CircuitType, fieldsToValue)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Snarky.Curves.Class (fromInt) as Curves
@@ -850,9 +849,10 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
 -- | enclosing or the imported compile, a side-loaded slot off its
 -- | runtime key.
 consShapeProveData
-  :: forall prevHeadInput prevHeadOutput slotWidth mpv restMpv
+  :: forall prevHeadInput prevHeadOutput prevHeadStmtVar slotWidth mpv restMpv
    . Add 1 restMpv mpv
   => Add restMpv 1 mpv
+  => CircuitType StepField (StatementIO prevHeadInput prevHeadOutput) prevHeadStmtVar
   => { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
   -> { slotWrapVK :: VerifierIndex PallasG WrapField
      , slotWrapDomain :: ProofsVerified
@@ -3058,9 +3058,6 @@ runMultiProverBody
             -- recursive consumer reads them back here.
             , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
             , challengePolynomialCommitment: stepProofSg
-            -- The statement's fields, input then output: what the
-            -- step circuit hashed into the step message digest.
-            , appState: valueToFields @StepField statement
             , widthData
             , stepDomainLog2: selfStepDomainLog2
             }

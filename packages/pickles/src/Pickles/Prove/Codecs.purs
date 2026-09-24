@@ -11,6 +11,8 @@
 module Pickles.Prove.Codecs
   ( encodeVerifiableProof
   , decodeVerifiableProof
+  , encodeVerifiableProofBody
+  , decodeVerifiableProofBody
   , encodeVerifier
   , decodeVerifier
   ) where
@@ -30,12 +32,14 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Types (ChunkedEvals, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (VerifiableProof, Verifier, dummyWrapSgOf)
+import Record as Record
 import Simple.JSON (readJSON, writeJSON)
 import Snarky.Backend.Kimchi.Proof (vestaProofFromSerdeJson, vestaProofToSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
 
 -- | Wire form of `ChunkedEvals`: each polynomial's per-chunk
 -- | `NonEmptyArray` becomes a plain `Array`, simple-json having no
@@ -53,21 +57,24 @@ type ChunkedEvalsWire f =
 -- | Wire form of a `VerifiableProof`: the wrap proof becomes its
 -- | serde-JSON string and the chunked evals lose their
 -- | `NonEmptyArray`s; every other field is unchanged.
-type VerifiableProofWire =
-  { wrapProof :: String
+type VerifiableProofWire = { appState :: Array StepField | VerifiableProofBodyWire }
+
+-- | `VerifiableProofWire` without `appState`, for a proof whose typed
+-- | statement travels beside it and is the one copy of that state.
+type VerifiableProofBodyWire =
+  ( wrapProof :: String
   , rawPlonk :: PlonkMinimal (F StepField)
   , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
   , branchData :: BranchData StepField Boolean
   , spongeDigestBeforeEvaluations :: StepField
   , prevEvalsChunked :: ChunkedEvalsWire StepField
   , pEval0Chunks :: Array StepField
-  , appState :: Array StepField
   , oldBulletproofChallenges :: Array (Vector StepIPARounds StepField)
   , prevChallengePolynomialCommitments :: Array (AffinePoint StepField)
   , challengePolynomialCommitment :: AffinePoint WrapField
   , prevWrapBulletproofChallenges :: Array (Vector WrapIPARounds WrapField)
   , stepDomainLog2 :: Int
-  }
+  )
 
 -- | Wire form of a `Verifier`: the wrap VK becomes its serde-JSON
 -- | string, and the step-domain constants serialize directly.
@@ -151,6 +158,18 @@ encodeVerifiableProof = writeJSON <<< toWire
 
 decodeVerifiableProof :: String -> Either MultipleErrors VerifiableProof
 decodeVerifiableProof s = (readJSON s :: Either MultipleErrors VerifiableProofWire) >>= fromWire
+
+-- | `encodeVerifiableProof` without `appState`.
+encodeVerifiableProofBody :: VerifiableProof -> String
+encodeVerifiableProofBody vp =
+  writeJSON (Record.delete (Proxy @"appState") (toWire vp) :: Record VerifiableProofBodyWire)
+
+-- | Decode what `encodeVerifiableProofBody` wrote, with the caller's
+-- | `appState` in place of the one it left out.
+decodeVerifiableProofBody :: Array StepField -> String -> Either MultipleErrors VerifiableProof
+decodeVerifiableProofBody appState s = do
+  w :: Record VerifiableProofBodyWire <- readJSON s
+  fromWire (Record.insert (Proxy @"appState") appState w)
 
 encodeVerifier :: Verifier -> String
 encodeVerifier v = writeJSON
