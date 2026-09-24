@@ -33,8 +33,7 @@ module Pickles.Prove.Compile
   -- them in scope.
   , padShapeProveData
   , class SlotKinds
-  , SlotKeySource(..)
-  , slotKindsOf
+  , slotKeysOf
   , class CompilableRulesSpec
   , branchCount
   , ruleSlotWidths
@@ -60,10 +59,9 @@ import Data.Either (Either(..), either, note)
 import Data.Enum (fromEnum)
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
-import Data.FoldableWithIndex (forWithIndex_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int.Bits as Int.Bits
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, over, unwrap, wrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
@@ -351,9 +349,8 @@ type ProverVKs =
   , stepNumChunks :: Int
   }
 
--- | Where one slot's wrap verification key comes from, chosen at
--- | compile time. This is the only place the compiled/side-loaded
--- | distinction is made.
+-- | Where a compiled slot's wrap verification key comes from, chosen
+-- | at compile time.
 -- |
 -- | * `Self` — the slot points at the rule being compiled. The step
 -- |   circuit substitutes that rule's own index, and the wrap VK
@@ -362,14 +359,14 @@ type ProverVKs =
 -- | * `External vks` — a previously compiled rule, whose `ProverVKs`
 -- |   the user supplies. Its wrap VK is baked into the step circuit
 -- |   as a constant, so that slot needs no advice path.
--- | * `SideLoadedKey` — no compile-time key at all. The wrap VK
--- |   arrives with the slot's `SideLoadedPrev` at prove time and
--- |   is allocated in-circuit; compile time fixes only the slot's
--- |   `n`, the upper bound on its `max_proofs_verified`.
+-- |
+-- | A side-loaded slot takes no key here: its kind in the prevs spec
+-- | says it is side-loaded, and its key arrives with its
+-- | `SideLoadedPrev` at prove time. Per slot, the compile holds a
+-- | `Maybe SlotWrapKey`, `Nothing` for a side-loaded slot.
 data SlotWrapKey
   = Self
   | External ProverVKs
-  | SideLoadedKey
 
 type StepInputs :: Type -> Type -> Type -> Type
 type StepInputs prevsSpec inputVal prevsCarrier =
@@ -509,10 +506,9 @@ statementOf = case _ of
 type CompileConfig :: Int -> Type
 type CompileConfig mpv =
   { srs :: { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
-  -- | Where each slot's wrap VK comes from, in slot order. The length
-  -- | is in the type, so a rule that supplies the wrong number of
-  -- | keys is a type error rather than a runtime one.
-  , perSlotImportedVKs :: Vector mpv SlotWrapKey
+  -- | Where each slot's wrap VK comes from, in slot order: a compiled
+  -- | slot's key, or `Nothing` for a side-loaded slot.
+  , perSlotImportedVKs :: Vector mpv (Maybe SlotWrapKey)
   , debug :: Boolean
   -- | The compile's declared `@stepChunks`, one value for every
   -- | branch. `Self` slots read their prev step proof's `zk_rows`
@@ -540,13 +536,13 @@ resolveSelfWrapDomainLog2 mpvMax = case _ of
 
 -- | One slot's compile-time key, as the runtime slot record the
 -- | per-slot derivations in `Pickles.Prove.Slot` read.
-runtimeSlotOf :: Int -> SlotWrapKey -> RuntimeSlot.Slot
+runtimeSlotOf :: Int -> Maybe SlotWrapKey -> RuntimeSlot.Slot
 runtimeSlotOf localMpv key =
   { localMpv
   , source: case key of
-      Self -> RuntimeSlot.SelfSource
-      SideLoadedKey -> RuntimeSlot.SideLoadedSource
-      External vks -> RuntimeSlot.ExternalSource
+      Just Self -> RuntimeSlot.SelfSource
+      Nothing -> RuntimeSlot.SideLoadedSource
+      Just (External vks) -> RuntimeSlot.ExternalSource
         { wrapVerifierIndex: vks.wrapCompileResult.verifierIndex
         , wrapDomainLog2: vks.wrapDomainLog2
         -- Only single-rule external sources are supported; the one
@@ -579,11 +575,11 @@ bundleWrapDomain bundle =
 -- | `Nothing` for a side-loaded slot, whose domain arrives with its
 -- | runtime key. A wrap domain outside the table fails the compile, as
 -- | OCaml's `domain_index` does.
-slotWrapDomainPin :: Int -> SlotWrapKey -> Either String (Maybe ProofsVerified)
+slotWrapDomainPin :: Int -> Maybe SlotWrapKey -> Either String (Maybe ProofsVerified)
 slotWrapDomainPin selfWrapDomainLog2 = case _ of
-  Self -> Just <$> known selfWrapDomainLog2
-  External vks -> Just <$> known vks.wrapDomainLog2
-  SideLoadedKey -> Right Nothing
+  Just Self -> Just <$> known selfWrapDomainLog2
+  Just (External vks) -> Just <$> known vks.wrapDomainLog2
+  Nothing -> Right Nothing
   where
   known log2 = note
     ("compileMulti: a prev slot's wrap domain log2 " <> show log2 <> " is not a wrap domain")
@@ -1338,8 +1334,8 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
   -- come off the key rather than off anything this compile knows. The
   -- witness is still sized at the slot's compile-time bound; a smaller
   -- `actualWrapDomainSize` is masked in-circuit. A slot has a key
-  -- exactly when its `SlotWrapKey` is `SideLoadedKey`, which
-  -- `mkRuleEntry` checks against the slot's kind.
+  -- exactly when the prevs spec makes it side-loaded, which is also
+  -- when its entry of `perSlotImportedVKs` is `Nothing`.
   slotParams i slot = case slot.sideLoadedKey of
     Just bundle ->
       { slotWrapVK: SideloadBundle.verifierIndex bundle
@@ -1426,7 +1422,7 @@ shapeProveData cfg wrapCR sideInfo pins widths slots =
   slotParams i slot =
     { slotWrapVK: case slot.sideLoadedKey, cfg.perSlotImportedVKs !! i of
         Just bundle, _ -> SideloadBundle.verifierIndex bundle
-        Nothing, External vks -> vks.wrapCompileResult.verifierIndex
+        Nothing, Just (External vks) -> vks.wrapCompileResult.verifierIndex
         Nothing, _ -> wrapCR.verifierIndex
     , slotWrapDomain: case slot.sideLoadedKey of
         Just bundle -> bundleWrapDomain bundle
@@ -1462,42 +1458,40 @@ foreign import data RulesNil :: RulesSpec
 -- | spec, and the rest of the list.
 foreign import data RulesCons :: Int -> Type -> RulesSpec -> RulesSpec
 
--- | Where a slot's wrap verification key comes from, as a value: the
--- | `SlotOf` kind a rule declares, and equally what a `SlotWrapKey`
--- | supplies. `Self` and `External` are both compiled sources, so they
--- | share a case.
-data SlotKeySource
-  = KeyFromCompile
-  | KeyFromProver
+-- | `spec` → the number of its compiled slots, and each slot's key:
+-- | a compiled slot takes the caller's next key, a side-loaded slot
+-- | `Nothing`. The caller supplies keys for the compiled slots only, so
+-- | a key's slot kind cannot disagree with the spec.
+class SlotKinds :: Type -> Int -> Int -> Constraint
+class SlotKinds spec compiled len | spec -> compiled len where
+  slotKeysOf
+    :: forall proxy
+     . proxy spec
+    -> Vector compiled SlotWrapKey
+    -> Vector len (Maybe SlotWrapKey)
 
-derive instance Eq SlotKeySource
+instance SlotKinds Unit 0 0 where
+  slotKeysOf _ _ = Vector.nil
 
-instance Show SlotKeySource where
-  show = case _ of
-    KeyFromCompile -> "a compiled slot (Self or External)"
-    KeyFromProver -> "a side-loaded slot"
+instance
+  ( SlotKinds rest restCompiled restLen
+  , Add restCompiled 1 compiled
+  , Add 1 restCompiled compiled
+  , Add restLen 1 len
+  ) =>
+  SlotKinds (SlotOf Compiled n stmt /\ rest) compiled len where
+  slotKeysOf _ keys =
+    let
+      { head, tail } = Vector.uncons keys
+    in
+      Vector.cons (Just head) (slotKeysOf (Proxy :: Proxy rest) tail)
 
--- | The source a `SlotWrapKey` supplies.
-slotWrapKeySource :: SlotWrapKey -> SlotKeySource
-slotWrapKeySource = case _ of
-  Self -> KeyFromCompile
-  External _ -> KeyFromCompile
-  SideLoadedKey -> KeyFromProver
-
--- | Each slot's declared key source, in slot order, read back from the
--- | spec's `SlotOf` kinds. `mkRuleEntry` checks it against the
--- | `SlotWrapKey` the caller supplies for that slot.
-class SlotKinds (prevsSpec :: Type) where
-  slotKindsOf :: forall proxy. proxy prevsSpec -> Array SlotKeySource
-
-instance SlotKinds Unit where
-  slotKindsOf _ = []
-
-instance SlotKinds rest => SlotKinds (SlotOf Compiled n stmt /\ rest) where
-  slotKindsOf _ = Array.cons KeyFromCompile (slotKindsOf (Proxy @rest))
-
-instance SlotKinds rest => SlotKinds (SlotOf SideLoaded n stmt /\ rest) where
-  slotKindsOf _ = Array.cons KeyFromProver (slotKindsOf (Proxy @rest))
+instance
+  ( SlotKinds rest compiled restLen
+  , Add restLen 1 len
+  ) =>
+  SlotKinds (SlotOf SideLoaded n stmt /\ rest) compiled len where
+  slotKeysOf _ keys = Vector.cons Nothing (slotKeysOf (Proxy :: Proxy rest) keys)
 
 -- | The wrap circuit's per-slot widths, overlaid from every branch's own
 -- | slot list.
@@ -2383,8 +2377,9 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize r = RuleEntry
       -- Per slot, the cache key of the wrap proof verified there.
       -> Array (Maybe ProofRef)
       -> Effect (Either EvaluationError (PProveStep.StepProveResult outputSize))
-  -- | Where each slot's wrap VK comes from, in slot order.
-  , slotVKs :: Vector mpv SlotWrapKey
+  -- | Where each slot's wrap VK comes from, in slot order: a compiled
+  -- | slot's key, or `Nothing` for a side-loaded slot.
+  , slotVKs :: Vector mpv (Maybe SlotWrapKey)
   }
 
 -- | A `RuleEntry` whose closures capture the given rule and invoke it
@@ -2394,12 +2389,10 @@ mkRuleEntry
   :: forall @mpvMax @outputVal @r
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
        inputVal inputVar outputVar
-       pad unfsTotal digestPlusUnfs
+       pad unfsTotal digestPlusUnfs compiled
    . CircuitGateConstructor StepField VestaG
   => SlotWidths prevsSpec mpv
-  -- Each slot's `SlotOf` kind, to check against the `SlotWrapKey` the
-  -- caller supplies for it.
-  => SlotKinds prevsSpec
+  => SlotKinds prevsSpec compiled mpv
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2418,20 +2411,12 @@ mkRuleEntry
   => CheckedType StepField (KimchiConstraint StepField) inputVar
   => SlotStatementsCarrier prevsSpec valCarrier
   => PStepRule r prevsSpec inputVal inputVar outputVal outputVar
-  -- | Where each slot's wrap VK comes from, in slot order.
-  -> Vector mpv SlotWrapKey
+  -- | The wrap VK source of each compiled slot, in slot order. A
+  -- | side-loaded slot takes none.
+  -> Vector compiled SlotWrapKey
   -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize r)
-mkRuleEntry rule slotVKs = do
-  -- A slot's kind says where its key comes from, and its `SlotWrapKey`
-  -- says the same thing at the value level. Disagreement means one of
-  -- the two is a mistake, and nothing downstream would report it: the
-  -- circuit follows the key, the rule's type follows the kind.
-  forWithIndex_ (slotKindsOf (Proxy @prevsSpec)) \i declared -> do
-    let supplied = map slotWrapKeySource (Array.index (Vector.toUnfoldable slotVKs) i)
-    when (Just declared /= supplied) $ Exc.throw
-      $ "mkRuleEntry: slot " <> show i <> " is declared " <> show declared
-          <> " in the rule's prevs spec, but its SlotWrapKey supplies "
-          <> maybe "no key at all" show supplied
+mkRuleEntry rule compiledKeys = do
+  let slotVKs = slotKeysOf (Proxy :: Proxy prevsSpec) compiledKeys
   pure $ RuleEntry
     { preComputeStepDomainLog2Fn: \handler ctx ->
         PProveStep.preComputeStepDomainLog2
@@ -2515,7 +2500,7 @@ buildStepProveCtx
   -- ^ the declared `@stepChunks`
   -> Int
   -- ^ the compile's `mpvMax`, which fixes its wrap domain
-  -> Vector mpv SlotWrapKey
+  -> Vector mpv (Maybe SlotWrapKey)
   -> Vector nd Int
   -> PProveStep.StepProveContext mpv nd
 buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =

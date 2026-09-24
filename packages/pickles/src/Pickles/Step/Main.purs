@@ -102,10 +102,9 @@ buildSlotVkSources = Vector.zipWith \blueprint prev -> case blueprint of
   BlueprintExternal lagrange v -> ConstVk lagrange v
   BlueprintSideLoaded lagrange -> case prev.verificationKey of
     Just vk -> SideloadedExistsVk lagrange vk
-    -- The slot's blueprint and its `SlotOf` kind are checked against
-    -- each other when the rule entry is built, so a side-loaded
-    -- blueprint always meets a side-loaded slot, whose returned
-    -- statement carries a key.
+    -- A side-loaded blueprint comes from a slot the prevs spec makes
+    -- side-loaded, and such a slot's returned statement carries a
+    -- key.
     Nothing -> unsafeThrow
       "buildSlotVkSources: a side-loaded slot returned no verification key"
 
