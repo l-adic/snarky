@@ -37,9 +37,9 @@ import Snarky.Circuit.DSL (F)
 -- | `inputVal = Unit`, so this `identity` cast supplies the missing pin
 -- | with named type variables (no wildcard warnings).
 pinCompileEntry
-  :: forall prevsSpec mpv nd valCarrier carrier outputSize vkCarrier blueprints
-   . RuleEntry prevsSpec mpv nd valCarrier Unit carrier outputSize vkCarrier blueprints ()
-  -> RuleEntry prevsSpec mpv nd valCarrier Unit carrier outputSize vkCarrier blueprints ()
+  :: forall prevsSpec mpv valCarrier outputSize
+   . RuleEntry prevsSpec mpv valCarrier Unit outputSize ()
+  -> RuleEntry prevsSpec mpv valCarrier Unit outputSize ()
 pinCompileEntry = identity
 
 -- | The full example-circuit compilation against the shared SRS: the
