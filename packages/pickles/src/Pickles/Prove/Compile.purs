@@ -5,9 +5,9 @@
 -- | by one rule's prev-slot spec and splits that rule's typed prevs
 -- | into the statements the rule reads and one `SomePrevSlot` per
 -- | slot, which the prover walks as a `Vector`;
--- | `CompilableRulesSpec` and `CompilableRulesSpecShape` are indexed
--- | by the list of rules and walk the branches. `RuleEntry` is one
--- | branch; `runMultiProverBody` is one branch's prover.
+-- | `CompilableRulesSpec` is indexed by the list of rules and walks
+-- | the branches. `RuleEntry` is one branch; `runMultiProverBody` is
+-- | one branch's prover.
 module Pickles.Prove.Compile
   ( PrevSlot(..)
   , SideLoadedPrev(..)
@@ -36,7 +36,6 @@ module Pickles.Prove.Compile
   , ruleCompileFns
   , RuleCompileFns
   , CompileMultiConfig
-  , class CompilableRulesSpecShape
   , class MaxOfRulesMpvs
   , class IntMax
   , class IntMaxOrd
@@ -1466,7 +1465,7 @@ instance IntMaxOrd GT a b a
 instance (Compare a b ord, IntMaxOrd ord a b c) => IntMax a b c
 
 -- | `mpvMax` is the maximum `ruleMpv` over `rules`, as an equality
--- | rather than a bound. `CompilableRulesSpecShape`'s per-rule
+-- | rather than a bound. `CompilableRulesSpec`'s per-rule
 -- | `Add mpvPad ruleMpv mpvMax` already gives `ruleMpv ≤ mpvMax`;
 -- | this pins `mpvMax` itself, so two call sites deriving it from the
 -- | same `rules` cannot disagree.
@@ -1541,25 +1540,21 @@ type MultiOutput proversCarrier branches mpvMax inputVal outputVal =
 --------------------------------------------------------------------------------
 -- CompilableRulesSpec
 --
--- The rules carrier is a tuple of `RuleEntry`s at different types;
--- one instance per rule collects each entry's `RuleCompileFns` into a
--- `Vector`, which the compile then walks as data.
+-- The rules carrier is a tuple of `RuleEntry`s at different types.
+-- One instance per rule collects each entry's `RuleCompileFns` into a
+-- `Vector`, which the compile walks as data, and builds that rule's
+-- `BranchProver`, whose type is the rule's own.
 --------------------------------------------------------------------------------
 
--- | One instance per rule, walking the rules spec.
--- |
--- | Two branch counts appear. `topBranches` is the whole compile's
--- | count and stays fixed through the recursion; `branches` is the
--- | count of the tail still to be walked. A `Self` slot's candidate
--- | step domains are all `topBranches` branches', not just the
--- | tail's.
+-- | One instance per rule, walking the rules spec. `branches` counts
+-- | the rules still to be walked.
 class CompilableRulesSpec
   :: RulesSpec
   -> Type
   -> Type
   -> Int
   -> Int
-  -> Int
+  -> Type
   -> Type
   -> Row (Type -> Type)
   -> Constraint
@@ -1568,102 +1563,16 @@ class
     rs
     inputVal
     outputVal
-    topBranches
     branches
     mpvMax
     rulesCarrier
+    proversCarrier
     r
-  | rs topBranches r ->
-    branches mpvMax rulesCarrier
+  | rs r -> branches mpvMax rulesCarrier proversCarrier
   where
   -- | Each rule's compile-time operations, in branch order.
   ruleCompileFns :: rulesCarrier -> Vector branches (RuleCompileFns mpvMax)
 
-instance
-  CompilableRulesSpec RulesNil
-    inputVal
-    outputVal
-    topBranches
-    0
-    mpvMax
-    Unit
-    r
-  where
-  ruleCompileFns _ = Vector.nil
-
-instance
-  ( CompilableRulesSpec rest inputVal outputVal
-      topBranches
-      restBranches
-      mpvMax
-      restCarrier
-      r
-  , Add 1 restBranches branches
-  , Add restBranches 1 branches
-  -- The rule's slots front-padded to the wrap circuit's `mpvMax`.
-  , Add mpvPad ruleMpv mpvMax
-  , Reflectable mpvPad Int
-  , SlotWidths prevsSpec ruleMpv
-  -- `outputSize` derives from `mpvMax`, not from the rule's own
-  -- `mpv`: the step public input is `mpvMax`-shaped.
-  , Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
-  , Add unfsTotal 1 digestPlusUnfs
-  , Add digestPlusUnfs mpvMax outputSize
-  , Reflectable ruleMpv Int
-  , SlotStatementsCarrier prevsSpec valCarrier
-  ) =>
-  CompilableRulesSpec
-    (RulesCons ruleMpv prevsSpec rest)
-    inputVal
-    outputVal
-    topBranches
-    branches
-    mpvMax
-    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
-        /\ restCarrier
-    )
-    r
-  where
-  ruleCompileFns (RuleEntry r /\ rest) =
-    r.compileFns :< ruleCompileFns
-      @rest
-      @inputVal
-      @outputVal
-      @topBranches
-      @restBranches
-      @mpvMax
-      @restCarrier
-      @r
-      rest
-
---------------------------------------------------------------------------------
--- CompilableRulesSpecShape — shape-data methods.
---
--- Separate from `CompilableRulesSpec` because that class must not
--- carry a `SplitPrevs` super-constraint: PS cannot always
--- discharge one at a call site, and the failure cascades through the
--- funDep chain and leaves every class parameter unresolved. Split,
--- the structural methods stay light and only callers of the
--- shape-data methods take on the heavier discharge.
---------------------------------------------------------------------------------
-
-class
-  CompilableRulesSpec rs inputVal outputVal topBranches branches mpvMax
-    rulesCarrier
-    r <=
-  CompilableRulesSpecShape
-    rs
-    inputVal
-    outputVal
-    topBranches
-    branches
-    mpvMax
-    rulesCarrier
-    proversCarrier
-    r
-  | rs topBranches r -> branches mpvMax rulesCarrier
-    proversCarrier
-  where
   -- | One `BranchProver` per branch: a closure that runs that
   -- | branch's step solve and prove, then the shared wrap solve and
   -- | prove with `whichBranch` set to its own index. The index
@@ -1697,12 +1606,156 @@ class
     -> WrapCompileResult
     -> Vector vecLen (WrapBranchData mpvMax)
     -- ^ every branch's wrap data
+    -> NonEmptyArray Int
+    -- ^ every branch's step domain log2, the `Self` slots' candidates
     -> Vector branches (Vector mpvMax (Maybe ProofsVerified))
     -- ^ the wrap-domain pins of this and the later branches
-    -> Vector topBranches Int
+    -> Vector branches Int
+    -- ^ the step domain log2s of this and the later branches
     -> Vector branches PProveStep.StepCompileResult
     -> rulesCarrier
     -> Effect proversCarrier
+
+instance
+  CompilableRulesSpec RulesNil
+    inputVal
+    outputVal
+    0
+    mpvMax
+    Unit
+    Unit
+    r
+  where
+  ruleCompileFns _ = Vector.nil
+  buildBranchProvers _ _ _ _ _ _ _ _ _ _ = pure unit
+
+instance
+  ( CompilableRulesSpec rest inputVal outputVal
+      restBranches
+      mpvMax
+      restCarrier
+      restProvers
+      r
+  , SplitPrevs prevsSpec prevsCarrier valCarrier ruleMpv
+  , SlotWidths prevsSpec ruleMpv
+  , SlotStatementsCarrier prevsSpec valCarrier
+  -- Per-rule step+wrap constraints needed by runMultiProverBody.
+  , CircuitGateConstructor StepField VestaG
+  , CircuitGateConstructor WrapField PallasG
+  , Reflectable ruleMpv Int
+  , Reflectable pad Int
+  , Reflectable outputSize Int
+  , Add pad ruleMpv PaddedLength
+  -- The rule's slots front-padded to the wrap circuit's `mpvMax`.
+  , Reflectable mpvPad Int
+  , Add mpvPad ruleMpv mpvMax
+  -- `outputSize` derives from `mpvMax`, not from the rule's own
+  -- `mpv`: the step public input is `mpvMax`-shaped.
+  , Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
+  , Add unfsTotal 1 digestPlusUnfs
+  , Add digestPlusUnfs mpvMax outputSize
+  -- Wrap-stage constraints at `mpvMax`, the shape
+  -- `padShapeProveData` widens the per-rule `ruleMpv` shape to.
+  , Reflectable mpvMax Int
+  , Reflectable padMax Int
+  , Add padMax mpvMax PaddedLength
+  , Compare mpvMax 3 LT
+  , CircuitType StepField inputVal inputVar
+  , CircuitType StepField outputVal outputVar
+  , CheckedType StepField (KimchiConstraint StepField) inputVar
+  , Add 1 restBranches branches
+  -- `(:<)` needs `Add restBranches 1 branches`; PS does not commute
+  -- `Add`, so both orderings are stated.
+  , Add restBranches 1 branches
+  ) =>
+  CompilableRulesSpec
+    (RulesCons ruleMpv prevsSpec rest)
+    inputVal
+    outputVal
+    branches
+    mpvMax
+    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
+        /\ restCarrier
+    )
+    -- `BranchProver`'s `mpv` is `mpvMax`, not `ruleMpv`: every
+    -- branch's `CompiledProof` presents the wrap-level width, with
+    -- its own width hidden inside `widthData`. `BranchProver` is a
+    -- newtype rather than an alias so that the instance head shows PS
+    -- a saturated type constructor instead of a function type.
+    ( BranchProver prevsSpec mpvMax prevsCarrier inputVal outputVal r
+        /\ restProvers
+    )
+    r
+  where
+  ruleCompileFns (RuleEntry r /\ rest) =
+    r.compileFns :< ruleCompileFns
+      @rest
+      @inputVal
+      @outputVal
+      @restBranches
+      @mpvMax
+      @restCarrier
+      @restProvers
+      @r
+      rest
+  buildBranchProvers
+    ncProxy
+    branchIdx
+    cfg
+    wrapResult
+    perBranchVec
+    allStepDomainLog2s
+    pins
+    stepDomainLog2s
+    stepResults
+    (headEntry /\ restEntries) = do
+    let
+      { head: headPins, tail: restPins } = Vector.uncons pins
+      { head: headLog2, tail: restLog2s } = Vector.uncons stepDomainLog2s
+      { head: headStepCR, tail: restStepResults } = Vector.uncons stepResults
+      headProver = BranchProver \handler stepInputs ->
+        runMultiProverBody
+          @prevsSpec
+          @ruleMpv
+          @valCarrier
+          @inputVal
+          @inputVar
+          @outputVal
+          @outputVar
+          @mpvMax
+          @mpvPad
+          handler
+          ncProxy
+          branchIdx
+          cfg
+          wrapResult
+          perBranchVec
+          headPins
+          allStepDomainLog2s
+          headStepCR
+          headLog2
+          headEntry
+          stepInputs
+    restProvers <- buildBranchProvers
+      @rest
+      @inputVal
+      @outputVal
+      @restBranches
+      @mpvMax
+      @restCarrier
+      @restProvers
+      @r
+      ncProxy
+      (branchIdx + 1)
+      cfg
+      wrapResult
+      perBranchVec
+      allStepDomainLog2s
+      restPins
+      restLog2s
+      restStepResults
+      restEntries
+    pure (headProver /\ restProvers)
 
 -- | The per-branch step compiles, and the step domain log2s the
 -- | pre-pass found for them. The pre-pass builds each rule's
@@ -1745,156 +1798,6 @@ runMultiCompileFull cfg stepNumChunks rules = do
     (\rule -> rule.stepCompile cfg stepNumChunks selfStepDomainLog2s)
     rules
   pure { stepResults, log2s }
-
-instance
-  CompilableRulesSpecShape RulesNil
-    inputVal
-    outputVal
-    topBranches
-    0
-    mpvMax
-    Unit
-    Unit
-    r
-  where
-  buildBranchProvers _ _ _ _ _ _ _ _ _ = pure unit
-
-instance
-  ( CompilableRulesSpecShape rest inputVal outputVal
-      topBranches
-      restBranches
-      mpvMax
-      restCarrier
-      restProvers
-      r
-  , SplitPrevs prevsSpec prevsCarrier valCarrier ruleMpv
-  , SlotWidths prevsSpec ruleMpv
-  , SlotStatementsCarrier prevsSpec valCarrier
-  -- Per-rule step+wrap constraints needed by runMultiProverBody.
-  , CircuitGateConstructor StepField VestaG
-  , CircuitGateConstructor WrapField PallasG
-  , Reflectable ruleMpv Int
-  , Reflectable pad Int
-  , Reflectable outputSize Int
-  , Add pad ruleMpv PaddedLength
-  -- `outputSize` derives from `mpvMax`, the wrap circuit's max.
-  , Reflectable mpvPad Int
-  , Add mpvPad ruleMpv mpvMax
-  , Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
-  , Add unfsTotal 1 digestPlusUnfs
-  , Add digestPlusUnfs mpvMax outputSize
-  -- Wrap-stage constraints at `mpvMax`, the shape
-  -- `padShapeProveData` widens the per-rule `ruleMpv` shape to.
-  , Reflectable mpvMax Int
-  , Reflectable padMax Int
-  , Add padMax mpvMax PaddedLength
-  , Compare mpvMax 3 LT
-  -- `topBranches` stays fixed across the recursion, and
-  -- `buildStepProveCtx` and the `Vector` dispatch need it.
-  , Reflectable topBranches Int
-  , Compare 0 topBranches LT
-  , Add 1 topBranchesPred topBranches
-  , CircuitType StepField inputVal inputVar
-  , CircuitType StepField outputVal outputVar
-  , CheckedType StepField (KimchiConstraint StepField) inputVar
-  , CompilableRulesSpec
-      (RulesCons ruleMpv prevsSpec rest)
-      inputVal
-      outputVal
-      topBranches
-      branches
-      mpvMax
-      ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
-          /\ restCarrier
-      )
-      r
-  , Add 1 restBranches branches
-  -- `(:<)` needs `Add restBranches 1 branches`; PS does not commute
-  -- `Add`, so both orderings are stated.
-  , Add restBranches 1 branches
-  ) =>
-  CompilableRulesSpecShape
-    (RulesCons ruleMpv prevsSpec rest)
-    inputVal
-    outputVal
-    topBranches
-    branches
-    mpvMax
-    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
-        /\ restCarrier
-    )
-    -- `BranchProver`'s `mpv` is `mpvMax`, not `ruleMpv`: every
-    -- branch's `CompiledProof` presents the wrap-level width, with
-    -- its own width hidden inside `widthData`. `BranchProver` is a
-    -- newtype rather than an alias so that the instance head shows PS
-    -- a saturated type constructor instead of a function type.
-    ( BranchProver prevsSpec mpvMax prevsCarrier inputVal outputVal r
-        /\ restProvers
-    )
-    r
-  where
-  buildBranchProvers
-    ncProxy
-    branchIdx
-    cfg
-    wrapResult
-    perBranchVec
-    pins
-    allStepDomainLog2s
-    stepResults
-    (headEntry /\ restEntries) = do
-    let
-      { head: headPins, tail: restPins } = Vector.uncons pins
-      { head: headStepCR, tail: restStepResults } = Vector.uncons stepResults
-      thisBranch = branchIdx
-      -- `branchIdx` is the recursion depth, so it indexes this
-      -- branch's own entry of the full step-domain vector.
-      headLog2 =
-        Vector.index allStepDomainLog2s (unsafeFinite @topBranches branchIdx)
-      headProver = BranchProver \handler stepInputs ->
-        runMultiProverBody
-          @prevsSpec
-          @ruleMpv
-          @valCarrier
-          @inputVal
-          @inputVar
-          @outputVal
-          @outputVar
-          @topBranches
-          @mpvMax
-          @mpvPad
-          handler
-          ncProxy
-          thisBranch
-          cfg
-          wrapResult
-          perBranchVec
-          headPins
-          allStepDomainLog2s
-          headStepCR
-          headLog2
-          headEntry
-          stepInputs
-    restProvers <- buildBranchProvers
-      @rest
-      @inputVal
-      @outputVal
-      @topBranches
-      @restBranches
-      @mpvMax
-      @restCarrier
-      @restProvers
-      @r
-      ncProxy
-      (branchIdx + 1)
-      cfg
-      wrapResult
-      perBranchVec
-      restPins
-      allStepDomainLog2s
-      restStepResults
-      restEntries
-    pure (headProver /\ restProvers)
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — per-rule entry in the multi-branch carrier.
@@ -2147,9 +2050,8 @@ requireSharedStepShifts ctx =
 runMultiProverBody
   :: forall @prevsSpec prevsCarrier @mpv @valCarrier
        @inputVal @inputVar @outputVal @outputVar
-       @topBranches
        @mpvMax @mpvPad @stepChunks numChunksPred
-       branches branchesPred topBranchesPred
+       branches branchesPred
        pad unfsTotal digestPlusUnfs outputSize
        padMax totalBasesMax totalBasesMaxPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
@@ -2161,13 +2063,6 @@ runMultiProverBody
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Add 1 branchesPred branches
-  -- `topBranches` sizes every branch's step domain log2s, the `Self`
-  -- slots' candidates; `branches` is the wrap circuit's per-branch
-  -- carrier count. They coincide, but stay separate to match the
-  -- rule-level signatures.
-  => Reflectable topBranches Int
-  => Compare 0 topBranches LT
-  => Add 1 topBranchesPred topBranches
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvPad Int
@@ -2216,7 +2111,7 @@ runMultiProverBody
   --   the wrap solver rebuilds the same `WrapMainConfig`
   -> Vector mpvMax (Maybe ProofsVerified)
   -- ^ this branch's wrap-domain pins, padding slots first
-  -> Vector topBranches Int
+  -> NonEmptyArray Int
   -- ^ every branch's step domain log2, which gives this rule's
   --   `finalizeOtherProofCircuit` its dispatch table for `Self` slots
   -> PProveStep.StepCompileResult
@@ -2257,7 +2152,7 @@ runMultiProverBody
     -- is the dispatch table `finalizeOtherProofCircuit` needs for
     -- `Self` slots.
     stepProveCtx = stepProveContextOf perRuleCfg (map slotWidthInt widths)
-      (NonEmptyArray.fromFoldable1 allStepDomainLog2s)
+      allStepDomainLog2s
 
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, prevProofRefs } <-
     mkStepAdvice perRuleCfg stepCR wrapResult appInput widths split.values
@@ -2573,8 +2468,7 @@ compileMulti
        proversCarrier
        branchesPred totalBases totalBasesPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
-   . CompilableRulesSpecShape rs inputVal outputVal
-       branches
+   . CompilableRulesSpec rs inputVal outputVal
        branches
        mpvMax
        rulesCarrier
@@ -2623,9 +2517,9 @@ compileMulti cfg rules = do
       @inputVal
       @outputVal
       @branches
-      @branches
       @mpvMax
       @rulesCarrier
+      @proversCarrier
       @r
       rules
     slotWidths = deriveWrapSlotWidths (reflectType (Proxy :: Proxy mpvMax))
@@ -2711,7 +2605,6 @@ compileMulti cfg rules = do
     @inputVal
     @outputVal
     @branches
-    @branches
     @mpvMax
     @rulesCarrier
     @proversCarrier
@@ -2721,6 +2614,7 @@ compileMulti cfg rules = do
     cfg
     wrapResult
     perBranchVec
+    (NonEmptyArray.fromFoldable1 log2s)
     (map _.prevWrapDomainPins perBranchVec)
     log2s
     stepResults
