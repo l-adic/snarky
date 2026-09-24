@@ -33,7 +33,7 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
   where
   body :: SharedSrs -> LoggerT Message Aff Unit
   body { pallasSrs, vestaSrs, lagrangeCache } = do
-    nrrEntry :: RuleEntry _ _ _ _ Unit _ _ <-
+    nrrEntry :: RuleEntry _ _ _ _ Unit _ <-
       liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
     let rules = tuple1 nrrEntry
     output <- withSpan "[DigestEqNrr] compile" $ liftEffect $ compileMulti

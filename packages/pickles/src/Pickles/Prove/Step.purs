@@ -34,7 +34,7 @@ import Prelude
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (getFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Lazy as Lazy
@@ -923,12 +923,14 @@ type StepCompileResult =
   }
 
 -- | Artifacts produced by `stepSolveAndProve`.
-type StepProveResult (outputSize :: Int) =
+type StepProveResult =
   { proverIndex :: ProverIndex VestaG StepField
   , verifierIndex :: VerifierIndex VestaG StepField
   , witness :: Vector 15 (Array StepField)
   , publicInputs :: Array StepField
-  , publicOutputs :: Vector outputSize (F StepField)
+  -- | The public output's field after the `mpvMax` padded
+  -- | unfinalized proofs.
+  , messagesForNextStepProofDigest :: F StepField
   , proof :: Proof VestaG StepField
   , assignments :: Assignments.Frozen StepField
   -- | The rule's user `publicOutput`, recovered post-solve and
@@ -1288,7 +1290,7 @@ stepSolveAndProve
   -- (`Nothing` on a base-case slot), recorded on its cache entry so a
   -- chain is walkable from the cache alone.
   -> Array (Maybe ProofRef)
-  -> Effect (Either EvaluationError (StepProveResult outputSize))
+  -> Effect (Either EvaluationError StepProveResult)
 stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
   -- Capture channel for the rule's user `publicOutput` FVars. The
   -- solver makes `stepMain`'s whole return value public, and these
@@ -1397,7 +1399,9 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
             , verifierIndex: compileResult.verifierIndex
             , witness
             , publicInputs
-            , publicOutputs
+            , messagesForNextStepProofDigest:
+                Vector.index publicOutputs
+                  (unsafeFinite @outputSize (reflectType (Proxy @mpvMax) * 32))
             , proof
             , assignments
             , userPublicOutputFields

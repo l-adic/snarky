@@ -47,7 +47,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Either (Either(..), either, note)
 import Data.Enum (fromEnum)
-import Data.Fin (getFinite, unsafeFinite)
+import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -1449,7 +1449,7 @@ instance
   , IntMax ruleMpv restMax mpvMax
   ) =>
   MaxOfRulesMpvs
-    (RuleEntry prevsSpec ruleMpv entryMpvMax valCarrier inputVal outputSize r /\ rest)
+    (RuleEntry prevsSpec ruleMpv entryMpvMax valCarrier inputVal r /\ rest)
     mpvMax
 
 -- | What `compileMulti` needs that is shared across all branches. The
@@ -1613,16 +1613,10 @@ instance
   , CircuitGateConstructor WrapField PallasG
   , Reflectable ruleMpv Int
   , Reflectable pad Int
-  , Reflectable outputSize Int
   , Add pad ruleMpv PaddedLength
   -- The rule's slots front-padded to the wrap circuit's `mpvMax`.
   , Reflectable mpvPad Int
   , Add mpvPad ruleMpv mpvMax
-  -- `outputSize` derives from `mpvMax`, not from the rule's own
-  -- `mpv`: the step public input is `mpvMax`-shaped.
-  , Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
-  , Add unfsTotal 1 digestPlusUnfs
-  , Add digestPlusUnfs mpvMax outputSize
   -- Wrap-stage constraints at `mpvMax`, the shape
   -- `padShapeProveData` widens the per-rule `ruleMpv` shape to.
   , Reflectable mpvMax Int
@@ -1638,7 +1632,7 @@ instance
   , Add restBranches 1 branches
   ) =>
   CompilableRules
-    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
+    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal r
         /\ restCarrier
     )
     inputVal
@@ -1808,10 +1802,9 @@ data RuleEntry
   -> Int
   -> Type
   -> Type
-  -> Int
   -> Row (Type -> Type)
   -> Type
-data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal outputSize r = RuleEntry
+data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
   { compileFns :: RuleCompileFns mpvMax
   , stepProveFn ::
       AdviceHandler r
@@ -1823,7 +1816,7 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal outputSize r = RuleEntry
            valCarrier
       -- Per slot, the cache key of the wrap proof verified there.
       -> Array (Maybe ProofRef)
-      -> Effect (Either EvaluationError (PProveStep.StepProveResult outputSize))
+      -> Effect (Either EvaluationError PProveStep.StepProveResult)
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
   , slotVKs :: Vector mpv (Maybe SlotWrapKey)
@@ -1858,7 +1851,7 @@ mkRuleEntry
   -- | The wrap VK source of each compiled slot, in slot order. A
   -- | side-loaded slot takes none.
   -> Vector compiled SlotWrapKey
-  -> Effect (RuleEntry prevsSpec mpv mpvMax valCarrier inputVal outputSize r)
+  -> Effect (RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r)
 mkRuleEntry rule compiledKeys = do
   let
     slotVKs = slotKeysOf (Proxy :: Proxy prevsSpec) compiledKeys
@@ -2018,7 +2011,7 @@ runMultiProverBody
        @inputVal @inputVar @outputVal @outputVar
        @mpvMax @mpvPad @stepChunks numChunksPred
        branches branchesPred
-       pad unfsTotal digestPlusUnfs outputSize
+       pad
        padMax totalBasesMax totalBasesMaxPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
        r
@@ -2032,12 +2025,8 @@ runMultiProverBody
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvPad Int
-  => Reflectable outputSize Int
   => Add pad mpv PaddedLength
   => Add mpvPad mpv mpvMax
-  => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs mpvMax outputSize
   -- The constraints above are at the rule's own `mpv`; those below
   -- are at the wrap circuit's possibly wider `mpvMax`.
   => Reflectable mpvMax Int
@@ -2084,7 +2073,7 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv mpvMax valCarrier inputVal outputSize r
+  -> RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> Effect (Either ProveError (CompiledProof mpvMax (StatementIO inputVal outputVal)))
 runMultiProverBody
@@ -2137,7 +2126,6 @@ runMultiProverBody
       widths
       split.slots
 
-    outerMpvMax = reflectType (Proxy @mpvMax)
     -- `maxProofsVerified: 0`, not `mpvMax`: that is the
     -- `forceOrderFor` sequence which draws
     -- `unfinalizedConstantDummy` first, putting its four challenges
@@ -2290,17 +2278,7 @@ runMultiProverBody
           , proofsVerifiedMask
           }
 
-        -- The step public input is `mpvMax`-shaped, its unfinalized
-        -- proofs front-padded up from the rule's own `mpv`, so the
-        -- outer-hash digest sits at `mpvMax * 32` rather than at
-        -- `mpv * 32`. The constraint chain in scope bounds that index
-        -- by `outputSize`.
-        msgStep =
-          let
-            F f = Vector.index stepResult.publicOutputs
-              (unsafeFinite @outputSize (outerMpvMax * 32))
-          in
-            f
+        F msgStep = stepResult.messagesForNextStepProofDigest
 
         stepProofSg = (pallasProofData @StepIPARounds stepResult.proof).opening.sg
 
