@@ -13,7 +13,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainTreeProofReturn
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -22,6 +21,7 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (StepMainTreeProofReturnParams, compileStepMainTreeProofReturn)
 import Pickles.Field (StepField, WrapField)
+import Pickles.ProofsVerified (ProofsVerified(..))
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
@@ -52,9 +52,7 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
-      , prevWrapDomainIndices: (Just 0 :< Just 1 :< Vector.nil) :< Vector.nil
+      , prevWrapDomainPins: (Just N0 :< Just N1 :< Vector.nil) :< Vector.nil
       }
   -- TPR: 2 prev slots, [NRR (n=0); self (n=2)]; slots derived from
   -- PrevsSpec via funcdep.

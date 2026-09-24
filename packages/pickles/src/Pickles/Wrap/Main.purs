@@ -15,7 +15,8 @@ module Pickles.Wrap.Main
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (Finite, getFinite, unsafeFinite)
+import Data.Enum (fromEnum)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
@@ -37,6 +38,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PackedStatement (PackedStepPublicInput(..))
+import Pickles.ProofsVerified (ProofsVerified, allPossibleDomainLog2s)
 import Pickles.Pseudo (PlonkDomain)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
@@ -87,11 +89,6 @@ type WrapMainInputVar =
 -- | Compile-time configuration for `wrapMain`: one step width, domain
 -- | log2 and step verification key per branch, plus the lagrange data
 -- | the public-input commitment needs.
--- |
--- | `allPossibleDomainLog2s` holds one wrap-domain log2 per
--- | `proofs_verified ∈ {0, 1, 2}` — in production `{13, 14, 15}`. The
--- | `Finite 16` bound is `1 + WrapIPARounds`, since a wrap domain is at
--- | most the wrap SRS size `2^WrapIPARounds`.
 type WrapMainConfig branches mpv stepChunks =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
@@ -109,12 +106,11 @@ type WrapMainConfig branches mpv stepChunks =
   , perBranchLagrangeAt ::
       Maybe (Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField))))
   , blindingH :: AffinePoint (F WrapField)
-  , allPossibleDomainLog2s :: Vector 3 (Finite 16)
-  -- Per branch, each slot's index into `allPossibleDomainLog2s`, the
-  -- branch's own slots front-padded with `1`, the padding index;
-  -- `Nothing` for a side-loaded slot, whose domain is not known at
-  -- compile time.
-  , prevWrapDomainIndices :: Vector branches (Vector mpv (Maybe Int))
+  -- Per branch, each slot's wrap domain as its index into
+  -- `allPossibleDomainLog2s`, the branch's own slots front-padded with
+  -- the padding domain; `Nothing` for a side-loaded slot, whose domain
+  -- is not known at compile time.
+  , prevWrapDomainPins :: Vector branches (Vector mpv (Maybe ProofsVerified))
   }
 
 -- | The unfinalized-proof shape `wrapFinalizeOtherProofCircuit`
@@ -525,18 +521,18 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
   -- where such a branch is active the index stays unconstrained.
   label "wrap-domain-index-pins" do
     forWithIndex_ wrapDomainIndices \slot index -> do
-      let atSlot = config.prevWrapDomainIndices <#> \ks -> Vector.index ks slot
+      let atSlot = config.prevWrapDomainPins <#> \ks -> Vector.index ks slot
       case sequence atSlot of
         -- Every branch knows this slot's domain. The one-hot bits sum to
         -- one, so the general constraint below is this equality.
         Just ks -> do
-          chosen <- Pseudo.choose whichBranch ks (const_ <<< fromInt)
+          chosen <- Pseudo.choose whichBranch ks (const_ <<< fromInt <<< fromEnum)
           assertEqual_ index chosen
         -- A side-loaded branch's term is zero on both sides, so while it
         -- is active the constraint reads `0 = 0`.
         Nothing -> do
           chosen <- Pseudo.choose whichBranch atSlot
-            (const_ <<< maybe zero fromInt)
+            (const_ <<< maybe zero (fromInt <<< fromEnum))
           knownBranch <- Pseudo.choose whichBranch atSlot
             (const_ <<< maybe zero (const one))
           pinned <- mul_ knownBranch index
@@ -573,7 +569,7 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
             -- One-hot over the 3 possible wrap domains.
             Pseudo.oneHotVector @3 wdi
           -- Bound: max wrap domain log2 + 1 = `WrapIPARounds` + 1.
-          Pseudo.toDomain @16 domainConfig which config.allPossibleDomainLog2s
+          Pseudo.toDomain @16 domainConfig which allPossibleDomainLog2s
       )
       revInputs
     pure (Vector.reverse revDomains)

@@ -15,7 +15,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainChunks2
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -87,9 +86,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
                     <> ", expected 2)"
       , perBranchLagrangeAt: Nothing
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
-      , prevWrapDomainIndices: Vector.nil :< Vector.nil
+      , prevWrapDomainPins: Vector.nil :< Vector.nil
       }
   -- mpv=0: no prev slots, so no per-slot widths. The
   -- @2 stepChunks type-app drives the wrap IVP's chunked w/z/t MSM

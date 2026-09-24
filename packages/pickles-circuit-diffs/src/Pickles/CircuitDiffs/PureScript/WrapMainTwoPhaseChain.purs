@@ -22,7 +22,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -32,6 +31,7 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainTwoPhaseChainIncrementParams, compileStepMainTwoPhaseChainIncrement)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
 import Pickles.Field (StepField, WrapField)
+import Pickles.ProofsVerified (ProofsVerified(..))
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
@@ -100,9 +100,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
       , lagrangeAt
       , perBranchLagrangeAt: Just perBranchLookup
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
-      , prevWrapDomainIndices: (Just 1 :< Vector.nil) :< (Just 1 :< Vector.nil) :< Vector.nil
+      , prevWrapDomainPins: (Just N1 :< Vector.nil) :< (Just N1 :< Vector.nil) :< Vector.nil
       }
   -- mpv=1, single slot of max width 1.
   let

@@ -13,7 +13,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -55,9 +54,7 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
-      , allPossibleDomainLog2s:
-          unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
-      , prevWrapDomainIndices: Vector.nil :< Vector.nil
+      , prevWrapDomainPins: Vector.nil :< Vector.nil
       }
   -- mpv=0, no per_proofs; slots derived from Unit via funcdep.
   let
