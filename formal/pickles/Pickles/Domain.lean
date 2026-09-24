@@ -10,9 +10,10 @@ set_option mvcgen.warning false
 # Domain scalars
 
 The domain arithmetic of `finalizeOtherProofCore` and its callers, transcribing
-`plonk_checks.ml`, `step_verifier.ml` and `pseudo.ml`: the negative powers of the domain
-generator, the permutation vanishing polynomial, the step side's known-domain selection and
-vanishing polynomial, and `ζ^(2^k)` by squaring and by multiplication.
+`plonk_checks.ml`, `step_verifier.ml`, `pseudo.ml` and `one_hot_vector.ml`: the negative powers
+of the domain generator, the permutation vanishing polynomial, the step side's known-domain
+selection and vanishing polynomial, the one-hot vector and the wrap side's domain selection, and
+`ζ^(2^k)` by squaring and by multiplication.
 
 ## Main definitions
 
@@ -22,6 +23,9 @@ vanishing polynomial, and `ζ^(2^k)` by squaring and by multiplication.
   runtime domain log2, and `ζⁿ − 1` for the selected domain.
 * `buildPow2PowsArray`, `pow2PowSquare`, `pow2PowMul`: `ζ^(2^i)` by squaring and by
   multiplication.
+* `oneHotVector`: bit `j` is `[index = j]`, with some bit asserted set.
+* `PlonkDomain`, `toDomain`: a domain selected in circuit, its generator and vanishing
+  polynomial.
 
 ## Main results
 
@@ -30,6 +34,9 @@ vanishing polynomial, and `ζ^(2^k)` by squaring and by multiplication.
 * `knownDomainWhiches_spec`, `knownDomainVanishingPolynomial_spec`: the bits read as
   `[L = log2ᵢ]` and the polynomial as `∑ᵢ bᵢ · ζ^(2^log2ᵢ) − 1`.
 * `buildPow2PowsArray_spec`, `pow2PowSquare_spec`, `pow2PowMul_spec`.
+* `oneHotVector_spec`: the bits read as `[index = j]` and `index` names an entry.
+* `toDomain_spec`: the generator reads as `∑ᵢ bᵢ · gen log2ᵢ`, the vanishing polynomial as
+  `∑ᵢ bᵢ · ζ^(2^log2ᵢ) − 1`.
 -/
 
 namespace Pickles
@@ -114,6 +121,29 @@ def knownDomainVanishingPolynomial (whiches : List (BoolVar F)) (log2s : List �
   let pow2AtLog2 := log2s.map fun l => pow2Pows[l]?.getD (.const 0)
   let masked ← Pseudo.mask whiches pow2AtLog2
   sealVar (CVar.sub_ masked (.const 1))
+
+/-- The one-hot vector of `index` over `n` entries: bit `j` is `[index = j]`, emitted
+last-to-first, and `assertAny` over the bits, so `index` names an entry. -/
+def oneHotVector (n : ℕ) (index : FVar F) : CircuitM F c (List (BoolVar F)) := do
+  let bits ← knownDomainWhiches index (List.range n)
+  assertAny bits
+  pure bits
+
+/-- A domain selected in circuit: its generator, and its vanishing polynomial `ζⁿ − 1` as a
+gadget of `ζ`. -/
+structure PlonkDomain (F c : Type) where
+  /-- The selected domain's generator. -/
+  generator : FVar F
+  /-- `ζ ↦ ζⁿ − 1` at the selected size `n`. -/
+  vanishingPolynomial : FVar F → CircuitM F c (FVar F)
+
+/-- The domain the one-hot bits `which` select among `log2s`: the generator a mask over the
+constants `gen log2ᵢ`, which emits no rows, and the vanishing polynomial
+`knownDomainVanishingPolynomial` over a `ζ^(2^i)` table up to the largest `log2ᵢ`. -/
+def toDomain (gen : ℕ → F) (which : List (BoolVar F)) (log2s : List ℕ) :
+    CircuitM F c (PlonkDomain F c) := do
+  let generator ← Pseudo.choose which log2s fun d => .const (gen d)
+  pure ⟨generator, knownDomainVanishingPolynomial which log2s (log2s.foldr max 0)⟩
 
 /-! ## Soundness -/
 
@@ -311,9 +341,56 @@ theorem knownDomainVanishingPolynomial_spec (whiches : List (BoolVar F)) (log2s 
   simp only [Function.comp_def, Prod.map_fst, Prod.map_snd, id_eq,
     hpows.2 e.2 (hlog e.2 (List.of_mem_zip he).2)]
 
+/-- Under any valuation satisfying the emitted constraints, bit `l` reads as `[index = l]`
+for `l < n`, and `index` reads as one of `0, …, n − 1`. -/
+theorem oneHotVector_spec (n : ℕ) (index : FVar F) :
+    ⦃⌜True⌝⦄ oneHotVector (c := Builder V c) n index
+    ⦃⇓ r _ => ⌜r.map (fun b : BoolVar F => (↑b : CVar F).val V)
+        = (List.range n).map (fun l : ℕ => if index.val V = (l : F) then 1 else 0) ∧
+      ∃ j < n, index.val V = (j : F)⌝⦄ := by
+  simp only [oneHotVector]
+  have hw := knownDomainWhiches_spec (c := c) (V := V) index (List.range n)
+  mvcgen [hw, assertAny_spec]
+  rename_i bits _ hbits _ _ hany
+  refine ⟨hbits, ?_⟩
+  have hread : ∀ b ∈ bits, ∃ l < n,
+      (↑b : CVar F).val V = if index.val V = (l : F) then 1 else 0 := by
+    intro b hb
+    have hmem := List.mem_map_of_mem (f := fun b : BoolVar F => (↑b : CVar F).val V) hb
+    rw [hbits] at hmem
+    obtain ⟨l, hl, h⟩ := List.mem_map.mp hmem
+    exact ⟨l, List.mem_range.mp hl, h.symm⟩
+  obtain ⟨b, hb, h1⟩ := hany fun b hb => by
+    obtain ⟨l, -, h⟩ := hread b hb
+    rw [h]
+    split <;> simp
+  obtain ⟨l, hl, h⟩ := hread b hb
+  rw [h1] at h
+  split at h
+  · exact ⟨l, hl, by assumption⟩
+  · exact absurd h one_ne_zero
+
+/-- Under any valuation satisfying the emitted constraints, the selected domain's generator
+reads as `∑ᵢ bᵢ · gen log2ᵢ`, and its vanishing polynomial at any `ζ` as
+`∑ᵢ bᵢ · ζ^(2^log2ᵢ) − 1`. -/
+theorem toDomain_spec (gen : ℕ → F) (which : List (BoolVar F)) (log2s : List ℕ) :
+    ⦃⌜True⌝⦄ toDomain (c := Builder V c) gen which log2s
+    ⦃⇓ d _ => ⌜d.generator.val V
+        = ((which.zip log2s).map fun e => (↑e.1 : CVar F).val V * gen e.2).sum ∧
+      ∀ zeta : FVar F, ⦃⌜True⌝⦄ d.vanishingPolynomial zeta
+        ⦃⇓ r _ => ⌜r.val V = ((which.zip log2s).map fun e =>
+          (↑e.1 : CVar F).val V * zeta.val V ^ (2 ^ e.2)).sum - 1⌝⦄⌝⦄ := by
+  simp only [toDomain]
+  have h := Pseudo.choose_spec (c := c) (V := V) which log2s fun d => (.const (gen d) : FVar F)
+  mvcgen [h]
+  rename_i _ hgen
+  exact ⟨hgen, fun zeta => knownDomainVanishingPolynomial_spec which log2s _ zeta
+    fun _ hl => List.le_max_of_le' 0 hl le_rfl⟩
+
 /-! The gadgets are sealed after their specs: a consumer composes the specs, never the
 bodies. -/
 attribute [irreducible] omegaLoop omegaPowers zkPolynomial whichesGo knownDomainWhiches
   buildPow2PowsArray pow2PowMul pow2PowSquare knownDomainVanishingPolynomial
+  oneHotVector toDomain
 
 end Pickles

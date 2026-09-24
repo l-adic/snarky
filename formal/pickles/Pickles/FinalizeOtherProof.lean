@@ -247,7 +247,7 @@ def finalizeOtherProofStep {nc : ℕ} (P : FopParams F) (domains : List (KnownDo
   let alpha ← EndoScalar.toField 8 pl.alpha.val endoVar
   let log2s := domains.map (·.log2)
   let whiches ← knownDomainWhiches domainLog2Var log2s
-  let gen ← Pseudo.mask whiches (domains.map fun d => .const d.generator)
+  let gen ← Pseudo.choose whiches domains fun d => .const d.generator
   let maxLog2 := log2s.foldr max 0
   finalizeOtherProofCore P stepShiftOps true (maskedChallengeDigest P.sponge mask prev)
     gen P.srsLengthLog2 (knownDomainVanishingPolynomial whiches log2s maxLog2) mask u w prev
@@ -844,15 +844,6 @@ private theorem onehot_sum_none (L : F) (c : KnownDomain F → F) (ds : List (Kn
   obtain ⟨d', hd', rfl⟩ := List.mem_map.mp hx
   rw [if_neg (h d' hd'), zero_mul]
 
-omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- Every entry is at most the running maximum. -/
-private theorem le_foldr_max : ∀ (l : List ℕ) (a : ℕ), a ∈ l → a ≤ l.foldr max 0
-  | [], _, h => nomatch h
-  | x :: l, a, h => by
-    rcases List.mem_cons.mp h with rfl | h'
-    · exact le_max_left _ _
-    · exact le_trans (le_foldr_max l a h') (le_max_right _ _)
-
 omit [ToNat F] [KimchiSystem F c] in
 /-- The step side's comparison reads as the decoded claim against the scalar. -/
 private theorem stepShiftOps_cmp [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
@@ -944,7 +935,8 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   have htf := EndoScalar.toField_spec (V := V) h2 h3
   have hwh := knownDomainWhiches_spec (V := V) (c := KimchiConstraint F) domainLog2Var
     (domains.map (·.log2))
-  have hmask := fun bits xs => Pseudo.mask_spec (V := V) (c := KimchiConstraint F) bits xs
+  have hmask := fun bits (xs : List (KnownDomain F)) f =>
+    Pseudo.choose_spec (V := V) (c := KimchiConstraint F) bits xs f
   have hall3 : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k := fun j k hj hk h =>
     hinj j k (by omega) (by omega) h
   have hchar : ∀ k : ℕ, k ≤ prev.flatten.length → (k : F) = 0 → k = 0 := fun k hk h =>
@@ -990,7 +982,10 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     rfl
   have hgenv : gen.val V = (domains.map fun d =>
       (if domainLog2Var.val V = (d.log2 : F) then (1 : F) else 0) * d.generator).sum := by
-    rw [hgen, zip_map_sum (fun x : FVar F => x.val V) whiches domains _ _ hbits]
+    have hsum := zip_map_sum (V := V) (fun d : KnownDomain F => (CVar.const d.generator).val V)
+      whiches domains _ id hbits
+    rw [List.map_id] at hsum
+    rw [hgen, hsum]
     rfl
   by_cases hmatch : ∃ d₀ ∈ domains, domainLog2Var.val V = (d₀.log2 : F)
   · obtain ⟨d₀, hd₀, hL⟩ := hmatch
@@ -1003,7 +998,8 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
         ⦃⇓ v _ => ⌜v.val V = z.val V ^ 2 ^ d₀.log2 - 1⌝⦄ := by
       intro z
       refine builder_spec_imp _ _ _ (knownDomainVanishingPolynomial_spec whiches
-        (domains.map (·.log2)) ((domains.map (·.log2)).foldr max 0) z (le_foldr_max _))
+        (domains.map (·.log2)) ((domains.map (·.log2)).foldr max 0) z
+        fun _ hl => List.le_max_of_le' 0 hl le_rfl)
         fun v hv => ?_
       rw [hv, zip_map_sum (fun l => z.val V ^ 2 ^ l) whiches domains _ _ hbits,
         onehot_sum _ _ domains hnodup d₀ hd₀ hL]

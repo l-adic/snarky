@@ -4,6 +4,7 @@ module Pickles.CircuitDiffs.PureScript.PseudoCircuits
   , compileOneHotN1Wrap
   , compileOneHotN3Step
   , compileOneHotN3Wrap
+  , compilePseudoToDomainWrap
   , compilePseudoMaskN1Step
   , compilePseudoMaskN1Wrap
   , compilePseudoMaskN3Step
@@ -26,12 +27,14 @@ module Pickles.CircuitDiffs.PureScript.PseudoCircuits
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import JS.BigInt (fromInt)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Linearization.FFI as LinFFI
 import Pickles.Pseudo (choose, oneHotVector)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sideload.VerificationKey (compileDummy)
@@ -92,6 +95,33 @@ compileOneHotN3Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy 
 compileOneHotN3Wrap :: Effect (CompiledCircuit WrapField)
 compileOneHotN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN3Circuit
+
+--------------------------------------------------------------------------------
+-- to_domain over the three wrap domains
+--------------------------------------------------------------------------------
+
+-- | Takes the domain index and `zeta`: the one-hot of the index, then the
+-- | selected wrap domain's vanishing polynomial at `zeta`, as `wrapMain`
+-- | selects each slot's finalize domain.
+pseudoToDomainWrapCircuit
+  :: forall r
+   . Vector 2 (FVar WrapField)
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
+pseudoToDomainWrapCircuit inputs = do
+  let { head: index, tail } = Vector.uncons inputs
+  which <- Pseudo.oneHotVector @3 index
+  domain <- Pseudo.toDomain @16
+    { shifts: LinFFI.domainShifts @WrapField
+    , domainGenerator: LinFFI.domainGenerator @WrapField
+    }
+    which
+    (unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil)
+  _ <- label "pseudo_to_domain" $ domain.vanishingPolynomial (Vector.head tail)
+  pure unit
+
+compilePseudoToDomainWrap :: Effect (CompiledCircuit WrapField)
+compilePseudoToDomainWrap = compile noAdvice (Proxy @(Vector 2 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  pseudoToDomainWrapCircuit
 
 --------------------------------------------------------------------------------
 -- pseudo_mask N1
