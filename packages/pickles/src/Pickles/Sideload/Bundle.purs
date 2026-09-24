@@ -8,9 +8,8 @@
 -- | from `verifierIndex`, so the two halves cannot disagree.
 module Pickles.Sideload.Bundle
   ( Bundle
-  , class HasSideLoadedVk
-  , projectVk
   , mkBundle
+  , projectVk
   , verifierIndex
   ) where
 
@@ -32,14 +31,6 @@ newtype Bundle slotVkChunks = Bundle
   , verifierIndex :: VerifierIndex Pallas.G WrapField
   }
 
--- | The side-loaded VK descriptor inside a prove-time cell: a
--- | `Bundle`'s `vk` half.
-class HasSideLoadedVk slotVkChunks cell | cell -> slotVkChunks where
-  projectVk :: cell -> SLVK.VerificationKey slotVkChunks (F StepField) Boolean
-
-instance HasSideLoadedVk slotVkChunks (Bundle slotVkChunks) where
-  projectVk (Bundle r) = r.vk
-
 -- | A `Bundle` from a kimchi `VerifierIndex` and the two
 -- | `ProofsVerified` tags.
 mkBundle
@@ -58,6 +49,9 @@ mkBundle r = Bundle
       }
   , verifierIndex: r.verifierIndex
   }
+
+projectVk :: forall slotVkChunks. Bundle slotVkChunks -> SLVK.VerificationKey slotVkChunks (F StepField) Boolean
+projectVk (Bundle r) = r.vk
 
 verifierIndex :: forall slotVkChunks. Bundle slotVkChunks -> VerifierIndex Pallas.G WrapField
 verifierIndex (Bundle r) = r.verifierIndex
