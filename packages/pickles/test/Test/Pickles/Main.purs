@@ -32,9 +32,12 @@ import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
 import Test.Spec.Runner.Node.Config as Cfg
 
--- | The pickles suite. Every spec here runs a full prove flow — step
--- | compile, step prove, wrap compile, wrap prove, iterated for the
--- | chained cases — and asserts that the proofs it produces verify.
+-- | The pickles suite. Each `Test.Pickles.Prove` spec but
+-- | `CompileValidation` runs a full prove flow — step compile, step
+-- | prove, wrap compile, wrap prove, iterated for the chained cases —
+-- | and asserts that the proofs it produces verify. The
+-- | `Test.Pickles.Sideload` specs check OCaml-produced fixtures against
+-- | the PureScript compile and verifier.
 -- |
 -- | `beforeAll buildSharedSrs` builds one SRS for all of them, so the
 -- | Lagrange bases attached to it are populated once per run rather
