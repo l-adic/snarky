@@ -20,7 +20,6 @@ import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchTreeRule, nrrRu
 import Control.Promise (fromAff)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
-import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1)
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -45,7 +44,7 @@ pinCompileEntry = identity
 
 -- | The full example-circuit compilation against the shared SRS: the
 -- | NRR `compileMulti`, then the N=2 tree `compileMulti`. The tree
--- | result is forced (the `fst … .constraints` read) so the whole
+-- | result is forced (the `Vector.head … .constraints` read) so the whole
 -- | pipeline actually runs.
 fullCompile :: BenchSrs -> Effect Int
 fullCompile srs = do
@@ -73,7 +72,7 @@ fullCompile srs = do
     (tuple1 treeEntry)
 
   -- Force the step constraint system so the compile is not deferred.
-  pure (Array.length (fst tree.vks.perBranchStep).constraints)
+  pure (Array.length (Vector.head tree.vks.perBranchStep).constraints)
 
 -- | The bench label: keys the results-JSON entry and the
 -- | `[bench-window]` markers `parse_gclog.mjs` matches GC lines to.

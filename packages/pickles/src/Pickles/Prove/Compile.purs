@@ -1512,9 +1512,9 @@ newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal r =
 -- | which every branch's wrap proof verifies — the wrap statement's
 -- | `whichBranch` says which step circuit was wrapped — and one
 -- | `StepCompileResult` per branch, which are not shared.
-type MultiVKs perBranchStepCarrier =
+type MultiVKs branches =
   { wrap :: WrapCompileResult
-  , perBranchStep :: perBranchStepCarrier
+  , perBranchStep :: Vector branches PProveStep.StepCompileResult
   , wrapDomainLog2 :: Int
   -- | The compile's declared `@stepChunks`.
   , stepChunks :: Int
@@ -1524,16 +1524,16 @@ type MultiVKs perBranchStepCarrier =
 -- | shared `tag`, `verifier` and set of VKs.
 type MultiOutput
   :: Type
-  -> Type
+  -> Int
   -> Int
   -> Type
   -> Type
   -> Type
-type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal =
+type MultiOutput proversCarrier branches mpvMax inputVal outputVal =
   { provers :: proversCarrier
   , tag :: Tag (StatementIO inputVal outputVal) mpvMax
   , verifier :: Verifier
-  , vks :: MultiVKs perBranchStepCarrier
+  , vks :: MultiVKs branches
   -- | What an `External` slot of a later compile imports from this
   -- | one: pass it as `External tagData`.
   , tagData :: CompiledTagData
@@ -1564,7 +1564,6 @@ class CompilableRulesSpec
   -> Int
   -> Int
   -> Type
-  -> Type
   -> Row (Type -> Type)
   -> Constraint
 class
@@ -1576,11 +1575,9 @@ class
     branches
     mpvMax
     rulesCarrier
-    perBranchStepCompileResults
     r
   | rs topBranches r ->
     branches mpvMax rulesCarrier
-    perBranchStepCompileResults
   where
   -- | Each branch's own slot widths, in branch order, which
   -- | `deriveWrapSlotWidths` overlays into the wrap circuit's single
@@ -1595,7 +1592,7 @@ class
   buildWrapPerBranchVec
     :: Int
     -> rulesCarrier
-    -> perBranchStepCompileResults
+    -> Vector branches PProveStep.StepCompileResult
     -> Either String (Vector branches (WrapBranchData mpvMax))
 
 instance
@@ -1605,7 +1602,6 @@ instance
     topBranches
     0
     mpvMax
-    Unit
     Unit
     r
   where
@@ -1618,8 +1614,8 @@ instance
       restBranches
       mpvMax
       restCarrier
-      restStepCompileResults
       r
+  , Add 1 restBranches branches
   , Add restBranches 1 branches
   -- The rule's slots front-padded to the wrap circuit's `mpvMax`.
   , Add mpvPad ruleMpv mpvMax
@@ -1643,7 +1639,6 @@ instance
     ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
         /\ restCarrier
     )
-    (PProveStep.StepCompileResult /\ restStepCompileResults)
     r
   where
   ruleSlotWidths _ =
@@ -1657,11 +1652,11 @@ instance
           @restBranches
           @mpvMax
           @restCarrier
-          @restStepCompileResults
           @r
           (Proxy :: Proxy rest)
       )
-  buildWrapPerBranchVec selfWrapDomainLog2 (RuleEntry r /\ restEntries) (headResult /\ restResults) = do
+  buildWrapPerBranchVec selfWrapDomainLog2 (RuleEntry r /\ restEntries) results = do
+    let { head: headResult, tail: restResults } = Vector.uncons results
     pins <- traverse (slotWrapDomainPin selfWrapDomainLog2) r.slotVKs
     let
       headRecord =
@@ -1679,7 +1674,6 @@ instance
       @restBranches
       @mpvMax
       @restCarrier
-      @restStepCompileResults
       @r
       selfWrapDomainLog2
       restEntries
@@ -1700,7 +1694,6 @@ instance
 class
   CompilableRulesSpec rs inputVal outputVal topBranches branches mpvMax
     rulesCarrier
-    perBranchStepCompileResults
     r <=
   CompilableRulesSpecShape
     rs
@@ -1710,11 +1703,9 @@ class
     branches
     mpvMax
     rulesCarrier
-    perBranchStepCompileResults
     proversCarrier
     r
   | rs topBranches r -> branches mpvMax rulesCarrier
-    perBranchStepCompileResults
     proversCarrier
   where
   -- | Every branch's own step domain log2, in branch order, each
@@ -1739,7 +1730,7 @@ class
     -- ^ the declared `@stepChunks`
     -> Vector topBranches Int
     -> rulesCarrier
-    -> Effect perBranchStepCompileResults
+    -> Effect (Vector branches PProveStep.StepCompileResult)
 
   -- | One `BranchProver` per branch: a closure that runs that
   -- | branch's step solve and prove, then the shared wrap solve and
@@ -1777,7 +1768,7 @@ class
     -> Vector branches (Vector mpvMax (Maybe ProofsVerified))
     -- ^ the wrap-domain pins of this and the later branches
     -> Vector topBranches Int
-    -> perBranchStepCompileResults
+    -> Vector branches PProveStep.StepCompileResult
     -> rulesCarrier
     -> Effect proversCarrier
 
@@ -1787,14 +1778,12 @@ class
 runMultiCompileFull
   :: forall @rs @inputVal @outputVal @topBranches @mpvMax @r
        rulesCarrier
-       perBranchStepCompileResults
        proversCarrier
    . CompilableRulesSpecShape rs inputVal outputVal
        topBranches
        topBranches
        mpvMax
        rulesCarrier
-       perBranchStepCompileResults
        proversCarrier
        r
   => Reflectable topBranches Int
@@ -1804,7 +1793,7 @@ runMultiCompileFull
   -- ^ the declared `@stepChunks`
   -> rulesCarrier
   -> Effect
-       { stepResults :: perBranchStepCompileResults
+       { stepResults :: Vector topBranches PProveStep.StepCompileResult
        , log2s :: Vector topBranches Int
        }
 runMultiCompileFull handler cfg stepNumChunks rules = do
@@ -1818,7 +1807,6 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @topBranches
     @mpvMax
     @rulesCarrier
-    @perBranchStepCompileResults
     @proversCarrier
     @r
     handler
@@ -1849,7 +1837,6 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @topBranches
     @mpvMax
     @rulesCarrier
-    @perBranchStepCompileResults
     @proversCarrier
     @r
     handler
@@ -1868,11 +1855,10 @@ instance
     mpvMax
     Unit
     Unit
-    Unit
     r
   where
   prePassDomainLog2s _ _ _ _ _ = pure Vector.nil
-  runMultiCompile _ _ _ _ _ = pure unit
+  runMultiCompile _ _ _ _ _ = pure Vector.nil
   buildBranchProvers _ _ _ _ _ _ _ _ _ = pure unit
 
 instance
@@ -1881,7 +1867,6 @@ instance
       restBranches
       mpvMax
       restCarrier
-      restStepCompileResults
       restProvers
       r
   , SplitPrevs prevsSpec prevsCarrier valCarrier ruleMpv
@@ -1924,7 +1909,6 @@ instance
       ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
           /\ restCarrier
       )
-      (PProveStep.StepCompileResult /\ restStepCompileResults)
       r
   , Add 1 restBranches branches
   -- `(:<)` needs `Add restBranches 1 branches`; PS does not commute
@@ -1941,7 +1925,6 @@ instance
     ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
         /\ restCarrier
     )
-    (PProveStep.StepCompileResult /\ restStepCompileResults)
     -- `BranchProver`'s `mpv` is `mpvMax`, not `ruleMpv`: every
     -- branch's `CompiledProof` presents the wrap-level width, with
     -- its own width hidden inside `widthData`. `BranchProver` is a
@@ -1967,7 +1950,6 @@ instance
       @restBranches
       @mpvMax
       @restCarrier
-      @restStepCompileResults
       @restProvers
       @r
       handler
@@ -1992,7 +1974,6 @@ instance
       @restBranches
       @mpvMax
       @restCarrier
-      @restStepCompileResults
       @restProvers
       @r
       handler
@@ -2000,7 +1981,7 @@ instance
       stepNumChunks
       log2s
       restEntries
-    pure (headResult /\ tailResults)
+    pure (headResult :< tailResults)
   buildBranchProvers
     ncProxy
     branchIdx
@@ -2009,10 +1990,11 @@ instance
     perBranchVec
     pins
     allStepDomainLog2s
-    (headStepCR /\ restStepResults)
+    stepResults
     (headEntry /\ restEntries) = do
     let
       { head: headPins, tail: restPins } = Vector.uncons pins
+      { head: headStepCR, tail: restStepResults } = Vector.uncons stepResults
       thisBranch = branchIdx
       -- `branchIdx` is the recursion depth, so it indexes this
       -- branch's own entry of the full step-domain vector.
@@ -2050,7 +2032,6 @@ instance
       @restBranches
       @mpvMax
       @restCarrier
-      @restStepCompileResults
       @restProvers
       @r
       ncProxy
@@ -2692,7 +2673,6 @@ compileMulti
        inputVal mpvMax
        branches
        rulesCarrier
-       perBranchStepCompileResults
        proversCarrier
        branchesPred totalBases totalBasesPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
@@ -2701,7 +2681,6 @@ compileMulti
        branches
        mpvMax
        rulesCarrier
-       perBranchStepCompileResults
        proversCarrier
        r
   => CircuitGateConstructor WrapField PallasG
@@ -2736,7 +2715,7 @@ compileMulti
   -> Effect
        ( MultiOutput
            proversCarrier
-           perBranchStepCompileResults
+           branches
            mpvMax
            inputVal
            outputVal
@@ -2752,7 +2731,6 @@ compileMulti handler cfg rules = do
           @branches
           @mpvMax
           @rulesCarrier
-          @perBranchStepCompileResults
           @r
           (Proxy :: Proxy rs)
       )
@@ -2805,7 +2783,6 @@ compileMulti handler cfg rules = do
     @branches
     @mpvMax
     @rulesCarrier
-    @perBranchStepCompileResults
     @r
     selfWrapDomainLog2
     rules
@@ -2857,7 +2834,6 @@ compileMulti handler cfg rules = do
     @branches
     @mpvMax
     @rulesCarrier
-    @perBranchStepCompileResults
     @proversCarrier
     @r
     (Proxy :: Proxy stepChunks)
