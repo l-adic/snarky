@@ -33,11 +33,7 @@ module Pickles.Prove.Compile
   , class SlotKinds
   , slotKeysOf
   , class CompilableRulesSpec
-  , branchCount
   , ruleSlotWidths
-  , extractStepCompileFns
-  , extractStepProveFns
-  , runStepCompiles
   , buildWrapPerBranchVec
   , class CompilableRulesSpecShape
   , prePassDomainLog2s
@@ -1569,9 +1565,6 @@ class CompilableRulesSpec
   -> Int
   -> Type
   -> Type
-  -> Type
-  -> Type
-  -> Type
   -> Row (Type -> Type)
   -> Constraint
 class
@@ -1583,40 +1576,16 @@ class
     branches
     mpvMax
     rulesCarrier
-    stepCompileFnsCarrier
-    perBranchCtxsCarrier
     perBranchStepCompileResults
-    stepProveFnsCarrier
     r
   | rs topBranches r ->
-    branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+    branches mpvMax rulesCarrier
     perBranchStepCompileResults
-    stepProveFnsCarrier
   where
-  -- | The number of branches, counted by walking `rs`.
-  branchCount :: forall proxy. proxy rs -> Int
-
   -- | Each branch's own slot widths, in branch order, which
   -- | `deriveWrapSlotWidths` overlays into the wrap circuit's single
   -- | `mpvMax`-long list.
   ruleSlotWidths :: forall proxy. proxy rs -> Array (Array Int)
-
-  -- | Each `RuleEntry`'s `stepCompileFn`, in branch order. The chain
-  -- | is heterogeneous: branch `i`'s thunk takes a context at that
-  -- | branch's own `mpv`.
-  extractStepCompileFns :: rulesCarrier -> stepCompileFnsCarrier
-
-  -- | Every branch's step compile, run against the matching context,
-  -- | in branch order.
-  runStepCompiles
-    :: AdviceHandler r
-    -> perBranchCtxsCarrier
-    -> rulesCarrier
-    -> Effect perBranchStepCompileResults
-
-  -- | Each `RuleEntry`'s `stepProveFn`, in branch order, which
-  -- | `buildBranchProvers` composes with the shared wrap flow.
-  extractStepProveFns :: rulesCarrier -> stepProveFnsCarrier
 
   -- | The per-branch step results, in the shape
   -- | `buildWrapMainConfigMulti` takes: each branch's `mpv`, its step
@@ -1638,16 +1607,9 @@ instance
     mpvMax
     Unit
     Unit
-    Unit
-    Unit
-    Unit
     r
   where
-  branchCount _ = 0
   ruleSlotWidths _ = []
-  extractStepCompileFns _ = unit
-  runStepCompiles _ _ _ = pure unit
-  extractStepProveFns _ = unit
   buildWrapPerBranchVec _ _ _ = Right Vector.nil
 
 instance
@@ -1656,10 +1618,7 @@ instance
       restBranches
       mpvMax
       restCarrier
-      restStepCompileFns
-      restCtxs
       restStepCompileResults
-      restStepProveFns
       r
   , Add restBranches 1 branches
   -- The rule's slots front-padded to the wrap circuit's `mpvMax`.
@@ -1684,44 +1643,9 @@ instance
     ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
         /\ restCarrier
     )
-    ( ( AdviceHandler r
-        -> PProveStep.StepProveContext ruleMpv
-        -> Effect PProveStep.StepCompileResult
-      )
-        /\ restStepCompileFns
-    )
-    (PProveStep.StepProveContext ruleMpv /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
-    ( ( AdviceHandler r
-        -> PProveStep.StepProveContext ruleMpv
-        -> PProveStep.StepCompileResult
-        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
-             inputVal
-             ruleMpv
-             valCarrier
-        -> Array (Maybe ProofRef)
-        -> Effect
-             (Either EvaluationError (PProveStep.StepProveResult outputSize))
-      )
-        /\ restStepProveFns
-    )
     r
   where
-  branchCount _ =
-    1 + branchCount
-      @rest
-      @inputVal
-      @outputVal
-      @topBranches
-      @restBranches
-      @mpvMax
-      @restCarrier
-      @restStepCompileFns
-      @restCtxs
-      @restStepCompileResults
-      @restStepProveFns
-      @r
-      (Proxy :: Proxy rest)
   ruleSlotWidths _ =
     Array.cons
       (Vector.toUnfoldable (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec))))
@@ -1733,48 +1657,10 @@ instance
           @restBranches
           @mpvMax
           @restCarrier
-          @restStepCompileFns
-          @restCtxs
           @restStepCompileResults
-          @restStepProveFns
           @r
           (Proxy :: Proxy rest)
       )
-  extractStepCompileFns (RuleEntry r /\ rest) =
-    r.stepCompileFn
-      /\ extractStepCompileFns
-        @rest
-        @inputVal
-        @outputVal
-        @topBranches
-        @restBranches
-        @mpvMax
-        @restCarrier
-        @restStepCompileFns
-        @restCtxs
-        @restStepCompileResults
-        @restStepProveFns
-        @r
-        rest
-  runStepCompiles handler (ctx /\ restCtxs) (RuleEntry r /\ restEntries) = do
-    headResult <- r.stepCompileFn handler ctx
-    tailResults <- runStepCompiles
-      @rest
-      @inputVal
-      @outputVal
-      @topBranches
-      @restBranches
-      @mpvMax
-      @restCarrier
-      @restStepCompileFns
-      @restCtxs
-      @restStepCompileResults
-      @restStepProveFns
-      @r
-      handler
-      restCtxs
-      restEntries
-    pure (headResult /\ tailResults)
   buildWrapPerBranchVec selfWrapDomainLog2 (RuleEntry r /\ restEntries) (headResult /\ restResults) = do
     pins <- traverse (slotWrapDomainPin selfWrapDomainLog2) r.slotVKs
     let
@@ -1793,31 +1679,12 @@ instance
       @restBranches
       @mpvMax
       @restCarrier
-      @restStepCompileFns
-      @restCtxs
       @restStepCompileResults
-      @restStepProveFns
       @r
       selfWrapDomainLog2
       restEntries
       restResults
     pure (headRecord :< restVec)
-  extractStepProveFns (RuleEntry r /\ rest) =
-    r.stepProveFn
-      /\ extractStepProveFns
-        @rest
-        @inputVal
-        @outputVal
-        @topBranches
-        @restBranches
-        @mpvMax
-        @restCarrier
-        @restStepCompileFns
-        @restCtxs
-        @restStepCompileResults
-        @restStepProveFns
-        @r
-        rest
 
 --------------------------------------------------------------------------------
 -- CompilableRulesSpecShape — shape-data methods.
@@ -1833,10 +1700,7 @@ instance
 class
   CompilableRulesSpec rs inputVal outputVal topBranches branches mpvMax
     rulesCarrier
-    stepCompileFnsCarrier
-    perBranchCtxsCarrier
     perBranchStepCompileResults
-    stepProveFnsCarrier
     r <=
   CompilableRulesSpecShape
     rs
@@ -1846,14 +1710,11 @@ class
     branches
     mpvMax
     rulesCarrier
-    stepCompileFnsCarrier
-    perBranchCtxsCarrier
     perBranchStepCompileResults
-    stepProveFnsCarrier
     proversCarrier
     r
-  | rs topBranches r -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-    perBranchStepCompileResults stepProveFnsCarrier
+  | rs topBranches r -> branches mpvMax rulesCarrier
+    perBranchStepCompileResults
     proversCarrier
   where
   -- | Every branch's own step domain log2, in branch order, each
@@ -1926,20 +1787,14 @@ class
 runMultiCompileFull
   :: forall @rs @inputVal @outputVal @topBranches @mpvMax @r
        rulesCarrier
-       stepCompileFnsCarrier
-       perBranchCtxsCarrier
        perBranchStepCompileResults
-       stepProveFnsCarrier
        proversCarrier
    . CompilableRulesSpecShape rs inputVal outputVal
        topBranches
        topBranches
        mpvMax
        rulesCarrier
-       stepCompileFnsCarrier
-       perBranchCtxsCarrier
        perBranchStepCompileResults
-       stepProveFnsCarrier
        proversCarrier
        r
   => Reflectable topBranches Int
@@ -1963,10 +1818,7 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @topBranches
     @mpvMax
     @rulesCarrier
-    @stepCompileFnsCarrier
-    @perBranchCtxsCarrier
     @perBranchStepCompileResults
-    @stepProveFnsCarrier
     @proversCarrier
     @r
     handler
@@ -1997,10 +1849,7 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @topBranches
     @mpvMax
     @rulesCarrier
-    @stepCompileFnsCarrier
-    @perBranchCtxsCarrier
     @perBranchStepCompileResults
-    @stepProveFnsCarrier
     @proversCarrier
     @r
     handler
@@ -2020,9 +1869,6 @@ instance
     Unit
     Unit
     Unit
-    Unit
-    Unit
-    Unit
     r
   where
   prePassDomainLog2s _ _ _ _ _ = pure Vector.nil
@@ -2035,10 +1881,7 @@ instance
       restBranches
       mpvMax
       restCarrier
-      restStepCompileFns
-      restCtxs
       restStepCompileResults
-      restStepProveFns
       restProvers
       r
   , SplitPrevs prevsSpec prevsCarrier valCarrier ruleMpv
@@ -2081,27 +1924,7 @@ instance
       ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
           /\ restCarrier
       )
-      ( ( AdviceHandler r
-          -> PProveStep.StepProveContext ruleMpv
-          -> Effect PProveStep.StepCompileResult
-        )
-          /\ restStepCompileFns
-      )
-      (PProveStep.StepProveContext ruleMpv /\ restCtxs)
       (PProveStep.StepCompileResult /\ restStepCompileResults)
-      ( ( AdviceHandler r
-          -> PProveStep.StepProveContext ruleMpv
-          -> PProveStep.StepCompileResult
-          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
-               inputVal
-               ruleMpv
-               valCarrier
-          -> Array (Maybe ProofRef)
-          -> Effect
-               (Either EvaluationError (PProveStep.StepProveResult outputSize))
-        )
-          /\ restStepProveFns
-      )
       r
   , Add 1 restBranches branches
   -- `(:<)` needs `Add restBranches 1 branches`; PS does not commute
@@ -2118,27 +1941,7 @@ instance
     ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
         /\ restCarrier
     )
-    ( ( AdviceHandler r
-        -> PProveStep.StepProveContext ruleMpv
-        -> Effect PProveStep.StepCompileResult
-      )
-        /\ restStepCompileFns
-    )
-    (PProveStep.StepProveContext ruleMpv /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
-    ( ( AdviceHandler r
-        -> PProveStep.StepProveContext ruleMpv
-        -> PProveStep.StepCompileResult
-        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
-             inputVal
-             ruleMpv
-             valCarrier
-        -> Array (Maybe ProofRef)
-        -> Effect
-             (Either EvaluationError (PProveStep.StepProveResult outputSize))
-      )
-        /\ restStepProveFns
-    )
     -- `BranchProver`'s `mpv` is `mpvMax`, not `ruleMpv`: every
     -- branch's `CompiledProof` presents the wrap-level width, with
     -- its own width hidden inside `widthData`. `BranchProver` is a
@@ -2164,10 +1967,7 @@ instance
       @restBranches
       @mpvMax
       @restCarrier
-      @restStepCompileFns
-      @restCtxs
       @restStepCompileResults
-      @restStepProveFns
       @restProvers
       @r
       handler
@@ -2192,10 +1992,7 @@ instance
       @restBranches
       @mpvMax
       @restCarrier
-      @restStepCompileFns
-      @restCtxs
       @restStepCompileResults
-      @restStepProveFns
       @restProvers
       @r
       handler
@@ -2253,10 +2050,7 @@ instance
       @restBranches
       @mpvMax
       @restCarrier
-      @restStepCompileFns
-      @restCtxs
       @restStepCompileResults
-      @restStepProveFns
       @restProvers
       @r
       ncProxy
@@ -2898,10 +2692,7 @@ compileMulti
        inputVal mpvMax
        branches
        rulesCarrier
-       stepCompileFnsCarrier
-       perBranchCtxsCarrier
        perBranchStepCompileResults
-       stepProveFnsCarrier
        proversCarrier
        branchesPred totalBases totalBasesPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
@@ -2910,10 +2701,7 @@ compileMulti
        branches
        mpvMax
        rulesCarrier
-       stepCompileFnsCarrier
-       perBranchCtxsCarrier
        perBranchStepCompileResults
-       stepProveFnsCarrier
        proversCarrier
        r
   => CircuitGateConstructor WrapField PallasG
@@ -2964,10 +2752,7 @@ compileMulti handler cfg rules = do
           @branches
           @mpvMax
           @rulesCarrier
-          @stepCompileFnsCarrier
-          @perBranchCtxsCarrier
           @perBranchStepCompileResults
-          @stepProveFnsCarrier
           @r
           (Proxy :: Proxy rs)
       )
@@ -3020,10 +2805,7 @@ compileMulti handler cfg rules = do
     @branches
     @mpvMax
     @rulesCarrier
-    @stepCompileFnsCarrier
-    @perBranchCtxsCarrier
     @perBranchStepCompileResults
-    @stepProveFnsCarrier
     @r
     selfWrapDomainLog2
     rules
@@ -3075,10 +2857,7 @@ compileMulti handler cfg rules = do
     @branches
     @mpvMax
     @rulesCarrier
-    @stepCompileFnsCarrier
-    @perBranchCtxsCarrier
     @perBranchStepCompileResults
-    @stepProveFnsCarrier
     @proversCarrier
     @r
     (Proxy :: Proxy stepChunks)
