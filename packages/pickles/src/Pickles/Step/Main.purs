@@ -532,7 +532,7 @@ unfFields unf =
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output
        @valCarrier @mpvMax mpvPad @nd ndPred
-       len sideloadedVkCarrier
+       len
        unfsTotal digestPlusUnfs
        r
    . PrimeField StepField
@@ -560,7 +560,7 @@ stepMain
      )
   -> StepMainSrsData len nd
   -> AffinePoint StepField
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
   -> Ref (Maybe (Array (FVar StepField)))
   -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
 stepMain

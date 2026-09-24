@@ -107,8 +107,7 @@ compileStepMainSideLoadedMain params = do
       (Proxy @(KimchiConstraint StepField))
       -- Parent N=1, pi=34 (1 input + 33 output = 1*32 unfp + 1 digest
       -- + 1 msgs_wrap). The spec sizes the slot at the side-loaded
-      -- tag's compile-time upper bound (`N2`). vkCarrier =
-      -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
+      -- tag's compile-time upper bound (`N2`).
       ( \_ -> stepMain
           @SideLoadedMainPrevsSpec
           @(F StepField)

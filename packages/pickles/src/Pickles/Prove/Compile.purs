@@ -27,7 +27,6 @@ module Pickles.Prove.Compile
   -- Re-exported because instance resolution at user call sites needs
   -- them in scope.
   , class CompilableSpec
-  , shapeCompileData
   , mkStepAdvice
   , shapeProveData
   , padShapeProveData
@@ -117,7 +116,6 @@ import Pickles.Prove.Wrap
   , wrapSolveAndProve
   )
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Sideload.Bundle (Bundle, SlotProveVk(..), projectVk, requireBundle, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (Compiled, SideLoaded, SlotOf)
@@ -488,54 +486,54 @@ slotWrapDomainPin selfWrapDomainLog2 = case _ of
 paddingWrapDomain :: ProofsVerified
 paddingWrapDomain = N1
 
--- | One slot's contribution to `shapeCompileData`: its per-slot
--- | entries spliced onto the tail, plus the rule-wide fields.
-consShapeCompileData
-  :: forall prevsSpec mpv restMpv nd
-   . Add restMpv 1 mpv
-  => Reflectable mpv Int
+-- | One rule's `StepProveContext`: the shared SRS data, then one entry
+-- | per slot, from that slot's width and `SlotWrapKey`.
+-- |
+-- | `selfStepDomainLog2s` holds every branch's own step domain log2,
+-- | which is what a `Self` slot's source domains are; an `External`
+-- | slot ignores it and reads the imported rule's step domain off its
+-- | prover index. During the pre-pass, which only counts gates,
+-- | callers pass `roughDomainsLog2` in every position.
+stepProveContextOf
+  :: forall mpv nd
+   . Reflectable mpv Int
   => Reflectable nd Int
-  => CompileConfig prevsSpec
+  => CompileConfig mpv
+  -> Vector mpv Int
   -> Vector nd Int
-  -> RuntimeSlot.Slot
-  -> ShapeCompileData restMpv nd
-  -> ShapeCompileData mpv nd
-consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
-  { stepProveCtx:
-      { srsData:
-          { blindingH:
-              coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
-          , perSlotFopDomainLog2s:
-              headFopDomainLog2s
-                :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
-          , perSlotNumChunks:
-              headEntry.numChunks :< restShape.stepProveCtx.srsData.perSlotNumChunks
-          , perSlotVkBlueprints:
-              headEntry.vkBlueprint
-                :< restShape.stepProveCtx.srsData.perSlotVkBlueprints
-          }
-      , dummySg: outerDummySgs.ipa.wrap.sg
-      , crs: cfg.srs.vestaSrs
-      , debug: cfg.debug
-      , proofCache: cfg.proofCache
+  -> StepProveContext mpv nd
+stepProveContextOf cfg slotWidths selfStepDomainLog2s =
+  { srsData:
+      { blindingH:
+          coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
+      , perSlotFopDomainLog2s: map (atBranchCount <<< _.fopDomainLog2s) entries
+      , perSlotNumChunks: map _.numChunks entries
+      , perSlotVkBlueprints: map _.vkBlueprint entries
       }
-  , wrapDomainLog2: cfg.selfWrapDomainLog2
+  , dummySg: outerDummySgs.ipa.wrap.sg
+  , crs: cfg.srs.vestaSrs
+  , debug: cfg.debug
+  , proofCache: cfg.proofCache
   }
   where
-  headEntry = slotCompileEntry @WrapVkChunks
-    { pallasSrs: cfg.srs.pallasSrs
-    , stepNumChunks: cfg.stepNumChunks
-    , outerWrapDomainLog2: cfg.selfWrapDomainLog2
-    , branchCount: Vector.length selfStepDomainLog2s
-    }
-    (Vector.toUnfoldable selfStepDomainLog2s)
-    headSlot
+  entries = Vector.zipWith
+    ( \width key -> slotCompileEntry @WrapVkChunks
+        { pallasSrs: cfg.srs.pallasSrs
+        , stepNumChunks: cfg.stepNumChunks
+        , outerWrapDomainLog2: cfg.selfWrapDomainLog2
+        , branchCount: Vector.length selfStepDomainLog2s
+        }
+        (Vector.toUnfoldable selfStepDomainLog2s)
+        (runtimeSlotOf width key)
+    )
+    slotWidths
+    cfg.perSlotImportedVKs
 
-  headFopDomainLog2s = case Vector.toVector headEntry.fopDomainLog2s of
+  atBranchCount domainLog2s = case Vector.toVector domainLog2s of
     Just v -> v
     Nothing -> unsafeThrow
-      $ "shapeCompileData: slot step-domain count "
-          <> show (Array.length headEntry.fopDomainLog2s)
+      $ "stepProveContextOf: slot step-domain count "
+          <> show (Array.length domainLog2s)
           <> " does not match the branch count "
           <> show (Vector.length selfStepDomainLog2s)
 
@@ -551,8 +549,8 @@ consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
 -- | has to run before the tail's.
 consMkStepAdvice
   :: forall @w wPad inputVal input prevHeadInput prevHeadStmt
-       prevHeadStmtVar prevsSpec restSpec restLen len headVkCell valElem
-       restValCarrier restVkCarrier
+       prevHeadStmtVar prevsSpec restSpec restLen len valElem
+       restValCarrier
    . Reflectable w Int
   => Compare w 3 LT
   => Reflectable wPad Int
@@ -569,7 +567,6 @@ consMkStepAdvice
      , slotWrapZkRows :: Int
      , slotStepNumChunks :: Int
      }
-  -> headVkCell
   -- | This slot's advice element, from its statement: the statement
   -- | itself for a compiled slot, the statement and the prove call's
   -- | key for a side-loaded one.
@@ -580,7 +577,6 @@ consMkStepAdvice
            StepAdvice restSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal
              restLen
              restValCarrier
-             restVkCarrier
        , challengePolynomialCommitments :: Vector restLen (AffinePoint StepField)
        , baseCaseWrapPublicInputs :: Vector restLen (Array WrapField)
        , prevProofRefs :: Array (Maybe ProofRef)
@@ -590,12 +586,11 @@ consMkStepAdvice
            StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal
              len
              (valElem /\ restValCarrier)
-             (headVkCell /\ restVkCarrier)
        , challengePolynomialCommitments :: Vector len (AffinePoint StepField)
        , baseCaseWrapPublicInputs :: Vector len (Array WrapField)
        , prevProofRefs :: Array (Maybe ProofRef)
        }
-consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffect = do
+consMkStepAdvice srs appInput slotParams mkValElem headSlot restEffect = do
   contrib <- buildSlotAdvice @w
     { publicInput: appInput
     , prevStatement: slotData.prevStatement
@@ -639,7 +634,6 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
       , kimchiPrevChallenges:
           contrib.slotKimchiPrevEntry :< restA.kimchiPrevChallenges
       , prevAppStates: mkValElem slotData.prevStatement /\ restA.prevAppStates
-      , sideloadedVKs: headVkCell /\ restA.sideloadedVKs
       }
   pure
     { stepAdvice: combinedAdvice
@@ -1078,17 +1072,6 @@ consShapeProveData srs slotParams sideInfo headSlot restProveData =
         , headSlotPrevWrapBpChals
         }
 
--- | What `shapeCompileData` returns: the step solver's context and
--- | the compile's wrap domain log2 (13, 14 or 15, for `mpv` 0, 1, 2).
--- | Both are derived from the `prevsSpec` shape and the
--- | `perSlotImportedVKs` alone, never from the rule or a prove call's
--- | inputs.
-type ShapeCompileData :: Int -> Int -> Type
-type ShapeCompileData mpv nd =
-  { stepProveCtx :: StepProveContext mpv nd
-  , wrapDomainLog2 :: Int
-  }
-
 -- | What `shapeProveData` needs out of `mkStepAdvice`'s return, one
 -- | entry per slot.
 -- |
@@ -1224,11 +1207,10 @@ padShapeProveData dummies slotWidths sd =
 -- CompilableSpec — the shape-dependent dispatch class
 --------------------------------------------------------------------------------
 
--- | One rule's prev-slot spec, and the three pieces of per-slot data
--- | derived from it: compile-time shape, step advice, wrap-stage
--- | data. The instances recurse over the slot list; the compile and
--- | prove flows are top-level functions dispatching through these
--- | methods.
+-- | One rule's prev-slot spec, and the two pieces of prove-time data
+-- | derived from it: step advice and wrap-stage data. The instances
+-- | recurse over the slot list; the prove flow is a top-level function
+-- | dispatching through these methods.
 -- |
 -- | Every other parameter is fixed by `prevsSpec`, so a caller pins
 -- | only that one.
@@ -1243,23 +1225,6 @@ class
   CompilableSpec prevsSpec prevsCarrier mpv valCarrier vkCarrier
   | prevsSpec -> prevsCarrier mpv valCarrier vkCarrier
   where
-  -- | The rule's compile-time shape data.
-  -- |
-  -- | `selfStepDomainLog2s` holds every branch's own step domain
-  -- | log2, which is what a `Self` slot's source domains are; an
-  -- | `External` slot ignores it and reads the imported rule's step
-  -- | domain off its prover index. During the pre-pass, which only
-  -- | counts gates, callers pass `roughDomainsLog2` in every
-  -- | position.
-  shapeCompileData
-    :: forall @nd ndPred
-     . Add 1 ndPred nd
-    => Compare 0 nd LT
-    => Reflectable nd Int
-    => CompileConfig mpv
-    -> Vector nd Int
-    -> ShapeCompileData mpv nd
-
   -- | The step solver's advice, plus the `ShapeProveSideInfo` the
   -- | wrap stage needs, assembled slot by slot.
   mkStepAdvice
@@ -1275,7 +1240,6 @@ class
          { stepAdvice ::
              StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal mpv
                valCarrier
-               vkCarrier
          , challengePolynomialCommitments :: Vector mpv (AffinePoint StepField)
          , baseCaseWrapPublicInputs :: Vector mpv (Array WrapField)
          , prevProofRefs :: Array (Maybe ProofRef)
@@ -1297,32 +1261,6 @@ class
 --------------------------------------------------------------------------------
 
 instance CompilableSpec Unit Unit 0 Unit Unit where
-  shapeCompileData cfg _ =
-    { stepProveCtx:
-        { srsData:
-            { blindingH:
-                coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
-            , perSlotFopDomainLog2s: Vector.nil
-            , perSlotNumChunks: Vector.nil
-            , perSlotVkBlueprints: Vector.nil
-            }
-        , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
-        , crs: cfg.srs.vestaSrs
-        , debug: cfg.debug
-        , proofCache: cfg.proofCache
-        }
-    , wrapDomainLog2: Dummy.wrapDomainLog2ForProofsVerified 0
-    }
-    where
-    -- Nothing is verified at `mpv = 0`, so this is never read; it is
-    -- there because `stepCompile` takes an sg_old padding constant.
-    nrrDummyWrapSg pallasSrs vestaSrs =
-      ( Dummy.computeDummySgValues
-          (Dummy.baseCaseDummies { maxProofsVerified: 0 })
-          pallasSrs
-          vestaSrs
-      ).ipa.wrap.sg
-
   mkStepAdvice cfg _ wrapCR appInput _ _ =
     let
       bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
@@ -1345,7 +1283,6 @@ instance CompilableSpec Unit Unit 0 Unit Unit where
                   { publicInput: appInput
                   , stepDomainLog2: 0
                   , prevAppStates: unit
-                  , sideloadedVKs: unit
                   }
               )
         , challengePolynomialCommitments: Vector.nil
@@ -1405,21 +1342,8 @@ instance
     -- What the prove call supplies for this slot's wrap VK.
     (SideloadBundle.SlotProveVk WrapVkChunks /\ restVkCarrier)
   where
-  shapeCompileData cfg selfStepDomainLog2s =
-    consShapeCompileData cfg selfStepDomainLog2s headSlot
-      (shapeCompileData @rest restCfg selfStepDomainLog2s)
-    where
-    { head: headSlotWrapKey, tail: restSlotVKs } = Vector.uncons cfg.perSlotImportedVKs
-    restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-
-    -- This slot as runtime data; the derivations from it — wrap
-    -- domain, source step domains, `zk_rows`, VK blueprint — live in
-    -- `Pickles.Prove.Slot`.
-    headSlot :: RuntimeSlot.Slot
-    headSlot = runtimeSlotOf (reflectType (Proxy @n)) headSlotWrapKey
-
   mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
-    consMkStepAdvice @n cfg.srs appInput slotParams headVk
+    consMkStepAdvice @n cfg.srs appInput slotParams
       (\statement -> mkSlotValue @k statement headVk)
       headSlot
       (mkStepAdvice @rest restCfg stepCR wrapCR appInput restPrevs restVkCarrier)
@@ -1427,7 +1351,7 @@ instance
     { head: headSlotWrapKey, tail: restSlotVKs } = Vector.uncons cfg.perSlotImportedVKs
     restCfg = cfg { perSlotImportedVKs = restSlotVKs }
 
-    -- The same record `shapeCompileData` builds, so the derivations
+    -- The same record `stepProveContextOf` builds, so the derivations
     -- below read it through `Pickles.Prove.Slot` instead of deciding
     -- the slot's source once per value.
     runtimeSlot :: RuntimeSlot.Slot
@@ -1831,9 +1755,6 @@ instance
   , Add digestPlusUnfs mpvMax outputSize
   , Reflectable ruleMpv Int
   , SlotStatementsCarrier prevsSpec valCarrier
-  -- The runtime side-loaded VK carrier, bound once here so that the
-  -- `RuleEntry` and the `StepAdvice` its closure takes share it.
-  , SideloadedVKsCarrier prevsSpec vkCarrier
   ) =>
   CompilableRulesSpec
     (RulesCons ruleMpv prevsSpec rest)
@@ -1842,7 +1763,7 @@ instance
     topBranches
     branches
     mpvMax
-    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize vkCarrier r
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize r
         /\ restCarrier
     )
     ( ( AdviceHandler r
@@ -1860,7 +1781,6 @@ instance
              inputVal
              ruleMpv
              valCarrier
-             vkCarrier
         -> Array (Maybe ProofRef)
         -> Effect
              (Either EvaluationError (PProveStep.StepProveResult outputSize))
@@ -2204,6 +2124,7 @@ instance
       restProvers
       r
   , CompilableSpec prevsSpec prevsCarrier ruleMpv valCarrier vkCarrier
+  , SlotWidths prevsSpec ruleMpv
   , SlotStatementsCarrier prevsSpec valCarrier
   -- Per-rule step+wrap constraints needed by runMultiProverBody.
   , CircuitGateConstructor StepField VestaG
@@ -2239,7 +2160,7 @@ instance
       topBranches
       branches
       mpvMax
-      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize vkCarrier r
+      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize r
           /\ restCarrier
       )
       ( ( AdviceHandler r
@@ -2257,7 +2178,6 @@ instance
                inputVal
                ruleMpv
                valCarrier
-               vkCarrier
           -> Array (Maybe ProofRef)
           -> Effect
                (Either EvaluationError (PProveStep.StepProveResult outputSize))
@@ -2277,7 +2197,7 @@ instance
     topBranches
     branches
     mpvMax
-    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize vkCarrier r
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize r
         /\ restCarrier
     )
     ( ( AdviceHandler r
@@ -2295,7 +2215,6 @@ instance
              inputVal
              ruleMpv
              valCarrier
-             vkCarrier
         -> Array (Maybe ProofRef)
         -> Effect
              (Either EvaluationError (PProveStep.StepProveResult outputSize))
@@ -2446,10 +2365,9 @@ data RuleEntry
   -> Type
   -> Type
   -> Int
-  -> Type
   -> Row (Type -> Type)
   -> Type
-data RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize vkCarrier r = RuleEntry
+data RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize r = RuleEntry
   { -- | Given a placeholder context, this rule's own step domain
     -- | log2, counted from a one-shot constraint-system build.
     --
@@ -2459,9 +2377,6 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize vkCarrier r = Rul
       AdviceHandler r -> PProveStep.StepProveContext mpv nd -> Effect Int
   , stepCompileFn ::
       AdviceHandler r -> PProveStep.StepProveContext mpv nd -> Effect PProveStep.StepCompileResult
-  -- | `vkCarrier` is a `RuleEntry` parameter rather than a forall in
-  -- | this field, so that the closure body's `stepSolveAndProve` sees
-  -- | a saturated `StepAdvice`.
   , stepProveFn ::
       AdviceHandler r
       -> PProveStep.StepProveContext mpv nd
@@ -2470,7 +2385,6 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize vkCarrier r = Rul
            inputVal
            mpv
            valCarrier
-           vkCarrier
       -- Per slot, the cache key of the wrap proof verified there.
       -> Array (Maybe ProofRef)
       -> Effect (Either EvaluationError (PProveStep.StepProveResult outputSize))
@@ -2486,14 +2400,8 @@ mkRuleEntry
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
        inputVal inputVar outputVar
        pad unfsTotal digestPlusUnfs
-       compileSideloadedVkCarrier sideloadedVkCarrier
    . CircuitGateConstructor StepField VestaG
   => SlotWidths prevsSpec mpv
-  -- The advice carriers: a placeholder per slot at compile time, and
-  -- the prove call's `SlotProveVk` cells, whose bundles the prover
-  -- machinery reads for a side-loaded slot's oracles.
-  => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
-  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   -- Each slot's `SlotOf` kind, to check against the `SlotWrapKey` the
   -- caller supplies for it.
   => SlotKinds prevsSpec
@@ -2517,7 +2425,7 @@ mkRuleEntry
   => PStepRule r prevsSpec inputVal inputVar outputVal outputVar
   -- | Where each slot's wrap VK comes from, in slot order.
   -> Vector mpv SlotWrapKey
-  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize sideloadedVkCarrier r)
+  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize r)
 mkRuleEntry rule slotVKs = do
   -- A slot's kind says where its key comes from, and its `SlotWrapKey`
   -- says the same thing at the value level. Disagreement means one of
@@ -2600,13 +2508,12 @@ type PStepRule r prevsSpec inputVal inputVar outputVal outputVar =
 --------------------------------------------------------------------------------
 
 -- | One rule's `StepProveContext`: the shared config combined with
--- | that rule's `slotVKs` and run through `shapeCompileData` for the
+-- | that rule's `slotVKs` and run through `stepProveContextOf` for the
 -- | per-slot layout.
 buildStepProveCtx
-  :: forall @prevsSpec @nd ndPred prevsCarrier mpv valCarrier vkCarrier
-   . CompilableSpec prevsSpec prevsCarrier mpv valCarrier vkCarrier
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
+  :: forall @prevsSpec @nd mpv
+   . SlotWidths prevsSpec mpv
+  => Reflectable mpv Int
   => Reflectable nd Int
   => CompileMultiConfig
   -> Int
@@ -2627,9 +2534,10 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
       , selfWrapDomainLog2:
           resolveSelfWrapDomainLog2 selfMpvMax cfg.wrapDomainOverride
       }
-    shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2s
   in
-    shape.stepProveCtx
+    stepProveContextOf perRuleCfg
+      (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
+      selfStepDomainLog2s
 
 --------------------------------------------------------------------------------
 -- runMultiProverBody — per-branch prover body.
@@ -2655,6 +2563,7 @@ runMultiProverBody
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
        vkCarrier r
    . CompilableSpec prevsSpec prevsCarrier mpv valCarrier vkCarrier
+  => SlotWidths prevsSpec mpv
   => SlotStatementsCarrier prevsSpec valCarrier
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
@@ -2722,7 +2631,7 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal outputSize vkCarrier r
+  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal outputSize r
   -> StepInputs prevsSpec inputVal prevsCarrier vkCarrier
   -> Effect (Either ProveError (CompiledProof mpvMax (StatementIO inputVal outputVal)))
 runMultiProverBody
@@ -2753,7 +2662,9 @@ runMultiProverBody
     -- Every branch's step domain log2s, not just this branch's: that
     -- is the dispatch table `finalizeOtherProofCircuit` needs for
     -- `Self` slots.
-    shape = shapeCompileData @prevsSpec perRuleCfg allStepDomainLog2s
+    stepProveCtx = stepProveContextOf perRuleCfg
+      (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
+      allStepDomainLog2s
 
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, prevProofRefs } <-
     mkStepAdvice @prevsSpec perRuleCfg stepCR wrapResult appInput
@@ -2844,7 +2755,7 @@ runMultiProverBody
 
     proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
 
-  eStepResult <- r.stepProveFn handler shape.stepProveCtx stepCR stepAdvice prevProofRefs
+  eStepResult <- r.stepProveFn handler stepProveCtx stepCR stepAdvice prevProofRefs
   case eStepResult of
     Left e -> pure (Left e)
     Right stepResult -> do

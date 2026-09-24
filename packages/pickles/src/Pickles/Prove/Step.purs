@@ -68,7 +68,6 @@ import Pickles.PlonkChecks (collapsePointEval, mapChunkedEvals, singleChunkEvals
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Dummy (baseCaseDummies, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
@@ -132,7 +131,7 @@ type StepBranchData =
 -- | protocol-constant dummy data from `Pickles.Dummy`. The rule's
 -- | `max_proofs_verified` is not among them: it is the type-level
 -- | `len`, reified where an `Int` is needed.
-type BuildStepAdviceInput inputVal valCarrier vkCarrier =
+type BuildStepAdviceInput inputVal valCarrier =
   { -- | Value bound to the step circuit's public input. Polymorphic in
     -- | `inputVal`, so a rule whose input typ is not `Field.typ` can
     -- | bind a multi-field record.
@@ -150,24 +149,18 @@ type BuildStepAdviceInput inputVal valCarrier vkCarrier =
   -- | still supplies an inhabitant of the right type, whose value is
   -- | irrelevant when `proofMustVerify` is false for that slot.
   , prevAppStates :: valCarrier
-
-  -- | Spec-indexed runtime side-loaded VK carrier: compiled slots
-  -- | contribute `Unit`, side-loaded slots a runtime verification key.
-  -- | Persisted into `StepAdvice.sideloadedVKs`, which is where the
-  -- | step rule body reads it from.
-  , sideloadedVKs :: vkCarrier
   }
 
 -- | A base-case `StepAdvice`. Each slot's dummy witness is built at
 -- | that slot's own width, read from `prevsSpec`, so a slot of width 0
 -- | gets empty `prevChallenges` and `prevSgs`.
 buildStepAdvice
-  :: forall @prevsSpec inputVal len valCarrier vkCarrier
+  :: forall @prevsSpec inputVal len valCarrier
    . Reflectable len Int
   => SlotWidths prevsSpec len
   => SlotStatementsCarrier prevsSpec valCarrier
-  => BuildStepAdviceInput inputVal valCarrier vkCarrier
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier vkCarrier
+  => BuildStepAdviceInput inputVal valCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
 buildStepAdvice input =
   let
     -- The Pallas generator, reused for every curve-point field of the
@@ -328,7 +321,6 @@ buildStepAdvice input =
             , challenges: Vector.replicate zero
             }
       , prevAppStates: input.prevAppStates
-      , sideloadedVKs: input.sideloadedVKs
       }
 
 -- | The sigma, coefficient and index commitments of a compiled wrap
@@ -1233,11 +1225,10 @@ buildStepCircuit
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
-       len sideloadedVkCarrier
+       len
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
   => SlotWidths prevsSpec len
-  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1272,7 +1263,6 @@ buildStepCircuit handler ctx rule = do
            inputVal
            len
            valCarrier
-           sideloadedVkCarrier
     dummyAdvice = unsafeCoerce unit
   -- A throwaway capture Ref: `compile` discards the `exists` body that
   -- would write it, so it stays `Nothing`.
@@ -1309,11 +1299,10 @@ stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
-       len sideloadedVkCarrier
+       len
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
   => SlotWidths prevsSpec len
-  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1423,11 +1412,10 @@ preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
-       len sideloadedVkCarrier
+       len
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
   => SlotWidths prevsSpec len
-  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1494,11 +1482,10 @@ stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
-       len sideloadedVkCarrier
+       len
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
   => SlotWidths prevsSpec len
-  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1520,7 +1507,7 @@ stepSolveAndProve
   -> StepProveContext len nd
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
   -- Per slot, the cache key of the wrap proof this proof verifies there
   -- (`Nothing` on a base-case slot), recorded on its cache entry so a
   -- chain is walkable from the cache alone.

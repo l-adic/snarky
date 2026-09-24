@@ -18,8 +18,8 @@ import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 
 newtype StepAdvice
-  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type -> Type
-newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len valCarrier vkCarrier =
+  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type
+newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len valCarrier =
   StepAdvice
     { perProofSlotsCarrier ::
         Vector len
@@ -56,12 +56,9 @@ newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len valCarrier vkCarrie
     -- | slot-specific values out of it through the deferred getter
     -- | `stepMain` hands it.
     , prevAppStates :: valCarrier
-    -- | The runtime side-loaded VKs, shaped from `prevsSpec` by
-    -- | `Pickles.Sideload.Advice.SideloadedVKsCarrier`.
-    , sideloadedVKs :: vkCarrier
     }
 
 derive instance
   Newtype
-    (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len valCarrier vkCarrier)
+    (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len valCarrier)
     _
