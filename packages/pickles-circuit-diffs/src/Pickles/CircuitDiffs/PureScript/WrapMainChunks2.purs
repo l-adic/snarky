@@ -24,7 +24,6 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, compileStepMainChunks2)
 import Pickles.Field (StepField, WrapField)
-import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
@@ -62,7 +61,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
       -- Build a chunked lookup using the new `srsLagrangeCommitmentChunksAt`
       -- FFI; the supplied `lagrangeAt` from IvpWrapParams is nc=1 and
       -- can't be used here.
-      , lagrangeAt: mkConstLagrangeBaseLookup \i ->
+      , lagrangeTable: \i -> Vector.singleton $
           let
             chunksArr = srsLagrangeCommitmentChunksAt
               vestaSrs
@@ -84,7 +83,6 @@ compileWrapMainChunks2 { blindingH } stepParams = do
                 $ "chunks2 wrap: lagrange chunks mismatch (got "
                     <> show (Array.length chunksArr)
                     <> ", expected 2)"
-      , perBranchLagrangeAt: Nothing
       , blindingH
       , prevWrapDomainPins: Vector.nil :< Vector.nil
       }

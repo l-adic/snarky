@@ -49,8 +49,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
       { stepWidths: 1 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
       , stepKeys: realStepVK :< Vector.nil
-      , lagrangeAt
-      , perBranchLagrangeAt: Nothing
+      , lagrangeTable: \i -> (lagrangeAt i).constant :< Vector.nil
       , blindingH
       , prevWrapDomainPins: (Nothing :< Vector.nil) :< Vector.nil
       }

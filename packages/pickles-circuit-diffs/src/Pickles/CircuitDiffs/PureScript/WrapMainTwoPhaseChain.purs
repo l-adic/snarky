@@ -32,7 +32,6 @@ import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainT
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Safe.Coerce (coerce)
@@ -48,11 +47,10 @@ import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
--- | Two_phase_chain needs per-branch SRS access (not just `lagrangeAt`)
+-- | Two_phase_chain needs per-branch SRS access
 -- | because the branches' step domains differ.
 type WrapMainTwoPhaseChainParams =
   { vestaSrs :: CRS VestaG
-  , lagrangeAt :: LagrangeBaseLookup 1 WrapField
   , blindingH :: AffinePoint (F WrapField)
   , makeZeroStepSrsData :: StepMainTwoPhaseChainMakeZeroParams
   , incrementStepSrsData :: StepMainTwoPhaseChainIncrementParams
@@ -60,7 +58,7 @@ type WrapMainTwoPhaseChainParams =
 
 compileWrapMainTwoPhaseChain
   :: WrapMainTwoPhaseChainParams -> Effect WrapArtifact
-compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsData, incrementStepSrsData } = do
+compileWrapMainTwoPhaseChain { vestaSrs, blindingH, makeZeroStepSrsData, incrementStepSrsData } = do
   -- Compile both branches' step CSes. make_zero first (so its artifact
   -- is available for increment's per-branch FOP domain dispatch).
   makeZeroArt <- compileStepMainTwoPhaseChainMakeZero makeZeroStepSrsData
@@ -87,7 +85,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
             $ "WrapMainTwoPhaseChain: lagrange chunks size mismatch (got "
                 <> show (Array.length chunksArr)
                 <> ", expected 1)"
-    perBranchLookup i =
+    lagrangeTable i =
       chunked makeZeroArt.stepDomainLog2 i
         :< chunked incrementArt.stepDomainLog2 i
         :< Vector.nil
@@ -97,8 +95,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
       { stepWidths: 0 :< 1 :< Vector.nil
       , domainLog2s: makeZeroArt.stepDomainLog2 :< incrementArt.stepDomainLog2 :< Vector.nil
       , stepKeys: makeZeroVK :< incrementVK :< Vector.nil
-      , lagrangeAt
-      , perBranchLagrangeAt: Just perBranchLookup
+      , lagrangeTable
       , blindingH
       , prevWrapDomainPins: (Just N1 :< Vector.nil) :< (Just N1 :< Vector.nil) :< Vector.nil
       }

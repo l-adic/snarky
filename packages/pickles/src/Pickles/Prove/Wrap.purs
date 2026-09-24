@@ -44,7 +44,6 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified)
-import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (AllocEvals, ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments, verifierIndexDigest)
 import Pickles.Wrap.Advice (WrapAdvice)
@@ -557,14 +556,10 @@ type WrapBranchData mpvMax =
 -- | circuit's `Pseudo.choose whichBranch` machinery dispatches over at
 -- | proof time.
 -- |
--- | The lagrange basis depends on the step domain, so it is filled one
--- | of two ways. When every branch shares a step domain, one basis
--- | serves all of them: `lagrangeAt` carries it and
--- | `perBranchLagrangeAt` is `Nothing`. When the domains differ,
--- | `perBranchLagrangeAt` carries one constant point per branch at each
--- | index, which the circuit 1-hot sums against `whichBranch`, and
--- | `lagrangeAt` is unused — filled from the head branch's domain only
--- | to satisfy the type.
+-- | The lagrange basis depends on the step domain, so `lagrangeTable`
+-- | gives each branch its basis at its own step domain; the circuit
+-- | compares the domains to pick one shared basis or a 1-hot sum
+-- | against `whichBranch`.
 buildWrapMainConfigMulti
   :: forall @branches @mpv @stepChunks branchesPred
    . Reflectable branches Int
@@ -576,10 +571,10 @@ buildWrapMainConfigMulti
 buildWrapMainConfigMulti vestaSrs { perBranch } =
   let
     domainLog2s = map _.stepDomainLog2 perBranch
-    headDomainLog2 = (Vector.uncons perBranch).head.stepDomainLog2
-    allEqual = Array.all (_ == headDomainLog2)
-      (Vector.toUnfoldable domainLog2s)
-    perBranchLookup i =
+    -- Each public-input slot's lagrange basis splits into
+    -- `stepChunks = ceil(2^stepDomainLog2 / 2^wrapMaxPolySize)` pieces,
+    -- which the FFI returns as an `Array` to reshape here.
+    lagrangeTable i =
       map
         ( \b ->
             let
@@ -591,7 +586,7 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
               case Vector.toVector @stepChunks (map coerce chunksArr) of
                 Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
                 Nothing -> unsafeThrow
-                  $ "buildWrapMainConfigMulti.perBranchLookup: lagrange chunks size mismatch "
+                  $ "buildWrapMainConfigMulti: lagrange chunks size mismatch "
                       <> "(got "
                       <> show (Array.length chunksArr)
                       <> ", expected stepChunks="
@@ -604,25 +599,7 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     , domainLog2s
     , stepKeys:
         map (\b -> stepVkForCircuit (extractStepVKComms b.stepVK)) perBranch
-    , lagrangeAt:
-        -- Each public-input slot's lagrange basis splits into
-        -- `stepChunks = ceil(2^stepDomainLog2 / 2^wrapMaxPolySize)`
-        -- pieces, which the FFI returns as an `Array` to reshape here.
-        mkConstLagrangeBaseLookup \i ->
-          let
-            chunksArr = srsLagrangeCommitmentChunksAt vestaSrs headDomainLog2 i
-          in
-            case Vector.toVector @stepChunks (map coerce chunksArr) of
-              Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
-              Nothing -> unsafeThrow
-                $ "buildWrapMainConfigMulti: lagrange chunks size mismatch "
-                    <> "(got "
-                    <> show (Array.length chunksArr)
-                    <> ", expected stepChunks="
-                    <> show (reflectType (Proxy @stepChunks))
-                    <> ")"
-    , perBranchLagrangeAt:
-        if allEqual then Nothing else Just perBranchLookup
+    , lagrangeTable
     , blindingH: (coerce (srsBlindingGenerator vestaSrs :: AffinePoint WrapField)) :: AffinePoint (F WrapField)
     , prevWrapDomainPins: map _.prevWrapDomainPins perBranch
     }

@@ -82,6 +82,7 @@ import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (compileWrapMainTwo
 import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
 import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
+import Pickles.CircuitDiffs.PureScript.XhatBranches (compileXhatBranches)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Pickles.CircuitDiffs.Types (CircuitComparison, WitnessExport)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
@@ -761,6 +762,31 @@ spec bundle =
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
         exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat @1 wrapSrsData)
+        -- `x_hat` at two branches, through the wrap circuit's `maskedLagrangeAt`: step
+        -- domains `2^16, 2^16` (one shared table) and `2^15, 2^16` (per-branch tables).
+        let
+          lagrangeOne :: Int -> Int -> Vector 1 (AffinePoint (F Fq))
+          lagrangeOne log2 i = Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs log2 i))
+        exactMatchEff "xhat_wrap_branches_same_circuit" $ fromCompiledCircuit =<< compileXhatBranches
+          { domainLog2s: 16 :< 16 :< Vector.nil
+          , lagrangeTable: \i -> lagrangeOne 16 i :< lagrangeOne 16 i :< Vector.nil
+          , blindingH: wrapSrsData.blindingH
+          }
+        exactMatchEff "xhat_wrap_branches_diff_circuit" $ fromCompiledCircuit =<< compileXhatBranches
+          { domainLog2s: 15 :< 16 :< Vector.nil
+          , lagrangeTable: \i -> lagrangeOne 15 i :< lagrangeOne 16 i :< Vector.nil
+          , blindingH: wrapSrsData.blindingH
+          }
+        -- The bases both branch circuits read, at `2^15` and `2^16`, and `h`, for the Lean
+        -- `check_cs` harness.
+        it "dumps the xhat_wrap_branches Lagrange bases for the Lean check_cs harness" $ liftEffect do
+          let
+            ptToJson :: AffinePoint Fq -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+            at log2 = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs log2 i)
+          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_branches_lagrange.json")
+            (writeJSON { lagrange15: at 15, lagrange16: at 16, h: ptToJson (pallasSrsBlindingGenerator srs) })
         -- Dump the 34 Lagrange bases + blinding `h` (the SRS constants baked into
         -- `xhat_wrap_circuit`) so the Lean `check_cs` harness can reproduce the gadget:
         -- Lean cannot compute Lagrange commitments (no SRS/FFI); it derives the corrections
@@ -1005,7 +1031,6 @@ spec bundle =
             }
           wrapMainTpcParams =
             { vestaSrs: wrapSrs
-            , lagrangeAt: wrapMainSrsData.lagrangeAt
             , blindingH: wrapMainSrsData.blindingH
             , makeZeroStepSrsData: tpcMakeZeroSrsData
             , incrementStepSrsData: tpcIncrementSrsData
