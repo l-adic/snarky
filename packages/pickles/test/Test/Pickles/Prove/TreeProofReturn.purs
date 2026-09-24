@@ -86,7 +86,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
   it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
 
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) nrrRule Vector.nil
+    nrrEntry <- liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
 
     let nrrRules = tuple1 nrrEntry
 
@@ -111,7 +111,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right p -> pure p
 
-    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField)
+    treeEntry <- liftEffect $ mkRuleEntry @(F StepField)
       treeProofReturnRule
       (External nrr.tagData :< Self :< Vector.nil)
 

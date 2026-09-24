@@ -77,8 +77,8 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    baseEntry <- liftEffect $ mkRuleEntry @2 @Unit makeZeroRule Vector.nil
-    mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit
+    baseEntry <- liftEffect $ mkRuleEntry @Unit makeZeroRule Vector.nil
+    mergeEntry <- liftEffect $ mkRuleEntry @Unit
       simpleChainN2Rule
       (Self :< Self :< Vector.nil)
     let rules = tuple2 baseEntry mergeEntry

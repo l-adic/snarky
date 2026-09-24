@@ -1867,8 +1867,8 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal outputSize r = RuleEntry
 -- | through `preComputeStepDomainLog2`, `stepCompile` and
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @mpvMax @outputVal @r
-       prevsSpec mpv mpvPad outputSize valCarrier
+  :: forall @outputVal @r
+       mpvMax prevsSpec mpv mpvPad outputSize valCarrier
        inputVal inputVar outputVar
        pad unfsTotal digestPlusUnfs compiled
    . CircuitGateConstructor StepField VestaG

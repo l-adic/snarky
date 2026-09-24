@@ -135,7 +135,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     -- The child's kimchi wrap verification key becomes the runtime
     -- `wrapVk` of the parent's side-loaded slot.
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit
+    childEntry <- liftEffect $ mkRuleEntry @Unit
       noRecursionInputRule
       Vector.nil
 
@@ -183,7 +183,6 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
         }
 
     sideLoadedEntry <- liftEffect $ mkRuleEntry
-      @1
       @Unit
       sideLoadedMainRule
       Vector.nil

@@ -109,7 +109,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
 
     let dummies = mkWidthDummies pallasSrs vestaSrs
 
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit childRule Vector.nil
+    childEntry <- liftEffect $ mkRuleEntry @Unit childRule Vector.nil
     logInfo "[HeterogeneousPrevs] compiling child…"
     child <- withSpan "[HeterogeneousPrevs] compile child" $ liftEffect $ compileMulti
       @ChildRules
@@ -131,8 +131,8 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       Right p -> pure p
     childCp' <- roundTripAndVerify dummies child.verifier childCp
 
-    baseEntry <- liftEffect $ mkRuleEntry @2 @Counts baseRule Vector.nil
-    absorbEntry <- liftEffect $ mkRuleEntry @2 @Counts absorbRule
+    baseEntry <- liftEffect $ mkRuleEntry @Counts baseRule Vector.nil
+    absorbEntry <- liftEffect $ mkRuleEntry @Counts absorbRule
       (External child.tagData :< Self :< Vector.nil)
 
     logInfo "[HeterogeneousPrevs] compiling application…"

@@ -78,7 +78,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
   it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChain.json")
 
-    chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput simpleChainRule (Self :< Vector.nil)
+    chainEntry <- liftEffect $ mkRuleEntry @NoOutput simpleChainRule (Self :< Vector.nil)
 
     let rules = tuple1 chainEntry
 

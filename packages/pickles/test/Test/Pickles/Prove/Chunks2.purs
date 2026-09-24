@@ -78,7 +78,7 @@ spec = describe "Pickles.Prove.Chunks2" do
     -- step domain up to 2^17, giving two chunks. The wrap SRS has depth
     -- 2^15 and the wrap domain is overridden to 2^14, giving one chunk
     -- and a `max_poly_size` of 32768.
-    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit chunks2Rule Vector.nil
+    chunks2Entry <- liftEffect $ mkRuleEntry @Unit chunks2Rule Vector.nil
     let rules = tuple1 chunks2Entry
 
     logInfo "[Chunks2] compiling…"

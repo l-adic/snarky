@@ -110,8 +110,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit makeZeroRule Vector.nil
-    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit incrementRule (Self :< Vector.nil)
+    makeZeroEntry <- liftEffect $ mkRuleEntry @Unit makeZeroRule Vector.nil
+    incrementEntry <- liftEffect $ mkRuleEntry @Unit incrementRule (Self :< Vector.nil)
     let rules = tuple2 makeZeroEntry incrementEntry
     logInfo "[TwoPhaseChain] compiling…"
     output <- withSpan "[TwoPhaseChain] compile" $ liftEffect $ compileMulti

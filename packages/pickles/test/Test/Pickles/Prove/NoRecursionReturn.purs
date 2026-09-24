@@ -51,7 +51,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
   it "compileMulti + prover.step end-to-end verify returns true" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/NoRecursionReturn.json")
 
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) nrrRule Vector.nil
+    nrrEntry <- liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
 
     let rules = tuple1 nrrEntry
 

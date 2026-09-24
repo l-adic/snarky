@@ -78,7 +78,7 @@ spec = describe "Pickles.Prove.Chunks4" do
     -- step domain up to 2^18, giving four chunks. The wrap SRS has
     -- depth 2^15 and the wrap domain is overridden to 2^15, giving one
     -- chunk.
-    chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit chunks4Rule Vector.nil
+    chunks4Entry <- liftEffect $ mkRuleEntry @Unit chunks4Rule Vector.nil
     let rules = tuple1 chunks4Entry
 
     logInfo "[Chunks4] compiling…"

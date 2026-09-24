@@ -292,14 +292,12 @@ compileTxCircuit chainId lagrangeCache srs = do
       }
   baseEntry <-
     mkRuleEntry
-      @2
       @NoOutput
       @(TxAdviceRow d ())
       (baseRule @d chainId)
       Vector.nil
   mergeEntry <-
     mkRuleEntry
-      @2
       @NoOutput
       @(TxAdviceRow d ())
       mergeRule

@@ -54,7 +54,7 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
   it "a step circuit finalizes a chunks=2 step proof, end-to-end verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/RecurseOverChunks.json")
 
-    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit chunks2Rule Vector.nil
+    chunks2Entry <- liftEffect $ mkRuleEntry @Unit chunks2Rule Vector.nil
 
     logInfo "[RecurseOverChunks] compiling chunks2…"
     chunks2 <- withSpan "[RecurseOverChunks] compile chunks2" $ liftEffect $ compileMulti
@@ -78,7 +78,7 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       Right p -> pure p
     verify chunks2.verifier (toVerifiable chunks2Cp) `shouldEqual` true
 
-    recurseEntry <- liftEffect $ mkRuleEntry @1 @Unit
+    recurseEntry <- liftEffect $ mkRuleEntry @Unit
       recurseRule
       (External chunks2.tagData :< Vector.nil)
 

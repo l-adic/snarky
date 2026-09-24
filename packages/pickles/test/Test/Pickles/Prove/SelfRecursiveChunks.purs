@@ -91,7 +91,7 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
   it "a chunks=2 self-recursive chain proves its base case and one step" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SelfRecursiveChunks.json")
 
-    entry <- liftEffect $ mkRuleEntry @1 @NoOutput selfRecursiveChunksRule (Self :< Vector.nil)
+    entry <- liftEffect $ mkRuleEntry @NoOutput selfRecursiveChunksRule (Self :< Vector.nil)
 
     logInfo "[SelfRecursiveChunks] compiling…"
     output <- withSpan "[SelfRecursiveChunks] compile" $ liftEffect $ compileMulti
