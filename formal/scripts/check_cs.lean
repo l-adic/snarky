@@ -921,47 +921,20 @@ def xhatWrapCircuit {nc : ℕ} (pts : Array (Vector XhatCurve.Point nc))
   let _ ← Pickles.publicInputCommitFull h leaves
   pure PUnit.unit
 
-/-- A point per branch, masked by the one-hot `bits`: coordinatewise `Σ bᵢ · Pᵢ`, an affine
-combination with no rows. -/
-def xhatMasked (bits : List (BoolVar Fq)) (ps : List (AffinePoint (FVar Fq))) :
-    CircuitM Fq Cq (AffinePoint (FVar Fq)) := do
-  let x ← Pickles.Pseudo.choose bits ps (·.x)
-  let y ← Pickles.Pseudo.choose bits ps (·.y)
-  pure ⟨x, y⟩
-
 /-- `xhat_wrap_branches_{same,diff}_circuit`: input 0 is the branch index over two branches,
-inputs 1–34 are `xhat_wrap_circuit`'s. The `condAdd` bases are masked by the branch bits.
-With `perBranch` off (one shared table, `pts0`) the scalar leaves keep constant bases and
-corrections; with it on, their bases and corrections are masked over `pts0`/`pts1` and
-sealed (`Pickles.publicInputCommitSealed`). -/
-def xhatBranchesCircuit (perBranch : Bool) (pts0 pts1 : Array XhatCurve.Point)
+inputs 1–34 are `xhat_wrap_circuit`'s, committed by `Pickles.publicInputCommitMasked` over the
+branches' Lagrange bases `pts0`/`pts1`, `shared` when the branches share one step domain. -/
+def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatCurve.Point)
     (h : AffinePoint (FVar Fq)) (input : Vector (FVar Fq) 35) : CircuitM Fq Cq PUnit := do
   let bits ← Pickles.oneHotVector 2 input[0]
   let get (i : ℕ) : FVar Fq := input[i + 1]?.getD (.const 0)
-  let pt (pts : Array XhatCurve.Point) (i : ℕ) : XhatCurve.Point :=
-    pts[i]?.getD (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
-  let masked (f : XhatCurve.Point → AffinePoint (FVar Fq)) (i : ℕ) :
-      CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) 1) := do
-    let p ← xhatMasked bits [f (pt pts0 i), f (pt pts1 i)]
-    pure #v[p]
-  let scalar (L : ℕ) (i : ℕ) : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) 1 ×
-      Vector (AffinePoint (FVar Fq)) 1) :=
-    if perBranch then do
-      pure (← masked xhatBase i, ← masked (xhatCorr L) i)
-    else pure (#v[xhatBase (pt pts0 i)], #v[xhatCorr L (pt pts0 i)])
-  let full (i : ℕ) : CircuitM Fq Cq (Pickles.Leaf Fq 1) := do
-    let (b, c) ← scalar 255 i
-    pure (.full (get i) b c)
-  let b128 (i : ℕ) : CircuitM Fq Cq (Pickles.Leaf Fq 1) := do
-    let (b, c) ← scalar 130 i
-    pure (.b128 (get i) b c)
-  let cond (i : ℕ) : CircuitM Fq Cq (Pickles.Leaf Fq 1) := do
-    pure (.condAdd (.unchecked (get i)) (← masked xhatBase i))
-  let leaves ← ([ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8,
-      cond 9, full 10 ] ++ (List.range 20).map (fun j => b128 (11 + j))
-      ++ [ cond 31, full 32, full 33 ]).mapM id
-  let _ ← if perBranch then Pickles.publicInputCommitSealed h leaves
-    else Pickles.publicInputCommitFull h leaves
+  let full (i : ℕ) : Pickles.PackedScalar Fq := .full (get i)
+  let b128 (i : ℕ) : Pickles.PackedScalar Fq := .b128 (get i)
+  let cond (i : ℕ) : Pickles.PackedScalar Fq := .bit (.unchecked (get i))
+  let ks := [ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8, cond 9,
+      full 10 ] ++ (List.range 20).map (fun j => b128 (11 + j)) ++ [ cond 31, full 32, full 33 ]
+  let _ ← Pickles.publicInputCommitMasked (C := XhatCurve) shared h bits ks
+    [pts0.toList.map (#v[·]), pts1.toList.map (#v[·])]
   pure PUnit.unit
 
 /-- The Lagrange bases and blinding `h` of an `x_hat` circuit, from its circuit-diffs export
@@ -1679,11 +1652,11 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
   ++ (branches.toList.map fun (_, l16, h) =>
     ("xhat_wrap_branches_same_circuit",
       wrapTarget (a := Vector Fq 35) (b := PUnit)
-        (xhatBranchesCircuit false l16 l16 (xhatWrapCell h))))
+        (xhatBranchesCircuit true l16 l16 (xhatWrapCell h))))
   ++ (branches.toList.map fun (l15, l16, h) =>
     ("xhat_wrap_branches_diff_circuit",
       wrapTarget (a := Vector Fq 35) (b := PUnit)
-        (xhatBranchesCircuit true l15 l16 (xhatWrapCell h))))
+        (xhatBranchesCircuit false l15 l16 (xhatWrapCell h))))
   ++ (wrap.toList.map fun (pts, h) =>
     ("wrap_verify_circuit", wrapTarget (a := Vector Fq 196) (b := PUnit) (wrapVerifyCircuit pts h)))
 

@@ -43,7 +43,7 @@ Pickles.toDomain_spec
 
 -- TODO: drop once the wrap main port consumes it. The wrap side's x_hat over bases masked
 -- across branches, CS-matched by check_cs but not yet reached from a capstone.
-Pickles.xHatSealed_reads_publicCommitment
+Pickles.xHatMasked_reads_publicCommitment
 
 -- TODO: drop once the wrap main port consumes them. The x_hat ladders' bounds on the packed
 -- scalars, the frame laws that carry them through the wrap verifier, and the wrap public
@@ -56,6 +56,8 @@ Pickles.wrapPublicInput_toList
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
+Pickles.chooseKey
+Pickles.onesVector
 Pickles.buildEvalList
 Pickles.Env.decidableAvoids
 Pickles.Env.decidableInvariants -- synthesis: found by class resolution, never by name
