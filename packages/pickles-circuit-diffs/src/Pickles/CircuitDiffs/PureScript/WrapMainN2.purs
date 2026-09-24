@@ -44,7 +44,7 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
   realStepVK <- deriveStepVKFromCompiled @1 @2 vestaSrs stepArt.stepCs
   let
 
-    config :: WrapMainConfig 1 1
+    config :: WrapMainConfig 1 2 1
     config =
       { stepWidths: 2 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
@@ -54,6 +54,7 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+      , prevWrapDomainIndices: (Just 1 :< Just 1 :< Vector.nil) :< Vector.nil
       }
   -- mpv=2, slots [2; 2]; derived from PrevsSpec via funcdep.
   let

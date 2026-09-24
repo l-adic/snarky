@@ -1797,13 +1797,17 @@ class
 
   -- | The per-branch step results, in the shape
   -- | `buildWrapMainConfigMulti` takes: each branch's `mpv`, its step
-  -- | domain log2 and its step VK.
+  -- | domain log2, its step VK, and each prev slot's wrap-domain index
+  -- | given the compile's own wrap domain log2.
   buildWrapPerBranchVec
-    :: perBranchStepCompileResults
+    :: Int
+    -> rulesCarrier
+    -> perBranchStepCompileResults
     -> Vector branches
          { mpv :: Int
          , stepDomainLog2 :: Int
          , stepVK :: VerifierIndex VestaG StepField
+         , prevWrapDomainIndices :: Vector mpvMax (Maybe Int)
          }
 
 instance
@@ -1825,7 +1829,7 @@ instance
   extractStepCompileFns _ = unit
   runStepCompiles _ _ _ = pure unit
   extractStepProveFns _ = unit
-  buildWrapPerBranchVec _ = Vector.nil
+  buildWrapPerBranchVec _ _ _ = Vector.nil
 
 instance
   ( CompilableRulesSpec rest inputVal outputVal
@@ -1839,6 +1843,9 @@ instance
       restStepProveFns
       r
   , Add restBranches 1 branches
+  -- The rule's slots front-padded to the wrap circuit's `mpvMax`.
+  , Add mpvPad ruleMpv mpvMax
+  , Reflectable mpvPad Int
   , SlotWidths prevsSpec
   , StepSlotsCarrier
       prevsSpec
@@ -1964,12 +1971,20 @@ instance
       restCtxs
       restEntries
     pure (headResult /\ tailResults)
-  buildWrapPerBranchVec (headResult /\ restResults) =
+  buildWrapPerBranchVec selfWrapDomainLog2 (RuleEntry r /\ restEntries) (headResult /\ restResults) =
     let
+      -- An index into `allPossibleDomainLog2s = [13, 14, 15]`.
+      slotIndex = case _ of
+        Self -> Just (selfWrapDomainLog2 - 13)
+        External vks -> Just (vks.wrapDomainLog2 - 13)
+        SideLoadedKey -> Nothing
       headRecord =
         { mpv: reflectType (Proxy :: Proxy ruleMpv)
         , stepDomainLog2: proverIndexDomainLog2 headResult.proverIndex
         , stepVK: headResult.verifierIndex
+        , prevWrapDomainIndices:
+            Vector.append (Vector.replicate @mpvPad (Just 1))
+              (map slotIndex r.slotVKs)
         }
       restVec = buildWrapPerBranchVec
         @rest
@@ -1984,6 +1999,8 @@ instance
         @restStepCompileResults
         @restStepProveFns
         @r
+        selfWrapDomainLog2
+        restEntries
         restResults
     in
       headRecord :< restVec
@@ -2100,6 +2117,7 @@ class
          { mpv :: Int
          , stepDomainLog2 :: Int
          , stepVK :: VerifierIndex VestaG StepField
+         , prevWrapDomainIndices :: Vector mpvMax (Maybe Int)
          }
     -> Vector topBranches Int
     -> perBranchStepCompileResults
@@ -2769,6 +2787,7 @@ runMultiProverBody
        { mpv :: Int
        , stepDomainLog2 :: Int
        , stepVK :: VerifierIndex VestaG StepField
+       , prevWrapDomainIndices :: Vector mpvMax (Maybe Int)
        }
   -- ^ the same per-branch vector wrap compile was given, from which
   --   the wrap solver rebuilds the same `WrapMainConfig`
@@ -3042,7 +3061,7 @@ runMultiProverBody
         -- branch's index as `whichBranch`.
         wrapCtx =
           { wrapMainConfig:
-              buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
+              buildWrapMainConfigMulti @branches @mpvMax cfg.srs.vestaSrs
                 { perBranch: perBranchVec
                 }
           , crs: cfg.srs.pallasSrs
@@ -3254,12 +3273,16 @@ compileMulti handler cfg rules = do
       @perBranchStepCompileResults
       @stepProveFnsCarrier
       @r
+      ( resolveSelfWrapDomainLog2 (reflectType (Proxy :: Proxy mpvMax))
+          cfg.wrapDomainOverride
+      )
+      rules
       stepResults
 
   -- Step 2: shared wrap compile across all branches.
   wrapResult <- wrapCompile @branches @mpvMax @stepChunks
     { wrapMainConfig:
-        buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
+        buildWrapMainConfigMulti @branches @mpvMax cfg.srs.vestaSrs
           { perBranch: perBranchVec }
     , crs: cfg.srs.pallasSrs
     , slotWidths:

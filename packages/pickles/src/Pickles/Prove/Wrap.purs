@@ -206,7 +206,7 @@ buildWrapAdvice input =
 -- | and the packed wrap statement from `assembleWrapMainInput`, which
 -- | drives both the `CircuitType` shape check and the solver input.
 type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
-  { wrapMainConfig :: WrapMainConfig branches stepChunks
+  { wrapMainConfig :: WrapMainConfig branches mpv stepChunks
   , crs :: CRS PallasG
   , publicInput ::
       Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
@@ -235,7 +235,7 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
 -- | without the solver-only fields (`publicInput`, `advice`).
 type WrapCompileContext :: Int -> Int -> Int -> Type
 type WrapCompileContext branches mpv stepChunks =
-  { wrapMainConfig :: WrapMainConfig branches stepChunks
+  { wrapMainConfig :: WrapMainConfig branches mpv stepChunks
   , crs :: CRS PallasG
   -- | One `max_local_max_proofs_verified` per slot, in slot order.
   , slotWidths :: Vector mpv Int
@@ -553,7 +553,7 @@ stepVkForCircuit vk =
 -- | `lagrangeAt` is unused — filled from the head branch's domain only
 -- | to satisfy the type.
 buildWrapMainConfigMulti
-  :: forall @branches @stepChunks branchesPred
+  :: forall @branches @mpv @stepChunks branchesPred
    . Reflectable branches Int
   => Reflectable stepChunks Int
   => Add 1 branchesPred branches
@@ -563,9 +563,10 @@ buildWrapMainConfigMulti
            { mpv :: Int
            , stepDomainLog2 :: Int
            , stepVK :: VerifierIndex VestaG StepField
+           , prevWrapDomainIndices :: Vector mpv (Maybe Int)
            }
      }
-  -> WrapMainConfig branches stepChunks
+  -> WrapMainConfig branches mpv stepChunks
 buildWrapMainConfigMulti vestaSrs { perBranch } =
   let
     domainLog2s = map _.stepDomainLog2 perBranch
@@ -619,5 +620,6 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     , blindingH: (coerce (srsBlindingGenerator vestaSrs :: AffinePoint WrapField)) :: AffinePoint (F WrapField)
     , allPossibleDomainLog2s:
         unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+    , prevWrapDomainIndices: map _.prevWrapDomainIndices perBranch
     }
 

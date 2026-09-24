@@ -19,7 +19,7 @@ import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.Newtype (over)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
@@ -55,7 +55,7 @@ import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, mul_, not_, true_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), groupMapParams)
@@ -92,7 +92,7 @@ type WrapMainInputVar =
 -- | `proofs_verified ∈ {0, 1, 2}` — in production `{13, 14, 15}`. The
 -- | `Finite 16` bound is `1 + WrapIPARounds`, since a wrap domain is at
 -- | most the wrap SRS size `2^WrapIPARounds`.
-type WrapMainConfig branches stepChunks =
+type WrapMainConfig branches mpv stepChunks =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
   , stepKeys :: Vector branches (StepVK stepChunks (FVar WrapField))
@@ -110,6 +110,11 @@ type WrapMainConfig branches stepChunks =
       Maybe (Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField))))
   , blindingH :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s :: Vector 3 (Finite 16)
+  -- Per branch, each slot's index into `allPossibleDomainLog2s`, the
+  -- branch's own slots front-padded with `1`, the padding index;
+  -- `Nothing` for a side-loaded slot, whose domain is not known at
+  -- compile time.
+  , prevWrapDomainIndices :: Vector branches (Vector mpv (Maybe Int))
   }
 
 -- | The unfinalized-proof shape `wrapFinalizeOtherProofCircuit`
@@ -298,7 +303,7 @@ wrapMain
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => WrapMainConfig branches stepChunks
+  => WrapMainConfig branches mpv stepChunks
   -> WrapMainInputVar
   -> WrapAdvice mpv stepChunks
   -> Vector mpv Int
@@ -376,7 +381,7 @@ wrapMainCore
   -- `wrapVerify`'s base-count constraints, with `sgOldN = mpv`.
   => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => WrapMainConfig branches stepChunks
+  => WrapMainConfig branches mpv stepChunks
   -> WrapMainInputVar
   -> WrapAdvice mpv stepChunks
   -- Per-slot `max_local_max_proofs_verified`: selects the padding
@@ -511,6 +516,24 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
 
   wrapDomainIndices <- label "wrap-domain-indices" $ exists $
     pure advice <#> \r -> r.wrapDomainIndices
+
+  -- The indices are advice, and each slot's finalize check is only
+  -- sound at the finalized proof's own domain, so pin every slot to the
+  -- index its branch was compiled for. Branches whose slot is
+  -- side-loaded leave it free; padding slots take index `1`, the value
+  -- the prover supplies for them.
+  label "wrap-domain-index-pins" do
+    forWithIndex_ wrapDomainIndices \slot index -> do
+      let atSlot = config.prevWrapDomainIndices <#> \ks -> Vector.index ks slot
+      chosen <- Pseudo.choose whichBranch atSlot
+        (\k -> const_ (fromInt (fromMaybe 0 k)))
+      if Array.all isJust (Vector.toUnfoldable atSlot) then
+        assertEqual_ index chosen
+      else do
+        knownBranch <- Pseudo.choose whichBranch atSlot
+          (\k -> const_ (if isJust k then one else zero))
+        pinned <- mul_ knownBranch index
+        assertEqual_ pinned chosen
 
   -- Emission order is part of the circuit: every slot's Pseudo domain
   -- first, right-to-left, then every FOP body, left-to-right.

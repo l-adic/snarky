@@ -92,7 +92,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
         :< chunked incrementArt.stepDomainLog2 i
         :< Vector.nil
 
-    config :: WrapMainConfig 2 1
+    config :: WrapMainConfig 2 1 1
     config =
       { stepWidths: 0 :< 1 :< Vector.nil
       , domainLog2s: makeZeroArt.stepDomainLog2 :< incrementArt.stepDomainLog2 :< Vector.nil
@@ -102,6 +102,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+      , prevWrapDomainIndices: (Just 1 :< Vector.nil) :< (Just 1 :< Vector.nil) :< Vector.nil
       }
   -- mpv=1, single slot of max width 1.
   let
