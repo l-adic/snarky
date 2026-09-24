@@ -768,13 +768,13 @@ spec bundle =
           lagrangeOne :: Int -> Int -> Vector 1 (AffinePoint (F Fq))
           lagrangeOne log2 i = Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs log2 i))
         exactMatchEff "xhat_wrap_branches_same_circuit" $ fromCompiledCircuit =<< compileXhatBranches
-          { lagrangeAt: mkConstLagrangeBaseLookup (lagrangeOne 16)
-          , perBranchLagrangeAt: Nothing
+          { domainLog2s: 16 :< 16 :< Vector.nil
+          , lagrangeTable: \i -> lagrangeOne 16 i :< lagrangeOne 16 i :< Vector.nil
           , blindingH: wrapSrsData.blindingH
           }
         exactMatchEff "xhat_wrap_branches_diff_circuit" $ fromCompiledCircuit =<< compileXhatBranches
-          { lagrangeAt: mkConstLagrangeBaseLookup (lagrangeOne 15)
-          , perBranchLagrangeAt: Just \i -> lagrangeOne 15 i :< lagrangeOne 16 i :< Vector.nil
+          { domainLog2s: 15 :< 16 :< Vector.nil
+          , lagrangeTable: \i -> lagrangeOne 15 i :< lagrangeOne 16 i :< Vector.nil
           , blindingH: wrapSrsData.blindingH
           }
         -- The bases both branch circuits read, at `2^15` and `2^16`, and `h`, for the Lean
@@ -1031,7 +1031,6 @@ spec bundle =
             }
           wrapMainTpcParams =
             { vestaSrs: wrapSrs
-            , lagrangeAt: wrapMainSrsData.lagrangeAt
             , blindingH: wrapMainSrsData.blindingH
             , makeZeroStepSrsData: tpcMakeZeroSrsData
             , incrementStepSrsData: tpcIncrementSrsData

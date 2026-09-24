@@ -43,7 +43,7 @@ import Pickles.ProofsVerified (ProofsVerified, allPossibleDomainLog2s)
 import Pickles.Pseudo (PlonkDomain)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
-import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
+import Pickles.PublicInputCommit (mkConstLagrangeBase, sumMaskedAffine, unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Typ (existsTyp, perSlotTyp, typOf)
 import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
@@ -57,8 +57,8 @@ import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (add_, scale_) as CVar
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, mul_, not_, true_)
+import Snarky.Circuit.CVar (scale_) as CVar
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, mul_, not_, true_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), groupMapParams)
@@ -94,18 +94,12 @@ type WrapMainConfig branches mpv stepChunks =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
   , stepKeys :: Vector branches (StepVK stepChunks (FVar WrapField))
-  -- Lagrange basis for the shared-domain fast path. Always populated;
-  -- when `perBranchLagrangeAt` is `Just`, it holds the head domain's
-  -- basis and is not consulted. `stepChunks` is the step proof's chunk
-  -- count: above one, the basis splits over the wrap SRS and the
-  -- public-input commitment accumulates chunkwise.
-  , lagrangeAt :: LagrangeBaseLookup stepChunks WrapField
-  -- Per-branch lagrange constants per index, for when branch domains
-  -- differ: `f i` gives each branch one `Vector stepChunks` of constant
-  -- chunks at that branch's own domain log2. `Nothing` selects the
-  -- shared-domain fast path.
-  , perBranchLagrangeAt ::
-      Maybe (Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField))))
+  -- The Lagrange bases per index: `f i` gives each branch its `i`-th
+  -- basis as `Vector stepChunks` constant chunks at that branch's own
+  -- step domain. `stepChunks` is the step proof's chunk count: above
+  -- one, the basis splits over the wrap SRS and the public-input
+  -- commitment accumulates chunkwise.
+  , lagrangeTable :: Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField)))
   , blindingH :: AffinePoint (F WrapField)
   -- Per branch, each slot's wrap domain as its index into
   -- `allPossibleDomainLog2s`, the branch's own slots front-padded with
@@ -212,10 +206,11 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView allEvals paddedChals 
   pure expandedChallenges
 
 -- | The wrap circuit's Lagrange lookup for the step proof's public
--- | input, routed through the branch bits. With one shared step domain
--- | (`perBranchLagrangeAt` is `Nothing`), the conditional-add base is
--- | the constant masked by `whichBranch`; with per-branch domains, the
--- | bases and the corrections are the per-branch points masked by it.
+-- | input, routed through the branch bits. The arm follows the
+-- | branches' step domains `domainLog2s`: when they are all equal, one
+-- | basis serves every branch and the conditional-add base is that
+-- | constant masked by `whichBranch`; when they differ, the bases and
+-- | the corrections are the per-branch points masked by it.
 -- | `whichBranch` is one-hot, so each mask is the active branch's point.
 maskedLagrangeAt
   :: forall branches branchesPred stepChunks
@@ -223,93 +218,60 @@ maskedLagrangeAt
   => Reflectable branches Int
   => Add 1 branchesPred branches
   => Vector branches (BoolVar WrapField)
+  -> Vector branches Int
+  -> (Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField))))
   -> LagrangeBaseLookup stepChunks WrapField
-  -> Maybe (Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField))))
-  -> LagrangeBaseLookup stepChunks WrapField
-maskedLagrangeAt whichBranch lagrangeAt perBranchLagrangeAt = lookup
+maskedLagrangeAt whichBranch domainLog2s lagrangeTable = lookup
   where
-  branchBools = map (coerce :: BoolVar WrapField -> FVar WrapField) whichBranch
-
-  -- Coordinate-wise sum of the per-branch points, each scaled by its
-  -- branch bool. `whichBranch` is 1-hot, so the result is the active
-  -- branch's point.
-  sumMaskByBranch
-    :: Vector branches (AffinePoint (F WrapField))
-    -> AffinePoint (FVar WrapField)
-  sumMaskByBranch perBranchPts =
+  sharedDomain =
     let
-      scaledPts = Vector.zipWith
-        ( \b (AffinePoint { x: F x', y: F y' }) ->
-            { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
-        )
-        branchBools
-        perBranchPts
-      { head: spHead, tail: spTail } = Vector.uncons scaledPts
+      { head, tail } = Vector.uncons domainLog2s
     in
-      AffinePoint
-        ( foldl
-            ( \acc pt ->
-                { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
-            )
-            spHead
-            spTail
-        )
+      Array.all (_ == head) (Vector.toUnfoldable tail)
 
-  -- `sumMaskByBranch` per chunk index: at each chunk position, one
-  -- point from each branch is muxed by `whichBranch`.
+  -- At each chunk index, one point from each branch is muxed by
+  -- `whichBranch`.
   sumMaskByBranchChunked
     :: Vector branches (Vector stepChunks (AffinePoint (F WrapField)))
     -> Vector stepChunks (AffinePoint (FVar WrapField))
   sumMaskByBranchChunked perBranchChunkedPts =
     Vector.generate \fi ->
-      sumMaskByBranch (map (\vc -> vc !! fi) perBranchChunkedPts)
+      PIC.sumMaskedAffine whichBranch (map (\vc -> vc !! fi) perBranchChunkedPts)
 
-  -- Lagrange-base lookup driving `publicInputCommit`. `Nothing`:
-  -- every branch shares the step domain, so one constant basis
-  -- serves all of them. `Just`: the domains differ, so per-branch
-  -- points are 1-hot summed and an in-circuit correction at scale
-  -- `2^shift` is produced for `scalarMulLeaf`.
-  --
-  -- The `Nothing` arm still routes its constant through the 1-hot
-  -- sum on `condAddPt`, and the `Just` arm carries a `constant`
-  -- field nothing reads; both are load-bearing for the emitted
-  -- constraints. Neither arm seals `condAddPt` — only step's
-  -- side-loaded path does.
+  -- The shared arm still routes its constant through the 1-hot sum on
+  -- `condAddPt`, and the per-branch arm carries a `constant` field
+  -- nothing reads; both are load-bearing for the emitted constraints.
+  -- Neither arm seals `condAddPt`: only step's side-loaded path does.
   lookup :: LagrangeBaseLookup stepChunks WrapField
-  lookup i = case perBranchLagrangeAt of
-    Nothing ->
-      let
-        lb = lagrangeAt i
-        replicatedConst = Vector.replicate @branches lb.constant
-      in
-        { constant: lb.constant
-        , circuit: lb.circuit
-        , condAddPt: sumMaskByBranchChunked replicatedConst
-        , correctionAt: Nothing
-        , sealCondAddPt: false
-        }
-    Just perBranchAt ->
-      let
-        perBranchPts = perBranchAt i
-        summed = sumMaskByBranchChunked perBranchPts
-        correctionAtShift shift =
-          sumMaskByBranchChunked
-            ( map
-                ( map
-                    ( \pt ->
-                        PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
-                          $ pow2pow (curveParams (Proxy @VestaG)) pt shift
-                    )
-                )
-                perBranchPts
-            )
-      in
-        { constant: (Vector.uncons perBranchPts).head
-        , circuit: summed
-        , condAddPt: summed
-        , correctionAt: Just correctionAtShift
-        , sealCondAddPt: false
-        }
+  lookup i =
+    let
+      perBranchPts = lagrangeTable i
+      headPts = (Vector.uncons perBranchPts).head
+    in
+      if sharedDomain then
+        (PIC.mkConstLagrangeBase headPts)
+          { condAddPt = sumMaskByBranchChunked (Vector.replicate @branches headPts) }
+      else
+        let
+          summed = sumMaskByBranchChunked perBranchPts
+          correctionAtShift shift =
+            sumMaskByBranchChunked
+              ( map
+                  ( map
+                      ( \pt ->
+                          PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
+                            $ pow2pow (curveParams (Proxy @VestaG)) pt shift
+                      )
+                  )
+                  perBranchPts
+              )
+        in
+          { constant: headPts
+          , circuit: summed
+          , condAddPt: summed
+          , correctionAt: Just correctionAtShift
+          , sealCondAddPt: false
+          }
 
 -- | Absorb one slot's `sg` and its unpadded bullet-proof challenges
 -- | into the supplied sponge state, and squeeze the digest. The caller
@@ -789,7 +751,7 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
   let
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
-      , lagrangeAt: maskedLagrangeAt whichBranch config.lagrangeAt config.perBranchLagrangeAt
+      , lagrangeAt: maskedLagrangeAt whichBranch config.domainLog2s config.lagrangeTable
       , blindingH: config.blindingH
       , correctionMode: InCircuitCorrections
       , endo: wrapEndo

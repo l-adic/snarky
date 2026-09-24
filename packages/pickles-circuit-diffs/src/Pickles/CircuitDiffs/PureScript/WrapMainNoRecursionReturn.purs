@@ -13,7 +13,6 @@ module Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn
 
 import Prelude
 
-import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -51,8 +50,7 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
       { stepWidths: 0 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
       , stepKeys: realStepVK :< Vector.nil
-      , lagrangeAt
-      , perBranchLagrangeAt: Nothing
+      , lagrangeTable: \i -> (lagrangeAt i).constant :< Vector.nil
       , blindingH
       , prevWrapDomainPins: Vector.nil :< Vector.nil
       }
