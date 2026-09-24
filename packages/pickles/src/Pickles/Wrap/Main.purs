@@ -9,6 +9,7 @@ module Pickles.Wrap.Main
   ( WrapMainConfig
   , WrapMainInput
   , WrapMainInputVar
+  , maskedLagrangeAt
   , wrapMain
   ) where
 
@@ -209,6 +210,106 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView allEvals paddedChals 
   label ("block3-fop-assert-" <> show slotIdx) do
     assertAny_ [ finalized, not_ unfView.shouldFinalize ]
   pure expandedChallenges
+
+-- | The wrap circuit's Lagrange lookup for the step proof's public
+-- | input, routed through the branch bits. With one shared step domain
+-- | (`perBranchLagrangeAt` is `Nothing`), the conditional-add base is
+-- | the constant masked by `whichBranch`; with per-branch domains, the
+-- | bases and the corrections are the per-branch points masked by it.
+-- | `whichBranch` is one-hot, so each mask is the active branch's point.
+maskedLagrangeAt
+  :: forall branches branchesPred stepChunks
+   . Reflectable stepChunks Int
+  => Reflectable branches Int
+  => Add 1 branchesPred branches
+  => Vector branches (BoolVar WrapField)
+  -> LagrangeBaseLookup stepChunks WrapField
+  -> Maybe (Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField))))
+  -> LagrangeBaseLookup stepChunks WrapField
+maskedLagrangeAt whichBranch lagrangeAt perBranchLagrangeAt = lookup
+  where
+  branchBools = map (coerce :: BoolVar WrapField -> FVar WrapField) whichBranch
+
+  -- Coordinate-wise sum of the per-branch points, each scaled by its
+  -- branch bool. `whichBranch` is 1-hot, so the result is the active
+  -- branch's point.
+  sumMaskByBranch
+    :: Vector branches (AffinePoint (F WrapField))
+    -> AffinePoint (FVar WrapField)
+  sumMaskByBranch perBranchPts =
+    let
+      scaledPts = Vector.zipWith
+        ( \b (AffinePoint { x: F x', y: F y' }) ->
+            { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
+        )
+        branchBools
+        perBranchPts
+      { head: spHead, tail: spTail } = Vector.uncons scaledPts
+    in
+      AffinePoint
+        ( foldl
+            ( \acc pt ->
+                { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
+            )
+            spHead
+            spTail
+        )
+
+  -- `sumMaskByBranch` per chunk index: at each chunk position, one
+  -- point from each branch is muxed by `whichBranch`.
+  sumMaskByBranchChunked
+    :: Vector branches (Vector stepChunks (AffinePoint (F WrapField)))
+    -> Vector stepChunks (AffinePoint (FVar WrapField))
+  sumMaskByBranchChunked perBranchChunkedPts =
+    Vector.generate \fi ->
+      sumMaskByBranch (map (\vc -> vc !! fi) perBranchChunkedPts)
+
+  -- Lagrange-base lookup driving `publicInputCommit`. `Nothing`:
+  -- every branch shares the step domain, so one constant basis
+  -- serves all of them. `Just`: the domains differ, so per-branch
+  -- points are 1-hot summed and an in-circuit correction at scale
+  -- `2^shift` is produced for `scalarMulLeaf`.
+  --
+  -- The `Nothing` arm still routes its constant through the 1-hot
+  -- sum on `condAddPt`, and the `Just` arm carries a `constant`
+  -- field nothing reads; both are load-bearing for the emitted
+  -- constraints. Neither arm seals `condAddPt` — only step's
+  -- side-loaded path does.
+  lookup :: LagrangeBaseLookup stepChunks WrapField
+  lookup i = case perBranchLagrangeAt of
+    Nothing ->
+      let
+        lb = lagrangeAt i
+        replicatedConst = Vector.replicate @branches lb.constant
+      in
+        { constant: lb.constant
+        , circuit: lb.circuit
+        , condAddPt: sumMaskByBranchChunked replicatedConst
+        , correctionAt: Nothing
+        , sealCondAddPt: false
+        }
+    Just perBranchAt ->
+      let
+        perBranchPts = perBranchAt i
+        summed = sumMaskByBranchChunked perBranchPts
+        correctionAtShift shift =
+          sumMaskByBranchChunked
+            ( map
+                ( map
+                    ( \pt ->
+                        PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
+                          $ pow2pow (curveParams (Proxy @VestaG)) pt shift
+                    )
+                )
+                perBranchPts
+            )
+      in
+        { constant: (Vector.uncons perBranchPts).head
+        , circuit: summed
+        , condAddPt: summed
+        , correctionAt: Just correctionAtShift
+        , sealCondAddPt: false
+        }
 
 -- | Absorb one slot's `sg` and its unpadded bullet-proof challenges
 -- | into the supplied sponge state, and squeeze the digest. The caller
@@ -686,91 +787,9 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
       }
 
   let
-    branchBools = map boolToField whichBranch
-
-    -- Coordinate-wise sum of the per-branch points, each scaled by its
-    -- branch bool. `whichBranch` is 1-hot, so the result is the active
-    -- branch's point.
-    sumMaskByBranch
-      :: Vector branches (AffinePoint (F WrapField))
-      -> AffinePoint (FVar WrapField)
-    sumMaskByBranch perBranchPts =
-      let
-        scaledPts = Vector.zipWith
-          ( \b (AffinePoint { x: F x', y: F y' }) ->
-              { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
-          )
-          branchBools
-          perBranchPts
-        { head: spHead, tail: spTail } = Vector.uncons scaledPts
-      in
-        AffinePoint
-          ( foldl
-              ( \acc pt ->
-                  { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
-              )
-              spHead
-              spTail
-          )
-
-    -- `sumMaskByBranch` per chunk index: at each chunk position, one
-    -- point from each branch is muxed by `whichBranch`.
-    sumMaskByBranchChunked
-      :: Vector branches (Vector stepChunks (AffinePoint (F WrapField)))
-      -> Vector stepChunks (AffinePoint (FVar WrapField))
-    sumMaskByBranchChunked perBranchChunkedPts =
-      Vector.generate \fi ->
-        sumMaskByBranch (map (\vc -> vc !! fi) perBranchChunkedPts)
-
-    -- Lagrange-base lookup driving `publicInputCommit`. `Nothing`:
-    -- every branch shares the step domain, so one constant basis
-    -- serves all of them. `Just`: the domains differ, so per-branch
-    -- points are 1-hot summed and an in-circuit correction at scale
-    -- `2^shift` is produced for `scalarMulLeaf`.
-    --
-    -- The `Nothing` arm still routes its constant through the 1-hot
-    -- sum on `condAddPt`, and the `Just` arm carries a `constant`
-    -- field nothing reads; both are load-bearing for the emitted
-    -- constraints. Neither arm seals `condAddPt` — only step's
-    -- side-loaded path does.
-    maskedLagrangeAt :: LagrangeBaseLookup stepChunks WrapField
-    maskedLagrangeAt i = case config.perBranchLagrangeAt of
-      Nothing ->
-        let
-          lb = config.lagrangeAt i
-          replicatedConst = Vector.replicate @branches lb.constant
-        in
-          { constant: lb.constant
-          , circuit: lb.circuit
-          , condAddPt: sumMaskByBranchChunked replicatedConst
-          , correctionAt: Nothing
-          , sealCondAddPt: false
-          }
-      Just perBranchAt ->
-        let
-          perBranchPts = perBranchAt i
-          summed = sumMaskByBranchChunked perBranchPts
-          correctionAtShift shift =
-            sumMaskByBranchChunked
-              ( map
-                  ( map
-                      ( \pt ->
-                          PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
-                            $ pow2pow (curveParams (Proxy @VestaG)) pt shift
-                      )
-                  )
-                  perBranchPts
-              )
-        in
-          { constant: (Vector.uncons perBranchPts).head
-          , circuit: summed
-          , condAddPt: summed
-          , correctionAt: Just correctionAtShift
-          , sealCondAddPt: false
-          }
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
-      , lagrangeAt: maskedLagrangeAt
+      , lagrangeAt: maskedLagrangeAt whichBranch config.lagrangeAt config.perBranchLagrangeAt
       , blindingH: config.blindingH
       , correctionMode: InCircuitCorrections
       , endo: wrapEndo
