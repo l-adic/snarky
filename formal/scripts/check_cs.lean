@@ -621,9 +621,9 @@ def oneHotCircuit (n : ℕ) (input : Vector (FVar F) 1) : CircuitM F c PUnit := 
   pure PUnit.unit
 
 /-- `pseudo_mask_n{n}`: the one-hot of input 0 over `n` entries masking `xs input`. -/
-def pseudoMaskCircuit {k : ℕ} (n : ℕ) (xs : Vector (FVar F) k → List (FVar F))
-    (input : Vector (FVar F) k) : CircuitM F c PUnit := do
-  let bits ← Pickles.oneHotVector n (input[0]?.getD (.const 0))
+def pseudoMaskCircuit {k : ℕ} (n : ℕ) (xs : Vector (FVar F) (k + 1) → List (FVar F))
+    (input : Vector (FVar F) (k + 1)) : CircuitM F c PUnit := do
+  let bits ← Pickles.oneHotVector n input[0]
   let _ ← Pickles.Pseudo.mask bits (xs input)
   pure PUnit.unit
 
@@ -642,7 +642,7 @@ end PseudoCircuits
 def pseudoToDomainWrapCircuit (input : Vector (FVar Fq) 2) : CircuitM Fq Cq PUnit := do
   let which ← Pickles.oneHotVector 3 input[0]
   let d ← Pickles.toDomain (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) which
-    [13, 14, 15] 15
+    [13, 14, 15]
   let _ ← d.vanishingPolynomial input[1]
   pure PUnit.unit
 

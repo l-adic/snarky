@@ -34,6 +34,11 @@ Pickles.Reflect.circuit_gateLinearization_fq
 -- applies, and the tactic implementations the completeness proofs call.
 Pickles.FopSide.unshiftV_read
 
+-- TODO: drop once the wrap finalize port consumes them. The wrap side's one-hot and
+-- domain selection, CS-matched by check_cs but not yet reached from a capstone.
+Pickles.oneHotVector_spec
+Pickles.toDomain_spec
+
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Pickles.buildEvalList

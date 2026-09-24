@@ -6,7 +6,7 @@ set_option mvcgen.warning false
 # Pseudo-domain selection
 
 Port of the PureScript `Pickles.Pseudo.mask` (OCaml `pseudo.ml`): the mask-select
-`∑ᵢ bᵢ · xᵢ` over a vector of bits and values, one row per entry.
+`∑ᵢ bᵢ · xᵢ` over a vector of bits and values, one row per non-constant entry.
 
 ## Main definitions
 
@@ -33,8 +33,8 @@ private def products : List (BoolVar F × FVar F) → CircuitM F c (List (FVar F
     let t ← mul (↑b) x
     pure (t :: tail)
 
-/-- The mask-select `∑ᵢ bᵢ · xᵢ`: one `mul` row per entry, the sum an
-affine combination. -/
+/-- The mask-select `∑ᵢ bᵢ · xᵢ`: one `mul` per entry, the sum an affine combination. A
+constant entry's `mul` folds to a scaling and emits no row. -/
 def mask (bits : List (BoolVar F)) (xs : List (FVar F)) : CircuitM F c (FVar F) := do
   let terms ← products (bits.zip xs)
   pure (Snarky.sum terms)
