@@ -3,7 +3,6 @@ import Snarky.Kimchi.Circuit.Point
 import Kimchi.Verifier.Kimchi
 import Pickles.Curve
 import Pickles.ListLemmas
-import Mathlib.Data.List.Forall2
 
 /-!
 # The in-circuit public-input commitment
