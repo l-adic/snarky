@@ -429,8 +429,11 @@ def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
     return ⟨nc, E⟩
   else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
     endo is not the curve's, zk_rows < 3 or above the domain, the generator is not primitive \
-    on the domain, there is no round, the blinding base is the identity, there is no \
-    Lagrange basis or one larger than the domain, or the Lagrange basis is not the SRS's")
+    on the domain, there is no round or too many for the absorb bound, the blinding base is \
+    the identity, there is no Lagrange basis or one larger than the domain, the chunk count is \
+    not the domain's, the Lagrange basis is not the SRS's, or the key's digest is not its \
+    commitments' (a commitment outside the model, such as a lookup or optional gate, was \
+    absorbed)")
 
 /-- An entry's checked proof at its environment's chunk count. -/
 def checkedFor (C : Ipa.KimchiCurve) (name : String) {nc : ℕ} (E : Pickles.Env C nc)

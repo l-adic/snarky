@@ -19,7 +19,7 @@ previous proof's statement and whether it must verify, with its own public outpu
 
 * `PrevStatement`: what the rule returns for one slot;
 * `StepMainAdvice`: the prover's values for every allocation;
-* `slotInput`: one slot's `verifyOne` input, assembled from its allocated cells;
+* `slotInput`: one slot's `verifyOneBy` input, assembled from its allocated cells;
 * `stepMain`: the circuit.
 -/
 
@@ -70,7 +70,7 @@ structure StepMainAdvice (n w nc k ks : ℕ) (inVal : Type) where
   /-- The wrap-side messages padding the statement to the tag's `w` slots. -/
   msgsPad : AsProver Fp (Vector Fp (w - n))
 
-/-- One slot's `verifyOne` input from its cells: the previous statement, the witness, the
+/-- One slot's `verifyOneBy` input from its cells: the previous statement, the witness, the
 unfinalized entry and the wrap-side message; the accumulator points widened to
 `MaxProofsVerified` with `dummySg` at the front, the mask trimmed to the slot's `w`. -/
 def slotInput {w nc k ks : ℕ} (hw : w ≤ MaxProofsVerified) (dummySg : AffinePoint (FVar Fp))

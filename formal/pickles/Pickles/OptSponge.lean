@@ -1117,9 +1117,10 @@ theorem ofSponge_spec (p : Poseidon.Params F)
         fun _ => ⟨fun h => absurd h (by simp), fun h => absurd (hm.trans h) (by simp)⟩⟩
       exact Or.inl (by simp [Rel, ← hm, hst', hst])
 
-/-! The gadgets are sealed after their specs: a consumer composes `squeeze_spec` and
-`optSqueeze_spec`, never the bodies. -/
+/-! The gadgets are sealed after their specs: a consumer composes `squeeze_spec`,
+`optSqueeze_spec` and `ofSponge_spec`, never the bodies. -/
 attribute [irreducible] addIn condPermute consumePair consumePairs consume squeeze optSqueeze
+  ofSponge
 
 end OptSponge
 

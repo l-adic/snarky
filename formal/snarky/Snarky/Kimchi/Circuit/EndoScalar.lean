@@ -275,6 +275,11 @@ of `n`. -/
   refine builder_spec_imp _ _ _ h fun r ⟨n, hn, hs, hr⟩ => ⟨n, by simpa using hn, hs, ?_⟩
   rw [hr, ← Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3]
 
+/-! ## Completeness
+
+Each accumulator witness is `Kimchi.Gate.EndoScalar.build`'s outputs, so every row holds by
+`Kimchi.Gate.EndoScalar.complete` on valid crumbs; `mapAccumM_complete` chains the rows. -/
+
 /-- The rows the loop is handed: crumb variables in scope, reading as valid 2-bit
 values. -/
 private def CrumbRow [Field F] (st₁ : ProverState F) (xs : Vector (FVar F) 8) : Prop :=

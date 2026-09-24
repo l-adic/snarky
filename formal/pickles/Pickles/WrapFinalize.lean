@@ -308,8 +308,8 @@ private theorem forall₂_map_zip {α β δ : Type} {R : δ → β → Prop} {f 
 
 /-- **The wrap circuit's finalize block reads as each finalized proof's scalar half.** Under any
 valuation satisfying the emitted constraints, with the branch bits reading as the indicator of
-`b`, every slot that branch `b` compiled for the key's domain (index `j` of `log2s`, generator
-`ω`, size `n`) and whose `shouldFinalize` is set reads as its scalar half. -/
+`b`, every slot that branch `b` compiled for the key's domain (index `j` of `wrapDomainLog2s`,
+generator `ω`, size `n`) and whose `shouldFinalize` is set reads as its scalar half. -/
 theorem wrapFinalizePrevProofs_reads
     {branches mpv : ℕ}
     (E : Env IpaPallas.curve nc)

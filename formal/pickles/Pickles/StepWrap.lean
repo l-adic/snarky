@@ -46,12 +46,11 @@ private theorem reads_true_of_tie {Vg : Valuation Fp} {Vs : Valuation Fq} {a : B
   subst this
   simpa [bit] using hSb
 
-/-- **Every must-verify slot's wrap proof verifies.** For any rule, take a satisfying run of
-the step circuit under `Vg` and one of the next wrap circuit's finalize block under `Vs`, with
-the branch bits reading as branch `b`. Suppose slot `i` is must-verify, its finalize slot was
-compiled for the key's wrap domain, and its two halves are tied and read one `shouldFinalize`
-bit. Then any wrap proof its cells read as, under the guards, the finalize ties and `SgOk`, is
-accepted by `kimchiVerify`. -/
+/-- **Every must-verify slot's wrap proof verifies.** Let `Vg` satisfy the step circuit of any
+rule and `Vs` the next wrap circuit's finalize block, with the branch bits reading as branch
+`b`. Every must-verify slot whose finalize slot was compiled for the key's wrap domain, and
+whose two halves are tied and read one `shouldFinalize` bit, has each wrap proof its cells read
+as accepted by `kimchiVerify`, under the guards, the finalize ties and `SgOk`. -/
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
     -- and the finalize block's slots; keys of `nc` chunks; the wrap circuit's `branches`
@@ -132,23 +131,22 @@ theorem stepWrap_kimchiVerify
       (∃ bb : Bool, CircuitType.Reads Vg inp.unfinalized.shouldFinalize bb ∧
         CircuitType.Reads Vs sl.unfinalized.shouldFinalize bb) →
       ∀ (cp : KimchiProof IpaPallas.curve nc E.σ.k)
-        (ms : List Bool)
-        (cvs : List (List Fp)),
+        (ms : List Bool),
         -- the slot's public input: its statement, carrying the step-message digest
         let pub := inp.publicInputAt E Vg ms
-        -- its cells hold `cp`, with masks `ms` and previous challenges `cvs`
-        inp.WireReads E Vg r.vk.points cp ms cvs →
+        -- its cells hold `cp`, with masks `ms`
+        inp.WireReads E Vg r.vk.points cp ms →
         -- of `cp` itself: the guards, the finalize ties and the deferred `sg` equation
         Guards IpaPallas.curve E.cvk cp pub →
         FopTies E cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
         SgOk E.σ E.cvk cp pub →
         kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
-  intro r x slots hbits i hmv inp sl hpin ht hsf cp ms cvs pub hwire hguard hf hsg
+  intro r x slots hbits i hmv inp sl hpin ht hsf cp ms pub hwire hguard hf hsg
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads E Es D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i
       hmv
-  obtain ⟨v, hv, hv1⟩ := hslot cp ms cvs hwire
+  obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the finalize side: the slot reads as its scalar half
   have hfin := wrapFinalizePrevProofs_reads E Vs gen x.val.1 (WrapFinalizeInVar.slots x pins) b j
     hbits hdom hgen
