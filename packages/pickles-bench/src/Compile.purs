@@ -61,17 +61,9 @@ fullCompile srs = do
     noAdvice
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 nrrEntry)
-  let
-    nrrProverVKs =
-      { stepCompileResult: fst nrr.vks.perBranchStep
-      , wrapCompileResult: nrr.vks.wrap
-      , wrapDomainLog2: nrr.vks.wrapDomainLog2
-      , stepNumChunks: nrr.vks.stepChunks
-      }
-
   treeEntry <- pinCompileEntry <$> mkRuleEntry @2 @(F StepField) @()
     benchTreeRule
-    (External nrrProverVKs :< Self :< Vector.nil)
+    (External nrr.tagData :< Self :< Vector.nil)
   tree <- compileMulti
     @TreeRules
     @(F StepField)

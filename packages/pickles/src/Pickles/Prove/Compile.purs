@@ -14,8 +14,6 @@ module Pickles.Prove.Compile
   , class SplitPrevs
   , splitPrevs
   , SomePrevSlot
-  , SlotWrapKey(..)
-  , ProverVKs
   , ProveError
   , StepInputs
   -- `Tag` carries a `Unique` as its routing key, so the name has to
@@ -87,7 +85,7 @@ import Pickles.ProofsVerified (ProofsVerified(..), allPossibleDomainLog2s, boolV
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
-import Pickles.Prove.Slot (slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
+import Pickles.Prove.Slot (CompiledTagData, SlotWrapKey(..), slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
 import Pickles.Prove.Slot as RuntimeSlot
 import Pickles.Prove.Step
   ( SlotAdviceContrib
@@ -293,12 +291,12 @@ slotCompileEntry cfg selfStepDomainLog2s slot =
   slotLagrange = mkConstLagrangeBaseLookup (lagrangeAt (slotWrapDomainLog2 outer slot))
 
   blueprint = case slot.source of
-    RuntimeSlot.SelfSource -> BlueprintSelf slotLagrange
-    RuntimeSlot.ExternalSource d ->
+    Just Self -> BlueprintSelf slotLagrange
+    Just (External d) ->
       BlueprintExternal slotLagrange (externalWrapVk @slotNc d.wrapVerifierIndex)
     -- A side-loaded slot's wrap domain is not known until prove time,
     -- so it carries all three bases and muxes in-circuit instead.
-    RuntimeSlot.SideLoadedSource ->
+    Nothing ->
       BlueprintSideLoaded (map (lagrangeAt <<< getFinite) allPossibleDomainLog2s)
 
 -- | Opaque runtime identity token. Each `newUnique` allocates a
@@ -336,37 +334,6 @@ newtype Tag stmt mpv = Tag
   }
 
 derive instance Newtype (Tag stmt mpv) _
-
--- | One compiled rule's keys, as an `External` slot of a later
--- | compile consumes them.
-type ProverVKs =
-  { stepCompileResult :: StepCompileResult
-  , wrapCompileResult :: WrapCompileResult
-  , wrapDomainLog2 :: Int
-  -- | The imported rule's declared `@stepChunks`, propagated so an
-  -- | `External` slot reads it directly rather than back-deriving it
-  -- | from the realized step domain log2.
-  , stepNumChunks :: Int
-  }
-
--- | Where a compiled slot's wrap verification key comes from, chosen
--- | at compile time.
--- |
--- | * `Self` — the slot points at the rule being compiled. The step
--- |   circuit substitutes that rule's own index, and the wrap VK
--- |   arrives as advice at prove time, because at step-compile time
--- |   the wrap circuit does not exist yet.
--- | * `External vks` — a previously compiled rule, whose `ProverVKs`
--- |   the user supplies. Its wrap VK is baked into the step circuit
--- |   as a constant, so that slot needs no advice path.
--- |
--- | A side-loaded slot takes no key here: its kind in the prevs spec
--- | says it is side-loaded, and its key arrives with its
--- | `SideLoadedPrev` at prove time. Per slot, the compile holds a
--- | `Maybe SlotWrapKey`, `Nothing` for a side-loaded slot.
-data SlotWrapKey
-  = Self
-  | External ProverVKs
 
 type StepInputs :: Type -> Type -> Type -> Type
 type StepInputs prevsSpec inputVal prevsCarrier =
@@ -534,27 +501,6 @@ resolveSelfWrapDomainLog2 mpvMax = case _ of
   Just o -> o
   Nothing -> wrapDomainLog2ForProofsVerified mpvMax
 
--- | One slot's compile-time key, as the runtime slot record the
--- | per-slot derivations in `Pickles.Prove.Slot` read.
-runtimeSlotOf :: Int -> Maybe SlotWrapKey -> RuntimeSlot.Slot
-runtimeSlotOf localMpv key =
-  { localMpv
-  , source: case key of
-      Just Self -> RuntimeSlot.SelfSource
-      Nothing -> RuntimeSlot.SideLoadedSource
-      Just (External vks) -> RuntimeSlot.ExternalSource
-        { wrapVerifierIndex: vks.wrapCompileResult.verifierIndex
-        , wrapDomainLog2: vks.wrapDomainLog2
-        -- Only single-rule external sources are supported; the one
-        -- domain is replicated to the branch width by
-        -- `slotSourceDomainLog2s`.
-        , stepDomainLog2s:
-            NonEmptyArray.singleton
-              (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
-        , numChunks: vks.stepNumChunks
-        }
-  }
-
 -- | A side-loaded slot's wrap domain log2, decoded from its runtime
 -- | VK descriptor's length-3 one-hot `actualWrapDomainSize` vector.
 bundleWrapDomainLog2 :: forall nc. SideloadBundle.Bundle nc -> Int
@@ -578,7 +524,7 @@ bundleWrapDomain bundle =
 slotWrapDomainPin :: Int -> Maybe SlotWrapKey -> Either String (Maybe ProofsVerified)
 slotWrapDomainPin selfWrapDomainLog2 = case _ of
   Just Self -> Just <$> known selfWrapDomainLog2
-  Just (External vks) -> Just <$> known vks.wrapDomainLog2
+  Just (External d) -> Just <$> known d.wrapDomainLog2
   Nothing -> Right Nothing
   where
   known log2 = note
@@ -628,7 +574,7 @@ stepProveContextOf cfg slotWidths selfStepDomainLog2s =
         , branchCount: Vector.length selfStepDomainLog2s
         }
         (Vector.toUnfoldable selfStepDomainLog2s)
-        (runtimeSlotOf width key)
+        { localMpv: width, source: key }
     )
     slotWidths
     cfg.perSlotImportedVKs
@@ -1373,7 +1319,7 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
       }
     where
     width = slotWidthInt (widths !! i)
-    runtimeSlot = runtimeSlotOf width (cfg.perSlotImportedVKs !! i)
+    runtimeSlot = { localMpv: width, source: cfg.perSlotImportedVKs !! i }
 
 -- | The rule's wrap-stage data, built slot by slot from the prevs, the
 -- | step-advice side info and the slots' wrap-domain pins.
@@ -1422,7 +1368,7 @@ shapeProveData cfg wrapCR sideInfo pins widths slots =
   slotParams i slot =
     { slotWrapVK: case slot.sideLoadedKey, cfg.perSlotImportedVKs !! i of
         Just bundle, _ -> SideloadBundle.verifierIndex bundle
-        Nothing, Just (External vks) -> vks.wrapCompileResult.verifierIndex
+        Nothing, Just (External d) -> d.wrapVerifierIndex
         Nothing, _ -> wrapCR.verifierIndex
     , slotWrapDomain: case slot.sideLoadedKey of
         Just bundle -> bundleWrapDomain bundle
@@ -1585,10 +1531,7 @@ type MultiVKs perBranchStepCarrier =
   { wrap :: WrapCompileResult
   , perBranchStep :: perBranchStepCarrier
   , wrapDomainLog2 :: Int
-  -- | The compile's declared `@stepChunks`, propagated so that a
-  -- | consumer building `ProverVKs` for an `External` slot reads it
-  -- | directly rather than back-deriving it from the step circuit's
-  -- | realized domain log2.
+  -- | The compile's declared `@stepChunks`.
   , stepChunks :: Int
   }
 
@@ -1601,15 +1544,14 @@ type MultiOutput
   -> Type
   -> Type
   -> Type
-  -> Type
-type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal perBranchVKsCarrier =
+type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal =
   { provers :: proversCarrier
   , tag :: Tag (StatementIO inputVal outputVal) mpvMax
   , verifier :: Verifier
   , vks :: MultiVKs perBranchStepCarrier
-  -- | Per-branch `ProverVKs` handles, for a caller that wants to
-  -- | reference one branch from another proof system via `External`.
-  , perBranchVKs :: perBranchVKsCarrier
+  -- | What an `External` slot of a later compile imports from this
+  -- | one: pass it as `External tagData`.
+  , tagData :: CompiledTagData
   }
 
 --------------------------------------------------------------------------------
@@ -3012,7 +2954,6 @@ compileMulti
            mpvMax
            inputVal
            outputVal
-           Unit
        )
 compileMulti handler cfg rules = do
   let
@@ -3177,5 +3118,11 @@ compileMulti handler cfg rules = do
         , wrapDomainLog2
         , stepChunks: reflectType (Proxy :: Proxy stepChunks)
         }
-    , perBranchVKs: unit
+    , tagData:
+        { wrapVerifierIndex: wrapResult.verifierIndex
+        , wrapDomainLog2
+        , stepDomainLog2s:
+            NonEmptyArray.nub (NonEmptyArray.fromFoldable1 (map _.stepDomainLog2 perBranchVec))
+        , numChunks: reflectType (Proxy :: Proxy stepChunks)
+        }
     }

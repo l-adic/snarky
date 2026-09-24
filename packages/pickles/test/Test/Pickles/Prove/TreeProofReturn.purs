@@ -112,19 +112,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right p -> pure p
 
-    -- The `External` slot takes the imported system's `ProverVKs`,
-    -- reassembled here from the multi-branch shape of `nrr.vks`.
-    let
-      nrrProverVKs =
-        { stepCompileResult: fst nrr.vks.perBranchStep
-        , wrapCompileResult: nrr.vks.wrap
-        , wrapDomainLog2: nrr.vks.wrapDomainLog2
-        , stepNumChunks: nrr.vks.stepChunks
-        }
-
     treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField)
       treeProofReturnRule
-      (External nrrProverVKs :< Self :< Vector.nil)
+      (External nrr.tagData :< Self :< Vector.nil)
 
     let treeRules = tuple1 treeEntry
 

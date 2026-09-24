@@ -79,17 +79,9 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       Right p -> pure p
     verify chunks2.verifier (toVerifiable chunks2Cp) `shouldEqual` true
 
-    let
-      chunks2ProverVKs =
-        { stepCompileResult: fst chunks2.vks.perBranchStep
-        , wrapCompileResult: chunks2.vks.wrap
-        , wrapDomainLog2: chunks2.vks.wrapDomainLog2
-        , stepNumChunks: chunks2.vks.stepChunks
-        }
-
     recurseEntry <- liftEffect $ mkRuleEntry @1 @Unit
       recurseRule
-      (External chunks2ProverVKs :< Vector.nil)
+      (External chunks2.tagData :< Vector.nil)
 
     logInfo "[RecurseOverChunks] compiling recurse…"
     recurse <- withSpan "[RecurseOverChunks] compile recurse" $ liftEffect $ compileMulti

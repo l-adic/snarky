@@ -132,17 +132,9 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       Right p -> pure p
     childCp' <- roundTripAndVerify dummies child.verifier childCp
 
-    let
-      childProverVKs =
-        { stepCompileResult: fst child.vks.perBranchStep
-        , wrapCompileResult: child.vks.wrap
-        , wrapDomainLog2: child.vks.wrapDomainLog2
-        , stepNumChunks: child.vks.stepChunks
-        }
-
     baseEntry <- liftEffect $ mkRuleEntry @2 @Counts baseRule Vector.nil
     absorbEntry <- liftEffect $ mkRuleEntry @2 @Counts absorbRule
-      (External childProverVKs :< Self :< Vector.nil)
+      (External child.tagData :< Self :< Vector.nil)
 
     logInfo "[HeterogeneousPrevs] compiling application…"
     -- The slot widths 0 and 2 give a smaller wrap circuit than the

@@ -19,8 +19,8 @@ import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 
 -- | Compile-time blueprint for one slot's wrap-VK source.
 -- |
--- | One constructor per `Pickles.Prove.Slot.SlotSource`, named to
--- | match. A self slot reads the shared key from advice, because the
+-- | One constructor per slot source: `Self`, `External`, or a
+-- | side-loaded slot. A self slot reads the shared key from advice, because the
 -- | wrap circuit does not exist yet at step-compile time; an external
 -- | slot has its source's key baked in as a constant; a side-loaded
 -- | slot carries the per-domain lagrange tables that
