@@ -801,16 +801,16 @@ Branch 0's slots are pinned to domain indices `[1, 1]`, branch 1's to `[0, 2]`. 
 def wrapFinalizeN2Circuit (input : Vector (FVar Fq) 295) : CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let whichBranch ← Pickles.oneHotVector 2 (get 0)
-  let slot (i : ℕ) :=
+  let slot (i : ℕ) (pins : List (Option ℕ)) : Pickles.WrapFinalizeSlot 15 1 Fq :=
     let off := 1 + 147 * i
-    let (u, w, prev) := fopInputsOf Type2.mk (fun j => get (off + j)) 25 15
-    ({ u with shouldFinalize := (.unchecked (get (off + 145)) : BoolVar Fq) }, w, prev,
-      get (off + 146))
-  let (u0, w0, p0, i0) := slot 0
-  let (u1, w1, p1, i1) := slot 1
+    let (u, w, _) := fopInputsOf Type2.mk (fun j => get (off + j)) 25 15
+    { domainIndex := get (off + 146), pins
+      unfinalized := { u with shouldFinalize := .unchecked (get (off + 145)) }
+      evals := w
+      prevChallenges := Vector.ofFn fun a => Vector.ofFn fun r => get (off + 114 + 15 * a + r) }
   let _ ← Pickles.wrapFinalizePrevProofs fopWrapParams
     (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) [13, 14, 15] whichBranch
-    [[some 1, some 0], [some 1, some 2]] [i0, i1] [u0, u1] [w0, w1] [p0, p1]
+    [slot 0 [some 1, some 0], slot 1 [some 1, some 2]]
   pure PUnit.unit
 
 /-! ## The wrap column

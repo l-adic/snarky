@@ -432,6 +432,26 @@ theorem finalizeOtherProofStep_finalized_bit {nc : ℕ} (P : FopParams F)
       u.deferredValues.plonk.zetaToDomainSize
   mvcgen -trivial [h1, h2, h3, hcore, -Snarky.Kimchi.EndoScalar.toField_spec]
 
+open Std.Do in
+/-- Under any valuation satisfying the emitted constraints, the wrap side's `finalized` reads
+as a bit (`finalizeOtherProofCore_finalized_bit`). -/
+theorem finalizeOtherProofWrap_finalized_bit {nc : ℕ} (P : FopParams F) (gen : FVar F)
+    (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F)))
+    (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F))) :
+    ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F))
+      P gen vanishing u w prev
+    ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.finalized : CVar F).val V = bit b⌝⦄ := by
+  simp only [finalizeOtherProofWrap]
+  have h1 := fun n x e =>
+    builder_spec_true (EndoScalar.toField (c := Builder V (KimchiConstraint F)) n x e)
+  have h2 := fun x => builder_spec_true (sealVar (c := Builder V (KimchiConstraint F)) x)
+  have hcore := fun zeta alpha beta gamma (perm zs zd : FVar F) =>
+    finalizeOtherProofCore_finalized_bit (V := V) P wrapShiftOps true
+      (challengeDigest P.sponge prev) gen P.srsLengthLog2 vanishing (prev.map fun _ => true_)
+      u w prev zeta alpha beta gamma (⟨perm⟩ : Type2 (FVar F)) ⟨zs⟩ ⟨zd⟩
+  mvcgen -trivial [h1, h2, hcore, -Snarky.Kimchi.EndoScalar.toField_spec]
+
 end FinalizedBit
 
 open Kimchi.Protocol.Linearization Bulletproof Classical in
