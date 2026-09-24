@@ -187,6 +187,33 @@ def publicInputCommitFull (blindingH : AffinePoint (FVar F)) (leaves : List (Lea
   let init ← sumCorrectionsHead leaves
   publicInputCommitChunks init blindingH leaves
 
+/-- One leaf of the sealing walk: a `condAdd` leaf constrains its bit, a scalar leaf seals its
+correction chunks and then its base chunks. -/
+private def sealLeaf : Leaf F nc → CircuitM F S (Leaf F nc)
+  | .condAdd b base => do
+      addConstraint (BasicSystem.boolean (↑b : CVar F) : S)
+      pure (.condAdd b base)
+  | .full s base corr => do
+      let corr ← corr.mapM sealPoint
+      let base ← base.mapM sealPoint
+      pure (.full s base corr)
+  | .b128 s base corr => do
+      let corr ← corr.mapM sealPoint
+      let base ← base.mapM sealPoint
+      pure (.b128 s base corr)
+  | .b10 s base corr => do
+      let corr ← corr.mapM sealPoint
+      let base ← base.mapM sealPoint
+      pure (.b10 s base corr)
+
+/-- `publicInputCommitFull` over leaves whose scalar bases and corrections are affine
+combinations, sealed in walk order before the fold reads them. -/
+def publicInputCommitSealed (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
+    CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
+  let leaves ← leaves.mapM sealLeaf
+  let init ← sumCorrectionsHead leaves
+  publicInputCommitChunks init blindingH leaves
+
 /-- The reading + ladder-witness data the fold produces for one leaf: a scalar leaf yields its
 ladder width `L = 5·chunks`, the split witness `(z, bb)` and the base's curve point `T`; a
 `condAdd` leaf yields its bit and base point. -/
