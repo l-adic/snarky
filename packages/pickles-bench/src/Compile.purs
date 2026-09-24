@@ -16,7 +16,7 @@ module Bench.Pickles.Compile
 import Prelude
 
 import Bench.Harness (Group)
-import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchTreeRule, nrrRule)
+import Bench.Pickles.Common (BenchSrs, benchTreeRule, nrrRule)
 import Control.Promise (fromAff)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
@@ -53,7 +53,6 @@ fullCompile srs = do
   -- here; any `Monad`/`MonadEffect`/`MonadRec` works).
   nrrEntry <- pinCompileEntry <$> mkRuleEntry @(F StepField) @() nrrRule Vector.nil
   nrr <- compileMulti
-    @NrrRules
     @(F StepField)
     @1
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
@@ -62,7 +61,6 @@ fullCompile srs = do
     benchTreeRule
     (External nrr.tagData :< Self :< Vector.nil)
   tree <- compileMulti
-    @TreeRules
     @(F StepField)
     @1
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }

@@ -29,7 +29,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -53,8 +53,6 @@ childRule _ _ = pure
   { prevs: toPrevs unit
   , publicOutput: unit
   }
-
-type ChildRules = RulesCons 0 Unit RulesNil
 
 --------------------------------------------------------------------------------
 -- The application
@@ -91,13 +89,6 @@ absorbRule getPrevStates _ = do
     , publicOutput: Tuple (CVar.add_ (const_ one) prevCount) (CVar.add_ prevSum childInput)
     }
 
-type AppRules =
-  RulesCons 0 Unit
-    ( RulesCons 2
-        AbsorbPrevsSpec
-        RulesNil
-    )
-
 --------------------------------------------------------------------------------
 -- Test spec
 --------------------------------------------------------------------------------
@@ -112,7 +103,6 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
     childEntry <- liftEffect $ mkRuleEntry @Unit childRule Vector.nil
     logInfo "[HeterogeneousPrevs] compiling child…"
     child <- withSpan "[HeterogeneousPrevs] compile child" $ liftEffect $ compileMulti
-      @ChildRules
       @Unit
       @1
       { srs: { vestaSrs, pallasSrs }
@@ -139,7 +129,6 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
     -- The slot widths 0 and 2 give a smaller wrap circuit than the
     -- default domain for `mpvMax = 2` assumes.
     app <- withSpan "[HeterogeneousPrevs] compile application" $ liftEffect $ compileMulti
-      @AppRules
       @Counts
       @1
       { srs: { vestaSrs, pallasSrs }

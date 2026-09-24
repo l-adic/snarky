@@ -27,7 +27,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -66,12 +66,6 @@ simpleChainN2Rule getPrevStates self = do
 type SimpleChainN2PrevsSpec =
   Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit))
 
--- | Carrier for the single rule.
-type SimpleChainN2Rules =
-  RulesCons 2
-    SimpleChainN2PrevsSpec
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SimpleChainN2" do
   it "b0..b2 chain (prevs = [self; self], N2): prove + verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
@@ -94,7 +88,6 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
 
     logInfo "[SimpleChainN2] compiling…"
     out <- withSpan "[SimpleChainN2] compile" $ liftEffect $ compileMulti
-      @SimpleChainN2Rules
       @Unit
       @1
       cfg

@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -76,21 +76,12 @@ incrementRule getPrevStates self = do
     }
 
 --------------------------------------------------------------------------------
--- Rules spec
+-- Prevs spec
 --------------------------------------------------------------------------------
 
 -- | Branch 1's single self-prev slot, at width 1.
 type IncrementPrevsSpec =
   Tuple1 (Slot 1 (StatementIO (F StepField) Unit))
-
--- | The two branches: branch 0 at `mpv = 0` with no prevs, branch 1 at
--- | `mpv = 1` with one self-prev.
-type TwoPhaseChainRules =
-  RulesCons 0 Unit
-    ( RulesCons 1
-        IncrementPrevsSpec
-        RulesNil
-    )
 
 --------------------------------------------------------------------------------
 -- Test spec
@@ -115,7 +106,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     let rules = tuple2 makeZeroEntry incrementEntry
     logInfo "[TwoPhaseChain] compiling…"
     output <- withSpan "[TwoPhaseChain] compile" $ liftEffect $ compileMulti
-      @TwoPhaseChainRules
       @Unit
       @1
       cfg

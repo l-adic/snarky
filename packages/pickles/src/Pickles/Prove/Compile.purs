@@ -5,7 +5,7 @@
 -- | by one rule's prev-slot spec and splits that rule's typed prevs
 -- | into the statements the rule reads and one `SomePrevSlot` per
 -- | slot, which the prover walks as a `Vector`;
--- | `CompilableRulesSpec` is indexed by the list of rules and walks
+-- | `CompilableRules` is indexed by the tuple of rules and walks
 -- | the branches. `RuleEntry` is one branch; `runMultiProverBody` is
 -- | one branch's prover.
 module Pickles.Prove.Compile
@@ -21,9 +21,6 @@ module Pickles.Prove.Compile
   , Unique
   , Tag(..)
   , BranchProver(..)
-  , RulesSpec
-  , RulesNil
-  , RulesCons
   , RuleEntry
   , mkRuleEntry
   , compileMulti
@@ -32,7 +29,7 @@ module Pickles.Prove.Compile
   , padShapeProveData
   , class SlotKinds
   , slotKeysOf
-  , class CompilableRulesSpec
+  , class CompilableRules
   , ruleCompileFns
   , RuleCompileFns
   , CompileMultiConfig
@@ -1362,31 +1359,6 @@ shapeProveData cfg wrapCR sideInfo pins widths slots =
     where
     width = slotWidthInt (widths !! i)
 
---------------------------------------------------------------------------------
--- Type-level rules spec
---
--- The same idea as `Pickles.Step.Slots.PrevsSpec` one level up: a list
--- over the branches rather than over one branch's prev slots. Each
--- `RulesCons` carries the two facts that vary per branch — that
--- branch's `mpv` and its prevs spec, which fixes each slot's statement
--- type.
---
--- `inputVal` and `outputVal` are not among them: they parameterize the
--- shared wrap VK's public-input layout, so they live at the
--- multi-branch level.
---------------------------------------------------------------------------------
-
--- | Kind: a type-level list of rule specs.
-data RulesSpec
-
--- | The empty rules list, which terminates the instance recursion.
--- | `compileMulti` itself rejects it, through `Compare 0 branches LT`.
-foreign import data RulesNil :: RulesSpec
-
--- | One branch's contribution to the rules list: its `mpv`, its prevs
--- | spec, and the rest of the list.
-foreign import data RulesCons :: Int -> Type -> RulesSpec -> RulesSpec
-
 -- | `spec` → the number of its compiled slots, and each slot's key:
 -- | a compiled slot takes the caller's next key, a side-loaded slot
 -- | `Nothing`. The caller supplies keys for the compiled slots only, so
@@ -1464,20 +1436,21 @@ instance IntMaxOrd GT a b a
 
 instance (Compare a b ord, IntMaxOrd ord a b c) => IntMax a b c
 
--- | `mpvMax` is the maximum `ruleMpv` over `rules`, as an equality
--- | rather than a bound. `CompilableRulesSpec`'s per-rule
--- | `Add mpvPad ruleMpv mpvMax` already gives `ruleMpv ≤ mpvMax`;
--- | this pins `mpvMax` itself, so two call sites deriving it from the
--- | same `rules` cannot disagree.
-class MaxOfRulesMpvs (rules :: RulesSpec) (mpvMax :: Int) | rules -> mpvMax
+-- | `mpvMax` is the largest rule `mpv` in a tuple of `RuleEntry`s.
+-- | `CompilableRules`'s per-rule `Add mpvPad ruleMpv mpvMax` only
+-- | bounds each `ruleMpv`; this fixes `mpvMax` itself, which is how an
+-- | entry's `mpvMax` is inferred.
+class MaxOfRulesMpvs (rules :: Type) (mpvMax :: Int) | rules -> mpvMax
 
-instance MaxOfRulesMpvs RulesNil 0
+instance MaxOfRulesMpvs Unit 0
 
 instance
   ( MaxOfRulesMpvs rest restMax
   , IntMax ruleMpv restMax mpvMax
   ) =>
-  MaxOfRulesMpvs (RulesCons ruleMpv prevsSpec rest) mpvMax
+  MaxOfRulesMpvs
+    (RuleEntry prevsSpec ruleMpv entryMpvMax valCarrier inputVal outputSize r /\ rest)
+    mpvMax
 
 -- | What `compileMulti` needs that is shared across all branches. The
 -- | per-branch data travels alongside, in the `rulesCarrier`.
@@ -1495,8 +1468,8 @@ type CompileMultiConfig =
   , lagrangeCache :: Maybe LagrangeCache
   }
 
--- | The prover for one branch: one `RulesCons` of the rules spec
--- | yields one of these, at that branch's shape.
+-- | The prover for one branch: one `RuleEntry` of the rules yields
+-- | one of these, at that branch's shape.
 newtype BranchProver
   :: Type -> Int -> Type -> Type -> Type -> Row (Type -> Type) -> Type
 newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal r =
@@ -1538,7 +1511,7 @@ type MultiOutput proversCarrier branches mpvMax inputVal outputVal =
   }
 
 --------------------------------------------------------------------------------
--- CompilableRulesSpec
+-- CompilableRules
 --
 -- The rules carrier is a tuple of `RuleEntry`s at different types.
 -- One instance per rule collects each entry's `RuleCompileFns` into a
@@ -1546,29 +1519,27 @@ type MultiOutput proversCarrier branches mpvMax inputVal outputVal =
 -- `BranchProver`, whose type is the rule's own.
 --------------------------------------------------------------------------------
 
--- | One instance per rule, walking the rules spec. `branches` counts
--- | the rules still to be walked.
-class CompilableRulesSpec
-  :: RulesSpec
+-- | One instance per rule, walking the tuple of `RuleEntry`s.
+-- | `branches` counts the rules still to be walked.
+class CompilableRules
+  :: Type
   -> Type
   -> Type
   -> Int
   -> Int
-  -> Type
   -> Type
   -> Row (Type -> Type)
   -> Constraint
 class
-  CompilableRulesSpec
-    rs
+  CompilableRules
+    rulesCarrier
     inputVal
     outputVal
     branches
     mpvMax
-    rulesCarrier
     proversCarrier
     r
-  | rs r -> branches mpvMax rulesCarrier proversCarrier
+  | rulesCarrier -> inputVal branches mpvMax proversCarrier r
   where
   -- | Each rule's compile-time operations, in branch order.
   ruleCompileFns :: rulesCarrier -> Vector branches (RuleCompileFns mpvMax)
@@ -1617,12 +1588,11 @@ class
     -> Effect proversCarrier
 
 instance
-  CompilableRulesSpec RulesNil
+  CompilableRules Unit
     inputVal
     outputVal
     0
     mpvMax
-    Unit
     Unit
     r
   where
@@ -1630,10 +1600,9 @@ instance
   buildBranchProvers _ _ _ _ _ _ _ _ _ _ = pure unit
 
 instance
-  ( CompilableRulesSpec rest inputVal outputVal
+  ( CompilableRules restCarrier inputVal outputVal
       restBranches
       mpvMax
-      restCarrier
       restProvers
       r
   , SplitPrevs prevsSpec prevsCarrier valCarrier ruleMpv
@@ -1668,15 +1637,14 @@ instance
   -- `Add`, so both orderings are stated.
   , Add restBranches 1 branches
   ) =>
-  CompilableRulesSpec
-    (RulesCons ruleMpv prevsSpec rest)
+  CompilableRules
+    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
+        /\ restCarrier
+    )
     inputVal
     outputVal
     branches
     mpvMax
-    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
-        /\ restCarrier
-    )
     -- `BranchProver`'s `mpv` is `mpvMax`, not `ruleMpv`: every
     -- branch's `CompiledProof` presents the wrap-level width, with
     -- its own width hidden inside `widthData`. `BranchProver` is a
@@ -1689,12 +1657,11 @@ instance
   where
   ruleCompileFns (RuleEntry r /\ rest) =
     r.compileFns :< ruleCompileFns
-      @rest
+      @restCarrier
       @inputVal
       @outputVal
       @restBranches
       @mpvMax
-      @restCarrier
       @restProvers
       @r
       rest
@@ -1737,12 +1704,11 @@ instance
           headEntry
           stepInputs
     restProvers <- buildBranchProvers
-      @rest
+      @restCarrier
       @inputVal
       @outputVal
       @restBranches
       @mpvMax
-      @restCarrier
       @restProvers
       @r
       ncProxy
@@ -2460,7 +2426,7 @@ runMultiProverBody
             }
 
 compileMulti
-  :: forall @rs @outputVal @stepChunks numChunksPred
+  :: forall @outputVal @stepChunks numChunksPred
        r
        inputVal mpvMax
        branches
@@ -2468,10 +2434,9 @@ compileMulti
        proversCarrier
        branchesPred totalBases totalBasesPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
-   . CompilableRulesSpec rs inputVal outputVal
+   . CompilableRules rulesCarrier inputVal outputVal
        branches
        mpvMax
-       rulesCarrier
        proversCarrier
        r
   => CircuitGateConstructor WrapField PallasG
@@ -2499,7 +2464,7 @@ compileMulti
   => Compare mpvMax 3 LT
   => Add mpvMax nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => MaxOfRulesMpvs rs mpvMax
+  => MaxOfRulesMpvs rulesCarrier mpvMax
   => CompileMultiConfig
   -> rulesCarrier
   -> Effect
@@ -2513,12 +2478,11 @@ compileMulti
 compileMulti cfg rules = do
   let
     ruleFns = ruleCompileFns
-      @rs
+      @rulesCarrier
       @inputVal
       @outputVal
       @branches
       @mpvMax
-      @rulesCarrier
       @proversCarrier
       @r
       rules
@@ -2601,12 +2565,11 @@ compileMulti cfg rules = do
   -- Step 3: one prover closure per branch, each capturing its own
   -- index and sharing the step-domain vector.
   provers <- buildBranchProvers
-    @rs
+    @rulesCarrier
     @inputVal
     @outputVal
     @branches
     @mpvMax
-    @rulesCarrier
     @proversCarrier
     @r
     (Proxy :: Proxy stepChunks)

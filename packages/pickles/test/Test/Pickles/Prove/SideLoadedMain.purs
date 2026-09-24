@@ -24,7 +24,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Safe.Coerce (coerce)
@@ -79,19 +79,9 @@ noRecursionInputRule _ self = do
     , publicOutput: unit
     }
 
--- | Carrier for the single child rule, at width 0 with no prevs.
-type NoRecursionInputRules =
-  RulesCons 0 Unit RulesNil
-
 -- | The parent rule's one side-loaded prev slot, at width 2.
 type SideLoadedMainPrevsSpec =
   Tuple1 (SideLoadedSlot 2 (StatementIO (F StepField) Unit))
-
--- | Carrier for the parent rule.
-type SideLoadedMainRules =
-  RulesCons 1
-    SideLoadedMainPrevsSpec
-    RulesNil
 
 -- | The parent rule: asserts `1 + prev == self`, or the base case
 -- | `self == 0`.
@@ -140,7 +130,6 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       Vector.nil
 
     child <- withSpan "[SideLoadedMain] compile child" $ liftEffect $ compileMulti
-      @NoRecursionInputRules
       @Unit
       @1
       { srs: { vestaSrs, pallasSrs }
@@ -188,7 +177,6 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       Vector.nil
 
     parent <- withSpan "[SideLoadedMain] compile parent" $ liftEffect $ compileMulti
-      @SideLoadedMainRules
       @Unit
       @1
       { srs: { vestaSrs, pallasSrs }

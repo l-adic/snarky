@@ -26,7 +26,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -80,12 +80,6 @@ selfRecursiveChunksRule getPrevStates self = do
 type SelfRecursiveChunksPrevsSpec =
   Tuple1 (Slot 1 (StatementIO (F StepField) NoOutput))
 
--- | Carrier for the single rule.
-type SelfRecursiveChunksRules =
-  RulesCons 1
-    SelfRecursiveChunksPrevsSpec
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SelfRecursiveChunks" do
   it "a chunks=2 self-recursive chain proves its base case and one step" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
@@ -95,7 +89,6 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
 
     logInfo "[SelfRecursiveChunks] compiling…"
     output <- withSpan "[SelfRecursiveChunks] compile" $ liftEffect $ compileMulti
-      @SelfRecursiveChunksRules
       @NoOutput
       @2
       { srs: { vestaSrs, pallasSrs }

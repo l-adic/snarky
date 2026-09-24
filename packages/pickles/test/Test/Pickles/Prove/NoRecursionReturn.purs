@@ -9,8 +9,7 @@
 -- | `nrrRule` is exported for the specs that need a real proof of it to
 -- | build on.
 module Test.Pickles.Prove.NoRecursionReturn
-  ( NrrRules
-  , nrrRule
+  ( nrrRule
   , spec
   ) where
 
@@ -26,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, FVar, const_)
@@ -41,11 +40,6 @@ nrrRule _ _ = pure
   , publicOutput: const_ zero
   }
 
--- | Carrier for the single `nrrRule`, at width 0 with no prevs.
-type NrrRules =
-  RulesCons 0 Unit
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
   it "compileMulti + prover.step end-to-end verify returns true" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
@@ -57,7 +51,6 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
 
     logInfo "[NoRecursionReturn] compiling…"
     output <- withSpan "[NoRecursionReturn] compile" $ liftEffect $ compileMulti
-      @NrrRules
       @(F StepField)
       @1
       { srs: { vestaSrs, pallasSrs }

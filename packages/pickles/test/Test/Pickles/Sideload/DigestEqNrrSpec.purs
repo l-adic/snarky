@@ -21,7 +21,7 @@ import Effect.Class (liftEffect)
 import Pickles (RuleEntry, StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Kimchi.ProofCache (vestaVerifierIndexJsonKey)
 import Snarky.Circuit.DSL (F)
-import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
+import Test.Pickles.Prove.NoRecursionReturn (nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Pickles.Sideload.Loader (decodeHex, loadFixture)
 import Test.Spec (SpecT, describe, it)
@@ -37,7 +37,6 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
       liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
     let rules = tuple1 nrrEntry
     output <- withSpan "[DigestEqNrr] compile" $ liftEffect $ compileMulti
-      @NrrRules
       @(F StepField)
       @1
       { srs: { vestaSrs, pallasSrs }

@@ -26,7 +26,7 @@ import Pickles.Prove.Codecs (decodeVerifiableProof, decodeVerifier, encodeVerifi
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F)
-import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
+import Test.Pickles.Prove.NoRecursionReturn (nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -43,7 +43,6 @@ spec = describe "Pickles.Prove.Codecs" do
 
       logInfo "[Codecs] compiling…"
       output <- withSpan "[Codecs] compile" $ liftEffect $ compileMulti
-        @NrrRules
         @(F StepField)
         @1
         { srs: { vestaSrs, pallasSrs }

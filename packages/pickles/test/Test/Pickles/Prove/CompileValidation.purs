@@ -20,7 +20,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Pickles (RuleEntry, StepField, compileMulti, mkRuleEntry)
 import Snarky.Circuit.DSL (F)
-import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
+import Test.Pickles.Prove.NoRecursionReturn (nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (fail)
@@ -35,7 +35,6 @@ spec = describe "Pickles.Prove.Compile.validateNumChunks" do
       liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
     let rules = tuple1 nrrEntry
     result <- withSpan "[CompileValidation] compile" $ liftEffect $ Exc.try $ compileMulti
-      @NrrRules
       @(F StepField)
       @2
       { srs: { vestaSrs, pallasSrs }

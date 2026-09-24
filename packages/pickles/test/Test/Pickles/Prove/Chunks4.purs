@@ -7,8 +7,7 @@
 -- | under `KIMCHI_WITNESS_DUMP` — which a byte-for-byte diff against
 -- | the reference dump compares.
 module Test.Pickles.Prove.Chunks4
-  ( Chunks4Rules
-  , chunks4Rule
+  ( chunks4Rule
   , spec
   ) where
 
@@ -27,7 +26,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
@@ -64,11 +63,6 @@ chunks4Rule _ _ = do
     , publicOutput: unit
     }
 
--- | Carrier for the single `chunks4Rule`, at width 0 with no prevs.
-type Chunks4Rules =
-  RulesCons 0 Unit
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks4" do
   it "base case (b0) — chunks=4 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
@@ -83,7 +77,6 @@ spec = describe "Pickles.Prove.Chunks4" do
 
     logInfo "[Chunks4] compiling…"
     output <- withSpan "[Chunks4] compile" $ liftEffect $ compileMulti
-      @Chunks4Rules
       @Unit
       @4
       { srs: { vestaSrs, pallasSrs }

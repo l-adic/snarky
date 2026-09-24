@@ -20,7 +20,7 @@ module Bench.Pickles.Prove
 import Prelude
 
 import Bench.Harness (Group)
-import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchTreeRule, nrrRule)
+import Bench.Pickles.Common (BenchSrs, benchTreeRule, nrrRule)
 import Bench.Pickles.FfiTimer as FfiTimer
 import Control.Promise (fromAff)
 import Data.Either (Either(..))
@@ -44,7 +44,6 @@ prepareProve :: BenchSrs -> Effect (Aff Unit)
 prepareProve srs = do
   nrrEntry <- mkRuleEntry @(F StepField) nrrRule Vector.nil
   nrr <- compileMulti
-    @NrrRules
     @(F StepField)
     @1
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
@@ -53,7 +52,6 @@ prepareProve srs = do
     benchTreeRule
     (External nrr.tagData :< Self :< Vector.nil)
   tree <- compileMulti
-    @TreeRules
     @(F StepField)
     @1
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }

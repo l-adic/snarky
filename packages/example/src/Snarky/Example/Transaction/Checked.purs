@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry, prevValues, toPrevs)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry, prevValues, toPrevs)
 import Pickles.Step.Main (RuleOutput)
 import Pickles.Step.Slots (PrevValues)
 import Simple.JSON (class ReadForeign, class WriteForeign)
@@ -246,15 +246,6 @@ type TxnStmt = StatementIO (Statement Vesta.ScalarField) NoOutput
 -- | mpv=2 program).
 type MergePrevsSpec = Slot 2 TxnStmt /\ Slot 2 TxnStmt /\ Unit
 
--- | The two-branch program. Branch 0 (base) has no prev slots; branch 1
--- | (merge) has `MergePrevsSpec`, at one chunk.
-type TxnSnarkRules =
-  RulesCons 0 Unit
-    ( RulesCons 2
-        MergePrevsSpec
-        RulesNil
-    )
-
 type BaseProverInput d =
   { env :: { mask :: Mask d, tx :: SignedTransaction Vesta.ScalarField }
   , statement :: Statement Vesta.ScalarField
@@ -307,7 +298,6 @@ compileTxCircuit chainId lagrangeCache srs = do
 
   out <-
     compileMulti
-      @TxnSnarkRules
       @NoOutput
       @1
       cfg
