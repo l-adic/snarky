@@ -1622,7 +1622,7 @@ private theorem Leaf.SameReads.corrHonest {d : HasCurve F} {V : Valuation F} (ci
         (hh T (onCurveAt_of_same (h.2.1 ci).1.symm (h.2.1 ci).2.symm hT))
   | .condAdd .., .condAdd .., _, _ => trivial
 
-omit [ToNat F] in
+omit [DecidableEq F] [ToNat F] in
 private theorem Leaf.SameReads.hasScalar {V : Valuation F} {ls ls' : List (Leaf F nc)}
     (hs : List.Forall₂ (Leaf.SameReads V) ls ls') (h : leafHasScalar ls) : leafHasScalar ls' := by
   induction hs with

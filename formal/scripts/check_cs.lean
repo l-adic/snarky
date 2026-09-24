@@ -937,6 +937,66 @@ def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatCurve.Point)
     [pts0.toList.map (#v[·]), pts1.toList.map (#v[·])]
   pure PUnit.unit
 
+/-! ## The wrap circuit (`wrap_main_circuit`)
+
+`Pickles.wrapMain` at one branch, one slot and one chunk, the PS `compileWrapMainN1` config: the
+step key, step domain, Lagrange bases, blinding `h` and padding challenges from
+`wrap_main_constants.json` (the circuit-diffs export), slot width `1`, the slot pinned to wrap
+domain index `1`. -/
+
+/-- The constants `wrap_main_circuit` bakes in. -/
+structure WrapMainConsts where
+  /-- The step proof's domain, `log2`. -/
+  stepDomainLog2 : ℕ
+  /-- The chosen step key's commitments, one chunk each. -/
+  key : Pickles.VkComms 1 (AffinePoint (FVar Fq))
+  /-- The Lagrange bases at the step domain. -/
+  lagrange : Array XhatCurve.Point
+  /-- The blinding base. -/
+  h : XhatCurve.Point
+  /-- The padding challenge vector. -/
+  dummy : List Fq
+
+/-- `wrap_main_constants.json`, parsed. -/
+def wrapMainConsts (path : System.FilePath) : IO WrapMainConsts := do
+  let raw ← IO.FS.readFile path
+  let parsed : Except String WrapMainConsts := do
+    let j ← Json.parse raw
+    let pt := Bulletproof.Fixture.parsePt XhatCurve
+    let chunk (j : Json) : Except String (Vector (AffinePoint (FVar Fq)) 1) := do
+      let pts ← FixtureKit.parseArrOf pt j
+      match pts[0]? with
+      | some P => pure #v[xhatBase P]
+      | none => throw "empty commitment"
+    let comms (k : String) (n : ℕ) :
+        Except String (Vector (Vector (AffinePoint (FVar Fq)) 1) n) := do
+      let cs ← FixtureKit.parseArrOf chunk (← j.getObjVal? k)
+      if h : cs.size = n then pure ⟨cs, h⟩ else throw s!"{k}: {cs.size} commitments"
+    let sigma ← comms "sigma" 7
+    let coeff ← comms "coefficients" 15
+    let sel ← comms "selectors" 6
+    pure
+      { stepDomainLog2 := ← j.getObjValAs? Nat "stepDomainLog2"
+        key := { sigmaComm := sigma, coefficientsComm := coeff, genericComm := sel[0]
+                 poseidonComm := sel[1], completeAddComm := sel[2], mulComm := sel[3]
+                 emulComm := sel[4], endomulScalarComm := sel[5] }
+        lagrange := ← FixtureKit.parseArrOf pt (← j.getObjVal? "lagrange")
+        h := ← pt (← j.getObjVal? "h")
+        dummy := (← FixtureKit.parseArrOf FixtureKit.parseZMod
+          (← j.getObjVal? "dummyWrapExpanded")).toList }
+  match parsed with
+  | .ok r => return r
+  | .error e => throw (IO.userError s!"{path}: {e}")
+
+/-- `wrap_main_circuit`. -/
+def wrapMainCircuit (k : WrapMainConsts) (stmt : Vector (FVar Fq) 40) : CircuitM Fq Cq PUnit :=
+  Pickles.wrapMain (bp := 0) (mpv := 1) (nc := 1) fopWrapParams
+    (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) [1] [k.stepDomainLog2] #v[k.key]
+    #v[#v[some 1]] (fun _ => k.lagrange.toList.map (#v[·])) k.h k.dummy #v[1]
+    ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+      AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+      AsProver.throw "advice", AsProver.throw "advice"⟩ stmt
+
 /-- The Lagrange bases and blinding `h` of an `x_hat` circuit, from its circuit-diffs export
 (`{lagrange : [[x,y]×n], h : [x,y]}`, decimal pairs), parsed as points of `C` — `IpaVesta` for
 `xhat_wrap_lagrange.json`, `IpaPallas` for `xhat_step_lagrange.json`. The corrections are
@@ -1621,6 +1681,7 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
     (step : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
     (ivpStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
     (branches : Option (Array XhatCurve.Point × Array XhatCurve.Point × XhatCurve.Point))
+    (wrapMainK : Option WrapMainConsts)
     (fullStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point)) :
     List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
   (fullStep.toList.map fun (pts, h) =>
@@ -1648,6 +1709,9 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
   ++ (wrap.toList.map fun (pts, h) =>
     ("ivp_wrap_circuit",
       wrapTarget (a := Vector Fq 177) (b := PUnit) (ivpWrapCircuit pts (xhatWrapCell h))))
+  ++ (wrapMainK.toList.map fun k =>
+    ("wrap_main_circuit",
+      wrapTarget (a := Vector Fq 40) (b := PUnit) (wrapMainCircuit k)))
   ++ (branches.toList.map fun (_, l16, h) =>
     ("xhat_wrap_branches_same_circuit",
       wrapTarget (a := Vector Fq 35) (b := PUnit)
@@ -1689,10 +1753,11 @@ def main : IO Unit := do
   let ivpStep ← optionalExport filter (dir / "ivp_step_lagrange.json") (xhatPoints XhatStepCurve)
   let xhatBranches ← optionalExport filter (dir / "xhat_wrap_branches_lagrange.json")
     xhatBranchesPoints
+  let wrapMainK ← optionalExport filter (dir / "wrap_main_constants.json") wrapMainConsts
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
   let selected := (targets hStep hWrap
-    ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches fullStep).filter
+    ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches wrapMainK fullStep).filter
     fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0
