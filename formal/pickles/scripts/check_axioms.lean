@@ -69,6 +69,7 @@ def roots : List Name :=
     `Pickles.wrapVerify_frame,
     `Pickles.wrapPublicInput_toList,
     `Pickles.xHatMasked_reads_publicCommitment,
+    `Pickles.hashMessagesForNextWrapProof_padded,
     `Pickles.finalizeOtherProofCore_spec,
     `Pickles.finalizeOtherProofStep_spec,
     `Pickles.finalizeOtherProofWrap_spec,

@@ -1410,8 +1410,7 @@ offset at 16 rounds where the wrap side has 15). -/
 one dummy challenge vector that pads its single real slot to `MaxProofsVerified` (PS
 `dummyPaddingSpongeStates` at `n = 1`), so the padding costs no gates. -/
 def wrapMsgSponge : SpongeVar Fq :=
-  SpongeVar.ofConstants (Poseidon.absorb Bulletproof.IpaVesta.curve.sponge.params
-    ⟨(0, 0, 0), .absorbed 0⟩ dummyWrapChallenges)
+  Pickles.wrapPaddingSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapChallenges 1
 
 /-- `wrap_verify_circuit`. -/
 def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : XhatCurve.Point)

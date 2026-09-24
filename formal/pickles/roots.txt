@@ -41,9 +41,11 @@ Pickles.FopSide.unshiftV_read
 Pickles.oneHotVector_spec
 Pickles.toDomain_spec
 
--- TODO: drop once the wrap main port consumes it. The wrap side's x_hat over bases masked
--- across branches, CS-matched by check_cs but not yet reached from a capstone.
+-- TODO: drop once the wrap main port consumes them. The wrap side's x_hat over bases masked
+-- across branches and its padded accumulator digest, CS-matched by check_cs but not yet
+-- reached from a capstone.
 Pickles.xHatMasked_reads_publicCommitment
+Pickles.hashMessagesForNextWrapProof_padded
 
 -- TODO: drop once the wrap main port consumes them. The x_hat ladders' bounds on the packed
 -- scalars, the frame laws that carry them through the wrap verifier, and the wrap public
