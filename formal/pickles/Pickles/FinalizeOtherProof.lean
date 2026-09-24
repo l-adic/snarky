@@ -340,6 +340,100 @@ private theorem four_bits {α : Type} (v : α → F) (b₁ b₂ b₃ b₄ : α) 
 
 /-! ## Soundness -/
 
+section FinalizedBit
+
+variable {V : Valuation F}
+
+open Std.Do in
+/-- `all` of four bits reads as a bit: it is one equality test on their sum. -/
+private theorem all4_bit (a b d e : BoolVar F) :
+    ⦃⌜True⌝⦄ Snarky.all (c := Builder V (KimchiConstraint F)) [a, b, d, e]
+    ⦃⇓ r _ => ⌜∃ bb : Bool, (↑r : CVar F).val V = bit bb⌝⦄ := by
+  simp only [Snarky.all]
+  mvcgen
+  intro hr
+  split_ifs at hr
+  · exact ⟨true, by rw [hr]; rfl⟩
+  · exact ⟨false, by rw [hr]; rfl⟩
+
+open Std.Do in
+/-- Under any valuation satisfying the emitted constraints, `finalized` reads as a bit: the
+conjunction of four checks is one equality test on their sum. -/
+theorem finalizeOtherProofCore_finalized_bit {sf : Type} {nc : ℕ} (P : FopParams F)
+    (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) (xiConstrainLowBits : Bool)
+    (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F)) (gen : FVar F)
+    (pow2Log2 : ℕ) (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
+    (mask : List (BoolVar F)) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
+    (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F)))
+    (zeta alpha beta gamma : FVar F) (perm zetaToSrs zetaToDomain : sf) :
+    ⦃⌜True⌝⦄ finalizeOtherProofCore P ops xiConstrainLowBits digest gen pow2Log2 vanishing mask u w
+      prev zeta alpha beta gamma perm zetaToSrs zetaToDomain
+    ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.finalized : CVar F).val V = bit b⌝⦄ := by
+  simp only [finalizeOtherProofCore]
+  have h1 := fun a b => builder_spec_true (mul (c := Builder V (KimchiConstraint F)) a b)
+  have h2 := fun pt l =>
+    builder_spec_true (challengePolyEvals (c := Builder V (KimchiConstraint F)) pt l)
+  have h3 := fun a b d e1 pu ev en x => builder_spec_true
+    (squeezeXiR (c := Builder V (KimchiConstraint F)) (nc := nc) a b d e1 pu ev en x)
+  have h4 := fun n x e =>
+    builder_spec_true (EndoScalar.toField (c := Builder V (KimchiConstraint F)) n x e)
+  have h5 := fun x n => builder_spec_true (pow2PowSquare (c := Builder V (KimchiConstraint F)) x n)
+  have h6 := fun a b e =>
+    builder_spec_true (collapseEvals (c := Builder V (KimchiConstraint F)) (nc := nc) a b e)
+  have h7 := fun a =>
+    builder_spec_true (precomputeAlphaPowers (c := Builder V (KimchiConstraint F)) a)
+  have h8 := fun g n => builder_spec_true (omegaPowers (c := Builder V (KimchiConstraint F)) g n)
+  have h9 := fun z o => builder_spec_true (zkPolynomial (c := Builder V (KimchiConstraint F)) z o)
+  have h10 := fun z => builder_spec_true (vanishing z)
+  have h11 := fun n z l =>
+    builder_spec_true (publicFold (c := Builder V (KimchiConstraint F)) n z l)
+  have h12 := fun e m t fe ul i x =>
+    builder_spec_true (ftEval0Circuit (c := Builder V (KimchiConstraint F)) e m t fe ul i x)
+  have h13 := fun a b l1 l2 =>
+    builder_spec_true (combinedInnerProduct (c := Builder V (KimchiConstraint F)) a b l1 l2)
+  have h14 := fun e l =>
+    builder_spec_true (computeChallenges (c := Builder V (KimchiConstraint F)) e l)
+  have h15 := fun l a b c' d =>
+    builder_spec_true (bCorrectCircuit (c := Builder V (KimchiConstraint F)) l a b c' d)
+  have h16 := fun a b c' d e f g =>
+    builder_spec_true (permScalarCircuit (c := Builder V (KimchiConstraint F)) a b c' d e f g)
+  have h17 := fun n z o =>
+    builder_spec_true (zetaToSrsOr (c := Builder V (KimchiConstraint F)) n z o)
+  have h18 := fun a b d e f g => builder_spec_true (plonkScalarsEqual ops a b d e f g)
+  have hall := fun a b d e => all4_bit (V := V) a b d e
+  mvcgen -trivial [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17,
+    h18, hall, -Snarky.all_spec, -Snarky.Kimchi.EndoScalar.toField_spec]
+  rename_i _ _ h
+  exact h
+
+open Std.Do in
+/-- Under any valuation satisfying the emitted constraints, the step side's `finalized` reads
+as a bit (`finalizeOtherProofCore_finalized_bit`). -/
+theorem finalizeOtherProofStep_finalized_bit {nc : ℕ} (P : FopParams F)
+    (domains : List (KnownDomain F)) (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type1 (FVar F)))
+    (w : ChunkedEvals nc (FVar F)) (mask : List (BoolVar F)) (prev : List (List (FVar F)))
+    (domainLog2Var : FVar F) :
+    ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint F))
+      P domains u w mask prev domainLog2Var
+    ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.finalized : CVar F).val V = bit b⌝⦄ := by
+  simp only [finalizeOtherProofStep]
+  have h1 := fun n x e =>
+    builder_spec_true (EndoScalar.toField (c := Builder V (KimchiConstraint F)) n x e)
+  have h2 := fun x l =>
+    builder_spec_true (knownDomainWhiches (c := Builder V (KimchiConstraint F)) x l)
+  have h3 := fun ws (l : List (KnownDomain F)) f =>
+    builder_spec_true (Pseudo.choose (c := Builder V (KimchiConstraint F)) ws l f)
+  have hcore := fun (g : FVar F)
+      (van : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F)) zeta alpha =>
+    finalizeOtherProofCore_finalized_bit (V := V) P stepShiftOps true
+      (maskedChallengeDigest P.sponge mask prev) g P.srsLengthLog2 van mask u w prev zeta alpha
+      u.deferredValues.plonk.beta.val u.deferredValues.plonk.gamma.val
+      u.deferredValues.plonk.perm u.deferredValues.plonk.zetaToSrsLength
+      u.deferredValues.plonk.zetaToDomainSize
+  mvcgen -trivial [h1, h2, h3, hcore, -Snarky.Kimchi.EndoScalar.toField_spec]
+
+end FinalizedBit
+
 open Kimchi.Protocol.Linearization Bulletproof Classical in
 /-- The readings of the claim checks at effective challenges `ξ`, `r` and challenge readings
 `cs`: each of `cipCorrect`, `bCorrect`, `plonkOk` reads as the indicator that the decoded claims

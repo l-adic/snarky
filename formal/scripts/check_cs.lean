@@ -88,6 +88,8 @@ import Pickles.PublicInputCommit
 import Pickles.FtComm
 import Pickles.IncrementallyVerify
 import Pickles.Verify
+import Pickles.VerifyOne
+import Pickles.StepMain
 import CompElliptic.Curves.Pasta.Fast.Projective.Core
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
@@ -1162,6 +1164,94 @@ def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point
     (stepVerifyStatement get) (stepVerifyUnfinalized get) (stepVerifyCells get)
   pure PUnit.unit
 
+/-! ## One slot of the step circuit
+
+Transcribes `Pickles.CircuitDiffs.PureScript.FullStepVerifyOne`: `Pickles.verifyOneBy` over one
+previous proof of width 1, the check against `verifyProofWith` at `pallasCrs15`'s Lagrange bases
+at domain 14 (`full_step_lagrange.json`), the finalize at the dump's one known domain of
+`log2 = 16`, the key's commitments the dummy generator and the padded `sg_old` the dummy wrap
+`sg`.
+
+The 286-cell layout: the application state at 0; the wrap proof from 1 (the 15 `w_comm` points,
+`z_comm` at 31, the 7 `t_comm` points at 33, the 15 `(L, R)` pairs at 47, `z₁`, `z₂` at 107-110,
+`δ` at 111, `sg` at 113); the proof state from 115 (`α, β, γ, ζ`, `ζ^{2^k}`, `ζⁿ`, `perm`,
+`cip`, `b`, `ξ`, the 16 round challenges, the two mask bits, the domain's `log2` at 143, the
+digest at 144); the evaluations from 145 (44 columns of two cells, `ft(ζω)` at 233); the
+previous challenges at 234; the previous `sg` at 250; the unfinalized proof from 252; the
+wrap-side message at 284 and `mustVerify` at 285. -/
+
+open Pickles Kimchi.Verifier in
+/-- `full_step_verify_one_circuit`. -/
+def fullStepVerifyOneCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point)
+    (input : Vector (FVar Fp) 286) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
+  let split (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  let col (b k : ℕ) : PointEvaluations (Vector (FVar Fp) 1) :=
+    ⟨#v[get (b + 2 * k)], #v[get (b + 2 * k + 1)]⟩
+  let psb := 115
+  let eb := 145
+  let inp : VerifyOneInput 16 15 1 1 :=
+    { appState := [get 0]
+      deferred := ⟨⟨⟨get psb⟩, ⟨get (psb + 1)⟩, ⟨get (psb + 2)⟩, ⟨get (psb + 3)⟩,
+          ⟨get (psb + 6)⟩, ⟨get (psb + 4)⟩, ⟨get (psb + 5)⟩⟩, ⟨get (psb + 7)⟩, ⟨get (psb + 9)⟩,
+        Vector.ofFn fun j => ⟨get (psb + 10 + j)⟩, ⟨get (psb + 8)⟩⟩
+      spongeDigest := get (psb + 29)
+      branchData := ⟨get (psb + 28), #v[.unchecked (get (psb + 26)), .unchecked (get (psb + 27))]⟩
+      messagesForNextWrapProof := get 284
+      evals := ⟨get (eb + 88), col eb 0,
+        ⟨Vector.ofFn fun j => col (eb + 2) j, col (eb + 62) 0, Vector.ofFn fun j => col (eb + 64) j,
+          Vector.ofFn fun j => col (eb + 32) j, col (eb + 76) 0, col (eb + 76) 1, col (eb + 76) 2,
+          col (eb + 76) 3, col (eb + 76) 4, col (eb + 76) 5⟩⟩
+      proofMask := #v[.unchecked (get (psb + 27))]
+      prevChallenges := #v[Vector.ofFn fun j => get (234 + j)]
+      prevSgs := #v[pt 250]
+      sgOld := #v[dummyWrapSg, pt 250]
+      unfinalized := ⟨⟨⟨⟨get 265⟩, ⟨get 263⟩, ⟨get 264⟩, ⟨get 266⟩, split 260, split 256,
+          split 258⟩, split 252, ⟨get 267⟩, Vector.ofFn fun j => ⟨get (268 + j)⟩, split 254⟩,
+        .unchecked (get 283), get 262⟩
+      proof := ⟨Vector.ofFn fun j => #v[pt (1 + 2 * j)], #v[pt 31],
+        Vector.ofFn fun j => pt (33 + 2 * j),
+        ⟨Vector.ofFn fun j => (pt (47 + 4 * j), pt (49 + 4 * j)), split 107, split 109, pt 111,
+          pt 113⟩⟩
+      mustVerify := .unchecked (get 285) }
+  let _ ← verifyOneBy (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
+    PicklesFixture.fopStepParams [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] dummyKeyComms inp
+  pure PUnit.unit
+
+/-! ## The step circuit
+
+Transcribes `Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2`: `Pickles.stepMain` for the
+rule `self = 1 + prev₁ + prev₂` over two self slots of width 2, at the Lagrange bases of
+`full_step_lagrange.json`, the finalize at the rule's own step domain (`log2 = 15`, the dump's
+22957 rows rounded up), and the wrap-side messages unpadded. The output is the 67 cells of the
+step statement. The advice is inert: the comparison is on the constraint system. -/
+
+/-- The rule of `simple_chain_n2`: two previous states, `self` their sum plus one unless `self`
+is zero, the base case in which neither previous proof must verify. -/
+def simpleChainN2Rule (appState : FVar Fp) :
+    CircuitM Fp C (Vector Pickles.PrevStatement 2 × List (FVar Fp)) := do
+  let prev1 ← witness (val := Fp) (AsProver.throw "advice")
+  let prev2 ← witness (val := Fp) (AsProver.throw "advice")
+  let isBaseCase ← equals (.const 0) appState
+  let mustVerify := Snarky.not isBaseCase
+  let selfCorrect ← equals (CVar.add_ (CVar.add_ (.const 1) prev1) prev2) appState
+  assertAny [selfCorrect, isBaseCase]
+  pure (#v[⟨[prev1], mustVerify⟩, ⟨[prev2], mustVerify⟩], [])
+
+open Pickles in
+/-- `step_main_simple_chain_n2_circuit`. -/
+def stepMainSimpleChainN2Circuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point)
+    (_ : Vector (FVar Fp) 0) : CircuitM Fp C (Vector (FVar Fp) 67) := do
+  let out ← stepMain (n := 2) (w := 2) (nc := 1) (k := 15) (ks := 16) (inVal := Fp) (by decide)
+    (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
+    PicklesFixture.fopStepParams [⟨15, Kimchi.Fixture.PS.fpSide.omega (2 ^ 15)⟩] dummyWrapSg
+    simpleChainN2Rule
+    ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+      AsProver.throw "advice", AsProver.throw "advice"⟩
+  pure (Vector.ofFn fun i => out.out[i.val]?.getD (.const 0))
+
 /-! ## The wrap side's `incrementally_verify_proof`
 
 Transcribes `Pickles.CircuitDiffs.PureScript.IvpWrap`: the wrap circuit's group half over a
@@ -1459,9 +1549,16 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
     (wrap2 : Option (Array (Vector XhatCurve.Point 2) × XhatCurve.Point))
     (step : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
     (ivpStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
-    (branches : Option (Array XhatCurve.Point × Array XhatCurve.Point × XhatCurve.Point)) :
+    (branches : Option (Array XhatCurve.Point × Array XhatCurve.Point × XhatCurve.Point))
+    (fullStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point)) :
     List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
-  (step.toList.map fun (pts, h) =>
+  (fullStep.toList.map fun (pts, h) =>
+    ("full_step_verify_one_circuit",
+      stepTarget (a := Vector Fp 286) (b := PUnit) (fullStepVerifyOneCircuit pts h)))
+  ++ (fullStep.toList.map fun (pts, h) =>
+    ("step_main_simple_chain_n2_circuit",
+      stepTarget (a := Vector Fp 0) (b := Vector Fp 67) (stepMainSimpleChainN2Circuit pts h)))
+  ++ (step.toList.map fun (pts, h) =>
     ("xhat_step_circuit",
       stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts (xhatStepCell h))))
   ++ (ivpStep.toList.map fun (pts, h) =>
@@ -1521,8 +1618,10 @@ def main : IO Unit := do
   let ivpStep ← optionalExport filter (dir / "ivp_step_lagrange.json") (xhatPoints XhatStepCurve)
   let xhatBranches ← optionalExport filter (dir / "xhat_wrap_branches_lagrange.json")
     xhatBranchesPoints
+  let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
+    (xhatPoints XhatStepCurve)
   let selected := (targets hStep hWrap
-    ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches).filter
+    ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches fullStep).filter
     fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0

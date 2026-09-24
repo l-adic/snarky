@@ -16,6 +16,8 @@ gets from the split type's allocation check and the harness asserts on its unche
 ## Main results
 
 * `wrapSide_claimOk`: every wrap-side scalar satisfies `IvpSide.ClaimOk`;
+* `stepSide_claimOk_of_bit`: a step-side scalar with a boolean parity cell satisfies
+  `IvpSide.ClaimOk`;
 * `assertClaimBitsStep_spec`: the asserted step-side scalars satisfy `IvpSide.ClaimOk`.
 -/
 
@@ -40,6 +42,15 @@ theorem wrapSide_claimOk (V : Valuation Fq) (x : Type1 (FVar Fq)) : (wrapSide V)
   exact HasCurve.vesta_ladderRegime _
     (top_lt_of_pinned (by norm_num [PALLAS_BASE_CARD]) hpre.2.1)
 
+/-- A step-side scalar whose parity cell reads as a bit is one the ladder reads: the ladders'
+tops are below `4·order − 4` at every pinned input. -/
+theorem stepSide_claimOk_of_bit {V : Valuation Fp} (x : Type2 (SplitField (FVar Fp) (BoolVar Fp)))
+    (hb : ∃ bb : Bool, (↑x.val.sOdd : CVar Fp).val V = bit bb) : (stepSide V).ClaimOk x := by
+  change (∃ bb : Bool, (↑x.val.sOdd : CVar Fp).val V = bit bb) ∧
+    ∀ w : ℤ × Bool, StepLadderPre V x w → StepLadderReg w
+  exact ⟨hb, fun w hpre => HasCurve.pallas_ladderRegime _
+    (top_lt_of_pinned (by norm_num [PALLAS_SCALAR_CARD]) hpre.2.2.1)⟩
+
 variable {c : Type}
 
 /-- The step side's assertion: each split scalar's parity cell is boolean. -/
@@ -56,11 +67,7 @@ theorem assertClaimBitsStep_spec {V : Valuation Fp}
     (fun x => ?_) xs
   rw [builder_spec_iff]
   intro nv hsat
-  obtain ⟨bb, hb⟩ := CheckedType.check_sound (F := Fp) (val := Bool) V x.val.sOdd nv hsat
-  change (∃ bb : Bool, (↑x.val.sOdd : CVar Fp).val V = bit bb) ∧
-    ∀ w : ℤ × Bool, StepLadderPre V x w → StepLadderReg w
-  refine ⟨⟨bb, hb⟩, fun w hpre => ?_⟩
-  exact HasCurve.pallas_ladderRegime _
-    (top_lt_of_pinned (by norm_num [PALLAS_SCALAR_CARD]) hpre.2.2.1)
+  exact stepSide_claimOk_of_bit x
+    (CheckedType.check_sound (F := Fp) (val := Bool) V x.val.sOdd nv hsat)
 
 end Pickles

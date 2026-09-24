@@ -40,6 +40,12 @@ instance instType1CircuitType {F v w : Type} [CircuitType F v w] :
     CircuitType F (Type1 v) (Type1 w) :=
   CircuitType.ofEquiv (Type1.equivVal v) (Type1.equivVal w)
 
+/-- A `Type1` is checked as its cell. -/
+instance instType1CheckedType {F c v w : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [CircuitType F v w] [CheckedType F c v w] :
+    CheckedType F c (Type1 v) (Type1 w) :=
+  CheckedType.ofEquiv (Type1.equivVal v) (Type1.equivVal w)
+
 /-- A `Type2` is its cell. -/
 def _root_.Snarky.Type2.equivVal (α : Type) : Type2 α ≃ α :=
   ⟨Type2.val, Type2.mk, fun _ => rfl, fun _ => rfl⟩
@@ -48,6 +54,12 @@ instance instType2CircuitType {F v w : Type} [CircuitType F v w] :
     CircuitType F (Type2 v) (Type2 w) :=
   CircuitType.ofEquiv (Type2.equivVal v) (Type2.equivVal w)
 
+/-- A `Type2` is checked as its cell. -/
+instance instType2CheckedType {F c v w : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [CircuitType F v w] [CheckedType F c v w] :
+    CheckedType F c (Type2 v) (Type2 w) :=
+  CheckedType.ofEquiv (Type2.equivVal v) (Type2.equivVal w)
+
 /-- A split scalar is its half and its parity. -/
 def _root_.Snarky.SplitField.equivProd (α β : Type) : SplitField α β ≃ α × β :=
   ⟨fun s => (s.sDiv2, s.sOdd), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
@@ -55,6 +67,13 @@ def _root_.Snarky.SplitField.equivProd (α β : Type) : SplitField α β ≃ α 
 instance instSplitFieldCircuitType {F a va b vb : Type} [CircuitType F a va]
     [CircuitType F b vb] : CircuitType F (SplitField a b) (SplitField va vb) :=
   CircuitType.ofEquiv (SplitField.equivProd a b) (SplitField.equivProd va vb)
+
+/-- A split scalar is checked as its half, then its parity: at `(FVar, BoolVar)` the
+parity's booleanity. -/
+instance instSplitFieldCheckedType {F c a va b vb : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [CircuitType F a va] [CircuitType F b vb] [CheckedType F c a va]
+    [CheckedType F c b vb] : CheckedType F c (SplitField a b) (SplitField va vb) :=
+  CheckedType.ofEquiv (SplitField.equivProd a b) (SplitField.equivProd va vb)
 
 /-! ## The evaluations -/
 

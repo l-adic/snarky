@@ -1100,6 +1100,17 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "full_step_verify_one_n2_circuit" (fromCompiledCircuit =<< compileFullStepVerifyOneN2 fullStepN2SrsData)
+        -- The `pallasCrs15` Lagrange bases at domain 14 and the blinding `h` baked into
+        -- `full_step_verify_one_circuit` and the step-main circuits, for the Lean `check_cs`
+        -- harness, which derives the corrections.
+        it "dumps the full_step_verify_one Lagrange bases for the Lean check_cs harness" $ liftEffect do
+          let
+            ptToJson :: AffinePoint Fp -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+            lagr = Array.range 0 29 <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)
+          FS.writeTextFile UTF8 (resultsDir <> "full_step_lagrange.json")
+            (writeJSON { lagrange: lagr, h: ptToJson (vestaSrsBlindingGenerator fullStepSrs) })
       describe "Typ checks" do
         exactMatchEff "other_field_check_step_circuit" (fromCompiledCircuit =<< compileOtherFieldCheck)
       describe "Step main" do
@@ -1121,6 +1132,16 @@ spec bundle =
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
         exactMatchEff "step_main_simple_chain_n2_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainSimpleChainN2 stepMainN2SrsData)
+        -- The same `pallasCrs15` domain-14 export as `full_step_lagrange.json`, written here too
+        -- so a run narrowed to the step-main circuits carries it.
+        it "dumps the step_main Lagrange bases for the Lean check_cs harness" $ liftEffect do
+          let
+            ptToJson :: AffinePoint Fp -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+            lagr = Array.range 0 29 <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)
+          FS.writeTextFile UTF8 (resultsDir <> "full_step_lagrange.json")
+            (writeJSON { lagrange: lagr, h: ptToJson (vestaSrsBlindingGenerator stepMainSrs) })
         -- N=0, Input_and_output mode — Add_one_return. No recursion,
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573

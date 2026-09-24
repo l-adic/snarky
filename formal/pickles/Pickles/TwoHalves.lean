@@ -541,7 +541,7 @@ theorem twoHalves_schnorr
   generalize dv.bulletproofChallenges.toList.map (·.val) = ms at hmsG hmsS
   clear hGdv hSdv
   -- the group half's read: `α`, `ζ` are the wire's through the shared readings
-  obtain ⟨o, hx, hsucc, hdig, hbpc⟩ := hg
+  obtain ⟨o, hx, hsucc, hdig, hbpc, -⟩ := hg
   simp only [IvpReads, DeferredValues.toIvpClaims] at hx
   obtain ⟨hdE, hβG, hγG, hαG', hζG', hξG⟩ := hx
   have hαG := (hαG' a₀ hαGa) ▸ hαGa

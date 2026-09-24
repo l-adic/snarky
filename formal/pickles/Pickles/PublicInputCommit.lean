@@ -2087,6 +2087,15 @@ theorem packLeavesOf_ofKey : ∀ (ks : List (PackedScalar C.BaseField))
       refine congrArg₂ _ ?_ ih
       cases k <;> simp [constLeaf, shiftBits]
 
+/-- Two packed scalars of one kind whose cells read the same value. -/
+def PackedScalar.SameReading (V : Valuation C.BaseField) :
+    PackedScalar C.BaseField → PackedScalar C.BaseField → Prop
+  | .full a, .full b => a.val V = b.val V
+  | .b128 a, .b128 b => a.val V = b.val V
+  | .b10 a, .b10 b => a.val V = b.val V
+  | .bit a, .bit b => (↑a : CVar C.BaseField).val V = (↑b : CVar C.BaseField).val V
+  | _, _ => False
+
 /-! ### The known-domain fold's table
 
 `publicInputCommitKnown` takes the corrections' sum as one constant, where
@@ -2117,6 +2126,36 @@ def XhatTable.ofKeyKnown (ks : List (PackedScalar C.BaseField))
        | k :: _, Ps :: _ => corrPt k Ps[ci]
        | _, _ => 0)
     corrSum := Vector.ofFn fun ci => constPt (corrSumPt ks lb ci) }
+
+/-- A packed scalar reads the same as itself. -/
+theorem PackedScalar.sameReading_refl (k : PackedScalar C.BaseField) :
+    PackedScalar.SameReading V k k := by
+  cases k <;> rfl
+
+/-- The public input of the key's table depends on each packed scalar only through its kind and
+its reading. -/
+theorem pubOf_ofKeyKnown_congr [ToNat C.BaseField] (lb : List (Vector C.Point nc)) :
+    ∀ {ks ks' : List (PackedScalar C.BaseField)},
+      List.Forall₂ (PackedScalar.SameReading V) ks ks' →
+      pubOf C V (packLeavesOf ks (XhatTable.ofKeyKnown ks lb))
+        = pubOf C V (packLeavesOf ks' (XhatTable.ofKeyKnown ks' lb)) := by
+  intro ks ks' h
+  have hk : ∀ ks : List (PackedScalar C.BaseField),
+      packLeavesOf ks (XhatTable.ofKeyKnown ks lb) = List.zipWith constLeaf ks lb :=
+    fun ks => packLeavesOf_ofKey ks lb
+  rw [hk, hk]
+  simp only [pubOf]
+  congr 1
+  induction h generalizing lb with
+  | nil => simp
+  | @cons k k' ks ks' hkk _ ih =>
+    cases lb with
+    | nil => simp
+    | cons Ps lb =>
+      simp only [List.zipWith_cons_cons, List.map_cons, ih lb (fun ks => packLeavesOf_ofKey ks lb)]
+      congr 1
+      cases k <;> cases k' <;> simp only [PackedScalar.SameReading] at hkk <;>
+        first | exact hkk.elim | simp only [constLeaf, Leaf.scalarVar, hkk]
 
 /-- A scalar's constant leaf is trivially bit-boolean. -/
 theorem bitBoolean_constLeaf_of_isScalar (ks : List (PackedScalar C.BaseField))

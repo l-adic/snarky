@@ -72,6 +72,22 @@ def stepPublicInput {ks nc : ℕ} (E : Env IpaPallas.curve nc) (V : Valuation Fp
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : Array Fq :=
   pubOf IpaPallas.curve V (stepLeavesAt E statement)
 
+/-- The public input reads the step-message digest only through its value. -/
+theorem stepPublicInput_congr_msg {ks nc : ℕ} (E : Env IpaPallas.curve nc) (V : Valuation Fp)
+    (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) (a b : FVar Fp)
+    (h : a.val V = b.val V) :
+    stepPublicInput E V { st with messagesForNextStepProof := a }
+      = stepPublicInput E V { st with messagesForNextStepProof := b } := by
+  simp only [stepPublicInput, stepLeavesAt, packLeaves, xhatTableAt]
+  refine pubOf_ofKeyKnown_congr (C := IpaPallas.curve) (V := V) _ ?_
+  have r := fun k => PackedScalar.sameReading_refl (V := V) (C := IpaPallas.curve) k
+  simp only [WrapStatement.packed]
+  refine List.rel_append (List.rel_append ?_ (List.forall₂_same.mpr fun k _ => r k))
+    (List.forall₂_same.mpr fun k _ => r k)
+  exact .cons (r _) (.cons (r _) (.cons (r _) (.cons (r _) (.cons (r _) (.cons (r _)
+    (.cons (r _) (.cons (r _) (.cons (r _) (.cons (r _) (.cons (r _) (.cons (r _)
+    (.cons h .nil))))))))))))
+
 /-- Chunk `c` of the key's Lagrange relations: each Lagrange polynomial's coefficients on the
 chunk. -/
 def chunkRelations {nc : ℕ} (E : Env IpaPallas.curve nc) (c : ℕ) :
@@ -317,6 +333,19 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {E : Env IpaPallas.curve 
         proof).withClaims claims).tComm.length = quotChunks * nc := hl.2.2
     have h5 := nc_le E
     omega
+
+/-- Under any valuation satisfying the emitted constraints, `verifyProofAt`'s returned bit reads
+as a bit (`verifyProof_success_bit`). -/
+theorem verifyProofAt_success_bit {ks k nc : ℕ} {V : Valuation Fp} (E : Env IpaPallas.curve nc)
+    (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (cells : IvpInput k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
+    ⦃⌜True⌝⦄
+    verifyProofAt (c := Builder V (KimchiConstraint Fp)) E spongeAfterIndex isBaseCase statement
+      u cells
+    ⦃⇓ v _ => ⌜∃ b : Bool, (↑v : CVar Fp).val V = bit b⌝⦄ :=
+  verifyProof_success_bit _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-! ## The circuit of its input -/
 

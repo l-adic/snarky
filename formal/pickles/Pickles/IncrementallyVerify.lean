@@ -799,6 +799,35 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     · exact success_eq S σ cvk cp pub oldsW hties.olds.kept inp.opening.z1 inp.opening.z2
         hties.proof.z1 hties.proof.z2 U chals _ _ _ _ _ hiff
 
+/-- Under any valuation satisfying the emitted constraints, the group half's success bit reads
+as a bit: it is the opening check's (`checkBulletproof_success_bit`). -/
+theorem incrementallyVerifyProof_success_bit {F : Type} [Field F] [DecidableEq F] [ToNat F]
+    {V : Valuation F} {sf : Type} (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
+    (e : IpaEndo F) (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F)
+    (sqrtF : F → Option F) (optSponge : Bool) (blindingH : AffinePoint (FVar F))
+    (spongeAfterIndex : SpongeVar F)
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
+    {k nc : ℕ} (inp : IvpInput k nc (FVar F) (BoolVar F) sf) :
+    ⦃⌜True⌝⦄ incrementallyVerifyProof ops e p endo gm sqrtF optSponge blindingH spongeAfterIndex
+      computeXHat inp
+    ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.success : CVar F).val V = bit b⌝⦄ := by
+  simp only [incrementallyVerifyProof]
+  have hsq := fun sv => builder_spec_true
+    (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
+  have hx := builder_spec_true computeXHat
+  have htrO := fun d sg xh w z t => builder_spec_true
+    (fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo d sg xh w z t)
+  have htr := fun d sg xh w z t => builder_spec_true
+    (fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo d sg xh w z t)
+  have hapc := fun o cl => builder_spec_true
+    (assertPlonkChallenges (c := Builder V (KimchiConstraint F)) o cl)
+  have hft := fun sig t perm zs zd => builder_spec_true (ftComm ops sig t perm zs zd)
+  have hcb := fun sv bases (ci : CheckBulletproofInput k (FVar F) sf) =>
+    checkBulletproof_success_bit (V := V) ops e p endo gm sqrtF sv bases ci
+  split <;>
+    mvcgen -trivial [hsq, hx, htrO, htr, hapc, hft, hcb, -Snarky.Kimchi.SpongeVar.squeeze_spec] <;>
+    assumption
+
 /-! ## The read theorem -/
 
 /-- **The group half reads as the wire's, on either side.** On the side `S`, given
