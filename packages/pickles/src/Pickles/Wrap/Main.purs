@@ -19,10 +19,10 @@ import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
-import Data.Maybe (Maybe(..), fromMaybe, isJust)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Traversable (traverse)
+import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
@@ -519,21 +519,28 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
 
   -- The indices are advice, and each slot's finalize check is only
   -- sound at the finalized proof's own domain, so pin every slot to the
-  -- index its branch was compiled for. Branches whose slot is
-  -- side-loaded leave it free; padding slots take index `1`, the value
-  -- the prover supplies for them.
+  -- index its branch was compiled for; padding slots take index `1`, the
+  -- value the prover supplies for them. A side-loaded predecessor's
+  -- domain comes from its key, which does not reach this circuit, so
+  -- where such a branch is active the index stays unconstrained.
   label "wrap-domain-index-pins" do
     forWithIndex_ wrapDomainIndices \slot index -> do
       let atSlot = config.prevWrapDomainIndices <#> \ks -> Vector.index ks slot
-      chosen <- Pseudo.choose whichBranch atSlot
-        (\k -> const_ (fromInt (fromMaybe 0 k)))
-      if Array.all isJust (Vector.toUnfoldable atSlot) then
-        assertEqual_ index chosen
-      else do
-        knownBranch <- Pseudo.choose whichBranch atSlot
-          (\k -> const_ (if isJust k then one else zero))
-        pinned <- mul_ knownBranch index
-        assertEqual_ pinned chosen
+      case sequence atSlot of
+        -- Every branch knows this slot's domain. The one-hot bits sum to
+        -- one, so the general constraint below is this equality.
+        Just ks -> do
+          chosen <- Pseudo.choose whichBranch ks (const_ <<< fromInt)
+          assertEqual_ index chosen
+        -- A side-loaded branch's term is zero on both sides, so while it
+        -- is active the constraint reads `0 = 0`.
+        Nothing -> do
+          chosen <- Pseudo.choose whichBranch atSlot
+            (const_ <<< maybe zero fromInt)
+          knownBranch <- Pseudo.choose whichBranch atSlot
+            (const_ <<< maybe zero (const one))
+          pinned <- mul_ knownBranch index
+          assertEqual_ pinned chosen
 
   -- Emission order is part of the circuit: every slot's Pseudo domain
   -- first, right-to-left, then every FOP body, left-to-right.
