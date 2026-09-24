@@ -604,6 +604,48 @@ def expandPlonkStepCircuit (input : Vector (FVar Fp) 4) : CircuitM Fp C PUnit :=
 def expandPlonkWrapCircuit (input : Vector (FVar Fq) 4) : CircuitM Fq Cq PUnit :=
   expandPlonkCore endoPallasLam (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15)) input
 
+/-! ## The Pseudo selection circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.PseudoCircuits`: `Pickles.oneHotVector` of input 0,
+`Pickles.Pseudo.mask` and `Pickles.Pseudo.choose` behind it, on either field, and
+`Pickles.toDomain` over the three wrap domains with the selected vanishing polynomial at
+input 1. -/
+
+section PseudoCircuits
+
+variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+
+/-- `one_hot_n{n}`: the one-hot vector of input 0 over `n` entries. -/
+def oneHotCircuit (n : ℕ) (input : Vector (FVar F) 1) : CircuitM F c PUnit := do
+  let _ ← Pickles.oneHotVector n input[0]
+  pure PUnit.unit
+
+/-- `pseudo_mask_n{n}`: the one-hot of input 0 over `n` entries masking `xs input`. -/
+def pseudoMaskCircuit {k : ℕ} (n : ℕ) (xs : Vector (FVar F) k → List (FVar F))
+    (input : Vector (FVar F) k) : CircuitM F c PUnit := do
+  let bits ← Pickles.oneHotVector n (input[0]?.getD (.const 0))
+  let _ ← Pickles.Pseudo.mask bits (xs input)
+  pure PUnit.unit
+
+/-- `pseudo_choose_n{n}`: the one-hot of input 0 over `n` entries choosing among the constants
+`ks`. -/
+def pseudoChooseCircuit (n : ℕ) (ks : List ℕ) (input : Vector (FVar F) 1) :
+    CircuitM F c PUnit := do
+  let bits ← Pickles.oneHotVector n input[0]
+  let _ ← Pickles.Pseudo.choose bits ks fun k => .const (k : F)
+  pure PUnit.unit
+
+end PseudoCircuits
+
+/-- `pseudo_to_domain_wrap_circuit`: the one-hot of input 0 over the wrap domains `2^13`,
+`2^14`, `2^15`, and the selected domain's vanishing polynomial at input 1. -/
+def pseudoToDomainWrapCircuit (input : Vector (FVar Fq) 2) : CircuitM Fq Cq PUnit := do
+  let which ← Pickles.oneHotVector 3 input[0]
+  let d ← Pickles.toDomain (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) which
+    [13, 14, 15] 15
+  let _ ← d.vanishingPolynomial input[1]
+  pure PUnit.unit
+
 /-! ## The evaluation layout
 
 The evaluation record as the dumps lay it out, shared by the `finalize_other_proof` targets
@@ -1296,6 +1338,35 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit),
     ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit),
+    -- the Pseudo selection circuits, on both fields
+    ("one_hot_n1_step_circuit", stepTarget (a := Vector Fp 1) (b := PUnit) (oneHotCircuit 1)),
+    ("one_hot_n3_step_circuit", stepTarget (a := Vector Fp 1) (b := PUnit) (oneHotCircuit 3)),
+    ("one_hot_n17_step_circuit", stepTarget (a := Vector Fp 1) (b := PUnit) (oneHotCircuit 17)),
+    ("one_hot_n1_wrap_circuit", wrapTarget (a := Vector Fq 1) (b := PUnit) (oneHotCircuit 1)),
+    ("one_hot_n3_wrap_circuit", wrapTarget (a := Vector Fq 1) (b := PUnit) (oneHotCircuit 3)),
+    ("one_hot_n17_wrap_circuit", wrapTarget (a := Vector Fq 1) (b := PUnit) (oneHotCircuit 17)),
+    ("pseudo_mask_n1_step_circuit", stepTarget (a := Vector Fp 2) (b := PUnit)
+      (pseudoMaskCircuit 1 fun i => [i[1]])),
+    ("pseudo_mask_n3_step_circuit", stepTarget (a := Vector Fp 4) (b := PUnit)
+      (pseudoMaskCircuit 3 fun i => [i[1], i[2], i[3]])),
+    ("pseudo_mask_n17_step_circuit", stepTarget (a := Vector Fp 1) (b := PUnit)
+      (pseudoMaskCircuit 17 fun _ => (List.range 17).map fun j => .const (j : Fp))),
+    ("pseudo_mask_n1_wrap_circuit", wrapTarget (a := Vector Fq 2) (b := PUnit)
+      (pseudoMaskCircuit 1 fun i => [i[1]])),
+    ("pseudo_mask_n3_wrap_circuit", wrapTarget (a := Vector Fq 4) (b := PUnit)
+      (pseudoMaskCircuit 3 fun i => [i[1], i[2], i[3]])),
+    ("pseudo_mask_n17_wrap_circuit", wrapTarget (a := Vector Fq 1) (b := PUnit)
+      (pseudoMaskCircuit 17 fun _ => (List.range 17).map fun j => .const (j : Fq))),
+    ("pseudo_choose_n1_step_circuit", stepTarget (a := Vector Fp 1) (b := PUnit)
+      (pseudoChooseCircuit 1 [42])),
+    ("pseudo_choose_n3_step_circuit", stepTarget (a := Vector Fp 1) (b := PUnit)
+      (pseudoChooseCircuit 3 [13, 14, 15])),
+    ("pseudo_choose_n1_wrap_circuit", wrapTarget (a := Vector Fq 1) (b := PUnit)
+      (pseudoChooseCircuit 1 [42])),
+    ("pseudo_choose_n3_wrap_circuit", wrapTarget (a := Vector Fq 1) (b := PUnit)
+      (pseudoChooseCircuit 3 [13, 14, 15])),
+    ("pseudo_to_domain_wrap_circuit",
+      wrapTarget (a := Vector Fq 2) (b := PUnit) pseudoToDomainWrapCircuit),
     ("hash_messages_for_next_wrap_proof_circuit",
       wrapTarget (a := Vector Fq 33) (b := PUnit) hashMessagesWrapCircuit) ]
 

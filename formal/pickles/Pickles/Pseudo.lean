@@ -12,10 +12,11 @@ Port of the PureScript `Pickles.Pseudo.mask` (OCaml `pseudo.ml`): the mask-selec
 
 * `Pseudo.mask`: the products, emitted last-to-first as OCaml's right-to-left `Vector.map`
   does, summed affinely.
+* `Pseudo.choose`: `mask` over values mapped to cells.
 
 ## Main results
 
-* `Pseudo.mask_spec`: the output reads as `∑ᵢ bᵢ · xᵢ`.
+* `Pseudo.mask_spec`, `Pseudo.choose_spec`: the output reads as `∑ᵢ bᵢ · xᵢ`.
 -/
 
 namespace Pickles.Pseudo
@@ -37,6 +38,11 @@ affine combination. -/
 def mask (bits : List (BoolVar F)) (xs : List (FVar F)) : CircuitM F c (FVar F) := do
   let terms ← products (bits.zip xs)
   pure (Snarky.sum terms)
+
+/-- The mask-select over `xs` mapped through `f`. -/
+def choose {α : Type} (bits : List (BoolVar F)) (xs : List α) (f : α → FVar F) :
+    CircuitM F c (FVar F) :=
+  mask bits (xs.map f)
 
 variable [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
 
@@ -67,8 +73,20 @@ theorem mask_spec (bits : List (BoolVar F)) (xs : List (FVar F)) :
   rename_i _ terms _ hterms
   rw [Snarky.sum_eval, hterms]
 
+/-- Under any valuation the choice reads as `∑ᵢ bᵢ · f xᵢ`. -/
+theorem choose_spec {α : Type} (bits : List (BoolVar F)) (xs : List α) (f : α → FVar F) :
+    ⦃⌜True⌝⦄ choose (c := Builder V c) bits xs f
+    ⦃⇓ r _ => ⌜r.val V
+      = ((bits.zip xs).map fun e => (↑e.1 : CVar F).val V * (f e.2).val V).sum⌝⦄ := by
+  simp only [choose]
+  have h := mask_spec (c := c) (V := V) bits (xs.map f)
+  mvcgen [h]
+  intro hr
+  rw [hr, List.zip_map_right, List.map_map]
+  rfl
+
 /-! The gadgets are sealed after their spec: a consumer composes `mask_spec`, never the
 bodies. -/
-attribute [irreducible] products mask
+attribute [irreducible] products mask choose
 
 end Pickles.Pseudo
