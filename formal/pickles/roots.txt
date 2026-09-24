@@ -39,6 +39,10 @@ Pickles.FopSide.unshiftV_read
 Pickles.oneHotVector_spec
 Pickles.toDomain_spec
 
+-- TODO: drop once the wrap main port consumes it. The wrap side's x_hat over bases masked
+-- across branches, CS-matched by check_cs but not yet reached from a capstone.
+Pickles.xHatSealed_reads_publicCommitment
+
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Pickles.buildEvalList

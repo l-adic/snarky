@@ -3,6 +3,7 @@ import Snarky.Kimchi.Circuit.Point
 import Kimchi.Verifier.Kimchi
 import Pickles.Curve
 import Pickles.ListLemmas
+import Mathlib.Data.List.Forall2
 
 /-!
 # The in-circuit public-input commitment
@@ -15,11 +16,12 @@ its ladder width, or a 1-bit `condAdd`. Packing (a structured statement → this
 separate concern; this module's soundness claim is stated against the list, and lands on
 `Kimchi.Verifier.publicCommitment` via `publicCommitment_eq_sum`.
 
-Two gadgets share the leaf interface: `publicInputCommitFull` (the wrap side: corrections
-summed in circuit, the fold interleaved) and `publicInputCommitKnown` (the step side, at a
-known domain: every ladder first, then one fold from the first ladder result, then the
-constant correction sum). Both read as `-(publicMsm) + h` over the circuit-side point group
-(`publicInputCommitFull_reads`, `publicInputCommitKnown_reads`).
+Three gadgets share the leaf interface: `publicInputCommitFull` (the wrap side: corrections
+summed in circuit, the fold interleaved), `publicInputCommitSealed` (the same fold over
+cells sealed first, for bases masked across branches) and `publicInputCommitKnown` (the step
+side, at a known domain: every ladder first, then one fold from the first ladder result, then
+the constant correction sum). All read as `-(publicMsm) + h` over the circuit-side point group
+(`publicInputCommitFold_reads`, `publicInputCommitKnown_reads`).
 
 The last section is the wire crossing: `xHat_reads_publicCommitment` and
 `xHatKnown_reads_publicCommitment` cross those reads to the wire verifier's own
@@ -179,13 +181,19 @@ private def constrainBits [BasicSystem F S] : List (Leaf F nc) → CircuitM F S 
   | .b128 _ _ _ :: rest => constrainBits rest
   | .b10 _ _ _ :: rest => constrainBits rest
 
-/-- The public-input commitment at every chunk, the wrap side's shape: the bits, the
-head-seeded corrections, the ladders folded onto them, negate, add `h`. -/
+/-- The wrap side's fold: the head-seeded corrections, the ladders folded onto them, negate,
+add `h`. -/
+private def publicInputCommitFold (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
+    CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
+  let init ← sumCorrectionsHead leaves
+  publicInputCommitChunks init blindingH leaves
+
+/-- The public-input commitment at every chunk, the wrap side's shape: the bits, then
+`publicInputCommitFold`. -/
 def publicInputCommitFull (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
   constrainBits leaves
-  let init ← sumCorrectionsHead leaves
-  publicInputCommitChunks init blindingH leaves
+  publicInputCommitFold blindingH leaves
 
 /-- One leaf of the sealing walk: a `condAdd` leaf constrains its bit, a scalar leaf seals its
 correction chunks and then its base chunks. -/
@@ -211,8 +219,7 @@ combinations, sealed in walk order before the fold reads them. -/
 def publicInputCommitSealed (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
   let leaves ← leaves.mapM sealLeaf
-  let init ← sumCorrectionsHead leaves
-  publicInputCommitChunks init blindingH leaves
+  publicInputCommitFold blindingH leaves
 
 /-- The reading + ladder-witness data the fold produces for one leaf: a scalar leaf yields its
 ladder width `L = 5·chunks`, the split witness `(z, bb)` and the base's curve point `T`; a
@@ -337,7 +344,7 @@ theorem LeafReads.regimeOK {V : Valuation F} {ci : Fin nc}
 omit [ToNat F] in
 /-- **The regime discharge, lifted to the whole leaf list.** Every info a leaf list reads to
 is in regime, off the narrow subwrap bounds and a single full-width regime premise
-(supplied at the deployed curve). The list form `publicInputCommitFull_spec`'s regime premise
+(supplied at the deployed curve). The list form `publicInputCommitFold_spec`'s regime premise
 wants. -/
 private theorem leafReads_regimeOK_all {V : Valuation F} {ci : Fin nc}
     (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
@@ -370,7 +377,7 @@ def CorrHonest (d : HasCurve F) (ci : Fin nc) (V : Valuation F) : Leaf F nc → 
 
 omit [ToNat F] in
 /-- **The seed discharge.** With honest corrections, the corrections' readings sum to the
-`corrDelta` sum — exactly `publicInputCommitFull_spec`'s seed premise. Position-wise
+`corrDelta` sum — exactly `publicInputCommitFold_spec`'s seed premise. Position-wise
 `cp = corrDelta info` (via `OnCurveAt.eq` on the shared cell), lifted over the list. -/
 private theorem corrSum_eq {V : Valuation F} {ci : Fin nc} :
     ∀ {leaves : List (Leaf F nc)} {cps : List d.W.Point} {infos : List (LeafInfo F d)},
@@ -590,21 +597,6 @@ private theorem publicInputCommitChunks_net_spec (ci : Fin nc) {V : Valuation F}
   rw [hIeq, LeafInfo.sum_corrDelta_add_delta] at h
   exact h
 
-omit [ToNat F] in
-/-- The bit pre-pass emits constraints and nothing else, so its triple is trivial; it exists
-so `mvcgen` can step past the pass in the commitment's specs. -/
-private theorem constrainBits_spec {V : Valuation F} :
-    ∀ leaves : List (Leaf F nc),
-      ⦃⌜True⌝⦄ constrainBits (S := Builder V (KimchiConstraint F)) leaves ⦃⇓ _ _ => ⌜True⌝⦄
-  | [] => by simp only [constrainBits]; mvcgen
-  | .condAdd _ _ :: rest => by
-      simp only [constrainBits]
-      have ih := constrainBits_spec (V := V) rest
-      mvcgen [ih]
-  | .full _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
-  | .b128 _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
-  | .b10 _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
-
 /-- A boolean leaf's bit is boolean; the scalar leaves say nothing. What the bit pre-pass
 forces of each leaf. -/
 def Leaf.bitBoolean (V : Valuation F) : Leaf F nc → Prop
@@ -614,7 +606,7 @@ def Leaf.bitBoolean (V : Valuation F) : Leaf F nc → Prop
 omit [ToNat F] in
 /-- **The bit pre-pass makes every boolean leaf's bit boolean.** The pass is the gadget's own
 opening move, so the commitment's read assumes this of its leaves rather than asking a
-consumer for it (`builder_spec_bind_assume`). -/
+consumer for it (`builder_spec_bind_of`). -/
 private theorem constrainBits_boolean {V : Valuation F} :
     ∀ leaves : List (Leaf F nc),
       ⦃⌜True⌝⦄ constrainBits (S := Builder V (KimchiConstraint F)) leaves
@@ -749,7 +741,7 @@ private theorem sumCorrectionsHead_spec (ci : Fin nc) {V : Valuation F} :
 /-- **The gadget computes the honest MSM at each chunk.** Composing the corrections sum with
 `publicInputCommitChunks_net_spec`: with the corrections reading as `cps` at chunk `ci`, the
 output reads there as `-(Σ netDelta) + h`, under the seed condition `Σcps = Σ corrDelta`. -/
-theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
+private theorem publicInputCommitFold_spec (ci : Fin nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts cps : List d.W.Point) (Hv : d.W.Point)
     (hH : OnCurveAt d.W V blindingH Hv)
@@ -757,25 +749,24 @@ theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
     (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
     (hscalar : leafHasScalar leaves) :
     ⦃⌜True⌝⦄
-    publicInputCommitFull (S := Builder V (KimchiConstraint F)) blindingH leaves
+    publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
     ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
       (cps.sum = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
         OnCurveAt d.W V r[ci] (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
-  simp only [publicInputCommitFull]
-  have hbits := constrainBits_spec (V := V) leaves
+  simp only [publicInputCommitFold]
   have hsum := sumCorrectionsHead_spec ci leaves cps hcorr hscalar
-  mvcgen [hbits, hsum]
-  rename_i _ rinit
+  mvcgen [hsum]
+  rename_i rinit
   intro s hpost
   exact publicInputCommitChunks_net_spec ci rinit blindingH leaves Ts cps.sum Hv
     hpost hH hpre s trivial
 
-/-- **The net read, premises discharged.** `publicInputCommitFull_spec` with its seed
+/-- **The net read, premises discharged.** `publicInputCommitFold_spec` with its seed
 (`corrSum_eq`, from honest corrections) and regime (`leafReads_regimeOK_all`, from the width
 bounds and the full-width regime premise) supplied: the output reads unconditionally at chunk
 `ci` as `-(Σ netDelta) + h`, the honest MSM. The last step before the wire crossing
 (`publicCommitment`). -/
-private theorem publicInputCommitFull_net (ci : Fin nc) {V : Valuation F}
+private theorem publicInputCommitFold_net (ci : Fin nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts cps : List d.W.Point) (Hv : d.W.Point)
     (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
@@ -788,21 +779,21 @@ private theorem publicInputCommitFull_net (ci : Fin nc) {V : Valuation F}
     (hscalar : leafHasScalar leaves)
     (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf) :
     ⦃⌜True⌝⦄
-    publicInputCommitFull (S := Builder V (KimchiConstraint F)) blindingH leaves
+    publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
     ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
       OnCurveAt d.W V r[ci] (-(infos.map LeafInfo.netDelta).sum + Hv)⌝⦄ := by
   refine builder_spec_imp _ _ _
-    (publicInputCommitFull_spec ci blindingH leaves Ts cps Hv hH hpre hcorr hscalar)
+    (publicInputCommitFold_spec ci blindingH leaves Ts cps Hv hH hpre hcorr hscalar)
     fun r hr => ?_
   obtain ⟨infos, hff, himp⟩ := hr
   exact ⟨infos, hff,
     himp (corrSum_eq hcorr hff hhon) (leafReads_regimeOK_all h130 h10 hff (hfull infos hff))⟩
 
-/-- **The honest MSM as a single point.** `publicInputCommitFull_net` with the net-delta sum
+/-- **The honest MSM as a single point.** `publicInputCommitFold_net` with the net-delta sum
 identified as a caller-supplied point `msm` (via `hmsm`): the output reads at chunk `ci` as
 `-msm + h`. The wire crossing supplies `msm = publicCommitment`'s MSM and discharges `hmsm`
 from the canonical decode. -/
-private theorem publicInputCommitFull_msm (ci : Fin nc) {V : Valuation F}
+private theorem publicInputCommitFold_msm (ci : Fin nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts cps : List d.W.Point) (Hv msm : d.W.Point)
     (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
@@ -817,10 +808,10 @@ private theorem publicInputCommitFull_msm (ci : Fin nc) {V : Valuation F}
     (hmsm : ∀ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos →
         (infos.map LeafInfo.netDelta).sum = msm) :
     ⦃⌜True⌝⦄
-    publicInputCommitFull (S := Builder V (KimchiConstraint F)) blindingH leaves
+    publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
     ⦃⇓ r _ => ⌜OnCurveAt d.W V r[ci] (-msm + Hv)⌝⦄ := by
   refine builder_spec_imp _ _ _
-    (publicInputCommitFull_net ci blindingH leaves Ts cps Hv h130 h10 hfull hH hpre hcorr
+    (publicInputCommitFold_net ci blindingH leaves Ts cps Hv h130 h10 hfull hH hpre hcorr
       hscalar hhon) fun r hr => ?_
   obtain ⟨infos, hff, hread⟩ := hr
   rw [hmsm infos hff] at hread
@@ -959,13 +950,13 @@ private theorem netDelta_sum_eq_publicMsm {V : Valuation F} {ci : Fin nc}
       simp only [List.map_cons, List.sum_cons]
       rw [hhead, ihv, publicMsm_cons]
 
-/-- **The gadget reads at each chunk as `-(publicMsm) + h`.** `publicInputCommitFull_msm` with
+/-- **The gadget reads at each chunk as `-(publicMsm) + h`.** `publicInputCommitFold_msm` with
 its `hfull`/`hmsm` premises discharged publicly: the regime from `hregime` (`regimeFull_hfull`),
 the MSM identity from `netDelta_sum_eq_publicMsm` (needing `hcast`, `hbit`; the canonical decode
 is the ladder's own top-bit pin, no premise). The output reads unconditionally as
 `-(Σ [scalarₗ]·baseₗ) + h`, the shape the wire's `publicCommitment` has. The clean public seam
 the wire crossing consumes — no private `LeafInfo`/`LeafReads`. -/
-theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
+private theorem publicInputCommitFold_reads (ci : Fin nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts cps : List d.W.Point) (Hv : d.W.Point)
     (hcast : ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : F)) : ℤ) = m)
@@ -978,9 +969,9 @@ theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
     (hscalar : leafHasScalar leaves)
     (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf) :
     ⦃⌜True⌝⦄
-    publicInputCommitFull (S := Builder V (KimchiConstraint F)) blindingH leaves
+    publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
     ⦃⇓ r _ => ⌜OnCurveAt d.W V r[ci] (-(publicMsm V leaves Ts) + Hv)⌝⦄ :=
-  publicInputCommitFull_msm ci blindingH leaves Ts cps Hv (publicMsm V leaves Ts) h130 h10
+  publicInputCommitFold_msm ci blindingH leaves Ts cps Hv (publicMsm V leaves Ts) h130 h10
     (fun _infos hr z bb T hmem => regimeFull_hfull hregime hr z bb T hmem)
     hH hpre hcorr hscalar hhon
     (fun _infos hr => netDelta_sum_eq_publicMsm hcast hbit hr hpre)
@@ -1249,7 +1240,7 @@ private theorem commitKnownTail_reads {V : Valuation F}
 /-- **The known-domain gadget computes the honest MSM.** For scalar-headed leaves, with the
 bases reading as `Ts`, the correction sum as `Cv` and `h` as `Hv`: the output reads as
 `-(Σ netDelta) + h` under the seed condition `Cv = Σ corrDelta`, the same shape as
-`publicInputCommitFull_spec`. -/
+`publicInputCommitFold_spec`. -/
 theorem publicInputCommitKnown_spec (ci : Fin nc) {V : Valuation F}
     (blindingH corrHead corrSum : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts : List d.W.Point) (Hv Cv : d.W.Point)
@@ -1299,7 +1290,7 @@ theorem publicInputCommitKnown_spec (ci : Fin nc) {V : Valuation F}
 its seed (from honest corrections, `corrSum_eq`, and the correction sum reading as `Σ cps`) and
 regime (`leafReads_regimeOK_all` from the width bounds and the full-width regime premise)
 discharged, and the net-delta sum identified with `publicMsm` — the same public seam as
-`publicInputCommitFull_reads`, so the wire crossing consumes either gadget. -/
+`publicInputCommitFold_reads`, so the wire crossing consumes either gadget. -/
 theorem publicInputCommitKnown_reads (ci : Fin nc) {V : Valuation F}
     (blindingH corrHead corrSum : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts cps : List d.W.Point) (Hv : d.W.Point)
@@ -1414,6 +1405,132 @@ private theorem leafPre_onCurve {d : HasCurve F} (ci : Fin nc) (V : Valuation F)
     (leaf : Leaf F nc) (T : d.W.Point) (h : LeafPre ci V leaf T) :
     OnCurveAt d.W V (leafBaseAt ci leaf) T := by
   cases leaf <;> first | exact h | exact h.1
+
+/-- Two chunk vectors of cells read the same under `V`. -/
+private def SameCells (V : Valuation F) (a b : Vector (AffinePoint (FVar F)) nc) : Prop :=
+  ∀ i : Fin nc, a[i].x.val V = b[i].x.val V ∧ a[i].y.val V = b[i].y.val V
+
+/-- `l'` is `l` sealed: the same kind and scalar, its cells reading as `l`'s. -/
+private def Leaf.SealedOf (V : Valuation F) : Leaf F nc → Leaf F nc → Prop
+  | .full s b c, .full s' b' c' => s' = s ∧ SameCells V b' b ∧ SameCells V c' c
+  | .b128 s b c, .b128 s' b' c' => s' = s ∧ SameCells V b' b ∧ SameCells V c' c
+  | .b10 s b c, .b10 s' b' c' => s' = s ∧ SameCells V b' b ∧ SameCells V c' c
+  | .condAdd b base, .condAdd b' base' => b' = b ∧ base' = base
+  | _, _ => False
+
+omit [ToNat F] in
+private theorem onCurveAt_of_same {W : WeierstrassCurve.Affine F} {V : Valuation F}
+    {p q : AffinePoint (FVar F)} {P : W.Point} (hx : p.x.val V = q.x.val V)
+    (hy : p.y.val V = q.y.val V) (h : OnCurveAt W V q P) : OnCurveAt W V p P := by
+  unfold OnCurveAt at h ⊢
+  rwa [hx, hy]
+
+omit [ToNat F] in
+/-- The sealing walk reads each leaf as its sealed copy, and makes a boolean leaf's bit
+boolean. -/
+private theorem sealLeaf_spec {V : Valuation F} (leaf : Leaf F nc) :
+    ⦃⌜True⌝⦄ sealLeaf (S := Builder V (KimchiConstraint F)) leaf
+    ⦃⇓ r _ => ⌜Leaf.SealedOf V leaf r ∧ leaf.bitBoolean V⌝⦄ := by
+  have hm := fun v : Vector (AffinePoint (FVar F)) nc =>
+    builder_spec_vector_mapM_get (sealPoint (c := Builder V (KimchiConstraint F)))
+      (fun q r => r.x.val V = q.x.val V ∧ r.y.val V = q.y.val V) sealPoint_spec v
+  cases leaf with
+  | condAdd b base =>
+      simp only [sealLeaf]
+      mvcgen
+      rename_i hb
+      refine ⟨⟨rfl, rfl⟩, ?_⟩
+      rcases (LawfulBasicSystem.holds_boolean V (↑b : CVar F)).mp hb with h | h
+      · exact ⟨false, by simpa [bit] using h⟩
+      · exact ⟨true, by simpa [bit] using h⟩
+  | full s base corr =>
+      simp only [sealLeaf]
+      have hc := hm corr
+      have hb := hm base
+      mvcgen [hc, hb]
+  | b128 s base corr =>
+      simp only [sealLeaf]
+      have hc := hm corr
+      have hb := hm base
+      mvcgen [hc, hb]
+  | b10 s base corr =>
+      simp only [sealLeaf]
+      have hc := hm corr
+      have hb := hm base
+      mvcgen [hc, hb]
+
+omit [DecidableEq F] [ToNat F] in
+private theorem Leaf.SealedOf.scalarVar {V : Valuation F} :
+    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → l'.scalarVar = l.scalarVar
+  | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h
+  | .condAdd .., .condAdd .., h => by simp only [Leaf.scalarVar, h.1]
+
+omit [ToNat F] in
+private theorem Leaf.SealedOf.baseAt {W : WeierstrassCurve.Affine F} {V : Valuation F}
+    (ci : Fin nc) {P : W.Point} :
+    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' →
+      OnCurveAt W V (leafBaseAt ci l) P → OnCurveAt W V (leafBaseAt ci l') P
+  | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h =>
+      onCurveAt_of_same (h.2.1 ci).1 (h.2.1 ci).2
+  | .condAdd .., .condAdd .., h => by simp only [leafBaseAt, h.2]; exact id
+
+omit [ToNat F] in
+private theorem Leaf.SealedOf.leafPre {d : HasCurve F} {V : Valuation F} (ci : Fin nc)
+    {T : d.W.Point} :
+    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → LeafPre ci V l T → LeafPre ci V l' T
+  | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h =>
+      onCurveAt_of_same (h.2.1 ci).1 (h.2.1 ci).2
+  | .condAdd .., .condAdd .., h => by simp only [LeafPre, h.1, h.2]; exact id
+
+omit [ToNat F] in
+private theorem Leaf.SealedOf.corrPre {d : HasCurve F} {V : Valuation F} (ci : Fin nc)
+    {cp : d.W.Point} :
+    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → CorrPre ci V l cp → CorrPre ci V l' cp
+  | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h =>
+      onCurveAt_of_same (h.2.2 ci).1 (h.2.2 ci).2
+  | .condAdd .., .condAdd .., _ => id
+
+omit [ToNat F] in
+private theorem Leaf.SealedOf.corrHonest {d : HasCurve F} {V : Valuation F} (ci : Fin nc) :
+    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → CorrHonest d ci V l → CorrHonest d ci V l'
+  | .full .., .full .., h, hh | .b128 .., .b128 .., h, hh | .b10 .., .b10 .., h, hh =>
+      fun T hT => onCurveAt_of_same (h.2.2 ci).1 (h.2.2 ci).2
+        (hh T (onCurveAt_of_same (h.2.1 ci).1.symm (h.2.1 ci).2.symm hT))
+  | .condAdd .., .condAdd .., _, _ => trivial
+
+omit [ToNat F] in
+private theorem Leaf.SealedOf.hasScalar {V : Valuation F} {ls ls' : List (Leaf F nc)}
+    (hs : List.Forall₂ (Leaf.SealedOf V) ls ls') (h : leafHasScalar ls) : leafHasScalar ls' := by
+  induction hs with
+  | nil => exact h
+  | @cons l l' _ _ hl _ ih =>
+      cases l <;> cases l' <;> simp_all [Leaf.SealedOf, leafHasScalar]
+
+omit [DecidableEq F] [ToNat F] in
+/-- A pointwise relation carries across the sealing. -/
+private theorem Leaf.SealedOf.forall₂ {β : Type} {V : Valuation F} {R : Leaf F nc → β → Prop}
+    (hR : ∀ {l l' b}, Leaf.SealedOf V l l' → R l b → R l' b) {ls ls' : List (Leaf F nc)}
+    (hs : List.Forall₂ (Leaf.SealedOf V) ls ls') :
+    ∀ {bs : List β}, List.Forall₂ R ls bs → List.Forall₂ R ls' bs := by
+  induction hs with
+  | nil => exact id
+  | cons hl _ ih =>
+      intro bs h
+      cases h with
+      | cons hr hrs => exact .cons (hR hl hr) (ih hrs)
+
+omit [DecidableEq F] [ToNat F] in
+/-- A leafwise property carries across the sealing. -/
+private theorem Leaf.SealedOf.forall {V : Valuation F} {P : Leaf F nc → Prop}
+    (hP : ∀ {l l'}, Leaf.SealedOf V l l' → P l → P l') {ls ls' : List (Leaf F nc)}
+    (hs : List.Forall₂ (Leaf.SealedOf V) ls ls') (h : ∀ l ∈ ls, P l) : ∀ l ∈ ls', P l := by
+  induction hs with
+  | nil => exact h
+  | cons hl _ ih =>
+      intro l hmem
+      rcases List.mem_cons.1 hmem with rfl | hmem
+      · exact hP hl (h _ (List.mem_cons_self ..))
+      · exact ih (fun l hl' => h l (List.mem_cons_of_mem _ hl')) l hmem
 
 /-- **The wire's negated-scalar MSM term list equals the crossed `publicMsm` term list.** The
 walk-order correspondence: at each `i`, the wire pairs Lagrange base `i` with `pubOf`'s `i`-th
@@ -1568,10 +1685,33 @@ private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.Bas
   rw [equivPoint_publicCommitment (SWPoint.equivPoint C.E) σ cvk (pubOf C V leaves) ci hne',
     crossing_list (SWPoint.equivPoint C.E) ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
 
+/-- The fold after either gadget's prepass reads as the wire's `publicCommitment`, given the
+binding. -/
+private theorem xHatFold_reads (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
+    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
+    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    (hscalar : leafHasScalar leaves) :
+    ⦃⌜True⌝⦄
+    publicInputCommitFold (S := Builder V (KimchiConstraint C.BaseField)) blindingH leaves
+    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
+      (SWPoint.equivPoint C.E
+        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
+  have hne : leaves ≠ [] := by
+    rintro rfl; simp [leafHasScalar] at hscalar
+  refine builder_spec_imp _ _ _
+    (publicInputCommitFold_reads (d := s.d) ci blindingH leaves Ts cps
+      (SWPoint.equivPoint C.E σ.h)
+      (xhatSide_cast s) (xhatSide_bit s) s.order_big
+      (le_trans (by norm_num) s.order_big)
+      (fun leaf _ => s.regime V leaf)
+      hbind.blinding hbind.pre hbind.corr hscalar hbind.hon) fun r hr => ?_
+  rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
+
 /-- **The wrap-side gadget reads as the wire verifier's `publicCommitment`.** The binding
 is asked for only under the boolean leaves' booleanity, which the gadget's bit pre-pass
 establishes itself (`constrainBits_boolean`): a consumer never supplies it.
-`publicInputCommitFull_reads` carries the subtle half — the canonical decode from the ladder's
+`publicInputCommitFold_reads` carries the subtle half — the canonical decode from the ladder's
 top-bit pin, `-(Σ [scalarₗ]·baseₗ) + h`; this crosses that to the wire's `publicCommitment`
 through `SWPoint.equivPoint`, and the integer → scalar reduction is exact
 (`CommitmentCurve.affine_card_nsmul`), so the read carries no slack. -/
@@ -1587,26 +1727,72 @@ theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuat
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
         (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
-  have hne : leaves ≠ [] := by
-    rintro rfl; simp [leafHasScalar] at hscalar
   -- the gadget opens with the bit pre-pass, so its own rows give the leaves' booleanity
   show ⦃⌜True⌝⦄
-    (constrainBits (S := Builder V (KimchiConstraint C.BaseField)) leaves >>= fun _ => do
-      let init ← sumCorrectionsHead leaves
-      publicInputCommitChunks init blindingH leaves)
+    (constrainBits (S := Builder V (KimchiConstraint C.BaseField)) leaves >>= fun _ =>
+      publicInputCommitFold blindingH leaves)
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
         (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄
-  refine builder_spec_bind_assume _ _ _ _ (constrainBits_boolean (V := V) leaves) fun hb => ?_
-  have hbind := hbind hb
-  refine builder_spec_imp _ _ _
-    (publicInputCommitFull_reads (d := s.d) ci blindingH leaves Ts cps
-      (SWPoint.equivPoint C.E σ.h)
-      (xhatSide_cast s) (xhatSide_bit s) s.order_big
-      (le_trans (by norm_num) s.order_big)
-      (fun leaf _ => s.regime V leaf)
-      hbind.blinding hbind.pre hbind.corr hscalar hbind.hon) fun r hr => ?_
-  rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
+  exact builder_spec_bind_of _ _ _ _ (constrainBits_boolean (V := V) leaves) fun hb _ =>
+    xHatFold_reads s ci σ cvk blindingH leaves Ts cps (hbind hb) hscalar
+
+/-- The sealed leaves carry the same public input. -/
+private theorem Leaf.SealedOf.pubOf {V : Valuation C.BaseField}
+    {ls ls' : List (Leaf C.BaseField nc)} (hs : List.Forall₂ (Leaf.SealedOf V) ls ls') :
+    Pickles.pubOf C V ls' = Pickles.pubOf C V ls := by
+  unfold Pickles.pubOf
+  congr 1
+  induction hs with
+  | nil => rfl
+  | cons hl _ ih => simp only [List.map_cons, ih, Leaf.SealedOf.scalarVar hl]
+
+/-- A binding carries to the sealed leaves: sealing keeps each cell's reading. -/
+private theorem XhatBinding.sealed {s : PastaShape C} {ci : Fin nc} {V : Valuation C.BaseField}
+    {σ : Bulletproof.SRS C.Point} {cvk : Kimchi.Verifier.KimchiVK C nc}
+    {blindingH : AffinePoint (FVar C.BaseField)} {leaves leaves' : List (Leaf C.BaseField nc)}
+    {Ts cps : List s.d.W.Point} (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    (hs : List.Forall₂ (Leaf.SealedOf V) leaves leaves') :
+    XhatBinding s ci V σ cvk blindingH leaves' Ts cps where
+  blinding := hbind.blinding
+  pre := Leaf.SealedOf.forall₂ (R := LeafPre ci V) (fun h hp => h.leafPre ci hp) hs hbind.pre
+  corr := Leaf.SealedOf.forall₂ (R := CorrPre ci V) (fun h hc => h.corrPre ci hc) hs hbind.corr
+  hon := Leaf.SealedOf.forall (Leaf.SealedOf.corrHonest ci) hs hbind.hon
+  hsize := hs.length_eq ▸ hbind.hsize
+  bases i hi := by
+    have hi' : i < leaves.length := hs.length_eq ▸ hi
+    exact Leaf.SealedOf.baseAt ci (hs.get hi' hi) (hbind.bases i hi')
+
+/-- **The sealed gadget reads as the wire verifier's `publicCommitment`.** The binding is
+stated over the leaves before sealing, whose cells may be affine combinations (bases masked
+across branches); the walk establishes the boolean leaves' booleanity itself. Otherwise
+`xHat_reads_publicCommitment`. -/
+theorem xHatSealed_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
+    {V : Valuation C.BaseField}
+    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
+    (Ts cps : List s.d.W.Point)
+    (hbind : (∀ leaf ∈ leaves, leaf.bitBoolean V) →
+      XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    (hscalar : leafHasScalar leaves) :
+    ⦃⌜True⌝⦄
+    publicInputCommitSealed (S := Builder V (KimchiConstraint C.BaseField)) blindingH leaves
+    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
+      (SWPoint.equivPoint C.E
+        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
+  have hmap := builder_spec_mapM (sealLeaf (S := Builder V (KimchiConstraint C.BaseField)))
+    (fun r a => Leaf.SealedOf V a r ∧ a.bitBoolean V) id sealLeaf_spec leaves
+  simp only [publicInputCommitSealed]
+  mvcgen [hmap]
+  rename_i _ rs
+  intro st hrel
+  rw [List.map_id] at hrel
+  obtain ⟨hb, hs⟩ := (List.forall₂_and_left leaves rs).mp
+    (hrel.flip.imp fun _ _ h => ⟨h.2, h.1⟩ : List.Forall₂ (fun a r => a.bitBoolean V ∧
+      Leaf.SealedOf V a r) leaves rs)
+  rw [← Leaf.SealedOf.pubOf hs]
+  exact xHatFold_reads s ci σ cvk blindingH rs Ts cps ((hbind hb).sealed hs)
+    (Leaf.SealedOf.hasScalar hs hscalar) st trivial
 
 /-- **The step-side gadget reads as the wire verifier's `publicCommitment`.** The
 known-domain shape (`publicInputCommitKnown`): the corrections are constants, so their sum
@@ -2046,10 +2232,10 @@ theorem corrSumPt_map_msm {m : ℕ} (g : Fin m → C.Point) :
 
 end OfKey
 
-/-! The gadgets are sealed after their reads: a consumer composes `publicInputCommitFull_reads`,
-`publicInputCommitKnown_reads` or `xHat_reads_publicCommitment`, never the body. -/
+/-! The gadgets are sealed after their reads: a consumer composes `publicInputCommitKnown_reads`,
+`xHat_reads_publicCommitment` or `xHatSealed_reads_publicCommitment`, never the body. -/
 attribute [irreducible] chunkwise leafStep foldChunks publicInputCommitChunks addChunks
-  sumCorrections sumCorrectionsHead publicInputCommitFull ladders foldKnown commitKnownTail
-  publicInputCommitKnown
+  sumCorrections sumCorrectionsHead publicInputCommitFold publicInputCommitFull sealLeaf
+  publicInputCommitSealed ladders foldKnown commitKnownTail publicInputCommitKnown
 
 end Pickles

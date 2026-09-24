@@ -98,20 +98,6 @@ theorem builder_spec_true {V : Valuation F} [ConstraintHolds F c] {α : Type}
   intro _ _
   trivial
 
-/-- What a program's prefix establishes may be assumed while proving the whole: a valuation
-satisfying the whole satisfies the prefix (`build_bind`). A gadget that opens by constraining
-its inputs proves the rest of its specification under that reading. -/
-theorem builder_spec_bind_assume {V : Valuation F} [ConstraintHolds F c] {α β : Type}
-    (x : CircuitM F (Builder V c) α) (f : α → CircuitM F (Builder V c) β) (Q : Prop)
-    (post : β → Prop) (hx : ⦃⌜True⌝⦄ x ⦃⇓ _ _ => ⌜Q⌝⦄)
-    (h : Q → ⦃⌜True⌝⦄ (x >>= f) ⦃⇓ r _ => ⌜post r⌝⦄) :
-    ⦃⌜True⌝⦄ (x >>= f) ⦃⇓ r _ => ⌜post r⌝⦄ := by
-  rw [builder_spec_iff]
-  intro nv hsat
-  have hQ : Q := (builder_spec_iff x fun _ => Q).mp hx nv fun con hc =>
-    hsat con (by rw [build_bind]; exact List.mem_append_left _ hc)
-  exact (builder_spec_iff _ post).mp (h hQ) nv hsat
-
 /-- A prefix establishing `Q`, then a tail whose specification assumes `Q`: the composition
 meets the tail's specification. -/
 theorem builder_spec_bind_of {V : Valuation F} [ConstraintHolds F c] {α β : Type}

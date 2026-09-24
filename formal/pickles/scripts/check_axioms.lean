@@ -63,6 +63,7 @@ def roots : List Name :=
     `Pickles.pow2PowMul_spec,
     `Pickles.oneHotVector_spec,
     `Pickles.toDomain_spec,
+    `Pickles.xHatSealed_reads_publicCommitment,
     `Pickles.finalizeOtherProofCore_spec,
     `Pickles.finalizeOtherProofStep_spec,
     `Pickles.finalizeOtherProofWrap_spec,
