@@ -220,30 +220,32 @@ Algorithm-2 decompositions are the three accumulators returned. -/
   exact ⟨_, hv, by simpa using hlen, hA, hB, hN⟩
 
 open Std.Do in
-/-- **Soundness of the wrapper**, at the deployed eight rows: any satisfying valuation
-reads the scalar as some `n < 2 ^ 128`, and the result as `Poseidon.FqSponge.endoExpand`
-of `n`. -/
-@[spec] theorem toField_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) :
+/-- **Soundness of the wrapper** at `rows` rows: any satisfying valuation reads the scalar as
+some `n < 2 ^ (16 · rows)`, and the result as `Kimchi.Gate.EndoScalar.toField` of `n`'s
+`8 · rows` crumbs. -/
+theorem toField_spec_rows {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F) :
     ⦃⌜True⌝⦄
-    toField (c := Builder V (KimchiConstraint F)) 8 scalar endo
-    ⦃⇓ r _ => ⌜∃ n : ℕ, n < 2 ^ 128 ∧ scalar.val V = ((n : ℕ) : F) ∧
-      r.val V = Poseidon.FqSponge.endoExpand (endo.val V) n⌝⦄ := by
-  -- the crumbs a satisfying run exposes are the canonical expansion of the value they spell
+    toField (c := Builder V (KimchiConstraint F)) rows scalar endo
+    ⦃⇓ r _ => ⌜∃ n : ℕ, n < 2 ^ (16 * rows) ∧ scalar.val V = ((n : ℕ) : F) ∧
+      r.val V = Kimchi.Gate.EndoScalar.toField
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) n) (endo.val V)⌝⦄ := by
   have hpack : ∀ (crumbs : List F) (rv sv ev : F),
-      (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) → crumbs.length = 8 * 8 →
+      (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) → crumbs.length = 8 * rows →
       rv = Kimchi.Gate.EndoScalar.toField crumbs ev →
       sv = Kimchi.Gate.EndoScalar.nReconstruct crumbs →
-      ∃ n : ℕ, n < 2 ^ 128 ∧ sv = ((n : ℕ) : F) ∧
-        rv = Poseidon.FqSponge.endoExpand ev n := by
+      ∃ n : ℕ, n < 2 ^ (16 * rows) ∧ sv = ((n : ℕ) : F) ∧
+        rv = Kimchi.Gate.EndoScalar.toField
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) n) ev := by
     intro crumbs rv sv ev hv hlen hr hs
     obtain ⟨n, hnlt, hcr⟩ := Kimchi.Gate.EndoScalar.eq_crumbsOf h2 h3 crumbs hv
     rw [hlen] at hnlt hcr
-    refine ⟨n, by rw [show (2 : ℕ) ^ 128 = 4 ^ (8 * 8) from by norm_num]; exact hnlt, ?_, ?_⟩
+    have h4 : (4 : ℕ) ^ (8 * rows) = 2 ^ (16 * rows) := by
+      rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]; ring_nf
+    refine ⟨n, h4 ▸ hnlt, ?_, ?_⟩
     · rw [hs, hcr, Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hnlt]
-    · rw [hr, hcr, show (8 * 8 : ℕ) = 64 from rfl,
-        ← Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3]
-  have hchk := toFieldChecked'_spec (V := V) h2 h3 8 scalar
+    · rw [hr, hcr]
+  have hchk := toFieldChecked'_spec (V := V) h2 h3 rows scalar
   simp only [toField]
   mvcgen [hchk]
   case h_1 =>
@@ -259,10 +261,19 @@ of `n`. -/
   simp only [Kimchi.Gate.EndoScalar.toField, CVar.val_add_, hmul, ha, hb]
   ring
 
-/-! ## Completeness
-
-Each accumulator witness is `Kimchi.Gate.EndoScalar.build`'s outputs, so every row holds by
-`Kimchi.Gate.EndoScalar.complete` on valid crumbs; `mapAccumM_complete` chains the rows. -/
+open Std.Do in
+/-- **Soundness of the wrapper**, at the deployed eight rows: any satisfying valuation
+reads the scalar as some `n < 2 ^ 128`, and the result as `Poseidon.FqSponge.endoExpand`
+of `n`. -/
+@[spec] theorem toField_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) :
+    ⦃⌜True⌝⦄
+    toField (c := Builder V (KimchiConstraint F)) 8 scalar endo
+    ⦃⇓ r _ => ⌜∃ n : ℕ, n < 2 ^ 128 ∧ scalar.val V = ((n : ℕ) : F) ∧
+      r.val V = Poseidon.FqSponge.endoExpand (endo.val V) n⌝⦄ := by
+  have h := toField_spec_rows (V := V) h2 h3 8 scalar endo
+  refine builder_spec_imp _ _ _ h fun r ⟨n, hn, hs, hr⟩ => ⟨n, by simpa using hn, hs, ?_⟩
+  rw [hr, ← Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3]
 
 /-- The rows the loop is handed: crumb variables in scope, reading as valid 2-bit
 values. -/
@@ -479,6 +490,52 @@ private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
       ⟨CircuitType.scoped_fvar.mpr hinv₂.2.2.1, CircuitType.reads_fvar.mpr hB⟩,
       ⟨CircuitType.scoped_fvar.mpr hinv₂.2.2.2, CircuitType.reads_fvar.mpr hN⟩⟩
 
+/-- **Completeness of the wrapper** at `rows` rows: on a scalar whose `ToNat` reading is
+below `2 ^ (16 · rows)`, the honest run succeeds and the result reads as
+`Kimchi.Gate.EndoScalar.toField` of its `8 · rows` crumbs. -/
+theorem toField_complete_rows [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F) (sv ev : F)
+    (hlt : ToNat.toNat sv < 2 ^ (16 * rows)) :
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => CircuitType.ReadsAs (val := F) st scalar sv ∧
+        CircuitType.ReadsAs (val := F) st endo ev)
+      (toField (c := KimchiConstraint F) rows scalar endo)
+      (fun r st' => CircuitType.ReadsAs (val := F) st' r
+        (Kimchi.Gate.EndoScalar.toField
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) ev)) := by
+  replace hlt : ToNat.toNat sv < 4 ^ (8 * rows) := by
+    have h4 : (4 : ℕ) ^ (8 * rows) = 2 ^ (16 * rows) := by
+      rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]; ring_nf
+    rw [h4]; exact hlt
+  have hnv : Kimchi.Gate.EndoScalar.nReconstruct
+      (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows) (ToNat.toNat sv)) = sv := by
+    rw [Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hlt,
+      LawfulToNat.cast_toNat]
+  simp only [toField]
+  complete_walk
+  refine Complete.seq (by complete_mono_tac)
+    (Complete.imp (fun st h => ⟨hnv ▸ h.2.2.2, h.1.1⟩) (fun _ _ h => h)
+      (assertEqual_complete (c := KimchiConstraint F) _ scalar sv))
+    fun _ => ?_
+  split
+  · rename_i e
+    refine Complete.pure_of fun st h => ?_
+    have he : e = ev := CircuitType.reads_fvar.mp h.1.1.2.2
+    refine ⟨CircuitType.scoped_fvar.mpr
+      (CVar.Scoped.add_ (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp h.1.2.1.1))
+        (CircuitType.scoped_fvar.mp h.1.2.2.1.1)), CircuitType.reads_fvar.mpr ?_⟩
+    simp only [CVar.val_add_, CVar.val_scale_, CircuitType.reads_fvar.mp h.1.2.1.2,
+      CircuitType.reads_fvar.mp h.1.2.2.1.2, he, Kimchi.Gate.EndoScalar.toField]
+    ring
+  · complete_walk
+    refine Complete.pure_of fun st h => ?_
+    refine ⟨CircuitType.scoped_fvar.mpr
+      (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp h.1.1.2.2.1.1)
+        (CircuitType.scoped_fvar.mp h.2.1)), CircuitType.reads_fvar.mpr ?_⟩
+    rw [CVar.val_add_, CircuitType.reads_fvar.mp h.2.2,
+      CircuitType.reads_fvar.mp h.1.1.2.2.1.2, Kimchi.Gate.EndoScalar.toField]
+    ring
+
 /-- **Completeness of the wrapper**, at the deployed eight rows: on a scalar whose
 `ToNat` reading is below `2 ^ 128`, the honest run succeeds and the result reads as
 `Poseidon.FqSponge.endoExpand` of it. -/
@@ -496,37 +553,7 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       = Kimchi.Gate.EndoScalar.toField
           (Kimchi.Gate.EndoScalar.crumbsOf (8 * 8) (ToNat.toNat sv)) ev from
     Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3 ev _]
-  replace hlt : ToNat.toNat sv < 4 ^ (8 * 8) := by norm_num; omega
-  have hnv : Kimchi.Gate.EndoScalar.nReconstruct
-      (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 8) (ToNat.toNat sv)) = sv := by
-    rw [Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hlt,
-      LawfulToNat.cast_toNat]
-  simp only [toField]
-  complete_walk
-  -- the walk stops at `assertEqual`: its precondition holds only through `hnv`'s rewrite
-  refine Complete.seq (by complete_mono_tac)
-    (Complete.imp (fun st h => ⟨hnv ▸ h.2.2.2, h.1.1⟩) (fun _ _ h => h)
-      (assertEqual_complete (c := KimchiConstraint F) _ scalar sv))
-    fun _ => ?_
-  split
-  · -- the endo coefficient is a constant: the reconstruction is an affine combination
-    rename_i e
-    refine Complete.pure_of fun st h => ?_
-    have he : e = ev := CircuitType.reads_fvar.mp h.1.1.2.2
-    refine ⟨CircuitType.scoped_fvar.mpr
-      (CVar.Scoped.add_ (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp h.1.2.1.1))
-        (CircuitType.scoped_fvar.mp h.1.2.2.1.1)), CircuitType.reads_fvar.mpr ?_⟩
-    simp only [CVar.val_add_, CVar.val_scale_, CircuitType.reads_fvar.mp h.1.2.1.2,
-      CircuitType.reads_fvar.mp h.1.2.2.1.2, he, Kimchi.Gate.EndoScalar.toField]
-    ring
-  · complete_walk
-    refine Complete.pure_of fun st h => ?_
-    refine ⟨CircuitType.scoped_fvar.mpr
-      (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp h.1.1.2.2.1.1)
-        (CircuitType.scoped_fvar.mp h.2.1)), CircuitType.reads_fvar.mpr ?_⟩
-    rw [CVar.val_add_, CircuitType.reads_fvar.mp h.2.2,
-      CircuitType.reads_fvar.mp h.1.1.2.2.1.2, Kimchi.Gate.EndoScalar.toField]
-    ring
+  exact toField_complete_rows h2 h3 8 scalar endo sv ev (by simpa using hlt)
 
 attribute [irreducible] EndoScalar.toFieldChecked' EndoScalar.toFieldChecked'.row
   EndoScalar.toField
