@@ -12,6 +12,7 @@ module Pickles.Wrap.FinalizeOtherProof
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Fin (unsafeFinite)
 import Data.Int (pow) as Int
 import Data.Reflectable (class Reflectable)
@@ -29,8 +30,7 @@ import Pickles.PlonkChecks (buildEvalListUnmasked, buildEvalPoint, challengeDige
 import Pickles.Types (Evals)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add, class Compare)
-import Prim.Ordering (LT)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, const_, equals_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
@@ -51,19 +51,16 @@ type Input n d fv b =
 -- | matches the claim in its statement, together with the expanded
 -- | bullet-proof challenges.
 wrapFinalizeOtherProofCircuit
-  :: forall d dPred n nPred nd ndPred f f' r r2
+  :: forall d dPred n nPred f f' r r2
    . Add 1 dPred d
   => Add 1 nPred n
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
-  => Reflectable nd Int
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => LinearizationFFI f
   => Reflectable d Int
-  => Params nd f r2
+  => Params f r2
   -> (FVar f -> Snarky f (KimchiConstraint f) r (FVar f))
   -> Input n d (FVar f) (BoolVar f)
   -> Snarky f (KimchiConstraint f) r (Output d f)
@@ -74,7 +71,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     ops = WrapOtherField.fopShiftOps @f
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
-    headDomain = Vector.head params.domains
+    headDomain = NEA.head params.domains
     domain = { generator: headDomain.generator, shifts: params.shifts }
     domainLog2 = headDomain.log2
 

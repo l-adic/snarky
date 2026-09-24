@@ -10,6 +10,7 @@ module Pickles.FinalizeOtherProof
 
 import Prelude
 
+import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Vector (Vector)
 import Pickles.DeferredValues (BulletproofChallenges)
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -46,13 +47,14 @@ data DomainMode
 -- | verification key.
 -- |
 -- | - `domains`: one `{ generator, log2 }` per step-domain size the
--- |   prev proof could have been proved over, deduplicated, so
--- |   `nd = 1` for a single-rule caller.
+-- |   prev proof could have been proved over: one per branch of the
+-- |   system that produced it. Duplicates are harmless; the selection
+-- |   deduplicates.
 -- | - `shifts`: one vector of kimchi permutation shifts for all of
 -- |   them; the candidate domains are required to share their shifts.
-type Params :: Int -> Type -> Row Type -> Type
-type Params nd f r =
-  { domains :: Vector nd { generator :: FVar f, log2 :: Int }
+type Params :: Type -> Row Type -> Type
+type Params f r =
+  { domains :: NonEmptyArray { generator :: FVar f, log2 :: Int }
   , shifts :: Vector 7 (FVar f)
   , srsLengthLog2 :: Int
   , zkRows :: Int

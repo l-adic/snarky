@@ -121,7 +121,7 @@ compileStepMainSideLoadedChild params = do
       -- outputSize = mpvMax*32+1+mpvMax = 1 (just the msgForNextStep
       -- digest — no unfinalized_proofs, no msgs_wrap entries).
       -- Visible axes: @prevsSpec @inputVal @outputVal @valCarrier
-      -- @mpvMax @nd. Implicit: input/output (CircuitType funcdep),
+      -- @mpvMax. Implicit: input/output (CircuitType funcdep),
       -- mpvPad (Add), outputSize (Mul/Add chain).
       ( \_ -> stepMain
           @Unit
@@ -129,7 +129,6 @@ compileStepMainSideLoadedChild params = do
           @Unit
           @Unit
           @0
-          @1
           sideLoadedChildRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

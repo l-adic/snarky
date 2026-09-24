@@ -73,7 +73,7 @@ compileStepMainAddOneReturn params = do
       -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
       -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @0 @1
+      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @0
           addOneReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

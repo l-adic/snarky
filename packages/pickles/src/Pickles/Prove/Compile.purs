@@ -52,6 +52,7 @@ module Pickles.Prove.Compile
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Either (Either(..), either, note)
 import Data.Enum (fromEnum)
@@ -204,7 +205,7 @@ type ProveError = EvaluationError
 -- | appear here.
 type SlotCompileEntry :: Int -> Type
 type SlotCompileEntry slotNc =
-  { fopDomainLog2s :: Array Int
+  { fopDomainLog2s :: NonEmptyArray Int
   , numChunks :: Int
   , vkBlueprint :: SlotVkBlueprint slotNc
   }
@@ -220,9 +221,6 @@ type SlotCompileConfig =
   -- | The enclosing rule's wrap domain log2, already resolved against
   -- | `wrapDomainOverride`. `Self` slots use it directly.
   , outerWrapDomainLog2 :: Int
-  -- | The number of branches the enclosing compile has, which is the
-  -- | width of every slot's `fopDomainLog2s`.
-  , branchCount :: Int
   }
 
 -- | The lagrange basis of a wrap VK at one domain, in `nc` chunks.
@@ -274,11 +272,11 @@ slotCompileEntry
   :: forall @slotNc
    . Reflectable slotNc Int
   => SlotCompileConfig
-  -> Array Int
+  -> NonEmptyArray Int
   -> RuntimeSlot.Slot
   -> SlotCompileEntry slotNc
 slotCompileEntry cfg selfStepDomainLog2s slot =
-  { fopDomainLog2s: slotSourceDomainLog2s cfg.branchCount selfStepDomainLog2s slot
+  { fopDomainLog2s: slotSourceDomainLog2s selfStepDomainLog2s slot
   , numChunks: slotNumChunks cfg.stepNumChunks slot
   , vkBlueprint: blueprint
   }
@@ -545,18 +543,17 @@ paddingWrapDomain = N1
 -- | prover index. During the pre-pass, which only counts gates,
 -- | callers pass `roughDomainsLog2` in every position.
 stepProveContextOf
-  :: forall mpv nd
+  :: forall mpv
    . Reflectable mpv Int
-  => Reflectable nd Int
   => CompileConfig mpv
   -> Vector mpv Int
-  -> Vector nd Int
-  -> StepProveContext mpv nd
+  -> NonEmptyArray Int
+  -> StepProveContext mpv
 stepProveContextOf cfg slotWidths selfStepDomainLog2s =
   { srsData:
       { blindingH:
           coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
-      , perSlotFopDomainLog2s: map (atBranchCount <<< _.fopDomainLog2s) entries
+      , perSlotFopDomainLog2s: map _.fopDomainLog2s entries
       , perSlotNumChunks: map _.numChunks entries
       , perSlotVkBlueprints: map _.vkBlueprint entries
       }
@@ -571,21 +568,12 @@ stepProveContextOf cfg slotWidths selfStepDomainLog2s =
         { pallasSrs: cfg.srs.pallasSrs
         , stepNumChunks: cfg.stepNumChunks
         , outerWrapDomainLog2: cfg.selfWrapDomainLog2
-        , branchCount: Vector.length selfStepDomainLog2s
         }
-        (Vector.toUnfoldable selfStepDomainLog2s)
+        selfStepDomainLog2s
         { localMpv: width, source: key }
     )
     slotWidths
     cfg.perSlotImportedVKs
-
-  atBranchCount domainLog2s = case Vector.toVector domainLog2s of
-    Just v -> v
-    Nothing -> unsafeThrow
-      $ "stepProveContextOf: slot step-domain count "
-          <> show (Array.length domainLog2s)
-          <> " does not match the branch count "
-          <> show (Vector.length selfStepDomainLog2s)
 
   outerBcd = Dummy.baseCaseDummies
     { maxProofsVerified: reflectType (Proxy :: Proxy mpv) }
@@ -1568,10 +1556,8 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal =
 -- |
 -- | Two branch counts appear. `topBranches` is the whole compile's
 -- | count and stays fixed through the recursion; `branches` is the
--- | count of the tail still to be walked. `RuleEntry`'s `nd` binds to
--- | `topBranches`, so every rule's step functions see a
--- | `StepProveContext mpv topBranches` — a context whose multi-domain
--- | dispatch ranges over every branch's step domain, not just the
+-- | count of the tail still to be walked. A `Self` slot's candidate
+-- | step domains are all `topBranches` branches', not just the
 -- | tail's.
 class CompilableRulesSpec
   :: RulesSpec
@@ -1694,19 +1680,19 @@ instance
     topBranches
     branches
     mpvMax
-    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize r
+    ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
         /\ restCarrier
     )
     ( ( AdviceHandler r
-        -> PProveStep.StepProveContext ruleMpv topBranches
+        -> PProveStep.StepProveContext ruleMpv
         -> Effect PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
-    (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+    (PProveStep.StepProveContext ruleMpv /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
     ( ( AdviceHandler r
-        -> PProveStep.StepProveContext ruleMpv topBranches
+        -> PProveStep.StepProveContext ruleMpv
         -> PProveStep.StepCompileResult
         -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
              inputVal
@@ -2091,19 +2077,19 @@ instance
       topBranches
       branches
       mpvMax
-      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize r
+      ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
           /\ restCarrier
       )
       ( ( AdviceHandler r
-          -> PProveStep.StepProveContext ruleMpv topBranches
+          -> PProveStep.StepProveContext ruleMpv
           -> Effect PProveStep.StepCompileResult
         )
           /\ restStepCompileFns
       )
-      (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+      (PProveStep.StepProveContext ruleMpv /\ restCtxs)
       (PProveStep.StepCompileResult /\ restStepCompileResults)
       ( ( AdviceHandler r
-          -> PProveStep.StepProveContext ruleMpv topBranches
+          -> PProveStep.StepProveContext ruleMpv
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
                inputVal
@@ -2128,19 +2114,19 @@ instance
     topBranches
     branches
     mpvMax
-    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal outputSize r
+    ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
         /\ restCarrier
     )
     ( ( AdviceHandler r
-        -> PProveStep.StepProveContext ruleMpv topBranches
+        -> PProveStep.StepProveContext ruleMpv
         -> Effect PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
-    (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+    (PProveStep.StepProveContext ruleMpv /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
     ( ( AdviceHandler r
-        -> PProveStep.StepProveContext ruleMpv topBranches
+        -> PProveStep.StepProveContext ruleMpv
         -> PProveStep.StepCompileResult
         -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
              inputVal
@@ -2292,25 +2278,21 @@ instance
 data RuleEntry
   :: Type
   -> Int
-  -> Int
   -> Type
   -> Type
   -> Int
   -> Row (Type -> Type)
   -> Type
-data RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize r = RuleEntry
+data RuleEntry prevsSpec mpv valCarrier inputVal outputSize r = RuleEntry
   { -- | Given a placeholder context, this rule's own step domain
     -- | log2, counted from a one-shot constraint-system build.
-    --
-    -- | `nd` is the compile's branch count, over which
-    -- | `finalizeOtherProofCircuit` dispatches for `Self` prev slots.
     preComputeStepDomainLog2Fn ::
-      AdviceHandler r -> PProveStep.StepProveContext mpv nd -> Effect Int
+      AdviceHandler r -> PProveStep.StepProveContext mpv -> Effect Int
   , stepCompileFn ::
-      AdviceHandler r -> PProveStep.StepProveContext mpv nd -> Effect PProveStep.StepCompileResult
+      AdviceHandler r -> PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
   , stepProveFn ::
       AdviceHandler r
-      -> PProveStep.StepProveContext mpv nd
+      -> PProveStep.StepProveContext mpv
       -> PProveStep.StepCompileResult
       -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
            inputVal
@@ -2329,7 +2311,7 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize r = RuleEntry
 -- | `stepSolveAndProve`.
 mkRuleEntry
   :: forall @mpvMax @outputVal @r
-       prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
+       prevsSpec mpv mpvPad outputSize valCarrier
        inputVal inputVar outputVar
        pad unfsTotal digestPlusUnfs compiled
    . CircuitGateConstructor StepField VestaG
@@ -2339,9 +2321,6 @@ mkRuleEntry
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
-  => Reflectable nd Int
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
   => Add mpvPad mpv mpvMax
@@ -2356,7 +2335,7 @@ mkRuleEntry
   -- | The wrap VK source of each compiled slot, in slot order. A
   -- | side-loaded slot takes none.
   -> Vector compiled SlotWrapKey
-  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal outputSize r)
+  -> Effect (RuleEntry prevsSpec mpv valCarrier inputVal outputSize r)
 mkRuleEntry rule compiledKeys = do
   let slotVKs = slotKeysOf (Proxy :: Proxy prevsSpec) compiledKeys
   pure $ RuleEntry
@@ -2371,7 +2350,6 @@ mkRuleEntry rule compiledKeys = do
           @outputVar
           @mpvMax
           @mpvPad
-          @nd
           handler
           ctx
           rule
@@ -2386,7 +2364,6 @@ mkRuleEntry rule compiledKeys = do
           @outputVar
           @mpvMax
           @mpvPad
-          @nd
           handler
           ctx
           rule
@@ -2401,7 +2378,6 @@ mkRuleEntry rule compiledKeys = do
           @outputVar
           @mpvMax
           @mpvPad
-          @nd
           handler
           ctx
           rule
@@ -2433,10 +2409,10 @@ type PStepRule r prevsSpec inputVal inputVar outputVal outputVar =
 -- | that rule's `slotVKs` and run through `stepProveContextOf` for the
 -- | per-slot layout.
 buildStepProveCtx
-  :: forall @prevsSpec @nd mpv
+  :: forall @prevsSpec @nd ndPred mpv
    . SlotWidths prevsSpec mpv
   => Reflectable mpv Int
-  => Reflectable nd Int
+  => Add 1 ndPred nd
   => CompileMultiConfig
   -> Int
   -- ^ the declared `@stepChunks`
@@ -2444,7 +2420,7 @@ buildStepProveCtx
   -- ^ the compile's `mpvMax`, which fixes its wrap domain
   -> Vector mpv (Maybe SlotWrapKey)
   -> Vector nd Int
-  -> PProveStep.StepProveContext mpv nd
+  -> PProveStep.StepProveContext mpv
 buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
   let
     perRuleCfg =
@@ -2459,7 +2435,7 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
   in
     stepProveContextOf perRuleCfg
       (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
-      selfStepDomainLog2s
+      (NonEmptyArray.fromFoldable1 selfStepDomainLog2s)
 
 --------------------------------------------------------------------------------
 -- runMultiProverBody — per-branch prover body.
@@ -2491,10 +2467,10 @@ runMultiProverBody
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Add 1 branchesPred branches
-  -- `topBranches` is the count threaded through `RuleEntry`'s `nd`
-  -- and the multi-domain vector `finalizeOtherProofCircuit` reads;
-  -- `branches` is the wrap circuit's per-branch carrier count. They
-  -- coincide, but stay separate to match the rule-level signatures.
+  -- `topBranches` sizes every branch's step domain log2s, the `Self`
+  -- slots' candidates; `branches` is the wrap circuit's per-branch
+  -- carrier count. They coincide, but stay separate to match the
+  -- rule-level signatures.
   => Reflectable topBranches Int
   => Compare 0 topBranches LT
   => Add 1 topBranchesPred topBranches
@@ -2553,7 +2529,7 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal outputSize r
+  -> RuleEntry prevsSpec mpv valCarrier inputVal outputSize r
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> Effect (Either ProveError (CompiledProof mpvMax (StatementIO inputVal outputVal)))
 runMultiProverBody
@@ -2587,7 +2563,7 @@ runMultiProverBody
     -- is the dispatch table `finalizeOtherProofCircuit` needs for
     -- `Self` slots.
     stepProveCtx = stepProveContextOf perRuleCfg (map slotWidthInt widths)
-      allStepDomainLog2s
+      (NonEmptyArray.fromFoldable1 allStepDomainLog2s)
 
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, prevProofRefs } <-
     mkStepAdvice perRuleCfg stepCR wrapResult appInput widths split.values

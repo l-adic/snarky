@@ -20,6 +20,8 @@ module Pickles.Step.Main
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
@@ -54,8 +56,7 @@ import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
 import Pickles.Typ (existsTyp)
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..))
-import Prim.Int (class Add, class Compare, class Mul)
-import Prim.Ordering (LT)
+import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
@@ -111,14 +112,14 @@ buildSlotVkSources = Vector.zipWith \blueprint prev -> case blueprint of
 -- | The SRS-derived and per-slot data `stepMain` needs beyond the
 -- | rule itself: one shared SRS constant, then one entry per slot,
 -- | since each slot's previous proof came from its own source.
-type StepMainSrsData :: Int -> Int -> Type
-type StepMainSrsData len nd =
+type StepMainSrsData :: Int -> Type
+type StepMainSrsData len =
   { -- | The Tock SRS `h` generator.
     blindingH :: AffinePoint (F StepField)
   -- | Per slot, every step-domain log2 the slot's previous-proof
   -- | source could have been produced at: one entry for a
   -- | single-branch source, one per branch for a multi-branch one.
-  , perSlotFopDomainLog2s :: Vector len (Vector nd Int)
+  , perSlotFopDomainLog2s :: Vector len (NonEmptyArray Int)
   -- | Per slot, the chunk count of its previous step proof. It sizes
   -- | that proof's evaluations in the witness, and fixes the kimchi
   -- | `zk_rows` its deferred permutation scalar was produced at.
@@ -530,15 +531,12 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output
-       @valCarrier @mpvMax mpvPad @nd ndPred
+       @valCarrier @mpvMax mpvPad
        len
        unfsTotal digestPlusUnfs
        r
    . PrimeField StepField
   => SlotWidths prevsSpec len
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
-  => Reflectable nd Int
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => SlotStatementsCarrier prevsSpec valCarrier
@@ -557,7 +555,7 @@ stepMain
        -> input
        -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput prevsSpec output)
      )
-  -> StepMainSrsData len nd
+  -> StepMainSrsData len
   -> AffinePoint StepField
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
   -> Ref (Maybe (Array (FVar StepField)))
@@ -685,7 +683,7 @@ stepMain
           slotFopDomainLog2s = perSlotFopDomainLog2s !! i
           -- Shifts are constant across a slot's candidate domains,
           -- so any one of them gives the right value.
-          slotShiftsLog2 = Vector.head slotFopDomainLog2s
+          slotShiftsLog2 = NEA.head slotFopDomainLog2s
 
           -- A compiled slot carries its lagrange table from compile
           -- time and its corrections are constants. A side-loaded

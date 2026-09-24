@@ -83,11 +83,10 @@ compileStepMainNoRecursionReturn params = do
       -- inputVal/outputVal are both `F StepField`.
       -- Visible axes: @prevsSpec @inputVal @outputVal @valCarrier
       -- @mpvMax. Implicit: input/output (via CircuitType), mpvPad
-      -- (Add), outputSize (Mul/Add chain),
-      -- nd (from perSlotFopDomainLog2s shape).
+      -- (Add), outputSize (Mul/Add chain).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
-      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @0 @1
+      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @0
           noRecursionReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

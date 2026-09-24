@@ -7,8 +7,9 @@ module Pickles.CircuitDiffs.PureScript.FopStep
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Fin (Finite, getFinite)
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
@@ -118,9 +119,10 @@ fopStepCircuit input =
       }
     params =
       { domains:
-          { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
-          , log2: domainLog2
-          } :< Vector.nil
+          NEA.singleton
+            { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
+            , log2: domainLog2
+            }
       , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
       , srsLengthLog2
       , zkRows: zkRowsByDefault

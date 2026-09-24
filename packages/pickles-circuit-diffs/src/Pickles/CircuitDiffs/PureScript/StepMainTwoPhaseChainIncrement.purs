@@ -22,6 +22,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
@@ -75,12 +76,12 @@ incrementRule getPrevStates appState = do
 compileStepMainTwoPhaseChainIncrement
   :: StepArtifact
   -- ^ Make_zero's compiled step artifact. Slot 0's `perSlotFopDomainLog2s`
-  -- is `Vector 2 [makeZero, increment]` — make_zero's step domain
+  -- entry is `[makeZero, increment]` — make_zero's step domain
   -- log2 is read from this artifact, increment's own is shape-passed.
   -> StepMainTwoPhaseChainIncrementParams
   -> Effect StepArtifact
 compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
-  -- Slot 0's source = self (the 2-branch proof system). nd=2 dispatch
+  -- Slot 0's source = self (the 2-branch proof system). Its candidate
   -- list: make_zero's step domain (from artifact) + increment's own
   -- step domain (shape-passed).
   let makeZeroLog2 = makeZeroArt.stepDomainLog2
@@ -100,15 +101,14 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           @Unit
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
-          @2
           incrementRule
           { blindingH: params.blindingH
-          -- nd=2 dispatch list: OCaml's `domain_for_compiled`
+          -- Two candidates: OCaml's `domain_for_compiled`
           -- (step_verifier.ml:879-899) passes both branches' step
           -- domains to `Pseudo.Domain.to_domain` for runtime dispatch
           -- on the prev's branch index.
           , perSlotFopDomainLog2s:
-              (makeZeroLog2 :< selfLog2 :< Vector.nil) :< Vector.nil
+              (NEA.cons' makeZeroLog2 [ selfLog2 ]) :< Vector.nil
           , perSlotNumChunks: 1 :< Vector.nil
           , perSlotVkBlueprints: BlueprintSelf params.lagrangeAt :< Vector.nil
           }

@@ -895,9 +895,9 @@ type StepRuleAt (r :: Row (Type -> Type)) prevsSpec inputVal input outputVal out
 -- | Ambient data the step prover needs alongside the advice and the
 -- | rule: the `StepMainSrsData` that `stepMain` consumes, the dummy sg
 -- | that pads `sg_old` in `verifyOne`, and the step circuit's Vesta SRS.
-type StepProveContext :: Int -> Int -> Type
-type StepProveContext len nd =
-  { srsData :: StepMainSrsData len nd
+type StepProveContext :: Int -> Type
+type StepProveContext len =
+  { srsData :: StepMainSrsData len
   , dummySg :: AffinePoint StepField
   , crs :: CRS VestaG
   -- | When `true`, enables the solver's prover-state debug checks and
@@ -1018,8 +1018,7 @@ writeRowLabelsTo path publicInputSize cs = do
 -- | works if the two see the same circuit.
 buildStepCircuit
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
-       @mpvMax @mpvPad @nd
-       ndPred
+       @mpvMax @mpvPad
        len
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
@@ -1028,10 +1027,7 @@ buildStepCircuit
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
-  => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
   => Add pad len PaddedLength
   => Add mpvPad len mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
@@ -1042,7 +1038,7 @@ buildStepCircuit
   => SlotStatementsCarrier prevsSpec valCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext len nd
+  -> StepProveContext len
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect
        { builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
@@ -1074,7 +1070,6 @@ buildStepCircuit handler ctx rule = do
             @outputVal
             @valCarrier
             @mpvMax
-            @nd
             rule
             ctx.srsData
             ctx.dummySg
@@ -1092,8 +1087,7 @@ buildStepCircuit handler ctx rule = do
 -- | indices created from its gates.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
-       @mpvMax @mpvPad @nd
-       ndPred
+       @mpvMax @mpvPad
        len
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
@@ -1102,10 +1096,7 @@ stepCompile
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
-  => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
   => Add pad len PaddedLength
   => Add mpvPad len mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
@@ -1116,7 +1107,7 @@ stepCompile
   => SlotStatementsCarrier prevsSpec valCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext len nd
+  -> StepProveContext len
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect StepCompileResult
 stepCompile handler ctx rule = do
@@ -1131,7 +1122,6 @@ stepCompile handler ctx rule = do
       @output
       @mpvMax
       @mpvPad
-      @nd
       handler
       ctx
       rule
@@ -1205,8 +1195,7 @@ stepCompile handler ctx rule = do
 -- | `range_check`, `xor`, `lookup` or `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
-       @mpvMax @mpvPad @nd
-       ndPred
+       @mpvMax @mpvPad
        len
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
@@ -1215,10 +1204,7 @@ preComputeStepDomainLog2
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
-  => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
   => Add pad len PaddedLength
   => Add mpvPad len mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
@@ -1229,7 +1215,7 @@ preComputeStepDomainLog2
   => SlotStatementsCarrier prevsSpec valCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext len nd
+  -> StepProveContext len
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect Int
 preComputeStepDomainLog2 handler ctx rule = do
@@ -1244,7 +1230,6 @@ preComputeStepDomainLog2 handler ctx rule = do
       @output
       @mpvMax
       @mpvPad
-      @nd
       handler
       ctx
       rule
@@ -1275,8 +1260,7 @@ preComputeStepDomainLog2 handler ctx rule = do
 -- | constraint system among them as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
-       @mpvMax @mpvPad @nd
-       ndPred
+       @mpvMax @mpvPad
        len
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
@@ -1285,10 +1269,7 @@ stepSolveAndProve
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
-  => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
   => Add pad len PaddedLength
   => Add mpvPad len mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
@@ -1299,7 +1280,7 @@ stepSolveAndProve
   => SlotStatementsCarrier prevsSpec valCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext len nd
+  -> StepProveContext len
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
@@ -1334,7 +1315,6 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
               @outputVal
               @valCarrier
               @mpvMax
-              @nd
               rule
               ctx.srsData
               ctx.dummySg

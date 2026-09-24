@@ -39,8 +39,7 @@ import Pickles.PlonkChecks (buildEvalListChunked, buildEvalPoint, collapseChunke
 import Pickles.Pseudo as Pseudo
 import Pickles.Types (ChunkedEvals)
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add, class Compare)
-import Prim.Ordering (LT)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, equals_, if_, label, mul_, not_, pow_, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
@@ -110,11 +109,8 @@ type Input n d f sf b =
 -- | representation; `params` fixes the candidate domains, the shifts,
 -- | `zkRows` and the linearization polynomial.
 finalizeOtherProofCircuit
-  :: forall d dPred nd ndPred n f f' r sf r1 r2
+  :: forall d dPred n f f' r sf r1 r2
    . Add 1 dPred d
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
-  => Reflectable nd Int
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
@@ -125,7 +121,7 @@ finalizeOtherProofCircuit
      , shiftedEqual :: sf -> FVar f -> Snarky f (KimchiConstraint f) r (BoolVar f)
      | r1
      }
-  -> Params nd f r2
+  -> Params f r2
   -> Input n d (FVar f) sf (BoolVar f)
   -> Snarky f (KimchiConstraint f) r (Output d f)
 finalizeOtherProofCircuit ops params { unfinalized, chunkedEvals, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
@@ -137,7 +133,7 @@ finalizeOtherProofCircuit ops params { unfinalized, chunkedEvals, mask, prevChal
     -- vanishing polynomial's tower of squarings. In side-loaded mode
     -- the universe is fixed at `[0..16]`, so it is 16 whatever
     -- `params.domains` says. The `Foldable1` maximum is total because
-    -- `Add 1 ndPred nd` forces `nd ≥ 1`.
+    -- `params.domains` is non-empty.
     maxLog2 = case params.domainMode of
       KnownDomainsMode -> Foldable1.maximum (map _.log2 params.domains)
       SideLoadedMode -> sideLoadedDomainLog2Max
@@ -168,13 +164,12 @@ finalizeOtherProofCircuit ops params { unfinalized, chunkedEvals, mask, prevChal
   domainSel <- case params.domainMode of
     -- One which-bit per distinct candidate domain, emitted last domain
     -- first. Candidates repeat whenever two of the source's branches
-    -- share a step domain, and an `External` source's one domain is
-    -- replicated across this compile's branches; a repeated candidate
-    -- would set two which-bits and select its domain twice.
+    -- share a step domain; a repeated candidate would set two
+    -- which-bits and select its domain twice.
     KnownDomainsMode -> do
       let
         distinct = Array.nubByEq (\a b -> a.log2 == b.log2)
-          (Array.sortWith _.log2 (Vector.toUnfoldable params.domains))
+          (Array.sortWith _.log2 (NEA.toArray params.domains))
       whiches <- Vector.reifyVector distinct \ds ->
         Vector.toUnfoldable <$> knownDomainWhiches domainLog2Var ds
       pure $ Known $ Array.zipWith

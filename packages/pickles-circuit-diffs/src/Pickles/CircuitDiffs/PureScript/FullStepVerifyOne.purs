@@ -8,6 +8,7 @@ module Pickles.CircuitDiffs.PureScript.FullStepVerifyOne
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Fin (getFinite)
 import Data.Fin as Fin
 import Data.Newtype (unwrap)
@@ -154,9 +155,10 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
     domainLog2 = 16
     fopParams =
       { domains:
-          { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
-          , log2: domainLog2
-          } :< Vector.nil
+          NEA.singleton
+            { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
+            , log2: domainLog2
+            }
       , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
       , srsLengthLog2: 16
       , zkRows: zkRowsByDefault

@@ -19,6 +19,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
@@ -122,12 +123,11 @@ compileStepMainTreeProofReturn params = do
           @(F StepField)
           @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
           @2
-          @1
           treeProofReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
-              (nrrArt.stepDomainLog2 :< Vector.nil)
-                :< (selfLog2 :< Vector.nil)
+              (NEA.singleton nrrArt.stepDomainLog2)
+                :< (NEA.singleton selfLog2)
                 :< Vector.nil
           , perSlotNumChunks: 1 :< 1 :< Vector.nil
           , perSlotVkBlueprints:

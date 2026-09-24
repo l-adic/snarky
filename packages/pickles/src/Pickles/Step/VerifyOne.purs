@@ -13,7 +13,6 @@ import Prelude
 import Data.Fin (getFinite) as Data.Fin
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -27,8 +26,6 @@ import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (ChunkedCommitment, ChunkedEvals, StepIPARounds, WrapIPARounds, WrapVkChunks)
-import Prim.Int (class Add, class Compare)
-import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
@@ -132,12 +129,9 @@ type VerifyOneResult tickD fv =
 -- | `incrementallyVerifyProof`, which stays generic because the wrap
 -- | side calls it at `stepChunks`, where chunking is real.
 verifyOne
-  :: forall nd ndPred n r r1
+  :: forall n r r1
    . PrimeField StepField
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
-  => Reflectable nd Int
-  => FOP.Params nd StepField r1
+  => FOP.Params StepField r1
   -> VerifyOneInput n WrapVkChunks 7 WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams WrapVkChunks StepField ()
   -> Snarky StepField (KimchiConstraint StepField) r (VerifyOneResult StepIPARounds (FVar StepField))

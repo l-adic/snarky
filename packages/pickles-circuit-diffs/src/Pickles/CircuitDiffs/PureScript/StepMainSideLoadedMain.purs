@@ -16,6 +16,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (Tuple1, (/\))
@@ -114,23 +115,16 @@ compileStepMainSideLoadedMain params = do
           @Unit
           @(Tuple1 (SideLoadedPrevValue (StatementIO (F StepField) Unit)))
           @1
-          @1
           sideLoadedMainRule
-          -- This circuit-diff harness builds `perSlotLagrangeAt` /
-          -- `perSlotVkBlueprints` / `perSlotFopDomainLog2s` inline rather
-          -- than going through `Pickles.Prove.Compile.shapeCompileData`.
-          -- The side-loaded slot ignores `perSlotLagrangeAt` (Step.Main
-          -- reads the per-domain tables from `SlotVkBlueprintSideLoaded` instead);
-          -- it's still required to satisfy the Vector shape.
+          -- Built inline rather than by
+          -- `Pickles.Prove.Compile.stepProveContextOf`.
           { blindingH: params.blindingH
-          -- Side-loaded slots ignore this Vector —
+          -- Side-loaded slots ignore this list —
           -- `Step.FinalizeOtherProof`'s `SideLoadedMode` synthesises
           -- the `Vector 17 [0..16]` universe from
-          -- `branch_data.domain_log2`. The `Vector 1 [0]` placeholder
-          -- here matches `nd = 1` for a single-rule side-loaded
-          -- compile.
+          -- `branch_data.domain_log2`, so `[0]` is a placeholder.
           , perSlotFopDomainLog2s:
-              (0 :< Vector.nil) :< Vector.nil
+              (NEA.singleton 0) :< Vector.nil
           , perSlotNumChunks: 1 :< Vector.nil
           , perSlotVkBlueprints:
               BlueprintSideLoaded params.sideloadedPerDomainLagrangeAt :< Vector.nil

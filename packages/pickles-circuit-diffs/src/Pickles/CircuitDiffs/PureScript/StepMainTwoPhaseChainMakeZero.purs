@@ -77,7 +77,6 @@ compileStepMainTwoPhaseChainMakeZero params = do
           @Unit
           @Unit
           @1
-          @1
           makeZeroRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

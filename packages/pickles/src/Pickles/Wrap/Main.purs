@@ -18,6 +18,7 @@ module Pickles.Wrap.Main
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Enum (fromEnum)
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldl)
@@ -187,7 +188,7 @@ processOneSlotFopBody
 processOneSlotFopBody fopBaseParams slotIdx domain unfView allEvals paddedChals = do
   { finalized, expandedChallenges } <- wrapFinalizeOtherProofCircuit
     { domains:
-        { generator: domain.generator, log2: fopBaseParams.domainLog2 } :< Vector.nil
+        NEA.singleton { generator: domain.generator, log2: fopBaseParams.domainLog2 }
     , shifts: domain.shifts
     , srsLengthLog2: fopBaseParams.srsLengthLog2
     , zkRows: fopBaseParams.zkRows

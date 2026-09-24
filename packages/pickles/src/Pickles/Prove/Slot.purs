@@ -17,9 +17,6 @@ module Pickles.Prove.Slot
   , slotWrapVerifierIndex
   ) where
 
-import Prelude
-
-import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
@@ -115,18 +112,13 @@ slotWrapDomainLog2 outerWrapDomainLog2 slot = case slot.source of
 -- | borrows the same array, and the real dispatch happens in
 -- | `Pickles.Step.FinalizeOtherProof`'s side-loaded mode.
 -- |
--- | `branchCount` is the width the result must have, the array being
--- | indexed by the enclosing compile's branches. Only single-branch
--- | external sources are supported: their one domain is replicated
--- | across the width.
-slotSourceDomainLog2s :: Int -> Array Int -> Slot -> Array Int
-slotSourceDomainLog2s branchCount selfStepDomainLog2s slot = case slot.source of
+-- | An `External` slot takes the imported system's domains, however
+-- | many branches it has.
+slotSourceDomainLog2s :: NonEmptyArray Int -> Slot -> NonEmptyArray Int
+slotSourceDomainLog2s selfStepDomainLog2s slot = case slot.source of
   Just Self -> selfStepDomainLog2s
   Nothing -> selfStepDomainLog2s
-  Just (External d)
-    | NEA.length d.stepDomainLog2s == 1 ->
-        Array.replicate branchCount (NEA.head d.stepDomainLog2s)
-    | otherwise -> NEA.toArray d.stepDomainLog2s
+  Just (External d) -> d.stepDomainLog2s
 
 -- | The slot source's compile-time `num_chunks`, from which `zk_rows`
 -- | follows. A `Self` slot takes the enclosing compile's declared
@@ -156,8 +148,9 @@ slotWrapVerifierIndex selfWrapVerifierIndex slot = case slot.source of
 -- |
 -- | A `Self` slot takes the enclosing compile's own realized
 -- | domain, which only exists after its step circuit is built, so the
--- | caller supplies it. Only single-branch external sources are
--- | supported, so their one domain is the head of the array.
+-- | caller supplies it. An `External` slot takes its source's first
+-- | domain: a base case may claim any of them, and an inductive prev
+-- | reads its own.
 slotStepDomainLog2 :: Int -> Slot -> Int
 slotStepDomainLog2 selfStepDomainLog2 slot = case slot.source of
   Just Self -> selfStepDomainLog2

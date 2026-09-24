@@ -10,6 +10,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
@@ -77,8 +78,7 @@ compileStepMainSimpleChain params = do
     let
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-      -- Axes: @prevsSpec @inputVal @outputVal @valCarrier @mpvMax @nd
-      --       @cell.
+      -- Axes: @prevsSpec @inputVal @outputVal @valCarrier @mpvMax.
       -- Single-rule: mpvMax = len = 1, mpvPad = 0.
       ( \_ -> stepMain
           @SimpleChainPrevsSpec
@@ -86,10 +86,9 @@ compileStepMainSimpleChain params = do
           @Unit
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
-          @1
           simpleChainRule
           { blindingH: params.blindingH
-          , perSlotFopDomainLog2s: (selfLog2 :< Vector.nil) :< Vector.nil
+          , perSlotFopDomainLog2s: (NEA.singleton selfLog2) :< Vector.nil
           , perSlotNumChunks: 1 :< Vector.nil
           , perSlotVkBlueprints: BlueprintSelf params.lagrangeAt :< Vector.nil
           }

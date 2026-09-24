@@ -10,6 +10,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
@@ -94,11 +95,10 @@ compileStepMainSimpleChainN2 params = do
           @( Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
           )
           @2
-          @1
           simpleChainN2Rule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
-              (selfLog2 :< Vector.nil) :< (selfLog2 :< Vector.nil) :< Vector.nil
+              (NEA.singleton selfLog2) :< (NEA.singleton selfLog2) :< Vector.nil
           , perSlotNumChunks: 1 :< 1 :< Vector.nil
           , perSlotVkBlueprints:
               BlueprintSelf params.lagrangeAt :< BlueprintSelf params.lagrangeAt :< Vector.nil

@@ -21,7 +21,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Fin (getFinite)
 import Data.Reflectable (class Reflectable)
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
@@ -65,9 +65,10 @@ compileFopStepChunks2 =
       in
         void $ finalizeOtherProofCircuit StepOtherField.fopShiftOps
           { domains:
-              { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
-              , log2: domainLog2
-              } :< Vector.nil
+              NEA.singleton
+                { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
+                , log2: domainLog2
+                }
           , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
           , srsLengthLog2
           , zkRows: zkRowsForNumChunks numChunks
