@@ -33,14 +33,13 @@ module Pickles.Prove.Compile
   , class SlotKinds
   , slotKeysOf
   , class CompilableRulesSpec
-  , ruleSlotWidths
-  , buildWrapPerBranchVec
+  , ruleCompileFns
+  , RuleCompileFns
+  , CompileMultiConfig
   , class CompilableRulesSpecShape
-  , prePassDomainLog2s
   , class MaxOfRulesMpvs
   , class IntMax
   , class IntMaxOrd
-  , runMultiCompile
   , buildBranchProvers
   , module Pickles.Verify
   ) where
@@ -60,7 +59,7 @@ import Data.Int.Bits as Int.Bits
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, over, unwrap, wrap)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Traversable (traverse)
+import Data.Traversable (sequence, traverse)
 import Data.TraversableWithIndex (forWithIndex)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
@@ -1542,11 +1541,9 @@ type MultiOutput proversCarrier branches mpvMax inputVal outputVal =
 --------------------------------------------------------------------------------
 -- CompilableRulesSpec
 --
--- Dispatch over the branches, one instance per rule. The rules are
--- reached through class methods rather than stored in the carrier
--- because PS rejects a record field holding `StepRule`'s rank-2
--- forall: each instance is monomorphic, so a rule value is used
--- inside a method body without ever being stored as a record value.
+-- The rules carrier is a tuple of `RuleEntry`s at different types;
+-- one instance per rule collects each entry's `RuleCompileFns` into a
+-- `Vector`, which the compile then walks as data.
 --------------------------------------------------------------------------------
 
 -- | One instance per rule, walking the rules spec.
@@ -1579,21 +1576,8 @@ class
   | rs topBranches r ->
     branches mpvMax rulesCarrier
   where
-  -- | Each branch's own slot widths, in branch order, which
-  -- | `deriveWrapSlotWidths` overlays into the wrap circuit's single
-  -- | `mpvMax`-long list.
-  ruleSlotWidths :: forall proxy. proxy rs -> Array (Array Int)
-
-  -- | The per-branch step results, in the shape
-  -- | `buildWrapMainConfigMulti` takes: each branch's `mpv`, its step
-  -- | domain log2, its step VK, and each prev slot's wrap-domain pin
-  -- | given the compile's own wrap domain log2. `Left` names a slot
-  -- | whose wrap domain has no pin.
-  buildWrapPerBranchVec
-    :: Int
-    -> rulesCarrier
-    -> Vector branches PProveStep.StepCompileResult
-    -> Either String (Vector branches (WrapBranchData mpvMax))
+  -- | Each rule's compile-time operations, in branch order.
+  ruleCompileFns :: rulesCarrier -> Vector branches (RuleCompileFns mpvMax)
 
 instance
   CompilableRulesSpec RulesNil
@@ -1605,8 +1589,7 @@ instance
     Unit
     r
   where
-  ruleSlotWidths _ = []
-  buildWrapPerBranchVec _ _ _ = Right Vector.nil
+  ruleCompileFns _ = Vector.nil
 
 instance
   ( CompilableRulesSpec rest inputVal outputVal
@@ -1636,37 +1619,13 @@ instance
     topBranches
     branches
     mpvMax
-    ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
+    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
         /\ restCarrier
     )
     r
   where
-  ruleSlotWidths _ =
-    Array.cons
-      (Vector.toUnfoldable (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec))))
-      ( ruleSlotWidths
-          @rest
-          @inputVal
-          @outputVal
-          @topBranches
-          @restBranches
-          @mpvMax
-          @restCarrier
-          @r
-          (Proxy :: Proxy rest)
-      )
-  buildWrapPerBranchVec selfWrapDomainLog2 (RuleEntry r /\ restEntries) results = do
-    let { head: headResult, tail: restResults } = Vector.uncons results
-    pins <- traverse (slotWrapDomainPin selfWrapDomainLog2) r.slotVKs
-    let
-      headRecord =
-        { mpv: reflectType (Proxy :: Proxy ruleMpv)
-        , stepDomainLog2: proverIndexDomainLog2 headResult.proverIndex
-        , stepVK: headResult.verifierIndex
-        , prevWrapDomainPins:
-            Vector.append (Vector.replicate @mpvPad (Just paddingWrapDomain)) pins
-        }
-    restVec <- buildWrapPerBranchVec
+  ruleCompileFns (RuleEntry r /\ rest) =
+    r.compileFns :< ruleCompileFns
       @rest
       @inputVal
       @outputVal
@@ -1675,10 +1634,7 @@ instance
       @mpvMax
       @restCarrier
       @r
-      selfWrapDomainLog2
-      restEntries
-      restResults
-    pure (headRecord :< restVec)
+      rest
 
 --------------------------------------------------------------------------------
 -- CompilableRulesSpecShape — shape-data methods.
@@ -1708,28 +1664,6 @@ class
   | rs topBranches r -> branches mpvMax rulesCarrier
     proversCarrier
   where
-  -- | Every branch's own step domain log2, in branch order, each
-  -- | obtained by building that rule's constraint system against a
-  -- | placeholder context and counting its gates. Callers pass
-  -- | `roughDomainsLog2` in every position of the placeholder.
-  prePassDomainLog2s
-    :: CompileMultiConfig
-    -> Int
-    -- ^ the declared `@stepChunks`
-    -> Vector topBranches Int
-    -> rulesCarrier
-    -> Effect (Vector branches Int)
-
-  -- | Every branch's step compile, each run against a context built
-  -- | from the same full vector of step domain log2s.
-  runMultiCompile
-    :: CompileMultiConfig
-    -> Int
-    -- ^ the declared `@stepChunks`
-    -> Vector topBranches Int
-    -> rulesCarrier
-    -> Effect (Vector branches PProveStep.StepCompileResult)
-
   -- | One `BranchProver` per branch: a closure that runs that
   -- | branch's step solve and prove, then the shared wrap solve and
   -- | prove with `whichBranch` set to its own index. The index
@@ -1771,45 +1705,25 @@ class
     -> Effect proversCarrier
 
 -- | The per-branch step compiles, and the step domain log2s the
--- | pre-pass found for them. Instantiating both class parameters at
--- | `topBranches` is what makes this the recursion's outermost call.
+-- | pre-pass found for them. The pre-pass builds each rule's
+-- | constraint system with `roughDomainsLog2` in every branch's
+-- | position and counts its gates; the compiles then run against the
+-- | domains it found.
 runMultiCompileFull
-  :: forall @rs @inputVal @outputVal @topBranches @mpvMax @r
-       rulesCarrier
-       proversCarrier
-   . CompilableRulesSpecShape rs inputVal outputVal
-       topBranches
-       topBranches
-       mpvMax
-       rulesCarrier
-       proversCarrier
-       r
-  => Reflectable topBranches Int
+  :: forall branches branchesPred mpvMax
+   . Add 1 branchesPred branches
   => CompileMultiConfig
   -> Int
   -- ^ the declared `@stepChunks`
-  -> rulesCarrier
+  -> Vector branches (RuleCompileFns mpvMax)
   -> Effect
-       { stepResults :: Vector topBranches PProveStep.StepCompileResult
-       , log2s :: Vector topBranches Int
+       { stepResults :: Vector branches PProveStep.StepCompileResult
+       , log2s :: Vector branches Int
        }
 runMultiCompileFull cfg stepNumChunks rules = do
   let
-    placeholder = Vector.replicate roughDomainsLog2
-  log2s <- prePassDomainLog2s
-    @rs
-    @inputVal
-    @outputVal
-    @topBranches
-    @topBranches
-    @mpvMax
-    @rulesCarrier
-    @proversCarrier
-    @r
-    cfg
-    stepNumChunks
-    placeholder
-    rules
+    placeholder = NonEmptyArray.fromFoldable1 (map (const roughDomainsLog2) rules)
+  log2s <- traverse (\rule -> rule.preComputeStepDomainLog2 cfg stepNumChunks placeholder) rules
   -- Warming happens here because the pre-pass has just yielded the
   -- real per-branch step domains and no constraint building — which
   -- is what fires the lazy `mkConstLagrangeBaseLookup` reads — has
@@ -1825,19 +1739,10 @@ runMultiCompileFull cfg stepNumChunks rules = do
     for_ log2s warmVesta
     warmPallas <- warmer cache pallasOps cfg.srs.pallasSrs
     for_ [ 13, 14, 15 ] warmPallas
-  stepResults <- runMultiCompile
-    @rs
-    @inputVal
-    @outputVal
-    @topBranches
-    @topBranches
-    @mpvMax
-    @rulesCarrier
-    @proversCarrier
-    @r
-    cfg
-    stepNumChunks
-    log2s
+  let
+    selfStepDomainLog2s = NonEmptyArray.fromFoldable1 log2s
+  stepResults <- traverse
+    (\rule -> rule.stepCompile cfg stepNumChunks selfStepDomainLog2s)
     rules
   pure { stepResults, log2s }
 
@@ -1852,8 +1757,6 @@ instance
     Unit
     r
   where
-  prePassDomainLog2s _ _ _ _ = pure Vector.nil
-  runMultiCompile _ _ _ _ = pure Vector.nil
   buildBranchProvers _ _ _ _ _ _ _ _ _ = pure unit
 
 instance
@@ -1901,7 +1804,7 @@ instance
       topBranches
       branches
       mpvMax
-      ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
+      ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
           /\ restCarrier
       )
       r
@@ -1917,7 +1820,7 @@ instance
     topBranches
     branches
     mpvMax
-    ( RuleEntry prevsSpec ruleMpv valCarrier inputVal outputSize r
+    ( RuleEntry prevsSpec ruleMpv mpvMax valCarrier inputVal outputSize r
         /\ restCarrier
     )
     -- `BranchProver`'s `mpv` is `mpvMax`, not `ruleMpv`: every
@@ -1930,51 +1833,6 @@ instance
     )
     r
   where
-  prePassDomainLog2s cfg stepNumChunks placeholder (RuleEntry r /\ restEntries) = do
-    let
-      placeholderCtx = buildStepProveCtx @prevsSpec cfg stepNumChunks
-        (reflectType (Proxy :: Proxy mpvMax))
-        r.slotVKs
-        placeholder
-    headLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
-    restVec <- prePassDomainLog2s
-      @rest
-      @inputVal
-      @outputVal
-      @topBranches
-      @restBranches
-      @mpvMax
-      @restCarrier
-      @restProvers
-      @r
-      cfg
-      stepNumChunks
-      placeholder
-      restEntries
-    pure (headLog2 :< restVec)
-  runMultiCompile cfg stepNumChunks log2s (RuleEntry r /\ restEntries) = do
-    let
-      ctx = buildStepProveCtx @prevsSpec cfg stepNumChunks
-        (reflectType (Proxy :: Proxy mpvMax))
-        r.slotVKs
-        log2s
-    requireSharedStepShifts ctx
-    headResult <- r.stepCompileFn ctx
-    tailResults <- runMultiCompile
-      @rest
-      @inputVal
-      @outputVal
-      @topBranches
-      @restBranches
-      @mpvMax
-      @restCarrier
-      @restProvers
-      @r
-      cfg
-      stepNumChunks
-      log2s
-      restEntries
-    pure (headResult :< tailResults)
   buildBranchProvers
     ncProxy
     branchIdx
@@ -2042,24 +1900,50 @@ instance
 -- RuleEntry / mkRuleEntry — per-rule entry in the multi-branch carrier.
 --------------------------------------------------------------------------------
 
+-- | One rule's compile-time operations, with the rule's own types
+-- | applied by `mkRuleEntry`, so that the compile walks the rules as a
+-- | `Vector`. The `Int` arguments are the declared `@stepChunks` and,
+-- | for `wrapBranchData`, the compile's own wrap domain log2; the
+-- | `NonEmptyArray` is every branch's step domain log2, which a `Self`
+-- | slot's finalize check selects among.
+type RuleCompileFns mpvMax =
+  { -- | The rule's slot widths, in slot order.
+    slotWidths :: Array Int
+  -- | The rule's step domain log2, counted from a constraint-system
+  -- | build against placeholder domains.
+  , preComputeStepDomainLog2 ::
+      CompileMultiConfig -> Int -> NonEmptyArray Int -> Effect Int
+  -- | The rule's step compile, after checking that each slot's
+  -- | candidate domains share their shifts.
+  , stepCompile ::
+      CompileMultiConfig
+      -> Int
+      -> NonEmptyArray Int
+      -> Effect PProveStep.StepCompileResult
+  -- | The rule's entry in the wrap circuit's per-branch data: its
+  -- | `mpv`, step domain, step VK, and each slot's wrap-domain pin,
+  -- | padding slots first. `Left` names a slot whose wrap domain has
+  -- | no pin.
+  , wrapBranchData ::
+      Int
+      -> PProveStep.StepCompileResult
+      -> Either String (WrapBranchData mpvMax)
+  }
+
 -- | One branch, as the rules carrier stores it: monomorphic closures
 -- | over the rank-2 `StepRule` captured at `mkRuleEntry` time, since
 -- | PS rejects a record field holding the rule itself.
 data RuleEntry
   :: Type
   -> Int
+  -> Int
   -> Type
   -> Type
   -> Int
   -> Row (Type -> Type)
   -> Type
-data RuleEntry prevsSpec mpv valCarrier inputVal outputSize r = RuleEntry
-  { -- | Given a placeholder context, this rule's own step domain
-    -- | log2, counted from a one-shot constraint-system build.
-    preComputeStepDomainLog2Fn ::
-      PProveStep.StepProveContext mpv -> Effect Int
-  , stepCompileFn ::
-      PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
+data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal outputSize r = RuleEntry
+  { compileFns :: RuleCompileFns mpvMax
   , stepProveFn ::
       AdviceHandler r
       -> PProveStep.StepProveContext mpv
@@ -2105,38 +1989,59 @@ mkRuleEntry
   -- | The wrap VK source of each compiled slot, in slot order. A
   -- | side-loaded slot takes none.
   -> Vector compiled SlotWrapKey
-  -> Effect (RuleEntry prevsSpec mpv valCarrier inputVal outputSize r)
+  -> Effect (RuleEntry prevsSpec mpv mpvMax valCarrier inputVal outputSize r)
 mkRuleEntry rule compiledKeys = do
-  let slotVKs = slotKeysOf (Proxy :: Proxy prevsSpec) compiledKeys
+  let
+    slotVKs = slotKeysOf (Proxy :: Proxy prevsSpec) compiledKeys
+    ctxAt cfg stepNumChunks selfStepDomainLog2s =
+      buildStepProveCtx @prevsSpec cfg stepNumChunks
+        (reflectType (Proxy :: Proxy mpvMax))
+        slotVKs
+        selfStepDomainLog2s
   pure $ RuleEntry
-    { preComputeStepDomainLog2Fn: \ctx ->
-        PProveStep.preComputeStepDomainLog2
-          @prevsSpec
-          @outputSize
-          @valCarrier
-          @inputVal
-          @inputVar
-          @outputVal
-          @outputVar
-          @mpvMax
-          @mpvPad
-          badAdvice
-          ctx
-          rule
-    , stepCompileFn: \ctx ->
-        PProveStep.stepCompile
-          @prevsSpec
-          @outputSize
-          @valCarrier
-          @inputVal
-          @inputVar
-          @outputVal
-          @outputVar
-          @mpvMax
-          @mpvPad
-          badAdvice
-          ctx
-          rule
+    { compileFns:
+        { slotWidths:
+            Vector.toUnfoldable (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
+        , preComputeStepDomainLog2: \cfg stepNumChunks selfStepDomainLog2s ->
+            PProveStep.preComputeStepDomainLog2
+              @prevsSpec
+              @outputSize
+              @valCarrier
+              @inputVal
+              @inputVar
+              @outputVal
+              @outputVar
+              @mpvMax
+              @mpvPad
+              badAdvice
+              (ctxAt cfg stepNumChunks selfStepDomainLog2s)
+              rule
+        , stepCompile: \cfg stepNumChunks selfStepDomainLog2s -> do
+            let ctx = ctxAt cfg stepNumChunks selfStepDomainLog2s
+            requireSharedStepShifts ctx
+            PProveStep.stepCompile
+              @prevsSpec
+              @outputSize
+              @valCarrier
+              @inputVal
+              @inputVar
+              @outputVal
+              @outputVar
+              @mpvMax
+              @mpvPad
+              badAdvice
+              ctx
+              rule
+        , wrapBranchData: \selfWrapDomainLog2 result -> do
+            pins <- traverse (slotWrapDomainPin selfWrapDomainLog2) slotVKs
+            pure
+              { mpv: reflectType (Proxy :: Proxy mpv)
+              , stepDomainLog2: proverIndexDomainLog2 result.proverIndex
+              , stepVK: result.verifierIndex
+              , prevWrapDomainPins:
+                  Vector.append (Vector.replicate @mpvPad (Just paddingWrapDomain)) pins
+              }
+        }
     , stepProveFn: \handler ctx compileResult advice prevProofs ->
         PProveStep.stepSolveAndProve
           @prevsSpec
@@ -2179,17 +2084,16 @@ type PStepRule r prevsSpec inputVal inputVar outputVal outputVar =
 -- | that rule's `slotVKs` and run through `stepProveContextOf` for the
 -- | per-slot layout.
 buildStepProveCtx
-  :: forall @prevsSpec @nd ndPred mpv
+  :: forall @prevsSpec mpv
    . SlotWidths prevsSpec mpv
   => Reflectable mpv Int
-  => Add 1 ndPred nd
   => CompileMultiConfig
   -> Int
   -- ^ the declared `@stepChunks`
   -> Int
   -- ^ the compile's `mpvMax`, which fixes its wrap domain
   -> Vector mpv (Maybe SlotWrapKey)
-  -> Vector nd Int
+  -> NonEmptyArray Int
   -> PProveStep.StepProveContext mpv
 buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
   let
@@ -2205,7 +2109,7 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
   in
     stepProveContextOf perRuleCfg
       (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
-      (NonEmptyArray.fromFoldable1 selfStepDomainLog2s)
+      selfStepDomainLog2s
 
 -- | Fails unless each slot's candidate step domains share their
 -- | permutation shifts. The step circuit finalizes a slot's previous
@@ -2319,7 +2223,7 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv valCarrier inputVal outputSize r
+  -> RuleEntry prevsSpec mpv mpvMax valCarrier inputVal outputSize r
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> Effect (Either ProveError (CompiledProof mpvMax (StatementIO inputVal outputVal)))
 runMultiProverBody
@@ -2714,30 +2618,23 @@ compileMulti
        )
 compileMulti cfg rules = do
   let
+    ruleFns = ruleCompileFns
+      @rs
+      @inputVal
+      @outputVal
+      @branches
+      @branches
+      @mpvMax
+      @rulesCarrier
+      @r
+      rules
     slotWidths = deriveWrapSlotWidths (reflectType (Proxy :: Proxy mpvMax))
-      ( ruleSlotWidths
-          @rs
-          @inputVal
-          @outputVal
-          @branches
-          @branches
-          @mpvMax
-          @rulesCarrier
-          @r
-          (Proxy :: Proxy rs)
-      )
+      (Vector.toUnfoldable (map _.slotWidths ruleFns))
   -- Step 1: the per-rule pre-pass, then the per-rule step compiles
   -- against the domains it found.
-  { stepResults, log2s } <- runMultiCompileFull
-    @rs
-    @inputVal
-    @outputVal
-    @branches
-    @mpvMax
-    @r
-    cfg
+  { stepResults, log2s } <- runMultiCompileFull cfg
     (reflectType (Proxy :: Proxy stepChunks))
-    rules
+    ruleFns
 
   -- The declared `@stepChunks` has to match what each branch's step
   -- domain actually needs: one chunk while the domain fits the
@@ -2766,18 +2663,10 @@ compileMulti cfg rules = do
   let
     selfWrapDomainLog2 =
       resolveSelfWrapDomainLog2 (reflectType (Proxy :: Proxy mpvMax)) cfg.wrapDomainOverride
-  perBranchVec <- either Exc.throw pure $ buildWrapPerBranchVec
-    @rs
-    @inputVal
-    @outputVal
-    @branches
-    @branches
-    @mpvMax
-    @rulesCarrier
-    @r
-    selfWrapDomainLog2
-    rules
-    stepResults
+  perBranchVec <- either Exc.throw pure $ sequence $
+    Vector.zipWith (\ruleFn result -> ruleFn.wrapBranchData selfWrapDomainLog2 result)
+      ruleFns
+      stepResults
 
   -- Step 2: shared wrap compile across all branches.
   wrapResult <- wrapCompile @branches @mpvMax @stepChunks
