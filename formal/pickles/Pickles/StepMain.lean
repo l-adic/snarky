@@ -9,7 +9,8 @@ are all proofs of the same system (self slots), each verifying `w` accumulators.
 public input, runs the rule, allocates this system's wrap key, every slot's witness, the
 unfinalized proofs and the wrap-side messages, verifies each slot (`verifyOneBy`), asserts every
 verdict, and hashes the step-side messages. Its output is the step statement: the unfinalized
-proofs, the digest, the wrap-side messages.
+proofs, the digest, the wrap-side messages, the first and last padded in front to the tag's
+width `w` when the rule verifies fewer proofs.
 
 The rule is an arbitrary circuit: it receives the public input and returns, per slot, the
 previous proof's statement and whether it must verify, with its own public output.
@@ -66,6 +67,8 @@ structure StepMainAdvice (n w nc k ks : ℕ) (inVal : Type) where
   unfinalized : AsProver Fp (Vector (UnfVal k) n)
   /-- The wrap-side messages. -/
   msgs : AsProver Fp (Vector Fp n)
+  /-- The wrap-side messages padding the statement to the tag's `w` slots. -/
+  msgsPad : AsProver Fp (Vector Fp (w - n))
 
 /-- One slot's `verifyOne` input from its cells: the previous statement, the witness, the
 unfinalized entry and the wrap-side message; the accumulator points widened to
@@ -113,8 +116,9 @@ variable {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
 /-- The step circuit of a rule with `n` self slots, each verifying `w` accumulators, over a
 previous step proof at `nc` chunks. `verify` checks one wrap proof (`verifyProofWith` at this
 system's wrap key); `P`, `domains` are the finalize's parameters and candidate domains. The
-statement is the unfinalized proofs' cells, the step-message digest, the wrap-side messages;
-the cells it was read from are returned beside it. -/
+statement is the unfinalized proofs' cells, the step-message digest, the wrap-side messages,
+each front-padded to the tag's `w` slots: `w − n` constant `dummyUnf` entries and `w − n` fresh
+message cells. The cells it was read from are returned beside it. -/
 def stepMain {n w nc k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     [CheckedType Fp c inVal inVar] (hw : w ≤ MaxProofsVerified)
     (verify : SpongeVar Fp → BoolVar Fp →
@@ -122,6 +126,7 @@ def stepMain {n w nc k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVa
       UnfinalizedProof k (FVar Fp) (BoolVar Fp) StepSf →
       IvpInput k nc (FVar Fp) (BoolVar Fp) StepSf → CircuitM Fp c (BoolVar Fp))
     (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (dummyUnf : UnfVal k)
     (rule : inVar → CircuitM Fp c (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w nc k ks inVal) : CircuitM Fp c (StepMainOut n w nc k ks) := do
   let publicInput ← witness (val := inVal) adv.publicInput
@@ -132,6 +137,7 @@ def stepMain {n w nc k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVa
   slots.val.toList.forM SlotWitness.check
   let unfs ← witness (val := Vector (UnfVal k) n) adv.unfinalized
   let msgs ← witness (val := Vector Fp n) adv.msgs
+  let msgsPad ← witness (val := Vector Fp (w - n)) adv.msgsPad
   let results ← (List.finRange n).mapM fun i =>
     verifyOneBy verify P domains vk.points
       (slotInput hw dummySg prevs[i] slots.val[i] unfs[i] msgs[i])
@@ -142,9 +148,10 @@ def stepMain {n w nc k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVa
     (slots.val[i].sg.pt, r.1.expandedChallenges)
   let digest ← hashMessagesForNextStepProof IpaPallas.curve.sponge.params vk.points appFields
     proofs
-  pure ⟨unfs.toList.flatMap
+  let pad := List.replicate (w - n) (CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf)
+  pure ⟨(pad ++ unfs.toList).flatMap
       (fun u => (CircuitType.varToFields (F := Fp) (val := UnfVal k) u).toList)
-    ++ [digest] ++ msgs.toList, prevs, vk, slots.val, unfs, msgs⟩
+    ++ [digest] ++ msgsPad.toList ++ msgs.toList, prevs, vk, slots.val, unfs, msgs⟩
 
 /-! ## The read -/
 
@@ -174,6 +181,7 @@ theorem stepMain_reads {n w nc : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curve nc) (D : KnownDomains Es)
     (hn : n ≤ MaxProofsVerified) (hw : w ≤ MaxProofsVerified) (dummySg : AffinePoint (FVar Fp))
+    (dummyUnf : UnfVal E.σ.k)
     (rule : inVar →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w nc E.σ.k Es.σ.k inVal)
@@ -184,7 +192,7 @@ theorem stepMain_reads {n w nc : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
       E.σ.Avoids (stepRelationsAt E (inp.statement msg))) :
     ⦃⌜True⌝⦄
     stepMain (c := Builder V (KimchiConstraint Fp)) hw (verifyProofAt E)
-      (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg rule adv
+      (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg dummyUnf rule adv
     ⦃⇓ r _ => ⌜∀ i : Fin n, CircuitType.Reads V r.prevs[i].mustVerify true →
       CircuitType.Reads V r.unfs[i].shouldFinalize true ∧
       (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).SlotReads E V
@@ -234,8 +242,8 @@ theorem stepMain_reads {n w nc : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
         (by simp only [MaxProofsVerified] at hl; omega) h)) nv hsat
   simp only [stepMain]
   mvcgen [hrule, hfm, hmap, hhash, hall, -Snarky.assertAll_spec]
-  rename_i _ _ _ _ rout _ vk _ _ slots _ _ _ _ hcheck unfs _ hunf msgs _ _ results _ hres _ _
-    hassert _ _
+  rename_i _ _ _ _ rout _ vk _ _ slots _ _ _ _ hcheck unfs _ hunf msgs _ _ _ _ _ results _ hres
+    _ _ hassert _ _
   intro i hmv
   obtain ⟨hlen, hget⟩ := forall₂_finRange hres
   -- every unfinalized entry's check: its parity bits and its finalize flag are boolean

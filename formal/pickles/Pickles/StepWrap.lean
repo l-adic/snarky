@@ -71,6 +71,8 @@ theorem stepWrap_kimchiVerify
     (hw : w ≤ MaxProofsVerified)
     -- the `sg` padding the missing accumulators
     (dummySg : AffinePoint (FVar Fp))
+    -- the unfinalized entry padding the step statement to the tag's `w` slots
+    (dummyUnf : UnfVal E.σ.k)
     -- every slot statement packs into at most `2 ^ E.σ.k` cells, the SRS size
     (hsmall : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k nc w) msg,
       (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
@@ -88,8 +90,8 @@ theorem stepWrap_kimchiVerify
     (adv : StepMainAdvice n w nc E.σ.k Es.σ.k inVal)
     -- `Vg` satisfies every constraint of the step circuit, which allocates all its cells
     (hstep : ∀ con ∈ (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw
-        (verifyProofAt E) (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg rule adv)
-        0).constraints, ConstraintHolds.Holds Vg con)
+        (verifyProofAt E) (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg dummyUnf rule
+        adv) 0).constraints, ConstraintHolds.Holds Vg con)
     -- the next wrap circuit's valuation
     (Vs : Valuation Fq)
     -- the generator of the wrap domain of each `log2`, a constant of the circuit
@@ -111,7 +113,7 @@ theorem stepWrap_kimchiVerify
     -- `gen` gives the key's generator at its domain
     (hgen : gen E.cvk.domainLog2 = E.cvk.omega) :
     let r := (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw (verifyProofAt E)
-      (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg rule adv) 0).result
+      (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the finalize block's input cells: the branch bits and the slots, with their pins
     let x := inputVar (F := Fq) (a := WrapFinalizeIn branches w E.σ.k nc)
     let slots := WrapFinalizeInVar.slots x pins
@@ -141,7 +143,8 @@ theorem stepWrap_kimchiVerify
   intro r x slots hbits i hmv inp sl hpin ht cp ms cvs pub hwire hguard hf hsg
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E Es D (hn.trans hw) hw dummySg rule adv hsmall havoid) 0 hstep i hmv
+    (stepMain_reads E Es D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i
+      hmv
   obtain ⟨v, hv, hv1⟩ := hslot cp ms cvs hwire
   -- the finalize side: the slot reads as its scalar half
   have hfin := wrapFinalizePrevProofs_reads E Vs gen x.val.1 (WrapFinalizeInVar.slots x pins) b j

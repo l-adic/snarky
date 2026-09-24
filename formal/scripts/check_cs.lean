@@ -1247,7 +1247,36 @@ Transcribes `Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2`: `Pickles.st
 rule `self = 1 + prev₁ + prev₂` over two self slots of width 2, at the Lagrange bases of
 `full_step_lagrange.json`, the finalize at the rule's own step domain (`log2 = 15`, the dump's
 22957 rows rounded up), and the wrap-side messages unpadded. The output is the 67 cells of the
-step statement. The advice is inert: the comparison is on the constraint system. -/
+step statement. `Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero` is the padded
+case: no slot in a tag of width 1, so one dummy unfinalized entry and one padding message. The
+advice is inert: the comparison is on the constraint system. -/
+
+/-- The unfinalized entry padding the statement of a rule verifying no proofs (PS
+`Dummy.baseCaseDummies { maxProofsVerified: 0 }`), at the wrap circuit's 15 rounds. -/
+def dummyUnfN0 : Pickles.UnfVal 15 :=
+  let sf (x : Fp) : Type2 (SplitField Fp Bool) := ⟨⟨x, true⟩⟩
+  { cip := sf 10733637291412775405099085909742784243308064411873129175045178535313137524648
+    b := sf 12005690365207186104828106725404484059974178413747419366262848828074459318671
+    zetaToSrsLength :=
+      sf 7826322391957027530016555805456769916486940393993472644155614648591765317494
+    zetaToDomainSize :=
+      sf 7826322391957027530016555805456769916486940393993472644155614648591765317494
+    perm := sf 11720302720943076563339347688798825215517484960467558296985186859509025408993
+    spongeDigest := 6277101735386680764176071790128604879584176795969512275969
+    beta := 152341587173296550850923210387509020609
+    gamma := 239197809892340837260422696781281951881
+    alpha := 236185100527557585826515066705725312805
+    zeta := 260445934505999659442479615932459762956
+    xi := 18446744073709551617
+    bulletproofChallenges := #v[161621990286339861369413299182831583087,
+      294397517322790754025793051151124957079, 10455894452509500744048069718178570187,
+      224814704134265519234947971901913897491, 330128161163701260858569889180053145483,
+      102493828312258879830323023652412497031, 215326567078568560823705023668614618897,
+      120359744259981153545389569741970563149, 221360828059242236386510005024107555656,
+      257571901803291014519404945390244881518, 209025140278641004900167089918138330057,
+      201591733645229477386800950847198767694, 318881875946480425567146057353930829431,
+      198219236102229943192453714701868046676, 122049445183499159876948789073679959987]
+    shouldFinalize := false }
 
 /-- The rule of `simple_chain_n2`: two previous states, `self` their sum plus one unless `self`
 is zero, the base case in which neither previous proof must verify. -/
@@ -1268,9 +1297,21 @@ def stepMainSimpleChainN2Circuit (pts : Array XhatStepCurve.Point) (h : XhatStep
   let out ← stepMain (n := 2) (w := 2) (nc := 1) (k := 15) (ks := 16) (inVal := Fp) (by decide)
     (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
     PicklesFixture.fopStepParams [⟨15, Kimchi.Fixture.PS.fpSide.omega (2 ^ 15)⟩] dummyWrapSg
-    simpleChainN2Rule
+    dummyUnfN0 simpleChainN2Rule
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-      AsProver.throw "advice", AsProver.throw "advice"⟩
+      AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
+  pure (Vector.ofFn fun i => out.out[i.val]?.getD (.const 0))
+
+open Pickles in
+/-- `step_main_two_phase_chain_make_zero_circuit`: the rule `self = 0` with no slot, so the
+verifier and the finalize's domains are never used. -/
+def stepMainTwoPhaseChainMakeZeroCircuit (_ : Vector (FVar Fp) 0) :
+    CircuitM Fp C (Vector (FVar Fp) 34) := do
+  let out ← stepMain (n := 0) (w := 1) (nc := 1) (k := 15) (ks := 16) (inVal := Fp) (by decide)
+    (fun _ _ _ _ _ => pure true_) PicklesFixture.fopStepParams [] dummyWrapSg dummyUnfN0
+    (fun x => do makeZeroAppCircuit x; pure (#v[], []))
+    ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+      AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
   pure (Vector.ofFn fun i => out.out[i.val]?.getD (.const 0))
 
 /-! ## The wrap side's `incrementally_verify_proof`
@@ -1547,6 +1588,8 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       wrapTarget (a := Vector Fq 2) (b := PUnit) pseudoToDomainWrapCircuit),
     ("hash_messages_for_next_step_proof_circuit",
       stepTarget (a := Vector Fp 91) (b := PUnit) hashMessagesStepCircuit),
+    ("step_main_two_phase_chain_make_zero_circuit",
+      stepTarget (a := Vector Fp 0) (b := Vector Fp 34) stepMainTwoPhaseChainMakeZeroCircuit),
     ("hash_messages_for_next_wrap_proof_circuit",
       wrapTarget (a := Vector Fq 33) (b := PUnit) hashMessagesWrapCircuit) ]
 
