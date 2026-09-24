@@ -15,7 +15,6 @@ against that domain and asserts the slot finalized or was not to be.
 ## Main definitions
 
 * `pinWrapDomainIndex`: one slot's pin against the branches' compile-time indices.
-* `selectDomain`: one slot's domain from its index.
 * `WrapFinalizeSlot`: one slot's cells and compile-time pins.
 * `wrapDomainLog2s`: the wrap domains a slot can be finalized at.
 * `wrapFinalizeCircuit`: the block as a circuit of its input (`WrapFinalizeIn`).
@@ -49,12 +48,6 @@ def pinWrapDomainIndex (whichBranch : List (BoolVar F)) (atSlot : List (Option �
     let knownBranch ← Pseudo.choose whichBranch atSlot fun k => .const (k.elim 0 fun _ => 1)
     let pinned ← mul knownBranch index
     assertEqual pinned chosen
-
-/-- The domain a slot's index selects among `log2s`: its one-hot bits, then `toDomain`. -/
-def selectDomain (gen : ℕ → F) (log2s : List ℕ) (index : FVar F) :
-    CircuitM F c (PlonkDomain F c) := do
-  let which ← oneHotVector log2s.length index
-  toDomain gen which log2s
 
 /-- One slot of the finalize block: its wrap domain index cell, its column of compile-time
 domain indices over the branches (`none` for a side-loaded predecessor), and the finalized
@@ -119,42 +112,6 @@ private theorem allSome_eq_some {α : Type} :
         subst h
         simp [allSome_eq_some (l := l) (by simpa [List.allSome] using hl)]
 
-omit [DecidableEq F] [ToNat F] in
-/-- Weights reading as the indicator of `b` pick a list's `b`-th entry. -/
-theorem sum_indicator {α : Type} (f : α → F) :
-    ∀ (xs : List α) (ws : List F) (b : ℕ),
-      ws = (List.range xs.length).map (fun l => if l = b then (1 : F) else 0) →
-      (hb : b < xs.length) → ((ws.zip xs).map fun e => e.1 * f e.2).sum = f xs[b]
-  | [], _, _, _, hb => absurd hb (Nat.not_lt_zero _)
-  | x :: xs, ws, b, hws, hb => by
-    rw [List.length_cons, List.range_succ_eq_map] at hws
-    subst hws
-    cases b with
-    | zero =>
-      simp only [List.map_cons, List.map_map, List.zip_cons_cons, List.sum_cons,
-        List.getElem_cons_zero]
-      rw [if_pos trivial, one_mul, add_eq_left]
-      refine List.sum_eq_zero fun y hy => ?_
-      obtain ⟨e, he, rfl⟩ := List.mem_map.mp hy
-      obtain ⟨l, -, hl⟩ := List.mem_map.mp (List.of_mem_zip he).1
-      rw [← hl]
-      simp
-    | succ b =>
-      simp only [List.map_cons, List.map_map, List.zip_cons_cons, List.sum_cons,
-        List.getElem_cons_succ]
-      rw [if_neg (Nat.succ_ne_zero b).symm, zero_mul, zero_add]
-      refine sum_indicator f xs _ b ?_ (by simpa using hb)
-      simp [Function.comp_def]
-
-omit [DecidableEq F] [ToNat F] in
-/-- A sum over bits zipped with values is the sum over the bits' readings zipped with them. -/
-private theorem sum_zip_bits {α : Type} (bits : List (BoolVar F)) (xs : List α) (g : α → F) :
-    ((bits.zip xs).map fun e => (↑e.1 : CVar F).val V * g e.2).sum
-      = (((bits.map fun x : BoolVar F => (↑x : CVar F).val V).zip xs).map
-          fun e => e.1 * g e.2).sum := by
-  rw [List.zip_map_left, List.map_map]
-  rfl
-
 omit [ToNat F] [KimchiSystem F c] in
 /-- Under any valuation satisfying the emitted constraints, with the branch bits reading as the
 indicator of `b` and branch `b` compiled for index `j` at this slot, the index reads as `j`. -/
@@ -196,37 +153,6 @@ theorem pinWrapDomainIndex_spec (whichBranch : List (BoolVar F)) (atSlot : List 
       CVar F).val V), hind (fun k => (CVar.const (k.elim 0 fun _ => (1 : F)) : CVar F).val V),
       hbj] at hassert
     simpa using hassert
-
-omit [ToNat F] [KimchiSystem F c] in
-/-- Under any valuation satisfying the emitted constraints, with the index reading as
-`j < log2s.length` and the casts of the candidate indices distinct from `j`'s, the selected
-domain's generator reads as `gen log2s[j]` and its vanishing polynomial as `ζ^(2^log2s[j]) − 1`. -/
-theorem selectDomain_spec (gen : ℕ → F) (log2s : List ℕ) (index : FVar F) (j : ℕ)
-    (hj : j < log2s.length) (hidx : index.val V = (j : F))
-    (hinj : ∀ l < log2s.length, (j : F) = l → j = l) :
-    ⦃⌜True⌝⦄ selectDomain (c := Builder V c) gen log2s index
-    ⦃⇓ d _ => ⌜d.generator.val V = gen log2s[j] ∧ ∀ zeta : FVar F,
-      ⦃⌜True⌝⦄ d.vanishingPolynomial zeta
-      ⦃⇓ r _ => ⌜r.val V = zeta.val V ^ 2 ^ log2s[j] - 1⌝⦄⌝⦄ := by
-  simp only [selectDomain]
-  have hw := oneHotVector_spec (c := c) (V := V) log2s.length index
-  have hd := fun which => toDomain_spec (c := c) (V := V) gen which log2s
-  mvcgen [hw, hd]
-  rename_i bits _ hbits d _
-  intro hg hv
-  have hind : bits.map (fun x : BoolVar F => (↑x : CVar F).val V)
-      = (List.range log2s.length).map fun l => if l = j then (1 : F) else 0 := by
-    rw [hbits.1]
-    refine List.map_congr_left fun l hl => ?_
-    rw [hidx]
-    by_cases h : l = j
-    · simp [h]
-    · rw [if_neg h, if_neg fun h' => h (hinj l (List.mem_range.mp hl) h').symm]
-  have hpick := fun f : ℕ → F =>
-    (sum_zip_bits bits log2s f).trans (sum_indicator f log2s _ j hind hj)
-  refine ⟨hg.trans (hpick gen), fun zeta => builder_spec_imp _ _ _ (hv zeta) ?_⟩
-  intro r hr
-  rw [hr, hpick fun l => zeta.val V ^ 2 ^ l]
 
 end Reads
 
