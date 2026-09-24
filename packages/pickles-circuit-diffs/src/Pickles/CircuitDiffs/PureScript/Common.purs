@@ -27,6 +27,7 @@ module Pickles.CircuitDiffs.PureScript.Common
   , wrapDomainLog2
   , wrapSrsLengthLog2
   , deriveStepVKFromCompiled
+  , deriveStepVKCommsFromCompiled
   , deriveWrapVKFromCompiled
   ) where
 
@@ -151,7 +152,19 @@ deriveStepVKFromCompiled
   => CRS VestaG
   -> CompiledCircuit StepField
   -> Effect (StepVK stepChunks (FVar WrapField))
-deriveStepVKFromCompiled vestaSrs builtState = do
+deriveStepVKFromCompiled vestaSrs builtState =
+  stepVkForCircuit <$> deriveStepVKCommsFromCompiled @stepChunks @len vestaSrs builtState
+
+-- | `deriveStepVKFromCompiled`'s commitments as values, before they
+-- | become the circuit's constant cells.
+deriveStepVKCommsFromCompiled
+  :: forall @stepChunks @len
+   . Reflectable stepChunks Int
+  => Reflectable len Int
+  => CRS VestaG
+  -> CompiledCircuit StepField
+  -> Effect (StepVK stepChunks WrapField)
+deriveStepVKCommsFromCompiled vestaSrs builtState = do
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
   csResult <- makeConstraintSystemWithPrevChallenges @StepField
@@ -171,7 +184,7 @@ deriveStepVKFromCompiled vestaSrs builtState = do
       , crs: vestaSrs
       }
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
-  pure $ stepVkForCircuit (extractStepVKComms @stepChunks verifierIndex)
+  pure $ extractStepVKComms @stepChunks verifierIndex
 
 -- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS
 -- | lives in `WrapField` over Pallas; commitments are Pallas points

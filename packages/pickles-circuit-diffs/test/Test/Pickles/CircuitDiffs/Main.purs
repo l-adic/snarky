@@ -65,6 +65,10 @@ import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (compileStepMainChunks2)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
+import Snarky.Backend.Kimchi.Class (createCRS)
+import Pickles.Types (ChunkedCommitment(..))
+import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.CircuitDiffs.PureScript.Common (deriveStepVKCommsFromCompiled)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturn)
@@ -872,6 +876,32 @@ spec bundle =
         -- commit `cf352650`).
         exactMatchEff "wrap_main_circuit"
           (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
+        -- The constants `wrap_main_circuit` bakes in, for the Lean `check_cs` harness: the
+        -- step key its one branch chooses, the step domain, the Lagrange bases and `h` its
+        -- `x_hat` reads, and the dummy wrap challenges its padding sponge states absorb.
+        it "dumps the wrap_main constants for the Lean check_cs harness" $ liftEffect do
+          stepArt <- compileStepMainSimpleChain wrapMainN1StepSrsData
+          vestaSrs <- createCRS @Fp
+          key <- deriveStepVKCommsFromCompiled @1 @1 vestaSrs stepArt.stepCs
+          let
+            ptToJson :: AffinePoint Fq -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+            chunks :: ChunkedCommitment 1 (AffinePoint Fq) -> Array (Array String)
+            chunks (ChunkedCommitment v) = ptToJson <$> Vector.toUnfoldable v
+          FS.writeTextFile UTF8 (resultsDir <> "wrap_main_constants.json") $ writeJSON
+            { stepDomainLog2: stepArt.stepDomainLog2
+            , sigma: chunks <$> (Vector.toUnfoldable key.sigmaComm :: Array _)
+            , coefficients: chunks <$> (Vector.toUnfoldable key.coefficientsComm :: Array _)
+            , selectors: chunks <$>
+                [ key.genericComm, key.psmComm, key.completeAddComm, key.mulComm, key.emulComm
+                , key.endomulScalarComm
+                ]
+            , lagrange: Array.range 0 63 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt wrapSrs 14 i)
+            , h: ptToJson (pallasSrsBlindingGenerator wrapSrs)
+            , dummyWrapExpanded: (BigInt.toString <<< toBigInt) <$>
+                (Vector.toUnfoldable dummyIpaChallenges.wrapExpanded :: Array _)
+            }
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
