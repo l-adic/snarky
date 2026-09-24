@@ -165,11 +165,11 @@ private theorem forall₂_finRange {α : Type} {R : α → Fin n → Prop} {l : 
   simpa using this
 
 /-- **The step circuit's slots read as their wrap proofs' group halves.** For any rule, under a
-valuation satisfying the emitted constraints, every slot the rule marks must-verify satisfies
-`SlotReads`: for any wrap proof its cells read as, the group half accepts it at the slot's
-statement, carrying the step-message digest of this step's key, application state and kept
-proofs. The rule is opaque; the slots' parity bits and verdicts are bits by their allocation
-checks. -/
+valuation satisfying the emitted constraints, every slot the rule marks must-verify has its
+unfinalized entry's `shouldFinalize` set and satisfies `SlotReads`: for any wrap proof its cells
+read as, the group half accepts it at the slot's statement, carrying the step-message digest of
+this step's key, application state and kept proofs. The rule is opaque; the slots' parity bits
+and verdicts are bits by their allocation checks. -/
 theorem stepMain_reads {n w nc : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curve nc) (D : KnownDomains Es)
@@ -186,6 +186,7 @@ theorem stepMain_reads {n w nc : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
     stepMain (c := Builder V (KimchiConstraint Fp)) hw (verifyProofAt E)
       (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg rule adv
     ⦃⇓ r _ => ⌜∀ i : Fin n, CircuitType.Reads V r.prevs[i].mustVerify true →
+      CircuitType.Reads V r.unfs[i].shouldFinalize true ∧
       (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).SlotReads E V
         r.vk.points⌝⦄ := by
   have hinj := castInj128_of_lt PALLAS_BASE_CARD (by decide)
@@ -209,12 +210,15 @@ theorem stepMain_reads {n w nc : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
         (CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
           (∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·))
             vk.points inp.proof).shifted, (stepSide V).ClaimOk x) →
-          inp.SlotReads E V vk.points))
+          inp.SlotReads E V vk.points) ∧
+        (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = (↑inp.mustVerify : CVar Fp).val V)
       id
       (fun i => builder_spec_and _ _ _
         (verifyOneBy_verdict_bit (verifyProofAt E) (fun sv b st u cells =>
           verifyProofAt_success_bit E sv b st u cells) _ _ _ _)
-        (verifyOne_slotReads E Es D hw vk.points _ (hsmall _) (havoid _)))
+        (builder_spec_and _ _ _
+          (verifyOne_slotReads E Es D hw vk.points _ (hsmall _) (havoid _))
+          (verifyOneBy_shouldFinalize (verifyProofAt E) _ _ _ _)))
       (List.finRange n)
   have hhash := fun (p : Poseidon.Params Fp) (vk : VkComms nc (AffinePoint (FVar Fp))) a pr =>
     builder_spec_true
@@ -245,11 +249,12 @@ theorem stepMain_reads {n w nc : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
     obtain ⟨hbit, -⟩ := hget ⟨jj, hlen ▸ hjj⟩
     obtain ⟨bb, hbb⟩ := hbit (hunfPost ⟨jj, hlen ▸ hjj⟩).2.2.2.2.2.2.2.2.2.2.2.2
     rw [hbb]; cases bb <;> simp [bit]
-  obtain ⟨-, hacc⟩ := hget i
+  obtain ⟨-, hacc, hsf⟩ := hget i
   have hi : i.val < results.length := by rw [hlen]; exact i.isLt
   have h1 := hassert (by simpa [hlen] using hn) hbits (results[i.val]'hi).2
     (List.mem_map.mpr ⟨_, List.getElem_mem hi, rfl⟩)
-  refine hacc hmv h1 fun x hx => ?_
+  refine ⟨CircuitType.reads_boolVar.mpr (hsf.trans (CircuitType.reads_boolVar.mp hmv)),
+    hacc hmv h1 fun x hx => ?_⟩
   have hu := hunfPost i
   have hz := hcheck slots.val[i] (by simp)
   simp only [IvpInput.shifted, ivpInputOf, slotInput, AllocUnfinalized.toUnfinalized,

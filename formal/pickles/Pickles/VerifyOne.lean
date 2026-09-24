@@ -196,6 +196,27 @@ theorem verifyOneBy_verdict_bit
   obtain ⟨bs, hbs⟩ := hsucc
   exact ⟨_, hor _ _ (hand _ _ hbs hbf) (not_val (hpin ▸ hbm))⟩
 
+/-- Under any valuation satisfying the emitted constraints, the unfinalized proof's
+`shouldFinalize` reads as `mustVerify`, for any `verify`. -/
+theorem verifyOneBy_shouldFinalize
+    (verify : SpongeVar Fp → BoolVar Fp →
+      WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
+      UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      IvpInput k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
+    (P : FopParams Fp) (domains : List (KnownDomain Fp))
+    (vk : VkComms nc (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks k nc w) :
+    ⦃⌜True⌝⦄ verifyOneBy verify P domains vk inp
+    ⦃⇓ _ _ => ⌜(↑inp.unfinalized.shouldFinalize : CVar Fp).val V
+      = (↑inp.mustVerify : CVar Fp).val V⌝⦄ := by
+  have hfop := fun u (e : ChunkedEvals nc (FVar Fp)) m pr d => builder_spec_true
+    (finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) (k := ks) P domains u e m pr d)
+  have hh := fun p vk' a pr => builder_spec_true
+    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := nc) p vk' a pr)
+  have hv := fun sv b st u cells => builder_spec_true (verify sv b st u cells)
+  simp only [verifyOneBy]
+  mvcgen [hfop, hh, hv]
+
 /-- A relation on a list's entries carries to its zip with an equally long list. -/
 private theorem forall₂_zip_fst {α β γ : Type} {R : α → γ → Prop} :
     ∀ (as : List α) (bs : List β) (cs : List γ), List.Forall₂ R as cs →
