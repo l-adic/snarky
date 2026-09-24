@@ -41,7 +41,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PackedStatement (PackedStepPublicInput(..))
-import Pickles.ProofsVerified (ProofsVerified, allPossibleDomainLog2s)
+import Pickles.ProofsVerified (ProofsVerified, allPossibleDomainLog2s, wrapDomainShifts)
 import Pickles.Pseudo (PlonkDomain)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
@@ -322,7 +322,7 @@ wrapFinalizePrevProofs whichBranch pins wrapDomainIndices unfViews witnesses pad
   -- first, right-to-left, then every FOP body, left-to-right.
   let
     domainConfig =
-      { shifts: LinFFI.domainShifts @WrapField
+      { shifts: wrapDomainShifts
       , domainGenerator: LinFFI.domainGenerator @WrapField
       }
     wrapIpaRounds = reflectType (Proxy @WrapIPARounds)

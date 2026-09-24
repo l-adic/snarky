@@ -4,6 +4,7 @@ module Pickles.ProofsVerified
   ( ProofsVerified(..)
   , ProofsVerifiedCount
   , allPossibleDomainLog2s
+  , wrapDomainShifts
   , proofsVerifiedToBoolVec
   , boolVecToProofsVerified
   ) where
@@ -12,11 +13,13 @@ import Prelude
 
 import Data.Enum (class BoundedEnum, class Enum)
 import Data.Enum.Generic (genericCardinality, genericFromEnum, genericPred, genericSucc, genericToEnum)
-import Data.Fin (Finite, reflectFinite)
+import Data.Fin (Finite, getFinite, reflectFinite)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Pickles.Field (WrapField)
+import Pickles.Linearization.FFI (domainShifts)
 
 -- | Number of proofs a Pickles VK verifies; capped at 2 for the
 -- | side-loaded protocol (`Width.Max = Nat.N2`).
@@ -34,6 +37,13 @@ type ProofsVerifiedCount = 3
 allPossibleDomainLog2s :: Vector ProofsVerifiedCount (Finite 16)
 allPossibleDomainLog2s =
   reflectFinite @13 :< reflectFinite @14 :< reflectFinite @15 :< Vector.nil
+
+-- | The permutation shifts `k_0..k_6` of every wrap domain in
+-- | `allPossibleDomainLog2s`. kimchi's shifts for the three sizes
+-- | coincide, so one set serves whichever domain a circuit selects.
+wrapDomainShifts :: Vector 7 WrapField
+wrapDomainShifts =
+  domainShifts @WrapField (getFinite (Vector.head allPossibleDomainLog2s))
 
 derive instance Eq ProofsVerified
 derive instance Ord ProofsVerified

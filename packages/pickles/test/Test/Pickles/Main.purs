@@ -26,6 +26,7 @@ import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChil
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
 import Test.Pickles.Sideload.VerifyFixturesSpec as SideloadVerifyFixtures
 import Test.Pickles.Sideload.VerifyNrrSpec as SideloadVerifyNrr
+import Test.Pickles.WrapDomainShiftsSpec as WrapDomainShifts
 import Test.Spec (SpecT, beforeAll, hoistSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -40,6 +41,7 @@ import Test.Spec.Runner.Node.Config as Cfg
 -- | than once per test.
 spec :: SpecT (LoggerT Message Aff) Unit Aff Unit
 spec = beforeAll buildSharedSrs do
+  WrapDomainShifts.spec
   CompileValidation.spec
   NoRecursionReturn.spec
   Codecs.spec
