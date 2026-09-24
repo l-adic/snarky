@@ -14,6 +14,7 @@ branches, and finalizes the previous wrap proofs that step proof verified.
 * `onesVector`: the slot mask, `true` up to the branch's first unused slot.
 * `wrapBranchBlock`: the branch bits, the slot mask, the branch's step domain, and the
   statement's branch data asserted to pack them.
+* `splitUnfinalized`: a previous proof's claims with their shifted scalars split.
 * `chooseKey`: the active branch's step key, the branches' keys summed under the one-hot bits
   and sealed.
 
@@ -22,6 +23,7 @@ branches, and finalizes the previous wrap proofs that step proof verified.
 * `onesVector_spec`: with the first unused slot reading as `w`, slot `i` reads as `[i < w]`.
 * `wrapBranchBlock_spec`: the branch data reads as `4·log2s[b] + Σᵢ 2^(1−i)·[i < widths[b]]`
   for the branch `b` the bits name.
+* `splitUnfinalized_spec`: each split scalar joins to its original (`SplitReads`).
 -/
 
 namespace Pickles
@@ -58,6 +60,34 @@ def wrapBranchBlock (branches mpv : ℕ) (widths log2s : List ℕ) (whichBranch 
     (fun acc im => CVar.add_ acc (CVar.scale_ ((2 ^ (1 - im.1) : ℕ) : F) ↑im.2)) (.const 0)
   assertEqual branchData (CVar.add_ packedMask (CVar.scale_ 4 domainLog2))
   pure (bits, mask)
+
+/-- One shifted scalar split into its halved representative and parity bit. -/
+def splitShifted [ToNat F] (x : Type2 (FVar F)) :
+    CircuitM F c (Type2 (SplitField (FVar F) (BoolVar F))) := do
+  let r ← splitFieldVar x.val
+  pure ⟨⟨r.1, r.2⟩⟩
+
+/-- A previous proof's claims with its five shifted scalars split, in the order combined inner
+product, `b`, `ζ^(srs length)`, `ζⁿ`, permutation scalar. -/
+def splitUnfinalized [ToNat F] {k : ℕ}
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) :
+    CircuitM F c
+      (UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) := do
+  let cip ← splitShifted u.deferredValues.combinedInnerProduct
+  let b ← splitShifted u.deferredValues.b
+  let ztSrs ← splitShifted u.deferredValues.plonk.zetaToSrsLength
+  let ztDom ← splitShifted u.deferredValues.plonk.zetaToDomainSize
+  let perm ← splitShifted u.deferredValues.plonk.perm
+  pure
+    { deferredValues :=
+        { plonk := { u.deferredValues.plonk with
+            perm := perm, zetaToSrsLength := ztSrs, zetaToDomainSize := ztDom }
+          combinedInnerProduct := cip
+          xi := u.deferredValues.xi
+          bulletproofChallenges := u.deferredValues.bulletproofChallenges
+          b := b }
+      shouldFinalize := u.shouldFinalize
+      spongeDigestBeforeEvaluations := u.spongeDigestBeforeEvaluations }
 
 section ChooseKey
 
@@ -242,6 +272,42 @@ theorem wrapBranchBlock_spec (branches mpv : ℕ) (widths log2s : List ℕ)
     packedMask_val (V := V) (fun i => bit (decide (i < widths[j]'(by omega)))) _ mask _ hmask']
   simp only [CVar.val]
   ring
+
+/-- A split shifted scalar joins to the original: its parity cell reads as a bit `bb` and
+`x = 2·sDiv2 + bb`. -/
+def SplitReads (V : Valuation F) (x : Type2 (FVar F))
+    (y : Type2 (SplitField (FVar F) (BoolVar F))) : Prop :=
+  ∃ bb : Bool, (↑y.val.sOdd : CVar F).val V = bit bb ∧ x.val.val V = 2 * y.val.sDiv2.val V + bit bb
+
+/-- Under any valuation satisfying the emitted constraints, the split reads as the scalar. -/
+theorem splitShifted_spec [ToNat F] (x : Type2 (FVar F)) :
+    ⦃⌜True⌝⦄ splitShifted (c := Builder V c) x ⦃⇓ y _ => ⌜SplitReads V x y⌝⦄ := by
+  unfold splitShifted
+  have h := splitFieldVar_spec (V := V) (c := c) x.val
+  mvcgen [h]
+
+/-- **The split claims.** Under any valuation satisfying the emitted constraints, the split
+claims keep every unshifted field and each split scalar joins to its original. -/
+theorem splitUnfinalized_spec [ToNat F] {k : ℕ}
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) :
+    ⦃⌜True⌝⦄ splitUnfinalized (c := Builder V c) u
+    ⦃⇓ r _ => ⌜r.deferredValues.plonk.alpha = u.deferredValues.plonk.alpha ∧
+      r.deferredValues.plonk.beta = u.deferredValues.plonk.beta ∧
+      r.deferredValues.plonk.gamma = u.deferredValues.plonk.gamma ∧
+      r.deferredValues.plonk.zeta = u.deferredValues.plonk.zeta ∧
+      r.deferredValues.xi = u.deferredValues.xi ∧
+      r.deferredValues.bulletproofChallenges = u.deferredValues.bulletproofChallenges ∧
+      r.shouldFinalize = u.shouldFinalize ∧
+      r.spongeDigestBeforeEvaluations = u.spongeDigestBeforeEvaluations ∧
+      SplitReads V u.deferredValues.combinedInnerProduct r.deferredValues.combinedInnerProduct ∧
+      SplitReads V u.deferredValues.b r.deferredValues.b ∧
+      SplitReads V u.deferredValues.plonk.perm r.deferredValues.plonk.perm ∧
+      SplitReads V u.deferredValues.plonk.zetaToSrsLength r.deferredValues.plonk.zetaToSrsLength ∧
+      SplitReads V u.deferredValues.plonk.zetaToDomainSize
+        r.deferredValues.plonk.zetaToDomainSize⌝⦄ := by
+  unfold splitUnfinalized
+  have h := fun x => splitShifted_spec (V := V) (c := c) x
+  mvcgen [h]
 
 end Reads
 

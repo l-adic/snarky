@@ -42,11 +42,12 @@ Pickles.oneHotVector_spec
 Pickles.toDomain_spec
 
 -- TODO: drop once the wrap main port consumes them. The wrap circuit's pieces: x_hat over
--- bases masked across branches, the padded accumulator digest and the branch block, not yet
--- reached from a capstone.
+-- bases masked across branches, the padded accumulator digest, the branch block and the claim
+-- split, not yet reached from a capstone.
 Pickles.xHatMasked_reads_publicCommitment
 Pickles.hashMessagesForNextWrapProof_padded
 Pickles.wrapBranchBlock_spec
+Pickles.splitUnfinalized_spec
 
 -- TODO: drop once the wrap main port consumes them. The x_hat ladders' bounds on the packed
 -- scalars, the frame laws that carry them through the wrap verifier, and the wrap public
