@@ -95,6 +95,7 @@ import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Pickles.MessageHash
 import Pickles.WrapVerify
+import Pickles.WrapFinalize
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.Poseidon
@@ -791,6 +792,25 @@ def finalizeOtherProofChunks2StepCircuit (input : Vector (FVar Fp) 239) :
 discarded. -/
 def finalizeOtherProofWrapCircuit (input : Vector (FVar Fq) 148) : CircuitM Fq Cq PUnit := do
   let _ ← fopWrapHarness input
+  pure PUnit.unit
+
+/-- `wrap_finalize_n2_circuit`: `Pickles.wrapFinalizePrevProofs` at two branches and two
+slots. Input 0 is the branch index; slot `i`'s 145-cell finalize input at the wrap circuit's
+15 rounds starts at `1 + 147 i`, followed by its `shouldFinalize` and its wrap domain index.
+Branch 0's slots are pinned to domain indices `[1, 1]`, branch 1's to `[0, 2]`. -/
+def wrapFinalizeN2Circuit (input : Vector (FVar Fq) 295) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let whichBranch ← Pickles.oneHotVector 2 (get 0)
+  let slot (i : ℕ) :=
+    let off := 1 + 147 * i
+    let (u, w, prev) := fopInputsOf Type2.mk (fun j => get (off + j)) 25 15
+    ({ u with shouldFinalize := (.unchecked (get (off + 145)) : BoolVar Fq) }, w, prev,
+      get (off + 146))
+  let (u0, w0, p0, i0) := slot 0
+  let (u1, w1, p1, i1) := slot 1
+  let _ ← Pickles.wrapFinalizePrevProofs fopWrapParams
+    (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) [13, 14, 15] whichBranch
+    [[some 1, some 0], [some 1, some 2]] [i0, i1] [u0, u1] [w0, w1] [p0, p1]
   pure PUnit.unit
 
 /-! ## The wrap column
@@ -1492,6 +1512,8 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       wrapTarget (a := Vector Fq 172) (b := PUnit) (checkBulletproofWrapCircuit hWrap)),
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit),
+    ("wrap_finalize_n2_circuit",
+      wrapTarget (a := Vector Fq 295) (b := PUnit) wrapFinalizeN2Circuit),
     ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit),
     -- the Pseudo selection circuits, on both fields
     ("one_hot_n1_step_circuit", stepTarget (a := Vector Fp 1) (b := PUnit) (oneHotCircuit 1)),

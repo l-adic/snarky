@@ -9,7 +9,9 @@ module Pickles.Wrap.Main
   ( WrapMainConfig
   , WrapMainInput
   , WrapMainInputVar
+  , UnfinalizedView
   , maskedLagrangeAt
+  , wrapFinalizePrevProofs
   , wrapMain
   ) where
 
@@ -273,6 +275,96 @@ maskedLagrangeAt whichBranch domainLog2s lagrangeTable = lookup
           , sealCondAddPt: false
           }
 
+-- | The wrap circuit's finalize block. It pins each slot's wrap domain
+-- | index to the domain its branch was compiled for, selects every
+-- | slot's domain from its index, then finalizes every slot's deferred
+-- | values against its domain, asserting each finalized or was not to
+-- | be. Returns each slot's expanded bullet-proof challenges.
+wrapFinalizePrevProofs
+  :: forall branches mpv r
+   . Reflectable branches Int
+  => Reflectable mpv Int
+  => Vector branches (BoolVar WrapField)
+  -> Vector branches (Vector mpv (Maybe ProofsVerified))
+  -> Vector mpv (FVar WrapField)
+  -> Vector mpv UnfinalizedView
+  -> Vector mpv (Evals (FVar WrapField))
+  -> Vector mpv (Vector PaddedLength (Vector WrapIPARounds (FVar WrapField)))
+  -> Snarky WrapField (KimchiConstraint WrapField) r
+       (Vector mpv (Vector WrapIPARounds (FVar WrapField)))
+wrapFinalizePrevProofs whichBranch pins wrapDomainIndices unfViews witnesses paddedChalsAll = do
+  -- The indices are advice, and each slot's finalize check is only
+  -- sound at the finalized proof's own domain, so pin every slot to the
+  -- index its branch was compiled for; padding slots take index `1`, the
+  -- value the prover supplies for them. A side-loaded predecessor's
+  -- domain comes from its key, which does not reach this circuit, so
+  -- where such a branch is active the index stays unconstrained.
+  label "wrap-domain-index-pins" do
+    forWithIndex_ wrapDomainIndices \slot index -> do
+      let atSlot = pins <#> \ks -> Vector.index ks slot
+      case sequence atSlot of
+        -- Every branch knows this slot's domain. The one-hot bits sum to
+        -- one, so the general constraint below is this equality.
+        Just ks -> do
+          chosen <- Pseudo.choose whichBranch ks (const_ <<< fromInt <<< fromEnum)
+          assertEqual_ index chosen
+        -- A side-loaded branch's term is zero on both sides, so while it
+        -- is active the constraint reads `0 = 0`.
+        Nothing -> do
+          chosen <- Pseudo.choose whichBranch atSlot
+            (const_ <<< maybe zero (fromInt <<< fromEnum))
+          knownBranch <- Pseudo.choose whichBranch atSlot
+            (const_ <<< maybe zero (const one))
+          pinned <- mul_ knownBranch index
+          assertEqual_ pinned chosen
+
+  -- Emission order is part of the circuit: every slot's Pseudo domain
+  -- first, right-to-left, then every FOP body, left-to-right.
+  let
+    domainConfig =
+      { shifts: LinFFI.domainShifts @WrapField
+      , domainGenerator: LinFFI.domainGenerator @WrapField
+      }
+    wrapIpaRounds = reflectType (Proxy @WrapIPARounds)
+    fopBaseParams =
+      { domainLog2: wrapIpaRounds
+      , srsLengthLog2: wrapIpaRounds
+      -- Fixed at the default, independent of the step proof's chunking.
+      , zkRows: zkRowsByDefault
+      , endo: let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
+      , linearizationPoly: Linearization.vesta
+      }
+
+  domains <- do
+    let
+      revIdxs = Vector.reverse (Vector.generate @mpv getFinite)
+      revWdis = Vector.reverse wrapDomainIndices
+      revInputs = Vector.zip revIdxs revWdis
+    revDomains <- traverse
+      ( \(Tuple slotIdx wdi) -> do
+          which <- label ("block3-wrap-domain-" <> show slotIdx) $
+            -- One-hot over the 3 possible wrap domains.
+            Pseudo.oneHotVector @3 wdi
+          -- Bound: max wrap domain log2 + 1 = `WrapIPARounds` + 1.
+          Pseudo.toDomain @16 domainConfig which allPossibleDomainLog2s
+      )
+      revInputs
+    pure (Vector.reverse revDomains)
+
+  let
+    idxs = Vector.generate @mpv identity
+  traverse
+    ( \fi -> do
+        let
+          slotIdx = getFinite fi
+          dom = Vector.index domains fi
+          unf = Vector.index unfViews fi
+          wit = Vector.index witnesses fi
+          chals = Vector.index paddedChalsAll fi
+        processOneSlotFopBody fopBaseParams slotIdx dom unf wit chals
+    )
+    idxs
+
 -- | Absorb one slot's `sg` and its unpadded bullet-proof challenges
 -- | into the supplied sponge state, and squeeze the digest. The caller
 -- | chooses the state, which already has the slot's padding dummies
@@ -454,9 +546,6 @@ wrapMainCore
 wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals = do
   let
     wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
-    wrapIpaRounds = reflectType (Proxy @WrapIPARounds)
-    wrapDomainLog2 = wrapIpaRounds
-    wrapSrsLengthLog2 = wrapIpaRounds
 
     boolToField = coerce
 
@@ -576,82 +665,14 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
   wrapDomainIndices <- label "wrap-domain-indices" $ exists $
     pure advice <#> \r -> r.wrapDomainIndices
 
-  -- The indices are advice, and each slot's finalize check is only
-  -- sound at the finalized proof's own domain, so pin every slot to the
-  -- index its branch was compiled for; padding slots take index `1`, the
-  -- value the prover supplies for them. A side-loaded predecessor's
-  -- domain comes from its key, which does not reach this circuit, so
-  -- where such a branch is active the index stays unconstrained.
-  label "wrap-domain-index-pins" do
-    forWithIndex_ wrapDomainIndices \slot index -> do
-      let atSlot = config.prevWrapDomainPins <#> \ks -> Vector.index ks slot
-      case sequence atSlot of
-        -- Every branch knows this slot's domain. The one-hot bits sum to
-        -- one, so the general constraint below is this equality.
-        Just ks -> do
-          chosen <- Pseudo.choose whichBranch ks (const_ <<< fromInt <<< fromEnum)
-          assertEqual_ index chosen
-        -- A side-loaded branch's term is zero on both sides, so while it
-        -- is active the constraint reads `0 = 0`.
-        Nothing -> do
-          chosen <- Pseudo.choose whichBranch atSlot
-            (const_ <<< maybe zero (fromInt <<< fromEnum))
-          knownBranch <- Pseudo.choose whichBranch atSlot
-            (const_ <<< maybe zero (const one))
-          pinned <- mul_ knownBranch index
-          assertEqual_ pinned chosen
-
-  -- Emission order is part of the circuit: every slot's Pseudo domain
-  -- first, right-to-left, then every FOP body, left-to-right.
   let
-    domainConfig =
-      { shifts: LinFFI.domainShifts @WrapField
-      , domainGenerator: LinFFI.domainGenerator @WrapField
-      }
-    fopBaseParams =
-      { domainLog2: wrapDomainLog2
-      , srsLengthLog2: wrapSrsLengthLog2
-      -- Fixed at the default, independent of the step proof's chunking.
-      , zkRows: zkRowsByDefault
-      , endo: wrapEndo
-      , linearizationPoly: Linearization.vesta
-      }
-
     unfViews = map unpackUnfinalized prevUnfinalized
-
     witnesses = map (\(AllocEvals allEvals) -> allEvals) rawEvals
-
-  domains <- do
-    let
-      revIdxs = Vector.reverse (Vector.generate @mpv getFinite)
-      revWdis = Vector.reverse wrapDomainIndices
-      revInputs = Vector.zip revIdxs revWdis
-    revDomains <- traverse
-      ( \(Tuple slotIdx wdi) -> do
-          which <- label ("block3-wrap-domain-" <> show slotIdx) $
-            -- One-hot over the 3 possible wrap domains.
-            Pseudo.oneHotVector @3 wdi
-          -- Bound: max wrap domain log2 + 1 = `WrapIPARounds` + 1.
-          Pseudo.toDomain @16 domainConfig which allPossibleDomainLog2s
-      )
-      revInputs
-    pure (Vector.reverse revDomains)
-
-  expandedChalsAll <-
-    let
-      idxs = Vector.generate @mpv identity
-    in
-      traverse
-        ( \fi -> do
-            let
-              slotIdx = getFinite fi
-              dom = Vector.index domains fi
-              unf = Vector.index unfViews fi
-              wit = Vector.index witnesses fi
-              chals = Vector.index paddedChalsAll fi
-            processOneSlotFopBody fopBaseParams slotIdx dom unf wit chals
-        )
-        idxs
+  expandedChalsAll <- wrapFinalizePrevProofs whichBranch config.prevWrapDomainPins
+    wrapDomainIndices
+    unfViews
+    witnesses
+    paddedChalsAll
 
   -- Right-to-left. `dummyPaddingSpongeStates` is indexed by the slot's
   -- real width `w`: entry `w` is the sponge after absorbing

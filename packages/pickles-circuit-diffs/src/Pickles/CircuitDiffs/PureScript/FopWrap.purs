@@ -1,6 +1,8 @@
 module Pickles.CircuitDiffs.PureScript.FopWrap
   ( FopWrapInput
+  , FopWrapInputAt
   , parseFopWrapInput
+  , parseFopWrapInputAt
   , fopWrapCircuit
   , compileFopWrap
   ) where
@@ -8,6 +10,7 @@ module Pickles.CircuitDiffs.PureScript.FopWrap
 import Prelude
 
 import Data.Fin (Finite, getFinite)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -27,7 +30,11 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
-type FopWrapInput =
+-- | The 16-round input `finalize_other_proof_wrap_circuit` takes.
+type FopWrapInput = FopWrapInputAt 16
+
+-- | One slot's finalize input at `rounds` bullet-proof rounds.
+type FopWrapInputAt rounds =
   { plonk ::
       { alpha :: SizedF 128 (FVar WrapField)
       , beta :: SizedF 128 (FVar WrapField)
@@ -40,7 +47,7 @@ type FopWrapInput =
   , combinedInnerProduct :: Type2 (FVar WrapField)
   , b :: Type2 (FVar WrapField)
   , xi :: SizedF 128 (FVar WrapField)
-  , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar WrapField))
+  , bulletproofChallenges :: Vector rounds (SizedF 128 (FVar WrapField))
   , spongeDigestBeforeEvaluations :: FVar WrapField
   , allEvals ::
       { ftEval1 :: FVar WrapField
@@ -51,13 +58,28 @@ type FopWrapInput =
       , sigmaEvals :: Vector 6 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
       , indexEvals :: Vector 6 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
       }
-  , prevChallenges :: Vector 2 (Vector 16 (FVar WrapField))
+  , prevChallenges :: Vector 2 (Vector rounds (FVar WrapField))
   }
 
 parseFopWrapInput :: Vector 148 (FVar WrapField) -> FopWrapInput
-parseFopWrapInput inputs =
+parseFopWrapInput inputs = parseFopWrapInputAt @16 (unsafeIdx inputs)
+
+-- | One slot's finalize input read through `at`, in the layout of
+-- | `finalize_other_proof_wrap_circuit` at `rounds` rounds: the deferred
+-- | values with `rounds` challenges, the evaluations, the two padded
+-- | previous-challenge vectors and the sponge digest.
+parseFopWrapInputAt
+  :: forall @rounds
+   . Reflectable rounds Int
+  => (Int -> FVar WrapField)
+  -> FopWrapInputAt rounds
+parseFopWrapInputAt at =
   let
-    at = unsafeIdx inputs
+    r = reflectType (Proxy @rounds)
+    -- the evaluations follow the challenges; the previous challenges and
+    -- the digest follow the evaluations
+    ev = 10 + r
+    prev = ev + 89
 
     evalPair :: forall n. Int -> Finite n -> { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
     evalPair base j =
@@ -78,18 +100,18 @@ parseFopWrapInput inputs =
     , b: Type2 (at 8)
     , xi: asSizedF128 (at 9)
     , bulletproofChallenges: Vector.generate \j -> asSizedF128 (at (10 + getFinite j))
-    , spongeDigestBeforeEvaluations: at 147
+    , spongeDigestBeforeEvaluations: at (prev + 2 * r)
     , allEvals:
-        { ftEval1: at 114
-        , publicEvals: { zeta: at 26, omegaTimesZeta: at 27 }
-        , witnessEvals: Vector.generate (evalPair 28)
-        , coeffEvals: Vector.generate (evalPair 58)
-        , zEvals: { zeta: at 88, omegaTimesZeta: at 89 }
-        , sigmaEvals: Vector.generate (evalPair 90)
-        , indexEvals: Vector.generate (evalPair 102)
+        { ftEval1: at (ev + 88)
+        , publicEvals: { zeta: at ev, omegaTimesZeta: at (ev + 1) }
+        , witnessEvals: Vector.generate (evalPair (ev + 2))
+        , coeffEvals: Vector.generate (evalPair (ev + 32))
+        , zEvals: { zeta: at (ev + 62), omegaTimesZeta: at (ev + 63) }
+        , sigmaEvals: Vector.generate (evalPair (ev + 64))
+        , indexEvals: Vector.generate (evalPair (ev + 76))
         }
     , prevChallenges: Vector.generate \j ->
-        Vector.generate \k -> at (115 + 16 * getFinite j + getFinite k)
+        Vector.generate \k -> at (prev + r * getFinite j + getFinite k)
     }
 
 fopWrapCircuit

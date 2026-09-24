@@ -254,10 +254,10 @@ def finalizeOtherProofStep {nc : ℕ} (P : FopParams F) (domains : List (KnownDo
     zeta alpha pl.beta.val pl.gamma.val pl.perm pl.zetaToSrsLength pl.zetaToDomainSize
 
 /-- The wrap side: `ζ`, `γ`, `β`, `α` in that order with `γ`, `β` sealed, the three shifted
-plonk claims sealed, then `finalizeOtherProofCore` at the constant generator with the plain
+plonk claims sealed, then `finalizeOtherProofCore` at the generator cell `gen` with the plain
 challenge digest, the `ξ` low half constrained, the `ζ^(2^srs)` rows and the caller's
 vanishing polynomial. -/
-def finalizeOtherProofWrap {nc : ℕ} (P : FopParams F) (gen : F)
+def finalizeOtherProofWrap {nc : ℕ} (P : FopParams F) (gen : FVar F)
     (vanishing : FVar F → CircuitM F c (FVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F)))
     (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F))) :
@@ -271,7 +271,7 @@ def finalizeOtherProofWrap {nc : ℕ} (P : FopParams F) (gen : F)
   let perm ← sealVar pl.perm.val
   let zetaToDomain ← sealVar pl.zetaToDomainSize.val
   let zetaToSrs ← sealVar pl.zetaToSrsLength.val
-  finalizeOtherProofCore P wrapShiftOps true (challengeDigest P.sponge prev) (.const gen)
+  finalizeOtherProofCore P wrapShiftOps true (challengeDigest P.sponge prev) gen
     P.srsLengthLog2 vanishing (prev.map fun _ => true_) u w prev zeta alpha beta gamma
     ⟨perm⟩
     ⟨zetaToSrs⟩ ⟨zetaToDomain⟩
@@ -1111,26 +1111,26 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     exact hne hgen0
 
 open Kimchi.Protocol.Linearization Poseidon.FqSponge in
-/-- The wrap side: under any valuation satisfying the emitted constraints, with the constant
-generator `ω` of order dividing `n` and the caller's vanishing polynomial reading `ζⁿ − 1`, and
-`â, ẑ < 2¹²⁸` the `α, ζ` claims, the outputs read as `FopReads` at `ζ = endoExpand λ ẑ`,
+/-- The wrap side: under any valuation satisfying the emitted constraints, with the generator
+cell reading as `ω` of order dividing `n`, the caller's vanishing polynomial reading `ζⁿ − 1`,
+and `â, ẑ < 2¹²⁸` the `α, ζ` claims, the outputs read as `FopReads` at `ζ = endoExpand λ ẑ`,
 `α = endoExpand λ â`, `β, γ` the raw claims, the digest of all previous challenges, `ξ`'s low
 half range-checked, and the Type2 decode of the shifted claims. -/
 theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hinj : CastInj128 F) (hsw : SplitWidth F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
-    (h3zk : 3 ≤ P.zkRows) (gen : F) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
+    (h3zk : 3 ≤ P.zkRows) (gen : FVar F) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen.val V ^ n = 1)
     (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) {nc : ℕ}
     (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
-    (hft : FtEval0Hyp V P n gen) :
+    (hft : FtEval0Hyp V P n (gen.val V)) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F)) P gen
       vanishing u w prev
     ⦃⇓ o _ => ⌜∃ a₀ z₀ : Prechallenge,
       Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
-      FopReads P true n gen
+      FopReads P true n (gen.val V)
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (prev.flatten.map (·.val V)))).1
         (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀.val)
@@ -1150,7 +1150,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       (List.forall₂_same.mpr fun _ _ => CircuitType.reads_boolVar.mpr (by simp [true_, bit])))
   have hcore := fun (zeta alpha beta gamma perm zetaToSrs zetaToDomain : FVar F) =>
     finalizeOtherProofCore_spec h2 h3 hinj hsw P hsize h3zk n hzk wrapShiftOps
-      wrapShiftOps.reading u ⟨perm⟩ ⟨zetaToSrs⟩ ⟨zetaToDomain⟩ true _ _ hd (.const gen)
+      wrapShiftOps.reading u ⟨perm⟩ ⟨zetaToSrs⟩ ⟨zetaToDomain⟩ true _ _ hd gen
       (fun _ => hω) P.srsLengthLog2
       vanishing (fun _ => hvan) _ _ hm w (Or.inr rfl) prev cvs hprev zeta alpha beta
       gamma hft
@@ -1238,7 +1238,7 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
 theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (hP : P.endo = Pasta.vestaEndo ∧ P.mds = symMdsQ ∧ P.toks = fqTokens)
     (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
-    (h3zk : 3 ≤ P.zkRows) (gen : Fq) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
+    (h3zk : 3 ≤ P.zkRows) (gen : FVar Fq) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen.val V ^ n = 1)
     (vanishing : FVar Fq → CircuitM Fq (Builder V (KimchiConstraint Fq)) (FVar Fq))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) {nc : ℕ}
@@ -1247,7 +1247,7 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen
       vanishing u w prev
-    ⦃⇓ o _ => ⌜FopVerifyReads P true n gen
+    ⦃⇓ o _ => ⌜FopVerifyReads P true n (gen.val V)
       (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
         (prev.flatten.map (·.val V)))).1
       (prev.map fun _ => true) cvs u w P.endoLam (fun x => x.val.val V)
@@ -1259,7 +1259,7 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
       fun ulb inp ext α ζ htab hζ hzk' hz1 hω' => by
         obtain ⟨he, hmds, ht⟩ := hP
         rw [he, hmds, ht]
-        exact ftEval0Circuit_spec_fq ulb inp ext n P.zkRows gen ζ α
+        exact ftEval0Circuit_spec_fq ulb inp ext n P.zkRows (gen.val V) ζ α
           (fun k hk => htab k (le_trans hk (by decide))) hζ hzk' hz1 hω')
     fun _ ⟨a₀, z₀, haval, hzval, hr⟩ =>
       ⟨a₀, z₀, haval, hzval, hr.wire⟩

@@ -33,6 +33,7 @@ import Pickles.StepMain
 import Pickles.WrapProof
 import Pickles.WrapScalarHalf
 import Pickles.WrapVerify
+import Pickles.WrapFinalize
 
 /-!
 # Pickles — the in-circuit kimchi verifier

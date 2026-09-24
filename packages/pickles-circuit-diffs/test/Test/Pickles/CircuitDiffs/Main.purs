@@ -72,6 +72,7 @@ import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (compileSt
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
+import Pickles.CircuitDiffs.PureScript.WrapFinalize (compileWrapFinalizeN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainChunks2 (compileWrapMainChunks2)
@@ -749,6 +750,7 @@ spec bundle =
       describe "Pickles Wrap sub-circuits" do
         exactMatchEff "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesWrap)
         exactMatchEff "finalize_other_proof_wrap_circuit" (fromCompiledCircuit =<< compileFopWrap)
+        exactMatchEff "wrap_finalize_n2_circuit" (fromCompiledCircuit =<< compileWrapFinalizeN2)
         exactMatchEff "group_map_wrap_circuit" (fromCompiledCircuit =<< compileGroupMap)
         exactMatchEff "bullet_reduce_one_wrap_circuit" (fromCompiledCircuit =<< compileBulletReduceOne)
         exactMatchEff "bullet_reduce_wrap_circuit" (fromCompiledCircuit =<< compileBulletReduce)
