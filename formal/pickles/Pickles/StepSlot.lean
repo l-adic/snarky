@@ -189,16 +189,17 @@ def AllocUnfinalized.toUnfinalized {k : ℕ} {f bc sf : Type} (u : AllocUnfinali
 
 /-! ## One slot's witness -/
 
-/-- One previous proof's witness, as allocated: the wrap proof's commitments and opening, the
-proof state it carries (the deferred values of the step proof it verified, and its branch
-data), that step proof's evaluations, and the `w` accumulators that step proof verified. -/
-structure SlotWitness (w nc k ks : ℕ) (f bc sf pt : Type) where
+/-- One previous proof's witness, as allocated: the wrap proof's commitments (`ncw` chunks)
+and opening, the proof state it carries (the deferred values of the step proof it verified, and
+its branch data), that step proof's evaluations (`ncs` chunks), and the `w` accumulators that
+step proof verified. -/
+structure SlotWitness (w ncw ncs k ks : ℕ) (f bc sf pt : Type) where
   /-- The witness commitments. -/
-  wComm : Vector (Vector pt nc) wCols
+  wComm : Vector (Vector pt ncw) wCols
   /-- The permutation accumulator's commitment. -/
-  zComm : Vector pt nc
-  /-- The quotient commitment, `nc` chunks per piece. -/
-  tComm : Vector (Vector pt nc) quotChunks
+  zComm : Vector pt ncw
+  /-- The quotient commitment, `ncw` chunks per piece. -/
+  tComm : Vector (Vector pt ncw) quotChunks
   /-- The opening's `(L, R)` pairs. -/
   lr : Vector (pt × pt) k
   /-- The opening's `z₁`. -/
@@ -236,7 +237,7 @@ structure SlotWitness (w nc k ks : ℕ) (f bc sf pt : Type) where
   /-- The carried branch data. -/
   branch : AllocBranchData f bc
   /-- The verified step proof's evaluations. -/
-  evals : AllocEvals nc f
+  evals : AllocEvals ncs f
   /-- The round challenges of the accumulators that step proof verified. -/
   prevChallenges : Vector (Vector f ks) w
   /-- Their `sg` points. -/
@@ -244,11 +245,11 @@ structure SlotWitness (w nc k ks : ℕ) (f bc sf pt : Type) where
 
 section SlotEncoding
 
-variable (w nc k ks : ℕ) (f bc sf pt : Type)
+variable (w ncw ncs k ks : ℕ) (f bc sf pt : Type)
 
 /-- The wrap proof's part of a slot witness. -/
 abbrev SlotWitness.ProofPart : Type :=
-  Vector (Vector pt nc) wCols × Vector pt nc × Vector (Vector pt nc) quotChunks ×
+  Vector (Vector pt ncw) wCols × Vector pt ncw × Vector (Vector pt ncw) quotChunks ×
     Vector (pt × pt) k × sf × sf × pt × pt
 
 /-- The proof state's part of a slot witness. -/
@@ -258,8 +259,8 @@ abbrev SlotWitness.StatePart : Type :=
 /-- A slot witness is its wrap proof, its proof state, the evaluations and the accumulators, in
 allocation order. -/
 def SlotWitness.equivProd :
-    SlotWitness w nc k ks f bc sf pt ≃
-      SlotWitness.ProofPart nc k sf pt × SlotWitness.StatePart ks f bc × AllocEvals nc f ×
+    SlotWitness w ncw ncs k ks f bc sf pt ≃
+      SlotWitness.ProofPart ncw k sf pt × SlotWitness.StatePart ks f bc × AllocEvals ncs f ×
         Vector (Vector f ks) w × Vector pt w where
   toFun s := ((s.wComm, s.zComm, s.tComm, s.lr, s.z1, s.z2, s.delta, s.sg),
     (s.cip, s.b, s.zetaToSrsLength, s.zetaToDomainSize, s.perm, s.spongeDigest, s.beta, s.gamma,
@@ -276,38 +277,38 @@ def SlotWitness.equivProd :
 
 end SlotEncoding
 
-instance instSlotWitnessCircuitType {F f fv b bv s sv p pv : Type} {w nc k ks : ℕ}
+instance instSlotWitnessCircuitType {F f fv b bv s sv p pv : Type} {w ncw ncs k ks : ℕ}
     [CircuitType F f fv] [CircuitType F b bv] [CircuitType F s sv] [CircuitType F p pv] :
-    CircuitType F (SlotWitness w nc k ks f b s p) (SlotWitness w nc k ks fv bv sv pv) :=
-  CircuitType.ofEquiv (SlotWitness.equivProd w nc k ks f b s p)
-    (SlotWitness.equivProd w nc k ks fv bv sv pv)
+    CircuitType F (SlotWitness w ncw ncs k ks f b s p) (SlotWitness w ncw ncs k ks fv bv sv pv) :=
+  CircuitType.ofEquiv (SlotWitness.equivProd w ncw ncs k ks f b s p)
+    (SlotWitness.equivProd w ncw ncs k ks fv bv sv pv)
 
 /-- One slot witness's check, in allocation order: every point of the wrap proof on the curve
 and the opening's parity bits boolean, nothing on the proof state's scalars, the branch data's
 check, nothing on the evaluations or the challenges, every accumulator point on the curve. -/
-def SlotWitness.check {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {w nc k ks : ℕ}
-    (s : SlotWitness w nc k ks (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))
-      (PallasPt (FVar Fp))) :
+def SlotWitness.check {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {w ncw ncs k ks : ℕ}
+    (s : SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) (PallasPt (FVar Fp))) :
     CircuitM Fp c PUnit := do
   CheckedType.check (c := c)
-    (val := SlotWitness.ProofPart nc k (Type2 (SplitField Fp Bool)) (PallasPt Fp))
+    (val := SlotWitness.ProofPart ncw k (Type2 (SplitField Fp Bool)) (PallasPt Fp))
     (s.wComm, s.zComm, s.tComm, s.lr, s.z1, s.z2, s.delta, s.sg)
   AllocBranchData.check s.branch
   CheckedType.check (c := c) (val := Vector (PallasPt Fp) w) s.prevSgs
 
 /-- Under any valuation satisfying the emitted constraints, the slot check forces the opening's
 `z₁`, `z₂` parity cells to read as bits. -/
-theorem SlotWitness.check_spec {V : Valuation Fp} {w nc k ks : ℕ}
-    (s : SlotWitness w nc k ks (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))
-      (PallasPt (FVar Fp))) :
+theorem SlotWitness.check_spec {V : Valuation Fp} {w ncw ncs k ks : ℕ}
+    (s : SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) (PallasPt (FVar Fp))) :
     ⦃⌜True⌝⦄ SlotWitness.check (c := Builder V (KimchiConstraint Fp)) s
     ⦃⇓ _ _ => ⌜(∃ b : Bool, (↑s.z1.val.sOdd : CVar Fp).val V = bit b) ∧
       ∃ b : Bool, (↑s.z2.val.sOdd : CVar Fp).val V = bit b⌝⦄ := by
   have hck : ⦃⌜True⌝⦄ CheckedType.check (F := Fp) (c := Builder V (KimchiConstraint Fp))
-      (val := SlotWitness.ProofPart nc k (Type2 (SplitField Fp Bool)) (PallasPt Fp))
+      (val := SlotWitness.ProofPart ncw k (Type2 (SplitField Fp Bool)) (PallasPt Fp))
       (s.wComm, s.zComm, s.tComm, s.lr, s.z1, s.z2, s.delta, s.sg)
       ⦃⇓ _ _ => ⌜CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
-        (val := SlotWitness.ProofPart nc k (Type2 (SplitField Fp Bool)) (PallasPt Fp)) V
+        (val := SlotWitness.ProofPart ncw k (Type2 (SplitField Fp Bool)) (PallasPt Fp)) V
         (s.wComm, s.zComm, s.tComm, s.lr, s.z1, s.z2, s.delta, s.sg)⌝⦄ :=
     (builder_spec_iff _ _).mpr fun nv h => CheckedType.check_sound V _ nv h
   have hbr := AllocBranchData.check_spec (V := V) s.branch

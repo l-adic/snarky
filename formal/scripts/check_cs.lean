@@ -1213,7 +1213,7 @@ def fullStepVerifyOneCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurv
     ⟨#v[get (b + 2 * k)], #v[get (b + 2 * k + 1)]⟩
   let psb := 115
   let eb := 145
-  let inp : VerifyOneInput 16 15 1 1 :=
+  let inp : VerifyOneInput 16 15 1 1 1 :=
     { appState := [get 0]
       deferred := ⟨⟨⟨get psb⟩, ⟨get (psb + 1)⟩, ⟨get (psb + 2)⟩, ⟨get (psb + 3)⟩,
           ⟨get (psb + 6)⟩, ⟨get (psb + 4)⟩, ⟨get (psb + 5)⟩⟩, ⟨get (psb + 7)⟩, ⟨get (psb + 9)⟩,
@@ -1294,7 +1294,8 @@ open Pickles in
 /-- `step_main_simple_chain_n2_circuit`. -/
 def stepMainSimpleChainN2Circuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point)
     (_ : Vector (FVar Fp) 0) : CircuitM Fp C (Vector (FVar Fp) 67) := do
-  let out ← stepMain (n := 2) (w := 2) (nc := 1) (k := 15) (ks := 16) (inVal := Fp) (by decide)
+  let out ← stepMain (n := 2) (w := 2) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := Fp)
+    (by decide)
     (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
     PicklesFixture.fopStepParams [⟨15, Kimchi.Fixture.PS.fpSide.omega (2 ^ 15)⟩] dummyWrapSg
     dummyUnfN0 simpleChainN2Rule
@@ -1307,7 +1308,8 @@ open Pickles in
 verifier and the finalize's domains are never used. -/
 def stepMainTwoPhaseChainMakeZeroCircuit (_ : Vector (FVar Fp) 0) :
     CircuitM Fp C (Vector (FVar Fp) 34) := do
-  let out ← stepMain (n := 0) (w := 1) (nc := 1) (k := 15) (ks := 16) (inVal := Fp) (by decide)
+  let out ← stepMain (n := 0) (w := 1) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := Fp)
+    (by decide)
     (fun _ _ _ _ _ => pure true_) PicklesFixture.fopStepParams [] dummyWrapSg dummyUnfN0
     (fun x => do makeZeroAppCircuit x; pure (#v[], []))
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",

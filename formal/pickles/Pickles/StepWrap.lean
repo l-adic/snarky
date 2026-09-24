@@ -53,15 +53,16 @@ whose two halves are tied and read one `shouldFinalize` bit, has each wrap proof
 as accepted by `kimchiVerify`, under the guards, the finalize ties and `SgOk`. -/
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
-    -- and the finalize block's slots; keys of `nc` chunks; the wrap circuit's `branches`
-    {n w nc branches : ℕ}
+    -- and the finalize block's slots; the wrap proofs at `ncw` chunks, the step proofs they
+    -- verified at `ncs`; the wrap circuit's `branches`
+    {n w ncw ncs branches : ℕ}
     -- the rule's input, as a value and as cells
     {inVal inVar : Type}
     [CircuitType Fp inVal inVar]
     -- the environment of the wrap proofs the slots verify (key, SRS, domain)
-    (E : Env IpaPallas.curve nc)
+    (E : Env IpaPallas.curve ncw)
     -- the environment of the step proofs those wrap proofs carry
-    (Es : Env IpaVesta.curve nc)
+    (Es : Env IpaVesta.curve ncs)
     -- the step domains the finalize inside the step circuit dispatches over
     (D : KnownDomains Es)
     -- the rule verifies at most the tag's `w` slots
@@ -73,11 +74,11 @@ theorem stepWrap_kimchiVerify
     -- the unfinalized entry padding the step statement to the tag's `w` slots
     (dummyUnf : UnfVal E.σ.k)
     -- every slot statement packs into at most `2 ^ E.σ.k` cells, the SRS size
-    (hsmall : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k nc w) msg,
+    (hsmall : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k ncw ncs w) msg,
       (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
     -- no relation the slot statements' public-input commitment names commits the SRS to the
     -- identity
-    (havoid : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k nc w) msg,
+    (havoid : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k ncw ncs w) msg,
       E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
     -- the step circuit's valuation
     (Vg : Valuation Fp)
@@ -86,7 +87,7 @@ theorem stepWrap_kimchiVerify
     (rule : inVar →
       CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     -- the step circuit's advice
-    (adv : StepMainAdvice n w nc E.σ.k Es.σ.k inVal)
+    (adv : StepMainAdvice n w ncw ncs E.σ.k Es.σ.k inVal)
     -- `Vg` satisfies every constraint of the step circuit, which allocates all its cells
     (hstep : ∀ con ∈ (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw
         (verifyProofAt E) (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg dummyUnf rule
@@ -99,7 +100,7 @@ theorem stepWrap_kimchiVerify
     -- front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- `Vs` satisfies every constraint of the compiled finalize block
-    (hwrap : ∀ con ∈ (compile (a := WrapFinalizeIn branches w E.σ.k nc) (b := Unit)
+    (hwrap : ∀ con ∈ (compile (a := WrapFinalizeIn branches w E.σ.k ncw) (b := Unit)
         (wrapFinalizeCircuit (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.ofEnv E Linearization.fqTokens) gen pins)).constraints,
         ConstraintHolds.Holds Vs con)
@@ -114,7 +115,7 @@ theorem stepWrap_kimchiVerify
     let r := (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw (verifyProofAt E)
       (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the finalize block's input cells: the branch bits and the slots, with their pins
-    let x := inputVar (F := Fq) (a := WrapFinalizeIn branches w E.σ.k nc)
+    let x := inputVar (F := Fq) (a := WrapFinalizeIn branches w E.σ.k ncw)
     let slots := WrapFinalizeInVar.slots x pins
     -- the branch bits read as `b`'s one-hot vector
     CircuitType.Reads Vs x.val.1 (Vector.ofFn fun l => decide (l = b)) →
@@ -130,7 +131,7 @@ theorem stepWrap_kimchiVerify
       -- and read one `shouldFinalize` bit
       (∃ bb : Bool, CircuitType.Reads Vg inp.unfinalized.shouldFinalize bb ∧
         CircuitType.Reads Vs sl.unfinalized.shouldFinalize bb) →
-      ∀ (cp : KimchiProof IpaPallas.curve nc E.σ.k)
+      ∀ (cp : KimchiProof IpaPallas.curve ncw E.σ.k)
         (ms : List Bool),
         -- the slot's public input: its statement, carrying the step-message digest
         let pub := inp.publicInputAt E Vg ms
