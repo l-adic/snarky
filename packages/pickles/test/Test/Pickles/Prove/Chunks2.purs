@@ -86,7 +86,6 @@ spec = describe "Pickles.Prove.Chunks2" do
       @Chunks2Rules
       @Unit
       @2
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14

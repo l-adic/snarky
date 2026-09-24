@@ -98,7 +98,6 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
       @SelfRecursiveChunksRules
       @NoOutput
       @2
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

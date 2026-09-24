@@ -47,7 +47,6 @@ prepareProve srs = do
     @NrrRules
     @(F StepField)
     @1
-    noAdvice
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 nrrEntry)
   treeEntry <- mkRuleEntry @2 @(F StepField)
@@ -57,7 +56,6 @@ prepareProve srs = do
     @TreeRules
     @(F StepField)
     @1
-    noAdvice
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 treeEntry)
 

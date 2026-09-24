@@ -49,7 +49,6 @@ import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..)
 import Pickles.Step.Main (RuleOutput)
 import Pickles.Step.Slots (PrevValues)
 import Simple.JSON (class ReadForeign, class WriteForeign)
-import Snarky.Backend.Advice (badAdvice)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, AsProver, FVar, Snarky, add_, assertEq, assert_, check, const_, exists, fieldsToValue, fieldsToVar, liftAdvice, not_, read, sizeInFields, true_, unpack_, valueToFields, varToFields)
 import Snarky.Circuit.MerkleTree (MERKLE)
@@ -313,7 +312,6 @@ compileTxCircuit chainId lagrangeCache srs = do
       @TxnSnarkRules
       @NoOutput
       @1
-      badAdvice
       cfg
       rules
   let

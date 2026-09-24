@@ -118,7 +118,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       @TwoPhaseChainRules
       @Unit
       @1
-      noAdvice
       cfg
       rules
 

@@ -26,7 +26,6 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Pickles (RuleEntry, SlotWrapKey(..), StepField, compileMulti, mkRuleEntry)
-import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F)
 
 -- | Pin a compile-only `RuleEntry`'s input VALUE type to `Unit` (and its
@@ -57,7 +56,6 @@ fullCompile srs = do
     @NrrRules
     @(F StepField)
     @1
-    noAdvice
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 nrrEntry)
   treeEntry <- pinCompileEntry <$> mkRuleEntry @2 @(F StepField) @()
@@ -67,7 +65,6 @@ fullCompile srs = do
     @TreeRules
     @(F StepField)
     @1
-    noAdvice
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 treeEntry)
 

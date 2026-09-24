@@ -147,7 +147,7 @@ import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
 import Safe.Coerce (coerce)
-import Snarky.Backend.Advice (AdviceHandler)
+import Snarky.Backend.Advice (AdviceHandler, badAdvice)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Snarky.Backend.Kimchi.Proof
@@ -1713,8 +1713,7 @@ class
   -- | placeholder context and counting its gates. Callers pass
   -- | `roughDomainsLog2` in every position of the placeholder.
   prePassDomainLog2s
-    :: AdviceHandler r
-    -> CompileMultiConfig
+    :: CompileMultiConfig
     -> Int
     -- ^ the declared `@stepChunks`
     -> Vector topBranches Int
@@ -1724,8 +1723,7 @@ class
   -- | Every branch's step compile, each run against a context built
   -- | from the same full vector of step domain log2s.
   runMultiCompile
-    :: AdviceHandler r
-    -> CompileMultiConfig
+    :: CompileMultiConfig
     -> Int
     -- ^ the declared `@stepChunks`
     -> Vector topBranches Int
@@ -1787,8 +1785,7 @@ runMultiCompileFull
        proversCarrier
        r
   => Reflectable topBranches Int
-  => AdviceHandler r
-  -> CompileMultiConfig
+  => CompileMultiConfig
   -> Int
   -- ^ the declared `@stepChunks`
   -> rulesCarrier
@@ -1796,7 +1793,7 @@ runMultiCompileFull
        { stepResults :: Vector topBranches PProveStep.StepCompileResult
        , log2s :: Vector topBranches Int
        }
-runMultiCompileFull handler cfg stepNumChunks rules = do
+runMultiCompileFull cfg stepNumChunks rules = do
   let
     placeholder = Vector.replicate roughDomainsLog2
   log2s <- prePassDomainLog2s
@@ -1809,7 +1806,6 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @rulesCarrier
     @proversCarrier
     @r
-    handler
     cfg
     stepNumChunks
     placeholder
@@ -1839,7 +1835,6 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @rulesCarrier
     @proversCarrier
     @r
-    handler
     cfg
     stepNumChunks
     log2s
@@ -1857,8 +1852,8 @@ instance
     Unit
     r
   where
-  prePassDomainLog2s _ _ _ _ _ = pure Vector.nil
-  runMultiCompile _ _ _ _ _ = pure Vector.nil
+  prePassDomainLog2s _ _ _ _ = pure Vector.nil
+  runMultiCompile _ _ _ _ = pure Vector.nil
   buildBranchProvers _ _ _ _ _ _ _ _ _ = pure unit
 
 instance
@@ -1935,13 +1930,13 @@ instance
     )
     r
   where
-  prePassDomainLog2s handler cfg stepNumChunks placeholder (RuleEntry r /\ restEntries) = do
+  prePassDomainLog2s cfg stepNumChunks placeholder (RuleEntry r /\ restEntries) = do
     let
       placeholderCtx = buildStepProveCtx @prevsSpec cfg stepNumChunks
         (reflectType (Proxy :: Proxy mpvMax))
         r.slotVKs
         placeholder
-    headLog2 <- r.preComputeStepDomainLog2Fn handler placeholderCtx
+    headLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
     restVec <- prePassDomainLog2s
       @rest
       @inputVal
@@ -1952,20 +1947,19 @@ instance
       @restCarrier
       @restProvers
       @r
-      handler
       cfg
       stepNumChunks
       placeholder
       restEntries
     pure (headLog2 :< restVec)
-  runMultiCompile handler cfg stepNumChunks log2s (RuleEntry r /\ restEntries) = do
+  runMultiCompile cfg stepNumChunks log2s (RuleEntry r /\ restEntries) = do
     let
       ctx = buildStepProveCtx @prevsSpec cfg stepNumChunks
         (reflectType (Proxy :: Proxy mpvMax))
         r.slotVKs
         log2s
     requireSharedStepShifts ctx
-    headResult <- r.stepCompileFn handler ctx
+    headResult <- r.stepCompileFn ctx
     tailResults <- runMultiCompile
       @rest
       @inputVal
@@ -1976,7 +1970,6 @@ instance
       @restCarrier
       @restProvers
       @r
-      handler
       cfg
       stepNumChunks
       log2s
@@ -2064,9 +2057,9 @@ data RuleEntry prevsSpec mpv valCarrier inputVal outputSize r = RuleEntry
   { -- | Given a placeholder context, this rule's own step domain
     -- | log2, counted from a one-shot constraint-system build.
     preComputeStepDomainLog2Fn ::
-      AdviceHandler r -> PProveStep.StepProveContext mpv -> Effect Int
+      PProveStep.StepProveContext mpv -> Effect Int
   , stepCompileFn ::
-      AdviceHandler r -> PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
+      PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
   , stepProveFn ::
       AdviceHandler r
       -> PProveStep.StepProveContext mpv
@@ -2116,7 +2109,7 @@ mkRuleEntry
 mkRuleEntry rule compiledKeys = do
   let slotVKs = slotKeysOf (Proxy :: Proxy prevsSpec) compiledKeys
   pure $ RuleEntry
-    { preComputeStepDomainLog2Fn: \handler ctx ->
+    { preComputeStepDomainLog2Fn: \ctx ->
         PProveStep.preComputeStepDomainLog2
           @prevsSpec
           @outputSize
@@ -2127,10 +2120,10 @@ mkRuleEntry rule compiledKeys = do
           @outputVar
           @mpvMax
           @mpvPad
-          handler
+          badAdvice
           ctx
           rule
-    , stepCompileFn: \handler ctx ->
+    , stepCompileFn: \ctx ->
         PProveStep.stepCompile
           @prevsSpec
           @outputSize
@@ -2141,7 +2134,7 @@ mkRuleEntry rule compiledKeys = do
           @outputVar
           @mpvMax
           @mpvPad
-          handler
+          badAdvice
           ctx
           rule
     , stepProveFn: \handler ctx compileResult advice prevProofs ->
@@ -2709,8 +2702,7 @@ compileMulti
   => Add mpvMax nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
   => MaxOfRulesMpvs rs mpvMax
-  => AdviceHandler r
-  -> CompileMultiConfig
+  => CompileMultiConfig
   -> rulesCarrier
   -> Effect
        ( MultiOutput
@@ -2720,7 +2712,7 @@ compileMulti
            inputVal
            outputVal
        )
-compileMulti handler cfg rules = do
+compileMulti cfg rules = do
   let
     slotWidths = deriveWrapSlotWidths (reflectType (Proxy :: Proxy mpvMax))
       ( ruleSlotWidths
@@ -2743,7 +2735,6 @@ compileMulti handler cfg rules = do
     @branches
     @mpvMax
     @r
-    handler
     cfg
     (reflectType (Proxy :: Proxy stepChunks))
     rules

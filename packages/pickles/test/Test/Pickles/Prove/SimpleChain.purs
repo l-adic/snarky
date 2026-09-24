@@ -87,7 +87,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
       @SimpleChainRules
       @NoOutput
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

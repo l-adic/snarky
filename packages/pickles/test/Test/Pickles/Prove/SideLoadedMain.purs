@@ -143,7 +143,6 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @NoRecursionInputRules
       @Unit
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -193,7 +192,6 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @SideLoadedMainRules
       @Unit
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

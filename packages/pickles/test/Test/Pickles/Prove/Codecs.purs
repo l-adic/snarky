@@ -46,7 +46,6 @@ spec = describe "Pickles.Prove.Codecs" do
         @NrrRules
         @(F StepField)
         @1
-        noAdvice
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing

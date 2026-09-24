@@ -61,7 +61,6 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       @Chunks2Rules
       @Unit
       @2
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
@@ -88,7 +87,6 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       @RecurseRules
       @Unit
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

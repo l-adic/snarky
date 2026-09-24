@@ -95,7 +95,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @NrrRules
       @(F StepField)
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -123,7 +122,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @TreeRules
       @(F StepField)
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14

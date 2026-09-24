@@ -97,7 +97,6 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
       @SimpleChainN2Rules
       @Unit
       @1
-      noAdvice
       cfg
       rules
 

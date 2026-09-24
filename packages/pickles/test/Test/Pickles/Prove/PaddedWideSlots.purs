@@ -88,7 +88,6 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
       @PaddedWideSlotsRules
       @Unit
       @1
-      noAdvice
       cfg
       rules
 

@@ -115,7 +115,6 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       @ChildRules
       @Unit
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -143,7 +142,6 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       @AppRules
       @Counts
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
