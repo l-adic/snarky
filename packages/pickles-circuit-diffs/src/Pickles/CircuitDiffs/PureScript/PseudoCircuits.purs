@@ -35,6 +35,7 @@ import JS.BigInt (fromInt)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.FFI as LinFFI
+import Pickles.ProofsVerified (wrapDomainShifts)
 import Pickles.Pseudo (choose, oneHotVector)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sideload.VerificationKey (compileDummy)
@@ -111,7 +112,7 @@ pseudoToDomainWrapCircuit inputs = do
   let { head: index, tail } = Vector.uncons inputs
   which <- Pseudo.oneHotVector @3 index
   domain <- Pseudo.toDomain @16
-    { shifts: LinFFI.domainShifts @WrapField
+    { shifts: wrapDomainShifts
     , domainGenerator: LinFFI.domainGenerator @WrapField
     }
     which

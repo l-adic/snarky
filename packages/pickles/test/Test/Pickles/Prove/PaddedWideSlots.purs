@@ -31,14 +31,14 @@ import Colog (LoggerT, Message, logInfo, withSpan)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (Tuple2, tuple2)
+import Data.Tuple.Nested (tuple2)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO, StepField, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), SlotWrapKey(..), StatementIO, StepField, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F(..))
@@ -49,17 +49,6 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 type Stmt = StatementIO (F StepField) Unit
-
--- | Branch 0 contributes no slots, branch 1 contributes two of width 2.
--- | `mpvMax` is the max of the two, so the wrap circuit has two slots of
--- | width 2 and branch 0's `mpvPad` is 2 — every slot it presents is a
--- | dummy that must still be two stacks wide.
-type PaddedWideSlotsRules =
-  RulesCons 0 Unit
-    ( RulesCons 2
-        (Tuple2 (Slot 2 Stmt) (Slot 2 Stmt))
-        RulesNil
-    )
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.PaddedWideSlots" do
@@ -77,18 +66,16 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    baseEntry <- liftEffect $ mkRuleEntry @2 @Unit makeZeroRule Vector.nil
-    mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit
+    baseEntry <- liftEffect $ mkRuleEntry @Unit makeZeroRule Vector.nil
+    mergeEntry <- liftEffect $ mkRuleEntry @Unit
       simpleChainN2Rule
       (Self :< Self :< Vector.nil)
     let rules = tuple2 baseEntry mergeEntry
 
     logInfo "[PaddedWideSlots] compiling…"
     output <- withSpan "[PaddedWideSlots] compile" $ liftEffect $ compileMulti
-      @PaddedWideSlotsRules
       @Unit
       @1
-      noAdvice
       cfg
       rules
 
@@ -97,7 +84,7 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
     let BranchProver baseProver = fst output.provers
     logInfo "[PaddedWideSlots] proving the padded branch…"
     eRes <- withSpan "[PaddedWideSlots] prove branch 0" $ liftEffect $ baseProver noAdvice
-      { appInput: F zero, prevs: unit, sideloadedVKs: unit }
+      { appInput: F zero, prevs: unit }
     b0 <- case eRes of
       Left e -> liftEffect $ Exc.throw ("PaddedWideSlots base prover: " <> show e)
       Right p -> pure p

@@ -26,12 +26,13 @@ import Foreign (MultipleErrors)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
-import Pickles.Prove.Codecs (decodeVerifiableProof, encodeVerifiableProof)
+import Pickles.Prove.Codecs (decodeVerifiableProofBody, encodeVerifiableProofBody)
 import Pickles.Step.Dummy (baseCaseDummies, computeDummySgValues)
 import Pickles.Types (Evals, PaddedLength, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (CompiledProof(..), CompiledProofWidthData(..), SomeCompiledProofWidthData, VerifiableProof, mkSomeCompiledProofWidthData, toVerifiable)
 import Simple.JSON (class ReadForeign, class WriteForeign, readJSON, writeJSON)
 import Snarky.Backend.Kimchi.Types (CRS)
+import Snarky.Circuit.Types (class CircuitType, valueToFields)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -77,8 +78,9 @@ mkWidthDummies pallasSrs vestaSrs =
     }
 
 toSerializableCompiledProof
-  :: forall mpv stmtVal
-   . CompiledProof mpv stmtVal
+  :: forall mpv stmtVal stmtVar
+   . CircuitType StepField stmtVal stmtVar
+  => CompiledProof mpv stmtVal
   -> SerializableCompiledProof stmtVal
 toSerializableCompiledProof cp@(CompiledProof rec) =
   runExists
@@ -118,7 +120,6 @@ reconstructCompiledProof dummies scp =
       , prevEvalsChunked: vp.prevEvalsChunked
       , pEval0Chunks: vp.pEval0Chunks
       , challengePolynomialCommitment: vp.challengePolynomialCommitment
-      , appState: vp.appState
       , widthData:
           rebuildWidthData dummies vp.oldBulletproofChallenges
             vp.prevWrapBulletproofChallenges
@@ -174,8 +175,9 @@ toVec :: forall @n a. Reflectable n Int => Array a -> Vector n a
 toVec arr = unsafePartial fromJust (Vector.toVector @n arr)
 
 -- | JSON wire form of `SerializableCompiledProof`: `verifiable` is
--- | embedded as a nested JSON string via `Pickles.Prove.Codecs`, and
--- | the rest serializes through its leaf instances.
+-- | embedded as a nested JSON string via `Pickles.Prove.Codecs`,
+-- | without `appState`, which decoding re-encodes from `statement`; the
+-- | rest serializes through its leaf instances.
 type SerializableCompiledProofWire stmtVal =
   { verifiable :: String
   , statement :: stmtVal
@@ -187,19 +189,21 @@ type SerializableCompiledProofWire stmtVal =
   }
 
 toWireSCP :: forall stmtVal. SerializableCompiledProof stmtVal -> SerializableCompiledProofWire stmtVal
-toWireSCP scp = scp { verifiable = encodeVerifiableProof scp.verifiable }
+toWireSCP scp = scp { verifiable = encodeVerifiableProofBody scp.verifiable }
 
 fromWireSCP
-  :: forall stmtVal
-   . SerializableCompiledProofWire stmtVal
+  :: forall stmtVal stmtVar
+   . CircuitType StepField stmtVal stmtVar
+  => SerializableCompiledProofWire stmtVal
   -> Either MultipleErrors (SerializableCompiledProof stmtVal)
 fromWireSCP w = do
-  verifiable <- decodeVerifiableProof w.verifiable
+  verifiable <- decodeVerifiableProofBody (valueToFields @StepField w.statement) w.verifiable
   pure (w { verifiable = verifiable })
 
 encodeCompiledProof
-  :: forall mpv stmtVal
+  :: forall mpv stmtVal stmtVar
    . WriteForeign stmtVal
+  => CircuitType StepField stmtVal stmtVar
   => CompiledProof mpv stmtVal
   -> String
 encodeCompiledProof = writeJSON <<< toWireSCP <<< toSerializableCompiledProof
@@ -209,8 +213,9 @@ encodeCompiledProof = writeJSON <<< toWireSCP <<< toSerializableCompiledProof
 -- | front-padding `WidthDummies` itself, so the caller never handles
 -- | them.
 decodeCompiledProof
-  :: forall mpv stmtVal r
+  :: forall mpv stmtVal stmtVar r
    . ReadForeign stmtVal
+  => CircuitType StepField stmtVal stmtVar
   => { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG | r }
   -> String
   -> Either MultipleErrors (CompiledProof mpv stmtVal)

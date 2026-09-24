@@ -16,18 +16,16 @@ module Bench.Pickles.Compile
 import Prelude
 
 import Bench.Harness (Group)
-import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchTreeRule, nrrRule)
+import Bench.Pickles.Common (BenchSrs, benchTreeRule, nrrRule)
 import Control.Promise (fromAff)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
-import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Pickles (RuleEntry, SlotWrapKey(..), StepField, compileMulti, mkRuleEntry)
-import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F)
 
 -- | Pin a compile-only `RuleEntry`'s input VALUE type to `Unit` (and its
@@ -38,14 +36,14 @@ import Snarky.Circuit.DSL (F)
 -- | `inputVal = Unit`, so this `identity` cast supplies the missing pin
 -- | with named type variables (no wildcard warnings).
 pinCompileEntry
-  :: forall prevsSpec mpv nd valCarrier carrier outputSize vkCarrier blueprints
-   . RuleEntry prevsSpec mpv nd valCarrier Unit carrier outputSize vkCarrier blueprints ()
-  -> RuleEntry prevsSpec mpv nd valCarrier Unit carrier outputSize vkCarrier blueprints ()
+  :: forall prevsSpec mpv mpvMax valCarrier
+   . RuleEntry prevsSpec mpv mpvMax valCarrier Unit ()
+  -> RuleEntry prevsSpec mpv mpvMax valCarrier Unit ()
 pinCompileEntry = identity
 
 -- | The full example-circuit compilation against the shared SRS: the
 -- | NRR `compileMulti`, then the N=2 tree `compileMulti`. The tree
--- | result is forced (the `fst … .constraints` read) so the whole
+-- | result is forced (the `Vector.head … .constraints` read) so the whole
 -- | pipeline actually runs.
 fullCompile :: BenchSrs -> Effect Int
 fullCompile srs = do
@@ -53,35 +51,23 @@ fullCompile srs = do
   -- witness monad `m` is never pinned by usage — pin it to `Effect`
   -- explicitly (compile discards the `exists` bodies, so `m` is phantom
   -- here; any `Monad`/`MonadEffect`/`MonadRec` works).
-  nrrEntry <- pinCompileEntry <$> mkRuleEntry @0 @(F StepField) @() nrrRule Vector.nil
+  nrrEntry <- pinCompileEntry <$> mkRuleEntry @(F StepField) @() nrrRule Vector.nil
   nrr <- compileMulti
-    @NrrRules
     @(F StepField)
     @1
-    noAdvice
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 nrrEntry)
-  let
-    nrrProverVKs =
-      { stepCompileResult: fst nrr.vks.perBranchStep
-      , wrapCompileResult: nrr.vks.wrap
-      , wrapDomainLog2: nrr.vks.wrapDomainLog2
-      , stepNumChunks: nrr.vks.stepChunks
-      }
-
-  treeEntry <- pinCompileEntry <$> mkRuleEntry @2 @(F StepField) @()
+  treeEntry <- pinCompileEntry <$> mkRuleEntry @(F StepField) @()
     benchTreeRule
-    (External nrrProverVKs :< Self :< Vector.nil)
+    (External nrr.tagData :< Self :< Vector.nil)
   tree <- compileMulti
-    @TreeRules
     @(F StepField)
     @1
-    noAdvice
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 treeEntry)
 
   -- Force the step constraint system so the compile is not deferred.
-  pure (Array.length (fst tree.vks.perBranchStep).constraints)
+  pure (Array.length (Vector.head tree.vks.perBranchStep).constraints)
 
 -- | The bench label: keys the results-JSON entry and the
 -- | `[bench-window]` markers `parse_gclog.mjs` matches GC lines to.

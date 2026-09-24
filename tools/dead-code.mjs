@@ -65,12 +65,23 @@ function loadModules() {
     if (!fs.existsSync(corefnPath)) continue;
     try {
       const m = JSON.parse(fs.readFileSync(corefnPath, 'utf8'));
+      if (isInternal(m) && !sourceDeclares(m)) continue;
       modules.set(m.moduleName.join('.'), m);
     } catch (e) {
       // Ignore malformed files (partial builds).
     }
   }
   return modules;
+}
+
+// False for a stale output: the module's source file is gone, or now
+// declares a different module. Such a module would report every export
+// as dead.
+function sourceDeclares(mod) {
+  const src = path.join(ROOT, mod.modulePath);
+  if (!fs.existsSync(src)) return false;
+  const header = fs.readFileSync(src, 'utf8').match(/^module\s+([\w.]+)/m);
+  return header !== null && header[1] === mod.moduleName.join('.');
 }
 
 // A module is "internal" iff its source lives under packages/ (not .spago/).

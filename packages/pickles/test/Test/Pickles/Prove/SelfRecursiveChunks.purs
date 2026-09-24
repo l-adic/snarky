@@ -26,7 +26,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -80,25 +80,17 @@ selfRecursiveChunksRule getPrevStates self = do
 type SelfRecursiveChunksPrevsSpec =
   Tuple1 (Slot 1 (StatementIO (F StepField) NoOutput))
 
--- | Carrier for the single rule.
-type SelfRecursiveChunksRules =
-  RulesCons 1
-    SelfRecursiveChunksPrevsSpec
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SelfRecursiveChunks" do
   it "a chunks=2 self-recursive chain proves its base case and one step" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SelfRecursiveChunks.json")
 
-    entry <- liftEffect $ mkRuleEntry @1 @NoOutput selfRecursiveChunksRule (Self :< Vector.nil)
+    entry <- liftEffect $ mkRuleEntry @NoOutput selfRecursiveChunksRule (Self :< Vector.nil)
 
     logInfo "[SelfRecursiveChunks] compiling…"
     output <- withSpan "[SelfRecursiveChunks] compile" $ liftEffect $ compileMulti
-      @SelfRecursiveChunksRules
       @NoOutput
       @2
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -116,7 +108,7 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
         -> Aff (CompiledProof 1 (StatementIO (F StepField) NoOutput))
       runStep prevSlot appInput = do
         eRes <- liftEffect $ prover noAdvice
-          { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 NoSideLoadedVk }
+          { appInput, prevs: tuple1 prevSlot }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("prover: " <> show e)
           Right p -> pure p

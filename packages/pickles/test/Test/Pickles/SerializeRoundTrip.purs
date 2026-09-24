@@ -20,10 +20,12 @@ import Prelude
 import Data.Either (either)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Partial.Unsafe (unsafeCrashWith)
+import Pickles.Field (StepField)
 import Pickles.Prove.SerializeProof (WidthDummies, decodeCompiledProof, encodeCompiledProof, mkWidthDummies, reconstructCompiledProof, toSerializableCompiledProof)
 import Pickles.Verify (CompiledProof, Verifier, toVerifiable, verifyBatch)
 import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Kimchi.Types (CRS)
+import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -34,8 +36,9 @@ type Srs r = { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG | r }
 -- | Serialize a `CompiledProof` and reconstruct it in memory — the
 -- | identity, if reconstruction is faithful.
 roundTrip
-  :: forall mpv stmt
-   . WidthDummies
+  :: forall mpv stmt stmtVar
+   . CircuitType StepField stmt stmtVar
+  => WidthDummies
   -> CompiledProof mpv stmt
   -> CompiledProof mpv stmt
 roundTrip dummies = reconstructCompiledProof dummies <<< toSerializableCompiledProof
@@ -43,9 +46,10 @@ roundTrip dummies = reconstructCompiledProof dummies <<< toSerializableCompiledP
 -- | As `roundTrip`, but through the JSON codec, which subsumes the
 -- | in-memory transform. A decode failure crashes the test.
 roundTripJSON
-  :: forall mpv stmt r
+  :: forall mpv stmt stmtVar r
    . WriteForeign stmt
   => ReadForeign stmt
+  => CircuitType StepField stmt stmtVar
   => Srs r
   -> CompiledProof mpv stmt
   -> CompiledProof mpv stmt
@@ -56,8 +60,9 @@ roundTripJSON srs =
 -- | and return it for use as a recursive prev, which is the stricter
 -- | check.
 roundTripAndVerify
-  :: forall mpv stmt m
+  :: forall mpv stmt stmtVar m
    . MonadAff m
+  => CircuitType StepField stmt stmtVar
   => WidthDummies
   -> Verifier
   -> CompiledProof mpv stmt
@@ -69,10 +74,11 @@ roundTripAndVerify dummies verifier cp = do
 
 -- | As `roundTripAndVerify`, but through the JSON codec.
 roundTripJSONAndVerify
-  :: forall mpv stmt m r
+  :: forall mpv stmt stmtVar m r
    . MonadAff m
   => WriteForeign stmt
   => ReadForeign stmt
+  => CircuitType StepField stmt stmtVar
   => Srs r
   -> Verifier
   -> CompiledProof mpv stmt

@@ -18,6 +18,7 @@ module Pickles.Wrap.Main
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Enum (fromEnum)
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldl)
@@ -41,7 +42,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PackedStatement (PackedStepPublicInput(..))
-import Pickles.ProofsVerified (ProofsVerified, allPossibleDomainLog2s)
+import Pickles.ProofsVerified (ProofsVerified, allPossibleDomainLog2s, wrapDomainShifts)
 import Pickles.Pseudo (PlonkDomain)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
@@ -187,7 +188,7 @@ processOneSlotFopBody
 processOneSlotFopBody fopBaseParams slotIdx domain unfView allEvals paddedChals = do
   { finalized, expandedChallenges } <- wrapFinalizeOtherProofCircuit
     { domains:
-        { generator: domain.generator, log2: fopBaseParams.domainLog2 } :< Vector.nil
+        NEA.singleton { generator: domain.generator, log2: fopBaseParams.domainLog2 }
     , shifts: domain.shifts
     , srsLengthLog2: fopBaseParams.srsLengthLog2
     , zkRows: fopBaseParams.zkRows
@@ -322,7 +323,7 @@ wrapFinalizePrevProofs whichBranch pins wrapDomainIndices unfViews witnesses pad
   -- first, right-to-left, then every FOP body, left-to-right.
   let
     domainConfig =
-      { shifts: LinFFI.domainShifts @WrapField
+      { shifts: wrapDomainShifts
       , domainGenerator: LinFFI.domainGenerator @WrapField
       }
     wrapIpaRounds = reflectType (Proxy @WrapIPARounds)

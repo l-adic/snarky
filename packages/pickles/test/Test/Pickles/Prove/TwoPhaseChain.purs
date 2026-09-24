@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -76,21 +76,12 @@ incrementRule getPrevStates self = do
     }
 
 --------------------------------------------------------------------------------
--- Rules spec
+-- Prevs spec
 --------------------------------------------------------------------------------
 
 -- | Branch 1's single self-prev slot, at width 1.
 type IncrementPrevsSpec =
   Tuple1 (Slot 1 (StatementIO (F StepField) Unit))
-
--- | The two branches: branch 0 at `mpv = 0` with no prevs, branch 1 at
--- | `mpv = 1` with one self-prev.
-type TwoPhaseChainRules =
-  RulesCons 0 Unit
-    ( RulesCons 1
-        IncrementPrevsSpec
-        RulesNil
-    )
 
 --------------------------------------------------------------------------------
 -- Test spec
@@ -110,15 +101,13 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit makeZeroRule Vector.nil
-    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit incrementRule (Self :< Vector.nil)
+    makeZeroEntry <- liftEffect $ mkRuleEntry @Unit makeZeroRule Vector.nil
+    incrementEntry <- liftEffect $ mkRuleEntry @Unit incrementRule (Self :< Vector.nil)
     let rules = tuple2 makeZeroEntry incrementEntry
     logInfo "[TwoPhaseChain] compiling…"
     output <- withSpan "[TwoPhaseChain] compile" $ liftEffect $ compileMulti
-      @TwoPhaseChainRules
       @Unit
       @1
-      noAdvice
       cfg
       rules
 
@@ -130,7 +119,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       dummies = mkWidthDummies pallasSrs vestaSrs
     logInfo "[TwoPhaseChain] proving [step0, wrap0]"
     eRes <- withSpan "[TwoPhaseChain] prove b0" $ liftEffect $ makeZeroProver noAdvice
-      { appInput: F zero, prevs: unit, sideloadedVKs: unit }
+      { appInput: F zero, prevs: unit }
     b0 <- case eRes of
       Left e -> liftEffect $ Exc.throw ("makeZeroProver: " <> show e)
       Right p -> pure p
@@ -142,7 +131,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB1 <- withSpan "[TwoPhaseChain] prove b1" $ liftEffect $ incrementProver noAdvice
       { appInput: F one
       , prevs: tuple1 (InductivePrev b0' output.tag)
-      , sideloadedVKs: tuple1 NoSideLoadedVk
       }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
@@ -152,7 +140,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB2 <- withSpan "[TwoPhaseChain] prove b2" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 2 :: StepField)
       , prevs: tuple1 (InductivePrev b1' output.tag)
-      , sideloadedVKs: tuple1 NoSideLoadedVk
       }
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
@@ -162,7 +149,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB3 <- withSpan "[TwoPhaseChain] prove b3" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 3 :: StepField)
       , prevs: tuple1 (InductivePrev b2' output.tag)
-      , sideloadedVKs: tuple1 NoSideLoadedVk
       }
     b3 <- case eB3 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)

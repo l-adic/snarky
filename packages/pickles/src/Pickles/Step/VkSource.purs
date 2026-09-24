@@ -1,10 +1,6 @@
 -- | Where the step circuit gets the wrap verification key for each of
 -- | its previous-proof slots: the compile-time blueprint, and the
--- | post-walk value `Pickles.Step.Main` dispatches on.
--- |
--- | These live below `Pickles.Step.Main` rather than in it so that
--- | `Pickles.Step.Slots`, whose carrier traversal walks them alongside
--- | `PerProofWitness`, can import them without a cycle.
+-- | value `Pickles.Step.Main` dispatches on.
 module Pickles.Step.VkSource
   ( SlotVkBlueprint(..)
   , SlotVkBlueprintSideLoaded
@@ -23,8 +19,8 @@ import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 
 -- | Compile-time blueprint for one slot's wrap-VK source.
 -- |
--- | One constructor per `Pickles.Prove.Slot.SlotSource`, named to
--- | match. A self slot reads the shared key from advice, because the
+-- | One constructor per slot source: `Self`, `External`, or a
+-- | side-loaded slot. A self slot reads the shared key from advice, because the
 -- | wrap circuit does not exist yet at step-compile time; an external
 -- | slot has its source's key baked in as a constant; a side-loaded
 -- | slot carries the per-domain lagrange tables that

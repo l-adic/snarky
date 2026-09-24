@@ -28,7 +28,6 @@ module Pickles.Verify
   , verifyBatch
   , verifyStages
   , wrapAccumulators
-  , wrapPublicInput
   , wrapPublicInputOf
   , wrapPublicInputVP
   ) where
@@ -63,7 +62,7 @@ import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Snarky.Circuit.Types (valueToFields)
+import Snarky.Circuit.Types (class CircuitType, valueToFields)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -208,7 +207,10 @@ newtype CompiledProof :: Int -> Type -> Type
 newtype CompiledProof mpv stmtVal = CompiledProof
   { -- The rule's application input and output. The production prover
     -- uses `StatementIO inputVal outputVal`, whose output a consumer
-    -- reaches as `(unwrap cp.statement).output`.
+    -- reaches as `(unwrap cp.statement).output`. It is the proof's only
+    -- copy of its statement: `toVerifiable` encodes it as
+    -- `VerifiableProof.appState`, so what a consumer reads is what
+    -- `verify` checks.
     statement :: stmtVal
 
   , wrapProof :: Proof PallasG WrapField
@@ -238,13 +240,6 @@ newtype CompiledProof mpv stmtVal = CompiledProof
   -- the step SRS.
   , challengePolynomialCommitment :: AffinePoint WrapField
 
-  -- The application state exactly as the step circuit absorbed it into
-  -- the `messages_for_next_step_proof` digest: the rule's public input
-  -- fields followed by its public output fields (`Pickles.Step.Main`'s
-  -- `hashAppFields`). The verifier recomputes that digest from these
-  -- fields and the real wrap VK; no digest is carried.
-  , appState :: Array StepField
-
   , widthData :: SomeCompiledProofWidthData
 
   -- The step domain log2 of this proof's branch. A `Verifier` is shared
@@ -256,8 +251,9 @@ newtype CompiledProof mpv stmtVal = CompiledProof
 -- | The minimal serializable proof an out-of-circuit verifier consumes:
 -- | the wrap kimchi proof, the carried statement skeleton, and the raw
 -- | messages both digests are recomputed from. What a `CompiledProof`
--- | carries beyond that — the typed `statement`, the collapsed
--- | `prevEvals` — verification does not read. The per-rule prev width
+-- | carries beyond that — the typed `statement`, read here only as its
+-- | encoding `appState`, and the collapsed `prevEvals` — verification
+-- | does not read. The per-rule prev width
 -- | is erased to plain `Array`s, the three prev-indexed ones aligned
 -- | slot by slot.
 -- |
@@ -272,7 +268,11 @@ type VerifiableProof =
   , spongeDigestBeforeEvaluations :: StepField
   , prevEvalsChunked :: ChunkedEvals StepField
   , pEval0Chunks :: Array StepField
-  -- The claimed application state, as `CompiledProof.appState`.
+  -- The application state exactly as the step circuit absorbed it into
+  -- the `messages_for_next_step_proof` digest: the rule's public input
+  -- fields followed by its public output fields (`Pickles.Step.Main`'s
+  -- `hashAppFields`). The verifier recomputes that digest from these
+  -- fields and the real wrap VK; no digest is carried.
   , appState :: Array StepField
   -- `messages_for_next_step_proof`: per prev proof, its expanded
   -- 16-round step challenges and its challenge-polynomial commitment.
@@ -289,8 +289,9 @@ type VerifiableProof =
 -- | A `CompiledProof` as the `VerifiableProof` the verifier wants, with
 -- | the per-rule width existential opened and erased.
 toVerifiable
-  :: forall mpv stmtVal
-   . CompiledProof mpv stmtVal
+  :: forall mpv stmtVal stmtVar
+   . CircuitType StepField stmtVal stmtVar
+  => CompiledProof mpv stmtVal
   -> VerifiableProof
 toVerifiable (CompiledProof p) =
   runExists
@@ -302,7 +303,7 @@ toVerifiable (CompiledProof p) =
         , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
         , prevEvalsChunked: p.prevEvalsChunked
         , pEval0Chunks: p.pEval0Chunks
-        , appState: p.appState
+        , appState: valueToFields @StepField p.statement
         , oldBulletproofChallenges: Array.fromFoldable wd.oldBulletproofChallenges
         , prevChallengePolynomialCommitments: Array.fromFoldable wd.outerStepChalPolyComms
         , challengePolynomialCommitment: p.challengePolynomialCommitment
@@ -348,8 +349,9 @@ type PaddedAccumulators =
 -- | width existential once, here, instead of inside the per-slot advice
 -- | logic.
 prevProofDataOf
-  :: forall mpv stmtVal
-   . Verifier
+  :: forall mpv stmtVal stmtVar
+   . CircuitType StepField stmtVal stmtVar
+  => Verifier
   -> CompiledProof mpv stmtVal
   -> PrevProofData
 prevProofDataOf verifier cp@(CompiledProof p) =
@@ -538,18 +540,6 @@ verifyStages v vp =
     { accumulatorOk: r.accumulatorOk
     , kimchiOk: verifyOpeningProofsBatch v.wrapVK [ r.ctx ]
     }
-
--- | The flat public input the kimchi verifier takes for this proof.
--- | Public so that tests can cross-check it against the prover's own
--- | `wrapResult.publicInputs` without running verification end to end,
--- | and so the recursive-step advice path in `Pickles.Prove.Compile`
--- | can ask for it from a `CompiledProof` directly.
-wrapPublicInput
-  :: forall mpv stmtVal
-   . Verifier
-  -> CompiledProof mpv stmtVal
-  -> Array WrapField
-wrapPublicInput v cp = wrapPublicInputVP v (toVerifiable cp)
 
 wrapPublicInputVP :: Verifier -> VerifiableProof -> Array WrapField
 wrapPublicInputVP v vp =

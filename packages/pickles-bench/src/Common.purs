@@ -14,8 +14,6 @@ module Bench.Pickles.Common
   , fillerIters
   , benchIterations
   , TreeProofReturnPrevsSpec
-  , NrrRules
-  , TreeRules
   , benchTreeRule
   , nrrRule
   ) where
@@ -27,7 +25,7 @@ import Data.Foldable (for_)
 import Data.Int.Bits as Bits
 import Data.Tuple.Nested (Tuple2, (/\))
 import Effect (Effect)
-import Pickles (PrevStatement(..), RulesCons, RulesNil, Slot, StatementIO(..), StepField, StepRule, prevValues, toPrevs)
+import Pickles (PrevStatement(..), Slot, StatementIO(..), StepField, StepRule, prevValues, toPrevs)
 import Snarky.Backend.Kimchi.Impl.Pallas as P
 import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -127,11 +125,3 @@ nrrRule _ _ = pure
   , publicOutput: const_ zero
   }
 
-type NrrRules =
-  RulesCons 0 Unit
-    RulesNil
-
-type TreeRules =
-  RulesCons 2
-    TreeProofReturnPrevsSpec
-    RulesNil

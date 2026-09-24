@@ -29,7 +29,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -53,8 +53,6 @@ childRule _ _ = pure
   { prevs: toPrevs unit
   , publicOutput: unit
   }
-
-type ChildRules = RulesCons 0 Unit RulesNil
 
 --------------------------------------------------------------------------------
 -- The application
@@ -91,13 +89,6 @@ absorbRule getPrevStates _ = do
     , publicOutput: Tuple (CVar.add_ (const_ one) prevCount) (CVar.add_ prevSum childInput)
     }
 
-type AppRules =
-  RulesCons 0 Unit
-    ( RulesCons 2
-        AbsorbPrevsSpec
-        RulesNil
-    )
-
 --------------------------------------------------------------------------------
 -- Test spec
 --------------------------------------------------------------------------------
@@ -109,13 +100,11 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
 
     let dummies = mkWidthDummies pallasSrs vestaSrs
 
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit childRule Vector.nil
+    childEntry <- liftEffect $ mkRuleEntry @Unit childRule Vector.nil
     logInfo "[HeterogeneousPrevs] compiling child…"
     child <- withSpan "[HeterogeneousPrevs] compile child" $ liftEffect $ compileMulti
-      @ChildRules
       @Unit
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -126,32 +115,22 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
 
     let BranchProver childProver = fst child.provers
     eChild <- withSpan "[HeterogeneousPrevs] prove child" $ liftEffect $ childProver noAdvice
-      { appInput: F (fromInt 7), prevs: unit, sideloadedVKs: unit }
+      { appInput: F (fromInt 7), prevs: unit }
     childCp <- case eChild of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right p -> pure p
     childCp' <- roundTripAndVerify dummies child.verifier childCp
 
-    let
-      childProverVKs =
-        { stepCompileResult: fst child.vks.perBranchStep
-        , wrapCompileResult: child.vks.wrap
-        , wrapDomainLog2: child.vks.wrapDomainLog2
-        , stepNumChunks: child.vks.stepChunks
-        }
-
-    baseEntry <- liftEffect $ mkRuleEntry @2 @Counts baseRule Vector.nil
-    absorbEntry <- liftEffect $ mkRuleEntry @2 @Counts absorbRule
-      (External childProverVKs :< Self :< Vector.nil)
+    baseEntry <- liftEffect $ mkRuleEntry @Counts baseRule Vector.nil
+    absorbEntry <- liftEffect $ mkRuleEntry @Counts absorbRule
+      (External child.tagData :< Self :< Vector.nil)
 
     logInfo "[HeterogeneousPrevs] compiling application…"
     -- The slot widths 0 and 2 give a smaller wrap circuit than the
     -- default domain for `mpvMax = 2` assumes.
     app <- withSpan "[HeterogeneousPrevs] compile application" $ liftEffect $ compileMulti
-      @AppRules
       @Counts
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
@@ -171,7 +150,6 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
         eRes <- liftEffect $ absorbProver noAdvice
           { appInput: unit
           , prevs: tuple2 (InductivePrev childCp' child.tag) selfPrev
-          , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("absorbProver: " <> show e)
@@ -179,7 +157,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
 
     logInfo "[HeterogeneousPrevs] proving b0 (base branch)"
     eB0 <- withSpan "[HeterogeneousPrevs] prove b0" $ liftEffect $ baseProver noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     b0 <- case eB0 of
       Left e -> liftEffect $ Exc.throw ("baseProver: " <> show e)
       Right p -> pure p

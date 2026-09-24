@@ -30,7 +30,6 @@ import Effect.Ref as Ref
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Field (StepField)
-import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Slots (PrevValues, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
@@ -112,11 +111,7 @@ compileStepMainSideLoadedChild
   :: StepMainSideLoadedChildParams -> Effect StepArtifact
 compileStepMainSideLoadedChild params = do
   throwawayCaptureRef <- Ref.new Nothing
-  -- `carrier` (value-side per-proof witness carrier) is not determined
-  -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here
-  -- (mpv=0 ⇒ empty `Unit` carrier).
   let
-    dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
     dummyAdvice = unsafeCoerce unit
   mkStepArtifact <$> do
     compile noAdvice (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
@@ -126,7 +121,7 @@ compileStepMainSideLoadedChild params = do
       -- outputSize = mpvMax*32+1+mpvMax = 1 (just the msgForNextStep
       -- digest — no unfinalized_proofs, no msgs_wrap entries).
       -- Visible axes: @prevsSpec @inputVal @outputVal @valCarrier
-      -- @mpvMax @nd. Implicit: input/output (CircuitType funcdep),
+      -- @mpvMax. Implicit: input/output (CircuitType funcdep),
       -- mpvPad (Add), outputSize (Mul/Add chain).
       ( \_ -> stepMain
           @Unit
@@ -134,12 +129,11 @@ compileStepMainSideLoadedChild params = do
           @Unit
           @Unit
           @0
-          @1
           sideLoadedChildRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
           , perSlotNumChunks: Vector.nil
-          , perSlotVkBlueprints: unit
+          , perSlotVkBlueprints: Vector.nil
           }
           dummyWrapSg
           dummyAdvice

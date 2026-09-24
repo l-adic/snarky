@@ -27,7 +27,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -67,27 +67,19 @@ simpleChainRule getPrevStates self = do
 type SimpleChainPrevsSpec =
   Tuple1 (Slot 1 (StatementIO (F StepField) NoOutput))
 
--- | Carrier for the single rule.
-type SimpleChainRules =
-  RulesCons 1
-    SimpleChainPrevsSpec
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
   it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChain.json")
 
-    chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput simpleChainRule (Self :< Vector.nil)
+    chainEntry <- liftEffect $ mkRuleEntry @NoOutput simpleChainRule (Self :< Vector.nil)
 
     let rules = tuple1 chainEntry
 
     logInfo "[SimpleChain] compiling…"
     output <- withSpan "[SimpleChain] compile" $ liftEffect $ compileMulti
-      @SimpleChainRules
       @NoOutput
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -109,7 +101,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         -> Aff (CompiledProof 1 (StatementIO (F StepField) NoOutput))
       runStep prevSlot appInput = do
         eRes <- liftEffect $ chainProver noAdvice
-          { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 NoSideLoadedVk }
+          { appInput, prevs: tuple1 prevSlot }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
           Right p -> pure p

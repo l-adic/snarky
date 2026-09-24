@@ -6,11 +6,11 @@
 module Pickles
   ( module Pickles.Field
   , module Pickles.ProofsVerified
-  , module Pickles.Sideload.Bundle
   , module Pickles.Slots
   , module Pickles.Types
   , module Pickles.Prove.Step
   , module Pickles.Prove.Compile
+  , module Pickles.Prove.Slot
   , module Pickles.Sideload.BoundVk
   , module Pickles.Step.Slots
   , module Pickles.Verify
@@ -18,12 +18,10 @@ module Pickles
 
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, RulesCons, RulesNil, SlotWrapKey(..), Tag(..), compileMulti, mkRuleEntry)
+import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, SideLoadedPrev(..), Tag(..), compileMulti, mkRuleEntry)
+import Pickles.Prove.Slot (SlotWrapKey(..))
 import Pickles.Prove.Step (StepRule)
 import Pickles.Sideload.BoundVk (BoundVk)
--- The one side-loading name on the main path: a rule with no
--- side-loaded slot still names `NoSideLoadedVk` once per slot.
-import Pickles.Sideload.Bundle (SlotProveVk(..))
 import Pickles.Slots (SideLoadedSlot, Slot)
 import Pickles.Step.Slots (PrevStatement(..), SideLoadedPrevStatement(..), SideLoadedPrevValue, prevValues, toPrevs)
 import Pickles.Types (PaddedLength, StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)

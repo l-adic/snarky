@@ -9,8 +9,7 @@
 -- | `nrrRule` is exported for the specs that need a real proof of it to
 -- | build on.
 module Test.Pickles.Prove.NoRecursionReturn
-  ( NrrRules
-  , nrrRule
+  ( nrrRule
   , spec
   ) where
 
@@ -26,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, FVar, const_)
@@ -41,26 +40,19 @@ nrrRule _ _ = pure
   , publicOutput: const_ zero
   }
 
--- | Carrier for the single `nrrRule`, at width 0 with no prevs.
-type NrrRules =
-  RulesCons 0 Unit
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
   it "compileMulti + prover.step end-to-end verify returns true" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/NoRecursionReturn.json")
 
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) nrrRule Vector.nil
+    nrrEntry <- liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
 
     let rules = tuple1 nrrEntry
 
     logInfo "[NoRecursionReturn] compiling…"
     output <- withSpan "[NoRecursionReturn] compile" $ liftEffect $ compileMulti
-      @NrrRules
       @(F StepField)
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -72,7 +64,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     let BranchProver nrrProver = fst output.provers
     logInfo "[NoRecursionReturn] proving"
     eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ nrrProver noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right compiledProof -> do

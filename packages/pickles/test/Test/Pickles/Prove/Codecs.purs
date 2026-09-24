@@ -26,7 +26,7 @@ import Pickles.Prove.Codecs (decodeVerifiableProof, decodeVerifier, encodeVerifi
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F)
-import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
+import Test.Pickles.Prove.NoRecursionReturn (nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -38,15 +38,13 @@ spec = describe "Pickles.Prove.Codecs" do
       cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR"
         <#> map \dir -> mkProofCache (dir <> "/Codecs.json")
 
-      nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) nrrRule Vector.nil
+      nrrEntry <- liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
       let rules = tuple1 nrrEntry
 
       logInfo "[Codecs] compiling…"
       output <- withSpan "[Codecs] compile" $ liftEffect $ compileMulti
-        @NrrRules
         @(F StepField)
         @1
-        noAdvice
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
@@ -58,7 +56,7 @@ spec = describe "Pickles.Prove.Codecs" do
       let BranchProver nrrProver = fst output.provers
       logInfo "[Codecs] proving"
       eResult <- withSpan "[Codecs] prove" $ liftEffect $ nrrProver noAdvice
-        { appInput: unit, prevs: unit, sideloadedVKs: unit }
+        { appInput: unit, prevs: unit }
       case eResult of
         Left e -> liftEffect $ Exc.throw ("Codecs prover: " <> show e)
         Right compiledProof -> do

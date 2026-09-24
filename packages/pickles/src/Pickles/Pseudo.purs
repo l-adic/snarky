@@ -22,8 +22,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
-import Prim.Int (class Add, class Compare)
-import Prim.Ordering (LT)
+import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, sub_)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_, seal, square_)
@@ -96,9 +95,8 @@ type PlonkDomain f r =
 -- | The plonk domain selected by `which` from the candidate sizes
 -- | `log2s`, which index a `buildPow2Pows` table of `maxLog2` entries.
 -- |
--- | The shifts are taken from the first candidate and emitted as
--- | constants. Every candidate must therefore have the same shifts;
--- | nothing here checks that.
+-- | `shifts` are emitted as constants whichever candidate is selected,
+-- | so every candidate must have exactly these shifts.
 toDomain
   :: forall @maxLog2 maxPred n f r
    . PrimeField f
@@ -106,15 +104,13 @@ toDomain
   => Reflectable maxLog2 Int
   => Add 1 maxPred maxLog2
   => Add maxPred 1 maxLog2
-  => Compare 0 n LT
-  => { shifts :: Int -> Vector 7 f
+  => { shifts :: Vector 7 f
      , domainGenerator :: Int -> f
      }
   -> Vector n (BoolVar f)
   -> Vector n (Finite maxLog2)
   -> Snarky f (KimchiConstraint f) r (PlonkDomain f r)
-toDomain { shifts: getShifts, domainGenerator } which log2s = do
-  let shifts_ = map const_ (getShifts (getFinite (Vector.head log2s)))
+toDomain { shifts, domainGenerator } which log2s = do
   generator <- mask which (map (\d -> const_ (domainGenerator (getFinite d))) log2s)
   let
     vanishingPolynomial x = do
@@ -122,7 +118,7 @@ toDomain { shifts: getShifts, domainGenerator } which log2s = do
       zetaToN <- choose which log2s
         (\log2 -> Vector.index pow2Pows log2)
       seal (zetaToN `sub_` const_ one)
-  pure { generator, shifts: shifts_, vanishingPolynomial }
+  pure { generator, shifts: map const_ shifts, vanishingPolynomial }
 
 -- | `[x, x^2, x^4, …, x^(2^(k-1))]`: entry `i` is `x^(2^i)`, at a cost
 -- | of `k-1` Square constraints.

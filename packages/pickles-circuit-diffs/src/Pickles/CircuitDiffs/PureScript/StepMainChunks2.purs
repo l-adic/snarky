@@ -30,7 +30,6 @@ import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Slots (PrevValues, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
@@ -83,11 +82,7 @@ compileStepMainChunks2
   :: StepMainChunks2Params -> Effect StepArtifact
 compileStepMainChunks2 params = do
   throwawayCaptureRef <- Ref.new Nothing
-  -- `carrier` (value-side per-proof witness carrier) is not determined
-  -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here
-  -- (mpv=0 ⇒ empty `Unit` carrier).
   let
-    dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
     dummyAdvice = unsafeCoerce unit
   mkStepArtifact <$> do
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
@@ -96,12 +91,12 @@ compileStepMainChunks2 params = do
       -- entries). Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- inputVal/outputVal both Unit — chunks2 is `Input Typ.unit`
       -- (degenerate Input mode) with `~auxiliary_typ:Typ.unit`.
-      ( \_ -> stepMain @Unit @Unit @Unit @Unit @0 @1
+      ( \_ -> stepMain @Unit @Unit @Unit @Unit @0
           chunks2Rule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
           , perSlotNumChunks: Vector.nil
-          , perSlotVkBlueprints: unit
+          , perSlotVkBlueprints: Vector.nil
           }
           dummyWrapSg
           dummyAdvice

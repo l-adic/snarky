@@ -7,8 +7,7 @@
 -- | under `KIMCHI_WITNESS_DUMP` — which a byte-for-byte diff against
 -- | the reference dump compares.
 module Test.Pickles.Prove.Chunks2
-  ( Chunks2Rules
-  , chunks2Rule
+  ( chunks2Rule
   , spec
   ) where
 
@@ -27,7 +26,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
@@ -64,11 +63,6 @@ chunks2Rule _ _ = do
     , publicOutput: unit
     }
 
--- | Carrier for the single `chunks2Rule`, at width 0 with no prevs.
-type Chunks2Rules =
-  RulesCons 0 Unit
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks2" do
   it "base case (b0) — chunks=2 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
@@ -78,15 +72,13 @@ spec = describe "Pickles.Prove.Chunks2" do
     -- step domain up to 2^17, giving two chunks. The wrap SRS has depth
     -- 2^15 and the wrap domain is overridden to 2^14, giving one chunk
     -- and a `max_poly_size` of 32768.
-    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit chunks2Rule Vector.nil
+    chunks2Entry <- liftEffect $ mkRuleEntry @Unit chunks2Rule Vector.nil
     let rules = tuple1 chunks2Entry
 
     logInfo "[Chunks2] compiling…"
     output <- withSpan "[Chunks2] compile" $ liftEffect $ compileMulti
-      @Chunks2Rules
       @Unit
       @2
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
@@ -98,7 +90,7 @@ spec = describe "Pickles.Prove.Chunks2" do
     let BranchProver chunks2Prover = fst output.provers
     logInfo "[Chunks2] proving"
     eResult <- withSpan "[Chunks2] prove" $ liftEffect $ chunks2Prover noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("chunks2Prover: " <> show e)
       Right compiledProof -> do

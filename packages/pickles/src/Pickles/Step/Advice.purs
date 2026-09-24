@@ -9,6 +9,7 @@ module Pickles.Step.Advice
 import Data.Newtype (class Newtype)
 import Data.Vector (Vector)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (PerProofUnfinalized)
 import Pickles.VerificationKey (VerificationKey)
 import Snarky.Circuit.DSL (F)
@@ -17,10 +18,16 @@ import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 
 newtype StepAdvice
-  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> Type
-newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier =
+  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type
+newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len valCarrier =
   StepAdvice
-    { perProofSlotsCarrier :: carrier
+    { perProofSlotsCarrier ::
+        Vector len
+          ( PerProofWitness wrapVkChunks ds dw
+              (F StepField)
+              (Type2 (SplitField (F StepField) Boolean))
+              Boolean
+          )
     , publicInput :: inputVal
     , publicUnfinalizedProofs ::
         Vector len
@@ -49,12 +56,9 @@ newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier 
     -- | slot-specific values out of it through the deferred getter
     -- | `stepMain` hands it.
     , prevAppStates :: valCarrier
-    -- | The runtime side-loaded VKs, shaped from `prevsSpec` by
-    -- | `Pickles.Sideload.Advice.SideloadedVKsCarrier`.
-    , sideloadedVKs :: vkCarrier
     }
 
 derive instance
   Newtype
-    (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier)
+    (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len valCarrier)
     _

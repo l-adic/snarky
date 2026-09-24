@@ -26,20 +26,25 @@ import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChil
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
 import Test.Pickles.Sideload.VerifyFixturesSpec as SideloadVerifyFixtures
 import Test.Pickles.Sideload.VerifyNrrSpec as SideloadVerifyNrr
+import Test.Pickles.WrapDomainShiftsSpec as WrapDomainShifts
 import Test.Spec (SpecT, beforeAll, hoistSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
 import Test.Spec.Runner.Node.Config as Cfg
 
--- | The pickles suite. Every spec here runs a full prove flow — step
--- | compile, step prove, wrap compile, wrap prove, iterated for the
--- | chained cases — and asserts that the proofs it produces verify.
+-- | The pickles suite. Each `Test.Pickles.Prove` spec but
+-- | `CompileValidation` runs a full prove flow — step compile, step
+-- | prove, wrap compile, wrap prove, iterated for the chained cases —
+-- | and asserts that the proofs it produces verify. The
+-- | `Test.Pickles.Sideload` specs check OCaml-produced fixtures against
+-- | the PureScript compile and verifier.
 -- |
 -- | `beforeAll buildSharedSrs` builds one SRS for all of them, so the
 -- | Lagrange bases attached to it are populated once per run rather
 -- | than once per test.
 spec :: SpecT (LoggerT Message Aff) Unit Aff Unit
 spec = beforeAll buildSharedSrs do
+  WrapDomainShifts.spec
   CompileValidation.spec
   NoRecursionReturn.spec
   Codecs.spec

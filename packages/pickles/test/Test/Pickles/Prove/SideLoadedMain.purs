@@ -18,14 +18,13 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (fst)
 import Data.Tuple.Nested (Tuple1, tuple1, (/\))
-import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoadedPrevStatement(..), SideLoadedSlot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Safe.Coerce (coerce)
@@ -80,19 +79,9 @@ noRecursionInputRule _ self = do
     , publicOutput: unit
     }
 
--- | Carrier for the single child rule, at width 0 with no prevs.
-type NoRecursionInputRules =
-  RulesCons 0 Unit RulesNil
-
 -- | The parent rule's one side-loaded prev slot, at width 2.
 type SideLoadedMainPrevsSpec =
   Tuple1 (SideLoadedSlot 2 (StatementIO (F StepField) Unit))
-
--- | Carrier for the parent rule.
-type SideLoadedMainRules =
-  RulesCons 1
-    SideLoadedMainPrevsSpec
-    RulesNil
 
 -- | The parent rule: asserts `1 + prev == self`, or the base case
 -- | `self == 0`.
@@ -136,15 +125,13 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     -- The child's kimchi wrap verification key becomes the runtime
     -- `wrapVk` of the parent's side-loaded slot.
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit
+    childEntry <- liftEffect $ mkRuleEntry @Unit
       noRecursionInputRule
       Vector.nil
 
     child <- withSpan "[SideLoadedMain] compile child" $ liftEffect $ compileMulti
-      @NoRecursionInputRules
       @Unit
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -160,7 +147,6 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     eChildCp <- withSpan "[SideLoadedMain] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F zero
       , prevs: unit
-      , sideloadedVKs: unit
       }
     childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
@@ -186,16 +172,13 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
         }
 
     sideLoadedEntry <- liftEffect $ mkRuleEntry
-      @1
       @Unit
       sideLoadedMainRule
-      (SideLoadedKey :< Vector.nil)
+      Vector.nil
 
     parent <- withSpan "[SideLoadedMain] compile parent" $ liftEffect $ compileMulti
-      @SideLoadedMainRules
       @Unit
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -216,8 +199,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- `1 + prev == self` branch is the one that holds.
     eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ chainProver noAdvice
       { appInput: F one
-      , prevs: tuple1 (InductivePrev childCp2' childTag2)
-      , sideloadedVKs: SideLoadedVk childVK /\ unit
+      , prevs: tuple1 (SideLoadedPrev childVK (InductivePrev childCp2' childTag2))
       }
     parentCp <- case eParentCp of
       Left e -> liftEffect $ Exc.throw ("sideloaded chainProver: " <> show e)

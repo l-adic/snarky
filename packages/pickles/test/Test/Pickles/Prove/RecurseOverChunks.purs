@@ -22,11 +22,11 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (true_)
-import Test.Pickles.Prove.Chunks2 (Chunks2Rules, chunks2Rule)
+import Test.Pickles.Prove.Chunks2 (chunks2Rule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -43,25 +43,17 @@ recurseRule _ _ = pure
   , publicOutput: unit
   }
 
--- | Carrier for the single `recurseRule`, at width 1.
-type RecurseRules =
-  RulesCons 1
-    RecursePrevsSpec
-    RulesNil
-
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.RecurseOverChunks" do
   it "a step circuit finalizes a chunks=2 step proof, end-to-end verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/RecurseOverChunks.json")
 
-    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit chunks2Rule Vector.nil
+    chunks2Entry <- liftEffect $ mkRuleEntry @Unit chunks2Rule Vector.nil
 
     logInfo "[RecurseOverChunks] compiling chunks2…"
     chunks2 <- withSpan "[RecurseOverChunks] compile chunks2" $ liftEffect $ compileMulti
-      @Chunks2Rules
       @Unit
       @2
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
@@ -73,30 +65,20 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
     let BranchProver chunks2Prover = fst chunks2.provers
     logInfo "[RecurseOverChunks] proving chunks2"
     eChunks2Cp <- withSpan "[RecurseOverChunks] prove chunks2" $ liftEffect $ chunks2Prover noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     chunks2Cp <- case eChunks2Cp of
       Left e -> liftEffect $ Exc.throw ("chunks2Prover: " <> show e)
       Right p -> pure p
     verify chunks2.verifier (toVerifiable chunks2Cp) `shouldEqual` true
 
-    let
-      chunks2ProverVKs =
-        { stepCompileResult: fst chunks2.vks.perBranchStep
-        , wrapCompileResult: chunks2.vks.wrap
-        , wrapDomainLog2: chunks2.vks.wrapDomainLog2
-        , stepNumChunks: chunks2.vks.stepChunks
-        }
-
-    recurseEntry <- liftEffect $ mkRuleEntry @1 @Unit
+    recurseEntry <- liftEffect $ mkRuleEntry @Unit
       recurseRule
-      (External chunks2ProverVKs :< Vector.nil)
+      (External chunks2.tagData :< Vector.nil)
 
     logInfo "[RecurseOverChunks] compiling recurse…"
     recurse <- withSpan "[RecurseOverChunks] compile recurse" $ liftEffect $ compileMulti
-      @RecurseRules
       @Unit
       @1
-      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -110,7 +92,6 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
     eRecurseCp <- withSpan "[RecurseOverChunks] prove recurse" $ liftEffect $ recurseProver noAdvice
       { appInput: unit
       , prevs: tuple1 (InductivePrev chunks2Cp chunks2.tag)
-      , sideloadedVKs: tuple1 NoSideLoadedVk
       }
     case eRecurseCp of
       Left e -> liftEffect $ Exc.throw ("recurseProver: " <> show e)

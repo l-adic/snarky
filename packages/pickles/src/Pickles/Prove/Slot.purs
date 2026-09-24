@@ -9,12 +9,7 @@
 module Pickles.Prove.Slot
   ( CompiledTagData
   , Slot
-  , SlotSource(..)
-  , AppSpec
-  , RuleSpec
-  , appMpv
-  , isSelf
-  , isSideLoaded
+  , SlotWrapKey(..)
   , slotNumChunks
   , slotSourceDomainLog2s
   , slotStepDomainLog2
@@ -22,14 +17,12 @@ module Pickles.Prove.Slot
   , slotWrapVerifierIndex
   ) where
 
-import Prelude
-
-import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
-import Data.Semigroup.Foldable (maximum)
+import Data.Maybe (Maybe(..))
 import Pickles.Field (WrapField)
 import Pickles.Step.Dummy (wrapDomainLog2ForProofsVerified)
+import Pickles.Step.FinalizeOtherProof (sideLoadedLog2s)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Curves.Pasta (PallasG)
 
@@ -60,24 +53,21 @@ type CompiledTagData =
   , numChunks :: Int
   }
 
--- | Where a slot's previous proofs come from: the rule currently being
--- | compiled, another already-compiled proof system, or a verification
--- | key supplied at prove time.
+-- | Where a compiled slot's wrap verification key comes from, chosen
+-- | at compile time. What separates the two is which verification key
+-- | the step circuit reads: one shared from advice, one a baked-in
+-- | constant.
 -- |
--- | `SelfSource` and `ExternalSource` are both compiled sources; what
--- | separates them is which verification key the step circuit reads —
--- | one shared from advice, one a baked-in constant.
-data SlotSource
+-- | A side-loaded slot takes none: its kind in the prevs spec says it
+-- | is side-loaded, and its key arrives with its prev at prove time.
+data SlotWrapKey
   -- | The rule being compiled. Its wrap verification key is read from
   -- | advice at prove time, because at step-compile time the wrap
   -- | circuit does not exist yet.
-  = SelfSource
+  = Self
   -- | A previously-compiled proof system, whose constants are baked
-  -- | into the step circuit.
-  | ExternalSource CompiledTagData
-  -- | A verification key arriving as a runtime witness at prove time,
-  -- | bounded at compile time by the slot's `localMpv`.
-  | SideLoadedSource
+  -- | into the step circuit; its compile returns them as `tagData`.
+  | External CompiledTagData
 
 -- | One previous-proof slot of one rule.
 -- |
@@ -92,48 +82,15 @@ type Slot =
     -- | `n`, not the enclosing rule's, and every per-slot width on the
     -- | wrap side keys on it.
     localMpv :: Int
-  , source :: SlotSource
+  -- | `Nothing` for a side-loaded slot.
+  , source :: Maybe SlotWrapKey
   }
-
--- | One rule of an application: its previous-proof slots in order. A
--- | rule may have none — the base case of every application — so the
--- | slots are a plain `Array`. The rule body itself lives on
--- | `Pickles.Prove.Compile`'s `RuleEntry`.
-type RuleSpec =
-  { name :: String
-  , slots :: Array Slot
-  }
-
--- | An application: its rules, in branch order. Non-empty because an
--- | application with no branches has no step circuit to compile and no
--- | verification key to produce — the same thing `compileMulti` states
--- | at the type level.
-type AppSpec = { rules :: NonEmptyArray RuleSpec }
-
--- | The application's `max_proofs_verified` — the widest rule's slot
--- | count, and the width every branch's step statement is padded to.
--- |
--- | Total without a default: the max-semigroup needs no identity, and
--- | one would be wrong — `Monoid (Max Int)` comes from `Bounded`, so an
--- | empty application would fold to `bottom`.
-appMpv :: AppSpec -> Int
-appMpv spec = maximum (map (Array.length <<< _.slots) spec.rules)
-
-isSelf :: Slot -> Boolean
-isSelf slot = case slot.source of
-  SelfSource -> true
-  _ -> false
-
-isSideLoaded :: Slot -> Boolean
-isSideLoaded slot = case slot.source of
-  SideLoadedSource -> true
-  _ -> false
 
 -- | The slot's wrap domain log2, which fixes its lagrange basis.
 -- |
--- | A `SelfSource` slot uses the enclosing rule's own wrap domain, so
+-- | A `Self` slot uses the enclosing rule's own wrap domain, so
 -- | the caller supplies it, already resolved against
--- | `wrapDomainOverride`; an `ExternalSource` slot carries its
+-- | `wrapDomainOverride`; an `External` slot carries its
 -- | source's.
 -- |
 -- | A side-loaded slot's real wrap domain is selected in-circuit from
@@ -142,65 +99,57 @@ isSideLoaded slot = case slot.source of
 -- | the enclosing override.
 slotWrapDomainLog2 :: Int -> Slot -> Int
 slotWrapDomainLog2 outerWrapDomainLog2 slot = case slot.source of
-  SelfSource -> outerWrapDomainLog2
-  ExternalSource d -> d.wrapDomainLog2
-  SideLoadedSource -> wrapDomainLog2ForProofsVerified slot.localMpv
+  Just Self -> outerWrapDomainLog2
+  Just (External d) -> d.wrapDomainLog2
+  Nothing -> wrapDomainLog2ForProofsVerified slot.localMpv
 
--- | The step-domain log2s of the slot's source, one per branch of that
--- | source. Drives `perSlotFopDomainLog2s`.
+-- | The step-domain log2s the slot's previous proof may have been
+-- | produced at. Drives `perSlotFopDomainLog2s`.
 -- |
--- | A `SelfSource` slot takes the enclosing compile's own domains,
--- | which are only known after the pre-pass, so the caller supplies
--- | them — which is why this is derived rather than stored on the slot.
--- | A side-loaded slot has no compile-time step domain at all; it
--- | borrows the same array, and the real dispatch happens in
--- | `Pickles.Step.FinalizeOtherProof`'s side-loaded mode.
--- |
--- | `branchCount` is the width the result must have, the array being
--- | indexed by the enclosing compile's branches. Only single-branch
--- | external sources are supported: their one domain is replicated
--- | across the width.
-slotSourceDomainLog2s :: Int -> Array Int -> Slot -> Array Int
-slotSourceDomainLog2s branchCount selfStepDomainLog2s slot = case slot.source of
-  SelfSource -> selfStepDomainLog2s
-  SideLoadedSource -> selfStepDomainLog2s
-  ExternalSource d
-    | NEA.length d.stepDomainLog2s == 1 ->
-        Array.replicate branchCount (NEA.head d.stepDomainLog2s)
-    | otherwise -> NEA.toArray d.stepDomainLog2s
+-- | A `Self` slot takes the enclosing compile's own domains, which
+-- | exist only after the pre-pass, so the caller supplies them. An
+-- | `External` slot takes the imported system's domains, and a
+-- | side-loaded slot every domain a side-loaded proof may have,
+-- | `[0..16]`.
+slotSourceDomainLog2s :: NonEmptyArray Int -> Slot -> NonEmptyArray Int
+slotSourceDomainLog2s selfStepDomainLog2s slot = case slot.source of
+  Just Self -> selfStepDomainLog2s
+  Nothing -> NEA.fromFoldable1 sideLoadedLog2s
+  Just (External d) -> d.stepDomainLog2s
 
 -- | The slot source's compile-time `num_chunks`, from which `zk_rows`
--- | follows. A `SelfSource` slot takes the enclosing compile's declared
+-- | follows. A `Self` slot takes the enclosing compile's declared
 -- | value; side-loaded previous proofs are single-chunk.
 slotNumChunks :: Int -> Slot -> Int
 slotNumChunks selfNumChunks slot = case slot.source of
-  SelfSource -> selfNumChunks
-  ExternalSource d -> d.numChunks
-  SideLoadedSource -> 1
+  Just Self -> selfNumChunks
+  Just (External d) -> d.numChunks
+  Nothing -> 1
 
 -- | The wrap verification key the slot verifies its previous proof
--- | against. A `SelfSource` slot takes the enclosing compile's own,
+-- | against. A `Self` slot takes the enclosing compile's own,
 -- | which the caller supplies because at step-compile time it is read
 -- | from advice; a side-loaded slot takes it too, its real key arriving
 -- | as a runtime witness.
 slotWrapVerifierIndex
   :: VerifierIndex PallasG WrapField -> Slot -> VerifierIndex PallasG WrapField
 slotWrapVerifierIndex selfWrapVerifierIndex slot = case slot.source of
-  SelfSource -> selfWrapVerifierIndex
-  ExternalSource d -> d.wrapVerifierIndex
-  SideLoadedSource -> selfWrapVerifierIndex
+  Just Self -> selfWrapVerifierIndex
+  Just (External d) -> d.wrapVerifierIndex
+  Nothing -> selfWrapVerifierIndex
 
 -- | The single step-domain log2 of the slot's source, for the places
 -- | that need one scalar rather than the per-branch vector: the dummy
 -- | wrap public input's `branch_data.domain_log2`, and the deferred
 -- | values the slot finalizes.
 -- |
--- | A `SelfSource` slot takes the enclosing compile's own realized
+-- | A `Self` slot takes the enclosing compile's own realized
 -- | domain, which only exists after its step circuit is built, so the
--- | caller supplies it. Only single-branch external sources are
--- | supported, so their one domain is the head of the array.
+-- | caller supplies it. An `External` slot takes its source's first
+-- | domain: a base case may claim any of them, and an inductive prev
+-- | reads its own.
 slotStepDomainLog2 :: Int -> Slot -> Int
 slotStepDomainLog2 selfStepDomainLog2 slot = case slot.source of
-  SelfSource -> selfStepDomainLog2
-  SideLoadedSource -> selfStepDomainLog2
-  ExternalSource d -> NEA.head d.stepDomainLog2s
+  Just Self -> selfStepDomainLog2
+  Nothing -> selfStepDomainLog2
+  Just (External d) -> NEA.head d.stepDomainLog2s
