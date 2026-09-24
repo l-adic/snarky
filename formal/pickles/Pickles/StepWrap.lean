@@ -33,11 +33,10 @@ open CompElliptic.Fields.Pasta
 open scoped Kimchi
 
 /-- A bit that reads as `true` on one side of a tie reads as `true` on the other. -/
-private theorem reads_true_of_tie {C : KimchiCurve} {sf sf' : Type} {k nc : ℕ}
-    {G : GroupHalf C sf k} {Sc : ScalarHalf C sf' k nc} (ht : HalvesTies G Sc)
-    (hG : CircuitType.Reads G.V G.claims.shouldFinalize true) :
-    (↑Sc.claims.shouldFinalize : CVar C.ScalarField).val Sc.V = 1 := by
-  obtain ⟨-, -, bb, hGb, hSb⟩ := ht
+private theorem reads_true_of_tie {Vg : Valuation Fp} {Vs : Valuation Fq} {a : BoolVar Fp}
+    {a' : BoolVar Fq} (ht : ∃ bb : Bool, CircuitType.Reads Vg a bb ∧ CircuitType.Reads Vs a' bb)
+    (hG : CircuitType.Reads Vg a true) : (↑a' : CVar Fq).val Vs = 1 := by
+  obtain ⟨bb, hGb, hSb⟩ := ht
   rw [CircuitType.reads_boolVar] at hG hGb hSb
   have : bb = true := by
     cases bb
@@ -50,8 +49,9 @@ private theorem reads_true_of_tie {C : KimchiCurve} {sf sf' : Type} {k nc : ℕ}
 /-- **Every must-verify slot's wrap proof verifies.** For any rule, take a satisfying run of
 the step circuit under `Vg` and one of the next wrap circuit's finalize block under `Vs`, with
 the branch bits reading as branch `b`. Suppose slot `i` is must-verify, its finalize slot was
-compiled for the key's wrap domain, and its two halves are tied. Then any wrap proof its cells
-read as, under the guards, the finalize ties and `SgOk`, is accepted by `kimchiVerify`. -/
+compiled for the key's wrap domain, and its two halves are tied and read one `shouldFinalize`
+bit. Then any wrap proof its cells read as, under the guards, the finalize ties and `SgOk`, is
+accepted by `kimchiVerify`. -/
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
     -- and the finalize block's slots; keys of `nc` chunks; the wrap circuit's `branches`
@@ -128,6 +128,9 @@ theorem stepWrap_kimchiVerify
       -- its two halves hold one set of claims
       HalvesTies (GroupHalf.step Vg inp.unfinalized)
         (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
+      -- and read one `shouldFinalize` bit
+      (∃ bb : Bool, CircuitType.Reads Vg inp.unfinalized.shouldFinalize bb ∧
+        CircuitType.Reads Vs sl.unfinalized.shouldFinalize bb) →
       ∀ (cp : KimchiProof IpaPallas.curve nc E.σ.k)
         (ms : List Bool)
         (cvs : List (List Fp)),
@@ -140,7 +143,7 @@ theorem stepWrap_kimchiVerify
         FopTies E cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
         SgOk E.σ E.cvk cp pub →
         kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
-  intro r x slots hbits i hmv inp sl hpin ht cp ms cvs pub hwire hguard hf hsg
+  intro r x slots hbits i hmv inp sl hpin ht hsf cp ms cvs pub hwire hguard hf hsg
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads E Es D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i
@@ -157,6 +160,6 @@ theorem stepWrap_kimchiVerify
     simp only [wrapFinalizeCircuit]
     mvcgen [hfin]
   exact (builder_spec_iff _ _).mp hcirc _ (fun con hc => hwrap con (mem_compile_of_mem_body hc))
-    _ hpin (reads_true_of_tie ht hsfG) cp pub hguard Vg inp.unfinalized v hv hv1 ht hf hsg
+    _ hpin (reads_true_of_tie hsf hsfG) cp pub hguard Vg inp.unfinalized v hv hv1 ht hf hsg
 
 end Pickles

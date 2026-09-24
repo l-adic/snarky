@@ -218,18 +218,16 @@ structure DvReads {K σ : Type} [Field K] [DecidableEq K] {k : ℕ} (V : Valuati
   b : decode c.b = dv.b
 
 /-- The two halves' claim cells carry one value across the field crossing: both read as one
-deferred-values record, the fq digest crosses as `castDigest` (zero when it does not fit the
-scalar field: a completeness gap, not a soundness one), and both read one `shouldFinalize` bit.
-The protocol enforces these through the public-input commitment binding the statement into the
-proof; no circuit computes them, so they are hypotheses here. -/
+deferred-values record, and the fq digest crosses as `castDigest` (zero when it does not fit
+the scalar field: a completeness gap, not a soundness one). The protocol enforces these through
+the public-input commitment binding the statement into the proof; no circuit computes them, so
+they are hypotheses here. -/
 def HalvesTies {k nc : ℕ} (G : GroupHalf C sf k) (Sc : ScalarHalf C sf' k nc) : Prop :=
   (∃ dv : DeferredValues k Prechallenge C.ScalarField,
     DvReads G.V G.side.decode G.claims.deferredValues dv ∧
       DvReads Sc.V Sc.side.decode Sc.claims.deferredValues dv) ∧
     Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
-      = castDigest C (G.claims.spongeDigestBeforeEvaluations.val G.V) ∧
-    ∃ b : Bool, CircuitType.Reads G.V G.claims.shouldFinalize b ∧
-      CircuitType.Reads Sc.V Sc.claims.shouldFinalize b
+      = castDigest C (G.claims.spongeDigestBeforeEvaluations.val G.V)
 
 /-- The scalar half's evaluation, mask and previous-challenge cells are the proof's. -/
 structure FopTies {nc : ℕ} (E : Env C nc) (cp : KimchiProof C nc E.σ.k) (pub : Array C.ScalarField)
@@ -517,7 +515,7 @@ theorem twoHalves_schnorr
   have hinjS := castInj128_of_lt _ hscalar
   have hxi := ScalarHalf.xiExact_of_constrained E hscalar cp hs ht
   -- the shared prechallenges
-  obtain ⟨⟨dv, hGdv, hSdv⟩, htdig, -⟩ := ht
+  obtain ⟨⟨dv, hGdv, hSdv⟩, htdig⟩ := ht
   have htperm := hSdv.perm.trans hGdv.perm.symm
   have htzetaM := hSdv.zetaM.trans hGdv.zetaM.symm
   have htzetaN := hSdv.zetaN.trans hGdv.zetaN.symm
