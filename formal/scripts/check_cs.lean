@@ -96,6 +96,7 @@ import Pickles.Linearization.Fq
 import Pickles.MessageHash
 import Pickles.WrapVerify
 import Pickles.WrapFinalize
+import Pickles.WrapMain
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.Poseidon
@@ -647,6 +648,30 @@ def pseudoToDomainWrapCircuit (input : Vector (FVar Fq) 2) : CircuitM Fq Cq PUni
   let d ← Pickles.toDomain (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) which
     [13, 14, 15]
   let _ ← d.vanishingPolynomial input[1]
+  pure PUnit.unit
+
+/-! ## The wrap circuit's branch selection
+
+Transcribe `Pickles.CircuitDiffs.PureScript.PseudoCircuits`' `utils_ones_vector_n16` (the slot
+mask, `Pickles.onesVector`, on either field) and `choose_key_n1_wrap` (`Pickles.chooseKey` over
+one branch whose key is Vesta's generator `(1, √6)` in every commitment). -/
+
+/-- `utils_ones_vector_n16`: the mask over 16 slots, the first zero at input 0. -/
+def onesVectorN16Circuit {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+    (input : Vector (FVar F) 1) : CircuitM F c PUnit := do
+  let _ ← Pickles.onesVector input[0] 16
+  pure PUnit.unit
+
+/-- `choose_key_n1_wrap_circuit`: the one-hot of input 0 over one branch choosing its key. -/
+def chooseKeyN1WrapCircuit (input : Vector (FVar Fq) 1) : CircuitM Fq Cq PUnit := do
+  let bits ← Pickles.oneHotVector 1 input[0]
+  let g : AffinePoint (FVar Fq) :=
+    ⟨.const 1,
+      .const 11426906929455361843568202299992114520848200991084027513389447476559454104162⟩
+  let ch : Vector (AffinePoint (FVar Fq)) 1 := #v[g]
+  let key : Pickles.VkComms 1 (AffinePoint (FVar Fq)) :=
+    ⟨Vector.replicate _ ch, Vector.replicate _ ch, ch, ch, ch, ch, ch, ch⟩
+  let _ ← Pickles.chooseKey (Vector.ofFn fun i => bits.getD i.val true_) #v[key]
   pure PUnit.unit
 
 /-! ## The evaluation layout
@@ -1586,6 +1611,12 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       (pseudoChooseCircuit 1 [42])),
     ("pseudo_choose_n3_wrap_circuit", wrapTarget (a := Vector Fq 1) (b := PUnit)
       (pseudoChooseCircuit 3 [13, 14, 15])),
+    ("utils_ones_vector_n16_step_circuit",
+      stepTarget (a := Vector Fp 1) (b := PUnit) onesVectorN16Circuit),
+    ("utils_ones_vector_n16_wrap_circuit",
+      wrapTarget (a := Vector Fq 1) (b := PUnit) onesVectorN16Circuit),
+    ("choose_key_n1_wrap_circuit",
+      wrapTarget (a := Vector Fq 1) (b := PUnit) chooseKeyN1WrapCircuit),
     ("pseudo_to_domain_wrap_circuit",
       wrapTarget (a := Vector Fq 2) (b := PUnit) pseudoToDomainWrapCircuit),
     ("hash_messages_for_next_step_proof_circuit",
