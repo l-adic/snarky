@@ -119,10 +119,8 @@ compileStepMainSideLoadedMain params = do
           -- Built inline rather than by
           -- `Pickles.Prove.Compile.stepProveContextOf`.
           { blindingH: params.blindingH
-          -- Side-loaded slots ignore this list —
-          -- `Step.FinalizeOtherProof`'s `SideLoadedMode` synthesises
-          -- the `Vector 17 [0..16]` universe from
-          -- `branch_data.domain_log2`, so `[0]` is a placeholder.
+          -- `SideLoadedMode` selects over `[0..16]` itself and reads
+          -- only the first entry, for the shifts.
           , perSlotFopDomainLog2s:
               (NEA.singleton 0) :< Vector.nil
           , perSlotNumChunks: 1 :< Vector.nil

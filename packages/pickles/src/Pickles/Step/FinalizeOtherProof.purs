@@ -13,6 +13,7 @@ module Pickles.Step.FinalizeOtherProof
   ( Input
   , finalizeOtherProofCircuit
   , mkSideLoadedOnesPrefixMask
+  , sideLoadedLog2s
   ) where
 
 import Prelude

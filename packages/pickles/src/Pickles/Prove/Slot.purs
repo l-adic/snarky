@@ -22,6 +22,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
 import Pickles.Field (WrapField)
 import Pickles.Step.Dummy (wrapDomainLog2ForProofsVerified)
+import Pickles.Step.FinalizeOtherProof (sideLoadedLog2s)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Curves.Pasta (PallasG)
 
@@ -102,22 +103,18 @@ slotWrapDomainLog2 outerWrapDomainLog2 slot = case slot.source of
   Just (External d) -> d.wrapDomainLog2
   Nothing -> wrapDomainLog2ForProofsVerified slot.localMpv
 
--- | The step-domain log2s of the slot's source, one per branch of that
--- | source. Drives `perSlotFopDomainLog2s`.
+-- | The step-domain log2s the slot's previous proof may have been
+-- | produced at. Drives `perSlotFopDomainLog2s`.
 -- |
--- | A `Self` slot takes the enclosing compile's own domains,
--- | which are only known after the pre-pass, so the caller supplies
--- | them — which is why this is derived rather than stored on the slot.
--- | A side-loaded slot has no compile-time step domain at all; it
--- | borrows the same array, and the real dispatch happens in
--- | `Pickles.Step.FinalizeOtherProof`'s side-loaded mode.
--- |
--- | An `External` slot takes the imported system's domains, however
--- | many branches it has.
+-- | A `Self` slot takes the enclosing compile's own domains, which
+-- | exist only after the pre-pass, so the caller supplies them. An
+-- | `External` slot takes the imported system's domains, and a
+-- | side-loaded slot every domain a side-loaded proof may have,
+-- | `[0..16]`.
 slotSourceDomainLog2s :: NonEmptyArray Int -> Slot -> NonEmptyArray Int
 slotSourceDomainLog2s selfStepDomainLog2s slot = case slot.source of
   Just Self -> selfStepDomainLog2s
-  Nothing -> selfStepDomainLog2s
+  Nothing -> NEA.fromFoldable1 sideLoadedLog2s
   Just (External d) -> d.stepDomainLog2s
 
 -- | The slot source's compile-time `num_chunks`, from which `zk_rows`

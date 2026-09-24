@@ -681,8 +681,8 @@ stepMain
           pw = reshapePerProofWitness slotWidth sppw
 
           slotFopDomainLog2s = perSlotFopDomainLog2s !! i
-          -- Shifts are constant across a slot's candidate domains,
-          -- so any one of them gives the right value.
+          -- `compileMulti` checks that a slot's candidate domains
+          -- share their shifts, so the first one's serve.
           slotShiftsLog2 = NEA.head slotFopDomainLog2s
 
           -- A compiled slot carries its lagrange table from compile

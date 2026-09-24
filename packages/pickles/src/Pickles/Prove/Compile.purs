@@ -58,6 +58,7 @@ import Data.Either (Either(..), either, note)
 import Data.Enum (fromEnum)
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int.Bits as Int.Bits
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -2181,6 +2182,7 @@ instance
         (reflectType (Proxy :: Proxy mpvMax))
         r.slotVKs
         log2s
+    requireSharedStepShifts ctx
     headResult <- r.stepCompileFn handler ctx
     tailResults <- runMultiCompile
       @rest
@@ -2436,6 +2438,26 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
     stepProveContextOf perRuleCfg
       (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
       (NonEmptyArray.fromFoldable1 selfStepDomainLog2s)
+
+-- | Fails unless each slot's candidate step domains share their
+-- | permutation shifts. The step circuit finalizes a slot's previous
+-- | proof with one shift set, its first candidate's.
+requireSharedStepShifts
+  :: forall mpv
+   . Reflectable mpv Int
+  => PProveStep.StepProveContext mpv
+  -> Effect Unit
+requireSharedStepShifts ctx =
+  forWithIndex_ ctx.srsData.perSlotFopDomainLog2s \slot log2s -> do
+    let shifts = domainShifts @StepField (NonEmptyArray.head log2s)
+    for_ log2s \log2 ->
+      when (domainShifts @StepField log2 /= shifts)
+        $ Exc.throw
+        $ "compileMulti: the candidate step domains of slot "
+            <> show (getFinite slot)
+            <> ", log2s "
+            <> show (NonEmptyArray.toArray log2s)
+            <> ", do not share their permutation shifts"
 
 --------------------------------------------------------------------------------
 -- runMultiProverBody — per-branch prover body.
