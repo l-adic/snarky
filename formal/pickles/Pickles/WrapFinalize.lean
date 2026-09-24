@@ -201,63 +201,6 @@ def WrapFinalizeSlot.ScalarReads (E : Env IpaPallas.curve nc) (Vs : Valuation Fq
       FopTies E cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
       SgOk E.σ E.cvk cp pub → kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true
 
-/-- Under any valuation satisfying the emitted constraints, a slot's finalize at a generator
-cell reading as the key's and a vanishing polynomial reading `ζⁿ − 1` at the key's size reads,
-once `finalized` is `1`, as the slot's scalar half. -/
-theorem finalizeOtherProofWrap_scalarReads (E : Env IpaPallas.curve nc) (Vs : Valuation Fq)
-    {branches : ℕ} (sl : WrapFinalizeSlot branches E.σ.k nc Fq) (gen : FVar Fq)
-    (hgen : gen.val Vs = E.cvk.omega)
-    (vanishing : FVar Fq → CircuitM Fq (Builder Vs (KimchiConstraint Fq)) (FVar Fq))
-    (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ E.cvk.n - 1⌝⦄) :
-    ⦃⌜True⌝⦄
-    finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen vanishing sl.unfinalized sl.evals
-      (sl.prevChallenges.toList.map Vector.toList)
-    ⦃⇓ o _ => ⌜(↑o.finalized : CVar Fq).val Vs = 1 → sl.ScalarReads E Vs⌝⦄ := by
-  have hP : (FopParams.ofEnv E Linearization.fqTokens).endo = Pasta.vestaEndo ∧
-      (FopParams.ofEnv E Linearization.fqTokens).mds = Reflect.symMdsQ ∧
-      (FopParams.ofEnv E Linearization.fqTokens).toks = Linearization.fqTokens :=
-    ⟨E.endo_eq, by rfl, rfl⟩
-  have hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs))
-      (sl.prevChallenges.toList.map Vector.toList)
-      (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals := by
-    refine List.forall₂_map_right_iff.2 (List.forall₂_map_left_iff.2
-      (List.forall₂_same.2 fun cs _ => ?_))
-    exact List.forall₂_map_right_iff.2
-      (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
-  have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
-    (FopParams.ofEnv E Linearization.fqTokens) hP IpaPallas.curve.frSponge.hsize E.zkRows_ge
-    gen E.cvk.n E.zkRows_le (by rw [hgen]; exact E.omega_prim.pow_eq_one) _ hvan
-    sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList) _ hprev
-  refine builder_spec_imp _ _ _ hspec ?_
-  intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit ht hf hsg
-  rw [hgen] at hread
-  have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals
-      = (cp.olds.map (·.u.toList)).toList :=
-    (ScalarHalf.wrap_olds Vs sl.unfinalized sl.evals sl.prevChallenges _).mp hf.olds
-  have hdv : (Poseidon.squeeze (FopParams.ofEnv E Linearization.fqTokens).sponge
-        (Poseidon.absorb (FopParams.ofEnv E Linearization.fqTokens).sponge Poseidon.init
-          ((sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)))).1
-      = recDigest IpaPallas.curve (cp.olds.map (·.u)) := by
-    have habs : (sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
-        = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
-      have h1 : (sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
-          = ((ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals).flatten := by
-        simp [ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten, List.map_map,
-          Function.comp_def]
-      rw [h1, holds]
-      simp [Function.comp_def]
-    rw [habs]
-    rfl
-  have hmask : (List.map (fun _ => true) (sl.prevChallenges.toList.map Vector.toList))
-      = (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).maskVals := by
-    rw [ScalarHalf.wrap_maskVals]
-    simp
-  rw [hdv, hmask] at hread
-  exact ((twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD])
-    (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf).mp
-    ⟨⟨hgbit, hfin⟩, hsg⟩).1
-
 /-- One slot's finalize body: under any valuation satisfying the emitted constraints, with the
 slot's domain reading as the key's (its generator `ω`, its vanishing polynomial `ζⁿ − 1`) and
 `shouldFinalize` set, the slot reads as its scalar half. -/
@@ -276,8 +219,57 @@ theorem wrapFinalizeBody_spec (E : Env IpaPallas.curve nc) (Vs : Valuation Fq)
       (↑sl.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 → sl.ScalarReads E Vs⌝⦄ := by
   by_cases h : d.generator.val Vs = E.cvk.omega ∧
       ∀ z, ⦃⌜True⌝⦄ d.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ E.cvk.n - 1⌝⦄
-  · have hf := builder_spec_and _ _ _
-      (finalizeOtherProofWrap_scalarReads E Vs sl d.generator h.1 d.vanishingPolynomial h.2)
+  · obtain ⟨hgen, hvan⟩ := h
+    have hsr : ⦃⌜True⌝⦄
+        finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
+          (FopParams.ofEnv E Linearization.fqTokens) d.generator d.vanishingPolynomial
+          sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList)
+        ⦃⇓ o _ => ⌜(↑o.finalized : CVar Fq).val Vs = 1 → sl.ScalarReads E Vs⌝⦄ := by
+      have hP : (FopParams.ofEnv E Linearization.fqTokens).endo = Pasta.vestaEndo ∧
+          (FopParams.ofEnv E Linearization.fqTokens).mds = Reflect.symMdsQ ∧
+          (FopParams.ofEnv E Linearization.fqTokens).toks = Linearization.fqTokens :=
+        ⟨E.endo_eq, by rfl, rfl⟩
+      have hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs))
+          (sl.prevChallenges.toList.map Vector.toList)
+          (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals := by
+        refine List.forall₂_map_right_iff.2 (List.forall₂_map_left_iff.2
+          (List.forall₂_same.2 fun cs _ => ?_))
+        exact List.forall₂_map_right_iff.2
+          (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
+      have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
+        (FopParams.ofEnv E Linearization.fqTokens) hP IpaPallas.curve.frSponge.hsize E.zkRows_ge
+        d.generator E.cvk.n E.zkRows_le (by rw [hgen]; exact E.omega_prim.pow_eq_one) _ hvan
+        sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList) _ hprev
+      refine builder_spec_imp _ _ _ hspec ?_
+      intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit ht hf hsg
+      rw [hgen] at hread
+      have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals
+          = (cp.olds.map (·.u.toList)).toList :=
+        (ScalarHalf.wrap_olds Vs sl.unfinalized sl.evals sl.prevChallenges _).mp hf.olds
+      have hdv : (Poseidon.squeeze (FopParams.ofEnv E Linearization.fqTokens).sponge
+            (Poseidon.absorb (FopParams.ofEnv E Linearization.fqTokens).sponge Poseidon.init
+              ((sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)))).1
+          = recDigest IpaPallas.curve (cp.olds.map (·.u)) := by
+        have habs : (sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
+            = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
+          have h1 : (sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
+              = ((ScalarHalf.wrap Vs sl.unfinalized sl.evals
+                  sl.prevChallenges).prevVals).flatten := by
+            simp [ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten, List.map_map,
+              Function.comp_def]
+          rw [h1, holds]
+          simp [Function.comp_def]
+        rw [habs]
+        rfl
+      have hmask : (List.map (fun _ => true) (sl.prevChallenges.toList.map Vector.toList))
+          = (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).maskVals := by
+        rw [ScalarHalf.wrap_maskVals]
+        simp
+      rw [hdv, hmask] at hread
+      exact ((twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD])
+        (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf).mp
+        ⟨⟨hgbit, hfin⟩, hsg⟩).1
+    have hf := builder_spec_and _ _ _ hsr
       (finalizeOtherProofWrap_finalized_bit (V := Vs) (FopParams.ofEnv E Linearization.fqTokens)
         d.generator d.vanishingPolynomial sl.unfinalized sl.evals
         (sl.prevChallenges.toList.map Vector.toList))
