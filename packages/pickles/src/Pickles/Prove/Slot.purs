@@ -10,11 +10,6 @@ module Pickles.Prove.Slot
   ( CompiledTagData
   , Slot
   , SlotSource(..)
-  , AppSpec
-  , RuleSpec
-  , appMpv
-  , isSelf
-  , isSideLoaded
   , slotNumChunks
   , slotSourceDomainLog2s
   , slotStepDomainLog2
@@ -27,7 +22,6 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
-import Data.Semigroup.Foldable (maximum)
 import Pickles.Field (WrapField)
 import Pickles.Step.Dummy (wrapDomainLog2ForProofsVerified)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
@@ -94,40 +88,6 @@ type Slot =
     localMpv :: Int
   , source :: SlotSource
   }
-
--- | One rule of an application: its previous-proof slots in order. A
--- | rule may have none — the base case of every application — so the
--- | slots are a plain `Array`. The rule body itself lives on
--- | `Pickles.Prove.Compile`'s `RuleEntry`.
-type RuleSpec =
-  { name :: String
-  , slots :: Array Slot
-  }
-
--- | An application: its rules, in branch order. Non-empty because an
--- | application with no branches has no step circuit to compile and no
--- | verification key to produce — the same thing `compileMulti` states
--- | at the type level.
-type AppSpec = { rules :: NonEmptyArray RuleSpec }
-
--- | The application's `max_proofs_verified` — the widest rule's slot
--- | count, and the width every branch's step statement is padded to.
--- |
--- | Total without a default: the max-semigroup needs no identity, and
--- | one would be wrong — `Monoid (Max Int)` comes from `Bounded`, so an
--- | empty application would fold to `bottom`.
-appMpv :: AppSpec -> Int
-appMpv spec = maximum (map (Array.length <<< _.slots) spec.rules)
-
-isSelf :: Slot -> Boolean
-isSelf slot = case slot.source of
-  SelfSource -> true
-  _ -> false
-
-isSideLoaded :: Slot -> Boolean
-isSideLoaded slot = case slot.source of
-  SideLoadedSource -> true
-  _ -> false
 
 -- | The slot's wrap domain log2, which fixes its lagrange basis.
 -- |

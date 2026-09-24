@@ -1,28 +1,21 @@
--- | The spec-indexed carrier that hands a circuit its side-loaded
--- | verification keys, in two phases. At compile time a cell is the VK
--- | descriptor alone, synthesised from the spec by `MkUnitVkCarrier`,
--- | because the in-circuit walk reads nothing else. At prove time it is
--- | a `SlotProveVk`, whose `Bundle` adds the hydrated `VerifierIndex`
--- | the prover machinery needs.
+-- | The spec-indexed carriers that hand a circuit its side-loaded
+-- | verification keys: `SideloadedVKsCarrier` at prove time,
+-- | `MkUnitVkCarrier` at compile time.
 -- |
 -- | Both carriers are uniform across slots: whether a slot is
 -- | side-loaded follows from its `SlotWrapKey`, which is runtime data,
 -- | so no carrier can vary its cell per slot.
 module Pickles.Sideload.Advice
   ( class SideloadedVKsCarrier
-  , class SideloadedVKsM
-  , getSideloadedVKsCarrier
   , class MkUnitVkCarrier
-  , mkUnitVkCarrier
   ) where
 
 import Prelude
 
-import Data.Tuple.Nested (type (/\), (/\))
-import Effect (Effect)
+import Data.Tuple.Nested (type (/\))
 import Pickles.Field (StepField)
 import Pickles.Sideload.Bundle (SlotProveVk)
-import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
+import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
 import Pickles.Slots (SlotOf)
 import Pickles.Types (WrapVkChunks)
 import Snarky.Circuit.DSL (F)
@@ -47,38 +40,16 @@ instance
     (SlotOf k n statement /\ rest)
     (SlotProveVk WrapVkChunks /\ restCarrier)
 
--- | The monad a spec-indexed VK carrier is drawn from.
-class
-  Monad m <=
-  SideloadedVKsM (spec :: Type) (m :: Type -> Type) (carrier :: Type)
-  | spec m -> carrier
-  , m -> spec carrier where
-  getSideloadedVKsCarrier :: Unit -> m carrier
-
--- | In `Effect`, the carrier is the placeholder one: compile time,
--- | where the constraint-system pass discards prover-supplied values.
-instance
-  MkUnitVkCarrier spec carrier =>
-  SideloadedVKsM spec Effect carrier where
-  getSideloadedVKsCarrier _ = pure (mkUnitVkCarrier @spec)
-
--- | A placeholder carrier in the spec's shape: `SLVK.compileDummy` at
--- | every slot. Pure construction, no kimchi FFI, because a descriptor
--- | is all the in-circuit walk reads.
--- |
--- | A compiled slot gets a dummy descriptor it never reads: its
--- | blueprint routes to `ConstVk` or `SharedExistsVk` without touching
--- | the cell.
+-- | The compile-time carrier shape for a spec: the VK descriptor at
+-- | every slot. It only types the step circuit's compile-time advice,
+-- | which compile never forces, so no carrier value is ever built.
 class MkUnitVkCarrier :: Type -> Type -> Constraint
-class MkUnitVkCarrier spec (carrier :: Type) | spec -> carrier where
-  mkUnitVkCarrier :: carrier
+class MkUnitVkCarrier spec (carrier :: Type) | spec -> carrier
 
-instance MkUnitVkCarrier Unit Unit where
-  mkUnitVkCarrier = unit
+instance MkUnitVkCarrier Unit Unit
 
 instance
   MkUnitVkCarrier rest restCarrier =>
   MkUnitVkCarrier
     (SlotOf k n statement /\ rest)
-    (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean /\ restCarrier) where
-  mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest
+    (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean /\ restCarrier)

@@ -37,14 +37,10 @@ newtype Bundle slotVkChunks = Bundle
   , verifierIndex :: VerifierIndex Pallas.G WrapField
   }
 
--- | The side-loaded VK descriptor inside a carrier cell, whichever
--- | phase the cell comes from: a compile-time cell is the descriptor
--- | already, a `Bundle` yields its `vk` half.
+-- | The side-loaded VK descriptor inside a prove-time cell: a
+-- | `Bundle`'s `vk` half.
 class HasSideLoadedVk slotVkChunks cell | cell -> slotVkChunks where
   projectVk :: cell -> SLVK.VerificationKey slotVkChunks (F StepField) Boolean
-
-instance HasSideLoadedVk slotVkChunks (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) where
-  projectVk = identity
 
 instance HasSideLoadedVk slotVkChunks (Bundle slotVkChunks) where
   projectVk (Bundle r) = r.vk
