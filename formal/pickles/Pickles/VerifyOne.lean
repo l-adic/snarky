@@ -120,13 +120,6 @@ def verifyOne (E : Env IpaPallas.curve nc) (P : FopParams Fp) (domains : List (K
     CircuitM Fp c (FopOutput Fp × BoolVar Fp) :=
   verifyOneBy (verifyProofAt E) P domains vk inp
 
-/-- One slot of the step circuit: `verifyOne` at the step key's parameters and domains, its
-verdict asserted. -/
-def slotCircuit (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curve nc) (D : KnownDomains Es)
-    (vk : VkComms nc (AffinePoint (FVar Fp))) (inp : VerifyOneInput Es.σ.k E.σ.k nc w) :
-    CircuitM Fp c Unit := do
-  let (_, r) ← verifyOne E (FopParams.ofEnv Es Linearization.fpTokens) D.list vk inp
-  assert r
 
 /-! ## The read -/
 
@@ -349,41 +342,6 @@ theorem verifyOne_reads (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curve nc
       List.append_assoc]
     simp only [Poseidon.absorb, List.foldl_append]
 
-/-- **The slot circuit's read**: `verifyOne_reads` at an asserted verdict, the digest cell
-replaced by its value in the public input. -/
-theorem slotCircuit_reads (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curve nc)
-    (D : KnownDomains Es) (hw : w ≤ MaxProofsVerified)
-    (vk : VkComms nc (AffinePoint (FVar Fp))) (inp : VerifyOneInput Es.σ.k E.σ.k nc w)
-    (cp : KimchiProof IpaPallas.curve nc E.σ.k)
-    (ms : List Bool) (hm : List.Forall₂ (CircuitType.Reads V) inp.proofMask.toList ms)
-    (cvs : List (List Fp)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V))
-      (inp.prevChallenges.toList.map Vector.toList) cvs)
-    (hkey : KeyReads IpaPallas.curve V vk E.cvk)
-    (hproof : ProofReads (stepSide V) (inp.proof.wComm.toList.map (·.toList))
-      inp.proof.zComm.toList inp.proof.tComm.toList inp.proof.opening cp)
-    (holds : CommReads IpaPallas.curve V inp.sgOld.toList (cp.olds.map (·.sg)).toList)
-    (hclaimOk : ∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·))
-      vk inp.proof).shifted, (stepSide V).ClaimOk x)
-    (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
-    (havoid : ∀ msg, E.σ.Avoids (stepRelationsAt E (inp.statement msg))) :
-    ⦃⌜True⌝⦄ slotCircuit (c := Builder V (KimchiConstraint Fp)) E Es D vk inp
-    ⦃⇓ _ _ => ⌜CircuitType.Reads V inp.mustVerify true →
-      ∃ v : BoolVar Fp,
-        (GroupHalf.step V inp.unfinalized).Reads E cp (inp.publicInputAt E V ms) v ∧
-          (↑v : CVar Fp).val V = 1⌝⦄ := by
-  have hr := verifyOne_reads E Es D hw vk inp cp ms hm cvs hprev hkey hproof holds hclaimOk
-    hsmall havoid
-  simp only [slotCircuit]
-  mvcgen [hr]
-  rename_i o _ hread _ _
-  intro h1 hmv
-  obtain ⟨msg, v, hmsg, hvr, hv1, -⟩ := hread hmv h1
-  refine ⟨v, ?_, hv1⟩
-  have hpub : stepPublicInput E V (inp.statement msg) = inp.publicInputAt E V ms :=
-    stepPublicInput_congr_msg E V (inp.statement msg) msg _ (by simpa using hmsg)
-  rw [← hpub]
-  exact hvr
-
 /-- What a verified slot certifies: for any wrap proof `cp` the slot's cells read as (the
 masks and previous challenges as `ms`, `cvs`, the key cells as the key, the proof and `sg`
 cells as `cp`'s), the group half accepts `cp` at the slot's public input. -/
@@ -426,54 +384,6 @@ theorem verifyOne_slotReads (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curv
     stepPublicInput_congr_msg E V (inp.statement msg) msg _ (by simpa using hmsg)
   rw [← hpub]
   exact hvr
-
-open WrapProof in
-/-- **A wrap proof verified in one slot of the step circuit makes `kimchiVerify` accept.** The
-step circuit's slot (`verifyOne`, its verdict asserted) and the next wrap circuit's scalar half,
-each satisfied, the slot must-verify, its cells reading as the wire's proof, key and old
-accumulators, and the two circuits holding one set of deferred claims: under the proof's
-`Guards` and `SgOk`, `kimchiVerify` accepts at the public input carrying the step-message
-digest of this step's key, application state and kept proofs. -/
-theorem slot_kimchiVerify_pallas (E : Env IpaPallas.curve nc) (Es : Env IpaVesta.curve nc)
-    (D : KnownDomains Es) (hw : w ≤ MaxProofsVerified)
-    (vk : VkComms nc (AffinePoint (FVar Fp))) (inp : VerifyOneInput Es.σ.k E.σ.k nc w)
-    (cp : KimchiProof IpaPallas.curve nc E.σ.k)
-    -- the step circuit's slot, satisfied
-    (Vg : Valuation Fp) (nv : ℕ)
-    (hsatG : ∀ con ∈ (build (slotCircuit (c := Builder Vg (KimchiConstraint Fp)) E Es D vk inp)
-      nv).constraints, ConstraintHolds.Holds Vg con)
-    (hmust : CircuitType.Reads Vg inp.mustVerify true)
-    -- the next wrap circuit's scalar half, satisfied
-    (Vs : Valuation Fq)
-    (hsatS : ∀ con ∈ (compile (a := ScalarIn E.σ.k nc) (b := Unit)
-        (scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E)).constraints,
-        ConstraintHolds.Holds Vs con)
-    -- the slot's cells read as the wire's
-    (ms : List Bool) (hm : List.Forall₂ (CircuitType.Reads Vg) inp.proofMask.toList ms)
-    (cvs : List (List Fp)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vg))
-      (inp.prevChallenges.toList.map Vector.toList) cvs)
-    (hkey : KeyReads IpaPallas.curve Vg vk E.cvk)
-    (hproof : ProofReads (stepSide Vg) (inp.proof.wComm.toList.map (·.toList))
-      inp.proof.zComm.toList inp.proof.tComm.toList inp.proof.opening cp)
-    (holds : CommReads IpaPallas.curve Vg inp.sgOld.toList (cp.olds.map (·.sg)).toList)
-    (hclaimOk : ∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·))
-      vk inp.proof).shifted, (stepSide Vg).ClaimOk x)
-    -- the statement's shape against the SRS
-    (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
-    (havoid : ∀ msg, E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
-    -- the two circuits hold one set of deferred claims, and the scalar half's cells are the wire's
-    (ht : HalvesTies (GroupHalf.step Vg inp.unfinalized) ((scalarInput E.σ.k nc).half Vs))
-    (hf : FopTies E cp (inp.publicInputAt E Vg ms) ((scalarInput E.σ.k nc).half Vs))
-    -- of the proof itself
-    (hguard : Guards IpaPallas.curve E.cvk cp (inp.publicInputAt E Vg ms))
-    (hsg : SgOk E.σ E.cvk cp (inp.publicInputAt E Vg ms)) :
-    kimchiVerify IpaPallas.curve E.σ E.cvk cp (inp.publicInputAt E Vg ms) = true := by
-  obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
-    (slotCircuit_reads (V := Vg) E Es D hw vk inp cp ms hm cvs hprev hkey hproof holds hclaimOk
-      hsmall havoid) nv hsatG hmust
-  exact (builder_spec_iff _ _).mp
-    (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k nc) Vg inp.unfinalized v hv hv1
-      ht hf hsg) _ fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Reads
 

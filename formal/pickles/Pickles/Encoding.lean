@@ -40,12 +40,6 @@ instance instType1CircuitType {F v w : Type} [CircuitType F v w] :
     CircuitType F (Type1 v) (Type1 w) :=
   CircuitType.ofEquiv (Type1.equivVal v) (Type1.equivVal w)
 
-/-- A `Type1` is checked as its cell. -/
-instance instType1CheckedType {F c v w : Type} [Add F] [Mul F] [Zero F] [One F]
-    [BasicSystem F c] [CircuitType F v w] [CheckedType F c v w] :
-    CheckedType F c (Type1 v) (Type1 w) :=
-  CheckedType.ofEquiv (Type1.equivVal v) (Type1.equivVal w)
-
 /-- A `Type2` is its cell. -/
 def _root_.Snarky.Type2.equivVal (α : Type) : Type2 α ≃ α :=
   ⟨Type2.val, Type2.mk, fun _ => rfl, fun _ => rfl⟩

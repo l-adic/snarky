@@ -355,14 +355,6 @@ private theorem absorb_mode_ne_squeezed (p : Poseidon.Params F) (sp : Poseidon.S
     absorb_mode_ne_squeezed p (Poseidon.absorb1 p sp y) (z :: zs) (by simp)
 
 omit [DecidableEq F] in
-/-- From an empty block, the block is empty exactly when nothing was absorbed. -/
-private theorem absorb_mode_eq_zero_iff (p : Poseidon.Params F) (sp : Poseidon.State F)
-    (h0 : sp.mode = .absorbed 0) :
-    ∀ xs : List F, (Poseidon.absorb p sp xs).mode = .absorbed 0 ↔ xs = []
-  | [] => by simp [Poseidon.absorb, h0]
-  | x :: xs => iff_of_false (absorb_mode_ne p _ _ (List.cons_ne_nil x xs)) (List.cons_ne_nil x xs)
-
-omit [DecidableEq F] in
 /-- The final state agrees with the value sponge's state after its squeeze. -/
 private theorem optFinalState_eq_squeeze (p : Poseidon.Params F)
     {os : Poseidon.Triple F × Bool} {ps : Poseidon.State F} (h : Rel p os ps) (empty : Bool)

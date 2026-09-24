@@ -4,10 +4,12 @@
 -- machine and the certificates prove must stay reachable from them, from the linearization
 -- reflection, or from a check script (the `script-surface` blocks).
 
--- The capstones: a proof of each kind is verified by its two circuits. Everything the
--- package proves stays reachable from these two.
+-- The capstones: a proof of each kind is verified by its two circuits, and a step circuit's
+-- must-verify slots are verified by it and the next wrap circuit's finalize block. Everything
+-- the package proves stays reachable from these.
 Pickles.stepProof_kimchiVerify_vesta
 Pickles.wrapProof_kimchiVerify_pallas
+Pickles.stepWrap_kimchiVerify
 
 -- The linearization reflection: the certificate identifying the deployed token stream with
 -- `gateLinearization`, and the environment transport its proof runs on.
