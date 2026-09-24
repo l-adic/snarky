@@ -72,9 +72,9 @@ import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrie
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Dummy (baseCaseDummies, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
-import Pickles.Step.Main (class BuildSlotVkSources, RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, PrevValues, replicateStepSlotsCarrier)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, slotWidthInt, slotWidthsOf)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -94,7 +94,7 @@ import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, getPallasProof, s
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (AsProver, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (AsProver, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
@@ -158,29 +158,16 @@ type BuildStepAdviceInput inputVal valCarrier vkCarrier =
   , sideloadedVKs :: vkCarrier
   }
 
--- | A base-case `StepAdvice`, keyed on the spec-indexed per-slot
--- | carrier. `prevsSpec` determines both the slot count `len` and the
--- | nested-tuple `carrier`, and the rank-2 `dummySlot` builds each
--- | slot's witness at that slot's own `n_i` — so homogeneous and
--- | heterogeneous specs go through one path, a slot at `n_i = 0`
--- | getting empty `prevChallenges` and `prevSgs`.
+-- | A base-case `StepAdvice`. Each slot's dummy witness is built at
+-- | that slot's own width, read from `prevsSpec`, so a slot of width 0
+-- | gets empty `prevChallenges` and `prevSgs`.
 buildStepAdvice
-  :: forall @prevsSpec inputVal len carrier valCarrier vkCarrier vkSourcesCarrier
+  :: forall @prevsSpec inputVal len valCarrier vkCarrier
    . Reflectable len Int
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       len
-       carrier
-       vkSourcesCarrier
+  => SlotWidths prevsSpec len
   => SlotStatementsCarrier prevsSpec valCarrier
   => BuildStepAdviceInput inputVal valCarrier vkCarrier
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier vkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier vkCarrier
 buildStepAdvice input =
   let
     -- The Pallas generator, reused for every curve-point field of the
@@ -266,13 +253,10 @@ buildStepAdvice input =
       , shouldFinalize: false
       }
 
-    -- Rank-2 per-slot dummy: only `prevChallenges` and `prevSgs`
-    -- depend on `n`, and they specialize per slot through
-    -- `Array.replicate`; every other field is reused verbatim.
+    -- Per-slot dummy: only `prevChallenges` and `prevSgs` depend on
+    -- the slot's width; every other field is reused verbatim.
     dummySlot
-      :: forall n
-       . Reflectable n Int
-      => Proxy n
+      :: Int
       -> Step.PerProofWitness
            WrapVkChunks
            StepIPARounds
@@ -319,13 +303,14 @@ buildStepAdvice input =
           }
       , prevEvals: prevEvalsDummy
       , prevChallenges:
-          Array.replicate (reflectType slotWidth)
+          Array.replicate slotWidth
             (UnChecked (map F dummyIpaChallenges.stepExpanded))
-      , prevSgs: Array.replicate (reflectType slotWidth) (WeierstrassAffinePoint g0)
+      , prevSgs: Array.replicate slotWidth (WeierstrassAffinePoint g0)
       }
   in
     StepAdvice
-      { perProofSlotsCarrier: replicateStepSlotsCarrier @prevsSpec @WrapVkChunks dummySlot
+      { perProofSlotsCarrier:
+          map (dummySlot <<< slotWidthInt) (slotWidthsOf (Proxy @prevsSpec))
       , publicInput: input.publicInput
       , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
       , messagesForNextWrapProof: Vector.replicate (F zero)
@@ -1123,9 +1108,9 @@ type StepRuleAt (r :: Row (Type -> Type)) prevsSpec inputVal input outputVal out
 -- | Ambient data the step prover needs alongside the advice and the
 -- | rule: the `StepMainSrsData` that `stepMain` consumes, the dummy sg
 -- | that pads `sg_old` in `verifyOne`, and the step circuit's Vesta SRS.
-type StepProveContext :: Int -> Int -> Type -> Type
-type StepProveContext len nd blueprints =
-  { srsData :: StepMainSrsData len nd blueprints
+type StepProveContext :: Int -> Int -> Type
+type StepProveContext len nd =
+  { srsData :: StepMainSrsData len nd
   , dummySg :: AffinePoint StepField
   , crs :: CRS VestaG
   -- | When `true`, enables the solver's prover-state debug checks and
@@ -1248,10 +1233,10 @@ buildStepCircuit
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
-       len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
+       len sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
+  => SlotWidths prevsSpec len
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1269,32 +1254,9 @@ buildStepCircuit
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => SlotStatementsCarrier prevsSpec valCarrier
-  => StepSlotsTyp prevsSpec carrier carrierVar
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       len
-       carrier
-       vkSourcesCarrier
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       len
-       carrierVar
-       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext len nd blueprints
+  -> StepProveContext len nd
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect
        { builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
@@ -1309,7 +1271,6 @@ buildStepCircuit handler ctx rule = do
       :: StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
            inputVal
            len
-           carrier
            valCarrier
            sideloadedVkCarrier
     dummyAdvice = unsafeCoerce unit
@@ -1348,10 +1309,10 @@ stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
-       len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
+       len sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
+  => SlotWidths prevsSpec len
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1369,32 +1330,9 @@ stepCompile
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => SlotStatementsCarrier prevsSpec valCarrier
-  => StepSlotsTyp prevsSpec carrier carrierVar
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       len
-       carrier
-       vkSourcesCarrier
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       len
-       carrierVar
-       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext len nd blueprints
+  -> StepProveContext len nd
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect StepCompileResult
 stepCompile handler ctx rule = do
@@ -1485,10 +1423,10 @@ preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
-       len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
+       len sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
+  => SlotWidths prevsSpec len
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1506,32 +1444,9 @@ preComputeStepDomainLog2
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => SlotStatementsCarrier prevsSpec valCarrier
-  => StepSlotsTyp prevsSpec carrier carrierVar
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       len
-       carrier
-       vkSourcesCarrier
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       len
-       carrierVar
-       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext len nd blueprints
+  -> StepProveContext len nd
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect Int
 preComputeStepDomainLog2 handler ctx rule = do
@@ -1579,10 +1494,10 @@ stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
-       len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
+       len sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
+  => SlotWidths prevsSpec len
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1600,35 +1515,12 @@ stepSolveAndProve
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => SlotStatementsCarrier prevsSpec valCarrier
-  => StepSlotsTyp prevsSpec carrier carrierVar
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       len
-       carrier
-       vkSourcesCarrier
-  => StepSlotsCarrier
-       prevsSpec
-       WrapVkChunks
-       StepIPARounds
-       WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       len
-       carrierVar
-       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext len nd blueprints
+  -> StepProveContext len nd
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier sideloadedVkCarrier
   -- Per slot, the cache key of the wrap proof this proof verifies there
   -- (`Nothing` on a base-case slot), recorded on its cache entry so a
   -- chain is walkable from the cache alone.

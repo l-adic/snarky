@@ -23,9 +23,8 @@ foreign import data SideLoaded :: SlotKind
 -- | One slot: its kind, the prev's `max_proofs_verified` — for a
 -- | side-loaded slot, the compile-time upper bound on the side-loaded
 -- | tag's mpv — and the prev's statement type. `n` doubles as the
--- | slot's width for the wrap circuit, which
--- | `Pickles.Prove.Compile.SlotWidths` reads back rather than having
--- | the application restate it.
+-- | slot's width, which `Pickles.Step.Slots.SlotWidths` reads back
+-- | rather than having the application restate it.
 -- |
 -- | Pure phantom; no value-level inhabitants. A rule's prevs spec is
 -- | the tuple chain `Slot n₁ s₁ /\ SideLoadedSlot n₂ s₂ /\ … /\ Unit`,

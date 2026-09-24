@@ -1,5 +1,5 @@
--- | Per-slot containers for `stepMain`, one entry per previous proof a
--- | rule declares.
+-- | Per-slot data for `stepMain`, one entry per previous proof a rule
+-- | declares.
 -- |
 -- | A rule's prevs are a type-level chain of `Pickles.Slots.Slot`
 -- | descriptors ending in `Unit`, and the slots need not agree on a
@@ -7,28 +7,26 @@
 -- |
 -- |   Slot 1 (StatementIO Stmt Unit) /\ Slot 2 Stmt' /\ Unit
 -- |
--- | Two carriers come from that one spec: `pwCarrier`, the per-slot
--- | `PerProofWitness` values, and `vkCarrier`, the per-slot wrap-VK
--- | sources. `traverseStepSlotsAWithVk` walks them in lockstep under
--- | one shared chunk count per slot.
+-- | What does not depend on a slot's statement type is a `Vector` over
+-- | the slots: each slot's width, read from the spec by `SlotWidths`,
+-- | and its per-proof witness, allocated by `stepSlotsTyp`.
 -- |
 -- | A rule body sees the spec through two more types indexed by it:
 -- | `PrevValues`, the previous statements it reads as advice, and
 -- | `Prevs`, the previous statements it returns.
 module Pickles.Step.Slots
-  ( class StepSlotsCarrier
-  , class SlotStatementsCarrier
+  ( class SlotStatementsCarrier
   , class SlotKindPrev
   , class SlotKindValue
   , class SlotPrevStatements
-  , class SlotVkCarrier
-  , class StepSlotsTyp
+  , class SlotWidths
   , EncodedPrev
   , PrevStatement(..)
   , PrevValues
   , Prevs
   , SideLoadedPrevStatement(..)
   , SideLoadedPrevValue
+  , SlotWidth
   , encodeSlotPrev
   , mkSlotValue
   , SlotWitnessVal
@@ -36,17 +34,16 @@ module Pickles.Step.Slots
   , mkPrevValues
   , prevValues
   , prevsVector
+  , slotWidthInt
+  , slotWidthsOf
   , stepSlotsTyp
   , toPrevs
-  , traverseStepSlotsA
-  , traverseStepSlotsAWithVk
-  , replicateStepSlotsCarrier
+  , withSlotWidth
   ) where
 
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (Finite, finZero, shiftSucc)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -58,146 +55,74 @@ import Pickles.Sideload.BoundVk.Internal (BoundVk(..))
 import Pickles.Sideload.Bundle (SlotProveVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
 import Pickles.Slots (Compiled, SideLoaded, SlotKind, SlotOf)
-import Pickles.Step.Types (PerProofWitness, WrapProof, perProofWitnessTyp)
-import Pickles.Step.VkSource (SlotVkSource)
-import Pickles.Typ (Typ, pairTyp, unitTyp)
+import Pickles.Step.Types (PerProofWitness, perProofWitnessTyp)
+import Pickles.Typ (Typ, vectorTyp)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Prim.Int (class Add)
-import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F, FVar)
+import Snarky.Circuit.DSL (class CircuitType, BoolVar, F, FVar)
 import Snarky.Circuit.Types (varToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
--- | `spec` → `vkCarrier`, split out of `StepSlotsCarrier` so the two
--- | `StepSlotsCarrier` constraints a caller needs — one at value
--- | elements, one at variables — agree on the carrier. `SlotVkSource`
--- | carries no field-element parameter, so the shape is the same for
--- | both; without the tighter fundep PS infers two distinct carrier
--- | variables.
-class SlotVkCarrier :: Type -> Type -> Constraint
-class SlotVkCarrier spec vkCarrier | spec -> vkCarrier
+-- | One slot's width `n`, the prev's `max_proofs_verified`, packed
+-- | with the `pad` that fills it out to `PaddedLength`, so that slots
+-- | of different widths share one `Vector`.
+newtype SlotWidth = SlotWidth
+  ( forall r
+     . ( forall n pad
+          . Reflectable n Int
+         => Reflectable pad Int
+         => Add pad n PaddedLength
+         => Proxy n
+         -> r
+       )
+    -> r
+  )
 
-instance SlotVkCarrier Unit Unit
+-- | Run `k` at the slot's width, as types.
+withSlotWidth
+  :: forall r
+   . SlotWidth
+  -> ( forall n pad
+        . Reflectable n Int
+       => Reflectable pad Int
+       => Add pad n PaddedLength
+       => Proxy n
+       -> r
+     )
+  -> r
+withSlotWidth (SlotWidth run) k = run k
+
+-- | The slot's width as an ordinary integer.
+slotWidthInt :: SlotWidth -> Int
+slotWidthInt w = withSlotWidth w \p -> reflectType p
+
+-- | `spec` → its slot count `len`, and each slot's width, read from the
+-- | `n` of its `SlotOf k n statement`.
+class SlotWidths :: Type -> Int -> Constraint
+class SlotWidths spec len | spec -> len where
+  slotWidthsOf :: forall proxy. proxy spec -> Vector len SlotWidth
+
+instance SlotWidths Unit 0 where
+  slotWidthsOf _ = Vector.nil
 
 instance
-  SlotVkCarrier rest restVk =>
-  SlotVkCarrier (SlotOf k n statement /\ rest) (SlotVkSource WrapVkChunks /\ restVk)
-
--- | `spec` → (`len`, `pwCarrier`, `vkCarrier`), with two traversals:
--- | one over `pwCarrier` alone, one zipping it with `vkCarrier`.
--- | Compiled and side-loaded slots present the same carrier shapes, so
--- | the spec does not distinguish them.
--- |
--- | `nc`, the wrap-VK chunk count, is a class parameter rather than a
--- | per-slot rank-2 binder: that is what lets the callback body use the
--- | caller's own layout constraints at `nc`, so `verifyOne` can be
--- | called directly, with no restated constraints and no `unsafeCoerce`.
--- | Being a wrap-side count, it is `Pickles.Types.WrapVkChunks` for
--- | every slot of every compile.
-class StepSlotsCarrier
-  :: Type -> Int -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Type -> Constraint
-class
-  SlotVkCarrier spec vkCarrier <=
-  StepSlotsCarrier spec nc ds dw f sf b len pwCarrier vkCarrier
-  | spec ds dw f sf b -> len pwCarrier
-  , spec -> vkCarrier
-  where
-  -- | Walk `pwCarrier` in slot order, ignoring the VK carrier.
-  traverseStepSlotsA
-    :: forall m result
-     . Applicative m
-    => ( forall n pad
-          . Reflectable n Int
-         => Reflectable pad Int
-         => Add pad n PaddedLength
-         => Proxy n
-         -> Finite len
-         -> PerProofWitness nc ds dw f sf b
-         -> m result
-       )
-    -> pwCarrier
-    -> m (Vector len result)
-
-  -- | Walk `pwCarrier` and `vkCarrier` in lockstep. The callback gets a
-  -- | slot's `PerProofWitness` and its `SlotVkSource` at the same `nc`,
-  -- | so no equality bridge is needed.
-  traverseStepSlotsAWithVk
-    :: forall m result
-     . Applicative m
-    => ( forall n pad
-          . Reflectable n Int
-         => Reflectable pad Int
-         => Add pad n PaddedLength
-         => Proxy n
-         -> Finite len
-         -> PerProofWitness nc ds dw f sf b
-         -> SlotVkSource nc
-         -> m result
-       )
-    -> pwCarrier
-    -> vkCarrier
-    -> m (Vector len result)
-
-  -- | Build a `pwCarrier` by specializing one rank-2 dummy slot at each
-  -- | slot's own `n`.
-  replicateStepSlotsCarrier
-    :: ( forall n pad
-          . Reflectable n Int
-         => Reflectable pad Int
-         => Add pad n PaddedLength
-         => Proxy n
-         -> PerProofWitness nc ds dw f sf b
-       )
-    -> pwCarrier
-
-instance StepSlotsCarrier Unit nc ds dw f sf b 0 Unit Unit where
-  traverseStepSlotsA _ _ = pure Vector.nil
-  traverseStepSlotsAWithVk _ _ _ = pure Vector.nil
-  replicateStepSlotsCarrier _ = unit
-
-instance
-  ( StepSlotsCarrier rest WrapVkChunks ds dw f sf b restLen restPw restVk
+  ( SlotWidths rest restLen
   , Add restLen 1 len
   , Reflectable n Int
-  , Add pad n PaddedLength
   , Reflectable pad Int
+  , Add pad n PaddedLength
   ) =>
-  StepSlotsCarrier
-    (SlotOf k n statement /\ rest)
-    WrapVkChunks
-    ds
-    dw
-    f
-    sf
-    b
-    len
-    (PerProofWitness WrapVkChunks ds dw f sf b /\ restPw)
-    (SlotVkSource WrapVkChunks /\ restVk)
-  where
-  traverseStepSlotsA f (here /\ rest) =
-    Vector.cons
-      <$> f (Proxy :: Proxy n) (finZero :: Finite len) here
-      <*> traverseStepSlotsA @rest (\pn i' pw -> f pn (shiftSucc i') pw) rest
-
-  traverseStepSlotsAWithVk f (pwHere /\ pwRest) (vkHere /\ vkRest) =
-    Vector.cons
-      <$> f (Proxy :: Proxy n) (finZero :: Finite len) pwHere vkHere
-      <*> traverseStepSlotsAWithVk @rest
-        (\pn i' pw vk -> f pn (shiftSucc i') pw vk)
-        pwRest
-        vkRest
-
-  replicateStepSlotsCarrier dummyPPW =
-    dummyPPW (Proxy :: Proxy n) /\ replicateStepSlotsCarrier @rest dummyPPW
+  SlotWidths (SlotOf k n statement /\ rest) len where
+  slotWidthsOf _ =
+    Vector.cons (SlotWidth \k -> k (Proxy :: Proxy n))
+      (slotWidthsOf (Proxy :: Proxy rest))
 
 -- | A slot's per-proof witness at the one pair of instantiations every
--- | caller of `StepSlotsCarrier` uses: values over `F StepField`,
--- | variables over `FVar StepField`.
+-- | caller uses: values over `F StepField`, variables over
+-- | `FVar StepField`.
 type SlotWitnessVal slotVkChunks =
   PerProofWitness slotVkChunks StepIPARounds WrapIPARounds
     (F StepField)
@@ -210,48 +135,22 @@ type SlotWitnessVar slotVkChunks =
     (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
     (BoolVar StepField)
 
--- | The per-proof carrier's layout, as a `Typ`.
--- |
--- | `StepSlotsCarrier` is indexed by one field-element type at a time,
--- | so it names the value carrier and the variable carrier through two
--- | separate dictionaries. A `Typ` relates the two and needs both at
--- | once — hence a second class over the same spec, pinned to the pair
--- | of instantiations every caller uses.
--- |
--- | It is also where the slot width crosses from the type level to the
--- | value level: the spec declares it, and it is reflected here and
--- | handed to `perProofWitnessTyp` as an ordinary integer. The chunk
--- | count of each slot's previous step proof is not in the spec at
--- | all, so the caller supplies one per slot, in slot order.
-class StepSlotsTyp :: Type -> Type -> Type -> Constraint
-class StepSlotsTyp spec valCarrier varCarrier | spec -> valCarrier varCarrier where
-  stepSlotsTyp :: Array Int -> Typ StepField (KimchiConstraint StepField) valCarrier varCarrier
-
-instance StepSlotsTyp Unit Unit Unit where
-  stepSlotsTyp _ = unitTyp
-
-instance
-  ( StepSlotsTyp rest restVal restVar
-  , Reflectable n Int
-  , CircuitType StepField
-      (WrapProof WrapIPARounds WrapVkChunks (WeierstrassAffinePoint PallasG (F StepField)) (Type2 (SplitField (F StepField) Boolean)))
-      (WrapProof WrapIPARounds WrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField)) (Type2 (SplitField (FVar StepField) (BoolVar StepField))))
-  , CheckedType StepField (KimchiConstraint StepField)
-      (WrapProof WrapIPARounds WrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField)) (Type2 (SplitField (FVar StepField) (BoolVar StepField))))
-  ) =>
-  StepSlotsTyp
-    (SlotOf k n statement /\ rest)
-    (SlotWitnessVal WrapVkChunks /\ restVal)
-    (SlotWitnessVar WrapVkChunks /\ restVar)
-  where
-  stepSlotsTyp slotNumChunks =
-    let
-      { head: numChunks, tail } = fromJust' "stepSlotsTyp: fewer chunk counts than slots"
-        (Array.uncons slotNumChunks)
-    in
-      pairTyp
-        (perProofWitnessTyp { width: reflectType (Proxy :: Proxy n), numChunks })
-        (stepSlotsTyp @rest tail)
+-- | The layout of a rule's per-proof witnesses, one per slot, each at
+-- | its slot's width and its previous step proof's chunk count.
+stepSlotsTyp
+  :: forall len
+   . Vector len SlotWidth
+  -> Vector len Int
+  -> Typ StepField (KimchiConstraint StepField)
+       (Vector len (SlotWitnessVal WrapVkChunks))
+       (Vector len (SlotWitnessVar WrapVkChunks))
+stepSlotsTyp widths numChunks =
+  vectorTyp
+    ( Vector.zipWith
+        (\w nc -> perProofWitnessTyp { width: slotWidthInt w, numChunks: nc })
+        widths
+        numChunks
+    )
 
 -- | What one slot of kind `k` contributes to the advice a rule reads:
 -- | a compiled slot its statement alone, a side-loaded slot its

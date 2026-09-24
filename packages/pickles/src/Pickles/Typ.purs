@@ -31,15 +31,19 @@ module Pickles.Typ
   , perSlotTyp
   , unitTyp
   , pairTyp
+  , vectorTyp
   , transportTyp
   ) where
 
 import Prelude
 
 import Data.Array as Array
-import Data.Foldable (sum, traverse_)
+import Data.Foldable (fold, sequence_, sum, traverse_)
 import Data.Maybe (Maybe(..))
+import Data.Traversable (mapAccumL)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, AsProver, CircuitOps(..), FVar, Snarky(..), check, fieldsToVar, sizeInFields, valueToFields)
@@ -187,6 +191,32 @@ pairTyp left right =
       in
         Tuple (left.fromVars before) (right.fromVars after)
   , check: \(Tuple la ra) -> left.check la *> right.check ra
+  }
+
+-- | A fixed-length run of shapes, each element at its own `Typ`: the
+-- | first element's field elements, then the second's, and so on.
+-- |
+-- | Field for field and check for check, this is the right-nested
+-- | `pairTyp` chain over the same elements ending in `unitTyp`, with
+-- | the length in the type instead of in the nesting.
+vectorTyp
+  :: forall f c n val var
+   . Vector n (Typ f c val var)
+  -> Typ f c (Vector n val) (Vector n var)
+vectorTyp elems =
+  { size: sum (map _.size elems)
+  , toFields: \vals -> fold (Vector.zipWith _.toFields elems vals)
+  , fromVars: \vars ->
+      let
+        takeElem rest t =
+          let
+            { before, after } = Array.splitAt t.size rest
+          in
+            { accum: after, value: t.fromVars before }
+      in
+        (mapAccumL takeElem vars elems).value
+  , check: \vars ->
+      sequence_ (Vector.zipWith (\(t :: Typ f c val var) v -> t.check v) elems vars)
   }
 
 -- | Re-present a shape at a different value and variable type, without

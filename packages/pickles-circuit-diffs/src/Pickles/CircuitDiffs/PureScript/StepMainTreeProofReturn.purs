@@ -20,7 +20,6 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 import Prelude
 
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -33,11 +32,9 @@ import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMai
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
-import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
-import Pickles.Step.Types (PerProofWitness)
-import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
+import Pickles.Types (StatementIO(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
@@ -46,7 +43,6 @@ import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, con
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -118,23 +114,6 @@ compileStepMainTreeProofReturn params = do
   runStepCompile nrrArt selfLog2 = do
     throwawayCaptureRef <- Ref.new Nothing
     let
-      dummyAdvice
-        :: StepAdvice _ _ _ _ _ _
-             ( Tuple
-                 ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
-                     (Type2 (SplitField (F StepField) Boolean))
-                     Boolean
-                 )
-                 ( Tuple
-                     ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
-                         (Type2 (SplitField (F StepField) Boolean))
-                         Boolean
-                     )
-                     Unit
-                 )
-             )
-             _
-             _
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
@@ -155,8 +134,8 @@ compileStepMainTreeProofReturn params = do
               -- Heterogeneous wrap domains: slot 0 reads NRR's basis at
               -- 2^13, slot 1 self's at 2^14. Each travels with its slot.
               BlueprintExternal params.slot0LagrangeAt nrrArt.wrapVk
-                /\ BlueprintSelf params.slot1LagrangeAt
-                /\ unit
+                :< BlueprintSelf params.slot1LagrangeAt
+                :< Vector.nil
           }
           dummyWrapSg
           dummyAdvice

@@ -1,10 +1,6 @@
 -- | Where the step circuit gets the wrap verification key for each of
 -- | its previous-proof slots: the compile-time blueprint, and the
--- | post-walk value `Pickles.Step.Main` dispatches on.
--- |
--- | These live below `Pickles.Step.Main` rather than in it so that
--- | `Pickles.Step.Slots`, whose carrier traversal walks them alongside
--- | `PerProofWitness`, can import them without a cycle.
+-- | value `Pickles.Step.Main` dispatches on.
 module Pickles.Step.VkSource
   ( SlotVkBlueprint(..)
   , SlotVkBlueprintSideLoaded

@@ -28,11 +28,9 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Pickles.Slots (SideLoadedSlot)
-import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Slots (PrevValues, SideLoadedPrevStatement(..), SideLoadedPrevValue, prevValues, toPrevs)
-import Pickles.Step.Types (PerProofWitness)
-import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
+import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -40,7 +38,6 @@ import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertAny_, const_, equals
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -103,21 +100,7 @@ compileStepMainSideLoadedMain
   :: StepMainSideLoadedMainParams -> Effect StepArtifact
 compileStepMainSideLoadedMain params = do
   throwawayCaptureRef <- Ref.new Nothing
-  -- `carrier` (value-side per-proof witness carrier) is not determined
-  -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here.
-  -- Side-loaded slot's compile-time upper bound is N2 ⇒ `PerProofWitness 2 …`.
   let
-    dummyAdvice
-      :: StepAdvice _ _ _ _ _ _
-           ( Tuple
-               ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
-                   (Type2 (SplitField (F StepField) Boolean))
-                   Boolean
-               )
-               Unit
-           )
-           _
-           _
     dummyAdvice = unsafeCoerce unit
   mkStepArtifact <$> do
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField)))
@@ -151,7 +134,7 @@ compileStepMainSideLoadedMain params = do
               (0 :< Vector.nil) :< Vector.nil
           , perSlotNumChunks: 1 :< Vector.nil
           , perSlotVkBlueprints:
-              BlueprintSideLoaded params.sideloadedPerDomainLagrangeAt /\ unit
+              BlueprintSideLoaded params.sideloadedPerDomainLagrangeAt :< Vector.nil
           }
           dummyWrapSg
           dummyAdvice

@@ -23,7 +23,6 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement
 import Prelude
 
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -33,11 +32,9 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
-import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
-import Pickles.Step.Types (PerProofWitness)
-import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
+import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -45,7 +42,6 @@ import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_, exis
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -93,20 +89,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
   where
   runStepCompile makeZeroLog2 selfLog2 = do
     throwawayCaptureRef <- Ref.new Nothing
-    -- `carrier` (value-side per-proof witness carrier) is not determined
-    -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here.
     let
-      dummyAdvice
-        :: StepAdvice _ _ _ _ _ _
-             ( Tuple
-                 ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
-                     (Type2 (SplitField (F StepField) Boolean))
-                     Boolean
-                 )
-                 Unit
-             )
-             _
-             _
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
@@ -127,7 +110,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           , perSlotFopDomainLog2s:
               (makeZeroLog2 :< selfLog2 :< Vector.nil) :< Vector.nil
           , perSlotNumChunks: 1 :< Vector.nil
-          , perSlotVkBlueprints: BlueprintSelf params.lagrangeAt /\ unit
+          , perSlotVkBlueprints: BlueprintSelf params.lagrangeAt :< Vector.nil
           }
           dummyWrapSg
           dummyAdvice
