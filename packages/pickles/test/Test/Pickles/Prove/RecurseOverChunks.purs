@@ -22,7 +22,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (true_)
@@ -73,7 +73,7 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
     let BranchProver chunks2Prover = fst chunks2.provers
     logInfo "[RecurseOverChunks] proving chunks2"
     eChunks2Cp <- withSpan "[RecurseOverChunks] prove chunks2" $ liftEffect $ chunks2Prover noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     chunks2Cp <- case eChunks2Cp of
       Left e -> liftEffect $ Exc.throw ("chunks2Prover: " <> show e)
       Right p -> pure p
@@ -110,7 +110,6 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
     eRecurseCp <- withSpan "[RecurseOverChunks] prove recurse" $ liftEffect $ recurseProver noAdvice
       { appInput: unit
       , prevs: tuple1 (InductivePrev chunks2Cp chunks2.tag)
-      , sideloadedVKs: tuple1 NoSideLoadedVk
       }
     case eRecurseCp of
       Left e -> liftEffect $ Exc.throw ("recurseProver: " <> show e)

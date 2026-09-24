@@ -10,7 +10,7 @@
 -- | the memo. Only the b1 prove is measured.
 -- |
 -- | The prover-call shape mirrors the passing `Test.Pickles.Prove.
--- | TreeProofReturn` (record `{ appInput, prevs, sideloadedVKs }` with
+-- | TreeProofReturn` (record `{ appInput, prevs }` with
 -- | `PrevSlot` constructors) — the live `BranchProver` API.
 module Bench.Pickles.Prove
   ( prepareProve
@@ -34,7 +34,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Ref as Ref
-import Pickles (BranchProver(..), PrevSlot(..), SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), PrevSlot(..), SlotWrapKey(..), StatementIO(..), StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
@@ -73,7 +73,7 @@ prepareProve srs = do
     BranchProver nrrProver = fst nrr.provers
     BranchProver treeProver = fst tree.provers
 
-  nrrCp <- nrrProver noAdvice { appInput: unit, prevs: unit, sideloadedVKs: unit } >>= case _ of
+  nrrCp <- nrrProver noAdvice { appInput: unit, prevs: unit } >>= case _ of
     Left e -> Exc.throw (show e)
     Right r -> pure r
 
@@ -85,7 +85,6 @@ prepareProve srs = do
     treeProver noAdvice
       { appInput: unit
       , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
-      , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
       } >>= case _ of
       Left e -> Exc.throw (show e)
       Right r -> pure r
@@ -96,7 +95,6 @@ prepareProve srs = do
         ( treeProver noAdvice
             { appInput: unit
             , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)
-            , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
             }
         ) >>= case _ of
         Left e -> liftEffect $ Exc.throw (show e)

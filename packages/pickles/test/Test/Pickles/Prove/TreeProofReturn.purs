@@ -28,7 +28,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -107,7 +107,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let BranchProver nrrProver = fst nrr.provers
     logInfo "[TreeProofReturn] proving nrr"
     eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ nrrProver noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     nrrCp <- case eNrrCp of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right p -> pure p
@@ -161,7 +161,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           { appInput: unit
           , prevs:
               tuple2 (InductivePrev nrrCp' nrr.tag) selfPrev
-          , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("treeProver: " <> show e)

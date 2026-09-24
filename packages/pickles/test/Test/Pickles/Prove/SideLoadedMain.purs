@@ -25,7 +25,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoadedPrevStatement(..), SideLoadedSlot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Safe.Coerce (coerce)
@@ -160,7 +160,6 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     eChildCp <- withSpan "[SideLoadedMain] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F zero
       , prevs: unit
-      , sideloadedVKs: unit
       }
     childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
@@ -216,8 +215,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- `1 + prev == self` branch is the one that holds.
     eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ chainProver noAdvice
       { appInput: F one
-      , prevs: tuple1 (InductivePrev childCp2' childTag2)
-      , sideloadedVKs: SideLoadedVk childVK /\ unit
+      , prevs: tuple1 (SideLoadedPrev childVK (InductivePrev childCp2' childTag2))
       }
     parentCp <- case eParentCp of
       Left e -> liftEffect $ Exc.throw ("sideloaded chainProver: " <> show e)

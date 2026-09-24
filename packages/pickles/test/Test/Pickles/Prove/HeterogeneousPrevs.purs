@@ -29,7 +29,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -126,7 +126,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
 
     let BranchProver childProver = fst child.provers
     eChild <- withSpan "[HeterogeneousPrevs] prove child" $ liftEffect $ childProver noAdvice
-      { appInput: F (fromInt 7), prevs: unit, sideloadedVKs: unit }
+      { appInput: F (fromInt 7), prevs: unit }
     childCp <- case eChild of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right p -> pure p
@@ -171,7 +171,6 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
         eRes <- liftEffect $ absorbProver noAdvice
           { appInput: unit
           , prevs: tuple2 (InductivePrev childCp' child.tag) selfPrev
-          , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("absorbProver: " <> show e)
@@ -179,7 +178,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
 
     logInfo "[HeterogeneousPrevs] proving b0 (base branch)"
     eB0 <- withSpan "[HeterogeneousPrevs] prove b0" $ liftEffect $ baseProver noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     b0 <- case eB0 of
       Left e -> liftEffect $ Exc.throw ("baseProver: " <> show e)
       Right p -> pure p

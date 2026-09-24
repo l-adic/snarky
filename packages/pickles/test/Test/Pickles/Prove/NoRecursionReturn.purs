@@ -72,7 +72,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     let BranchProver nrrProver = fst output.provers
     logInfo "[NoRecursionReturn] proving"
     eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ nrrProver noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right compiledProof -> do

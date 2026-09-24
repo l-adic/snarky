@@ -98,7 +98,7 @@ spec = describe "Pickles.Prove.Chunks2" do
     let BranchProver chunks2Prover = fst output.provers
     logInfo "[Chunks2] proving"
     eResult <- withSpan "[Chunks2] prove" $ liftEffect $ chunks2Prover noAdvice
-      { appInput: unit, prevs: unit, sideloadedVKs: unit }
+      { appInput: unit, prevs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("chunks2Prover: " <> show e)
       Right compiledProof -> do

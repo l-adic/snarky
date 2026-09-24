@@ -58,7 +58,7 @@ spec = describe "Pickles.Prove.Codecs" do
       let BranchProver nrrProver = fst output.provers
       logInfo "[Codecs] proving"
       eResult <- withSpan "[Codecs] prove" $ liftEffect $ nrrProver noAdvice
-        { appInput: unit, prevs: unit, sideloadedVKs: unit }
+        { appInput: unit, prevs: unit }
       case eResult of
         Left e -> liftEffect $ Exc.throw ("Codecs prover: " <> show e)
         Right compiledProof -> do

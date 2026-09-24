@@ -28,7 +28,6 @@ module Pickles.Step.Slots
   , SideLoadedPrevValue
   , SlotWidth
   , encodeSlotPrev
-  , mkSlotValue
   , SlotWitnessVal
   , SlotWitnessVar
   , mkPrevValues
@@ -52,13 +51,13 @@ import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.Field (StepField)
 import Pickles.Sideload.BoundVk.Internal (BoundVk(..))
-import Pickles.Sideload.Bundle (SlotProveVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
 import Pickles.Slots (Compiled, SideLoaded, SlotKind, SlotOf)
 import Pickles.Step.Types (PerProofWitness, perProofWitnessTyp)
 import Pickles.Typ (Typ, vectorTyp)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CircuitType, BoolVar, F, FVar)
 import Snarky.Circuit.Types (varToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -75,6 +74,7 @@ newtype SlotWidth = SlotWidth
           . Reflectable n Int
          => Reflectable pad Int
          => Add pad n PaddedLength
+         => Compare n 3 LT
          => Proxy n
          -> r
        )
@@ -89,6 +89,7 @@ withSlotWidth
         . Reflectable n Int
        => Reflectable pad Int
        => Add pad n PaddedLength
+       => Compare n 3 LT
        => Proxy n
        -> r
      )
@@ -114,6 +115,7 @@ instance
   , Reflectable n Int
   , Reflectable pad Int
   , Add pad n PaddedLength
+  , Compare n 3 LT
   ) =>
   SlotWidths (SlotOf k n statement /\ rest) len where
   slotWidthsOf _ =
@@ -156,13 +158,9 @@ stepSlotsTyp widths numChunks =
 -- | a compiled slot its statement alone, a side-loaded slot its
 -- | statement and the runtime key the rule has to bind.
 class SlotKindValue :: SlotKind -> Type -> Type -> Constraint
-class SlotKindValue k statement valElem | k statement -> valElem where
-  -- | Build the element from the slot's statement and whatever the
-  -- | prove call supplied for its key.
-  mkSlotValue :: statement -> SlotProveVk WrapVkChunks -> valElem
+class SlotKindValue k statement valElem | k statement -> valElem
 
-instance SlotKindValue Compiled statement statement where
-  mkSlotValue statement _ = statement
+instance SlotKindValue Compiled statement statement
 
 -- | A side-loaded slot's advice: the prev's statement, and the
 -- | verification key the prove call supplied for it.
@@ -171,11 +169,7 @@ type SideLoadedPrevValue statement =
   , verificationKey :: SLVK.VerificationKey WrapVkChunks (F StepField) Boolean
   }
 
-instance SlotKindValue SideLoaded statement (SideLoadedPrevValue statement) where
-  -- `projectVk` throws when the slot's key is missing. The read is
-  -- deferred: the rule projects this inside an `exists` body, which
-  -- compile discards.
-  mkSlotValue statement slotVk = { statement, verificationKey: projectVk slotVk }
+instance SlotKindValue SideLoaded statement (SideLoadedPrevValue statement)
 
 -- | `spec` → the per-slot statements carrier: one entry per prev, at
 -- | that slot's kind and statement type.

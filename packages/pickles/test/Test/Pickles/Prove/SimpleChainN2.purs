@@ -27,7 +27,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -117,7 +117,6 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
         eRes <- liftEffect $ prover noAdvice
           { appInput
           , prevs: tuple2 prev1 prev2
-          , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("SimpleChainN2 prover: " <> show e)

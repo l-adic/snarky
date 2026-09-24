@@ -97,7 +97,7 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
     let BranchProver baseProver = fst output.provers
     logInfo "[PaddedWideSlots] proving the padded branch…"
     eRes <- withSpan "[PaddedWideSlots] prove branch 0" $ liftEffect $ baseProver noAdvice
-      { appInput: F zero, prevs: unit, sideloadedVKs: unit }
+      { appInput: F zero, prevs: unit }
     b0 <- case eRes of
       Left e -> liftEffect $ Exc.throw ("PaddedWideSlots base prover: " <> show e)
       Right p -> pure p

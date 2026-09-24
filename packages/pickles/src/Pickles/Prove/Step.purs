@@ -12,7 +12,6 @@
 -- | not specific to a rule.
 module Pickles.Prove.Step
   ( StepBranchData
-  , BuildStepAdviceInput
   , BuildSlotAdviceInput
   , extractWrapVKCommsAdvice
   , dummyWrapTockPublicInput
@@ -24,7 +23,6 @@ module Pickles.Prove.Step
   , StepProveContext
   , SlotAdviceContrib
   , buildSlotAdvice
-  , buildStepAdvice
   , stepCompile
   , preComputeStepDomainLog2
   , stepSolveAndProve
@@ -40,14 +38,14 @@ import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Lazy as Lazy
-import Data.Maybe (Maybe(..), fromJust, maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
@@ -56,24 +54,22 @@ import JS.BigInt as BigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
-import Partial.Unsafe (unsafePartial)
-import Pickles.Constants (zkRowsByDefault, zkRowsForNumChunks)
+import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.DeferredValues (BranchData) as VT
 import Pickles.DeferredValues (UnfinalizedProof)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks (collapsePointEval, mapChunkedEvals, singleChunkEvals)
+import Pickles.PlonkChecks (collapsePointEval, mapChunkedEvals)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
-import Pickles.Step.Dummy (baseCaseDummies, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, slotWidthInt, slotWidthsOf)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -101,8 +97,7 @@ import Snarky.Circuit.Types (class CircuitType, valueToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, toBigInt)
-import Snarky.Curves.Class (fromInt, generator, toAffine) as Curves
-import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Class (fromInt) as Curves
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
@@ -122,206 +117,6 @@ type StepBranchData =
   , mask0 :: Boolean
   , mask1 :: Boolean
   }
-
---------------------------------------------------------------------------------
--- Base-case advice builder
---------------------------------------------------------------------------------
-
--- | Inputs to `buildStepAdvice`; every other field of the advice is
--- | protocol-constant dummy data from `Pickles.Dummy`. The rule's
--- | `max_proofs_verified` is not among them: it is the type-level
--- | `len`, reified where an `Int` is needed.
-type BuildStepAdviceInput inputVal valCarrier =
-  { -- | Value bound to the step circuit's public input. Polymorphic in
-    -- | `inputVal`, so a rule whose input typ is not `Field.typ` can
-    -- | bind a multi-field record.
-    publicInput :: inputVal
-
-  -- | The prev rule's step domain log2, its wrap statement's
-  -- | `branch_data.domain_log2`. Distinct from the step circuit's own
-  -- | kimchi domain, which kimchi determines at proof-creation time
-  -- | rather than reading from advice.
-  , stepDomainLog2 :: Int
-
-  -- | Heterogeneous per-slot prev statements, shaped by `prevsSpec`
-  -- | through `SlotStatementsCarrier`. Each slot's value is the prev's
-  -- | `StatementIO inputVal outputVal`; on the base case the caller
-  -- | still supplies an inhabitant of the right type, whose value is
-  -- | irrelevant when `proofMustVerify` is false for that slot.
-  , prevAppStates :: valCarrier
-  }
-
--- | A base-case `StepAdvice`. Each slot's dummy witness is built at
--- | that slot's own width, read from `prevsSpec`, so a slot of width 0
--- | gets empty `prevChallenges` and `prevSgs`.
-buildStepAdvice
-  :: forall @prevsSpec inputVal len valCarrier
-   . Reflectable len Int
-  => SlotWidths prevsSpec len
-  => SlotStatementsCarrier prevsSpec valCarrier
-  => BuildStepAdviceInput inputVal valCarrier
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
-buildStepAdvice input =
-  let
-    -- The Pallas generator, reused for every curve-point field of the
-    -- base-case dummy advice. Never the point at infinity, so
-    -- `toAffine` is always `Just`.
-    g0 =
-      let
-        p = unsafePartial (fromJust (Curves.toAffine (Curves.generator :: Pallas.G)))
-      in
-        { x: F p.x, y: F p.y }
-
-    g0w = WeierstrassAffinePoint g0
-
-    -- `len` reified: the rule's `max_proofs_verified`, for the few
-    -- places that need an `Int`.
-    mrw = reflectType (Proxy @len)
-
-    bcd = baseCaseDummies { maxProofsVerified: mrw }
-
-    z1 = toShifted (F bcd.proofDummy.z1)
-
-    z2 = toShifted (F bcd.proofDummy.z2)
-
-    -- One chunk: a slot whose previous step proof has more would need
-    -- the dummy at that count, which nothing here supplies.
-    prevEvalsDummy = mapChunkedEvals F (singleChunkEvals bcd.proofDummy.prevEvals)
-
-    dummyFop
-      :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
-    dummyFop = stepDummyUnfinalizedProof @len bcd
-      { domainLog2: wrapDomainLog2ForProofsVerified mrw, zkRows: zkRowsByDefault, numChunks: 1 }
-      (map SizedF.wrapF bcd.ipaStepChallenges)
-
-    dummyBranch =
-      -- The mask by width: 0 → [F, F], 1 → [F, T], 2 → [T, T].
-      { domainLog2: F (Curves.fromInt input.stepDomainLog2)
-      , proofsVerifiedMask: (mrw >= 2) :< (mrw >= 1) :< Vector.nil
-      }
-
-    dvFop = dummyFop.deferredValues
-    pFop = dvFop.plonk
-
-    -- `wrapDummyUnfinalizedProof` is in wrap-field
-    -- `Type2 (F WrapField)`; the helpers below carry it across to the
-    -- step-field `Type2 (SplitField (F StepField) Boolean)` that
-    -- `publicInputCommit` walks over.
-    du = wrapDummyUnfinalizedProof bcd
-
-    t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
-    t2toT2sf t = toShifted (fromShifted t :: F WrapField)
-
-    chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
-    chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
-
-    spongeDigest =
-      let
-        F digestWrap = du.spongeDigestBeforeEvaluations
-      in
-        F (crossFieldDigest digestWrap)
-
-    dvDu = du.deferredValues
-    pDu = dvDu.plonk
-
-    dummyPublicUnfinalized
-      :: PerProofUnfinalized
-           WrapIPARounds
-           (Type2 (SplitField (F StepField) Boolean))
-           (F StepField)
-           Boolean
-    dummyPublicUnfinalized = PerProofUnfinalized
-      { combinedInnerProduct: t2toT2sf dvDu.combinedInnerProduct
-      , b: t2toT2sf dvDu.b
-      , zetaToSrsLength: t2toT2sf pDu.zetaToSrsLength
-      , zetaToDomainSize: t2toT2sf pDu.zetaToDomainSize
-      , perm: t2toT2sf pDu.perm
-      , spongeDigest
-      , beta: UnChecked (chalToStep pDu.beta)
-      , gamma: UnChecked (chalToStep pDu.gamma)
-      , alpha: UnChecked (chalToStep pDu.alpha)
-      , zeta: UnChecked (chalToStep pDu.zeta)
-      , xi: UnChecked (chalToStep dvDu.xi)
-      , bulletproofChallenges: map (UnChecked <<< chalToStep) dvDu.bulletproofChallenges
-      , shouldFinalize: false
-      }
-
-    -- Per-slot dummy: only `prevChallenges` and `prevSgs` depend on
-    -- the slot's width; every other field is reused verbatim.
-    dummySlot
-      :: Int
-      -> Step.PerProofWitness
-           WrapVkChunks
-           StepIPARounds
-           WrapIPARounds
-           (F StepField)
-           (Type2 (SplitField (F StepField) Boolean))
-           Boolean
-    dummySlot slotWidth = Step.PerProofWitness
-      { wrapProof: Step.WrapProof
-          { opening: WrapProofOpening
-              { lr: Vector.generate
-                  ( \_ ->
-                      { l: WeierstrassAffinePoint g0
-                      , r: WeierstrassAffinePoint g0
-                      }
-                  )
-              , z1
-              , z2
-              , delta: WeierstrassAffinePoint g0
-              , sg: WeierstrassAffinePoint g0
-              }
-          , messages: WrapProofMessages
-              { wComm: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate (WeierstrassAffinePoint g0)))
-              , zComm: ChunkedCommitment (Vector.replicate (WeierstrassAffinePoint g0))
-              , tComm: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate (WeierstrassAffinePoint g0)))
-              }
-          }
-      , proofState: Step.ProofState
-          { fopState: Step.FopProofState
-              { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
-              , b: unwrap dvFop.b
-              , zetaToSrsLength: unwrap pFop.zetaToSrsLength
-              , zetaToDomainSize: unwrap pFop.zetaToDomainSize
-              , perm: unwrap pFop.perm
-              , spongeDigest: dummyFop.spongeDigestBeforeEvaluations
-              , beta: UnChecked pFop.beta
-              , gamma: UnChecked pFop.gamma
-              , alpha: UnChecked pFop.alpha
-              , zeta: UnChecked pFop.zeta
-              , xi: UnChecked dvFop.xi
-              , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
-              }
-          , branchData: Step.AllocBranchData dummyBranch
-          }
-      , prevEvals: prevEvalsDummy
-      , prevChallenges:
-          Array.replicate slotWidth
-            (UnChecked (map F dummyIpaChallenges.stepExpanded))
-      , prevSgs: Array.replicate slotWidth (WeierstrassAffinePoint g0)
-      }
-  in
-    StepAdvice
-      { perProofSlotsCarrier:
-          map (dummySlot <<< slotWidthInt) (slotWidthsOf (Proxy @prevsSpec))
-      , publicInput: input.publicInput
-      , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
-      , messagesForNextWrapProof: Vector.replicate (F zero)
-      , messagesForNextWrapProofDummyHash: F zero
-      , wrapVerifierIndex:
-          VerificationKey
-            { sigma: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate g0w))
-            , coeff: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate g0w))
-            , index: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate g0w))
-            }
-      , kimchiPrevChallenges:
-          Vector.replicate
-            { sgX: zero
-            , sgY: zero
-            , challenges: Vector.replicate zero
-            }
-      , prevAppStates: input.prevAppStates
-      }
 
 -- | The sigma, coefficient and index commitments of a compiled wrap
 -- | verifier index, in the shape the step advice wants. They are Pallas
@@ -634,9 +429,9 @@ type BuildSlotAdviceInput inputVal stmt =
 -- | `messagesForNextWrapProof` and `kimchiPrevChallenges`, plus its
 -- | per-proof witness at that slot's own `n`.
 -- |
--- | `Pickles.Prove.Compile`'s `mkStepAdvice` recurses over the slots to
--- | assemble these into one `StepAdvice`, and supplies the values that
--- | are shared across slots, which is why they are not here.
+-- | `Pickles.Prove.Compile`'s `mkStepAdvice` assembles these, one per
+-- | slot, into one `StepAdvice`, and supplies the values that are
+-- | shared across slots, which is why they are not here.
 type SlotAdviceContrib :: Type
 type SlotAdviceContrib =
   { challengePolynomialCommitment :: AffinePoint StepField

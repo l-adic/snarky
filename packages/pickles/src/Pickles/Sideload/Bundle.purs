@@ -8,18 +8,13 @@
 -- | from `verifierIndex`, so the two halves cannot disagree.
 module Pickles.Sideload.Bundle
   ( Bundle
-  , SlotProveVk(..)
   , class HasSideLoadedVk
   , projectVk
   , mkBundle
-  , requireBundle
   , verifierIndex
   ) where
 
-import Prelude
-
 import Data.Reflectable (class Reflectable)
-import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.Sideload.VerificationKey (mkVerificationKey)
@@ -44,43 +39,6 @@ class HasSideLoadedVk slotVkChunks cell | cell -> slotVkChunks where
 
 instance HasSideLoadedVk slotVkChunks (Bundle slotVkChunks) where
   projectVk (Bundle r) = r.vk
-
--- | What one prove call supplies for one slot's wrap verification key.
--- |
--- | The constructors pair with `Pickles.Prove.Compile.SlotWrapKey`,
--- | which is where the slot's source is actually decided:
--- |
--- | * `Self` / `External` ⇒ `NoSideLoadedVk` — the key is baked into
--- |   the step circuit at compile time, so a prove call has nothing to
--- |   add.
--- | * `SideLoadedKey` ⇒ `SideLoadedVk bundle` — the key is this
--- |   witness, allocated in-circuit by `buildSlotVkSources`.
--- |
--- | `Maybe (Bundle slotVkChunks)` with the two cases named after what
--- | they assert, because at a call site a bare `Nothing` says nothing
--- | about why the slot is empty.
-data SlotProveVk :: Int -> Type
-data SlotProveVk slotVkChunks
-  = NoSideLoadedVk
-  | SideLoadedVk (Bundle slotVkChunks)
-
-instance HasSideLoadedVk slotVkChunks (SlotProveVk slotVkChunks) where
-  projectVk = projectVk <<< requireBundle
-
--- | The bundle of a slot that must have one.
--- |
--- | Every caller is on a path taken because the slot's key is
--- | `SideLoadedKey`, or its blueprint `BlueprintSideLoaded`, so
--- | `NoSideLoadedVk` here means a side-loaded slot was declared with
--- | nothing supplied for it in `sideloadedVKs`. It throws rather than
--- | substituting a dummy: the slot's whole job is to verify against
--- | the key that is missing.
-requireBundle :: forall slotVkChunks. SlotProveVk slotVkChunks -> Bundle slotVkChunks
-requireBundle = case _ of
-  SideLoadedVk b -> b
-  NoSideLoadedVk -> unsafeThrow
-    "requireBundle: a side-loaded slot was declared with no runtime \
-    \verification key in this rule's `sideloadedVKs`"
 
 -- | A `Bundle` from a kimchi `VerifierIndex` and the two
 -- | `ProofsVerified` tags.
