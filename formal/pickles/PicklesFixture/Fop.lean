@@ -76,7 +76,8 @@ def fopWrapHarnessAt (domainLog2 rounds : ℕ) {n : ℕ} (input : Vector (FVar F
     CircuitM Fq Cq (Pickles.FopOutput Fq) := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type2.mk get (10 + rounds) rounds
-  Pickles.finalizeOtherProofWrap fopWrapParams (Kimchi.Fixture.PS.fqSide.omega (2 ^ domainLog2))
+  Pickles.finalizeOtherProofWrap fopWrapParams
+    (.const (Kimchi.Fixture.PS.fqSide.omega (2 ^ domainLog2)))
     (fun z => do let t ← Pickles.pow2PowMul z domainLog2; pure (CVar.sub_ t (.const 1)))
     u w prev
 
@@ -116,7 +117,8 @@ def fopStepOn {k nc : ℕ} (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOut
 /-- The wrap side on its records at a constant domain, `ζⁿ − 1` by `pow2PowMul`. -/
 def fopWrapOnAt (domainLog2 : ℕ) {k : ℕ} (v : Pickles.WrapFopVar k 1) :
     CircuitM Fq Cq (Pickles.FopOutput Fq) :=
-  Pickles.finalizeOtherProofWrap fopWrapParams (Kimchi.Fixture.PS.fqSide.omega (2 ^ domainLog2))
+  Pickles.finalizeOtherProofWrap fopWrapParams
+    (.const (Kimchi.Fixture.PS.fqSide.omega (2 ^ domainLog2)))
     (fun z => do let t ← Pickles.pow2PowMul z domainLog2; pure (CVar.sub_ t (.const 1)))
     v.claims v.evals (v.prev.toList.map (·.toList))
 

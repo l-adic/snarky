@@ -72,6 +72,7 @@ import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (compileSt
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
+import Pickles.CircuitDiffs.PureScript.WrapFinalize (compileWrapFinalizeN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainChunks2 (compileWrapMainChunks2)
@@ -159,6 +160,22 @@ resultsDir = "packages/pickles-circuit-diffs/circuits/results/"
 
 writeComparison :: String -> CircuitComparison -> Effect Unit
 writeComparison path c = FS.writeTextFile UTF8 path (writeJSON c)
+
+-- | A point as its decimal `[x, y]` pair, the form the Lean `check_cs` harness parses.
+ptToJson :: forall f. PrimeField f => AffinePoint f -> Array String
+ptToJson (AffinePoint { x, y }) = [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+
+-- | Write the first `count` Lagrange bases of a step-side SRS at domain `2^log2`, with its
+-- | blinding `h`, to `file` in `resultsDir` for the Lean `check_cs` harness. Emitted inside
+-- | an `it`, so it runs after `resetOutputDirs` has created the directory.
+dumpStepLagrange :: String -> CRS PallasG -> Int -> Int -> Effect Unit
+dumpStepLagrange file srs log2 count =
+  FS.writeTextFile UTF8 (resultsDir <> file)
+    ( writeJSON
+        { lagrange: Array.range 0 (count - 1) <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt srs log2 i)
+        , h: ptToJson (vestaSrsBlindingGenerator srs)
+        }
+    )
 
 appendManifest :: String -> String -> Effect Unit
 appendManifest name status =
@@ -737,18 +754,13 @@ spec bundle =
         -- The step-side twin of the `xhat_wrap_lagrange.json` dump below: the 30 Pallas
         -- Lagrange bases + blinding `h` baked into `xhat_step_circuit`, for the Lean
         -- `check_cs` harness (`xhatStepCircuit`), which derives the corrections itself.
-        it "dumps the xhat_step Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            ptToJson :: AffinePoint Fp -> Array String
-            ptToJson (AffinePoint { x, y }) =
-              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
-            lagr = Array.range 0 29 <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt stepSrs 16 i)
-          FS.writeTextFile UTF8 (resultsDir <> "xhat_step_lagrange.json")
-            (writeJSON { lagrange: lagr, h: ptToJson (vestaSrsBlindingGenerator stepSrs) })
+        it "dumps the xhat_step Lagrange bases for the Lean check_cs harness" $ liftEffect $
+          dumpStepLagrange "xhat_step_lagrange.json" stepSrs 16 30
         exactMatchEff "check_bulletproof_step_circuit" (fromCompiledCircuit =<< compileCheckBulletproofStep stepSrsData.blindingH)
       describe "Pickles Wrap sub-circuits" do
         exactMatchEff "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesWrap)
         exactMatchEff "finalize_other_proof_wrap_circuit" (fromCompiledCircuit =<< compileFopWrap)
+        exactMatchEff "wrap_finalize_n2_circuit" (fromCompiledCircuit =<< compileWrapFinalizeN2)
         exactMatchEff "group_map_wrap_circuit" (fromCompiledCircuit =<< compileGroupMap)
         exactMatchEff "bullet_reduce_one_wrap_circuit" (fromCompiledCircuit =<< compileBulletReduceOne)
         exactMatchEff "bullet_reduce_wrap_circuit" (fromCompiledCircuit =<< compileBulletReduce)
@@ -781,9 +793,6 @@ spec bundle =
         -- `check_cs` harness.
         it "dumps the xhat_wrap_branches Lagrange bases for the Lean check_cs harness" $ liftEffect do
           let
-            ptToJson :: AffinePoint Fq -> Array String
-            ptToJson (AffinePoint { x, y }) =
-              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
             at log2 = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs log2 i)
           FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_branches_lagrange.json")
             (writeJSON { lagrange15: at 15, lagrange16: at 16, h: ptToJson (pallasSrsBlindingGenerator srs) })
@@ -799,9 +808,6 @@ spec bundle =
         -- time, before the directory exists.
         it "dumps the xhat_wrap Lagrange bases for the Lean check_cs harness" $ liftEffect do
           let
-            ptToJson :: AffinePoint Fq -> Array String
-            ptToJson (AffinePoint { x, y }) =
-              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
             lagr = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs 16 i)
           FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_lagrange.json")
             (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
@@ -821,10 +827,6 @@ spec bundle =
         -- chunks, for the Lean `check_cs` harness.
         it "dumps the xhat_wrap_chunks2 Lagrange bases for the Lean check_cs harness" $ liftEffect do
           let
-            ptToJson :: AffinePoint Fq -> Array String
-            ptToJson (AffinePoint { x, y }) =
-              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
-
             lagr :: Array (Array (Array String))
             lagr = Array.range 0 33 <#> \i -> ptToJson <$> Vector.toUnfoldable (chunks2At i)
           FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_chunks2_lagrange.json")
@@ -1049,14 +1051,8 @@ spec bundle =
         -- The `pallasCrs15` twin of `xhat_step_lagrange.json`: the 30 Lagrange bases at domain
         -- 15 and the blinding `h` baked into `ivp_step_circuit` (and `step_verify_circuit`),
         -- for the Lean `check_cs` harness (`ivpStepCircuit`), which derives the corrections.
-        it "dumps the ivp_step Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            ptToJson :: AffinePoint Fp -> Array String
-            ptToJson (AffinePoint { x, y }) =
-              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
-            lagr = Array.range 0 29 <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt stepSrs 15 i)
-          FS.writeTextFile UTF8 (resultsDir <> "ivp_step_lagrange.json")
-            (writeJSON { lagrange: lagr, h: ptToJson (vestaSrsBlindingGenerator stepSrs) })
+        it "dumps the ivp_step Lagrange bases for the Lean check_cs harness" $ liftEffect $
+          dumpStepLagrange "ivp_step_lagrange.json" stepSrs 15 30
       describe "Step verify" do
         let
           -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
@@ -1069,14 +1065,8 @@ spec bundle =
         exactMatchEff "step_verify_circuit" (fromCompiledCircuit =<< compileStepVerify stepVerifySrsData)
         -- The same `pallasCrs15` export as `ivp_step_lagrange.json`, written here too so a run
         -- narrowed to `step_verify_circuit` carries it (a narrowed run resets the results dir).
-        it "dumps the step_verify_circuit Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            ptToJson :: AffinePoint Fp -> Array String
-            ptToJson (AffinePoint { x, y }) =
-              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
-            lagr = Array.range 0 29 <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)
-          FS.writeTextFile UTF8 (resultsDir <> "ivp_step_lagrange.json")
-            (writeJSON { lagrange: lagr, h: ptToJson (vestaSrsBlindingGenerator stepVerifySrs) })
+        it "dumps the step_verify_circuit Lagrange bases for the Lean check_cs harness" $ liftEffect $
+          dumpStepLagrange "ivp_step_lagrange.json" stepVerifySrs 15 30
         let
           stepVerifyN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -1100,6 +1090,11 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "full_step_verify_one_n2_circuit" (fromCompiledCircuit =<< compileFullStepVerifyOneN2 fullStepN2SrsData)
+        -- The `pallasCrs15` Lagrange bases at domain 14 and the blinding `h` baked into
+        -- `full_step_verify_one_circuit` and the step-main circuits, for the Lean `check_cs`
+        -- harness, which derives the corrections.
+        it "dumps the full_step_verify_one Lagrange bases for the Lean check_cs harness" $ liftEffect $
+          dumpStepLagrange "full_step_lagrange.json" fullStepSrs 14 30
       describe "Typ checks" do
         exactMatchEff "other_field_check_step_circuit" (fromCompiledCircuit =<< compileOtherFieldCheck)
       describe "Step main" do
@@ -1121,6 +1116,10 @@ spec bundle =
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
         exactMatchEff "step_main_simple_chain_n2_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainSimpleChainN2 stepMainN2SrsData)
+        -- The same `pallasCrs15` domain-14 export as `full_step_lagrange.json`, written here too
+        -- so a run narrowed to the step-main circuits carries it.
+        it "dumps the step_main Lagrange bases for the Lean check_cs harness" $ liftEffect $
+          dumpStepLagrange "full_step_lagrange.json" stepMainSrs 14 30
         -- N=0, Input_and_output mode — Add_one_return. No recursion,
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573

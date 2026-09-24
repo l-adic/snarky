@@ -1,5 +1,6 @@
 import Pickles.Curve
 import Pickles.Statement
+import Pickles.VkComms
 import Kimchi.Verifier.Kimchi
 
 /-!
@@ -14,7 +15,10 @@ theorems share.
 * `Env`: the SRS, the key at `nc` chunks and their invariants — the key's endo coefficient is
   the curve's, the domain holds its zero-knowledge rows, the generator is primitive, the round
   count's bounds, the blinding base is a finite point, `nc` is the run's chunk count, the
-  Lagrange basis is nonempty, within the domain, and the SRS's own (`Ipa.lagrangeBasis`);
+  Lagrange basis is nonempty, within the domain, and the SRS's own (`Ipa.lagrangeBasis`), and
+  the digest is the key's (`KimchiVK.indexDigest`);
+* `KimchiVK.indexState`, `KimchiVK.indexDigest`: the fq-sponge after the key's commitments,
+  and its squeeze, the verifier-index digest;
 * `Env.Invariants`, `Env.ofInvariants`: the decidable form a driver checks once per key, and
   the environment it yields;
 * `Env.lagrangeRelations`: the coefficient vectors of the key's Lagrange polynomials' chunks,
@@ -58,6 +62,31 @@ private theorem isPrimitiveRoot_two_pow {F : Type*} [Field F] (g : F) (d : ℕ)
       rw [← orderOf_eq_prime_pow h2' h1]
       exact IsPrimitiveRoot.orderOf g
 
+/-! ## The key's digest -/
+
+section Digest
+
+variable {C : KimchiCurve} {nc : ℕ}
+
+/-- A key's commitments as the record the circuit reads them in. -/
+def _root_.Kimchi.Verifier.KimchiVK.comms (cvk : KimchiVK C nc) : VkComms nc C.Point :=
+  ⟨cvk.sigmaComm, cvk.coefficientsComm, cvk.genericComm, cvk.poseidonComm, cvk.completeAddComm,
+    cvk.mulComm, cvk.emulComm, cvk.endomulScalarComm⟩
+
+/-- The fq-sponge after the key: its commitments' coordinates absorbed from the fresh sponge,
+in `VkComms.indexPoints` order. -/
+def _root_.Kimchi.Verifier.KimchiVK.indexState (cvk : KimchiVK C nc) :
+    Poseidon.State C.BaseField :=
+  Poseidon.absorb C.sponge.params Poseidon.init
+    (cvk.comms.indexPoints.flatMap fun P => [P.x, P.y])
+
+/-- The verifier-index digest recomputed from the key: `VerifierIndex::digest` on the
+modeled fragment's commitments, the squeeze of `indexState`. -/
+def _root_.Kimchi.Verifier.KimchiVK.indexDigest (cvk : KimchiVK C nc) : C.BaseField :=
+  (Poseidon.squeeze C.sponge.params cvk.indexState).1
+
+end Digest
+
 /-! ## The environment -/
 
 /-- The verification environment: the SRS and the verifier key of the proof under
@@ -95,6 +124,9 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   Lagrange polynomials (`Ipa.lagrangeBasis`). A key carries them, but they are no data of the
   circuit. -/
   lagrange_eq : cvk.lagrangeBasis = Ipa.lagrangeBasis C σ nc cvk.n cvk.omega cvk.lagrangeBasis.size
+  /-- The key's digest is its commitments' (`KimchiVK.indexDigest`): the verifier takes the
+  digest as an input, and production computes it from the key. -/
+  digest_eq : cvk.digest = cvk.indexDigest
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks
 them once on what it loaded. That the generator is primitive is checked by squaring
@@ -108,7 +140,8 @@ def Env.Invariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : Kimchi
     MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧ σ.h ≠ 0 ∧
     0 < cvk.lagrangeBasis.size ∧ cvk.lagrangeBasis.size ≤ cvk.n ∧
     nc = (if cvk.domainLog2 < σ.k then 1 else 2 ^ (cvk.domainLog2 - σ.k)) ∧
-    cvk.lagrangeBasis = Ipa.lagrangeBasis C σ nc cvk.n cvk.omega cvk.lagrangeBasis.size
+    cvk.lagrangeBasis = Ipa.lagrangeBasis C σ nc cvk.n cvk.omega cvk.lagrangeBasis.size ∧
+    cvk.digest = cvk.indexDigest
 
 instance Env.decidableInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
     (cvk : KimchiVK C nc) :
@@ -120,7 +153,7 @@ def Env.ofInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : Kimc
     (h : Env.Invariants σ cvk) : Env C nc :=
   ⟨σ, cvk, h.1, h.2.1, h.2.2.1, isPrimitiveRoot_two_pow _ _ h.2.2.2.1.1 h.2.2.2.1.2,
     h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2⟩
+    h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- There is a chunk. -/
 theorem Env.nc_pos {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : 0 < nc := by

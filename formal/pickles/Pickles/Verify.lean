@@ -255,12 +255,33 @@ def DeferredValues.toIvpClaims {F sf : Type} {k : ℕ} (dv : DeferredValues k (F
     dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩,
    dv.xi, ⟨dv.combinedInnerProduct, dv.b⟩⟩
 
+/-- Under any valuation satisfying the emitted constraints, `verifyProof`'s returned bit reads
+as a bit (`incrementallyVerifyProof_success_bit`). -/
+theorem verifyProof_success_bit {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F}
+    {sf : Type} (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
+    (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
+    (blindingH : AffinePoint (FVar F)) {k ks nc : ℕ} (tab : XhatTable F nc)
+    (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
+    (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
+    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) :
+    ⦃⌜True⌝⦄ verifyProof ops e p endo gm sqrtF blindingH tab spongeAfterIndex isBaseCase
+      statement u cells
+    ⦃⇓ v _ => ⌜∃ b : Bool, (↑v : CVar F).val V = bit b⌝⦄ := by
+  have hivp := fun cx => incrementallyVerifyProof_success_bit (V := V) ops e p endo gm sqrtF
+    false blindingH spongeAfterIndex cx (cells.withClaims u)
+  have hsel := fun b x y => builder_spec_true
+    (selectField (c := Builder V (KimchiConstraint F)) b x y)
+  simp only [verifyProof]
+  mvcgen [hivp, hsel] invariants
+    · ⇓⟨_, _⟩ => ⌜True⌝
+
 /-- `verifyProof`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
 input `pub`, whose success bit is the returned bit, whose digest cell reads as the claimed
 `spongeDigestBeforeEvaluations` (so the claim is the wire's digest element), and whose round
-prechallenges read as the claimed ones off the base case, pair by pair over the zip. The gadget
-compares the two lists as far as both reach; their lengths are the statement's and the
-opening's, not the gadget's. -/
+prechallenges read as the claimed ones off the base case, pair by pair over the zip, and the
+returned bit reads as a bit. The gadget compares the two lists as far as both reach; their
+lengths are the statement's and the opening's, not the gadget's. -/
 def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (base : Bool)
@@ -270,7 +291,8 @@ def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
     o.success = v ∧
     u.spongeDigestBeforeEvaluations.val V = o.spongeDigest.val V ∧
     (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges,
-      p.1.val.val V = p.2.val.val V)
+      p.1.val.val V = p.2.val.val V) ∧
+    ∃ b : Bool, (↑v : CVar C.BaseField).val V = bit b
 
 /-- **`verifyProof` reads as the group half at the packed statement, on either side.** On the
 group side `S` and the curve shape `X`: the wire's public input is
@@ -341,8 +363,11 @@ theorem verifyProof_reads
   -- the blinding cell's read is the tables' own: every chunk's binding carries it
   have hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h) :=
     (hxhat ⟨0, hivp.nc_pos⟩).1.blinding
-  have hivp := incrementallyVerifyProof_reads S σ cvk cp _ endo sqrtF false blindingH
-    spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hh hivp
+  have hivp := builder_spec_and _ _ _
+    (incrementallyVerifyProof_reads S σ cvk cp _ endo sqrtF false blindingH
+      spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hh hivp)
+    (incrementallyVerifyProof_success_bit ops S.curve.e C.sponge.params endo (.ofSpec C.groupMap)
+      sqrtF false blindingH spongeAfterIndex _ (cells.withClaims u))
   have hb := CircuitType.reads_boolVar.mp hbase
   simp only [verifyProof]
   mvcgen [hivp] invariants
@@ -360,7 +385,7 @@ theorem verifyProof_reads
     exact absurd hp List.not_mem_nil
   · -- the exit: the read
     rename_i o _ hivp' _ _ hdig _ _ hall
-    exact ⟨o, hivp', rfl, hdig, hall⟩
+    exact ⟨o, hivp'.1, rfl, hdig, hall, hivp'.2⟩
 
 end Read
 

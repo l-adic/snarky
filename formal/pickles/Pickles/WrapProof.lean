@@ -97,79 +97,15 @@ private theorem InputReads.fopTies (hin : InputReads E cp pub Vg Vs g s) :
     FopTies E cp pub (s.half Vs) :=
   ⟨hin.prevChallenges, hin.ftEval1, hin.evals, hin.pubEvals⟩
 
-/-- A wrap key has at most `2^32` chunks: its domain size divides `|Fq| − 1`, whose two-adic
-part is `2^32`, and the chunk count is at most the domain size. -/
-private theorem nc_le (E : Env IpaPallas.curve nc) : nc ≤ 2 ^ 32 := by
-  have hω0 : E.cvk.omega ≠ 0 := E.omega_prim.ne_zero (by rw [KimchiVK.n]; positivity)
-  have hn : E.cvk.n ∣ PALLAS_SCALAR_CARD - 1 :=
-    E.omega_prim.dvd_of_pow_eq_one _ (ZMod.pow_card_sub_one_eq_one hω0)
-  have hd : E.cvk.domainLog2 ≤ 32 := by
-    by_contra h
-    have h33 : 2 ^ 33 ∣ PALLAS_SCALAR_CARD - 1 :=
-      (Nat.pow_dvd_pow 2 (show 33 ≤ E.cvk.domainLog2 by omega)).trans hn
-    exact absurd h33 (by norm_num [PALLAS_SCALAR_CARD])
-  calc nc ≤ E.cvk.n := E.nc_le_n
-    _ = 2 ^ E.cvk.domainLog2 := rfl
-    _ ≤ 2 ^ 32 := Nat.pow_le_pow_right two_pos hd
-
-/-- The base field's characteristic exceeds the group half's absorb count. -/
-private theorem char_guard (m : ℕ) (hm : m ≤ 5 + 48 * 2 ^ 32) (h0 : (m : Fp) = 0) : m = 0 := by
-  have hd : PALLAS_BASE_CARD ∣ m := (ZMod.natCast_eq_zero_iff m PALLAS_BASE_CARD).mp h0
-  exact Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hm (by norm_num [PALLAS_BASE_CARD]))
-
 /-- The group half's hypotheses, from the readings (`InputReads`, `VkReads`) and the shifted
 claims' `IvpSide.ClaimOk`, with the shape guards proved. -/
 private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     (hclaimOk : ∀ x ∈ g.shifted, (stepSide Vg).ClaimOk x) :
     ∃ oldsW, IvpHyps (stepSide Vg) E.σ E.cvk cp pub false spongeAfterIndex
-      ((g.cells keyCells).withClaims g.claims) oldsW := by
-  have hc : (g.cells keyCells).withClaims g.claims = g.cells keyCells := rfl
-  rw [hc]
-  refine ⟨(cp.olds.map (·.sg)).toList.map (·, true),
-    { idx := hvk.idx, mask := ?mask
-      ties :=
-        { olds := ⟨?olds, ?kept⟩, proof := hin.proof
-          key := hvk.key
-          claimOk := hclaimOk }
-      nc_pos := E.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
-  case mask =>
-    intro m hm
-    have hm' : m ∈ g.sgOld.map (none, ·) := hm
-    simp only [List.mem_map] at hm'
-    obtain ⟨q, -, rfl⟩ := hm'
-    rfl
-  case olds =>
-    show List.Forall₂ (MaskedBaseReads IpaPallas.curve.E.toAffine Vg)
-      ((g.sgOld.map (none, ·)).map fun m => (m.2, m.1)) _
-    simp only [List.map_map, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
-    exact hin.olds.imp fun _ _ h => ⟨h, rfl⟩
-  case kept => simp [List.filter_map, Function.comp_def]
-  case tne =>
-    intro he
-    have he' : g.tComm = [] := he
-    have hlen := congrArg List.length he'
-    simp [GroupVar.tComm] at hlen
-    exact absurd hlen (Nat.pos_iff_ne_zero.mp E.nc_pos)
-  case lrne =>
-    intro he
-    have he' : g.opening.lr.toList = [] := he
-    have hlen := congrArg List.length he'
-    rw [Vector.length_toList, List.length_nil] at hlen
-    exact absurd hlen (Nat.pos_iff_ne_zero.mp E.rounds_pos)
-  case char =>
-    intro m hm h0
-    refine char_guard m (le_trans hm ?_) h0
-    have h1 : (g.cells keyCells).sgOld.length = 2 := by
-      show (g.sgOld.map (none, ·)).length = 2
-      simp [GroupVar.sgOld, MaxProofsVerified]
-    have hl := ivpInputOf_lengths g.claims.deferredValues (g.sgOld.map (none, ·)) keyCells
-      g.val.proof
-    have h2 : (g.cells keyCells).wComm.flatten.length = 15 * nc := hl.1
-    have h3 : (g.cells keyCells).zComm.length = nc := hl.2.1
-    have h4 : (g.cells keyCells).tComm.length = quotChunks * nc := hl.2.2
-    have h5 := nc_le E
-    omega
+      ((g.cells keyCells).withClaims g.claims) oldsW :=
+  ivpHyps_of_reads g.claims g.sgOld g.val.proof (by simp [GroupVar.sgOld, MaxProofsVerified])
+    hin.proof hin.olds hvk hclaimOk
 
 end WrapProof
 

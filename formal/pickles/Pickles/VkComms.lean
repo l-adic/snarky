@@ -49,6 +49,10 @@ def selectors (k : VkComms nc f) : List (Vector f nc) :=
   [k.genericComm, k.poseidonComm, k.completeAddComm, k.mulComm, k.emulComm,
    k.endomulScalarComm]
 
+/-- The key's commitment chunks in absorb order: `σ₀…σ₆`, the coefficients, the selectors. -/
+def indexPoints (k : VkComms nc f) : List f :=
+  (k.sigmaComm.toList ++ k.coefficientsComm.toList ++ k.selectors).flatMap Vector.toList
+
 /-- The permutation commitments the batch opens: `σ₀…σ₅`. -/
 def sigmaBatch (k : VkComms nc f) : List (Vector f nc) :=
   (k.sigmaComm.take sigmaRows).toList

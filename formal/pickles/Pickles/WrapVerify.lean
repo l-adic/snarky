@@ -112,7 +112,7 @@ theorem wrapVerify_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     exact absurd hp List.not_mem_nil
   · -- the exit: the group half's read at the asserted bit
     rename_i o _ hivp' _ _ hsucc _ _ _ _ _ _ _ hdig _ _ hall
-    exact ⟨o.success, ⟨o, hivp', rfl, hdig, fun _ => hall⟩, hsucc⟩
+    exact ⟨o.success, ⟨o, hivp', rfl, hdig, fun _ => hall, true, by simp [bit, hsucc]⟩, hsucc⟩
 
 end Read
 

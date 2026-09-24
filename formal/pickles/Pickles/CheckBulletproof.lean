@@ -765,6 +765,39 @@ theorem IpaScalarOps.Reading.scale_reads {sf : Type}
   intro nv hsat hwf
   exact (builder_spec_iff _ _).mp (R.scale pt x hwf) nv hsat
 
+/-- Under any valuation satisfying the emitted constraints, the success bit reads as a bit: it
+is the conjunction of two equality tests, whatever the cells hold. -/
+theorem ipaFinalCheck_success_bit {sf : Type}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
+    (e : IpaEndo F) (p : Poseidon.Params F) (endo : FVar F)
+    (sv : SpongeVar F) (t : FVar F) (u combined : AffinePoint (FVar F))
+    (inp : CheckBulletproofInput k (FVar F) sf) :
+    ⦃⌜True⌝⦄ ipaFinalCheck ops e p endo sv t u combined inp
+    ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.success : CVar F).val V = bit b⌝⦄ := by
+  simp only [ipaFinalCheck]
+  have hext := fun sv' lr => builder_spec_true
+    (extractScalarChallenges (c := Builder V (KimchiConstraint F)) p endo sv' lr)
+  have hbr := fun pairs => builder_spec_true
+    (bulletReduce (c := Builder V (KimchiConstraint F)) e pairs)
+  have hcip := fun pt x => builder_spec_true (ops.scaleByCip pt x)
+  have hsc := fun pt x => builder_spec_true (ops.scaleByShifted pt x)
+  have hadd := fun m a b => builder_spec_true
+    (Snarky.Kimchi.addFast (c := Builder V (KimchiConstraint F)) m a b)
+  have hδs := fun sv' pt => builder_spec_true
+    (absorbPoint (c := Builder V (KimchiConstraint F)) p sv' pt)
+  have hpre := fun sv' => builder_spec_true
+    (squeezePrechallenge (c := Builder V (KimchiConstraint F)) p false endo sv')
+  have hem := fun g x => builder_spec_true
+    (Snarky.Kimchi.endoMul (c := Builder V (KimchiConstraint F)) e.d.endo 32 g x)
+  mvcgen -trivial [-Snarky.Kimchi.addFast_spec, hext, hbr, hcip, hsc, hadd, hδs, hpre, hem]
+  rename_i _ _ hx _ _ hy _ _ hand
+  have hbit : ∀ {v : F} {q : Prop} [Decidable q], v = (if q then 1 else 0) →
+      ∃ b : Bool, v = bit b := fun {v q _} h =>
+    ⟨decide q, by rw [h]; by_cases hq : q <;> simp [hq, bit]⟩
+  obtain ⟨bx, hbx⟩ := hbit hx
+  obtain ⟨byy, hby⟩ := hbit hy
+  exact ⟨_, hand bx byy hbx hby⟩
+
 /-- Under any valuation satisfying the emitted constraints, with `u`, the combined
 commitment, the pairs, `δ`, `sg` and `h` reading as points, the scaled scalars well-formed and
 their witnesses in regime (`hreg`; at the deployed curves: the ladder's top is below
@@ -863,6 +896,30 @@ theorem ipaFinalCheck_spec {sf : Type}
     simp only [hxe, hye, decide_true, Bool.and_self] at hsucc
     simpa [bit] using hsucc
 
+
+/-- Under any valuation satisfying the emitted constraints, the opening check's success bit
+reads as a bit (`ipaFinalCheck_success_bit`). -/
+theorem checkBulletproof_success_bit {sf : Type}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
+    (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
+    (sv : SpongeVar F) (bases : List (AffinePoint (FVar F) × Option (BoolVar F)))
+    (inp : CheckBulletproofInput k (FVar F) sf) :
+    ⦃⌜True⌝⦄ checkBulletproof ops e p endo gm sqrtF sv bases inp
+    ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.success : CVar F).val V = bit b⌝⦄ := by
+  simp only [checkBulletproof]
+  have habs := fun sv' limbs => builder_spec_true
+    (absorbList (c := Builder V (KimchiConstraint F)) p sv' limbs)
+  have hsq := fun sv' => builder_spec_true
+    (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv')
+  have hgm := fun t => builder_spec_true
+    (groupMapCircuit (c := Builder V (KimchiConstraint F)) sqrtF gm t)
+  have hlh := fun pt => builder_spec_true
+    (lowerHalfPoint (c := Builder V (KimchiConstraint F)) endo pt)
+  have hcomb := fun xi bs => builder_spec_true
+    (combinePolynomials (c := Builder V (KimchiConstraint F)) e xi bs)
+  have hfin := fun sv' t u comb => ipaFinalCheck_success_bit (V := V) ops e p endo sv' t u comb inp
+  mvcgen -trivial [habs, hsq, hgm, hlh, hcomb, hfin, -Snarky.Kimchi.SpongeVar.squeeze_spec,
+    -Snarky.Kimchi.SpongeVar.absorb_spec]
 
 /-- The check's algebra half: under `ipaFinalCheck_spec`'s hypotheses, plus the bases reading
 as `bv` (non-empty, `ξ` reading as `n`) and the map-to-curve as `umap` up to the ordinate's

@@ -8,6 +8,7 @@ import Snarky.DSL.Bits
 import Snarky.Kimchi.Semantics
 import Snarky.Traverse
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.CheckedPoint
 import Snarky.Kimchi.Circuit.Curve
 
 /-!
@@ -40,8 +41,8 @@ with `endoMul` and pins to the input: the cross-field division gadget.
   (the Poseidon parameter-data deviation). The law layer renders that class as the
   explicit `HasEndo` structure — the coefficient, the eigenvalue, and every curve fact
   the law pair consumes — with the deployed dictionaries `HasEndo.pallas`/`HasEndo.vesta`.
-- `endoInv`'s checked point witness renders as the plain pair witness plus the inline
-  on-curve rows — same allocation, same three rows (`square`, `mul`, `assertSquare`);
+- `endoInv`'s checked point witness renders as the plain pair witness plus
+  `CheckedPoint.check` — same allocation, same three rows (`square`, `mul`, `assertSquare`);
   the curve `W` and the scalar-field data `q`, `lam'` are parameters, like `eb`. Its
   advice computes in the other field through the kimchi gate model itself
   (`Kimchi.Gate.EndoScalar.toField` at `crumbsOf`, in `ZMod q`) and scalar-multiplies in
@@ -169,9 +170,7 @@ def endoInv [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
     CircuitM F c (AffinePoint (FVar F)) := do
   let result ← witness (val := F × F) (endoInvWit W q hq lam' g scalar.val)
   let rp : AffinePoint (FVar F) := ⟨result.1, result.2⟩
-  let x2 ← square rp.x
-  let x3 ← mul x2 rp.x
-  assertSquare rp.y (CVar.add_ (CVar.add_ x3 (CVar.scale_ W.a₄ rp.x)) (.const W.a₆))
+  CheckedPoint.check W.a₄ W.a₆ rp
   let computed ← endoMul eb 32 rp scalar
   assertEqual computed.x g.x
   assertEqual computed.y g.y
@@ -1302,14 +1301,14 @@ theorem endoInv_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   simp only [Snarky.Kimchi.endoInv]
   have hendo := fun (rp : AffinePoint (FVar F)) =>
     endoMul_spec (V := V) d rp scalar
-  mvcgen [hendo]
-  rename_i result _ _ _ _ hx2 _ _ hx3 _ _ hsq _ _ hcomp _ _ heqx _ _ heqy
+  have hcheck := fun (rp : AffinePoint (FVar F)) =>
+    CheckedPoint.check_spec (V := V) (c := KimchiConstraint F) d.W.a₄ d.W.a₆ rp
+  mvcgen [hendo, hcheck]
+  rename_i result _ _ _ _ hsq _ _ hcomp _ _ heqx _ _ heqy
   intro G hG
   -- the on-curve rows read as the curve equation at the witnessed point
   have hEq : d.W.Equation (result.1.val V) (result.2.val V) := by
     rw [d.W.equation_iff, d.short.1, d.short.2.1, d.short.2.2.1]
-    simp only [CVar.val_add_, CVar.val_scale_, CVar.val] at hsq
-    rw [hx3, hx2] at hsq
     linear_combination hsq
   have hres : d.W.Nonsingular (result.1.val V) (result.2.val V) :=
     (d.W.equation_iff_nonsingular_of_Δ_ne_zero d.delta_ne).mp hEq
@@ -1455,43 +1454,26 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [CircuitType.reads_prod] at hrd
     exact ⟨hsc.2, hrd.2⟩
   have m₁ := monotone_and m₀ (CircuitType.monotone_readsAs (val := F × F) (v := rp) (a := (px, py)))
-  -- `x²`
+  -- the on-curve rows
   refine Complete.seq m₁
-    (Complete.imp (fun st h => hrpx st h.2) (fun _ _ h => h)
-      (square_complete (c := KimchiConstraint F) rp.1 px)) fun x2 => ?_
-  have m₂ := monotone_and m₁ (CircuitType.monotone_readsAs (v := x2) (a := px * px))
-  -- `x³`
-  refine Complete.seq m₂
-    (Complete.imp (fun st h => ⟨h.2, hrpx st h.1.2⟩) (fun _ _ h => h)
-      (mul_complete (c := KimchiConstraint F) x2 rp.1 (px * px) px)) fun x3 => ?_
-  have m₃ := monotone_and m₂ (CircuitType.monotone_readsAs (v := x3) (a := px * px * px))
-  -- the on-curve row
-  refine Complete.seq m₃
     (Complete.imp
-      (fun st h => ⟨hrpy st h.1.1.2,
-        ⟨CircuitType.scoped_fvar.mpr
-          (((CircuitType.scoped_fvar.mp h.2.1).add_
-            (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp (hrpx st h.1.1.2).1))).add_
-              (CVar.scoped_const _ _)),
-          CircuitType.reads_fvar.mpr (by
-            rw [CVar.val_add_, CVar.val_add_, CVar.val_scale_,
-              CircuitType.reads_fvar.mp h.2.2,
-              CircuitType.reads_fvar.mp (hrpx st h.1.1.2).2]
-            rfl)⟩⟩)
+      (fun st h => ⟨scoped_affinePoint.mpr ⟨CircuitType.scoped_fvar.mp (hrpx st h.2).1,
+          CircuitType.scoped_fvar.mp (hrpy st h.2).1⟩,
+        reads_affinePoint.mpr ⟨CircuitType.reads_fvar.mp (hrpx st h.2).2,
+          CircuitType.reads_fvar.mp (hrpy st h.2).2⟩⟩)
       (fun _ _ h => h)
-      (assertSquare_complete (c := KimchiConstraint F) rp.2
-        (CVar.add_ (CVar.add_ x3 (CVar.scale_ d.W.a₄ rp.1)) (.const d.W.a₆))
-        py (px * px * px + d.W.a₄ * px + d.W.a₆) hEq)) fun _ => ?_
-  have m₄ := monotone_and m₃ mT
+      (CheckedPoint.check_complete (c := KimchiConstraint F) d.W.a₄ d.W.a₆ ⟨rp.1, rp.2⟩ ⟨px, py⟩
+        (by rw [hEq]; ring))) fun _ => ?_
+  have m₄ := monotone_and m₁ mT
   -- the multiply-back
   refine Complete.seq m₄
     (Complete.imp
       (fun st h => ⟨⟨scoped_affinePoint.mpr
-          ⟨CircuitType.scoped_fvar.mp (hrpx st h.1.1.1.2).1,
-            CircuitType.scoped_fvar.mp (hrpy st h.1.1.1.2).1⟩,
-          OnCurveAt.of_reads (CircuitType.reads_fvar.mp (hrpx st h.1.1.1.2).2)
-            (CircuitType.reads_fvar.mp (hrpy st h.1.1.1.2).2) hpns⟩,
-        h.1.1.1.1.2⟩)
+          ⟨CircuitType.scoped_fvar.mp (hrpx st h.1.2).1,
+            CircuitType.scoped_fvar.mp (hrpy st h.1.2).1⟩,
+          OnCurveAt.of_reads (CircuitType.reads_fvar.mp (hrpx st h.1.2).2)
+            (CircuitType.reads_fvar.mp (hrpy st h.1.2).2) hpns⟩,
+        h.1.1.2⟩)
       (fun _ _ h => h)
       (endoMul_complete d ⟨rp.1, rp.2⟩ scalar px py sv hpns hfits)) fun computed => ?_
   have m₅ := monotone_and m₄ (monotone_onCurveAs (W := d.W) (p := computed)
@@ -1518,24 +1500,24 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       ⟨CircuitType.scoped_fvar.mpr hgSc.2, CircuitType.reads_fvar.mpr hgy⟩⟩
   refine Complete.seq m₅
     (Complete.imp
-      (fun st h => ⟨(hcx st h.2 h.1.1.1.1.1.1).1, (hcx st h.2 h.1.1.1.1.1.1).2.1⟩)
+      (fun st h => ⟨(hcx st h.2 h.1.1.1.1).1, (hcx st h.2 h.1.1.1.1).2.1⟩)
       (fun _ _ h => h)
       (assertEqual_complete (c := KimchiConstraint F) computed.x g.x xv)) fun _ => ?_
   have m₆ := monotone_and m₅ mT
   refine Complete.seq m₆
     (Complete.imp
-      (fun st h => ⟨(hcx st h.1.2 h.1.1.1.1.1.1.1).2.2.1,
-        (hcx st h.1.2 h.1.1.1.1.1.1.1).2.2.2⟩)
+      (fun st h => ⟨(hcx st h.1.2 h.1.1.1.1.1).2.2.1,
+        (hcx st h.1.2 h.1.1.1.1.1).2.2.2⟩)
       (fun _ _ h => h)
       (assertEqual_complete (c := KimchiConstraint F) computed.y g.y yv)) fun _ => ?_
   -- the result reads as the quotient
   refine Complete.pure_of fun st h => ?_
   refine ⟨scoped_affinePoint.mpr
-      ⟨CircuitType.scoped_fvar.mp (hrpx st h.1.1.1.1.1.1.2).1,
-        CircuitType.scoped_fvar.mp (hrpy st h.1.1.1.1.1.1.2).1⟩, ?_⟩
+      ⟨CircuitType.scoped_fvar.mp (hrpx st h.1.1.1.1.2).1,
+        CircuitType.scoped_fvar.mp (hrpy st h.1.1.1.1.2).1⟩, ?_⟩
   rw [hpteq]
-  exact OnCurveAt.of_reads (CircuitType.reads_fvar.mp (hrpx st h.1.1.1.1.1.1.2).2)
-    (CircuitType.reads_fvar.mp (hrpy st h.1.1.1.1.1.1.2).2) hpns
+  exact OnCurveAt.of_reads (CircuitType.reads_fvar.mp (hrpx st h.1.1.1.1.2).2)
+    (CircuitType.reads_fvar.mp (hrpy st h.1.1.1.1.2).2) hpns
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
   WeierstrassCurve.Affine in

@@ -43,7 +43,7 @@ def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {
     (w : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
     CircuitM Fq c (FopOutput Fq) :=
-  finalizeOtherProofWrap (FopParams.ofEnv E Linearization.fqTokens) E.cvk.omega
+  finalizeOtherProofWrap (FopParams.ofEnv E Linearization.fqTokens) (.const E.cvk.omega)
     (fun z => do
       let t ← pow2PowMul z E.cvk.domainLog2
       pure (CVar.sub_ t (.const 1)))
@@ -111,7 +111,7 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
       (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
   have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
     (FopParams.ofEnv E Linearization.fqTokens) hP IpaPallas.curve.frSponge.hsize E.zkRows_ge
-    E.cvk.omega E.cvk.n E.zkRows_le E.omega_prim.pow_eq_one _ hvan claimsS evals
+    (.const E.cvk.omega) E.cvk.n E.zkRows_le E.omega_prim.pow_eq_one _ hvan claimsS evals
     (prevChallenges.toList.map Vector.toList) _ hprev
   simp only [finalizeOtherProofWrapAt]
   refine builder_spec_imp _ _ _ hspec ?_

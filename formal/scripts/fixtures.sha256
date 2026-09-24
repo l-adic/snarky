@@ -2,7 +2,7 @@
 # tools/fixture-dump against the mina submodule at the revision below.
 # Re-pin with scripts/check_fixtures_manifest.sh --regen after a deliberate
 # regeneration; a hash mismatch otherwise means a fixture was edited by hand.
-# mina-submodule: 408fc8b20d2818e04a81b5b5c9f51cee7c4092a1
+# mina-submodule: 0bbe52e52487afa8ea68567377f70023d75bc32b
 00edf3eb8c19ac47272bdaf8545fc0029e4c46d6c12ae4d9dbe91372a9adbe98  bulletproof-pcs/fixtures/ipa_batch_pallas.json
 b0e1c5ee68cb15677e35847e960b7330635738a0cec12190e2479ccf43cf7e2d  bulletproof-pcs/fixtures/ipa_batch_vesta.json
 40aa14a23ff8632c251cdaaef3621653d5ea818b8ce6e39b6c0a8f13824e52ed  bulletproof-pcs/fixtures/ipa_chunked2_pallas.json
