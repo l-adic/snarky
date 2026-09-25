@@ -221,7 +221,14 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
       CircuitType.Reads V r.unfs[i].shouldFinalize true ∧
       (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).SlotReads E V
         r.vk.points ∧
-      (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).ScalarReads Es D V⌝⦄ := by
+      (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).ScalarReads Es D V ∧
+      ∃ (n : ℕ) (ms : Vector Bool MaxProofsVerified), n < 2 ^ 16 ∧
+        (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).branchData.domainLog2.val V
+          = (n : Fp) ∧
+        CircuitType.Reads V
+          (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i]
+            r.msgs[i]).branchData.proofsVerifiedMask
+          ms⌝⦄ := by
   have hinj := castInj128_of_lt PALLAS_BASE_CARD (by decide)
   have hrule := fun x => builder_spec_true (rule x)
   have hfm := forM_spec (V := V) (c := KimchiConstraint Fp)
@@ -230,7 +237,8 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
     (fun s => (∃ b : Bool, (↑s.z1.val.sOdd : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.z2.val.sOdd : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.branch.mask0 : CVar Fp).val V = bit b) ∧
-      ∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b)
+      (∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b) ∧
+      ∃ n : ℕ, n < 2 ^ 16 ∧ s.branch.domainLog2.val V = (n : Fp))
     (fun s => SlotWitness.check_spec s)
   have hmap := fun (vk : VkComms ncw (PallasPt (FVar Fp)))
       (slots : UnChecked (Vector (SlotVar w ncw ncs E.σ.k Es.σ.k) n))
@@ -295,9 +303,20 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
   have h1 := hassert (by simpa [hlen] using hn) hbits (results[i.val]'hi).2
     (List.mem_map.mpr ⟨_, List.getElem_mem hi, rfl⟩)
   have hz := hcheck slots.val[i] (by simp)
-  have hmask := slotInput_mask_reads hw dummySg rout.1[i] unfs[i] msgs[i] hz.2.2.1 hz.2.2.2
+  have hmask := slotInput_mask_reads hw dummySg rout.1[i] unfs[i] msgs[i] hz.2.2.1 hz.2.2.2.1
   refine ⟨CircuitType.reads_boolVar.mpr (hsf.trans (CircuitType.reads_boolVar.mp hmv)),
-    hacc hmv h1 fun x hx => ?_, hsc hmask hmv h1⟩
+    hacc hmv h1 fun x hx => ?_, hsc hmask hmv h1, ?_⟩
+  rotate_left
+  · obtain ⟨-, -, h0, h1, hd⟩ := hz
+    obtain ⟨m, hm, hdv⟩ := hd
+    obtain ⟨b0, hb0⟩ := h0
+    obtain ⟨b1, hb1⟩ := h1
+    simp only [slotInput]
+    refine ⟨m, #v[b0, b1], hm, hdv, CircuitType.reads_vector.mpr fun j hj => ?_⟩
+    rw [CircuitType.reads_boolVar]
+    match j, hj with
+    | 0, _ => exact hb0
+    | 1, _ => exact hb1
   have hu := hunfPost i
   simp only [IvpInput.shifted, ivpInputOf, slotInput, AllocUnfinalized.toUnfinalized,
     List.mem_cons, List.not_mem_nil, or_false] at hx

@@ -38,6 +38,8 @@ branches, and finalizes the previous wrap proofs that step proof verified.
 * `wrapMain_reads`: the branch index names a branch whose domain and slot count the branch
   data packs, and every slot that branch compiled for the key's wrap domain, once
   `shouldFinalize` is set, reads as its scalar half.
+* `wrapMain_verifyReads`: `wrapMainVerify_reads` over the whole circuit, at the branch the
+  index names when that branch's key and bases are a step environment's.
 -/
 
 namespace Pickles
@@ -817,9 +819,7 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
     (slotWidths : Vector ℕ mpv) (adv : WrapMainAdvice mpv ncStep E.σ.k ks slotWidths.toList.sum)
     (branchData : FVar Fq)
     (hwl : widths.length = branches) (hll : log2s.length = branches) (hw : ∀ w ∈ widths, w ≤ mpv)
-    (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD)
-    (j : ℕ) (hdom : wrapDomainLog2s[j]? = some E.cvk.domainLog2)
-    (hgen : gen E.cvk.domainLog2 = E.cvk.omega) :
+    (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD) :
     ⦃⌜True⌝⦄
     wrapMainFinalize (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens)
@@ -833,9 +833,10 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
       branchData.val Vs = 4 * (log2s[b]'(by omega) : Fq)
         + ((List.range mpv).map fun i =>
             ((2 ^ (1 - i) : ℕ) : Fq) * bit (decide (i < widths[b]'(by omega)))).sum ∧
-      ∀ i : Fin mpv, hd.slots[i].pins[(⟨b, hb⟩ : Fin branches)] = some j →
-        (↑hd.slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
-        hd.slots[i].ScalarReads E Vs⌝⦄ := by
+      ∀ j : ℕ, wrapDomainLog2s[j]? = some E.cvk.domainLog2 → gen E.cvk.domainLog2 = E.cvk.omega →
+        ∀ i : Fin mpv, hd.slots[i].pins[(⟨b, hb⟩ : Fin branches)] = some j →
+          (↑hd.slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
+          hd.slots[i].ScalarReads E Vs⌝⦄ := by
   -- branch indices and slot counts are below the field's characteristic
   have hcast := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
   have hinjB : ∀ a a' : ℕ, a < branches → a' < branches → (a : Fq) = a' → a = a' :=
@@ -852,9 +853,11 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
       CircuitType.Reads Vs bs (Vector.ofFn fun l => decide (l = b))) _
     fun b hbits => chooseKey_spec (V := Vs) (c := KimchiConstraint Fq) bs stepKeys b hbits
   have hfin := fun bs (sl : Vector (WrapFinalizeSlot branches E.σ.k 1 Fq) mpv) =>
-    builder_spec_forall _ (fun b : Fin branches =>
-      CircuitType.Reads Vs bs (Vector.ofFn fun l => decide (l = b))) _
-      fun b hbits => wrapFinalizePrevProofs_reads E Vs gen bs sl b j hbits hdom hgen
+    builder_spec_forall _ (fun bj : Fin branches × ℕ =>
+      CircuitType.Reads Vs bs (Vector.ofFn fun l => decide (l = bj.1)) ∧
+        wrapDomainLog2s[bj.2]? = some E.cvk.domainLog2 ∧ gen E.cvk.domainLog2 = E.cvk.omega) _
+      fun bj ⟨hbits, hdom, hgen⟩ =>
+        wrapFinalizePrevProofs_reads E Vs gen bs sl bj.1 bj.2 hbits hdom hgen
   mvcgen [hbb, hck, hfin]
   rename_i bits _ hbb' _ _ _ _ _ hck' _ _ _ _ _ _ _ _ _ _ _ _ _ _ hfin'
   obtain ⟨b, hb, hwb, hbits, -, hbd⟩ := hbb'
@@ -869,7 +872,8 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
       Option.map_some, Option.some.injEq] at h
     simp only [Vector.getElem_ofFn, List.getD_eq_getElem _ _ hl', h, bit, Fin.mk.injEq]
     by_cases hlb : l = b <;> simp [hlb]
-  exact ⟨b, hb, hwb, hbits, hck' ⟨b, hb⟩ hread, hbd, hfin' ⟨b, hb⟩ hread⟩
+  exact ⟨b, hb, hwb, hbits, hck' ⟨b, hb⟩ hread, hbd,
+    fun j hdom hgen => hfin' (⟨b, hb⟩, j) hread hdom hgen⟩
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The wrap circuit's verify read.** Under any valuation satisfying the emitted constraints,
 with the finalize half's bits reading as branch `b` and its chosen key as the constant cells of
@@ -1058,9 +1062,7 @@ theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
     (dummy : List Fq) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep E.σ.k ks slotWidths.toList.sum) (stmt : Vector (FVar Fq) 40)
     (hwl : widths.length = branches) (hll : log2s.length = branches) (hw : ∀ w ∈ widths, w ≤ mpv)
-    (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD)
-    (j : ℕ) (hdom : wrapDomainLog2s[j]? = some E.cvk.domainLog2)
-    (hgen : gen E.cvk.domainLog2 = E.cvk.omega) :
+    (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD) :
     ⦃⌜True⌝⦄
     wrapMain (c := Builder Vs (KimchiConstraint Fq)) (FopParams.ofEnv E Linearization.fqTokens)
       gen widths log2s stepKeys pins lagrange h dummy slotWidths adv stmt
@@ -1073,16 +1075,87 @@ theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
       (stmt[29]?.getD (CVar.const 0)).val Vs = 4 * (log2s[b]'(by omega) : Fq)
         + ((List.range mpv).map fun i =>
             ((2 ^ (1 - i) : ℕ) : Fq) * bit (decide (i < widths[b]'(by omega)))).sum ∧
-      ∀ i : Fin mpv, r.1.slots[i].pins[(⟨b, hb⟩ : Fin branches)] = some j →
-        (↑r.1.slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
-        r.1.slots[i].ScalarReads E Vs⌝⦄ := by
+      ∀ j : ℕ, wrapDomainLog2s[j]? = some E.cvk.domainLog2 → gen E.cvk.domainLog2 = E.cvk.omega →
+        ∀ i : Fin mpv, r.1.slots[i].pins[(⟨b, hb⟩ : Fin branches)] = some j →
+          (↑r.1.slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
+          r.1.slots[i].ScalarReads E Vs⌝⦄ := by
   simp only [wrapMain]
   have hh := wrapMainFinalize_reads E Vs gen widths log2s stepKeys pins dummy slotWidths adv
-    (stmt[29]?.getD (CVar.const 0)) hwl hll hw hmpv hbr j hdom hgen
+    (stmt[29]?.getD (CVar.const 0)) hwl hll hw hmpv hbr
   have ht := fun hd : WrapMainFinalizeOut branches mpv ncStep E.σ.k => builder_spec_true (V := Vs)
     (c := KimchiConstraint Fq)
     (wrapMainVerify log2s lagrange h dummy slotWidths adv stmt hd)
   mvcgen [hh, ht]
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- **The wrap circuit's verify read**, over the whole circuit: `wrapMainVerify_reads` with the
+finalize half's branch bits and chosen key supplied by `wrapMainFinalize_reads`. When the branch
+index reads as `b`, branch `b`'s key cells are the step environment `EsStep`'s constants and its
+Lagrange bases the environment's, the digests, the step-side digest, the split claims and the
+step proof's group half read as in `wrapMainVerify_reads`. -/
+theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
+    (E : Env IpaPallas.curve 1) (EsStep : Env IpaVesta.curve ncStep)
+    (Vs : Valuation Fq)
+    (gen : ℕ → Fq) (widths log2s : List ℕ)
+    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
+    (pins : Vector (Vector (Option ℕ) branches) mpv)
+    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
+    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (adv : WrapMainAdvice mpv ncStep E.σ.k EsStep.σ.k slotWidths.toList.sum)
+    (stmt : Vector (FVar Fq) 40)
+    (hwl : widths.length = branches) (hll : log2s.length = branches) (hw : ∀ w ∈ widths, w ≤ mpv)
+    (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD)
+    (hh : h = EsStep.σ.h)
+    (hsize : mpv * (E.σ.k + 17) + 1 + mpv ≤ EsStep.cvk.lagrangeBasis.size)
+    (hnz : ∀ P ∈ EsStep.cvk.comms.indexPoints, P ≠ 0)
+    (havoid : EsStep.σ.Avoids EsStep.lagrangeRelations) :
+    ⦃⌜True⌝⦄
+    wrapMain (c := Builder Vs (KimchiConstraint Fq)) (FopParams.ofEnv E Linearization.fqTokens)
+      gen widths log2s stepKeys pins lagrange h dummy slotWidths adv stmt
+    ⦃⇓ r _ => ⌜∀ b : Fin branches, r.1.whichBranch.val Vs = (b : Fq) →
+      stepKeys[b] = keyCellsOf constPt EsStep.cvk →
+      lagrange (log2s[b]'(by omega)) = EsStep.cvk.lagrangeBasis.toList →
+      (∀ (i : Fin mpv) (sg : AffinePoint Fq) (chals : List (Vector Fq E.σ.k)),
+        CircuitType.Reads Vs r.1.stepAccs[i].pt sg →
+        List.Forall₂ (CircuitType.Reads Vs) (r.1.real i) chals →
+        r.2.msgs[i].val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy sg chals) ∧
+      (stmt[12]?.getD (CVar.const 0)).val Vs = r.1.proofState.2.val Vs ∧
+      (∀ i : Fin mpv, SplitClaimsRead Vs r.1.proofState.1[i].toUnfinalized r.2.splits[i]) ∧
+      ∀ (cp : KimchiProof IpaVesta.curve ncStep EsStep.σ.k)
+        (oldsW : List (IpaVesta.curve.Point × Bool)),
+        ProofReads (wrapSide Vs) r.2.cells.wComm r.2.cells.zComm r.2.cells.tComm
+          r.2.cells.opening cp →
+        OldsRead Vs r.2.cells.sgOld cp oldsW →
+        ∃ v : BoolVar Fq,
+          VerifyReads (wrapSide Vs) EsStep.σ EsStep.cvk cp
+            (wrapPublicInput EsStep Vs r.2.statement) r.2.u false v ∧
+          (↑v : CVar Fq).val Vs = 1⌝⦄ := by
+  have hcast := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
+  simp only [wrapMain]
+  have hfin := wrapMainFinalize_reads E Vs gen widths log2s stepKeys pins dummy slotWidths adv
+    (stmt[29]?.getD (CVar.const 0)) hwl hll hw hmpv hbr
+  -- the verify read, with the finalize half's branch facts moved into its postcondition
+  have hver := fun fin : WrapMainFinalizeOut branches mpv ncStep E.σ.k =>
+    builder_spec_forall (wrapMainVerify (c := Builder Vs (KimchiConstraint Fq)) log2s lagrange h
+      dummy slotWidths adv stmt fin)
+      (fun b : Fin branches =>
+        fin.bits.map (fun x : BoolVar Fq => (↑x : CVar Fq).val Vs)
+          = (List.range branches).map (fun l => if l = b.val then (1 : Fq) else 0) ∧
+        (∀ kv : VkComms ncStep (AffinePoint Fq),
+          CircuitType.Reads Vs (keyCellsOf constPt EsStep.cvk) kv →
+            CircuitType.Reads Vs fin.key kv) ∧
+        lagrange (log2s[b]'(by omega)) = EsStep.cvk.lagrangeBasis.toList) _
+      fun b ⟨hbits, hkey, hlag⟩ => wrapMainVerify_reads EsStep Vs log2s lagrange h dummy
+        slotWidths adv stmt fin b hll hbits hkey hlag hh hmpv hsize hnz havoid
+  mvcgen [hfin, hver]
+  rename_i _ _ _ _ hF hV
+  intro b hwb hkeyB hlag
+  obtain ⟨b', hb', hwb', hbits, hkey, -, -⟩ := hF
+  -- the circuit's branch is `b`: both are below the field's characteristic
+  have hbb : b' = b.val := hcast (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega))
+    (hwb'.symm.trans hwb)
+  subst hbb
+  exact hV b hbits (fun kv hkv => hkey kv (hkeyB ▸ hkv)) hlag
 
 end MainReads
 

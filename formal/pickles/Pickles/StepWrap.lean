@@ -178,12 +178,12 @@ theorem stepWrap_kimchiVerify
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp
     (wrapMain_reads E Vs gen widths log2s stepKeys pins lagrange h dummy slotWidths advW
-      (inputVar (F := Fq) (a := Vector Fq 40)) hwl hll hwidths hw hbr j hdom hgen) _ hbody
+      (inputVar (F := Fq) (a := Vector Fq 40)) hwl hll hwidths hw hbr) _ hbody
   -- the circuit's branch is `b`: both are below the field's characteristic
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
   subst hbb
-  exact hfin _ hpin (reads_true_of_tie hsf hsfG) cp pub hguard Vg inp.unfinalized v hv hv1 ht hf
-    hsg
+  exact hfin j hdom hgen _ hpin (reads_true_of_tie hsf hsfG) cp pub hguard Vg inp.unfinalized v hv
+    hv1 ht hf hsg
 
 end Pickles

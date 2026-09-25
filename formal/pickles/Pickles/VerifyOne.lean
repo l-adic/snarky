@@ -369,6 +369,13 @@ theorem verifyOne_slotReads (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.cur
   rw [← hpub]
   exact hvr
 
+/-- The scalar half of the step proof a slot finalizes: the deferred values and digest its wrap
+proof carries, that step proof's evaluations, and its own mask and previous challenges. -/
+abbrev VerifyOneInput.finalizedHalf (V : Valuation Fp) (inp : VerifyOneInput ks k ncw ncs w) :
+    ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) ks ncs w :=
+  ScalarHalf.step V ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals inp.proofMask
+    inp.prevChallenges
+
 /-- What a verified slot certifies of the step proof its deferred values came from
 (`StepFinalizeReads` at the slot's cells): given that proof's group half from the wrap circuit,
 the ties and `SgOk`, `kimchiVerify` accepts it. -/

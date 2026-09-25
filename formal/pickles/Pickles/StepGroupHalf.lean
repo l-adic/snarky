@@ -88,6 +88,26 @@ theorem stepPublicInput_congr_msg {ks nc : ℕ} (E : Env IpaPallas.curve nc) (V 
     (.cons (r _) (.cons (r _) (.cons (r _) (.cons (r _) (.cons (r _) (.cons (r _)
     (.cons h .nil))))))))))))
 
+/-- The cells a deployed wrap proof's public input carries beyond `stepPublicInput`: eight
+feature flags and the lookup option's flag and scalar challenge, all zero in the modeled
+fragment. -/
+def wrapFlagCells : ℕ := 10
+
+/-- The public input's entry after the statement's round challenges is the packed branch data. -/
+theorem stepPublicInput_branchData {ks nc : ℕ} (E : Env IpaPallas.curve nc) (V : Valuation Fp)
+    (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (h : 13 + ks < (stepPublicInput E V st).size) :
+    (stepPublicInput E V st)[13 + ks]
+      = ((ToNat.toNat (st.proofState.deferredValues.branchData.packed.val V) : ℕ) : Fq) := by
+  simp only [stepPublicInput, pubOf, stepLeavesAt, packLeaves, packLeavesOf, List.getElem_toArray,
+    List.getElem_map, List.getElem_zipWith]
+  have hp : ∀ hi, st.packed[13 + ks]'hi = .b10 st.proofState.deferredValues.branchData.packed := by
+    intro hi
+    simp only [WrapStatement.packed]
+    rw [List.getElem_append_right (by simp; omega)]
+    simp
+  simp only [hp, Leaf.scalarVar]
+
 /-- Chunk `c` of the key's Lagrange relations: each Lagrange polynomial's coefficients on the
 chunk. -/
 def chunkRelations {nc : ℕ} (E : Env IpaPallas.curve nc) (c : ℕ) :

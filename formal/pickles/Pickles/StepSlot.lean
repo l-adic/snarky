@@ -297,7 +297,8 @@ def SlotWitness.check {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {w ncw n
   CheckedType.check (c := c) (val := Vector (PallasPt Fp) w) s.prevSgs
 
 /-- Under any valuation satisfying the emitted constraints, the slot check forces the opening's
-`z₁`, `z₂` parity cells and the branch data's mask cells to read as bits. -/
+`z₁`, `z₂` parity cells and the branch data's mask cells to read as bits, and its `log2` cell
+as a number below `2 ^ 16`. -/
 theorem SlotWitness.check_spec {V : Valuation Fp} {w ncw ncs k ks : ℕ}
     (s : SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))) (PallasPt (FVar Fp))) :
@@ -305,7 +306,8 @@ theorem SlotWitness.check_spec {V : Valuation Fp} {w ncw ncs k ks : ℕ}
     ⦃⇓ _ _ => ⌜(∃ b : Bool, (↑s.z1.val.sOdd : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.z2.val.sOdd : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.branch.mask0 : CVar Fp).val V = bit b) ∧
-      ∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b⌝⦄ := by
+      (∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b) ∧
+      ∃ n : ℕ, n < 2 ^ 16 ∧ s.branch.domainLog2.val V = (n : Fp)⌝⦄ := by
   have hck : ⦃⌜True⌝⦄ CheckedType.check (F := Fp) (c := Builder V (KimchiConstraint Fp))
       (val := SlotWitness.ProofPart ncw k (Type2 (SplitField Fp Bool)) (PallasPt Fp))
       (s.wComm, s.zComm, s.tComm, s.lr, s.z1, s.z2, s.delta, s.sg)
@@ -319,7 +321,7 @@ theorem SlotWitness.check_spec {V : Valuation Fp} {w ncw ncs k ks : ℕ}
   simp only [SlotWitness.check]
   mvcgen [hck, hbr, hsg]
   rename_i _ _ hp _ _ hb _ _
-  exact ⟨hp.2.2.2.2.1.2, hp.2.2.2.2.2.1.2, hb.1, hb.2.1⟩
+  exact ⟨hp.2.2.2.2.1.2, hp.2.2.2.2.2.1.2, hb⟩
 
 /-! ## The key -/
 
