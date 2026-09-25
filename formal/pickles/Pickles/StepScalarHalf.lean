@@ -97,9 +97,6 @@ private theorem flatten_zipWith_val {V : Valuation Fp} :
 
 /-! ## The claims across the two circuits -/
 
-/-- A step-field value reduced into the wrap field: what a wrap circuit's cell holds of it. -/
-abbrev redFq (x : Fp) : Fq := ((ZMod.val x : ℕ) : Fq)
-
 /-- The claims the wrap statement carries across: each of the wrap circuit's claim cells holds
 the step circuit's matching cell's value, reduced into the wrap field. -/
 def ClaimsCast {k : ℕ} (Vg : Valuation Fq)
@@ -116,30 +113,6 @@ def ClaimsCast {k : ℕ} (Vg : Valuation Fq)
   g.bulletproofChallenges.toList.map (·.val.val Vg)
     = s.bulletproofChallenges.toList.map fun c => redFq (c.val.val Vs)
 
-/-- The step field is below the wrap field. -/
-private theorem fp_lt_fq : PALLAS_BASE_CARD < PALLAS_SCALAR_CARD := by
-  norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
-
-/-- Reducing into the wrap field keeps a step-field value's representative. -/
-private theorem val_redFq (x : Fp) : ZMod.val (redFq x) = ZMod.val x :=
-  ZMod.val_natCast_of_lt ((ZMod.val_lt x).trans fp_lt_fq)
-
-/-- A step cell reading as a prechallenge reduces to a wrap cell reading as it. -/
-private theorem reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp} {c : SizedF 128 (FVar Fq)}
-    {x : SizedF 128 (FVar Fp)} {m : Prechallenge} (hc : c.val.val Vg = redFq (x.val.val Vs))
-    (hx : Reads128 Vs x m) : Reads128 Vg c m := by
-  unfold Reads128 at hx ⊢
-  rw [hc, hx, redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_BASE_CARD]))]
-
-/-- A wrap cell reading as a prechallenge is the reduction of a step cell reading as it. -/
-private theorem reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
-    {c : SizedF 128 (FVar Fq)} {x : SizedF 128 (FVar Fp)} {m : Prechallenge}
-    (hc : c.val.val Vg = redFq (x.val.val Vs)) (hm : Reads128 Vg c m) : Reads128 Vs x m := by
-  unfold Reads128 at hm ⊢
-  have h := congrArg ZMod.val (hc.symm.trans hm)
-  rw [val_redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_SCALAR_CARD]))] at h
-  rw [← ZMod.natCast_zmod_val (x.val.val Vs), h]
-
 /-- The two sides decode a shifted claim alike across the reduction. -/
 private theorem wrapDecode_redFq {Vg : Valuation Fq} {Vs : Valuation Fp} {c : Type1 (FVar Fq)}
     {x : Type1 (FVar Fp)} (hc : c.val.val Vg = redFq (x.val.val Vs)) :
@@ -151,23 +124,6 @@ private theorem wrapDecode_redFq {Vg : Valuation Fq} {Vs : Valuation Fp} {c : Ty
 private theorem castDigest_redFq (x : Fp) : castDigest IpaVesta.curve (redFq x) = x := by
   simp only [castDigest, val_redFq, if_pos (ZMod.val_lt x)]
   exact ZMod.natCast_zmod_val x
-
-/-- Round challenges reading as prechallenges on the step side read as them on the wrap side. -/
-private theorem forall₂_reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
-    {sl : List (SizedF 128 (FVar Fp))} {ms : List Prechallenge}
-    (hr : List.Forall₂ (Reads128 Vs) sl ms) :
-    ∀ gl : List (SizedF 128 (FVar Fq)),
-      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
-      List.Forall₂ (Reads128 Vg) gl ms := by
-  induction hr with
-  | nil => intro gl h; cases gl with
-    | nil => exact .nil
-    | cons _ _ => simp at h
-  | cons hx _ ih => intro gl h; cases gl with
-    | nil => simp at h
-    | cons g gl =>
-      simp only [List.map_cons, List.cons.injEq] at h
-      exact .cons (reads128_redFq h.1 hx) (ih gl h.2)
 
 /-- **The claims cast across make the two halves hold one set of claims.** With the wrap
 circuit's claim cells the step circuit's reduced (`ClaimsCast`), `β`, `γ` reading as

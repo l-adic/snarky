@@ -175,8 +175,7 @@ def WrapFinalizeSlot.ScalarReads (E : Env IpaPallas.curve nc) (Vs : Valuation Fq
       (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
         (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) (successG : BoolVar Fp),
       (GroupHalf.step Vg claimsG).Reads E cp pub successG → (↑successG : CVar Fp).val Vg = 1 →
-      HalvesTies (GroupHalf.step Vg claimsG)
-        (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
+      SplitClaimsCast Vg claimsG Vs sl.unfinalized →
       FopTies E cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
       SgOk E.σ E.cvk cp pub → kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true
 
@@ -220,8 +219,15 @@ theorem wrapFinalizeBody_spec (E : Env IpaPallas.curve nc) (Vs : Valuation Fq)
         d.generator E.cvk.n E.zkRows_le (by rw [hgen]; exact E.omega_prim.pow_eq_one) _ hvan
         sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList) _ hprev
       refine builder_spec_imp _ _ _ hspec ?_
-      intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit ht hf hsg
+      intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit hc hf hsg
       rw [hgen] at hread
+      -- the two halves hold one set of claims: `β`, `γ` read on the step side, the rest here
+      have ht : HalvesTies (GroupHalf.step Vg claimsG)
+          (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) := by
+        obtain ⟨og, hivp, -⟩ := hg
+        obtain ⟨a₀, z₀, hα, hζ, ξ₀, -, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
+        exact halvesTies_of_splitCast Vg claimsG Vs sl.unfinalized sl.evals sl.prevChallenges
+          hc ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
       have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals
           = (cp.olds.map (·.u.toList)).toList :=
         (ScalarHalf.wrap_olds Vs sl.unfinalized sl.evals sl.prevChallenges _).mp hf.olds
