@@ -467,6 +467,14 @@ theorem CircuitType.reads_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {
   rw [← Vector.eq_iff_flatten_eq]
   simp only [Vector.ext_iff, Vector.getElem_map]
 
+/-- A vector of bundles reads as some vector of values when each entry reads as some value. -/
+theorem CircuitType.exists_reads_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {n : Nat}
+    {V : Valuation F} {vs : Vector va n}
+    (h : ∀ (i : Nat) (hi : i < n), ∃ x : a, CircuitType.Reads V vs[i] x) :
+    ∃ xs : Vector a n, CircuitType.Reads V vs xs :=
+  ⟨Vector.ofFn fun i => (h i i.isLt).choose,
+    reads_vector.mpr fun i hi => by simpa using (h i hi).choose_spec⟩
+
 theorem CircuitType.scoped_ofEquiv [inst : CircuitType F a va] (ev : b ≃ a) (ew : vb ≃ va)
     {st : ProverState F} {v : vb} :
     @CircuitType.Scoped F b vb (CircuitType.ofEquiv ev ew) st v ↔

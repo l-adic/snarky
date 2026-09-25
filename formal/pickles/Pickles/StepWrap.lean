@@ -163,7 +163,7 @@ theorem stepWrap_kimchiVerify
         kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
   intro r hd hb i hmv inp sl hpin ht hsf cp ms pub hwire hguard hf hsg
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
-  obtain ⟨hsfG, hslot⟩ := (builder_spec_iff _ _).mp
+  obtain ⟨hsfG, hslot, -⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads E EsPrev D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i
       hmv
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire

@@ -173,12 +173,34 @@ private theorem forall₂_finRange {α : Type} {R : α → Fin n → Prop} {l : 
   have := (List.forall₂_iff_get.mp h).2 j.val (hlen ▸ j.isLt) (by simp)
   simpa using this
 
-/-- **The step circuit's slots read as their wrap proofs' group halves.** For any rule, under a
-valuation satisfying the emitted constraints, every slot the rule marks must-verify has its
-unfinalized entry's `shouldFinalize` set and satisfies `SlotReads`: for any wrap proof its cells
-read as, the group half accepts it at the slot's statement, carrying the step-message digest of
-this step's key, application state and kept proofs. The rule is opaque; the slots' parity bits
-and verdicts are bits by their allocation checks. -/
+/-- A slot's kept mask cells are its branch data's mask cells: when those read as bits, the
+kept ones read as some mask. -/
+private theorem slotInput_mask_reads {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified)
+    (dummySg : AffinePoint (FVar Fp)) (prev : PrevStatement) {s : SlotVar w ncw ncs k ks}
+    (u : UnfVar k) (msg : FVar Fp)
+    (h0 : ∃ b : Bool, (↑s.branch.mask0 : CVar Fp).val V = bit b)
+    (h1 : ∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b) :
+    ∃ ms : Vector Bool w,
+      CircuitType.Reads V (slotInput hw dummySg prev s u msg).proofMask ms := by
+  refine CircuitType.exists_reads_vector fun j hj => ?_
+  have hb : (slotInput hw dummySg prev s u msg).proofMask[j]
+      ∈ (slotInput hw dummySg prev s u msg).proofMask.toList := by simp
+  generalize (slotInput hw dummySg prev s u msg).proofMask[j] = b at hb ⊢
+  simp only [slotInput, Vector.toList_cast, Vector.toList_drop] at hb
+  have hb' : b = s.branch.mask0 ∨ b = s.branch.mask1 := by
+    simpa using List.mem_of_mem_drop hb
+  rcases hb' with rfl | rfl
+  · obtain ⟨bb, h⟩ := h0
+    exact ⟨bb, CircuitType.reads_boolVar.mpr h⟩
+  · obtain ⟨bb, h⟩ := h1
+    exact ⟨bb, CircuitType.reads_boolVar.mpr h⟩
+
+/-- **The step circuit's slots read as their proofs' halves.** For any rule, under a valuation
+satisfying the emitted constraints, every slot the rule marks must-verify has its unfinalized
+entry's `shouldFinalize` set, satisfies `SlotReads` (the group half accepts any wrap proof its
+cells read as, at the slot's statement carrying the step-message digest) and `ScalarReads` (its
+finalize decides `kimchiVerify` for the step proof that wrap proof verified). The rule is
+opaque; the slots' parity bits, mask bits and verdicts are bits by their allocation checks. -/
 theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.curve ncs) (D : KnownDomains Es)
@@ -198,14 +220,17 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
     ⦃⇓ r _ => ⌜∀ i : Fin n, CircuitType.Reads V r.prevs[i].mustVerify true →
       CircuitType.Reads V r.unfs[i].shouldFinalize true ∧
       (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).SlotReads E V
-        r.vk.points⌝⦄ := by
+        r.vk.points ∧
+      (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).ScalarReads Es D V⌝⦄ := by
   have hinj := castInj128_of_lt PALLAS_BASE_CARD (by decide)
   have hrule := fun x => builder_spec_true (rule x)
   have hfm := forM_spec (V := V) (c := KimchiConstraint Fp)
     (SlotWitness.check (c := Builder V (KimchiConstraint Fp)) (w := w) (ncw := ncw) (ncs := ncs)
       (k := E.σ.k) (ks := Es.σ.k))
     (fun s => (∃ b : Bool, (↑s.z1.val.sOdd : CVar Fp).val V = bit b) ∧
-      ∃ b : Bool, (↑s.z2.val.sOdd : CVar Fp).val V = bit b)
+      (∃ b : Bool, (↑s.z2.val.sOdd : CVar Fp).val V = bit b) ∧
+      (∃ b : Bool, (↑s.branch.mask0 : CVar Fp).val V = bit b) ∧
+      ∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b)
     (fun s => SlotWitness.check_spec s)
   have hmap := fun (vk : VkComms ncw (PallasPt (FVar Fp)))
       (slots : UnChecked (Vector (SlotVar w ncw ncs E.σ.k Es.σ.k) n))
@@ -222,6 +247,9 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
           (∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·))
             vk.points inp.proof).shifted, (stepSide V).ClaimOk x) →
           inp.SlotReads E V vk.points) ∧
+        ((∃ ms : Vector Bool w, CircuitType.Reads V inp.proofMask ms) →
+          CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
+          inp.ScalarReads Es D V) ∧
         (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = (↑inp.mustVerify : CVar Fp).val V)
       id
       (fun i => builder_spec_and _ _ _
@@ -229,7 +257,9 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
           verifyProofAt_success_bit E sv b st u cells) _ _ _ _)
         (builder_spec_and _ _ _
           (verifyOne_slotReads E Es D hw vk.points _ (hsmall _) (havoid _))
-          (verifyOneBy_shouldFinalize (verifyProofAt E) _ _ _ _)))
+          (builder_spec_and _ _ _
+            (verifyOne_scalarReads Es D hw (verifyProofAt E) vk.points _)
+            (verifyOneBy_shouldFinalize (verifyProofAt E) _ _ _ _))))
       (List.finRange n)
   have hhash := fun (p : Poseidon.Params Fp) (vk : VkComms ncw (AffinePoint (FVar Fp))) a pr =>
     builder_spec_true
@@ -260,14 +290,15 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
     obtain ⟨hbit, -⟩ := hget ⟨jj, hlen ▸ hjj⟩
     obtain ⟨bb, hbb⟩ := hbit (hunfPost ⟨jj, hlen ▸ hjj⟩).2.2.2.2.2.2.2.2.2.2.2.2
     rw [hbb]; cases bb <;> simp [bit]
-  obtain ⟨-, hacc, hsf⟩ := hget i
+  obtain ⟨-, hacc, hsc, hsf⟩ := hget i
   have hi : i.val < results.length := by rw [hlen]; exact i.isLt
   have h1 := hassert (by simpa [hlen] using hn) hbits (results[i.val]'hi).2
     (List.mem_map.mpr ⟨_, List.getElem_mem hi, rfl⟩)
-  refine ⟨CircuitType.reads_boolVar.mpr (hsf.trans (CircuitType.reads_boolVar.mp hmv)),
-    hacc hmv h1 fun x hx => ?_⟩
-  have hu := hunfPost i
   have hz := hcheck slots.val[i] (by simp)
+  have hmask := slotInput_mask_reads hw dummySg rout.1[i] unfs[i] msgs[i] hz.2.2.1 hz.2.2.2
+  refine ⟨CircuitType.reads_boolVar.mpr (hsf.trans (CircuitType.reads_boolVar.mp hmv)),
+    hacc hmv h1 fun x hx => ?_, hsc hmask hmv h1⟩
+  have hu := hunfPost i
   simp only [IvpInput.shifted, ivpInputOf, slotInput, AllocUnfinalized.toUnfinalized,
     List.mem_cons, List.not_mem_nil, or_false] at hx
   rcases hx with rfl | rfl | rfl | rfl | rfl | rfl | rfl
@@ -277,7 +308,7 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
   · exact stepSide_claimOk_of_bit _ hu.1.2
   · exact stepSide_claimOk_of_bit _ hu.2.1.2
   · exact stepSide_claimOk_of_bit _ hz.1
-  · exact stepSide_claimOk_of_bit _ hz.2
+  · exact stepSide_claimOk_of_bit _ hz.2.1
 
 end Reads
 

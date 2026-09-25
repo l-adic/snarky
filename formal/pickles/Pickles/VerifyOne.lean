@@ -369,6 +369,56 @@ theorem verifyOne_slotReads (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.cur
   rw [← hpub]
   exact hvr
 
+/-- What a verified slot certifies of the step proof its deferred values came from
+(`StepFinalizeReads` at the slot's cells): given that proof's group half from the wrap circuit,
+the ties and `SgOk`, `kimchiVerify` accepts it. -/
+def VerifyOneInput.ScalarReads (Es : Env IpaVesta.curve ncs) (D : KnownDomains Es)
+    (V : Valuation Fp) (inp : VerifyOneInput Es.σ.k k ncw ncs w) : Prop :=
+  StepFinalizeReads Es D V ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals inp.proofMask
+    inp.prevChallenges inp.branchData.domainLog2
+
+/-- One slot reads as the scalar half of the step proof its deferred values came from: with the
+mask cells boolean, when the slot must verify and the verdict reads `1`, the slot satisfies
+`ScalarReads`, for any `verify`. -/
+theorem verifyOne_scalarReads (Es : Env IpaVesta.curve ncs) (D : KnownDomains Es)
+    (hw : w ≤ MaxProofsVerified)
+    (verify : SpongeVar Fp → BoolVar Fp →
+      WrapStatement Es.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
+      UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      IvpInput k ncw (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
+    (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput Es.σ.k k ncw ncs w) :
+    ⦃⌜True⌝⦄ verifyOneBy verify (FopParams.ofEnv Es Linearization.fpTokens) D.list vk inp
+    ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads V inp.proofMask ms) →
+      CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
+      inp.ScalarReads Es D V⌝⦄ := by
+  have hfin := finalizeOtherProofStepAt_finalizeReads Es V D ⟨inp.deferred, true_, inp.spongeDigest⟩
+    inp.evals inp.proofMask inp.prevChallenges inp.branchData.domainLog2 hw
+  simp only [finalizeOtherProofStepAt] at hfin
+  have hfop := builder_spec_and _ _ _ hfin
+    (finalizeOtherProofStep_finalized_bit (V := V) (k := Es.σ.k)
+      (FopParams.ofEnv Es Linearization.fpTokens) D.list ⟨inp.deferred, true_, inp.spongeDigest⟩
+      inp.evals inp.proofMask.toList (inp.prevChallenges.toList.map Vector.toList)
+      inp.branchData.domainLog2)
+  have hh := fun p vk' a pr => builder_spec_true
+    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) p vk' a pr)
+  have hv := fun sv b st u cells => builder_spec_true (verify sv b st u cells)
+  simp only [verifyOneBy]
+  mvcgen [hfop, hh, hv, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
+  rename_i _ _ _ _ _ hF _ _ _ _ ver _ hVer _ _ hRes
+  intro hmask hmv hres
+  obtain ⟨hreads, bf, hbf⟩ := hF
+  have hnot : (↑(Snarky.not inp.mustVerify) : CVar Fp).val V = 0 := by
+    rw [not_val (CircuitType.reads_boolVar.mp hmv)]
+    simp [bit]
+  rw [hres, hnot] at hRes
+  have hver : (↑ver : CVar Fp).val V = 1 := by linear_combination -hRes
+  rw [hVer] at hver
+  cases bf
+  · rw [hbf, bit, if_neg (by decide), mul_zero] at hver
+    exact absurd hver zero_ne_one
+  · exact hreads hmask (by simpa [bit] using hbf)
+
 end Reads
 
 end Pickles
