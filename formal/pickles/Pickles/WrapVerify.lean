@@ -162,7 +162,7 @@ open CompElliptic.CurveForms.ShortWeierstrass
 
 /-- `wrapVerify_reads` at `wrapSide` and the deployed Vesta constants; the counterpart of
 `verifyProof_step_reads`. -/
-private theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
+theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
     (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
@@ -246,7 +246,7 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc : 
 
 /-- A packed step statement opens with a full scalar: the first slot's combined inner product,
 or with no slot the `messagesForNextStepProof` digest. -/
-private theorem StepStatement.packed_head {ks n : ℕ}
+theorem StepStatement.packed_head {ks n : ℕ}
     (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) :
     ∃ x rest, st.packed = .full x :: rest := by
   unfold StepStatement.packed
@@ -313,6 +313,78 @@ theorem wrapVerifyAt_reads {ks n nc : ℕ} {V : Valuation Fq}
       simpa [wrapPublicInput] using hr ⟨i, by simpa using h₁⟩⟩
   exact wrapVerify_wrap_reads E.σ E.cvk cp _ _ _ _ spongeAfterIndex _ msgSponge newBpChallenges
     claimedMsgDigest u cells oldsW hX (onCurveAt_constPt E.σ.h E.h_ne) hivp
+
+open scoped Kimchi in
+/-- A step key has at most `2^32` chunks: its domain size divides `|Fp| − 1`, whose two-adic
+part is `2^32`, and the chunk count is at most the domain size. -/
+private theorem nc_le_vesta {nc : ℕ} (E : Env IpaVesta.curve nc) : nc ≤ 2 ^ 32 := by
+  have hω0 : E.cvk.omega ≠ 0 := E.omega_prim.ne_zero (by rw [KimchiVK.n]; positivity)
+  have hn : E.cvk.n ∣ PALLAS_BASE_CARD - 1 :=
+    E.omega_prim.dvd_of_pow_eq_one _ (ZMod.pow_card_sub_one_eq_one hω0)
+  have hd : E.cvk.domainLog2 ≤ 32 := by
+    by_contra h
+    have h33 : 2 ^ 33 ∣ PALLAS_BASE_CARD - 1 :=
+      (Nat.pow_dvd_pow 2 (show 33 ≤ E.cvk.domainLog2 by omega)).trans hn
+    exact absurd h33 (by norm_num [PALLAS_BASE_CARD])
+  calc nc ≤ E.cvk.n := E.nc_le_n
+    _ = 2 ^ E.cvk.domainLog2 := rfl
+    _ ≤ 2 ^ 32 := Nat.pow_le_pow_right two_pos hd
+
+/-- The wrap side's base field's characteristic exceeds the group half's absorb count. -/
+private theorem char_guard_fq (m : ℕ) (hm : m ≤ 5 + 48 * 2 ^ 32) (h0 : (m : Fq) = 0) :
+    m = 0 := by
+  have hd : PALLAS_SCALAR_CARD ∣ m := (ZMod.natCast_eq_zero_iff m PALLAS_SCALAR_CARD).mp h0
+  exact Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hm (by norm_num [PALLAS_SCALAR_CARD]))
+
+open scoped Kimchi in
+/-- The wrap side's group-half hypotheses at masked `sg` cells, at most two, from the proof
+cells reading as `cp`'s, the `sg` cells as its old accumulators' under their bits, and the key
+cells and the sponge after the key as `VkReads`, with the shifted claims' `IvpSide.ClaimOk`
+(`wrapSide_claimOk`) and the shape guards proved. -/
+theorem ivpHyps_of_reads_wrap {nc : ℕ} {V : Valuation Fq} {E : Env IpaVesta.curve nc}
+    {cp : KimchiProof IpaVesta.curve nc E.σ.k} {pub : Array Fp}
+    {keyCells : VkComms nc (AffinePoint (FVar Fq))} {spongeAfterIndex : SpongeVar Fq}
+    (dv : DeferredValues E.σ.k (FVar Fq) (Type1 (FVar Fq)))
+    (sgOld : List (Option (BoolVar Fq) × AffinePoint (FVar Fq)))
+    (proof : IvpProof E.σ.k nc (FVar Fq) (Type1 (FVar Fq)))
+    (u : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (oldsW : List (IpaVesta.curve.Point × Bool))
+    (hmask : ∀ m ∈ sgOld, m.1.isSome = true) (hlen : sgOld.length ≤ 2)
+    (hproof : ProofReads (wrapSide V) (proof.wComm.toList.map (·.toList)) proof.zComm.toList
+      proof.tComm.toList proof.opening cp)
+    (holds : OldsRead V sgOld cp oldsW)
+    (hvk : VkReads E.cvk V spongeAfterIndex keyCells) :
+    IvpHyps (wrapSide V) E.σ E.cvk cp pub true spongeAfterIndex
+      ((ivpInputOf dv sgOld keyCells proof).withClaims u) oldsW := by
+  have hl := ivpInputOf_lengths dv sgOld keyCells proof
+  refine
+    { idx := hvk.idx, mask := hmask
+      ties :=
+        { olds := holds, proof := hproof, key := hvk.key
+          claimOk := fun x _ => wrapSide_claimOk V x }
+      nc_pos := E.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }
+  case tne =>
+    intro he
+    have he' : (ivpInputOf dv sgOld keyCells proof).tComm = [] := he
+    have h4 : (ivpInputOf dv sgOld keyCells proof).tComm.length = quotChunks * nc := hl.2.2
+    rw [he', List.length_nil] at h4
+    have := E.nc_pos
+    omega
+  case lrne =>
+    intro he
+    have hlen' := congrArg List.length he
+    rw [List.length_nil] at hlen'
+    exact absurd (by simpa using hlen') (Nat.pos_iff_ne_zero.mp E.rounds_pos)
+  case char =>
+    intro m hm h0
+    refine char_guard_fq m (le_trans hm ?_) h0
+    have h2 : (ivpInputOf dv sgOld keyCells proof).wComm.flatten.length = 15 * nc := hl.1
+    have h3 : (ivpInputOf dv sgOld keyCells proof).zComm.length = nc := hl.2.1
+    have h4 : (ivpInputOf dv sgOld keyCells proof).tComm.length = quotChunks * nc := hl.2.2
+    have h1 : (ivpInputOf dv sgOld keyCells proof).sgOld.length ≤ 2 := hlen
+    have h5 := nc_le_vesta E
+    simp only [IvpInput.withClaims] at *
+    omega
 
 end WrapRead
 

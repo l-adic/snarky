@@ -32,6 +32,9 @@ branches, and finalizes the previous wrap proofs that step proof verified.
 * `wrapBranchBlock_spec`: the branch data reads as `4·log2s[b] + Σᵢ 2^(1−i)·[i < widths[b]]`
   for the branch `b` the bits name.
 * `splitUnfinalized_spec`: the split claims read as the claims (`SplitClaimsRead`).
+* `wrapMainVerify_reads`: for the branch the bits name, each slot's digest is the wire's
+  digest of its accumulator, the claims split, and the group half accepts any step proof the
+  cells hold at the packed statement.
 * `wrapMain_reads`: the branch index names a branch whose domain and slot count the branch
   data packs, and every slot that branch compiled for the key's wrap domain, once
   `shouldFinalize` is set, reads as its scalar half.
@@ -226,7 +229,7 @@ claims, the step statement they pack, the step proof's claims and cells, and the
 the chosen key. -/
 structure WrapMainVerifyOut (mpv ncStep k ks : ℕ) where
   /-- Each slot's accumulator digest. -/
-  msgs : List (FVar Fq)
+  msgs : Vector (FVar Fq) mpv
   /-- The previous proofs' claims, split. -/
   splits : Vector (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
     (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) mpv
@@ -297,7 +300,7 @@ def wrapMainVerify {branches mpv ncStep k ks : ℕ} (log2s : List ℕ)
     hashMessagesForNextWrapProof sp
       (wrapPaddingSponge sp dummy (MaxProofsVerified - (hd.real j).length))
       ((hd.real j).map Vector.toList) hd.stepAccs[j].pt
-  let msgs := rev.reverse
+  let msgs : Vector (FVar Fq) mpv := Vector.ofFn fun j => rev.reverse.getD j.val (.const 0)
   assertEqual (get 12) hd.proofState.2
   let opening ← witness (val := WrapOpeningVal ks) adv.opening
   let messages ← witness (val := WrapMessagesVal ncStep) adv.messages
@@ -305,7 +308,7 @@ def wrapMainVerify {branches mpv ncStep k ks : ℕ} (log2s : List ℕ)
   let statement : StepStatement k mpv (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))) :=
     { proofState := { unfinalizedProofs := splits, messagesForNextStepProof := hd.proofState.2 }
-      messagesForNextWrapProof := Vector.ofFn fun j => msgs.getD j.val (.const 0) }
+      messagesForNextWrapProof := msgs }
   let dv : DeferredValues ks (FVar Fq) (Type1 (FVar Fq)) :=
     { plonk := { alpha := ⟨get 7⟩, beta := ⟨get 5⟩, gamma := ⟨get 6⟩, zeta := ⟨get 8⟩,
                  perm := ⟨get 4⟩, zetaToSrsLength := ⟨get 2⟩, zetaToDomainSize := ⟨get 3⟩ }
@@ -867,6 +870,182 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
     simp only [Vector.getElem_ofFn, List.getD_eq_getElem _ _ hl', h, bit, Fin.mk.injEq]
     by_cases hlb : l = b <;> simp [hlb]
   exact ⟨b, hb, hwb, hbits, hck' ⟨b, hb⟩ hread, hbd, hfin' ⟨b, hb⟩ hread⟩
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- **The wrap circuit's verify read.** Under any valuation satisfying the emitted constraints,
+with the finalize half's bits reading as branch `b` and its chosen key as the constant cells of
+the step environment `EsStep`'s key, and branch `b`'s Lagrange bases and the blinding base the
+environment's: each slot's digest is the wire's messages-for-next-wrap-proof digest of the
+accumulator its cells hold, the statement's step-side digest is the advice's, the split claims
+read as the claims, and for any step proof the cells hold the group half accepts it at the
+packed statement. -/
+theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
+    (EsStep : Env IpaVesta.curve ncStep) (Vs : Valuation Fq) (log2s : List ℕ)
+    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
+    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (adv : WrapMainAdvice mpv ncStep k EsStep.σ.k slotWidths.toList.sum)
+    (stmt : Vector (FVar Fq) 40) (fin : WrapMainFinalizeOut branches mpv ncStep k)
+    (b : Fin branches) (hll : log2s.length = branches)
+    (hbits : fin.bits.map (fun x : BoolVar Fq => (↑x : CVar Fq).val Vs)
+      = (List.range branches).map fun l => if l = b.val then (1 : Fq) else 0)
+    (hkey : ∀ kv : VkComms ncStep (AffinePoint Fq),
+      CircuitType.Reads Vs (keyCellsOf constPt EsStep.cvk) kv → CircuitType.Reads Vs fin.key kv)
+    (hlag : lagrange (log2s[b]'(by omega)) = EsStep.cvk.lagrangeBasis.toList)
+    (hh : h = EsStep.σ.h) (hmpv : mpv ≤ MaxProofsVerified)
+    (hsize : mpv * (k + 17) + 1 + mpv ≤ EsStep.cvk.lagrangeBasis.size)
+    (hnz : ∀ P ∈ EsStep.cvk.comms.indexPoints, P ≠ 0)
+    (havoid : EsStep.σ.Avoids EsStep.lagrangeRelations) :
+    ⦃⌜True⌝⦄
+    wrapMainVerify (c := Builder Vs (KimchiConstraint Fq)) log2s lagrange h dummy slotWidths adv
+      stmt fin
+    ⦃⇓ out _ => ⌜
+      (∀ (i : Fin mpv) (sg : AffinePoint Fq) (chals : List (Vector Fq k)),
+        CircuitType.Reads Vs fin.stepAccs[i].pt sg →
+        List.Forall₂ (CircuitType.Reads Vs) (fin.real i) chals →
+        out.msgs[i].val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy sg chals) ∧
+      (stmt[12]?.getD (CVar.const 0)).val Vs = fin.proofState.2.val Vs ∧
+      (∀ i : Fin mpv, SplitClaimsRead Vs fin.proofState.1[i].toUnfinalized out.splits[i]) ∧
+      ∀ (cp : KimchiProof IpaVesta.curve ncStep EsStep.σ.k)
+        (oldsW : List (IpaVesta.curve.Point × Bool)),
+        ProofReads (wrapSide Vs) out.cells.wComm out.cells.zComm out.cells.tComm
+          out.cells.opening cp →
+        OldsRead Vs out.cells.sgOld cp oldsW →
+        ∃ v : BoolVar Fq,
+          VerifyReads (wrapSide Vs) EsStep.σ EsStep.cvk cp (wrapPublicInput EsStep Vs out.statement)
+            out.u false v ∧ (↑v : CVar Fq).val Vs = 1⌝⦄ := by
+  have hsp := IpaVesta.curve.sponge.hsize
+  have hmsg := builder_spec_mapM (fun j : Fin mpv =>
+      hashMessagesForNextWrapProof (c := Builder Vs (KimchiConstraint Fq))
+        IpaVesta.curve.sponge.params
+        (wrapPaddingSponge IpaVesta.curve.sponge.params dummy
+          (MaxProofsVerified - (fin.real j).length))
+        ((fin.real j).map Vector.toList) fin.stepAccs[j].pt)
+    (fun d j => ∀ (sgv : AffinePoint Fq) (cv : List (Vector Fq k)),
+      CircuitType.Reads Vs fin.stepAccs[j].pt sgv →
+      List.Forall₂ (CircuitType.Reads Vs) (fin.real j) cv →
+        d.val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy sgv cv) id
+    (fun j => hashMessagesForNextWrapProof_padded (V := Vs) _ hsp dummy (fin.real j)
+      fin.stepAccs[j].pt) (List.finRange mpv).reverse
+  have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
+      (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
+    (fun a r => SplitClaimsRead Vs a.toUnfinalized r)
+    (fun a => splitUnfinalized_spec (V := Vs) a.toUnfinalized) fin.proofState.1
+  have hsai := spongeAfterIndex_spec (V := Vs) IpaVesta.curve.sponge.params hsp fin.key
+  subst hh
+  -- the tables at the branches' domains, and branch `b`'s is the key's
+  have hb' : b.val < (log2s.map lagrange).length := by simp [hll]
+  have htab : (log2s.map lagrange)[b.val]'hb' = EsStep.cvk.lagrangeBasis.toList := by
+    simpa using hlag
+  have hshared : log2s.all (· == log2s.headD 0) = true →
+      (log2s.map lagrange).headD [] = (log2s.map lagrange)[b.val]'hb' := by
+    intro hall
+    have hne : log2s ≠ [] := by
+      intro h0; have := NeZero.ne branches; simp [h0] at hll; omega
+    obtain ⟨l0, ls, hls⟩ := List.exists_cons_of_ne_nil hne
+    have hb0 : log2s[b.val]'(by omega) = log2s.headD 0 :=
+      beq_iff_eq.mp (List.all_eq_true.mp hall _ (List.getElem_mem _))
+    simp only [List.getElem_map, hb0]
+    subst hls
+    rfl
+  have hbitsT : fin.bits.map (fun x : BoolVar Fq => (↑x : CVar Fq).val Vs)
+      = (List.range (log2s.map lagrange).length).map
+          fun l => if l = b.val then (1 : Fq) else 0 := by
+    simpa [hll] using hbits
+  -- the masked commitment reads as the packed statement's public commitment, chunk by chunk
+  have hX : ∀ st : StepStatement k mpv (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))),
+      ⦃⌜True⌝⦄ (Vector.toList <$> publicInputCommitMasked
+        (S := Builder Vs (KimchiConstraint Fq)) (C := IpaVesta.curve)
+        (log2s.all (· == log2s.headD 0)) (constPt EsStep.σ.h) fin.bits st.packed
+        (log2s.map lagrange))
+      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve Vs pts (publicCommitment IpaVesta.curve EsStep.σ
+        EsStep.cvk (wrapPublicInput EsStep Vs st)).toList⌝⦄ := by
+    intro st
+    have hlen : st.packed.length ≤ EsStep.cvk.lagrangeBasis.size := by
+      rw [StepStatement.packed_length]; exact hsize
+    have hscalar : leafHasScalar
+        (List.zipWith (constLeaf (C := IpaVesta.curve)) st.packed
+          EsStep.cvk.lagrangeBasis.toList) := by
+      obtain ⟨x, rest, hx⟩ := st.packed_head
+      obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
+        (l := EsStep.cvk.lagrangeBasis.toList) (by
+          intro h0
+          have := EsStep.lagrange_pos
+          simp [← Array.length_toList, h0] at this)
+      rw [hx, hlb]
+      simp [constLeaf, leafHasScalar]
+    have hpub : wrapPublicInput EsStep Vs st
+        = pubOf IpaVesta.curve Vs (List.zipWith (constLeaf (C := IpaVesta.curve)) st.packed
+          EsStep.cvk.lagrangeBasis.toList) := by
+      unfold wrapPublicInput wrapLeavesAt
+      exact congrArg _ (packLeavesOf_ofKey (C := IpaVesta.curve) _ _)
+    have h0 := builder_spec_forall _ (fun _ : Fin ncStep => True) _ fun ci _ =>
+      xHatMasked_reads_publicCommitment (V := Vs) pastaShapeVesta ci EsStep.σ EsStep.cvk
+        (log2s.all (· == log2s.headD 0)) fin.bits st.packed (log2s.map lagrange) b.val hbitsT hb'
+        htab hshared hlen EsStep.h_ne
+        (fun Ps h => EsStep.lagrange_ne pastaShapeVesta havoid Ps h ci)
+        hscalar
+    mvcgen -trivial [h0]
+    intro hr
+    rw [hpub]
+    exact List.forall₂_iff_get.mpr ⟨by simp [pubOf], fun i h₁ h₂ => by
+      simpa [pubOf] using hr ⟨i, by simpa using h₁⟩⟩
+  -- the verify block, for any index sponge, statement, proof cells, claims and accumulators
+  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement k mpv (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+      (pr : IvpProof EsStep.σ.k ncStep (FVar Fq) (Type1 (FVar Fq)))
+      (dv : DeferredValues EsStep.σ.k (FVar Fq) (Type1 (FVar Fq)))
+      (sgOld : List (Option (BoolVar Fq) × AffinePoint (FVar Fq)))
+      (u : UnfinalizedProof EsStep.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) =>
+    builder_spec_forall (wrapVerify (c := Builder Vs (KimchiConstraint Fq)) IpaScalarOps.wrap
+        IpaEndo.vesta IpaVesta.curve.sponge.params (.const ((Pasta.pallasLam : ℤ) : Fq))
+        groupMapParamsVesta vestaBase.sqrt? (constPt EsStep.σ.h) sv
+        (Vector.toList <$> publicInputCommitMasked (C := IpaVesta.curve)
+          (log2s.all (· == log2s.headD 0)) (constPt EsStep.σ.h) fin.bits st.packed
+          (log2s.map lagrange))
+        (wrapPaddingSponge IpaVesta.curve.sponge.params dummy (MaxProofsVerified - mpv))
+        (fin.outs.map (·.expandedChallenges)) (stmt[11]?.getD (.const 0)) u
+        (ivpInputOf dv sgOld fin.key pr))
+      (fun q : KimchiProof IpaVesta.curve ncStep EsStep.σ.k × List (IpaVesta.curve.Point × Bool) =>
+        (∀ m ∈ sgOld, m.1.isSome = true) ∧ sgOld.length ≤ 2 ∧
+        SpongeVar.ReadsAt Vs sv (Poseidon.absorb IpaVesta.curve.sponge.params Poseidon.init
+          (fin.key.indexPoints.flatMap fun P => [P.x.val Vs, P.y.val Vs])) ∧
+        ProofReads (wrapSide Vs) (pr.wComm.toList.map (·.toList)) pr.zComm.toList
+          pr.tComm.toList pr.opening q.1 ∧
+        OldsRead Vs sgOld q.1 q.2) _
+      fun q hq => wrapVerify_wrap_reads EsStep.σ EsStep.cvk q.1 (wrapPublicInput EsStep Vs st)
+        _ _ _ sv _ _ _ _ u (ivpInputOf dv sgOld fin.key pr) q.2 (hX st)
+        (onCurveAt_constPt EsStep.σ.h EsStep.h_ne)
+        (ivpHyps_of_reads_wrap dv sgOld pr u q.2 hq.1 hq.2.1 hq.2.2.2.1 hq.2.2.2.2
+          (vkReads_of_reads EsStep fin.key sv hkey hnz hq.2.2.1))
+  simp only [wrapMainVerify]
+  mvcgen [hmsg, hsplit, hsai, hwv]
+  rename_i rev _ hrev _ _ h12 _ _ _ _ _ _ _ _ hspl _ _ hsv _ _ hver
+  refine ⟨?_, h12, hspl, ?_⟩
+  · -- each slot's digest, from the right-to-left run
+    intro i sg chals hsg hch
+    rw [List.map_id] at hrev
+    have hrev' := List.forall₂_reverse_iff.mpr (by simpa using hrev)
+    have hlen : rev.reverse.length = mpv := by simpa using hrev'.length_eq
+    have hi := (List.forall₂_iff_get.mp hrev').2 i (by omega) (by simp)
+    simp only [List.get_eq_getElem, List.reverse_reverse, List.getElem_finRange, Fin.cast_mk,
+      Fin.eta] at hi
+    have hget : (Vector.ofFn fun j : Fin mpv => rev.reverse.getD j.val (CVar.const 0))[i]
+        = rev.reverse[i.val]'(by omega) := by
+      simp [List.getD_eq_getElem, hlen]
+    rw [hget]
+    obtain ⟨hx, hy⟩ := reads_affinePoint.mp hsg
+    exact hi sg chals hx hy hch
+  · -- the group half, for any proof the cells hold
+    intro cp oldsW hpr hol
+    refine hver (cp, oldsW) ?_ ?_ hsv hpr hol
+    · intro m hm
+      simp only [List.mem_map] at hm
+      obtain ⟨j, -, rfl⟩ := hm
+      rfl
+    · simp only [List.length_map, List.length_finRange]
+      simp only [MaxProofsVerified] at hmpv
+      omega
+
 /-- **The wrap circuit's finalize read**, over the whole circuit: `wrapMainFinalize_reads` at the
 statement's branch data (cell `29`). -/
 theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]

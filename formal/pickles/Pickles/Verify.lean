@@ -124,6 +124,15 @@ def StepStatement.packed {n : ℕ}
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full
 
+/-- A packed step statement's length: `k + 17` scalars per slot, then its digests. -/
+theorem StepStatement.packed_length {n : ℕ}
+    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
+    st.packed.length = n * (k + 17) + 1 + n := by
+  simp only [StepStatement.packed, UnfinalizedProof.packed, List.length_append,
+    List.length_flatMap, List.length_map, List.length_cons, List.length_nil, Vector.length_toList]
+  simp [Nat.mul_comm]
+  omega
+
 /-- The group half's input with its claims taken from an unfinalized proof: `xi`,
 `combinedInnerProduct`, `b` and the plonk claims of its deferred values; the key, proof and
 `sgOld` cells as given. -/

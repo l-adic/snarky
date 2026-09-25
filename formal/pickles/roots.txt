@@ -36,19 +36,9 @@ Pickles.Reflect.circuit_gateLinearization_fq
 -- applies, and the tactic implementations the completeness proofs call.
 Pickles.FopSide.unshiftV_read
 
--- TODO: drop once the wrap finalize port consumes them. The wrap side's one-hot and
--- domain selection, CS-matched by check_cs but not yet reached from a capstone.
-Pickles.oneHotVector_spec
-Pickles.toDomain_spec
-
--- TODO: drop once the wrap main port consumes them. The wrap circuit's pieces: x_hat over
--- bases masked across branches, the padded accumulator digest, the branch block and the claim
--- split, not yet reached from a capstone.
-Pickles.xHatMasked_reads_publicCommitment
-Pickles.hashMessagesForNextWrapProof_padded
-Pickles.splitUnfinalized_spec
-Pickles.chooseKey_spec
-Pickles.vkReads_of_reads
+-- TODO: drop once the wrap-step capstone consumes it. The wrap circuit's verify read, not yet
+-- reached from a capstone.
+Pickles.wrapMainVerify_reads
 
 -- TODO: drop once the wrap main port consumes them. The x_hat ladders' bounds on the packed
 -- scalars, the frame laws that carry them through the wrap verifier, and the wrap public
