@@ -93,20 +93,63 @@ feature flags and the lookup option's flag and scalar challenge, all zero in the
 fragment. -/
 def wrapFlagCells : ℕ := 10
 
-/-- The public input's entry after the statement's round challenges is the packed branch data. -/
-theorem stepPublicInput_branchData {ks nc : ℕ} (E : Env IpaPallas.curve nc) (V : Valuation Fp)
-    (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    (h : 13 + ks < (stepPublicInput E V st).size) :
-    (stepPublicInput E V st)[13 + ks]
-      = ((ToNat.toNat (st.proofState.deferredValues.branchData.packed.val V) : ℕ) : Fq) := by
-  simp only [stepPublicInput, pubOf, stepLeavesAt, packLeaves, packLeavesOf, List.getElem_toArray,
-    List.getElem_map, List.getElem_zipWith]
-  have hp : ∀ hi, st.packed[13 + ks]'hi = .b10 st.proofState.deferredValues.branchData.packed := by
-    intro hi
-    simp only [WrapStatement.packed]
-    rw [List.getElem_append_right (by simp; omega)]
-    simp
-  simp only [hp, Leaf.scalarVar]
+/-- A wrap statement's cells as the wrap circuit's packed public input: each scalar reduced into
+the scalar field as `stepPublicInput` reduces it, the optional-feature cells zero. -/
+def WrapStatement.toPacked {ks : ℕ} (V : Valuation Fp)
+    (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
+    StatementPacked ks (Type1 Fq) Fq :=
+  let r (x : FVar Fp) : Fq := ((ToNat.toNat (x.val V) : ℕ) : Fq)
+  let dv := st.proofState.deferredValues
+  let pl := dv.plonk
+  { fpFields := #v[⟨r dv.combinedInnerProduct.val⟩, ⟨r dv.b.val⟩, ⟨r pl.zetaToSrsLength.val⟩,
+      ⟨r pl.zetaToDomainSize.val⟩, ⟨r pl.perm.val⟩]
+    challenges := #v[r pl.beta.val, r pl.gamma.val]
+    scalarChallenges := #v[r pl.alpha.val, r pl.zeta.val, r dv.xi.val]
+    digests := #v[r st.proofState.spongeDigestBeforeEvaluations,
+      r st.proofState.messagesForNextWrapProof, r st.messagesForNextStepProof]
+    bulletproofChallenges := dv.bulletproofChallenges.map fun c => r c.val
+    branchData := r dv.branchData.packed
+    featureFlags := Vector.replicate 8 0
+    lookupOptFlag := 0
+    lookupOptScalarChallenge := 0 }
+
+/-- **The packed statement is the wire's public input.** Flattened, `toPacked` is the public
+input `stepPublicInput` commits to, followed by the `wrapFlagCells` zero cells, when the key has
+a Lagrange point per packed scalar. -/
+theorem WrapStatement.toPacked_toFields {ks nc : ℕ} (E : Env IpaPallas.curve nc)
+    (V : Valuation Fp) (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (hlen : st.packed.length ≤ E.cvk.lagrangeBasis.size) :
+    (CircuitType.valueToFields (F := Fq) (var := StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
+      (st.toPacked V)).toList
+      = (stepPublicInput E V st).toList ++ List.replicate wrapFlagCells 0 := by
+  have hpub : (stepPublicInput E V st).toList
+      = st.packed.map (PackedScalar.reduced IpaPallas.curve V) := by
+    have hk : packLeavesOf st.packed (XhatTable.ofKeyKnown (C := IpaPallas.curve) st.packed
+        E.cvk.lagrangeBasis.toList)
+        = List.zipWith (constLeaf (C := IpaPallas.curve)) st.packed E.cvk.lagrangeBasis.toList :=
+      packLeavesOf_ofKey st.packed E.cvk.lagrangeBasis.toList
+    simp only [stepPublicInput, stepLeavesAt, packLeaves, xhatTableAt]
+    rw [hk]
+    exact pubOf_zipWith_constLeaf _ _ (by simpa using hlen)
+  rw [hpub]
+  change (CircuitType.valueToFields (F := Fq)
+    (var := Vector (Type1 (FVar Fq)) 5 × Vector (FVar Fq) 2 × Vector (FVar Fq) 3 ×
+      Vector (FVar Fq) 3 × Vector (FVar Fq) ks × FVar Fq × Vector (FVar Fq) 8 × FVar Fq × FVar Fq)
+    (StatementPacked.equivProd ks (Type1 Fq) Fq (st.toPacked V))).toList = _
+  have h1 : ∀ x : Type1 Fq, CircuitType.valueToFields (F := Fq) (var := Type1 (FVar Fq)) x
+      = #v[x.val] := fun _ => rfl
+  have h2 : ∀ x : Fq, CircuitType.valueToFields (F := Fq) (var := FVar Fq) x = #v[x] :=
+    fun _ => rfl
+  simp only [StatementPacked.equivProd, Equiv.coe_fn_mk, CircuitType.valueToFields_prod,
+    CircuitType.valueToFields_vector]
+  simp [WrapStatement.toPacked, WrapStatement.packed, PackedScalar.reduced, PackedScalar.cell,
+    wrapFlagCells, mapVec_eq_map, h1, h2, Function.comp_def]
+  rw [toList_flatten_singletons st.proofState.deferredValues.bulletproofChallenges
+    fun x => ((ToNat.toNat (CVar.val x.val V) : ℕ) : Fq)]
+  simp only [List.append_cancel_left_eq, List.cons.injEq, true_and]
+  rw [show Vector.replicate 8 #v[(0 : Fq)] = (Vector.replicate 8 (0 : Fq)).map fun c => #v[c] by
+    simp, toList_flatten_singletons]
+  simp
 
 /-- Chunk `c` of the key's Lagrange relations: each Lagrange polynomial's coefficients on the
 chunk. -/

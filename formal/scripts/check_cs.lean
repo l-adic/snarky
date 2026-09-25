@@ -1017,7 +1017,7 @@ step chunks from its constants, slot counts and step domains; a branch's Lagrang
 one exported for its step domain. -/
 def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (widths : Vector (Fin (mpv + 1)) (bp + 1)) (log2s : Vector ℕ (bp + 1))
-    (stmt : Vector (FVar Fq) 40) :
+    (stmt : Pickles.StatementPacked 16 (Type1 (FVar Fq)) (FVar Fq)) :
     CircuitM Fq Cq PUnit :=
   let zeroKey : Pickles.VkComms nc (AffinePoint (FVar Fq)) :=
     VkComms.replicate (Vector.replicate nc ⟨.const 0, .const 0⟩)
@@ -1807,7 +1807,7 @@ def main : IO Unit := do
         | throw (IO.userError s!"{name}: slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}")
       let some log2s := wrapMainLog2s? bp k.domainLog2s
         | throw (IO.userError s!"{name}: step domains {k.domainLog2s} are not {bp + 1}")
-      pure (name, wrapTarget (a := Vector Fq 40) (b := PUnit)
+      pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := PUnit)
         (wrapMainDumpCircuit bp mpv nc k widths log2s))
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)

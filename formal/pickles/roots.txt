@@ -13,6 +13,10 @@ Pickles.wrapProof_kimchiVerify_pallas
 Pickles.stepWrap_kimchiVerify
 Pickles.wrapStep_kimchiVerify
 
+-- The wrap circuit's packed statement is the wire's public input: the anchor for the
+-- capstone's typed public-input tie.
+Pickles.WrapStatement.toPacked_toFields
+
 -- The linearization reflection: the certificate identifying the deployed token stream with
 -- `gateLinearization`, and the environment transport its proof runs on.
 Pickles.Linearization.map_position

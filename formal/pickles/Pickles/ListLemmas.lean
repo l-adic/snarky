@@ -87,4 +87,12 @@ theorem getElem_map_fin {α β : Type} {n : ℕ} (f : α → β) (Ps : Vector α
     (Ps.map f)[ci] = f Ps[ci] := by
   simp [Fin.getElem_fin]
 
+/-- A vector of singletons flattens to the vector's entries. -/
+theorem toList_flatten_singletons {α β : Type} {n : ℕ} (v : Vector α n) (f : α → β) :
+    (v.map fun c => #v[f c]).flatten.toList = v.toList.map f := by
+  refine List.ext_getElem (by simp) fun i h₁ h₂ => ?_
+  simp only [Vector.getElem_toList, List.getElem_map]
+  rw [Vector.getElem_flatten (by simpa using h₁)]
+  simp
+
 end Pickles

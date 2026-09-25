@@ -113,7 +113,7 @@ theorem stepWrap_kimchiVerify
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vs` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
     -- domains and the SRS's blinding base
-    (hwrap : ∀ con ∈ (compile (a := Vector Fq 40) (b := Unit)
+    (hwrap : ∀ con ∈ (compile (a := StatementPacked ks (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
           (stepKeyCells stepEnvs) pins lagrange σStep.h
@@ -133,8 +133,9 @@ theorem stepWrap_kimchiVerify
     let hd := (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
           (stepKeyCells stepEnvs) pins lagrange σStep.h dummy
-      slotWidths advW (inputVar (F := Fq) (a := Vector Fq 40)))
-      (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq)) (a := Vector Fq 40))).result
+      slotWidths advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)))
+      (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
+        (a := StatementPacked ks (Type1 Fq) Fq))).result
     -- the wrap circuit's branch index reads as `b`
     hd.1.whichBranch.val Vs = (b : Fq) →
     -- slot `i` must verify
@@ -170,8 +171,9 @@ theorem stepWrap_kimchiVerify
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
           (stepKeyCells stepEnvs) pins lagrange σStep.h dummy
-      slotWidths advW (inputVar (F := Fq) (a := Vector Fq 40)))
-      (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq)) (a := Vector Fq 40))
+      slotWidths advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)))
+      (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
+        (a := StatementPacked ks (Type1 Fq) Fq))
       ).constraints, ConstraintHolds.Holds Vs con := fun con hc =>
     hwrap con (mem_compile_of_mem_body (by
       simp only [wrapMainCircuit, build_bind]
@@ -179,7 +181,7 @@ theorem stepWrap_kimchiVerify
   obtain ⟨b', hb', hwb, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp
     (wrapMain_reads E Vs gen widths (stepDomainLog2s stepEnvs)
           (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths advW
-      (inputVar (F := Fq) (a := Vector Fq 40)) hw hbr) _ hbody
+      (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)) hw hbr) _ hbody
   -- the circuit's branch is `b`: both are below the field's characteristic
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)

@@ -21,11 +21,12 @@ wrap proof was made at the wrap circuit's public input.
 
 ## Implementation notes
 
-The slot finalizes over the domain its branch data names, and the finalize read needs that domain
-to be the step key's. The wrap circuit's statement carries the branch data at cell `29`, which
-`wrapMain_reads` reads as branch `b`'s domain and mask; the tie carries it to the slot's packed
-branch data, whose `log2` and mask cells the slot check bounds. Cell `29` is the entry after the
-round challenges only at `StepIPARounds` of them.
+The public-input tie says the wrap circuit's packed statement reads as the slot's statement
+packed (`VerifyOneInput.packedAt`), which `WrapStatement.toPacked_toFields` identifies with the
+public input the slot verifies the wrap proof at. The slot finalizes over the domain its branch
+data names, and the finalize read needs that domain to be the step key's: the tie carries the
+wrap statement's branch data, which `wrapMain_reads` reads as branch `b`'s domain and mask, to
+the slot's packed branch data, whose `log2` and mask cells the slot check bounds.
 -/
 
 namespace Pickles
@@ -87,9 +88,8 @@ private theorem wrapStep_kimchiVerify_core
     [CircuitType Fp inVal inVar]
     -- the environment of the wrap proofs (key, SRS, domain)
     (E : Env IpaPallas.curve 1)
-    -- the environment of the step proof the wrap circuit verifies, at the deployed round count
+    -- the environment of the step proof the wrap circuit verifies
     (EsStep : Env IpaVesta.curve ncStep)
-    (hks : EsStep.σ.k = StepIPARounds)
     -- the wrap circuit's valuation
     (Vw : Valuation Fq)
     -- the generator of the wrap domain of each `log2`, a constant of the circuit
@@ -108,7 +108,7 @@ private theorem wrapStep_kimchiVerify_core
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vw` satisfies every constraint of the compiled wrap circuit
-    (hwrap : ∀ con ∈ (compile (a := Vector Fq 40) (b := Unit)
+    (hwrap : ∀ con ∈ (compile (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vw (KimchiConstraint Fq))
           (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h
           dummy slotWidths advW)).constraints,
@@ -150,11 +150,12 @@ private theorem wrapStep_kimchiVerify_core
     let r := (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
       (FopParams.ofEnv EsStep Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the wrap circuit's statement and cells
-    let stmt := inputVar (F := Fq) (a := Vector Fq 40)
+    let stmt := inputVar (F := Fq) (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq)
     let hd := (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h dummy
       slotWidths advW stmt)
-      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq)) (a := Vector Fq 40))).result
+      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
+        (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq))).result
     -- the wrap circuit's branch index reads as `b`
     hd.1.whichBranch.val Vw = (b : Fq) →
     -- slot `i` must verify
@@ -162,8 +163,7 @@ private theorem wrapStep_kimchiVerify_core
       let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
       ∀ ms : List Bool, List.Forall₂ (CircuitType.Reads Vs) inp.proofMask.toList ms →
       -- its wrap proof was made at the wrap circuit's public input
-      stmt.toList.map (·.val Vw)
-        = (inp.publicInputAt E Vs ms).toList ++ List.replicate wrapFlagCells 0 →
+      CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
       -- its finalized half holds the wrap circuit's claims
       HalvesTies (GroupHalf.wrap Vw hd.2.u) (inp.finalizedHalf Vs) →
       ∀ (cp : KimchiProof IpaVesta.curve ncStep EsStep.σ.k)
@@ -188,7 +188,8 @@ private theorem wrapStep_kimchiVerify_core
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h dummy
       slotWidths advW stmt)
-      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq)) (a := Vector Fq 40))
+      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
+        (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq))
       ).constraints, ConstraintHolds.Holds Vw con := fun con hc =>
     hwrap con (mem_compile_of_mem_body (by
       simp only [wrapMainCircuit, build_bind]
@@ -206,22 +207,11 @@ private theorem wrapStep_kimchiVerify_core
   obtain ⟨v, hv, hv1⟩ := hgrp cp oldsW hpr hol
   -- the slot's domain is the key's: cell `29` carries the branch data across the tie
   have hdom : inp.branchData.domainLog2.val Vs = (D.keyLog2 : Fp) := by
-    have hsz := congrArg List.length htie
-    simp only [List.length_map, Vector.length_toList, List.length_append, Array.length_toList,
-      List.length_replicate, wrapFlagCells] at hsz
-    have hk16 : EsStep.σ.k = 16 := hks
-    have hlt : 13 + EsStep.σ.k < (inp.publicInputAt E Vs ms).size := by omega
-    have hP := stepPublicInput_branchData E Vs
-      (inp.statement (.const (inp.stepMsgDigest E Vs ms))) hlt
-    have h29 := congrArg (fun l => l[13 + EsStep.σ.k]?) htie
-    simp only [List.getElem?_append_left (by simpa using hlt), List.getElem?_map,
-      Array.getElem?_toList, Array.getElem?_eq_getElem hlt] at h29
-    have hL : stmt.toList[13 + EsStep.σ.k]? = some stmt[29] := by
-      rw [show 13 + EsStep.σ.k = 29 by omega]; simp
-    rw [hL, Option.map_some, Option.some.injEq] at h29
-    have hcell : (stmt[29]?.getD (CVar.const 0)).val Vw
+    have hcell : stmt.branchData.val Vw
         = ((ToNat.toNat (inp.branchData.packed.val Vs) : ℕ) : Fq) := by
-      simpa using h29.trans hP
+      simp only [CircuitType.reads_ofEquiv, StatementPacked.equivProd, Equiv.coe_fn_mk,
+        CircuitType.reads_prod] at htie
+      exact CircuitType.reads_fvar.mp htie.2.2.2.2.2.1
     rw [hcell] at hbd
     -- both sides are small numbers: `4·n₀ + t` and `4·log2s[b] + s`
     obtain ⟨t, ht3, hpk⟩ := BranchData.packed_val inp.branchData n0 ms0 hdv hmsR
@@ -257,7 +247,6 @@ theorem wrapStep_kimchiVerify
     -- count
     (stepEnvs : Vector (Env IpaVesta.curve ncStep) branches)
     (σStep : SRS IpaVesta.curve.Point) (hσ : ∀ i : Fin branches, stepEnvs[i].σ = σStep)
-    (hks : σStep.k = StepIPARounds)
     -- the branch the wrap circuit takes
     (b : Fin branches)
     -- the wrap circuit's valuation
@@ -278,7 +267,7 @@ theorem wrapStep_kimchiVerify
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vw` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
     -- domains and the SRS's blinding base
-    (hwrap : ∀ con ∈ (compile (a := Vector Fq 40) (b := Unit)
+    (hwrap : ∀ con ∈ (compile (a := StatementPacked stepEnvs[b].σ.k (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vw (KimchiConstraint Fq))
           (FopParams.ofEnv E Linearization.fqTokens) gen widths
           (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins
@@ -318,13 +307,14 @@ theorem wrapStep_kimchiVerify
       (FopParams.ofEnv stepEnvs[b] Linearization.fpTokens) D.list dummySg dummyUnf rule adv)
       0).result
     -- the wrap circuit's statement and cells
-    let stmt := inputVar (F := Fq) (a := Vector Fq 40)
+    let stmt := inputVar (F := Fq) (a := StatementPacked stepEnvs[b].σ.k (Type1 Fq) Fq)
     let hd := (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) gen widths
       (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins
       lagrange σStep.h dummy
       slotWidths advW stmt)
-      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq)) (a := Vector Fq 40))).result
+      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
+        (a := StatementPacked stepEnvs[b].σ.k (Type1 Fq) Fq))).result
     -- the wrap circuit's branch index reads as `b`
     hd.1.whichBranch.val Vw = (b : Fq) →
     -- slot `i` must verify
@@ -332,8 +322,7 @@ theorem wrapStep_kimchiVerify
       let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
       ∀ ms : List Bool, List.Forall₂ (CircuitType.Reads Vs) inp.proofMask.toList ms →
       -- its wrap proof was made at the wrap circuit's public input
-      stmt.toList.map (·.val Vw)
-        = (inp.publicInputAt E Vs ms).toList ++ List.replicate wrapFlagCells 0 →
+      CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
       -- its finalized half holds the wrap circuit's claims
       HalvesTies (GroupHalf.wrap Vw hd.2.u) (inp.finalizedHalf Vs) →
       ∀ (cp : KimchiProof IpaVesta.curve ncStep stepEnvs[b].σ.k)
@@ -355,7 +344,7 @@ theorem wrapStep_kimchiVerify
     simp only [KimchiVK.n] at this
     simpa [stepDomainLog2s] using Nat.pow_right_injective (le_refl 2) this
   intro r stmt hd hb i hmv inp ms hms htie ht cp oldsW pub hpr hol hguard hf hsg
-  exact wrapStep_kimchiVerify_core E stepEnvs[b] (by rw [hσ b]; exact hks) Vw gen widths
+  exact wrapStep_kimchiVerify_core E stepEnvs[b] Vw gen widths
     (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths
     advW hbr hwrap b (by simp [stepKeyCells]) (by simpa [stepDomainLog2s] using hlag)
     (by rw [hσ b]) hsize hnz havoidS D hlog hn hw dummySg dummyUnf hsmall havoid Vs rule adv hstep
