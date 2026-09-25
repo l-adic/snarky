@@ -55,8 +55,8 @@ as accepted by `kimchiVerify`, under the guards, the finalize ties and `SgOk`. -
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
     -- and the wrap circuit's slots; the step proofs the wrap proofs verified at `ncs`; the
-    -- wrap circuit's `branches`, the step proof it verifies at `nck` chunks
-    {n w ncs branches nck : ℕ} [NeZero branches]
+    -- wrap circuit's `branches`, the step proof it verifies at `ncStep` chunks
+    {n w ncs branches ncStep : ℕ} [NeZero branches]
     -- the rule's input, as a value and as cells
     {inVal inVar : Type}
     [CircuitType Fp inVal inVar]
@@ -99,16 +99,16 @@ theorem stepWrap_kimchiVerify
     (gen : ℕ → Fq)
     -- the tag's branches: their slot counts, step domains and step keys
     (widths log2s : List ℕ)
-    (stepKeys : Vector (VkComms nck (AffinePoint (FVar Fq))) branches)
+    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots,
     -- front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the Lagrange bases at a step domain, the blinding base, the padding challenges and each
     -- slot's challenge-stack height: constants of the wrap circuit
-    (lagrange : ℕ → List (Vector IpaVesta.curve.Point nck)) (h : IpaVesta.curve.Point)
+    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
     (dummy : List Fq) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
-    (advW : WrapMainAdvice w nck E.σ.k slotWidths.toList.sum)
+    (advW : WrapMainAdvice w ncStep E.σ.k slotWidths.toList.sum)
     -- one slot count and one step domain per branch, each slot count at most `w`, and fewer
     -- branches than the field's characteristic
     (hwl : widths.length = branches)
