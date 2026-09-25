@@ -63,9 +63,9 @@ theorem stepWrap_kimchiVerify
     -- the environment of the wrap proofs the slots verify (key, SRS, domain)
     (E : Env IpaPallas.curve 1)
     -- the environment of the step proofs those wrap proofs carry
-    (Es : Env IpaVesta.curve ncPrevStep)
+    (EsPrev : Env IpaVesta.curve ncPrevStep)
     -- the step domains the finalize inside the step circuit dispatches over
-    (D : KnownDomains Es)
+    (D : KnownDomains EsPrev)
     -- the rule verifies at most the tag's `w` slots
     (hn : n ≤ w)
     -- the tag verifies at most `MaxProofsVerified`
@@ -75,11 +75,11 @@ theorem stepWrap_kimchiVerify
     -- the unfinalized entry padding the step statement to the tag's `w` slots
     (dummyUnf : UnfVal E.σ.k)
     -- every slot statement packs into at most `2 ^ E.σ.k` cells, the SRS size
-    (hsmall : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k 1 ncPrevStep w) msg,
+    (hsmall : ∀ (inp : VerifyOneInput EsPrev.σ.k E.σ.k 1 ncPrevStep w) msg,
       (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
     -- no relation the slot statements' public-input commitment names commits the SRS to the
     -- identity
-    (havoid : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k 1 ncPrevStep w) msg,
+    (havoid : ∀ (inp : VerifyOneInput EsPrev.σ.k E.σ.k 1 ncPrevStep w) msg,
       E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
     -- the step circuit's valuation
     (Vg : Valuation Fp)
@@ -88,11 +88,11 @@ theorem stepWrap_kimchiVerify
     (rule : inVar →
       CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     -- the step circuit's advice
-    (adv : StepMainAdvice n w 1 ncPrevStep E.σ.k Es.σ.k inVal)
+    (adv : StepMainAdvice n w 1 ncPrevStep E.σ.k EsPrev.σ.k inVal)
     -- `Vg` satisfies every constraint of the step circuit, which allocates all its cells
     (hstep : ∀ con ∈ (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw
-        (verifyProofAt E) (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg dummyUnf rule
-        adv) 0).constraints, ConstraintHolds.Holds Vg con)
+        (verifyProofAt E) (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list dummySg dummyUnf
+        rule adv) 0).constraints, ConstraintHolds.Holds Vg con)
     -- the next wrap circuit's valuation
     (Vs : Valuation Fq)
     -- the generator of the wrap domain of each `log2`, a constant of the circuit
@@ -130,7 +130,7 @@ theorem stepWrap_kimchiVerify
     -- `gen` gives the key's generator at its domain
     (hgen : gen E.cvk.domainLog2 = E.cvk.omega) :
     let r := (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw (verifyProofAt E)
-      (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
+      (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the wrap circuit's cells over its statement
     let hd := (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h dummy
@@ -164,7 +164,7 @@ theorem stepWrap_kimchiVerify
   intro r hd hb i hmv inp sl hpin ht hsf cp ms pub hwire hguard hf hsg
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E Es D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i
+    (stepMain_reads E EsPrev D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i
       hmv
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
