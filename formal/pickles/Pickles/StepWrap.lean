@@ -54,16 +54,16 @@ whose two halves are tied and read one `shouldFinalize` bit, has each wrap proof
 as accepted by `kimchiVerify`, under the guards, the finalize ties and `SgOk`. -/
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
-    -- and the wrap circuit's slots; the step proofs the wrap proofs verified at `ncs`; the
+    -- and the wrap circuit's slots; the step proofs the wrap proofs verified at `ncPrevStep`; the
     -- wrap circuit's `branches`, the step proof it verifies at `ncStep` chunks
-    {n w ncs branches ncStep : ℕ} [NeZero branches]
+    {n w ncPrevStep branches ncStep : ℕ} [NeZero branches]
     -- the rule's input, as a value and as cells
     {inVal inVar : Type}
     [CircuitType Fp inVal inVar]
     -- the environment of the wrap proofs the slots verify (key, SRS, domain)
     (E : Env IpaPallas.curve 1)
     -- the environment of the step proofs those wrap proofs carry
-    (Es : Env IpaVesta.curve ncs)
+    (Es : Env IpaVesta.curve ncPrevStep)
     -- the step domains the finalize inside the step circuit dispatches over
     (D : KnownDomains Es)
     -- the rule verifies at most the tag's `w` slots
@@ -75,11 +75,11 @@ theorem stepWrap_kimchiVerify
     -- the unfinalized entry padding the step statement to the tag's `w` slots
     (dummyUnf : UnfVal E.σ.k)
     -- every slot statement packs into at most `2 ^ E.σ.k` cells, the SRS size
-    (hsmall : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k 1 ncs w) msg,
+    (hsmall : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k 1 ncPrevStep w) msg,
       (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
     -- no relation the slot statements' public-input commitment names commits the SRS to the
     -- identity
-    (havoid : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k 1 ncs w) msg,
+    (havoid : ∀ (inp : VerifyOneInput Es.σ.k E.σ.k 1 ncPrevStep w) msg,
       E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
     -- the step circuit's valuation
     (Vg : Valuation Fp)
@@ -88,7 +88,7 @@ theorem stepWrap_kimchiVerify
     (rule : inVar →
       CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     -- the step circuit's advice
-    (adv : StepMainAdvice n w 1 ncs E.σ.k Es.σ.k inVal)
+    (adv : StepMainAdvice n w 1 ncPrevStep E.σ.k Es.σ.k inVal)
     -- `Vg` satisfies every constraint of the step circuit, which allocates all its cells
     (hstep : ∀ con ∈ (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw
         (verifyProofAt E) (FopParams.ofEnv Es Linearization.fpTokens) D.list dummySg dummyUnf rule
