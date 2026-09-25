@@ -16,8 +16,9 @@ wrap proof was made at the wrap circuit's public input.
 ## Main results
 
 * `wrapStep_kimchiVerify`: the two circuits' runs, each satisfied under its own valuation, with
-  the public-input tie between the wrap circuit and the slot, the ties between the two halves
-  and the readings, make `kimchiVerify` accept the wrapped step proof.
+  the public-input tie between the wrap circuit and the slot and the readings, make
+  `kimchiVerify` accept the wrapped step proof. That the two halves hold one set of claims is
+  derived from the tie (`ClaimsCast`, `halvesTies_of_cast`).
 
 ## Implementation notes
 
@@ -76,6 +77,43 @@ private theorem BranchData.packed_val {V : Valuation Fp} (bd : BranchData (FVar 
   have e1 : bd.proofsVerifiedMask.toList[1]? = some bd.proofsVerifiedMask[1] := by simp
   simp only [BranchData.packed, e0, e1, CVar.val_add_, CVar.val_scale_, hdv, h0, h1]
   cases ms[0] <;> cases ms[1] <;> simp [bit]; ring
+
+/-- A wrap statement reading as a step statement packed carries its claims across: the wrap
+circuit's claim cells hold the step statement's, reduced into the wrap field. -/
+private theorem claimsCast_of_reads {ks : ℕ} {Vw : Valuation Fq} {Vs : Valuation Fp}
+    (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
+    (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (h : CircuitType.Reads Vw stmt (st.toPacked Vs)) :
+    ClaimsCast Vw stmt.claims Vs ⟨st.proofState.deferredValues.toDeferredValues, true_,
+      st.proofState.spongeDigestBeforeEvaluations⟩ := by
+  simp only [CircuitType.reads_ofEquiv, StatementPacked.equivProd, Equiv.coe_fn_mk,
+    CircuitType.reads_prod, CircuitType.reads_vector] at h
+  obtain ⟨hfp, hch, hsc, hdg, hbp, -⟩ := h
+  simp only [CircuitType.reads_fvar] at hfp hch hsc hdg hbp
+  have f0 := hfp 0 (by decide)
+  have f1 := hfp 1 (by decide)
+  have f2 := hfp 2 (by decide)
+  have f3 := hfp 3 (by decide)
+  have f4 := hfp 4 (by decide)
+  have c0 := hch 0 (by decide)
+  have c1 := hch 1 (by decide)
+  have s0 := hsc 0 (by decide)
+  have s1 := hsc 1 (by decide)
+  have s2 := hsc 2 (by decide)
+  have d0 := hdg 0 (by decide)
+  simp only [WrapStatement.toPacked, Type1.equivCarrier, Equiv.coe_fn_mk] at f0 f1 f2 f3 f4
+  simp only [WrapStatement.toPacked] at c0 c1 s0 s1 s2 d0
+  unfold ClaimsCast
+  refine ⟨?_, ?_⟩
+  · simp only [StatementPacked.claims, List.map_cons, List.map_nil, f0, f1, f2, f3, f4, c0, c1,
+      s0, s1, s2, d0]
+    rfl
+  · refine List.ext_getElem (by simp [StatementPacked.claims]) fun i h₁ h₂ => ?_
+    simp only [StatementPacked.claims, List.getElem_map, Vector.getElem_toList,
+      Vector.getElem_map]
+    rw [hbp i (by simpa [StatementPacked.claims] using h₁)]
+    simp only [WrapStatement.toPacked, Vector.getElem_map]
+    rfl
 
 /-- `wrapStep_kimchiVerify` over the wrap circuit's constants as given, tied to the step
 environment `EsStep` by hypotheses. -/
@@ -164,8 +202,6 @@ private theorem wrapStep_kimchiVerify_core
       ∀ ms : List Bool, List.Forall₂ (CircuitType.Reads Vs) inp.proofMask.toList ms →
       -- its wrap proof was made at the wrap circuit's public input
       CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
-      -- its finalized half holds the wrap circuit's claims
-      HalvesTies (GroupHalf.wrap Vw hd.2.u) (inp.finalizedHalf Vs) →
       ∀ (cp : KimchiProof IpaVesta.curve ncStep EsStep.σ.k)
         (oldsW : List (IpaVesta.curve.Point × Bool)),
         -- the step proof's public input: the wrap circuit's packed step statement
@@ -179,7 +215,7 @@ private theorem wrapStep_kimchiVerify_core
         FopTies EsStep cp pub (inp.finalizedHalf Vs) →
         SgOk EsStep.σ EsStep.cvk cp pub →
         kimchiVerify IpaVesta.curve EsStep.σ EsStep.cvk cp pub = true := by
-  intro r stmt hd hb i hmv inp ms hms htie ht cp oldsW pub hpr hol hguard hf hsg
+  intro r stmt hd hb i hmv inp ms hms htie cp oldsW pub hpr hol hguard hf hsg
   -- the step side: slot `i` finalizes, over the domain its branch data names
   obtain ⟨-, -, hscal, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads E EsStep D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep
@@ -225,15 +261,15 @@ private theorem wrapStep_kimchiVerify_core
       (Set.mem_Iio.2 (by norm_num [PALLAS_SCALAR_CARD]; omega))
       (Set.mem_Iio.2 (by norm_num [PALLAS_SCALAR_CARD]; omega)) (by push_cast at hbd ⊢; exact hbd)
     rw [hdv, show n0 = D.keyLog2 by omega]
-  exact hscal hdom cp pub hguard Vw hd.2.u v hv hv1 ht hf hsg
+  exact hscal hdom cp pub hguard Vw stmt.claims v hv hv1
+    (claimsCast_of_reads stmt _ htie) hf hsg
 
 /-- **The wrap circuit's step proof verifies.** Let `Vw` satisfy the wrap circuit built from the
 tag's step environments `stepEnvs`, over one SRS, with its branch index reading as branch `b`
 whose table is `stepEnvs[b]`'s Lagrange basis, and let `Vs` satisfy the next step circuit, which
-finalizes over `stepEnvs[b]`'s domains. For every must-verify slot whose wrap
-proof was made at the wrap circuit's public input, and whose finalized half holds the wrap
-circuit's claims, each step proof the wrap circuit's cells read as is accepted by `kimchiVerify`,
-under the guards, the finalize ties and `SgOk`. -/
+finalizes over `stepEnvs[b]`'s domains. For every must-verify slot whose wrap proof was made at
+the wrap circuit's public input, each step proof the wrap circuit's cells read as is accepted by
+`kimchiVerify`, under the guards, the finalize ties and `SgOk`. -/
 theorem wrapStep_kimchiVerify
     -- the next rule's `n` slots; the tag's `w`, the wrap circuit's slots; the wrap circuit's
     -- `branches`, the step proof it verifies at `ncStep` chunks
@@ -323,8 +359,6 @@ theorem wrapStep_kimchiVerify
       ∀ ms : List Bool, List.Forall₂ (CircuitType.Reads Vs) inp.proofMask.toList ms →
       -- its wrap proof was made at the wrap circuit's public input
       CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
-      -- its finalized half holds the wrap circuit's claims
-      HalvesTies (GroupHalf.wrap Vw hd.2.u) (inp.finalizedHalf Vs) →
       ∀ (cp : KimchiProof IpaVesta.curve ncStep stepEnvs[b].σ.k)
         (oldsW : List (IpaVesta.curve.Point × Bool)),
         -- the step proof's public input: the wrap circuit's packed step statement
@@ -343,11 +377,11 @@ theorem wrapStep_kimchiVerify
     have := D.key_n
     simp only [KimchiVK.n] at this
     simpa [stepDomainLog2s] using Nat.pow_right_injective (le_refl 2) this
-  intro r stmt hd hb i hmv inp ms hms htie ht cp oldsW pub hpr hol hguard hf hsg
+  intro r stmt hd hb i hmv inp ms hms htie cp oldsW pub hpr hol hguard hf hsg
   exact wrapStep_kimchiVerify_core E stepEnvs[b] Vw gen widths
     (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths
     advW hbr hwrap b (by simp [stepKeyCells]) (by simpa [stepDomainLog2s] using hlag)
     (by rw [hσ b]) hsize hnz havoidS D hlog hn hw dummySg dummyUnf hsmall havoid Vs rule adv hstep
-    hb i hmv ms hms htie ht cp oldsW hpr hol hguard hf hsg
+    hb i hmv ms hms htie cp oldsW hpr hol hguard hf hsg
 
 end Pickles

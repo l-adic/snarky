@@ -507,10 +507,6 @@ def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fq))) (g : GroupVar
   ivpInputOf g.val.group.statement.proofState.deferredValues.toDeferredValues g.sgOld keyCells
     g.val.group.proof
 
-/-- The group circuit as a `GroupHalf`. -/
-abbrev GroupVar.half (V : Valuation Fq) (g : GroupVar k kw n nc) :
-    GroupHalf Bulletproof.IpaVesta.curve (Type1 (FVar Fq)) k := GroupHalf.wrap V g.claims
-
 /-- The verify block as a circuit of its input: `wrapVerifyAt` on the input, with the key's
 cells and the two sponges as constants. -/
 def groupCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]

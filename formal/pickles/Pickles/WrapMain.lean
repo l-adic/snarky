@@ -228,8 +228,8 @@ structure WrapMainFinalizeOut (branches mpv ncStep k : ℕ) where
   outs : List (FopOutput Fq)
 
 /-- The wrap circuit's cells from its verify half: each slot's accumulator digest, the split
-claims, the step statement they pack, the step proof's claims and cells, and the sponge after
-the chosen key. -/
+claims, the step statement they pack, the step proof's cells, and the sponge after the chosen
+key. -/
 structure WrapMainVerifyOut (mpv ncStep k ks : ℕ) where
   /-- Each slot's accumulator digest. -/
   msgs : Vector (FVar Fq) mpv
@@ -239,8 +239,6 @@ structure WrapMainVerifyOut (mpv ncStep k ks : ℕ) where
   /-- The step statement the step proof's public input packs. -/
   statement : StepStatement k mpv (FVar Fq) (BoolVar Fq)
     (Type2 (SplitField (FVar Fq) (BoolVar Fq)))
-  /-- The step proof's claims, from the wrap statement. -/
-  u : UnfinalizedProof ks (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))
   /-- The step proof's cells: the key, commitments, opening and old accumulators. -/
   cells : IvpInput ks ncStep (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))
   /-- The sponge after the chosen key. -/
@@ -287,6 +285,21 @@ def wrapMainFinalize {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : Fop
   let outs ← wrapFinalizePrevProofs P gen bitsV slots
   pure ⟨whichBranch, bits, mask, ps, key, stepAccs, real, slots, outs⟩
 
+/-- The step proof's claims as the wrap statement carries them: the deferred values from its
+packed fields, the digest before evaluations, and `shouldFinalize` set. -/
+def StatementPacked.claims {ks : ℕ} (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) :
+    UnfinalizedProof ks (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) where
+  deferredValues :=
+    { plonk := { alpha := ⟨stmt.scalarChallenges[0]⟩, beta := ⟨stmt.challenges[0]⟩,
+                 gamma := ⟨stmt.challenges[1]⟩, zeta := ⟨stmt.scalarChallenges[1]⟩,
+                 perm := stmt.fpFields[4], zetaToSrsLength := stmt.fpFields[2],
+                 zetaToDomainSize := stmt.fpFields[3] }
+      combinedInnerProduct := stmt.fpFields[0], b := stmt.fpFields[1],
+      xi := ⟨stmt.scalarChallenges[2]⟩
+      bulletproofChallenges := stmt.bulletproofChallenges.map SizedF.mk }
+  shouldFinalize := true_
+  spongeDigestBeforeEvaluations := stmt.digests[0]
+
 /-- The wrap circuit's verify half: the step proof's group half, checked by the verify block
 over the public-input commitment masked across branches, with what it reads first: the per-slot
 accumulator digests right to left, the step-side digest's equality, the opening and messages,
@@ -312,14 +325,7 @@ def wrapMainVerify {branches mpv ncStep k ks : ℕ} (log2s : Vector ℕ branches
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))) :=
     { proofState := { unfinalizedProofs := splits, messagesForNextStepProof := hd.proofState.2 }
       messagesForNextWrapProof := msgs }
-  let dv : DeferredValues ks (FVar Fq) (Type1 (FVar Fq)) :=
-    { plonk := { alpha := ⟨stmt.scalarChallenges[0]⟩, beta := ⟨stmt.challenges[0]⟩,
-                 gamma := ⟨stmt.challenges[1]⟩, zeta := ⟨stmt.scalarChallenges[1]⟩,
-                 perm := stmt.fpFields[4], zetaToSrsLength := stmt.fpFields[2],
-                 zetaToDomainSize := stmt.fpFields[3] }
-      combinedInnerProduct := stmt.fpFields[0], b := stmt.fpFields[1],
-      xi := ⟨stmt.scalarChallenges[2]⟩
-      bulletproofChallenges := stmt.bulletproofChallenges.map SizedF.mk }
+  let dv := stmt.claims.deferredValues
   let pr : IvpProof ks ncStep (FVar Fq) (Type1 (FVar Fq)) :=
     { wComm := messages.1.map (·.map (·.pt))
       zComm := messages.2.1.map (·.pt)
@@ -331,9 +337,6 @@ def wrapMainVerify {branches mpv ncStep k ks : ℕ} (log2s : Vector ℕ branches
   let sgOld := (List.finRange mpv).map fun j =>
     (some (maskRev.getD j.val true_), hd.stepAccs[j].pt)
   let shared := log2s.toList.all (· == log2s.toList.headD 0)
-  let u : UnfinalizedProof ks (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
-    { deferredValues := dv, shouldFinalize := true_,
-      spongeDigestBeforeEvaluations := stmt.digests[0] }
   let cells := ivpInputOf dv sgOld hd.key pr
   let sv ← spongeAfterIndex sp hd.key
   wrapVerify IpaScalarOps.wrap IpaEndo.vesta sp (.const ((Pasta.pallasLam : ℤ) : Fq))
@@ -341,8 +344,8 @@ def wrapMainVerify {branches mpv ncStep k ks : ℕ} (log2s : Vector ℕ branches
     (Vector.toList <$> publicInputCommitMasked (C := IpaVesta.curve) shared (constPt h) hd.bits
       statement.packed (log2s.toList.map lagrange))
     (wrapPaddingSponge sp dummy (MaxProofsVerified - mpv))
-    (hd.outs.map (·.expandedChallenges)) stmt.digests[1] u cells
-  pure ⟨msgs, splits, statement, u, cells, sv⟩
+    (hd.outs.map (·.expandedChallenges)) stmt.digests[1] stmt.claims cells
+  pure ⟨msgs, splits, statement, cells, sv⟩
 
 /-- The wrap circuit over its packed statement (`StatementPacked`), at `k` rounds. The branches'
 slot counts `widths`, step domains `log2s`, step keys and wrap domain pins are the tag's;
@@ -932,7 +935,7 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
         OldsRead Vs out.cells.sgOld cp oldsW →
         ∃ v : BoolVar Fq,
           VerifyReads (wrapSide Vs) EsStep.σ EsStep.cvk cp (wrapPublicInput EsStep Vs out.statement)
-            out.u false v ∧ (↑v : CVar Fq).val Vs = 1⌝⦄ := by
+            stmt.claims false v ∧ (↑v : CVar Fq).val Vs = 1⌝⦄ := by
   have hsp := IpaVesta.curve.sponge.hsize
   have hmsg := builder_spec_mapM (fun j : Fin mpv =>
       hashMessagesForNextWrapProof (c := Builder Vs (KimchiConstraint Fq))
@@ -1151,7 +1154,7 @@ theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
         OldsRead Vs r.2.cells.sgOld cp oldsW →
         ∃ v : BoolVar Fq,
           VerifyReads (wrapSide Vs) EsStep.σ EsStep.cvk cp
-            (wrapPublicInput EsStep Vs r.2.statement) r.2.u false v ∧
+            (wrapPublicInput EsStep Vs r.2.statement) stmt.claims false v ∧
           (↑v : CVar Fq).val Vs = 1⌝⦄ := by
   have hcast := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
   simp only [wrapMain]

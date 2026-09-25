@@ -30,9 +30,11 @@ booleanity follows from satisfaction (`BranchData.mask_boolean`).
   the public input, the proof cells as the proof, the `sg` cells as the old accumulators, the
   evaluation cells as the evaluations, the branch's domain as the key's;
 * `VkReads`: the circuit's key cells read as the key;
-* `HalvesTies`: the two circuits hold one set of deferred claims;
+* `ClaimsCast`: the wrap circuit's claim cells hold the step circuit's, reduced into the wrap
+  field — what the statement carries between them; that the two circuits then hold one set of
+  deferred claims (`HalvesTies`) is derived;
 * no hypothesis where a circuit enforces it: the three scalars `ftComm` scales by, which the
-  scalar circuit checks and `HalvesTies` carries over. No scalar a ladder reads is excluded:
+  scalar circuit checks and the cast carries over. No scalar a ladder reads is excluded:
   every ladder top is below `4·order − 4` (`wrapSide_claimOk`);
 * `havoid`: the SRS avoids the key's Lagrange relations (`SRS.Avoids`,
   `Env.lagrangeRelations`). The key's Lagrange points are commitments against the SRS, finite
@@ -128,7 +130,7 @@ open StepProof in
 /-- **A step proof's two circuits, satisfied, make `kimchiVerify` accept.** The wrap circuit's
 verify block and the step circuit's scalar half, each compiled over its input and satisfied,
 with the inputs reading as the wire's proof (`InputReads`), the key cells as the key
-(`VkReads`) and the two circuits holding one set of deferred claims (`HalvesTies`): under the
+(`VkReads`) and the wrap circuit's claim cells holding the step circuit's (`ClaimsCast`): under the
 proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
 theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
     (E : Env IpaVesta.curve nc)
@@ -153,8 +155,8 @@ theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
     (hin : InputReads E cp pub domains Vg Vs (groupInput E.σ.k kw n nc) (scalarInput E.σ.k nc))
     -- the key cells read as the key
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
-    -- the two circuits hold one set of deferred claims
-    (ht : HalvesTies ((groupInput E.σ.k kw n nc).half Vg) ((scalarInput E.σ.k nc).half Vs))
+    -- the wrap circuit's claim cells hold the step circuit's, reduced into the wrap field
+    (hc : ClaimsCast Vg (groupInput E.σ.k kw n nc).claims Vs (scalarInput E.σ.k nc).claims)
     -- the SRS avoids the key's Lagrange relations
     (havoid : E.σ.Avoids E.lagrangeRelations)
     -- of the proof itself
@@ -175,7 +177,7 @@ theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
       fun con hc => hsatS con (mem_compile_of_mem_check hc)).1
   exact (builder_spec_iff _ _).mp
     (scalarCircuit_reads E cp _ hguard Vs domains (scalarInput E.σ.k nc) hmask hdom Vg _ v hv hv1
-      ht hf hsg) _
+      hc hf hsg) _
     fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Pickles
