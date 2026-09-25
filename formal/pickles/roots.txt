@@ -48,6 +48,7 @@ Pickles.xHatMasked_reads_publicCommitment
 Pickles.hashMessagesForNextWrapProof_padded
 Pickles.splitUnfinalized_spec
 Pickles.chooseKey_spec
+Pickles.vkReads_of_reads
 
 -- TODO: drop once the wrap main port consumes them. The x_hat ladders' bounds on the packed
 -- scalars, the frame laws that carry them through the wrap verifier, and the wrap public

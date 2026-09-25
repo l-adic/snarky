@@ -50,16 +50,6 @@ def xhatStepCorr (pts : Array XhatStepCurve.Point) (i : ℕ) : XhatStepCurve.Poi
 def oneChunk {C : Bulletproof.Ipa.KimchiCurve} (pts : Array C.Point) : List (Vector C.Point 1) :=
   pts.toList.map (#v[·])
 
-/-! ## A verified key as constants -/
-
-/-- A checked key's commitments as constant cells. -/
-def keyCellsOf {C : Bulletproof.Ipa.KimchiCurve} {F : Type} {nc : ℕ}
-    (cell : C.Point → AffinePoint (FVar F)) (cvk : Kimchi.Verifier.KimchiVK C nc) :
-    VkComms nc (AffinePoint (FVar F)) :=
-  ⟨cvk.sigmaComm.map (·.map cell), cvk.coefficientsComm.map (·.map cell),
-   cvk.genericComm.map cell, cvk.poseidonComm.map cell, cvk.completeAddComm.map cell,
-   cvk.mulComm.map cell, cvk.emulComm.map cell, cvk.endomulScalarComm.map cell⟩
-
 /-- A key's commitments in the index digest's absorb order: `σ₀…σ₆`, the coefficients, then
 the selectors. -/
 def digestOrder {nc : ℕ} {f : Type} (k : VkComms nc f) : List (Vector f nc) :=

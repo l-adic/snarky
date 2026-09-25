@@ -72,6 +72,7 @@ def roots : List Name :=
     `Pickles.hashMessagesForNextWrapProof_padded,
     `Pickles.splitUnfinalized_spec,
     `Pickles.chooseKey_spec,
+    `Pickles.vkReads_of_reads,
     `Pickles.finalizeOtherProofCore_spec,
     `Pickles.finalizeOtherProofStep_spec,
     `Pickles.finalizeOtherProofWrap_spec,

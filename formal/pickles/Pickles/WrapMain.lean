@@ -26,6 +26,8 @@ branches, and finalizes the previous wrap proofs that step proof verified.
 
 * `onesVector_spec`: with the first unused slot reading as `w`, slot `i` reads as `[i < w]`.
 * `chooseKey_spec`: with the bits reading as branch `b`, the chosen key reads as branch `b`'s.
+* `vkReads_of_reads`: key cells reading as a key's constant cells read as its commitments
+  (`VkReads`), the sponge after them squeezing to its digest.
 * `wrapBranchBlock_spec`: the branch data reads as `4·log2s[b] + Σᵢ 2^(1−i)·[i < widths[b]]`
   for the branch `b` the bits name.
 * `splitUnfinalized_spec`: each split scalar joins to its original (`SplitReads`).
@@ -683,6 +685,79 @@ theorem chooseKey_spec {branches : ℕ} [NeZero branches] (bits : Vector (BoolVa
 end ChooseKeyRead
 
 end Reads
+
+/-! ## A chosen key reads as a verifier key -/
+
+section KeyRead
+
+open Std.Do Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open CompElliptic.CurveForms.ShortWeierstrass
+
+variable {C : KimchiCurve} {nc : ℕ} {V : Valuation C.BaseField}
+
+/-- A key's commitments as values, each point by its coordinates. -/
+private def keyValsOf (cvk : KimchiVK C nc) : VkComms nc (AffinePoint C.BaseField) :=
+  ⟨cvk.sigmaComm.map (·.map fun P => ⟨P.x, P.y⟩),
+   cvk.coefficientsComm.map (·.map fun P => ⟨P.x, P.y⟩),
+   cvk.genericComm.map (fun P => ⟨P.x, P.y⟩), cvk.poseidonComm.map (fun P => ⟨P.x, P.y⟩),
+   cvk.completeAddComm.map (fun P => ⟨P.x, P.y⟩), cvk.mulComm.map (fun P => ⟨P.x, P.y⟩),
+   cvk.emulComm.map (fun P => ⟨P.x, P.y⟩), cvk.endomulScalarComm.map (fun P => ⟨P.x, P.y⟩)⟩
+
+/-- A key's constant cells read as its values. -/
+private theorem reads_keyCellsOf (cvk : KimchiVK C nc) :
+    CircuitType.Reads V (keyCellsOf constPt cvk) (keyValsOf cvk) := by
+  rw [VkComms.reads_iff]
+  intro p
+  cases p <;> simp [keyCellsOf, keyValsOf, VkComms.at, constPt, CVar.val]
+
+/-- The values' points are the key's commitments' coordinates. -/
+private theorem keyValsOf_at (cvk : KimchiVK C nc) (p : VkPos nc) :
+    (keyValsOf cvk).at p = ⟨(cvk.comms.at p).x, (cvk.comms.at p).y⟩ := by
+  cases p <;> simp [keyValsOf, VkComms.at, KimchiVK.comms]
+
+/-- **A key read as a verifier key's commitments.** Key cells reading as the constant cells of
+`cvk` (`keyCellsOf constPt`) read as its commitments (`KeyReads`), once they are finite points,
+and a sponge reading as the fresh sponge after their coordinates squeezes to its digest. -/
+theorem vkReads_of_reads (E : Env C nc) (k : VkComms nc (AffinePoint (FVar C.BaseField)))
+    (sv : SpongeVar C.BaseField)
+    (hk : ∀ kv : VkComms nc (AffinePoint C.BaseField),
+      CircuitType.Reads V (keyCellsOf constPt E.cvk) kv → CircuitType.Reads V k kv)
+    (hnz : ∀ P ∈ E.cvk.comms.indexPoints, P ≠ 0)
+    (hsv : SpongeVar.ReadsAt V sv (Poseidon.absorb C.sponge.params Poseidon.init
+      (k.indexPoints.flatMap fun P => [P.x.val V, P.y.val V]))) :
+    VkReads E.cvk V sv k := by
+  have hpt := (VkComms.reads_iff k _).mp (hk _ (reads_keyCellsOf E.cvk))
+  -- each cell reads as its commitment's coordinates
+  have hat : ∀ p, (k.at p).x.val V = (E.cvk.comms.at p).x ∧
+      (k.at p).y.val V = (E.cvk.comms.at p).y := by
+    intro p
+    simpa [keyValsOf_at] using hpt p
+  have hnz' : ∀ p, E.cvk.comms.at p ≠ 0 := fun p => hnz _ (by
+    cases p <;> simp only [VkComms.indexPoints, VkComms.selectors, KimchiVK.comms, VkComms.at,
+      List.mem_flatMap, List.mem_append, List.mem_cons, Vector.mem_toList_iff] <;>
+      exact ⟨_, by simp [Vector.getElem_mem], Vector.getElem_mem _⟩)
+  have honc : ∀ p, OnCurveAt C.E.toAffine V (k.at p) (SWPoint.equivPoint C.E (E.cvk.comms.at p)) :=
+    fun p => by
+      have h := onCurveAt_constPt (V := V) _ (hnz' p)
+      unfold OnCurveAt at h ⊢
+      rw [(hat p).1, (hat p).2]
+      simpa [constPt, CVar.val] using h
+  have hvec : ∀ {m : ℕ} (cells : Vector (AffinePoint (FVar C.BaseField)) m)
+      (Ps : Vector C.Point m), (∀ c : Fin m, OnCurveAt C.E.toAffine V cells[c]
+        (SWPoint.equivPoint C.E Ps[c])) → CommReads C V cells.toList Ps.toList := by
+    intro m cells Ps h
+    exact List.forall₂_iff_get.mpr ⟨by simp, fun i h1 h2 => by simpa using h ⟨i, by simpa using h1⟩⟩
+  have hkey : KeyReads C V k E.cvk := ⟨fun i => hvec _ _ fun c => honc (.sigma i c),
+    fun i => hvec _ _ fun c => honc (.coeff i c), hvec _ _ fun c => honc (.generic c),
+    hvec _ _ fun c => honc (.poseidon c), hvec _ _ fun c => honc (.completeAdd c),
+    hvec _ _ fun c => honc (.mul c), hvec _ _ fun c => honc (.emul c),
+    hvec _ _ fun c => honc (.endomulScalar c)⟩
+  -- the absorbed coordinates are the key's (`KeyReads.indexCoords`)
+  refine ⟨⟨_, hsv, ?_⟩, hkey⟩
+  rw [hkey.indexCoords, E.digest_eq]
+  rfl
+
+end KeyRead
 
 /-! ## The wrap circuit's read -/
 
