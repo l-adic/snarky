@@ -504,8 +504,7 @@ theorem wrapMainHead_reads {bp mpv nc : ℕ} (E : Env IpaPallas.curve 1) (Vs : V
     (slotWidths : Vector ℕ mpv) (adv : WrapMainAdvice mpv nc E.σ.k slotWidths.toList.sum)
     (branchData : FVar Fq)
     (hwl : widths.length = bp + 1) (hll : log2s.length = bp + 1) (hw : ∀ w ∈ widths, w ≤ mpv)
-    (hinjB : ∀ j k : ℕ, j < bp + 1 → k < bp + 1 → (j : Fq) = k → j = k)
-    (hinj : ∀ j k : ℕ, j ≤ mpv → k ≤ mpv → (j : Fq) = k → j = k)
+    (hmpv : mpv ≤ MaxProofsVerified) (hbp : bp < PALLAS_SCALAR_CARD)
     (j : ℕ) (hdom : wrapDomainLog2s[j]? = some E.cvk.domainLog2)
     (hgen : gen E.cvk.domainLog2 = E.cvk.omega) :
     ⦃⌜True⌝⦄
@@ -518,6 +517,14 @@ theorem wrapMainHead_reads {bp mpv nc : ℕ} (E : Env IpaPallas.curve 1) (Vs : V
       ∀ i : Fin mpv, hd.slots[i].pins[(⟨b, hb⟩ : Fin (bp + 1))] = some j →
         (↑hd.slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
         hd.slots[i].ScalarReads E Vs⌝⦄ := by
+  -- branch indices and slot counts are below the field's characteristic
+  have hcast := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
+  have hinjB : ∀ a a' : ℕ, a < bp + 1 → a' < bp + 1 → (a : Fq) = a' → a = a' :=
+    fun a a' ha ha' => hcast (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega))
+  have hmax : MaxProofsVerified < PALLAS_SCALAR_CARD := by
+    norm_num [MaxProofsVerified, PALLAS_SCALAR_CARD]
+  have hinj : ∀ a a' : ℕ, a ≤ mpv → a' ≤ mpv → (a : Fq) = a' → a = a' :=
+    fun a a' ha ha' => hcast (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega))
   simp only [wrapMainHead]
   have hbb := fun wb => wrapBranchBlock_spec (V := Vs) (c := KimchiConstraint Fq) (bp + 1) mpv
     widths log2s wb branchData hwl hll hw hinjB hinj
@@ -551,8 +558,7 @@ theorem wrapMain_reads {bp mpv nc : ℕ} (E : Env IpaPallas.curve 1) (Vs : Valua
     (dummy : List Fq) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv nc E.σ.k slotWidths.toList.sum) (stmt : Vector (FVar Fq) 40)
     (hwl : widths.length = bp + 1) (hll : log2s.length = bp + 1) (hw : ∀ w ∈ widths, w ≤ mpv)
-    (hinjB : ∀ j k : ℕ, j < bp + 1 → k < bp + 1 → (j : Fq) = k → j = k)
-    (hinj : ∀ j k : ℕ, j ≤ mpv → k ≤ mpv → (j : Fq) = k → j = k)
+    (hmpv : mpv ≤ MaxProofsVerified) (hbp : bp < PALLAS_SCALAR_CARD)
     (j : ℕ) (hdom : wrapDomainLog2s[j]? = some E.cvk.domainLog2)
     (hgen : gen E.cvk.domainLog2 = E.cvk.omega) :
     ⦃⌜True⌝⦄
@@ -567,7 +573,7 @@ theorem wrapMain_reads {bp mpv nc : ℕ} (E : Env IpaPallas.curve 1) (Vs : Valua
         hd.slots[i].ScalarReads E Vs⌝⦄ := by
   simp only [wrapMain]
   have hh := wrapMainHead_reads E Vs gen widths log2s stepKeys pins dummy slotWidths adv
-    (stmt[29]?.getD (CVar.const 0)) hwl hll hw hinjB hinj j hdom hgen
+    (stmt[29]?.getD (CVar.const 0)) hwl hll hw hmpv hbp j hdom hgen
   have ht := fun hd : WrapMainHead bp mpv nc E.σ.k => builder_spec_true (V := Vs)
     (c := KimchiConstraint Fq)
     (wrapMainTail log2s lagrange h dummy slotWidths adv stmt hd)
