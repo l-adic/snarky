@@ -71,6 +71,7 @@ def roots : List Name :=
     `Pickles.xHatMasked_reads_publicCommitment,
     `Pickles.hashMessagesForNextWrapProof_padded,
     `Pickles.splitUnfinalized_spec,
+    `Pickles.chooseKey_spec,
     `Pickles.finalizeOtherProofCore_spec,
     `Pickles.finalizeOtherProofStep_spec,
     `Pickles.finalizeOtherProofWrap_spec,

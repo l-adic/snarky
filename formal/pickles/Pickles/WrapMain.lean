@@ -25,6 +25,7 @@ branches, and finalizes the previous wrap proofs that step proof verified.
 ## Main results
 
 * `onesVector_spec`: with the first unused slot reading as `w`, slot `i` reads as `[i < w]`.
+* `chooseKey_spec`: with the bits reading as branch `b`, the chosen key reads as branch `b`'s.
 * `wrapBranchBlock_spec`: the branch data reads as `4·log2s[b] + Σᵢ 2^(1−i)·[i < widths[b]]`
   for the branch `b` the bits name.
 * `splitUnfinalized_spec`: each split scalar joins to its original (`SplitReads`).
@@ -259,7 +260,7 @@ def wrapMainHead {branches mpv nc k : ℕ} [NeZero branches] (P : FopParams Fq) 
 /-- The wrap circuit after its finalize block: the per-slot accumulator digests right to left,
 the step-side digest's equality, the opening and messages, the claim split, and the verify
 block over the public-input commitment masked across branches. -/
-def wrapMainTail {branches mpv nc k : ℕ} [NeZero branches] (log2s : List ℕ)
+def wrapMainTail {branches mpv nc k : ℕ} (log2s : List ℕ)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point nc)) (h : IpaVesta.curve.Point)
     (dummy : List Fq) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv nc k slotWidths.toList.sum) (stmt : Vector (FVar Fq) 40)
@@ -498,6 +499,188 @@ theorem splitUnfinalized_spec [ToNat F] {k : ℕ}
   unfold splitUnfinalized
   have h := fun x => splitShifted_spec (V := V) (c := c) x
   mvcgen [h]
+
+section ChooseKeyRead
+
+open Kimchi
+
+variable {nc : ℕ}
+
+/-- A point of a key: a commitment and one of its chunks. -/
+private inductive VkPos (nc : ℕ) where
+  | sigma (i : Fin permCols) (c : Fin nc)
+  | coeff (i : Fin coeffCols) (c : Fin nc)
+  | generic (c : Fin nc)
+  | poseidon (c : Fin nc)
+  | completeAdd (c : Fin nc)
+  | mul (c : Fin nc)
+  | emul (c : Fin nc)
+  | endomulScalar (c : Fin nc)
+
+/-- A key's point at a position. -/
+private def VkComms.at {f : Type} (k : VkComms nc f) : VkPos nc → f
+  | .sigma i c => k.sigmaComm[i][c]
+  | .coeff i c => k.coefficientsComm[i][c]
+  | .generic c => k.genericComm[c]
+  | .poseidon c => k.poseidonComm[c]
+  | .completeAdd c => k.completeAddComm[c]
+  | .mul c => k.mulComm[c]
+  | .emul c => k.emulComm[c]
+  | .endomulScalar c => k.endomulScalarComm[c]
+
+omit [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] in
+/-- A key reads as a value key exactly when every point does. -/
+private theorem VkComms.reads_iff (k : VkComms nc (AffinePoint (FVar F)))
+    (kv : VkComms nc (AffinePoint F)) :
+    CircuitType.Reads V k kv ↔
+      ∀ p, (k.at p).x.val V = (kv.at p).x ∧ (k.at p).y.val V = (kv.at p).y := by
+  rw [CircuitType.reads_ofEquiv]
+  simp only [VkComms.equivProd, Equiv.coe_fn_mk, CircuitType.reads_prod,
+    CircuitType.reads_vector, reads_affinePoint]
+  constructor
+  · rintro ⟨hs, hc, hg, hp, hca, hm, he, hes⟩ p
+    cases p with
+    | sigma i c => exact hs i i.isLt c c.isLt
+    | coeff i c => exact hc i i.isLt c c.isLt
+    | generic c => exact hg c c.isLt
+    | poseidon c => exact hp c c.isLt
+    | completeAdd c => exact hca c c.isLt
+    | mul c => exact hm c c.isLt
+    | emul c => exact he c c.isLt
+    | endomulScalar c => exact hes c c.isLt
+  · intro h
+    exact ⟨fun i hi c hc => h (.sigma ⟨i, hi⟩ ⟨c, hc⟩),
+      fun i hi c hc => h (.coeff ⟨i, hi⟩ ⟨c, hc⟩), fun c hc => h (.generic ⟨c, hc⟩),
+      fun c hc => h (.poseidon ⟨c, hc⟩), fun c hc => h (.completeAdd ⟨c, hc⟩),
+      fun c hc => h (.mul ⟨c, hc⟩), fun c hc => h (.emul ⟨c, hc⟩),
+      fun c hc => h (.endomulScalar ⟨c, hc⟩)⟩
+
+/-- `f` over a vector last to first relates each entry to its result. -/
+private theorem vecMapMRev_spec {α β : Type} {n : ℕ} (f : α → CircuitM F (Builder V c) β)
+    (Q : α → β → Prop) (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜Q a r⌝⦄) (v : Vector α n) :
+    ⦃⌜True⌝⦄ vecMapMRev f v ⦃⇓ rs _ => ⌜∀ i : Fin n, Q v[i] rs[i]⌝⦄ := by
+  simp only [vecMapMRev]
+  have h := builder_spec_vector_mapM_get f Q hf v.reverse
+  mvcgen [h]
+  rename_i rev _ hrev
+  intro i
+  have := hrev ⟨n - 1 - i, by omega⟩
+  simp only [Vector.getElem_reverse] at this ⊢
+  have hi : n - 1 - (n - 1 - i.val) = i.val := by omega
+  simpa [hi] using this
+
+/-- `f` over a key's commitments relates each point to its result. -/
+private theorem VkComms.mapMRev_spec (f : AffinePoint (FVar F) → CircuitM F (Builder V c)
+      (AffinePoint (FVar F))) (Q : AffinePoint (FVar F) → AffinePoint (FVar F) → Prop)
+    (hf : ∀ p, ⦃⌜True⌝⦄ f p ⦃⇓ r _ => ⌜Q p r⌝⦄) (k : VkComms nc (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ VkComms.mapMRev f k ⦃⇓ r _ => ⌜∀ p, Q (k.at p) (r.at p)⌝⦄ := by
+  simp only [VkComms.mapMRev]
+  have hv := fun (v : Vector (AffinePoint (FVar F)) nc) => builder_spec_vector_mapM_get f Q hf v
+  have hvv := fun {m : ℕ} (vv : Vector (Vector (AffinePoint (FVar F)) nc) m) =>
+    vecMapMRev_spec (fun v => v.mapM f) (fun v w => ∀ c : Fin nc, Q v[c] w[c]) (fun v => hv v) vv
+  mvcgen [hv, hvv]
+  rename_i _ _ hes _ _ he _ _ hm _ _ hca _ _ hp _ _ hg _ _ hc _ _ hs
+  intro p
+  cases p with
+  | sigma i c => exact hs i c
+  | coeff i c => exact hc i c
+  | generic c => exact hg c
+  | poseidon c => exact hp c
+  | completeAdd c => exact hca c
+  | mul c => exact hm c
+  | emul c => exact he c
+  | endomulScalar c => exact hes c
+
+/-- A point scaled by a bit reads as the bit times each coordinate. -/
+private theorem scalePt_spec (b : FVar F) (p : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄ scalePt (c := Builder V c) b p
+    ⦃⇓ r _ => ⌜r.x.val V = b.val V * p.x.val V ∧ r.y.val V = b.val V * p.y.val V⌝⦄ := by
+  simp only [scalePt]
+  mvcgen
+
+omit [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] in
+/-- Two keys added point by point read as the sums. -/
+private theorem VkComms.add_at_val (a b : VkComms nc (AffinePoint (FVar F))) (p : VkPos nc) :
+    ((VkComms.add a b).at p).x.val V = (a.at p).x.val V + (b.at p).x.val V ∧
+      ((VkComms.add a b).at p).y.val V = (a.at p).y.val V + (b.at p).y.val V := by
+  cases p <;> simp [VkComms.add, VkComms.at, CVar.val_add_]
+
+omit [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] in
+/-- A fold of `add` reads, point by point, as the sum of the keys' readings. -/
+private theorem VkComms.foldl_add_at_val (p : VkPos nc) :
+    ∀ (L : List (VkComms nc (AffinePoint (FVar F)))) (h : VkComms nc (AffinePoint (FVar F))),
+      ((L.foldl VkComms.add h).at p).x.val V
+          = ((h :: L).map fun k => (k.at p).x.val V).sum ∧
+        ((L.foldl VkComms.add h).at p).y.val V
+          = ((h :: L).map fun k => (k.at p).y.val V).sum
+  | [], h => by simp
+  | k :: L, h => by
+    obtain ⟨hx, hy⟩ := VkComms.foldl_add_at_val p L (VkComms.add h k)
+    obtain ⟨ax, ay⟩ := VkComms.add_at_val (V := V) h k p
+    simp only [List.foldl_cons, List.map_cons, List.sum_cons] at hx hy ⊢
+    rw [hx, hy, ax, ay]
+    constructor <;> ring
+
+/-- **The chosen key.** Under any valuation satisfying the emitted constraints, with the bits
+reading as branch `b`'s one-hot vector, the chosen key reads as `keys[b]` does. -/
+theorem chooseKey_spec {branches : ℕ} [NeZero branches] (bits : Vector (BoolVar F) branches)
+    (keys : Vector (VkComms nc (AffinePoint (FVar F))) branches) (b : Fin branches)
+    (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b))) :
+    ⦃⌜True⌝⦄ chooseKey (c := Builder V c) bits keys
+    ⦃⇓ r _ => ⌜∀ kv : VkComms nc (AffinePoint F), CircuitType.Reads V keys[b] kv →
+      CircuitType.Reads V r kv⌝⦄ := by
+  simp only [chooseKey]
+  have hs := fun e : BoolVar F × VkComms nc (AffinePoint (FVar F)) =>
+    VkComms.mapMRev_spec (scalePt (↑e.1 : FVar F))
+      (fun p r => r.x.val V = (↑e.1 : CVar F).val V * p.x.val V ∧
+        r.y.val V = (↑e.1 : CVar F).val V * p.y.val V)
+      (fun p => scalePt_spec (c := c) _ p) e.2
+  have hscaled := vecMapMRev_spec (fun e : BoolVar F × VkComms nc (AffinePoint (FVar F)) =>
+      VkComms.mapMRev (scalePt (↑e.1 : FVar F)) e.2)
+    (fun e r => ∀ p, (r.at p).x.val V = (↑e.1 : CVar F).val V * (e.2.at p).x.val V ∧
+      (r.at p).y.val V = (↑e.1 : CVar F).val V * (e.2.at p).y.val V) hs (bits.zip keys)
+  have hseal := fun k : VkComms nc (AffinePoint (FVar F)) => VkComms.mapMRev_spec sealPoint
+    (fun p r => r.x.val V = p.x.val V ∧ r.y.val V = p.y.val V)
+    (fun p => sealPoint_spec (c := c) p) k
+  mvcgen [hscaled, hseal]
+  rename_i scaled _ hsc r _
+  intro hr kv hk
+  rw [VkComms.reads_iff] at hk ⊢
+  intro p
+  -- each bit reads as `[l = b]`
+  have hbit : ∀ l : Fin branches, (↑bits[l] : CVar F).val V = if l = b then 1 else 0 := by
+    intro l
+    have h := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hbits l l.isLt)
+    simpa [bit, Fin.ext_iff] using h
+  -- the sum over the branches picks branch `b`
+  have hsum : ∀ g : VkComms nc (AffinePoint (FVar F)) → AffinePoint (FVar F) → F,
+      (∀ i : Fin branches, g scaled[i] (scaled[i].at p)
+        = (↑bits[i] : CVar F).val V * g keys[i] (keys[i].at p)) →
+      ((scaled[0]'(Nat.pos_of_neZero branches) :: scaled.toList.tail).map
+          fun k => g k (k.at p)).sum = g keys[b] (keys[b].at p) := by
+    intro g hg
+    have hl : scaled[0]'(Nat.pos_of_neZero branches) :: scaled.toList.tail = scaled.toList := by
+      obtain ⟨⟨l⟩, hl⟩ := scaled
+      cases l with
+      | nil => exact absurd hl (by simpa using (NeZero.ne branches).symm)
+      | cons a l => rfl
+    rw [hl]
+    have hof : scaled.toList.map (fun k => g k (k.at p))
+        = List.ofFn fun i : Fin branches => g scaled[i] (scaled[i].at p) := by
+      apply List.ext_getElem <;> simp
+    rw [hof, List.sum_ofFn]
+    simp only [hg, hbit, ite_mul, one_mul, zero_mul, Finset.sum_ite_eq', Finset.mem_univ,
+      if_true]
+  obtain ⟨hfx, hfy⟩ := VkComms.foldl_add_at_val (V := V) p scaled.toList.tail
+    (scaled[0]'(Nat.pos_of_neZero branches))
+  obtain ⟨hrx, hry⟩ := hr p
+  refine ⟨?_, ?_⟩
+  · rw [hrx, hfx, hsum (fun _ q => q.x.val V) fun i => by simpa using (hsc i p).1]
+    exact (hk p).1
+  · rw [hry, hfy, hsum (fun _ q => q.y.val V) fun i => by simpa using (hsc i p).2]
+    exact (hk p).2
+
+end ChooseKeyRead
 
 end Reads
 
