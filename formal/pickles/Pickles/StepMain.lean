@@ -205,6 +205,71 @@ open Std.Do
 
 variable {V : Valuation Fp}
 
+/-- An entry's cells in allocation order: each split claim as its half then its parity, the
+digest, `β, γ, α, ζ, ξ`, the round challenges, the finalize flag. -/
+theorem AllocUnfinalized.varToFields_toList {k : ℕ}
+    (u : AllocUnfinalized k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
+    (CircuitType.varToFields (F := Fp)
+      (val := AllocUnfinalized k Fp Bool (Type2 (SplitField Fp Bool))) u).toList
+      = ([u.cip.val.sDiv2, (↑u.cip.val.sOdd : CVar Fp), u.b.val.sDiv2, (↑u.b.val.sOdd : CVar Fp),
+          u.zetaToSrsLength.val.sDiv2, (↑u.zetaToSrsLength.val.sOdd : CVar Fp),
+          u.zetaToDomainSize.val.sDiv2, (↑u.zetaToDomainSize.val.sOdd : CVar Fp),
+          u.perm.val.sDiv2, (↑u.perm.val.sOdd : CVar Fp),
+          u.spongeDigest, u.beta, u.gamma, u.alpha, u.zeta, u.xi] : List (CVar Fp))
+        ++ u.bulletproofChallenges.toList ++ [(↑u.shouldFinalize : CVar Fp)] := by
+  have h2 : ∀ x : Type2 (SplitField (FVar Fp) (BoolVar Fp)),
+      CircuitType.varToFields (F := Fp) (val := Type2 (SplitField Fp Bool)) x
+        = #v[x.val.sDiv2, ↑x.val.sOdd] := fun _ => rfl
+  have hf : ∀ x : FVar Fp, CircuitType.varToFields (F := Fp) (val := Fp) x = #v[x] :=
+    fun _ => rfl
+  have hb : ∀ x : BoolVar Fp, CircuitType.varToFields (F := Fp) (val := Bool) x = #v[↑x] :=
+    fun _ => rfl
+  erw [CircuitType.varToFields_ofEquiv]
+  simp only [AllocUnfinalized.equivProd, Equiv.coe_fn_mk, CircuitType.varToFields_prod,
+    CircuitType.varToFields_vector, h2, hf, hb, mapVec_eq_map]
+  have hbp : (Vector.map (CircuitType.varToFields (F := Fp) (val := Fp)) u.bulletproofChallenges)
+      = u.bulletproofChallenges.map fun c => #v[c] := by
+    ext1; simp [hf]
+  rw [hbp]
+  simp only [Vector.toList_append]
+  have hs := toList_flatten_singletons u.bulletproofChallenges id
+  simp only [id] at hs
+  simp [hs]
+
+/-- The step statement's cells open with the unfinalized entries, front-padded to `w` with the
+constant `dummyUnf`, each entry's cells in allocation order. -/
+theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+    [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar] (hw : w ≤ MaxProofsVerified)
+    (verify : SpongeVar Fp → BoolVar Fp →
+      WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
+      UnfinalizedProof k (FVar Fp) (BoolVar Fp) StepSf →
+      IvpInput k ncw (FVar Fp) (BoolVar Fp) StepSf →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
+    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (dummyUnf : UnfVal k)
+    (rule : inVar →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+    (adv : StepMainAdvice n w ncw ncs k ks inVal) :
+    ⦃⌜True⌝⦄
+    stepMain hw verify P domains dummySg dummyUnf rule adv
+    ⦃⇓ r _ => ⌜∃ tail : List (FVar Fp), r.out =
+      (List.replicate (w - n) (CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf)
+          ++ r.unfs.toList).flatMap
+        (fun u => (CircuitType.varToFields (F := Fp) (val := UnfVal k) u).toList) ++ tail⌝⦄ := by
+  have hrule := fun x => builder_spec_true (rule x)
+  have hfm := fun (l : List (SlotVar w ncw ncs k ks)) => builder_spec_true
+    (l.forM (SlotWitness.check (c := Builder V (KimchiConstraint Fp))))
+  have hmap := fun (f : Fin n → CircuitM Fp (Builder V (KimchiConstraint Fp))
+      (FopOutput Fp × BoolVar Fp)) => builder_spec_true ((List.finRange n).mapM f)
+  have hall := fun bs => builder_spec_true
+    (assertAll (c := Builder V (KimchiConstraint Fp)) bs)
+  have hhash := fun (p : Poseidon.Params Fp) (vk : VkComms ncw (AffinePoint (FVar Fp))) a pr =>
+    builder_spec_true
+      (hashMessagesForNextStepProof (c := Builder V (KimchiConstraint Fp)) p vk a pr)
+  simp only [stepMain]
+  mvcgen [hrule, hfm, hmap, hall, hhash, -Snarky.assertAll_spec]
+  exact ⟨_, List.append_assoc _ _ _ |>.trans (List.append_assoc _ _ _)⟩
+
 /-- A list related entrywise to `finRange n` has length `n`, and its entry at `j` is related
 to `j`. -/
 private theorem forall₂_finRange {α : Type} {R : α → Fin n → Prop} {l : List α}

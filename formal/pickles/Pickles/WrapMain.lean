@@ -893,6 +893,56 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
     by_cases hlb : l = b <;> simp [hlb]
   exact ⟨b, hb, hwb, hbits, hck' ⟨b, hb⟩ hread, hbd,
     fun j hdom hgen => hfin' (⟨b, hb⟩, j) hread hdom hgen⟩
+/-- The step statement the verify half packs, for any branch, table and key: its slots are the
+split claims, each split reading as the allocated claims it splits, and the public-input
+ladders bound every packed scalar (`PackedScalar.Bound`). -/
+theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} (Vs : Valuation Fq)
+    (log2s : Vector ℕ branches) (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep))
+    (h : IpaVesta.curve.Point) (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
+    (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
+    (fin : WrapMainFinalizeOut branches mpv ncStep k) (hnc : 0 < ncStep) :
+    ⦃⌜True⌝⦄
+    wrapMainVerify (c := Builder Vs (KimchiConstraint Fq)) log2s lagrange h dummy slotWidths adv
+      stmt fin
+    ⦃⇓ out _ => ⌜out.statement.proofState.unfinalizedProofs = out.splits ∧
+      (∀ i : Fin mpv, SplitClaimsRead Vs fin.proofState.1[i].toUnfinalized out.splits[i]) ∧
+      ∀ x ∈ out.statement.packed, x.Bound Vs⌝⦄ := by
+  have hmsg := builder_spec_mapM (fun j : Fin mpv =>
+      hashMessagesForNextWrapProof (c := Builder Vs (KimchiConstraint Fq))
+        IpaVesta.curve.sponge.params
+        (wrapPaddingSponge IpaVesta.curve.sponge.params dummy
+          (MaxProofsVerified - (fin.real j).length))
+        ((fin.real j).map Vector.toList) fin.stepAccs[j].pt)
+    (fun _ _ => True) id (fun _ => builder_spec_true _) (List.finRange mpv).reverse
+  have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
+      (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
+    (fun a r => SplitClaimsRead Vs a.toUnfinalized r)
+    (fun a => splitUnfinalized_spec (V := Vs) a.toUnfinalized) fin.proofState.1
+  have hsai := builder_spec_true
+    (spongeAfterIndex (c := Builder Vs (KimchiConstraint Fq)) IpaVesta.curve.sponge.params
+      fin.key)
+  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement k mpv (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+      (cells : IvpInput ks ncStep (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) =>
+    wrapVerify_frame (V := Vs) IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
+      (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h) sv
+      (Vector.toList <$> publicInputCommitMasked (C := IpaVesta.curve)
+        (log2s.toList.all (· == log2s.toList.headD 0)) (constPt h) fin.bits st.packed
+        (log2s.toList.map lagrange))
+      (wrapPaddingSponge IpaVesta.curve.sponge.params dummy (MaxProofsVerified - mpv))
+      (fin.outs.map (·.expandedChallenges)) stmt.digests[1] stmt.claims cells
+      (∀ x ∈ st.packed, x.Bound Vs)
+      (by
+        have hb : ⦃⌜True⌝⦄ publicInputCommitMasked (S := Builder Vs (KimchiConstraint Fq))
+            (C := IpaVesta.curve) (log2s.toList.all (· == log2s.toList.headD 0)) (constPt h)
+            fin.bits st.packed (log2s.toList.map lagrange)
+            ⦃⇓ _ _ => ⌜∀ x ∈ st.packed, x.Bound Vs⌝⦄ :=
+          publicInputCommitMasked_bound hnc _ _ _ _ _
+        mvcgen -trivial [hb])
+  simp only [wrapMainVerify]
+  mvcgen [hmsg, hsplit, hsai, hwv]
+
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The wrap circuit's verify read.** Under any valuation satisfying the emitted constraints,
 with the finalize half's bits reading as branch `b` and its chosen key as the constant cells of
@@ -1112,6 +1162,57 @@ theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
     (c := KimchiConstraint Fq)
     (wrapMainVerify log2s lagrange h dummy slotWidths adv stmt hd)
   mvcgen [hh, ht]
+
+/-- Each finalize slot finalizes the claims the circuit allocated for it. -/
+theorem wrapMainFinalize_slots {branches mpv ncStep k ks : ℕ} [NeZero branches]
+    (Vs : Valuation Fq) (P : FopParams Fq) (gen : ℕ → Fq)
+    (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
+    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
+    (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : List Fq)
+    (slotWidths : Vector ℕ mpv) (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
+    (branchData : FVar Fq) :
+    ⦃⌜True⌝⦄
+    wrapMainFinalize (c := Builder Vs (KimchiConstraint Fq)) P gen widths log2s stepKeys pins
+      dummy slotWidths adv branchData
+    ⦃⇓ hd _ => ⌜∀ j : Fin mpv, hd.slots[j].unfinalized = hd.proofState.1[j].toUnfinalized⌝⦄ := by
+  have hbb := fun wb => builder_spec_true (wrapBranchBlock (c := Builder Vs (KimchiConstraint Fq))
+    branches mpv widths log2s wb branchData)
+  have hck := fun bs => builder_spec_true
+    (chooseKey (c := Builder Vs (KimchiConstraint Fq)) bs stepKeys)
+  have hfin := fun bs (sl : Vector (WrapFinalizeSlot branches k 1 Fq) mpv) => builder_spec_true
+    (wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq)) P gen bs sl)
+  simp only [wrapMainFinalize]
+  mvcgen [hbb, hck, hfin]
+  intro j
+  simp
+
+/-- The step statement the wrap circuit verifies at, for any branch, table and key: its slots
+are the split claims, each reading as the allocated claims each finalize slot finalizes, and
+the public-input ladders bound every packed scalar (`wrapMainVerify_statement`). -/
+theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
+    (Vs : Valuation Fq) (gen : ℕ → Fq) (widths : Vector (Fin (mpv + 1)) branches)
+    (log2s : Vector ℕ branches)
+    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
+    (pins : Vector (Vector (Option ℕ) branches) mpv)
+    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
+    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
+    (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) (hnc : 0 < ncStep) :
+    ⦃⌜True⌝⦄
+    wrapMain (c := Builder Vs (KimchiConstraint Fq)) P gen widths log2s stepKeys pins lagrange h
+      dummy slotWidths adv stmt
+    ⦃⇓ r _ => ⌜r.2.statement.proofState.unfinalizedProofs = r.2.splits ∧
+      (∀ i : Fin mpv, SplitClaimsRead Vs r.1.proofState.1[i].toUnfinalized r.2.splits[i]) ∧
+      (∀ x ∈ r.2.statement.packed, x.Bound Vs) ∧
+      ∀ j : Fin mpv, r.1.slots[j].unfinalized = r.1.proofState.1[j].toUnfinalized⌝⦄ := by
+  simp only [wrapMain]
+  have hf := wrapMainFinalize_slots Vs P gen widths log2s stepKeys pins dummy slotWidths adv
+    stmt.branchData
+  have hv := fun fin => wrapMainVerify_statement Vs log2s lagrange h dummy slotWidths adv stmt fin
+    hnc
+  mvcgen [hf, hv]
+  rename_i _ _ hsl _ _ hst
+  exact ⟨hst.1, hst.2.1, hst.2.2, hsl⟩
 
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The wrap circuit's verify read**, over the whole circuit: `wrapMainVerify_reads` with the

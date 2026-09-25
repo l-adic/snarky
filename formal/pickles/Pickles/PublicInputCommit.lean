@@ -2019,6 +2019,14 @@ def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Lea
     | .b10 s => Leaf.b10 s bc.1 bc.2
     | .bit b => Leaf.condAdd b bc.1) ks (tab.bases.zip tab.corrs)
 
+/-- A packed scalar's cell as the public-input ladder bounds it (`CellBound`): the full cell's
+half below `2^253`, the 128-bit cell's below `2^127`, the 10-bit cell's below `2^9`. -/
+def PackedScalar.Bound (V : Valuation F) : PackedScalar F → Prop
+  | .full s => CellBound V 253 s
+  | .b128 s => CellBound V 127 s
+  | .b10 s => CellBound V 9 s
+  | .bit b => ∃ bb : Bool, (↑b : CVar F).val V = Snarky.bit bb
+
 /-- The cell a packed scalar carries. -/
 def PackedScalar.cell : PackedScalar F → CVar F
   | .full s => s
@@ -2515,6 +2523,53 @@ def publicInputCommitMasked [KimchiSystem C.BaseField S] (shared : Bool)
 
 variable [ConstraintHolds C.BaseField S] [LawfulBasicSystem C.BaseField S]
   {V : Valuation C.BaseField}
+
+open Std.Do in
+/-- Masking a packed scalar's leaf keeps its scalar cell. -/
+private theorem maskLeaf_bound (shared : Bool) (bits : List (BoolVar C.BaseField))
+    (k : PackedScalar C.BaseField) (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc) :
+    ⦃⌜True⌝⦄ maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits k Pss P0
+    ⦃⇓ r _ => ⌜r.Bound V ∧ r.bitBoolean V → k.Bound V⌝⦄ := by
+  have hm := fun (ps : List (Vector (AffinePoint (FVar C.BaseField)) nc)) => builder_spec_true
+    (maskCells (S := Builder V (KimchiConstraint C.BaseField)) bits ps)
+  cases k <;> cases shared <;> simp only [maskLeaf, Bool.false_eq_true, if_false, if_true] <;>
+    mvcgen [hm] <;> simp_all [Leaf.Bound, Leaf.bitBoolean, PackedScalar.Bound, constLeaf]
+
+open Std.Do in
+/-- **The public-input ladders bound the packed scalars, whatever the bases.** Under any
+valuation satisfying the emitted constraints, every packed scalar's cell reads as its ladder
+bounds it (`PackedScalar.Bound`): the ladders' decomposition rows never read the bases, so no
+branch bits, table or key enter. -/
+theorem publicInputCommitMasked_bound (hnc : 0 < nc) (shared : Bool)
+    (blindingH : AffinePoint (FVar C.BaseField)) (bits : List (BoolVar C.BaseField))
+    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
+    ⦃⌜True⌝⦄
+    publicInputCommitMasked (S := Builder V (KimchiConstraint C.BaseField)) shared blindingH
+      bits ks tables
+    ⦃⇓ _ _ => ⌜∀ k ∈ ks, k.Bound V⌝⦄ := by
+  have hml := builder_spec_mapM (V := V) (c := KimchiConstraint C.BaseField)
+    (fun ki : PackedScalar C.BaseField × ℕ =>
+      maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits ki.1
+        (tables.map (·.getD ki.2 (Vector.replicate nc 0)))
+        ((tables.headD []).getD ki.2 (Vector.replicate nc 0)))
+    (fun r ki => r.Bound V ∧ r.bitBoolean V → ki.1.Bound V) id
+    (fun ki => maskLeaf_bound shared bits ki.1 _ _) ks.zipIdx
+  have hF := fun rs => publicInputCommitFull_bound hnc (V := V) blindingH rs
+  have hS := fun rs => publicInputCommitSealed_bound hnc (V := V) blindingH rs
+  -- a packed scalar is its masked leaf's scalar
+  have hall : ∀ rs : List (Leaf C.BaseField nc),
+      List.Forall₂ (fun r ki => r.Bound V ∧ r.bitBoolean V → ki.1.Bound V) rs
+        (ks.zipIdx.map id) →
+      (∀ l ∈ rs, l.Bound V ∧ l.bitBoolean V) → ∀ k ∈ ks, k.Bound V := by
+    intro rs hrs hb k hk
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hk
+    have hlen : rs.length = ks.length := by simpa using hrs.length_eq
+    have h := (List.forall₂_iff_get.mp hrs).2 i (by omega) (by simpa using hi)
+    simp only [List.get_eq_getElem, List.getElem_map, id, List.getElem_zipIdx] at h
+    exact h (hb _ (List.getElem_mem _))
+  unfold publicInputCommitMasked maskLeaves
+  cases shared <;> simp only [Bool.false_eq_true, if_false, if_true] <;> mvcgen [hml, hF, hS] <;>
+    rename_i rs _ _ _ hrs <;> exact hall rs hrs
 
 /-- Under the branch bits reading as the indicator of `b`, the masked point reads as the
 `b`-th. -/
