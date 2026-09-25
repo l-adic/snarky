@@ -13,11 +13,13 @@ import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKCommsFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (StepMainSimpleChainParams, compileStepMainSimpleChain)
+import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
+import Pickles.Prove.Wrap (stepVkForCircuit)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
@@ -35,7 +37,8 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
   stepArt <- compileStepMainSimpleChain stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
-  realStepVK <- deriveStepVKFromCompiled @1 @1 vestaSrs stepArt.stepCs
+  stepComms <- deriveStepVKCommsFromCompiled @1 @1 vestaSrs stepArt.stepCs
+  let realStepVK = stepVkForCircuit stepComms
   let
 
     config :: WrapMainConfig 1 1 1
@@ -59,4 +62,5 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
     , wrapVk
+    , constants: wrapMainConstants config (stepComms :< Vector.nil) (1 :< Vector.nil)
     }

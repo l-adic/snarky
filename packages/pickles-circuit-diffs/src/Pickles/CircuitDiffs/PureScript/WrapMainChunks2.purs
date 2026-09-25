@@ -20,10 +20,12 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
-import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKCommsFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, compileStepMainChunks2)
+import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.Wrap (stepVkForCircuit)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
@@ -44,7 +46,8 @@ compileWrapMainChunks2 { blindingH } stepParams = do
   stepArt <- compileStepMainChunks2 stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
-  realStepVK <- deriveStepVKFromCompiled @2 @0 vestaSrs stepArt.stepCs
+  stepComms <- deriveStepVKCommsFromCompiled @2 @0 vestaSrs stepArt.stepCs
+  let realStepVK = stepVkForCircuit stepComms
   let
 
     config :: WrapMainConfig 1 0 2
@@ -100,4 +103,5 @@ compileWrapMainChunks2 { blindingH } stepParams = do
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
     , wrapVk
+    , constants: wrapMainConstants config (stepComms :< Vector.nil) Vector.nil
     }

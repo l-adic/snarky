@@ -245,6 +245,8 @@ type WrapArtifact =
   , stepDomainLog2 :: Int
   , wrapCs :: CompiledCircuit WrapField
   , wrapVk :: VerificationKey 1 (WeierstrassAffinePoint PallasG (F StepField))
+  -- ^ The constants the wrap circuit bakes in, as JSON (`wrapMainConstants`).
+  , constants :: String
   }
 
 -- | Construct a `StepArtifact` from a compiled step CS, deriving the
