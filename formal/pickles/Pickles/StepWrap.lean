@@ -98,7 +98,7 @@ theorem stepWrap_kimchiVerify
     -- the generator of the wrap domain of each `log2`, a constant of the circuit
     (gen : ℕ → Fq)
     -- the tag's branches: their slot counts, step domains and step keys
-    (widths log2s : List ℕ)
+    (widths : Vector (Fin (w + 1)) branches) (log2s : List ℕ)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots,
     -- front-padded
@@ -109,11 +109,8 @@ theorem stepWrap_kimchiVerify
     (dummy : List Fq) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k ks slotWidths.toList.sum)
-    -- one slot count and one step domain per branch, each slot count at most `w`, and fewer
-    -- branches than the field's characteristic
-    (hwl : widths.length = branches)
+    -- one step domain per branch, and fewer branches than the field's characteristic
     (hll : log2s.length = branches)
-    (hwidths : ∀ x ∈ widths, x ≤ w)
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vs` satisfies every constraint of the compiled wrap circuit
     (hwrap : ∀ con ∈ (compile (a := Vector Fq 40) (b := Unit)
@@ -178,7 +175,7 @@ theorem stepWrap_kimchiVerify
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp
     (wrapMain_reads E Vs gen widths log2s stepKeys pins lagrange h dummy slotWidths advW
-      (inputVar (F := Fq) (a := Vector Fq 40)) hwl hll hwidths hw hbr) _ hbody
+      (inputVar (F := Fq) (a := Vector Fq 40)) hll hw hbr) _ hbody
   -- the circuit's branch is `b`: both are below the field's characteristic
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)

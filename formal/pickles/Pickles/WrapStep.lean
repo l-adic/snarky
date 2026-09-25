@@ -99,7 +99,7 @@ theorem wrapStep_kimchiVerify
     -- the generator of the wrap domain of each `log2`, a constant of the circuit
     (gen : ℕ → Fq)
     -- the tag's branches: their slot counts, step domains and step keys
-    (widths log2s : List ℕ)
+    (widths : Vector (Fin (w + 1)) branches) (log2s : List ℕ)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     -- each slot's compile-time wrap domain index per branch
     (pins : Vector (Vector (Option ℕ) branches) w)
@@ -109,11 +109,8 @@ theorem wrapStep_kimchiVerify
     (dummy : List Fq) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k EsStep.σ.k slotWidths.toList.sum)
-    -- one slot count and one step domain per branch, each slot count at most `w`, and fewer
-    -- branches than the field's characteristic
-    (hwl : widths.length = branches)
+    -- one step domain per branch, and fewer branches than the field's characteristic
     (hll : log2s.length = branches)
-    (hwidths : ∀ x ∈ widths, x ≤ w)
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vw` satisfies every constraint of the compiled wrap circuit
     (hwrap : ∀ con ∈ (compile (a := Vector Fq 40) (b := Unit)
@@ -202,15 +199,15 @@ theorem wrapStep_kimchiVerify
       simp only [wrapMainCircuit, build_bind]
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, -, hbd, -⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_reads E Vw gen widths log2s stepKeys pins lagrange h dummy slotWidths advW stmt hwl
-      hll hwidths hw hbr) _ hbody
+    (wrapMain_reads E Vw gen widths log2s stepKeys pins lagrange h dummy slotWidths advW stmt hll hw
+      hbr) _ hbody
   -- the circuit's branch is `b`: both are below the field's characteristic
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
   subst hbb
   obtain ⟨-, -, -, hgrp⟩ := (builder_spec_iff _ _).mp
     (wrapMain_verifyReads E EsStep Vw gen widths log2s stepKeys pins lagrange h dummy slotWidths
-      advW stmt hwl hll hwidths hw hbr hh hsize hnz havoidS) _ hbody b hb hkeyB hlag
+      advW stmt hll hw hbr hh hsize hnz havoidS) _ hbody b hb hkeyB hlag
   obtain ⟨v, hv, hv1⟩ := hgrp cp oldsW hpr hol
   -- the slot's domain is the key's: cell `29` carries the branch data across the tie
   have hdom : inp.branchData.domainLog2.val Vs = (D.keyLog2 : Fp) := by
@@ -233,7 +230,7 @@ theorem wrapStep_kimchiVerify
     rw [hcell] at hbd
     -- both sides are small numbers: `4·n₀ + t` and `4·log2s[b] + s`
     obtain ⟨t, ht3, hpk⟩ := BranchData.packed_val inp.branchData n0 ms0 hdv hmsR
-    obtain ⟨sN, hs3, hsum⟩ := maskSum_natCast hw fun l => decide (l < widths[b.val]'(by omega))
+    obtain ⟨sN, hs3, hsum⟩ := maskSum_natCast hw fun l => decide (l < (widths[b.val] : ℕ))
     have hL := D.keyLog2_lt
     have hn0p : 4 * n0 + t < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]; omega
     have hlog' : log2s[b.val]'(by omega) = D.keyLog2 := by simpa using hlog

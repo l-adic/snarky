@@ -1001,10 +1001,18 @@ def wrapMainConsts (nc : ℕ) (path : System.FilePath) : IO (WrapMainConsts nc) 
   | .ok r => return r
   | .error e => throw (IO.userError s!"{path}: {e}")
 
+/-- The exported slot counts as one per branch, each at most `mpv`, when they are. -/
+def wrapMainWidths? (bp mpv : ℕ) (ws : List ℕ) : Option (Vector (Fin (mpv + 1)) (bp + 1)) :=
+  if h : ws.length = bp + 1 ∧ ∀ x ∈ ws, x ≤ mpv then
+    some (Vector.ofFn fun b =>
+      ⟨ws[b.val]'(by omega), Nat.lt_succ_of_le (h.2 _ (List.getElem_mem _))⟩)
+  else none
+
 /-- A `wrap_main_*` circuit: `Pickles.wrapMain` at `bp + 1` branches, `mpv` slots and `nc`
-step chunks from its constants; a branch's Lagrange table is the one exported for its
-step domain. -/
-def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc) (stmt : Vector (FVar Fq) 40) :
+step chunks from its constants and slot counts; a branch's Lagrange table is the one exported
+for its step domain. -/
+def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
+    (widths : Vector (Fin (mpv + 1)) (bp + 1)) (stmt : Vector (FVar Fq) 40) :
     CircuitM Fq Cq PUnit :=
   let zeroKey : Pickles.VkComms nc (AffinePoint (FVar Fq)) :=
     VkComms.replicate (Vector.replicate nc ⟨.const 0, .const 0⟩)
@@ -1013,7 +1021,7 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc) (stmt : Vector
     Vector.replicate nc (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
   Pickles.wrapMain (branches := bp + 1) (mpv := mpv) (ncStep := nc) (k := 15) (ks := 16)
     fopWrapParams
-    (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) k.stepWidths k.domainLog2s
+    (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) widths k.domainLog2s
     (Vector.ofFn fun b => k.keys.getD b.val zeroKey)
     (Vector.ofFn fun s => Vector.ofFn fun b => pin ((k.pins.getD b.val []).getD s.val (-1)))
     (fun l => k.lagrange.toList.map fun perBranch =>
@@ -1789,8 +1797,11 @@ def main : IO Unit := do
     xhatBranchesPoints
   let wrapMains ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
     let k ← optionalExport filter (dir / s!"{name}_constants.json") (wrapMainConsts nc)
-    pure (k.map fun k =>
-      (name, wrapTarget (a := Vector Fq 40) (b := PUnit) (wrapMainDumpCircuit bp mpv nc k)))
+    k.mapM fun k => do
+      let some widths := wrapMainWidths? bp mpv k.stepWidths
+        | throw (IO.userError s!"{name}: slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}")
+      pure (name, wrapTarget (a := Vector Fq 40) (b := PUnit)
+        (wrapMainDumpCircuit bp mpv nc k widths))
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
   let selected := (targets hStep hWrap
