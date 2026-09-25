@@ -55,8 +55,8 @@ as accepted by `kimchiVerify`, under the guards, the finalize ties and `SgOk`. -
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
     -- and the wrap circuit's slots; the step proofs the wrap proofs verified at `ncPrevStep`; the
-    -- wrap circuit's `branches`, the step proof it verifies at `ncStep` chunks
-    {n w ncPrevStep branches ncStep : ℕ} [NeZero branches]
+    -- wrap circuit's `branches`, the step proof it verifies at `ncStep` chunks and `ks` rounds
+    {n w ncPrevStep branches ncStep ks : ℕ} [NeZero branches]
     -- the rule's input, as a value and as cells
     {inVal inVar : Type}
     [CircuitType Fp inVal inVar]
@@ -108,7 +108,7 @@ theorem stepWrap_kimchiVerify
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
     (dummy : List Fq) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
-    (advW : WrapMainAdvice w ncStep E.σ.k slotWidths.toList.sum)
+    (advW : WrapMainAdvice w ncStep E.σ.k ks slotWidths.toList.sum)
     -- one slot count and one step domain per branch, each slot count at most `w`, and fewer
     -- branches than the field's characteristic
     (hwl : widths.length = branches)
@@ -137,11 +137,11 @@ theorem stepWrap_kimchiVerify
       slotWidths advW (inputVar (F := Fq) (a := Vector Fq 40)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq)) (a := Vector Fq 40))).result
     -- the wrap circuit's branch index reads as `b`
-    hd.whichBranch.val Vs = (b : Fq) →
+    hd.1.whichBranch.val Vs = (b : Fq) →
     -- slot `i` must verify
     ∀ i : Fin n, CircuitType.Reads Vg r.prevs[i].mustVerify true →
       let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
-      let sl := hd.slots[Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)]
+      let sl := hd.1.slots[Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)]
       -- the active branch compiled its wrap slot for the key's domain
       sl.pins[b] = some j →
       -- its two halves hold one set of claims
@@ -176,7 +176,7 @@ theorem stepWrap_kimchiVerify
     hwrap con (mem_compile_of_mem_body (by
       simp only [wrapMainCircuit, build_bind]
       exact List.mem_append_left _ hc))
-  obtain ⟨b', hb', hwb, -, hfin⟩ := (builder_spec_iff _ _).mp
+  obtain ⟨b', hb', hwb, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp
     (wrapMain_reads E Vs gen widths log2s stepKeys pins lagrange h dummy slotWidths advW
       (inputVar (F := Fq) (a := Vector Fq 40)) hwl hll hwidths hw hbr j hdom hgen) _ hbody
   -- the circuit's branch is `b`: both are below the field's characteristic
