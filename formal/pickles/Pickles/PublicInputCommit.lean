@@ -20,7 +20,9 @@ summed in circuit, the fold interleaved), `publicInputCommitSealed` (the same fo
 cells sealed first, for bases masked across branches) and `publicInputCommitKnown` (the step
 side, at a known domain: every ladder first, then one fold from the first ladder result, then
 the constant correction sum). All read as `-(publicMsm) + h` over the circuit-side point group
-(`publicInputCommitFold_reads`, `publicInputCommitKnown_reads`).
+(`publicInputCommitFold_reads`, `publicInputCommitKnown_reads`). Whatever the bases read as,
+`publicInputCommitFull` and `publicInputCommitSealed` bound every leaf's scalar to its ladder's
+width (`Leaf.Bound`; `publicInputCommitFull_bound`, `publicInputCommitSealed_bound`).
 
 The last section is the wire crossing: `xHat_reads_publicCommitment` and
 `xHatKnown_reads_publicCommitment` cross those reads to the wire verifier's own
@@ -33,7 +35,9 @@ The tables the gadgets take are a verifier key's data, so the module ends by com
 a packed scalar list (`PackedScalar`) against a key's Lagrange points gives the leaves
 (`packLeavesOf`) and the tables (`XhatTable.ofKey`, `XhatTable.ofKeyKnown`), bound as the
 reads require (`xhatBinding_const`, `bound_ofKeyKnown`), with the known-domain fold's
-correction sum a commitment to named coefficients (`corrCoeffs`, `corrSumPt_map_msm`).
+correction sum a commitment to named coefficients (`corrCoeffs`, `corrSumPt_map_msm`). The
+public input of those leaves is the packed scalars reduced into the scalar field
+(`PackedScalar.reduced`, `pubOf_zipWith_constLeaf`).
 -/
 
 namespace Pickles
@@ -79,6 +83,11 @@ def Leaf.scalarVar : Leaf F nc → CVar F
   | .b128 s _ _ => s
   | .b10 s _ _ => s
   | .condAdd b _ => (↑b : CVar F)
+
+/-- A cell as a `scaleFast2'` ladder bounds it: `2·z + bb` for a bit `bb` and a half
+`0 ≤ z < 2^w`. -/
+def CellBound (V : Valuation F) (w : ℕ) (s : FVar F) : Prop :=
+  ∃ (z : ℤ) (bb : Bool), 0 ≤ z ∧ z < 2 ^ w ∧ ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V
 
 end Reads
 
@@ -1315,6 +1324,102 @@ theorem publicInputCommitKnown_reads (ci : Fin nc) {V : Valuation F}
   exact himp (corrSum_eq hcorr hff hhon)
     (leafReads_regimeOK_all h130 h10 hff (regimeFull_hfull hregime hff))
 
+/-! ### The ladders' scalar bounds, for any bases -/
+
+/-- A leaf's scalar as its ladder bounds it: the full leaf's half below `2^253` (the top-bit
+pin), the 128-bit leaf's below `2^127`, the 10-bit leaf's below `2^9`. -/
+def Leaf.Bound (V : Valuation F) : Leaf F nc → Prop
+  | .full s _ _ => CellBound V 253 s
+  | .b128 s _ _ => CellBound V 127 s
+  | .b10 s _ _ => CellBound V 9 s
+  | .condAdd _ _ => True
+
+open Std.Do in
+/-- One leaf's ladder bounds its scalar, whatever its base reads as. -/
+private theorem leafStep_bound (ci : Fin nc) {V : Valuation F} (acc : AffinePoint (FVar F)) :
+    ∀ leaf : Leaf F nc, ⦃⌜True⌝⦄ leafStep (S := Builder V (KimchiConstraint F)) ci acc leaf
+      ⦃⇓ _ _ => ⌜leaf.Bound V⌝⦄
+  | .full scalar base _ => by
+      simp only [leafStep]
+      have hsf := scaleFast2'_spec_scalar (V := V) 255 51 254 (by norm_num) base[ci] scalar
+      have hadd := fun l => builder_spec_true
+        (addFast (c := Builder V (KimchiConstraint F)) .checkFinite acc l)
+      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i _ _ _ hsf' _ _
+      obtain ⟨z, bb, h0, -, hlt, hval⟩ := hsf'
+      exact ⟨z, bb, h0, hlt (by norm_num), hval⟩
+  | .b128 scalar base _ => by
+      simp only [leafStep]
+      have hsf := scaleFast2'_spec_scalar (V := V) 255 26 127 (by norm_num) base[ci] scalar
+      have hadd := fun l => builder_spec_true
+        (addFast (c := Builder V (KimchiConstraint F)) .checkFinite acc l)
+      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i _ _ _ hsf' _ _
+      obtain ⟨z, bb, h0, hlt, -, hval⟩ := hsf'
+      exact ⟨z, bb, h0, hlt, hval⟩
+  | .b10 scalar base _ => by
+      simp only [leafStep]
+      have hsf := scaleFast2'_spec_scalar (V := V) 255 2 9 (by norm_num) base[ci] scalar
+      have hadd := fun l => builder_spec_true
+        (addFast (c := Builder V (KimchiConstraint F)) .checkFinite acc l)
+      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i _ _ _ hsf' _ _
+      obtain ⟨z, bb, h0, hlt, -, hval⟩ := hsf'
+      exact ⟨z, bb, h0, hlt, hval⟩
+  | .condAdd b base => by
+      exact builder_spec_true _
+
+open Std.Do in
+/-- The fold's ladders bound every leaf's scalar, at a first chunk. -/
+private theorem foldChunks_bound (hnc : 0 < nc) {V : Valuation F} :
+    ∀ (acc : Vector (AffinePoint (FVar F)) nc) (leaves : List (Leaf F nc)),
+      ⦃⌜True⌝⦄ foldChunks (S := Builder V (KimchiConstraint F)) acc leaves
+      ⦃⇓ _ _ => ⌜∀ l ∈ leaves, l.Bound V⌝⦄
+  | acc, [] => by
+      simp only [foldChunks]
+      mvcgen
+      simp
+  | acc, leaf :: rest => by
+      simp only [foldChunks]
+      have hc := chunkwise_at (V := V) (fun c => leafStep c acc[c] leaf) ⟨0, hnc⟩
+        (fun _ => leaf.Bound V) (leafStep_bound ⟨0, hnc⟩ acc[0] leaf)
+      have ih := fun acc' => foldChunks_bound hnc (V := V) acc' rest
+      mvcgen [hc, ih]
+      rename_i _ _ hl _ _
+      intro hr l hl'
+      rcases List.mem_cons.mp hl' with rfl | hm
+      · exact hl
+      · exact hr l hm
+
+open Std.Do in
+/-- The fold, from any corrections' sum, bounds every leaf's scalar. -/
+private theorem publicInputCommitFold_bound (hnc : 0 < nc) {V : Valuation F}
+    (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
+    ⦃⌜True⌝⦄ publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
+    ⦃⇓ _ _ => ⌜∀ l ∈ leaves, l.Bound V⌝⦄ := by
+  simp only [publicInputCommitFold, publicInputCommitChunks]
+  have hs := builder_spec_true
+    (sumCorrectionsHead (S := Builder V (KimchiConstraint F)) leaves)
+  have hf := fun acc => foldChunks_bound hnc (V := V) acc leaves
+  have hc := fun (acc : Vector (AffinePoint (FVar F)) nc) => builder_spec_true
+    (chunkwise (S := Builder V (KimchiConstraint F)) fun c =>
+      (·.p) <$> addFast .checkFinite ⟨acc[c].x, CVar.negate_ acc[c].y⟩ blindingH)
+  mvcgen [hs, hf, hc]
+
+open Std.Do in
+/-- `publicInputCommitFull` bounds every leaf's scalar and makes every bit boolean, whatever
+the bases read as. -/
+theorem publicInputCommitFull_bound (hnc : 0 < nc) {V : Valuation F}
+    (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
+    ⦃⌜True⌝⦄ publicInputCommitFull (S := Builder V (KimchiConstraint F)) blindingH leaves
+    ⦃⇓ _ _ => ⌜∀ l ∈ leaves, l.Bound V ∧ l.bitBoolean V⌝⦄ := by
+  simp only [publicInputCommitFull]
+  have hb := constrainBits_boolean (V := V) leaves
+  have hf := publicInputCommitFold_bound hnc (V := V) blindingH leaves
+  mvcgen [hb, hf]
+  rename_i _ _ hb' _ _
+  exact fun hf' l hl => ⟨hf' l hl, hb' l hl⟩
+
 end Fold
 
 /-! ## The wire crossing
@@ -1464,6 +1569,13 @@ private theorem Leaf.SealedOf.scalarVar {V : Valuation F} :
   | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h
   | .condAdd .., .condAdd .., h => by simp only [Leaf.scalarVar, h.1]
 
+omit [DecidableEq F] [ToNat F] in
+private theorem Leaf.SealedOf.bound {V : Valuation F} :
+    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → l'.Bound V → l.Bound V
+  | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h => by
+      simp only [Leaf.Bound, h.1, imp_self]
+  | .condAdd .., .condAdd .., _ => id
+
 omit [ToNat F] in
 private theorem Leaf.SealedOf.baseAt {W : WeierstrassCurve.Affine F} {V : Valuation F}
     (ci : Fin nc) {P : W.Point} :
@@ -1530,6 +1642,27 @@ private theorem Leaf.SealedOf.forall {V : Valuation F} {P : Leaf F nc → Prop}
       rcases List.mem_cons.1 hmem with rfl | hmem
       · exact hP hl (h _ (List.mem_cons_self ..))
       · exact ih (fun l hl' => h l (List.mem_cons_of_mem _ hl')) l hmem
+
+open Std.Do in
+/-- `publicInputCommitSealed` bounds every leaf's scalar and makes every bit boolean, whatever
+the bases read as. -/
+theorem publicInputCommitSealed_bound (hnc : 0 < nc) {V : Valuation F}
+    (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
+    ⦃⌜True⌝⦄ publicInputCommitSealed (S := Builder V (KimchiConstraint F)) blindingH leaves
+    ⦃⇓ _ _ => ⌜∀ l ∈ leaves, l.Bound V ∧ l.bitBoolean V⌝⦄ := by
+  simp only [publicInputCommitSealed]
+  have hs := builder_spec_mapM (V := V) (c := KimchiConstraint F)
+    (sealLeaf (S := Builder V (KimchiConstraint F)))
+    (fun r l => Leaf.SealedOf V l r ∧ l.bitBoolean V) id sealLeaf_spec leaves
+  have hf := fun rs => publicInputCommitFold_bound hnc (V := V) blindingH rs
+  mvcgen [hs, hf]
+  rename_i rs _ hrs _ _
+  intro hb l hl
+  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hl
+  have hlen : rs.length = leaves.length := by simpa using hrs.length_eq
+  have h := (List.forall₂_iff_get.mp hrs).2 i (by omega) (by simpa using hi)
+  simp only [List.get_eq_getElem, List.getElem_map, id] at h
+  exact ⟨Leaf.SealedOf.bound h.1 (hb _ (List.getElem_mem _)), h.2⟩
 
 /-- **The wire's negated-scalar MSM term list equals the crossed `publicMsm` term list.** The
 walk-order correspondence: at each `i`, the wire pairs Lagrange base `i` with `pubOf`'s `i`-th
@@ -1873,6 +2006,13 @@ def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Lea
     | .b10 s => Leaf.b10 s bc.1 bc.2
     | .bit b => Leaf.condAdd b bc.1) ks (tab.bases.zip tab.corrs)
 
+/-- The cell a packed scalar carries. -/
+def PackedScalar.cell : PackedScalar F → CVar F
+  | .full s => s
+  | .b128 s => s
+  | .b10 s => s
+  | .bit b => (↑b : CVar F)
+
 end Packed
 
 /-! ## The table of a key
@@ -2086,6 +2226,26 @@ theorem packLeavesOf_ofKey : ∀ (ks : List (PackedScalar C.BaseField))
         List.zip_cons_cons] at ih ⊢
       refine congrArg₂ _ ?_ ih
       cases k <;> simp [constLeaf, shiftBits]
+
+/-- A packed scalar's cell reduced into the scalar field: the public-input entry it
+contributes (`pubOf`). -/
+def PackedScalar.reduced (C : KimchiCurve) [ToNat C.BaseField] (V : Valuation C.BaseField)
+    (k : PackedScalar C.BaseField) : C.ScalarField :=
+  ((ToNat.toNat (k.cell.val V) : ℕ) : C.ScalarField)
+
+/-- With a Lagrange point per scalar, the public input of the constant leaves is the reduced
+scalars. -/
+theorem pubOf_zipWith_constLeaf [ToNat C.BaseField] :
+    ∀ (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)),
+      ks.length ≤ lb.length →
+      (pubOf C V (List.zipWith constLeaf ks lb)).toList = ks.map (PackedScalar.reduced C V)
+  | [], _, _ => by simp [pubOf]
+  | _ :: _, [], h => by simp at h
+  | k :: ks, Ps :: lb, h => by
+    have ih := pubOf_zipWith_constLeaf ks lb (by simpa using h)
+    simp only [pubOf, List.zipWith_cons_cons, List.map_cons, List.toList_toArray] at ih ⊢
+    rw [ih]
+    cases k <;> rfl
 
 /-- Two packed scalars of one kind whose cells read the same value. -/
 def PackedScalar.SameReading (V : Valuation C.BaseField) :

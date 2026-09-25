@@ -25,6 +25,9 @@ The scalar side of the opening — recomputing `cip`, `b`, `ξ` and the permutat
 belongs to `finalizeOtherProofCore`; the group circuit consumes them as claims (`IvpClaims`)
 and scales by them. `verifyProof` ties the two.
 
+On the conditional sponge, whatever the public-input commitment's rows force of the valuation,
+the gadget's rows force too (`incrementallyVerifyProof_frame`).
+
 ## The read
 
 `IvpReads` is the read, on either side (`IvpSide`): the digest is the wire's (`fqRun`'s
@@ -154,6 +157,43 @@ def incrementallyVerifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEnd
   pure ⟨tr.digest, o.success, o.challenges⟩
 
 end Gadget
+
+/-! ## A frame for the public-input commitment -/
+
+section Frame
+
+variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F} {k : ℕ}
+
+open Std.Do in
+/-- Whatever the public-input commitment's rows force of the valuation, the group half's rows
+force too, under the conditional sponge, where the commitment runs at one bind. -/
+theorem incrementallyVerifyProof_frame {sf : Type}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
+    (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
+    (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
+    {nc : ℕ} (inp : IvpInput k nc (FVar F) (BoolVar F) sf) (P : Prop)
+    (hX : ⦃⌜True⌝⦄ computeXHat ⦃⇓ _ _ => ⌜P⌝⦄) :
+    ⦃⌜True⌝⦄
+    incrementallyVerifyProof ops e p endo gm sqrtF true blindingH spongeAfterIndex computeXHat inp
+    ⦃⇓ _ _ => ⌜P⌝⦄ := by
+  have hsq := builder_spec_true
+    (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p spongeAfterIndex)
+  have htr := fun d xHat => builder_spec_true
+    (fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo d
+      (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat inp.wComm inp.zComm inp.tComm)
+  have hpc := fun tr => builder_spec_true
+    (assertPlonkChallenges (c := Builder V (KimchiConstraint F)) tr inp.plonk.chals)
+  have hft := builder_spec_true
+    (ftComm (c := Builder V (KimchiConstraint F)) ops inp.key.sigmaLast.toList inp.tComm
+      inp.plonk.perm inp.plonk.zetaToSrsLength inp.plonk.zetaToDomainSize)
+  have hcb := fun sp bases => builder_spec_true
+    (checkBulletproof (c := Builder V (KimchiConstraint F)) ops e p endo gm sqrtF sp bases
+      ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩)
+  simp only [incrementallyVerifyProof, if_true]
+  mvcgen [hsq, hX, htr, hpc, hft, hcb, -Snarky.Kimchi.SpongeVar.squeeze_spec]
+
+end Frame
 
 /-! ## The read -/
 
