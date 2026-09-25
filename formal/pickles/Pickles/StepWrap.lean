@@ -55,8 +55,8 @@ as accepted by `kimchiVerify`, under the guards, the finalize ties and `SgOk`. -
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
     -- and the wrap circuit's slots; the step proofs the wrap proofs verified at `ncs`; the
-    -- wrap circuit's `bp + 1` branches, the step proof it verifies at `nck` chunks
-    {n w ncs bp nck : ℕ}
+    -- wrap circuit's `branches`, the step proof it verifies at `nck` chunks
+    {n w ncs branches nck : ℕ} [NeZero branches]
     -- the rule's input, as a value and as cells
     {inVal inVar : Type}
     [CircuitType Fp inVal inVar]
@@ -99,10 +99,10 @@ theorem stepWrap_kimchiVerify
     (gen : ℕ → Fq)
     -- the tag's branches: their slot counts, step domains and step keys
     (widths log2s : List ℕ)
-    (stepKeys : Vector (VkComms nck (AffinePoint (FVar Fq))) (bp + 1))
+    (stepKeys : Vector (VkComms nck (AffinePoint (FVar Fq))) branches)
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots,
     -- front-padded
-    (pins : Vector (Vector (Option ℕ) (bp + 1)) w)
+    (pins : Vector (Vector (Option ℕ) branches) w)
     -- the Lagrange bases at a step domain, the blinding base, the padding challenges and each
     -- slot's challenge-stack height: constants of the wrap circuit
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point nck)) (h : IpaVesta.curve.Point)
@@ -111,10 +111,10 @@ theorem stepWrap_kimchiVerify
     (advW : WrapMainAdvice w nck E.σ.k slotWidths.toList.sum)
     -- one slot count and one step domain per branch, each slot count at most `w`, and fewer
     -- branches than the field's characteristic
-    (hwl : widths.length = bp + 1)
-    (hll : log2s.length = bp + 1)
+    (hwl : widths.length = branches)
+    (hll : log2s.length = branches)
     (hwidths : ∀ x ∈ widths, x ≤ w)
-    (hbp : bp < PALLAS_SCALAR_CARD)
+    (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vs` satisfies every constraint of the compiled wrap circuit
     (hwrap : ∀ con ∈ (compile (a := Vector Fq 40) (b := Unit)
         (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
@@ -122,7 +122,7 @@ theorem stepWrap_kimchiVerify
           dummy slotWidths advW)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the active branch
-    (b : Fin (bp + 1))
+    (b : Fin branches)
     -- the key's wrap domain, as an index into `wrapDomainLog2s`
     (j : ℕ)
     -- `j` is the key's domain
@@ -178,7 +178,7 @@ theorem stepWrap_kimchiVerify
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, hfin⟩ := (builder_spec_iff _ _).mp
     (wrapMain_reads E Vs gen widths log2s stepKeys pins lagrange h dummy slotWidths advW
-      (inputVar (F := Fq) (a := Vector Fq 40)) hwl hll hwidths hw hbp j hdom hgen) _ hbody
+      (inputVar (F := Fq) (a := Vector Fq 40)) hwl hll hwidths hw hbr j hdom hgen) _ hbody
   -- the circuit's branch is `b`: both are below the field's characteristic
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)

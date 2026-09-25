@@ -1011,7 +1011,7 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc) (stmt : Vector
   let pin (v : Int) : Option ℕ := if v < 0 then none else some v.toNat
   let zeroPts : Vector XhatCurve.Point nc :=
     Vector.replicate nc (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
-  Pickles.wrapMain (bp := bp) (mpv := mpv) (nc := nc) (k := 15) fopWrapParams
+  Pickles.wrapMain (branches := bp + 1) (mpv := mpv) (nc := nc) (k := 15) fopWrapParams
     (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) k.stepWidths k.domainLog2s
     (Vector.ofFn fun b => k.keys.getD b.val zeroKey)
     (Vector.ofFn fun s => Vector.ofFn fun b => pin ((k.pins.getD b.val []).getD s.val (-1)))
