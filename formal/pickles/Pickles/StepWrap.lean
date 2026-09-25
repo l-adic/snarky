@@ -97,25 +97,26 @@ theorem stepWrap_kimchiVerify
     (Vs : Valuation Fq)
     -- the generator of the wrap domain of each `log2`, a constant of the circuit
     (gen : ℕ → Fq)
-    -- the tag's branches: their slot counts, step domains and step keys
-    (widths : Vector (Fin (w + 1)) branches) (log2s : List ℕ)
-    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
+    -- the tag's branches' slot counts, and their step circuits' environments over one SRS
+    (widths : Vector (Fin (w + 1)) branches)
+    (stepEnvs : Vector (Env IpaVesta.curve ncStep) branches) (σStep : SRS IpaVesta.curve.Point)
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots,
     -- front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
-    -- the Lagrange bases at a step domain, the blinding base, the padding challenges and each
-    -- slot's challenge-stack height: constants of the wrap circuit
-    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
+    -- the Lagrange bases at a step domain, the padding challenges and each slot's
+    -- challenge-stack height: constants of the wrap circuit
+    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep))
     (dummy : List Fq) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k ks slotWidths.toList.sum)
-    -- one step domain per branch, and fewer branches than the field's characteristic
-    (hll : log2s.length = branches)
+    -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
-    -- `Vs` satisfies every constraint of the compiled wrap circuit
+    -- `Vs` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
+    -- domains and the SRS's blinding base
     (hwrap : ∀ con ∈ (compile (a := Vector Fq 40) (b := Unit)
         (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
-          (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h
+          (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
+          (stepKeyCells stepEnvs) pins lagrange σStep.h
           dummy slotWidths advW)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the active branch
@@ -130,7 +131,8 @@ theorem stepWrap_kimchiVerify
       (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the wrap circuit's cells over its statement
     let hd := (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h dummy
+      (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
+          (stepKeyCells stepEnvs) pins lagrange σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := Vector Fq 40)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq)) (a := Vector Fq 40))).result
     -- the wrap circuit's branch index reads as `b`
@@ -166,7 +168,8 @@ theorem stepWrap_kimchiVerify
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h dummy
+      (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
+          (stepKeyCells stepEnvs) pins lagrange σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := Vector Fq 40)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq)) (a := Vector Fq 40))
       ).constraints, ConstraintHolds.Holds Vs con := fun con hc =>
@@ -174,8 +177,9 @@ theorem stepWrap_kimchiVerify
       simp only [wrapMainCircuit, build_bind]
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_reads E Vs gen widths log2s stepKeys pins lagrange h dummy slotWidths advW
-      (inputVar (F := Fq) (a := Vector Fq 40)) hll hw hbr) _ hbody
+    (wrapMain_reads E Vs gen widths (stepDomainLog2s stepEnvs)
+          (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths advW
+      (inputVar (F := Fq) (a := Vector Fq 40)) hw hbr) _ hbody
   -- the circuit's branch is `b`: both are below the field's characteristic
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)

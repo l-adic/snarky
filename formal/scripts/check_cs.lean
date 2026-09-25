@@ -1008,11 +1008,16 @@ def wrapMainWidths? (bp mpv : ℕ) (ws : List ℕ) : Option (Vector (Fin (mpv + 
       ⟨ws[b.val]'(by omega), Nat.lt_succ_of_le (h.2 _ (List.getElem_mem _))⟩)
   else none
 
+/-- The exported step domains as one per branch, when they are. -/
+def wrapMainLog2s? (bp : ℕ) (ls : List ℕ) : Option (Vector ℕ (bp + 1)) :=
+  if h : ls.length = bp + 1 then some ⟨ls.toArray, by simpa using h⟩ else none
+
 /-- A `wrap_main_*` circuit: `Pickles.wrapMain` at `bp + 1` branches, `mpv` slots and `nc`
-step chunks from its constants and slot counts; a branch's Lagrange table is the one exported
-for its step domain. -/
+step chunks from its constants, slot counts and step domains; a branch's Lagrange table is the
+one exported for its step domain. -/
 def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
-    (widths : Vector (Fin (mpv + 1)) (bp + 1)) (stmt : Vector (FVar Fq) 40) :
+    (widths : Vector (Fin (mpv + 1)) (bp + 1)) (log2s : Vector ℕ (bp + 1))
+    (stmt : Vector (FVar Fq) 40) :
     CircuitM Fq Cq PUnit :=
   let zeroKey : Pickles.VkComms nc (AffinePoint (FVar Fq)) :=
     VkComms.replicate (Vector.replicate nc ⟨.const 0, .const 0⟩)
@@ -1021,7 +1026,7 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     Vector.replicate nc (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
   Pickles.wrapMain (branches := bp + 1) (mpv := mpv) (ncStep := nc) (k := 15) (ks := 16)
     fopWrapParams
-    (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) widths k.domainLog2s
+    (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) widths log2s
     (Vector.ofFn fun b => k.keys.getD b.val zeroKey)
     (Vector.ofFn fun s => Vector.ofFn fun b => pin ((k.pins.getD b.val []).getD s.val (-1)))
     (fun l => k.lagrange.toList.map fun perBranch =>
@@ -1800,8 +1805,10 @@ def main : IO Unit := do
     k.mapM fun k => do
       let some widths := wrapMainWidths? bp mpv k.stepWidths
         | throw (IO.userError s!"{name}: slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}")
+      let some log2s := wrapMainLog2s? bp k.domainLog2s
+        | throw (IO.userError s!"{name}: step domains {k.domainLog2s} are not {bp + 1}")
       pure (name, wrapTarget (a := Vector Fq 40) (b := PUnit)
-        (wrapMainDumpCircuit bp mpv nc k widths))
+        (wrapMainDumpCircuit bp mpv nc k widths log2s))
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
   let selected := (targets hStep hWrap
