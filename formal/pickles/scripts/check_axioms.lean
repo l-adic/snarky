@@ -70,7 +70,7 @@ def roots : List Name :=
     `Pickles.wrapPublicInput_toList,
     `Pickles.xHatMasked_reads_publicCommitment,
     `Pickles.hashMessagesForNextWrapProof_padded,
-    `Pickles.wrapBranchBlock_spec,
+    `Pickles.wrapMain_reads,
     `Pickles.splitUnfinalized_spec,
     `Pickles.finalizeOtherProofCore_spec,
     `Pickles.finalizeOtherProofStep_spec,
@@ -119,6 +119,7 @@ def deployedRoots : List Name :=
     `Pickles.finalizeOtherProofStep_spec_fp,
     `Pickles.finalizeOtherProofWrap_spec_fq,
     `Pickles.wrapPublicInput_toList,
+    `Pickles.wrapMain_reads,
     `Pickles.stepProof_kimchiVerify_vesta,
     `Pickles.wrapProof_kimchiVerify_pallas,
     `Pickles.stepWrap_kimchiVerify ]

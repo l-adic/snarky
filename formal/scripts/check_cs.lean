@@ -1011,7 +1011,7 @@ def wrapMainCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc) (stmt : Vector (FV
   let pin (v : Int) : Option ℕ := if v < 0 then none else some v.toNat
   let zeroPts : Vector XhatCurve.Point nc :=
     Vector.replicate nc (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
-  Pickles.wrapMain (bp := bp) (mpv := mpv) (nc := nc) fopWrapParams
+  Pickles.wrapMain (bp := bp) (mpv := mpv) (nc := nc) (k := 15) fopWrapParams
     (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) k.stepWidths k.domainLog2s
     (Vector.ofFn fun b => k.keys.getD b.val zeroKey)
     (Vector.ofFn fun s => Vector.ofFn fun b => pin ((k.pins.getD b.val []).getD s.val (-1)))
@@ -1020,7 +1020,7 @@ def wrapMainCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc) (stmt : Vector (FV
     k.h k.dummy (Vector.ofFn fun s => k.slotWidths.getD s.val 0)
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-      AsProver.throw "advice", AsProver.throw "advice"⟩ stmt
+      AsProver.throw "advice", AsProver.throw "advice"⟩ stmt *> pure PUnit.unit
 
 /-- The `wrap_main_*` dumps with their branch, slot and chunk counts. -/
 def wrapMainDumps : List (String × ℕ × ℕ × ℕ) :=
