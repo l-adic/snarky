@@ -320,6 +320,17 @@ def wrapMain {bp mpv nc k : ℕ} (P : FopParams Fq) (gen : ℕ → Fq) (widths l
   wrapMainTail log2s lagrange h dummy slotWidths adv stmt hd
   pure hd
 
+/-- The wrap circuit as a circuit of its statement: `wrapMain`, its cells dropped. -/
+def wrapMainCircuit {bp mpv nc k : ℕ} (P : FopParams Fq) (gen : ℕ → Fq) (widths log2s : List ℕ)
+    (stepKeys : Vector (VkComms nc (AffinePoint (FVar Fq))) (bp + 1))
+    (pins : Vector (Vector (Option ℕ) (bp + 1)) mpv)
+    (lagrange : ℕ → List (Vector IpaVesta.curve.Point nc)) (h : IpaVesta.curve.Point)
+    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (adv : WrapMainAdvice mpv nc k slotWidths.toList.sum) (stmt : Vector (FVar Fq) 40) :
+    CircuitM Fq c Unit := do
+  let _ ← wrapMain P gen widths log2s stepKeys pins lagrange h dummy slotWidths adv stmt
+  pure ()
+
 end Main
 
 /-! ## The reads -/

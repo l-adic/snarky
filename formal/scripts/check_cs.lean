@@ -1004,7 +1004,7 @@ def wrapMainConsts (nc : ℕ) (path : System.FilePath) : IO (WrapMainConsts nc) 
 /-- A `wrap_main_*` circuit: `Pickles.wrapMain` at `bp + 1` branches, `mpv` slots and `nc`
 step chunks from its constants; a branch's Lagrange table is the one exported for its
 step domain. -/
-def wrapMainCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc) (stmt : Vector (FVar Fq) 40) :
+def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc) (stmt : Vector (FVar Fq) 40) :
     CircuitM Fq Cq PUnit :=
   let zeroKey : Pickles.VkComms nc (AffinePoint (FVar Fq)) :=
     VkComms.replicate (Vector.replicate nc ⟨.const 0, .const 0⟩)
@@ -1789,7 +1789,7 @@ def main : IO Unit := do
   let wrapMains ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
     let k ← optionalExport filter (dir / s!"{name}_constants.json") (wrapMainConsts nc)
     pure (k.map fun k =>
-      (name, wrapTarget (a := Vector Fq 40) (b := PUnit) (wrapMainCircuit bp mpv nc k)))
+      (name, wrapTarget (a := Vector Fq 40) (b := PUnit) (wrapMainDumpCircuit bp mpv nc k)))
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
   let selected := (targets hStep hWrap
