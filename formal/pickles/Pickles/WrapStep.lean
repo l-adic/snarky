@@ -181,10 +181,11 @@ private theorem wrapStep_kimchiVerify_core
     (rule : inVar →
       CircuitM Fp (Builder Vs (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w 1 ncStep E.σ.k EsStep.σ.k inVal)
-    -- `Vs` satisfies every constraint of the next step circuit
-    (hstep : ∀ con ∈ (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) hw
-        (verifyProofAt E) (FopParams.ofEnv EsStep Linearization.fpTokens) D.list dummySg
-        dummyUnf rule adv) 0).constraints, ConstraintHolds.Holds Vs con) :
+    -- `Vs` satisfies every constraint of the compiled next step circuit
+    (hstep : ∀ con ∈ (compile (a := Unit) (b := Vector Fp (w * (E.σ.k + 17) + 1 + w))
+        (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
+          (FopParams.ofEnv EsStep Linearization.fpTokens) D.list dummySg dummyUnf rule
+          adv)).constraints, ConstraintHolds.Holds Vs con) :
     let r := (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
       (FopParams.ofEnv EsStep Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the wrap circuit's statement and cells
@@ -218,8 +219,8 @@ private theorem wrapStep_kimchiVerify_core
   intro r stmt hd hb i hmv inp ms hms htie cp oldsW pub hpr hol hguard hf hsg
   -- the step side: slot `i` finalizes, over the domain its branch data names
   obtain ⟨-, -, hscal, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E EsStep D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep
-    i hmv
+    (stepMain_reads E EsStep D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0
+    (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap side: the body's constraints hold, so its reads do
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h dummy
@@ -335,10 +336,11 @@ theorem wrapStep_kimchiVerify
     (rule : inVar →
       CircuitM Fp (Builder Vs (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w 1 ncStep E.σ.k stepEnvs[b].σ.k inVal)
-    -- `Vs` satisfies every constraint of the next step circuit
-    (hstep : ∀ con ∈ (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) hw
-        (verifyProofAt E) (FopParams.ofEnv stepEnvs[b] Linearization.fpTokens) D.list dummySg
-        dummyUnf rule adv) 0).constraints, ConstraintHolds.Holds Vs con) :
+    -- `Vs` satisfies every constraint of the compiled next step circuit
+    (hstep : ∀ con ∈ (compile (a := Unit) (b := Vector Fp (w * (E.σ.k + 17) + 1 + w))
+        (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
+          (FopParams.ofEnv stepEnvs[b] Linearization.fpTokens) D.list dummySg dummyUnf rule
+          adv)).constraints, ConstraintHolds.Holds Vs con) :
     let r := (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
       (FopParams.ofEnv stepEnvs[b] Linearization.fpTokens) D.list dummySg dummyUnf rule adv)
       0).result

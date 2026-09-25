@@ -20,7 +20,8 @@ previous proof's statement and whether it must verify, with its own public outpu
 * `PrevStatement`: what the rule returns for one slot;
 * `StepMainAdvice`: the prover's values for every allocation;
 * `slotInput`: one slot's `verifyOneBy` input, assembled from its allocated cells;
-* `stepMain`: the circuit.
+* `stepMain`: the circuit;
+* `stepMainCircuit`: the circuit as a circuit of its statement, what `Snarky.compile` takes.
 -/
 
 namespace Pickles
@@ -154,6 +155,47 @@ def stepMain {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
   pure ⟨(pad ++ unfs.toList).flatMap
       (fun u => (CircuitType.varToFields (F := Fp) (val := UnfVal k) u).toList)
     ++ [digest] ++ msgsPad.toList ++ msgs.toList, prevs, vk, slots.val, unfs, msgs⟩
+
+/-- The step circuit as a circuit of its statement: no input cells (the `Unit` argument is
+`Snarky.compile`'s empty input), the output `stepMain`'s statement cells, `w · (k + 17) + 1 + w`
+of them (each padded entry's `k + 17` cells, the digest, the `w` wrap-side messages). -/
+@[nolint unusedArguments]
+def stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+    [CheckedType Fp c inVal inVar] (hw : w ≤ MaxProofsVerified)
+    (verify : SpongeVar Fp → BoolVar Fp →
+      WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
+      UnfinalizedProof k (FVar Fp) (BoolVar Fp) StepSf →
+      IvpInput k ncw (FVar Fp) (BoolVar Fp) StepSf → CircuitM Fp c (BoolVar Fp))
+    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (dummyUnf : UnfVal k)
+    (rule : inVar → CircuitM Fp c (Vector PrevStatement n × List (FVar Fp)))
+    (adv : StepMainAdvice n w ncw ncs k ks inVal) (_ : Unit) :
+    CircuitM Fp c (Vector (FVar Fp) (w * (k + 17) + 1 + w)) := do
+  let r ← stepMain hw verify P domains dummySg dummyUnf rule adv
+  pure (Vector.ofFn fun i => r.out[i.val]?.getD (.const 0))
+
+/-- The compiled step circuit's rows contain `stepMain`'s, built from the first variable: the
+statement has no input cells, so the body starts there. -/
+theorem mem_compile_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
+    [CircuitType Fp inVal inVar] {V : Valuation Fp}
+    [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar] (hw : w ≤ MaxProofsVerified)
+    (verify : SpongeVar Fp → BoolVar Fp →
+      WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
+      UnfinalizedProof k (FVar Fp) (BoolVar Fp) StepSf →
+      IvpInput k ncw (FVar Fp) (BoolVar Fp) StepSf →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
+    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (dummyUnf : UnfVal k)
+    (rule : inVar →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+    (adv : StepMainAdvice n w ncw ncs k ks inVal) {con : KimchiConstraint Fp}
+    (h : con ∈ (build (stepMain hw verify P domains dummySg dummyUnf rule adv) 0).constraints) :
+    con ∈ (compile (a := Unit) (b := Vector Fp (w * (k + 17) + 1 + w))
+      (stepMainCircuit hw verify P domains dummySg dummyUnf rule adv)).constraints := by
+  refine mem_compile_of_mem_body ?_
+  unfold stepMainCircuit
+  erw [build_bind]
+  exact List.mem_append_left _ h
 
 /-! ## The read -/
 

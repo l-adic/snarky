@@ -91,10 +91,11 @@ theorem stepWrap_kimchiVerify
       CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     -- the step circuit's advice
     (adv : StepMainAdvice n w 1 ncPrevStep E.σ.k EsPrev.σ.k inVal)
-    -- `Vg` satisfies every constraint of the step circuit, which allocates all its cells
-    (hstep : ∀ con ∈ (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw
-        (verifyProofAt E) (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list dummySg dummyUnf
-        rule adv) 0).constraints, ConstraintHolds.Holds Vg con)
+    -- `Vg` satisfies every constraint of the compiled step circuit
+    (hstep : ∀ con ∈ (compile (a := Unit) (b := Vector Fp (w * (E.σ.k + 17) + 1 + w))
+        (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp)) hw (verifyProofAt E)
+          (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list dummySg dummyUnf rule
+          adv)).constraints, ConstraintHolds.Holds Vg con)
     -- the next wrap circuit's valuation
     (Vs : Valuation Fq)
     -- the generator of the wrap domain of each `log2`, a constant of the circuit
@@ -165,8 +166,8 @@ theorem stepWrap_kimchiVerify
   intro r hd hb i hmv inp sl hpin hc hsf cp ms pub hwire hguard hf hsg
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E EsPrev D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i
-      hmv
+    (stepMain_reads E EsPrev D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0
+      (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc)) i hmv
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
