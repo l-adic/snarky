@@ -279,7 +279,8 @@ the wrap circuit's public input, each step proof the wrap circuit's cells read a
 theorem wrapStep_kimchiVerify
     -- the next rule's `n` slots; the tag's `w`, the wrap circuit's slots; the wrap circuit's
     -- `branches`, the step proof it verifies at `ncStep` chunks
-    {n w branches ncStep : ℕ} [NeZero branches]
+    {n w branches ncStep : ℕ}
+    [NeZero branches]
     -- the next rule's input, as a value and as cells
     {inVal inVar : Type}
     [CircuitType Fp inVal inVar]
@@ -287,10 +288,13 @@ theorem wrapStep_kimchiVerify
     (E : Env IpaPallas.curve 1)
     -- the wrap SRS has the deployed size, `2 ^ WrapIPARounds` points
     (hE : E.σ.k = WrapIPARounds)
-    -- the step SRS, of the deployed size `2 ^ StepIPARounds`, and the tag's step keys over it,
-    -- one per branch
-    (σStep : SRS IpaVesta.curve.Point) (hσk : σStep.k = StepIPARounds)
+    -- the step SRS
+    (σStep : SRS IpaVesta.curve.Point)
+    -- the step SRS has the deployed size, `2 ^ StepIPARounds` points
+    (hσk : σStep.k = StepIPARounds)
+    -- the tag's step keys, one per branch
     (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
+    -- each is a key over the step SRS
     (hkeys : ∀ i : Fin branches, Env.Invariants σStep stepKeys[i])
     -- the branch the wrap circuit takes
     (b : Fin branches)
@@ -300,84 +304,143 @@ theorem wrapStep_kimchiVerify
     (widths : Vector (Fin (w + 1)) branches)
     -- each slot's compile-time wrap domain index per branch
     (pins : Vector (Vector (Option ℕ) branches) w)
-    -- the padding challenges and each slot's challenge-stack height: constants of the wrap
-    -- circuit
-    (dummy : Vector Fq E.σ.k) (slotWidths : Vector ℕ w)
+    -- the padding challenges
+    (dummy : Vector Fq E.σ.k)
+    -- each slot's challenge-stack height
+    (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k σStep.k slotWidths.toList.sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vw` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
     -- domains and the SRS's Lagrange points and blinding base
-    (hwrap : ∀ con ∈ (compile (a := StatementPacked σStep.k (Type1 Fq) Fq) (b := Unit)
-        (wrapMainCircuit (c := Builder Vw (KimchiConstraint Fq))
-          (FopParams.ofEnv E Linearization.fqTokens) widths
-          (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
-          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-          slotWidths advW)).constraints,
+    (hwrap :
+      ∀ con ∈
+          (compile (a := StatementPacked σStep.k (Type1 Fq) Fq) (b := Unit)
+            (wrapMainCircuit (c := Builder Vw (KimchiConstraint Fq))
+              (FopParams.ofEnv E Linearization.fqTokens)
+              widths
+              (stepDomainLog2s stepKeys)
+              (stepKeyCells stepKeys)
+              pins
+              (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w)))
+              σStep.h
+              dummy
+              slotWidths
+              advW)).constraints,
         ConstraintHolds.Holds Vw con)
-    -- the step statement fits the key's Lagrange basis, the key's points are finite, and the SRS
-    -- avoids the key's Lagrange relations
+    -- the step statement fits key `b`'s Lagrange basis
     (hsize : CircuitType.size Fp (StmtVal E.σ.k w) ≤ stepKeys[b].lagrangeBasis.size)
+    -- key `b`'s points are finite
     (hnz : ∀ P ∈ stepKeys[b].comms.indexPoints, P ≠ 0)
+    -- the step SRS avoids key `b`'s Lagrange relations
     (havoidS : σStep.Avoids (stepEnvAt σStep stepKeys hkeys b).lagrangeRelations)
-    -- the next step circuit's finalize constants and the step domains it dispatches over
-    (P : FopParams Fp) (domains : List (KnownDomain Fp))
-    -- they fit the verified key: its finalize constants, and its domain among the candidates
+    -- the next step circuit's finalize constants
+    (P : FopParams Fp)
+    -- the step domains the next step circuit's finalize dispatches over
+    (domains : List (KnownDomain Fp))
+    -- they are key `b`'s finalize constants
     (hP : FopParams.ofEnv (stepEnvAt σStep stepKeys hkeys b) Linearization.fpTokens = P)
-    (D : KnownDomains (stepEnvAt σStep stepKeys hkeys b)) (hD : D.list = domains)
-    -- the next rule verifies at most the tag's `w` slots, which is at most `MaxProofsVerified`
-    (hn : n ≤ w) (hw : w ≤ MaxProofsVerified)
-    -- the `sg` padding the missing accumulators, the unfinalized entry padding the statement
-    (dummySg : AffinePoint (FVar Fp)) (dummyUnf : UnfVal E.σ.k)
+    -- key `b`'s candidate domains: distinct, each holding its zero-knowledge rows, its own
+    -- among them
+    (D : KnownDomains (stepEnvAt σStep stepKeys hkeys b))
+    -- they are the next step circuit's
+    (hD : D.list = domains)
+    -- the next rule verifies at most the tag's `w` slots
+    (hn : n ≤ w)
+    -- the tag verifies at most `MaxProofsVerified`
+    (hw : w ≤ MaxProofsVerified)
+    -- the `sg` padding the missing accumulators
+    (dummySg : AffinePoint (FVar Fp))
+    -- the unfinalized entry padding the statement
+    (dummyUnf : UnfVal E.σ.k)
     -- the slot statements' public-input commitment's relations are avoided
-    (havoid : ∀ (inp : VerifyOneInput σStep.k E.σ.k 1 ncStep w) msg,
-      E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
+    (havoid :
+      ∀ (inp : VerifyOneInput σStep.k E.σ.k 1 ncStep w) msg,
+        E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
     -- the next step circuit's valuation
     (Vs : Valuation Fp)
     [CheckedType Fp (Builder Vs (KimchiConstraint Fp)) inVal inVar]
-    -- the next rule, and the next step circuit's advice
-    (rule : inVar →
-      CircuitM Fp (Builder Vs (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+    -- the next rule
+    (rule :
+      inVar →
+        CircuitM Fp (Builder Vs (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+    -- the next step circuit's advice
     (adv : StepMainAdvice n w 1 ncStep E.σ.k σStep.k inVal)
     -- `Vs` satisfies every constraint of the compiled next step circuit
-    (hstep : ∀ con ∈ (compile (a := Unit) (b := StmtVal E.σ.k w)
-        (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
-          P domains dummySg dummyUnf rule
-          adv)).constraints, ConstraintHolds.Holds Vs con) :
-    let r := (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
-      P domains dummySg dummyUnf rule adv)
-      0).result
-    -- the wrap circuit's statement and cells
+    (hstep :
+      ∀ con ∈
+          (compile (a := Unit) (b := StmtVal E.σ.k w)
+            (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp))
+              hw
+              (verifyProofAt E)
+              P
+              domains
+              dummySg
+              dummyUnf
+              rule
+              adv)).constraints,
+        ConstraintHolds.Holds Vs con) :
+    -- the next step circuit's run
+    let r :=
+      (build
+        (stepMain (c := Builder Vs (KimchiConstraint Fp))
+          hw
+          (verifyProofAt E)
+          P
+          domains
+          dummySg
+          dummyUnf
+          rule
+          adv)
+        0).result
+    -- the wrap circuit's statement
     let stmt := inputVar (F := Fq) (a := StatementPacked σStep.k (Type1 Fq) Fq)
-    let hd := (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) widths
-      (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
-      (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-      slotWidths advW stmt)
-      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
-        (a := StatementPacked σStep.k (Type1 Fq) Fq))).result
+    -- the wrap circuit's cells over it
+    let hd :=
+      (build
+        (wrapMain (c := Builder Vw (KimchiConstraint Fq))
+          (FopParams.ofEnv E Linearization.fqTokens)
+          widths
+          (stepDomainLog2s stepKeys)
+          (stepKeyCells stepKeys)
+          pins
+          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w)))
+          σStep.h
+          dummy
+          slotWidths
+          advW
+          stmt)
+        (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
+          (a := StatementPacked σStep.k (Type1 Fq) Fq))).result
     -- the wrap circuit's branch index reads as `b`
     hd.1.whichBranch.val Vw = (b : Fq) →
     -- slot `i` must verify
-    ∀ i : Fin n, CircuitType.Reads Vs r.prevs[i].mustVerify true →
+    ∀ i : Fin n,
+      CircuitType.Reads Vs r.prevs[i].mustVerify true →
       let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
-      ∀ ms : Vector Bool w, CircuitType.Reads Vs inp.proofMask ms →
-      -- its wrap proof was made at the wrap circuit's public input
-      CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
-      ∀ (cp : KimchiProof IpaVesta.curve ncStep σStep.k)
-        (oldsW : List (IpaVesta.curve.Point × Bool)),
-        -- the step proof's public input: the wrap circuit's packed step statement
-        let pub := wrapPublicInput (stepEnvAt σStep stepKeys hkeys b) Vw hd.2.statement
-        -- the wrap circuit's cells hold `cp`
-        ProofReads (wrapSide Vw) hd.2.cells.wComm hd.2.cells.zComm hd.2.cells.tComm
-          hd.2.cells.opening cp →
-        OldsRead Vw hd.2.cells.sgOld cp oldsW →
-        -- of `cp` itself: the guards, the finalize ties and the deferred `sg` equation
-        Guards IpaVesta.curve stepKeys[b] cp pub →
-        FopTies (stepEnvAt σStep stepKeys hkeys b) cp pub (inp.finalizedHalf Vs) →
-        SgOk σStep stepKeys[b] cp pub →
-        kimchiVerify IpaVesta.curve σStep stepKeys[b] cp pub = true := by
+      -- its masks
+      ∀ ms : Vector Bool w,
+        CircuitType.Reads Vs inp.proofMask ms →
+        -- its wrap proof was made at the wrap circuit's public input
+        CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
+        ∀ (cp : KimchiProof IpaVesta.curve ncStep σStep.k)
+          (oldsW : List (IpaVesta.curve.Point × Bool)),
+          -- the step proof's public input: the wrap circuit's packed step statement
+          let pub := wrapPublicInput (stepEnvAt σStep stepKeys hkeys b) Vw hd.2.statement
+          -- the wrap circuit's cells hold `cp`
+          ProofReads (wrapSide Vw)
+            hd.2.cells.wComm
+            hd.2.cells.zComm
+            hd.2.cells.tComm
+            hd.2.cells.opening
+            cp →
+          OldsRead Vw hd.2.cells.sgOld cp oldsW →
+          -- of `cp` itself: the guards, the finalize ties and the deferred `sg` equation
+          Guards IpaVesta.curve stepKeys[b] cp pub →
+          FopTies (stepEnvAt σStep stepKeys hkeys b) cp pub (inp.finalizedHalf Vs) →
+          SgOk σStep stepKeys[b] cp pub →
+          kimchiVerify IpaVesta.curve σStep stepKeys[b] cp pub = true := by
   subst hP hD
   -- branch `b`'s environment: its key over the step SRS
   let Eb := stepEnvAt σStep stepKeys hkeys b

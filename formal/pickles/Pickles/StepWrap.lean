@@ -247,7 +247,8 @@ theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
     -- and the wrap circuit's slots; the step proofs the wrap proofs verified at `ncPrevStep`; the
     -- wrap circuit's `branches`, the step proof it verifies at `ncStep` chunks
-    {n w ncPrevStep branches ncStep : ℕ} [NeZero branches]
+    {n w ncPrevStep branches ncStep : ℕ}
+    [NeZero branches]
     -- the rule's input, as a value and as cells
     {inVal inVar : Type}
     [CircuitType Fp inVal inVar]
@@ -255,8 +256,10 @@ theorem stepWrap_kimchiVerify
     (E : Env IpaPallas.curve 1)
     -- the wrap SRS has the deployed size, `2 ^ WrapIPARounds` points
     (hE : E.σ.k = WrapIPARounds)
-    -- the step circuit's finalize constants, and the step domains it dispatches over
-    (P : FopParams Fp) (domains : List (KnownDomain Fp))
+    -- the step circuit's finalize constants
+    (P : FopParams Fp)
+    -- the step domains the step circuit's finalize dispatches over
+    (domains : List (KnownDomain Fp))
     -- the rule verifies at most the tag's `w` slots
     (hn : n ≤ w)
     -- the tag verifies at most `MaxProofsVerified`
@@ -267,45 +270,68 @@ theorem stepWrap_kimchiVerify
     (dummyUnf : UnfVal E.σ.k)
     -- no relation the slot statements' public-input commitment names commits the SRS to the
     -- identity
-    (havoid : ∀ (inp : VerifyOneInput StepIPARounds E.σ.k 1 ncPrevStep w) msg,
-      E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
+    (havoid :
+      ∀ (inp : VerifyOneInput StepIPARounds E.σ.k 1 ncPrevStep w) msg,
+        E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
     -- the step circuit's valuation
     (Vg : Valuation Fp)
     [CheckedType Fp (Builder Vg (KimchiConstraint Fp)) inVal inVar]
     -- the application rule: from its input, each slot's statement and the public output
-    (rule : inVar →
-      CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+    (rule :
+      inVar →
+        CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     -- the step circuit's advice
     (adv : StepMainAdvice n w 1 ncPrevStep E.σ.k StepIPARounds inVal)
     -- `Vg` satisfies every constraint of the compiled step circuit
-    (hstep : ∀ con ∈ (compile (a := Unit) (b := StmtVal E.σ.k w)
-        (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp)) hw (verifyProofAt E)
-          P domains dummySg dummyUnf rule
-          adv)).constraints, ConstraintHolds.Holds Vg con)
+    (hstep :
+      ∀ con ∈
+          (compile (a := Unit) (b := StmtVal E.σ.k w)
+            (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp))
+              hw
+              (verifyProofAt E)
+              P
+              domains
+              dummySg
+              dummyUnf
+              rule
+              adv)).constraints,
+        ConstraintHolds.Holds Vg con)
     -- the next wrap circuit's valuation
     (Vs : Valuation Fq)
-    -- the tag's branches' slot counts, the step SRS and the branches' step keys over it
+    -- the tag's branches' slot counts
     (widths : Vector (Fin (w + 1)) branches)
-    (σStep : SRS IpaVesta.curve.Point) (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
+    -- the step SRS
+    (σStep : SRS IpaVesta.curve.Point)
+    -- the tag's step keys, one per branch
+    (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
+    -- each is a key over the step SRS
     (hkeys : ∀ i : Fin branches, Env.Invariants σStep stepKeys[i])
-    -- each slot's compile-time wrap domain index per branch: the tag's `w` slots,
-    -- front-padded
+    -- each slot's compile-time wrap domain index per branch: the tag's `w` slots, front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
-    -- the padding challenges and each slot's challenge-stack height: constants of the wrap
-    -- circuit
-    (dummy : Vector Fq E.σ.k) (slotWidths : Vector ℕ w)
+    -- the padding challenges
+    (dummy : Vector Fq E.σ.k)
+    -- each slot's challenge-stack height
+    (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k StepIPARounds slotWidths.toList.sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vs` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
-    -- domains and the SRS's blinding base
-    (hwrap : ∀ con ∈ (compile (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
-        (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
-          (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepKeys)
-          (stepKeyCells stepKeys) pins
-          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h
-          dummy slotWidths advW)).constraints,
+    -- domains and the SRS's Lagrange points and blinding base
+    (hwrap :
+      ∀ con ∈
+          (compile (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
+            (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
+              (FopParams.ofEnv E Linearization.fqTokens)
+              widths
+              (stepDomainLog2s stepKeys)
+              (stepKeyCells stepKeys)
+              pins
+              (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w)))
+              σStep.h
+              dummy
+              slotWidths
+              advW)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the active branch
     (b : Fin branches)
@@ -313,29 +339,49 @@ theorem stepWrap_kimchiVerify
     (j : ℕ)
     -- `j` is the key's domain
     (hdom : wrapDomainLog2s[j]? = some E.cvk.domainLog2) :
-    let r := (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw (verifyProofAt E)
-      P domains dummySg dummyUnf rule adv) 0).result
+    -- the step circuit's run
+    let r :=
+      (build
+        (stepMain (c := Builder Vg (KimchiConstraint Fp))
+          hw
+          (verifyProofAt E)
+          P
+          domains
+          dummySg
+          dummyUnf
+          rule
+          adv)
+        0).result
     -- the wrap circuit's cells over its statement
-    let hd := (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepKeys)
-          (stepKeyCells stepKeys) pins
-          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-      slotWidths advW (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
-      (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
-        (a := StatementPacked StepIPARounds (Type1 Fq) Fq))).result
+    let hd :=
+      (build
+        (wrapMain (c := Builder Vs (KimchiConstraint Fq))
+          (FopParams.ofEnv E Linearization.fqTokens)
+          widths
+          (stepDomainLog2s stepKeys)
+          (stepKeyCells stepKeys)
+          pins
+          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w)))
+          σStep.h
+          dummy
+          slotWidths
+          advW
+          (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
+        (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
+          (a := StatementPacked StepIPARounds (Type1 Fq) Fq))).result
     -- the wrap circuit's branch index reads as `b`
     hd.1.whichBranch.val Vs = (b : Fq) →
     -- the step proof's public input: the step circuit's statement reads as the one the wrap
     -- circuit's cells hold, each cell the scalar its x_hat ladder applies (`StmtVal.ofWrap`)
     CircuitType.Reads Vg r.out (StmtVal.ofWrap Vs hd.2.statement) →
     -- slot `i` must verify
-    ∀ i : Fin n, CircuitType.Reads Vg r.prevs[i].mustVerify true →
+    ∀ i : Fin n,
+      CircuitType.Reads Vg r.prevs[i].mustVerify true →
       let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
       let sl := hd.1.slots[Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)]
       -- the active branch compiled its wrap slot for the key's domain
       sl.pins[b] = some j →
-      ∀ (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
-        (ms : Vector Bool w),
+      ∀ (cp : KimchiProof IpaPallas.curve 1 E.σ.k) (ms : Vector Bool w),
         -- the slot's public input: its statement, carrying the step-message digest
         let pub := inp.publicInputAt E Vg ms
         -- its cells hold `cp`, with masks `ms`
