@@ -213,37 +213,6 @@ open Std.Do
 
 variable {V : Valuation Fp}
 
-/-- An entry's cells in allocation order: each split claim as its half then its parity, the
-digest, `β, γ, α, ζ, ξ`, the round challenges, the finalize flag. -/
-theorem AllocUnfinalized.varToFields_toList {k : ℕ}
-    (u : AllocUnfinalized k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
-    (CircuitType.varToFields (F := Fp)
-      (val := AllocUnfinalized k Fp Bool (Type2 (SplitField Fp Bool))) u).toList
-      = ([u.cip.val.sDiv2, (↑u.cip.val.sOdd : CVar Fp), u.b.val.sDiv2, (↑u.b.val.sOdd : CVar Fp),
-          u.zetaToSrsLength.val.sDiv2, (↑u.zetaToSrsLength.val.sOdd : CVar Fp),
-          u.zetaToDomainSize.val.sDiv2, (↑u.zetaToDomainSize.val.sOdd : CVar Fp),
-          u.perm.val.sDiv2, (↑u.perm.val.sOdd : CVar Fp),
-          u.spongeDigest, u.beta, u.gamma, u.alpha, u.zeta, u.xi] : List (CVar Fp))
-        ++ u.bulletproofChallenges.toList ++ [(↑u.shouldFinalize : CVar Fp)] := by
-  have h2 : ∀ x : Type2 (SplitField (FVar Fp) (BoolVar Fp)),
-      CircuitType.varToFields (F := Fp) (val := Type2 (SplitField Fp Bool)) x
-        = #v[x.val.sDiv2, ↑x.val.sOdd] := fun _ => rfl
-  have hf : ∀ x : FVar Fp, CircuitType.varToFields (F := Fp) (val := Fp) x = #v[x] :=
-    fun _ => rfl
-  have hb : ∀ x : BoolVar Fp, CircuitType.varToFields (F := Fp) (val := Bool) x = #v[↑x] :=
-    fun _ => rfl
-  erw [CircuitType.varToFields_ofEquiv]
-  simp only [AllocUnfinalized.equivProd, Equiv.coe_fn_mk, CircuitType.varToFields_prod,
-    CircuitType.varToFields_vector, h2, hf, hb, mapVec_eq_map]
-  have hbp : (Vector.map (CircuitType.varToFields (F := Fp) (val := Fp)) u.bulletproofChallenges)
-      = u.bulletproofChallenges.map fun c => #v[c] := by
-    ext1; simp [hf]
-  rw [hbp]
-  simp only [Vector.toList_append]
-  have hs := toList_flatten_singletons u.bulletproofChallenges id
-  simp only [id] at hs
-  simp [hs]
-
 /-- The step statement has `w · (k + 17) + 1 + w` cells: `k + 17` per entry, the digest, one
 message per slot. -/
 theorem StmtVal.size (k w : ℕ) : CircuitType.size Fp (StmtVal k w) = w * (k + 17) + 1 + w := by
@@ -257,24 +226,6 @@ theorem StmtVal.size (k w : ℕ) : CircuitType.size Fp (StmtVal k w) = w * (k + 
     omega
   simp [hu, h1]
   ring
-
-/-- The step statement's cells: each entry's cells in turn, the digest, the messages. -/
-theorem StmtVar.varToFields_toList {k w : ℕ} (s : StmtVar k w) :
-    (CircuitType.varToFields (F := Fp) (val := StmtVal k w) s).toList
-      = s.1.toList.flatMap (fun u => (CircuitType.varToFields (F := Fp) (val := UnfVal k) u).toList)
-        ++ s.2.1 :: s.2.2.toList := by
-  obtain ⟨us, d, ms⟩ := s
-  have hf : ∀ x : FVar Fp, CircuitType.varToFields (F := Fp) (val := Fp) x = #v[x] :=
-    fun _ => rfl
-  simp only [CircuitType.varToFields_prod, CircuitType.varToFields_vector, hf, mapVec_eq_map,
-    Vector.toList_append]
-  have hms : Vector.map (CircuitType.varToFields (F := Fp) (val := Fp)) ms
-      = ms.map fun c => #v[c] := by
-    ext1; simp [hf]
-  have hs := toList_flatten_singletons ms id
-  simp only [id, List.map_id] at hs
-  rw [hms, hs, toList_flatten', Vector.toList_map, List.map_map]
-  rfl
 
 /-- The step statement's unfinalized entries are the circuit's, front-padded to `w` with the
 constant `dummyUnf`. -/

@@ -74,25 +74,6 @@ private theorem cell_eq_redFq {Vs : Valuation Fq} {k : PackedScalar Fq} (hb : k.
     cases k <;> rfl
   rw [hr, redFq, ZMod.val_natCast_of_lt (hN.trans hp), ZMod.natCast_zmod_val]
 
-/-- Two flat maps with blocks of one length that agree, read through `g`, up to their tails
-agree block by block. -/
-private theorem map_flatMap_block {α β γ δ : Type} (f : α → List β) (h : γ → List δ)
-    (g : β → δ) (L : ℕ) (hf : ∀ a, (f a).length = L) (hh : ∀ c, (h c).length = L) :
-    ∀ (as : List α) (cs : List γ) (t : List β) (t' : List δ), as.length = cs.length →
-      (as.flatMap f ++ t).map g = cs.flatMap h ++ t' →
-      ∀ j (hj : j < as.length) (hj' : j < cs.length), (f as[j]).map g = h cs[j]
-  | [], _, _, _, _, _, j, hj, _ => absurd hj (Nat.not_lt_zero _)
-  | _ :: _, [], _, _, hl, _, _, _, _ => by simp at hl
-  | a :: as, c :: cs, t, t', hl, he, j, hj, hj' => by
-    simp only [List.flatMap_cons, List.append_assoc, List.map_append] at he
-    obtain ⟨h0, hrest⟩ := List.append_inj he (by simp [hf, hh])
-    cases j with
-    | zero => exact h0
-    | succ j =>
-      simp only [List.length_cons] at hl hj hj'
-      exact map_flatMap_block f h g L hf hh as cs t t' (by omega)
-        (by simpa [List.map_append] using hrest) j (by omega) (by omega)
-
 /-- An unfinalized entry the wrap circuit's cells hold, as the step circuit's values: each cell
 the scalar its x_hat ladder applies (`PackedScalar.reduced`), a bit `true` when it reads `1`. -/
 def UnfVal.ofWrap {k : ℕ} (Vs : Valuation Fq)
@@ -130,65 +111,6 @@ private theorem bit_ofWrap {Vs : Valuation Fq} {b : BoolVar Fq}
   · simp only [bit, ToNat.toNat, decide_true, if_true]
     rw [ZMod.val_one, Nat.cast_one]
 
-/-- With its bit cells boolean, an entry's step values encode as the scalars its ladders
-apply. -/
-private theorem UnfVal.valueToFields_ofWrap {k : ℕ} (Vs : Valuation Fq)
-    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
-    (hb : ∀ x ∈ u.packed, x.Bound Vs) :
-    (CircuitType.valueToFields (F := Fp) (var := UnfVar k) (UnfVal.ofWrap Vs u)).toList
-      = u.packed.map (PackedScalar.reduced IpaVesta.curve Vs) := by
-  have h2 : ∀ x : Type2 (SplitField Fp Bool),
-      CircuitType.valueToFields (F := Fp) (var := Type2 (SplitField (FVar Fp) (BoolVar Fp))) x
-        = #v[x.val.sDiv2, bit x.val.sOdd] := fun _ => rfl
-  have hf : ∀ x : Fp, CircuitType.valueToFields (F := Fp) (var := FVar Fp) x = #v[x] :=
-    fun _ => rfl
-  have hbv : ∀ x : Bool, CircuitType.valueToFields (F := Fp) (var := BoolVar Fp) x = #v[bit x] :=
-    fun _ => rfl
-  have hbit : ∀ c : BoolVar Fq, PackedScalar.bit c ∈ u.packed →
-      (bit (decide ((↑c : CVar Fq).val Vs = 1)) : Fp)
-        = PackedScalar.reduced IpaVesta.curve Vs (.bit c) :=
-    fun c hc => bit_ofWrap (hb _ hc)
-  erw [CircuitType.valueToFields_ofEquiv]
-  simp only [UnfVal.ofWrap, AllocUnfinalized.equivProd, Equiv.coe_fn_mk,
-    CircuitType.valueToFields_prod, CircuitType.valueToFields_vector, h2, hf, hbv, mapVec_eq_map]
-  simp (disch := simp [UnfinalizedProof.packed]) only [hbit]
-  -- the full and 128-bit ladders apply the same scalar
-  have hk : ∀ x : FVar Fq, PackedScalar.reduced IpaVesta.curve Vs (.full x)
-      = PackedScalar.reduced IpaVesta.curve Vs (.b128 x) := fun _ => rfl
-  have hbp : Vector.map (fun c : SizedF 128 (FVar Fq) => CircuitType.valueToFields (F := Fp)
-        (var := FVar Fp) (PackedScalar.reduced IpaVesta.curve Vs (.b128 c.val)))
-        u.deferredValues.bulletproofChallenges
-      = u.deferredValues.bulletproofChallenges.map
-          fun c => #v[PackedScalar.reduced IpaVesta.curve Vs (.b128 c.val)] := by
-    ext1; simp [hf]
-  have hs := toList_flatten_singletons u.deferredValues.bulletproofChallenges
-    fun c => PackedScalar.reduced IpaVesta.curve Vs (.b128 c.val)
-  simp [UnfinalizedProof.packed, Vector.map_map, Function.comp_def, hk, hbp, hs]
-
-/-- With its bit cells boolean, the step statement the wrap cells hold encodes as the scalars
-their ladders apply. -/
-private theorem StmtVal.valueToFields_ofWrap {k w : ℕ} (Vs : Valuation Fq)
-    (st : StepStatement k w (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
-    (hb : ∀ x ∈ st.packed, x.Bound Vs) :
-    (CircuitType.valueToFields (F := Fp) (var := StmtVar k w) (StmtVal.ofWrap Vs st)).toList
-      = st.packed.map (PackedScalar.reduced IpaVesta.curve Vs) := by
-  have hf : ∀ x : Fp, CircuitType.valueToFields (F := Fp) (var := FVar Fp) x = #v[x] :=
-    fun _ => rfl
-  have he : ∀ u ∈ st.proofState.unfinalizedProofs.toList,
-      (CircuitType.valueToFields (F := Fp) (var := UnfVar k) (UnfVal.ofWrap Vs u)).toList
-        = u.packed.map (PackedScalar.reduced IpaVesta.curve Vs) := fun u hu =>
-    UnfVal.valueToFields_ofWrap Vs u fun x hx => hb x (by
-      rw [StepStatement.packed]
-      exact List.mem_append_left _ (List.mem_append_left _ (List.mem_flatMap.mpr ⟨u, hu, hx⟩)))
-  simp only [StmtVal.ofWrap, CircuitType.valueToFields_prod, CircuitType.valueToFields_vector,
-    mapVec_eq_map, Vector.toList_append, Vector.map_map, Function.comp_def, hf, toList_flatten',
-    Vector.toList_map, List.map_map]
-  rw [List.map_congr_left he, StepStatement.packed]
-  simp [List.flatMap, Function.comp_def]
-  -- the messages' singleton blocks
-  generalize st.messagesForNextWrapProof.toList = l
-  induction l <;> simp_all
-
 open Snarky.Kimchi in
 /-- One slot across the tie: its cells, read, are the wrap statement's slot reduced, and the wrap
 side's ladders bound that slot; then the wrap circuit's claims hold the step circuit's lifted
@@ -196,8 +118,7 @@ side's ladders bound that slot; then the wrap circuit's claims hold the step cir
 private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u : UnfVar k)
     (sp : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
     (a : AllocUnfinalized k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (hblock : (CircuitType.varToFields (F := Fp) (val := UnfVal k) u).toList.map (·.val Vg)
-      = sp.packed.map (PackedScalar.reduced IpaVesta.curve Vs))
+    (hu : CircuitType.Reads Vg u (UnfVal.ofWrap Vs sp))
     (hbnd : ∀ x ∈ sp.packed, x.Bound Vs)
     (hsr : SplitClaimsRead Vs a.toUnfinalized sp) :
     SplitClaimsCast Vg u.toUnfinalized Vs a.toUnfinalized ∧
@@ -206,12 +127,14 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
   -- each wrap entry is the lift of the step cell it is read against
   have hB : ∀ x ∈ sp.packed, x.cell.val Vs = redFq (PackedScalar.reduced IpaVesta.curve Vs x) :=
     fun x hx => cell_eq_redFq (hbnd x hx)
-  rw [AllocUnfinalized.varToFields_toList] at hblock
-  simp only [UnfinalizedProof.packed, List.map_append, List.map_cons, List.map_nil,
-    List.cons_append, List.nil_append, List.cons.injEq] at hblock
-  obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16, htail⟩ := hblock
-  obtain ⟨hbp, hsf⟩ := List.append_inj htail (by simp)
-  simp only [List.cons.injEq, and_true] at hsf
+  -- the entry's cells, field by field
+  simp only [UnfVal.ofWrap, CircuitType.reads_ofEquiv, AllocUnfinalized.equivProd,
+    Type2.equivVal, SplitField.equivProd, Equiv.coe_fn_mk, CircuitType.reads_prod,
+    CircuitType.reads_fvar, CircuitType.reads_boolVar] at hu
+  obtain ⟨⟨c1, c2⟩, ⟨c3, c4⟩, ⟨c5, c6⟩, ⟨c7, c8⟩, ⟨c9, c10⟩, c11, c12, c13, c14, c15, c16, hbpR,
+    hsf⟩ := hu
+  -- a parity bit's step bit is the scalar its ladder applies
+  rw [bit_ofWrap (hbnd _ (by simp [UnfinalizedProof.packed]))] at c2 c4 c6 c8 c10
   have mem : ∀ x, x ∈ sp.packed ↔ x ∈ UnfinalizedProof.packed sp := fun _ => Iff.rfl
   obtain ⟨ha, hbe, hg, hz, hxi, hbps, hsfe, hdig, hscip, hsb, hsperm, hszm, hszn⟩ := hsr
   -- an entry of the slot, read against the step cell `v`, is `v` lifted
@@ -272,7 +195,12 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
     have hbp' : u.bulletproofChallenges.toList.map (·.val Vg)
         = sp.deferredValues.bulletproofChallenges.toList.map fun c =>
             PackedScalar.reduced IpaVesta.curve Vs (.b128 c.val) := by
-      simpa [List.map_map, Function.comp_def] using hbp
+      have h := CircuitType.reads_vector.mp hbpR
+      refine List.ext_getElem (by simp) fun l h₁ _ => ?_
+      have hl := CircuitType.reads_fvar.mp (h l (by simpa using h₁))
+      rw [Vector.getElem_map] at hl
+      simp only [List.getElem_map, Vector.getElem_toList]
+      exact hl
     have hsp : sp.deferredValues.bulletproofChallenges.toList.map (·.val.val Vs)
         = (u.bulletproofChallenges.toList.map (·.val Vg)).map redFq := by
       rw [hbp', List.map_map]
@@ -285,10 +213,8 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
       CircuitType.Reads Vs a.shouldFinalize bb := by
     obtain ⟨bb, hbb⟩ := hbnd (.bit sp.shouldFinalize) (by simp [UnfinalizedProof.packed])
     refine ⟨bb, CircuitType.reads_boolVar.mpr ?_, CircuitType.reads_boolVar.mpr ?_⟩
-    · rw [hsf]
-      show ((ZMod.val ((↑sp.shouldFinalize : CVar Fq).val Vs) : ℕ) : Fp) = bit bb
-      rw [hbb]
-      cases bb <;> simp [bit, ZMod.val_one_eq_one_mod, PALLAS_SCALAR_CARD]
+    · rw [hsf, hbb]
+      cases bb <;> simp [bit]
     · rw [← show sp.shouldFinalize = a.shouldFinalize from hsfe]
       exact hbb
   refine ⟨?_, fsf⟩
@@ -450,35 +376,21 @@ theorem stepWrap_kimchiVerify
     (stepMain_out hw (verifyProofAt E) (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list
       dummySg dummyUnf rule adv) 0
     (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc))
-  have hlenU : ∀ u : UnfVar E.σ.k,
-      (CircuitType.varToFields (F := Fp) (val := UnfVal E.σ.k) u).toList.length = E.σ.k + 17 := by
-    intro u
-    rw [AllocUnfinalized.varToFields_toList]
-    simp
-  have hlenP : ∀ sp : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq))),
-      (sp.packed.map (PackedScalar.reduced IpaVesta.curve Vs)).length = E.σ.k + 17 := by
-    intro sp
-    simp [UnfinalizedProof.packed]
-  -- the tie, cell by cell: the step circuit's output cells are the wrap ladders' scalars
-  have htie' : (CircuitType.varToFields (F := Fp) (val := StmtVal E.σ.k w) r.out).toList.map
-      (·.val Vg) = hd.2.statement.packed.map (PackedScalar.reduced IpaVesta.curve Vs) := by
-    rw [← StmtVal.valueToFields_ofWrap Vs _ hbnd, ← htie, mapVec_eq_map, Vector.toList_map]
-  rw [StmtVar.varToFields_toList, StepStatement.packed, hsplitsEq, List.append_assoc] at htie'
-  rw [List.map_append (f := PackedScalar.reduced IpaVesta.curve Vs), List.map_flatMap] at htie'
-  -- slot `i` is the `(w − n) + i`-th block on both sides
+  -- slot `i` is entry `(w − n) + i` on both sides of the tie
   set jf : Fin w := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
   have hjv : jf.val = w - n + i := rfl
-  have hblk := map_flatMap_block _
-    (fun sp => sp.packed.map (PackedScalar.reduced IpaVesta.curve Vs)) (fun x : FVar Fp => x.val Vg)
-    (E.σ.k + 17) hlenU hlenP r.out.1.toList hd.2.splits.toList _ _ (by simp) htie' (w - n + i)
-    (by simp; omega) (by simp; omega)
-  have hl : r.out.1.toList[w - n + i]'(by simp; omega) = r.unfs[i] := by
+  have hents : CircuitType.Reads Vg r.out.1
+      (hd.2.statement.proofState.unfinalizedProofs.map (UnfVal.ofWrap Vs)) :=
+    (CircuitType.reads_prod.mp htie).1
+  have hblk := CircuitType.reads_vector.mp hents (w - n + i) (by omega)
+  have hl : r.out.1[w - n + i]'(by omega) = r.unfs[i] := by
     have h1 : r.out.1 = _ := hout
     simp [h1]
     rfl
-  have hr : hd.2.splits.toList[w - n + i]'(by simp; omega) = hd.2.splits[jf] := by
-    simp [hjv]
+  have hr : (hd.2.statement.proofState.unfinalizedProofs.map (UnfVal.ofWrap Vs))[w - n + i]'
+      (by omega) = UnfVal.ofWrap Vs hd.2.splits[jf] := by
+    have hs : hd.2.statement.proofState.unfinalizedProofs = hd.2.splits := hsplitsEq
+    simp [hs, hjv]
   rw [hl, hr] at hblk
   have hbj : ∀ x ∈ hd.2.splits[jf].packed, x.Bound Vs := fun x hx => hbnd x (by
     rw [StepStatement.packed, hsplitsEq]
