@@ -237,12 +237,164 @@ private theorem reads_true_of_tie {Vg : Valuation Fp} {Vs : Valuation Fq} {a : B
   subst this
   simpa [bit] using hSb
 
+/-! ## The wrap proof a slot's cells hold -/
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- A checked point's post is Pallas's curve equation. -/
+private theorem pallas_onCurve {V : Valuation Fp} {p : AffinePoint (FVar Fp)}
+    (h : p.y.val V * p.y.val V = p.x.val V ^ 3 + 0 * p.x.val V + 5) :
+    OnCurve IpaPallas.curve.E.A IpaPallas.curve.E.B (p.x.val V, p.y.val V) := by
+  simp only [OnCurve, IpaPallas.curve, CompElliptic.Curves.Pasta.Pallas.curve,
+    CompElliptic.Curves.Pasta.Pallas.a, CompElliptic.Curves.Pasta.Pallas.b]
+  linear_combination h
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- Cells on the curve read as their points. -/
+private theorem commReads_readPt {V : Valuation Fp} {cells : List (AffinePoint (FVar Fp))}
+    (h : ∀ p ∈ cells, OnCurve IpaPallas.curve.E.A IpaPallas.curve.E.B (p.x.val V, p.y.val V)) :
+    CommReads IpaPallas.curve V cells (cells.map (readPt (C := IpaPallas.curve) V)) :=
+  List.forall₂_map_right_iff.mpr (List.forall₂_same.mpr fun p hp => onCurveAt_readPt (h p hp))
+
+/-- The wrap proof a slot's cells hold: its commitments, opening and old commitments from the
+step circuit's cells, its evaluations and old challenges from the next wrap circuit's. -/
+private def slotProof {ks k ncs w : ℕ} (Vg : Valuation Fp) (Vs : Valuation Fq)
+    (inp : VerifyOneInput ks k 1 ncs w) (evals : ChunkedEvals 1 (FVar Fq))
+    (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
+    KimchiProof IpaPallas.curve 1 k where
+  wComm := inp.proof.wComm.map (·.map (readPt (C := IpaPallas.curve) Vg))
+  zComm := inp.proof.zComm.map (readPt (C := IpaPallas.curve) Vg)
+  tComm := (inp.proof.tComm.map (readPt (C := IpaPallas.curve) Vg)).toArray
+  tComm_le := by simp
+  evals := evals.evals.map fun v => v.map (·.val Vs)
+  pubEvals := .carried (evals.pub.map fun v => v.map (·.val Vs))
+  ftEval1 := evals.ftEval1.val Vs
+  opening := ⟨inp.proof.opening.lr.map fun q =>
+      (readPt (C := IpaPallas.curve) Vg q.1, readPt (C := IpaPallas.curve) Vg q.2),
+    readPt (C := IpaPallas.curve) Vg inp.proof.opening.delta,
+    (stepSide Vg).decode inp.proof.opening.z1, (stepSide Vg).decode inp.proof.opening.z2,
+    readPt (C := IpaPallas.curve) Vg inp.proof.opening.sg⟩
+  olds := (inp.sgOld.zipWith (fun P u => ⟨readPt (C := IpaPallas.curve) Vg P,
+    u.map (·.val Vs)⟩) prevChallenges).toArray
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- With its point cells on the curve, the step circuit's proof cells hold `slotProof`'s
+commitments and opening. -/
+private theorem slotProof_proofReads {ks k ncs w : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq}
+    {inp : VerifyOneInput ks k 1 ncs w} {evals : ChunkedEvals 1 (FVar Fq)}
+    {prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified}
+    (hon : ∀ p : AffinePoint (FVar Fp),
+      (p ∈ (inp.proof.wComm.toList.flatMap (·.toList)) ∨ p ∈ inp.proof.zComm.toList ∨
+        p ∈ inp.proof.tComm.toList ∨
+        p ∈ (inp.proof.opening.lr.toList.flatMap fun q => [q.1, q.2]) ∨
+        p = inp.proof.opening.delta ∨ p = inp.proof.opening.sg) →
+      OnCurve IpaPallas.curve.E.A IpaPallas.curve.E.B (p.x.val Vg, p.y.val Vg)) :
+    ProofReads (stepSide Vg) (inp.proof.wComm.toList.map (·.toList)) inp.proof.zComm.toList
+      inp.proof.tComm.toList inp.proof.opening (slotProof Vg Vs inp evals prevChallenges) := by
+  refine ⟨?_, ?_, ?_, ?_, onCurveAt_readPt (hon _ (by simp)),
+    onCurveAt_readPt (hon _ (by simp)), rfl, rfl⟩
+  · simp only [ColumnsRead, slotProof, Vector.toList_map, List.forall₂_map_left_iff,
+      List.forall₂_map_right_iff]
+    refine List.forall₂_same.mpr fun col hcol => ?_
+    simpa [Vector.toList_map] using commReads_readPt fun p hp =>
+      hon p (Or.inl (List.mem_flatMap.mpr ⟨col, hcol, hp⟩))
+  · simpa [slotProof, Vector.toList_map] using
+      commReads_readPt fun p hp => hon p (Or.inr (Or.inl hp))
+  · simpa [slotProof, Vector.toList_map] using
+      commReads_readPt fun p hp => hon p (Or.inr (Or.inr (Or.inl hp)))
+  · simp only [slotProof, Vector.toList_map, List.map_map, List.forall₂_map_right_iff]
+    refine List.forall₂_same.mpr fun q hq => ⟨onCurveAt_readPt (hon _ ?_),
+      onCurveAt_readPt (hon _ ?_)⟩ <;>
+    exact Or.inr (Or.inr (Or.inr (Or.inl (List.mem_flatMap.mpr ⟨q, hq, by simp⟩))))
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- With its cells on the curve, the step circuit's `sgOld` cells hold `slotProof`'s old
+commitments. -/
+private theorem slotProof_olds {ks k ncs w : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq}
+    {inp : VerifyOneInput ks k 1 ncs w} {evals : ChunkedEvals 1 (FVar Fq)}
+    {prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified}
+    (hon : ∀ p ∈ inp.sgOld.toList,
+      OnCurve IpaPallas.curve.E.A IpaPallas.curve.E.B (p.x.val Vg, p.y.val Vg)) :
+    CommReads IpaPallas.curve Vg inp.sgOld.toList
+      ((slotProof Vg Vs inp evals prevChallenges).olds.map (·.sg)).toList := by
+  have h : ((slotProof Vg Vs inp evals prevChallenges).olds.map (·.sg)).toList
+      = inp.sgOld.toList.map (readPt (C := IpaPallas.curve) Vg) := by
+    refine List.ext_getElem (by simp [slotProof]) fun j h₁ h₂ => ?_
+    simp [slotProof]
+  rw [h]
+  exact commReads_readPt hon
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- A slot's checked point cells, and the constant padding cells, lie on the curve. -/
+private theorem slotInput_onCurve {w ncs k ks : ℕ} {V : Valuation Fp}
+    (hw : w ≤ MaxProofsVerified) {dummySg : IpaPallas.curve.Point} (hd : dummySg ≠ 0)
+    (prev : PrevStatement) {s : SlotVar w 1 ncs k ks} (u : UnfVar k) (msg : FVar Fp)
+    (hs : SlotWitness.PointsOnCurve V s) :
+    let inp := slotInput hw (constPt dummySg) prev s u msg
+    (∀ p : AffinePoint (FVar Fp),
+      (p ∈ (inp.proof.wComm.toList.flatMap (·.toList)) ∨ p ∈ inp.proof.zComm.toList ∨
+        p ∈ inp.proof.tComm.toList ∨
+        p ∈ (inp.proof.opening.lr.toList.flatMap fun q => [q.1, q.2]) ∨
+        p = inp.proof.opening.delta ∨ p = inp.proof.opening.sg) →
+      OnCurve IpaPallas.curve.E.A IpaPallas.curve.E.B (p.x.val V, p.y.val V)) ∧
+    ∀ p ∈ inp.sgOld.toList,
+      OnCurve IpaPallas.curve.E.A IpaPallas.curve.E.B (p.x.val V, p.y.val V) := by
+  obtain ⟨⟨hwc, hz, ht, hlr, -, -, hdl, hsg⟩, hprev⟩ := hs
+  have hdum : OnCurve IpaPallas.curve.E.A IpaPallas.curve.E.B
+      ((constPt dummySg).x.val V, (constPt dummySg).y.val V) := by
+    simpa [constPt, CVar.val] using SWPoint.onCurve_of_ne_zero hd
+  refine ⟨fun p hp => ?_, fun p hp => ?_⟩
+  · simp [slotInput] at hp
+    rcases hp with ⟨col, hcol, q, hq, rfl⟩ | ⟨q, hq, rfl⟩ | hp | hp | rfl | rfl
+    · exact pallas_onCurve
+        (hwc col (Vector.mem_toList_iff.mpr hcol) q (Vector.mem_toList_iff.mpr hq))
+    · exact pallas_onCurve (hz q (Vector.mem_toList_iff.mpr hq))
+    · obtain ⟨col, hcol, hp⟩ := Vector.mem_flatten.mp hp
+      obtain ⟨col, hcol', rfl⟩ := Vector.mem_map.mp hcol
+      obtain ⟨q, hq, rfl⟩ := Vector.mem_map.mp hp
+      exact pallas_onCurve
+        (ht col (Vector.mem_toList_iff.mpr hcol') q (Vector.mem_toList_iff.mpr hq))
+    · obtain ⟨a, b, hab, rfl | rfl⟩ := hp
+      · exact pallas_onCurve (hlr _ (Vector.mem_toList_iff.mpr hab)).1
+      · exact pallas_onCurve (hlr _ (Vector.mem_toList_iff.mpr hab)).2
+    · exact pallas_onCurve hdl
+    · exact pallas_onCurve hsg
+  · simp [slotInput] at hp
+    rcases hp with ⟨-, rfl⟩ | ⟨q, hq, rfl⟩
+    · exact hdum
+    · exact pallas_onCurve (hprev q (Vector.mem_toList_iff.mpr hq))
+
+/-- Keeping every entry keeps the list. -/
+private theorem flatten_zipWith_keep_all {α : Type} :
+    ∀ (n : ℕ) (l : List α), l.length = n →
+      (List.zipWith (fun m cv => if m = true then [cv] else [])
+        (List.replicate n true) l).flatten = l
+  | _, [], h => by simp [← h]
+  | _, a :: l, h => by
+    subst h; simp [List.replicate_succ, flatten_zipWith_keep_all _ l rfl]
+
+/-- The next wrap circuit's finalize cells hold `slotProof`'s evaluations and old challenges. -/
+private theorem slotProof_fopTies {ks ncs w : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq}
+    (E : Env IpaPallas.curve 1) {inp : VerifyOneInput ks E.σ.k 1 ncs w}
+    (claims : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (evals : ChunkedEvals 1 (FVar Fq))
+    (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified) (pub : Array Fq) :
+    FopTies E (slotProof Vg Vs inp evals prevChallenges) pub
+      (ScalarHalf.wrap Vs claims evals prevChallenges) := by
+  refine ⟨?_, rfl, rfl, rfl⟩
+  have hl : (ScalarHalf.wrap Vs claims evals prevChallenges).prevVals.length = MaxProofsVerified :=
+    by simp [ScalarHalf.prevVals, ScalarHalf.wrap]
+  rw [ScalarHalf.wrap_maskVals, flatten_zipWith_keep_all _ _ hl]
+  refine List.ext_getElem (by simp [ScalarHalf.prevVals, ScalarHalf.wrap, slotProof])
+    fun j h₁ h₂ => ?_
+  simp [ScalarHalf.prevVals, ScalarHalf.wrap, slotProof, Vector.toList_map]
+
 /-- **Every must-verify slot's wrap proof verifies.** Let `Vg` satisfy the step circuit of any
 rule, compiled with any finalize constants `P` and candidate `domains`, and `Vs` the next wrap
-circuit, with its branch index reading as branch `b`. When the step
-circuit's output reads as the wrap circuit's public input, every must-verify slot whose wrap
-slot was compiled for the key's wrap domain has each wrap proof its cells read as accepted by
-`kimchiVerify`, under the guards, the finalize ties and `SgOk`. -/
+circuit, with its branch index reading as branch `b`. When the step circuit's output reads as
+the wrap circuit's public input and its wrap key as `E`'s, every must-verify slot whose wrap slot
+was compiled for the key's wrap domain holds a wrap proof in its cells; the next wrap circuit's
+finalize cells hold that proof's evaluations and old challenges, and `kimchiVerify` accepts it
+under the guards and `SgOk`. -/
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
     -- and the wrap circuit's slots; the step proofs the wrap proofs verified at `ncPrevStep`; the
@@ -265,7 +417,9 @@ theorem stepWrap_kimchiVerify
     -- the tag verifies at most `MaxProofsVerified`
     (hw : w ≤ MaxProofsVerified)
     -- the `sg` padding the missing accumulators
-    (dummySg : AffinePoint (FVar Fp))
+    (dummySg : IpaPallas.curve.Point)
+    -- off the identity, so its constant cells lie on the curve
+    (hdummySg : dummySg ≠ 0)
     -- the unfinalized entry padding the step statement to the tag's `w` slots
     (dummyUnf : UnfVal E.σ.k)
     -- no relation the slot statements' public-input commitment names commits the SRS to the
@@ -291,7 +445,7 @@ theorem stepWrap_kimchiVerify
               (verifyProofAt E)
               P
               domains
-              dummySg
+              (constPt dummySg)
               dummyUnf
               rule
               adv)).constraints,
@@ -347,7 +501,7 @@ theorem stepWrap_kimchiVerify
           (verifyProofAt E)
           P
           domains
-          dummySg
+          (constPt dummySg)
           dummyUnf
           rule
           adv)
@@ -377,29 +531,40 @@ theorem stepWrap_kimchiVerify
     -- slot `i` must verify
     ∀ i : Fin n,
       CircuitType.Reads Vg r.prevs[i].mustVerify true →
-      let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
+      let inp := slotInput hw (constPt dummySg) r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
       let sl := hd.1.slots[Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)]
       -- the active branch compiled its wrap slot for the key's domain
       sl.pins[b] = some j →
-      ∀ (cp : KimchiProof IpaPallas.curve 1 E.σ.k) (ms : Vector Bool w),
+      -- the step circuit's wrap key reads as `E`'s
+      KeyReads IpaPallas.curve Vg r.vk.points E.cvk →
+      ∃ (cp : KimchiProof IpaPallas.curve 1 E.σ.k) (ms : Vector Bool w),
         -- the slot's public input: its statement, carrying the step-message digest
         let pub := inp.publicInputAt E Vg ms
         -- its cells hold `cp`, with masks `ms`
-        inp.WireReads E Vg r.vk.points cp ms →
-        -- of `cp` itself: the guards, the finalize ties and the deferred `sg` equation
-        Guards IpaPallas.curve E.cvk cp pub →
-        FopTies E cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
-        SgOk E.σ E.cvk cp pub →
-        kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
-  intro r hd hb htie i hmv inp sl hpin cp ms pub hwire hguard hf hsg
+        inp.WireReads E Vg r.vk.points cp ms ∧
+        -- the next wrap circuit's finalize cells hold `cp`'s evaluations and old challenges
+        FopTies E cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) ∧
+        -- of `cp` itself: the guards and the deferred `sg` equation
+        (Guards IpaPallas.curve E.cvk cp pub →
+          SgOk E.σ E.cvk cp pub →
+          kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true) := by
+  intro r hd hb htie i hmv inp sl hpin hkey
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
-  obtain ⟨hsfG, hslot, -⟩ := (builder_spec_iff _ _).mp
+  obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads E P domains (by norm_num [MaxProofsVerified, StepIPARounds]) (fun _ => True)
       (fun _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
-      (hn.trans hw) hw dummySg dummyUnf rule adv
+      (hn.trans hw) hw (constPt dummySg) dummyUnf rule adv
       (fun _ _ => (WrapStatement.packed_length _).trans_le
         (by rw [hE]; norm_num [StepIPARounds, WrapIPARounds])) havoid) 0
       (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc)) i hmv
+  -- the wrap proof the slot's cells hold
+  obtain ⟨hon, holds⟩ := slotInput_onCurve hw hdummySg r.prevs[i] r.unfs[i] r.msgs[i] hpts
+  let cp := slotProof Vg Vs inp sl.evals sl.prevChallenges
+  have hwire : inp.WireReads E Vg r.vk.points cp ms :=
+    ⟨hms, hkey, slotProof_proofReads hon, slotProof_olds holds⟩
+  have hf := slotProof_fopTies (Vg := Vg) (Vs := Vs) E (inp := inp) sl.unfinalized sl.evals
+    sl.prevChallenges (inp.publicInputAt E Vg ms)
+  refine ⟨cp, ms, hwire, hf, fun hguard hsg => ?_⟩
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
@@ -430,7 +595,7 @@ theorem stepWrap_kimchiVerify
       hbody
   have hout := (builder_spec_iff _ _).mp
     (stepMain_out hw (verifyProofAt E) P domains
-      dummySg dummyUnf rule adv) 0
+      (constPt dummySg) dummyUnf rule adv) 0
     (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc))
   -- slot `i` is entry `(w − n) + i` on both sides of the tie
   set jf : Fin w := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
@@ -458,7 +623,7 @@ theorem stepWrap_kimchiVerify
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
   subst hbb
-  exact hfin j hdom _ hpin (reads_true_of_tie hsf hsfG) cp pub hguard Vg inp.unfinalized v hv
+  exact hfin j hdom _ hpin (reads_true_of_tie hsf hsfG) cp _ hguard Vg inp.unfinalized v hv
     hv1 hc hf hsg
 
 end Pickles
