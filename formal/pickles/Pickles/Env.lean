@@ -127,6 +127,9 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   /-- The key's digest is its commitments' (`KimchiVK.indexDigest`): the verifier takes the
   digest as an input, and production computes it from the key. -/
   digest_eq : cvk.digest = cvk.indexDigest
+  /-- The key's generator is its domain's (`domainGenerator`): a constant of the scalar field,
+  never chosen by the key. -/
+  omega_eq : cvk.omega = domainGenerator C cvk.domainLog2
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks
 them once on what it loaded. That the generator is primitive is checked by squaring
@@ -141,7 +144,7 @@ def Env.Invariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : Kimchi
     0 < cvk.lagrangeBasis.size ∧ cvk.lagrangeBasis.size ≤ cvk.n ∧
     nc = (if cvk.domainLog2 < σ.k then 1 else 2 ^ (cvk.domainLog2 - σ.k)) ∧
     cvk.lagrangeBasis = Ipa.lagrangeBasis C σ nc cvk.n cvk.omega cvk.lagrangeBasis.size ∧
-    cvk.digest = cvk.indexDigest
+    cvk.digest = cvk.indexDigest ∧ cvk.omega = domainGenerator C cvk.domainLog2
 
 instance Env.decidableInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
     (cvk : KimchiVK C nc) :
@@ -153,7 +156,8 @@ def Env.ofInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : Kimc
     (h : Env.Invariants σ cvk) : Env C nc :=
   ⟨σ, cvk, h.1, h.2.1, h.2.2.1, isPrimitiveRoot_two_pow _ _ h.2.2.2.1.1 h.2.2.2.1.2,
     h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2⟩
+    h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- There is a chunk. -/
 theorem Env.nc_pos {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : 0 < nc := by

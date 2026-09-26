@@ -79,7 +79,7 @@ structure InputReads (E : Env IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curv
   /-- The `sg` cells under their keep bits; the kept ones are the old accumulators'. -/
   olds : ∃ oldsW, OldsRead Vg g.sgOld cp oldsW
   /-- The branch's domain is the key's. -/
-  domain : s.branch.domainLog2.val Vs = (domains.keyLog2 : Fp)
+  domain : s.branch.domainLog2.val Vs = (E.cvk.domainLog2 : Fp)
   /-- `ft(ζω)`. -/
   ftEval1 : s.evals.ftEval1.val Vs = cp.ftEval1
   /-- The proof's evaluations, chunk by chunk. -/

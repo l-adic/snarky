@@ -147,6 +147,13 @@ structure KimchiCurve extends CommitmentCurve where
   groupMap : Poseidon.GroupMap.Spec base
   /-- The map-to-curve targets this curve. -/
   groupMap_E : groupMap.E = E
+  /-- The two-adicity of the scalar field: the largest `S` with `2 ^ S` dividing `scalar - 1`. -/
+  twoAdicity : ℕ
+  /-- The scalar field's primitive `2 ^ twoAdicity`-th root of unity. A constant of the field:
+  every evaluation domain's generator is a power of it. -/
+  rootOfUnity : ZMod scalar
+  /-- `rootOfUnity` has order exactly `2 ^ twoAdicity`. -/
+  rootOfUnity_order : orderOf rootOfUnity = 2 ^ twoAdicity
 
 /-- The map-to-curve, as the transcript uses it: the SvdW map of `groupMap`, transported along
 the tie to this curve's point type. -/
@@ -813,6 +820,9 @@ abbrev curve : Ipa.KimchiCurve where
   endoScalar := Pasta.pallasEndo
   groupMap := GroupMapVesta.spec
   groupMap_E := rfl
+  twoAdicity := pallasBase.twoAdicity
+  rootOfUnity := pallasBase.rootOfUnity
+  rootOfUnity_order := pallasBase.valid.rootOfUnity_order
   fastMsm := fun {_} g a =>
     CompElliptic.Curves.Pasta.Fast.MsmProj.pippengerProjScatterPar 8
       (List.ofFn fun i => ((a i).val, g i))
@@ -846,6 +856,9 @@ abbrev curve : Ipa.KimchiCurve where
   endoScalar := Pasta.vestaEndo
   groupMap := GroupMapPallas.spec
   groupMap_E := rfl
+  twoAdicity := vestaBase.twoAdicity
+  rootOfUnity := vestaBase.rootOfUnity
+  rootOfUnity_order := vestaBase.valid.rootOfUnity_order
   fastMsm := fun {_} g a =>
     CompElliptic.Curves.Pasta.Fast.MsmProjPallas.pippengerProjScatterPar 8
       (List.ofFn fun i => ((a i).val, g i))
