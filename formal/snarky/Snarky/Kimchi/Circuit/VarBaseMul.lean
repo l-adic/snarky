@@ -1495,7 +1495,6 @@ open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2`). -/
 theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
-    (hsplit : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F) :
     ⦃⌜True⌝⦄
     scaleFast2 (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base sDiv2 sOdd
@@ -1922,8 +1921,8 @@ open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2'`). A half and a parity bit that join to the scalar, the
 half one bit narrower at the full width, and the result is the multiple they name. -/
 theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
-    (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
-    (hsplit : sDiv2Bits ≤ 5 * chunks) (base : AffinePoint (FVar F)) (s : FVar F) :
+    (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
+    (s : FVar F) :
     ⦃⌜True⌝⦄
     scaleFast2' (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base s
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
@@ -1933,12 +1932,10 @@ theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
         ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
           OnCurveAt d.W V r
             ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⌝⦄ := by
-  have hsplit' : scaleFast2'Width n sDiv2Bits ≤ 5 * chunks := by
-    unfold scaleFast2'Width; split_ifs <;> omega
   have hsplitV := fun (V : Valuation F) =>
     splitFieldVar_spec (c := KimchiConstraint F) (V := V) s
   have hsf2 := fun (V : Valuation F) (sDiv2 : FVar F) (sOdd : BoolVar F) =>
-    scaleFast2_spec (V := V) d n chunks (scaleFast2'Width n sDiv2Bits) hn hsplit' base sDiv2 sOdd
+    scaleFast2_spec (V := V) d n chunks (scaleFast2'Width n sDiv2Bits) hn base sDiv2 sOdd
   simp only [scaleFast2']
   mvcgen [hsplitV, hsf2]
   rename_i hsp _ _

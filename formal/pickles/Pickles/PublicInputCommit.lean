@@ -473,7 +473,7 @@ private theorem leafStep_spec (ci : Fin nc) {V : Valuation F} (acc : AffinePoint
           OnCurveAt d.W V r (accv + info.delta)⌝⦄
   | .full scalar base _, T, hT => by
       simp only [leafStep]
-      have hsf := scaleFast2'_spec (V := V) d 255 51 254 (by norm_num) (by norm_num) base[ci] scalar
+      have hsf := scaleFast2'_spec (V := V) d 255 51 254 (by norm_num) base[ci] scalar
       have hadd := fun l => addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
         d.two_torsion_free acc l
       mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
@@ -486,7 +486,7 @@ private theorem leafStep_spec (ci : Fin nc) {V : Valuation F} (acc : AffinePoint
       exact hstep
   | .b128 scalar base _, T, hT => by
       simp only [leafStep]
-      have hsf := scaleFast2'_spec (V := V) d 255 26 127 (by norm_num) (by norm_num) base[ci] scalar
+      have hsf := scaleFast2'_spec (V := V) d 255 26 127 (by norm_num) base[ci] scalar
       have hadd := fun l => addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
         d.two_torsion_free acc l
       mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
@@ -499,7 +499,7 @@ private theorem leafStep_spec (ci : Fin nc) {V : Valuation F} (acc : AffinePoint
       exact hstep
   | .b10 scalar base _, T, hT => by
       simp only [leafStep]
-      have hsf := scaleFast2'_spec (V := V) d 255 2 9 (by norm_num) (by norm_num) base[ci] scalar
+      have hsf := scaleFast2'_spec (V := V) d 255 2 9 (by norm_num) base[ci] scalar
       have hadd := fun l => addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
         d.two_torsion_free acc l
       mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
@@ -1077,7 +1077,7 @@ private theorem ladders_spec (ci : Fin nc) {V : Valuation F} :
       exact ⟨[], .nil, .nil⟩
   | .full scalar base _ :: rest, T :: Ts, .cons hT hrest => by
       simp only [ladders]
-      have hsf := scaleFast2'_spec (V := V) d 255 51 254 (by norm_num) (by norm_num) base[ci] scalar
+      have hsf := scaleFast2'_spec (V := V) d 255 51 254 (by norm_num) base[ci] scalar
       have ih := ladders_spec (V := V) ci rest Ts hrest
       mvcgen [hsf, ih]
       rename_i _ _ _ hsf' _ _
@@ -1089,7 +1089,7 @@ private theorem ladders_spec (ci : Fin nc) {V : Valuation F} :
       simpa only [LeafInfo.delta, Pasta.Shifted.unshiftType2] using hladder hreg
   | .b128 scalar base _ :: rest, T :: Ts, .cons hT hrest => by
       simp only [ladders]
-      have hsf := scaleFast2'_spec (V := V) d 255 26 127 (by norm_num) (by norm_num) base[ci] scalar
+      have hsf := scaleFast2'_spec (V := V) d 255 26 127 (by norm_num) base[ci] scalar
       have ih := ladders_spec (V := V) ci rest Ts hrest
       mvcgen [hsf, ih]
       rename_i _ _ _ hsf' _ _
@@ -1100,7 +1100,7 @@ private theorem ladders_spec (ci : Fin nc) {V : Valuation F} :
       simpa only [LeafInfo.delta, Pasta.Shifted.unshiftType2] using hladder hreg
   | .b10 scalar base _ :: rest, T :: Ts, .cons hT hrest => by
       simp only [ladders]
-      have hsf := scaleFast2'_spec (V := V) d 255 2 9 (by norm_num) (by norm_num) base[ci] scalar
+      have hsf := scaleFast2'_spec (V := V) d 255 2 9 (by norm_num) base[ci] scalar
       have ih := ladders_spec (V := V) ci rest Ts hrest
       mvcgen [hsf, ih]
       rename_i _ _ _ hsf' _ _
