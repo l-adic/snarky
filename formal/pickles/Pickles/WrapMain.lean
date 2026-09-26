@@ -255,8 +255,8 @@ variable {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
 
 /-- The wrap circuit's finalize half: the previous wrap proofs' scalar halves, checked by the
 finalize block. It opens with what the deployed circuit emits first: the branch block over the
-statement's branch data, the key choice, and the allocations of the proof state, accumulators,
-old challenge stacks, evaluations and wrap domain indices. -/
+statement's branch data, the proof state's allocation, the key choice, and the allocations of the
+accumulators, old challenge stacks, evaluations and wrap domain indices. -/
 def wrapMainFinalize {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
@@ -288,7 +288,7 @@ def wrapMainFinalize {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : Fop
       { domainIndex := domainIndices[j], pins := pins[j]
         unfinalized := ps.1[j].toUnfinalized, evals := evals.val[j].toChunked
         prevChallenges := padded j }
-  let outs ← wrapFinalizePrevProofs P (domainGenerator IpaPallas.curve) bitsV slots
+  let outs ← wrapFinalizePrevProofs P bitsV slots
   pure ⟨whichBranch, bits, mask, ps, key, stepAccs, real, slots, outs⟩
 
 /-- The step proof's claims as the wrap statement carries them: the deferred values from its
@@ -354,8 +354,8 @@ def wrapMainVerify {branches mpv ncStep k ks : ℕ} (log2s : Vector ℕ branches
 /-- The wrap circuit over its packed statement (`StatementPacked`), at `k` rounds. The branches'
 slot counts `widths`, step domains `log2s`, step keys and wrap domain pins are the tag's;
 `lagrange` gives the Lagrange bases at a step domain, `h` the blinding base, `dummy` the padding
-challenge vector, `slotWidths` each slot's challenge-stack height. Returns its cells up to the
-finalize block. -/
+challenge vector, `slotWidths` each slot's challenge-stack height. Returns both halves' cells,
+the finalize half's (`WrapMainFinalizeOut`) and the verify half's (`WrapMainVerifyOut`). -/
 def wrapMain {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
@@ -627,6 +627,7 @@ private theorem VkComms.reads_iff (k : VkComms nc (AffinePoint (FVar F)))
       fun c hc => h (.mul ⟨c, hc⟩), fun c hc => h (.emul ⟨c, hc⟩),
       fun c hc => h (.endomulScalar ⟨c, hc⟩)⟩
 
+omit [Field F] [DecidableEq F] [BasicSystem F c] [LawfulBasicSystem F c] in
 /-- `f` over a vector last to first relates each entry to its result. -/
 private theorem vecMapMRev_spec {α β : Type} {n : ℕ} (f : α → CircuitM F (Builder V c) β)
     (Q : α → β → Prop) (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜Q a r⌝⦄) (v : Vector α n) :
@@ -637,10 +638,10 @@ private theorem vecMapMRev_spec {α β : Type} {n : ℕ} (f : α → CircuitM F 
   rename_i rev _ hrev
   intro i
   have := hrev ⟨n - 1 - i, by omega⟩
-  simp only [Vector.getElem_reverse] at this ⊢
   have hi : n - 1 - (n - 1 - i.val) = i.val := by omega
   simpa [hi] using this
 
+omit [Field F] [DecidableEq F] [BasicSystem F c] [LawfulBasicSystem F c] in
 /-- `f` over a key's commitments relates each point to its result. -/
 private theorem VkComms.mapMRev_spec (f : AffinePoint (FVar F) → CircuitM F (Builder V c)
       (AffinePoint (FVar F))) (Q : AffinePoint (FVar F) → AffinePoint (FVar F) → Prop)
@@ -887,8 +888,7 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
       CircuitType.Reads Vs bs (Vector.ofFn fun l => decide (l = bj.1)) ∧
         wrapDomainLog2s[bj.2]? = some E.cvk.domainLog2) _
       fun bj ⟨hbits, hdom⟩ =>
-        wrapFinalizePrevProofs_reads E Vs (domainGenerator IpaPallas.curve) bs sl bj.1 bj.2 hbits
-          hdom E.omega_eq.symm
+        wrapFinalizePrevProofs_reads E Vs bs sl bj.1 bj.2 hbits hdom
   mvcgen [hbb, hck, hfin]
   rename_i bits _ hbb' _ _ _ _ _ hck' _ _ _ _ _ _ _ _ _ _ _ _ _ _ hfin'
   obtain ⟨b, hb, hwb, hbits, hmask, hbd⟩ := hbb'
@@ -1197,7 +1197,7 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
       Fin.eta] at hi
     have hget : (Vector.ofFn fun j : Fin mpv => rev.reverse.getD j.val (CVar.const 0))[i]
         = rev.reverse[i.val]'(by omega) := by
-      simp [List.getD_eq_getElem, hlen]
+      simp [hlen]
     rw [hget]
     obtain ⟨hx, hy⟩ := reads_affinePoint.mp hsg
     exact hi sg chals hx hy hch
@@ -1268,8 +1268,7 @@ theorem wrapMainFinalize_slots {branches mpv ncStep k ks : ℕ} [NeZero branches
   have hck := fun bs => builder_spec_true
     (chooseKey (c := Builder Vs (KimchiConstraint Fq)) bs stepKeys)
   have hfin := fun bs (sl : Vector (WrapFinalizeSlot branches k 1 Fq) mpv) => builder_spec_true
-    (wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq)) P
-      (domainGenerator IpaPallas.curve) bs sl)
+    (wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq)) P bs sl)
   simp only [wrapMainFinalize]
   mvcgen [hbb, hck, hfin]
   intro j
@@ -1294,8 +1293,7 @@ theorem wrapMainFinalize_accs {branches mpv ncStep k ks : ℕ} [NeZero branches]
   have hck := fun bs => builder_spec_true
     (chooseKey (c := Builder Vs (KimchiConstraint Fq)) bs stepKeys)
   have hfin := fun bs (sl : Vector (WrapFinalizeSlot branches k 1 Fq) mpv) => builder_spec_true
-    (wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq)) P
-      (domainGenerator IpaPallas.curve) bs sl)
+    (wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq)) P bs sl)
   simp only [wrapMainFinalize]
   mvcgen [hbb, hck, hfin]
   -- the accumulators' allocation checks, before the challenge stacks, evaluations, domain

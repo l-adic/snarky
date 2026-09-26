@@ -43,13 +43,16 @@ def hashMessagesForNextWrapProof (p : Poseidon.Params F) (sv : SpongeVar F)
   let (digest, _) ← SpongeVar.squeeze p sv
   pure digest
 
-/-- The sponge after absorbing `pad` copies of the dummy challenge vector `dummy`, as constant
-cells: a slot with `pad` padding entries starts its accumulator digest here, so the padding
-emits no rows. -/
+/-- The sponge state after absorbing `pad` copies of the dummy challenge vector `dummy`. -/
+def wrapPaddingState {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (pad : ℕ) :
+    Poseidon.State F :=
+  Poseidon.absorb p Poseidon.init (List.replicate pad dummy.toList).flatten
+
+/-- `wrapPaddingState` as constant cells: a slot with `pad` padding entries starts its
+accumulator digest here, so the padding emits no rows. -/
 def wrapPaddingSponge {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (pad : ℕ) :
     SpongeVar F :=
-  SpongeVar.ofConstants
-    (Poseidon.absorb p Poseidon.init (List.replicate pad dummy.toList).flatten)
+  SpongeVar.ofConstants (wrapPaddingState p dummy pad)
 
 /-- The wire's messages-for-next-wrap-proof digest: an accumulator's `sg` and its old bulletproof
 challenges, front-padded with `dummy` to `MaxProofsVerified`, absorbed from the fresh sponge and
@@ -159,7 +162,8 @@ theorem hashMessagesForNextWrapProof_padded {k : ℕ} (p : Poseidon.Params F)
       intro i h1 h2
       have := (CircuitType.reads_vector.mp hr) i (by simpa using h2)
       simpa [CircuitType.reads_fvar] using this
-  simp only [wrapMsgDigest, hcv.length_eq, Poseidon.absorb, List.foldl_append, hvals hcv, hx, hy]
+  simp only [wrapMsgDigest, wrapPaddingState, hcv.length_eq, Poseidon.absorb, List.foldl_append,
+    hvals hcv, hx, hy]
 
 /-- Under any valuation satisfying the emitted constraints, the sponge after the key reads as
 the fresh value sponge after absorbing the key's coordinates in order. -/

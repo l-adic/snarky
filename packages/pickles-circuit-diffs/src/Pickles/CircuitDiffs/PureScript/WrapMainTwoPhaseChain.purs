@@ -9,7 +9,7 @@
 -- | * `Features.none`.
 -- |
 -- | Step VKs are derived from each branch's compiled step CS via
--- | `deriveStepVKFromCompiled`.
+-- | `deriveStepVKCommsFromCompiled`.
 -- |
 -- | The returned `WrapArtifact`'s `stepCs` / `stepDomainLog2` fields
 -- | reflect the increment branch (the last-compiled "main" branch);
@@ -108,13 +108,16 @@ compileWrapMainTwoPhaseChain { vestaSrs, blindingH, makeZeroStepSrsData, increme
   let
     dummyAdvice :: WrapAdvice 1 1
     dummyAdvice = unsafeCoerce unit
+
+    slotWidths :: Vector 1 Int
+    slotWidths = 1 :< Vector.nil
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @2 @1 @1 config stmt dummyAdvice (1 :< Vector.nil))
+    (\stmt -> wrapMain @2 @1 @1 config stmt dummyAdvice slotWidths)
   wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: incrementArt.stepCs
     , stepDomainLog2: incrementArt.stepDomainLog2
     , wrapCs
     , wrapVk
-    , constants: wrapMainConstants config (makeZeroComms :< incrementComms :< Vector.nil) (1 :< Vector.nil)
+    , constants: wrapMainConstants config (makeZeroComms :< incrementComms :< Vector.nil) slotWidths
     }

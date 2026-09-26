@@ -17,7 +17,7 @@ module Pickles.CircuitDiffs.PureScript.WrapMainSideLoadedMain
 import Prelude
 
 import Data.Maybe (Maybe(..))
-import Data.Vector ((:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKCommsFromCompiled, deriveWrapVKFromCompiled)
@@ -62,13 +62,16 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   let
     dummyAdvice :: WrapAdvice 1 1
     dummyAdvice = unsafeCoerce unit
+
+    slotWidths :: Vector 1 Int
+    slotWidths = 2 :< Vector.nil
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMain @1 @1 @1
           config
           stmt
           dummyAdvice
-          (2 :< Vector.nil)
+          slotWidths
     )
   wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
@@ -76,5 +79,5 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
     , wrapVk
-    , constants: wrapMainConstants config (stepComms :< Vector.nil) (2 :< Vector.nil)
+    , constants: wrapMainConstants config (stepComms :< Vector.nil) slotWidths
     }

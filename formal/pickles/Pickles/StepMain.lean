@@ -330,9 +330,9 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
       SlotWitness.PointsOnCurve V r.slots[i] ∧
       (∃ ms : Vector Bool w, CircuitType.Reads V
         (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).proofMask ms) ∧
-      ∃ (n : ℕ) (ms : Vector Bool MaxProofsVerified), n < 2 ^ 16 ∧
+      ∃ (d : ℕ) (ms : Vector Bool MaxProofsVerified), d < 2 ^ 16 ∧
         (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).branchData.domainLog2.val V
-          = (n : Fp) ∧
+          = (d : Fp) ∧
         CircuitType.Reads V
           (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i]
             r.msgs[i]).branchData.proofsVerifiedMask

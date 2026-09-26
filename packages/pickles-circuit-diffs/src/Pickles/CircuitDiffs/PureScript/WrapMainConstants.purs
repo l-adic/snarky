@@ -13,28 +13,31 @@ import Data.Array as Array
 import Data.Enum (fromEnum)
 import Data.Maybe (maybe)
 import Data.Newtype (un)
-import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
+import Pickles.PackedStatement (PackedStepPublicInput)
+import Pickles.Types (WrapIPARounds)
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Main (WrapMainConfig)
 import Simple.JSON (writeJSON)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
-import Snarky.Circuit.DSL (F(..))
+import Snarky.Circuit.DSL (class CircuitType, BoolVar, F(..), FVar, sizeInFields)
 import Snarky.Curves.Class (toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 -- | The constants as JSON. `keys` are the branches' step keys as values;
--- | the Lagrange table is exported at every packed public-input scalar of
--- | `mpv` slots, `32` per slot and one per digest. A side-loaded pin is
--- | `-1`.
+-- | the Lagrange table is exported at every scalar of the packed step
+-- | statement of `mpv` slots (`PackedStepPublicInput`). A side-loaded pin
+-- | is `-1`.
 wrapMainConstants
   :: forall branches mpv stepChunks
-   . Reflectable mpv Int
+   . CircuitType WrapField
+       (PackedStepPublicInput mpv WrapIPARounds (F WrapField) Boolean)
+       (PackedStepPublicInput mpv WrapIPARounds (FVar WrapField) (BoolVar WrapField))
   => WrapMainConfig branches mpv stepChunks
   -> Vector branches (StepVK stepChunks WrapField)
   -> Vector mpv Int
@@ -55,8 +58,8 @@ wrapMainConstants config keys slotWidths =
         (Vector.toUnfoldable dummyIpaChallenges.wrapExpanded :: Array WrapField)
     }
   where
-  mpv = reflectType (Proxy @mpv)
-  packedCount = 32 * mpv + 1 + mpv
+  packedCount = sizeInFields (Proxy @WrapField)
+    (Proxy @(PackedStepPublicInput mpv WrapIPARounds (F WrapField) Boolean))
 
   fieldJson :: WrapField -> String
   fieldJson = BigInt.toString <<< toBigInt

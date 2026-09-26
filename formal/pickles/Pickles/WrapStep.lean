@@ -41,21 +41,6 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta
 open scoped Kimchi
 
-/-- A step key's domain exponent is small: its size is the order of a root of unity of the
-field, which divides `p − 1`. -/
-private theorem Env.domainLog2_lt {nc : ℕ} (Es : Env IpaVesta.curve nc) :
-    Es.cvk.domainLog2 < 255 := by
-  have hpos : 0 < Es.cvk.n := by have := Es.zkRows_ge; have := Es.zkRows_le; omega
-  have hne : Es.cvk.omega ≠ 0 := Es.omega_prim.ne_zero (by omega)
-  have hd : Es.cvk.n ∣ PALLAS_BASE_CARD - 1 :=
-    Es.omega_prim.dvd_of_pow_eq_one _ (ZMod.pow_card_sub_one_eq_one hne)
-  have hle := Nat.le_of_dvd (by norm_num [PALLAS_BASE_CARD]) hd
-  rw [KimchiVK.n] at hle
-  by_contra hc
-  have := Nat.pow_le_pow_right (show 0 < 2 by norm_num) (not_lt.mp hc)
-  norm_num [PALLAS_BASE_CARD] at hle this
-  omega
-
 /-- The mask part of the wrap circuit's branch data, at most two slots, is a small number:
 `Σᵢ 2^(1−i)·maskᵢ ≤ 3`. -/
 private theorem maskSum_natCast {w : ℕ} (hw : w ≤ MaxProofsVerified) (p : ℕ → Bool) :
@@ -290,7 +275,7 @@ private theorem wrapStep_kimchiVerify_core
   set sN := ((List.range w).map fun i =>
     2 ^ (1 - i) * (if decide (i < (widths[b.val] : ℕ)) then 1 else 0)).sum
   have ht3 : t ≤ 3 := by rw [htdef]; split <;> split <;> omega
-  have hL := EsStep.domainLog2_lt
+  have hL : EsStep.cvk.domainLog2 < 255 := EsStep.domainLog2_le.trans_lt (by decide)
   have hn0p : 4 * n0 + t < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]; omega
   have hlog' : log2s[b.val] = EsStep.cvk.domainLog2 := by simpa using hlog
   rw [hsum, hlog'] at hbd

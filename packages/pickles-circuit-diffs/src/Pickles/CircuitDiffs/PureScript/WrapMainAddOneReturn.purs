@@ -12,7 +12,7 @@ module Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn
 
 import Prelude
 
-import Data.Vector ((:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKCommsFromCompiled, deriveWrapVKFromCompiled)
@@ -55,13 +55,16 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
   let
     dummyAdvice :: WrapAdvice 0 1
     dummyAdvice = unsafeCoerce unit
+
+    slotWidths :: Vector 0 Int
+    slotWidths = Vector.nil
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @1 @0 @1 config stmt dummyAdvice Vector.nil)
+    (\stmt -> wrapMain @1 @0 @1 config stmt dummyAdvice slotWidths)
   wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
     , wrapVk
-    , constants: wrapMainConstants config (stepComms :< Vector.nil) Vector.nil
+    , constants: wrapMainConstants config (stepComms :< Vector.nil) slotWidths
     }

@@ -148,7 +148,7 @@ def dummyWrapChallenges : Vector Fq 15 :=
 state after absorbing one dummy challenge vector per padding slot, so the padding costs no
 gates. -/
 def wrapMsgSpongeState (n : ℕ) : Poseidon.State Fq :=
-  Poseidon.absorb Bulletproof.IpaVesta.curve.sponge.params ⟨(0, 0, 0), .absorbed 0⟩
-    (List.replicate (MaxProofsVerified - n) dummyWrapChallenges.toList).flatten
+  Pickles.wrapPaddingState Bulletproof.IpaVesta.curve.sponge.params dummyWrapChallenges
+    (MaxProofsVerified - n)
 
 end PicklesFixture

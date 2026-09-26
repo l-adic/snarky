@@ -26,7 +26,6 @@ module Pickles.CircuitDiffs.PureScript.Common
   , srsLengthLog2
   , wrapDomainLog2
   , wrapSrsLengthLog2
-  , deriveStepVKFromCompiled
   , deriveStepVKCommsFromCompiled
   , deriveWrapVKFromCompiled
   ) where
@@ -45,7 +44,7 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Prove.Step (extractWrapVKCommsAdvice)
-import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
+import Pickles.Prove.Wrap (extractStepVKComms)
 import Pickles.Types (WrapVkChunks)
 import Pickles.VerificationKey (StepVK, VerificationKey)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
@@ -136,27 +135,15 @@ wrapSrsLengthLog2 = 15
 -- VK derivation
 --------------------------------------------------------------------------------
 
--- | Derive a step `VerifierIndex`'s commitments from a compiled step
--- | constraint system. Returns a `StepVK (FVar WrapField)` for use as
--- | the `stepKeys` field in `WrapMainConfig`.
+-- | Derive a step `VerifierIndex`'s commitments, as values, from a
+-- | compiled step constraint system. `stepVkForCircuit` turns them into
+-- | the `stepKeys` cells of `WrapMainConfig`.
 -- |
 -- | Mirrors `Pickles.Prove.Step.stepCompile`'s
 -- | `makeConstraintSystemWithPrevChallenges + createProverIndex +
--- | createVerifierIndex` tail, then runs `extractStepVKComms +
--- | stepVkForCircuit`. Byte-identical to OCaml's
--- | `Pickles.compile_promise` for the same step CS + SRS.
-deriveStepVKFromCompiled
-  :: forall @stepChunks @len
-   . Reflectable stepChunks Int
-  => Reflectable len Int
-  => CRS VestaG
-  -> CompiledCircuit StepField
-  -> Effect (StepVK stepChunks (FVar WrapField))
-deriveStepVKFromCompiled vestaSrs builtState =
-  stepVkForCircuit <$> deriveStepVKCommsFromCompiled @stepChunks @len vestaSrs builtState
-
--- | `deriveStepVKFromCompiled`'s commitments as values, before they
--- | become the circuit's constant cells.
+-- | createVerifierIndex` tail, then runs `extractStepVKComms`.
+-- | Byte-identical to OCaml's `Pickles.compile_promise` for the same
+-- | step CS + SRS.
 deriveStepVKCommsFromCompiled
   :: forall @stepChunks @len
    . Reflectable stepChunks Int
@@ -186,7 +173,7 @@ deriveStepVKCommsFromCompiled vestaSrs builtState = do
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
   pure $ extractStepVKComms @stepChunks verifierIndex
 
--- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS
+-- | Wrap-side analog of `deriveStepVKCommsFromCompiled`. The wrap CS
 -- | lives in `WrapField` over Pallas; commitments are Pallas points
 -- | with coordinates in `Pallas.BaseField = StepField`, so the
 -- | resulting VK is what a step circuit consumes when verifying the

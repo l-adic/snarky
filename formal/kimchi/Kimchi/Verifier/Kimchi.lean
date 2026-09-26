@@ -304,7 +304,7 @@ squared `twoAdicity − log2` times. -/
 def domainGenerator (C : Ipa.KimchiCurve) (log2 : ℕ) : C.ScalarField :=
   powPow2 C.rootOfUnity (C.twoAdicity - log2)
 
-/-- A domain generator has its domain's order as a divisor: `ω ^ 2 ^ log2 = 1`. -/
+/-- A domain generator's order divides its domain's size: `ω ^ 2 ^ log2 = 1`. -/
 theorem domainGenerator_pow (C : Ipa.KimchiCurve) (log2 : ℕ) :
     domainGenerator C log2 ^ 2 ^ log2 = 1 := by
   rw [domainGenerator, powPow2_eq, ← pow_mul, ← pow_add]

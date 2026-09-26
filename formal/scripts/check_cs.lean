@@ -834,8 +834,7 @@ def wrapFinalizeN2Circuit (input : Vector (FVar Fq) 295) : CircuitM Fq Cq PUnit 
       unfinalized := { u with shouldFinalize := .unchecked (get (off + 145)) }
       evals := w
       prevChallenges := Vector.ofFn fun a => Vector.ofFn fun r => get (off + 114 + 15 * a + r) }
-  let _ ← Pickles.wrapFinalizePrevProofs fopWrapParams
-    (fun l => Kimchi.Fixture.PS.fqSide.omega (2 ^ l)) whichBranch
+  let _ ← Pickles.wrapFinalizePrevProofs fopWrapParams whichBranch
     #v[slot 0 #v[some 1, some 0], slot 1 #v[some 1, some 2]]
   pure PUnit.unit
 

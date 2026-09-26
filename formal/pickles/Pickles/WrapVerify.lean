@@ -315,17 +315,10 @@ theorem wrapVerifyAt_reads {ks n nc : ℕ} {V : Valuation Fq}
     claimedMsgDigest u cells oldsW hX (onCurveAt_constPt E.σ.h E.h_ne) hivp
 
 open scoped Kimchi in
-/-- A step key has at most `2^32` chunks: its domain size divides `|Fp| − 1`, whose two-adic
-part is `2^32`, and the chunk count is at most the domain size. -/
+/-- A step key has at most `2^32` chunks: its domain exponent is at most `Fp`'s two-adicity,
+`32` (`Env.domainLog2_le`), and the chunk count is at most the domain size. -/
 private theorem nc_le_vesta {nc : ℕ} (E : Env IpaVesta.curve nc) : nc ≤ 2 ^ 32 := by
-  have hω0 : E.cvk.omega ≠ 0 := E.omega_prim.ne_zero (by rw [KimchiVK.n]; positivity)
-  have hn : E.cvk.n ∣ PALLAS_BASE_CARD - 1 :=
-    E.omega_prim.dvd_of_pow_eq_one _ (ZMod.pow_card_sub_one_eq_one hω0)
-  have hd : E.cvk.domainLog2 ≤ 32 := by
-    by_contra h
-    have h33 : 2 ^ 33 ∣ PALLAS_BASE_CARD - 1 :=
-      (Nat.pow_dvd_pow 2 (show 33 ≤ E.cvk.domainLog2 by omega)).trans hn
-    exact absurd h33 (by norm_num [PALLAS_BASE_CARD])
+  have hd : E.cvk.domainLog2 ≤ 32 := E.domainLog2_le
   calc nc ≤ E.cvk.n := E.nc_le_n
     _ = 2 ^ E.cvk.domainLog2 := rfl
     _ ≤ 2 ^ 32 := Nat.pow_le_pow_right two_pos hd

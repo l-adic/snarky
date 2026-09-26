@@ -1,6 +1,6 @@
 -- API root set for the pickles package: the in-circuit kimchi verifier.
 --
--- The two capstones are the package's reason to exist; everything the gadgets, the token
+-- The capstones are the package's reason to exist; everything the gadgets, the token
 -- machine and the certificates prove must stay reachable from them, from the linearization
 -- reflection, or from a check script (the `script-surface` blocks).
 
@@ -46,13 +46,9 @@ Pickles.FopSide.unshiftV_read
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
-Pickles.chooseKey
-Pickles.onesVector
-Pickles.wrapMain
 Pickles.buildEvalList
 Pickles.Env.decidableAvoids
 Pickles.Env.decidableInvariants -- synthesis: found by class resolution, never by name
-Pickles.Env.ofInvariants
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
 Pickles.decidableAvoidsStepRelations

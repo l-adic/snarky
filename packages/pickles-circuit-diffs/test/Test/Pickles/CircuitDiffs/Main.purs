@@ -947,7 +947,7 @@ spec bundle =
           -- Step CS params for Add_one_return (mpv=0, no prev proofs).
           -- Lagrange lookup is unused at mpv=0 (perSlotLagrangeAt is
           -- Vector.nil). blindingH and SRS size match the Vesta CRS
-          -- used by createCRS in deriveStepVKFromCompiled.
+          -- the step VK is derived over (deriveStepVKCommsFromCompiled).
           aorStepSrs = bundle.pallasCrs15
           aorStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
