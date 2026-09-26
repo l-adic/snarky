@@ -218,7 +218,10 @@ private theorem wrapStep_kimchiVerify_core
   intro r stmt hd hb i hmv inp ms hms htie cp oldsW pub hpr hol hguard hf hsg
   -- the step side: slot `i` finalizes, over the domain its branch data names
   obtain ⟨-, -, hscal, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E EsStep D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0
+    (stepMain_reads E (FopParams.ofEnv EsStep Linearization.fpTokens) D.list
+      EsStep.rounds_small (fun inp => inp.ScalarReads EsStep Vs)
+      (fun vk inp => verifyOne_scalarReads EsStep D hw (verifyProofAt E) vk inp) (hn.trans hw) hw
+      dummySg dummyUnf rule adv hsmall havoid) 0
     (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap side: the body's constraints hold, so its reads do
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
