@@ -1399,7 +1399,7 @@ def simpleChainN2Rule (appState : FVar Fp) :
 open Pickles in
 /-- `step_main_simple_chain_n2_circuit`. -/
 def stepMainSimpleChainN2Circuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point) :
-    Unit → CircuitM Fp C (Vector (FVar Fp) 67) :=
+    Unit → CircuitM Fp C (StmtVar 15 2) :=
   stepMainCircuit (n := 2) (w := 2) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := Fp)
     (by decide)
     (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
@@ -1411,7 +1411,7 @@ def stepMainSimpleChainN2Circuit (pts : Array XhatStepCurve.Point) (h : XhatStep
 open Pickles in
 /-- `step_main_two_phase_chain_make_zero_circuit`: the rule `self = 0` with no slot, so the
 verifier and the finalize's domains are never used. -/
-def stepMainTwoPhaseChainMakeZeroCircuit : Unit → CircuitM Fp C (Vector (FVar Fp) 34) :=
+def stepMainTwoPhaseChainMakeZeroCircuit : Unit → CircuitM Fp C (StmtVar 15 1) :=
   stepMainCircuit (n := 0) (w := 1) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := Fp)
     (by decide)
     (fun _ _ _ _ _ => pure true_) PicklesFixture.fopStepParams [] dummyWrapSg dummyUnfN0
@@ -1699,7 +1699,7 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
     ("hash_messages_for_next_step_proof_circuit",
       stepTarget (a := Vector Fp 91) (b := PUnit) hashMessagesStepCircuit),
     ("step_main_two_phase_chain_make_zero_circuit",
-      stepTarget (a := Unit) (b := Vector Fp 34) stepMainTwoPhaseChainMakeZeroCircuit),
+      stepTarget (a := Unit) (b := Pickles.StmtVal 15 1) stepMainTwoPhaseChainMakeZeroCircuit),
     ("hash_messages_for_next_wrap_proof_circuit",
       wrapTarget (a := Vector Fq 33) (b := PUnit) hashMessagesWrapCircuit) ]
 
@@ -1734,7 +1734,7 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
       stepTarget (a := Vector Fp 286) (b := PUnit) (fullStepVerifyOneCircuit pts h)))
   ++ (fullStep.toList.map fun (pts, h) =>
     ("step_main_simple_chain_n2_circuit",
-      stepTarget (a := Unit) (b := Vector Fp 67) (stepMainSimpleChainN2Circuit pts h)))
+      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2) (stepMainSimpleChainN2Circuit pts h)))
   ++ (step.toList.map fun (pts, h) =>
     ("xhat_step_circuit",
       stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts (xhatStepCell h))))

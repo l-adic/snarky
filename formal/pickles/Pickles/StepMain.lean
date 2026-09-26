@@ -48,6 +48,13 @@ abbrev UnfVar (k : ℕ) : Type := AllocUnfinalized k (FVar Fp) (BoolVar Fp) Step
 /-- One unfinalized entry's values. -/
 abbrev UnfVal (k : ℕ) : Type := AllocUnfinalized k Fp Bool (Type2 (SplitField Fp Bool))
 
+/-- The step statement's cells at the tag's `w` slots, in wire order: the unfinalized entries,
+the step-message digest, the wrap-side messages. -/
+abbrev StmtVar (k w : ℕ) : Type := Vector (UnfVar k) w × FVar Fp × Vector (FVar Fp) w
+
+/-- The step statement's values, in wire order. -/
+abbrev StmtVal (k w : ℕ) : Type := Vector (UnfVal k) w × Fp × Vector Fp w
+
 /-- What the rule returns for one slot: the previous proof's statement, as field cells, and
 whether it must verify. -/
 structure PrevStatement where
@@ -99,8 +106,8 @@ def slotInput {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified) (dummySg : A
 /-- What the step circuit allocated and returns: the step statement's cells, and the cells it
 read them from, so a statement about the circuit can name them. -/
 structure StepMainOut (n w ncw ncs k ks : ℕ) where
-  /-- The step statement: the unfinalized proofs' cells, the digest, the wrap-side messages. -/
-  out : List (FVar Fp)
+  /-- The step statement: the unfinalized entries, the digest, the wrap-side messages. -/
+  out : StmtVar k w
   /-- What the rule returned for each slot. -/
   prevs : Vector PrevStatement n
   /-- This system's wrap key. -/
@@ -151,14 +158,16 @@ def stepMain {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
     (slots.val[i].sg.pt, r.1.expandedChallenges)
   let digest ← hashMessagesForNextStepProof IpaPallas.curve.sponge.params vk.points appFields
     proofs
-  let pad := List.replicate (w - n) (CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf)
-  pure ⟨(pad ++ unfs.toList).flatMap
-      (fun u => (CircuitType.varToFields (F := Fp) (val := UnfVal k) u).toList)
-    ++ [digest] ++ msgsPad.toList ++ msgs.toList, prevs, vk, slots.val, unfs, msgs⟩
+  -- the first `w − n` slots are padding
+  let unfsW := Vector.ofFn fun j : Fin w => if h : j.val < w - n
+    then CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf
+    else unfs[j.val - (w - n)]'(by omega)
+  let msgsW := Vector.ofFn fun j : Fin w =>
+    if h : j.val < w - n then msgsPad[j.val] else msgs[j.val - (w - n)]'(by omega)
+  pure ⟨(unfsW, digest, msgsW), prevs, vk, slots.val, unfs, msgs⟩
 
 /-- The step circuit as a circuit of its statement: no input cells (the `Unit` argument is
-`Snarky.compile`'s empty input), the output `stepMain`'s statement cells, `w · (k + 17) + 1 + w`
-of them (each padded entry's `k + 17` cells, the digest, the `w` wrap-side messages). -/
+`Snarky.compile`'s empty input), the output `stepMain`'s statement. -/
 @[nolint unusedArguments]
 def stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     [CheckedType Fp c inVal inVar] (hw : w ≤ MaxProofsVerified)
@@ -170,9 +179,8 @@ def stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType F
     (dummyUnf : UnfVal k)
     (rule : inVar → CircuitM Fp c (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w ncw ncs k ks inVal) (_ : Unit) :
-    CircuitM Fp c (Vector (FVar Fp) (w * (k + 17) + 1 + w)) := do
-  let r ← stepMain hw verify P domains dummySg dummyUnf rule adv
-  pure (Vector.ofFn fun i => r.out[i.val]?.getD (.const 0))
+    CircuitM Fp c (StmtVar k w) :=
+  StepMainOut.out <$> stepMain hw verify P domains dummySg dummyUnf rule adv
 
 /-- The compiled step circuit's rows contain `stepMain`'s, built from the first variable: the
 statement has no input cells, so the body starts there. -/
@@ -190,7 +198,7 @@ theorem mem_compile_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w ncw ncs k ks inVal) {con : KimchiConstraint Fp}
     (h : con ∈ (build (stepMain hw verify P domains dummySg dummyUnf rule adv) 0).constraints) :
-    con ∈ (compile (a := Unit) (b := Vector Fp (w * (k + 17) + 1 + w))
+    con ∈ (compile (a := Unit) (b := StmtVal k w)
       (stepMainCircuit hw verify P domains dummySg dummyUnf rule adv)).constraints := by
   refine mem_compile_of_mem_body ?_
   unfold stepMainCircuit
@@ -236,8 +244,40 @@ theorem AllocUnfinalized.varToFields_toList {k : ℕ}
   simp only [id] at hs
   simp [hs]
 
-/-- The step statement's cells open with the unfinalized entries, front-padded to `w` with the
-constant `dummyUnf`, each entry's cells in allocation order. -/
+/-- The step statement has `w · (k + 17) + 1 + w` cells: `k + 17` per entry, the digest, one
+message per slot. -/
+theorem StmtVal.size (k w : ℕ) : CircuitType.size Fp (StmtVal k w) = w * (k + 17) + 1 + w := by
+  have h1 : CircuitType.size Fp Fp = 1 := rfl
+  have h2 : CircuitType.size Fp (Type2 (SplitField Fp Bool)) = 2 := rfl
+  have hb : CircuitType.size Fp Bool = 1 := rfl
+  have hu : CircuitType.size Fp (UnfVal k) = k + 17 := by
+    unfold CircuitType.size
+    dsimp only [instAllocUnfinalizedCircuitType, CircuitType.ofEquiv]
+    simp [h1, h2, hb]
+    omega
+  simp [hu, h1]
+  ring
+
+/-- The step statement's cells: each entry's cells in turn, the digest, the messages. -/
+theorem StmtVar.varToFields_toList {k w : ℕ} (s : StmtVar k w) :
+    (CircuitType.varToFields (F := Fp) (val := StmtVal k w) s).toList
+      = s.1.toList.flatMap (fun u => (CircuitType.varToFields (F := Fp) (val := UnfVal k) u).toList)
+        ++ s.2.1 :: s.2.2.toList := by
+  obtain ⟨us, d, ms⟩ := s
+  have hf : ∀ x : FVar Fp, CircuitType.varToFields (F := Fp) (val := Fp) x = #v[x] :=
+    fun _ => rfl
+  simp only [CircuitType.varToFields_prod, CircuitType.varToFields_vector, hf, mapVec_eq_map,
+    Vector.toList_append]
+  have hms : Vector.map (CircuitType.varToFields (F := Fp) (val := Fp)) ms
+      = ms.map fun c => #v[c] := by
+    ext1; simp [hf]
+  have hs := toList_flatten_singletons ms id
+  simp only [id, List.map_id] at hs
+  rw [hms, hs, toList_flatten', Vector.toList_map, List.map_map]
+  rfl
+
+/-- The step statement's unfinalized entries are the circuit's, front-padded to `w` with the
+constant `dummyUnf`. -/
 theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar] (hw : w ≤ MaxProofsVerified)
     (verify : SpongeVar Fp → BoolVar Fp →
@@ -252,10 +292,9 @@ theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType 
     (adv : StepMainAdvice n w ncw ncs k ks inVal) :
     ⦃⌜True⌝⦄
     stepMain hw verify P domains dummySg dummyUnf rule adv
-    ⦃⇓ r _ => ⌜∃ tail : List (FVar Fp), r.out =
-      (List.replicate (w - n) (CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf)
-          ++ r.unfs.toList).flatMap
-        (fun u => (CircuitType.varToFields (F := Fp) (val := UnfVal k) u).toList) ++ tail⌝⦄ := by
+    ⦃⇓ r _ => ⌜r.out.1 = Vector.ofFn fun j : Fin w => if h : j.val < w - n
+      then CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf
+      else r.unfs[j.val - (w - n)]'(by omega)⌝⦄ := by
   have hrule := fun x => builder_spec_true (rule x)
   have hfm := fun (l : List (SlotVar w ncw ncs k ks)) => builder_spec_true
     (l.forM (SlotWitness.check (c := Builder V (KimchiConstraint Fp))))
@@ -268,7 +307,6 @@ theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType 
       (hashMessagesForNextStepProof (c := Builder V (KimchiConstraint Fp)) p vk a pr)
   simp only [stepMain]
   mvcgen [hrule, hfm, hmap, hall, hhash, -Snarky.assertAll_spec]
-  exact ⟨_, List.append_assoc _ _ _ |>.trans (List.append_assoc _ _ _)⟩
 
 /-- A list related entrywise to `finRange n` has length `n`, and its entry at `j` is related
 to `j`. -/

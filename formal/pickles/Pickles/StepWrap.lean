@@ -256,7 +256,7 @@ theorem stepWrap_kimchiVerify
     -- the step circuit's advice
     (adv : StepMainAdvice n w 1 ncPrevStep E.σ.k EsPrev.σ.k inVal)
     -- `Vg` satisfies every constraint of the compiled step circuit
-    (hstep : ∀ con ∈ (compile (a := Unit) (b := Vector Fp (w * (E.σ.k + 17) + 1 + w))
+    (hstep : ∀ con ∈ (compile (a := Unit) (b := StmtVal E.σ.k w)
         (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp)) hw (verifyProofAt E)
           (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list dummySg dummyUnf rule
           adv)).constraints, ConstraintHolds.Holds Vg con)
@@ -303,7 +303,8 @@ theorem stepWrap_kimchiVerify
     hd.1.whichBranch.val Vs = (b : Fq) →
     -- the step proof's public input: the step circuit's statement is the wrap circuit's packed
     -- step statement, each cell reduced into the step field (`wrapPublicInput_toList`)
-    r.out.map (·.val Vg) = hd.2.statement.packed.map (PackedScalar.reduced IpaVesta.curve Vs) →
+    (CircuitType.varToFields (F := Fp) (val := StmtVal E.σ.k w) r.out).toList.map (·.val Vg)
+      = hd.2.statement.packed.map (PackedScalar.reduced IpaVesta.curve Vs) →
     -- slot `i` must verify
     ∀ i : Fin n, CircuitType.Reads Vg r.prevs[i].mustVerify true →
       let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
@@ -349,7 +350,7 @@ theorem stepWrap_kimchiVerify
     (wrapMain_statement (FopParams.ofEnv E Linearization.fqTokens) Vs widths
       (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths
       advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)) hnc) _ hbody
-  obtain ⟨tail, hout⟩ := (builder_spec_iff _ _).mp
+  have hout := (builder_spec_iff _ _).mp
     (stepMain_out hw (verifyProofAt E) (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list
       dummySg dummyUnf rule adv) 0
     (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc))
@@ -364,22 +365,19 @@ theorem stepWrap_kimchiVerify
     intro sp
     simp [UnfinalizedProof.packed]
   have htie' := htie
-  rw [hout, StepStatement.packed, hsplitsEq, List.append_assoc] at htie'
+  rw [StmtVar.varToFields_toList, StepStatement.packed, hsplitsEq, List.append_assoc] at htie'
   rw [List.map_append (f := PackedScalar.reduced IpaVesta.curve Vs), List.map_flatMap] at htie'
   -- slot `i` is the `(w − n) + i`-th block on both sides
   set jf : Fin w := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
   have hjv : jf.val = w - n + i := rfl
   have hblk := map_flatMap_block _
     (fun sp => sp.packed.map (PackedScalar.reduced IpaVesta.curve Vs)) (fun x : FVar Fp => x.val Vg)
-    (E.σ.k + 17) hlenU hlenP (List.replicate (w - n)
-      (CircuitType.constVar (F := Fp) (var := UnfVar E.σ.k) dummyUnf) ++ r.unfs.toList)
-    hd.2.splits.toList tail _ (by simp; omega) htie' (w - n + i)
-    (by simp) (by simp; omega)
-  have hl : (List.replicate (w - n)
-      (CircuitType.constVar (F := Fp) (var := UnfVar E.σ.k) dummyUnf) ++ r.unfs.toList)[w - n + i]'
-        (by simp) = r.unfs[i] := by
-    rw [List.getElem_append_right (by simp)]
-    simp
+    (E.σ.k + 17) hlenU hlenP r.out.1.toList hd.2.splits.toList _ _ (by simp) htie' (w - n + i)
+    (by simp; omega) (by simp; omega)
+  have hl : r.out.1.toList[w - n + i]'(by simp; omega) = r.unfs[i] := by
+    have h1 : r.out.1 = _ := hout
+    simp [h1]
+    rfl
   have hr : hd.2.splits.toList[w - n + i]'(by simp; omega) = hd.2.splits[jf] := by
     simp [hjv]
   rw [hl, hr] at hblk
