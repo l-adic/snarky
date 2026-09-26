@@ -379,15 +379,23 @@ def wrapMainCircuit {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopP
   let _ ← wrapMain P widths log2s stepKeys pins lagrange h dummy slotWidths adv stmt
   pure ()
 
-/-- The branches' step keys as the wrap circuit's constant cells, from their environments. -/
-def stepKeyCells {branches ncStep : ℕ} (stepEnvs : Vector (Env IpaVesta.curve ncStep) branches) :
+/-- The branches' step keys as the wrap circuit's constant cells. -/
+def stepKeyCells {branches ncStep : ℕ}
+    (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches) :
     Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches :=
-  stepEnvs.map fun e => keyCellsOf constPt e.cvk
+  stepKeys.map (keyCellsOf constPt)
 
-/-- The branches' step domain exponents, from their environments. -/
+/-- The branches' step domain exponents. -/
 def stepDomainLog2s {branches ncStep : ℕ}
-    (stepEnvs : Vector (Env IpaVesta.curve ncStep) branches) : Vector ℕ branches :=
-  stepEnvs.map (·.cvk.domainLog2)
+    (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches) : Vector ℕ branches :=
+  stepKeys.map (·.domainLog2)
+
+/-- Branch `b`'s step environment: its key over the step SRS `σ`, which is `σ` by definition. -/
+def stepEnvAt {branches ncStep : ℕ} (σ : SRS IpaVesta.curve.Point)
+    (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
+    (hkeys : ∀ i : Fin branches, Env.Invariants σ stepKeys[i]) (b : Fin branches) :
+    Env IpaVesta.curve ncStep :=
+  Env.ofInvariants σ stepKeys[b] (hkeys b)
 
 /-- The Lagrange table a wrap circuit is compiled with: at each step domain, the SRS's first
 `count` Lagrange commitments over that domain. -/

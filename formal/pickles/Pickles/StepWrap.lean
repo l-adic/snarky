@@ -284,9 +284,10 @@ theorem stepWrap_kimchiVerify
           adv)).constraints, ConstraintHolds.Holds Vg con)
     -- the next wrap circuit's valuation
     (Vs : Valuation Fq)
-    -- the tag's branches' slot counts, and their step circuits' environments over one SRS
+    -- the tag's branches' slot counts, the step SRS and the branches' step keys over it
     (widths : Vector (Fin (w + 1)) branches)
-    (stepEnvs : Vector (Env IpaVesta.curve ncStep) branches) (σStep : SRS IpaVesta.curve.Point)
+    (σStep : SRS IpaVesta.curve.Point) (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
+    (hkeys : ∀ i : Fin branches, Env.Invariants σStep stepKeys[i])
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots,
     -- front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
@@ -301,8 +302,8 @@ theorem stepWrap_kimchiVerify
     -- domains and the SRS's blinding base
     (hwrap : ∀ con ∈ (compile (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
-          (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
-          (stepKeyCells stepEnvs) pins
+          (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepKeys)
+          (stepKeyCells stepKeys) pins
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h
           dummy slotWidths advW)).constraints,
         ConstraintHolds.Holds Vs con)
@@ -316,8 +317,8 @@ theorem stepWrap_kimchiVerify
       P domains dummySg dummyUnf rule adv) 0).result
     -- the wrap circuit's cells over its statement
     let hd := (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
-          (stepKeyCells stepEnvs) pins
+      (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepKeys)
+          (stepKeyCells stepKeys) pins
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
@@ -356,8 +357,8 @@ theorem stepWrap_kimchiVerify
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
-          (stepKeyCells stepEnvs) pins
+      (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepKeys)
+          (stepKeyCells stepKeys) pins
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
@@ -367,17 +368,17 @@ theorem stepWrap_kimchiVerify
       simp only [wrapMainCircuit, build_bind]
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_reads E Vs widths (stepDomainLog2s stepEnvs)
-          (stepKeyCells stepEnvs) pins
+    (wrapMain_reads E Vs widths (stepDomainLog2s stepKeys)
+          (stepKeyCells stepKeys) pins
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
           slotWidths advW (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
           hw hbr) _
       hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
-  have hnc : 0 < ncStep := (stepEnvs[0]'(Nat.pos_of_neZero branches)).nc_pos
+  have hnc : 0 < ncStep := (stepEnvAt σStep stepKeys hkeys ⟨0, Nat.pos_of_neZero branches⟩).nc_pos
   obtain ⟨hsplitsEq, hsr, hbnd, hslots⟩ := (builder_spec_iff _ _).mp
     (wrapMain_statement (FopParams.ofEnv E Linearization.fqTokens) Vs widths
-      (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins
+      (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
       (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hnc) _
       hbody
