@@ -299,6 +299,19 @@ theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) : powPow2 x k = x ^ 2
       show powPow2 x k * powPow2 x k = _
       rw [ih, ← pow_add, ← two_mul, ← pow_succ']
 
+/-- The generator of the evaluation domain of size `2 ^ log2`: the scalar field's root of unity
+squared `twoAdicity − log2` times. -/
+def domainGenerator (C : Ipa.KimchiCurve) (log2 : ℕ) : C.ScalarField :=
+  powPow2 C.rootOfUnity (C.twoAdicity - log2)
+
+/-- A domain generator has its domain's order as a divisor: `ω ^ 2 ^ log2 = 1`. -/
+theorem domainGenerator_pow (C : Ipa.KimchiCurve) (log2 : ℕ) :
+    domainGenerator C log2 ^ 2 ^ log2 = 1 := by
+  rw [domainGenerator, powPow2_eq, ← pow_mul, ← pow_add]
+  refine orderOf_dvd_iff_pow_eq_one.mp ?_
+  rw [C.rootOfUnity_order]
+  exact Nat.pow_dvd_pow 2 (by omega)
+
 /-- The shared sum of the two public evaluations, `∑ᵢ −(pt − ωⁱ)⁻¹ · pubᵢ · ωⁱ`, by a
 running-`ω`-power fold. Each term is inverted on its own, the same value a batched
 inversion gives. -/

@@ -77,16 +77,23 @@ def VerifyOneInput.hashed {ks k ncw ncs w : ℕ} (inp : VerifyOneInput ks k ncw 
 /-- The step-message digest a slot's statement carries, as a value: the fq-sponge after the
 key, then the application state and the kept proofs' `sg` and challenges, squeezed. -/
 def VerifyOneInput.stepMsgDigest {ks k ncw ncs w : ℕ} (E : Env IpaPallas.curve ncw)
-    (V : Valuation Fp) (ms : List Bool) (inp : VerifyOneInput ks k ncw ncs w) : Fp :=
+    (V : Valuation Fp) (ms : Vector Bool w) (inp : VerifyOneInput ks k ncw ncs w) : Fp :=
   (Poseidon.squeeze IpaPallas.curve.sponge.params
     (Poseidon.absorb IpaPallas.curve.sponge.params E.cvk.indexState
-      (inp.appState.map (·.val V) ++ keptValues V ms inp.hashed))).1
+      (inp.appState.map (·.val V) ++ keptValues V ms.toList inp.hashed))).1
 
 /-- The public input a slot's wrap proof is verified at: its statement read at `V`, carrying
 the step-message digest `stepMsgDigest`. -/
 def VerifyOneInput.publicInputAt {ks k ncw ncs w : ℕ} (E : Env IpaPallas.curve ncw)
-    (V : Valuation Fp) (ms : List Bool) (inp : VerifyOneInput ks k ncw ncs w) : Array Fq :=
+    (V : Valuation Fp) (ms : Vector Bool w) (inp : VerifyOneInput ks k ncw ncs w) : Array Fq :=
   stepPublicInput E V (inp.statement (.const (inp.stepMsgDigest E V ms)))
+
+/-- The packed public input of a slot's wrap proof: its statement, carrying the step-message
+digest `stepMsgDigest`, as the wrap circuit's packed statement (`WrapStatement.toPacked`). -/
+def VerifyOneInput.packedAt {ks k ncw ncs w : ℕ} (E : Env IpaPallas.curve ncw)
+    (V : Valuation Fp) (ms : Vector Bool w) (inp : VerifyOneInput ks k ncw ncs w) :
+    StatementPacked ks (Type1 Fq) Fq :=
+  (inp.statement (.const (inp.stepMsgDigest E V ms))).toPacked V
 
 variable {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k ncw ncs w : ℕ}
 
@@ -224,12 +231,13 @@ the masks as `ms`: when the slot must verify and the verdict
 reads `1`, the step-message digest cell reads as the hash of the key, the application state
 and the kept proofs' `sg` and challenges, the group half accepts `cp` at the statement carrying
 that digest, and the carried deferred values finalize. -/
-theorem verifyOne_reads (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.curve ncs)
-    (D : KnownDomains Es) (hw : w ≤ MaxProofsVerified)
-    (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput Es.σ.k E.σ.k ncw ncs w)
+theorem verifyOne_reads (E : Env IpaPallas.curve ncw) (P : FopParams Fp)
+    (domains : List (KnownDomain Fp)) (hks : MaxProofsVerified * ks < 2 ^ 128)
+    (hw : w ≤ MaxProofsVerified)
+    (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks E.σ.k ncw ncs w)
     (cp : KimchiProof IpaPallas.curve ncw E.σ.k)
     -- the masks
-    (ms : List Bool) (hm : List.Forall₂ (CircuitType.Reads V) inp.proofMask.toList ms)
+    (ms : Vector Bool w) (hm : CircuitType.Reads V inp.proofMask ms)
     -- the key
     (hkey : KeyReads IpaPallas.curve V vk E.cvk)
     -- the proof
@@ -242,7 +250,7 @@ theorem verifyOne_reads (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.curve n
     (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
     (havoid : ∀ msg, E.σ.Avoids (stepRelationsAt E (inp.statement msg))) :
     ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt E)
-      (FopParams.ofEnv Es Linearization.fpTokens) D.list vk inp
+      P domains vk inp
     ⦃⇓ o _ => ⌜CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
       ∃ (msg : FVar Fp) (v : BoolVar Fp),
         msg.val V = inp.stepMsgDigest E V ms ∧
@@ -253,13 +261,14 @@ theorem verifyOne_reads (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.curve n
   have hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fp) = k → j = k := fun j k hj hk h =>
     hinj j k (by omega) (by omega) h
   have hms := forall₂_zip_fst inp.proofMask.toList
-    (inp.prevSgs.toList.zip (inp.prevChallenges.toList.map Vector.toList)) ms hm (by simp)
+    (inp.prevSgs.toList.zip (inp.prevChallenges.toList.map Vector.toList)) ms.toList
+    (CircuitType.reads_vector_iff_forall₂.mp hm) (by simp)
   have hprevlen : (inp.prevChallenges.toList.map Vector.toList).flatten.length < 2 ^ 128 := by
-    have : (inp.prevChallenges.toList.map Vector.toList).flatten.length = w * Es.σ.k := by
+    have : (inp.prevChallenges.toList.map Vector.toList).flatten.length = w * ks := by
       rw [List.length_flatten, List.map_map]
       simp [Function.comp_def]
-    have := Es.rounds_small
-    have : w * Es.σ.k ≤ MaxProofsVerified * Es.σ.k := Nat.mul_le_mul_right _ hw
+    have := hks
+    have : w * ks ≤ MaxProofsVerified * ks := Nat.mul_le_mul_right _ hw
     simp only [MaxProofsVerified] at *
     omega
   have hchar : ∀ k : ℕ, k ≤ (inp.hashed.map fun q => q.2.2.length + 2).sum →
@@ -275,10 +284,10 @@ theorem verifyOne_reads (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.curve n
     unfold VerifyOneInput.hashed at *
     omega
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d =>
-    finalizeOtherProofStep_finalized_bit (V := V) (k := Es.σ.k)
-      (FopParams.ofEnv Es Linearization.fpTokens) D.list u e m pr d
+    finalizeOtherProofStep_finalized_bit (V := V) (k := ks)
+      P domains u e m pr d
   have hh := hashMessagesForNextStepProofOpt_spec (V := V) IpaPallas.curve.sponge.params
-    IpaPallas.curve.sponge.hsize hall vk inp.appState inp.hashed ms hms hchar
+    IpaPallas.curve.sponge.hsize hall vk inp.appState inp.hashed ms.toList hms hchar
   have hvp : ∀ (sv : SpongeVar Fp) (msg : FVar Fp),
       ⦃⌜True⌝⦄ verifyProofAt (c := Builder V (KimchiConstraint Fp)) E sv
         (Snarky.not inp.mustVerify) (inp.statement msg) inp.unfinalized
@@ -326,8 +335,8 @@ key, its proof cells as `cp`'s commitments and opening, and its `sg` cells as `c
 accumulators. -/
 def VerifyOneInput.WireReads (E : Env IpaPallas.curve ncw) (V : Valuation Fp)
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks E.σ.k ncw ncs w)
-    (cp : KimchiProof IpaPallas.curve ncw E.σ.k) (ms : List Bool) : Prop :=
-  List.Forall₂ (CircuitType.Reads V) inp.proofMask.toList ms ∧
+    (cp : KimchiProof IpaPallas.curve ncw E.σ.k) (ms : Vector Bool w) : Prop :=
+  CircuitType.Reads V inp.proofMask ms ∧
     KeyReads IpaPallas.curve V vk E.cvk ∧
     ProofReads (stepSide V) (inp.proof.wComm.toList.map (·.toList))
       inp.proof.zComm.toList inp.proof.tComm.toList inp.proof.opening cp ∧
@@ -337,7 +346,7 @@ def VerifyOneInput.WireReads (E : Env IpaPallas.curve ncw) (V : Valuation Fp)
 half accepts `cp` at the slot's public input. -/
 def VerifyOneInput.SlotReads (E : Env IpaPallas.curve ncw) (V : Valuation Fp)
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks E.σ.k ncw ncs w) : Prop :=
-    ∀ (cp : KimchiProof IpaPallas.curve ncw E.σ.k) (ms : List Bool),
+    ∀ (cp : KimchiProof IpaPallas.curve ncw E.σ.k) (ms : Vector Bool w),
       inp.WireReads E V vk cp ms →
       ∃ v : BoolVar Fp,
         (GroupHalf.step V inp.unfinalized).Reads E cp (inp.publicInputAt E V ms) v ∧
@@ -347,13 +356,14 @@ def VerifyOneInput.SlotReads (E : Env IpaPallas.curve ncw) (V : Valuation Fp)
 and the shifted claims are in the ladder's regime, the readings become premises of the
 conclusion, and the digest cell is replaced by its value in the public input — the form a
 circuit that allocates the slot's cells before running it consumes. -/
-theorem verifyOne_slotReads (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.curve ncs)
-    (D : KnownDomains Es) (hw : w ≤ MaxProofsVerified)
-    (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput Es.σ.k E.σ.k ncw ncs w)
+theorem verifyOne_slotReads (E : Env IpaPallas.curve ncw) (P : FopParams Fp)
+    (domains : List (KnownDomain Fp)) (hks : MaxProofsVerified * ks < 2 ^ 128)
+    (hw : w ≤ MaxProofsVerified)
+    (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks E.σ.k ncw ncs w)
     (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
     (havoid : ∀ msg, E.σ.Avoids (stepRelationsAt E (inp.statement msg))) :
     ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt E)
-      (FopParams.ofEnv Es Linearization.fpTokens) D.list vk inp
+      P domains vk inp
     ⦃⇓ o _ => ⌜CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
       (∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·)) vk
         inp.proof).shifted, (stepSide V).ClaimOk x) →
@@ -361,13 +371,70 @@ theorem verifyOne_slotReads (E : Env IpaPallas.curve ncw) (Es : Env IpaVesta.cur
   rw [builder_spec_iff]
   intro nv hsat hmv h1 hclaimOk cp ms ⟨hm, hkey, hproof, holds⟩
   obtain ⟨msg, v, hmsg, hvr, hv1, -⟩ := (builder_spec_iff _ _).mp
-    (verifyOne_reads E Es D hw vk inp cp ms hm hkey hproof holds hclaimOk hsmall
+    (verifyOne_reads E P domains hks hw vk inp cp ms hm hkey hproof holds hclaimOk hsmall
       havoid) nv hsat hmv h1
   refine ⟨v, ?_, hv1⟩
   have hpub : stepPublicInput E V (inp.statement msg) = inp.publicInputAt E V ms :=
     stepPublicInput_congr_msg E V (inp.statement msg) msg _ (by simpa using hmsg)
   rw [← hpub]
   exact hvr
+
+/-- The scalar half of the step proof a slot finalizes: the deferred values and digest its wrap
+proof carries, that step proof's evaluations, and its own mask and previous challenges. -/
+abbrev VerifyOneInput.finalizedHalf (V : Valuation Fp) (inp : VerifyOneInput ks k ncw ncs w) :
+    ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) ks ncs w :=
+  ScalarHalf.step V ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals inp.proofMask
+    inp.prevChallenges
+
+/-- What a verified slot certifies of the step proof its deferred values came from
+(`StepFinalizeReads` at the slot's cells): given that proof's group half from the wrap circuit,
+the ties and `SgOk`, `kimchiVerify` accepts it. -/
+def VerifyOneInput.ScalarReads (Es : Env IpaVesta.curve ncs) (V : Valuation Fp)
+    (inp : VerifyOneInput Es.σ.k k ncw ncs w) : Prop :=
+  StepFinalizeReads Es V ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals inp.proofMask
+    inp.prevChallenges inp.branchData.domainLog2
+
+/-- One slot reads as the scalar half of the step proof its deferred values came from: with the
+mask cells boolean, when the slot must verify and the verdict reads `1`, the slot satisfies
+`ScalarReads`, for any `verify`. -/
+theorem verifyOne_scalarReads (Es : Env IpaVesta.curve ncs) (D : KnownDomains Es)
+    (hw : w ≤ MaxProofsVerified)
+    (verify : SpongeVar Fp → BoolVar Fp →
+      WrapStatement Es.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
+      UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      IvpInput k ncw (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
+    (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput Es.σ.k k ncw ncs w) :
+    ⦃⌜True⌝⦄ verifyOneBy verify (FopParams.ofEnv Es Linearization.fpTokens) D.list vk inp
+    ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads V inp.proofMask ms) →
+      CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
+      inp.ScalarReads Es V⌝⦄ := by
+  have hfin := finalizeOtherProofStepAt_finalizeReads Es V D ⟨inp.deferred, true_, inp.spongeDigest⟩
+    inp.evals inp.proofMask inp.prevChallenges inp.branchData.domainLog2 hw
+  simp only [finalizeOtherProofStepAt] at hfin
+  have hfop := builder_spec_and _ _ _ hfin
+    (finalizeOtherProofStep_finalized_bit (V := V) (k := Es.σ.k)
+      (FopParams.ofEnv Es Linearization.fpTokens) D.list ⟨inp.deferred, true_, inp.spongeDigest⟩
+      inp.evals inp.proofMask.toList (inp.prevChallenges.toList.map Vector.toList)
+      inp.branchData.domainLog2)
+  have hh := fun p vk' a pr => builder_spec_true
+    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) p vk' a pr)
+  have hv := fun sv b st u cells => builder_spec_true (verify sv b st u cells)
+  simp only [verifyOneBy]
+  mvcgen [hfop, hh, hv, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
+  rename_i _ _ _ _ _ hF _ _ _ _ ver _ hVer _ _ hRes
+  intro hmask hmv hres
+  obtain ⟨hreads, bf, hbf⟩ := hF
+  have hnot : (↑(Snarky.not inp.mustVerify) : CVar Fp).val V = 0 := by
+    rw [not_val (CircuitType.reads_boolVar.mp hmv)]
+    simp [bit]
+  rw [hres, hnot] at hRes
+  have hver : (↑ver : CVar Fp).val V = 1 := by linear_combination -hRes
+  rw [hVer] at hver
+  cases bf
+  · rw [hbf, bit, if_neg (by decide), mul_zero] at hver
+    exact absurd hver zero_ne_one
+  · exact hreads hmask (by simpa [bit] using hbf)
 
 end Reads
 

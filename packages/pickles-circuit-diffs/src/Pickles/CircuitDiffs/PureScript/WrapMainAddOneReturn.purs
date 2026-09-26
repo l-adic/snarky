@@ -15,10 +15,12 @@ import Prelude
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKCommsFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (StepMainAddOneReturnParams, compileStepMainAddOneReturn)
+import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.Wrap (stepVkForCircuit)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
@@ -36,7 +38,8 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
   stepArt <- compileStepMainAddOneReturn stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
-  realStepVK <- deriveStepVKFromCompiled @1 @0 vestaSrs stepArt.stepCs
+  stepComms <- deriveStepVKCommsFromCompiled @1 @0 vestaSrs stepArt.stepCs
+  let realStepVK = stepVkForCircuit stepComms
   let
 
     config :: WrapMainConfig 1 0 1
@@ -60,4 +63,5 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
     , wrapVk
+    , constants: wrapMainConstants config (stepComms :< Vector.nil) Vector.nil
     }

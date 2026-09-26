@@ -17,7 +17,6 @@ against that domain and asserts the slot finalized or was not to be.
 * `pinWrapDomainIndex`: one slot's pin against the branches' compile-time indices.
 * `WrapFinalizeSlot`: one slot's cells and compile-time pins.
 * `wrapDomainLog2s`: the wrap domains a slot can be finalized at.
-* `wrapFinalizeCircuit`: the block as a circuit of its input (`WrapFinalizeIn`).
 * `wrapFinalizePrevProofs`: the pins, left to right; the domains, right to left; the finalize
   bodies with their assertions, left to right.
 
@@ -165,26 +164,6 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 variable {nc : ℕ}
 
-/-- The finalize block's input, as values: the branch bits and, per slot, its wrap domain index
-and its finalize input. Nothing in it is checked on input. -/
-abbrev WrapFinalizeIn (branches w k nc : ℕ) : Type :=
-  UnChecked (Vector Bool branches × Vector (Fq × WrapFop k nc) w)
-
-/-- `WrapFinalizeIn`, as cells. -/
-abbrev WrapFinalizeInVar (branches w k nc : ℕ) : Type :=
-  UnChecked (Vector (BoolVar Fq) branches × Vector (FVar Fq × WrapFopVar k nc) w)
-
-/-- The input's slots, each with its column of compile-time pins. -/
-def WrapFinalizeInVar.slots {branches w k : ℕ} (x : WrapFinalizeInVar branches w k nc)
-    (pins : Vector (Vector (Option ℕ) branches) w) : Vector (WrapFinalizeSlot branches k nc Fq) w :=
-  Vector.zipWith (fun s p => ⟨s.1, p, s.2.claims, s.2.evals, s.2.prev⟩) x.val.2 pins
-
-/-- The finalize block as a circuit of its input, at compile-time pins `pins`. -/
-def wrapFinalizeCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {branches w k : ℕ}
-    (P : FopParams Fq) (gen : ℕ → Fq) (pins : Vector (Vector (Option ℕ) branches) w)
-    (x : WrapFinalizeInVar branches w k nc) : CircuitM Fq c Unit := do
-  let _ ← wrapFinalizePrevProofs P gen x.val.1 (x.slots pins)
-
 /-- A finalize slot reads as a wrap proof's scalar half: for any wrap proof and public input
 under the guards, a step circuit's group half accepting it at asserted success, the ties and
 the deferred `sg` equation make `kimchiVerify` accept. -/
@@ -196,8 +175,7 @@ def WrapFinalizeSlot.ScalarReads (E : Env IpaPallas.curve nc) (Vs : Valuation Fq
       (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
         (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) (successG : BoolVar Fp),
       (GroupHalf.step Vg claimsG).Reads E cp pub successG → (↑successG : CVar Fp).val Vg = 1 →
-      HalvesTies (GroupHalf.step Vg claimsG)
-        (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
+      SplitClaimsCast Vg claimsG Vs sl.unfinalized →
       FopTies E cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
       SgOk E.σ E.cvk cp pub → kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true
 
@@ -241,8 +219,15 @@ theorem wrapFinalizeBody_spec (E : Env IpaPallas.curve nc) (Vs : Valuation Fq)
         d.generator E.cvk.n E.zkRows_le (by rw [hgen]; exact E.omega_prim.pow_eq_one) _ hvan
         sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList) _ hprev
       refine builder_spec_imp _ _ _ hspec ?_
-      intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit ht hf hsg
+      intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit hc hf hsg
       rw [hgen] at hread
+      -- the two halves hold one set of claims: `β`, `γ` read on the step side, the rest here
+      have ht : HalvesTies (GroupHalf.step Vg claimsG)
+          (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) := by
+        obtain ⟨og, hivp, -⟩ := hg
+        obtain ⟨a₀, z₀, hα, hζ, ξ₀, -, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
+        exact halvesTies_of_splitCast Vg claimsG Vs sl.unfinalized sl.evals sl.prevChallenges
+          hc ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
       have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals
           = (cp.olds.map (·.u.toList)).toList :=
         (ScalarHalf.wrap_olds Vs sl.unfinalized sl.evals sl.prevChallenges _).mp hf.olds

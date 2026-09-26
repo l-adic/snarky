@@ -109,9 +109,10 @@ theorem FopSide.unshiftV_read {C : KimchiCurve} {V : Valuation C.ScalarField} {s
 
 /-- The scalar half of a proof's verification, as the next circuit runs it (for a step proof,
 the following step circuit): its valuation, its side, and its cells — the deferred claims with
-the fq digest, the evaluations, the predecessor mask and the previous challenges. Inputs only:
-the circuit's output is an argument of the statements that read it. -/
-structure ScalarHalf (C : KimchiCurve) (sf : Type) (k nc : ℕ) where
+the fq digest, the evaluations, and per slot of the finalized proof's `w` the predecessor mask
+and the previous challenges. Inputs only: the circuit's output is an argument of the statements
+that read it. -/
+structure ScalarHalf (C : KimchiCurve) (sf : Type) (k nc w : ℕ) where
   /-- The circuit's valuation (over the scalar field). -/
   V : Valuation C.ScalarField
   /-- The side. -/
@@ -122,19 +123,21 @@ structure ScalarHalf (C : KimchiCurve) (sf : Type) (k nc : ℕ) where
   evals : ChunkedEvals nc (FVar C.ScalarField)
   /-- The predecessor mask cells, one per slot: `1` for a real predecessor, `0` for a dummy
   pad slot. The wrap half fixes them all true (`ScalarHalf.wrap`). -/
-  mask : Vector (BoolVar C.ScalarField) MaxProofsVerified
+  mask : Vector (BoolVar C.ScalarField) w
   /-- The previous-challenge cells: per slot, the `k` expanded round challenges of that
   predecessor's opening. -/
-  prevChallenges : Vector (Vector (FVar C.ScalarField) k) MaxProofsVerified
+  prevChallenges : Vector (Vector (FVar C.ScalarField) k) w
 
 /-- The mask as the valuation reads it: a cell counts as set when it holds `1`. -/
-def ScalarHalf.maskVals {C : KimchiCurve} {sf : Type} {k nc : ℕ} (Sc : ScalarHalf C sf k nc) :
+def ScalarHalf.maskVals {C : KimchiCurve} {sf : Type} {k nc w : ℕ}
+    (Sc : ScalarHalf C sf k nc w) :
     List Bool :=
   Sc.mask.toList.map fun (b : BoolVar C.ScalarField) =>
     decide ((↑b : CVar C.ScalarField).val Sc.V = 1)
 
 /-- The previous challenges as the valuation reads them. -/
-def ScalarHalf.prevVals {C : KimchiCurve} {sf : Type} {k nc : ℕ} (Sc : ScalarHalf C sf k nc) :
+def ScalarHalf.prevVals {C : KimchiCurve} {sf : Type} {k nc w : ℕ}
+    (Sc : ScalarHalf C sf k nc w) :
     List (List C.ScalarField) :=
   Sc.prevChallenges.toList.map fun cs => cs.toList.map fun x => x.val Sc.V
 
@@ -155,7 +158,7 @@ def FopParams.ofEnv {C : KimchiCurve} {nc : ℕ} (E : Env C nc)
 
 section AtCells
 
-variable {C : KimchiCurve} {sf sf' : Type}
+variable {C : KimchiCurve} {sf sf' : Type} {w : ℕ}
 
 /-- The group half's read: `VerifyReads` at the half's side and claim cells, off the base
 case. -/
@@ -169,7 +172,7 @@ prechallenge at the half's own cells makes `xiCorrect` read `1`. It needs the lo
 `ξ` split range-checked: unchecked, the prover could witness a low half at or above `2¹²⁸`
 whose split stays below the modulus, and `xiCorrect` would read `0` at an honest claim. -/
 private def ScalarHalf.XiExact {nc : ℕ} (E : Env C nc) (cp : KimchiProof C nc E.σ.k)
-    (Sc : ScalarHalf C sf' E.σ.k nc)
+    (Sc : ScalarHalf C sf' E.σ.k nc w)
     (out : FopOutput C.ScalarField) : Prop :=
   let pre := frPrechallenges C.frSponge.params
     (frTranscript (Sc.claims.spongeDigestBeforeEvaluations.val Sc.V)
@@ -185,7 +188,7 @@ end AtCells
 
 section Ties
 
-variable {C : KimchiCurve} {sf sf' : Type}
+variable {C : KimchiCurve} {sf sf' : Type} {w : ℕ}
 
 /-- A half's deferred-claim cells read, under its valuation `V` and decoding `decode`, as the
 deferred values `dv`: the prechallenge cells read as `dv`'s prechallenges, and the shifted cells
@@ -222,7 +225,7 @@ deferred-values record, and the fq digest crosses as `castDigest` (zero when it 
 the scalar field: a completeness gap, not a soundness one). The protocol enforces these through
 the public-input commitment binding the statement into the proof; no circuit computes them, so
 they are hypotheses here. -/
-def HalvesTies {k nc : ℕ} (G : GroupHalf C sf k) (Sc : ScalarHalf C sf' k nc) : Prop :=
+def HalvesTies {k nc : ℕ} (G : GroupHalf C sf k) (Sc : ScalarHalf C sf' k nc w) : Prop :=
   (∃ dv : DeferredValues k Prechallenge C.ScalarField,
     DvReads G.V G.side.decode G.claims.deferredValues dv ∧
       DvReads Sc.V Sc.side.decode Sc.claims.deferredValues dv) ∧
@@ -231,7 +234,7 @@ def HalvesTies {k nc : ℕ} (G : GroupHalf C sf k) (Sc : ScalarHalf C sf' k nc) 
 
 /-- The scalar half's evaluation, mask and previous-challenge cells are the proof's. -/
 structure FopTies {nc : ℕ} (E : Env C nc) (cp : KimchiProof C nc E.σ.k) (pub : Array C.ScalarField)
-    (Sc : ScalarHalf C sf' E.σ.k nc) : Prop where
+    (Sc : ScalarHalf C sf' E.σ.k nc w) : Prop where
   /-- The kept previous challenges are the old accumulators' challenges, in order. -/
   olds : (List.zipWith (fun m cv => if m then [cv] else []) Sc.maskVals
       Sc.prevVals).flatten
@@ -248,7 +251,7 @@ comparison exact (`XiExact`). -/
 private theorem ScalarHalf.xiExact_of_constrained {nc : ℕ} (E : Env C nc)
     (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C nc E.σ.k) {G : GroupHalf C sf E.σ.k}
-    {Sc : ScalarHalf C sf' E.σ.k nc} {out : FopOutput C.ScalarField}
+    {Sc : ScalarHalf C sf' E.σ.k nc w} {out : FopOutput C.ScalarField}
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
       true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
@@ -292,7 +295,7 @@ private def ClaimsHonest {nc : ℕ} (E : Env C nc) (cp : KimchiProof C nc E.σ.k
 through the side's decode, the `ξ` cell at the half's valuation. -/
 def ScalarHalf.ClaimsHonest {nc : ℕ} (E : Env C nc) (cp : KimchiProof C nc E.σ.k)
     (pub : Array C.ScalarField)
-    (Sc : ScalarHalf C sf' E.σ.k nc) : Prop :=
+    (Sc : ScalarHalf C sf' E.σ.k nc w) : Prop :=
   let dv := Sc.claims.deferredValues
   Pickles.ClaimsHonest E cp pub (Sc.side.decode dv.combinedInnerProduct) (Sc.side.decode dv.b)
     (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.plonk.zetaToSrsLength)
@@ -494,7 +497,7 @@ theorem twoHalves_schnorr
     (success : BoolVar C.BaseField)
     (hg : G.Reads E cp pub success)
     -- the scalar half
-    (Sc : ScalarHalf C sf' E.σ.k nc)
+    (Sc : ScalarHalf C sf' E.σ.k nc w)
     (out : FopOutput C.ScalarField)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
       true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
@@ -716,7 +719,7 @@ theorem twoHalves_kimchiVerify
     (success : BoolVar C.BaseField)
     (hg : G.Reads E cp pub success)
     -- the scalar half
-    (Sc : ScalarHalf C sf' E.σ.k nc)
+    (Sc : ScalarHalf C sf' E.σ.k nc w)
     (out : FopOutput C.ScalarField)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
       true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
@@ -736,6 +739,79 @@ theorem twoHalves_kimchiVerify
   exact ⟨fun ⟨⟨hc, hs⟩, hsg⟩ => ⟨⟨hs, hsg⟩, hc⟩, fun ⟨⟨hs, hsg⟩, hc⟩ => ⟨⟨hc, hs⟩, hsg⟩⟩
 
 end Ties
+
+/-! ## Across the cycle
+
+The claims cross between the two circuits of a proof's verification. A step-field value sits in
+a wrap-field cell as its representative (`redFq`), and since the step field is the smaller one
+the reduction is injective: a 128-bit prechallenge read on either side is read on the other. -/
+
+section Across
+
+open CompElliptic.Fields.Pasta
+
+/-- A step-field value reduced into the wrap field: what a wrap circuit's cell holds of it. -/
+abbrev redFq (x : Fp) : Fq := ((ZMod.val x : ℕ) : Fq)
+
+/-- The step field is below the wrap field. -/
+theorem fp_lt_fq : PALLAS_BASE_CARD < PALLAS_SCALAR_CARD := by
+  norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
+
+/-- Reducing into the wrap field keeps a step-field value's representative. -/
+theorem val_redFq (x : Fp) : ZMod.val (redFq x) = ZMod.val x :=
+  ZMod.val_natCast_of_lt ((ZMod.val_lt x).trans fp_lt_fq)
+
+/-- A step cell reading as a prechallenge reduces to a wrap cell reading as it. -/
+theorem reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp} {c : SizedF 128 (FVar Fq)}
+    {x : SizedF 128 (FVar Fp)} {m : Prechallenge} (hc : c.val.val Vg = redFq (x.val.val Vs))
+    (hx : Reads128 Vs x m) : Reads128 Vg c m := by
+  unfold Reads128 at hx ⊢
+  rw [hc, hx, redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_BASE_CARD]))]
+
+/-- A wrap cell reading as a prechallenge is the reduction of a step cell reading as it. -/
+theorem reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
+    {c : SizedF 128 (FVar Fq)} {x : SizedF 128 (FVar Fp)} {m : Prechallenge}
+    (hc : c.val.val Vg = redFq (x.val.val Vs)) (hm : Reads128 Vg c m) : Reads128 Vs x m := by
+  unfold Reads128 at hm ⊢
+  have h := congrArg ZMod.val (hc.symm.trans hm)
+  rw [val_redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_SCALAR_CARD]))] at h
+  rw [← ZMod.natCast_zmod_val (x.val.val Vs), h]
+
+/-- Round challenges reading as prechallenges on the step side read as them on the wrap side. -/
+theorem forall₂_reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
+    {sl : List (SizedF 128 (FVar Fp))} {ms : List Prechallenge}
+    (hr : List.Forall₂ (Reads128 Vs) sl ms) :
+    ∀ gl : List (SizedF 128 (FVar Fq)),
+      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
+      List.Forall₂ (Reads128 Vg) gl ms := by
+  induction hr with
+  | nil => intro gl h; cases gl with
+    | nil => exact .nil
+    | cons _ _ => simp at h
+  | cons hx _ ih => intro gl h; cases gl with
+    | nil => simp at h
+    | cons g gl =>
+      simp only [List.map_cons, List.cons.injEq] at h
+      exact .cons (reads128_redFq h.1 hx) (ih gl h.2)
+
+/-- Round challenges reading as prechallenges on the wrap side read as them on the step side. -/
+theorem forall₂_reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
+    {gl : List (SizedF 128 (FVar Fq))} {ms : List Prechallenge}
+    (hr : List.Forall₂ (Reads128 Vg) gl ms) :
+    ∀ sl : List (SizedF 128 (FVar Fp)),
+      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
+      List.Forall₂ (Reads128 Vs) sl ms := by
+  induction hr with
+  | nil => intro sl h; cases sl with
+    | nil => exact .nil
+    | cons _ _ => simp at h
+  | cons hx _ ih => intro sl h; cases sl with
+    | nil => simp at h
+    | cons s sl =>
+      simp only [List.map_cons, List.cons.injEq] at h
+      exact .cons (reads128_of_redFq h.1 hx) (ih sl h.2)
+
+end Across
 
 /-! ## At a step proof: Vesta commitments
 
@@ -763,11 +839,11 @@ def GroupHalf.wrap {k : ℕ} (V : Valuation Fq)
 
 /-- The step circuit's scalar half of a step proof: `fopStep` at the circuit's valuation, at
 the round count `k` of the finalized proof's SRS (`StepIPARounds` when deployed). -/
-def ScalarHalf.step {k nc : ℕ} (V : Valuation Fp)
+def ScalarHalf.step {k nc w : ℕ} (V : Valuation Fp)
     (claims : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    (evals : ChunkedEvals nc (FVar Fp)) (mask : Vector (BoolVar Fp) MaxProofsVerified)
-    (prevChallenges : Vector (Vector (FVar Fp) k) MaxProofsVerified) :
-    ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) k nc :=
+    (evals : ChunkedEvals nc (FVar Fp)) (mask : Vector (BoolVar Fp) w)
+    (prevChallenges : Vector (Vector (FVar Fp) k) w) :
+    ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) k nc w :=
   ⟨V, fopStep V, claims, evals, mask, prevChallenges⟩
 
 end StepProof
@@ -805,7 +881,7 @@ def ScalarHalf.wrap {k nc : ℕ} (V : Valuation Fq)
     (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
     (evals : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
-    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k nc :=
+    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k nc MaxProofsVerified :=
   ⟨V, fopWrap V, claims, evals, Vector.replicate MaxProofsVerified true_, prevChallenges⟩
 
 /-- The wrap half's mask reads all-true. -/

@@ -82,6 +82,14 @@ def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVa
   ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
   ++ [.b10 dv.branchData.packed]
 
+/-- A packed wrap statement's length: thirteen scalars, the `ks` round challenges and the branch
+data. -/
+theorem WrapStatement.packed_length
+    (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
+    st.packed.length = 14 + ks := by
+  simp [WrapStatement.packed]
+  omega
+
 /-- A packed wrap statement has no boolean cell: the branch data is one 10-bit scalar. -/
 theorem WrapStatement.packed_isScalar
     (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
@@ -123,6 +131,15 @@ def StepStatement.packed {n : ℕ}
   st.proofState.unfinalizedProofs.toList.flatMap UnfinalizedProof.packed
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full
+
+/-- A packed step statement's length: `k + 17` scalars per slot, then its digests. -/
+theorem StepStatement.packed_length {n : ℕ}
+    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
+    st.packed.length = n * (k + 17) + 1 + n := by
+  simp only [StepStatement.packed, UnfinalizedProof.packed, List.length_append,
+    List.length_flatMap, List.length_map, List.length_cons, List.length_nil, Vector.length_toList]
+  simp [Nat.mul_comm]
+  omega
 
 /-- The group half's input with its claims taken from an unfinalized proof: `xi`,
 `combinedInnerProduct`, `b` and the plonk claims of its deferred values; the key, proof and
@@ -197,6 +214,72 @@ theorem ivpInputOf_lengths {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FV
       (ivpInputOf dv sgOld key pr).tComm.length = quotChunks * nc := by
   simp [ivpInputOf, List.length_flatten, List.map_map, Function.comp_def]
   omega
+
+/-- The proof's point cells: the commitments, then the opening's `(L, R)` pairs, `δ` and `sg`. -/
+def IvpProof.points {F sf : Type} {k nc : ℕ} (pr : IvpProof k nc (FVar F) sf) :
+    List (AffinePoint (FVar F)) :=
+  pr.wComm.toList.flatMap (·.toList) ++ pr.zComm.toList ++ pr.tComm.toList ++
+    pr.opening.lr.toList.flatMap (fun q => [q.1, q.2]) ++ [pr.opening.delta, pr.opening.sg]
+
+/-- Cells on the curve read as their points. -/
+theorem commReads_readPt {C : KimchiCurve} {V : Valuation C.BaseField}
+    {cells : List (AffinePoint (FVar C.BaseField))}
+    (h : ∀ p ∈ cells, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V)) :
+    CommReads C V cells (cells.map (readPt V)) :=
+  List.forall₂_map_right_iff.mpr (List.forall₂_same.mpr fun p hp => onCurveAt_readPt (h p hp))
+
+/-- The wire proof the cells `pr` hold, beside the evaluations and old accumulators other cells
+hold: each point cell reads as its `readPt`, and the opening's scalars decode by `S`. -/
+def IvpProof.read {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
+    {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf} {k nc : ℕ}
+    (S : IvpSide C V ops) (pr : IvpProof k nc (FVar C.BaseField) sf)
+    (evals : ProofEvaluations (Vector C.ScalarField nc)) (pubEvals : PubEvalSrc C nc)
+    (ftEval1 : C.ScalarField) (olds : Array (Accumulator C k)) : KimchiProof C nc k where
+  wComm := pr.wComm.map (·.map (readPt V))
+  zComm := pr.zComm.map (readPt V)
+  tComm := (pr.tComm.map (readPt V)).toArray
+  tComm_le := by simp
+  evals := evals
+  pubEvals := pubEvals
+  ftEval1 := ftEval1
+  opening := ⟨pr.opening.lr.map fun q => (readPt V q.1, readPt V q.2), readPt V pr.opening.delta,
+    S.decode pr.opening.z1, S.decode pr.opening.z2, readPt V pr.opening.sg⟩
+  olds := olds
+
+/-- With its point cells on the curve, the cells `pr` hold `pr.read`'s commitments and
+opening. -/
+theorem IvpProof.read_proofReads {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
+    {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf} {k nc : ℕ}
+    (S : IvpSide C V ops) (pr : IvpProof k nc (FVar C.BaseField) sf)
+    (evals : ProofEvaluations (Vector C.ScalarField nc)) (pubEvals : PubEvalSrc C nc)
+    (ftEval1 : C.ScalarField) (olds : Array (Accumulator C k))
+    (hon : ∀ p ∈ pr.points, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V)) :
+    ProofReads S (pr.wComm.toList.map (·.toList)) pr.zComm.toList pr.tComm.toList pr.opening
+      (pr.read S evals pubEvals ftEval1 olds) := by
+  refine ⟨?_, ?_, ?_, ?_, onCurveAt_readPt (hon _ (by simp [IvpProof.points])),
+    onCurveAt_readPt (hon _ (by simp [IvpProof.points])), rfl, rfl⟩
+  · simp only [ColumnsRead, IvpProof.read, Vector.toList_map, List.forall₂_map_left_iff,
+      List.forall₂_map_right_iff]
+    refine List.forall₂_same.mpr fun col hcol => ?_
+    simpa [Vector.toList_map] using commReads_readPt fun p hp =>
+      hon p (by simp only [IvpProof.points, List.mem_append, List.mem_flatMap]
+                exact Or.inl (Or.inl (Or.inl (Or.inl ⟨col, hcol, hp⟩))))
+  · simpa [IvpProof.read, Vector.toList_map] using
+      commReads_readPt fun p hp => hon p (by simp [IvpProof.points, hp])
+  · simpa [IvpProof.read, Vector.toList_map] using
+      commReads_readPt fun p hp => hon p (by simp [IvpProof.points, hp])
+  · simp only [IvpProof.read, Vector.toList_map, List.map_map, List.forall₂_map_right_iff]
+    refine List.forall₂_same.mpr fun q hq => ⟨onCurveAt_readPt (hon _ ?_),
+      onCurveAt_readPt (hon _ ?_)⟩ <;>
+    simp only [IvpProof.points, List.mem_append, List.mem_flatMap] <;>
+    exact Or.inl (Or.inr ⟨q, hq, by simp⟩)
+
+/-- A key's commitments as cells, each point through `cell`. -/
+def keyCellsOf {C : KimchiCurve} {F : Type} {nc : ℕ} (cell : C.Point → AffinePoint (FVar F))
+    (cvk : KimchiVK C nc) : VkComms nc (AffinePoint (FVar F)) :=
+  ⟨cvk.sigmaComm.map (·.map cell), cvk.coefficientsComm.map (·.map cell),
+   cvk.genericComm.map cell, cvk.poseidonComm.map cell, cvk.completeAddComm.map cell,
+   cvk.mulComm.map cell, cvk.emulComm.map cell, cvk.endomulScalarComm.map cell⟩
 
 /-- The circuit's key cells read as the key (`KeyReads`), and the sponge after the index
 digest squeezes to the key's digest. -/
