@@ -45,6 +45,15 @@ Pickles.toDomain_spec
 -- across branches, CS-matched by check_cs but not yet reached from a capstone.
 Pickles.xHatSealed_reads_publicCommitment
 
+-- TODO: drop once the wrap main port consumes them. The x_hat ladders' bounds on the packed
+-- scalars, the frame laws that carry them through the wrap verifier, and the wrap public
+-- input as the packed statement reduced.
+Pickles.publicInputCommitFull_bound
+Pickles.publicInputCommitSealed_bound
+Pickles.incrementallyVerifyProof_frame
+Pickles.wrapVerify_frame
+Pickles.wrapPublicInput_toList
+
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Pickles.buildEvalList

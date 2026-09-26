@@ -1391,7 +1391,7 @@ theorem step_scale_reads {V : Valuation Fp} (pt : AffinePoint (FVar Fp))
       ∃ w : ℤ × Bool, StepLadderPre V x w ∧
         (StepLadderReg w → OnCurveAt IpaEndo.pallas.d.W V r (stepLadderDec w • T))⌝⦄ := by
   refine builder_spec_imp _ _ _
-    (scaleFast2_spec (V := V) HasCurve.pallas 255 51 254 (by norm_num) (by norm_num) pt
+    (scaleFast2_spec (V := V) HasCurve.pallas 255 51 254 (by norm_num) pt
       x.val.sDiv2 x.val.sOdd) fun r hr T hT => ?_
   obtain ⟨z, h0, hlt, hz, hreg⟩ := hr T hT bb hbit
   exact ⟨(z, bb), ⟨hbit, h0, hlt, hz⟩, fun hR => hreg hR⟩
@@ -1412,7 +1412,7 @@ theorem step_scaleCip_reads {V : Valuation Fp} (pt : AffinePoint (FVar Fp))
       ∃ w : ℤ × Bool, StepCipPre V x w ∧
         (StepLadderReg w → OnCurveAt IpaEndo.pallas.d.W V r (stepLadderDec w • T))⌝⦄ := by
   refine builder_spec_imp _ _ _
-    (scaleFast2_spec (V := V) HasCurve.pallas 255 51 253 (by norm_num) (by norm_num) pt
+    (scaleFast2_spec (V := V) HasCurve.pallas 255 51 253 (by norm_num) pt
       x.val.sDiv2 x.val.sOdd) fun r hr T hT => ?_
   obtain ⟨z, h0, hlt, hz, hreg⟩ := hr T hT bb hbit
   exact ⟨(z, bb), ⟨⟨hbit, h0, lt_trans hlt (by norm_num), hz⟩, hlt⟩, fun hR => hreg hR⟩

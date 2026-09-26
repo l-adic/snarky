@@ -24,7 +24,9 @@ The emitted circuits of `scaleFast1` at the full 255-bit ladder and of `scaleFas
 128-bit split are checked against recorded fixtures (`formal/scripts/check_cs.lean`).
 
 Each section holds one circuit, its soundness spec and its completeness law, and then seals
-the circuit `irreducible`: later sections reach it only through those laws.
+the circuit `irreducible`: later sections reach it only through those laws. The ladders
+`varBaseMul`, `scaleFast2` and `scaleFast2'` also state their scalar side alone, for any base
+(`*_spec_scalar`): the decomposition and booleanity rows never read the base.
 
 ## Deviations from the original
 
@@ -532,6 +534,19 @@ private theorem threads_length {base : AffinePoint (FVar F)}
     rounds.length = pref.length :=
   (threads_facts h).1.length_eq.symm
 
+/-- A trace's rounds, read at a valuation, link as the model's rows. -/
+private theorem threads_link_read [Field F] [DecidableEq F] {V : Valuation F}
+    {base : AffinePoint (FVar F)} {st fin : AffinePoint (FVar F) × FVar F}
+    {pref : List (Vector (FVar F) 5)} {rounds : List (ScaleRound F)}
+    (h : Chain (Threads base) st pref rounds fin) :
+    (rounds.map (ScaleRound.read V)).IsChain
+      fun a b => (b.x0 = a.x5 ∧ b.y0 = a.y5) ∧ b.n = a.nPrime := by
+  refine (List.isChain_map _).mpr ?_
+  refine (threads_link h).imp fun a b hab => ?_
+  exact ⟨⟨congrArg (·.val V) (congrArg AffinePoint.x hab.1),
+    congrArg (·.val V) (congrArg AffinePoint.y hab.1)⟩,
+    congrArg (·.val V) hab.2⟩
+
 /-- Flattening a list's five-wide windows recovers the list. -/
 private theorem flatMap_window {α : Type} (dflt : α) (c : ℕ) (l : List α)
     (hl : l.length = 5 * c) :
@@ -578,9 +593,75 @@ private theorem threads_rows [Field F] {base : AffinePoint (FVar F)} {V : Valuat
       hb4]
 
 open Kimchi.Gate.VarBaseMul (runBits bitsRegister bitsVal accX accY accN gateLadder) in
-/-- A satisfied trace from the doubled seed is one of the model's runs (`isChain_getD`):
-its bits are bits, the register reads as their value (`chain_accN`), and under the regime
-the result is the base times their Type1 decode (`varBaseMul_off`). -/
+/-- The trace's scalar side, for any base: the rounds' bits are boolean, `5` per round, and the
+final register is their value (`chain_accN`). Only the decomposition and booleanity rows are
+read. -/
+private theorem run_sound_scalar [Field F] [DecidableEq F] (V : Valuation F)
+    {base P0 : AffinePoint (FVar F)} {pref : List (Vector (FVar F) 5)}
+    {rounds : List (ScaleRound F)} {fin : AffinePoint (FVar F) × FVar F}
+    (hthr : Chain (Threads base) (P0, .const 0) pref rounds fin)
+    (hpay : ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read V r)) :
+    (∀ b ∈ roundBits V rounds, b = 0 ∨ b = 1) ∧
+      (roundBits V rounds).length = 5 * pref.length ∧
+      fin.2.val V = bitsRegister (roundBits V rounds) := by
+  match hround : rounds, hthr with
+  | [], hthr' =>
+    obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hthr'
+    exact ⟨by simp [roundBits], by simp [roundBits], by simp [roundBits, bitsRegister, CVar.val]⟩
+  | r₀ :: rs, hthr' =>
+    subst hround
+    set l := (r₀ :: rs).map (ScaleRound.read V) with hl
+    set dflt := ScaleRound.read V r₀ with hdflt
+    set g : ℕ → Kimchi.Gate.VarBaseMul.Witness F := fun i => l.getD i dflt with hg
+    have hlink : l.IsChain fun a b => (b.x0 = a.x5 ∧ b.y0 = a.y5) ∧ b.n = a.nPrime :=
+      threads_link_read (V := V) hthr'
+    have hgH : ∀ i, i < l.length → Kimchi.Gate.VarBaseMul.Holds (g i) := by
+      intro i hi
+      show Kimchi.Gate.VarBaseMul.Holds (l.getD i dflt)
+      rw [List.getD_eq_getElem _ _ hi]
+      have hmem : l[i] ∈ (r₀ :: rs).map (ScaleRound.read V) := hl ▸ List.getElem_mem hi
+      obtain ⟨r, hr, hrw⟩ := List.mem_map.mp hmem
+      rw [← hrw]
+      exact hpay r hr
+    have hgN : ∀ i, i + 1 < l.length → (g (i + 1)).n = (g i).nPrime := by
+      intro i hi
+      show (l.getD (i + 1) dflt).n = (l.getD i dflt).nPrime
+      rw [List.getD_eq_getElem _ _ hi, List.getD_eq_getElem _ _ (by omega)]
+      exact (hlink.getElem i hi).2
+    -- the run's bit stream is the rounds'
+    have hbits : runBits g l.length = roundBits V (r₀ :: rs) := by
+      rw [hg, Kimchi.Gate.VarBaseMul.runBits_getD, hl, roundBits, List.flatMap_map]
+      rfl
+    obtain ⟨-, -, han⟩ :=
+      Kimchi.Gate.VarBaseMul.acc_getD_length l (by simp [hl]) dflt
+    obtain ⟨-, hlastN⟩ := VarBaseMul.threads_last hthr'
+    have hlastl : l.getLast (by simp [hl])
+        = ScaleRound.read V ((r₀ :: rs).getLast (by simp)) := List.getLast_map _
+    have hfinn : accN g l.length = fin.2.val V := by
+      rw [hg, han, hlastl]
+      show ((r₀ :: rs).getLast (by simp)).nNext.val V = _
+      rw [hlastN]
+    -- the register, from the run's own fold
+    have hzero : accN g 0 = 0 := by
+      obtain ⟨-, hn0⟩ := VarBaseMul.threads_head hthr'
+      show (l.getD 0 dflt).n = 0
+      rw [hl]
+      show r₀.nPrev.val V = 0
+      rw [hn0]
+      simp [CVar.val]
+    refine ⟨?_, ?_, ?_⟩
+    · rw [← hbits]
+      exact Kimchi.Gate.VarBaseMul.runBits_bool l.length g hgH
+    · rw [← VarBaseMul.threads_length hthr', roundBits, List.length_flatMap]
+      simp
+      omega
+    · rw [← hfinn, Kimchi.Gate.VarBaseMul.chain_accN l.length g hgH hgN, hzero, mul_zero,
+        zero_add, hbits]
+
+open Kimchi.Gate.VarBaseMul (runBits bitsRegister bitsVal accX accY accN gateLadder) in
+/-- A satisfied trace from the doubled seed is one of the model's runs (`isChain_getD`): under
+the regime the result is the base times its bits' Type1 decode (`varBaseMul_off`). The bits
+themselves are `run_sound_scalar`'s. -/
 private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuation F)
     {base P0 : AffinePoint (FVar F)} {pref : List (Vector (FVar F) 5)}
     {rounds : List (ScaleRound F)} {fin : AffinePoint (FVar F) × FVar F}
@@ -589,21 +670,17 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
     (hpay : ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read V r))
     (hT : OnCurveAt d.W V base T)
     (hP0 : OnCurveAt d.W V P0 ((2 : ℤ) • T)) :
-    (∀ b ∈ roundBits V rounds, b = 0 ∨ b = 1) ∧
-      (roundBits V rounds).length = 5 * pref.length ∧
-      fin.2.val V = bitsRegister (roundBits V rounds) ∧
-      ∀ _ : d.LadderRegime (5 * pref.length)
-          (Pasta.Shifted.unshiftType1 (5 * pref.length) (bitsVal (roundBits V rounds))),
-        OnCurveAt d.W V fin.1
-          ((Pasta.Shifted.unshiftType1 (5 * pref.length) (bitsVal (roundBits V rounds))) • T) := by
+    ∀ _ : d.LadderRegime (5 * pref.length)
+        (Pasta.Shifted.unshiftType1 (5 * pref.length) (bitsVal (roundBits V rounds))),
+      OnCurveAt d.W V fin.1
+        ((Pasta.Shifted.unshiftType1 (5 * pref.length) (bitsVal (roundBits V rounds))) • T) := by
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
   match hround : rounds, hthr with
   | [], hthr' =>
     obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hthr'
-    refine ⟨by simp [roundBits], by simp [roundBits], by simp [roundBits, bitsRegister, CVar.val],
-      fun _ => ?_⟩
+    intro _
     simpa [roundBits, bitsVal] using hP0
   | r₀ :: rs, hthr' =>
     subst hround
@@ -624,19 +701,12 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
       show Kimchi.Gate.AddComplete.IsPoint d.W (r.base.x.val V) (r.base.y.val V) T
       rw [VarBaseMul.threads_base hthr' r hr]
       exact hT
-    obtain ⟨hgH, hgB, hgL, hgN⟩ :=
+    obtain ⟨hgH, hgB, hgL, -⟩ :=
       Kimchi.Gate.VarBaseMul.isChain_getD d.W T l dflt
         (fun w hw => by
           obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (hl ▸ hw)
           exact hpay r hr)
-        hbaseAll
-        (by
-          rw [hl]
-          refine (List.isChain_map _).mpr ?_
-          refine (VarBaseMul.threads_link hthr').imp fun a b hab => ?_
-          exact ⟨⟨congrArg (·.val V) (congrArg AffinePoint.x hab.1),
-            congrArg (·.val V) (congrArg AffinePoint.y hab.1)⟩,
-            congrArg (·.val V) hab.2⟩)
+        hbaseAll (threads_link_read (V := V) hthr')
     have hgI : Kimchi.Gate.AddComplete.IsPoint d.W (g 0).x0 (g 0).y0 ((2 : ℤ) • T) := by
       obtain ⟨hp0, -⟩ := VarBaseMul.threads_head hthr'
       show Kimchi.Gate.AddComplete.IsPoint d.W (r₀.acc0.x.val V) (r₀.acc0.y.val V) _
@@ -647,9 +717,9 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
       rw [hg, Kimchi.Gate.VarBaseMul.runBits_getD, hl, roundBits, List.flatMap_map]
       rfl
     -- the run closes where the trace does
-    obtain ⟨hax, hay, han⟩ :=
+    obtain ⟨hax, hay, -⟩ :=
       Kimchi.Gate.VarBaseMul.acc_getD_length l (by simp [hl]) dflt
-    obtain ⟨hlast5, hlastN⟩ := VarBaseMul.threads_last hthr'
+    obtain ⟨hlast5, -⟩ := VarBaseMul.threads_last hthr'
     have hlastl : l.getLast (by simp [hl])
         = ScaleRound.read V ((r₀ :: rs).getLast (by simp)) := List.getLast_map _
     have hfinx : accX g l.length = fin.1.x.val V := by
@@ -660,49 +730,29 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
       rw [hg, hay, hlastl]
       show ((r₀ :: rs).getLast (by simp)).acc5.y.val V = _
       rw [hlast5]
-    have hfinn : accN g l.length = fin.2.val V := by
-      rw [hg, han, hlastl]
-      show ((r₀ :: rs).getLast (by simp)).nNext.val V = _
-      rw [hlastN]
-    -- the register, from the run's own fold
-    have hzero : accN g 0 = 0 := by
-      obtain ⟨-, hn0⟩ := VarBaseMul.threads_head hthr'
-      show (l.getD 0 dflt).n = 0
-      rw [hl]
-      show r₀.nPrev.val V = 0
-      rw [hn0]
-      simp [CVar.val]
-    have hreg : fin.2.val V = bitsRegister (roundBits V (r₀ :: rs)) := by
-      rw [← hfinn, Kimchi.Gate.VarBaseMul.chain_accN l.length g hgH hgN, hzero, mul_zero,
-        zero_add, hbits]
-    refine ⟨?_, ?_, hreg, fun hregime => ?_⟩
-    · rw [← hbits]
-      exact Kimchi.Gate.VarBaseMul.runBits_bool l.length g hgH
-    · rw [← VarBaseMul.threads_length hthr', roundBits, List.length_flatMap]
-      simp
-      omega
-    · rw [← hlen] at hregime ⊢
-      simp only [HasCurve.LadderRegime] at hregime
-      have hs : gateLadder g (5 * l.length)
-          = Pasta.Shifted.unshiftType1 (5 * l.length)
-            (bitsVal (roundBits V (r₀ :: rs))) := by
-        rw [Pasta.Shifted.unshiftType1]
-        rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
-          Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hbits]
-      obtain ⟨hfin', hpt, -⟩ :=
-        Kimchi.Gate.VarBaseMul.varBaseMul_off d.W l.length g T
-          (gateLadder g (5 * l.length)) hgH hgB hgL hgI d.two_ne d.odd rfl
-          (by
-            rw [hs]
-            rcases hregime with h | h
-            · exact Or.inl h
-            · exact Or.inr h)
-      have hns : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V) := by
-        rw [← hfinx, ← hfiny]
-        exact hfin'
-      refine ⟨hns, ?_⟩
-      rw [← hs, ← hpt]
-      congr 1
+    intro hregime
+    rw [← hlen] at hregime ⊢
+    simp only [HasCurve.LadderRegime] at hregime
+    have hs : gateLadder g (5 * l.length)
+        = Pasta.Shifted.unshiftType1 (5 * l.length)
+          (bitsVal (roundBits V (r₀ :: rs))) := by
+      rw [Pasta.Shifted.unshiftType1]
+      rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
+        Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hbits]
+    obtain ⟨hfin', hpt, -⟩ :=
+      Kimchi.Gate.VarBaseMul.varBaseMul_off d.W l.length g T
+        (gateLadder g (5 * l.length)) hgH hgB hgL hgI d.two_ne d.odd rfl
+        (by
+          rw [hs]
+          rcases hregime with h | h
+          · exact Or.inl h
+          · exact Or.inr h)
+    have hns : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V) := by
+      rw [← hfinx, ← hfiny]
+      exact hfin'
+    refine ⟨hns, ?_⟩
+    rw [← hs, ← hpt]
+    congr 1
 
 /-- The trace's readings are the model's honest walk: round `i` reads as `chainBuild`'s
 row `i`, from the accumulator the trace opened on and the bits it was handed. -/
@@ -775,6 +825,72 @@ private theorem grants_walk [Field F] [DecidableEq F] (base : AffinePoint (FVar 
       rw [show ((r :: tail)[j + 1]'hi) = tail[j]'hj from rfl, hshift,
         Kimchi.Gate.VarBaseMul.chainBuild_shift, hmx, hmy, hmn]
 
+/-- The returned bits, read off a satisfied trace: the first `5 * chunks` cells are the bits
+`bs` of the rounds (read MSB-first through the windows), whose LSB-first value is the rounds'
+`bitsVal` and, the final register reading as their `bitsRegister` (`hreg`), its value. -/
+private theorem lsbBits_of_run [Field F] [DecidableEq F] (V : Valuation F) {n chunks : ℕ}
+    (hn : 5 * chunks ≤ n) {bits : Vector (FVar F) n} {base P0 : AffinePoint (FVar F)}
+    {loop : List (ScaleRound F) × (AffinePoint (FVar F) × FVar F)}
+    (hchain : Chain (Threads base) (P0, .const 0)
+      ((List.range chunks).map fun i => Vector.ofFn fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1) (.const 0))
+      loop.1 loop.2)
+    (hbool : ∀ b ∈ roundBits V loop.1, b = 0 ∨ b = 1)
+    (hreg : loop.2.2.val V = Kimchi.Gate.VarBaseMul.bitsRegister (roundBits V loop.1)) :
+    ∃ bs : Vector Bool (5 * chunks),
+      (∀ i (hi : i < 5 * chunks), (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i]) ∧
+      Kimchi.Gate.VarBaseMul.bitsVal (roundBits V loop.1) = (Kimchi.natLsbVal bs.toList : ℤ) ∧
+      loop.2.2.val V = ((Kimchi.natLsbVal bs.toList : ℕ) : F) := by
+  -- the rounds' bits are the windows', and the windows flatten to the reversed prefix
+  have hmsb : ((bits.toList.take (5 * chunks)).reverse).length = 5 * chunks := by
+    simp only [List.length_reverse, List.length_take, Vector.length_toList]
+    omega
+  have hbits : roundBits V loop.1
+      = (((bits.toList.take (5 * chunks)).reverse).map (·.val V)) := by
+    rw [threads_rows hchain, List.flatMap_map]
+    exact flatMap_window_map (·.val V) (CVar.const 0) chunks _ hmsb
+  -- the cells, decided as bits: the gate's rows make each one `0` or `1`
+  have hcell : ∀ i (hi : i < 5 * chunks),
+      (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 0 ∨
+        (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 1 := by
+    intro i hi
+    refine hbool _ ?_
+    rw [hbits]
+    refine List.mem_map.mpr ⟨bits[i]'(Nat.lt_of_lt_of_le hi hn), ?_, rfl⟩
+    rw [List.mem_reverse]
+    have hidx : (bits.toList.take (5 * chunks))[i]'(by simp; omega)
+        = bits[i]'(Nat.lt_of_lt_of_le hi hn) := by
+      simp [List.getElem_take]
+    exact hidx ▸ List.getElem_mem _
+  set bs : Vector Bool (5 * chunks) :=
+    Vector.ofFn fun i : Fin (5 * chunks) =>
+      decide ((bits[i.1]'(Nat.lt_of_lt_of_le i.isLt hn)).val V = 1) with hbsdef
+  have hread : ∀ i (hi : i < 5 * chunks),
+      (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i] := by
+    intro i hi
+    simp only [hbsdef, Vector.getElem_ofFn]
+    rcases hcell i hi with h0 | h1
+    · simp [h0, bit]
+    · simp [h1, bit]
+  have hdec : ((roundBits V loop.1).map fun b => decide (b = 1)).reverse = bs.toList := by
+    rw [hbits, List.map_map, ← List.map_reverse, List.reverse_reverse]
+    apply List.ext_getElem
+    · simp only [List.length_map, List.length_take, Vector.length_toList, hbsdef,
+        Vector.length_toList]
+      omega
+    · intro i h1 _
+      have hi : i < 5 * chunks := by simp only [List.length_map, List.length_take,
+        Vector.length_toList, lt_min_iff] at h1; omega
+      simp only [hbsdef, Vector.getElem_toList, Vector.getElem_ofFn, List.getElem_map,
+        List.getElem_take, Function.comp_apply, Vector.getElem_toList]
+  have hbn : Kimchi.Gate.VarBaseMul.bitsVal (roundBits V loop.1)
+      = (Kimchi.natLsbVal bs.toList : ℤ) := by
+    rw [Kimchi.Gate.VarBaseMul.bitsVal_eq_natLsbVal, hdec]
+  refine ⟨bs, hread, hbn, ?_⟩
+  rw [hreg, Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast (roundBits V loop.1) hbool, hbn]
+  push_cast
+  ring
+
 end VarBaseMul
 
 open Std.Do WeierstrassCurve.Affine in
@@ -818,65 +934,41 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     rcases hadd.2 T T hTs hTs h2T with ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd (hadd.1.symm.trans hinf) (by norm_num)
     · exact h3
-  obtain ⟨hbool, hlen, hreg, hpoint⟩ := VarBaseMul.run_sound d V T hchain hpay hTs hP0
-  -- the rounds' bits are the windows', and the windows flatten to the reversed prefix
-  have hmsb : ((bits.toList.take (5 * chunks)).reverse).length = 5 * chunks := by
-    simp only [List.length_reverse, List.length_take, Vector.length_toList]
-    omega
-  have hbits : VarBaseMul.roundBits V loop.1
-      = (((bits.toList.take (5 * chunks)).reverse).map (·.val V)) := by
-    rw [VarBaseMul.threads_rows hchain, List.flatMap_map]
-    exact VarBaseMul.flatMap_window_map (·.val V) (CVar.const 0) chunks _ hmsb
-
+  obtain ⟨hbool, -, hreg⟩ := VarBaseMul.run_sound_scalar V hchain hpay
+  have hpoint := VarBaseMul.run_sound d V T hchain hpay hTs hP0
+  obtain ⟨bs, hread, hbn, hval⟩ := VarBaseMul.lsbBits_of_run V hn hchain hbool hreg
   have hpreflen : ((List.range chunks).map fun i =>
       (Vector.ofFn fun j : Fin 5 =>
         ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
           (CVar.const 0))).length = chunks := by simp
-  -- the cells, decided as bits: the gate's rows make each one `0` or `1`
-  have hcell : ∀ i (hi : i < 5 * chunks),
-      (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 0 ∨
-        (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 1 := by
-    intro i hi
-    refine hbool _ ?_
-    rw [hbits]
-    refine List.mem_map.mpr ⟨bits[i]'(Nat.lt_of_lt_of_le hi hn), ?_, rfl⟩
-    rw [List.mem_reverse]
-    have hidx : (bits.toList.take (5 * chunks))[i]'(by simp; omega)
-        = bits[i]'(Nat.lt_of_lt_of_le hi hn) := by
-      simp [List.getElem_take]
-    exact hidx ▸ List.getElem_mem _
-  set bs : Vector Bool (5 * chunks) :=
-    Vector.ofFn fun i : Fin (5 * chunks) =>
-      decide ((bits[i.1]'(Nat.lt_of_lt_of_le i.isLt hn)).val V = 1) with hbsdef
-  have hread : ∀ i (hi : i < 5 * chunks),
-      (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i] := by
-    intro i hi
-    simp only [hbsdef, Vector.getElem_ofFn]
-    rcases hcell i hi with h0 | h1
-    · simp [h0, bit]
-    · simp [h1, bit]
-  have hdec : ((VarBaseMul.roundBits V loop.1).map fun b => decide (b = 1)).reverse
-      = bs.toList := by
-    rw [hbits, List.map_map, ← List.map_reverse, List.reverse_reverse]
-    apply List.ext_getElem
-    · simp only [List.length_map, List.length_take, Vector.length_toList, hbsdef,
-        Vector.length_toList]
-      omega
-    · intro i h1 _
-      have hi : i < 5 * chunks := by simp only [List.length_map, List.length_take,
-        Vector.length_toList, lt_min_iff] at h1; omega
-      simp only [hbsdef, Vector.getElem_toList, Vector.getElem_ofFn, List.getElem_map,
-        List.getElem_take, Function.comp_apply, Vector.getElem_toList]
-  have hbn : Kimchi.Gate.VarBaseMul.bitsVal (VarBaseMul.roundBits V loop.1)
-      = (Kimchi.natLsbVal bs.toList : ℤ) := by
-    rw [Kimchi.Gate.VarBaseMul.bitsVal_eq_natLsbVal, hdec]
-  refine ⟨bs, hread, ?_, ?_⟩
-  · rw [← hpin, hreg,
-      Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast (VarBaseMul.roundBits V loop.1) hbool, hbn]
-    push_cast
-    ring
-  · rw [hpreflen, hbn] at hpoint
-    exact hpoint
+  refine ⟨bs, hread, by rw [← hpin]; exact hval, ?_⟩
+  rw [hpreflen, hbn] at hpoint
+  exact hpoint
+
+open Std.Do in
+/-- **Soundness, the scalar side.** For any base, under any satisfying valuation the first
+`5 * chunks` returned bits read as bits whose LSB-first value the scalar reads as: the
+decomposition and booleanity rows never read the base. -/
+theorem varBaseMul_spec_scalar {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (n chunks : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
+    (scalar : Type1 (FVar F)) :
+    ⦃⌜True⌝⦄
+    varBaseMul (c := Builder V (KimchiConstraint F)) n chunks base scalar
+    ⦃⇓ r _ => ⌜∃ bs : Vector Bool (5 * chunks),
+        (∀ i (hi : i < 5 * chunks),
+          (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i]) ∧
+        scalar.val.val V = ((Kimchi.natLsbVal bs.toList : ℕ) : F)⌝⦄ := by
+  have hloop := fun (b : AffinePoint (FVar F)) =>
+    mapAccumM_spec (V := V) (c := KimchiConstraint F) (scaleRound b) (VarBaseMul.Threads b)
+      (fun st bs => VarBaseMul.scaleRound_spec b st bs)
+  have hadd := fun (a b : AffinePoint (FVar F)) =>
+    builder_spec_true (addFast (c := Builder V (KimchiConstraint F)) .checkFinite a b)
+  unfold varBaseMul
+  mvcgen [hloop, hadd, -Snarky.Kimchi.addFast_spec]
+  rename_i _ _ _ _ bits _ _ _ _ loop _ hchain _ _ hpay _ _ hpin
+  obtain ⟨hbool, -, hreg⟩ := VarBaseMul.run_sound_scalar V hchain hpay
+  obtain ⟨bs, hread, -, hval⟩ := VarBaseMul.lsbBits_of_run V hn hchain hbool hreg
+  exact ⟨bs, hread, by rw [← hpin]; exact hval⟩
 
 open WeierstrassCurve.Affine in
 /-- **Completeness.** From an on-curve base and a scalar within the ladder's width, under
@@ -1162,11 +1254,9 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     fun _ => Complete.pure_of fun st h => ?post
   case pin =>
     obtain ⟨⟨-, hchain, hrows⟩, hext, hp2x, hp2y, hseal, -⟩ := h
-    obtain ⟨-, -, hreg, -⟩ :=
-      VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
-        hchain
+    obtain ⟨-, -, hreg⟩ :=
+      VarBaseMul.run_sound_scalar st.env.get hchain
         (hpayAt st st le_rfl hext hseal hp2x hp2y hchain hrows)
-        (hTread hseal).2 (hP0at hp2x hp2y)
     rw [hreg, hroundBits st hext hchain, hregSv]
   case post =>
     obtain ⟨-, ⟨hinv, hchain, hrows⟩, hext, hp2x, hp2y, hseal, -⟩ := h
@@ -1183,7 +1273,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         rw [CVar.val_of_le hext (hbitfacts i hi).1, (hbitfacts i hi).2]
         simp [bit]
     · -- the point, from `run_sound` on the trace
-      obtain ⟨-, -, -, hpoint⟩ :=
+      have hpoint :=
         VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
           hchain
           (hpayAt st st le_rfl hext hseal hp2x hp2y hchain hrows)
@@ -1367,11 +1457,44 @@ def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   let x ← select sOdd r.g.x q.p.x
   pure ⟨x, y⟩
 
+/-- The pinned high bits: bits reading as `bs` whose cells from `sDiv2Bits` on are pinned to
+`0` have LSB-first value below `2 ^ sDiv2Bits`. -/
+private theorem natLsbVal_lt_of_pinned [Field F] {V : Valuation F} {n chunks sDiv2Bits : ℕ}
+    (hn : 5 * chunks ≤ n) (lsbBits : Vector (FVar F) n) (bs : Vector Bool (5 * chunks))
+    (hread : ∀ i (hi : i < 5 * chunks),
+      (lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i])
+    (hpin0 : ∀ x ∈ lsbBits.toList.drop sDiv2Bits, x.val V = (CVar.const 0 : FVar F).val V) :
+    (Kimchi.natLsbVal bs.toList : ℤ) < 2 ^ sDiv2Bits := by
+  have hzeros : ∀ b ∈ bs.toList.drop sDiv2Bits, b = false := by
+    intro b hb
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hb
+    have hi' : sDiv2Bits + i < 5 * chunks := by
+      simp only [List.length_drop, Vector.length_toList] at hi
+      omega
+    have hidx : sDiv2Bits + i < n := Nat.lt_of_lt_of_le hi' hn
+    have hmem : lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx)
+        ∈ lsbBits.toList.drop sDiv2Bits := by
+      have heq : (lsbBits.toList.drop sDiv2Bits)[i]'(by
+          simp only [List.length_drop, Vector.length_toList]; omega)
+          = lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx) := List.getElem_drop ..
+      rw [← heq]
+      exact List.getElem_mem _
+    have hb0 : bit bs[sDiv2Bits + i] = (0 : F) := by
+      rw [← hread (sDiv2Bits + i) hi',
+        show lsbBits[sDiv2Bits + i]'hidx
+          = lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx) from rfl,
+        hpin0 _ hmem]
+      simp [CVar.val]
+    rw [List.getElem_drop, Vector.getElem_toList]
+    cases hbb : bs[sDiv2Bits + i] with
+    | false => rfl
+    | true => rw [hbb] at hb0; simp [bit] at hb0
+  exact_mod_cast Kimchi.natLsbVal_lt_of_drop_false hzeros
+
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2`). -/
 theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
-    (hsplit : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F) :
     ⦃⌜True⌝⦄
     scaleFast2 (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base sDiv2 sOdd
@@ -1397,33 +1520,7 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   rename_i _ rvb _ hvb _ _ hpin0 q _ yr _ hyr xr _ hxr hadd
   intro T hT bb hbb
   obtain ⟨bs, hread, hreg, hpoint⟩ := hvb T hT
-  -- the pinned high bits: the ladder's integer fits the split's width
-  have hzeros : ∀ b ∈ bs.toList.drop sDiv2Bits, b = false := by
-    intro b hb
-    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hb
-    have hi' : sDiv2Bits + i < 5 * chunks := by
-      simp only [List.length_drop, Vector.length_toList] at hi
-      omega
-    have hidx : sDiv2Bits + i < n := Nat.lt_of_lt_of_le hi' hn
-    have hmem : rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx)
-        ∈ rvb.lsbBits.toList.drop sDiv2Bits := by
-      have heq : (rvb.lsbBits.toList.drop sDiv2Bits)[i]'(by
-          simp only [List.length_drop, Vector.length_toList]; omega)
-          = rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx) := List.getElem_drop ..
-      rw [← heq]
-      exact List.getElem_mem _
-    have hb0 : bit bs[sDiv2Bits + i] = (0 : F) := by
-      rw [← hread (sDiv2Bits + i) hi',
-        show rvb.lsbBits[sDiv2Bits + i]'hidx
-          = rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx) from rfl,
-        hpin0 _ hmem]
-      simp [CVar.val]
-    rw [List.getElem_drop, Vector.getElem_toList]
-    cases hbb : bs[sDiv2Bits + i] with
-    | false => rfl
-    | true => rw [hbb] at hb0; simp [bit] at hb0
-  have hltSplit : (Kimchi.natLsbVal bs.toList : ℤ) < 2 ^ sDiv2Bits := by
-    exact_mod_cast Kimchi.natLsbVal_lt_of_drop_false hzeros
+  have hltSplit := natLsbVal_lt_of_pinned hn rvb.lsbBits bs hread hpin0
   refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, hltSplit, ?_, ?_⟩
   · rw [hreg]
     push_cast
@@ -1458,6 +1555,31 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
             = ((Pasta.Shifted.unshiftType1 (5 * chunks) ((Kimchi.natLsbVal bs.toList : ℤ))) • T)
             from by rw [Pasta.Shifted.unshiftType1]; module]
         exact ⟨hGns, hGeq⟩
+
+open Std.Do in
+/-- **Soundness, the scalar side** (`scaleFast2`). For any base, the half is an integer below
+`2 ^ sDiv2Bits`: the ladder's bits and the pinned high bits never read the base. -/
+theorem scaleFast2_spec_scalar {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
+    (sDiv2 : FVar F) (sOdd : BoolVar F) :
+    ⦃⌜True⌝⦄
+    scaleFast2 (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base sDiv2 sOdd
+    ⦃⇓ _ _ => ⌜∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧ (z : F) = sDiv2.val V⌝⦄ := by
+  have hvbm := varBaseMul_spec_scalar (V := V) n chunks hn base ⟨sDiv2⟩
+  have hpin := forM_spec (V := V) (c := KimchiConstraint F)
+    (fun b : FVar F => assertEqual (c := Builder V (KimchiConstraint F)) b (CVar.const 0))
+    (fun b : FVar F => b.val V = (CVar.const 0 : FVar F).val V)
+    (fun b => assertEqual_spec (V := V) b (CVar.const 0))
+  have hadd := fun (a b : AffinePoint (FVar F)) =>
+    builder_spec_true (addFast (c := Builder V (KimchiConstraint F)) .checkFinite a b)
+  have hsel := fun (t e : FVar F) =>
+    builder_spec_true (Snarky.selectField (c := Builder V (KimchiConstraint F)) sOdd t e)
+  simp only [scaleFast2, select_fvar]
+  mvcgen [hvbm, hpin, hadd, hsel, -Snarky.Kimchi.addFast_spec]
+  rename_i _ rvb _ hvb _ _ hpin0 _ _ _ _ _ _ _ _
+  obtain ⟨bs, hread, hreg⟩ := hvb
+  exact ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _,
+    natLsbVal_lt_of_pinned hn rvb.lsbBits bs hread hpin0, by rw [hreg]; push_cast; ring⟩
 
 open WeierstrassCurve.Affine in
 /-- **Completeness** (`scaleFast2`). The ladder's honest run on `sDiv2`, whose high bits
@@ -1778,12 +1900,29 @@ def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   let (sDiv2, sOdd) ← splitFieldVar s
   scaleFast2 n chunks (scaleFast2'Width n sDiv2Bits) base sDiv2 sOdd
 
+/-- The split's reading of `scaleFast2'`: a half `z` below the ladder's width and a parity bit
+joining to `s` read as a half below `2 ^ sDiv2Bits`, one bit narrower at the full width. -/
+private theorem scaleFast2'_join [Field F] {V : Valuation F} {n sDiv2Bits : ℕ}
+    {s sDiv2 : FVar F} {z : ℤ} {bb : Bool}
+    (hpin : s.val V = 2 * sDiv2.val V + bit bb) (h0 : 0 ≤ z)
+    (hlt : z < 2 ^ scaleFast2'Width n sDiv2Bits) (hzval : (z : F) = sDiv2.val V) :
+    0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧ (n ≤ sDiv2Bits + 1 → z < 2 ^ (sDiv2Bits - 1)) ∧
+      ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V := by
+  have hw : 2 ^ scaleFast2'Width n sDiv2Bits ≤ (2 : ℤ) ^ sDiv2Bits := by
+    apply pow_le_pow_right₀ (by norm_num)
+    unfold scaleFast2'Width; split_ifs <;> omega
+  refine ⟨h0, lt_of_lt_of_le hlt hw, fun hfull => ?_, ?_⟩
+  · rwa [scaleFast2'Width, if_pos hfull] at hlt
+  · push_cast
+    rw [hpin, hzval]
+    cases bb <;> simp [bit]
+
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2'`). A half and a parity bit that join to the scalar, the
 half one bit narrower at the full width, and the result is the multiple they name. -/
 theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
-    (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
-    (hsplit : sDiv2Bits ≤ 5 * chunks) (base : AffinePoint (FVar F)) (s : FVar F) :
+    (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
+    (s : FVar F) :
     ⦃⌜True⌝⦄
     scaleFast2' (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base s
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
@@ -1793,26 +1932,40 @@ theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
         ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
           OnCurveAt d.W V r
             ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⌝⦄ := by
-  have hsplit' : scaleFast2'Width n sDiv2Bits ≤ 5 * chunks := by
-    unfold scaleFast2'Width; split_ifs <;> omega
   have hsplitV := fun (V : Valuation F) =>
     splitFieldVar_spec (c := KimchiConstraint F) (V := V) s
   have hsf2 := fun (V : Valuation F) (sDiv2 : FVar F) (sOdd : BoolVar F) =>
-    scaleFast2_spec (V := V) d n chunks (scaleFast2'Width n sDiv2Bits) hn hsplit' base sDiv2 sOdd
+    scaleFast2_spec (V := V) d n chunks (scaleFast2'Width n sDiv2Bits) hn base sDiv2 sOdd
   simp only [scaleFast2']
   mvcgen [hsplitV, hsf2]
   rename_i hsp _ _
   intro hq T hT
   obtain ⟨bb, hbit, hpin⟩ := hsp
   obtain ⟨z, h0, hlt, hzval, hpoint⟩ := hq T hT bb hbit
-  have hw : 2 ^ scaleFast2'Width n sDiv2Bits ≤ (2 : ℤ) ^ sDiv2Bits := by
-    apply pow_le_pow_right₀ (by norm_num)
-    unfold scaleFast2'Width; split_ifs <;> omega
-  refine ⟨z, bb, h0, lt_of_lt_of_le hlt hw, fun hfull => ?_, ?_, hpoint⟩
-  · rwa [scaleFast2'Width, if_pos hfull] at hlt
-  · push_cast
-    rw [hpin, hzval]
-    cases bb <;> simp [bit]
+  obtain ⟨h0', hlt', hfull, hjoin⟩ := scaleFast2'_join hpin h0 hlt hzval
+  exact ⟨z, bb, h0', hlt', hfull, hjoin, hpoint⟩
+
+open Std.Do in
+/-- **Soundness, the scalar side** (`scaleFast2'`). For any base, a half and a parity bit join
+to the scalar, the half below `2 ^ sDiv2Bits` and one bit narrower at the full width. -/
+theorem scaleFast2'_spec_scalar {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
+    (s : FVar F) :
+    ⦃⌜True⌝⦄
+    scaleFast2' (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base s
+    ⦃⇓ _ _ => ⌜∃ (z : ℤ) (bb : Bool), 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧
+        (n ≤ sDiv2Bits + 1 → z < 2 ^ (sDiv2Bits - 1)) ∧
+        ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V⌝⦄ := by
+  have hsplitV := splitFieldVar_spec (c := KimchiConstraint F) (V := V) s
+  have hsf2 := fun (sDiv2 : FVar F) (sOdd : BoolVar F) =>
+    scaleFast2_spec_scalar (V := V) n chunks (scaleFast2'Width n sDiv2Bits) hn base sDiv2 sOdd
+  simp only [scaleFast2']
+  mvcgen [hsplitV, hsf2]
+  rename_i hsp _ _
+  intro hq
+  obtain ⟨bb, -, hpin⟩ := hsp
+  obtain ⟨z, h0, hlt, hzval⟩ := hq
+  exact ⟨z, bb, scaleFast2'_join hpin h0 hlt hzval⟩
 
 
 open WeierstrassCurve.Affine in

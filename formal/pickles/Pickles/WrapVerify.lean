@@ -26,7 +26,10 @@ already absorbed the dummy padding, so those absorptions stay out of the circuit
 bit forced to `1`. `wrapVerifyAt` fixes the environment: the SRS blinding base as a constant
 cell, and the public-input commitment `publicInputCommitFull` over the packed step statement at
 the key's Lagrange table (`XhatTable.ofKey`). Its read `wrapVerifyAt_reads` proves the table's
-reading from the environment rather than assuming it.
+reading from the environment rather than assuming it. `wrapVerify_frame` carries what the
+public-input commitment's rows force out of the block, and `wrapPublicInput_toList` states the
+wrap public input as the packed step statement reduced into the scalar field
+(`PackedScalar.reduced`).
 
 `StepProof.groupCircuit` is the block as a circuit of its input (`StepProof.GroupIn`), with the
 key's cells and the two sponges as constants; the top-level statement
@@ -56,6 +59,39 @@ def wrapVerify {sf : Type} {k : ℕ} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
   for cc in u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges do
     assertEqual cc.1.val cc.2.val
   pure PUnit.unit
+
+/-! ## A frame for the public-input commitment -/
+
+section Frame
+
+variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F}
+
+open Std.Do in
+/-- Whatever the public-input commitment's rows force of the valuation, the verify block's rows
+force too (`incrementallyVerifyProof_frame`). -/
+theorem wrapVerify_frame {sf : Type} {k : ℕ}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
+    (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
+    (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
+    (msgSponge : SpongeVar F) (newBpChallenges : List (List (FVar F)))
+    (claimedMsgDigest : FVar F) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
+    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) (P : Prop)
+    (hX : ⦃⌜True⌝⦄ computeXHat ⦃⇓ _ _ => ⌜P⌝⦄) :
+    ⦃⌜True⌝⦄
+    wrapVerify ops e p endo gm sqrtF blindingH spongeAfterIndex computeXHat msgSponge
+      newBpChallenges claimedMsgDigest u cells
+    ⦃⇓ _ _ => ⌜P⌝⦄ := by
+  have hivp := incrementallyVerifyProof_frame ops e p endo gm sqrtF blindingH spongeAfterIndex
+    computeXHat (cells.withClaims u) P hX
+  have hh := fun sg => builder_spec_true
+    (hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p msgSponge
+      newBpChallenges sg)
+  simp only [wrapVerify]
+  mvcgen [hivp, hh] invariants
+    · ⇓⟨_, _⟩ => ⌜P⌝
+
+end Frame
 
 /-! ## The read -/
 
@@ -165,6 +201,18 @@ def wrapPublicInput {ks n nc : ℕ} (E : Env IpaVesta.curve nc) (V : Valuation F
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : Array Fp :=
   pubOf IpaVesta.curve V (wrapLeavesAt E statement)
+
+/-- The public input a step statement packs to is its packed scalars reduced into the scalar
+field (`PackedScalar.reduced`), when the key has a Lagrange point per packed scalar. -/
+theorem wrapPublicInput_toList {ks n nc : ℕ} (E : Env IpaVesta.curve nc) (V : Valuation Fq)
+    (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+    (hlen : statement.packed.length ≤ E.cvk.lagrangeBasis.size) :
+    (wrapPublicInput E V statement).toList
+      = statement.packed.map (PackedScalar.reduced IpaVesta.curve V) := by
+  unfold wrapPublicInput wrapLeavesAt
+  rw [packLeavesOf_ofKey (C := IpaVesta.curve) statement.packed E.cvk.lagrangeBasis.toList]
+  exact pubOf_zipWith_constLeaf _ _ (by simpa using hlen)
 
 /-- The verify block at the deployed Vesta constants, the blinding base `h` as a constant cell,
 and the public-input commitment of the packed step statement at the Lagrange points `lagrange`.

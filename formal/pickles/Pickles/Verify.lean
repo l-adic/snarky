@@ -27,7 +27,8 @@ different proofs in one circuit; that composition is not ported.
 ## Main definitions
 
 * `WrapStatement.packed`, `packLeaves`: the wrap statement as the public-input leaf list;
-* `StepStatement.packed`: the step statement as packed scalars;
+* `UnfinalizedProof.packed`, `StepStatement.packed`: one slot, and the step statement, as
+  packed scalars;
 * `IvpInput.withClaims`, `ivpInputOf`: the group half's input from a proof's claims;
 * `verifyProof`: the gadget.
 
@@ -95,27 +96,31 @@ def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (tab : XhatTable F nc) : List (Leaf F nc) :=
   packLeavesOf st.packed tab
 
-/-- The step statement as packed scalars, in packing order: per slot, the five split claims
+/-- One slot of the step statement as packed scalars, in packing order: the five split claims
 `cip, b, ζ^{2^k}, ζⁿ, perm` as a full half and a boolean parity, the digest full, `β, γ, α, ζ, ξ`
-and the `k` round challenges 128-bit, `shouldFinalize` boolean; then the
-`messagesForNextStepProof` digest and the slots' `messagesForNextWrapProof` digests, full. -/
+and the `k` round challenges 128-bit, `shouldFinalize` boolean. -/
+def UnfinalizedProof.packed
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
+    List (PackedScalar F) :=
+  let dv := u.deferredValues
+  let pl := dv.plonk
+  let split (x : Type2 (SplitField (FVar F) (BoolVar F))) : List (PackedScalar F) :=
+    [.full x.val.sDiv2, .bit x.val.sOdd]
+  split dv.combinedInnerProduct ++ split dv.b ++ split pl.zetaToSrsLength
+    ++ split pl.zetaToDomainSize ++ split pl.perm
+    ++ [.full u.spongeDigestBeforeEvaluations,
+        .b128 pl.beta.val, .b128 pl.gamma.val, .b128 pl.alpha.val, .b128 pl.zeta.val,
+        .b128 dv.xi.val]
+    ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
+    ++ [.bit u.shouldFinalize]
+
+/-- The step statement as packed scalars, in packing order: the slots (`UnfinalizedProof.packed`),
+then the `messagesForNextStepProof` digest and the slots' `messagesForNextWrapProof` digests,
+full. -/
 def StepStatement.packed {n : ℕ}
     (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
     List (PackedScalar F) :=
-  let slot (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-      List (PackedScalar F) :=
-    let dv := u.deferredValues
-    let pl := dv.plonk
-    let split (x : Type2 (SplitField (FVar F) (BoolVar F))) : List (PackedScalar F) :=
-      [.full x.val.sDiv2, .bit x.val.sOdd]
-    split dv.combinedInnerProduct ++ split dv.b ++ split pl.zetaToSrsLength
-      ++ split pl.zetaToDomainSize ++ split pl.perm
-      ++ [.full u.spongeDigestBeforeEvaluations,
-          .b128 pl.beta.val, .b128 pl.gamma.val, .b128 pl.alpha.val, .b128 pl.zeta.val,
-          .b128 dv.xi.val]
-      ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
-      ++ [.bit u.shouldFinalize]
-  st.proofState.unfinalizedProofs.toList.flatMap slot
+  st.proofState.unfinalizedProofs.toList.flatMap UnfinalizedProof.packed
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full
 

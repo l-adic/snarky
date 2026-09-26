@@ -34,6 +34,7 @@ Snarky.Kimchi.vesta_varBaseMul_complete
 Snarky.Tactic.completeStep
 
 -- The circuit gadgets and their specs: what a gadget emits, read back at a valuation.
+Snarky.Kimchi.scaleFast2'_spec_scalar
 Snarky.assertAll_spec
 Snarky.assertAny_spec
 Snarky.assertEq_spec
