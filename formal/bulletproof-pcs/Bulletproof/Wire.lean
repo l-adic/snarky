@@ -226,6 +226,12 @@ def lagrangeBasis (σ : SRS C.Point) (nc n : ℕ) (ω : C.ScalarField) (count : 
         return acc
       msm C g fun t => coeffs.getD t 0
 
+/-- Fewer Lagrange-basis commitments are a prefix of more. -/
+theorem lagrangeBasis_toList_take (σ : SRS C.Point) (nc n : ℕ) (ω : C.ScalarField) {m N : ℕ}
+    (h : m ≤ N) :
+    (lagrangeBasis C σ nc n ω N).toList.take m = (lagrangeBasis C σ nc n ω m).toList := by
+  simp [lagrangeBasis, ← List.map_take, Nat.min_eq_left h]
+
 /-! ### The SRS relations a statement names
 
 A statement over an SRS cannot assume its generators independent: the point group has prime

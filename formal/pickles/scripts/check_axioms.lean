@@ -63,7 +63,6 @@ def roots : List Name :=
     `Pickles.pow2PowMul_spec,
     `Pickles.oneHotVector_spec,
     `Pickles.toDomain_spec,
-    `Pickles.xHatSealed_reads_publicCommitment,
     `Pickles.publicInputCommitFull_bound,
     `Pickles.publicInputCommitSealed_bound,
     `Pickles.incrementallyVerifyProof_frame,
@@ -96,7 +95,9 @@ def roots : List Name :=
     `Pickles.incrementallyVerifyProof_reads,
     `Pickles.stepProof_kimchiVerify_vesta,
     `Pickles.wrapProof_kimchiVerify_pallas,
-    `Pickles.stepWrap_kimchiVerify ]
+    `Pickles.stepWrap_kimchiVerify,
+    `Pickles.wrapStep_kimchiVerify,
+    `Pickles.WrapStatement.toPacked_toFields ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
@@ -118,7 +119,9 @@ def deployedRoots : List Name :=
     `Pickles.wrapPublicInput_toList,
     `Pickles.stepProof_kimchiVerify_vesta,
     `Pickles.wrapProof_kimchiVerify_pallas,
-    `Pickles.stepWrap_kimchiVerify ]
+    `Pickles.stepWrap_kimchiVerify,
+    `Pickles.wrapStep_kimchiVerify,
+    `Pickles.WrapStatement.toPacked_toFields ]
 
 /-- A trusted `native_decide` certificate: one defined in an upstream CompElliptic module,
 in `Pasta/Endo.lean`, or in `Pickles/Reflect/Certificate.lean`. -/

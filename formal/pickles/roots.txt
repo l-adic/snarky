@@ -4,12 +4,22 @@
 -- machine and the certificates prove must stay reachable from them, from the linearization
 -- reflection, or from a check script (the `script-surface` blocks).
 
--- The capstones: a proof of each kind is verified by its two circuits, and a step circuit's
--- must-verify slots are verified by it and the next wrap circuit's finalize block. Everything
--- the package proves stays reachable from these.
+-- The capstones: a proof of each kind is verified by its two circuits, a step circuit's
+-- must-verify slots are verified by it and the next wrap circuit's finalize block, and a wrap
+-- circuit's step proof by it and the next step circuit's finalize. Everything the package
+-- proves stays reachable from these.
 Pickles.stepProof_kimchiVerify_vesta
 Pickles.wrapProof_kimchiVerify_pallas
 Pickles.stepWrap_kimchiVerify
+
+-- The bridge from `stepWrap_kimchiVerify`'s public-input tie to the public input
+-- `kimchiVerify` reads: the wrap public input is the packed statement, reduced.
+Pickles.wrapPublicInput_toList
+Pickles.wrapStep_kimchiVerify
+
+-- The wrap circuit's packed statement is the wire's public input: the anchor for the
+-- capstone's typed public-input tie.
+Pickles.WrapStatement.toPacked_toFields
 
 -- The linearization reflection: the certificate identifying the deployed token stream with
 -- `gateLinearization`, and the environment transport its proof runs on.
@@ -35,24 +45,6 @@ Pickles.Reflect.circuit_gateLinearization_fq
 -- simp set, they leave no constant in a proof term), coercion instances the elaborator
 -- applies, and the tactic implementations the completeness proofs call.
 Pickles.FopSide.unshiftV_read
-
--- TODO: drop once the wrap finalize port consumes them. The wrap side's one-hot and
--- domain selection, CS-matched by check_cs but not yet reached from a capstone.
-Pickles.oneHotVector_spec
-Pickles.toDomain_spec
-
--- TODO: drop once the wrap main port consumes it. The wrap side's x_hat over bases masked
--- across branches, CS-matched by check_cs but not yet reached from a capstone.
-Pickles.xHatSealed_reads_publicCommitment
-
--- TODO: drop once the wrap main port consumes them. The x_hat ladders' bounds on the packed
--- scalars, the frame laws that carry them through the wrap verifier, and the wrap public
--- input as the packed statement reduced.
-Pickles.publicInputCommitFull_bound
-Pickles.publicInputCommitSealed_bound
-Pickles.incrementallyVerifyProof_frame
-Pickles.wrapVerify_frame
-Pickles.wrapPublicInput_toList
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin

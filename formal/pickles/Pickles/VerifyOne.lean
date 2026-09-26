@@ -88,6 +88,13 @@ def VerifyOneInput.publicInputAt {ks k ncw ncs w : ℕ} (E : Env IpaPallas.curve
     (V : Valuation Fp) (ms : Vector Bool w) (inp : VerifyOneInput ks k ncw ncs w) : Array Fq :=
   stepPublicInput E V (inp.statement (.const (inp.stepMsgDigest E V ms)))
 
+/-- The packed public input of a slot's wrap proof: its statement, carrying the step-message
+digest `stepMsgDigest`, as the wrap circuit's packed statement (`WrapStatement.toPacked`). -/
+def VerifyOneInput.packedAt {ks k ncw ncs w : ℕ} (E : Env IpaPallas.curve ncw)
+    (V : Valuation Fp) (ms : Vector Bool w) (inp : VerifyOneInput ks k ncw ncs w) :
+    StatementPacked ks (Type1 Fq) Fq :=
+  (inp.statement (.const (inp.stepMsgDigest E V ms))).toPacked V
+
 variable {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k ncw ncs w : ℕ}
 
 /-- One previous proof: assert the unfinalized proof's `shouldFinalize` is `mustVerify`,
