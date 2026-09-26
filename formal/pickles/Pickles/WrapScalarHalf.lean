@@ -165,7 +165,7 @@ def ScalarVar.prev (s : ScalarVar k nc) : Vector (Vector (FVar Fq) k) MaxProofsV
   s.val.prev
 /-- The scalar circuit as a `ScalarHalf`. -/
 abbrev ScalarVar.half (V : Valuation Fq) (s : ScalarVar k nc) :
-    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k nc :=
+    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k nc MaxProofsVerified :=
   ScalarHalf.wrap V s.claims s.evals s.prev
 
 /-- The wrap circuit's scalar half as a circuit of its input, `finalized` asserted, as at a

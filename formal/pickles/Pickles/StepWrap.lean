@@ -132,7 +132,7 @@ theorem stepWrap_kimchiVerify
       (∃ bb : Bool, CircuitType.Reads Vg inp.unfinalized.shouldFinalize bb ∧
         CircuitType.Reads Vs sl.unfinalized.shouldFinalize bb) →
       ∀ (cp : KimchiProof IpaPallas.curve ncw E.σ.k)
-        (ms : List Bool),
+        (ms : Vector Bool w),
         -- the slot's public input: its statement, carrying the step-message digest
         let pub := inp.publicInputAt E Vg ms
         -- its cells hold `cp`, with masks `ms`
