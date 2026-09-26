@@ -58,6 +58,7 @@ Pickles.wrapPublicInput_toList
 -- script-surface:begin
 Pickles.chooseKey
 Pickles.onesVector
+Pickles.wrapMain
 Pickles.buildEvalList
 Pickles.Env.decidableAvoids
 Pickles.Env.decidableInvariants -- synthesis: found by class resolution, never by name

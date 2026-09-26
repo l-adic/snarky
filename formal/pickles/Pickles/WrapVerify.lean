@@ -162,7 +162,7 @@ open CompElliptic.CurveForms.ShortWeierstrass
 
 /-- `wrapVerify_reads` at `wrapSide` and the deployed Vesta constants; the counterpart of
 `verifyProof_step_reads`. -/
-private theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
+theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
     (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
@@ -246,7 +246,7 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc : 
 
 /-- A packed step statement opens with a full scalar: the first slot's combined inner product,
 or with no slot the `messagesForNextStepProof` digest. -/
-private theorem StepStatement.packed_head {ks n : ℕ}
+theorem StepStatement.packed_head {ks n : ℕ}
     (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) :
     ∃ x rest, st.packed = .full x :: rest := by
   unfold StepStatement.packed

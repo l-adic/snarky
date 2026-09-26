@@ -124,6 +124,15 @@ def StepStatement.packed {n : ℕ}
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full
 
+/-- A packed step statement's length: `k + 17` scalars per slot, then its digests. -/
+theorem StepStatement.packed_length {n : ℕ}
+    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
+    st.packed.length = n * (k + 17) + 1 + n := by
+  simp only [StepStatement.packed, UnfinalizedProof.packed, List.length_append,
+    List.length_flatMap, List.length_map, List.length_cons, List.length_nil, Vector.length_toList]
+  simp [Nat.mul_comm]
+  omega
+
 /-- The group half's input with its claims taken from an unfinalized proof: `xi`,
 `combinedInnerProduct`, `b` and the plonk claims of its deferred values; the key, proof and
 `sgOld` cells as given. -/
@@ -197,6 +206,12 @@ theorem ivpInputOf_lengths {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FV
       (ivpInputOf dv sgOld key pr).tComm.length = quotChunks * nc := by
   simp [ivpInputOf, List.length_flatten, List.map_map, Function.comp_def]
   omega
+
+/-- The proof's point cells: the commitments, then the opening's `(L, R)` pairs, `δ` and `sg`. -/
+def IvpProof.points {F sf : Type} {k nc : ℕ} (pr : IvpProof k nc (FVar F) sf) :
+    List (AffinePoint (FVar F)) :=
+  pr.wComm.toList.flatMap (·.toList) ++ pr.zComm.toList ++ pr.tComm.toList ++
+    pr.opening.lr.toList.flatMap (fun q => [q.1, q.2]) ++ [pr.opening.delta, pr.opening.sg]
 
 /-- A key's commitments as cells, each point through `cell`. -/
 def keyCellsOf {C : KimchiCurve} {F : Type} {nc : ℕ} (cell : C.Point → AffinePoint (FVar F))
