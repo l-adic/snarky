@@ -23,9 +23,11 @@ valuation (`builder_spec_iff`).
   the public input, the slot as one that must verify, the proof cells as the proof, the `sg`
   cells as the old accumulators, the evaluation cells as the evaluations;
 * `VkReads`: the circuit's key cells read as the key;
-* `HalvesTies`: the two circuits hold one set of deferred claims;
+* `SplitClaimsCast`: the wrap circuit's claim cells hold the step circuit's, lifted into the
+  wrap field — what the statement carries between them; that the two circuits then hold one
+  set of deferred claims (`HalvesTies`) is derived;
 * no hypothesis where a circuit enforces it: the three scalars `ftComm` scales by, which the
-  scalar circuit checks and `HalvesTies` carries over; the claimed `cip` absorbing as its
+  scalar circuit checks and the cast carries over; the claimed `cip` absorbing as its
   canonical representative, which its own ladder (`scaleByCip`) pins; and the parity cells
   of the split shifted claims, which the group circuit asserts boolean
   (`assertClaimBitsStep`);
@@ -113,8 +115,8 @@ open WrapProof in
 /-- **A wrap proof's two circuits, satisfied, make `kimchiVerify` accept.** The step circuit's
 `verify` and the wrap circuit's scalar half, each compiled over its input and satisfied, with
 the inputs reading as the wire's proof (`InputReads`), the key cells as the key (`VkReads`)
-and the two circuits holding one set of deferred claims (`HalvesTies`): under the proof's
-`Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
+and the wrap circuit's claim cells holding the step circuit's (`SplitClaimsCast`): under the
+proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
 theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
     (E : Env IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc E.σ.k)
@@ -136,8 +138,8 @@ theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
     (hin : InputReads E cp pub Vg Vs (groupInput ks E.σ.k nc) (scalarInput E.σ.k nc))
     -- the key cells read as the key
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
-    -- the two circuits hold one set of deferred claims
-    (ht : HalvesTies ((groupInput ks E.σ.k nc).half Vg) ((scalarInput E.σ.k nc).half Vs))
+    -- the wrap circuit's claim cells hold the step circuit's, lifted into the wrap field
+    (hc : SplitClaimsCast Vg (groupInput ks E.σ.k nc).claims Vs (scalarInput E.σ.k nc).claims)
     -- the statement packs no more leaves than the SRS has points, and the SRS avoids the
     -- public-input relations
     (hsmall : (groupInput ks E.σ.k nc).statement.packed.length ≤ 2 ^ E.σ.k)
@@ -156,7 +158,7 @@ theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
       hsmall havoid hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   exact (builder_spec_iff _ _).mp
-    (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k nc) Vg _ v hv hv1 ht hf hsg) _
+    (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k nc) Vg _ v hv hv1 hc hf hsg) _
     fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Pickles

@@ -740,6 +740,79 @@ theorem twoHalves_kimchiVerify
 
 end Ties
 
+/-! ## Across the cycle
+
+The claims cross between the two circuits of a proof's verification. A step-field value sits in
+a wrap-field cell as its representative (`redFq`), and since the step field is the smaller one
+the reduction is injective: a 128-bit prechallenge read on either side is read on the other. -/
+
+section Across
+
+open CompElliptic.Fields.Pasta
+
+/-- A step-field value reduced into the wrap field: what a wrap circuit's cell holds of it. -/
+abbrev redFq (x : Fp) : Fq := ((ZMod.val x : ℕ) : Fq)
+
+/-- The step field is below the wrap field. -/
+theorem fp_lt_fq : PALLAS_BASE_CARD < PALLAS_SCALAR_CARD := by
+  norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
+
+/-- Reducing into the wrap field keeps a step-field value's representative. -/
+theorem val_redFq (x : Fp) : ZMod.val (redFq x) = ZMod.val x :=
+  ZMod.val_natCast_of_lt ((ZMod.val_lt x).trans fp_lt_fq)
+
+/-- A step cell reading as a prechallenge reduces to a wrap cell reading as it. -/
+theorem reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp} {c : SizedF 128 (FVar Fq)}
+    {x : SizedF 128 (FVar Fp)} {m : Prechallenge} (hc : c.val.val Vg = redFq (x.val.val Vs))
+    (hx : Reads128 Vs x m) : Reads128 Vg c m := by
+  unfold Reads128 at hx ⊢
+  rw [hc, hx, redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_BASE_CARD]))]
+
+/-- A wrap cell reading as a prechallenge is the reduction of a step cell reading as it. -/
+theorem reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
+    {c : SizedF 128 (FVar Fq)} {x : SizedF 128 (FVar Fp)} {m : Prechallenge}
+    (hc : c.val.val Vg = redFq (x.val.val Vs)) (hm : Reads128 Vg c m) : Reads128 Vs x m := by
+  unfold Reads128 at hm ⊢
+  have h := congrArg ZMod.val (hc.symm.trans hm)
+  rw [val_redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_SCALAR_CARD]))] at h
+  rw [← ZMod.natCast_zmod_val (x.val.val Vs), h]
+
+/-- Round challenges reading as prechallenges on the step side read as them on the wrap side. -/
+theorem forall₂_reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
+    {sl : List (SizedF 128 (FVar Fp))} {ms : List Prechallenge}
+    (hr : List.Forall₂ (Reads128 Vs) sl ms) :
+    ∀ gl : List (SizedF 128 (FVar Fq)),
+      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
+      List.Forall₂ (Reads128 Vg) gl ms := by
+  induction hr with
+  | nil => intro gl h; cases gl with
+    | nil => exact .nil
+    | cons _ _ => simp at h
+  | cons hx _ ih => intro gl h; cases gl with
+    | nil => simp at h
+    | cons g gl =>
+      simp only [List.map_cons, List.cons.injEq] at h
+      exact .cons (reads128_redFq h.1 hx) (ih gl h.2)
+
+/-- Round challenges reading as prechallenges on the wrap side read as them on the step side. -/
+theorem forall₂_reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
+    {gl : List (SizedF 128 (FVar Fq))} {ms : List Prechallenge}
+    (hr : List.Forall₂ (Reads128 Vg) gl ms) :
+    ∀ sl : List (SizedF 128 (FVar Fp)),
+      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
+      List.Forall₂ (Reads128 Vs) sl ms := by
+  induction hr with
+  | nil => intro sl h; cases sl with
+    | nil => exact .nil
+    | cons _ _ => simp at h
+  | cons hx _ ih => intro sl h; cases sl with
+    | nil => simp at h
+    | cons s sl =>
+      simp only [List.map_cons, List.cons.injEq] at h
+      exact .cons (reads128_of_redFq h.1 hx) (ih sl h.2)
+
+end Across
+
 /-! ## At a step proof: Vesta commitments
 
 A step proof's commitments are Vesta points (`Fq` coordinates) with `Fp` scalars. Its group

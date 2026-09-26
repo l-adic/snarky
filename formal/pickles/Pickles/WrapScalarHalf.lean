@@ -60,6 +60,93 @@ private theorem vanishingAt_spec {V : Valuation Fq} (log2 : ℕ) (z : FVar Fq) :
   rename_i t _ ht
   simp [ht]
 
+/-! ## The claims across the two circuits -/
+
+/-- The claims the step statement carries across: each of the wrap circuit's claim cells holds
+the step circuit's matching value lifted into the wrap field, a split shifted claim as
+`2·sDiv2 + sOdd`. -/
+def SplitClaimsCast {k : ℕ} (Vg : Valuation Fp)
+    (claimsG : UnfinalizedProof k (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (Vs : Valuation Fq) (claimsS : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) :
+    Prop :=
+  let g := claimsG.deferredValues
+  let w := claimsS.deferredValues
+  let join (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) : Fq :=
+    2 * redFq (x.val.sDiv2.val Vg) + redFq ((↑x.val.sOdd : CVar Fp).val Vg)
+  [w.plonk.alpha.val, w.plonk.beta.val, w.plonk.gamma.val, w.plonk.zeta.val, w.xi.val,
+    claimsS.spongeDigestBeforeEvaluations].map (·.val Vs)
+    = [g.plonk.alpha.val, g.plonk.beta.val, g.plonk.gamma.val, g.plonk.zeta.val, g.xi.val,
+      claimsG.spongeDigestBeforeEvaluations].map (fun x => redFq (x.val Vg)) ∧
+  [w.plonk.perm, w.plonk.zetaToSrsLength, w.plonk.zetaToDomainSize, w.combinedInnerProduct,
+    w.b].map (·.val.val Vs)
+    = [g.plonk.perm, g.plonk.zetaToSrsLength, g.plonk.zetaToDomainSize, g.combinedInnerProduct,
+      g.b].map join ∧
+  w.bulletproofChallenges.toList.map (·.val.val Vs)
+    = g.bulletproofChallenges.toList.map fun c => redFq (c.val.val Vg)
+
+/-- The step digest crosses into the wrap field through `castDigest` as its representative. -/
+private theorem castDigest_pallas (x : Fp) : castDigest IpaPallas.curve x = redFq x := by
+  have h : x.val < IpaPallas.curve.scalar := (ZMod.val_lt x).trans fp_lt_fq
+  simp only [castDigest, if_pos h]
+
+/-- **The claims cast across make the two halves hold one set of claims.** With the wrap
+circuit's claim cells the step circuit's lifted (`SplitClaimsCast`), `β`, `γ` reading as
+prechallenges on the step side (the group read) and `α`, `ζ`, `ξ` and the round challenges on the
+wrap side (the finalize read), both halves read one deferred-values record. -/
+theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
+    (claimsG : UnfinalizedProof k (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (Vs : Valuation Fq) (claimsS : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (evals : ChunkedEvals nc (FVar Fq))
+    (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified)
+    (hc : SplitClaimsCast Vg claimsG Vs claimsS)
+    (hβ : ∃ m, Reads128 Vg claimsG.deferredValues.plonk.beta m)
+    (hγ : ∃ m, Reads128 Vg claimsG.deferredValues.plonk.gamma m)
+    (hα : ∃ m, Reads128 Vs claimsS.deferredValues.plonk.alpha m)
+    (hζ : ∃ m, Reads128 Vs claimsS.deferredValues.plonk.zeta m)
+    (hξ : ∃ m, Reads128 Vs claimsS.deferredValues.xi m)
+    (hch : ∃ ms, List.Forall₂ (Reads128 Vs) claimsS.deferredValues.bulletproofChallenges.toList
+      ms) :
+    HalvesTies (GroupHalf.step Vg claimsG) (ScalarHalf.wrap Vs claimsS evals prevChallenges) := by
+  obtain ⟨hl, hsh, hbp⟩ := hc
+  simp only [List.map_cons, List.map_nil, List.cons.injEq] at hl hsh
+  obtain ⟨cα, cβ, cγ, cζ, cξ, cdig, -⟩ := hl
+  obtain ⟨cperm, czm, czn, ccip, cb, -⟩ := hsh
+  obtain ⟨b, hb⟩ := hβ
+  obtain ⟨g, hg⟩ := hγ
+  obtain ⟨a, ha⟩ := hα
+  obtain ⟨z, hz⟩ := hζ
+  obtain ⟨ξ, hxi⟩ := hξ
+  obtain ⟨ms, hms⟩ := hch
+  have hlen : ms.length = k := by simpa using hms.length_eq.symm
+  let s := claimsS.deferredValues
+  let dec := (fopWrap Vs).decode
+  let dv : DeferredValues k Prechallenge Fq :=
+    { plonk := { alpha := ⟨a⟩, beta := ⟨b⟩, gamma := ⟨g⟩, zeta := ⟨z⟩, perm := dec s.plonk.perm
+                 zetaToSrsLength := dec s.plonk.zetaToSrsLength
+                 zetaToDomainSize := dec s.plonk.zetaToDomainSize }
+      combinedInnerProduct := dec s.combinedInnerProduct, xi := ⟨ξ⟩
+      bulletproofChallenges := ⟨(ms.map SizedF.mk).toArray, by simp [hlen]⟩
+      b := dec s.b }
+  have hchals : dv.bulletproofChallenges.toList.map (·.val) = ms := by
+    simp [dv, Function.comp_def]
+  -- a split claim decodes, on the step side, as its joined cell on the wrap side
+  have hdec : ∀ (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) (y : Type2 (FVar Fq)),
+      y.val.val Vs = 2 * redFq (x.val.sDiv2.val Vg) + redFq ((↑x.val.sOdd : CVar Fp).val Vg) →
+      (stepSide Vg).decode x = dec y := by
+    intro x y hxy
+    simp only [dec, FopSide.decode, fopWrap, wrapShiftOps.reading, Type2.fromShifted, hxy,
+      stepSide, stepDecode, Pasta.Shifted.unshiftType2]
+  refine ⟨⟨dv, ⟨reads128_of_redFq cα ha, hb, hg, reads128_of_redFq cζ hz, hdec _ _ cperm,
+      hdec _ _ czm, hdec _ _ czn, hdec _ _ ccip, reads128_of_redFq cξ hxi,
+      hchals ▸ forall₂_reads128_of_redFq hms _ hbp, hdec _ _ cb⟩,
+    ⟨ha, reads128_redFq cβ hb, reads128_redFq cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
+      hchals ▸ hms, rfl⟩⟩, ?_⟩
+  show claimsS.spongeDigestBeforeEvaluations.val Vs
+    = castDigest IpaPallas.curve (claimsG.spongeDigestBeforeEvaluations.val Vg)
+  rw [cdig, castDigest_pallas]
+
 /-- **Running the wrap circuit's scalar half, a wrap proof's remaining half decides
 `kimchiVerify`.** `twoHalves_kimchiVerify` at a wrap proof as a triple about the scalar circuit,
 with the step circuit's group half assumed (`verifyProof_step_reads` produces it). What the
@@ -82,8 +169,7 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
     (hg : (GroupHalf.step Vg claimsG).Reads E cp pub successG)
     (hgbit : (↑successG : CVar Fp).val Vg = 1)
     -- across the two
-    (ht : HalvesTies (GroupHalf.step Vg claimsG)
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges))
+    (hc : SplitClaimsCast Vg claimsG Vs claimsS)
     (hf : FopTies E cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
     ⦃⌜True⌝⦄
     finalizeOtherProofWrapAt (c := Builder Vs (KimchiConstraint Fq)) E claimsS evals
@@ -116,6 +202,13 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
   simp only [finalizeOtherProofWrapAt]
   refine builder_spec_imp _ _ _ hspec ?_
   intro o hread
+  -- the two halves hold one set of claims: `β`, `γ` read on the step side, the rest here
+  have ht : HalvesTies (GroupHalf.step Vg claimsG)
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges) := by
+    obtain ⟨og, hivp, -⟩ := hg
+    obtain ⟨a₀, z₀, hα, hζ, ξ₀, -, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
+    exact halvesTies_of_splitCast Vg claimsG Vs claimsS evals prevChallenges hc
+      ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
   -- the circuit absorbs every previous-challenge cell; their values are the proof's accumulators
   have holds : (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals
       = (cp.olds.map (·.u.toList)).toList :=
@@ -187,14 +280,14 @@ theorem scalarCircuit_reads (E : Env IpaPallas.curve nc)
     (successG : BoolVar Fp)
     (hg : (GroupHalf.step Vg claimsG).Reads E cp pub successG)
     (hgbit : (↑successG : CVar Fp).val Vg = 1)
-    (ht : HalvesTies (GroupHalf.step Vg claimsG) (s.half Vs))
+    (hc : SplitClaimsCast Vg claimsG Vs s.claims)
     (hf : FopTies E cp pub (s.half Vs))
     (hsg : SgOk E.σ E.cvk cp pub) :
     ⦃⌜True⌝⦄
     scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E s
     ⦃⇓ _ _ => ⌜kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true⌝⦄ := by
   have hAt := finalizeOtherProofWrapAt_kimchiVerify_pallas E cp pub hguard Vs s.claims s.evals
-    s.prev Vg claimsG successG hg hgbit ht hf
+    s.prev Vg claimsG successG hg hgbit hc hf
   simp only [scalarCircuit]
   mvcgen [hAt]
   rename_i o _ hiff _ _
