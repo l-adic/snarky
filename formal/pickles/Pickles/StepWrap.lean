@@ -291,9 +291,8 @@ theorem stepWrap_kimchiVerify
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots,
     -- front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
-    -- the Lagrange bases at a step domain, the padding challenges and each slot's
-    -- challenge-stack height: constants of the wrap circuit
-    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep))
+    -- the padding challenges and each slot's challenge-stack height: constants of the wrap
+    -- circuit
     (dummy : Vector Fq E.σ.k) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k ks slotWidths.toList.sum)
@@ -304,7 +303,8 @@ theorem stepWrap_kimchiVerify
     (hwrap : ∀ con ∈ (compile (a := StatementPacked ks (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
-          (stepKeyCells stepEnvs) pins lagrange σStep.h
+          (stepKeyCells stepEnvs) pins
+          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h
           dummy slotWidths advW)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the active branch
@@ -318,7 +318,8 @@ theorem stepWrap_kimchiVerify
     -- the wrap circuit's cells over its statement
     let hd := (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
-          (stepKeyCells stepEnvs) pins lagrange σStep.h dummy
+          (stepKeyCells stepEnvs) pins
+          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
         (a := StatementPacked ks (Type1 Fq) Fq))).result
@@ -354,7 +355,8 @@ theorem stepWrap_kimchiVerify
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
-          (stepKeyCells stepEnvs) pins lagrange σStep.h dummy
+          (stepKeyCells stepEnvs) pins
+          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
         (a := StatementPacked ks (Type1 Fq) Fq))
@@ -364,14 +366,17 @@ theorem stepWrap_kimchiVerify
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp
     (wrapMain_reads E Vs widths (stepDomainLog2s stepEnvs)
-          (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths advW
-      (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)) hw hbr) _ hbody
+          (stepKeyCells stepEnvs) pins
+          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
+          slotWidths advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)) hw hbr) _
+      hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
   have hnc : 0 < ncStep := (stepEnvs[0]'(Nat.pos_of_neZero branches)).nc_pos
   obtain ⟨hsplitsEq, hsr, hbnd, hslots⟩ := (builder_spec_iff _ _).mp
     (wrapMain_statement (FopParams.ofEnv E Linearization.fqTokens) Vs widths
-      (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths
-      advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)) hnc) _ hbody
+      (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins
+      (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
+      slotWidths advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)) hnc) _ hbody
   have hout := (builder_spec_iff _ _).mp
     (stepMain_out hw (verifyProofAt E) (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list
       dummySg dummyUnf rule adv) 0
