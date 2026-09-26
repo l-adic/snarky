@@ -17,7 +17,6 @@ against that domain and asserts the slot finalized or was not to be.
 * `pinWrapDomainIndex`: one slot's pin against the branches' compile-time indices.
 * `WrapFinalizeSlot`: one slot's cells and compile-time pins.
 * `wrapDomainLog2s`: the wrap domains a slot can be finalized at.
-* `wrapFinalizeCircuit`: the block as a circuit of its input (`WrapFinalizeIn`).
 * `wrapFinalizePrevProofs`: the pins, left to right; the domains, right to left; the finalize
   bodies with their assertions, left to right.
 
@@ -164,26 +163,6 @@ open Bulletproof Bulletproof.Ipa Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 variable {nc : ℕ}
-
-/-- The finalize block's input, as values: the branch bits and, per slot, its wrap domain index
-and its finalize input. Nothing in it is checked on input. -/
-abbrev WrapFinalizeIn (branches w k nc : ℕ) : Type :=
-  UnChecked (Vector Bool branches × Vector (Fq × WrapFop k nc) w)
-
-/-- `WrapFinalizeIn`, as cells. -/
-abbrev WrapFinalizeInVar (branches w k nc : ℕ) : Type :=
-  UnChecked (Vector (BoolVar Fq) branches × Vector (FVar Fq × WrapFopVar k nc) w)
-
-/-- The input's slots, each with its column of compile-time pins. -/
-def WrapFinalizeInVar.slots {branches w k : ℕ} (x : WrapFinalizeInVar branches w k nc)
-    (pins : Vector (Vector (Option ℕ) branches) w) : Vector (WrapFinalizeSlot branches k nc Fq) w :=
-  Vector.zipWith (fun s p => ⟨s.1, p, s.2.claims, s.2.evals, s.2.prev⟩) x.val.2 pins
-
-/-- The finalize block as a circuit of its input, at compile-time pins `pins`. -/
-def wrapFinalizeCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {branches w k : ℕ}
-    (P : FopParams Fq) (gen : ℕ → Fq) (pins : Vector (Vector (Option ℕ) branches) w)
-    (x : WrapFinalizeInVar branches w k nc) : CircuitM Fq c Unit := do
-  let _ ← wrapFinalizePrevProofs P gen x.val.1 (x.slots pins)
 
 /-- A finalize slot reads as a wrap proof's scalar half: for any wrap proof and public input
 under the guards, a step circuit's group half accepting it at asserted success, the ties and

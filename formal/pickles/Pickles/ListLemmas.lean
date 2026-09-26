@@ -80,6 +80,18 @@ theorem toList_flatten' {α : Type} {m n : ℕ} (v : Vector (Vector α n) m) :
   simp [Vector.flatten, Vector.toList, Function.comp_def]
   rfl
 
+/-- Keeping the entries a mask sets: the flattened singletons are the kept entries, in order. -/
+theorem flatten_zipWith_keep {α : Type} :
+    ∀ {w : ℕ} (m : Fin w → Bool) (f : Fin w → α),
+      (List.zipWith (fun b x => if b = true then [x] else []) (List.ofFn m)
+        (List.ofFn f)).flatten = ((List.finRange w).filter m).map f
+  | 0, _, _ => by simp
+  | _ + 1, m, f => by
+    rw [List.ofFn_succ, List.ofFn_succ, List.zipWith_cons_cons, List.flatten_cons,
+      flatten_zipWith_keep (fun j => m j.succ) (fun j => f j.succ), List.finRange_succ,
+      List.filter_cons, List.filter_map]
+    by_cases h : m 0 <;> simp [h, Function.comp_def, List.map_map]
+
 /-! ## Vectors -/
 
 /-- An entry of a mapped vector, at a `Fin` index. -/

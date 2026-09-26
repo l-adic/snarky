@@ -2059,6 +2059,18 @@ theorem onCurveAt_constPt (P : C.Point) (hP : P ≠ 0) :
   ⟨nonsingular_toW (SWPoint.onCurve_of_ne_zero hP),
     SWPoint.equivPoint_eq_some P (SWPoint.onCurve_of_ne_zero hP)⟩
 
+/-- The point a cell pair reads as: its coordinates when they lie on the curve, the identity
+otherwise. -/
+def readPt (V : Valuation C.BaseField) (p : AffinePoint (FVar C.BaseField)) : C.Point :=
+  if h : OnCurve C.E.A C.E.B (p.x.val V, p.y.val V) then ⟨_, _, Or.inl h⟩ else 0
+
+/-- A cell pair on the curve reads as its `readPt`. -/
+theorem onCurveAt_readPt {p : AffinePoint (FVar C.BaseField)}
+    (h : OnCurve C.E.A C.E.B (p.x.val V, p.y.val V)) :
+    OnCurveAt C.E.toAffine V p (SWPoint.equivPoint C.E (readPt V p)) := by
+  rw [readPt, dif_pos h]
+  exact ⟨nonsingular_toW h, SWPoint.equivPoint_eq_some _ h⟩
+
 /-- The shift correction `-(2^L)·P`, computed through the curve's verified fast
 multi-scalar multiplication. The group's own `•` is a recursion as deep as its scalar, so a
 table built with it states the right point and can never be run; this one a driver runs. -/
