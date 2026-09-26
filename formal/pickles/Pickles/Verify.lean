@@ -82,6 +82,14 @@ def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVa
   ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
   ++ [.b10 dv.branchData.packed]
 
+/-- A packed wrap statement's length: thirteen scalars, the `ks` round challenges and the branch
+data. -/
+theorem WrapStatement.packed_length
+    (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
+    st.packed.length = 14 + ks := by
+  simp [WrapStatement.packed]
+  omega
+
 /-- A packed wrap statement has no boolean cell: the branch data is one 10-bit scalar. -/
 theorem WrapStatement.packed_isScalar
     (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :

@@ -241,9 +241,8 @@ theorem stepWrap_kimchiVerify
     (dummySg : AffinePoint (FVar Fp))
     -- the unfinalized entry padding the step statement to the tag's `w` slots
     (dummyUnf : UnfVal E.σ.k)
-    -- every slot statement packs into at most `2 ^ E.σ.k` cells, the SRS size
-    (hsmall : ∀ (inp : VerifyOneInput EsPrev.σ.k E.σ.k 1 ncPrevStep w) msg,
-      (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
+    -- a slot statement's `14 + ks` packed cells fit the SRS
+    (hsmall : 14 + EsPrev.σ.k ≤ 2 ^ E.σ.k)
     -- no relation the slot statements' public-input commitment names commits the SRS to the
     -- identity
     (havoid : ∀ (inp : VerifyOneInput EsPrev.σ.k E.σ.k 1 ncPrevStep w) msg,
@@ -325,7 +324,8 @@ theorem stepWrap_kimchiVerify
   intro r hd hb htie i hmv inp sl hpin cp ms pub hwire hguard hf hsg
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E EsPrev D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0
+    (stepMain_reads E EsPrev D (hn.trans hw) hw dummySg dummyUnf rule adv
+      (fun _ _ => (WrapStatement.packed_length _).trans_le hsmall) havoid) 0
       (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc)) i hmv
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does

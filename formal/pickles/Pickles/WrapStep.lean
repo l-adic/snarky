@@ -319,10 +319,9 @@ theorem wrapStep_kimchiVerify
     (hn : n ≤ w) (hw : w ≤ MaxProofsVerified)
     -- the `sg` padding the missing accumulators, the unfinalized entry padding the statement
     (dummySg : AffinePoint (FVar Fp)) (dummyUnf : UnfVal E.σ.k)
-    -- every slot statement packs into at most `2 ^ E.σ.k` cells, and its public-input
-    -- commitment's relations are avoided
-    (hsmall : ∀ (inp : VerifyOneInput stepEnvs[b].σ.k E.σ.k 1 ncStep w) msg,
-      (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
+    -- a slot statement's `14 + ks` packed cells fit the SRS, and its public-input commitment's
+    -- relations are avoided
+    (hsmall : 14 + stepEnvs[b].σ.k ≤ 2 ^ E.σ.k)
     (havoid : ∀ (inp : VerifyOneInput stepEnvs[b].σ.k E.σ.k 1 ncStep w) msg,
       E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
     -- the next step circuit's valuation
@@ -385,7 +384,8 @@ theorem wrapStep_kimchiVerify
     (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins
     (srsLagrangeTable σStep ncStep (w * (E.σ.k + 17) + 1 + w)) σStep.h dummy
     slotWidths advW hbr hwrap b (by simp [stepKeyCells]) hlag
-    (by rw [hσ b]) hsize hnz havoidS D hlog hn hw dummySg dummyUnf hsmall havoid Vs rule adv hstep
+    (by rw [hσ b]) hsize hnz havoidS D hlog hn hw dummySg dummyUnf
+    (fun _ _ => (WrapStatement.packed_length _).trans_le hsmall) havoid Vs rule adv hstep
     hb i hmv ms hms htie cp oldsW hpr hol hguard hf hsg
 
 end Pickles
