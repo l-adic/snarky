@@ -56,6 +56,8 @@ Pickles.wrapPublicInput_toList
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
+Pickles.chooseKey
+Pickles.onesVector
 Pickles.buildEvalList
 Pickles.Env.decidableAvoids
 Pickles.Env.decidableInvariants -- synthesis: found by class resolution, never by name

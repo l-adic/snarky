@@ -3,6 +3,7 @@ import Snarky.Kimchi.Circuit.Point
 import Kimchi.Verifier.Kimchi
 import Pickles.Curve
 import Pickles.ListLemmas
+import Pickles.Domain
 
 /-!
 # The in-circuit public-input commitment
@@ -38,6 +39,11 @@ reads require (`xhatBinding_const`, `bound_ofKeyKnown`), with the known-domain f
 correction sum a commitment to named coefficients (`corrCoeffs`, `corrSumPt_map_msm`). The
 public input of those leaves is the packed scalars reduced into the scalar field
 (`PackedScalar.reduced`, `pubOf_zipWith_constLeaf`).
+
+A circuit whose branches were compiled at different step domains masks the branches' tables
+by the one-hot branch bits (`maskLeaves`, `publicInputCommitMasked`); under the bits reading as
+branch `b` the masked commitment reads as the `publicCommitment` of branch `b`'s key
+(`xHatMasked_reads_publicCommitment`).
 -/
 
 namespace Pickles
@@ -1514,12 +1520,13 @@ private theorem leafPre_onCurve {d : HasCurve F} (ci : Fin nc) (V : Valuation F)
 private def SameCells (V : Valuation F) (a b : Vector (AffinePoint (FVar F)) nc) : Prop :=
   ∀ i : Fin nc, a[i].x.val V = b[i].x.val V ∧ a[i].y.val V = b[i].y.val V
 
-/-- `l'` is `l` sealed: the same kind and scalar, its cells reading as `l`'s. -/
-private def Leaf.SealedOf (V : Valuation F) : Leaf F nc → Leaf F nc → Prop
+/-- `l'` reads as `l`: the same kind and scalar, its cells reading as `l`'s. What sealing and
+masking preserve. -/
+private def Leaf.SameReads (V : Valuation F) : Leaf F nc → Leaf F nc → Prop
   | .full s b c, .full s' b' c' => s' = s ∧ SameCells V b' b ∧ SameCells V c' c
   | .b128 s b c, .b128 s' b' c' => s' = s ∧ SameCells V b' b ∧ SameCells V c' c
   | .b10 s b c, .b10 s' b' c' => s' = s ∧ SameCells V b' b ∧ SameCells V c' c
-  | .condAdd b base, .condAdd b' base' => b' = b ∧ base' = base
+  | .condAdd b base, .condAdd b' base' => b' = b ∧ SameCells V base' base
   | _, _ => False
 
 omit [ToNat F] in
@@ -1529,12 +1536,17 @@ private theorem onCurveAt_of_same {W : WeierstrassCurve.Affine F} {V : Valuation
   unfold OnCurveAt at h ⊢
   rwa [hx, hy]
 
+omit [DecidableEq F] [ToNat F] in
+private theorem Leaf.SameReads.refl {V : Valuation F} : ∀ l : Leaf F nc, Leaf.SameReads V l l
+  | .full .. | .b128 .. | .b10 .. => ⟨rfl, fun _ => ⟨rfl, rfl⟩, fun _ => ⟨rfl, rfl⟩⟩
+  | .condAdd .. => ⟨rfl, fun _ => ⟨rfl, rfl⟩⟩
+
 omit [ToNat F] in
 /-- The sealing walk reads each leaf as its sealed copy, and makes a boolean leaf's bit
 boolean. -/
 private theorem sealLeaf_spec {V : Valuation F} (leaf : Leaf F nc) :
     ⦃⌜True⌝⦄ sealLeaf (S := Builder V (KimchiConstraint F)) leaf
-    ⦃⇓ r _ => ⌜Leaf.SealedOf V leaf r ∧ leaf.bitBoolean V⌝⦄ := by
+    ⦃⇓ r _ => ⌜Leaf.SameReads V leaf r ∧ leaf.bitBoolean V⌝⦄ := by
   have hm := fun v : Vector (AffinePoint (FVar F)) nc =>
     builder_spec_vector_mapM_get (sealPoint (c := Builder V (KimchiConstraint F)))
       (fun q r => r.x.val V = q.x.val V ∧ r.y.val V = q.y.val V) sealPoint_spec v
@@ -1543,7 +1555,7 @@ private theorem sealLeaf_spec {V : Valuation F} (leaf : Leaf F nc) :
       simp only [sealLeaf]
       mvcgen
       rename_i hb
-      refine ⟨⟨rfl, rfl⟩, ?_⟩
+      refine ⟨⟨rfl, fun _ => ⟨rfl, rfl⟩⟩, ?_⟩
       rcases (LawfulBasicSystem.holds_boolean V (↑b : CVar F)).mp hb with h | h
       · exact ⟨false, by simpa [bit] using h⟩
       · exact ⟨true, by simpa [bit] using h⟩
@@ -1564,64 +1576,65 @@ private theorem sealLeaf_spec {V : Valuation F} (leaf : Leaf F nc) :
       mvcgen [hc, hb]
 
 omit [DecidableEq F] [ToNat F] in
-private theorem Leaf.SealedOf.scalarVar {V : Valuation F} :
-    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → l'.scalarVar = l.scalarVar
+private theorem Leaf.SameReads.scalarVar {V : Valuation F} :
+    ∀ {l l' : Leaf F nc}, Leaf.SameReads V l l' → l'.scalarVar = l.scalarVar
   | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h
   | .condAdd .., .condAdd .., h => by simp only [Leaf.scalarVar, h.1]
 
 omit [DecidableEq F] [ToNat F] in
-private theorem Leaf.SealedOf.bound {V : Valuation F} :
-    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → l'.Bound V → l.Bound V
+private theorem Leaf.SameReads.bound {V : Valuation F} :
+    ∀ {l l' : Leaf F nc}, Leaf.SameReads V l l' → l'.Bound V → l.Bound V
   | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h => by
       simp only [Leaf.Bound, h.1, imp_self]
   | .condAdd .., .condAdd .., _ => id
 
 omit [ToNat F] in
-private theorem Leaf.SealedOf.baseAt {W : WeierstrassCurve.Affine F} {V : Valuation F}
+private theorem Leaf.SameReads.baseAt {W : WeierstrassCurve.Affine F} {V : Valuation F}
     (ci : Fin nc) {P : W.Point} :
-    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' →
+    ∀ {l l' : Leaf F nc}, Leaf.SameReads V l l' →
       OnCurveAt W V (leafBaseAt ci l) P → OnCurveAt W V (leafBaseAt ci l') P
   | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h =>
       onCurveAt_of_same (h.2.1 ci).1 (h.2.1 ci).2
-  | .condAdd .., .condAdd .., h => by simp only [leafBaseAt, h.2]; exact id
+  | .condAdd .., .condAdd .., h => onCurveAt_of_same (h.2 ci).1 (h.2 ci).2
 
 omit [ToNat F] in
-private theorem Leaf.SealedOf.leafPre {d : HasCurve F} {V : Valuation F} (ci : Fin nc)
+private theorem Leaf.SameReads.leafPre {d : HasCurve F} {V : Valuation F} (ci : Fin nc)
     {T : d.W.Point} :
-    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → LeafPre ci V l T → LeafPre ci V l' T
+    ∀ {l l' : Leaf F nc}, Leaf.SameReads V l l' → LeafPre ci V l T → LeafPre ci V l' T
   | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h =>
       onCurveAt_of_same (h.2.1 ci).1 (h.2.1 ci).2
-  | .condAdd .., .condAdd .., h => by simp only [LeafPre, h.1, h.2]; exact id
+  | .condAdd .., .condAdd .., h => fun hp =>
+      ⟨onCurveAt_of_same (h.2 ci).1 (h.2 ci).2 hp.1, by rw [h.1]; exact hp.2⟩
 
 omit [ToNat F] in
-private theorem Leaf.SealedOf.corrPre {d : HasCurve F} {V : Valuation F} (ci : Fin nc)
+private theorem Leaf.SameReads.corrPre {d : HasCurve F} {V : Valuation F} (ci : Fin nc)
     {cp : d.W.Point} :
-    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → CorrPre ci V l cp → CorrPre ci V l' cp
+    ∀ {l l' : Leaf F nc}, Leaf.SameReads V l l' → CorrPre ci V l cp → CorrPre ci V l' cp
   | .full .., .full .., h | .b128 .., .b128 .., h | .b10 .., .b10 .., h =>
       onCurveAt_of_same (h.2.2 ci).1 (h.2.2 ci).2
   | .condAdd .., .condAdd .., _ => id
 
 omit [ToNat F] in
-private theorem Leaf.SealedOf.corrHonest {d : HasCurve F} {V : Valuation F} (ci : Fin nc) :
-    ∀ {l l' : Leaf F nc}, Leaf.SealedOf V l l' → CorrHonest d ci V l → CorrHonest d ci V l'
+private theorem Leaf.SameReads.corrHonest {d : HasCurve F} {V : Valuation F} (ci : Fin nc) :
+    ∀ {l l' : Leaf F nc}, Leaf.SameReads V l l' → CorrHonest d ci V l → CorrHonest d ci V l'
   | .full .., .full .., h, hh | .b128 .., .b128 .., h, hh | .b10 .., .b10 .., h, hh =>
       fun T hT => onCurveAt_of_same (h.2.2 ci).1 (h.2.2 ci).2
         (hh T (onCurveAt_of_same (h.2.1 ci).1.symm (h.2.1 ci).2.symm hT))
   | .condAdd .., .condAdd .., _, _ => trivial
 
-omit [ToNat F] in
-private theorem Leaf.SealedOf.hasScalar {V : Valuation F} {ls ls' : List (Leaf F nc)}
-    (hs : List.Forall₂ (Leaf.SealedOf V) ls ls') (h : leafHasScalar ls) : leafHasScalar ls' := by
+omit [DecidableEq F] [ToNat F] in
+private theorem Leaf.SameReads.hasScalar {V : Valuation F} {ls ls' : List (Leaf F nc)}
+    (hs : List.Forall₂ (Leaf.SameReads V) ls ls') (h : leafHasScalar ls) : leafHasScalar ls' := by
   induction hs with
   | nil => exact h
   | @cons l l' _ _ hl _ ih =>
-      cases l <;> cases l' <;> simp_all [Leaf.SealedOf, leafHasScalar]
+      cases l <;> cases l' <;> simp_all [Leaf.SameReads, leafHasScalar]
 
 omit [DecidableEq F] [ToNat F] in
 /-- A pointwise relation carries across the sealing. -/
-private theorem Leaf.SealedOf.forall₂ {β : Type} {V : Valuation F} {R : Leaf F nc → β → Prop}
-    (hR : ∀ {l l' b}, Leaf.SealedOf V l l' → R l b → R l' b) {ls ls' : List (Leaf F nc)}
-    (hs : List.Forall₂ (Leaf.SealedOf V) ls ls') :
+private theorem Leaf.SameReads.forall₂ {β : Type} {V : Valuation F} {R : Leaf F nc → β → Prop}
+    (hR : ∀ {l l' b}, Leaf.SameReads V l l' → R l b → R l' b) {ls ls' : List (Leaf F nc)}
+    (hs : List.Forall₂ (Leaf.SameReads V) ls ls') :
     ∀ {bs : List β}, List.Forall₂ R ls bs → List.Forall₂ R ls' bs := by
   induction hs with
   | nil => exact id
@@ -1632,9 +1645,9 @@ private theorem Leaf.SealedOf.forall₂ {β : Type} {V : Valuation F} {R : Leaf 
 
 omit [DecidableEq F] [ToNat F] in
 /-- A leafwise property carries across the sealing. -/
-private theorem Leaf.SealedOf.forall {V : Valuation F} {P : Leaf F nc → Prop}
-    (hP : ∀ {l l'}, Leaf.SealedOf V l l' → P l → P l') {ls ls' : List (Leaf F nc)}
-    (hs : List.Forall₂ (Leaf.SealedOf V) ls ls') (h : ∀ l ∈ ls, P l) : ∀ l ∈ ls', P l := by
+private theorem Leaf.SameReads.forall {V : Valuation F} {P : Leaf F nc → Prop}
+    (hP : ∀ {l l'}, Leaf.SameReads V l l' → P l → P l') {ls ls' : List (Leaf F nc)}
+    (hs : List.Forall₂ (Leaf.SameReads V) ls ls') (h : ∀ l ∈ ls, P l) : ∀ l ∈ ls', P l := by
   induction hs with
   | nil => exact h
   | cons hl _ ih =>
@@ -1653,7 +1666,7 @@ theorem publicInputCommitSealed_bound (hnc : 0 < nc) {V : Valuation F}
   simp only [publicInputCommitSealed]
   have hs := builder_spec_mapM (V := V) (c := KimchiConstraint F)
     (sealLeaf (S := Builder V (KimchiConstraint F)))
-    (fun r l => Leaf.SealedOf V l r ∧ l.bitBoolean V) id sealLeaf_spec leaves
+    (fun r l => Leaf.SameReads V l r ∧ l.bitBoolean V) id sealLeaf_spec leaves
   have hf := fun rs => publicInputCommitFold_bound hnc (V := V) blindingH rs
   mvcgen [hs, hf]
   rename_i rs _ hrs _ _
@@ -1662,7 +1675,7 @@ theorem publicInputCommitSealed_bound (hnc : 0 < nc) {V : Valuation F}
   have hlen : rs.length = leaves.length := by simpa using hrs.length_eq
   have h := (List.forall₂_iff_get.mp hrs).2 i (by omega) (by simpa using hi)
   simp only [List.get_eq_getElem, List.getElem_map, id] at h
-  exact ⟨Leaf.SealedOf.bound h.1 (hb _ (List.getElem_mem _)), h.2⟩
+  exact ⟨Leaf.SameReads.bound h.1 (hb _ (List.getElem_mem _)), h.2⟩
 
 /-- **The wire's negated-scalar MSM term list equals the crossed `publicMsm` term list.** The
 walk-order correspondence: at each `i`, the wire pairs Lagrange base `i` with `pubOf`'s `i`-th
@@ -1869,31 +1882,31 @@ theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuat
   exact builder_spec_bind_of _ _ _ _ (constrainBits_boolean (V := V) leaves) fun hb _ =>
     xHatFold_reads s ci σ cvk blindingH leaves Ts cps (hbind hb) hscalar
 
-/-- The sealed leaves carry the same public input. -/
-private theorem Leaf.SealedOf.pubOf {V : Valuation C.BaseField}
-    {ls ls' : List (Leaf C.BaseField nc)} (hs : List.Forall₂ (Leaf.SealedOf V) ls ls') :
+/-- Leaves reading the same carry the same public input. -/
+private theorem Leaf.SameReads.pubOf {V : Valuation C.BaseField}
+    {ls ls' : List (Leaf C.BaseField nc)} (hs : List.Forall₂ (Leaf.SameReads V) ls ls') :
     Pickles.pubOf C V ls' = Pickles.pubOf C V ls := by
   unfold Pickles.pubOf
   congr 1
   induction hs with
   | nil => rfl
-  | cons hl _ ih => simp only [List.map_cons, ih, Leaf.SealedOf.scalarVar hl]
+  | cons hl _ ih => simp only [List.map_cons, ih, Leaf.SameReads.scalarVar hl]
 
-/-- A binding carries to the sealed leaves: sealing keeps each cell's reading. -/
-private theorem XhatBinding.sealed {s : PastaShape C} {ci : Fin nc} {V : Valuation C.BaseField}
+/-- A binding carries to leaves reading the same, as sealed or masked leaves do. -/
+private theorem XhatBinding.ofSameReads {s : PastaShape C} {ci : Fin nc} {V : Valuation C.BaseField}
     {σ : Bulletproof.SRS C.Point} {cvk : Kimchi.Verifier.KimchiVK C nc}
     {blindingH : AffinePoint (FVar C.BaseField)} {leaves leaves' : List (Leaf C.BaseField nc)}
     {Ts cps : List s.d.W.Point} (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
-    (hs : List.Forall₂ (Leaf.SealedOf V) leaves leaves') :
+    (hs : List.Forall₂ (Leaf.SameReads V) leaves leaves') :
     XhatBinding s ci V σ cvk blindingH leaves' Ts cps where
   blinding := hbind.blinding
-  pre := Leaf.SealedOf.forall₂ (R := LeafPre ci V) (fun h hp => h.leafPre ci hp) hs hbind.pre
-  corr := Leaf.SealedOf.forall₂ (R := CorrPre ci V) (fun h hc => h.corrPre ci hc) hs hbind.corr
-  hon := Leaf.SealedOf.forall (Leaf.SealedOf.corrHonest ci) hs hbind.hon
+  pre := Leaf.SameReads.forall₂ (R := LeafPre ci V) (fun h hp => h.leafPre ci hp) hs hbind.pre
+  corr := Leaf.SameReads.forall₂ (R := CorrPre ci V) (fun h hc => h.corrPre ci hc) hs hbind.corr
+  hon := Leaf.SameReads.forall (Leaf.SameReads.corrHonest ci) hs hbind.hon
   hsize := hs.length_eq ▸ hbind.hsize
   bases i hi := by
     have hi' : i < leaves.length := hs.length_eq ▸ hi
-    exact Leaf.SealedOf.baseAt ci (hs.get hi' hi) (hbind.bases i hi')
+    exact Leaf.SameReads.baseAt ci (hs.get hi' hi) (hbind.bases i hi')
 
 /-- **The sealed gadget reads as the wire verifier's `publicCommitment`.** The binding is
 stated over the leaves before sealing, whose cells may be affine combinations (bases masked
@@ -1913,7 +1926,7 @@ theorem xHatSealed_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
       (SWPoint.equivPoint C.E
         (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
   have hmap := builder_spec_mapM (sealLeaf (S := Builder V (KimchiConstraint C.BaseField)))
-    (fun r a => Leaf.SealedOf V a r ∧ a.bitBoolean V) id sealLeaf_spec leaves
+    (fun r a => Leaf.SameReads V a r ∧ a.bitBoolean V) id sealLeaf_spec leaves
   simp only [publicInputCommitSealed]
   mvcgen [hmap]
   rename_i _ rs
@@ -1921,10 +1934,10 @@ theorem xHatSealed_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
   rw [List.map_id] at hrel
   obtain ⟨hb, hs⟩ := (List.forall₂_and_left leaves rs).mp
     (hrel.flip.imp fun _ _ h => ⟨h.2, h.1⟩ : List.Forall₂ (fun a r => a.bitBoolean V ∧
-      Leaf.SealedOf V a r) leaves rs)
-  rw [← Leaf.SealedOf.pubOf hs]
-  exact xHatFold_reads s ci σ cvk blindingH rs Ts cps ((hbind hb).sealed hs)
-    (Leaf.SealedOf.hasScalar hs hscalar) st trivial
+      Leaf.SameReads V a r) leaves rs)
+  rw [← Leaf.SameReads.pubOf hs]
+  exact xHatFold_reads s ci σ cvk blindingH rs Ts cps ((hbind hb).ofSameReads hs)
+    (Leaf.SameReads.hasScalar hs hscalar) st trivial
 
 /-- **The step-side gadget reads as the wire verifier's `publicCommitment`.** The
 known-domain shape (`publicInputCommitKnown`): the corrections are constants, so their sum
@@ -2005,6 +2018,14 @@ def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Lea
     | .b128 s => Leaf.b128 s bc.1 bc.2
     | .b10 s => Leaf.b10 s bc.1 bc.2
     | .bit b => Leaf.condAdd b bc.1) ks (tab.bases.zip tab.corrs)
+
+/-- A packed scalar's cell as the public-input ladder bounds it (`CellBound`): the full cell's
+half below `2^253`, the 128-bit cell's below `2^127`, the 10-bit cell's below `2^9`. -/
+def PackedScalar.Bound (V : Valuation F) : PackedScalar F → Prop
+  | .full s => CellBound V 253 s
+  | .b128 s => CellBound V 127 s
+  | .b10 s => CellBound V 9 s
+  | .bit b => ∃ bb : Bool, (↑b : CVar F).val V = Snarky.bit bb
 
 /-- The cell a packed scalar carries. -/
 def PackedScalar.cell : PackedScalar F → CVar F
@@ -2430,10 +2451,309 @@ theorem corrSumPt_map_msm {m : ℕ} (g : Fin m → C.Point) :
 
 end OfKey
 
+/-! ## Bases masked across branches
+
+A circuit whose branches were compiled at different step domains reads each Lagrange base as
+the branches' bases masked by the one-hot branch bits. When the branches share one domain the
+scalar leaves keep that domain's constants and only the boolean leaves' bases are masked. -/
+
+section Masked
+
+open Kimchi.Verifier Bulletproof Bulletproof.Ipa CompElliptic.CurveForms.ShortWeierstrass
+
+variable {C : KimchiCurve} {nc : ℕ} {S : Type} [BasicSystem C.BaseField S]
+
+/-- A point per branch masked by the branch bits: coordinatewise `Σ bᵢ · Pᵢ`, with no rows
+for constant points. -/
+def maskPoint (bits : List (BoolVar C.BaseField)) (ps : List (AffinePoint (FVar C.BaseField))) :
+    CircuitM C.BaseField S (AffinePoint (FVar C.BaseField)) := do
+  let x ← Pseudo.choose bits ps (·.x)
+  let y ← Pseudo.choose bits ps (·.y)
+  pure ⟨x, y⟩
+
+/-- `maskPoint` at every chunk. -/
+def maskCells (bits : List (BoolVar C.BaseField))
+    (vs : List (Vector (AffinePoint (FVar C.BaseField)) nc)) :
+    CircuitM C.BaseField S (Vector (AffinePoint (FVar C.BaseField)) nc) :=
+  (Vector.ofFn id).mapM fun ci => maskPoint bits (vs.map (·[ci]))
+
+/-- One packed scalar's leaf over the branches' Lagrange points `Pss`. A boolean leaf's base is
+masked. With `shared` a scalar leaf is `P0`'s constant leaf; otherwise its base and shift
+correction are masked. -/
+def maskLeaf (shared : Bool) (bits : List (BoolVar C.BaseField)) (k : PackedScalar C.BaseField)
+    (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc) :
+    CircuitM C.BaseField S (Leaf C.BaseField nc) :=
+  let base := maskCells bits (Pss.map (·.map constPt))
+  let corr (L : ℕ) := maskCells bits (Pss.map (·.map fun P => constPt (negShift C L P)))
+  match k with
+  | .full x => if shared then pure (constLeaf (.full x) P0) else do
+      let b ← base
+      let c ← corr 255
+      pure (.full x b c)
+  | .b128 x => if shared then pure (constLeaf (.b128 x) P0) else do
+      let b ← base
+      let c ← corr 130
+      pure (.b128 x b c)
+  | .b10 x => if shared then pure (constLeaf (.b10 x) P0) else do
+      let b ← base
+      let c ← corr 10
+      pure (.b10 x b c)
+  | .bit b => do
+      let bs ← base
+      pure (.condAdd b bs)
+
+/-- The leaves of a packed scalar list over the branches' Lagrange tables, leaf `i` at each
+table's `i`-th base. -/
+def maskLeaves (shared : Bool) (bits : List (BoolVar C.BaseField))
+    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
+    CircuitM C.BaseField S (List (Leaf C.BaseField nc)) :=
+  ks.zipIdx.mapM fun (k, i) =>
+    maskLeaf shared bits k (tables.map (·.getD i (Vector.replicate nc 0)))
+      ((tables.headD []).getD i (Vector.replicate nc 0))
+
+/-- The public-input commitment over bases masked across branches: `publicInputCommitFull`
+when the branches share one step domain, otherwise `publicInputCommitSealed`. -/
+def publicInputCommitMasked [KimchiSystem C.BaseField S] (shared : Bool)
+    (blindingH : AffinePoint (FVar C.BaseField)) (bits : List (BoolVar C.BaseField))
+    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
+    CircuitM C.BaseField S (Vector (AffinePoint (FVar C.BaseField)) nc) := do
+  let leaves ← maskLeaves shared bits ks tables
+  if shared then publicInputCommitFull blindingH leaves
+  else publicInputCommitSealed blindingH leaves
+
+variable [ConstraintHolds C.BaseField S] [LawfulBasicSystem C.BaseField S]
+  {V : Valuation C.BaseField}
+
+open Std.Do in
+/-- Masking a packed scalar's leaf keeps its scalar cell. -/
+private theorem maskLeaf_bound (shared : Bool) (bits : List (BoolVar C.BaseField))
+    (k : PackedScalar C.BaseField) (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc) :
+    ⦃⌜True⌝⦄ maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits k Pss P0
+    ⦃⇓ r _ => ⌜r.Bound V ∧ r.bitBoolean V → k.Bound V⌝⦄ := by
+  have hm := fun (ps : List (Vector (AffinePoint (FVar C.BaseField)) nc)) => builder_spec_true
+    (maskCells (S := Builder V (KimchiConstraint C.BaseField)) bits ps)
+  cases k <;> cases shared <;> simp only [maskLeaf, Bool.false_eq_true, if_false, if_true] <;>
+    mvcgen [hm] <;> simp_all [Leaf.Bound, Leaf.bitBoolean, PackedScalar.Bound, constLeaf]
+
+open Std.Do in
+/-- **The public-input ladders bound the packed scalars, whatever the bases.** Under any
+valuation satisfying the emitted constraints, every packed scalar's cell reads as its ladder
+bounds it (`PackedScalar.Bound`): the ladders' decomposition rows never read the bases, so no
+branch bits, table or key enter. -/
+theorem publicInputCommitMasked_bound (hnc : 0 < nc) (shared : Bool)
+    (blindingH : AffinePoint (FVar C.BaseField)) (bits : List (BoolVar C.BaseField))
+    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
+    ⦃⌜True⌝⦄
+    publicInputCommitMasked (S := Builder V (KimchiConstraint C.BaseField)) shared blindingH
+      bits ks tables
+    ⦃⇓ _ _ => ⌜∀ k ∈ ks, k.Bound V⌝⦄ := by
+  have hml := builder_spec_mapM (V := V) (c := KimchiConstraint C.BaseField)
+    (fun ki : PackedScalar C.BaseField × ℕ =>
+      maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits ki.1
+        (tables.map (·.getD ki.2 (Vector.replicate nc 0)))
+        ((tables.headD []).getD ki.2 (Vector.replicate nc 0)))
+    (fun r ki => r.Bound V ∧ r.bitBoolean V → ki.1.Bound V) id
+    (fun ki => maskLeaf_bound shared bits ki.1 _ _) ks.zipIdx
+  have hF := fun rs => publicInputCommitFull_bound hnc (V := V) blindingH rs
+  have hS := fun rs => publicInputCommitSealed_bound hnc (V := V) blindingH rs
+  -- a packed scalar is its masked leaf's scalar
+  have hall : ∀ rs : List (Leaf C.BaseField nc),
+      List.Forall₂ (fun r ki => r.Bound V ∧ r.bitBoolean V → ki.1.Bound V) rs
+        (ks.zipIdx.map id) →
+      (∀ l ∈ rs, l.Bound V ∧ l.bitBoolean V) → ∀ k ∈ ks, k.Bound V := by
+    intro rs hrs hb k hk
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hk
+    have hlen : rs.length = ks.length := by simpa using hrs.length_eq
+    have h := (List.forall₂_iff_get.mp hrs).2 i (by omega) (by simpa using hi)
+    simp only [List.get_eq_getElem, List.getElem_map, id, List.getElem_zipIdx] at h
+    exact h (hb _ (List.getElem_mem _))
+  unfold publicInputCommitMasked maskLeaves
+  cases shared <;> simp only [Bool.false_eq_true, if_false, if_true] <;> mvcgen [hml, hF, hS] <;>
+    rename_i rs _ _ _ hrs <;> exact hall rs hrs
+
+/-- Under the branch bits reading as the indicator of `b`, the masked point reads as the
+`b`-th. -/
+theorem maskPoint_spec (bits : List (BoolVar C.BaseField))
+    (ps : List (AffinePoint (FVar C.BaseField))) (b : ℕ)
+    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
+      = (List.range ps.length).map fun l => if l = b then (1 : C.BaseField) else 0)
+    (hb : b < ps.length) :
+    ⦃⌜True⌝⦄ maskPoint (S := Builder V S) bits ps
+    ⦃⇓ r _ => ⌜r.x.val V = ps[b].x.val V ∧ r.y.val V = ps[b].y.val V⌝⦄ := by
+  simp only [maskPoint]
+  have hx := Pseudo.choose_spec (c := S) (V := V) bits ps (·.x)
+  have hy := Pseudo.choose_spec (c := S) (V := V) bits ps (·.y)
+  mvcgen [hx, hy]
+  rename_i _ _ hrx _ _ hry
+  rw [hrx, hry, sum_zip_bits bits ps (fun p => p.x.val V),
+    sum_zip_bits bits ps (fun p => p.y.val V),
+    sum_indicator (fun p : AffinePoint (FVar C.BaseField) => p.x.val V) ps _ b hbits hb,
+    sum_indicator (fun p : AffinePoint (FVar C.BaseField) => p.y.val V) ps _ b hbits hb]
+  exact ⟨rfl, rfl⟩
+
+/-- Chunk by chunk, the masked cells read as the `b`-th branch's. -/
+private theorem maskCells_spec (bits : List (BoolVar C.BaseField))
+    (vs : List (Vector (AffinePoint (FVar C.BaseField)) nc)) (b : ℕ)
+    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
+      = (List.range vs.length).map fun l => if l = b then (1 : C.BaseField) else 0)
+    (hb : b < vs.length) :
+    ⦃⌜True⌝⦄ maskCells (S := Builder V S) bits vs ⦃⇓ r _ => ⌜SameCells V r vs[b]⌝⦄ := by
+  unfold maskCells
+  have hm := builder_spec_vector_mapM_get (maskPoint (S := Builder V S) bits ∘ fun ci : Fin nc =>
+      vs.map (·[ci]))
+    (fun (ci : Fin nc) (r : AffinePoint (FVar C.BaseField)) =>
+      r.x.val V = vs[b][ci].x.val V ∧ r.y.val V = vs[b][ci].y.val V)
+    (fun ci => builder_spec_imp _ _ _
+      (maskPoint_spec (V := V) (S := S) bits (vs.map (·[ci])) b (by simpa using hbits)
+        (by simpa using hb)) fun r h => by simpa using h) (Vector.ofFn id)
+  refine builder_spec_imp _ _ _ hm fun r hr ci => ?_
+  simpa using hr ci
+
+/-- Under the branch bits reading as the indicator of `b`, the masked leaf reads as branch
+`b`'s constant leaf; with `shared`, `P0` is branch `b`'s points. -/
+private theorem maskLeaf_spec (shared : Bool) (bits : List (BoolVar C.BaseField))
+    (k : PackedScalar C.BaseField) (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc)
+    (b : ℕ)
+    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
+      = (List.range Pss.length).map fun l => if l = b then (1 : C.BaseField) else 0)
+    (hb : b < Pss.length) (hshared : shared = true → P0 = Pss[b]) :
+    ⦃⌜True⌝⦄ maskLeaf (S := Builder V S) shared bits k Pss P0
+    ⦃⇓ r _ => ⌜Leaf.SameReads V (constLeaf k Pss[b]) r⌝⦄ := by
+  have hB := maskCells_spec (V := V) (S := S) bits (Pss.map (·.map constPt)) b
+    (by simpa using hbits) (by simpa using hb)
+  have hC := fun L => maskCells_spec (V := V) (S := S) bits
+    (Pss.map (·.map fun P => constPt (negShift C L P))) b (by simpa using hbits) (by simpa using hb)
+  cases k with
+  | bit x =>
+      simp only [maskLeaf]
+      mvcgen [hB]
+      rename_i r _ hr
+      exact ⟨rfl, by simpa [constLeaf] using hr⟩
+  | full x =>
+      simp only [maskLeaf]
+      cases shared with
+      | true =>
+          mvcgen
+          rw [hshared]; exact Leaf.SameReads.refl _
+      | false =>
+          have hC' := hC 255
+          mvcgen [hB, hC']
+          rename_i rb _ hrb rc _ hrc
+          exact ⟨rfl, by simpa [constLeaf] using hrb, by simpa [constLeaf] using hrc⟩
+  | b128 x =>
+      simp only [maskLeaf]
+      cases shared with
+      | true =>
+          mvcgen
+          rw [hshared]; exact Leaf.SameReads.refl _
+      | false =>
+          have hC' := hC 130
+          mvcgen [hB, hC']
+          rename_i rb _ hrb rc _ hrc
+          exact ⟨rfl, by simpa [constLeaf] using hrb, by simpa [constLeaf] using hrc⟩
+  | b10 x =>
+      simp only [maskLeaf]
+      cases shared with
+      | true =>
+          mvcgen
+          rw [hshared]; exact Leaf.SameReads.refl _
+      | false =>
+          have hC' := hC 10
+          mvcgen [hB, hC']
+          rename_i rb _ hrb rc _ hrc
+          exact ⟨rfl, by simpa [constLeaf] using hrb, by simpa [constLeaf] using hrc⟩
+
+/-- Under the branch bits reading as the indicator of `b`, the masked leaves read as branch
+`b`'s constant leaves; with `shared`, the first table is branch `b`'s. -/
+private theorem maskLeaves_spec (shared : Bool) (bits : List (BoolVar C.BaseField))
+    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) (b : ℕ)
+    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
+      = (List.range tables.length).map fun l => if l = b then (1 : C.BaseField) else 0)
+    (hb : b < tables.length) (hlen : ks.length ≤ tables[b].length)
+    (hshared : shared = true → tables.headD [] = tables[b]) :
+    ⦃⌜True⌝⦄ maskLeaves (S := Builder V S) shared bits ks tables
+    ⦃⇓ ls _ => ⌜List.Forall₂ (Leaf.SameReads V) (List.zipWith constLeaf ks tables[b]) ls⌝⦄ := by
+  unfold maskLeaves
+  have hm := builder_spec_mapM (fun ki : PackedScalar C.BaseField × ℕ =>
+      maskLeaf (S := Builder V S) shared bits ki.1
+        (tables.map (·.getD ki.2 (Vector.replicate nc 0)))
+        ((tables.headD []).getD ki.2 (Vector.replicate nc 0)))
+    (fun r ki => Leaf.SameReads V
+      (constLeaf ki.1 (tables[b].getD ki.2 (Vector.replicate nc 0))) r) id
+    (fun ki => builder_spec_imp _ _ _
+      (maskLeaf_spec (V := V) (S := S) shared bits ki.1 _ _ b (by simpa using hbits)
+        (by simpa using hb) fun h => by rw [hshared h]; simp)
+      fun r h => by simpa using h) ks.zipIdx
+  refine builder_spec_imp _ _ _ hm fun rs hrs => ?_
+  rw [List.map_id] at hrs
+  have hl : rs.length = ks.length := by simpa using hrs.length_eq
+  refine List.forall₂_iff_get.mpr ⟨by simp [hl]; omega, fun i h₁ h₂ => ?_⟩
+  have hi : i < ks.length := by simp at h₁; exact h₁.1
+  have h := (List.forall₂_iff_get.mp hrs).2 i h₂ (by simpa using hi)
+  simp only [List.get_eq_getElem, List.getElem_zipIdx, List.getElem_zipWith] at h ⊢
+  rw [List.getD_eq_getElem _ _ (by omega)] at h
+  simpa using h
+
+/-- A boolean leaf's booleanity carries back across `SameReads`. -/
+private theorem Leaf.SameReads.bitBoolean_of {V : Valuation C.BaseField} :
+    ∀ {ls ls' : List (Leaf C.BaseField nc)}, List.Forall₂ (Leaf.SameReads V) ls ls' →
+      (∀ l ∈ ls', l.bitBoolean V) → ∀ l ∈ ls, l.bitBoolean V
+  | [], [], .nil, _ => fun _ h => absurd h List.not_mem_nil
+  | l :: ls, l' :: ls', .cons hl hs, h => by
+      intro x hx
+      rcases List.mem_cons.1 hx with rfl | hx
+      · have h' := h l' (List.mem_cons_self ..)
+        cases x <;> cases l' <;> simp_all [Leaf.SameReads, Leaf.bitBoolean]
+      · exact Leaf.SameReads.bitBoolean_of hs (fun y hy => h y (List.mem_cons_of_mem _ hy)) x hx
+
+/-- **The masked commitment reads as the chosen key's `publicCommitment`.** Under the branch
+bits reading as the indicator of `b`, with branch `b`'s table the key's first `ks.length`
+Lagrange points (and, with `shared`, the first table branch `b`'s), the commitment over the
+masked bases reads as the wire's `publicCommitment` of the packed scalars at the key. -/
+theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (shared : Bool) (bits : List (BoolVar C.BaseField))
+    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) (b : ℕ)
+    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
+      = (List.range tables.length).map fun l => if l = b then (1 : C.BaseField) else 0)
+    (hb : b < tables.length) (htab : tables[b] = cvk.lagrangeBasis.toList.take ks.length)
+    (hshared : shared = true → tables.headD [] = tables[b])
+    (hlen : ks.length ≤ cvk.lagrangeBasis.size)
+    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[ci] ≠ 0)
+    (hscalar : leafHasScalar (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)) :
+    ⦃⌜True⌝⦄
+    publicInputCommitMasked (S := Builder V (KimchiConstraint C.BaseField)) shared (constPt σ.h)
+      bits ks tables
+    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci] (SWPoint.equivPoint C.E (publicCommitment C σ cvk
+      (pubOf C V (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)))[ci])⌝⦄ := by
+  have hm := maskLeaves_spec (V := V) (S := KimchiConstraint C.BaseField) shared bits ks tables b
+    hbits hb (by rw [htab]; simpa using hlen) hshared
+  -- the leaves past the table's end are never paired
+  have hz : List.zipWith constLeaf ks (cvk.lagrangeBasis.toList.take ks.length)
+      = List.zipWith constLeaf ks cvk.lagrangeBasis.toList := by
+    apply List.ext_getElem <;> simp
+  rw [htab, hz] at hm
+  unfold publicInputCommitMasked
+  mvcgen [hm]
+  all_goals
+    rename_i _ rs _
+    intro st hrs
+    have hbind := fun hb' : (∀ l ∈ rs, Leaf.bitBoolean V l) =>
+      (xhatBinding_const (V := V) s ci σ cvk ks hh hL
+        (Leaf.SameReads.bitBoolean_of hrs hb')).ofSameReads hrs
+    rw [← Leaf.SameReads.pubOf hrs]
+  · exact xHat_reads_publicCommitment s ci σ cvk (constPt σ.h) rs _ _ hbind
+      (Leaf.SameReads.hasScalar hrs hscalar) st trivial
+  · exact xHatSealed_reads_publicCommitment s ci σ cvk (constPt σ.h) rs _ _ hbind
+      (Leaf.SameReads.hasScalar hrs hscalar) st trivial
+
+end Masked
+
 /-! The gadgets are sealed after their reads: a consumer composes `publicInputCommitKnown_reads`,
-`xHat_reads_publicCommitment` or `xHatSealed_reads_publicCommitment`, never the body. -/
+`xHat_reads_publicCommitment`, `xHatSealed_reads_publicCommitment` or
+`xHatMasked_reads_publicCommitment`, never the body. -/
 attribute [irreducible] chunkwise leafStep foldChunks publicInputCommitChunks addChunks
   sumCorrections sumCorrectionsHead publicInputCommitFold publicInputCommitFull sealLeaf
-  publicInputCommitSealed ladders foldKnown commitKnownTail publicInputCommitKnown
+  publicInputCommitSealed ladders foldKnown commitKnownTail publicInputCommitKnown maskPoint
+  maskCells maskLeaf maskLeaves publicInputCommitMasked
 
 end Pickles
