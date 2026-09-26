@@ -263,8 +263,6 @@ theorem stepWrap_kimchiVerify
           adv)).constraints, ConstraintHolds.Holds Vg con)
     -- the next wrap circuit's valuation
     (Vs : Valuation Fq)
-    -- the generator of the wrap domain of each `log2`, a constant of the circuit
-    (gen : ℕ → Fq)
     -- the tag's branches' slot counts, and their step circuits' environments over one SRS
     (widths : Vector (Fin (w + 1)) branches)
     (stepEnvs : Vector (Env IpaVesta.curve ncStep) branches) (σStep : SRS IpaVesta.curve.Point)
@@ -283,7 +281,7 @@ theorem stepWrap_kimchiVerify
     -- domains and the SRS's blinding base
     (hwrap : ∀ con ∈ (compile (a := StatementPacked ks (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
-          (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
+          (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
           (stepKeyCells stepEnvs) pins lagrange σStep.h
           dummy slotWidths advW)).constraints,
         ConstraintHolds.Holds Vs con)
@@ -292,14 +290,12 @@ theorem stepWrap_kimchiVerify
     -- the key's wrap domain, as an index into `wrapDomainLog2s`
     (j : ℕ)
     -- `j` is the key's domain
-    (hdom : wrapDomainLog2s[j]? = some E.cvk.domainLog2)
-    -- `gen` gives the key's generator at its domain
-    (hgen : gen E.cvk.domainLog2 = E.cvk.omega) :
+    (hdom : wrapDomainLog2s[j]? = some E.cvk.domainLog2) :
     let r := (build (stepMain (c := Builder Vg (KimchiConstraint Fp)) hw (verifyProofAt E)
       (FopParams.ofEnv EsPrev Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the wrap circuit's cells over its statement
     let hd := (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
+      (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
           (stepKeyCells stepEnvs) pins lagrange σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
@@ -334,7 +330,7 @@ theorem stepWrap_kimchiVerify
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen widths (stepDomainLog2s stepEnvs)
+      (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepEnvs)
           (stepKeyCells stepEnvs) pins lagrange σStep.h dummy
       slotWidths advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
@@ -344,13 +340,13 @@ theorem stepWrap_kimchiVerify
       simp only [wrapMainCircuit, build_bind]
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_reads E Vs gen widths (stepDomainLog2s stepEnvs)
+    (wrapMain_reads E Vs widths (stepDomainLog2s stepEnvs)
           (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths advW
       (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)) hw hbr) _ hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
   have hnc : 0 < ncStep := (stepEnvs[0]'(Nat.pos_of_neZero branches)).nc_pos
   obtain ⟨hsplitsEq, hsr, hbnd, hslots⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_statement (FopParams.ofEnv E Linearization.fqTokens) Vs gen widths
+    (wrapMain_statement (FopParams.ofEnv E Linearization.fqTokens) Vs widths
       (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths
       advW (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)) hnc) _ hbody
   obtain ⟨tail, hout⟩ := (builder_spec_iff _ _).mp
@@ -397,7 +393,7 @@ theorem stepWrap_kimchiVerify
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
   subst hbb
-  exact hfin j hdom hgen _ hpin (reads_true_of_tie hsf hsfG) cp pub hguard Vg inp.unfinalized v hv
+  exact hfin j hdom _ hpin (reads_true_of_tie hsf hsfG) cp pub hguard Vg inp.unfinalized v hv
     hv1 hc hf hsg
 
 end Pickles

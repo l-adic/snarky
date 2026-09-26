@@ -503,10 +503,9 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
   let cvk := E.cvk
   let cp ← checkedFor CS "vesta" E s
   do
-    let cands := (steps.toList.map fun t =>
-      (⟨t.vk.domainLog2, t.vk.omega⟩ : Pickles.KnownDomain Fp)).eraseDups
-    let some doms := Pickles.KnownDomains.ofList? E cands s.vk.domainLog2
-      | IO.println s!"    ✗ the file's step domains {cands.map (·.log2)} are no KnownDomains \
+    let cands := (steps.toList.map (·.vk.domainLog2)).eraseDups
+    let some doms := Pickles.KnownDomains.ofList? E cands
+      | IO.println s!"    ✗ the file's step domains {cands} are no KnownDomains \
           at this key (2^{s.vk.domainLog2})"
         return false
     let n := (s.publicInput.size - 1) / (18 + Pickles.WrapIPARounds)
@@ -515,7 +514,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let st ← match stepStatementOf toWrap Pickles.WrapIPARounds n s.publicInput with
       | .error e => throw (IO.userError s!"step statement: {e}") | .ok r => pure r
     let dv := wst.proofState.deferredValues
-    let hdom := decide (dv.branchData.domainLog2 = (doms.keyLog2 : Fq))
+    let hdom := decide (dv.branchData.domainLog2 = (s.vk.domainLog2 : Fq))
     -- the statement as constant cells: every reading below is the value's own
     let stVar : Pickles.StepStatement Pickles.WrapIPARounds n (FVar Fq) (BoolVar Fq)
         (Type2 (SplitField (FVar Fq) (BoolVar Fq))) := CircuitType.constVar (F := Fq) st
@@ -540,8 +539,8 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     -- `havoid`, the theorem's own hypothesis, decided on the key's Lagrange points
     let avoidOk := @decide (E.σ.Avoids E.lagrangeRelations)
       (E.decidableAvoids Pickles.pastaShapeVesta)
-    IO.println s!"    env=true rounds={σ.k} domains={cands.map (·.log2)} \
-      key=2^{doms.keyLog2} hdom={hdom} \
+    IO.println s!"    env=true rounds={σ.k} domains={cands} \
+      key=2^{s.vk.domainLog2} hdom={hdom} \
       pub={pubOk} ({pub.size} cells) avoids={avoidOk} msgDigest={msgOk} \
       guards={guards} \
       sgOk={sg'} kimchiVerify={kv}"

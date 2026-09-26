@@ -20,36 +20,58 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- The domains the step circuit's scalar half may select from: distinct sizes, each
-generator of its order, each domain holding the zero-knowledge rows, and the key's own domain
-among them. -/
+/-- The domains the step circuit's scalar half may select from, by `log2`: distinct sizes,
+each holding the zero-knowledge rows, and the key's own domain among them. Each candidate's
+generator is its size's `domainGenerator`. -/
 structure KnownDomains {nc : ℕ} (E : Env IpaVesta.curve nc) where
-  /-- The candidates. -/
-  list : List (KnownDomain Fp)
+  /-- The candidates' `log2`s. -/
+  log2s : List ℕ
   /-- Distinct sizes, as the circuit compares them. -/
-  nodup : (list.map fun d => (d.log2 : Fp)).Nodup
-  /-- Each generator has its domain's order. -/
-  generator_pow : ∀ d ∈ list, d.generator ^ 2 ^ d.log2 = 1
+  log2s_nodup : (log2s.map fun d : ℕ => (d : Fp)).Nodup
   /-- Each domain holds the key's zero-knowledge rows. -/
-  zkRows_le : ∀ d ∈ list, E.cvk.zkRows ≤ 2 ^ d.log2
-  /-- `log2` of the key's domain size. -/
-  keyLog2 : ℕ
-  /-- The key's domain size is that power of two. -/
-  key_n : E.cvk.n = 2 ^ keyLog2
+  log2s_zkRows : ∀ d ∈ log2s, E.cvk.zkRows ≤ 2 ^ d
   /-- The key's domain is a candidate. -/
-  key_mem : (⟨keyLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ list
+  domainLog2_mem : E.cvk.domainLog2 ∈ log2s
 
-/-- A candidate list and the key's `log2` as `KnownDomains`, when its facts hold: each is
-decidable, so a driver checks them once. The generator orders are checked by squaring
-(`powPow2`). -/
-def KnownDomains.ofList? {nc : ℕ} (E : Env IpaVesta.curve nc) (list : List (KnownDomain Fp))
-    (keyLog2 : ℕ) : Option (KnownDomains E) :=
-  if h : (list.map fun d => (d.log2 : Fp)).Nodup ∧
-      (∀ d ∈ list, powPow2 d.generator d.log2 = 1) ∧
-      (∀ d ∈ list, E.cvk.zkRows ≤ 2 ^ d.log2) ∧
-      E.cvk.n = 2 ^ keyLog2 ∧ (⟨keyLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ list then
-    some ⟨list, h.1, fun d hd => powPow2_eq d.generator d.log2 ▸ h.2.1 d hd, h.2.2.1,
-      keyLog2, h.2.2.2.1, h.2.2.2.2⟩
+namespace KnownDomains
+
+variable {nc : ℕ} {E : Env IpaVesta.curve nc} (D : KnownDomains E)
+
+/-- The candidates with their generators, as the circuit takes them. -/
+def list : List (KnownDomain Fp) :=
+  D.log2s.map fun d => ⟨d, domainGenerator IpaVesta.curve d⟩
+
+/-- The candidates' sizes are distinct. -/
+theorem nodup : (D.list.map fun d => (d.log2 : Fp)).Nodup := by
+  rw [list, List.map_map]
+  exact D.log2s_nodup
+
+/-- Each generator has its domain's order. -/
+theorem generator_pow : ∀ d ∈ D.list, d.generator ^ 2 ^ d.log2 = 1 := by
+  simp only [list, List.mem_map]
+  rintro _ ⟨d, -, rfl⟩
+  exact domainGenerator_pow _ d
+
+/-- Each domain holds the key's zero-knowledge rows. -/
+theorem zkRows_le : ∀ d ∈ D.list, E.cvk.zkRows ≤ 2 ^ d.log2 := by
+  simp only [list, List.mem_map]
+  rintro _ ⟨d, hd, rfl⟩
+  exact D.log2s_zkRows d hd
+
+/-- The key's domain, with the key's generator, is a candidate. -/
+theorem key_mem : (⟨E.cvk.domainLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ D.list := by
+  rw [E.omega_eq]
+  exact List.mem_map.mpr ⟨_, D.domainLog2_mem, rfl⟩
+
+end KnownDomains
+
+/-- A candidate list of `log2`s as `KnownDomains`, when its facts hold: each is decidable, so a
+driver checks them once. -/
+def KnownDomains.ofList? {nc : ℕ} (E : Env IpaVesta.curve nc) (log2s : List ℕ) :
+    Option (KnownDomains E) :=
+  if h : (log2s.map fun d : ℕ => (d : Fp)).Nodup ∧ (∀ d ∈ log2s, E.cvk.zkRows ≤ 2 ^ d) ∧
+      E.cvk.domainLog2 ∈ log2s then
+    some ⟨log2s, h.1, h.2.1, h.2.2⟩
   else none
 
 /-- `finalizeOtherProofStep` with the verifier key's parameters, the `Fp` token stream, and
@@ -195,7 +217,7 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     -- at most two slots; the mask cells are boolean, and the domain cell holds the key's `log2`
     (hw : w ≤ MaxProofsVerified)
     (hmask : ∃ ms : Vector Bool w, CircuitType.Reads Vs mask ms)
-    (hdom : domainLog2Var.val Vs = (domains.keyLog2 : Fp))
+    (hdom : domainLog2Var.val Vs = (E.cvk.domainLog2 : Fp))
     -- the wrap circuit's group half, and its asserted bit
     (Vg : Valuation Fq)
     (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
@@ -256,9 +278,9 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     exact halvesTies_of_cast Vg claimsG Vs claimsS evals mask prevChallenges hc
       ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
   -- the selected domain is the key's: two candidates of one size are one candidate
-  have hd : d₀ = ⟨domains.keyLog2, E.cvk.omega⟩ :=
+  have hd : d₀ = ⟨E.cvk.domainLog2, E.cvk.omega⟩ :=
     List.inj_on_of_nodup_map domains.nodup hd₀ domains.key_mem (hL.symm.trans hdom)
-  have hn : 2 ^ d₀.log2 = E.cvk.n := by rw [hd, domains.key_n]
+  have hn : 2 ^ d₀.log2 = E.cvk.n := by rw [hd]; rfl
   have hω : d₀.generator = E.cvk.omega := by rw [hd]
   -- the circuit absorbs the kept challenge cells; their values are the proof's accumulators
   have hcells := map_map_val_of_forall₂ hprev
@@ -289,13 +311,12 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
 holding the key's `log2`, for any step proof and public input under the guards, the wrap
 circuit's group half accepting it, its claim cells holding these reduced (`ClaimsCast`), the proof
 ties and `SgOk` make `kimchiVerify` accept. -/
-def StepFinalizeReads {nc w : ℕ} (E : Env IpaVesta.curve nc) (domains : KnownDomains E)
-    (Vs : Valuation Fp)
+def StepFinalizeReads {nc w : ℕ} (E : Env IpaVesta.curve nc) (Vs : Valuation Fp)
     (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (evals : ChunkedEvals nc (FVar Fp))
     (mask : Vector (BoolVar Fp) w) (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) w)
     (domainLog2Var : FVar Fp) : Prop :=
-  domainLog2Var.val Vs = (domains.keyLog2 : Fp) →
+  domainLog2Var.val Vs = (E.cvk.domainLog2 : Fp) →
   ∀ (cp : KimchiProof IpaVesta.curve nc E.σ.k) (pub : Array Fp),
     Guards IpaVesta.curve E.cvk cp pub →
     ∀ (Vg : Valuation Fq)
@@ -319,7 +340,7 @@ theorem finalizeOtherProofStepAt_finalizeReads {nc w : ℕ} (E : Env IpaVesta.cu
       mask prevChallenges domainLog2Var
     ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads Vs mask ms) →
       (↑o.finalized : CVar Fp).val Vs = 1 →
-      StepFinalizeReads E domains Vs claimsS evals mask prevChallenges domainLog2Var⌝⦄ := by
+      StepFinalizeReads E Vs claimsS evals mask prevChallenges domainLog2Var⌝⦄ := by
   rw [builder_spec_iff]
   intro nv hsat hmask h1 hdom cp pub hguard Vg claimsG successG hg hgbit hc hf hsg
   exact (((builder_spec_iff _ _).mp
@@ -412,7 +433,7 @@ theorem scalarCircuit_reads {nc : ℕ}
     (Vs : Valuation Fp) (domains : KnownDomains E) (s : ScalarVar E.σ.k nc)
     (hmask : ∃ ms : Vector Bool MaxProofsVerified,
       CircuitType.Reads Vs s.branch.proofsVerifiedMask ms)
-    (hdom : s.branch.domainLog2.val Vs = (domains.keyLog2 : Fp))
+    (hdom : s.branch.domainLog2.val Vs = (E.cvk.domainLog2 : Fp))
     (Vg : Valuation Fq)
     (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (successG : BoolVar Fq)

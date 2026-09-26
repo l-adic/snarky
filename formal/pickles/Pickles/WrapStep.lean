@@ -38,14 +38,14 @@ open scoped Kimchi
 
 /-- A step key's domain exponent is small: its size is the order of a root of unity of the
 field, which divides `p − 1`. -/
-private theorem KnownDomains.keyLog2_lt {nc : ℕ} {Es : Env IpaVesta.curve nc}
-    (D : KnownDomains Es) : D.keyLog2 < 255 := by
+private theorem Env.domainLog2_lt {nc : ℕ} (Es : Env IpaVesta.curve nc) :
+    Es.cvk.domainLog2 < 255 := by
   have hpos : 0 < Es.cvk.n := by have := Es.zkRows_ge; have := Es.zkRows_le; omega
   have hne : Es.cvk.omega ≠ 0 := Es.omega_prim.ne_zero (by omega)
   have hd : Es.cvk.n ∣ PALLAS_BASE_CARD - 1 :=
     Es.omega_prim.dvd_of_pow_eq_one _ (ZMod.pow_card_sub_one_eq_one hne)
   have hle := Nat.le_of_dvd (by norm_num [PALLAS_BASE_CARD]) hd
-  rw [D.key_n] at hle
+  rw [KimchiVK.n] at hle
   by_contra hc
   have := Nat.pow_le_pow_right (show 0 < 2 by norm_num) (not_lt.mp hc)
   norm_num [PALLAS_BASE_CARD] at hle this
@@ -130,8 +130,6 @@ private theorem wrapStep_kimchiVerify_core
     (EsStep : Env IpaVesta.curve ncStep)
     -- the wrap circuit's valuation
     (Vw : Valuation Fq)
-    -- the generator of the wrap domain of each `log2`, a constant of the circuit
-    (gen : ℕ → Fq)
     -- the tag's branches: their slot counts, step domains and step keys
     (widths : Vector (Fin (w + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
@@ -148,13 +146,14 @@ private theorem wrapStep_kimchiVerify_core
     -- `Vw` satisfies every constraint of the compiled wrap circuit
     (hwrap : ∀ con ∈ (compile (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vw (KimchiConstraint Fq))
-          (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h
+          (FopParams.ofEnv E Linearization.fqTokens) widths log2s stepKeys pins lagrange h
           dummy slotWidths advW)).constraints,
         ConstraintHolds.Holds Vw con)
     -- the active branch: its key, Lagrange bases and blinding base are `EsStep`'s
     (b : Fin branches)
     (hkeyB : stepKeys[b] = keyCellsOf constPt EsStep.cvk)
-    (hlag : lagrange log2s[b] = EsStep.cvk.lagrangeBasis.toList)
+    (hlag : lagrange log2s[b]
+      = EsStep.cvk.lagrangeBasis.toList.take (w * (E.σ.k + 17) + 1 + w))
     (hh : h = EsStep.σ.h)
     -- the step statement fits the key's Lagrange basis, the key's points are finite, and the SRS
     -- avoids the key's Lagrange relations
@@ -163,7 +162,7 @@ private theorem wrapStep_kimchiVerify_core
     (havoidS : EsStep.σ.Avoids EsStep.lagrangeRelations)
     -- the step domains the next step circuit's finalize dispatches over; branch `b`'s is the key's
     (D : KnownDomains EsStep)
-    (hlog : log2s[b] = D.keyLog2)
+    (hlog : log2s[b] = EsStep.cvk.domainLog2)
     -- the next rule verifies at most the tag's `w` slots, which is at most `MaxProofsVerified`
     (hn : n ≤ w) (hw : w ≤ MaxProofsVerified)
     -- the `sg` padding the missing accumulators, the unfinalized entry padding the statement
@@ -191,7 +190,7 @@ private theorem wrapStep_kimchiVerify_core
     -- the wrap circuit's statement and cells
     let stmt := inputVar (F := Fq) (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq)
     let hd := (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h dummy
+      (FopParams.ofEnv E Linearization.fqTokens) widths log2s stepKeys pins lagrange h dummy
       slotWidths advW stmt)
       (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
         (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq))).result
@@ -223,7 +222,7 @@ private theorem wrapStep_kimchiVerify_core
     (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap side: the body's constraints hold, so its reads do
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen widths log2s stepKeys pins lagrange h dummy
+      (FopParams.ofEnv E Linearization.fqTokens) widths log2s stepKeys pins lagrange h dummy
       slotWidths advW stmt)
       (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
         (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq))
@@ -232,18 +231,18 @@ private theorem wrapStep_kimchiVerify_core
       simp only [wrapMainCircuit, build_bind]
       exact List.mem_append_left _ hc))
   obtain ⟨b', hb', hwb, -, -, hbd, -⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_reads E Vw gen widths log2s stepKeys pins lagrange h dummy slotWidths advW stmt hw
+    (wrapMain_reads E Vw widths log2s stepKeys pins lagrange h dummy slotWidths advW stmt hw
       hbr) _ hbody
   -- the circuit's branch is `b`: both are below the field's characteristic
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
   subst hbb
   obtain ⟨-, -, -, hgrp⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_verifyReads E EsStep Vw gen widths log2s stepKeys pins lagrange h dummy slotWidths
+    (wrapMain_verifyReads E EsStep Vw widths log2s stepKeys pins lagrange h dummy slotWidths
       advW stmt hw hbr hh hsize hnz havoidS) _ hbody b hb hkeyB hlag
   obtain ⟨v, hv, hv1⟩ := hgrp cp oldsW hpr hol
   -- the slot's domain is the key's: cell `29` carries the branch data across the tie
-  have hdom : inp.branchData.domainLog2.val Vs = (D.keyLog2 : Fp) := by
+  have hdom : inp.branchData.domainLog2.val Vs = (EsStep.cvk.domainLog2 : Fp) := by
     have hcell : stmt.branchData.val Vw
         = ((ToNat.toNat (inp.branchData.packed.val Vs) : ℕ) : Fq) := by
       simp only [CircuitType.reads_ofEquiv, StatementPacked.equivProd, Equiv.coe_fn_mk,
@@ -253,15 +252,16 @@ private theorem wrapStep_kimchiVerify_core
     -- both sides are small numbers: `4·n₀ + t` and `4·log2s[b] + s`
     obtain ⟨t, ht3, hpk⟩ := BranchData.packed_val inp.branchData n0 ms0 hdv hmsR
     obtain ⟨sN, hs3, hsum⟩ := maskSum_natCast hw fun l => decide (l < (widths[b.val] : ℕ))
-    have hL := D.keyLog2_lt
+    have hL := EsStep.domainLog2_lt
     have hn0p : 4 * n0 + t < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]; omega
-    have hlog' : log2s[b.val] = D.keyLog2 := by simpa using hlog
+    have hlog' : log2s[b.val] = EsStep.cvk.domainLog2 := by simpa using hlog
     rw [hpk, hsum, hlog'] at hbd
     simp only [ToNat.toNat, ZMod.val_natCast_of_lt hn0p] at hbd
-    have hnat : 4 * n0 + t = 4 * D.keyLog2 + sN := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
+    have hnat : 4 * n0 + t = 4 * EsStep.cvk.domainLog2 + sN :=
+      CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
       (Set.mem_Iio.2 (by norm_num [PALLAS_SCALAR_CARD]; omega))
       (Set.mem_Iio.2 (by norm_num [PALLAS_SCALAR_CARD]; omega)) (by push_cast at hbd ⊢; exact hbd)
-    rw [hdv, show n0 = D.keyLog2 by omega]
+    rw [hdv, show n0 = EsStep.cvk.domainLog2 by omega]
   exact hscal hdom cp pub hguard Vw stmt.claims v hv hv1
     (claimsCast_of_reads stmt _ htie) hf hsg
 
@@ -288,30 +288,26 @@ theorem wrapStep_kimchiVerify
     (b : Fin branches)
     -- the wrap circuit's valuation
     (Vw : Valuation Fq)
-    -- the generator of the wrap domain of each `log2`, a constant of the circuit
-    (gen : ℕ → Fq)
     -- the tag's branches' slot counts
     (widths : Vector (Fin (w + 1)) branches)
     -- each slot's compile-time wrap domain index per branch
     (pins : Vector (Vector (Option ℕ) branches) w)
-    -- the Lagrange bases at a step domain, the padding challenges and each slot's
-    -- challenge-stack height: constants of the wrap circuit
-    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep))
+    -- the padding challenges and each slot's challenge-stack height: constants of the wrap
+    -- circuit
     (dummy : List Fq) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k stepEnvs[b].σ.k slotWidths.toList.sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vw` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
-    -- domains and the SRS's blinding base
+    -- domains and the SRS's Lagrange points and blinding base
     (hwrap : ∀ con ∈ (compile (a := StatementPacked stepEnvs[b].σ.k (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vw (KimchiConstraint Fq))
-          (FopParams.ofEnv E Linearization.fqTokens) gen widths
+          (FopParams.ofEnv E Linearization.fqTokens) widths
           (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins
-          lagrange σStep.h dummy slotWidths advW)).constraints,
+          (srsLagrangeTable σStep ncStep (w * (E.σ.k + 17) + 1 + w)) σStep.h dummy slotWidths
+          advW)).constraints,
         ConstraintHolds.Holds Vw con)
-    -- the table at branch `b`'s domain is its key's Lagrange basis
-    (hlag : lagrange stepEnvs[b].cvk.domainLog2 = stepEnvs[b].cvk.lagrangeBasis.toList)
     -- the step statement fits the key's Lagrange basis, the key's points are finite, and the SRS
     -- avoids the key's Lagrange relations
     (hsize : w * (E.σ.k + 17) + 1 + w ≤ stepEnvs[b].cvk.lagrangeBasis.size)
@@ -347,9 +343,9 @@ theorem wrapStep_kimchiVerify
     -- the wrap circuit's statement and cells
     let stmt := inputVar (F := Fq) (a := StatementPacked stepEnvs[b].σ.k (Type1 Fq) Fq)
     let hd := (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
-      (FopParams.ofEnv E Linearization.fqTokens) gen widths
+      (FopParams.ofEnv E Linearization.fqTokens) widths
       (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins
-      lagrange σStep.h dummy
+      (srsLagrangeTable σStep ncStep (w * (E.σ.k + 17) + 1 + w)) σStep.h dummy
       slotWidths advW stmt)
       (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
         (a := StatementPacked stepEnvs[b].σ.k (Type1 Fq) Fq))).result
@@ -374,15 +370,21 @@ theorem wrapStep_kimchiVerify
         FopTies stepEnvs[b] cp pub (inp.finalizedHalf Vs) →
         SgOk stepEnvs[b].σ stepEnvs[b].cvk cp pub →
         kimchiVerify IpaVesta.curve stepEnvs[b].σ stepEnvs[b].cvk cp pub = true := by
-  -- the key's domain exponent is `D`'s: both give its size as a power of two
-  have hlog : (stepDomainLog2s stepEnvs)[b] = D.keyLog2 := by
-    have := D.key_n
-    simp only [KimchiVK.n] at this
-    simpa [stepDomainLog2s] using Nat.pow_right_injective (le_refl 2) this
+  -- branch `b`'s domain exponent is its key's
+  have hlog : (stepDomainLog2s stepEnvs)[b] = stepEnvs[b].cvk.domainLog2 := by
+    simp [stepDomainLog2s]
+  -- branch `b`'s table is its key's Lagrange points: both are the SRS's over the key's domain
+  have hlag : srsLagrangeTable σStep ncStep (w * (E.σ.k + 17) + 1 + w)
+      (stepDomainLog2s stepEnvs)[b]
+      = stepEnvs[b].cvk.lagrangeBasis.toList.take (w * (E.σ.k + 17) + 1 + w) := by
+    rw [hlog, stepEnvs[b].lagrange_eq, Ipa.lagrangeBasis_toList_take _ _ _ _ _ hsize,
+      srsLagrangeTable, stepEnvs[b].omega_eq, hσ b]
+    rfl
   intro r stmt hd hb i hmv inp ms hms htie cp oldsW pub hpr hol hguard hf hsg
-  exact wrapStep_kimchiVerify_core E stepEnvs[b] Vw gen widths
-    (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins lagrange σStep.h dummy slotWidths
-    advW hbr hwrap b (by simp [stepKeyCells]) (by simpa [stepDomainLog2s] using hlag)
+  exact wrapStep_kimchiVerify_core E stepEnvs[b] Vw widths
+    (stepDomainLog2s stepEnvs) (stepKeyCells stepEnvs) pins
+    (srsLagrangeTable σStep ncStep (w * (E.σ.k + 17) + 1 + w)) σStep.h dummy
+    slotWidths advW hbr hwrap b (by simp [stepKeyCells]) hlag
     (by rw [hσ b]) hsize hnz havoidS D hlog hn hw dummySg dummyUnf hsmall havoid Vs rule adv hstep
     hb i hmv ms hms htie cp oldsW hpr hol hguard hf hsg
 

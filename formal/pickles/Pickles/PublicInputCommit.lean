@@ -2707,15 +2707,15 @@ private theorem Leaf.SameReads.bitBoolean_of {V : Valuation C.BaseField} :
       · exact Leaf.SameReads.bitBoolean_of hs (fun y hy => h y (List.mem_cons_of_mem _ hy)) x hx
 
 /-- **The masked commitment reads as the chosen key's `publicCommitment`.** Under the branch
-bits reading as the indicator of `b`, with branch `b`'s table the key's Lagrange basis (and,
-with `shared`, the first table branch `b`'s), the commitment over the masked bases reads as
-the wire's `publicCommitment` of the packed scalars at the key. -/
+bits reading as the indicator of `b`, with branch `b`'s table the key's first `ks.length`
+Lagrange points (and, with `shared`, the first table branch `b`'s), the commitment over the
+masked bases reads as the wire's `publicCommitment` of the packed scalars at the key. -/
 theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (shared : Bool) (bits : List (BoolVar C.BaseField))
     (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) (b : ℕ)
     (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
       = (List.range tables.length).map fun l => if l = b then (1 : C.BaseField) else 0)
-    (hb : b < tables.length) (htab : tables[b] = cvk.lagrangeBasis.toList)
+    (hb : b < tables.length) (htab : tables[b] = cvk.lagrangeBasis.toList.take ks.length)
     (hshared : shared = true → tables.headD [] = tables[b])
     (hlen : ks.length ≤ cvk.lagrangeBasis.size)
     (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[ci] ≠ 0)
@@ -2727,7 +2727,11 @@ theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ :
       (pubOf C V (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)))[ci])⌝⦄ := by
   have hm := maskLeaves_spec (V := V) (S := KimchiConstraint C.BaseField) shared bits ks tables b
     hbits hb (by rw [htab]; simpa using hlen) hshared
-  rw [htab] at hm
+  -- the leaves past the table's end are never paired
+  have hz : List.zipWith constLeaf ks (cvk.lagrangeBasis.toList.take ks.length)
+      = List.zipWith constLeaf ks cvk.lagrangeBasis.toList := by
+    apply List.ext_getElem <;> simp
+  rw [htab, hz] at hm
   unfold publicInputCommitMasked
   mvcgen [hm]
   all_goals

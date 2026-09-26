@@ -328,7 +328,7 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
       CircuitType.Reads V r.unfs[i].shouldFinalize true ∧
       (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).SlotReads E V
         r.vk.points ∧
-      (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).ScalarReads Es D V ∧
+      (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).ScalarReads Es V ∧
       ∃ (n : ℕ) (ms : Vector Bool MaxProofsVerified), n < 2 ^ 16 ∧
         (slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]).branchData.domainLog2.val V
           = (n : Fp) ∧
@@ -364,7 +364,7 @@ theorem stepMain_reads {n w ncw ncs : ℕ} {inVal inVar : Type} [CircuitType Fp 
           inp.SlotReads E V vk.points) ∧
         ((∃ ms : Vector Bool w, CircuitType.Reads V inp.proofMask ms) →
           CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
-          inp.ScalarReads Es D V) ∧
+          inp.ScalarReads Es V) ∧
         (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = (↑inp.mustVerify : CVar Fp).val V)
       id
       (fun i => builder_spec_and _ _ _

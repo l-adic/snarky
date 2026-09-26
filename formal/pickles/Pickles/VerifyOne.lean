@@ -386,9 +386,9 @@ abbrev VerifyOneInput.finalizedHalf (V : Valuation Fp) (inp : VerifyOneInput ks 
 /-- What a verified slot certifies of the step proof its deferred values came from
 (`StepFinalizeReads` at the slot's cells): given that proof's group half from the wrap circuit,
 the ties and `SgOk`, `kimchiVerify` accepts it. -/
-def VerifyOneInput.ScalarReads (Es : Env IpaVesta.curve ncs) (D : KnownDomains Es)
-    (V : Valuation Fp) (inp : VerifyOneInput Es.σ.k k ncw ncs w) : Prop :=
-  StepFinalizeReads Es D V ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals inp.proofMask
+def VerifyOneInput.ScalarReads (Es : Env IpaVesta.curve ncs) (V : Valuation Fp)
+    (inp : VerifyOneInput Es.σ.k k ncw ncs w) : Prop :=
+  StepFinalizeReads Es V ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals inp.proofMask
     inp.prevChallenges inp.branchData.domainLog2
 
 /-- One slot reads as the scalar half of the step proof its deferred values came from: with the
@@ -405,7 +405,7 @@ theorem verifyOne_scalarReads (Es : Env IpaVesta.curve ncs) (D : KnownDomains Es
     ⦃⌜True⌝⦄ verifyOneBy verify (FopParams.ofEnv Es Linearization.fpTokens) D.list vk inp
     ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads V inp.proofMask ms) →
       CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
-      inp.ScalarReads Es D V⌝⦄ := by
+      inp.ScalarReads Es V⌝⦄ := by
   have hfin := finalizeOtherProofStepAt_finalizeReads Es V D ⟨inp.deferred, true_, inp.spongeDigest⟩
     inp.evals inp.proofMask inp.prevChallenges inp.branchData.domainLog2 hw
   simp only [finalizeOtherProofStepAt] at hfin
