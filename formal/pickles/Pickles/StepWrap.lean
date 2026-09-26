@@ -144,9 +144,11 @@ theorem stepWrap_kimchiVerify
         kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
   intro r x slots hbits i hmv inp sl hpin hc hsf cp ms pub hwire hguard hf hsg
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
-  obtain ⟨hsfG, hslot⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E Es D (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i
-      hmv
+  obtain ⟨hsfG, hslot, -⟩ := (builder_spec_iff _ _).mp
+    (stepMain_reads E (FopParams.ofEnv Es Linearization.fpTokens) D.list Es.rounds_small
+      (fun _ => True)
+      (fun _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
+      (hn.trans hw) hw dummySg dummyUnf rule adv hsmall havoid) 0 hstep i hmv
   obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
   -- the finalize side: the slot reads as its scalar half
   have hfin := wrapFinalizePrevProofs_reads E Vs gen x.val.1 (WrapFinalizeInVar.slots x pins) b j

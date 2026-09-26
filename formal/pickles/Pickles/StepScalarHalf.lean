@@ -307,6 +307,47 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     (by norm_num [PALLAS_BASE_CARD]) cp pub hguard _ successG hg _ o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
+/-- What a set `finalized` bit certifies about the cells it finalized: with the domain cell
+holding the key's `log2`, for any step proof and public input under the guards, the wrap
+circuit's group half accepting it, its claim cells holding these reduced (`ClaimsCast`), the proof
+ties and `SgOk` make `kimchiVerify` accept. -/
+def StepFinalizeReads {nc w : ℕ} (E : Env IpaVesta.curve nc) (Vs : Valuation Fp)
+    (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (evals : ChunkedEvals nc (FVar Fp))
+    (mask : Vector (BoolVar Fp) w) (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) w)
+    (domainLog2Var : FVar Fp) : Prop :=
+  domainLog2Var.val Vs = (E.cvk.domainLog2 : Fp) →
+  ∀ (cp : KimchiProof IpaVesta.curve nc E.σ.k) (pub : Array Fp),
+    Guards IpaVesta.curve E.cvk cp pub →
+    ∀ (Vg : Valuation Fq)
+      (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+      (successG : BoolVar Fq),
+      (GroupHalf.wrap Vg claimsG).Reads E cp pub successG → (↑successG : CVar Fq).val Vg = 1 →
+      ClaimsCast Vg claimsG Vs claimsS →
+      FopTies E cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges) →
+      SgOk E.σ E.cvk cp pub → kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true
+
+/-- `finalizeOtherProofStepAt_kimchiVerify_vesta` in `∀`-form: with the mask cells boolean, a
+set `finalized` bit certifies `StepFinalizeReads`. -/
+theorem finalizeOtherProofStepAt_finalizeReads {nc w : ℕ} (E : Env IpaVesta.curve nc)
+    (Vs : Valuation Fp) (domains : KnownDomains E)
+    (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (evals : ChunkedEvals nc (FVar Fp))
+    (mask : Vector (BoolVar Fp) w) (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) w)
+    (domainLog2Var : FVar Fp) (hw : w ≤ MaxProofsVerified) :
+    ⦃⌜True⌝⦄
+    finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp)) E domains claimsS evals
+      mask prevChallenges domainLog2Var
+    ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads Vs mask ms) →
+      (↑o.finalized : CVar Fp).val Vs = 1 →
+      StepFinalizeReads E Vs claimsS evals mask prevChallenges domainLog2Var⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat hmask h1 hdom cp pub hguard Vg claimsG successG hg hgbit hc hf hsg
+  exact (((builder_spec_iff _ _).mp
+    (finalizeOtherProofStepAt_kimchiVerify_vesta E cp pub hguard Vs domains claimsS evals mask
+      prevChallenges domainLog2Var hw hmask hdom Vg claimsG successG hg hgbit hc hf)
+    nv hsat).mp ⟨hsg, h1⟩).1
+
 /-! ## The circuit of its input
 
 The gadget does not check its mask cells, so its read assumes them boolean. `scalarCircuit`
