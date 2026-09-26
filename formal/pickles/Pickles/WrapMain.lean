@@ -395,13 +395,6 @@ def stepDomainLog2s {branches ncStep : ℕ}
     (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches) : Vector ℕ branches :=
   stepKeys.map (·.domainLog2)
 
-/-- Branch `b`'s step environment: its key over the step SRS `σ`, which is `σ` by definition. -/
-def stepEnvAt {branches ncStep : ℕ} (σ : SRS IpaVesta.curve.Point)
-    (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
-    (hkeys : ∀ i : Fin branches, Env.Invariants σ stepKeys[i]) (b : Fin branches) :
-    Env IpaVesta.curve ncStep :=
-  Env.ofInvariants σ stepKeys[b] (hkeys b)
-
 /-- The Lagrange table a wrap circuit is compiled with: at each step domain, the SRS's first
 `count` Lagrange commitments over that domain. -/
 def srsLagrangeTable (σ : SRS IpaVesta.curve.Point) (nc count d : ℕ) :

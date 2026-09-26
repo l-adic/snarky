@@ -18,6 +18,8 @@ the rule marks must-verify hold a wrap proof that `kimchiVerify` accepts.
   the step circuit's output read as the wrap circuit's public input, the pins at the key's wrap
   domain and the key's reading, give each must-verify slot a wrap proof its cells hold, which
   `kimchiVerify` accepts.
+* `StmtVal.ofWrap_toFields`: the tie's statement, flattened, is the public input
+  `wrapPublicInput` commits to.
 
 ## Implementation notes
 
@@ -117,6 +119,69 @@ private theorem bit_ofWrap {Vs : Valuation Fq} {b : BoolVar Fq}
   · simp [bit, ToNat.toNat]
   · simp only [bit, ToNat.toNat, decide_true, if_true]
     rw [ZMod.val_one, Nat.cast_one]
+
+/-- An unfinalized entry's values, flattened, are its packed scalars reduced, when its bit cells
+read as bits. -/
+private theorem UnfVal.ofWrap_toFields {k : ℕ} {Vs : Valuation Fq}
+    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+    (hbnd : ∀ x ∈ u.packed, x.Bound Vs) :
+    (CircuitType.valueToFields (F := Fp) (var := UnfVar k) (UnfVal.ofWrap Vs u)).toList
+      = u.packed.map (PackedScalar.reduced IpaVesta.curve Vs) := by
+  have hbit : ∀ b : BoolVar Fq, PackedScalar.bit b ∈ u.packed →
+      (bit (decide ((↑b : CVar Fq).val Vs = 1)) : Fp)
+        = PackedScalar.reduced IpaVesta.curve Vs (.bit b) :=
+    fun b hm => bit_ofWrap (hbnd _ hm)
+  have h1 : ∀ x : Fp, CircuitType.valueToFields (F := Fp) (var := FVar Fp) x = #v[x] :=
+    fun _ => rfl
+  have h2 : ∀ b : Bool, CircuitType.valueToFields (F := Fp) (var := BoolVar Fp) b = #v[bit b] :=
+    fun _ => rfl
+  -- the parity bits and the finalize flag
+  have e1 := hbit u.deferredValues.combinedInnerProduct.val.sOdd
+    (by simp [UnfinalizedProof.packed])
+  have e2 := hbit u.deferredValues.b.val.sOdd (by simp [UnfinalizedProof.packed])
+  have e3 := hbit u.deferredValues.plonk.zetaToSrsLength.val.sOdd
+    (by simp [UnfinalizedProof.packed])
+  have e4 := hbit u.deferredValues.plonk.zetaToDomainSize.val.sOdd
+    (by simp [UnfinalizedProof.packed])
+  have e5 := hbit u.deferredValues.plonk.perm.val.sOdd (by simp [UnfinalizedProof.packed])
+  have e6 := hbit u.shouldFinalize (by simp [UnfinalizedProof.packed])
+  simp only [CircuitType.toList_valueToFields_ofEquiv, UnfVal.ofWrap, AllocUnfinalized.equivProd,
+    Type2.equivVal, SplitField.equivProd, Equiv.coe_fn_mk, CircuitType.valueToFields_prod,
+    CircuitType.valueToFields_vector, Vector.toList_append, h1, h2, e1, e2, e3, e4, e5, e6,
+    mapVec_eq_map, Vector.map_map, Function.comp_def]
+  rw [toList_flatten_singletons]
+  simp [UnfinalizedProof.packed, PackedScalar.reduced, PackedScalar.cell]
+
+/-- **The tie's statement is the wire's public input.** Flattened, `StmtVal.ofWrap` is the public
+input `wrapPublicInput` commits to, when the ladders bound every packed cell
+(`wrapMain_statement`) and the key has a Lagrange point per packed scalar. -/
+theorem StmtVal.ofWrap_toFields {ks n nc : ℕ} (E : Env IpaVesta.curve nc) (Vs : Valuation Fq)
+    (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+    (hbnd : ∀ x ∈ st.packed, x.Bound Vs)
+    (hlen : st.packed.length ≤ E.cvk.lagrangeBasis.size) :
+    (CircuitType.valueToFields (F := Fp) (var := StmtVar ks n) (StmtVal.ofWrap Vs st)).toList
+      = (wrapPublicInput E Vs st).toList := by
+  rw [wrapPublicInput_toList E Vs st hlen]
+  have h1 : ∀ x : Fp, CircuitType.valueToFields (F := Fp) (var := FVar Fp) x = #v[x] :=
+    fun _ => rfl
+  simp only [StmtVal.ofWrap, CircuitType.valueToFields_prod, CircuitType.valueToFields_vector,
+    Vector.toList_append, StepStatement.packed, List.map_append, h1, mapVec_eq_map,
+    Vector.map_map, Function.comp_def]
+  rw [toList_flatten_singletons st.messagesForNextWrapProof
+    fun x => PackedScalar.reduced IpaVesta.curve Vs (.full x)]
+  -- each slot's values, flattened, are its packed scalars reduced
+  have hs : (st.proofState.unfinalizedProofs.map fun u => CircuitType.valueToFields (F := Fp)
+        (var := UnfVar ks) (UnfVal.ofWrap Vs u)).flatten.toList
+      = (st.proofState.unfinalizedProofs.toList.flatMap UnfinalizedProof.packed).map
+        (PackedScalar.reduced IpaVesta.curve Vs) := by
+    simp only [toList_flatten', Vector.toList_map, List.map_map, Function.comp_def, List.flatMap,
+      List.map_flatten]
+    refine congrArg List.flatten (List.map_congr_left fun u hu =>
+      UnfVal.ofWrap_toFields u fun x hx => hbnd x ?_)
+    simp only [StepStatement.packed, List.mem_append, List.mem_flatMap]
+    exact Or.inl (Or.inl ⟨u, hu, hx⟩)
+  rw [hs]
+  simp
 
 open Snarky.Kimchi in
 /-- One slot across the tie: its cells, read, are the wrap statement's slot reduced, and the wrap
@@ -406,8 +471,8 @@ theorem stepWrap_kimchiVerify
     (σStep : SRS IpaVesta.curve.Point)
     -- the tag's step keys, one per branch
     (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
-    -- each is a key over the step SRS
-    (hkeys : ∀ i : Fin branches, Env.Invariants σStep stepKeys[i])
+    -- their commitments have at least one chunk
+    (hnc : 0 < ncStep)
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots, front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the padding challenges
@@ -534,7 +599,6 @@ theorem stepWrap_kimchiVerify
           hw hbr) _
       hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
-  have hnc : 0 < ncStep := (stepEnvAt σStep stepKeys hkeys ⟨0, Nat.pos_of_neZero branches⟩).nc_pos
   obtain ⟨hsplitsEq, hsr, hbnd, hslots⟩ := (builder_spec_iff _ _).mp
     (wrapMain_statement (FopParams.ofEnv E Linearization.fqTokens) Vs widths
       (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins

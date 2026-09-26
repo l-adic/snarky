@@ -11,14 +11,12 @@
 Pickles.stepProof_kimchiVerify_vesta
 Pickles.wrapProof_kimchiVerify_pallas
 Pickles.stepWrap_kimchiVerify
-
--- The bridge from `stepWrap_kimchiVerify`'s public-input tie to the public input
--- `kimchiVerify` reads: the wrap public input is the packed statement, reduced.
-Pickles.wrapPublicInput_toList
 Pickles.wrapStep_kimchiVerify
 
--- The wrap circuit's packed statement is the wire's public input: the anchor for the
--- capstone's typed public-input tie.
+-- The capstones' typed public-input ties are the wire's public input: the step circuit's
+-- statement values flatten to what `wrapPublicInput` commits to, and the wrap circuit's packed
+-- statement to what `stepPublicInput` commits to.
+Pickles.StmtVal.ofWrap_toFields
 Pickles.WrapStatement.toPacked_toFields
 
 -- The linearization reflection: the certificate identifying the deployed token stream with

@@ -97,6 +97,7 @@ def roots : List Name :=
     `Pickles.wrapProof_kimchiVerify_pallas,
     `Pickles.stepWrap_kimchiVerify,
     `Pickles.wrapStep_kimchiVerify,
+    `Pickles.StmtVal.ofWrap_toFields,
     `Pickles.WrapStatement.toPacked_toFields ]
 
 /-- The standard logical axioms, permitted everywhere. -/
@@ -121,6 +122,7 @@ def deployedRoots : List Name :=
     `Pickles.wrapProof_kimchiVerify_pallas,
     `Pickles.stepWrap_kimchiVerify,
     `Pickles.wrapStep_kimchiVerify,
+    `Pickles.StmtVal.ofWrap_toFields,
     `Pickles.WrapStatement.toPacked_toFields ]
 
 /-- A trusted `native_decide` certificate: one defined in an upstream CompElliptic module,

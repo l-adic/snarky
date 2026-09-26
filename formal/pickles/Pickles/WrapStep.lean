@@ -363,12 +363,12 @@ private theorem wrapStep_kimchiVerify_core
     hcc hf hsg
 
 /-- **The wrap circuit's step proof verifies.** Let `Vw` satisfy the wrap circuit built from the
-tag's step keys `stepKeys` over the step SRS `σStep`, with its branch index reading as branch
-`b` whose table is key `b`'s Lagrange basis, and let `Vs` satisfy the next step circuit,
-compiled with finalize constants `P` and candidate `domains` that fit key `b`. For every
-must-verify slot whose wrap proof was made at the wrap circuit's public input, the wrap
-circuit's cells hold a step proof; the slot's finalize cells hold its evaluations and old
-challenges, and `kimchiVerify` accepts it under the guards and `SgOk`. -/
+tag's step keys `stepKeys` and the step SRS `σStep`, with its branch index reading as branch
+`b`, whose key is over `σStep` and whose table is that key's Lagrange basis, and let `Vs`
+satisfy the next step circuit, compiled with finalize constants `P` and candidate `domains`
+that fit key `b`. For every must-verify slot whose wrap proof was made at the wrap circuit's
+public input, the wrap circuit's cells hold a step proof; the slot's finalize cells hold its
+evaluations and old challenges, and `kimchiVerify` accepts it under the guards and `SgOk`. -/
 theorem wrapStep_kimchiVerify
     -- the next rule's `n` slots; the tag's `w`, the wrap circuit's slots; the wrap circuit's
     -- `branches`, the step proof it verifies at `ncStep` chunks
@@ -387,10 +387,10 @@ theorem wrapStep_kimchiVerify
     (hσk : σStep.k = StepIPARounds)
     -- the tag's step keys, one per branch
     (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
-    -- each is a key over the step SRS
-    (hkeys : ∀ i : Fin branches, Env.Invariants σStep stepKeys[i])
     -- the branch the wrap circuit takes
     (b : Fin branches)
+    -- its key is a key over the step SRS
+    (hkey : Env.Invariants σStep stepKeys[b])
     -- the wrap circuit's valuation
     (Vw : Valuation Fq)
     -- the tag's branches' slot counts
@@ -427,16 +427,16 @@ theorem wrapStep_kimchiVerify
     -- key `b`'s points are finite
     (hnz : ∀ P ∈ stepKeys[b].comms.indexPoints, P ≠ 0)
     -- the step SRS avoids key `b`'s Lagrange relations
-    (havoidS : σStep.Avoids (stepEnvAt σStep stepKeys hkeys b).lagrangeRelations)
+    (havoidS : σStep.Avoids (Env.ofInvariants σStep stepKeys[b] hkey).lagrangeRelations)
     -- the next step circuit's finalize constants
     (P : FopParams Fp)
     -- the step domains the next step circuit's finalize dispatches over
     (domains : List (KnownDomain Fp))
     -- they are key `b`'s finalize constants
-    (hP : FopParams.ofEnv (stepEnvAt σStep stepKeys hkeys b) Linearization.fpTokens = P)
+    (hP : FopParams.ofEnv (Env.ofInvariants σStep stepKeys[b] hkey) Linearization.fpTokens = P)
     -- key `b`'s candidate domains: distinct, each holding its zero-knowledge rows, its own
     -- among them
-    (D : KnownDomains (stepEnvAt σStep stepKeys hkeys b))
+    (D : KnownDomains (Env.ofInvariants σStep stepKeys[b] hkey))
     -- they are the next step circuit's
     (hD : D.list = domains)
     -- the next rule verifies at most the tag's `w` slots
@@ -520,7 +520,7 @@ theorem wrapStep_kimchiVerify
         ∃ (cp : KimchiProof IpaVesta.curve ncStep σStep.k)
           (oldsW : List (IpaVesta.curve.Point × Bool)),
           -- the step proof's public input: the wrap circuit's packed step statement
-          let pub := wrapPublicInput (stepEnvAt σStep stepKeys hkeys b) Vw hd.2.statement
+          let pub := wrapPublicInput (Env.ofInvariants σStep stepKeys[b] hkey) Vw hd.2.statement
           -- the wrap circuit's cells hold `cp`, with keep bits `oldsW`
           ProofReads (wrapSide Vw)
             hd.2.cells.wComm
@@ -530,17 +530,17 @@ theorem wrapStep_kimchiVerify
             cp ∧
           OldsRead Vw hd.2.cells.sgOld cp oldsW ∧
           -- the next step circuit's finalize cells hold `cp`'s evaluations and old challenges
-          FopTies (stepEnvAt σStep stepKeys hkeys b) cp pub (inp.finalizedHalf Vs) ∧
+          FopTies (Env.ofInvariants σStep stepKeys[b] hkey) cp pub (inp.finalizedHalf Vs) ∧
           -- of `cp` itself: the guards and the deferred `sg` equation
           (Guards IpaVesta.curve stepKeys[b] cp pub →
             SgOk σStep stepKeys[b] cp pub →
             kimchiVerify IpaVesta.curve σStep stepKeys[b] cp pub = true) := by
   subst hP hD
   -- branch `b`'s environment: its key over the step SRS
-  let Eb := stepEnvAt σStep stepKeys hkeys b
+  let Eb := Env.ofInvariants σStep stepKeys[b] hkey
   -- branch `b`'s domain exponent is its key's
   have hlog : (stepDomainLog2s stepKeys)[b] = Eb.cvk.domainLog2 := by
-    simp [Eb, stepDomainLog2s, stepEnvAt, Env.ofInvariants]
+    simp [Eb, stepDomainLog2s, Env.ofInvariants]
   -- branch `b`'s table is its key's Lagrange points: both are the SRS's over the key's domain
   have hlag : srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))
       (stepDomainLog2s stepKeys)[b]
@@ -553,7 +553,7 @@ theorem wrapStep_kimchiVerify
   exact wrapStep_kimchiVerify_core E Eb Vw widths
     (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
     (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-    slotWidths advW hbr hwrap b (by simp [Eb, stepKeyCells, stepEnvAt, Env.ofInvariants]) hlag
+    slotWidths advW hbr hwrap b (by simp [Eb, stepKeyCells, Env.ofInvariants]) hlag
     rfl hsize hnz havoidS D hlog hn hw dummySg dummyUnf
     (fun _ _ => (WrapStatement.packed_length _).trans_le
       (show 14 + σStep.k ≤ 2 ^ E.σ.k by rw [hσk, hE]; norm_num [StepIPARounds, WrapIPARounds]))
