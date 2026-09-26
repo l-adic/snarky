@@ -253,7 +253,7 @@ old challenge stacks, evaluations and wrap domain indices. -/
 def wrapMainFinalize {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
-    (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : List Fq)
+    (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : Vector Fq k)
     (slotWidths : Vector ℕ mpv) (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
     (branchData : FVar Fq) : CircuitM Fq c (WrapMainFinalizeOut branches mpv ncStep k) := do
   let whichBranch ← witness (val := Fq) adv.whichBranch
@@ -273,7 +273,7 @@ def wrapMainFinalize {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : Fop
     (List.range slotWidths[j]).map fun e =>
       Vector.ofFn fun r => oldChals.toList.getD (k * (off + e) + r.val) (.const 0)
   let padded (j : Fin mpv) : Vector (Vector (FVar Fq) k) MaxProofsVerified :=
-    let stack := List.replicate (MaxProofsVerified - slotWidths[j]) (dummy.map CVar.const)
+    let stack := List.replicate (MaxProofsVerified - slotWidths[j]) (dummy.toList.map CVar.const)
       ++ (real j).map Vector.toList
     Vector.ofFn fun a => Vector.ofFn fun r => (stack.getD a.val []).getD r.val (.const 0)
   let slots : Vector (WrapFinalizeSlot branches k 1 Fq) mpv :=
@@ -305,7 +305,7 @@ accumulator digests right to left, the step-side digest's equality, the opening 
 and the claim split. -/
 def wrapMainVerify {branches mpv ncStep k ks : ℕ} (log2s : Vector ℕ branches)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
     (hd : WrapMainFinalizeOut branches mpv ncStep k) :
@@ -356,7 +356,7 @@ def wrapMain {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams F
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) :
     CircuitM Fq c
@@ -372,7 +372,7 @@ def wrapMainCircuit {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopP
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) :
     CircuitM Fq c Unit := do
@@ -838,7 +838,7 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
     (Vs : Valuation Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
-    (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : List Fq)
+    (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : Vector Fq E.σ.k)
     (slotWidths : Vector ℕ mpv) (adv : WrapMainAdvice mpv ncStep E.σ.k ks slotWidths.toList.sum)
     (branchData : FVar Fq)
     (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD) :
@@ -902,7 +902,7 @@ split claims, each split reading as the allocated claims it splits, and the publ
 ladders bound every packed scalar (`PackedScalar.Bound`). -/
 theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} (Vs : Valuation Fq)
     (log2s : Vector ℕ branches) (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep))
-    (h : IpaVesta.curve.Point) (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (h : IpaVesta.curve.Point) (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
     (fin : WrapMainFinalizeOut branches mpv ncStep k) (hnc : 0 < ncStep) :
@@ -958,7 +958,7 @@ packed statement. -/
 theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
     (EsStep : Env IpaVesta.curve ncStep) (Vs : Valuation Fq) (log2s : Vector ℕ branches)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep k EsStep.σ.k slotWidths.toList.sum)
     (stmt : StatementPacked EsStep.σ.k (Type1 (FVar Fq)) (FVar Fq))
     (fin : WrapMainFinalizeOut branches mpv ncStep k)
@@ -1141,7 +1141,7 @@ theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (dummy : Vector Fq E.σ.k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep E.σ.k ks slotWidths.toList.sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
     (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD) :
@@ -1174,7 +1174,7 @@ theorem wrapMainFinalize_slots {branches mpv ncStep k ks : ℕ} [NeZero branches
     (Vs : Valuation Fq) (P : FopParams Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
-    (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : List Fq)
+    (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : Vector Fq k)
     (slotWidths : Vector ℕ mpv) (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
     (branchData : FVar Fq) :
     ⦃⌜True⌝⦄
@@ -1202,7 +1202,7 @@ theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) (hnc : 0 < ncStep) :
     ⦃⌜True⌝⦄
@@ -1234,7 +1234,7 @@ theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : List Fq) (slotWidths : Vector ℕ mpv)
+    (dummy : Vector Fq E.σ.k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep E.σ.k EsStep.σ.k slotWidths.toList.sum)
     (stmt : StatementPacked EsStep.σ.k (Type1 (FVar Fq)) (FVar Fq))
     (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD)

@@ -46,16 +46,18 @@ def hashMessagesForNextWrapProof (p : Poseidon.Params F) (sv : SpongeVar F)
 /-- The sponge after absorbing `pad` copies of the dummy challenge vector `dummy`, as constant
 cells: a slot with `pad` padding entries starts its accumulator digest here, so the padding
 emits no rows. -/
-def wrapPaddingSponge (p : Poseidon.Params F) (dummy : List F) (pad : ℕ) : SpongeVar F :=
-  SpongeVar.ofConstants (Poseidon.absorb p Poseidon.init (List.replicate pad dummy).flatten)
+def wrapPaddingSponge {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (pad : ℕ) :
+    SpongeVar F :=
+  SpongeVar.ofConstants
+    (Poseidon.absorb p Poseidon.init (List.replicate pad dummy.toList).flatten)
 
 /-- The wire's messages-for-next-wrap-proof digest: an accumulator's `sg` and its old bulletproof
 challenges, front-padded with `dummy` to `MaxProofsVerified`, absorbed from the fresh sponge and
 squeezed. -/
-def wrapMsgDigest {k : ℕ} (p : Poseidon.Params F) (dummy : List F) (sg : AffinePoint F)
+def wrapMsgDigest {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (sg : AffinePoint F)
     (chals : List (Vector F k)) : F :=
   (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
-    ((List.replicate (MaxProofsVerified - chals.length) dummy).flatten
+    ((List.replicate (MaxProofsVerified - chals.length) dummy.toList).flatten
       ++ (chals.map Vector.toList).flatten ++ [sg.x, sg.y]))).1
 
 /-- The sponge after the key: its commitments absorbed chunk by chunk, `x` then `y`, in the
@@ -132,7 +134,7 @@ theorem hashMessagesForNextWrapProof_spec (p : Poseidon.Params F)
 of cells reading as an accumulator `sg` and its challenges `chals` is the wire's
 messages-for-next-wrap-proof digest of them (`wrapMsgDigest`). -/
 theorem hashMessagesForNextWrapProof_padded {k : ℕ} (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (dummy : List F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (dummy : Vector F k)
     (chals : List (Vector (FVar F) k)) (sg : AffinePoint (FVar F)) :
     ⦃⌜True⌝⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p
       (wrapPaddingSponge p dummy (MaxProofsVerified - chals.length)) (chals.map Vector.toList) sg

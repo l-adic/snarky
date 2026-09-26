@@ -294,7 +294,7 @@ theorem stepWrap_kimchiVerify
     -- the Lagrange bases at a step domain, the padding challenges and each slot's
     -- challenge-stack height: constants of the wrap circuit
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep))
-    (dummy : List Fq) (slotWidths : Vector ℕ w)
+    (dummy : Vector Fq E.σ.k) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k ks slotWidths.toList.sum)
     -- fewer branches than the field's characteristic
@@ -334,7 +334,7 @@ theorem stepWrap_kimchiVerify
       -- the active branch compiled its wrap slot for the key's domain
       sl.pins[b] = some j →
       ∀ (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
-        (ms : List Bool),
+        (ms : Vector Bool w),
         -- the slot's public input: its statement, carrying the step-message digest
         let pub := inp.publicInputAt E Vg ms
         -- its cells hold `cp`, with masks `ms`

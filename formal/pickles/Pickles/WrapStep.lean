@@ -138,7 +138,7 @@ private theorem wrapStep_kimchiVerify_core
     -- the Lagrange bases at a step domain, the blinding base, the padding challenges and each
     -- slot's challenge-stack height: constants of the wrap circuit
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : List Fq) (slotWidths : Vector ℕ w)
+    (dummy : Vector Fq E.σ.k) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k EsStep.σ.k slotWidths.toList.sum)
     -- fewer branches than the field's characteristic
@@ -199,7 +199,7 @@ private theorem wrapStep_kimchiVerify_core
     -- slot `i` must verify
     ∀ i : Fin n, CircuitType.Reads Vs r.prevs[i].mustVerify true →
       let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
-      ∀ ms : List Bool, List.Forall₂ (CircuitType.Reads Vs) inp.proofMask.toList ms →
+      ∀ ms : Vector Bool w, CircuitType.Reads Vs inp.proofMask ms →
       -- its wrap proof was made at the wrap circuit's public input
       CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
       ∀ (cp : KimchiProof IpaVesta.curve ncStep EsStep.σ.k)
@@ -295,7 +295,7 @@ theorem wrapStep_kimchiVerify
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the padding challenges and each slot's challenge-stack height: constants of the wrap
     -- circuit
-    (dummy : List Fq) (slotWidths : Vector ℕ w)
+    (dummy : Vector Fq E.σ.k) (slotWidths : Vector ℕ w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep E.σ.k stepEnvs[b].σ.k slotWidths.toList.sum)
     -- fewer branches than the field's characteristic
@@ -354,7 +354,7 @@ theorem wrapStep_kimchiVerify
     -- slot `i` must verify
     ∀ i : Fin n, CircuitType.Reads Vs r.prevs[i].mustVerify true →
       let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
-      ∀ ms : List Bool, List.Forall₂ (CircuitType.Reads Vs) inp.proofMask.toList ms →
+      ∀ ms : Vector Bool w, CircuitType.Reads Vs inp.proofMask ms →
       -- its wrap proof was made at the wrap circuit's public input
       CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
       ∀ (cp : KimchiProof IpaVesta.curve ncStep stepEnvs[b].σ.k)

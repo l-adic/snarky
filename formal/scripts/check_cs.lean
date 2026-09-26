@@ -961,7 +961,7 @@ structure WrapMainConsts (nc : ℕ) where
   /-- Each slot's challenge-stack height. -/
   slotWidths : List ℕ
   /-- The padding challenge vector. -/
-  dummy : List Fq
+  dummy : Vector Fq 15
 
 /-- `<name>_constants.json`, parsed at `nc` step chunks. -/
 def wrapMainConsts (nc : ℕ) (path : System.FilePath) : IO (WrapMainConsts nc) := do
@@ -995,8 +995,9 @@ def wrapMainConsts (nc : ℕ) (path : System.FilePath) : IO (WrapMainConsts nc) 
           (fun j => do pure (← FixtureKit.parseArrOf (fun j => j.getInt?) j).toList)
           (← j.getObjVal? "pins")).toList
         slotWidths := ← nats "slotWidths"
-        dummy := (← FixtureKit.parseArrOf FixtureKit.parseZMod
-          (← j.getObjVal? "dummyWrapExpanded")).toList }
+        dummy := ← do
+          let d ← FixtureKit.parseArrOf FixtureKit.parseZMod (← j.getObjVal? "dummyWrapExpanded")
+          if h : d.size = 15 then pure ⟨d, h⟩ else throw s!"dummy: {d.size} challenges" }
   match parsed with
   | .ok r => return r
   | .error e => throw (IO.userError s!"{path}: {e}")
