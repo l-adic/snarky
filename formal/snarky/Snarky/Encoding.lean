@@ -263,6 +263,12 @@ theorem CircuitType.varToFields_ofEquiv {inst : CircuitType F a va} (ev : b ≃ 
     @CircuitType.varToFields F b vb (@CircuitType.ofEquiv F a va b vb inst ev ew) v
       = @CircuitType.varToFields F a va inst (ew v) := rfl
 
+/-- A value through an isomorphism encodes as its image. -/
+theorem CircuitType.valueToFields_ofEquiv {inst : CircuitType F a va} (ev : b ≃ a)
+    (ew : vb ≃ va) (x : b) :
+    @CircuitType.valueToFields F b vb (@CircuitType.ofEquiv F a va b vb inst ev ew) x
+      = @CircuitType.valueToFields F a va inst (ev x) := rfl
+
 end Equiv
 
 end Snarky
