@@ -264,7 +264,7 @@ the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
 def runGroup {ks kw : ℕ} (cvk : Kimchi.Verifier.KimchiVK CW 1) (basis : Array CW.Point)
     (h : CW.Point) (inp : Pickles.StepGroup ks kw 1 Fp Bool) : IO (Bool × List (String × ℕ)) :=
   runHalf (a := Pickles.StepGroup ks kw 1 Fp Bool) Kimchi.Fixture.PS.fpSide
-    (groupStepOn (keyCellsOf xhatStepCell cvk) basis h) (fun b => [("success", b)]) inp
+    (groupStepOn (Pickles.keyCellsOf xhatStepCell cvk) basis h) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group half on its records: the step key's commitments as constants,
 the Lagrange bases, the SRS's blinding base. -/
@@ -273,7 +273,8 @@ def runGroupWrap {ks kw n nc : ℕ} (cvk : Kimchi.Verifier.KimchiVK CS nc)
     (inp : Pickles.WrapGroup ks kw n nc Fq Bool) :
     IO (Bool × List (String × ℕ)) :=
   runHalf (a := Pickles.WrapGroup ks kw n nc Fq Bool) Kimchi.Fixture.PS.fqSide
-    (groupWrapOn (keyCellsOf xhatWrapCell cvk) basis (xhatWrapCell h)) (fun b => [("success", b)])
+    (groupWrapOn (Pickles.keyCellsOf xhatWrapCell cvk) basis (xhatWrapCell h))
+    (fun b => [("success", b)])
     inp
 
 /-- The wrap circuit's group-half input from a wrap entry, the step entry it wrapped and the
@@ -502,10 +503,9 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
   let cvk := E.cvk
   let cp ← checkedFor CS "vesta" E s
   do
-    let cands := (steps.toList.map fun t =>
-      (⟨t.vk.domainLog2, t.vk.omega⟩ : Pickles.KnownDomain Fp)).eraseDups
-    let some doms := Pickles.KnownDomains.ofList? E cands s.vk.domainLog2
-      | IO.println s!"    ✗ the file's step domains {cands.map (·.log2)} are no KnownDomains \
+    let cands := (steps.toList.map (·.vk.domainLog2)).eraseDups
+    let some doms := Pickles.KnownDomains.ofList? E cands
+      | IO.println s!"    ✗ the file's step domains {cands} are no KnownDomains \
           at this key (2^{s.vk.domainLog2})"
         return false
     let n := (s.publicInput.size - 1) / (18 + Pickles.WrapIPARounds)
@@ -514,7 +514,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let st ← match stepStatementOf toWrap Pickles.WrapIPARounds n s.publicInput with
       | .error e => throw (IO.userError s!"step statement: {e}") | .ok r => pure r
     let dv := wst.proofState.deferredValues
-    let hdom := decide (dv.branchData.domainLog2 = (doms.keyLog2 : Fq))
+    let hdom := decide (dv.branchData.domainLog2 = (s.vk.domainLog2 : Fq))
     -- the statement as constant cells: every reading below is the value's own
     let stVar : Pickles.StepStatement Pickles.WrapIPARounds n (FVar Fq) (BoolVar Fq)
         (Type2 (SplitField (FVar Fq) (BoolVar Fq))) := CircuitType.constVar (F := Fq) st
@@ -539,8 +539,8 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     -- `havoid`, the theorem's own hypothesis, decided on the key's Lagrange points
     let avoidOk := @decide (E.σ.Avoids E.lagrangeRelations)
       (E.decidableAvoids Pickles.pastaShapeVesta)
-    IO.println s!"    env=true rounds={σ.k} domains={cands.map (·.log2)} \
-      key=2^{doms.keyLog2} hdom={hdom} \
+    IO.println s!"    env=true rounds={σ.k} domains={cands} \
+      key=2^{s.vk.domainLog2} hdom={hdom} \
       pub={pubOk} ({pub.size} cells) avoids={avoidOk} msgDigest={msgOk} \
       guards={guards} \
       sgOk={sg'} kimchiVerify={kv}"
@@ -570,7 +570,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let (satG, _) ← runHalf (a := Pickles.StepProof.GroupIn σ.k Pickles.WrapIPARounds n nc)
       Kimchi.Fixture.PS.fqSide
       (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n nc) => do
-        let key := keyCellsOf xhatWrapCell E.cvk
+        let key := Pickles.keyCellsOf xhatWrapCell E.cvk
         let sv ← wrapIndexSponge key
         Pickles.StepProof.groupCircuit E key sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
@@ -637,7 +637,7 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   let (satG, _) ← runHalf (a := Pickles.WrapProof.GroupIn Pickles.StepIPARounds σ.k 1)
     Kimchi.Fixture.PS.fpSide
     (fun (v : Pickles.WrapProof.GroupVar Pickles.StepIPARounds σ.k 1) => do
-      let key := keyCellsOf xhatStepCell E.cvk
+      let key := Pickles.keyCellsOf xhatStepCell E.cvk
       let sv ← stepIndexSponge key
       Pickles.WrapProof.groupCircuit E key sv v)
     (fun _ => []) ⟨ginp⟩
