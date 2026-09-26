@@ -22,8 +22,10 @@ the rule marks must-verify hold a wrap proof that `kimchiVerify` accepts.
 ## Implementation notes
 
 The wrap circuit has one slot per proof the tag verifies, `w`, front-padded: step slot `i` is
-wrap slot `i + (w − n)`. The wrap proofs are at one chunk, the chunk count the wrap circuit
-allocates their evaluations at. The step circuit sets `shouldFinalize` on every
+wrap slot `i + (w − n)`. Every slot's wrap proof carries `w` accumulators (`SlotVar`), so the
+wrap circuit is compiled with a challenge stack `w` high at every slot, and both circuits pad
+the accumulators to `MaxProofsVerified` alike. The wrap proofs are at one chunk, the chunk count
+the wrap circuit allocates their evaluations at. The step circuit sets `shouldFinalize` on every
 must-verify slot, and the tie carries that bit to the finalize block, where it forces the slot
 to finalize.
 
@@ -410,10 +412,8 @@ theorem stepWrap_kimchiVerify
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the padding challenges
     (dummy : Vector Fq E.σ.k)
-    -- each slot's challenge-stack height
-    (slotWidths : Vector ℕ w)
-    -- the wrap circuit's advice
-    (advW : WrapMainAdvice w ncStep E.σ.k StepIPARounds slotWidths.toList.sum)
+    -- the wrap circuit's advice, every slot's challenge stack `w` high
+    (advW : WrapMainAdvice w ncStep E.σ.k StepIPARounds (Vector.replicate w w).toList.sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vs` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
@@ -430,7 +430,7 @@ theorem stepWrap_kimchiVerify
               (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w)))
               σStep.h
               dummy
-              slotWidths
+              (Vector.replicate w w)
               advW)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the active branch
@@ -464,7 +464,7 @@ theorem stepWrap_kimchiVerify
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w)))
           σStep.h
           dummy
-          slotWidths
+          (Vector.replicate w w)
           advW
           (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
         (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
@@ -517,7 +517,8 @@ theorem stepWrap_kimchiVerify
       (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepKeys)
           (stepKeyCells stepKeys) pins
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-      slotWidths advW (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
+      (Vector.replicate w w) advW
+      (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
         (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
       ).constraints, ConstraintHolds.Holds Vs con := fun con hc =>
@@ -528,7 +529,8 @@ theorem stepWrap_kimchiVerify
     (wrapMain_reads E Vs widths (stepDomainLog2s stepKeys)
           (stepKeyCells stepKeys) pins
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-          slotWidths advW (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
+          (Vector.replicate w w) advW
+          (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
           hw hbr) _
       hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
@@ -537,7 +539,8 @@ theorem stepWrap_kimchiVerify
     (wrapMain_statement (FopParams.ofEnv E Linearization.fqTokens) Vs widths
       (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
       (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-      slotWidths advW (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hnc) _
+      (Vector.replicate w w) advW
+      (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hnc) _
       hbody
   have hout := (builder_spec_iff _ _).mp
     (stepMain_out hw (verifyProofAt E) P domains
