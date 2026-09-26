@@ -198,6 +198,13 @@ theorem ivpInputOf_lengths {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FV
   simp [ivpInputOf, List.length_flatten, List.map_map, Function.comp_def]
   omega
 
+/-- A key's commitments as cells, each point through `cell`. -/
+def keyCellsOf {C : KimchiCurve} {F : Type} {nc : ℕ} (cell : C.Point → AffinePoint (FVar F))
+    (cvk : KimchiVK C nc) : VkComms nc (AffinePoint (FVar F)) :=
+  ⟨cvk.sigmaComm.map (·.map cell), cvk.coefficientsComm.map (·.map cell),
+   cvk.genericComm.map cell, cvk.poseidonComm.map cell, cvk.completeAddComm.map cell,
+   cvk.mulComm.map cell, cvk.emulComm.map cell, cvk.endomulScalarComm.map cell⟩
+
 /-- The circuit's key cells read as the key (`KeyReads`), and the sponge after the index
 digest squeezes to the key's digest. -/
 structure VkReads {C : KimchiCurve} {nc : ℕ} (cvk : KimchiVK C nc) (V : Valuation C.BaseField)

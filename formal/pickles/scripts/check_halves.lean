@@ -264,7 +264,7 @@ the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
 def runGroup {ks kw : ℕ} (cvk : Kimchi.Verifier.KimchiVK CW 1) (basis : Array CW.Point)
     (h : CW.Point) (inp : Pickles.StepGroup ks kw 1 Fp Bool) : IO (Bool × List (String × ℕ)) :=
   runHalf (a := Pickles.StepGroup ks kw 1 Fp Bool) Kimchi.Fixture.PS.fpSide
-    (groupStepOn (keyCellsOf xhatStepCell cvk) basis h) (fun b => [("success", b)]) inp
+    (groupStepOn (Pickles.keyCellsOf xhatStepCell cvk) basis h) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group half on its records: the step key's commitments as constants,
 the Lagrange bases, the SRS's blinding base. -/
@@ -273,7 +273,8 @@ def runGroupWrap {ks kw n nc : ℕ} (cvk : Kimchi.Verifier.KimchiVK CS nc)
     (inp : Pickles.WrapGroup ks kw n nc Fq Bool) :
     IO (Bool × List (String × ℕ)) :=
   runHalf (a := Pickles.WrapGroup ks kw n nc Fq Bool) Kimchi.Fixture.PS.fqSide
-    (groupWrapOn (keyCellsOf xhatWrapCell cvk) basis (xhatWrapCell h)) (fun b => [("success", b)])
+    (groupWrapOn (Pickles.keyCellsOf xhatWrapCell cvk) basis (xhatWrapCell h))
+    (fun b => [("success", b)])
     inp
 
 /-- The wrap circuit's group-half input from a wrap entry, the step entry it wrapped and the
@@ -570,7 +571,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let (satG, _) ← runHalf (a := Pickles.StepProof.GroupIn σ.k Pickles.WrapIPARounds n nc)
       Kimchi.Fixture.PS.fqSide
       (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n nc) => do
-        let key := keyCellsOf xhatWrapCell E.cvk
+        let key := Pickles.keyCellsOf xhatWrapCell E.cvk
         let sv ← wrapIndexSponge key
         Pickles.StepProof.groupCircuit E key sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
@@ -637,7 +638,7 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   let (satG, _) ← runHalf (a := Pickles.WrapProof.GroupIn Pickles.StepIPARounds σ.k 1)
     Kimchi.Fixture.PS.fpSide
     (fun (v : Pickles.WrapProof.GroupVar Pickles.StepIPARounds σ.k 1) => do
-      let key := keyCellsOf xhatStepCell E.cvk
+      let key := Pickles.keyCellsOf xhatStepCell E.cvk
       let sv ← stepIndexSponge key
       Pickles.WrapProof.groupCircuit E key sv v)
     (fun _ => []) ⟨ginp⟩
