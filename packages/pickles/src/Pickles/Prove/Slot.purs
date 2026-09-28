@@ -51,6 +51,9 @@ type CompiledTagData =
   -- | The imported system's compile-time `num_chunks`. `zk_rows`
   -- | follows from it.
   , numChunks :: Int
+  -- | The imported system's `max_proofs_verified`: the width of every
+  -- | slot that verifies its proofs.
+  , maxProofsVerified :: Int
   }
 
 -- | Where a compiled slot's wrap verification key comes from, chosen
