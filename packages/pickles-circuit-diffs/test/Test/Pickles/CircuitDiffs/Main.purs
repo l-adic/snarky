@@ -69,7 +69,7 @@ import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSi
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2WithConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturnWithConstants)
-import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (compileStepMainTwoPhaseChainIncrement)
+import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (compileStepMainTwoPhaseChainIncrementWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero, compileStepMainTwoPhaseChainMakeZeroWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
@@ -1286,8 +1286,9 @@ spec bundle =
         -- FOP domain dispatch list's `[makeZero, increment]` head).
         exactMatchEff "step_main_two_phase_chain_increment_circuit" $ do
           makeZeroArt <- compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData
-          fromCompiledCircuit <<< _.stepCs =<<
-            compileStepMainTwoPhaseChainIncrement makeZeroArt twoPhaseChainIncrementSrsData
+          stepWithConstants "step_main_two_phase_chain_increment_circuit"
+            =<< compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt
+              twoPhaseChainIncrementSrsData
         -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule
         -- has no prevs but the multi-branch wrap is mpv=N1, so the
         -- step PI is 34 entries (mpvPad=1 → 1 front-padded dummy slot).

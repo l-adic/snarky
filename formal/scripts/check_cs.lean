@@ -1405,6 +1405,14 @@ def makeZeroRule (x : FVar Fp) :
   makeZeroAppCircuit x
   pure (#v[], [])
 
+/-- The rule of `two_phase_chain`'s `increment` branch: `self = prev + 1`, its one slot this
+system's previous proof, which must verify. -/
+def incrementRule (x : FVar Fp) :
+    CircuitM Fp C (Vector Pickles.PrevStatement 1 × List (FVar Fp)) := do
+  let prev ← witness (val := Fp) (AsProver.throw "advice")
+  assertEqual x (CVar.add_ (.const 1) prev)
+  pure (#v[⟨[prev], true_⟩], [])
+
 /-- The rule of `tree_proof_return`: slot 0 a No_recursion_return proof, which always verifies,
 slot 1 this system's previous proof, which verifies unless it is the base case; `self` is `0`
 in the base case, `1 + prev` otherwise. -/
@@ -1914,6 +1922,7 @@ def main : IO Unit := do
     optionalExport filter (dir / s!"{name}_constants.json") (stepMainConsts n w)
   let chainN2 ← stepConsts "step_main_simple_chain_n2_circuit" 2 2
   let makeZero ← stepConsts "step_main_two_phase_chain_make_zero_circuit" 0 1
+  let increment ← stepConsts "step_main_two_phase_chain_increment_circuit" 1 1
   let treeReturn ← stepConsts "step_main_tree_proof_return_circuit" 2 2
   let stepMains :=
     (chainN2.toList.map fun k => ("step_main_simple_chain_n2_circuit",
@@ -1922,6 +1931,9 @@ def main : IO Unit := do
     ++ (makeZero.toList.map fun k => ("step_main_two_phase_chain_make_zero_circuit",
       stepTarget (a := Unit) (b := Pickles.StmtVal 15 1)
         (stepMainDumpCircuit (inVal := Fp) 1 (by decide) k dummyUnfN0 makeZeroRule)))
+    ++ (increment.toList.map fun k => ("step_main_two_phase_chain_increment_circuit",
+      stepTarget (a := Unit) (b := Pickles.StmtVal 15 1)
+        (stepMainDumpCircuit (inVal := Fp) 1 (by decide) k dummyUnfN0 incrementRule)))
     ++ (treeReturn.toList.map fun k => ("step_main_tree_proof_return_circuit",
       stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
         (stepMainDumpCircuit (inVal := Unit) 2 (by decide) k dummyUnfN0 treeProofReturnRule)))
