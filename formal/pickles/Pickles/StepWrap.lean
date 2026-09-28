@@ -25,8 +25,8 @@ the rule marks must-verify hold a wrap proof that `kimchiVerify` accepts.
 
 The wrap circuit has one slot per proof the tag verifies, `w`, front-padded: step slot `i` is
 wrap slot `i + (w − n)`. A slot's wrap proof carries its source's width of accumulators
-(`SlotSource.width`), the wrap circuit is compiled with a challenge stack `w` high at every slot,
-and both circuits pad the accumulators to `MaxProofsVerified` alike. The wrap circuit finalizes
+(`SlotSource.width`), the wrap circuit is compiled with any challenge-stack height per slot, and
+both circuits pad the accumulators to `MaxProofsVerified` alike. The wrap circuit finalizes
 every slot with its own tag's constants, which are any key's over the same SRS
 (`FopParams.ofEnv_eq`). The wrap proofs are at one chunk, the chunk count
 the wrap circuit allocates their evaluations at. The step circuit sets `shouldFinalize` on every
@@ -479,8 +479,10 @@ theorem stepWrap_kimchiVerify
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the padding challenges
     (dummy : Vector Fq E.σ.k)
-    -- the wrap circuit's advice, every slot's challenge stack `w` high
-    (advW : WrapMainAdvice w ncStep E.σ.k StepIPARounds (Vector.replicate w w).toList.sum)
+    -- each wrap slot's challenge-stack height
+    (slotWidths : Vector ℕ w)
+    -- the wrap circuit's advice
+    (advW : WrapMainAdvice w ncStep E.σ.k StepIPARounds slotWidths.toList.sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- `Vs` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
@@ -497,7 +499,7 @@ theorem stepWrap_kimchiVerify
               (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w)))
               σStep.h
               dummy
-              (Vector.replicate w w)
+              slotWidths
               advW)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the active branch
@@ -528,7 +530,7 @@ theorem stepWrap_kimchiVerify
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w)))
           σStep.h
           dummy
-          (Vector.replicate w w)
+          slotWidths
           advW
           (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
         (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
@@ -592,7 +594,7 @@ theorem stepWrap_kimchiVerify
       (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepKeys)
           (stepKeyCells stepKeys) pins
           (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-      (Vector.replicate w w) advW
+      slotWidths advW
       (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
         (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
@@ -604,7 +606,7 @@ theorem stepWrap_kimchiVerify
   have hreads := wrapMain_reads Ei Vs widths (stepDomainLog2s stepKeys)
     (stepKeyCells stepKeys) pins
     (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-    (Vector.replicate w w) advW
+    slotWidths advW
     (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hw hbr
   rw [FopParams.ofEnv_eq Ei E rfl] at hreads
   obtain ⟨b', hb', hwb, -, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp hreads _ hbody
@@ -613,7 +615,7 @@ theorem stepWrap_kimchiVerify
     (wrapMain_statement (FopParams.ofEnv E Linearization.fqTokens) Vs widths
       (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
       (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal E.σ.k w))) σStep.h dummy
-      (Vector.replicate w w) advW
+      slotWidths advW
       (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hnc) _
       hbody
   have hout := (builder_spec_iff _ _).mp
