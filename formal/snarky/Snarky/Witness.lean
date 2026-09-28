@@ -255,6 +255,40 @@ variable {a va b vb : Type}
 
 end Equiv
 
+section FinFamily
+
+/-- A `Fin`-indexed family is checked entry by entry in index order: through `Fin.consEquiv`,
+entry `0`'s check, then the rest's. -/
+@[reducible] private def CheckedType.finFamily [Field F] [BasicSystem F c] [ConstraintHolds F c] :
+    (n : ℕ) → (β γ : Fin n → Type) → [∀ i, CircuitType F (β i) (γ i)] →
+      [∀ i, CheckedType F c (β i) (γ i)] →
+      @CheckedType F c ((i : Fin n) → β i) ((i : Fin n) → γ i) _ _ _
+        (CircuitType.finFamily n β γ)
+  | 0, _, _, _, _ => CheckedType.ofEquiv (Equiv.ofUnique _ Unit) (Equiv.ofUnique _ Unit)
+  | n + 1, β, γ, _, _ =>
+    letI := CircuitType.finFamily (F := F) n (fun i => β i.succ) (fun i => γ i.succ)
+    letI := CheckedType.finFamily n (fun i => β i.succ) (fun i => γ i.succ)
+    CheckedType.ofEquiv (Fin.consEquiv β).symm (Fin.consEquiv γ).symm
+
+instance instCheckedTypeFinFamily [Field F] [BasicSystem F c] [ConstraintHolds F c] {n : ℕ}
+    {β γ : Fin n → Type} [∀ i, CircuitType F (β i) (γ i)] [∀ i, CheckedType F c (β i) (γ i)] :
+    CheckedType F c ((i : Fin n) → β i) ((i : Fin n) → γ i) :=
+  CheckedType.finFamily n β γ
+
+/-- A family's check forces each entry's. -/
+theorem CheckedType.post_finFamily [Field F] [BasicSystem F c] [ConstraintHolds F c] :
+    ∀ {n : ℕ} {β γ : Fin n → Type} [∀ i, CircuitType F (β i) (γ i)]
+      [∀ i, CheckedType F c (β i) (γ i)] (V : Valuation F) (v : (i : Fin n) → γ i),
+      CheckedType.post (c := c) (val := (i : Fin n) → β i) V v ↔
+        ∀ i, CheckedType.post (c := c) (val := β i) V (v i)
+  | 0, _, _, _, _, _, _ => ⟨fun _ i => i.elim0, fun _ => trivial⟩
+  | n + 1, β, γ, _, _, V, v => by
+    rw [Fin.forall_fin_succ, ← CheckedType.post_finFamily (β := fun i => β i.succ)
+      (γ := fun i => γ i.succ) V fun i => v i.succ]
+    exact Iff.rfl
+
+end FinFamily
+
 end Instances
 
 /-! ## Admissibility, at the concrete types and the formers
