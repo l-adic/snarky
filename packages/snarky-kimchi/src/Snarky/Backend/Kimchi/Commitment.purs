@@ -13,6 +13,7 @@ import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Prelude ((<<<))
+import Simple.JSON (class WriteForeign)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.Types (class CircuitType, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Type.Proxy (Proxy(..))
@@ -28,6 +29,7 @@ newtype ChunkedCommitment :: Int -> Type -> Type
 newtype ChunkedCommitment chunks pt = ChunkedCommitment (Vector chunks pt)
 
 derive instance Newtype (ChunkedCommitment chunks pt) _
+derive newtype instance WriteForeign pt => WriteForeign (ChunkedCommitment chunks pt)
 
 instance
   ( CircuitType f a var

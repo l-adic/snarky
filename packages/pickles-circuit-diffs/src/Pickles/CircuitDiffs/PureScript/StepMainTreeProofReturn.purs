@@ -1,5 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
   ( compileStepMainTreeProofReturn
+  , compileStepMainTreeProofReturnWithConstants
   , StepMainTreeProofReturnParams
   ) where
 
@@ -21,20 +22,22 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
+import Data.Reflectable (reflectType)
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
-import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, WrapArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
+import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
 import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
-import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
-import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
+import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthInt, slotWidthsOf, toPrevs)
 import Pickles.Types (StatementIO(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -103,16 +106,49 @@ treeProofReturnRule getPrevStates _ = do
 type TreeProofReturnPrevsSpec =
   Tuple2 (Slot 0 (StatementIO Unit (F StepField))) (Slot 2 (StatementIO Unit (F StepField)))
 
+-- | The tag's width: `self` verifies two proofs, so `mpvMax = len = 2`.
+type Mpv = 2
+
 compileStepMainTreeProofReturn
   :: StepMainTreeProofReturnParams -> Effect StepArtifact
-compileStepMainTreeProofReturn params = do
+compileStepMainTreeProofReturn params =
+  _.art <$> compileStepMainTreeProofReturnWithConstants params
+
+-- | `compileStepMainTreeProofReturn`, with the constants the circuit bakes
+-- | in (`stepMainConstants`) for the Lean `check_cs` harness.
+compileStepMainTreeProofReturnWithConstants
+  :: StepMainTreeProofReturnParams
+  -> Effect { art :: StepArtifact, constants :: String }
+compileStepMainTreeProofReturnWithConstants params = do
   nrrArt <- compileWrapMainNoRecursionReturn
     params.nrrWrapSrsData
     params.nrrStepSrsData
-  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile nrrArt 1)
-  mkStepArtifact <$> runStepCompile nrrArt selfLog2
+  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData nrrArt 1))
+  art <- mkStepArtifact <$> runStepCompile (srsData nrrArt selfLog2)
+  pure
+    { art
+    , constants: stepMainConstants (reflectType (Proxy @Mpv))
+        (map slotWidthInt (slotWidthsOf (Proxy @TreeProofReturnPrevsSpec)))
+        (srsData nrrArt selfLog2)
+    }
   where
-  runStepCompile nrrArt selfLog2 = do
+  srsData :: WrapArtifact -> Int -> StepMainSrsData 2
+  srsData nrrArt selfLog2 =
+    { blindingH: params.blindingH
+    , perSlotFopDomainLog2s:
+        (NEA.singleton nrrArt.stepDomainLog2)
+          :< (NEA.singleton selfLog2)
+          :< Vector.nil
+    , perSlotNumChunks: 1 :< 1 :< Vector.nil
+    , perSlotVkBlueprints:
+        -- Heterogeneous wrap domains: slot 0 reads NRR's basis at
+        -- 2^13, slot 1 self's at 2^14. Each travels with its slot.
+        BlueprintExternal params.slot0LagrangeAt nrrArt.wrapVk
+          :< BlueprintSelf params.slot1LagrangeAt
+          :< Vector.nil
+    }
+
+  runStepCompile srs = do
     throwawayCaptureRef <- Ref.new Nothing
     let
       dummyAdvice = unsafeCoerce unit
@@ -122,21 +158,9 @@ compileStepMainTreeProofReturn params = do
           @Unit
           @(F StepField)
           @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
-          @2
+          @Mpv
           treeProofReturnRule
-          { blindingH: params.blindingH
-          , perSlotFopDomainLog2s:
-              (NEA.singleton nrrArt.stepDomainLog2)
-                :< (NEA.singleton selfLog2)
-                :< Vector.nil
-          , perSlotNumChunks: 1 :< 1 :< Vector.nil
-          , perSlotVkBlueprints:
-              -- Heterogeneous wrap domains: slot 0 reads NRR's basis at
-              -- 2^13, slot 1 self's at 2^14. Each travels with its slot.
-              BlueprintExternal params.slot0LagrangeAt nrrArt.wrapVk
-                :< BlueprintSelf params.slot1LagrangeAt
-                :< Vector.nil
-          }
+          srs
           dummyWrapSg
           dummyAdvice
           throwawayCaptureRef

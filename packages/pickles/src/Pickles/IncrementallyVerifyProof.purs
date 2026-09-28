@@ -8,6 +8,7 @@ module Pickles.IncrementallyVerifyProof
   , IncrementallyVerifyProofOutput
   , incrementallyVerifyProof
   , ftComm
+  , PackedWrapStatement
   , packStatement
   ) where
 
@@ -328,6 +329,21 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
 -- | The wrap statement as public input
 -------------------------------------------------------------------------------
 
+-- | A wrap statement's public input, one scalar per Lagrange base, at
+-- | cell type `x` and shifted-claim type `sf`: the five claims, the two
+-- | challenges, the three scalar challenges, the three digests, the `d`
+-- | bulletproof challenges and the packed branch data.
+type PackedWrapStatement :: Int -> Type -> Type -> Type
+type PackedWrapStatement d x sf =
+  Tuple (Vector 5 sf)
+    ( Tuple (Vector 2 (SizedF 128 x))
+        ( Tuple (Vector 3 (SizedF 128 x))
+            ( Tuple (Vector 3 x)
+                (Tuple (Vector d (SizedF 128 x)) (SizedF 10 x))
+            )
+        )
+    )
+
 -- | A `WrapStatement` as the nested public-input tuple the verifier
 -- | commits to; the nesting is the one `publicInputCommit`'s instance
 -- | expects.
@@ -335,16 +351,7 @@ packStatement
   :: forall d f sf
    . PrimeField f
   => WrapStatement d (FVar f) sf (BoolVar f)
-  -> Tuple (Vector 5 sf)
-       ( Tuple (Vector 2 (SizedF 128 (FVar f)))
-           ( Tuple (Vector 3 (SizedF 128 (FVar f)))
-               ( Tuple (Vector 3 (FVar f))
-                   ( Tuple (Vector d (SizedF 128 (FVar f)))
-                       (SizedF 10 (FVar f))
-                   )
-               )
-           )
-       )
+  -> PackedWrapStatement d (FVar f) sf
 packStatement { proofState: ps, messagesForNextStepProof } =
   let
     dv = ps.deferredValues

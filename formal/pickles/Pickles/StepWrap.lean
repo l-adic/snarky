@@ -454,9 +454,9 @@ theorem stepWrap_kimchiVerify
       ∀ con ∈
           (compile (a := Unit) (b := StmtVal E.σ.k w)
             (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp))
-              (fun _ => w)
+              (fun _ => .self E.cvk.lagrangeBasis.toList)
               (fun _ => hw)
-              (verifyProofAt E)
+              E.σ.h
               P
               domains
               (constPt dummySg)
@@ -509,9 +509,9 @@ theorem stepWrap_kimchiVerify
     let r :=
       (build
         (stepMain (c := Builder Vg (KimchiConstraint Fp))
-          (fun _ => w)
+          (fun _ => .self E.cvk.lagrangeBasis.toList)
           (fun _ => hw)
-          (verifyProofAt E)
+          E.σ.h
           P
           domains
           (constPt dummySg)
@@ -564,14 +564,15 @@ theorem stepWrap_kimchiVerify
   intro r hd hb htie i hmv inp sl hpin hkey
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E P domains (by norm_num [MaxProofsVerified, StepIPARounds]) (fun _ => w)
-      (fun _ _ => True)
+    (stepMain_reads E P domains (by norm_num [MaxProofsVerified, StepIPARounds])
+      (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => rfl) (fun _ _ => True)
       (fun _ _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
       (hn.trans hw) (fun _ => hw) (constPt dummySg) dummyUnf rule adv
       (fun _ _ _ => (WrapStatement.packed_length _).trans_le
         (by rw [hE]; norm_num [StepIPARounds, WrapIPARounds])) (fun _ => havoid)) 0
       (fun con hc => hstep con
-        (mem_compile_stepMainCircuit (fun _ => w) (fun _ => hw) _ _ _ _ _ _ _ hc)) i hmv
+        (mem_compile_stepMainCircuit (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => hw)
+          _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap proof the slot's cells hold
   obtain ⟨hon, holds⟩ := slotInput_onCurve hw hdummySg r.prevs[i] r.unfs[i] r.msgs[i] hpts
   let cp := slotProof Vg Vs inp sl.evals sl.prevChallenges
@@ -611,10 +612,11 @@ theorem stepWrap_kimchiVerify
       (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hnc) _
       hbody
   have hout := (builder_spec_iff _ _).mp
-    (stepMain_out (fun _ => w) (fun _ => hw) (verifyProofAt E) P domains
+    (stepMain_out (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => hw) E.σ.h P domains
       (constPt dummySg) dummyUnf rule adv) 0
     (fun con hc => hstep con
-      (mem_compile_stepMainCircuit (fun _ => w) (fun _ => hw) _ _ _ _ _ _ _ hc))
+      (mem_compile_stepMainCircuit (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => hw)
+        _ _ _ _ _ _ _ hc))
   -- slot `i` is entry `(w − n) + i` on both sides of the tie
   set jf : Fin w := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
   have hjv : jf.val = w - n + i := rfl

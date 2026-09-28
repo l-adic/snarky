@@ -1350,15 +1350,15 @@ def fullStepVerifyOneCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurv
     PicklesFixture.fopStepParams [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] dummyKeyComms inp
   pure PUnit.unit
 
-/-! ## The step circuit
+/-! ## The step circuits (`step_main_*`)
 
-Transcribes `Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2`: `Pickles.stepMain` for the
-rule `self = 1 + prev₁ + prev₂` over two self slots of width 2, at the Lagrange bases of
-`full_step_lagrange.json`, the finalize at the rule's own step domain (`log2 = 15`, the dump's
-22957 rows rounded up), and the wrap-side messages unpadded. The output is the 67 cells of the
-step statement. `Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero` is the padded
-case: no slot in a tag of width 1, so one dummy unfinalized entry and one padding message. The
-advice is inert: the comparison is on the constraint system. -/
+`Pickles.stepMain` at each dump's slots, its configuration from `<name>_constants.json` (the
+circuit-diffs export, `StepMainConstants`): the tag's width, the blinding `h`, and per slot its
+source, width, candidate step domains and Lagrange bases, with an external slot's wrap key. Only
+the rule is transcribed per dump. `simple_chain_n2` has two self slots of width 2;
+`two_phase_chain_make_zero` no slot in a tag of width 1, so one dummy unfinalized entry and one
+padding message; `tree_proof_return` an external slot on No_recursion_return (width 0) and a self
+slot of width 2. -/
 
 /-- The unfinalized entry padding the statement of a rule verifying no proofs (PS
 `Dummy.baseCaseDummies { maxProofsVerified: 0 }`), at the wrap circuit's 15 rounds. -/
@@ -1399,26 +1399,131 @@ def simpleChainN2Rule (appState : FVar Fp) :
   assertAny [selfCorrect, isBaseCase]
   pure (#v[⟨[prev1], mustVerify⟩, ⟨[prev2], mustVerify⟩], [])
 
-open Pickles in
-/-- `step_main_simple_chain_n2_circuit`. -/
-def stepMainSimpleChainN2Circuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point) :
-    Unit → CircuitM Fp C (StmtVar 15 2) :=
-  stepMainCircuit (n := 2) (w := 2) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := Fp)
-    (fun _ => 2) (by decide)
-    (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
-    PicklesFixture.fopStepParams [⟨15, Kimchi.Fixture.PS.fpSide.omega (2 ^ 15)⟩] dummyWrapSg
-    dummyUnfN0 simpleChainN2Rule
-    ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-      AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
+/-- The rule of `two_phase_chain`'s `make_zero` branch: `self = 0`, with no slot. -/
+def makeZeroRule (x : FVar Fp) :
+    CircuitM Fp C (Vector Pickles.PrevStatement 0 × List (FVar Fp)) := do
+  makeZeroAppCircuit x
+  pure (#v[], [])
+
+/-- The rule of `tree_proof_return`: slot 0 a No_recursion_return proof, which always verifies,
+slot 1 this system's previous proof, which verifies unless it is the base case; `self` is `0`
+in the base case, `1 + prev` otherwise. -/
+def treeProofReturnRule (_ : Unit) :
+    CircuitM Fp C (Vector Pickles.PrevStatement 2 × List (FVar Fp)) := do
+  let noRecursiveInput ← witness (val := Fp) (AsProver.throw "advice")
+  let prev ← witness (val := Fp) (AsProver.throw "advice")
+  let isBaseCase ← witness (val := Bool) (AsProver.throw "advice")
+  let mustVerify := Snarky.not isBaseCase
+  let self ← selectField isBaseCase (.const 0) (CVar.add_ (.const 1) prev)
+  pure (#v[⟨[noRecursiveInput], true_⟩, ⟨[prev], mustVerify⟩], [self])
+
+/-- One slot of a `step_main_*` dump's constants, at one chunk. -/
+structure StepSlotConsts where
+  /-- An external slot's wrap key: its sigma, coefficient and selector commitments. -/
+  key : Option (Vector (Vector XhatStepCurve.Point 1) 7 ×
+    Vector (Vector XhatStepCurve.Point 1) 15 × Vector (Vector XhatStepCurve.Point 1) 6)
+  /-- The slot's width, at most `MaxProofsVerified`. -/
+  width : Fin (Pickles.MaxProofsVerified + 1)
+  /-- Its candidate step domains, `log2`. -/
+  domainLog2s : List ℕ
+  /-- The Lagrange bases its public-input commitment reads. -/
+  lagrange : Array (Vector XhatStepCurve.Point 1)
+
+/-- The constants of a `step_main_*` dump with `n` slots: the blinding `h`, each slot's, and this
+compile's own step domains (its self slots'). -/
+structure StepMainConsts (n : ℕ) where
+  /-- The blinding base. -/
+  h : XhatStepCurve.Point
+  /-- Each slot's constants, in the rule's order. -/
+  slots : Vector StepSlotConsts n
+  /-- This compile's own step domains, `log2`. -/
+  ownDomainLog2s : List ℕ
+
+/-- The finalize's candidate domains at the given `log2`s, generators from the fixture. -/
+def stepKnownDomains (ls : List ℕ) : List (Pickles.KnownDomain Fp) :=
+  ls.map fun l => ⟨l, Kimchi.Fixture.PS.fpSide.omega (2 ^ l)⟩
+
+/-- A slot's source: an external slot's wrap key carries its commitments and Lagrange bases, the
+fields the step circuit reads; the rest are placeholders it never reads. -/
+def StepSlotConsts.source (s : StepSlotConsts) : Pickles.SlotSource 1 :=
+  match s.key with
+  | none => .self s.lagrange.toList
+  | some (sigma, coefficients, sel) =>
+    .external
+      { domainLog2 := 0, omega := 0, sigmaComm := sigma, coefficientsComm := coefficients
+        genericComm := sel[0], poseidonComm := sel[1], completeAddComm := sel[2]
+        mulComm := sel[3], emulComm := sel[4], endomulScalarComm := sel[5]
+        shifts := Vector.replicate _ 0, zkRows := 0, prevChallenges := 0, endo := 0
+        digest := 0, lagrangeBasis := s.lagrange }
+      s.width.val (stepKnownDomains s.domainLog2s)
+
+/-- A slot's width is at most `MaxProofsVerified` when the tag's is. -/
+theorem StepSlotConsts.width_le (s : StepSlotConsts) {w : ℕ} (hw : w ≤ Pickles.MaxProofsVerified) :
+    s.source.width w ≤ Pickles.MaxProofsVerified := by
+  unfold StepSlotConsts.source
+  split
+  · exact hw
+  · exact Nat.le_of_lt_succ s.width.isLt
+
+/-- `<name>_constants.json` of a `step_main_*` dump with `n` slots at the tag's width `w`: a
+self slot's width must be `w`, and the self slots share this compile's step domains. -/
+def stepMainConsts (n w : ℕ) (path : System.FilePath) : IO (StepMainConsts n) := do
+  let raw ← IO.FS.readFile path
+  let parsed : Except String (StepMainConsts n) := do
+    let j ← Json.parse raw
+    let pt (j : Json) : Except String XhatStepCurve.Point := do
+      let x ← Kimchi.Fixture.PS.parseHexLE (m := XhatStepCurve.base) (← j.getObjVal? "x")
+      let y ← Kimchi.Fixture.PS.parseHexLE (m := XhatStepCurve.base) (← j.getObjVal? "y")
+      FixtureKit.swPointOfCoords XhatStepCurve.E (x, y)
+    let chunk (j : Json) : Except String (Vector XhatStepCurve.Point 1) := do
+      let pts ← FixtureKit.parseArrOf pt j
+      if h : pts.size = 1 then pure ⟨pts, h⟩ else throw s!"{pts.size} chunks, expected 1"
+    let comms (j : Json) (k : String) (m : ℕ) :
+        Except String (Vector (Vector XhatStepCurve.Point 1) m) := do
+      let cs ← FixtureKit.parseArrOf chunk (← j.getObjVal? k)
+      if h : cs.size = m then pure ⟨cs, h⟩ else throw s!"{k}: {cs.size} commitments"
+    let mpv ← (← j.getObjVal? "mpv").getNat?
+    unless mpv = w do throw s!"mpv {mpv}, expected {w}"
+    let slot (j : Json) : Except String StepSlotConsts := do
+      let chunks ← (← j.getObjVal? "numChunks").getNat?
+      unless chunks = 1 do throw s!"{chunks} chunks, expected 1"
+      let wd ← (← j.getObjVal? "width").getNat?
+      let some width := (if h : wd < Pickles.MaxProofsVerified + 1 then some ⟨wd, h⟩ else none)
+        | throw s!"width {wd} above MaxProofsVerified"
+      let key ← match ← (← j.getObjVal? "source").getStr? with
+        | "self" =>
+          unless wd = w do throw s!"a self slot of width {wd} in a tag of width {w}"
+          pure none
+        | "external" => do
+          let k ← j.getObjVal? "key"
+          pure (some (← comms k "sigma" 7, ← comms k "coeff" 15, ← comms k "index" 6))
+        | src => throw s!"unsupported slot source {src}"
+      pure { key, width
+             domainLog2s := (← FixtureKit.parseArrOf (fun j => j.getNat?)
+               (← j.getObjVal? "domainLog2s")).toList
+             lagrange := ← FixtureKit.parseArrOf chunk (← j.getObjVal? "lagrange") }
+    let slots ← FixtureKit.parseArrOf slot (← j.getObjVal? "slots")
+    let some slots := (if h : slots.size = n then some (⟨slots, h⟩ : Vector _ n) else none)
+      | throw s!"{slots.size} slots, expected {n}"
+    let own := (slots.toList.filter (·.key.isNone)).map (·.domainLog2s)
+    unless own.all (· == own.headD []) do throw s!"self slots disagree on step domains {own}"
+    pure { h := ← pt (← j.getObjVal? "blindingH"), slots, ownDomainLog2s := own.headD [] }
+  match parsed with
+  | .ok r => return r
+  | .error e => throw (IO.userError s!"{path}: {e}")
 
 open Pickles in
-/-- `step_main_two_phase_chain_make_zero_circuit`: the rule `self = 0` with no slot, so the
-verifier and the finalize's domains are never used. -/
-def stepMainTwoPhaseChainMakeZeroCircuit : Unit → CircuitM Fp C (StmtVar 15 1) :=
-  stepMainCircuit (n := 0) (w := 1) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := Fp)
-    Fin.elim0 (fun i => i.elim0)
-    (fun _ _ _ _ _ => pure true_) PicklesFixture.fopStepParams [] dummyWrapSg dummyUnfN0
-    (fun x => do makeZeroAppCircuit x; pure (#v[], []))
+/-- A `step_main_*` circuit: `Pickles.stepMain` at `n` slots and the tag's width `w`, each slot's
+source and the blinding `h` from the dump's constants, over the transcribed `rule`, the statement
+padded with `dummyUnf`. The advice is inert: the comparison is on the constraint system. -/
+def stepMainDumpCircuit {n : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+    [CheckedType Fp C inVal inVar] (w : ℕ) (hw : w ≤ MaxProofsVerified) (k : StepMainConsts n)
+    (dummyUnf : UnfVal 15)
+    (rule : inVar → CircuitM Fp C (Vector PrevStatement n × List (FVar Fp))) :
+    Unit → CircuitM Fp C (StmtVar 15 w) :=
+  stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := inVal)
+    (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h PicklesFixture.fopStepParams
+    (stepKnownDomains k.ownDomainLog2s) dummyWrapSg dummyUnf rule
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
 
@@ -1701,8 +1806,6 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       wrapTarget (a := Vector Fq 2) (b := PUnit) pseudoToDomainWrapCircuit),
     ("hash_messages_for_next_step_proof_circuit",
       stepTarget (a := Vector Fp 91) (b := PUnit) hashMessagesStepCircuit),
-    ("step_main_two_phase_chain_make_zero_circuit",
-      stepTarget (a := Unit) (b := Pickles.StmtVal 15 1) stepMainTwoPhaseChainMakeZeroCircuit),
     ("hash_messages_for_next_wrap_proof_circuit",
       wrapTarget (a := Vector Fq 33) (b := PUnit) hashMessagesWrapCircuit) ]
 
@@ -1735,9 +1838,6 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
   (fullStep.toList.map fun (pts, h) =>
     ("full_step_verify_one_circuit",
       stepTarget (a := Vector Fp 286) (b := PUnit) (fullStepVerifyOneCircuit pts h)))
-  ++ (fullStep.toList.map fun (pts, h) =>
-    ("step_main_simple_chain_n2_circuit",
-      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2) (stepMainSimpleChainN2Circuit pts h)))
   ++ (step.toList.map fun (pts, h) =>
     ("xhat_step_circuit",
       stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts (xhatStepCell h))))
@@ -1810,8 +1910,24 @@ def main : IO Unit := do
         (wrapMainDumpCircuit bp mpv nc k widths log2s))
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
+  let stepConsts (name : String) (n w : ℕ) :=
+    optionalExport filter (dir / s!"{name}_constants.json") (stepMainConsts n w)
+  let chainN2 ← stepConsts "step_main_simple_chain_n2_circuit" 2 2
+  let makeZero ← stepConsts "step_main_two_phase_chain_make_zero_circuit" 0 1
+  let treeReturn ← stepConsts "step_main_tree_proof_return_circuit" 2 2
+  let stepMains :=
+    (chainN2.toList.map fun k => ("step_main_simple_chain_n2_circuit",
+      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
+        (stepMainDumpCircuit (inVal := Fp) 2 (by decide) k dummyUnfN0 simpleChainN2Rule)))
+    ++ (makeZero.toList.map fun k => ("step_main_two_phase_chain_make_zero_circuit",
+      stepTarget (a := Unit) (b := Pickles.StmtVal 15 1)
+        (stepMainDumpCircuit (inVal := Fp) 1 (by decide) k dummyUnfN0 makeZeroRule)))
+    ++ (treeReturn.toList.map fun k => ("step_main_tree_proof_return_circuit",
+      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
+        (stepMainDumpCircuit (inVal := Unit) 2 (by decide) k dummyUnfN0 treeProofReturnRule)))
   let selected := (targets hStep hWrap
-    ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches wrapMains fullStep).filter
+    ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches wrapMains fullStep
+    ++ stepMains).filter
     fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0

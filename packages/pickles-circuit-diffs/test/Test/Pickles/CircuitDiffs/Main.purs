@@ -35,7 +35,7 @@ import Pickles.CircuitDiffs.PureScript.CheckBulletproofStep (compileCheckBulletp
 import Pickles.CircuitDiffs.PureScript.CheckBulletproofWrap (compileCheckBulletproofWrap)
 import Pickles.CircuitDiffs.PureScript.Cip (compileCipStep, compileCipWrap)
 import Pickles.CircuitDiffs.PureScript.CombinePoly (compileCombinePoly)
-import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, WrapArtifact)
 import Pickles.CircuitDiffs.PureScript.ExpandPlonk (compileExpandPlonkStep, compileExpandPlonkWrap)
 import Pickles.CircuitDiffs.PureScript.FopStep (compileFopStep)
 import Pickles.CircuitDiffs.PureScript.FopStepChunks2 (compileFopStepChunks2)
@@ -67,10 +67,10 @@ import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecu
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
-import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
-import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturn)
+import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2WithConstants)
+import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturnWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (compileStepMainTwoPhaseChainIncrement)
-import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero)
+import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero, compileStepMainTwoPhaseChainMakeZeroWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapFinalize (compileWrapFinalizeN2)
@@ -184,6 +184,13 @@ wrapWithConstants :: String -> WrapArtifact -> Effect (Circuit Fq)
 wrapWithConstants name art = do
   FS.writeTextFile UTF8 (resultsDir <> name <> "_constants.json") art.constants
   fromCompiledCircuit art.wrapCs
+
+-- | A step artifact's circuit, after writing the constants it bakes in to
+-- | `<name>_constants.json` in `resultsDir` for the Lean `check_cs` harness.
+stepWithConstants :: String -> { art :: StepArtifact, constants :: String } -> Effect (Circuit Fp)
+stepWithConstants name r = do
+  FS.writeTextFile UTF8 (resultsDir <> name <> "_constants.json") r.constants
+  fromCompiledCircuit r.art.stepCs
 
 appendManifest :: String -> String -> Effect Unit
 appendManifest name status =
@@ -1123,7 +1130,10 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
-        exactMatchEff "step_main_simple_chain_n2_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainSimpleChainN2 stepMainN2SrsData)
+        exactMatchEff "step_main_simple_chain_n2_circuit"
+          ( stepWithConstants "step_main_simple_chain_n2_circuit"
+              =<< compileStepMainSimpleChainN2WithConstants stepMainN2SrsData
+          )
         -- The same `pallasCrs15` domain-14 export as `full_step_lagrange.json`, written here too
         -- so a run narrowed to the step-main circuits carries it.
         it "dumps the step_main Lagrange bases for the Lean check_cs harness" $ liftEffect $
@@ -1194,7 +1204,10 @@ spec bundle =
             , nrrWrapSrsData: tprNrrWrapSrsData
             , nrrStepSrsData: tprNrrStepSrsData
             }
-        exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainTreeProofReturn treeProofReturnSrsData)
+        exactMatchEff "step_main_tree_proof_return_circuit"
+          ( stepWithConstants "step_main_tree_proof_return_circuit"
+              =<< compileStepMainTreeProofReturnWithConstants treeProofReturnSrsData
+          )
         -- N=1 parent + single side-loaded prev (mpv=N2 upper bound).
         -- The three per-domain lagrange tables sit at log2 ∈ {13, 14,
         -- 15} (= the wrap-domain log2s for `actualWrapDomainSize ∈
@@ -1280,7 +1293,9 @@ spec bundle =
         -- step PI is 34 entries (mpvPad=1 → 1 front-padded dummy slot).
         -- Step domain log2 = 9. Body asserts `self_v = 0` (single R1CS).
         exactMatchEff "step_main_two_phase_chain_make_zero_circuit"
-          (fromCompiledCircuit <<< _.stepCs =<< compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData)
+          ( stepWithConstants "step_main_two_phase_chain_make_zero_circuit"
+              =<< compileStepMainTwoPhaseChainMakeZeroWithConstants twoPhaseChainMakeZeroSrsData
+          )
       describe "Linearization" do
         exactMatchEff "linearization_step_circuit" (fromCompiledCircuit =<< compileLinearizationStep)
         exactMatchEff "linearization_wrap_circuit" (fromCompiledCircuit =<< compileLinearizationWrap)

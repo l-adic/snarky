@@ -1,5 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero
   ( compileStepMainTwoPhaseChainMakeZero
+  , compileStepMainTwoPhaseChainMakeZeroWithConstants
   , StepMainTwoPhaseChainMakeZeroParams
   ) where
 
@@ -21,15 +22,17 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero
 import Prelude
 
 import Data.Maybe (Maybe(..))
+import Data.Reflectable (reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Slots (PrevValues, toPrevs)
+import Pickles.Step.Slots (PrevValues, slotWidthInt, slotWidthsOf, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_)
@@ -59,9 +62,20 @@ makeZeroRule _ appState = do
     , publicOutput: unit
     }
 
+-- | The tag's width: the wrap is mpv=N1 though the rule has no prevs.
+type Mpv = 1
+
 compileStepMainTwoPhaseChainMakeZero
   :: StepMainTwoPhaseChainMakeZeroParams -> Effect StepArtifact
-compileStepMainTwoPhaseChainMakeZero params = do
+compileStepMainTwoPhaseChainMakeZero params =
+  _.art <$> compileStepMainTwoPhaseChainMakeZeroWithConstants params
+
+-- | `compileStepMainTwoPhaseChainMakeZero`, with the constants the circuit
+-- | bakes in (`stepMainConstants`) for the Lean `check_cs` harness.
+compileStepMainTwoPhaseChainMakeZeroWithConstants
+  :: StepMainTwoPhaseChainMakeZeroParams
+  -> Effect { art :: StepArtifact, constants :: String }
+compileStepMainTwoPhaseChainMakeZeroWithConstants params = do
   throwawayCaptureRef <- Ref.new Nothing
   let
     dummyAdvice = unsafeCoerce unit
@@ -69,21 +83,30 @@ compileStepMainTwoPhaseChainMakeZero params = do
   -- so step PI front-pads 1 dummy unfinalized_proof slot. Output
   -- size = 1*32 + 1 + 1 = 34. `stepMain` derives the front-padding
   -- dummy from `len`.
-  mkStepArtifact <$> do
+  art <- mkStepArtifact <$> do
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
           @Unit
           @(F StepField)
           @Unit
           @Unit
-          @1
+          @Mpv
           makeZeroRule
-          { blindingH: params.blindingH
-          , perSlotFopDomainLog2s: Vector.nil
-          , perSlotNumChunks: Vector.nil
-          , perSlotVkBlueprints: Vector.nil
-          }
+          srsData
           dummyWrapSg
           dummyAdvice
           throwawayCaptureRef
       )
+  pure
+    { art
+    , constants: stepMainConstants (reflectType (Proxy @Mpv))
+        (map slotWidthInt (slotWidthsOf (Proxy @Unit)))
+        srsData
+    }
+  where
+  srsData =
+    { blindingH: params.blindingH
+    , perSlotFopDomainLog2s: Vector.nil
+    , perSlotNumChunks: Vector.nil
+    , perSlotVkBlueprints: Vector.nil
+    }

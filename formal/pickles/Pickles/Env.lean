@@ -184,6 +184,11 @@ theorem Env.domainLog2_le {C : KimchiCurve} {nc : ℕ} (E : Env C nc) :
   rw [← E.omega_prim.eq_orderOf, KimchiVK.n] at hd
   exact (Nat.pow_dvd_pow_iff_le_right (by norm_num)).mp hd
 
+/-- An environment's key satisfies the invariants over its SRS: `Env.ofInvariants`' converse. -/
+theorem Env.invariants {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : Env.Invariants E.σ E.cvk :=
+  ⟨E.endo_eq, E.zkRows_ge, E.zkRows_le, E.domainLog2_le, E.rounds_small, E.rounds_pos, E.h_ne,
+    E.lagrange_pos, E.lagrange_le, E.nc_eq, E.lagrange_eq, E.digest_eq, E.omega_eq⟩
+
 /-- Every chunk meets the domain: chunk `c` starts below `n`. -/
 theorem Env.chunk_lt {C : KimchiCurve} {nc : ℕ} (E : Env C nc) (c : Fin nc) :
     c.val * 2 ^ E.σ.k < E.cvk.n := by

@@ -187,6 +187,7 @@ newtype WeierstrassAffinePoint :: Type -> Type -> Type
 newtype WeierstrassAffinePoint g f = WeierstrassAffinePoint { x :: f, y :: f }
 
 derive instance Generic (WeierstrassAffinePoint g f) _
+derive newtype instance WriteForeign f => WriteForeign (WeierstrassAffinePoint g f)
 
 -- | NOTE: `WeierstrassAffinePoint` keeps its value side `F`-leaved (unlike
 -- | `Point`/`AffinePoint`, which drop `F`). It is composed inside pickles'

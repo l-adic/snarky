@@ -195,12 +195,12 @@ private theorem wrapStep_kimchiVerify_core
     (adv : StepMainAdvice n w (fun _ => w) 1 ncStep E.σ.k EsStep.σ.k inVal)
     -- `Vs` satisfies every constraint of the compiled next step circuit
     (hstep : ∀ con ∈ (compile (a := Unit) (b := StmtVal E.σ.k w)
-        (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp)) (fun _ => w) (fun _ => hw)
-          (verifyProofAt E)
+        (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp))
+          (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => hw) E.σ.h
           (FopParams.ofEnv EsStep Linearization.fpTokens) D.list dummySg dummyUnf rule
           adv)).constraints, ConstraintHolds.Holds Vs con) :
-    let r := (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) (fun _ => w) (fun _ => hw)
-      (verifyProofAt E)
+    let r := (build (stepMain (c := Builder Vs (KimchiConstraint Fp))
+      (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => hw) E.σ.h
       (FopParams.ofEnv EsStep Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the wrap circuit's statement and cells
     let stmt := inputVar (F := Fq) (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq)
@@ -235,11 +235,13 @@ private theorem wrapStep_kimchiVerify_core
   -- the step side: slot `i` finalizes, over the domain its branch data names
   obtain ⟨-, -, hscal, -, -, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads E (FopParams.ofEnv EsStep Linearization.fpTokens) D.list
-      EsStep.rounds_small (fun _ => w) (fun _ inp => inp.ScalarReads EsStep Vs)
+      EsStep.rounds_small (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => rfl)
+      (fun _ inp => inp.ScalarReads EsStep Vs)
       (fun _ vk inp => verifyOne_scalarReads EsStep D hw (verifyProofAt E) vk inp) (hn.trans hw)
       (fun _ => hw) dummySg dummyUnf rule adv (fun _ => hsmall) (fun _ => havoid)) 0
     (fun con hc => hstep con
-      (mem_compile_stepMainCircuit (fun _ => w) (fun _ => hw) _ _ _ _ _ _ _ hc)) i hmv
+      (mem_compile_stepMainCircuit (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => hw)
+        _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap side: the body's constraints hold, so its reads do
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) widths log2s stepKeys pins lagrange h dummy
@@ -453,9 +455,9 @@ theorem wrapStep_kimchiVerify
       ∀ con ∈
           (compile (a := Unit) (b := StmtVal E.σ.k w)
             (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp))
-              (fun _ => w)
+              (fun _ => .self E.cvk.lagrangeBasis.toList)
               (fun _ => hw)
-              (verifyProofAt E)
+              E.σ.h
               P
               domains
               dummySg
@@ -467,9 +469,9 @@ theorem wrapStep_kimchiVerify
     let r :=
       (build
         (stepMain (c := Builder Vs (KimchiConstraint Fp))
-          (fun _ => w)
+          (fun _ => .self E.cvk.lagrangeBasis.toList)
           (fun _ => hw)
-          (verifyProofAt E)
+          E.σ.h
           P
           domains
           dummySg
