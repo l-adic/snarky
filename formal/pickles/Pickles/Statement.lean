@@ -9,7 +9,9 @@ shifted-scalar type (`Type1` or `Type2`): the `sf` fields are the scalars of the
 
 * `DeferredValues`: what one half of a proof's verification computes and the other certifies;
 * `UnfinalizedProof`: the step statement's per-predecessor entry;
-* `WrapStatement`, `StepStatement`: the two public inputs.
+* `WrapStatement`, `StepStatement`: the two public inputs;
+* `StatementPacked`: the wrap statement as the wrap circuit's public input, in wire order
+  (`Pickles/Wrap/Types.purs`).
 -/
 
 namespace Pickles
@@ -113,5 +115,29 @@ structure StepStatement (k n : ℕ) (f bc sf : Type) where
   proofState : StepProofState k n f bc sf
   /-- One `hashMessagesForNextWrapProof` digest per predecessor slot. -/
   messagesForNextWrapProof : Vector f n
+
+/-- The wrap statement as the wrap circuit's public input, in wire order: the deferred values
+packed as field cells, the branch data as one cell, and the optional-feature cells the modeled
+fragment holds at zero. -/
+structure StatementPacked (k : ℕ) (sf f : Type) where
+  /-- The shifted scalars: `cip`, `b`, `ζ^(2^k)`, `ζⁿ`, the permutation scalar. -/
+  fpFields : Vector sf 5
+  /-- `β`, `γ`. -/
+  challenges : Vector f 2
+  /-- `α`, `ζ`, `ξ`. -/
+  scalarChallenges : Vector f 3
+  /-- The fq-sponge digest before evaluations, the wrap-side and the step-side message
+  digests. -/
+  digests : Vector f 3
+  /-- The round challenges. -/
+  bulletproofChallenges : Vector f k
+  /-- The branch data, packed as `4·domainLog2 + mask₀ + 2·mask₁`. -/
+  branchData : f
+  /-- The optional-gate feature flags. -/
+  featureFlags : Vector f 8
+  /-- The lookup option's flag. -/
+  lookupOptFlag : f
+  /-- The lookup option's scalar challenge. -/
+  lookupOptScalarChallenge : f
 
 end Pickles

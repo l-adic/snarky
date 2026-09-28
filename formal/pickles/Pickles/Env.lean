@@ -26,6 +26,7 @@ theorems share.
 
 ## Main results
 
+* `Env.domainLog2_le`: the key's domain exponent is at most the scalar field's two-adicity;
 * `Env.chunk_lt`, `Env.chunk_add_le`: every chunk starts within the domain and holds
   `min (2^k) n` of its points;
 * `Env.lagrange_ne`: where the SRS avoids the Lagrange relations, every chunk of the key's
@@ -45,22 +46,19 @@ namespace Pickles
 
 open Kimchi.Verifier Bulletproof Bulletproof.Ipa
 
-/-! ## Primitivity, runnable -/
+/-! ## Primitivity -/
 
-/-- An element of order dividing `2 ^ d` and not `2 ^ (d - 1)` is a primitive `2 ^ d`-th root:
-primitivity by two runs of squarings (`powPow2`). -/
-private theorem isPrimitiveRoot_two_pow {F : Type*} [Field F] (g : F) (d : ℕ)
-    (h1 : powPow2 g d = 1) (h2 : d = 0 ∨ powPow2 g (d - 1) ≠ 1) :
-    IsPrimitiveRoot g (2 ^ d) := by
-  rw [powPow2_eq] at h1
-  cases d with
-  | zero =>
-      obtain rfl : g = 1 := by simpa using h1
-      simp
-  | succ d =>
-      have h2' : ¬g ^ 2 ^ d = 1 := by simpa [powPow2_eq] using h2
-      rw [← orderOf_eq_prime_pow h2' h1]
-      exact IsPrimitiveRoot.orderOf g
+/-- A domain generator within the field's two-adicity is a primitive root of its domain's size:
+the root of unity, of order `2 ^ twoAdicity`, squared `twoAdicity − log2` times. -/
+private theorem isPrimitiveRoot_domainGenerator (C : KimchiCurve) {log2 : ℕ}
+    (hl : log2 ≤ C.twoAdicity) : IsPrimitiveRoot (domainGenerator C log2) (2 ^ log2) := by
+  have hr : IsPrimitiveRoot C.rootOfUnity (2 ^ C.twoAdicity) := by
+    rw [← C.rootOfUnity_order]
+    exact IsPrimitiveRoot.orderOf _
+  have h := hr.pow_of_dvd (p := 2 ^ (C.twoAdicity - log2)) (by positivity)
+    (Nat.pow_dvd_pow 2 (Nat.sub_le _ _))
+  rw [Nat.pow_div (Nat.sub_le _ _) two_pos, Nat.sub_sub_self hl, ← powPow2_eq] at h
+  exact h
 
 /-! ## The key's digest -/
 
@@ -127,21 +125,23 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   /-- The key's digest is its commitments' (`KimchiVK.indexDigest`): the verifier takes the
   digest as an input, and production computes it from the key. -/
   digest_eq : cvk.digest = cvk.indexDigest
+  /-- The key's generator is its domain's (`domainGenerator`): a constant of the scalar field,
+  never chosen by the key. -/
+  omega_eq : cvk.omega = domainGenerator C cvk.domainLog2
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks
-them once on what it loaded. That the generator is primitive is checked by squaring
-(`isPrimitiveRoot_two_pow`); the Lagrange points by computing them from the SRS, the one costly
-check. -/
+them once on what it loaded. That the generator is primitive follows from its being its
+domain's generator within the field's two-adicity (`isPrimitiveRoot_domainGenerator`); the
+Lagrange points are checked by computing them from the SRS, the one costly check. -/
 def Env.Invariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) :
     Prop :=
   cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ cvk.zkRows ≤ cvk.n ∧
-    (powPow2 cvk.omega cvk.domainLog2 = 1 ∧
-      (cvk.domainLog2 = 0 ∨ powPow2 cvk.omega (cvk.domainLog2 - 1) ≠ 1)) ∧
+    cvk.domainLog2 ≤ C.twoAdicity ∧
     MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧ σ.h ≠ 0 ∧
     0 < cvk.lagrangeBasis.size ∧ cvk.lagrangeBasis.size ≤ cvk.n ∧
     nc = (if cvk.domainLog2 < σ.k then 1 else 2 ^ (cvk.domainLog2 - σ.k)) ∧
     cvk.lagrangeBasis = Ipa.lagrangeBasis C σ nc cvk.n cvk.omega cvk.lagrangeBasis.size ∧
-    cvk.digest = cvk.indexDigest
+    cvk.digest = cvk.indexDigest ∧ cvk.omega = domainGenerator C cvk.domainLog2
 
 instance Env.decidableInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
     (cvk : KimchiVK C nc) :
@@ -151,9 +151,11 @@ instance Env.decidableInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
 /-- The environment of an SRS and a key whose invariants hold. -/
 def Env.ofInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (h : Env.Invariants σ cvk) : Env C nc :=
-  ⟨σ, cvk, h.1, h.2.1, h.2.2.1, isPrimitiveRoot_two_pow _ _ h.2.2.2.1.1 h.2.2.2.1.2,
+  ⟨σ, cvk, h.1, h.2.1, h.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.2.2.2 ▸ isPrimitiveRoot_domainGenerator C h.2.2.2.1,
     h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2⟩
+    h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- There is a chunk. -/
 theorem Env.nc_pos {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : 0 < nc := by
@@ -170,6 +172,17 @@ theorem Env.nc_le_n {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : nc ≤ E.cvk.n
     · exact Nat.one_le_two_pow
     · exact Nat.pow_le_pow_right two_pos (Nat.sub_le _ _)
   rwa [← E.nc_eq] at h
+
+/-- The key's domain exponent is at most the scalar field's two-adicity: its generator has
+order `2 ^ domainLog2` (`omega_prim`) and is a power of the root of unity (`omega_eq`), whose
+order is `2 ^ twoAdicity`. -/
+theorem Env.domainLog2_le {C : KimchiCurve} {nc : ℕ} (E : Env C nc) :
+    E.cvk.domainLog2 ≤ C.twoAdicity := by
+  have hd : orderOf E.cvk.omega ∣ 2 ^ C.twoAdicity := by
+    rw [E.omega_eq, domainGenerator, powPow2_eq, ← C.rootOfUnity_order]
+    exact orderOf_pow_dvd _
+  rw [← E.omega_prim.eq_orderOf, KimchiVK.n] at hd
+  exact (Nat.pow_dvd_pow_iff_le_right (by norm_num)).mp hd
 
 /-- Every chunk meets the domain: chunk `c` starts below `n`. -/
 theorem Env.chunk_lt {C : KimchiCurve} {nc : ℕ} (E : Env C nc) (c : Fin nc) :

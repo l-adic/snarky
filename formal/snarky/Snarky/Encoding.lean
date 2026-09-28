@@ -257,6 +257,12 @@ instance, derived from its product decomposition. -/
   value_roundTrip x := by simp [inst.value_roundTrip]
   var_roundTrip f := by simp [inst.var_roundTrip]
 
+/-- A value encoded through an isomorphism flattens as its image. -/
+theorem CircuitType.toList_valueToFields_ofEquiv [inst : CircuitType F a va] (ev : b ≃ a)
+    (ew : vb ≃ va) (x : b) :
+    (@CircuitType.valueToFields F b vb (CircuitType.ofEquiv ev ew) x).toList
+      = (CircuitType.valueToFields (F := F) (var := va) (ev x)).toList := rfl
+
 end Equiv
 
 end Snarky

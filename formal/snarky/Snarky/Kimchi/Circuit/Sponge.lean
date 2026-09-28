@@ -61,6 +61,11 @@ theorem ReadsAt.init [Field F] {V : Valuation F} :
     ReadsAt V (SpongeVar.init (F := F)) (Poseidon.init (F := F)) :=
   ⟨rfl, rfl⟩
 
+/-- A sponge seeded from constants reads as its value-level state. -/
+theorem ReadsAt.ofConstants [Field F] {V : Valuation F} (s : Poseidon.State F) :
+    ReadsAt V (SpongeVar.ofConstants s) s :=
+  ⟨rfl, rfl⟩
+
 /-- The sponge's reading at a table: in scope, and reading this value sponge. -/
 def Reads [Add F] [Mul F] [Zero F] (st : ProverState F) (sv : SpongeVar F)
     (s : Poseidon.State F) : Prop :=

@@ -207,6 +207,34 @@ instance instWrapStatementCircuitType {F f w b vb sv sf : Type} {k : ℕ} [Circu
     CircuitType F (WrapStatement k f b sv) (WrapStatement k w vb sf) :=
   CircuitType.ofEquiv (WrapStatement.equivProd k f b sv) (WrapStatement.equivProd k w vb sf)
 
+/-! ## The packed wrap statement -/
+
+/-- A `Type1` cell is checked as its cell. -/
+instance instType1CheckedType {F c : Type} [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+    CheckedType F c (Type1 F) (Type1 (FVar F)) :=
+  CheckedType.ofEquiv Type1.equivCarrier Type1.equivCarrier
+
+/-- The packed wrap statement is its field groups, in wire order. -/
+def StatementPacked.equivProd (k : ℕ) (sf f : Type) :
+    StatementPacked k sf f ≃ Vector sf 5 × Vector f 2 × Vector f 3 × Vector f 3 × Vector f k ×
+      f × Vector f 8 × f × f where
+  toFun s := (s.fpFields, s.challenges, s.scalarChallenges, s.digests, s.bulletproofChallenges,
+    s.branchData, s.featureFlags, s.lookupOptFlag, s.lookupOptScalarChallenge)
+  invFun p := ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1,
+    p.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2⟩
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+instance instStatementPackedCircuitType {F f w sv sf : Type} {k : ℕ} [CircuitType F f w]
+    [CircuitType F sv sf] : CircuitType F (StatementPacked k sv f) (StatementPacked k sf w) :=
+  CircuitType.ofEquiv (StatementPacked.equivProd k sv f) (StatementPacked.equivProd k sf w)
+
+/-- Nothing in the packed wrap statement is checked beyond its cells' own checks. -/
+instance instStatementPackedCheckedType {F c f w sv sf : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+    [One F] [BasicSystem F c] [CircuitType F f w] [CircuitType F sv sf] [CheckedType F c f w]
+    [CheckedType F c sv sf] : CheckedType F c (StatementPacked k sv f) (StatementPacked k sf w) :=
+  CheckedType.ofEquiv (StatementPacked.equivProd k sv f) (StatementPacked.equivProd k sf w)
+
 /-! ## The step statement -/
 
 /-- A step proof state is its slots and the step-message digest. -/

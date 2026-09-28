@@ -219,7 +219,6 @@ structure KnownDomain (F : Type) where
   log2 : ℕ
   /-- The domain generator `ω`. -/
   generator : F
-deriving DecidableEq
 
 /-- The step side's shifted-value conventions: Type1 claims, compared by encoding the
 computed scalar. -/

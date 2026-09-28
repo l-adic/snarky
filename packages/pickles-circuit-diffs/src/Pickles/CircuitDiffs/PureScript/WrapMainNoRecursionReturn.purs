@@ -13,13 +13,15 @@ module Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn
 
 import Prelude
 
-import Data.Vector ((:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKCommsFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
+import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.Wrap (stepVkForCircuit)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
@@ -39,7 +41,8 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
   stepArt <- compileStepMainNoRecursionReturn stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
-  realStepVK <- deriveStepVKFromCompiled @1 @0 vestaSrs stepArt.stepCs
+  stepComms <- deriveStepVKCommsFromCompiled @1 @0 vestaSrs stepArt.stepCs
+  let realStepVK = stepVkForCircuit stepComms
   let
 
     config :: WrapMainConfig 1 0 1
@@ -58,12 +61,16 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
   let
     dummyAdvice :: WrapAdvice 0 1
     dummyAdvice = unsafeCoerce unit
+
+    slotWidths :: Vector 0 Int
+    slotWidths = Vector.nil
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @1 @0 @1 config stmt dummyAdvice Vector.nil)
+    (\stmt -> wrapMain @1 @0 @1 config stmt dummyAdvice slotWidths)
   wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
     , wrapVk
+    , constants: wrapMainConstants config (stepComms :< Vector.nil) slotWidths
     }

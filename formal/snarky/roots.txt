@@ -74,6 +74,7 @@ Snarky.CircuitType.fieldsToValue_vector
 Snarky.CircuitType.fieldsToVar_fvar
 Snarky.CircuitType.size_prod
 Snarky.CircuitType.size_vector
+Snarky.CircuitType.toList_valueToFields_ofEquiv
 Snarky.CircuitType.valueToFields_prod
 Snarky.CircuitType.valueToFields_unit
 Snarky.CircuitType.valueToFields_vector

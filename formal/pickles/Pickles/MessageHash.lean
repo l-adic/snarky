@@ -1,4 +1,7 @@
+import Snarky.Kimchi.Circuit.AddComplete
+import Pickles.FrSponge
 import Pickles.OptSponge
+import Pickles.Statement
 import Pickles.VkComms
 
 set_option mvcgen.warning false
@@ -16,6 +19,8 @@ advice on the plain sponge, the per-slot one keeps it under the proof's mask.
 
 ## Main results
 
+* `hashMessagesForNextWrapProof_padded`: from the padding sponge (`wrapPaddingSponge`), the wrap
+  digest is the wire's messages-for-next-wrap-proof digest of the accumulator (`wrapMsgDigest`);
 * `spongeAfterIndex_spec`: the sponge after the key reads as the key's coordinates absorbed;
 * `hashMessagesForNextStepProofOpt_spec`: the per-slot digest reads as the plain sponge's
   squeeze after the key, the application state and the kept proofs' advice.
@@ -32,11 +37,31 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem 
 def hashMessagesForNextWrapProof (p : Poseidon.Params F) (sv : SpongeVar F)
     (allChallenges : List (List (FVar F))) (sg : AffinePoint (FVar F)) :
     CircuitM F c (FVar F) := do
-  let sv ← allChallenges.flatten.foldlM (SpongeVar.absorb p) sv
+  let sv ← absorbList p sv allChallenges.flatten
   let sv ← SpongeVar.absorb p sv sg.x
   let sv ← SpongeVar.absorb p sv sg.y
   let (digest, _) ← SpongeVar.squeeze p sv
   pure digest
+
+/-- The sponge state after absorbing `pad` copies of the dummy challenge vector `dummy`. -/
+def wrapPaddingState {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (pad : ℕ) :
+    Poseidon.State F :=
+  Poseidon.absorb p Poseidon.init (List.replicate pad dummy.toList).flatten
+
+/-- `wrapPaddingState` as constant cells: a slot with `pad` padding entries starts its
+accumulator digest here, so the padding emits no rows. -/
+def wrapPaddingSponge {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (pad : ℕ) :
+    SpongeVar F :=
+  SpongeVar.ofConstants (wrapPaddingState p dummy pad)
+
+/-- The wire's messages-for-next-wrap-proof digest: an accumulator's `sg` and its old bulletproof
+challenges, front-padded with `dummy` to `MaxProofsVerified`, absorbed from the fresh sponge and
+squeezed. -/
+def wrapMsgDigest {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (sg : AffinePoint F)
+    (chals : List (Vector F k)) : F :=
+  (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
+    ((List.replicate (MaxProofsVerified - chals.length) dummy.toList).flatten
+      ++ (chals.map Vector.toList).flatten ++ [sg.x, sg.y]))).1
 
 /-- The sponge after the key: its commitments absorbed chunk by chunk, `x` then `y`, in the
 order `σ₀…σ₆`, the coefficients, the selectors. -/
@@ -81,13 +106,64 @@ def hashMessagesForNextStepProofOpt {nc : ℕ} (p : Poseidon.Params F)
     let (digest, _) ← OptSponge.optSqueeze p ov
     pure (digest, afterIndex)
 
-/-! ## Reading the step digest -/
+/-! ## Reading the digests -/
 
 section Reads
 
 open Std.Do
 
 variable {V : Valuation F}
+
+/-- Under any valuation satisfying the emitted constraints, from a sponge reading as `s`, the
+wrap digest reads as the squeeze after absorbing the challenges' readings, then `sg`. -/
+theorem hashMessagesForNextWrapProof_spec (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
+    (allChallenges : List (List (FVar F))) (sg : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p sv
+      allChallenges sg
+    ⦃⇓ d _ => ⌜∀ s, SpongeVar.ReadsAt V sv s → d.val V = (Poseidon.squeeze p (Poseidon.absorb p s
+      (allChallenges.flatten.map (·.val V) ++ [sg.x.val V, sg.y.val V]))).1⌝⦄ := by
+  have hl := fun sv => absorbList_spec (V := V) p hsize sv allChallenges.flatten
+  have hx := fun sv x => SpongeVar.absorb_spec (V := V) p hsize sv x
+  have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
+  simp only [hashMessagesForNextWrapProof]
+  mvcgen [hl, hx, hsq]
+  rename_i _ _ hl' _ _ hx1 _ _ hy1 _ _ hsq'
+  intro s hs
+  rw [(hsq' _ (hy1 _ (hx1 _ (hl' s hs)))).1]
+  simp [Poseidon.absorb, List.foldl_append]
+
+/-- **The padded wrap digest.** From the padding sponge for the stacks it is given, the digest
+of cells reading as an accumulator `sg` and its challenges `chals` is the wire's
+messages-for-next-wrap-proof digest of them (`wrapMsgDigest`). -/
+theorem hashMessagesForNextWrapProof_padded {k : ℕ} (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (dummy : Vector F k)
+    (chals : List (Vector (FVar F) k)) (sg : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p
+      (wrapPaddingSponge p dummy (MaxProofsVerified - chals.length)) (chals.map Vector.toList) sg
+    ⦃⇓ d _ => ⌜∀ (sgv : AffinePoint F) (cv : List (Vector F k)), CircuitType.Reads V sg sgv →
+      List.Forall₂ (CircuitType.Reads V) chals cv → d.val V = wrapMsgDigest p dummy sgv cv⌝⦄ := by
+  refine builder_spec_imp _ _ _
+    (hashMessagesForNextWrapProof_spec p hsize _ (chals.map Vector.toList) sg) fun d hd => ?_
+  intro sgv cv hsg hcv
+  rw [hd _ (SpongeVar.ReadsAt.ofConstants _)]
+  obtain ⟨hx, hy⟩ := reads_affinePoint.mp hsg
+  -- the challenge cells read as the challenges
+  have hvals : ∀ {cs : List (Vector (FVar F) k)} {vs : List (Vector F k)},
+      List.Forall₂ (CircuitType.Reads V) cs vs →
+      (cs.map Vector.toList).flatten.map (·.val V) = (vs.map Vector.toList).flatten := by
+    intro cs vs h
+    induction h with
+    | nil => rfl
+    | cons hr _ ih =>
+      simp only [List.map_cons, List.flatten_cons, List.map_append, ih]
+      congr 1
+      apply List.ext_getElem (by simp)
+      intro i h1 h2
+      have := (CircuitType.reads_vector.mp hr) i (by simpa using h2)
+      simpa [CircuitType.reads_fvar] using this
+  simp only [wrapMsgDigest, wrapPaddingState, hcv.length_eq, Poseidon.absorb, List.foldl_append,
+    hvals hcv, hx, hy]
 
 /-- Under any valuation satisfying the emitted constraints, the sponge after the key reads as
 the fresh value sponge after absorbing the key's coordinates in order. -/

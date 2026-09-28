@@ -35,6 +35,7 @@ import Pickles.CircuitDiffs.PureScript.CheckBulletproofStep (compileCheckBulletp
 import Pickles.CircuitDiffs.PureScript.CheckBulletproofWrap (compileCheckBulletproofWrap)
 import Pickles.CircuitDiffs.PureScript.Cip (compileCipStep, compileCipWrap)
 import Pickles.CircuitDiffs.PureScript.CombinePoly (compileCombinePoly)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact)
 import Pickles.CircuitDiffs.PureScript.ExpandPlonk (compileExpandPlonkStep, compileExpandPlonkWrap)
 import Pickles.CircuitDiffs.PureScript.FopStep (compileFopStep)
 import Pickles.CircuitDiffs.PureScript.FopStepChunks2 (compileFopStepChunks2)
@@ -176,6 +177,13 @@ dumpStepLagrange file srs log2 count =
         , h: ptToJson (vestaSrsBlindingGenerator srs)
         }
     )
+
+-- | A wrap artifact's circuit, after writing the constants it bakes in to
+-- | `<name>_constants.json` in `resultsDir` for the Lean `check_cs` harness.
+wrapWithConstants :: String -> WrapArtifact -> Effect (Circuit Fq)
+wrapWithConstants name art = do
+  FS.writeTextFile UTF8 (resultsDir <> name <> "_constants.json") art.constants
+  fromCompiledCircuit art.wrapCs
 
 appendManifest :: String -> String -> Effect Unit
 appendManifest name status =
@@ -871,7 +879,7 @@ spec bundle =
         -- commitment pipeline (mirrors the wrap_main_n2_circuit fix at
         -- commit `cf352650`).
         exactMatchEff "wrap_main_circuit"
-          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
+          (wrapWithConstants "wrap_main_circuit" =<< compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
@@ -893,7 +901,7 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_side_loaded_main_circuit"
-          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
+          (wrapWithConstants "wrap_main_side_loaded_main_circuit" =<< compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
         -- N=2 Input mode (Simple_chain_n2). step_widths=[2], padded=[[0;2];[0;2]].
         -- `compileWrapMainN2` deterministically computes the step VK by
         -- recompiling the matching step CS and running the kimchi
@@ -917,7 +925,7 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN2StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_n2_circuit"
-          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainN2 wrapMainN2SrsData wrapMainN2StepSrsData)
+          (wrapWithConstants "wrap_main_n2_circuit" =<< compileWrapMainN2 wrapMainN2SrsData wrapMainN2StepSrsData)
         -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
         -- padded=[[0];[0]]. First (and only) N=0 wrap fixture — exercises
         -- the wrap verify-one-of-step path with a step proof whose own
@@ -939,7 +947,7 @@ spec bundle =
           -- Step CS params for Add_one_return (mpv=0, no prev proofs).
           -- Lagrange lookup is unused at mpv=0 (perSlotLagrangeAt is
           -- Vector.nil). blindingH and SRS size match the Vesta CRS
-          -- used by createCRS in deriveStepVKFromCompiled.
+          -- the step VK is derived over (deriveStepVKCommsFromCompiled).
           aorStepSrs = bundle.pallasCrs15
           aorStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -947,7 +955,7 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_add_one_return_circuit"
-          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
+          (wrapWithConstants "wrap_main_add_one_return_circuit" =<< compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=0, num_chunks=2 wrap. Same branch/widths/Max_widths layout
         -- as `wrap_main_add_one_return_circuit` but with `stepChunks=2`
         -- at `wrapMainForPrevs`, so the IVP MSM walks 2 chunks per
@@ -962,7 +970,7 @@ spec bundle =
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatchEff "chunks2_wrap_main_circuit"
-          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
+          (wrapWithConstants "chunks2_wrap_main_circuit" =<< compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
@@ -1011,7 +1019,7 @@ spec bundle =
             , nrrStepSrsData: wrapTprNrrStepSrsData
             }
         exactMatchEff "wrap_main_tree_proof_return_circuit"
-          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
+          (wrapWithConstants "wrap_main_tree_proof_return_circuit" =<< compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
         -- Multi-branch (2 branches: make_zero + increment) sharing ONE wrap
         -- key. step_widths=[0;1], padded=[[0;0];[0;1]]; per-branch step
         -- domains [9; 14] differ (make_zero is tiny, increment full),
@@ -1038,7 +1046,7 @@ spec bundle =
             , incrementStepSrsData: tpcIncrementSrsData
             }
         exactMatchEff "wrap_main_two_phase_chain_circuit"
-          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainTwoPhaseChain wrapMainTpcParams)
+          (wrapWithConstants "wrap_main_two_phase_chain_circuit" =<< compileWrapMainTwoPhaseChain wrapMainTpcParams)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = bundle.pallasCrs15

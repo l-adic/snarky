@@ -5,6 +5,7 @@ package:
     - curves
     - effect
     - either
+    - enums
     - exceptions
     - foldable-traversable
     - foreign

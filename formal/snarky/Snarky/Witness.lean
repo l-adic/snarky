@@ -55,6 +55,14 @@ instance instCheckedTypeFVar [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] 
   check_sound := by intros; trivial
   check_complete _ _ _ := Complete.pure
 
+/-- The empty bundle carries no well-formedness constraint. -/
+instance instCheckedTypeUnit [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+    CheckedType F c Unit Unit where
+  check _ := .pure PUnit.unit
+  post _ _ := True
+  check_sound := by intros; trivial
+  check_complete _ _ _ := Complete.pure
+
 /-- A freshly witnessed boolean must be constrained to `{0, 1}`: one `boolean` row, whose
 reading is the booleanity every consumer of the bundle assumes. -/
 instance instCheckedTypeBool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
