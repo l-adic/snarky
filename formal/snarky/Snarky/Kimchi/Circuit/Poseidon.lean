@@ -89,7 +89,7 @@ instance instCircuitTypeSpongeState :
     rw [h0, h1, h2]
 
 /-- The state cells carry no well-formedness constraint (plain field variables). -/
-instance instCheckedTypeSpongeState [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+instance instCheckedTypeSpongeState [Field F] [BasicSystem F c] :
     CheckedType F c (Poseidon.Triple F) (SpongeState F) where
   check _ := pure PUnit.unit
   post _ _ := True
@@ -97,7 +97,7 @@ instance instCheckedTypeSpongeState [Add F] [Mul F] [Zero F] [One F] [BasicSyste
   check_complete _ _ _ := Complete.pure
 
 /-- A state triple carries no admissibility condition. -/
-@[simp] theorem valid_spongeState [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+@[simp] theorem valid_spongeState [Field F] [BasicSystem F c]
     {v : Poseidon.Triple F} :
     CheckedType.Valid (F := F) (c := c) (var := SpongeState F) v := fun _ _ _ => trivial
 

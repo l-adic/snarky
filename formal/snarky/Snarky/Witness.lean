@@ -1,3 +1,4 @@
+import Mathlib.Algebra.Field.Defs
 import Snarky.Prover
 
 /-!
@@ -16,7 +17,7 @@ emitted by `witness` under both interpreters, with what its rows force about the
 (`post`, `check_sound`) and that a bundle whose reading already satisfies them can be
 completed to a run that does (`check_complete`). The value type is a parameter because
 the laws speak of the encoding. -/
-class CheckedType (F c val var : Type) [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+class CheckedType (F c val var : Type) [Field F] [BasicSystem F c]
     [CircuitType F val var] where
   /-- The circuit that constrains the bundle to well-formed values. -/
   check : var → CircuitM F c PUnit
@@ -38,7 +39,7 @@ class CheckedType (F c val var : Type) [Add F] [Mul F] [Zero F] [One F] [BasicSy
 /-- The values a check admits: those whose every bundle reading satisfies `post`. A
 definition rather than a field, so no completeness law can assume more than the type's
 own rows force. -/
-def CheckedType.Valid {F c val var : Type} [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+def CheckedType.Valid {F c val var : Type} [Field F] [BasicSystem F c]
     [CircuitType F val var] [CheckedType F c val var] (a : val) : Prop :=
   ∀ (V : Valuation F) (w : var), CircuitType.Reads V w a →
     CheckedType.post (c := c) (val := val) V w
@@ -48,7 +49,7 @@ section Instances
 variable {F c : Type}
 
 /-- A field element carries no well-formedness constraint. -/
-instance instCheckedTypeFVar [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+instance instCheckedTypeFVar [Field F] [BasicSystem F c] :
     CheckedType F c F (FVar F) where
   check _ := .pure PUnit.unit
   post _ _ := True
@@ -56,7 +57,7 @@ instance instCheckedTypeFVar [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] 
   check_complete _ _ _ := Complete.pure
 
 /-- The empty bundle carries no well-formedness constraint. -/
-instance instCheckedTypeUnit [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+instance instCheckedTypeUnit [Field F] [BasicSystem F c] :
     CheckedType F c Unit Unit where
   check _ := .pure PUnit.unit
   post _ _ := True
@@ -65,7 +66,7 @@ instance instCheckedTypeUnit [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] 
 
 /-- A freshly witnessed boolean must be constrained to `{0, 1}`: one `boolean` row, whose
 reading is the booleanity every consumer of the bundle assumes. -/
-instance instCheckedTypeBool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+instance instCheckedTypeBool [Field F] [DecidableEq F]
     [NeZero (1 : F)] [BasicSystem F c] : CheckedType F c Bool (BoolVar F) where
   check b := addConstraint (BasicSystem.boolean b.toCVar)
   post V b := ∃ bb : Bool, (↑b : CVar F).val V = bit bb
@@ -90,7 +91,7 @@ section Product
 variable {a va b vb : Type}
 
 /-- A product is checked factor by factor; its rows concatenate. -/
-instance instCheckedTypeProd [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+instance instCheckedTypeProd [Field F] [BasicSystem F c]
     [CircuitType F a va] [CircuitType F b vb] [CheckedType F c a va] [CheckedType F c b vb] :
     CheckedType F c (a × b) (va × vb) where
   check p := do
@@ -130,7 +131,7 @@ section VectorFormer
 variable {a va : Type}
 
 /-- Check each bundle in turn. -/
-def checkAll [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [CircuitType F a va]
+def checkAll [Field F] [BasicSystem F c] [CircuitType F a va]
     [CheckedType F c a va] : List va → CircuitM F c PUnit
   | [] => pure PUnit.unit
   | v :: vs => do
@@ -139,7 +140,7 @@ def checkAll [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [CircuitType F a
 
 section Laws
 
-variable [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [CircuitType F a va]
+variable [Field F] [BasicSystem F c] [CircuitType F a va]
   [CheckedType F c a va]
 
 private theorem checkAll_sound [ConstraintHolds F c] [LawfulBasicSystem F c] (V : Valuation F) :
@@ -202,7 +203,7 @@ private theorem checkAll_complete [ConstraintHolds F c] [LawfulBasicSystem F c] 
 end Laws
 
 /-- A vector is checked entry by entry; its rows concatenate. -/
-instance instCheckedTypeVector [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+instance instCheckedTypeVector [Field F] [BasicSystem F c]
     [CircuitType F a va] [CheckedType F c a va] {n : Nat} :
     CheckedType F c (Vector a n) (Vector va n) where
   check vs := checkAll (F := F) (c := c) (a := a) vs.toList
@@ -224,7 +225,7 @@ variable {val var : Type}
 
 /-- An `UnChecked` bundle emits no check: it grants nothing, which is what the wrapper
 is for. -/
-instance instCheckedTypeUnChecked [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+instance instCheckedTypeUnChecked [Field F] [BasicSystem F c]
     [CircuitType F val var] : CheckedType F c (UnChecked val) (UnChecked var) where
   check _ := pure PUnit.unit
   post _ _ := True
@@ -238,9 +239,9 @@ section Equiv
 variable {a va b vb : Type}
 
 /-- A type isomorphic to a checked type is checked through the isomorphism. -/
-@[reducible] def CheckedType.ofEquiv [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+@[reducible] def CheckedType.ofEquiv [Field F] [BasicSystem F c]
     [CircuitType F a va] [S : CheckedType F c a va] (ev : b ≃ a) (ew : vb ≃ va) :
-    @CheckedType F c b vb _ _ _ _ _ (CircuitType.ofEquiv ev ew) :=
+    @CheckedType F c b vb _ _ (CircuitType.ofEquiv ev ew) :=
   letI : CircuitType F b vb := CircuitType.ofEquiv ev ew
   { check := fun v => S.check (ew v)
     post := fun V v => S.post V (ew v)
@@ -266,21 +267,21 @@ section Valid
 
 variable {F c : Type}
 
-@[simp] theorem valid_fvar [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] {x : F} :
+@[simp] theorem valid_fvar [Field F] [BasicSystem F c] {x : F} :
     CheckedType.Valid (F := F) (c := c) (var := FVar F) x := fun _ _ _ => trivial
 
-@[simp] theorem valid_bool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [NeZero (1 : F)]
+@[simp] theorem valid_bool [Field F] [DecidableEq F] [NeZero (1 : F)]
     [BasicSystem F c] {b : Bool} :
     CheckedType.Valid (F := F) (c := c) (var := BoolVar F) b :=
   fun _ _ h => ⟨b, CircuitType.reads_boolVar.mp h⟩
 
-@[simp] theorem valid_unchecked {val var : Type} [Add F] [Mul F] [Zero F] [One F]
+@[simp] theorem valid_unchecked {val var : Type} [Field F]
     [BasicSystem F c] [CircuitType F val var] {x : UnChecked val} :
     CheckedType.Valid (F := F) (c := c) (var := UnChecked var) x := fun _ _ _ => trivial
 
 variable {a va b vb : Type}
 
-@[simp] theorem valid_prod [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+@[simp] theorem valid_prod [Field F] [BasicSystem F c]
     [CircuitType F a va] [CircuitType F b vb] [CheckedType F c a va] [CheckedType F c b vb]
     {p : a × b} :
     CheckedType.Valid (F := F) (c := c) (var := va × vb) p ↔
@@ -296,7 +297,7 @@ variable {a va b vb : Type}
     rw [CircuitType.reads_prod] at hu
     exact ⟨hx V u hu.1, hy V w hu.2⟩
 
-@[simp] theorem valid_vector [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+@[simp] theorem valid_vector [Field F] [BasicSystem F c]
     [CircuitType F a va] [CheckedType F c a va] {n : Nat} {xs : Vector a n} :
     CheckedType.Valid (F := F) (c := c) (var := Vector va n) xs ↔
       ∀ (i : Nat) (hi : i < n), CheckedType.Valid (F := F) (c := c) (var := va) xs[i] := by
@@ -308,9 +309,9 @@ variable {a va b vb : Type}
     exact h i hi V ws[i] (hws i hi)
 
 /-- Admissibility transfers along the isomorphism. -/
-@[simp] theorem valid_ofEquiv [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+@[simp] theorem valid_ofEquiv [Field F] [BasicSystem F c]
     [CircuitType F a va] [S : CheckedType F c a va] (ev : b ≃ a) (ew : vb ≃ va) {x : b} :
-    @CheckedType.Valid F c b vb _ _ _ _ _ (CircuitType.ofEquiv ev ew)
+    @CheckedType.Valid F c b vb _ _ (CircuitType.ofEquiv ev ew)
         (CheckedType.ofEquiv ev ew) x ↔
       CheckedType.Valid (F := F) (c := c) (var := va) (ev x) := by
   constructor
@@ -332,7 +333,7 @@ variable {F c val var : Type}
 /-- Witness a typed value, the circuit's nondeterminism primitive. The builder allocates
 `CircuitType.size` variables for the bundle and emits the type's `CheckedType.check` rows;
 only prover runs execute `compute`, whose output is the witness to that existential. -/
-def witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [inst : CircuitType F val var]
+def witness [Field F] [BasicSystem F c] [inst : CircuitType F val var]
     [CheckedType F c val var] (compute : AsProver F val) : CircuitM F c var :=
   .existsOp inst.size (inst.valueToFields <$> compute) fun vs => do
     let v := inst.fieldsToVar (mapVec CVar.var vs)
@@ -351,7 +352,7 @@ def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver 
 
 open Std.Do in
 /-- A witnessed bundle satisfies its type's `CheckedType.post` wherever the rows hold. -/
-@[spec] theorem witness_spec {V : Valuation F} [Add F] [Mul F] [Zero F] [One F]
+@[spec] theorem witness_spec {V : Valuation F} [Field F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     [CircuitType F val var] [S : CheckedType F (Builder V c) val var] (compute : AsProver F val) :
     ⦃⌜True⌝⦄
@@ -388,7 +389,7 @@ reads as that value and whose rows, the type's check rows, hold at any extension
 Admissibility (`CheckedType.Valid`) is what the type's own rows force, so the hypothesis
 restricts the honest prover to exactly what the circuit accepts. The allocation's order
 facts are left to `Complete.frame`. -/
-theorem Complete.witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+theorem Complete.witness [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] [inst : CircuitType F val var]
     [CheckedType F c val var] (compute : AsProver F val) (v : val)
     (hv : CheckedType.Valid (F := F) (c := c) (var := var) v) :
@@ -433,7 +434,7 @@ theorem Complete.witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
 end Combinators
 
 /-- Witnessing an unchecked bundle emits no rows — the wrapper's whole content. -/
-example {val var : Type} [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+example {val var : Type} [Field F] [BasicSystem F c]
     [CircuitType F val var] (compute : AsProver F (UnChecked val)) (nv : Nat) :
     (build (witness (c := c) (val := UnChecked val) compute) nv).constraints = [] := by
   simp [witness, build, build_bind]

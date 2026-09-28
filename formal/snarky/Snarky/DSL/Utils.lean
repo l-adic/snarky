@@ -15,7 +15,7 @@ row. `seal` is a Lean token, hence the name. -/
 
 /-- Seal an expression: pass through a lone unit-coefficient variable or a lone constant;
 otherwise witness its value into a fresh variable and assert them equal. -/
-def sealVar [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
+def sealVar [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
     CircuitM F c (FVar F) :=
   match x.reduceToAffineExpression with
   | ⟨none, [(v, k)]⟩ => if k = 1 then pure (.var v) else core x

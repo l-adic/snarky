@@ -174,8 +174,8 @@ instance instAllocUnfinalizedCircuitType {F f w b vb sv sf : Type} {k : ℕ} [Ci
 
 /-- An unfinalized entry is checked cell by cell: at split shifted claims, each claim's parity
 bit and the finalize flag are boolean. -/
-instance instAllocUnfinalizedCheckedType {F c f w b vb sv sf : Type} {k : ℕ} [Add F] [Mul F]
-    [Zero F] [One F] [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb]
+instance instAllocUnfinalizedCheckedType {F c f w b vb sv sf : Type} {k : ℕ} [Field F]
+    [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb]
     [CircuitType F sv sf] [CheckedType F c f w] [CheckedType F c b vb] [CheckedType F c sv sf] :
     CheckedType F c (AllocUnfinalized k f b sv) (AllocUnfinalized k w vb sf) :=
   CheckedType.ofEquiv (AllocUnfinalized.equivProd k f b sv) (AllocUnfinalized.equivProd k w vb sf)
@@ -358,7 +358,7 @@ instance instVkCommsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
   CircuitType.ofEquiv (VkComms.equivProd nc v) (VkComms.equivProd nc w)
 
 /-- A key is checked commitment by commitment: at checked points, every chunk on the curve. -/
-instance instVkCommsCheckedType {F c v w : Type} {nc : ℕ} [Add F] [Mul F] [Zero F] [One F]
+instance instVkCommsCheckedType {F c v w : Type} {nc : ℕ} [Field F]
     [BasicSystem F c] [CircuitType F v w] [CheckedType F c v w] :
     CheckedType F c (VkComms nc v) (VkComms nc w) :=
   CheckedType.ofEquiv (VkComms.equivProd nc v) (VkComms.equivProd nc w)

@@ -386,8 +386,8 @@ instance instScalarInputCircuitType {F f w b vb : Type} {k nc : ℕ} [CircuitTyp
   CircuitType.ofEquiv (ScalarInput.equivProd k nc f b) (ScalarInput.equivProd k nc w vb)
 
 /-- The input's check is the branch data's: the rest is unchecked. -/
-instance instScalarInputCheckedType {F c f w b vb : Type} {k nc : ℕ} [Add F] [Mul F] [Zero F]
-    [One F] [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
+instance instScalarInputCheckedType {F c f w b vb : Type} {k nc : ℕ} [Field F]
+    [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
     [CheckedType F c b vb] : CheckedType F c (ScalarInput k nc f b) (ScalarInput k nc w vb) :=
   CheckedType.ofEquiv (ScalarInput.equivProd k nc f b) (ScalarInput.equivProd k nc w vb)
 
