@@ -95,7 +95,7 @@ private def rowWit [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
 /-- One `endoMul` window round (the loop body, named): witness the row's advice
 octet and assemble the `EndoMulRound` record, returning the round and the advanced
 `(accumulator, register)` state. -/
-def endoMulRound [Field F] [DecidableEq F] [BasicSystem F c]
+def endoMulRound [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     (eb : F) (t : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 4) :
     CircuitM F c (EndoMulRound F × (AffinePoint (FVar F) × FVar F)) := do
@@ -112,7 +112,8 @@ def endoMulRound [Field F] [DecidableEq F] [BasicSystem F c]
 `β·x` and build `acc = [2](g + φ(g))` with two `addFast`s, run the `rounds` window rounds
 threading `(acc, nAcc)`, pin the scalar fold, emit one `endoMul` constraint, and return
 the final accumulator. -/
-def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
+def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
+    [KimchiSystem F c]
     (eb : F) (rounds : ℕ) (g : AffinePoint (FVar F))
     (scalar : SizedF (4 * rounds) (FVar F)) :
     CircuitM F c (AffinePoint (FVar F)) := do
@@ -164,7 +165,8 @@ witness plus the inline on-curve rows — verify `endoMul result scalar = g`, an
 witnessed point. `W` is the (short-Weierstrass) curve, whose `a₄`/`a₆` are the check's
 coefficients; `q` and `lam'` are the scalar-field order and eigenvalue the advice decodes
 through. -/
-def endoInv [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
+def endoInv [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
+    [KimchiSystem F c]
     (eb : F) (W : WeierstrassCurve.Affine F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
     (g : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
     CircuitM F c (AffinePoint (FVar F)) := do

@@ -101,7 +101,7 @@ variable {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k ncw ncs w : ℕ
 finalize the carried deferred values, hash the step-side messages, run the group half at the
 rebuilt wrap statement from the hash's sponge after the key, and return the finalized round
 challenges with the verdict `(verified ∧ finalized) ∨ ¬mustVerify`. -/
-def verifyOneBy
+def verifyOneBy [ConstraintHolds Fp c]
     (verify : SpongeVar Fp → BoolVar Fp →
       WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
       UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →

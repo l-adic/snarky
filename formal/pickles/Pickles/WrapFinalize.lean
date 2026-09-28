@@ -36,8 +36,8 @@ variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Kim
 /-- One slot's pin. `atSlot` holds each branch's compile-time domain index for the slot, `none`
 for a side-loaded predecessor. When every branch knows it, the index equals the one-hot choice;
 otherwise the known branches' bits scale the index to that choice. -/
-def pinWrapDomainIndex (whichBranch : List (BoolVar F)) (atSlot : List (Option ℕ))
-    (index : FVar F) : CircuitM F c PUnit :=
+def pinWrapDomainIndex [ConstraintHolds F c] (whichBranch : List (BoolVar F))
+    (atSlot : List (Option ℕ)) (index : FVar F) : CircuitM F c PUnit :=
   match atSlot.allSome with
   | some ks => do
     let chosen ← Pseudo.choose whichBranch ks fun j => .const (j : F)
@@ -149,7 +149,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 /-- The wrap circuit's finalize block over its slots: the pins, left to right; the domains, right
 to left, among `wrapDomainLog2s` with the scalar field's generators (`domainGenerator`); the
 finalize bodies with their assertions, left to right. Returns each slot's finalize output. -/
-def wrapFinalizePrevProofs {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
+def wrapFinalizePrevProofs {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [KimchiSystem Fq c]
     {branches mpv k nc : ℕ} (P : FopParams Fq) (whichBranch : Vector (BoolVar Fq) branches)
     (slots : Vector (WrapFinalizeSlot branches k nc Fq) mpv) :
     CircuitM Fq c (List (FopOutput Fq)) := do

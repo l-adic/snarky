@@ -37,7 +37,8 @@ abbrev WrapFopVar (k nc : ℕ) : Type := FopInput k nc (FVar Fq) (BoolVar Fq) (T
 verifier key's parameters and domain — its generator a constant, `ζⁿ − 1` by `pow2PowMul`
 at the key's `log2` — the `Fq` token stream, and the previous-challenge cells at their static
 size. -/
-def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {k nc : ℕ}
+def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
+    [KimchiSystem Fq c] {k nc : ℕ}
     (E : Env IpaPallas.curve nc)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
     (w : ChunkedEvals nc (FVar Fq))
@@ -263,7 +264,7 @@ abbrev ScalarVar.half (V : Valuation Fq) (s : ScalarVar k nc) :
 
 /-- The wrap circuit's scalar half as a circuit of its input, `finalized` asserted, as at a
 slot whose `shouldFinalize` is set. -/
-def scalarCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
+def scalarCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [KimchiSystem Fq c]
     (E : Env IpaPallas.curve nc) (s : ScalarVar E.σ.k nc) : CircuitM Fq c Unit := do
   let o ← finalizeOtherProofWrapAt E s.claims s.evals s.prev
   assert o.finalized

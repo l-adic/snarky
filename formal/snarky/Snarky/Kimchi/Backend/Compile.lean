@@ -1,5 +1,6 @@
 import Snarky.Compile
 import Snarky.Kimchi.Backend.Assemble
+import Snarky.Kimchi.Semantics
 
 /-!
 # Whole-circuit compilation at the kimchi backend

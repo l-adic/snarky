@@ -168,7 +168,8 @@ theorem CVar.Scoped.packLow [Semiring F] [DecidableEq F] {st : ProverState F} {n
 
 /-- Decompose a field variable into `n` LSB-first bits: witness them checked — each pays
 its `boolean` row — then pin their weighted sum to the operand with one `r1cs` row. -/
-def unpack [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] (v : FVar F) (n : Nat) :
+def unpack [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat) :
     CircuitM F c (Vector (BoolVar F) n) := do
   let bits ← witness (val := Vector Bool n) (advice v n)
   addConstraint (BasicSystem.r1cs (pack bits) (.const 1) v)
@@ -231,7 +232,8 @@ theorem unpack_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [Bas
 attribute [irreducible] unpack
 
 /-- The rows `unpack` emits, in order: one `boolean` per bit, then the packing row. -/
-example [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] (v : FVar F) (nv : Nat) :
+example [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (nv : Nat) :
     (build (unpack (c := c) v 2) nv).constraints =
       (let bits := (build (unpack (c := c) v 2) nv).result
        [BasicSystem.boolean bits[0].toCVar, BasicSystem.boolean bits[1].toCVar,

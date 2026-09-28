@@ -44,7 +44,7 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem 
 namespace OptSponge
 
 /-- Add `x` into the rate slot the bit `pos` selects, by one `r1cs` constraint per slot. -/
-private def addIn (st : SpongeState F) (pos : BoolVar F) (x : FVar F) :
+private def addIn [ConstraintHolds F c] (st : SpongeState F) (pos : BoolVar F) (x : FVar F) :
     CircuitM F c (SpongeState F) := do
   let flag0 := Snarky.not pos
   let s0' ← witness (val := F) (advice st.s0 (↑flag0) x)
@@ -61,7 +61,8 @@ where
     pure (if fv = 1 then sv + xv else sv)
 
 /-- Permute where the bit is set: the permutation, then one selection per slot. -/
-private def condPermute (p : Poseidon.Params F) (permute : BoolVar F) (st : SpongeState F) :
+private def condPermute [ConstraintHolds F c] (p : Poseidon.Params F) (permute : BoolVar F)
+    (st : SpongeState F) :
     CircuitM F c (SpongeState F) := do
   let permuted ← poseidon p st
   let s0 ← selectField permute permuted.s0 st.s0
@@ -71,7 +72,8 @@ private def condPermute (p : Poseidon.Params F) (permute : BoolVar F) (st : Spon
 
 /-- Consume one pair of guarded inputs at position `pos`, permuting at most once; returns the
 state and the next position. -/
-private def consumePair (p : Poseidon.Params F) (st : SpongeState F) (pos : BoolVar F)
+private def consumePair [ConstraintHolds F c] (p : Poseidon.Params F) (st : SpongeState F)
+    (pos : BoolVar F)
     (e₁ e₂ : BoolVar F × FVar F) : CircuitM F c (SpongeState F × BoolVar F) := do
   let (b, x) := e₁
   let (b', y) := e₂
@@ -94,7 +96,7 @@ private def consumePair (p : Poseidon.Params F) (st : SpongeState F) (pos : Bool
   pure (state4, posAfter)
 
 /-- Consume the pairs in order. -/
-private def consumePairs (p : Poseidon.Params F) :
+private def consumePairs [ConstraintHolds F c] (p : Poseidon.Params F) :
     SpongeState F → BoolVar F → List ((BoolVar F × FVar F) × (BoolVar F × FVar F)) →
     CircuitM F c (SpongeState F × BoolVar F)
   | st, pos, [] => pure (st, pos)
@@ -113,19 +115,20 @@ private def initState : SpongeState F := ⟨.const 0, .const 0, .const 0⟩
 
 /-- The final permutation's bit with no unpaired entry: the position, or, under
 `needsFinalPermuteIfEmpty`, an empty input. -/
-private def finalBit (nf : Bool) (emptyInput pos : BoolVar F) : CircuitM F c (BoolVar F) :=
+private def finalBit [ConstraintHolds F c] (nf : Bool) (emptyInput pos : BoolVar F) : CircuitM
+    F c (BoolVar F) :=
   if nf then Snarky.or emptyInput pos else pure pos
 
 /-- The final permutation's bit after the unpaired entry `b`: the position or `b`, or, under
 `needsFinalPermuteIfEmpty`, an empty input. -/
-private def finalBitLeftover (nf : Bool) (emptyInput pos b : BoolVar F) :
+private def finalBitLeftover [ConstraintHolds F c] (nf : Bool) (emptyInput pos b : BoolVar F) :
     CircuitM F c (BoolVar F) :=
   if nf then Snarky.any [pos, b, emptyInput] else Snarky.any [pos, b]
 
 /-- Consume the guarded inputs from `st` at position `pos`: the pairs, then the unpaired entry
 if any, then a permutation where the block is non-empty or, under `needsFinalPermuteIfEmpty`,
 nothing was kept. -/
-def consume (p : Poseidon.Params F) (st : SpongeState F) (pos : BoolVar F)
+def consume [ConstraintHolds F c] (p : Poseidon.Params F) (st : SpongeState F) (pos : BoolVar F)
     (needsFinalPermuteIfEmpty : Bool) (input : List (BoolVar F × FVar F)) :
     CircuitM F c (SpongeState F) := do
   let (pairs, leftover) := pairUp input
@@ -145,7 +148,7 @@ def consume (p : Poseidon.Params F) (st : SpongeState F) (pos : BoolVar F)
 
 /-- Consume the guarded inputs from a fresh sponge at position `0`, permuting even when
 nothing was kept, and read slot `0`. -/
-def squeeze (p : Poseidon.Params F) (input : List (BoolVar F × FVar F)) :
+def squeeze [ConstraintHolds F c] (p : Poseidon.Params F) (input : List (BoolVar F × FVar F)) :
     CircuitM F c (FVar F) := do
   let final ← consume p initState false_ true input
   pure final.s0
@@ -178,7 +181,8 @@ def create : OptSpongeVar F := ⟨initState, .absorbing false_ [], true⟩
 /-- A plain sponge as the conditional sponge on the same state: squeezed at the same slot;
 absorbed at position `0` or `1`, absorbing from there; with both rate slots filled, permuted
 first, which alone clears the empty-input permute. -/
-def ofSponge (p : Poseidon.Params F) (sv : SpongeVar F) : CircuitM F c (OptSpongeVar F) :=
+def ofSponge [ConstraintHolds F c] (p : Poseidon.Params F) (sv : SpongeVar F) : CircuitM F c
+    (OptSpongeVar F) :=
   match sv.mode with
   | .squeezed n => pure ⟨sv.state, .squeezed n, true⟩
   | .absorbed ⟨0, _⟩ => pure ⟨sv.state, .absorbing false_ [], true⟩
@@ -204,7 +208,7 @@ private def slotVar (st : SpongeState F) : Fin 3 → FVar F
 /-- Squeeze: when squeezed, the next slot, permuting first when the block is exhausted; when
 absorbing, consume the pending inputs oldest first and read slot `0`, now squeezed at slot `1`
 with the empty-input permute set. -/
-def optSqueeze (p : Poseidon.Params F) (ov : OptSpongeVar F) :
+def optSqueeze [ConstraintHolds F c] (p : Poseidon.Params F) (ov : OptSpongeVar F) :
     CircuitM F c (FVar F × OptSpongeVar F) :=
   match ov.phase with
   | .squeezed n =>

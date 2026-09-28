@@ -104,7 +104,8 @@ private def sqrtWit [Field F] (sqrtF : F → Option F) (x : FVar F) :
 /-- In-circuit square root with a residuosity flag: witness the flag, select the operand or
 its non-residue twist, witness a root, and pin it with one `square` row —
 `y² = if isQR then x else nonResidue·x`. -/
-private def sqrtFlagged [Field F] [DecidableEq F] [BasicSystem F c]
+private def sqrtFlagged [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c]
     (sqrtF : F → Option F) (nonResidue : F) (x : FVar F) :
     CircuitM F c (FVar F × BoolVar F) := do
   let isQR ← witness (val := Bool) (isQRWit sqrtF x)
@@ -133,7 +134,8 @@ where the flag is set, to its non-residue twist where it is clear. -/
 
 /-- The in-circuit map: the candidate abscissae, a flagged root per candidate, at least one
 flag asserted set, and the first-flagged candidate selected by boolean products. -/
-def groupMapCircuit [Field F] [DecidableEq F] [BasicSystem F c]
+def groupMapCircuit [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c]
     (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
     CircuitM F c (AffinePoint (FVar F)) := do
   let t2 ← mul t t

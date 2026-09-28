@@ -76,7 +76,8 @@ def KnownDomains.ofList? {nc : ℕ} (E : Env IpaVesta.curve nc) (log2s : List �
 
 /-- `finalizeOtherProofStep` with the verifier key's parameters, the `Fp` token stream, and
 the mask and previous-challenge cells at the finalized proof's width `w`. -/
-def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {k nc w : ℕ}
+def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
+    [KimchiSystem Fp c] {k nc w : ℕ}
     (E : Env IpaVesta.curve nc) (domains : KnownDomains E)
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (evals : ChunkedEvals nc (FVar Fp))
@@ -387,7 +388,8 @@ instance instScalarInputCircuitType {F f w b vb : Type} {k nc : ℕ} [CircuitTyp
 
 /-- The input's check is the branch data's: the rest is unchecked. -/
 instance instScalarInputCheckedType {F c f w b vb : Type} {k nc : ℕ} [Field F]
-    [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f w] [CircuitType F b vb]
+    [CheckedType F c f w]
     [CheckedType F c b vb] : CheckedType F c (ScalarInput k nc f b) (ScalarInput k nc w vb) :=
   CheckedType.ofEquiv (ScalarInput.equivProd k nc f b) (ScalarInput.equivProd k nc w vb)
 
@@ -417,7 +419,7 @@ abbrev ScalarVar.half {k nc : ℕ} (V : Valuation Fp) (s : ScalarVar k nc) :
 
 /-- The step circuit's scalar half as a circuit of its input: the gadget, then `finalized`
 asserted, as at a slot whose `shouldFinalize` is set. -/
-def scalarCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
+def scalarCircuit {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [KimchiSystem Fp c]
     {nc : ℕ} (E : Env IpaVesta.curve nc) (domains : KnownDomains E) (s : ScalarVar E.σ.k nc) :
     CircuitM Fp c Unit := do
   let o ← finalizeOtherProofStepAt E domains s.claims s.evals s.branch.proofsVerifiedMask s.prev

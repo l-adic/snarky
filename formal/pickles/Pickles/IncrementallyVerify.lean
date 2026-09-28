@@ -134,7 +134,9 @@ transcript — under `optSponge`, `computeXHat` first, then the conditional spon
 accumulators under their keep bits; otherwise the plain sponge with `computeXHat` run at its
 point of the schedule; assert the plonk claims equal the squeezes; build `ftComm`; run
 `checkBulletproof` on `IvpInput.bases` from the pre-digest sponge. -/
-def incrementallyVerifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
+def incrementallyVerifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type}
+    (ops : IpaScalarOps F c sf)
+    (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (optSponge : Bool) (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
     (computeXHat : CircuitM F c (List (AffinePoint (FVar F))))

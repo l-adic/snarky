@@ -28,7 +28,7 @@ variable {F c : Type}
 
 /-- 128-bit range assert: the `EndoScalar.toField` decomposition is the check; its result is
 discarded. -/
-def rangeCheck128 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+def rangeCheck128 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
     [KimchiSystem F c] (endo : FVar F) (v : SizedF 128 (FVar F)) :
     CircuitM F c PUnit := do
   let _ ← EndoScalar.toField (c := c) 8 v.val endo
@@ -83,6 +83,7 @@ as one range-checked difference — where `hi` equals the bound's high limb, `bo
 elsewhere `bound_hi − 1 − hi`. A negative difference wraps past `2^128` and fails, so the
 first case pins `lo < bound_lo` and the second `hi < bound_hi`. -/
 private def assertSplitBelow [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [ConstraintHolds F c]
     [KimchiSystem F c] (endo lo hi : FVar F) (bound : ℕ) : CircuitM F c PUnit := do
   let boundHi : F := ((bound / 2 ^ 128 : ℕ) : F)
   let boundLo : F := ((bound % 2 ^ 128 : ℕ) : F)
@@ -94,7 +95,7 @@ private def assertSplitBelow [Field F] [DecidableEq F] [ToNat F] [BasicSystem F 
 
 /-- The split below a bound: witness `x = lo + 2^128·hi`, range-check `hi` (and `lo` under
 `constrainLowBits`), pin the recombination and `lo + 2^128·hi < bound`, and return `lo`. -/
-def split128Below [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+def split128Below [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
     [KimchiSystem F c] (constrainLowBits : Bool) (endo : FVar F) (bound : ℕ) (x : FVar F) :
     CircuitM F c (SizedF 128 (FVar F)) := do
   let lohi ← witness (val := UnChecked (F × F)) (.mk <$> lowestWit x)
@@ -108,7 +109,7 @@ def split128Below [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
 
 /-- The lowest 128 bits: the split below the field modulus, so the low half is the canonical
 representative's. -/
-def lowest128Bits' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+def lowest128Bits' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
     [KimchiSystem F c] (constrainLowBits : Bool) (endo x : FVar F) :
     CircuitM F c (SizedF 128 (FVar F)) :=
   split128Below constrainLowBits endo (fieldModulus F) x

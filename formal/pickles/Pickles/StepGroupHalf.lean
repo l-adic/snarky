@@ -240,7 +240,9 @@ def decidableAvoidsStepRelations {ks nc : ℕ} (E : Env IpaPallas.curve nc)
 square root, with the blinding base `h` as a constant cell and the public-input commitment
 table of the Lagrange points `lagrange`. The constraint-system check compares it to the
 production dump at the dump's points. -/
-def verifyProofWith {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k nc : ℕ}
+def verifyProofWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
+    [LawfulBasicSystem Fp c] [KimchiSystem Fp c]
+    {ks k nc : ℕ}
     (h : IpaPallas.curve.Point) (lagrange : List (Vector IpaPallas.curve.Point nc))
     (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
@@ -253,7 +255,9 @@ def verifyProofWith {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k nc :
     isBaseCase statement u cells
 
 /-- `verifyProofWith` at the SRS blinding base and the key's Lagrange points. -/
-def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k nc : ℕ}
+def verifyProofAt {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
+    [LawfulBasicSystem Fp c] [KimchiSystem Fp c]
+    {ks k nc : ℕ}
     (E : Env IpaPallas.curve nc) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
@@ -465,7 +469,9 @@ abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k nc) :
 /-- `verifyProofAt` as a circuit of its input, its success bit asserted. Before it, the shifted
 scalars' parity cells are asserted boolean (`assertClaimBitsStep`), the allocation check the
 deployed circuit's split type makes and this harness's unchecked input lacks. -/
-def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaPallas.curve nc)
+def groupCircuit {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
+    [KimchiSystem Fp c]
+    (E : Env IpaPallas.curve nc)
     (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks k nc) : CircuitM Fp c Unit := do
   assertClaimBitsStep g.shifted

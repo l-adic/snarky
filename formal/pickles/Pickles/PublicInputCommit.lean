@@ -111,7 +111,8 @@ private def chunkwise {β : Type} (f : Fin nc → CircuitM F S β) : CircuitM F 
 shift `+2^{5·chunks}` is not cancelled here, since `sumCorrectionsHead` sums the corrections
 separately into the fold's initial accumulator — and a `condAdd` leaf conditionally adds its
 base. -/
-private def leafStep (ci : Fin nc) (acc : AffinePoint (FVar F)) :
+private def leafStep [ConstraintHolds F S] [LawfulBasicSystem F S] (ci : Fin nc)
+    (acc : AffinePoint (FVar F)) :
     Leaf F nc → CircuitM F S (AffinePoint (FVar F))
   | .full scalar base _ => do
       let l ← scaleFast2' 255 51 254 base[ci] scalar
@@ -129,7 +130,7 @@ private def leafStep (ci : Fin nc) (acc : AffinePoint (FVar F)) :
 /-- The leaves folded onto one accumulator per chunk, leaf by leaf and each leaf chunk by chunk:
 chunk `k`'s ladder and add both run before chunk `k + 1`'s, the order the deployed gate
 stream has. -/
-private def foldChunks :
+private def foldChunks [ConstraintHolds F S] [LawfulBasicSystem F S] :
     Vector (AffinePoint (FVar F)) nc → List (Leaf F nc) →
       CircuitM F S (Vector (AffinePoint (FVar F)) nc)
   | acc, [] => pure acc
@@ -140,20 +141,21 @@ private def foldChunks :
 /-- The public-input commitment from the corrections' sum `init`, per chunk: fold the leaves'
 ladders, then negate and add the blinding `h` — `-(Σ [scalar]·base[c]) + h`. The
 fold's bare-ladder shifts cancel against `init` in the spec. -/
-private def publicInputCommitChunks (init : Vector (AffinePoint (FVar F)) nc)
+private def publicInputCommitChunks [ConstraintHolds F S] [LawfulBasicSystem F S]
+    (init : Vector (AffinePoint (FVar F)) nc)
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
   let acc ← foldChunks init leaves
   chunkwise fun c => (·.p) <$> addFast .checkFinite ⟨acc[c].x, CVar.negate_ acc[c].y⟩ blindingH
 
 /-- A correction added onto the accumulator, chunk by chunk. -/
-private def addChunks (acc corr : Vector (AffinePoint (FVar F)) nc) :
+private def addChunks [ConstraintHolds F S] (acc corr : Vector (AffinePoint (FVar F)) nc) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) :=
   chunkwise fun c => (·.p) <$> addFast .checkFinite acc[c] corr[c]
 
 /-- Sum the leaves' shift corrections onto `acc`, leaf by leaf and each leaf chunk by chunk:
 each scalar leaf adds its `correction`, `condAdd` contributes nothing. -/
-private def sumCorrections :
+private def sumCorrections [ConstraintHolds F S] :
     Vector (AffinePoint (FVar F)) nc → List (Leaf F nc) →
       CircuitM F S (Vector (AffinePoint (FVar F)) nc)
   | acc, [] => pure acc
@@ -177,7 +179,8 @@ def leafHasScalar : List (Leaf F nc) → Prop
 /-- Head-seeded corrections sum: the first scalar leaf's correction seeds the fold (no gate),
 each later scalar correction adds one per chunk (`n` corrections → `n−1` gates per chunk).
 `condAdd` leaves are skipped; the all-`condAdd`/empty case is the unused origin. -/
-private def sumCorrectionsHead : List (Leaf F nc) → CircuitM F S (Vector (AffinePoint (FVar F)) nc)
+private def sumCorrectionsHead [ConstraintHolds F S] :
+    List (Leaf F nc) → CircuitM F S (Vector (AffinePoint (FVar F)) nc)
   | [] => pure (Vector.replicate nc ⟨.const 0, .const 0⟩)
   | .full _ _ corr :: rest => sumCorrections corr rest
   | .b128 _ _ corr :: rest => sumCorrections corr rest
@@ -197,21 +200,25 @@ private def constrainBits [BasicSystem F S] : List (Leaf F nc) → CircuitM F S 
 
 /-- The wrap side's fold: the head-seeded corrections, the ladders folded onto them, negate,
 add `h`. -/
-private def publicInputCommitFold (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
+private def publicInputCommitFold [ConstraintHolds F S] [LawfulBasicSystem F S]
+    (blindingH : AffinePoint (FVar F))
+    (leaves : List (Leaf F nc)) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
   let init ← sumCorrectionsHead leaves
   publicInputCommitChunks init blindingH leaves
 
 /-- The public-input commitment at every chunk, the wrap side's shape: the bits, then
 `publicInputCommitFold`. -/
-def publicInputCommitFull (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
+def publicInputCommitFull [ConstraintHolds F S] [LawfulBasicSystem F S]
+    (blindingH : AffinePoint (FVar F))
+    (leaves : List (Leaf F nc)) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
   constrainBits leaves
   publicInputCommitFold blindingH leaves
 
 /-- One leaf of the sealing walk: a `condAdd` leaf constrains its bit, a scalar leaf seals its
 correction chunks and then its base chunks. -/
-private def sealLeaf : Leaf F nc → CircuitM F S (Leaf F nc)
+private def sealLeaf [ConstraintHolds F S] : Leaf F nc → CircuitM F S (Leaf F nc)
   | .condAdd b base => do
       addConstraint (BasicSystem.boolean (↑b : CVar F) : S)
       pure (.condAdd b base)
@@ -230,7 +237,9 @@ private def sealLeaf : Leaf F nc → CircuitM F S (Leaf F nc)
 
 /-- `publicInputCommitFull` over leaves whose scalar bases and corrections are affine
 combinations, sealed in walk order before the fold reads them. -/
-def publicInputCommitSealed (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
+def publicInputCommitSealed [ConstraintHolds F S] [LawfulBasicSystem F S]
+    (blindingH : AffinePoint (FVar F))
+    (leaves : List (Leaf F nc)) :
     CircuitM F S (Vector (AffinePoint (FVar F)) nc) := do
   let leaves ← leaves.mapM sealLeaf
   publicInputCommitFold blindingH leaves
@@ -1004,7 +1013,8 @@ quirk of the original the deployed step statement (all scalars) never reaches; t
 literal and the read is stated for scalar-headed lists. -/
 
 /-- Phase 1: every ladder, in leaf order; a `condAdd` leaf passes its bit and base through. -/
-private def ladders [BasicSystem F S] [KimchiSystem F S] (ci : Fin nc) :
+private def ladders [BasicSystem F S] [ConstraintHolds F S] [LawfulBasicSystem F S]
+    [KimchiSystem F S] (ci : Fin nc) :
     List (Leaf F nc) →
       CircuitM F S (List (AffinePoint (FVar F) ⊕ (BoolVar F × AffinePoint (FVar F))))
   | [] => pure []
@@ -1021,7 +1031,7 @@ private def ladders [BasicSystem F S] [KimchiSystem F S] (ci : Fin nc) :
 
 /-- Phase 2: the left fold of the phase-1 results onto `acc`: a ladder result is added, a
 `condAdd` conditionally adds its base. -/
-private def foldKnown [BasicSystem F S] [KimchiSystem F S] :
+private def foldKnown [BasicSystem F S] [ConstraintHolds F S] [KimchiSystem F S] :
     AffinePoint (FVar F) → List (AffinePoint (FVar F) ⊕ (BoolVar F × AffinePoint (FVar F))) →
       CircuitM F S (AffinePoint (FVar F))
   | acc, [] => pure acc
@@ -1035,7 +1045,7 @@ private def foldKnown [BasicSystem F S] [KimchiSystem F S] :
 
 /-- Phases 2 and 3 on the phase-1 results: seed the fold with the first result (or `corrHead`
 when it is a `condAdd`), add the constant correction sum, negate, add `h`. No leaves: `h`. -/
-private def commitKnownTail [BasicSystem F S] [KimchiSystem F S]
+private def commitKnownTail [BasicSystem F S] [ConstraintHolds F S] [KimchiSystem F S]
     (blindingH corrHead corrSum : AffinePoint (FVar F)) :
     List (AffinePoint (FVar F) ⊕ (BoolVar F × AffinePoint (FVar F))) →
       CircuitM F S (AffinePoint (FVar F))
@@ -1047,7 +1057,8 @@ private def commitKnownTail [BasicSystem F S] [KimchiSystem F S]
 
 /-- The known-domain public-input commitment at one chunk: the ladders, then their fold with
 the constant corrections, negated, plus `h`. -/
-def publicInputCommitKnown [BasicSystem F S] [KimchiSystem F S] (ci : Fin nc)
+def publicInputCommitKnown [BasicSystem F S] [ConstraintHolds F S] [LawfulBasicSystem F S]
+    [KimchiSystem F S] (ci : Fin nc)
     (blindingH corrHead corrSum : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
     CircuitM F S (AffinePoint (FVar F)) := do
   let rs ← ladders ci leaves
@@ -2477,14 +2488,15 @@ variable {C : KimchiCurve} {nc : ℕ} {S : Type} [BasicSystem C.BaseField S]
 
 /-- A point per branch masked by the branch bits: coordinatewise `Σ bᵢ · Pᵢ`, with no rows
 for constant points. -/
-def maskPoint (bits : List (BoolVar C.BaseField)) (ps : List (AffinePoint (FVar C.BaseField))) :
+def maskPoint [ConstraintHolds C.BaseField S] (bits : List (BoolVar C.BaseField))
+    (ps : List (AffinePoint (FVar C.BaseField))) :
     CircuitM C.BaseField S (AffinePoint (FVar C.BaseField)) := do
   let x ← Pseudo.choose bits ps (·.x)
   let y ← Pseudo.choose bits ps (·.y)
   pure ⟨x, y⟩
 
 /-- `maskPoint` at every chunk. -/
-def maskCells (bits : List (BoolVar C.BaseField))
+def maskCells [ConstraintHolds C.BaseField S] (bits : List (BoolVar C.BaseField))
     (vs : List (Vector (AffinePoint (FVar C.BaseField)) nc)) :
     CircuitM C.BaseField S (Vector (AffinePoint (FVar C.BaseField)) nc) :=
   (Vector.ofFn id).mapM fun ci => maskPoint bits (vs.map (·[ci]))
@@ -2492,8 +2504,8 @@ def maskCells (bits : List (BoolVar C.BaseField))
 /-- One packed scalar's leaf over the branches' Lagrange points `Pss`. A boolean leaf's base is
 masked. With `shared` a scalar leaf is `P0`'s constant leaf; otherwise its base and shift
 correction are masked. -/
-def maskLeaf (shared : Bool) (bits : List (BoolVar C.BaseField)) (k : PackedScalar C.BaseField)
-    (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc) :
+def maskLeaf [ConstraintHolds C.BaseField S] (shared : Bool) (bits : List (BoolVar C.BaseField))
+    (k : PackedScalar C.BaseField) (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc) :
     CircuitM C.BaseField S (Leaf C.BaseField nc) :=
   let base := maskCells bits (Pss.map (·.map constPt))
   let corr (L : ℕ) := maskCells bits (Pss.map (·.map fun P => constPt (negShift C L P)))
@@ -2516,7 +2528,7 @@ def maskLeaf (shared : Bool) (bits : List (BoolVar C.BaseField)) (k : PackedScal
 
 /-- The leaves of a packed scalar list over the branches' Lagrange tables, leaf `i` at each
 table's `i`-th base. -/
-def maskLeaves (shared : Bool) (bits : List (BoolVar C.BaseField))
+def maskLeaves [ConstraintHolds C.BaseField S] (shared : Bool) (bits : List (BoolVar C.BaseField))
     (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
     CircuitM C.BaseField S (List (Leaf C.BaseField nc)) :=
   ks.zipIdx.mapM fun (k, i) =>
@@ -2525,7 +2537,9 @@ def maskLeaves (shared : Bool) (bits : List (BoolVar C.BaseField))
 
 /-- The public-input commitment over bases masked across branches: `publicInputCommitFull`
 when the branches share one step domain, otherwise `publicInputCommitSealed`. -/
-def publicInputCommitMasked [KimchiSystem C.BaseField S] (shared : Bool)
+def publicInputCommitMasked [ConstraintHolds C.BaseField S] [LawfulBasicSystem C.BaseField S]
+    [KimchiSystem C.BaseField S]
+    (shared : Bool)
     (blindingH : AffinePoint (FVar C.BaseField)) (bits : List (BoolVar C.BaseField))
     (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
     CircuitM C.BaseField S (Vector (AffinePoint (FVar C.BaseField)) nc) := do

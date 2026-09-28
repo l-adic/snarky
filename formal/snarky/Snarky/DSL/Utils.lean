@@ -15,7 +15,7 @@ row. `seal` is a Lean token, hence the name. -/
 
 /-- Seal an expression: pass through a lone unit-coefficient variable or a lone constant;
 otherwise witness its value into a fresh variable and assert them equal. -/
-def sealVar [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
+def sealVar [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (x : FVar F) :
     CircuitM F c (FVar F) :=
   match x.reduceToAffineExpression with
   | ⟨none, [(v, k)]⟩ => if k = 1 then pure (.var v) else core x
@@ -114,14 +114,14 @@ theorem sealVar_complete [Field F] [DecidableEq F] [BasicSystem F c] [Constraint
 attribute [irreducible] sealVar sealVar.core
 
 /-- The rows the witnessing branch emits: one `equal` against the fresh variable. -/
-example [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) (nv : Nat) :
+example [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (x : FVar F) (nv : Nat) :
     build (sealVar.core (c := c) x) nv =
       ⟨.var nv, nv + 1, [BasicSystem.equal (c := c) x (.var nv)]⟩ := by
   unfold sealVar.core assertEqual
   cases x <;> rfl
 
 /-- The pass-through arms emit no rows. -/
-example [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) (nv : Nat)
+example [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (x : FVar F) (nv : Nat)
     (h : x.reduceToAffineExpression = ⟨none, [(v, 1)]⟩ ∨
       x.reduceToAffineExpression = ⟨some k, []⟩) :
     (build (sealVar (c := c) x) nv).constraints = [] := by

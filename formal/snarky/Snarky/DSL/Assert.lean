@@ -66,7 +66,7 @@ attribute [irreducible] assertEqual
 
 /-- Assert non-zeroness by witnessing the inverse: a nonzero constant folds to nothing,
 the constant zero emits the falsum `0 = 1`, otherwise `inv`'s row. -/
-def assertNonZero [Field F] [DecidableEq F] [BasicSystem F c] (v : FVar F) :
+def assertNonZero [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (v : FVar F) :
     CircuitM F c PUnit :=
   match v with
   | .const f =>
@@ -110,7 +110,8 @@ attribute [irreducible] assertNonZero
 /-! ## Inequality -/
 
 /-- Assert inequality: the difference is nonzero — `assertNonZero`'s rows. -/
-def assertNotEqual [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
+def assertNotEqual [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x y : FVar F) :
     CircuitM F c PUnit :=
   assertNonZero (CVar.sub_ x y)
 
@@ -212,7 +213,8 @@ attribute [irreducible] assert
 /-! ## Bit sums -/
 
 /-- Assert at least one bit is set: the bit-sum is nonzero — `assertNonZero`'s rows. -/
-def assertAny [Field F] [DecidableEq F] [BasicSystem F c] (bs : List (BoolVar F)) :
+def assertAny [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (bs : List (BoolVar F)) :
     CircuitM F c PUnit :=
   assertNonZero (sum (bs.map BoolVar.toCVar))
 
