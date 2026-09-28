@@ -63,6 +63,7 @@ import Pickles.CircuitDiffs.PureScript.SchnorrVerify (compileSchnorrVerify)
 import Pickles.CircuitDiffs.PureScript.SpongeChallenges (compileChallengeDigestStep, compileChallengeDigestWrap, compileSpongeAndChallengesStep, compileSpongeAndChallengesWrap)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (compileStepMainChunks2)
+import Pickles.CircuitDiffs.PureScript.StepMainImportTwoPhaseChain (compileStepMainImportTwoPhaseChainWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
@@ -1207,6 +1208,28 @@ spec bundle =
         exactMatchEff "step_main_tree_proof_return_circuit"
           ( stepWithConstants "step_main_tree_proof_return_circuit"
               =<< compileStepMainTreeProofReturnWithConstants treeProofReturnSrsData
+          )
+        -- N=2: an External slot over `two_phase_chain` (step domains 9 and
+        -- 14) beside a Self slot; both slots read the 2^14 Lagrange basis.
+        let
+          tpcStepSrsData =
+            { lagrangeAt: lagrangeAtD14
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+          importTwoPhaseChainSrsData =
+            { slot0LagrangeAt: lagrangeAtD14
+            , slot1LagrangeAt: lagrangeAtD14
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            , twoPhaseChainSrsData:
+                { vestaSrs: bundle.vestaCrs16
+                , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
+                , makeZeroStepSrsData: tpcStepSrsData
+                , incrementStepSrsData: tpcStepSrsData
+                }
+            }
+        exactMatchEff "step_main_import_two_phase_chain_circuit"
+          ( stepWithConstants "step_main_import_two_phase_chain_circuit"
+              =<< compileStepMainImportTwoPhaseChainWithConstants importTwoPhaseChainSrsData
           )
         -- N=1 parent + single side-loaded prev (mpv=N2 upper bound).
         -- The three per-domain lagrange tables sit at log2 ∈ {13, 14,

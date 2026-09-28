@@ -1425,6 +1425,18 @@ def treeProofReturnRule (_ : Unit) :
   let self ← selectField isBaseCase (.const 0) (CVar.add_ (.const 1) prev)
   pure (#v[⟨[noRecursiveInput], true_⟩, ⟨[prev], mustVerify⟩], [self])
 
+/-- The rule of `import_two_phase_chain`: slot 0 a `two_phase_chain` proof, which always
+verifies, slot 1 this system's previous proof, which verifies unless it is the base case;
+`self` is slot 0's value `tx` in the base case, `prev + tx` otherwise. -/
+def importTwoPhaseChainRule (_ : Unit) :
+    CircuitM Fp C (Vector Pickles.PrevStatement 2 × List (FVar Fp)) := do
+  let tx ← witness (val := Fp) (AsProver.throw "advice")
+  let prev ← witness (val := Fp) (AsProver.throw "advice")
+  let isBaseCase ← witness (val := Bool) (AsProver.throw "advice")
+  let mustVerify := Snarky.not isBaseCase
+  let self ← selectField isBaseCase tx (CVar.add_ prev tx)
+  pure (#v[⟨[tx], true_⟩, ⟨[prev], mustVerify⟩], [self])
+
 /-- One slot of a `step_main_*` dump's constants, at one chunk. -/
 structure StepSlotConsts where
   /-- An external slot's wrap key: its sigma, coefficient and selector commitments. -/
@@ -1924,6 +1936,7 @@ def main : IO Unit := do
   let makeZero ← stepConsts "step_main_two_phase_chain_make_zero_circuit" 0 1
   let increment ← stepConsts "step_main_two_phase_chain_increment_circuit" 1 1
   let treeReturn ← stepConsts "step_main_tree_proof_return_circuit" 2 2
+  let importTpc ← stepConsts "step_main_import_two_phase_chain_circuit" 2 2
   let stepMains :=
     (chainN2.toList.map fun k => ("step_main_simple_chain_n2_circuit",
       stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
@@ -1937,6 +1950,10 @@ def main : IO Unit := do
     ++ (treeReturn.toList.map fun k => ("step_main_tree_proof_return_circuit",
       stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
         (stepMainDumpCircuit (inVal := Unit) 2 (by decide) k dummyUnfN0 treeProofReturnRule)))
+    ++ (importTpc.toList.map fun k => ("step_main_import_two_phase_chain_circuit",
+      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
+        (stepMainDumpCircuit (inVal := Unit) 2 (by decide) k dummyUnfN0
+          importTwoPhaseChainRule)))
   let selected := (targets hStep hWrap
     ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches wrapMains fullStep
     ++ stepMains).filter

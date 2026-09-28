@@ -122,6 +122,13 @@ copy_fixture "${TMP}/dump_two_phase_chain_step_0"  step_main_two_phase_chain_mak
 copy_fixture "${TMP}/dump_two_phase_chain_step_1"  step_main_two_phase_chain_increment_circuit
 copy_fixture "${TMP}/dump_two_phase_chain_wrap_0"  wrap_main_two_phase_chain_circuit
 
+# dump_import_two_phase_chain: two_phase_chain (step_0, step_1, wrap_0,
+# byte-equal to dump_two_phase_chain's), then the chain rule with
+# prevs=[two_phase_chain; self] (step_2, wrap_1). Only the chain's step
+# CS is tested: an External slot over a two-domain import beside a Self
+# slot.
+copy_fixture "${TMP}/dump_import_two_phase_chain_step_2"  step_main_import_two_phase_chain_circuit
+
 # dump_side_loaded_main: 2 compiles (child + parent) → 2 step + 2 wrap.
 copy_fixture "${TMP}/dump_side_loaded_main_step_0"  step_main_side_loaded_child_circuit
 copy_fixture "${TMP}/dump_side_loaded_main_step_1"  step_main_side_loaded_main_circuit
