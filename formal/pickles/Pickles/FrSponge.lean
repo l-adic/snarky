@@ -41,7 +41,7 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
 
 /-- Absorb a list, left to right. -/
-def absorbList (p : Poseidon.Params F) (sv : SpongeVar F) :
+def absorbList [ConstraintHolds F c] (p : Poseidon.Params F) (sv : SpongeVar F) :
     List (FVar F) → CircuitM F c (SpongeVar F)
   | [] => pure sv
   | x :: xs => do
@@ -50,7 +50,7 @@ def absorbList (p : Poseidon.Params F) (sv : SpongeVar F) :
 
 /-- The digest of the previous proofs' bulletproof challenges `c_{j,i}`: a fresh sponge
 absorbing them in order, squeezed once. -/
-def challengeDigest (p : Poseidon.Params F) (prev : List (List (FVar F))) :
+def challengeDigest [ConstraintHolds F c] (p : Poseidon.Params F) (prev : List (List (FVar F))) :
     CircuitM F c (FVar F) := do
   let sv ← absorbList p SpongeVar.init prev.flatten
   let (d, _) ← SpongeVar.squeeze p sv
@@ -63,7 +63,7 @@ private def maskedEntries {β α : Type} : List β → List (List α) → List (
 
 /-- The step side's digest of the previous proofs' challenges: the conditional sponge over the
 challenges, each guarded by its proof's mask bit, squeezed once. -/
-def maskedChallengeDigest (p : Poseidon.Params F) (mask : List (BoolVar F))
+def maskedChallengeDigest [ConstraintHolds F c] (p : Poseidon.Params F) (mask : List (BoolVar F))
     (prev : List (List (FVar F))) : CircuitM F c (FVar F) :=
   OptSponge.squeeze p (maskedEntries mask prev)
 
@@ -72,8 +72,8 @@ absorb its result, then the rest of `Kimchi.Verifier.frTranscript` at the same w
 the public chunks and every column's chunks, a column's `ζ` chunks before its `ζω` chunks — then
 squeeze `ξ` and `r`, each split to its low 128 bits — `ξ` with the low bits constrained iff
 `xiConstrainLowBits`, `r` always. -/
-def squeezeXiR [ToNat F] {nc : ℕ} (p : Poseidon.Params F) (digestBefore : FVar F)
-    (digest : CircuitM F c (FVar F)) (ftEval1 : FVar F)
+def squeezeXiR [ConstraintHolds F c] [ToNat F] {nc : ℕ} (p : Poseidon.Params F)
+    (digestBefore : FVar F) (digest : CircuitM F c (FVar F)) (ftEval1 : FVar F)
     (pub : PointEvaluations (Vector (FVar F) nc)) (evals : ProofEvaluations (Vector (FVar F) nc))
     (endo : FVar F) (xiConstrainLowBits : Bool) :
     CircuitM F c (SizedF 128 (FVar F) × SizedF 128 (FVar F)) := do

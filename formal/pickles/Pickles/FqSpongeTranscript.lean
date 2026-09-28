@@ -45,13 +45,13 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
 
 /-- Absorb a point: `x` then `y`. -/
-def absorbPoint (p : Poseidon.Params F) (sv : SpongeVar F) (P : AffinePoint (FVar F)) :
-    CircuitM F c (SpongeVar F) := do
+def absorbPoint [ConstraintHolds F c] (p : Poseidon.Params F) (sv : SpongeVar F)
+    (P : AffinePoint (FVar F)) : CircuitM F c (SpongeVar F) := do
   let sv ← SpongeVar.absorb p sv P.x
   SpongeVar.absorb p sv P.y
 
 /-- Absorb points, left to right. -/
-private def absorbPoints (p : Poseidon.Params F) :
+private def absorbPoints [ConstraintHolds F c] (p : Poseidon.Params F) :
     SpongeVar F → List (AffinePoint (FVar F)) → CircuitM F c (SpongeVar F)
   | sv, [] => pure sv
   | sv, P :: Ps => do
@@ -59,7 +59,7 @@ private def absorbPoints (p : Poseidon.Params F) :
     absorbPoints p sv' Ps
 
 /-- Absorb column commitments, each a chunk list, left to right. -/
-private def absorbColumns (p : Poseidon.Params F) :
+private def absorbColumns [ConstraintHolds F c] (p : Poseidon.Params F) :
     SpongeVar F → List (List (AffinePoint (FVar F))) → CircuitM F c (SpongeVar F)
   | sv, [] => pure sv
   | sv, col :: cols => do
@@ -68,7 +68,8 @@ private def absorbColumns (p : Poseidon.Params F) :
 
 /-- One squeeze split to its low 128 bits, the low half range-checked when
 `constrainLowBits` is set; the squeezed sponge is returned beside it. -/
-def squeezePrechallenge [ToNat F] (p : Poseidon.Params F) (constrainLowBits : Bool)
+def squeezePrechallenge [ConstraintHolds F c] [ToNat F] (p : Poseidon.Params F)
+    (constrainLowBits : Bool)
     (endo : FVar F) (sv : SpongeVar F) : CircuitM F c (SizedF 128 (FVar F) × SpongeVar F) := do
   let (x, sv) ← SpongeVar.squeeze p sv
   let chal ← lowest128Bits' constrainLowBits endo x
@@ -95,8 +96,8 @@ structure FqTranscriptOutput (F : Type) where
 /-- The step side's fq-sponge transcript. `computeXHat` runs after the `sgOld` absorbs and
 its result is absorbed next, as the verifiers do; only `β` and `γ` have their low halves
 range-checked. The returned sponge is the one the digest is squeezed from. -/
-def fqSpongeTranscript [ToNat F] (p : Poseidon.Params F) (endo indexDigest : FVar F)
-    (sgOld : List (AffinePoint (FVar F)))
+def fqSpongeTranscript [ConstraintHolds F c] [ToNat F] (p : Poseidon.Params F)
+    (endo indexDigest : FVar F) (sgOld : List (AffinePoint (FVar F)))
     (computeXHat : CircuitM F c (List (AffinePoint (FVar F))))
     (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
     CircuitM F c (FqTranscriptOutput F) := do
@@ -151,7 +152,8 @@ private def optAbsorbMasked (ov : OptSpongeVar F) (m : BoolVar F × AffinePoint 
 open OptSponge in
 /-- One squeeze of the conditional sponge split to its low 128 bits, as
 `squeezePrechallenge`. -/
-def optSqueezePrechallenge [ToNat F] (p : Poseidon.Params F) (constrainLowBits : Bool)
+def optSqueezePrechallenge [ConstraintHolds F c] [ToNat F] (p : Poseidon.Params F)
+    (constrainLowBits : Bool)
     (endo : FVar F) (ov : OptSpongeVar F) :
     CircuitM F c (SizedF 128 (FVar F) × OptSpongeVar F) := do
   let (x, ov) ← optSqueeze p ov
@@ -163,10 +165,10 @@ open OptSponge in
 conditional sponge, with `sgOld` absorbed under its mask bits and `xHat` given rather than
 computed. After `ζ` the sponge becomes a plain one (`toRegularSponge`), which is returned and
 from which the digest is squeezed. -/
-def fqSpongeTranscriptOpt [ToNat F] (p : Poseidon.Params F) (endo indexDigest : FVar F)
-    (sgOld : List (BoolVar F × AffinePoint (FVar F))) (xHat : List (AffinePoint (FVar F)))
-    (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
-    CircuitM F c (FqTranscriptOutput F) := do
+def fqSpongeTranscriptOpt [ConstraintHolds F c] [ToNat F] (p : Poseidon.Params F)
+    (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F)))
+    (xHat : List (AffinePoint (FVar F))) (wComm : List (List (AffinePoint (FVar F))))
+    (zComm tComm : List (AffinePoint (FVar F))) : CircuitM F c (FqTranscriptOutput F) := do
   let ov := optAbsorb create (true_, indexDigest)
   let ov := sgOld.foldl optAbsorbMasked ov
   let ov := xHat.foldl optAbsorbPoint ov

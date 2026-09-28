@@ -124,7 +124,7 @@ attribute [irreducible] chunkVar toBlocksVar
 /-! ## One block -/
 
 /-- Absorb one block: add into the rate slots, permute. -/
-private def updateBlock [Field F] [BasicSystem F c] [KimchiSystem F c]
+private def updateBlock [Field F] [BasicSystem F c] [ConstraintHolds F c] [KimchiSystem F c]
     (p : Poseidon.Params F) (st : SpongeState F) (b : FVar F × FVar F) :
     CircuitM F c (SpongeState F) :=
   poseidon p (addBlockVar st b)
@@ -181,7 +181,8 @@ attribute [irreducible] addBlockVar updateBlock
 /-! ## The block fold -/
 
 /-- Fold the input into the state block by block. -/
-def update [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params F)
+def update [Field F] [BasicSystem F c] [ConstraintHolds F c]
+    [KimchiSystem F c] (p : Poseidon.Params F)
     (st : SpongeState F) (xs : List (FVar F)) :
     CircuitM F c (SpongeState F) :=
   (toBlocksVar xs).foldlM (updateBlock p) st
@@ -274,7 +275,8 @@ attribute [irreducible] update
 /-! ## Hashing two elements -/
 
 /-- Hash exactly two elements: one block, one permutation. -/
-def hash2 [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params F)
+def hash2 [Field F] [BasicSystem F c] [ConstraintHolds F c]
+    [KimchiSystem F c] (p : Poseidon.Params F)
     (a b : FVar F) : CircuitM F c (FVar F) := do
   let st ← updateBlock p initState (a, b)
   pure st.s0
@@ -326,7 +328,8 @@ attribute [irreducible] hash2
 /-! ## Hashing a list -/
 
 /-- Hash a list: `update` the fresh state, read slot 0. -/
-def hashVec [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params F)
+def hashVec [Field F] [BasicSystem F c] [ConstraintHolds F c]
+    [KimchiSystem F c] (p : Poseidon.Params F)
     (xs : List (FVar F)) : CircuitM F c (FVar F) := do
   let st ← update p initState xs
   pure st.s0

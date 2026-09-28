@@ -49,8 +49,8 @@ instance instType2CircuitType {F v w : Type} [CircuitType F v w] :
   CircuitType.ofEquiv (Type2.equivVal v) (Type2.equivVal w)
 
 /-- A `Type2` is checked as its cell. -/
-instance instType2CheckedType {F c v w : Type} [Add F] [Mul F] [Zero F] [One F]
-    [BasicSystem F c] [CircuitType F v w] [CheckedType F c v w] :
+instance instType2CheckedType {F c v w : Type} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F v w] [CheckedType F c v w] :
     CheckedType F c (Type2 v) (Type2 w) :=
   CheckedType.ofEquiv (Type2.equivVal v) (Type2.equivVal w)
 
@@ -64,8 +64,9 @@ instance instSplitFieldCircuitType {F a va b vb : Type} [CircuitType F a va]
 
 /-- A split scalar is checked as its half, then its parity: at `(FVar, BoolVar)` the
 parity's booleanity. -/
-instance instSplitFieldCheckedType {F c a va b vb : Type} [Add F] [Mul F] [Zero F] [One F]
-    [BasicSystem F c] [CircuitType F a va] [CircuitType F b vb] [CheckedType F c a va]
+instance instSplitFieldCheckedType {F c a va b vb : Type} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F a va] [CircuitType F b vb]
+    [CheckedType F c a va]
     [CheckedType F c b vb] : CheckedType F c (SplitField a b) (SplitField va vb) :=
   CheckedType.ofEquiv (SplitField.equivProd a b) (SplitField.equivProd va vb)
 
@@ -168,8 +169,9 @@ The deployed check also range-checks the log2 by expanding its 16 bits through t
 row; `toField_spec` is proved at 8 rows only, so that check is absent here and this one emits
 fewer rows. The deployed allocation also puts the mask bits before the log2, a variable order
 a dump comparison would see. -/
-instance instBranchDataCheckedType {F c f w b vb : Type} [Add F] [Mul F] [Zero F] [One F]
-    [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
+instance instBranchDataCheckedType {F c f w b vb : Type} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f w] [CircuitType F b vb]
+    [CheckedType F c f w]
     [CheckedType F c b vb] : CheckedType F c (BranchData f b) (BranchData w vb) :=
   CheckedType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
 
@@ -210,7 +212,7 @@ instance instWrapStatementCircuitType {F f w b vb sv sf : Type} {k : ℕ} [Circu
 /-! ## The packed wrap statement -/
 
 /-- A `Type1` cell is checked as its cell. -/
-instance instType1CheckedType {F c : Type} [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+instance instType1CheckedType {F c : Type} [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     CheckedType F c (Type1 F) (Type1 (FVar F)) :=
   CheckedType.ofEquiv Type1.equivCarrier Type1.equivCarrier
 
@@ -230,8 +232,9 @@ instance instStatementPackedCircuitType {F f w sv sf : Type} {k : ℕ} [CircuitT
   CircuitType.ofEquiv (StatementPacked.equivProd k sv f) (StatementPacked.equivProd k sf w)
 
 /-- Nothing in the packed wrap statement is checked beyond its cells' own checks. -/
-instance instStatementPackedCheckedType {F c f w sv sf : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
-    [One F] [BasicSystem F c] [CircuitType F f w] [CircuitType F sv sf] [CheckedType F c f w]
+instance instStatementPackedCheckedType {F c f w sv sf : Type} {k : ℕ} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f w] [CircuitType F sv sf]
+    [CheckedType F c f w]
     [CheckedType F c sv sf] : CheckedType F c (StatementPacked k sv f) (StatementPacked k sf w) :=
   CheckedType.ofEquiv (StatementPacked.equivProd k sv f) (StatementPacked.equivProd k sf w)
 

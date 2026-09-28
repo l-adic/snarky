@@ -128,7 +128,9 @@ parameters and candidate domains. The statement is the unfinalized proofs' cells
 step-message digest, the wrap-side messages, each front-padded to the tag's `w` slots: `w − n`
 constant `dummyUnf` entries and `w − n` fresh message cells. The cells it was read from are
 returned beside it. -/
-def stepMain {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
+    {inVal inVar : Type}
+    [CircuitType Fp inVal inVar]
     [CheckedType Fp c inVal inVar] (hw : w ≤ MaxProofsVerified)
     (verify : SpongeVar Fp → BoolVar Fp →
       WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
@@ -169,7 +171,9 @@ def stepMain {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal
 /-- The step circuit as a circuit of its statement: no input cells (the `Unit` argument is
 `Snarky.compile`'s empty input), the output `stepMain`'s statement. -/
 @[nolint unusedArguments]
-def stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
+    {inVal inVar : Type}
+    [CircuitType Fp inVal inVar]
     [CheckedType Fp c inVal inVar] (hw : w ≤ MaxProofsVerified)
     (verify : SpongeVar Fp → BoolVar Fp →
       WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →

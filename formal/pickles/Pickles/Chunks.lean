@@ -50,7 +50,7 @@ structure ChunkedEvals (nc : ℕ) (f : Type) where
 
 /-- `∑ᵢ chunks[i] · ptⁱ`, by Horner from the last chunk down: one multiplication per chunk
 past the first, the innermost first. -/
-def hornerChunks (pt : FVar F) : List (FVar F) → CircuitM F c (FVar F)
+def hornerChunks [ConstraintHolds F c] (pt : FVar F) : List (FVar F) → CircuitM F c (FVar F)
   | [] => pure (.const 0)
   | [x] => pure x
   | x :: y :: rest => do
@@ -59,14 +59,14 @@ def hornerChunks (pt : FVar F) : List (FVar F) → CircuitM F c (FVar F)
     pure (CVar.add_ x t)
 
 /-- One column's chunks recombined at `ζ^(2^k)` and `(ζω)^(2^k)`, the `ζω` fold first. -/
-def collapseColumn {nc : ℕ} (zetaPow zetaOmegaPow : FVar F)
+def collapseColumn [ConstraintHolds F c] {nc : ℕ} (zetaPow zetaOmegaPow : FVar F)
     (e : PointEvaluations (Vector (FVar F) nc)) : CircuitM F c (PointEvaluations (FVar F)) := do
   let zetaOmega ← hornerChunks zetaOmegaPow e.zetaOmega.toList
   let zeta ← hornerChunks zetaPow e.zeta.toList
   pure ⟨zeta, zetaOmega⟩
 
 /-- A vector's columns recombined from the last to the first. -/
-private def collapseColumnsRev {nc m : ℕ} (zetaPow zetaOmegaPow : FVar F)
+private def collapseColumnsRev [ConstraintHolds F c] {nc m : ℕ} (zetaPow zetaOmegaPow : FVar F)
     (v : Vector (PointEvaluations (Vector (FVar F) nc)) m) :
     CircuitM F c (Vector (PointEvaluations (FVar F)) m) := do
   let r ← v.reverse.mapM (collapseColumn zetaPow zetaOmegaPow)
@@ -74,7 +74,7 @@ private def collapseColumnsRev {nc m : ℕ} (zetaPow zetaOmegaPow : FVar F)
 
 /-- Every column of a chunked batch recombined, in a fixed emission order: the selectors, `σ`,
 `z`, the coefficients, the witness columns, each vector from its last column to its first. -/
-def collapseEvals {nc : ℕ} (zetaPow zetaOmegaPow : FVar F)
+def collapseEvals [ConstraintHolds F c] {nc : ℕ} (zetaPow zetaOmegaPow : FVar F)
     (e : ProofEvaluations (Vector (FVar F) nc)) : CircuitM F c (ProofEvaluations (FVar F)) := do
   let endomulScalarSelector ← collapseColumn zetaPow zetaOmegaPow e.endomulScalarSelector
   let emulSelector ← collapseColumn zetaPow zetaOmegaPow e.emulSelector
@@ -91,7 +91,7 @@ def collapseEvals {nc : ℕ} (zetaPow zetaOmegaPow : FVar F)
 
 /-- The public evaluation at `ζ`: the one chunk as it is, or the chunks folded at `ζ^(2^srs)`,
 with that power returned beside the fold for `zetaToSrsOr` to reuse. -/
-def publicFold (srsLengthLog2 : ℕ) (zeta : FVar F) :
+def publicFold [ConstraintHolds F c] (srsLengthLog2 : ℕ) (zeta : FVar F) :
     List (FVar F) → CircuitM F c (FVar F × Option (FVar F))
   | [x] => pure (x, none)
   | chunks => do
@@ -100,7 +100,8 @@ def publicFold (srsLengthLog2 : ℕ) (zeta : FVar F) :
     pure (folded, some zetaToSrs)
 
 /-- `ζ^(2^srs)`: the public fold's, when it computed one, and otherwise computed here. -/
-def zetaToSrsOr (srsLengthLog2 : ℕ) (zeta : FVar F) : Option (FVar F) → CircuitM F c (FVar F)
+def zetaToSrsOr [ConstraintHolds F c] (srsLengthLog2 : ℕ) (zeta : FVar F) : Option (FVar F) →
+    CircuitM F c (FVar F)
   | some z => pure z
   | none => Snarky.pow zeta (2 ^ srsLengthLog2)
 

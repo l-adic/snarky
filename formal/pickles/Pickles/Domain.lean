@@ -57,7 +57,7 @@ structure OmegaPowers (F : Type) where
   omegaToZk : FVar F
 
 /-- `k` further multiplications by `ω⁻¹`. -/
-private def omegaLoop (om1 : FVar F) : ℕ → FVar F → CircuitM F c (FVar F)
+private def omegaLoop [ConstraintHolds F c] (om1 : FVar F) : ℕ → FVar F → CircuitM F c (FVar F)
   | 0, term => pure term
   | k + 1, term => do
     let next ← mul term om1
@@ -65,7 +65,8 @@ private def omegaLoop (om1 : FVar F) : ℕ → FVar F → CircuitM F c (FVar F)
 
 /-- The negative generator powers: `ω⁻¹` by one `inv`, `ω⁻²` by one `mul`, `zkRows − 3` further
 multiplications by `ω⁻¹` reaching `ω^{−(zkRows−1)}`, and one more for `ω^{−zkRows}`. -/
-def omegaPowers (generator : FVar F) (zkRows : ℕ) : CircuitM F c (OmegaPowers F) := do
+def omegaPowers [ConstraintHolds F c] (generator : FVar F) (zkRows : ℕ) : CircuitM F c
+    (OmegaPowers F) := do
   let om1 ← inv generator
   let om2 ← mul om1 om1
   let omZkP1 ← omegaLoop om1 (zkRows - 3) om2
@@ -74,12 +75,14 @@ def omegaPowers (generator : FVar F) (zkRows : ℕ) : CircuitM F c (OmegaPowers 
 
 /-- The permutation vanishing polynomial at `ζ`,
 `(ζ − ω⁻¹)(ζ − ω^{−(zkRows−1)})(ζ − ω^{−zkRows})`, in two `mul` rows. -/
-def zkPolynomial (zeta : FVar F) (o : OmegaPowers F) : CircuitM F c (FVar F) := do
+def zkPolynomial [ConstraintHolds F c] (zeta : FVar F) (o : OmegaPowers F) :
+    CircuitM F c (FVar F) := do
   let t1 ← mul (CVar.sub_ zeta o.omegaToMinus1) (CVar.sub_ zeta o.omegaToZkPlus1)
   mul t1 (CVar.sub_ zeta o.omegaToZk)
 
 /-- One `equals` per candidate, emitted in list order. -/
-private def whichesGo (domainLog2Var : FVar F) : List ℕ → CircuitM F c (List (BoolVar F))
+private def whichesGo [ConstraintHolds F c] (domainLog2Var : FVar F) : List ℕ → CircuitM F c
+    (List (BoolVar F))
   | [] => pure []
   | l :: rest => do
     let b ← equals (.const (l : F)) domainLog2Var
@@ -88,13 +91,13 @@ private def whichesGo (domainLog2Var : FVar F) : List ℕ → CircuitM F c (List
 
 /-- Which known domain the previous proof uses: one `equals` of the runtime domain log2
 against each candidate, emitted last-to-first, the bits returned in candidate order. -/
-def knownDomainWhiches (domainLog2Var : FVar F) (log2s : List ℕ) :
+def knownDomainWhiches [ConstraintHolds F c] (domainLog2Var : FVar F) (log2s : List ℕ) :
     CircuitM F c (List (BoolVar F)) := do
   let rev ← whichesGo domainLog2Var log2s.reverse
   pure rev.reverse
 
 /-- `[x, x², x⁴, …, x^(2^n)]` by `n` `square` rows. -/
-def buildPow2PowsArray (x : FVar F) : ℕ → CircuitM F c (Array (FVar F))
+def buildPow2PowsArray [ConstraintHolds F c] (x : FVar F) : ℕ → CircuitM F c (Array (FVar F))
   | 0 => pure #[x]
   | k + 1 => do
     let arr ← buildPow2PowsArray x k
@@ -102,14 +105,14 @@ def buildPow2PowsArray (x : FVar F) : ℕ → CircuitM F c (Array (FVar F))
     pure (arr.push sq)
 
 /-- `x^(2^n)` by `n` `mul` rows. -/
-def pow2PowMul (x : FVar F) : ℕ → CircuitM F c (FVar F)
+def pow2PowMul [ConstraintHolds F c] (x : FVar F) : ℕ → CircuitM F c (FVar F)
   | 0 => pure x
   | k + 1 => do
     let acc ← pow2PowMul x k
     mul acc acc
 
 /-- `x^(2^n)` by `n` `square` rows. -/
-def pow2PowSquare (x : FVar F) : ℕ → CircuitM F c (FVar F)
+def pow2PowSquare [ConstraintHolds F c] (x : FVar F) : ℕ → CircuitM F c (FVar F)
   | 0 => pure x
   | k + 1 => do
     let acc ← pow2PowSquare x k
@@ -117,8 +120,8 @@ def pow2PowSquare (x : FVar F) : ℕ → CircuitM F c (FVar F)
 
 /-- `ζⁿ − 1` for the selected known domain: the table `ζ^(2^i)` for `i ≤ maxLog2`, the
 domains' entries summed under their which bits, minus one, sealed. -/
-def knownDomainVanishingPolynomial (whiches : List (BoolVar F)) (log2s : List ℕ)
-    (maxLog2 : ℕ) (zeta : FVar F) : CircuitM F c (FVar F) := do
+def knownDomainVanishingPolynomial [ConstraintHolds F c] (whiches : List (BoolVar F))
+    (log2s : List ℕ) (maxLog2 : ℕ) (zeta : FVar F) : CircuitM F c (FVar F) := do
   let pow2Pows ← buildPow2PowsArray zeta maxLog2
   let pow2AtLog2 := log2s.map fun l => pow2Pows[l]?.getD (.const 0)
   let masked ← Pseudo.mask whiches pow2AtLog2
@@ -126,7 +129,8 @@ def knownDomainVanishingPolynomial (whiches : List (BoolVar F)) (log2s : List �
 
 /-- The one-hot vector of `index` over `n` entries: bit `j` is `[index = j]`, emitted
 last-to-first, and `assertAny` over the bits, so `index` names an entry. -/
-def oneHotVector (n : ℕ) (index : FVar F) : CircuitM F c (List (BoolVar F)) := do
+def oneHotVector [ConstraintHolds F c] (n : ℕ) (index : FVar F) :
+    CircuitM F c (List (BoolVar F)) := do
   let bits ← knownDomainWhiches index (List.range n)
   assertAny bits
   pure bits
@@ -142,13 +146,13 @@ structure PlonkDomain (F c : Type) where
 /-- The domain the one-hot bits `which` select among `log2s`: the generator a mask over the
 constants `gen log2ᵢ`, which emits no rows, and the vanishing polynomial
 `knownDomainVanishingPolynomial` over a `ζ^(2^i)` table up to the largest `log2ᵢ`. -/
-def toDomain (gen : ℕ → F) (which : List (BoolVar F)) (log2s : List ℕ) :
+def toDomain [ConstraintHolds F c] (gen : ℕ → F) (which : List (BoolVar F)) (log2s : List ℕ) :
     CircuitM F c (PlonkDomain F c) := do
   let generator ← Pseudo.choose which log2s fun d => .const (gen d)
   pure ⟨generator, knownDomainVanishingPolynomial which log2s (log2s.foldr max 0)⟩
 
 /-- The domain an index selects among `log2s`: its one-hot bits, then `toDomain`. -/
-def selectDomain (gen : ℕ → F) (log2s : List ℕ) (index : FVar F) :
+def selectDomain [ConstraintHolds F c] (gen : ℕ → F) (log2s : List ℕ) (index : FVar F) :
     CircuitM F c (PlonkDomain F c) := do
   let which ← oneHotVector log2s.length index
   toDomain gen which log2s

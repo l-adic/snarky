@@ -1,5 +1,6 @@
 import Mathlib.Algebra.NeZero
 import Mathlib.Logic.Equiv.Defs
+import Mathlib.Data.Fin.Tuple.Basic
 import Snarky.CVar
 import Snarky.Types.Vector
 
@@ -264,5 +265,27 @@ theorem CircuitType.toList_valueToFields_ofEquiv [inst : CircuitType F a va] (ev
       = (CircuitType.valueToFields (F := F) (var := va) (ev x)).toList := rfl
 
 end Equiv
+
+/-! ## The `Fin`-family former -/
+
+section FinFamily
+
+variable {F : Type}
+
+/-- A family indexed by `Fin n`, its entries of possibly different types, encodes as its
+entries in index order: through `Fin.consEquiv`, entry `0` then the rest. -/
+@[reducible] def CircuitType.finFamily :
+    (n : ℕ) → (β γ : Fin n → Type) → [∀ i, CircuitType F (β i) (γ i)] →
+      CircuitType F ((i : Fin n) → β i) ((i : Fin n) → γ i)
+  | 0, _, _, _ => CircuitType.ofEquiv (Equiv.ofUnique _ Unit) (Equiv.ofUnique _ Unit)
+  | n + 1, β, γ, _ =>
+    letI := CircuitType.finFamily n (fun i => β i.succ) (fun i => γ i.succ)
+    CircuitType.ofEquiv (Fin.consEquiv β).symm (Fin.consEquiv γ).symm
+
+instance instCircuitTypeFinFamily {n : ℕ} {β γ : Fin n → Type} [∀ i, CircuitType F (β i) (γ i)] :
+    CircuitType F ((i : Fin n) → β i) ((i : Fin n) → γ i) :=
+  CircuitType.finFamily n β γ
+
+end FinFamily
 
 end Snarky

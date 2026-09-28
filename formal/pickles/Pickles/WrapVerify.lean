@@ -43,7 +43,8 @@ open Snarky Snarky.Kimchi
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
 
 /-- The wrap circuit's verify block: the group half, then its four assertions. -/
-def wrapVerify {sf : Type} {k : ℕ} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
+def wrapVerify [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type} {k : ℕ}
+    (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
     (computeXHat : CircuitM F c (List (AffinePoint (FVar F)))) (msgSponge : SpongeVar F)
@@ -217,7 +218,9 @@ theorem wrapPublicInput_toList {ks n nc : ℕ} (E : Env IpaVesta.curve nc) (V : 
 /-- The verify block at the deployed Vesta constants, the blinding base `h` as a constant cell,
 and the public-input commitment of the packed step statement at the Lagrange points `lagrange`.
 The CS-equality corpus pins this gadget at its dumps' points. -/
-def wrapVerifyWith {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc : ℕ}
+def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
+    [LawfulBasicSystem Fq c] [KimchiSystem Fq c]
+    {ks n k nc : ℕ}
     (h : IpaVesta.curve.Point) (lagrange : List (Vector IpaVesta.curve.Point nc))
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
@@ -233,7 +236,9 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc 
     msgSponge newBpChallenges claimedMsgDigest u cells
 
 /-- `wrapVerifyWith` at the environment's SRS blinding base and the key's Lagrange points. -/
-def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k nc : ℕ}
+def wrapVerifyAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
+    [KimchiSystem Fq c]
+    {ks n k nc : ℕ}
     (E : Env IpaVesta.curve nc)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
@@ -502,7 +507,8 @@ def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fq))) (g : GroupVar
 
 /-- The verify block as a circuit of its input: `wrapVerifyAt` on the input, with the key's
 cells and the two sponges as constants. -/
-def groupCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
+def groupCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
+    [KimchiSystem Fq c]
     (E : Env Bulletproof.IpaVesta.curve nc) (keyCells : VkComms nc (AffinePoint (FVar Fq)))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n nc) : CircuitM Fq c Unit := do
   wrapVerifyAt E g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest g.claims

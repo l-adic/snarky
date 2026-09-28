@@ -66,9 +66,10 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-- The `ftEval0` gadget: the permutation contribution minus the interpreted constant term,
 in the source's operation order. -/
-def ftEval0Circuit (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (toks : Array PolishToken)
-    (feat : FeatureFlag → Bool) (ulb : Bool → Int → CircuitM F c (FVar F))
-    (inp : Inputs F) (ext : PermInputs F) : CircuitM F c (FVar F) := do
+def ftEval0Circuit [ConstraintHolds F c] (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
+    (toks : Array PolishToken) (feat : FeatureFlag → Bool)
+    (ulb : Bool → Int → CircuitM F c (FVar F)) (inp : Inputs F) (ext : PermInputs F) :
+    CircuitM F c (FVar F) := do
   let w := inp.evals.w
   let s := inp.evals.s
   let β := inp.beta

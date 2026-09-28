@@ -30,7 +30,8 @@ def inputVar [A : CircuitType F a avar] : avar :=
 /-- The whole-circuit program: bind the input bundle, pay its check, run the body,
 witness the output's encoding into fresh public slots, and constrain the body's output to
 them. The result is the body's output paired with the public bundle. -/
-def compileBody [Field F] [DecidableEq F] [BasicSystem F c] [CircuitType F a avar]
+def compileBody [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [CircuitType F a avar]
     [CheckedType F c a avar] [CircuitType F b bvar] (main : avar → CircuitM F c bvar) :
     CircuitM F c (bvar × bvar) := do
   let av : avar := inputVar (F := F) (a := a)
@@ -44,7 +45,8 @@ def compileBody [Field F] [DecidableEq F] [BasicSystem F c] [CircuitType F a ava
 
 /-- A circuit's constraint system: the builder on the whole-circuit program, with the
 counter past the input slots. -/
-def compile [Field F] [DecidableEq F] [BasicSystem F c] [A : CircuitType F a avar]
+def compile [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [A : CircuitType F a avar]
     [CheckedType F c a avar] [CircuitType F b bvar] (main : avar → CircuitM F c bvar) :
     Built c (bvar × bvar) :=
   build (compileBody (a := a) (b := b) main) A.size
@@ -56,7 +58,7 @@ def seed [A : CircuitType F a avar] (input : a) : ProverState F :=
 
 /-- Solve a circuit on a public input: run the prover on the whole-circuit program from
 the seeded table and read the output bundle back. -/
-def solve [Field F] [DecidableEq F] [BasicSystem F c] [CircuitType F a avar]
+def solve [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [CircuitType F a avar]
     [CheckedType F c a avar] [CircuitType F b bvar] (main : avar → CircuitM F c bvar)
     (input : a) : Except EvalError (b × Assignments F) :=
   match prove (compileBody (a := a) (b := b) main) (seed (F := F) (avar := avar) input).nv
@@ -189,7 +191,7 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
 
 /-- The counter the body starts from: past the input slots, and past whatever the input
 bundle's own check allocated. -/
-def bodyStart [Field F] [BasicSystem F c] [A : CircuitType F a avar]
+def bodyStart [Field F] [BasicSystem F c] [ConstraintHolds F c] [A : CircuitType F a avar]
     [CheckedType F c a avar] : Nat :=
   (build (CheckedType.check (F := F) (c := c) (val := a)
     (inputVar (F := F) (a := a))) A.size).nextVar
@@ -198,7 +200,7 @@ def bodyStart [Field F] [BasicSystem F c] [A : CircuitType F a avar]
 whole-circuit program pays the check first. A valuation satisfying the compiled system
 therefore satisfies the check's rows, and so — through `CheckedType.check_sound` — whatever
 the input type's own rows force about the bundle. -/
-theorem mem_compile_of_mem_check [Field F] [DecidableEq F] [BasicSystem F c]
+theorem mem_compile_of_mem_check [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [A : CircuitType F a avar] [CheckedType F c a avar] [CircuitType F b bvar]
     {main : avar → CircuitM F c bvar} {con : c}
     (h : con ∈ (build (CheckedType.check (F := F) (c := c) (val := a)
@@ -211,7 +213,7 @@ theorem mem_compile_of_mem_check [Field F] [DecidableEq F] [BasicSystem F c]
 whole-circuit program runs the input check, then the body, then the output binding, and
 `build_bind` concatenates their rows in that order. A valuation satisfying the compiled
 system therefore satisfies the body's own rows — the direction a soundness triple needs. -/
-theorem mem_compile_of_mem_body [Field F] [DecidableEq F] [BasicSystem F c]
+theorem mem_compile_of_mem_body [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [A : CircuitType F a avar] [CheckedType F c a avar] [CircuitType F b bvar]
     {main : avar → CircuitM F c bvar} {con : c}
     (h : con ∈ (build (main (inputVar (F := F) (a := a)))

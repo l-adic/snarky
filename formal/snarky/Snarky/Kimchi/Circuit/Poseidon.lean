@@ -89,7 +89,7 @@ instance instCircuitTypeSpongeState :
     rw [h0, h1, h2]
 
 /-- The state cells carry no well-formedness constraint (plain field variables). -/
-instance instCheckedTypeSpongeState [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+instance instCheckedTypeSpongeState [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     CheckedType F c (Poseidon.Triple F) (SpongeState F) where
   check _ := pure PUnit.unit
   post _ _ := True
@@ -97,13 +97,14 @@ instance instCheckedTypeSpongeState [Add F] [Mul F] [Zero F] [One F] [BasicSyste
   check_complete _ _ _ := Complete.pure
 
 /-- A state triple carries no admissibility condition. -/
-@[simp] theorem valid_spongeState [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+@[simp] theorem valid_spongeState [Field F] [BasicSystem F c] [ConstraintHolds F c]
     {v : Poseidon.Triple F} :
     CheckedType.Valid (F := F) (c := c) (var := SpongeState F) v := fun _ _ _ => trivial
 
 /-- The Poseidon permutation gadget: one bulk witness of the round outputs, one block
 constraint over the 56 chained states at `p`'s data, the last state returned. -/
-def poseidon [Field F] [BasicSystem F c] [KimchiSystem F c] (p : Poseidon.Params F)
+def poseidon [Field F] [BasicSystem F c] [ConstraintHolds F c]
+    [KimchiSystem F c] (p : Poseidon.Params F)
     (initialState : SpongeState F) : CircuitM F c (SpongeState F) := do
   let roundOutputs ← witness (val := Vector (Poseidon.Triple F) 55) (advice p initialState)
   addConstraint (KimchiSystem.poseidon

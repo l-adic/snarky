@@ -128,7 +128,8 @@ def evalRows {α : Type} (e : ProofEvaluations α) : List (PointEvaluations α) 
 
 /-- The three plonk comparisons: each computed scalar — the permutation scalar, `ζ^(2^srs)` and
 `ζⁿ` at the call site — against its shifted claim by `shiftedEqual`, and the conjunction. -/
-def plonkScalarsEqual {sf : Type} (ops : FopShiftOps F c sf) (perm zetaToSrs zetaToDomain : sf)
+def plonkScalarsEqual [ConstraintHolds F c] {sf : Type} (ops : FopShiftOps F c sf)
+    (perm zetaToSrs zetaToDomain : sf)
     (actualPerm actualZetaToSrs actualZetaToDomain : FVar F) : CircuitM F c (BoolVar F) := do
   let permOk ← ops.shiftedEqual perm actualPerm
   let zetaToSrsOk ← ops.shiftedEqual zetaToSrs actualZetaToSrs
@@ -151,7 +152,8 @@ recomputes `ξ` from the fr-sponge over every chunk, the combined inner product 
 chunk, `b` and the permutation scalar, compares each with its claim (the shifted claims through
 `ops`, the plonk ones by `plonkScalarsEqual`), and returns the four bits and their
 conjunction. Each column's chunks are recombined at the `ζ^(2^k)` rows (`collapseEvals`). -/
-def finalizeOtherProofCore {sf : Type} {nc : ℕ} (P : FopParams F) (ops : FopShiftOps F c sf)
+def finalizeOtherProofCore [ConstraintHolds F c] {sf : Type} {nc : ℕ} (P : FopParams F)
+    (ops : FopShiftOps F c sf)
     (xiConstrainLowBits : Bool) (digest : CircuitM F c (FVar F)) (gen : FVar F)
     (pow2Log2 : ℕ) (vanishing : FVar F → CircuitM F c (FVar F)) (mask : List (BoolVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) (w : ChunkedEvals nc (FVar F))
@@ -222,13 +224,13 @@ structure KnownDomain (F : Type) where
 
 /-- The step side's shifted-value conventions: Type1 claims, compared by encoding the
 computed scalar. -/
-def stepShiftOps : FopShiftOps F c (Type1 (FVar F)) where
+def stepShiftOps [ConstraintHolds F c] : FopShiftOps F c (Type1 (FVar F)) where
   unshift x := Type1.fromShiftedCircuit 255 x
   shiftedEqual claimed actual := equals claimed.val (Type1.ofFieldCircuit 255 actual)
 
 /-- The wrap side's shifted-value conventions: Type2 claims, compared by decoding the
 claim. -/
-def wrapShiftOps : FopShiftOps F c (Type2 (FVar F)) where
+def wrapShiftOps [ConstraintHolds F c] : FopShiftOps F c (Type2 (FVar F)) where
   unshift x := Type2.fromShiftedCircuit 255 x
   shiftedEqual claimed actual := equals (Type2.fromShiftedCircuit 255 claimed) actual
 
@@ -236,10 +238,10 @@ def wrapShiftOps : FopShiftOps F c (Type2 (FVar F)) where
 among `domains` by the runtime `domainLog2Var`, then `finalizeOtherProofCore` with the masked
 challenge digest, the `ξ` low half constrained, the `ζ^(2^srs)` rows and the known-domain
 vanishing polynomial. -/
-def finalizeOtherProofStep {nc : ℕ} (P : FopParams F) (domains : List (KnownDomain F))
-    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type1 (FVar F))) (w : ChunkedEvals nc (FVar F))
-    (mask : List (BoolVar F))
-    (prev : List (List (FVar F))) (domainLog2Var : FVar F) : CircuitM F c (FopOutput F) := do
+def finalizeOtherProofStep [ConstraintHolds F c] {nc : ℕ} (P : FopParams F)
+    (domains : List (KnownDomain F)) (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type1 (FVar F)))
+    (w : ChunkedEvals nc (FVar F)) (mask : List (BoolVar F)) (prev : List (List (FVar F)))
+    (domainLog2Var : FVar F) : CircuitM F c (FopOutput F) := do
   let endoVar : FVar F := .const P.endoLam
   let pl := u.deferredValues.plonk
   let zeta ← EndoScalar.toField 8 pl.zeta.val endoVar
@@ -256,7 +258,7 @@ def finalizeOtherProofStep {nc : ℕ} (P : FopParams F) (domains : List (KnownDo
 plonk claims sealed, then `finalizeOtherProofCore` at the generator cell `gen` with the plain
 challenge digest, the `ξ` low half constrained, the `ζ^(2^srs)` rows and the caller's
 vanishing polynomial. -/
-def finalizeOtherProofWrap {nc : ℕ} (P : FopParams F) (gen : FVar F)
+def finalizeOtherProofWrap [ConstraintHolds F c] {nc : ℕ} (P : FopParams F) (gen : FVar F)
     (vanishing : FVar F → CircuitM F c (FVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F)))
     (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F))) :

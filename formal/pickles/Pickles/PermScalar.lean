@@ -30,7 +30,7 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-- `−(z(ζω) · β · α²¹ · zkp · ∏_{i<6} (γ + β·σᵢ + wᵢ))` over the six evaluated σ columns and
 the first six witness columns. -/
-def permScalarCircuit (w s : Fin sigmaRows → FVar F)
+def permScalarCircuit [ConstraintHolds F c] (w s : Fin sigmaRows → FVar F)
     (zOmega beta gamma zkPoly alphaPow21 : FVar F) : CircuitM F c (FVar F) := do
   let t ← mul zOmega beta
   let t ← mul t alphaPow21

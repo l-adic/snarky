@@ -56,7 +56,8 @@ instance instAllocBranchDataCircuitType {F f w b vb : Type} [CircuitType F f w]
 
 /-- The branch data's check: the mask bits' booleanity, then the `log2` range-checked by
 expanding its 16 bits through the endo at one row. -/
-def AllocBranchData.check {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
+def AllocBranchData.check {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
+    [LawfulBasicSystem Fp c] [KimchiSystem Fp c]
     (d : AllocBranchData (FVar Fp) (BoolVar Fp)) : CircuitM Fp c PUnit := do
   CheckedType.check (c := c) (val := Bool × Bool × Fp) (d.mask0, d.mask1, d.domainLog2)
   let _ ← EndoScalar.toField 1 d.domainLog2 (.const Pasta.pallasEndo)
@@ -174,8 +175,8 @@ instance instAllocUnfinalizedCircuitType {F f w b vb sv sf : Type} {k : ℕ} [Ci
 
 /-- An unfinalized entry is checked cell by cell: at split shifted claims, each claim's parity
 bit and the finalize flag are boolean. -/
-instance instAllocUnfinalizedCheckedType {F c f w b vb sv sf : Type} {k : ℕ} [Add F] [Mul F]
-    [Zero F] [One F] [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb]
+instance instAllocUnfinalizedCheckedType {F c f w b vb sv sf : Type} {k : ℕ} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f w] [CircuitType F b vb]
     [CircuitType F sv sf] [CheckedType F c f w] [CheckedType F c b vb] [CheckedType F c sv sf] :
     CheckedType F c (AllocUnfinalized k f b sv) (AllocUnfinalized k w vb sf) :=
   CheckedType.ofEquiv (AllocUnfinalized.equivProd k f b sv) (AllocUnfinalized.equivProd k w vb sf)
@@ -286,7 +287,8 @@ instance instSlotWitnessCircuitType {F f fv b bv s sv p pv : Type} {w ncw ncs k 
 /-- One slot witness's check, in allocation order: every point of the wrap proof on the curve
 and the opening's parity bits boolean, nothing on the proof state's scalars, the branch data's
 check, nothing on the evaluations or the challenges, every accumulator point on the curve. -/
-def SlotWitness.check {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {w ncw ncs k ks : ℕ}
+def SlotWitness.check {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
+    [LawfulBasicSystem Fp c] [KimchiSystem Fp c] {w ncw ncs k ks : ℕ}
     (s : SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))) (PallasPt (FVar Fp))) :
     CircuitM Fp c PUnit := do
@@ -358,8 +360,8 @@ instance instVkCommsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
   CircuitType.ofEquiv (VkComms.equivProd nc v) (VkComms.equivProd nc w)
 
 /-- A key is checked commitment by commitment: at checked points, every chunk on the curve. -/
-instance instVkCommsCheckedType {F c v w : Type} {nc : ℕ} [Add F] [Mul F] [Zero F] [One F]
-    [BasicSystem F c] [CircuitType F v w] [CheckedType F c v w] :
+instance instVkCommsCheckedType {F c v w : Type} {nc : ℕ} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F v w] [CheckedType F c v w] :
     CheckedType F c (VkComms nc v) (VkComms nc w) :=
   CheckedType.ofEquiv (VkComms.equivProd nc v) (VkComms.equivProd nc w)
 

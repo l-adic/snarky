@@ -26,7 +26,8 @@ open Std.Do Snarky
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-- The products `bᵢ · xᵢ`, in entry order, emitted last-to-first. -/
-private def products : List (BoolVar F × FVar F) → CircuitM F c (List (FVar F))
+private def products [ConstraintHolds F c] :
+    List (BoolVar F × FVar F) → CircuitM F c (List (FVar F))
   | [] => pure []
   | (b, x) :: rest => do
     let tail ← products rest
@@ -35,12 +36,14 @@ private def products : List (BoolVar F × FVar F) → CircuitM F c (List (FVar F
 
 /-- The mask-select `∑ᵢ bᵢ · xᵢ`: one `mul` per entry, the sum an affine combination. A
 constant entry's `mul` folds to a scaling and emits no row. -/
-def mask (bits : List (BoolVar F)) (xs : List (FVar F)) : CircuitM F c (FVar F) := do
+def mask [ConstraintHolds F c] (bits : List (BoolVar F)) (xs : List (FVar F)) : CircuitM F c
+    (FVar F) := do
   let terms ← products (bits.zip xs)
   pure (Snarky.sum terms)
 
 /-- The mask-select over `xs` mapped through `f`. -/
-def choose {α : Type} (bits : List (BoolVar F)) (xs : List α) (f : α → FVar F) :
+def choose [ConstraintHolds F c] {α : Type} (bits : List (BoolVar F)) (xs : List α)
+    (f : α → FVar F) :
     CircuitM F c (FVar F) :=
   mask bits (xs.map f)
 

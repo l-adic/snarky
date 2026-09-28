@@ -37,19 +37,21 @@ open scoped Kimchi
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-- One Horner step: `fx + ξ·acc` where the entry's bit is set, `acc` otherwise. -/
-private def hornerStep (ξ acc : FVar F) (e : BoolVar F × FVar F) : CircuitM F c (FVar F) := do
+private def hornerStep [ConstraintHolds F c] (ξ acc : FVar F) (e : BoolVar F × FVar F) :
+    CircuitM F c (FVar F) := do
   let xiAcc ← mul ξ acc
   selectField e.1 (CVar.add_ e.2 xiAcc) acc
 
 /-- The Horner fold from an accumulator, in fold order. -/
-private def hornerGo (ξ acc : FVar F) : List (BoolVar F × FVar F) → CircuitM F c (FVar F)
+private def hornerGo [ConstraintHolds F c] (ξ acc : FVar F) : List (BoolVar F × FVar F) →
+    CircuitM F c (FVar F)
   | [] => pure acc
   | e :: rest => do
     let acc' ← hornerStep ξ acc e
     hornerGo ξ acc' rest
 
 /-- The Horner sum of a batch, seeded from its last entry and folded from the back. -/
-private def hornerCombine (ξ : FVar F) (evals : List (BoolVar F × FVar F)) :
+private def hornerCombine [ConstraintHolds F c] (ξ : FVar F) (evals : List (BoolVar F × FVar F)) :
     CircuitM F c (FVar F) :=
   match evals.reverse with
   | [] => pure (.const 0)
@@ -62,8 +64,8 @@ def buildEvalList (sgEvals : List (BoolVar F × FVar F)) (publicInput ftEval : F
   sgEvals ++ (true_, publicInput) :: (true_, ftEval) :: evals.map (true_, ·)
 
 /-- The combined inner product `combine(ζ) + r · combine(ζω)`, the `ζω` fold first. -/
-def combinedInnerProduct (ξ r : FVar F) (evalsZeta evalsZetaw : List (BoolVar F × FVar F)) :
-    CircuitM F c (FVar F) := do
+def combinedInnerProduct [ConstraintHolds F c] (ξ r : FVar F)
+    (evalsZeta evalsZetaw : List (BoolVar F × FVar F)) : CircuitM F c (FVar F) := do
   let combineZetaw ← hornerCombine ξ evalsZetaw
   let rTimesZetaw ← mul r combineZetaw
   let combineZeta ← hornerCombine ξ evalsZeta
