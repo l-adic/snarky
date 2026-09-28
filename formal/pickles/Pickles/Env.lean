@@ -190,11 +190,6 @@ theorem Env.domainLog2_le {C : KimchiCurve} {nc : ℕ} (E : Env C nc) :
   rw [← E.omega_prim.eq_orderOf, KimchiVK.n] at hd
   exact (Nat.pow_dvd_pow_iff_le_right (by norm_num)).mp hd
 
-/-- An environment's key satisfies the invariants over its SRS: `Env.ofInvariants`' converse. -/
-theorem Env.invariants {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : Env.Invariants E.σ E.cvk :=
-  ⟨E.endo_eq, E.zkRows_eq, E.zkRows_le, E.domainLog2_le, E.rounds_small, E.rounds_pos, E.h_ne,
-    E.lagrange_pos, E.lagrange_le, E.nc_eq, E.lagrange_eq, E.digest_eq, E.omega_eq, E.shifts_eq⟩
-
 /-- At least three zero-knowledge rows, at any chunk count. -/
 theorem Env.zkRows_ge {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : 3 ≤ E.cvk.zkRows := by
   have := E.nc_pos

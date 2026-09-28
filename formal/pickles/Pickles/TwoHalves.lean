@@ -154,6 +154,14 @@ def FopParams.ofEnv {C : KimchiCurve} {nc : ℕ} (E : Env C nc)
     srsLengthLog2 := E.σ.k
     zkRows := E.cvk.zkRows }
 
+/-- The scalar half's parameters are fixed by the SRS size and the chunk count: every key's endo
+coefficient and shifts are the curve's, its zero-knowledge rows the chunk count's. -/
+theorem FopParams.ofEnv_eq {C : KimchiCurve} {nc : ℕ} (E₁ E₂ : Env C nc) (hσ : E₁.σ.k = E₂.σ.k)
+    (toks : Array Linearization.PolishToken) :
+    FopParams.ofEnv E₁ toks = FopParams.ofEnv E₂ toks := by
+  simp only [FopParams.ofEnv, E₁.endo_eq, E₂.endo_eq, E₁.shifts_eq, E₂.shifts_eq, E₁.zkRows_eq,
+    E₂.zkRows_eq, hσ]
+
 /-! ## The two halves' reads at their own cells -/
 
 section AtCells
