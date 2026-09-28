@@ -189,6 +189,7 @@ constant `dummyUnf` entries and `w − n` fresh message cells. The cells it was 
 returned beside it. -/
 def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
     {inVal inVar : Type} [CircuitType Fp inVal inVar] [CheckedType Fp c inVal inVar]
+    [CheckedType Fp c (AllocBranchData Fp Bool) (AllocBranchData (FVar Fp) (BoolVar Fp))]
     (srcs : Fin n → SlotSource ncw)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
     (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
@@ -199,11 +200,8 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
   let publicInput ← witness (val := inVal) adv.publicInput
   let (prevs, publicOutput) ← rule publicInput
   let vk ← witness (val := VkComms ncw (PallasPt Fp)) adv.vk
-  let slotsU ← witness
-    (val := UnChecked ((i : Fin n) → SlotVal (SlotSource.widths w srcs i) ncw ncs k ks))
-    (UnChecked.mk <$> adv.slots)
-  let slots := slotsU.val
-  (List.finRange n).forM fun i => SlotWitness.check (slots i)
+  let slots ← witness (val := (i : Fin n) → SlotVal (SlotSource.widths w srcs i) ncw ncs k ks)
+    adv.slots
   let unfs ← witness (val := Vector (UnfVal k) n) adv.unfinalized
   let msgs ← witness (val := Vector Fp n) adv.msgs
   let msgsPad ← witness (val := Vector Fp (w - n)) adv.msgsPad
@@ -230,6 +228,7 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
 @[nolint unusedArguments]
 def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
     {inVal inVar : Type} [CircuitType Fp inVal inVar] [CheckedType Fp c inVal inVar]
+    [CheckedType Fp c (AllocBranchData Fp Bool) (AllocBranchData (FVar Fp) (BoolVar Fp))]
     (srcs : Fin n → SlotSource ncw)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
     (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
@@ -297,10 +296,6 @@ theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType 
       then CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf
       else r.unfs[j.val - (w - n)]'(by omega)⌝⦄ := by
   have hrule := fun x => builder_spec_true (rule x)
-  have hfm := fun (slots : (i : Fin n) → SlotVar (SlotSource.widths w srcs i) ncw ncs k ks) =>
-    builder_spec_true
-    ((List.finRange n).forM fun i => SlotWitness.check (c := Builder V (KimchiConstraint Fp))
-      (slots i))
   have hmap := fun (f : Fin n → CircuitM Fp (Builder V (KimchiConstraint Fp))
       (FopOutput Fp × BoolVar Fp)) => builder_spec_true ((List.finRange n).mapM f)
   have hall := fun bs => builder_spec_true
@@ -309,7 +304,7 @@ theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType 
     builder_spec_true
       (hashMessagesForNextStepProof (c := Builder V (KimchiConstraint Fp)) p vk a pr)
   simp only [stepMain]
-  mvcgen [hrule, hfm, hmap, hall, hhash, -Snarky.assertAll_spec]
+  mvcgen [hrule, hmap, hall, hhash, -Snarky.assertAll_spec]
 
 /-- A list related entrywise to `finRange n` has length `n`, and its entry at `j` is related
 to `j`. -/
@@ -406,16 +401,6 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
     rw [SlotSource.lagrange_eq K (srcs i) hfit]
     unfold verifyProofAt
     rfl
-  have hfm := fun (slots : (i : Fin n) → SlotVar (SlotSource.widths w srcs i) ncw ncs σ.k ks) =>
-    forM_spec (V := V) (c := KimchiConstraint Fp)
-      (fun i => SlotWitness.check (c := Builder V (KimchiConstraint Fp)) (slots i))
-      (fun i => (∃ b : Bool, (↑(slots i).z1.val.sOdd : CVar Fp).val V = bit b) ∧
-        (∃ b : Bool, (↑(slots i).z2.val.sOdd : CVar Fp).val V = bit b) ∧
-        (∃ b : Bool, (↑(slots i).branch.mask0 : CVar Fp).val V = bit b) ∧
-        (∃ b : Bool, (↑(slots i).branch.mask1 : CVar Fp).val V = bit b) ∧
-        (∃ n : ℕ, n < 2 ^ 16 ∧ (slots i).branch.domainLog2.val V = (n : Fp)) ∧
-        SlotWitness.PointsOnCurve V (slots i))
-      (fun i => SlotWitness.check_spec (slots i))
   have hmap := fun (vk : VkComms ncw (PallasPt (FVar Fp)))
       (slots : (i : Fin n) → SlotVar (SlotSource.widths w srcs i) ncw ncs σ.k ks)
       (unfs : Vector (UnfVar σ.k) n) (msgs : Vector (FVar Fp) n)
@@ -468,8 +453,8 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
       (fun j k' hj hk h => hinj j k' (by simp only [MaxProofsVerified] at hl; omega)
         (by simp only [MaxProofsVerified] at hl; omega) h)) nv hsat
   simp only [stepMain]
-  mvcgen [hrule, hfm, hmap, hhash, hall, -Snarky.assertAll_spec]
-  rename_i _ _ _ _ rout _ vk _ _ slots _ _ _ _ hcheck unfs _ hunf msgs _ _ _ _ _ results _ _ _
+  mvcgen [hrule, hmap, hhash, hall, -Snarky.assertAll_spec]
+  rename_i _ _ _ _ rout _ vk _ _ slots _ hcheck unfs _ hunf msgs _ _ _ _ _ results _ _ _
     hassert _ _ hres
   intro i hmv
   obtain ⟨hlen, hget⟩ := forall₂_finRange hres
@@ -488,7 +473,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
   have hi : i.val < results.length := by rw [hlen]; exact i.isLt
   have h1 := hassert (by simpa [hlen] using hn) hbits (results[i.val]'hi).2
     (List.mem_map.mpr ⟨_, List.getElem_mem hi, rfl⟩)
-  have hz := hcheck i (by simp)
+  have hz := SlotWitness.of_post ((CheckedType.post_finFamily V slots).mp hcheck i)
   have hmask := slotInput_mask_reads (hws i) dummySg rout.1[i] unfs[i] msgs[i] hz.2.2.1 hz.2.2.2.1
   refine ⟨CircuitType.reads_boolVar.mpr (hsf.trans (CircuitType.reads_boolVar.mp hmv)),
     fun K hK hfit hav => hacc ⟨K, hK⟩ hfit (hav _) hmv h1 fun x hx => ?_, hsc hmask hmv h1,

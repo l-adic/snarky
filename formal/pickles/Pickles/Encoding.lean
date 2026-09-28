@@ -81,6 +81,12 @@ instance instPointEvaluationsCircuitType {F v w : Type} [CircuitType F v w] :
     CircuitType F (PointEvaluations v) (PointEvaluations w) :=
   CircuitType.ofEquiv (PointEvaluations.equivProd v) (PointEvaluations.equivProd w)
 
+/-- An evaluation pair is checked entry by entry. -/
+instance instPointEvaluationsCheckedType {F c v w : Type} [Field F] [BasicSystem F c]
+    [ConstraintHolds F c] [CircuitType F v w] [CheckedType F c v w] :
+    CheckedType F c (PointEvaluations v) (PointEvaluations w) :=
+  CheckedType.ofEquiv (PointEvaluations.equivProd v) (PointEvaluations.equivProd w)
+
 /-- The evaluation record is its ten families, in field order. -/
 def _root_.Kimchi.Verifier.ProofEvaluations.equivProd (α : Type) :
     ProofEvaluations α ≃
