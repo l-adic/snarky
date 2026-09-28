@@ -192,13 +192,15 @@ private theorem wrapStep_kimchiVerify_core
     -- the next rule, and the next step circuit's advice
     (rule : inVar →
       CircuitM Fp (Builder Vs (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
-    (adv : StepMainAdvice n w 1 ncStep E.σ.k EsStep.σ.k inVal)
+    (adv : StepMainAdvice n w (fun _ => w) 1 ncStep E.σ.k EsStep.σ.k inVal)
     -- `Vs` satisfies every constraint of the compiled next step circuit
     (hstep : ∀ con ∈ (compile (a := Unit) (b := StmtVal E.σ.k w)
-        (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
+        (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp)) (fun _ => w) (fun _ => hw)
+          (verifyProofAt E)
           (FopParams.ofEnv EsStep Linearization.fpTokens) D.list dummySg dummyUnf rule
           adv)).constraints, ConstraintHolds.Holds Vs con) :
-    let r := (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) hw (verifyProofAt E)
+    let r := (build (stepMain (c := Builder Vs (KimchiConstraint Fp)) (fun _ => w) (fun _ => hw)
+      (verifyProofAt E)
       (FopParams.ofEnv EsStep Linearization.fpTokens) D.list dummySg dummyUnf rule adv) 0).result
     -- the wrap circuit's statement and cells
     let stmt := inputVar (F := Fq) (a := StatementPacked EsStep.σ.k (Type1 Fq) Fq)
@@ -211,7 +213,7 @@ private theorem wrapStep_kimchiVerify_core
     hd.1.whichBranch.val Vw = (b : Fq) →
     -- slot `i` must verify
     ∀ i : Fin n, CircuitType.Reads Vs r.prevs[i].mustVerify true →
-      let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
+      let inp := slotInput hw dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]
       ∀ ms : Vector Bool w, CircuitType.Reads Vs inp.proofMask ms →
       -- its wrap proof was made at the wrap circuit's public input
       CircuitType.Reads Vw stmt (inp.packedAt E Vs ms) →
@@ -233,10 +235,11 @@ private theorem wrapStep_kimchiVerify_core
   -- the step side: slot `i` finalizes, over the domain its branch data names
   obtain ⟨-, -, hscal, -, -, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads E (FopParams.ofEnv EsStep Linearization.fpTokens) D.list
-      EsStep.rounds_small (fun inp => inp.ScalarReads EsStep Vs)
-      (fun vk inp => verifyOne_scalarReads EsStep D hw (verifyProofAt E) vk inp) (hn.trans hw) hw
-      dummySg dummyUnf rule adv hsmall havoid) 0
-    (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc)) i hmv
+      EsStep.rounds_small (fun _ => w) (fun _ inp => inp.ScalarReads EsStep Vs)
+      (fun _ vk inp => verifyOne_scalarReads EsStep D hw (verifyProofAt E) vk inp) (hn.trans hw)
+      (fun _ => hw) dummySg dummyUnf rule adv (fun _ => hsmall) (fun _ => havoid)) 0
+    (fun con hc => hstep con
+      (mem_compile_stepMainCircuit (fun _ => w) (fun _ => hw) _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap side: the body's constraints hold, so its reads do
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) widths log2s stepKeys pins lagrange h dummy
@@ -444,13 +447,14 @@ theorem wrapStep_kimchiVerify
       inVar →
         CircuitM Fp (Builder Vs (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     -- the next step circuit's advice
-    (adv : StepMainAdvice n w 1 ncStep E.σ.k σStep.k inVal)
+    (adv : StepMainAdvice n w (fun _ => w) 1 ncStep E.σ.k σStep.k inVal)
     -- `Vs` satisfies every constraint of the compiled next step circuit
     (hstep :
       ∀ con ∈
           (compile (a := Unit) (b := StmtVal E.σ.k w)
             (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp))
-              hw
+              (fun _ => w)
+              (fun _ => hw)
               (verifyProofAt E)
               P
               domains
@@ -463,7 +467,8 @@ theorem wrapStep_kimchiVerify
     let r :=
       (build
         (stepMain (c := Builder Vs (KimchiConstraint Fp))
-          hw
+          (fun _ => w)
+          (fun _ => hw)
           (verifyProofAt E)
           P
           domains
@@ -496,7 +501,7 @@ theorem wrapStep_kimchiVerify
     -- slot `i` must verify
     ∀ i : Fin n,
       CircuitType.Reads Vs r.prevs[i].mustVerify true →
-      let inp := slotInput hw dummySg r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
+      let inp := slotInput hw dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]
       -- its masks
       ∀ ms : Vector Bool w,
         CircuitType.Reads Vs inp.proofMask ms →

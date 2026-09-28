@@ -51,7 +51,8 @@ private def rowWit [Field F] [DecidableEq F] (xs : Vector (FVar F) 8)
 
 /-- The gate emitter: the bulk crumb witness, the accumulator rounds and one `endoScalar`
 constraint, returning the raw `(a, b, n)` accumulators. -/
-def toFieldChecked' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
+def toFieldChecked' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [ConstraintHolds F c] [KimchiSystem F c]
     (rows : ℕ) (scalar : FVar F) :
     CircuitM F c (FVar F × FVar F × FVar F) := do
   let crumbs ← witness (val := Vector F (rows * 8)) (crumbsWit rows scalar)
@@ -69,7 +70,8 @@ where
 
 /-- The checked decomposition: the gate, the pin `n = scalar`, and `a·endo + b`, which
 costs no constraint when `endo` is a constant. -/
-def toField [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
+def toField [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
+    [KimchiSystem F c]
     (rows : ℕ) (scalar endo : FVar F) : CircuitM F c (FVar F) := do
   let (a, b, n) ← toFieldChecked' (c := c) rows scalar
   assertEqual n scalar

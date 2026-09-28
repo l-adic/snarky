@@ -50,7 +50,8 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-- The slot mask over `mpv` slots: slot `i` is set while no slot up to `i` equals
 `firstZero`, one `equals` and one `and` per slot, in slot order. -/
-def onesVector (firstZero : FVar F) (mpv : ℕ) : CircuitM F c (List (BoolVar F)) :=
+def onesVector [ConstraintHolds F c] (firstZero : FVar F) (mpv : ℕ) :
+    CircuitM F c (List (BoolVar F)) :=
   go true_ 0 mpv
 where
   /-- The slots from `i` on, `value` the mask so far. -/
@@ -66,9 +67,9 @@ where
 count among `widths`, the slot mask, the branch's step domain among `log2s`, and the
 assertion that `branchData` packs the domain and the mask as `4·domainLog2 + Σᵢ 2^(1−i)·maskᵢ`.
 Returns the bits and the mask. -/
-def wrapBranchBlock (branches mpv : ℕ) (widths : Vector (Fin (mpv + 1)) branches)
-    (log2s : Vector ℕ branches) (whichBranch branchData : FVar F) :
-    CircuitM F c (List (BoolVar F) × List (BoolVar F)) := do
+def wrapBranchBlock [ConstraintHolds F c] (branches mpv : ℕ)
+    (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
+    (whichBranch branchData : FVar F) : CircuitM F c (List (BoolVar F) × List (BoolVar F)) := do
   let bits ← oneHotVector branches whichBranch
   let firstZero ← Pseudo.choose bits widths.toList fun w => .const ((w : ℕ) : F)
   let mask ← onesVector firstZero mpv
@@ -79,14 +80,14 @@ def wrapBranchBlock (branches mpv : ℕ) (widths : Vector (Fin (mpv + 1)) branch
   pure (bits, mask)
 
 /-- One shifted scalar split into its halved representative and parity bit. -/
-def splitShifted [ToNat F] (x : Type2 (FVar F)) :
+def splitShifted [ConstraintHolds F c] [LawfulBasicSystem F c] [ToNat F] (x : Type2 (FVar F)) :
     CircuitM F c (Type2 (SplitField (FVar F) (BoolVar F))) := do
   let r ← splitFieldVar x.val
   pure ⟨⟨r.1, r.2⟩⟩
 
 /-- A previous proof's claims with its five shifted scalars split, in the order combined inner
 product, `b`, `ζ^(srs length)`, `ζⁿ`, permutation scalar. -/
-def splitUnfinalized [ToNat F] {k : ℕ}
+def splitUnfinalized [ConstraintHolds F c] [LawfulBasicSystem F c] [ToNat F] {k : ℕ}
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) :
     CircuitM F c
       (UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) := do
@@ -112,7 +113,7 @@ variable {nc : ℕ}
 
 /-- A point's coordinates multiplied by a bit, `y` before `x`: one branch's term of the
 coordinate-wise selection. -/
-private def scalePt (b : FVar F) (p : AffinePoint (FVar F)) :
+private def scalePt [ConstraintHolds F c] (b : FVar F) (p : AffinePoint (FVar F)) :
     CircuitM F c (AffinePoint (FVar F)) := do
   let y ← mul b p.y
   let x ← mul b p.x
@@ -153,7 +154,8 @@ private def VkComms.add (a b : VkComms nc (AffinePoint (FVar F))) :
 /-- The active branch's key, selected coordinate by coordinate: each branch's commitments
 multiplied by its bit, branches last to first, the products summed and each sum sealed. With
 one-hot bits, every inactive branch contributes zero to each coordinate. -/
-def chooseKey {branches : ℕ} [NeZero branches] (bits : Vector (BoolVar F) branches)
+def chooseKey [ConstraintHolds F c] {branches : ℕ} [NeZero branches]
+    (bits : Vector (BoolVar F) branches)
     (keys : Vector (VkComms nc (AffinePoint (FVar F))) branches) :
     CircuitM F c (VkComms nc (AffinePoint (FVar F))) := do
   let scaled ← vecMapMRev (fun (e : BoolVar F × VkComms nc (AffinePoint (FVar F))) =>
@@ -257,7 +259,9 @@ variable {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
 finalize block. It opens with what the deployed circuit emits first: the branch block over the
 statement's branch data, the proof state's allocation, the key choice, and the allocations of the
 accumulators, old challenge stacks, evaluations and wrap domain indices. -/
-def wrapMainFinalize {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
+def wrapMainFinalize [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
+    {branches mpv ncStep k ks : ℕ} [NeZero branches]
+    (P : FopParams Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : Vector Fq k)
@@ -310,7 +314,8 @@ def StatementPacked.claims {ks : ℕ} (stmt : StatementPacked ks (Type1 (FVar Fq
 over the public-input commitment masked across branches, with what it reads first: the per-slot
 accumulator digests right to left, the step-side digest's equality, the opening and messages,
 and the claim split. -/
-def wrapMainVerify {branches mpv ncStep k ks : ℕ} (log2s : Vector ℕ branches)
+def wrapMainVerify [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
+    {branches mpv ncStep k ks : ℕ} (log2s : Vector ℕ branches)
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
@@ -356,7 +361,9 @@ slot counts `widths`, step domains `log2s`, step keys and wrap domain pins are t
 `lagrange` gives the Lagrange bases at a step domain, `h` the blinding base, `dummy` the padding
 challenge vector, `slotWidths` each slot's challenge-stack height. Returns both halves' cells,
 the finalize half's (`WrapMainFinalizeOut`) and the verify half's (`WrapMainVerifyOut`). -/
-def wrapMain {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
+def wrapMain [ConstraintHolds Fq c] [LawfulBasicSystem Fq c] {branches mpv ncStep k ks : ℕ}
+    [NeZero branches]
+    (P : FopParams Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
@@ -372,7 +379,9 @@ def wrapMain {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams F
   pure (hd, vo)
 
 /-- The wrap circuit as a circuit of its statement: `wrapMain`, its cells dropped. -/
-def wrapMainCircuit {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
+def wrapMainCircuit [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
+    {branches mpv ncStep k ks : ℕ} [NeZero branches]
+    (P : FopParams Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)

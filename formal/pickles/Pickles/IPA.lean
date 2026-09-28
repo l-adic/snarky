@@ -38,7 +38,7 @@ open Std.Do Snarky
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-- The successive squares `[x², x⁴, …, x^(2^n)]`. -/
-private def squaresGo (x : FVar F) : ℕ → CircuitM F c (List (FVar F))
+private def squaresGo [ConstraintHolds F c] (x : FVar F) : ℕ → CircuitM F c (List (FVar F))
   | 0 => pure []
   | n + 1 => do
     let sq ← mul x x
@@ -46,7 +46,8 @@ private def squaresGo (x : FVar F) : ℕ → CircuitM F c (List (FVar F))
     pure (sq :: rest)
 
 /-- The product `acc · ∏ (1 + c · pw)` over the pairs. -/
-private def bPolyGo (acc : FVar F) : List (FVar F × FVar F) → CircuitM F c (FVar F)
+private def bPolyGo [ConstraintHolds F c] (acc : FVar F) :
+    List (FVar F × FVar F) → CircuitM F c (FVar F)
   | [] => pure acc
   | (ch, pw) :: rest => do
     let cp ← mul ch pw
@@ -55,13 +56,15 @@ private def bPolyGo (acc : FVar F) : List (FVar F × FVar F) → CircuitM F c (F
 
 /-- The challenge polynomial `∏ᵢ (1 + cᵢ · pt^(2^(k−1−i)))` at `pt`. The product is seeded
 from the constant `1`, whose multiplication folds to no row. -/
-private def bPolyCircuit (chals : List (FVar F)) (pt : FVar F) : CircuitM F c (FVar F) := do
+private def bPolyCircuit [ConstraintHolds F c] (chals : List (FVar F)) (pt : FVar F) : CircuitM
+    F c (FVar F) := do
   let squares ← squaresGo pt (chals.length - 1)
   bPolyGo (.const 1) (chals.zip (pt :: squares).reverse)
 
 /-- For challenge vectors `(c_{j,0}, …, c_{j,k−1})`, `j < n`, the list whose `j`-th entry is
 `∏_{i<k} (1 + c_{j,i} · pt^{2^{k−1−i}})`. -/
-def challengePolyEvals (pt : FVar F) : List (List (FVar F)) → CircuitM F c (List (FVar F))
+def challengePolyEvals [ConstraintHolds F c] (pt : FVar F) :
+    List (List (FVar F)) → CircuitM F c (List (FVar F))
   | [] => pure []
   | chals :: rest => do
     -- last vector first
@@ -71,7 +74,8 @@ def challengePolyEvals (pt : FVar F) : List (List (FVar F)) → CircuitM F c (Li
 
 /-- The bulletproof challenges expanded through the endomorphism `endo`: `EndoScalar.toField`
 on each, the last challenge first and the results in vector order. -/
-def computeChallenges [ToNat F] [Snarky.Kimchi.KimchiSystem F c] (endo : FVar F) :
+def computeChallenges [ConstraintHolds F c] [ToNat F] [Snarky.Kimchi.KimchiSystem F c]
+    (endo : FVar F) :
     List (FVar F) → CircuitM F c (List (FVar F))
   | [] => pure []
   | ch :: rest => do
@@ -80,16 +84,16 @@ def computeChallenges [ToNat F] [Snarky.Kimchi.KimchiSystem F c] (endo : FVar F)
     pure (x :: later)
 
 /-- `b(c, ζ) + r · b(c, ζω)` for challenges `c`, the `ζω` evaluation first. -/
-private def computeBCircuit (chals : List (FVar F)) (zeta zetaOmega evalscale : FVar F) :
-    CircuitM F c (FVar F) := do
+private def computeBCircuit [ConstraintHolds F c] (chals : List (FVar F))
+    (zeta zetaOmega evalscale : FVar F) : CircuitM F c (FVar F) := do
   let bZetaOmega ← bPolyCircuit chals zetaOmega
   let scaledB ← mul evalscale bZetaOmega
   let bZeta ← bPolyCircuit chals zeta
   pure (CVar.add_ bZeta scaledB)
 
 /-- The bit `expectedB = b(c, ζ) + r · b(c, ζω)`. -/
-def bCorrectCircuit (chals : List (FVar F)) (zeta zetaOmega evalscale expectedB : FVar F) :
-    CircuitM F c (BoolVar F) := do
+def bCorrectCircuit [ConstraintHolds F c] (chals : List (FVar F))
+    (zeta zetaOmega evalscale expectedB : FVar F) : CircuitM F c (BoolVar F) := do
   let computedB ← computeBCircuit chals zeta zetaOmega evalscale
   equals expectedB computedB
 

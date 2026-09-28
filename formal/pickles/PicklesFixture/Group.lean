@@ -61,7 +61,7 @@ def VkComms.replicate {nc : ℕ} {f : Type} (P : Vector f nc) : VkComms nc f :=
 
 /-- The sponge after a key's index digest: every commitment's chunks in `digestOrder`, `x`
 then `y`, absorbed into the fresh sponge. -/
-def indexSponge {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+def indexSponge {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [KimchiSystem F c] {nc : ℕ} (p : Poseidon.Params F) (key : VkComms nc (AffinePoint (FVar F))) :
     CircuitM F c (SpongeVar F) :=
   ((digestOrder key).map Vector.toList).flatten.foldlM

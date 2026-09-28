@@ -49,7 +49,7 @@ structure IpaScalarOps (F c sf : Type) where
 
 /-- The wrap side's operations: `scaleFast1` at 51 chunks over the `Type1` representative,
 absorbed as one limb. -/
-def IpaScalarOps.wrap : IpaScalarOps F c (Type1 (FVar F)) where
+def IpaScalarOps.wrap [ConstraintHolds F c] : IpaScalarOps F c (Type1 (FVar F)) where
   scaleByShifted p t := scaleFast1 255 51 p t
   scaleByCip p t := scaleFast1 255 51 p t
   shiftedToAbsorbFields t := [t.val]
@@ -57,7 +57,8 @@ def IpaScalarOps.wrap : IpaScalarOps F c (Type1 (FVar F)) where
 /-- The step side's operations: `scaleFast2` at 51 chunks and 254 halved bits over the
 `Type2` split representative (253 for `cip`), absorbed as the halved limb then the parity
 bit. -/
-def IpaScalarOps.step : IpaScalarOps F c (Type2 (SplitField (FVar F) (BoolVar F))) where
+def IpaScalarOps.step [ConstraintHolds F c] :
+    IpaScalarOps F c (Type2 (SplitField (FVar F) (BoolVar F))) where
   scaleByShifted p t := scaleFast2 255 51 254 p t.val.sDiv2 t.val.sOdd
   scaleByCip p t := scaleFast2 255 51 253 p t.val.sDiv2 t.val.sOdd
   shiftedToAbsorbFields t := [t.val.sDiv2, (↑t.val.sOdd : CVar F)]
@@ -149,7 +150,7 @@ structure CheckBulletproofOutput (F : Type) where
   sponge : SpongeVar F
 
 /-- The round prechallenges: per pair absorb `L` then `R` and squeeze a scalar challenge. -/
-def extractScalarChallenges (p : Poseidon.Params F) (endo : FVar F) :
+def extractScalarChallenges [ConstraintHolds F c] (p : Poseidon.Params F) (endo : FVar F) :
     SpongeVar F → List (AffinePoint (FVar F) × AffinePoint (FVar F)) →
     CircuitM F c (List (SizedF 128 (FVar F)) × SpongeVar F)
   | sv, [] => pure ([], sv)
@@ -161,7 +162,7 @@ def extractScalarChallenges (p : Poseidon.Params F) (endo : FVar F) :
     pure (u :: us, sv)
 
 /-- The per-pair terms of `bulletReduce`: `endoInv(L, u) + endo(R, u)`, in order. -/
-def bulletTerms (e : IpaEndo F) :
+def bulletTerms [ConstraintHolds F c] (e : IpaEndo F) :
     List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)) →
     CircuitM F c (List (AffinePoint (FVar F)))
   | [] => pure []
@@ -173,7 +174,7 @@ def bulletTerms (e : IpaEndo F) :
     pure (r.p :: rest)
 
 /-- The running sum of points from an accumulator, one `addFast` per point. -/
-def sumPoints : AffinePoint (FVar F) → List (AffinePoint (FVar F)) →
+def sumPoints [ConstraintHolds F c] : AffinePoint (FVar F) → List (AffinePoint (FVar F)) →
     CircuitM F c (AffinePoint (FVar F))
   | acc, [] => pure acc
   | acc, q :: qs => do
@@ -182,7 +183,7 @@ def sumPoints : AffinePoint (FVar F) → List (AffinePoint (FVar F)) →
 
 /-- The challenge fold: per pair `endoInv(L, u) + endo(R, u)` (`bulletTerms`), then the
 running sum (`sumPoints`). Empty input yields the origin. -/
-def bulletReduce (e : IpaEndo F)
+def bulletReduce [ConstraintHolds F c] (e : IpaEndo F)
     (pairs : List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F))) :
     CircuitM F c (AffinePoint (FVar F)) := do
   let terms ← bulletTerms e pairs
@@ -192,7 +193,7 @@ def bulletReduce (e : IpaEndo F)
 
 /-- The Horner fold of `combinePolynomials` from an accumulator over the remaining (reversed)
 bases: `acc ← base + ξ·acc`, a masked base kept or skipped by its bit. -/
-def hornerFold (e : IpaEndo F) (xi : SizedF 128 (FVar F)) :
+def hornerFold [ConstraintHolds F c] (e : IpaEndo F) (xi : SizedF 128 (FVar F)) :
     AffinePoint (FVar F) → List (AffinePoint (FVar F) × Option (BoolVar F)) →
     CircuitM F c (AffinePoint (FVar F))
   | acc, [] => pure acc
@@ -207,7 +208,7 @@ def hornerFold (e : IpaEndo F) (xi : SizedF 128 (FVar F)) :
 /-- The polyscale combination of the commitment bases: Horner from the last base,
 `acc ← base + ξ·acc`, a masked base kept or skipped by its bit — skipped without consuming a
 power of `ξ`. Empty input yields the origin. -/
-def combinePolynomials (e : IpaEndo F) (xi : SizedF 128 (FVar F))
+def combinePolynomials [ConstraintHolds F c] (e : IpaEndo F) (xi : SizedF 128 (FVar F))
     (bases : List (AffinePoint (FVar F) × Option (BoolVar F))) :
     CircuitM F c (AffinePoint (FVar F)) :=
   match bases.reverse with
@@ -217,7 +218,7 @@ def combinePolynomials (e : IpaEndo F) (xi : SizedF 128 (FVar F))
 /-- The opening's final check, given `t`, `u` and the combined commitment: the round
 challenges, the challenge fold `bulletReduce`, `Q = P + cip·u + fold`, `δ` absorbed and `c`
 squeezed, and the Schnorr equation decided. -/
-def ipaFinalCheck {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
+def ipaFinalCheck [ConstraintHolds F c] {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (sv : SpongeVar F) (t : FVar F)
     (u combinedPolynomial : AffinePoint (FVar F)) (inp : CheckBulletproofInput k (FVar F) sf) :
     CircuitM F c (CheckBulletproofOutput F) := do
@@ -249,7 +250,8 @@ private def isUpperWit (y : FVar F) : AsProver F Bool := do
 /-- The IPA base with its ordinate in the lower half: `(x, y')` with `y' = ±y` and `y'` split
 below `(p + 1) / 2`. The group map leaves the square root's sign to the prover; the wire's
 `uBase` takes the lower-half root too (`KimchiCurve.lowerHalf_eq_of_lt`). -/
-def lowerHalfPoint (endo : FVar F) (pt : AffinePoint (FVar F)) :
+def lowerHalfPoint [ConstraintHolds F c] [LawfulBasicSystem F c] (endo : FVar F)
+    (pt : AffinePoint (FVar F)) :
     CircuitM F c (AffinePoint (FVar F)) := do
   let isUpper ← witness (val := Bool) (isUpperWit pt.y)
   let y ← select isUpper (CVar.scale_ (-1) pt.y) pt.y
@@ -259,7 +261,8 @@ def lowerHalfPoint (endo : FVar F) (pt : AffinePoint (FVar F)) :
 /-- The opening check: from the given sponge, absorb the shifted `cip`, squeeze and map the
 `U` base, pin its ordinate to the lower half (`lowerHalfPoint`), combine the bases by `ξ` under
 their masks, and run `ipaFinalCheck`. -/
-def checkBulletproof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
+def checkBulletproof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type}
+    (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (sv : SpongeVar F) (bases : List (AffinePoint (FVar F) × Option (BoolVar F)))
     (inp : CheckBulletproofInput k (FVar F) sf) : CircuitM F c (CheckBulletproofOutput F) := do

@@ -37,7 +37,7 @@ variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Kim
 
 /-- The `z`-Horner collapse of the chunks `c₀, …, cₙ₋₁`: `c₀ + scale (hornerReduce [c₁, …]) z`,
 so the innermost (last-chunk) scale is emitted first. The empty list gives the unused origin. -/
-def hornerReduce {sf : Type} (ops : IpaScalarOps F c sf) (z : sf) :
+def hornerReduce [ConstraintHolds F c] {sf : Type} (ops : IpaScalarOps F c sf) (z : sf) :
     List (AffinePoint (FVar F)) → CircuitM F c (AffinePoint (FVar F))
   | [] => pure ⟨.const 0, .const 0⟩
   | [chunk] => pure chunk
@@ -49,7 +49,7 @@ def hornerReduce {sf : Type} (ops : IpaScalarOps F c sf) (z : sf) :
 /-- The linearization commitment: collapse `sigmaLast` and scale by `perm`; collapse `tComm` and
 scale that by `zetaToDomainSize`; add the first two, then add the negated third. The `ζⁿ` scale
 is emitted before either addition. The negation is the pure `y ↦ −y` (`CVar.negate_`). -/
-def ftComm {sf : Type} (ops : IpaScalarOps F c sf)
+def ftComm [ConstraintHolds F c] {sf : Type} (ops : IpaScalarOps F c sf)
     (sigmaLast tComm : List (AffinePoint (FVar F)))
     (perm zetaToSrsLength zetaToDomainSize : sf) : CircuitM F c (AffinePoint (FVar F)) := do
   let reducedSigma ← hornerReduce ops zetaToSrsLength sigmaLast

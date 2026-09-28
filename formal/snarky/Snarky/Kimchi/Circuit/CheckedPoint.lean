@@ -39,7 +39,7 @@ def CheckedPoint.rhs [Field F] [DecidableEq F] (a b : F) (x x3 : FVar F) : FVar 
   CVar.add_ (CVar.add_ x3 (CVar.scale_ a x)) (.const b)
 
 /-- The on-curve check: `x² ← square x`, `x³ ← x² · x`, then `y · y = x³ + a·x + b`. -/
-def CheckedPoint.check [Field F] [DecidableEq F] [BasicSystem F c] (a b : F)
+def CheckedPoint.check [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b : F)
     (p : AffinePoint (FVar F)) :
     CircuitM F c PUnit := do
   let x2 ← square p.x
@@ -99,13 +99,14 @@ theorem CheckedPoint.check_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.reads_fvar.mp hx.2]
     simp [CVar.val]
 
-instance instCheckedTypeCheckedPoint [Field F] [DecidableEq F] [BasicSystem F c] (a b : F) :
+instance instCheckedTypeCheckedPoint [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : F) :
     CheckedType F c (CheckedPoint a b F) (CheckedPoint a b (FVar F)) where
   check p := CheckedPoint.check a b p.pt
   post V p := p.pt.y.val V * p.pt.y.val V = p.pt.x.val V ^ 3 + a * p.pt.x.val V + b
   check_sound V p nv hsat := (builder_spec_iff _ _).mp (CheckedPoint.check_spec a b p.pt) nv hsat
   check_complete := by
-    intro _ _ v x hv
+    intro v x hv
     have hcurve : x.pt.y * x.pt.y = x.pt.x ^ 3 + a * x.pt.x + b := by
       have h := hv (fun _ => 0) (CircuitType.constVar x) (CircuitType.reads_constVar _ x)
       simpa [CircuitType.constVar, CircuitType.ofEquiv, CheckedPoint.equivPoint, CVar.val] using h

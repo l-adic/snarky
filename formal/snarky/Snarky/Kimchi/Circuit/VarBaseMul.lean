@@ -94,7 +94,7 @@ private def bitWit [Field F] [DecidableEq F] (t : AffinePoint (FVar F))
 /-- One 5-bit round: the register advice, then five bit steps threaded through the
 accumulator, returned as the gate's `ScaleRound` record and the next `(acc, register)` pair.
 A named circuit, so the ladder's loop walks one spec per round. -/
-def scaleRound [Field F] [DecidableEq F] [BasicSystem F c]
+def scaleRound [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 5) :
     CircuitM F c (ScaleRound F × (AffinePoint (FVar F) × FVar F)) := do
@@ -462,7 +462,7 @@ structure VarBaseMulResult (n : ℕ) (F : Type) where
 /-- The variable-base scalar multiplication: seal the base, witness the scalar's `n` bits
 LSB-first, build `acc = [2]·T` with one `addFast`, walk the low `5 * chunks` bits MSB-first in
 5-bit rounds, emit one `varBaseMul` constraint, and pin the final register to the scalar. -/
-def varBaseMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+def varBaseMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
     [KimchiSystem F c] (n chunks : ℕ) (base' : AffinePoint (FVar F))
     (scalar : Type1 (FVar F)) : CircuitM F c (VarBaseMulResult n F) := do
   let base ← sealPoint base'
@@ -1292,7 +1292,7 @@ attribute [irreducible] lsbBitsWit varBaseMul
 dropping the bits. When the ladder covers all `n` bits it pins the top bit to zero: an
 `n`-bit string decomposes the scalar uniquely only below the modulus, and both `t` and
 `t + modulus` fit below `2ⁿ` for almost every `t`. -/
-def scaleFast1 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+def scaleFast1 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
     [KimchiSystem F c] (n chunks : ℕ) (p : AffinePoint (FVar F))
     (t : Type1 (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
   let r ← varBaseMul n chunks p t
@@ -1444,7 +1444,7 @@ attribute [irreducible] scaleFast1
 /-- The split path, `[2·sDiv2 + sOdd + 2^(5·chunks)]·g`, for a scalar field larger than
 the circuit field: run the ladder on `sDiv2`, pin its bits from `sDiv2Bits` up to zero, and
 fold the parity in by subtracting the base when `sOdd` is clear. -/
-def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
     [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
     (sDiv2 : FVar F) (sOdd : BoolVar F) : CircuitM F c (AffinePoint (FVar F)) := do
   let r ← varBaseMul n chunks base ⟨sDiv2⟩
@@ -1803,7 +1803,8 @@ private def splitFieldWit [Field F] [ToNat F] (s : FVar F) : AsProver F (F × Bo
   pure (splitField v)
 
 /-- Witness a parity split and assert `s = 2·sDiv2 + sOdd`. -/
-def splitFieldVar [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+def splitFieldVar [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c]
     (s : FVar F) : CircuitM F c (FVar F × BoolVar F) := do
   let r ← witness (val := F × Bool) (splitFieldWit s)
   assertEqual s (CVar.add_ (CVar.scale_ 2 r.1) ↑r.2)
@@ -1894,7 +1895,8 @@ def scaleFast2'Width (n sDiv2Bits : ℕ) : ℕ :=
 At the full field width the split is an equation in the circuit field that both `s` and
 `s + modulus` solve for almost every `s`, decoding to different multiples of the base; the
 one bit less of `sDiv2` makes the decomposition canonical. -/
-def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c]
     [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
     (s : FVar F) : CircuitM F c (AffinePoint (FVar F)) := do
   let (sDiv2, sOdd) ← splitFieldVar s

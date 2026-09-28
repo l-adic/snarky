@@ -45,7 +45,7 @@ instance : CircuitType F (AffinePoint F) (AffinePoint (FVar F)) where
     | 1, _ => rfl
 
 /-- A point's coordinates carry no check of their own. -/
-instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     CheckedType F c (AffinePoint F) (AffinePoint (FVar F)) where
   check _ := pure PUnit.unit
   post _ _ := True
@@ -53,7 +53,7 @@ instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
   check_complete _ _ _ := Complete.pure
 
 /-- A point's coordinates carry no admissibility condition. -/
-@[simp] theorem valid_affinePoint [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+@[simp] theorem valid_affinePoint [Field F] [BasicSystem F c] [ConstraintHolds F c]
     {p : AffinePoint F} :
     CheckedType.Valid (F := F) (c := c) (var := AffinePoint (FVar F)) p := fun _ _ _ => trivial
 
@@ -75,7 +75,7 @@ instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
     rw [hx, hy]
 
 /-- Seal a point coordinatewise, `y` before `x`: the order is part of the emitted rows. -/
-def sealPoint [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
+def sealPoint [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     (p : AffinePoint (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
   let y ← sealVar p.y
   let x ← sealVar p.x
@@ -110,7 +110,7 @@ def AddAux.equiv (a : Type) : AddAux a ≃ a × a × a where
 instance instCircuitTypeAddAux : CircuitType F (AddAux F) (AddAux (FVar F)) :=
   CircuitType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
 
-instance instCheckedTypeAddAux [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+instance instCheckedTypeAddAux [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     CheckedType F c (AddAux F) (AddAux (FVar F)) :=
   CheckedType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
 
@@ -145,7 +145,7 @@ structure AddResult (F : Type) where
 /-- Complete addition under a finiteness mode: seal both points, witness `sameX`, the
 mode-dependent `inf`, `infZ`, `x21Inv`, the slope and the output point in that order, and
 emit one `addComplete` constraint. -/
-def addFast [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
+def addFast [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [KimchiSystem F c]
     (finiteness : Finiteness) (p1' p2' : AffinePoint (FVar F)) :
     CircuitM F c (AddResult F) := do
   let p1 ← sealPoint p1'

@@ -13,7 +13,8 @@ variable {F c : Type}
 /-- Invert a field variable: witness the inverse, pin it with `x · xInv = 1`. A nonzero
 constant folds to its constant inverse with no constraint; a constant zero takes the
 witnessed path, where the witness fails and the row `0 · xInv = 1` is unsatisfiable. -/
-def inv [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
+def inv [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x : FVar F) : CircuitM F c (FVar F) :=
   let witnessed : CircuitM F c (FVar F) := do
     let xInv ← witness (val := F) (advice x)
     addConstraint (BasicSystem.r1cs x xInv (.const 1))
@@ -87,7 +88,8 @@ attribute [irreducible] inv
 /-- Multiply two field variables: constants fold — two constants multiply out, a
 constant times an expression folds to `scale_` — otherwise the product is witnessed and
 pinned with one `r1cs` row. -/
-def mul [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVar F) :=
+def mul [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x y : FVar F) : CircuitM F c (FVar F) :=
   match x, y with
   | .const a, .const b => pure (.const (a * b))
   | .const a, y => pure (CVar.scale_ a y)
@@ -162,7 +164,7 @@ attribute [irreducible] mul
 
 /-- Square a field variable: a constant folds to its square, otherwise the square is
 witnessed and pinned with one `square` row. -/
-def square [Field F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
+def square [Field F] [BasicSystem F c] [ConstraintHolds F c] (x : FVar F) : CircuitM F c (FVar F) :=
   match x with
   | .const a => pure (.const (a * a))
   | x => do
@@ -221,7 +223,7 @@ attribute [irreducible] square
 
 /-- Divide field variables — `x · y⁻¹`: the inverse witnessed and pinned by `inv`, the
 product by `mul`. -/
-def div [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
+def div [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (x y : FVar F) :
     CircuitM F c (FVar F) := do
   let yInv ← inv y
   mul x yInv
@@ -263,7 +265,7 @@ the inverse-or-zero, and pin them with `r · x = 0` and `xInv · x = 1 − r` �
 kills `r` where `x` is nonzero, the second forces `r = 1` where `x` is zero, so `r` reads
 `1` exactly where `x` reads `0` (and in particular reads a bit). A constant folds to the
 constant answer with no constraint. -/
-def isZero [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
+def isZero [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (x : FVar F) :
     CircuitM F c (BoolVar F) :=
   match x with
   | .const xv => pure (.unchecked (.const (if xv = 0 then 1 else 0)))
@@ -359,7 +361,7 @@ attribute [irreducible] isZero
 
 /-- Equality test, returning the answer bit: `isZero` on the difference — a constant
 difference folds, otherwise two rows. -/
-def equals [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) :
+def equals [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b : FVar F) :
     CircuitM F c (BoolVar F) :=
   isZero (CVar.sub_ a b)
 
@@ -396,7 +398,7 @@ attribute [irreducible] equals
 
 /-- The rows `equals` emits, in order — `r · z = 0` then `zInv · z = 1 − r` over the
 difference `z` — when the difference is not constant. -/
-example [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) (nv : Nat)
+example [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b : FVar F) (nv : Nat)
     (h : ∀ f, CVar.sub_ a b ≠ CVar.const f) :
     (build (equals (c := c) a b) nv).constraints =
       [BasicSystem.r1cs (CVar.var nv) (CVar.sub_ a b) (.const 0),
@@ -409,7 +411,7 @@ example [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) (nv : Nat)
 
 /-- Negated equality test: `equals`'s bit, negated by the retag `1 − r` — no rows of its
 own. -/
-def neq [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) :
+def neq [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b : FVar F) :
     CircuitM F c (BoolVar F) := do
   let r ← equals a b
   pure (.unchecked (CVar.sub_ (.const 1) ↑r))
@@ -445,7 +447,8 @@ theorem neq_complete [Field F] [DecidableEq F] [BasicSystem F c]
 attribute [irreducible] neq
 
 /-- `neq` emits exactly `equals`'s rows. -/
-example [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) (nv : Nat) :
+example [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (a b : FVar F) (nv : Nat) :
     (build (neq (c := c) a b) nv).constraints = (build (equals (c := c) a b) nv).constraints := by
   unfold neq
   rw [build_bind]
@@ -486,7 +489,7 @@ attribute [irreducible] sum
 /-- Fuel-indexed body of `pow`, structural on the fuel: square, recurse on `n / 2`, and
 multiply by `x` once more when `n` is odd. The fuel-exhausted branch is unreachable —
 `pow` seeds fuel `n`, and the exponent at least halves each step. -/
-private def powGo [Field F] [DecidableEq F] [BasicSystem F c] :
+private def powGo [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] :
     Nat → FVar F → Nat → CircuitM F c (FVar F)
   | _, _, 0 => pure (.const 1)
   | _, x, 1 => pure x
@@ -498,7 +501,7 @@ private def powGo [Field F] [DecidableEq F] [BasicSystem F c] :
 
 /-- `x ^ n` by repeated squaring — `mul`'s rows, in the recursion's order. On a constant
 every step folds, so no rows are emitted. -/
-def pow [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) (n : Nat) :
+def pow [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (x : FVar F) (n : Nat) :
     CircuitM F c (FVar F) :=
   powGo n x n
 

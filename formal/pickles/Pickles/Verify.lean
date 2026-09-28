@@ -307,7 +307,9 @@ group half at the unfinalized proof's claims (`IvpInput.withClaims`), then the t
 the digest equals the claimed `spongeDigestBeforeEvaluations`; each returned round
 prechallenge equals the claimed one, the claim compared with itself in the base case. Returns
 the success bit. -/
-def verifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F) (p : Poseidon.Params F)
+def verifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type}
+    (ops : IpaScalarOps F c sf) (e : IpaEndo F)
+    (p : Poseidon.Params F)
     (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) {nc : ℕ} (tab : XhatTable F nc)
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)

@@ -54,7 +54,7 @@ theorem stepSide_claimOk_of_bit {V : Valuation Fp} (x : Type2 (SplitField (FVar 
 variable {c : Type}
 
 /-- The step side's assertion: each split scalar's parity cell is boolean. -/
-def assertClaimBitsStep [BasicSystem Fp c]
+def assertClaimBitsStep [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
     (xs : List (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) : CircuitM Fp c PUnit :=
   xs.forM fun x => CheckedType.check (F := Fp) (val := Bool) x.val.sOdd
 

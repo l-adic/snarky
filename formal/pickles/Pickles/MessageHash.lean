@@ -34,7 +34,7 @@ variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem 
 
 /-- The accumulator digest from the sponge `sv`: every challenge vector absorbed in order, then
 `sg.x` and `sg.y`, then one squeeze. -/
-def hashMessagesForNextWrapProof (p : Poseidon.Params F) (sv : SpongeVar F)
+def hashMessagesForNextWrapProof [ConstraintHolds F c] (p : Poseidon.Params F) (sv : SpongeVar F)
     (allChallenges : List (List (FVar F))) (sg : AffinePoint (FVar F)) :
     CircuitM F c (FVar F) := do
   let sv ← absorbList p sv allChallenges.flatten
@@ -65,8 +65,8 @@ def wrapMsgDigest {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (sg : A
 
 /-- The sponge after the key: its commitments absorbed chunk by chunk, `x` then `y`, in the
 order `σ₀…σ₆`, the coefficients, the selectors. -/
-def spongeAfterIndex {nc : ℕ} (p : Poseidon.Params F) (vk : VkComms nc (AffinePoint (FVar F))) :
-    CircuitM F c (SpongeVar F) :=
+def spongeAfterIndex [ConstraintHolds F c] {nc : ℕ} (p : Poseidon.Params F)
+    (vk : VkComms nc (AffinePoint (FVar F))) : CircuitM F c (SpongeVar F) :=
   vk.indexPoints.foldlM
     (fun sv P => do
       let sv ← SpongeVar.absorb p sv P.x
@@ -75,7 +75,7 @@ def spongeAfterIndex {nc : ℕ} (p : Poseidon.Params F) (vk : VkComms nc (Affine
 
 /-- The step proof's accumulator digest on the plain sponge: after the key, the application
 state, then per proof `sg` and its challenges, then one squeeze. -/
-def hashMessagesForNextStepProof {nc : ℕ} (p : Poseidon.Params F)
+def hashMessagesForNextStepProof [ConstraintHolds F c] {nc : ℕ} (p : Poseidon.Params F)
     (vk : VkComms nc (AffinePoint (FVar F))) (appState : List (FVar F))
     (proofs : List (AffinePoint (FVar F) × List (FVar F))) : CircuitM F c (FVar F) := do
   let sv ← spongeAfterIndex p vk
@@ -89,7 +89,7 @@ def hashMessagesForNextStepProof {nc : ℕ} (p : Poseidon.Params F)
 sponge after the key, which the verify block resumes from: after the key and the application
 state, per proof `sg` and its challenges on the conditional sponge. With no proofs there is no
 masked input, and the plain sponge squeezes. -/
-def hashMessagesForNextStepProofOpt {nc : ℕ} (p : Poseidon.Params F)
+def hashMessagesForNextStepProofOpt [ConstraintHolds F c] {nc : ℕ} (p : Poseidon.Params F)
     (vk : VkComms nc (AffinePoint (FVar F))) (appState : List (FVar F))
     (proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F))) :
     CircuitM F c (FVar F × SpongeVar F) := do

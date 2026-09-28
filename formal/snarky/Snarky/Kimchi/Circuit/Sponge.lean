@@ -85,7 +85,7 @@ theorem Reads.readsAt [Add F] [Mul F] [Zero F] {st : ProverState F} {sv : Sponge
 
 /-- Seal `x` into rate slot `n`: `Poseidon.addSlot` over circuit variables, with `x` as
 the left addend. -/
-private def addSlotVar [Field F] [DecidableEq F] [BasicSystem F c]
+private def addSlotVar [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     (s : SpongeState F) (n : Fin 3) (x : FVar F) :
     CircuitM F c (SpongeState F) :=
   match n with
@@ -214,7 +214,7 @@ attribute [irreducible] addSlotVar
 /-- Absorb one element: seal into the next rate slot, permuting first when the rate is
 full; absorbing after a squeeze restarts at slot 0. Mirrors `Poseidon.absorb1` branch
 for branch. -/
-def absorb [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
+def absorb [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [KimchiSystem F c]
     (p : Poseidon.Params F) (sv : SpongeVar F) (x : FVar F) :
     CircuitM F c (SpongeVar F) :=
   match sv.mode with
@@ -348,7 +348,7 @@ private theorem slotVar_scoped [Field F] {st : ProverState F} {s : SpongeState F
 
 /-- Squeeze one element: read the next rate slot, permuting first when entering squeeze
 mode or when the block is exhausted. Mirrors `Poseidon.squeeze` branch for branch. -/
-def squeeze [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
+def squeeze [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [KimchiSystem F c]
     (p : Poseidon.Params F) (sv : SpongeVar F) :
     CircuitM F c (FVar F × SpongeVar F) :=
   match sv.mode with

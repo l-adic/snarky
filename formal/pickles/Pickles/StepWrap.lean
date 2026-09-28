@@ -448,13 +448,14 @@ theorem stepWrap_kimchiVerify
       inVar →
         CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     -- the step circuit's advice
-    (adv : StepMainAdvice n w 1 ncPrevStep E.σ.k StepIPARounds inVal)
+    (adv : StepMainAdvice n w (fun _ => w) 1 ncPrevStep E.σ.k StepIPARounds inVal)
     -- `Vg` satisfies every constraint of the compiled step circuit
     (hstep :
       ∀ con ∈
           (compile (a := Unit) (b := StmtVal E.σ.k w)
             (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp))
-              hw
+              (fun _ => w)
+              (fun _ => hw)
               (verifyProofAt E)
               P
               domains
@@ -508,7 +509,8 @@ theorem stepWrap_kimchiVerify
     let r :=
       (build
         (stepMain (c := Builder Vg (KimchiConstraint Fp))
-          hw
+          (fun _ => w)
+          (fun _ => hw)
           (verifyProofAt E)
           P
           domains
@@ -542,7 +544,7 @@ theorem stepWrap_kimchiVerify
     -- slot `i` must verify
     ∀ i : Fin n,
       CircuitType.Reads Vg r.prevs[i].mustVerify true →
-      let inp := slotInput hw (constPt dummySg) r.prevs[i] r.slots[i] r.unfs[i] r.msgs[i]
+      let inp := slotInput hw (constPt dummySg) r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]
       let sl := hd.1.slots[Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)]
       -- the active branch compiled its wrap slot for the key's domain
       sl.pins[b] = some j →
@@ -562,12 +564,14 @@ theorem stepWrap_kimchiVerify
   intro r hd hb htie i hmv inp sl hpin hkey
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E P domains (by norm_num [MaxProofsVerified, StepIPARounds]) (fun _ => True)
-      (fun _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
-      (hn.trans hw) hw (constPt dummySg) dummyUnf rule adv
-      (fun _ _ => (WrapStatement.packed_length _).trans_le
-        (by rw [hE]; norm_num [StepIPARounds, WrapIPARounds])) havoid) 0
-      (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc)) i hmv
+    (stepMain_reads E P domains (by norm_num [MaxProofsVerified, StepIPARounds]) (fun _ => w)
+      (fun _ _ => True)
+      (fun _ _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
+      (hn.trans hw) (fun _ => hw) (constPt dummySg) dummyUnf rule adv
+      (fun _ _ _ => (WrapStatement.packed_length _).trans_le
+        (by rw [hE]; norm_num [StepIPARounds, WrapIPARounds])) (fun _ => havoid)) 0
+      (fun con hc => hstep con
+        (mem_compile_stepMainCircuit (fun _ => w) (fun _ => hw) _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap proof the slot's cells hold
   obtain ⟨hon, holds⟩ := slotInput_onCurve hw hdummySg r.prevs[i] r.unfs[i] r.msgs[i] hpts
   let cp := slotProof Vg Vs inp sl.evals sl.prevChallenges
@@ -607,9 +611,10 @@ theorem stepWrap_kimchiVerify
       (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hnc) _
       hbody
   have hout := (builder_spec_iff _ _).mp
-    (stepMain_out hw (verifyProofAt E) P domains
+    (stepMain_out (fun _ => w) (fun _ => hw) (verifyProofAt E) P domains
       (constPt dummySg) dummyUnf rule adv) 0
-    (fun con hc => hstep con (mem_compile_stepMainCircuit hw _ _ _ _ _ _ _ hc))
+    (fun con hc => hstep con
+      (mem_compile_stepMainCircuit (fun _ => w) (fun _ => hw) _ _ _ _ _ _ _ hc))
   -- slot `i` is entry `(w − n) + i` on both sides of the tie
   set jf : Fin w := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
   have hjv : jf.val = w - n + i := rfl

@@ -67,6 +67,10 @@ Snarky.instLawfulIfThenElseFVar
 Snarky.instLawfulIfThenElseProd
 Snarky.instLawfulIfThenElseUnit
 Snarky.instLawfulIfThenElseVector
+-- The `Fin`-family former: bundles of different types, one per index, witnessed as one.
+Snarky.instCircuitTypeFinFamily
+Snarky.instCheckedTypeFinFamily
+Snarky.CheckedType.post_finFamily
 Snarky.select_fvar
 Snarky.true_val
 Snarky.CircuitType.fieldsToValue_prod

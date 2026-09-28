@@ -68,7 +68,8 @@ attribute [irreducible] Snarky.not
 reads as `t`, where it reads `0` as `e` — `r = b·(t − e) + e`, one row. A constant
 selector folds to the chosen branch; constant branches fold to the affine form with no
 constraint. -/
-def selectField [Field F] [DecidableEq F] [BasicSystem F c] (b : BoolVar F) (t e : FVar F) :
+def selectField [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (b : BoolVar F) (t e : FVar F) :
     CircuitM F c (FVar F) :=
   match (↑b : CVar F), t, e with
   | .const bv, t, e => pure (if bv = 1 then t else e)
@@ -221,18 +222,19 @@ class IfThenElse (F c : Type) (var : Type) where
 export IfThenElse (select)
 
 /-- Field variables select by the arithmetic mux. -/
-instance instIfThenElseFVar [Field F] [DecidableEq F] [BasicSystem F c] :
+instance instIfThenElseFVar [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] :
     IfThenElse F c (FVar F) :=
   ⟨selectField⟩
 
 /-- Selection at a field variable IS the arithmetic mux — the instance's defining
 equation, for a caller whose program says `select` and whose law says `selectField`. -/
-@[simp] theorem select_fvar [Field F] [DecidableEq F] [BasicSystem F c] (b : BoolVar F)
+@[simp] theorem select_fvar [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (b : BoolVar F)
     (t e : FVar F) : select (c := c) b t e = selectField b t e := rfl
 
 /-- Boolean variables select through the field mux, retagged: the mux of two bits is a
 bit. -/
-instance instIfThenElseBoolVar [Field F] [DecidableEq F] [BasicSystem F c] :
+instance instIfThenElseBoolVar [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] :
     IfThenElse F c (BoolVar F) where
   select b x y := do
     let r ← selectField b ↑x ↑y
@@ -262,13 +264,13 @@ The laws are per shape, like the definition. A bundle carries them through
 through its own isomorphism. -/
 
 open Std.Do in
-/-- Selection's contract at a bundle: the result reads as the operand the selector's bit
-picks, and from scoped operands the run succeeds with a scoped bundle out. -/
+/-- Selection's contract at a bundle, at the backend's reading of its constraints: the result
+reads as the operand the selector's bit picks, and from scoped operands the run succeeds with a
+scoped bundle out. -/
 class LawfulIfThenElse (F c val var : Type) [Field F] [DecidableEq F] [BasicSystem F c]
-    [CircuitType F val var] [IfThenElse F c var] where
+    [ConstraintHolds F c] [CircuitType F val var] [IfThenElse F c var] where
   /-- The result reads as the operand the selector's bit picks. -/
-  select_sound : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (V : Valuation F)
-    (b : BoolVar F) (t e : var) (tv ev : val) (bb : Bool),
+  select_sound : ∀ (V : Valuation F) (b : BoolVar F) (t e : var) (tv ev : val) (bb : Bool),
     CircuitType.Reads V t tv → CircuitType.Reads V e ev → (↑b : CVar F).val V = bit bb →
     ⦃⌜True⌝⦄
     atBuilder V (select (c := c) b t e)
@@ -276,8 +278,7 @@ class LawfulIfThenElse (F c val var : Type) [Field F] [DecidableEq F] [BasicSyst
   /-- From operands that read `tv` and `ev` and a selector that reads `bb`, the run
   succeeds, its rows hold at every extension of the final table, and the result reads the
   branch the selector picks. -/
-  select_complete : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F)
-    (t e : var) (bb : Bool) (tv ev : val),
+  select_complete : ∀ (b : BoolVar F) (t e : var) (bb : Bool) (tv ev : val),
     Complete (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧
         CircuitType.ReadsAs (val := val) st t tv ∧ CircuitType.ReadsAs (val := val) st e ev)
       (select (c := c) b t e)
@@ -287,7 +288,7 @@ section Lawful
 
 open Std.Do
 
-variable [Field F] [DecidableEq F] [BasicSystem F c]
+variable [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
 
 instance instLawfulIfThenElseFVar : LawfulIfThenElse F c F (FVar F) where
   select_sound V b t e tv ev bb ht he hb := by
@@ -423,7 +424,7 @@ end Lawful
 
 /-- Conjoin boolean variables: the product, retagged — boolean because a product of bits
 is a bit. `mul`'s rows. -/
-def and [Field F] [DecidableEq F] [BasicSystem F c] (a b : BoolVar F) :
+def and [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b : BoolVar F) :
     CircuitM F c (BoolVar F) := do
   let r ← mul ↑a ↑b
   pure (.unchecked r)
@@ -468,7 +469,7 @@ attribute [irreducible] Snarky.and
 
 /-- Disjoin boolean variables by De Morgan: `¬(¬a ∧ ¬b)` — one `and`, the negations pure
 retags. -/
-def or [Field F] [DecidableEq F] [BasicSystem F c] (a b : BoolVar F) :
+def or [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b : BoolVar F) :
     CircuitM F c (BoolVar F) := do
   let r ← Snarky.and (Snarky.not a) (Snarky.not b)
   pure (Snarky.not r)
@@ -518,7 +519,7 @@ attribute [irreducible] Snarky.or
 /-- Exclusive or: both constant folds; one constant selects the other operand (`0`) or
 its negation (`1`), anything else falls through to the witnessing branch — the bit,
 pinned by `2a · b = a + b − r`. -/
-def xor [Field F] [DecidableEq F] [BasicSystem F c] (a b : BoolVar F) :
+def xor [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b : BoolVar F) :
     CircuitM F c (BoolVar F) :=
   match (↑a : CVar F), (↑b : CVar F) with
   | .const av, .const bv => pure (.unchecked (.const (if av = bv then 0 else 1)))
@@ -740,7 +741,7 @@ theorem sum_of_bits [Field F] [DecidableEq F] :
 
 /-- Any of a list of bits: empty is false, a singleton is itself, a pair is `or`, and three
 or more test the bit-sum against zero. -/
-def any [Field F] [DecidableEq F] [BasicSystem F c] (xs : List (BoolVar F)) :
+def any [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (xs : List (BoolVar F)) :
     CircuitM F c (BoolVar F) :=
   match xs with
   | [] => pure false_
@@ -885,7 +886,7 @@ attribute [irreducible] Snarky.any
 
 /-- All of a list of bits: empty is true, a singleton is itself, a pair is `and`, and three
 or more test the bit-sum against the length. -/
-def all [Field F] [DecidableEq F] [BasicSystem F c] (xs : List (BoolVar F)) :
+def all [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (xs : List (BoolVar F)) :
     CircuitM F c (BoolVar F) :=
   match xs with
   | [] => pure true_

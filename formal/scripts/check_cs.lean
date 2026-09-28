@@ -620,20 +620,22 @@ section PseudoCircuits
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-- `one_hot_n{n}`: the one-hot vector of input 0 over `n` entries. -/
-def oneHotCircuit (n : ℕ) (input : Vector (FVar F) 1) : CircuitM F c PUnit := do
+def oneHotCircuit [ConstraintHolds F c] (n : ℕ) (input : Vector (FVar F) 1) :
+    CircuitM F c PUnit := do
   let _ ← Pickles.oneHotVector n input[0]
   pure PUnit.unit
 
 /-- `pseudo_mask_n{n}`: the one-hot of input 0 over `n` entries masking `xs input`. -/
-def pseudoMaskCircuit {k : ℕ} (n : ℕ) (xs : Vector (FVar F) (k + 1) → List (FVar F))
-    (input : Vector (FVar F) (k + 1)) : CircuitM F c PUnit := do
+def pseudoMaskCircuit [ConstraintHolds F c] {k : ℕ} (n : ℕ)
+    (xs : Vector (FVar F) (k + 1) → List (FVar F)) (input : Vector (FVar F) (k + 1)) :
+    CircuitM F c PUnit := do
   let bits ← Pickles.oneHotVector n input[0]
   let _ ← Pickles.Pseudo.mask bits (xs input)
   pure PUnit.unit
 
 /-- `pseudo_choose_n{n}`: the one-hot of input 0 over `n` entries choosing among the constants
 `ks`. -/
-def pseudoChooseCircuit (n : ℕ) (ks : List ℕ) (input : Vector (FVar F) 1) :
+def pseudoChooseCircuit [ConstraintHolds F c] (n : ℕ) (ks : List ℕ) (input : Vector (FVar F) 1) :
     CircuitM F c PUnit := do
   let bits ← Pickles.oneHotVector n input[0]
   let _ ← Pickles.Pseudo.choose bits ks fun k => .const (k : F)
@@ -658,6 +660,7 @@ one branch whose key is Vesta's generator `(1, √6)` in every commitment). -/
 
 /-- `utils_ones_vector_n16`: the mask over 16 slots, the first zero at input 0. -/
 def onesVectorN16Circuit {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c]
     (input : Vector (FVar F) 1) : CircuitM F c PUnit := do
   let _ ← Pickles.onesVector input[0] 16
   pure PUnit.unit
@@ -1401,7 +1404,7 @@ open Pickles in
 def stepMainSimpleChainN2Circuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point) :
     Unit → CircuitM Fp C (StmtVar 15 2) :=
   stepMainCircuit (n := 2) (w := 2) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := Fp)
-    (by decide)
+    (fun _ => 2) (by decide)
     (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
     PicklesFixture.fopStepParams [⟨15, Kimchi.Fixture.PS.fpSide.omega (2 ^ 15)⟩] dummyWrapSg
     dummyUnfN0 simpleChainN2Rule
@@ -1413,7 +1416,7 @@ open Pickles in
 verifier and the finalize's domains are never used. -/
 def stepMainTwoPhaseChainMakeZeroCircuit : Unit → CircuitM Fp C (StmtVar 15 1) :=
   stepMainCircuit (n := 0) (w := 1) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := Fp)
-    (by decide)
+    Fin.elim0 (fun i => i.elim0)
     (fun _ _ _ _ _ => pure true_) PicklesFixture.fopStepParams [] dummyWrapSg dummyUnfN0
     (fun x => do makeZeroAppCircuit x; pure (#v[], []))
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",

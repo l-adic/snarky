@@ -25,7 +25,8 @@ theorem OnCurveAt.ne_zero [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine
   exact Point.some_ne_zero hns
 
 /-- Points select coordinatewise, `y` before `x` (the upstream emission order). -/
-instance instIfThenElseAffinePoint [Field F] [DecidableEq F] [BasicSystem F c] :
+instance instIfThenElseAffinePoint [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] :
     IfThenElse F c (AffinePoint (FVar F)) where
   select b t e := do
     let y ← selectField b t.y e.y
