@@ -564,12 +564,12 @@ theorem stepWrap_kimchiVerify
   intro r hd hb htie i hmv inp sl hpin hkey
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E P domains (by norm_num [MaxProofsVerified, StepIPARounds])
-      (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => rfl) (fun _ _ => True)
+    (stepMain_reads E.σ P domains (by norm_num [MaxProofsVerified, StepIPARounds])
+      (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ _ => True)
       (fun _ _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
       (hn.trans hw) (fun _ => hw) (constPt dummySg) dummyUnf rule adv
       (fun _ _ _ => (WrapStatement.packed_length _).trans_le
-        (by rw [hE]; norm_num [StepIPARounds, WrapIPARounds])) (fun _ => havoid)) 0
+        (by rw [hE]; norm_num [StepIPARounds, WrapIPARounds]))) 0
       (fun con hc => hstep con
         (mem_compile_stepMainCircuit (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => hw)
           _ _ _ _ _ _ _ hc)) i hmv
@@ -581,7 +581,7 @@ theorem stepWrap_kimchiVerify
   have hf := slotProof_fopTies (Vg := Vg) (Vs := Vs) E (inp := inp) sl.unfinalized sl.evals
     sl.prevChallenges (inp.publicInputAt E Vg ms)
   refine ⟨cp, ms, hwire, hf, fun hguard hsg => ?_⟩
-  obtain ⟨v, hv, hv1⟩ := hslot cp ms hwire
+  obtain ⟨v, hv, hv1⟩ := hslot E.cvk E.invariants rfl havoid cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.ofEnv E Linearization.fqTokens) widths (stepDomainLog2s stepKeys)

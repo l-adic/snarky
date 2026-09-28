@@ -180,12 +180,9 @@ private theorem wrapStep_kimchiVerify_core
     (hn : n ≤ w) (hw : w ≤ MaxProofsVerified)
     -- the `sg` padding the missing accumulators, the unfinalized entry padding the statement
     (dummySg : AffinePoint (FVar Fp)) (dummyUnf : UnfVal E.σ.k)
-    -- every slot statement packs into at most `2 ^ E.σ.k` cells, and its public-input
-    -- commitment's relations are avoided
+    -- every slot statement packs into at most `2 ^ E.σ.k` cells
     (hsmall : ∀ (inp : VerifyOneInput EsStep.σ.k E.σ.k 1 ncStep w) msg,
       (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
-    (havoid : ∀ (inp : VerifyOneInput EsStep.σ.k E.σ.k 1 ncStep w) msg,
-      E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
     -- the next step circuit's valuation
     (Vs : Valuation Fp)
     [CheckedType Fp (Builder Vs (KimchiConstraint Fp)) inVal inVar]
@@ -234,11 +231,12 @@ private theorem wrapStep_kimchiVerify_core
   intro r stmt hd hb i hmv inp ms hms htie
   -- the step side: slot `i` finalizes, over the domain its branch data names
   obtain ⟨-, -, hscal, -, -, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads E (FopParams.ofEnv EsStep Linearization.fpTokens) D.list
-      EsStep.rounds_small (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => rfl)
+    (stepMain_reads E.σ (FopParams.ofEnv EsStep Linearization.fpTokens) D.list
+      EsStep.rounds_small (fun _ => .self E.cvk.lagrangeBasis.toList)
       (fun _ inp => inp.ScalarReads EsStep Vs)
-      (fun _ vk inp => verifyOne_scalarReads EsStep D hw (verifyProofAt E) vk inp) (hn.trans hw)
-      (fun _ => hw) dummySg dummyUnf rule adv (fun _ => hsmall) (fun _ => havoid)) 0
+      (fun _ vk inp => verifyOne_scalarReads EsStep D hw
+        (verifyProofWith E.σ.h E.cvk.lagrangeBasis.toList) vk inp) (hn.trans hw)
+      (fun _ => hw) dummySg dummyUnf rule adv (fun _ => hsmall)) 0
     (fun con hc => hstep con
       (mem_compile_stepMainCircuit (fun _ => .self E.cvk.lagrangeBasis.toList) (fun _ => hw)
         _ _ _ _ _ _ _ hc)) i hmv
@@ -437,10 +435,6 @@ theorem wrapStep_kimchiVerify
     (dummySg : AffinePoint (FVar Fp))
     -- the unfinalized entry padding the statement
     (dummyUnf : UnfVal E.σ.k)
-    -- the slot statements' public-input commitment's relations are avoided
-    (havoid :
-      ∀ (inp : VerifyOneInput σStep.k E.σ.k 1 ncStep w) msg,
-        E.σ.Avoids (stepRelationsAt E (inp.statement msg)))
     -- the next step circuit's valuation
     (Vs : Valuation Fp)
     [CheckedType Fp (Builder Vs (KimchiConstraint Fp)) inVal inVar]
@@ -549,6 +543,6 @@ theorem wrapStep_kimchiVerify
     rfl hsize hnz havoidS D hlog hn hw dummySg dummyUnf
     (fun _ _ => (WrapStatement.packed_length _).trans_le
       (show 14 + σStep.k ≤ 2 ^ E.σ.k by rw [hσk, hE]; norm_num [StepIPARounds, WrapIPARounds]))
-    havoid Vs rule adv hstep hb i hmv ms hms htie
+    Vs rule adv hstep hb i hmv ms hms htie
 
 end Pickles
