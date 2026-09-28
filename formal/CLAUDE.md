@@ -83,7 +83,11 @@ contract), `scripts/deadcode.{lean,sh}` (cross-package reachability over the uni
 the packages' manifests), `scripts/module-deps.sh` (the dependency-graph artifact —
 `make lean-dep-graph`), `scripts/prune-stale-oleans.sh` (garbage-collect build artifacts
 of deleted/renamed modules — run it after branch switches), and
-`scripts/kernel-replay.sh` (the lean4checker kernel-replay gate).
+`scripts/kernel-replay.sh` (the lean4checker kernel-replay gate). Three audit tools, run by
+hand with `lake env lean` from `formal/`, answer questions the gates do not:
+`scripts/closure_path.lean` (why a declaration is, or is not, reachable from given roots),
+`scripts/dup_defs.lean` (`Prop` definitions that restate each other without saying so) and
+`scripts/unused_fields.lean` (hypothesis-structure fields no root's proof reads).
 
 **The comment gate** (`scripts/check-comments.sh`, `make lean-comments`) fixes the objective
 half of the comment convention; the judgement half is the `proof-comment-style` skill. A
