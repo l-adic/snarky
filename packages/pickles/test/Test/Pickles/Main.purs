@@ -10,6 +10,7 @@ import Test.Pickles.Prove.Chunks4 as Chunks4
 import Test.Pickles.Prove.Codecs as Codecs
 import Test.Pickles.Prove.CompileValidation as CompileValidation
 import Test.Pickles.Prove.HeterogeneousPrevs as HeterogeneousPrevs
+import Test.Pickles.Prove.ImportTwoPhaseChain as ImportTwoPhaseChain
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.PaddedWideSlots as PaddedWideSlots
 import Test.Pickles.Prove.RecurseOverChunks as RecurseOverChunks
@@ -59,6 +60,7 @@ spec = beforeAll buildSharedSrs do
   TreeProofReturn.spec
   HeterogeneousPrevs.spec
   TwoPhaseChain.spec
+  ImportTwoPhaseChain.spec
   SideloadRoundTripNrr.spec
   SideloadRoundTripMainChild.spec
   SideloadDigestEqNrr.spec
