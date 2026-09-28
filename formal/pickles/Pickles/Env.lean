@@ -38,13 +38,14 @@ theorems share.
 
 The chunk count is a parameter, pinned to the run's (`nc_eq`, `Wire.runNc`): one chunk for a
 domain within the SRS, `n / 2^k` above it. One chunk is production's invariant for a wrap
-proof; a step proof may be chunked. The zero-knowledge row count is kept generic
-(`zkRows_ge`), never fixed at its one-chunk value.
+proof; a step proof may be chunked. The zero-knowledge row count is the chunk count's
+(`zkRows_eq`), never fixed at its one-chunk value.
 -/
 
 namespace Pickles
 
 open Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open scoped Kimchi
 
 /-! ## Primitivity -/
 
@@ -97,8 +98,9 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   /-- The key's endomorphism coefficient is the curve's: production derives it from the curve,
   never from the key's own data. -/
   endo_eq : cvk.endo = C.endoScalar
-  /-- At least three zero-knowledge rows (exactly three at one chunk; kept generic). -/
-  zkRows_ge : 3 ≤ cvk.zkRows
+  /-- The zero-knowledge rows are the chunk count's: kimchi's `zk_rows_strict_lower_bound nc + 1`,
+  three at one chunk. -/
+  zkRows_eq : cvk.zkRows = (2 * (permCols + 1) * nc - 2) / permCols + 1
   /-- The key's domain holds its zero-knowledge rows. -/
   zkRows_le : cvk.zkRows ≤ cvk.n
   /-- The key's generator generates its domain. -/
@@ -128,6 +130,8 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   /-- The key's generator is its domain's (`domainGenerator`): a constant of the scalar field,
   never chosen by the key. -/
   omega_eq : cvk.omega = domainGenerator C cvk.domainLog2
+  /-- The key's permutation shifts are the field's (`Shifts::new`): no key chooses them. -/
+  shifts_eq : cvk.shifts = C.shifts
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks
 them once on what it loaded. That the generator is primitive follows from its being its
@@ -135,13 +139,15 @@ domain's generator within the field's two-adicity (`isPrimitiveRoot_domainGenera
 Lagrange points are checked by computing them from the SRS, the one costly check. -/
 def Env.Invariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) :
     Prop :=
-  cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ cvk.zkRows ≤ cvk.n ∧
+  cvk.endo = C.endoScalar ∧ cvk.zkRows = (2 * (permCols + 1) * nc - 2) / permCols + 1 ∧
+    cvk.zkRows ≤ cvk.n ∧
     cvk.domainLog2 ≤ C.twoAdicity ∧
     MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧ σ.h ≠ 0 ∧
     0 < cvk.lagrangeBasis.size ∧ cvk.lagrangeBasis.size ≤ cvk.n ∧
     nc = (if cvk.domainLog2 < σ.k then 1 else 2 ^ (cvk.domainLog2 - σ.k)) ∧
     cvk.lagrangeBasis = Ipa.lagrangeBasis C σ nc cvk.n cvk.omega cvk.lagrangeBasis.size ∧
-    cvk.digest = cvk.indexDigest ∧ cvk.omega = domainGenerator C cvk.domainLog2
+    cvk.digest = cvk.indexDigest ∧ cvk.omega = domainGenerator C cvk.domainLog2 ∧
+    cvk.shifts = C.shifts
 
 instance Env.decidableInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
     (cvk : KimchiVK C nc) :
@@ -152,10 +158,10 @@ instance Env.decidableInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
 def Env.ofInvariants {C : KimchiCurve} {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (h : Env.Invariants σ cvk) : Env C nc :=
   ⟨σ, cvk, h.1, h.2.1, h.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.2.2.2 ▸ isPrimitiveRoot_domainGenerator C h.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.2.2.2.1 ▸ isPrimitiveRoot_domainGenerator C h.2.2.2.1,
     h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
     h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.2.2.2⟩
+    h.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- There is a chunk. -/
 theorem Env.nc_pos {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : 0 < nc := by
@@ -186,8 +192,14 @@ theorem Env.domainLog2_le {C : KimchiCurve} {nc : ℕ} (E : Env C nc) :
 
 /-- An environment's key satisfies the invariants over its SRS: `Env.ofInvariants`' converse. -/
 theorem Env.invariants {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : Env.Invariants E.σ E.cvk :=
-  ⟨E.endo_eq, E.zkRows_ge, E.zkRows_le, E.domainLog2_le, E.rounds_small, E.rounds_pos, E.h_ne,
-    E.lagrange_pos, E.lagrange_le, E.nc_eq, E.lagrange_eq, E.digest_eq, E.omega_eq⟩
+  ⟨E.endo_eq, E.zkRows_eq, E.zkRows_le, E.domainLog2_le, E.rounds_small, E.rounds_pos, E.h_ne,
+    E.lagrange_pos, E.lagrange_le, E.nc_eq, E.lagrange_eq, E.digest_eq, E.omega_eq, E.shifts_eq⟩
+
+/-- At least three zero-knowledge rows, at any chunk count. -/
+theorem Env.zkRows_ge {C : KimchiCurve} {nc : ℕ} (E : Env C nc) : 3 ≤ E.cvk.zkRows := by
+  have := E.nc_pos
+  rw [E.zkRows_eq]
+  omega
 
 /-- Every chunk meets the domain: chunk `c` starts below `n`. -/
 theorem Env.chunk_lt {C : KimchiCurve} {nc : ℕ} (E : Env C nc) (c : Fin nc) :

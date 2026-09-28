@@ -126,11 +126,12 @@ instance CommitmentCurve.pointModule (C : CommitmentCurve) : Module C.ScalarFiel
   AddCommGroup.zmodModule C.card_nsmul
 
 /-- The curve as the kimchi verifier needs it: the curve itself, the two sponges, the
-endomorphism and the SvdW map-to-curve, with the tie between the map's curve and this one.
+endomorphism, the SvdW map-to-curve, with the tie between the map's curve and this one, and the
+scalar field's constants.
 
 One record rather than four, because there are exactly two of these in the tree and no half of
 it is ever supplied on its own. The IPA opening verifier is indexed by this as well; it reads
-everything here except `frSponge`. -/
+everything here except `frSponge` and `shifts`. -/
 structure KimchiCurve extends CommitmentCurve where
   /-- The Fq-sponge spec driving the verifier's Fiat–Shamir transcript. -/
   sponge : FqSponge.Spec base scalar
@@ -154,6 +155,9 @@ structure KimchiCurve extends CommitmentCurve where
   rootOfUnity : ZMod scalar
   /-- `rootOfUnity` has order exactly `2 ^ twoAdicity`. -/
   rootOfUnity_order : orderOf rootOfUnity = 2 ^ twoAdicity
+  /-- The permutation argument's coset shifts, one per wired column: kimchi's `Shifts::new`, a
+  constant of the field, the same for every domain. Not read by the IPA opening verifier. -/
+  shifts : Vector (ZMod scalar) 7
 
 /-- The map-to-curve, as the transcript uses it: the SvdW map of `groupMap`, transported along
 the tie to this curve's point type. -/
@@ -829,6 +833,13 @@ abbrev curve : Ipa.KimchiCurve where
   twoAdicity := pallasBase.twoAdicity
   rootOfUnity := pallasBase.rootOfUnity
   rootOfUnity_order := pallasBase.valid.rootOfUnity_order
+  shifts := #v[1,
+    328286983623303317637963920346571898945724874896624808297627776768640590563,
+    91433028157768305433241271390810941046493237899366836746431422160024463706,
+    240213425742950025341713987028051046476975246675775993287051503548513551377,
+    417757293700961807788464308236931191792053554682199437460107260306038610067,
+    430348682428487492383428014506756320686619984007091686553051322507181255952,
+    326625242707153437805405281465150497418605074624614708160829052937679007395]
   fastMsm := fun {_} g a =>
     CompElliptic.Curves.Pasta.Fast.MsmProj.pippengerProjScatterPar 8
       (List.ofFn fun i => ((a i).val, g i))
@@ -865,6 +876,13 @@ abbrev curve : Ipa.KimchiCurve where
   twoAdicity := vestaBase.twoAdicity
   rootOfUnity := vestaBase.rootOfUnity
   rootOfUnity_order := vestaBase.valid.rootOfUnity_order
+  shifts := #v[1,
+    328286983623303317637963920346571898945724874896624808297627776768640590563,
+    220790353665890403705559231885806581221301230221265349993193424985261418438,
+    211720422259245489258933986578227917398506328781182391541883955346082631533,
+    211634429328372259348572816867521795029192573698954618296359582461568682420,
+    317476258975906211462498873025720239242336777696786967497139785505242641540,
+    99141114743446054294525453467100398765600279346526770105380817318185104545]
   fastMsm := fun {_} g a =>
     CompElliptic.Curves.Pasta.Fast.MsmProjPallas.pippengerProjScatterPar 8
       (List.ofFn fun i => ((a i).val, g i))
