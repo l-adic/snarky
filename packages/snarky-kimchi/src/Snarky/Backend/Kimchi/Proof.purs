@@ -28,7 +28,6 @@ module Snarky.Backend.Kimchi.Proof
   , verifyOpeningProof
   , verifyOpeningProofsBatch
   , computeB0
-  , permutationVanishingPolynomial
   , domainGenerator
   , proverIndexDomainLog2
   , srsLagrangeCommitmentChunksAt
@@ -215,7 +214,7 @@ type LrPair f = { l :: AffinePoint f, r :: AffinePoint f }
 -- | removed in the Phase D kimchi-napi migration — consumers access the
 -- | same data via the structured `ProofData` record returned by
 -- | `proofData`. Likewise the math helpers
--- | (`permutationVanishingPolynomial`, `domainGenerator`, `computeB0`)
+-- | (`domainGenerator`, `computeB0`)
 -- | are kept as class methods but their bodies now bind directly to
 -- | `Pickles.Domain` PS implementations.
 -- | `c` is the commitment curve's coordinate field (where a proof's curve
@@ -246,7 +245,6 @@ class ProofFFI f g c | f -> g c, g -> f c where
     :: VerifierIndex g f
     -> Array { proof :: Proof g f, publicInput :: Array f, prevChallenges :: Array { sgX :: c, sgY :: c, challenges :: Array f } }
     -> Boolean
-  permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
   computeB0 :: { challenges :: Array f, zeta :: f, zetaOmega :: f, evalscale :: f } -> f
   -- | Recursive oracles: like `proofOracles` but absorbs the prior proofs'
@@ -655,7 +653,7 @@ foreign import vestaVerifyOpeningProofsBatch
 -- `group_map`. It is squeezed in the commitment curve's BASE field (=
 -- the OTHER scalar field in the 2-cycle): for a Vesta proof it's Fq =
 -- `Pallas.ScalarField`; for a Pallas proof it's Fp = `Vesta.ScalarField`.
--- `permutationVanishingPolynomial`, `domainGenerator`, and `computeB0` are
+-- `domainGenerator` and `computeB0` are
 -- now pure PureScript via `Pickles.Domain` (running on `TwoAdicField` +
 -- `PrimeField` arithmetic). The previous snarky-crypto foreign imports were
 -- removed in the kimchi-napi migration — no behavior change, the math is
@@ -737,7 +735,6 @@ instance ProofFFI Pallas.BaseField Vesta.G Pallas.ScalarField where
   proofBulletproofChallenges = pallasProofBulletproofChallenges
   verifyOpeningProof = pallasVerifyOpeningProof
   verifyOpeningProofsBatch = pallasVerifyOpeningProofsBatch
-  permutationVanishingPolynomial = Domain.permutationVanishingPolynomial @Pallas.BaseField
   domainGenerator = Domain.domainGenerator @Pallas.BaseField
   computeB0 = Domain.computeB0
   proofOraclesRec = pallasProofOracles
@@ -756,7 +753,6 @@ instance ProofFFI Vesta.BaseField Pallas.G Vesta.ScalarField where
   proofBulletproofChallenges = vestaProofBulletproofChallenges
   verifyOpeningProof = vestaVerifyOpeningProof
   verifyOpeningProofsBatch = vestaVerifyOpeningProofsBatch
-  permutationVanishingPolynomial = Domain.permutationVanishingPolynomial @Vesta.BaseField
   domainGenerator = Domain.domainGenerator @Vesta.BaseField
   computeB0 = Domain.computeB0
   proofOraclesRec = vestaProofOracles

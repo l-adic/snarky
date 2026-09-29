@@ -76,7 +76,6 @@ type ExpandDeferredInput n d =
   , generator :: StepField
   , domainLog2 :: Int
   , shifts :: Vector 7 StepField
-  , vanishesOnZk :: StepField
   , omegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> StepField
 
   -- Endo scalar for step-field challenge expansion.
@@ -151,7 +150,6 @@ expandDeferred input =
       , zkRows: input.zkRows
       , srsLengthLog2: input.srsLengthLog2
       , endo: input.endo
-      , vanishesOnZk: input.vanishesOnZk
       , omegaForLagrange: input.omegaForLagrange
       , linearizationPoly: input.linearizationPoly
       }
@@ -255,7 +253,6 @@ type ExpandProofInput n nwp wrapVkChunks =
   , stepDomainLog2 :: Int
   , stepGenerator :: StepField
   , stepShifts :: Vector 7 StepField
-  , stepVanishesOnZk :: StepField
   , stepOmegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> StepField
 
   -- Endo scalar for step-field challenge expansion.
@@ -308,7 +305,6 @@ type ExpandProofInput n nwp wrapVkChunks =
   , wrapShifts :: Vector 7 WrapField
   , wrapZkRows :: Int
   , wrapSrsLengthLog2 :: Int
-  , wrapVanishesOnZk :: WrapField
   , wrapOmegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> WrapField
   , wrapLinearizationPoly :: LinearizationPoly WrapField
 
@@ -395,7 +391,6 @@ expandProof input =
       , generator: input.stepGenerator
       , domainLog2: input.stepDomainLog2
       , shifts: input.stepShifts
-      , vanishesOnZk: input.stepVanishesOnZk
       , omegaForLagrange: input.stepOmegaForLagrange
       , endo: input.endo
       , linearizationPoly: input.linearizationPoly
@@ -508,7 +503,6 @@ expandProof input =
       , zkRows: input.wrapZkRows
       , srsLengthLog2: input.wrapSrsLengthLog2
       , endo: input.wrapEndo
-      , vanishesOnZk: input.wrapVanishesOnZk
       , omegaForLagrange: input.wrapOmegaForLagrange
       , linearizationPoly: input.wrapLinearizationPoly
       }

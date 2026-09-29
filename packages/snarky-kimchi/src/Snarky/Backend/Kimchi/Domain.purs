@@ -13,8 +13,6 @@
 -- | runs in `WrapField` (= Fq), step-circuit math in `StepField` (= Fp).
 module Snarky.Backend.Kimchi.Domain
   ( domainGenerator
-  , evalVanishesOnLastNRows
-  , permutationVanishingPolynomial
   , unnormalizedLagrangeBasis
   , bPoly
   , computeB0
@@ -22,9 +20,9 @@ module Snarky.Backend.Kimchi.Domain
 
 import Prelude
 
-import Data.Array (length, (..))
+import Data.Array (length)
 import Data.Array as Array
-import Data.Foldable (foldl, product)
+import Data.Foldable (product)
 import Data.Maybe (Maybe(..))
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
@@ -45,48 +43,6 @@ domainGenerator log2 = repeatedSquare (twoAdicity @f - log2) (twoAdicRoot @f)
 -- | Domain size as a `BigInt`, equal to `2^log2`.
 domainSize :: Int -> BigInt
 domainSize log2 = BigInt.shl one (BigInt.fromInt log2)
-
--- | Evaluates the polynomial
--- |   ∏_{j=0}^{n-1} (pt - ω^(domainSize - n + j))
--- | at `pt`, where ω is the 2^domainLog2-th root of unity.
--- |
--- | Direct port of `eval_vanishes_on_last_n_rows` in
--- | `kimchi/src/circuits/polynomials/permutation.rs:68`.
-evalVanishesOnLastNRows :: forall @f. TwoAdicField f => Int -> Int -> f -> f
-evalVanishesOnLastNRows _ 0 _ = one
-evalVanishesOnLastNRows log2 n pt =
-  let
-    omega = domainGenerator @f log2
-    startOffset = domainSize log2 - BigInt.fromInt n
-    firstTerm = pow omega startOffset
-    initial = { acc: pt - firstTerm, term: firstTerm }
-    final = foldl
-      ( \{ acc, term } _ ->
-          let
-            term' = term * omega
-          in
-            { acc: acc * (pt - term'), term: term' }
-      )
-      initial
-      (1 .. (n - 1))
-  in
-    final.acc
-
--- | Permutation vanishing polynomial evaluated at `pt`:
--- |   (pt - ω^(n - zkRows)) * (pt - ω^(n - zkRows + 1)) * (pt - ω^(n - 1))
--- |
--- | Mirrors `eval_permutation_vanishing_polynomial`. Note that the
--- | snarky-crypto wrapper `pallas_permutation_vanishing_polynomial` /
--- | `vesta_permutation_vanishing_polynomial` calls
--- | `eval_vanishes_on_last_n_rows(log2, zk_rows, pt)` (no `+ 1`), which is
--- | what we mirror here.
-permutationVanishingPolynomial
-  :: forall @f
-   . TwoAdicField f
-  => { domainLog2 :: Int, zkRows :: Int, pt :: f }
-  -> f
-permutationVanishingPolynomial { domainLog2, zkRows, pt } =
-  evalVanishesOnLastNRows @f domainLog2 zkRows pt
 
 -- | Unnormalized i-th Lagrange basis polynomial evaluated at `pt`:
 -- |   (pt^n - 1) / (pt - ω^i),   n = 2^domainLog2

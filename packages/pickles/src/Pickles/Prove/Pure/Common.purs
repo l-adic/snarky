@@ -341,8 +341,6 @@ derivePlonk input =
 -- |
 -- | * `pEval0Chunks` — public-input polynomial evaluation chunks at
 -- |   `zeta`.
--- | * `vanishesOnZk` — precomputed
--- |   `vanishes_on_zero_knowledge_and_previous_rows`.
 -- | * `omegaForLagrange` — the omega power an
 -- |   `unnormalized_lagrange_basis` lookup at `{ zkRows, offset }`
 -- |   needs.
@@ -359,7 +357,6 @@ type FtEval0Input f =
   , zkRows :: Int
   , srsLengthLog2 :: Int
   , endo :: f
-  , vanishesOnZk :: f
   , omegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> f
   , linearizationPoly :: LinearizationPoly f
   }
@@ -419,12 +416,14 @@ ftEval0 input =
       , defaultVal: zero
       }
 
+    -- Lookups are off, so the two lookup-only slots hold `1`, as in
+    -- the circuit.
     challenges =
       { alpha: expanded.alpha
       , beta: expanded.beta
       , gamma: expanded.gamma
       , jointCombiner: one
-      , vanishesOnZeroKnowledgeAndPreviousRows: input.vanishesOnZk
+      , vanishesOnZeroKnowledgeAndPreviousRows: one
       , unnormalizedLagrangeBasis: \args ->
           zetaToNMinus1 / (expanded.zeta - input.omegaForLagrange args)
       }

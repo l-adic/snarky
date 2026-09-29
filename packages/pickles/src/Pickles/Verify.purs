@@ -57,7 +57,7 @@ import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasSrsBPolyCommitmentPoint)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitmentPoint)
-import Snarky.Backend.Kimchi.Proof (Proof, permutationVanishingPolynomial, verifyOpeningProofsBatch)
+import Snarky.Backend.Kimchi.Proof (Proof, verifyOpeningProofsBatch)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.Kimchi (Type1)
@@ -444,34 +444,24 @@ wrapAccumulators verifier vp =
 -- | reified back from the array length.
 expandDv :: Verifier -> VerifiableProof -> WrapDeferredValuesOutput
 expandDv verifier vp =
-  let
-    zetaField = coerce (toFieldPure vp.rawPlonk.zeta (F verifier.stepEndo))
-
-    vanishesOnZkAtZeta = permutationVanishingPolynomial
-      { domainLog2: vp.stepDomainLog2
+  Vector.reifyVector vp.oldBulletproofChallenges \oldBpChals ->
+    expandDeferredForVerify
+      { rawPlonk: vp.rawPlonk
+      , rawBulletproofChallenges: vp.rawBulletproofChallenges
+      , branchData: vp.branchData
+      , spongeDigestBeforeEvaluations: vp.spongeDigestBeforeEvaluations
+      , chunkedEvals: vp.prevEvalsChunked
+      , pEval0Chunks: vp.pEval0Chunks
+      , oldBulletproofChallenges: oldBpChals
+      , domainLog2: vp.stepDomainLog2
       , zkRows: verifier.stepZkRows
-      , pt: zetaField
+      , srsLengthLog2: verifier.stepSrsLengthLog2
+      , generator: domainGenerator vp.stepDomainLog2
+      , shifts: domainShifts vp.stepDomainLog2
+      , omegaForLagrange: \_ -> one
+      , endo: verifier.stepEndo
+      , linearizationPoly: verifier.linearizationPoly
       }
-  in
-    Vector.reifyVector vp.oldBulletproofChallenges \oldBpChals ->
-      expandDeferredForVerify
-        { rawPlonk: vp.rawPlonk
-        , rawBulletproofChallenges: vp.rawBulletproofChallenges
-        , branchData: vp.branchData
-        , spongeDigestBeforeEvaluations: vp.spongeDigestBeforeEvaluations
-        , chunkedEvals: vp.prevEvalsChunked
-        , pEval0Chunks: vp.pEval0Chunks
-        , oldBulletproofChallenges: oldBpChals
-        , domainLog2: vp.stepDomainLog2
-        , zkRows: verifier.stepZkRows
-        , srsLengthLog2: verifier.stepSrsLengthLog2
-        , generator: domainGenerator vp.stepDomainLog2
-        , shifts: domainShifts vp.stepDomainLog2
-        , vanishesOnZk: vanishesOnZkAtZeta
-        , omegaForLagrange: \_ -> one
-        , endo: verifier.stepEndo
-        , linearizationPoly: verifier.linearizationPoly
-        }
 
 -- | Everything one proof needs on its own: the accumulator check's
 -- | verdict, plus the wrap proof's kimchi public input and accumulator

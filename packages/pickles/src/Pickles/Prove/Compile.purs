@@ -148,14 +148,12 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Snarky.Backend.Kimchi.Proof
   ( pallasProofData
-  , permutationVanishingPolynomial
   , proofOraclesRec
   , proverIndexDomainLog2
   , vestaProofData
   )
 import Snarky.Backend.Kimchi.Proof
-  ( permutationVanishingPolynomial
-  , proofOraclesRec
+  ( proofOraclesRec
   , proverIndexDomainLog2
   , srsBlindingGenerator
   , srsLagrangeCommitmentChunksAt
@@ -732,21 +730,11 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
 
         wrapPI = wrapPublicInputVP prevVerifier prevData.proof
 
-        prevZetaField =
-          coerce
-            (toFieldPure prevData.proof.rawPlonk.zeta (F prevVerifier.stepEndo))
-
         -- A step domain is per-branch, so it comes off the prev proof
         -- rather than off the `Verifier`.
         prevStepGenerator = domainGenerator prevData.proof.stepDomainLog2
 
         prevStepShifts = domainShifts prevData.proof.stepDomainLog2
-
-        prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
-          { domainLog2: prevData.proof.stepDomainLog2
-          , zkRows: prevVerifier.stepZkRows
-          , pt: prevZetaField
-          }
 
         -- The unpadded accumulators, reified back to a `Vector n`.
         -- `expandDeferredForVerify` folds over them, so the length has
@@ -767,7 +755,6 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
             , srsLengthLog2: prevVerifier.stepSrsLengthLog2
             , generator: prevStepGenerator
             , shifts: prevStepShifts
-            , vanishesOnZk: prevVanishesOnZk
             , omegaForLagrange: \_ -> one
             , endo: prevVerifier.stepEndo
             , linearizationPoly: prevVerifier.linearizationPoly
@@ -2278,11 +2265,6 @@ runMultiProverBody
           , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
           , generator: (domainGenerator selfStepDomainLog2)
           , shifts: (domainShifts selfStepDomainLog2)
-          , vanishesOnZk: permutationVanishingPolynomial
-              { domainLog2: selfStepDomainLog2
-              , zkRows: selfZkRows
-              , pt: stepOracles.zeta
-              }
           , omegaForLagrange: \_ -> one
           , endo:
               let EndoScalar e = endoScalar :: EndoScalar StepField in e

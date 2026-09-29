@@ -12,4 +12,3 @@ export {
   poseidonParamsKimchiFp,
   poseidonParamsKimchiFq,
 } from './PastaPoseidonConstants.js';
-export * from './poly.js';
