@@ -114,7 +114,8 @@ def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
   let dv := v.statement.proofState.deferredValues
   let mask := dv.branchData.proofsVerifiedMask.toList.drop (MaxProofsVerified - n)
   let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta
-    Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) groupMapParamsVesta
+    Bulletproof.IpaVesta.curve.sponge.params (.const Bulletproof.IpaPallas.curve.lam)
+    groupMapParamsVesta
     vestaBase.sqrt? true blindingH sv computeXHat
     (ivpInputOf dv.toDeferredValues ((mask.zip v.sgOld.toList).map fun (m, P) => (some m, P))
       key v.proof)
