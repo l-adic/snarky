@@ -43,13 +43,14 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
+import Pickles.IncrementallyVerifyProof (class StepChunkLayout)
 import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.Types (AllocEvals, ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments, verifierIndexDigest)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
 import Pickles.Wrap.Types as Wrap
-import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -287,27 +288,16 @@ bumpWrapCsCounter = do
 -- | `exists` body, which `compile` discards, so the advice record is
 -- | never projected and the dummy never forced.
 wrapCompile
-  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
+  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred nonSgBases
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
-  => Mul 7 stepChunks tCommLen
+  => StepChunkLayout stepChunks tCommLen nonSgBases
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add stepChunks 1 sg1
-  => Add sg1 stepChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
@@ -379,27 +369,16 @@ wrapCompile ctx = do
 -- | kimchi proof. Errors surface as `Either EvaluationError`. The wrap
 -- | circuit emits no advice, so the row is pinned to `()` (`noAdvice`).
 wrapSolveAndProve
-  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
+  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred nonSgBases
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
-  => Mul 7 stepChunks tCommLen
+  => StepChunkLayout stepChunks tCommLen nonSgBases
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add stepChunks 1 sg1
-  => Add sg1 stepChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases

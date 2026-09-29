@@ -16,13 +16,13 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
-import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
+import Pickles.IncrementallyVerifyProof (class StepChunkLayout, IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.PublicInputCommit (class PublicInputCommit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, spongeFromConstants)
 import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
-import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (FVar, Snarky, assertEq, assertEqual_, assert_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF)
@@ -47,7 +47,7 @@ type WrapVerifyInput n d fv =
 -- | the messages-for-next-wrap digest, the sponge digest, and the
 -- | bullet-proof challenges.
 wrapVerify
-  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred n r cr
+  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred nonSgBases totalBases totalBasesPred d dPred n r cr
    . PrimeField WrapField
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
@@ -55,29 +55,13 @@ wrapVerify
   => Reflectable sgOldN Int
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Compare n 3 LT
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
   => Add 1 dPred d
-  -- Base layout, forwarded to the IVP: xHat(nc) :: ftComm ::
-  -- zComm(nc) :: index(6nc) :: wComm(15nc) :: coeff(15nc) ::
-  -- sigma(6nc), so the non-sg count is `1 + 44*nc`. `wCoeffN` and
-  -- `indexSigmaN` are shared because `Mul`'s fundep would unify
-  -- same-RHS counts otherwise.
-  => Mul 7 stepChunks tCommLen
+  => StepChunkLayout stepChunks tCommLen nonSgBases
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
   => Add sgOldN nonSgBases totalBases
-  => Add stepChunks 1 sg1
-  => Add sg1 stepChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
   => Add 1 totalBasesPred totalBases
   => IncrementallyVerifyProofParams stepChunks WrapField r
   -> IncrementallyVerifyProofInput publicInput sgOldN stepChunks tCommLen d (FVar WrapField) (Type1 (FVar WrapField))
