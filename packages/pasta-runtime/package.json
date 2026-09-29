@@ -10,7 +10,6 @@
     "./field": "./PastaField.js",
     "./curve": "./PastaCurve.js",
     "./poseidon": "./PastaPoseidon.js",
-    "./poseidon-constants": "./PastaPoseidonConstants.js",
-    "./poly": "./poly.js"
+    "./poseidon-constants": "./PastaPoseidonConstants.js"
   }
 }

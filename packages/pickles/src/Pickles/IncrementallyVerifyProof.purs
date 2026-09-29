@@ -6,6 +6,8 @@ module Pickles.IncrementallyVerifyProof
   ( IncrementallyVerifyProofParams
   , IncrementallyVerifyProofInput
   , IncrementallyVerifyProofOutput
+  , class StepChunkLayout
+  , layoutBases
   , incrementallyVerifyProof
   , ftComm
   , PackedWrapStatement
@@ -118,6 +120,63 @@ type IncrementallyVerifyProofOutput d f =
   }
 
 -------------------------------------------------------------------------------
+-- | Base layout
+-------------------------------------------------------------------------------
+
+-- | The bulletproof base layout of a `stepChunks`-chunk proof: `tComm`
+-- | has `tCommLen = 7 * stepChunks` chunks, and the MSM has
+-- | `nonSgBases = 1 + 44 * stepChunks` bases besides `sgOld`. `xHat` is
+-- | chunked too: at two chunks the step domain exceeds the wrap SRS's
+-- | `max_poly_size`.
+class StepChunkLayout :: Int -> Int -> Int -> Constraint
+class
+  ( Mul 7 stepChunks tCommLen
+  , Reflectable nonSgBases Int
+  ) <=
+  StepChunkLayout stepChunks tCommLen nonSgBases
+  | stepChunks -> tCommLen nonSgBases where
+  -- | The non-`sgOld` bases, flat and in xi-Horner order, each
+  -- | polynomial's chunks adjacent.
+  layoutBases
+    :: forall a
+     . { xHat :: Vector stepChunks a
+       , ftComm :: a
+       , zComm :: Vector stepChunks a
+       , index :: Vector 6 (Vector stepChunks a)
+       , wComm :: Vector 15 (Vector stepChunks a)
+       , coeff :: Vector 15 (Vector stepChunks a)
+       , sigma :: Vector 6 (Vector stepChunks a)
+       }
+    -> Vector nonSgBases a
+
+-- One `Add` per append. `w` and `i` each size two groups: `Mul`'s
+-- fundep would unify separate binders for the same product anyway.
+-- `Mul 44` pins the total at `1 + 44 * stepChunks`.
+instance
+  ( Mul 7 n t
+  , Mul 15 n w
+  , Mul 6 n i
+  , Mul 44 n c
+  , Add 1 c s
+  , Add n 1 s1
+  , Add s1 n s2
+  , Add s2 i s3
+  , Add s3 w s4
+  , Add s4 w s5
+  , Add s5 i s
+  , Reflectable s Int
+  ) =>
+  StepChunkLayout n t s where
+  layoutBases r =
+    r.xHat
+      `Vector.append` (r.ftComm :< Vector.nil)
+      `Vector.append` r.zComm
+      `Vector.append` Vector.concat r.index
+      `Vector.append` Vector.concat r.wComm
+      `Vector.append` Vector.concat r.coeff
+      `Vector.append` Vector.concat r.sigma
+
+-------------------------------------------------------------------------------
 -- | Circuit
 -------------------------------------------------------------------------------
 
@@ -125,7 +184,7 @@ type IncrementallyVerifyProofOutput d f =
 -- | transcript, `ftComm` and `checkBulletproof` together, and asserts
 -- | that the deferred values agree with the sponge's challenges.
 incrementallyVerifyProof
-  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred f f' @g sf r cr
+  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred nonSgBases totalBases totalBasesPred d dPred f f' @g sf r cr
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -139,37 +198,12 @@ incrementallyVerifyProof
   => Reflectable sgOldN Int
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
   => Add 1 dPred d
-  -- `tComm` is one flat vector of `7 * stepChunks` points; `ftComm`
-  -- Horner-reduces it as a single list.
-  => Mul 7 stepChunks tCommLen
+  => StepChunkLayout stepChunks tCommLen nonSgBases
   => Add 1 tCommLenPred tCommLen
-  -- The MSM has `sgOldN + 1 + 44*stepChunks` bases, laid out by
-  -- `allBases` below. `xHat` is chunked because at two chunks the step
-  -- `wrap_domain` exceeds the wrap SRS `max_poly_size`, so the
-  -- public-input commitment splits into `stepChunks` pieces.
-  --
-  -- One `indexSigmaN` serves both index (6nc) and sigma (6nc), and one
-  -- `wCoeffN` both wComm (15nc) and coeff (15nc): `Mul` is functionally
-  -- determined, so separate binders would force a length-mismatch
-  -- unification.
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
   => Add sgOldN nonSgBases totalBases
-  -- One `Add` per append in the non-sgOld group, spelling out the
-  -- running total; the group ends at `nonSgBases`, and the outer append
-  -- of `sgOld` is the `Add sgOldN nonSgBases totalBases` above.
-  => Add stepChunks 1 sg1 -- xHat + ftComm = nc + 1
-  => Add sg1 stepChunks sg2 -- + zComm = 1 + 2nc
-  => Add sg2 indexSigmaN sg3 -- + index = 1 + 8nc
-  => Add sg3 wCoeffN sg4 -- + wComm = 1 + 23nc
-  => Add sg4 wCoeffN sg5 -- + coeff = 1 + 38nc
-  => Add sg5 indexSigmaN nonSgBases -- + sigma = 1 + 44nc
   => Add 1 totalBasesPred totalBases
   => IpaScalarOps f cr sf
   -> IncrementallyVerifyProofParams stepChunks f r
@@ -259,31 +293,19 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     , zetaToDomainSize: input.deferredValues.plonk.zetaToDomainSize
     }
 
-  -- The base layout is fixed, flat and in xi-Horner emission order,
-  -- each polynomial's chunks adjacent:
-  --   sgOld, xHat (stepChunks), ftComm,
-  --   zComm (stepChunks),
-  --   index comms (6 polys × stepChunks),
-  --   wComm (15 polys × stepChunks),
-  --   coeff comms (15 polys × stepChunks),
-  --   sigma_comm[0..PERMUTS-2] (6 polys × stepChunks).
   -- `sigmaCommLast` is not a base here; it enters only the index-digest
   -- absorb.
   let
-    wCommFlat = Vector.concat (coerce input.wComm :: Vector 15 (Vector stepChunks (AffinePoint (FVar f))))
-    indexFlat = Vector.concat (coerce input.columnComms.index :: Vector 6 (Vector stepChunks (AffinePoint (FVar f))))
-    coeffFlat = Vector.concat (coerce input.columnComms.coeff :: Vector 15 (Vector stepChunks (AffinePoint (FVar f))))
-    sigmaFlat = Vector.concat (coerce input.columnComms.sigma :: Vector 6 (Vector stepChunks (AffinePoint (FVar f))))
     allBases =
-      input.sgOld `Vector.append`
-        ( xHat
-            `Vector.append` (ftCommResult :< Vector.nil)
-            `Vector.append` unwrap input.zComm
-            `Vector.append` indexFlat
-            `Vector.append` wCommFlat
-            `Vector.append` coeffFlat
-            `Vector.append` sigmaFlat
-        )
+      input.sgOld `Vector.append` layoutBases
+        { xHat
+        , ftComm: ftCommResult
+        , zComm: unwrap input.zComm
+        , index: map unwrap input.columnComms.index
+        , wComm: map unwrap input.wComm
+        , coeff: map unwrap input.columnComms.coeff
+        , sigma: map unwrap input.columnComms.sigma
+        }
 
     -- Only the wrap side's `sgOld` bases are masked; every other base
     -- is unconditional.

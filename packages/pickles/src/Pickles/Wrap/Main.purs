@@ -37,6 +37,7 @@ import Pickles.DeferredValues (UnfinalizedProof)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
+import Pickles.IncrementallyVerifyProof (class StepChunkLayout)
 import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
@@ -56,7 +57,7 @@ import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Types (PrevProofState(..), StatementPacked(..))
 import Pickles.Wrap.Verify (wrapVerify)
-import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
@@ -430,25 +431,14 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -- | value. `mpv` is their count and stays type-level because it sizes
 -- | the statement vectors the circuit reads.
 wrapMain
-  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
+  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred nonSgBases r
    . PrimeField WrapField
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
-  => Mul 7 stepChunks tCommLen
+  => StepChunkLayout stepChunks tCommLen nonSgBases
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add stepChunks 1 sg1
-  => Add sg1 stepChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches
@@ -502,30 +492,14 @@ wrapMain config input advice widths =
 -- | an action because it allocates witness variables at a fixed point
 -- | in the `exists` order.
 wrapMainCore
-  :: forall @branches @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
+  :: forall @branches @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred nonSgBases r
    . PrimeField WrapField
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
-  -- Base layout forwarded to `wrapVerify`: xHat(nc) :: ftComm ::
-  -- zComm(nc) :: index(6nc) :: wComm(15nc) :: coeff(15nc) ::
-  -- sigma(6nc), so the non-sg count is `1 + 44*nc`. `wCoeffN` and
-  -- `indexSigmaN` are shared because `Mul`'s fundep would unify
-  -- same-RHS counts otherwise.
-  => Mul 7 stepChunks tCommLen
+  => StepChunkLayout stepChunks tCommLen nonSgBases
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add stepChunks 1 sg1
-  => Add sg1 stepChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches

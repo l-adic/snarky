@@ -84,7 +84,7 @@ import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
-import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
+import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
 import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
@@ -573,13 +573,6 @@ buildSlotAdvice input = do
 
     stepShifts = domainShifts input.stepDomainLog2
 
-    zetaExpandedStep =
-      toFieldPure (SizedF.unwrapF plonkMinimalStep.zeta) stepEndoScalarF
-
-    stepVanishesOnZk =
-      (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
-        { domainLog2: input.stepDomainLog2, zkRows: input.stepZkRows, pt: zetaExpandedStep }
-
     wrapGen = domainGenerator input.wrapDomainLog2
     wrapZetaw = oracles.zeta * wrapGen
     wrapSrsLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
@@ -604,10 +597,6 @@ buildSlotAdvice input = do
 
     wrapShifts = domainShifts input.wrapDomainLog2
 
-    wrapVanishesOnZk =
-      (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
-        { domainLog2: input.wrapDomainLog2, zkRows: input.wrapZkRows, pt: oracles.zeta }
-
     expandProofInputRec =
       { mustVerify: input.mustVerify
       , zkRows: input.stepZkRows
@@ -621,7 +610,6 @@ buildSlotAdvice input = do
       , stepDomainLog2: input.stepDomainLog2
       , stepGenerator
       , stepShifts
-      , stepVanishesOnZk
       , stepOmegaForLagrange: \_ -> one
       , endo: stepEndoScalarF
       , linearizationPoly: Linearization.pallas
@@ -643,7 +631,6 @@ buildSlotAdvice input = do
       , wrapShifts
       , wrapZkRows: input.wrapZkRows
       , wrapSrsLengthLog2: reflectType (Proxy :: Proxy WrapIPARounds)
-      , wrapVanishesOnZk
       , wrapOmegaForLagrange: \_ -> one
       , wrapLinearizationPoly: Linearization.vesta
       , stepPrevChallenges: map (map F) prevChalsPerSlot

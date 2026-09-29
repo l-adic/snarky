@@ -71,6 +71,7 @@ import Pickles.Constants (roughDomainsLog2, zkRowsForNumChunks)
 import Pickles.DeferredValues (toPlonkMinimal)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
+import Pickles.IncrementallyVerifyProof (class StepChunkLayout)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval, padChunkedEvals, singleChunkEvals)
@@ -147,14 +148,12 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Snarky.Backend.Kimchi.Proof
   ( pallasProofData
-  , permutationVanishingPolynomial
   , proofOraclesRec
   , proverIndexDomainLog2
   , vestaProofData
   )
 import Snarky.Backend.Kimchi.Proof
-  ( permutationVanishingPolynomial
-  , proofOraclesRec
+  ( proofOraclesRec
   , proverIndexDomainLog2
   , srsBlindingGenerator
   , srsLagrangeCommitmentChunksAt
@@ -731,21 +730,11 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
 
         wrapPI = wrapPublicInputVP prevVerifier prevData.proof
 
-        prevZetaField =
-          coerce
-            (toFieldPure prevData.proof.rawPlonk.zeta (F prevVerifier.stepEndo))
-
         -- A step domain is per-branch, so it comes off the prev proof
         -- rather than off the `Verifier`.
         prevStepGenerator = domainGenerator prevData.proof.stepDomainLog2
 
         prevStepShifts = domainShifts prevData.proof.stepDomainLog2
-
-        prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
-          { domainLog2: prevData.proof.stepDomainLog2
-          , zkRows: prevVerifier.stepZkRows
-          , pt: prevZetaField
-          }
 
         -- The unpadded accumulators, reified back to a `Vector n`.
         -- `expandDeferredForVerify` folds over them, so the length has
@@ -766,7 +755,6 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
             , srsLengthLog2: prevVerifier.stepSrsLengthLog2
             , generator: prevStepGenerator
             , shifts: prevStepShifts
-            , vanishesOnZk: prevVanishesOnZk
             , omegaForLagrange: \_ -> one
             , endo: prevVerifier.stepEndo
             , linearizationPoly: prevVerifier.linearizationPoly
@@ -1549,26 +1537,15 @@ class
   -- | prove with `whichBranch` set to its own index. The index
   -- | argument is the head entry's; top-level callers pass `0`.
   buildBranchProvers
-    :: forall stepChunks numChunksPred vecLen vecLenPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBasesMax totalBasesMaxPred
+    :: forall stepChunks numChunksPred vecLen vecLenPred tCommLen tCommLenPred nonSgBases totalBasesMax totalBasesMaxPred
      . Reflectable vecLen Int
     => Add 1 vecLenPred vecLen
     => Reflectable stepChunks Int
     => Reflectable tCommLen Int
-    => Reflectable nonSgBases Int
     => Compare 0 stepChunks LT
     => Add 1 numChunksPred stepChunks
-    => Mul 7 stepChunks tCommLen
+    => StepChunkLayout stepChunks tCommLen nonSgBases
     => Add 1 tCommLenPred tCommLen
-    => Mul 15 stepChunks wCoeffN
-    => Mul 6 stepChunks indexSigmaN
-    => Mul 44 stepChunks chunkBases
-    => Add 1 chunkBases nonSgBases
-    => Add stepChunks 1 sg1
-    => Add sg1 stepChunks sg2
-    => Add sg2 indexSigmaN sg3
-    => Add sg3 wCoeffN sg4
-    => Add sg4 wCoeffN sg5
-    => Add sg5 indexSigmaN nonSgBases
     => Add mpvMax nonSgBases totalBasesMax
     => Add 1 totalBasesMaxPred totalBasesMax
     => Proxy stepChunks
@@ -2048,7 +2025,7 @@ runMultiProverBody
        branches branchesPred
        pad
        padMax totalBasesMax totalBasesMaxPred
-       tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
+       tCommLen tCommLenPred nonSgBases
        r
    . SplitPrevs prevsSpec prevsCarrier valCarrier mpv
   => SlotWidths prevsSpec mpv
@@ -2068,21 +2045,10 @@ runMultiProverBody
   => Reflectable padMax Int
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
-  => Mul 7 stepChunks tCommLen
+  => StepChunkLayout stepChunks tCommLen nonSgBases
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add stepChunks 1 sg1
-  => Add sg1 stepChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
   => Add padMax mpvMax PaddedLength
   => Compare mpvMax 3 LT
   => Add mpvMax nonSgBases totalBasesMax
@@ -2299,11 +2265,6 @@ runMultiProverBody
           , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
           , generator: (domainGenerator selfStepDomainLog2)
           , shifts: (domainShifts selfStepDomainLog2)
-          , vanishesOnZk: permutationVanishingPolynomial
-              { domainLog2: selfStepDomainLog2
-              , zkRows: selfZkRows
-              , pt: stepOracles.zeta
-              }
           , omegaForLagrange: \_ -> one
           , endo:
               let EndoScalar e = endoScalar :: EndoScalar StepField in e
@@ -2446,7 +2407,7 @@ compileMulti
        rulesCarrier
        proversCarrier
        branchesPred totalBases totalBasesPred
-       tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
+       tCommLen tCommLenPred nonSgBases
    . CompilableRules rulesCarrier inputVal outputVal
        branches
        mpvMax
@@ -2457,21 +2418,10 @@ compileMulti
   => Reflectable mpvMax Int
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
-  => Mul 7 stepChunks tCommLen
+  => StepChunkLayout stepChunks tCommLen nonSgBases
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add stepChunks 1 sg1
-  => Add sg1 stepChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare 0 branches LT
   => Compare mpvMax 3 LT

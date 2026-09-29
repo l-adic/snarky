@@ -73,7 +73,6 @@ type WrapDeferredValuesInput n =
   , srsLengthLog2 :: Int
   , generator :: StepField
   , shifts :: Vector 7 StepField
-  , vanishesOnZk :: StepField
   , omegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> StepField
 
   -- ===== Endo + linearization. =====
@@ -222,7 +221,6 @@ wrapComputeDeferredValues input =
       , zkRows: input.zkRows
       , srsLengthLog2: input.srsLengthLog2
       , endo: input.endo
-      , vanishesOnZk: input.vanishesOnZk
       , omegaForLagrange: input.omegaForLagrange
       , linearizationPoly: input.linearizationPoly
       }
