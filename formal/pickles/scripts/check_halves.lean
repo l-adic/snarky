@@ -347,13 +347,13 @@ def srsAt (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C
   return σ
 
 /-- The Lagrange points an entry's key reads — as many as its public-input count — at its
-domain and `nc` chunks, computed from `σ` and memoised per curve, domain and chunk count under
-`lagrange-cache/`: `KimchiVK.lagrangePoints` at the key's count, where `kimchiVerifyWith` is
-`kimchiVerify` by definition. -/
+domain and `nc` chunks, computed from `σ` and memoised per curve, SRS size, domain and chunk
+count under `lagrange-cache/`: `KimchiVK.lagrangePoints` at the key's count, where
+`kimchiVerifyWith` is `kimchiVerify` by definition. -/
 def basisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (nc : ℕ)
     (e : Cache.Entry C) : IO (Array (Vector C.Point nc)) := do
   let memoDir := (← IO.getEnv "LAGRANGE_CACHE_DIR").getD "lagrange-cache"
-  Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-2^{e.vk.domainLog2}-{nc}c.json" σ nc
+  Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-k{σ.k}-2^{e.vk.domainLog2}-{nc}c.json" σ nc
     (2 ^ e.vk.domainLog2) e.vk.omega e.vk.publicCount
 
 /-- A cache entry's checked wire records at the SRS `σ`: the records checked at the run's chunk
@@ -719,14 +719,17 @@ def main : IO Unit := do
   -- at a time, so the workers only read shared data (and never write a memo file at once).
   let t0 ← IO.monoMsNow
   let needKeys := on "theorem" || on "carry"
+  let needPoints := needKeys || on "verify" || on "wrap-group" || on "step-group"
   for s in steps do
     let σ ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS s.proof.opening.lr.size
-    let _ ← checkedAny CS σ s
+    let ⟨nc, _, _⟩ ← checkedAny CS σ s
     if needKeys then discard <| keyFor CS "vesta" vestaBase.sqrt? vestaSRS vestaKeys s
+    if needPoints then discard <| basisFor CS "vesta" σ nc s
   for w in wraps do
     let σ ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS w.proof.opening.lr.size
-    let _ ← checkedAny CW σ w
+    let ⟨nc, _, _⟩ ← checkedAny CW σ w
     if needKeys then discard <| keyFor CW "pallas" pallasBase.sqrt? pallasSRS pallasKeys w
+    if needPoints then discard <| basisFor CW "pallas" σ nc w
   IO.println s!"warm-up: {(← IO.monoMsNow) - t0} ms; {nJobs} worker(s)"
   let mut allOk := true
   let mut jobs : Array (IO Bool) := #[]
