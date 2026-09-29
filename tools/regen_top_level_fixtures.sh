@@ -50,13 +50,16 @@ echo ">> Building drivers in mina..."
 echo ">> Running drivers into ${TMP}..."
 rm -rf "${TMP}"
 mkdir -p "${TMP}" "${FIXTURES_DIR}"
-# SIDELOAD_FIXTURE_DIR is read only by dump_side_loaded_main, which writes
-# the side-loaded child fixture consumed by Pickles.Sideload.MainChild.
+# SIDELOAD_FIXTURE_DIR and BIND_VK_CIRCUIT_DIR are read only by
+# dump_side_loaded_main, which writes the side-loaded child fixture
+# consumed by Pickles.Sideload.MainChild and the bind_vk_step_circuit
+# gadget fixture.
 for d in "${DRIVERS[@]}"; do
   echo "   - ${d}"
   PICKLES_STEP_CS_DUMP="${TMP}/${d}_step_%c" \
   PICKLES_WRAP_CS_DUMP="${TMP}/${d}_wrap_%c" \
   SIDELOAD_FIXTURE_DIR="${SNARKY_ROOT}/packages/pickles/test/fixtures/sideload_main_child" \
+  BIND_VK_CIRCUIT_DIR="${FIXTURES_DIR}" \
   KIMCHI_DETERMINISTIC_SEED=42 \
   "${DRIVER_BIN_DIR}/${d}/${d}.exe" >/dev/null
 done

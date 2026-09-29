@@ -33,11 +33,16 @@ step ~handler:(handler No_recursion.example_input
                        For this fixture, the value is `Field.Constant.zero`
                        (= the public input passed to `step` per
                        `dump_side_loaded_main.ml:103`).
+- `vk_digest.json`   — the side-loaded key's digest as Mina hashes a zkApp
+                       verification key (`Verification_key_wire.digest_vk`),
+                       a single field as a hex string. It covers the two
+                       reconstructed fields below, so it also checks their
+                       reconstruction.
 
 ## Schema
 
-Identical to `packages/pickles/test/fixtures/sideload/nrr/` — same four
-file names, same JSON shapes, same Rust serde codec for the kimchi
+The first four files are identical to `packages/pickles/test/fixtures/sideload/nrr/`
+— same file names, same JSON shapes, same Rust serde codec for the kimchi
 artefacts. PS's loader needs no changes to consume either.
 
 ## Reconstructed PS-side, NOT in fixture
