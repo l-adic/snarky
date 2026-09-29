@@ -1954,14 +1954,26 @@ def main : IO Unit := do
       stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
         (stepMainDumpCircuit (inVal := Unit) 2 (by decide) k dummyUnfN0
           importTwoPhaseChainRule)))
-  let selected := (targets hStep hWrap
-    ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches wrapMains fullStep
-    ++ stepMains).filter
-    fun (n, _) =>
+  -- the import's candidates reversed and repeated: the circuit sorts and dedups them, so the
+  -- dump is the same
+  let importTpcUnsorted := importTpc.toList.map fun (k : StepMainConsts 2) =>
+    let s0 := k.slots[0]
+    let s0' := { s0 with domainLog2s := s0.domainLog2s.reverse ++ s0.domainLog2s }
+    ("step_main_import_two_phase_chain_circuit (candidates reversed, repeated)",
+      "step_main_import_two_phase_chain_circuit",
+      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
+        (stepMainDumpCircuit (inVal := Unit) 2 (by decide) { k with slots := k.slots.set 0 s0' }
+          dummyUnfN0 importTwoPhaseChainRule))
+  let named : List (String × String ×
+      (Json → Except String (Option (Bool × List (String × Bool))))) :=
+    (targets hStep hWrap
+      ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches wrapMains fullStep
+      ++ stepMains).map fun (n, c) => (n, n, c)
+  let selected := (named ++ importTpcUnsorted).filter fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0
-  for (name, compare) in selected do
-    let path := dir / s!"{name}.json"
+  for (name, dump, compare) in selected do
+    let path := dir / s!"{dump}.json"
     let raw ← IO.FS.readFile path
     match Json.parse raw >>= compare with
     | .error e =>

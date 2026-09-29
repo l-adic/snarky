@@ -482,8 +482,8 @@ shown to hold together on a proof the real prover made, and its conclusion is ch
 public input it names:
 
 * the environment's invariants hold of the step key and its SRS (`Env.Invariants`);
-* the file's step domains form a `KnownDomains` with this key's among them, and the wrap
-  statement's `domain_log2` is the key's (`hdom`);
+* the file's step domains form a `KnownDomains`, and the wrap statement's `domain_log2` is
+  the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
   public input (`wrapPublicInput`);
 * the SRS avoids the key's Lagrange relations (`havoid`), decided on the key's Lagrange
@@ -503,7 +503,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
   let cvk := E.cvk
   let cp ← checkedFor CS "vesta" E s
   do
-    let cands := (steps.toList.map (·.vk.domainLog2)).eraseDups
+    let cands := steps.toList.map (·.vk.domainLog2)
     let some doms := Pickles.KnownDomains.ofList? E cands
       | IO.println s!"    ✗ the file's step domains {cands} are no KnownDomains \
           at this key (2^{s.vk.domainLog2})"

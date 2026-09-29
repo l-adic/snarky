@@ -20,18 +20,16 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- The domains the step circuit's scalar half may select from, by `log2`: distinct sizes,
-each holding the zero-knowledge rows, and the key's own domain among them. Each candidate's
-generator is its size's `domainGenerator`. -/
+/-- The domains the step circuit's scalar half may select from, by `log2`: domains of the
+field, each holding the zero-knowledge rows. Each candidate's generator is its size's
+`domainGenerator`. -/
 structure KnownDomains {nc : ℕ} (E : Env IpaVesta.curve nc) where
   /-- The candidates' `log2`s. -/
   log2s : List ℕ
-  /-- Distinct sizes, as the circuit compares them. -/
-  log2s_nodup : (log2s.map fun d : ℕ => (d : Fp)).Nodup
+  /-- Each candidate is a domain of the field. -/
+  log2s_le : ∀ d ∈ log2s, d ≤ IpaVesta.curve.twoAdicity
   /-- Each domain holds the key's zero-knowledge rows. -/
   log2s_zkRows : ∀ d ∈ log2s, E.cvk.zkRows ≤ 2 ^ d
-  /-- The key's domain is a candidate. -/
-  domainLog2_mem : E.cvk.domainLog2 ∈ log2s
 
 namespace KnownDomains
 
@@ -41,10 +39,31 @@ variable {nc : ℕ} {E : Env IpaVesta.curve nc} (D : KnownDomains E)
 def list : List (KnownDomain Fp) :=
   D.log2s.map fun d => ⟨d, domainGenerator IpaVesta.curve d⟩
 
-/-- The candidates' sizes are distinct. -/
-theorem nodup : (D.list.map fun d => (d.log2 : Fp)).Nodup := by
-  rw [list, List.map_map]
-  exact D.log2s_nodup
+/-- Domain sizes below the field's two-adicity are distinct in the field when they are distinct
+as numbers. -/
+private theorem cast_inj {a b : ℕ} (ha : a ≤ IpaVesta.curve.twoAdicity)
+    (hb : b ≤ IpaVesta.curve.twoAdicity) (h : (a : Fp) = b) : a = b := by
+  have hp : IpaVesta.curve.twoAdicity < PALLAS_BASE_CARD := by decide
+  rwa [ZMod.natCast_eq_natCast_iff', Nat.mod_eq_of_lt (by omega),
+    Nat.mod_eq_of_lt (by omega)] at h
+
+/-- A candidate's `log2` is one of the record's. -/
+private theorem log2_mem {d : KnownDomain Fp} (hd : d ∈ D.list) : d.log2 ∈ D.log2s := by
+  obtain ⟨l, hl, rfl⟩ := List.mem_map.mp hd
+  exact hl
+
+/-- The kept candidates' sizes are distinct in the field. -/
+theorem nodup : ((KnownDomain.dedupSort D.list).map fun d => (d.log2 : Fp)).Nodup := by
+  have hmap : ((KnownDomain.dedupSort D.list).map fun d => (d.log2 : Fp))
+      = ((KnownDomain.dedupSort D.list).map (·.log2)).map fun l : ℕ => (l : Fp) := by
+    rw [List.map_map]
+    rfl
+  rw [hmap]
+  refine (KnownDomain.nodup_dedupSort D.list).map_on fun a ha b hb h => ?_
+  obtain ⟨da, hda, rfl⟩ := List.mem_map.mp ha
+  obtain ⟨db, hdb, rfl⟩ := List.mem_map.mp hb
+  exact cast_inj (D.log2s_le _ (D.log2_mem (KnownDomain.mem_of_mem_dedupSort hda)))
+    (D.log2s_le _ (D.log2_mem (KnownDomain.mem_of_mem_dedupSort hdb))) h
 
 /-- Each generator has its domain's order. -/
 theorem generator_pow : ∀ d ∈ D.list, d.generator ^ 2 ^ d.log2 = 1 := by
@@ -58,10 +77,14 @@ theorem zkRows_le : ∀ d ∈ D.list, E.cvk.zkRows ≤ 2 ^ d.log2 := by
   rintro _ ⟨d, hd, rfl⟩
   exact D.log2s_zkRows d hd
 
-/-- The key's domain, with the key's generator, is a candidate. -/
-theorem key_mem : (⟨E.cvk.domainLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ D.list := by
+/-- A candidate the size of the key's domain, in the field, is the key's domain with the key's
+generator. -/
+theorem eq_key {d : KnownDomain Fp} (hd : d ∈ D.list)
+    (h : (d.log2 : Fp) = (E.cvk.domainLog2 : Fp)) :
+    d = ⟨E.cvk.domainLog2, E.cvk.omega⟩ := by
+  obtain ⟨l, hl, rfl⟩ := List.mem_map.mp hd
+  obtain rfl := cast_inj (D.log2s_le l hl) E.domainLog2_le h
   rw [E.omega_eq]
-  exact List.mem_map.mpr ⟨_, D.domainLog2_mem, rfl⟩
 
 end KnownDomains
 
@@ -69,9 +92,8 @@ end KnownDomains
 driver checks them once. -/
 def KnownDomains.ofList? {nc : ℕ} (E : Env IpaVesta.curve nc) (log2s : List ℕ) :
     Option (KnownDomains E) :=
-  if h : (log2s.map fun d : ℕ => (d : Fp)).Nodup ∧ (∀ d ∈ log2s, E.cvk.zkRows ≤ 2 ^ d) ∧
-      E.cvk.domainLog2 ∈ log2s then
-    some ⟨log2s, h.1, h.2.1, h.2.2⟩
+  if h : (∀ d ∈ log2s, d ≤ IpaVesta.curve.twoAdicity) ∧ (∀ d ∈ log2s, E.cvk.zkRows ≤ 2 ^ d) then
+    some ⟨log2s, h.1, h.2⟩
   else none
 
 /-- `finalizeOtherProofStep` with the verifier key's parameters, the `Fp` token stream, and
@@ -279,8 +301,7 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     exact halvesTies_of_cast Vg claimsG Vs claimsS evals mask prevChallenges hc
       ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
   -- the selected domain is the key's: two candidates of one size are one candidate
-  have hd : d₀ = ⟨E.cvk.domainLog2, E.cvk.omega⟩ :=
-    List.inj_on_of_nodup_map domains.nodup hd₀ domains.key_mem (hL.symm.trans hdom)
+  have hd : d₀ = ⟨E.cvk.domainLog2, E.cvk.omega⟩ := domains.eq_key hd₀ (hL.symm.trans hdom)
   have hn : 2 ^ d₀.log2 = E.cvk.n := by rw [hd]; rfl
   have hω : d₀.generator = E.cvk.omega := by rw [hd]
   -- the circuit absorbs the kept challenge cells; their values are the proof's accumulators

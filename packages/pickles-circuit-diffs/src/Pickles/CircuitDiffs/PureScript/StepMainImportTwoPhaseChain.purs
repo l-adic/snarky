@@ -125,8 +125,8 @@ compileStepMainImportTwoPhaseChainWithConstants params = do
   srsData tpcArt makeZeroArt selfLog2 =
     { blindingH: params.blindingH
     , perSlotFopDomainLog2s:
-        -- slot 0: the import's step domains, sorted as OCaml's
-        -- `domain_for_compiled` takes them; slot 1: this compile's own
+        -- slot 0: the import's step domains, in its branch order
+        -- (make_zero, increment); slot 1: this compile's own
         (NEA.cons' makeZeroArt.stepDomainLog2 [ tpcArt.stepDomainLog2 ])
           :< (NEA.singleton selfLog2)
           :< Vector.nil
