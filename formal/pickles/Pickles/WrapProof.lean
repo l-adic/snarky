@@ -13,6 +13,10 @@ The top-level statement for a wrap proof (Pallas commitments), the twin of
 satisfying the next wrap circuit's scalar half with its `finalized` bit set, the readings of
 their inputs as the wire's proof, and the ties between them, make the deployed verifier accept.
 
+The statement is about a slot that must verify: the scalar half asserts `finalized`. A base-case
+slot has no proof to verify, and the deployed circuits accept it without one; their read over
+every slot is `stepWrap_kimchiVerify`.
+
 The two halves run in different circuits over different fields, so each is compiled
 (`Snarky.compile`) over its input and appears as its constraint system, satisfied by its own
 valuation (`builder_spec_iff`).
@@ -119,7 +123,8 @@ open WrapProof in
 `verify` and the wrap circuit's scalar half, each compiled over its input and satisfied, with
 the inputs reading as the wire's proof (`InputReads`), the key cells as the key (`VkReads`)
 and the wrap circuit's claim cells holding the step circuit's (`SplitClaimsCast`): under the
-proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
+proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. The slot must
+verify; the base case is `stepWrap_kimchiVerify`'s. -/
 theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
     (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve nc)
     (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)

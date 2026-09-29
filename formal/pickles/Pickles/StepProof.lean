@@ -12,6 +12,10 @@ circuit's verify block, a valuation satisfying the next step circuit's scalar ha
 `finalized` bit set, the readings of their inputs as the wire's proof, and the ties between
 them, make the deployed verifier accept.
 
+The statement is about a slot that must verify: the scalar half asserts `finalized`. A base-case
+slot has no proof to verify, and the deployed circuits accept it without one; their read over
+every slot is `wrapStep_kimchiVerify`.
+
 `kimchiVerify` accepts exactly when its guards hold, the opening's Schnorr equation holds at
 the run's own scalars, and `sg` is the challenge polynomial's commitment
 (`kimchiVerify_reflects`, `verifyWith`). The group circuit proves the equation at the claimed
@@ -135,7 +139,8 @@ open StepProof in
 verify block and the step circuit's scalar half, each compiled over its input and satisfied,
 with the inputs reading as the wire's proof (`InputReads`), the key cells as the key
 (`VkReads`) and the wrap circuit's claim cells holding the step circuit's (`ClaimsCast`): under the
-proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
+proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. The slot must
+verify; the base case is `wrapStep_kimchiVerify`'s. -/
 theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
     (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve nc)
     (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
