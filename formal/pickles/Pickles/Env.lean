@@ -27,7 +27,7 @@ that joins them: the key's chunk count is the run's at the SRS (`chunkCount`). W
 ## Main results
 
 * `Key.omega_prim`, `three_le_zkRowsOf`: the generator is primitive on the domain, and there are
-  at least three zero-knowledge rows at any chunk count;
+  at least three zero-knowledge rows at any positive chunk count;
 * `Key.chunk_lt`, `Key.chunk_add_le`: at the run's chunk count, every chunk starts within the
   domain and holds `min (2^k) n` of its points;
 * `Key.lagrange_ne`: where the SRS avoids the Lagrange relations, every chunk of the key's

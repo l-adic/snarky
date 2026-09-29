@@ -172,8 +172,7 @@ def GroupHalf.Reads {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : Ki
 prechallenge at the half's own cells makes `xiCorrect` read `1`. It needs the low half of the
 `ξ` split range-checked: unchecked, the prover could witness a low half at or above `2¹²⁸`
 whose split stays below the modulus, and `xiCorrect` would read `0` at an honest claim. -/
-private def ScalarHalf.XiExact {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k)
+private def ScalarHalf.XiExact {nc : ℕ} (σ : SRS C.Point) (cp : KimchiProof C nc σ.k)
     (Sc : ScalarHalf C sf' σ.k nc w)
     (out : FopOutput C.ScalarField) : Prop :=
   let pre := frPrechallenges C.frSponge.params
@@ -259,7 +258,7 @@ private theorem ScalarHalf.xiExact_of_constrained {nc : ℕ} (σ : SRS C.Point) 
       true cvk.n cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
       Sc.side.read Sc.side.unshiftV Sc.V out)
-    (ht : HalvesTies G Sc) : Sc.XiExact σ cvk cp out := by
+    (ht : HalvesTies G Sc) : Sc.XiExact σ cp out := by
   have hinjS := castInj128_of_lt _ hscalar
   obtain ⟨⟨dv, -, hSdv⟩, -⟩ := ht
   have hαSa := hSdv.alpha
@@ -595,8 +594,8 @@ theorem twoHalves_schnorr
   obtain rfl := Reads128.unique hinjS hαSa hαS
   obtain rfl := Reads128.unique hinjS hζSz hζS
   simp only [FopReadsWire, FopChecks, FopParams.of, FopSide.unshiftV_read] at hs
-  -- the parameters are the curve's and the chunk count's, which the key's fields are
-  simp only [← K.endo_eq, ← K.shifts_eq, ← K.zkRows_eq] at hs
+  -- the zero-knowledge rows are the chunk count's, which the key's are
+  simp only [← K.zkRows_eq] at hs
   obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiF, -, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
   obtain rfl : ξ₀ = ξ₀' := Reads128.unique hinjS hξSx hξS
   -- the scalar half's inputs are the run's

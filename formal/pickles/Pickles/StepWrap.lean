@@ -549,7 +549,7 @@ theorem stepWrap_kimchiVerify
       let sl := hd.1.slots[Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)]
       -- the slot's wrap key `K`, one chunk over the wrap SRS: its source fits `K`, its key
       -- cells read as `K`
-      ∀ (K : Key IpaPallas.curve 1) (hK : 1 = chunkCount S.σ.k K.cvk.domainLog2),
+      ∀ K : Key IpaPallas.curve 1, 1 = chunkCount S.σ.k K.cvk.domainLog2 →
       (srcs i).Fits S.σ K.cvk →
       KeyReads IpaPallas.curve Vg ((srcs i).keyCells r.vk.points) K.cvk →
       -- no relation the slot statements' public-input commitment names commits the SRS to the
@@ -572,7 +572,7 @@ theorem stepWrap_kimchiVerify
   intro r hd hb htie i hmv inp sl K hK hfit hkey havoid j hpin hdom
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads S P domains (by norm_num [MaxProofsVerified, StepIPARounds]) srcs
+    (stepMain_reads S.σ P domains (by norm_num [MaxProofsVerified, StepIPARounds]) srcs
       (fun _ _ => True)
       (fun _ _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
       (hn.trans hw) hws (constPt dummySg) dummyUnf rule adv
@@ -586,7 +586,7 @@ theorem stepWrap_kimchiVerify
   have hf := slotProof_fopTies (Vg := Vg) (Vs := Vs) S.σ K.cvk (inp := inp) sl.unfinalized
     sl.evals sl.prevChallenges (inp.publicInputAt K.cvk Vg ms)
   refine ⟨cp, ms, hwire, hf, fun hguard hsg => ?_⟩
-  obtain ⟨v, hv, hv1⟩ := hslot K hK hfit havoid cp ms hwire
+  obtain ⟨v, hv, hv1⟩ := hslot S rfl K hK hfit havoid cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens) widths

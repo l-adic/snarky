@@ -56,8 +56,6 @@ Pickles.WrapIPARounds
 Pickles.avoids_stepRelationsAt_iff -- the drivers decide its right side
 Pickles.KnownDomains.ofList?
 Pickles.accOk
-Pickles.carry
 Pickles.carryWith_lagrangePoints -- the drivers decide the carry at memoized points
-Pickles.sgOk
 Pickles.sgOkWith_lagrangePoints -- the drivers decide sgOk at memoized points
 -- script-surface:end

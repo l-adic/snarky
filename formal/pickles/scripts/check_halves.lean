@@ -417,8 +417,9 @@ def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Optio
 /-- An entry's SRS and key, both checked, at the key's chunk count. -/
 abbrev Checked (C : Ipa.KimchiCurve) := (nc : ℕ) × Pickles.Srs C × Pickles.Key C nc
 
-/-- An entry's checked SRS and key (`Srs.check`, `Key.check`), with the key's chunk count the
-SRS's, built once per key and handed back for every later entry under the same key. -/
+/-- An entry's checked SRS and key (`Srs.check`, `Key.check`), built once per key and handed
+back for every later entry under the same key. The key is parsed at the run's chunk count
+(`Wire.runNc`), which is the SRS's on its domain (`chunkCount`) by definition. -/
 def keyFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (keys : IO.Ref (List (String × Checked C)))
     (e : Cache.Entry C) : IO (Checked C) := do
@@ -434,8 +435,6 @@ def keyFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
         curve's, zk_rows is not the chunk count's or is above the domain, the generator is not \
         primitive on the domain, or its digest is not its commitments' (a commitment outside \
         the model, such as a lookup or optional gate, was absorbed)")
-  unless nc = Kimchi.Verifier.chunkCount σ.k cvk.domainLog2 do
-    throw (IO.userError s!"the key's chunk count {nc} is not the SRS's on its domain")
   keys.modify ((key, ⟨nc, S, K⟩) :: ·)
   return ⟨nc, S, K⟩
 
@@ -485,8 +484,8 @@ decided on a wrap entry and the step entry it wrapped — so the theorem's assum
 shown to hold together on a proof the real prover made, and its conclusion is checked at the
 public input it names:
 
-* the step SRS and key pass their checks (`Srs.check`, `Key.check`), and the key's chunk
-  count is the SRS's on its domain (`hnc`);
+* the step SRS and key pass their checks (`Srs.check`, `Key.check`); the key is parsed at the
+  SRS's chunk count on its domain, so `hnc` holds by definition (`Wire.runNc`);
 * the file's step domains form a `KnownDomains`, and the wrap statement's `domain_log2` is
   the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
@@ -591,8 +590,8 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
 decided on a step entry's slot and the wrap entry that slot verified — the twin of
 `theoremHyps`:
 
-* the wrap SRS and key pass their checks (`Srs.check`, `Key.check`), and the key's chunk
-  count is the SRS's on its domain (`hnc`);
+* the wrap SRS and key pass their checks (`Srs.check`, `Key.check`); the key is parsed at the
+  SRS's chunk count on its domain, so `hnc` holds by definition (`Wire.runNc`);
 * the packed wrap statement, carried into the step field and flattened with its
   optional-feature cells, is the wrap proof's public input (`stepPublicInput`);
 * the packed statement fits in the SRS (`hsmall`), and the SRS avoids the step relations

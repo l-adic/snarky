@@ -11,9 +11,10 @@ descriptors) are excluded: they are noise, not authored code.
 
 Script surface: a root inside a `-- script-surface:begin` / `-- script-surface:end` block in
 a manifest declares a declaration consumed by the `scripts/` drivers rather than the library.
-The gate additionally checks each such name textually appears in some scripts/ file, so the
-blocks cannot rot into general exemption dumps. A trailing `-- synthesis: ...` comment
-exempts a line from the textual check (instances are found by class resolution, not by name).
+The gate additionally checks each such name textually appears in some scripts/ file as a whole
+name, never inside a longer one, so the blocks cannot rot into general exemption dumps. A
+trailing `-- synthesis: ...` comment exempts a line from the textual check (instances are found
+by class resolution, not by name).
 
 Every package is audited. A root is in a manifest for one of four reasons, and the manifests'
 sections say which:
@@ -148,6 +149,14 @@ partial def reachable (env : Environment) (roots : Array Name) : NameSet :=
       go (fresh.foldl (·.insert ·) seen) (fresh.toList ++ rest)
   go (roots.foldl (·.insert ·) ∅) roots.toList
 
+/-- Whether `id` occurs in `s` as a whole name component rather than inside a longer name, as
+`sgOk` does inside `sgOkWith`. -/
+def mentions (s id : String) : Bool :=
+  let idChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?'
+  let parts := s.splitOn id
+  (parts.zip parts.tail).any fun (a, b) =>
+    (a.isEmpty || !idChar a.back) && (b.isEmpty || !idChar b.front)
+
 end Kimchi.DeadCode
 
 run_cmd do
@@ -186,7 +195,7 @@ run_cmd do
       corpus := corpus ++ (← IO.FS.readFile e.path)
   let mut unanchored : Array Name := #[]
   for (n, exempt) in surface do
-    if !exempt && (corpus.splitOn n.getString!).length ≤ 1 then
+    if !exempt && !Kimchi.DeadCode.mentions corpus n.getString! then
       unanchored := unanchored.push n
   let live := Kimchi.DeadCode.reachable env roots
   -- all authored declarations under the dead-zero contract
