@@ -30,11 +30,16 @@ variable (C : Ipa.KimchiCurve)
 
 variable {nc : ℕ}
 
-/-- The run's fq-sponge oracles, `fqOracles` at the run's own public commitment, over the key's
-Lagrange points. -/
+/-- The run's public commitment: `publicCommitment` at the key's first `pub.size` Lagrange
+points. -/
+def runPublicComm (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField) :
+    Vector C.Point nc :=
+  publicCommitment C σ (cvk.lagrangePoints σ pub.size).toArray pub
+
+/-- The run's fq-sponge oracles, `fqOracles` at the run's own public commitment. -/
 def runOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : FqOracles C :=
-  fqOracles C cvk cp (publicCommitment C σ (cvk.lagrangePoints σ pub.size) pub)
+  fqOracles C cvk cp (runPublicComm C σ cvk pub)
 
 /-- The second batch point `ζω`. -/
 def runZetaOmega (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -131,8 +136,7 @@ def runStreamP (σ : SRS C.Point) (cvk : KimchiVK C nc)
       bPoly a.u.get (runZetaOmega C σ cvk cp pub))), by simp⟩
     : Vector (C.Point × C.ScalarField × C.ScalarField) cp.olds.size)
     ++ ((Vector.ofFn fun c : Fin nc =>
-          ((publicCommitment C σ (cvk.lagrangePoints σ pub.size) pub)[c], pe.zeta[c],
-            pe.zetaOmega[c]))
+          ((runPublicComm C σ cvk pub)[c], pe.zeta[c], pe.zetaOmega[c]))
         ++ (⟨#[(runFtComm C σ cvk cp pub,
                runFtEval0P C σ cvk cp pub
                  (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray),
@@ -162,6 +166,60 @@ def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
   runInputP C σ cvk cp pub (runPubEvals C σ cvk cp pub)
     (runFrOracles C σ cvk cp pub).xi (runFrOracles C σ cvk cp pub).r
 
+
+/-- The verifier body's run at the run's public commitment is the run functions' warm sponge and
+IPA input. Drivers compute it once, at a public commitment to memoized points. -/
+theorem runAt_runPublicComm (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
+    runAt C σ cvk cp pub (runPublicComm C σ cvk pub)
+      = ((runOracles C σ cvk cp pub).warm, runInput C σ cvk cp pub) := rfl
+
+/-! ## Zero public-input cells
+
+Zero cells past the end of the public input change no run function: the input enters only
+through the public commitment and the barycentric evaluations, and a zero cell adds nothing to
+either. -/
+
+section AppendZero
+
+variable (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+  (pub zs : Array C.ScalarField) (hz : ∀ z ∈ zs, z = 0)
+include hz
+
+theorem runPublicComm_append_zero :
+    runPublicComm C σ cvk (pub ++ zs) = runPublicComm C σ cvk pub := by
+  unfold runPublicComm
+  rw [publicCommitment_append_zero C σ _ pub zs hz (by simp),
+    publicCommitment_lagrangePoints_of_le C σ cvk pub (by simp)]
+
+theorem runOracles_append_zero :
+    runOracles C σ cvk cp (pub ++ zs) = runOracles C σ cvk cp pub := by
+  simp only [runOracles, runPublicComm_append_zero C σ cvk pub zs hz]
+
+theorem runZetaN_append_zero : runZetaN C σ cvk cp (pub ++ zs) = runZetaN C σ cvk cp pub := by
+  simp only [runZetaN, runOracles_append_zero C σ cvk cp pub zs hz]
+
+theorem runZetaM_append_zero : runZetaM C σ cvk cp (pub ++ zs) = runZetaM C σ cvk cp pub := by
+  simp only [runZetaM, runOracles_append_zero C σ cvk cp pub zs hz]
+
+theorem runPubEvals_append_zero :
+    runPubEvals C σ cvk cp (pub ++ zs) = runPubEvals C σ cvk cp pub := by
+  simp only [runPubEvals, runZetaOmega, runZetaN, runZetaOmegaN,
+    runOracles_append_zero C σ cvk cp pub zs hz, publicEvalChunks_append_zero _ _ _ _ _ _ _ _ _ hz]
+
+theorem runPScalar_append_zero :
+    runPScalar C σ cvk cp (pub ++ zs) = runPScalar C σ cvk cp pub := by
+  simp only [runPScalar, runLinEvals, runZetaM, runZetaOmegaM, runZetaOmega,
+    runOracles_append_zero C σ cvk cp pub zs hz]
+
+theorem runInput_append_zero :
+    runInput C σ cvk cp (pub ++ zs) = runInput C σ cvk cp pub := by
+  simp only [runInput, runInputP, runStreamP, runFrOracles, runFtComm, runFComm, runFtEval0P,
+    runPScalar, runLinEvals, runZetaOmega, runZetaN, runZetaM, runZetaOmegaM,
+    runOracles_append_zero C σ cvk cp pub zs hz, runPubEvals_append_zero C σ cvk cp pub zs hz,
+    runPublicComm_append_zero C σ cvk pub zs hz]
+
+end AppendZero
 
 /-! ## The body reflection -/
 

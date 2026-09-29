@@ -342,7 +342,7 @@ prechallenges (the transcript range-checks them), and the claimed `α`, `ζ`, on
 def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (inp : IvpClaims (FVar C.BaseField) sf)
     (o : IvpOutput C.BaseField) : Prop :=
-  let pre := fqRun C cvk cp (publicCommitment C σ cvk pub)
+  let pre := fqRun C cvk cp (runPublicComm C σ cvk pub)
   let r := ipaRunAt C pre.warm (S.decode inp.deferred.combinedInnerProduct) cp.opening
   let run := runInput C σ cvk cp pub
   pre.digestElem = o.spongeDigest.val V ∧
@@ -502,7 +502,7 @@ tail. -/
 private theorem runInput_comms {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     (runInput C σ cvk cp pub).commitments.toList
-      = (cp.olds.map (·.sg)).toList ++ ((publicCommitment C σ cvk pub).toList
+      = (cp.olds.map (·.sg)).toList ++ ((runPublicComm C σ cvk pub).toList
         ++ [runFtComm C σ cvk cp pub] ++ ((tailRowsOf C cvk cp).flatten.map (·.1)).toList) := by
   show ((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map (·.1)).toList = _
   simp [runStreamP, Vector.toList_append, Function.comp_def, Vector.toList_push]
@@ -511,7 +511,7 @@ private theorem runInput_comms {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C n
 commitments. -/
 private def restOf {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField) : List C.Point :=
-  (publicCommitment C σ cvk pub).toList ++ [runFtComm C σ cvk cp pub]
+  (runPublicComm C σ cvk pub).toList ++ [runFtComm C σ cvk cp pub]
     ++ ((tailRowsOf C cvk cp).flatten.map (·.1)).toList
 
 /-- The masked bases the wire's stream reads as: the olds under their bits, the rest kept. -/
@@ -552,7 +552,7 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
     {pub : Array C.ScalarField} {inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf}
     {oldsW : List (C.Point × Bool)}
     (hties : IvpTies S σ cvk cp inp oldsW) {xHat : List (AffinePoint (FVar C.BaseField))}
-    (hx : CommReads C V xHat (publicCommitment C σ cvk pub).toList)
+    (hx : CommReads C V xHat (runPublicComm C σ cvk pub).toList)
     {ftc : AffinePoint (FVar C.BaseField)}
     (hf : OnCurveAt C.E.toAffine V ftc (SWPoint.equivPoint C.E (runFtComm C σ cvk cp pub))) :
     List.Forall₂ (MaskedBaseReads C.E.toAffine V) (inp.bases xHat ftc)
@@ -740,9 +740,9 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (hlrne : inp.opening.lr.toList ≠ [])
     (tr : FqTranscriptOutput C.BaseField)
-    (hx : CommReads C V tr.xHat (publicCommitment C σ cvk pub).toList)
+    (hx : CommReads C V tr.xHat (runPublicComm C σ cvk pub).toList)
     (hFq : FqTranscriptReads C.sponge.params cvk.digest ((cp.olds.map (·.sg)).toList.map wirePt)
-      ((publicCommitment C σ cvk pub).toList.map wirePt)
+      ((runPublicComm C σ cvk pub).toList.map wirePt)
       (cp.wComm.toList.map fun P => P.toList.map wirePt) (cp.zComm.toList.map wirePt)
       (cp.tComm.toList.map wirePt) V tr)
     (hasrt : inp.plonk.chals.beta.val.val V = tr.beta.val.val V ∧
@@ -759,25 +759,25 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
   -- the wire's fq squeezes at these readings are `IvpReads`'s
   have hpre : fqSqueezes C.sponge.params cvk.digest
       (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
-      (((publicCommitment C σ cvk pub).toList.map wirePt).map pointCoords)
+      (((runPublicComm C σ cvk pub).toList.map wirePt).map pointCoords)
       ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
       ((cp.zComm.toList.map wirePt).map pointCoords) ((cp.tComm.toList.map wirePt).map pointCoords)
       = fqSqueezes C.sponge.params cvk.digest
         ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y))
-        (coords C (publicCommitment C σ cvk pub))
+        (coords C (runPublicComm C σ cvk pub))
         (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
         (cp.tComm.toList.map fun P => (P.x, P.y)) := by
     delta Kimchi.Verifier.coords
     simp only [pointCoords, wirePt, List.map_map, Function.comp_def]
   set fqW := fqSqueezes C.sponge.params cvk.digest
     (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
-    (((publicCommitment C σ cvk pub).toList.map wirePt).map pointCoords)
+    (((runPublicComm C σ cvk pub).toList.map wirePt).map pointCoords)
     ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
     ((cp.zComm.toList.map wirePt).map pointCoords) ((cp.tComm.toList.map wirePt).map pointCoords)
     with hfqW
   -- the wire's raw run, field by field, at those squeezes
   obtain ⟨hβ, hγ, hα, hζ, hd, hwarm⟩ :=
-    fqRun_eq_fqSqueezes C cvk cp (publicCommitment C σ cvk pub)
+    fqRun_eq_fqSqueezes C cvk cp (runPublicComm C σ cvk pub)
   rw [← hpre] at hβ hγ hα hζ hd hwarm
   unfold IvpReads
   dsimp only
@@ -885,7 +885,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
-      ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
+      ⦃⇓ pts _ => ⌜CommReads C V pts (runPublicComm C σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (h : IvpHyps S σ cvk cp pub optSponge spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
@@ -928,7 +928,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rw [List.map_eq_nil_iff] at h
       exact List.eq_nil_of_length_eq_zero (hties.proof.t.length_eq.trans (by rw [h]; rfl))
     have hchar' : ∀ k : ℕ, k ≤ 1 + 2 * ((oldsW.map fun b => (b.2, wirePt b.1)).length
-        + ((publicCommitment C σ cvk pub).toList.map wirePt).length
+        + ((runPublicComm C σ cvk pub).toList.map wirePt).length
         + (cp.wComm.toList.map fun P => P.toList.map wirePt).flatten.length
         + (cp.zComm.toList.map wirePt).length + (cp.tComm.toList.map wirePt).length) →
         (k : C.BaseField) = 0 → k = 0 := by
@@ -958,7 +958,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       fqSpongeTranscript_reads (V := V) S.curve.two_ne S.curve.three_ne S.curve.splitWidth _
         C.sponge.hsize endo d
         (inp.sgOld.map (·.2))
-        computeXHat (fun pts => CommReads C V pts (publicCommitment C σ cvk pub).toList) _
+        computeXHat (fun pts => CommReads C V pts (runPublicComm C σ cvk pub).toList) _
         (builder_spec_imp _ _ _ hXhat fun _ h => ⟨h, h.reads⟩) inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [htr, hasrt, hft, hcb]
     case vc1.hsize => exact C.sponge.hsize

@@ -71,7 +71,7 @@ structure InputReads (E : Env IpaPallas.curve nc) (cp : KimchiProof IpaPallas.cu
     (pub : Array Fq) (Vg : Valuation Fp) (Vs : Valuation Fq)
     (g : GroupVar ks E.σ.k nc) (s : ScalarVar E.σ.k nc) : Prop where
   /-- The wrap statement's cells are the public input. -/
-  statement : stepPublicInput E Vg g.statement = pub
+  statement : stepPublicInput Vg g.statement = pub
   /-- The slot must verify: its base-case bit reads `false`. -/
   mustVerify : CircuitType.Reads Vg g.isBaseCase false
   /-- The proof's cells read as the proof's. -/
@@ -140,9 +140,10 @@ theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the wrap circuit's claim cells hold the step circuit's, lifted into the wrap field
     (hc : SplitClaimsCast Vg (groupInput ks E.σ.k nc).claims Vs (scalarInput E.σ.k nc).claims)
-    -- the statement packs no more leaves than the SRS has points, and the SRS avoids the
-    -- public-input relations
+    -- the statement packs no more leaves than the SRS has points or the domain has elements,
+    -- and the SRS avoids the public-input relations
     (hsmall : (groupInput ks E.σ.k nc).statement.packed.length ≤ 2 ^ E.σ.k)
+    (hn : (groupInput ks E.σ.k nc).statement.packed.length ≤ E.cvk.n)
     (havoid : E.σ.Avoids (stepRelationsAt E (groupInput ks E.σ.k nc).statement))
     -- of the proof itself
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
@@ -155,7 +156,7 @@ theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
     (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex (groupInput ks E.σ.k nc) hbase
-      hsmall havoid hivp) _
+      hsmall hn havoid hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   exact (builder_spec_iff _ _).mp
     (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k nc) Vg _ v hv hv1 hc hf hsg) _

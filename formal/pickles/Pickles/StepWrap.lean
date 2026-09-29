@@ -156,14 +156,13 @@ private theorem UnfVal.ofWrap_toFields {k : ℕ} {Vs : Valuation Fq}
 
 /-- **The tie's statement is the wire's public input.** Flattened, `StmtVal.ofWrap` is the public
 input `wrapPublicInput` commits to, when the ladders bound every packed cell
-(`wrapMain_statement`) and the key has a Lagrange point per packed scalar. -/
+(`wrapMain_statement`). -/
 theorem StmtVal.ofWrap_toFields {ks n nc : ℕ} (E : Env IpaVesta.curve nc) (Vs : Valuation Fq)
     (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
-    (hbnd : ∀ x ∈ st.packed, x.Bound Vs)
-    (hlen : st.packed.length ≤ E.cvk.lagrangeBasis.size) :
+    (hbnd : ∀ x ∈ st.packed, x.Bound Vs) :
     (CircuitType.valueToFields (F := Fp) (var := StmtVar ks n) (StmtVal.ofWrap Vs st)).toList
       = (wrapPublicInput E Vs st).toList := by
-  rw [wrapPublicInput_toList E Vs st hlen]
+  rw [wrapPublicInput_toList E Vs st]
   have h1 : ∀ x : Fp, CircuitType.valueToFields (F := Fp) (var := FVar Fp) x = #v[x] :=
     fun _ => rfl
   simp only [StmtVal.ofWrap, CircuitType.valueToFields_prod, CircuitType.valueToFields_vector,
@@ -440,7 +439,7 @@ theorem stepWrap_kimchiVerify
     -- the unfinalized entry padding the step statement to the tag's `w` slots
     (dummyUnf : UnfVal E.σ.k)
     -- each slot's source: a proof of this system, or of another compiled one
-    (srcs : Fin n → SlotSource 1)
+    (srcs : Fin n → SlotSource 1 StepIPARounds)
     -- each slot verifies at most `MaxProofsVerified` accumulators
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified)
     -- the step circuit's valuation
@@ -549,7 +548,7 @@ theorem stepWrap_kimchiVerify
       let sl := hd.1.slots[Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)]
       -- the slot's wrap key `K`, over the wrap SRS: its source fits `K`, its key cells read as `K`
       ∀ (K : KimchiVK IpaPallas.curve 1) (hK : Env.Invariants E.σ K),
-      (srcs i).Fits K →
+      (srcs i).Fits E.σ K →
       KeyReads IpaPallas.curve Vg ((srcs i).keyCells r.vk.points) K →
       -- no relation the slot statements' public-input commitment names commits the SRS to the
       -- identity
@@ -579,8 +578,7 @@ theorem stepWrap_kimchiVerify
       (fun _ _ => True)
       (fun _ _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
       (hn.trans hw) hws (constPt dummySg) dummyUnf rule adv
-      (fun _ _ _ => (WrapStatement.packed_length _).trans_le
-        (by rw [hE]; norm_num [StepIPARounds, WrapIPARounds]))) 0
+      (fun _ _ _ => (WrapStatement.packed_length _).trans_le (by rw [hE]; decide))) 0
       (fun con hc => hstep con (mem_compile_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap proof the slot's cells hold
   obtain ⟨hon, holds⟩ := slotInput_onCurve (hws i) hdummySg r.prevs[i] r.unfs[i] r.msgs[i] hpts

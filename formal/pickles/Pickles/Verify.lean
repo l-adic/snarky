@@ -82,12 +82,13 @@ def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVa
   ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
   ++ [.b10 dv.branchData.packed]
 
-/-- A packed wrap statement's length: thirteen scalars, the `ks` round challenges and the branch
-data. -/
+/-- A packed wrap statement has one scalar per cell of `PackedWrapStatement`. -/
 theorem WrapStatement.packed_length
     (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
-    st.packed.length = 14 + ks := by
-  simp [WrapStatement.packed]
+    st.packed.length = CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) := by
+  have h1 : CircuitType.size Fp Fp = 1 := rfl
+  have ht : CircuitType.size Fp (Type1 Fp) = 1 := rfl
+  simp [WrapStatement.packed, h1, ht]
   omega
 
 /-- A packed wrap statement has no boolean cell: the branch data is one 10-bit scalar. -/
@@ -131,15 +132,6 @@ def StepStatement.packed {n : ℕ}
   st.proofState.unfinalizedProofs.toList.flatMap UnfinalizedProof.packed
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full
-
-/-- A packed step statement's length: `k + 17` scalars per slot, then its digests. -/
-theorem StepStatement.packed_length {n : ℕ}
-    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    st.packed.length = n * (k + 17) + 1 + n := by
-  simp only [StepStatement.packed, UnfinalizedProof.packed, List.length_append,
-    List.length_flatMap, List.length_map, List.length_cons, List.length_nil, Vector.length_toList]
-  simp [Nat.mul_comm]
-  omega
 
 /-- The group half's input with its claims taken from an unfinalized proof: `xi`,
 `combinedInnerProduct`, `b` and the plonk claims of its deferred values; the key, proof and
@@ -384,11 +376,24 @@ def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
       p.1.val.val V = p.2.val.val V) ∧
     ∃ b : Bool, (↑v : CVar C.BaseField).val V = bit b
 
+/-- Zero cells past the end of the public input change nothing the read speaks about: the input
+enters it only through the run's public commitment and IPA input, which they leave alone. -/
+theorem VerifyReads.append_zero {nc : ℕ} {S : IvpSide C V ops} {σ : SRS C.Point}
+    {cvk : KimchiVK C nc} {cp : KimchiProof C nc σ.k} {pub zs : Array C.ScalarField}
+    {u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf} {base : Bool}
+    {v : BoolVar C.BaseField} (hz : ∀ z ∈ zs, z = 0) (h : VerifyReads S σ cvk cp pub u base v) :
+    VerifyReads S σ cvk cp (pub ++ zs) u base v := by
+  simpa only [VerifyReads, IvpReads, runPublicComm_append_zero C σ cvk pub zs hz,
+    runInput_append_zero C σ cvk cp pub zs hz, runPScalar_append_zero C σ cvk cp pub zs hz,
+    runZetaM_append_zero C σ cvk cp pub zs hz, runZetaN_append_zero C σ cvk cp pub zs hz]
+    using h
+
 /-- **`verifyProof` reads as the group half at the packed statement, on either side.** On the
 group side `S` and the curve shape `X`: the wire's public input is
 `pubOf (packLeaves statement)`, the statement's scalars reduced to the scalar field; the
-public-input commitment tables are bound to the key at those leaves (`XhatTable.Bound`); the
-group half's premises hold at the claims-substituted cells (`IvpHyps`). -/
+public-input commitment tables are bound to the key's Lagrange points at those leaves
+(`XhatTable.Bound`); the group half's premises hold at the claims-substituted cells
+(`IvpHyps`). -/
 theorem verifyProof_reads
     {nc : ℕ}
     (S : IvpSide C V ops)
@@ -418,7 +423,9 @@ theorem verifyProof_reads
     -- the base-case bit's reading, the tables bound to the key at the packed statement's
     -- leaves, the group half's premises at the claims-substituted cells
     (hbase : CircuitType.Reads V isBaseCase base)
-    (htab : tab.Bound X V σ cvk blindingH (packLeaves statement tab))
+    (htab : tab.Bound X V σ
+      (cvk.lagrangePoints σ (pubOf C V (packLeaves statement tab)).size).toArray
+      blindingH (packLeaves statement tab))
     (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
@@ -438,16 +445,16 @@ theorem verifyProof_reads
         (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH tab.corrHead[ci]
         tab.corrSum[ci] (packLeaves statement tab))
       ⦃⇓ pts _ => ⌜CommReads C V pts
-        (publicCommitment C σ cvk (pubOf C V (packLeaves statement tab))).toList⌝⦄ := by
-    have hvec : (publicCommitment C σ cvk (pubOf C V (packLeaves statement tab))).toList
+        (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList⌝⦄ := by
+    have hvec : (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList
         = (List.finRange nc).map fun ci =>
-            (publicCommitment C σ cvk (pubOf C V (packLeaves statement tab)))[ci] := by
+            (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab)))[ci] := by
       apply List.ext_getElem <;> simp
     unfold CommReads
     rw [hvec]
     refine builder_spec_imp _ _ _
       (builder_spec_mapM _ (fun r P => OnCurveAt X.d.W V r (SWPoint.equivPoint C.E P)) _
-        (fun ci => xHatKnown_reads_publicCommitment X ci σ cvk blindingH tab.corrHead[ci]
+        (fun ci => xHatKnown_reads_publicCommitment X ci σ _ blindingH tab.corrHead[ci]
           tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _)
       fun pts hp => hp.imp fun _ _ h => h
   -- the blinding cell's read is the tables' own: every chunk's binding carries it
@@ -493,7 +500,10 @@ theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (cells : IvpInput σ.k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (base : Bool) (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V isBaseCase base)
-    (htab : tab.Bound pastaShapePallas V σ cvk blindingH (packLeaves statement tab))
+    (htab : tab.Bound pastaShapePallas V σ
+      (cvk.lagrangePoints σ (pubOf IpaPallas.curve V (packLeaves statement tab)).size).toArray
+      blindingH
+      (packLeaves statement tab))
     (hivp : IvpHyps (stepSide V) σ cvk cp (pubOf IpaPallas.curve V (packLeaves statement tab))
       false spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄

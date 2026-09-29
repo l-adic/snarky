@@ -32,8 +32,8 @@ The last section is the wire crossing: `xHat_reads_publicCommitment` and
 integer→scalar reduction is exact — the read carries no slack), instantiated at
 `pastaShapeVesta` (Vesta) and `pastaShapePallas` (Pallas).
 
-The tables the gadgets take are a verifier key's data, so the module ends by computing them:
-a packed scalar list (`PackedScalar`) against a key's Lagrange points gives the leaves
+The tables the gadgets take are fixed by the key's domain and the SRS, so the module ends by
+computing them: a packed scalar list (`PackedScalar`) against the Lagrange points gives the leaves
 (`packLeavesOf`) and the tables (`XhatTable.ofKey`, `XhatTable.ofKeyKnown`), bound as the
 reads require (`xhatBinding_const`, `bound_ofKeyKnown`), with the known-domain fold's
 correction sum a commitment to named coefficients (`corrCoeffs`, `corrSumPt_map_msm`). The
@@ -1484,12 +1484,12 @@ additive-equiv algebra over `publicCommitment_eq_sum`; the wire crossing instant
 `SWPoint.equivPoint`. -/
 theorem equivPoint_publicCommitment {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ} {G : Type}
     [AddCommGroup G] (e : C.Point ≃+ G) (σ : Bulletproof.SRS C.Point)
-    (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (lagrange : Array (Vector C.Point nc))
     (pub : Array C.ScalarField) (ci : Fin nc) (hne : pub.size ≠ 0) :
-    e ((Kimchi.Verifier.publicCommitment C σ cvk pub)[ci])
-      = (((cvk.lagrangeBasis.extract 0 pub.size).zip pub).toList.map
+    e ((Kimchi.Verifier.publicCommitment C σ lagrange pub)[ci])
+      = (((lagrange.extract 0 pub.size).zip pub).toList.map
           (fun Pp => (-Pp.2).val • e (Pp.1[ci]))).sum + e σ.h := by
-  rw [Kimchi.Verifier.publicCommitment_eq_sum C σ cvk pub hne]
+  rw [Kimchi.Verifier.publicCommitment_eq_sum C σ lagrange pub hne]
   simp only [Fin.getElem_fin, Vector.getElem_ofFn, map_add, map_list_sum, List.map_map,
     Function.comp_def, map_nsmul]
 
@@ -1694,13 +1694,13 @@ scalar, and the gadget pairs leaf `i`'s base — read as that same Lagrange base
 its own scalar. The circuit-field → scalar-field reduction is the cast, so the scalars agree. -/
 private theorem crossing_list {C : Bulletproof.Ipa.KimchiCurve} {d : HasCurve F}
     (e : C.Point ≃+ d.W.Point) (ci : Fin nc) (V : Valuation F)
-    (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (lagrange : Array (Vector C.Point nc))
     (leaves : List (Leaf F nc)) (Ts : List d.W.Point)
     (hlen : Ts.length = leaves.length)
-    (hsize : leaves.length ≤ cvk.lagrangeBasis.size)
+    (hsize : leaves.length ≤ lagrange.size)
     (htie : ∀ (i : ℕ) (hi : i < leaves.length),
-      Ts[i]'(hlen ▸ hi) = e ((cvk.lagrangeBasis[i]'(lt_of_lt_of_le hi hsize))[ci])) :
-    ((cvk.lagrangeBasis.extract 0 (pubOf C V leaves).size).zip (pubOf C V leaves)).toList.map
+      Ts[i]'(hlen ▸ hi) = e ((lagrange[i]'(lt_of_lt_of_le hi hsize))[ci])) :
+    ((lagrange.extract 0 (pubOf C V leaves).size).zip (pubOf C V leaves)).toList.map
         (fun Pp => (-Pp.2).val • e (Pp.1[ci]))
       = (leaves.zip Ts).map
           (fun p => ((-(↑(ToNat.toNat (p.1.scalarVar.val V)) : C.ScalarField)).val : ℕ) • p.2) := by
@@ -1790,7 +1790,7 @@ their correction points. The gadget-specific seed facts (`leafHasScalar` for the
 `leafHeadScalar` and the constant correction sum for the known-domain fold) stay beside the
 read they serve. -/
 structure XhatBinding (s : PastaShape C) (ci : Fin nc) (V : Valuation C.BaseField)
-    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (σ : Bulletproof.SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (Ts cps : List s.d.W.Point) : Prop where
   /-- The blinding cell reads as the verifier's SRS blinding `σ.h`, crossed to the point group. -/
@@ -1802,29 +1802,29 @@ structure XhatBinding (s : PastaShape C) (ci : Fin nc) (V : Valuation C.BaseFiel
   /-- Each leaf's correction is the honest shift `-(2^L)·base`. -/
   hon : ∀ leaf ∈ leaves, CorrHonest s.d ci V leaf
   /-- There are at least as many Lagrange bases as public-input leaves. -/
-  hsize : leaves.length ≤ cvk.lagrangeBasis.size
+  hsize : leaves.length ≤ lagrange.size
   /-- Each leaf's chunk base reads as the verifier's Lagrange base at that index — the walk-order
   tie the packing item owns. -/
   bases : ∀ (i : ℕ) (hi : i < leaves.length),
     OnCurveAt s.d.W V (leafBaseAt ci leaves[i])
-      (SWPoint.equivPoint C.E ((cvk.lagrangeBasis[i]'(lt_of_lt_of_le hi hsize))[ci]))
+      (SWPoint.equivPoint C.E ((lagrange[i]'(lt_of_lt_of_le hi hsize))[ci]))
 
 /-- **The wire's `publicCommitment`, crossed, is `-(publicMsm) + h`.** The shared half of the two
 gadget reads: `equivPoint_publicCommitment` unfolds the wire's MSM, `crossing_list` ties each
 Lagrange base to the leaf's base reading, and `neg_publicMsm_sum` moves the negation through
 the exact integer → scalar reduction (`CommitmentCurve.affine_card_nsmul`). -/
 private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
-    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (σ : Bulletproof.SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
-    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hne : leaves ≠ []) :
-    SWPoint.equivPoint C.E (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci]
+    SWPoint.equivPoint C.E (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci]
       = -(publicMsm V leaves Ts) + SWPoint.equivPoint C.E σ.h := by
   haveI : NeZero C.scalar := ⟨(Fact.out : C.scalar.Prime).ne_zero⟩
   have hlen : Ts.length = leaves.length := (List.Forall₂.length_eq hbind.pre).symm
   have htie : ∀ (i : ℕ) (hi : i < leaves.length),
       Ts[i]'(hlen ▸ hi)
-        = SWPoint.equivPoint C.E ((cvk.lagrangeBasis[i]'(lt_of_lt_of_le hi hbind.hsize))[ci]) := by
+        = SWPoint.equivPoint C.E ((lagrange[i]'(lt_of_lt_of_le hi hbind.hsize))[ci]) := by
     intro i hi
     have hpre_i : LeafPre ci V leaves[i] (Ts[i]'(hlen ▸ hi)) :=
       hbind.pre.get hi (hlen ▸ hi)
@@ -1838,21 +1838,21 @@ private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.Bas
     rw [publicMsm]
     exact neg_publicMsm_sum C.scalar
       (fun leaf => ToNat.toNat (leaf.scalarVar.val V)) (leaves.zip Ts)
-  rw [equivPoint_publicCommitment (SWPoint.equivPoint C.E) σ cvk (pubOf C V leaves) ci hne',
-    crossing_list (SWPoint.equivPoint C.E) ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
+  rw [equivPoint_publicCommitment (SWPoint.equivPoint C.E) σ lagrange (pubOf C V leaves) ci hne',
+    crossing_list (SWPoint.equivPoint C.E) ci V lagrange leaves Ts hlen hbind.hsize htie, hpm]
 
 /-- The fold after either gadget's prepass reads as the wire's `publicCommitment`, given the
 binding. -/
 private theorem xHatFold_reads (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
-    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (σ : Bulletproof.SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
-    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hscalar : leafHasScalar leaves) :
     ⦃⌜True⌝⦄
     publicInputCommitFold (S := Builder V (KimchiConstraint C.BaseField)) blindingH leaves
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄ := by
   have hne : leaves ≠ [] := by
     rintro rfl; simp [leafHasScalar] at hscalar
   refine builder_spec_imp _ _ _
@@ -1862,7 +1862,7 @@ private theorem xHatFold_reads (s : PastaShape C) (ci : Fin nc) {V : Valuation C
       (le_trans (by norm_num) s.order_big)
       (fun leaf _ => s.regime V leaf)
       hbind.blinding hbind.pre hbind.corr hscalar hbind.hon) fun r hr => ?_
-  rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
+  rw [xhat_cross s ci σ lagrange blindingH leaves Ts cps hbind hne]; exact hr
 
 /-- **The wrap-side gadget reads as the wire verifier's `publicCommitment`.** The binding
 is asked for only under the boolean leaves' booleanity, which the gadget's bit pre-pass
@@ -1872,26 +1872,26 @@ top-bit pin, `-(Σ [scalarₗ]·baseₗ) + h`; this crosses that to the wire's `
 through `SWPoint.equivPoint`, and the integer → scalar reduction is exact
 (`CommitmentCurve.affine_card_nsmul`), so the read carries no slack. -/
 theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
-    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (σ : Bulletproof.SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (Ts cps : List s.d.W.Point)
     (hbind : (∀ leaf ∈ leaves, leaf.bitBoolean V) →
-      XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+      XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hscalar : leafHasScalar leaves) :
     ⦃⌜True⌝⦄
     publicInputCommitFull (S := Builder V (KimchiConstraint C.BaseField)) blindingH leaves
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄ := by
   -- the gadget opens with the bit pre-pass, so its own rows give the leaves' booleanity
   show ⦃⌜True⌝⦄
     (constrainBits (S := Builder V (KimchiConstraint C.BaseField)) leaves >>= fun _ =>
       publicInputCommitFold blindingH leaves)
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄
   exact builder_spec_bind_of _ _ _ _ (constrainBits_boolean (V := V) leaves) fun hb _ =>
-    xHatFold_reads s ci σ cvk blindingH leaves Ts cps (hbind hb) hscalar
+    xHatFold_reads s ci σ lagrange blindingH leaves Ts cps (hbind hb) hscalar
 
 /-- Leaves reading the same carry the same public input. -/
 private theorem Leaf.SameReads.pubOf {V : Valuation C.BaseField}
@@ -1905,11 +1905,11 @@ private theorem Leaf.SameReads.pubOf {V : Valuation C.BaseField}
 
 /-- A binding carries to leaves reading the same, as sealed or masked leaves do. -/
 private theorem XhatBinding.ofSameReads {s : PastaShape C} {ci : Fin nc} {V : Valuation C.BaseField}
-    {σ : Bulletproof.SRS C.Point} {cvk : Kimchi.Verifier.KimchiVK C nc}
+    {σ : Bulletproof.SRS C.Point} {lagrange : Array (Vector C.Point nc)}
     {blindingH : AffinePoint (FVar C.BaseField)} {leaves leaves' : List (Leaf C.BaseField nc)}
-    {Ts cps : List s.d.W.Point} (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    {Ts cps : List s.d.W.Point} (hbind : XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hs : List.Forall₂ (Leaf.SameReads V) leaves leaves') :
-    XhatBinding s ci V σ cvk blindingH leaves' Ts cps where
+    XhatBinding s ci V σ lagrange blindingH leaves' Ts cps where
   blinding := hbind.blinding
   pre := Leaf.SameReads.forall₂ (R := LeafPre ci V) (fun h hp => h.leafPre ci hp) hs hbind.pre
   corr := Leaf.SameReads.forall₂ (R := CorrPre ci V) (fun h hc => h.corrPre ci hc) hs hbind.corr
@@ -1925,17 +1925,17 @@ across branches); the walk establishes the boolean leaves' booleanity itself. Ot
 `xHat_reads_publicCommitment`. -/
 theorem xHatSealed_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
     {V : Valuation C.BaseField}
-    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (σ : Bulletproof.SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (Ts cps : List s.d.W.Point)
     (hbind : (∀ leaf ∈ leaves, leaf.bitBoolean V) →
-      XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+      XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hscalar : leafHasScalar leaves) :
     ⦃⌜True⌝⦄
     publicInputCommitSealed (S := Builder V (KimchiConstraint C.BaseField)) blindingH leaves
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄ := by
   have hmap := builder_spec_mapM (sealLeaf (S := Builder V (KimchiConstraint C.BaseField)))
     (fun r a => Leaf.SameReads V a r ∧ a.bitBoolean V) id sealLeaf_spec leaves
   simp only [publicInputCommitSealed]
@@ -1947,7 +1947,7 @@ theorem xHatSealed_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
     (hrel.flip.imp fun _ _ h => ⟨h.2, h.1⟩ : List.Forall₂ (fun a r => a.bitBoolean V ∧
       Leaf.SameReads V a r) leaves rs)
   rw [← Leaf.SameReads.pubOf hs]
-  exact xHatFold_reads s ci σ cvk blindingH rs Ts cps ((hbind hb).ofSameReads hs)
+  exact xHatFold_reads s ci σ lagrange blindingH rs Ts cps ((hbind hb).ofSameReads hs)
     (Leaf.SameReads.hasScalar hs hscalar) st trivial
 
 /-- **The step-side gadget reads as the wire verifier's `publicCommitment`.** The
@@ -1956,17 +1956,17 @@ known-domain shape (`publicInputCommitKnown`): the corrections are constants, so
 a scalar leaf. Otherwise `xHat_reads_publicCommitment`. -/
 theorem xHatKnown_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
     {V : Valuation C.BaseField}
-    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (σ : Bulletproof.SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (blindingH corrHead corrSum : AffinePoint (FVar C.BaseField))
     (leaves : List (Leaf C.BaseField nc))
-    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hhead : leafHeadScalar leaves) (hC : OnCurveAt s.d.W V corrSum cps.sum) :
     ⦃⌜True⌝⦄
     publicInputCommitKnown (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH corrHead
       corrSum leaves
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄ := by
   have hne : leaves ≠ [] := by
     rintro rfl; exact hhead.elim
   refine builder_spec_imp _ _ _
@@ -1976,18 +1976,18 @@ theorem xHatKnown_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
       (le_trans (by norm_num) s.order_big)
       (fun leaf _ => s.regime V leaf)
       hbind.blinding hbind.pre hbind.corr hC hhead hbind.hon) fun r hr => ?_
-  rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
+  rw [xhat_cross s ci σ lagrange blindingH leaves Ts cps hbind hne]; exact hr
 
-/-- A commitment table is bound to the verifier key at the leaves it serves: chunk by chunk, the
+/-- A commitment table is bound to the Lagrange points at the leaves it serves: chunk by chunk, the
 leaves' `XhatBinding` at some base and correction points with the correction sum reading as
 their sum, and the tables nonempty (the known-domain fold is seeded by the first leaf). -/
 structure XhatTable.Bound (s : PastaShape C) (V : Valuation C.BaseField)
-    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (σ : Bulletproof.SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (T : XhatTable C.BaseField nc) : Prop where
   /-- Each chunk's binding, with the correction sum read. -/
   chunks : ∃ Ts cps : List (Fin nc → s.d.W.Point), ∀ ci : Fin nc,
-    XhatBinding s ci V σ cvk blindingH leaves (Ts.map (· ci)) (cps.map (· ci)) ∧
+    XhatBinding s ci V σ lagrange blindingH leaves (Ts.map (· ci)) (cps.map (· ci)) ∧
     OnCurveAt s.d.W V T.corrSum[ci] (cps.map (· ci)).sum
   /-- At least one base. -/
   bases_ne : T.bases ≠ []
@@ -2049,9 +2049,9 @@ end Packed
 
 /-! ## The table of a key
 
-The Lagrange bases and shift corrections are data of the verifier key, so the table is
-computed from it as constant cells rather than taken as an argument and then assumed to be
-the key's. It depends on the statement's packing only through the leaf kinds: each kind has
+The Lagrange bases and shift corrections are fixed by the key's domain and the SRS, so the
+table is computed from them as constant cells rather than taken as an argument and then assumed
+to be theirs. It depends on the statement's packing only through the leaf kinds: each kind has
 its own shift. -/
 
 section OfKey
@@ -2206,20 +2206,20 @@ points are finite (at the `(0, 0)` sentinel no cell reads as the point, so this 
 too), the boolean leaves are boolean — which `xHat_reads_publicCommitment` supplies from the
 gadget's own bit pre-pass. -/
 theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
-    (cvk : KimchiVK C nc) (ks : List (PackedScalar C.BaseField))
+    (lagrange : Array (Vector C.Point nc)) (ks : List (PackedScalar C.BaseField))
     (hh : σ.h ≠ 0)
-    (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[ci] ≠ 0)
+    (hL : ∀ Ps ∈ lagrange.toList, Ps[ci] ≠ 0)
 
-    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList, leaf.bitBoolean V)
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks lagrange.toList, leaf.bitBoolean V)
  :
-    XhatBinding s ci V σ cvk (constPt σ.h)
-      (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)
-      (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks cvk.lagrangeBasis.toList)
-      (List.zipWith (constCp s ci) ks cvk.lagrangeBasis.toList) where
+    XhatBinding s ci V σ lagrange (constPt σ.h)
+      (List.zipWith constLeaf ks lagrange.toList)
+      (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks lagrange.toList)
+      (List.zipWith (constCp s ci) ks lagrange.toList) where
   blinding := onCurveAt_constPt σ.h hh
   pre := forall₂_zipWith _ _ _ _ _ fun p hp =>
     leafPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2) fun b hb => by
-      have hmem : constLeaf p.1 p.2 ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList := by
+      have hmem : constLeaf p.1 p.2 ∈ List.zipWith constLeaf ks lagrange.toList := by
         rw [← List.map_uncurry_zip_eq_zipWith]
         exact List.mem_map.2 ⟨p, hp, rfl⟩
       have := hbits _ hmem
@@ -2237,7 +2237,7 @@ theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
     intro i hi
     rw [List.getElem_zipWith, leafBaseAt_constLeaf]
     have h := onCurveAt_constPt (V := V) _ (hL _ (List.getElem_mem
-      (l := cvk.lagrangeBasis.toList) (n := i) (by
+      (l := lagrange.toList) (n := i) (by
         simp only [List.length_zipWith, Array.length_toList] at hi; simp; omega)))
     simpa using h
 
@@ -2291,15 +2291,6 @@ theorem pubOf_zipWith_constLeaf [ToNat C.BaseField] :
     rw [ih]
     cases k <;> rfl
 
-/-- Two packed scalars of one kind whose cells read the same value. -/
-def PackedScalar.SameReading (V : Valuation C.BaseField) :
-    PackedScalar C.BaseField → PackedScalar C.BaseField → Prop
-  | .full a, .full b => a.val V = b.val V
-  | .b128 a, .b128 b => a.val V = b.val V
-  | .b10 a, .b10 b => a.val V = b.val V
-  | .bit a, .bit b => (↑a : CVar C.BaseField).val V = (↑b : CVar C.BaseField).val V
-  | _, _ => False
-
 /-! ### The known-domain fold's table
 
 `publicInputCommitKnown` takes the corrections' sum as one constant, where
@@ -2330,36 +2321,6 @@ def XhatTable.ofKeyKnown (ks : List (PackedScalar C.BaseField))
        | k :: _, Ps :: _ => corrPt k Ps[ci]
        | _, _ => 0)
     corrSum := Vector.ofFn fun ci => constPt (corrSumPt ks lb ci) }
-
-/-- A packed scalar reads the same as itself. -/
-theorem PackedScalar.sameReading_refl (k : PackedScalar C.BaseField) :
-    PackedScalar.SameReading V k k := by
-  cases k <;> rfl
-
-/-- The public input of the key's table depends on each packed scalar only through its kind and
-its reading. -/
-theorem pubOf_ofKeyKnown_congr [ToNat C.BaseField] (lb : List (Vector C.Point nc)) :
-    ∀ {ks ks' : List (PackedScalar C.BaseField)},
-      List.Forall₂ (PackedScalar.SameReading V) ks ks' →
-      pubOf C V (packLeavesOf ks (XhatTable.ofKeyKnown ks lb))
-        = pubOf C V (packLeavesOf ks' (XhatTable.ofKeyKnown ks' lb)) := by
-  intro ks ks' h
-  have hk : ∀ ks : List (PackedScalar C.BaseField),
-      packLeavesOf ks (XhatTable.ofKeyKnown ks lb) = List.zipWith constLeaf ks lb :=
-    fun ks => packLeavesOf_ofKey ks lb
-  rw [hk, hk]
-  simp only [pubOf]
-  congr 1
-  induction h generalizing lb with
-  | nil => simp
-  | @cons k k' ks ks' hkk _ ih =>
-    cases lb with
-    | nil => simp
-    | cons Ps lb =>
-      simp only [List.zipWith_cons_cons, List.map_cons, ih lb (fun ks => packLeavesOf_ofKey ks lb)]
-      congr 1
-      cases k <;> cases k' <;> simp only [PackedScalar.SameReading] at hkk <;>
-        first | exact hkk.elim | simp only [constLeaf, Leaf.scalarVar, hkk]
 
 /-- A scalar's constant leaf is trivially bit-boolean. -/
 theorem bitBoolean_constLeaf_of_isScalar (ks : List (PackedScalar C.BaseField))
@@ -2393,24 +2354,24 @@ private theorem equivPoint_corrSumPt (s : PastaShape C) (ci : Fin nc)
 
 /-- **The known-domain table computed from the key is bound to the key.** Beyond
 `xhatBinding_const`'s premises, the correction sum is a finite point at every chunk. -/
-theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (cvk : KimchiVK C nc)
+theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (ks : List (PackedScalar C.BaseField))
-    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, ∀ ci : Fin nc, Ps[ci] ≠ 0)
-    (hks : ks ≠ []) (hlb : cvk.lagrangeBasis.toList ≠ [])
-    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList, leaf.bitBoolean V)
+    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ lagrange.toList, ∀ ci : Fin nc, Ps[ci] ≠ 0)
+    (hks : ks ≠ []) (hlb : lagrange.toList ≠ [])
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks lagrange.toList, leaf.bitBoolean V)
 
-    (hsum : ∀ ci : Fin nc, corrSumPt ks cvk.lagrangeBasis.toList ci ≠ 0) :
-    (XhatTable.ofKeyKnown ks cvk.lagrangeBasis.toList).Bound s V σ cvk (constPt σ.h)
-      (List.zipWith constLeaf ks cvk.lagrangeBasis.toList) where
+    (hsum : ∀ ci : Fin nc, corrSumPt ks lagrange.toList ci ≠ 0) :
+    (XhatTable.ofKeyKnown ks lagrange.toList).Bound s V σ lagrange (constPt σ.h)
+      (List.zipWith constLeaf ks lagrange.toList) where
   chunks := by
     refine ⟨List.zipWith (fun _ Ps => fun ci => SWPoint.equivPoint C.E Ps[ci]) ks
-        cvk.lagrangeBasis.toList,
-      List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks cvk.lagrangeBasis.toList,
+        lagrange.toList,
+      List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks lagrange.toList,
       fun ci => ⟨?_, ?_⟩⟩
-    · have hb := xhatBinding_const (V := V) s ci σ cvk ks hh (fun Ps h => hL Ps h ci) hbits
+    · have hb := xhatBinding_const (V := V) s ci σ lagrange ks hh (fun Ps h => hL Ps h ci) hbits
       simpa only [List.map_zipWith] using hb
-    · have hc : (XhatTable.ofKeyKnown ks cvk.lagrangeBasis.toList).corrSum[ci]
-          = constPt (corrSumPt ks cvk.lagrangeBasis.toList ci) := by
+    · have hc : (XhatTable.ofKeyKnown ks lagrange.toList).corrSum[ci]
+          = constPt (corrSumPt ks lagrange.toList ci) := by
         simp [XhatTable.ofKeyKnown, Fin.getElem_fin]
       rw [hc, ← equivPoint_corrSumPt s ci]
       exact onCurveAt_constPt _ (hsum ci)
@@ -2420,7 +2381,7 @@ theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (cvk : KimchiVK C
     cases ks with
     | nil => exact absurd rfl hks
     | cons k ks =>
-      cases hl : cvk.lagrangeBasis.toList with
+      cases hl : lagrange.toList with
       | nil => exact absurd hl hlb
       | cons Ps lb => simp [XhatTable.ofKeyKnown, XhatTable.ofKey]
 
@@ -2735,27 +2696,27 @@ private theorem Leaf.SameReads.bitBoolean_of {V : Valuation C.BaseField} :
 /-- **The masked commitment reads as the chosen key's `publicCommitment`.** Under the branch
 bits reading as the indicator of `b`, with branch `b`'s table the key's first `ks.length`
 Lagrange points (and, with `shared`, the first table branch `b`'s), the commitment over the
-masked bases reads as the wire's `publicCommitment` of the packed scalars at the key. -/
+masked bases reads as the wire's `publicCommitment` of the packed scalars at the points. -/
 theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
-    (cvk : KimchiVK C nc) (shared : Bool) (bits : List (BoolVar C.BaseField))
+    (lagrange : Array (Vector C.Point nc)) (shared : Bool) (bits : List (BoolVar C.BaseField))
     (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) (b : ℕ)
     (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
       = (List.range tables.length).map fun l => if l = b then (1 : C.BaseField) else 0)
-    (hb : b < tables.length) (htab : tables[b] = cvk.lagrangeBasis.toList.take ks.length)
+    (hb : b < tables.length) (htab : tables[b] = lagrange.toList.take ks.length)
     (hshared : shared = true → tables.headD [] = tables[b])
-    (hlen : ks.length ≤ cvk.lagrangeBasis.size)
-    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[ci] ≠ 0)
-    (hscalar : leafHasScalar (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)) :
+    (hlen : ks.length ≤ lagrange.size)
+    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ lagrange.toList, Ps[ci] ≠ 0)
+    (hscalar : leafHasScalar (List.zipWith constLeaf ks lagrange.toList)) :
     ⦃⌜True⌝⦄
     publicInputCommitMasked (S := Builder V (KimchiConstraint C.BaseField)) shared (constPt σ.h)
       bits ks tables
-    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci] (SWPoint.equivPoint C.E (publicCommitment C σ cvk
-      (pubOf C V (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)))[ci])⌝⦄ := by
+    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci] (SWPoint.equivPoint C.E (publicCommitment C σ lagrange
+      (pubOf C V (List.zipWith constLeaf ks lagrange.toList)))[ci])⌝⦄ := by
   have hm := maskLeaves_spec (V := V) (S := KimchiConstraint C.BaseField) shared bits ks tables b
     hbits hb (by rw [htab]; simpa using hlen) hshared
   -- the leaves past the table's end are never paired
-  have hz : List.zipWith constLeaf ks (cvk.lagrangeBasis.toList.take ks.length)
-      = List.zipWith constLeaf ks cvk.lagrangeBasis.toList := by
+  have hz : List.zipWith constLeaf ks (lagrange.toList.take ks.length)
+      = List.zipWith constLeaf ks lagrange.toList := by
     apply List.ext_getElem <;> simp
   rw [htab, hz] at hm
   unfold publicInputCommitMasked
@@ -2764,12 +2725,12 @@ theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ :
     rename_i _ rs _
     intro st hrs
     have hbind := fun hb' : (∀ l ∈ rs, Leaf.bitBoolean V l) =>
-      (xhatBinding_const (V := V) s ci σ cvk ks hh hL
+      (xhatBinding_const (V := V) s ci σ lagrange ks hh hL
         (Leaf.SameReads.bitBoolean_of hrs hb')).ofSameReads hrs
     rw [← Leaf.SameReads.pubOf hrs]
-  · exact xHat_reads_publicCommitment s ci σ cvk (constPt σ.h) rs _ _ hbind
+  · exact xHat_reads_publicCommitment s ci σ lagrange (constPt σ.h) rs _ _ hbind
       (Leaf.SameReads.hasScalar hrs hscalar) st trivial
-  · exact xHatSealed_reads_publicCommitment s ci σ cvk (constPt σ.h) rs _ _ hbind
+  · exact xHatSealed_reads_publicCommitment s ci σ lagrange (constPt σ.h) rs _ _ hbind
       (Leaf.SameReads.hasScalar hrs hscalar) st trivial
 
 end Masked

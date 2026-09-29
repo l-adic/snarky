@@ -1057,11 +1057,10 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
     (hkey : ∀ kv : VkComms ncStep (AffinePoint Fq),
       CircuitType.Reads Vs (keyCellsOf constPt EsStep.cvk) kv → CircuitType.Reads Vs fin.key kv)
     (hlag : lagrange log2s[b]
-      = EsStep.cvk.lagrangeBasis.toList.take (mpv * (k + 17) + 1 + mpv))
+      = (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList)
     (hh : h = EsStep.σ.h) (hmpv : mpv ≤ MaxProofsVerified)
-    (hsize : mpv * (k + 17) + 1 + mpv ≤ EsStep.cvk.lagrangeBasis.size)
     (hnz : ∀ P ∈ EsStep.cvk.comms.indexPoints, P ≠ 0)
-    (havoid : EsStep.σ.Avoids EsStep.lagrangeRelations) :
+    (havoid : EsStep.σ.Avoids (EsStep.lagrangeRelations (CircuitType.size Fp (StmtVal k mpv)))) :
     ⦃⌜True⌝⦄
     wrapMainVerify (c := Builder Vs (KimchiConstraint Fq)) log2s lagrange h dummy slotWidths adv
       stmt fin
@@ -1103,12 +1102,12 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
   set L := log2s.toList with hL
   have hll : L.length = branches := by simp [hL]
   replace hlag : lagrange (L[b.val]'(by omega))
-      = EsStep.cvk.lagrangeBasis.toList.take (mpv * (k + 17) + 1 + mpv) := by
+      = (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList := by
     simpa [hL] using hlag
   -- the tables at the branches' domains, and branch `b`'s is the key's
   have hb' : b.val < (L.map lagrange).length := by simp [hll]
   have htab : (L.map lagrange)[b.val]'hb'
-      = EsStep.cvk.lagrangeBasis.toList.take (mpv * (k + 17) + 1 + mpv) := by
+      = (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList := by
     simpa using hlag
   have hshared : L.all (· == L.headD 0) = true →
       (L.map lagrange).headD [] = (L.map lagrange)[b.val]'hb' := by
@@ -1132,36 +1131,45 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
         (S := Builder Vs (KimchiConstraint Fq)) (C := IpaVesta.curve)
         (L.all (· == L.headD 0)) (constPt EsStep.σ.h) fin.bits st.packed
         (L.map lagrange))
-      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve Vs pts (publicCommitment IpaVesta.curve EsStep.σ
+      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve Vs pts (runPublicComm IpaVesta.curve EsStep.σ
         EsStep.cvk (wrapPublicInput EsStep Vs st)).toList⌝⦄ := by
     intro st
-    have hlen : st.packed.length ≤ EsStep.cvk.lagrangeBasis.size := by
-      rw [StepStatement.packed_length]; exact hsize
+    have hcount : st.packed.length = CircuitType.size Fp (StmtVal k mpv) :=
+      StepStatement.packed_length _
+    have hsz : (wrapPublicInput EsStep Vs st).size = CircuitType.size Fp (StmtVal k mpv) := by
+      rw [← Array.length_toList, wrapPublicInput_toList, List.length_map, hcount]
+    have hlen : st.packed.length
+        ≤ (EsStep.cvk.lagrangePoints EsStep.σ
+          (CircuitType.size Fp (StmtVal k mpv))).toArray.size := by
+      simp [hcount]
     have hscalar : leafHasScalar
         (List.zipWith (constLeaf (C := IpaVesta.curve)) st.packed
-          EsStep.cvk.lagrangeBasis.toList) := by
+          (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList) := by
       obtain ⟨x, rest, hx⟩ := st.packed_head
       obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
-        (l := EsStep.cvk.lagrangeBasis.toList) (by
-          intro h0
-          have := EsStep.lagrange_pos
-          simp [← Array.length_toList, h0] at this)
-      rw [hx, hlb]
+        (l := (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList) (by
+          simp)
+      rw [hlb, hx]
       simp [constLeaf, leafHasScalar]
     have hpub : wrapPublicInput EsStep Vs st
         = pubOf IpaVesta.curve Vs (List.zipWith (constLeaf (C := IpaVesta.curve)) st.packed
-          EsStep.cvk.lagrangeBasis.toList) := by
+          (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList) := by
       unfold wrapPublicInput wrapLeavesAt
+      rw [hcount]
       exact congrArg _ (packLeavesOf_ofKey (C := IpaVesta.curve) _ _)
     have h0 := builder_spec_forall _ (fun _ : Fin ncStep => True) _ fun ci _ =>
-      xHatMasked_reads_publicCommitment (V := Vs) pastaShapeVesta ci EsStep.σ EsStep.cvk
+      xHatMasked_reads_publicCommitment (V := Vs) pastaShapeVesta ci EsStep.σ
+        (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal k mpv))).toArray
         (L.all (· == L.headD 0)) fin.bits st.packed (L.map lagrange) b.val hbitsT hb'
-        (by rw [htab, StepStatement.packed_length]) hshared hlen EsStep.h_ne
+        (by rw [htab, Vector.toList_toArray, hcount, List.take_of_length_le (by simp)]) hshared
+        hlen EsStep.h_ne
         (fun Ps h => EsStep.lagrange_ne pastaShapeVesta havoid Ps h ci)
         hscalar
     mvcgen -trivial [h0]
     intro hr
-    rw [hpub]
+    unfold runPublicComm
+    rw [hsz, hpub]
+    rw [Vector.toList_toArray] at hr
     exact List.forall₂_iff_get.mpr ⟨by simp [pubOf], fun i h₁ h₂ => by
       simpa [pubOf] using hr ⟨i, by simpa using h₁⟩⟩
   -- the verify block, for any index sponge, statement, proof cells, claims and accumulators
@@ -1383,15 +1391,16 @@ theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
     (stmt : StatementPacked EsStep.σ.k (Type1 (FVar Fq)) (FVar Fq))
     (hmpv : mpv ≤ MaxProofsVerified) (hbr : branches ≤ PALLAS_SCALAR_CARD)
     (hh : h = EsStep.σ.h)
-    (hsize : mpv * (E.σ.k + 17) + 1 + mpv ≤ EsStep.cvk.lagrangeBasis.size)
     (hnz : ∀ P ∈ EsStep.cvk.comms.indexPoints, P ≠ 0)
-    (havoid : EsStep.σ.Avoids EsStep.lagrangeRelations) :
+    (havoid :
+      EsStep.σ.Avoids (EsStep.lagrangeRelations (CircuitType.size Fp (StmtVal E.σ.k mpv)))) :
     ⦃⌜True⌝⦄
     wrapMain (c := Builder Vs (KimchiConstraint Fq)) (FopParams.ofEnv E Linearization.fqTokens)
       widths log2s stepKeys pins lagrange h dummy slotWidths adv stmt
     ⦃⇓ r _ => ⌜∀ b : Fin branches, r.1.whichBranch.val Vs = (b : Fq) →
       stepKeys[b] = keyCellsOf constPt EsStep.cvk →
-      lagrange log2s[b] = EsStep.cvk.lagrangeBasis.toList.take (mpv * (E.σ.k + 17) + 1 + mpv) →
+      lagrange log2s[b]
+        = (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal E.σ.k mpv))).toList →
       (∀ (i : Fin mpv) (sg : AffinePoint Fq) (chals : List (Vector Fq E.σ.k)),
         CircuitType.Reads Vs r.1.stepAccs[i].pt sg →
         List.Forall₂ (CircuitType.Reads Vs) (r.1.real i) chals →
@@ -1422,9 +1431,9 @@ theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
           CircuitType.Reads Vs (keyCellsOf constPt EsStep.cvk) kv →
             CircuitType.Reads Vs fin.key kv) ∧
         lagrange log2s[b]
-          = EsStep.cvk.lagrangeBasis.toList.take (mpv * (E.σ.k + 17) + 1 + mpv)) _
+          = (EsStep.cvk.lagrangePoints EsStep.σ (CircuitType.size Fp (StmtVal E.σ.k mpv))).toList) _
       fun b ⟨hbits, hkey, hlag⟩ => wrapMainVerify_reads EsStep Vs log2s lagrange h dummy
-        slotWidths adv stmt fin b hbits hkey hlag hh hmpv hsize hnz havoid
+        slotWidths adv stmt fin b hbits hkey hlag hh hmpv hnz havoid
   mvcgen [hfin, hver]
   rename_i _ _ _ _ hF hV
   intro b hwb hkeyB hlag

@@ -1,5 +1,6 @@
 import Kimchi.Columns
 import Pickles.Encoding
+import Pickles.Verify
 import Pickles.VkComms
 import Snarky.Kimchi.Circuit.CheckedPoint
 import Snarky.Kimchi.Circuit.EndoScalar
@@ -237,6 +238,41 @@ def AllocUnfinalized.toUnfinalized {k : ℕ} {f bc sf : Type} (u : AllocUnfinali
   ⟨⟨⟨⟨u.alpha⟩, ⟨u.beta⟩, ⟨u.gamma⟩, ⟨u.zeta⟩, u.perm, u.zetaToSrsLength, u.zetaToDomainSize⟩,
       u.cip, ⟨u.xi⟩, u.bulletproofChallenges.map SizedF.mk, u.b⟩,
     u.shouldFinalize, u.spongeDigest⟩
+
+/-! ## The step statement -/
+
+/-- The step statement's shifted claims, at the step field. -/
+abbrev StepSf : Type := Type2 (SplitField (FVar Fp) (BoolVar Fp))
+
+/-- One unfinalized entry's cells, at `k` rounds. -/
+abbrev UnfVar (k : ℕ) : Type := AllocUnfinalized k (FVar Fp) (BoolVar Fp) StepSf
+
+/-- One unfinalized entry's values. -/
+abbrev UnfVal (k : ℕ) : Type := AllocUnfinalized k Fp Bool (Type2 (SplitField Fp Bool))
+
+/-- The step statement's cells at the tag's `w` slots, in wire order: the unfinalized entries,
+the step-message digest, the wrap-side messages. -/
+abbrev StmtVar (k w : ℕ) : Type := Vector (UnfVar k) w × FVar Fp × Vector (FVar Fp) w
+
+/-- The step statement's values, in wire order. -/
+abbrev StmtVal (k w : ℕ) : Type := Vector (UnfVal k) w × Fp × Vector Fp w
+
+/-- A packed step statement has one scalar per cell of the statement's values. -/
+theorem StepStatement.packed_length {F : Type} [Field F] {k n : ℕ}
+    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
+    st.packed.length = CircuitType.size Fp (StmtVal k n) := by
+  have h1 : CircuitType.size Fp Fp = 1 := rfl
+  have h2 : CircuitType.size Fp (Type2 (SplitField Fp Bool)) = 2 := rfl
+  have hb : CircuitType.size Fp Bool = 1 := rfl
+  have hu : CircuitType.size Fp (UnfVal k) = k + 17 := by
+    unfold CircuitType.size
+    dsimp only [instAllocUnfinalizedCircuitType, CircuitType.ofEquiv]
+    simp [h1, h2, hb]
+    omega
+  simp only [StepStatement.packed, UnfinalizedProof.packed, List.length_append,
+    List.length_flatMap, List.length_map, List.length_cons, List.length_nil, Vector.length_toList]
+  simp [hu, h1]
+  ring
 
 /-! ## One slot's witness -/
 

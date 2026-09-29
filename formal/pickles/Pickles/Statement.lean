@@ -116,6 +116,12 @@ structure StepStatement (k n : ℕ) (f bc sf : Type) where
   /-- One `hashMessagesForNextWrapProof` digest per predecessor slot. -/
   messagesForNextWrapProof : Vector f n
 
+/-- The packed wrap statement: the scalars the step circuit's public-input commitment reads, in
+wire order — the five shifted scalars, `β`, `γ`, `α`, `ζ`, `ξ`, the three digests, the round
+challenges and the branch data. It is `StatementPacked` without the optional-feature cells. -/
+abbrev PackedWrapStatement (k : ℕ) (sf f : Type) : Type :=
+  Vector sf 5 × Vector f 2 × Vector f 3 × Vector f 3 × Vector f k × f
+
 /-- The wrap statement as the wrap circuit's public input, in wire order: the deferred values
 packed as field cells, the branch data as one cell, and the optional-feature cells the modeled
 fragment holds at zero. -/

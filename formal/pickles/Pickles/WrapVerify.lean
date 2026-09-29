@@ -121,7 +121,7 @@ theorem wrapVerify_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cells : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
-      ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
+      ⦃⇓ pts _ => ⌜CommReads C V pts (runPublicComm C σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (h : IvpHyps S σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
@@ -175,7 +175,7 @@ theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (cells : IvpInput σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (oldsW : List (IpaVesta.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
-      ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
+      ⌜CommReads IpaVesta.curve V pts (runPublicComm IpaVesta.curve σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH
       (SWPoint.equivPoint IpaVesta.curve.E σ.h))
     (h : IvpHyps (wrapSide V) σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
@@ -190,11 +190,13 @@ theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
 
 /-! ## The block at an environment -/
 
-/-- The step statement's public-input leaves at the key's own Lagrange table. -/
+/-- The step statement's public-input leaves at the key's Lagrange points, one per packed
+scalar. -/
 def wrapLeavesAt {ks n nc : ℕ} (E : Env IpaVesta.curve nc)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : List (Leaf Fq nc) :=
-  packLeavesOf statement.packed (XhatTable.ofKey statement.packed E.cvk.lagrangeBasis.toList)
+  packLeavesOf statement.packed
+    (XhatTable.ofKey statement.packed (E.cvk.lagrangePoints E.σ statement.packed.length).toList)
 
 /-- The public input the step statement packs to under `V`: what the verified step proof's
 public input must be. -/
@@ -204,16 +206,16 @@ def wrapPublicInput {ks n nc : ℕ} (E : Env IpaVesta.curve nc) (V : Valuation F
   pubOf IpaVesta.curve V (wrapLeavesAt E statement)
 
 /-- The public input a step statement packs to is its packed scalars reduced into the scalar
-field (`PackedScalar.reduced`), when the key has a Lagrange point per packed scalar. -/
+field (`PackedScalar.reduced`). -/
 theorem wrapPublicInput_toList {ks n nc : ℕ} (E : Env IpaVesta.curve nc) (V : Valuation Fq)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
-    (hlen : statement.packed.length ≤ E.cvk.lagrangeBasis.size) :
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) :
     (wrapPublicInput E V statement).toList
       = statement.packed.map (PackedScalar.reduced IpaVesta.curve V) := by
   unfold wrapPublicInput wrapLeavesAt
-  rw [packLeavesOf_ofKey (C := IpaVesta.curve) statement.packed E.cvk.lagrangeBasis.toList]
-  exact pubOf_zipWith_constLeaf _ _ (by simpa using hlen)
+  rw [packLeavesOf_ofKey (C := IpaVesta.curve) statement.packed
+    (E.cvk.lagrangePoints E.σ statement.packed.length).toList]
+  exact pubOf_zipWith_constLeaf _ _ (by simp)
 
 /-- The verify block at the deployed Vesta constants, the blinding base `h` as a constant cell,
 and the public-input commitment of the packed step statement at the Lagrange points `lagrange`.
@@ -235,7 +237,8 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
       (packLeavesOf statement.packed (XhatTable.ofKey statement.packed lagrange)))
     msgSponge newBpChallenges claimedMsgDigest u cells
 
-/-- `wrapVerifyWith` at the environment's SRS blinding base and the key's Lagrange points. -/
+/-- `wrapVerifyWith` at the environment's SRS blinding base and the key's Lagrange points, one
+per packed scalar. -/
 def wrapVerifyAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
     [KimchiSystem Fq c]
     {ks n k nc : ℕ}
@@ -246,8 +249,8 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBas
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
-  wrapVerifyWith E.σ.h E.cvk.lagrangeBasis.toList statement spongeAfterIndex msgSponge
-    newBpChallenges claimedMsgDigest u cells
+  wrapVerifyWith E.σ.h (E.cvk.lagrangePoints E.σ statement.packed.length).toList statement
+    spongeAfterIndex msgSponge newBpChallenges claimedMsgDigest u cells
 
 /-- A packed step statement opens with a full scalar: the first slot's combined inner product,
 or with no slot the `messagesForNextStepProof` digest. -/
@@ -276,7 +279,7 @@ theorem wrapVerifyAt_reads {ks n nc : ℕ} {V : Valuation Fq}
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput E.σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (havoid : E.σ.Avoids E.lagrangeRelations)
+    (havoid : E.σ.Avoids (E.lagrangeRelations statement.packed.length))
     (hivp : ∃ oldsW, IvpHyps (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V statement) true
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
@@ -287,30 +290,35 @@ theorem wrapVerifyAt_reads {ks n nc : ℕ} {V : Valuation Fq}
         (↑v : CVar Fq).val V = 1⌝⦄ := by
   obtain ⟨oldsW, hivp⟩ := hivp
   have hleaves : wrapLeavesAt E statement
-      = List.zipWith constLeaf statement.packed E.cvk.lagrangeBasis.toList := by
+      = List.zipWith constLeaf statement.packed
+        (E.cvk.lagrangePoints E.σ statement.packed.length).toList := by
     unfold wrapLeavesAt
     exact packLeavesOf_ofKey (C := IpaVesta.curve) _ _
+  have hsz : (wrapPublicInput E V statement).size = statement.packed.length := by
+    rw [← Array.length_toList, wrapPublicInput_toList, List.length_map]
   -- the binding at each chunk, under the boolean leaves' booleanity, which the commitment's
   -- read supplies
   have hbind := fun (ci : Fin nc) (hb : ∀ leaf ∈ wrapLeavesAt E statement, leaf.bitBoolean V) =>
-    xhatBinding_const (V := V) pastaShapeVesta ci E.σ E.cvk statement.packed E.h_ne
+    xhatBinding_const (V := V) pastaShapeVesta ci E.σ
+      (E.cvk.lagrangePoints E.σ statement.packed.length).toArray statement.packed E.h_ne
       (fun Ps h => E.lagrange_ne pastaShapeVesta havoid Ps h ci) (hleaves ▸ hb)
   have hscalar : leafHasScalar (wrapLeavesAt E statement) := by
     obtain ⟨x, rest, hx⟩ := statement.packed_head
     obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
-      (l := E.cvk.lagrangeBasis.toList) (by
-        intro h0
-        have := E.lagrange_pos
-        simp [← Array.length_toList, h0] at this)
-    rw [hleaves, hx, hlb]
+      (l := (E.cvk.lagrangePoints E.σ statement.packed.length).toList) (by
+        simp [hx])
+    rw [hleaves, hlb, hx]
     simp [constLeaf, leafHasScalar]
   have hX : ⦃⌜True⌝⦄
       (Vector.toList <$> publicInputCommitFull (S := Builder V (KimchiConstraint Fq))
         (constPt E.σ.h) (wrapLeavesAt E statement))
-      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve E.σ E.cvk
+      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve V pts (runPublicComm IpaVesta.curve E.σ E.cvk
         (wrapPublicInput E V statement)).toList⌝⦄ := by
+    unfold runPublicComm
+    rw [hsz]
     have h0 := builder_spec_forall _ (fun _ : Fin nc => True) _ fun ci _ =>
-      xHat_reads_publicCommitment pastaShapeVesta ci E.σ E.cvk (constPt E.σ.h)
+      xHat_reads_publicCommitment pastaShapeVesta ci E.σ
+        (E.cvk.lagrangePoints E.σ statement.packed.length).toArray (constPt E.σ.h)
         (wrapLeavesAt E statement) _ _ (fun hb => hleaves ▸ hbind ci hb) hscalar
     mvcgen -trivial [h0]
     intro hr
@@ -514,6 +522,27 @@ def groupCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBas
   wrapVerifyAt E g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest g.claims
     (g.cells keyCells)
 
+/-- `groupCircuit` at the blinding base `h` and the Lagrange points `lagrange`, given rather than
+computed from the SRS: what a driver runs at points it computed once. -/
+def groupCircuitWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
+    [LawfulBasicSystem Fq c] [KimchiSystem Fq c]
+    (h : Bulletproof.IpaVesta.curve.Point)
+    (lagrange : List (Vector Bulletproof.IpaVesta.curve.Point nc))
+    (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
+    (g : GroupVar k kw n nc) : CircuitM Fq c Unit := do
+  wrapVerifyWith h lagrange g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest
+    g.claims (g.cells keyCells)
+
+/-- `groupCircuit` is `groupCircuitWith` at the environment's blinding base and the key's
+Lagrange points, one per packed scalar. -/
+theorem groupCircuit_eq_groupCircuitWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
+    [LawfulBasicSystem Fq c] [KimchiSystem Fq c] (E : Env Bulletproof.IpaVesta.curve nc)
+    (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
+    (g : GroupVar k kw n nc) :
+    groupCircuit (c := c) E keyCells spongeAfterIndex msgSponge g
+      = groupCircuitWith E.σ.h (E.cvk.lagrangePoints E.σ g.stepStatement.packed.length).toList
+        keyCells spongeAfterIndex msgSponge g := rfl
+
 open Std.Do in
 /-- **The group circuit's read.** Every wrap-side claim satisfies `IvpSide.ClaimOk`
 (`wrapSide_claimOk`), which `IvpHyps` may assume. With the SRS avoiding the Lagrange relations,
@@ -521,7 +550,8 @@ a satisfying valuation reads as `VerifyReads` with its success bit `1`. -/
 theorem groupCircuit_reads {V : Valuation Fq} (E : Env Bulletproof.IpaVesta.curve nc)
     (cp : Kimchi.Verifier.KimchiProof Bulletproof.IpaVesta.curve nc E.σ.k)
     (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
-    (g : GroupVar E.σ.k kw n nc) (havoid : E.σ.Avoids E.lagrangeRelations)
+    (g : GroupVar E.σ.k kw n nc)
+    (havoid : E.σ.Avoids (E.lagrangeRelations g.stepStatement.packed.length))
     (hivp : (∀ x ∈ g.shifted, (wrapSide V).ClaimOk x) →
       ∃ oldsW, IvpHyps (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V g.stepStatement) true
         spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :

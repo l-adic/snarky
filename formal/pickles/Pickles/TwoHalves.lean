@@ -350,6 +350,49 @@ def carry {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof 
   let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
   decide (cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1)
 
+/-! ### At memoized Lagrange points
+
+The run functions each compute the SRS's Lagrange points afresh. A driver deciding `sgOk` or
+`carry` computes the verifier's run once instead (`runAt`), at points it computed once, and
+these are the same verdicts there. -/
+
+/-- `sgOk` at the Lagrange points `L`, the run computed once. -/
+def sgOkWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
+  let r := runAt C σ cvk cp pub (publicCommitment C σ L pub)
+  let tr := transcriptFrom C r.1 r.2
+  decide (r.2.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i]))
+
+/-- `carry` at the Lagrange points `L`, the run computed once. -/
+def carryWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) : Bool :=
+  let r := runAt C σ cvk cp pub (publicCommitment C σ L pub)
+  let tr := transcriptFrom C r.1 r.2
+  decide (cp'.olds[i].sg = r.2.proof.sg ∧ cp'.olds[i].u = tr.2.1)
+
+/-- At the key's Lagrange points, at least one per public-input cell, the run is the run
+functions'. -/
+private theorem runAt_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m) :
+    runAt C σ cvk cp pub (publicCommitment C σ (cvk.lagrangePoints σ m).toArray pub)
+      = ((runOracles C σ cvk cp pub).warm, runInput C σ cvk cp pub) := by
+  rw [publicCommitment_lagrangePoints_of_le C σ cvk pub h]
+  exact runAt_runPublicComm C σ cvk cp pub
+
+/-- `sgOkWith` at the key's Lagrange points is `sgOk`. -/
+theorem sgOkWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m) :
+    sgOkWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub = sgOk σ cvk cp pub := by
+  simp only [sgOkWith, sgOk, runAt_lagrangePoints σ cvk cp pub h]
+
+/-- `carryWith` at the key's Lagrange points is `carry`. -/
+theorem carryWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m)
+    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) :
+    carryWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub cp' i = carry σ cvk cp pub cp' i := by
+  simp only [carryWith, carry, runAt_lagrangePoints σ cvk cp pub h]
+
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
 /-- The challenge polynomial over a vector's list is the one over the vector. -/
@@ -642,7 +685,7 @@ theorem twoHalves_schnorr
   -- the opening clause, at the three `ft` scalars
   obtain ⟨U, ns, c₀, chals, rfl, hns, rfl, rfl, hchals, hiff⟩ :=
     hξG hpermG hzetaM hzetaN ξ₀ hξGx
-  have hch : chals = (ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
+  have hch : chals = (ipaRunAt C (fqRun C E.cvk cp (runPublicComm C E.σ E.cvk pub)).warm
       (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
         fun m => endoExpand C.lam m.val :=
     Vector.toList_inj.mp (by rw [hchals, Vector.toList_map])
@@ -655,7 +698,7 @@ theorem twoHalves_schnorr
       = o.bulletproofChallenges.map (·.val.val G.V) :=
     map_eq_map_of_zip (by simp [hns.length_eq]) (hbpc rfl)
   rw [forall₂_reads128_iff] at hmsG hmsS hns hĉ
-  have hĉeq : ĉ = (ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
+  have hĉeq : ĉ = (ipaRunAt C (fqRun C E.cvk cp (runPublicComm C E.σ E.cvk pub)).warm
       (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.toList :=
     (List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
       (List.map_injective_iff.mpr hinjG.prechallenge_injective (hmsG.symm.trans (hbpc'.trans hns)))
@@ -673,7 +716,7 @@ theorem twoHalves_schnorr
   have hbIff : (↑out.bCorrect : CVar C.ScalarField).val Sc.V = 1
       ↔ Sc.side.decode Sc.claims.deferredValues.b
         = combinedB (fun i =>
-            ((ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
+            ((ipaRunAt C (fqRun C E.cvk cp (runPublicComm C E.σ E.cvk pub)).warm
               (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
                 (fun m => endoExpand C.lam m.val))[i]) run.evalscale run.pointFn := by
     simp only [hbC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
@@ -681,7 +724,7 @@ theorem twoHalves_schnorr
   -- assemble, the wire's transcript projected (no unfolding of the sponge runs)
   have hproof : (runInput C E.σ E.cvk cp pub).proof = cp.opening := rfl
   have hwarm : (runOracles C E.σ E.cvk cp pub).warm
-      = (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm := by
+      = (fqRun C E.cvk cp (runPublicComm C E.σ E.cvk pub)).warm := by
     simp only [runOracles, fqOracles, FqRun.expand]
   rw [hproof] at hiff
   simp only [ScalarHalf.ClaimsHonest, ClaimsHonest, run, tr, transcriptFrom, hwarm, hproof]

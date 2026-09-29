@@ -86,7 +86,7 @@ def VerifyOneInput.stepMsgDigest {ks k ncw ncs w : ℕ} (E : Env IpaPallas.curve
 the step-message digest `stepMsgDigest`. -/
 def VerifyOneInput.publicInputAt {ks k ncw ncs w : ℕ} (E : Env IpaPallas.curve ncw)
     (V : Valuation Fp) (ms : Vector Bool w) (inp : VerifyOneInput ks k ncw ncs w) : Array Fq :=
-  stepPublicInput E V (inp.statement (.const (inp.stepMsgDigest E V ms)))
+  stepPublicInput V (inp.statement (.const (inp.stepMsgDigest E V ms)))
 
 /-- The packed public input of a slot's wrap proof: its statement, carrying the step-message
 digest `stepMsgDigest`, as the wrap circuit's packed statement (`WrapStatement.toPacked`). -/
@@ -248,13 +248,14 @@ theorem verifyOne_reads (E : Env IpaPallas.curve ncw) (P : FopParams Fp)
       vk inp.proof).shifted, (stepSide V).ClaimOk x)
     -- the statement's shape against the SRS
     (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
+    (hn : ∀ msg, (inp.statement msg).packed.length ≤ E.cvk.n)
     (havoid : ∀ msg, E.σ.Avoids (stepRelationsAt E (inp.statement msg))) :
     ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt E)
       P domains vk inp
     ⦃⇓ o _ => ⌜CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
       ∃ (msg : FVar Fp) (v : BoolVar Fp),
         msg.val V = inp.stepMsgDigest E V ms ∧
-        VerifyReads (stepSide V) E.σ E.cvk cp (stepPublicInput E V (inp.statement msg))
+        VerifyReads (stepSide V) E.σ E.cvk cp (stepPublicInput V (inp.statement msg))
           inp.unfinalized false v ∧
         (↑v : CVar Fp).val V = 1 ∧ (↑o.1.finalized : CVar Fp).val V = 1⌝⦄ := by
   have hinj := castInj128_of_lt PALLAS_BASE_CARD (by decide)
@@ -296,7 +297,7 @@ theorem verifyOne_reads (E : Env IpaPallas.curve ncw) (P : FopParams Fp)
       ⦃⇓ v _ => ⌜CircuitType.Reads V inp.mustVerify true →
         SpongeVar.ReadsAt V sv (Poseidon.absorb IpaPallas.curve.sponge.params Poseidon.init
           (vk.indexPoints.flatMap fun P => [P.x.val V, P.y.val V])) →
-        VerifyReads (stepSide V) E.σ E.cvk cp (stepPublicInput E V (inp.statement msg))
+        VerifyReads (stepSide V) E.σ E.cvk cp (stepPublicInput V (inp.statement msg))
           inp.unfinalized false v⌝⦄ := by
     intro sv msg
     rw [builder_spec_iff]
@@ -304,11 +305,11 @@ theorem verifyOne_reads (E : Env IpaPallas.curve ncw) (P : FopParams Fp)
     rw [hkey.indexCoords] at hsv
     have hbase : CircuitType.Reads V (Snarky.not inp.mustVerify) false :=
       CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp hmv))
-    obtain ⟨oldsW, hivp⟩ := ivpHyps_of_reads (pub := stepPublicInput E V (inp.statement msg))
+    obtain ⟨oldsW, hivp⟩ := ivpHyps_of_reads (pub := stepPublicInput V (inp.statement msg))
       inp.unfinalized inp.sgOld.toList inp.proof (by simp [MaxProofsVerified]) hproof holds
       ⟨⟨_, hsv, E.digest_eq.symm⟩, hkey⟩ hclaimOk
     exact (builder_spec_iff _ _).mp (verifyProofAt_reads E cp sv _ (inp.statement msg)
-      inp.unfinalized _ oldsW hbase (hsmall msg) (havoid msg) hivp) nv hsat
+      inp.unfinalized _ oldsW hbase (hsmall msg) (hn msg) (havoid msg) hivp) nv hsat
   simp only [verifyOneBy]
   mvcgen [hfop, hh, hvp, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
   rename_i _ _ _ _ fop _ hF hr _ hH succ _ hVp ver _ hVer res _ hRes
@@ -361,6 +362,7 @@ theorem verifyOne_slotReads (E : Env IpaPallas.curve ncw) (P : FopParams Fp)
     (hw : w ≤ MaxProofsVerified)
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks E.σ.k ncw ncs w)
     (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ E.σ.k)
+    (hn : ∀ msg, (inp.statement msg).packed.length ≤ E.cvk.n)
     (havoid : ∀ msg, E.σ.Avoids (stepRelationsAt E (inp.statement msg))) :
     ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt E)
       P domains vk inp
@@ -371,11 +373,11 @@ theorem verifyOne_slotReads (E : Env IpaPallas.curve ncw) (P : FopParams Fp)
   rw [builder_spec_iff]
   intro nv hsat hmv h1 hclaimOk cp ms ⟨hm, hkey, hproof, holds⟩
   obtain ⟨msg, v, hmsg, hvr, hv1, -⟩ := (builder_spec_iff _ _).mp
-    (verifyOne_reads E P domains hks hw vk inp cp ms hm hkey hproof holds hclaimOk hsmall
+    (verifyOne_reads E P domains hks hw vk inp cp ms hm hkey hproof holds hclaimOk hsmall hn
       havoid) nv hsat hmv h1
   refine ⟨v, ?_, hv1⟩
-  have hpub : stepPublicInput E V (inp.statement msg) = inp.publicInputAt E V ms :=
-    stepPublicInput_congr_msg E V (inp.statement msg) msg _ (by simpa using hmsg)
+  have hpub : stepPublicInput V (inp.statement msg) = inp.publicInputAt E V ms :=
+    stepPublicInput_congr_msg V (inp.statement msg) msg _ (by simpa using hmsg)
   rw [← hpub]
   exact hvr
 

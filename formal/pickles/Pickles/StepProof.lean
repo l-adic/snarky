@@ -157,8 +157,9 @@ theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the wrap circuit's claim cells hold the step circuit's, reduced into the wrap field
     (hc : ClaimsCast Vg (groupInput E.σ.k kw n nc).claims Vs (scalarInput E.σ.k nc).claims)
-    -- the SRS avoids the key's Lagrange relations
-    (havoid : E.σ.Avoids E.lagrangeRelations)
+    -- the SRS avoids the key's Lagrange relations, one per packed scalar
+    (havoid : E.σ.Avoids
+      (E.lagrangeRelations (groupInput E.σ.k kw n nc).stepStatement.packed.length))
     -- of the proof itself
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
     (hsg : SgOk E.σ E.cvk cp pub) :

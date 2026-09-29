@@ -58,11 +58,15 @@ def main : IO Unit := do
   | .ok (σ, vk, proof, pub) =>
     let nc := Wire.runNc CP σ vk
     if h : nc = 1 then
-      -- `SgOk` is stated at one chunk, which is production's wrap regime.
+      -- `SgOk` is stated at one chunk, which is production's wrap regime. The key's Lagrange
+      -- points are computed once, where the verdicts are `kimchiVerify` and `sgOk`
+      -- (`kimchiVerifyWith_lagrangePoints`, `sgOkWith_lagrangePoints`).
+      let L : Array (Vector CP.Point 1) :=
+        Ipa.lagrangeBasis CP σ 1 (2 ^ vk.domainLog2) vk.omega vk.publicCount
       let check (p : Wire.KimchiProof CP) : Option (Bool × Bool) :=
         match (h ▸ vk.check nc : Option (KimchiVK CP 1)),
               (h ▸ p.check nc σ.k : Option (KimchiProof CP 1 σ.k)) with
-        | some cvk, some cp => some (kimchiVerify CP σ cvk cp pub, sgOk σ cvk cp pub)
+        | some cvk, some cp => some (kimchiVerifyWith CP σ cvk L cp pub, sgOkWith σ cvk L cp pub)
         | _, _ => none
       let some (verified, accepted) := check proof
         | throw (IO.userError s!"{path}: the fixture's own records failed to parse")

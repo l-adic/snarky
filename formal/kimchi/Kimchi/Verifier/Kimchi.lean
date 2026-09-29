@@ -231,8 +231,8 @@ def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
 Lagrange polynomials, in `nc` chunks (`Ipa.lagrangeBasis`). They are the SRS's, not the key's:
 the key fixes only the domain. -/
 def KimchiVK.lagrangePoints {C : Ipa.KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
-    (cvk : KimchiVK C nc) (m : ℕ) : Array (Vector C.Point nc) :=
-  Ipa.lagrangeBasis C σ nc cvk.n cvk.omega m
+    (cvk : KimchiVK C nc) (m : ℕ) : Vector (Vector C.Point nc) m :=
+  ⟨Ipa.lagrangeBasis C σ nc cvk.n cvk.omega m, by simp [Ipa.lagrangeBasis]⟩
 
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record, the form
 `kimchiVerify` hands `ftEval0`. `Gate.Poseidon.mdsOfParams` is the same repackaging behind
@@ -331,6 +331,38 @@ private def publicEvals {F : Type*} [Field F] (n : ℕ)
   else
     (pubDot omega zeta pub * (zetaN - 1) * (n : F)⁻¹,
      pubDot omega zetaOmega pub * (n : F)⁻¹ * (zetaOmegaN - 1))
+
+/-- Zero cells past the end add nothing to `pubDot`: each adds `0` and advances the power. -/
+private theorem pubDot_append_zero {F : Type*} [Field F] (omega pt : F) (pub zs : Array F)
+    (hz : ∀ z ∈ zs, z = 0) : pubDot omega pt (pub ++ zs) = pubDot omega pt pub := by
+  have key : ∀ (l : List F) (acc : F × F), (∀ z ∈ l, z = 0) →
+      (l.foldl (fun (acc : F × F) pi => (acc.1 + -(pt - acc.2)⁻¹ * pi * acc.2, acc.2 * omega))
+        acc).1 = acc.1 := by
+    intro l
+    induction l with
+    | nil => intro _ _; rfl
+    | cons z l ih =>
+      intro acc h
+      rw [List.foldl_cons, ih _ fun y hy => h y (List.mem_cons_of_mem _ hy), h z List.mem_cons_self]
+      simp
+  unfold pubDot
+  rw [Array.foldl_append, ← Array.foldl_toList (xs := zs)]
+  exact key _ _ fun z h => hz z (Array.mem_toList_iff.mp h)
+
+/-- Zero cells past the end change neither public evaluation. -/
+private theorem publicEvals_append_zero {F : Type*} [Field F] (n : ℕ)
+    (omega zeta zetaOmega zetaN zetaOmegaN : F) (pub zs : Array F) (hz : ∀ z ∈ zs, z = 0) :
+    publicEvals n omega zeta zetaOmega zetaN zetaOmegaN (pub ++ zs)
+      = publicEvals n omega zeta zetaOmega zetaN zetaOmegaN pub := by
+  unfold publicEvals
+  rw [pubDot_append_zero _ _ _ _ hz, pubDot_append_zero _ _ _ _ hz]
+  by_cases hp : pub.size = 0
+  · have h0 : pub = #[] := Array.eq_empty_of_size_eq_zero hp
+    subst h0
+    by_cases hzs : zs.size = 0
+    · simp [hzs]
+    · simp [hzs, pubDot]
+  · simp [hp]
 
 /-! ## The Fiat–Shamir schedules -/
 
@@ -516,6 +548,17 @@ def publicEvalChunks {C : Ipa.KimchiCurve} {nc k : ℕ} (cp : KimchiProof C nc k
     let (e0, e1) := publicEvals n omega zeta zetaOmega zetaN zetaOmegaN pub
     ⟨⟨#[e0], by simp [h]⟩, ⟨#[e1], by simp [h]⟩⟩
 
+/-- Zero public-input cells past the end change neither public evaluation chunk. -/
+theorem publicEvalChunks_append_zero {C : Ipa.KimchiCurve} {nc k : ℕ} (cp : KimchiProof C nc k)
+    (n : ℕ) (omega zeta zetaOmega zetaN zetaOmegaN : C.ScalarField) (pub zs : Array C.ScalarField)
+    (hz : ∀ z ∈ zs, z = 0) :
+    publicEvalChunks cp n omega zeta zetaOmega zetaN zetaOmegaN (pub ++ zs)
+      = publicEvalChunks cp n omega zeta zetaOmega zetaN zetaOmegaN pub := by
+  unfold publicEvalChunks
+  split
+  · rfl
+  · rw [publicEvals_append_zero _ _ _ _ _ _ _ _ hz]
+
 /-- The proof's evaluations, chunk-combined, as the linearization's `Evals` record: every
 `ζ`-side value combined at `zetaM`, every `ζω`-side value at `zetaOmegaM`. -/
 def KimchiProof.linEvals {C : Ipa.KimchiCurve} {nc k : ℕ}
@@ -569,6 +612,61 @@ theorem publicCommitment_eq_sum {nc : ℕ} (σ : SRS C.Point) (L : Array (Vector
   refine congrArg Vector.ofFn (funext fun c => ?_)
   rw [← Array.foldl_toList, ← List.foldl_map, foldl_add_eq, _root_.zero_add]
 
+/-- The public commitment's chunk sum ignores zero cells past the end, where the points cover
+them. -/
+private theorem publicSum_append_zero {nc : ℕ} (L : Array (Vector C.Point nc))
+    (pub zs : Array C.ScalarField) (hz : ∀ z ∈ zs, z = 0) (hL : pub.size + zs.size ≤ L.size)
+    (c : Fin nc) :
+    (((L.extract 0 (pub ++ zs).size).zip (pub ++ zs)).toList.map
+        (fun Pp => (-Pp.2).val • Pp.1[c])).sum
+      = (((L.extract 0 pub.size).zip pub).toList.map (fun Pp => (-Pp.2).val • Pp.1[c])).sum := by
+  simp only [Array.toList_zip, Array.toList_extract, Array.toList_append, Array.size_append,
+    List.extract_eq_take_drop, List.drop_zero, Nat.sub_zero, List.take_add]
+  rw [List.zip_append (by simp; omega), List.map_append, List.sum_append]
+  have h0 : ((List.zip (List.take zs.size (List.drop pub.size L.toList)) zs.toList).map
+      (fun Pp : Vector C.Point nc × C.ScalarField => (-Pp.2).val • Pp.1[c])).sum = 0 := by
+    refine List.sum_eq_zero fun x hx => ?_
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hx
+    rw [hz p.2 (Array.mem_toList_iff.mp (List.of_mem_zip hp).2)]
+    simp
+  rw [h0, _root_.add_zero]
+
+/-- Zero public-input cells past the end change no chunk of the public commitment, where the
+points cover them. -/
+theorem publicCommitment_append_zero {nc : ℕ} (σ : SRS C.Point) (L : Array (Vector C.Point nc))
+    (pub zs : Array C.ScalarField) (hz : ∀ z ∈ zs, z = 0) (hL : pub.size + zs.size ≤ L.size) :
+    publicCommitment C σ L (pub ++ zs) = publicCommitment C σ L pub := by
+  by_cases hzs : zs.size = 0
+  · rw [Array.eq_empty_of_size_eq_zero hzs, Array.append_empty]
+  have hne : (pub ++ zs).size ≠ 0 := by rw [Array.size_append]; omega
+  rw [publicCommitment_eq_sum C σ L _ hne]
+  by_cases hp : pub.size = 0
+  · have hs := publicSum_append_zero C L pub zs hz hL
+    rw [Array.eq_empty_of_size_eq_zero hp] at hs ⊢
+    unfold publicCommitment
+    ext c hc
+    simp only [Array.size_empty, if_true, Vector.getElem_ofFn, Vector.getElem_replicate]
+    rw [hs ⟨c, hc⟩]
+    simp
+  · rw [publicCommitment_eq_sum C σ L pub hp]
+    exact congrArg Vector.ofFn (funext fun c => by rw [publicSum_append_zero C L pub zs hz hL c])
+
+/-- The public commitment at more of the key's Lagrange points than the input has cells is the
+commitment at exactly as many: it reads only the first `pub.size`. -/
+theorem publicCommitment_lagrangePoints_of_le {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m) :
+    publicCommitment C σ (cvk.lagrangePoints σ m).toArray pub
+      = publicCommitment C σ (cvk.lagrangePoints σ pub.size).toArray pub := by
+  have he : (cvk.lagrangePoints σ m).toArray.extract 0 pub.size
+      = (cvk.lagrangePoints σ pub.size).toArray.extract 0 pub.size := by
+    apply Array.toList_inj.mp
+    simp only [Array.toList_extract, List.extract_eq_take_drop, List.drop_zero, Nat.sub_zero,
+      KimchiVK.lagrangePoints]
+    rw [Ipa.lagrangeBasis_toList_take C σ nc cvk.n cvk.omega h,
+      Ipa.lagrangeBasis_toList_take C σ nc cvk.n cvk.omega le_rfl]
+  unfold publicCommitment
+  rw [he]
+
 /-! ## The stream combinators -/
 
 /-- One logical batch row's per-chunk segment triples: the chunk commitments zipped
@@ -602,69 +700,77 @@ def tailRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
 
 /-! ## The verifier -/
 
-/-- The verifier body at the Lagrange points `L`, for one proof at the basic gate set. It
-rejects a proof whose accumulator count differs from the key's, or a public input whose length
-is not the key's count. It then derives the challenges, evaluates the scalar side on
-chunk-combined evaluations, and collapses the linearized and quotient commitments at `ζ^M` into
-the one `ft` commitment. `Ipa.verifyFrom`, from the warm sponge, opens the old accumulators'
-rows, then the public, `ft` and `tailRowsOf` rows flattened to one segment per chunk (`ft` a
-single segment). -/
+/-- The verifier body's run at the public commitment `publicComm`, each intermediate computed
+once: the warm fq-sponge the challenge schedule leaves, and the batched IPA input. It derives the
+challenges, evaluates the scalar side on chunk-combined evaluations, and collapses the linearized
+and quotient commitments at `ζ^M` into the one `ft` commitment; the input opens the old
+accumulators' rows, then the public, `ft` and `tailRowsOf` rows flattened to one segment per
+chunk (`ft` a single segment). -/
+def runAt {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) (publicComm : Vector C.Point nc) :
+    FqSponge.S C.base × Ipa.Input C σ.k (cp.olds.size + (nc + 1 + tailRowCount * nc)) evalPts :=
+  let n := cvk.n
+  let o := fqOracles C cvk cp publicComm
+  let zetaOmega := o.zeta * cvk.omega
+  let zetaN := powPow2 o.zeta cvk.domainLog2
+  let zetaOmegaN := powPow2 zetaOmega cvk.domainLog2
+  let zetaM := powPow2 o.zeta σ.k
+  let zetaOmegaM := powPow2 zetaOmega σ.k
+  let pubEvals := publicEvalChunks cp n cvk.omega o.zeta zetaOmega zetaN zetaOmegaN pub
+  let pubEval0 := combineAt zetaM pubEvals.zeta.toArray
+  let e := cp.linEvals zetaM zetaOmegaM
+  let shifts : Fin permCols → C.ScalarField := fun i => cvk.shifts[i]
+  let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n cvk.zkRows cvk.omega shifts
+    cvk.endo (mdsOfParams C.frSponge.params) o.alpha o.beta o.gamma o.zeta pubEval0 e
+  let fr := frOracles C cp o.digest pubEvals
+  let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n cvk.zkRows cvk.omega o.zeta
+  let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
+  let fComm := cvk.sigmaComm[6].map (fun P => pScalar.val • P)
+  let ftComm := Ipa.combineCommitments C zetaM fComm.toArray
+    - (zetaN - 1).val • Ipa.combineCommitments C zetaM cp.tComm
+  let accRows : Vector (C.Point × C.ScalarField × C.ScalarField) cp.olds.size :=
+    ⟨cp.olds.map (fun a => (a.sg, bPoly a.u.get o.zeta, bPoly a.u.get zetaOmega)), by simp⟩
+  let stream : Vector (C.Point × C.ScalarField × C.ScalarField)
+      (cp.olds.size + (nc + 1 + tailRowCount * nc)) :=
+    accRows
+      ++ ((Vector.ofFn fun c : Fin nc =>
+            (publicComm[c], pubEvals.zeta[c], pubEvals.zetaOmega[c]))
+          ++ (⟨#[(ftComm, ftEval0, cp.ftEval1)], rfl⟩
+              : Vector (C.Point × C.ScalarField × C.ScalarField) 1)
+          ++ (tailRowsOf C cvk cp).flatten)
+  let inp : Ipa.Input C σ.k (cp.olds.size + (nc + 1 + tailRowCount * nc)) evalPts :=
+    { commitments := stream.map (·.1)
+      xs := ⟨#[o.zeta, zetaOmega], rfl⟩
+      evals := stream.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector _ evalPts))
+      polyscale := fr.xi
+      evalscale := fr.r
+      proof := cp.opening }
+  (o.warm, inp)
+
+/-- The verifier body at the Lagrange points `L`, for one proof at the basic gate set: it rejects
+a proof whose accumulator count differs from the key's, or a public input whose length is not
+the key's count, and otherwise finishes its run (`runAt`) at the public commitment to `L` with
+`Ipa.verifyFrom`, from the warm sponge. -/
 def kimchiVerifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (L : Array (Vector C.Point nc)) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     Bool :=
-  let n := cvk.n
   if cp.olds.size ≠ cvk.prevChallenges || pub.size ≠ cvk.publicCount then
     false
   else
-    let publicComm := publicCommitment C σ L pub
-    let o := fqOracles C cvk cp publicComm
-    let zetaOmega := o.zeta * cvk.omega
-    let zetaN := powPow2 o.zeta cvk.domainLog2
-    let zetaOmegaN := powPow2 zetaOmega cvk.domainLog2
-    let zetaM := powPow2 o.zeta σ.k
-    let zetaOmegaM := powPow2 zetaOmega σ.k
-    let pubEvals := publicEvalChunks cp n cvk.omega o.zeta zetaOmega zetaN zetaOmegaN pub
-    let pubEval0 := combineAt zetaM pubEvals.zeta.toArray
-    let e := cp.linEvals zetaM zetaOmegaM
-    let shifts : Fin permCols → C.ScalarField := fun i => cvk.shifts[i]
-    let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n cvk.zkRows cvk.omega shifts
-      cvk.endo (mdsOfParams C.frSponge.params) o.alpha o.beta o.gamma o.zeta pubEval0 e
-    let fr := frOracles C cp o.digest pubEvals
-    let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n cvk.zkRows cvk.omega o.zeta
-    let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
-    let fComm := cvk.sigmaComm[6].map (fun P => pScalar.val • P)
-    let ftComm := Ipa.combineCommitments C zetaM fComm.toArray
-      - (zetaN - 1).val • Ipa.combineCommitments C zetaM cp.tComm
-    let accRows : Vector (C.Point × C.ScalarField × C.ScalarField) cp.olds.size :=
-      ⟨cp.olds.map (fun a => (a.sg, bPoly a.u.get o.zeta, bPoly a.u.get zetaOmega)), by simp⟩
-    let stream : Vector (C.Point × C.ScalarField × C.ScalarField)
-        (cp.olds.size + (nc + 1 + tailRowCount * nc)) :=
-      accRows
-        ++ ((Vector.ofFn fun c : Fin nc =>
-              (publicComm[c], pubEvals.zeta[c], pubEvals.zetaOmega[c]))
-            ++ (⟨#[(ftComm, ftEval0, cp.ftEval1)], rfl⟩
-                : Vector (C.Point × C.ScalarField × C.ScalarField) 1)
-            ++ (tailRowsOf C cvk cp).flatten)
-    let inp : Ipa.Input C σ.k (cp.olds.size + (nc + 1 + tailRowCount * nc)) evalPts :=
-      { commitments := stream.map (·.1)
-        xs := ⟨#[o.zeta, zetaOmega], rfl⟩
-        evals := stream.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector _ evalPts))
-        polyscale := fr.xi
-        evalscale := fr.r
-        proof := cp.opening }
-    Ipa.verifyFrom C σ o.warm inp
+    let r := runAt C σ cvk cp pub (publicCommitment C σ L pub)
+    Ipa.verifyFrom C σ r.1 r.2
 
 /-- **The verifier over checked records**: the body at the key's Lagrange points from the SRS,
 as many as the public input has entries, which the guard makes the key's count. -/
 def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
-  kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ pub.size) cp pub
+  kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ pub.size).toArray cp pub
 
 /-- The body at the key's count of Lagrange points is the verifier: at any other public-input
 length both reject. -/
 theorem kimchiVerifyWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
-    kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ cvk.publicCount) cp pub
+    kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ cvk.publicCount).toArray cp pub
       = kimchiVerify C σ cvk cp pub := by
   unfold kimchiVerify
   by_cases h : pub.size = cvk.publicCount

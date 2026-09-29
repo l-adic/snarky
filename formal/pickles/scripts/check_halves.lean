@@ -346,29 +346,29 @@ def srsAt (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C
   loaded.modify ((k, σ) :: ·)
   return σ
 
-/-- The Lagrange basis an entry's key needs — as many as its public input has cells — at its
+/-- The Lagrange points an entry's key reads — as many as its public-input count — at its
 domain and `nc` chunks, computed from `σ` and memoised per curve, domain and chunk count under
-`lagrange-cache/`. -/
+`lagrange-cache/`: `KimchiVK.lagrangePoints` at the key's count, which is what
+`kimchiVerifyWith` takes to be `kimchiVerify` (`kimchiVerifyWith_lagrangePoints`). -/
 def basisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (nc : ℕ)
     (e : Cache.Entry C) : IO (Array (Vector C.Point nc)) := do
   let memoDir := (← IO.getEnv "LAGRANGE_CACHE_DIR").getD "lagrange-cache"
   Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-2^{e.vk.domainLog2}-{nc}c.json" σ nc
-    (2 ^ e.vk.domainLog2) e.vk.omega e.publicInput.size
+    (2 ^ e.vk.domainLog2) e.vk.omega e.vk.publicCount
 
-/-- A cache entry's checked wire records at the SRS `σ`, its key completed with the Lagrange
-basis: the records checked at the run's chunk count and `σ`'s round count. -/
-def checkedAny (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
+/-- A cache entry's checked wire records at the SRS `σ`: the records checked at the run's chunk
+count and `σ`'s round count. -/
+def checkedAny (C : Ipa.KimchiCurve) (σ : SRS C.Point) (e : Cache.Entry C) :
     IO ((nc : ℕ) × Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc σ.k) := do
   let nc := Kimchi.Verifier.Wire.runNc C σ e.vk
-  let vk := { e.vk with lagrangeBasis := (← basisFor C name σ nc e).map Vector.toArray }
-  match vk.check nc, e.proof.check nc σ.k with
+  match e.vk.check nc, e.proof.check nc σ.k with
   | some cvk, some cp => return ⟨nc, cvk, cp⟩
   | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
 
 /-- `checkedAny` at one chunk, the chunk count the halves' environment fixes. -/
-def checkedAt (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
+def checkedAt (C : Ipa.KimchiCurve) (σ : SRS C.Point) (e : Cache.Entry C) :
     IO (Kimchi.Verifier.KimchiVK C 1 × Kimchi.Verifier.KimchiProof C 1 σ.k) := do
-  let ⟨nc, cvk, cp⟩ ← checkedAny C name σ e
+  let ⟨nc, cvk, cp⟩ ← checkedAny C σ e
   if h : nc = 1 then return (h ▸ cvk, h ▸ cp)
   else throw (IO.userError s!"the entry runs at {nc} chunks; this lane is one-chunk")
 
@@ -409,13 +409,13 @@ count. -/
 def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (memo : Memo) (e : Cache.Entry C) : IO Bool := do
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let ⟨_, cvk, cp⟩ ← checkedAny C name σ e
+  let ⟨nc, cvk, cp⟩ ← checkedAny C σ e
+  let L ← basisFor C name σ nc e
   memoized memo.verify (memoKey C name σ.k e e.publicInput) fun _ =>
-    Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
+    Kimchi.Verifier.kimchiVerifyWith C σ cvk L cp e.publicInput
 
-/-- The environment of an entry's key at its SRS, built once per key. Deciding
-`Env.Invariants` computes the key's Lagrange points from the SRS — the one costly invariant —
-so the environment is kept and handed back for every later entry under the same key. -/
+/-- The environment of an entry's key at its SRS, built once per key and handed back for every
+later entry under the same key. -/
 def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point)))
     (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env C nc)))
@@ -423,7 +423,7 @@ def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
   let key := s!"{e.vkDigest}/{e.proof.opening.lr.size}/{e.publicInput.size}"
   if let some E := (← envs.get).lookup key then return E
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let ⟨nc, cvk, _⟩ ← checkedAny C name σ e
+  let ⟨nc, cvk, _⟩ ← checkedAny C σ e
   if hE : Pickles.Env.Invariants σ cvk then
     let E : Pickles.Env C nc := Pickles.Env.ofInvariants σ cvk hE
     envs.modify ((key, ⟨nc, E⟩) :: ·)
@@ -431,15 +431,14 @@ def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
   else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
     endo or shifts are not the curve's, zk_rows is not the chunk count's or is above the \
     domain, the generator is not primitive on the domain, there is no round or too many for \
-    the absorb bound, the blinding base is the identity, there is no Lagrange basis or one \
-    larger than the domain, the chunk count is not the domain's, the Lagrange basis is not the \
-    SRS's, or the key's digest is not its commitments' (a commitment outside the model, such as \
-    a lookup or optional gate, was absorbed)")
+    the absorb bound, the blinding base is the identity, the chunk count is not the domain's, \
+    or the key's digest is not its commitments' (a commitment outside the model, such as a \
+    lookup or optional gate, was absorbed)")
 
 /-- An entry's checked proof at its environment's chunk count. -/
-def checkedFor (C : Ipa.KimchiCurve) (name : String) {nc : ℕ} (E : Pickles.Env C nc)
+def checkedFor (C : Ipa.KimchiCurve) {nc : ℕ} (E : Pickles.Env C nc)
     (e : Cache.Entry C) : IO (Kimchi.Verifier.KimchiProof C nc E.σ.k) := do
-  let ⟨nc', _, cp⟩ ← checkedAny C name E.σ e
+  let ⟨nc', _, cp⟩ ← checkedAny C E.σ e
   if h : nc' = nc then return h ▸ cp
   else throw (IO.userError s!"the entry runs at {nc'} chunks, its environment at {nc}")
 
@@ -454,23 +453,25 @@ def envFor1 (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option
 
 /-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on
 `C`: `carry` decided on the two checked proofs, `accOk` on the accumulator, `sgOk` on `pred`,
-and the last two agreeing. -/
+and the last two agreeing. `carry` and `sgOk` are decided at the memoized Lagrange points
+(`carryWith_lagrangePoints`, `sgOkWith_lagrangePoints`). -/
 def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point)))
     (envs : IO.Ref (List (String × (nc : ℕ) × Pickles.Env C nc))) (memo : Memo)
     (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
-  let ⟨_, E⟩ ← envFor C name sqrt loaded envs pred
+  let ⟨nc, E⟩ ← envFor C name sqrt loaded envs pred
   unless succ.proof.opening.lr.size = E.σ.k do
     throw (IO.userError s!"round counts differ: {E.σ.k} and {succ.proof.opening.lr.size}")
-  let cp ← checkedFor C name E pred
-  let ⟨_, _, cp'⟩ ← checkedAny C name E.σ succ
+  let cp ← checkedFor C E pred
+  let ⟨_, _, cp'⟩ ← checkedAny C E.σ succ
   if h : slot < cp'.olds.size then
     -- `sgOk` is the predecessor's shared verdict (`memo`); `accOk` is the successor's own
     -- accumulator and stays a computation of its own, since its agreeing with `sgOk` is what
     -- the carry says
-    let c := Pickles.carry E.σ E.cvk cp pred.publicInput cp' ⟨slot, h⟩
+    let L ← basisFor C name E.σ nc pred
+    let c := Pickles.carryWith E.σ E.cvk L cp pred.publicInput cp' ⟨slot, h⟩
     let s ← memoized memo.sg (memoKey C name E.σ.k pred pred.publicInput) fun _ =>
-      Pickles.sgOk E.σ E.cvk cp pred.publicInput
+      Pickles.sgOkWith E.σ E.cvk L cp pred.publicInput
     let a := Pickles.accOk E.σ cp'.olds[slot]
     IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
     return c && a && s && (s == a)
@@ -486,8 +487,8 @@ public input it names:
   the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
   public input (`wrapPublicInput`);
-* the SRS avoids the key's Lagrange relations (`havoid`), decided on the key's Lagrange
-  points (`Env.decidableAvoids`), which the environment's invariants tie to the SRS;
+* the SRS avoids the key's Lagrange relations, one per packed scalar (`havoid`), decided on the
+  SRS's Lagrange points on the key's domain (`Env.avoids_lagrangeRelations_iff`);
 * the wrap statement's `messages_for_next_wrap_proof` is the digest `wrapVerifyAt` asserts:
   the padding, the slots' expanded round challenges, the step opening's `sg`;
 * `Guards`, `SgOk`, and the conclusion `kimchiVerify`, at that public input.
@@ -501,7 +502,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
   let ⟨nc, E⟩ ← envFor CS "vesta" vestaBase.sqrt? loaded envs s
   let σ := E.σ
   let cvk := E.cvk
-  let cp ← checkedFor CS "vesta" E s
+  let cp ← checkedFor CS E s
   do
     let cands := steps.toList.map (·.vk.domainLog2)
     let some doms := Pickles.KnownDomains.ofList? E cands
@@ -530,15 +531,18 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let digest := (Poseidon.squeeze params (Poseidon.absorb params (wrapMsgSpongeState n)
       (expanded.flatten ++ [sg.x, sg.y]))).1
     let msgOk := decide (digest = wst.proofState.messagesForNextWrapProof)
-    let guards := decide (¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨
-      cp.olds.size ≠ cvk.prevChallenges))
+    let guards := decide (cp.olds.size = cvk.prevChallenges ∧ pub.size = cvk.publicCount)
+    let L ← basisFor CS "vesta" σ nc s
     let sg' ← memoized memo.sg (memoKey CS "vesta" σ.k s pub) fun _ =>
-      Pickles.sgOk E.σ E.cvk cp pub
+      Pickles.sgOkWith E.σ E.cvk L cp pub
     let kv ← memoized memo.verify (memoKey CS "vesta" σ.k s pub) fun _ =>
-      Kimchi.Verifier.kimchiVerify CS σ cvk cp pub
-    -- `havoid`, the theorem's own hypothesis, decided on the key's Lagrange points
-    let avoidOk := @decide (E.σ.Avoids E.lagrangeRelations)
-      (E.decidableAvoids Pickles.pastaShapeVesta)
+      Kimchi.Verifier.kimchiVerifyWith CS σ cvk L cp pub
+    -- `havoid`, the theorem's own hypothesis, decided on the memoized Lagrange points as the
+    -- right side of `Env.avoids_lagrangeRelations_iff`. The bounded `∀` is pinned to the list
+    -- walk: left to resolution it goes to `Vector`'s finite-type instance, which enumerates
+    -- the curve.
+    let Lm := L.toList.take stVar.packed.length
+    let avoidOk := @decide (∀ Ps ∈ Lm, ∀ c : Fin nc, Ps[c] ≠ 0) (List.decidableBAll _ _)
     IO.println s!"    env=true rounds={σ.k} domains={cands} \
       key=2^{s.vk.domainLog2} hdom={hdom} \
       pub={pubOk} ({pub.size} cells) avoids={avoidOk} msgDigest={msgOk} \
@@ -560,7 +564,8 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     -- `hsatG`: the theorem's group circuit — the verify block with its success bit and its
     -- message digest asserted — on the wrap statement, the step statement and proof, and
     -- the slots' expanded round challenges; its key cells are the step key's, as constants,
-    -- and its sponge after the index digest is that key's
+    -- its sponge after the index digest is that key's, and its Lagrange points the memoized
+    -- ones (`StepProof.groupCircuit_eq_groupCircuitWith`)
     let ginp ← match wrapGroupInput w s n (σ.g ⟨0, Nat.two_pow_pos _⟩) cp with
       | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok r => pure r
     let newBp : Vector (Vector Fq Pickles.WrapIPARounds) n :=
@@ -572,7 +577,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n nc) => do
         let key := Pickles.keyCellsOf xhatWrapCell E.cvk
         let sv ← wrapIndexSponge key
-        Pickles.StepProof.groupCircuit E key sv
+        Pickles.StepProof.groupCircuitWith E.σ.h Lm key sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
       (fun _ => []) ⟨{ group := ginp, newBp }⟩
     IO.println s!"    groupCircuit: satisfies={satG}"
@@ -583,11 +588,11 @@ decided on a step entry's slot and the wrap entry that slot verified — the twi
 `theoremHyps`:
 
 * the environment's invariants hold of the wrap key and its SRS (`Env.Invariants`);
-* the packed wrap statement, carried into the step field, reads back as the cells of the wrap
-  proof's public input that a circuit reads (`stepPublicInput`), the wire's ten further cells
-  are zero;
-* the SRS avoids the step relations (`havoid`), decided on the key's Lagrange points
-  (`decidableAvoidsStepRelations`);
+* the packed wrap statement, carried into the step field and flattened with its
+  optional-feature cells, is the wrap proof's public input (`stepPublicInput`);
+* the packed statement fits in the SRS and in the key's domain (`hsmall`, `hn`), and the SRS
+  avoids the step relations (`havoid`), decided on the SRS's Lagrange points on the key's
+  domain (`avoids_stepRelationsAt_iff`);
 * `Guards`, `SgOk`, and the conclusion `kimchiVerify`, at that public input;
 * both circuits, as `compile` builds them, are satisfied: `WrapProof.scalarCircuit` with
   `finalized` asserted, `WrapProof.groupCircuit` with its success bit asserted at a slot that
@@ -598,29 +603,32 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   let E ← envFor1 CW "pallas" pallasBase.sqrt? loaded envs w
   let σ := E.σ
   let cvk := E.cvk
-  let (_, cp) ← checkedAt CW "pallas" σ w
+  let (_, cp) ← checkedAt CW σ w
   let wst ← match wrapStatementOf toStep Pickles.StepIPARounds w.publicInput with
     | .error e => throw (IO.userError s!"wrap statement: {e}") | .ok r => pure r
   -- the statement as constant cells: every reading below is the value's own
   let stVar : Pickles.WrapStatement Pickles.StepIPARounds (FVar Fp) (BoolVar Fp)
       (Type1 (FVar Fp)) := CircuitType.constVar (F := Fp) wst
   let V : Valuation Fp := fun _ => 0
-  let pub := Pickles.stepPublicInput E V stVar
-  -- the wire's input is the cells read, then ten zero cells
-  let pubOk := decide (pub ++ Array.replicate 10 0 = w.publicInput)
+  let pub := Pickles.stepPublicInput V stVar
+  let pubOk := decide (pub = w.publicInput)
   let smallOk := decide (stVar.packed.length ≤ 2 ^ E.σ.k)
-  let avoidOk := if hs : stVar.packed.length ≤ 2 ^ E.σ.k then
-    @decide (E.σ.Avoids (Pickles.stepRelationsAt E stVar))
-      (Pickles.decidableAvoidsStepRelations E stVar hs)
-  else false
-  let guards := decide (¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨
-    cp.olds.size ≠ cvk.prevChallenges))
+  let nOk := decide (stVar.packed.length ≤ cvk.n)
+  let L ← basisFor CW "pallas" σ 1 w
+  -- `havoid`, decided on the memoized Lagrange points as the right side of
+  -- `avoids_stepRelationsAt_iff`, which holds under `hsmall` and `hn`; the bounded `∀` is
+  -- pinned to the list walk
+  let Lm := L.toList.take stVar.packed.length
+  let avoidOk :=
+    decide (∀ c : Fin 1, Pickles.corrSumPt (C := CW) stVar.packed Lm c ≠ 0)
+      && @decide (∀ Ps ∈ Lm, ∀ c : Fin 1, Ps[c] ≠ 0) (List.decidableBAll _ _)
+  let guards := decide (cp.olds.size = cvk.prevChallenges ∧ pub.size = cvk.publicCount)
   let sg' ← memoized memo.sg (memoKey CW "pallas" σ.k w pub) fun _ =>
-    Pickles.sgOk E.σ E.cvk cp pub
+    Pickles.sgOkWith E.σ E.cvk L cp pub
   let kv ← memoized memo.verify (memoKey CW "pallas" σ.k w pub) fun _ =>
-    Kimchi.Verifier.kimchiVerify CW σ cvk cp pub
+    Kimchi.Verifier.kimchiVerifyWith CW σ cvk L cp pub
   IO.println s!"    env=true rounds={σ.k} key=2^{cvk.domainLog2} pub={pubOk} \
-    ({pub.size} cells + 10 zeros) small={smallOk} avoids={avoidOk} guards={guards} \
+    ({pub.size} cells) small={smallOk} n={nOk} avoids={avoidOk} guards={guards} \
     sgOk={sg'} kimchiVerify={kv}"
   -- `hsatS`: the theorem's scalar circuit, which asserts `finalized`
   let finp ← match wrapFopInput s slot cp with
@@ -631,7 +639,8 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   IO.println s!"    scalarCircuit (finalized asserted): satisfies={satS}"
   -- `hsatG`: the theorem's group circuit — `verify` with its success bit asserted — on the
   -- wrap statement, the slot's claims and the wrap proof; its key cells are the wrap key's,
-  -- as constants, and its sponge after the index digest is that key's
+  -- as constants, its sponge after the index digest is that key's, and its Lagrange points the
+  -- memoized ones (`WrapProof.groupCircuit_eq_groupCircuitWith`)
   let ginp ← match stepGroupInput w s slot (σ.g ⟨0, Nat.two_pow_pos _⟩) cp with
     | .error e => throw (IO.userError s!"step group input: {e}") | .ok r => pure r
   let (satG, _) ← runHalf (a := Pickles.WrapProof.GroupIn Pickles.StepIPARounds σ.k 1)
@@ -639,17 +648,17 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
     (fun (v : Pickles.WrapProof.GroupVar Pickles.StepIPARounds σ.k 1) => do
       let key := Pickles.keyCellsOf xhatStepCell E.cvk
       let sv ← stepIndexSponge key
-      Pickles.WrapProof.groupCircuit E key sv v)
+      Pickles.WrapProof.groupCircuitWith E.σ.h Lm key sv v)
     (fun _ => []) ⟨ginp⟩
   IO.println s!"    groupCircuit: satisfies={satG}"
-  return pubOk && smallOk && avoidOk && guards && sg' && kv && satS && satG
+  return pubOk && smallOk && nOk && avoidOk && guards && sg' && kv && satS && satG
 
 /-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `accOk` on its
 own. -/
 def padOk (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) (slot : ℕ) : IO Bool := do
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let ⟨_, _, cp⟩ ← checkedAny C name σ e
+  let ⟨_, _, cp⟩ ← checkedAny C σ e
   if h : slot < cp.olds.size then return Pickles.accOk σ cp.olds[slot]
   else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
 
@@ -708,11 +717,11 @@ def main : IO Unit := do
   let needEnvs := on "theorem" || on "carry"
   for s in steps do
     let σ ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS s.proof.opening.lr.size
-    let _ ← checkedAny CS "vesta" σ s
+    let _ ← checkedAny CS σ s
     if needEnvs then discard <| envFor CS "vesta" vestaBase.sqrt? vestaSRS vestaEnvs s
   for w in wraps do
     let σ ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS w.proof.opening.lr.size
-    let _ ← checkedAny CW "pallas" σ w
+    let _ ← checkedAny CW σ w
     if needEnvs then discard <| envFor CW "pallas" pallasBase.sqrt? pallasSRS pallasEnvs w
   IO.println s!"warm-up: {(← IO.monoMsNow) - t0} ms; {nJobs} worker(s)"
   let mut allOk := true
@@ -743,7 +752,7 @@ def main : IO Unit := do
     if on "step" then
       jobs := jobs.push do
         let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS s.proof.opening.lr.size
-        let ⟨nc, cvkS, cpS⟩ ← checkedAny CS "vesta" σS s
+        let ⟨nc, cvkS, cpS⟩ ← checkedAny CS σS s
         let inp ← match stepFopInput w cpS with
           | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
         report s!"step half on {pair} (domain 2^{s.vk.domainLog2}, {nc} chunk(s), \
@@ -766,7 +775,7 @@ def main : IO Unit := do
         let n := (s.publicInput.size - 1) / (18 + Pickles.WrapIPARounds)
         let r := s.proof.opening.lr.size
         let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS r
-        let ⟨nc, cvkS, cpS⟩ ← checkedAny CS "vesta" σS s
+        let ⟨nc, cvkS, cpS⟩ ← checkedAny CS σS s
         let ginp ← match wrapGroupInput w s n (σS.g ⟨0, Nat.two_pow_pos _⟩) cpS with
           | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok i => pure i
         let basis ← basisFor CS "vesta" σS nc s
@@ -785,7 +794,7 @@ def main : IO Unit := do
       if on "wrap" then
         jobs := jobs.push do
           let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
-          let (_, cpW) ← checkedAt CW "pallas" σW w
+          let (_, cpW) ← checkedAt CW σW w
           let inp ← match wrapFopInput s slot cpW with
             | .error e => throw (IO.userError s!"wrap input: {e}") | .ok i => pure i
           report s!"wrap half on {pair} (domain 2^{w.vk.domainLog2}, {r} rounds)"
@@ -793,7 +802,7 @@ def main : IO Unit := do
       if on "step-group" then
         jobs := jobs.push do
           let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
-          let (cvkW, cpW) ← checkedAt CW "pallas" σW w
+          let (cvkW, cpW) ← checkedAt CW σW w
           let ginp ← match stepGroupInput w s slot (σW.g ⟨0, Nat.two_pow_pos _⟩) cpW with
             | .error e => throw (IO.userError s!"step group input: {e}") | .ok i => pure i
           let basis := (← basisFor CW "pallas" σW 1 w).map (·[(0 : Fin 1)])
