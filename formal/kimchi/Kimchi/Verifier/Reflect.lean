@@ -30,10 +30,11 @@ variable (C : Ipa.KimchiCurve)
 
 variable {nc : ℕ}
 
-/-- The run's fq-sponge oracles, `fqOracles` at the run's own public commitment. -/
+/-- The run's fq-sponge oracles, `fqOracles` at the run's own public commitment, over the key's
+Lagrange points. -/
 def runOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : FqOracles C :=
-  fqOracles C cvk cp (publicCommitment C σ cvk pub)
+  fqOracles C cvk cp (publicCommitment C σ (cvk.lagrangePoints σ pub.size) pub)
 
 /-- The second batch point `ζω`. -/
 def runZetaOmega (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -130,7 +131,8 @@ def runStreamP (σ : SRS C.Point) (cvk : KimchiVK C nc)
       bPoly a.u.get (runZetaOmega C σ cvk cp pub))), by simp⟩
     : Vector (C.Point × C.ScalarField × C.ScalarField) cp.olds.size)
     ++ ((Vector.ofFn fun c : Fin nc =>
-          ((publicCommitment C σ cvk pub)[c], pe.zeta[c], pe.zetaOmega[c]))
+          ((publicCommitment C σ (cvk.lagrangePoints σ pub.size) pub)[c], pe.zeta[c],
+            pe.zetaOmega[c]))
         ++ (⟨#[(runFtComm C σ cvk cp pub,
                runFtEval0P C σ cvk cp pub
                  (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray),
@@ -163,11 +165,11 @@ def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
 
 /-! ## The body reflection -/
 
-/-- The argument-dependent guards of `kimchiVerify`: the public input fits the Lagrange
-table and the domain, and the accumulator count is the key's. -/
+/-- The argument-dependent guards of `kimchiVerify`: the accumulator count and the public
+input's length are the key's. -/
 def Guards {k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) (pub : Array C.ScalarField) :
     Prop :=
-  ¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨ cp.olds.size ≠ cvk.prevChallenges)
+  cp.olds.size = cvk.prevChallenges ∧ pub.size = cvk.publicCount
 
 /-- `kimchiVerify` accepts iff the guards hold and the warm-sponge IPA finish (`verifyFrom`)
 accepts on the run's own input. -/
@@ -177,12 +179,11 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : Kim
       ↔ Guards C cvk cp pub ∧
         Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub) = true := by
   have hkv : kimchiVerify C σ cvk cp pub
-      = (if cvk.lagrangeBasis.size < pub.size || cvk.n < pub.size
-            || cp.olds.size ≠ cvk.prevChallenges then false
+      = (if cp.olds.size ≠ cvk.prevChallenges || pub.size ≠ cvk.publicCount then false
           else Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub)) := rfl
-  have hcond : (cvk.lagrangeBasis.size < pub.size || cvk.n < pub.size
-      || cp.olds.size ≠ cvk.prevChallenges) = true ↔ ¬ Guards C cvk cp pub := by
-    simp only [Guards, Bool.or_eq_true, decide_eq_true_eq, ne_eq, not_not, or_assoc]
+  have hcond : (cp.olds.size ≠ cvk.prevChallenges || pub.size ≠ cvk.publicCount) = true
+      ↔ ¬ Guards C cvk cp pub := by
+    simp only [Guards, Bool.or_eq_true, decide_eq_true_eq, ne_eq, not_and_or]
   rw [hkv]
   by_cases hg : Guards C cvk cp pub
   · rw [if_neg (hcond.not.mpr (not_not.mpr hg))]

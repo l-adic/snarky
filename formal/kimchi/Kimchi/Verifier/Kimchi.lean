@@ -54,12 +54,7 @@ The modeled fragment, and every deviation from the upstream file:
   upstream settles one MSM, `∑ᵢ (rⁱ·Aᵢ + sⁱ·Bᵢ) = 0` at fresh random weights `r`, `s`. On one
   proof both weights are `1` and upstream's test is `A + B = 0`, so acceptance here implies
   upstream acceptance, not conversely (`Bulletproof/Wire.lean`, *What `verify` checks*).
-  Batching several proofs is out of scope;
-* upstream's key carries the public-input count as a serialized field, and upstream rejects
-  a public input of any other length (lines 816–820, re-checked at 835–838). The wire key
-  here carries no count, so `kimchiVerify` checks the two bounds the body needs instead: the
-  public input against the Lagrange table and against the domain, so the Lagrange MSM and
-  the barycentric sums read only genuine entries.
+  Batching several proofs is out of scope.
 -/
 
 namespace Kimchi.Verifier
@@ -216,6 +211,10 @@ structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
   shifts : Vector C.ScalarField permCols
   /-- The number of zero-knowledge rows. -/
   zkRows : ℕ
+  /-- The public-input count: `kimchiVerify` rejects a public input of any other length. -/
+  publicCount : ℕ
+  /-- The public input is a segment of a column: its count is at most the domain size. -/
+  publicCount_le : publicCount ≤ 2 ^ domainLog2
   /-- The accumulator count the key was built with: `kimchiVerify` rejects a proof whose
   `olds` has any other length. -/
   prevChallenges : ℕ
@@ -223,13 +222,17 @@ structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
   endo : C.ScalarField
   /-- The verifier-index digest, an input rather than computed from the key. -/
   digest : C.BaseField
-  /-- The Lagrange-basis commitments, chunk-validated in full: SRS-derived data, an input
-  like `digest`. -/
-  lagrangeBasis : Array (Vector C.Point nc)
 
 /-- The domain size of a checked key. -/
 def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
     (cvk : KimchiVK C nc) : ℕ := 2 ^ cvk.domainLog2
+
+/-- The first `m` Lagrange points of the key's domain: the SRS's commitments to the domain's
+Lagrange polynomials, in `nc` chunks (`Ipa.lagrangeBasis`). They are the SRS's, not the key's:
+the key fixes only the domain. -/
+def KimchiVK.lagrangePoints {C : Ipa.KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (m : ℕ) : Array (Vector C.Point nc) :=
+  Ipa.lagrangeBasis C σ nc cvk.n cvk.omega m
 
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record, the form
 `kimchiVerify` hands `ftEval0`. `Gate.Poseidon.mdsOfParams` is the same repackaging behind
@@ -533,15 +536,15 @@ def KimchiProof.linEvals {C : Ipa.KimchiCurve} {nc k : ℕ}
 
 /-! ## The group side -/
 
-/-- The public-input commitment, per chunk: on empty input, `nc` copies of the blinding
-base `σ.h`; else chunk `c` is the MSM of the Lagrange-basis commitments' `c`-chunks against
+/-- The public-input commitment at the Lagrange points `L`, per chunk: on empty input, `nc`
+copies of the blinding base `σ.h`; else chunk `c` is the MSM of the points' `c`-chunks against
 the negated public input, plus `σ.h`, the all-ones blinder applied per chunk. -/
-def publicCommitment {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+def publicCommitment {nc : ℕ} (σ : SRS C.Point) (L : Array (Vector C.Point nc))
     (pub : Array C.ScalarField) : Vector C.Point nc :=
   if pub.size = 0 then Vector.replicate nc σ.h
   else
     Vector.ofFn (fun (c : Fin nc) =>
-      ((cvk.lagrangeBasis.extract 0 pub.size).zip pub).foldl
+      ((L.extract 0 pub.size).zip pub).foldl
         (fun acc Pp => acc + (-Pp.2).val • Pp.1[c]) 0
       + σ.h)
 
@@ -555,11 +558,11 @@ private theorem foldl_add_eq {G : Type*} [AddMonoid G] (init : G) :
 /-- `publicCommitment` as a per-chunk list sum plus `h` (nonempty input): an order-free
 re-association of the fold into `(… .map …).sum + h`, with no negation rewrite and no
 curve-order fact. `Pickles.PublicInputCommit` works from this form. -/
-theorem publicCommitment_eq_sum {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+theorem publicCommitment_eq_sum {nc : ℕ} (σ : SRS C.Point) (L : Array (Vector C.Point nc))
     (pub : Array C.ScalarField) (hne : pub.size ≠ 0) :
-    publicCommitment C σ cvk pub =
+    publicCommitment C σ L pub =
       Vector.ofFn (fun c : Fin nc =>
-        (((cvk.lagrangeBasis.extract 0 pub.size).zip pub).toList.map
+        (((L.extract 0 pub.size).zip pub).toList.map
             (fun Pp => (-Pp.2).val • Pp.1[c])).sum + σ.h) := by
   unfold publicCommitment
   rw [if_neg hne]
@@ -599,24 +602,21 @@ def tailRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
 
 /-! ## The verifier -/
 
-/-- **The verifier body over checked records**, for one proof at the basic gate set. It
-rejects a proof whose accumulator count differs from the key's, or whose public input
-overruns the domain or the Lagrange table. It then derives the challenges, evaluates the
-scalar side on chunk-combined evaluations, and collapses the linearized and quotient
-commitments at `ζ^M` into the one `ft` commitment. `Ipa.verifyFrom`, from the warm sponge,
-opens the old accumulators' rows, then the public, `ft` and `tailRowsOf` rows flattened to
-one segment per chunk (`ft` a single segment). -/
-def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
+/-- The verifier body at the Lagrange points `L`, for one proof at the basic gate set. It
+rejects a proof whose accumulator count differs from the key's, or a public input whose length
+is not the key's count. It then derives the challenges, evaluates the scalar side on
+chunk-combined evaluations, and collapses the linearized and quotient commitments at `ζ^M` into
+the one `ft` commitment. `Ipa.verifyFrom`, from the warm sponge, opens the old accumulators'
+rows, then the public, `ft` and `tailRowsOf` rows flattened to one segment per chunk (`ft` a
+single segment). -/
+def kimchiVerifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (L : Array (Vector C.Point nc)) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
+    Bool :=
   let n := cvk.n
-  -- The two public-input bounds stand in for upstream's exact count, which the wire key
-  -- does not carry (the module docstring's scope). The accumulator count guard is
-  -- upstream's own.
-  if cvk.lagrangeBasis.size < pub.size || n < pub.size
-      || cp.olds.size ≠ cvk.prevChallenges then
+  if cp.olds.size ≠ cvk.prevChallenges || pub.size ≠ cvk.publicCount then
     false
   else
-    let publicComm := publicCommitment C σ cvk pub
+    let publicComm := publicCommitment C σ L pub
     let o := fqOracles C cvk cp publicComm
     let zetaOmega := o.zeta * cvk.omega
     let zetaN := powPow2 o.zeta cvk.domainLog2
@@ -653,5 +653,24 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
         evalscale := fr.r
         proof := cp.opening }
     Ipa.verifyFrom C σ o.warm inp
+
+/-- **The verifier over checked records**: the body at the key's Lagrange points from the SRS,
+as many as the public input has entries, which the guard makes the key's count. -/
+def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
+  kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ pub.size) cp pub
+
+/-- The body at the key's count of Lagrange points is the verifier: at any other public-input
+length both reject. -/
+theorem kimchiVerifyWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
+    kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ cvk.publicCount) cp pub
+      = kimchiVerify C σ cvk cp pub := by
+  unfold kimchiVerify
+  by_cases h : pub.size = cvk.publicCount
+  · rw [h]
+  · have hg : (decide (cp.olds.size ≠ cvk.prevChallenges) || decide (pub.size ≠ cvk.publicCount))
+        = true := by simp [h]
+    simp only [kimchiVerifyWith, hg, if_true]
 
 end Kimchi.Verifier

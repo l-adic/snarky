@@ -90,6 +90,7 @@ def main : IO Unit := do
     , check1 "vk.endomulScalarComm" (ptCoords vk.endomulScalarComm) (ptCoords rvk.endomulScalarComm)
     , check1 "vk.shifts" vk.shifts.toList rvk.shifts.toList
     , check1 "vk.zkRows" vk.zkRows rvk.zkRows
+    , check1 "vk.publicCount" vk.publicCount rvk.publicCount
     , check1 "vk.prevChallenges" vk.prevChallenges rvk.prevChallenges
     , check1 "vk.digest" vk.digest rvk.digest ]
   for (_, line) in checks do IO.println line
