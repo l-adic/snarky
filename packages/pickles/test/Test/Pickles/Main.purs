@@ -15,6 +15,7 @@ import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.PaddedWideSlots as PaddedWideSlots
 import Test.Pickles.Prove.RecurseOverChunks as RecurseOverChunks
 import Test.Pickles.Prove.SelfRecursiveChunks as SelfRecursiveChunks
+import Test.Pickles.Prove.SideLoadedBound as SideLoadedBound
 import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.SimpleChainN2 as SimpleChainN2
@@ -22,6 +23,7 @@ import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
 import Test.Pickles.SharedSrs (buildSharedSrs)
 import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
+import Test.Pickles.Sideload.DigestVkSpec as SideloadDigestVk
 import Test.Pickles.Sideload.LeanInputsSpec as SideloadLeanInputs
 import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChild
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
@@ -57,6 +59,7 @@ spec = beforeAll buildSharedSrs do
   RecurseOverChunks.spec
   SelfRecursiveChunks.spec
   SideLoadedMain.spec
+  SideLoadedBound.spec
   TreeProofReturn.spec
   HeterogeneousPrevs.spec
   TwoPhaseChain.spec
@@ -64,6 +67,7 @@ spec = beforeAll buildSharedSrs do
   SideloadRoundTripNrr.spec
   SideloadRoundTripMainChild.spec
   SideloadDigestEqNrr.spec
+  SideloadDigestVk.spec
   SideloadVerifyNrr.spec
   SideloadVerifyFixtures.spec
   SideloadLeanInputs.spec
