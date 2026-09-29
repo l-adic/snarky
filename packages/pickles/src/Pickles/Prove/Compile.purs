@@ -1855,6 +1855,10 @@ mkRuleEntry
 mkRuleEntry rule compiledKeys = do
   let
     slotVKs = slotKeysOf (Proxy :: Proxy prevsSpec) compiledKeys
+  requireSlotWidths (reflectType (Proxy :: Proxy mpvMax))
+    (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
+    slotVKs
+  let
     ctxAt cfg stepNumChunks selfStepDomainLog2s =
       buildStepProveCtx @prevsSpec cfg stepNumChunks
         (reflectType (Proxy :: Proxy mpvMax))
@@ -1972,6 +1976,37 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
     stepProveContextOf perRuleCfg
       (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
       selfStepDomainLog2s
+
+-- | Fails unless every compiled slot's declared width is its source's
+-- | `max_proofs_verified`: the tag's own `mpvMax` for a `Self` slot,
+-- | the imported system's for an `External` one. OCaml reads a slot's
+-- | width off its tag; here the prevs spec declares it, so the two can
+-- | disagree. A side-loaded slot takes its key at prove time and is
+-- | not checked here.
+requireSlotWidths
+  :: forall len
+   . Reflectable len Int
+  => Int
+  -> Vector len Int
+  -> Vector len (Maybe SlotWrapKey)
+  -> Effect Unit
+requireSlotWidths mpvMax widths keys =
+  forWithIndex_ (Vector.zip widths keys) \slot (width /\ key) ->
+    for_ (sourceWidth key) \n ->
+      when (width /= n)
+        $ Exc.throw
+        $ "mkRuleEntry: slot "
+            <> show (getFinite slot)
+            <> " declares width "
+            <> show width
+            <> ", but its source verifies "
+            <> show n
+            <> " proofs"
+  where
+  sourceWidth = case _ of
+    Just Self -> Just mpvMax
+    Just (External d) -> Just d.maxProofsVerified
+    Nothing -> Nothing
 
 -- | Fails unless each slot's candidate step domains share their
 -- | permutation shifts. The step circuit finalizes a slot's previous
@@ -2592,5 +2627,6 @@ compileMulti cfg rules = do
         , stepDomainLog2s:
             NonEmptyArray.nub (NonEmptyArray.fromFoldable1 (map _.stepDomainLog2 perBranchVec))
         , numChunks: reflectType (Proxy :: Proxy stepChunks)
+        , maxProofsVerified: reflectType (Proxy :: Proxy mpvMax)
         }
     }

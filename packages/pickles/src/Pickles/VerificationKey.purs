@@ -33,6 +33,7 @@ import Pickles.Types (ChunkedCommitment(..))
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
+import Simple.JSON (class WriteForeign)
 import Snarky.Backend.Kimchi.Proof (class ProofFFI, sigmaCommLast, verifierIndexColumnComms)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
@@ -65,6 +66,8 @@ newtype VerificationKey stepChunks pt = VerificationKey
   , coeff :: Vector 15 (ChunkedCommitment stepChunks pt)
   , index :: Vector 6 (ChunkedCommitment stepChunks pt)
   }
+
+derive newtype instance WriteForeign pt => WriteForeign (VerificationKey stepChunks pt)
 
 instance
   ( CircuitType f a var

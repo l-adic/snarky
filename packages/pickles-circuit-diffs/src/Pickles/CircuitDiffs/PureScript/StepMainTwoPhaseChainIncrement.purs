@@ -1,5 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement
   ( compileStepMainTwoPhaseChainIncrement
+  , compileStepMainTwoPhaseChainIncrementWithConstants
   , StepMainTwoPhaseChainIncrementParams
   ) where
 
@@ -24,17 +25,19 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
+import Data.Reflectable (reflectType)
 import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
-import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
-import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
+import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthInt, slotWidthsOf, toPrevs)
 import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
@@ -73,6 +76,9 @@ incrementRule getPrevStates appState = do
     , publicOutput: unit
     }
 
+-- | The tag's width: the multi-branch wrap is mpv=N1.
+type Mpv = 1
+
 compileStepMainTwoPhaseChainIncrement
   :: StepArtifact
   -- ^ Make_zero's compiled step artifact. Slot 0's `perSlotFopDomainLog2s`
@@ -80,15 +86,43 @@ compileStepMainTwoPhaseChainIncrement
   -- log2 is read from this artifact, increment's own is shape-passed.
   -> StepMainTwoPhaseChainIncrementParams
   -> Effect StepArtifact
-compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
+compileStepMainTwoPhaseChainIncrement makeZeroArt params =
+  _.art <$> compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params
+
+-- | `compileStepMainTwoPhaseChainIncrement`, with the constants the circuit
+-- | bakes in (`stepMainConstants`) for the Lean `check_cs` harness.
+compileStepMainTwoPhaseChainIncrementWithConstants
+  :: StepArtifact
+  -> StepMainTwoPhaseChainIncrementParams
+  -> Effect { art :: StepArtifact, constants :: String }
+compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params = do
   -- Slot 0's source = self (the 2-branch proof system). Its candidate
   -- list: make_zero's step domain (from artifact) + increment's own
   -- step domain (shape-passed).
   let makeZeroLog2 = makeZeroArt.stepDomainLog2
-  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile makeZeroLog2 1)
-  mkStepArtifact <$> runStepCompile makeZeroLog2 selfLog2
+  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData makeZeroLog2 1))
+  art <- mkStepArtifact <$> runStepCompile (srsData makeZeroLog2 selfLog2)
+  pure
+    { art
+    , constants: stepMainConstants (reflectType (Proxy @Mpv))
+        (map slotWidthInt (slotWidthsOf (Proxy @IncrementPrevsSpec)))
+        (srsData makeZeroLog2 selfLog2)
+    }
   where
-  runStepCompile makeZeroLog2 selfLog2 = do
+  srsData :: Int -> Int -> StepMainSrsData 1
+  srsData makeZeroLog2 selfLog2 =
+    { blindingH: params.blindingH
+    -- Two candidates: OCaml's `domain_for_compiled`
+    -- (step_verifier.ml:879-899) passes both branches' step
+    -- domains to `Pseudo.Domain.to_domain` for runtime dispatch
+    -- on the prev's branch index.
+    , perSlotFopDomainLog2s:
+        (NEA.cons' makeZeroLog2 [ selfLog2 ]) :< Vector.nil
+    , perSlotNumChunks: 1 :< Vector.nil
+    , perSlotVkBlueprints: BlueprintSelf params.lagrangeAt :< Vector.nil
+    }
+
+  runStepCompile srsData' = do
     throwawayCaptureRef <- Ref.new Nothing
     let
       dummyAdvice = unsafeCoerce unit
@@ -100,18 +134,9 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           @(F StepField)
           @Unit
           @(Tuple1 (StatementIO (F StepField) Unit))
-          @1
+          @Mpv
           incrementRule
-          { blindingH: params.blindingH
-          -- Two candidates: OCaml's `domain_for_compiled`
-          -- (step_verifier.ml:879-899) passes both branches' step
-          -- domains to `Pseudo.Domain.to_domain` for runtime dispatch
-          -- on the prev's branch index.
-          , perSlotFopDomainLog2s:
-              (NEA.cons' makeZeroLog2 [ selfLog2 ]) :< Vector.nil
-          , perSlotNumChunks: 1 :< Vector.nil
-          , perSlotVkBlueprints: BlueprintSelf params.lagrangeAt :< Vector.nil
-          }
+          srsData'
           dummyWrapSg
           dummyAdvice
           throwawayCaptureRef

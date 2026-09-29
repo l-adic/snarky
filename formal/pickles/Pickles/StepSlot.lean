@@ -83,6 +83,50 @@ theorem AllocBranchData.check_spec {V : Valuation Fp}
   obtain ⟨n, hlt, hv, -⟩ := hn
   exact ⟨hp.1, hp.2.1, n, hlt, hv⟩
 
+/-- The branch data is checked by `AllocBranchData.check`: its mask cells read as bits, its
+`log2` cell as a number below `2 ^ 16`. -/
+instance instAllocBranchDataCheckedType :
+    CheckedType Fp (KimchiConstraint Fp) (AllocBranchData Fp Bool)
+      (AllocBranchData (FVar Fp) (BoolVar Fp)) where
+  check := AllocBranchData.check
+  post V d := (∃ b : Bool, (↑d.mask0 : CVar Fp).val V = bit b) ∧
+    (∃ b : Bool, (↑d.mask1 : CVar Fp).val V = bit b) ∧
+    ∃ n : ℕ, n < 2 ^ 16 ∧ d.domainLog2.val V = (n : Fp)
+  check_sound V d nv h := (builder_spec_iff _ _).mp (AllocBranchData.check_spec d) nv h
+  check_complete := by
+    rintro ⟨m0, m1, dl⟩ ⟨a0, a1, x⟩ hv
+    -- an admissible `log2` is below `2 ^ 16`
+    have hc := CircuitType.reads_constVar (F := Fp) (var := AllocBranchData (FVar Fp) (BoolVar Fp))
+      (fun _ => 0) (⟨a0, a1, x⟩ : AllocBranchData Fp Bool)
+    obtain ⟨_, _, n, hn, hx⟩ := hv _ _ hc
+    replace hx : x = (n : Fp) :=
+      (CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp
+        (CircuitType.reads_prod.mp hc).2).2).symm.trans hx
+    have hlt : ToNat.toNat x < 2 ^ (16 * 1) := by
+      rw [hx, LawfulToNat.toNat_natCast n
+        (show n < PALLAS_BASE_CARD from lt_trans hn (by decide))]
+      exact hn
+    refine Complete.bind (Complete.imp (fun st (h : CircuitType.ReadsAs
+        (val := Bool × Bool × Fp) st (m0, m1, dl) (a0, a1, x)) =>
+          ⟨h, (CircuitType.scoped_prod.mp (CircuitType.scoped_prod.mp h.1).2).2,
+            (CircuitType.reads_prod.mp (CircuitType.reads_prod.mp h.2).2).2⟩)
+        (fun _ _ h => h.2)
+        (Complete.frame CircuitType.monotone_readsAs
+          (CheckedType.check_complete (c := KimchiConstraint Fp) (val := Bool × Bool × Fp)
+            (m0, m1, dl) (a0, a1, x) (show CheckedType.Valid (F := Fp) (c := KimchiConstraint Fp)
+              (var := BoolVar Fp × BoolVar Fp × FVar Fp) (a0, a1, x) by simp)))) fun _ => ?_
+    exact Complete.bind
+      (Complete.imp (fun st h => ⟨h, CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
+          CircuitType.reads_fvar.mpr rfl⟩) (fun _ _ _ => trivial)
+        (EndoScalar.toField_complete_rows (by decide) (by decide) 1 dl _ x _ hlt))
+      fun _ => Complete.pure
+
+/-- The branch data's check, read at a valuation. -/
+instance instAllocBranchDataCheckedTypeBuilder {V : Valuation Fp} :
+    CheckedType Fp (Builder V (KimchiConstraint Fp)) (AllocBranchData Fp Bool)
+      (AllocBranchData (FVar Fp) (BoolVar Fp)) :=
+  instAllocBranchDataCheckedType
+
 /-! ## The evaluations -/
 
 /-- The previous step proof's evaluations as allocated: the public column, the witness, the
@@ -118,6 +162,12 @@ def AllocEvals.equivProd (nc : ℕ) (f : Type) :
 instance instAllocEvalsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
     CircuitType F (AllocEvals nc v) (AllocEvals nc w) :=
   CircuitType.ofEquiv (AllocEvals.equivProd nc v) (AllocEvals.equivProd nc w)
+
+/-- The evaluations are checked column by column. -/
+instance instAllocEvalsCheckedType {F c v w : Type} {nc : ℕ} [Field F] [BasicSystem F c]
+    [ConstraintHolds F c] [CircuitType F v w] [CheckedType F c v w] :
+    CheckedType F c (AllocEvals nc v) (AllocEvals nc w) :=
+  CheckedType.ofEquiv (AllocEvals.equivProd nc v) (AllocEvals.equivProd nc w)
 
 /-- The evaluations as the record the finalize reads. -/
 def AllocEvals.toChunked {nc : ℕ} {f : Type} (e : AllocEvals nc f) : ChunkedEvals nc f :=
@@ -284,19 +334,14 @@ instance instSlotWitnessCircuitType {F f fv b bv s sv p pv : Type} {w ncw ncs k 
   CircuitType.ofEquiv (SlotWitness.equivProd w ncw ncs k ks f b s p)
     (SlotWitness.equivProd w ncw ncs k ks fv bv sv pv)
 
-/-- One slot witness's check, in allocation order: every point of the wrap proof on the curve
-and the opening's parity bits boolean, nothing on the proof state's scalars, the branch data's
-check, nothing on the evaluations or the challenges, every accumulator point on the curve. -/
-def SlotWitness.check {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
-    [LawfulBasicSystem Fp c] [KimchiSystem Fp c] {w ncw ncs k ks : ℕ}
-    (s : SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp)
-      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) (PallasPt (FVar Fp))) :
-    CircuitM Fp c PUnit := do
-  CheckedType.check (c := c)
-    (val := SlotWitness.ProofPart ncw k (Type2 (SplitField Fp Bool)) (PallasPt Fp))
-    (s.wComm, s.zComm, s.tComm, s.lr, s.z1, s.z2, s.delta, s.sg)
-  AllocBranchData.check s.branch
-  CheckedType.check (c := c) (val := Vector (PallasPt Fp) w) s.prevSgs
+/-- A slot witness is checked component by component, in allocation order. -/
+instance instSlotWitnessCheckedType {F c f fv b bv s sv p pv : Type} {w ncw ncs k ks : ℕ}
+    [Field F] [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f fv] [CircuitType F b bv]
+    [CircuitType F s sv] [CircuitType F p pv] [CheckedType F c f fv] [CheckedType F c s sv]
+    [CheckedType F c p pv] [CheckedType F c (AllocBranchData f b) (AllocBranchData fv bv)] :
+    CheckedType F c (SlotWitness w ncw ncs k ks f b s p) (SlotWitness w ncw ncs k ks fv bv sv pv) :=
+  CheckedType.ofEquiv (SlotWitness.equivProd w ncw ncs k ks f b s p)
+    (SlotWitness.equivProd w ncw ncs k ks fv bv sv pv)
 
 /-- A slot's points lie on Pallas's curve: the wrap proof's commitments, `(L, R)` pairs, `δ` and
 `sg`, and the accumulators' `sg`s, as the slot check's point checks leave them. -/
@@ -309,38 +354,23 @@ def SlotWitness.PointsOnCurve {w ncw ncs k ks : ℕ} (V : Valuation Fp)
     CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
       (val := Vector (PallasPt Fp) w) V s.prevSgs
 
-/-- Under any valuation satisfying the emitted constraints, the slot check forces the opening's
-`z₁`, `z₂` parity cells and the branch data's mask cells to read as bits, its `log2` cell as a
-number below `2 ^ 16`, and its points onto the curve (`PointsOnCurve`). -/
-theorem SlotWitness.check_spec {V : Valuation Fp} {w ncw ncs k ks : ℕ}
-    (s : SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp)
-      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) (PallasPt (FVar Fp))) :
-    ⦃⌜True⌝⦄ SlotWitness.check (c := Builder V (KimchiConstraint Fp)) s
-    ⦃⇓ _ _ => ⌜(∃ b : Bool, (↑s.z1.val.sOdd : CVar Fp).val V = bit b) ∧
+/-- A slot witness's check forces the opening's `z₁`, `z₂` parity cells and the branch data's
+mask cells to read as bits, its `log2` cell as a number below `2 ^ 16`, and its points onto the
+curve (`PointsOnCurve`). -/
+theorem SlotWitness.of_post {V : Valuation Fp} {w ncw ncs k ks : ℕ}
+    {s : SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) (PallasPt (FVar Fp))}
+    (h : CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
+      (val := SlotWitness w ncw ncs k ks Fp Bool (Type2 (SplitField Fp Bool)) (PallasPt Fp))
+      V s) :
+    (∃ b : Bool, (↑s.z1.val.sOdd : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.z2.val.sOdd : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.branch.mask0 : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b) ∧
       (∃ n : ℕ, n < 2 ^ 16 ∧ s.branch.domainLog2.val V = (n : Fp)) ∧
-      SlotWitness.PointsOnCurve V s⌝⦄ := by
-  have hck : ⦃⌜True⌝⦄ CheckedType.check (F := Fp) (c := Builder V (KimchiConstraint Fp))
-      (val := SlotWitness.ProofPart ncw k (Type2 (SplitField Fp Bool)) (PallasPt Fp))
-      (s.wComm, s.zComm, s.tComm, s.lr, s.z1, s.z2, s.delta, s.sg)
-      ⦃⇓ _ _ => ⌜CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
-        (val := SlotWitness.ProofPart ncw k (Type2 (SplitField Fp Bool)) (PallasPt Fp)) V
-        (s.wComm, s.zComm, s.tComm, s.lr, s.z1, s.z2, s.delta, s.sg)⌝⦄ :=
-    (builder_spec_iff _ _).mpr fun nv h => CheckedType.check_sound V _ nv h
-  have hbr := AllocBranchData.check_spec (V := V) s.branch
-  have hsg : ⦃⌜True⌝⦄ CheckedType.check (F := Fp) (c := Builder V (KimchiConstraint Fp))
-      (val := Vector (PallasPt Fp) w) s.prevSgs
-      ⦃⇓ _ _ => ⌜CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
-        (val := Vector (PallasPt Fp) w) V s.prevSgs⌝⦄ :=
-    (builder_spec_iff _ _).mpr fun nv h => CheckedType.check_sound V _ nv h
-  simp only [SlotWitness.check]
-  mvcgen [hck, hbr, hsg]
-  rename_i _ _ hp _ _ hb _ _
-  intro hs
-  obtain ⟨b0, b1, hd⟩ := hb
-  exact ⟨hp.2.2.2.2.1.2, hp.2.2.2.2.2.1.2, b0, b1, hd, hp, hs⟩
+      SlotWitness.PointsOnCurve V s := by
+  obtain ⟨hp, ⟨-, -, -, -, -, -, -, -, -, -, -, -, hb0, hb1, hd⟩, -, -, hs⟩ := h
+  exact ⟨hp.2.2.2.2.1.2, hp.2.2.2.2.2.1.2, hb0, hb1, hd, hp, hs⟩
 
 /-! ## The key -/
 

@@ -1,5 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
   ( compileStepMainSimpleChainN2
+  , compileStepMainSimpleChainN2WithConstants
   , StepMainSimpleChainN2Params
   ) where
 
@@ -12,17 +13,19 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
+import Data.Reflectable (reflectType)
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
-import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
+import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthInt, slotWidthsOf, toPrevs)
 import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
@@ -70,16 +73,41 @@ simpleChainN2Rule getPrevStates appState = do
     , publicOutput: unit
     }
 
+-- | The tag's width: single-rule, so `mpvMax = len = 2`, `mpvPad = 0`.
+type Mpv = 2
+
 compileStepMainSimpleChainN2
   :: StepMainSimpleChainN2Params -> Effect StepArtifact
-compileStepMainSimpleChainN2 params = do
+compileStepMainSimpleChainN2 params =
+  _.art <$> compileStepMainSimpleChainN2WithConstants params
+
+-- | `compileStepMainSimpleChainN2`, with the constants the circuit bakes
+-- | in (`stepMainConstants`) for the Lean `check_cs` harness.
+compileStepMainSimpleChainN2WithConstants
+  :: StepMainSimpleChainN2Params -> Effect { art :: StepArtifact, constants :: String }
+compileStepMainSimpleChainN2WithConstants params = do
   -- Both prev slots are self → both FOP domain log2s = this rule's own
   -- step domain log2. Resolved via two-pass compile (mirrors OCaml
   -- `Fix_domains.domains`).
-  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile 1)
-  mkStepArtifact <$> runStepCompile selfLog2
+  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData 1))
+  art <- mkStepArtifact <$> runStepCompile (srsData selfLog2)
+  pure
+    { art
+    , constants: stepMainConstants (reflectType (Proxy @Mpv))
+        (map slotWidthInt (slotWidthsOf (Proxy @SimpleChainN2PrevsSpec)))
+        (srsData selfLog2)
+    }
   where
-  runStepCompile selfLog2 = do
+  srsData selfLog2 =
+    { blindingH: params.blindingH
+    , perSlotFopDomainLog2s:
+        (NEA.singleton selfLog2) :< (NEA.singleton selfLog2) :< Vector.nil
+    , perSlotNumChunks: 1 :< 1 :< Vector.nil
+    , perSlotVkBlueprints:
+        BlueprintSelf params.lagrangeAt :< BlueprintSelf params.lagrangeAt :< Vector.nil
+    }
+
+  runStepCompile srs = do
     -- Throwaway capture Ref + dummy advice, mirroring `stepCompile`:
     -- compile discards every `exists` body, so the Ref stays `Nothing`
     -- and the `unsafeCoerce unit` advice is never projected.
@@ -87,22 +115,15 @@ compileStepMainSimpleChainN2 params = do
     let
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
-      -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
           @SimpleChainN2PrevsSpec
           @(F StepField)
           @Unit
           @( Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
           )
-          @2
+          @Mpv
           simpleChainN2Rule
-          { blindingH: params.blindingH
-          , perSlotFopDomainLog2s:
-              (NEA.singleton selfLog2) :< (NEA.singleton selfLog2) :< Vector.nil
-          , perSlotNumChunks: 1 :< 1 :< Vector.nil
-          , perSlotVkBlueprints:
-              BlueprintSelf params.lagrangeAt :< BlueprintSelf params.lagrangeAt :< Vector.nil
-          }
+          srs
           dummyWrapSg
           dummyAdvice
           throwawayCaptureRef

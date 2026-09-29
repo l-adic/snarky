@@ -401,16 +401,17 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {E : Env IpaPallas.curve 
     have h5 := nc_le E
     omega
 
-/-- Under any valuation satisfying the emitted constraints, `verifyProofAt`'s returned bit reads
-as a bit (`verifyProof_success_bit`). -/
-theorem verifyProofAt_success_bit {ks k nc : ℕ} {V : Valuation Fp} (E : Env IpaPallas.curve nc)
-    (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+/-- Under any valuation satisfying the emitted constraints, `verifyProofWith`'s returned bit
+reads as a bit (`verifyProof_success_bit`). -/
+theorem verifyProofWith_success_bit {ks k nc : ℕ} {V : Valuation Fp} (h : IpaPallas.curve.Point)
+    (lagrange : List (Vector IpaPallas.curve.Point nc)) (spongeAfterIndex : SpongeVar Fp)
+    (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     ⦃⌜True⌝⦄
-    verifyProofAt (c := Builder V (KimchiConstraint Fp)) E spongeAfterIndex isBaseCase statement
-      u cells
+    verifyProofWith (c := Builder V (KimchiConstraint Fp)) h lagrange spongeAfterIndex
+      isBaseCase statement u cells
     ⦃⇓ v _ => ⌜∃ b : Bool, (↑v : CVar Fp).val V = bit b⌝⦄ :=
   verifyProof_success_bit _ _ _ _ _ _ _ _ _ _ _ _ _
 

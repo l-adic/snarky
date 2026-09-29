@@ -222,6 +222,25 @@ structure KnownDomain (F : Type) where
   /-- The domain generator `ω`. -/
   generator : F
 
+omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The candidates as the circuit selects among them: sorted by `log2`, the first of each size
+kept. -/
+def KnownDomain.dedupSort (ds : List (KnownDomain F)) : List (KnownDomain F) :=
+  (ds.mergeSort fun a b => a.log2 ≤ b.log2).destutter fun a b => a.log2 < b.log2
+
+omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
+/-- A kept candidate is a candidate. -/
+theorem KnownDomain.mem_of_mem_dedupSort {ds : List (KnownDomain F)} {d : KnownDomain F}
+    (h : d ∈ KnownDomain.dedupSort ds) : d ∈ ds :=
+  List.mem_mergeSort.mp ((List.destutter_sublist _ _).subset h)
+
+omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The kept candidates' sizes are distinct. -/
+theorem KnownDomain.nodup_dedupSort (ds : List (KnownDomain F)) :
+    ((KnownDomain.dedupSort ds).map (·.log2)).Nodup :=
+  (List.isChain_iff_pairwise.mp ((List.isChain_map (fun d : KnownDomain F => d.log2)).mpr
+    (List.isChain_destutter _ _))).imp ne_of_lt
+
 /-- The step side's shifted-value conventions: Type1 claims, compared by encoding the
 computed scalar. -/
 def stepShiftOps [ConstraintHolds F c] : FopShiftOps F c (Type1 (FVar F)) where
@@ -235,7 +254,8 @@ def wrapShiftOps [ConstraintHolds F c] : FopShiftOps F c (Type2 (FVar F)) where
   shiftedEqual claimed actual := equals (Type2.fromShiftedCircuit 255 claimed) actual
 
 /-- The step side, known-domains mode: `ζ` then `α` expanded, the generator mask-selected
-among `domains` by the runtime `domainLog2Var`, then `finalizeOtherProofCore` with the masked
+among `domains`, sorted by size with one per size (`KnownDomain.dedupSort`), by the runtime
+`domainLog2Var`, then `finalizeOtherProofCore` with the masked
 challenge digest, the `ξ` low half constrained, the `ζ^(2^srs)` rows and the known-domain
 vanishing polynomial. -/
 def finalizeOtherProofStep [ConstraintHolds F c] {nc : ℕ} (P : FopParams F)
@@ -246,9 +266,10 @@ def finalizeOtherProofStep [ConstraintHolds F c] {nc : ℕ} (P : FopParams F)
   let pl := u.deferredValues.plonk
   let zeta ← EndoScalar.toField 8 pl.zeta.val endoVar
   let alpha ← EndoScalar.toField 8 pl.alpha.val endoVar
-  let log2s := domains.map (·.log2)
+  let ds := KnownDomain.dedupSort domains
+  let log2s := ds.map (·.log2)
   let whiches ← knownDomainWhiches domainLog2Var log2s
-  let gen ← Pseudo.choose whiches domains fun d => .const d.generator
+  let gen ← Pseudo.choose whiches ds fun d => .const d.generator
   let maxLog2 := log2s.foldr max 0
   finalizeOtherProofCore P stepShiftOps true (maskedChallengeDigest P.sponge mask prev)
     gen P.srsLengthLog2 (knownDomainVanishingPolynomial whiches log2s maxLog2) mask u w prev
@@ -1022,7 +1043,7 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (hinj : CastInj128 F) (hsw : SplitWidth F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (domains : List (KnownDomain F))
-    (hnodup : (domains.map fun d => (d.log2 : F)).Nodup)
+    (hnodup : ((KnownDomain.dedupSort domains).map fun d => (d.log2 : F)).Nodup)
     (hdom : ∀ d ∈ domains, P.zkRows ≤ 2 ^ d.log2 ∧ d.generator ^ 2 ^ d.log2 = 1)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type1 (FVar F)))
     {nc : ℕ} (w : ChunkedEvals nc (FVar F)) (mask : List (BoolVar F))
@@ -1047,9 +1068,12 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
         (u.deferredValues.combinedInnerProduct.val.val V)
         (u.deferredValues.b.val.val V) (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ := by
   simp only [finalizeOtherProofStep]
+  have hsub : ∀ d ∈ KnownDomain.dedupSort domains, d ∈ domains :=
+    fun _ => KnownDomain.mem_of_mem_dedupSort
+  generalize KnownDomain.dedupSort domains = ds at hnodup hsub ⊢
   have htf := EndoScalar.toField_spec (V := V) h2 h3
   have hwh := knownDomainWhiches_spec (V := V) (c := KimchiConstraint F) domainLog2Var
-    (domains.map (·.log2))
+    (ds.map (·.log2))
   have hmask := fun bits (xs : List (KnownDomain F)) f =>
     Pseudo.choose_spec (V := V) (c := KimchiConstraint F) bits xs f
   have hall3 : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k := fun j k hj hk h =>
@@ -1061,15 +1085,15 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     builder_spec_forall
       (finalizeOtherProofCore (c := Builder V (KimchiConstraint F)) P stepShiftOps true
         (maskedChallengeDigest P.sponge mask prev) gen P.srsLengthLog2
-        (knownDomainVanishingPolynomial whiches (domains.map (·.log2))
-          ((domains.map (·.log2)).foldr max 0))
+        (knownDomainVanishingPolynomial whiches (ds.map (·.log2))
+          ((ds.map (·.log2)).foldr max 0))
         mask u w prev zeta alpha u.deferredValues.plonk.beta.val u.deferredValues.plonk.gamma.val
         u.deferredValues.plonk.perm u.deferredValues.plonk.zetaToSrsLength
         u.deferredValues.plonk.zetaToDomainSize)
       (fun n : ℕ => P.zkRows ≤ n ∧ (gen.val V ≠ 0 → gen.val V ^ n = 1) ∧
         (gen.val V ≠ 0 → ∀ z, ⦃⌜True⌝⦄ knownDomainVanishingPolynomial
-          (c := Builder V (KimchiConstraint F)) whiches (domains.map (·.log2))
-          ((domains.map (·.log2)).foldr max 0) z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄))
+          (c := Builder V (KimchiConstraint F)) whiches (ds.map (·.log2))
+          ((ds.map (·.log2)).foldr max 0) z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄))
       (fun n o => gen.val V ≠ 0 ∧ FopReads P true n (gen.val V) _ ms cvs u w (zeta.val V)
         (alpha.val V) (u.deferredValues.plonk.beta.val.val V)
         (u.deferredValues.plonk.gamma.val.val V) (u.deferredValues.plonk.perm.val.val V)
@@ -1092,42 +1116,42 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   have hc : (CVar.const P.endoLam : CVar F).val V = P.endoLam := rfl
   rw [hc] at hz' ha'
   have hbits : whiches.map (fun b : BoolVar F => (↑b : CVar F).val V)
-      = domains.map fun d => if domainLog2Var.val V = (d.log2 : F) then (1 : F) else 0 := by
+      = ds.map fun d => if domainLog2Var.val V = (d.log2 : F) then (1 : F) else 0 := by
     rw [hwh', List.map_map]
     rfl
-  have hgenv : gen.val V = (domains.map fun d =>
+  have hgenv : gen.val V = (ds.map fun d =>
       (if domainLog2Var.val V = (d.log2 : F) then (1 : F) else 0) * d.generator).sum := by
     have hsum := zip_map_sum (V := V) (fun d : KnownDomain F => (CVar.const d.generator).val V)
-      whiches domains _ id hbits
+      whiches ds _ id hbits
     rw [List.map_id] at hsum
     rw [hgen, hsum]
     rfl
-  by_cases hmatch : ∃ d₀ ∈ domains, domainLog2Var.val V = (d₀.log2 : F)
+  by_cases hmatch : ∃ d₀ ∈ ds, domainLog2Var.val V = (d₀.log2 : F)
   · obtain ⟨d₀, hd₀, hL⟩ := hmatch
-    obtain ⟨hzk₀, hω₀⟩ := hdom d₀ hd₀
+    obtain ⟨hzk₀, hω₀⟩ := hdom d₀ (hsub d₀ hd₀)
     have hgen₀ : gen.val V = d₀.generator := by
       rw [hgenv]
-      exact onehot_sum _ _ domains hnodup d₀ hd₀ hL
+      exact onehot_sum _ _ ds hnodup d₀ hd₀ hL
     have hvan₀ : ∀ z, ⦃⌜True⌝⦄ knownDomainVanishingPolynomial (c := Builder V (KimchiConstraint F))
-        whiches (domains.map (·.log2)) ((domains.map (·.log2)).foldr max 0) z
+        whiches (ds.map (·.log2)) ((ds.map (·.log2)).foldr max 0) z
         ⦃⇓ v _ => ⌜v.val V = z.val V ^ 2 ^ d₀.log2 - 1⌝⦄ := by
       intro z
       refine builder_spec_imp _ _ _ (knownDomainVanishingPolynomial_spec whiches
-        (domains.map (·.log2)) ((domains.map (·.log2)).foldr max 0) z
+        (ds.map (·.log2)) ((ds.map (·.log2)).foldr max 0) z
         fun _ hl => List.le_max_of_le' 0 hl le_rfl)
         fun v hv => ?_
-      rw [hv, zip_map_sum (fun l => z.val V ^ 2 ^ l) whiches domains _ _ hbits,
-        onehot_sum _ _ domains hnodup d₀ hd₀ hL]
+      rw [hv, zip_map_sum (fun l => z.val V ^ 2 ^ l) whiches ds _ _ hbits,
+        onehot_sum _ _ ds hnodup d₀ hd₀ hL]
     obtain ⟨-, hreads⟩ := hcore' (2 ^ d₀.log2) hzk₀ (fun _ => by rw [hgen₀]; exact hω₀)
       (fun _ => hvan₀)
-    refine ⟨d₀, hd₀, hL, ⟨a₀, ha₀⟩, ⟨z₀, hz₀⟩, haval, hzval, ?_⟩
+    refine ⟨d₀, hsub d₀ hd₀, hL, ⟨a₀, ha₀⟩, ⟨z₀, hz₀⟩, haval, hzval, ?_⟩
     rw [hgen₀, hz', ha'] at hreads
     exact hreads
   · exfalso
     push Not at hmatch
     have hgen0 : gen.val V = 0 := by
       rw [hgenv]
-      exact onehot_sum_none _ _ domains hmatch
+      exact onehot_sum_none _ _ ds hmatch
     obtain ⟨hne, -⟩ := hcore' P.zkRows le_rfl (fun h => absurd hgen0 h) (fun h => absurd hgen0 h)
     exact hne hgen0
 
@@ -1225,7 +1249,7 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
     (hP : P.endo = Pasta.pallasEndo ∧ P.mds = symMds ∧ P.toks = fpTokens)
     (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (domains : List (KnownDomain Fp))
-    (hnodup : (domains.map fun d => (d.log2 : Fp)).Nodup)
+    (hnodup : ((KnownDomain.dedupSort domains).map fun d => (d.log2 : Fp)).Nodup)
     (hdom : ∀ d ∈ domains, P.zkRows ≤ 2 ^ d.log2 ∧ d.generator ^ 2 ^ d.log2 = 1)
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     {nc : ℕ} (w : ChunkedEvals nc (FVar Fp)) (mask : List (BoolVar Fp))

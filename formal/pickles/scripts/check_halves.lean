@@ -429,12 +429,12 @@ def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
     envs.modify ((key, ⟨nc, E⟩) :: ·)
     return ⟨nc, E⟩
   else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
-    endo is not the curve's, zk_rows < 3 or above the domain, the generator is not primitive \
-    on the domain, there is no round or too many for the absorb bound, the blinding base is \
-    the identity, there is no Lagrange basis or one larger than the domain, the chunk count is \
-    not the domain's, the Lagrange basis is not the SRS's, or the key's digest is not its \
-    commitments' (a commitment outside the model, such as a lookup or optional gate, was \
-    absorbed)")
+    endo or shifts are not the curve's, zk_rows is not the chunk count's or is above the \
+    domain, the generator is not primitive on the domain, there is no round or too many for \
+    the absorb bound, the blinding base is the identity, there is no Lagrange basis or one \
+    larger than the domain, the chunk count is not the domain's, the Lagrange basis is not the \
+    SRS's, or the key's digest is not its commitments' (a commitment outside the model, such as \
+    a lookup or optional gate, was absorbed)")
 
 /-- An entry's checked proof at its environment's chunk count. -/
 def checkedFor (C : Ipa.KimchiCurve) (name : String) {nc : ℕ} (E : Pickles.Env C nc)
@@ -482,8 +482,8 @@ shown to hold together on a proof the real prover made, and its conclusion is ch
 public input it names:
 
 * the environment's invariants hold of the step key and its SRS (`Env.Invariants`);
-* the file's step domains form a `KnownDomains` with this key's among them, and the wrap
-  statement's `domain_log2` is the key's (`hdom`);
+* the file's step domains form a `KnownDomains`, and the wrap statement's `domain_log2` is
+  the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
   public input (`wrapPublicInput`);
 * the SRS avoids the key's Lagrange relations (`havoid`), decided on the key's Lagrange
@@ -503,7 +503,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
   let cvk := E.cvk
   let cp ← checkedFor CS "vesta" E s
   do
-    let cands := (steps.toList.map (·.vk.domainLog2)).eraseDups
+    let cands := steps.toList.map (·.vk.domainLog2)
     let some doms := Pickles.KnownDomains.ofList? E cands
       | IO.println s!"    ✗ the file's step domains {cands} are no KnownDomains \
           at this key (2^{s.vk.domainLog2})"
