@@ -26,8 +26,13 @@ module Pickles.CircuitDiffs.PureScript.Common
   , srsLengthLog2
   , wrapDomainLog2
   , wrapSrsLengthLog2
-  , deriveStepVKCommsFromCompiled
-  , deriveWrapVKFromCompiled
+  , DerivedKey
+  , deriveStepKey
+  , deriveWrapKey
+  , KeyExport
+  , stepKeyExport
+  , wrapKeyExport
+  , srsLagrangeAt
   ) where
 
 import Prelude
@@ -43,18 +48,17 @@ import Effect (Effect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
-import Pickles.Prove.Step (extractWrapVKCommsAdvice)
-import Pickles.Prove.Wrap (extractStepVKComms)
-import Pickles.Types (WrapVkChunks)
-import Pickles.VerificationKey (StepVK, VerificationKey)
+import Pickles.VerificationKey (VerificationKey, verifierIndexDigest)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex, crsSize)
-import Snarky.Backend.Kimchi.Types (CRS)
+import Snarky.Backend.Kimchi.Proof (class ProofFFI, proverIndexDomainLog2, srsLagrangeCommitmentChunksAt)
+import Snarky.Backend.Kimchi.ProofCache (pallasVerifierIndexJsonKey, vestaVerifierIndexJsonKey)
+import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.DSL (F(..), FVar, SizedF)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -135,23 +139,24 @@ wrapSrsLengthLog2 = 15
 -- VK derivation
 --------------------------------------------------------------------------------
 
--- | Derive a step `VerifierIndex`'s commitments, as values, from a
--- | compiled step constraint system. `stepVkForCircuit` turns them into
--- | the `stepKeys` cells of `WrapMainConfig`.
+-- | A verifier index derived from a compiled circuit, with its domain's
+-- | `log2`.
+type DerivedKey g f = { verifierIndex :: VerifierIndex g f, domainLog2 :: Int }
+
+-- | Derive a step `VerifierIndex` from a compiled step constraint system,
+-- | with its domain.
 -- |
 -- | Mirrors `Pickles.Prove.Step.stepCompile`'s
 -- | `makeConstraintSystemWithPrevChallenges + createProverIndex +
--- | createVerifierIndex` tail, then runs `extractStepVKComms`.
--- | Byte-identical to OCaml's `Pickles.compile_promise` for the same
--- | step CS + SRS.
-deriveStepVKCommsFromCompiled
-  :: forall @stepChunks @len
-   . Reflectable stepChunks Int
-  => Reflectable len Int
+-- | createVerifierIndex` tail. Byte-identical to OCaml's
+-- | `Pickles.compile_promise` for the same step CS + SRS.
+deriveStepKey
+  :: forall @len
+   . Reflectable len Int
   => CRS VestaG
   -> CompiledCircuit StepField
-  -> Effect (StepVK stepChunks WrapField)
-deriveStepVKCommsFromCompiled vestaSrs builtState = do
+  -> Effect (DerivedKey VestaG StepField)
+deriveStepKey vestaSrs builtState = do
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
   csResult <- makeConstraintSystemWithPrevChallenges @StepField
@@ -162,7 +167,6 @@ deriveStepVKCommsFromCompiled vestaSrs builtState = do
     , maxPolySize: crsSize vestaSrs
     }
   let
-
     proverIndex = createProverIndex @StepField @VestaG
       { gates: csResult.gates
       , publicInputSize: csResult.publicInputSize
@@ -170,23 +174,22 @@ deriveStepVKCommsFromCompiled vestaSrs builtState = do
       , maxPolySize: csResult.maxPolySize
       , crs: vestaSrs
       }
-    verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
-  pure $ extractStepVKComms @stepChunks verifierIndex
+  pure
+    { verifierIndex: createVerifierIndex @StepField @VestaG proverIndex
+    , domainLog2: proverIndexDomainLog2 proverIndex
+    }
 
--- | Wrap-side analog of `deriveStepVKCommsFromCompiled`. The wrap CS
--- | lives in `WrapField` over Pallas; commitments are Pallas points
--- | with coordinates in `Pallas.BaseField = StepField`, so the
--- | resulting VK is what a step circuit consumes when verifying the
--- | wrap proof. Used as a per-slot known wrap key in
--- | `perSlotVkBlueprints` (e.g. `BlueprintExternal realNrrWrapVK` for
--- | Tree_proof_return's slot 0).
-deriveWrapVKFromCompiled
+-- | Wrap-side analog of `deriveStepKey`. The wrap CS lives in `WrapField`
+-- | over Pallas; commitments are Pallas points with coordinates in
+-- | `Pallas.BaseField = StepField`, so the resulting key is what a step
+-- | circuit consumes when verifying the wrap proof.
+deriveWrapKey
   :: forall @len
    . Reflectable len Int
   => CRS PallasG
   -> CompiledCircuit WrapField
-  -> Effect (VerificationKey WrapVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
-deriveWrapVKFromCompiled pallasSrs builtState = do
+  -> Effect (DerivedKey PallasG WrapField)
+deriveWrapKey pallasSrs builtState = do
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
   csResult <- makeConstraintSystemWithPrevChallenges @WrapField
@@ -204,8 +207,43 @@ deriveWrapVKFromCompiled pallasSrs builtState = do
       , maxPolySize: csResult.maxPolySize
       , crs: pallasSrs
       }
-    verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
-  pure $ extractWrapVKCommsAdvice verifierIndex
+  pure
+    { verifierIndex: createVerifierIndex @WrapField @PallasG proverIndex
+    , domainLog2: proverIndexDomainLog2 proverIndex
+    }
+
+-- | A key as a dump carries it for the Lean `check_cs` harness: the
+-- | verifier index's JSON, as the proof cache stores it, and its digest,
+-- | which the cache keys it by.
+type KeyExport = { vk :: String, digest :: String }
+
+-- | A step key, exported.
+stepKeyExport :: VerifierIndex VestaG StepField -> KeyExport
+stepKeyExport vk =
+  { vk: pallasVerifierIndexJsonKey vk
+  , digest: BigInt.toString (toBigInt (verifierIndexDigest vk))
+  }
+
+-- | A wrap key, exported.
+wrapKeyExport :: VerifierIndex PallasG WrapField -> KeyExport
+wrapKeyExport vk =
+  { vk: vestaVerifierIndexJsonKey vk
+  , digest: BigInt.toString (toBigInt (verifierIndexDigest vk))
+  }
+
+-- | The SRS's `i`-th Lagrange commitment at domain `2^log2`, every chunk,
+-- | as a circuit's Lagrange table holds it. A harness checks its table
+-- | against the key it serves with it.
+srsLagrangeAt
+  :: forall f g c
+   . ProofFFI f g c
+  => CRS g
+  -> Int
+  -> Int
+  -> Array (AffinePoint (F c))
+srsLagrangeAt srs log2 i =
+  map (\(AffinePoint p) -> AffinePoint { x: F p.x, y: F p.y })
+    (srsLagrangeCommitmentChunksAt srs log2 i)
 
 -------------------------------------------------------------------------------
 -- | Compile-result artifacts
@@ -232,6 +270,9 @@ type WrapArtifact =
   , stepDomainLog2 :: Int
   , wrapCs :: CompiledCircuit WrapField
   , wrapVk :: VerificationKey 1 (WeierstrassAffinePoint PallasG (F StepField))
+  -- ^ The wrap circuit's own key, whole: a step circuit's slot verifies
+  -- its proofs against it.
+  , wrapKey :: DerivedKey PallasG WrapField
   -- ^ The constants the wrap circuit bakes in, as JSON (`wrapMainConstants`).
   , constants :: String
   }

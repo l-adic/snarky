@@ -20,12 +20,13 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
-import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKCommsFromCompiled, deriveWrapVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepKey, deriveWrapKey)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, compileStepMainChunks2)
 import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
-import Pickles.Prove.Wrap (stepVkForCircuit)
+import Pickles.Prove.Step (extractWrapVKCommsAdvice)
+import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
@@ -46,7 +47,8 @@ compileWrapMainChunks2 { blindingH } stepParams = do
   stepArt <- compileStepMainChunks2 stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
-  stepComms <- deriveStepVKCommsFromCompiled @2 @0 vestaSrs stepArt.stepCs
+  stepKey <- deriveStepKey @0 vestaSrs stepArt.stepCs
+  let stepComms = extractStepVKComms @2 stepKey.verifierIndex
   let realStepVK = stepVkForCircuit stepComms
   let
 
@@ -100,11 +102,13 @@ compileWrapMainChunks2 { blindingH } stepParams = do
     slotWidths = Vector.nil
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @1 @0 @2 config stmt dummyAdvice slotWidths)
-  wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+  wrapKey <- deriveWrapKey @2 pallasSrs wrapCs
+  constants <- wrapMainConstants config vestaSrs (stepKey :< Vector.nil) slotWidths
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk
-    , constants: wrapMainConstants config (stepComms :< Vector.nil) slotWidths
+    , wrapVk: extractWrapVKCommsAdvice wrapKey.verifierIndex
+    , wrapKey
+    , constants
     }

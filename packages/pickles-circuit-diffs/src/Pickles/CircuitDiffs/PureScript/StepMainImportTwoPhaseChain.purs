@@ -1,5 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainImportTwoPhaseChain
-  ( compileStepMainImportTwoPhaseChainWithConstants
+  ( compileStepMainImportTwoPhaseChain
+  , compileStepMainImportTwoPhaseChainWithConstants
   , StepMainImportTwoPhaseChainParams
   ) where
 
@@ -29,11 +30,11 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
-import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, WrapArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, WrapArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero)
 import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (WrapMainTwoPhaseChainParams, compileWrapMainTwoPhaseChain)
-import Pickles.Field (StepField)
+import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
@@ -42,10 +43,12 @@ import Pickles.Types (StatementIO(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
+import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -100,11 +103,17 @@ chainRule getPrevStates _ = do
 -- | The tag's width: `self` verifies two proofs, so `mpvMax = len = 2`.
 type Mpv = 2
 
+-- | The chain's step circuit.
+compileStepMainImportTwoPhaseChain
+  :: StepMainImportTwoPhaseChainParams -> Effect StepArtifact
+compileStepMainImportTwoPhaseChain params =
+  _.art <$> compileStepMainImportTwoPhaseChainWithConstants params
+
 -- | The chain's step circuit, with the constants it bakes in
 -- | (`stepMainConstants`) for the Lean `check_cs` harness.
 compileStepMainImportTwoPhaseChainWithConstants
   :: StepMainImportTwoPhaseChainParams
-  -> Effect { art :: StepArtifact, constants :: String }
+  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect String }
 compileStepMainImportTwoPhaseChainWithConstants params = do
   -- `two_phase_chain`'s wrap artifact carries its key and `increment`'s
   -- step domain; `make_zero`'s comes from its own step compile.
@@ -116,9 +125,13 @@ compileStepMainImportTwoPhaseChainWithConstants params = do
   art <- mkStepArtifact <$> runStepCompile (srsData tpcArt makeZeroArt selfLog2)
   pure
     { art
-    , constants: stepMainConstants (reflectType (Proxy @Mpv))
-        (map slotWidthInt (slotWidthsOf (Proxy @ChainPrevsSpec)))
-        (srsData tpcArt makeZeroArt selfLog2)
+    , constants: \selfWrapKey -> do
+        pallasSrs <- createCRS @WrapField
+        stepMainConstants (reflectType (Proxy @Mpv))
+          (map slotWidthInt (slotWidthsOf (Proxy @ChainPrevsSpec)))
+          (srsData tpcArt makeZeroArt selfLog2)
+          pallasSrs
+          (Just tpcArt.wrapKey :< Just selfWrapKey :< Vector.nil)
     }
   where
   srsData :: WrapArtifact -> StepArtifact -> Int -> StepMainSrsData 2
