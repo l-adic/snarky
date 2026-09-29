@@ -460,8 +460,6 @@ theorem stepWrap_kimchiVerify
     (σStep : SRS IpaVesta.curve.Point)
     -- the tag's step keys, one per branch
     (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
-    -- their commitments have at least one chunk
-    (hnc : 0 < ncStep)
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots, front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the padding challenges
@@ -588,7 +586,8 @@ theorem stepWrap_kimchiVerify
       (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
       (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal S.σ.k w))) σStep.h dummy
       slotWidths advW
-      (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hnc) _
+      (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
+      (stepKeys[0]'(Nat.pos_of_neZero branches)).nc_pos) _
       hbody
   have hout := (builder_spec_iff _ _).mp
     (stepMain_out srcs hws S.σ.h P domains (constPt dummySg) dummyUnf rule adv) 0

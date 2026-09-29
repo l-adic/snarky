@@ -374,13 +374,13 @@ theorem ivpHyps_of_reads_wrap {nc : ℕ} {V : Valuation Fq} {S : Srs IpaVesta.cu
       ties :=
         { olds := holds, proof := hproof, key := hvk.key
           claimOk := fun x _ => wrapSide_claimOk V x }
-      nc_pos := K.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }
+      nc_pos := K.cvk.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }
   case tne =>
     intro he
     have he' : (ivpInputOf dv sgOld keyCells proof).tComm = [] := he
     have h4 : (ivpInputOf dv sgOld keyCells proof).tComm.length = quotChunks * nc := hl.2.2
     rw [he', List.length_nil] at h4
-    have := K.nc_pos
+    have := K.cvk.nc_pos
     omega
   case lrne =>
     intro he

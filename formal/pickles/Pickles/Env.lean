@@ -15,9 +15,9 @@ that joins them: the key's chunk count is the run's at the SRS (`chunkCount`). W
 
 * `Srs`: the SRS, its round count positive and within the absorb bound, its blinding base
   finite;
-* `Key`: a key at `nc` chunks, at least one, its endo coefficient, shifts and generator the
-  curve's, its domain one of the field, its zero-knowledge rows the chunk count's and within the
-  domain, its digest its commitments' (`KimchiVK.indexDigest`);
+* `Key`: a key at `nc` chunks, its endo coefficient, shifts and generator the curve's, its
+  domain one of the field, its zero-knowledge rows the chunk count's and within the domain, its
+  digest its commitments' (`KimchiVK.indexDigest`);
 * `Srs.check`, `Key.check`: the decidable forms a driver checks once per SRS and per key;
 * `KimchiVK.indexState`, `KimchiVK.indexDigest`: the fq-sponge after the key's commitments,
   and its squeeze, the verifier-index digest;
@@ -149,15 +149,13 @@ theorem three_le_zkRowsOf {nc : ℕ} (h : 0 < nc) : 3 ≤ zkRowsOf nc := by
   rw [zkRowsOf]
   omega
 
-/-- A verifier key at `nc` chunks as the verifiers read it: there is a chunk, the endomorphism
-coefficient, permutation shifts and generator are the curve's, the domain is one of the field,
-the digest is the key's commitments', and the zero-knowledge rows are the chunk count's and fit
-in the domain. -/
+/-- A verifier key at `nc` chunks as the verifiers read it: the endomorphism coefficient,
+permutation shifts and generator are the curve's, the domain is one of the field, the digest is
+the key's commitments', and the zero-knowledge rows are the chunk count's and fit in the
+domain. -/
 structure Key (C : KimchiCurve) (nc : ℕ) where
   /-- The verifier key, at `nc` chunks. -/
   cvk : KimchiVK C nc
-  /-- There is a chunk. -/
-  nc_pos : 0 < nc
   /-- The key's endomorphism coefficient is the curve's: production derives it from the curve,
   never from the key's own data. -/
   endo_eq : cvk.endo = C.endoScalar
@@ -180,12 +178,11 @@ structure Key (C : KimchiCurve) (nc : ℕ) where
 
 /-- The key's facts, decided: a driver checks them once per key it loads. -/
 def Key.check {C : KimchiCurve} {nc : ℕ} (cvk : KimchiVK C nc) : Option (Key C nc) :=
-  if h : 0 < nc ∧ cvk.endo = C.endoScalar ∧
+  if h : cvk.endo = C.endoScalar ∧
       cvk.zkRows = zkRowsOf nc ∧ cvk.zkRows ≤ cvk.n ∧
       cvk.domainLog2 ≤ C.twoAdicity ∧ cvk.digest = cvk.indexDigest ∧
       cvk.omega = domainGenerator C cvk.domainLog2 ∧ cvk.shifts = C.shifts then
-    some ⟨cvk, h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
-      h.2.2.2.2.2.2.2⟩
+    some ⟨cvk, h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩
   else none
 
 namespace Key

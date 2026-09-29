@@ -177,12 +177,12 @@ def KimchiProof.check {C : Ipa.KimchiCurve} (nc k : ℕ) (p : KimchiProof C) :
              ftEval1 := p.ftEval1, opening := opening, olds }
   else none
 
-/-- **The key check**: every committed column validated to `nc` chunks, and the public-input
-count at most the domain size. -/
+/-- **The key check**: at least one chunk, every committed column validated to `nc` chunks,
+and the public-input count at most the domain size. -/
 def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
     Option (Kimchi.Verifier.KimchiVK C nc) := do
-  if hpub : vk.publicCount ≤ 2 ^ vk.domainLog2 then
-    return { domainLog2 := vk.domainLog2, omega := vk.omega
+  if h : 0 < nc ∧ vk.publicCount ≤ 2 ^ vk.domainLog2 then
+    return { nc_pos := h.1, domainLog2 := vk.domainLog2, omega := vk.omega
              sigmaComm := ← vk.sigmaComm.mapM (checkChunks nc)
              coefficientsComm := ← vk.coefficientsComm.mapM (checkChunks nc)
              genericComm := ← checkChunks nc vk.genericComm
@@ -192,7 +192,7 @@ def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
              emulComm := ← checkChunks nc vk.emulComm
              endomulScalarComm := ← checkChunks nc vk.endomulScalarComm
              shifts := vk.shifts, zkRows := vk.zkRows
-             publicCount := vk.publicCount, publicCount_le := hpub
+             publicCount := vk.publicCount, publicCount_le := h.2
              prevChallenges := vk.prevChallenges, endo := vk.endo, digest := vk.digest }
   else none
 
