@@ -110,4 +110,5 @@ Snarky.Kimchi.makeWitness
 Snarky.Kimchi.kimchiGateData
 Snarky.Kimchi.kimchiSolve
 Snarky.Kimchi.SpongeVar.ofConstants
+Snarky.compileWith_constraints -- check-cs compiles a circuit's output alone as the capstones' system
 -- script-surface:end

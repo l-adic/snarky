@@ -452,21 +452,6 @@ theorem stepWrap_kimchiVerify
         CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     -- the step circuit's advice
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) 1 ncPrevStep S.σ.k StepIPARounds inVal)
-    -- `Vg` satisfies every constraint of the compiled step circuit
-    (hstep :
-      ∀ con ∈
-          (compile (a := Unit) (b := StmtVal S.σ.k w)
-            (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp))
-              srcs
-              hws
-              S.σ.h
-              P
-              domains
-              (constPt dummySg)
-              dummyUnf
-              rule
-              adv)).constraints,
-        ConstraintHolds.Holds Vg con)
     -- the next wrap circuit's valuation
     (Vs : Valuation Fq)
     -- the tag's branches' slot counts
@@ -487,29 +472,12 @@ theorem stepWrap_kimchiVerify
     (advW : WrapMainAdvice w ncStep S.σ.k StepIPARounds slotWidths.toList.sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
-    -- `Vs` satisfies every constraint of the compiled wrap circuit, over the branches' keys and
-    -- domains and the SRS's Lagrange points and blinding base
-    (hwrap :
-      ∀ con ∈
-          (compile (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
-            (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
-              (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens)
-              widths
-              (stepDomainLog2s stepKeys)
-              (stepKeyCells stepKeys)
-              pins
-              (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StmtVal S.σ.k w)))
-              σStep.h
-              dummy
-              slotWidths
-              advW)).constraints,
-        ConstraintHolds.Holds Vs con)
     -- the active branch
     (b : Fin branches) :
-    -- the step circuit's run
-    let r :=
-      (build
-        (stepMain (c := Builder Vg (KimchiConstraint Fp))
+    -- the compiled step circuit: its rows, and the cells of the run that emitted them
+    let step :=
+      compileWith (a := Unit) (b := StmtVal S.σ.k w)
+        (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp))
           srcs
           hws
           S.σ.h
@@ -519,11 +487,11 @@ theorem stepWrap_kimchiVerify
           dummyUnf
           rule
           adv)
-        0).result
-    -- the wrap circuit's cells over its statement
-    let hd :=
-      (build
-        (wrapMain (c := Builder Vs (KimchiConstraint Fq))
+    -- the compiled wrap circuit, over the branches' keys and domains and the SRS's Lagrange
+    -- points and blinding base
+    let wrap :=
+      compileWith (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
+        (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens)
           widths
           (stepDomainLog2s stepKeys)
@@ -533,10 +501,15 @@ theorem stepWrap_kimchiVerify
           σStep.h
           dummy
           slotWidths
-          advW
-          (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
-        (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
-          (a := StatementPacked StepIPARounds (Type1 Fq) Fq))).result
+          advW)
+    -- `Vg` satisfies every constraint of the compiled step circuit
+    (∀ con ∈ step.constraints, ConstraintHolds.Holds Vg con) →
+    -- `Vs` satisfies every constraint of the compiled wrap circuit
+    (∀ con ∈ wrap.constraints, ConstraintHolds.Holds Vs con) →
+    -- the step circuit's run
+    let r := step.result.1.2
+    -- the wrap circuit's cells over its statement
+    let hd := wrap.result.1.2
     -- the wrap circuit's branch index reads as `b`
     hd.1.whichBranch.val Vs = (b : Fq) →
     -- the step proof's public input: the step circuit's statement reads as the one the wrap
@@ -569,6 +542,9 @@ theorem stepWrap_kimchiVerify
         (Guards IpaPallas.curve K.cvk cp pub →
           SgOk S.σ K.cvk cp pub →
           kimchiVerify IpaPallas.curve S.σ K.cvk cp pub = true) := by
+  intro step wrap hstep hwrap
+  rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _,
+    show wrap.result.1.2 = _ from compileWith_wrapMainCircuit_cells _ _ _ _ _ _ _ _ _ _]
   intro r hd hb htie i hmv inp sl K hK hfit hkey havoid j hpin hdom
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
@@ -577,7 +553,7 @@ theorem stepWrap_kimchiVerify
       (fun _ _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
       (hn.trans hw) hws (constPt dummySg) dummyUnf rule adv
       (fun _ _ _ => (WrapStatement.packed_length _).trans_le (by rw [hE]; decide))) 0
-      (fun con hc => hstep con (mem_compile_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv
+      (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv
   -- the wrap proof the slot's cells hold
   obtain ⟨hon, holds⟩ := slotInput_onCurve (hws i) hdummySg r.prevs[i] r.unfs[i] r.msgs[i] hpts
   let cp := slotProof Vg Vs inp sl.evals sl.prevChallenges
@@ -598,9 +574,7 @@ theorem stepWrap_kimchiVerify
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
         (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
       ).constraints, ConstraintHolds.Holds Vs con := fun con hc =>
-    hwrap con (mem_compile_of_mem_body (by
-      simp only [wrapMainCircuit, build_bind]
-      exact List.mem_append_left _ hc))
+    hwrap con (mem_compileWith_wrapMainCircuit _ _ _ _ _ _ _ _ _ _ hc)
   -- the finalize reads the slot at `K`
   have hreads := wrapMain_reads S.σ Vs widths (stepDomainLog2s stepKeys)
     (stepKeyCells stepKeys) pins
@@ -618,7 +592,7 @@ theorem stepWrap_kimchiVerify
       hbody
   have hout := (builder_spec_iff _ _).mp
     (stepMain_out srcs hws S.σ.h P domains (constPt dummySg) dummyUnf rule adv) 0
-    (fun con hc => hstep con (mem_compile_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
+    (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
   -- slot `i` is entry `(w − n) + i` on both sides of the tie
   set jf : Fin w := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
   have hjv : jf.val = w - n + i := rfl
