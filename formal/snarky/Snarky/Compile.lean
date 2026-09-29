@@ -223,6 +223,66 @@ theorem mem_compile_of_mem_body [Field F] [DecidableEq F] [BasicSystem F c] [Con
   rw [compile, compileBody, build_bind, List.mem_append]
   exact Or.inr (by rw [build_bind, List.mem_append]; exact Or.inl h)
 
-attribute [irreducible] inputVar compileBody compile solve
+/-! ## Circuits that keep cells
+
+A statement about a circuit often needs cells the circuit computes but does not publish, such
+as what a verifier gadget read. `compileWith` compiles a body that returns those cells beside
+its output: the constraint system is `compile`'s (`compileWith_constraints`), and the run's
+result carries the cells (`compileWith_result`), so the rows and the cells come from one
+run. -/
+
+/-- `compileBody` for a body that also returns cells it keeps internal: only the output is
+bound to the public bundle, and the cells ride along in the result. -/
+def compileWithBody {α : Type} [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [CircuitType F a avar] [CheckedType F c a avar] [CircuitType F b bvar]
+    (main : avar → CircuitM F c (bvar × α)) : CircuitM F c ((bvar × α) × bvar) := do
+  let av : avar := inputVar (F := F) (a := a)
+  CheckedType.check (c := c) (val := a) av
+  let out ← main av
+  let pub ← witness (val := UnChecked b) (do
+    let x ← readVar (val := b) out.1
+    pure (UnChecked.mk x))
+  assertEq (val := b) out.1 pub.val
+  pure (out, pub.val)
+
+/-- `compile` for a body that also returns cells it keeps internal (`compileWithBody`). -/
+def compileWith {α : Type} [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [A : CircuitType F a avar] [CheckedType F c a avar] [CircuitType F b bvar]
+    (main : avar → CircuitM F c (bvar × α)) : Built c ((bvar × α) × bvar) :=
+  build (compileWithBody (a := a) (b := b) main) A.size
+
+/-- Keeping cells changes no row: the constraint system is `compile`'s on the output alone. -/
+theorem compileWith_constraints {α : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [A : CircuitType F a avar] [CheckedType F c a avar]
+    [CircuitType F b bvar] (main : avar → CircuitM F c (bvar × α)) :
+    (compileWith (a := a) (b := b) main).constraints
+      = (compile (a := a) (b := b) fun av => Prod.fst <$> main av).constraints := by
+  simp only [compileWith, compileWithBody, compile, compileBody, map_eq_pure_bind, bind_assoc,
+    pure_bind, build_bind]
+  rfl
+
+/-- The run's result carries the body's: its output and its cells, as the body builds from
+`bodyStart`. -/
+theorem compileWith_result {α : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [A : CircuitType F a avar] [CheckedType F c a avar]
+    [CircuitType F b bvar] (main : avar → CircuitM F c (bvar × α)) :
+    (compileWith (a := a) (b := b) main).result.1
+      = (build (main (inputVar (F := F) (a := a)))
+          (bodyStart (F := F) (c := c) (a := a) (avar := avar))).result := by
+  simp only [compileWith, compileWithBody, bodyStart, build_bind]
+  rfl
+
+/-- The compiled rows contain the body's, built from `bodyStart` (`mem_compile_of_mem_body`). -/
+theorem mem_compileWith_of_mem_body {α : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [A : CircuitType F a avar] [CheckedType F c a avar]
+    [CircuitType F b bvar] {main : avar → CircuitM F c (bvar × α)} {con : c}
+    (h : con ∈ (build (main (inputVar (F := F) (a := a)))
+      (bodyStart (F := F) (c := c) (a := a) (avar := avar))).constraints) :
+    con ∈ (compileWith (a := a) (b := b) main).constraints := by
+  rw [bodyStart] at h
+  rw [compileWith, compileWithBody, build_bind, List.mem_append]
+  exact Or.inr (by rw [build_bind, List.mem_append]; exact Or.inl h)
+
+attribute [irreducible] inputVar compileBody compile solve compileWithBody compileWith
 
 end Snarky

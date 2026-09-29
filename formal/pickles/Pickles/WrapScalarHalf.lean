@@ -200,7 +200,7 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
       (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
   have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
     (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) hP IpaPallas.curve.frSponge.hsize
-    (three_le_zkRowsOf K.nc_pos) (.const K.cvk.omega) K.cvk.n
+    (three_le_zkRowsOf K.cvk.nc_pos) (.const K.cvk.omega) K.cvk.n
     (show zkRowsOf nc ≤ K.cvk.n from K.zkRows_eq ▸ K.zkRows_le)
     K.omega_prim.pow_eq_one _ hvan claimsS evals
     (prevChallenges.toList.map Vector.toList) _ hprev

@@ -211,7 +211,8 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
   pure ⟨(unfsW, digest, msgsW), prevs, vk, slots, unfs, msgs⟩
 
 /-- The step circuit as a circuit of its statement: no input cells (the `Unit` argument is
-`Snarky.compile`'s empty input), the output `stepMain`'s statement. -/
+`Snarky.compileWith`'s empty input), the output `stepMain`'s statement, and `stepMain`'s cells
+kept beside it. -/
 @[nolint unusedArguments]
 def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
     {inVal inVar : Type} [CircuitType Fp inVal inVar] [CheckedType Fp c inVal inVar]
@@ -222,12 +223,12 @@ def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs
     (dummyUnf : UnfVal k)
     (rule : inVar → CircuitM Fp c (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) (_ : Unit) :
-    CircuitM Fp c (StmtVar k w) :=
-  StepMainOut.out <$> stepMain srcs hws h P domains dummySg dummyUnf rule adv
+    CircuitM Fp c (StmtVar k w × StepMainOut n w (SlotSource.widths w srcs) ncw ncs k ks) :=
+  (fun r => (r.out, r)) <$> stepMain srcs hws h P domains dummySg dummyUnf rule adv
 
 /-- The compiled step circuit's rows contain `stepMain`'s, built from the first variable: the
 statement has no input cells, so the body starts there. -/
-theorem mem_compile_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
+theorem mem_compileWith_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
     [CircuitType Fp inVal inVar] {V : Valuation Fp}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (srcs : Fin n → SlotSource ncw ks)
@@ -239,12 +240,31 @@ theorem mem_compile_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal)
     {con : KimchiConstraint Fp}
     (hc : con ∈ (build (stepMain srcs hws h P domains dummySg dummyUnf rule adv) 0).constraints) :
-    con ∈ (compile (a := Unit) (b := StmtVal k w)
+    con ∈ (compileWith (a := Unit) (b := StmtVal k w)
       (stepMainCircuit srcs hws h P domains dummySg dummyUnf rule adv)).constraints := by
-  refine mem_compile_of_mem_body ?_
+  refine mem_compileWith_of_mem_body ?_
   unfold stepMainCircuit
-  erw [build_bind]
+  erw [map_eq_pure_bind, build_bind]
   exact List.mem_append_left _ hc
+
+/-- The compiled step circuit's cells are `stepMain`'s run, built from the first variable. -/
+theorem compileWith_stepMainCircuit_cells {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
+    [CircuitType Fp inVal inVar] {V : Valuation Fp}
+    [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
+    (srcs : Fin n → SlotSource ncw ks)
+    (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
+    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (dummyUnf : UnfVal k)
+    (rule : inVar →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+    (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
+    (compileWith (a := Unit) (b := StmtVal k w)
+      (stepMainCircuit srcs hws h P domains dummySg dummyUnf rule adv)).result.1.2
+      = (build (stepMain srcs hws h P domains dummySg dummyUnf rule adv) 0).result := by
+  rw [compileWith_result]
+  unfold stepMainCircuit
+  erw [map_eq_pure_bind, build_bind]
+  rfl
 
 /-! ## The read -/
 

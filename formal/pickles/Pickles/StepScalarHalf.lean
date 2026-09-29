@@ -285,7 +285,7 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     exact lt_of_le_of_lt (Nat.mul_le_mul_right _ hw) S.rounds_small
   have hspec := finalizeOtherProofStep_spec_fp (V := Vs)
     (FopParams.of IpaVesta.curve nc S.σ.k Linearization.fpTokens) hP IpaVesta.curve.frSponge.hsize
-    (three_le_zkRowsOf K.nc_pos) domains.list domains.nodup
+    (three_le_zkRowsOf K.cvk.nc_pos) domains.list domains.nodup
     (fun d hd => ⟨domains.zkRows_le d hd, domains.generator_pow d hd⟩) claimsS
     evals mask.toList _ hm (prevChallenges.toList.map Vector.toList) _ hprev hlen
     domainLog2Var

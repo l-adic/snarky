@@ -385,7 +385,7 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
         { olds := ⟨?olds, ?kept⟩, proof := hproof
           key := hvk.key
           claimOk := hclaimOk }
-      nc_pos := K.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
+      nc_pos := K.cvk.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
     intro m hm
     have hm' : m ∈ sgOld.map (none, ·) := hm
@@ -403,7 +403,7 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
     have he' : proof.tComm.toList = [] := he
     have hlen := congrArg List.length he'
     simp at hlen
-    exact absurd hlen (Nat.pos_iff_ne_zero.mp K.nc_pos)
+    exact absurd hlen (Nat.pos_iff_ne_zero.mp K.cvk.nc_pos)
   case lrne =>
     intro he
     have he' : proof.opening.lr.toList = [] := he

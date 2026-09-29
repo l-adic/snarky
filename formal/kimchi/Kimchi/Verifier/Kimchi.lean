@@ -187,6 +187,8 @@ structure KimchiProof (C : Ipa.KimchiCurve) (nc k : ℕ) where
 
 /-- A chunk-validated verifier key: what `Wire.KimchiVK.check` returns. -/
 structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
+  /-- Every commitment has a chunk. -/
+  nc_pos : 0 < nc
   /-- The domain size exponent: `n = 2 ^ domainLog2`. -/
   domainLog2 : ℕ
   /-- The domain generator `ω`. -/

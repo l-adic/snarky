@@ -1031,7 +1031,8 @@ def wrapMainKeys? {nc : ℕ} (bp : ℕ)
 /-- A `wrap_main_*` circuit: `Pickles.wrapMainCircuit` at `bp + 1` branches, `mpv` slots and
 `nc` step chunks, as `wrapStep_kimchiVerify` states it: the branches' domains and key cells are
 their checked step keys' (`stepDomainLog2s`, `stepKeyCells`), and a domain's Lagrange table is
-the one exported for the branch at it. -/
+the one exported for the branch at it. Its output alone, the cells dropped: compiled, that is
+the theorem's `compileWith` system (`Snarky.compileWith_constraints`). -/
 def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (widths : Vector (Fin (mpv + 1)) (bp + 1))
     (keys : Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1))
@@ -1040,7 +1041,8 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
   let pin (v : Int) : Option ℕ := if v < 0 then none else some v.toNat
   let zeroPts : Vector XhatCurve.Point nc :=
     Vector.replicate nc (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
-  Pickles.wrapMainCircuit (branches := bp + 1) (mpv := mpv) (ncStep := nc) (k := 15) (ks := 16)
+  Prod.fst <$> Pickles.wrapMainCircuit (branches := bp + 1) (mpv := mpv) (ncStep := nc) (k := 15)
+    (ks := 16)
     fopWrapParams widths (Pickles.stepDomainLog2s keys) (Pickles.stepKeyCells keys)
     (Vector.ofFn fun s => Vector.ofFn fun b => pin ((k.pins.getD b.val []).getD s.val (-1)))
     (fun l => k.lagrange.toList.map fun perBranch =>
@@ -1587,19 +1589,20 @@ open Pickles in
 /-- A `step_main_*` circuit: `Pickles.stepMainCircuit` at `n` slots and the tag's width `w`, as
 `stepWrap_kimchiVerify` states it: each slot's source and the blinding `h` from the dump's
 constants, the step proofs' finalize constants (`FopParams.of`), this compile's known domains,
-over the transcribed `rule`, the statement padded with `dummyUnf`. The advice is inert: the
-comparison is on the constraint system. -/
+over the transcribed `rule`, the statement padded with `dummyUnf`. Its output alone, the cells
+dropped: compiled, that is the theorem's `compileWith` system (`Snarky.compileWith_constraints`).
+The advice is inert: the comparison is on the constraint system. -/
 def stepMainDumpCircuit {n : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     [CheckedType Fp C inVal inVar] (w : ℕ) (hw : w ≤ MaxProofsVerified) (k : StepMainConsts n)
     (dummyUnf : UnfVal 15)
     (rule : inVar → CircuitM Fp C (Vector PrevStatement n × List (FVar Fp))) :
-    Unit → CircuitM Fp C (StmtVar 15 w) :=
-  stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := 1) (k := 15) (ks := StepIPARounds)
-    (inVal := inVal)
+    Unit → CircuitM Fp C (StmtVar 15 w) := fun u =>
+  Prod.fst <$> stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := 1) (k := 15)
+    (ks := StepIPARounds) (inVal := inVal)
     (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h
     (PicklesFixture.fopStepParams 1) k.ownDomains.list (constPt dummyWrapSgPt) dummyUnf rule
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-      AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
+      AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩ u
 
 /-! ## The wrap side's `incrementally_verify_proof`
 

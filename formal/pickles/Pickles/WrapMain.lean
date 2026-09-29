@@ -1,3 +1,4 @@
+import Snarky.Compile
 import Pickles.WrapFinalize
 import Pickles.WrapVerify
 import Pickles.StepSlot
@@ -378,7 +379,8 @@ def wrapMain [ConstraintHolds Fq c] [LawfulBasicSystem Fq c] {branches mpv ncSte
   let vo ← wrapMainVerify log2s lagrange h dummy slotWidths adv stmt hd
   pure (hd, vo)
 
-/-- The wrap circuit as a circuit of its statement: `wrapMain`, its cells dropped. -/
+/-- The wrap circuit as a circuit of its statement: no public output, `wrapMain`'s cells kept
+beside it (`Snarky.compileWith`). -/
 def wrapMainCircuit [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
     {branches mpv ncStep k ks : ℕ} [NeZero branches]
     (P : FopParams Fq)
@@ -389,9 +391,9 @@ def wrapMainCircuit [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
     (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
     (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) :
-    CircuitM Fq c Unit := do
-  let _ ← wrapMain P widths log2s stepKeys pins lagrange h dummy slotWidths adv stmt
-  pure ()
+    CircuitM Fq c
+      (Unit × (WrapMainFinalizeOut branches mpv ncStep k × WrapMainVerifyOut mpv ncStep k ks)) :=
+  ((), ·) <$> wrapMain P widths log2s stepKeys pins lagrange h dummy slotWidths adv stmt
 
 /-- The branches' step keys as the wrap circuit's constant cells. -/
 def stepKeyCells {branches ncStep : ℕ}
@@ -411,6 +413,53 @@ def srsLagrangeTable (σ : SRS IpaVesta.curve.Point) (nc count d : ℕ) :
   (Ipa.lagrangeBasis IpaVesta.curve σ nc (2 ^ d) (domainGenerator IpaVesta.curve d) count).toList
 
 end Main
+
+/-! ## The compiled wrap circuit -/
+
+section Compiled
+
+open CompElliptic.Fields.Pasta Bulletproof
+
+variable {branches mpv ncStep k ks : ℕ} [NeZero branches] {V : Valuation Fq}
+  (P : FopParams Fq) (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
+  (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
+  (pins : Vector (Vector (Option ℕ) branches) mpv)
+  (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
+  (dummy : Vector Fq k) (slotWidths : Vector ℕ mpv)
+  (adv : WrapMainAdvice mpv ncStep k ks slotWidths.toList.sum)
+
+/-- The compiled wrap circuit's rows contain `wrapMain`'s, built from `bodyStart` on its
+statement. -/
+theorem mem_compileWith_wrapMainCircuit {con : KimchiConstraint Fq}
+    (hc : con ∈ (build (wrapMain (c := Builder V (KimchiConstraint Fq)) P widths log2s stepKeys
+      pins lagrange h dummy slotWidths adv
+      (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)))
+      (bodyStart (F := Fq) (c := Builder V (KimchiConstraint Fq))
+        (a := StatementPacked ks (Type1 Fq) Fq))).constraints) :
+    con ∈ (compileWith (a := StatementPacked ks (Type1 Fq) Fq) (b := Unit)
+      (wrapMainCircuit (c := Builder V (KimchiConstraint Fq)) P widths log2s stepKeys pins
+        lagrange h dummy slotWidths adv)).constraints := by
+  refine mem_compileWith_of_mem_body ?_
+  unfold wrapMainCircuit
+  erw [map_eq_pure_bind, build_bind]
+  exact List.mem_append_left _ hc
+
+/-- The compiled wrap circuit's cells are `wrapMain`'s run from `bodyStart` on its statement. -/
+theorem compileWith_wrapMainCircuit_cells :
+    (compileWith (a := StatementPacked ks (Type1 Fq) Fq) (b := Unit)
+      (wrapMainCircuit (c := Builder V (KimchiConstraint Fq)) P widths log2s stepKeys pins
+        lagrange h dummy slotWidths adv)).result.1.2
+      = (build (wrapMain (c := Builder V (KimchiConstraint Fq)) P widths log2s stepKeys pins
+          lagrange h dummy slotWidths adv
+          (inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)))
+          (bodyStart (F := Fq) (c := Builder V (KimchiConstraint Fq))
+            (a := StatementPacked ks (Type1 Fq) Fq))).result := by
+  rw [compileWith_result]
+  unfold wrapMainCircuit
+  erw [map_eq_pure_bind, build_bind]
+  rfl
+
+end Compiled
 
 /-! ## The reads -/
 

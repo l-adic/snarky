@@ -224,7 +224,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
       have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) hP
           IpaPallas.curve.frSponge.hsize
-        (three_le_zkRowsOf K.nc_pos)
+        (three_le_zkRowsOf K.cvk.nc_pos)
         d.generator K.cvk.n (show zkRowsOf nc ≤ K.cvk.n from K.zkRows_eq ▸ K.zkRows_le)
           (by rw [hgen]; exact K.omega_prim.pow_eq_one) _ hvan
         sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList) _ hprev
