@@ -29,12 +29,13 @@ import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
-import Pickles.Field (StepField)
+import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Slots (PrevValues, slotWidthInt, slotWidthsOf, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
+import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
@@ -97,12 +98,13 @@ compileStepMainTwoPhaseChainMakeZeroWithConstants params = do
           dummyAdvice
           throwawayCaptureRef
       )
-  pure
-    { art
-    , constants: stepMainConstants (reflectType (Proxy @Mpv))
-        (map slotWidthInt (slotWidthsOf (Proxy @Unit)))
-        srsData
-    }
+  pallasSrs <- createCRS @WrapField
+  constants <- stepMainConstants (reflectType (Proxy @Mpv))
+    (map slotWidthInt (slotWidthsOf (Proxy @Unit)))
+    srsData
+    pallasSrs
+    Vector.nil
+  pure { art, constants }
   where
   srsData =
     { blindingH: params.blindingH

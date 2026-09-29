@@ -1,16 +1,15 @@
--- | N2 wrapper for the `wrap_main` library circuit.
+-- | The wrap circuit of the `import_two_phase_chain` tag, whose step
+-- | circuit `step_main_import_two_phase_chain_circuit` dumps.
 -- |
--- | Configuration: `branches=1`, `step_widths=[2]`,
--- | `Max_widths_by_slot=[N2;N2]`, `Features.none`. Single rule
--- | (`prevs = [self; self]`), so `branches = 1`.
+-- | Configuration: branches=1, step_widths=[2], prev slots [1, 2] (slot 0
+-- | = a `two_phase_chain` proof, slot 1 = the tag's own), both at wrap
+-- | domain N1, Features.none.
 -- |
--- | `stepKeys` VK constants are derived by compiling the same
--- | Simple_chain N2 step CS (`step_main_simple_chain_n2_circuit`)
--- | and running the kimchi commitment pipeline; this produces the
--- | same baked-in constants OCaml's `Pickles.compile_promise` does.
--- | Reference: OCaml `dump_simple_chain_n2.ml`.
-module Pickles.CircuitDiffs.PureScript.WrapMainN2
-  ( compileWrapMainN2
+-- | No OCaml dump of this circuit exists; it is compiled for its key,
+-- | which the step circuit's self slot verifies against
+-- | (`stepMainConstants`).
+module Pickles.CircuitDiffs.PureScript.WrapMainImportTwoPhaseChain
+  ( compileWrapMainImportTwoPhaseChain
   ) where
 
 import Prelude
@@ -21,7 +20,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepKey, deriveWrapKey)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
-import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (StepMainSimpleChainN2Params, compileStepMainSimpleChainN2)
+import Pickles.CircuitDiffs.PureScript.StepMainImportTwoPhaseChain (StepMainImportTwoPhaseChainParams, compileStepMainImportTwoPhaseChain)
 import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
@@ -36,19 +35,17 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
-compileWrapMainN2
+compileWrapMainImportTwoPhaseChain
   :: IvpWrapParams
-  -> StepMainSimpleChainN2Params
+  -> StepMainImportTwoPhaseChainParams
   -> Effect WrapArtifact
-compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
-  stepArt <- compileStepMainSimpleChainN2 stepParams
+compileWrapMainImportTwoPhaseChain { lagrangeAt, blindingH } stepParams = do
+  stepArt <- compileStepMainImportTwoPhaseChain stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
   stepKey <- deriveStepKey @2 vestaSrs stepArt.stepCs
-  let stepComms = extractStepVKComms @1 stepKey.verifierIndex
-  let realStepVK = stepVkForCircuit stepComms
+  let realStepVK = stepVkForCircuit (extractStepVKComms @1 stepKey.verifierIndex)
   let
-
     config :: WrapMainConfig 1 2 1
     config =
       { stepWidths: 2 :< Vector.nil
@@ -58,21 +55,16 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
       , blindingH
       , prevWrapDomainPins: (Just N1 :< Just N1 :< Vector.nil) :< Vector.nil
       }
-  -- mpv=2, slots [2; 2]; derived from PrevsSpec via funcdep.
+  -- slot 0 carries a `two_phase_chain` proof's one accumulator, slot 1
+  -- the tag's own two
   let
     dummyAdvice :: WrapAdvice 2 1
     dummyAdvice = unsafeCoerce unit
 
     slotWidths :: Vector 2 Int
-    slotWidths = 2 :< 2 :< Vector.nil
+    slotWidths = 1 :< 2 :< Vector.nil
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    ( \stmt ->
-        wrapMain @1 @2 @1
-          config
-          stmt
-          dummyAdvice
-          slotWidths
-    )
+    (\stmt -> wrapMain @1 @2 @1 config stmt dummyAdvice slotWidths)
   wrapKey <- deriveWrapKey @2 pallasSrs wrapCs
   constants <- wrapMainConstants config vestaSrs (stepKey :< Vector.nil) slotWidths
   pure

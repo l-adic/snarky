@@ -219,7 +219,8 @@ private def parseChunks (C : Ipa.KimchiCurve) (nc : ℕ) (j : Json) :
 
 /-- `Ipa.lagrangeBasis` memoised at `path`: read back when the file holds at least `count`
 commitments of `nc` chunks, computed and written otherwise. The path must name the curve, the
-domain and the SRS size, which fix the basis. -/
+domain and the SRS size, which fix the basis. The file is written to a temporary path and
+renamed over `path`, so a reader never sees a partial file. -/
 def lagrangeBasisCached (C : Ipa.KimchiCurve) (path : System.FilePath) (σ : SRS C.Point)
     (nc n : ℕ) (ω : C.ScalarField) (count : ℕ) : IO (Array (Vector C.Point nc)) := do
   if ← path.pathExists then
@@ -227,8 +228,10 @@ def lagrangeBasisCached (C : Ipa.KimchiCurve) (path : System.FilePath) (σ : SRS
       if count ≤ pts.size then return pts.extract 0 count
   let pts := Ipa.lagrangeBasis C σ nc n ω count
   if let some dir := path.parent then IO.FS.createDirAll dir
-  IO.FS.writeFile path
+  let tmp : System.FilePath := s!"{path}.{← IO.monoNanosNow}.tmp"
+  IO.FS.writeFile tmp
     (Json.arr (pts.map fun v => Json.arr (v.toArray.map pointJson))).compress
+  IO.FS.rename tmp path
   return pts
 
 end Bulletproof.Fixture

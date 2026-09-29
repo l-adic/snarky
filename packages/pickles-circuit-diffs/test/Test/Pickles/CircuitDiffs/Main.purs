@@ -35,7 +35,7 @@ import Pickles.CircuitDiffs.PureScript.CheckBulletproofStep (compileCheckBulletp
 import Pickles.CircuitDiffs.PureScript.CheckBulletproofWrap (compileCheckBulletproofWrap)
 import Pickles.CircuitDiffs.PureScript.Cip (compileCipStep, compileCipWrap)
 import Pickles.CircuitDiffs.PureScript.CombinePoly (compileCombinePoly)
-import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, WrapArtifact)
+import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, WrapArtifact)
 import Pickles.CircuitDiffs.PureScript.ExpandPlonk (compileExpandPlonkStep, compileExpandPlonkWrap)
 import Pickles.CircuitDiffs.PureScript.FopStep (compileFopStep)
 import Pickles.CircuitDiffs.PureScript.FopStepChunks2 (compileFopStepChunks2)
@@ -63,13 +63,13 @@ import Pickles.CircuitDiffs.PureScript.SchnorrVerify (compileSchnorrVerify)
 import Pickles.CircuitDiffs.PureScript.SpongeChallenges (compileChallengeDigestStep, compileChallengeDigestWrap, compileSpongeAndChallengesStep, compileSpongeAndChallengesWrap)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (compileStepMainChunks2)
-import Pickles.CircuitDiffs.PureScript.StepMainImportTwoPhaseChain (compileStepMainImportTwoPhaseChainWithConstants)
+import Pickles.CircuitDiffs.PureScript.StepMainImportTwoPhaseChain (StepMainImportTwoPhaseChainParams, compileStepMainImportTwoPhaseChainWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2WithConstants)
-import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturnWithConstants)
+import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (StepMainTreeProofReturnParams, compileStepMainTreeProofReturnWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (compileStepMainTwoPhaseChainIncrementWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero, compileStepMainTwoPhaseChainMakeZeroWithConstants)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
@@ -78,17 +78,18 @@ import Pickles.CircuitDiffs.PureScript.WrapFinalize (compileWrapFinalizeN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainChunks2 (compileWrapMainChunks2)
+import Pickles.CircuitDiffs.PureScript.WrapMainImportTwoPhaseChain (compileWrapMainImportTwoPhaseChain)
 import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
 import Pickles.CircuitDiffs.PureScript.WrapMainSideLoadedMain (compileWrapMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.WrapMainTreeProofReturn (compileWrapMainTreeProofReturn)
-import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (compileWrapMainTwoPhaseChain)
+import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (WrapMainTwoPhaseChainParams, compileWrapMainTwoPhaseChain)
 import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
 import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatBranches (compileXhatBranches)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Pickles.CircuitDiffs.Types (CircuitComparison, WitnessExport)
-import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.PublicInputCommit (LagrangeBaseLookup, mkConstLagrangeBaseLookup)
 import Random.LCG (mkSeed)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
@@ -192,6 +193,108 @@ stepWithConstants :: String -> { art :: StepArtifact, constants :: String } -> E
 stepWithConstants name r = do
   FS.writeTextFile UTF8 (resultsDir <> name <> "_constants.json") r.constants
   fromCompiledCircuit r.art.stepCs
+
+-- | `stepWithConstants` for a step circuit whose self slots verify against
+-- | its tag's wrap key, `wrapArt`'s.
+stepWithSelfKey
+  :: String
+  -> WrapArtifact
+  -> { art :: StepArtifact, constants :: DerivedKey PallasG Fq -> Effect String }
+  -> Effect (Circuit Fp)
+stepWithSelfKey name wrapArt r = do
+  constants <- r.constants wrapArt.wrapKey
+  stepWithConstants name { art: r.art, constants }
+
+-- | The wrap circuits of the tags whose step circuits are dumped: each
+-- | `wrap_main_*` fixture of such a tag, and the key its step circuit's
+-- | self slots verify against. `simple_chain_n2` and `tree_proof_return`
+-- | use `override_wrap_domain:N1`.
+simpleChainN2Wrap :: SrsBundle -> Effect WrapArtifact
+simpleChainN2Wrap bundle =
+  compileWrapMainN2
+    { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+        Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
+    , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
+    }
+    (stepLagrangeData bundle.pallasCrs15 14)
+
+-- | `tree_proof_return`'s wrap circuit (`simpleChainN2Wrap`). Its step
+-- | slots read the No_recursion_return wrap key's basis at 2^13 and its
+-- | own at 2^14.
+treeProofReturnWrap :: SrsBundle -> Effect WrapArtifact
+treeProofReturnWrap bundle =
+  compileWrapMainTreeProofReturn
+    { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+        Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
+    , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
+    }
+    (treeProofReturnParams bundle)
+
+-- | `two_phase_chain`'s wrap circuit (`simpleChainN2Wrap`): two branches,
+-- | make_zero and increment, sharing one wrap key.
+twoPhaseChainWrap :: SrsBundle -> Effect WrapArtifact
+twoPhaseChainWrap bundle = compileWrapMainTwoPhaseChain (twoPhaseChainParams bundle)
+
+-- | `import_two_phase_chain`'s wrap circuit (`simpleChainN2Wrap`). No
+-- | OCaml fixture: it is compiled for its key alone.
+importTwoPhaseChainWrap :: SrsBundle -> Effect WrapArtifact
+importTwoPhaseChainWrap bundle =
+  compileWrapMainImportTwoPhaseChain
+    { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+        Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
+    , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
+    }
+    (importTwoPhaseChainParams bundle)
+
+-- | A step circuit's SRS data: the `srs` Lagrange basis at `2^log2` and its
+-- | blinding base.
+stepLagrangeData
+  :: CRS PallasG
+  -> Int
+  -> { lagrangeAt :: LagrangeBaseLookup 1 Fp, blindingH :: AffinePoint (F Fp) }
+stepLagrangeData srs log2 =
+  { lagrangeAt: stepLagrangeAt srs log2
+  , blindingH: (coerce $ vestaSrsBlindingGenerator srs) :: AffinePoint (F Fp)
+  }
+
+-- | The `srs` Lagrange basis at `2^log2`, as a step circuit reads it.
+stepLagrangeAt :: CRS PallasG -> Int -> LagrangeBaseLookup 1 Fp
+stepLagrangeAt srs log2 = mkConstLagrangeBaseLookup \i ->
+  Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt srs log2 i)) :: AffinePoint (F Fp))
+
+-- | `tree_proof_return`'s step params: slot 0 a No_recursion_return proof,
+-- | its wrap circuit compiled from the NRR wrap and step data; slot 1 self.
+treeProofReturnParams :: SrsBundle -> StepMainTreeProofReturnParams
+treeProofReturnParams bundle =
+  { slot0LagrangeAt: stepLagrangeAt bundle.pallasCrs15 13
+  , slot1LagrangeAt: stepLagrangeAt bundle.pallasCrs15 14
+  , blindingH: (coerce $ vestaSrsBlindingGenerator bundle.pallasCrs15) :: AffinePoint (F Fp)
+  , nrrWrapSrsData:
+      { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+          Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 9 i))
+      , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
+      }
+  , nrrStepSrsData: stepLagrangeData bundle.pallasCrs15 14
+  }
+
+-- | `two_phase_chain`'s wrap params: both branches' step data at 2^14.
+twoPhaseChainParams :: SrsBundle -> WrapMainTwoPhaseChainParams
+twoPhaseChainParams bundle =
+  { vestaSrs: bundle.vestaCrs16
+  , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
+  , makeZeroStepSrsData: stepLagrangeData bundle.pallasCrs15 14
+  , incrementStepSrsData: stepLagrangeData bundle.pallasCrs15 14
+  }
+
+-- | `import_two_phase_chain`'s step params: an External slot over
+-- | `two_phase_chain` beside a Self slot, both reading the 2^14 basis.
+importTwoPhaseChainParams :: SrsBundle -> StepMainImportTwoPhaseChainParams
+importTwoPhaseChainParams bundle =
+  { slot0LagrangeAt: stepLagrangeAt bundle.pallasCrs15 14
+  , slot1LagrangeAt: stepLagrangeAt bundle.pallasCrs15 14
+  , blindingH: (coerce $ vestaSrsBlindingGenerator bundle.pallasCrs15) :: AffinePoint (F Fp)
+  , twoPhaseChainSrsData: twoPhaseChainParams bundle
+  }
 
 appendManifest :: String -> String -> Effect Unit
 appendManifest name status =
@@ -920,20 +1023,8 @@ spec bundle =
         -- `wrap_main_circuit`): `dump_simple_chain_n2.ml` passes
         -- `~override_wrap_domain:Proofs_verified.N1`, so the wrap
         -- domain is N1 = Pow_2_roots_of_unity 14.
-        let
-          wrapMainN2SrsData =
-            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i))
-            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
-            }
-          wrapMainN2StepSrs = bundle.pallasCrs15
-          wrapMainN2StepSrsData =
-            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN2StepSrs 14 i)) :: AffinePoint (F Fp))
-            , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN2StepSrs) :: AffinePoint (F Fp)
-            }
         exactMatchEff "wrap_main_n2_circuit"
-          (wrapWithConstants "wrap_main_n2_circuit" =<< compileWrapMainN2 wrapMainN2SrsData wrapMainN2StepSrsData)
+          (wrapWithConstants "wrap_main_n2_circuit" =<< simpleChainN2Wrap bundle)
         -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
         -- padded=[[0];[0]]. First (and only) N=0 wrap fixture — exercises
         -- the wrap verify-one-of-step path with a step proof whose own
@@ -955,7 +1046,7 @@ spec bundle =
           -- Step CS params for Add_one_return (mpv=0, no prev proofs).
           -- Lagrange lookup is unused at mpv=0 (perSlotLagrangeAt is
           -- Vector.nil). blindingH and SRS size match the Vesta CRS
-          -- the step VK is derived over (deriveStepVKCommsFromCompiled).
+          -- the step VK is derived over (deriveStepKey).
           aorStepSrs = bundle.pallasCrs15
           aorStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -987,47 +1078,8 @@ spec bundle =
         -- circuit uses override_wrap_domain:N1 → wrap domain log2 = 14.
         -- The IVP MSM lagrange lookup is at the STEP domain log2 (15),
         -- matching `domainLog2s` in the WrapMainConfig.
-        let
-          wrapMainTprSrsData =
-            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i))
-            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
-            }
-          -- Step CS params for TPR (mpv=2, heterogeneous prevs [N0,N2]).
-          -- Per-slot lagrange domains: slot 0 (NRR) at 2^13, slot 1
-          -- (self) at 2^14 (override_wrap_domain:N1). Same shape used
-          -- by `step_main_tree_proof_return_circuit`'s direct test.
-          tprStepSrs = bundle.pallasCrs15
-          tprLagrangeAtD13 = mkConstLagrangeBaseLookup \i ->
-            Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp))
-          tprLagrangeAtD14 = mkConstLagrangeBaseLookup \i ->
-            Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp))
-
-          -- NRR wrap+step SRS data for the chained NRR compile inside
-          -- compileStepMainTreeProofReturn (the wrap fixture goes through
-          -- it transitively via compileWrapMainTreeProofReturn).
-          wrapTprNrrWrapSrsData :: IvpWrapParams
-          wrapTprNrrWrapSrsData =
-            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i))
-            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
-            }
-
-          wrapTprNrrStepSrsData :: StepMainNoRecursionReturnParams
-          wrapTprNrrStepSrsData =
-            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp))
-            , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
-            }
-          tprStepSrsData =
-            { slot0LagrangeAt: tprLagrangeAtD13
-            , slot1LagrangeAt: tprLagrangeAtD14
-            , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
-            , nrrWrapSrsData: wrapTprNrrWrapSrsData
-            , nrrStepSrsData: wrapTprNrrStepSrsData
-            }
         exactMatchEff "wrap_main_tree_proof_return_circuit"
-          (wrapWithConstants "wrap_main_tree_proof_return_circuit" =<< compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
+          (wrapWithConstants "wrap_main_tree_proof_return_circuit" =<< treeProofReturnWrap bundle)
         -- Multi-branch (2 branches: make_zero + increment) sharing ONE wrap
         -- key. step_widths=[0;1], padded=[[0;0];[0;1]]; per-branch step
         -- domains [9; 14] differ (make_zero is tiny, increment full),
@@ -1035,26 +1087,8 @@ spec bundle =
         -- Lagrange lookup is per-branch — needs the wrap SRS directly.
         -- Step VKs are derived per-branch (mirrors the deterministic
         -- VK fix family — wrap_main_circuit, wrap_main_tree_proof_return).
-        let
-          tpcStepSrs = bundle.pallasCrs15
-          tpcMakeZeroSrsData =
-            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp))
-            , blindingH: (coerce $ vestaSrsBlindingGenerator tpcStepSrs) :: AffinePoint (F Fp)
-            }
-          tpcIncrementSrsData =
-            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp))
-            , blindingH: (coerce $ vestaSrsBlindingGenerator tpcStepSrs) :: AffinePoint (F Fp)
-            }
-          wrapMainTpcParams =
-            { vestaSrs: wrapSrs
-            , blindingH: wrapMainSrsData.blindingH
-            , makeZeroStepSrsData: tpcMakeZeroSrsData
-            , incrementStepSrsData: tpcIncrementSrsData
-            }
         exactMatchEff "wrap_main_two_phase_chain_circuit"
-          (wrapWithConstants "wrap_main_two_phase_chain_circuit" =<< compileWrapMainTwoPhaseChain wrapMainTpcParams)
+          (wrapWithConstants "wrap_main_two_phase_chain_circuit" =<< twoPhaseChainWrap bundle)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = bundle.pallasCrs15
@@ -1131,10 +1165,10 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
-        exactMatchEff "step_main_simple_chain_n2_circuit"
-          ( stepWithConstants "step_main_simple_chain_n2_circuit"
-              =<< compileStepMainSimpleChainN2WithConstants stepMainN2SrsData
-          )
+        exactMatchEff "step_main_simple_chain_n2_circuit" do
+          wrapArt <- simpleChainN2Wrap bundle
+          stepWithSelfKey "step_main_simple_chain_n2_circuit" wrapArt
+            =<< compileStepMainSimpleChainN2WithConstants stepMainN2SrsData
         -- The same `pallasCrs15` domain-14 export as `full_step_lagrange.json`, written here too
         -- so a run narrowed to the step-main circuits carries it.
         it "dumps the step_main Lagrange bases for the Lean check_cs harness" $ liftEffect $
@@ -1205,32 +1239,16 @@ spec bundle =
             , nrrWrapSrsData: tprNrrWrapSrsData
             , nrrStepSrsData: tprNrrStepSrsData
             }
-        exactMatchEff "step_main_tree_proof_return_circuit"
-          ( stepWithConstants "step_main_tree_proof_return_circuit"
-              =<< compileStepMainTreeProofReturnWithConstants treeProofReturnSrsData
-          )
+        exactMatchEff "step_main_tree_proof_return_circuit" do
+          wrapArt <- treeProofReturnWrap bundle
+          stepWithSelfKey "step_main_tree_proof_return_circuit" wrapArt
+            =<< compileStepMainTreeProofReturnWithConstants treeProofReturnSrsData
         -- N=2: an External slot over `two_phase_chain` (step domains 9 and
         -- 14) beside a Self slot; both slots read the 2^14 Lagrange basis.
-        let
-          tpcStepSrsData =
-            { lagrangeAt: lagrangeAtD14
-            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
-            }
-          importTwoPhaseChainSrsData =
-            { slot0LagrangeAt: lagrangeAtD14
-            , slot1LagrangeAt: lagrangeAtD14
-            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
-            , twoPhaseChainSrsData:
-                { vestaSrs: bundle.vestaCrs16
-                , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
-                , makeZeroStepSrsData: tpcStepSrsData
-                , incrementStepSrsData: tpcStepSrsData
-                }
-            }
-        exactMatchEff "step_main_import_two_phase_chain_circuit"
-          ( stepWithConstants "step_main_import_two_phase_chain_circuit"
-              =<< compileStepMainImportTwoPhaseChainWithConstants importTwoPhaseChainSrsData
-          )
+        exactMatchEff "step_main_import_two_phase_chain_circuit" do
+          wrapArt <- importTwoPhaseChainWrap bundle
+          stepWithSelfKey "step_main_import_two_phase_chain_circuit" wrapArt
+            =<< compileStepMainImportTwoPhaseChainWithConstants (importTwoPhaseChainParams bundle)
         -- N=1 parent + single side-loaded prev (mpv=N2 upper bound).
         -- The three per-domain lagrange tables sit at log2 ∈ {13, 14,
         -- 15} (= the wrap-domain log2s for `actualWrapDomainSize ∈
@@ -1309,7 +1327,8 @@ spec bundle =
         -- FOP domain dispatch list's `[makeZero, increment]` head).
         exactMatchEff "step_main_two_phase_chain_increment_circuit" $ do
           makeZeroArt <- compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData
-          stepWithConstants "step_main_two_phase_chain_increment_circuit"
+          wrapArt <- twoPhaseChainWrap bundle
+          stepWithSelfKey "step_main_two_phase_chain_increment_circuit" wrapArt
             =<< compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt
               twoPhaseChainIncrementSrsData
         -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule

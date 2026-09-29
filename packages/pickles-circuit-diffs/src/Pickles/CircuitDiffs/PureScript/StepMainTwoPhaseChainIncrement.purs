@@ -31,9 +31,9 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
-import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
-import Pickles.Field (StepField)
+import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
@@ -41,10 +41,12 @@ import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthI
 import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
+import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_, exists, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -94,7 +96,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params =
 compileStepMainTwoPhaseChainIncrementWithConstants
   :: StepArtifact
   -> StepMainTwoPhaseChainIncrementParams
-  -> Effect { art :: StepArtifact, constants :: String }
+  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect String }
 compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params = do
   -- Slot 0's source = self (the 2-branch proof system). Its candidate
   -- list: make_zero's step domain (from artifact) + increment's own
@@ -104,9 +106,13 @@ compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params = do
   art <- mkStepArtifact <$> runStepCompile (srsData makeZeroLog2 selfLog2)
   pure
     { art
-    , constants: stepMainConstants (reflectType (Proxy @Mpv))
-        (map slotWidthInt (slotWidthsOf (Proxy @IncrementPrevsSpec)))
-        (srsData makeZeroLog2 selfLog2)
+    , constants: \selfWrapKey -> do
+        pallasSrs <- createCRS @WrapField
+        stepMainConstants (reflectType (Proxy @Mpv))
+          (map slotWidthInt (slotWidthsOf (Proxy @IncrementPrevsSpec)))
+          (srsData makeZeroLog2 selfLog2)
+          pallasSrs
+          (Just selfWrapKey :< Vector.nil)
     }
   where
   srsData :: Int -> Int -> StepMainSrsData 1

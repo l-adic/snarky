@@ -9,7 +9,7 @@
 -- | * `Features.none`.
 -- |
 -- | Step VKs are derived from each branch's compiled step CS via
--- | `deriveStepVKCommsFromCompiled`.
+-- | `deriveStepKey`.
 -- |
 -- | The returned `WrapArtifact`'s `stepCs` / `stepDomainLog2` fields
 -- | reflect the increment branch (the last-compiled "main" branch);
@@ -27,13 +27,14 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
-import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKCommsFromCompiled, deriveWrapVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepKey, deriveWrapKey)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainTwoPhaseChainIncrementParams, compileStepMainTwoPhaseChainIncrement)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
 import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Prove.Wrap (stepVkForCircuit)
+import Pickles.Prove.Step (extractWrapVKCommsAdvice)
+import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Safe.Coerce (coerce)
@@ -67,11 +68,11 @@ compileWrapMainTwoPhaseChain { vestaSrs, blindingH, makeZeroStepSrsData, increme
   incrementArt <- compileStepMainTwoPhaseChainIncrement makeZeroArt incrementStepSrsData
   vestaSrs' <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
-  makeZeroComms <- deriveStepVKCommsFromCompiled @1 @0 vestaSrs' makeZeroArt.stepCs
-  incrementComms <- deriveStepVKCommsFromCompiled @1 @1 vestaSrs' incrementArt.stepCs
+  makeZeroKey <- deriveStepKey @0 vestaSrs' makeZeroArt.stepCs
+  incrementKey <- deriveStepKey @1 vestaSrs' incrementArt.stepCs
   let
-    makeZeroVK = stepVkForCircuit makeZeroComms
-    incrementVK = stepVkForCircuit incrementComms
+    makeZeroVK = stepVkForCircuit (extractStepVKComms @1 makeZeroKey.verifierIndex)
+    incrementVK = stepVkForCircuit (extractStepVKComms @1 incrementKey.verifierIndex)
   let
     -- @0 for make_zero (n=0 prev_challenges), @1 for increment (n=1).
 
@@ -113,11 +114,14 @@ compileWrapMainTwoPhaseChain { vestaSrs, blindingH, makeZeroStepSrsData, increme
     slotWidths = 1 :< Vector.nil
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @2 @1 @1 config stmt dummyAdvice slotWidths)
-  wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+  wrapKey <- deriveWrapKey @2 pallasSrs wrapCs
+  constants <- wrapMainConstants config vestaSrs' (makeZeroKey :< incrementKey :< Vector.nil)
+    slotWidths
   pure
     { stepCs: incrementArt.stepCs
     , stepDomainLog2: incrementArt.stepDomainLog2
     , wrapCs
-    , wrapVk
-    , constants: wrapMainConstants config (makeZeroComms :< incrementComms :< Vector.nil) slotWidths
+    , wrapVk: extractWrapVKCommsAdvice wrapKey.verifierIndex
+    , wrapKey
+    , constants
     }

@@ -59,7 +59,7 @@ def fopStepHarnessAt (domains : List (Pickles.KnownDomain Fp)) (input : Vector (
 
 /-- `fopStepHarnessAt` at the dump's one known domain, of log2 16. -/
 def fopStepHarness (input : Vector (FVar Fp) 151) : CircuitM Fp C (Pickles.FopOutput Fp) :=
-  fopStepHarnessAt [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] input
+  fopStepHarnessAt [⟨16, Kimchi.Verifier.domainGenerator Bulletproof.IpaVesta.curve 16⟩] input
 
 /-- The wrap side's deployed parameters: the Pallas curve's (`FopParams.of`) at one chunk, at the
 wrap SRS of `2 ^ 15` points and the `Fq` linearization. -/
@@ -73,7 +73,7 @@ def fopWrapHarnessAt (domainLog2 rounds : ℕ) {n : ℕ} (input : Vector (FVar F
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type2.mk get (10 + rounds) rounds
   Pickles.finalizeOtherProofWrap fopWrapParams
-    (.const (Kimchi.Fixture.PS.fqSide.omega (2 ^ domainLog2)))
+    (.const (Kimchi.Verifier.domainGenerator Bulletproof.IpaPallas.curve domainLog2))
     (fun z => do let t ← Pickles.pow2PowMul z domainLog2; pure (CVar.sub_ t (.const 1)))
     u w prev
 
@@ -108,13 +108,13 @@ def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) {k nc : ℕ}
 
 /-- `fopStepOnAt` at the dump's one known domain, of log2 16. -/
 def fopStepOn {k nc : ℕ} (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp) :=
-  fopStepOnAt [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] v
+  fopStepOnAt [⟨16, Kimchi.Verifier.domainGenerator Bulletproof.IpaVesta.curve 16⟩] v
 
 /-- The wrap side on its records at a constant domain, `ζⁿ − 1` by `pow2PowMul`. -/
 def fopWrapOnAt (domainLog2 : ℕ) {k : ℕ} (v : Pickles.WrapFopVar k 1) :
     CircuitM Fq Cq (Pickles.FopOutput Fq) :=
   Pickles.finalizeOtherProofWrap fopWrapParams
-    (.const (Kimchi.Fixture.PS.fqSide.omega (2 ^ domainLog2)))
+    (.const (Kimchi.Verifier.domainGenerator Bulletproof.IpaPallas.curve domainLog2))
     (fun z => do let t ← Pickles.pow2PowMul z domainLog2; pure (CVar.sub_ t (.const 1)))
     v.claims v.evals (v.prev.toList.map (·.toList))
 

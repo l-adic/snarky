@@ -33,18 +33,6 @@ abbrev C := KimchiConstraint Fp
 /-- The kimchi constraint sum at the wrap field. -/
 abbrev Cq := KimchiConstraint Fq
 
-/-- Vesta's GLV eigenvalue, as a scalar-field element. -/
-def endoVestaLam : Fp := (Pasta.vestaLam : ℤ)
-
-/-- The wrap-side scalar-challenge endomorphism (OCaml `Endo.Step_inner_curve.scalar`):
-Pallas's `λ` at the wrap field. -/
-def endoPallasLam : Fq := (Pasta.pallasLam : ℤ)
-
-/-- The step-side coset shifts: the Vesta scalar field's (`KimchiCurve.shifts`). They enter the
-dump as Generic coefficients, so the comparison checks them against production rather than
-trusting them. -/
-def stepShifts : Fin permCols → Fp := fun i => Bulletproof.IpaVesta.curve.shifts[i]
-
 /-- The two previous-challenge vectors from `base`, `rounds` entries each. -/
 def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) (rounds : ℕ := 16) :
     List (List (FVar (ZMod p))) :=

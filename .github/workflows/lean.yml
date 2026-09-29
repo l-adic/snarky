@@ -362,29 +362,32 @@ jobs:
 
     # The proofs come from the PureScript suite's cache (committed); the SRS they were made
     # against is the project's, fetched as the PureScript jobs fetch it. The Lagrange bases
-    # the driver needs are computed from it at run time and memoised under
-    # formal/lagrange-cache (a few MSMs, cached across runs).
+    # the driver needs are computed from it in the driver's warm-up and memoised under
+    # formal/lagrange-cache, cached across runs.
     - name: Cache SRS files
       uses: actions/cache@v3
       with:
         path: srs-cache/
         key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
 
-    # Keyed per file and by the file's content: each file needs its own domains' bases, a
-    # static key is never re-saved once it hits, and two jobs must not race for one key. The
-    # fallbacks start a new key from the nearest older memo instead of from nothing.
+    - name: Populate SRS cache
+      working-directory: .
+      run: make fetch-srs
+
+    # A memo is only as good as the SRS and the code that computed it, so the key's prefix
+    # hashes both: the fetched SRS files and the Lean sources the bases come from (the
+    # bulletproof package, and the manifest pinning CompElliptic's MSM). Then it is keyed per
+    # file and by the file's content: each file needs its own domains' bases, a static key
+    # is never re-saved once it hits, and two jobs must not race for one key. The fallbacks
+    # start a new key from the nearest older memo under the same prefix only.
     - name: Cache the Lean Lagrange bases
       uses: actions/cache@v3
       with:
         path: formal/lagrange-cache/
-        key: ${{ runner.os }}-lean-lagrange-${{ matrix.cache }}-${{ hashFiles(format('packages/pickles/test/fixtures/proof-cache/{0}.json', matrix.cache)) }}
+        key: ${{ runner.os }}-lean-lagrange-${{ hashFiles('srs-cache/*.srs') }}-${{ hashFiles('formal/bulletproof-pcs/**/*.lean', 'formal/lake-manifest.json', 'formal/lean-toolchain') }}-${{ matrix.cache }}-${{ hashFiles(format('packages/pickles/test/fixtures/proof-cache/{0}.json', matrix.cache)) }}
         restore-keys: |
-          ${{ runner.os }}-lean-lagrange-${{ matrix.cache }}-
-          ${{ runner.os }}-lean-lagrange
-
-    - name: Populate SRS cache
-      working-directory: .
-      run: make fetch-srs
+          ${{ runner.os }}-lean-lagrange-${{ hashFiles('srs-cache/*.srs') }}-${{ hashFiles('formal/bulletproof-pcs/**/*.lean', 'formal/lake-manifest.json', 'formal/lean-toolchain') }}-${{ matrix.cache }}-
+          ${{ runner.os }}-lean-lagrange-${{ hashFiles('srs-cache/*.srs') }}-${{ hashFiles('formal/bulletproof-pcs/**/*.lean', 'formal/lake-manifest.json', 'formal/lean-toolchain') }}-
 
     # Every modelled half through the prover interpreter on real proofs, the table decided
     # against the assembled system, the success bits read back, kimchiVerify on the same
