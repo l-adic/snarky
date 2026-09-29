@@ -27,23 +27,26 @@ through the client-side `verifyWire` composition below — parse the wire record
   accumulator list) with its two old accumulators, at the wrap domain `2^14` below the
   `2^15` Tock SRS: the recursion path, and production's sub-SRS one-chunk regime.
 
-Each run checks the accept bit, then two negative matrices:
+Each run first checks the key's Lagrange points, computed from the SRS
+(`Ipa.lagrangeBasis`), against upstream's `lagrange_basis` dump, then the accept bit, then two
+negative matrices:
 
 * **verify-level corruptions** (the mutant still parses; the verdict must flip to
-  REJECT): evaluation chunks on the ζ and ζω sides and beyond chunk 0 (`z` chunk 1, a
-  witness-column chunk 1), the quotient commitment at chunk 0 and at the high chunk
-  (`7·nc − 1`, the second `ft_comm` collapse group — exists only at `nc = 2`),
-  an EMPTIED quotient commitment (which parses — production bounds `t_comm.len()` from
-  above only, verifier.rs:260 — and must fail the ft identity), `ft_eval1`, (where
-  carried) a public-evaluation chunk, and (where the proof carries accumulators) an old
-  accumulator's commitment, one of its challenges, and the whole list dropped against
-  the key's count;
+  REJECT): a public input one longer than the key's count, evaluation chunks on the ζ and
+  ζω sides and beyond chunk 0 (`z` chunk 1, a witness-column chunk 1), the quotient
+  commitment at chunk 0 and at the high chunk (`7·nc − 1`, the second `ft_comm` collapse
+  group — exists only at `nc = 2`), an EMPTIED quotient commitment (which parses —
+  production bounds `t_comm.len()` from above only, verifier.rs:260 — and must fail the ft
+  identity), `ft_eval1`, (where carried) a public-evaluation chunk, and (where the proof
+  carries accumulators) an old accumulator's commitment, one of its challenges, and the whole
+  list dropped against the key's count;
 * **parse rejections** (`Wire.check` must return `none` — ragged or mis-pinned wire
   input, matching production's `Err` returns): a ragged evaluation chunk vector, a
   missing `evals_public` at `nc > 1` (production's `MissingPublicInputEvaluation`,
   verifier.rs:334–335), an oversized `t_comm` (`> 7·nc`), a wrong opening round count
   (an `lr` pair popped — this failure arises in the IPA-side `Ipa.Wire.Proof.check`
-  and propagates through `KimchiProof.check`), a ragged VK chunk vector, and (where
+  and propagates through `KimchiProof.check`), a ragged VK chunk vector, a public count
+  above the domain size, and (where
   the proof carries accumulators) an accumulator with a short challenge vector or a
   two-chunk commitment.
 
@@ -59,15 +62,22 @@ either reproduces production's accept bit here or fails. -/
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
 open scoped Kimchi
 
+/-- The key's Lagrange points from the SRS, `count` of them: `KimchiVK.lagrangePoints` of the
+checked key, read off the wire key. -/
+def lagrangeOf (C : Ipa.KimchiCurve) (σ : Bulletproof.SRS C.Point) (vk : Wire.KimchiVK C)
+    (count : ℕ) : Array (Vector C.Point (Wire.runNc C σ vk)) :=
+  Ipa.lagrangeBasis C σ (Wire.runNc C σ vk) (2 ^ vk.domainLog2) vk.omega count
+
 /-- The client-side composition: parse the wire records at the run's chunk count and
 hand the checked records to the protocol verifier —
 check-then-verify, the wire module's intended use. Ragged or mis-pinned input is
-rejected, matching production's `Err` returns. -/
+rejected, matching production's `Err` returns. The key's Lagrange points `L` are computed
+once per fixture at the key's count, where the body is `kimchiVerify` by definition. -/
 def verifyWire (C : Ipa.KimchiCurve) (σ : Bulletproof.SRS C.Point)
-    (vk : Wire.KimchiVK C) (p : Wire.KimchiProof C)
-    (pub : Array C.ScalarField) : Bool :=
+    (vk : Wire.KimchiVK C) (L : Array (Vector C.Point (Wire.runNc C σ vk)))
+    (p : Wire.KimchiProof C) (pub : Array C.ScalarField) : Bool :=
   match vk.check (Wire.runNc C σ vk), p.check (Wire.runNc C σ vk) σ.k with
-  | some cvk, some cp => kimchiVerify C σ cvk cp pub
+  | some cvk, some cp => kimchiVerifyWith C σ cvk L cp pub
   | _, _ => false
 
 /-- One chunked-verifier fixture run: decode (both formats), verify, and check the
@@ -85,7 +95,8 @@ def runChunked (C : Ipa.KimchiCurve)
     IO Unit := do
   let raw ← IO.FS.readFile path
   let r : Except String
-      (_ × Wire.KimchiVK C × Wire.KimchiProof C × Array C.ScalarField) := do
+      (_ × Wire.KimchiVK C × Wire.KimchiProof C × Array C.ScalarField
+        × Array (Array C.Point)) := do
     let j ← Json.parse raw
     let vk ← Kimchi.Fixture.parseVK C j
     let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
@@ -96,17 +107,26 @@ def runChunked (C : Ipa.KimchiCurve)
     let σ ← parseSRSAt C (Nat.log2 mps) j
     let proof ← Kimchi.Fixture.parseKimchiProof C j
     let pub ← parseArrOf (parseZMod (n := C.scalar)) (← j.getObjVal? "public")
-    return (σ, vk, proof, pub)
+    let basis ← parseArrOf (Kimchi.Fixture.parseComm C) (← j.getObjVal? "lagrange_basis")
+    return (σ, vk, proof, pub, basis)
   match r with
   | .error e => throw (IO.userError s!"{path}: fixture parse error: {e}")
-  | .ok (σ, vk, proof, pub) =>
+  | .ok (σ, vk, proof, pub, basis) =>
     unless proof.pubEvals.isSome == expectPublic do
       throw (IO.userError s!"{path}: unexpected evals_public presence")
     unless proof.prevChallenges.size = olds do
       throw (IO.userError s!"{path}: expected {olds} old accumulators, \
         got {proof.prevChallenges.size}")
     let nc := Wire.runNc C σ vk
-    let verify (p : Wire.KimchiProof C) : Bool := verifyWire C σ vk p pub
+    -- the key's Lagrange points, and the SRS's at the fixture's count against upstream's
+    let L := lagrangeOf C σ vk vk.publicCount
+    let Lup := if basis.size = vk.publicCount then L else lagrangeOf C σ vk basis.size
+    let basisOk := Lup.map Vector.toArray == basis
+    IO.println s!"{path}: {basis.size} Lagrange points from the SRS \
+      {if basisOk then "match" else "DIFFER FROM (BUG)"} upstream's"
+    let verifyPub (p : Wire.KimchiProof C) (pub : Array C.ScalarField) : Bool :=
+      verifyWire C σ vk L p pub
+    let verify (p : Wire.KimchiProof C) : Bool := verifyPub p pub
     IO.println s!"{path}: verifying (nc = {nc}, {proof.prevChallenges.size} accumulators)…"
     (← IO.getStdout).flush
     let ok := verify proof
@@ -124,7 +144,8 @@ def runChunked (C : Ipa.KimchiCurve)
     -- verify-level corruption, once as the parse-side non-vacuity control for it.
     let emptyT : Wire.KimchiProof C := { proof with tComm := #[] }
     -- verify-level corruptions: each mutant still parses; the verdict must flip.
-    let mut corrupts : Array (String × Bool) := #[]
+    let mut corrupts : Array (String × Bool) := #[
+      ("public input longer than the key's count", !verifyPub proof (pub.push 0))]
     -- The nc-specific high-chunk corruption (the second ft_comm collapse group). Kept
     -- even under `heavy`, so the nc > 2 run is non-vacuous.
     if 1 < nc then
@@ -193,7 +214,9 @@ def runChunked (C : Ipa.KimchiCurve)
       ("oversized t_comm (size > 7·nc)", (overT.check nc σ.k).isNone),
       ("wrong opening round count (lr pair popped; the IPA-side check)",
         (badLr.check nc σ.k).isNone),
-      ("ragged VK chunk vector (sigma_comm[0])", (raggedVK.check nc).isNone)]
+      ("ragged VK chunk vector (sigma_comm[0])", (raggedVK.check nc).isNone),
+      ("public count above the domain size",
+        ({ vk with publicCount := 2 ^ vk.domainLog2 + 1 }.check nc).isNone)]
     if 1 < nc then
       let noPub : Wire.KimchiProof C := { proof with pubEvals := none }
       parses := parses.push ("missing evals_public at nc > 1", (noPub.check nc σ.k).isNone)
@@ -215,7 +238,7 @@ def runChunked (C : Ipa.KimchiCurve)
     let emptyParses := (emptyT.check nc σ.k).isSome
     IO.println s!"  {if emptyParses then "✓ parses" else "✗ none (VACUOUS CONTROL)"}: \
       emptied t comm reaches the verifier"
-    unless ok && emptyParses && corrupts.all (·.2) && parses.all (·.2) do
+    unless basisOk && ok && emptyParses && corrupts.all (·.2) && parses.all (·.2) do
       throw (IO.userError s!"{path}: chunked kimchi verifier check FAILED")
 
 abbrev CV := IpaVesta.curve

@@ -43,12 +43,10 @@ def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ →
     ⟨get (base + 88), pub.map (#v[·]), evals.map (#v[·])⟩
   (u, w, prevChallengesOf get (base + 89) rounds)
 
-/-- The step side's deployed parameters: the Vesta fr-sponge and the `Fp` linearization. -/
-def fopStepParams : Pickles.FopParams Fp :=
-  { sponge := Bulletproof.IpaVesta.curve.frSponge.params, endoLam := endoVestaLam,
-    endo := Kimchi.Fixture.PS.fpSide.endo, mds := Kimchi.Fixture.PS.fpSide.mds,
-    toks := Pickles.Linearization.fpTokens, shifts := stepShifts, srsLengthLog2 := 16,
-    zkRows := 3 }
+/-- The step side's deployed parameters at `nc` chunks: the Vesta curve's (`FopParams.of`), at
+the step SRS of `2 ^ 16` points and the `Fp` linearization. -/
+def fopStepParams (nc : ℕ) : Pickles.FopParams Fp :=
+  Pickles.FopParams.of Bulletproof.IpaVesta.curve nc 16 Pickles.Linearization.fpTokens
 
 /-- The step side over the 151-cell layout at given known domains: the mask at 26–27
 (unchecked), the domain's log2 at 28, the evaluations from 29. -/
@@ -56,19 +54,17 @@ def fopStepHarnessAt (domains : List (Pickles.KnownDomain Fp)) (input : Vector (
     CircuitM Fp C (Pickles.FopOutput Fp) := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type1.mk get 29
-  Pickles.finalizeOtherProofStep fopStepParams domains u w
+  Pickles.finalizeOtherProofStep (fopStepParams 1) domains u w
     [.unchecked (get 26), .unchecked (get 27)] prev (get 28)
 
 /-- `fopStepHarnessAt` at the dump's one known domain, of log2 16. -/
 def fopStepHarness (input : Vector (FVar Fp) 151) : CircuitM Fp C (Pickles.FopOutput Fp) :=
   fopStepHarnessAt [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] input
 
-/-- The wrap side's deployed parameters: the Pallas fr-sponge and the `Fq` linearization. -/
+/-- The wrap side's deployed parameters: the Pallas curve's (`FopParams.of`) at one chunk, at the
+wrap SRS of `2 ^ 15` points and the `Fq` linearization. -/
 def fopWrapParams : Pickles.FopParams Fq :=
-  { sponge := Bulletproof.IpaPallas.curve.frSponge.params, endoLam := endoPallasLam,
-    endo := Kimchi.Fixture.PS.fqSide.endo, mds := Kimchi.Fixture.PS.fqSide.mds,
-    toks := Pickles.Linearization.fqTokens, shifts := wrapShifts, srsLengthLog2 := 15,
-    zkRows := 3 }
+  Pickles.FopParams.of Bulletproof.IpaPallas.curve 1 15 Pickles.Linearization.fqTokens
 
 /-- The wrap side over the flat layout at a constant domain and `rounds` challenges: the
 evaluations from `10 + rounds`, the vanishing polynomial `ζⁿ − 1` by `pow2PowMul`. -/
@@ -103,16 +99,16 @@ abbrev StepFopVar (k nc : ℕ) : Type :=
     Pickles.ChunkedEvals nc (FVar Fp) × Vector (BoolVar Fp) Pickles.MaxProofsVerified ×
     Vector (Vector (FVar Fp) k) Pickles.MaxProofsVerified × FVar Fp
 
-/-- The step side on its records at a given `zkRows` and known domains. -/
-def fopStepOnAt (zkRows : ℕ) (domains : List (Pickles.KnownDomain Fp)) {k nc : ℕ}
+/-- The step side on its records at known domains, at the records' chunk count. -/
+def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) {k nc : ℕ}
     (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp) :=
   let (u, w, mask, prev, domainLog2) := v
-  Pickles.finalizeOtherProofStep { fopStepParams with zkRows } domains u w mask.toList
+  Pickles.finalizeOtherProofStep (fopStepParams nc) domains u w mask.toList
     (prev.toList.map (·.toList)) domainLog2
 
-/-- `fopStepOnAt` at three zero-knowledge rows and the dump's one known domain, of log2 16. -/
+/-- `fopStepOnAt` at the dump's one known domain, of log2 16. -/
 def fopStepOn {k nc : ℕ} (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp) :=
-  fopStepOnAt 3 [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] v
+  fopStepOnAt [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] v
 
 /-- The wrap side on its records at a constant domain, `ζⁿ − 1` by `pow2PowMul`. -/
 def fopWrapOnAt (domainLog2 : ℕ) {k : ℕ} (v : Pickles.WrapFopVar k 1) :

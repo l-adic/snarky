@@ -2,17 +2,18 @@ import Pickles.Encoding
 import Pickles.TwoHalves
 
 /-!
-# The wrap circuit's scalar half, at an environment
+# The wrap circuit's scalar half, at a key
 
-`finalizeOtherProofWrap` with its parameters fixed to the verifier key's (`FopParams.ofEnv`),
-the deployed `Fq` linearization and the key's own domain, and the capstone that runs it: the
-wrap-side twin of `finalizeOtherProofStepAt_kimchiVerify_vesta`. The two halves of a wrap
-proof's verification run in different circuits over different fields, so no one triple covers
-both; each side gets a triple about its own circuit, with the other half assumed.
+`finalizeOtherProofWrap` with its parameters fixed to the chunk count's and the round count's
+(`FopParams.of`), the deployed `Fq` linearization and the key's own domain, and the capstone
+that runs it: the wrap-side twin of `finalizeOtherProofStepAt_kimchiVerify_vesta`. The two
+halves of a wrap proof's verification run in different circuits over different fields, so no
+one triple covers both; each side gets a triple about its own circuit, with the other half
+assumed.
 
 The domain is a constant of the circuit — the generator the key's, `ζⁿ − 1` by `pow2PowMul` at
 the key's `log2` — so what the gadget's read owes about it (the generator's order, room for the
-zero-knowledge rows) is the environment's, and there is no domain cell to tie. The wrap side
+zero-knowledge rows) is the key's, and there is no domain cell to tie. The wrap side
 keeps every previous-challenge slot. Like the step side's, the capstone is an equivalence.
 
 `WrapProof.scalarCircuit` is the gadget as a circuit of its input (`WrapProof.ScalarIn`) with
@@ -33,20 +34,20 @@ abbrev WrapFop (k nc : ℕ) : Type := FopInput k nc Fq Bool (Type2 Fq)
 /-- The wrap side's input at `k` rounds and `nc` chunks, as cells. -/
 abbrev WrapFopVar (k nc : ℕ) : Type := FopInput k nc (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))
 
-/-- The wrap circuit's scalar half at an environment: `finalizeOtherProofWrap` with the
-verifier key's parameters and domain — its generator a constant, `ζⁿ − 1` by `pow2PowMul`
-at the key's `log2` — the `Fq` token stream, and the previous-challenge cells at their static
-size. -/
+/-- The wrap circuit's scalar half at a key: `finalizeOtherProofWrap` with the parameters at the
+chunk count and the proof's round count (`FopParams.of`) and the key's domain — its generator a
+constant, `ζⁿ − 1` by `pow2PowMul` at the key's `log2` — the `Fq` token stream, and the
+previous-challenge cells at their static size. -/
 def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
-    [KimchiSystem Fq c] {k nc : ℕ}
-    (E : Env IpaPallas.curve nc)
+    [KimchiSystem Fq c] {k nc : ℕ} (cvk : KimchiVK IpaPallas.curve nc)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
     (w : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
     CircuitM Fq c (FopOutput Fq) :=
-  finalizeOtherProofWrap (FopParams.ofEnv E Linearization.fqTokens) (.const E.cvk.omega)
+  finalizeOtherProofWrap (FopParams.of IpaPallas.curve nc k Linearization.fqTokens)
+    (.const cvk.omega)
     (fun z => do
-      let t ← pow2PowMul z E.cvk.domainLog2
+      let t ← pow2PowMul z cvk.domainLog2
       pure (CVar.sub_ t (.const 1)))
     u w (prevChallenges.toList.map Vector.toList)
 
@@ -151,43 +152,44 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
 /-- **Running the wrap circuit's scalar half, a wrap proof's remaining half decides
 `kimchiVerify`.** `twoHalves_kimchiVerify` at a wrap proof as a triple about the scalar circuit,
 with the step circuit's group half assumed (`verifyProof_step_reads` produces it). What the
-circuit's parameters and domain owe is the environment's; what is left is the ties. -/
+circuit's parameters and domain owe is the key's; what is left is the ties. -/
 theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
-    (E : Env IpaPallas.curve nc)
-    (cp : KimchiProof IpaPallas.curve nc E.σ.k)
+    (σ : SRS IpaPallas.curve.Point) (K : Key IpaPallas.curve nc)
+    (cp : KimchiProof IpaPallas.curve nc σ.k)
     (pub : Array Fq)
-    (hguard : Guards IpaPallas.curve E.cvk cp pub)
+    (hguard : Guards IpaPallas.curve K.cvk cp pub)
     -- the wrap circuit: its valuation and its cells
     (Vs : Valuation Fq)
-    (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (claimsS : UnfinalizedProof σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
     (evals : ChunkedEvals nc (FVar Fq))
-    (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified)
+    (prevChallenges : Vector (Vector (FVar Fq) σ.k) MaxProofsVerified)
     -- the step circuit's group half, and its asserted bit
     (Vg : Valuation Fp)
-    (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
+    (claimsG : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (successG : BoolVar Fp)
-    (hg : (GroupHalf.step Vg claimsG).Reads E cp pub successG)
+    (hg : (GroupHalf.step Vg claimsG).Reads σ K.cvk cp pub successG)
     (hgbit : (↑successG : CVar Fp).val Vg = 1)
     -- across the two
     (hc : SplitClaimsCast Vg claimsG Vs claimsS)
-    (hf : FopTies E cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
+    (hf : FopTies σ K.cvk cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
     ⦃⌜True⌝⦄
-    finalizeOtherProofWrapAt (c := Builder Vs (KimchiConstraint Fq)) E claimsS evals
+    finalizeOtherProofWrapAt (c := Builder Vs (KimchiConstraint Fq)) K.cvk claimsS evals
       prevChallenges
-    ⦃⇓ o _ => ⌜SgOk E.σ E.cvk cp pub ∧ (↑o.finalized : CVar Fq).val Vs = 1
-      ↔ kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
-        (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp pub⌝⦄ := by
-  have hP : (FopParams.ofEnv E Linearization.fqTokens).endo = Pasta.vestaEndo ∧
-      (FopParams.ofEnv E Linearization.fqTokens).mds = Reflect.symMdsQ ∧
-      (FopParams.ofEnv E Linearization.fqTokens).toks = Linearization.fqTokens :=
-    ⟨E.endo_eq, by rfl, rfl⟩
+    ⦃⇓ o _ => ⌜SgOk σ K.cvk cp pub ∧ (↑o.finalized : CVar Fq).val Vs = 1
+      ↔ kimchiVerify IpaPallas.curve σ K.cvk cp pub = true ∧
+        (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest σ K.cvk cp pub⌝⦄ := by
+  have hP : (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).endo = Pasta.vestaEndo ∧
+      (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).mds = Reflect.symMdsQ ∧
+      (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).toks =
+        Linearization.fqTokens :=
+    ⟨rfl, by rfl, rfl⟩
   -- the vanishing polynomial at the key's domain
   have hvan : ∀ z : FVar Fq, ⦃⌜True⌝⦄
-      (do let t ← pow2PowMul (c := Builder Vs (KimchiConstraint Fq)) z E.cvk.domainLog2
+      (do let t ← pow2PowMul (c := Builder Vs (KimchiConstraint Fq)) z K.cvk.domainLog2
           pure (CVar.sub_ t (.const 1)))
-      ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ E.cvk.n - 1⌝⦄ :=
-    fun z => vanishingAt_spec E.cvk.domainLog2 z
+      ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.cvk.n - 1⌝⦄ :=
+    fun z => vanishingAt_spec K.cvk.domainLog2 z
   -- the cells read as their own values
   have hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs))
       (prevChallenges.toList.map Vector.toList)
@@ -197,8 +199,10 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
     exact List.forall₂_map_right_iff.2
       (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
   have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
-    (FopParams.ofEnv E Linearization.fqTokens) hP IpaPallas.curve.frSponge.hsize E.zkRows_ge
-    (.const E.cvk.omega) E.cvk.n E.zkRows_le E.omega_prim.pow_eq_one _ hvan claimsS evals
+    (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) hP IpaPallas.curve.frSponge.hsize
+    (three_le_zkRowsOf K.nc_pos) (.const K.cvk.omega) K.cvk.n
+    (show zkRowsOf nc ≤ K.cvk.n from K.zkRows_eq ▸ K.zkRows_le)
+    K.omega_prim.pow_eq_one _ hvan claimsS evals
     (prevChallenges.toList.map Vector.toList) _ hprev
   simp only [finalizeOtherProofWrapAt]
   refine builder_spec_imp _ _ _ hspec ?_
@@ -214,9 +218,9 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
   have holds : (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals
       = (cp.olds.map (·.u.toList)).toList :=
     (ScalarHalf.wrap_olds Vs claimsS evals prevChallenges _).mp hf.olds
-  have hdv : (Poseidon.squeeze (FopParams.ofEnv E Linearization.fqTokens).sponge
-        (Poseidon.absorb (FopParams.ofEnv E Linearization.fqTokens).sponge Poseidon.init
-          ((prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)))).1
+  have hdv : (Poseidon.squeeze (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).sponge
+        (Poseidon.absorb (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).sponge
+          Poseidon.init ((prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)))).1
       = recDigest IpaPallas.curve (cp.olds.map (·.u)) := by
     have habs : (prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
         = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
@@ -233,7 +237,7 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
     rw [ScalarHalf.wrap_maskVals]
     simp
   rw [hdv, hmask] at hread
-  rw [← twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD])
+  rw [← twoHalves_kimchiVerify σ K (by norm_num [PALLAS_BASE_CARD])
     (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
@@ -265,29 +269,29 @@ abbrev ScalarVar.half (V : Valuation Fq) (s : ScalarVar k nc) :
 /-- The wrap circuit's scalar half as a circuit of its input, `finalized` asserted, as at a
 slot whose `shouldFinalize` is set. -/
 def scalarCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [KimchiSystem Fq c]
-    (E : Env IpaPallas.curve nc) (s : ScalarVar E.σ.k nc) : CircuitM Fq c Unit := do
-  let o ← finalizeOtherProofWrapAt E s.claims s.evals s.prev
+    {k : ℕ} (cvk : KimchiVK IpaPallas.curve nc) (s : ScalarVar k nc) : CircuitM Fq c Unit := do
+  let o ← finalizeOtherProofWrapAt cvk s.claims s.evals s.prev
   assert o.finalized
 
 /-- **The scalar circuit's read.** With the step circuit's group half and the ties, a valuation
 satisfying the body makes `kimchiVerify` accept once `SgOk` holds. -/
-theorem scalarCircuit_reads (E : Env IpaPallas.curve nc)
-    (cp : KimchiProof IpaPallas.curve nc E.σ.k) (pub : Array Fq)
-    (hguard : Guards IpaPallas.curve E.cvk cp pub)
-    (Vs : Valuation Fq) (s : ScalarVar E.σ.k nc)
+theorem scalarCircuit_reads (σ : SRS IpaPallas.curve.Point) (K : Key IpaPallas.curve nc)
+    (cp : KimchiProof IpaPallas.curve nc σ.k) (pub : Array Fq)
+    (hguard : Guards IpaPallas.curve K.cvk cp pub)
+    (Vs : Valuation Fq) (s : ScalarVar σ.k nc)
     (Vg : Valuation Fp)
-    (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
+    (claimsG : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (successG : BoolVar Fp)
-    (hg : (GroupHalf.step Vg claimsG).Reads E cp pub successG)
+    (hg : (GroupHalf.step Vg claimsG).Reads σ K.cvk cp pub successG)
     (hgbit : (↑successG : CVar Fp).val Vg = 1)
     (hc : SplitClaimsCast Vg claimsG Vs s.claims)
-    (hf : FopTies E cp pub (s.half Vs))
-    (hsg : SgOk E.σ E.cvk cp pub) :
+    (hf : FopTies σ K.cvk cp pub (s.half Vs))
+    (hsg : SgOk σ K.cvk cp pub) :
     ⦃⌜True⌝⦄
-    scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E s
-    ⦃⇓ _ _ => ⌜kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true⌝⦄ := by
-  have hAt := finalizeOtherProofWrapAt_kimchiVerify_pallas E cp pub hguard Vs s.claims s.evals
+    scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) K.cvk s
+    ⦃⇓ _ _ => ⌜kimchiVerify IpaPallas.curve σ K.cvk cp pub = true⌝⦄ := by
+  have hAt := finalizeOtherProofWrapAt_kimchiVerify_pallas σ K cp pub hguard Vs s.claims s.evals
     s.prev Vg claimsG successG hg hgbit hc hf
   simp only [scalarCircuit]
   mvcgen [hAt]

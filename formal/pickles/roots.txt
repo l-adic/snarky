@@ -15,9 +15,10 @@ Pickles.wrapStep_kimchiVerify
 
 -- The capstones' typed public-input ties are the wire's public input: the step circuit's
 -- statement values flatten to what `wrapPublicInput` commits to, and the wrap circuit's packed
--- statement to what `stepPublicInput` commits to.
+-- statement, flattened (`stepPublicInput`), is the leaves' input followed by the zero
+-- optional-feature cells.
 Pickles.StmtVal.ofWrap_toFields
-Pickles.WrapStatement.toPacked_toFields
+Pickles.stepPublicInput_eq_append
 
 -- The linearization reflection: the certificate identifying the deployed token stream with
 -- `gateLinearization`, and the environment transport its proof runs on.
@@ -47,13 +48,14 @@ Pickles.FopSide.unshiftV_read
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Pickles.buildEvalList
-Pickles.Env.decidableAvoids
-Pickles.Env.decidableInvariants -- synthesis: found by class resolution, never by name
+Pickles.Key.avoids_lagrangeRelations_iff -- the drivers decide its right side
+Pickles.Key.check
+Pickles.Srs.check
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
-Pickles.decidableAvoidsStepRelations
+Pickles.avoids_stepRelationsAt_iff -- the drivers decide its right side
 Pickles.KnownDomains.ofList?
 Pickles.accOk
-Pickles.carry
-Pickles.sgOk
+Pickles.carryWith_lagrangePoints -- the drivers decide the carry at memoized points
+Pickles.sgOkWith_lagrangePoints -- the drivers decide sgOk at memoized points
 -- script-surface:end

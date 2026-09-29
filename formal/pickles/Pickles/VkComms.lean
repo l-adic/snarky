@@ -61,6 +61,12 @@ def sigmaBatch (k : VkComms nc f) : List (Vector f nc) :=
 def sigmaLast (k : VkComms nc f) : Vector f nc :=
   k.sigmaComm[6]
 
+/-- The record with `g` applied to every commitment chunk. -/
+def map {f' : Type} (g : f → f') (k : VkComms nc f) : VkComms nc f' :=
+  ⟨k.sigmaComm.map (·.map g), k.coefficientsComm.map (·.map g), k.genericComm.map g,
+    k.poseidonComm.map g, k.completeAddComm.map g, k.mulComm.map g, k.emulComm.map g,
+    k.endomulScalarComm.map g⟩
+
 end VkComms
 
 end Pickles

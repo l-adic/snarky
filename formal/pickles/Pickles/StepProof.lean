@@ -16,7 +16,7 @@ them, make the deployed verifier accept.
 the run's own scalars, and `sg` is the challenge polynomial's commitment
 (`kimchiVerify_reflects`, `verifyWith`). The group circuit proves the equation at the claimed
 scalars; the scalar circuit proves the claimed scalars are the run's; the ties say the two
-circuits speak of one set of claims. The guards are the environment's, and the `sg` equation
+circuits speak of one set of claims. The guards are the key's, and the `sg` equation
 is the one check no circuit performs: it is deferred to the next proof's accumulator (`SgOk`).
 
 The two halves run in different circuits over different fields, so each is compiled
@@ -37,7 +37,7 @@ booleanity follows from satisfaction (`BranchData.mask_boolean`).
   scalar circuit checks and the cast carries over. No scalar a ladder reads is excluded:
   every ladder top is below `4·order − 4` (`wrapSide_claimOk`);
 * `havoid`: the SRS avoids the key's Lagrange relations (`SRS.Avoids`,
-  `Env.lagrangeRelations`). The key's Lagrange points are commitments against the SRS, finite
+  `KimchiVK.lagrangeRelations`). The key's Lagrange points are commitments against the SRS, finite
   exactly when the SRS has no relation at their coefficient vectors, which no invariant gives;
 * `Guards` and `SgOk`, of the proof itself.
 
@@ -71,51 +71,55 @@ public input, the proof cells as the proof's commitments and opening, the `sg` c
 their keep bits as the old accumulators' commitments; the branch's domain as the key's, the
 evaluation cells as the proof's evaluations, the kept previous challenges as the old
 accumulators'. -/
-structure InputReads (E : Env IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc E.σ.k)
-    (pub : Array Fp) (domains : KnownDomains E) (Vg : Valuation Fq) (Vs : Valuation Fp)
-    (g : GroupVar E.σ.k kw n nc) (s : ScalarVar E.σ.k nc) : Prop where
+structure InputReads (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
+    (cp : KimchiProof IpaVesta.curve nc σ.k)
+    (pub : Array Fp) (domains : KnownDomains nc) (Vg : Valuation Fq) (Vs : Valuation Fp)
+    (g : GroupVar σ.k kw n nc) (s : ScalarVar σ.k nc) : Prop where
   /-- The step statement's cells are the public input. -/
-  statement : wrapPublicInput E Vg g.stepStatement = pub
+  statement : wrapPublicInput σ cvk Vg g.stepStatement = pub
   /-- The proof's cells read as the proof's. -/
   proof : ProofReads (wrapSide Vg) g.wComm g.zComm g.tComm g.opening cp
   /-- The `sg` cells under their keep bits; the kept ones are the old accumulators'. -/
   olds : ∃ oldsW, OldsRead Vg g.sgOld cp oldsW
   /-- The branch's domain is the key's. -/
-  domain : s.branch.domainLog2.val Vs = (E.cvk.domainLog2 : Fp)
+  domain : s.branch.domainLog2.val Vs = (cvk.domainLog2 : Fp)
   /-- `ft(ζω)`. -/
   ftEval1 : s.evals.ftEval1.val Vs = cp.ftEval1
   /-- The proof's evaluations, chunk by chunk. -/
   evals : s.evals.evals.map (fun v => v.map (·.val Vs)) = cp.evals
   /-- The public evaluations are the run's (`runPubEvals`), chunk by chunk. -/
   pubEvals : s.evals.pub.map (fun v => v.map (·.val Vs))
-    = runPubEvals IpaVesta.curve E.σ E.cvk cp pub
+    = runPubEvals IpaVesta.curve σ cvk cp pub
   /-- The kept previous challenges are the old accumulators', in order. -/
   prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
       (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
 
-variable {E : Env IpaVesta.curve nc} {cp : KimchiProof IpaVesta.curve nc E.σ.k}
-  {pub : Array Fp} {domains : KnownDomains E} {Vg : Valuation Fq} {Vs : Valuation Fp}
-  {g : GroupVar E.σ.k kw n nc} {s : ScalarVar E.σ.k nc}
-  {keyCells : VkComms nc (AffinePoint (FVar Fq))} {spongeAfterIndex : SpongeVar Fq}
-
 /-- The scalar half's proof ties are the input's readings. -/
-private theorem InputReads.fopTies (hin : InputReads E cp pub domains Vg Vs g s) :
-    FopTies E cp pub (s.half Vs) :=
+private theorem InputReads.fopTies {σ : SRS IpaVesta.curve.Point}
+    {cvk : KimchiVK IpaVesta.curve nc} {cp : KimchiProof IpaVesta.curve nc σ.k} {pub : Array Fp}
+    {domains : KnownDomains nc} {Vg : Valuation Fq} {Vs : Valuation Fp}
+    {g : GroupVar σ.k kw n nc} {s : ScalarVar σ.k nc}
+    (hin : InputReads σ cvk cp pub domains Vg Vs g s) : FopTies σ cvk cp pub (s.half Vs) :=
   ⟨hin.prevChallenges, hin.ftEval1, hin.evals, hin.pubEvals⟩
 
-private theorem sgOld_length_le (g : GroupVar E.σ.k kw n nc) : g.sgOld.length ≤ 2 := by
+private theorem sgOld_length_le {k : ℕ} (g : GroupVar k kw n nc) : g.sgOld.length ≤ 2 := by
   simp only [GroupVar.sgOld, List.length_map, List.length_zip, List.length_drop,
     Vector.length_toList, MaxProofsVerified]
   omega
 
 /-- The group half's hypotheses, from the readings (`InputReads`, `VkReads`), with the shifted
 claims' `IvpSide.ClaimOk` and the shape guards proved (`ivpHyps_of_reads_wrap`). -/
-private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
-    (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells) :
-    ∃ oldsW, IvpHyps (wrapSide Vg) E.σ E.cvk cp pub true spongeAfterIndex
+private theorem InputReads.ivpHyps {S : Srs IpaVesta.curve} {K : Key IpaVesta.curve nc}
+    {cp : KimchiProof IpaVesta.curve nc S.σ.k} {pub : Array Fp} {domains : KnownDomains nc}
+    {Vg : Valuation Fq} {Vs : Valuation Fp} {g : GroupVar S.σ.k kw n nc} {s : ScalarVar S.σ.k nc}
+    {keyCells : VkComms nc (AffinePoint (FVar Fq))} {spongeAfterIndex : SpongeVar Fq}
+    (hin : InputReads S.σ K.cvk cp pub domains Vg Vs g s)
+    (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
+    (hvk : VkReads K.cvk Vg spongeAfterIndex keyCells) :
+    ∃ oldsW, IvpHyps (wrapSide Vg) S.σ K.cvk cp pub true spongeAfterIndex
       ((g.cells keyCells).withClaims g.claims) oldsW := by
   obtain ⟨oldsW, holds⟩ := hin.olds
-  refine ⟨oldsW, ivpHyps_of_reads_wrap _ g.sgOld g.val.group.proof g.claims oldsW ?_
+  refine ⟨oldsW, ivpHyps_of_reads_wrap hnc _ g.sgOld g.val.group.proof g.claims oldsW ?_
     (sgOld_length_le g) hin.proof holds hvk⟩
   intro m hm
   simp only [GroupVar.sgOld, List.mem_map] at hm
@@ -133,50 +137,53 @@ with the inputs reading as the wire's proof (`InputReads`), the key cells as the
 (`VkReads`) and the wrap circuit's claim cells holding the step circuit's (`ClaimsCast`): under the
 proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
 theorem stepProof_kimchiVerify_vesta {kw n nc : ℕ}
-    (E : Env IpaVesta.curve nc)
-    (cp : KimchiProof IpaVesta.curve nc E.σ.k)
+    (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve nc)
+    (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
+    (cp : KimchiProof IpaVesta.curve nc S.σ.k)
     (pub : Array Fp)
-    (domains : KnownDomains E)
+    (domains : KnownDomains nc)
     -- the group circuit's constants
     (keyCells : VkComms nc (AffinePoint (FVar Fq)))
     (spongeAfterIndex : SpongeVar Fq)
     (msgSponge : SpongeVar Fq)
     -- the group circuit: the wrap verify block, compiled over its input, satisfied
     (Vg : Valuation Fq)
-    (hsatG : ∀ con ∈ (compile (a := GroupIn E.σ.k kw n nc) (b := Unit)
-        (groupCircuit (c := Builder Vg (KimchiConstraint Fq)) E keyCells spongeAfterIndex
+    (hsatG : ∀ con ∈ (compile (a := GroupIn S.σ.k kw n nc) (b := Unit)
+        (groupCircuit (c := Builder Vg (KimchiConstraint Fq)) S.σ K.cvk keyCells spongeAfterIndex
           msgSponge)).constraints, ConstraintHolds.Holds Vg con)
     -- the scalar circuit: the step finalize, compiled over its input, satisfied
     (Vs : Valuation Fp)
-    (hsatS : ∀ con ∈ (compile (a := ScalarIn E.σ.k nc) (b := Unit)
-        (scalarCircuit (c := Builder Vs (KimchiConstraint Fp)) E domains)).constraints,
+    (hsatS : ∀ con ∈ (compile (a := ScalarIn S.σ.k nc) (b := Unit)
+        (scalarCircuit (c := Builder Vs (KimchiConstraint Fp)) domains)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the input cells read as the wire's
-    (hin : InputReads E cp pub domains Vg Vs (groupInput E.σ.k kw n nc) (scalarInput E.σ.k nc))
+    (hin : InputReads S.σ K.cvk cp pub domains Vg Vs (groupInput S.σ.k kw n nc)
+      (scalarInput S.σ.k nc))
     -- the key cells read as the key
-    (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
+    (hvk : VkReads K.cvk Vg spongeAfterIndex keyCells)
     -- the wrap circuit's claim cells hold the step circuit's, reduced into the wrap field
-    (hc : ClaimsCast Vg (groupInput E.σ.k kw n nc).claims Vs (scalarInput E.σ.k nc).claims)
-    -- the SRS avoids the key's Lagrange relations
-    (havoid : E.σ.Avoids E.lagrangeRelations)
+    (hc : ClaimsCast Vg (groupInput S.σ.k kw n nc).claims Vs (scalarInput S.σ.k nc).claims)
+    -- the SRS avoids the key's Lagrange relations, one per packed scalar
+    (havoid : S.σ.Avoids
+      (K.cvk.lagrangeRelations S.σ.k (groupInput S.σ.k kw n nc).stepStatement.packed.length))
     -- of the proof itself
-    (hguard : Guards IpaVesta.curve E.cvk cp pub)
-    (hsg : SgOk E.σ E.cvk cp pub) :
-    kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true := by
+    (hguard : Guards IpaVesta.curve K.cvk cp pub)
+    (hsg : SgOk S.σ K.cvk cp pub) :
+    kimchiVerify IpaVesta.curve S.σ K.cvk cp pub = true := by
   have hpub := hin.statement
-  have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hvk
+  have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hnc hvk
   have hf := hin.fopTies
   have hdom := hin.domain
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
-    (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex msgSponge
-      (groupInput E.σ.k kw n nc) havoid fun _ => hivp) _
+    (groupCircuit_reads (V := Vg) S K hnc cp keyCells spongeAfterIndex msgSponge
+      (groupInput S.σ.k kw n nc) havoid fun _ => hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
-  have hmask := BranchData.mask_boolean (V := Vs) (scalarInput E.σ.k nc).branch
-    (CheckedType.check_sound Vs (scalarInput E.σ.k nc) _
+  have hmask := BranchData.mask_boolean (V := Vs) (scalarInput S.σ.k nc).branch
+    (CheckedType.check_sound Vs (scalarInput S.σ.k nc) _
       fun con hc => hsatS con (mem_compile_of_mem_check hc)).1
   exact (builder_spec_iff _ _).mp
-    (scalarCircuit_reads E cp _ hguard Vs domains (scalarInput E.σ.k nc) hmask hdom Vg _ v hv hv1
+    (scalarCircuit_reads S K cp _ hguard Vs domains (scalarInput S.σ.k nc) hmask hdom Vg _ v hv hv1
       hc hf hsg) _
     fun con hc => hsatS con (mem_compile_of_mem_body hc)
 

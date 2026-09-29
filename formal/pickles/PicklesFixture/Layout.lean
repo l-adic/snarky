@@ -10,7 +10,7 @@ import Pasta.Endo
 The circuit dumps hand a driver one flat vector of field cells per circuit, and a harness
 lays that vector out as the records the library gadgets take. This module holds the parts
 of that layout shared by more than one driver: the two constraint types, the GLV
-eigenvalues, the coset shifts at each field, and the two block readers (the previous
+eigenvalues, the step field's coset shifts, and the two block readers (the previous
 challenge vectors and the evaluation record).
 
 The coset shifts are read off the curves (`KimchiCurve.shifts`), never written out again
@@ -44,9 +44,6 @@ def endoPallasLam : Fq := (Pasta.pallasLam : ℤ)
 dump as Generic coefficients, so the comparison checks them against production rather than
 trusting them. -/
 def stepShifts : Fin permCols → Fp := fun i => Bulletproof.IpaVesta.curve.shifts[i]
-
-/-- The wrap-side coset shifts: the Pallas scalar field's (`KimchiCurve.shifts`). -/
-def wrapShifts : Fin permCols → Fq := fun i => Bulletproof.IpaPallas.curve.shifts[i]
 
 /-- The two previous-challenge vectors from `base`, `rounds` entries each. -/
 def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) (rounds : ℕ := 16) :

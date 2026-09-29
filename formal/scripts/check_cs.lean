@@ -798,7 +798,7 @@ def fopStepChunkedHarnessAt (nc : ℕ) (domains : List (Pickles.KnownDomain Fp))
           emulSelector := column 42
           endomulScalarSelector := column 43 } }
   Pickles.finalizeOtherProofStep
-    { PicklesFixture.fopStepParams with zkRows := (16 * nc + 5) / 7 }
+    (PicklesFixture.fopStepParams nc)
     domains u w [.unchecked (get 26), .unchecked (get 27)]
     (PicklesFixture.prevChallengesOf get (tail + 1))
     (get 28)
@@ -1347,7 +1347,8 @@ def fullStepVerifyOneCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurv
           pt 113⟩⟩
       mustVerify := .unchecked (get 285) }
   let _ ← verifyOneBy (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
-    PicklesFixture.fopStepParams [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] dummyKeyComms inp
+    (PicklesFixture.fopStepParams 1) [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] dummyKeyComms
+    inp
   pure PUnit.unit
 
 /-! ## The step circuits (`step_main_*`)
@@ -1449,8 +1450,8 @@ structure StepSlotConsts where
   width : Fin (Pickles.MaxProofsVerified + 1)
   /-- Its candidate step domains, `log2`. -/
   domainLog2s : List ℕ
-  /-- The Lagrange bases its public-input commitment reads. -/
-  lagrange : Array (Vector XhatStepCurve.Point 1)
+  /-- The Lagrange bases its public-input commitment reads, one per packed statement cell. -/
+  lagrange : Pickles.SlotLagrange 1 Pickles.StepIPARounds
 
 /-- The constants of a `step_main_*` dump with `n` slots: the blinding `h`, each slot's, and this
 compile's own step domains (its self slots'). -/
@@ -1466,19 +1467,17 @@ structure StepMainConsts (n : ℕ) where
 def stepKnownDomains (ls : List ℕ) : List (Pickles.KnownDomain Fp) :=
   ls.map fun l => ⟨l, Kimchi.Fixture.PS.fpSide.omega (2 ^ l)⟩
 
-/-- A slot's source: an external slot's wrap key carries its commitments and Lagrange bases, the
-fields the step circuit reads; the rest are placeholders it never reads. -/
-def StepSlotConsts.source (s : StepSlotConsts) : Pickles.SlotSource 1 :=
+/-- A slot's source: an external slot carries its wrap key's commitments and its Lagrange bases.
+-/
+def StepSlotConsts.source (s : StepSlotConsts) : Pickles.SlotSource 1 Pickles.StepIPARounds :=
   match s.key with
-  | none => .self s.lagrange.toList
+  | none => .self s.lagrange
   | some (sigma, coefficients, sel) =>
     .external
-      { domainLog2 := 0, omega := 0, sigmaComm := sigma, coefficientsComm := coefficients
-        genericComm := sel[0], poseidonComm := sel[1], completeAddComm := sel[2]
-        mulComm := sel[3], emulComm := sel[4], endomulScalarComm := sel[5]
-        shifts := Vector.replicate _ 0, zkRows := 0, prevChallenges := 0, endo := 0
-        digest := 0, lagrangeBasis := s.lagrange }
-      s.width.val (stepKnownDomains s.domainLog2s)
+      { sigmaComm := sigma, coefficientsComm := coefficients, genericComm := sel[0]
+        poseidonComm := sel[1], completeAddComm := sel[2], mulComm := sel[3]
+        emulComm := sel[4], endomulScalarComm := sel[5] }
+      s.lagrange s.width.val (stepKnownDomains s.domainLog2s)
 
 /-- A slot's width is at most `MaxProofsVerified` when the tag's is. -/
 theorem StepSlotConsts.width_le (s : StepSlotConsts) {w : ℕ} (hw : w ≤ Pickles.MaxProofsVerified) :
@@ -1524,7 +1523,12 @@ def stepMainConsts (n w : ℕ) (path : System.FilePath) : IO (StepMainConsts n) 
       pure { key, width
              domainLog2s := (← FixtureKit.parseArrOf (fun j => j.getNat?)
                (← j.getObjVal? "domainLog2s")).toList
-             lagrange := ← FixtureKit.parseArrOf chunk (← j.getObjVal? "lagrange") }
+             lagrange := ← do
+               let pts ← FixtureKit.parseArrOf chunk (← j.getObjVal? "lagrange")
+               let m := CircuitType.size Fp
+                 (Pickles.PackedWrapStatement Pickles.StepIPARounds (Type1 Fp) Fp)
+               if h : pts.size = m then pure ⟨pts, h⟩
+               else throw s!"{pts.size} Lagrange bases, expected {m}" }
     let slots ← FixtureKit.parseArrOf slot (← j.getObjVal? "slots")
     let some slots := (if h : slots.size = n then some (⟨slots, h⟩ : Vector _ n) else none)
       | throw s!"{slots.size} slots, expected {n}"
@@ -1544,8 +1548,10 @@ def stepMainDumpCircuit {n : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inV
     (dummyUnf : UnfVal 15)
     (rule : inVar → CircuitM Fp C (Vector PrevStatement n × List (FVar Fp))) :
     Unit → CircuitM Fp C (StmtVar 15 w) :=
-  stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := 1) (k := 15) (ks := 16) (inVal := inVal)
-    (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h PicklesFixture.fopStepParams
+  stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := 1) (k := 15) (ks := StepIPARounds)
+    (inVal := inVal)
+    (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h
+    (PicklesFixture.fopStepParams 1)
     (stepKnownDomains k.ownDomainLog2s) dummyWrapSg dummyUnf rule
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩

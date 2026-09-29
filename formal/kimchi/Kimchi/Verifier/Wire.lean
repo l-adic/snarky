@@ -107,8 +107,8 @@ structure KimchiVK (C : Ipa.KimchiCurve) where
   endo : C.ScalarField
   /-- The precomputed key digest, an input rather than computed from the key. -/
   digest : C.BaseField
-  /-- The Lagrange-basis commitments: SRS-derived data, a model input like `digest`. -/
-  lagrangeBasis : Array (PolyComm C)
+  /-- The public-input count. -/
+  publicCount : ℕ
 
 /-- A chunk vector validated to the run's chunk count. -/
 private def checkChunks {α : Type*} (nc : ℕ) (a : Array α) : Option (Vector α nc) :=
@@ -144,6 +144,10 @@ counterpart. Such a run should fail the batched opening, but that is an argument
 check. `KimchiVK.check` pins every committed column of the key the same way, which upstream
 likewise never checks; honest keys are uniform.
 
+The key check also bounds the public-input count by the domain size. Upstream never checks it
+either, but at a larger count its public commitment has fewer Lagrange points than inputs and
+its MSM asserts, so no public input verifies against such a key.
+
 The quotient commitment is not pinned non-empty: upstream bounds its chunk count from above
 only, so the empty quotient parses.
 -/
@@ -173,27 +177,28 @@ def KimchiProof.check {C : Ipa.KimchiCurve} (nc k : ℕ) (p : KimchiProof C) :
              ftEval1 := p.ftEval1, opening := opening, olds }
   else none
 
-/-- **The key check**: every committed column validated to `nc` chunks, the Lagrange basis
-included in full. The basis is SRS-derived and chunked uniformly, so ragged basis data
-is rejected. -/
+/-- **The key check**: every committed column validated to `nc` chunks, and the public-input
+count at most the domain size. -/
 def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
     Option (Kimchi.Verifier.KimchiVK C nc) := do
-  return { domainLog2 := vk.domainLog2, omega := vk.omega
-           sigmaComm := ← vk.sigmaComm.mapM (checkChunks nc)
-           coefficientsComm := ← vk.coefficientsComm.mapM (checkChunks nc)
-           genericComm := ← checkChunks nc vk.genericComm
-           poseidonComm := ← checkChunks nc vk.poseidonComm
-           completeAddComm := ← checkChunks nc vk.completeAddComm
-           mulComm := ← checkChunks nc vk.mulComm
-           emulComm := ← checkChunks nc vk.emulComm
-           endomulScalarComm := ← checkChunks nc vk.endomulScalarComm
-           shifts := vk.shifts, zkRows := vk.zkRows, prevChallenges := vk.prevChallenges
-           endo := vk.endo, digest := vk.digest
-           lagrangeBasis := ← vk.lagrangeBasis.mapM (checkChunks nc) }
+  if hpub : vk.publicCount ≤ 2 ^ vk.domainLog2 then
+    return { domainLog2 := vk.domainLog2, omega := vk.omega
+             sigmaComm := ← vk.sigmaComm.mapM (checkChunks nc)
+             coefficientsComm := ← vk.coefficientsComm.mapM (checkChunks nc)
+             genericComm := ← checkChunks nc vk.genericComm
+             poseidonComm := ← checkChunks nc vk.poseidonComm
+             completeAddComm := ← checkChunks nc vk.completeAddComm
+             mulComm := ← checkChunks nc vk.mulComm
+             emulComm := ← checkChunks nc vk.emulComm
+             endomulScalarComm := ← checkChunks nc vk.endomulScalarComm
+             shifts := vk.shifts, zkRows := vk.zkRows
+             publicCount := vk.publicCount, publicCount_le := hpub
+             prevChallenges := vk.prevChallenges, endo := vk.endo, digest := vk.digest }
+  else none
 
 /-- The run's chunk count, the upstream verifier's formula: one chunk when the domain is no
 larger than the SRS, else the domain size over the SRS size. Clients parse at this count. -/
 def runNc (σ : SRS C.Point) (vk : KimchiVK C) : ℕ :=
-  if vk.domainLog2 < σ.k then 1 else 2 ^ (vk.domainLog2 - σ.k)
+  chunkCount σ.k vk.domainLog2
 
 end Kimchi.Verifier.Wire

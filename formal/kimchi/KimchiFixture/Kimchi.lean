@@ -121,6 +121,6 @@ def parseVK (C : Ipa.KimchiCurve) (j : Json) :
            prevChallenges := ← nat "prev_challenges_count"
            endo := ← parseZMod (← fld "endo")
            digest := ← parseZMod (← fld "digest")
-           lagrangeBasis := ← parseArrOf (parseComm C) (← fld "lagrange_basis") }
+           publicCount := ← nat "public_count" }
 
 end Kimchi.Fixture

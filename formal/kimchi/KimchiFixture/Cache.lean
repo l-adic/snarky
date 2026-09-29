@@ -107,7 +107,7 @@ private def natJ (j : Json) : Except String ℕ :=
   | .error _ => parseNat j
 
 /-- The verification key's JSON as the kimchi key wire record. `endo` and `digest` are not
-on the wire; `lagrangeBasis` is left empty for the caller to derive from the SRS. -/
+on the wire. -/
 def parseVK (C : Ipa.KimchiCurve) (endo : C.ScalarField) (digest : C.BaseField) (j : Json) :
     Except String (KimchiVK C) := do
   let dom ← j.getObjVal? "domain"
@@ -132,7 +132,7 @@ def parseVK (C : Ipa.KimchiCurve) (endo : C.ScalarField) (digest : C.BaseField) 
            prevChallenges := ← natJ (← j.getObjVal? "prevChallenges")
            endo
            digest
-           lagrangeBasis := #[] }
+           publicCount := ← natJ (← j.getObjVal? "public") }
 
 /-- The comma-joined decimal public input. -/
 private def parsePublicInput (C : Ipa.KimchiCurve) (s : String) :
