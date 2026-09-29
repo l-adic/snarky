@@ -1466,18 +1466,16 @@ structure StepMainConsts (n : ℕ) where
 def stepKnownDomains (ls : List ℕ) : List (Pickles.KnownDomain Fp) :=
   ls.map fun l => ⟨l, Kimchi.Fixture.PS.fpSide.omega (2 ^ l)⟩
 
-/-- A slot's source: an external slot's wrap key carries its commitments, the fields the step
-circuit reads; the rest are placeholders it never reads. Its Lagrange bases sit beside it. -/
+/-- A slot's source: an external slot carries its wrap key's commitments and its Lagrange bases.
+-/
 def StepSlotConsts.source (s : StepSlotConsts) : Pickles.SlotSource 1 Pickles.StepIPARounds :=
   match s.key with
   | none => .self s.lagrange
   | some (sigma, coefficients, sel) =>
     .external
-      { domainLog2 := 0, omega := 0, sigmaComm := sigma, coefficientsComm := coefficients
-        genericComm := sel[0], poseidonComm := sel[1], completeAddComm := sel[2]
-        mulComm := sel[3], emulComm := sel[4], endomulScalarComm := sel[5]
-        shifts := Vector.replicate _ 0, zkRows := 0, publicCount := 0
-        publicCount_le := Nat.zero_le _, prevChallenges := 0, endo := 0, digest := 0 }
+      { sigmaComm := sigma, coefficientsComm := coefficients, genericComm := sel[0]
+        poseidonComm := sel[1], completeAddComm := sel[2], mulComm := sel[3]
+        emulComm := sel[4], endomulScalarComm := sel[5] }
       s.lagrange s.width.val (stepKnownDomains s.domainLog2s)
 
 /-- A slot's width is at most `MaxProofsVerified` when the tag's is. -/

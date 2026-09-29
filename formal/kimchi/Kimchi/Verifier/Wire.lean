@@ -199,6 +199,6 @@ def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
 /-- The run's chunk count, the upstream verifier's formula: one chunk when the domain is no
 larger than the SRS, else the domain size over the SRS size. Clients parse at this count. -/
 def runNc (σ : SRS C.Point) (vk : KimchiVK C) : ℕ :=
-  if vk.domainLog2 < σ.k then 1 else 2 ^ (vk.domainLog2 - σ.k)
+  chunkCount σ.k vk.domainLog2
 
 end Kimchi.Verifier.Wire

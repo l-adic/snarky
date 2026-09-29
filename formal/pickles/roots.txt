@@ -48,8 +48,9 @@ Pickles.FopSide.unshiftV_read
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Pickles.buildEvalList
-Pickles.Env.avoids_lagrangeRelations_iff -- the drivers decide its right side
-Pickles.Env.decidableInvariants -- synthesis: found by class resolution, never by name
+Pickles.Key.avoids_lagrangeRelations_iff -- the drivers decide its right side
+Pickles.Key.check
+Pickles.Srs.check
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
 Pickles.avoids_stepRelationsAt_iff -- the drivers decide its right side

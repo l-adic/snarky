@@ -67,9 +67,10 @@ abbrev scalarInput (k nc : ℕ) : ScalarVar k nc := inputVar (F := Fq) (a := Sca
 public input, the slot as one that must verify, the proof cells as the proof's commitments and
 opening, the `sg` cells as the old accumulators' commitments; the evaluation cells as the
 proof's evaluations, the previous challenges as the old accumulators'. -/
-structure InputReads (E : Env IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc E.σ.k)
+structure InputReads (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
+    (cp : KimchiProof IpaPallas.curve nc σ.k)
     (pub : Array Fq) (Vg : Valuation Fp) (Vs : Valuation Fq)
-    (g : GroupVar ks E.σ.k nc) (s : ScalarVar E.σ.k nc) : Prop where
+    (g : GroupVar ks σ.k nc) (s : ScalarVar σ.k nc) : Prop where
   /-- The wrap statement's cells are the public input. -/
   statement : stepPublicInput Vg g.statement = pub
   /-- The slot must verify: its base-case bit reads `false`. -/
@@ -84,29 +85,31 @@ structure InputReads (E : Env IpaPallas.curve nc) (cp : KimchiProof IpaPallas.cu
   evals : s.evals.evals.map (fun v => v.map (·.val Vs)) = cp.evals
   /-- The public evaluations are the run's (`runPubEvals`), chunk by chunk. -/
   pubEvals : s.evals.pub.map (fun v => v.map (·.val Vs))
-    = runPubEvals IpaPallas.curve E.σ E.cvk cp pub
+    = runPubEvals IpaPallas.curve σ cvk cp pub
   /-- The previous challenges are the old accumulators', in order. -/
   prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
       (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
 
-variable {E : Env IpaPallas.curve nc} {cp : KimchiProof IpaPallas.curve nc E.σ.k}
-  {pub : Array Fq} {Vg : Valuation Fp} {Vs : Valuation Fq}
-  {g : GroupVar ks E.σ.k nc} {s : ScalarVar E.σ.k nc}
-  {keyCells : VkComms nc (AffinePoint (FVar Fp))} {spongeAfterIndex : SpongeVar Fp}
-
 /-- The scalar half's proof ties are the input's readings. -/
-private theorem InputReads.fopTies (hin : InputReads E cp pub Vg Vs g s) :
-    FopTies E cp pub (s.half Vs) :=
+private theorem InputReads.fopTies {σ : SRS IpaPallas.curve.Point}
+    {cvk : KimchiVK IpaPallas.curve nc} {cp : KimchiProof IpaPallas.curve nc σ.k} {pub : Array Fq}
+    {Vg : Valuation Fp} {Vs : Valuation Fq} {g : GroupVar ks σ.k nc} {s : ScalarVar σ.k nc}
+    (hin : InputReads σ cvk cp pub Vg Vs g s) : FopTies σ cvk cp pub (s.half Vs) :=
   ⟨hin.prevChallenges, hin.ftEval1, hin.evals, hin.pubEvals⟩
 
 /-- The group half's hypotheses, from the readings (`InputReads`, `VkReads`) and the shifted
 claims' `IvpSide.ClaimOk`, with the shape guards proved. -/
-private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
-    (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
+private theorem InputReads.ivpHyps {S : Srs IpaPallas.curve} {K : Key IpaPallas.curve nc}
+    {cp : KimchiProof IpaPallas.curve nc S.σ.k} {pub : Array Fq} {Vg : Valuation Fp}
+    {Vs : Valuation Fq} {g : GroupVar ks S.σ.k nc} {s : ScalarVar S.σ.k nc}
+    {keyCells : VkComms nc (AffinePoint (FVar Fp))} {spongeAfterIndex : SpongeVar Fp}
+    (hin : InputReads S.σ K.cvk cp pub Vg Vs g s)
+    (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
+    (hvk : VkReads K.cvk Vg spongeAfterIndex keyCells)
     (hclaimOk : ∀ x ∈ g.shifted, (stepSide Vg).ClaimOk x) :
-    ∃ oldsW, IvpHyps (stepSide Vg) E.σ E.cvk cp pub false spongeAfterIndex
+    ∃ oldsW, IvpHyps (stepSide Vg) S.σ K.cvk cp pub false spongeAfterIndex
       ((g.cells keyCells).withClaims g.claims) oldsW :=
-  ivpHyps_of_reads g.claims g.sgOld g.val.proof (by simp [GroupVar.sgOld, MaxProofsVerified])
+  ivpHyps_of_reads hnc g.claims g.sgOld g.val.proof (by simp [GroupVar.sgOld, MaxProofsVerified])
     hin.proof hin.olds hvk hclaimOk
 
 end WrapProof
@@ -118,48 +121,49 @@ the inputs reading as the wire's proof (`InputReads`), the key cells as the key 
 and the wrap circuit's claim cells holding the step circuit's (`SplitClaimsCast`): under the
 proof's `Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
 theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
-    (E : Env IpaPallas.curve nc)
-    (cp : KimchiProof IpaPallas.curve nc E.σ.k)
+    (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve nc)
+    (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
+    (cp : KimchiProof IpaPallas.curve nc S.σ.k)
     (pub : Array Fq)
     -- the group circuit's constants
     (keyCells : VkComms nc (AffinePoint (FVar Fp)))
     (spongeAfterIndex : SpongeVar Fp)
     -- the group circuit: the step circuit's verify, compiled over its input, satisfied
     (Vg : Valuation Fp)
-    (hsatG : ∀ con ∈ (compile (a := GroupIn ks E.σ.k nc) (b := Unit)
-        (groupCircuit (c := Builder Vg (KimchiConstraint Fp)) E keyCells
+    (hsatG : ∀ con ∈ (compile (a := GroupIn ks S.σ.k nc) (b := Unit)
+        (groupCircuit (c := Builder Vg (KimchiConstraint Fp)) S.σ K.cvk keyCells
           spongeAfterIndex)).constraints, ConstraintHolds.Holds Vg con)
     -- the scalar circuit: the wrap finalize, compiled over its input, satisfied
     (Vs : Valuation Fq)
-    (hsatS : ∀ con ∈ (compile (a := ScalarIn E.σ.k nc) (b := Unit)
-        (scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E)).constraints,
+    (hsatS : ∀ con ∈ (compile (a := ScalarIn S.σ.k nc) (b := Unit)
+        (scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) K.cvk)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the input cells read as the wire's
-    (hin : InputReads E cp pub Vg Vs (groupInput ks E.σ.k nc) (scalarInput E.σ.k nc))
+    (hin : InputReads S.σ K.cvk cp pub Vg Vs (groupInput ks S.σ.k nc) (scalarInput S.σ.k nc))
     -- the key cells read as the key
-    (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
+    (hvk : VkReads K.cvk Vg spongeAfterIndex keyCells)
     -- the wrap circuit's claim cells hold the step circuit's, lifted into the wrap field
-    (hc : SplitClaimsCast Vg (groupInput ks E.σ.k nc).claims Vs (scalarInput E.σ.k nc).claims)
+    (hc : SplitClaimsCast Vg (groupInput ks S.σ.k nc).claims Vs (scalarInput S.σ.k nc).claims)
     -- the statement packs no more leaves than the SRS has points or the domain has elements,
     -- and the SRS avoids the public-input relations
-    (hsmall : (groupInput ks E.σ.k nc).statement.packed.length ≤ 2 ^ E.σ.k)
-    (hn : (groupInput ks E.σ.k nc).statement.packed.length ≤ E.cvk.n)
-    (havoid : E.σ.Avoids (stepRelationsAt E (groupInput ks E.σ.k nc).statement))
+    (hsmall : (groupInput ks S.σ.k nc).statement.packed.length ≤ 2 ^ S.σ.k)
+    (hn : (groupInput ks S.σ.k nc).statement.packed.length ≤ K.cvk.n)
+    (havoid : S.σ.Avoids (stepRelationsAt S.σ K.cvk (groupInput ks S.σ.k nc).statement))
     -- of the proof itself
-    (hguard : Guards IpaPallas.curve E.cvk cp pub)
-    (hsg : SgOk E.σ E.cvk cp pub) :
-    kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
+    (hguard : Guards IpaPallas.curve K.cvk cp pub)
+    (hsg : SgOk S.σ K.cvk cp pub) :
+    kimchiVerify IpaPallas.curve S.σ K.cvk cp pub = true := by
   have hpub := hin.statement
-  have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hvk
+  have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hnc hvk
   have hf := hin.fopTies
   have hbase := hin.mustVerify
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
-    (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex (groupInput ks E.σ.k nc) hbase
-      hsmall hn havoid hivp) _
+    (groupCircuit_reads (V := Vg) S K hnc cp keyCells spongeAfterIndex (groupInput ks S.σ.k nc)
+      hbase hsmall hn havoid hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   exact (builder_spec_iff _ _).mp
-    (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k nc) Vg _ v hv hv1 hc hf hsg) _
+    (scalarCircuit_reads S.σ K cp _ hguard Vs (scalarInput S.σ.k nc) Vg _ v hv hv1 hc hf hsg) _
     fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Pickles

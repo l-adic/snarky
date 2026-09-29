@@ -227,6 +227,12 @@ structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
 def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
     (cvk : KimchiVK C nc) : ℕ := 2 ^ cvk.domainLog2
 
+/-- The upstream verifier's chunk count at an SRS of `2 ^ k` points and a domain of
+`2 ^ domainLog2`: one chunk when the domain is no larger than the SRS, else the domain size over
+the SRS size. -/
+def chunkCount (k domainLog2 : ℕ) : ℕ :=
+  if domainLog2 < k then 1 else 2 ^ (domainLog2 - k)
+
 /-- The first `m` Lagrange points of the key's domain: the SRS's commitments to the domain's
 Lagrange polynomials, in `nc` chunks (`Ipa.lagrangeBasis`). They are the SRS's, not the key's:
 the key fixes only the domain. -/
