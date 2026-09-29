@@ -10,12 +10,15 @@ import Lean.Data.Json
 (`Pickles.twoHalves_kimchiVerify`) carries as a hypothesis rather than discharging: no circuit
 computes it, because pickles defers it. A chain only ever terminates after a wrap, so it is the
 out-of-circuit verifier of the final wrap proof that checks it, and this driver runs that check
-in the form the verifier would — `Pickles.sgOk`, the decidable form of `SgOk`.
+in the form the verifier would — `Pickles.sgOk`, the decidable form of `SgOk`, at the key's
+Lagrange points (`sgOkWith_lagrangePoints`).
 
 The fixture is `kimchi_proof_pallas_pickles.json`, a deployed pickles wrap proof (OCaml through
 the Rust prover, `simple_chain`'s second wrap) with its two old accumulators, at the wrap domain
 `2^14` below the `2^15` Tock SRS. It is the same artifact
-`kimchi/scripts/check_kimchi_verifier.lean` runs the whole verifier on.
+`kimchi/scripts/check_kimchi_verifier.lean` runs the whole verifier on, and the Lagrange points
+here are the fixture's `lagrange_basis`, which that driver checks against the SRS's
+(`Ipa.lagrangeBasis`) rather than this one recomputing them.
 
 Three assertions, the last two of which keep the first from adjudicating vacuously:
 
@@ -35,11 +38,11 @@ open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier Pickles
 /-- The commitment curve of a wrap proof. -/
 abbrev CP := IpaPallas.curve
 
-/-- The fixture's records: the SRS at the dumped `max_poly_size`, the wire key, the wire proof
-and the public input. -/
+/-- The fixture's records: the SRS at the dumped `max_poly_size`, the wire key, the wire proof,
+the public input and the Lagrange points. -/
 def parseFixture (raw : String) :
     Except String (SRS CP.Point × Wire.KimchiVK CP × Wire.KimchiProof CP ×
-      Array CP.ScalarField) := do
+      Array CP.ScalarField × Array (Array CP.Point)) := do
   let j ← Json.parse raw
   let vk ← Kimchi.Fixture.parseVK CP j
   let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
@@ -48,21 +51,25 @@ def parseFixture (raw : String) :
   let σ ← parseSRSAt CP (Nat.log2 mps) j
   let proof ← Kimchi.Fixture.parseKimchiProof CP j
   let pub ← parseArrOf (parseZMod (n := CP.scalar)) (← j.getObjVal? "public")
-  return (σ, vk, proof, pub)
+  let basis ← parseArrOf (Kimchi.Fixture.parseComm CP) (← j.getObjVal? "lagrange_basis")
+  return (σ, vk, proof, pub, basis)
 
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "../kimchi/fixtures"
   let path := s!"{dir}/kimchi_proof_pallas_pickles.json"
   match parseFixture (← IO.FS.readFile path) with
   | .error e => throw (IO.userError s!"{path}: fixture parse error: {e}")
-  | .ok (σ, vk, proof, pub) =>
+  | .ok (σ, vk, proof, pub, basis) =>
     let nc := Wire.runNc CP σ vk
     if h : nc = 1 then
-      -- `SgOk` is stated at one chunk, which is production's wrap regime. The key's Lagrange
-      -- points are computed once, where the verdicts are `kimchiVerify` and `sgOk`
-      -- (`kimchiVerifyWith_lagrangePoints`, `sgOkWith_lagrangePoints`).
-      let L : Array (Vector CP.Point 1) :=
-        Ipa.lagrangeBasis CP σ 1 (2 ^ vk.domainLog2) vk.omega vk.publicCount
+      -- `SgOk` is stated at one chunk, which is production's wrap regime. At the key's count of
+      -- Lagrange points the verdicts are `kimchiVerify`, by definition, and `sgOk`.
+      let some L := basis.mapM fun a =>
+          if ha : a.size = 1 then some (⟨a, ha⟩ : Vector CP.Point 1) else none
+        | throw (IO.userError s!"{path}: a Lagrange point is not one chunk")
+      unless L.size = vk.publicCount do
+        throw (IO.userError s!"{path}: {L.size} Lagrange points, the key's count is \
+          {vk.publicCount}")
       let check (p : Wire.KimchiProof CP) : Option (Bool × Bool) :=
         match (h ▸ vk.check nc : Option (KimchiVK CP 1)),
               (h ▸ p.check nc σ.k : Option (KimchiProof CP 1 σ.k)) with

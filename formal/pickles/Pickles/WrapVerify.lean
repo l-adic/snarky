@@ -519,39 +519,28 @@ def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fq))) (g : GroupVar
   ivpInputOf g.val.group.statement.proofState.deferredValues.toDeferredValues g.sgOld keyCells
     g.val.group.proof
 
-/-- The verify block as a circuit of its input: `wrapVerifyAt` on the input, with the key's
-cells and the two sponges as constants. -/
-def groupCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
-    [KimchiSystem Fq c]
-    (σ : Bulletproof.SRS Bulletproof.IpaVesta.curve.Point)
-    (cvk : Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc)
-    (keyCells : VkComms nc (AffinePoint (FVar Fq)))
-    (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n nc) : CircuitM Fq c Unit := do
-  wrapVerifyAt σ cvk g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest g.claims
-    (g.cells keyCells)
-
-/-- `groupCircuit` at the blinding base `h` and the Lagrange points `lagrange`, given rather than
-computed from the SRS: what a driver runs at points it computed once. -/
+/-- The verify block as a circuit of its input, at the blinding base `h` and the Lagrange points
+`lagrange`: `wrapVerifyWith` on the input, with the key's cells and the two sponges as constants.
+What a driver runs at points it computed once. -/
 def groupCircuitWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
     [LawfulBasicSystem Fq c] [KimchiSystem Fq c]
     (h : Bulletproof.IpaVesta.curve.Point)
     (lagrange : List (Vector Bulletproof.IpaVesta.curve.Point nc))
     (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
-    (g : GroupVar k kw n nc) : CircuitM Fq c Unit := do
+    (g : GroupVar k kw n nc) : CircuitM Fq c Unit :=
   wrapVerifyWith h lagrange g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest
     g.claims (g.cells keyCells)
 
-/-- `groupCircuit` is `groupCircuitWith` at the SRS blinding base and the key's Lagrange points,
-one per packed scalar. -/
-theorem groupCircuit_eq_groupCircuitWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
-    [LawfulBasicSystem Fq c] [KimchiSystem Fq c]
+/-- `groupCircuitWith` at the SRS blinding base and the key's Lagrange points, one per packed
+scalar: `wrapVerifyAt` as a circuit of its input. -/
+def groupCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
+    [KimchiSystem Fq c]
     (σ : Bulletproof.SRS Bulletproof.IpaVesta.curve.Point)
     (cvk : Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc)
-    (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
-    (g : GroupVar k kw n nc) :
-    groupCircuit (c := c) σ cvk keyCells spongeAfterIndex msgSponge g
-      = groupCircuitWith σ.h (cvk.lagrangePoints σ g.stepStatement.packed.length).toList
-        keyCells spongeAfterIndex msgSponge g := rfl
+    (keyCells : VkComms nc (AffinePoint (FVar Fq)))
+    (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n nc) : CircuitM Fq c Unit :=
+  groupCircuitWith σ.h (cvk.lagrangePoints σ g.stepStatement.packed.length).toList keyCells
+    spongeAfterIndex msgSponge g
 
 open Std.Do in
 /-- **The group circuit's read.** Every wrap-side claim satisfies `IvpSide.ClaimOk`
@@ -572,9 +561,8 @@ theorem groupCircuit_reads {V : Valuation Fq} (S : Srs Bulletproof.IpaVesta.curv
       msgSponge g
     ⦃⇓ _ _ => ⌜∃ v : BoolVar Fq,
       VerifyReads (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V g.stepStatement) g.claims
-        false v ∧ (↑v : CVar Fq).val V = 1⌝⦄ := by
-  simp only [groupCircuit]
-  exact wrapVerifyAt_reads (V := V) S K hnc cp g.stepStatement spongeAfterIndex msgSponge g.newBp
+        false v ∧ (↑v : CVar Fq).val V = 1⌝⦄ :=
+  wrapVerifyAt_reads (V := V) S K hnc cp g.stepStatement spongeAfterIndex msgSponge g.newBp
     g.msgDigest g.claims (g.cells keyCells) havoid (hivp fun x _ => wrapSide_claimOk V x)
 
 end StepProof

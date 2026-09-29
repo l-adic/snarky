@@ -72,8 +72,7 @@ def lagrangeOf (C : Ipa.KimchiCurve) (σ : Bulletproof.SRS C.Point) (vk : Wire.K
 hand the checked records to the protocol verifier —
 check-then-verify, the wire module's intended use. Ragged or mis-pinned input is
 rejected, matching production's `Err` returns. The key's Lagrange points `L` are computed
-once per fixture at the key's count, where the body is `kimchiVerify`
-(`kimchiVerifyWith_lagrangePoints`). -/
+once per fixture at the key's count, where the body is `kimchiVerify` by definition. -/
 def verifyWire (C : Ipa.KimchiCurve) (σ : Bulletproof.SRS C.Point)
     (vk : Wire.KimchiVK C) (L : Array (Vector C.Point (Wire.runNc C σ vk)))
     (p : Wire.KimchiProof C) (pub : Array C.ScalarField) : Bool :=

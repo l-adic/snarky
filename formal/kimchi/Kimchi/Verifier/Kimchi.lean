@@ -767,22 +767,9 @@ def kimchiVerifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     Ipa.verifyFrom C σ r.1 r.2
 
 /-- **The verifier over checked records**: the body at the key's Lagrange points from the SRS,
-as many as the public input has entries, which the guard makes the key's count. -/
+as many as the key's public-input count. -/
 def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
-  kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ pub.size).toArray cp pub
-
-/-- The body at the key's count of Lagrange points is the verifier: at any other public-input
-length both reject. -/
-theorem kimchiVerifyWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
-    kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ cvk.publicCount).toArray cp pub
-      = kimchiVerify C σ cvk cp pub := by
-  unfold kimchiVerify
-  by_cases h : pub.size = cvk.publicCount
-  · rw [h]
-  · have hg : (decide (cp.olds.size ≠ cvk.prevChallenges) || decide (pub.size ≠ cvk.publicCount))
-        = true := by simp [h]
-    simp only [kimchiVerifyWith, hg, if_true]
+  kimchiVerifyWith C σ cvk (cvk.lagrangePoints σ cvk.publicCount).toArray cp pub
 
 end Kimchi.Verifier

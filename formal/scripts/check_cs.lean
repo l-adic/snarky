@@ -798,7 +798,7 @@ def fopStepChunkedHarnessAt (nc : ℕ) (domains : List (Pickles.KnownDomain Fp))
           emulSelector := column 42
           endomulScalarSelector := column 43 } }
   Pickles.finalizeOtherProofStep
-    { PicklesFixture.fopStepParams with zkRows := (16 * nc + 5) / 7 }
+    (PicklesFixture.fopStepParams nc)
     domains u w [.unchecked (get 26), .unchecked (get 27)]
     (PicklesFixture.prevChallengesOf get (tail + 1))
     (get 28)
@@ -1347,7 +1347,8 @@ def fullStepVerifyOneCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurv
           pt 113⟩⟩
       mustVerify := .unchecked (get 285) }
   let _ ← verifyOneBy (fun sv b st u cells => verifyProofWith h (oneChunk pts) sv b st u cells)
-    PicklesFixture.fopStepParams [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] dummyKeyComms inp
+    (PicklesFixture.fopStepParams 1) [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] dummyKeyComms
+    inp
   pure PUnit.unit
 
 /-! ## The step circuits (`step_main_*`)
@@ -1549,7 +1550,8 @@ def stepMainDumpCircuit {n : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inV
     Unit → CircuitM Fp C (StmtVar 15 w) :=
   stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := 1) (k := 15) (ks := StepIPARounds)
     (inVal := inVal)
-    (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h PicklesFixture.fopStepParams
+    (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h
+    (PicklesFixture.fopStepParams 1)
     (stepKnownDomains k.ownDomainLog2s) dummyWrapSg dummyUnf rule
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩

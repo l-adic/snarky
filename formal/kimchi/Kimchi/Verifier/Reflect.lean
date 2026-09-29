@@ -9,6 +9,10 @@ records: the oracles, the combination powers, the combined claims, the ft commit
 flat segment stream and the batched IPA input. `runInput`'s commitment and claim columns are
 `runStreamP` projections by definition, so no separate content equalities are needed.
 
+The run functions are for proofs, not for running: each recomputes the public commitment, and
+with it the SRS's Lagrange points. The body itself (`kimchiVerifyWith`) computes its run once
+(`runAt`), at the Lagrange points it is given.
+
 `kimchiVerify_reflects` reads an acceptance as `Guards` plus the warm-sponge IPA finish on
 `runInput`. Proof-carried public evaluations are adversarial batch data, believed only
 through binding; without them, at `nc = 1`, the verifier computes the barycentric fallback
@@ -166,14 +170,6 @@ def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
   runInputP C σ cvk cp pub (runPubEvals C σ cvk cp pub)
     (runFrOracles C σ cvk cp pub).xi (runFrOracles C σ cvk cp pub).r
 
-
-/-- The verifier body's run at the run's public commitment is the run functions' warm sponge and
-IPA input. Drivers compute it once, at a public commitment to memoized points. -/
-theorem runAt_runPublicComm (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
-    runAt C σ cvk cp pub (runPublicComm C σ cvk pub)
-      = ((runOracles C σ cvk cp pub).warm, runInput C σ cvk cp pub) := rfl
-
 /-! ## Zero public-input cells
 
 Zero cells past the end of the public input change no run function: the input enters only
@@ -238,7 +234,14 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : Kim
         Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub) = true := by
   have hkv : kimchiVerify C σ cvk cp pub
       = (if cp.olds.size ≠ cvk.prevChallenges || pub.size ≠ cvk.publicCount then false
-          else Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub)) := rfl
+          else Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub)) := by
+    unfold kimchiVerify kimchiVerifyWith
+    by_cases h : pub.size = cvk.publicCount
+    · rw [← h]
+      rfl
+    · have hg : (decide (cp.olds.size ≠ cvk.prevChallenges) || decide (pub.size ≠ cvk.publicCount))
+          = true := by simp [h]
+      simp only [hg, if_true]
   have hcond : (cp.olds.size ≠ cvk.prevChallenges || pub.size ≠ cvk.publicCount) = true
       ↔ ¬ Guards C cvk cp pub := by
     simp only [Guards, Bool.or_eq_true, decide_eq_true_eq, ne_eq, not_and_or]

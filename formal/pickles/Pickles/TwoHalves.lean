@@ -314,13 +314,19 @@ def SgOk {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C
   let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
   run.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i])
 
+/-- `sgOk` at the Lagrange points `L`: the deferred check on the verifier's run (`runAt`) at the
+public commitment to `L`, computed once. -/
+def sgOkWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
+  let r := runAt C σ cvk cp pub (publicCommitment C σ L pub)
+  let tr := transcriptFrom C r.1 r.2
+  decide (r.2.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i]))
+
 /-- The decidable mirror of `SgOk`: the deferred check as run out of circuit on a wire
-proof. -/
+proof, at the key's Lagrange points, one per public-input cell. -/
 def sgOk {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField) : Bool :=
-  let run := runInput C σ cvk cp pub
-  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
-  decide (run.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i]))
+  sgOkWith σ cvk (cvk.lagrangePoints σ pub.size).toArray cp pub
 
 /-! ## The deferred obligation, carried
 
@@ -336,30 +342,8 @@ carries. -/
 def accOk (σ : SRS C.Point) (a : Accumulator C σ.k) : Bool :=
   decide (a.sg = msm C σ.g (bPolyCoefficients fun i => a.u[i]))
 
-/-- Whether `cp'` carries `cp`'s deferred obligation as its old accumulator `i`: the
-accumulator's commitment is `cp`'s opening's `sg`, its challenges the wire's round challenges
-of `cp`. -/
-def carry {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField)
-    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) : Bool :=
-  let run := runInput C σ cvk cp pub
-  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
-  decide (cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1)
-
-/-! ### At memoized Lagrange points
-
-The run functions each compute the SRS's Lagrange points afresh. A driver deciding `sgOk` or
-`carry` computes the verifier's run once instead (`runAt`), at points it computed once, and
-these are the same verdicts there. -/
-
-/-- `sgOk` at the Lagrange points `L`, the run computed once. -/
-def sgOkWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
-  let r := runAt C σ cvk cp pub (publicCommitment C σ L pub)
-  let tr := transcriptFrom C r.1 r.2
-  decide (r.2.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i]))
-
-/-- `carry` at the Lagrange points `L`, the run computed once. -/
+/-- `carry` at the Lagrange points `L`: the handover on the verifier's run (`runAt`) at the
+public commitment to `L`, computed once. -/
 def carryWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) : Bool :=
@@ -367,27 +351,33 @@ def carryWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Ve
   let tr := transcriptFrom C r.1 r.2
   decide (cp'.olds[i].sg = r.2.proof.sg ∧ cp'.olds[i].u = tr.2.1)
 
-/-- At the key's Lagrange points, at least one per public-input cell, the run is the run
-functions'. -/
-private theorem runAt_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m) :
-    runAt C σ cvk cp pub (publicCommitment C σ (cvk.lagrangePoints σ m).toArray pub)
-      = ((runOracles C σ cvk cp pub).warm, runInput C σ cvk cp pub) := by
-  rw [publicCommitment_lagrangePoints_of_le C σ cvk pub h]
-  exact runAt_runPublicComm C σ cvk cp pub
+/-- Whether `cp'` carries `cp`'s deferred obligation as its old accumulator `i`: the
+accumulator's commitment is `cp`'s opening's `sg`, its challenges the wire's round challenges
+of `cp`, at the key's Lagrange points, one per public-input cell. -/
+def carry {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField)
+    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) : Bool :=
+  carryWith σ cvk (cvk.lagrangePoints σ pub.size).toArray cp pub cp' i
 
-/-- `sgOkWith` at the key's Lagrange points is `sgOk`. -/
+/-! ### At more Lagrange points
+
+A driver computes a key's Lagrange points once, as many as the key's public-input count, and
+decides `sgOk` and `carry` at them: the public commitment reads only as many as the input has
+cells (`publicCommitment_lagrangePoints_of_le`), so these are the same verdicts. -/
+
+/-- `sgOkWith` at the key's Lagrange points, at least one per public-input cell, is `sgOk`. -/
 theorem sgOkWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m) :
     sgOkWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub = sgOk σ cvk cp pub := by
-  simp only [sgOkWith, sgOk, runAt_lagrangePoints σ cvk cp pub h]
+  simp only [sgOkWith, sgOk, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
 
-/-- `carryWith` at the key's Lagrange points is `carry`. -/
+/-- `carryWith` at the key's Lagrange points, at least one per public-input cell, is
+`carry`. -/
 theorem carryWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m)
     {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) :
     carryWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub cp' i = carry σ cvk cp pub cp' i := by
-  simp only [carryWith, carry, runAt_lagrangePoints σ cvk cp pub h]
+  simp only [carryWith, carry, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
 
 /-! ### Reading the wire's batch through the scalar half's rows -/
 

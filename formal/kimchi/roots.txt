@@ -60,7 +60,6 @@ Kimchi.Index.instDecidableSatisfies -- synthesis: found by class resolution, nev
 Kimchi.Verifier.Wire.KimchiProof.check
 Kimchi.Verifier.Wire.KimchiVK.check
 Kimchi.Verifier.Wire.runNc
-Kimchi.Verifier.kimchiVerifyWith_lagrangePoints -- the drivers verify at memoized points
 Kimchi.Fixture.Cache.parseFile
 Kimchi.Fixture.parseKimchiProof
 Kimchi.Fixture.parseVK

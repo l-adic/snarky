@@ -100,6 +100,23 @@ theorem stepPublicInput_congr_msg {ks : ℕ} (V : Valuation Fp)
       = stepPublicInput V { st with messagesForNextStepProof := b } := by
   simp only [stepPublicInput, WrapStatement.toPacked, h]
 
+/-- The public input has a cell per packed scalar: the packed statement, then the
+optional-feature cells. -/
+theorem packed_length_le_stepPublicInput {ks : ℕ} (V : Valuation Fp)
+    (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
+    st.packed.length ≤ (stepPublicInput V st).size := by
+  have hs : (stepPublicInput V st).size = CircuitType.size Fq (Vector (Type1 Fq) 5 ×
+      Vector Fq 2 × Vector Fq 3 × Vector Fq 3 × Vector Fq ks × Fq × Vector Fq 8 × Fq × Fq) := by
+    simp only [stepPublicInput, Vector.size_toArray]
+    rfl
+  have h1 : CircuitType.size Fq Fq = 1 := rfl
+  have ht : CircuitType.size Fq (Type1 Fq) = 1 := rfl
+  have h1' : CircuitType.size Fp Fp = 1 := rfl
+  have ht' : CircuitType.size Fp (Type1 Fp) = 1 := rfl
+  rw [hs, WrapStatement.packed_length]
+  simp only [CircuitType.size_prod, CircuitType.size_vector, h1, ht, h1', ht']
+  omega
+
 /-- **The packed statement is the leaves' public input, then zero cells.** Flattened, `toPacked`
 is the public input the leaves commit to (`pubOf`), followed by the optional-feature cells, all
 zero. -/
@@ -476,20 +493,11 @@ abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k nc) :
     GroupHalf IpaPallas.curve (Type2 (SplitField (FVar Fp) (BoolVar Fp))) k :=
   GroupHalf.step V g.claims
 
-/-- `verifyProofAt` as a circuit of its input, its success bit asserted. Before it, the shifted
-scalars' parity cells are asserted boolean (`assertClaimBitsStep`), the allocation check the
-deployed circuit's split type makes and this harness's unchecked input lacks. -/
-def groupCircuit {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
-    [KimchiSystem Fp c]
-    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
-    (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
-    (g : GroupVar ks k nc) : CircuitM Fp c Unit := do
-  assertClaimBitsStep g.shifted
-  let v ← verifyProofAt σ cvk spongeAfterIndex g.isBaseCase g.statement g.claims (g.cells keyCells)
-  assert v
-
-/-- `groupCircuit` at the blinding base `h` and the Lagrange points `lagrange`, given rather than
-computed from the SRS: what a driver runs at points it computed once. -/
+/-- `verifyProofWith` as a circuit of its input, its success bit asserted, at the blinding base
+`h` and the Lagrange points `lagrange`: what a driver runs at points it computed once. Before
+it, the shifted scalars' parity cells are asserted boolean (`assertClaimBitsStep`), the
+allocation check the deployed circuit's split type makes and this harness's unchecked input
+lacks. -/
 def groupCircuitWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
     [KimchiSystem Fp c]
     (h : IpaPallas.curve.Point) (lagrange : List (Vector IpaPallas.curve.Point nc))
@@ -500,16 +508,15 @@ def groupCircuitWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [Lawfu
     (g.cells keyCells)
   assert v
 
-/-- `groupCircuit` is `groupCircuitWith` at the SRS blinding base and the key's Lagrange points,
-one per packed scalar. -/
-theorem groupCircuit_eq_groupCircuitWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
-    [LawfulBasicSystem Fp c] [KimchiSystem Fp c] (σ : SRS IpaPallas.curve.Point)
-    (cvk : KimchiVK IpaPallas.curve nc)
+/-- `groupCircuitWith` at the SRS blinding base and the key's Lagrange points, one per packed
+scalar: `verifyProofAt` as a circuit of its input. -/
+def groupCircuit {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
+    [KimchiSystem Fp c]
+    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
-    (g : GroupVar ks k nc) :
-    groupCircuit (c := c) σ cvk keyCells spongeAfterIndex g
-      = groupCircuitWith σ.h (cvk.lagrangePoints σ g.statement.packed.length).toList
-        keyCells spongeAfterIndex g := rfl
+    (g : GroupVar ks k nc) : CircuitM Fp c Unit :=
+  groupCircuitWith σ.h (cvk.lagrangePoints σ g.statement.packed.length).toList keyCells
+    spongeAfterIndex g
 
 /-- **The group circuit's read**: the group half's read at a bit that reads `1`. -/
 theorem groupCircuit_reads {V : Valuation Fp} (S : Srs IpaPallas.curve)
@@ -528,12 +535,13 @@ theorem groupCircuit_reads {V : Valuation Fp} (S : Srs IpaPallas.curve)
     ⦃⇓ _ _ => ⌜∃ v : BoolVar Fp,
       (g.half V).Reads S.σ K.cvk cp (stepPublicInput V g.statement) v ∧
         (↑v : CVar Fp).val V = 1⌝⦄ := by
-  simp only [groupCircuit]
+  simp only [groupCircuit, groupCircuitWith]
   refine builder_spec_bind_of _ _ _ _ (assertClaimBitsStep_spec (V := V) g.shifted)
     fun hclaimOk _ => ?_
   obtain ⟨oldsW, hivp⟩ := hivp hclaimOk
   have hv := verifyProofAt_reads (V := V) S K hnc cp spongeAfterIndex g.isBaseCase g.statement
     g.claims (g.cells keyCells) oldsW hbase hsmall hn havoid hivp
+  unfold verifyProofAt at hv
   mvcgen -trivial [hv]
   rename_i v _ hr _ _
   intro h1

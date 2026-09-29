@@ -777,23 +777,20 @@ variable {C : KimchiCurve} {nc : ℕ} {V : Valuation C.BaseField}
 
 /-- A key's commitments as values, each point by its coordinates. -/
 private def keyValsOf (cvk : KimchiVK C nc) : VkComms nc (AffinePoint C.BaseField) :=
-  ⟨cvk.sigmaComm.map (·.map fun P => ⟨P.x, P.y⟩),
-   cvk.coefficientsComm.map (·.map fun P => ⟨P.x, P.y⟩),
-   cvk.genericComm.map (fun P => ⟨P.x, P.y⟩), cvk.poseidonComm.map (fun P => ⟨P.x, P.y⟩),
-   cvk.completeAddComm.map (fun P => ⟨P.x, P.y⟩), cvk.mulComm.map (fun P => ⟨P.x, P.y⟩),
-   cvk.emulComm.map (fun P => ⟨P.x, P.y⟩), cvk.endomulScalarComm.map (fun P => ⟨P.x, P.y⟩)⟩
+  cvk.comms.map fun P => ⟨P.x, P.y⟩
 
 /-- A key's constant cells read as its values. -/
 private theorem reads_keyCellsOf (cvk : KimchiVK C nc) :
     CircuitType.Reads V (keyCellsOf constPt cvk) (keyValsOf cvk) := by
   rw [VkComms.reads_iff]
   intro p
-  cases p <;> simp [keyCellsOf, keyValsOf, VkComms.at, constPt, CVar.val]
+  cases p <;> simp [keyCellsOf, keyValsOf, VkComms.map, KimchiVK.comms, VkComms.at, constPt,
+    CVar.val]
 
 /-- The values' points are the key's commitments' coordinates. -/
 private theorem keyValsOf_at (cvk : KimchiVK C nc) (p : VkPos nc) :
     (keyValsOf cvk).at p = ⟨(cvk.comms.at p).x, (cvk.comms.at p).y⟩ := by
-  cases p <;> simp [keyValsOf, VkComms.at, KimchiVK.comms]
+  cases p <;> simp [keyValsOf, VkComms.map, VkComms.at, KimchiVK.comms]
 
 /-- **A key read as a verifier key's commitments.** Key cells reading as the constant cells of
 `cvk` (`keyCellsOf constPt`) read as its commitments (`KeyReads`), once they are finite points,
