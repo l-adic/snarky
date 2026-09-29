@@ -155,8 +155,8 @@ structure KimchiCurve extends CommitmentCurve where
   rootOfUnity : ZMod scalar
   /-- `rootOfUnity` has order exactly `2 ^ twoAdicity`. -/
   rootOfUnity_order : orderOf rootOfUnity = 2 ^ twoAdicity
-  /-- The permutation argument's coset shifts, one per wired column: kimchi's `Shifts::new`, a
-  constant of the field, the same for every domain. Not read by the IPA opening verifier. -/
+  /-- The permutation argument's coset shifts, one per wired column: constants of the scalar
+  field, the same for every domain. Not read by the IPA opening verifier. -/
   shifts : Vector (ZMod scalar) 7
 
 /-- The map-to-curve, as the transcript uses it: the SvdW map of `groupMap`, transported along

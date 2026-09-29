@@ -10,11 +10,11 @@ import Pasta.Endo
 The circuit dumps hand a driver one flat vector of field cells per circuit, and a harness
 lays that vector out as the records the library gadgets take. This module holds the parts
 of that layout shared by more than one driver: the two constraint types, the GLV
-eigenvalues, the coset shifts production samples, and the two block readers (the previous
+eigenvalues, the coset shifts at each field, and the two block readers (the previous
 challenge vectors and the evaluation record).
 
-The coset shifts are production values written out as literals, so they live here rather
-than in any one driver: a second copy is a second thing to drift.
+The coset shifts are read off the curves (`KimchiCurve.shifts`), never written out again
+here or in any one driver: a second copy is a second thing to drift.
 -/
 
 namespace PicklesFixture

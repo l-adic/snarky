@@ -411,15 +411,17 @@ compiled for `K`'s domain, holds a wrap proof in its cells; the next wrap circui
 cells hold that proof's evaluations and old challenges, and `kimchiVerify` accepts it at `K`
 under the guards and `SgOk`. -/
 theorem stepWrap_kimchiVerify
-    -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries
-    -- and the wrap circuit's slots; the step proofs the wrap proofs verified at `ncPrevStep`; the
-    -- wrap circuit's `branches`, the step proof it verifies at `ncStep` chunks
+    -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries,
+    -- a self slot's width and the wrap circuit's slots; the step proofs the wrap proofs
+    -- verified at `ncPrevStep`; the wrap circuit's `branches`, the step proof it verifies at
+    -- `ncStep` chunks
     {n w ncPrevStep branches ncStep : ℕ}
     [NeZero branches]
     -- the rule's input, as a value and as cells
     {inVal inVar : Type}
     [CircuitType Fp inVal inVar]
-    -- the environment of the wrap proofs the slots verify (key, SRS, domain)
+    -- an environment over the wrap SRS the slots share; its key is read only through the wrap
+    -- circuit's finalize constants, the same at every key (`FopParams.ofEnv_eq`)
     (E : Env IpaPallas.curve 1)
     -- the wrap SRS has the deployed size, `2 ^ WrapIPARounds` points
     (hE : E.σ.k = WrapIPARounds)

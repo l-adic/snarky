@@ -1,6 +1,7 @@
 import Pickles.Curve
 import Pickles.Statement
 import Pickles.VkComms
+import Kimchi.Columns
 import Kimchi.Verifier.Kimchi
 
 /-!
@@ -12,11 +13,12 @@ theorems share.
 
 ## Main definitions
 
-* `Env`: the SRS, the key at `nc` chunks and their invariants — the key's endo coefficient is
-  the curve's, the domain holds its zero-knowledge rows, the generator is primitive, the round
-  count's bounds, the blinding base is a finite point, `nc` is the run's chunk count, the
-  Lagrange basis is nonempty, within the domain, and the SRS's own (`Ipa.lagrangeBasis`), and
-  the digest is the key's (`KimchiVK.indexDigest`);
+* `Env`: the SRS, the key at `nc` chunks and their invariants — the key's endo coefficient and
+  permutation shifts are the curve's, its zero-knowledge rows are the chunk count's and fit in
+  the domain, the generator is primitive and the domain's, the round count's bounds, the
+  blinding base is a finite point, `nc` is the run's chunk count, the Lagrange basis is
+  nonempty, within the domain, and the SRS's own (`Ipa.lagrangeBasis`), and the digest is the
+  key's (`KimchiVK.indexDigest`);
 * `KimchiVK.indexState`, `KimchiVK.indexDigest`: the fq-sponge after the key's commitments,
   and its squeeze, the verifier-index digest;
 * `Env.Invariants`, `Env.ofInvariants`: the decidable form a driver checks once per key, and
@@ -27,6 +29,7 @@ theorems share.
 ## Main results
 
 * `Env.domainLog2_le`: the key's domain exponent is at most the scalar field's two-adicity;
+* `Env.zkRows_ge`: at least three zero-knowledge rows, at any chunk count;
 * `Env.chunk_lt`, `Env.chunk_add_le`: every chunk starts within the domain and holds
   `min (2^k) n` of its points;
 * `Env.lagrange_ne`: where the SRS avoids the Lagrange relations, every chunk of the key's
@@ -98,8 +101,8 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   /-- The key's endomorphism coefficient is the curve's: production derives it from the curve,
   never from the key's own data. -/
   endo_eq : cvk.endo = C.endoScalar
-  /-- The zero-knowledge rows are the chunk count's: kimchi's `zk_rows_strict_lower_bound nc + 1`,
-  three at one chunk. -/
+  /-- The zero-knowledge rows are the chunk count's: the least count strictly above the
+  zero-knowledge bound at `nc` chunks, three at one chunk. -/
   zkRows_eq : cvk.zkRows = (2 * (permCols + 1) * nc - 2) / permCols + 1
   /-- The key's domain holds its zero-knowledge rows. -/
   zkRows_le : cvk.zkRows ≤ cvk.n
@@ -130,7 +133,8 @@ structure Env (C : KimchiCurve) (nc : ℕ) where
   /-- The key's generator is its domain's (`domainGenerator`): a constant of the scalar field,
   never chosen by the key. -/
   omega_eq : cvk.omega = domainGenerator C cvk.domainLog2
-  /-- The key's permutation shifts are the field's (`Shifts::new`): no key chooses them. -/
+  /-- The key's permutation shifts are the curve's (`KimchiCurve.shifts`): no key chooses
+  them. -/
   shifts_eq : cvk.shifts = C.shifts
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks

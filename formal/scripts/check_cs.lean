@@ -1357,8 +1357,11 @@ circuit-diffs export, `StepMainConstants`): the tag's width, the blinding `h`, a
 source, width, candidate step domains and Lagrange bases, with an external slot's wrap key. Only
 the rule is transcribed per dump. `simple_chain_n2` has two self slots of width 2;
 `two_phase_chain_make_zero` no slot in a tag of width 1, so one dummy unfinalized entry and one
-padding message; `tree_proof_return` an external slot on No_recursion_return (width 0) and a self
-slot of width 2. -/
+padding message; `two_phase_chain_increment` one self slot of width 1 over the tag's two step
+domains; `tree_proof_return` an external slot on No_recursion_return (width 0) and a self slot of
+width 2; `import_two_phase_chain` an external slot on two_phase_chain (width 1, its two step
+domains) and a self slot of width 2, run a second time with the external slot's candidates
+reversed and repeated against the same dump. -/
 
 /-- The unfinalized entry padding the statement of a rule verifying no proofs (PS
 `Dummy.baseCaseDummies { maxProofsVerified: 0 }`), at the wrap circuit's 15 rounds. -/
