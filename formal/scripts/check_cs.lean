@@ -730,12 +730,11 @@ bases under their mask bits. The SRS blinding base `h` is a constant on both sid
 production. -/
 
 /-- The SRS blinding base `h` of a fixture (`srs_h`, the same production SRS the IPA
-fixture checks read), as a constant point. -/
-def blindingBase (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) :
-    IO (AffinePoint (FVar (ZMod C.base))) := do
+fixture checks read). -/
+def blindingBase (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) : IO C.Point := do
   let raw ← IO.FS.readFile path
   match Json.parse raw >>= fun j => j.getObjVal? "srs_h" >>= Bulletproof.Fixture.parsePt C with
-  | .ok P => return ⟨.const P.x, .const P.y⟩
+  | .ok P => return P
   | .error e => throw (IO.userError s!"{path}: {e}")
 
 /-- `check_bulletproof_step_circuit`: the sponge state at 0–2 (`Squeezed 1`), `ξ` at 3, the
@@ -1050,6 +1049,23 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice"⟩ stmt
+
+/-- What `wrapStep_kimchiVerify` assumes of a wrap main's constants beyond its keys, decided
+with no MSM: each branch's table holds one base per cell of the step statement
+(`CircuitType.size Fp (StmtVal 15 mpv)`), `h` is the step SRS's blinding base (`hh`), every step
+key's index points are finite (`hnz`), and every base is (`havoidS`, by
+`Key.avoids_lagrangeRelations_iff`). The bases are upstream's commitments, which the dump's
+harness checks against the keys. -/
+def wrapMainHyps {nc : ℕ} (mpv : ℕ) (k : WrapMainConsts nc) (h : XhatCurve.Point) :
+    Except String Unit := do
+  let m := CircuitType.size Fp (Pickles.StmtVal 15 mpv)
+  unless k.lagrange.size = m do
+    throw s!"{k.lagrange.size} Lagrange bases, the step statement has {m} cells"
+  unless decide (k.h = h) do throw "h is not the step SRS's blinding base"
+  unless k.keys.all fun key => key.comms.indexPoints.all fun P => decide (P ≠ 0) do
+    throw "a step key has an index point at the identity"
+  unless k.lagrange.all fun row => row.all fun Ps => Ps.toList.all fun P => decide (P ≠ 0) do
+    throw "a Lagrange base is the identity"
 
 /-- The `wrap_main_*` dumps with their branch, slot and chunk counts. -/
 def wrapMainDumps : List (String × ℕ × ℕ × ℕ) :=
@@ -1547,6 +1563,26 @@ def stepMainConsts (n w : ℕ) (path : System.FilePath) : IO (StepMainConsts n) 
   | .ok r => return r
   | .error e => throw (IO.userError s!"{path}: {e}")
 
+/-- What `stepWrap_kimchiVerify` assumes of a step main's constants beyond its keys, decided
+with no MSM: `h` is the wrap SRS's blinding base, the dummy `sg` is finite (`hdummySg`), and
+each slot's table fits its key's domain (`Fits`' size clause) and has every base and their
+correction sum finite, which is the SRS avoiding the slot's step relations
+(`avoids_stepRelationsAt_iff`). The correction sum reads the packing's kinds only, so any
+statement of the slot's type stands for all (`stepVerifyStatement` over zero cells). The bases
+are upstream's commitments, which the dump's harness checks against the keys. -/
+def stepMainHyps {n : ℕ} (k : StepMainConsts n) (h : XhatStepCurve.Point) :
+    Except String Unit := do
+  unless decide (k.h = h) do throw "h is not the wrap SRS's blinding base"
+  unless decide (dummyWrapSgPt ≠ 0) do throw "the dummy sg is the identity"
+  let packed := (stepVerifyStatement fun _ => .const 0).packed
+  for s in k.slots.toList do
+    let bases := s.lagrange.toList
+    unless bases.length ≤ s.key.n do
+      throw s!"{bases.length} Lagrange bases overflow the domain 2^{s.key.domainLog2}"
+    unless bases.all fun Ps => decide (Ps[0] ≠ 0) do throw "a Lagrange base is the identity"
+    unless decide (Pickles.corrSumPt (C := Bulletproof.IpaPallas.curve) packed bases 0 ≠ 0) do
+      throw "a slot's correction sum is the identity"
+
 open Pickles in
 /-- A `step_main_*` circuit: `Pickles.stepMainCircuit` at `n` slots and the tag's width `w`, as
 `stepWrap_kimchiVerify` states it: each slot's source and the blinding `h` from the dump's
@@ -1923,8 +1959,10 @@ def optionalExport {α : Type} (filter : String) (path : System.FilePath)
 def main : IO Unit := do
   let dir ← resultsDir
   let fdir := (← IO.getEnv "BULLETPROOF_FIXTURES_DIR").getD "bulletproof-pcs/fixtures"
-  let hStep ← blindingBase Bulletproof.IpaPallas.curve s!"{fdir}/ipa_batch_pallas.json"
-  let hWrap ← blindingBase Bulletproof.IpaVesta.curve s!"{fdir}/ipa_batch_vesta.json"
+  let hStepPt ← blindingBase Bulletproof.IpaPallas.curve s!"{fdir}/ipa_batch_pallas.json"
+  let hWrapPt ← blindingBase Bulletproof.IpaVesta.curve s!"{fdir}/ipa_batch_vesta.json"
+  let hStep := Pickles.constPt hStepPt
+  let hWrap := Pickles.constPt hWrapPt
   -- `KIMCHI_CS_FILTER` narrows the corpus to targets whose name contains it — for local
   -- validation of one circuit against a partial results dir. Unset (CI) runs the whole corpus.
   let filter := (← IO.getEnv "KIMCHI_CS_FILTER").getD ""
@@ -1944,12 +1982,16 @@ def main : IO Unit := do
         | throw (IO.userError s!"{name}: slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}")
       let some keys := wrapMainKeys? bp k.keys
         | throw (IO.userError s!"{name}: {k.keys.length} step keys, not {bp + 1}")
+      if let .error e := wrapMainHyps mpv k hWrapPt then throw (IO.userError s!"{name}: {e}")
       pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
         (wrapMainDumpCircuit bp mpv nc k widths keys))
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
-  let stepConsts (name : String) (n w : ℕ) :=
-    optionalExport filter (dir / s!"{name}_constants.json") (stepMainConsts n w)
+  let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n)) := do
+    let k ← optionalExport filter (dir / s!"{name}_constants.json") (stepMainConsts n w)
+    for k in k.toList do
+      if let .error e := stepMainHyps k hStepPt then throw (IO.userError s!"{name}: {e}")
+    pure k
   let chainN2 ← stepConsts "step_main_simple_chain_n2_circuit" 2 2
   let makeZero ← stepConsts "step_main_two_phase_chain_make_zero_circuit" 0 1
   let increment ← stepConsts "step_main_two_phase_chain_increment_circuit" 1 1
