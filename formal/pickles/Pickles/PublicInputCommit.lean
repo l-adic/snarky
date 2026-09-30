@@ -2201,21 +2201,18 @@ points as bases, their honest shifts as corrections, the SRS blinding base — s
 points are finite (at the `(0, 0)` sentinel no cell reads as the point, so this is necessary
 too), the boolean leaves are boolean — which `xHat_reads_publicCommitment` supplies from the
 gadget's own bit pre-pass. -/
-theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
-    (lagrange : Array (Vector C.Point nc)) (ks : List (PackedScalar C.BaseField))
-    (hh : σ.h ≠ 0)
-    (hL : ∀ Ps ∈ lagrange.toList, Ps[ci] ≠ 0)
-
-    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks lagrange.toList, leaf.bitBoolean V)
- :
-    XhatBinding s ci V σ lagrange (constPt σ.h)
-      (List.zipWith constLeaf ks lagrange.toList)
-      (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks lagrange.toList)
-      (List.zipWith (constCp s ci) ks lagrange.toList) where
+theorem xhatBinding_const {m : ℕ} (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
+    (lagrange : Vector (Vector C.Point nc) m) (ks : Vector (PackedScalar C.BaseField) m)
+    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ lagrange.toList, Ps[ci] ≠ 0)
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks.toList lagrange.toList, leaf.bitBoolean V) :
+    XhatBinding s ci V σ lagrange.toArray (constPt σ.h)
+      (List.zipWith constLeaf ks.toList lagrange.toList)
+      (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks.toList lagrange.toList)
+      (List.zipWith (constCp s ci) ks.toList lagrange.toList) where
   blinding := onCurveAt_constPt σ.h hh
   pre := forall₂_zipWith _ _ _ _ _ fun p hp =>
     leafPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2) fun b hb => by
-      have hmem : constLeaf p.1 p.2 ∈ List.zipWith constLeaf ks lagrange.toList := by
+      have hmem : constLeaf p.1 p.2 ∈ List.zipWith constLeaf ks.toList lagrange.toList := by
         rw [← List.map_uncurry_zip_eq_zipWith]
         exact List.mem_map.2 ⟨p, hp, rfl⟩
       have := hbits _ hmem
@@ -2233,8 +2230,7 @@ theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
     intro i hi
     rw [List.getElem_zipWith, leafBaseAt_constLeaf]
     have h := onCurveAt_constPt (V := V) _ (hL _ (List.getElem_mem
-      (l := lagrange.toList) (n := i) (by
-        simp only [List.length_zipWith, Array.length_toList] at hi; simp; omega)))
+      (l := lagrange.toList) (n := i) (by simpa using hi)))
     simpa using h
 
 /-- The ladder width of a packed scalar's kind; a boolean leaf has no correction. -/
@@ -2357,8 +2353,7 @@ theorem bound_ofKeyKnown {m : ℕ} (s : PastaShape C) (σ : SRS C.Point)
       lagrange.toList,
     List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks.toList lagrange.toList,
     fun ci => ⟨?_, ?_⟩⟩
-  · have hb := xhatBinding_const (V := V) s ci σ lagrange.toArray ks.toList hh
-      (fun Ps h => hL Ps h ci) hbits
+  · have hb := xhatBinding_const (V := V) s ci σ lagrange ks hh (fun Ps h => hL Ps h ci) hbits
     simpa only [List.map_zipWith] using hb
   · have hc : (XhatTable.ofKeyKnown ks lagrange).corrSum[ci]
         = constPt (corrSumPt ks.toList lagrange.toList ci) := by
@@ -2683,7 +2678,7 @@ theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ :
     rename_i _ rs _
     intro st hrs
     have hbind := fun hb' : (∀ l ∈ rs, Leaf.bitBoolean V l) =>
-      (xhatBinding_const (V := V) s ci σ lagrange.toArray ks.toList hh hL
+      (xhatBinding_const (V := V) s ci σ lagrange ks hh hL
         (Leaf.SameReads.bitBoolean_of hrs hb')).ofSameReads hrs
     rw [← Leaf.SameReads.pubOf hrs]
   · exact xHat_reads_publicCommitment s ci σ lagrange.toArray (constPt σ.h) rs _ _ hbind

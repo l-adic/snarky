@@ -258,7 +258,7 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBas
 
 /-- A packed step statement opens with a full scalar: the first slot's combined inner product,
 or with no slot the `messagesForNextStepProof` digest. -/
-theorem StepStatement.packed_head {ks n : ℕ}
+private theorem StepStatement.packed_head {ks n : ℕ}
     (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) :
     ∃ x rest, st.packed.toList = .full x :: rest := by
   simp only [StepStatement.packed, Vector.toList_mk]
@@ -270,6 +270,18 @@ theorem StepStatement.packed_head {ks n : ℕ}
     simp only [List.flatMap_cons, UnfinalizedProof.packed, Vector.toList_mk, List.append_assoc,
       List.cons_append]
     exact ⟨_, _, rfl⟩
+
+/-- A packed step statement's constant leaves reach a scalar leaf, at any Lagrange table of its
+size. -/
+theorem StepStatement.leafHasScalar_packed {ks n nc : ℕ}
+    (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+    (lagrange : Vector (Vector IpaVesta.curve.Point nc) (CircuitType.size Fp (StmtVal ks n))) :
+    leafHasScalar (List.zipWith (constLeaf (C := IpaVesta.curve)) st.packed.toList
+      lagrange.toList) := by
+  obtain ⟨x, rest, hx⟩ := st.packed_head
+  obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil (l := lagrange.toList) (by simp)
+  rw [hlb, hx]
+  simp [constLeaf, leafHasScalar]
 
 /-- **The block at a key reads as the group half at the packed statement.** The public-input
 and blinding-cell premises of `wrapVerify_wrap_reads` are proved from the SRS and the key
@@ -307,15 +319,10 @@ theorem wrapVerifyAt_reads {ks n kw nw nc np : ℕ} {V : Valuation Fq}
   have hbind := fun (ci : Fin nc)
     (hb : ∀ leaf ∈ wrapLeavesAt S.σ K.cvk statement, leaf.bitBoolean V) =>
     xhatBinding_const (V := V) pastaShapeVesta ci S.σ
-      (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (StmtVal ks n))).toArray
-      statement.packed.toList S.h_ne
+      (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (StmtVal ks n))) statement.packed S.h_ne
       (fun Ps h => Key.lagrange_ne pastaShapeVesta S.σ hnc havoid Ps h ci) (hleaves ▸ hb)
-  have hscalar : leafHasScalar (wrapLeavesAt S.σ K.cvk statement) := by
-    obtain ⟨x, rest, hx⟩ := statement.packed_head
-    obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
-      (l := (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (StmtVal ks n))).toList) (by simp)
-    rw [hleaves, hlb, hx]
-    simp [constLeaf, leafHasScalar]
+  have hscalar : leafHasScalar (wrapLeavesAt S.σ K.cvk statement) :=
+    hleaves ▸ statement.leafHasScalar_packed _
   have hX : ⦃⌜True⌝⦄
       (publicInputCommitFull (S := Builder V (KimchiConstraint Fq))
         (constPt S.σ.h) (wrapLeavesAt S.σ K.cvk statement))

@@ -1192,15 +1192,8 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
     have hsz : (wrapPublicInput SStep.σ KStep.cvk Vs st).size = CircuitType.size Fp
       (StmtVal k mpv) := by
       rw [← Array.length_toList, wrapPublicInput_toList, List.length_map, Vector.length_toList]
-    have hscalar : leafHasScalar
-        (List.zipWith (constLeaf (C := IpaVesta.curve)) st.packed.toList
-          (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList) := by
-      obtain ⟨x, rest, hx⟩ := st.packed_head
-      obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
-        (l := (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList) (by
-          simp)
-      rw [hlb, hx]
-      simp [constLeaf, leafHasScalar]
+    have hscalar := st.leafHasScalar_packed
+      (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv)))
     have hpub : wrapPublicInput SStep.σ KStep.cvk Vs st
         = pubOf IpaVesta.curve Vs (List.zipWith (constLeaf (C := IpaVesta.curve)) st.packed.toList
           (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList) := by
