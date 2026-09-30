@@ -88,11 +88,12 @@ def knownDomainWhiches [ConstraintHolds F c] {n : ℕ} (domainLog2Var : FVar F)
   pure rev.reverse
 
 /-- `[x, x², x⁴, …, x^(2^n)]` by `n` `square` rows. -/
-def buildPow2PowsArray [ConstraintHolds F c] (x : FVar F) : ℕ → CircuitM F c (Array (FVar F))
-  | 0 => pure #[x]
+def buildPow2PowsArray [ConstraintHolds F c] (x : FVar F) :
+    (n : ℕ) → CircuitM F c (Vector (FVar F) (n + 1))
+  | 0 => pure #v[x]
   | k + 1 => do
     let arr ← buildPow2PowsArray x k
-    let sq ← square (arr.back?.getD x)
+    let sq ← square arr.back
     pure (arr.push sq)
 
 /-- `x^(2^n)` by `n` `mul` rows. -/
@@ -246,38 +247,31 @@ theorem knownDomainWhiches_spec {n : ℕ} (domainLog2Var : FVar F) (log2s : Vect
   simp only [Fin.getElem_fin, Vector.getElem_reverse] at hi ⊢
   simpa only [show n - 1 - (n - 1 - i) = i.val by omega] using hi
 
-/-- Under any valuation the table has `maxLog2 + 1` entries and entry `i` reads as `x^(2^i)`. -/
+/-- Under any valuation entry `i` of the table reads as `x^(2^i)`. -/
 theorem buildPow2PowsArray_spec (x : FVar F) :
     ∀ maxLog2 : ℕ,
       ⦃⌜True⌝⦄ buildPow2PowsArray (c := Builder V c) x maxLog2
-      ⦃⇓ r _ => ⌜r.size = maxLog2 + 1
-        ∧ ∀ i ≤ maxLog2, (r[i]?.getD (.const 0)).val V = x.val V ^ (2 ^ i)⌝⦄
+      ⦃⇓ r _ => ⌜∀ i : Fin (maxLog2 + 1), r[i].val V = x.val V ^ (2 ^ (i : ℕ))⌝⦄
   | 0 => by
     simp only [buildPow2PowsArray]
     mvcgen
-    refine ⟨rfl, ?_⟩
-    intro i hi
-    interval_cases i
+    intro i
+    fin_cases i
     simp
   | k + 1 => by
     simp only [buildPow2PowsArray]
     have ih := buildPow2PowsArray_spec x k
     mvcgen [ih]
     rename_i arr _ harr sq _ hsq
-    obtain ⟨hsize, hent⟩ := harr
-    have hback : arr.back?.getD x = arr[k]?.getD (.const 0) := by
-      rw [Array.back?, hsize, Nat.add_sub_cancel]
-      cases h : arr[k]? with
-      | none => exact absurd h (by simp [hsize])
-      | some v => rfl
-    rw [hback, hent k le_rfl] at hsq
-    refine ⟨by simp [hsize], ?_⟩
-    intro i hi
-    rw [Array.getElem?_push]
+    have hk : arr[k].val V = x.val V ^ 2 ^ k := harr ⟨k, by omega⟩
+    simp only [Vector.back, Nat.add_sub_cancel, hk] at hsq
+    intro i
+    rw [Fin.getElem_fin, Vector.getElem_push]
     split
     · rename_i hik
-      rw [Option.getD_some, hsq, ← pow_add, ← two_mul, hik, hsize, pow_succ, mul_comm]
-    · exact hent i (by omega)
+      exact harr ⟨i, hik⟩
+    · rename_i hik
+      rw [hsq, ← pow_add, ← two_mul, show (i : ℕ) = k + 1 by omega, pow_succ, mul_comm]
 
 /-- Under any valuation the output reads as `x^(2^n)`. -/
 theorem pow2PowMul_spec (x : FVar F) :
@@ -326,8 +320,10 @@ theorem knownDomainVanishingPolynomial_spec (whiches : List (BoolVar F)) (log2s 
   rw [hr, CVar.val_sub_, hmasked, List.zip_map_right, List.map_map]
   congr 2
   refine List.map_congr_left fun e he => ?_
+  have hl := hlog e.2 (List.of_mem_zip he).2
+  have hpe : pows[e.2].val V = zeta.val V ^ 2 ^ e.2 := hpows ⟨e.2, by omega⟩
   simp only [Function.comp_def, Prod.map_fst, Prod.map_snd, id_eq,
-    hpows.2 e.2 (hlog e.2 (List.of_mem_zip he).2)]
+    Vector.getElem?_eq_getElem (show e.2 < maxLog2 + 1 by omega), Option.getD_some, hpe]
 
 /-- Under any valuation satisfying the emitted constraints, bit `l` reads as `[index = l]`
 for `l < n`, and `index` reads as one of `0, …, n − 1`. -/
