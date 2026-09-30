@@ -167,8 +167,8 @@ theorem halvesTies_of_cast {k nc w : ℕ} (Vg : Valuation Fq)
     (hα : ∃ m, Reads128 Vs claimsS.deferredValues.plonk.alpha m)
     (hζ : ∃ m, Reads128 Vs claimsS.deferredValues.plonk.zeta m)
     (hξ : ∃ m, Reads128 Vs claimsS.deferredValues.xi m)
-    (hch : ∃ ms, List.Forall₂ (Reads128 Vs) claimsS.deferredValues.bulletproofChallenges.toList
-      ms) :
+    (hch : ∃ ms : Vector Prechallenge k,
+      ∀ i : Fin k, Reads128 Vs claimsS.deferredValues.bulletproofChallenges[i] ms[i]) :
     HalvesTies (GroupHalf.wrap Vg claimsG)
       (ScalarHalf.step Vs claimsS evals mask prevChallenges) := by
   obtain ⟨hl, hbp⟩ := hc
@@ -180,7 +180,7 @@ theorem halvesTies_of_cast {k nc w : ℕ} (Vg : Valuation Fq)
   obtain ⟨z, hz⟩ := hζ
   obtain ⟨ξ, hxi⟩ := hξ
   obtain ⟨ms, hms⟩ := hch
-  have hlen : ms.length = k := by simpa using hms.length_eq.symm
+  replace hms := forall₂_toList_iff.mpr hms
   let s := claimsS.deferredValues
   let dec := (fopStep Vs).decode
   let dv : DeferredValues k Prechallenge Fp :=
@@ -188,10 +188,10 @@ theorem halvesTies_of_cast {k nc w : ℕ} (Vg : Valuation Fq)
                  zetaToSrsLength := dec s.plonk.zetaToSrsLength
                  zetaToDomainSize := dec s.plonk.zetaToDomainSize }
       combinedInnerProduct := dec s.combinedInnerProduct, xi := ⟨ξ⟩
-      bulletproofChallenges := ⟨(ms.map SizedF.mk).toArray, by simp [hlen]⟩
+      bulletproofChallenges := ms.map SizedF.mk
       b := dec s.b }
-  have hchals : dv.bulletproofChallenges.toList.map (·.val) = ms := by
-    simp [dv, Function.comp_def]
+  have hchals : dv.bulletproofChallenges.toList.map (·.val) = ms.toList := by
+    simp [dv, Vector.toList_map, Function.comp_def]
   refine ⟨⟨dv, ⟨reads128_redFq cα ha, hb, hg, reads128_redFq cζ hz, wrapDecode_redFq cperm,
       wrapDecode_redFq czm, wrapDecode_redFq czn, wrapDecode_redFq ccip, reads128_redFq cξ hxi,
       hchals ▸ forall₂_reads128_redFq hms _ hbp, wrapDecode_redFq cb⟩,
@@ -269,7 +269,7 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
   have ht : HalvesTies (GroupHalf.wrap Vg claimsG)
       (ScalarHalf.step Vs claimsS evals mask prevChallenges) := by
     obtain ⟨og, hivp, -⟩ := hg
-    obtain ⟨a₀, z₀, hα, hζ, ξ₀, -, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
+    obtain ⟨a₀, z₀, hα, hζ, ξ₀, _r, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
     exact halvesTies_of_cast Vg claimsG Vs claimsS evals mask prevChallenges hc
       ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
   -- the selected domain is the key's: two candidates of one size are one candidate

@@ -201,17 +201,15 @@ def finalizeOtherProofCore [ConstraintHolds F c] {sf : Type} {nc np : ℕ} (P : 
     (buildEvalListChunked (mask.zip sgZetaw).toList w.pub.zetaOmega.toList w.ftEval1
       (evalFields (·.zetaOmega) w.evals))
   let cipCorrect ← equals (ops.unshift u.deferredValues.combinedInnerProduct) actualCip
-  let expanded ← computeChallenges endoVar
-    (u.deferredValues.bulletproofChallenges.toList.map (·.val))
-  let bCorrect ← bCorrectCircuit expanded.toList zeta zetaw r (ops.unshift u.deferredValues.b)
+  let expanded ← computeChallenges endoVar u.deferredValues.bulletproofChallenges
+  let bCorrect ← bCorrectCircuit expanded zeta zetaw r (ops.unshift u.deferredValues.b)
   let actualPerm ← permScalarCircuit (fun i => evals.w ⟨i, by omega⟩) evals.s evals.zOmega
     beta gamma zkPoly (alphaPows 21)
   let actualZetaToSrs ← zetaToSrsOr P.srsLengthLog2 zeta zetaToSrsHere
   let plonkOk ← plonkScalarsEqual ops perm zetaToSrs zetaToDomain actualPerm actualZetaToSrs
     (CVar.add_ zetaToNMinus1 (.const 1))
   let finalized ← Snarky.all [xiCorrect, bCorrect, cipCorrect, plonkOk]
-  pure ⟨finalized, xiCorrect, bCorrect, cipCorrect, plonkOk,
-    expanded.cast (by simp)⟩
+  pure ⟨finalized, xiCorrect, bCorrect, cipCorrect, plonkOk, expanded⟩
 
 /-- A known domain the previous proof may have: its `log2` and generator. -/
 structure KnownDomain (F : Type) where
@@ -434,9 +432,9 @@ theorem finalizeOtherProofCore_finalized_bit {sf : Type} {nc : ℕ} (P : FopPara
     builder_spec_true (ftEval0Circuit (c := Builder V (KimchiConstraint F)) e m t fe ul i x)
   have h13 := fun a b l1 l2 =>
     builder_spec_true (combinedInnerProduct (c := Builder V (KimchiConstraint F)) a b l1 l2)
-  have h14 := fun e l =>
+  have h14 := fun e (l : Vector (SizedF 128 (FVar F)) k) =>
     builder_spec_true (computeChallenges (c := Builder V (KimchiConstraint F)) e l)
-  have h15 := fun l a b c' d =>
+  have h15 := fun (l : Vector (FVar F) k) a b c' d =>
     builder_spec_true (bCorrectCircuit (c := Builder V (KimchiConstraint F)) l a b c' d)
   have h16 := fun a b c' d e f g =>
     builder_spec_true (permScalarCircuit (c := Builder V (KimchiConstraint F)) a b c' d e f g)
@@ -508,7 +506,7 @@ batch is the mask-kept challenge-polynomial rows (`sgRows`), every public chunk'
 def FopChecks {nc np : ℕ} (P : FopParams F) (n : ℕ) (ω : F) (ms : Vector Bool np)
     (cvs : Vector (Vector F k) np) (w : ChunkedEvals nc (FVar F))
     (ζ α β γ permV zetaMV zetaNV cipV bV : F) (unshiftV : F → F)
-    (V : Valuation F) (o : FopOutput F k) (ξ r : F) (cs : List F) : Prop :=
+    (V : Valuation F) (o : FopOutput F k) (ξ r : F) (cs : Vector F k) : Prop :=
   let ev := w.evals.map fun v => v.map (·.val V)
   let pv := w.pub.map fun v => v.map (·.val V)
   let e := combineEvals (ζ ^ 2 ^ P.srsLengthLog2) ((ζ * ω) ^ 2 ^ P.srsLengthLog2) ev
@@ -518,7 +516,7 @@ def FopChecks {nc np : ℕ} (P : FopParams F) (n : ℕ) (ω : F) (ms : Vector Bo
     ++ chunkRows pv ++ ⟨ft₀, w.ftEval1.val V⟩ :: (evalRows ev).flatMap chunkRows
   let cipOk := unshiftV cipV = Bulletproof.combinedInnerProduct ξ r
     (fun (i : Fin rows.length) (j : Fin evalPts) => ((rows.get i).toVector)[j])
-  let bOk := unshiftV bV = combinedB (fun i : Fin cs.length => cs.get i) r ![ζ, ζ * ω]
+  let bOk := unshiftV bV = combinedB cs.get r ![ζ, ζ * ω]
   let permOk := unshiftV permV = permScalar β γ α (zkpmEval n P.zkRows ω ζ) (linEvals e)
   let zetaMOk := unshiftV zetaMV = ζ ^ 2 ^ P.srsLengthLog2
   let zetaNOk := unshiftV zetaNV = ζ ^ n
@@ -528,7 +526,7 @@ def FopChecks {nc np : ℕ} (P : FopParams F) (n : ℕ) (ω : F) (ms : Vector Bo
   (↑o.finalized : CVar F).val V
     = (if (↑o.xiCorrect : CVar F).val V = 1 ∧ (↑o.bCorrect : CVar F).val V = 1 ∧
         (↑o.cipCorrect : CVar F).val V = 1 ∧ (↑o.plonkOk : CVar F).val V = 1 then 1 else 0) ∧
-  List.Forall₂ (CircuitType.Reads V) o.expandedChallenges.toList cs
+  CircuitType.Reads V o.expandedChallenges cs
 
 open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
 /-- The exact reading of `finalizeOtherProofCore`'s outputs: with `(x₁, x₂)` the wire
@@ -548,7 +546,7 @@ def FopReads {sf : Type} {nc np : ℕ} (P : FopParams F) (xiConstrainLowBits : B
         (w.pub.map fun v => v.map (·.val V)) (w.evals.map fun v => v.map (·.val V)))
     let x₁ := sq.1
     let x₂ := sq.2
-    ∃ (ξ₀ r' : Prechallenge) (ξ' : F) (ĉ : List Prechallenge),
+    ∃ (ξ₀ r' : Prechallenge) (ξ' : F) (ĉ : Vector Prechallenge k),
       Reads128 V u.deferredValues.xi ξ₀ ∧
       (xiConstrainLowBits = true → ∃ m : Prechallenge, ξ' = m.val) ∧
       (∀ lo : ℕ, lo < 2 ^ 128 → ξ' = lo →
@@ -556,7 +554,7 @@ def FopReads {sf : Type} {nc np : ℕ} (P : FopParams F) (xiConstrainLowBits : B
           lo + 2 ^ 128 * hi < fieldModulus F) ∧
       (∃ hi : ℕ, hi < 2 ^ 128 ∧ x₂ = (r'.val : F) + 2 ^ 128 * (hi : F) ∧
           r'.val + 2 ^ 128 * hi < fieldModulus F) ∧
-      List.Forall₂ (Reads128 V) u.deferredValues.bulletproofChallenges.toList ĉ ∧
+      (∀ i : Fin k, Reads128 V u.deferredValues.bulletproofChallenges[i] ĉ[i]) ∧
       (↑o.xiCorrect : CVar F).val V = (if ξ' = (ξ₀.val : F) then 1 else 0) ∧
       FopChecks P n ω ms cvs w ζ α β γ permV zetaMV zetaNV cipV bV unshiftV V o
         (endoExpand P.endoLam ξ₀.val)
@@ -581,12 +579,12 @@ def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} {nc np : ℕ} (P : FopPara
   let pre := frPrechallenges P.sponge
     (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
       (w.pub.map fun v => v.map (·.val V)) (w.evals.map fun v => v.map (·.val V)))
-  ∃ (ξ₀ r' : Prechallenge) (ĉ : List Prechallenge),
+  ∃ (ξ₀ r' : Prechallenge) (ĉ : Vector Prechallenge k),
     Reads128 V u.deferredValues.xi ξ₀ ∧ r'.val = pre.2 ∧
     ((↑o.xiCorrect : CVar (ZMod p)).val V = 0 ∨ (↑o.xiCorrect : CVar (ZMod p)).val V = 1) ∧
     ((↑o.xiCorrect : CVar (ZMod p)).val V = 1 → ξ₀.val = pre.1) ∧
     (xiConstrainLowBits = true → ξ₀.val = pre.1 → (↑o.xiCorrect : CVar (ZMod p)).val V = 1) ∧
-    List.Forall₂ (Reads128 V) u.deferredValues.bulletproofChallenges.toList ĉ ∧
+    (∀ i : Fin k, Reads128 V u.deferredValues.bulletproofChallenges[i] ĉ[i]) ∧
     FopChecks P n ω ms cvs w ζ α β γ permV zetaMV zetaNV cipV bV unshiftV V o
       (endoExpand P.endoLam ξ₀.val)
       (endoExpand P.endoLam r'.val) (ĉ.map fun c => endoExpand P.endoLam c.val)
@@ -807,13 +805,14 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       (fun p hp => combinedInnerProduct_spec_cip ξ r ez ew p.1 p.2.1 hp.1 hp.2.1 hp.2.2.1
         hp.2.2.2.1 p.2.2 hp.2.2.2.2.1 hp.2.2.2.2.2)
   have hcc := computeChallenges_spec (V := V) h2 h3 (.const P.endoLam)
-  have hbc := fun (chals : List (FVar F)) (zeta zetaOmega evalscale expectedB : FVar F) =>
+    u.deferredValues.bulletproofChallenges
+  have hbc := fun (chals : Vector (FVar F) k) (zeta zetaOmega evalscale expectedB : FVar F) =>
     builder_spec_forall
       (bCorrectCircuit (c := Builder V (KimchiConstraint F)) chals zeta zetaOmega evalscale
         expectedB)
-      (fun cs : List F => List.Forall₂ (CircuitType.Reads V) chals cs)
+      (fun cs : Vector F k => CircuitType.Reads V chals cs)
       (fun cs b => (↑b : CVar F).val V = if expectedB.val V
-        = combinedB (fun i : Fin cs.length => cs.get i) (evalscale.val V)
+        = combinedB cs.get (evalscale.val V)
             ![zeta.val V, zetaOmega.val V] then 1 else 0)
       (fun cs hc => bCorrectCircuit_spec chals zeta zetaOmega evalscale expectedB cs hc)
   have hps := fun (w s : Fin sigmaRows → FVar F) (zO b g zk a21 : FVar F) =>
@@ -948,9 +947,8 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   · exact hom.1
   dsimp only [FopReads, FopChecks]
   rw [hfin hbool]
-  refine ⟨⟨ξ₀, hξ₀⟩, r'n, xr.1.val.val V, ns, hxival, hlo, hx1, hx2 _ r'n.2 hrval, ?_,
-    hxiC, hcipC, hbv, hplonk, ?_, by simpa only [Vector.toList_cast] using hexpd⟩
-  · exact (List.forall₂_map_left_iff (f := fun x : SizedF 128 (FVar F) => x.val)).mp hns
+  refine ⟨⟨ξ₀, hξ₀⟩, r'n, xr.1.val.val V, ns, hxival, hlo, hx1, hx2 _ r'n.2 hrval, hns,
+    hxiC, hcipC, hbv, hplonk, ?_, hexpd⟩
   · simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq]
 
 /-! ## The two sides -/

@@ -108,8 +108,8 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
     (hα : ∃ m, Reads128 Vs claimsS.deferredValues.plonk.alpha m)
     (hζ : ∃ m, Reads128 Vs claimsS.deferredValues.plonk.zeta m)
     (hξ : ∃ m, Reads128 Vs claimsS.deferredValues.xi m)
-    (hch : ∃ ms, List.Forall₂ (Reads128 Vs) claimsS.deferredValues.bulletproofChallenges.toList
-      ms) :
+    (hch : ∃ ms : Vector Prechallenge k,
+      ∀ i : Fin k, Reads128 Vs claimsS.deferredValues.bulletproofChallenges[i] ms[i]) :
     HalvesTies (GroupHalf.step Vg claimsG) (ScalarHalf.wrap Vs claimsS evals prevChallenges) := by
   obtain ⟨hl, hsh, hbp⟩ := hc
   simp only [List.map_cons, List.map_nil, List.cons.injEq] at hl hsh
@@ -121,7 +121,7 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
   obtain ⟨z, hz⟩ := hζ
   obtain ⟨ξ, hxi⟩ := hξ
   obtain ⟨ms, hms⟩ := hch
-  have hlen : ms.length = k := by simpa using hms.length_eq.symm
+  replace hms := forall₂_toList_iff.mpr hms
   let s := claimsS.deferredValues
   let dec := (fopWrap Vs).decode
   let dv : DeferredValues k Prechallenge Fq :=
@@ -129,10 +129,10 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
                  zetaToSrsLength := dec s.plonk.zetaToSrsLength
                  zetaToDomainSize := dec s.plonk.zetaToDomainSize }
       combinedInnerProduct := dec s.combinedInnerProduct, xi := ⟨ξ⟩
-      bulletproofChallenges := ⟨(ms.map SizedF.mk).toArray, by simp [hlen]⟩
+      bulletproofChallenges := ms.map SizedF.mk
       b := dec s.b }
-  have hchals : dv.bulletproofChallenges.toList.map (·.val) = ms := by
-    simp [dv, Function.comp_def]
+  have hchals : dv.bulletproofChallenges.toList.map (·.val) = ms.toList := by
+    simp [dv, Vector.toList_map, Function.comp_def]
   -- a split claim decodes, on the step side, as its joined cell on the wrap side
   have hdec : ∀ (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) (y : Type2 (FVar Fq)),
       y.val.val Vs = 2 * redFq (x.val.sDiv2.val Vg) + redFq ((↑x.val.sOdd : CVar Fp).val Vg) →
@@ -207,7 +207,7 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
   have ht : HalvesTies (GroupHalf.step Vg claimsG)
       (ScalarHalf.wrap Vs claimsS evals prevChallenges) := by
     obtain ⟨og, hivp, -⟩ := hg
-    obtain ⟨a₀, z₀, hα, hζ, ξ₀, -, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
+    obtain ⟨a₀, z₀, hα, hζ, ξ₀, _r, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
     exact halvesTies_of_splitCast Vg claimsG Vs claimsS evals prevChallenges hc
       ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
   -- the circuit absorbs every previous-challenge cell; their values are the proof's accumulators

@@ -43,24 +43,6 @@ theorem toList_map_fst_zip {α β γ : Type} {n : ℕ} (as : Vector α n) (bs : 
 
 /-! ## `Forall₂` along zips -/
 
-/-- Pairing a list with another of the same length keeps a relation on the first. -/
-theorem forall₂_zip_left {α β γ : Type} {R : α → γ → Prop} :
-    ∀ {l₁ : List α} {l₂ : List γ} (l : List β), List.Forall₂ R l₁ l₂ → l.length = l₁.length →
-      List.Forall₂ (fun q v => R q.1 v) (l₁.zip l) l₂
-  | [], [], _, .nil, _ => .nil
-  | _ :: _, _ :: _, [], .cons _ _, h => absurd h (by simp)
-  | _ :: _, _ :: _, _ :: l, .cons hq hs, h =>
-    .cons hq (forall₂_zip_left l hs (by simpa using h))
-
-/-- A relation on the second components of a zip, at equal lengths, is one on the list. -/
-theorem forall₂_zip_right {α β γ : Type} {R : β → γ → Prop} :
-    ∀ {l₁ : List α} {l₂ : List β} {ns : List γ}, l₂.length = l₁.length →
-      List.Forall₂ (fun q m => R q.2 m) (l₁.zip l₂) ns → List.Forall₂ R l₂ ns
-  | [], [], _, _, h => by cases h; exact .nil
-  | _ :: _, _ :: l₂, _ :: _, hl, .cons hq hs => .cons hq (forall₂_zip_right (by simpa using hl) hs)
-  | [], _ :: _, _, hl, _ => absurd hl (by simp)
-  | _ :: _, [], _, hl, _ => absurd hl (by simp)
-
 /-- Two `List.zipWith`s of the same lists are related where their entries are, pair by pair. -/
 theorem forall₂_zipWith {α β γ δ : Type} (R : γ → δ → Prop) (f : α → β → γ) (g : α → β → δ) :
     ∀ (ks : List α) (lb : List β), (∀ p ∈ ks.zip lb, R (f p.1 p.2) (g p.1 p.2)) →
@@ -98,6 +80,25 @@ theorem flatten_zipWith_keep {α : Type} :
 theorem getElem_map_fin {α β : Type} {n : ℕ} (f : α → β) (Ps : Vector α n) (ci : Fin n) :
     (Ps.map f)[ci] = f Ps[ci] := by
   simp [Fin.getElem_fin]
+
+/-- Two vectors' lists are related entrywise exactly when their entries are, index by index. -/
+theorem forall₂_toList_iff {α β : Type} {R : α → β → Prop} {n : ℕ} {v : Vector α n}
+    {w : Vector β n} : List.Forall₂ R v.toList w.toList ↔ ∀ i : Fin n, R v[i] w[i] := by
+  rw [List.forall₂_iff_get]
+  constructor
+  · rintro ⟨-, h⟩ i
+    simpa using h i (by simp) (by simp)
+  · intro h
+    exact ⟨by simp, fun i h₁ h₂ => by simpa using h ⟨i, by simpa using h₁⟩⟩
+
+/-- A list related entrywise to a vector's list is the list of a vector of the same length,
+related to it index by index. -/
+theorem exists_vector_of_forall₂ {α β : Type} {R : α → β → Prop} {n : ℕ} {v : Vector α n}
+    {l : List β} (h : List.Forall₂ R v.toList l) :
+    ∃ w : Vector β n, w.toList = l ∧ ∀ i : Fin n, R v[i] w[i] := by
+  have hl : l.length = n := by simpa using h.length_eq.symm
+  refine ⟨⟨l.toArray, by simpa using hl⟩, by simp, forall₂_toList_iff.mp ?_⟩
+  simpa using h
 
 /-- A vector of singletons flattens to the vector's entries. -/
 theorem toList_flatten_singletons {α β : Type} {n : ℕ} (v : Vector α n) (f : α → β) :

@@ -120,7 +120,7 @@ def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
     (ivpInputOf dv.toDeferredValues ((mask.zip v.sgOld.toList).map fun (m, P) => (some m, P))
       key v.proof)
   assertEqual v.statement.proofState.spongeDigestBeforeEvaluations o.spongeDigest
-  for c in dv.bulletproofChallenges.toList.zip o.bulletproofChallenges do
+  for c in (dv.bulletproofChallenges.zip o.bulletproofChallenges).toList do
     assertEqual c.1.val c.2.val
   pure o.success
 

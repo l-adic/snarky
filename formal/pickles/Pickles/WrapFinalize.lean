@@ -232,7 +232,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
       have ht : HalvesTies (GroupHalf.step Vg claimsG)
           (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) := by
         obtain ⟨og, hivp, -⟩ := hg
-        obtain ⟨a₀, z₀, hα, hζ, ξ₀, -, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
+        obtain ⟨a₀, z₀, hα, hζ, ξ₀, _r, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
         exact halvesTies_of_splitCast Vg claimsG Vs sl.unfinalized sl.evals sl.prevChallenges
           hc ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
       have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals.toList

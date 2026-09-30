@@ -283,21 +283,19 @@ expanded by `Pickles.computeChallenges`, then `Pickles.bCorrectCircuit` against 
 Type1-unshifted claim. Input layout: challenges 0–15, `ζ` 16, `ζω` 17, `evalscale` 18,
 claimed `b` 19. -/
 def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
-  let inl := input.toList
-  let zero : FVar Fp := .const 0
-  let expanded ← Pickles.computeChallenges (.const Bulletproof.IpaVesta.curve.lam) (inl.take 16)
-  let _ ← Pickles.bCorrectCircuit expanded.toList (inl.getD 16 zero) (inl.getD 17 zero)
-    (inl.getD 18 zero) (Type1.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩)
+  let expanded ← Pickles.computeChallenges (.const Bulletproof.IpaVesta.curve.lam)
+    (Vector.ofFn fun i : Fin 16 => (⟨input[i]⟩ : SizedF 128 (FVar Fp)))
+  let _ ← Pickles.bCorrectCircuit expanded input[16] input[17] input[18]
+    (Type1.fromShiftedCircuit 255 ⟨input[19]⟩)
   pure PUnit.unit
 
 /-- `b_correct_wrap_circuit` (PS `bCorrectWrapCircuit`): the step layout at the wrap field,
 the challenges expanded through `IpaPallas.curve.lam`, the claim Type2-unshifted. -/
 def bCorrectWrapCircuit (input : Vector (FVar Fq) 20) : CircuitM Fq Cq PUnit := do
-  let inl := input.toList
-  let zero : FVar Fq := .const 0
-  let expanded ← Pickles.computeChallenges (.const Bulletproof.IpaPallas.curve.lam) (inl.take 16)
-  let _ ← Pickles.bCorrectCircuit expanded.toList (inl.getD 16 zero) (inl.getD 17 zero)
-    (inl.getD 18 zero) (Type2.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩)
+  let expanded ← Pickles.computeChallenges (.const Bulletproof.IpaPallas.curve.lam)
+    (Vector.ofFn fun i : Fin 16 => (⟨input[i]⟩ : SizedF 128 (FVar Fq)))
+  let _ ← Pickles.bCorrectCircuit expanded input[16] input[17] input[18]
+    (Type2.fromShiftedCircuit 255 ⟨input[19]⟩)
   pure PUnit.unit
 
 /-- The step-side `endoInv` scalar-field data: the Pallas group order is prime
@@ -1252,7 +1250,7 @@ def ivpStepCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
     Pickles.groupMapParamsPallas (fun _ => none) false h sv (xhatStepCommit pts h get)
     (ivpStepInput get)
   assertEqual o.spongeDigest (get 174)
-  for c in ((List.range 15).map fun j => get (45 + j)).zip o.bulletproofChallenges do
+  for c in ((List.range 15).map fun j => get (45 + j)).zip o.bulletproofChallenges.toList do
     assertEqual c.1 c.2.val
   pure PUnit.unit
 
@@ -1683,7 +1681,7 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
     Pickles.groupMapParamsVesta vestaBase.sqrt? true h sv computeXHat
     (Pickles.ivpInputOf dv [] dummyWrapKeyComms (wrapIvpProof pt get))
   assertEqual o.spongeDigest (get 176)
-  for c in dv.bulletproofChallenges.toList.zip o.bulletproofChallenges do
+  for c in (dv.bulletproofChallenges.zip o.bulletproofChallenges).toList do
     assertEqual c.1.val c.2.val
   pure PUnit.unit
 

@@ -260,11 +260,12 @@ theorem IvpProof.read_proofReads {C : KimchiCurve} {V : Valuation C.BaseField} {
       commReads_readPt fun p hp => hon p (by simp [IvpProof.points, hp])
   · simpa [IvpProof.read, Vector.toList_map] using
       commReads_readPt fun p hp => hon p (by simp [IvpProof.points, hp])
-  · simp only [IvpProof.read, Vector.toList_map, List.map_map, List.forall₂_map_right_iff]
-    refine List.forall₂_same.mpr fun q hq => ⟨onCurveAt_readPt (hon _ ?_),
-      onCurveAt_readPt (hon _ ?_)⟩ <;>
+  · intro i
+    have hq : pr.opening.lr[i] ∈ pr.opening.lr.toList := by simp
+    simp only [IvpProof.read, Fin.getElem_fin, Vector.getElem_map]
+    refine ⟨onCurveAt_readPt (hon _ ?_), onCurveAt_readPt (hon _ ?_)⟩ <;>
     simp only [IvpProof.points, List.mem_append, List.mem_flatMap] <;>
-    exact Or.inl (Or.inr ⟨q, hq, by simp⟩)
+    exact Or.inl (Or.inr ⟨_, hq, by simp⟩)
 
 /-- A key's commitments as cells, each point through `cell`. -/
 def keyCellsOf {C : KimchiCurve} {F : Type} {nc : ℕ} (cell : C.Point → AffinePoint (FVar F))
@@ -313,7 +314,7 @@ def verifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type}
   let o ← incrementallyVerifyProof ops e p endo gm sqrtF false blindingH spongeAfterIndex
     computeXHat (cells.withClaims u)
   assertEqual u.spongeDigestBeforeEvaluations o.spongeDigest
-  for c12 in u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges do
+  for c12 in (u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges).toList do
     let c2' ← selectField isBaseCase c12.1.val c12.2.val
     assertEqual c12.1.val c2'
   pure o.success
@@ -359,19 +360,19 @@ theorem verifyProof_success_bit {F : Type} [Field F] [DecidableEq F] [ToNat F] {
 /-- `verifyProof`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
 input `pub`, whose success bit is the returned bit, whose digest cell reads as the claimed
 `spongeDigestBeforeEvaluations` (so the claim is the wire's digest element), and whose round
-prechallenges read as the claimed ones off the base case, pair by pair over the zip, and the
-returned bit reads as a bit. The gadget compares the two lists as far as both reach; their
-lengths are the statement's and the opening's, not the gadget's. -/
+prechallenges read as the claimed ones off the base case, pair by pair, and the returned bit
+reads as a bit. -/
 def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (base : Bool)
     (v : BoolVar C.BaseField) : Prop :=
-  ∃ o : IvpOutput C.BaseField,
+  ∃ o : IvpOutput C.BaseField σ.k,
     IvpReads S σ cvk cp pub u.deferredValues.toIvpClaims o ∧
     o.success = v ∧
     u.spongeDigestBeforeEvaluations.val V = o.spongeDigest.val V ∧
-    (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges,
-      p.1.val.val V = p.2.val.val V) ∧
+    (base = false →
+      ∀ p ∈ (u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges).toList,
+        p.1.val.val V = p.2.val.val V) ∧
     ∃ b : Bool, (↑v : CVar C.BaseField).val V = bit b
 
 /-- Zero cells past the end of the public input change nothing the read speaks about: the input

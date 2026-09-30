@@ -493,16 +493,6 @@ private theorem rows_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp 
 
 /-! ### Reading the cells through the ties -/
 
-/-- `combinedB` over a vector's list is `combinedB` over the vector. -/
-private theorem combinedB_toList {F : Type} [Field F] {k m : ℕ} (v : Vector F k) (r : F)
-    (x : Fin m → F) :
-    combinedB (fun i : Fin v.toList.length => v.toList.get i) r x
-      = combinedB (fun i => v[i]) r x := by
-  unfold combinedB
-  refine Finset.sum_congr rfl fun j _ => ?_
-  rw [bPoly_toList]
-  rfl
-
 /-- The run's evaluation points, as the scalar half lists them. -/
 private theorem pointFn_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k)
@@ -667,23 +657,22 @@ theorem twoHalves_schnorr
   -- the opening clause, at the three `ft` scalars
   obtain ⟨U, ns, c₀, chals, rfl, hns, rfl, rfl, hchals, hiff⟩ :=
     hξG hpermG hzetaM hzetaN ξ₀ hξGx
-  have hch : chals = (ipaRunAt C (fqRun C K.cvk cp (runPublicComm C σ K.cvk pub)).warm
-      (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
-        fun m => endoExpand C.lam m.val :=
-    Vector.toList_inj.mp (by rw [hchals, Vector.toList_map])
-  subst hch
+  subst hchals
   rw [hsucc] at hiff
   -- the round challenges: the cell lists' readings are equations of lists
   -- `verify` compares the claimed challenges with the returned ones entry by entry off the
   -- base case; both lists have the SRS's round count, so the ties give the lists
   have hbpc' : G.claims.deferredValues.bulletproofChallenges.toList.map (·.val.val G.V)
-      = o.bulletproofChallenges.map (·.val.val G.V) :=
-    map_eq_map_of_zip (by simp [hns.length_eq]) (hbpc rfl)
+      = o.bulletproofChallenges.toList.map (·.val.val G.V) :=
+    map_eq_map_of_zip (by simp) fun p hp => hbpc rfl p (by rwa [Vector.toList_zip])
+  rw [← forall₂_toList_iff] at hns hĉ
   rw [forall₂_reads128_iff] at hmsG hmsS hns hĉ
   have hĉeq : ĉ = (ipaRunAt C (fqRun C K.cvk cp (runPublicComm C σ K.cvk pub)).warm
-      (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.toList :=
-    (List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
-      (List.map_injective_iff.mpr hinjG.prechallenge_injective (hmsG.symm.trans (hbpc'.trans hns)))
+      (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1 :=
+    Vector.toList_inj.mp
+      ((List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
+        (List.map_injective_iff.mpr hinjG.prechallenge_injective
+          (hmsG.symm.trans (hbpc'.trans hns))))
   -- the four checks, in wire terms
   rw [hζ, hα, hβ, hγ] at hcipC
   rw [hζ] at hbC
@@ -702,7 +691,8 @@ theorem twoHalves_schnorr
               (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
                 (fun m => endoExpand C.lam m.val))[i]) run.evalscale run.pointFn := by
     simp only [hbC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
-    rw [hr, hĉeq, ← Vector.toList_map, combinedB_toList, pointFn_eq]
+    rw [hr, hĉeq, pointFn_eq]
+    rfl
   -- assemble, the wire's transcript projected (no unfolding of the sponge runs)
   have hproof : (runInput C σ K.cvk cp pub).proof = cp.opening := rfl
   have hwarm : (runOracles C σ K.cvk cp pub).warm

@@ -46,7 +46,7 @@ valuation (`builder_spec_iff`).
 Unlike the step proof's statement, there is no domain cell (the wrap circuit's domain is a
 constant) and every `sg` slot is kept. The layered hypotheses the halves' reads consume
 (`IvpHyps`, `IvpTies`, `FopTies`) are built from these in the proof; the shape guards among
-them (`mask`, `nc_pos`, `t_ne`, `lr_ne`, `char`) are proved.
+them (`mask`, `nc_pos`, `t_ne`, `k_pos`, `char`) are proved.
 -/
 
 namespace Pickles

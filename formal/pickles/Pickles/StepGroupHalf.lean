@@ -332,7 +332,7 @@ theorem verifyProofAt_reads {ks nc : ℕ} {V : Valuation Fp} (S : Srs IpaPallas.
   have hr := verifyProof_step_reads (V := V) S.σ K.cvk cp (.const ((Pasta.vestaLam : ℤ) : Fp))
     pallasBase.sqrt? (constPt S.σ.h) (xhatTableAt S.σ K.cvk statement) spongeAfterIndex isBaseCase
     statement u cells false oldsW hbase htab
-    ⟨hivp.idx, hivp.mask, hivp.ties, hivp.nc_pos, hivp.t_ne, hivp.lr_ne, hivp.char⟩
+    ⟨hivp.idx, hivp.mask, hivp.ties, hivp.nc_pos, hivp.t_ne, hivp.k_pos, hivp.char⟩
   exact builder_spec_imp _ _ _ hr fun _ h => VerifyReads.append_zero hz h
 
 /-- A wrap key has at most `2^32` chunks: its domain size divides `|Fq| − 1`, whose two-adic
@@ -385,7 +385,7 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
         { olds := ⟨?olds, ?kept⟩, proof := hproof
           key := hvk.key
           claimOk := hclaimOk }
-      nc_pos := K.cvk.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
+      nc_pos := K.cvk.nc_pos, t_ne := ?tne, k_pos := S.rounds_pos, char := ?char }⟩
   case mask =>
     intro m hm
     have hm' : m ∈ sgOld.map (none, ·) := hm
@@ -404,12 +404,6 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
     have hlen := congrArg List.length he'
     simp at hlen
     exact absurd hlen (Nat.pos_iff_ne_zero.mp K.cvk.nc_pos)
-  case lrne =>
-    intro he
-    have he' : proof.opening.lr.toList = [] := he
-    have hlen := congrArg List.length he'
-    rw [Vector.length_toList, List.length_nil] at hlen
-    exact absurd hlen (Nat.pos_iff_ne_zero.mp S.rounds_pos)
   case char =>
     intro m hm h0
     refine char_guard m (le_trans hm ?_) h0

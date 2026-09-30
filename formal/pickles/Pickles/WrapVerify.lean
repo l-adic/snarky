@@ -57,7 +57,7 @@ def wrapVerify [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type} {k kw :
   let d ← hashMessagesForNextWrapProof p msgSponge ⟨cells.opening.sg, newBpChallenges⟩
   assertEqual claimedMsgDigest d
   assertEqual u.spongeDigestBeforeEvaluations o.spongeDigest
-  for cc in u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges do
+  for cc in (u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges).toList do
     assertEqual cc.1.val cc.2.val
   pure PUnit.unit
 
@@ -373,7 +373,7 @@ theorem ivpHyps_of_reads_wrap {nc : ℕ} {V : Valuation Fq} {S : Srs IpaVesta.cu
       ties :=
         { olds := holds, proof := hproof, key := hvk.key
           claimOk := fun x _ => wrapSide_claimOk V x }
-      nc_pos := K.cvk.nc_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }
+      nc_pos := K.cvk.nc_pos, t_ne := ?tne, k_pos := S.rounds_pos, char := ?char }
   case tne =>
     intro he
     have he' : (ivpInputOf dv sgOld keyCells proof).tComm = [] := he
@@ -381,11 +381,6 @@ theorem ivpHyps_of_reads_wrap {nc : ℕ} {V : Valuation Fq} {S : Srs IpaVesta.cu
     rw [he', List.length_nil] at h4
     have := K.cvk.nc_pos
     omega
-  case lrne =>
-    intro he
-    have hlen' := congrArg List.length he
-    rw [List.length_nil] at hlen'
-    exact absurd (by simpa using hlen') (Nat.pos_iff_ne_zero.mp S.rounds_pos)
   case char =>
     intro m hm h0
     refine char_guard_fq m (le_trans hm ?_) h0

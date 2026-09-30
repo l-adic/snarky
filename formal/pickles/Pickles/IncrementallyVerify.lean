@@ -63,13 +63,13 @@ variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Kim
 
 /-- What the group half returns: the fq-sponge digest before evaluations, the opening check's
 acceptance bit, and the raw 128-bit round prechallenges. -/
-structure IvpOutput (F : Type) where
+structure IvpOutput (F : Type) (k : ℕ) where
   /-- The fq-sponge digest before evaluations. -/
   spongeDigest : FVar F
   /-- Whether the opening's Schnorr equation holds. -/
   success : BoolVar F
   /-- The squeezed round prechallenges, in round order, raw 128-bit. -/
-  bulletproofChallenges : List (SizedF 128 (FVar F))
+  bulletproofChallenges : Vector (SizedF 128 (FVar F)) k
 
 /-- The deferred plonk claims the group half consumes: the four 128-bit challenges, asserted
 against the squeezes, and the three shifted scalars `ftComm` scales by. -/
@@ -141,7 +141,7 @@ def incrementallyVerifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf :
     (optSponge : Bool) (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
     (computeXHat : CircuitM F c (List (AffinePoint (FVar F))))
     {nc : ℕ} (inp : IvpInput k nc (FVar F) (BoolVar F) sf) :
-    CircuitM F c (IvpOutput F) := do
+    CircuitM F c (IvpOutput F k) := do
   let (indexDigest, _) ← SpongeVar.squeeze p spongeAfterIndex
   let tr ←
     if optSponge then do
@@ -294,8 +294,8 @@ structure ProofReads {nc k : ℕ} (S : IvpSide C V ops)
   /-- The quotient chunks. -/
   t : CommReads C V tComm cp.tComm.toList
   /-- The `(L, R)` cells read as the proof's pairs. -/
-  lr : List.Forall₂ (PairReads C.E.toAffine V) opening.lr.toList
-    (cp.opening.lr.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2))
+  lr : ∀ i : Fin k, PairReads C.E.toAffine V opening.lr[i]
+    (SWPoint.equivPoint C.E cp.opening.lr[i].1, SWPoint.equivPoint C.E cp.opening.lr[i].2)
   /-- The `δ` cell reads as the proof's. -/
   delta : OnCurveAt C.E.toAffine V opening.delta (SWPoint.equivPoint C.E cp.opening.delta)
   /-- The `sg` cell reads as the proof's. -/
@@ -341,7 +341,7 @@ prechallenges (the transcript range-checks them), and the claimed `α`, `ζ`, on
 `pre`'s; the opening clause is described in the note above. -/
 def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (inp : IvpClaims (FVar C.BaseField) sf)
-    (o : IvpOutput C.BaseField) : Prop :=
+    (o : IvpOutput C.BaseField σ.k) : Prop :=
   let pre := fqRun C cvk cp (runPublicComm C σ cvk pub)
   let r := ipaRunAt C pre.warm (S.decode inp.deferred.combinedInnerProduct) cp.opening
   let run := runInput C σ cvk cp pub
@@ -354,12 +354,12 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
    S.decode inp.plonk.zetaToSrsLength = runZetaM C σ cvk cp pub →
    S.decode inp.plonk.zetaToDomainSize = runZetaN C σ cvk cp pub →
    ∀ ξ₀, Reads128 V inp.xi ξ₀ →
-    ∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
+    ∃ (U : C.Point) (ns : Vector Prechallenge σ.k) (c₀ : Prechallenge)
       (chals : Vector C.ScalarField σ.k),
       U = C.uBase r.1 ∧
-      List.Forall₂ (Reads128 V) o.bulletproofChallenges ns ∧
-      ns = r.2.1.toList ∧ c₀ = r.2.2 ∧
-      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
+      (∀ i : Fin σ.k, Reads128 V o.bulletproofChallenges[i] ns[i]) ∧
+      ns = r.2.1 ∧ c₀ = r.2.2 ∧
+      chals = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
       (((↑o.success : CVar C.BaseField).val V = 1) ↔
         schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀.val)
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
@@ -389,7 +389,7 @@ structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   /-- At least one quotient chunk. -/
   t_ne : inp.tComm ≠ []
   /-- At least one round. -/
-  lr_ne : inp.opening.lr.toList ≠ []
+  k_pos : 0 < σ.k
   /-- The base field's characteristic exceeds the absorb count. -/
   char : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
     + inp.zComm.length + inp.tComm.length) → (k : C.BaseField) = 0 → k = 0
@@ -738,7 +738,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (oldsW : List (C.Point × Bool))
     (blindingH : AffinePoint (FVar C.BaseField)) (hties : IvpTies S σ cvk cp inp oldsW)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
-    (hlrne : inp.opening.lr.toList ≠ [])
+    (hk : 0 < σ.k)
     (tr : FqTranscriptOutput C.BaseField)
     (hx : CommReads C V tr.xHat (runPublicComm C σ cvk pub).toList)
     (hFq : FqTranscriptReads C.sponge.params cvk.digest ((cp.olds.map (·.sg)).toList.map wirePt)
@@ -752,8 +752,8 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (ftc : AffinePoint (FVar C.BaseField))
     (hft : FtCommReads S σ cvk cp pub ftc inp.plonk.perm inp.plonk.zetaToSrsLength
       inp.plonk.zetaToDomainSize inp.key.sigmaLast inp.tComm)
-    (o : CheckBulletproofOutput C.BaseField)
-    (hcb : S.OpeningReads tr.sponge (inp.bases tr.xHat ftc)
+    (o : CheckBulletproofOutput C.BaseField σ.k)
+    (hcb : S.OpeningReads σ tr.sponge (inp.bases tr.xHat ftc)
       ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩ o) :
     IvpReads S σ cvk cp pub inp.toIvpClaims ⟨tr.digest, o.success, o.challenges⟩ := by
   -- the wire's fq squeezes at these readings are `IvpReads`'s
@@ -818,16 +818,18 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
         inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
         inp.opening.z1, inp.opening.z2]).subset hxs)
     obtain ⟨U, ns, c₀, chals, hU, hns, hc, hchals, ⟨wc, hwc⟩, hiff⟩ :=
-      hcb.2 _ hb hbne (streamBv_last σ cvk cp pub oldsW) hclaims ξ₀ hξ σ cp.opening.lr
-        cp.opening.delta cp.opening.sg hties.proof.lr hlrne hties.proof.delta hties.proof.sg hh
-    have hlrv : List.Forall₂ (CircuitType.Reads V) inp.opening.lr.toList
-        (cp.opening.lr.toList.map fun q => (wirePt q.1, wirePt q.2)) :=
-      List.forall₂_map_right_iff.2
-        ((List.forall₂_map_right_iff.1 hties.proof.lr).imp fun _ _ h => pairReads_reads h)
+      hcb.2 _ hb hbne (streamBv_last σ cvk cp pub oldsW) hclaims ξ₀ hξ cp.opening.lr
+        cp.opening.delta cp.opening.sg hties.proof.lr hk hties.proof.delta hties.proof.sg hh
+    have hlrv : CircuitType.Reads V inp.opening.lr
+        (cp.opening.lr.map fun q => (wirePt q.1, wirePt q.2)) :=
+      CircuitType.reads_vector.mpr fun i hi => by
+        simpa using pairReads_reads (hties.proof.lr ⟨i, hi⟩)
     have hδv : CircuitType.Reads V inp.opening.delta (wirePt cp.opening.delta) :=
       reads_affinePoint.mpr (onCurveAt_equivPoint_coords hties.proof.delta)
     -- the opening transcript, from the warm sponge
     have hT := CheckBulletproofReads.wire (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
+    dsimp only [CheckBulletproofReadsWire] at hT
+    rw [Vector.toList_map] at hT
     -- the wire's IPA run at the claimed `cip` is the opening check's transcript
     obtain ⟨h1, h2, h3⟩ :=
       ipaRunAt_reads S fqW.2.2 inp.deferred.combinedInnerProduct hwc cp.opening
@@ -836,8 +838,8 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
       ?_⟩
     · rw [← hT.1]
       exact hU
-    · exact List.map_injective_iff.mpr Subtype.val_injective
-        ((forall₂_exact hT.2.1 hns).trans h2.symm)
+    · exact Vector.toList_inj.mp (List.map_injective_iff.mpr Subtype.val_injective
+        ((forall₂_exact hT.2.1 (forall₂_toList_iff.mpr hns)).trans h2.symm))
     · exact success_eq S σ cvk cp pub oldsW hties.olds.kept inp.opening.z1 inp.opening.z2
         hties.proof.z1 hties.proof.z2 U chals _ _ _ _ _ hiff
 
@@ -894,14 +896,14 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       blindingH
       spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
-  obtain ⟨hIdx, hmask, hties, hnc, htne, hlrne, hchar⟩ := h
+  obtain ⟨hIdx, hmask, hties, hnc, htne, hk, hchar⟩ := h
   have hasrt := fun (tr : FqTranscriptOutput C.BaseField) =>
     assertPlonkChallenges_spec (V := V) tr inp.plonk.chals
   have hft := ftComm_reads S σ cvk cp pub inp.plonk.perm inp.plonk.zetaToSrsLength
     inp.plonk.zetaToDomainSize inp.key.sigmaLast inp.tComm hnc htne
   have hcb := fun (sv : SpongeVar C.BaseField)
     (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField))) =>
-    S.opening_reads endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
+    S.opening_reads σ endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
   obtain ⟨sIdx, hsIdx, hdig⟩ := hIdx
   cases optSponge with
   | true =>
@@ -950,7 +952,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rw [← hties.olds.kept, List.filter_map, List.map_map, List.map_map]
       rfl
     rw [hkept] at hFq
-    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne tr
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hk tr
       (htr'.1 ▸ hx) hFq hasrt' ftc hft' o hcb'
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
@@ -971,7 +973,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rfl
     have hFq := htr'.2 _ _ _ _ hsgv hties.proof.w.reads hties.proof.z.reads hties.proof.t.reads
     rw [hd, hkept] at hFq
-    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne tr htr'.1
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hk tr htr'.1
       hFq hasrt' ftc hft' o hcb'
 
 end Assembly

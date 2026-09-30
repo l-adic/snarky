@@ -46,7 +46,7 @@ booleanity follows from satisfaction (`BranchData.mask_boolean`).
 * `Guards` and `SgOk`, of the proof itself.
 
 The layered hypotheses the halves' reads consume (`IvpHyps`, `IvpTies`, `FopTies`) are built
-from these in the proof; the shape guards among them (`mask`, `nc_pos`, `t_ne`, `lr_ne`,
+from these in the proof; the shape guards among them (`mask`, `nc_pos`, `t_ne`, `k_pos`,
 `char`) are proved.
 -/
 
