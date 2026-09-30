@@ -1026,46 +1026,65 @@ def wrapMainKeys? {nc : ℕ} (bp : ℕ)
     Option (Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1)) :=
   if h : ks.length = bp + 1 then some ⟨ks.toArray, by simpa using h⟩ else none
 
+/-- The exported pins as each slot's column over the branches, when every branch has one entry
+per slot: a negative entry marks a side-loaded predecessor, any other the wrap domain index. -/
+def wrapMainPins? (bp mpv : ℕ) (pins : List (List Int)) :
+    Option (Vector (Vector (Option ℕ) (bp + 1)) mpv) :=
+  if h : pins.length = bp + 1 ∧ ∀ row ∈ pins, row.length = mpv then
+    some (Vector.ofFn fun s => Vector.ofFn fun b =>
+      let v := (pins[b.val]'(by omega))[s.val]'(by
+        rw [h.2 _ (List.getElem_mem _)]
+        exact s.2)
+      if v < 0 then none else some v.toNat)
+  else none
+
+/-- The exported Lagrange bases as one table per branch, when there are `m` scalars with one
+base per branch each. -/
+def wrapMainTables? (bp nc m : ℕ) (lagrange : Array (List (Vector XhatCurve.Point nc))) :
+    Option (Vector (Vector (Vector XhatCurve.Point nc) m) (bp + 1)) :=
+  if h : lagrange.size = m ∧ ∀ row ∈ lagrange.toList, row.length = bp + 1 then
+    some (Vector.ofFn fun b => Vector.ofFn fun i =>
+      (lagrange[i.val]'(by omega))[b.val]'(by
+        rw [h.2 _ (Array.getElem_mem_toList _)]
+        exact b.2))
+  else none
+
 /-- A `wrap_main_*` circuit: `Pickles.wrapMainCircuit` at `bp + 1` branches, `mpv` slots and
 `nc` step chunks, as `wrapStep_kimchiVerify` states it: the branches' domains and key cells are
 their checked step keys' (`stepDomainLog2s`, `stepKeyCells`), and a domain's Lagrange table is
-the one exported for the branch at it. Its output alone, the cells dropped: compiled, that is
-the theorem's `compileWith` system (`Snarky.compileWith_constraints`). -/
+the first branch's at it (a domain no branch has is never read). Its output alone, the cells
+dropped: compiled, that is the theorem's `compileWith` system
+(`Snarky.compileWith_constraints`). -/
 def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (widths : Vector (Fin (mpv + 1)) (bp + 1))
     (keys : Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1))
     (slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv)
+    (pins : Vector (Vector (Option ℕ) (bp + 1)) mpv)
+    (tables : Vector (Vector (Vector XhatCurve.Point nc)
+      (CircuitType.size Fp (Pickles.StmtVal 15 mpv))) (bp + 1))
     (stmt : Pickles.StatementPacked 16 (Type1 (FVar Fq)) (FVar Fq)) :
     CircuitM Fq Cq Unit :=
-  let pin (v : Int) : Option ℕ := if v < 0 then none else some v.toNat
-  let zeroPts : Vector XhatCurve.Point nc :=
-    Vector.replicate nc (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
   Prod.fst <$> Pickles.wrapMainCircuit (branches := bp + 1) (mpv := mpv) (ncStep := nc) (k := 15)
     (ks := 16)
     fopWrapParams widths (Pickles.stepDomainLog2s keys) (Pickles.stepKeyCells keys)
-    (Vector.ofFn fun s => Vector.ofFn fun b => pin ((k.pins.getD b.val []).getD s.val (-1)))
-    (fun l => firstBases (k.lagrange.map fun perBranch =>
-      perBranch.getD ((Pickles.stepDomainLog2s keys).toList.idxOf l) zeroPts))
+    pins (fun l => tables[(Pickles.stepDomainLog2s keys).toList.idxOf l]?.getD tables[0])
     k.h k.dummy slotWidths
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice"⟩ stmt
 
-/-- What `wrapStep_kimchiVerify` assumes of a wrap main's constants beyond its keys, decided
-with no MSM: each branch's table holds one base per cell of the step statement
-(`CircuitType.size Fp (StmtVal 15 mpv)`), `h` is the step SRS's blinding base (`hh`), every step
+/-- What `wrapStep_kimchiVerify` assumes of a wrap main's constants beyond its keys and the
+tables' shape, decided with no MSM: `h` is the step SRS's blinding base (`hh`), every step
 key's index points are finite (`hnz`), and every base is (`havoidS`, by
 `Key.avoids_lagrangeRelations_iff`). The bases are upstream's commitments, which the dump's
 harness checks against the keys. -/
-def wrapMainHyps {nc : ℕ} (mpv : ℕ) (k : WrapMainConsts nc) (h : XhatCurve.Point) :
+def wrapMainHyps {nc bp m : ℕ} (k : WrapMainConsts nc)
+    (tables : Vector (Vector (Vector XhatCurve.Point nc) m) (bp + 1)) (h : XhatCurve.Point) :
     Except String Unit := do
-  let m := CircuitType.size Fp (Pickles.StmtVal 15 mpv)
-  unless k.lagrange.size = m do
-    throw s!"{k.lagrange.size} Lagrange bases, the step statement has {m} cells"
   unless decide (k.h = h) do throw "h is not the step SRS's blinding base"
   unless k.keys.all fun key => key.comms.indexPoints.all fun P => decide (P ≠ 0) do
     throw "a step key has an index point at the identity"
-  unless k.lagrange.all fun row => row.all fun Ps => Ps.toList.all fun P => decide (P ≠ 0) do
+  unless tables.all fun t => t.all fun Ps => Ps.all fun P => decide (P ≠ 0) do
     throw "a Lagrange base is the identity"
 
 /-- The `wrap_main_*` dumps with their branch, slot and chunk counts. -/
@@ -1988,9 +2007,15 @@ def main : IO Unit := do
       let some slotWidths := wrapMainWidths? mpv Pickles.MaxProofsVerified k.slotWidths
         | throw (IO.userError
             s!"{name}: stack heights {k.slotWidths} are not {mpv} ≤ {Pickles.MaxProofsVerified}")
-      if let .error e := wrapMainHyps mpv k hWrapPt then throw (IO.userError s!"{name}: {e}")
+      let some pins := wrapMainPins? bp mpv k.pins
+        | throw (IO.userError s!"{name}: pins {k.pins} are not {bp + 1} rows of {mpv}")
+      let m := CircuitType.size Fp (Pickles.StmtVal 15 mpv)
+      let some tables := wrapMainTables? bp nc m k.lagrange
+        | throw (IO.userError (s!"{name}: Lagrange bases are not {m} rows of {bp + 1}: " ++
+            s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}"))
+      if let .error e := wrapMainHyps k tables hWrapPt then throw (IO.userError s!"{name}: {e}")
       pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
-        (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths))
+        (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths pins tables))
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
   let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n)) := do
