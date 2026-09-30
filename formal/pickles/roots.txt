@@ -21,7 +21,7 @@ Pickles.chain_kimchiVerify_iff
 -- statement values flatten to what `wrapPublicInput` commits to, and the wrap circuit's packed
 -- statement, flattened (`stepPublicInput`), is the leaves' input followed by the zero
 -- optional-feature cells.
-Pickles.StmtVal.ofWrap_toFields
+Pickles.StepStatement.ofWrap_toFields
 Pickles.stepPublicInput_eq_append
 
 -- The linearization reflection: the certificate identifying the deployed token stream with

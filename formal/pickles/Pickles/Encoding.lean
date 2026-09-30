@@ -247,26 +247,46 @@ instance instStatementPackedCheckedType {F c f w sv sf : Type} {k : ℕ} [Field 
 /-! ## The step statement -/
 
 /-- A step proof state is its slots and the step-message digest. -/
-def StepProofState.equivProd (k n : ℕ) (f bc sf : Type) :
-    StepProofState k n f bc sf ≃ Vector (UnfinalizedProof k f bc sf) n × f :=
+def StepProofState.equivProd (u f : Type) (n : ℕ) :
+    StepProofState u f n ≃ Vector u n × f :=
   ⟨fun s => (s.unfinalizedProofs, s.messagesForNextStepProof), fun p => ⟨p.1, p.2⟩,
    fun _ => rfl, fun _ => rfl⟩
 
-instance instStepProofStateCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] [CircuitType F sv sf] :
-    CircuitType F (StepProofState k n f b sv) (StepProofState k n w vb sf) :=
-  CircuitType.ofEquiv (StepProofState.equivProd k n f b sv) (StepProofState.equivProd k n w vb sf)
+instance instStepProofStateCircuitType {F u vu f w : Type} {n : ℕ} [CircuitType F u vu]
+    [CircuitType F f w] : CircuitType F (StepProofState u f n) (StepProofState vu w n) :=
+  CircuitType.ofEquiv (StepProofState.equivProd u f n) (StepProofState.equivProd vu w n)
+
+/-- A step proof state is checked as its slots and digest. -/
+instance instStepProofStateCheckedType {F c u vu f w : Type} {n : ℕ} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F u vu] [CircuitType F f w]
+    [CheckedType F c u vu] [CheckedType F c f w] :
+    CheckedType F c (StepProofState u f n) (StepProofState vu w n) :=
+  CheckedType.ofEquiv (StepProofState.equivProd u f n) (StepProofState.equivProd vu w n)
 
 /-- A step statement is its proof state and the slots' wrap-message digests. -/
-def StepStatement.equivProd (k n : ℕ) (f bc sf : Type) :
-    StepStatement k n f bc sf ≃ StepProofState k n f bc sf × Vector f n :=
+def StepStatement.equivProd (u f : Type) (n : ℕ) :
+    StepStatement u f n ≃ StepProofState u f n × Vector f n :=
   ⟨fun s => (s.proofState, s.messagesForNextWrapProof), fun p => ⟨p.1, p.2⟩, fun _ => rfl,
    fun _ => rfl⟩
 
-instance instStepStatementCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] [CircuitType F sv sf] :
-    CircuitType F (StepStatement k n f b sv) (StepStatement k n w vb sf) :=
-  CircuitType.ofEquiv (StepStatement.equivProd k n f b sv) (StepStatement.equivProd k n w vb sf)
+instance instStepStatementCircuitType {F u vu f w : Type} {n : ℕ} [CircuitType F u vu]
+    [CircuitType F f w] : CircuitType F (StepStatement u f n) (StepStatement vu w n) :=
+  CircuitType.ofEquiv (StepStatement.equivProd u f n) (StepStatement.equivProd vu w n)
+
+/-- A step statement has as many cells as its slots, digest and wrap-message digests. -/
+theorem StepStatement.size_eq {F u vu f w : Type} {n : ℕ} [CircuitType F u vu]
+    [CircuitType F f w] :
+    CircuitType.size F (StepStatement u f n) = CircuitType.size F ((Vector u n × f) × Vector f n) :=
+  rfl
+
+/-- A step statement's value flattens as its slots, digest and wrap-message digests. -/
+theorem StepStatement.toList_valueToFields {F u vu f w : Type} {n : ℕ} [CircuitType F u vu]
+    [CircuitType F f w] (x : StepStatement u f n) :
+    (CircuitType.valueToFields (F := F) (var := StepStatement vu w n) x).toList
+      = (CircuitType.valueToFields (F := F) (var := (Vector vu n × w) × Vector w n)
+          ((x.proofState.unfinalizedProofs, x.proofState.messagesForNextStepProof),
+            x.messagesForNextWrapProof)).toList :=
+  rfl
 
 /-! ## The scalar half's input -/
 

@@ -194,7 +194,7 @@ structure WrapMainAdvice (mpv ncStep k ks wsum : ℕ) where
   /-- The branch index. -/
   whichBranch : AsProver Fq Fq
   /-- The previous proofs' claims and the step-side message digest. -/
-  proofState : AsProver Fq (Vector (AllocUnfinalized k Fq Bool (Type2 Fq)) mpv × Fq)
+  proofState : AsProver Fq (StepProofState (AllocUnfinalized k Fq Bool (Type2 Fq)) Fq mpv)
   /-- The step proof's accumulators. -/
   stepAccs : AsProver Fq (Vector (VestaPt Fq) mpv)
   /-- The slots' old challenge stacks, slot after slot. -/
@@ -221,7 +221,8 @@ structure WrapMainFinalizeOut (branches mpv ncStep k : ℕ)
   /-- The slot mask. -/
   mask : Vector (BoolVar Fq) mpv
   /-- The previous proofs' claims, as allocated, and the step-side message digest. -/
-  proofState : Vector (AllocUnfinalized k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) mpv × FVar Fq
+  proofState : StepProofState (AllocUnfinalized k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (FVar Fq) mpv
   /-- The chosen step key. -/
   key : VkComms ncStep (AffinePoint (FVar Fq))
   /-- The step proof's accumulators. -/
@@ -259,8 +260,8 @@ structure WrapMainVerifyOut (mpv ncStep k ks : ℕ) where
   splits : Vector (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
     (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) mpv
   /-- The step statement the step proof's public input packs. -/
-  statement : StepStatement k mpv (FVar Fq) (BoolVar Fq)
-    (Type2 (SplitField (FVar Fq) (BoolVar Fq)))
+  statement : StepStatement (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) mpv
   /-- The step proof's cells: the key, commitments, opening and old accumulators. -/
   cells : IvpInput ks ncStep mpv (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))
   /-- The sponge after the chosen key. -/
@@ -294,7 +295,7 @@ def wrapMainFinalize [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
     CircuitM Fq c (WrapMainFinalizeOut branches mpv ncStep k slotWidths) := do
   let whichBranch ← witness (val := Fq) adv.whichBranch
   let (bits, mask) ← wrapBranchBlock branches mpv widths log2s whichBranch branchData
-  let ps ← witness (val := Vector (AllocUnfinalized k Fq Bool (Type2 Fq)) mpv × Fq)
+  let ps ← witness (val := StepProofState (AllocUnfinalized k Fq Bool (Type2 Fq)) Fq mpv)
     adv.proofState
   let key ← chooseKey bits stepKeys
   let stepAccs ← witness (val := Vector (VestaPt Fq) mpv) adv.stepAccs
@@ -340,7 +341,7 @@ and the claim split. -/
 def wrapMainVerify [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
     {branches mpv ncStep k ks : ℕ} [NeZero branches] (log2s : Vector ℕ branches)
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
@@ -352,13 +353,15 @@ def wrapMainVerify [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
       (wrapPaddingSponge sp dummy (MaxProofsVerified - slotWidths[j]))
       (hd.messagesForNextWrapProof j)
   let msgs : Vector (FVar Fq) mpv := rev.reverse
-  assertEqual stmt.digests[2] hd.proofState.2
+  assertEqual stmt.digests[2] hd.proofState.messagesForNextStepProof
   let opening ← witness (val := WrapOpeningVal ks) adv.opening
   let messages ← witness (val := WrapMessagesVal ncStep) adv.messages
-  let splits ← hd.proofState.1.mapM fun a => splitUnfinalized a.toUnfinalized
-  let statement : StepStatement k mpv (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq))) :=
-    { proofState := { unfinalizedProofs := splits, messagesForNextStepProof := hd.proofState.2 }
+  let splits ← hd.proofState.unfinalizedProofs.mapM fun a => splitUnfinalized a.toUnfinalized
+  let statement : StepStatement (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) mpv :=
+    { proofState :=
+        { unfinalizedProofs := splits,
+          messagesForNextStepProof := hd.proofState.messagesForNextStepProof }
       messagesForNextWrapProof := msgs }
   let dv := stmt.claims.deferredValues
   let pr : IvpProof ks ncStep (FVar Fq) (Type1 (FVar Fq)) :=
@@ -392,7 +395,7 @@ def wrapMain [ConstraintHolds Fq c] [LawfulBasicSystem Fq c] {branches mpv ncSte
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) :
@@ -413,7 +416,7 @@ def wrapMainCircuit [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) :
@@ -453,7 +456,7 @@ variable {branches mpv ncStep k ks : ℕ} [NeZero branches] {V : Valuation Fq}
   (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
   (pins : Vector (Vector (Option ℕ) branches) mpv)
   (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))) (h : IpaVesta.curve.Point)
   (dummy : Vector Fq k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
   (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
 
@@ -982,7 +985,7 @@ ladders bound every packed scalar (`PackedScalar.Bound`). -/
 theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} [NeZero branches]
     (Vs : Valuation Fq)
     (log2s : Vector ℕ branches) (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv)))
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))
     (h : IpaVesta.curve.Point) (dummy : Vector Fq k)
     (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
@@ -992,7 +995,8 @@ theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} [NeZero branch
     wrapMainVerify (c := Builder Vs (KimchiConstraint Fq)) log2s lagrange h dummy slotWidths adv
       stmt fin
     ⦃⇓ out _ => ⌜out.statement.proofState.unfinalizedProofs = out.splits ∧
-      (∀ i : Fin mpv, SplitClaimsRead Vs fin.proofState.1[i].toUnfinalized out.splits[i]) ∧
+      (∀ i : Fin mpv,
+        SplitClaimsRead Vs fin.proofState.unfinalizedProofs[i].toUnfinalized out.splits[i]) ∧
       ∀ x ∈ out.statement.packed.toList, x.Bound Vs⌝⦄ := by
   have hmsg := builder_spec_vector_mapM_get (fun j : Fin mpv =>
       hashMessagesForNextWrapProof (c := Builder Vs (KimchiConstraint Fq))
@@ -1004,12 +1008,12 @@ theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} [NeZero branch
   have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
       (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
     (fun a r => SplitClaimsRead Vs a.toUnfinalized r)
-    (fun a => splitUnfinalized_spec (V := Vs) a.toUnfinalized) fin.proofState.1
+    (fun a => splitUnfinalized_spec (V := Vs) a.toUnfinalized) fin.proofState.unfinalizedProofs
   have hsai := builder_spec_true
     (spongeAfterIndex (c := Builder Vs (KimchiConstraint Fq)) IpaVesta.curve.sponge.params
       fin.key)
-  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement k mpv (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) mpv)
       (cells : IvpInput ks ncStep mpv (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) =>
     wrapVerify_frame (V := Vs) IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
       (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h) sv
@@ -1044,7 +1048,7 @@ the curve, beside the claims' deferred values, the accumulator cells and the cho
 theorem wrapMainVerify_cells {branches mpv ncStep k ks : ℕ} [NeZero branches]
     (Vs : Valuation Fq)
     (log2s : Vector ℕ branches) (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv)))
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))
     (h : IpaVesta.curve.Point) (dummy : Vector Fq k)
     (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
@@ -1066,12 +1070,12 @@ theorem wrapMainVerify_cells {branches mpv ncStep k ks : ℕ} [NeZero branches]
     (fun _ _ => True) (fun _ => builder_spec_true _) (Vector.finRange mpv).reverse
   have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
       (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
-    (fun _ _ => True) (fun _ => builder_spec_true _) fin.proofState.1
+    (fun _ _ => True) (fun _ => builder_spec_true _) fin.proofState.unfinalizedProofs
   have hsai := builder_spec_true
     (spongeAfterIndex (c := Builder Vs (KimchiConstraint Fq)) IpaVesta.curve.sponge.params
       fin.key)
-  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement k mpv (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) mpv)
       (cells : IvpInput ks ncStep mpv (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) =>
     builder_spec_true (wrapVerify (c := Builder Vs (KimchiConstraint Fq)) IpaScalarOps.wrap
       IpaEndo.vesta IpaVesta.curve.sponge.params (.const ((Pasta.pallasLam : ℤ) : Fq))
@@ -1117,7 +1121,7 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
     (hnc : ncStep = chunkCount SStep.σ.k KStep.cvk.domainLog2) (Vs : Valuation Fq)
     (log2s : Vector ℕ branches)
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep k SStep.σ.k (slotWidths.map Fin.val).sum)
     (stmt : StatementPacked SStep.σ.k (Type1 (FVar Fq)) (FVar Fq))
@@ -1127,11 +1131,12 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
     (hkey : ∀ kv : VkComms ncStep (AffinePoint Fq),
       CircuitType.Reads Vs (keyCellsOf constPt KStep.cvk) kv → CircuitType.Reads Vs fin.key kv)
     (hlag : lagrange log2s[b]
-      = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv)))
+      = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))
     (hh : h = SStep.σ.h) (hmpv : mpv ≤ MaxProofsVerified)
     (hnz : ∀ P ∈ KStep.cvk.comms.indexPoints, P ≠ 0)
     (havoid : SStep.σ.Avoids
-      (KStep.cvk.lagrangeRelations SStep.σ.k (CircuitType.size Fp (StmtVal k mpv)))) :
+      (KStep.cvk.lagrangeRelations SStep.σ.k
+        (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))) :
     ⦃⌜True⌝⦄
     wrapMainVerify (c := Builder Vs (KimchiConstraint Fq)) log2s lagrange h dummy slotWidths adv
       stmt fin
@@ -1139,8 +1144,9 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
       (∀ (i : Fin mpv) (sg : AffinePoint Fq) (chals : Vector (Vector Fq k) slotWidths[i]),
         CircuitType.Reads Vs fin.stepAccs[i].pt sg → CircuitType.Reads Vs (fin.real i) chals →
         out.msgs[i].val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chals⟩) ∧
-      stmt.digests[2].val Vs = fin.proofState.2.val Vs ∧
-      (∀ i : Fin mpv, SplitClaimsRead Vs fin.proofState.1[i].toUnfinalized out.splits[i]) ∧
+      stmt.digests[2].val Vs = fin.proofState.messagesForNextStepProof.val Vs ∧
+      (∀ i : Fin mpv,
+        SplitClaimsRead Vs fin.proofState.unfinalizedProofs[i].toUnfinalized out.splits[i]) ∧
       ∀ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
         (oldsW : Vector (IpaVesta.curve.Point × Bool) mpv),
         ProofReads (wrapSide Vs) out.cells.wComm out.cells.zComm out.cells.tComm
@@ -1165,12 +1171,13 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
   have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
       (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
     (fun a r => SplitClaimsRead Vs a.toUnfinalized r)
-    (fun a => splitUnfinalized_spec (V := Vs) a.toUnfinalized) fin.proofState.1
+    (fun a => splitUnfinalized_spec (V := Vs) a.toUnfinalized) fin.proofState.unfinalizedProofs
   have hsai := spongeAfterIndex_spec (V := Vs) IpaVesta.curve.sponge.params hsp fin.key
   subst hh
   -- branch `b`'s table is the key's; with a shared domain, the first table is branch `b`'s
   have htab : (log2s.map lagrange)[b]
-      = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv)) := by
+      = KStep.cvk.lagrangePoints SStep.σ
+          (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)) := by
     simpa using hlag
   have hshared : log2s.toList.all (· == log2s[(0 : Fin branches)]) = true →
       (log2s.map lagrange)[(0 : Fin branches)] = (log2s.map lagrange)[b] := by
@@ -1180,8 +1187,8 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
     simp only [Fin.getElem_fin, Vector.getElem_map] at hb0 ⊢
     rw [hb0]
   -- the masked commitment reads as the packed statement's public commitment, chunk by chunk
-  have hX : ∀ st : StepStatement k mpv (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq))),
+  have hX : ∀ st : StepStatement (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) mpv,
       ⦃⌜True⌝⦄ (publicInputCommitMasked
         (S := Builder Vs (KimchiConstraint Fq)) (C := IpaVesta.curve)
         (log2s.toList.all (· == log2s[(0 : Fin branches)])) (constPt SStep.σ.h) fin.bits
@@ -1190,18 +1197,19 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
         KStep.cvk (wrapPublicInput SStep.σ KStep.cvk Vs st)).toList⌝⦄ := by
     intro st
     have hsz : (wrapPublicInput SStep.σ KStep.cvk Vs st).size = CircuitType.size Fp
-      (StmtVal k mpv) := by
+      (StepStatement (UnfVal k) Fp mpv) := by
       rw [← Array.length_toList, wrapPublicInput_toList, List.length_map, Vector.length_toList]
     have hscalar := st.leafHasScalar_packed
-      (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv)))
+      (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))
     have hpub : wrapPublicInput SStep.σ KStep.cvk Vs st
         = pubOf IpaVesta.curve Vs (List.zipWith (constLeaf (C := IpaVesta.curve)) st.packed.toList
-          (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv))).toList) := by
+          (KStep.cvk.lagrangePoints SStep.σ
+            (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))).toList) := by
       unfold wrapPublicInput wrapLeavesAt
       exact congrArg _ (packLeavesOf_ofKey (C := IpaVesta.curve) _ _)
     have h0 := builder_spec_forall _ (fun _ : Fin ncStep => True) _ fun ci _ =>
       xHatMasked_reads_publicCommitment (V := Vs) pastaShapeVesta ci SStep.σ
-        (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal k mpv)))
+        (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))
         (log2s.toList.all (· == log2s[(0 : Fin branches)])) fin.bits st.packed
         (log2s.map lagrange) b hbits htab hshared SStep.h_ne
         (fun Ps h => Key.lagrange_ne pastaShapeVesta SStep.σ hnc havoid Ps h ci)
@@ -1213,8 +1221,8 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
     exact List.forall₂_iff_get.mpr ⟨by simp [pubOf], fun i h₁ h₂ => by
       simpa [pubOf] using hr ⟨i, by simpa using h₁⟩⟩
   -- the verify block, for any index sponge, statement, proof cells, claims and accumulators
-  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement k mpv (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) mpv)
       (pr : IvpProof SStep.σ.k ncStep (FVar Fq) (Type1 (FVar Fq)))
       (dv : DeferredValues SStep.σ.k (FVar Fq) (Type1 (FVar Fq)))
       (sgOld : Vector (Option (BoolVar Fq) × AffinePoint (FVar Fq)) mpv)
@@ -1273,7 +1281,7 @@ theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal σ.k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp mpv))) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq σ.k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep σ.k ks (slotWidths.map Fin.val).sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
@@ -1317,7 +1325,8 @@ theorem wrapMainFinalize_slots {branches mpv ncStep k ks : ℕ} [NeZero branches
     ⦃⌜True⌝⦄
     wrapMainFinalize (c := Builder Vs (KimchiConstraint Fq)) P widths log2s stepKeys pins
       dummy slotWidths adv branchData
-    ⦃⇓ hd _ => ⌜∀ j : Fin mpv, hd.slots[j].unfinalized = hd.proofState.1[j].toUnfinalized⌝⦄ := by
+    ⦃⇓ hd _ => ⌜∀ j : Fin mpv,
+      hd.slots[j].unfinalized = hd.proofState.unfinalizedProofs[j].toUnfinalized⌝⦄ := by
   have hbb := fun wb => builder_spec_true (wrapBranchBlock (c := Builder Vs (KimchiConstraint Fq))
     branches mpv widths log2s wb branchData)
   have hck := fun bs => builder_spec_true
@@ -1366,7 +1375,7 @@ theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) (hnc : 0 < ncStep) :
@@ -1374,9 +1383,11 @@ theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P
     wrapMain (c := Builder Vs (KimchiConstraint Fq)) P widths log2s stepKeys pins lagrange h
       dummy slotWidths adv stmt
     ⦃⇓ r _ => ⌜r.2.statement.proofState.unfinalizedProofs = r.2.splits ∧
-      (∀ i : Fin mpv, SplitClaimsRead Vs r.1.proofState.1[i].toUnfinalized r.2.splits[i]) ∧
+      (∀ i : Fin mpv,
+        SplitClaimsRead Vs r.1.proofState.unfinalizedProofs[i].toUnfinalized r.2.splits[i]) ∧
       (∀ x ∈ r.2.statement.packed.toList, x.Bound Vs) ∧
-      ∀ j : Fin mpv, r.1.slots[j].unfinalized = r.1.proofState.1[j].toUnfinalized⌝⦄ := by
+      ∀ j : Fin mpv,
+        r.1.slots[j].unfinalized = r.1.proofState.unfinalizedProofs[j].toUnfinalized⌝⦄ := by
   simp only [wrapMain]
   have hf := wrapMainFinalize_slots Vs P widths log2s stepKeys pins dummy slotWidths adv
     stmt.branchData
@@ -1395,7 +1406,7 @@ theorem wrapMain_cells {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : F
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
     (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) :
@@ -1428,7 +1439,7 @@ theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
     (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
     (pins : Vector (Vector (Option ℕ) branches) mpv)
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StmtVal σ.k mpv))) (h : IpaVesta.curve.Point)
+      (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp mpv))) (h : IpaVesta.curve.Point)
     (dummy : Vector Fq σ.k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
     (adv : WrapMainAdvice mpv ncStep σ.k SStep.σ.k (slotWidths.map Fin.val).sum)
     (stmt : StatementPacked SStep.σ.k (Type1 (FVar Fq)) (FVar Fq))
@@ -1436,19 +1447,22 @@ theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
     (hh : h = SStep.σ.h)
     (hnz : ∀ P ∈ KStep.cvk.comms.indexPoints, P ≠ 0)
     (havoid : SStep.σ.Avoids
-      (KStep.cvk.lagrangeRelations SStep.σ.k (CircuitType.size Fp (StmtVal σ.k mpv)))) :
+      (KStep.cvk.lagrangeRelations SStep.σ.k
+        (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp mpv)))) :
     ⦃⌜True⌝⦄
     wrapMain (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens)
       widths log2s stepKeys pins lagrange h dummy slotWidths adv stmt
     ⦃⇓ r _ => ⌜∀ b : Fin branches, r.1.whichBranch.val Vs = (b : Fq) →
       stepKeys[b] = keyCellsOf constPt KStep.cvk →
-      lagrange log2s[b] = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k mpv)) →
+      lagrange log2s[b] = KStep.cvk.lagrangePoints SStep.σ
+          (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp mpv)) →
       (∀ (i : Fin mpv) (sg : AffinePoint Fq) (chals : Vector (Vector Fq σ.k) slotWidths[i]),
         CircuitType.Reads Vs r.1.stepAccs[i].pt sg → CircuitType.Reads Vs (r.1.real i) chals →
         r.2.msgs[i].val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chals⟩) ∧
-      stmt.digests[2].val Vs = r.1.proofState.2.val Vs ∧
-      (∀ i : Fin mpv, SplitClaimsRead Vs r.1.proofState.1[i].toUnfinalized r.2.splits[i]) ∧
+      stmt.digests[2].val Vs = r.1.proofState.messagesForNextStepProof.val Vs ∧
+      (∀ i : Fin mpv,
+        SplitClaimsRead Vs r.1.proofState.unfinalizedProofs[i].toUnfinalized r.2.splits[i]) ∧
       ∀ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
         (oldsW : Vector (IpaVesta.curve.Point × Bool) mpv),
         ProofReads (wrapSide Vs) r.2.cells.wComm r.2.cells.zComm r.2.cells.tComm
@@ -1472,7 +1486,8 @@ theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
           CircuitType.Reads Vs (keyCellsOf constPt KStep.cvk) kv →
             CircuitType.Reads Vs fin.key kv) ∧
         lagrange log2s[b]
-          = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k mpv))) _
+          = KStep.cvk.lagrangePoints SStep.σ
+              (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp mpv))) _
       fun b ⟨hbits, hkey, hlag⟩ => wrapMainVerify_reads SStep KStep hnc Vs log2s lagrange h dummy
         slotWidths adv stmt fin b hbits hkey hlag hh hmpv hnz havoid
   mvcgen [hfin, hver]

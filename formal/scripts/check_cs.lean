@@ -1061,7 +1061,7 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv)
     (pins : Vector (Vector (Option ℕ) (bp + 1)) mpv)
     (tables : Vector (Vector (Vector XhatCurve.Point nc)
-      (CircuitType.size Fp (Pickles.StmtVal 15 mpv))) (bp + 1))
+      (CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv))) (bp + 1))
     (stmt : Pickles.StatementPacked 16 (Type1 (FVar Fq)) (FVar Fq)) :
     CircuitM Fq Cq Unit :=
   Prod.fst <$> Pickles.wrapMainCircuit (branches := bp + 1) (mpv := mpv) (ncStep := nc) (k := 15)
@@ -1615,7 +1615,7 @@ def stepMainDumpCircuit {n : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inV
     [CheckedType Fp C inVal inVar] (w : ℕ) (hw : w ≤ MaxProofsVerified) (k : StepMainConsts n)
     (dummyUnf : UnfVal 15)
     (rule : inVar → CircuitM Fp C (Vector PrevStatement n × List (FVar Fp))) :
-    Unit → CircuitM Fp C (StmtVar 15 w) := fun u =>
+    Unit → CircuitM Fp C (StepStatement (UnfVar 15) (FVar Fp) w) := fun u =>
   Prod.fst <$> stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := 1) (k := 15)
     (ks := StepIPARounds) (inVal := inVal)
     (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h
@@ -1647,8 +1647,8 @@ def dummyWrapKeyComms : Pickles.VkComms 1 (AffinePoint (FVar Fq)) :=
 
 /-- The step statement of the wrap-side harnesses, one slot at 15 rounds, from `get`. -/
 def wrapStepStatement (get : ℕ → FVar Fq) :
-    Pickles.StepStatement 15 1 (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq))) :=
+    Pickles.StepStatement (Pickles.UnfinalizedProof 15 (FVar Fq) (BoolVar Fq)
+        (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) 1 :=
   let split (i : ℕ) : Type2 (SplitField (FVar Fq) (BoolVar Fq)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
   { proofState :=
@@ -2009,7 +2009,7 @@ def main : IO Unit := do
             s!"{name}: stack heights {k.slotWidths} are not {mpv} ≤ {Pickles.MaxProofsVerified}")
       let some pins := wrapMainPins? bp mpv k.pins
         | throw (IO.userError s!"{name}: pins {k.pins} are not {bp + 1} rows of {mpv}")
-      let m := CircuitType.size Fp (Pickles.StmtVal 15 mpv)
+      let m := CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv)
       let some tables := wrapMainTables? bp nc m k.lagrange
         | throw (IO.userError (s!"{name}: Lagrange bases are not {m} rows of {bp + 1}: " ++
             s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}"))
@@ -2030,19 +2030,19 @@ def main : IO Unit := do
   let importTpc ← stepConsts "step_main_import_two_phase_chain_circuit" 2 2
   let stepMains :=
     (chainN2.toList.map fun k => ("step_main_simple_chain_n2_circuit",
-      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
+      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
         (stepMainDumpCircuit (inVal := Fp) 2 (by decide) k dummyUnfN0 simpleChainN2Rule)))
     ++ (makeZero.toList.map fun k => ("step_main_two_phase_chain_make_zero_circuit",
-      stepTarget (a := Unit) (b := Pickles.StmtVal 15 1)
+      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 1)
         (stepMainDumpCircuit (inVal := Fp) 1 (by decide) k dummyUnfN0 makeZeroRule)))
     ++ (increment.toList.map fun k => ("step_main_two_phase_chain_increment_circuit",
-      stepTarget (a := Unit) (b := Pickles.StmtVal 15 1)
+      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 1)
         (stepMainDumpCircuit (inVal := Fp) 1 (by decide) k dummyUnfN0 incrementRule)))
     ++ (treeReturn.toList.map fun k => ("step_main_tree_proof_return_circuit",
-      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
+      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
         (stepMainDumpCircuit (inVal := Unit) 2 (by decide) k dummyUnfN0 treeProofReturnRule)))
     ++ (importTpc.toList.map fun k => ("step_main_import_two_phase_chain_circuit",
-      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
+      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
         (stepMainDumpCircuit (inVal := Unit) 2 (by decide) k dummyUnfN0
           importTwoPhaseChainRule)))
   -- the import's candidates reversed and repeated: the circuit sorts and dedups them, so the
@@ -2056,7 +2056,7 @@ def main : IO Unit := do
     let s0' := { s0 with domains := d }
     ("step_main_import_two_phase_chain_circuit (candidates reversed, repeated)",
       "step_main_import_two_phase_chain_circuit",
-      stepTarget (a := Unit) (b := Pickles.StmtVal 15 2)
+      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
         (stepMainDumpCircuit (inVal := Unit) 2 (by decide) { k with slots := k.slots.set 0 s0' }
           dummyUnfN0 importTwoPhaseChainRule))
   let named : List (String × String ×

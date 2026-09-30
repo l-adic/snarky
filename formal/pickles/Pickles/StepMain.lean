@@ -36,7 +36,8 @@ open scoped Kimchi
 /-- One slot's witness cells: `w` accumulators, the wrap proof at `ncw` chunks with its opening
 at `k` rounds, the previous step proof at `ncs` chunks with its challenges at `ks`. -/
 abbrev SlotVar (w ncw ncs k ks : ℕ) : Type :=
-  SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp) StepSf (PallasPt (FVar Fp))
+  SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))
+      (PallasPt (FVar Fp))
 
 /-- One slot's witness values. -/
 abbrev SlotVal (w ncw ncs k ks : ℕ) : Type :=
@@ -151,7 +152,7 @@ def slotInput {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified) (dummySg : A
 read them from, so a statement about the circuit can name them. -/
 structure StepMainOut (n w : ℕ) (ws : Fin n → ℕ) (ncw ncs k ks : ℕ) where
   /-- The step statement: the unfinalized entries, the digest, the wrap-side messages. -/
-  out : StmtVar k w
+  out : StepStatement (UnfVar k) (FVar Fp) w
   /-- What the rule returned for each slot. -/
   prevs : Vector PrevStatement n
   /-- This system's wrap key. -/
@@ -211,7 +212,7 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
     else unfs[j.val - (w - n)]'(by omega)
   let msgsW := Vector.ofFn fun j : Fin w =>
     if h : j.val < w - n then msgsPad[j.val] else msgs[j.val - (w - n)]'(by omega)
-  pure ⟨(unfsW, digest, msgsW), prevs, vk, slots, unfs, msgs, msgNext⟩
+  pure ⟨⟨⟨unfsW, digest⟩, msgsW⟩, prevs, vk, slots, unfs, msgs, msgNext⟩
 
 /-- The step circuit as a circuit of its statement: no input cells (the `Unit` argument is
 `Snarky.compileWith`'s empty input), the output `stepMain`'s statement, and `stepMain`'s cells
@@ -226,7 +227,8 @@ def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs
     (dummyUnf : UnfVal k)
     (rule : inVar → CircuitM Fp c (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) (_ : Unit) :
-    CircuitM Fp c (StmtVar k w × StepMainOut n w (SlotSource.widths w srcs) ncw ncs k ks) :=
+    CircuitM Fp c (StepStatement (UnfVar k) (FVar Fp) w × StepMainOut n w
+        (SlotSource.widths w srcs) ncw ncs k ks) :=
   (fun r => (r.out, r)) <$> stepMain srcs hws h P domains dummySg dummyUnf rule adv
 
 /-- The compiled step circuit's rows contain `stepMain`'s, built from the first variable: the
@@ -243,7 +245,7 @@ theorem mem_compileWith_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : 
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal)
     {con : KimchiConstraint Fp}
     (hc : con ∈ (build (stepMain srcs hws h P domains dummySg dummyUnf rule adv) 0).constraints) :
-    con ∈ (compileWith (a := Unit) (b := StmtVal k w)
+    con ∈ (compileWith (a := Unit) (b := StepStatement (UnfVal k) Fp w)
       (stepMainCircuit srcs hws h P domains dummySg dummyUnf rule adv)).constraints := by
   refine mem_compileWith_of_mem_body ?_
   unfold stepMainCircuit
@@ -261,7 +263,7 @@ theorem compileWith_stepMainCircuit_cells {n w ncw ncs k ks : ℕ} {inVal inVar 
     (rule : inVar →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
-    (compileWith (a := Unit) (b := StmtVal k w)
+    (compileWith (a := Unit) (b := StepStatement (UnfVal k) Fp w)
       (stepMainCircuit srcs hws h P domains dummySg dummyUnf rule adv)).result.1.2
       = (build (stepMain srcs hws h P domains dummySg dummyUnf rule adv) 0).result := by
   rw [compileWith_result]
@@ -290,7 +292,8 @@ theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType 
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
     ⦃⌜True⌝⦄
     stepMain srcs hws h P domains dummySg dummyUnf rule adv
-    ⦃⇓ r _ => ⌜r.out.1 = Vector.ofFn fun j : Fin w => if h : j.val < w - n
+    ⦃⇓ r _ => ⌜r.out.proofState.unfinalizedProofs = Vector.ofFn fun j : Fin w =>
+      if h : j.val < w - n
       then CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf
       else r.unfs[j.val - (w - n)]'(by omega)⌝⦄ := by
   have hrule := fun x => builder_spec_true (rule x)

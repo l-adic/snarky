@@ -102,18 +102,19 @@ structure WrapStatement (k : ℕ) (f bc sf : Type) where
   /-- The step-side message digest, copied from the step statement. -/
   messagesForNextStepProof : f
 
-/-- The proof-state part of a step statement. -/
-structure StepProofState (k n : ℕ) (f bc sf : Type) where
-  /-- One entry per predecessor slot: the rule's `n` slots, not padded. -/
-  unfinalizedProofs : Vector (UnfinalizedProof k f bc sf) n
+/-- The proof-state part of a step statement, its unfinalized proofs of type `u`: the statement's
+`UnfinalizedProof`s, or a circuit's cells of them in allocation order. -/
+structure StepProofState (u f : Type) (n : ℕ) where
+  /-- One entry per predecessor slot. -/
+  unfinalizedProofs : Vector u n
   /-- The step-side message digest: the application state and the predecessors' `sg`s and
   round challenges. -/
   messagesForNextStepProof : f
 
-/-- The public input of a step proof. -/
-structure StepStatement (k n : ℕ) (f bc sf : Type) where
+/-- The public input of a step proof, its unfinalized proofs of type `u`. -/
+structure StepStatement (u f : Type) (n : ℕ) where
   /-- The proof state. -/
-  proofState : StepProofState k n f bc sf
+  proofState : StepProofState u f n
   /-- One `hashMessagesForNextWrapProof` digest per predecessor slot. -/
   messagesForNextWrapProof : Vector f n
 
