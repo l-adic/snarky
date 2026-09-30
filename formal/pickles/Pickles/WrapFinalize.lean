@@ -129,25 +129,27 @@ def wrapFinalizePrevProofs {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] 
 
 variable {nc : ℕ}
 
-/-- A finalize slot reads as a wrap proof's scalar half: for any wrap proof and public input
-under the guards, a step circuit's group half accepting it at asserted success, the ties and
-the deferred `sg` equation make `kimchiVerify` accept. -/
+/-- A finalize slot reads as a wrap proof's scalar half, `expanded` being its finalize's
+expanded challenges: for any wrap proof and public input, with a step circuit's group half
+accepting it at asserted success and the ties, `expanded` reads as the proof's wire challenges,
+and under the guards the deferred `sg` equation makes `kimchiVerify` accept. -/
 def WrapFinalizeSlot.ScalarReads (σ : SRS IpaPallas.curve.Point)
     (cvk : KimchiVK IpaPallas.curve nc) (Vs : Valuation Fq)
-    {branches : ℕ} (sl : WrapFinalizeSlot branches σ.k nc Fq) : Prop :=
-  ∀ (cp : KimchiProof IpaPallas.curve nc σ.k) (pub : Array Fq),
-    Guards IpaPallas.curve cvk cp pub →
-    ∀ (Vg : Valuation Fp)
-      (claimsG : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp)
-        (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) (successG : BoolVar Fp),
-      (GroupHalf.step Vg claimsG).Reads σ cvk cp pub successG → (↑successG : CVar Fp).val Vg = 1 →
-      SplitClaimsCast Vg claimsG Vs sl.unfinalized →
-      FopTies σ cvk cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
-      SgOk σ cvk cp pub → kimchiVerify IpaPallas.curve σ cvk cp pub = true
+    {branches : ℕ} (sl : WrapFinalizeSlot branches σ.k nc Fq)
+    (expanded : Vector (FVar Fq) σ.k) : Prop :=
+  ∀ (cp : KimchiProof IpaPallas.curve nc σ.k) (pub : Array Fq) (Vg : Valuation Fp)
+    (claimsG : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) (successG : BoolVar Fp),
+    (GroupHalf.step Vg claimsG).Reads σ cvk cp pub successG → (↑successG : CVar Fp).val Vg = 1 →
+    SplitClaimsCast Vg claimsG Vs sl.unfinalized →
+    FopTies σ cvk cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) →
+    expanded.map (·.val Vs) = wireChallenges σ cvk cp pub ∧
+      (Guards IpaPallas.curve cvk cp pub →
+        SgOk σ cvk cp pub → kimchiVerify IpaPallas.curve σ cvk cp pub = true)
 
 /-- One slot's finalize body: under any valuation satisfying the emitted constraints, with the
 slot's domain reading as the key's (its generator `ω`, its vanishing polynomial `ζⁿ − 1`) and
-`shouldFinalize` set, the slot reads as its scalar half. -/
+`shouldFinalize` set, the slot reads as its scalar half at the body's expanded challenges. -/
 theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPallas.curve nc)
     (Vs : Valuation Fq)
     (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) {branches : ℕ}
@@ -160,9 +162,10 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
         sl.unfinalized sl.evals sl.prevChallenges
       assertAny [o.finalized, Snarky.not sl.unfinalized.shouldFinalize]
       pure o)
-    ⦃⇓ _ _ => ⌜d.generator.val Vs = K.cvk.omega →
+    ⦃⇓ o _ => ⌜d.generator.val Vs = K.cvk.omega →
       (∀ z, ⦃⌜True⌝⦄ d.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.cvk.n - 1⌝⦄) →
-      (↑sl.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 → sl.ScalarReads σ K.cvk Vs⌝⦄ := by
+      (↑sl.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
+      sl.ScalarReads σ K.cvk Vs o.expandedChallenges⌝⦄ := by
   by_cases h : d.generator.val Vs = K.cvk.omega ∧
       ∀ z, ⦃⌜True⌝⦄ d.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.cvk.n - 1⌝⦄
   · obtain ⟨hgen, hvan⟩ := h
@@ -171,7 +174,8 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) d.generator
             d.vanishingPolynomial
           sl.unfinalized sl.evals sl.prevChallenges
-        ⦃⇓ o _ => ⌜(↑o.finalized : CVar Fq).val Vs = 1 → sl.ScalarReads σ K.cvk Vs⌝⦄ := by
+        ⦃⇓ o _ => ⌜(↑o.finalized : CVar Fq).val Vs = 1 →
+          sl.ScalarReads σ K.cvk Vs o.expandedChallenges⌝⦄ := by
       have hP :
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).endo = Pasta.vestaEndo ∧
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).mds = Reflect.symMdsQ ∧
@@ -190,7 +194,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
           (by rw [hgen]; exact K.omega_prim.pow_eq_one) _ hvan
         sl.unfinalized sl.evals sl.prevChallenges _ hprev
       refine builder_spec_imp _ _ _ hspec ?_
-      intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit hc hf hsg
+      intro o hread hfin cp pub Vg claimsG successG hg hgbit hc hf
       rw [hgen] at hread
       -- the two halves hold one set of claims: `β`, `γ` read on the step side, the rest here
       have ht : HalvesTies (GroupHalf.step Vg claimsG)
@@ -222,6 +226,9 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
         rw [ScalarHalf.wrap_maskVals]
         exact Vector.ext fun i hi => by simp
       rw [hdv, hmask] at hread
+      refine ⟨(twoHalves_schnorr σ K (by norm_num [PALLAS_BASE_CARD])
+        (by norm_num [PALLAS_SCALAR_CARD]) cp pub _ successG hg _ o hread ht hf).2 ⟨hgbit, hfin⟩,
+        fun hguard hsg => ?_⟩
       exact ((twoHalves_kimchiVerify σ K (by norm_num [PALLAS_BASE_CARD])
         (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf).mp
         ⟨⟨hgbit, hfin⟩, hsg⟩).1
@@ -252,7 +259,8 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
 /-- **The wrap circuit's finalize block reads as each finalized proof's scalar half.** Under any
 valuation satisfying the emitted constraints, with the branch bits reading as the indicator of
 `b`, every slot that branch `b` compiled for the key's domain (index `j` of `wrapDomainLog2s`,
-generator `ω`, size `n`) and whose `shouldFinalize` is set reads as its scalar half. -/
+generator `ω`, size `n`) and whose `shouldFinalize` is set reads as its scalar half at its
+output's expanded challenges. -/
 theorem wrapFinalizePrevProofs_reads
     {branches mpv : ℕ}
     (σ : SRS IpaPallas.curve.Point) (K : Key IpaPallas.curve nc)
@@ -265,9 +273,9 @@ theorem wrapFinalizePrevProofs_reads
     ⦃⌜True⌝⦄
     wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) whichBranch slots
-    ⦃⇓ _ _ => ⌜∀ i : Fin mpv, slots[i].pins[b] = some j →
+    ⦃⇓ outs _ => ⌜∀ i : Fin mpv, slots[i].pins[b] = some j →
       (↑slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
-      slots[i].ScalarReads σ K.cvk Vs⌝⦄ := by
+      slots[i].ScalarReads σ K.cvk Vs outs[i].expandedChallenges⌝⦄ := by
   -- the key's domain is candidate `j` of the table
   obtain ⟨hj, hjv⟩ := List.getElem?_eq_some_iff.mp hdom
   have hn : 2 ^ wrapDomainLog2s[j] = K.cvk.n := by rw [hjv]; rfl
@@ -323,9 +331,10 @@ theorem wrapFinalizePrevProofs_reads
           p.2.prevChallenges
         assertAny [o.finalized, Snarky.not p.2.unfinalized.shouldFinalize]
         pure o)
-    (fun p _ => p.1.generator.val Vs = K.cvk.omega →
+    (fun p o => p.1.generator.val Vs = K.cvk.omega →
       (∀ z, ⦃⌜True⌝⦄ p.1.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.cvk.n - 1⌝⦄) →
-      (↑p.2.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 → p.2.ScalarReads σ K.cvk Vs)
+      (↑p.2.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
+      p.2.ScalarReads σ K.cvk Vs o.expandedChallenges)
     (fun p => wrapFinalizeBody_spec σ K Vs p.1 p.2)
   mvcgen [hpin, hdom, hbody]
   rename_i hpinP rev _ hrev _ _

@@ -507,7 +507,9 @@ theorem stepWrap_kimchiVerify
     ∀ i : Fin n,
       CircuitType.Reads Vg r.prevs[i].mustVerify true →
       let inp := slotInput (hws i) (constPt dummySg) r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]
-      let sl := hd.1.slots[Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)]
+      -- the next wrap circuit's slot for it
+      let jf := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
+      let sl := hd.1.slots[jf]
       -- the slot's wrap key `K`, one chunk over the wrap SRS: its source fits `K`, its key
       -- cells read as `K`
       ∀ K : Key IpaPallas.curve 1, 1 = chunkCount S.σ.k K.cvk.domainLog2 →
@@ -526,6 +528,9 @@ theorem stepWrap_kimchiVerify
         inp.WireReads K.cvk Vg ((srcs i).keyCells r.vk.points) cp ms ∧
         -- the next wrap circuit's finalize cells hold `cp`'s evaluations and old challenges
         FopTies S.σ K.cvk cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) ∧
+        -- the next wrap circuit's message carries `cp`'s round challenges at the slot
+        ((hd.2.messagesForNextWrapProof hd.1).oldBulletproofChallenges[jf]).map (·.val Vs)
+          = wireChallenges S.σ K.cvk cp pub ∧
         -- of `cp` itself: the guards and the deferred `sg` equation
         (Guards IpaPallas.curve K.cvk cp pub →
           SgOk S.σ K.cvk cp pub →
@@ -533,7 +538,7 @@ theorem stepWrap_kimchiVerify
   intro step wrap hstep hwrap
   rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _,
     show wrap.result.1.2 = _ from compileWith_wrapMainCircuit_cells _ _ _ _ _ _ _ _ _ _]
-  intro r hd hb htie i hmv inp sl K hK hfit hkey havoid j hpin hdom
+  intro r hd hb htie i hmv inp jf sl K hK hfit hkey havoid j hpin hdom
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads S.σ P domains (by norm_num [MaxProofsVerified, StepIPARounds]) srcs
@@ -549,7 +554,6 @@ theorem stepWrap_kimchiVerify
     ⟨hms, hkey, IvpProof.read_proofReads _ _ _ _ _ _ hon, slotProof_olds holds⟩
   have hf := slotProof_fopTies (Vg := Vg) (Vs := Vs) S.σ K.cvk (inp := inp) sl.unfinalized
     sl.evals sl.prevChallenges (inp.publicInputAt K.cvk Vg ms)
-  refine ⟨cp, ms, hwire, hf, fun hguard hsg => ?_⟩
   obtain ⟨v, hv, hv1⟩ := hslot S rfl K hK hfit havoid cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
@@ -586,7 +590,6 @@ theorem stepWrap_kimchiVerify
     (stepMain_out srcs hws S.σ.h P domains (constPt dummySg) dummyUnf rule adv) 0
     (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
   -- slot `i` is entry `(w − n) + i` on both sides of the tie
-  set jf : Fin w := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
   have hjv : jf.val = w - n + i := rfl
   have hents : CircuitType.Reads Vg r.out.proofState.unfinalizedProofs
       (hd.2.statement.proofState.unfinalizedProofs.map (UnfVal.ofWrap Vs)) := by
@@ -615,7 +618,8 @@ theorem stepWrap_kimchiVerify
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
   subst hbb
-  exact hfin K j hdom _ hpin (reads_true_of_tie hsf hsfG) cp _ hguard Vg inp.unfinalized v hv
-    hv1 hc hf hsg
+  obtain ⟨hE, hK⟩ := hfin K j hdom _ hpin (reads_true_of_tie hsf hsfG) cp _ Vg inp.unfinalized v
+    hv hv1 hc hf
+  exact ⟨cp, ms, hwire, hf, by simpa [Fin.getElem_fin, Vector.getElem_map] using hE, hK⟩
 
 end Pickles

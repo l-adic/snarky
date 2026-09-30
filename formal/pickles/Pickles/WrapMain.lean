@@ -267,6 +267,15 @@ structure WrapMainVerifyOut (mpv ncStep k ks : ℕ) where
   /-- The sponge after the chosen key. -/
   spongeAfterIndex : SpongeVar Fq
 
+/-- The message the wrap statement's `messagesForNextWrapProof` digest hashes: the step proof's
+opening `sg` and each slot's expanded challenges. -/
+abbrev WrapMainVerifyOut.messagesForNextWrapProof {branches mpv ncStep k ks : ℕ}
+    {slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv}
+    (out : WrapMainVerifyOut mpv ncStep k ks)
+    (fin : WrapMainFinalizeOut branches mpv ncStep k slotWidths) :
+    MessagesForNextWrapProof (AffinePoint (FVar Fq)) (Vector (Vector (FVar Fq) k) mpv) :=
+  ⟨out.cells.opening.sg, fin.outs.map (·.expandedChallenges)⟩
+
 variable {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
 
 /-- Slot `j`'s challenge stacks end within the slots' stacks in all. -/
@@ -952,7 +961,7 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
       ∀ (K : Key IpaPallas.curve 1) (j : ℕ), wrapDomainLog2s[j]? = some K.cvk.domainLog2 →
         ∀ i : Fin mpv, hd.slots[i].pins[(⟨b, hb⟩ : Fin branches)] = some j →
           (↑hd.slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
-          hd.slots[i].ScalarReads σ K.cvk Vs⌝⦄ := by
+          hd.slots[i].ScalarReads σ K.cvk Vs hd.outs[i].expandedChallenges⌝⦄ := by
   -- branch indices and slot counts are below the field's characteristic
   have hcast := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
   have hinjB : ∀ a a' : ℕ, a < branches → a' < branches → (a : Fq) = a' → a = a' :=
@@ -1304,7 +1313,7 @@ theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
       ∀ (K : Key IpaPallas.curve 1) (j : ℕ), wrapDomainLog2s[j]? = some K.cvk.domainLog2 →
         ∀ i : Fin mpv, r.1.slots[i].pins[(⟨b, hb⟩ : Fin branches)] = some j →
           (↑r.1.slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
-          r.1.slots[i].ScalarReads σ K.cvk Vs⌝⦄ := by
+          r.1.slots[i].ScalarReads σ K.cvk Vs r.1.outs[i].expandedChallenges⌝⦄ := by
   simp only [wrapMain]
   have hh := wrapMainFinalize_reads σ Vs widths log2s stepKeys pins dummy slotWidths adv
     stmt.branchData hmpv hbr
