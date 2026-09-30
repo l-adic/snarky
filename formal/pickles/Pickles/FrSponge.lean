@@ -1,6 +1,7 @@
 import Snarky.Kimchi.Circuit.Sponge
 import Snarky.Kimchi.Circuit.RangeCheck
 import Kimchi.Verifier.Kimchi
+import Pickles.ListLemmas
 import Pickles.OptSponge
 import Pickles.Prechallenge
 
@@ -57,15 +58,15 @@ def challengeDigest [ConstraintHolds F c] {n k : ℕ} (p : Poseidon.Params F)
   pure d
 
 /-- Each challenge paired with its vector's guard, in order. -/
-private def maskedEntries {β α : Type} : List β → List (List α) → List (β × α)
-  | b :: bs, cs :: css => cs.map (b, ·) ++ maskedEntries bs css
-  | _, _ => []
+private def maskedEntries {β α : Type} {n k : ℕ} (mask : Vector β n)
+    (prev : Vector (Vector α k) n) : Vector (β × α) (n * k) :=
+  (Vector.zipWith (fun b cs => cs.map (b, ·)) mask prev).flatten
 
 /-- The step side's digest of the previous proofs' challenges: the conditional sponge over the
 challenges, each guarded by its proof's mask bit, squeezed once. -/
 def maskedChallengeDigest [ConstraintHolds F c] {n k : ℕ} (p : Poseidon.Params F)
     (mask : Vector (BoolVar F) n) (prev : Vector (Vector (FVar F) k) n) : CircuitM F c (FVar F) :=
-  OptSponge.squeeze p (maskedEntries mask.toList (prev.toList.map Vector.toList))
+  OptSponge.squeeze p (maskedEntries mask prev).toList
 
 /-- The fr-sponge schedule at `nc` chunks per column: absorb `digestBefore`, run `digest` and
 absorb its result, then the rest of `Kimchi.Verifier.frTranscript` at the same width — `ft(ζω)`,
@@ -127,46 +128,31 @@ theorem challengeDigest_spec {n k : ℕ} (p : Poseidon.Params F)
   exact (hsqz _ (habs _ SpongeVar.ReadsAt.init)).1
 
 /-- The guarded entries read entrywise once the mask does. -/
-private theorem maskedEntries_forall₂ {mask : List (BoolVar F)} {ms : List Bool}
-    (hm : List.Forall₂ (CircuitType.Reads V) mask ms) :
-    ∀ prev : List (List (FVar F)), List.Forall₂ (CircuitType.Reads V) (maskedEntries mask prev)
-      (maskedEntries ms (prev.map (·.map (·.val V)))) := by
-  induction hm with
-  | nil => intro prev; cases prev <;> exact .nil
-  | cons hb _ ih =>
-    intro prev
-    cases prev with
-    | nil => exact .nil
-    | cons cs css =>
-      refine List.rel_append ?_ (ih css)
-      rw [List.map_map, List.forall₂_map_right_iff, List.forall₂_map_left_iff]
-      exact List.forall₂_same.mpr fun x _ =>
-        CircuitType.reads_prod.mpr ⟨hb, CircuitType.reads_fvar.mpr rfl⟩
+private theorem maskedEntries_forall₂ {n k : ℕ} {mask : Vector (BoolVar F) n} {ms : Vector Bool n}
+    (hm : CircuitType.Reads V mask ms) (prev : Vector (Vector (FVar F) k) n) :
+    List.Forall₂ (CircuitType.Reads V) (maskedEntries mask prev).toList
+      (maskedEntries ms (prev.map (·.map (·.val V)))).toList := by
+  simp only [maskedEntries, toList_flatten']
+  refine List.rel_flatten ?_
+  rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+  refine forall₂_toList_iff.mpr fun i => forall₂_toList_iff.mpr fun j => ?_
+  simp only [Fin.getElem_fin, Vector.getElem_zipWith, Vector.getElem_map]
+  exact CircuitType.reads_prod.mpr
+    ⟨CircuitType.reads_vector.mp hm i i.isLt, CircuitType.reads_fvar.mpr rfl⟩
 
 omit [Field F] [DecidableEq F] in
 /-- The kept entries are the vectors whose guard is set, in order. -/
-private theorem kept_maskedEntries :
-    ∀ (ms : List Bool) (vs : List (List F)),
-      ((maskedEntries ms vs).filter (·.1)).map (·.2)
-        = (List.zipWith (fun m cs => if m then cs else []) ms vs).flatten
-  | [], vs => by cases vs <;> rfl
-  | _ :: _, [] => rfl
-  | m :: ms, cs :: vs => by
-    have := kept_maskedEntries ms vs
-    cases m <;> simp [maskedEntries, List.filter_append, List.filter_map, this,
-      Function.comp_def]
-
-omit [Field F] [DecidableEq F] in
-/-- There are no more guarded entries than challenges. -/
-private theorem maskedEntries_length_le :
-    ∀ (mask : List (BoolVar F)) (prev : List (List (FVar F))),
-      (maskedEntries mask prev).length ≤ prev.flatten.length
-  | [], prev => by cases prev <;> simp [maskedEntries]
-  | _ :: _, [] => by simp [maskedEntries]
-  | _ :: bs, cs :: css => by
-    have := maskedEntries_length_le bs css
-    simp only [maskedEntries, List.length_append, List.length_map, List.flatten_cons]
-    omega
+private theorem kept_maskedEntries {α : Type} {n k : ℕ} (f : α → F) (ms : Vector Bool n)
+    (vs : Vector (Vector α k) n) :
+    ((maskedEntries ms (vs.map (·.map f))).toList.filter (·.1)).map (·.2)
+      = (Vector.zipWith (fun m cs => if m then cs.toList.map f else []) ms vs).toList.flatten := by
+  simp only [maskedEntries, toList_flatten', List.filter_flatten, List.map_flatten, List.map_map]
+  congr 1
+  refine List.ext_getElem (by simp) fun i hi _ => ?_
+  have hi' : i < n := by simpa using hi
+  simp only [List.getElem_map, Vector.getElem_toList, Vector.getElem_zipWith, Vector.getElem_map,
+    Function.comp_apply]
+  cases ms[i] <;> simp [Vector.toList_map, List.filter_map, Function.comp_def]
 
 /-- Under any valuation satisfying the emitted constraints, with the mask reading as
 `m_0, …, m_{n−1}` and the challenge vectors as `c_j = (c_{j,0}, …, c_{j,k−1})`, the output
@@ -184,15 +170,9 @@ theorem maskedChallengeDigest_spec {n k : ℕ} (p : Poseidon.Params F)
       (Vector.zipWith (fun m cs => if m then cs.toList.map (·.val V) else []) ms
         prev).toList.flatten)).1⌝⦄ := by
   simp only [maskedChallengeDigest]
-  have hlen : (prev.toList.map Vector.toList).flatten.length = n * k := by
-    rw [List.length_flatten, List.map_map]
-    simp [Function.comp_def]
-  have h := OptSponge.squeeze_spec (V := V) p hsize hall _ _
-    (maskedEntries_forall₂ (CircuitType.reads_vector_iff_forall₂.mp hm)
-      (prev.toList.map Vector.toList))
-    (fun j hj => hchar j (hlen ▸ le_trans hj (maskedEntries_length_le _ _)))
-  rw [kept_maskedEntries, List.zipWith_map_right, List.zipWith_map_right] at h
-  simpa only [Vector.toList_zipWith] using h
+  have h := OptSponge.squeeze_spec (V := V) p hsize hall _ _ (maskedEntries_forall₂ hm prev)
+    (fun j hj => hchar j (by simpa using hj))
+  rwa [kept_maskedEntries] at h
 
 omit [DecidableEq F] in
 /-- The circuit transcript reads as `frTranscript` of the readings: the transcript is natural
