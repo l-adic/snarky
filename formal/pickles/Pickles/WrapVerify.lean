@@ -43,14 +43,14 @@ open Snarky Snarky.Kimchi
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
 
 /-- The wrap circuit's verify block: the group half, then its four assertions. -/
-def wrapVerify [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type} {k kw : ℕ}
+def wrapVerify [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type} {k kw np : ℕ}
     (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
     (computeXHat : CircuitM F c (Vector (AffinePoint (FVar F)) nc)) (msgSponge : SpongeVar F)
     (newBpChallenges : List (Vector (FVar F) kw)) (claimedMsgDigest : FVar F)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) : CircuitM F c PUnit := do
+    (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) : CircuitM F c PUnit := do
   let o ← incrementallyVerifyProof ops e p endo gm sqrtF true blindingH spongeAfterIndex
     computeXHat (cells.withClaims u)
   assert o.success
@@ -70,14 +70,14 @@ variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F}
 open Std.Do in
 /-- Whatever the public-input commitment's rows force of the valuation, the verify block's rows
 force too (`incrementallyVerifyProof_frame`). -/
-theorem wrapVerify_frame {sf : Type} {k kw : ℕ}
+theorem wrapVerify_frame {sf : Type} {k kw np : ℕ}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (msgSponge : SpongeVar F) (newBpChallenges : List (Vector (FVar F) kw))
     (claimedMsgDigest : FVar F) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) (P : Prop)
+    (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) (P : Prop)
     (hX : ⦃⌜True⌝⦄ computeXHat ⦃⇓ _ _ => ⌜P⌝⦄) :
     ⦃⌜True⌝⦄
     wrapVerify ops e p endo gm sqrtF blindingH spongeAfterIndex computeXHat msgSponge
@@ -108,7 +108,7 @@ variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
 cells, the output satisfies `VerifyReads` at a bit that reads `1`, since the block asserts it.
 The message-digest assertion is read trivially: no statement of the group half mentions the
 advice it hashes. -/
-theorem wrapVerify_reads {nc kw : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
+theorem wrapVerify_reads {nc kw np : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
     (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
@@ -117,8 +117,8 @@ theorem wrapVerify_reads {nc kw : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (msgSponge : SpongeVar C.BaseField) (newBpChallenges : List (Vector (FVar C.BaseField) kw))
     (claimedMsgDigest : FVar C.BaseField)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (cells : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (oldsW : List (C.Point × Bool))
+    (cells : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (oldsW : Vector (C.Point × Bool) np)
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts.toList (runPublicComm C σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
@@ -162,7 +162,7 @@ open CompElliptic.CurveForms.ShortWeierstrass
 
 /-- `wrapVerify_reads` at `wrapSide` and the deployed Vesta constants; the counterpart of
 `verifyProof_step_reads`. -/
-theorem wrapVerify_wrap_reads {nc kw : ℕ} {V : Valuation Fq}
+theorem wrapVerify_wrap_reads {nc kw np : ℕ} {V : Valuation Fq}
     (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
     (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
@@ -172,8 +172,8 @@ theorem wrapVerify_wrap_reads {nc kw : ℕ} {V : Valuation Fq}
     (msgSponge : SpongeVar Fq) (newBpChallenges : List (Vector (FVar Fq) kw))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (oldsW : List (IpaVesta.curve.Point × Bool))
+    (cells : IvpInput σ.k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (oldsW : Vector (IpaVesta.curve.Point × Bool) np)
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaVesta.curve V pts.toList (runPublicComm IpaVesta.curve σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH
@@ -224,14 +224,14 @@ and the public-input commitment of the packed step statement at the Lagrange poi
 The CS-equality corpus pins this gadget at its dumps' points. -/
 def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
     [LawfulBasicSystem Fq c] [KimchiSystem Fq c]
-    {ks n k kw nc : ℕ}
+    {ks n k kw nc np : ℕ}
     (h : IpaVesta.curve.Point) (lagrange : List (Vector IpaVesta.curve.Point nc))
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (Vector (FVar Fq) kw))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
+    (cells : IvpInput k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
   wrapVerify IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
     (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h)
     spongeAfterIndex
@@ -243,14 +243,14 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
 scalar. -/
 def wrapVerifyAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
     [KimchiSystem Fq c]
-    {ks n k kw nc : ℕ}
+    {ks n k kw nc np : ℕ}
     (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (Vector (FVar Fq) kw))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
+    (cells : IvpInput k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
   wrapVerifyWith σ.h (cvk.lagrangePoints σ statement.packed.length).toList statement
     spongeAfterIndex msgSponge newBpChallenges claimedMsgDigest u cells
 
@@ -273,7 +273,7 @@ and blinding-cell premises of `wrapVerify_wrap_reads` are proved from the SRS an
 (`xhatBinding_const`). Left as hypotheses: the SRS avoids the Lagrange relations,
 and `IvpHyps`. The boolean leaves'
 booleanity is not left: the commitment gadget constrains it. -/
-theorem wrapVerifyAt_reads {ks n kw nc : ℕ} {V : Valuation Fq}
+theorem wrapVerifyAt_reads {ks n kw nc np : ℕ} {V : Valuation Fq}
     (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve nc)
     (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2) (cp : KimchiProof IpaVesta.curve nc S.σ.k)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
@@ -281,7 +281,7 @@ theorem wrapVerifyAt_reads {ks n kw nc : ℕ} {V : Valuation Fq}
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (Vector (FVar Fq) kw))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof S.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput S.σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (cells : IvpInput S.σ.k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (havoid : S.σ.Avoids (K.cvk.lagrangeRelations S.σ.k statement.packed.length))
     (hivp : ∃ oldsW, IvpHyps (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V statement) true
       spongeAfterIndex (cells.withClaims u) oldsW) :
@@ -352,16 +352,16 @@ open scoped Kimchi in
 cells reading as `cp`'s, the `sg` cells as its old accumulators' under their bits, and the key
 cells and the sponge after the key as `VkReads`, with the shifted claims' `IvpSide.ClaimOk`
 (`wrapSide_claimOk`) and the shape guards proved. -/
-theorem ivpHyps_of_reads_wrap {nc : ℕ} {V : Valuation Fq} {S : Srs IpaVesta.curve}
+theorem ivpHyps_of_reads_wrap {nc np : ℕ} {V : Valuation Fq} {S : Srs IpaVesta.curve}
     {K : Key IpaVesta.curve nc} (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
     {cp : KimchiProof IpaVesta.curve nc S.σ.k} {pub : Array Fp}
     {keyCells : VkComms nc (AffinePoint (FVar Fq))} {spongeAfterIndex : SpongeVar Fq}
     (dv : DeferredValues S.σ.k (FVar Fq) (Type1 (FVar Fq)))
-    (sgOld : List (Option (BoolVar Fq) × AffinePoint (FVar Fq)))
+    (sgOld : Vector (Option (BoolVar Fq) × AffinePoint (FVar Fq)) np)
     (proof : IvpProof S.σ.k nc (FVar Fq) (Type1 (FVar Fq)))
     (u : UnfinalizedProof S.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (oldsW : List (IpaVesta.curve.Point × Bool))
-    (hmask : ∀ m ∈ sgOld, m.1.isSome = true) (hlen : sgOld.length ≤ 2)
+    (oldsW : Vector (IpaVesta.curve.Point × Bool) np)
+    (hmask : ∀ m ∈ sgOld, m.1.isSome = true) (hnp : np ≤ MaxProofsVerified)
     (hproof : ProofReads (wrapSide V) proof.wComm proof.zComm proof.tComm proof.opening cp)
     (holds : OldsRead V sgOld cp oldsW)
     (hvk : VkReads K.cvk V spongeAfterIndex keyCells) :
@@ -376,9 +376,9 @@ theorem ivpHyps_of_reads_wrap {nc : ℕ} {V : Valuation Fq} {S : Srs IpaVesta.cu
   case char =>
     intro m hm h0
     refine char_guard_fq m (le_trans hm ?_) h0
-    have h1 : (ivpInputOf dv sgOld keyCells proof).sgOld.length ≤ 2 := hlen
+    have h1 := hnp
+    simp only [MaxProofsVerified] at h1
     have h5 := nc_le_vesta S.σ K hnc
-    simp only [IvpInput.withClaims] at *
     omega
 
 end WrapRead
@@ -391,75 +391,79 @@ open CompElliptic.Fields.Pasta
 
 /-- The wrap circuit's group half of a step proof, polymorphic in its cells, at the wrap
 statement's `ks` rounds (the step proof's), the step statement's `kw` (its slots' wrap proofs')
-and its `n` slots. The keep bits of the accumulators are the wrap statement's branch data. -/
-structure WrapGroup (ks kw n nc : ℕ) (f b : Type) where
+and its `MaxProofsVerified - pad` slots: the last of the wrap statement's mask slots, whose bits
+are the accumulators' keep bits. -/
+structure WrapGroup (ks kw pad nc : ℕ) (f b : Type) where
   /-- The wrap statement. -/
   statement : WrapStatement ks f b (Type1 f)
   /-- The step statement: the verified proof's public input. -/
-  stepStatement : StepStatement kw n f b (Type2 (SplitField f b))
+  stepStatement : StepStatement kw (MaxProofsVerified - pad) f b (Type2 (SplitField f b))
   /-- The step proof, at `nc` chunks. -/
   proof : IvpProof ks nc f (Type1 f)
-  /-- The step proof's `n` accumulators' `sg`. -/
-  sgOld : Vector (AffinePoint f) n
+  /-- The step proof's accumulators' `sg`, one per slot. -/
+  sgOld : Vector (AffinePoint f) (MaxProofsVerified - pad)
 
 /-- A wrap-side group half is its two statements, the proof and the accumulators' `sg`. -/
-def WrapGroup.equivProd (ks kw n nc : ℕ) (f b : Type) :
-    WrapGroup ks kw n nc f b ≃
-      WrapStatement ks f b (Type1 f) × StepStatement kw n f b (Type2 (SplitField f b)) ×
-        IvpProof ks nc f (Type1 f) × Vector (AffinePoint f) n :=
+def WrapGroup.equivProd (ks kw pad nc : ℕ) (f b : Type) :
+    WrapGroup ks kw pad nc f b ≃
+      WrapStatement ks f b (Type1 f) ×
+        StepStatement kw (MaxProofsVerified - pad) f b (Type2 (SplitField f b)) ×
+        IvpProof ks nc f (Type1 f) × Vector (AffinePoint f) (MaxProofsVerified - pad) :=
   ⟨fun g => (g.statement, g.stepStatement, g.proof, g.sgOld),
    fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2⟩, fun _ => rfl, fun _ => rfl⟩
 
-instance instWrapGroupCircuitType {F : Type} {ks kw n nc : ℕ} [CircuitType F Bool (BoolVar F)] :
-    CircuitType F (WrapGroup ks kw n nc F Bool) (WrapGroup ks kw n nc (FVar F) (BoolVar F)) :=
-  CircuitType.ofEquiv (WrapGroup.equivProd ks kw n nc F Bool)
-    (WrapGroup.equivProd ks kw n nc (FVar F) (BoolVar F))
+instance instWrapGroupCircuitType {F : Type} {ks kw pad nc : ℕ} [CircuitType F Bool (BoolVar F)] :
+    CircuitType F (WrapGroup ks kw pad nc F Bool) (WrapGroup ks kw pad nc (FVar F) (BoolVar F)) :=
+  CircuitType.ofEquiv (WrapGroup.equivProd ks kw pad nc F Bool)
+    (WrapGroup.equivProd ks kw pad nc (FVar F) (BoolVar F))
 
 namespace StepProof
 
-variable {k kw n nc : ℕ}
+variable {k kw pad nc : ℕ}
 
 /-- The group circuit's input, polymorphic in its cells: the group half and the slots'
 expanded round challenges the message hash absorbs. -/
-structure GroupInput (k kw n nc : ℕ) (f b : Type) where
+structure GroupInput (k kw pad nc : ℕ) (f b : Type) where
   /-- The group half. -/
-  group : WrapGroup k kw n nc f b
+  group : WrapGroup k kw pad nc f b
   /-- The slots' expanded round challenges. -/
-  newBp : Vector (Vector f kw) n
+  newBp : Vector (Vector f kw) (MaxProofsVerified - pad)
 
 /-- A group input is the group half and the expanded round challenges. -/
-def GroupInput.equivProd (k kw n nc : ℕ) (f b : Type) :
-    GroupInput k kw n nc f b ≃ WrapGroup k kw n nc f b × Vector (Vector f kw) n :=
+def GroupInput.equivProd (k kw pad nc : ℕ) (f b : Type) :
+    GroupInput k kw pad nc f b ≃
+      WrapGroup k kw pad nc f b × Vector (Vector f kw) (MaxProofsVerified - pad) :=
   ⟨fun g => (g.group, g.newBp), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
 instance instGroupInputCircuitType {F : Type} [CircuitType F Bool (BoolVar F)] :
-    CircuitType F (GroupInput k kw n nc F Bool) (GroupInput k kw n nc (FVar F) (BoolVar F)) :=
-  CircuitType.ofEquiv (GroupInput.equivProd k kw n nc F Bool)
-    (GroupInput.equivProd k kw n nc (FVar F) (BoolVar F))
+    CircuitType F (GroupInput k kw pad nc F Bool) (GroupInput k kw pad nc (FVar F) (BoolVar F)) :=
+  CircuitType.ofEquiv (GroupInput.equivProd k kw pad nc F Bool)
+    (GroupInput.equivProd k kw pad nc (FVar F) (BoolVar F))
 
 /-- The group circuit's input, as values. Unchecked: the block's own rows constrain what it
 reads. -/
-abbrev GroupIn (k kw n nc : ℕ) : Type := UnChecked (GroupInput k kw n nc Fq Bool)
+abbrev GroupIn (k kw pad nc : ℕ) : Type := UnChecked (GroupInput k kw pad nc Fq Bool)
 
 /-- `GroupIn`, as cells. -/
-abbrev GroupVar (k kw n nc : ℕ) : Type :=
-  UnChecked (GroupInput k kw n nc (FVar Fq) (BoolVar Fq))
+abbrev GroupVar (k kw pad nc : ℕ) : Type :=
+  UnChecked (GroupInput k kw pad nc (FVar Fq) (BoolVar Fq))
 
 /-- The step statement: the verified proof's public input. -/
-def GroupVar.stepStatement (g : GroupVar k kw n nc) :
-    StepStatement kw n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))) :=
+def GroupVar.stepStatement (g : GroupVar k kw pad nc) :
+    StepStatement kw (MaxProofsVerified - pad) (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))) :=
   g.val.group.stepStatement
 
 /-- The slots' expanded round challenges. -/
-def GroupVar.newBp (g : GroupVar k kw n nc) : List (Vector (FVar Fq) kw) :=
+def GroupVar.newBp (g : GroupVar k kw pad nc) : List (Vector (FVar Fq) kw) :=
   g.val.newBp.toList
 
 /-- The wrap statement's `messagesForNextWrapProof` digest. -/
-def GroupVar.msgDigest (g : GroupVar k kw n nc) : FVar Fq :=
+def GroupVar.msgDigest (g : GroupVar k kw pad nc) : FVar Fq :=
   g.val.group.statement.proofState.messagesForNextWrapProof
 
 /-- The wrap statement's deferred claims, as the unfinalized proof the block verifies. -/
-def GroupVar.claims (g : GroupVar k kw n nc) :
+def GroupVar.claims (g : GroupVar k kw pad nc) :
     UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
   { deferredValues := g.val.group.statement.proofState.deferredValues.toDeferredValues
     shouldFinalize := true_
@@ -468,39 +472,41 @@ def GroupVar.claims (g : GroupVar k kw n nc) :
 
 open scoped Kimchi in
 /-- The step proof's witness commitments, `nc` chunks each. -/
-def GroupVar.wComm (g : GroupVar k kw n nc) : Vector (Vector (AffinePoint (FVar Fq)) nc) wCols :=
+def GroupVar.wComm (g : GroupVar k kw pad nc) : Vector (Vector (AffinePoint (FVar Fq)) nc) wCols :=
   g.val.group.proof.wComm
 
 /-- The step proof's permutation-accumulator commitment, `nc` chunks. -/
-def GroupVar.zComm (g : GroupVar k kw n nc) : Vector (AffinePoint (FVar Fq)) nc :=
+def GroupVar.zComm (g : GroupVar k kw pad nc) : Vector (AffinePoint (FVar Fq)) nc :=
   g.val.group.proof.zComm
 
 open scoped Kimchi in
 /-- The step proof's `7 · nc` quotient chunks. -/
-def GroupVar.tComm (g : GroupVar k kw n nc) : Vector (AffinePoint (FVar Fq)) (quotChunks * nc) :=
+def GroupVar.tComm (g : GroupVar k kw pad nc) : Vector (AffinePoint (FVar Fq)) (quotChunks * nc) :=
   g.val.group.proof.tComm
 
 /-- The step proof's opening. -/
-def GroupVar.opening (g : GroupVar k kw n nc) : BulletproofOpening k (FVar Fq) (Type1 (FVar Fq)) :=
+def GroupVar.opening (g : GroupVar k kw pad nc) :
+    BulletproofOpening k (FVar Fq) (Type1 (FVar Fq)) :=
   g.val.group.proof.opening
 
-/-- The accumulators' `sg`, each under its keep bit: the last `n` of the branch data's mask. -/
-def GroupVar.sgOld (g : GroupVar k kw n nc) : List (Option (BoolVar Fq) × AffinePoint (FVar Fq)) :=
+/-- The accumulators' `sg`, each under its keep bit: the branch data's mask past its first
+`pad` slots. -/
+def GroupVar.sgOld (g : GroupVar k kw pad nc) :
+    Vector (Option (BoolVar Fq) × AffinePoint (FVar Fq)) (MaxProofsVerified - pad) :=
   let bd := g.val.group.statement.proofState.deferredValues.branchData
-  let mask := bd.proofsVerifiedMask.toList.drop (MaxProofsVerified - n)
-  (mask.zip g.val.group.sgOld.toList).map fun (m, P) => (some m, P)
+  ((bd.proofsVerifiedMask.drop pad).zip g.val.group.sgOld).map fun (m, P) => (some m, P)
 
 /-- The shifted scalars the block scales by: the claims' `perm`, `ζ^{2^k}`, `ζⁿ`, `cip`, `b`
 and the opening's `z₁`, `z₂`. -/
-def GroupVar.shifted (g : GroupVar k kw n nc) : List (Type1 (FVar Fq)) :=
+def GroupVar.shifted (g : GroupVar k kw pad nc) : List (Type1 (FVar Fq)) :=
   let dv := g.claims.deferredValues
   [dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize, dv.combinedInnerProduct,
    dv.b, g.opening.z1, g.opening.z2]
 
 /-- What `incrementallyVerifyProof` consumes: the claims, the accumulators, the key's cells, the
 proof. -/
-def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fq))) (g : GroupVar k kw n nc) :
-    IvpInput k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
+def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fq))) (g : GroupVar k kw pad nc) :
+    IvpInput k nc (MaxProofsVerified - pad) (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
   ivpInputOf g.val.group.statement.proofState.deferredValues.toDeferredValues g.sgOld keyCells
     g.val.group.proof
 
@@ -512,7 +518,7 @@ def groupCircuitWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
     (h : Bulletproof.IpaVesta.curve.Point)
     (lagrange : List (Vector Bulletproof.IpaVesta.curve.Point nc))
     (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
-    (g : GroupVar k kw n nc) : CircuitM Fq c Unit :=
+    (g : GroupVar k kw pad nc) : CircuitM Fq c Unit :=
   wrapVerifyWith h lagrange g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest
     g.claims (g.cells keyCells)
 
@@ -523,7 +529,7 @@ def groupCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBas
     (σ : Bulletproof.SRS Bulletproof.IpaVesta.curve.Point)
     (cvk : Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc)
     (keyCells : VkComms nc (AffinePoint (FVar Fq)))
-    (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n nc) : CircuitM Fq c Unit :=
+    (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw pad nc) : CircuitM Fq c Unit :=
   groupCircuitWith σ.h (cvk.lagrangePoints σ g.stepStatement.packed.length).toList keyCells
     spongeAfterIndex msgSponge g
 
@@ -536,7 +542,7 @@ theorem groupCircuit_reads {V : Valuation Fq} (S : Srs Bulletproof.IpaVesta.curv
     (hnc : nc = Kimchi.Verifier.chunkCount S.σ.k K.cvk.domainLog2)
     (cp : Kimchi.Verifier.KimchiProof Bulletproof.IpaVesta.curve nc S.σ.k)
     (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
-    (g : GroupVar S.σ.k kw n nc)
+    (g : GroupVar S.σ.k kw pad nc)
     (havoid : S.σ.Avoids (K.cvk.lagrangeRelations S.σ.k g.stepStatement.packed.length))
     (hivp : (∀ x ∈ g.shifted, (wrapSide V).ClaimOk x) →
       ∃ oldsW, IvpHyps (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V g.stepStatement) true

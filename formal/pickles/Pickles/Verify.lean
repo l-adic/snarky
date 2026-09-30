@@ -54,7 +54,7 @@ open scoped Kimchi
 
 section Pack
 
-variable {F : Type} [Field F] [DecidableEq F] {nc k : ℕ}
+variable {F : Type} [Field F] [DecidableEq F] {nc k np : ℕ}
 
 /-- The branch data as one 10-bit value `4·domainLog2 + m₀ + 2·m₁`, over the mask bits `m₀`,
 `m₁`. A missing mask bit reads as `0`. -/
@@ -136,9 +136,9 @@ def StepStatement.packed {n : ℕ}
 /-- The group half's input with its claims taken from an unfinalized proof: `xi`,
 `combinedInnerProduct`, `b` and the plonk claims of its deferred values; the key, proof and
 `sgOld` cells as given. -/
-def IvpInput.withClaims {sf : Type} (inp : IvpInput k nc (FVar F) (BoolVar F) sf)
+def IvpInput.withClaims {sf : Type} (inp : IvpInput k nc np (FVar F) (BoolVar F) sf)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) :
-    IvpInput k nc (FVar F) (BoolVar F) sf :=
+    IvpInput k nc np (FVar F) (BoolVar F) sf :=
   let dv := u.deferredValues
   { inp with
     plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
@@ -182,10 +182,10 @@ instance instIvpProofCircuitType {F sv sf : Type} {k nc : ℕ} [CircuitType F sv
 
 /-- The group half's input from a proof's deferred values (its claims), the old accumulator
 points under their keep bits (`sgOld`), a key's commitments and the proof. -/
-def ivpInputOf {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
-    (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
+def ivpInputOf {F sf : Type} {k nc np : ℕ} (dv : DeferredValues k (FVar F) sf)
+    (sgOld : Vector (Option (BoolVar F) × AffinePoint (FVar F)) np)
     (key : VkComms nc (AffinePoint (FVar F))) (pr : IvpProof k nc (FVar F) sf) :
-    IvpInput k nc (FVar F) (BoolVar F) sf :=
+    IvpInput k nc np (FVar F) (BoolVar F) sf :=
   { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
       dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
     xi := dv.xi
@@ -279,7 +279,7 @@ end Records
 section Gadget
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
-  {ks k nc : ℕ}
+  {ks k nc np : ℕ}
 
 /-- One proof's group-half check: the public-input commitment from the packed statement
 (`publicInputCommitKnown`, chunk by chunk, with the constant correction seed and sum), the
@@ -295,7 +295,7 @@ def verifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type}
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
     (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) : CircuitM F c (BoolVar F) := do
+    (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) : CircuitM F c (BoolVar F) := do
   let leaves := packLeaves statement tab
   let computeXHat : CircuitM F c (Vector (AffinePoint (FVar F)) nc) :=
     (Vector.finRange nc).mapM fun ci =>
@@ -314,7 +314,7 @@ end Gadget
 
 section Read
 
-variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks nc : ℕ}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks nc np : ℕ}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- The group half's claim cells from a `DeferredValues` record: the plonk claims, `ξ`, and
@@ -334,7 +334,7 @@ theorem verifyProof_success_bit {F : Type} [Field F] [DecidableEq F] [ToNat F] {
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
     (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) :
+    (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) :
     ⦃⌜True⌝⦄ verifyProof ops e p endo gm sqrtF blindingH tab spongeAfterIndex isBaseCase
       statement u cells
     ⦃⇓ v _ => ⌜∃ b : Bool, (↑v : CVar F).val V = bit b⌝⦄ := by
@@ -403,11 +403,11 @@ theorem verifyProof_reads
     (statement : WrapStatement ks (FVar C.BaseField) (BoolVar C.BaseField)
       (Type1 (FVar C.BaseField)))
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (cells : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (cells : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
     -- the values the premises speak about: the base-case bit, the old accumulator points under
     -- their bits
     (base : Bool)
-    (oldsW : List (C.Point × Bool))
+    (oldsW : Vector (C.Point × Bool) np)
     -- the base-case bit's reading, the tables bound to the key at the packed statement's
     -- leaves, the group half's premises at the claims-substituted cells
     (hbase : CircuitType.Reads V isBaseCase base)
@@ -474,15 +474,15 @@ section StepRead
 
 /-- **`verifyProof` reads as the group half on the step side**: `verifyProof_reads` at `stepSide`
 and `pastaShapePallas`. -/
-theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
+theorem verifyProof_step_reads {nc np : ℕ} {V : Valuation Fp}
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc σ.k)
     (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
     (tab : XhatTable Fp nc) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput σ.k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (base : Bool) (oldsW : List (IpaPallas.curve.Point × Bool))
+    (cells : IvpInput σ.k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (base : Bool) (oldsW : Vector (IpaPallas.curve.Point × Bool) np)
     (hbase : CircuitType.Reads V isBaseCase base)
     (htab : tab.Bound pastaShapePallas V σ
       (cvk.lagrangePoints σ (pubOf IpaPallas.curve V (packLeaves statement tab)).size).toArray

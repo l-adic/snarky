@@ -250,12 +250,12 @@ table of the Lagrange points `lagrange`. The constraint-system check compares it
 production dump at the dump's points. -/
 def verifyProofWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     [LawfulBasicSystem Fp c] [KimchiSystem Fp c]
-    {ks k nc : ℕ}
+    {ks k nc np : ℕ}
     (h : IpaPallas.curve.Point) (lagrange : List (Vector IpaPallas.curve.Point nc))
     (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
+    (cells : IvpInput k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
   verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params
     (.const ((Pasta.vestaLam : ℤ) : Fp)) groupMapParamsPallas pallasBase.sqrt? (constPt h)
@@ -266,12 +266,12 @@ def verifyProofWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
 scalar. -/
 def verifyProofAt {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     [LawfulBasicSystem Fp c] [KimchiSystem Fp c]
-    {ks k nc : ℕ}
+    {ks k nc np : ℕ}
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
+    (cells : IvpInput k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
   verifyProofWith σ.h (cvk.lagrangePoints σ statement.packed.length).toList spongeAfterIndex
     isBaseCase statement u cells
@@ -282,15 +282,16 @@ the Lagrange points and the constant correction sum are finite, since the fold a
 with `addFast`. No invariant of the key gives these; they are relations the SRS avoids
 (`havoid`, `stepRelationsAt`). The optional-feature cells the table leaves out are zero
 (`stepPublicInput_eq_append`). -/
-theorem verifyProofAt_reads {ks nc : ℕ} {V : Valuation Fp} (S : Srs IpaPallas.curve)
+theorem verifyProofAt_reads {ks nc np : ℕ} {V : Valuation Fp} (S : Srs IpaPallas.curve)
     (K : Key IpaPallas.curve nc) (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
     (cp : KimchiProof IpaPallas.curve nc S.σ.k)
     (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof S.σ.k (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput S.σ.k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (oldsW : List (IpaPallas.curve.Point × Bool))
+    (cells : IvpInput S.σ.k nc np (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (oldsW : Vector (IpaPallas.curve.Point × Bool) np)
     (hbase : CircuitType.Reads V isBaseCase false)
     (hsmall : statement.packed.length ≤ 2 ^ S.σ.k) (hn : statement.packed.length ≤ K.cvk.n)
     (havoid : S.σ.Avoids (stepRelationsAt S.σ K.cvk statement))
@@ -367,18 +368,19 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
     {keyCells : VkComms nc (AffinePoint (FVar Fp))} {spongeAfterIndex : SpongeVar Fp}
     (claims : UnfinalizedProof S.σ.k (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (sgOld : List (AffinePoint (FVar Fp)))
+    (sgOld : Vector (AffinePoint (FVar Fp)) MaxProofsVerified)
     (proof : IvpProof S.σ.k nc (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (hlen : sgOld.length ≤ 2)
     (hproof : ProofReads (stepSide V) proof.wComm proof.zComm proof.tComm proof.opening cp)
-    (holds : CommReads IpaPallas.curve V sgOld (cp.olds.map (·.sg)).toList)
+    (holds : CommReads IpaPallas.curve V sgOld.toList (cp.olds.map (·.sg)).toList)
     (hvk : VkReads K.cvk V spongeAfterIndex keyCells)
     (hclaimOk : ∀ x ∈ (ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
       proof).shifted, (stepSide V).ClaimOk x) :
     ∃ oldsW, IvpHyps (stepSide V) S.σ K.cvk cp pub false spongeAfterIndex
       ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells proof).withClaims claims)
       oldsW := by
-  refine ⟨(cp.olds.map (·.sg)).toList.map (·, true),
+  -- the proof's old accumulators, one per `sg` cell
+  obtain ⟨sgW, hsgW, -⟩ := exists_vector_of_forall₂ holds
+  refine ⟨sgW.map (·, true),
     { idx := hvk.idx, mask := ?mask
       ties :=
         { olds := ⟨?olds, ?kept⟩, proof := hproof
@@ -388,33 +390,31 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
   case mask =>
     intro m hm
     have hm' : m ∈ sgOld.map (none, ·) := hm
-    simp only [List.mem_map] at hm'
-    obtain ⟨q, -, rfl⟩ := hm'
+    obtain ⟨q, -, rfl⟩ := Vector.mem_map.mp hm'
     rfl
   case olds =>
     show List.Forall₂ (MaskedBaseReads IpaPallas.curve.E.toAffine V)
-      ((sgOld.map (none, ·)).map fun m => (m.2, m.1)) _
-    simp only [List.map_map, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+      ((sgOld.map (none, ·)).toList.map fun m => (m.2, m.1)) _
+    simp only [Vector.toList_map, List.map_map, List.forall₂_map_left_iff,
+      List.forall₂_map_right_iff, hsgW]
     exact holds.imp fun _ _ h => ⟨h, rfl⟩
-  case kept => simp [List.filter_map, Function.comp_def]
+  case kept => simp [Vector.toList_map, hsgW, List.filter_map, Function.comp_def]
   case char =>
     intro m hm h0
     refine char_guard m (le_trans hm ?_) h0
-    have h1 : ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
-        proof).withClaims claims).sgOld.length ≤ 2 := by
-      show (sgOld.map (none, ·)).length ≤ 2
-      simpa using hlen
     have h5 := nc_le S.σ K hnc
+    simp only [MaxProofsVerified]
     omega
 
 /-- Under any valuation satisfying the emitted constraints, `verifyProofWith`'s returned bit
 reads as a bit (`verifyProof_success_bit`). -/
-theorem verifyProofWith_success_bit {ks k nc : ℕ} {V : Valuation Fp} (h : IpaPallas.curve.Point)
+theorem verifyProofWith_success_bit {ks k nc np : ℕ} {V : Valuation Fp}
+    (h : IpaPallas.curve.Point)
     (lagrange : List (Vector IpaPallas.curve.Point nc)) (spongeAfterIndex : SpongeVar Fp)
     (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
+    (cells : IvpInput k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     ⦃⌜True⌝⦄
     verifyProofWith (c := Builder V (KimchiConstraint Fp)) h lagrange spongeAfterIndex
       isBaseCase statement u cells
@@ -457,7 +457,8 @@ def GroupVar.opening (g : GroupVar ks k nc) :
     BulletproofOpening k (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   g.val.proof.opening
 /-- The old accumulators' `sg` cells, one per slot. -/
-def GroupVar.sgOld (g : GroupVar ks k nc) : List (AffinePoint (FVar Fp)) := g.val.sgOld.toList
+def GroupVar.sgOld (g : GroupVar ks k nc) : Vector (AffinePoint (FVar Fp)) MaxProofsVerified :=
+  g.val.sgOld
 /-- The shifted scalars the block scales by: the claims' `perm`, `ζ^{2^k}`, `ζⁿ`, `cip`, `b`
 and the opening's `z₁`, `z₂`. -/
 def GroupVar.shifted (g : GroupVar ks k nc) :
@@ -468,7 +469,8 @@ def GroupVar.shifted (g : GroupVar ks k nc) :
 /-- What `incrementallyVerifyProof` consumes: the claims, every `sg` unmasked, the key's
 cells and the proof. -/
 def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fp))) (g : GroupVar ks k nc) :
-    IvpInput k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    IvpInput k nc MaxProofsVerified (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   ivpInputOf g.claims.deferredValues (g.sgOld.map (none, ·)) keyCells g.val.proof
 /-- The group circuit as a `GroupHalf`. -/
 abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k nc) :

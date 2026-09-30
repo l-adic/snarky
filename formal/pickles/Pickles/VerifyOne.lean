@@ -108,7 +108,8 @@ def verifyOneBy [ConstraintHolds Fp c]
     (verify : SpongeVar Fp → BoolVar Fp →
       WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
       UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
-      IvpInput k ncw (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      IvpInput k ncw MaxProofsVerified (FVar Fp) (BoolVar Fp)
+        (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
       CircuitM Fp c (BoolVar Fp))
     (P : FopParams Fp) (domains : List (KnownDomain Fp))
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks k ncw ncs w) :
@@ -120,7 +121,7 @@ def verifyOneBy [ConstraintHolds Fp c]
     inp.proofMask (inp.messagesForNextStepProof vk)
   let success ← verify afterIndex (Snarky.not inp.mustVerify) (inp.statement msgStep)
     inp.unfinalized
-    (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·)) vk inp.proof)
+    (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.map (none, ·)) vk inp.proof)
   let verified ← Snarky.and success fop.finalized
   let result ← Snarky.or verified (Snarky.not inp.mustVerify)
   pure (fop, result)
@@ -161,7 +162,8 @@ theorem verifyOneBy_verdict_bit
     (verify : SpongeVar Fp → BoolVar Fp →
       WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
       UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
-      IvpInput k ncw (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      IvpInput k ncw MaxProofsVerified (FVar Fp) (BoolVar Fp)
+        (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
     (hverify : ∀ sv b st u cells, ⦃⌜True⌝⦄ verify sv b st u cells
       ⦃⇓ v _ => ⌜∃ bb : Bool, (↑v : CVar Fp).val V = bit bb⌝⦄)
@@ -189,7 +191,8 @@ theorem verifyOneBy_shouldFinalize
     (verify : SpongeVar Fp → BoolVar Fp →
       WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
       UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
-      IvpInput k ncw (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      IvpInput k ncw MaxProofsVerified (FVar Fp) (BoolVar Fp)
+        (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
     (P : FopParams Fp) (domains : List (KnownDomain Fp))
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks k ncw ncs w) :
@@ -227,7 +230,7 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
     (hproof : ProofReads (stepSide V) inp.proof.wComm inp.proof.zComm inp.proof.tComm
       inp.proof.opening cp)
     (holds : CommReads IpaPallas.curve V inp.sgOld.toList (cp.olds.map (·.sg)).toList)
-    (hclaimOk : ∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·))
+    (hclaimOk : ∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.map (none, ·))
       vk inp.proof).shifted, (stepSide V).ClaimOk x)
     -- the statement's shape against the SRS
     (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ S.σ.k)
@@ -261,7 +264,7 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
   have hvp : ∀ (sv : SpongeVar Fp) (msg : FVar Fp),
       ⦃⌜True⌝⦄ verifyProofAt (c := Builder V (KimchiConstraint Fp)) S.σ K.cvk sv
         (Snarky.not inp.mustVerify) (inp.statement msg) inp.unfinalized
-        (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·)) vk
+        (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.map (none, ·)) vk
           inp.proof)
       ⦃⇓ v _ => ⌜CircuitType.Reads V inp.mustVerify true →
         SpongeVar.ReadsAt V sv (Poseidon.absorb IpaPallas.curve.sponge.params Poseidon.init
@@ -275,7 +278,7 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
     have hbase : CircuitType.Reads V (Snarky.not inp.mustVerify) false :=
       CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp hmv))
     obtain ⟨oldsW, hivp⟩ := ivpHyps_of_reads (pub := stepPublicInput V (inp.statement msg)) hnc
-      inp.unfinalized inp.sgOld.toList inp.proof (by simp [MaxProofsVerified]) hproof holds
+      inp.unfinalized inp.sgOld inp.proof hproof holds
       ⟨⟨_, hsv, K.digest_eq.symm⟩, hkey⟩ hclaimOk
     exact (builder_spec_iff _ _).mp (verifyProofAt_reads S K hnc cp sv _ (inp.statement msg)
       inp.unfinalized _ oldsW hbase (hsmall msg) (hn msg) (havoid msg) hivp) nv hsat
@@ -339,7 +342,7 @@ theorem verifyOne_slotReads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve n
     ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt S.σ K.cvk)
       P domains vk inp
     ⦃⇓ o _ => ⌜CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
-      (∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·)) vk
+      (∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.map (none, ·)) vk
         inp.proof).shifted, (stepSide V).ClaimOk x) →
       inp.SlotReads S.σ K.cvk V vk⌝⦄ := by
   rw [builder_spec_iff]
@@ -378,7 +381,8 @@ theorem verifyOne_scalarReads (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve n
     (verify : SpongeVar Fp → BoolVar Fp →
       WrapStatement S.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) →
       UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
-      IvpInput k ncw (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
+      IvpInput k ncw MaxProofsVerified (FVar Fp) (BoolVar Fp)
+        (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput S.σ.k k ncw ncs w) :
     ⦃⌜True⌝⦄ verifyOneBy verify (FopParams.of IpaVesta.curve ncs S.σ.k Linearization.fpTokens)

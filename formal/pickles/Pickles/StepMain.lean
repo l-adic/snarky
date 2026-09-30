@@ -387,7 +387,8 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
   have hrule := fun x => builder_spec_true (rule x)
   -- at a key slot `i`'s source fits, its verifier is `verifyProofAt` over `σ`
   have hv : ∀ (i : Fin n) (K : KimchiVK IpaPallas.curve ncw), (srcs i).Fits σ K →
-      verifyProofWith (c := Builder V (KimchiConstraint Fp)) (ks := ks) (k := σ.k) σ.h
+      verifyProofWith (c := Builder V (KimchiConstraint Fp)) (ks := ks) (k := σ.k)
+        (np := MaxProofsVerified) σ.h
         (srcs i).lagrange.toList = verifyProofAt σ K := by
     intro i K hfit
     funext sv b st u cells
@@ -410,7 +411,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
           ((srcs i).Fits σ SK.1.2.cvk ∧
             ∀ msg, σ.Avoids (stepRelationsAt σ SK.1.2.cvk (inp.statement msg))) →
           CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
-          (∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·))
+          (∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.map (none, ·))
             ((srcs i).keyCells vk.points) inp.proof).shifted, (stepSide V).ClaimOk x) →
           inp.SlotReads σ SK.1.2.cvk V ((srcs i).keyCells vk.points)) ∧
         ((∃ ms : Vector Bool (SlotSource.widths w srcs i), CircuitType.Reads V inp.proofMask ms) →

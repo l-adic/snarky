@@ -198,7 +198,7 @@ private theorem wrapStep_kimchiVerify_core
       -- its wrap proof was made at the wrap circuit's public input
       CircuitType.Reads Vw stmt (inp.packedAt cvk Vs ms) →
       ∃ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
-        (oldsW : List (IpaVesta.curve.Point × Bool)),
+        (oldsW : Vector (IpaVesta.curve.Point × Bool) w),
         -- the step proof's public input: the wrap circuit's packed step statement
         let pub := wrapPublicInput SStep.σ KStep.cvk Vw hd.2.statement
         -- the wrap circuit's cells hold `cp`
@@ -286,7 +286,7 @@ private theorem wrapStep_kimchiVerify_core
     (.carried (inp.evals.pub.map fun v => v.map (·.val Vs))) (inp.evals.ftEval1.val Vs)
     (((List.finRange w).filter fun j => ms[j]).map fun j =>
       (⟨P j, U j⟩ : Accumulator IpaVesta.curve SStep.σ.k)).toArray
-  let oldsW := (List.finRange w).map fun j => (P j, ms[j])
+  let oldsW : Vector (IpaVesta.curve.Point × Bool) w := Vector.ofFn fun j => (P j, ms[j])
   have hpr : ProofReads (wrapSide Vw) hd.2.cells.wComm hd.2.cells.zComm hd.2.cells.tComm
       hd.2.cells.opening cp := by
     rw [hcells']
@@ -294,10 +294,13 @@ private theorem wrapStep_kimchiVerify_core
   have hol : OldsRead Vw hd.2.cells.sgOld cp oldsW := by
     rw [hcells']
     refine ⟨?_, ?_⟩
-    · simp only [ivpInputOf, WrapMainFinalizeOut.sgOld, oldsW, List.map_map,
-        List.forall₂_map_left_iff, List.forall₂_map_right_iff]
-      exact List.forall₂_same.mpr fun j _ => ⟨onCurveAt_readPt (hacc j), hkeep j⟩
-    · simp [cp, IvpProof.read, oldsW, List.filter_map, Function.comp_def]
+    · rw [← Vector.toList_map, ← Vector.toList_map]
+      refine forall₂_toList_iff.mpr fun j => ?_
+      simp only [ivpInputOf, WrapMainFinalizeOut.sgOld, oldsW, Fin.getElem_fin,
+        Vector.getElem_map, Vector.getElem_ofFn]
+      exact ⟨onCurveAt_readPt (hacc j), hkeep j⟩
+    · simp [cp, IvpProof.read, oldsW, Vector.toList_ofFn, List.ofFn_eq_map, List.filter_map,
+        Function.comp_def]
   have hf : FopTies SStep.σ KStep.cvk cp (wrapPublicInput SStep.σ KStep.cvk Vw hd.2.statement)
       (inp.finalizedHalf Vs) := by
     refine ⟨?_, rfl, rfl, rfl⟩
@@ -448,7 +451,7 @@ theorem wrapStep_kimchiVerify
         -- its wrap proof was made at the wrap circuit's public input
         CircuitType.Reads Vw stmt (inp.packedAt cvk Vs ms) →
         ∃ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
-          (oldsW : List (IpaVesta.curve.Point × Bool)),
+          (oldsW : Vector (IpaVesta.curve.Point × Bool) w),
           -- the step proof's public input: the wrap circuit's packed step statement
           let pub := wrapPublicInput SStep.σ stepKeys[b] Vw hd.2.statement
           -- the wrap circuit's cells hold `cp`, with keep bits `oldsW`

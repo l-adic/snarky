@@ -98,15 +98,15 @@ structure FqTranscriptOutput (F : Type) (nc : ℕ) where
 /-- The step side's fq-sponge transcript. `computeXHat` runs after the `sgOld` absorbs and
 its result is absorbed next, as the verifiers do; only `β` and `γ` have their low halves
 range-checked. The returned sponge is the one the digest is squeezed from. -/
-def fqSpongeTranscript [ConstraintHolds F c] [ToNat F] {nc : ℕ} (p : Poseidon.Params F)
-    (endo indexDigest : FVar F) (sgOld : List (AffinePoint (FVar F)))
+def fqSpongeTranscript [ConstraintHolds F c] [ToNat F] {np nc : ℕ} (p : Poseidon.Params F)
+    (endo indexDigest : FVar F) (sgOld : Vector (AffinePoint (FVar F)) np)
     (computeXHat : CircuitM F c (Vector (AffinePoint (FVar F)) nc))
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols)
     (zComm : Vector (AffinePoint (FVar F)) nc)
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc)) :
     CircuitM F c (FqTranscriptOutput F nc) := do
   let sv ← SpongeVar.absorb p SpongeVar.init indexDigest
-  let sv ← absorbPoints p sv sgOld
+  let sv ← absorbPoints p sv sgOld.toList
   let xHat ← computeXHat
   let sv ← absorbPoints p sv xHat.toList
   let sv ← absorbColumns p sv (wComm.toList.map Vector.toList)
@@ -169,15 +169,15 @@ open OptSponge in
 conditional sponge, with `sgOld` absorbed under its mask bits and `xHat` given rather than
 computed. After `ζ` the sponge becomes a plain one (`toRegularSponge`), which is returned and
 from which the digest is squeezed. -/
-def fqSpongeTranscriptOpt [ConstraintHolds F c] [ToNat F] {nc : ℕ} (p : Poseidon.Params F)
-    (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F)))
+def fqSpongeTranscriptOpt [ConstraintHolds F c] [ToNat F] {np nc : ℕ} (p : Poseidon.Params F)
+    (endo indexDigest : FVar F) (sgOld : Vector (BoolVar F × AffinePoint (FVar F)) np)
     (xHat : Vector (AffinePoint (FVar F)) nc)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols)
     (zComm : Vector (AffinePoint (FVar F)) nc)
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc)) :
     CircuitM F c (FqTranscriptOutput F nc) := do
   let ov := optAbsorb create (true_, indexDigest)
-  let ov := sgOld.foldl optAbsorbMasked ov
+  let ov := sgOld.toList.foldl optAbsorbMasked ov
   let ov := xHat.toList.foldl optAbsorbPoint ov
   let ov := (wComm.toList.map Vector.toList).foldl (fun ov col => col.foldl optAbsorbPoint ov) ov
   let (beta, ov) ← optSqueezePrechallenge p true endo ov
@@ -322,8 +322,9 @@ def FqTranscriptReads [ToNat F] (p : Poseidon.Params F) (indexDigest : F)
 theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (endo indexDigest : FVar F) (sgOld : List (AffinePoint (FVar F))) (sgv : List (AffinePoint F))
-    (hsg : List.Forall₂ (CircuitType.Reads V) sgOld sgv) {nc : ℕ}
+    (endo indexDigest : FVar F) {np : ℕ} (sgOld : Vector (AffinePoint (FVar F)) np)
+    (sgv : List (AffinePoint F)) (hsg : List.Forall₂ (CircuitType.Reads V) sgOld.toList sgv)
+    {nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (xv : List (AffinePoint F))
     (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜List.Forall₂ (CircuitType.Reads V) pts.toList xv⌝⦄)
@@ -366,7 +367,7 @@ theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠
 result holds of the former. -/
 theorem fqSpongeTranscript_xHat [ToNat F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar F)
-    (sgOld : List (AffinePoint (FVar F))) {nc : ℕ}
+    {np : ℕ} (sgOld : Vector (AffinePoint (FVar F)) np) {nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (P : Vector (AffinePoint (FVar F)) nc → Prop)
     (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜P pts⌝⦄)
@@ -639,8 +640,8 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
     (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
-    (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F)))
-    (sgv : List (Bool × AffinePoint F)) (hsg : List.Forall₂ (CircuitType.Reads V) sgOld sgv)
+    (endo indexDigest : FVar F) {np : ℕ} (sgOld : Vector (BoolVar F × AffinePoint (FVar F)) np)
+    (sgv : List (Bool × AffinePoint F)) (hsg : List.Forall₂ (CircuitType.Reads V) sgOld.toList sgv)
     {nc : ℕ} (hnc : 0 < nc) (xHat : Vector (AffinePoint (FVar F)) nc) (xv : List (AffinePoint F))
     (hx : List.Forall₂ (CircuitType.Reads V) xHat.toList xv)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols) (wv : List (List (AffinePoint F)))
@@ -649,7 +650,7 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc)) (zv tv : List (AffinePoint F))
     (hz : List.Forall₂ (CircuitType.Reads V) zComm.toList zv)
     (ht : List.Forall₂ (CircuitType.Reads V) tComm.toList tv)
-    (hchar : ∀ j : ℕ, j ≤ 1 + 2 * (sgOld.length + nc + wCols * nc + nc + quotChunks * nc) →
+    (hchar : ∀ j : ℕ, j ≤ 1 + 2 * (np + nc + wCols * nc + nc + quotChunks * nc) →
       (j : F) = 0 → j = 0) :
     ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
       xHat wComm zComm tComm
@@ -668,7 +669,7 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
     have h4 := hz.length_eq
     have h5 := ht.length_eq
     rw [hwlen] at h3
-    simp only [Vector.length_toList] at h2 h4 h5
+    simp only [Vector.length_toList] at h1 h2 h4 h5
     intro k hk
     exact hchar k (by omega)
   obtain ⟨zP, zs, hzl⟩ : ∃ P Ps, zComm.toList = P :: Ps := by
@@ -756,7 +757,7 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
 /-- The conditional transcript returns the `xHat` it was given. -/
 theorem fqSpongeTranscriptOpt_xHat [ToNat F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar F)
-    (sgOld : List (BoolVar F × AffinePoint (FVar F))) {nc : ℕ}
+    {np : ℕ} (sgOld : Vector (BoolVar F × AffinePoint (FVar F)) np) {nc : ℕ}
     (xHat : Vector (AffinePoint (FVar F)) nc)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols)
     (zComm : Vector (AffinePoint (FVar F)) nc)
@@ -784,7 +785,7 @@ together with any property `P` of `computeXHat`'s result, carried to the output'
 theorem fqSpongeTranscript_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (endo indexDigest : FVar F) (sgOld : List (AffinePoint (FVar F))) {nc : ℕ}
+    (endo indexDigest : FVar F) {np : ℕ} (sgOld : Vector (AffinePoint (FVar F)) np) {nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (P : Vector (AffinePoint (FVar F)) nc → Prop) (xv : List (AffinePoint F))
     (hx : ⦃⌜True⌝⦄ computeXHat
@@ -797,7 +798,7 @@ theorem fqSpongeTranscript_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) �
     ⦃⇓ o _ => ⌜P o.xHat ∧
       ∀ (sgv : List (AffinePoint F)) (wv : List (List (AffinePoint F)))
       (zv tv : List (AffinePoint F)),
-      List.Forall₂ (CircuitType.Reads V) sgOld sgv →
+      List.Forall₂ (CircuitType.Reads V) sgOld.toList sgv →
       List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) (wComm.toList.map Vector.toList) wv →
       List.Forall₂ (CircuitType.Reads V) zComm.toList zv →
       List.Forall₂ (CircuitType.Reads V) tComm.toList tv →
@@ -816,19 +817,19 @@ theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
     (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
-    (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F))) {nc : ℕ}
-    (hnc : 0 < nc) (xHat : Vector (AffinePoint (FVar F)) nc)
+    (endo indexDigest : FVar F) {np : ℕ} (sgOld : Vector (BoolVar F × AffinePoint (FVar F)) np)
+    {nc : ℕ} (hnc : 0 < nc) (xHat : Vector (AffinePoint (FVar F)) nc)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols)
     (zComm : Vector (AffinePoint (FVar F)) nc)
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc))
-    (hchar : ∀ j : ℕ, j ≤ 1 + 2 * (sgOld.length + nc + wCols * nc + nc + quotChunks * nc) →
+    (hchar : ∀ j : ℕ, j ≤ 1 + 2 * (np + nc + wCols * nc + nc + quotChunks * nc) →
       (j : F) = 0 → j = 0) :
     ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
       xHat wComm zComm tComm
     ⦃⇓ o _ => ⌜o.xHat = xHat ∧
       ∀ (sgv : List (Bool × AffinePoint F)) (xv : List (AffinePoint F))
       (wv : List (List (AffinePoint F))) (zv tv : List (AffinePoint F)),
-      List.Forall₂ (CircuitType.Reads V) sgOld sgv →
+      List.Forall₂ (CircuitType.Reads V) sgOld.toList sgv →
       List.Forall₂ (CircuitType.Reads V) xHat.toList xv →
       List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) (wComm.toList.map Vector.toList) wv →
       List.Forall₂ (CircuitType.Reads V) zComm.toList zv →

@@ -83,7 +83,7 @@ def groupStepOn (key : VkComms 1 (AffinePoint (FVar Fp))) (basis : Array XhatSte
     CircuitM Fp C (BoolVar Fp) := do
   let sv ← stepIndexSponge key
   verifyProofWith blindingH (oneChunk basis) sv v.isBaseCase v.statement v.claims
-    (ivpInputOf v.claims.deferredValues (v.sgOld.toList.map (none, ·)) key v.proof)
+    (ivpInputOf v.claims.deferredValues (v.sgOld.map (none, ·)) key v.proof)
 
 /-! ## The wrap circuit's group half, on a step proof -/
 
@@ -100,11 +100,11 @@ def wrapIndexSponge {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq))) :
 
 /-- The wrap circuit's group half: the step key's index sponge, the step statement's
 public-input commitment, then `Pickles.incrementallyVerifyProof` with each old accumulator
-point under its keep bit (the last `n` bits of the branch data's mask), then the digest and
+point under its keep bit (the branch data's mask past its first `pad` bits), then the digest and
 round-challenge assertions against the wrap statement. Returns the success bit. -/
 def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
     (basis : Array (Vector XhatWrapCurve.Point nc)) (blindingH : AffinePoint (FVar Fq))
-    {ks kw n : ℕ} (v : WrapGroup ks kw n nc (FVar Fq) (BoolVar Fq)) :
+    {ks kw pad : ℕ} (v : WrapGroup ks kw pad nc (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
   let sv ← wrapIndexSponge key
   let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) nc) :=
@@ -112,12 +112,12 @@ def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
       (packLeavesOf v.stepStatement.packed
         (XhatTable.ofKey v.stepStatement.packed basis.toList))
   let dv := v.statement.proofState.deferredValues
-  let mask := dv.branchData.proofsVerifiedMask.toList.drop (MaxProofsVerified - n)
+  let mask := dv.branchData.proofsVerifiedMask.drop pad
   let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const Bulletproof.IpaPallas.curve.lam)
     groupMapParamsVesta
     vestaBase.sqrt? true blindingH sv computeXHat
-    (ivpInputOf dv.toDeferredValues ((mask.zip v.sgOld.toList).map fun (m, P) => (some m, P))
+    (ivpInputOf dv.toDeferredValues ((mask.zip v.sgOld).map fun (m, P) => (some m, P))
       key v.proof)
   assertEqual v.statement.proofState.spongeDigestBeforeEvaluations o.spongeDigest
   for c in (dv.bulletproofChallenges.zip o.bulletproofChallenges).toList do

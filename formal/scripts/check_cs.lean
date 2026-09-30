@@ -700,7 +700,7 @@ def fqSpongeTranscriptStepCircuit (input : Vector (FVar Fp) 53) : CircuitM Fp C 
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let _ ← Pickles.fqSpongeTranscript Bulletproof.IpaVesta.curve.frSponge.params
     (.const Bulletproof.IpaVesta.curve.lam)
-    (get 0) [pt 1, pt 3] (pure #v[pt 5]) (Vector.ofFn fun j : Fin 15 => #v[pt (7 + 2 * j.val)])
+    (get 0) #v[pt 1, pt 3] (pure #v[pt 5]) (Vector.ofFn fun j : Fin 15 => #v[pt (7 + 2 * j.val)])
     #v[pt 37] (Vector.ofFn fun j : Fin 7 => pt (39 + 2 * j.val))
   pure PUnit.unit
 
@@ -713,7 +713,7 @@ def fqSpongeTranscriptWrapCircuit (input : Vector (FVar Fq) 55) : CircuitM Fq Cq
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let _ ← Pickles.fqSpongeTranscriptOpt Bulletproof.IpaPallas.curve.frSponge.params
     (.const Bulletproof.IpaPallas.curve.lam) (get 2)
-    [(.unchecked (get 0), pt 3), (.unchecked (get 1), pt 5)] #v[pt 7]
+    #v[(BoolVar.unchecked (get 0), pt 3), (BoolVar.unchecked (get 1), pt 5)] #v[pt 7]
     (Vector.ofFn fun j : Fin 15 => #v[pt (9 + 2 * j.val)]) #v[pt 39]
     (Vector.ofFn fun j : Fin 7 => pt (41 + 2 * j.val))
   pure PUnit.unit
@@ -1219,7 +1219,7 @@ def dummyIndexSponge : CircuitM Fp C (SpongeVar Fp) :=
 /-- The group half's cells from the 175-input layout at `get`: the claims and the opening
 from the inputs, the key's commitments and `sg_old` dummy constants. -/
 def ivpStepInput (get : ℕ → FVar Fp) :
-    Pickles.IvpInput Pickles.WrapIPARounds 1 (FVar Fp) (BoolVar Fp)
+    Pickles.IvpInput Pickles.WrapIPARounds 1 2 (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
@@ -1230,7 +1230,7 @@ def ivpStepInput (get : ℕ → FVar Fp) :
                  perm := shifted 34, zetaToSrsLength := shifted 36, zetaToDomainSize := shifted 38 }
       combinedInnerProduct := shifted 40, b := shifted 42, xi := ⟨get 44⟩
       bulletproofChallenges := Vector.ofFn fun j => ⟨get (45 + j)⟩ }
-  Pickles.ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
+  Pickles.ivpInputOf dv #v[(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
     { wComm := Vector.ofFn fun j => #v[pt (60 + 2 * j)]
       zComm := #v[pt 90]
       tComm := Vector.ofFn fun j => pt (92 + 2 * j)
@@ -1304,13 +1304,13 @@ def stepVerifyStatement (get : ℕ → FVar Fp) :
 /-- The group half's cells from the 268-input layout: the wrap proof block at 0, the key and
 `sg_old` dummies; the claim cells are `verify`'s to substitute. -/
 def stepVerifyCells (get : ℕ → FVar Fp) :
-    Pickles.IvpInput Pickles.WrapIPARounds 1 (FVar Fp) (BoolVar Fp)
+    Pickles.IvpInput Pickles.WrapIPARounds 1 2 (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
   Pickles.ivpInputOf (stepVerifyUnfinalized get).deferredValues
-    [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
+    #v[(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
     { wComm := Vector.ofFn fun j => #v[pt (2 * j)]
       zComm := #v[pt 30]
       tComm := Vector.ofFn fun j => pt (32 + 2 * j)
@@ -1679,7 +1679,7 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const Bulletproof.IpaPallas.curve.lam)
     Pickles.groupMapParamsVesta vestaBase.sqrt? true h sv computeXHat
-    (Pickles.ivpInputOf dv [] dummyWrapKeyComms (wrapIvpProof pt get))
+    (Pickles.ivpInputOf dv #v[] dummyWrapKeyComms (wrapIvpProof pt get))
   assertEqual o.spongeDigest (get 176)
   for c in (dv.bulletproofChallenges.zip o.bulletproofChallenges).toList do
     assertEqual c.1.val c.2.val
@@ -1711,7 +1711,7 @@ def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : XhatCurve.Point)
     [Vector.ofFn fun j : Fin 15 => get (178 + j)] (get 177)
     { deferredValues := dv, shouldFinalize := .unchecked (.const 1)
       spongeDigestBeforeEvaluations := get 176 }
-    (Pickles.ivpInputOf dv [(some (.unchecked (.const 1)), pt 194)] dummyWrapKeyComms
+    (Pickles.ivpInputOf dv #v[(some (BoolVar.unchecked (.const 1)), pt 194)] dummyWrapKeyComms
       (wrapIvpProof pt get))
 
 /-! ## The `messages_for_next_wrap_proof` hash

@@ -82,7 +82,7 @@ structure InputReads (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.
   /-- The proof's cells read as the proof's. -/
   proof : ProofReads (stepSide Vg) g.wComm g.zComm g.tComm g.opening cp
   /-- The `sg` cells are the old accumulators', every slot kept. -/
-  olds : CommReads IpaPallas.curve Vg g.sgOld (cp.olds.map (·.sg)).toList
+  olds : CommReads IpaPallas.curve Vg g.sgOld.toList (cp.olds.map (·.sg)).toList
   /-- `ft(ζω)`. -/
   ftEval1 : s.evals.ftEval1.val Vs = cp.ftEval1
   /-- The proof's evaluations, chunk by chunk. -/
@@ -113,8 +113,7 @@ private theorem InputReads.ivpHyps {S : Srs IpaPallas.curve} {K : Key IpaPallas.
     (hclaimOk : ∀ x ∈ g.shifted, (stepSide Vg).ClaimOk x) :
     ∃ oldsW, IvpHyps (stepSide Vg) S.σ K.cvk cp pub false spongeAfterIndex
       ((g.cells keyCells).withClaims g.claims) oldsW :=
-  ivpHyps_of_reads hnc g.claims g.sgOld g.val.proof (by simp [GroupVar.sgOld, MaxProofsVerified])
-    hin.proof hin.olds hvk hclaimOk
+  ivpHyps_of_reads hnc g.claims g.sgOld g.val.proof hin.proof hin.olds hvk hclaimOk
 
 end WrapProof
 

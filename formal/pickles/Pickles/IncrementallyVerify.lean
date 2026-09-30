@@ -59,7 +59,7 @@ open scoped Kimchi
 section Gadget
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
-  {k : ℕ}
+  {k np : ℕ}
 
 /-- What the group half returns: the fq-sponge digest before evaluations, the opening check's
 acceptance bit, and the raw 128-bit round prechallenges. -/
@@ -96,10 +96,10 @@ structure IvpClaims (f sf : Type) where
 
 /-- What the group half consumes: the claims, the old accumulators' commitments, the key's
 commitments at `nc` chunks, the proof's commitments as chunk lists, and the opening proof. -/
-structure IvpInput (k nc : ℕ) (f bc sf : Type) extends IvpClaims f sf where
-  /-- The previous proofs' challenge-polynomial commitments, each under its keep bit on the
+structure IvpInput (k nc np : ℕ) (f bc sf : Type) extends IvpClaims f sf where
+  /-- The `np` previous proofs' challenge-polynomial commitments, each under its keep bit on the
   wrap side and unmasked on the step side. -/
-  sgOld : List (Option bc × AffinePoint f)
+  sgOld : Vector (Option bc × AffinePoint f) np
   /-- The verifier key's commitments. -/
   key : VkComms nc (AffinePoint f)
   /-- The proof's fifteen witness commitments, `nc` chunks each. -/
@@ -113,7 +113,7 @@ structure IvpInput (k nc : ℕ) (f bc sf : Type) extends IvpClaims f sf where
 
 /-- The shifted scalars the circuit scales by: the three `ftComm` scales by and the four of the
 opening check. -/
-def IvpInput.shifted {F sf : Type} {nc : ℕ} (inp : IvpInput k nc (FVar F) (BoolVar F) sf) :
+def IvpInput.shifted {F sf : Type} {nc : ℕ} (inp : IvpInput k nc np (FVar F) (BoolVar F) sf) :
     List sf :=
   [inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize,
    inp.deferred.combinedInnerProduct, inp.deferred.b, inp.opening.z1, inp.opening.z2]
@@ -121,10 +121,10 @@ def IvpInput.shifted {F sf : Type} {nc : ℕ} (inp : IvpInput k nc (FVar F) (Boo
 /-- The batch bases in batch order: the old accumulators under their masks, then unmasked the
 public-input commitment `xHat`, the linearization commitment `ftc`, `z`, the six selectors,
 the witness columns, the coefficients and `σ₀…σ₅`, each commitment's chunks adjacent. -/
-def IvpInput.bases {F sf : Type} {nc : ℕ} (inp : IvpInput k nc (FVar F) (BoolVar F) sf)
+def IvpInput.bases {F sf : Type} {nc : ℕ} (inp : IvpInput k nc np (FVar F) (BoolVar F) sf)
     (xHat : Vector (AffinePoint (FVar F)) nc)
     (ftc : AffinePoint (FVar F)) : List (AffinePoint (FVar F) × Option (BoolVar F)) :=
-  inp.sgOld.map (fun m => (m.2, m.1))
+  inp.sgOld.toList.map (fun m => (m.2, m.1))
     ++ (xHat.toList ++ [ftc] ++ inp.zComm.toList ++ (inp.key.selectors.map Vector.toList).flatten
         ++ (inp.wComm.toList.map Vector.toList).flatten
         ++ (inp.key.coefficientsComm.toList.map Vector.toList).flatten
@@ -141,7 +141,7 @@ def incrementallyVerifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf :
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (optSponge : Bool) (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
     {nc : ℕ} (computeXHat : CircuitM F c (Vector (AffinePoint (FVar F)) nc))
-    (inp : IvpInput k nc (FVar F) (BoolVar F) sf) :
+    (inp : IvpInput k nc np (FVar F) (BoolVar F) sf) :
     CircuitM F c (IvpOutput F k) := do
   let (indexDigest, _) ← SpongeVar.squeeze p spongeAfterIndex
   let tr ←
@@ -165,7 +165,7 @@ end Gadget
 
 section Frame
 
-variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F} {k : ℕ}
+variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F} {k np : ℕ}
 
 open Std.Do in
 /-- Whatever the public-input commitment's rows force of the valuation, the group half's rows
@@ -176,7 +176,7 @@ theorem incrementallyVerifyProof_frame {sf : Type}
     (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
     {nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
-    (inp : IvpInput k nc (FVar F) (BoolVar F) sf) (P : Prop)
+    (inp : IvpInput k nc np (FVar F) (BoolVar F) sf) (P : Prop)
     (hX : ⦃⌜True⌝⦄ computeXHat ⦃⇓ _ _ => ⌜P⌝⦄) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof ops e p endo gm sqrtF true blindingH spongeAfterIndex computeXHat inp
@@ -273,14 +273,14 @@ theorem KeyReads.sigmaLastRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C
 /-- The old-accumulator cells read as the proof's old accumulators: they read as the points
 `oldsW` under their keep bits, and the kept points are the old accumulators' commitments, in
 order. -/
-structure OldsRead {nc k : ℕ} (V : Valuation C.BaseField)
-    (sgOld : List (Option (BoolVar C.BaseField) × AffinePoint (FVar C.BaseField)))
-    (cp : KimchiProof C nc k) (oldsW : List (C.Point × Bool)) : Prop where
+structure OldsRead {nc k np : ℕ} (V : Valuation C.BaseField)
+    (sgOld : Vector (Option (BoolVar C.BaseField) × AffinePoint (FVar C.BaseField)) np)
+    (cp : KimchiProof C nc k) (oldsW : Vector (C.Point × Bool) np) : Prop where
   /-- The cells read as `oldsW`'s points under their bits. -/
-  cells : List.Forall₂ (MaskedBaseReads C.E.toAffine V) (sgOld.map fun m => (m.2, m.1))
-    (oldsW.map fun b => (SWPoint.equivPoint C.E b.1, b.2))
+  cells : List.Forall₂ (MaskedBaseReads C.E.toAffine V) (sgOld.toList.map fun m => (m.2, m.1))
+    (oldsW.toList.map fun b => (SWPoint.equivPoint C.E b.1, b.2))
   /-- The kept points are the proof's old accumulators' commitments, in order. -/
-  kept : (oldsW.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList
+  kept : (oldsW.toList.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList
 
 /-- A proof's cells read as the wire proof `cp`: the witness, permutation and quotient
 commitment columns read as the proof's, the opening's `(L, R)`, `δ` and `sg` cells read as its
@@ -316,8 +316,8 @@ to nothing here: `ξ`, `cip`, `b` are scaled by as claimed, and `perm`, `ζ^{2^k
 only `ftComm`, so their being the wire's is a premise of `IvpReads`' opening clause. -/
 structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k)
-    (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (oldsW : List (C.Point × Bool)) : Prop where
+    (inp : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (oldsW : Vector (C.Point × Bool) np) : Prop where
   /-- The old-accumulator cells read as the proof's old accumulators, through `oldsW`. -/
   olds : OldsRead V inp.sgOld cp oldsW
   /-- The proof's cells read as the proof's. -/
@@ -378,8 +378,8 @@ wider than the absorb count. -/
 structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (optSponge : Bool)
     (spongeAfterIndex : SpongeVar C.BaseField)
-    (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (oldsW : List (C.Point × Bool)) : Prop where
+    (inp : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (oldsW : Vector (C.Point × Bool) np) : Prop where
   /-- The sponge after the index digest squeezes to the key's digest. -/
   idx : ∃ s : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex s ∧
     (Poseidon.squeeze C.sponge.params s).1 = cvk.digest
@@ -392,7 +392,7 @@ structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   /-- At least one round. -/
   k_pos : 0 < σ.k
   /-- The base field's characteristic exceeds the absorb count. -/
-  char : ∀ j : ℕ, j ≤ 1 + 2 * (inp.sgOld.length + nc + wCols * nc + nc + quotChunks * nc) →
+  char : ∀ j : ℕ, j ≤ 1 + 2 * (np + nc + wCols * nc + nc + quotChunks * nc) →
     (j : C.BaseField) = 0 → j = 0
 
 end Read
@@ -550,14 +550,15 @@ their bits, `xHat` as the public chunks, `ftc` as `runFtComm`, the columns as th
 private theorem bases_reads {nc : ℕ} {sf : Type}
     {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
     {S : IvpSide C V ops} {σ : SRS C.Point} {cvk : KimchiVK C nc} {cp : KimchiProof C nc σ.k}
-    {pub : Array C.ScalarField} {inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf}
-    {oldsW : List (C.Point × Bool)}
+    {pub : Array C.ScalarField} {np : ℕ}
+    {inp : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf}
+    {oldsW : Vector (C.Point × Bool) np}
     (hties : IvpTies S σ cvk cp inp oldsW) {xHat : Vector (AffinePoint (FVar C.BaseField)) nc}
     (hx : CommReads C V xHat.toList (runPublicComm C σ cvk pub).toList)
     {ftc : AffinePoint (FVar C.BaseField)}
     (hf : OnCurveAt C.E.toAffine V ftc (SWPoint.equivPoint C.E (runFtComm C σ cvk cp pub))) :
     List.Forall₂ (MaskedBaseReads C.E.toAffine V) (inp.bases xHat ftc)
-      ((streamBv σ cvk cp pub oldsW).map fun b => (SWPoint.equivPoint C.E b.1, b.2)) := by
+      ((streamBv σ cvk cp pub oldsW.toList).map fun b => (SWPoint.equivPoint C.E b.1, b.2)) := by
   unfold IvpInput.bases streamBv restOf
   rw [tailRows_comms]
   have hi := hties.key.selectorsRead.masked
@@ -735,8 +736,8 @@ already the key's), the plonk claims asserted equal to the squeezes, `ftc` read 
 opening check read, the output satisfies `IvpReads`. -/
 private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (oldsW : List (C.Point × Bool))
+    {np : ℕ} (inp : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (oldsW : Vector (C.Point × Bool) np)
     (blindingH : AffinePoint (FVar C.BaseField)) (hties : IvpTies S σ cvk cp inp oldsW)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (hk : 0 < σ.k)
@@ -819,7 +820,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
         inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
         inp.opening.z1, inp.opening.z2]).subset hxs)
     obtain ⟨U, ns, c₀, chals, hU, hns, hc, hchals, ⟨wc, hwc⟩, hiff⟩ :=
-      hcb.2 _ hb hbne (streamBv_last σ cvk cp pub oldsW) hclaims ξ₀ hξ cp.opening.lr
+      hcb.2 _ hb hbne (streamBv_last σ cvk cp pub oldsW.toList) hclaims ξ₀ hξ cp.opening.lr
         cp.opening.delta cp.opening.sg hties.proof.lr hk hties.proof.delta hties.proof.sg hh
     have hlrv : CircuitType.Reads V inp.opening.lr
         (cp.opening.lr.map fun q => (wirePt q.1, wirePt q.2)) :=
@@ -841,7 +842,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
       exact hU
     · exact Vector.toList_inj.mp (List.map_injective_iff.mpr Subtype.val_injective
         ((forall₂_exact hT.2.1 (forall₂_toList_iff.mpr hns)).trans h2.symm))
-    · exact success_eq S σ cvk cp pub oldsW hties.olds.kept inp.opening.z1 inp.opening.z2
+    · exact success_eq S σ cvk cp pub oldsW.toList hties.olds.kept inp.opening.z1 inp.opening.z2
         hties.proof.z1 hties.proof.z2 U chals _ _ _ _ _ hiff
 
 /-- Under any valuation satisfying the emitted constraints, the group half's success bit reads
@@ -852,7 +853,7 @@ theorem incrementallyVerifyProof_success_bit {F : Type} [Field F] [DecidableEq F
     (sqrtF : F → Option F) (optSponge : Bool) (blindingH : AffinePoint (FVar F))
     (spongeAfterIndex : SpongeVar F) {k nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
-    (inp : IvpInput k nc (FVar F) (BoolVar F) sf) :
+    {np : ℕ} (inp : IvpInput k nc np (FVar F) (BoolVar F) sf) :
     ⦃⌜True⌝⦄ incrementallyVerifyProof ops e p endo gm sqrtF optSponge blindingH spongeAfterIndex
       computeXHat inp
     ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.success : CVar F).val V = bit b⌝⦄ := by
@@ -860,10 +861,12 @@ theorem incrementallyVerifyProof_success_bit {F : Type} [Field F] [DecidableEq F
   have hsq := fun sv => builder_spec_true
     (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
   have hx := builder_spec_true computeXHat
-  have htrO := fun d sg (xh : Vector (AffinePoint (FVar F)) nc) w z t => builder_spec_true
+  have htrO := fun d (sg : Vector (BoolVar F × AffinePoint (FVar F)) np)
+      (xh : Vector (AffinePoint (FVar F)) nc) w z t => builder_spec_true
     (fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo d sg xh w z t)
-  have htr := fun d sg (xh : CircuitM F (Builder V (KimchiConstraint F))
-      (Vector (AffinePoint (FVar F)) nc)) w z t => builder_spec_true
+  have htr := fun d (sg : Vector (AffinePoint (FVar F)) np)
+      (xh : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
+      w z t => builder_spec_true
     (fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo d sg xh w z t)
   have hapc := fun (o : FqTranscriptOutput F nc) cl => builder_spec_true
     (assertPlonkChallenges (c := Builder V (KimchiConstraint F)) o cl)
@@ -887,8 +890,8 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
     (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
       (Vector (AffinePoint (FVar C.BaseField)) nc))
-    (inp : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (oldsW : List (C.Point × Bool))
+    {np : ℕ} (inp : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (oldsW : Vector (C.Point × Bool) np)
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts.toList (runPublicComm C σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
@@ -916,18 +919,19 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
         C.sponge.hsize
         S.curve.small_inj endo d
         (inp.sgOld.map fun m => (m.1.getD true_, m.2)) hnc xHat inp.wComm inp.zComm inp.tComm
-        (by simpa using hchar)
+        hchar
     mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
     case vc1.hsize => exact C.sponge.hsize
     rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- the transcript, at the wire readings of every absorbed cell
-    have hsgv := olds_reads hmask hties.olds.cells
+    have hsgv := olds_reads (fun m hm => hmask m (Vector.mem_toList_iff.mp hm)) hties.olds.cells
+    rw [← Vector.toList_map] at hsgv
     have hFq := htr'.2 _ _ _ _ _ hsgv hx.reads hties.proof.w.reads hties.proof.z.reads
       hties.proof.t.reads
     rw [hd] at hFq
     -- the kept old-accumulator readings are the olds' `sg`
-    have hkept : ((oldsW.map fun b => (b.2, wirePt b.1)).filter (·.1)).map (·.2)
+    have hkept : ((oldsW.toList.map fun b => (b.2, wirePt b.1)).filter (·.1)).map (·.2)
         = (cp.olds.map (·.sg)).toList.map wirePt := by
       rw [← hties.olds.kept, List.filter_map, List.map_map, List.map_map]
       rfl
@@ -947,8 +951,11 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- every old is kept: the plain sponge absorbs them all
-    obtain ⟨hsgv, hall⟩ := olds_reads_plain hmask hties.olds.cells
-    have hkept : oldsW.map (fun b => wirePt b.1) = (cp.olds.map (·.sg)).toList.map wirePt := by
+    obtain ⟨hsgv, hall⟩ :=
+      olds_reads_plain (fun m hm => hmask m (Vector.mem_toList_iff.mp hm)) hties.olds.cells
+    rw [← Vector.toList_map] at hsgv
+    have hkept : oldsW.toList.map (fun b => wirePt b.1)
+        = (cp.olds.map (·.sg)).toList.map wirePt := by
       rw [← hties.olds.kept, List.filter_eq_self.2 hall, List.map_map]
       rfl
     have hFq := htr'.2 _ _ _ _ hsgv hties.proof.w.reads hties.proof.z.reads hties.proof.t.reads
