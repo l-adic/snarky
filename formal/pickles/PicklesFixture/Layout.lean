@@ -3,6 +3,7 @@ import Snarky.Kimchi.Constraint
 import Kimchi.Columns
 import Kimchi.Verifier.Kimchi
 import Pasta.Endo
+import Pickles.Statement
 
 /-!
 # The dumps' input layouts and the production constants they carry
@@ -33,9 +34,10 @@ abbrev C := KimchiConstraint Fp
 /-- The kimchi constraint sum at the wrap field. -/
 abbrev Cq := KimchiConstraint Fq
 
-/-- The two previous-challenge vectors from `base`, `rounds` entries each. -/
+/-- The `Pickles.MaxProofsVerified` previous-challenge vectors from `base`, `rounds` entries
+each. -/
 def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) (rounds : ℕ := 16) :
-    Vector (Vector (FVar (ZMod p)) rounds) 2 :=
+    Vector (Vector (FVar (ZMod p)) rounds) Pickles.MaxProofsVerified :=
   Vector.ofFn fun j => Vector.ofFn fun i => get (base + rounds * j + i)
 
 open Kimchi.Verifier in

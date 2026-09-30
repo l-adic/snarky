@@ -88,9 +88,7 @@ private theorem BranchData.packed_val {V : Valuation Fp} (bd : BranchData (FVar 
       = ((4 * n + ((if ms[0] then 1 else 0) + 2 * (if ms[1] then 1 else 0)) : ℕ) : Fp) := by
   have h0 := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hms 0 (by decide))
   have h1 := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hms 1 (by decide))
-  have e0 : bd.proofsVerifiedMask.toList[0]? = some bd.proofsVerifiedMask[0] := by simp
-  have e1 : bd.proofsVerifiedMask.toList[1]? = some bd.proofsVerifiedMask[1] := by simp
-  simp only [BranchData.packed, e0, e1, CVar.val_add_, CVar.val_scale_, hdv, h0, h1]
+  simp only [BranchData.packed, Fin.getElem_fin, CVar.val_add_, CVar.val_scale_, hdv, h0, h1]
   cases ms[0] <;> cases ms[1] <;> simp [bit]; ring
 
 /-- A wrap statement reading as a step statement packed carries its claims across: the wrap

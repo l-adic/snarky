@@ -141,12 +141,11 @@ section Pack
 variable {F : Type} [Field F] [DecidableEq F] {nc k np : ℕ}
 
 /-- The branch data as one 10-bit value `4·domainLog2 + m₀ + 2·m₁`, over the mask bits `m₀`,
-`m₁`. A missing mask bit reads as `0`. -/
+`m₁`. -/
 def BranchData.packed (bd : BranchData (FVar F) (BoolVar F)) : FVar F :=
-  let bit (i : ℕ) : CVar F := match bd.proofsVerifiedMask.toList[i]? with
-    | some b => (↑b : CVar F)
-    | none => .const 0
-  CVar.add_ (CVar.scale_ 4 bd.domainLog2) (CVar.add_ (bit 0) (CVar.scale_ 2 (bit 1)))
+  let bit (i : Fin MaxProofsVerified) : CVar F := ↑bd.proofsVerifiedMask[i]
+  CVar.add_ (CVar.scale_ 4 bd.domainLog2)
+    (CVar.add_ (bit ⟨0, by decide⟩) (CVar.scale_ 2 (bit ⟨1, by decide⟩)))
 
 /-- The wrap statement as packed scalars, in packing order: the five shifted scalars
 `cip, b, ζ^{2^k}, ζⁿ, perm` (full), `β, γ, α, ζ, ξ` (128), the sponge digest and the two
