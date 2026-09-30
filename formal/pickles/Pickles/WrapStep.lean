@@ -152,9 +152,9 @@ private theorem wrapStep_kimchiVerify_core
     -- the Lagrange bases at a step domain, the blinding base, the padding challenges and each
     -- slot's challenge-stack height: constants of the wrap circuit
     (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : Vector Fq σ.k) (slotWidths : Vector ℕ w)
+    (dummy : Vector Fq σ.k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
     -- the wrap circuit's advice
-    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k slotWidths.toList.sum)
+    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k (slotWidths.map Fin.val).sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- the active branch: its key and Lagrange bases are `KStep`'s, its blinding base `SStep`'s
@@ -363,9 +363,9 @@ theorem wrapStep_kimchiVerify
     -- the padding challenges
     (dummy : Vector Fq σ.k)
     -- each slot's challenge-stack height
-    (slotWidths : Vector ℕ w)
+    (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
     -- the wrap circuit's advice
-    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k slotWidths.toList.sum)
+    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k (slotWidths.map Fin.val).sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- key `b`'s points are finite

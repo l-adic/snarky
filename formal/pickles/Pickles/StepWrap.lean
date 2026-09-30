@@ -461,9 +461,9 @@ theorem stepWrap_kimchiVerify
     -- the padding challenges
     (dummy : Vector Fq S.σ.k)
     -- each wrap slot's challenge-stack height
-    (slotWidths : Vector ℕ w)
+    (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
     -- the wrap circuit's advice
-    (advW : WrapMainAdvice w ncStep S.σ.k StepIPARounds slotWidths.toList.sum)
+    (advW : WrapMainAdvice w ncStep S.σ.k StepIPARounds (slotWidths.map Fin.val).sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- the active branch

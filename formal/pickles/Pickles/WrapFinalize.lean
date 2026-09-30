@@ -152,12 +152,12 @@ finalize bodies with their assertions, left to right. Returns each slot's finali
 def wrapFinalizePrevProofs {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [KimchiSystem Fq c]
     {branches mpv k nc : ℕ} (P : FopParams Fq) (whichBranch : Vector (BoolVar Fq) branches)
     (slots : Vector (WrapFinalizeSlot branches k nc Fq) mpv) :
-    CircuitM Fq c (List (FopOutput Fq k)) := do
+    CircuitM Fq c (Vector (FopOutput Fq k) mpv) := do
   slots.toList.forM fun sl =>
     pinWrapDomainIndex whichBranch.toList sl.pins.toList sl.domainIndex
-  let rev ← (slots.toList.map (·.domainIndex)).reverse.mapM
+  let rev ← (slots.map (·.domainIndex)).reverse.mapM
     (selectDomain (domainGenerator IpaPallas.curve) wrapDomainLog2s)
-  (rev.reverse.zip slots.toList).mapM fun (d, sl) => do
+  (rev.reverse.zip slots).mapM fun (d, sl) => do
     let o ← finalizeOtherProofWrap P d.generator d.vanishingPolynomial sl.unfinalized sl.evals
       sl.prevChallenges
     assertAny [o.finalized, Snarky.not sl.unfinalized.shouldFinalize]
@@ -285,20 +285,6 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
     intro _ _ hg hv
     exact absurd ⟨hg, hv⟩ h
 
-/-- A list related entrywise to a mapped list pairs each entry of the original with one of its
-own entries, related to the entry's image. -/
-private theorem forall₂_map_zip {α β δ : Type} {R : δ → β → Prop} {f : α → β} :
-    ∀ {ds : List δ} {l : List α}, List.Forall₂ R ds (l.map f) →
-      ∀ a ∈ l, ∃ d, (d, a) ∈ ds.zip l ∧ R d (f a)
-  | _, [], _, a, ha => absurd ha List.not_mem_nil
-  | [], _ :: _, h, _, _ => by simp at h
-  | d :: ds, x :: l, h, a, ha => by
-    rw [List.map_cons, List.forall₂_cons] at h
-    rcases List.mem_cons.mp ha with rfl | ha
-    · exact ⟨d, by simp, h.1⟩
-    · obtain ⟨d', hd', hR⟩ := forall₂_map_zip h.2 a ha
-      exact ⟨d', by simp [hd'], hR⟩
-
 /-- **The wrap circuit's finalize block reads as each finalized proof's scalar half.** Under any
 valuation satisfying the emitted constraints, with the branch bits reading as the indicator of
 `b`, every slot that branch `b` compiled for the key's domain (index `j` of `wrapDomainLog2s`,
@@ -355,13 +341,13 @@ theorem wrapFinalizePrevProofs_reads
         intro _ _ h'
         exact absurd h' h)
   -- each slot's domain: an index reading as `j` selects the key's domain
-  have hdom := builder_spec_mapM (V := Vs) (c := KimchiConstraint Fq)
+  have hdom := builder_spec_vector_mapM_get (V := Vs) (c := KimchiConstraint Fq)
     (selectDomain (domainGenerator IpaPallas.curve) wrapDomainLog2s)
-    (fun (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) (index : FVar Fq) =>
+    (fun (index : FVar Fq) (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) =>
       index.val Vs = (j : Fq) →
         d.generator.val Vs = domainGenerator IpaPallas.curve wrapDomainLog2s[j] ∧
           ∀ zeta : FVar Fq, ⦃⌜True⌝⦄ d.vanishingPolynomial zeta
-            ⦃⇓ r _ => ⌜r.val Vs = zeta.val Vs ^ 2 ^ wrapDomainLog2s[j] - 1⌝⦄) id
+            ⦃⇓ r _ => ⌜r.val Vs = zeta.val Vs ^ 2 ^ wrapDomainLog2s[j] - 1⌝⦄)
     (fun index => by
       by_cases h : index.val Vs = (j : Fq)
       · refine builder_spec_imp _ _ _
@@ -370,9 +356,9 @@ theorem wrapFinalizePrevProofs_reads
         exact hr
       · refine builder_spec_imp _ _ _ (builder_spec_true _) ?_
         intro _ _ h'
-        exact absurd h' h)
+        exact absurd h' h) ((slots.map (·.domainIndex)).reverse)
   -- each slot's body
-  have hbody := builder_spec_mapM (V := Vs) (c := KimchiConstraint Fq)
+  have hbody := builder_spec_vector_mapM_get (V := Vs) (c := KimchiConstraint Fq) (m := mpv)
     (fun (p : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq)) ×
         WrapFinalizeSlot branches σ.k nc Fq) =>
       do
@@ -382,21 +368,22 @@ theorem wrapFinalizePrevProofs_reads
           p.2.prevChallenges
         assertAny [o.finalized, Snarky.not p.2.unfinalized.shouldFinalize]
         pure o)
-    (fun _ p => p.1.generator.val Vs = K.cvk.omega →
+    (fun p _ => p.1.generator.val Vs = K.cvk.omega →
       (∀ z, ⦃⌜True⌝⦄ p.1.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.cvk.n - 1⌝⦄) →
-      (↑p.2.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 → p.2.ScalarReads σ K.cvk Vs) id
+      (↑p.2.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 → p.2.ScalarReads σ K.cvk Vs)
     (fun p => wrapFinalizeBody_spec σ K Vs p.1 p.2)
   mvcgen [hpin, hdom, hbody]
   rename_i hpinP rev _ hrev _ _
   intro hos i hpb hsf
   have hsl : slots[i] ∈ slots.toList := by simp
   have hidx := hpinP _ hsl (by simpa using hpb)
-  rw [List.map_id] at hrev
-  rw [← List.reverse_reverse rev] at hrev
-  have hrev' := List.forall₂_reverse_iff.mp hrev
-  obtain ⟨d, hdz, hd⟩ := forall₂_map_zip hrev' _ hsl
+  -- slot `i`'s domain is the `(mpv − 1 − i)`-th of the right-to-left run
+  have hd := hrev ⟨mpv - 1 - i, by omega⟩
+  simp only [Fin.getElem_fin, Vector.getElem_reverse, Vector.getElem_map] at hd
+  simp only [show mpv - 1 - (mpv - 1 - i) = i.val by omega] at hd
   obtain ⟨hg, hv⟩ := hd hidx
-  obtain ⟨_, -, hR⟩ := forall₂_map_zip (f := id) hos (d, slots[i]) hdz
+  have hR := hos i
+  simp only [Fin.getElem_fin, Vector.getElem_zip, Vector.getElem_reverse] at hR
   exact hR (hg.trans hgen') (fun z => builder_spec_imp _ _ _ (hv z) fun r hr => by rw [hr, hn])
     hsf
 

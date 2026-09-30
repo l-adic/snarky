@@ -1013,9 +1013,10 @@ def wrapMainConsts (nc : ℕ) (path : System.FilePath) : IO (WrapMainConsts nc) 
   | .ok r => return r
   | .error e => throw (IO.userError s!"{path}: {e}")
 
-/-- The exported slot counts as one per branch, each at most `mpv`, when they are. -/
-def wrapMainWidths? (bp mpv : ℕ) (ws : List ℕ) : Option (Vector (Fin (mpv + 1)) (bp + 1)) :=
-  if h : ws.length = bp + 1 ∧ ∀ x ∈ ws, x ≤ mpv then
+/-- `n` exported counts, each at most `cap`, when they are: the branches' slot counts, the
+slots' challenge-stack heights. -/
+def wrapMainWidths? (n cap : ℕ) (ws : List ℕ) : Option (Vector (Fin (cap + 1)) n) :=
+  if h : ws.length = n ∧ ∀ x ∈ ws, x ≤ cap then
     some (Vector.ofFn fun b =>
       ⟨ws[b.val]'(by omega), Nat.lt_succ_of_le (h.2 _ (List.getElem_mem _))⟩)
   else none
@@ -1034,6 +1035,7 @@ the theorem's `compileWith` system (`Snarky.compileWith_constraints`). -/
 def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (widths : Vector (Fin (mpv + 1)) (bp + 1))
     (keys : Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1))
+    (slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv)
     (stmt : Pickles.StatementPacked 16 (Type1 (FVar Fq)) (FVar Fq)) :
     CircuitM Fq Cq Unit :=
   let pin (v : Int) : Option ℕ := if v < 0 then none else some v.toNat
@@ -1045,7 +1047,7 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (Vector.ofFn fun s => Vector.ofFn fun b => pin ((k.pins.getD b.val []).getD s.val (-1)))
     (fun l => k.lagrange.toList.map fun perBranch =>
       perBranch.getD ((Pickles.stepDomainLog2s keys).toList.idxOf l) zeroPts)
-    k.h k.dummy (Vector.ofFn fun s => k.slotWidths.getD s.val 0)
+    k.h k.dummy slotWidths
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice"⟩ stmt
@@ -1708,7 +1710,7 @@ def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : XhatCurve.Point)
   let dv := wrapIvpDv get
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
   Pickles.wrapVerifyWith h (oneChunk pts) (wrapStepStatement get) sv wrapMsgSponge
-    [Vector.ofFn fun j : Fin 15 => get (178 + j)] (get 177)
+    #v[Vector.ofFn fun j : Fin 15 => get (178 + j)] (get 177)
     { deferredValues := dv, shouldFinalize := .unchecked (.const 1)
       spongeDigestBeforeEvaluations := get 176 }
     (Pickles.ivpInputOf dv #v[(some (BoolVar.unchecked (.const 1)), pt 194)] dummyWrapKeyComms
@@ -1728,7 +1730,7 @@ def hashMessagesWrapCircuit (input : Vector (FVar Fq) 33) : CircuitM Fq Cq PUnit
   let digest ← Pickles.hashMessagesForNextWrapProof Bulletproof.IpaVesta.curve.sponge.params
     SpongeVar.init
     ⟨⟨get 30, get 31⟩,
-      [Vector.ofFn fun j : Fin 15 => get j, Vector.ofFn fun j : Fin 15 => get (15 + j)]⟩
+      #v[Vector.ofFn fun j : Fin 15 => get j, Vector.ofFn fun j : Fin 15 => get (15 + j)]⟩
   assertEqual digest (get 32)
 
 /-! ## The step proof's accumulator digest
@@ -1979,13 +1981,16 @@ def main : IO Unit := do
   let wrapMains ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
     let k ← optionalExport filter (dir / s!"{name}_constants.json") (wrapMainConsts nc)
     k.mapM fun k => do
-      let some widths := wrapMainWidths? bp mpv k.stepWidths
+      let some widths := wrapMainWidths? (bp + 1) mpv k.stepWidths
         | throw (IO.userError s!"{name}: slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}")
       let some keys := wrapMainKeys? bp k.keys
         | throw (IO.userError s!"{name}: {k.keys.length} step keys, not {bp + 1}")
+      let some slotWidths := wrapMainWidths? mpv Pickles.MaxProofsVerified k.slotWidths
+        | throw (IO.userError
+            s!"{name}: stack heights {k.slotWidths} are not {mpv} ≤ {Pickles.MaxProofsVerified}")
       if let .error e := wrapMainHyps mpv k hWrapPt then throw (IO.userError s!"{name}: {e}")
       pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
-        (wrapMainDumpCircuit bp mpv nc k widths keys))
+        (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths))
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
   let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n)) := do
