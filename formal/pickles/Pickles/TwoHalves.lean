@@ -658,23 +658,17 @@ theorem twoHalves_schnorr
     hξG hpermG hzetaM hzetaN ξ₀ hξGx
   subst hchals
   rw [hsucc] at hiff
-  -- the round challenges: the cell lists' readings are equations of lists
-  -- `verify` compares the claimed challenges with the returned ones entry by entry off the
-  -- base case; both lists have the SRS's round count, so the ties give the lists
-  have hbpc' : G.claims.deferredValues.bulletproofChallenges.toList.map (·.val.val G.V)
-      = o.bulletproofChallenges.toList.map (·.val.val G.V) :=
-    map_eq_map_of_zip (by simp) fun p hp => hbpc rfl p (by rwa [Vector.toList_zip])
+  -- the round challenges: `verify` compares the claimed challenges with the returned ones
+  -- entry by entry off the base case
   have hĉeq : ĉ = (ipaRunAt C (fqRun C K.cvk cp (runPublicComm C σ K.cvk pub)).warm
       (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1 := by
     ext i hi
-    have hbi : G.claims.deferredValues.bulletproofChallenges[i].val.val G.V
-        = o.bulletproofChallenges[i].val.val G.V := by
-      simpa [hi] using congrArg (·[i]?) hbpc'
+    have hbi := hbpc rfl ⟨i, hi⟩
     have hn := hns ⟨i, hi⟩
     have hg := hmsG ⟨i, hi⟩
     have hs := hmsS ⟨i, hi⟩
     have hc := hĉ ⟨i, hi⟩
-    simp only [Fin.getElem_fin] at hn hg hs hc
+    simp only [Fin.getElem_fin] at hbi hn hg hs hc
     unfold Reads128 at hn
     rw [← hbi] at hn
     rw [Reads128.unique hinjS hc hs, Reads128.unique hinjG hg hn]

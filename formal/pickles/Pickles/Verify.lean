@@ -448,9 +448,8 @@ def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
     IvpReads S σ cvk cp pub u.deferredValues.toIvpClaims o ∧
     o.success = v ∧
     u.spongeDigestBeforeEvaluations.val V = o.spongeDigest.val V ∧
-    (base = false →
-      ∀ p ∈ (u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges).toList,
-        p.1.val.val V = p.2.val.val V) ∧
+    (base = false → ∀ i : Fin σ.k,
+      u.deferredValues.bulletproofChallenges[i].val.val V = o.bulletproofChallenges[i].val.val V) ∧
     ∃ b : Bool, (↑v : CVar C.BaseField).val V = bit b
 
 /-- Zero cells past the end of the public input change nothing the read speaks about: the input
@@ -558,7 +557,9 @@ theorem verifyProof_reads
     exact absurd hp List.not_mem_nil
   · -- the exit: the read
     rename_i o _ hivp' _ _ hdig _ _ hall
-    exact ⟨o, hivp'.1, rfl, hdig, hall, hivp'.2⟩
+    refine ⟨o, hivp'.1, rfl, hdig, fun hbf i => ?_, hivp'.2⟩
+    simpa using hall hbf _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem
+      (xs := u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges) i.isLt))
 
 end Read
 

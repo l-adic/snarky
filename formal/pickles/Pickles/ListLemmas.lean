@@ -4,28 +4,14 @@ import Mathlib.Data.Vector.Basic
 /-!
 # List and vector lemmas the pickles modules share
 
-Facts about `List`, `List.Forall₂` and `Vector` that mention no pickles type: what a circuit
-that walks two cell lists in step establishes about them as lists, and how one-entry and
-flattened vectors read as lists.
+Facts about `List`, `List.Forall₂` and `Vector` that mention no pickles type: maps over zips,
+entrywise relations between vectors and their lists, and how one-entry and flattened vectors
+read as lists.
 -/
 
 namespace Pickles
 
 /-! ## Zips -/
-
-/-- Pointwise ties along a zip give the mapped lists, at equal lengths: what a circuit that
-compares two cell lists entry by entry establishes about them as lists. -/
-theorem map_eq_map_of_zip {α β γ : Type} {f : α → γ} {g : β → γ} :
-    ∀ {l₁ : List α} {l₂ : List β}, l₁.length = l₂.length →
-      (∀ p ∈ l₁.zip l₂, f p.1 = g p.2) → l₁.map f = l₂.map g
-  | [], [], _, _ => rfl
-  | [], _ :: _, hlen, _ => absurd hlen (by simp)
-  | _ :: _, [], hlen, _ => absurd hlen (by simp)
-  | a :: as, b :: bs, hlen, h => by
-      simp only [List.map_cons, List.cons.injEq]
-      refine ⟨h (a, b) (by simp), map_eq_map_of_zip (by simpa using hlen) fun p hp => h p ?_⟩
-      rw [List.zip_cons_cons]
-      exact List.mem_cons_of_mem _ hp
 
 /-- Mapping a function of the second components over a zip, at equal lengths, maps the second
 list. -/
