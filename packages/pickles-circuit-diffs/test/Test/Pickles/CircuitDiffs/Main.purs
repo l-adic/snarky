@@ -27,6 +27,7 @@ import Node.Process as Process
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, fromGateData, gateDataOf, parseOcamlFixtures)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect, compileBCorrectWrap)
+import Pickles.CircuitDiffs.PureScript.BindVk (compileBindVkStep)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOne (compileBulletReduceOne)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOneStep (compileBulletReduceOneStep)
@@ -1368,3 +1369,4 @@ spec bundle =
         exactMatchEff "pseudo_to_domain_wrap_circuit" (fromCompiledCircuit =<< compilePseudoToDomainWrap)
         exactMatchEff "choose_key_n1_wrap_circuit" (fromCompiledCircuit =<< compileChooseKeyN1Wrap)
         exactMatchEff "sideloaded_vk_typ_step_circuit" (fromCompiledCircuit =<< compileSideloadedVkTypStep)
+        exactMatchEff "bind_vk_step_circuit" (fromCompiledCircuit =<< compileBindVkStep)

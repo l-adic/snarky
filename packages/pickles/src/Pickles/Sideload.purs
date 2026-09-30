@@ -6,8 +6,10 @@
 -- | surface.
 module Pickles.Sideload
   ( module Pickles.Sideload.Bundle
+  , module Pickles.Sideload.BoundVk
   , module Snarky.Backend.Kimchi.Proof
   ) where
 
-import Pickles.Sideload.Bundle (Bundle, mkBundle, verifierIndex)
+import Pickles.Sideload.BoundVk (digestVk)
+import Pickles.Sideload.Bundle (Bundle, mkBundle, projectVk, verifierIndex)
 import Snarky.Backend.Kimchi.Proof (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)

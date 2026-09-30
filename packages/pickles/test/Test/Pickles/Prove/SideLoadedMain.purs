@@ -8,7 +8,9 @@
 -- | parent's own out-of-circuit verify path is exercised at a
 -- | side-loaded slot.
 module Test.Pickles.Prove.SideLoadedMain
-  ( spec
+  ( SideLoadedMainPrevsSpec
+  , noRecursionInputRule
+  , spec
   ) where
 
 import Prelude
