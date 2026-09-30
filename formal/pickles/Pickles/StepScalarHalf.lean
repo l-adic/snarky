@@ -137,8 +137,8 @@ def ClaimsCast {k : ℕ} (Vg : Valuation Fq)
     = [s.plonk.alpha.val, s.plonk.beta.val, s.plonk.gamma.val, s.plonk.zeta.val, s.plonk.perm.val,
       s.plonk.zetaToSrsLength.val, s.plonk.zetaToDomainSize.val, s.combinedInnerProduct.val,
       s.xi.val, s.b.val, claimsS.spongeDigestBeforeEvaluations].map (fun x => redFq (x.val Vs)) ∧
-  g.bulletproofChallenges.toList.map (·.val.val Vg)
-    = s.bulletproofChallenges.toList.map fun c => redFq (c.val.val Vs)
+  ∀ i : Fin k,
+    g.bulletproofChallenges[i].val.val Vg = redFq (s.bulletproofChallenges[i].val.val Vs)
 
 /-- The two sides decode a shifted claim alike across the reduction. -/
 private theorem wrapDecode_redFq {Vg : Valuation Fq} {Vs : Valuation Fp} {c : Type1 (FVar Fq)}
@@ -180,7 +180,6 @@ theorem halvesTies_of_cast {k nc w : ℕ} (Vg : Valuation Fq)
   obtain ⟨z, hz⟩ := hζ
   obtain ⟨ξ, hxi⟩ := hξ
   obtain ⟨ms, hms⟩ := hch
-  replace hms := forall₂_toList_iff.mpr hms
   let s := claimsS.deferredValues
   let dec := (fopStep Vs).decode
   let dv : DeferredValues k Prechallenge Fp :=
@@ -190,13 +189,11 @@ theorem halvesTies_of_cast {k nc w : ℕ} (Vg : Valuation Fq)
       combinedInnerProduct := dec s.combinedInnerProduct, xi := ⟨ξ⟩
       bulletproofChallenges := ms.map SizedF.mk
       b := dec s.b }
-  have hchals : dv.bulletproofChallenges.toList.map (·.val) = ms.toList := by
-    simp [dv, Vector.toList_map, Function.comp_def]
   refine ⟨⟨dv, ⟨reads128_redFq cα ha, hb, hg, reads128_redFq cζ hz, wrapDecode_redFq cperm,
       wrapDecode_redFq czm, wrapDecode_redFq czn, wrapDecode_redFq ccip, reads128_redFq cξ hxi,
-      hchals ▸ forall₂_reads128_redFq hms _ hbp, wrapDecode_redFq cb⟩,
+      fun i => by simpa [dv] using reads128_redFq (hbp i) (hms i), wrapDecode_redFq cb⟩,
     ⟨ha, reads128_of_redFq cβ hb, reads128_of_redFq cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
-      hchals ▸ hms, rfl⟩⟩, ?_⟩
+      fun i => by simpa [dv] using hms i, rfl⟩⟩, ?_⟩
   show claimsS.spongeDigestBeforeEvaluations.val Vs
     = castDigest IpaVesta.curve (claimsG.spongeDigestBeforeEvaluations.val Vg)
   rw [cdig, castDigest_redFq]

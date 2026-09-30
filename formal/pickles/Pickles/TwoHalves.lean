@@ -216,8 +216,7 @@ structure DvReads {K σ : Type} [Field K] [DecidableEq K] {k : ℕ} (V : Valuati
   /-- `ξ`. -/
   xi : Reads128 V c.xi dv.xi.val
   /-- The round challenges. -/
-  chals : List.Forall₂ (Reads128 V) c.bulletproofChallenges.toList
-    (dv.bulletproofChallenges.toList.map (·.val))
+  chals : ∀ i : Fin k, Reads128 V c.bulletproofChallenges[i] dv.bulletproofChallenges[i].val
   /-- `b`. -/
   b : decode c.b = dv.b
 
@@ -665,14 +664,20 @@ theorem twoHalves_schnorr
   have hbpc' : G.claims.deferredValues.bulletproofChallenges.toList.map (·.val.val G.V)
       = o.bulletproofChallenges.toList.map (·.val.val G.V) :=
     map_eq_map_of_zip (by simp) fun p hp => hbpc rfl p (by rwa [Vector.toList_zip])
-  rw [← forall₂_toList_iff] at hns hĉ
-  rw [forall₂_reads128_iff] at hmsG hmsS hns hĉ
   have hĉeq : ĉ = (ipaRunAt C (fqRun C K.cvk cp (runPublicComm C σ K.cvk pub)).warm
-      (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1 :=
-    Vector.toList_inj.mp
-      ((List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
-        (List.map_injective_iff.mpr hinjG.prechallenge_injective
-          (hmsG.symm.trans (hbpc'.trans hns))))
+      (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1 := by
+    ext i hi
+    have hbi : G.claims.deferredValues.bulletproofChallenges[i].val.val G.V
+        = o.bulletproofChallenges[i].val.val G.V := by
+      simpa [hi] using congrArg (·[i]?) hbpc'
+    have hn := hns ⟨i, hi⟩
+    have hg := hmsG ⟨i, hi⟩
+    have hs := hmsS ⟨i, hi⟩
+    have hc := hĉ ⟨i, hi⟩
+    simp only [Fin.getElem_fin] at hn hg hs hc
+    unfold Reads128 at hn
+    rw [← hbi] at hn
+    rw [Reads128.unique hinjS hc hs, Reads128.unique hinjG hg hn]
   -- the four checks, in wire terms
   rw [hζ, hα, hβ, hγ] at hcipC
   rw [hζ] at hbC
@@ -799,40 +804,6 @@ theorem reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
   have h := congrArg ZMod.val (hc.symm.trans hm)
   rw [val_redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_SCALAR_CARD]))] at h
   rw [← ZMod.natCast_zmod_val (x.val.val Vs), h]
-
-/-- Round challenges reading as prechallenges on the step side read as them on the wrap side. -/
-theorem forall₂_reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
-    {sl : List (SizedF 128 (FVar Fp))} {ms : List Prechallenge}
-    (hr : List.Forall₂ (Reads128 Vs) sl ms) :
-    ∀ gl : List (SizedF 128 (FVar Fq)),
-      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
-      List.Forall₂ (Reads128 Vg) gl ms := by
-  induction hr with
-  | nil => intro gl h; cases gl with
-    | nil => exact .nil
-    | cons _ _ => simp at h
-  | cons hx _ ih => intro gl h; cases gl with
-    | nil => simp at h
-    | cons g gl =>
-      simp only [List.map_cons, List.cons.injEq] at h
-      exact .cons (reads128_redFq h.1 hx) (ih gl h.2)
-
-/-- Round challenges reading as prechallenges on the wrap side read as them on the step side. -/
-theorem forall₂_reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
-    {gl : List (SizedF 128 (FVar Fq))} {ms : List Prechallenge}
-    (hr : List.Forall₂ (Reads128 Vg) gl ms) :
-    ∀ sl : List (SizedF 128 (FVar Fp)),
-      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
-      List.Forall₂ (Reads128 Vs) sl ms := by
-  induction hr with
-  | nil => intro sl h; cases sl with
-    | nil => exact .nil
-    | cons _ _ => simp at h
-  | cons hx _ ih => intro sl h; cases sl with
-    | nil => simp at h
-    | cons s sl =>
-      simp only [List.map_cons, List.cons.injEq] at h
-      exact .cons (reads128_of_redFq h.1 hx) (ih sl h.2)
 
 end Across
 

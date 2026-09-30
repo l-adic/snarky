@@ -84,8 +84,8 @@ def SplitClaimsCast {k : ℕ} (Vg : Valuation Fp)
     w.b].map (·.val.val Vs)
     = [g.plonk.perm, g.plonk.zetaToSrsLength, g.plonk.zetaToDomainSize, g.combinedInnerProduct,
       g.b].map join ∧
-  w.bulletproofChallenges.toList.map (·.val.val Vs)
-    = g.bulletproofChallenges.toList.map fun c => redFq (c.val.val Vg)
+  ∀ i : Fin k,
+    w.bulletproofChallenges[i].val.val Vs = redFq (g.bulletproofChallenges[i].val.val Vg)
 
 /-- The step digest crosses into the wrap field through `castDigest` as its representative. -/
 private theorem castDigest_pallas (x : Fp) : castDigest IpaPallas.curve x = redFq x := by
@@ -121,7 +121,6 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
   obtain ⟨z, hz⟩ := hζ
   obtain ⟨ξ, hxi⟩ := hξ
   obtain ⟨ms, hms⟩ := hch
-  replace hms := forall₂_toList_iff.mpr hms
   let s := claimsS.deferredValues
   let dec := (fopWrap Vs).decode
   let dv : DeferredValues k Prechallenge Fq :=
@@ -131,8 +130,6 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
       combinedInnerProduct := dec s.combinedInnerProduct, xi := ⟨ξ⟩
       bulletproofChallenges := ms.map SizedF.mk
       b := dec s.b }
-  have hchals : dv.bulletproofChallenges.toList.map (·.val) = ms.toList := by
-    simp [dv, Vector.toList_map, Function.comp_def]
   -- a split claim decodes, on the step side, as its joined cell on the wrap side
   have hdec : ∀ (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) (y : Type2 (FVar Fq)),
       y.val.val Vs = 2 * redFq (x.val.sDiv2.val Vg) + redFq ((↑x.val.sOdd : CVar Fp).val Vg) →
@@ -142,9 +139,9 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
       stepSide, stepDecode, Pasta.Shifted.unshiftType2]
   refine ⟨⟨dv, ⟨reads128_of_redFq cα ha, hb, hg, reads128_of_redFq cζ hz, hdec _ _ cperm,
       hdec _ _ czm, hdec _ _ czn, hdec _ _ ccip, reads128_of_redFq cξ hxi,
-      hchals ▸ forall₂_reads128_of_redFq hms _ hbp, hdec _ _ cb⟩,
+      fun i => by simpa [dv] using reads128_of_redFq (hbp i) (hms i), hdec _ _ cb⟩,
     ⟨ha, reads128_redFq cβ hb, reads128_redFq cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
-      hchals ▸ hms, rfl⟩⟩, ?_⟩
+      fun i => by simpa [dv] using hms i, rfl⟩⟩, ?_⟩
   show claimsS.spongeDigestBeforeEvaluations.val Vs
     = castDigest IpaPallas.curve (claimsG.spongeDigestBeforeEvaluations.val Vg)
   rw [cdig, castDigest_pallas]

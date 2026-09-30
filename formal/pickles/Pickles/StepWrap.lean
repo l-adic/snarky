@@ -259,30 +259,19 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
   have fperm := join _ _ u.perm hsperm (e (by simp [UnfinalizedProof.packed]) c9)
     (e (by simp [UnfinalizedProof.packed]) c10)
   -- the round challenges, entrywise
-  have fbp : a.bulletproofChallenges.toList.map (·.val Vs)
-      = u.bulletproofChallenges.toList.map fun c => redFq (c.val Vg) := by
-    have hs : ∀ c ∈ sp.deferredValues.bulletproofChallenges.toList,
-        c.val.val Vs = redFq (PackedScalar.reduced IpaVesta.curve Vs (.b128 c.val)) :=
-      fun c hc => hB (.b128 c.val) (by
-        simp only [UnfinalizedProof.packed, Vector.mem_mk, List.mem_toArray, List.mem_append,
-          List.mem_cons, List.mem_map, PackedScalar.b128.injEq]
-        exact Or.inl (Or.inr ⟨c, hc, rfl⟩))
-    have hbp' : u.bulletproofChallenges.toList.map (·.val Vg)
-        = sp.deferredValues.bulletproofChallenges.toList.map fun c =>
-            PackedScalar.reduced IpaVesta.curve Vs (.b128 c.val) := by
-      have h := CircuitType.reads_vector.mp hbpR
-      refine List.ext_getElem (by simp) fun l h₁ _ => ?_
-      have hl := CircuitType.reads_fvar.mp (h l (by simpa using h₁))
-      rw [Vector.getElem_map] at hl
-      simp only [List.getElem_map, Vector.getElem_toList]
-      exact hl
-    have hsp : sp.deferredValues.bulletproofChallenges.toList.map (·.val.val Vs)
-        = (u.bulletproofChallenges.toList.map (·.val Vg)).map redFq := by
-      rw [hbp', List.map_map]
-      exact List.map_congr_left hs
-    rw [hbps] at hsp
-    simpa [AllocUnfinalized.toUnfinalized, Vector.toList_map, List.map_map,
-      Function.comp_def] using hsp
+  have fbp : ∀ i : Fin k, a.bulletproofChallenges[i].val Vs
+      = redFq (u.bulletproofChallenges[i].val Vg) := by
+    intro i
+    have hl := CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp hbpR i i.isLt)
+    have hs := hB (.b128 sp.deferredValues.bulletproofChallenges[i].val) (by
+      simp only [UnfinalizedProof.packed, Vector.mem_mk, List.mem_toArray, List.mem_append,
+        List.mem_cons, List.mem_map, PackedScalar.b128.injEq]
+      exact Or.inl (Or.inr ⟨_, by simp, rfl⟩))
+    have ha := congrArg (·[i].val.val Vs) hbps
+    simp only [AllocUnfinalized.toUnfinalized, Vector.getElem_map, Fin.getElem_fin] at ha hl
+    simp only [PackedScalar.cell, Fin.getElem_fin, ha] at hs ⊢
+    rw [hs, hl]
+    rfl
   -- the finalize flag: a bit on the wrap side, so the same bit on the step side
   have fsf : ∃ bb : Bool, CircuitType.Reads Vg u.shouldFinalize bb ∧
       CircuitType.Reads Vs a.shouldFinalize bb := by
@@ -296,7 +285,7 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
   simp only [SplitClaimsCast, AllocUnfinalized.toUnfinalized, List.map_cons, List.map_nil,
     List.cons.injEq, and_true] at fcip fbb fzm fzn fperm ⊢
   exact ⟨⟨fa, fb, fg, fz, fxi, fd⟩, ⟨fperm, fzm, fzn, fcip, fbb⟩, by
-    simpa [Function.comp_def, Vector.toList_map, List.map_map] using fbp⟩
+    simpa [Vector.getElem_map] using fbp⟩
 
 /-- A bit that reads as `true` on one side of a tie reads as `true` on the other. -/
 private theorem reads_true_of_tie {Vg : Valuation Fp} {Vs : Valuation Fq} {a : BoolVar Fp}

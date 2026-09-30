@@ -121,10 +121,9 @@ private theorem claimsCast_of_reads {ks : ℕ} {Vw : Valuation Fq} {Vs : Valuati
   · simp only [StatementPacked.claims, List.map_cons, List.map_nil, f0, f1, f2, f3, f4, c0, c1,
       s0, s1, s2, d0]
     rfl
-  · refine List.ext_getElem (by simp [StatementPacked.claims]) fun i h₁ h₂ => ?_
-    simp only [StatementPacked.claims, List.getElem_map, Vector.getElem_toList,
-      Vector.getElem_map]
-    rw [hbp i (by simpa [StatementPacked.claims] using h₁)]
+  · intro i
+    simp only [StatementPacked.claims, Fin.getElem_fin, Vector.getElem_map]
+    rw [hbp i i.isLt]
     simp only [WrapStatement.toPacked, Vector.getElem_map]
     rfl
 

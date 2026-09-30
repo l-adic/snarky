@@ -18,7 +18,7 @@ prechallenge is met through it:
   `SplitWidth` names;
 * `CastInj128 F` — naturals below `2¹²⁸` cast injectively into `F`, what pins a gadget's
   own reading of a prechallenge to the claimed one, and makes a cell's reading unique
-  (`Reads128.unique`). A list of readings is one equation of lists (`forall₂_reads128_iff`).
+  (`Reads128.unique`).
 -/
 
 namespace Pickles
@@ -88,15 +88,6 @@ omit [DecidableEq F] in
 theorem Reads128.unique (hinj : CastInj128 F) {V : Valuation F} {u : SizedF 128 (FVar F)}
     {m m' : Prechallenge} (h : Reads128 V u m) (h' : Reads128 V u m') : m = m' :=
   hinj.prechallenge_injective (h.symm.trans h')
-
-omit [DecidableEq F] in
-/-- A cell list reads as a prechallenge list: `Forall₂ (Reads128 V)` is one equation of
-lists, the cells' values against the prechallenges' casts. -/
-theorem forall₂_reads128_iff {V : Valuation F} {cs : List (SizedF 128 (FVar F))}
-    {ms : List Prechallenge} :
-    List.Forall₂ (Reads128 V) cs ms ↔ cs.map (·.val.val V) = ms.map (fun m => (m.val : F)) := by
-  rw [← List.forall₂_eq_eq_eq, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
-  rfl
 
 /-- The modulus read off `ZMod p` is `p`. -/
 theorem fieldModulus_zmod (p : ℕ) [Fact p.Prime] : fieldModulus (ZMod p) = p :=
