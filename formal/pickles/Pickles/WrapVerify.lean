@@ -196,9 +196,8 @@ scalar. -/
 def wrapLeavesAt {ks n nc : ℕ} (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : List (Leaf Fq nc) :=
-  packLeavesOf statement.packed.toList
-    (XhatTable.ofKey statement.packed.toList
-      (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n))).toList)
+  packLeavesOf statement.packed
+    (XhatTable.ofKey statement.packed (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n))))
 
 /-- The public input the step statement packs to under `V`: what the verified step proof's
 public input must be. -/
@@ -217,9 +216,9 @@ theorem wrapPublicInput_toList {ks n nc : ℕ} (σ : SRS IpaVesta.curve.Point)
     (wrapPublicInput σ cvk V statement).toList
       = statement.packed.toList.map (PackedScalar.reduced IpaVesta.curve V) := by
   unfold wrapPublicInput wrapLeavesAt
-  rw [packLeavesOf_ofKey (C := IpaVesta.curve) statement.packed.toList
-    (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n))).toList]
-  exact pubOf_zipWith_constLeaf _ _ (by simp)
+  rw [packLeavesOf_ofKey (C := IpaVesta.curve) statement.packed
+    (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n)))]
+  exact pubOf_zipWith_constLeaf _ _
 
 /-- The verify block at the deployed Vesta constants, the blinding base `h` as a constant cell,
 and the public-input commitment of the packed step statement at the Lagrange points `lagrange`.
@@ -227,7 +226,8 @@ The CS-equality corpus pins this gadget at its dumps' points. -/
 def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
     [LawfulBasicSystem Fq c] [KimchiSystem Fq c]
     {ks n k kw nw nc np : ℕ}
-    (h : IpaVesta.curve.Point) (lagrange : List (Vector IpaVesta.curve.Point nc))
+    (h : IpaVesta.curve.Point)
+    (lagrange : Vector (Vector IpaVesta.curve.Point nc) (CircuitType.size Fp (StmtVal ks n)))
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : Vector (Vector (FVar Fq) kw) nw)
@@ -238,7 +238,7 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
     (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h)
     spongeAfterIndex
     (publicInputCommitFull (constPt h)
-      (packLeavesOf statement.packed.toList (XhatTable.ofKey statement.packed.toList lagrange)))
+      (packLeavesOf statement.packed (XhatTable.ofKey statement.packed lagrange)))
     msgSponge newBpChallenges claimedMsgDigest u cells
 
 /-- `wrapVerifyWith` at the SRS blinding base and the key's Lagrange points, one per packed
@@ -253,7 +253,7 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBas
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
-  wrapVerifyWith σ.h (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n))).toList statement
+  wrapVerifyWith σ.h (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n))) statement
     spongeAfterIndex msgSponge newBpChallenges claimedMsgDigest u cells
 
 /-- A packed step statement opens with a full scalar: the first slot's combined inner product,
@@ -520,7 +520,8 @@ What a driver runs at points it computed once. -/
 def groupCircuitWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
     [LawfulBasicSystem Fq c] [KimchiSystem Fq c]
     (h : Bulletproof.IpaVesta.curve.Point)
-    (lagrange : List (Vector Bulletproof.IpaVesta.curve.Point nc))
+    (lagrange : Vector (Vector Bulletproof.IpaVesta.curve.Point nc)
+      (CircuitType.size Fp (StmtVal kw (MaxProofsVerified - pad))))
     (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
     (g : GroupVar k kw pad nc) : CircuitM Fq c Unit :=
   wrapVerifyWith h lagrange g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest
@@ -535,7 +536,7 @@ def groupCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBas
     (keyCells : VkComms nc (AffinePoint (FVar Fq)))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw pad nc) : CircuitM Fq c Unit :=
   groupCircuitWith σ.h
-    (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal kw (MaxProofsVerified - pad)))).toList
+    (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal kw (MaxProofsVerified - pad))))
     keyCells spongeAfterIndex msgSponge g
 
 open Std.Do in

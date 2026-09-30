@@ -588,7 +588,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds padN nc) => do
         let key := Pickles.keyCellsOf xhatWrapCell cvk
         let sv ← wrapIndexSponge key
-        Pickles.StepProof.groupCircuitWith σ.h Lm key sv
+        Pickles.StepProof.groupCircuitWith σ.h (firstBases L) key sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
       (fun _ => []) ⟨{ group := ginp, newBp }⟩
     IO.println s!"    groupCircuit: satisfies={satG}"
@@ -660,7 +660,7 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
     (fun (v : Pickles.WrapProof.GroupVar Pickles.StepIPARounds σ.k 1) => do
       let key := Pickles.keyCellsOf xhatStepCell cvk
       let sv ← stepIndexSponge key
-      Pickles.WrapProof.groupCircuitWith σ.h Lm key sv v)
+      Pickles.WrapProof.groupCircuitWith σ.h (firstBases L) key sv v)
     (fun _ => []) ⟨ginp⟩
   IO.println s!"    groupCircuit: satisfies={satG}"
   return pubOk && smallOk && avoidOk && guards && sg' && kv && satS && satG

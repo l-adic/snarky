@@ -54,9 +54,10 @@ points at the statement's packing, one point per packed scalar. It reads the pac
 never its cells. -/
 private def xhatTableAt {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point)
     (cvk : KimchiVK IpaPallas.curve nc)
-    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : XhatTable Fp nc :=
-  XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed.toList
-    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
+    XhatTable Fp nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)) :=
+  XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed
+    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
 
 /-- The public-input leaves at a key: the packed wrap statement over the key's table. -/
 def stepLeavesAt {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
@@ -128,18 +129,17 @@ theorem stepPublicInput_eq_append {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point)
   refine ⟨Array.replicate 10 0, fun z hz => (Array.mem_replicate.mp hz).2, ?_⟩
   have hpub : (pubOf IpaPallas.curve V (stepLeavesAt σ cvk st)).toList
       = st.packed.toList.map (PackedScalar.reduced IpaPallas.curve V) := by
-    have hk : packLeavesOf st.packed.toList
-        (XhatTable.ofKeyKnown (C := IpaPallas.curve) st.packed.toList
-          (cvk.lagrangePoints σ
-            (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList)
+    have hk : packLeavesOf st.packed
+        (XhatTable.ofKeyKnown (C := IpaPallas.curve) st.packed
+          (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))))
         = List.zipWith (constLeaf (C := IpaPallas.curve)) st.packed.toList
           (cvk.lagrangePoints σ
             (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList :=
-      packLeavesOf_ofKey st.packed.toList
-        (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList
+      packLeavesOf_ofKey st.packed
+        (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     simp only [stepLeavesAt, packLeaves, xhatTableAt]
     rw [hk]
-    exact pubOf_zipWith_constLeaf _ _ (by simp)
+    exact pubOf_zipWith_constLeaf _ _
   apply Array.toList_inj.mp
   rw [Array.toList_append, hpub]
   unfold stepPublicInput
@@ -263,7 +263,9 @@ production dump at the dump's points. -/
 def verifyProofWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     [LawfulBasicSystem Fp c] [KimchiSystem Fp c]
     {ks k nc np : ℕ}
-    (h : IpaPallas.curve.Point) (lagrange : List (Vector IpaPallas.curve.Point nc))
+    (h : IpaPallas.curve.Point)
+    (lagrange : Vector (Vector IpaPallas.curve.Point nc)
+      (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
@@ -271,7 +273,7 @@ def verifyProofWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     CircuitM Fp c (BoolVar Fp) :=
   verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params
     (.const ((Pasta.vestaLam : ℤ) : Fp)) groupMapParamsPallas pallasBase.sqrt? (constPt h)
-    (XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed.toList lagrange) spongeAfterIndex
+    (XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed lagrange) spongeAfterIndex
     isBaseCase statement u cells
 
 /-- `verifyProofWith` at the SRS blinding base and the key's Lagrange points, one per packed
@@ -286,7 +288,7 @@ def verifyProofAt {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     (cells : IvpInput k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
   verifyProofWith σ.h
-    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList
+    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     spongeAfterIndex isBaseCase statement u cells
 
 /-- **`verifyProofAt` reads as the group half at the packed statement's public input.** The
@@ -326,9 +328,6 @@ theorem verifyProofAt_reads {ks nc np : ℕ} {V : Valuation Fp} (S : Srs IpaPall
       = (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)) := by
     rw [← stepLeavesAt, hleaves]
     simp [pubOf]
-  have hlb : (K.cvk.lagrangePoints S.σ
-      (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList ≠ [] := by
-    simp
   have htab : (xhatTableAt S.σ K.cvk statement).Bound pastaShapePallas V S.σ
       (K.cvk.lagrangePoints S.σ
         (pubOf IpaPallas.curve V (packLeaves statement (xhatTableAt S.σ K.cvk
@@ -336,16 +335,14 @@ theorem verifyProofAt_reads {ks nc np : ℕ} {V : Valuation Fp} (S : Srs IpaPall
       (constPt S.σ.h) (packLeaves statement (xhatTableAt S.σ K.cvk statement)) := by
     rw [hsz]
     have hb := bound_ofKeyKnown (V := V) pastaShapePallas S.σ
-      (K.cvk.lagrangePoints S.σ
-        (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toArray
-      statement.packed.toList S.h_ne
+      (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
+      statement.packed S.h_ne
       (fun Ps h ci => Key.lagrange_ne pastaShapePallas S.σ hnc
         (fun a ha => havoid a (List.mem_append_right _ ha)) Ps h ci)
-      (by simp [WrapStatement.packed]) hlb
       (bitBoolean_constLeaf_of_isScalar _ _
         fun k hk => statement.packed_isScalar k (Vector.mem_toList_iff.mp hk))
       (corrSumPt_ne_zero S.σ K hnc statement hsmall hn havoid)
-    rw [Vector.toList_toArray, ← hleaves] at hb
+    rw [← hleaves] at hb
     exact hb
   obtain ⟨zs, hz, hpub⟩ := stepPublicInput_eq_append S.σ K.cvk V statement
   rw [hpub] at hivp ⊢
@@ -429,8 +426,9 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
 reads as a bit (`verifyProof_success_bit`). -/
 theorem verifyProofWith_success_bit {ks k nc np : ℕ} {V : Valuation Fp}
     (h : IpaPallas.curve.Point)
-    (lagrange : List (Vector IpaPallas.curve.Point nc)) (spongeAfterIndex : SpongeVar Fp)
-    (isBaseCase : BoolVar Fp)
+    (lagrange : Vector (Vector IpaPallas.curve.Point nc)
+      (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
+    (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
@@ -503,7 +501,9 @@ allocation check the deployed circuit's split type makes and this harness's unch
 lacks. -/
 def groupCircuitWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
     [KimchiSystem Fp c]
-    (h : IpaPallas.curve.Point) (lagrange : List (Vector IpaPallas.curve.Point nc))
+    (h : IpaPallas.curve.Point)
+    (lagrange : Vector (Vector IpaPallas.curve.Point nc)
+      (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks k nc) : CircuitM Fp c Unit := do
   assertClaimBitsStep g.shifted
@@ -519,7 +519,7 @@ def groupCircuit {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBas
     (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks k nc) : CircuitM Fp c Unit :=
   groupCircuitWith σ.h
-    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList
+    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     keyCells spongeAfterIndex g
 
 /-- **The group circuit's read**: the group half's read at a bit that reads `1`. -/

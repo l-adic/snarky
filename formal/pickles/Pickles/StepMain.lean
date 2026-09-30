@@ -196,7 +196,7 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
   let msgs ← witness (val := Vector Fp n) adv.msgs
   let msgsPad ← witness (val := Vector Fp (w - n)) adv.msgsPad
   let results ← (Vector.finRange n).mapM fun i =>
-    verifyOneBy (verifyProofWith h (srcs i).lagrange.toList) P ((srcs i).domains domains)
+    verifyOneBy (verifyProofWith h (srcs i).lagrange) P ((srcs i).domains domains)
       ((srcs i).keyCells vk.points) (slotInput (hws i) dummySg prevs[i] (slots i) unfs[i] msgs[i])
   assertAll (results.toList.map (·.2))
   let appFields := (CircuitType.varToFields (F := Fp) (val := inVal) publicInput).toList ++
@@ -346,7 +346,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
     (hQ : ∀ (i : Fin n) (vk : VkComms ncw (AffinePoint (FVar Fp)))
         (inp : VerifyOneInput ks σ.k ncw ncs (SlotSource.widths w srcs i)),
       ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp))
-        (verifyProofWith σ.h (srcs i).lagrange.toList) P ((srcs i).domains domains) vk inp
+        (verifyProofWith σ.h (srcs i).lagrange) P ((srcs i).domains domains) vk inp
       ⦃⇓ o _ => ⌜(∃ ms : Vector Bool (SlotSource.widths w srcs i),
           CircuitType.Reads V inp.proofMask ms) →
         CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 → Q i inp⌝⦄)
@@ -388,7 +388,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
   have hv : ∀ (i : Fin n) (K : KimchiVK IpaPallas.curve ncw), (srcs i).Fits σ K →
       verifyProofWith (c := Builder V (KimchiConstraint Fp)) (ks := ks) (k := σ.k)
         (np := MaxProofsVerified) σ.h
-        (srcs i).lagrange.toList = verifyProofAt σ K := by
+        (srcs i).lagrange = verifyProofAt σ K := by
     intro i K hfit
     funext sv b st u cells
     unfold verifyProofAt
@@ -398,7 +398,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
       (unfs : Vector (UnfVar σ.k) n) (msgs : Vector (FVar Fp) n)
       (prevs : Vector PrevStatement n) =>
     builder_spec_vector_mapM_get (V := V) (c := KimchiConstraint Fp)
-      (fun i : Fin n => verifyOneBy (verifyProofWith σ.h (srcs i).lagrange.toList) P
+      (fun i : Fin n => verifyOneBy (verifyProofWith σ.h (srcs i).lagrange) P
         ((srcs i).domains domains) ((srcs i).keyCells vk.points)
         (slotInput (hws i) dummySg prevs[i] (slots i) unfs[i] msgs[i]))
       (fun (i : Fin n) o =>
@@ -420,9 +420,9 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
       (fun i => by
         beta_reduce
         exact builder_spec_and _ _ _
-          (verifyOneBy_verdict_bit (verifyProofWith σ.h (srcs i).lagrange.toList)
+          (verifyOneBy_verdict_bit (verifyProofWith σ.h (srcs i).lagrange)
             (fun sv b st u cells =>
-              verifyProofWith_success_bit σ.h (srcs i).lagrange.toList sv b st u cells) _ _ _ _)
+              verifyProofWith_success_bit σ.h (srcs i).lagrange sv b st u cells) _ _ _ _)
           (builder_spec_and _ _ _
             (builder_spec_forall _ _ _ fun SK hK => by
               obtain ⟨⟨S, K⟩, hS, hnc⟩ := SK
@@ -432,7 +432,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
                 hks (hws i) ((srcs i).keyCells vk.points) _ hsmall hK.1.1 hK.2)
             (builder_spec_and _ _ _
               (hQ i ((srcs i).keyCells vk.points) _)
-              (verifyOneBy_shouldFinalize (verifyProofWith σ.h (srcs i).lagrange.toList)
+              (verifyOneBy_shouldFinalize (verifyProofWith σ.h (srcs i).lagrange)
                 _ _ _ _))))
       (Vector.finRange n)
   have hhash := fun (p : Poseidon.Params Fp) m =>

@@ -935,10 +935,10 @@ def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatCurve.Point)
   let full (i : ℕ) : Pickles.PackedScalar Fq := .full (get i)
   let b128 (i : ℕ) : Pickles.PackedScalar Fq := .b128 (get i)
   let cond (i : ℕ) : Pickles.PackedScalar Fq := .bit (.unchecked (get i))
-  let ks := [ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8, cond 9,
-      full 10 ] ++ (List.range 20).map (fun j => b128 (11 + j)) ++ [ cond 31, full 32, full 33 ]
-  let _ ← Pickles.publicInputCommitMasked (C := XhatCurve) shared h bits.toList ks
-    [pts0.toList.map (#v[·]), pts1.toList.map (#v[·])]
+  let ks := #v[ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8, cond 9,
+      full 10 ] ++ Vector.ofFn (n := 20) (fun j => b128 (11 + j)) ++ #v[ cond 31, full 32, full 33 ]
+  let _ ← Pickles.publicInputCommitMasked (C := XhatCurve) shared h bits ks
+    #v[oneChunk pts0, oneChunk pts1]
   pure PUnit.unit
 
 /-! ## The wrap circuits (`wrap_main_*`)
@@ -1045,8 +1045,8 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (ks := 16)
     fopWrapParams widths (Pickles.stepDomainLog2s keys) (Pickles.stepKeyCells keys)
     (Vector.ofFn fun s => Vector.ofFn fun b => pin ((k.pins.getD b.val []).getD s.val (-1)))
-    (fun l => k.lagrange.toList.map fun perBranch =>
-      perBranch.getD ((Pickles.stepDomainLog2s keys).toList.idxOf l) zeroPts)
+    (fun l => firstBases (k.lagrange.map fun perBranch =>
+      perBranch.getD ((Pickles.stepDomainLog2s keys).toList.idxOf l) zeroPts))
     k.h k.dummy slotWidths
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
@@ -1677,8 +1677,8 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
   let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) 1) :=
     Pickles.publicInputCommitFull h
-      (Pickles.packLeavesOf (wrapStepStatement get).packed.toList
-        (Pickles.XhatTable.ofKey (wrapStepStatement get).packed.toList (oneChunk pts)))
+      (Pickles.packLeavesOf (wrapStepStatement get).packed
+        (Pickles.XhatTable.ofKey (wrapStepStatement get).packed (oneChunk pts)))
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const Bulletproof.IpaPallas.curve.lam)
     Pickles.groupMapParamsVesta vestaBase.sqrt? true h sv computeXHat

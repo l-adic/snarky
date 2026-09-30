@@ -181,8 +181,9 @@ theorem WrapStatement.packed_isScalar
 
 /-- The public-input leaves of a wrap statement: `packLeavesOf` its packing. -/
 def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
-    (tab : XhatTable F nc) : List (Leaf F nc) :=
-  packLeavesOf st.packed.toList tab
+    (tab : XhatTable F nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))) :
+    List (Leaf F nc) :=
+  packLeavesOf st.packed tab
 
 /-- One slot of the step statement as packed scalars, in packing order: the five split claims
 `cip, b, ζ^{2^k}, ζⁿ, perm` as a full half and a boolean parity, the digest full, `β, γ, α, ζ, ξ`
@@ -378,7 +379,8 @@ def verifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type}
     (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F)
     (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
-    (blindingH : AffinePoint (FVar F)) {nc : ℕ} (tab : XhatTable F nc)
+    (blindingH : AffinePoint (FVar F)) {nc : ℕ}
+    (tab : XhatTable F nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
     (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
@@ -417,7 +419,8 @@ as a bit (`incrementallyVerifyProof_success_bit`). -/
 theorem verifyProof_success_bit {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F}
     {sf : Type} (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
-    (blindingH : AffinePoint (FVar F)) {k ks nc : ℕ} (tab : XhatTable F nc)
+    (blindingH : AffinePoint (FVar F)) {k ks nc : ℕ}
+    (tab : XhatTable F nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
     (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
@@ -482,7 +485,7 @@ theorem verifyProof_reads
     (sqrtF : C.BaseField → Option C.BaseField)
     (blindingH : AffinePoint (FVar C.BaseField))
     -- the public-input commitment tables
-    (tab : XhatTable C.BaseField nc)
+    (tab : XhatTable C.BaseField nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     -- the cells: the sponge after the index digest, the base-case bit, the wrap statement,
     -- the unfinalized proof it is checked against, the group half's commitment cells
     (spongeAfterIndex : SpongeVar C.BaseField)
@@ -508,12 +511,15 @@ theorem verifyProof_reads
       (.ofSpec C.groupMap)
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) u base v⌝⦄ := by
-  obtain ⟨⟨Ts, cps, hxhat⟩, hbases, hcorrs⟩ := htab
+  obtain ⟨Ts, cps, hxhat⟩ := htab
   -- the leaves are headed by a scalar leaf: the first packed scalar is `cip`
   have hhead : leafHeadScalar (packLeaves statement tab) := by
-    obtain ⟨b, bs, hb⟩ := List.exists_cons_of_ne_nil hbases
-    obtain ⟨c', cs, hc⟩ := List.exists_cons_of_ne_nil hcorrs
-    simp [packLeaves, packLeavesOf, WrapStatement.packed, leafHeadScalar, hb, hc]
+    have h1 : CircuitType.size Fp Fp = 1 := rfl
+    have ht : CircuitType.size Fp (Type1 Fp) = 1 := rfl
+    obtain ⟨bc, bcs, hbc⟩ := List.exists_cons_of_ne_nil
+      (l := (tab.bases.zip tab.corrs).toList) (by simp [h1, ht])
+    simp [packLeaves, packLeavesOf, Vector.toList_zipWith, WrapStatement.packed, Vector.toList_mk,
+      hbc, leafHeadScalar]
   -- the public-input commitment, chunk by chunk, reads as the wire's, crossed to `C.E`
   have hXhat : ⦃⌜True⌝⦄
       (Vector.finRange nc).mapM (fun ci => publicInputCommitKnown
@@ -565,7 +571,8 @@ theorem verifyProof_step_reads {nc np : ℕ} {V : Valuation Fp}
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc σ.k)
     (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
-    (tab : XhatTable Fp nc) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+    (tab : XhatTable Fp nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
+    (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput σ.k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))

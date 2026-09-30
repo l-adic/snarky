@@ -151,7 +151,9 @@ private theorem wrapStep_kimchiVerify_core
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the Lagrange bases at a step domain, the blinding base, the padding challenges and each
     -- slot's challenge-stack height: constants of the wrap circuit
-    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
+    (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
+      (CircuitType.size Fp (StmtVal σ.k w)))
+    (h : IpaVesta.curve.Point)
     (dummy : Vector Fq σ.k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
     -- the wrap circuit's advice
     (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k (slotWidths.map Fin.val).sum)
@@ -161,7 +163,7 @@ private theorem wrapStep_kimchiVerify_core
     (b : Fin branches)
     (hkeyB : stepKeys[b] = keyCellsOf constPt KStep.cvk)
     (hlag : lagrange log2s[b]
-      = (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k w))).toList)
+      = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k w)))
     (hh : h = SStep.σ.h)
     -- the key's points are finite, and the SRS avoids the key's Lagrange relations, one per
     -- cell of the step statement
@@ -471,9 +473,10 @@ theorem wrapStep_kimchiVerify
   -- branch `b`'s table is its key's Lagrange points: both are the SRS's over the key's domain
   have hlag : srsLagrangeTable SStep.σ ncStep (CircuitType.size Fp (StmtVal σ.k w))
       (stepDomainLog2s stepKeys)[b]
-      = (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k w))).toList := by
+      = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k w)) := by
     rw [hlog, srsLagrangeTable]
-    show _ = (Ipa.lagrangeBasis IpaVesta.curve SStep.σ ncStep KStep.cvk.n KStep.cvk.omega _).toList
+    apply Vector.toArray_inj.mp
+    show _ = Ipa.lagrangeBasis IpaVesta.curve SStep.σ ncStep KStep.cvk.n KStep.cvk.omega _
     rw [KStep.omega_eq]
     rfl
   intro wrap step hwrap hstep
@@ -491,7 +494,7 @@ theorem wrapStep_kimchiVerify
         intro nv hsat hmsk hmv' h1 hdj
         rw [hdj] at hsat h1
         exact (builder_spec_iff _ _).mp (verifyOne_scalarReads SStep KStep D (hws j)
-          (verifyProofWith σ.h (srcs j).lagrange.toList) vk inp) nv hsat hmsk hmv' h1)
+          (verifyProofWith σ.h (srcs j).lagrange) vk inp) nv hsat hmsk hmv' h1)
       hn hws dummySg dummyUnf rule adv
       (by rw [hσk, hE]; decide))
       0 (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv

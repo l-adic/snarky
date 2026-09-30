@@ -46,9 +46,16 @@ def xhatStepWidth (i : ℕ) : ℕ :=
 def xhatStepCorr (pts : Array XhatStepCurve.Point) (i : ℕ) : XhatStepCurve.Point :=
   xhatStepCorrPt (xhatStepWidth i) (pts[i]?.getD 0)
 
-/-- Lagrange bases as the one-chunk points the public-input tables are computed from. -/
-def oneChunk {C : Bulletproof.Ipa.KimchiCurve} (pts : Array C.Point) : List (Vector C.Point 1) :=
-  pts.toList.map (#v[·])
+/-- The first `m` Lagrange bases of `pts`, the origin past its end: the bases a public-input
+table over `m` scalars is computed from. -/
+def firstBases {C : Bulletproof.Ipa.KimchiCurve} {nc m : ℕ} (pts : Array (Vector C.Point nc)) :
+    Vector (Vector C.Point nc) m :=
+  Vector.ofFn fun i => pts[i.val]?.getD (Vector.replicate nc 0)
+
+/-- One-chunk Lagrange bases as the first `m` points the public-input tables are computed from. -/
+def oneChunk {C : Bulletproof.Ipa.KimchiCurve} {m : ℕ} (pts : Array C.Point) :
+    Vector (Vector C.Point 1) m :=
+  firstBases (pts.map (#v[·]))
 
 /-- A key's commitments in the index digest's absorb order: `σ₀…σ₆`, the coefficients, then
 the selectors. -/
@@ -109,8 +116,8 @@ def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
   let sv ← wrapIndexSponge key
   let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) nc) :=
     publicInputCommitFull blindingH
-      (packLeavesOf v.stepStatement.packed.toList
-        (XhatTable.ofKey v.stepStatement.packed.toList basis.toList))
+      (packLeavesOf v.stepStatement.packed
+        (XhatTable.ofKey v.stepStatement.packed (firstBases basis)))
   let dv := v.statement.proofState.deferredValues
   let mask := dv.branchData.proofsVerifiedMask.drop pad
   let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta
