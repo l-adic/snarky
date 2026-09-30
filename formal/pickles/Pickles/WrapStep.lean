@@ -181,9 +181,10 @@ private theorem wrapStep_kimchiVerify_core
     (∀ con ∈ wrap.constraints, ConstraintHolds.Holds Vw con) →
     -- the wrap circuit's statement and cells
     let stmt := inputVar (F := Fq) (a := StatementPacked SStep.σ.k (Type1 Fq) Fq)
-    let hd := wrap.result.1.2
+    let wrapFinalizeOut := wrap.result.1.2.1
+    let wrapVerifyOut := wrap.result.1.2.2
     -- the wrap circuit's branch index reads as `b`
-    hd.1.whichBranch.val Vw = (b : Fq) →
+    wrapFinalizeOut.whichBranch.val Vw = (b : Fq) →
     -- a slot of the next step circuit, at this tag's width, from its cells: its finalize reads
     -- as the key's scalar half at its expanded challenges, and its branch data carries a domain
     -- exponent and a mask
@@ -202,11 +203,15 @@ private theorem wrapStep_kimchiVerify_core
       ∃ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
         (oldsW : Vector (IpaVesta.curve.Point × Bool) w),
         -- the step proof's public input: the wrap circuit's packed step statement
-        let pub := wrapPublicInput SStep.σ KStep.cvk Vw hd.2.statement
+        let pub := wrapPublicInput SStep.σ KStep.cvk Vw wrapVerifyOut.statement
         -- the wrap circuit's cells hold `cp`
-        ProofReads (wrapSide Vw) hd.2.cells.wComm hd.2.cells.zComm hd.2.cells.tComm
-          hd.2.cells.opening cp ∧
-        OldsRead Vw hd.2.cells.sgOld cp oldsW ∧
+        ProofReads (wrapSide Vw)
+          wrapVerifyOut.cells.wComm
+          wrapVerifyOut.cells.zComm
+          wrapVerifyOut.cells.tComm
+          wrapVerifyOut.cells.opening
+          cp ∧
+        OldsRead Vw wrapVerifyOut.cells.sgOld cp oldsW ∧
         -- the next step circuit's finalize cells hold `cp`'s evaluations and old challenges
         FopTies SStep.σ KStep.cvk cp pub (inp.finalizedHalf Vs) ∧
         -- its expanded challenges are `cp`'s round challenges
@@ -217,7 +222,8 @@ private theorem wrapStep_kimchiVerify_core
           kimchiVerify IpaVesta.curve SStep.σ KStep.cvk cp pub = true) := by
   intro wrap hwrap
   rw [show wrap.result.1.2 = _ from compileWith_wrapMainCircuit_cells _ _ _ _ _ _ _ _ _ _]
-  intro stmt hd hb dummySg prev s u msg expanded inp hscal n0 ms0 hn0 hdv hmsR ms hms htie
+  intro stmt wrapFinalizeOut wrapVerifyOut hb dummySg prev s u msg expanded inp hscal n0 ms0 hn0
+      hdv hmsR ms hms htie
   -- the wrap side: the body's constraints hold, so its reads do
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
       (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens) widths log2s stepKeys pins
@@ -270,7 +276,7 @@ private theorem wrapStep_kimchiVerify_core
   have hmsj : ∀ j : Fin w, ms[j] = ms0[MaxProofsVerified - w + j] :=
     reads_drop (by simpa [MaxProofsVerified] using hw) hmsR hms
   -- so the wrap circuit's keep bit for slot `j` reads as `ms[j]`
-  have hkeep : ∀ j : Fin w, (↑hd.1.mask.reverse[j] : CVar Fq).val Vw = bit ms[j] := by
+  have hkeep : ∀ j : Fin w, (↑wrapFinalizeOut.mask.reverse[j] : CVar Fq).val Vw = bit ms[j] := by
     intro j
     have h := CircuitType.reads_boolVar.mp
       (CircuitType.reads_vector.mp hmask (w - 1 - j) (by omega))
@@ -278,20 +284,21 @@ private theorem wrapStep_kimchiVerify_core
     rw [Fin.getElem_fin, Vector.getElem_reverse, h, hmsj j, hrev j]
   -- the step proof the cells hold: its group half from the wrap circuit's cells, its evaluations
   -- and kept old challenges from the next step circuit's
-  have hcells' : hd.2.cells = ivpInputOf stmt.claims.deferredValues hd.1.sgOld hd.1.key pr := hcells
+  have hcells' : wrapVerifyOut.cells = ivpInputOf stmt.claims.deferredValues wrapFinalizeOut.sgOld
+      wrapFinalizeOut.key pr := hcells
   let P : Fin w → IpaVesta.curve.Point := fun j =>
-    readPt (C := IpaVesta.curve) Vw hd.1.stepAccs[j].pt
+    readPt (C := IpaVesta.curve) Vw wrapFinalizeOut.stepAccs[j].pt
   let U : Fin w → Vector Fp SStep.σ.k := fun j => inp.prevChallenges[j].map (·.val Vs)
   let cp := pr.read (wrapSide Vw) (inp.evals.evals.map fun v => v.map (·.val Vs))
     (.carried (inp.evals.pub.map fun v => v.map (·.val Vs))) (inp.evals.ftEval1.val Vs)
     (((List.finRange w).filter fun j => ms[j]).map fun j =>
       (⟨P j, U j⟩ : Accumulator IpaVesta.curve SStep.σ.k)).toArray
   let oldsW : Vector (IpaVesta.curve.Point × Bool) w := Vector.ofFn fun j => (P j, ms[j])
-  have hpr : ProofReads (wrapSide Vw) hd.2.cells.wComm hd.2.cells.zComm hd.2.cells.tComm
-      hd.2.cells.opening cp := by
+  have hpr : ProofReads (wrapSide Vw) wrapVerifyOut.cells.wComm wrapVerifyOut.cells.zComm
+      wrapVerifyOut.cells.tComm wrapVerifyOut.cells.opening cp := by
     rw [hcells']
     exact IvpProof.read_proofReads _ _ _ _ _ _ hon
-  have hol : OldsRead Vw hd.2.cells.sgOld cp oldsW := by
+  have hol : OldsRead Vw wrapVerifyOut.cells.sgOld cp oldsW := by
     rw [hcells']
     refine ⟨?_, ?_⟩
     · rw [← Vector.toList_map, ← Vector.toList_map]
@@ -301,7 +308,8 @@ private theorem wrapStep_kimchiVerify_core
       exact ⟨onCurveAt_readPt (hacc j), hkeep j⟩
     · simp [cp, IvpProof.read, oldsW, Vector.toList_ofFn, List.ofFn_eq_map, List.filter_map,
         Function.comp_def]
-  have hf : FopTies SStep.σ KStep.cvk cp (wrapPublicInput SStep.σ KStep.cvk Vw hd.2.statement)
+  have hf : FopTies SStep.σ KStep.cvk cp
+      (wrapPublicInput SStep.σ KStep.cvk Vw wrapVerifyOut.statement)
       (inp.finalizedHalf Vs) := by
     refine ⟨?_, rfl, rfl, rfl⟩
     have hm : (inp.finalizedHalf Vs).maskVals = Vector.ofFn fun j : Fin w => ms[j] := by
@@ -319,7 +327,7 @@ private theorem wrapStep_kimchiVerify_core
   obtain ⟨v, hv, hv1⟩ := hgrp cp oldsW hpr hol
   have hcc := claimsCast_of_reads stmt _ htie
   clear_value oldsW cp U P
-  obtain ⟨hE, hK⟩ := hscal hdom cp (wrapPublicInput SStep.σ KStep.cvk Vw hd.2.statement) Vw
+  obtain ⟨hE, hK⟩ := hscal hdom cp (wrapPublicInput SStep.σ KStep.cvk Vw wrapVerifyOut.statement) Vw
     stmt.claims v hv hv1 hcc hf
   exact ⟨cp, oldsW, hpr, hol, hf, hE, hK⟩
 
@@ -431,41 +439,43 @@ theorem wrapStep_kimchiVerify
     -- `Vs` satisfies every constraint of the compiled next step circuit
     (∀ con ∈ step.constraints, ConstraintHolds.Holds Vs con) →
     -- the next step circuit's run
-    let r := step.result.1.2
+    let stepOut := step.result.1.2
     -- the wrap circuit's statement
-    let stmt := inputVar (F := Fq) (a := StatementPacked SStep.σ.k (Type1 Fq) Fq)
+    let wrapStmt := inputVar (F := Fq) (a := StatementPacked SStep.σ.k (Type1 Fq) Fq)
     -- the wrap circuit's cells over it
-    let hd := wrap.result.1.2
+    let wrapFinalizeOut := wrap.result.1.2.1
+    let wrapVerifyOut := wrap.result.1.2.2
     -- the wrap circuit's branch index reads as `b`
-    hd.1.whichBranch.val Vw = (b : Fq) →
+    wrapFinalizeOut.whichBranch.val Vw = (b : Fq) →
     -- slot `i` must verify
     ∀ i : Fin n,
-      CircuitType.Reads Vs r.prevs[i].mustVerify true →
+      CircuitType.Reads Vs stepOut.prevs[i].mustVerify true →
       -- it finalizes over key `b`'s domains, at this tag's width
       (srcs i).domains domains = D.list →
       SlotSource.widths wNext srcs i = w →
-      let inp := slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]
+      let inp := slotInput (hws i) dummySg stepOut.prevs[i] (stepOut.slots i) stepOut.unfs[i]
+          stepOut.msgs[i]
       -- its masks
       ∀ ms : Vector Bool (SlotSource.widths wNext srcs i),
         CircuitType.Reads Vs inp.proofMask ms →
         -- its wrap proof was made at the wrap circuit's public input
-        CircuitType.Reads Vw stmt (inp.packedAt cvk Vs ms) →
+        CircuitType.Reads Vw wrapStmt (inp.packedAt cvk Vs ms) →
         ∃ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
           (oldsW : Vector (IpaVesta.curve.Point × Bool) w),
           -- the step proof's public input: the wrap circuit's packed step statement
-          let pub := wrapPublicInput SStep.σ stepKeys[b] Vw hd.2.statement
+          let pub := wrapPublicInput SStep.σ stepKeys[b] Vw wrapVerifyOut.statement
           -- the wrap circuit's cells hold `cp`, with keep bits `oldsW`
           ProofReads (wrapSide Vw)
-            hd.2.cells.wComm
-            hd.2.cells.zComm
-            hd.2.cells.tComm
-            hd.2.cells.opening
+            wrapVerifyOut.cells.wComm
+            wrapVerifyOut.cells.zComm
+            wrapVerifyOut.cells.tComm
+            wrapVerifyOut.cells.opening
             cp ∧
-          OldsRead Vw hd.2.cells.sgOld cp oldsW ∧
+          OldsRead Vw wrapVerifyOut.cells.sgOld cp oldsW ∧
           -- the next step circuit's finalize cells hold `cp`'s evaluations and old challenges
           FopTies SStep.σ stepKeys[b] cp pub (inp.finalizedHalf Vs) ∧
           -- the next step circuit's message carries `cp`'s round challenges at slot `i`
-          (r.messagesForNextStepProof.oldBulletproofChallenges[i]).map (·.val Vs)
+          (stepOut.messagesForNextStepProof.oldBulletproofChallenges[i]).map (·.val Vs)
             = wireChallenges SStep.σ stepKeys[b] cp pub ∧
           -- of `cp` itself: the guards and the deferred `sg` equation
           (Guards IpaVesta.curve stepKeys[b] cp pub →
@@ -488,7 +498,7 @@ theorem wrapStep_kimchiVerify
     rfl
   intro wrap step hwrap hstep
   rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _]
-  intro r stmt hd hb i hmv hdi hwi inp ms hms htie
+  intro stepOut wrapStmt wrapFinalizeOut wrapVerifyOut hb i hmv hdi hwi inp ms hms htie
   -- the step side: slot `i` finalizes, over the domain its branch data names; a slot over
   -- branch `b`'s domains reads as its key's scalar half
   obtain ⟨-, -, hscal, -, -, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
@@ -512,7 +522,8 @@ theorem wrapStep_kimchiVerify
     (srsLagrangeTable SStep.σ ncStep
       (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp _))) SStep.σ.h dummy
     slotWidths advW hbr b (by simp [stepKeyCells, hkey]) hlag
-    rfl hnz havoidS hlog hw Vs hwrap hb dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i] _
+    rfl hnz havoidS hlog hw Vs hwrap hb dummySg stepOut.prevs[i] (stepOut.slots i) stepOut.unfs[i]
+        stepOut.msgs[i] _
     (hscal hdi) n0 ms0 hn0 hdv hmsR ms hms htie
 
 end Pickles
