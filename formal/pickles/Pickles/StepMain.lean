@@ -356,8 +356,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs σ.k ks inVal)
     -- the statement's shape against the SRS
-    (hsmall : ∀ (i : Fin n) (inp : VerifyOneInput ks σ.k ncw ncs (SlotSource.widths w srcs i))
-      msg, (inp.statement msg).packed.length ≤ 2 ^ σ.k) :
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ σ.k) :
     ⦃⌜True⌝⦄
     stepMain (c := Builder V (KimchiConstraint Fp)) srcs hws σ.h
       P domains dummySg dummyUnf rule adv
@@ -393,7 +392,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
     intro i K hfit
     funext sv b st u cells
     unfold verifyProofAt
-    rw [hfit.2, WrapStatement.packed_length st]
+    rw [hfit.2]
   have hmap := fun (vk : VkComms ncw (PallasPt (FVar Fp)))
       (slots : (i : Fin n) → SlotVar (SlotSource.widths w srcs i) ncw ncs σ.k ks)
       (unfs : Vector (UnfVar σ.k) n) (msgs : Vector (FVar Fp) n)
@@ -430,8 +429,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
               subst hS
               rw [hv i K.cvk hK.1]
               exact verifyOne_slotReads S K hnc P ((srcs i).domains domains)
-                hks (hws i) ((srcs i).keyCells vk.points) _ (hsmall i _)
-                (fun msg => (WrapStatement.packed_length _).trans_le hK.1.1) hK.2)
+                hks (hws i) ((srcs i).keyCells vk.points) _ hsmall hK.1.1 hK.2)
             (builder_spec_and _ _ _
               (hQ i ((srcs i).keyCells vk.points) _)
               (verifyOneBy_shouldFinalize (verifyProofWith σ.h (srcs i).lagrange.toList)

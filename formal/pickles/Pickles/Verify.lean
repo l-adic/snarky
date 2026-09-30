@@ -154,68 +154,73 @@ message digests (full), the round challenges (128), the packed branch data (10).
 scalars are the step proof's `Fp` values in their `Type1` representative, a full field element
 each. -/
 def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
-    List (PackedScalar F) :=
+    Vector (PackedScalar F) (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)) :=
   let dv := st.proofState.deferredValues
   let pl := dv.plonk
-  [.full dv.combinedInnerProduct.val, .full dv.b.val, .full pl.zetaToSrsLength.val,
-   .full pl.zetaToDomainSize.val, .full pl.perm.val,
-   .b128 pl.beta.val, .b128 pl.gamma.val,
-   .b128 pl.alpha.val, .b128 pl.zeta.val, .b128 dv.xi.val,
-   .full st.proofState.spongeDigestBeforeEvaluations,
-   .full st.proofState.messagesForNextWrapProof, .full st.messagesForNextStepProof]
+  ⟨List.toArray ([.full dv.combinedInnerProduct.val, .full dv.b.val, .full pl.zetaToSrsLength.val,
+    .full pl.zetaToDomainSize.val, .full pl.perm.val,
+    .b128 pl.beta.val, .b128 pl.gamma.val,
+    .b128 pl.alpha.val, .b128 pl.zeta.val, .b128 dv.xi.val,
+    .full st.proofState.spongeDigestBeforeEvaluations,
+    .full st.proofState.messagesForNextWrapProof, .full st.messagesForNextStepProof]
   ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
-  ++ [.b10 dv.branchData.packed]
-
-/-- A packed wrap statement has one scalar per cell of `PackedWrapStatement`. -/
-theorem WrapStatement.packed_length
-    (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
-    st.packed.length = CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) := by
-  have h1 : CircuitType.size Fp Fp = 1 := rfl
-  have ht : CircuitType.size Fp (Type1 Fp) = 1 := rfl
-  simp [WrapStatement.packed, h1, ht]
-  omega
+  ++ [.b10 dv.branchData.packed]), by
+    have h1 : CircuitType.size Fp Fp = 1 := rfl
+    have ht : CircuitType.size Fp (Type1 Fp) = 1 := rfl
+    simp [h1, ht]
+    omega⟩
 
 /-- A packed wrap statement has no boolean cell: the branch data is one 10-bit scalar. -/
 theorem WrapStatement.packed_isScalar
     (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
     ∀ k ∈ st.packed, k.IsScalar := by
-  simp only [WrapStatement.packed, PackedScalar.IsScalar, List.cons_append, List.nil_append,
-    List.mem_cons, List.mem_append, List.mem_map, List.not_mem_nil, or_false, forall_eq_or_imp,
-    true_and]
+  simp only [WrapStatement.packed, Vector.mem_mk, List.mem_toArray, PackedScalar.IsScalar,
+    List.cons_append, List.nil_append, List.mem_cons, List.mem_append, List.mem_map,
+    List.not_mem_nil, or_false, forall_eq_or_imp, true_and]
   rintro a (⟨c, -, rfl⟩ | rfl) <;> trivial
 
 /-- The public-input leaves of a wrap statement: `packLeavesOf` its packing. -/
 def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (tab : XhatTable F nc) : List (Leaf F nc) :=
-  packLeavesOf st.packed tab
+  packLeavesOf st.packed.toList tab
 
 /-- One slot of the step statement as packed scalars, in packing order: the five split claims
 `cip, b, ζ^{2^k}, ζⁿ, perm` as a full half and a boolean parity, the digest full, `β, γ, α, ζ, ξ`
 and the `k` round challenges 128-bit, `shouldFinalize` boolean. -/
 def UnfinalizedProof.packed
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    List (PackedScalar F) :=
+    Vector (PackedScalar F) (CircuitType.size Fp (UnfVal k)) :=
   let dv := u.deferredValues
   let pl := dv.plonk
   let split (x : Type2 (SplitField (FVar F) (BoolVar F))) : List (PackedScalar F) :=
     [.full x.val.sDiv2, .bit x.val.sOdd]
-  split dv.combinedInnerProduct ++ split dv.b ++ split pl.zetaToSrsLength
+  ⟨List.toArray (split dv.combinedInnerProduct ++ split dv.b ++ split pl.zetaToSrsLength
     ++ split pl.zetaToDomainSize ++ split pl.perm
     ++ [.full u.spongeDigestBeforeEvaluations,
         .b128 pl.beta.val, .b128 pl.gamma.val, .b128 pl.alpha.val, .b128 pl.zeta.val,
         .b128 dv.xi.val]
     ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
-    ++ [.bit u.shouldFinalize]
+    ++ [.bit u.shouldFinalize]), by
+    have h1 : CircuitType.size Fp Fp = 1 := rfl
+    have h2 : CircuitType.size Fp (Type2 (SplitField Fp Bool)) = 2 := rfl
+    have hb : CircuitType.size Fp Bool = 1 := rfl
+    unfold CircuitType.size
+    dsimp only [instAllocUnfinalizedCircuitType, CircuitType.ofEquiv]
+    simp [split, h1, h2, hb]
+    omega⟩
 
 /-- The step statement as packed scalars, in packing order: the slots (`UnfinalizedProof.packed`),
 then the `messagesForNextStepProof` digest and the slots' `messagesForNextWrapProof` digests,
 full. -/
 def StepStatement.packed {n : ℕ}
     (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    List (PackedScalar F) :=
-  st.proofState.unfinalizedProofs.toList.flatMap UnfinalizedProof.packed
+    Vector (PackedScalar F) (CircuitType.size Fp (StmtVal k n)) :=
+  ⟨List.toArray (st.proofState.unfinalizedProofs.toList.flatMap (fun u => u.packed.toList)
     ++ [.full st.proofState.messagesForNextStepProof]
-    ++ st.messagesForNextWrapProof.toList.map .full
+    ++ st.messagesForNextWrapProof.toList.map .full), by
+    have h1 : CircuitType.size Fp Fp = 1 := rfl
+    simp [h1]
+    ring⟩
 
 /-- The group half's input with its claims taken from an unfinalized proof: `xi`,
 `combinedInnerProduct`, `b` and the plonk claims of its deferred values; the key, proof and

@@ -109,8 +109,8 @@ def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
   let sv ← wrapIndexSponge key
   let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) nc) :=
     publicInputCommitFull blindingH
-      (packLeavesOf v.stepStatement.packed
-        (XhatTable.ofKey v.stepStatement.packed basis.toList))
+      (packLeavesOf v.stepStatement.packed.toList
+        (XhatTable.ofKey v.stepStatement.packed.toList basis.toList))
   let dv := v.statement.proofState.deferredValues
   let mask := dv.branchData.proofsVerifiedMask.drop pad
   let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta

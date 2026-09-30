@@ -233,8 +233,8 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
     (hclaimOk : ∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.map (none, ·))
       vk inp.proof).shifted, (stepSide V).ClaimOk x)
     -- the statement's shape against the SRS
-    (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ S.σ.k)
-    (hn : ∀ msg, (inp.statement msg).packed.length ≤ K.cvk.n)
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.σ.k)
+    (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n)
     (havoid : ∀ msg, S.σ.Avoids (stepRelationsAt S.σ K.cvk (inp.statement msg))) :
     ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt S.σ K.cvk)
       P domains vk inp
@@ -281,7 +281,7 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
       inp.unfinalized inp.sgOld inp.proof hproof holds
       ⟨⟨_, hsv, K.digest_eq.symm⟩, hkey⟩ hclaimOk
     exact (builder_spec_iff _ _).mp (verifyProofAt_reads S K hnc cp sv _ (inp.statement msg)
-      inp.unfinalized _ oldsW hbase (hsmall msg) (hn msg) (havoid msg) hivp) nv hsat
+      inp.unfinalized _ oldsW hbase hsmall hn (havoid msg) hivp) nv hsat
   simp only [verifyOneBy]
   mvcgen [hfop, hh, hvp, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
   rename_i _ _ _ _ fop _ hF hr _ hH succ _ hVp ver _ hVer res _ hRes
@@ -336,8 +336,8 @@ theorem verifyOne_slotReads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve n
     (domains : List (KnownDomain Fp)) (hks : MaxProofsVerified * ks < 2 ^ 128)
     (hw : w ≤ MaxProofsVerified)
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks S.σ.k ncw ncs w)
-    (hsmall : ∀ msg, (inp.statement msg).packed.length ≤ 2 ^ S.σ.k)
-    (hn : ∀ msg, (inp.statement msg).packed.length ≤ K.cvk.n)
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.σ.k)
+    (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n)
     (havoid : ∀ msg, S.σ.Avoids (stepRelationsAt S.σ K.cvk (inp.statement msg))) :
     ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt S.σ K.cvk)
       P domains vk inp

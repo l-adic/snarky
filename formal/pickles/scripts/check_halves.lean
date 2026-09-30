@@ -552,7 +552,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     -- right side of `Key.avoids_lagrangeRelations_iff`. The bounded `∀` is pinned to the list
     -- walk: left to resolution it goes to `Vector`'s finite-type instance, which enumerates
     -- the curve.
-    let Lm := L.toList.take stVar.packed.length
+    let Lm := L.toList.take stVar.packed.toList.length
     let avoidOk := @decide (∀ Ps ∈ Lm, ∀ c : Fin nc, Ps[c] ≠ 0) (List.decidableBAll _ _)
     IO.println s!"    keys=true rounds={σ.k} domains={cands} \
       key=2^{s.vk.domainLog2} hdom={hdom} \
@@ -624,15 +624,15 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
   let V : Valuation Fp := fun _ => 0
   let pub := Pickles.stepPublicInput V stVar
   let pubOk := decide (pub = w.publicInput)
-  let smallOk := decide (stVar.packed.length ≤ 2 ^ σ.k)
+  let smallOk := decide (stVar.packed.toList.length ≤ 2 ^ σ.k)
   let L ← basisFor CW "pallas" σ 1 w
   -- `havoid`, decided on the memoized Lagrange points as the right side of
   -- `avoids_stepRelationsAt_iff`, which holds under `hsmall` and a statement that fits in the
   -- domain, as it does under `guards`: the key's count is at most its domain; the bounded `∀`
   -- is pinned to the list walk
-  let Lm := L.toList.take stVar.packed.length
+  let Lm := L.toList.take stVar.packed.toList.length
   let avoidOk :=
-    decide (∀ c : Fin 1, Pickles.corrSumPt (C := CW) stVar.packed Lm c ≠ 0)
+    decide (∀ c : Fin 1, Pickles.corrSumPt (C := CW) stVar.packed.toList Lm c ≠ 0)
       && @decide (∀ Ps ∈ Lm, ∀ c : Fin 1, Ps[c] ≠ 0) (List.decidableBAll _ _)
   let guards := decide (cp.olds.size = cvk.prevChallenges ∧ pub.size = cvk.publicCount)
   let sg' ← memoized memo.sg (memoKey CW "pallas" σ.k w pub) fun _ =>

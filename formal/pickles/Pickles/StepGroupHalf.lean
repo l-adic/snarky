@@ -55,8 +55,8 @@ never its cells. -/
 private def xhatTableAt {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point)
     (cvk : KimchiVK IpaPallas.curve nc)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : XhatTable Fp nc :=
-  XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed
-    (cvk.lagrangePoints σ statement.packed.length).toList
+  XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed.toList
+    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList
 
 /-- The public-input leaves at a key: the packed wrap statement over the key's table. -/
 def stepLeavesAt {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
@@ -104,7 +104,7 @@ theorem stepPublicInput_congr_msg {ks : ℕ} (V : Valuation Fp)
 optional-feature cells. -/
 theorem packed_length_le_stepPublicInput {ks : ℕ} (V : Valuation Fp)
     (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
-    st.packed.length ≤ (stepPublicInput V st).size := by
+    CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ (stepPublicInput V st).size := by
   have hs : (stepPublicInput V st).size = CircuitType.size Fq (Vector (Type1 Fq) 5 ×
       Vector Fq 2 × Vector Fq 3 × Vector Fq 3 × Vector Fq ks × Fq × Vector Fq 8 × Fq × Fq) := by
     simp only [stepPublicInput, Vector.size_toArray]
@@ -113,7 +113,7 @@ theorem packed_length_le_stepPublicInput {ks : ℕ} (V : Valuation Fp)
   have ht : CircuitType.size Fq (Type1 Fq) = 1 := rfl
   have h1' : CircuitType.size Fp Fp = 1 := rfl
   have ht' : CircuitType.size Fp (Type1 Fp) = 1 := rfl
-  rw [hs, WrapStatement.packed_length]
+  rw [hs]
   simp only [CircuitType.size_prod, CircuitType.size_vector, h1, ht, h1', ht']
   omega
 
@@ -127,12 +127,16 @@ theorem stepPublicInput_eq_append {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point)
       stepPublicInput V st = pubOf IpaPallas.curve V (stepLeavesAt σ cvk st) ++ zs := by
   refine ⟨Array.replicate 10 0, fun z hz => (Array.mem_replicate.mp hz).2, ?_⟩
   have hpub : (pubOf IpaPallas.curve V (stepLeavesAt σ cvk st)).toList
-      = st.packed.map (PackedScalar.reduced IpaPallas.curve V) := by
-    have hk : packLeavesOf st.packed (XhatTable.ofKeyKnown (C := IpaPallas.curve) st.packed
-        (cvk.lagrangePoints σ st.packed.length).toList)
-        = List.zipWith (constLeaf (C := IpaPallas.curve)) st.packed
-          (cvk.lagrangePoints σ st.packed.length).toList :=
-      packLeavesOf_ofKey st.packed (cvk.lagrangePoints σ st.packed.length).toList
+      = st.packed.toList.map (PackedScalar.reduced IpaPallas.curve V) := by
+    have hk : packLeavesOf st.packed.toList
+        (XhatTable.ofKeyKnown (C := IpaPallas.curve) st.packed.toList
+          (cvk.lagrangePoints σ
+            (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList)
+        = List.zipWith (constLeaf (C := IpaPallas.curve)) st.packed.toList
+          (cvk.lagrangePoints σ
+            (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList :=
+      packLeavesOf_ofKey st.packed.toList
+        (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList
     simp only [stepLeavesAt, packLeaves, xhatTableAt]
     rw [hk]
     exact pubOf_zipWith_constLeaf _ _ (by simp)
@@ -173,20 +177,22 @@ never its cells. -/
 def stepRelationsAt {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
     List (Fin (2 ^ σ.k) → IpaPallas.curve.ScalarField) :=
-  (List.finRange nc).map (fun c : Fin nc => corrCoeffs (C := IpaPallas.curve) statement.packed
-    (chunkRelations σ cvk statement.packed.length c.val))
-    ++ cvk.lagrangeRelations σ.k statement.packed.length
+  (List.finRange nc).map (fun c : Fin nc =>
+    corrCoeffs (C := IpaPallas.curve) statement.packed.toList
+      (chunkRelations σ cvk (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)) c.val))
+    ++ cvk.lagrangeRelations σ.k (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))
 
 /-- Chunk `c` of the correction sum is the commitment to its coefficients on the chunk. -/
 private theorem corrSumPt_eq_msm {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point)
     (cvk : KimchiVK IpaPallas.curve nc)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) (m : ℕ) (c : Fin nc) :
-    corrSumPt (C := IpaPallas.curve) statement.packed (cvk.lagrangePoints σ m).toList c
+    corrSumPt (C := IpaPallas.curve) statement.packed.toList (cvk.lagrangePoints σ m).toList c
       = msm IpaPallas.curve σ.g
-          (corrCoeffs (C := IpaPallas.curve) statement.packed (chunkRelations σ cvk m c.val)) := by
-  have hchunk : corrSumPt (C := IpaPallas.curve) statement.packed
+          (corrCoeffs (C := IpaPallas.curve) statement.packed.toList
+            (chunkRelations σ cvk m c.val)) := by
+  have hchunk : corrSumPt (C := IpaPallas.curve) statement.packed.toList
       (cvk.lagrangePoints σ m).toList c
-      = corrSumPt (C := IpaPallas.curve) statement.packed
+      = corrSumPt (C := IpaPallas.curve) statement.packed.toList
           ((cvk.lagrangePoints σ m).toList.map fun Ps => #v[Ps[c]]) 0 := by
     simp [corrSumPt, List.zipWith_map_right]
   have hmap : (cvk.lagrangePoints σ m).toList.map (fun Ps => #v[Ps[c]])
@@ -204,23 +210,26 @@ shift. -/
 private theorem corrSumPt_ne_zero {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point)
     (K : Key IpaPallas.curve nc) (hnc : nc = chunkCount σ.k K.cvk.domainLog2)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    (hsmall : statement.packed.length ≤ 2 ^ σ.k) (hn : statement.packed.length ≤ K.cvk.n)
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ σ.k)
+    (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n)
     (h : σ.Avoids (stepRelationsAt σ K.cvk statement)) (c : Fin nc) :
-    corrSumPt (C := IpaPallas.curve) statement.packed
-      (K.cvk.lagrangePoints σ statement.packed.length).toList c ≠ 0 := by
+    corrSumPt (C := IpaPallas.curve) statement.packed.toList
+      (K.cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList c
+      ≠ 0 := by
   rw [corrSumPt_eq_msm]
   refine h _ (List.mem_append_left _ (List.mem_map.2 ⟨c, List.mem_finRange c, rfl⟩))
     fun h0 => ?_
   obtain ⟨k, rest, hk⟩ := List.exists_cons_of_ne_nil
-    (l := statement.packed) (by simp [WrapStatement.packed])
+    (l := statement.packed.toList) (by simp [WrapStatement.packed])
   have hroom := Key.chunk_add_le hnc c
-  rw [hk, List.length_cons] at hsmall hn
+  have hlen : rest.length + 1 = CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) := by
+    rw [← List.length_cons, ← hk, Vector.length_toList]
   refine zipWith_lagrangeCoeffs_ne_zero (k := σ.k) K.omega_prim
-    (K.natCast_n_ne_zero pastaShapePallas) c statement.packed.length (shiftCoeff k)
+    (K.natCast_n_ne_zero pastaShapePallas) c
+    (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)) (shiftCoeff k)
     (rest.map shiftCoeff) (shiftCoeff_ne_zero pastaShapePallas k
-      (statement.packed_isScalar k (hk ▸ List.mem_cons_self))) (by rw [hk]; simp)
-    (by simp only [List.length_map, hk, List.length_cons, Nat.min_self]; omega)
-    (by simp only [List.length_map, hk, List.length_cons, Nat.min_self]; omega) ?_
+      (statement.packed_isScalar k (Vector.mem_toList_iff.mp (hk ▸ List.mem_cons_self)))) (by omega)
+    (by simp only [List.length_map]; omega) (by simp only [List.length_map]; omega) ?_
   rw [← h0, corrCoeffs, chunkRelations, hk, ← List.map_cons, List.zipWith_map_left]
 
 /-- The SRS avoids the step relations iff every chunk of the correction sum and every Lagrange
@@ -229,12 +238,15 @@ point is finite: a chunk of the sum commits to that chunk's coefficients
 theorem avoids_stepRelationsAt_iff {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point)
     (K : Key IpaPallas.curve nc) (hnc : nc = chunkCount σ.k K.cvk.domainLog2)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    (hsmall : statement.packed.length ≤ 2 ^ σ.k) (hn : statement.packed.length ≤ K.cvk.n) :
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ σ.k)
+    (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n) :
     σ.Avoids (stepRelationsAt σ K.cvk statement)
-      ↔ (∀ c : Fin nc, corrSumPt (C := IpaPallas.curve) statement.packed
-            (K.cvk.lagrangePoints σ statement.packed.length).toList c ≠ 0)
-        ∧ ∀ Ps ∈ (K.cvk.lagrangePoints σ statement.packed.length).toList, ∀ c : Fin nc,
-            Ps[c] ≠ 0 := by
+      ↔ (∀ c : Fin nc, corrSumPt (C := IpaPallas.curve) statement.packed.toList
+            (K.cvk.lagrangePoints σ
+              (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList c ≠ 0)
+        ∧ ∀ Ps ∈ (K.cvk.lagrangePoints σ
+            (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList,
+            ∀ c : Fin nc, Ps[c] ≠ 0 := by
   refine ⟨fun h => ⟨corrSumPt_ne_zero σ K hnc statement hsmall hn h, Key.lagrange_ne
     pastaShapePallas σ hnc
     fun a ha => h a (List.mem_append_right _ ha)⟩, fun ⟨hsum, hL⟩ a ha hne => ?_⟩
@@ -259,7 +271,7 @@ def verifyProofWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     CircuitM Fp c (BoolVar Fp) :=
   verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params
     (.const ((Pasta.vestaLam : ℤ) : Fp)) groupMapParamsPallas pallasBase.sqrt? (constPt h)
-    (XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed lagrange) spongeAfterIndex
+    (XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed.toList lagrange) spongeAfterIndex
     isBaseCase statement u cells
 
 /-- `verifyProofWith` at the SRS blinding base and the key's Lagrange points, one per packed
@@ -273,8 +285,9 @@ def verifyProofAt {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
-  verifyProofWith σ.h (cvk.lagrangePoints σ statement.packed.length).toList spongeAfterIndex
-    isBaseCase statement u cells
+  verifyProofWith σ.h
+    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList
+    spongeAfterIndex isBaseCase statement u cells
 
 /-- **`verifyProofAt` reads as the group half at the packed statement's public input.** The
 table is the key's, so `XhatTable.Bound` needs beyond the key's invariants only that
@@ -293,7 +306,8 @@ theorem verifyProofAt_reads {ks nc np : ℕ} {V : Valuation Fp} (S : Srs IpaPall
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (oldsW : Vector (IpaPallas.curve.Point × Bool) np)
     (hbase : CircuitType.Reads V isBaseCase false)
-    (hsmall : statement.packed.length ≤ 2 ^ S.σ.k) (hn : statement.packed.length ≤ K.cvk.n)
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.σ.k)
+    (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n)
     (havoid : S.σ.Avoids (stepRelationsAt S.σ K.cvk statement))
     (hivp : IvpHyps (stepSide V) S.σ K.cvk cp (stepPublicInput V statement) false
       spongeAfterIndex (cells.withClaims u) oldsW) :
@@ -303,16 +317,18 @@ theorem verifyProofAt_reads {ks nc np : ℕ} {V : Valuation Fp} (S : Srs IpaPall
     ⦃⇓ v _ => ⌜VerifyReads (stepSide V) S.σ K.cvk cp (stepPublicInput V statement) u false
       v⌝⦄ := by
   have hleaves : stepLeavesAt S.σ K.cvk statement
-      = List.zipWith (constLeaf (C := IpaPallas.curve)) statement.packed
-        (K.cvk.lagrangePoints S.σ statement.packed.length).toList := by
+      = List.zipWith (constLeaf (C := IpaPallas.curve)) statement.packed.toList
+        (K.cvk.lagrangePoints S.σ
+          (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList := by
     unfold stepLeavesAt packLeaves xhatTableAt
     exact packLeavesOf_ofKey (C := IpaPallas.curve) _ _
   have hsz : (pubOf IpaPallas.curve V (packLeaves statement (xhatTableAt S.σ K.cvk statement))).size
-      = statement.packed.length := by
+      = (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)) := by
     rw [← stepLeavesAt, hleaves]
     simp [pubOf]
-  have hlb : (K.cvk.lagrangePoints S.σ statement.packed.length).toList ≠ [] := by
-    simp [WrapStatement.packed]
+  have hlb : (K.cvk.lagrangePoints S.σ
+      (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList ≠ [] := by
+    simp
   have htab : (xhatTableAt S.σ K.cvk statement).Bound pastaShapePallas V S.σ
       (K.cvk.lagrangePoints S.σ
         (pubOf IpaPallas.curve V (packLeaves statement (xhatTableAt S.σ K.cvk
@@ -320,11 +336,14 @@ theorem verifyProofAt_reads {ks nc np : ℕ} {V : Valuation Fp} (S : Srs IpaPall
       (constPt S.σ.h) (packLeaves statement (xhatTableAt S.σ K.cvk statement)) := by
     rw [hsz]
     have hb := bound_ofKeyKnown (V := V) pastaShapePallas S.σ
-      (K.cvk.lagrangePoints S.σ statement.packed.length).toArray statement.packed S.h_ne
+      (K.cvk.lagrangePoints S.σ
+        (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toArray
+      statement.packed.toList S.h_ne
       (fun Ps h ci => Key.lagrange_ne pastaShapePallas S.σ hnc
         (fun a ha => havoid a (List.mem_append_right _ ha)) Ps h ci)
       (by simp [WrapStatement.packed]) hlb
-      (bitBoolean_constLeaf_of_isScalar _ _ statement.packed_isScalar)
+      (bitBoolean_constLeaf_of_isScalar _ _
+        fun k hk => statement.packed_isScalar k (Vector.mem_toList_iff.mp hk))
       (corrSumPt_ne_zero S.σ K hnc statement hsmall hn havoid)
     rw [Vector.toList_toArray, ← hleaves] at hb
     exact hb
@@ -499,8 +518,9 @@ def groupCircuit {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBas
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks k nc) : CircuitM Fp c Unit :=
-  groupCircuitWith σ.h (cvk.lagrangePoints σ g.statement.packed.length).toList keyCells
-    spongeAfterIndex g
+  groupCircuitWith σ.h
+    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))).toList
+    keyCells spongeAfterIndex g
 
 /-- **The group circuit's read**: the group half's read at a bit that reads `1`. -/
 theorem groupCircuit_reads {V : Valuation Fp} (S : Srs IpaPallas.curve)
@@ -509,7 +529,8 @@ theorem groupCircuit_reads {V : Valuation Fp} (S : Srs IpaPallas.curve)
     (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks S.σ.k nc)
     (hbase : CircuitType.Reads V g.isBaseCase false)
-    (hsmall : g.statement.packed.length ≤ 2 ^ S.σ.k) (hn : g.statement.packed.length ≤ K.cvk.n)
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.σ.k)
+    (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n)
     (havoid : S.σ.Avoids (stepRelationsAt S.σ K.cvk g.statement))
     (hivp : (∀ x ∈ g.shifted, (stepSide V).ClaimOk x) →
       ∃ oldsW, IvpHyps (stepSide V) S.σ K.cvk cp (stepPublicInput V g.statement) false

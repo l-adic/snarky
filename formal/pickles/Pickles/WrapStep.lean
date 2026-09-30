@@ -493,7 +493,7 @@ theorem wrapStep_kimchiVerify
         exact (builder_spec_iff _ _).mp (verifyOne_scalarReads SStep KStep D (hws j)
           (verifyProofWith σ.h (srcs j).lagrange.toList) vk inp) nv hsat hmsk hmv' h1)
       hn hws dummySg dummyUnf rule adv
-      (fun _ _ _ => (WrapStatement.packed_length _).trans_le (by rw [hσk, hE]; decide)))
+      (by rw [hσk, hE]; decide))
       0 (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv
   -- the slot is at this tag's width
   subst hwi

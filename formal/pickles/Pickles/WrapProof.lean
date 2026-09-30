@@ -150,14 +150,14 @@ theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
     (hc : SplitClaimsCast Vg (groupInput ks S.σ.k nc).claims Vs (scalarInput S.σ.k nc).claims)
     -- the statement packs no more leaves than the SRS has points, and the SRS avoids the
     -- public-input relations
-    (hsmall : (groupInput ks S.σ.k nc).statement.packed.length ≤ 2 ^ S.σ.k)
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.σ.k)
     (havoid : S.σ.Avoids (stepRelationsAt S.σ K.cvk (groupInput ks S.σ.k nc).statement))
     -- of the proof itself
     (hguard : Guards IpaPallas.curve K.cvk cp pub)
     (hsg : SgOk S.σ K.cvk cp pub) :
     kimchiVerify IpaPallas.curve S.σ K.cvk cp pub = true := by
   -- the statement fits in the domain: its public input is the key's count, at most the domain
-  have hn : (groupInput ks S.σ.k nc).statement.packed.length ≤ K.cvk.n := by
+  have hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n := by
     have h := packed_length_le_stepPublicInput Vg (groupInput ks S.σ.k nc).statement
     rw [hin.statement, hguard.2] at h
     exact h.trans K.cvk.publicCount_le

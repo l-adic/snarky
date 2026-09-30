@@ -196,8 +196,9 @@ scalar. -/
 def wrapLeavesAt {ks n nc : ℕ} (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : List (Leaf Fq nc) :=
-  packLeavesOf statement.packed
-    (XhatTable.ofKey statement.packed (cvk.lagrangePoints σ statement.packed.length).toList)
+  packLeavesOf statement.packed.toList
+    (XhatTable.ofKey statement.packed.toList
+      (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n))).toList)
 
 /-- The public input the step statement packs to under `V`: what the verified step proof's
 public input must be. -/
@@ -214,10 +215,10 @@ theorem wrapPublicInput_toList {ks n nc : ℕ} (σ : SRS IpaVesta.curve.Point)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) :
     (wrapPublicInput σ cvk V statement).toList
-      = statement.packed.map (PackedScalar.reduced IpaVesta.curve V) := by
+      = statement.packed.toList.map (PackedScalar.reduced IpaVesta.curve V) := by
   unfold wrapPublicInput wrapLeavesAt
-  rw [packLeavesOf_ofKey (C := IpaVesta.curve) statement.packed
-    (cvk.lagrangePoints σ statement.packed.length).toList]
+  rw [packLeavesOf_ofKey (C := IpaVesta.curve) statement.packed.toList
+    (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n))).toList]
   exact pubOf_zipWith_constLeaf _ _ (by simp)
 
 /-- The verify block at the deployed Vesta constants, the blinding base `h` as a constant cell,
@@ -237,7 +238,7 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
     (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h)
     spongeAfterIndex
     (publicInputCommitFull (constPt h)
-      (packLeavesOf statement.packed (XhatTable.ofKey statement.packed lagrange)))
+      (packLeavesOf statement.packed.toList (XhatTable.ofKey statement.packed.toList lagrange)))
     msgSponge newBpChallenges claimedMsgDigest u cells
 
 /-- `wrapVerifyWith` at the SRS blinding base and the key's Lagrange points, one per packed
@@ -252,21 +253,22 @@ def wrapVerifyAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBas
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
-  wrapVerifyWith σ.h (cvk.lagrangePoints σ statement.packed.length).toList statement
+  wrapVerifyWith σ.h (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal ks n))).toList statement
     spongeAfterIndex msgSponge newBpChallenges claimedMsgDigest u cells
 
 /-- A packed step statement opens with a full scalar: the first slot's combined inner product,
 or with no slot the `messagesForNextStepProof` digest. -/
 theorem StepStatement.packed_head {ks n : ℕ}
     (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) :
-    ∃ x rest, st.packed = .full x :: rest := by
-  unfold StepStatement.packed
+    ∃ x rest, st.packed.toList = .full x :: rest := by
+  simp only [StepStatement.packed, Vector.toList_mk]
   cases st.proofState.unfinalizedProofs.toList with
   | nil =>
     simp only [List.flatMap_nil, List.nil_append, List.cons_append]
     exact ⟨_, _, rfl⟩
   | cons u us =>
-    simp only [List.flatMap_cons, List.append_assoc, List.cons_append]
+    simp only [List.flatMap_cons, UnfinalizedProof.packed, Vector.toList_mk, List.append_assoc,
+      List.cons_append]
     exact ⟨_, _, rfl⟩
 
 /-- **The block at a key reads as the group half at the packed statement.** The public-input
@@ -283,7 +285,7 @@ theorem wrapVerifyAt_reads {ks n kw nw nc np : ℕ} {V : Valuation Fq}
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof S.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput S.σ.k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (havoid : S.σ.Avoids (K.cvk.lagrangeRelations S.σ.k statement.packed.length))
+    (havoid : S.σ.Avoids (K.cvk.lagrangeRelations S.σ.k (CircuitType.size Fp (StmtVal ks n))))
     (hivp : ∃ oldsW, IvpHyps (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V statement) true
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
@@ -294,24 +296,24 @@ theorem wrapVerifyAt_reads {ks n kw nw nc np : ℕ} {V : Valuation Fq}
         (↑v : CVar Fq).val V = 1⌝⦄ := by
   obtain ⟨oldsW, hivp⟩ := hivp
   have hleaves : wrapLeavesAt S.σ K.cvk statement
-      = List.zipWith constLeaf statement.packed
-        (K.cvk.lagrangePoints S.σ statement.packed.length).toList := by
+      = List.zipWith constLeaf statement.packed.toList
+        (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (StmtVal ks n))).toList := by
     unfold wrapLeavesAt
     exact packLeavesOf_ofKey (C := IpaVesta.curve) _ _
-  have hsz : (wrapPublicInput S.σ K.cvk V statement).size = statement.packed.length := by
-    rw [← Array.length_toList, wrapPublicInput_toList, List.length_map]
+  have hsz : (wrapPublicInput S.σ K.cvk V statement).size = CircuitType.size Fp (StmtVal ks n) := by
+    rw [← Array.length_toList, wrapPublicInput_toList, List.length_map, Vector.length_toList]
   -- the binding at each chunk, under the boolean leaves' booleanity, which the commitment's
   -- read supplies
   have hbind := fun (ci : Fin nc)
     (hb : ∀ leaf ∈ wrapLeavesAt S.σ K.cvk statement, leaf.bitBoolean V) =>
     xhatBinding_const (V := V) pastaShapeVesta ci S.σ
-      (K.cvk.lagrangePoints S.σ statement.packed.length).toArray statement.packed S.h_ne
+      (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (StmtVal ks n))).toArray
+      statement.packed.toList S.h_ne
       (fun Ps h => Key.lagrange_ne pastaShapeVesta S.σ hnc havoid Ps h ci) (hleaves ▸ hb)
   have hscalar : leafHasScalar (wrapLeavesAt S.σ K.cvk statement) := by
     obtain ⟨x, rest, hx⟩ := statement.packed_head
     obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
-      (l := (K.cvk.lagrangePoints S.σ statement.packed.length).toList) (by
-        simp [hx])
+      (l := (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (StmtVal ks n))).toList) (by simp)
     rw [hleaves, hlb, hx]
     simp [constLeaf, leafHasScalar]
   have hX : ⦃⌜True⌝⦄
@@ -323,7 +325,7 @@ theorem wrapVerifyAt_reads {ks n kw nw nc np : ℕ} {V : Valuation Fq}
     rw [hsz]
     have h0 := builder_spec_forall _ (fun _ : Fin nc => True) _ fun ci _ =>
       xHat_reads_publicCommitment pastaShapeVesta ci S.σ
-        (K.cvk.lagrangePoints S.σ statement.packed.length).toArray (constPt S.σ.h)
+        (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (StmtVal ks n))).toArray (constPt S.σ.h)
         (wrapLeavesAt S.σ K.cvk statement) _ _ (fun hb => hleaves ▸ hbind ci hb) hscalar
     mvcgen -trivial [h0]
     intro hr
@@ -532,8 +534,9 @@ def groupCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBas
     (cvk : Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc)
     (keyCells : VkComms nc (AffinePoint (FVar Fq)))
     (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw pad nc) : CircuitM Fq c Unit :=
-  groupCircuitWith σ.h (cvk.lagrangePoints σ g.stepStatement.packed.length).toList keyCells
-    spongeAfterIndex msgSponge g
+  groupCircuitWith σ.h
+    (cvk.lagrangePoints σ (CircuitType.size Fp (StmtVal kw (MaxProofsVerified - pad)))).toList
+    keyCells spongeAfterIndex msgSponge g
 
 open Std.Do in
 /-- **The group circuit's read.** Every wrap-side claim satisfies `IvpSide.ClaimOk`
@@ -545,7 +548,8 @@ theorem groupCircuit_reads {V : Valuation Fq} (S : Srs Bulletproof.IpaVesta.curv
     (cp : Kimchi.Verifier.KimchiProof Bulletproof.IpaVesta.curve nc S.σ.k)
     (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
     (g : GroupVar S.σ.k kw pad nc)
-    (havoid : S.σ.Avoids (K.cvk.lagrangeRelations S.σ.k g.stepStatement.packed.length))
+    (havoid : S.σ.Avoids (K.cvk.lagrangeRelations S.σ.k
+      (CircuitType.size Fp (StmtVal kw (MaxProofsVerified - pad)))))
     (hivp : (∀ x ∈ g.shifted, (wrapSide V).ClaimOk x) →
       ∃ oldsW, IvpHyps (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V g.stepStatement) true
         spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :

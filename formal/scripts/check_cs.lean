@@ -1582,7 +1582,8 @@ def stepMainHyps {n : ℕ} (k : StepMainConsts n) (h : XhatStepCurve.Point) :
     unless bases.length ≤ s.key.n do
       throw s!"{bases.length} Lagrange bases overflow the domain 2^{s.key.domainLog2}"
     unless bases.all fun Ps => decide (Ps[0] ≠ 0) do throw "a Lagrange base is the identity"
-    unless decide (Pickles.corrSumPt (C := Bulletproof.IpaPallas.curve) packed bases 0 ≠ 0) do
+    unless decide
+        (Pickles.corrSumPt (C := Bulletproof.IpaPallas.curve) packed.toList bases 0 ≠ 0) do
       throw "a slot's correction sum is the identity"
 
 open Pickles in
@@ -1676,8 +1677,8 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
   let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) 1) :=
     Pickles.publicInputCommitFull h
-      (Pickles.packLeavesOf (wrapStepStatement get).packed
-        (Pickles.XhatTable.ofKey (wrapStepStatement get).packed (oneChunk pts)))
+      (Pickles.packLeavesOf (wrapStepStatement get).packed.toList
+        (Pickles.XhatTable.ofKey (wrapStepStatement get).packed.toList (oneChunk pts)))
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const Bulletproof.IpaPallas.curve.lam)
     Pickles.groupMapParamsVesta vestaBase.sqrt? true h sv computeXHat

@@ -176,23 +176,6 @@ def AllocEvals.toChunked {nc : ℕ} {f : Type} (e : AllocEvals nc f) : ChunkedEv
 
 /-! ## The step statement -/
 
-/-- A packed step statement has one scalar per cell of the statement's values. -/
-theorem StepStatement.packed_length {F : Type} [Field F] {k n : ℕ}
-    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    st.packed.length = CircuitType.size Fp (StmtVal k n) := by
-  have h1 : CircuitType.size Fp Fp = 1 := rfl
-  have h2 : CircuitType.size Fp (Type2 (SplitField Fp Bool)) = 2 := rfl
-  have hb : CircuitType.size Fp Bool = 1 := rfl
-  have hu : CircuitType.size Fp (UnfVal k) = k + 17 := by
-    unfold CircuitType.size
-    dsimp only [instAllocUnfinalizedCircuitType, CircuitType.ofEquiv]
-    simp [h1, h2, hb]
-    omega
-  simp only [StepStatement.packed, UnfinalizedProof.packed, List.length_append,
-    List.length_flatMap, List.length_map, List.length_cons, List.length_nil, Vector.length_toList]
-  simp [hu, h1]
-  ring
-
 /-! ## One slot's witness -/
 
 /-- One previous proof's witness, as allocated: the wrap proof's commitments (`ncw` chunks)
