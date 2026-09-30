@@ -133,11 +133,10 @@ def slotInput {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified) (dummySg : A
   deferred := ⟨⟨⟨s.alpha⟩, ⟨s.beta⟩, ⟨s.gamma⟩, ⟨s.zeta⟩, ⟨s.perm⟩, ⟨s.zetaToSrsLength⟩,
       ⟨s.zetaToDomainSize⟩⟩, ⟨s.cip⟩, ⟨s.xi⟩, s.bulletproofChallenges.map SizedF.mk, ⟨s.b⟩⟩
   spongeDigest := s.spongeDigest
-  branchData := ⟨s.branch.domainLog2, #v[s.branch.mask0, s.branch.mask1]⟩
+  branchData := ⟨s.branch.domainLog2, s.branch.mask⟩
   messagesForNextWrapProof := msg
   evals := s.evals.toChunked
-  proofMask := (#v[s.branch.mask0, s.branch.mask1].drop (2 - w)).cast
-    (by simp only [MaxProofsVerified] at hw; omega)
+  proofMask := (s.branch.mask.drop (MaxProofsVerified - w)).cast (by omega)
   prevChallenges := s.prevChallenges
   prevSgs := s.prevSgs.map CheckedPoint.pt
   sgOld := (Vector.replicate (MaxProofsVerified - w) dummySg ++ s.prevSgs.map CheckedPoint.pt).cast
@@ -310,8 +309,7 @@ kept ones read as some mask. -/
 private theorem slotInput_mask_reads {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified)
     (dummySg : AffinePoint (FVar Fp)) (prev : PrevStatement) {s : SlotVar w ncw ncs k ks}
     (u : UnfVar k) (msg : FVar Fp)
-    (h0 : ∃ b : Bool, (↑s.branch.mask0 : CVar Fp).val V = bit b)
-    (h1 : ∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b) :
+    (hm : ∀ m ∈ s.branch.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) :
     ∃ ms : Vector Bool w,
       CircuitType.Reads V (slotInput hw dummySg prev s u msg).proofMask ms := by
   refine CircuitType.exists_reads_vector fun j hj => ?_
@@ -319,13 +317,8 @@ private theorem slotInput_mask_reads {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProof
       ∈ (slotInput hw dummySg prev s u msg).proofMask.toList := by simp
   generalize (slotInput hw dummySg prev s u msg).proofMask[j] = b at hb ⊢
   simp only [slotInput, Vector.toList_cast, Vector.toList_drop] at hb
-  have hb' : b = s.branch.mask0 ∨ b = s.branch.mask1 := by
-    simpa using List.mem_of_mem_drop hb
-  rcases hb' with rfl | rfl
-  · obtain ⟨bb, h⟩ := h0
-    exact ⟨bb, CircuitType.reads_boolVar.mpr h⟩
-  · obtain ⟨bb, h⟩ := h1
-    exact ⟨bb, CircuitType.reads_boolVar.mpr h⟩
+  obtain ⟨bb, h⟩ := hm b (List.mem_of_mem_drop hb)
+  exact ⟨bb, CircuitType.reads_boolVar.mpr h⟩
 
 /-- **The step circuit's slots read as their proofs' halves.** For any rule, under a valuation
 satisfying the emitted constraints, every slot the rule marks must-verify has its unfinalized
@@ -474,21 +467,16 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
   have h1 := hassert (by simpa using hn) hbits results[i].2
     (List.mem_map.mpr ⟨_, Vector.mem_toList_iff.mpr (Vector.getElem_mem i.isLt), rfl⟩)
   have hz := SlotWitness.of_post ((CheckedType.post_finFamily V slots).mp hcheck i)
-  have hmask := slotInput_mask_reads (hws i) dummySg rout.1[i] unfs[i] msgs[i] hz.2.2.1 hz.2.2.2.1
+  have hmask := slotInput_mask_reads (hws i) dummySg rout.1[i] unfs[i] msgs[i] hz.2.2.1
   refine ⟨CircuitType.reads_boolVar.mpr (hsf.trans (CircuitType.reads_boolVar.mp hmv)),
     fun S hS K hK hfit hav => hacc ⟨(S, K), hS, hK⟩ hfit (hav _) hmv h1 fun x hx => ?_,
-    hsc hmask hmv h1, hz.2.2.2.2.2, hmask, ?_⟩
+    hsc hmask hmv h1, hz.2.2.2.2, hmask, ?_⟩
   rotate_left
-  · obtain ⟨-, -, h0, h1, hd, -⟩ := hz
-    obtain ⟨m, hm, hdv⟩ := hd
-    obtain ⟨b0, hb0⟩ := h0
-    obtain ⟨b1, hb1⟩ := h1
+  · obtain ⟨-, -, hmb, ⟨m, hm, hdv⟩, -⟩ := hz
+    obtain ⟨bs, hbs⟩ := CircuitType.exists_reads_vector (vs := (slots i).branch.mask) fun j hj =>
+      (hmb _ (by simp)).imp fun _ h => CircuitType.reads_boolVar.mpr h
     simp only [slotInput]
-    refine ⟨m, #v[b0, b1], hm, hdv, CircuitType.reads_vector.mpr fun j hj => ?_⟩
-    rw [CircuitType.reads_boolVar]
-    match j, hj with
-    | 0, _ => exact hb0
-    | 1, _ => exact hb1
+    exact ⟨m, bs, hm, hdv, hbs⟩
   have hu := hunfPost i
   simp only [IvpInput.shifted, ivpInputOf, slotInput, AllocUnfinalized.toUnfinalized,
     List.mem_cons, List.not_mem_nil, or_false] at hx

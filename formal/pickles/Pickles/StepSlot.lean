@@ -36,19 +36,17 @@ abbrev PallasPt (α : Type) : Type := CheckedPoint (F := Fp) 0 5 α
 
 /-! ## The branch data -/
 
-/-- The branch data as allocated: the two mask bits, then the domain's `log2`. -/
+/-- The branch data as allocated: the mask bits, then the domain's `log2`. -/
 structure AllocBranchData (f bc : Type) where
-  /-- The first mask bit. -/
-  mask0 : bc
-  /-- The second mask bit. -/
-  mask1 : bc
+  /-- The proofs-verified mask, one bit per predecessor slot. -/
+  mask : Vector bc MaxProofsVerified
   /-- `log2` of the verified proof's domain size. -/
   domainLog2 : f
 
-/-- The branch data is its two bits and its `log2`. -/
-def AllocBranchData.equivProd (f bc : Type) : AllocBranchData f bc ≃ bc × bc × f :=
-  ⟨fun d => (d.mask0, d.mask1, d.domainLog2), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
-    fun _ => rfl⟩
+/-- The branch data is its mask and its `log2`. -/
+def AllocBranchData.equivProd (f bc : Type) :
+    AllocBranchData f bc ≃ Vector bc MaxProofsVerified × f :=
+  ⟨fun d => (d.mask, d.domainLog2), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
 instance instAllocBranchDataCircuitType {F f w b vb : Type} [CircuitType F f w]
     [CircuitType F b vb] : CircuitType F (AllocBranchData f b) (AllocBranchData w vb) :=
@@ -59,7 +57,7 @@ expanding its 16 bits through the endo at one row. -/
 def AllocBranchData.check {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     [LawfulBasicSystem Fp c] [KimchiSystem Fp c]
     (d : AllocBranchData (FVar Fp) (BoolVar Fp)) : CircuitM Fp c PUnit := do
-  CheckedType.check (c := c) (val := Bool × Bool × Fp) (d.mask0, d.mask1, d.domainLog2)
+  CheckedType.check (c := c) (val := Vector Bool MaxProofsVerified × Fp) (d.mask, d.domainLog2)
   let _ ← EndoScalar.toField 1 d.domainLog2 (.const Pasta.pallasEndo)
 
 /-- Under any valuation satisfying the emitted constraints, the mask cells read as bits and
@@ -67,13 +65,12 @@ the `log2` cell as a number below `2 ^ 16`. -/
 theorem AllocBranchData.check_spec {V : Valuation Fp}
     (d : AllocBranchData (FVar Fp) (BoolVar Fp)) :
     ⦃⌜True⌝⦄ AllocBranchData.check (c := Builder V (KimchiConstraint Fp)) d
-    ⦃⇓ _ _ => ⌜(∃ b : Bool, (↑d.mask0 : CVar Fp).val V = bit b) ∧
-      (∃ b : Bool, (↑d.mask1 : CVar Fp).val V = bit b) ∧
+    ⦃⇓ _ _ => ⌜(∀ m ∈ d.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
       ∃ n : ℕ, n < 2 ^ 16 ∧ d.domainLog2.val V = (n : Fp)⌝⦄ := by
   have hck : ⦃⌜True⌝⦄ CheckedType.check (F := Fp) (c := Builder V (KimchiConstraint Fp))
-      (val := Bool × Bool × Fp) (d.mask0, d.mask1, d.domainLog2)
+      (val := Vector Bool MaxProofsVerified × Fp) (d.mask, d.domainLog2)
       ⦃⇓ _ _ => ⌜CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
-        (val := Bool × Bool × Fp) V (d.mask0, d.mask1, d.domainLog2)⌝⦄ :=
+        (val := Vector Bool MaxProofsVerified × Fp) V (d.mask, d.domainLog2)⌝⦄ :=
     (builder_spec_iff _ _).mpr fun nv h => CheckedType.check_sound V _ nv h
   have htf := EndoScalar.toField_spec_rows (V := V) (by decide) (by decide) 1 d.domainLog2
     (.const Pasta.pallasEndo)
@@ -81,7 +78,7 @@ theorem AllocBranchData.check_spec {V : Valuation Fp}
   mvcgen [hck, htf]
   rename_i _ _ hp _ _ hn
   obtain ⟨n, hlt, hv, -⟩ := hn
-  exact ⟨hp.1, hp.2.1, n, hlt, hv⟩
+  exact ⟨hp.1, n, hlt, hv⟩
 
 /-- The branch data is checked by `AllocBranchData.check`: its mask cells read as bits, its
 `log2` cell as a number below `2 ^ 16`. -/
@@ -89,32 +86,31 @@ instance instAllocBranchDataCheckedType :
     CheckedType Fp (KimchiConstraint Fp) (AllocBranchData Fp Bool)
       (AllocBranchData (FVar Fp) (BoolVar Fp)) where
   check := AllocBranchData.check
-  post V d := (∃ b : Bool, (↑d.mask0 : CVar Fp).val V = bit b) ∧
-    (∃ b : Bool, (↑d.mask1 : CVar Fp).val V = bit b) ∧
+  post V d := (∀ m ∈ d.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
     ∃ n : ℕ, n < 2 ^ 16 ∧ d.domainLog2.val V = (n : Fp)
   check_sound V d nv h := (builder_spec_iff _ _).mp (AllocBranchData.check_spec d) nv h
   check_complete := by
-    rintro ⟨m0, m1, dl⟩ ⟨a0, a1, x⟩ hv
+    rintro ⟨m, dl⟩ ⟨a, x⟩ hv
     -- an admissible `log2` is below `2 ^ 16`
     have hc := CircuitType.reads_constVar (F := Fp) (var := AllocBranchData (FVar Fp) (BoolVar Fp))
-      (fun _ => 0) (⟨a0, a1, x⟩ : AllocBranchData Fp Bool)
-    obtain ⟨_, _, n, hn, hx⟩ := hv _ _ hc
+      (fun _ => 0) (⟨a, x⟩ : AllocBranchData Fp Bool)
+    obtain ⟨_, n, hn, hx⟩ := hv _ _ hc
     replace hx : x = (n : Fp) :=
-      (CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp
-        (CircuitType.reads_prod.mp hc).2).2).symm.trans hx
+      (CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp hc).2).symm.trans hx
     have hlt : ToNat.toNat x < 2 ^ (16 * 1) := by
       rw [hx, LawfulToNat.toNat_natCast n
         (show n < PALLAS_BASE_CARD from lt_trans hn (by decide))]
       exact hn
     refine Complete.bind (Complete.imp (fun st (h : CircuitType.ReadsAs
-        (val := Bool × Bool × Fp) st (m0, m1, dl) (a0, a1, x)) =>
-          ⟨h, (CircuitType.scoped_prod.mp (CircuitType.scoped_prod.mp h.1).2).2,
-            (CircuitType.reads_prod.mp (CircuitType.reads_prod.mp h.2).2).2⟩)
+        (val := Vector Bool MaxProofsVerified × Fp) st (m, dl) (a, x)) =>
+          ⟨h, (CircuitType.scoped_prod.mp h.1).2, (CircuitType.reads_prod.mp h.2).2⟩)
         (fun _ _ h => h.2)
         (Complete.frame CircuitType.monotone_readsAs
-          (CheckedType.check_complete (c := KimchiConstraint Fp) (val := Bool × Bool × Fp)
-            (m0, m1, dl) (a0, a1, x) (show CheckedType.Valid (F := Fp) (c := KimchiConstraint Fp)
-              (var := BoolVar Fp × BoolVar Fp × FVar Fp) (a0, a1, x) by simp)))) fun _ => ?_
+          (CheckedType.check_complete (c := KimchiConstraint Fp)
+            (val := Vector Bool MaxProofsVerified × Fp) (m, dl) (a, x)
+            (show CheckedType.Valid (F := Fp) (c := KimchiConstraint Fp)
+              (var := Vector (BoolVar Fp) MaxProofsVerified × FVar Fp) (a, x) by simp))))
+      fun _ => ?_
     exact Complete.bind
       (Complete.imp (fun st h => ⟨h, CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
           CircuitType.reads_fvar.mpr rfl⟩) (fun _ _ _ => trivial)
@@ -303,12 +299,11 @@ theorem SlotWitness.of_post {V : Valuation Fp} {w ncw ncs k ks : ℕ}
       V s) :
     (∃ b : Bool, (↑s.z1.val.sOdd : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.z2.val.sOdd : CVar Fp).val V = bit b) ∧
-      (∃ b : Bool, (↑s.branch.mask0 : CVar Fp).val V = bit b) ∧
-      (∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b) ∧
+      (∀ m ∈ s.branch.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
       (∃ n : ℕ, n < 2 ^ 16 ∧ s.branch.domainLog2.val V = (n : Fp)) ∧
       SlotWitness.PointsOnCurve V s := by
-  obtain ⟨hp, ⟨-, -, -, -, -, -, -, -, -, -, -, -, hb0, hb1, hd⟩, -, -, hs⟩ := h
-  exact ⟨hp.2.2.2.2.1.2, hp.2.2.2.2.2.1.2, hb0, hb1, hd, hp, hs⟩
+  obtain ⟨hp, ⟨-, -, -, -, -, -, -, -, -, -, -, -, hm, hd⟩, -, -, hs⟩ := h
+  exact ⟨hp.2.2.2.2.1.2, hp.2.2.2.2.2.1.2, hm, hd, hp, hs⟩
 
 /-! ## The key -/
 
