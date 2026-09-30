@@ -37,14 +37,12 @@ variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Kim
 for a side-loaded predecessor. When every branch knows it, the index equals the one-hot choice;
 otherwise the known branches' bits scale the index to that choice. -/
 def pinWrapDomainIndex [ConstraintHolds F c] {n : ℕ} (whichBranch : Vector (BoolVar F) n)
-    (atSlot : Vector (Option ℕ) n) (index : FVar F) : CircuitM F c PUnit :=
-  match atSlot.toList.allSome with
-  | some ks => do
-    let chosen ← Pseudo.choose whichBranch.toList ks fun j => .const (j : F)
+    (atSlot : Vector (Option ℕ) n) (index : FVar F) : CircuitM F c PUnit := do
+  let chosen ← Pseudo.choose whichBranch.toList atSlot.toList
+    fun k => .const (k.elim 0 fun j => (j : F))
+  if atSlot.all Option.isSome then
     assertEqual index chosen
-  | none => do
-    let chosen ← Pseudo.choose whichBranch.toList atSlot.toList
-      fun k => .const (k.elim 0 fun j => (j : F))
+  else
     let knownBranch ← Pseudo.choose whichBranch.toList atSlot.toList
       fun k => .const (k.elim 0 fun _ => 1)
     let pinned ← mul knownBranch index
@@ -75,28 +73,6 @@ section Reads
 
 variable [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
 
-/-- A list whose entries are all `some` is the `some`s of `List.allSome`'s result. -/
-private theorem allSome_eq_some {α : Type} :
-    ∀ {l : List (Option α)} {ks : List α}, l.allSome = some ks → l = ks.map some
-  | [], ks, h => by
-    simp only [List.allSome, List.mapM_nil, Option.pure_def, Option.some.injEq] at h
-    subst h; rfl
-  | a :: l, ks, h => by
-    cases a with
-    | none => simp [List.allSome] at h
-    | some x =>
-      cases hl : l.allSome with
-      | none =>
-        simp only [List.allSome] at hl
-        simp [List.allSome, hl] at h
-      | some ks' =>
-        simp only [List.allSome] at hl
-        simp only [List.allSome, List.mapM_cons, hl] at h
-        simp only [id_eq, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
-          Option.some.injEq] at h
-        subst h
-        simp [allSome_eq_some (l := l) (by simpa [List.allSome] using hl)]
-
 omit [ToNat F] [KimchiSystem F c] in
 /-- Under any valuation satisfying the emitted constraints, with the branch bits reading as the
 indicator of `b` and branch `b` compiled for index `j` at this slot, the index reads as `j`. -/
@@ -107,37 +83,23 @@ theorem pinWrapDomainIndex_spec {n : ℕ} (whichBranch : Vector (BoolVar F) n)
     ⦃⌜True⌝⦄ pinWrapDomainIndex (c := Builder V c) whichBranch atSlot index
     ⦃⇓ _ _ => ⌜index.val V = (j : F)⌝⦄ := by
   have hj' : atSlot[(b : ℕ)] = some j := by rwa [Fin.getElem_fin] at hj
+  have hind := fun (f : Option ℕ → F) => sum_oneHot f whichBranch atSlot.toList (by simp) b hbits
+  have hsel := hind fun k => (CVar.const (k.elim 0 fun i => (i : F)) : CVar F).val V
+  have hone := hind fun k => (CVar.const (k.elim 0 fun _ => (1 : F)) : CVar F).val V
+  rw [Vector.getElem_toList, hj'] at hsel hone
+  have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
+    fun k => .const (k.elim 0 fun i => (i : F))
+  have hk := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
+    fun k => .const (k.elim 0 fun _ => (1 : F))
   simp only [pinWrapDomainIndex]
-  split
-  · rename_i ks hks
-    have hks' := allSome_eq_some hks
-    have hlen : ks.length = n := by simpa using congrArg List.length hks'.symm
-    have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList ks
-      fun i => .const (i : F)
-    mvcgen [hc]
-    rename_i chosen _ hchosen _ _
+  mvcgen [hc, hk]
+  · rename_i chosen _ _ hchosen _ _
     intro hidx
-    rw [hidx, hchosen, sum_oneHot (fun i : ℕ => (CVar.const (i : F) : CVar F).val V)
-      whichBranch ks hlen b hbits]
-    have hbj := congrArg (·[(b : ℕ)]?) hks'
-    simp only [Vector.getElem?_toList, List.getElem?_map, Vector.getElem?_eq_getElem b.isLt, hj',
-      List.getElem?_eq_getElem (show (b : ℕ) < ks.length by omega), Option.map_some,
-      Option.some.injEq] at hbj
-    rw [← hbj]
+    rw [hidx, hchosen, hsel]
     rfl
-  · rename_i hnone
-    have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
-      fun k => .const (k.elim 0 fun i => (i : F))
-    have hk := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
-      fun k => .const (k.elim 0 fun _ => (1 : F))
-    mvcgen [hc, hk]
-    rename_i chosen _ hchosen known _ hknown pinned _ hpinned _ _
+  · rename_i chosen _ _ hchosen known _ hknown pinned _ hpinned _ _
     intro hassert
-    have hind := fun (f : Option ℕ → F) => sum_oneHot f whichBranch atSlot.toList (by simp) b hbits
-    rw [hpinned, hchosen, hknown, hind (fun k => (CVar.const (k.elim 0 fun i => (i : F)) :
-      CVar F).val V), hind (fun k => (CVar.const (k.elim 0 fun _ => (1 : F)) : CVar F).val V)]
-      at hassert
-    rw [Vector.getElem_toList, hj'] at hassert
+    rw [hpinned, hchosen, hknown, hsel, hone] at hassert
     simpa using hassert
 
 end Reads
