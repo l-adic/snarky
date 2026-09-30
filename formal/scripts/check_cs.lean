@@ -700,8 +700,8 @@ def fqSpongeTranscriptStepCircuit (input : Vector (FVar Fp) 53) : CircuitM Fp C 
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let _ ← Pickles.fqSpongeTranscript Bulletproof.IpaVesta.curve.frSponge.params
     (.const Bulletproof.IpaVesta.curve.lam)
-    (get 0) [pt 1, pt 3] (pure [pt 5]) ((List.range 15).map fun j => [pt (7 + 2 * j)]) [pt 37]
-    ((List.range 7).map fun j => pt (39 + 2 * j))
+    (get 0) [pt 1, pt 3] (pure #v[pt 5]) (Vector.ofFn fun j : Fin 15 => #v[pt (7 + 2 * j.val)])
+    #v[pt 37] (Vector.ofFn fun j : Fin 7 => pt (39 + 2 * j.val))
   pure PUnit.unit
 
 
@@ -713,9 +713,9 @@ def fqSpongeTranscriptWrapCircuit (input : Vector (FVar Fq) 55) : CircuitM Fq Cq
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let _ ← Pickles.fqSpongeTranscriptOpt Bulletproof.IpaPallas.curve.frSponge.params
     (.const Bulletproof.IpaPallas.curve.lam) (get 2)
-    [(.unchecked (get 0), pt 3), (.unchecked (get 1), pt 5)] [pt 7]
-    ((List.range 15).map fun j => [pt (9 + 2 * j)]) [pt 39]
-    ((List.range 7).map fun j => pt (41 + 2 * j))
+    [(.unchecked (get 0), pt 3), (.unchecked (get 1), pt 5)] #v[pt 7]
+    (Vector.ofFn fun j : Fin 15 => #v[pt (9 + 2 * j.val)]) #v[pt 39]
+    (Vector.ofFn fun j : Fin 7 => pt (41 + 2 * j.val))
   pure PUnit.unit
 
 /-! ## The `check_bulletproof` circuits
@@ -1133,13 +1133,13 @@ def xhatStepLeaves (pts : Array XhatStepCurve.Point) (get : ℕ → FVar Fp) :
     | _ => .b128 (get i) base corr
 
 /-- The known-domain `x_hat` over the step leaves, with the constant correction seed and sum:
-the one chunk, as the list the group half consumes. -/
+the one chunk the group half consumes. -/
 def xhatStepCommit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
-    (get : ℕ → FVar Fp) : CircuitM Fp C (List (AffinePoint (FVar Fp))) := do
+    (get : ℕ → FVar Fp) : CircuitM Fp C (Vector (AffinePoint (FVar Fp)) 1) := do
   let corrSum : XhatStepCurve.Point := ((List.range 30).map (xhatStepCorr pts)).sum
   let r ← Pickles.publicInputCommitKnown (0 : Fin 1) h (xhatStepCell (xhatStepCorr pts 0))
     (xhatStepCell corrSum) (xhatStepLeaves pts get)
-  pure [r]
+  pure #v[r]
 
 /-- `xhat_step_circuit`: `Pickles.publicInputCommitKnown` over the 30-leaf list, leaf `i`
 reading input `i` and Lagrange base `pts[i]`, with the constant correction seed and sum. -/
@@ -1172,16 +1172,16 @@ def ftcommStepCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
-  let _ ← Pickles.ftComm Pickles.IpaScalarOps.step [pallasGenerator]
-    ((List.range 7).map fun j => pt (2 * j)) (shifted 14) (shifted 16) (shifted 18)
+  let _ ← Pickles.ftComm Pickles.IpaScalarOps.step #v[pallasGenerator]
+    (Vector.ofFn fun j : Fin 7 => pt (2 * j.val)) (shifted 14) (shifted 16) (shifted 18)
   pure PUnit.unit
 
 /-- `ftcomm_wrap_circuit`. -/
 def ftcommWrapCircuit (input : Vector (FVar Fq) 17) : CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
-  let _ ← Pickles.ftComm Pickles.IpaScalarOps.wrap [vestaGenerator]
-    ((List.range 7).map fun j => pt (2 * j)) ⟨get 14⟩ ⟨get 15⟩ ⟨get 16⟩
+  let _ ← Pickles.ftComm Pickles.IpaScalarOps.wrap #v[vestaGenerator]
+    (Vector.ofFn fun j : Fin 7 => pt (2 * j.val)) ⟨get 14⟩ ⟨get 15⟩ ⟨get 16⟩
   pure PUnit.unit
 
 /-! ## The `incrementally_verify_proof` circuit
@@ -1672,8 +1672,8 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let dv := wrapIvpDv get
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
-  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=
-    Vector.toList <$> Pickles.publicInputCommitFull h
+  let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) 1) :=
+    Pickles.publicInputCommitFull h
       (Pickles.packLeavesOf (wrapStepStatement get).packed
         (Pickles.XhatTable.ofKey (wrapStepStatement get).packed (oneChunk pts)))
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta

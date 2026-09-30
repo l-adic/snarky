@@ -224,8 +224,8 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
     -- the key
     (hkey : KeyReads IpaPallas.curve V vk K.cvk)
     -- the proof
-    (hproof : ProofReads (stepSide V) (inp.proof.wComm.toList.map (·.toList))
-      inp.proof.zComm.toList inp.proof.tComm.toList inp.proof.opening cp)
+    (hproof : ProofReads (stepSide V) inp.proof.wComm inp.proof.zComm inp.proof.tComm
+      inp.proof.opening cp)
     (holds : CommReads IpaPallas.curve V inp.sgOld.toList (cp.olds.map (·.sg)).toList)
     (hclaimOk : ∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·))
       vk inp.proof).shifted, (stepSide V).ClaimOk x)
@@ -309,8 +309,8 @@ def VerifyOneInput.WireReads (cvk : KimchiVK IpaPallas.curve ncw) (V : Valuation
     (cp : KimchiProof IpaPallas.curve ncw k) (ms : Vector Bool w) : Prop :=
   CircuitType.Reads V inp.proofMask ms ∧
     KeyReads IpaPallas.curve V vk cvk ∧
-    ProofReads (stepSide V) (inp.proof.wComm.toList.map (·.toList))
-      inp.proof.zComm.toList inp.proof.tComm.toList inp.proof.opening cp ∧
+    ProofReads (stepSide V) inp.proof.wComm inp.proof.zComm inp.proof.tComm
+      inp.proof.opening cp ∧
     CommReads IpaPallas.curve V inp.sgOld.toList (cp.olds.map (·.sg)).toList
 
 /-- What a verified slot certifies: for any wire proof `cp` the slot's cells hold, the group

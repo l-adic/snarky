@@ -332,7 +332,7 @@ theorem verifyProofAt_reads {ks nc : ℕ} {V : Valuation Fp} (S : Srs IpaPallas.
   have hr := verifyProof_step_reads (V := V) S.σ K.cvk cp (.const ((Pasta.vestaLam : ℤ) : Fp))
     pallasBase.sqrt? (constPt S.σ.h) (xhatTableAt S.σ K.cvk statement) spongeAfterIndex isBaseCase
     statement u cells false oldsW hbase htab
-    ⟨hivp.idx, hivp.mask, hivp.ties, hivp.nc_pos, hivp.t_ne, hivp.k_pos, hivp.char⟩
+    ⟨hivp.idx, hivp.mask, hivp.ties, hivp.nc_pos, hivp.k_pos, hivp.char⟩
   exact builder_spec_imp _ _ _ hr fun _ h => VerifyReads.append_zero hz h
 
 /-- A wrap key has at most `2^32` chunks: its domain size divides `|Fq| − 1`, whose two-adic
@@ -370,8 +370,7 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
     (sgOld : List (AffinePoint (FVar Fp)))
     (proof : IvpProof S.σ.k nc (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (hlen : sgOld.length ≤ 2)
-    (hproof : ProofReads (stepSide V) (proof.wComm.toList.map (·.toList)) proof.zComm.toList
-      proof.tComm.toList proof.opening cp)
+    (hproof : ProofReads (stepSide V) proof.wComm proof.zComm proof.tComm proof.opening cp)
     (holds : CommReads IpaPallas.curve V sgOld (cp.olds.map (·.sg)).toList)
     (hvk : VkReads K.cvk V spongeAfterIndex keyCells)
     (hclaimOk : ∀ x ∈ (ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
@@ -385,7 +384,7 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
         { olds := ⟨?olds, ?kept⟩, proof := hproof
           key := hvk.key
           claimOk := hclaimOk }
-      nc_pos := K.cvk.nc_pos, t_ne := ?tne, k_pos := S.rounds_pos, char := ?char }⟩
+      nc_pos := K.cvk.nc_pos, k_pos := S.rounds_pos, char := ?char }⟩
   case mask =>
     intro m hm
     have hm' : m ∈ sgOld.map (none, ·) := hm
@@ -398,12 +397,6 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
     simp only [List.map_map, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
     exact holds.imp fun _ _ h => ⟨h, rfl⟩
   case kept => simp [List.filter_map, Function.comp_def]
-  case tne =>
-    intro he
-    have he' : proof.tComm.toList = [] := he
-    have hlen := congrArg List.length he'
-    simp at hlen
-    exact absurd hlen (Nat.pos_iff_ne_zero.mp K.cvk.nc_pos)
   case char =>
     intro m hm h0
     refine char_guard m (le_trans hm ?_) h0
@@ -411,13 +404,6 @@ theorem ivpHyps_of_reads {nc : ℕ} {V : Valuation Fp} {S : Srs IpaPallas.curve}
         proof).withClaims claims).sgOld.length ≤ 2 := by
       show (sgOld.map (none, ·)).length ≤ 2
       simpa using hlen
-    have hl := ivpInputOf_lengths claims.deferredValues (sgOld.map (none, ·)) keyCells proof
-    have h2 : ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
-        proof).withClaims claims).wComm.flatten.length = 15 * nc := hl.1
-    have h3 : ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
-        proof).withClaims claims).zComm.length = nc := hl.2.1
-    have h4 : ((ivpInputOf claims.deferredValues (sgOld.map (none, ·)) keyCells
-        proof).withClaims claims).tComm.length = quotChunks * nc := hl.2.2
     have h5 := nc_le S.σ K hnc
     omega
 
@@ -455,15 +441,17 @@ def GroupVar.claims (g : GroupVar ks k nc) :
   g.val.claims
 /-- Whether the slot is a base case. -/
 def GroupVar.isBaseCase (g : GroupVar ks k nc) : BoolVar Fp := g.val.isBaseCase
+open scoped Kimchi in
 /-- The wrap proof's witness commitments, `nc` chunks each. -/
-def GroupVar.wComm (g : GroupVar ks k nc) : List (List (AffinePoint (FVar Fp))) :=
-  g.val.proof.wComm.toList.map (·.toList)
-/-- The wrap proof's permutation-accumulator commitment. -/
-def GroupVar.zComm (g : GroupVar ks k nc) : List (AffinePoint (FVar Fp)) :=
-  g.val.proof.zComm.toList
-/-- The wrap proof's quotient chunks. -/
-def GroupVar.tComm (g : GroupVar ks k nc) : List (AffinePoint (FVar Fp)) :=
-  g.val.proof.tComm.toList
+def GroupVar.wComm (g : GroupVar ks k nc) : Vector (Vector (AffinePoint (FVar Fp)) nc) wCols :=
+  g.val.proof.wComm
+/-- The wrap proof's permutation-accumulator commitment, `nc` chunks. -/
+def GroupVar.zComm (g : GroupVar ks k nc) : Vector (AffinePoint (FVar Fp)) nc :=
+  g.val.proof.zComm
+open scoped Kimchi in
+/-- The wrap proof's `7 · nc` quotient chunks. -/
+def GroupVar.tComm (g : GroupVar ks k nc) : Vector (AffinePoint (FVar Fp)) (quotChunks * nc) :=
+  g.val.proof.tComm
 /-- The wrap proof's opening. -/
 def GroupVar.opening (g : GroupVar ks k nc) :
     BulletproofOpening k (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=

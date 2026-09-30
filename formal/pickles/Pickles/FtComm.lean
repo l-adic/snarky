@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Pickles.CheckBulletproof
 import Kimchi.Verifier.Reflect
 
@@ -26,6 +27,7 @@ crosses to the wire's `runFtComm`, given the claims decode to the wire's scalars
 namespace Pickles
 
 open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
+open scoped Kimchi
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Bulletproof Bulletproof.Ipa
 open CompElliptic.CurveForms.ShortWeierstrass
 
@@ -49,12 +51,13 @@ def hornerReduce [ConstraintHolds F c] {sf : Type} (ops : IpaScalarOps F c sf) (
 /-- The linearization commitment: collapse `sigmaLast` and scale by `perm`; collapse `tComm` and
 scale that by `zetaToDomainSize`; add the first two, then add the negated third. The `ζⁿ` scale
 is emitted before either addition. The negation is the pure `y ↦ −y` (`CVar.negate_`). -/
-def ftComm [ConstraintHolds F c] {sf : Type} (ops : IpaScalarOps F c sf)
-    (sigmaLast tComm : List (AffinePoint (FVar F)))
+def ftComm [ConstraintHolds F c] {sf : Type} {nc : ℕ} (ops : IpaScalarOps F c sf)
+    (sigmaLast : Vector (AffinePoint (FVar F)) nc)
+    (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc))
     (perm zetaToSrsLength zetaToDomainSize : sf) : CircuitM F c (AffinePoint (FVar F)) := do
-  let reducedSigma ← hornerReduce ops zetaToSrsLength sigmaLast
+  let reducedSigma ← hornerReduce ops zetaToSrsLength sigmaLast.toList
   let fComm ← ops.scaleByShifted reducedSigma perm
-  let chunkedT ← hornerReduce ops zetaToSrsLength tComm
+  let chunkedT ← hornerReduce ops zetaToSrsLength tComm.toList
   let zetaDom ← ops.scaleByShifted chunkedT zetaToDomainSize
   let r1 ← addFast .checkFinite fComm chunkedT
   (·.p) <$> addFast .checkFinite r1.p ⟨zetaDom.x, CVar.negate_ zetaDom.y⟩
@@ -82,13 +85,13 @@ def FtCommReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (ftCommCell : AffinePoint (FVar C.BaseField)) (permCell zetaMCell zetaNCell : sf)
     (sigma6Cells : Vector (AffinePoint (FVar C.BaseField)) nc)
-    (tCommCells : List (AffinePoint (FVar C.BaseField))) : Prop :=
+    (tCommCells : Vector (AffinePoint (FVar C.BaseField)) (quotChunks * nc)) : Prop :=
   S.decode permCell = runPScalar C σ cvk cp pub →
   S.decode zetaMCell = runZetaM C σ cvk cp pub →
   S.decode zetaNCell = runZetaN C σ cvk cp pub →
   S.ClaimOk permCell → S.ClaimOk zetaMCell → S.ClaimOk zetaNCell →
   CommReads C V sigma6Cells.toList (cvk.sigmaComm[6]).toList →
-  CommReads C V tCommCells cp.tComm.toList →
+  CommReads C V tCommCells.toList cp.tComm.toList →
   OnCurveAt C.E.toAffine V ftCommCell (SWPoint.equivPoint C.E (runFtComm C σ cvk cp pub))
 
 /-! ## Reading helpers -/
@@ -195,16 +198,15 @@ private theorem OnCurveAt.congr_pt {F : Type} [Field F] [DecidableEq F]
   e ▸ h
 
 /-- **`ftComm` reads as the wire's `runFtComm`.** On either side, the output satisfies
-`FtCommReads`, given a chunk in each list (the empty collapse is the unused origin). Each scale
+`FtCommReads`, given a chunk (the empty collapse is the unused origin). Each scale
 reads through `IpaScalarOps.Reading`, each collapse through `hornerReduce_reads`; the wire side
 is the same expression, since `combineCommitments` is Horner (`combineCommitments_eq_foldr`) and
 `SWPoint.equivPoint` carries it across. -/
 theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (permCell zetaMCell zetaNCell : sf)
     (sigma6Cells : Vector (AffinePoint (FVar C.BaseField)) nc)
-    (tCommCells : List (AffinePoint (FVar C.BaseField))) (hnc : 0 < nc)
-    (hne : tCommCells ≠ []) :
-    ⦃⌜True⌝⦄ ftComm ops sigma6Cells.toList tCommCells permCell zetaMCell zetaNCell
+    (tCommCells : Vector (AffinePoint (FVar C.BaseField)) (quotChunks * nc)) (hnc : 0 < nc) :
+    ⦃⌜True⌝⦄ ftComm ops sigma6Cells tCommCells permCell zetaMCell zetaNCell
     ⦃⇓ r _ => ⌜FtCommReads S σ cvk cp pub r permCell zetaMCell zetaNCell sigma6Cells
       tCommCells⌝⦄ := by
   have hσne : sigma6Cells.toList ≠ [] := by
@@ -212,10 +214,15 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
     have := congrArg List.length h
     simp at this
     omega
+  have hne : tCommCells.toList ≠ [] := by
+    intro h
+    have := congrArg List.length h
+    simp at this
+    omega
   simp only [ftComm]
   have hhσ := hornerReduce_reads S zetaMCell sigma6Cells.toList hσne
   have hscP := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r permCell
-  have hht := hornerReduce_reads S zetaMCell tCommCells hne
+  have hht := hornerReduce_reads S zetaMCell tCommCells.toList hne
   have hscN := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zetaNCell
   have hadd := fun (a b : AffinePoint (FVar C.BaseField)) =>
     addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.curve.two_ne

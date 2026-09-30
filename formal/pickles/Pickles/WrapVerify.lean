@@ -47,7 +47,7 @@ def wrapVerify [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type} {k kw :
     (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
-    (computeXHat : CircuitM F c (List (AffinePoint (FVar F)))) (msgSponge : SpongeVar F)
+    (computeXHat : CircuitM F c (Vector (AffinePoint (FVar F)) nc)) (msgSponge : SpongeVar F)
     (newBpChallenges : List (Vector (FVar F) kw)) (claimedMsgDigest : FVar F)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
     (cells : IvpInput k nc (FVar F) (BoolVar F) sf) : CircuitM F c PUnit := do
@@ -74,7 +74,7 @@ theorem wrapVerify_frame {sf : Type} {k kw : ℕ}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
-    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (msgSponge : SpongeVar F) (newBpChallenges : List (Vector (FVar F) kw))
     (claimedMsgDigest : FVar F) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
     (cells : IvpInput k nc (FVar F) (BoolVar F) sf) (P : Prop)
@@ -113,14 +113,14 @@ theorem wrapVerify_reads {nc kw : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
     (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
     (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
-      (List (AffinePoint (FVar C.BaseField))))
+      (Vector (AffinePoint (FVar C.BaseField)) nc))
     (msgSponge : SpongeVar C.BaseField) (newBpChallenges : List (Vector (FVar C.BaseField) kw))
     (claimedMsgDigest : FVar C.BaseField)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (cells : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
-      ⦃⇓ pts _ => ⌜CommReads C V pts (runPublicComm C σ cvk pub).toList⌝⦄)
+      ⦃⇓ pts _ => ⌜CommReads C V pts.toList (runPublicComm C σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (h : IvpHyps S σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
@@ -167,14 +167,15 @@ theorem wrapVerify_wrap_reads {nc kw : ℕ} {V : Valuation Fq}
     (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
     (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
     (spongeAfterIndex : SpongeVar Fq)
-    (computeXHat : CircuitM Fq (Builder V (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
+    (computeXHat : CircuitM Fq (Builder V (KimchiConstraint Fq))
+      (Vector (AffinePoint (FVar Fq)) nc))
     (msgSponge : SpongeVar Fq) (newBpChallenges : List (Vector (FVar Fq) kw))
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput σ.k nc (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (oldsW : List (IpaVesta.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
-      ⌜CommReads IpaVesta.curve V pts (runPublicComm IpaVesta.curve σ cvk pub).toList⌝⦄)
+      ⌜CommReads IpaVesta.curve V pts.toList (runPublicComm IpaVesta.curve σ cvk pub).toList⌝⦄)
     (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH
       (SWPoint.equivPoint IpaVesta.curve.E σ.h))
     (h : IvpHyps (wrapSide V) σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
@@ -234,7 +235,7 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
   wrapVerify IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
     (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h)
     spongeAfterIndex
-    (Vector.toList <$> publicInputCommitFull (constPt h)
+    (publicInputCommitFull (constPt h)
       (packLeavesOf statement.packed (XhatTable.ofKey statement.packed lagrange)))
     msgSponge newBpChallenges claimedMsgDigest u cells
 
@@ -313,9 +314,9 @@ theorem wrapVerifyAt_reads {ks n kw nc : ℕ} {V : Valuation Fq}
     rw [hleaves, hlb, hx]
     simp [constLeaf, leafHasScalar]
   have hX : ⦃⌜True⌝⦄
-      (Vector.toList <$> publicInputCommitFull (S := Builder V (KimchiConstraint Fq))
+      (publicInputCommitFull (S := Builder V (KimchiConstraint Fq))
         (constPt S.σ.h) (wrapLeavesAt S.σ K.cvk statement))
-      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve V pts (runPublicComm IpaVesta.curve S.σ K.cvk
+      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve V pts.toList (runPublicComm IpaVesta.curve S.σ K.cvk
         (wrapPublicInput S.σ K.cvk V statement)).toList⌝⦄ := by
     unfold runPublicComm
     rw [hsz]
@@ -361,32 +362,20 @@ theorem ivpHyps_of_reads_wrap {nc : ℕ} {V : Valuation Fq} {S : Srs IpaVesta.cu
     (u : UnfinalizedProof S.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (oldsW : List (IpaVesta.curve.Point × Bool))
     (hmask : ∀ m ∈ sgOld, m.1.isSome = true) (hlen : sgOld.length ≤ 2)
-    (hproof : ProofReads (wrapSide V) (proof.wComm.toList.map (·.toList)) proof.zComm.toList
-      proof.tComm.toList proof.opening cp)
+    (hproof : ProofReads (wrapSide V) proof.wComm proof.zComm proof.tComm proof.opening cp)
     (holds : OldsRead V sgOld cp oldsW)
     (hvk : VkReads K.cvk V spongeAfterIndex keyCells) :
     IvpHyps (wrapSide V) S.σ K.cvk cp pub true spongeAfterIndex
       ((ivpInputOf dv sgOld keyCells proof).withClaims u) oldsW := by
-  have hl := ivpInputOf_lengths dv sgOld keyCells proof
   refine
     { idx := hvk.idx, mask := hmask
       ties :=
         { olds := holds, proof := hproof, key := hvk.key
           claimOk := fun x _ => wrapSide_claimOk V x }
-      nc_pos := K.cvk.nc_pos, t_ne := ?tne, k_pos := S.rounds_pos, char := ?char }
-  case tne =>
-    intro he
-    have he' : (ivpInputOf dv sgOld keyCells proof).tComm = [] := he
-    have h4 : (ivpInputOf dv sgOld keyCells proof).tComm.length = quotChunks * nc := hl.2.2
-    rw [he', List.length_nil] at h4
-    have := K.cvk.nc_pos
-    omega
+      nc_pos := K.cvk.nc_pos, k_pos := S.rounds_pos, char := ?char }
   case char =>
     intro m hm h0
     refine char_guard_fq m (le_trans hm ?_) h0
-    have h2 : (ivpInputOf dv sgOld keyCells proof).wComm.flatten.length = 15 * nc := hl.1
-    have h3 : (ivpInputOf dv sgOld keyCells proof).zComm.length = nc := hl.2.1
-    have h4 : (ivpInputOf dv sgOld keyCells proof).tComm.length = quotChunks * nc := hl.2.2
     have h1 : (ivpInputOf dv sgOld keyCells proof).sgOld.length ≤ 2 := hlen
     have h5 := nc_le_vesta S.σ K hnc
     simp only [IvpInput.withClaims] at *
@@ -477,17 +466,19 @@ def GroupVar.claims (g : GroupVar k kw n nc) :
     spongeDigestBeforeEvaluations :=
       g.val.group.statement.proofState.spongeDigestBeforeEvaluations }
 
+open scoped Kimchi in
 /-- The step proof's witness commitments, `nc` chunks each. -/
-def GroupVar.wComm (g : GroupVar k kw n nc) : List (List (AffinePoint (FVar Fq))) :=
-  g.val.group.proof.wComm.toList.map (·.toList)
+def GroupVar.wComm (g : GroupVar k kw n nc) : Vector (Vector (AffinePoint (FVar Fq)) nc) wCols :=
+  g.val.group.proof.wComm
 
 /-- The step proof's permutation-accumulator commitment, `nc` chunks. -/
-def GroupVar.zComm (g : GroupVar k kw n nc) : List (AffinePoint (FVar Fq)) :=
-  g.val.group.proof.zComm.toList
+def GroupVar.zComm (g : GroupVar k kw n nc) : Vector (AffinePoint (FVar Fq)) nc :=
+  g.val.group.proof.zComm
 
-/-- The step proof's quotient chunks. -/
-def GroupVar.tComm (g : GroupVar k kw n nc) : List (AffinePoint (FVar Fq)) :=
-  g.val.group.proof.tComm.toList
+open scoped Kimchi in
+/-- The step proof's `7 · nc` quotient chunks. -/
+def GroupVar.tComm (g : GroupVar k kw n nc) : Vector (AffinePoint (FVar Fq)) (quotChunks * nc) :=
+  g.val.group.proof.tComm
 
 /-- The step proof's opening. -/
 def GroupVar.opening (g : GroupVar k kw n nc) : BulletproofOpening k (FVar Fq) (Type1 (FVar Fq)) :=

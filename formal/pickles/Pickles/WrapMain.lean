@@ -358,7 +358,7 @@ def wrapMainVerify [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
   let sv ← spongeAfterIndex sp hd.key
   wrapVerify IpaScalarOps.wrap IpaEndo.vesta sp (.const ((Pasta.pallasLam : ℤ) : Fq))
     groupMapParamsVesta vestaBase.sqrt? (constPt h) sv
-    (Vector.toList <$> publicInputCommitMasked (C := IpaVesta.curve) shared (constPt h) hd.bits
+    (publicInputCommitMasked (C := IpaVesta.curve) shared (constPt h) hd.bits
       statement.packed (log2s.toList.map lagrange))
     (wrapPaddingSponge sp dummy (MaxProofsVerified - mpv))
     (hd.outs.map (·.expandedChallenges)) stmt.digests[1] stmt.claims cells
@@ -1001,7 +1001,7 @@ theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} (Vs : Valuatio
       (cells : IvpInput ks ncStep (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) =>
     wrapVerify_frame (V := Vs) IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
       (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h) sv
-      (Vector.toList <$> publicInputCommitMasked (C := IpaVesta.curve)
+      (publicInputCommitMasked (C := IpaVesta.curve)
         (log2s.toList.all (· == log2s.toList.headD 0)) (constPt h) fin.bits st.packed
         (log2s.toList.map lagrange))
       (wrapPaddingSponge IpaVesta.curve.sponge.params dummy (MaxProofsVerified - mpv))
@@ -1061,7 +1061,7 @@ theorem wrapMainVerify_cells {branches mpv ncStep k ks : ℕ} (Vs : Valuation Fq
     builder_spec_true (wrapVerify (c := Builder Vs (KimchiConstraint Fq)) IpaScalarOps.wrap
       IpaEndo.vesta IpaVesta.curve.sponge.params (.const ((Pasta.pallasLam : ℤ) : Fq))
       groupMapParamsVesta vestaBase.sqrt? (constPt h) sv
-      (Vector.toList <$> publicInputCommitMasked (C := IpaVesta.curve)
+      (publicInputCommitMasked (C := IpaVesta.curve)
         (log2s.toList.all (· == log2s.toList.headD 0)) (constPt h) fin.bits st.packed
         (log2s.toList.map lagrange))
       (wrapPaddingSponge IpaVesta.curve.sponge.params dummy (MaxProofsVerified - mpv))
@@ -1184,11 +1184,11 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
   -- the masked commitment reads as the packed statement's public commitment, chunk by chunk
   have hX : ∀ st : StepStatement k mpv (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq))),
-      ⦃⌜True⌝⦄ (Vector.toList <$> publicInputCommitMasked
+      ⦃⌜True⌝⦄ (publicInputCommitMasked
         (S := Builder Vs (KimchiConstraint Fq)) (C := IpaVesta.curve)
         (L.all (· == L.headD 0)) (constPt SStep.σ.h) fin.bits st.packed
         (L.map lagrange))
-      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve Vs pts (runPublicComm IpaVesta.curve SStep.σ
+      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve Vs pts.toList (runPublicComm IpaVesta.curve SStep.σ
         KStep.cvk (wrapPublicInput SStep.σ KStep.cvk Vs st)).toList⌝⦄ := by
     intro st
     have hcount : st.packed.length = CircuitType.size Fp (StmtVal k mpv) :=
@@ -1240,7 +1240,7 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
     builder_spec_forall (wrapVerify (c := Builder Vs (KimchiConstraint Fq)) IpaScalarOps.wrap
         IpaEndo.vesta IpaVesta.curve.sponge.params (.const ((Pasta.pallasLam : ℤ) : Fq))
         groupMapParamsVesta vestaBase.sqrt? (constPt SStep.σ.h) sv
-        (Vector.toList <$> publicInputCommitMasked (C := IpaVesta.curve)
+        (publicInputCommitMasked (C := IpaVesta.curve)
           (L.all (· == L.headD 0)) (constPt SStep.σ.h) fin.bits st.packed
           (L.map lagrange))
         (wrapPaddingSponge IpaVesta.curve.sponge.params dummy (MaxProofsVerified - mpv))
@@ -1250,8 +1250,7 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
         (∀ m ∈ sgOld, m.1.isSome = true) ∧ sgOld.length ≤ 2 ∧
         SpongeVar.ReadsAt Vs sv (Poseidon.absorb IpaVesta.curve.sponge.params Poseidon.init
           (fin.key.indexPoints.flatMap fun P => [P.x.val Vs, P.y.val Vs])) ∧
-        ProofReads (wrapSide Vs) (pr.wComm.toList.map (·.toList)) pr.zComm.toList
-          pr.tComm.toList pr.opening q.1 ∧
+        ProofReads (wrapSide Vs) pr.wComm pr.zComm pr.tComm pr.opening q.1 ∧
         OldsRead Vs sgOld q.1 q.2) _
       fun q hq => wrapVerify_wrap_reads SStep.σ KStep.cvk q.1
         (wrapPublicInput SStep.σ KStep.cvk Vs st)

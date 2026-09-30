@@ -191,21 +191,10 @@ def ivpInputOf {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
     xi := dv.xi
     deferred := ⟨dv.combinedInnerProduct, dv.b⟩
     sgOld, key
-    wComm := pr.wComm.toList.map (·.toList)
-    zComm := pr.zComm.toList
-    tComm := pr.tComm.toList
+    wComm := pr.wComm
+    zComm := pr.zComm
+    tComm := pr.tComm
     opening := pr.opening }
-
-/-- The proof's commitment cells, counted: `15 · nc` witness chunks, `nc` accumulator chunks,
-`7 · nc` quotient chunks. -/
-theorem ivpInputOf_lengths {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
-    (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
-    (key : VkComms nc (AffinePoint (FVar F))) (pr : IvpProof k nc (FVar F) sf) :
-    (ivpInputOf dv sgOld key pr).wComm.flatten.length = wCols * nc ∧
-      (ivpInputOf dv sgOld key pr).zComm.length = nc ∧
-      (ivpInputOf dv sgOld key pr).tComm.length = quotChunks * nc := by
-  simp [ivpInputOf, List.length_flatten, List.map_map, Function.comp_def]
-  omega
 
 /-- The proof's point cells: the commitments, then the opening's `(L, R)` pairs, `δ` and `sg`. -/
 def IvpProof.points {F sf : Type} {k nc : ℕ} (pr : IvpProof k nc (FVar F) sf) :
@@ -246,7 +235,7 @@ theorem IvpProof.read_proofReads {C : KimchiCurve} {V : Valuation C.BaseField} {
     (evals : ProofEvaluations (Vector C.ScalarField nc)) (pubEvals : PubEvalSrc C nc)
     (ftEval1 : C.ScalarField) (olds : Array (Accumulator C k))
     (hon : ∀ p ∈ pr.points, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V)) :
-    ProofReads S (pr.wComm.toList.map (·.toList)) pr.zComm.toList pr.tComm.toList pr.opening
+    ProofReads S pr.wComm pr.zComm pr.tComm pr.opening
       (pr.read S evals pubEvals ftEval1 olds) := by
   refine ⟨?_, ?_, ?_, ?_, onCurveAt_readPt (hon _ (by simp [IvpProof.points])),
     onCurveAt_readPt (hon _ (by simp [IvpProof.points])), rfl, rfl⟩
@@ -308,8 +297,8 @@ def verifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type}
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
     (cells : IvpInput k nc (FVar F) (BoolVar F) sf) : CircuitM F c (BoolVar F) := do
   let leaves := packLeaves statement tab
-  let computeXHat : CircuitM F c (List (AffinePoint (FVar F))) :=
-    (List.finRange nc).mapM fun ci =>
+  let computeXHat : CircuitM F c (Vector (AffinePoint (FVar F)) nc) :=
+    (Vector.finRange nc).mapM fun ci =>
       publicInputCommitKnown ci blindingH tab.corrHead[ci] tab.corrSum[ci] leaves
   let o ← incrementallyVerifyProof ops e p endo gm sqrtF false blindingH spongeAfterIndex
     computeXHat (cells.withClaims u)
@@ -440,22 +429,18 @@ theorem verifyProof_reads
     simp [packLeaves, packLeavesOf, WrapStatement.packed, leafHeadScalar, hb, hc]
   -- the public-input commitment, chunk by chunk, reads as the wire's, crossed to `C.E`
   have hXhat : ⦃⌜True⌝⦄
-      (List.finRange nc).mapM (fun ci => publicInputCommitKnown
+      (Vector.finRange nc).mapM (fun ci => publicInputCommitKnown
         (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH tab.corrHead[ci]
         tab.corrSum[ci] (packLeaves statement tab))
-      ⦃⇓ pts _ => ⌜CommReads C V pts
-        (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList⌝⦄ := by
-    have hvec : (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList
-        = (List.finRange nc).map fun ci =>
-            (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab)))[ci] := by
-      apply List.ext_getElem <;> simp
-    unfold CommReads
-    rw [hvec]
-    refine builder_spec_imp _ _ _
-      (builder_spec_mapM _ (fun r P => OnCurveAt X.d.W V r (SWPoint.equivPoint C.E P)) _
+      ⦃⇓ pts _ => ⌜CommReads C V pts.toList
+        (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList⌝⦄ :=
+    builder_spec_imp _ _ _
+      (builder_spec_vector_mapM_get _ (fun ci r => OnCurveAt X.d.W V r
+          (SWPoint.equivPoint C.E
+            (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab)))[ci]))
         (fun ci => xHatKnown_reads_publicCommitment X ci σ _ blindingH tab.corrHead[ci]
           tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _)
-      fun pts hp => hp.imp fun _ _ h => h
+      fun pts hp => forall₂_toList_iff.mpr fun i => by simpa using hp i
   -- the blinding cell's read is the tables' own: every chunk's binding carries it
   have hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h) :=
     (hxhat ⟨0, hivp.nc_pos⟩).1.blinding

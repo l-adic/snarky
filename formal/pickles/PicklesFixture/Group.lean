@@ -107,8 +107,8 @@ def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
     {ks kw n : ℕ} (v : WrapGroup ks kw n nc (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
   let sv ← wrapIndexSponge key
-  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) :=
-    Vector.toList <$> publicInputCommitFull blindingH
+  let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) nc) :=
+    publicInputCommitFull blindingH
       (packLeavesOf v.stepStatement.packed
         (XhatTable.ofKey v.stepStatement.packed basis.toList))
   let dv := v.statement.proofState.deferredValues
