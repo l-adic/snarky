@@ -46,16 +46,18 @@ def xhatStepWidth (i : ℕ) : ℕ :=
 def xhatStepCorr (pts : Array XhatStepCurve.Point) (i : ℕ) : XhatStepCurve.Point :=
   xhatStepCorrPt (xhatStepWidth i) (pts[i]?.getD 0)
 
-/-- The first `m` Lagrange bases of `pts`, the origin past its end: the bases a public-input
-table over `m` scalars is computed from. -/
-def firstBases {C : Bulletproof.Ipa.KimchiCurve} {nc m : ℕ} (pts : Array (Vector C.Point nc)) :
-    Vector (Vector C.Point nc) m :=
-  Vector.ofFn fun i => pts[i.val]?.getD (Vector.replicate nc 0)
+/-- The first `m` Lagrange bases of `pts`, the bases a public-input table over `m` scalars is
+computed from, when it has that many. -/
+def firstBases? {C : Bulletproof.Ipa.KimchiCurve} {nc m : ℕ} (pts : Array (Vector C.Point nc)) :
+    Except String (Vector (Vector C.Point nc) m) :=
+  if h : m ≤ pts.size then .ok (Vector.ofFn fun i => pts[i.val]) else
+    .error s!"{pts.size} Lagrange bases, {m} needed"
 
-/-- One-chunk Lagrange bases as the first `m` points the public-input tables are computed from. -/
+/-- One-chunk Lagrange bases as the first `m` points the public-input tables are computed from,
+the origin past the end of `pts`. -/
 def oneChunk {C : Bulletproof.Ipa.KimchiCurve} {m : ℕ} (pts : Array C.Point) :
     Vector (Vector C.Point 1) m :=
-  firstBases (pts.map (#v[·]))
+  Vector.ofFn fun i => #v[pts[i.val]?.getD 0]
 
 /-- A key's commitments in the index digest's absorb order: `σ₀…σ₆`, the coefficients, then
 the selectors. -/
@@ -85,11 +87,13 @@ def stepIndexSponge (key : VkComms 1 (AffinePoint (FVar Fp))) : CircuitM Fp C (S
 
 /-- The step circuit's group half: the key's index sponge, then `verifyProofWith` over the
 record, every old accumulator point unmasked. Returns the success bit. -/
-def groupStepOn (key : VkComms 1 (AffinePoint (FVar Fp))) (basis : Array XhatStepCurve.Point)
-    (blindingH : XhatStepCurve.Point) {ks kw : ℕ} (v : StepGroup ks kw 1 (FVar Fp) (BoolVar Fp)) :
+def groupStepOn {ks kw : ℕ} (key : VkComms 1 (AffinePoint (FVar Fp)))
+    (basis : Vector (Vector XhatStepCurve.Point 1)
+      (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
+    (blindingH : XhatStepCurve.Point) (v : StepGroup ks kw 1 (FVar Fp) (BoolVar Fp)) :
     CircuitM Fp C (BoolVar Fp) := do
   let sv ← stepIndexSponge key
-  verifyProofWith blindingH (oneChunk basis) sv v.isBaseCase v.statement v.claims
+  verifyProofWith blindingH basis sv v.isBaseCase v.statement v.claims
     (ivpInputOf v.claims.deferredValues (v.sgOld.map (none, ·)) key v.proof)
 
 /-! ## The wrap circuit's group half, on a step proof -/
@@ -109,15 +113,16 @@ def wrapIndexSponge {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq))) :
 public-input commitment, then `Pickles.incrementallyVerifyProof` with each old accumulator
 point under its keep bit (the branch data's mask past its first `pad` bits), then the digest and
 round-challenge assertions against the wrap statement. Returns the success bit. -/
-def groupWrapOn {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
-    (basis : Array (Vector XhatWrapCurve.Point nc)) (blindingH : AffinePoint (FVar Fq))
-    {ks kw pad : ℕ} (v : WrapGroup ks kw pad nc (FVar Fq) (BoolVar Fq)) :
+def groupWrapOn {nc ks kw pad : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
+    (basis : Vector (Vector XhatWrapCurve.Point nc)
+      (CircuitType.size Fp (StmtVal kw (MaxProofsVerified - pad))))
+    (blindingH : AffinePoint (FVar Fq)) (v : WrapGroup ks kw pad nc (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
   let sv ← wrapIndexSponge key
   let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) nc) :=
     publicInputCommitFull blindingH
       (packLeavesOf v.stepStatement.packed
-        (XhatTable.ofKey v.stepStatement.packed (firstBases basis)))
+        (XhatTable.ofKey v.stepStatement.packed basis))
   let dv := v.statement.proofState.deferredValues
   let mask := dv.branchData.proofsVerifiedMask.drop pad
   let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta
