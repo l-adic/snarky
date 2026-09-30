@@ -631,7 +631,7 @@ def pseudoMaskCircuit [ConstraintHolds F c] {k : ℕ} (n : ℕ)
     (xs : Vector (FVar F) (k + 1) → List (FVar F)) (input : Vector (FVar F) (k + 1)) :
     CircuitM F c PUnit := do
   let bits ← Pickles.oneHotVector n input[0]
-  let _ ← Pickles.Pseudo.mask bits (xs input)
+  let _ ← Pickles.Pseudo.mask bits.toList (xs input)
   pure PUnit.unit
 
 /-- `pseudo_choose_n{n}`: the one-hot of input 0 over `n` entries choosing among the constants
@@ -639,7 +639,7 @@ def pseudoMaskCircuit [ConstraintHolds F c] {k : ℕ} (n : ℕ)
 def pseudoChooseCircuit [ConstraintHolds F c] (n : ℕ) (ks : List ℕ) (input : Vector (FVar F) 1) :
     CircuitM F c PUnit := do
   let bits ← Pickles.oneHotVector n input[0]
-  let _ ← Pickles.Pseudo.choose bits ks fun k => .const (k : F)
+  let _ ← Pickles.Pseudo.choose bits.toList ks fun k => .const (k : F)
   pure PUnit.unit
 
 end PseudoCircuits
@@ -648,8 +648,8 @@ end PseudoCircuits
 `2^14`, `2^15`, and the selected domain's vanishing polynomial at input 1. -/
 def pseudoToDomainWrapCircuit (input : Vector (FVar Fq) 2) : CircuitM Fq Cq PUnit := do
   let which ← Pickles.oneHotVector 3 input[0]
-  let d ← Pickles.toDomain (Kimchi.Verifier.domainGenerator Bulletproof.IpaPallas.curve) which
-    [13, 14, 15]
+  let d ← Pickles.toDomain (Kimchi.Verifier.domainGenerator Bulletproof.IpaPallas.curve)
+    which.toList [13, 14, 15]
   let _ ← d.vanishingPolynomial input[1]
   pure PUnit.unit
 
@@ -937,7 +937,7 @@ def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatCurve.Point)
   let cond (i : ℕ) : Pickles.PackedScalar Fq := .bit (.unchecked (get i))
   let ks := [ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8, cond 9,
       full 10 ] ++ (List.range 20).map (fun j => b128 (11 + j)) ++ [ cond 31, full 32, full 33 ]
-  let _ ← Pickles.publicInputCommitMasked (C := XhatCurve) shared h bits ks
+  let _ ← Pickles.publicInputCommitMasked (C := XhatCurve) shared h bits.toList ks
     [pts0.toList.map (#v[·]), pts1.toList.map (#v[·])]
   pure PUnit.unit
 

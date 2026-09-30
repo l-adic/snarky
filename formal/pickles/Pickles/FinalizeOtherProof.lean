@@ -265,11 +265,12 @@ def finalizeOtherProofStep [ConstraintHolds F c] {nc np : ℕ} (P : FopParams F)
   let alpha ← EndoScalar.toField 8 pl.alpha.val endoVar
   let ds := KnownDomain.dedupSort domains
   let log2s := ds.map (·.log2)
-  let whiches ← knownDomainWhiches domainLog2Var log2s
-  let gen ← Pseudo.choose whiches ds fun d => .const d.generator
+  let whiches ← knownDomainWhiches domainLog2Var log2s.toArray.toVector
+  let gen ← Pseudo.choose whiches.toList ds fun d => .const d.generator
   let maxLog2 := log2s.foldr max 0
   finalizeOtherProofCore P stepShiftOps true (maskedChallengeDigest P.sponge mask prev)
-    gen P.srsLengthLog2 (knownDomainVanishingPolynomial whiches log2s maxLog2) mask u w prev
+    gen P.srsLengthLog2 (knownDomainVanishingPolynomial whiches.toList log2s maxLog2) mask u w
+    prev
     zeta alpha pl.beta.val pl.gamma.val pl.perm pl.zetaToSrsLength pl.zetaToDomainSize
 
 /-- The wrap side: `ζ`, `γ`, `β`, `α` in that order with `γ`, `β` sealed, the three shifted
@@ -460,7 +461,7 @@ theorem finalizeOtherProofStep_finalized_bit {nc np : ℕ} (P : FopParams F)
   simp only [finalizeOtherProofStep]
   have h1 := fun n x e =>
     builder_spec_true (EndoScalar.toField (c := Builder V (KimchiConstraint F)) n x e)
-  have h2 := fun x l =>
+  have h2 := fun x (n : ℕ) (l : Vector ℕ n) =>
     builder_spec_true (knownDomainWhiches (c := Builder V (KimchiConstraint F)) x l)
   have h3 := fun ws (l : List (KnownDomain F)) f =>
     builder_spec_true (Pseudo.choose (c := Builder V (KimchiConstraint F)) ws l f)
@@ -1096,7 +1097,7 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   generalize KnownDomain.dedupSort domains = ds at hnodup hsub ⊢
   have htf := EndoScalar.toField_spec (V := V) h2 h3
   have hwh := knownDomainWhiches_spec (V := V) (c := KimchiConstraint F) domainLog2Var
-    (ds.map (·.log2))
+    (ds.map (·.log2)).toArray.toVector
   have hmask := fun bits (xs : List (KnownDomain F)) f =>
     Pseudo.choose_spec (V := V) (c := KimchiConstraint F) bits xs f
   have hall3 : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k := fun j k hj hk h =>
@@ -1138,14 +1139,14 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   obtain ⟨a₀, ha₀, haval, ha'⟩ := ha
   have hc : (CVar.const P.endoLam : CVar F).val V = P.endoLam := rfl
   rw [hc] at hz' ha'
-  have hbits : whiches.map (fun b : BoolVar F => (↑b : CVar F).val V)
+  have hbits : whiches.toList.map (fun b : BoolVar F => (↑b : CVar F).val V)
       = ds.map fun d => if domainLog2Var.val V = (d.log2 : F) then (1 : F) else 0 := by
-    rw [hwh', List.map_map]
-    rfl
+    refine List.ext_getElem (by simp) fun i h1 _ => ?_
+    simpa using hwh' ⟨i, by simpa using h1⟩
   have hgenv : gen.val V = (ds.map fun d =>
       (if domainLog2Var.val V = (d.log2 : F) then (1 : F) else 0) * d.generator).sum := by
     have hsum := zip_map_sum (V := V) (fun d : KnownDomain F => (CVar.const d.generator).val V)
-      whiches ds _ id hbits
+      whiches.toList ds _ id hbits
     rw [List.map_id] at hsum
     rw [hgen, hsum]
     rfl
@@ -1156,14 +1157,14 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       rw [hgenv]
       exact onehot_sum _ _ ds hnodup d₀ hd₀ hL
     have hvan₀ : ∀ z, ⦃⌜True⌝⦄ knownDomainVanishingPolynomial (c := Builder V (KimchiConstraint F))
-        whiches (ds.map (·.log2)) ((ds.map (·.log2)).foldr max 0) z
+        whiches.toList (ds.map (·.log2)) ((ds.map (·.log2)).foldr max 0) z
         ⦃⇓ v _ => ⌜v.val V = z.val V ^ 2 ^ d₀.log2 - 1⌝⦄ := by
       intro z
-      refine builder_spec_imp _ _ _ (knownDomainVanishingPolynomial_spec whiches
+      refine builder_spec_imp _ _ _ (knownDomainVanishingPolynomial_spec whiches.toList
         (ds.map (·.log2)) ((ds.map (·.log2)).foldr max 0) z
         fun _ hl => List.le_max_of_le' 0 hl le_rfl)
         fun v hv => ?_
-      rw [hv, zip_map_sum (fun l => z.val V ^ 2 ^ l) whiches ds _ _ hbits,
+      rw [hv, zip_map_sum (fun l => z.val V ^ 2 ^ l) whiches.toList ds _ _ hbits,
         onehot_sum _ _ ds hnodup d₀ hd₀ hL]
     obtain ⟨-, hreads⟩ := hcore' (2 ^ d₀.log2) hzk₀ (fun _ => by rw [hgen₀]; exact hω₀)
       (fun _ => hvan₀)

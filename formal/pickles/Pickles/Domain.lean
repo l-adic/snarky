@@ -80,20 +80,11 @@ def zkPolynomial [ConstraintHolds F c] (zeta : FVar F) (o : OmegaPowers F) :
   let t1 ← mul (CVar.sub_ zeta o.omegaToMinus1) (CVar.sub_ zeta o.omegaToZkPlus1)
   mul t1 (CVar.sub_ zeta o.omegaToZk)
 
-/-- One `equals` per candidate, emitted in list order. -/
-private def whichesGo [ConstraintHolds F c] (domainLog2Var : FVar F) : List ℕ → CircuitM F c
-    (List (BoolVar F))
-  | [] => pure []
-  | l :: rest => do
-    let b ← equals (.const (l : F)) domainLog2Var
-    let tail ← whichesGo domainLog2Var rest
-    pure (b :: tail)
-
 /-- Which known domain the previous proof uses: one `equals` of the runtime domain log2
 against each candidate, emitted last-to-first, the bits returned in candidate order. -/
-def knownDomainWhiches [ConstraintHolds F c] (domainLog2Var : FVar F) (log2s : List ℕ) :
-    CircuitM F c (List (BoolVar F)) := do
-  let rev ← whichesGo domainLog2Var log2s.reverse
+def knownDomainWhiches [ConstraintHolds F c] {n : ℕ} (domainLog2Var : FVar F)
+    (log2s : Vector ℕ n) : CircuitM F c (Vector (BoolVar F) n) := do
+  let rev ← log2s.reverse.mapM fun l : ℕ => equals (.const (l : F)) domainLog2Var
   pure rev.reverse
 
 /-- `[x, x², x⁴, …, x^(2^n)]` by `n` `square` rows. -/
@@ -130,9 +121,9 @@ def knownDomainVanishingPolynomial [ConstraintHolds F c] (whiches : List (BoolVa
 /-- The one-hot vector of `index` over `n` entries: bit `j` is `[index = j]`, emitted
 last-to-first, and `assertAny` over the bits, so `index` names an entry. -/
 def oneHotVector [ConstraintHolds F c] (n : ℕ) (index : FVar F) :
-    CircuitM F c (List (BoolVar F)) := do
-  let bits ← knownDomainWhiches index (List.range n)
-  assertAny bits
+    CircuitM F c (Vector (BoolVar F) n) := do
+  let bits ← knownDomainWhiches index (Vector.range n)
+  assertAny bits.toList
   pure bits
 
 /-- A domain selected in circuit: its generator, and its vanishing polynomial `ζⁿ − 1` as a
@@ -155,7 +146,7 @@ def toDomain [ConstraintHolds F c] (gen : ℕ → F) (which : List (BoolVar F)) 
 def selectDomain [ConstraintHolds F c] (gen : ℕ → F) (log2s : List ℕ) (index : FVar F) :
     CircuitM F c (PlonkDomain F c) := do
   let which ← oneHotVector log2s.length index
-  toDomain gen which log2s
+  toDomain gen which.toList log2s
 
 /-! ## Soundness -/
 
@@ -236,39 +227,24 @@ theorem zkPolynomial_eq_zkpmEval (n zkRows : ℕ) (ω ζ : F) (hω : ω ^ n = 1)
     h1', show n - (zkRows - 1) = n - zkRows + 1 by omega]
   ring
 
-/-- The bits read as the equalities, in order. -/
-private theorem whichesGo_spec (domainLog2Var : FVar F) :
-    ∀ log2s : List ℕ,
-      ⦃⌜True⌝⦄ whichesGo (c := Builder V c) domainLog2Var log2s
-      ⦃⇓ r _ => ⌜r.map (fun b : BoolVar F => (↑b : CVar F).val V)
-        = log2s.map fun l : ℕ => if domainLog2Var.val V = (l : F) then 1 else 0⌝⦄
-  | [] => by
-    simp only [whichesGo]
-    mvcgen
-  | l :: rest => by
-    simp only [whichesGo]
-    have ih := whichesGo_spec domainLog2Var rest
-    mvcgen [ih]
-    rename_i b _ hb tail _ htail
-    simp only [List.map_cons, hb, htail]
-    congr 1
-    have hc : (CVar.const (l : F) : CVar F).val V = (l : F) := rfl
-    rw [hc]
-    by_cases h : domainLog2Var.val V = (l : F)
-    · rw [if_pos h.symm, if_pos h]
-    · rw [if_neg (fun h' => h h'.symm), if_neg h]
-
 /-- Under any valuation, with the runtime domain log2 reading as `L`, the `i`-th bit reads as
 `[L = log2ᵢ]`. -/
-theorem knownDomainWhiches_spec (domainLog2Var : FVar F) (log2s : List ℕ) :
+theorem knownDomainWhiches_spec {n : ℕ} (domainLog2Var : FVar F) (log2s : Vector ℕ n) :
     ⦃⌜True⌝⦄ knownDomainWhiches (c := Builder V c) domainLog2Var log2s
-    ⦃⇓ r _ => ⌜r.map (fun b : BoolVar F => (↑b : CVar F).val V)
-      = log2s.map fun l : ℕ => if domainLog2Var.val V = (l : F) then 1 else 0⌝⦄ := by
+    ⦃⇓ r _ => ⌜∀ i : Fin n, (↑r[i] : CVar F).val V
+      = if domainLog2Var.val V = (log2s[i] : F) then 1 else 0⌝⦄ := by
   simp only [knownDomainWhiches]
-  have h := whichesGo_spec (c := c) (V := V) domainLog2Var log2s.reverse
+  have h := builder_spec_vector_mapM_get (V := V) (c := c)
+    (fun l : ℕ => equals (c := Builder V c) (.const (l : F)) domainLog2Var)
+    (fun l (b : BoolVar F) => (↑b : CVar F).val V = if domainLog2Var.val V = (l : F) then 1 else 0)
+    (fun l => builder_spec_imp _ _ _ (equals_spec _ _) fun b hb =>
+      hb.trans (if_congr ⟨Eq.symm, Eq.symm⟩ rfl rfl)) log2s.reverse
   mvcgen [h]
   rename_i rev _ hrev
-  rw [List.map_reverse, hrev, ← List.map_reverse, List.reverse_reverse]
+  intro i
+  have hi := hrev ⟨n - 1 - i, by omega⟩
+  simp only [Fin.getElem_fin, Vector.getElem_reverse] at hi ⊢
+  simpa only [show n - 1 - (n - 1 - i) = i.val by omega] using hi
 
 /-- Under any valuation the table has `maxLog2 + 1` entries and entry `i` reads as `x^(2^i)`. -/
 theorem buildPow2PowsArray_spec (x : FVar F) :
@@ -357,21 +333,21 @@ theorem knownDomainVanishingPolynomial_spec (whiches : List (BoolVar F)) (log2s 
 for `l < n`, and `index` reads as one of `0, …, n − 1`. -/
 theorem oneHotVector_spec (n : ℕ) (index : FVar F) :
     ⦃⌜True⌝⦄ oneHotVector (c := Builder V c) n index
-    ⦃⇓ r _ => ⌜r.map (fun b : BoolVar F => (↑b : CVar F).val V)
-        = (List.range n).map (fun l : ℕ => if index.val V = (l : F) then 1 else 0) ∧
+    ⦃⇓ r _ => ⌜(∀ l : Fin n, (↑r[l] : CVar F).val V
+        = if index.val V = ((l : ℕ) : F) then 1 else 0) ∧
       ∃ j < n, index.val V = (j : F)⌝⦄ := by
   simp only [oneHotVector]
-  have hw := knownDomainWhiches_spec (c := c) (V := V) index (List.range n)
+  have hw := knownDomainWhiches_spec (c := c) (V := V) index (Vector.range n)
   mvcgen [hw, assertAny_spec]
   rename_i bits _ hbits _ _ hany
-  refine ⟨hbits, ?_⟩
-  have hread : ∀ b ∈ bits, ∃ l < n,
+  simp only [Fin.getElem_fin, Vector.getElem_range] at hbits
+  refine ⟨fun l => hbits l, ?_⟩
+  have hread : ∀ b ∈ bits.toList, ∃ l < n,
       (↑b : CVar F).val V = if index.val V = (l : F) then 1 else 0 := by
     intro b hb
-    have hmem := List.mem_map_of_mem (f := fun b : BoolVar F => (↑b : CVar F).val V) hb
-    rw [hbits] at hmem
-    obtain ⟨l, hl, h⟩ := List.mem_map.mp hmem
-    exact ⟨l, List.mem_range.mp hl, h.symm⟩
+    obtain ⟨l, hl, rfl⟩ := List.getElem_of_mem hb
+    simp only [Vector.getElem_toList, Vector.length_toList] at hl ⊢
+    exact ⟨l, hl, hbits ⟨l, hl⟩⟩
   obtain ⟨b, hb, h1⟩ := hany fun b hb => by
     obtain ⟨l, -, h⟩ := hread b hb
     rw [h]
@@ -426,6 +402,23 @@ theorem sum_indicator {α : Type} (f : α → F) :
       refine sum_indicator f xs _ b ?_ (by simpa using hb)
       simp [Function.comp_def]
 
+/-- One-hot bits of an index reading as `j`, with the entry indices distinct from `j` in the
+field, read as the indicator of `j`. -/
+theorem oneHot_reads {n : ℕ} {bits : Vector (BoolVar F) n} {index : FVar F} (j : Fin n)
+    (hbits : ∀ l : Fin n, (↑bits[l] : CVar F).val V
+      = if index.val V = ((l : ℕ) : F) then 1 else 0)
+    (hidx : index.val V = ((j : ℕ) : F)) (hinj : ∀ l < n, ((j : ℕ) : F) = l → (j : ℕ) = l) :
+    CircuitType.Reads V bits (Vector.ofFn fun l : Fin n => decide (l = j)) := by
+  refine CircuitType.reads_vector.mpr fun l hl => CircuitType.reads_boolVar.mpr ?_
+  have h := hbits ⟨l, hl⟩
+  simp only [Fin.getElem_fin] at h
+  rw [h, hidx, Vector.getElem_ofFn]
+  by_cases hlj : l = j
+  · simp [hlj, bit]
+  · simp only [bit, Fin.ext_iff, hlj, decide_false]
+    rw [if_neg fun h' => hlj (hinj l hl h').symm]
+    simp
+
 omit [DecidableEq F] in
 /-- A sum over bits zipped with values is the sum over the bits' readings zipped with them. -/
 theorem sum_zip_bits {α : Type} (bits : List (BoolVar F)) (xs : List α) (g : α → F) :
@@ -434,6 +427,28 @@ theorem sum_zip_bits {α : Type} (bits : List (BoolVar F)) (xs : List α) (g : �
           fun e => e.1 * g e.2).sum := by
   rw [List.zip_map_left, List.map_map]
   rfl
+
+/-- One-hot bits reading as the indicator of `j`, as the list of their readings. -/
+theorem oneHot_toList {n : ℕ} {bits : Vector (BoolVar F) n} {j : Fin n}
+    (hbits : CircuitType.Reads V bits (Vector.ofFn fun l : Fin n => decide (l = j))) :
+    bits.toList.map (fun x : BoolVar F => (↑x : CVar F).val V)
+      = (List.range n).map fun l => if l = (j : ℕ) then (1 : F) else 0 := by
+  refine List.ext_getElem (by simp) fun l h1 h2 => ?_
+  have hl : l < n := by simpa using h2
+  have hr := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hbits l hl)
+  simp only [Vector.getElem_ofFn] at hr
+  simp only [List.getElem_map, Vector.getElem_toList, List.getElem_range, hr]
+  by_cases h : l = (j : ℕ) <;> simp [h, bit, Fin.ext_iff]
+
+/-- Bits reading as the indicator of `j` pick a list's `j`-th entry out of the bit-weighted
+sum. -/
+theorem sum_oneHot {α : Type} {n : ℕ} (f : α → F) (bits : Vector (BoolVar F) n) (xs : List α)
+    (hlen : xs.length = n) (j : Fin n)
+    (hbits : CircuitType.Reads V bits (Vector.ofFn fun l : Fin n => decide (l = j))) :
+    ((bits.toList.zip xs).map fun e => (↑e.1 : CVar F).val V * f e.2).sum
+      = f (xs[(j : ℕ)]'(by omega)) :=
+  (sum_zip_bits bits.toList xs f).trans
+    (sum_indicator f xs _ j (by rw [hlen]; exact oneHot_toList hbits) (by omega))
 
 /-- Under any valuation satisfying the emitted constraints, with the index reading as
 `j < log2s.length` and the casts of the candidate indices distinct from `j`'s, the selected
@@ -451,23 +466,15 @@ theorem selectDomain_spec (gen : ℕ → F) (log2s : List ℕ) (index : FVar F) 
   mvcgen [hw, hd]
   rename_i bits _ hbits d _
   intro hg hv
-  have hind : bits.map (fun x : BoolVar F => (↑x : CVar F).val V)
-      = (List.range log2s.length).map fun l => if l = j then (1 : F) else 0 := by
-    rw [hbits.1]
-    refine List.map_congr_left fun l hl => ?_
-    rw [hidx]
-    by_cases h : l = j
-    · simp [h]
-    · rw [if_neg h, if_neg fun h' => h (hinj l (List.mem_range.mp hl) h').symm]
   have hpick := fun f : ℕ → F =>
-    (sum_zip_bits bits log2s f).trans (sum_indicator f log2s _ j hind hj)
+    sum_oneHot f bits log2s rfl ⟨j, hj⟩ (oneHot_reads ⟨j, hj⟩ hbits.1 hidx hinj)
   refine ⟨hg.trans (hpick gen), fun zeta => builder_spec_imp _ _ _ (hv zeta) ?_⟩
   intro r hr
   rw [hr, hpick fun l => zeta.val V ^ 2 ^ l]
 
 /-! The gadgets are sealed after their specs: a consumer composes the specs, never the
 bodies. -/
-attribute [irreducible] omegaLoop omegaPowers zkPolynomial whichesGo knownDomainWhiches
+attribute [irreducible] omegaLoop omegaPowers zkPolynomial knownDomainWhiches
   buildPow2PowsArray pow2PowMul pow2PowSquare knownDomainVanishingPolynomial
   oneHotVector toDomain
 

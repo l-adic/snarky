@@ -266,16 +266,12 @@ private theorem wrapStep_kimchiVerify_core
   have hmsj : ∀ j : Fin w, ms[j] = ms0[MaxProofsVerified - w + j] :=
     reads_drop (by simpa [MaxProofsVerified] using hw) hmsR hms
   -- so the wrap circuit's keep bit for slot `j` reads as `ms[j]`
-  have hlen : hd.1.mask.length = w := by simpa using congrArg List.length hmask
-  have hkeep : ∀ j : Fin w,
-      (↑(hd.1.mask.reverse.getD j.val true_) : CVar Fq).val Vw = bit ms[j] := by
+  have hkeep : ∀ j : Fin w, (↑hd.1.mask.reverse[j] : CVar Fq).val Vw = bit ms[j] := by
     intro j
-    have h := List.getElem_of_eq hmask
-      (show w - 1 - j < (hd.1.mask.map fun x : BoolVar Fq => (↑x : CVar Fq).val Vw).length by
-        simp; omega)
-    simp only [List.getElem_map, List.getElem_range] at h
-    rw [List.getD_eq_getElem _ _ (by simp; omega), List.getElem_reverse, hmsj j, hrev j]
-    simpa [hlen] using h
+    have h := CircuitType.reads_boolVar.mp
+      (CircuitType.reads_vector.mp hmask (w - 1 - j) (by omega))
+    simp only [Vector.getElem_ofFn] at h
+    rw [Fin.getElem_fin, Vector.getElem_reverse, h, hmsj j, hrev j]
   -- the step proof the cells hold: its group half from the wrap circuit's cells, its evaluations
   -- and kept old challenges from the next step circuit's
   have hcells' : hd.2.cells = ivpInputOf stmt.claims.deferredValues hd.1.sgOld hd.1.key pr := hcells

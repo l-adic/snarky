@@ -36,15 +36,17 @@ variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Kim
 /-- One slot's pin. `atSlot` holds each branch's compile-time domain index for the slot, `none`
 for a side-loaded predecessor. When every branch knows it, the index equals the one-hot choice;
 otherwise the known branches' bits scale the index to that choice. -/
-def pinWrapDomainIndex [ConstraintHolds F c] (whichBranch : List (BoolVar F))
-    (atSlot : List (Option ℕ)) (index : FVar F) : CircuitM F c PUnit :=
-  match atSlot.allSome with
+def pinWrapDomainIndex [ConstraintHolds F c] {n : ℕ} (whichBranch : Vector (BoolVar F) n)
+    (atSlot : Vector (Option ℕ) n) (index : FVar F) : CircuitM F c PUnit :=
+  match atSlot.toList.allSome with
   | some ks => do
-    let chosen ← Pseudo.choose whichBranch ks fun j => .const (j : F)
+    let chosen ← Pseudo.choose whichBranch.toList ks fun j => .const (j : F)
     assertEqual index chosen
   | none => do
-    let chosen ← Pseudo.choose whichBranch atSlot fun k => .const (k.elim 0 fun j => (j : F))
-    let knownBranch ← Pseudo.choose whichBranch atSlot fun k => .const (k.elim 0 fun _ => 1)
+    let chosen ← Pseudo.choose whichBranch.toList atSlot.toList
+      fun k => .const (k.elim 0 fun j => (j : F))
+    let knownBranch ← Pseudo.choose whichBranch.toList atSlot.toList
+      fun k => .const (k.elim 0 fun _ => 1)
     let pinned ← mul knownBranch index
     assertEqual pinned chosen
 
@@ -98,43 +100,44 @@ private theorem allSome_eq_some {α : Type} :
 omit [ToNat F] [KimchiSystem F c] in
 /-- Under any valuation satisfying the emitted constraints, with the branch bits reading as the
 indicator of `b` and branch `b` compiled for index `j` at this slot, the index reads as `j`. -/
-theorem pinWrapDomainIndex_spec (whichBranch : List (BoolVar F)) (atSlot : List (Option ℕ))
-    (index : FVar F) (b j : ℕ)
-    (hbits : whichBranch.map (fun x : BoolVar F => (↑x : CVar F).val V)
-      = (List.range atSlot.length).map fun l => if l = b then (1 : F) else 0)
-    (hj : atSlot[b]? = some (some j)) :
+theorem pinWrapDomainIndex_spec {n : ℕ} (whichBranch : Vector (BoolVar F) n)
+    (atSlot : Vector (Option ℕ) n) (index : FVar F) (b : Fin n) (j : ℕ)
+    (hbits : CircuitType.Reads V whichBranch (Vector.ofFn fun l => decide (l = b)))
+    (hj : atSlot[b] = some j) :
     ⦃⌜True⌝⦄ pinWrapDomainIndex (c := Builder V c) whichBranch atSlot index
     ⦃⇓ _ _ => ⌜index.val V = (j : F)⌝⦄ := by
-  obtain ⟨hb, hbj⟩ := List.getElem?_eq_some_iff.mp hj
+  have hj' : atSlot[(b : ℕ)] = some j := by rwa [Fin.getElem_fin] at hj
   simp only [pinWrapDomainIndex]
   split
   · rename_i ks hks
     have hks' := allSome_eq_some hks
-    subst hks'
-    have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch ks fun i => .const (i : F)
+    have hlen : ks.length = n := by simpa using congrArg List.length hks'.symm
+    have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList ks
+      fun i => .const (i : F)
     mvcgen [hc]
     rename_i chosen _ hchosen _ _
     intro hidx
-    rw [hidx, hchosen]
-    rw [sum_zip_bits whichBranch ks fun i => (CVar.const (i : F) : CVar F).val V,
-      sum_indicator (fun i : ℕ => (CVar.const (i : F) : CVar F).val V) ks _ b
-        (by simpa using hbits) (by simpa using hb)]
-    simp only [List.getElem_map, Option.some.injEq] at hbj
-    rw [hbj]
+    rw [hidx, hchosen, sum_oneHot (fun i : ℕ => (CVar.const (i : F) : CVar F).val V)
+      whichBranch ks hlen b hbits]
+    have hbj := congrArg (·[(b : ℕ)]?) hks'
+    simp only [Vector.getElem?_toList, List.getElem?_map, Vector.getElem?_eq_getElem b.isLt, hj',
+      List.getElem?_eq_getElem (show (b : ℕ) < ks.length by omega), Option.map_some,
+      Option.some.injEq] at hbj
+    rw [← hbj]
     rfl
   · rename_i hnone
-    have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch atSlot
+    have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
       fun k => .const (k.elim 0 fun i => (i : F))
-    have hk := Pseudo.choose_spec (c := c) (V := V) whichBranch atSlot
+    have hk := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
       fun k => .const (k.elim 0 fun _ => (1 : F))
     mvcgen [hc, hk]
     rename_i chosen _ hchosen known _ hknown pinned _ hpinned _ _
     intro hassert
-    have hind := fun (f : Option ℕ → F) =>
-      (sum_zip_bits whichBranch atSlot f).trans (sum_indicator f atSlot _ b hbits hb)
+    have hind := fun (f : Option ℕ → F) => sum_oneHot f whichBranch atSlot.toList (by simp) b hbits
     rw [hpinned, hchosen, hknown, hind (fun k => (CVar.const (k.elim 0 fun i => (i : F)) :
-      CVar F).val V), hind (fun k => (CVar.const (k.elim 0 fun _ => (1 : F)) : CVar F).val V),
-      hbj] at hassert
+      CVar F).val V), hind (fun k => (CVar.const (k.elim 0 fun _ => (1 : F)) : CVar F).val V)]
+      at hassert
+    rw [Vector.getElem_toList, hj'] at hassert
     simpa using hassert
 
 end Reads
@@ -153,8 +156,7 @@ def wrapFinalizePrevProofs {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] 
     {branches mpv k nc : ℕ} (P : FopParams Fq) (whichBranch : Vector (BoolVar Fq) branches)
     (slots : Vector (WrapFinalizeSlot branches k nc Fq) mpv) :
     CircuitM Fq c (Vector (FopOutput Fq k) mpv) := do
-  slots.toList.forM fun sl =>
-    pinWrapDomainIndex whichBranch.toList sl.pins.toList sl.domainIndex
+  slots.toList.forM fun sl => pinWrapDomainIndex whichBranch sl.pins sl.domainIndex
   let rev ← (slots.map (·.domainIndex)).reverse.mapM
     (selectDomain (domainGenerator IpaPallas.curve) wrapDomainLog2s)
   (rev.reverse.zip slots).mapM fun (d, sl) => do
@@ -304,15 +306,6 @@ theorem wrapFinalizePrevProofs_reads
     ⦃⇓ _ _ => ⌜∀ i : Fin mpv, slots[i].pins[b] = some j →
       (↑slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
       slots[i].ScalarReads σ K.cvk Vs⌝⦄ := by
-  -- the branch bits, as readings
-  have hbits' : whichBranch.toList.map (fun x : BoolVar Fq => (↑x : CVar Fq).val Vs)
-      = (List.range branches).map fun l => if l = b.val then (1 : Fq) else 0 := by
-    refine List.ext_getElem (by simp) fun l h1 h2 => ?_
-    have hl : l < branches := by simpa using h2
-    have hr := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hbits l hl)
-    simp only [Vector.getElem_ofFn] at hr
-    simp only [List.getElem_map, Vector.getElem_toList, List.getElem_range, hr]
-    by_cases h : l = b.val <;> simp [h, bit, Fin.ext_iff]
   -- the key's domain is candidate `j` of the table
   obtain ⟨hj, hjv⟩ := List.getElem?_eq_some_iff.mp hdom
   have hn : 2 ^ wrapDomainLog2s[j] = K.cvk.n := by rw [hjv]; rfl
@@ -329,12 +322,12 @@ theorem wrapFinalizePrevProofs_reads
   -- each slot's pin: on a slot branch `b` compiled for `j`, the index reads as `j`
   have hpin := forM_spec (V := Vs) (c := KimchiConstraint Fq)
     (fun sl : WrapFinalizeSlot branches σ.k nc Fq =>
-      pinWrapDomainIndex whichBranch.toList sl.pins.toList sl.domainIndex)
-    (fun sl => sl.pins.toList[b.val]? = some (some j) → sl.domainIndex.val Vs = (j : Fq))
+      pinWrapDomainIndex whichBranch sl.pins sl.domainIndex)
+    (fun sl => sl.pins[b] = some j → sl.domainIndex.val Vs = (j : Fq))
     (fun sl => by
-      by_cases h : sl.pins.toList[b.val]? = some (some j)
-      · refine builder_spec_imp _ _ _ (pinWrapDomainIndex_spec whichBranch.toList sl.pins.toList
-          sl.domainIndex b j (by simpa using hbits') h) ?_
+      by_cases h : sl.pins[b] = some j
+      · refine builder_spec_imp _ _ _ (pinWrapDomainIndex_spec whichBranch sl.pins
+          sl.domainIndex b j hbits h) ?_
         intro _ hr _
         exact hr
       · refine builder_spec_imp _ _ _ (builder_spec_true _) ?_
