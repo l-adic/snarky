@@ -50,7 +50,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2po
 import Pickles.PublicInputCommit (mkConstLagrangeBase, sumMaskedAffine, unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Typ (existsTyp, perSlotTyp, typOf)
-import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
@@ -367,25 +367,20 @@ wrapFinalizePrevProofs whichBranch pins wrapDomainIndices unfViews witnesses pad
     )
     idxs
 
--- | Absorb one slot's `sg` and its unpadded bullet-proof challenges
--- | into the supplied sponge state, and squeeze the digest. The caller
--- | chooses the state, which already has the slot's padding dummies
--- | absorbed.
+-- | Hash one slot's rebuilt message from the supplied sponge state,
+-- | which already has the slot's padding dummies absorbed.
 hashOneSlotMessage
   :: forall r
    . PrimeField WrapField
   => Int -- slotIdx, for labels only
   -> Sponge WrapField -- precomputed sponge state for the slot's pad count
-  -> AffinePoint (FVar WrapField) -- step accumulator sg for this slot
-  -> Array (Vector WrapIPARounds (FVar WrapField)) -- raw (unpadded) chals
+  -> MessagesForNextWrapProof (AffinePoint (FVar WrapField))
+       (Array (Vector WrapIPARounds (FVar WrapField)))
   -> Snarky WrapField (KimchiConstraint WrapField) r (FVar WrapField)
-hashOneSlotMessage slotIdx spongeState sg allChallenges =
+hashOneSlotMessage slotIdx spongeState msg =
   label ("block4-msg-hash-" <> show slotIdx)
     $ evalSpongeM (spongeFromConstants { state: spongeState.state, spongeState: spongeState.spongeState })
-    $ hashMessagesForNextWrapProofCircuit'
-        { sg
-        , allChallenges
-        }
+    $ hashMessagesForNextWrapProofCircuit' msg
 
 -- | Split each of a `PerProofUnfinalized`'s five deferred `Type2`
 -- | fields into `(sDiv2, sOdd)`, giving the `UnfinalizedProof` shape
@@ -673,9 +668,12 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
           let
             slotIdx = getFinite fi
             state = Vector.index perSlotSponge fi
-            sg = Vector.index stepAccsAffine fi
-            chals = Vector.index perSlotReal fi
-          hashOneSlotMessage slotIdx state sg chals
+          hashOneSlotMessage slotIdx state
+            ( MessagesForNextWrapProof
+                { challengePolynomialCommitment: Vector.index stepAccsAffine fi
+                , oldBulletproofChallenges: Vector.index perSlotReal fi
+                }
+            )
       )
       revIdxs
     pure (Vector.reverse revMsgs)

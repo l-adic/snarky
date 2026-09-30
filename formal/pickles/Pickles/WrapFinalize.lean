@@ -36,15 +36,15 @@ variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Kim
 /-- One slot's pin. `atSlot` holds each branch's compile-time domain index for the slot, `none`
 for a side-loaded predecessor. When every branch knows it, the index equals the one-hot choice;
 otherwise the known branches' bits scale the index to that choice. -/
-def pinWrapDomainIndex [ConstraintHolds F c] (whichBranch : List (BoolVar F))
-    (atSlot : List (Option ℕ)) (index : FVar F) : CircuitM F c PUnit :=
-  match atSlot.allSome with
-  | some ks => do
-    let chosen ← Pseudo.choose whichBranch ks fun j => .const (j : F)
+def pinWrapDomainIndex [ConstraintHolds F c] {n : ℕ} (whichBranch : Vector (BoolVar F) n)
+    (atSlot : Vector (Option ℕ) n) (index : FVar F) : CircuitM F c PUnit := do
+  let chosen ← Pseudo.choose whichBranch.toList atSlot.toList
+    fun k => .const (k.elim 0 fun j => (j : F))
+  if atSlot.all Option.isSome then
     assertEqual index chosen
-  | none => do
-    let chosen ← Pseudo.choose whichBranch atSlot fun k => .const (k.elim 0 fun j => (j : F))
-    let knownBranch ← Pseudo.choose whichBranch atSlot fun k => .const (k.elim 0 fun _ => 1)
+  else
+    let knownBranch ← Pseudo.choose whichBranch.toList atSlot.toList
+      fun k => .const (k.elim 0 fun _ => 1)
     let pinned ← mul knownBranch index
     assertEqual pinned chosen
 
@@ -73,68 +73,33 @@ section Reads
 
 variable [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
 
-/-- A list whose entries are all `some` is the `some`s of `List.allSome`'s result. -/
-private theorem allSome_eq_some {α : Type} :
-    ∀ {l : List (Option α)} {ks : List α}, l.allSome = some ks → l = ks.map some
-  | [], ks, h => by
-    simp only [List.allSome, List.mapM_nil, Option.pure_def, Option.some.injEq] at h
-    subst h; rfl
-  | a :: l, ks, h => by
-    cases a with
-    | none => simp [List.allSome] at h
-    | some x =>
-      cases hl : l.allSome with
-      | none =>
-        simp only [List.allSome] at hl
-        simp [List.allSome, hl] at h
-      | some ks' =>
-        simp only [List.allSome] at hl
-        simp only [List.allSome, List.mapM_cons, hl] at h
-        simp only [id_eq, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
-          Option.some.injEq] at h
-        subst h
-        simp [allSome_eq_some (l := l) (by simpa [List.allSome] using hl)]
-
 omit [ToNat F] [KimchiSystem F c] in
 /-- Under any valuation satisfying the emitted constraints, with the branch bits reading as the
 indicator of `b` and branch `b` compiled for index `j` at this slot, the index reads as `j`. -/
-theorem pinWrapDomainIndex_spec (whichBranch : List (BoolVar F)) (atSlot : List (Option ℕ))
-    (index : FVar F) (b j : ℕ)
-    (hbits : whichBranch.map (fun x : BoolVar F => (↑x : CVar F).val V)
-      = (List.range atSlot.length).map fun l => if l = b then (1 : F) else 0)
-    (hj : atSlot[b]? = some (some j)) :
+theorem pinWrapDomainIndex_spec {n : ℕ} (whichBranch : Vector (BoolVar F) n)
+    (atSlot : Vector (Option ℕ) n) (index : FVar F) (b : Fin n) (j : ℕ)
+    (hbits : CircuitType.Reads V whichBranch (Vector.ofFn fun l => decide (l = b)))
+    (hj : atSlot[b] = some j) :
     ⦃⌜True⌝⦄ pinWrapDomainIndex (c := Builder V c) whichBranch atSlot index
     ⦃⇓ _ _ => ⌜index.val V = (j : F)⌝⦄ := by
-  obtain ⟨hb, hbj⟩ := List.getElem?_eq_some_iff.mp hj
+  have hj' : atSlot[(b : ℕ)] = some j := by rwa [Fin.getElem_fin] at hj
+  have hind := fun (f : Option ℕ → F) => sum_oneHot f whichBranch atSlot.toList (by simp) b hbits
+  have hsel := hind fun k => (CVar.const (k.elim 0 fun i => (i : F)) : CVar F).val V
+  have hone := hind fun k => (CVar.const (k.elim 0 fun _ => (1 : F)) : CVar F).val V
+  rw [Vector.getElem_toList, hj'] at hsel hone
+  have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
+    fun k => .const (k.elim 0 fun i => (i : F))
+  have hk := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
+    fun k => .const (k.elim 0 fun _ => (1 : F))
   simp only [pinWrapDomainIndex]
-  split
-  · rename_i ks hks
-    have hks' := allSome_eq_some hks
-    subst hks'
-    have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch ks fun i => .const (i : F)
-    mvcgen [hc]
-    rename_i chosen _ hchosen _ _
+  mvcgen [hc, hk]
+  · rename_i chosen _ _ hchosen _ _
     intro hidx
-    rw [hidx, hchosen]
-    rw [sum_zip_bits whichBranch ks fun i => (CVar.const (i : F) : CVar F).val V,
-      sum_indicator (fun i : ℕ => (CVar.const (i : F) : CVar F).val V) ks _ b
-        (by simpa using hbits) (by simpa using hb)]
-    simp only [List.getElem_map, Option.some.injEq] at hbj
-    rw [hbj]
+    rw [hidx, hchosen, hsel]
     rfl
-  · rename_i hnone
-    have hc := Pseudo.choose_spec (c := c) (V := V) whichBranch atSlot
-      fun k => .const (k.elim 0 fun i => (i : F))
-    have hk := Pseudo.choose_spec (c := c) (V := V) whichBranch atSlot
-      fun k => .const (k.elim 0 fun _ => (1 : F))
-    mvcgen [hc, hk]
-    rename_i chosen _ hchosen known _ hknown pinned _ hpinned _ _
+  · rename_i chosen _ _ hchosen known _ hknown pinned _ hpinned _ _
     intro hassert
-    have hind := fun (f : Option ℕ → F) =>
-      (sum_zip_bits whichBranch atSlot f).trans (sum_indicator f atSlot _ b hbits hb)
-    rw [hpinned, hchosen, hknown, hind (fun k => (CVar.const (k.elim 0 fun i => (i : F)) :
-      CVar F).val V), hind (fun k => (CVar.const (k.elim 0 fun _ => (1 : F)) : CVar F).val V),
-      hbj] at hassert
+    rw [hpinned, hchosen, hknown, hsel, hone] at hassert
     simpa using hassert
 
 end Reads
@@ -152,14 +117,13 @@ finalize bodies with their assertions, left to right. Returns each slot's finali
 def wrapFinalizePrevProofs {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [KimchiSystem Fq c]
     {branches mpv k nc : ℕ} (P : FopParams Fq) (whichBranch : Vector (BoolVar Fq) branches)
     (slots : Vector (WrapFinalizeSlot branches k nc Fq) mpv) :
-    CircuitM Fq c (List (FopOutput Fq)) := do
-  slots.toList.forM fun sl =>
-    pinWrapDomainIndex whichBranch.toList sl.pins.toList sl.domainIndex
-  let rev ← (slots.toList.map (·.domainIndex)).reverse.mapM
+    CircuitM Fq c (Vector (FopOutput Fq k) mpv) := do
+  slots.toList.forM fun sl => pinWrapDomainIndex whichBranch sl.pins sl.domainIndex
+  let rev ← (slots.map (·.domainIndex)).reverse.mapM
     (selectDomain (domainGenerator IpaPallas.curve) wrapDomainLog2s)
-  (rev.reverse.zip slots.toList).mapM fun (d, sl) => do
+  (rev.reverse.zip slots).mapM fun (d, sl) => do
     let o ← finalizeOtherProofWrap P d.generator d.vanishingPolynomial sl.unfinalized sl.evals
-      (sl.prevChallenges.toList.map Vector.toList)
+      sl.prevChallenges
     assertAny [o.finalized, Snarky.not sl.unfinalized.shouldFinalize]
     pure o
 
@@ -193,7 +157,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
       let o ← finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) d.generator
           d.vanishingPolynomial
-        sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList)
+        sl.unfinalized sl.evals sl.prevChallenges
       assertAny [o.finalized, Snarky.not sl.unfinalized.shouldFinalize]
       pure o)
     ⦃⇓ _ _ => ⌜d.generator.val Vs = K.cvk.omega →
@@ -206,7 +170,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
         finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) d.generator
             d.vanishingPolynomial
-          sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList)
+          sl.unfinalized sl.evals sl.prevChallenges
         ⦃⇓ o _ => ⌜(↑o.finalized : CVar Fq).val Vs = 1 → sl.ScalarReads σ K.cvk Vs⌝⦄ := by
       have hP :
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).endo = Pasta.vestaEndo ∧
@@ -214,20 +178,17 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).toks =
             Linearization.fqTokens :=
         ⟨rfl, by rfl, rfl⟩
-      have hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs))
-          (sl.prevChallenges.toList.map Vector.toList)
-          (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals := by
-        refine List.forall₂_map_right_iff.2 (List.forall₂_map_left_iff.2
-          (List.forall₂_same.2 fun cs _ => ?_))
-        exact List.forall₂_map_right_iff.2
-          (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
+      have hprev : CircuitType.Reads Vs sl.prevChallenges
+          (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals :=
+        CircuitType.reads_vector.mpr fun i hi => CircuitType.reads_vector.mpr fun j hj =>
+          CircuitType.reads_fvar.mpr (by simp [ScalarHalf.prevVals, ScalarHalf.wrap])
       have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) hP
           IpaPallas.curve.frSponge.hsize
         (three_le_zkRowsOf K.cvk.nc_pos)
         d.generator K.cvk.n (show zkRowsOf nc ≤ K.cvk.n from K.zkRows_eq ▸ K.zkRows_le)
           (by rw [hgen]; exact K.omega_prim.pow_eq_one) _ hvan
-        sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList) _ hprev
+        sl.unfinalized sl.evals sl.prevChallenges _ hprev
       refine builder_spec_imp _ _ _ hspec ?_
       intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit hc hf hsg
       rw [hgen] at hread
@@ -235,33 +196,31 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
       have ht : HalvesTies (GroupHalf.step Vg claimsG)
           (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) := by
         obtain ⟨og, hivp, -⟩ := hg
-        obtain ⟨a₀, z₀, hα, hζ, ξ₀, -, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
+        obtain ⟨a₀, z₀, hα, hζ, ξ₀, _r, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
         exact halvesTies_of_splitCast Vg claimsG Vs sl.unfinalized sl.evals sl.prevChallenges
           hc ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
-      have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals
-          = (cp.olds.map (·.u.toList)).toList :=
+      have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals.toList
+          = (cp.olds.map (·.u)).toList :=
         (ScalarHalf.wrap_olds Vs sl.unfinalized sl.evals sl.prevChallenges _).mp hf.olds
       have hdv :
           (Poseidon.squeeze (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).sponge
             (Poseidon.absorb (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).sponge
-              Poseidon.init
-              ((sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)))).1
+              Poseidon.init (sl.prevChallenges.flatten.toList.map (·.val Vs)))).1
           = recDigest IpaPallas.curve (cp.olds.map (·.u)) := by
-        have habs : (sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
+        have habs : sl.prevChallenges.flatten.toList.map (·.val Vs)
             = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
-          have h1 : (sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
+          have h1 : sl.prevChallenges.flatten.toList.map (·.val Vs)
               = ((ScalarHalf.wrap Vs sl.unfinalized sl.evals
-                  sl.prevChallenges).prevVals).flatten := by
-            simp [ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten, List.map_map,
-              Function.comp_def]
+                  sl.prevChallenges).prevVals.toList.map Vector.toList).flatten := by
+            simp [toList_flatten', ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten,
+              List.map_map, Function.comp_def, Vector.toList_map]
           rw [h1, holds]
-          simp [Function.comp_def]
         rw [habs]
         rfl
-      have hmask : (List.map (fun _ => true) (sl.prevChallenges.toList.map Vector.toList))
+      have hmask : (sl.prevChallenges.map fun _ => true)
           = (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).maskVals := by
         rw [ScalarHalf.wrap_maskVals]
-        simp
+        exact Vector.ext fun i hi => by simp
       rw [hdv, hmask] at hread
       exact ((twoHalves_kimchiVerify σ K (by norm_num [PALLAS_BASE_CARD])
         (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf).mp
@@ -270,7 +229,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
       (finalizeOtherProofWrap_finalized_bit (V := Vs)
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens)
         d.generator d.vanishingPolynomial sl.unfinalized sl.evals
-        (sl.prevChallenges.toList.map Vector.toList))
+        sl.prevChallenges)
     mvcgen [hf]
     rename_i o _ ho _ _ hany
     intro _ _ hsf
@@ -289,20 +248,6 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
   · refine builder_spec_imp _ _ _ (builder_spec_true _) ?_
     intro _ _ hg hv
     exact absurd ⟨hg, hv⟩ h
-
-/-- A list related entrywise to a mapped list pairs each entry of the original with one of its
-own entries, related to the entry's image. -/
-private theorem forall₂_map_zip {α β δ : Type} {R : δ → β → Prop} {f : α → β} :
-    ∀ {ds : List δ} {l : List α}, List.Forall₂ R ds (l.map f) →
-      ∀ a ∈ l, ∃ d, (d, a) ∈ ds.zip l ∧ R d (f a)
-  | _, [], _, a, ha => absurd ha List.not_mem_nil
-  | [], _ :: _, h, _, _ => by simp at h
-  | d :: ds, x :: l, h, a, ha => by
-    rw [List.map_cons, List.forall₂_cons] at h
-    rcases List.mem_cons.mp ha with rfl | ha
-    · exact ⟨d, by simp, h.1⟩
-    · obtain ⟨d', hd', hR⟩ := forall₂_map_zip h.2 a ha
-      exact ⟨d', by simp [hd'], hR⟩
 
 /-- **The wrap circuit's finalize block reads as each finalized proof's scalar half.** Under any
 valuation satisfying the emitted constraints, with the branch bits reading as the indicator of
@@ -323,15 +268,6 @@ theorem wrapFinalizePrevProofs_reads
     ⦃⇓ _ _ => ⌜∀ i : Fin mpv, slots[i].pins[b] = some j →
       (↑slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
       slots[i].ScalarReads σ K.cvk Vs⌝⦄ := by
-  -- the branch bits, as readings
-  have hbits' : whichBranch.toList.map (fun x : BoolVar Fq => (↑x : CVar Fq).val Vs)
-      = (List.range branches).map fun l => if l = b.val then (1 : Fq) else 0 := by
-    refine List.ext_getElem (by simp) fun l h1 h2 => ?_
-    have hl : l < branches := by simpa using h2
-    have hr := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hbits l hl)
-    simp only [Vector.getElem_ofFn] at hr
-    simp only [List.getElem_map, Vector.getElem_toList, List.getElem_range, hr]
-    by_cases h : l = b.val <;> simp [h, bit, Fin.ext_iff]
   -- the key's domain is candidate `j` of the table
   obtain ⟨hj, hjv⟩ := List.getElem?_eq_some_iff.mp hdom
   have hn : 2 ^ wrapDomainLog2s[j] = K.cvk.n := by rw [hjv]; rfl
@@ -348,25 +284,25 @@ theorem wrapFinalizePrevProofs_reads
   -- each slot's pin: on a slot branch `b` compiled for `j`, the index reads as `j`
   have hpin := forM_spec (V := Vs) (c := KimchiConstraint Fq)
     (fun sl : WrapFinalizeSlot branches σ.k nc Fq =>
-      pinWrapDomainIndex whichBranch.toList sl.pins.toList sl.domainIndex)
-    (fun sl => sl.pins.toList[b.val]? = some (some j) → sl.domainIndex.val Vs = (j : Fq))
+      pinWrapDomainIndex whichBranch sl.pins sl.domainIndex)
+    (fun sl => sl.pins[b] = some j → sl.domainIndex.val Vs = (j : Fq))
     (fun sl => by
-      by_cases h : sl.pins.toList[b.val]? = some (some j)
-      · refine builder_spec_imp _ _ _ (pinWrapDomainIndex_spec whichBranch.toList sl.pins.toList
-          sl.domainIndex b j (by simpa using hbits') h) ?_
+      by_cases h : sl.pins[b] = some j
+      · refine builder_spec_imp _ _ _ (pinWrapDomainIndex_spec whichBranch sl.pins
+          sl.domainIndex b j hbits h) ?_
         intro _ hr _
         exact hr
       · refine builder_spec_imp _ _ _ (builder_spec_true _) ?_
         intro _ _ h'
         exact absurd h' h)
   -- each slot's domain: an index reading as `j` selects the key's domain
-  have hdom := builder_spec_mapM (V := Vs) (c := KimchiConstraint Fq)
+  have hdom := builder_spec_vector_mapM_get (V := Vs) (c := KimchiConstraint Fq)
     (selectDomain (domainGenerator IpaPallas.curve) wrapDomainLog2s)
-    (fun (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) (index : FVar Fq) =>
+    (fun (index : FVar Fq) (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) =>
       index.val Vs = (j : Fq) →
         d.generator.val Vs = domainGenerator IpaPallas.curve wrapDomainLog2s[j] ∧
           ∀ zeta : FVar Fq, ⦃⌜True⌝⦄ d.vanishingPolynomial zeta
-            ⦃⇓ r _ => ⌜r.val Vs = zeta.val Vs ^ 2 ^ wrapDomainLog2s[j] - 1⌝⦄) id
+            ⦃⇓ r _ => ⌜r.val Vs = zeta.val Vs ^ 2 ^ wrapDomainLog2s[j] - 1⌝⦄)
     (fun index => by
       by_cases h : index.val Vs = (j : Fq)
       · refine builder_spec_imp _ _ _
@@ -375,33 +311,34 @@ theorem wrapFinalizePrevProofs_reads
         exact hr
       · refine builder_spec_imp _ _ _ (builder_spec_true _) ?_
         intro _ _ h'
-        exact absurd h' h)
+        exact absurd h' h) ((slots.map (·.domainIndex)).reverse)
   -- each slot's body
-  have hbody := builder_spec_mapM (V := Vs) (c := KimchiConstraint Fq)
+  have hbody := builder_spec_vector_mapM_get (V := Vs) (c := KimchiConstraint Fq) (m := mpv)
     (fun (p : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq)) ×
         WrapFinalizeSlot branches σ.k nc Fq) =>
       do
         let o ← finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) p.1.generator
           p.1.vanishingPolynomial p.2.unfinalized p.2.evals
-          (p.2.prevChallenges.toList.map Vector.toList)
+          p.2.prevChallenges
         assertAny [o.finalized, Snarky.not p.2.unfinalized.shouldFinalize]
         pure o)
-    (fun _ p => p.1.generator.val Vs = K.cvk.omega →
+    (fun p _ => p.1.generator.val Vs = K.cvk.omega →
       (∀ z, ⦃⌜True⌝⦄ p.1.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.cvk.n - 1⌝⦄) →
-      (↑p.2.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 → p.2.ScalarReads σ K.cvk Vs) id
+      (↑p.2.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 → p.2.ScalarReads σ K.cvk Vs)
     (fun p => wrapFinalizeBody_spec σ K Vs p.1 p.2)
   mvcgen [hpin, hdom, hbody]
   rename_i hpinP rev _ hrev _ _
   intro hos i hpb hsf
   have hsl : slots[i] ∈ slots.toList := by simp
   have hidx := hpinP _ hsl (by simpa using hpb)
-  rw [List.map_id] at hrev
-  rw [← List.reverse_reverse rev] at hrev
-  have hrev' := List.forall₂_reverse_iff.mp hrev
-  obtain ⟨d, hdz, hd⟩ := forall₂_map_zip hrev' _ hsl
+  -- slot `i`'s domain is the `(mpv − 1 − i)`-th of the right-to-left run
+  have hd := hrev ⟨mpv - 1 - i, by omega⟩
+  simp only [Fin.getElem_fin, Vector.getElem_reverse, Vector.getElem_map] at hd
+  simp only [show mpv - 1 - (mpv - 1 - i) = i.val by omega] at hd
   obtain ⟨hg, hv⟩ := hd hidx
-  obtain ⟨_, -, hR⟩ := forall₂_map_zip (f := id) hos (d, slots[i]) hdz
+  have hR := hos i
+  simp only [Fin.getElem_fin, Vector.getElem_zip, Vector.getElem_reverse] at hR
   exact hR (hg.trans hgen') (fun z => builder_spec_imp _ _ _ (hv z) fun r hr => by rw [hr, hn])
     hsf
 

@@ -1768,14 +1768,14 @@ section Binding
 
 variable {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ}
 
-/-- A circuit's commitment tables: per public-input scalar its Lagrange base and its shift
-correction, chunked, and the correction seed and sum the known-domain fold takes as
-constants. -/
-structure XhatTable (F : Type) [Field F] (nc : ℕ) where
+/-- A circuit's commitment tables over `m` public-input scalars: per scalar its Lagrange base
+and its shift correction, chunked, and the correction seed and sum the known-domain fold takes
+as constants. -/
+structure XhatTable (F : Type) [Field F] (nc m : ℕ) where
   /-- The Lagrange bases, one per scalar. -/
-  bases : List (Vector (AffinePoint (FVar F)) nc)
+  bases : Vector (Vector (AffinePoint (FVar F)) nc) m
   /-- The shift corrections, one per scalar. -/
-  corrs : List (Vector (AffinePoint (FVar F)) nc)
+  corrs : Vector (Vector (AffinePoint (FVar F)) nc) m
   /-- The correction seed of the known-domain fold. -/
   corrHead : Vector (AffinePoint (FVar F)) nc
   /-- The correction sum of the known-domain fold. -/
@@ -1980,19 +1980,14 @@ theorem xHatKnown_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
 
 /-- A commitment table is bound to the Lagrange points at the leaves it serves: chunk by chunk, the
 leaves' `XhatBinding` at some base and correction points with the correction sum reading as
-their sum, and the tables nonempty (the known-domain fold is seeded by the first leaf). -/
-structure XhatTable.Bound (s : PastaShape C) (V : Valuation C.BaseField)
+their sum. -/
+def XhatTable.Bound {m : ℕ} (s : PastaShape C) (V : Valuation C.BaseField)
     (σ : Bulletproof.SRS C.Point) (lagrange : Array (Vector C.Point nc))
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
-    (T : XhatTable C.BaseField nc) : Prop where
-  /-- Each chunk's binding, with the correction sum read. -/
-  chunks : ∃ Ts cps : List (Fin nc → s.d.W.Point), ∀ ci : Fin nc,
+    (T : XhatTable C.BaseField nc m) : Prop :=
+  ∃ Ts cps : List (Fin nc → s.d.W.Point), ∀ ci : Fin nc,
     XhatBinding s ci V σ lagrange blindingH leaves (Ts.map (· ci)) (cps.map (· ci)) ∧
     OnCurveAt s.d.W V T.corrSum[ci] (cps.map (· ci)).sum
-  /-- At least one base. -/
-  bases_ne : T.bases ≠ []
-  /-- At least one correction. -/
-  corrs_ne : T.corrs ≠ []
 
 end Binding
 
@@ -2023,12 +2018,13 @@ def PackedScalar.IsScalar : PackedScalar F → Prop
 
 /-- The commitment leaves of a packed scalar list: scalar `i` with Lagrange base `i` and its shift
 correction from the table; a boolean cell adds its base under the bit, with no correction. -/
-def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Leaf F nc) :=
-  List.zipWith (fun k bc => match k with
+def packLeavesOf {m : ℕ} (ks : Vector (PackedScalar F) m) (tab : XhatTable F nc m) :
+    List (Leaf F nc) :=
+  (Vector.zipWith (fun k bc => match k with
     | .full s => Leaf.full s bc.1 bc.2
     | .b128 s => Leaf.b128 s bc.1 bc.2
     | .b10 s => Leaf.b10 s bc.1 bc.2
-    | .bit b => Leaf.condAdd b bc.1) ks (tab.bases.zip tab.corrs)
+    | .bit b => Leaf.condAdd b bc.1) ks (tab.bases.zip tab.corrs)).toList
 
 /-- A packed scalar's cell as the public-input ladder bounds it (`CellBound`): the full cell's
 half below `2^253`, the 128-bit cell's below `2^127`, the 10-bit cell's below `2^9`. -/
@@ -2205,21 +2201,18 @@ points as bases, their honest shifts as corrections, the SRS blinding base — s
 points are finite (at the `(0, 0)` sentinel no cell reads as the point, so this is necessary
 too), the boolean leaves are boolean — which `xHat_reads_publicCommitment` supplies from the
 gadget's own bit pre-pass. -/
-theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
-    (lagrange : Array (Vector C.Point nc)) (ks : List (PackedScalar C.BaseField))
-    (hh : σ.h ≠ 0)
-    (hL : ∀ Ps ∈ lagrange.toList, Ps[ci] ≠ 0)
-
-    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks lagrange.toList, leaf.bitBoolean V)
- :
-    XhatBinding s ci V σ lagrange (constPt σ.h)
-      (List.zipWith constLeaf ks lagrange.toList)
-      (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks lagrange.toList)
-      (List.zipWith (constCp s ci) ks lagrange.toList) where
+theorem xhatBinding_const {m : ℕ} (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
+    (lagrange : Vector (Vector C.Point nc) m) (ks : Vector (PackedScalar C.BaseField) m)
+    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ lagrange.toList, Ps[ci] ≠ 0)
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks.toList lagrange.toList, leaf.bitBoolean V) :
+    XhatBinding s ci V σ lagrange.toArray (constPt σ.h)
+      (List.zipWith constLeaf ks.toList lagrange.toList)
+      (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks.toList lagrange.toList)
+      (List.zipWith (constCp s ci) ks.toList lagrange.toList) where
   blinding := onCurveAt_constPt σ.h hh
   pre := forall₂_zipWith _ _ _ _ _ fun p hp =>
     leafPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2) fun b hb => by
-      have hmem : constLeaf p.1 p.2 ∈ List.zipWith constLeaf ks lagrange.toList := by
+      have hmem : constLeaf p.1 p.2 ∈ List.zipWith constLeaf ks.toList lagrange.toList := by
         rw [← List.map_uncurry_zip_eq_zipWith]
         exact List.mem_map.2 ⟨p, hp, rfl⟩
       have := hbits _ hmem
@@ -2237,8 +2230,7 @@ theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
     intro i hi
     rw [List.getElem_zipWith, leafBaseAt_constLeaf]
     have h := onCurveAt_constPt (V := V) _ (hL _ (List.getElem_mem
-      (l := lagrange.toList) (n := i) (by
-        simp only [List.length_zipWith, Array.length_toList] at hi; simp; omega)))
+      (l := lagrange.toList) (n := i) (by simpa using hi)))
     simpa using h
 
 /-- The ladder width of a packed scalar's kind; a boolean leaf has no correction. -/
@@ -2250,26 +2242,23 @@ private def shiftBits : PackedScalar C.BaseField → Option ℕ
 
 /-- The commitment table computed from the key's Lagrange points, at a statement's packing. A
 boolean leaf's correction slot is never read (`packLeavesOf` drops it); it holds the base. -/
-def XhatTable.ofKey (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)) :
-    XhatTable C.BaseField nc where
+def XhatTable.ofKey {m : ℕ} (ks : Vector (PackedScalar C.BaseField) m)
+    (lb : Vector (Vector C.Point nc) m) : XhatTable C.BaseField nc m where
   bases := lb.map (·.map constPt)
-  corrs := List.zipWith (fun k Ps => Ps.map fun P =>
+  corrs := Vector.zipWith (fun k Ps => Ps.map fun P =>
     constPt (match shiftBits k with | some L => negShift C L P | none => P)) ks lb
   corrHead := Vector.replicate nc (constPt 0)
   corrSum := Vector.replicate nc (constPt 0)
 
 /-- `packLeavesOf` at that table is the constant leaves. -/
-theorem packLeavesOf_ofKey : ∀ (ks : List (PackedScalar C.BaseField))
-    (lb : List (Vector C.Point nc)),
-    packLeavesOf ks (XhatTable.ofKey ks lb) = List.zipWith constLeaf ks lb
-  | [], _ => by simp [packLeavesOf]
-  | _ :: _, [] => by simp [packLeavesOf, XhatTable.ofKey]
-  | k :: ks, Ps :: lb => by
-      have ih := packLeavesOf_ofKey ks lb
-      simp only [packLeavesOf, XhatTable.ofKey, List.map_cons, List.zipWith_cons_cons,
-        List.zip_cons_cons] at ih ⊢
-      refine congrArg₂ _ ?_ ih
-      cases k <;> simp [constLeaf, shiftBits]
+theorem packLeavesOf_ofKey {m : ℕ} (ks : Vector (PackedScalar C.BaseField) m)
+    (lb : Vector (Vector C.Point nc) m) :
+    packLeavesOf ks (XhatTable.ofKey ks lb) = List.zipWith constLeaf ks.toList lb.toList := by
+  rw [packLeavesOf, ← Vector.toList_zipWith]
+  congr 1
+  ext i hi
+  simp only [Vector.getElem_zipWith, Vector.getElem_zip, XhatTable.ofKey, Vector.getElem_map]
+  cases ks[i] <;> simp [constLeaf, shiftBits]
 
 /-- A packed scalar's cell reduced into the scalar field: the public-input entry it
 contributes (`pubOf`). -/
@@ -2279,17 +2268,16 @@ def PackedScalar.reduced (C : KimchiCurve) [ToNat C.BaseField] (V : Valuation C.
 
 /-- With a Lagrange point per scalar, the public input of the constant leaves is the reduced
 scalars. -/
-theorem pubOf_zipWith_constLeaf [ToNat C.BaseField] :
-    ∀ (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)),
-      ks.length ≤ lb.length →
-      (pubOf C V (List.zipWith constLeaf ks lb)).toList = ks.map (PackedScalar.reduced C V)
-  | [], _, _ => by simp [pubOf]
-  | _ :: _, [], h => by simp at h
-  | k :: ks, Ps :: lb, h => by
-    have ih := pubOf_zipWith_constLeaf ks lb (by simpa using h)
-    simp only [pubOf, List.zipWith_cons_cons, List.map_cons, List.toList_toArray] at ih ⊢
-    rw [ih]
-    cases k <;> rfl
+theorem pubOf_zipWith_constLeaf [ToNat C.BaseField] {m : ℕ}
+    (ks : Vector (PackedScalar C.BaseField) m) (lb : Vector (Vector C.Point nc) m) :
+    (pubOf C V (List.zipWith constLeaf ks.toList lb.toList)).toList
+      = ks.toList.map (PackedScalar.reduced C V) := by
+  apply List.ext_getElem (by simp [pubOf])
+  intro i h1 h2
+  have hi : i < m := by simpa using h2
+  simp only [pubOf, List.toList_toArray, List.getElem_map, List.getElem_zipWith,
+    Vector.getElem_toList]
+  cases ks[i]'hi <;> rfl
 
 /-! ### The known-domain fold's table
 
@@ -2313,14 +2301,14 @@ def corrSumPt (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point 
 /-- The table of the known-domain fold, computed from the key's Lagrange points: the
 bases and corrections of `XhatTable.ofKey`, the fold's seed the first correction, its constant
 the correction sum. -/
-def XhatTable.ofKeyKnown (ks : List (PackedScalar C.BaseField))
-    (lb : List (Vector C.Point nc)) : XhatTable C.BaseField nc :=
+def XhatTable.ofKeyKnown {m : ℕ} (ks : Vector (PackedScalar C.BaseField) m)
+    (lb : Vector (Vector C.Point nc) m) : XhatTable C.BaseField nc m :=
   { XhatTable.ofKey ks lb with
     corrHead := Vector.ofFn fun ci => constPt
-      (match ks, lb with
+      (match ks.toList, lb.toList with
        | k :: _, Ps :: _ => corrPt k Ps[ci]
        | _, _ => 0)
-    corrSum := Vector.ofFn fun ci => constPt (corrSumPt ks lb ci) }
+    corrSum := Vector.ofFn fun ci => constPt (corrSumPt ks.toList lb.toList ci) }
 
 /-- A scalar's constant leaf is trivially bit-boolean. -/
 theorem bitBoolean_constLeaf_of_isScalar (ks : List (PackedScalar C.BaseField))
@@ -2354,36 +2342,24 @@ private theorem equivPoint_corrSumPt (s : PastaShape C) (ci : Fin nc)
 
 /-- **The known-domain table computed from the key is bound to the key.** Beyond
 `xhatBinding_const`'s premises, the correction sum is a finite point at every chunk. -/
-theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (lagrange : Array (Vector C.Point nc))
-    (ks : List (PackedScalar C.BaseField))
+theorem bound_ofKeyKnown {m : ℕ} (s : PastaShape C) (σ : SRS C.Point)
+    (lagrange : Vector (Vector C.Point nc) m) (ks : Vector (PackedScalar C.BaseField) m)
     (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ lagrange.toList, ∀ ci : Fin nc, Ps[ci] ≠ 0)
-    (hks : ks ≠ []) (hlb : lagrange.toList ≠ [])
-    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks lagrange.toList, leaf.bitBoolean V)
-
-    (hsum : ∀ ci : Fin nc, corrSumPt ks lagrange.toList ci ≠ 0) :
-    (XhatTable.ofKeyKnown ks lagrange.toList).Bound s V σ lagrange (constPt σ.h)
-      (List.zipWith constLeaf ks lagrange.toList) where
-  chunks := by
-    refine ⟨List.zipWith (fun _ Ps => fun ci => SWPoint.equivPoint C.E Ps[ci]) ks
-        lagrange.toList,
-      List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks lagrange.toList,
-      fun ci => ⟨?_, ?_⟩⟩
-    · have hb := xhatBinding_const (V := V) s ci σ lagrange ks hh (fun Ps h => hL Ps h ci) hbits
-      simpa only [List.map_zipWith] using hb
-    · have hc : (XhatTable.ofKeyKnown ks lagrange.toList).corrSum[ci]
-          = constPt (corrSumPt ks lagrange.toList ci) := by
-        simp [XhatTable.ofKeyKnown, Fin.getElem_fin]
-      rw [hc, ← equivPoint_corrSumPt s ci]
-      exact onCurveAt_constPt _ (hsum ci)
-  bases_ne := by
-    simpa [XhatTable.ofKeyKnown, XhatTable.ofKey] using hlb
-  corrs_ne := by
-    cases ks with
-    | nil => exact absurd rfl hks
-    | cons k ks =>
-      cases hl : lagrange.toList with
-      | nil => exact absurd hl hlb
-      | cons Ps lb => simp [XhatTable.ofKeyKnown, XhatTable.ofKey]
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks.toList lagrange.toList, leaf.bitBoolean V)
+    (hsum : ∀ ci : Fin nc, corrSumPt ks.toList lagrange.toList ci ≠ 0) :
+    (XhatTable.ofKeyKnown ks lagrange).Bound s V σ lagrange.toArray (constPt σ.h)
+      (List.zipWith constLeaf ks.toList lagrange.toList) := by
+  refine ⟨List.zipWith (fun _ Ps => fun ci => SWPoint.equivPoint C.E Ps[ci]) ks.toList
+      lagrange.toList,
+    List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks.toList lagrange.toList,
+    fun ci => ⟨?_, ?_⟩⟩
+  · have hb := xhatBinding_const (V := V) s ci σ lagrange ks hh (fun Ps h => hL Ps h ci) hbits
+    simpa only [List.map_zipWith] using hb
+  · have hc : (XhatTable.ofKeyKnown ks lagrange).corrSum[ci]
+        = constPt (corrSumPt ks.toList lagrange.toList ci) := by
+      simp [XhatTable.ofKeyKnown, Fin.getElem_fin]
+    rw [hc, ← equivPoint_corrSumPt s ci]
+    exact onCurveAt_constPt _ (hsum ci)
 
 /-! ### The correction sum's coefficients
 
@@ -2449,24 +2425,25 @@ variable {C : KimchiCurve} {nc : ℕ} {S : Type} [BasicSystem C.BaseField S]
 
 /-- A point per branch masked by the branch bits: coordinatewise `Σ bᵢ · Pᵢ`, with no rows
 for constant points. -/
-def maskPoint [ConstraintHolds C.BaseField S] (bits : List (BoolVar C.BaseField))
-    (ps : List (AffinePoint (FVar C.BaseField))) :
+def maskPoint [ConstraintHolds C.BaseField S] {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
+    (ps : Vector (AffinePoint (FVar C.BaseField)) n) :
     CircuitM C.BaseField S (AffinePoint (FVar C.BaseField)) := do
-  let x ← Pseudo.choose bits ps (·.x)
-  let y ← Pseudo.choose bits ps (·.y)
+  let x ← Pseudo.choose bits.toList ps.toList (·.x)
+  let y ← Pseudo.choose bits.toList ps.toList (·.y)
   pure ⟨x, y⟩
 
 /-- `maskPoint` at every chunk. -/
-def maskCells [ConstraintHolds C.BaseField S] (bits : List (BoolVar C.BaseField))
-    (vs : List (Vector (AffinePoint (FVar C.BaseField)) nc)) :
+def maskCells [ConstraintHolds C.BaseField S] {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
+    (vs : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) n) :
     CircuitM C.BaseField S (Vector (AffinePoint (FVar C.BaseField)) nc) :=
   (Vector.ofFn id).mapM fun ci => maskPoint bits (vs.map (·[ci]))
 
 /-- One packed scalar's leaf over the branches' Lagrange points `Pss`. A boolean leaf's base is
 masked. With `shared` a scalar leaf is `P0`'s constant leaf; otherwise its base and shift
 correction are masked. -/
-def maskLeaf [ConstraintHolds C.BaseField S] (shared : Bool) (bits : List (BoolVar C.BaseField))
-    (k : PackedScalar C.BaseField) (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc) :
+def maskLeaf [ConstraintHolds C.BaseField S] (shared : Bool) {n : ℕ}
+    (bits : Vector (BoolVar C.BaseField) n) (k : PackedScalar C.BaseField)
+    (Pss : Vector (Vector C.Point nc) n) (P0 : Vector C.Point nc) :
     CircuitM C.BaseField S (Leaf C.BaseField nc) :=
   let base := maskCells bits (Pss.map (·.map constPt))
   let corr (L : ℕ) := maskCells bits (Pss.map (·.map fun P => constPt (negShift C L P)))
@@ -2487,22 +2464,23 @@ def maskLeaf [ConstraintHolds C.BaseField S] (shared : Bool) (bits : List (BoolV
       let bs ← base
       pure (.condAdd b bs)
 
-/-- The leaves of a packed scalar list over the branches' Lagrange tables, leaf `i` at each
-table's `i`-th base. -/
-def maskLeaves [ConstraintHolds C.BaseField S] (shared : Bool) (bits : List (BoolVar C.BaseField))
-    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
-    CircuitM C.BaseField S (List (Leaf C.BaseField nc)) :=
-  ks.zipIdx.mapM fun (k, i) =>
-    maskLeaf shared bits k (tables.map (·.getD i (Vector.replicate nc 0)))
-      ((tables.headD []).getD i (Vector.replicate nc 0))
+/-- The leaves of `m` packed scalars over the `n` branches' Lagrange tables, leaf `i` at each
+table's `i`-th base; with `shared`, a scalar leaf is the first table's. -/
+def maskLeaves [ConstraintHolds C.BaseField S] (shared : Bool) {n m : ℕ} [NeZero n]
+    (bits : Vector (BoolVar C.BaseField) n) (ks : Vector (PackedScalar C.BaseField) m)
+    (tables : Vector (Vector (Vector C.Point nc) m) n) :
+    CircuitM C.BaseField S (List (Leaf C.BaseField nc)) := do
+  let ls ← (Vector.finRange m).mapM fun i =>
+    maskLeaf shared bits ks[i] (tables.map (·[i])) tables[(0 : Fin n)][i]
+  pure ls.toList
 
 /-- The public-input commitment over bases masked across branches: `publicInputCommitFull`
 when the branches share one step domain, otherwise `publicInputCommitSealed`. -/
 def publicInputCommitMasked [ConstraintHolds C.BaseField S] [LawfulBasicSystem C.BaseField S]
     [KimchiSystem C.BaseField S]
-    (shared : Bool)
-    (blindingH : AffinePoint (FVar C.BaseField)) (bits : List (BoolVar C.BaseField))
-    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
+    (shared : Bool) {n m : ℕ} [NeZero n]
+    (blindingH : AffinePoint (FVar C.BaseField)) (bits : Vector (BoolVar C.BaseField) n)
+    (ks : Vector (PackedScalar C.BaseField) m) (tables : Vector (Vector (Vector C.Point nc) m) n) :
     CircuitM C.BaseField S (Vector (AffinePoint (FVar C.BaseField)) nc) := do
   let leaves ← maskLeaves shared bits ks tables
   if shared then publicInputCommitFull blindingH leaves
@@ -2513,11 +2491,11 @@ variable [ConstraintHolds C.BaseField S] [LawfulBasicSystem C.BaseField S]
 
 open Std.Do in
 /-- Masking a packed scalar's leaf keeps its scalar cell. -/
-private theorem maskLeaf_bound (shared : Bool) (bits : List (BoolVar C.BaseField))
-    (k : PackedScalar C.BaseField) (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc) :
+private theorem maskLeaf_bound (shared : Bool) {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
+    (k : PackedScalar C.BaseField) (Pss : Vector (Vector C.Point nc) n) (P0 : Vector C.Point nc) :
     ⦃⌜True⌝⦄ maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits k Pss P0
     ⦃⇓ r _ => ⌜r.Bound V ∧ r.bitBoolean V → k.Bound V⌝⦄ := by
-  have hm := fun (ps : List (Vector (AffinePoint (FVar C.BaseField)) nc)) => builder_spec_true
+  have hm := fun (ps : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) n) => builder_spec_true
     (maskCells (S := Builder V (KimchiConstraint C.BaseField)) bits ps)
   cases k <;> cases shared <;> simp only [maskLeaf, Bool.false_eq_true, if_false, if_true] <;>
     mvcgen [hm] <;> simp_all [Leaf.Bound, Leaf.bitBoolean, PackedScalar.Bound, constLeaf]
@@ -2527,63 +2505,55 @@ open Std.Do in
 valuation satisfying the emitted constraints, every packed scalar's cell reads as its ladder
 bounds it (`PackedScalar.Bound`): the ladders' decomposition rows never read the bases, so no
 branch bits, table or key enter. -/
-theorem publicInputCommitMasked_bound (hnc : 0 < nc) (shared : Bool)
-    (blindingH : AffinePoint (FVar C.BaseField)) (bits : List (BoolVar C.BaseField))
-    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) :
+theorem publicInputCommitMasked_bound (hnc : 0 < nc) (shared : Bool) {n m : ℕ} [NeZero n]
+    (blindingH : AffinePoint (FVar C.BaseField)) (bits : Vector (BoolVar C.BaseField) n)
+    (ks : Vector (PackedScalar C.BaseField) m) (tables : Vector (Vector (Vector C.Point nc) m) n) :
     ⦃⌜True⌝⦄
     publicInputCommitMasked (S := Builder V (KimchiConstraint C.BaseField)) shared blindingH
       bits ks tables
-    ⦃⇓ _ _ => ⌜∀ k ∈ ks, k.Bound V⌝⦄ := by
-  have hml := builder_spec_mapM (V := V) (c := KimchiConstraint C.BaseField)
-    (fun ki : PackedScalar C.BaseField × ℕ =>
-      maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits ki.1
-        (tables.map (·.getD ki.2 (Vector.replicate nc 0)))
-        ((tables.headD []).getD ki.2 (Vector.replicate nc 0)))
-    (fun r ki => r.Bound V ∧ r.bitBoolean V → ki.1.Bound V) id
-    (fun ki => maskLeaf_bound shared bits ki.1 _ _) ks.zipIdx
+    ⦃⇓ _ _ => ⌜∀ k ∈ ks.toList, k.Bound V⌝⦄ := by
+  have hml := builder_spec_vector_mapM_get (V := V) (c := KimchiConstraint C.BaseField)
+    (fun i : Fin m =>
+      maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits ks[i]
+        (tables.map (·[i])) tables[(0 : Fin n)][i])
+    (fun i r => r.Bound V ∧ r.bitBoolean V → ks[i].Bound V)
+    (fun i => maskLeaf_bound shared bits ks[i] _ _) (Vector.finRange m)
   have hF := fun rs => publicInputCommitFull_bound hnc (V := V) blindingH rs
   have hS := fun rs => publicInputCommitSealed_bound hnc (V := V) blindingH rs
   -- a packed scalar is its masked leaf's scalar
-  have hall : ∀ rs : List (Leaf C.BaseField nc),
-      List.Forall₂ (fun r ki => r.Bound V ∧ r.bitBoolean V → ki.1.Bound V) rs
-        (ks.zipIdx.map id) →
-      (∀ l ∈ rs, l.Bound V ∧ l.bitBoolean V) → ∀ k ∈ ks, k.Bound V := by
+  have hall : ∀ rs : Vector (Leaf C.BaseField nc) m,
+      (∀ i : Fin m, rs[i].Bound V ∧ rs[i].bitBoolean V → ks[i].Bound V) →
+      (∀ l ∈ rs.toList, l.Bound V ∧ l.bitBoolean V) → ∀ k ∈ ks.toList, k.Bound V := by
     intro rs hrs hb k hk
     obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hk
-    have hlen : rs.length = ks.length := by simpa using hrs.length_eq
-    have h := (List.forall₂_iff_get.mp hrs).2 i (by omega) (by simpa using hi)
-    simp only [List.get_eq_getElem, List.getElem_map, id, List.getElem_zipIdx] at h
-    exact h (hb _ (List.getElem_mem _))
+    simp only [Vector.length_toList] at hi
+    simpa using hrs ⟨i, hi⟩ (hb _ (by simp))
   unfold publicInputCommitMasked maskLeaves
   cases shared <;> simp only [Bool.false_eq_true, if_false, if_true] <;> mvcgen [hml, hF, hS] <;>
-    rename_i rs _ _ _ hrs <;> exact hall rs hrs
+    rename_i _ rs _ _ _ hrs <;> exact hall rs fun i => by simpa using hrs i
 
 /-- Under the branch bits reading as the indicator of `b`, the masked point reads as the
 `b`-th. -/
-theorem maskPoint_spec (bits : List (BoolVar C.BaseField))
-    (ps : List (AffinePoint (FVar C.BaseField))) (b : ℕ)
-    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
-      = (List.range ps.length).map fun l => if l = b then (1 : C.BaseField) else 0)
-    (hb : b < ps.length) :
+theorem maskPoint_spec {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
+    (ps : Vector (AffinePoint (FVar C.BaseField)) n) (b : Fin n)
+    (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b))) :
     ⦃⌜True⌝⦄ maskPoint (S := Builder V S) bits ps
     ⦃⇓ r _ => ⌜r.x.val V = ps[b].x.val V ∧ r.y.val V = ps[b].y.val V⌝⦄ := by
   simp only [maskPoint]
-  have hx := Pseudo.choose_spec (c := S) (V := V) bits ps (·.x)
-  have hy := Pseudo.choose_spec (c := S) (V := V) bits ps (·.y)
+  have hx := Pseudo.choose_spec (c := S) (V := V) bits.toList ps.toList (·.x)
+  have hy := Pseudo.choose_spec (c := S) (V := V) bits.toList ps.toList (·.y)
   mvcgen [hx, hy]
   rename_i _ _ hrx _ _ hry
-  rw [hrx, hry, sum_zip_bits bits ps (fun p => p.x.val V),
-    sum_zip_bits bits ps (fun p => p.y.val V),
-    sum_indicator (fun p : AffinePoint (FVar C.BaseField) => p.x.val V) ps _ b hbits hb,
-    sum_indicator (fun p : AffinePoint (FVar C.BaseField) => p.y.val V) ps _ b hbits hb]
-  exact ⟨rfl, rfl⟩
+  rw [hrx, hry, sum_oneHot (fun p : AffinePoint (FVar C.BaseField) => p.x.val V) bits ps.toList
+      (by simp) b hbits,
+    sum_oneHot (fun p : AffinePoint (FVar C.BaseField) => p.y.val V) bits ps.toList
+      (by simp) b hbits]
+  simp
 
 /-- Chunk by chunk, the masked cells read as the `b`-th branch's. -/
-private theorem maskCells_spec (bits : List (BoolVar C.BaseField))
-    (vs : List (Vector (AffinePoint (FVar C.BaseField)) nc)) (b : ℕ)
-    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
-      = (List.range vs.length).map fun l => if l = b then (1 : C.BaseField) else 0)
-    (hb : b < vs.length) :
+private theorem maskCells_spec {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
+    (vs : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) n) (b : Fin n)
+    (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b))) :
     ⦃⌜True⌝⦄ maskCells (S := Builder V S) bits vs ⦃⇓ r _ => ⌜SameCells V r vs[b]⌝⦄ := by
   unfold maskCells
   have hm := builder_spec_vector_mapM_get (maskPoint (S := Builder V S) bits ∘ fun ci : Fin nc =>
@@ -2591,25 +2561,22 @@ private theorem maskCells_spec (bits : List (BoolVar C.BaseField))
     (fun (ci : Fin nc) (r : AffinePoint (FVar C.BaseField)) =>
       r.x.val V = vs[b][ci].x.val V ∧ r.y.val V = vs[b][ci].y.val V)
     (fun ci => builder_spec_imp _ _ _
-      (maskPoint_spec (V := V) (S := S) bits (vs.map (·[ci])) b (by simpa using hbits)
-        (by simpa using hb)) fun r h => by simpa using h) (Vector.ofFn id)
+      (maskPoint_spec (V := V) (S := S) bits (vs.map (·[ci])) b hbits) fun r h => by
+        simpa using h) (Vector.ofFn id)
   refine builder_spec_imp _ _ _ hm fun r hr ci => ?_
   simpa using hr ci
 
 /-- Under the branch bits reading as the indicator of `b`, the masked leaf reads as branch
 `b`'s constant leaf; with `shared`, `P0` is branch `b`'s points. -/
-private theorem maskLeaf_spec (shared : Bool) (bits : List (BoolVar C.BaseField))
-    (k : PackedScalar C.BaseField) (Pss : List (Vector C.Point nc)) (P0 : Vector C.Point nc)
-    (b : ℕ)
-    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
-      = (List.range Pss.length).map fun l => if l = b then (1 : C.BaseField) else 0)
-    (hb : b < Pss.length) (hshared : shared = true → P0 = Pss[b]) :
+private theorem maskLeaf_spec (shared : Bool) {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
+    (k : PackedScalar C.BaseField) (Pss : Vector (Vector C.Point nc) n) (P0 : Vector C.Point nc)
+    (b : Fin n) (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b)))
+    (hshared : shared = true → P0 = Pss[b]) :
     ⦃⌜True⌝⦄ maskLeaf (S := Builder V S) shared bits k Pss P0
     ⦃⇓ r _ => ⌜Leaf.SameReads V (constLeaf k Pss[b]) r⌝⦄ := by
-  have hB := maskCells_spec (V := V) (S := S) bits (Pss.map (·.map constPt)) b
-    (by simpa using hbits) (by simpa using hb)
+  have hB := maskCells_spec (V := V) (S := S) bits (Pss.map (·.map constPt)) b hbits
   have hC := fun L => maskCells_spec (V := V) (S := S) bits
-    (Pss.map (·.map fun P => constPt (negShift C L P))) b (by simpa using hbits) (by simpa using hb)
+    (Pss.map (·.map fun P => constPt (negShift C L P))) b hbits
   cases k with
   | bit x =>
       simp only [maskLeaf]
@@ -2652,34 +2619,26 @@ private theorem maskLeaf_spec (shared : Bool) (bits : List (BoolVar C.BaseField)
 
 /-- Under the branch bits reading as the indicator of `b`, the masked leaves read as branch
 `b`'s constant leaves; with `shared`, the first table is branch `b`'s. -/
-private theorem maskLeaves_spec (shared : Bool) (bits : List (BoolVar C.BaseField))
-    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) (b : ℕ)
-    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
-      = (List.range tables.length).map fun l => if l = b then (1 : C.BaseField) else 0)
-    (hb : b < tables.length) (hlen : ks.length ≤ tables[b].length)
-    (hshared : shared = true → tables.headD [] = tables[b]) :
+private theorem maskLeaves_spec (shared : Bool) {n m : ℕ} [NeZero n]
+    (bits : Vector (BoolVar C.BaseField) n) (ks : Vector (PackedScalar C.BaseField) m)
+    (tables : Vector (Vector (Vector C.Point nc) m) n) (b : Fin n)
+    (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b)))
+    (hshared : shared = true → tables[(0 : Fin n)] = tables[b]) :
     ⦃⌜True⌝⦄ maskLeaves (S := Builder V S) shared bits ks tables
-    ⦃⇓ ls _ => ⌜List.Forall₂ (Leaf.SameReads V) (List.zipWith constLeaf ks tables[b]) ls⌝⦄ := by
+    ⦃⇓ ls _ => ⌜List.Forall₂ (Leaf.SameReads V)
+      (List.zipWith constLeaf ks.toList tables[b].toList) ls⌝⦄ := by
   unfold maskLeaves
-  have hm := builder_spec_mapM (fun ki : PackedScalar C.BaseField × ℕ =>
-      maskLeaf (S := Builder V S) shared bits ki.1
-        (tables.map (·.getD ki.2 (Vector.replicate nc 0)))
-        ((tables.headD []).getD ki.2 (Vector.replicate nc 0)))
-    (fun r ki => Leaf.SameReads V
-      (constLeaf ki.1 (tables[b].getD ki.2 (Vector.replicate nc 0))) r) id
-    (fun ki => builder_spec_imp _ _ _
-      (maskLeaf_spec (V := V) (S := S) shared bits ki.1 _ _ b (by simpa using hbits)
-        (by simpa using hb) fun h => by rw [hshared h]; simp)
-      fun r h => by simpa using h) ks.zipIdx
-  refine builder_spec_imp _ _ _ hm fun rs hrs => ?_
-  rw [List.map_id] at hrs
-  have hl : rs.length = ks.length := by simpa using hrs.length_eq
-  refine List.forall₂_iff_get.mpr ⟨by simp [hl]; omega, fun i h₁ h₂ => ?_⟩
-  have hi : i < ks.length := by simp at h₁; exact h₁.1
-  have h := (List.forall₂_iff_get.mp hrs).2 i h₂ (by simpa using hi)
-  simp only [List.get_eq_getElem, List.getElem_zipIdx, List.getElem_zipWith] at h ⊢
-  rw [List.getD_eq_getElem _ _ (by omega)] at h
-  simpa using h
+  have hm := builder_spec_vector_mapM_get (V := V) (c := S) (fun i : Fin m =>
+      maskLeaf (S := Builder V S) shared bits ks[i] (tables.map (·[i])) tables[(0 : Fin n)][i])
+    (fun i r => Leaf.SameReads V (constLeaf ks[i] tables[b][i]) r)
+    (fun i => builder_spec_imp _ _ _
+      (maskLeaf_spec (V := V) (S := S) shared bits ks[i] _ _ b hbits fun h => by
+        rw [hshared h]; simp)
+      fun r h => by simpa using h) (Vector.finRange m)
+  mvcgen [hm]
+  rename_i rs _ hrs
+  rw [← Vector.toList_zipWith]
+  exact forall₂_toList_iff.mpr fun i => by simpa using hrs i
 
 /-- A boolean leaf's booleanity carries back across `SameReads`. -/
 private theorem Leaf.SameReads.bitBoolean_of {V : Valuation C.BaseField} :
@@ -2694,31 +2653,25 @@ private theorem Leaf.SameReads.bitBoolean_of {V : Valuation C.BaseField} :
       · exact Leaf.SameReads.bitBoolean_of hs (fun y hy => h y (List.mem_cons_of_mem _ hy)) x hx
 
 /-- **The masked commitment reads as the chosen key's `publicCommitment`.** Under the branch
-bits reading as the indicator of `b`, with branch `b`'s table the key's first `ks.length`
-Lagrange points (and, with `shared`, the first table branch `b`'s), the commitment over the
-masked bases reads as the wire's `publicCommitment` of the packed scalars at the points. -/
+bits reading as the indicator of `b`, with branch `b`'s table the key's Lagrange points (and,
+with `shared`, the first table branch `b`'s), the commitment over the masked bases reads as the
+wire's `publicCommitment` of the packed scalars at the points. -/
 theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
-    (lagrange : Array (Vector C.Point nc)) (shared : Bool) (bits : List (BoolVar C.BaseField))
-    (ks : List (PackedScalar C.BaseField)) (tables : List (List (Vector C.Point nc))) (b : ℕ)
-    (hbits : bits.map (fun x : BoolVar C.BaseField => (↑x : CVar C.BaseField).val V)
-      = (List.range tables.length).map fun l => if l = b then (1 : C.BaseField) else 0)
-    (hb : b < tables.length) (htab : tables[b] = lagrange.toList.take ks.length)
-    (hshared : shared = true → tables.headD [] = tables[b])
-    (hlen : ks.length ≤ lagrange.size)
+    {n m : ℕ} [NeZero n] (lagrange : Vector (Vector C.Point nc) m) (shared : Bool)
+    (bits : Vector (BoolVar C.BaseField) n) (ks : Vector (PackedScalar C.BaseField) m)
+    (tables : Vector (Vector (Vector C.Point nc) m) n) (b : Fin n)
+    (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b)))
+    (htab : tables[b] = lagrange) (hshared : shared = true → tables[(0 : Fin n)] = tables[b])
     (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ lagrange.toList, Ps[ci] ≠ 0)
-    (hscalar : leafHasScalar (List.zipWith constLeaf ks lagrange.toList)) :
+    (hscalar : leafHasScalar (List.zipWith constLeaf ks.toList lagrange.toList)) :
     ⦃⌜True⌝⦄
     publicInputCommitMasked (S := Builder V (KimchiConstraint C.BaseField)) shared (constPt σ.h)
       bits ks tables
-    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci] (SWPoint.equivPoint C.E (publicCommitment C σ lagrange
-      (pubOf C V (List.zipWith constLeaf ks lagrange.toList)))[ci])⌝⦄ := by
+    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci] (SWPoint.equivPoint C.E (publicCommitment C σ
+      lagrange.toArray (pubOf C V (List.zipWith constLeaf ks.toList lagrange.toList)))[ci])⌝⦄ := by
   have hm := maskLeaves_spec (V := V) (S := KimchiConstraint C.BaseField) shared bits ks tables b
-    hbits hb (by rw [htab]; simpa using hlen) hshared
-  -- the leaves past the table's end are never paired
-  have hz : List.zipWith constLeaf ks (lagrange.toList.take ks.length)
-      = List.zipWith constLeaf ks lagrange.toList := by
-    apply List.ext_getElem <;> simp
-  rw [htab, hz] at hm
+    hbits hshared
+  rw [htab] at hm
   unfold publicInputCommitMasked
   mvcgen [hm]
   all_goals
@@ -2728,9 +2681,9 @@ theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ :
       (xhatBinding_const (V := V) s ci σ lagrange ks hh hL
         (Leaf.SameReads.bitBoolean_of hrs hb')).ofSameReads hrs
     rw [← Leaf.SameReads.pubOf hrs]
-  · exact xHat_reads_publicCommitment s ci σ lagrange (constPt σ.h) rs _ _ hbind
+  · exact xHat_reads_publicCommitment s ci σ lagrange.toArray (constPt σ.h) rs _ _ hbind
       (Leaf.SameReads.hasScalar hrs hscalar) st trivial
-  · exact xHatSealed_reads_publicCommitment s ci σ lagrange (constPt σ.h) rs _ _ hbind
+  · exact xHatSealed_reads_publicCommitment s ci σ lagrange.toArray (constPt σ.h) rs _ _ hbind
       (Leaf.SameReads.hasScalar hrs hscalar) st trivial
 
 end Masked

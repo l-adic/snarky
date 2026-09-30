@@ -131,15 +131,15 @@ structure ScalarHalf (C : KimchiCurve) (sf : Type) (k nc w : ℕ) where
 /-- The mask as the valuation reads it: a cell counts as set when it holds `1`. -/
 def ScalarHalf.maskVals {C : KimchiCurve} {sf : Type} {k nc w : ℕ}
     (Sc : ScalarHalf C sf k nc w) :
-    List Bool :=
-  Sc.mask.toList.map fun (b : BoolVar C.ScalarField) =>
+    Vector Bool w :=
+  Sc.mask.map fun (b : BoolVar C.ScalarField) =>
     decide ((↑b : CVar C.ScalarField).val Sc.V = 1)
 
 /-- The previous challenges as the valuation reads them. -/
 def ScalarHalf.prevVals {C : KimchiCurve} {sf : Type} {k nc w : ℕ}
     (Sc : ScalarHalf C sf k nc w) :
-    List (List C.ScalarField) :=
-  Sc.prevChallenges.toList.map fun cs => cs.toList.map fun x => x.val Sc.V
+    Vector (Vector C.ScalarField k) w :=
+  Sc.prevChallenges.map fun cs => cs.map fun x => x.val Sc.V
 
 /-- The scalar half's parameters at `nc` chunks and an SRS of `2 ^ k` points: the curve's sponge,
 endomorphism coefficient and shifts, the chunk count's zero-knowledge rows, and the side's
@@ -174,7 +174,7 @@ prechallenge at the half's own cells makes `xiCorrect` read `1`. It needs the lo
 whose split stays below the modulus, and `xiCorrect` would read `0` at an honest claim. -/
 private def ScalarHalf.XiExact {nc : ℕ} (σ : SRS C.Point) (cp : KimchiProof C nc σ.k)
     (Sc : ScalarHalf C sf' σ.k nc w)
-    (out : FopOutput C.ScalarField) : Prop :=
+    (out : FopOutput C.ScalarField σ.k) : Prop :=
   let pre := frPrechallenges C.frSponge.params
     (frTranscript (Sc.claims.spongeDigestBeforeEvaluations.val Sc.V)
       (recDigest C (cp.olds.map (·.u))) (Sc.evals.ftEval1.val Sc.V)
@@ -216,8 +216,7 @@ structure DvReads {K σ : Type} [Field K] [DecidableEq K] {k : ℕ} (V : Valuati
   /-- `ξ`. -/
   xi : Reads128 V c.xi dv.xi.val
   /-- The round challenges. -/
-  chals : List.Forall₂ (Reads128 V) c.bulletproofChallenges.toList
-    (dv.bulletproofChallenges.toList.map (·.val))
+  chals : ∀ i : Fin k, Reads128 V c.bulletproofChallenges[i] dv.bulletproofChallenges[i].val
   /-- `b`. -/
   b : decode c.b = dv.b
 
@@ -238,9 +237,9 @@ structure FopTies {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : Kimc
     (pub : Array C.ScalarField)
     (Sc : ScalarHalf C sf' σ.k nc w) : Prop where
   /-- The kept previous challenges are the old accumulators' challenges, in order. -/
-  olds : (List.zipWith (fun m cv => if m then [cv] else []) Sc.maskVals
-      Sc.prevVals).flatten
-    = (cp.olds.map (·.u.toList)).toList
+  olds : (Vector.zipWith (fun m cv => if m then [cv] else []) Sc.maskVals
+      Sc.prevVals).toList.flatten
+    = (cp.olds.map (·.u)).toList
   /-- `ft(ζω)` is the proof's. -/
   ftEval1 : Sc.evals.ftEval1.val Sc.V = cp.ftEval1
   /-- The evaluation cells are the proof's evaluations, chunk by chunk. -/
@@ -253,7 +252,7 @@ comparison exact (`XiExact`). -/
 private theorem ScalarHalf.xiExact_of_constrained {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C nc σ.k) {G : GroupHalf C sf σ.k}
-    {Sc : ScalarHalf C sf' σ.k nc w} {out : FopOutput C.ScalarField}
+    {Sc : ScalarHalf C sf' σ.k nc w} {out : FopOutput C.ScalarField σ.k}
     (hs : FopVerifyReads (p := C.scalar) (FopParams.of C nc σ.k Sc.side.toks)
       true cvk.n cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
@@ -380,15 +379,6 @@ theorem carryWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C
 
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
-/-- The challenge polynomial over a vector's list is the one over the vector. -/
-private theorem bPoly_toList {F : Type} [Field F] {k : ℕ} (u : Vector F k) (x : F) :
-    bPoly (fun i : Fin u.toList.length => u.toList.get i) x = bPoly u.get x := by
-  unfold bPoly
-  refine Fintype.prod_equiv (finCongr Vector.length_toList) _ _ fun i => ?_
-  simp only [finCongr_apply, Fin.val_cast, List.get_eq_getElem, Vector.getElem_toList,
-    Vector.length_toList]
-  rfl
-
 /-- The proof's combined evaluations are the linearization view of its evaluations recombined
 at the same points. -/
 private theorem linEvals_combine {C : KimchiCurve} {nc k : ℕ} (cp : KimchiProof C nc k)
@@ -444,9 +434,10 @@ tail rows — projected to `(ζ, ζω)` pairs are the run's segment stream so pr
 evaluations, public chunks, `ft(ζω)` and points are tied to the run's by equations, so a
 caller supplies them in whatever form its hypotheses hold. -/
 private theorem rows_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField) (ms : List Bool) (cvs : List (List C.ScalarField))
-    (holds : (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten
-      = (cp.olds.map (·.u.toList)).toList)
+    (pub : Array C.ScalarField) {np : ℕ} (ms : Vector Bool np)
+    (cvs : Vector (Vector C.ScalarField σ.k) np)
+    (holds : (Vector.zipWith (fun m cv => if m then [cv] else []) ms cvs).toList.flatten
+      = (cp.olds.map (·.u)).toList)
     (ev : ProofEvaluations (Vector C.ScalarField nc))
     (pv : PointEvaluations (Vector C.ScalarField nc)) (ft1 zM zOM : C.ScalarField)
     (hev : ev = cp.evals) (hpv : pv = runPubEvals C σ cvk cp pub) (hft : ft1 = cp.ftEval1)
@@ -455,8 +446,8 @@ private theorem rows_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp 
     (zk : ℕ) (endo : C.ScalarField) (sh : Fin permCols → C.ScalarField)
     (hzk : zk = cvk.zkRows) (hendo : endo = cvk.endo) (hsh : sh = fun i => cvk.shifts[i]) :
     let o := runOracles C σ cvk cp pub
-    (sgRows ms (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) o.zeta)
-        (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) (o.zeta * cvk.omega))
+    (sgRows ms (cvs.map fun cv => bPoly cv.get o.zeta)
+        (cvs.map fun cv => bPoly cv.get (o.zeta * cvk.omega))
       ++ chunkRows pv
       ++ ⟨ftEval0 cvk.n zk cvk.omega sh endo
               (mdsOfParams C.frSponge.params) o.alpha o.beta o.gamma o.zeta
@@ -476,7 +467,7 @@ private theorem rows_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp 
   congr 1
   · -- the kept accumulators' rows
     simp only [Function.comp_def, PointEvaluations.toVector, runZetaOmega]
-    simp only [List.map_map, Function.comp_def, bPoly_toList, Vector.toList_mk, Array.toList_map]
+    simp only [List.map_map, Function.comp_def, Vector.toList_mk, Array.toList_map]
   congr 1
   · -- the public chunks
     apply List.ext_getElem (by simp [chunkRows])
@@ -500,16 +491,6 @@ private theorem rows_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp 
     rfl
 
 /-! ### Reading the cells through the ties -/
-
-/-- `combinedB` over a vector's list is `combinedB` over the vector. -/
-private theorem combinedB_toList {F : Type} [Field F] {k m : ℕ} (v : Vector F k) (r : F)
-    (x : Fin m → F) :
-    combinedB (fun i : Fin v.toList.length => v.toList.get i) r x
-      = combinedB (fun i => v[i]) r x := by
-  unfold combinedB
-  refine Finset.sum_congr rfl fun j _ => ?_
-  rw [bPoly_toList]
-  rfl
 
 /-- The run's evaluation points, as the scalar half lists them. -/
 private theorem pointFn_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -537,7 +518,7 @@ theorem twoHalves_schnorr
     (hg : G.Reads σ K.cvk cp pub success)
     -- the scalar half
     (Sc : ScalarHalf C sf' σ.k nc w)
-    (out : FopOutput C.ScalarField)
+    (out : FopOutput C.ScalarField σ.k)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.of C nc σ.k Sc.side.toks)
       true K.cvk.n K.cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
@@ -675,23 +656,22 @@ theorem twoHalves_schnorr
   -- the opening clause, at the three `ft` scalars
   obtain ⟨U, ns, c₀, chals, rfl, hns, rfl, rfl, hchals, hiff⟩ :=
     hξG hpermG hzetaM hzetaN ξ₀ hξGx
-  have hch : chals = (ipaRunAt C (fqRun C K.cvk cp (runPublicComm C σ K.cvk pub)).warm
-      (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
-        fun m => endoExpand C.lam m.val :=
-    Vector.toList_inj.mp (by rw [hchals, Vector.toList_map])
-  subst hch
+  subst hchals
   rw [hsucc] at hiff
-  -- the round challenges: the cell lists' readings are equations of lists
-  -- `verify` compares the claimed challenges with the returned ones entry by entry off the
-  -- base case; both lists have the SRS's round count, so the ties give the lists
-  have hbpc' : G.claims.deferredValues.bulletproofChallenges.toList.map (·.val.val G.V)
-      = o.bulletproofChallenges.map (·.val.val G.V) :=
-    map_eq_map_of_zip (by simp [hns.length_eq]) (hbpc rfl)
-  rw [forall₂_reads128_iff] at hmsG hmsS hns hĉ
+  -- the round challenges: `verify` compares the claimed challenges with the returned ones
+  -- entry by entry off the base case
   have hĉeq : ĉ = (ipaRunAt C (fqRun C K.cvk cp (runPublicComm C σ K.cvk pub)).warm
-      (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.toList :=
-    (List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
-      (List.map_injective_iff.mpr hinjG.prechallenge_injective (hmsG.symm.trans (hbpc'.trans hns)))
+      (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1 := by
+    ext i hi
+    have hbi := hbpc rfl ⟨i, hi⟩
+    have hn := hns ⟨i, hi⟩
+    have hg := hmsG ⟨i, hi⟩
+    have hs := hmsS ⟨i, hi⟩
+    have hc := hĉ ⟨i, hi⟩
+    simp only [Fin.getElem_fin] at hbi hn hg hs hc
+    unfold Reads128 at hn
+    rw [← hbi] at hn
+    rw [Reads128.unique hinjS hc hs, Reads128.unique hinjG hg hn]
   -- the four checks, in wire terms
   rw [hζ, hα, hβ, hγ] at hcipC
   rw [hζ] at hbC
@@ -710,7 +690,8 @@ theorem twoHalves_schnorr
               (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
                 (fun m => endoExpand C.lam m.val))[i]) run.evalscale run.pointFn := by
     simp only [hbC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
-    rw [hr, hĉeq, ← Vector.toList_map, combinedB_toList, pointFn_eq]
+    rw [hr, hĉeq, pointFn_eq]
+    rfl
   -- assemble, the wire's transcript projected (no unfolding of the sponge runs)
   have hproof : (runInput C σ K.cvk cp pub).proof = cp.opening := rfl
   have hwarm : (runOracles C σ K.cvk cp pub).warm
@@ -761,7 +742,7 @@ theorem twoHalves_kimchiVerify
     (hg : G.Reads σ K.cvk cp pub success)
     -- the scalar half
     (Sc : ScalarHalf C sf' σ.k nc w)
-    (out : FopOutput C.ScalarField)
+    (out : FopOutput C.ScalarField σ.k)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.of C nc σ.k Sc.side.toks)
       true K.cvk.n K.cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
@@ -817,40 +798,6 @@ theorem reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
   have h := congrArg ZMod.val (hc.symm.trans hm)
   rw [val_redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_SCALAR_CARD]))] at h
   rw [← ZMod.natCast_zmod_val (x.val.val Vs), h]
-
-/-- Round challenges reading as prechallenges on the step side read as them on the wrap side. -/
-theorem forall₂_reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
-    {sl : List (SizedF 128 (FVar Fp))} {ms : List Prechallenge}
-    (hr : List.Forall₂ (Reads128 Vs) sl ms) :
-    ∀ gl : List (SizedF 128 (FVar Fq)),
-      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
-      List.Forall₂ (Reads128 Vg) gl ms := by
-  induction hr with
-  | nil => intro gl h; cases gl with
-    | nil => exact .nil
-    | cons _ _ => simp at h
-  | cons hx _ ih => intro gl h; cases gl with
-    | nil => simp at h
-    | cons g gl =>
-      simp only [List.map_cons, List.cons.injEq] at h
-      exact .cons (reads128_redFq h.1 hx) (ih gl h.2)
-
-/-- Round challenges reading as prechallenges on the wrap side read as them on the step side. -/
-theorem forall₂_reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
-    {gl : List (SizedF 128 (FVar Fq))} {ms : List Prechallenge}
-    (hr : List.Forall₂ (Reads128 Vg) gl ms) :
-    ∀ sl : List (SizedF 128 (FVar Fp)),
-      gl.map (·.val.val Vg) = sl.map (fun c => redFq (c.val.val Vs)) →
-      List.Forall₂ (Reads128 Vs) sl ms := by
-  induction hr with
-  | nil => intro sl h; cases sl with
-    | nil => exact .nil
-    | cons _ _ => simp at h
-  | cons hx _ ih => intro sl h; cases sl with
-    | nil => simp at h
-    | cons s sl =>
-      simp only [List.map_cons, List.cons.injEq] at h
-      exact .cons (reads128_of_redFq h.1 hx) (ih sl h.2)
 
 end Across
 
@@ -931,9 +878,8 @@ theorem ScalarHalf.wrap_maskVals {k nc : ℕ} (V : Valuation Fq)
     (evals : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
     (ScalarHalf.wrap V claims evals prevChallenges).maskVals
-      = List.replicate MaxProofsVerified true := by
-  simp only [ScalarHalf.wrap, ScalarHalf.maskVals, Vector.toList_replicate, List.map_replicate,
-    true_val, decide_true]
+      = Vector.replicate MaxProofsVerified true := by
+  simp only [ScalarHalf.wrap, ScalarHalf.maskVals, Vector.map_replicate, true_val, decide_true]
 
 /-- At the wrap half the `olds` tie keeps every slot: the previous-challenge cells read as the
 old accumulators' challenges, in order. -/
@@ -941,12 +887,12 @@ theorem ScalarHalf.wrap_olds {k nc : ℕ} (V : Valuation Fq)
     (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
     (evals : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified)
-    (olds : List (List Fq)) :
-    ((List.zipWith (fun m cv => if m then [cv] else [])
+    (olds : List (Vector Fq k)) :
+    ((Vector.zipWith (fun m cv => if m then [cv] else [])
         (ScalarHalf.wrap V claims evals prevChallenges).maskVals
-        (ScalarHalf.wrap V claims evals prevChallenges).prevVals).flatten = olds)
-      ↔ (ScalarHalf.wrap V claims evals prevChallenges).prevVals = olds := by
-  have hkeep : ∀ (n : ℕ) (l : List (List Fq)), l.length = n →
+        (ScalarHalf.wrap V claims evals prevChallenges).prevVals).toList.flatten = olds)
+      ↔ (ScalarHalf.wrap V claims evals prevChallenges).prevVals.toList = olds := by
+  have hkeep : ∀ (n : ℕ) (l : List (Vector Fq k)), l.length = n →
       (List.zipWith (fun m cv => if m then [cv] else []) (List.replicate n true) l).flatten
         = l := by
     intro n l hn
@@ -956,7 +902,8 @@ theorem ScalarHalf.wrap_olds {k nc : ℕ} (V : Valuation Fq)
     | cons x xs ih =>
       rw [List.length_cons, List.replicate_succ, List.zipWith_cons_cons, List.flatten_cons,
         if_pos rfl, List.singleton_append, ih]
-  rw [ScalarHalf.wrap_maskVals, hkeep _ _ (by simp [ScalarHalf.prevVals])]
+  rw [ScalarHalf.wrap_maskVals, Vector.toList_zipWith, Vector.toList_replicate,
+    hkeep _ _ (by simp)]
 
 end WrapProof
 

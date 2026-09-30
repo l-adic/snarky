@@ -61,38 +61,31 @@ private def bPolyCircuit [ConstraintHolds F c] (chals : List (FVar F)) (pt : FVa
   let squares ← squaresGo pt (chals.length - 1)
   bPolyGo (.const 1) (chals.zip (pt :: squares).reverse)
 
-/-- For challenge vectors `(c_{j,0}, …, c_{j,k−1})`, `j < n`, the list whose `j`-th entry is
-`∏_{i<k} (1 + c_{j,i} · pt^{2^{k−1−i}})`. -/
-def challengePolyEvals [ConstraintHolds F c] (pt : FVar F) :
-    List (List (FVar F)) → CircuitM F c (List (FVar F))
-  | [] => pure []
-  | chals :: rest => do
-    -- last vector first
-    let later ← challengePolyEvals pt rest
-    let b ← bPolyCircuit chals pt
-    pure (b :: later)
+/-- For challenge vectors `(c_{j,0}, …, c_{j,k−1})`, `j < n`, the vector whose `j`-th entry is
+`∏_{i<k} (1 + c_{j,i} · pt^{2^{k−1−i}})`, the last vector's emitted first. -/
+def challengePolyEvals [ConstraintHolds F c] {n k : ℕ} (pt : FVar F)
+    (prev : Vector (Vector (FVar F) k) n) : CircuitM F c (Vector (FVar F) n) := do
+  let later ← prev.reverse.mapM fun chals => bPolyCircuit chals.toList pt
+  pure later.reverse
 
-/-- The bulletproof challenges expanded through the endomorphism `endo`: `EndoScalar.toField`
-on each, the last challenge first and the results in vector order. -/
+/-- The 128-bit bulletproof challenges expanded through the endomorphism `endo`:
+`EndoScalar.toField` on each, the last challenge first and the results in vector order. -/
 def computeChallenges [ConstraintHolds F c] [ToNat F] [Snarky.Kimchi.KimchiSystem F c]
-    (endo : FVar F) :
-    List (FVar F) → CircuitM F c (List (FVar F))
-  | [] => pure []
-  | ch :: rest => do
-    let later ← computeChallenges endo rest
-    let x ← Snarky.Kimchi.EndoScalar.toField 8 ch endo
-    pure (x :: later)
+    {k : ℕ} (endo : FVar F) (chals : Vector (SizedF 128 (FVar F)) k) :
+    CircuitM F c (Vector (FVar F) k) := do
+  let later ← chals.reverse.mapM fun ch => Snarky.Kimchi.EndoScalar.toField 8 ch.val endo
+  pure later.reverse
 
 /-- `b(c, ζ) + r · b(c, ζω)` for challenges `c`, the `ζω` evaluation first. -/
-private def computeBCircuit [ConstraintHolds F c] (chals : List (FVar F))
+private def computeBCircuit [ConstraintHolds F c] {k : ℕ} (chals : Vector (FVar F) k)
     (zeta zetaOmega evalscale : FVar F) : CircuitM F c (FVar F) := do
-  let bZetaOmega ← bPolyCircuit chals zetaOmega
+  let bZetaOmega ← bPolyCircuit chals.toList zetaOmega
   let scaledB ← mul evalscale bZetaOmega
-  let bZeta ← bPolyCircuit chals zeta
+  let bZeta ← bPolyCircuit chals.toList zeta
   pure (CVar.add_ bZeta scaledB)
 
 /-- The bit `expectedB = b(c, ζ) + r · b(c, ζω)`. -/
-def bCorrectCircuit [ConstraintHolds F c] (chals : List (FVar F))
+def bCorrectCircuit [ConstraintHolds F c] {k : ℕ} (chals : Vector (FVar F) k)
     (zeta zetaOmega evalscale expectedB : FVar F) : CircuitM F c (BoolVar F) := do
   let computedB ← computeBCircuit chals zeta zetaOmega evalscale
   equals expectedB computedB
@@ -184,62 +177,88 @@ private theorem bPolyCircuit_spec (chals : List (FVar F)) (pt : FVar F) (cs : Li
     rw [← hP, List.zip_map, List.map_map]
     rfl
 
+omit [DecidableEq F] in
+/-- The challenge polynomial over a vector's list is the one over the vector. -/
+theorem bPoly_toList {k : ℕ} (u : Vector F k) (x : F) :
+    Bulletproof.bPoly (fun i : Fin u.toList.length => u.toList.get i) x
+      = Bulletproof.bPoly u.get x := by
+  unfold Bulletproof.bPoly
+  refine Fintype.prod_equiv (finCongr Vector.length_toList) _ _ fun i => ?_
+  simp only [finCongr_apply, Fin.val_cast, List.get_eq_getElem, Vector.getElem_toList,
+    Vector.length_toList]
+  rfl
+
 /-- Under any valuation satisfying the emitted constraints, with the `j`-th of the `n`
 challenge vectors reading as `(c_{j,0}, …, c_{j,k−1})` and the point as `p`, the `j`-th output
 reads as `∏_{i<k} (1 + c_{j,i} · p^{2^{k−1−i}})`. -/
-theorem challengePolyEvals_spec (pt : FVar F) :
-    ∀ (prev : List (List (FVar F))) (cvs : List (List F)),
-      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs →
-      ⦃⌜True⌝⦄ challengePolyEvals (c := Builder V c) pt prev
-      ⦃⇓ l _ => ⌜List.Forall₂ (CircuitType.Reads V) l (cvs.map fun cv =>
-        Bulletproof.bPoly (fun i : Fin cv.length => cv.get i) (pt.val V))⌝⦄
-  | [], [], _ => by simp only [challengePolyEvals]; mvcgen; all_goals simp
-  | [], _ :: _, h => nomatch h
-  | _ :: _, [], h => nomatch h
-  | chals :: rest, cv :: cvs, h => by
-    obtain ⟨hcv, hrest⟩ := List.forall₂_cons.mp h
-    simp only [challengePolyEvals]
-    have ih := challengePolyEvals_spec pt rest cvs hrest
-    have hb := bPolyCircuit_spec (c := c) (V := V) chals pt cv hcv
-    mvcgen [ih, hb]
-    exact List.Forall₂.cons (CircuitType.reads_fvar.mpr ‹_›) ‹_›
+theorem challengePolyEvals_spec {n k : ℕ} (pt : FVar F) (prev : Vector (Vector (FVar F) k) n)
+    (cvs : Vector (Vector F k) n) (h : CircuitType.Reads V prev cvs) :
+    ⦃⌜True⌝⦄ challengePolyEvals (c := Builder V c) pt prev
+    ⦃⇓ l _ => ⌜CircuitType.Reads V l (cvs.map fun cv => Bulletproof.bPoly cv.get (pt.val V))⌝⦄ := by
+  have hb := builder_spec_vector_mapM_get (V := V)
+    (fun chals : Vector (FVar F) k => bPolyCircuit (c := Builder V c) chals.toList pt)
+    (fun chals a => ∀ cv : Vector F k, CircuitType.Reads V chals cv →
+      a.val V = Bulletproof.bPoly cv.get (pt.val V))
+    (fun chals => builder_spec_forall _ _ _ fun cv hcv =>
+      builder_spec_imp _ _ _ (bPolyCircuit_spec chals.toList pt cv.toList
+        (CircuitType.reads_vector_iff_forall₂.mp hcv)) fun a ha => by rw [ha, bPoly_toList])
+    prev.reverse
+  simp only [challengePolyEvals]
+  mvcgen [hb]
+  rename_i _ _ hl
+  refine CircuitType.reads_vector.mpr fun i hi => CircuitType.reads_fvar.mpr ?_
+  have hj := hl ⟨n - 1 - i, by omega⟩
+  simp only [Fin.getElem_fin, Vector.getElem_reverse, Vector.getElem_map] at hj ⊢
+  simp only [show n - 1 - (n - 1 - i) = i by omega] at hj
+  exact hj _ (CircuitType.reads_vector.mp h i hi)
 
 /-- Under any valuation satisfying the emitted constraints, with `endo` reading as `λ`, the
 `j`-th challenge reads as a prechallenge `nⱼ` and the `j`-th output as `endoExpand λ nⱼ`,
 Mina's `a·λ + b` from the GLV recoding of `nⱼ`. -/
 theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (endo : FVar F) :
-    ∀ chals : List (FVar F),
-      ⦃⌜True⌝⦄ computeChallenges (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) endo chals
-      ⦃⇓ l _ => ⌜∃ ns : List Prechallenge,
-        List.Forall₂ (fun (ch : FVar F) (n : Prechallenge) => Reads128 V ⟨ch⟩ n) chals ns ∧
-        List.Forall₂ (CircuitType.Reads V) l
-          (ns.map fun n => Poseidon.FqSponge.endoExpand (endo.val V) n.val)⌝⦄
-  | [] => by
-    simp only [computeChallenges]
-    mvcgen
-    exact ⟨[], .nil, .nil⟩
-  | ch :: rest => by
-    simp only [computeChallenges]
-    have ih := computeChallenges_spec h2 h3 endo rest
-    have hx := Snarky.Kimchi.EndoScalar.toField_spec (V := V) h2 h3 ch endo
-    mvcgen [ih, hx]
-    rename_i hrest _ _ hch
-    obtain ⟨ns, hns, hl⟩ := hrest
-    obtain ⟨n, hn, hchv, hrv⟩ := hch
-    exact ⟨⟨n, hn⟩ :: ns, .cons hchv hns, .cons (CircuitType.reads_fvar.mpr hrv) hl⟩
+    (endo : FVar F) {k : ℕ} (chals : Vector (SizedF 128 (FVar F)) k) :
+    ⦃⌜True⌝⦄ computeChallenges (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) endo chals
+    ⦃⇓ l _ => ⌜∃ ns : Vector Prechallenge k, (∀ i : Fin k, Reads128 V chals[i] ns[i]) ∧
+      CircuitType.Reads V l
+        (ns.map fun n => Poseidon.FqSponge.endoExpand (endo.val V) n.val)⌝⦄ := by
+  have hx := builder_spec_vector_mapM_get (V := V)
+    (fun ch : SizedF 128 (FVar F) =>
+      Snarky.Kimchi.EndoScalar.toField (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) 8
+        ch.val endo)
+    (fun ch r => ∃ n : Prechallenge, Reads128 V ch n ∧
+      r.val V = Poseidon.FqSponge.endoExpand (endo.val V) n.val)
+    (fun ch => builder_spec_imp _ _ _
+      (Snarky.Kimchi.EndoScalar.toField_spec (V := V) h2 h3 ch.val endo)
+      fun _ ⟨n, hn, hch, hr⟩ => ⟨⟨n, hn⟩, hch, hr⟩)
+    chals.reverse
+  simp only [computeChallenges]
+  mvcgen [hx]
+  rename_i r _ hl
+  have hat : ∀ i : Fin k, ∃ n : Prechallenge, Reads128 V chals[i] n ∧
+      r.reverse[i].val V = Poseidon.FqSponge.endoExpand (endo.val V) n.val := by
+    intro i
+    have h := hl ⟨k - 1 - i, by omega⟩
+    simp only [Fin.getElem_fin, Vector.getElem_reverse] at h ⊢
+    simp only [show k - 1 - (k - 1 - i) = i.val by omega] at h
+    exact h
+  choose f hf using hat
+  refine ⟨Vector.ofFn f, fun i => by simpa using (hf i).1, ?_⟩
+  refine CircuitType.reads_vector.mpr fun i hi => CircuitType.reads_fvar.mpr ?_
+  simpa using (hf ⟨i, hi⟩).2
 
 /-- Under any valuation satisfying the emitted constraints, with the challenges reading as
 `c = (c₀, …, c_{k−1})` and `ζ`, `ζω`, `r` as themselves, the output reads as
 `b(c, ζ) + r · b(c, ζω)`, which is `Bulletproof.combinedB c r ![ζ, ζω]`. -/
-private theorem computeBCircuit_spec (chals : List (FVar F)) (zeta zetaOmega evalscale : FVar F)
-    (cs : List F) (hc : List.Forall₂ (CircuitType.Reads V) chals cs) :
+private theorem computeBCircuit_spec {k : ℕ} (chals : Vector (FVar F) k)
+    (zeta zetaOmega evalscale : FVar F) (cs : Vector F k) (hc : CircuitType.Reads V chals cs) :
     ⦃⌜True⌝⦄ computeBCircuit (c := Builder V c) chals zeta zetaOmega evalscale
-    ⦃⇓ a _ => ⌜a.val V = Bulletproof.combinedB (fun i : Fin cs.length => cs.get i)
+    ⦃⇓ a _ => ⌜a.val V = Bulletproof.combinedB cs.get
       (evalscale.val V) ![zeta.val V, zetaOmega.val V]⌝⦄ := by
   simp only [computeBCircuit]
-  have hw := bPolyCircuit_spec (c := c) (V := V) chals zetaOmega cs hc
-  have hz := bPolyCircuit_spec (c := c) (V := V) chals zeta cs hc
+  have hc' := CircuitType.reads_vector_iff_forall₂.mp hc
+  have hw := bPolyCircuit_spec (c := c) (V := V) chals.toList zetaOmega cs.toList hc'
+  have hz := bPolyCircuit_spec (c := c) (V := V) chals.toList zeta cs.toList hc'
+  rw [bPoly_toList] at hw hz
   mvcgen [hw, hz]
   simp only [CVar.val_add_, Bulletproof.combinedB, Fin.sum_univ_two, Fin.val_zero, Fin.val_one,
     pow_zero, pow_one, one_mul, Matrix.cons_val_zero, Matrix.cons_val_one, *]
@@ -247,11 +266,12 @@ private theorem computeBCircuit_spec (chals : List (FVar F)) (zeta zetaOmega eva
 /-- Under any valuation satisfying the emitted constraints, with the challenges reading as
 `c`, the claim as `b` and `ζ`, `ζω`, `r` as themselves, the output bit reads `1` where
 `b = b(c, ζ) + r · b(c, ζω)` and `0` elsewhere. -/
-theorem bCorrectCircuit_spec (chals : List (FVar F)) (zeta zetaOmega evalscale expectedB : FVar F)
-    (cs : List F) (hc : List.Forall₂ (CircuitType.Reads V) chals cs) :
+theorem bCorrectCircuit_spec {k : ℕ} (chals : Vector (FVar F) k)
+    (zeta zetaOmega evalscale expectedB : FVar F) (cs : Vector F k)
+    (hc : CircuitType.Reads V chals cs) :
     ⦃⌜True⌝⦄ bCorrectCircuit (c := Builder V c) chals zeta zetaOmega evalscale expectedB
     ⦃⇓ b _ => ⌜(↑b : CVar F).val V = if expectedB.val V
-      = Bulletproof.combinedB (fun i : Fin cs.length => cs.get i) (evalscale.val V)
+      = Bulletproof.combinedB cs.get (evalscale.val V)
           ![zeta.val V, zetaOmega.val V] then 1 else 0⌝⦄ := by
   simp only [bCorrectCircuit]
   have h := computeBCircuit_spec (c := c) (V := V) chals zeta zetaOmega evalscale cs hc

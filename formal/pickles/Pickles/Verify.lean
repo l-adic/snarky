@@ -26,6 +26,8 @@ different proofs in one circuit; that composition is not ported.
 
 ## Main definitions
 
+* `AllocUnfinalized`, `UnfVal`, `StmtVal`: one entry of the step statement's unfinalized
+  proofs, as allocated, and the step statement's values;
 * `WrapStatement.packed`, `packLeaves`: the wrap statement as the public-input leaf list;
 * `UnfinalizedProof.packed`, `StepStatement.packed`: one slot, and the step statement, as
   packed scalars;
@@ -50,19 +52,100 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 open CompElliptic.CurveForms.ShortWeierstrass
 open scoped Kimchi
 
+/-! ## The unfinalized proofs -/
+
+/-- One entry of the step statement's unfinalized proofs, as allocated: the five shifted
+claims, the fq-sponge digest, `β`, `γ`, `α`, `ζ`, `ξ`, the bulletproof challenges, and the
+finalize flag. -/
+structure AllocUnfinalized (k : ℕ) (f bc sf : Type) where
+  /-- The shifted combined inner product. -/
+  cip : sf
+  /-- The shifted `b`. -/
+  b : sf
+  /-- The shifted `ζ^(srs length)`. -/
+  zetaToSrsLength : sf
+  /-- The shifted `ζⁿ`. -/
+  zetaToDomainSize : sf
+  /-- The shifted permutation scalar. -/
+  perm : sf
+  /-- The fq-sponge digest before evaluations. -/
+  spongeDigest : f
+  /-- The 128-bit `β`. -/
+  beta : f
+  /-- The 128-bit `γ`. -/
+  gamma : f
+  /-- The 128-bit `α` prechallenge. -/
+  alpha : f
+  /-- The 128-bit `ζ` prechallenge. -/
+  zeta : f
+  /-- The 128-bit `ξ` prechallenge. -/
+  xi : f
+  /-- The raw bulletproof challenges. -/
+  bulletproofChallenges : Vector f k
+  /-- Whether the finalize check is asserted for this entry. -/
+  shouldFinalize : bc
+
+/-- An unfinalized entry is its cells, in allocation order. -/
+def AllocUnfinalized.equivProd (k : ℕ) (f bc sf : Type) :
+    AllocUnfinalized k f bc sf ≃
+      sf × sf × sf × sf × sf × f × f × f × f × f × f × Vector f k × bc :=
+  ⟨fun u => (u.cip, u.b, u.zetaToSrsLength, u.zetaToDomainSize, u.perm, u.spongeDigest,
+      u.beta, u.gamma, u.alpha, u.zeta, u.xi, u.bulletproofChallenges, u.shouldFinalize),
+    fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1,
+      p.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.2.1,
+      p.2.2.2.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.2.2.2⟩,
+    fun _ => rfl, fun _ => rfl⟩
+
+instance instAllocUnfinalizedCircuitType {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] :
+    CircuitType F (AllocUnfinalized k f b sv) (AllocUnfinalized k w vb sf) :=
+  CircuitType.ofEquiv (AllocUnfinalized.equivProd k f b sv) (AllocUnfinalized.equivProd k w vb sf)
+
+/-- An unfinalized entry is checked cell by cell: at split shifted claims, each claim's parity
+bit and the finalize flag are boolean. -/
+instance instAllocUnfinalizedCheckedType {F c f w b vb sv sf : Type} {k : ℕ} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f w] [CircuitType F b vb]
+    [CircuitType F sv sf] [CheckedType F c f w] [CheckedType F c b vb] [CheckedType F c sv sf] :
+    CheckedType F c (AllocUnfinalized k f b sv) (AllocUnfinalized k w vb sf) :=
+  CheckedType.ofEquiv (AllocUnfinalized.equivProd k f b sv) (AllocUnfinalized.equivProd k w vb sf)
+
+/-- The entry as the step statement's unfinalized proof. -/
+def AllocUnfinalized.toUnfinalized {k : ℕ} {f bc sf : Type} (u : AllocUnfinalized k f bc sf) :
+    UnfinalizedProof k f bc sf :=
+  ⟨⟨⟨⟨u.alpha⟩, ⟨u.beta⟩, ⟨u.gamma⟩, ⟨u.zeta⟩, u.perm, u.zetaToSrsLength, u.zetaToDomainSize⟩,
+      u.cip, ⟨u.xi⟩, u.bulletproofChallenges.map SizedF.mk, u.b⟩,
+    u.shouldFinalize, u.spongeDigest⟩
+
+/-! ## The step statement -/
+
+/-- The step statement's shifted claims, at the step field. -/
+abbrev StepSf : Type := Type2 (SplitField (FVar Fp) (BoolVar Fp))
+
+/-- One unfinalized entry's cells, at `k` rounds. -/
+abbrev UnfVar (k : ℕ) : Type := AllocUnfinalized k (FVar Fp) (BoolVar Fp) StepSf
+
+/-- One unfinalized entry's values. -/
+abbrev UnfVal (k : ℕ) : Type := AllocUnfinalized k Fp Bool (Type2 (SplitField Fp Bool))
+
+/-- The step statement's cells at the tag's `w` slots, in wire order: the unfinalized entries,
+the step-message digest, the wrap-side messages. -/
+abbrev StmtVar (k w : ℕ) : Type := Vector (UnfVar k) w × FVar Fp × Vector (FVar Fp) w
+
+/-- The step statement's values, in wire order. -/
+abbrev StmtVal (k w : ℕ) : Type := Vector (UnfVal k) w × Fp × Vector Fp w
+
 /-! ## Packing the wrap statement -/
 
 section Pack
 
-variable {F : Type} [Field F] [DecidableEq F] {nc k : ℕ}
+variable {F : Type} [Field F] [DecidableEq F] {nc k np : ℕ}
 
 /-- The branch data as one 10-bit value `4·domainLog2 + m₀ + 2·m₁`, over the mask bits `m₀`,
-`m₁`. A missing mask bit reads as `0`. -/
+`m₁`. -/
 def BranchData.packed (bd : BranchData (FVar F) (BoolVar F)) : FVar F :=
-  let bit (i : ℕ) : CVar F := match bd.proofsVerifiedMask.toList[i]? with
-    | some b => (↑b : CVar F)
-    | none => .const 0
-  CVar.add_ (CVar.scale_ 4 bd.domainLog2) (CVar.add_ (bit 0) (CVar.scale_ 2 (bit 1)))
+  let bit (i : Fin MaxProofsVerified) : CVar F := ↑bd.proofsVerifiedMask[i]
+  CVar.add_ (CVar.scale_ 4 bd.domainLog2)
+    (CVar.add_ (bit ⟨0, by decide⟩) (CVar.scale_ 2 (bit ⟨1, by decide⟩)))
 
 /-- The wrap statement as packed scalars, in packing order: the five shifted scalars
 `cip, b, ζ^{2^k}, ζⁿ, perm` (full), `β, γ, α, ζ, ξ` (128), the sponge digest and the two
@@ -70,39 +153,35 @@ message digests (full), the round challenges (128), the packed branch data (10).
 scalars are the step proof's `Fp` values in their `Type1` representative, a full field element
 each. -/
 def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
-    List (PackedScalar F) :=
+    Vector (PackedScalar F) (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)) :=
   let dv := st.proofState.deferredValues
   let pl := dv.plonk
-  [.full dv.combinedInnerProduct.val, .full dv.b.val, .full pl.zetaToSrsLength.val,
-   .full pl.zetaToDomainSize.val, .full pl.perm.val,
-   .b128 pl.beta.val, .b128 pl.gamma.val,
-   .b128 pl.alpha.val, .b128 pl.zeta.val, .b128 dv.xi.val,
-   .full st.proofState.spongeDigestBeforeEvaluations,
-   .full st.proofState.messagesForNextWrapProof, .full st.messagesForNextStepProof]
+  ⟨List.toArray ([.full dv.combinedInnerProduct.val, .full dv.b.val, .full pl.zetaToSrsLength.val,
+    .full pl.zetaToDomainSize.val, .full pl.perm.val,
+    .b128 pl.beta.val, .b128 pl.gamma.val,
+    .b128 pl.alpha.val, .b128 pl.zeta.val, .b128 dv.xi.val,
+    .full st.proofState.spongeDigestBeforeEvaluations,
+    .full st.proofState.messagesForNextWrapProof, .full st.messagesForNextStepProof]
   ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
-  ++ [.b10 dv.branchData.packed]
-
-/-- A packed wrap statement has one scalar per cell of `PackedWrapStatement`. -/
-theorem WrapStatement.packed_length
-    (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
-    st.packed.length = CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) := by
-  have h1 : CircuitType.size Fp Fp = 1 := rfl
-  have ht : CircuitType.size Fp (Type1 Fp) = 1 := rfl
-  simp [WrapStatement.packed, h1, ht]
-  omega
+  ++ [.b10 dv.branchData.packed]), by
+    have h1 : CircuitType.size Fp Fp = 1 := rfl
+    have ht : CircuitType.size Fp (Type1 Fp) = 1 := rfl
+    simp [h1, ht]
+    omega⟩
 
 /-- A packed wrap statement has no boolean cell: the branch data is one 10-bit scalar. -/
 theorem WrapStatement.packed_isScalar
     (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
     ∀ k ∈ st.packed, k.IsScalar := by
-  simp only [WrapStatement.packed, PackedScalar.IsScalar, List.cons_append, List.nil_append,
-    List.mem_cons, List.mem_append, List.mem_map, List.not_mem_nil, or_false, forall_eq_or_imp,
-    true_and]
+  simp only [WrapStatement.packed, Vector.mem_mk, List.mem_toArray, PackedScalar.IsScalar,
+    List.cons_append, List.nil_append, List.mem_cons, List.mem_append, List.mem_map,
+    List.not_mem_nil, or_false, forall_eq_or_imp, true_and]
   rintro a (⟨c, -, rfl⟩ | rfl) <;> trivial
 
 /-- The public-input leaves of a wrap statement: `packLeavesOf` its packing. -/
 def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
-    (tab : XhatTable F nc) : List (Leaf F nc) :=
+    (tab : XhatTable F nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp))) :
+    List (Leaf F nc) :=
   packLeavesOf st.packed tab
 
 /-- One slot of the step statement as packed scalars, in packing order: the five split claims
@@ -110,35 +189,45 @@ def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
 and the `k` round challenges 128-bit, `shouldFinalize` boolean. -/
 def UnfinalizedProof.packed
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    List (PackedScalar F) :=
+    Vector (PackedScalar F) (CircuitType.size Fp (UnfVal k)) :=
   let dv := u.deferredValues
   let pl := dv.plonk
   let split (x : Type2 (SplitField (FVar F) (BoolVar F))) : List (PackedScalar F) :=
     [.full x.val.sDiv2, .bit x.val.sOdd]
-  split dv.combinedInnerProduct ++ split dv.b ++ split pl.zetaToSrsLength
+  ⟨List.toArray (split dv.combinedInnerProduct ++ split dv.b ++ split pl.zetaToSrsLength
     ++ split pl.zetaToDomainSize ++ split pl.perm
     ++ [.full u.spongeDigestBeforeEvaluations,
         .b128 pl.beta.val, .b128 pl.gamma.val, .b128 pl.alpha.val, .b128 pl.zeta.val,
         .b128 dv.xi.val]
     ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
-    ++ [.bit u.shouldFinalize]
+    ++ [.bit u.shouldFinalize]), by
+    have h1 : CircuitType.size Fp Fp = 1 := rfl
+    have h2 : CircuitType.size Fp (Type2 (SplitField Fp Bool)) = 2 := rfl
+    have hb : CircuitType.size Fp Bool = 1 := rfl
+    unfold CircuitType.size
+    dsimp only [instAllocUnfinalizedCircuitType, CircuitType.ofEquiv]
+    simp [split, h1, h2, hb]
+    omega⟩
 
 /-- The step statement as packed scalars, in packing order: the slots (`UnfinalizedProof.packed`),
 then the `messagesForNextStepProof` digest and the slots' `messagesForNextWrapProof` digests,
 full. -/
 def StepStatement.packed {n : ℕ}
     (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    List (PackedScalar F) :=
-  st.proofState.unfinalizedProofs.toList.flatMap UnfinalizedProof.packed
+    Vector (PackedScalar F) (CircuitType.size Fp (StmtVal k n)) :=
+  ⟨List.toArray (st.proofState.unfinalizedProofs.toList.flatMap (fun u => u.packed.toList)
     ++ [.full st.proofState.messagesForNextStepProof]
-    ++ st.messagesForNextWrapProof.toList.map .full
+    ++ st.messagesForNextWrapProof.toList.map .full), by
+    have h1 : CircuitType.size Fp Fp = 1 := rfl
+    simp [h1]
+    ring⟩
 
 /-- The group half's input with its claims taken from an unfinalized proof: `xi`,
 `combinedInnerProduct`, `b` and the plonk claims of its deferred values; the key, proof and
 `sgOld` cells as given. -/
-def IvpInput.withClaims {sf : Type} (inp : IvpInput k nc (FVar F) (BoolVar F) sf)
+def IvpInput.withClaims {sf : Type} (inp : IvpInput k nc np (FVar F) (BoolVar F) sf)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) :
-    IvpInput k nc (FVar F) (BoolVar F) sf :=
+    IvpInput k nc np (FVar F) (BoolVar F) sf :=
   let dv := u.deferredValues
   { inp with
     plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
@@ -182,30 +271,19 @@ instance instIvpProofCircuitType {F sv sf : Type} {k nc : ℕ} [CircuitType F sv
 
 /-- The group half's input from a proof's deferred values (its claims), the old accumulator
 points under their keep bits (`sgOld`), a key's commitments and the proof. -/
-def ivpInputOf {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
-    (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
+def ivpInputOf {F sf : Type} {k nc np : ℕ} (dv : DeferredValues k (FVar F) sf)
+    (sgOld : Vector (Option (BoolVar F) × AffinePoint (FVar F)) np)
     (key : VkComms nc (AffinePoint (FVar F))) (pr : IvpProof k nc (FVar F) sf) :
-    IvpInput k nc (FVar F) (BoolVar F) sf :=
+    IvpInput k nc np (FVar F) (BoolVar F) sf :=
   { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
       dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
     xi := dv.xi
     deferred := ⟨dv.combinedInnerProduct, dv.b⟩
     sgOld, key
-    wComm := pr.wComm.toList.map (·.toList)
-    zComm := pr.zComm.toList
-    tComm := pr.tComm.toList
+    wComm := pr.wComm
+    zComm := pr.zComm
+    tComm := pr.tComm
     opening := pr.opening }
-
-/-- The proof's commitment cells, counted: `15 · nc` witness chunks, `nc` accumulator chunks,
-`7 · nc` quotient chunks. -/
-theorem ivpInputOf_lengths {F sf : Type} {k nc : ℕ} (dv : DeferredValues k (FVar F) sf)
-    (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
-    (key : VkComms nc (AffinePoint (FVar F))) (pr : IvpProof k nc (FVar F) sf) :
-    (ivpInputOf dv sgOld key pr).wComm.flatten.length = wCols * nc ∧
-      (ivpInputOf dv sgOld key pr).zComm.length = nc ∧
-      (ivpInputOf dv sgOld key pr).tComm.length = quotChunks * nc := by
-  simp [ivpInputOf, List.length_flatten, List.map_map, Function.comp_def]
-  omega
 
 /-- The proof's point cells: the commitments, then the opening's `(L, R)` pairs, `δ` and `sg`. -/
 def IvpProof.points {F sf : Type} {k nc : ℕ} (pr : IvpProof k nc (FVar F) sf) :
@@ -246,25 +324,24 @@ theorem IvpProof.read_proofReads {C : KimchiCurve} {V : Valuation C.BaseField} {
     (evals : ProofEvaluations (Vector C.ScalarField nc)) (pubEvals : PubEvalSrc C nc)
     (ftEval1 : C.ScalarField) (olds : Array (Accumulator C k))
     (hon : ∀ p ∈ pr.points, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V)) :
-    ProofReads S (pr.wComm.toList.map (·.toList)) pr.zComm.toList pr.tComm.toList pr.opening
+    ProofReads S pr.wComm pr.zComm pr.tComm pr.opening
       (pr.read S evals pubEvals ftEval1 olds) := by
   refine ⟨?_, ?_, ?_, ?_, onCurveAt_readPt (hon _ (by simp [IvpProof.points])),
     onCurveAt_readPt (hon _ (by simp [IvpProof.points])), rfl, rfl⟩
-  · simp only [ColumnsRead, IvpProof.read, Vector.toList_map, List.forall₂_map_left_iff,
-      List.forall₂_map_right_iff]
-    refine List.forall₂_same.mpr fun col hcol => ?_
-    simpa [Vector.toList_map] using commReads_readPt fun p hp =>
+  · intro i
+    simpa [IvpProof.read, Vector.toList_map] using commReads_readPt fun p hp =>
       hon p (by simp only [IvpProof.points, List.mem_append, List.mem_flatMap]
-                exact Or.inl (Or.inl (Or.inl (Or.inl ⟨col, hcol, hp⟩))))
+                exact Or.inl (Or.inl (Or.inl (Or.inl ⟨pr.wComm[i], by simp, hp⟩))))
   · simpa [IvpProof.read, Vector.toList_map] using
       commReads_readPt fun p hp => hon p (by simp [IvpProof.points, hp])
   · simpa [IvpProof.read, Vector.toList_map] using
       commReads_readPt fun p hp => hon p (by simp [IvpProof.points, hp])
-  · simp only [IvpProof.read, Vector.toList_map, List.map_map, List.forall₂_map_right_iff]
-    refine List.forall₂_same.mpr fun q hq => ⟨onCurveAt_readPt (hon _ ?_),
-      onCurveAt_readPt (hon _ ?_)⟩ <;>
+  · intro i
+    have hq : pr.opening.lr[i] ∈ pr.opening.lr.toList := by simp
+    simp only [IvpProof.read, Fin.getElem_fin, Vector.getElem_map]
+    refine ⟨onCurveAt_readPt (hon _ ?_), onCurveAt_readPt (hon _ ?_)⟩ <;>
     simp only [IvpProof.points, List.mem_append, List.mem_flatMap] <;>
-    exact Or.inl (Or.inr ⟨q, hq, by simp⟩)
+    exact Or.inl (Or.inr ⟨_, hq, by simp⟩)
 
 /-- A key's commitments as cells, each point through `cell`. -/
 def keyCellsOf {C : KimchiCurve} {F : Type} {nc : ℕ} (cell : C.Point → AffinePoint (FVar F))
@@ -289,7 +366,7 @@ end Records
 section Gadget
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
-  {ks k nc : ℕ}
+  {ks k nc np : ℕ}
 
 /-- One proof's group-half check: the public-input commitment from the packed statement
 (`publicInputCommitKnown`, chunk by chunk, with the constant correction seed and sum), the
@@ -301,19 +378,20 @@ def verifyProof [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type}
     (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F)
     (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
-    (blindingH : AffinePoint (FVar F)) {nc : ℕ} (tab : XhatTable F nc)
+    (blindingH : AffinePoint (FVar F)) {nc : ℕ}
+    (tab : XhatTable F nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
     (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) : CircuitM F c (BoolVar F) := do
+    (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) : CircuitM F c (BoolVar F) := do
   let leaves := packLeaves statement tab
-  let computeXHat : CircuitM F c (List (AffinePoint (FVar F))) :=
-    (List.finRange nc).mapM fun ci =>
+  let computeXHat : CircuitM F c (Vector (AffinePoint (FVar F)) nc) :=
+    (Vector.finRange nc).mapM fun ci =>
       publicInputCommitKnown ci blindingH tab.corrHead[ci] tab.corrSum[ci] leaves
   let o ← incrementallyVerifyProof ops e p endo gm sqrtF false blindingH spongeAfterIndex
     computeXHat (cells.withClaims u)
   assertEqual u.spongeDigestBeforeEvaluations o.spongeDigest
-  for c12 in u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges do
+  for c12 in (u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges).toList do
     let c2' ← selectField isBaseCase c12.1.val c12.2.val
     assertEqual c12.1.val c2'
   pure o.success
@@ -324,7 +402,7 @@ end Gadget
 
 section Read
 
-variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks nc : ℕ}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks nc np : ℕ}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- The group half's claim cells from a `DeferredValues` record: the plonk claims, `ξ`, and
@@ -340,11 +418,12 @@ as a bit (`incrementallyVerifyProof_success_bit`). -/
 theorem verifyProof_success_bit {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F}
     {sf : Type} (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
-    (blindingH : AffinePoint (FVar F)) {k ks nc : ℕ} (tab : XhatTable F nc)
+    (blindingH : AffinePoint (FVar F)) {k ks nc : ℕ}
+    (tab : XhatTable F nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
     (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (cells : IvpInput k nc (FVar F) (BoolVar F) sf) :
+    (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) :
     ⦃⌜True⌝⦄ verifyProof ops e p endo gm sqrtF blindingH tab spongeAfterIndex isBaseCase
       statement u cells
     ⦃⇓ v _ => ⌜∃ b : Bool, (↑v : CVar F).val V = bit b⌝⦄ := by
@@ -359,19 +438,18 @@ theorem verifyProof_success_bit {F : Type} [Field F] [DecidableEq F] [ToNat F] {
 /-- `verifyProof`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
 input `pub`, whose success bit is the returned bit, whose digest cell reads as the claimed
 `spongeDigestBeforeEvaluations` (so the claim is the wire's digest element), and whose round
-prechallenges read as the claimed ones off the base case, pair by pair over the zip, and the
-returned bit reads as a bit. The gadget compares the two lists as far as both reach; their
-lengths are the statement's and the opening's, not the gadget's. -/
+prechallenges read as the claimed ones off the base case, pair by pair, and the returned bit
+reads as a bit. -/
 def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (base : Bool)
     (v : BoolVar C.BaseField) : Prop :=
-  ∃ o : IvpOutput C.BaseField,
+  ∃ o : IvpOutput C.BaseField σ.k,
     IvpReads S σ cvk cp pub u.deferredValues.toIvpClaims o ∧
     o.success = v ∧
     u.spongeDigestBeforeEvaluations.val V = o.spongeDigest.val V ∧
-    (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges,
-      p.1.val.val V = p.2.val.val V) ∧
+    (base = false → ∀ i : Fin σ.k,
+      u.deferredValues.bulletproofChallenges[i].val.val V = o.bulletproofChallenges[i].val.val V) ∧
     ∃ b : Bool, (↑v : CVar C.BaseField).val V = bit b
 
 /-- Zero cells past the end of the public input change nothing the read speaks about: the input
@@ -405,7 +483,7 @@ theorem verifyProof_reads
     (sqrtF : C.BaseField → Option C.BaseField)
     (blindingH : AffinePoint (FVar C.BaseField))
     -- the public-input commitment tables
-    (tab : XhatTable C.BaseField nc)
+    (tab : XhatTable C.BaseField nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
     -- the cells: the sponge after the index digest, the base-case bit, the wrap statement,
     -- the unfinalized proof it is checked against, the group half's commitment cells
     (spongeAfterIndex : SpongeVar C.BaseField)
@@ -413,11 +491,11 @@ theorem verifyProof_reads
     (statement : WrapStatement ks (FVar C.BaseField) (BoolVar C.BaseField)
       (Type1 (FVar C.BaseField)))
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
-    (cells : IvpInput σ.k nc (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (cells : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
     -- the values the premises speak about: the base-case bit, the old accumulator points under
     -- their bits
     (base : Bool)
-    (oldsW : List (C.Point × Bool))
+    (oldsW : Vector (C.Point × Bool) np)
     -- the base-case bit's reading, the tables bound to the key at the packed statement's
     -- leaves, the group half's premises at the claims-substituted cells
     (hbase : CircuitType.Reads V isBaseCase base)
@@ -431,30 +509,29 @@ theorem verifyProof_reads
       (.ofSpec C.groupMap)
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) u base v⌝⦄ := by
-  obtain ⟨⟨Ts, cps, hxhat⟩, hbases, hcorrs⟩ := htab
+  obtain ⟨Ts, cps, hxhat⟩ := htab
   -- the leaves are headed by a scalar leaf: the first packed scalar is `cip`
   have hhead : leafHeadScalar (packLeaves statement tab) := by
-    obtain ⟨b, bs, hb⟩ := List.exists_cons_of_ne_nil hbases
-    obtain ⟨c', cs, hc⟩ := List.exists_cons_of_ne_nil hcorrs
-    simp [packLeaves, packLeavesOf, WrapStatement.packed, leafHeadScalar, hb, hc]
+    have h1 : CircuitType.size Fp Fp = 1 := rfl
+    have ht : CircuitType.size Fp (Type1 Fp) = 1 := rfl
+    obtain ⟨bc, bcs, hbc⟩ := List.exists_cons_of_ne_nil
+      (l := (tab.bases.zip tab.corrs).toList) (by simp [h1, ht])
+    simp [packLeaves, packLeavesOf, Vector.toList_zipWith, WrapStatement.packed, Vector.toList_mk,
+      hbc, leafHeadScalar]
   -- the public-input commitment, chunk by chunk, reads as the wire's, crossed to `C.E`
   have hXhat : ⦃⌜True⌝⦄
-      (List.finRange nc).mapM (fun ci => publicInputCommitKnown
+      (Vector.finRange nc).mapM (fun ci => publicInputCommitKnown
         (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH tab.corrHead[ci]
         tab.corrSum[ci] (packLeaves statement tab))
-      ⦃⇓ pts _ => ⌜CommReads C V pts
-        (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList⌝⦄ := by
-    have hvec : (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList
-        = (List.finRange nc).map fun ci =>
-            (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab)))[ci] := by
-      apply List.ext_getElem <;> simp
-    unfold CommReads
-    rw [hvec]
-    refine builder_spec_imp _ _ _
-      (builder_spec_mapM _ (fun r P => OnCurveAt X.d.W V r (SWPoint.equivPoint C.E P)) _
+      ⦃⇓ pts _ => ⌜CommReads C V pts.toList
+        (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList⌝⦄ :=
+    builder_spec_imp _ _ _
+      (builder_spec_vector_mapM_get _ (fun ci r => OnCurveAt X.d.W V r
+          (SWPoint.equivPoint C.E
+            (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab)))[ci]))
         (fun ci => xHatKnown_reads_publicCommitment X ci σ _ blindingH tab.corrHead[ci]
           tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _)
-      fun pts hp => hp.imp fun _ _ h => h
+      fun pts hp => forall₂_toList_iff.mpr fun i => by simpa using hp i
   -- the blinding cell's read is the tables' own: every chunk's binding carries it
   have hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h) :=
     (hxhat ⟨0, hivp.nc_pos⟩).1.blinding
@@ -480,7 +557,9 @@ theorem verifyProof_reads
     exact absurd hp List.not_mem_nil
   · -- the exit: the read
     rename_i o _ hivp' _ _ hdig _ _ hall
-    exact ⟨o, hivp'.1, rfl, hdig, hall, hivp'.2⟩
+    refine ⟨o, hivp'.1, rfl, hdig, fun hbf i => ?_, hivp'.2⟩
+    simpa using hall hbf _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem
+      (xs := u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges) i.isLt))
 
 end Read
 
@@ -488,15 +567,16 @@ section StepRead
 
 /-- **`verifyProof` reads as the group half on the step side**: `verifyProof_reads` at `stepSide`
 and `pastaShapePallas`. -/
-theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
+theorem verifyProof_step_reads {nc np : ℕ} {V : Valuation Fp}
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc σ.k)
     (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
-    (tab : XhatTable Fp nc) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+    (tab : XhatTable Fp nc (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
+    (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput σ.k nc (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (base : Bool) (oldsW : List (IpaPallas.curve.Point × Bool))
+    (cells : IvpInput σ.k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (base : Bool) (oldsW : Vector (IpaPallas.curve.Point × Bool) np)
     (hbase : CircuitType.Reads V isBaseCase base)
     (htab : tab.Bound pastaShapePallas V σ
       (cvk.lagrangePoints σ (pubOf IpaPallas.curve V (packLeaves statement tab)).size).toArray

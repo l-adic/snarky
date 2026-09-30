@@ -19,7 +19,7 @@ import Pickles.Field (WrapField)
 import Pickles.IncrementallyVerifyProof (class StepChunkLayout, IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.PublicInputCommit (class PublicInputCommit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, spongeFromConstants)
-import Pickles.Types (WrapIPARounds)
+import Pickles.Types (MessagesForNextWrapProof(..), WrapIPARounds)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
 import Prim.Int (class Add, class Compare)
@@ -81,9 +81,11 @@ wrapVerify ivpParams ivpInput verifyInput = do
     msgHashSponge = spongeFromConstants { state: paddingState.state, spongeState: paddingState.spongeState }
   computedDigest <- label "ivp-hash-msg-for-next-wrap" $ evalSpongeM msgHashSponge $
     hashMessagesForNextWrapProofCircuit'
-      { sg: verifyInput.sg
-      , allChallenges: verifyInput.newBpChallenges
-      }
+      ( MessagesForNextWrapProof
+          { challengePolynomialCommitment: verifyInput.sg
+          , oldBulletproofChallenges: verifyInput.newBpChallenges
+          }
+      )
   label "ivp-assert-msg-wrap-hash" $ assertEqual_ verifyInput.messagesForNextWrapProofDigest computedDigest
 
   label "ivp-assert-sponge-digest" $ assertEqual_ verifyInput.spongeDigestBeforeEvaluations output.spongeDigestBeforeEvaluations

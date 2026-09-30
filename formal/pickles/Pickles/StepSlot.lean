@@ -21,7 +21,6 @@ gadgets read, with every point checked on the curve.
 * `AllocBranchData`: the branch data, the mask bits before the domain's `log2`, which is
   range-checked to 16 bits;
 * `AllocEvals`: the previous step proof's evaluations, column by column, `ft(ζω)` last;
-* `AllocUnfinalized`: one entry of the step statement's unfinalized proofs;
 * `SlotWitness`: one previous proof's witness: the wrap proof, its proof state, the step
   proof's evaluations, and the accumulators it verified.
 -/
@@ -37,19 +36,17 @@ abbrev PallasPt (α : Type) : Type := CheckedPoint (F := Fp) 0 5 α
 
 /-! ## The branch data -/
 
-/-- The branch data as allocated: the two mask bits, then the domain's `log2`. -/
+/-- The branch data as allocated: the mask bits, then the domain's `log2`. -/
 structure AllocBranchData (f bc : Type) where
-  /-- The first mask bit. -/
-  mask0 : bc
-  /-- The second mask bit. -/
-  mask1 : bc
+  /-- The proofs-verified mask, one bit per predecessor slot. -/
+  mask : Vector bc MaxProofsVerified
   /-- `log2` of the verified proof's domain size. -/
   domainLog2 : f
 
-/-- The branch data is its two bits and its `log2`. -/
-def AllocBranchData.equivProd (f bc : Type) : AllocBranchData f bc ≃ bc × bc × f :=
-  ⟨fun d => (d.mask0, d.mask1, d.domainLog2), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
-    fun _ => rfl⟩
+/-- The branch data is its mask and its `log2`. -/
+def AllocBranchData.equivProd (f bc : Type) :
+    AllocBranchData f bc ≃ Vector bc MaxProofsVerified × f :=
+  ⟨fun d => (d.mask, d.domainLog2), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
 instance instAllocBranchDataCircuitType {F f w b vb : Type} [CircuitType F f w]
     [CircuitType F b vb] : CircuitType F (AllocBranchData f b) (AllocBranchData w vb) :=
@@ -60,7 +57,7 @@ expanding its 16 bits through the endo at one row. -/
 def AllocBranchData.check {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
     [LawfulBasicSystem Fp c] [KimchiSystem Fp c]
     (d : AllocBranchData (FVar Fp) (BoolVar Fp)) : CircuitM Fp c PUnit := do
-  CheckedType.check (c := c) (val := Bool × Bool × Fp) (d.mask0, d.mask1, d.domainLog2)
+  CheckedType.check (c := c) (val := Vector Bool MaxProofsVerified × Fp) (d.mask, d.domainLog2)
   let _ ← EndoScalar.toField 1 d.domainLog2 (.const Pasta.pallasEndo)
 
 /-- Under any valuation satisfying the emitted constraints, the mask cells read as bits and
@@ -68,13 +65,12 @@ the `log2` cell as a number below `2 ^ 16`. -/
 theorem AllocBranchData.check_spec {V : Valuation Fp}
     (d : AllocBranchData (FVar Fp) (BoolVar Fp)) :
     ⦃⌜True⌝⦄ AllocBranchData.check (c := Builder V (KimchiConstraint Fp)) d
-    ⦃⇓ _ _ => ⌜(∃ b : Bool, (↑d.mask0 : CVar Fp).val V = bit b) ∧
-      (∃ b : Bool, (↑d.mask1 : CVar Fp).val V = bit b) ∧
+    ⦃⇓ _ _ => ⌜(∀ m ∈ d.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
       ∃ n : ℕ, n < 2 ^ 16 ∧ d.domainLog2.val V = (n : Fp)⌝⦄ := by
   have hck : ⦃⌜True⌝⦄ CheckedType.check (F := Fp) (c := Builder V (KimchiConstraint Fp))
-      (val := Bool × Bool × Fp) (d.mask0, d.mask1, d.domainLog2)
+      (val := Vector Bool MaxProofsVerified × Fp) (d.mask, d.domainLog2)
       ⦃⇓ _ _ => ⌜CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
-        (val := Bool × Bool × Fp) V (d.mask0, d.mask1, d.domainLog2)⌝⦄ :=
+        (val := Vector Bool MaxProofsVerified × Fp) V (d.mask, d.domainLog2)⌝⦄ :=
     (builder_spec_iff _ _).mpr fun nv h => CheckedType.check_sound V _ nv h
   have htf := EndoScalar.toField_spec_rows (V := V) (by decide) (by decide) 1 d.domainLog2
     (.const Pasta.pallasEndo)
@@ -82,7 +78,7 @@ theorem AllocBranchData.check_spec {V : Valuation Fp}
   mvcgen [hck, htf]
   rename_i _ _ hp _ _ hn
   obtain ⟨n, hlt, hv, -⟩ := hn
-  exact ⟨hp.1, hp.2.1, n, hlt, hv⟩
+  exact ⟨hp.1, n, hlt, hv⟩
 
 /-- The branch data is checked by `AllocBranchData.check`: its mask cells read as bits, its
 `log2` cell as a number below `2 ^ 16`. -/
@@ -90,32 +86,31 @@ instance instAllocBranchDataCheckedType :
     CheckedType Fp (KimchiConstraint Fp) (AllocBranchData Fp Bool)
       (AllocBranchData (FVar Fp) (BoolVar Fp)) where
   check := AllocBranchData.check
-  post V d := (∃ b : Bool, (↑d.mask0 : CVar Fp).val V = bit b) ∧
-    (∃ b : Bool, (↑d.mask1 : CVar Fp).val V = bit b) ∧
+  post V d := (∀ m ∈ d.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
     ∃ n : ℕ, n < 2 ^ 16 ∧ d.domainLog2.val V = (n : Fp)
   check_sound V d nv h := (builder_spec_iff _ _).mp (AllocBranchData.check_spec d) nv h
   check_complete := by
-    rintro ⟨m0, m1, dl⟩ ⟨a0, a1, x⟩ hv
+    rintro ⟨m, dl⟩ ⟨a, x⟩ hv
     -- an admissible `log2` is below `2 ^ 16`
     have hc := CircuitType.reads_constVar (F := Fp) (var := AllocBranchData (FVar Fp) (BoolVar Fp))
-      (fun _ => 0) (⟨a0, a1, x⟩ : AllocBranchData Fp Bool)
-    obtain ⟨_, _, n, hn, hx⟩ := hv _ _ hc
+      (fun _ => 0) (⟨a, x⟩ : AllocBranchData Fp Bool)
+    obtain ⟨_, n, hn, hx⟩ := hv _ _ hc
     replace hx : x = (n : Fp) :=
-      (CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp
-        (CircuitType.reads_prod.mp hc).2).2).symm.trans hx
+      (CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp hc).2).symm.trans hx
     have hlt : ToNat.toNat x < 2 ^ (16 * 1) := by
       rw [hx, LawfulToNat.toNat_natCast n
         (show n < PALLAS_BASE_CARD from lt_trans hn (by decide))]
       exact hn
     refine Complete.bind (Complete.imp (fun st (h : CircuitType.ReadsAs
-        (val := Bool × Bool × Fp) st (m0, m1, dl) (a0, a1, x)) =>
-          ⟨h, (CircuitType.scoped_prod.mp (CircuitType.scoped_prod.mp h.1).2).2,
-            (CircuitType.reads_prod.mp (CircuitType.reads_prod.mp h.2).2).2⟩)
+        (val := Vector Bool MaxProofsVerified × Fp) st (m, dl) (a, x)) =>
+          ⟨h, (CircuitType.scoped_prod.mp h.1).2, (CircuitType.reads_prod.mp h.2).2⟩)
         (fun _ _ h => h.2)
         (Complete.frame CircuitType.monotone_readsAs
-          (CheckedType.check_complete (c := KimchiConstraint Fp) (val := Bool × Bool × Fp)
-            (m0, m1, dl) (a0, a1, x) (show CheckedType.Valid (F := Fp) (c := KimchiConstraint Fp)
-              (var := BoolVar Fp × BoolVar Fp × FVar Fp) (a0, a1, x) by simp)))) fun _ => ?_
+          (CheckedType.check_complete (c := KimchiConstraint Fp)
+            (val := Vector Bool MaxProofsVerified × Fp) (m, dl) (a, x)
+            (show CheckedType.Valid (F := Fp) (c := KimchiConstraint Fp)
+              (var := Vector (BoolVar Fp) MaxProofsVerified × FVar Fp) (a, x) by simp))))
+      fun _ => ?_
     exact Complete.bind
       (Complete.imp (fun st h => ⟨h, CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
           CircuitType.reads_fvar.mpr rfl⟩) (fun _ _ _ => trivial)
@@ -175,104 +170,7 @@ def AllocEvals.toChunked {nc : ℕ} {f : Type} (e : AllocEvals nc f) : ChunkedEv
   ⟨e.ftEval1, e.pub, ⟨e.w, e.z, e.s, e.coefficients, e.index[0], e.index[1], e.index[2],
     e.index[3], e.index[4], e.index[5]⟩⟩
 
-/-! ## The unfinalized proofs -/
-
-/-- One entry of the step statement's unfinalized proofs, as allocated: the five shifted
-claims, the fq-sponge digest, `β`, `γ`, `α`, `ζ`, `ξ`, the bulletproof challenges, and the
-finalize flag. -/
-structure AllocUnfinalized (k : ℕ) (f bc sf : Type) where
-  /-- The shifted combined inner product. -/
-  cip : sf
-  /-- The shifted `b`. -/
-  b : sf
-  /-- The shifted `ζ^(srs length)`. -/
-  zetaToSrsLength : sf
-  /-- The shifted `ζⁿ`. -/
-  zetaToDomainSize : sf
-  /-- The shifted permutation scalar. -/
-  perm : sf
-  /-- The fq-sponge digest before evaluations. -/
-  spongeDigest : f
-  /-- The 128-bit `β`. -/
-  beta : f
-  /-- The 128-bit `γ`. -/
-  gamma : f
-  /-- The 128-bit `α` prechallenge. -/
-  alpha : f
-  /-- The 128-bit `ζ` prechallenge. -/
-  zeta : f
-  /-- The 128-bit `ξ` prechallenge. -/
-  xi : f
-  /-- The raw bulletproof challenges. -/
-  bulletproofChallenges : Vector f k
-  /-- Whether the finalize check is asserted for this entry. -/
-  shouldFinalize : bc
-
-/-- An unfinalized entry is its cells, in allocation order. -/
-def AllocUnfinalized.equivProd (k : ℕ) (f bc sf : Type) :
-    AllocUnfinalized k f bc sf ≃
-      sf × sf × sf × sf × sf × f × f × f × f × f × f × Vector f k × bc :=
-  ⟨fun u => (u.cip, u.b, u.zetaToSrsLength, u.zetaToDomainSize, u.perm, u.spongeDigest,
-      u.beta, u.gamma, u.alpha, u.zeta, u.xi, u.bulletproofChallenges, u.shouldFinalize),
-    fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1,
-      p.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.2.1,
-      p.2.2.2.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.2.2.2⟩,
-    fun _ => rfl, fun _ => rfl⟩
-
-instance instAllocUnfinalizedCircuitType {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] [CircuitType F sv sf] :
-    CircuitType F (AllocUnfinalized k f b sv) (AllocUnfinalized k w vb sf) :=
-  CircuitType.ofEquiv (AllocUnfinalized.equivProd k f b sv) (AllocUnfinalized.equivProd k w vb sf)
-
-/-- An unfinalized entry is checked cell by cell: at split shifted claims, each claim's parity
-bit and the finalize flag are boolean. -/
-instance instAllocUnfinalizedCheckedType {F c f w b vb sv sf : Type} {k : ℕ} [Field F]
-    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f w] [CircuitType F b vb]
-    [CircuitType F sv sf] [CheckedType F c f w] [CheckedType F c b vb] [CheckedType F c sv sf] :
-    CheckedType F c (AllocUnfinalized k f b sv) (AllocUnfinalized k w vb sf) :=
-  CheckedType.ofEquiv (AllocUnfinalized.equivProd k f b sv) (AllocUnfinalized.equivProd k w vb sf)
-
-/-- The entry as the step statement's unfinalized proof. -/
-def AllocUnfinalized.toUnfinalized {k : ℕ} {f bc sf : Type} (u : AllocUnfinalized k f bc sf) :
-    UnfinalizedProof k f bc sf :=
-  ⟨⟨⟨⟨u.alpha⟩, ⟨u.beta⟩, ⟨u.gamma⟩, ⟨u.zeta⟩, u.perm, u.zetaToSrsLength, u.zetaToDomainSize⟩,
-      u.cip, ⟨u.xi⟩, u.bulletproofChallenges.map SizedF.mk, u.b⟩,
-    u.shouldFinalize, u.spongeDigest⟩
-
 /-! ## The step statement -/
-
-/-- The step statement's shifted claims, at the step field. -/
-abbrev StepSf : Type := Type2 (SplitField (FVar Fp) (BoolVar Fp))
-
-/-- One unfinalized entry's cells, at `k` rounds. -/
-abbrev UnfVar (k : ℕ) : Type := AllocUnfinalized k (FVar Fp) (BoolVar Fp) StepSf
-
-/-- One unfinalized entry's values. -/
-abbrev UnfVal (k : ℕ) : Type := AllocUnfinalized k Fp Bool (Type2 (SplitField Fp Bool))
-
-/-- The step statement's cells at the tag's `w` slots, in wire order: the unfinalized entries,
-the step-message digest, the wrap-side messages. -/
-abbrev StmtVar (k w : ℕ) : Type := Vector (UnfVar k) w × FVar Fp × Vector (FVar Fp) w
-
-/-- The step statement's values, in wire order. -/
-abbrev StmtVal (k w : ℕ) : Type := Vector (UnfVal k) w × Fp × Vector Fp w
-
-/-- A packed step statement has one scalar per cell of the statement's values. -/
-theorem StepStatement.packed_length {F : Type} [Field F] {k n : ℕ}
-    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    st.packed.length = CircuitType.size Fp (StmtVal k n) := by
-  have h1 : CircuitType.size Fp Fp = 1 := rfl
-  have h2 : CircuitType.size Fp (Type2 (SplitField Fp Bool)) = 2 := rfl
-  have hb : CircuitType.size Fp Bool = 1 := rfl
-  have hu : CircuitType.size Fp (UnfVal k) = k + 17 := by
-    unfold CircuitType.size
-    dsimp only [instAllocUnfinalizedCircuitType, CircuitType.ofEquiv]
-    simp [h1, h2, hb]
-    omega
-  simp only [StepStatement.packed, UnfinalizedProof.packed, List.length_append,
-    List.length_flatMap, List.length_map, List.length_cons, List.length_nil, Vector.length_toList]
-  simp [hu, h1]
-  ring
 
 /-! ## One slot's witness -/
 
@@ -401,12 +299,11 @@ theorem SlotWitness.of_post {V : Valuation Fp} {w ncw ncs k ks : ℕ}
       V s) :
     (∃ b : Bool, (↑s.z1.val.sOdd : CVar Fp).val V = bit b) ∧
       (∃ b : Bool, (↑s.z2.val.sOdd : CVar Fp).val V = bit b) ∧
-      (∃ b : Bool, (↑s.branch.mask0 : CVar Fp).val V = bit b) ∧
-      (∃ b : Bool, (↑s.branch.mask1 : CVar Fp).val V = bit b) ∧
+      (∀ m ∈ s.branch.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
       (∃ n : ℕ, n < 2 ^ 16 ∧ s.branch.domainLog2.val V = (n : Fp)) ∧
       SlotWitness.PointsOnCurve V s := by
-  obtain ⟨hp, ⟨-, -, -, -, -, -, -, -, -, -, -, -, hb0, hb1, hd⟩, -, -, hs⟩ := h
-  exact ⟨hp.2.2.2.2.1.2, hp.2.2.2.2.2.1.2, hb0, hb1, hd, hp, hs⟩
+  obtain ⟨hp, ⟨-, -, -, -, -, -, -, -, -, -, -, -, hm, hd⟩, -, -, hs⟩ := h
+  exact ⟨hp.2.2.2.2.1.2, hp.2.2.2.2.2.1.2, hm, hd, hp, hs⟩
 
 /-! ## The key -/
 

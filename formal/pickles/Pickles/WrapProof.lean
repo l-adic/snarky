@@ -46,7 +46,7 @@ valuation (`builder_spec_iff`).
 Unlike the step proof's statement, there is no domain cell (the wrap circuit's domain is a
 constant) and every `sg` slot is kept. The layered hypotheses the halves' reads consume
 (`IvpHyps`, `IvpTies`, `FopTies`) are built from these in the proof; the shape guards among
-them (`mask`, `nc_pos`, `t_ne`, `lr_ne`, `char`) are proved.
+them (`mask`, `nc_pos`, `k_pos`, `char`) are proved.
 -/
 
 namespace Pickles
@@ -82,7 +82,7 @@ structure InputReads (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.
   /-- The proof's cells read as the proof's. -/
   proof : ProofReads (stepSide Vg) g.wComm g.zComm g.tComm g.opening cp
   /-- The `sg` cells are the old accumulators', every slot kept. -/
-  olds : CommReads IpaPallas.curve Vg g.sgOld (cp.olds.map (·.sg)).toList
+  olds : CommReads IpaPallas.curve Vg g.sgOld.toList (cp.olds.map (·.sg)).toList
   /-- `ft(ζω)`. -/
   ftEval1 : s.evals.ftEval1.val Vs = cp.ftEval1
   /-- The proof's evaluations, chunk by chunk. -/
@@ -91,8 +91,8 @@ structure InputReads (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.
   pubEvals : s.evals.pub.map (fun v => v.map (·.val Vs))
     = runPubEvals IpaPallas.curve σ cvk cp pub
   /-- The previous challenges are the old accumulators', in order. -/
-  prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
-      (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
+  prevChallenges : (Vector.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
+      (s.half Vs).prevVals).toList.flatten = (cp.olds.map (·.u)).toList
 
 /-- The scalar half's proof ties are the input's readings. -/
 private theorem InputReads.fopTies {σ : SRS IpaPallas.curve.Point}
@@ -113,8 +113,7 @@ private theorem InputReads.ivpHyps {S : Srs IpaPallas.curve} {K : Key IpaPallas.
     (hclaimOk : ∀ x ∈ g.shifted, (stepSide Vg).ClaimOk x) :
     ∃ oldsW, IvpHyps (stepSide Vg) S.σ K.cvk cp pub false spongeAfterIndex
       ((g.cells keyCells).withClaims g.claims) oldsW :=
-  ivpHyps_of_reads hnc g.claims g.sgOld g.val.proof (by simp [GroupVar.sgOld, MaxProofsVerified])
-    hin.proof hin.olds hvk hclaimOk
+  ivpHyps_of_reads hnc g.claims g.sgOld g.val.proof hin.proof hin.olds hvk hclaimOk
 
 end WrapProof
 
@@ -151,14 +150,14 @@ theorem wrapProof_kimchiVerify_pallas {ks nc : ℕ}
     (hc : SplitClaimsCast Vg (groupInput ks S.σ.k nc).claims Vs (scalarInput S.σ.k nc).claims)
     -- the statement packs no more leaves than the SRS has points, and the SRS avoids the
     -- public-input relations
-    (hsmall : (groupInput ks S.σ.k nc).statement.packed.length ≤ 2 ^ S.σ.k)
+    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.σ.k)
     (havoid : S.σ.Avoids (stepRelationsAt S.σ K.cvk (groupInput ks S.σ.k nc).statement))
     -- of the proof itself
     (hguard : Guards IpaPallas.curve K.cvk cp pub)
     (hsg : SgOk S.σ K.cvk cp pub) :
     kimchiVerify IpaPallas.curve S.σ K.cvk cp pub = true := by
   -- the statement fits in the domain: its public input is the key's count, at most the domain
-  have hn : (groupInput ks S.σ.k nc).statement.packed.length ≤ K.cvk.n := by
+  have hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n := by
     have h := packed_length_le_stepPublicInput Vg (groupInput ks S.σ.k nc).statement
     rw [hin.statement, hguard.2] at h
     exact h.trans K.cvk.publicCount_le

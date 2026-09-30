@@ -4,28 +4,14 @@ import Mathlib.Data.Vector.Basic
 /-!
 # List and vector lemmas the pickles modules share
 
-Facts about `List`, `List.Forall₂` and `Vector` that mention no pickles type: what a circuit
-that walks two cell lists in step establishes about them as lists, and how one-entry and
-flattened vectors read as lists.
+Facts about `List`, `List.Forall₂` and `Vector` that mention no pickles type: maps over zips,
+entrywise relations between vectors and their lists, and how one-entry and flattened vectors
+read as lists.
 -/
 
 namespace Pickles
 
 /-! ## Zips -/
-
-/-- Pointwise ties along a zip give the mapped lists, at equal lengths: what a circuit that
-compares two cell lists entry by entry establishes about them as lists. -/
-theorem map_eq_map_of_zip {α β γ : Type} {f : α → γ} {g : β → γ} :
-    ∀ {l₁ : List α} {l₂ : List β}, l₁.length = l₂.length →
-      (∀ p ∈ l₁.zip l₂, f p.1 = g p.2) → l₁.map f = l₂.map g
-  | [], [], _, _ => rfl
-  | [], _ :: _, hlen, _ => absurd hlen (by simp)
-  | _ :: _, [], hlen, _ => absurd hlen (by simp)
-  | a :: as, b :: bs, hlen, h => by
-      simp only [List.map_cons, List.cons.injEq]
-      refine ⟨h (a, b) (by simp), map_eq_map_of_zip (by simpa using hlen) fun p hp => h p ?_⟩
-      rw [List.zip_cons_cons]
-      exact List.mem_cons_of_mem _ hp
 
 /-- Mapping a function of the second components over a zip, at equal lengths, maps the second
 list. -/
@@ -42,24 +28,6 @@ theorem toList_map_fst_zip {α β γ : Type} {n : ℕ} (as : Vector α n) (bs : 
   rw [← List.map_map, ← Vector.toList_zip, ← Vector.toList_map, Vector.map_fst_zip]
 
 /-! ## `Forall₂` along zips -/
-
-/-- Pairing a list with another of the same length keeps a relation on the first. -/
-theorem forall₂_zip_left {α β γ : Type} {R : α → γ → Prop} :
-    ∀ {l₁ : List α} {l₂ : List γ} (l : List β), List.Forall₂ R l₁ l₂ → l.length = l₁.length →
-      List.Forall₂ (fun q v => R q.1 v) (l₁.zip l) l₂
-  | [], [], _, .nil, _ => .nil
-  | _ :: _, _ :: _, [], .cons _ _, h => absurd h (by simp)
-  | _ :: _, _ :: _, _ :: l, .cons hq hs, h =>
-    .cons hq (forall₂_zip_left l hs (by simpa using h))
-
-/-- A relation on the second components of a zip, at equal lengths, is one on the list. -/
-theorem forall₂_zip_right {α β γ : Type} {R : β → γ → Prop} :
-    ∀ {l₁ : List α} {l₂ : List β} {ns : List γ}, l₂.length = l₁.length →
-      List.Forall₂ (fun q m => R q.2 m) (l₁.zip l₂) ns → List.Forall₂ R l₂ ns
-  | [], [], _, _, h => by cases h; exact .nil
-  | _ :: _, _ :: l₂, _ :: _, hl, .cons hq hs => .cons hq (forall₂_zip_right (by simpa using hl) hs)
-  | [], _ :: _, _, hl, _ => absurd hl (by simp)
-  | _ :: _, [], _, hl, _ => absurd hl (by simp)
 
 /-- Two `List.zipWith`s of the same lists are related where their entries are, pair by pair. -/
 theorem forall₂_zipWith {α β γ δ : Type} (R : γ → δ → Prop) (f : α → β → γ) (g : α → β → δ) :
@@ -98,6 +66,25 @@ theorem flatten_zipWith_keep {α : Type} :
 theorem getElem_map_fin {α β : Type} {n : ℕ} (f : α → β) (Ps : Vector α n) (ci : Fin n) :
     (Ps.map f)[ci] = f Ps[ci] := by
   simp [Fin.getElem_fin]
+
+/-- Two vectors' lists are related entrywise exactly when their entries are, index by index. -/
+theorem forall₂_toList_iff {α β : Type} {R : α → β → Prop} {n : ℕ} {v : Vector α n}
+    {w : Vector β n} : List.Forall₂ R v.toList w.toList ↔ ∀ i : Fin n, R v[i] w[i] := by
+  rw [List.forall₂_iff_get]
+  constructor
+  · rintro ⟨-, h⟩ i
+    simpa using h i (by simp) (by simp)
+  · intro h
+    exact ⟨by simp, fun i h₁ h₂ => by simpa using h ⟨i, by simpa using h₁⟩⟩
+
+/-- A list related entrywise to a vector's list is the list of a vector of the same length,
+related to it index by index. -/
+theorem exists_vector_of_forall₂ {α β : Type} {R : α → β → Prop} {n : ℕ} {v : Vector α n}
+    {l : List β} (h : List.Forall₂ R v.toList l) :
+    ∃ w : Vector β n, w.toList = l ∧ ∀ i : Fin n, R v[i] w[i] := by
+  have hl : l.length = n := by simpa using h.length_eq.symm
+  refine ⟨⟨l.toArray, by simpa using hl⟩, by simp, forall₂_toList_iff.mp ?_⟩
+  simpa using h
 
 /-- A vector of singletons flattens to the vector's entries. -/
 theorem toList_flatten_singletons {α β : Type} {n : ℕ} (v : Vector α n) (f : α → β) :

@@ -88,9 +88,7 @@ private theorem BranchData.packed_val {V : Valuation Fp} (bd : BranchData (FVar 
       = ((4 * n + ((if ms[0] then 1 else 0) + 2 * (if ms[1] then 1 else 0)) : ℕ) : Fp) := by
   have h0 := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hms 0 (by decide))
   have h1 := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hms 1 (by decide))
-  have e0 : bd.proofsVerifiedMask.toList[0]? = some bd.proofsVerifiedMask[0] := by simp
-  have e1 : bd.proofsVerifiedMask.toList[1]? = some bd.proofsVerifiedMask[1] := by simp
-  simp only [BranchData.packed, e0, e1, CVar.val_add_, CVar.val_scale_, hdv, h0, h1]
+  simp only [BranchData.packed, Fin.getElem_fin, CVar.val_add_, CVar.val_scale_, hdv, h0, h1]
   cases ms[0] <;> cases ms[1] <;> simp [bit]; ring
 
 /-- A wrap statement reading as a step statement packed carries its claims across: the wrap
@@ -123,10 +121,9 @@ private theorem claimsCast_of_reads {ks : ℕ} {Vw : Valuation Fq} {Vs : Valuati
   · simp only [StatementPacked.claims, List.map_cons, List.map_nil, f0, f1, f2, f3, f4, c0, c1,
       s0, s1, s2, d0]
     rfl
-  · refine List.ext_getElem (by simp [StatementPacked.claims]) fun i h₁ h₂ => ?_
-    simp only [StatementPacked.claims, List.getElem_map, Vector.getElem_toList,
-      Vector.getElem_map]
-    rw [hbp i (by simpa [StatementPacked.claims] using h₁)]
+  · intro i
+    simp only [StatementPacked.claims, Fin.getElem_fin, Vector.getElem_map]
+    rw [hbp i i.isLt]
     simp only [WrapStatement.toPacked, Vector.getElem_map]
     rfl
 
@@ -151,17 +148,19 @@ private theorem wrapStep_kimchiVerify_core
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the Lagrange bases at a step domain, the blinding base, the padding challenges and each
     -- slot's challenge-stack height: constants of the wrap circuit
-    (lagrange : ℕ → List (Vector IpaVesta.curve.Point ncStep)) (h : IpaVesta.curve.Point)
-    (dummy : Vector Fq σ.k) (slotWidths : Vector ℕ w)
+    (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
+      (CircuitType.size Fp (StmtVal σ.k w)))
+    (h : IpaVesta.curve.Point)
+    (dummy : Vector Fq σ.k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
     -- the wrap circuit's advice
-    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k slotWidths.toList.sum)
+    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k (slotWidths.map Fin.val).sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- the active branch: its key and Lagrange bases are `KStep`'s, its blinding base `SStep`'s
     (b : Fin branches)
     (hkeyB : stepKeys[b] = keyCellsOf constPt KStep.cvk)
     (hlag : lagrange log2s[b]
-      = (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k w))).toList)
+      = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k w)))
     (hh : h = SStep.σ.h)
     -- the key's points are finite, and the SRS avoids the key's Lagrange relations, one per
     -- cell of the step statement
@@ -198,7 +197,7 @@ private theorem wrapStep_kimchiVerify_core
       -- its wrap proof was made at the wrap circuit's public input
       CircuitType.Reads Vw stmt (inp.packedAt cvk Vs ms) →
       ∃ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
-        (oldsW : List (IpaVesta.curve.Point × Bool)),
+        (oldsW : Vector (IpaVesta.curve.Point × Bool) w),
         -- the step proof's public input: the wrap circuit's packed step statement
         let pub := wrapPublicInput SStep.σ KStep.cvk Vw hd.2.statement
         -- the wrap circuit's cells hold `cp`
@@ -266,16 +265,12 @@ private theorem wrapStep_kimchiVerify_core
   have hmsj : ∀ j : Fin w, ms[j] = ms0[MaxProofsVerified - w + j] :=
     reads_drop (by simpa [MaxProofsVerified] using hw) hmsR hms
   -- so the wrap circuit's keep bit for slot `j` reads as `ms[j]`
-  have hlen : hd.1.mask.length = w := by simpa using congrArg List.length hmask
-  have hkeep : ∀ j : Fin w,
-      (↑(hd.1.mask.reverse.getD j.val true_) : CVar Fq).val Vw = bit ms[j] := by
+  have hkeep : ∀ j : Fin w, (↑hd.1.mask.reverse[j] : CVar Fq).val Vw = bit ms[j] := by
     intro j
-    have h := List.getElem_of_eq hmask
-      (show w - 1 - j < (hd.1.mask.map fun x : BoolVar Fq => (↑x : CVar Fq).val Vw).length by
-        simp; omega)
-    simp only [List.getElem_map, List.getElem_range] at h
-    rw [List.getD_eq_getElem _ _ (by simp; omega), List.getElem_reverse, hmsj j, hrev j]
-    simpa [hlen] using h
+    have h := CircuitType.reads_boolVar.mp
+      (CircuitType.reads_vector.mp hmask (w - 1 - j) (by omega))
+    simp only [Vector.getElem_ofFn] at h
+    rw [Fin.getElem_fin, Vector.getElem_reverse, h, hmsj j, hrev j]
   -- the step proof the cells hold: its group half from the wrap circuit's cells, its evaluations
   -- and kept old challenges from the next step circuit's
   have hcells' : hd.2.cells = ivpInputOf stmt.claims.deferredValues hd.1.sgOld hd.1.key pr := hcells
@@ -286,7 +281,7 @@ private theorem wrapStep_kimchiVerify_core
     (.carried (inp.evals.pub.map fun v => v.map (·.val Vs))) (inp.evals.ftEval1.val Vs)
     (((List.finRange w).filter fun j => ms[j]).map fun j =>
       (⟨P j, U j⟩ : Accumulator IpaVesta.curve SStep.σ.k)).toArray
-  let oldsW := (List.finRange w).map fun j => (P j, ms[j])
+  let oldsW : Vector (IpaVesta.curve.Point × Bool) w := Vector.ofFn fun j => (P j, ms[j])
   have hpr : ProofReads (wrapSide Vw) hd.2.cells.wComm hd.2.cells.zComm hd.2.cells.tComm
       hd.2.cells.opening cp := by
     rw [hcells']
@@ -294,25 +289,27 @@ private theorem wrapStep_kimchiVerify_core
   have hol : OldsRead Vw hd.2.cells.sgOld cp oldsW := by
     rw [hcells']
     refine ⟨?_, ?_⟩
-    · simp only [ivpInputOf, WrapMainFinalizeOut.sgOld, oldsW, List.map_map,
-        List.forall₂_map_left_iff, List.forall₂_map_right_iff]
-      exact List.forall₂_same.mpr fun j _ => ⟨onCurveAt_readPt (hacc j), hkeep j⟩
-    · simp [cp, IvpProof.read, oldsW, List.filter_map, Function.comp_def]
+    · rw [← Vector.toList_map, ← Vector.toList_map]
+      refine forall₂_toList_iff.mpr fun j => ?_
+      simp only [ivpInputOf, WrapMainFinalizeOut.sgOld, oldsW, Fin.getElem_fin,
+        Vector.getElem_map, Vector.getElem_ofFn]
+      exact ⟨onCurveAt_readPt (hacc j), hkeep j⟩
+    · simp [cp, IvpProof.read, oldsW, Vector.toList_ofFn, List.ofFn_eq_map, List.filter_map,
+        Function.comp_def]
   have hf : FopTies SStep.σ KStep.cvk cp (wrapPublicInput SStep.σ KStep.cvk Vw hd.2.statement)
       (inp.finalizedHalf Vs) := by
     refine ⟨?_, rfl, rfl, rfl⟩
-    have hm : (inp.finalizedHalf Vs).maskVals = List.ofFn fun j : Fin w => ms[j] := by
-      refine List.ext_getElem (by simp [ScalarHalf.maskVals]) fun j h₁ h₂ => ?_
-      have hj : j < w := by simpa [ScalarHalf.maskVals] using h₁
+    have hm : (inp.finalizedHalf Vs).maskVals = Vector.ofFn fun j : Fin w => ms[j] := by
+      refine Vector.ext fun j hj => ?_
       have h := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hms j hj)
       simp only [ScalarHalf.maskVals, VerifyOneInput.finalizedHalf, ScalarHalf.step,
-        List.getElem_map, Vector.getElem_toList, List.getElem_ofFn, h]
+        Vector.getElem_map, Vector.getElem_ofFn, h]
       cases ms[j]'hj <;> simp [bit]
-    have hp : (inp.finalizedHalf Vs).prevVals = List.ofFn fun j : Fin w => (U j).toList := by
-      refine List.ext_getElem (by simp [ScalarHalf.prevVals]) fun j h₁ h₂ => ?_
-      simp [ScalarHalf.prevVals, VerifyOneInput.finalizedHalf, ScalarHalf.step, U,
-        Vector.toList_map]
-    rw [hm, hp, flatten_zipWith_keep]
+    have hp : (inp.finalizedHalf Vs).prevVals = Vector.ofFn fun j : Fin w => U j := by
+      refine Vector.ext fun j hj => ?_
+      simp [ScalarHalf.prevVals, VerifyOneInput.finalizedHalf, ScalarHalf.step, U]
+    rw [hm, hp, Vector.toList_zipWith, Vector.toList_ofFn, Vector.toList_ofFn,
+      flatten_zipWith_keep]
     simp [cp, IvpProof.read]
   refine ⟨cp, oldsW, hpr, hol, hf, fun hguard hsg => ?_⟩
   obtain ⟨v, hv, hv1⟩ := hgrp cp oldsW hpr hol
@@ -361,9 +358,9 @@ theorem wrapStep_kimchiVerify
     -- the padding challenges
     (dummy : Vector Fq σ.k)
     -- each slot's challenge-stack height
-    (slotWidths : Vector ℕ w)
+    (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
     -- the wrap circuit's advice
-    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k slotWidths.toList.sum)
+    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k (slotWidths.map Fin.val).sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- key `b`'s points are finite
@@ -449,7 +446,7 @@ theorem wrapStep_kimchiVerify
         -- its wrap proof was made at the wrap circuit's public input
         CircuitType.Reads Vw stmt (inp.packedAt cvk Vs ms) →
         ∃ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
-          (oldsW : List (IpaVesta.curve.Point × Bool)),
+          (oldsW : Vector (IpaVesta.curve.Point × Bool) w),
           -- the step proof's public input: the wrap circuit's packed step statement
           let pub := wrapPublicInput SStep.σ stepKeys[b] Vw hd.2.statement
           -- the wrap circuit's cells hold `cp`, with keep bits `oldsW`
@@ -473,9 +470,10 @@ theorem wrapStep_kimchiVerify
   -- branch `b`'s table is its key's Lagrange points: both are the SRS's over the key's domain
   have hlag : srsLagrangeTable SStep.σ ncStep (CircuitType.size Fp (StmtVal σ.k w))
       (stepDomainLog2s stepKeys)[b]
-      = (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k w))).toList := by
+      = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StmtVal σ.k w)) := by
     rw [hlog, srsLagrangeTable]
-    show _ = (Ipa.lagrangeBasis IpaVesta.curve SStep.σ ncStep KStep.cvk.n KStep.cvk.omega _).toList
+    apply Vector.toArray_inj.mp
+    show _ = Ipa.lagrangeBasis IpaVesta.curve SStep.σ ncStep KStep.cvk.n KStep.cvk.omega _
     rw [KStep.omega_eq]
     rfl
   intro wrap step hwrap hstep
@@ -493,9 +491,9 @@ theorem wrapStep_kimchiVerify
         intro nv hsat hmsk hmv' h1 hdj
         rw [hdj] at hsat h1
         exact (builder_spec_iff _ _).mp (verifyOne_scalarReads SStep KStep D (hws j)
-          (verifyProofWith σ.h (srcs j).lagrange.toList) vk inp) nv hsat hmsk hmv' h1)
+          (verifyProofWith σ.h (srcs j).lagrange) vk inp) nv hsat hmsk hmv' h1)
       hn hws dummySg dummyUnf rule adv
-      (fun _ _ _ => (WrapStatement.packed_length _).trans_le (by rw [hσk, hE]; decide)))
+      (by rw [hσk, hE]; decide))
       0 (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv
   -- the slot is at this tag's width
   subst hwi

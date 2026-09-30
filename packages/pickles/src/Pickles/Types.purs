@@ -14,6 +14,8 @@ module Pickles.Types
   , StepInput
   , StepStatement
   , WrapStatement
+  , MessagesForNextStepProof(..)
+  , MessagesForNextWrapProof(..)
   , StatementIO(..)
   , WrapProofMessages(..)
   , WrapProofOpening(..)
@@ -115,6 +117,23 @@ type WrapStatement d f sf b =
       , messagesForNextWrapProof :: f
       }
   , messagesForNextStepProof :: f
+  }
+
+-- | What a step proof's `messagesForNextStepProof` digest hashes: OCaml's
+-- | `Step.Proof_state.Messages_for_next_step_proof`.
+newtype MessagesForNextStepProof g s cpc bc = MessagesForNextStepProof
+  { appState :: s
+  , dlogPlonkIndex :: g
+  , challengePolynomialCommitments :: cpc
+  , oldBulletproofChallenges :: bc
+  }
+
+-- | What a wrap proof's `messagesForNextWrapProof` digest hashes: OCaml's
+-- | `Wrap.Proof_state.Messages_for_next_wrap_proof`. The challenges are
+-- | unpadded; the digest pads them.
+newtype MessagesForNextWrapProof g bc = MessagesForNextWrapProof
+  { challengePolynomialCommitment :: g
+  , oldBulletproofChallenges :: bc
   }
 
 -- The allocation carriers below — `StatementIO`, `WrapProofMessages`,

@@ -125,7 +125,7 @@ import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, SideLoadedPrevValue, SlotWidth, slotWidthInt, slotWidthsOf, withSlotWidth)
 import Pickles.Step.Types as Step
 import Pickles.Step.VkSource (SlotVkBlueprint(..))
-import Pickles.Types (AllocEvals(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.Types (AllocEvals(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..), verifierIndexDigest, vestaVerifierIndexCommitments)
 import Pickles.Verify
   ( CompiledProof(..)
@@ -138,7 +138,7 @@ import Pickles.Verify
   , verify
   , wrapPublicInputVP
   )
-import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPure)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
@@ -656,11 +656,13 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
         baseCaseDummyChalPoly =
           { sg: dummyWrapSg, challenges: dummyIpaChallenges.wrapExpanded }
 
-        msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
-          { sg: dummyStepSg
-          , paddedChallenges:
-              Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
-          }
+        msgWrapDigest = hashMessagesForNextWrapProofPure dummyIpaChallenges.wrapExpanded
+          ( MessagesForNextWrapProof
+              { challengePolynomialCommitment: dummyStepSg
+              , oldBulletproofChallenges:
+                  Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
+              }
+          )
 
         fopProofState = Dummy.stepDummyUnfinalizedProof @w bcd
           { domainLog2: slotParams.slotStepDomainLog2
@@ -2295,10 +2297,6 @@ runMultiProverBody
           , challenges: dummyIpaChallenges.wrapExpanded
           }
 
-        msgWrapPadded =
-          Vector.append (Vector.replicate @padMax dummyWrapExpanded)
-            proveDataMax.msgWrapChallenges
-
         kimchiPrevPadded
           :: Vector PaddedLength
                { sgX :: StepField
@@ -2309,10 +2307,12 @@ runMultiProverBody
           Vector.append (Vector.replicate @padMax dummyKimchiEntry)
             proveDataMax.kimchiPrevEntries
 
-        msgWrap = hashMessagesForNextWrapProofPureGeneral
-          { sg: stepProofSg
-          , paddedChallenges: msgWrapPadded
-          }
+        msgWrap = hashMessagesForNextWrapProofPure dummyWrapExpanded
+          ( MessagesForNextWrapProof
+              { challengePolynomialCommitment: stepProofSg
+              , oldBulletproofChallenges: proveDataMax.msgWrapChallenges
+              }
+          )
 
         wrapDv = wrapComputeDeferredValues wrapDvInput
 
