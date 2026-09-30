@@ -21,7 +21,6 @@ gadgets read, with every point checked on the curve.
 * `AllocBranchData`: the branch data, the mask bits before the domain's `log2`, which is
   range-checked to 16 bits;
 * `AllocEvals`: the previous step proof's evaluations, column by column, `ft(ζω)` last;
-* `AllocUnfinalized`: one entry of the step statement's unfinalized proofs;
 * `SlotWitness`: one previous proof's witness: the wrap proof, its proof state, the step
   proof's evaluations, and the accumulators it verified.
 -/
@@ -175,87 +174,7 @@ def AllocEvals.toChunked {nc : ℕ} {f : Type} (e : AllocEvals nc f) : ChunkedEv
   ⟨e.ftEval1, e.pub, ⟨e.w, e.z, e.s, e.coefficients, e.index[0], e.index[1], e.index[2],
     e.index[3], e.index[4], e.index[5]⟩⟩
 
-/-! ## The unfinalized proofs -/
-
-/-- One entry of the step statement's unfinalized proofs, as allocated: the five shifted
-claims, the fq-sponge digest, `β`, `γ`, `α`, `ζ`, `ξ`, the bulletproof challenges, and the
-finalize flag. -/
-structure AllocUnfinalized (k : ℕ) (f bc sf : Type) where
-  /-- The shifted combined inner product. -/
-  cip : sf
-  /-- The shifted `b`. -/
-  b : sf
-  /-- The shifted `ζ^(srs length)`. -/
-  zetaToSrsLength : sf
-  /-- The shifted `ζⁿ`. -/
-  zetaToDomainSize : sf
-  /-- The shifted permutation scalar. -/
-  perm : sf
-  /-- The fq-sponge digest before evaluations. -/
-  spongeDigest : f
-  /-- The 128-bit `β`. -/
-  beta : f
-  /-- The 128-bit `γ`. -/
-  gamma : f
-  /-- The 128-bit `α` prechallenge. -/
-  alpha : f
-  /-- The 128-bit `ζ` prechallenge. -/
-  zeta : f
-  /-- The 128-bit `ξ` prechallenge. -/
-  xi : f
-  /-- The raw bulletproof challenges. -/
-  bulletproofChallenges : Vector f k
-  /-- Whether the finalize check is asserted for this entry. -/
-  shouldFinalize : bc
-
-/-- An unfinalized entry is its cells, in allocation order. -/
-def AllocUnfinalized.equivProd (k : ℕ) (f bc sf : Type) :
-    AllocUnfinalized k f bc sf ≃
-      sf × sf × sf × sf × sf × f × f × f × f × f × f × Vector f k × bc :=
-  ⟨fun u => (u.cip, u.b, u.zetaToSrsLength, u.zetaToDomainSize, u.perm, u.spongeDigest,
-      u.beta, u.gamma, u.alpha, u.zeta, u.xi, u.bulletproofChallenges, u.shouldFinalize),
-    fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1,
-      p.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.2.1,
-      p.2.2.2.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2.2.2.2⟩,
-    fun _ => rfl, fun _ => rfl⟩
-
-instance instAllocUnfinalizedCircuitType {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] [CircuitType F sv sf] :
-    CircuitType F (AllocUnfinalized k f b sv) (AllocUnfinalized k w vb sf) :=
-  CircuitType.ofEquiv (AllocUnfinalized.equivProd k f b sv) (AllocUnfinalized.equivProd k w vb sf)
-
-/-- An unfinalized entry is checked cell by cell: at split shifted claims, each claim's parity
-bit and the finalize flag are boolean. -/
-instance instAllocUnfinalizedCheckedType {F c f w b vb sv sf : Type} {k : ℕ} [Field F]
-    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f w] [CircuitType F b vb]
-    [CircuitType F sv sf] [CheckedType F c f w] [CheckedType F c b vb] [CheckedType F c sv sf] :
-    CheckedType F c (AllocUnfinalized k f b sv) (AllocUnfinalized k w vb sf) :=
-  CheckedType.ofEquiv (AllocUnfinalized.equivProd k f b sv) (AllocUnfinalized.equivProd k w vb sf)
-
-/-- The entry as the step statement's unfinalized proof. -/
-def AllocUnfinalized.toUnfinalized {k : ℕ} {f bc sf : Type} (u : AllocUnfinalized k f bc sf) :
-    UnfinalizedProof k f bc sf :=
-  ⟨⟨⟨⟨u.alpha⟩, ⟨u.beta⟩, ⟨u.gamma⟩, ⟨u.zeta⟩, u.perm, u.zetaToSrsLength, u.zetaToDomainSize⟩,
-      u.cip, ⟨u.xi⟩, u.bulletproofChallenges.map SizedF.mk, u.b⟩,
-    u.shouldFinalize, u.spongeDigest⟩
-
 /-! ## The step statement -/
-
-/-- The step statement's shifted claims, at the step field. -/
-abbrev StepSf : Type := Type2 (SplitField (FVar Fp) (BoolVar Fp))
-
-/-- One unfinalized entry's cells, at `k` rounds. -/
-abbrev UnfVar (k : ℕ) : Type := AllocUnfinalized k (FVar Fp) (BoolVar Fp) StepSf
-
-/-- One unfinalized entry's values. -/
-abbrev UnfVal (k : ℕ) : Type := AllocUnfinalized k Fp Bool (Type2 (SplitField Fp Bool))
-
-/-- The step statement's cells at the tag's `w` slots, in wire order: the unfinalized entries,
-the step-message digest, the wrap-side messages. -/
-abbrev StmtVar (k w : ℕ) : Type := Vector (UnfVar k) w × FVar Fp × Vector (FVar Fp) w
-
-/-- The step statement's values, in wire order. -/
-abbrev StmtVal (k w : ℕ) : Type := Vector (UnfVal k) w × Fp × Vector Fp w
 
 /-- A packed step statement has one scalar per cell of the statement's values. -/
 theorem StepStatement.packed_length {F : Type} [Field F] {k n : ℕ}
