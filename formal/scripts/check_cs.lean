@@ -675,7 +675,7 @@ def chooseKeyN1WrapCircuit (input : Vector (FVar Fq) 1) : CircuitM Fq Cq PUnit :
   let ch : Vector (AffinePoint (FVar Fq)) 1 := #v[g]
   let key : Pickles.VkComms 1 (AffinePoint (FVar Fq)) :=
     ⟨Vector.replicate _ ch, Vector.replicate _ ch, ch, ch, ch, ch, ch, ch⟩
-  let _ ← Pickles.chooseKey (Vector.ofFn fun i => bits.getD i.val true_) #v[key]
+  let _ ← Pickles.chooseKey bits #v[key]
   pure PUnit.unit
 
 /-! ## The evaluation layout
@@ -830,8 +830,7 @@ slots. Input 0 is the branch index; slot `i`'s 145-cell finalize input at the wr
 Branch 0's slots are pinned to domain indices `[1, 1]`, branch 1's to `[0, 2]`. -/
 def wrapFinalizeN2Circuit (input : Vector (FVar Fq) 295) : CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
-  let bits ← Pickles.oneHotVector 2 (get 0)
-  let whichBranch : Vector (BoolVar Fq) 2 := Vector.ofFn fun i => bits.getD i.val true_
+  let whichBranch ← Pickles.oneHotVector 2 (get 0)
   let slot (i : ℕ) (pins : Vector (Option ℕ) 2) : Pickles.WrapFinalizeSlot 2 15 1 Fq :=
     let off := 1 + 147 * i
     let (u, w, _) := fopInputsOf Type2.mk (fun j => get (off + j)) 25 15

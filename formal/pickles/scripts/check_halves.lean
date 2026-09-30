@@ -193,10 +193,11 @@ def stepFopInput (w : Cache.Entry CW) {k nc : ℕ} (cpS : Kimchi.Verifier.Kimchi
     { deferredValues := dv.toDeferredValues, shouldFinalize := true
       spongeDigestBeforeEvaluations := st.proofState.spongeDigestBeforeEvaluations }
   let accs := cpS.olds.toList.map (·.u)
-  let slots := (List.replicate (Pickles.MaxProofsVerified - accs.length) (Vector.replicate k 0)
-    ++ accs).take Pickles.MaxProofsVerified
   let prev : Vector (Vector Fp k) Pickles.MaxProofsVerified ←
-    if h : slots.length = Pickles.MaxProofsVerified then pure ⟨slots.toArray, by simp [h]⟩
+    if h : accs.length ≤ Pickles.MaxProofsVerified then
+      let slots := List.replicate (Pickles.MaxProofsVerified - accs.length) (Vector.replicate k 0)
+        ++ accs
+      pure ⟨slots.toArray, by simp [slots]; omega⟩
     else throw s!"accumulators: {accs.length}, more than {Pickles.MaxProofsVerified}"
   return (u, ← chunkedEvalsOf CS cpS, dv.branchData.proofsVerifiedMask, prev,
     dv.branchData.domainLog2)
