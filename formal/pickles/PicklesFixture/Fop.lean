@@ -28,7 +28,7 @@ open Pickles Kimchi.Verifier in
 def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ → FVar (ZMod p))
     (base : ℕ) (rounds : ℕ := 16) :
     UnfinalizedProof rounds (FVar (ZMod p)) (BoolVar (ZMod p)) sf ×
-      Pickles.ChunkedEvals 1 (FVar (ZMod p)) × List (List (FVar (ZMod p))) :=
+      Pickles.ChunkedEvals 1 (FVar (ZMod p)) × Vector (Vector (FVar (ZMod p)) rounds) 2 :=
   let (pub, evals) := evalsAt get base
   let u : UnfinalizedProof rounds (FVar (ZMod p)) (BoolVar (ZMod p)) sf :=
     { deferredValues :=
@@ -55,7 +55,7 @@ def fopStepHarnessAt (domains : List (Pickles.KnownDomain Fp)) (input : Vector (
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type1.mk get 29
   Pickles.finalizeOtherProofStep (fopStepParams 1) domains u w
-    [.unchecked (get 26), .unchecked (get 27)] prev (get 28)
+    #v[.unchecked (get 26), .unchecked (get 27)] prev (get 28)
 
 /-- `fopStepHarnessAt` at the dump's one known domain, of log2 16. -/
 def fopStepHarness (input : Vector (FVar Fp) 151) : CircuitM Fp C (Pickles.FopOutput Fp 16) :=
@@ -103,8 +103,7 @@ abbrev StepFopVar (k nc : ℕ) : Type :=
 def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) {k nc : ℕ}
     (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp k) :=
   let (u, w, mask, prev, domainLog2) := v
-  Pickles.finalizeOtherProofStep (fopStepParams nc) domains u w mask.toList
-    (prev.toList.map (·.toList)) domainLog2
+  Pickles.finalizeOtherProofStep (fopStepParams nc) domains u w mask prev domainLog2
 
 /-- `fopStepOnAt` at the dump's one known domain, of log2 16. -/
 def fopStepOn {k nc : ℕ} (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp k) :=
@@ -116,6 +115,6 @@ def fopWrapOnAt (domainLog2 : ℕ) {k : ℕ} (v : Pickles.WrapFopVar k 1) :
   Pickles.finalizeOtherProofWrap fopWrapParams
     (.const (Kimchi.Verifier.domainGenerator Bulletproof.IpaPallas.curve domainLog2))
     (fun z => do let t ← Pickles.pow2PowMul z domainLog2; pure (CVar.sub_ t (.const 1)))
-    v.claims v.evals (v.prev.toList.map (·.toList))
+    v.claims v.evals v.prev
 
 end PicklesFixture

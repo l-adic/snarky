@@ -49,7 +49,7 @@ def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c
     (fun z => do
       let t ← pow2PowMul z cvk.domainLog2
       pure (CVar.sub_ t (.const 1)))
-    u w (prevChallenges.toList.map Vector.toList)
+    u w prevChallenges
 
 /-- `ζ^{2^log2} − 1` by `pow2PowMul`: the vanishing polynomial of a constant domain. -/
 private theorem vanishingAt_spec {V : Valuation Fq} (log2 : ℕ) (z : FVar Fq) :
@@ -191,19 +191,15 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
       ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.cvk.n - 1⌝⦄ :=
     fun z => vanishingAt_spec K.cvk.domainLog2 z
   -- the cells read as their own values
-  have hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs))
-      (prevChallenges.toList.map Vector.toList)
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals := by
-    refine List.forall₂_map_right_iff.2 (List.forall₂_map_left_iff.2
-      (List.forall₂_same.2 fun cs _ => ?_))
-    exact List.forall₂_map_right_iff.2
-      (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
+  have hprev : CircuitType.Reads Vs prevChallenges
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals :=
+    CircuitType.reads_vector.mpr fun i hi => CircuitType.reads_vector.mpr fun j hj =>
+      CircuitType.reads_fvar.mpr (by simp [ScalarHalf.prevVals, ScalarHalf.wrap])
   have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
     (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) hP IpaPallas.curve.frSponge.hsize
     (three_le_zkRowsOf K.cvk.nc_pos) (.const K.cvk.omega) K.cvk.n
     (show zkRowsOf nc ≤ K.cvk.n from K.zkRows_eq ▸ K.zkRows_le)
-    K.omega_prim.pow_eq_one _ hvan claimsS evals
-    (prevChallenges.toList.map Vector.toList) _ hprev
+    K.omega_prim.pow_eq_one _ hvan claimsS evals prevChallenges _ hprev
   simp only [finalizeOtherProofWrapAt]
   refine builder_spec_imp _ _ _ hspec ?_
   intro o hread
@@ -215,27 +211,27 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas {nc : ℕ}
     exact halvesTies_of_splitCast Vg claimsG Vs claimsS evals prevChallenges hc
       ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
   -- the circuit absorbs every previous-challenge cell; their values are the proof's accumulators
-  have holds : (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals
-      = (cp.olds.map (·.u.toList)).toList :=
+  have holds : (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals.toList
+      = (cp.olds.map (·.u)).toList :=
     (ScalarHalf.wrap_olds Vs claimsS evals prevChallenges _).mp hf.olds
   have hdv : (Poseidon.squeeze (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).sponge
         (Poseidon.absorb (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).sponge
-          Poseidon.init ((prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)))).1
+          Poseidon.init (prevChallenges.flatten.toList.map (·.val Vs)))).1
       = recDigest IpaPallas.curve (cp.olds.map (·.u)) := by
-    have habs : (prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
+    have habs : prevChallenges.flatten.toList.map (·.val Vs)
         = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
-      have h1 : (prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
-          = ((ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals).flatten := by
-        simp [ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten, List.map_map,
-          Function.comp_def]
+      have h1 : prevChallenges.flatten.toList.map (·.val Vs)
+          = ((ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals.toList.map
+              Vector.toList).flatten := by
+        simp [toList_flatten', ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten,
+          List.map_map, Function.comp_def, Vector.toList_map]
       rw [h1, holds]
-      simp [Function.comp_def]
     rw [habs]
     rfl
-  have hmask : (List.map (fun _ => true) (prevChallenges.toList.map Vector.toList))
+  have hmask : (prevChallenges.map fun _ => true)
       = (ScalarHalf.wrap Vs claimsS evals prevChallenges).maskVals := by
     rw [ScalarHalf.wrap_maskVals]
-    simp
+    exact Vector.ext fun i hi => by simp
   rw [hdv, hmask] at hread
   rw [← twoHalves_kimchiVerify σ K (by norm_num [PALLAS_BASE_CARD])
     (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf]

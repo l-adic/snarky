@@ -159,7 +159,7 @@ def wrapFinalizePrevProofs {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] 
     (selectDomain (domainGenerator IpaPallas.curve) wrapDomainLog2s)
   (rev.reverse.zip slots.toList).mapM fun (d, sl) => do
     let o ← finalizeOtherProofWrap P d.generator d.vanishingPolynomial sl.unfinalized sl.evals
-      (sl.prevChallenges.toList.map Vector.toList)
+      sl.prevChallenges
     assertAny [o.finalized, Snarky.not sl.unfinalized.shouldFinalize]
     pure o
 
@@ -193,7 +193,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
       let o ← finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) d.generator
           d.vanishingPolynomial
-        sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList)
+        sl.unfinalized sl.evals sl.prevChallenges
       assertAny [o.finalized, Snarky.not sl.unfinalized.shouldFinalize]
       pure o)
     ⦃⇓ _ _ => ⌜d.generator.val Vs = K.cvk.omega →
@@ -206,7 +206,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
         finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) d.generator
             d.vanishingPolynomial
-          sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList)
+          sl.unfinalized sl.evals sl.prevChallenges
         ⦃⇓ o _ => ⌜(↑o.finalized : CVar Fq).val Vs = 1 → sl.ScalarReads σ K.cvk Vs⌝⦄ := by
       have hP :
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).endo = Pasta.vestaEndo ∧
@@ -214,20 +214,17 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).toks =
             Linearization.fqTokens :=
         ⟨rfl, by rfl, rfl⟩
-      have hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs))
-          (sl.prevChallenges.toList.map Vector.toList)
-          (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals := by
-        refine List.forall₂_map_right_iff.2 (List.forall₂_map_left_iff.2
-          (List.forall₂_same.2 fun cs _ => ?_))
-        exact List.forall₂_map_right_iff.2
-          (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
+      have hprev : CircuitType.Reads Vs sl.prevChallenges
+          (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals :=
+        CircuitType.reads_vector.mpr fun i hi => CircuitType.reads_vector.mpr fun j hj =>
+          CircuitType.reads_fvar.mpr (by simp [ScalarHalf.prevVals, ScalarHalf.wrap])
       have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) hP
           IpaPallas.curve.frSponge.hsize
         (three_le_zkRowsOf K.cvk.nc_pos)
         d.generator K.cvk.n (show zkRowsOf nc ≤ K.cvk.n from K.zkRows_eq ▸ K.zkRows_le)
           (by rw [hgen]; exact K.omega_prim.pow_eq_one) _ hvan
-        sl.unfinalized sl.evals (sl.prevChallenges.toList.map Vector.toList) _ hprev
+        sl.unfinalized sl.evals sl.prevChallenges _ hprev
       refine builder_spec_imp _ _ _ hspec ?_
       intro o hread hfin cp pub hguard Vg claimsG successG hg hgbit hc hf hsg
       rw [hgen] at hread
@@ -238,30 +235,28 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
         obtain ⟨a₀, z₀, hα, hζ, ξ₀, -, ĉ, hξ, -, -, -, -, hĉ, -⟩ := hread
         exact halvesTies_of_splitCast Vg claimsG Vs sl.unfinalized sl.evals sl.prevChallenges
           hc ⟨_, hivp.2.1⟩ ⟨_, hivp.2.2.1⟩ ⟨a₀, hα⟩ ⟨z₀, hζ⟩ ⟨ξ₀, hξ⟩ ⟨ĉ, hĉ⟩
-      have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals
-          = (cp.olds.map (·.u.toList)).toList :=
+      have holds : (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).prevVals.toList
+          = (cp.olds.map (·.u)).toList :=
         (ScalarHalf.wrap_olds Vs sl.unfinalized sl.evals sl.prevChallenges _).mp hf.olds
       have hdv :
           (Poseidon.squeeze (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).sponge
             (Poseidon.absorb (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).sponge
-              Poseidon.init
-              ((sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)))).1
+              Poseidon.init (sl.prevChallenges.flatten.toList.map (·.val Vs)))).1
           = recDigest IpaPallas.curve (cp.olds.map (·.u)) := by
-        have habs : (sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
+        have habs : sl.prevChallenges.flatten.toList.map (·.val Vs)
             = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
-          have h1 : (sl.prevChallenges.toList.map Vector.toList).flatten.map (·.val Vs)
+          have h1 : sl.prevChallenges.flatten.toList.map (·.val Vs)
               = ((ScalarHalf.wrap Vs sl.unfinalized sl.evals
-                  sl.prevChallenges).prevVals).flatten := by
-            simp [ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten, List.map_map,
-              Function.comp_def]
+                  sl.prevChallenges).prevVals.toList.map Vector.toList).flatten := by
+            simp [toList_flatten', ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten,
+              List.map_map, Function.comp_def, Vector.toList_map]
           rw [h1, holds]
-          simp [Function.comp_def]
         rw [habs]
         rfl
-      have hmask : (List.map (fun _ => true) (sl.prevChallenges.toList.map Vector.toList))
+      have hmask : (sl.prevChallenges.map fun _ => true)
           = (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges).maskVals := by
         rw [ScalarHalf.wrap_maskVals]
-        simp
+        exact Vector.ext fun i hi => by simp
       rw [hdv, hmask] at hread
       exact ((twoHalves_kimchiVerify σ K (by norm_num [PALLAS_BASE_CARD])
         (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ o hread ht hf).mp
@@ -270,7 +265,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : Key IpaPalla
       (finalizeOtherProofWrap_finalized_bit (V := Vs)
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens)
         d.generator d.vanishingPolynomial sl.unfinalized sl.evals
-        (sl.prevChallenges.toList.map Vector.toList))
+        sl.prevChallenges)
     mvcgen [hf]
     rename_i o _ ho _ _ hany
     intro _ _ hsf
@@ -384,7 +379,7 @@ theorem wrapFinalizePrevProofs_reads
         let o ← finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) p.1.generator
           p.1.vanishingPolynomial p.2.unfinalized p.2.evals
-          (p.2.prevChallenges.toList.map Vector.toList)
+          p.2.prevChallenges
         assertAny [o.finalized, Snarky.not p.2.unfinalized.shouldFinalize]
         pure o)
     (fun _ p => p.1.generator.val Vs = K.cvk.omega →

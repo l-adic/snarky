@@ -115,7 +115,7 @@ def verifyOneBy [ConstraintHolds Fp c]
     CircuitM Fp c (FopOutput Fp ks × BoolVar Fp) := do
   assertEqual (inp.unfinalized.shouldFinalize : FVar Fp) (inp.mustVerify : FVar Fp)
   let fop ← finalizeOtherProofStep P domains ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals
-    inp.proofMask.toList (inp.prevChallenges.toList.map Vector.toList) inp.branchData.domainLog2
+    inp.proofMask inp.prevChallenges inp.branchData.domainLog2
   let (msgStep, afterIndex) ← hashMessagesForNextStepProofOpt IpaPallas.curve.sponge.params
     inp.proofMask (inp.messagesForNextStepProof vk)
   let success ← verify afterIndex (Snarky.not inp.mustVerify) (inp.statement msgStep)
@@ -171,7 +171,7 @@ theorem verifyOneBy_verdict_bit
     ⦃⇓ o _ => ⌜(∃ bb : Bool, (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = bit bb) →
       ∃ bb : Bool, (↑o.2 : CVar Fp).val V = bit bb⌝⦄ := by
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d =>
-    finalizeOtherProofStep_finalized_bit (V := V) (k := ks) P domains u e m pr d
+    finalizeOtherProofStep_finalized_bit (V := V) (k := ks) (np := w) P domains u e m pr d
   have hh := fun p mask m => builder_spec_true
     (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) (n := w)
       (k := ks) p mask m)
@@ -197,7 +197,8 @@ theorem verifyOneBy_shouldFinalize
     ⦃⇓ _ _ => ⌜(↑inp.unfinalized.shouldFinalize : CVar Fp).val V
       = (↑inp.mustVerify : CVar Fp).val V⌝⦄ := by
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d => builder_spec_true
-    (finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) (k := ks) P domains u e m pr d)
+    (finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) (k := ks) (np := w) P domains u
+      e m pr d)
   have hh := fun p mask m => builder_spec_true
     (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) (n := w)
       (k := ks) p mask m)
@@ -252,7 +253,7 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
     simp only [MaxProofsVerified] at *
     omega
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d =>
-    finalizeOtherProofStep_finalized_bit (V := V) (k := ks)
+    finalizeOtherProofStep_finalized_bit (V := V) (k := ks) (np := w)
       P domains u e m pr d
   have hh := hashMessagesForNextStepProofOpt_spec (V := V) IpaPallas.curve.sponge.params
     IpaPallas.curve.sponge.hsize hall inp.proofMask (inp.messagesForNextStepProof vk) ms hm
@@ -393,8 +394,7 @@ theorem verifyOne_scalarReads (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve n
     (finalizeOtherProofStep_finalized_bit (V := V) (k := S.σ.k)
       (FopParams.of IpaVesta.curve ncs S.σ.k Linearization.fpTokens) D.list
         ⟨inp.deferred, true_, inp.spongeDigest⟩
-      inp.evals inp.proofMask.toList (inp.prevChallenges.toList.map Vector.toList)
-      inp.branchData.domainLog2)
+      inp.evals inp.proofMask inp.prevChallenges inp.branchData.domainLog2)
   have hh := fun p mask m => builder_spec_true
     (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) (n := w)
       (k := S.σ.k) p mask m)

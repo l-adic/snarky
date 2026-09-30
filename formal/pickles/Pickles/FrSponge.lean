@@ -50,9 +50,9 @@ def absorbList [ConstraintHolds F c] (p : Poseidon.Params F) (sv : SpongeVar F) 
 
 /-- The digest of the previous proofs' bulletproof challenges `c_{j,i}`: a fresh sponge
 absorbing them in order, squeezed once. -/
-def challengeDigest [ConstraintHolds F c] (p : Poseidon.Params F) (prev : List (List (FVar F))) :
-    CircuitM F c (FVar F) := do
-  let sv ← absorbList p SpongeVar.init prev.flatten
+def challengeDigest [ConstraintHolds F c] {n k : ℕ} (p : Poseidon.Params F)
+    (prev : Vector (Vector (FVar F) k) n) : CircuitM F c (FVar F) := do
+  let sv ← absorbList p SpongeVar.init prev.flatten.toList
   let (d, _) ← SpongeVar.squeeze p sv
   pure d
 
@@ -63,9 +63,9 @@ private def maskedEntries {β α : Type} : List β → List (List α) → List (
 
 /-- The step side's digest of the previous proofs' challenges: the conditional sponge over the
 challenges, each guarded by its proof's mask bit, squeezed once. -/
-def maskedChallengeDigest [ConstraintHolds F c] (p : Poseidon.Params F) (mask : List (BoolVar F))
-    (prev : List (List (FVar F))) : CircuitM F c (FVar F) :=
-  OptSponge.squeeze p (maskedEntries mask prev)
+def maskedChallengeDigest [ConstraintHolds F c] {n k : ℕ} (p : Poseidon.Params F)
+    (mask : Vector (BoolVar F) n) (prev : Vector (Vector (FVar F) k) n) : CircuitM F c (FVar F) :=
+  OptSponge.squeeze p (maskedEntries mask.toList (prev.toList.map Vector.toList))
 
 /-- The fr-sponge schedule at `nc` chunks per column: absorb `digestBefore`, run `digest` and
 absorb its result, then the rest of `Kimchi.Verifier.frTranscript` at the same width — `ft(ζω)`,
@@ -114,13 +114,13 @@ theorem absorbList_spec (p : Poseidon.Params F)
 `c_{j,i}`, the output reads as the first squeeze of the value sponge that absorbed them in
 order: `(squeeze p (absorb p init [c_{0,0}, …, c_{n−1,k−1}])).1`, which is the fr-sponge
 digest `frDigest` of the absorbed challenges. -/
-theorem challengeDigest_spec (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (prev : List (List (FVar F))) :
+theorem challengeDigest_spec {n k : ℕ} (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (prev : Vector (Vector (FVar F) k) n) :
     ⦃⌜True⌝⦄ challengeDigest (c := Builder V (KimchiConstraint F)) p prev
     ⦃⇓ d _ => ⌜d.val V = (Poseidon.squeeze p
-      (Poseidon.absorb p Poseidon.init (prev.flatten.map (·.val V)))).1⌝⦄ := by
+      (Poseidon.absorb p Poseidon.init (prev.flatten.toList.map (·.val V)))).1⌝⦄ := by
   simp only [challengeDigest]
-  have ha := absorbList_spec (V := V) p hsize SpongeVar.init prev.flatten
+  have ha := absorbList_spec (V := V) p hsize SpongeVar.init prev.flatten.toList
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   mvcgen [ha, hsq]
   rename_i _ _ _ habs _ _ hsqz
@@ -173,21 +173,26 @@ private theorem maskedEntries_length_le :
 reads as the first squeeze of the value sponge that absorbed exactly the kept vectors in
 order: `(squeeze p (absorb p init (c_{j₁} ++ … ++ c_{jₗ}))).1` for `j₁ < … < jₗ` the indices
 with `m_j = 1`. -/
-theorem maskedChallengeDigest_spec (p : Poseidon.Params F)
+theorem maskedChallengeDigest_spec {n k : ℕ} (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
-    (mask : List (BoolVar F)) (prev : List (List (FVar F))) (ms : List Bool)
-    (hm : List.Forall₂ (CircuitType.Reads V) mask ms)
-    (hchar : ∀ k : ℕ, k ≤ prev.flatten.length → (k : F) = 0 → k = 0) :
+    (mask : Vector (BoolVar F) n) (prev : Vector (Vector (FVar F) k) n) (ms : Vector Bool n)
+    (hm : CircuitType.Reads V mask ms)
+    (hchar : ∀ j : ℕ, j ≤ n * k → (j : F) = 0 → j = 0) :
     ⦃⌜True⌝⦄ maskedChallengeDigest (c := Builder V (KimchiConstraint F)) p mask prev
     ⦃⇓ d _ => ⌜d.val V = (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
-      (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1⌝⦄
-    := by
+      (Vector.zipWith (fun m cs => if m then cs.toList.map (·.val V) else []) ms
+        prev).toList.flatten)).1⌝⦄ := by
   simp only [maskedChallengeDigest]
-  have h := OptSponge.squeeze_spec (V := V) p hsize hall _ _ (maskedEntries_forall₂ hm prev)
-    (fun k hk => hchar k (le_trans hk (maskedEntries_length_le mask prev)))
-  rw [kept_maskedEntries, List.zipWith_map_right] at h
-  exact h
+  have hlen : (prev.toList.map Vector.toList).flatten.length = n * k := by
+    rw [List.length_flatten, List.map_map]
+    simp [Function.comp_def]
+  have h := OptSponge.squeeze_spec (V := V) p hsize hall _ _
+    (maskedEntries_forall₂ (CircuitType.reads_vector_iff_forall₂.mp hm)
+      (prev.toList.map Vector.toList))
+    (fun j hj => hchar j (hlen ▸ le_trans hj (maskedEntries_length_le _ _)))
+  rw [kept_maskedEntries, List.zipWith_map_right, List.zipWith_map_right] at h
+  simpa only [Vector.toList_zipWith] using h
 
 omit [DecidableEq F] in
 /-- The circuit transcript reads as `frTranscript` of the readings: the transcript is natural

@@ -301,18 +301,17 @@ private theorem wrapStep_kimchiVerify_core
   have hf : FopTies SStep.σ KStep.cvk cp (wrapPublicInput SStep.σ KStep.cvk Vw hd.2.statement)
       (inp.finalizedHalf Vs) := by
     refine ⟨?_, rfl, rfl, rfl⟩
-    have hm : (inp.finalizedHalf Vs).maskVals = List.ofFn fun j : Fin w => ms[j] := by
-      refine List.ext_getElem (by simp [ScalarHalf.maskVals]) fun j h₁ h₂ => ?_
-      have hj : j < w := by simpa [ScalarHalf.maskVals] using h₁
+    have hm : (inp.finalizedHalf Vs).maskVals = Vector.ofFn fun j : Fin w => ms[j] := by
+      refine Vector.ext fun j hj => ?_
       have h := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hms j hj)
       simp only [ScalarHalf.maskVals, VerifyOneInput.finalizedHalf, ScalarHalf.step,
-        List.getElem_map, Vector.getElem_toList, List.getElem_ofFn, h]
+        Vector.getElem_map, Vector.getElem_ofFn, h]
       cases ms[j]'hj <;> simp [bit]
-    have hp : (inp.finalizedHalf Vs).prevVals = List.ofFn fun j : Fin w => (U j).toList := by
-      refine List.ext_getElem (by simp [ScalarHalf.prevVals]) fun j h₁ h₂ => ?_
-      simp [ScalarHalf.prevVals, VerifyOneInput.finalizedHalf, ScalarHalf.step, U,
-        Vector.toList_map]
-    rw [hm, hp, flatten_zipWith_keep]
+    have hp : (inp.finalizedHalf Vs).prevVals = Vector.ofFn fun j : Fin w => U j := by
+      refine Vector.ext fun j hj => ?_
+      simp [ScalarHalf.prevVals, VerifyOneInput.finalizedHalf, ScalarHalf.step, U]
+    rw [hm, hp, Vector.toList_zipWith, Vector.toList_ofFn, Vector.toList_ofFn,
+      flatten_zipWith_keep]
     simp [cp, IvpProof.read]
   refine ⟨cp, oldsW, hpr, hol, hf, fun hguard hsg => ?_⟩
   obtain ⟨v, hv, hv1⟩ := hgrp cp oldsW hpr hol

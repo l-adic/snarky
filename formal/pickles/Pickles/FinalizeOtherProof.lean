@@ -150,12 +150,12 @@ recomputes `ξ` from the fr-sponge over every chunk, the combined inner product 
 chunk, `b` and the permutation scalar, compares each with its claim (the shifted claims through
 `ops`, the plonk ones by `plonkScalarsEqual`), and returns the four bits and their
 conjunction. Each column's chunks are recombined at the `ζ^(2^k)` rows (`collapseEvals`). -/
-def finalizeOtherProofCore [ConstraintHolds F c] {sf : Type} {nc : ℕ} (P : FopParams F)
+def finalizeOtherProofCore [ConstraintHolds F c] {sf : Type} {nc np : ℕ} (P : FopParams F)
     (ops : FopShiftOps F c sf)
     (xiConstrainLowBits : Bool) (digest : CircuitM F c (FVar F)) (gen : FVar F)
-    (pow2Log2 : ℕ) (vanishing : FVar F → CircuitM F c (FVar F)) (mask : List (BoolVar F))
+    (pow2Log2 : ℕ) (vanishing : FVar F → CircuitM F c (FVar F)) (mask : Vector (BoolVar F) np)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) (w : ChunkedEvals nc (FVar F))
-    (prev : List (List (FVar F)))
+    (prev : Vector (Vector (FVar F) k) np)
     (zeta alpha beta gamma : FVar F) (perm zetaToSrs zetaToDomain : sf) :
     CircuitM F c (FopOutput F k) := do
   let endoVar : FVar F := .const P.endoLam
@@ -196,9 +196,9 @@ def finalizeOtherProofCore [ConstraintHolds F c] {sf : Type} {nc : ℕ} (P : Fop
       omegaZk := omegas.omegaToZk, shifts := P.shifts }
   let ftEval0 ← ftEval0Circuit P.endo P.mds P.toks (fun _ => false) ulb inp ext
   let actualCip ← combinedInnerProduct xi r
-    (buildEvalListChunked (mask.zip sgZeta) w.pub.zeta.toList ftEval0
+    (buildEvalListChunked (mask.zip sgZeta).toList w.pub.zeta.toList ftEval0
       (evalFields (·.zeta) w.evals))
-    (buildEvalListChunked (mask.zip sgZetaw) w.pub.zetaOmega.toList w.ftEval1
+    (buildEvalListChunked (mask.zip sgZetaw).toList w.pub.zetaOmega.toList w.ftEval1
       (evalFields (·.zetaOmega) w.evals))
   let cipCorrect ← equals (ops.unshift u.deferredValues.combinedInnerProduct) actualCip
   let expanded ← computeChallenges endoVar
@@ -256,10 +256,11 @@ among `domains`, sorted by size with one per size (`KnownDomain.dedupSort`), by 
 `domainLog2Var`, then `finalizeOtherProofCore` with the masked
 challenge digest, the `ξ` low half constrained, the `ζ^(2^srs)` rows and the known-domain
 vanishing polynomial. -/
-def finalizeOtherProofStep [ConstraintHolds F c] {nc : ℕ} (P : FopParams F)
+def finalizeOtherProofStep [ConstraintHolds F c] {nc np : ℕ} (P : FopParams F)
     (domains : List (KnownDomain F)) (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type1 (FVar F)))
-    (w : ChunkedEvals nc (FVar F)) (mask : List (BoolVar F)) (prev : List (List (FVar F)))
-    (domainLog2Var : FVar F) : CircuitM F c (FopOutput F k) := do
+    (w : ChunkedEvals nc (FVar F)) (mask : Vector (BoolVar F) np)
+    (prev : Vector (Vector (FVar F) k) np) (domainLog2Var : FVar F) :
+    CircuitM F c (FopOutput F k) := do
   let endoVar : FVar F := .const P.endoLam
   let pl := u.deferredValues.plonk
   let zeta ← EndoScalar.toField 8 pl.zeta.val endoVar
@@ -277,10 +278,10 @@ def finalizeOtherProofStep [ConstraintHolds F c] {nc : ℕ} (P : FopParams F)
 plonk claims sealed, then `finalizeOtherProofCore` at the generator cell `gen` with the plain
 challenge digest, the `ξ` low half constrained, the `ζ^(2^srs)` rows and the caller's
 vanishing polynomial. -/
-def finalizeOtherProofWrap [ConstraintHolds F c] {nc : ℕ} (P : FopParams F) (gen : FVar F)
+def finalizeOtherProofWrap [ConstraintHolds F c] {nc np : ℕ} (P : FopParams F) (gen : FVar F)
     (vanishing : FVar F → CircuitM F c (FVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F)))
-    (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F))) :
+    (w : ChunkedEvals nc (FVar F)) (prev : Vector (Vector (FVar F) k) np) :
     CircuitM F c (FopOutput F k) := do
   let endoVar : FVar F := .const P.endoLam
   let pl := u.deferredValues.plonk
@@ -300,8 +301,8 @@ def finalizeOtherProofWrap [ConstraintHolds F c] {nc : ℕ} (P : FopParams F) (g
 
 /-- The kept challenge-polynomial rows: the `j`-th previous proof's `(b_j(ζ), b_j(ζω))` where
 its mask bit is set. -/
-def sgRows (ms : List Bool) (a b : List F) : List (PointEvaluations F) :=
-  ((ms.zip (a.zip b)).filter (·.1)).map fun e => ⟨e.2.1, e.2.2⟩
+def sgRows {np : ℕ} (ms : Vector Bool np) (a b : Vector F np) : List (PointEvaluations F) :=
+  ((ms.zip (a.zip b)).toList.filter (·.1)).map fun e => ⟨e.2.1, e.2.2⟩
 
 omit [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
 /-- The linearization view is natural: reading the variables' view is the readings' view. -/
@@ -311,30 +312,52 @@ private theorem map_linEvals (V : Valuation F) (e : ProofEvaluations (FVar F)) :
     PointEvaluations.map]
 
 omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- The kept entries of the two masked zips are the two columns of the kept rows. -/
-private theorem keptEvals_zip :
+/-- The kept entries of two masked zips of equal lengths are the two columns of the kept
+rows. -/
+private theorem keptEvals_zip_list :
     ∀ (ms : List Bool) (a b : List F), a.length = b.length →
-      keptEvals (ms.zip a) = (sgRows ms a b).map (·.zeta) ∧
-      keptEvals (ms.zip b) = (sgRows ms a b).map (·.zetaOmega)
-  | [], _, _, _ => by simp [keptEvals, sgRows]
-  | _ :: _, [], [], _ => by simp [keptEvals, sgRows]
+      keptEvals (ms.zip a) = (((ms.zip (a.zip b)).filter (·.1)).map
+          fun e => (⟨e.2.1, e.2.2⟩ : PointEvaluations F)).map (·.zeta) ∧
+      keptEvals (ms.zip b) = (((ms.zip (a.zip b)).filter (·.1)).map
+          fun e => (⟨e.2.1, e.2.2⟩ : PointEvaluations F)).map (·.zetaOmega)
+  | [], _, _, _ => by simp [keptEvals]
+  | _ :: _, [], [], _ => by simp [keptEvals]
   | m :: ms, x :: a, y :: b, h => by
-    have := keptEvals_zip ms a b (by simpa using h)
-    cases m <;> simp [keptEvals, sgRows] at this ⊢ <;> exact this
+    have := keptEvals_zip_list ms a b (by simpa using h)
+    cases m <;> simp [keptEvals] at this ⊢ <;> exact this
 
 omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- `sgRows` over two images of one list of challenge lists is the mask-kept challenge lists
-under both maps. -/
-theorem sgRows_kept (f g : List F → F) :
-    ∀ (ms : List Bool) (cvs : List (List F)),
-      sgRows ms (cvs.map f) (cvs.map g)
+/-- The kept entries of the two masked zips are the two columns of the kept rows. -/
+private theorem keptEvals_zip {np : ℕ} (ms : Vector Bool np) (a b : Vector F np) :
+    keptEvals (ms.zip a).toList = (sgRows ms a b).map (·.zeta) ∧
+      keptEvals (ms.zip b).toList = (sgRows ms a b).map (·.zetaOmega) := by
+  simp only [sgRows, Vector.toList_zip]
+  exact keptEvals_zip_list _ _ _ (by simp)
+
+omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The kept rows of two images of one list are the kept entries under both maps. -/
+private theorem sgRows_kept_list {α : Type} (f g : α → F) :
+    ∀ (ms : List Bool) (cvs : List α),
+      (((ms.zip ((cvs.map f).zip (cvs.map g))).filter (·.1)).map
+          fun e => (⟨e.2.1, e.2.2⟩ : PointEvaluations F))
         = (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten.map
             fun cv => (⟨f cv, g cv⟩ : PointEvaluations F)
-  | [], _ => by simp [sgRows]
-  | _ :: _, [] => by simp [sgRows]
+  | [], _ => by simp
+  | _ :: _, [] => by simp
   | m :: ms, cv :: cvs => by
-    have ih := sgRows_kept f g ms cvs
-    cases m <;> simp [sgRows] at ih ⊢ <;> exact ih
+    have ih := sgRows_kept_list f g ms cvs
+    cases m <;> simp at ih ⊢ <;> exact ih
+
+omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
+/-- `sgRows` over two images of one vector of challenge vectors is the mask-kept challenge
+vectors under both maps. -/
+theorem sgRows_kept {np : ℕ} (f g : Vector F k → F) (ms : Vector Bool np)
+    (cvs : Vector (Vector F k) np) :
+    sgRows ms (cvs.map f) (cvs.map g)
+      = (Vector.zipWith (fun m cv => if m then [cv] else []) ms cvs).toList.flatten.map
+          fun cv => (⟨f cv, g cv⟩ : PointEvaluations F) := by
+  simp only [sgRows, Vector.toList_zip, Vector.toList_map, Vector.toList_zipWith]
+  exact sgRows_kept_list f g ms.toList cvs.toList
 
 omit [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
 /-- Zips read entrywise. -/
@@ -383,15 +406,15 @@ theorem finalizeOtherProofCore_finalized_bit {sf : Type} {nc : ℕ} (P : FopPara
     (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) (xiConstrainLowBits : Bool)
     (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F)) (gen : FVar F)
     (pow2Log2 : ℕ) (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
-    (mask : List (BoolVar F)) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
-    (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F)))
+    {np : ℕ} (mask : Vector (BoolVar F) np) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
+    (w : ChunkedEvals nc (FVar F)) (prev : Vector (Vector (FVar F) k) np)
     (zeta alpha beta gamma : FVar F) (perm zetaToSrs zetaToDomain : sf) :
     ⦃⌜True⌝⦄ finalizeOtherProofCore P ops xiConstrainLowBits digest gen pow2Log2 vanishing mask u w
       prev zeta alpha beta gamma perm zetaToSrs zetaToDomain
     ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.finalized : CVar F).val V = bit b⌝⦄ := by
   simp only [finalizeOtherProofCore]
   have h1 := fun a b => builder_spec_true (mul (c := Builder V (KimchiConstraint F)) a b)
-  have h2 := fun pt l =>
+  have h2 := fun pt (l : Vector (Vector (FVar F) k) np) =>
     builder_spec_true (challengePolyEvals (c := Builder V (KimchiConstraint F)) pt l)
   have h3 := fun a b d e1 pu ev en x => builder_spec_true
     (squeezeXiR (c := Builder V (KimchiConstraint F)) (nc := nc) a b d e1 pu ev en x)
@@ -429,10 +452,10 @@ theorem finalizeOtherProofCore_finalized_bit {sf : Type} {nc : ℕ} (P : FopPara
 open Std.Do in
 /-- Under any valuation satisfying the emitted constraints, the step side's `finalized` reads
 as a bit (`finalizeOtherProofCore_finalized_bit`). -/
-theorem finalizeOtherProofStep_finalized_bit {nc : ℕ} (P : FopParams F)
+theorem finalizeOtherProofStep_finalized_bit {nc np : ℕ} (P : FopParams F)
     (domains : List (KnownDomain F)) (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type1 (FVar F)))
-    (w : ChunkedEvals nc (FVar F)) (mask : List (BoolVar F)) (prev : List (List (FVar F)))
-    (domainLog2Var : FVar F) :
+    (w : ChunkedEvals nc (FVar F)) (mask : Vector (BoolVar F) np)
+    (prev : Vector (Vector (FVar F) k) np) (domainLog2Var : FVar F) :
     ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint F))
       P domains u w mask prev domainLog2Var
     ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.finalized : CVar F).val V = bit b⌝⦄ := by
@@ -455,10 +478,10 @@ theorem finalizeOtherProofStep_finalized_bit {nc : ℕ} (P : FopParams F)
 open Std.Do in
 /-- Under any valuation satisfying the emitted constraints, the wrap side's `finalized` reads
 as a bit (`finalizeOtherProofCore_finalized_bit`). -/
-theorem finalizeOtherProofWrap_finalized_bit {nc : ℕ} (P : FopParams F) (gen : FVar F)
+theorem finalizeOtherProofWrap_finalized_bit {nc np : ℕ} (P : FopParams F) (gen : FVar F)
     (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F)))
-    (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F))) :
+    (w : ChunkedEvals nc (FVar F)) (prev : Vector (Vector (FVar F) k) np) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F))
       P gen vanishing u w prev
     ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.finalized : CVar F).val V = bit b⌝⦄ := by
@@ -482,16 +505,16 @@ equal `combinedInnerProduct` over the read batch, `combinedB`, and `permScalar`,
 `cs`. The evaluations are recombined at `ζ^(2^srs)` and `(ζω)^(2^srs)` (`combineEvals`), and the
 batch is the mask-kept challenge-polynomial rows (`sgRows`), every public chunk's row,
 `(ft₀, ft(ζω))` with `ft₀` the `ftEval0` value, and every evaluation chunk's row. -/
-def FopChecks {nc : ℕ} (P : FopParams F) (n : ℕ) (ω : F) (ms : List Bool) (cvs : List (List F))
-    (w : ChunkedEvals nc (FVar F)) (ζ α β γ permV zetaMV zetaNV cipV bV : F) (unshiftV : F → F)
+def FopChecks {nc np : ℕ} (P : FopParams F) (n : ℕ) (ω : F) (ms : Vector Bool np)
+    (cvs : Vector (Vector F k) np) (w : ChunkedEvals nc (FVar F))
+    (ζ α β γ permV zetaMV zetaNV cipV bV : F) (unshiftV : F → F)
     (V : Valuation F) (o : FopOutput F k) (ξ r : F) (cs : List F) : Prop :=
   let ev := w.evals.map fun v => v.map (·.val V)
   let pv := w.pub.map fun v => v.map (·.val V)
   let e := combineEvals (ζ ^ 2 ^ P.srsLengthLog2) ((ζ * ω) ^ 2 ^ P.srsLengthLog2) ev
   let ft₀ := ftEval0 n P.zkRows ω P.shifts P.endo P.mds α β γ ζ
     (combineAt (ζ ^ 2 ^ P.srsLengthLog2) pv.zeta.toArray) (linEvals e)
-  let rows := sgRows ms (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) ζ)
-      (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) (ζ * ω))
+  let rows := sgRows ms (cvs.map fun cv => bPoly cv.get ζ) (cvs.map fun cv => bPoly cv.get (ζ * ω))
     ++ chunkRows pv ++ ⟨ft₀, w.ftEval1.val V⟩ :: (evalRows ev).flatMap chunkRows
   let cipOk := unshiftV cipV = Bulletproof.combinedInnerProduct ξ r
     (fun (i : Fin rows.length) (j : Fin evalPts) => ((rows.get i).toVector)[j])
@@ -515,8 +538,8 @@ prechallenge `ξ₀` the `ξ` claim reads as, the recomputed low half `ξ'` of `
 that `xiCorrect` reads `[ξ' = ξ₀]` and `FopChecks` holds at `endoExpand` of `ξ₀`, `r'` and each `ĉ`.
 `ξ'` is a prechallenge under `xiConstrainLowBits`, and any reading of it below `2¹²⁸` splits `x₁`
 below the modulus. `FopReads.wire` restates this against the verifier's prechallenges. -/
-def FopReads {sf : Type} {nc : ℕ} (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ)
-    (ω dv : F) (ms : List Bool) (cvs : List (List F))
+def FopReads {sf : Type} {nc np : ℕ} (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ)
+    (ω dv : F) (ms : Vector Bool np) (cvs : Vector (Vector F k) np)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) (w : ChunkedEvals nc (FVar F))
     (ζ α β γ permV zetaMV zetaNV cipV bV : F) (unshiftV : F → F) (V : Valuation F)
     (o : FopOutput F k) : Prop :=
@@ -547,9 +570,10 @@ open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 `FopChecks` holds at the endo-expansions of the `ξ` claim, of `r` and of the challenge claims.
 Without the constraint the recomputed low half may sit at or above `2¹²⁸`, so a claim equal to
 `pre.1` can read `xiCorrect = 0`. -/
-def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} {nc : ℕ} (P : FopParams (ZMod p))
-    (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : List Bool)
-    (cvs : List (List (ZMod p))) (u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf)
+def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} {nc np : ℕ} (P : FopParams (ZMod p))
+    (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : Vector Bool np)
+    (cvs : Vector (Vector (ZMod p) k) np)
+    (u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf)
     (w : ChunkedEvals nc (FVar (ZMod p)))
     (ζ α β γ permV zetaMV zetaNV cipV bV : ZMod p) (unshiftV : ZMod p → ZMod p)
     (V : Valuation (ZMod p))
@@ -571,9 +595,10 @@ def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} {nc : ℕ} (P : FopParams 
 squeezes below the modulus are its prechallenges (`low128_of_split`), the `ξ` one once
 `xiCorrect` identifies it with the 128-bit claim — and, under the low-half constraint, the
 recomputed `ξ'` is that prechallenge outright, so a claim equal to it reads `xiCorrect = 1`. -/
-theorem FopReads.wire {p : ℕ} [Fact p.Prime] {sf : Type} {nc : ℕ}
-    {P : FopParams (ZMod p)} {xiConstrainLowBits : Bool} {n : ℕ} {ω dv : ZMod p} {ms : List Bool}
-    {cvs : List (List (ZMod p))} {u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf}
+theorem FopReads.wire {p : ℕ} [Fact p.Prime] {sf : Type} {nc np : ℕ}
+    {P : FopParams (ZMod p)} {xiConstrainLowBits : Bool} {n : ℕ} {ω dv : ZMod p}
+    {ms : Vector Bool np} {cvs : Vector (Vector (ZMod p) k) np}
+    {u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf}
     {w : ChunkedEvals nc (FVar (ZMod p))}
     {ζ α β γ permV zetaMV zetaNV cipV bV : ZMod p} {unshiftV : ZMod p → ZMod p}
     {V : Valuation (ZMod p)}
@@ -680,13 +705,13 @@ private theorem keptEvals_batch (sg : List (Bool × F)) (ps : List F) (f : F)
 
 omit [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
 /-- A chunked batch reads entrywise. -/
-private theorem forall₂_buildEvalList {V : Valuation F} {mask : List (BoolVar F)}
-    {ms : List Bool} {sg : List (FVar F)} {sgv : List F}
-    (hm : List.Forall₂ (CircuitType.Reads V) mask ms)
-    (hsg : List.Forall₂ (CircuitType.Reads V) sg sgv) (ps : List (FVar F)) (f : FVar F)
+private theorem forall₂_buildEvalList {V : Valuation F} {np : ℕ} {mask : Vector (BoolVar F) np}
+    {ms : Vector Bool np} {sg : Vector (FVar F) np} {sgv : Vector F np}
+    (hm : CircuitType.Reads V mask ms)
+    (hsg : CircuitType.Reads V sg sgv) (ps : List (FVar F)) (f : FVar F)
     (ev : List (FVar F)) :
-    List.Forall₂ (CircuitType.Reads V) (buildEvalListChunked (mask.zip sg) ps f ev)
-      ((ms.zip sgv) ++ (ps.map (·.val V)).map (true, ·) ++ (true, f.val V)
+    List.Forall₂ (CircuitType.Reads V) (buildEvalListChunked (mask.zip sg).toList ps f ev)
+      ((ms.zip sgv).toList ++ (ps.map (·.val V)).map (true, ·) ++ (true, f.val V)
         :: (ev.map (·.val V)).map (true, ·)) := by
   have htrue : CircuitType.Reads V (true_ : BoolVar F) true :=
     CircuitType.reads_boolVar.mpr (by simp [true_, bit])
@@ -695,7 +720,10 @@ private theorem forall₂_buildEvalList {V : Valuation F} {mask : List (BoolVar 
     rw [List.map_map, List.forall₂_map_right_iff, List.forall₂_map_left_iff]
     exact List.forall₂_same.mpr fun x _ =>
       CircuitType.reads_prod.mpr ⟨htrue, CircuitType.reads_fvar.mpr rfl⟩
-  refine List.rel_append (List.rel_append (forall₂_zip hm hsg) (hall ps)) (.cons ?_ (hall ev))
+  refine List.rel_append (List.rel_append ?_ (hall ps)) (.cons ?_ (hall ev))
+  · rw [Vector.toList_zip, Vector.toList_zip]
+    exact forall₂_zip (CircuitType.reads_vector_iff_forall₂.mp hm)
+      (CircuitType.reads_vector_iff_forall₂.mp hsg)
   exact CircuitType.reads_prod.mpr ⟨htrue, CircuitType.reads_fvar.mpr rfl⟩
 
 omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
@@ -749,10 +777,11 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (gen : FVar F) (hω : gen.val V ≠ 0 → gen.val V ^ n = 1) (pow2Log2 : ℕ)
     (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (hvan : gen.val V ≠ 0 → ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (mask : List (BoolVar F)) (ms : List Bool) (hm : List.Forall₂ (CircuitType.Reads V) mask ms)
+    {np : ℕ} (mask : Vector (BoolVar F) np) (ms : Vector Bool np)
+    (hm : CircuitType.Reads V mask ms)
     {nc : ℕ} (w : ChunkedEvals nc (FVar F)) (hpow : nc = 1 ∨ pow2Log2 = P.srsLengthLog2)
-    (prev : List (List (FVar F)))
-    (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
+    (prev : Vector (Vector (FVar F) k) np)
+    (cvs : Vector (Vector F k) np) (hprev : CircuitType.Reads V prev cvs)
     (zeta alpha beta gamma : FVar F) (hft : FtEval0Hyp V P n (gen.val V)) :
     ⦃⌜True⌝⦄ finalizeOtherProofCore (c := Builder V (KimchiConstraint F)) P ops
       xiConstrainLowBits digest gen pow2Log2 vanishing mask u w prev zeta alpha beta gamma perm
@@ -871,23 +900,21 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     rw [hpf.1]
     simp [PointEvaluations.map, Vector.toList, ← Array.toList_map]
   -- the read batch: every public chunk's row, `ft`, every evaluation chunk's row
-  have hlen : (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) (zeta.val V)).length
-      = (cvs.map fun cv =>
-          bPoly (fun i : Fin cv.length => cv.get i) (zeta.val V * gen.val V)).length := by
-    simp
   rw [hzw] at hsgw
   have hcipv := hcipA ⟨_, _, sgRows ms
-      (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) (zeta.val V))
-      (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) (zeta.val V * gen.val V))
+      (cvs.map fun cv => bPoly cv.get (zeta.val V))
+      (cvs.map fun cv => bPoly cv.get (zeta.val V * gen.val V))
       ++ chunkRows (w.pub.map fun v => v.map (·.val V))
       ++ ⟨ft0.val V, w.ftEval1.val V⟩
       :: (evalRows (w.evals.map fun v => v.map (·.val V))).flatMap chunkRows⟩
     (forall₂_buildEvalList hm hsgz _ _ _) (forall₂_buildEvalList hm hsgw _ _ _)
     (getLast_batch _ _ _ _) (getLast_batch _ _ _ _)
-    (by rw [keptEvals_batch, (keptEvals_zip _ _ _ hlen).1,
+    (by rw [keptEvals_batch, (keptEvals_zip ms _
+            (cvs.map fun cv => bPoly cv.get (zeta.val V * gen.val V))).1,
           map_evalFields V _ (·.zeta) fun _ => rfl]
         simp [List.map_flatMap, (chunkRows_map _).1, PointEvaluations.map, Vector.toList_map])
-    (by rw [keptEvals_batch, (keptEvals_zip _ _ _ hlen).2,
+    (by rw [keptEvals_batch, (keptEvals_zip ms (cvs.map fun cv => bPoly cv.get (zeta.val V))
+            _).2,
           map_evalFields V _ (·.zetaOmega) fun _ => rfl]
         simp [List.map_flatMap, (chunkRows_map _).2, PointEvaluations.map, Vector.toList_map])
   dsimp only at hcipv
@@ -1044,11 +1071,11 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (hnodup : ((KnownDomain.dedupSort domains).map fun d => (d.log2 : F)).Nodup)
     (hdom : ∀ d ∈ domains, P.zkRows ≤ 2 ^ d.log2 ∧ d.generator ^ 2 ^ d.log2 = 1)
     (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type1 (FVar F)))
-    {nc : ℕ} (w : ChunkedEvals nc (FVar F)) (mask : List (BoolVar F))
-    (ms : List Bool) (hm : List.Forall₂ (CircuitType.Reads V) mask ms)
-    (prev : List (List (FVar F)))
-    (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
-    (hprevlen : prev.flatten.length < 2 ^ 128) (domainLog2Var : FVar F)
+    {nc np : ℕ} (w : ChunkedEvals nc (FVar F)) (mask : Vector (BoolVar F) np)
+    (ms : Vector Bool np) (hm : CircuitType.Reads V mask ms)
+    (prev : Vector (Vector (FVar F) k) np)
+    (cvs : Vector (Vector F k) np) (hprev : CircuitType.Reads V prev cvs)
+    (hprevlen : np * k < 2 ^ 128) (domainLog2Var : FVar F)
     (hft : ∀ (n : ℕ) (ω : F), FtEval0Hyp V P n ω) :
     ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint F)) P domains u w mask
       prev domainLog2Var
@@ -1057,7 +1084,8 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
       FopReads P true (2 ^ d₀.log2) d₀.generator
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
-          (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
+          (Vector.zipWith (fun m cs => if m then cs.toList.map (·.val V) else []) ms
+            prev).toList.flatten)).1
         ms cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
         (u.deferredValues.plonk.perm.val.val V)
@@ -1076,8 +1104,8 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     Pseudo.choose_spec (V := V) (c := KimchiConstraint F) bits xs f
   have hall3 : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k := fun j k hj hk h =>
     hinj j k (by omega) (by omega) h
-  have hchar : ∀ k : ℕ, k ≤ prev.flatten.length → (k : F) = 0 → k = 0 := fun k hk h =>
-    hinj k 0 (by omega) (by omega) (by simpa using h)
+  have hchar : ∀ j : ℕ, j ≤ np * k → (j : F) = 0 → j = 0 := fun j hj h =>
+    hinj j 0 (lt_of_le_of_lt hj hprevlen) (by omega) (by simpa using h)
   have hd := maskedChallengeDigest_spec (V := V) P.sponge hsize hall3 mask prev ms hm hchar
   have hcore := fun (gen : FVar F) (whiches : List (BoolVar F)) (zeta alpha : FVar F) =>
     builder_spec_forall
@@ -1165,9 +1193,9 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (h3zk : 3 ≤ P.zkRows) (gen : FVar F) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen.val V ^ n = 1)
     (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) {nc : ℕ}
-    (w : ChunkedEvals nc (FVar F)) (prev : List (List (FVar F)))
-    (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (FVar F))) {nc np : ℕ}
+    (w : ChunkedEvals nc (FVar F)) (prev : Vector (Vector (FVar F) k) np)
+    (cvs : Vector (Vector F k) np) (hprev : CircuitType.Reads V prev cvs)
     (hft : FtEval0Hyp V P n (gen.val V)) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F)) P gen
       vanishing u w prev
@@ -1175,7 +1203,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
       FopReads P true n (gen.val V)
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
-          (prev.flatten.map (·.val V)))).1
+          (prev.flatten.toList.map (·.val V)))).1
         (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀.val)
         (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
@@ -1187,10 +1215,11 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   simp only [finalizeOtherProofWrap]
   have htf := EndoScalar.toField_spec (V := V) h2 h3
   have hd := challengeDigest_spec (V := V) P.sponge hsize prev
-  have hm : List.Forall₂ (CircuitType.Reads V) (prev.map fun _ => (true_ : BoolVar F))
+  have hm : CircuitType.Reads V (prev.map fun _ => (true_ : BoolVar F))
       (prev.map fun _ => true) :=
-    List.forall₂_map_right_iff.mpr (List.forall₂_map_left_iff.mpr
-      (List.forall₂_same.mpr fun _ _ => CircuitType.reads_boolVar.mpr (by simp [true_, bit])))
+    CircuitType.reads_vector.mpr fun i hi => by
+      simp only [Vector.getElem_map]
+      exact CircuitType.reads_boolVar.mpr (by simp [true_, bit])
   have hcore := fun (zeta alpha beta gamma perm zetaToSrs zetaToDomain : FVar F) =>
     finalizeOtherProofCore_spec h2 h3 hinj hsw P hsize h3zk n hzk wrapShiftOps
       wrapShiftOps.reading u ⟨perm⟩ ⟨zetaToSrs⟩ ⟨zetaToDomain⟩ true _ _ hd gen
@@ -1219,9 +1248,10 @@ through the side's claim reading `read` (`FopShiftOps.Reading.read`). The parame
 sides differ in are arguments: the low-half flag, the domain `(n, ω)`, the recursion digest
 `dv`, the predecessor mask `ms`, the reading and the shift decode. So is the eigenvalue
 `endoLam` the claims expand at, `P.endoLam` at the deployed specs. -/
-def FopVerifyReads {p : ℕ} [Fact p.Prime] {sf : Type} {nc : ℕ} (P : FopParams (ZMod p))
-    (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : List Bool)
-    (cvs : List (List (ZMod p))) (u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf)
+def FopVerifyReads {p : ℕ} [Fact p.Prime] {sf : Type} {nc np : ℕ} (P : FopParams (ZMod p))
+    (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : Vector Bool np)
+    (cvs : Vector (Vector (ZMod p) k) np)
+    (u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf)
     (w : ChunkedEvals nc (FVar (ZMod p))) (endoLam : ZMod p) (read : sf → ZMod p)
     (unshiftV : ZMod p → ZMod p) (V : Valuation (ZMod p)) (o : FopOutput (ZMod p) k) : Prop :=
   ∃ a₀ z₀ : Prechallenge,
@@ -1250,17 +1280,18 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
     (hnodup : ((KnownDomain.dedupSort domains).map fun d => (d.log2 : Fp)).Nodup)
     (hdom : ∀ d ∈ domains, P.zkRows ≤ 2 ^ d.log2 ∧ d.generator ^ 2 ^ d.log2 = 1)
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    {nc : ℕ} (w : ChunkedEvals nc (FVar Fp)) (mask : List (BoolVar Fp))
-    (ms : List Bool)
-    (hm : List.Forall₂ (CircuitType.Reads V) mask ms) (prev : List (List (FVar Fp)))
-    (cvs : List (List Fp)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
-    (hprevlen : prev.flatten.length < 2 ^ 128) (domainLog2Var : FVar Fp) :
+    {nc np : ℕ} (w : ChunkedEvals nc (FVar Fp)) (mask : Vector (BoolVar Fp) np)
+    (ms : Vector Bool np)
+    (hm : CircuitType.Reads V mask ms) (prev : Vector (Vector (FVar Fp) k) np)
+    (cvs : Vector (Vector Fp k) np) (hprev : CircuitType.Reads V prev cvs)
+    (hprevlen : np * k < 2 ^ 128) (domainLog2Var : FVar Fp) :
     ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) P domains u w mask
       prev domainLog2Var
     ⦃⇓ o _ => ⌜∃ d₀, d₀ ∈ domains ∧ domainLog2Var.val V = (d₀.log2 : Fp) ∧
       FopVerifyReads P true (2 ^ d₀.log2) d₀.generator
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
-          (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
+          (Vector.zipWith (fun m cs => if m then cs.toList.map (·.val V) else []) ms
+            prev).toList.flatten)).1
         ms cvs u w P.endoLam (fun x => x.val.val V)
         (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
   builder_spec_imp _ _ _
@@ -1284,15 +1315,15 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (h3zk : 3 ≤ P.zkRows) (gen : FVar Fq) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen.val V ^ n = 1)
     (vanishing : FVar Fq → CircuitM Fq (Builder V (KimchiConstraint Fq)) (FVar Fq))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) {nc : ℕ}
+    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))) {nc np : ℕ}
     (w : ChunkedEvals nc (FVar Fq))
-    (prev : List (List (FVar Fq)))
-    (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
+    (prev : Vector (Vector (FVar Fq) k) np)
+    (cvs : Vector (Vector Fq k) np) (hprev : CircuitType.Reads V prev cvs) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen
       vanishing u w prev
     ⦃⇓ o _ => ⌜FopVerifyReads P true n (gen.val V)
       (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
-        (prev.flatten.map (·.val V)))).1
+        (prev.flatten.toList.map (·.val V)))).1
       (prev.map fun _ => true) cvs u w P.endoLam (fun x => x.val.val V)
       (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
   builder_spec_imp _ _ _

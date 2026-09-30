@@ -106,38 +106,21 @@ def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c
     (domainLog2Var : FVar Fp) :
     CircuitM Fp c (FopOutput Fp k) :=
   finalizeOtherProofStep (FopParams.of IpaVesta.curve nc k Linearization.fpTokens) domains.list
-    u evals mask.toList (prevChallenges.toList.map Vector.toList) domainLog2Var
+    u evals mask prevChallenges domainLog2Var
 
-/-- A list of cells read, element by element, is the list of their values. -/
-private theorem map_val_of_forall₂_reads {V : Valuation Fp} {cs : List (FVar Fp)} {cv : List Fp}
-    (h : List.Forall₂ (CircuitType.Reads V) cs cv) : cs.map (fun x => CVar.val x V) = cv := by
-  induction h with
-  | nil => rfl
-  | @cons x v xs vs hx _ ih =>
-    simp only [List.map_cons, ih, List.cons.injEq, and_true]
-    exact CircuitType.reads_fvar.mp hx
-
-/-- Lists of cells read, element by element. -/
-private theorem map_map_val_of_forall₂ {V : Valuation Fp} {css : List (List (FVar Fp))}
-    {cvs : List (List Fp)} (h : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) css cvs) :
-    css.map (fun cs => cs.map (fun x => CVar.val x V)) = cvs := by
-  induction h with
-  | nil => rfl
-  | @cons cs cv css cvs hc _ ih =>
-    simp only [List.map_cons, ih, List.cons.injEq, and_true]
-    exact map_val_of_forall₂_reads hc
-
-/-- The mask keeps the same values whether it selects the challenge lists or singletons of
-them: the circuit absorbs the first form, `FopTies.olds` states the second. -/
-private theorem flatten_zipWith_val {V : Valuation Fp} :
-    ∀ (ms : List Bool) (css : List (List (FVar Fp))),
-      (List.zipWith (fun m cs => if m = true then cs.map (fun x => CVar.val x V) else [])
-          ms css).flatten
+/-- The mask keeps the same values whether it selects the challenge vectors' readings or
+singletons of their read vectors: the circuit absorbs the first form, `FopTies.olds` states the
+second. -/
+private theorem flatten_zipWith_val {V : Valuation Fp} {k : ℕ} :
+    ∀ (ms : List Bool) (css : List (Vector (FVar Fp) k)),
+      (List.zipWith (fun m (cs : Vector (FVar Fp) k) =>
+          if m = true then cs.toList.map (fun x => CVar.val x V) else []) ms css).flatten
         = ((List.zipWith (fun m cv => if m = true then [cv] else []) ms
-            (css.map (fun cs => cs.map (fun x => CVar.val x V)))).flatten).flatten
+            (css.map (fun cs => cs.map (fun x => CVar.val x V)))).flatten.map
+              Vector.toList).flatten
   | [], _ => rfl
   | _ :: _, [] => rfl
-  | m :: ms, cs :: css => by cases m <;> simp [flatten_zipWith_val ms css]
+  | m :: ms, cs :: css => by cases m <;> simp [flatten_zipWith_val ms css, Vector.toList_map]
 
 /-! ## The claims across the two circuits -/
 
@@ -260,35 +243,25 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
       (FopParams.of IpaVesta.curve nc S.σ.k Linearization.fpTokens).toks = Linearization.fpTokens :=
     ⟨rfl, by rfl, rfl⟩
   -- the cells read as their own values
-  have hm : List.Forall₂ (CircuitType.Reads Vs) mask.toList
-      (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1)) := by
+  have hm : CircuitType.Reads Vs mask
+      (ScalarHalf.step Vs claimsS evals mask prevChallenges).maskVals := by
     obtain ⟨ms, hms⟩ := hmask
-    refine List.forall₂_map_right_iff.2 (List.forall₂_same.2 fun b hb => ?_)
-    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hb
-    have h := CircuitType.reads_boolVar.mp
-      (CircuitType.reads_vector.mp hms i (by simpa using hi))
+    refine CircuitType.reads_vector.mpr fun i hi => ?_
+    have h := CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hms i hi)
     rw [CircuitType.reads_boolVar]
-    cases hb : ms[i]'(by simpa using hi) <;> simp_all [bit]
-  have hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs))
-      (prevChallenges.toList.map Vector.toList)
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals := by
-    refine List.forall₂_map_right_iff.2 (List.forall₂_map_left_iff.2
-      (List.forall₂_same.2 fun cs _ => ?_))
-    exact List.forall₂_map_right_iff.2
-      (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
-  have hlen : (prevChallenges.toList.map Vector.toList).flatten.length < 2 ^ 128 := by
-    have : (prevChallenges.toList.map Vector.toList).flatten.length
-        = w * S.σ.k := by
-      rw [List.length_flatten, List.map_map]
-      simp [Function.comp_def]
-    rw [this]
-    exact lt_of_le_of_lt (Nat.mul_le_mul_right _ hw) S.rounds_small
+    simp only [ScalarHalf.maskVals, ScalarHalf.step, Vector.getElem_map]
+    cases hb : ms[i] <;> simp_all [bit]
+  have hprev : CircuitType.Reads Vs prevChallenges
+      (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals :=
+    CircuitType.reads_vector.mpr fun i hi => CircuitType.reads_vector.mpr fun j hj =>
+      CircuitType.reads_fvar.mpr (by simp [ScalarHalf.prevVals, ScalarHalf.step])
+  have hlen : w * S.σ.k < 2 ^ 128 :=
+    lt_of_le_of_lt (Nat.mul_le_mul_right _ hw) S.rounds_small
   have hspec := finalizeOtherProofStep_spec_fp (V := Vs)
     (FopParams.of IpaVesta.curve nc S.σ.k Linearization.fpTokens) hP IpaVesta.curve.frSponge.hsize
     (three_le_zkRowsOf K.cvk.nc_pos) domains.list domains.nodup
     (fun d hd => ⟨domains.zkRows_le d hd, domains.generator_pow d hd⟩) claimsS
-    evals mask.toList _ hm (prevChallenges.toList.map Vector.toList) _ hprev hlen
-    domainLog2Var
+    evals mask _ hm prevChallenges _ hprev hlen domainLog2Var
   simp only [finalizeOtherProofStepAt]
   refine builder_spec_imp _ _ _ hspec ?_
   rintro o ⟨d₀, hd₀, hL, hread⟩
@@ -304,25 +277,19 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
   have hn : 2 ^ d₀.log2 = K.cvk.n := by rw [hd]; rfl
   have hω : d₀.generator = K.cvk.omega := by rw [hd]
   -- the circuit absorbs the kept challenge cells; their values are the proof's accumulators
-  have hcells := map_map_val_of_forall₂ hprev
   have hdv : (Poseidon.squeeze (FopParams.of IpaVesta.curve nc S.σ.k Linearization.fpTokens).sponge
         (Poseidon.absorb (FopParams.of IpaVesta.curve nc S.σ.k Linearization.fpTokens).sponge
           Poseidon.init
-          (List.zipWith (fun m cs => if m = true then cs.map (fun x => CVar.val x Vs) else [])
-            (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1))
-            (prevChallenges.toList.map Vector.toList)).flatten)).1
+          (Vector.zipWith (fun m cs => if m = true then cs.toList.map (fun x => CVar.val x Vs)
+            else []) (ScalarHalf.step Vs claimsS evals mask prevChallenges).maskVals
+            prevChallenges).toList.flatten)).1
       = recDigest IpaVesta.curve (cp.olds.map (·.u)) := by
-    have habs : (List.zipWith (fun m cs => if m = true then cs.map (fun x => CVar.val x Vs)
-          else []) (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1))
-          (prevChallenges.toList.map Vector.toList)).flatten
-        = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
-      have holds : (List.zipWith (fun m cv => if m = true then [cv] else [])
-          (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1))
-          (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals).flatten
-          = (cp.olds.map (·.u.toList)).toList := hf.olds
-      rw [flatten_zipWith_val, hcells, holds]
-      simp [Function.comp_def]
-    rw [habs]
+    have holds := hf.olds
+    simp only [ScalarHalf.prevVals, ScalarHalf.step, Vector.toList_zipWith, Vector.toList_map]
+      at holds
+    rw [Vector.toList_zipWith, flatten_zipWith_val]
+    simp only [ScalarHalf.step]
+    rw [holds]
     rfl
   rw [hn, hω, hdv] at hread
   rw [← twoHalves_kimchiVerify S.σ K (by norm_num [PALLAS_SCALAR_CARD])

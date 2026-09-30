@@ -395,14 +395,10 @@ private theorem slotProof_fopTies {ks ncs w : ℕ} {Vg : Valuation Fp} {Vs : Val
     (prevChallenges : Vector (Vector (FVar Fq) σ.k) MaxProofsVerified) (pub : Array Fq) :
     FopTies σ cvk (slotProof Vg Vs inp evals prevChallenges) pub
       (ScalarHalf.wrap Vs claims evals prevChallenges) := by
-  refine ⟨?_, rfl, rfl, rfl⟩
-  have hp : (ScalarHalf.wrap Vs claims evals prevChallenges).prevVals
-      = List.ofFn fun j : Fin MaxProofsVerified => (prevChallenges[j].map (·.val Vs)).toList :=
-    List.ext_getElem (by simp [ScalarHalf.prevVals, ScalarHalf.wrap]) fun j h₁ h₂ => by
-      simp [ScalarHalf.prevVals, ScalarHalf.wrap, Vector.toList_map]
-  rw [ScalarHalf.wrap_maskVals, hp, ← List.ofFn_const, flatten_zipWith_keep]
-  refine List.ext_getElem (by simp [slotProof, IvpProof.read]) fun j h₁ h₂ => ?_
-  simp [slotProof, IvpProof.read, Vector.toList_map]
+  refine ⟨(ScalarHalf.wrap_olds Vs claims evals prevChallenges _).mpr ?_, rfl, rfl, rfl⟩
+  refine List.ext_getElem (by simp [slotProof, IvpProof.read, ScalarHalf.prevVals,
+    ScalarHalf.wrap]) fun j h₁ h₂ => ?_
+  simp [slotProof, IvpProof.read, ScalarHalf.prevVals, ScalarHalf.wrap]
 
 /-- **Every must-verify slot's wrap proof verifies.** Let `Vg` satisfy the step circuit of any
 rule, its slots from any sources, and `Vs` the next wrap circuit, with its branch index reading

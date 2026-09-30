@@ -95,8 +95,8 @@ structure InputReads (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.cu
   pubEvals : s.evals.pub.map (fun v => v.map (·.val Vs))
     = runPubEvals IpaVesta.curve σ cvk cp pub
   /-- The kept previous challenges are the old accumulators', in order. -/
-  prevChallenges : (List.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
-      (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
+  prevChallenges : (Vector.zipWith (fun m cv => if m then [cv] else []) (s.half Vs).maskVals
+      (s.half Vs).prevVals).toList.flatten = (cp.olds.map (·.u)).toList
 
 /-- The scalar half's proof ties are the input's readings. -/
 private theorem InputReads.fopTies {σ : SRS IpaVesta.curve.Point}

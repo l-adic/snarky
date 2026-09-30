@@ -541,8 +541,8 @@ def cipCore {p : ℕ} [Fact p.Prime] (get : ℕ → FVar (ZMod p)) (base : ℕ)
   let sgZeta ← challengePolyEvals zeta chals
   let sgZetaw ← challengePolyEvals zetaw chals
   let actual ← combinedInnerProduct (at_ 34) (at_ 35)
-    (buildEvalList (tagged sgZeta) (at_ 38) (at_ 36) (evals 40))
-    (buildEvalList (tagged sgZetaw) (at_ 39) (at_ 37) (evals 83))
+    (buildEvalList (tagged sgZeta.toList) (at_ 38) (at_ 36) (evals 40))
+    (buildEvalList (tagged sgZetaw.toList) (at_ 39) (at_ 37) (evals 83))
   let _ ← equals expected actual
   pure PUnit.unit
 
@@ -802,7 +802,7 @@ def fopStepChunkedHarnessAt (nc : ℕ) (domains : List (Pickles.KnownDomain Fp))
           endomulScalarSelector := column 43 } }
   Pickles.finalizeOtherProofStep
     (PicklesFixture.fopStepParams nc)
-    domains u w [.unchecked (get 26), .unchecked (get 27)]
+    domains u w #v[.unchecked (get 26), .unchecked (get 27)]
     (PicklesFixture.prevChallengesOf get (tail + 1))
     (get 28)
 

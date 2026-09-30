@@ -61,16 +61,12 @@ private def bPolyCircuit [ConstraintHolds F c] (chals : List (FVar F)) (pt : FVa
   let squares ← squaresGo pt (chals.length - 1)
   bPolyGo (.const 1) (chals.zip (pt :: squares).reverse)
 
-/-- For challenge vectors `(c_{j,0}, …, c_{j,k−1})`, `j < n`, the list whose `j`-th entry is
-`∏_{i<k} (1 + c_{j,i} · pt^{2^{k−1−i}})`. -/
-def challengePolyEvals [ConstraintHolds F c] (pt : FVar F) :
-    List (List (FVar F)) → CircuitM F c (List (FVar F))
-  | [] => pure []
-  | chals :: rest => do
-    -- last vector first
-    let later ← challengePolyEvals pt rest
-    let b ← bPolyCircuit chals pt
-    pure (b :: later)
+/-- For challenge vectors `(c_{j,0}, …, c_{j,k−1})`, `j < n`, the vector whose `j`-th entry is
+`∏_{i<k} (1 + c_{j,i} · pt^{2^{k−1−i}})`, the last vector's emitted first. -/
+def challengePolyEvals [ConstraintHolds F c] {n k : ℕ} (pt : FVar F)
+    (prev : Vector (Vector (FVar F) k) n) : CircuitM F c (Vector (FVar F) n) := do
+  let later ← prev.reverse.mapM fun chals => bPolyCircuit chals.toList pt
+  pure later.reverse
 
 /-- The bulletproof challenges expanded through the endomorphism `endo`: `EndoScalar.toField`
 on each, the last challenge first and the results in vector order. -/
@@ -184,25 +180,40 @@ private theorem bPolyCircuit_spec (chals : List (FVar F)) (pt : FVar F) (cs : Li
     rw [← hP, List.zip_map, List.map_map]
     rfl
 
+omit [DecidableEq F] in
+/-- The challenge polynomial over a vector's list is the one over the vector. -/
+theorem bPoly_toList {k : ℕ} (u : Vector F k) (x : F) :
+    Bulletproof.bPoly (fun i : Fin u.toList.length => u.toList.get i) x
+      = Bulletproof.bPoly u.get x := by
+  unfold Bulletproof.bPoly
+  refine Fintype.prod_equiv (finCongr Vector.length_toList) _ _ fun i => ?_
+  simp only [finCongr_apply, Fin.val_cast, List.get_eq_getElem, Vector.getElem_toList,
+    Vector.length_toList]
+  rfl
+
 /-- Under any valuation satisfying the emitted constraints, with the `j`-th of the `n`
 challenge vectors reading as `(c_{j,0}, …, c_{j,k−1})` and the point as `p`, the `j`-th output
 reads as `∏_{i<k} (1 + c_{j,i} · p^{2^{k−1−i}})`. -/
-theorem challengePolyEvals_spec (pt : FVar F) :
-    ∀ (prev : List (List (FVar F))) (cvs : List (List F)),
-      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs →
-      ⦃⌜True⌝⦄ challengePolyEvals (c := Builder V c) pt prev
-      ⦃⇓ l _ => ⌜List.Forall₂ (CircuitType.Reads V) l (cvs.map fun cv =>
-        Bulletproof.bPoly (fun i : Fin cv.length => cv.get i) (pt.val V))⌝⦄
-  | [], [], _ => by simp only [challengePolyEvals]; mvcgen; all_goals simp
-  | [], _ :: _, h => nomatch h
-  | _ :: _, [], h => nomatch h
-  | chals :: rest, cv :: cvs, h => by
-    obtain ⟨hcv, hrest⟩ := List.forall₂_cons.mp h
-    simp only [challengePolyEvals]
-    have ih := challengePolyEvals_spec pt rest cvs hrest
-    have hb := bPolyCircuit_spec (c := c) (V := V) chals pt cv hcv
-    mvcgen [ih, hb]
-    exact List.Forall₂.cons (CircuitType.reads_fvar.mpr ‹_›) ‹_›
+theorem challengePolyEvals_spec {n k : ℕ} (pt : FVar F) (prev : Vector (Vector (FVar F) k) n)
+    (cvs : Vector (Vector F k) n) (h : CircuitType.Reads V prev cvs) :
+    ⦃⌜True⌝⦄ challengePolyEvals (c := Builder V c) pt prev
+    ⦃⇓ l _ => ⌜CircuitType.Reads V l (cvs.map fun cv => Bulletproof.bPoly cv.get (pt.val V))⌝⦄ := by
+  have hb := builder_spec_vector_mapM_get (V := V)
+    (fun chals : Vector (FVar F) k => bPolyCircuit (c := Builder V c) chals.toList pt)
+    (fun chals a => ∀ cv : Vector F k, CircuitType.Reads V chals cv →
+      a.val V = Bulletproof.bPoly cv.get (pt.val V))
+    (fun chals => builder_spec_forall _ _ _ fun cv hcv =>
+      builder_spec_imp _ _ _ (bPolyCircuit_spec chals.toList pt cv.toList
+        (CircuitType.reads_vector_iff_forall₂.mp hcv)) fun a ha => by rw [ha, bPoly_toList])
+    prev.reverse
+  simp only [challengePolyEvals]
+  mvcgen [hb]
+  rename_i _ _ hl
+  refine CircuitType.reads_vector.mpr fun i hi => CircuitType.reads_fvar.mpr ?_
+  have hj := hl ⟨n - 1 - i, by omega⟩
+  simp only [Fin.getElem_fin, Vector.getElem_reverse, Vector.getElem_map] at hj ⊢
+  simp only [show n - 1 - (n - 1 - i) = i by omega] at hj
+  exact hj _ (CircuitType.reads_vector.mp h i hi)
 
 /-- Under any valuation satisfying the emitted constraints, with `endo` reading as `λ`, the
 `j`-th challenge reads as a prechallenge `nⱼ` and the `j`-th output as `endoExpand λ nⱼ`,
