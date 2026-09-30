@@ -10,6 +10,7 @@ shifted-scalar type (`Type1` or `Type2`): the `sf` fields are the scalars of the
 * `DeferredValues`: what one half of a proof's verification computes and the other certifies;
 * `UnfinalizedProof`: the step statement's per-predecessor entry;
 * `WrapStatement`, `StepStatement`: the two public inputs;
+* `MessagesForNextStepProof`, `MessagesForNextWrapProof`: what the two message digests hash;
 * `StatementPacked`: the wrap statement as the wrap circuit's public input, in wire order
   (`Pickles/Wrap/Types.purs`).
 -/
@@ -115,6 +116,32 @@ structure StepStatement (k n : ℕ) (f bc sf : Type) where
   proofState : StepProofState k n f bc sf
   /-- One `hashMessagesForNextWrapProof` digest per predecessor slot. -/
   messagesForNextWrapProof : Vector f n
+
+/-- What a step proof's `messagesForNextStepProof` digest hashes: the application state, this
+system's wrap key, and per previous proof its `sg` and old bulletproof challenges. -/
+structure MessagesForNextStepProof (g s cpc bc : Type) where
+  /-- The application state. -/
+  appState : s
+  /-- This system's wrap key. -/
+  dlogPlonkIndex : g
+  /-- Each previous proof's `sg`. -/
+  challengePolynomialCommitments : cpc
+  /-- Each previous proof's old bulletproof challenges. -/
+  oldBulletproofChallenges : bc
+
+/-- What a wrap proof's `messagesForNextWrapProof` digest hashes: a step proof's `sg` and the old
+bulletproof challenges it is paired with, unpadded. -/
+structure MessagesForNextWrapProof (g bc : Type) where
+  /-- The step proof's challenge polynomial commitment. -/
+  challengePolynomialCommitment : g
+  /-- The old bulletproof challenges. -/
+  oldBulletproofChallenges : bc
+
+/-- A step message's previous proofs in absorb order: each `sg` with its challenges. -/
+def MessagesForNextStepProof.proofs {g s pt f : Type} {n k : ℕ}
+    (m : MessagesForNextStepProof g s (Vector pt n) (Vector (Vector f k) n)) :
+    Vector (pt × Vector f k) n :=
+  m.challengePolynomialCommitments.zip m.oldBulletproofChallenges
 
 /-- The packed wrap statement: the scalars the step circuit's public-input commitment reads, in
 wire order — the five shifted scalars, `β`, `γ`, `α`, `ζ`, `ξ`, the three digests, the round

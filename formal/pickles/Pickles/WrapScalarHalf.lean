@@ -43,7 +43,7 @@ def finalizeOtherProofWrapAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c
     (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
     (w : ChunkedEvals nc (FVar Fq))
     (prevChallenges : Vector (Vector (FVar Fq) k) MaxProofsVerified) :
-    CircuitM Fq c (FopOutput Fq) :=
+    CircuitM Fq c (FopOutput Fq k) :=
   finalizeOtherProofWrap (FopParams.of IpaPallas.curve nc k Linearization.fqTokens)
     (.const cvk.omega)
     (fun z => do

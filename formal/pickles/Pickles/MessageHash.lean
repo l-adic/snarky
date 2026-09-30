@@ -32,14 +32,15 @@ open Snarky Snarky.Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
 
-/-- The accumulator digest from the sponge `sv`: every challenge vector absorbed in order, then
-`sg.x` and `sg.y`, then one squeeze. -/
-def hashMessagesForNextWrapProof [ConstraintHolds F c] (p : Poseidon.Params F) (sv : SpongeVar F)
-    (allChallenges : List (List (FVar F))) (sg : AffinePoint (FVar F)) :
+/-- The digest of the message `m` from the sponge `sv`: every challenge vector absorbed in order,
+then the commitment's `x` and `y`, then one squeeze. -/
+def hashMessagesForNextWrapProof [ConstraintHolds F c] {k : ℕ} (p : Poseidon.Params F)
+    (sv : SpongeVar F)
+    (m : MessagesForNextWrapProof (AffinePoint (FVar F)) (List (Vector (FVar F) k))) :
     CircuitM F c (FVar F) := do
-  let sv ← absorbList p sv allChallenges.flatten
-  let sv ← SpongeVar.absorb p sv sg.x
-  let sv ← SpongeVar.absorb p sv sg.y
+  let sv ← absorbList p sv (m.oldBulletproofChallenges.map Vector.toList).flatten
+  let sv ← SpongeVar.absorb p sv m.challengePolynomialCommitment.x
+  let sv ← SpongeVar.absorb p sv m.challengePolynomialCommitment.y
   let (digest, _) ← SpongeVar.squeeze p sv
   pure digest
 
@@ -54,14 +55,15 @@ def wrapPaddingSponge {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (pa
     SpongeVar F :=
   SpongeVar.ofConstants (wrapPaddingState p dummy pad)
 
-/-- The wire's messages-for-next-wrap-proof digest: an accumulator's `sg` and its old bulletproof
-challenges, front-padded with `dummy` to `MaxProofsVerified`, absorbed from the fresh sponge and
-squeezed. -/
-def wrapMsgDigest {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (sg : AffinePoint F)
-    (chals : List (Vector F k)) : F :=
+/-- The wire's messages-for-next-wrap-proof digest of the message `m`: its old bulletproof
+challenges, front-padded with `dummy` to `MaxProofsVerified`, then its commitment, absorbed from
+the fresh sponge and squeezed. -/
+def wrapMsgDigest {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k)
+    (m : MessagesForNextWrapProof (AffinePoint F) (List (Vector F k))) : F :=
   (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
-    ((List.replicate (MaxProofsVerified - chals.length) dummy.toList).flatten
-      ++ (chals.map Vector.toList).flatten ++ [sg.x, sg.y]))).1
+    ((List.replicate (MaxProofsVerified - m.oldBulletproofChallenges.length) dummy.toList).flatten
+      ++ (m.oldBulletproofChallenges.map Vector.toList).flatten
+      ++ [m.challengePolynomialCommitment.x, m.challengePolynomialCommitment.y]))).1
 
 /-- The sponge after the key: its commitments absorbed chunk by chunk, `x` then `y`, in the
 order `σ₀…σ₆`, the coefficients, the selectors. -/
@@ -73,36 +75,38 @@ def spongeAfterIndex [ConstraintHolds F c] {nc : ℕ} (p : Poseidon.Params F)
       SpongeVar.absorb p sv P.y)
     SpongeVar.init
 
-/-- The step proof's accumulator digest on the plain sponge: after the key, the application
+/-- The digest of the step message `m` on the plain sponge: after its key, its application
 state, then per proof `sg` and its challenges, then one squeeze. -/
-def hashMessagesForNextStepProof [ConstraintHolds F c] {nc : ℕ} (p : Poseidon.Params F)
-    (vk : VkComms nc (AffinePoint (FVar F))) (appState : List (FVar F))
-    (proofs : List (AffinePoint (FVar F) × List (FVar F))) : CircuitM F c (FVar F) := do
-  let sv ← spongeAfterIndex p vk
-  let sv ← appState.foldlM (SpongeVar.absorb p) sv
-  let sv ← (proofs.flatMap fun (sg, chals) => sg.x :: sg.y :: chals).foldlM
+def hashMessagesForNextStepProof [ConstraintHolds F c] {nc n k : ℕ} (p : Poseidon.Params F)
+    (m : MessagesForNextStepProof (VkComms nc (AffinePoint (FVar F))) (List (FVar F))
+      (Vector (AffinePoint (FVar F)) n) (Vector (Vector (FVar F) k) n)) :
+    CircuitM F c (FVar F) := do
+  let sv ← spongeAfterIndex p m.dlogPlonkIndex
+  let sv ← m.appState.foldlM (SpongeVar.absorb p) sv
+  let sv ← (m.proofs.toList.flatMap fun (sg, chals) => sg.x :: sg.y :: chals.toList).foldlM
     (SpongeVar.absorb p) sv
   let (digest, _) ← SpongeVar.squeeze p sv
   pure digest
 
-/-- The step proof's accumulator digest with each proof's advice kept under its mask, and the
-sponge after the key, which the verify block resumes from: after the key and the application
+/-- The digest of the step message `m` with each proof's advice kept under its bit of `mask`, and
+the sponge after the key, which the verify block resumes from: after the key and the application
 state, per proof `sg` and its challenges on the conditional sponge. With no proofs there is no
 masked input, and the plain sponge squeezes. -/
-def hashMessagesForNextStepProofOpt [ConstraintHolds F c] {nc : ℕ} (p : Poseidon.Params F)
-    (vk : VkComms nc (AffinePoint (FVar F))) (appState : List (FVar F))
-    (proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F))) :
+def hashMessagesForNextStepProofOpt [ConstraintHolds F c] {nc n k : ℕ} (p : Poseidon.Params F)
+    (mask : Vector (BoolVar F) n)
+    (m : MessagesForNextStepProof (VkComms nc (AffinePoint (FVar F))) (List (FVar F))
+      (Vector (AffinePoint (FVar F)) n) (Vector (Vector (FVar F) k) n)) :
     CircuitM F c (FVar F × SpongeVar F) := do
-  let afterIndex ← spongeAfterIndex p vk
-  let sv ← appState.foldlM (SpongeVar.absorb p) afterIndex
-  match proofs with
+  let afterIndex ← spongeAfterIndex p m.dlogPlonkIndex
+  let sv ← m.appState.foldlM (SpongeVar.absorb p) afterIndex
+  match (mask.zip m.proofs).toList with
   | [] => do
     let (digest, _) ← SpongeVar.squeeze p sv
     pure (digest, afterIndex)
-  | _ => do
+  | proofs => do
     let ov ← OptSponge.ofSponge p sv
     let ov := proofs.foldl (fun ov (b, sg, chals) =>
-      (sg.x :: sg.y :: chals).foldl (fun ov x => OptSponge.optAbsorb ov (b, x)) ov) ov
+      (sg.x :: sg.y :: chals.toList).foldl (fun ov x => OptSponge.optAbsorb ov (b, x)) ov) ov
     let (digest, _) ← OptSponge.optSqueeze p ov
     pure (digest, afterIndex)
 
@@ -115,15 +119,18 @@ open Std.Do
 variable {V : Valuation F}
 
 /-- Under any valuation satisfying the emitted constraints, from a sponge reading as `s`, the
-wrap digest reads as the squeeze after absorbing the challenges' readings, then `sg`. -/
-theorem hashMessagesForNextWrapProof_spec (p : Poseidon.Params F)
+wrap digest of `m` reads as the squeeze after absorbing its challenges' readings, then its
+commitment's. -/
+theorem hashMessagesForNextWrapProof_spec {k : ℕ} (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
-    (allChallenges : List (List (FVar F))) (sg : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p sv
-      allChallenges sg
+    (m : MessagesForNextWrapProof (AffinePoint (FVar F)) (List (Vector (FVar F) k))) :
+    ⦃⌜True⌝⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p sv m
     ⦃⇓ d _ => ⌜∀ s, SpongeVar.ReadsAt V sv s → d.val V = (Poseidon.squeeze p (Poseidon.absorb p s
-      (allChallenges.flatten.map (·.val V) ++ [sg.x.val V, sg.y.val V]))).1⌝⦄ := by
-  have hl := fun sv => absorbList_spec (V := V) p hsize sv allChallenges.flatten
+      ((m.oldBulletproofChallenges.map Vector.toList).flatten.map (·.val V) ++
+        [m.challengePolynomialCommitment.x.val V,
+          m.challengePolynomialCommitment.y.val V]))).1⌝⦄ := by
+  have hl := fun sv => absorbList_spec (V := V) p hsize sv
+    (m.oldBulletproofChallenges.map Vector.toList).flatten
   have hx := fun sv x => SpongeVar.absorb_spec (V := V) p hsize sv x
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   simp only [hashMessagesForNextWrapProof]
@@ -134,17 +141,18 @@ theorem hashMessagesForNextWrapProof_spec (p : Poseidon.Params F)
   simp [Poseidon.absorb, List.foldl_append]
 
 /-- **The padded wrap digest.** From the padding sponge for the stacks it is given, the digest
-of cells reading as an accumulator `sg` and its challenges `chals` is the wire's
-messages-for-next-wrap-proof digest of them (`wrapMsgDigest`). -/
+of the message of cells reading as an accumulator `sg` and its challenges `chals` is the wire's
+messages-for-next-wrap-proof digest of the message they read as (`wrapMsgDigest`). -/
 theorem hashMessagesForNextWrapProof_padded {k : ℕ} (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (dummy : Vector F k)
     (chals : List (Vector (FVar F) k)) (sg : AffinePoint (FVar F)) :
     ⦃⌜True⌝⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p
-      (wrapPaddingSponge p dummy (MaxProofsVerified - chals.length)) (chals.map Vector.toList) sg
+      (wrapPaddingSponge p dummy (MaxProofsVerified - chals.length)) ⟨sg, chals⟩
     ⦃⇓ d _ => ⌜∀ (sgv : AffinePoint F) (cv : List (Vector F k)), CircuitType.Reads V sg sgv →
-      List.Forall₂ (CircuitType.Reads V) chals cv → d.val V = wrapMsgDigest p dummy sgv cv⌝⦄ := by
+      List.Forall₂ (CircuitType.Reads V) chals cv →
+        d.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩⌝⦄ := by
   refine builder_spec_imp _ _ _
-    (hashMessagesForNextWrapProof_spec p hsize _ (chals.map Vector.toList) sg) fun d hd => ?_
+    (hashMessagesForNextWrapProof_spec p hsize _ ⟨sg, chals⟩) fun d hd => ?_
   intro sgv cv hsg hcv
   rw [hd _ (SpongeVar.ReadsAt.ofConstants _)]
   obtain ⟨hx, hy⟩ := reads_affinePoint.mp hsg
@@ -198,22 +206,23 @@ private theorem foldl_optAbsorb_reads {p : Poseidon.Params F} {ib nf : Bool}
     simpa using foldl_optAbsorb_reads es vs hes _ _ (OptSponge.optAbsorb_reads_absorbing h he)
 
 /-- The step digest's guarded inputs: each proof's `sg` and challenges under its mask. -/
-private def guarded (proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F))) :
+private def guarded {k : ℕ}
+    (proofs : List (BoolVar F × AffinePoint (FVar F) × Vector (FVar F) k)) :
     List (BoolVar F × FVar F) :=
-  proofs.flatMap fun (b, sg, chals) => (sg.x :: sg.y :: chals).map (b, ·)
+  proofs.flatMap fun (b, sg, chals) => (sg.x :: sg.y :: chals.toList).map (b, ·)
 
 /-- The kept values: each proof's `sg` and challenges where its mask reads `true`. -/
-def keptValues (V : Valuation F) (ms : List Bool)
-    (proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F))) : List F :=
-  (List.zipWith (fun m (q : BoolVar F × AffinePoint (FVar F) × List (FVar F)) =>
-    if m then (q.2.1.x :: q.2.1.y :: q.2.2).map (·.val V) else []) ms proofs).flatten
+def keptValues {n k : ℕ} (V : Valuation F) (ms : Vector Bool n)
+    (proofs : Vector (AffinePoint (FVar F) × Vector (FVar F) k) n) : List F :=
+  (Vector.zipWith (fun b (q : AffinePoint (FVar F) × Vector (FVar F) k) =>
+    if b then (q.1.x :: q.1.y :: q.2.toList).map (·.val V) else []) ms proofs).toList.flatten
 
 omit [DecidableEq F] in
 /-- The nested per-proof absorbs are one fold over the guarded inputs. -/
-private theorem foldl_guarded (ov : OptSponge.OptSpongeVar F) :
-    ∀ proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F)),
-      proofs.foldl (fun ov q =>
-          (q.2.1.x :: q.2.1.y :: q.2.2).foldl (fun ov x => OptSponge.optAbsorb ov (q.1, x)) ov) ov
+private theorem foldl_guarded {k : ℕ} (ov : OptSponge.OptSpongeVar F) :
+    ∀ proofs : List (BoolVar F × AffinePoint (FVar F) × Vector (FVar F) k),
+      proofs.foldl (fun ov q => (q.2.1.x :: q.2.1.y :: q.2.2.toList).foldl
+          (fun ov x => OptSponge.optAbsorb ov (q.1, x)) ov) ov
         = (guarded proofs).foldl OptSponge.optAbsorb ov := by
   intro proofs
   induction proofs generalizing ov with
@@ -224,14 +233,14 @@ private theorem foldl_guarded (ov : OptSponge.OptSpongeVar F) :
     exact ih _
 
 /-- The guarded inputs' readings: each value under its proof's mask. -/
-private def guardedVals (V : Valuation F) (ms : List Bool)
-    (proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F))) : List (Bool × F) :=
-  (List.zipWith (fun m (q : BoolVar F × AffinePoint (FVar F) × List (FVar F)) =>
-    (q.2.1.x :: q.2.1.y :: q.2.2).map fun x => (m, x.val V)) ms proofs).flatten
+private def guardedVals {k : ℕ} (V : Valuation F) (ms : List Bool)
+    (proofs : List (BoolVar F × AffinePoint (FVar F) × Vector (FVar F) k)) : List (Bool × F) :=
+  (List.zipWith (fun m (q : BoolVar F × AffinePoint (FVar F) × Vector (FVar F) k) =>
+    (q.2.1.x :: q.2.1.y :: q.2.2.toList).map fun x => (m, x.val V)) ms proofs).flatten
 
 omit [BasicSystem F c] [KimchiSystem F c] in
-private theorem guarded_reads :
-    ∀ (proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F))) (ms : List Bool),
+private theorem guarded_reads {k : ℕ} :
+    ∀ (proofs : List (BoolVar F × AffinePoint (FVar F) × Vector (FVar F) k)) (ms : List Bool),
       List.Forall₂ (fun q m => CircuitType.Reads V q.1 m) proofs ms →
       List.Forall₂ (CircuitType.Reads V) (guarded proofs) (guardedVals V ms proofs)
   | [], [], .nil => .nil
@@ -248,38 +257,66 @@ private theorem guarded_reads :
         CircuitType.reads_prod.mpr ⟨hq, by simp⟩
 
 omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
-private theorem guardedVals_kept (ms : List Bool)
-    (proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F))) :
-    ((guardedVals V ms proofs).filter (·.1)).map (·.2) = keptValues V ms proofs := by
-  induction proofs generalizing ms with
-  | nil => cases ms <;> rfl
-  | cons q qs ih =>
-    cases ms with
-    | nil => rfl
-    | cons m ms =>
-      simp only [guardedVals, keptValues, List.zipWith_cons_cons, List.flatten_cons,
-        List.filter_append, List.map_append] at *
-      rw [ih]
-      cases m <;> simp [List.filter_map, Function.comp_def]
+private theorem guardedVals_kept {k : ℕ} :
+    ∀ (ms : List Bool) (masks : List (BoolVar F))
+      (proofs : List (AffinePoint (FVar F) × Vector (FVar F) k)), masks.length = proofs.length →
+      ((guardedVals V ms (masks.zip proofs)).filter (·.1)).map (·.2)
+        = (List.zipWith (fun b (q : AffinePoint (FVar F) × Vector (FVar F) k) =>
+          if b then (q.1.x :: q.1.y :: q.2.toList).map (·.val V) else []) ms proofs).flatten
+  | [], _, _, _ => by simp [guardedVals]
+  | _ :: _, [], [], _ => by simp [guardedVals]
+  | _ :: _, [], _ :: _, h => by simp at h
+  | _ :: _, _ :: _, [], h => by simp at h
+  | m :: ms, _ :: masks, q :: qs, h => by
+    have ih := guardedVals_kept ms masks qs (by simpa using h)
+    simp only [guardedVals, List.zip_cons_cons, List.zipWith_cons_cons, List.flatten_cons,
+      List.filter_append, List.map_append] at ih ⊢
+    rw [ih]
+    cases m <;> simp [List.filter_map, Function.comp_def]
 
-/-- Under any valuation satisfying the emitted constraints, with each proof's mask reading as
-`ms`, the digest reads as the first squeeze of the value sponge after the key's coordinates,
-the application state, and the kept proofs' `sg` and challenges, and the returned sponge reads
-as the one after the key. -/
-theorem hashMessagesForNextStepProofOpt_spec {nc : ℕ} (p : Poseidon.Params F)
+/-- A relation on a list's entries carries to its zip with an equally long list. -/
+private theorem forall₂_zip_fst {α β γ : Type} {R : α → γ → Prop} :
+    ∀ (as : List α) (bs : List β) (cs : List γ), List.Forall₂ R as cs →
+      bs.length = as.length → List.Forall₂ (fun q c => R q.1 c) (as.zip bs) cs
+  | [], _, [], .nil, _ => by simp
+  | a :: as, b :: bs, c :: cs, .cons h hs, hl => by
+    simp only [List.zip_cons_cons]
+    exact .cons h (forall₂_zip_fst as bs cs hs (by simpa using hl))
+  | _ :: _, [], _, _, hl => by simp at hl
+
+/-- Under any valuation satisfying the emitted constraints, with the mask reading as `ms`, the
+digest reads as the first squeeze of the value sponge after the key's coordinates, the
+application state, and the kept proofs' `sg` and challenges, and the returned sponge reads as
+the one after the key. -/
+theorem hashMessagesForNextStepProofOpt_spec {nc n k : ℕ} (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
-    (vk : VkComms nc (AffinePoint (FVar F))) (appState : List (FVar F))
-    (proofs : List (BoolVar F × AffinePoint (FVar F) × List (FVar F))) (ms : List Bool)
-    (hms : List.Forall₂ (fun q m => CircuitType.Reads V q.1 m) proofs ms)
-    (hchar : ∀ k : ℕ, k ≤ (proofs.map fun q => q.2.2.length + 2).sum → (k : F) = 0 → k = 0) :
-    ⦃⌜True⌝⦄ hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint F)) p vk
-      appState proofs
+    (mask : Vector (BoolVar F) n)
+    (m : MessagesForNextStepProof (VkComms nc (AffinePoint (FVar F))) (List (FVar F))
+      (Vector (AffinePoint (FVar F)) n) (Vector (Vector (FVar F) k) n)) (ms : Vector Bool n)
+    (hms : CircuitType.Reads V mask ms)
+    (hchar : ∀ j : ℕ, j ≤ n * (k + 2) → (j : F) = 0 → j = 0) :
+    ⦃⌜True⌝⦄ hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint F)) p mask m
     ⦃⇓ r _ => ⌜SpongeVar.ReadsAt V r.2 (Poseidon.absorb p Poseidon.init
-        (vk.indexPoints.flatMap fun P => [P.x.val V, P.y.val V])) ∧
+        (m.dlogPlonkIndex.indexPoints.flatMap fun P => [P.x.val V, P.y.val V])) ∧
       r.1.val V = (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
-        (vk.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V]) ++ appState.map (·.val V) ++
-          keptValues V ms proofs))).1⌝⦄ := by
+        (m.dlogPlonkIndex.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V]) ++
+          m.appState.map (·.val V) ++ keptValues V ms m.proofs))).1⌝⦄ := by
+  obtain ⟨appState, vk, cpcs, obc⟩ := m
+  dsimp only [MessagesForNextStepProof.proofs]
+  -- the kept values, the mask readings and the absorb count, over the zipped proofs
+  have hkept : keptValues V ms (cpcs.zip obc) = ((guardedVals V ms.toList
+      (mask.zip (cpcs.zip obc)).toList).filter (·.1)).map (·.2) := by
+    rw [Vector.toList_zip, guardedVals_kept _ _ _ (by simp)]
+    simp [keptValues]
+  have hms' : List.Forall₂ (fun q b => CircuitType.Reads V q.1 b)
+      (mask.zip (cpcs.zip obc)).toList ms.toList := by
+    rw [Vector.toList_zip]
+    exact forall₂_zip_fst _ _ _ (CircuitType.reads_vector_iff_forall₂.mp hms) (by simp)
+  have hchar' : ∀ j : ℕ, j ≤ (guarded (mask.zip (cpcs.zip obc)).toList).length →
+      (j : F) = 0 → j = 0 := fun j hj => hchar j (hj.trans_eq (by simp [guarded]))
+  rw [hkept]
+  clear hkept hms hchar
   have hidx := spongeAfterIndex_spec (V := V) p hsize vk
   have hx := fun sv x => SpongeVar.absorb_spec (V := V) p hsize sv x
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
@@ -297,7 +334,8 @@ theorem hashMessagesForNextStepProofOpt_spec {nc : ℕ} (p : Poseidon.Params F)
       intro nv hsat ib ps₀ pend nf h hne hc
       exact ((builder_spec_iff _ _).mp
         (OptSponge.optSqueeze_absorbing_spec p hsize hall ov ib ps₀ pend nf h hne hc) nv hsat).1
-  simp only [hashMessagesForNextStepProofOpt]
+  simp only [hashMessagesForNextStepProofOpt, MessagesForNextStepProof.proofs]
+  generalize (mask.zip (cpcs.zip obc)).toList = proofs at hms' hchar' ⊢
   cases proofs with
   | nil =>
     simp only
@@ -315,7 +353,7 @@ theorem hashMessagesForNextStepProofOpt_spec {nc : ℕ} (p : Poseidon.Params F)
     · rename_i hA _ _ hApp _ _ hS
       refine ⟨hA, ?_⟩
       rw [(hS _ hApp).1]
-      simp [keptValues]
+      simp [guardedVals]
   | cons q qs =>
     simp only
     mvcgen [hidx, hx, hof, hosq] invariants
@@ -339,14 +377,11 @@ theorem hashMessagesForNextStepProofOpt_spec {nc : ℕ} (p : Poseidon.Params F)
         rw [hm] at hn
         exact nomatch hn
       obtain ⟨ib, nf, hab, hnf⟩ := hOf _ hApp hsq
-      have hab' := foldl_optAbsorb_reads _ _ (guarded_reads _ ms hms) _ _ hab
+      have hab' := foldl_optAbsorb_reads _ _ (guarded_reads _ ms.toList hms') _ _ hab
       rw [← foldl_guarded] at hab'
-      have hlen := (guarded_reads _ ms hms).length_eq
-      have hglen : (guarded (q :: qs)).length = ((q :: qs).map fun q => q.2.2.length + 2).sum := by
-        simp only [guarded, List.length_flatMap, List.length_map, List.length_cons]
-      rw [hS _ _ _ _ hab' (Or.inr ⟨hsq, hnf⟩) (by simpa [← hlen, hglen] using hchar),
-        List.nil_append,
-        guardedVals_kept]
+      have hlen := (guarded_reads _ ms.toList hms').length_eq
+      rw [hS _ _ _ _ hab' (Or.inr ⟨hsq, hnf⟩) (fun j hj => hchar' j (hj.trans_eq hlen.symm)),
+        List.nil_append]
       simp [Poseidon.absorb, List.foldl_append]
 
 end Reads

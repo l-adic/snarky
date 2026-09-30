@@ -246,7 +246,7 @@ def runHalf {p : ℕ} [Fact p.Prime] {a av β : Type} [CircuitType (ZMod p) a av
     return (sat, bits)
 
 /-- The scalar half's five bits. -/
-def fopBits {F : Type} (o : Pickles.FopOutput F) : List (String × BoolVar F) :=
+def fopBits {F : Type} {k : ℕ} (o : Pickles.FopOutput F k) : List (String × BoolVar F) :=
   [("finalized", o.finalized), ("xiCorrect", o.xiCorrect), ("bCorrect", o.bCorrect),
    ("cipCorrect", o.cipCorrect), ("plonkOk", o.plonkOk)]
 

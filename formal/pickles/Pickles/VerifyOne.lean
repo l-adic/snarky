@@ -69,10 +69,13 @@ def VerifyOneInput.statement {ks k ncw ncs w : ℕ} (inp : VerifyOneInput ks k n
     (msg : FVar Fp) : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) :=
   ⟨⟨⟨inp.deferred, inp.branchData⟩, inp.spongeDigest, inp.messagesForNextWrapProof⟩, msg⟩
 
-/-- The previous proofs the step-message digest absorbs: each one's mask, `sg` and challenges. -/
-def VerifyOneInput.hashed {ks k ncw ncs w : ℕ} (inp : VerifyOneInput ks k ncw ncs w) :
-    List (BoolVar Fp × AffinePoint (FVar Fp) × List (FVar Fp)) :=
-  inp.proofMask.toList.zip (inp.prevSgs.toList.zip (inp.prevChallenges.toList.map Vector.toList))
+/-- The message a slot's step-message digest is rebuilt from: the previous proof's application
+state, the key, and its previous proofs' `sg`s and challenges. -/
+def VerifyOneInput.messagesForNextStepProof {ks k ncw ncs w : ℕ}
+    (inp : VerifyOneInput ks k ncw ncs w) (vk : VkComms ncw (AffinePoint (FVar Fp))) :
+    MessagesForNextStepProof (VkComms ncw (AffinePoint (FVar Fp))) (List (FVar Fp))
+      (Vector (AffinePoint (FVar Fp)) w) (Vector (Vector (FVar Fp) ks) w) :=
+  ⟨inp.appState, vk, inp.prevSgs, inp.prevChallenges⟩
 
 /-- The step-message digest a slot's statement carries, as a value: the fq-sponge after the
 key, then the application state and the kept proofs' `sg` and challenges, squeezed. -/
@@ -80,7 +83,7 @@ def VerifyOneInput.stepMsgDigest {ks k ncw ncs w : ℕ} (cvk : KimchiVK IpaPalla
     (V : Valuation Fp) (ms : Vector Bool w) (inp : VerifyOneInput ks k ncw ncs w) : Fp :=
   (Poseidon.squeeze IpaPallas.curve.sponge.params
     (Poseidon.absorb IpaPallas.curve.sponge.params cvk.indexState
-      (inp.appState.map (·.val V) ++ keptValues V ms.toList inp.hashed))).1
+      (inp.appState.map (·.val V) ++ keptValues V ms (inp.prevSgs.zip inp.prevChallenges)))).1
 
 /-- The public input a slot's wrap proof is verified at: its statement read at `V`, carrying
 the step-message digest `stepMsgDigest`. -/
@@ -109,12 +112,12 @@ def verifyOneBy [ConstraintHolds Fp c]
       CircuitM Fp c (BoolVar Fp))
     (P : FopParams Fp) (domains : List (KnownDomain Fp))
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput ks k ncw ncs w) :
-    CircuitM Fp c (FopOutput Fp × BoolVar Fp) := do
+    CircuitM Fp c (FopOutput Fp ks × BoolVar Fp) := do
   assertEqual (inp.unfinalized.shouldFinalize : FVar Fp) (inp.mustVerify : FVar Fp)
   let fop ← finalizeOtherProofStep P domains ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals
     inp.proofMask.toList (inp.prevChallenges.toList.map Vector.toList) inp.branchData.domainLog2
-  let (msgStep, afterIndex) ← hashMessagesForNextStepProofOpt IpaPallas.curve.sponge.params vk
-    inp.appState inp.hashed
+  let (msgStep, afterIndex) ← hashMessagesForNextStepProofOpt IpaPallas.curve.sponge.params
+    inp.proofMask (inp.messagesForNextStepProof vk)
   let success ← verify afterIndex (Snarky.not inp.mustVerify) (inp.statement msgStep)
     inp.unfinalized
     (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.toList.map (none, ·)) vk inp.proof)
@@ -169,8 +172,9 @@ theorem verifyOneBy_verdict_bit
       ∃ bb : Bool, (↑o.2 : CVar Fp).val V = bit bb⌝⦄ := by
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d =>
     finalizeOtherProofStep_finalized_bit (V := V) (k := ks) P domains u e m pr d
-  have hh := fun p vk' a pr => builder_spec_true
-    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) p vk' a pr)
+  have hh := fun p mask m => builder_spec_true
+    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) (n := w)
+      (k := ks) p mask m)
   simp only [verifyOneBy]
   mvcgen [hfop, hh, hverify]
   rename_i _ _ hpin _ _ hfin _ _ _ _ hsucc _ _ hand _ _ hor
@@ -194,35 +198,12 @@ theorem verifyOneBy_shouldFinalize
       = (↑inp.mustVerify : CVar Fp).val V⌝⦄ := by
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d => builder_spec_true
     (finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) (k := ks) P domains u e m pr d)
-  have hh := fun p vk' a pr => builder_spec_true
-    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) p vk' a pr)
+  have hh := fun p mask m => builder_spec_true
+    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) (n := w)
+      (k := ks) p mask m)
   have hv := fun sv b st u cells => builder_spec_true (verify sv b st u cells)
   simp only [verifyOneBy]
   mvcgen [hfop, hh, hv]
-
-/-- A relation on a list's entries carries to its zip with an equally long list. -/
-private theorem forall₂_zip_fst {α β γ : Type} {R : α → γ → Prop} :
-    ∀ (as : List α) (bs : List β) (cs : List γ), List.Forall₂ R as cs →
-      bs.length = as.length → List.Forall₂ (fun q c => R q.1 c) (as.zip bs) cs
-  | [], _, [], .nil, _ => by simp
-  | a :: as, b :: bs, c :: cs, .cons h hs, hl => by
-    simp only [List.zip_cons_cons]
-    exact .cons h (forall₂_zip_fst as bs cs hs (by simpa using hl))
-  | _ :: _, [], _, _, hl => by simp at hl
-
-/-- The digest's absorb count is at most two per proof plus its challenges. -/
-private theorem hashed_count_le {α : Type} :
-    ∀ (ms : List α) (sgs : List (AffinePoint (FVar Fp))) (chs : List (List (FVar Fp))),
-      (((ms.zip (sgs.zip chs)).map fun q => q.2.2.length + 2).sum
-        ≤ 2 * ms.length + chs.flatten.length)
-  | [], _, _ => by simp
-  | _ :: _, [], _ => by simp
-  | _ :: _, _ :: _, [] => by simp
-  | _ :: ms, _ :: sgs, ch :: chs => by
-    have := hashed_count_le ms sgs chs
-    simp only [List.zip_cons_cons, List.map_cons, List.sum_cons, List.length_cons,
-      List.flatten_cons, List.length_append]
-    omega
 
 /-- **One slot reads as its wrap proof's group half.** Under a valuation satisfying the emitted
 constraints, with the slot's proof cells reading as `cp`'s, its `sg` cells as `cp`'s old
@@ -262,34 +243,20 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
   have hinj := castInj128_of_lt PALLAS_BASE_CARD (by decide)
   have hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fp) = k → j = k := fun j k hj hk h =>
     hinj j k (by omega) (by omega) h
-  have hms := forall₂_zip_fst inp.proofMask.toList
-    (inp.prevSgs.toList.zip (inp.prevChallenges.toList.map Vector.toList)) ms.toList
-    (CircuitType.reads_vector_iff_forall₂.mp hm) (by simp)
-  have hprevlen : (inp.prevChallenges.toList.map Vector.toList).flatten.length < 2 ^ 128 := by
-    have : (inp.prevChallenges.toList.map Vector.toList).flatten.length = w * ks := by
-      rw [List.length_flatten, List.map_map]
-      simp [Function.comp_def]
-    have := hks
-    have : w * ks ≤ MaxProofsVerified * ks := Nat.mul_le_mul_right _ hw
-    simp only [MaxProofsVerified] at *
-    omega
-  have hchar : ∀ k : ℕ, k ≤ (inp.hashed.map fun q => q.2.2.length + 2).sum →
-      (k : Fp) = 0 → k = 0 := by
-    intro k hk h0
-    have hb := hashed_count_le inp.proofMask.toList inp.prevSgs.toList
-      (inp.prevChallenges.toList.map Vector.toList)
-    have hd : PALLAS_BASE_CARD ∣ k := (ZMod.natCast_eq_zero_iff k PALLAS_BASE_CARD).mp h0
-    refine Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt (le_trans hk hb) ?_)
+  have hchar : ∀ j : ℕ, j ≤ w * (ks + 2) → (j : Fp) = 0 → j = 0 := by
+    intro j hj h0
+    have hd : PALLAS_BASE_CARD ∣ j := (ZMod.natCast_eq_zero_iff j PALLAS_BASE_CARD).mp h0
+    refine Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hj ?_)
     have : (2 : ℕ) ^ 128 + 4 < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
-    have : inp.proofMask.toList.length ≤ 2 := by
-      simpa [MaxProofsVerified] using hw
-    unfold VerifyOneInput.hashed at *
+    have : w * (ks + 2) ≤ MaxProofsVerified * (ks + 2) := Nat.mul_le_mul_right _ hw
+    simp only [MaxProofsVerified] at *
     omega
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d =>
     finalizeOtherProofStep_finalized_bit (V := V) (k := ks)
       P domains u e m pr d
   have hh := hashMessagesForNextStepProofOpt_spec (V := V) IpaPallas.curve.sponge.params
-    IpaPallas.curve.sponge.hsize hall vk inp.appState inp.hashed ms.toList hms hchar
+    IpaPallas.curve.sponge.hsize hall inp.proofMask (inp.messagesForNextStepProof vk) ms hm
+    hchar
   have hvp : ∀ (sv : SpongeVar Fp) (msg : FVar Fp),
       ⦃⌜True⌝⦄ verifyProofAt (c := Builder V (KimchiConstraint Fp)) S.σ K.cvk sv
         (Snarky.not inp.mustVerify) (inp.statement msg) inp.unfinalized
@@ -314,6 +281,7 @@ theorem verifyOne_reads (S : Srs IpaPallas.curve) (K : Key IpaPallas.curve ncw)
   simp only [verifyOneBy]
   mvcgen [hfop, hh, hvp, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
   rename_i _ _ _ _ fop _ hF hr _ hH succ _ hVp ver _ hVer res _ hRes
+  simp only [VerifyOneInput.messagesForNextStepProof, MessagesForNextStepProof.proofs] at hH
   intro hmv hres
   have hnot : (↑(Snarky.not inp.mustVerify) : CVar Fp).val V = 0 := by
     rw [not_val (CircuitType.reads_boolVar.mp hmv)]
@@ -427,8 +395,9 @@ theorem verifyOne_scalarReads (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve n
         ⟨inp.deferred, true_, inp.spongeDigest⟩
       inp.evals inp.proofMask.toList (inp.prevChallenges.toList.map Vector.toList)
       inp.branchData.domainLog2)
-  have hh := fun p vk' a pr => builder_spec_true
-    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) p vk' a pr)
+  have hh := fun p mask m => builder_spec_true
+    (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) (n := w)
+      (k := S.σ.k) p mask m)
   have hv := fun sv b st u cells => builder_spec_true (verify sv b st u cells)
   simp only [verifyOneBy]
   mvcgen [hfop, hh, hv, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]

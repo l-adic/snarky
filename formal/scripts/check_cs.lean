@@ -286,7 +286,7 @@ def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
   let inl := input.toList
   let zero : FVar Fp := .const 0
   let expanded ← Pickles.computeChallenges (.const Bulletproof.IpaVesta.curve.lam) (inl.take 16)
-  let _ ← Pickles.bCorrectCircuit expanded (inl.getD 16 zero) (inl.getD 17 zero)
+  let _ ← Pickles.bCorrectCircuit expanded.toList (inl.getD 16 zero) (inl.getD 17 zero)
     (inl.getD 18 zero) (Type1.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩)
   pure PUnit.unit
 
@@ -296,7 +296,7 @@ def bCorrectWrapCircuit (input : Vector (FVar Fq) 20) : CircuitM Fq Cq PUnit := 
   let inl := input.toList
   let zero : FVar Fq := .const 0
   let expanded ← Pickles.computeChallenges (.const Bulletproof.IpaPallas.curve.lam) (inl.take 16)
-  let _ ← Pickles.bCorrectCircuit expanded (inl.getD 16 zero) (inl.getD 17 zero)
+  let _ ← Pickles.bCorrectCircuit expanded.toList (inl.getD 16 zero) (inl.getD 17 zero)
     (inl.getD 18 zero) (Type2.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩)
   pure PUnit.unit
 
@@ -778,7 +778,7 @@ the `ζω` chunks) in the order public, `w`, coefficients, `z`, `σ`, the six se
 `ft(ζω)`, the two previous-challenge vectors and the digest before evaluations. `zk_rows`
 follows the chunk count. At `nc = 1` this is the 151-cell layout. -/
 def fopStepChunkedHarnessAt (nc : ℕ) (domains : List (Pickles.KnownDomain Fp)) {n : ℕ}
-    (input : Vector (FVar Fp) n) : CircuitM Fp C (Pickles.FopOutput Fp) := do
+    (input : Vector (FVar Fp) n) : CircuitM Fp C (Pickles.FopOutput Fp 16) := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let column (k : ℕ) : PointEvaluations (Vector (FVar Fp) nc) :=
     ⟨Vector.ofFn fun c => get (29 + 2 * nc * k + c),
@@ -809,7 +809,7 @@ def fopStepChunkedHarnessAt (nc : ℕ) (domains : List (Pickles.KnownDomain Fp))
 /-- `finalize_other_proof_chunks2_step_circuit`: the dump's 239 cells at two chunks and one
 known domain of `log2 = 16`. -/
 def fopStepChunks2Harness (input : Vector (FVar Fp) 239) :
-    CircuitM Fp C (Pickles.FopOutput Fp) :=
+    CircuitM Fp C (Pickles.FopOutput Fp 16) :=
   fopStepChunkedHarnessAt 2 [⟨16, Kimchi.Verifier.domainGenerator Bulletproof.IpaVesta.curve 16⟩]
     input
 
@@ -1710,7 +1710,7 @@ def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : XhatCurve.Point)
   let dv := wrapIvpDv get
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
   Pickles.wrapVerifyWith h (oneChunk pts) (wrapStepStatement get) sv wrapMsgSponge
-    [(List.range 15).map fun j => get (178 + j)] (get 177)
+    [Vector.ofFn fun j : Fin 15 => get (178 + j)] (get 177)
     { deferredValues := dv, shouldFinalize := .unchecked (.const 1)
       spongeDigestBeforeEvaluations := get 176 }
     (Pickles.ivpInputOf dv [(some (.unchecked (.const 1)), pt 194)] dummyWrapKeyComms
@@ -1729,8 +1729,8 @@ def hashMessagesWrapCircuit (input : Vector (FVar Fq) 33) : CircuitM Fq Cq PUnit
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let digest ← Pickles.hashMessagesForNextWrapProof Bulletproof.IpaVesta.curve.sponge.params
     SpongeVar.init
-    [(List.range 15).map fun j => get j, (List.range 15).map fun j => get (15 + j)]
-    ⟨get 30, get 31⟩
+    ⟨⟨get 30, get 31⟩,
+      [Vector.ofFn fun j : Fin 15 => get j, Vector.ofFn fun j : Fin 15 => get (15 + j)]⟩
   assertEqual digest (get 32)
 
 /-! ## The step proof's accumulator digest
@@ -1749,10 +1749,10 @@ def hashMessagesStepCircuit (input : Vector (FVar Fp) 91) : CircuitM Fp C PUnit 
   let vk : Pickles.VkComms 1 (AffinePoint (FVar Fp)) :=
     ⟨Vector.ofFn fun j => pt j, Vector.ofFn fun j => pt (7 + j), pt 22, pt 23, pt 24, pt 25,
       pt 26, pt 27⟩
-  let proof (i : ℕ) : AffinePoint (FVar Fp) × List (FVar Fp) :=
-    (⟨get (56 + 17 * i), get (57 + 17 * i)⟩, (List.range 15).map fun j => get (58 + 17 * i + j))
+  let sg (i : ℕ) : AffinePoint (FVar Fp) := ⟨get (56 + 17 * i), get (57 + 17 * i)⟩
+  let chals (i : ℕ) : Vector (FVar Fp) 15 := Vector.ofFn fun j => get (58 + 17 * i + j)
   let digest ← Pickles.hashMessagesForNextStepProof Bulletproof.IpaPallas.curve.sponge.params
-    vk [] [proof 0, proof 1]
+    ⟨[], vk, #v[sg 0, sg 1], #v[chals 0, chals 1]⟩
   assertEqual digest (get 90)
 
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS

@@ -104,7 +104,7 @@ def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c
     (evals : ChunkedEvals nc (FVar Fp))
     (mask : Vector (BoolVar Fp) w) (prevChallenges : Vector (Vector (FVar Fp) k) w)
     (domainLog2Var : FVar Fp) :
-    CircuitM Fp c (FopOutput Fp) :=
+    CircuitM Fp c (FopOutput Fp k) :=
   finalizeOtherProofStep (FopParams.of IpaVesta.curve nc k Linearization.fpTokens) domains.list
     u evals mask.toList (prevChallenges.toList.map Vector.toList) domainLog2Var
 

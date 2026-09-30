@@ -228,7 +228,14 @@ structure WrapMainFinalizeOut (branches mpv ncStep k : ℕ) where
   /-- The finalize slots. -/
   slots : Vector (WrapFinalizeSlot branches k 1 Fq) mpv
   /-- Their finalize outputs. -/
-  outs : List (FopOutput Fq)
+  outs : List (FopOutput Fq k)
+
+/-- The message slot `j`'s accumulator digest is rebuilt from: the step proof's accumulator and
+the slot's real challenge stacks. -/
+abbrev WrapMainFinalizeOut.messagesForNextWrapProof {branches mpv ncStep k : ℕ}
+    (hd : WrapMainFinalizeOut branches mpv ncStep k) (j : Fin mpv) :
+    MessagesForNextWrapProof (AffinePoint (FVar Fq)) (List (Vector (FVar Fq) k)) :=
+  ⟨hd.stepAccs[j].pt, hd.real j⟩
 
 /-- The accumulator cells the verify half batches: slot `j`'s accumulator under keep bit
 `mask[mpv − 1 − j]`. -/
@@ -327,7 +334,7 @@ def wrapMainVerify [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
   let rev ← (List.finRange mpv).reverse.mapM fun j =>
     hashMessagesForNextWrapProof sp
       (wrapPaddingSponge sp dummy (MaxProofsVerified - (hd.real j).length))
-      ((hd.real j).map Vector.toList) hd.stepAccs[j].pt
+      (hd.messagesForNextWrapProof j)
   let msgs : Vector (FVar Fq) mpv := Vector.ofFn fun j => rev.reverse.getD j.val (.const 0)
   assertEqual stmt.digests[2] hd.proofState.2
   let opening ← witness (val := WrapOpeningVal ks) adv.opening
@@ -980,7 +987,7 @@ theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} (Vs : Valuatio
         IpaVesta.curve.sponge.params
         (wrapPaddingSponge IpaVesta.curve.sponge.params dummy
           (MaxProofsVerified - (fin.real j).length))
-        ((fin.real j).map Vector.toList) fin.stepAccs[j].pt)
+        (fin.messagesForNextWrapProof j))
     (fun _ _ => True) id (fun _ => builder_spec_true _) (List.finRange mpv).reverse
   have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
       (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
@@ -1040,7 +1047,7 @@ theorem wrapMainVerify_cells {branches mpv ncStep k ks : ℕ} (Vs : Valuation Fq
         IpaVesta.curve.sponge.params
         (wrapPaddingSponge IpaVesta.curve.sponge.params dummy
           (MaxProofsVerified - (fin.real j).length))
-        ((fin.real j).map Vector.toList) fin.stepAccs[j].pt)
+        (fin.messagesForNextWrapProof j))
     (fun _ _ => True) id (fun _ => builder_spec_true _) (List.finRange mpv).reverse
   have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
       (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
@@ -1117,7 +1124,7 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
       (∀ (i : Fin mpv) (sg : AffinePoint Fq) (chals : List (Vector Fq k)),
         CircuitType.Reads Vs fin.stepAccs[i].pt sg →
         List.Forall₂ (CircuitType.Reads Vs) (fin.real i) chals →
-        out.msgs[i].val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy sg chals) ∧
+        out.msgs[i].val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chals⟩) ∧
       stmt.digests[2].val Vs = fin.proofState.2.val Vs ∧
       (∀ i : Fin mpv, SplitClaimsRead Vs fin.proofState.1[i].toUnfinalized out.splits[i]) ∧
       ∀ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)
@@ -1135,11 +1142,11 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
         IpaVesta.curve.sponge.params
         (wrapPaddingSponge IpaVesta.curve.sponge.params dummy
           (MaxProofsVerified - (fin.real j).length))
-        ((fin.real j).map Vector.toList) fin.stepAccs[j].pt)
+        (fin.messagesForNextWrapProof j))
     (fun d j => ∀ (sgv : AffinePoint Fq) (cv : List (Vector Fq k)),
       CircuitType.Reads Vs fin.stepAccs[j].pt sgv →
       List.Forall₂ (CircuitType.Reads Vs) (fin.real j) cv →
-        d.val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy sgv cv) id
+        d.val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sgv, cv⟩) id
     (fun j => hashMessagesForNextWrapProof_padded (V := Vs) _ hsp dummy (fin.real j)
       fin.stepAccs[j].pt) (List.finRange mpv).reverse
   have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
@@ -1458,7 +1465,7 @@ theorem wrapMain_verifyReads {branches mpv ncStep : ℕ} [NeZero branches]
       (∀ (i : Fin mpv) (sg : AffinePoint Fq) (chals : List (Vector Fq σ.k)),
         CircuitType.Reads Vs r.1.stepAccs[i].pt sg →
         List.Forall₂ (CircuitType.Reads Vs) (r.1.real i) chals →
-        r.2.msgs[i].val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy sg chals) ∧
+        r.2.msgs[i].val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chals⟩) ∧
       stmt.digests[2].val Vs = r.1.proofState.2.val Vs ∧
       (∀ i : Fin mpv, SplitClaimsRead Vs r.1.proofState.1[i].toUnfinalized r.2.splits[i]) ∧
       ∀ (cp : KimchiProof IpaVesta.curve ncStep SStep.σ.k)

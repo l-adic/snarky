@@ -51,14 +51,14 @@ def fopStepParams (nc : ℕ) : Pickles.FopParams Fp :=
 /-- The step side over the 151-cell layout at given known domains: the mask at 26–27
 (unchecked), the domain's log2 at 28, the evaluations from 29. -/
 def fopStepHarnessAt (domains : List (Pickles.KnownDomain Fp)) (input : Vector (FVar Fp) 151) :
-    CircuitM Fp C (Pickles.FopOutput Fp) := do
+    CircuitM Fp C (Pickles.FopOutput Fp 16) := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type1.mk get 29
   Pickles.finalizeOtherProofStep (fopStepParams 1) domains u w
     [.unchecked (get 26), .unchecked (get 27)] prev (get 28)
 
 /-- `fopStepHarnessAt` at the dump's one known domain, of log2 16. -/
-def fopStepHarness (input : Vector (FVar Fp) 151) : CircuitM Fp C (Pickles.FopOutput Fp) :=
+def fopStepHarness (input : Vector (FVar Fp) 151) : CircuitM Fp C (Pickles.FopOutput Fp 16) :=
   fopStepHarnessAt [⟨16, Kimchi.Verifier.domainGenerator Bulletproof.IpaVesta.curve 16⟩] input
 
 /-- The wrap side's deployed parameters: the Pallas curve's (`FopParams.of`) at one chunk, at the
@@ -69,7 +69,7 @@ def fopWrapParams : Pickles.FopParams Fq :=
 /-- The wrap side over the flat layout at a constant domain and `rounds` challenges: the
 evaluations from `10 + rounds`, the vanishing polynomial `ζⁿ − 1` by `pow2PowMul`. -/
 def fopWrapHarnessAt (domainLog2 rounds : ℕ) {n : ℕ} (input : Vector (FVar Fq) n) :
-    CircuitM Fq Cq (Pickles.FopOutput Fq) := do
+    CircuitM Fq Cq (Pickles.FopOutput Fq rounds) := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type2.mk get (10 + rounds) rounds
   Pickles.finalizeOtherProofWrap fopWrapParams
@@ -78,7 +78,7 @@ def fopWrapHarnessAt (domainLog2 rounds : ℕ) {n : ℕ} (input : Vector (FVar F
     u w prev
 
 /-- `fopWrapHarnessAt` at the dump's constant domain, of log2 15, and 16 challenges. -/
-def fopWrapHarness (input : Vector (FVar Fq) 148) : CircuitM Fq Cq (Pickles.FopOutput Fq) :=
+def fopWrapHarness (input : Vector (FVar Fq) 148) : CircuitM Fq Cq (Pickles.FopOutput Fq 16) :=
   fopWrapHarnessAt 15 16 input
 
 /-! ## The gadgets' records as the input
@@ -101,18 +101,18 @@ abbrev StepFopVar (k nc : ℕ) : Type :=
 
 /-- The step side on its records at known domains, at the records' chunk count. -/
 def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) {k nc : ℕ}
-    (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp) :=
+    (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp k) :=
   let (u, w, mask, prev, domainLog2) := v
   Pickles.finalizeOtherProofStep (fopStepParams nc) domains u w mask.toList
     (prev.toList.map (·.toList)) domainLog2
 
 /-- `fopStepOnAt` at the dump's one known domain, of log2 16. -/
-def fopStepOn {k nc : ℕ} (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp) :=
+def fopStepOn {k nc : ℕ} (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp k) :=
   fopStepOnAt [⟨16, Kimchi.Verifier.domainGenerator Bulletproof.IpaVesta.curve 16⟩] v
 
 /-- The wrap side on its records at a constant domain, `ζⁿ − 1` by `pow2PowMul`. -/
 def fopWrapOnAt (domainLog2 : ℕ) {k : ℕ} (v : Pickles.WrapFopVar k 1) :
-    CircuitM Fq Cq (Pickles.FopOutput Fq) :=
+    CircuitM Fq Cq (Pickles.FopOutput Fq k) :=
   Pickles.finalizeOtherProofWrap fopWrapParams
     (.const (Kimchi.Verifier.domainGenerator Bulletproof.IpaPallas.curve domainLog2))
     (fun z => do let t ← Pickles.pow2PowMul z domainLog2; pure (CVar.sub_ t (.const 1)))

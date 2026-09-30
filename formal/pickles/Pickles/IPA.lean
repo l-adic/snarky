@@ -76,12 +76,12 @@ def challengePolyEvals [ConstraintHolds F c] (pt : FVar F) :
 on each, the last challenge first and the results in vector order. -/
 def computeChallenges [ConstraintHolds F c] [ToNat F] [Snarky.Kimchi.KimchiSystem F c]
     (endo : FVar F) :
-    List (FVar F) → CircuitM F c (List (FVar F))
-  | [] => pure []
+    (chals : List (FVar F)) → CircuitM F c (Vector (FVar F) chals.length)
+  | [] => pure #v[]
   | ch :: rest => do
     let later ← computeChallenges endo rest
     let x ← Snarky.Kimchi.EndoScalar.toField 8 ch endo
-    pure (x :: later)
+    pure ((#v[x] ++ later).cast (by simp [Nat.add_comm]))
 
 /-- `b(c, ζ) + r · b(c, ζω)` for challenges `c`, the `ζω` evaluation first. -/
 private def computeBCircuit [ConstraintHolds F c] (chals : List (FVar F))
@@ -213,7 +213,7 @@ theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 
       ⦃⌜True⌝⦄ computeChallenges (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) endo chals
       ⦃⇓ l _ => ⌜∃ ns : List Prechallenge,
         List.Forall₂ (fun (ch : FVar F) (n : Prechallenge) => Reads128 V ⟨ch⟩ n) chals ns ∧
-        List.Forall₂ (CircuitType.Reads V) l
+        List.Forall₂ (CircuitType.Reads V) l.toList
           (ns.map fun n => Poseidon.FqSponge.endoExpand (endo.val V) n.val)⌝⦄
   | [] => by
     simp only [computeChallenges]
@@ -227,7 +227,9 @@ theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 
     rename_i hrest _ _ hch
     obtain ⟨ns, hns, hl⟩ := hrest
     obtain ⟨n, hn, hchv, hrv⟩ := hch
-    exact ⟨⟨n, hn⟩ :: ns, .cons hchv hns, .cons (CircuitType.reads_fvar.mpr hrv) hl⟩
+    refine ⟨⟨n, hn⟩ :: ns, .cons hchv hns, ?_⟩
+    simpa [Vector.toList_cast, Vector.toList_append] using
+      List.Forall₂.cons (CircuitType.reads_fvar.mpr hrv) hl
 
 /-- Under any valuation satisfying the emitted constraints, with the challenges reading as
 `c = (c₀, …, c_{k−1})` and `ζ`, `ζω`, `r` as themselves, the output reads as

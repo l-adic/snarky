@@ -152,7 +152,7 @@ finalize bodies with their assertions, left to right. Returns each slot's finali
 def wrapFinalizePrevProofs {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [KimchiSystem Fq c]
     {branches mpv k nc : ℕ} (P : FopParams Fq) (whichBranch : Vector (BoolVar Fq) branches)
     (slots : Vector (WrapFinalizeSlot branches k nc Fq) mpv) :
-    CircuitM Fq c (List (FopOutput Fq)) := do
+    CircuitM Fq c (List (FopOutput Fq k)) := do
   slots.toList.forM fun sl =>
     pinWrapDomainIndex whichBranch.toList sl.pins.toList sl.domainIndex
   let rev ← (slots.toList.map (·.domainIndex)).reverse.mapM

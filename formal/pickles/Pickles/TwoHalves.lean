@@ -174,7 +174,7 @@ prechallenge at the half's own cells makes `xiCorrect` read `1`. It needs the lo
 whose split stays below the modulus, and `xiCorrect` would read `0` at an honest claim. -/
 private def ScalarHalf.XiExact {nc : ℕ} (σ : SRS C.Point) (cp : KimchiProof C nc σ.k)
     (Sc : ScalarHalf C sf' σ.k nc w)
-    (out : FopOutput C.ScalarField) : Prop :=
+    (out : FopOutput C.ScalarField σ.k) : Prop :=
   let pre := frPrechallenges C.frSponge.params
     (frTranscript (Sc.claims.spongeDigestBeforeEvaluations.val Sc.V)
       (recDigest C (cp.olds.map (·.u))) (Sc.evals.ftEval1.val Sc.V)
@@ -253,7 +253,7 @@ comparison exact (`XiExact`). -/
 private theorem ScalarHalf.xiExact_of_constrained {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C nc σ.k) {G : GroupHalf C sf σ.k}
-    {Sc : ScalarHalf C sf' σ.k nc w} {out : FopOutput C.ScalarField}
+    {Sc : ScalarHalf C sf' σ.k nc w} {out : FopOutput C.ScalarField σ.k}
     (hs : FopVerifyReads (p := C.scalar) (FopParams.of C nc σ.k Sc.side.toks)
       true cvk.n cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
@@ -537,7 +537,7 @@ theorem twoHalves_schnorr
     (hg : G.Reads σ K.cvk cp pub success)
     -- the scalar half
     (Sc : ScalarHalf C sf' σ.k nc w)
-    (out : FopOutput C.ScalarField)
+    (out : FopOutput C.ScalarField σ.k)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.of C nc σ.k Sc.side.toks)
       true K.cvk.n K.cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
@@ -761,7 +761,7 @@ theorem twoHalves_kimchiVerify
     (hg : G.Reads σ K.cvk cp pub success)
     -- the scalar half
     (Sc : ScalarHalf C sf' σ.k nc w)
-    (out : FopOutput C.ScalarField)
+    (out : FopOutput C.ScalarField σ.k)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.of C nc σ.k Sc.side.toks)
       true K.cvk.n K.cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
