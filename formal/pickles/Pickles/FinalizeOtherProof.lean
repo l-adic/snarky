@@ -186,7 +186,7 @@ def finalizeOtherProofCore [ConstraintHolds F c] {sf : Type} {nc np : ℕ} (P : 
     | _, _ => .const 1
   let ulb (zk : Bool) (offset : Int) : CircuitM F c (FVar F) :=
     div zetaToNMinus1 (CVar.sub_ zeta (omegaFor zk offset))
-  let (pEval0, zetaToSrsHere) ← publicFold P.srsLengthLog2 zeta w.pub.zeta.toList
+  let (pEval0, zetaToSrsHere) ← publicFold P.srsLengthLog2 zeta w.pub.zeta
   let evals := linEvals collapsed
   let inp : Inputs F :=
     { evals := evals, alphaPows := alphaPows, beta := beta, gamma := gamma,
@@ -426,7 +426,7 @@ theorem finalizeOtherProofCore_finalized_bit {sf : Type} {nc : ℕ} (P : FopPara
   have h8 := fun g n => builder_spec_true (omegaPowers (c := Builder V (KimchiConstraint F)) g n)
   have h9 := fun z o => builder_spec_true (zkPolynomial (c := Builder V (KimchiConstraint F)) z o)
   have h10 := fun z => builder_spec_true (vanishing z)
-  have h11 := fun n z l =>
+  have h11 := fun n z (l : Vector (FVar F) nc) =>
     builder_spec_true (publicFold (c := Builder V (KimchiConstraint F)) n z l)
   have h12 := fun e m t fe ul i x =>
     builder_spec_true (ftEval0Circuit (c := Builder V (KimchiConstraint F)) e m t fe ul i x)
@@ -837,7 +837,8 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   -- great cost, so the trivial pass is skipped and its four `2 ≠ 0`/`3 ≠ 0` conditions
   -- closed by tag once `hsq` is cleared
   have hcol := collapseEvals_spec (V := V) (c := KimchiConstraint F) (nc := nc)
-  have hpf := publicFold_spec (V := V) (c := KimchiConstraint F) P.srsLengthLog2 zeta
+  have hpf := publicFold_spec (V := V) (c := KimchiConstraint F) (nc := nc) P.srsLengthLog2
+    zeta
   have hzs := fun o => builder_spec_forall
     (zetaToSrsOr (c := Builder V (KimchiConstraint F)) P.srsLengthLog2 zeta o)
     (fun _ : Unit => ∀ z ∈ o, z.val V = zeta.val V ^ 2 ^ P.srsLengthLog2)
@@ -895,9 +896,7 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
           (w.evals.map fun v => v.map (·.val V))) := by
     rw [map_linEvals, hcoll, hE]
   have hp0 : pf.1.val V = combineAt (zeta.val V ^ 2 ^ P.srsLengthLog2)
-      (w.pub.map fun (v : Vector (FVar F) nc) => v.map (·.val V)).zeta.toArray := by
-    rw [hpf.1]
-    simp [PointEvaluations.map, Vector.toList, ← Array.toList_map]
+      (w.pub.map fun (v : Vector (FVar F) nc) => v.map (·.val V)).zeta.toArray := hpf.1
   -- the read batch: every public chunk's row, `ft`, every evaluation chunk's row
   rw [hzw] at hsgw
   have hcipv := hcipA ⟨_, _, sgRows ms

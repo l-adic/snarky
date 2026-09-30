@@ -16,7 +16,6 @@ that recombination as a circuit, with its reading; it transcribes the chunk help
 ## Main definitions
 
 * `ChunkedEvals`: a proof's evaluations at `nc` chunks per column.
-* `hornerChunks`: `∑ᵢ chunks[i] · ptⁱ` in circuit.
 * `collapseColumn`, `collapseEvals`: every column recombined, in a fixed emission order.
 * `publicFold`, `zetaToSrsOr`: the public chunks folded at `ζ^(2^srs)`, and that power shared
   with the plonk check.
@@ -25,7 +24,7 @@ that recombination as a circuit, with its reading; it transcribes the chunk help
 
 ## Main results
 
-* `hornerChunks_spec`, `collapseEvals_spec`, `publicFold_spec`, `zetaToSrsOr_spec`: each gadget
+* `collapseEvals_spec`, `publicFold_spec`, `zetaToSrsOr_spec`: each gadget
   reads as the value-side recombination.
 * `combineEvals_one`: at one chunk the recombination is each column's single chunk.
 -/
@@ -50,7 +49,7 @@ structure ChunkedEvals (nc : ℕ) (f : Type) where
 
 /-- `∑ᵢ chunks[i] · ptⁱ`, by Horner from the last chunk down: one multiplication per chunk
 past the first, the innermost first. -/
-def hornerChunks [ConstraintHolds F c] (pt : FVar F) : List (FVar F) → CircuitM F c (FVar F)
+private def hornerChunks [ConstraintHolds F c] (pt : FVar F) : List (FVar F) → CircuitM F c (FVar F)
   | [] => pure (.const 0)
   | [x] => pure x
   | x :: y :: rest => do
@@ -91,12 +90,11 @@ def collapseEvals [ConstraintHolds F c] {nc : ℕ} (zetaPow zetaOmegaPow : FVar 
 
 /-- The public evaluation at `ζ`: the one chunk as it is, or the chunks folded at `ζ^(2^srs)`,
 with that power returned beside the fold for `zetaToSrsOr` to reuse. -/
-def publicFold [ConstraintHolds F c] (srsLengthLog2 : ℕ) (zeta : FVar F) :
-    List (FVar F) → CircuitM F c (FVar F × Option (FVar F))
-  | [x] => pure (x, none)
-  | chunks => do
+def publicFold [ConstraintHolds F c] {nc : ℕ} (srsLengthLog2 : ℕ) (zeta : FVar F)
+    (chunks : Vector (FVar F) nc) : CircuitM F c (FVar F × Option (FVar F)) :=
+  if h : nc = 1 then pure (chunks[0], none) else do
     let zetaToSrs ← Snarky.pow zeta (2 ^ srsLengthLog2)
-    let folded ← hornerChunks zetaToSrs chunks
+    let folded ← hornerChunks zetaToSrs chunks.toList
     pure (folded, some zetaToSrs)
 
 /-- `ζ^(2^srs)`: the public fold's, when it computed one, and otherwise computed here. -/
@@ -159,7 +157,7 @@ theorem combineAt_single (x a : F) : combineAt x #[a] = a := by
   simpa using combineAt_eq_foldr x [a]
 
 /-- `hornerChunks` reads as the chunks' `combineAt` at the point's reading. -/
-theorem hornerChunks_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
+private theorem hornerChunks_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
     (pt : FVar F) :
     ∀ chunks : List (FVar F), ⦃⌜True⌝⦄ hornerChunks (c := Builder V c) pt chunks
       ⦃⇓ r _ => ⌜r.val V = combineAt (pt.val V) (chunks.map (·.val V)).toArray⌝⦄ := by
@@ -253,28 +251,23 @@ theorem collapseEvals_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicS
 /-- The public fold reads as the public chunks' `combineAt` at `ζ^(2^srs)`, and the power it
 returns, if any, reads as `ζ^(2^srs)`. -/
 theorem publicFold_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (srsLengthLog2 : ℕ) (zeta : FVar F) (chunks : List (FVar F)) :
+    {nc : ℕ} (srsLengthLog2 : ℕ) (zeta : FVar F) (chunks : Vector (FVar F) nc) :
     ⦃⌜True⌝⦄ publicFold (c := Builder V c) srsLengthLog2 zeta chunks
     ⦃⇓ r _ => ⌜r.1.val V = combineAt (zeta.val V ^ 2 ^ srsLengthLog2)
         (chunks.map (·.val V)).toArray ∧
       ∀ z ∈ r.2, z.val V = zeta.val V ^ 2 ^ srsLengthLog2⌝⦄ := by
-  match chunks with
-  | [x] =>
-    simp only [publicFold]
+  unfold publicFold
+  split
+  · subst nc
     mvcgen
+    obtain ⟨⟨_ | ⟨x, _ | _⟩⟩, h⟩ := chunks <;> simp at h
     simp [combineAt_single]
-  | [] =>
-    simp only [publicFold]
-    have hh := hornerChunks_spec (V := V) (c := c)
+  · have hh := hornerChunks_spec (V := V) (c := c)
     mvcgen [hh]
     rename_i t _ ht a _ ha
-    exact ⟨by rw [ha, ht], fun z hz => by simp at hz; rw [← hz, ht]⟩
-  | x :: y :: rest =>
-    simp only [publicFold]
-    have hh := hornerChunks_spec (V := V) (c := c)
-    mvcgen [hh]
-    rename_i t _ ht a _ ha
-    exact ⟨by rw [ha, ht], fun z hz => by simp at hz; rw [← hz, ht]⟩
+    refine ⟨by rw [ha, ht]; simp [Vector.toList, ← Array.toList_map], fun z hz => ?_⟩
+    simp at hz
+    rw [← hz, ht]
 
 /-- `zetaToSrsOr` reads as `ζ^(2^srs)` once the power it may be handed does. -/
 theorem zetaToSrsOr_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
@@ -294,16 +287,16 @@ theorem zetaToSrsOr_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSys
 omit [DecidableEq F] [BasicSystem F c] in
 /-- At one chunk the recombination is each column's single chunk, whatever the points. -/
 theorem combineEvals_one (x y : F) (e : ProofEvaluations (Vector F 1)) :
-    combineEvals x y e = e.map (·.toList.headD 0) := by
+    combineEvals x y e = e.map fun v : Vector F 1 => v[0] := by
   have hcol : ∀ col : PointEvaluations (Vector F 1),
-      combineColumn x y col = col.map (·.toList.headD 0) := by
+      combineColumn x y col = col.map fun v : Vector F 1 => v[0] := by
     intro col
     obtain ⟨⟨za, hza⟩, ⟨zb, hzb⟩⟩ := col
     obtain ⟨la⟩ := za
     obtain ⟨lb⟩ := zb
     match la, lb, hza, hzb with
     | [a], [b], _, _ => simp [combineColumn, combineAt_single, PointEvaluations.map]
-  have hf : combineColumn x y = PointEvaluations.map (·.toList.headD 0) := funext hcol
+  have hf : combineColumn x y = PointEvaluations.map fun v : Vector F 1 => v[0] := funext hcol
   simp only [combineEvals, hf]
   rfl
 
