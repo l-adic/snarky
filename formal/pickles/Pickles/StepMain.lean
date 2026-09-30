@@ -334,15 +334,17 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
     (hks : MaxProofsVerified * ks < 2 ^ 128)
     -- each slot's source
     (srcs : Fin n → SlotSource ncw ks)
-    -- what the slot's finalize establishes of an accepted slot
-    (Q : (i : Fin n) → VerifyOneInput ks σ.k ncw ncs (SlotSource.widths w srcs i) → Prop)
+    -- what the slot's finalize establishes of an accepted slot, at its expanded challenges
+    (Q : (i : Fin n) → VerifyOneInput ks σ.k ncw ncs (SlotSource.widths w srcs i) →
+      Vector (FVar Fp) ks → Prop)
     (hQ : ∀ (i : Fin n) (vk : VkComms ncw (AffinePoint (FVar Fp)))
         (inp : VerifyOneInput ks σ.k ncw ncs (SlotSource.widths w srcs i)),
       ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp))
         (verifyProofWith σ.h (srcs i).lagrange) P ((srcs i).domains domains) vk inp
       ⦃⇓ o _ => ⌜(∃ ms : Vector Bool (SlotSource.widths w srcs i),
           CircuitType.Reads V inp.proofMask ms) →
-        CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 → Q i inp⌝⦄)
+        CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
+        Q i inp o.1.expandedChallenges⌝⦄)
     (hn : n ≤ MaxProofsVerified) (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified)
     (dummySg : AffinePoint (FVar Fp)) (dummyUnf : UnfVal σ.k)
     (rule : inVar →
@@ -364,7 +366,8 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
           σ.Avoids (stepRelationsAt σ K.cvk (inp.statement msg))) →
         (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]).SlotReads
           σ K.cvk V ((srcs i).keyCells r.vk.points)) ∧
-      Q i (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]) ∧
+      Q i (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i])
+        r.messagesForNextStepProof.oldBulletproofChallenges[i] ∧
       SlotWitness.PointsOnCurve V (r.slots i) ∧
       (∃ ms : Vector Bool (SlotSource.widths w srcs i), CircuitType.Reads V
         (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]).proofMask ms) ∧
@@ -408,7 +411,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
           inp.SlotReads σ SK.1.2.cvk V ((srcs i).keyCells vk.points)) ∧
         ((∃ ms : Vector Bool (SlotSource.widths w srcs i), CircuitType.Reads V inp.proofMask ms) →
           CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
-          Q i inp) ∧
+          Q i inp o.1.expandedChallenges) ∧
         (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = (↑inp.mustVerify : CVar Fp).val V)
       (fun i => by
         beta_reduce
@@ -470,7 +473,8 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
   have hmask := slotInput_mask_reads (hws i) dummySg rout.1[i] unfs[i] msgs[i] hz.2.2.1
   refine ⟨CircuitType.reads_boolVar.mpr (hsf.trans (CircuitType.reads_boolVar.mp hmv)),
     fun S hS K hK hfit hav => hacc ⟨(S, K), hS, hK⟩ hfit (hav _) hmv h1 fun x hx => ?_,
-    hsc hmask hmv h1, hz.2.2.2.2, hmask, ?_⟩
+    by simpa only [Fin.getElem_fin, Vector.getElem_map] using hsc hmask hmv h1, hz.2.2.2.2,
+    hmask, ?_⟩
   rotate_left
   · obtain ⟨-, -, hmb, ⟨m, hm, hdv⟩, -⟩ := hz
     obtain ⟨bs, hbs⟩ := CircuitType.exists_reads_vector (vs := (slots i).branch.mask) fun j hj =>

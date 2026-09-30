@@ -533,7 +533,7 @@ theorem stepWrap_kimchiVerify
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads S.σ P domains (by norm_num [MaxProofsVerified, StepIPARounds]) srcs
-      (fun _ _ => True)
+      (fun _ _ _ => True)
       (fun _ _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
       (hn.trans hw) hws (constPt dummySg) dummyUnf rule adv
       (by rw [hE]; decide)) 0

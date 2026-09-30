@@ -200,15 +200,15 @@ theorem halvesTies_of_cast {k nc w : ℕ} (Vg : Valuation Fq)
 
 /-- **The step circuit's scalar half decides `kimchiVerify`.** `twoHalves_kimchiVerify` as a
 triple about the scalar circuit, with the wrap circuit's group half assumed
-(`wrapVerifyAt_reads` produces it): `SgOk` with `finalized` set is equivalent to `kimchiVerify`
-accepting with the claims honest. The parameters and domains are discharged by `K` and
-`domains`; the cells owe a boolean mask, the key's domain `log2`, the claims cast across
-(`ClaimsCast`) and the proof ties. -/
+(`wrapVerifyAt_reads` produces it): under the guards, `SgOk` with `finalized` set is equivalent
+to `kimchiVerify` accepting with the claims honest, and with `finalized` set the expanded
+challenges read as the wire's round challenges. The parameters and domains are discharged by
+`K` and `domains`; the cells owe a boolean mask, the key's domain `log2`, the claims cast
+across (`ClaimsCast`) and the proof ties. -/
 theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc S.σ.k)
     (pub : Array Fp)
-    (hguard : Guards IpaVesta.curve K.cvk cp pub)
     -- the step circuit: its valuation, its cells, the domains it may select from
     (Vs : Valuation Fp)
     (domains : KnownDomains nc)
@@ -232,9 +232,12 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     ⦃⌜True⌝⦄
     finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp)) domains claimsS evals
       mask prevChallenges domainLog2Var
-    ⦃⇓ o _ => ⌜SgOk S.σ K.cvk cp pub ∧ (↑o.finalized : CVar Fp).val Vs = 1
-      ↔ kimchiVerify IpaVesta.curve S.σ K.cvk cp pub = true ∧
-        (ScalarHalf.step Vs claimsS evals mask prevChallenges).ClaimsHonest S.σ K.cvk cp pub⌝⦄ := by
+    ⦃⇓ o _ => ⌜(Guards IpaVesta.curve K.cvk cp pub →
+        (SgOk S.σ K.cvk cp pub ∧ (↑o.finalized : CVar Fp).val Vs = 1
+          ↔ kimchiVerify IpaVesta.curve S.σ K.cvk cp pub = true ∧
+            (ScalarHalf.step Vs claimsS evals mask prevChallenges).ClaimsHonest S.σ K.cvk cp pub)) ∧
+      ((↑o.finalized : CVar Fp).val Vs = 1 →
+        o.expandedChallenges.map (·.val Vs) = wireChallenges S.σ K.cvk cp pub)⌝⦄ := by
   have hP : (FopParams.of IpaVesta.curve nc S.σ.k Linearization.fpTokens).endo = Pasta.pallasEndo ∧
       (FopParams.of IpaVesta.curve nc S.σ.k Linearization.fpTokens).mds = Reflect.symMds ∧
       (FopParams.of IpaVesta.curve nc S.σ.k Linearization.fpTokens).toks = Linearization.fpTokens :=
@@ -289,30 +292,35 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     rw [holds]
     rfl
   rw [hn, hω, hdv] at hread
+  refine ⟨fun hguard => ?_, fun h1 => (twoHalves_schnorr S.σ K
+    (by norm_num [PALLAS_SCALAR_CARD]) (by norm_num [PALLAS_BASE_CARD]) cp pub _ successG hg _ o
+    hread ht hf).2 ⟨hgbit, h1⟩⟩
   rw [← twoHalves_kimchiVerify S.σ K (by norm_num [PALLAS_SCALAR_CARD])
     (by norm_num [PALLAS_BASE_CARD]) cp pub hguard _ successG hg _ o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
-/-- What a set `finalized` bit certifies about the cells it finalized: with the domain cell
-holding the key's `log2`, for any step proof and public input under the guards, the wrap
-circuit's group half accepting it, its claim cells holding these reduced (`ClaimsCast`), the proof
-ties and `SgOk` make `kimchiVerify` accept. -/
+/-- What a set `finalized` bit certifies about the cells it finalized, `expanded` being its
+expanded challenges: with the domain cell holding the key's `log2`, for any step proof and
+public input with the wrap circuit's group half accepting it, its claim cells holding these
+reduced (`ClaimsCast`) and the proof ties, `expanded` reads as the proof's wire challenges, and
+under the guards `SgOk` makes `kimchiVerify` accept. -/
 def StepFinalizeReads {nc w : ℕ} (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (Vs : Valuation Fp)
     (claimsS : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (evals : ChunkedEvals nc (FVar Fp))
     (mask : Vector (BoolVar Fp) w) (prevChallenges : Vector (Vector (FVar Fp) σ.k) w)
-    (domainLog2Var : FVar Fp) : Prop :=
+    (domainLog2Var : FVar Fp) (expanded : Vector (FVar Fp) σ.k) : Prop :=
   domainLog2Var.val Vs = (cvk.domainLog2 : Fp) →
-  ∀ (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp),
-    Guards IpaVesta.curve cvk cp pub →
-    ∀ (Vg : Valuation Fq)
-      (claimsG : UnfinalizedProof σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-      (successG : BoolVar Fq),
-      (GroupHalf.wrap Vg claimsG).Reads σ cvk cp pub successG → (↑successG : CVar Fq).val Vg = 1 →
-      ClaimsCast Vg claimsG Vs claimsS →
-      FopTies σ cvk cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges) →
-      SgOk σ cvk cp pub → kimchiVerify IpaVesta.curve σ cvk cp pub = true
+  ∀ (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
+    (Vg : Valuation Fq)
+    (claimsG : UnfinalizedProof σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (successG : BoolVar Fq),
+    (GroupHalf.wrap Vg claimsG).Reads σ cvk cp pub successG → (↑successG : CVar Fq).val Vg = 1 →
+    ClaimsCast Vg claimsG Vs claimsS →
+    FopTies σ cvk cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges) →
+    expanded.map (·.val Vs) = wireChallenges σ cvk cp pub ∧
+      (Guards IpaVesta.curve cvk cp pub →
+        SgOk σ cvk cp pub → kimchiVerify IpaVesta.curve σ cvk cp pub = true)
 
 /-- `finalizeOtherProofStepAt_kimchiVerify_vesta` in `∀`-form: with the mask cells boolean, a
 set `finalized` bit certifies `StepFinalizeReads`. -/
@@ -328,13 +336,14 @@ theorem finalizeOtherProofStepAt_finalizeReads {nc w : ℕ} (S : Srs IpaVesta.cu
       mask prevChallenges domainLog2Var
     ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads Vs mask ms) →
       (↑o.finalized : CVar Fp).val Vs = 1 →
-      StepFinalizeReads S.σ K.cvk Vs claimsS evals mask prevChallenges domainLog2Var⌝⦄ := by
+      StepFinalizeReads S.σ K.cvk Vs claimsS evals mask prevChallenges domainLog2Var
+        o.expandedChallenges⌝⦄ := by
   rw [builder_spec_iff]
-  intro nv hsat hmask h1 hdom cp pub hguard Vg claimsG successG hg hgbit hc hf hsg
-  exact (((builder_spec_iff _ _).mp
-    (finalizeOtherProofStepAt_kimchiVerify_vesta S K cp pub hguard Vs domains claimsS evals mask
-      prevChallenges domainLog2Var hw hmask hdom Vg claimsG successG hg hgbit hc hf)
-    nv hsat).mp ⟨hsg, h1⟩).1
+  intro nv hsat hmask h1 hdom cp pub Vg claimsG successG hg hgbit hc hf
+  have h := (builder_spec_iff _ _).mp
+    (finalizeOtherProofStepAt_kimchiVerify_vesta S K cp pub Vs domains claimsS evals mask
+      prevChallenges domainLog2Var hw hmask hdom Vg claimsG successG hg hgbit hc hf) nv hsat
+  exact ⟨h.2 h1, fun hguard hsg => ((h.1 hguard).mp ⟨hsg, h1⟩).1⟩
 
 /-! ## The circuit of its input
 
@@ -435,14 +444,14 @@ theorem scalarCircuit_reads {nc : ℕ}
     ⦃⌜True⌝⦄
     scalarCircuit (c := Builder Vs (KimchiConstraint Fp)) domains s
     ⦃⇓ _ _ => ⌜kimchiVerify IpaVesta.curve S.σ K.cvk cp pub = true⌝⦄ := by
-  have hAt := finalizeOtherProofStepAt_kimchiVerify_vesta S K cp pub hguard Vs domains s.claims
+  have hAt := finalizeOtherProofStepAt_kimchiVerify_vesta S K cp pub Vs domains s.claims
     s.evals s.branch.proofsVerifiedMask s.prev s.branch.domainLog2 le_rfl hmask hdom Vg claimsG
     successG hg hgbit hc hf
   simp only [scalarCircuit]
   mvcgen [hAt]
   rename_i o _ hiff _ _
   intro hfin
-  exact (hiff.mp ⟨hsg, hfin⟩).1
+  exact ((hiff.1 hguard).mp ⟨hsg, hfin⟩).1
 
 end StepProof
 

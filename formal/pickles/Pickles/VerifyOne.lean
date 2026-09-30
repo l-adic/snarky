@@ -364,17 +364,18 @@ abbrev VerifyOneInput.finalizedHalf (V : Valuation Fp) (inp : VerifyOneInput ks 
     inp.prevChallenges
 
 /-- What a verified slot certifies of the step proof its deferred values came from
-(`StepFinalizeReads` at the slot's cells): given that proof's group half from the wrap circuit,
-the ties and `SgOk`, `kimchiVerify` accepts it. -/
+(`StepFinalizeReads` at the slot's cells, `expanded` its finalize's expanded challenges): given
+that proof's group half from the wrap circuit and the ties, `expanded` reads as the proof's wire
+challenges, and under the guards and `SgOk` `kimchiVerify` accepts it. -/
 def VerifyOneInput.ScalarReads (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve ncs)
     (V : Valuation Fp)
-    (inp : VerifyOneInput σ.k k ncw ncs w) : Prop :=
+    (inp : VerifyOneInput σ.k k ncw ncs w) (expanded : Vector (FVar Fp) σ.k) : Prop :=
   StepFinalizeReads σ cvk V ⟨inp.deferred, true_, inp.spongeDigest⟩ inp.evals inp.proofMask
-    inp.prevChallenges inp.branchData.domainLog2
+    inp.prevChallenges inp.branchData.domainLog2 expanded
 
 /-- One slot reads as the scalar half of the step proof its deferred values came from: with the
 mask cells boolean, when the slot must verify and the verdict reads `1`, the slot satisfies
-`ScalarReads`, for any `verify`. -/
+`ScalarReads` at the finalize's expanded challenges, for any `verify`. -/
 theorem verifyOne_scalarReads (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve ncs)
     (D : KnownDomains ncs)
     (hw : w ≤ MaxProofsVerified)
@@ -389,7 +390,7 @@ theorem verifyOne_scalarReads (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve n
       D.list vk inp
     ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads V inp.proofMask ms) →
       CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
-      inp.ScalarReads S.σ K.cvk V⌝⦄ := by
+      inp.ScalarReads S.σ K.cvk V o.1.expandedChallenges⌝⦄ := by
   have hfin := finalizeOtherProofStepAt_finalizeReads S K V D
     ⟨inp.deferred, true_, inp.spongeDigest⟩
     inp.evals inp.proofMask inp.prevChallenges inp.branchData.domainLog2 hw
