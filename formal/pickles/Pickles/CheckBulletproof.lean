@@ -169,17 +169,14 @@ def extractScalarChallenges [ConstraintHolds F c] (p : Poseidon.Params F) (endo 
   let (us, sv) ← extractScalarChallengesList p endo sv lr.toList
   pure (us.cast (by simp), sv)
 
-/-- The per-pair terms of `bulletReduce`: `endoInv(L, u) + endo(R, u)`, in order. -/
-def bulletTerms [ConstraintHolds F c] (e : IpaEndo F) :
-    List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)) →
-    CircuitM F c (List (AffinePoint (FVar F)))
-  | [] => pure []
-  | q :: qs => do
-    let lScaled ← endoInv e.d.endo e.d.W e.q e.hq e.lam q.1.1 q.2
-    let rScaled ← endoMul e.d.endo 32 q.1.2 q.2
-    let r ← addFast .checkFinite lScaled rScaled
-    let rest ← bulletTerms e qs
-    pure (r.p :: rest)
+/-- One pair's term of `bulletReduce`: `endoInv(L, u) + endo(R, u)`. -/
+def bulletTerm [ConstraintHolds F c] (e : IpaEndo F)
+    (q : (AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)) :
+    CircuitM F c (AffinePoint (FVar F)) := do
+  let lScaled ← endoInv e.d.endo e.d.W e.q e.hq e.lam q.1.1 q.2
+  let rScaled ← endoMul e.d.endo 32 q.1.2 q.2
+  let r ← addFast .checkFinite lScaled rScaled
+  pure r.p
 
 /-- The running sum of points from an accumulator, one `addFast` per point. -/
 def sumPoints [ConstraintHolds F c] : AffinePoint (FVar F) → List (AffinePoint (FVar F)) →
@@ -189,13 +186,13 @@ def sumPoints [ConstraintHolds F c] : AffinePoint (FVar F) → List (AffinePoint
     let r ← addFast .checkFinite acc q
     sumPoints r.p qs
 
-/-- The challenge fold: per pair `endoInv(L, u) + endo(R, u)` (`bulletTerms`), then the
-running sum (`sumPoints`). Empty input yields the origin. -/
+/-- The challenge fold: per pair `endoInv(L, u) + endo(R, u)` (`bulletTerm`), then the
+running sum (`sumPoints`). No pairs yield the origin. -/
 def bulletReduce [ConstraintHolds F c] (e : IpaEndo F)
-    (pairs : List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F))) :
+    (pairs : Vector ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)) k) :
     CircuitM F c (AffinePoint (FVar F)) := do
-  let terms ← bulletTerms e pairs
-  match terms with
+  let terms ← pairs.mapM (bulletTerm e)
+  match terms.toList with
   | [] => pure ⟨.const 0, .const 0⟩
   | h :: t => sumPoints h t
 
@@ -231,7 +228,7 @@ def ipaFinalCheck [ConstraintHolds F c] {sf : Type} (ops : IpaScalarOps F c sf) 
     (u combinedPolynomial : AffinePoint (FVar F)) (inp : CheckBulletproofInput k (FVar F) sf) :
     CircuitM F c (CheckBulletproofOutput F k) := do
   let (chals, sv) ← extractScalarChallenges p endo sv inp.opening.lr
-  let lrProd ← bulletReduce e (inp.opening.lr.zip chals).toList
+  let lrProd ← bulletReduce e (inp.opening.lr.zip chals)
   let cipU ← ops.scaleByCip u inp.deferred.combinedInnerProduct
   let pPrime ← (·.p) <$> addFast .checkFinite combinedPolynomial cipU
   let q ← (·.p) <$> addFast .checkFinite pPrime lrProd
@@ -439,7 +436,8 @@ theorem checkBulletproof_spec (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hsw : S
     (combinePolynomials (c := Builder V (KimchiConstraint F)) e xi bs)
   have hext := fun sv' =>
     extractScalarChallenges_spec (V := V) h2 h3 hsw p hsize endo sv' inp.opening.lr lrv hlr
-  have hbr := fun ps => builder_spec_true (bulletReduce (c := Builder V (KimchiConstraint F)) e ps)
+  have hbr := fun (ps : Vector _ k) => builder_spec_true
+    (bulletReduce (c := Builder V (KimchiConstraint F)) e ps)
   have hsc := fun u x => builder_spec_true (ops.scaleByShifted u x)
   have hscc := fun u x => builder_spec_true (ops.scaleByCip u x)
   have hadd := fun f a b => builder_spec_true (addFast (c := Builder V (KimchiConstraint F)) f a b)
@@ -613,39 +611,29 @@ def PairReads (W : WeierstrassCurve.Affine F) (V : Valuation F)
     (q : AffinePoint (FVar F) × AffinePoint (FVar F)) (v : W.Point × W.Point) : Prop :=
   OnCurveAt W V q.1 v.1 ∧ OnCurveAt W V q.2 v.2
 
-/-- Under any valuation satisfying the emitted constraints, with the pairs reading as `pv`,
-the terms read as `lrTerm` at the readings, the challenges reading as some `ns`. -/
-private theorem bulletTerms_spec (e : IpaEndo F)
-    (hchar : CastInj128 F) :
-    ∀ (pairs : List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)))
-      (pv : List (e.d.W.Point × e.d.W.Point)),
-      List.Forall₂ (fun q v => PairReads e.d.W V q.1 v) pairs pv →
-      ⦃⌜True⌝⦄ bulletTerms (c := Builder V (KimchiConstraint F)) e pairs
-      ⦃⇓ r _ => ⌜∃ ns : List Prechallenge, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
-        List.Forall₂ (OnCurveAt e.d.W V) r
-          (List.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val))⌝⦄
-  | [], [], .nil => by
-    simp only [bulletTerms]
-    mvcgen
-    exact ⟨[], .nil, .nil⟩
-  | q :: pairs, v :: pv, .cons ⟨hL, hR⟩ hpv => by
-    simp only [bulletTerms]
-    have hinv := endoInv_spec (V := V) e.d e.q e.hq e.lam q.1.1 q.2
-    have hem := endoMul_spec (V := V) e.d q.1.2 q.2
-    have hadd := fun a b => addFast_checkFinite_spec (V := V) e.d.W e.d.short e.d.two_ne
-      e.d.two_torsion_free a b
-    have ih := bulletTerms_spec e hchar pairs pv hpv
-    mvcgen [-Snarky.Kimchi.addFast_spec, hinv, hem, hadd, ih]
-    rename_i _ lS _ hinv' rS _ hem' r _ hr rest _ hrest
-    obtain ⟨n', hn', hq', R, hRs, -, -, hRform⟩ := hinv' v.1 hL
-    obtain ⟨n'', hn'', hq'', hRr⟩ := hem' v.2 hR
-    obtain rfl : n' = n'' := hchar n' n'' hn' hn'' (hq'.symm.trans hq'')
-    obtain ⟨ns, hns, hterms⟩ := hrest
-    refine ⟨⟨n', hn'⟩ :: ns, .cons hq' hns, List.Forall₂.cons ?_ hterms⟩
-    have hadd' := hr R _ hRs hRr
-    rw [hRform] at hadd'
-    unfold lrTerm
-    exact hadd'
+/-- Under any valuation satisfying the emitted constraints, with the pair reading as `v`, the
+term reads as `lrTerm` at `v`, the challenge reading as some `n`. -/
+private theorem bulletTerm_spec (e : IpaEndo F) (hchar : CastInj128 F)
+    (q : (AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)) :
+    ⦃⌜True⌝⦄ bulletTerm (c := Builder V (KimchiConstraint F)) e q
+    ⦃⇓ r _ => ⌜∀ v : e.d.W.Point × e.d.W.Point, PairReads e.d.W V q.1 v →
+      ∃ n : Prechallenge, Reads128 V q.2 n ∧ OnCurveAt e.d.W V r (lrTerm e.d.lam v n.val)⌝⦄ := by
+  simp only [bulletTerm]
+  have hinv := endoInv_spec (V := V) e.d e.q e.hq e.lam q.1.1 q.2
+  have hem := endoMul_spec (V := V) e.d q.1.2 q.2
+  have hadd := fun a b => addFast_checkFinite_spec (V := V) e.d.W e.d.short e.d.two_ne
+    e.d.two_torsion_free a b
+  mvcgen [-Snarky.Kimchi.addFast_spec, hinv, hem, hadd]
+  rename_i _ lS _ hinv' rS _ hem' r _ hr
+  intro v ⟨hL, hR⟩
+  obtain ⟨n', hn', hq', R, hRs, -, -, hRform⟩ := hinv' v.1 hL
+  obtain ⟨n'', hn'', hq'', hRr⟩ := hem' v.2 hR
+  obtain rfl : n' = n'' := hchar n' n'' hn' hn'' (hq'.symm.trans hq'')
+  refine ⟨⟨n', hn'⟩, hq', ?_⟩
+  have hadd' := hr R _ hRs hRr
+  rw [hRform] at hadd'
+  unfold lrTerm
+  exact hadd'
 
 omit [ToNat F] in
 /-- Under any valuation satisfying the emitted constraints, the running sum from an
@@ -673,38 +661,37 @@ private theorem sumPoints_spec (e : IpaEndo F) :
     rcases hqv with _ | ⟨hq, hqs⟩
     exact hrest' _ hqs _ (hr accv _ hacc hq)
 
-/-- Under any valuation satisfying the emitted constraints, with the pairs (non-empty)
+/-- Under any valuation satisfying the emitted constraints, with the pairs (at least one)
 reading as `pv` and their challenges as `ns`, the fold reads as `lrSum` of the terms. -/
 theorem bulletReduce_spec (e : IpaEndo F)
     (hchar : CastInj128 F)
-    (pairs : List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)))
-    (pv : List (e.d.W.Point × e.d.W.Point))
-    (hp : List.Forall₂ (fun q v => PairReads e.d.W V q.1 v) pairs pv) (hne : pairs ≠ []) :
+    (pairs : Vector ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)) k)
+    (pv : Vector (e.d.W.Point × e.d.W.Point) k)
+    (hp : ∀ i : Fin k, PairReads e.d.W V pairs[i].1 pv[i]) (hk : 0 < k) :
     ⦃⌜True⌝⦄ bulletReduce (c := Builder V (KimchiConstraint F)) e pairs
-    ⦃⇓ r _ => ⌜∃ ns : List Prechallenge, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
-      OnCurveAt e.d.W V r (lrSum (List.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val)))⌝⦄ := by
+    ⦃⇓ r _ => ⌜∃ ns : Vector Prechallenge k, (∀ i : Fin k, Reads128 V pairs[i].2 ns[i]) ∧
+      OnCurveAt e.d.W V r
+        (lrSum (Vector.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val)).toList)⌝⦄ := by
   simp only [bulletReduce]
-  have ht := bulletTerms_spec (V := V) e hchar pairs pv hp
+  have ht := builder_spec_vector_mapM_get (bulletTerm e) _ (bulletTerm_spec (V := V) e hchar)
+    pairs
   have hs := fun acc qs => sumPoints_spec (V := V) e acc qs
   mvcgen [ht, hs]
-  · rename_i terms _ _ hterms
-    obtain ⟨ns, hns, hterms⟩ := hterms
-    rcases pairs with _ | ⟨q, pairs⟩
-    · exact absurd rfl hne
-    · rcases hp with _ | ⟨_, _⟩
-      rcases hns with _ | ⟨_, _⟩
-      exact absurd hterms (by simp)
-  · rename_i _ _ h t _ _ hterms r _
+  · rename_i terms hnil _ _
+    have := congrArg List.length hnil
+    simp at this
+    omega
+  · rename_i terms h t hcons _ hterms r _
     intro hrest
-    obtain ⟨ns, hns, hterms⟩ := hterms
-    refine ⟨ns, hns, ?_⟩
-    rcases hz : List.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val) with _ | ⟨w, ws⟩
-    · rw [hz] at hterms
-      exact absurd hterms (by simp)
-    · rw [hz] at hterms
-      rcases hterms with _ | ⟨hw, hws⟩
-      simpa [lrSum] using hrest ws hws w hw
-
+    obtain ⟨f, hf⟩ := Classical.skolem.mp fun i : Fin k => hterms i pv[i] (hp i)
+    refine ⟨Vector.ofFn f, fun i => by simpa using (hf i).1, ?_⟩
+    have hz : List.Forall₂ (OnCurveAt e.d.W V) terms.toList
+        (Vector.zipWith (lrTerm e.d.lam) pv ((Vector.ofFn f).map Subtype.val)).toList :=
+      forall₂_toList_iff.mpr fun i => by simpa using (hf i).2
+    rw [hcons] at hz
+    obtain ⟨w, ws, hw, hws, hzl⟩ := List.forall₂_cons_left_iff.mp hz
+    rw [hzl]
+    simpa [lrSum] using hrest ws hws w hw
 
 /-- The Schnorr equation over the gadgets' group, at readings: `Q = P + cip·u + lrProd` and
 `c·Q + δ = z₁·(sg + b·u) + z₂·h`, the scalars integers (`endoExpandZ` of the challenges, the
@@ -715,16 +702,17 @@ def SchnorrPoint {W : WeierstrassCurve.Affine F} (lam : ℤ) (c : ℕ) (u P lrPr
 
 /-- `bulletReduce_spec` with the readings carried into the postcondition. -/
 private theorem bulletReduce_spec' (e : IpaEndo F)
-    (hchar : CastInj128 F)
-    (pairs : List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F))) :
+    (hchar : CastInj128 F) (hk : 0 < k)
+    (pairs : Vector ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)) k) :
     ⦃⌜True⌝⦄ bulletReduce (c := Builder V (KimchiConstraint F)) e pairs
-    ⦃⇓ r _ => ⌜∀ pv : List (e.d.W.Point × e.d.W.Point),
-      List.Forall₂ (fun q v => PairReads e.d.W V q.1 v) pairs pv → pairs ≠ [] →
-      ∃ ns : List Prechallenge, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
-        OnCurveAt e.d.W V r (lrSum (List.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val)))⌝⦄ := by
+    ⦃⇓ r _ => ⌜∀ pv : Vector (e.d.W.Point × e.d.W.Point) k,
+      (∀ i : Fin k, PairReads e.d.W V pairs[i].1 pv[i]) →
+      ∃ ns : Vector Prechallenge k, (∀ i : Fin k, Reads128 V pairs[i].2 ns[i]) ∧
+        OnCurveAt e.d.W V r
+          (lrSum (Vector.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val)).toList)⌝⦄ := by
   rw [builder_spec_iff]
-  intro nv hsat pv hp hne
-  exact (builder_spec_iff _ _).mp (bulletReduce_spec e hchar pairs pv hp hne) nv hsat
+  intro nv hsat pv hp
+  exact (builder_spec_iff _ _).mp (bulletReduce_spec e hchar pairs pv hp hk) nv hsat
 
 /-- How a side's `scaleByShifted` reads under `V` (one value per side: `wrapReading`,
 `stepReading`). The ladder pins its bit decomposition only through the value it packs to, so
@@ -786,7 +774,7 @@ theorem ipaFinalCheck_success_bit {sf : Type}
   simp only [ipaFinalCheck]
   have hext := fun sv' (lr : Vector (AffinePoint (FVar F) × AffinePoint (FVar F)) k) =>
     builder_spec_true (extractScalarChallenges (c := Builder V (KimchiConstraint F)) p endo sv' lr)
-  have hbr := fun pairs => builder_spec_true
+  have hbr := fun (pairs : Vector _ k) => builder_spec_true
     (bulletReduce (c := Builder V (KimchiConstraint F)) e pairs)
   have hcip := fun pt x => builder_spec_true (ops.scaleByCip pt x)
   have hsc := fun pt x => builder_spec_true (ops.scaleByShifted pt x)
@@ -840,7 +828,7 @@ theorem ipaFinalCheck_spec {sf : Type}
   simp only [ipaFinalCheck]
   have hext := fun sv' => builder_spec_true
     (extractScalarChallenges (c := Builder V (KimchiConstraint F)) p endo sv' inp.opening.lr)
-  have hbr := fun pairs => bulletReduce_spec' (V := V) e hchar pairs
+  have hbr := fun pairs => bulletReduce_spec' (V := V) e hchar hk pairs
   have hadd := fun a b => addFast_checkFinite_spec (V := V) e.d.W e.d.short e.d.two_ne
     e.d.two_torsion_free a b
   have hδs := fun sv' => builder_spec_true
@@ -864,17 +852,7 @@ theorem ipaFinalCheck_spec {sf : Type}
   rename_i _ ext _ lrProd _ hbr' cipU _ hcip pP _ hpP q _ hq svD _ cP _ cQ _ hcQ lhs _ hlhs
     bU _ hbU sgBU _ hsgBU z1T _ hz1 z2T _ hz2 rhs _ hrhs xEq _ hx yEq _ hy succ _ hand
   intro uv Pv hu hP
-  -- the pairs with their challenges read as the proof's pairs, and there is at least one
-  have hpairs : List.Forall₂ (fun q v => PairReads e.d.W V q.1 v)
-      (inp.opening.lr.zip ext.1).toList lrv.toList :=
-    forall₂_toList_iff.mpr fun i => by simpa using hlr i
-  have hzne : (inp.opening.lr.zip ext.1).toList ≠ [] := fun h => by
-    have := congrArg List.length h
-    simp at this
-    omega
-  obtain ⟨nsl, hnsl, hlr'⟩ := hbr' lrv.toList hpairs hzne
-  obtain ⟨ns, rfl, hns⟩ := exists_vector_of_forall₂ hnsl
-  rw [← Vector.toList_map, ← Vector.toList_zipWith] at hlr'
+  obtain ⟨ns, hns, hlr'⟩ := hbr' lrv fun i => by simpa using hlr i
   obtain ⟨wcip, hpcip, hcipU⟩ := hcip uv hu
   have hpP' := hpP _ _ hP (hcipU (hr1 _ (R.preCip_pre hpcip)))
   have hq' := hq _ _ hpP' hlr'
@@ -1975,7 +1953,7 @@ theorem CheckBulletproofReads.wire {p : ℕ} [Fact p.Prime]
 
 /-! The gadgets are sealed after their reads: a consumer composes `checkBulletproof_reads` and
 `IvpSide.opening_reads`, never the bodies. -/
-attribute [irreducible] extractScalarChallengesList extractScalarChallenges bulletTerms sumPoints
+attribute [irreducible] extractScalarChallengesList extractScalarChallenges bulletTerm sumPoints
   bulletReduce hornerFold
   combinePolynomials ipaFinalCheck checkBulletproof
 
