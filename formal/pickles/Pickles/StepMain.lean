@@ -280,7 +280,7 @@ open Std.Do
 variable {V : Valuation Fp}
 
 /-- The step statement's unfinalized entries are the circuit's, front-padded to `w` with the
-constant `dummyUnf`. -/
+constant `dummyUnf`, and the step message's commitments are the slots' `sg` cells. -/
 theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (srcs : Fin n → SlotSource ncw ks)
@@ -292,10 +292,12 @@ theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType 
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
     ⦃⌜True⌝⦄
     stepMain srcs hws h P domains dummySg dummyUnf rule adv
-    ⦃⇓ r _ => ⌜r.out.proofState.unfinalizedProofs = Vector.ofFn fun j : Fin w =>
+    ⦃⇓ r _ => ⌜(r.out.proofState.unfinalizedProofs = Vector.ofFn fun j : Fin w =>
       if h : j.val < w - n
       then CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf
-      else r.unfs[j.val - (w - n)]'(by omega)⌝⦄ := by
+      else r.unfs[j.val - (w - n)]'(by omega)) ∧
+      r.messagesForNextStepProof.challengePolynomialCommitments
+        = Vector.ofFn fun i => (r.slots i).sg.pt⌝⦄ := by
   have hrule := fun x => builder_spec_true (rule x)
   have hmap := fun (f : Fin n → CircuitM Fp (Builder V (KimchiConstraint Fp))
       (FopOutput Fp ks × BoolVar Fp)) => builder_spec_true ((Vector.finRange n).mapM f)

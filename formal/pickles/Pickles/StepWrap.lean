@@ -327,6 +327,25 @@ private def slotProof {ks k ncs w : ℕ} (Vg : Valuation Fp) (Vs : Valuation Fq)
     (inp.sgOld.zipWith (fun P u => ⟨readPt (C := IpaPallas.curve) Vg P, u.map (·.val Vs)⟩)
       prevChallenges).toArray
 
+/-- The accumulator a step circuit and the next wrap circuit emit for the wrap proof they
+verify: the step message's commitment at slot `i`, with the wrap message's challenges at `jf`. -/
+def StepWrap.emittedAccumulator {n w ncw ncs k ks branches mpv ncStep kw ks' : ℕ}
+    {ws : Fin n → ℕ} {slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv}
+    (Vg : Valuation Fp) (Vs : Valuation Fq) (i : Fin n) (jf : Fin mpv)
+    (stepOut : StepMainOut n w ws ncw ncs k ks)
+    (verifyOut : WrapMainVerifyOut mpv ncStep kw ks')
+    (finalizeOut : WrapMainFinalizeOut branches mpv ncStep kw slotWidths) :
+    Accumulator IpaPallas.curve kw :=
+  Accumulator.ofCells Vg Vs stepOut.messagesForNextStepProof.challengePolynomialCommitments[i]
+    (verifyOut.messagesForNextWrapProof finalizeOut).oldBulletproofChallenges[jf]
+
+/-- The accumulators a step circuit and the next wrap circuit consume: the step slot's
+old-accumulator cells, with the wrap finalize slot's previous challenges, padding included. -/
+def StepWrap.consumedAccumulators {ks k ncw ncs w branches kw nc : ℕ}
+    (Vg : Valuation Fp) (Vs : Valuation Fq) (inp : VerifyOneInput ks k ncw ncs w)
+    (sl : WrapFinalizeSlot branches kw nc Fq) : List (Accumulator IpaPallas.curve kw) :=
+  (Vector.zipWith (Accumulator.ofCells Vg Vs) inp.sgOld sl.prevChallenges).toList
+
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- With its cells on the curve, the step circuit's `sgOld` cells hold `slotProof`'s old
 commitments. -/
@@ -530,10 +549,11 @@ theorem stepWrap_kimchiVerify
         inp.WireReads K.cvk Vg ((srcs i).keyCells stepOut.vk.points) cp ms ∧
         -- the next wrap circuit's finalize cells hold `cp`'s evaluations and old challenges
         FopTies S.σ K.cvk cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) ∧
-        -- the next wrap circuit's message carries `cp`'s round challenges at the slot
-        ((wrapVerifyOut.messagesForNextWrapProof wrapFinalizeOut).oldBulletproofChallenges[jf]).map
-          (·.val Vs)
-          = wireChallenges S.σ K.cvk cp pub ∧
+        -- the link emits `cp`'s deferred obligation, as its outgoing messages carry it
+        StepWrap.emittedAccumulator Vg Vs i jf stepOut wrapVerifyOut wrapFinalizeOut
+          = ⟨cp.opening.sg, wireChallenges S.σ K.cvk cp pub⟩ ∧
+        -- the link consumes `cp`'s old accumulators
+        StepWrap.consumedAccumulators Vg Vs inp sl = cp.olds.toList ∧
         -- of `cp` itself: the guards and the deferred `sg` equation
         (Guards IpaPallas.curve K.cvk cp pub →
           SgOk S.σ K.cvk cp pub →
@@ -603,7 +623,7 @@ theorem stepWrap_kimchiVerify
     exact htie.1.1
   have hblk := CircuitType.reads_vector.mp hents (w - n + i) (by omega)
   have hl : stepOut.out.proofState.unfinalizedProofs[w - n + i]'(by omega) = stepOut.unfs[i] := by
-    have h1 : stepOut.out.proofState.unfinalizedProofs = _ := hout
+    have h1 : stepOut.out.proofState.unfinalizedProofs = _ := hout.1
     simp [h1]
     rfl
   have hr :
@@ -628,6 +648,14 @@ theorem stepWrap_kimchiVerify
   subst hbb
   obtain ⟨hE, hK⟩ := hfin K j hdom _ hpin (reads_true_of_tie hsf hsfG) cp _ Vg inp.unfinalized v
     hv hv1 hc hf
-  exact ⟨cp, ms, hwire, hf, by simpa [Fin.getElem_fin, Vector.getElem_map] using hE, hK⟩
+  refine ⟨cp, ms, hwire, hf, ?_, ?_, hK⟩
+  · have hsgs : stepOut.messagesForNextStepProof.challengePolynomialCommitments
+        = Vector.ofFn fun i => (stepOut.slots i).sg.pt := hout.2
+    simp only [StepWrap.emittedAccumulator, Accumulator.ofCells,
+      WrapMainVerifyOut.messagesForNextWrapProof, Fin.getElem_fin, Vector.getElem_map, hsgs,
+      Vector.getElem_ofFn] at hE ⊢
+    rw [hE]
+    rfl
+  · rfl
 
 end Pickles

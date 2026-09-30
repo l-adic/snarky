@@ -346,6 +346,12 @@ carries. -/
 def accOk (σ : SRS C.Point) (a : Accumulator C σ.k) : Bool :=
   decide (a.sg = msm C σ.g (bPolyCoefficients fun i => a.u[i]))
 
+/-- An accumulator read from cells: its commitment from a base-field circuit at `Vb`, its
+challenges from a scalar-field circuit at `Vs`. -/
+def Accumulator.ofCells {k : ℕ} (Vb : Valuation C.BaseField) (Vs : Valuation C.ScalarField)
+    (sg : AffinePoint (FVar C.BaseField)) (u : Vector (FVar C.ScalarField) k) : Accumulator C k :=
+  ⟨readPt Vb sg, u.map (·.val Vs)⟩
+
 /-- `carry` at the Lagrange points `L`: the handover on the verifier's run (`runAt`) at the
 public commitment to `L`, computed once. -/
 def carryWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))

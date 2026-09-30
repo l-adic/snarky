@@ -62,6 +62,20 @@ theorem flatten_zipWith_keep {α : Type} :
 
 /-! ## Vectors -/
 
+/-- The entries whose mask bit is set, in order. -/
+def _root_.Vector.applyMask {α : Type} {n : ℕ} (v : Vector α n) (ms : Vector Bool n) : List α :=
+  ((v.zip ms).toList.filter (·.2)).map (·.1)
+
+/-- Masking a vector built index by index keeps the images of the set indices, in order. -/
+theorem applyMask_zipWith_finRange {α β : Type} {n : ℕ} (f : Fin n → β → α) (v : Vector β n)
+    (ms : Vector Bool n) :
+    (Vector.zipWith f (Vector.finRange n) v).applyMask ms
+      = ((List.finRange n).filter (ms[·])).map fun j => f j v[j] := by
+  have h : ((Vector.zipWith f (Vector.finRange n) v).zip ms).toList
+      = (List.finRange n).map fun i => (f i v[i], ms[i]) :=
+    List.ext_getElem (by simp) fun i h₁ h₂ => by simp
+  simp only [Vector.applyMask, h, List.filter_map, List.map_map, Function.comp_def]
+
 /-- An entry of a mapped vector, at a `Fin` index. -/
 theorem getElem_map_fin {α β : Type} {n : ℕ} (f : α → β) (Ps : Vector α n) (ci : Fin n) :
     (Ps.map f)[ci] = f Ps[ci] := by
