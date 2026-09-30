@@ -12,7 +12,6 @@ import Prelude
 
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Vector (Vector)
-import Pickles.DeferredValues (BulletproofChallenges)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, square_)
 import Snarky.Curves.Class (class PrimeField)
@@ -65,14 +64,13 @@ type Params f r =
   }
 
 -- | The outcome of each deferred-value check, with `finalized` their
--- | conjunction, alongside the prev proof's bulletproof challenges as
--- | 128-bit values and expanded through the endomorphism.
+-- | conjunction, alongside the prev proof's bulletproof challenges
+-- | expanded through the endomorphism.
 type Output d f =
   { finalized :: BoolVar f
   , xiCorrect :: BoolVar f
   , bCorrect :: BoolVar f
   , cipCorrect :: BoolVar f
   , plonkOk :: BoolVar f
-  , challenges :: BulletproofChallenges d (FVar f)
   , expandedChallenges :: Vector d (FVar f)
   }

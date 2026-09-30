@@ -27,6 +27,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.DeferredValues (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
+import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -35,9 +36,10 @@ import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch,
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Types as Step
-import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, Evals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, Evals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
-import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPure)
+import Prim.Int (class Add)
 import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, domainGenerator, proofOpeningPrechallenges, proofOraclesRec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofData)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
@@ -367,9 +369,12 @@ type PrevStatementWithHashes =
 -- | Assemble one predecessor slot's step-circuit witness from a raw
 -- | wrap proof.
 expandProof
-  :: forall @stepChunks n nwp wrapVkChunks
+  :: forall @stepChunks n nwp pad wrapVkChunks
    . Reflectable stepChunks Int
   => Reflectable wrapVkChunks Int
+  => Reflectable n Int
+  => Reflectable pad Int
+  => Add pad n nwp
   => ExpandProofInput n nwp wrapVkChunks
   -> ExpandProofOutput stepChunks
 expandProof input =
@@ -397,28 +402,25 @@ expandProof input =
       }
 
     -- ===== Step-side messages digest =====
-    stepPrevProofs =
-      Vector.zipWith
-        ( \sg raw ->
-            { sg
-            , expandedBpChallenges:
-                map (\c -> toFieldPure (unwrapF c) input.endo) raw
-            }
-        )
-        input.stepPrevSgs
-        input.oldBulletproofChallenges
-
     messagesForNextStepProofDigest = hashMessagesForNextStepProofPure
-      { stepVk: input.dlogIndex
-      , appState: input.appStateFields
-      , proofs: stepPrevProofs
-      }
+      ( MessagesForNextStepProof
+          { appState: input.appStateFields
+          , dlogPlonkIndex: input.dlogIndex
+          , challengePolynomialCommitments: input.stepPrevSgs
+          , oldBulletproofChallenges:
+              map (map \c -> toFieldPure (unwrapF c) input.endo) input.oldBulletproofChallenges
+          }
+      )
 
     -- ===== Wrap-side messages digest =====
-    messagesForNextWrapProofDigest = hashMessagesForNextWrapProofPureGeneral
-      { sg: input.wrapChallengePolynomialCommitment
-      , paddedChallenges: input.wrapPaddedPrevChallenges
-      }
+    -- The message holds the unpadded challenges: the padded stack
+    -- without its front padding.
+    messagesForNextWrapProofDigest = hashMessagesForNextWrapProofPure dummyIpaChallenges.wrapExpanded
+      ( MessagesForNextWrapProof
+          { challengePolynomialCommitment: input.wrapChallengePolynomialCommitment
+          , oldBulletproofChallenges: Vector.drop @pad input.wrapPaddedPrevChallenges
+          }
+      )
 
     -- ===== Wrap-proof oracles =====
     oraclesResult = proofOraclesRec input.wrapVerifierIndex

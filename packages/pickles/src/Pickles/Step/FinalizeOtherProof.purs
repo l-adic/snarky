@@ -410,9 +410,7 @@ finalizeOtherProofCircuit ops params { unfinalized, chunkedEvals, mask, prevChal
 
   finalized <- all_ [ xiCorrect, bCorrect, cipCorrect, plonkOk ]
 
-  let challenges = deferred.bulletproofChallenges
-
-  pure { finalized, xiCorrect, bCorrect, cipCorrect, plonkOk, challenges, expandedChallenges }
+  pure { finalized, xiCorrect, bCorrect, cipCorrect, plonkOk, expandedChallenges }
 
 -------------------------------------------------------------------------------
 -- | Side-loaded helpers

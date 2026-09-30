@@ -37,6 +37,7 @@ import Prelude
 import Data.Array as Array
 import Data.Exists (Exists, mkExists, runExists)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Tuple (fst, snd)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Constants (zkRowsForNumChunks)
@@ -49,9 +50,9 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
-import Pickles.Types (ChunkedEvals, Evals, PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.Types (ChunkedEvals, Evals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.VerificationKey (extractWrapVKForStepHash)
-import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPure)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
@@ -385,28 +386,25 @@ messageDigests
   -> { step :: StepField, wrap :: WrapField }
 messageDigests verifier vp =
   let
-    stepProofs = Array.zipWith
-      (\sg expandedBpChallenges -> { sg, expandedBpChallenges })
-      vp.prevChallengePolynomialCommitments
-      vp.oldBulletproofChallenges
+    stepProofs = Array.zip vp.prevChallengePolynomialCommitments vp.oldBulletproofChallenges
 
     step = Vector.reifyVector stepProofs \proofs ->
       hashMessagesForNextStepProofPure
-        { stepVk: extractWrapVKForStepHash @WrapVkChunks verifier.wrapVK
-        , appState: vp.appState
-        , proofs
-        }
+        ( MessagesForNextStepProof
+            { appState: vp.appState
+            , dlogPlonkIndex: extractWrapVKForStepHash @WrapVkChunks verifier.wrapVK
+            , challengePolynomialCommitments: map fst proofs
+            , oldBulletproofChallenges: map snd proofs
+            }
+        )
 
-    paddedLen = reflectType (Proxy :: Proxy PaddedLength)
-
-    wrapPadded =
-      Array.replicate (paddedLen - Array.length vp.prevWrapBulletproofChallenges)
-        dummyIpaChallenges.wrapExpanded
-        <> vp.prevWrapBulletproofChallenges
-
-    wrap = Vector.reifyVector wrapPadded \paddedChallenges ->
-      hashMessagesForNextWrapProofPureGeneral
-        { sg: vp.challengePolynomialCommitment, paddedChallenges }
+    wrap = Vector.reifyVector vp.prevWrapBulletproofChallenges \chals ->
+      hashMessagesForNextWrapProofPure dummyIpaChallenges.wrapExpanded
+        ( MessagesForNextWrapProof
+            { challengePolynomialCommitment: vp.challengePolynomialCommitment
+            , oldBulletproofChallenges: chals
+            }
+        )
   in
     { step, wrap }
 

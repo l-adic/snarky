@@ -15,7 +15,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Fin (getFinite)
-import Data.Foldable (foldM, for_)
+import Data.Foldable (fold, foldM, for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
@@ -26,7 +26,7 @@ import Effect (Effect)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Trace as Trace
-import Pickles.Types (ChunkedCommitment)
+import Pickles.Types (ChunkedCommitment, MessagesForNextStepProof(..))
 import Pickles.VerificationKey (StepVK)
 import Poseidon (class PoseidonField, hash)
 import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, label)
@@ -37,8 +37,8 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 -- | The in-circuit digest, with each proof's contribution gated on its
--- | `mask` through an opt-sponge. Also returns the sponge state after
--- | the VK commitments, which the IVP resumes from.
+-- | bit of `mask` through an opt-sponge. Also returns the sponge state
+-- | after the VK commitments, which the IVP resumes from.
 -- |
 -- | Absorption order is fixed by the verifier's transcript: every
 -- | commitment chunk by chunk, `x` then `y`, then the app state, then
@@ -47,23 +47,25 @@ hashMessagesForNextStepProofOpt
   :: forall n wrapVkChunks d f r
    . PrimeField f
   => PoseidonField f
-  => { vkComms ::
-         { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
-         , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint (FVar f))
-         , coeff :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
-         , index :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
-         }
-     , appStateFields :: Array (FVar f)
-     , proofs ::
-         Vector n
-           { sg :: AffinePoint (FVar f)
-           , rawChallenges :: Vector d (FVar f)
-           , mask :: BoolVar f
-           }
-     }
+  => Vector n (BoolVar f)
+  -> MessagesForNextStepProof
+       { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
+       , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint (FVar f))
+       , coeff :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
+       , index :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
+       }
+       (Array (FVar f))
+       (Vector n (AffinePoint (FVar f)))
+       (Vector n (Vector d (FVar f)))
   -> Snarky f (KimchiConstraint f) r { digest :: FVar f, spongeAfterIndex :: Sponge (FVar f) }
-hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
+hashMessagesForNextStepProofOpt mask (MessagesForNextStepProof m) = do
   let
+    vkComms = m.dlogPlonkIndex
+    appStateFields = m.appState
+    proofs = Vector.zipWith
+      (\b (Tuple sg rawChallenges) -> { mask: b, sg, rawChallenges })
+      mask
+      (Vector.zipWith Tuple m.challengePolynomialCommitments m.oldBulletproofChallenges)
     absorbPt s (AffinePoint { x, y }) = do
       s1 <- Sponge.absorb x s
       Sponge.absorb y s1
@@ -102,17 +104,13 @@ hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
 hashMessagesForNextStepProofPure
   :: forall n wrapVkChunks d f
    . PoseidonField f
-  => { stepVk :: StepVK wrapVkChunks f
-     , appState :: Array f
-     , proofs ::
-         Vector n
-           { sg :: AffinePoint f
-           , expandedBpChallenges :: Vector d f
-           }
-     }
+  => MessagesForNextStepProof (StepVK wrapVkChunks f) (Array f) (Vector n (AffinePoint f))
+       (Vector n (Vector d f))
   -> f
-hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
+hashMessagesForNextStepProofPure (MessagesForNextStepProof m) =
   let
+    stepVk = m.dlogPlonkIndex
+
     ptFields :: AffinePoint f -> Array f
     ptFields (AffinePoint pt) = [ pt.x, pt.y ]
 
@@ -130,14 +128,13 @@ hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
         <> chunkedFields stepVk.emulComm
         <> chunkedFields stepVk.endomulScalarComm
 
-    proofFields = Array.concatMap
-      ( \p ->
-          ptFields p.sg
-            <> Vector.toUnfoldable p.expandedBpChallenges
+    proofFields = fold
+      ( Vector.zipWith (\sg chals -> ptFields sg <> Vector.toUnfoldable chals)
+          m.challengePolynomialCommitments
+          m.oldBulletproofChallenges
       )
-      (Array.fromFoldable proofs)
   in
-    hash (vkFields <> appState <> proofFields)
+    hash (vkFields <> m.appState <> proofFields)
 
 -- | `hashMessagesForNextStepProofPure` with one trace line per input
 -- | field element, in hashing order, under the `msgForNextStep.*`
@@ -149,20 +146,16 @@ hashMessagesForNextStepProofPureTraced
   => Reflectable n Int
   => Reflectable wrapVkChunks Int
   => Reflectable d Int
-  => { stepVk :: StepVK wrapVkChunks f
-     , appState :: Array f
-     , proofs ::
-         Vector n
-           { sg :: AffinePoint f
-           , expandedBpChallenges :: Vector d f
-           }
-     }
+  => MessagesForNextStepProof (StepVK wrapVkChunks f) (Array f) (Vector n (AffinePoint f))
+       (Vector n (Vector d f))
   -> Effect f
-hashMessagesForNextStepProofPureTraced inp@{ stepVk, appState, proofs } = do
+hashMessagesForNextStepProofPureTraced msg@(MessagesForNextStepProof m) = do
   -- Label format is fixed by the OCaml trace this is diffed against: a
   -- single-chunk commitment is `label.x` / `label.y`, a multi-chunk one
   -- `label.i.x` / `label.i.y` per chunk.
   let
+    stepVk = m.dlogPlonkIndex
+
     traceChunks :: String -> ChunkedCommitment wrapVkChunks (AffinePoint f) -> Effect Unit
     traceChunks lbl cc =
       case Vector.toUnfoldable (unwrap cc) of
@@ -182,13 +175,14 @@ hashMessagesForNextStepProofPureTraced inp@{ stepVk, appState, proofs } = do
   traceChunks "msgForNextStep.vk.mul" stepVk.mulComm
   traceChunks "msgForNextStep.vk.emul" stepVk.emulComm
   traceChunks "msgForNextStep.vk.endomul_scalar" stepVk.endomulScalarComm
-  forWithIndex_ appState \i v ->
+  forWithIndex_ m.appState \i v ->
     Trace.field ("msgForNextStep.app_state." <> show i) v
-  forWithIndex_ (Array.fromFoldable proofs) \i p -> do
-    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.x") (unwrap p.sg).x
-    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.y") (unwrap p.sg).y
-    forWithIndex_ p.expandedBpChallenges \fj c ->
+  forWithIndex_ (Vector.zipWith Tuple m.challengePolynomialCommitments m.oldBulletproofChallenges) \fi (Tuple sg chals) -> do
+    let i = getFinite fi
+    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.x") (unwrap sg).x
+    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.y") (unwrap sg).y
+    forWithIndex_ chals \fj c ->
       Trace.field ("msgForNextStep.prev." <> show i <> ".bp_chal." <> show (getFinite fj)) c
-  let digest = hashMessagesForNextStepProofPure inp
+  let digest = hashMessagesForNextStepProofPure msg
   Trace.field "msgForNextStep.final_digest" digest
   pure digest

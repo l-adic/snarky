@@ -25,7 +25,7 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (ChunkedCommitment, ChunkedEvals, StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.Types (ChunkedCommitment, ChunkedEvals, MessagesForNextStepProof(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
@@ -113,14 +113,13 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
   }
 
 type VerifyOneResult tickD fv =
-  { challenges :: Vector tickD (SizedF 128 fv) -- as squeezed
-  , expandedChallenges :: Vector tickD fv -- the same, through the endo
+  { expandedChallenges :: Vector tickD fv -- the bulletproof challenges, through the endo
   , result :: BoolVar StepField
   }
 
--- | The previous proof's bulletproof challenges, and a verdict that is
--- | true when the proof both verifies and finalizes, or when
--- | `mustVerify` is false.
+-- | The previous proof's expanded bulletproof challenges, and a
+-- | verdict that is true when the proof both verifies and finalizes,
+-- | or when `mustVerify` is false.
 -- |
 -- | Specialized to the step field. The wrap VK is one chunk
 -- | (`Pickles.Types.WrapVkChunks`), so the chunked-base layout is
@@ -139,7 +138,7 @@ verifyOne fopParams input ivpParams = do
   label "step1_assert_finalize" $ assertEq input.unfinalized.shouldFinalize input.mustVerify
 
   let ps = input.proofState
-  { finalized, challenges, expandedChallenges, xiCorrect, bCorrect, cipCorrect, plonkOk } <- label "step2_fop" $ finalizeOtherProofCircuit StepOtherField.fopShiftOps fopParams
+  { finalized, expandedChallenges, xiCorrect, bCorrect, cipCorrect, plonkOk } <- label "step2_fop" $ finalizeOtherProofCircuit StepOtherField.fopShiftOps fopParams
     { unfinalized:
         { deferredValues:
             { plonk: ps.plonk
@@ -165,19 +164,16 @@ verifyOne fopParams input ivpParams = do
   ivpTrace "diag.fop.plonkOk" (coerce plonkOk)
   ivpTrace "diag.fop.finalized" (coerce finalized)
 
-  -- The message hash takes the unpadded `prevSgs`, not `sgOld`.
-  let
-    msgHashProofs = Vector.zipWith
-      (\mask (Tuple sg rawChals) -> { sg, rawChallenges: rawChals, mask })
-      input.proofMask
-      (Vector.zipWith Tuple input.prevSgs input.prevChallenges)
-
+  -- The message holds the unpadded `prevSgs`, not `sgOld`.
   { digest: messagesForNextStepProof, spongeAfterIndex } <-
-    hashMessagesForNextStepProofOpt
-      { vkComms: input.vkComms
-      , appStateFields: input.appStateFields
-      , proofs: msgHashProofs
-      }
+    hashMessagesForNextStepProofOpt input.proofMask
+      ( MessagesForNextStepProof
+          { appState: input.appStateFields
+          , dlogPlonkIndex: input.vkComms
+          , challengePolynomialCommitments: input.prevSgs
+          , oldBulletproofChallenges: input.prevChallenges
+          }
+      )
 
   let
     statement =
@@ -269,4 +265,4 @@ verifyOne fopParams input ivpParams = do
     verifiedAndFinalized <- and_ output.success finalized
     or_ verifiedAndFinalized (not_ input.mustVerify)
 
-  pure { challenges, expandedChallenges, result }
+  pure { expandedChallenges, result }

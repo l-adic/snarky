@@ -276,9 +276,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
   ivpTrace "wrap.fop.dbg.ftEval0" ftEval0
   ivpTrace "wrap.fop.dbg.ftEval1_used" allEvals.ftEval1
 
-  let challenges = deferred.bulletproofChallenges
-
-  pure { finalized, xiCorrect, bCorrect, cipCorrect, plonkOk, challenges, expandedChallenges }
+  pure { finalized, xiCorrect, bCorrect, cipCorrect, plonkOk, expandedChallenges }
 
 -- | `x^(2^n)`, built from multiplication constraints. `pow2PowSquare`
 -- | computes the same value from Square constraints, so the two emit

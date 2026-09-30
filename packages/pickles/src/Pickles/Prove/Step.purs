@@ -72,9 +72,9 @@ import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesF
 import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
-import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
+import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, verifierIndexDigest, vestaVerifierIndexCommitments)
-import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPure)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -159,11 +159,13 @@ mkDummyMsgWrapHash bcd pallasSrs vestaSrs =
   let
     sgValues = Dummy.computeDummySgValues bcd pallasSrs vestaSrs
 
-    msgWrapHashWrap = hashMessagesForNextWrapProofPureGeneral
-      { sg: sgValues.ipa.step.sg
-      , paddedChallenges:
-          Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
-      }
+    msgWrapHashWrap = hashMessagesForNextWrapProofPure dummyIpaChallenges.wrapExpanded
+      ( MessagesForNextWrapProof
+          { challengePolynomialCommitment: sgValues.ipa.step.sg
+          , oldBulletproofChallenges:
+              Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
+          }
+      )
   in
     F (crossFieldDigest msgWrapHashWrap)
 
@@ -261,15 +263,16 @@ dummyWrapTockPublicInput input =
 
     stepExpanded = dummyIpaChallenges.stepExpanded
 
-    singleEntry = { sg: input.wrapSg, expandedBpChallenges: stepExpanded }
-
     appStateFields = valueToFields @StepField @stmt input.prevStatement
 
     msgStepDigestStepField = hashMessagesForNextStepProofPure
-      { stepVk: wrapVkStep
-      , appState: appStateFields
-      , proofs: Vector.replicate @n singleEntry
-      }
+      ( MessagesForNextStepProof
+          { appState: appStateFields
+          , dlogPlonkIndex: wrapVkStep
+          , challengePolynomialCommitments: Vector.replicate @n input.wrapSg
+          , oldBulletproofChallenges: Vector.replicate @n stepExpanded
+          }
+      )
 
     -- The digests in `packStatement`'s order: sponge, msgWrap, msgStep.
     sponge0 = fop.spongeDigestBeforeEvaluations
@@ -477,10 +480,12 @@ buildSlotAdvice input = do
   let
     wrapPadded = input.wrapOwnPaddedBpChals
 
-    msgWrapHash = hashMessagesForNextWrapProofPureGeneral
-      { sg: input.stepOpeningSg
-      , paddedChallenges: wrapPadded
-      }
+    msgWrapHash = hashMessagesForNextWrapProofPure dummyIpaChallenges.wrapExpanded
+      ( MessagesForNextWrapProof
+          { challengePolynomialCommitment: input.stepOpeningSg
+          , oldBulletproofChallenges: Vector.drop @pad wrapPadded
+          }
+      )
 
     msgWrapHashStep = F (crossFieldDigest msgWrapHash)
 
@@ -493,16 +498,14 @@ buildSlotAdvice input = do
 
     prevChalsPerSlot = Vector.drop @pad input.prevChallengesForStepHash
 
-    prevProofsForHash =
-      Vector.zipWith (\sg chals -> { sg, expandedBpChallenges: chals })
-        prevCpcs
-        prevChalsPerSlot
-
   msgStepDigestStepField <- hashMessagesForNextStepProofPureTraced
-    { stepVk: wrapVkStep
-    , appState: valueToFields @StepField @prevHeadStmt input.prevStatement
-    , proofs: prevProofsForHash
-    }
+    ( MessagesForNextStepProof
+        { appState: valueToFields @StepField @prevHeadStmt input.prevStatement
+        , dlogPlonkIndex: wrapVkStep
+        , challengePolynomialCommitments: prevCpcs
+        , oldBulletproofChallenges: prevChalsPerSlot
+        }
+    )
 
   Trace.field "expand_proof.msgForNextStep" msgStepDigestStepField
   Trace.field "expand_proof.msgForNextWrap" msgWrapHash

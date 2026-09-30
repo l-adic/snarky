@@ -11,7 +11,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Types (WrapIPARounds)
+import Pickles.Types (MessagesForNextWrapProof(..), WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit')
 import RandomOracle.Sponge (Sponge) as RO
 import Snarky.Backend.Advice (noAdvice)
@@ -51,9 +51,11 @@ hashMessagesWrapCircuit inputs = do
 
   digest <- evalSpongeM (initialSpongeCircuit :: RO.Sponge (FVar WrapField)) $
     hashMessagesForNextWrapProofCircuit'
-      { sg
-      , allChallenges: chals0 :< chals1 :< Vector.nil
-      }
+      ( MessagesForNextWrapProof
+          { challengePolynomialCommitment: sg
+          , oldBulletproofChallenges: chals0 :< chals1 :< Vector.nil
+          }
+      )
 
   assertEq digest claimed
 
