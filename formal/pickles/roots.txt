@@ -13,6 +13,10 @@ Pickles.wrapProof_kimchiVerify_pallas
 Pickles.stepWrap_kimchiVerify
 Pickles.wrapStep_kimchiVerify
 
+-- The handover along a chain: every proof of a carried chain verifies exactly when every
+-- carried accumulator passes the deferred check.
+Pickles.chain_kimchiVerify_iff
+
 -- The capstones' typed public-input ties are the wire's public input: the step circuit's
 -- statement values flatten to what `wrapPublicInput` commits to, and the wrap circuit's packed
 -- statement, flattened (`stepPublicInput`), is the leaves' input followed by the zero
