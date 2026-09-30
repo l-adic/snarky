@@ -125,10 +125,11 @@ def IvpInput.bases {F sf : Type} {nc : ℕ} (inp : IvpInput k nc np (FVar F) (Bo
     (xHat : Vector (AffinePoint (FVar F)) nc)
     (ftc : AffinePoint (FVar F)) : List (AffinePoint (FVar F) × Option (BoolVar F)) :=
   inp.sgOld.toList.map (fun m => (m.2, m.1))
-    ++ (xHat.toList ++ [ftc] ++ inp.zComm.toList ++ (inp.key.selectors.map Vector.toList).flatten
+    ++ (xHat.toList ++ [ftc] ++ inp.zComm.toList
+        ++ (inp.key.selectors.toList.map Vector.toList).flatten
         ++ (inp.wComm.toList.map Vector.toList).flatten
         ++ (inp.key.coefficientsComm.toList.map Vector.toList).flatten
-        ++ (inp.key.sigmaBatch.map Vector.toList).flatten).map (fun P => (P, none))
+        ++ (inp.key.sigmaBatch.toList.map Vector.toList).flatten).map (fun P => (P, none))
 
 /-- The group half: squeeze the index digest from `spongeAfterIndex`; run the fq-sponge
 transcript — under `optSponge`, `computeXHat` first, then the conditional sponge with the old
@@ -206,63 +207,39 @@ section Read
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
-/-- A list of chunked commitment cells reads, column by column, as the wire's commitments. -/
-def ColumnsRead (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
-    (cols : List (List (AffinePoint (FVar C.BaseField)))) (Ps : List (Vector C.Point nc)) :
-    Prop :=
-  List.Forall₂ (fun col P => CommReads C V col P.toList) cols Ps
+/-- Chunked commitment cells read, column by column, as the wire's commitments. -/
+def ColumnsRead (C : KimchiCurve) (V : Valuation C.BaseField) {nc m : ℕ}
+    (cols : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m)
+    (Ps : Vector (Vector C.Point nc) m) : Prop :=
+  ∀ i : Fin m, CommReads C V cols[i].toList Ps[i].toList
 
-/-- A key's commitment cells read as the key's commitments, field by field. -/
+/-- A key's commitment cells read as the key's commitments. -/
 structure KeyReads (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
     (key : VkComms nc (AffinePoint (FVar C.BaseField))) (cvk : KimchiVK C nc) : Prop where
   /-- The permutation commitments `σ₀…σ₆`. -/
-  sigma : ∀ i : Fin permCols, CommReads C V key.sigmaComm[i].toList cvk.sigmaComm[i].toList
+  sigma : ColumnsRead C V key.sigmaComm cvk.sigmaComm
   /-- The coefficient commitments. -/
-  coefficients : ∀ i : Fin coeffCols,
-    CommReads C V key.coefficientsComm[i].toList cvk.coefficientsComm[i].toList
-  /-- The generic selector's commitment. -/
-  generic : CommReads C V key.genericComm.toList cvk.genericComm.toList
-  /-- The poseidon selector's commitment. -/
-  poseidon : CommReads C V key.poseidonComm.toList cvk.poseidonComm.toList
-  /-- The complete-add selector's commitment. -/
-  completeAdd : CommReads C V key.completeAddComm.toList cvk.completeAddComm.toList
-  /-- The variable-base-mul selector's commitment. -/
-  mul : CommReads C V key.mulComm.toList cvk.mulComm.toList
-  /-- The endo-mul selector's commitment. -/
-  emul : CommReads C V key.emulComm.toList cvk.emulComm.toList
-  /-- The endo-mul-scalar selector's commitment. -/
-  endomulScalar : CommReads C V key.endomulScalarComm.toList cvk.endomulScalarComm.toList
+  coefficients : ColumnsRead C V key.coefficientsComm cvk.coefficientsComm
+  /-- The selector commitments, in batch order. -/
+  selectors : ColumnsRead C V key.selectors cvk.comms.selectors
 
-/-- Vectors of columns read entrywise read as their lists of columns. -/
-private theorem columnsRead_of_forall {nc m : ℕ}
-    {cells : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m}
-    {Ps : Vector (Vector C.Point nc) m}
-    (h : ∀ i : Fin m, CommReads C V cells[i].toList Ps[i].toList) :
-    ColumnsRead C V (cells.toList.map Vector.toList) Ps.toList :=
-  List.forall₂_iff_get.mpr ⟨by simp, fun i h₁ h₂ => by
-    simpa using h ⟨i, by simpa using h₂⟩⟩
-
-/-- The selector cells read as the key's selectors, in batch order. -/
-theorem KeyReads.selectorsRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
-    {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
-    ColumnsRead C V (key.selectors.map Vector.toList)
-      [cvk.genericComm, cvk.poseidonComm, cvk.completeAddComm, cvk.mulComm, cvk.emulComm,
-       cvk.endomulScalarComm] :=
-  .cons h.generic (.cons h.poseidon (.cons h.completeAdd (.cons h.mul (.cons h.emul
-    (.cons h.endomulScalar .nil)))))
-
-/-- The coefficient cells read as the key's coefficients. -/
-theorem KeyReads.coefficientsRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
-    {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
-    ColumnsRead C V (key.coefficientsComm.toList.map Vector.toList) cvk.coefficientsComm.toList :=
-  columnsRead_of_forall h.coefficients
+/-- A column read, over the columns' lists. -/
+private theorem ColumnsRead.forall₂ {nc m : ℕ}
+    {cols : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m}
+    {Ps : Vector (Vector C.Point nc) m} (h : ColumnsRead C V cols Ps) :
+    List.Forall₂ (fun col P => CommReads C V (Vector.toList col) (Vector.toList P)) cols.toList
+      Ps.toList :=
+  forall₂_toList_iff.mpr h
 
 /-- The batch's permutation cells read as the key's `σ₀…σ₅`. -/
 theorem KeyReads.sigmaBatchRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
     {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
-    ColumnsRead C V (key.sigmaBatch.map Vector.toList) (cvk.sigmaComm.take sigmaRows).toList :=
-  columnsRead_of_forall (cells := key.sigmaComm.take sigmaRows) fun i => by
-    simpa using h.sigma ⟨i, lt_of_lt_of_le i.isLt (Nat.min_le_right _ _)⟩
+    ColumnsRead C V key.sigmaBatch (cvk.sigmaComm.take sigmaRows) := fun i => by
+  have := h.sigma ⟨i, by omega⟩
+  simp only [Fin.getElem_fin] at this
+  rw [← Vector.getElem_take (j := sigmaRows) (by omega),
+    ← Vector.getElem_take (xs := cvk.sigmaComm) (j := sigmaRows) (by omega)] at this
+  exact this
 
 /-- The `σ₆` cells read as the key's `σ₆`. -/
 theorem KeyReads.sigmaLastRead {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
@@ -291,7 +268,7 @@ structure ProofReads {nc k : ℕ} (S : IvpSide C V ops)
     (tComm : Vector (AffinePoint (FVar C.BaseField)) (quotChunks * nc))
     (opening : BulletproofOpening k (FVar C.BaseField) sf) (cp : KimchiProof C nc k) : Prop where
   /-- The witness commitments. -/
-  w : ColumnsRead C V (wComm.toList.map Vector.toList) cp.wComm.toList
+  w : ColumnsRead C V wComm cp.wComm
   /-- The permutation accumulator's commitment. -/
   z : CommReads C V zComm.toList cp.zComm.toList
   /-- The quotient chunks. -/
@@ -434,11 +411,13 @@ private theorem CommReads.reads {cells : List (AffinePoint (FVar C.BaseField))} 
     (onCurveAt_equivPoint_coords hc))
 
 /-- A column read gives the columns' coordinate readings. -/
-private theorem ColumnsRead.reads {nc : ℕ} {cols : List (List (AffinePoint (FVar C.BaseField)))}
-    {Ps : List (Vector C.Point nc)} (h : ColumnsRead C V cols Ps) :
-    List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) cols
-      (Ps.map fun P => P.toList.map wirePt) :=
-  List.forall₂_map_right_iff.2 (h.imp fun _ _ hc => hc.reads)
+private theorem ColumnsRead.reads {nc m : ℕ}
+    {cols : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m}
+    {Ps : Vector (Vector C.Point nc) m} (h : ColumnsRead C V cols Ps) :
+    List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) (cols.toList.map Vector.toList)
+      (Ps.toList.map fun P => P.toList.map wirePt) := by
+  rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+  exact h.forall₂.imp fun _ _ hc => hc.reads
 
 /-- Unmasked bases read as their points, kept. -/
 private theorem CommReads.masked {cells : List (AffinePoint (FVar C.BaseField))} {Ps : List C.Point}
@@ -449,14 +428,16 @@ private theorem CommReads.masked {cells : List (AffinePoint (FVar C.BaseField))}
   exact h.imp fun _ _ hc => ⟨hc, rfl⟩
 
 /-- Unmasked chunked columns read as their points, kept, flattened. -/
-private theorem ColumnsRead.masked {nc : ℕ} {cols : List (List (AffinePoint (FVar C.BaseField)))}
-    {Ps : List (Vector C.Point nc)} (h : ColumnsRead C V cols Ps) :
-    List.Forall₂ (MaskedBaseReads C.E.toAffine V) (cols.flatten.map fun P => (P, none))
-      ((Ps.map Vector.toList).flatten.map fun P => (SWPoint.equivPoint C.E P, true)) := by
+private theorem ColumnsRead.masked {nc m : ℕ}
+    {cols : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m}
+    {Ps : Vector (Vector C.Point nc) m} (h : ColumnsRead C V cols Ps) :
+    List.Forall₂ (MaskedBaseReads C.E.toAffine V)
+      ((cols.toList.map Vector.toList).flatten.map fun P => (P, none))
+      ((Ps.toList.map Vector.toList).flatten.map fun P => (SWPoint.equivPoint C.E P, true)) := by
   rw [List.map_flatten, List.map_flatten]
   refine List.rel_flatten ?_
-  rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff, List.forall₂_map_right_iff]
-  exact h.imp fun _ _ hc => hc.masked
+  rw [List.map_map, List.map_map, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+  exact h.forall₂.imp fun _ _ hc => hc.masked
 
 /-- A batch row's commitments. -/
 private theorem zipSeg_fst {nc : ℕ} (comm : Vector C.Point nc)
@@ -561,12 +542,12 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
       ((streamBv σ cvk cp pub oldsW.toList).map fun b => (SWPoint.equivPoint C.E b.1, b.2)) := by
   unfold IvpInput.bases streamBv restOf
   rw [tailRows_comms]
-  have hi := hties.key.selectorsRead.masked
+  have hi := hties.key.selectors.masked
   have hw := hties.proof.w.masked
-  have hc := hties.key.coefficientsRead.masked
+  have hc := hties.key.coefficients.masked
   have hs := hties.key.sigmaBatchRead.masked
-  simp only [List.map_append, List.map_map, List.append_assoc, List.map_cons, List.map_nil,
-    Function.comp_def] at hi hw hc hs ⊢
+  simp only [VkComms.selectors, KimchiVK.comms, Vector.toList_mk, List.map_append, List.map_map,
+    List.append_assoc, List.map_cons, List.map_nil, Function.comp_def] at hi hw hc hs ⊢
   refine List.rel_append hties.olds.cells ?_
   refine List.rel_append hx.masked ?_
   refine List.rel_append (.cons ⟨hf, rfl⟩ .nil) ?_
@@ -586,30 +567,26 @@ private theorem CommReads.coords :
     simp only [List.flatMap_cons, hx, hy, CommReads.coords hs]
 
 /-- Columns read as commitments have the commitments' coordinates. -/
-private theorem ColumnsRead.coords {nc : ℕ} :
-    ∀ {cols : List (List (AffinePoint (FVar C.BaseField)))} {Ps : List (Vector C.Point nc)},
-      ColumnsRead C V cols Ps →
-      cols.flatMap (fun col => col.flatMap fun P => [P.x.val V, P.y.val V])
-        = Ps.flatMap (fun v => v.toList.flatMap fun P => [P.x, P.y])
-  | [], [], .nil => rfl
-  | col :: cols, v :: Ps, .cons hc hs => by
-    simp only [List.flatMap_cons, ColumnsRead.coords hs, CommReads.coords hc]
+private theorem ColumnsRead.coords {nc m : ℕ}
+    {cols : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m}
+    {Ps : Vector (Vector C.Point nc) m} (h : ColumnsRead C V cols Ps) :
+    cols.toList.flatMap (fun col => col.toList.flatMap fun P => [P.x.val V, P.y.val V])
+      = Ps.toList.flatMap (fun v => v.toList.flatMap fun P => [P.x, P.y]) := by
+  have h' := h.forall₂
+  generalize cols.toList = cs at h' ⊢
+  generalize Ps.toList = ps at h' ⊢
+  induction h' with
+  | nil => rfl
+  | cons hc _ ih => simp only [List.flatMap_cons, ih, CommReads.coords hc]
 
 /-- Key cells reading as the key have its coordinates, in absorb order. -/
 theorem KeyReads.indexCoords {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
     {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
     key.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V])
       = cvk.comms.indexPoints.flatMap fun P => [P.x, P.y] := by
-  have hc : ColumnsRead C V
-      ((key.sigmaComm.toList ++ key.coefficientsComm.toList ++ key.selectors).map Vector.toList)
-      (cvk.sigmaComm.toList ++ cvk.coefficientsComm.toList ++ cvk.comms.selectors) := by
-    simp only [List.map_append]
-    exact List.rel_append (List.rel_append (columnsRead_of_forall h.sigma) h.coefficientsRead)
-      h.selectorsRead
-  have := ColumnsRead.coords hc
-  simp only [List.flatMap_map] at this
-  simp only [VkComms.indexPoints, List.flatMap_assoc]
-  exact this
+  simp only [VkComms.indexPoints, List.flatMap_assoc, List.flatMap_append, h.sigma.coords,
+    h.coefficients.coords, h.selectors.coords]
+  rfl
 
 end Helpers
 

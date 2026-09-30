@@ -45,17 +45,17 @@ variable {nc : ℕ} {f : Type}
 
 /-- The six selector commitments in batch order: generic, poseidon, complete-add, mul, emul,
 endomul-scalar. -/
-def selectors (k : VkComms nc f) : List (Vector f nc) :=
-  [k.genericComm, k.poseidonComm, k.completeAddComm, k.mulComm, k.emulComm,
-   k.endomulScalarComm]
+def selectors (k : VkComms nc f) : Vector (Vector f nc) 6 :=
+  #v[k.genericComm, k.poseidonComm, k.completeAddComm, k.mulComm, k.emulComm,
+    k.endomulScalarComm]
 
 /-- The key's commitment chunks in absorb order: `σ₀…σ₆`, the coefficients, the selectors. -/
 def indexPoints (k : VkComms nc f) : List f :=
-  (k.sigmaComm.toList ++ k.coefficientsComm.toList ++ k.selectors).flatMap Vector.toList
+  (k.sigmaComm.toList ++ k.coefficientsComm.toList ++ k.selectors.toList).flatMap Vector.toList
 
 /-- The permutation commitments the batch opens: `σ₀…σ₅`. -/
-def sigmaBatch (k : VkComms nc f) : List (Vector f nc) :=
-  (k.sigmaComm.take sigmaRows).toList
+def sigmaBatch (k : VkComms nc f) : Vector (Vector f nc) sigmaRows :=
+  k.sigmaComm.take sigmaRows
 
 /-- The last permutation commitment `σ₆`, which `ftComm` scales. -/
 def sigmaLast (k : VkComms nc f) : Vector f nc :=

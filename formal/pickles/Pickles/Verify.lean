@@ -239,12 +239,10 @@ theorem IvpProof.read_proofReads {C : KimchiCurve} {V : Valuation C.BaseField} {
       (pr.read S evals pubEvals ftEval1 olds) := by
   refine ⟨?_, ?_, ?_, ?_, onCurveAt_readPt (hon _ (by simp [IvpProof.points])),
     onCurveAt_readPt (hon _ (by simp [IvpProof.points])), rfl, rfl⟩
-  · simp only [ColumnsRead, IvpProof.read, Vector.toList_map, List.forall₂_map_left_iff,
-      List.forall₂_map_right_iff]
-    refine List.forall₂_same.mpr fun col hcol => ?_
-    simpa [Vector.toList_map] using commReads_readPt fun p hp =>
+  · intro i
+    simpa [IvpProof.read, Vector.toList_map] using commReads_readPt fun p hp =>
       hon p (by simp only [IvpProof.points, List.mem_append, List.mem_flatMap]
-                exact Or.inl (Or.inl (Or.inl (Or.inl ⟨col, hcol, hp⟩))))
+                exact Or.inl (Or.inl (Or.inl (Or.inl ⟨pr.wComm[i], by simp, hp⟩))))
   · simpa [IvpProof.read, Vector.toList_map] using
       commReads_readPt fun p hp => hon p (by simp [IvpProof.points, hp])
   · simpa [IvpProof.read, Vector.toList_map] using

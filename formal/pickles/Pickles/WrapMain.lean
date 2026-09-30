@@ -884,7 +884,7 @@ theorem vkReads_of_reads (K : Key C nc) (k : VkComms nc (AffinePoint (FVar C.Bas
     simpa [keyValsOf_at] using hpt p
   have hnz' : ∀ p, K.cvk.comms.at p ≠ 0 := fun p => hnz _ (by
     cases p <;> simp only [VkComms.indexPoints, VkComms.selectors, KimchiVK.comms, VkComms.at,
-      List.mem_flatMap, List.mem_append, List.mem_cons, Vector.mem_toList_iff] <;>
+      List.mem_flatMap, List.mem_append, Vector.mem_toList_iff] <;>
       exact ⟨_, by simp [Vector.getElem_mem], Vector.getElem_mem _⟩)
   have honc : ∀ p, OnCurveAt C.E.toAffine V (k.at p) (SWPoint.equivPoint C.E (K.cvk.comms.at p)) :=
     fun p => by
@@ -898,10 +898,11 @@ theorem vkReads_of_reads (K : Key C nc) (k : VkComms nc (AffinePoint (FVar C.Bas
     intro m cells Ps h
     exact List.forall₂_iff_get.mpr ⟨by simp, fun i h1 h2 => by simpa using h ⟨i, by simpa using h1⟩⟩
   have hkey : KeyReads C V k K.cvk := ⟨fun i => hvec _ _ fun c => honc (.sigma i c),
-    fun i => hvec _ _ fun c => honc (.coeff i c), hvec _ _ fun c => honc (.generic c),
-    hvec _ _ fun c => honc (.poseidon c), hvec _ _ fun c => honc (.completeAdd c),
-    hvec _ _ fun c => honc (.mul c), hvec _ _ fun c => honc (.emul c),
-    hvec _ _ fun c => honc (.endomulScalar c)⟩
+    fun i => hvec _ _ fun c => honc (.coeff i c), fun i => by
+      fin_cases i
+      exacts [hvec _ _ fun c => honc (.generic c), hvec _ _ fun c => honc (.poseidon c),
+        hvec _ _ fun c => honc (.completeAdd c), hvec _ _ fun c => honc (.mul c),
+        hvec _ _ fun c => honc (.emul c), hvec _ _ fun c => honc (.endomulScalar c)]⟩
   -- the absorbed coordinates are the key's (`KeyReads.indexCoords`)
   refine ⟨⟨_, hsv, ?_⟩, hkey⟩
   rw [hkey.indexCoords, K.digest_eq]

@@ -53,7 +53,7 @@ def oneChunk {C : Bulletproof.Ipa.KimchiCurve} (pts : Array C.Point) : List (Vec
 /-- A key's commitments in the index digest's absorb order: `σ₀…σ₆`, the coefficients, then
 the selectors. -/
 def digestOrder {nc : ℕ} {f : Type} (k : VkComms nc f) : List (Vector f nc) :=
-  k.sigmaComm.toList ++ k.coefficientsComm.toList ++ k.selectors
+  k.sigmaComm.toList ++ k.coefficientsComm.toList ++ k.selectors.toList
 
 /-- Every commitment of a key record the same point: the constant key of the CS dumps. -/
 def VkComms.replicate {nc : ℕ} {f : Type} (P : Vector f nc) : VkComms nc f :=
