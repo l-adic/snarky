@@ -35,8 +35,9 @@ implication is cryptographic and stays out of the tree.
 
 Two links share no cells: each circuit run has its own valuation, and an accumulator reaches the
 next link only through the digests of its messages, carried in public inputs. The wrap digest
-crosses the step circuit's statement reduced into the step field, so the wrap collision both
-theorems name is one of the reduced digests (`WrapMsgCollision`).
+crosses the step circuit's statement reduced into the step field; the wrap circuit's public-input
+ladder bounds it below `2^254 < p`, so the reduction loses nothing and both collisions are exact
+Poseidon collisions.
 -/
 
 namespace Pickles
@@ -52,8 +53,8 @@ open scoped Kimchi
 /-! ## Collisions between two links -/
 
 /-- The wrap message a wrap circuit sends (its verify cells `out` over `fin`, under `V`) and the
-one a later wrap circuit rebuilds for its slot `j` (`fin'`, under `V'`) read differently, but
-their digests agree once a step circuit reads them. -/
+one a later wrap circuit rebuilds for its slot `j` (`fin'`, under `V'`) read differently, but hash
+alike. -/
 def WrapMsgCollision {branches w ncStep kw ks branches' w' ncStep' : ℕ}
     {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
     {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) w'}
@@ -67,7 +68,7 @@ def WrapMsgCollision {branches w ncStep kw ks branches' w' ncStep' : ℕ}
     CircuitType.Reads V (out.messagesForNextWrapProof fin).oldBulletproofChallenges chals ∧
     CircuitType.Reads V' (fin'.messagesForNextWrapProof j).challengePolynomialCommitment sg' ∧
     CircuitType.Reads V' (fin'.messagesForNextWrapProof j).oldBulletproofChallenges chals' ∧
-    Collision IpaVesta.curve.sponge.params (fun x : Fq => ((ToNat.toNat x : ℕ) : Fp))
+    Collision IpaVesta.curve.sponge.params
       (wrapMsgInput dummy ⟨sg, chals⟩) (wrapMsgInput dummy ⟨sg', chals'⟩)
 
 /-- The step message a step circuit sends (`out`, under `V`) and the one a later slot rebuilds
@@ -81,7 +82,7 @@ def StepMsgCollision {n w : ℕ} {ws : Fin n → ℕ} {ncs kw ks k' ncs' w' : �
     CircuitType.Reads V out.messagesForNextStepProof.dlogPlonkIndex vk ∧
     CircuitType.Reads V out.messagesForNextStepProof.challengePolynomialCommitments sgs ∧
     CircuitType.Reads V out.messagesForNextStepProof.oldBulletproofChallenges chals ∧
-    Collision IpaPallas.curve.sponge.params id
+    Collision IpaPallas.curve.sponge.params
       (stepMsgInput ⟨out.messagesForNextStepProof.appState.map (·.val V), vk, sgs, chals⟩)
       (cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y]) ++ inp.appState.map (·.val V')
         ++ keptValues V' ms (inp.prevSgs.zip inp.prevChallenges))
@@ -262,6 +263,12 @@ end Helpers
 private theorem toFp_redFq (x : Fp) : ((ZMod.val (redFq x) : ℕ) : Fp) = x := by
   rw [val_redFq, ZMod.natCast_zmod_val]
 
+/-- A wrap-field value below `2^254 < p` survives reduction into the step field and back. -/
+private theorem redFq_toFp_of_lt (x : Fq) (h : ZMod.val x < 2 ^ 254) :
+    redFq ((ZMod.val x : ℕ) : Fp) = x := by
+  have hp : (2 : ℕ) ^ 254 < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
+  rw [redFq, ZMod.val_natCast_of_lt (h.trans hp), ZMod.natCast_zmod_val]
+
 private theorem readPt_congr {C : KimchiCurve} {V V' : Valuation C.BaseField}
     {p q : AffinePoint (FVar C.BaseField)}
     (hx : p.x.val V = q.x.val V') (hy : p.y.val V = q.y.val V') : readPt V p = readPt V' q := by
@@ -384,9 +391,8 @@ theorem opened_by_next_step
     ⟨mW'.challengePolynomialCommitment.x.val rk1.Vw, mW'.challengePolynomialCommitment.y.val rk1.Vw⟩
   let chalsW' := mW'.oldBulletproofChallenges.map (·.map (·.val rk1.Vw))
   -- the wrap digest, from link k's wrap circuit through its step circuit to link k1's wrap circuit
-  have hwrapD : ((ZMod.val (wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chalsW⟩) : ℕ)
-      : Fp) = ((ZMod.val (wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩) : ℕ)
-      : Fp) := by
+  have hwrapD : wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chalsW⟩
+      = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩ := by
     have h1 := hWk.1 sg chalsW (reads_pt _ _) (reads_vecs _ _)
     have h2 := (digests_of_tie htk).1
     have h3 := hSk.2 hn rk.i
@@ -394,9 +400,13 @@ theorem opened_by_next_step
     have h5 : (rk1.wrapVerifyOut.statement.messagesForNextWrapProof[wNext - n + rk.i]).val rk1.Vw
         = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩ :=
       hWk1.2.1 j sg' chalsW' (reads_pt _ _) (reads_vecs _ _)
-    rw [← h1, h2, toFp_redFq]
-    show rk.stepOut.msgs[rk.i].val rk.Vs = _
-    rw [← h3, h4, h5]
+    -- the step circuit reads the bounded digest exactly
+    have h6 : ZMod.val
+        ((rk1.wrapVerifyOut.statement.messagesForNextWrapProof[wNext - n + rk.i]).val rk1.Vw)
+        < 2 ^ 254 := hWk1.2.2.2 j
+    rw [← h1, h2]
+    show redFq (rk.stepOut.msgs[rk.i].val rk.Vs) = _
+    rw [← h3, h4, redFq_toFp_of_lt _ h6, h5]
   -- the step digest, from link k's step circuit through link k1's wrap circuit to its slot
   have hstepD : Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
         (stepMsgInput ⟨mS.appState.map (·.val rk.Vs), vk, sgs, chals⟩)
@@ -405,7 +415,7 @@ theorem opened_by_next_step
           ++ rk1.inp.appState.map (·.val rk1.Vs)
           ++ keptValues rk1.Vs rk1.ms (rk1.inp.prevSgs.zip rk1.inp.prevChallenges)) := by
     have h1 := hSk.1 vk sgs chals (reads_key _ _) (reads_pts _ _) (reads_vecs _ _)
-    have h3 := hWk1.2.2
+    have h3 := hWk1.2.2.1
     have h4 := (digests_of_tie htk1).2
     rw [h3] at h4
     rw [h4, toFp_redFq] at hpubD
@@ -584,9 +594,8 @@ theorem opened_by_next_wrap
     ⟨mW'.challengePolynomialCommitment.x.val rk1.Vs, mW'.challengePolynomialCommitment.y.val rk1.Vs⟩
   let chalsW' := mW'.oldBulletproofChallenges.map (·.map (·.val rk1.Vs))
   -- the wrap digest, from link k's wrap circuit through link k1's step circuit to its wrap circuit
-  have hwrapD : ((ZMod.val (wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chalsW⟩) : ℕ)
-      : Fp) = ((ZMod.val (wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩) : ℕ)
-      : Fp) := by
+  have hwrapD : wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chalsW⟩
+      = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩ := by
     have hn1 := rk1.hn
     have h1 := hWk.1 sg chalsW (reads_pt _ _) (reads_vecs _ _)
     have h2 := (digests_of_tie htie).1
@@ -595,9 +604,13 @@ theorem opened_by_next_wrap
     have h5 : (rk1.wrapVerifyOut.statement.messagesForNextWrapProof[w' - n' + rk1.i]).val rk1.Vs
         = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩ :=
       hW1.2.1 rk1.jf sg' chalsW' (reads_pt _ _) (reads_vecs _ _)
-    rw [← h1, h2, toFp_redFq]
-    show rk1.stepOut.msgs[rk1.i].val rk1.Vg = _
-    rw [← h3, h4, h5]
+    -- the step circuit reads the bounded digest exactly
+    have h6 : ZMod.val
+        ((rk1.wrapVerifyOut.statement.messagesForNextWrapProof[w' - n' + rk1.i]).val rk1.Vs)
+        < 2 ^ 254 := hW1.2.2.2 rk1.jf
+    rw [← h1, h2]
+    show redFq (rk1.stepOut.msgs[rk1.i].val rk1.Vg) = _
+    rw [← h3, h4, redFq_toFp_of_lt _ h6, h5]
   -- the step digest, from link k's step circuit through its wrap circuit to link k1's slot
   have hstepD : Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
         (stepMsgInput ⟨mS.appState.map (·.val rk.Vg), vk, sgs, chals⟩)
@@ -606,7 +619,7 @@ theorem opened_by_next_wrap
           ++ rk1.inp.appState.map (·.val rk1.Vg)
           ++ keptValues rk1.Vg rk1.ms (rk1.inp.prevSgs.zip rk1.inp.prevChallenges)) := by
     have h1 := hSk.1 vk sgs chals (reads_key _ _) (reads_pts _ _) (reads_vecs _ _)
-    have h3 := hWk.2.2
+    have h3 := hWk.2.2.1
     have h4 := (digests_of_tie htie).2
     rw [h3] at h4
     rw [h4, toFp_redFq] at hpubD

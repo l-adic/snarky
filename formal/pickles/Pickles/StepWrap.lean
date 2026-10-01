@@ -50,35 +50,11 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta
 open scoped Kimchi
 
-/-- A bounded cell's representative is below `2^254`: `2z + bb` with `z < 2^253`, or a bit. -/
-private theorem val_lt_of_bound {Vs : Valuation Fq} {k : PackedScalar Fq} (hb : k.Bound Vs) :
-    ZMod.val (k.cell.val Vs) < 2 ^ 254 := by
-  have hq : (2 : ℕ) ^ 254 < PALLAS_SCALAR_CARD := by norm_num [PALLAS_SCALAR_CARD]
-  have hcell : ∀ w ≤ 253, ∀ s : FVar Fq, CellBound Vs w s → ZMod.val (s.val Vs) < 2 ^ 254 := by
-    intro w hw s ⟨z, bb, h0, hlt, hval⟩
-    have hz : z < 2 ^ 253 := lt_of_lt_of_le hlt (pow_le_pow_right₀ (by norm_num) hw)
-    obtain ⟨N, hNz⟩ := Int.eq_ofNat_of_zero_le
-      (show 0 ≤ 2 * z + (if bb then 1 else 0) by cases bb <;> simp <;> omega)
-    have hN : N < 2 ^ 254 := by
-      have : (N : ℤ) < 2 ^ 254 := by rw [← hNz]; cases bb <;> simp <;> omega
-      exact_mod_cast this
-    rw [← hval, hNz, Int.cast_natCast, ZMod.val_natCast_of_lt (hN.trans hq)]
-    exact hN
-  cases k with
-  | full s => exact hcell 253 le_rfl s hb
-  | b128 s => exact hcell 127 (by norm_num) s hb
-  | b10 s => exact hcell 9 (by norm_num) s hb
-  | bit b =>
-    obtain ⟨bb, hbb⟩ := hb
-    show ZMod.val ((↑b : CVar Fq).val Vs) < _
-    rw [hbb]
-    cases bb <;> simp [bit, ZMod.val_one_eq_one_mod, PALLAS_SCALAR_CARD]
-
 /-- A bounded cell is the lift of its own public-input entry: reducing into the step field and
 lifting back is the identity below `2^254 < p`. -/
 private theorem cell_eq_redFq {Vs : Valuation Fq} {k : PackedScalar Fq} (hb : k.Bound Vs) :
     k.cell.val Vs = redFq (PackedScalar.reduced IpaVesta.curve Vs k) := by
-  have hN := val_lt_of_bound hb
+  have hN := PackedScalar.val_lt_of_bound hb
   have hp : (2 : ℕ) ^ 254 < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
   have hr : PackedScalar.reduced IpaVesta.curve Vs k
       = ((ZMod.val (k.cell.val Vs) : ℕ) : Fp) := by
@@ -617,7 +593,8 @@ theorem stepWrap_kimchiVerify
       (srsLagrangeTable σStep ncStep
         (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w))) σStep.h dummy
       slotWidths advW
-      (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))) _ hbody
+      (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
+      (stepKeys[0]'(Nat.pos_of_neZero branches)).nc_pos) _ hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
   obtain ⟨hsplitsEq, hsr, hbnd, hslots⟩ := (builder_spec_iff _ _).mp
     (wrapMain_statement (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens) Vs widths

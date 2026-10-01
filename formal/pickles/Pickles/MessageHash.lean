@@ -109,9 +109,9 @@ def stepMsgDigest {nc n k : ℕ} (p : Poseidon.Params F)
       (Vector (AffinePoint F) n) (Vector (Vector F k) n)) : F :=
   (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init (stepMsgInput m))).1
 
-/-- The inputs `xs` and `ys` differ, but their Poseidon digests read alike under `read`. -/
-def Collision {R : Type} (p : Poseidon.Params F) (read : F → R) (xs ys : List F) : Prop :=
-  xs ≠ ys ∧ read (Poseidon.RandomOracle.hash p xs) = read (Poseidon.RandomOracle.hash p ys)
+/-- The inputs `xs` and `ys` differ, but have one Poseidon digest. -/
+def Collision (p : Poseidon.Params F) (xs ys : List F) : Prop :=
+  xs ≠ ys ∧ Poseidon.RandomOracle.hash p xs = Poseidon.RandomOracle.hash p ys
 
 /-- The digest of the step message `m` with each proof's advice kept under its bit of `mask`, and
 the sponge after the key, which the verify block resumes from: after the key and the application

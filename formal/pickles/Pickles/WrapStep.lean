@@ -282,7 +282,7 @@ private theorem wrapStep_kimchiVerify_core
       stepKeys pins lagrange h dummy slotWidths advW stmt) _ hbody
   have hhash := (builder_spec_iff _ _).mp
     (wrapMain_hashesMessages Vw (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens) widths
-      log2s stepKeys pins lagrange h dummy slotWidths advW stmt) _ hbody
+      log2s stepKeys pins lagrange h dummy slotWidths advW stmt KStep.cvk.nc_pos) _ hbody
   -- cell `29` carries the branch data across the tie: `4·n₀ + ms₀[0] + 2·ms₀[1]` on the step
   -- side, `4·log2s[b] + Σᵢ 2^(1−i)·[i < widths[b]]` on the wrap side
   have hcell : stmt.branchData.val Vw
