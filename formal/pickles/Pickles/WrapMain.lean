@@ -308,6 +308,12 @@ private theorem slotStacks_end_le {mpv : ℕ} (slotWidths : Vector (Fin (MaxProo
   simp only [Fin.getElem_fin]
   omega
 
+/-- The challenge stacks `real`, front-padded to `MaxProofsVerified` with constant `dummy`
+stacks. -/
+def padChallenges {k w : ℕ} (dummy : Vector Fq k) (real : Vector (Vector (FVar Fq) k) w)
+    (hw : w ≤ MaxProofsVerified) : Vector (Vector (FVar Fq) k) MaxProofsVerified :=
+  (Vector.replicate (MaxProofsVerified - w) (dummy.map CVar.const) ++ real).cast (by omega)
+
 /-- The wrap circuit's finalize half: the previous wrap proofs' scalar halves, checked by the
 finalize block. It opens with what the deployed circuit emits first: the branch block over the
 statement's branch data, the proof state's allocation, the key choice, and the allocations of the
@@ -337,8 +343,7 @@ def wrapMainFinalize [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
     Vector.ofFn fun e => oldChals[((slotWidths.map Fin.val).toList.take j).sum + e]'
       (by have := slotStacks_end_le slotWidths j; omega)
   let padded (j : Fin mpv) : Vector (Vector (FVar Fq) k) MaxProofsVerified :=
-    (Vector.replicate (MaxProofsVerified - slotWidths[j]) (dummy.map CVar.const) ++ real j).cast
-      (by have := slotWidths[j].isLt; omega)
+    padChallenges dummy (real j) (Nat.lt_succ_iff.mp slotWidths[j].isLt)
   let slots : Vector (WrapFinalizeSlot branches k 1 Fq) mpv :=
     Vector.ofFn fun j =>
       { domainIndex := domainIndices[j], pins := pins[j]
@@ -1422,7 +1427,8 @@ theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
       (wrapMainVerify log2s lagrange h dummy slotWidths adv stmt hd)
   mvcgen [hh, ht]
 
-/-- Each finalize slot finalizes the claims the circuit allocated for it. -/
+/-- Each finalize slot finalizes the claims the circuit allocated for it, over its real challenge
+stacks padded. -/
 theorem wrapMainFinalize_slots {branches mpv ncStep k ks : ℕ} [NeZero branches]
     (Vs : Valuation Fq) (P : FopParams Fq)
     (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
@@ -1435,7 +1441,9 @@ theorem wrapMainFinalize_slots {branches mpv ncStep k ks : ℕ} [NeZero branches
     wrapMainFinalize (c := Builder Vs (KimchiConstraint Fq)) P widths log2s stepKeys pins
       dummy slotWidths adv branchData
     ⦃⇓ hd _ => ⌜∀ j : Fin mpv,
-      hd.slots[j].unfinalized = hd.proofState.unfinalizedProofs[j].toUnfinalized⌝⦄ := by
+      hd.slots[j].unfinalized = hd.proofState.unfinalizedProofs[j].toUnfinalized ∧
+      hd.slots[j].prevChallenges
+        = padChallenges dummy (hd.real j) (Nat.lt_succ_iff.mp slotWidths[j].isLt)⌝⦄ := by
   have hbb := fun wb => builder_spec_true (wrapBranchBlock (c := Builder Vs (KimchiConstraint Fq))
     branches mpv widths log2s wb branchData)
   have hck := fun bs => builder_spec_true
@@ -1476,8 +1484,9 @@ theorem wrapMainFinalize_accs {branches mpv ncStep k ks : ℕ} [NeZero branches]
   exact fun j => vesta_onCurve (hacc _ (by simp))
 
 /-- The step statement the wrap circuit verifies at, for any branch, table and key: its slots
-are the split claims, each reading as the allocated claims each finalize slot finalizes, and
-the public-input ladders bound every packed scalar (`wrapMainVerify_statement`). -/
+are the split claims, each reading as the allocated claims each finalize slot finalizes over its
+padded challenge stacks, and the public-input ladders bound every packed scalar
+(`wrapMainVerify_statement`). -/
 theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
     (Vs : Valuation Fq) (widths : Vector (Fin (mpv + 1)) branches)
     (log2s : Vector ℕ branches)
@@ -1496,7 +1505,9 @@ theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P
         SplitClaimsRead Vs r.1.proofState.unfinalizedProofs[i].toUnfinalized r.2.splits[i]) ∧
       (∀ x ∈ r.2.statement.packed.toList, x.Bound Vs) ∧
       ∀ j : Fin mpv,
-        r.1.slots[j].unfinalized = r.1.proofState.unfinalizedProofs[j].toUnfinalized⌝⦄ := by
+        r.1.slots[j].unfinalized = r.1.proofState.unfinalizedProofs[j].toUnfinalized ∧
+        r.1.slots[j].prevChallenges
+          = padChallenges dummy (r.1.real j) (Nat.lt_succ_iff.mp slotWidths[j].isLt)⌝⦄ := by
   simp only [wrapMain]
   have hf := wrapMainFinalize_slots Vs P widths log2s stepKeys pins dummy slotWidths adv
     stmt.branchData

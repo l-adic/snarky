@@ -99,6 +99,7 @@ def roots : List Name :=
     `Pickles.wrapStep_kimchiVerify,
     `Pickles.chain_kimchiVerify_iff,
     `Pickles.opened_by_next,
+    `Pickles.opened_by_next_wrap,
     `Pickles.StepStatement.ofWrap_toFields,
     `Pickles.stepPublicInput_eq_append ]
 
@@ -125,6 +126,7 @@ def deployedRoots : List Name :=
     `Pickles.stepWrap_kimchiVerify,
     `Pickles.wrapStep_kimchiVerify,
     `Pickles.opened_by_next,
+    `Pickles.opened_by_next_wrap,
     `Pickles.StepStatement.ofWrap_toFields,
     `Pickles.stepPublicInput_eq_append ]
 

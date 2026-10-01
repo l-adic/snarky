@@ -340,11 +340,16 @@ def StepWrap.emittedAccumulator {n w ncw ncs k ks branches mpv ncStep kw ks' : �
     (verifyOut.messagesForNextWrapProof finalizeOut).oldBulletproofChallenges[jf]
 
 /-- The accumulators a step circuit and the next wrap circuit consume: the step slot's
-old-accumulator cells, with the wrap finalize slot's previous challenges, padding included. -/
-def StepWrap.consumedAccumulators {ks k ncw ncs w branches kw nc : ℕ}
+old-accumulator cells, with the challenges of the wrap message rebuilt for slot `jf`, both padded
+(the challenges with `dummy`). -/
+def StepWrap.consumedAccumulators {ks k ncw ncs w branches mpv ncStep kw : ℕ}
+    {slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv}
     (Vg : Valuation Fp) (Vs : Valuation Fq) (inp : VerifyOneInput ks k ncw ncs w)
-    (sl : WrapFinalizeSlot branches kw nc Fq) : List (Accumulator IpaPallas.curve kw) :=
-  (Vector.zipWith (Accumulator.ofCells Vg Vs) inp.sgOld sl.prevChallenges).toList
+    (dummy : Vector Fq kw) (finalizeOut : WrapMainFinalizeOut branches mpv ncStep kw slotWidths)
+    (jf : Fin mpv) : List (Accumulator IpaPallas.curve kw) :=
+  (Vector.zipWith (Accumulator.ofCells Vg Vs) inp.sgOld
+    (padChallenges dummy (finalizeOut.messagesForNextWrapProof jf).oldBulletproofChallenges
+      (Nat.lt_succ_iff.mp slotWidths[jf].isLt))).toList
 
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- With its cells on the curve, the step circuit's `sgOld` cells hold `slotProof`'s old
@@ -554,8 +559,8 @@ theorem stepWrap_kimchiVerify
         -- the link emits `cp`'s deferred obligation, as its outgoing messages carry it
         StepWrap.emittedAccumulator Vg Vs i jf stepOut wrapVerifyOut wrapFinalizeOut
           = ⟨cp.opening.sg, wireChallenges S.σ K.cvk cp pub⟩ ∧
-        -- the link consumes `cp`'s old accumulators
-        StepWrap.consumedAccumulators Vg Vs inp sl = cp.olds.toList ∧
+        -- the link consumes `cp`'s old accumulators, as its incoming messages were rebuilt
+        StepWrap.consumedAccumulators Vg Vs inp dummy wrapFinalizeOut jf = cp.olds.toList ∧
         -- the step circuit and the next wrap circuit hash their messages
         stepOut.HashesMessages Vg ∧
         wrapVerifyOut.HashesMessages Vs dummy wrapStmt wrapFinalizeOut ∧
@@ -656,7 +661,7 @@ theorem stepWrap_kimchiVerify
   obtain ⟨hc, hsf⟩ := slot_cast stepOut.unfs[i] wrapVerifyOut.splits[jf]
       wrapFinalizeOut.proofState.unfinalizedProofs[jf]
     hblk hbj (hsr jf)
-  rw [← hslots jf] at hc hsf
+  rw [← (hslots jf).1] at hc hsf
   -- the circuit's branch is `b`: both are below the field's characteristic
   have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
     (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
@@ -670,6 +675,9 @@ theorem stepWrap_kimchiVerify
       Vector.getElem_map, hsgs, Vector.getElem_ofFn] at hE ⊢
     rw [hE]
     rfl
-  · rfl
+  · -- the finalize slot's challenges are the rebuilt message's, padded
+    simp only [StepWrap.consumedAccumulators]
+    rw [← (hslots jf).2]
+    rfl
 
 end Pickles
