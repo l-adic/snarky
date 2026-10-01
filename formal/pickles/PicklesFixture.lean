@@ -4,6 +4,8 @@ import PicklesFixture.Fop
 import PicklesFixture.Group
 import PicklesFixture.Constants
 import PicklesFixture.Rules
+import PicklesFixture.Compare
+import PicklesFixture.Mains
 
 /-!
 # The pickles circuit harnesses the drivers share
