@@ -39,9 +39,9 @@ crosses the step circuit's statement reduced into the step field; the wrap circu
 ladder bounds it below `2^254 < p`, so the reduction loses nothing and both collisions are exact
 Poseidon collisions.
 
-The branch a wrap circuit takes is witnessed, so nothing assumes it is the previous rule's. The
-branch's slot count is how many proofs the next slot keeps; another count than the previous
-rule's makes the slot rebuild a step input of another length, two or more cells off, which
+The branch a wrap circuit takes is witnessed, so the handover names no branch: it reads only that
+the next slot keeps the last `k` of its slots. A `k` other than the number of proofs the previous
+rule sent makes the slot rebuild a step input of another length, two or more cells off, which
 collides with the sent one.
 -/
 
@@ -122,10 +122,6 @@ structure WrapStepRun (branches w ncStep kw ks n wNext : ℕ) (ws ss : Fin n →
   ms : Vector Bool (ws i)
   /-- The slot's key cells. -/
   key : VkComms 1 (AffinePoint (FVar Fp))
-  /-- The wrap circuit's branches' slot counts. -/
-  widths : Vector (Fin (w + 1)) branches
-  /-- The branch the wrap circuit takes. -/
-  b : Fin branches
 
 namespace WrapStepRun
 
@@ -152,14 +148,14 @@ def Emits (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
   r.Hashes cvk dummy ∧
   WrapStep.emittedAccumulator r.Vw r.Vs r.i r.wrapVerifyOut r.wrapFinalizeOut r.stepOut = A
 
-/-- The link consumes `olds`, its slot keeping exactly its branch's slots, as
+/-- The link consumes `olds`, its slot keeping the last of the wrap circuit's slots, as
 `wrapStep_kimchiVerify` concludes. -/
 def Consumes (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
     (olds : List (Accumulator IpaVesta.curve ks)) : Prop :=
   r.Hashes cvk dummy ∧
   WrapStep.consumedAccumulators r.Vw r.Vs r.wrapFinalizeOut (r.inp.messagesForNextStepProof r.key)
     r.hwi r.ms = olds ∧
-  ∀ (j : ℕ) (hj : j < ws r.i), r.ms[j] = decide (w - (r.widths[r.b] : ℕ) ≤ j)
+  ∃ k ≤ w, ∀ (j : ℕ) (hj : j < ws r.i), r.ms[j] = decide (w - k ≤ j)
 
 end WrapStepRun
 
@@ -431,14 +427,13 @@ theorem opened_by_next_step
     A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 hn dummy ∨ rk.StepCollision rk1 cvk1 := by
   intro he hc hh
   obtain ⟨⟨htk, hWk, hSk⟩, hA⟩ := he
-  obtain ⟨⟨htk1, hWk1, -⟩, hcons, hkept⟩ := hc
+  obtain ⟨⟨htk1, hWk1, -⟩, hcons, k, hkw, hkept⟩ := hc
   obtain ⟨hpub, hss⟩ := hh
   obtain ⟨hpubD, hpubM⟩ := digests_of_ofWrap hpub
   have hw1 := rk1.hwi
-  -- link k1's slot keeps the last of its branch's slots
-  have hkm : (rk1.widths[rk1.b] : ℕ) ≤ ws' rk1.i := by have := rk1.widths[rk1.b].isLt; omega
-  have hmaskk : ∀ (j : ℕ) (hj : j < ws' rk1.i),
-      rk1.ms[j] = decide (ws' rk1.i - (rk1.widths[rk1.b] : ℕ) ≤ j) := by
+  -- link k1's slot keeps the last `k` of its slots
+  have hkm : k ≤ ws' rk1.i := by omega
+  have hmaskk : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - k ≤ j) := by
     intro j hj
     rw [hkept j hj, hw1]
   -- link k's outgoing messages, read
@@ -492,7 +487,7 @@ theorem opened_by_next_step
     simp only [Poseidon.absorb, List.foldl_append] at e ⊢
     exact e
   -- a slot keeping other than `rk`'s `n` proofs rebuilds a step input of another length
-  by_cases hkn : (rk1.widths[rk1.b] : ℕ) = n
+  by_cases hkn : k = n
   swap
   · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
       Collision.of_length_apart
@@ -573,10 +568,6 @@ structure StepWrapRun (n w : ℕ) (ws ss : Fin n → ℕ) (sa ncs kw ks branches
   wrapFinalizeOut : WrapMainFinalizeOut branches w ncStep kw slotWidths
   /-- The wrap circuit's verify cells. -/
   wrapVerifyOut : WrapMainVerifyOut w ncStep kw ks
-  /-- The wrap circuit's branches' slot counts. -/
-  widths : Vector (Fin (w + 1)) branches
-  /-- The branch the wrap circuit takes. -/
-  b : Fin branches
 
 namespace StepWrapRun
 
@@ -620,15 +611,15 @@ variable {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ks branches ncStep : ℕ
   {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) w'}
 
 /-- The link `rk` hands its wrap proof to the next link `rk1`: `rk1`'s slot verifies it at `rk`'s
-wrap circuit's public input, over the key `cvk`, at `rk`'s width; the slot keeps exactly the last
-`widths[b]` slots of `rk`'s wrap circuit, as `wrapStep_kimchiVerify` concludes of the link
-between them; the slot reads a previous statement of the size of `rk`'s application state. -/
+wrap circuit's public input, over the key `cvk`, at `rk`'s width; the slot keeps the last of
+`rk`'s wrap circuit's slots, as `wrapStep_kimchiVerify` concludes of the link between them, and
+reads a previous statement of the size of `rk`'s application state. -/
 def StepWrapRun.Hands (rk : StepWrapRun n w ws ss sa ncs kw ks branches ncStep slotWidths)
     (rk1 : StepWrapRun n' w' ws' ss' sa' ncs' kw ks branches' ncStep' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1) : Prop :=
   CircuitType.Reads rk.Vs rk.wrapStmt (rk1.inp.packedAt cvk rk1.Vg rk1.ms) ∧
   ws' rk1.i = w ∧
-  (∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (w - (rk.widths[rk.b] : ℕ) ≤ j)) ∧
+  (∃ k ≤ w, ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (w - k ≤ j)) ∧
   ss' rk1.i = sa
 
 /-- The wrap message `rk` sends and the one the next link `rk1` rebuilds for its slot collide
@@ -664,11 +655,10 @@ theorem opened_by_next_wrap
   intro he hc hh
   obtain ⟨⟨hpub, hSk, hWk⟩, hA⟩ := he
   obtain ⟨⟨hpub1, hS1, hW1⟩, hcons⟩ := hc
-  obtain ⟨htie, hw1, hkept, hss⟩ := hh
-  -- the slot keeps the last of the branch's slots
-  have hkm : (rk.widths[rk.b] : ℕ) ≤ ws' rk1.i := by have := rk.widths[rk.b].isLt; omega
-  have hmaskk : ∀ (j : ℕ) (hj : j < ws' rk1.i),
-      rk1.ms[j] = decide (ws' rk1.i - (rk.widths[rk.b] : ℕ) ≤ j) := by
+  obtain ⟨htie, hw1, ⟨k, hkw, hkept⟩, hss⟩ := hh
+  -- the slot keeps the last `k` of its slots
+  have hkm : k ≤ ws' rk1.i := by omega
+  have hmaskk : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - k ≤ j) := by
     intro j hj
     rw [hkept j hj, hw1]
   obtain ⟨hpubD, -⟩ := digests_of_ofWrap hpub
@@ -724,7 +714,7 @@ theorem opened_by_next_wrap
     simp only [Poseidon.absorb, List.foldl_append] at e ⊢
     exact e
   -- a slot keeping other than `rk`'s `n` proofs rebuilds a step input of another length
-  by_cases hkn : (rk.widths[rk.b] : ℕ) = n
+  by_cases hkn : k = n
   swap
   · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
       Collision.of_length_apart
