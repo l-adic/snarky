@@ -19,8 +19,8 @@ over the 56 chained states, and return the output state.
 - The parameters arrive as an explicit `p : Poseidon.Params F`, whose data the emitted
   payload carries.
 - The states are the nominal `SpongeState` (cells `s0`/`s1`/`s2`), reading as
-  `Poseidon.Triple`; the constraint payload's rows stay bare triples
-  (`SpongeState.cells`).
+  `SpongeStateVal`, a `Poseidon.Triple` under its own name; the constraint payload's rows stay
+  bare triples (`SpongeState.cells`).
 - Labels are not threaded.
 -/
 
@@ -31,7 +31,7 @@ open Snarky
 variable {F c : Type}
 
 /-- The width-3 Poseidon state as circuit variables. Reads as the value side's
-`Poseidon.Triple` through its `CircuitType` instance. -/
+`SpongeStateVal` through its `CircuitType` instance. -/
 structure SpongeState (F : Type) where
   /-- Rate slot 0. -/
   s0 : FVar F
@@ -45,9 +45,15 @@ structure SpongeState (F : Type) where
 def SpongeState.cells (st : SpongeState F) : FVar F × FVar F × FVar F :=
   (st.s0, st.s1, st.s2)
 
+/-- The width-3 Poseidon state's values, the value side of `SpongeState`: a
+`Poseidon.Triple` under its own name. A `def`, not an `abbrev`, so instance resolution does not
+see through it: the sponge state's `CircuitType` instance matches this type only, never another
+triple of cells, whose variables are three plain cells. -/
+def SpongeStateVal (F : Type) : Type := Poseidon.Triple F
+
 /-- A width-3 value state encodes as its three slots, read back as a `SpongeState`. -/
 instance instCircuitTypeSpongeState :
-    CircuitType F (Poseidon.Triple F) (SpongeState F) where
+    CircuitType F (SpongeStateVal F) (SpongeState F) where
   size := 3
   valueToFields v := #v[v.1, v.2.1, v.2.2]
   fieldsToValue fs := (fs[0], fs[1], fs[2])
@@ -64,20 +70,20 @@ instance instCircuitTypeSpongeState :
 /-- The state's reading, one cell at a time — the instance's defining equation. -/
 @[simp] theorem readVal_spongeState [Add F] [Mul F] [Zero F] (V : Valuation F)
     (s : SpongeState F) :
-    CircuitType.readVal (val := Poseidon.Triple F) V s
+    CircuitType.readVal (val := SpongeStateVal F) V s
       = (s.s0.val V, s.s1.val V, s.s2.val V) := rfl
 
 /-- The state is in scope when its three cells are. -/
 @[simp] theorem scoped_spongeState [Add F] [Mul F] [Zero F] {st : ProverState F}
     {s : SpongeState F} :
-    CircuitType.Scoped (val := Poseidon.Triple F) st s ↔
+    CircuitType.Scoped (val := SpongeStateVal F) st s ↔
       s.s0.Scoped st ∧ s.s1.Scoped st ∧ s.s2.Scoped st := by
   show (∀ cv ∈ [s.s0, s.s1, s.s2], cv.Scoped st) ↔ _
   simp
 
 /-- The state reads a triple exactly when its cells read the components. -/
 @[simp] theorem reads_spongeState [Add F] [Mul F] [Zero F] {V : Valuation F}
-    {s : SpongeState F} {v : Poseidon.Triple F} :
+    {s : SpongeState F} {v : SpongeStateVal F} :
     CircuitType.Reads V s v ↔
       s.s0.val V = v.1 ∧ s.s1.val V = v.2.1 ∧ s.s2.val V = v.2.2 := by
   constructor
@@ -90,7 +96,7 @@ instance instCircuitTypeSpongeState :
 
 /-- The state cells carry no well-formedness constraint (plain field variables). -/
 instance instCheckedTypeSpongeState [Field F] [BasicSystem F c] [ConstraintHolds F c] :
-    CheckedType F c (Poseidon.Triple F) (SpongeState F) where
+    CheckedType F c (SpongeStateVal F) (SpongeState F) where
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
@@ -98,7 +104,7 @@ instance instCheckedTypeSpongeState [Field F] [BasicSystem F c] [ConstraintHolds
 
 /-- A state triple carries no admissibility condition. -/
 @[simp] theorem valid_spongeState [Field F] [BasicSystem F c] [ConstraintHolds F c]
-    {v : Poseidon.Triple F} :
+    {v : SpongeStateVal F} :
     CheckedType.Valid (F := F) (c := c) (var := SpongeState F) v := fun _ _ _ => trivial
 
 /-- The Poseidon permutation gadget: one bulk witness of the round outputs, one block
@@ -106,7 +112,7 @@ constraint over the 56 chained states at `p`'s data, the last state returned. -/
 def poseidon [Field F] [BasicSystem F c] [ConstraintHolds F c]
     [KimchiSystem F c] (p : Poseidon.Params F)
     (initialState : SpongeState F) : CircuitM F c (SpongeState F) := do
-  let roundOutputs ← witness (val := Vector (Poseidon.Triple F) 55) (advice p initialState)
+  let roundOutputs ← witness (val := Vector (SpongeStateVal F) 55) (advice p initialState)
   addConstraint (KimchiSystem.poseidon
     { mds := p.mds, rc := p.roundConstants.toList,
       state := initialState.cells :: (roundOutputs.map SpongeState.cells).toList })
@@ -115,7 +121,7 @@ where
   /-- The advice: the 55 round outputs, oldest first — the traversal lives here, so
   the circuit itself is one witness and one constraint. -/
   advice (p : Poseidon.Params F) (s : SpongeState F) :
-      AsProver F (Vector (Poseidon.Triple F) 55) := do
+      AsProver F (Vector (SpongeStateVal F) 55) := do
     let s0 ← AsProver.readCVar s.s0
     let s1 ← AsProver.readCVar s.s1
     let s2 ← AsProver.readCVar s.s2
@@ -175,8 +181,8 @@ whole chain, so the proof assembles its five-apart windows into the gate tower's
     (s : SpongeState F) :
     ⦃⌜True⌝⦄
     poseidon (c := Builder V (KimchiConstraint F)) p s
-    ⦃⇓ r _ => ⌜CircuitType.readVal (val := Poseidon.Triple F) V r
-        = Poseidon.blockCipher p (CircuitType.readVal (val := Poseidon.Triple F) V s)⌝⦄ := by
+    ⦃⇓ r _ => ⌜CircuitType.readVal (val := SpongeStateVal F) V r
+        = Poseidon.blockCipher p (CircuitType.readVal (val := SpongeStateVal F) V s)⌝⦄ := by
   simp only [poseidon]
   mvcgen
   rename_i outs _ _ _ _ hpay
@@ -299,13 +305,13 @@ theorem poseidon_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (s : SpongeState F) (sv : Poseidon.Triple F) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv)
+      (fun st => CircuitType.ReadsAs (val := SpongeStateVal F) st s sv)
       (poseidon (c := KimchiConstraint F) p s)
-      (fun r st' => CircuitType.ReadsAs (val := Poseidon.Triple F) st' r
+      (fun r st' => CircuitType.ReadsAs (val := SpongeStateVal F) st' r
         (Poseidon.blockCipher p sv)) := by
   -- the operand's three cells, in scope and reading
   have hcell : ∀ {st : ProverState F} {t : SpongeState F} {v : Poseidon.Triple F},
-      CircuitType.ReadsAs (val := Poseidon.Triple F) st t v →
+      CircuitType.ReadsAs (val := SpongeStateVal F) st t v →
         (t.s0.Scoped st ∧ t.s1.Scoped st ∧ t.s2.Scoped st) ∧
           t.s0.val st.env.get = v.1 ∧ t.s1.val st.env.get = v.2.1 ∧
             t.s2.val st.env.get = v.2.2 := by

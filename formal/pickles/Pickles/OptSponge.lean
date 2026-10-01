@@ -394,8 +394,8 @@ variable {V : Valuation F}
 private theorem addIn_spec (st : SpongeState F) (pos : BoolVar F) (x : FVar F) :
     ⦃⌜True⌝⦄ addIn (c := Builder V (KimchiConstraint F)) st pos x
     ⦃⇓ r _ => ⌜∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
-      CircuitType.readVal (val := Poseidon.Triple F) V r
-      = Poseidon.addSlot (CircuitType.readVal (val := Poseidon.Triple F) V st)
+      CircuitType.readVal (val := SpongeStateVal F) V r
+      = Poseidon.addSlot (CircuitType.readVal (val := SpongeStateVal F) V st)
           (if pb then 1 else 0) (x.val V)⌝⦄ := by
   simp only [addIn]
   mvcgen
@@ -424,9 +424,9 @@ private theorem condPermute_spec (p : Poseidon.Params F)
     (st : SpongeState F) :
     ⦃⌜True⌝⦄ condPermute (c := Builder V (KimchiConstraint F)) p permute st
     ⦃⇓ r _ => ⌜∀ pb : Bool, (↑permute : CVar F).val V = bit pb →
-      CircuitType.readVal (val := Poseidon.Triple F) V r
-      = if pb then Poseidon.blockCipher p (CircuitType.readVal (val := Poseidon.Triple F) V st)
-        else CircuitType.readVal (val := Poseidon.Triple F) V st⌝⦄ := by
+      CircuitType.readVal (val := SpongeStateVal F) V r
+      = if pb then Poseidon.blockCipher p (CircuitType.readVal (val := SpongeStateVal F) V st)
+        else CircuitType.readVal (val := SpongeStateVal F) V st⌝⦄ := by
   simp only [condPermute]
   have hpose := Poseidon.poseidon_spec (V := V) p hsize st
   mvcgen [hpose]
@@ -511,10 +511,10 @@ private theorem consumePair_spec (p : Poseidon.Params F)
     (h2 : CircuitType.Reads V e₂ v₂) :
     ⦃⌜True⌝⦄ consumePair (c := Builder V (KimchiConstraint F)) p st pos e₁ e₂
     ⦃⇓ r _ => ⌜∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
-      CircuitType.readVal (val := Poseidon.Triple F) V r.1
-        = (optAbsorb2 p (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) (v₁, v₂)).1
+      CircuitType.readVal (val := SpongeStateVal F) V r.1
+        = (optAbsorb2 p (CircuitType.readVal (val := SpongeStateVal F) V st, pb) (v₁, v₂)).1
       ∧ (↑r.2 : CVar F).val V
-        = bit (optAbsorb2 p (CircuitType.readVal (val := Poseidon.Triple F) V st, pb)
+        = bit (optAbsorb2 p (CircuitType.readVal (val := SpongeStateVal F) V st, pb)
             (v₁, v₂)).2⌝⦄ := by
   obtain ⟨b, x⟩ := e₁
   obtain ⟨b', y⟩ := e₂
@@ -574,11 +574,11 @@ private theorem consumePairs_spec (p : Poseidon.Params F)
       List.Forall₂ (CircuitType.Reads V) pairs vs →
       ⦃⌜True⌝⦄ consumePairs (c := Builder V (KimchiConstraint F)) p st pos pairs
       ⦃⇓ r _ => ⌜∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
-        CircuitType.readVal (val := Poseidon.Triple F) V r.1
-          = (vs.foldl (optAbsorb2 p) (CircuitType.readVal (val := Poseidon.Triple F) V st, pb)).1
+        CircuitType.readVal (val := SpongeStateVal F) V r.1
+          = (vs.foldl (optAbsorb2 p) (CircuitType.readVal (val := SpongeStateVal F) V st, pb)).1
         ∧ (↑r.2 : CVar F).val V
           = bit (vs.foldl (optAbsorb2 p)
-              (CircuitType.readVal (val := Poseidon.Triple F) V st, pb)).2⌝⦄
+              (CircuitType.readVal (val := SpongeStateVal F) V st, pb)).2⌝⦄
   | [], [], st, pos, _ => by
     simp only [consumePairs]
     mvcgen
@@ -737,10 +737,10 @@ theorem consume_spec (p : Poseidon.Params F)
     (hchar : ∀ k : ℕ, k ≤ input.length → (k : F) = 0 → k = 0) :
     ⦃⌜True⌝⦄ consume (c := Builder V (KimchiConstraint F)) p st pos nf input
     ⦃⇓ r _ => ⌜∀ (pb : Bool) (ps : Poseidon.State F), (↑pos : CVar F).val V = bit pb →
-      RelStart p (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) ps →
+      RelStart p (CircuitType.readVal (val := SpongeStateVal F) V st, pb) ps →
       ((∃ v ∈ xs, v.1 = true) ∨ ((∀ n, ps.mode ≠ .squeezed n) ∧
         (pb = false → (nf = true ↔ ps.mode = .absorbed 0)))) →
-      CircuitType.readVal (val := Poseidon.Triple F) V r
+      CircuitType.readVal (val := SpongeStateVal F) V r
         = (Poseidon.squeeze p (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2)))).2.state⌝⦄ := by
   have hbool := guard_bit input xs hx
   have hex := exists_guard_iff input xs hx
@@ -760,12 +760,12 @@ theorem consume_spec (p : Poseidon.Params F)
   have hanyChar : ∀ k ≤ (input.map (·.1)).length, (k : F) = 0 → k = 0 := by simpa using hchar
   -- the fold's invariant and the emptiness reading, at the start the caller provides
   have hend : ∀ (pb : Bool) (ps : Poseidon.State F),
-      RelStart p (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) ps →
+      RelStart p (CircuitType.readVal (val := SpongeStateVal F) V st, pb) ps →
       ((∃ v ∈ xs, v.1 = true) ∨ ((∀ n, ps.mode ≠ .squeezed n) ∧
         (pb = false → (nf = true ↔ ps.mode = .absorbed 0)))) →
-      Rel p (xs.foldl (optAbsorb1 p) (CircuitType.readVal (val := Poseidon.Triple F) V st, pb))
+      Rel p (xs.foldl (optAbsorb1 p) (CircuitType.readVal (val := SpongeStateVal F) V st, pb))
           (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2))) ∧
-        ((xs.foldl (optAbsorb1 p) (CircuitType.readVal (val := Poseidon.Triple F) V st, pb)).2
+        ((xs.foldl (optAbsorb1 p) (CircuitType.readVal (val := SpongeStateVal F) V st, pb)).2
             = false →
           (((!xs.any (·.1)) && nf) = true ↔
             (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2))).mode = .absorbed 0)) := by
@@ -789,7 +789,7 @@ theorem consume_spec (p : Poseidon.Params F)
         by_contra h; exact hk (hne'.mpr h)
       obtain ⟨hsq, hpos0⟩ := hne.resolve_left hk
       have hfold := foldl_optAbsorb1_dropped p xs
-        (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) hdrop
+        (CircuitType.readVal (val := SpongeStateVal F) V st, pb) hdrop
       rw [hnil] at hrel0 ⊢
       simp only [Poseidon.absorb, List.foldl_nil] at hrel0 ⊢
       refine ⟨rel_of_relStart p hrel0 hsq, fun hp => ?_⟩
@@ -825,7 +825,7 @@ theorem consume_spec (p : Poseidon.Params F)
     have hF := hFin _ hSp
     rw [hF, hst]
     show optFinalState p (List.foldl (optAbsorb2 p)
-      (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) vpairs)
+      (CircuitType.readVal (val := SpongeStateVal F) V st, pb) vpairs)
         ((!xs.any (·.1)) && nf) = _
     rw [hfold _]
     exact optFinalState_eq_squeeze p hrel _ hempty
@@ -855,9 +855,9 @@ theorem consume_spec (p : Poseidon.Params F)
     have hSp := hAny3 _ _ _ hE hpos hb
     have hF := hFin _ hSp
     rw [hF, hS]
-    have hfold' := hfold (CircuitType.readVal (val := Poseidon.Triple F) V st, pb)
+    have hfold' := hfold (CircuitType.readVal (val := SpongeStateVal F) V st, pb)
     generalize List.foldl (optAbsorb2 p)
-      (CircuitType.readVal (val := Poseidon.Triple F) V st, pb) vpairs = fd at hfold' ⊢
+      (CircuitType.readVal (val := SpongeStateVal F) V st, pb) vpairs = fd at hfold' ⊢
     obtain ⟨fst, fpos⟩ := fd
     rw [optFinalState_leftover p fst fpos bb ((!xs.any (·.1)) && nf) xv hbe, hfold']
     exact optFinalState_eq_squeeze p hrel _ hempty
@@ -879,11 +879,11 @@ theorem squeeze_spec (p : Poseidon.Params F)
   mvcgen [hc]
   rename_i _ fin _ hfin
   have hf : (↑(false_ : BoolVar F) : CVar F).val V = bit false := by simp [false_, bit]
-  have hinit : CircuitType.readVal (val := Poseidon.Triple F) V initState = (0, 0, 0) := by
+  have hinit : CircuitType.readVal (val := SpongeStateVal F) V initState = (0, 0, 0) := by
     simp [initState, readVal_spongeState]
   have hF := hfin false Poseidon.init hf (by rw [hinit]; exact Or.inl (rel_init p))
     (Or.inr ⟨fun n h => (nomatch h), fun _ => iff_of_true trivial rfl⟩)
-  have hs0 : fin.s0.val V = (CircuitType.readVal (val := Poseidon.Triple F) V fin).1 := by
+  have hs0 : fin.s0.val V = (CircuitType.readVal (val := SpongeStateVal F) V fin).1 := by
     simp [readVal_spongeState]
   rw [hs0, hF]
   exact (squeeze_fst_of_absorbed p _ (absorb_mode_absorbed p _ _ ⟨0, rfl⟩)).symm
@@ -896,7 +896,7 @@ omit [DecidableEq F] in
 mode's, and the empty-input permute is on. -/
 def SqueezedReads (V : Valuation F) (ov : OptSpongeVar F) (ps : Poseidon.State F) : Prop :=
   ∃ n, ov.phase = .squeezed n ∧
-    CircuitType.readVal (val := Poseidon.Triple F) V ov.state = ps.state ∧
+    CircuitType.readVal (val := SpongeStateVal F) V ov.state = ps.state ∧
     ps.mode = .squeezed n ∧ ov.needsFinalPermuteIfEmpty = true
 
 omit [DecidableEq F] in
@@ -906,7 +906,7 @@ unless given). -/
 def AbsorbingReads (p : Poseidon.Params F) (V : Valuation F) (ov : OptSpongeVar F) (ib : Bool)
     (ps₀ : Poseidon.State F) (pend : List (Bool × F)) (nf : Bool := true) : Prop :=
   ∃ i xs, ov.phase = .absorbing i xs ∧ (↑i : CVar F).val V = bit ib ∧
-    RelStart p (CircuitType.readVal (val := Poseidon.Triple F) V ov.state, ib) ps₀ ∧
+    RelStart p (CircuitType.readVal (val := SpongeStateVal F) V ov.state, ib) ps₀ ∧
     List.Forall₂ (CircuitType.Reads V) xs.reverse pend ∧ ov.needsFinalPermuteIfEmpty = nf
 
 omit [BasicSystem F c] [KimchiSystem F c] in
@@ -945,7 +945,7 @@ omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- `slotVar` reads the value slot. -/
 private theorem slotVar_val (st : SpongeState F) (n : Fin 3) :
     (slotVar st n).val V
-      = Poseidon.slot (CircuitType.readVal (val := Poseidon.Triple F) V st) n := by
+      = Poseidon.slot (CircuitType.readVal (val := SpongeStateVal F) V st) n := by
   fin_cases n <;> simp [slotVar, Poseidon.slot, readVal_spongeState]
 
 omit [DecidableEq F] in

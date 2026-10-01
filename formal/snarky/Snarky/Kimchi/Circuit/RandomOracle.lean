@@ -55,7 +55,7 @@ private def addBlockVar [Add F] (st : SpongeState F) (b : FVar F × FVar F) :
 
 /-- The fresh state is in scope and reads as the value fresh state, at any table. -/
 private theorem initState_readsAs [Field F] (st : ProverState F) :
-    CircuitType.ReadsAs (val := Poseidon.Triple F) st (initState (F := F))
+    CircuitType.ReadsAs (val := SpongeStateVal F) st (initState (F := F))
       Poseidon.RandomOracle.initialState :=
   ⟨scoped_spongeState.mpr ⟨trivial, trivial, trivial⟩,
    by simp [initState, Poseidon.RandomOracle.initialState, CVar.val]⟩
@@ -137,9 +137,9 @@ open Std.Do in
     (st : SpongeState F) (b : FVar F × FVar F) :
     ⦃⌜True⌝⦄
     updateBlock (c := Builder V (KimchiConstraint F)) p st b
-    ⦃⇓ r _ => ⌜CircuitType.readVal (val := Poseidon.Triple F) V r
+    ⦃⇓ r _ => ⌜CircuitType.readVal (val := SpongeStateVal F) V r
       = Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock
-          (CircuitType.readVal (val := Poseidon.Triple F) V st)
+          (CircuitType.readVal (val := SpongeStateVal F) V st)
           (CircuitType.readVal (val := F × F) V b))⌝⦄ := by
   obtain ⟨b0, b1⟩ := b
   simp only [updateBlock]
@@ -153,10 +153,10 @@ private theorem updateBlock_complete [Field F] [DecidableEq F] (p : Poseidon.Par
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : SpongeState F)
     (b : FVar F × FVar F) (sv : Poseidon.Triple F) (bv : F × F) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun s => CircuitType.ReadsAs (val := Poseidon.Triple F) s st sv ∧
+      (fun s => CircuitType.ReadsAs (val := SpongeStateVal F) s st sv ∧
         CircuitType.ReadsAs (val := F × F) s b bv)
       (updateBlock (c := KimchiConstraint F) p st b)
-      (fun r s' => CircuitType.ReadsAs (val := Poseidon.Triple F) s' r
+      (fun r s' => CircuitType.ReadsAs (val := SpongeStateVal F) s' r
         (Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock sv bv))) := by
   obtain ⟨b0, b1⟩ := b
   obtain ⟨bv0, bv1⟩ := bv
@@ -195,17 +195,17 @@ private theorem foldBlocks_spec {V : Valuation F} [Field F] [DecidableEq F]
     (bs : List (FVar F × FVar F)) (st : SpongeState F) :
     ⦃⌜True⌝⦄
     bs.foldlM (updateBlock (c := Builder V (KimchiConstraint F)) p) st
-    ⦃⇓ r _ => ⌜CircuitType.readVal (val := Poseidon.Triple F) V r
+    ⦃⇓ r _ => ⌜CircuitType.readVal (val := SpongeStateVal F) V r
       = (bs.map (CircuitType.readVal (val := F × F) V)).foldl
           (fun s b => Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
-          (CircuitType.readVal (val := Poseidon.Triple F) V st)⌝⦄ := by
+          (CircuitType.readVal (val := SpongeStateVal F) V st)⌝⦄ := by
   have ub := updateBlock_spec (V := V) p hsize
   mvcgen [ub]
   case inv1 =>
-    exact ⇓ q _ => ⌜CircuitType.readVal (val := Poseidon.Triple F) V q.2
+    exact ⇓ q _ => ⌜CircuitType.readVal (val := SpongeStateVal F) V q.2
       = (q.1.prefix.map (CircuitType.readVal (val := F × F) V)).foldl
           (fun s b => Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
-          (CircuitType.readVal (val := Poseidon.Triple F) V st)⌝
+          (CircuitType.readVal (val := SpongeStateVal F) V st)⌝
   all_goals simp_all
 
 /-- The block fold is complete, generalized over the block list: the honest run accepts
@@ -215,10 +215,10 @@ private theorem foldBlocks_complete [Field F] [DecidableEq F] (p : Poseidon.Para
     ∀ (bs : List (FVar F × FVar F)) (bvs : List (F × F)) (st : SpongeState F)
       (sv : Poseidon.Triple F),
       Complete (F := F) (c := KimchiConstraint F)
-        (fun s => CircuitType.ReadsAs (val := Poseidon.Triple F) s st sv ∧
+        (fun s => CircuitType.ReadsAs (val := SpongeStateVal F) s st sv ∧
           List.Forall₂ (CircuitType.ReadsAs (val := F × F) s) bs bvs)
         (bs.foldlM (updateBlock (c := KimchiConstraint F) p) st)
-        (fun r s' => CircuitType.ReadsAs (val := Poseidon.Triple F) s' r
+        (fun r s' => CircuitType.ReadsAs (val := SpongeStateVal F) s' r
           (bvs.foldl (fun t b => Poseidon.blockCipher p
             (Poseidon.RandomOracle.addBlock t b)) sv))
   | [], bvs, st, sv => by
@@ -247,9 +247,9 @@ of the state and input readings. -/
     (st : SpongeState F) (xs : List (FVar F)) :
     ⦃⌜True⌝⦄
     update (c := Builder V (KimchiConstraint F)) p st xs
-    ⦃⇓ r _ => ⌜CircuitType.readVal (val := Poseidon.Triple F) V r
+    ⦃⇓ r _ => ⌜CircuitType.readVal (val := SpongeStateVal F) V r
       = Poseidon.RandomOracle.update p
-          (CircuitType.readVal (val := Poseidon.Triple F) V st)
+          (CircuitType.readVal (val := SpongeStateVal F) V st)
           (xs.map (fun x => x.val V))⌝⦄ := by
   have h := foldBlocks_spec (V := V) p hsize (toBlocksVar xs) st
   rw [toBlocksVar_readVal] at h
@@ -261,10 +261,10 @@ theorem update_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : SpongeState F)
     (xs : List (FVar F)) (sv : Poseidon.Triple F) (vs : List F) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun s => CircuitType.ReadsAs (val := Poseidon.Triple F) s st sv ∧
+      (fun s => CircuitType.ReadsAs (val := SpongeStateVal F) s st sv ∧
         List.Forall₂ (CircuitType.ReadsAs (val := F) s) xs vs)
       (update (c := KimchiConstraint F) p st xs)
-      (fun r s' => CircuitType.ReadsAs (val := Poseidon.Triple F) s' r
+      (fun r s' => CircuitType.ReadsAs (val := SpongeStateVal F) s' r
         (Poseidon.RandomOracle.update p sv vs)) := by
   simp only [update, Poseidon.RandomOracle.update]
   exact Complete.imp (fun _ h => ⟨h.1, toBlocksVar_readsAs h.2⟩) (fun _ _ h => h)
