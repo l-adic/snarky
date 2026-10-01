@@ -97,8 +97,8 @@ def roots : List Name :=
     `Pickles.wrapProof_kimchiVerify_pallas,
     `Pickles.stepWrap_kimchiVerify,
     `Pickles.wrapStep_kimchiVerify,
-    `Pickles.opened_by_next_step,
-    `Pickles.opened_by_next_wrap,
+    `Pickles.WrapStepRun.mem_olds_or_collision,
+    `Pickles.StepWrapRun.mem_olds_or_collision,
     `Pickles.StepStatement.ofWrap_toFields,
     `Pickles.stepPublicInput_eq_append ]
 
@@ -124,8 +124,8 @@ def deployedRoots : List Name :=
     `Pickles.wrapProof_kimchiVerify_pallas,
     `Pickles.stepWrap_kimchiVerify,
     `Pickles.wrapStep_kimchiVerify,
-    `Pickles.opened_by_next_step,
-    `Pickles.opened_by_next_wrap,
+    `Pickles.WrapStepRun.mem_olds_or_collision,
+    `Pickles.StepWrapRun.mem_olds_or_collision,
     `Pickles.StepStatement.ofWrap_toFields,
     `Pickles.stepPublicInput_eq_append ]
 

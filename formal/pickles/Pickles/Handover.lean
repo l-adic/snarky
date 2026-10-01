@@ -22,9 +22,9 @@ accumulator of the proof the next link verifies, which that proof's batch opens.
 
 ## Main results
 
-* `opened_by_next_step`, `opened_by_next_wrap`: the accumulator a link emits is an old
-  accumulator of the step, respectively wrap, proof the next link verifies, unless Poseidon
-  collides on the messages passed between them.
+* `WrapStepRun.mem_olds_or_collision`, `StepWrapRun.mem_olds_or_collision`: the accumulator a
+  link emits is an old accumulator of the step, respectively wrap, proof the next link
+  verifies, unless Poseidon collides on the messages passed between them.
 
 ## Implementation notes
 
@@ -260,11 +260,11 @@ private theorem keptValues_front {m n k : ℕ} (V : Valuation F) (ms : Vector Bo
 
 end Helpers
 
-private theorem toFp_redFq (x : Fp) : ((ZMod.val (redFq x) : ℕ) : Fp) = x := by
+private theorem natCast_val_redFq (x : Fp) : ((ZMod.val (redFq x) : ℕ) : Fp) = x := by
   rw [val_redFq, ZMod.natCast_zmod_val]
 
 /-- A wrap-field value below `2^254 < p` survives reduction into the step field and back. -/
-private theorem redFq_toFp_of_lt (x : Fq) (h : ZMod.val x < 2 ^ 254) :
+private theorem redFq_natCast_val_of_lt (x : Fq) (h : ZMod.val x < 2 ^ 254) :
     redFq ((ZMod.val x : ℕ) : Fp) = x := by
   have hp : (2 : ℕ) ^ 254 < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
   rw [redFq, ZMod.val_natCast_of_lt (h.trans hp), ZMod.natCast_zmod_val]
@@ -445,7 +445,7 @@ private theorem wrapMsgDigest_eq
   have h6 : ZMod.val ((out'.statement.messagesForNextWrapProof[w - n + i]).val Vw') < 2 ^ 254 :=
     hW'.2.2.2 ⟨w - n + i, hjw⟩
   rw [← hW.1 sg chals hsg hch, (digests_of_tie htie).1, hmsg, ← hS.2 hn i,
-    (digests_of_ofWrap hpub).2 (w - n + i) (by omega), redFq_toFp_of_lt _ h6, h5]
+    (digests_of_ofWrap hpub).2 (w - n + i) (by omega), redFq_natCast_val_of_lt _ h6, h5]
 
 /-- A step message and a slot's rebuild of it hash alike, when a wrap circuit carries the
 message's digest from the step circuit's statement to the public input the slot verifies. -/
@@ -475,7 +475,7 @@ private theorem hash_stepInput_eq {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw
   have h4 := (digests_of_tie htie).2
   rw [hW.2.2.1] at h4
   have hpubD := (digests_of_ofWrap hpub).1
-  rw [h4, toFp_redFq] at hpubD
+  rw [h4, natCast_val_redFq] at hpubD
   rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
   have e := (hS.1 vk sgs chals hvk hsgs hch).symm.trans hpubD
   simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState] at e
@@ -540,7 +540,7 @@ private theorem wrapInput_eq_or_collision {k w w' : ℕ} (dummy : Vector Fq k)
 link `rk1` consumes the olds of the step proof `cp` that `rk`'s step circuit made. Then `A` is one
 of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
 the messages passed between the links. -/
-theorem opened_by_next_step
+theorem WrapStepRun.mem_olds_or_collision
     (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
     (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' sa' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1)
@@ -726,7 +726,7 @@ def StepWrapRun.StepCollision (rk : StepWrapRun n w ws ss sa ncs kw ks branches 
 link `rk1` consumes the olds of the wrap proof `cp` that `rk`'s wrap circuit made. Then `A` is one
 of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
 the messages passed between the links. -/
-theorem opened_by_next_wrap
+theorem StepWrapRun.mem_olds_or_collision
     (rk : StepWrapRun n w ws ss sa ncs kw ks branches ncStep slotWidths)
     (rk1 : StepWrapRun n' w' ws' ss' sa' ncs' kw ks branches' ncStep' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1)
