@@ -109,12 +109,28 @@ def stepMsgDigest {nc s n k : ℕ} (p : Poseidon.Params F)
       (Vector (AffinePoint F) n) (Vector (Vector F k) n)) : F :=
   (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init (stepMsgInput m))).1
 
-/-- The inputs `xs` and `ys` have one length and differ, but have one Poseidon digest. The length
-rules out the padding: `Poseidon.RandomOracle.hash` pads an odd tail with `0`, so `xs` and
-`xs ++ [0]` hash alike. -/
+/-- The inputs `xs` and `ys` absorb different blocks (`Poseidon.RandomOracle.toBlocks`), but have
+one Poseidon digest. Distinct inputs can share their blocks: the hash pads an odd tail with `0`,
+so `xs` and `xs ++ [0]` hash alike without a collision. -/
 def Collision (p : Poseidon.Params F) (xs ys : List F) : Prop :=
-  xs.length = ys.length ∧ xs ≠ ys ∧
+  Poseidon.RandomOracle.toBlocks xs ≠ Poseidon.RandomOracle.toBlocks ys ∧
     Poseidon.RandomOracle.hash p xs = Poseidon.RandomOracle.hash p ys
+
+omit [DecidableEq F] in
+/-- Distinct inputs of one length that hash alike collide. -/
+theorem Collision.of_length_eq {p : Poseidon.Params F} {xs ys : List F}
+    (hl : xs.length = ys.length) (hne : xs ≠ ys)
+    (hh : Poseidon.RandomOracle.hash p xs = Poseidon.RandomOracle.hash p ys) :
+    Collision p xs ys :=
+  ⟨fun h => hne (Poseidon.RandomOracle.eq_of_toBlocks_eq hl h), hh⟩
+
+omit [DecidableEq F] in
+/-- Nonempty inputs whose lengths are two or more apart and that hash alike collide. -/
+theorem Collision.of_length_apart {p : Poseidon.Params F} {xs ys : List F} (hx : xs ≠ [])
+    (hy : ys ≠ []) (hl : xs.length + 2 ≤ ys.length ∨ ys.length + 2 ≤ xs.length)
+    (hh : Poseidon.RandomOracle.hash p xs = Poseidon.RandomOracle.hash p ys) :
+    Collision p xs ys :=
+  ⟨Poseidon.RandomOracle.toBlocks_ne_of_length hx hy hl, hh⟩
 
 /-- The digest of the step message `m` with each proof's advice kept under its bit of `mask`, and
 the sponge after the key, which the verify block resumes from: after the key and the application

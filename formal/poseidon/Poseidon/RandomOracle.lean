@@ -34,6 +34,52 @@ def toBlocks : List F → List (F × F)
   | [] => [(0, 0)]
   | xs => chunk xs
 
+/-- `chunk` halves the length, rounding up. -/
+theorem length_chunk : ∀ xs : List F, (chunk xs).length = (xs.length + 1) / 2
+  | [] => by simp [chunk]
+  | [_] => by simp [chunk]
+  | _ :: _ :: rest => by
+    simp only [chunk, List.length_cons, length_chunk rest]
+    omega
+
+/-- Inputs of one length with the same chunks are equal. -/
+theorem eq_of_chunk_eq : ∀ {xs ys : List F}, xs.length = ys.length → chunk xs = chunk ys →
+    xs = ys
+  | [], [], _, _ => rfl
+  | [x], [y], _, h => by simpa [chunk] using h
+  | x :: x' :: xs, y :: y' :: ys, hl, h => by
+    simp only [chunk, List.cons.injEq, Prod.mk.injEq] at h
+    obtain ⟨⟨rfl, rfl⟩, h⟩ := h
+    rw [eq_of_chunk_eq (by simpa using hl) h]
+  | [], _ :: _, hl, _ | _ :: _, [], hl, _ | [_], _ :: _ :: _, hl, _
+  | _ :: _ :: _, [_], hl, _ => by simp at hl
+
+/-- A nonempty input's blocks are its chunks. -/
+theorem toBlocks_of_ne_nil {xs : List F} (h : xs ≠ []) : toBlocks xs = chunk xs := by
+  cases xs with
+  | nil => exact absurd rfl h
+  | cons x xs => rfl
+
+/-- Inputs of one length with the same blocks are equal. -/
+theorem eq_of_toBlocks_eq {xs ys : List F} (hl : xs.length = ys.length)
+    (h : toBlocks xs = toBlocks ys) : xs = ys := by
+  cases xs with
+  | nil => exact (List.length_eq_zero_iff.mp hl.symm).symm
+  | cons x xs =>
+    have hy : ys ≠ [] := by rintro rfl; simp at hl
+    rw [toBlocks_of_ne_nil (List.cons_ne_nil x xs), toBlocks_of_ne_nil hy] at h
+    exact eq_of_chunk_eq hl h
+
+/-- Nonempty inputs whose lengths are two or more apart have different blocks. -/
+theorem toBlocks_ne_of_length {xs ys : List F} (hx : xs ≠ []) (hy : ys ≠ [])
+    (hl : xs.length + 2 ≤ ys.length ∨ ys.length + 2 ≤ xs.length) :
+    toBlocks xs ≠ toBlocks ys := by
+  rw [toBlocks_of_ne_nil hx, toBlocks_of_ne_nil hy]
+  intro h
+  have := congrArg List.length h
+  rw [length_chunk, length_chunk] at this
+  omega
+
 /-- Add a block into the two rate slots. -/
 def addBlock (st : Triple F) (b : F × F) : Triple F :=
   (st.1 + b.1, st.2.1 + b.2, st.2.2)

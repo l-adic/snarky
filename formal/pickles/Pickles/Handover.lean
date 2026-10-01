@@ -38,6 +38,11 @@ next link only through the digests of its messages, carried in public inputs. Th
 crosses the step circuit's statement reduced into the step field; the wrap circuit's public-input
 ladder bounds it below `2^254 < p`, so the reduction loses nothing and both collisions are exact
 Poseidon collisions.
+
+The branch a wrap circuit takes is witnessed, so nothing assumes it is the previous rule's. The
+branch's slot count is how many proofs the next slot keeps; another count than the previous
+rule's makes the slot rebuild a step input of another length, two or more cells off, which
+collides with the sent one.
 -/
 
 namespace Pickles
@@ -166,13 +171,12 @@ variable {branches w ncStep kw ks n wNext sa : ℕ} {ws ss : Fin n → ℕ}
   {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) wNext}
 
 /-- The link `rk` hands its step proof to the next link `rk1`: the step proof `rk`'s step circuit
-makes is the one `rk1`'s wrap circuit verifies, on the branch of `rk`'s rule, which has `rk`'s
-slots, and `rk1`'s slot reads a previous statement of the size of `rk`'s application state. -/
+makes is the one `rk1`'s wrap circuit verifies, and `rk1`'s slot reads a previous statement of the
+size of `rk`'s application state. -/
 def WrapStepRun.Hands (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
     (rk1 : WrapStepRun branches' wNext ncStep' kw ks' n' wNext' ws' ss' sa' slotWidths') : Prop :=
   CircuitType.Reads rk.Vs rk.stepOut.out
     (StepStatement.ofWrap rk1.Vw rk1.wrapVerifyOut.statement) ∧
-  (rk1.widths[rk1.b] : ℕ) = n ∧
   ss' rk1.i = sa
 
 /-- The next link's wrap slot of the slot `rk.i`: the step statement front-pads. -/
@@ -315,22 +319,43 @@ private theorem kept_of_stepInput_eq {n m ks sa s' : ℕ} {V : Valuation Fp}
   refine ⟨by simpa using hx, by simpa using hy, Vector.toList_inj.mp ?_⟩
   simpa [Vector.toList_map] using hb
 
-/-- A step message and a slot's rebuild of it have one length when the rebuilt statement has the
-message's size and the slot keeps exactly the message's `n` proofs. -/
-private theorem length_stepInput {n m ks sa s' : ℕ} {V : Valuation Fp}
+/-- A step message carrying `n` proofs and a slot's rebuild of it keeping a suffix of `k`, over a
+statement of the message's size: their lengths differ by the `ks + 2` cells of each proof one
+holds and the other does not. -/
+private theorem length_stepInput {n m k ks sa s' : ℕ} {V : Valuation Fp}
     (cvk : KimchiVK IpaPallas.curve 1) {app : Vector Fp sa} {vk : VkComms 1 (AffinePoint Fp)}
     {sgs : Vector (AffinePoint Fp) n} {chals : Vector (Vector Fp ks) n}
     {app' : Vector (FVar Fp) s'} {ms : Vector Bool m} {psgs : Vector (AffinePoint (FVar Fp)) m}
     {pchals : Vector (Vector (FVar Fp) ks) m} (hs : s' = sa)
-    (hmask : ∀ (j : ℕ) (hj : j < m), ms[j] = decide (m - n ≤ j)) (hnm : n ≤ m) :
-    (stepMsgInput ⟨app, vk, sgs, chals⟩).length
+    (hmask : ∀ (j : ℕ) (hj : j < m), ms[j] = decide (m - k ≤ j)) (hkm : k ≤ m) :
+    (stepMsgInput ⟨app, vk, sgs, chals⟩).length + k * (ks + 2)
       = (cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y]) ++ app'.toList.map (·.val V)
-        ++ keptValues V ms (psgs.zip pchals)).length := by
+        ++ keptValues V ms (psgs.zip pchals)).length + n * (ks + 2) := by
   subst hs
   rw [keptValues_front V ms (psgs.zip pchals) hmask]
   simp [stepMsgInput, MessagesForNextStepProof.proofs, List.length_flatMap, List.length_flatten,
-    Function.comp_def, VkComms.indexPoints, VkComms.selectors]
-  omega
+    Function.comp_def, VkComms.indexPoints, VkComms.selectors, Nat.sub_sub_self hkm]
+  ring
+
+/-- Lengths that differ by `ks + 2` cells per proof, over different proof counts, are two or more
+apart. -/
+private theorem length_apart {L L' n k ks : ℕ} (h : L + k * (ks + 2) = L' + n * (ks + 2))
+    (hkn : k ≠ n) : L + 2 ≤ L' ∨ L' + 2 ≤ L := by
+  rcases Nat.lt_or_gt_of_ne hkn with hlt | hlt
+  · have := Nat.mul_le_mul_right (ks + 2) hlt
+    rw [Nat.succ_mul] at this
+    omega
+  · have := Nat.mul_le_mul_right (ks + 2) hlt
+    rw [Nat.succ_mul] at this
+    omega
+
+/-- A key's coordinates are nonempty: every commitment has a chunk. -/
+private theorem indexCoords_ne_nil {f F : Type} (key : VkComms 1 f) (x y : f → F) :
+    key.indexPoints.flatMap (fun P => [x P, y P]) ≠ [] := by
+  have hP : key.sigmaComm[0][0] ∈ key.indexPoints := by
+    simp only [VkComms.indexPoints, List.mem_flatMap]
+    exact ⟨key.sigmaComm[0], by simp, by simp⟩
+  exact List.ne_nil_of_mem (List.mem_flatMap.mpr ⟨_, hP, List.mem_cons_self⟩)
 
 /-- Two wrap messages' inputs have one length: each pads its challenge stacks to
 `MaxProofsVerified`. -/
@@ -407,13 +432,15 @@ theorem opened_by_next_step
   intro he hc hh
   obtain ⟨⟨htk, hWk, hSk⟩, hA⟩ := he
   obtain ⟨⟨htk1, hWk1, -⟩, hcons, hkept⟩ := hc
-  obtain ⟨hpub, hbw, hss⟩ := hh
+  obtain ⟨hpub, hss⟩ := hh
   obtain ⟨hpubD, hpubM⟩ := digests_of_ofWrap hpub
   have hw1 := rk1.hwi
-  -- link k1's slot keeps exactly `rk`'s slots
-  have hmask : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j) := by
+  -- link k1's slot keeps the last of its branch's slots
+  have hkm : (rk1.widths[rk1.b] : ℕ) ≤ ws' rk1.i := by have := rk1.widths[rk1.b].isLt; omega
+  have hmaskk : ∀ (j : ℕ) (hj : j < ws' rk1.i),
+      rk1.ms[j] = decide (ws' rk1.i - (rk1.widths[rk1.b] : ℕ) ≤ j) := by
     intro j hj
-    rw [hkept j hj, hbw, hw1]
+    rw [hkept j hj, hw1]
   -- link k's outgoing messages, read
   let mW := rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut
   let mS := rk.stepOut.messagesForNextStepProof
@@ -464,6 +491,20 @@ theorem opened_by_next_step
     simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState] at e
     simp only [Poseidon.absorb, List.foldl_append] at e ⊢
     exact e
+  -- a slot keeping other than `rk`'s `n` proofs rebuilds a step input of another length
+  by_cases hkn : (rk1.widths[rk1.b] : ℕ) = n
+  swap
+  · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
+      Collision.of_length_apart
+        (List.append_ne_nil_of_left_ne_nil
+          (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
+        (List.append_ne_nil_of_left_ne_nil
+          (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
+        (length_apart (length_stepInput cvk1 hss hmaskk hkm) hkn) hstepD⟩)
+  -- link k1's slot keeps exactly `rk`'s slots
+  have hmask : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j) := by
+    intro j hj
+    rw [hmaskk j hj, hkn]
   -- distinct step inputs collide
   by_cases hX : stepMsgInput ⟨mS.appState.map (·.val rk.Vs), vk, sgs, chals⟩
       = cvk1.comms.indexPoints.flatMap (fun P => [P.x, P.y])
@@ -471,13 +512,14 @@ theorem opened_by_next_step
           ++ keptValues rk1.Vs rk1.ms (rk1.inp.prevSgs.zip rk1.inp.prevChallenges)
   swap
   · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
-      length_stepInput cvk1 hss hmask (by omega), hX, hstepD⟩)
+      Collision.of_length_eq (Nat.add_right_cancel (length_stepInput cvk1 hss hmask (by omega)))
+        hX hstepD⟩)
   -- distinct wrap inputs collide
   by_cases hW : wrapMsgInput dummy ⟨sg, chalsW⟩ = wrapMsgInput dummy ⟨sg', chalsW'⟩
   swap
   · refine Or.inr (Or.inl ⟨sg, sg', chalsW, chalsW', reads_pt _ _, reads_vecs _ _, reads_pt _ _,
-      reads_vecs _ _, length_wrapMsgInput dummy (rk.hwi ▸ rk.hws rk.i)
-        (Nat.lt_succ_iff.mp (slotWidths'[j]).isLt) _ _ _ _, hW, ?_⟩)
+      reads_vecs _ _, Collision.of_length_eq (length_wrapMsgInput dummy (rk.hwi ▸ rk.hws rk.i)
+        (Nat.lt_succ_iff.mp (slotWidths'[j]).isLt) _ _ _ _) hW ?_⟩)
     rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
     exact hwrapD
   left
@@ -580,15 +622,13 @@ variable {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ks branches ncStep : ℕ
 /-- The link `rk` hands its wrap proof to the next link `rk1`: `rk1`'s slot verifies it at `rk`'s
 wrap circuit's public input, over the key `cvk`, at `rk`'s width; the slot keeps exactly the last
 `widths[b]` slots of `rk`'s wrap circuit, as `wrapStep_kimchiVerify` concludes of the link
-between them, and that branch has `rk`'s slots; the slot reads a previous statement of the size of
-`rk`'s application state. -/
+between them; the slot reads a previous statement of the size of `rk`'s application state. -/
 def StepWrapRun.Hands (rk : StepWrapRun n w ws ss sa ncs kw ks branches ncStep slotWidths)
     (rk1 : StepWrapRun n' w' ws' ss' sa' ncs' kw ks branches' ncStep' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1) : Prop :=
   CircuitType.Reads rk.Vs rk.wrapStmt (rk1.inp.packedAt cvk rk1.Vg rk1.ms) ∧
   ws' rk1.i = w ∧
   (∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (w - (rk.widths[rk.b] : ℕ) ≤ j)) ∧
-  (rk.widths[rk.b] : ℕ) = n ∧
   ss' rk1.i = sa
 
 /-- The wrap message `rk` sends and the one the next link `rk1` rebuilds for its slot collide
@@ -624,11 +664,13 @@ theorem opened_by_next_wrap
   intro he hc hh
   obtain ⟨⟨hpub, hSk, hWk⟩, hA⟩ := he
   obtain ⟨⟨hpub1, hS1, hW1⟩, hcons⟩ := hc
-  obtain ⟨htie, hw1, hkept, hbw, hss⟩ := hh
-  -- the slot keeps exactly `rk`'s slots
-  have hmask : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j) := by
+  obtain ⟨htie, hw1, hkept, hss⟩ := hh
+  -- the slot keeps the last of the branch's slots
+  have hkm : (rk.widths[rk.b] : ℕ) ≤ ws' rk1.i := by have := rk.widths[rk.b].isLt; omega
+  have hmaskk : ∀ (j : ℕ) (hj : j < ws' rk1.i),
+      rk1.ms[j] = decide (ws' rk1.i - (rk.widths[rk.b] : ℕ) ≤ j) := by
     intro j hj
-    rw [hkept j hj, hbw, hw1]
+    rw [hkept j hj, hw1]
   obtain ⟨hpubD, -⟩ := digests_of_ofWrap hpub
   obtain ⟨-, hpubM1⟩ := digests_of_ofWrap hpub1
   -- link k's outgoing messages, read
@@ -681,6 +723,20 @@ theorem opened_by_next_wrap
     simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState] at e
     simp only [Poseidon.absorb, List.foldl_append] at e ⊢
     exact e
+  -- a slot keeping other than `rk`'s `n` proofs rebuilds a step input of another length
+  by_cases hkn : (rk.widths[rk.b] : ℕ) = n
+  swap
+  · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
+      Collision.of_length_apart
+        (List.append_ne_nil_of_left_ne_nil
+          (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
+        (List.append_ne_nil_of_left_ne_nil
+          (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
+        (length_apart (length_stepInput cvk hss hmaskk hkm) hkn) hstepD⟩)
+  -- the slot keeps exactly `rk`'s slots
+  have hmask : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j) := by
+    intro j hj
+    rw [hmaskk j hj, hkn]
   -- distinct step inputs collide
   by_cases hX : stepMsgInput ⟨mS.appState.map (·.val rk.Vg), vk, sgs, chals⟩
       = cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y])
@@ -688,13 +744,14 @@ theorem opened_by_next_wrap
           ++ keptValues rk1.Vg rk1.ms (rk1.inp.prevSgs.zip rk1.inp.prevChallenges)
   swap
   · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
-      length_stepInput cvk hss hmask (hw1 ▸ rk.hn), hX, hstepD⟩)
+      Collision.of_length_eq (Nat.add_right_cancel (length_stepInput cvk hss hmask (by omega)))
+        hX hstepD⟩)
   -- distinct wrap inputs collide
   by_cases hW : wrapMsgInput dummy ⟨sg, chalsW⟩ = wrapMsgInput dummy ⟨sg', chalsW'⟩
   swap
   · refine Or.inr (Or.inl ⟨sg, sg', chalsW, chalsW', reads_pt _ _, reads_vecs _ _, reads_pt _ _,
-      reads_vecs _ _, length_wrapMsgInput dummy rk.hw
-        (Nat.lt_succ_iff.mp (slotWidths'[rk1.jf]).isLt) _ _ _ _, hW, ?_⟩)
+      reads_vecs _ _, Collision.of_length_eq (length_wrapMsgInput dummy rk.hw
+        (Nat.lt_succ_iff.mp (slotWidths'[rk1.jf]).isLt) _ _ _ _) hW ?_⟩)
     rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
     exact hwrapD
   left

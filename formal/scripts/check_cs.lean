@@ -1097,9 +1097,9 @@ def wrapMainDumps : List (String × ℕ × ℕ × ℕ) :=
     ("wrap_main_tree_proof_return_circuit", 0, 2, 1),
     ("wrap_main_two_phase_chain_circuit", 1, 1, 1) ]
 
-/-- Which rule each wrap main's branch is compiled from, by dump name. The handover theorems'
-`Hands` has the next slot keep exactly the previous rule's slots, which is the branch's slot count
-being its rule's (`widths[b] = n`). -/
+/-- Which rule each wrap main's branch is compiled from, by dump name: the sources whose statement
+size a slot verifying that wrap main reads (`stepRuleSizes`). Each branch's slot count is checked
+to be its rule's, which checks the table. -/
 def branchRules : List (String × ℕ × String) :=
   [ ("wrap_main_n2_circuit", 0, "step_main_simple_chain_n2_circuit"),
     ("wrap_main_tree_proof_return_circuit", 0, "step_main_tree_proof_return_circuit"),
@@ -2075,9 +2075,10 @@ def main : IO Unit := do
   let increment ← stepConsts "step_main_two_phase_chain_increment_circuit" 1 1
   let treeReturn ← stepConsts "step_main_tree_proof_return_circuit" 2 2
   let importTpc ← stepConsts "step_main_import_two_phase_chain_circuit" 2 2
-  -- the handover theorems' constant premises: each branch's slot count is its rule's, each slot
-  -- is at the width of the wrap circuit whose proofs it verifies and reads a previous statement of
-  -- its branches' rules' application-state size, and the wrap circuits share one padding
+  -- the handover theorems' constant premises: each slot is at the width of the wrap circuit whose
+  -- proofs it verifies and reads a previous statement of its branches' rules' application-state
+  -- size, and the wrap circuits share one padding; each branch's slot count is its rule's, which
+  -- checks the branch table
   let stepShapes : List (String × ℕ × List ℕ) :=
     (chainN2.toList.map (stepMainShape "step_main_simple_chain_n2_circuit" 2))
     ++ (makeZero.toList.map (stepMainShape "step_main_two_phase_chain_make_zero_circuit" 1))
