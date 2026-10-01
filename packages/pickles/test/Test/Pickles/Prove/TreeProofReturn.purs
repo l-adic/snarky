@@ -27,13 +27,12 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
 import Snarky.Curves.Class (fromInt)
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -73,7 +72,7 @@ nrrRule _ _ = pure
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
   it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
+    outputs <- liftEffect $ appOutputs "TreeProofReturn"
 
     nrrEntry <- liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
 
@@ -86,8 +85,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "nrr"
       }
       nrrRules
 
@@ -112,8 +112,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "tree"
       }
       treeRules
 

@@ -26,12 +26,11 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, Snarky, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -72,7 +71,7 @@ chunks2Rule _ _ = do
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks2" do
   it "base case (b0) — chunks=2 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks2.json")
+    outputs <- liftEffect $ appOutputs "Chunks2"
 
     -- The step SRS has depth 2^16, and this rule's 2^16 rows round the
     -- step domain up to 2^17, giving two chunks. The wrap SRS has depth
@@ -88,8 +87,9 @@ spec = describe "Pickles.Prove.Chunks2" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "chunks2"
       }
       rules
 

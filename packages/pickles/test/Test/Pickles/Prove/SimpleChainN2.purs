@@ -26,12 +26,11 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -69,15 +68,16 @@ type SimpleChainN2PrevsSpec =
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SimpleChainN2" do
   it "b0..b2 chain (prevs = [self; self], N2): prove + verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChainN2.json")
+    outputs <- liftEffect $ appOutputs "SimpleChainN2"
 
     let
       cfg =
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Just 14
-        , proofCache: cache
+        , proofCache: outputs.proofCache
         , lagrangeCache: Just lagrangeCache
+        , dump: outputs.dumpAt "simple_chain_n2"
         }
 
     entry <- liftEffect $ mkRuleEntry @Unit

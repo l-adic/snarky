@@ -20,12 +20,11 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), StepField, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Pickles.Prove.Codecs (decodeVerifiableProof, decodeVerifier, encodeVerifiableProof, encodeVerifier)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F)
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.Prove.NoRecursionReturn (nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -35,8 +34,7 @@ spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Codecs" do
   it "serialize -> deserialize -> verify a pickles wrap proof + verifier"
     \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-      cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR"
-        <#> map \dir -> mkProofCache (dir <> "/Codecs.json")
+      outputs <- liftEffect $ appOutputs "Codecs"
 
       nrrEntry <- liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
       let rules = tuple1 nrrEntry
@@ -48,8 +46,9 @@ spec = describe "Pickles.Prove.Codecs" do
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
-        , proofCache: cache
+        , proofCache: outputs.proofCache
         , lagrangeCache: Just lagrangeCache
+        , dump: outputs.dumpAt "nrr"
         }
         rules
 

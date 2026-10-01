@@ -6,7 +6,7 @@ import Colog (LoggerT, Message)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.Field (StepField)
-import Pickles.Prove.RuleDump (recordRule, writeRuleDump)
+import Pickles.Prove.RuleDump (encodeRuleDump, recordRule)
 import Simple.JSON (writeJSON)
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.TwoPhaseChain (incrementRule, makeZeroRule)
@@ -23,9 +23,9 @@ spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.RuleDump" do
   it "records makeZeroRule" \_ -> liftEffect do
     d <- recordRule @0 @() @(F StepField) @Unit makeZeroRule
-    writeJSON (writeRuleDump d) `shouldEqual`
+    writeJSON (encodeRuleDump d) `shouldEqual`
       """{"publicOutput":[],"prevs":[],"ops":[{"constraint":{"basic":{"equal":[{"var":0},{"const":"0"}]}}}],"inputSize":1}"""
   it "records incrementRule" \_ -> liftEffect do
     d <- recordRule @1 @() @(F StepField) @Unit incrementRule
-    writeJSON (writeRuleDump d) `shouldEqual`
+    writeJSON (encodeRuleDump d) `shouldEqual`
       """{"publicOutput":[],"prevs":[{"statement":[{"var":1}],"mustVerify":{"const":"1"}}],"ops":[{"alloc":1},{"constraint":{"basic":{"equal":[{"var":0},{"add":[{"const":"1"},{"var":1}]}]}}}],"inputSize":1}"""

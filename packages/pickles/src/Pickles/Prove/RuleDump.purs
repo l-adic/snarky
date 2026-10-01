@@ -13,7 +13,7 @@ module Pickles.Prove.RuleDump
   , RuleOp(..)
   , RulePrev
   , recordRule
-  , writeRuleDump
+  , encodeRuleDump
   ) where
 
 import Prelude
@@ -124,8 +124,8 @@ recordRule rule = do
 -- | expression as `{var}`, `{const}`, `{add: [a, b]}` or `{scale: {k, x}}`,
 -- | and each constraint under its `KimchiConstraint` arm's name with the
 -- | payload's own field names.
-writeRuleDump :: RuleDump -> Foreign
-writeRuleDump d = writeImpl
+encodeRuleDump :: RuleDump -> Foreign
+encodeRuleDump d = writeImpl
   { inputSize: d.inputSize
   , ops: map op d.ops
   , prevs: map (\p -> writeImpl { statement: map cvar p.statement, mustVerify: cvar p.mustVerify }) d.prevs

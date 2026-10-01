@@ -46,7 +46,7 @@ prepareProve srs = do
   nrr <- compileMulti
     @(F StepField)
     @1
-    { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
+    { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing, dump: Nothing }
     (tuple1 nrrEntry)
   treeEntry <- mkRuleEntry @(F StepField)
     benchTreeRule
@@ -54,7 +54,7 @@ prepareProve srs = do
   tree <- compileMulti
     @(F StepField)
     @1
-    { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
+    { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing, dump: Nothing }
     (tuple1 treeEntry)
 
   let

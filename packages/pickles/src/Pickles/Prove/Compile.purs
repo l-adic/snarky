@@ -70,6 +70,9 @@ import JS.BigInt as BigInt
 import Pickles.Constants (roughDomainsLog2, zkRowsForNumChunks)
 import Pickles.DeferredValues (toPlonkMinimal)
 import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.Dump.Circuit (comparable, fromCompiledCircuit)
+import Pickles.Dump.Constants (DerivedKey, stepKeyExport, stepMainConstants, wrapKeyExport, wrapMainConstants)
+import Pickles.Dump.Tag (BranchDump, writeTagDump)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IncrementallyVerifyProof (class StepChunkLayout)
 import Pickles.Linearization (pallas) as Linearization
@@ -79,8 +82,7 @@ import Pickles.ProofsVerified (ProofsVerified(..), allPossibleDomainLog2s, boolV
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
-import Pickles.Prove.RuleDump (RuleDump)
-import Pickles.Prove.RuleDump as RuleDump
+import Pickles.Prove.RuleDump (recordRule)
 import Pickles.Prove.Slot (CompiledTagData, SlotWrapKey(..), slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
 import Pickles.Prove.Slot as RuntimeSlot
 import Pickles.Prove.Step
@@ -1458,6 +1460,10 @@ type CompileMultiConfig =
   -- | injected from disk thereafter. `Nothing` leaves kimchi to
   -- | compute bases lazily in-process, unpersisted.
   , lagrangeCache :: Maybe LagrangeCache
+  -- | Optional theorems' dump: the path of this tag's file, which
+  -- | `compileMulti` writes once the wrap circuit exists (`Pickles.Dump.Tag`).
+  -- | `Nothing` = no dump.
+  , dump :: Maybe String
   }
 
 -- | The prover for one branch: one `RuleEntry` of the rules yields
@@ -1772,6 +1778,16 @@ type RuleCompileFns mpvMax =
       Int
       -> PProveStep.StepCompileResult
       -> Either String (WrapBranchData mpvMax)
+  -- | The branch's part of the tag's dump, once the wrap circuit exists:
+  -- | its step circuit with constants and key, and its rule. A `Self`
+  -- | slot's key is the tag's own wrap key, passed in.
+  , dumpBranch ::
+      CompileMultiConfig
+      -> Int
+      -> NonEmptyArray Int
+      -> DerivedKey PallasG WrapField
+      -> PProveStep.StepCompileResult
+      -> Effect BranchDump
   }
 
 -- | One branch, as the rules carrier stores it: monomorphic closures
@@ -1801,8 +1817,6 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
   , slotVKs :: Vector mpv (Maybe SlotWrapKey)
-  -- | The rule's body as data (`recordRule`), for the theorems' dump.
-  , recordRule :: Effect RuleDump
   }
 
 -- | A `RuleEntry` whose closures capture the given rule and invoke it
@@ -1890,6 +1904,22 @@ mkRuleEntry rule compiledKeys = do
               , prevWrapDomainPins:
                   Vector.append (Vector.replicate @mpvPad (Just paddingWrapDomain)) pins
               }
+        , dumpBranch: \cfg stepNumChunks selfStepDomainLog2s selfKey result -> do
+            let
+              ctx = ctxAt cfg stepNumChunks selfStepDomainLog2s
+              slotKey = case _ of
+                Self -> selfKey
+                External t -> { verifierIndex: t.wrapVerifierIndex, domainLog2: t.wrapDomainLog2 }
+            circuit <- comparable <$> fromCompiledCircuit result.builtState
+            constants <- stepMainConstants (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
+              ctx.srsData
+              cfg.srs.pallasSrs
+              (map (map slotKey) slotVKs)
+            ruleDump <- recordRule @mpv @r @inputVal @outputVal rule
+            pure
+              { stepMain: { circuit, constants, key: stepKeyExport result.verifierIndex }
+              , rule: ruleDump
+              }
         }
     , stepProveFn: \handler ctx compileResult advice prevProofs ->
         PProveStep.stepSolveAndProve
@@ -1909,7 +1939,6 @@ mkRuleEntry rule compiledKeys = do
           advice
           prevProofs
     , slotVKs
-    , recordRule: RuleDump.recordRule @mpv @r @inputVal @outputVal rule
     }
 
 -- A local name for `StepRuleAt`, to keep the `RuleEntry` field types
@@ -2495,19 +2524,22 @@ compileMulti cfg rules = do
       stepResults
 
   -- Step 2: shared wrap compile across all branches.
+  let
+    wrapMainConfig =
+      buildWrapMainConfigMulti @branches @mpvMax cfg.srs.vestaSrs
+        { perBranch: perBranchVec }
+    slotWidthsVec =
+      case Vector.toVector slotWidths of
+        Just ws -> ws
+        Nothing -> unsafeThrow
+          $ "compileMulti: expected "
+              <> show (reflectType (Proxy :: Proxy mpvMax))
+              <> " slot widths, got "
+              <> show (Array.length slotWidths)
   wrapResult <- wrapCompile @branches @mpvMax @stepChunks
-    { wrapMainConfig:
-        buildWrapMainConfigMulti @branches @mpvMax cfg.srs.vestaSrs
-          { perBranch: perBranchVec }
+    { wrapMainConfig
     , crs: cfg.srs.pallasSrs
-    , slotWidths:
-        case Vector.toVector slotWidths of
-          Just ws -> ws
-          Nothing -> unsafeThrow
-            $ "compileMulti: expected "
-                <> show (reflectType (Proxy :: Proxy mpvMax))
-                <> " slot widths, got "
-                <> show (Array.length slotWidths)
+    , slotWidths: slotWidthsVec
     }
 
   -- The wrap domain the step circuits were built against is an
@@ -2529,6 +2561,27 @@ compileMulti cfg rules = do
         <> ", but the actual wrap domain size for the circuit has size "
         <> show actualWrapDomainLog2
         <> ". Set wrapDomainOverride to the correct domain size."
+
+  -- The theorems' dump of this tag, from the circuits just compiled: a
+  -- `Self` slot's key is the wrap key built above.
+  for_ cfg.dump \path -> do
+    let
+      selfKey = { verifierIndex: wrapResult.verifierIndex, domainLog2: actualWrapDomainLog2 }
+      selfStepDomainLog2s = NonEmptyArray.fromFoldable1 log2s
+    circuit <- comparable <$> fromCompiledCircuit wrapResult.builtState
+    constants <- wrapMainConstants wrapMainConfig cfg.srs.vestaSrs
+      (perBranchVec <#> \b -> { verifierIndex: b.stepVK, domainLog2: b.stepDomainLog2 })
+      slotWidthsVec
+    branches <- sequence $ Vector.zipWith
+      ( \ruleFn result ->
+          ruleFn.dumpBranch cfg declaredNumChunks selfStepDomainLog2s selfKey result
+      )
+      ruleFns
+      stepResults
+    writeTagDump path
+      { wrapMain: { circuit, constants, key: wrapKeyExport wrapResult.verifierIndex }
+      , branches: Vector.toUnfoldable branches
+      }
 
   -- Step 3: one prover closure per branch, each capturing its own
   -- index and sharing the step-domain vector.

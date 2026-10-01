@@ -21,11 +21,10 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (true_)
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.Prove.Chunks2 (chunks2Rule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -46,7 +45,7 @@ recurseRule _ _ = pure
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.RecurseOverChunks" do
   it "a step circuit finalizes a chunks=2 step proof, end-to-end verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/RecurseOverChunks.json")
+    outputs <- liftEffect $ appOutputs "RecurseOverChunks"
 
     chunks2Entry <- liftEffect $ mkRuleEntry @Unit chunks2Rule Vector.nil
 
@@ -57,8 +56,9 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "chunks2"
       }
       (tuple1 chunks2Entry)
 
@@ -82,8 +82,9 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "recurse"
       }
       (tuple1 recurseEntry)
 

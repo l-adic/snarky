@@ -280,6 +280,7 @@ compileTxCircuit chainId lagrangeCache srs = do
       , wrapDomainOverride: Just 14
       , proofCache: Nothing
       , lagrangeCache
+      , dump: Nothing
       }
   baseEntry <-
     mkRuleEntry

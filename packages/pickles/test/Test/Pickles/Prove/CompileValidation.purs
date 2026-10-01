@@ -50,6 +50,7 @@ numChunksSpec = describe "Pickles.Prove.Compile.validateNumChunks" do
       , wrapDomainOverride: Nothing
       , proofCache: Nothing
       , lagrangeCache: Nothing
+      , dump: Nothing
       }
       rules
     case result of
@@ -85,6 +86,7 @@ slotWidthsSpec = describe "Pickles.Prove.Compile.requireSlotWidths" do
       , wrapDomainOverride: Nothing
       , proofCache: Nothing
       , lagrangeCache: Just lagrangeCache
+      , dump: Nothing
       }
       (tuple1 nrrEntry)
     result :: Either Exc.Error (RuleEntry _ _ 2 _ Unit _) <- liftEffect $ Exc.try $

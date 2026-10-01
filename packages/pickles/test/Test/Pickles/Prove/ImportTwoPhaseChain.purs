@@ -29,12 +29,11 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, exists, if_, not_, true_)
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.Prove.TwoPhaseChain (incrementRule, makeZeroRule)
 import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
@@ -74,15 +73,16 @@ chainRule getPrevStates _ = do
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
   it "an External slot over a two-domain import, beside a Self slot: c0..c2 prove + verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/ImportTwoPhaseChain.json")
+    outputs <- liftEffect $ appOutputs "ImportTwoPhaseChain"
 
     let
       cfg =
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
-        , proofCache: cache
+        , proofCache: outputs.proofCache
         , lagrangeCache: Just lagrangeCache
+        , dump: Nothing
         }
       -- Every prev is round-tripped through serialization before it is
       -- consumed, so the chain closes only if that is faithful.
@@ -95,7 +95,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
     txs <- withSpan "[ImportTwoPhaseChain] compile two_phase_chain" $ liftEffect $ compileMulti
       @Unit
       @1
-      cfg
+      cfg { dump = outputs.dumpAt "two_phase_chain" }
       (tuple2 makeZeroEntry incrementEntry)
     let
       BranchProver makeZeroProver = fst txs.provers
@@ -127,7 +127,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
     chain <- withSpan "[ImportTwoPhaseChain] compile chain" $ liftEffect $ compileMulti
       @(F StepField)
       @1
-      cfg { wrapDomainOverride = Just 14 }
+      cfg { wrapDomainOverride = Just 14, dump = outputs.dumpAt "chain" }
       (tuple1 chainEntry)
     let
       BranchProver chainProver = fst chain.provers
