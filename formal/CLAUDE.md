@@ -329,6 +329,8 @@ scripts/check_cs.lean                        # compiled constraint systems vs th
                                              # needs the circuit-diffs exports, so CI runs it from test.yml)
 scripts/check_premises.lean                  # the capstones' constant premises on the same dumps' constants
                                              # (workspace-level; CI runs it beside check-cs)
+scripts/check_tags.lean                      # each tag's step circuits, rules replayed from the pickles
+                                             # prove tests' tag dumps (PICKLES_DUMP_DIR)
 ```
 
 (Every package-local check reads its data through an env var whose **default is relative

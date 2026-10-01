@@ -102,8 +102,9 @@ private def parseVarId (j : Json) : Except String (Option ℕ) := do
   let i ← j.getInt?
   return if i < 0 then none else some i.toNat
 
-/-- The gate table of a comparison JSON's PureScript side, with the witness fields empty. -/
-private def parseGates {m : ℕ} (ps : Json) : Except String (Raw (ZMod m)) := do
+/-- A dumped gate table, with the witness fields empty: a comparison JSON's PureScript side, or a
+circuit of a tag dump. -/
+def parseGates {m : ℕ} (ps : Json) : Except String (Raw (ZMod m)) := do
   let gatesJ ← (← ps.getObjVal? "gates").getArr?
   let typs ← gatesJ.mapM fun g => do parseGateKind (← (← g.getObjVal? "kind").getStr?)
   let coeffs ← gatesJ.mapM fun g => do
