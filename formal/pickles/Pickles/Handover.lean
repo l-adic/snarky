@@ -596,10 +596,12 @@ def Emits (dummy : Vector Fq kw) (A : Accumulator IpaPallas.curve kw) : Prop :=
   r.Hashes dummy ∧
   StepWrap.emittedAccumulator r.Vg r.Vs r.i r.jf r.stepOut r.wrapVerifyOut r.wrapFinalizeOut = A
 
-/-- The link consumes `olds`, as `stepWrap_kimchiVerify` concludes. -/
+/-- The link consumes `olds`, its slot's mask being what the slot's mask cells read as, as
+`stepWrap_kimchiVerify` concludes. -/
 def Consumes (dummy : Vector Fq kw) (olds : List (Accumulator IpaPallas.curve kw)) : Prop :=
   r.Hashes dummy ∧
-  StepWrap.consumedAccumulators r.Vg r.Vs r.inp dummy r.wrapFinalizeOut r.jf = olds
+  StepWrap.consumedAccumulators r.Vg r.Vs r.inp dummy r.wrapFinalizeOut r.jf = olds ∧
+  CircuitType.Reads r.Vg r.inp.proofMask r.ms
 
 end StepWrapRun
 
@@ -610,9 +612,9 @@ variable {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ks branches ncStep : ℕ
   {n' w' : ℕ} {ws' ss' : Fin n' → ℕ} {sa' ncs' branches' ncStep' : ℕ}
   {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) w'}
 
-/-- The link `rk` hands its wrap proof to the next link `rk1`: `rk1`'s slot verifies it at `rk`'s
-wrap circuit's public input, over the key `cvk`, at `rk`'s width; the slot keeps the last of
-`rk`'s wrap circuit's slots, as `wrapStep_kimchiVerify` concludes of the link between them, and
+/-- The link `rk` hands its wrap proof to the next link `rk1` through the wrap-step link between
+them, `rk`'s wrap circuit and `rk1`'s step slot: the tie and the slot's width are
+`wrapStep_kimchiVerify`'s premises for that link and the kept suffix its conclusion; the slot
 reads a previous statement of the size of `rk`'s application state. -/
 def StepWrapRun.Hands (rk : StepWrapRun n w ws ss sa ncs kw ks branches ncStep slotWidths)
     (rk1 : StepWrapRun n' w' ws' ss' sa' ncs' kw ks branches' ncStep' slotWidths')
@@ -654,7 +656,7 @@ theorem opened_by_next_wrap
     A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 dummy ∨ rk.StepCollision rk1 cvk := by
   intro he hc hh
   obtain ⟨⟨hpub, hSk, hWk⟩, hA⟩ := he
-  obtain ⟨⟨hpub1, hS1, hW1⟩, hcons⟩ := hc
+  obtain ⟨⟨hpub1, hS1, hW1⟩, hcons, -⟩ := hc
   obtain ⟨htie, hw1, ⟨k, hkw, hkept⟩, hss⟩ := hh
   -- the slot keeps the last `k` of its slots
   have hkm : k ≤ ws' rk1.i := by omega
