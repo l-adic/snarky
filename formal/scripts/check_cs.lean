@@ -1097,6 +1097,25 @@ def wrapMainDumps : List (String × ℕ × ℕ × ℕ) :=
     ("wrap_main_tree_proof_return_circuit", 0, 2, 1),
     ("wrap_main_two_phase_chain_circuit", 1, 1, 1) ]
 
+/-- Which rule each wrap main's branch is compiled from, by dump name. The handover theorems'
+`Hands` has the next slot keep exactly the previous rule's slots, which is the branch's slot count
+being its rule's (`widths[b] = n`). -/
+def branchRules : List (String × ℕ × String) :=
+  [ ("wrap_main_n2_circuit", 0, "step_main_simple_chain_n2_circuit"),
+    ("wrap_main_tree_proof_return_circuit", 0, "step_main_tree_proof_return_circuit"),
+    ("wrap_main_two_phase_chain_circuit", 0, "step_main_two_phase_chain_make_zero_circuit"),
+    ("wrap_main_two_phase_chain_circuit", 1, "step_main_two_phase_chain_increment_circuit") ]
+
+/-- Which wrap main's proofs each step main's slot verifies, by dump name, where both are
+dumped. The handover theorems need the slot at that wrap circuit's width (`wrapStep_kimchiVerify`'s
+`hwi`, `StepWrapRun.Hands`). -/
+def slotTags : List (String × ℕ × String) :=
+  [ ("step_main_simple_chain_n2_circuit", 0, "wrap_main_n2_circuit"),
+    ("step_main_simple_chain_n2_circuit", 1, "wrap_main_n2_circuit"),
+    ("step_main_tree_proof_return_circuit", 1, "wrap_main_tree_proof_return_circuit"),
+    ("step_main_two_phase_chain_increment_circuit", 0, "wrap_main_two_phase_chain_circuit"),
+    ("step_main_import_two_phase_chain_circuit", 0, "wrap_main_two_phase_chain_circuit") ]
+
 /-- The Lagrange bases and blinding `h` of an `x_hat` circuit, from its circuit-diffs export
 (`{lagrange : [[x,y]×n], h : [x,y]}`, decimal pairs), parsed as points of `C` — `IpaVesta` for
 `xhat_wrap_lagrange.json`, `IpaPallas` for `xhat_step_lagrange.json`. The corrections are
@@ -1604,6 +1623,11 @@ def stepMainHyps {n : ℕ} (k : StepMainConsts n) (h : XhatStepCurve.Point) :
         (Pickles.corrSumPt (C := Bulletproof.IpaPallas.curve) packed.toList bases 0 ≠ 0) do
       throw "a slot's correction sum is the identity"
 
+/-- A step main's dump name, slot count, and slots' widths at the tag's width `w`. -/
+def stepMainShape {n : ℕ} (name : String) (w : ℕ) (k : StepMainConsts n) :
+    String × ℕ × List ℕ :=
+  (name, n, k.slots.toList.map fun s => s.source.width w)
+
 open Pickles in
 /-- A `step_main_*` circuit: `Pickles.stepMainCircuit` at `n` slots and the tag's width `w`, as
 `stepWrap_kimchiVerify` states it: each slot's source and the blinding `h` from the dump's
@@ -1997,7 +2021,7 @@ def main : IO Unit := do
   let ivpStep ← optionalExport filter (dir / "ivp_step_lagrange.json") (xhatPoints XhatStepCurve)
   let xhatBranches ← optionalExport filter (dir / "xhat_wrap_branches_lagrange.json")
     xhatBranchesPoints
-  let wrapMains ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
+  let wrapMainsK ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
     let k ← optionalExport filter (dir / s!"{name}_constants.json") (wrapMainConsts nc)
     k.mapM fun k => do
       let some widths := wrapMainWidths? (bp + 1) mpv k.stepWidths
@@ -2014,20 +2038,60 @@ def main : IO Unit := do
         | throw (IO.userError (s!"{name}: Lagrange bases are not {m} rows of {bp + 1}: " ++
             s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}"))
       if let .error e := wrapMainHyps k tables hWrapPt then throw (IO.userError s!"{name}: {e}")
-      pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
-        (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths pins tables))
+      pure ((name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
+        (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths pins tables)), k.stepWidths,
+        k.dummy)
+  let wrapMains := wrapMainsK.map (·.1)
   let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
     (xhatPoints XhatStepCurve)
   let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n)) := do
     let k ← optionalExport filter (dir / s!"{name}_constants.json") (stepMainConsts n w)
     for k in k.toList do
       if let .error e := stepMainHyps k hStepPt then throw (IO.userError s!"{name}: {e}")
+      unless n ≤ w do throw (IO.userError s!"{name}: {n} slots exceed the tag's width {w}")
     pure k
   let chainN2 ← stepConsts "step_main_simple_chain_n2_circuit" 2 2
   let makeZero ← stepConsts "step_main_two_phase_chain_make_zero_circuit" 0 1
   let increment ← stepConsts "step_main_two_phase_chain_increment_circuit" 1 1
   let treeReturn ← stepConsts "step_main_tree_proof_return_circuit" 2 2
   let importTpc ← stepConsts "step_main_import_two_phase_chain_circuit" 2 2
+  -- the handover theorems' constant premises: each branch's slot count is its rule's, each slot
+  -- is at the width of the wrap circuit whose proofs it verifies, and the wrap circuits share one
+  -- padding
+  let stepShapes : List (String × ℕ × List ℕ) :=
+    (chainN2.toList.map (stepMainShape "step_main_simple_chain_n2_circuit" 2))
+    ++ (makeZero.toList.map (stepMainShape "step_main_two_phase_chain_make_zero_circuit" 1))
+    ++ (increment.toList.map (stepMainShape "step_main_two_phase_chain_increment_circuit" 1))
+    ++ (treeReturn.toList.map (stepMainShape "step_main_tree_proof_return_circuit" 2))
+    ++ (importTpc.toList.map (stepMainShape "step_main_import_two_phase_chain_circuit" 2))
+  let mut branches := 0
+  for (wname, b, sname) in branchRules do
+    match wrapMainsK.find? (·.1.1 == wname), stepShapes.find? (·.1 == sname) with
+    | some (_, widths, _), some (_, n, _) =>
+      let some w := widths[b]? | throw (IO.userError s!"{wname} has no branch {b}")
+      unless w == n do
+        throw (IO.userError s!"{wname}: branch {b} has {w} slots, its rule {sname} has {n}")
+      branches := branches + 1
+    | _, _ =>
+      unless filter.isEmpty do continue
+      throw (IO.userError s!"{wname} branch {b} or its rule {sname} was not loaded")
+  IO.println s!"✓ branch slot counts are their rules' ({branches} branches)"
+  let mut slots := 0
+  for (sname, i, wname) in slotTags do
+    match stepShapes.find? (·.1 == sname), wrapMainDumps.find? (·.1 == wname) with
+    | some (_, _, ws), some (_, _, mpv, _) =>
+      let some wi := ws[i]? | throw (IO.userError s!"{sname} has no slot {i}")
+      unless wi == mpv do
+        throw (IO.userError s!"{sname}: slot {i} has width {wi}, {wname} verifies {mpv}")
+      slots := slots + 1
+    | _, _ =>
+      unless filter.isEmpty do continue
+      throw (IO.userError s!"{sname} slot {i} or {wname} was not loaded")
+  IO.println s!"✓ slots are at their wrap circuits' widths ({slots} slots)"
+  let dummies := wrapMainsK.map (·.2.2)
+  unless dummies.all fun d => decide (some d = dummies.head?) do
+    throw (IO.userError "the wrap mains' padding challenges differ")
+  IO.println s!"✓ the wrap mains share one padding ({dummies.length} circuits)"
   let stepMains :=
     (chainN2.toList.map fun k => ("step_main_simple_chain_n2_circuit",
       stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)

@@ -248,6 +248,8 @@ private theorem wrapStep_kimchiVerify_core
         -- the link consumes `cp`'s old accumulators
         WrapStep.consumedAccumulators Vw Vs wrapFinalizeOut (inp.messagesForNextStepProof vk) rfl ms
           = cp.olds.toList ∧
+        -- the slot's mask keeps exactly the last `widths[b]` slots
+        (∀ (j : ℕ) (hj : j < w), ms[j] = decide (w - (widths[b] : ℕ) ≤ j)) ∧
         -- the wrap circuit hashes its messages
         wrapVerifyOut.HashesMessages Vw dummy stmt wrapFinalizeOut ∧
         -- of `cp` itself: the guards and the deferred `sg` equation
@@ -312,6 +314,12 @@ private theorem wrapStep_kimchiVerify_core
   have hrev := mask_rev hw _ ms0 (htdef ▸ (by omega : t = sN))
   have hmsj : ∀ j : Fin w, ms[j] = ms0[MaxProofsVerified - w + j] :=
     reads_drop (by simpa [MaxProofsVerified] using hw) hmsR hms
+  -- so it keeps exactly the last `widths[b]` slots
+  have hkept : ∀ (j : ℕ) (hj : j < w), ms[j] = decide (w - (widths[b.val] : ℕ) ≤ j) := by
+    intro j hj
+    rw [show ms[j] = ms[(⟨j, hj⟩ : Fin w)] from rfl, hmsj ⟨j, hj⟩, hrev ⟨j, hj⟩]
+    simp only [decide_eq_decide]
+    omega
   -- so the wrap circuit's keep bit for slot `j` reads as `ms[j]`
   have hkeep : ∀ j : Fin w, (↑wrapFinalizeOut.mask.reverse[j] : CVar Fq).val Vw = bit ms[j] := by
     intro j
@@ -376,7 +384,7 @@ private theorem wrapStep_kimchiVerify_core
   clear_value oldsW cp U P
   obtain ⟨hE, hK⟩ := hscal hdom cp (wrapPublicInput SStep.σ KStep.cvk Vw wrapVerifyOut.statement) Vw
     stmt.claims v hv hv1 hcc hf
-  refine ⟨cp, oldsW, hpr, hol, hf, ?_, hcons, hhash, hK⟩
+  refine ⟨cp, oldsW, hpr, hol, hf, ?_, hcons, hkept, hhash, hK⟩
   simp only [Accumulator.ofCells, hsg, hE]
 
 /-- **The wrap circuit's step proof verifies.** Let `Vw` satisfy the wrap circuit built from the
@@ -529,6 +537,9 @@ theorem wrapStep_kimchiVerify
           WrapStep.consumedAccumulators Vw Vs wrapFinalizeOut
               (inp.messagesForNextStepProof ((srcs i).keyCells stepOut.vk.points)) hwi ms
             = cp.olds.toList ∧
+          -- the slot's mask keeps exactly the last `widths[b]` slots
+          (∀ (j : ℕ) (hj : j < SlotSource.widths wNext srcs i),
+            ms[j] = decide (w - (widths[b] : ℕ) ≤ j)) ∧
           -- the wrap circuit and the next step circuit hash their messages
           wrapVerifyOut.HashesMessages Vw dummy wrapStmt wrapFinalizeOut ∧
           stepOut.HashesMessages Vs ∧
@@ -578,7 +589,7 @@ theorem wrapStep_kimchiVerify
     (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
   -- the slot is at this tag's width
   subst hwi
-  obtain ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hhashW, hK⟩ :=
+  obtain ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hkept, hhashW, hK⟩ :=
     wrapStep_kimchiVerify_core σ cvk SStep KStep hnc Vw widths
     (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
     (srsLagrangeTable SStep.σ ncStep
@@ -587,6 +598,6 @@ theorem wrapStep_kimchiVerify
     rfl hnz havoidS hlog hw Vs hwrap hb dummySg stepOut.prevs[i] (stepOut.slots i) stepOut.unfs[i]
         stepOut.msgs[i] ((srcs i).keyCells stepOut.vk.points) _
     (hscal hdi) n0 ms0 hn0 hdv hmsR ms hms htie
-  exact ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hhashW, hhashS, hK⟩
+  exact ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hkept, hhashW, hhashS, hK⟩
 
 end Pickles

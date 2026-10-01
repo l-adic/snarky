@@ -117,6 +117,10 @@ structure WrapStepRun (branches w ncStep kw ks n wNext : ℕ) (ws : Fin n → �
   ms : Vector Bool (ws i)
   /-- The slot's key cells. -/
   key : VkComms 1 (AffinePoint (FVar Fp))
+  /-- The wrap circuit's branches' slot counts. -/
+  widths : Vector (Fin (w + 1)) branches
+  /-- The branch the wrap circuit takes. -/
+  b : Fin branches
 
 namespace WrapStepRun
 
@@ -143,12 +147,14 @@ def Emits (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
   r.Hashes cvk dummy ∧
   WrapStep.emittedAccumulator r.Vw r.Vs r.i r.wrapVerifyOut r.wrapFinalizeOut r.stepOut = A
 
-/-- The link consumes `olds`, as `wrapStep_kimchiVerify` concludes. -/
+/-- The link consumes `olds`, its slot keeping exactly its branch's slots, as
+`wrapStep_kimchiVerify` concludes. -/
 def Consumes (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
     (olds : List (Accumulator IpaVesta.curve ks)) : Prop :=
   r.Hashes cvk dummy ∧
   WrapStep.consumedAccumulators r.Vw r.Vs r.wrapFinalizeOut (r.inp.messagesForNextStepProof r.key)
-    r.hwi r.ms = olds
+    r.hwi r.ms = olds ∧
+  ∀ (j : ℕ) (hj : j < ws r.i), r.ms[j] = decide (w - (r.widths[r.b] : ℕ) ≤ j)
 
 end WrapStepRun
 
@@ -160,12 +166,13 @@ variable {branches w ncStep kw ks n wNext : ℕ} {ws : Fin n → ℕ}
   {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) wNext}
 
 /-- The link `rk` hands its step proof to the next link `rk1`: the step proof `rk`'s step circuit
-makes is the one `rk1`'s wrap circuit verifies, and `rk1`'s slot keeps exactly `rk`'s slots. -/
+makes is the one `rk1`'s wrap circuit verifies, on the branch of `rk`'s rule, which has `rk`'s
+slots. -/
 def WrapStepRun.Hands (rk : WrapStepRun branches w ncStep kw ks n wNext ws slotWidths)
     (rk1 : WrapStepRun branches' wNext ncStep' kw ks' n' wNext' ws' slotWidths') : Prop :=
   CircuitType.Reads rk.Vs rk.stepOut.out
     (StepStatement.ofWrap rk1.Vw rk1.wrapVerifyOut.statement) ∧
-  ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j)
+  (rk1.widths[rk1.b] : ℕ) = n
 
 /-- The next link's wrap slot of the slot `rk.i`: the step statement front-pads. -/
 def WrapStepRun.slotIndex (rk : WrapStepRun branches w ncStep kw ks n wNext ws slotWidths)
@@ -370,10 +377,14 @@ theorem opened_by_next_step
     A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 hn dummy ∨ rk.StepCollision rk1 cvk1 := by
   intro he hc hh
   obtain ⟨⟨htk, hWk, hSk⟩, hA⟩ := he
-  obtain ⟨⟨htk1, hWk1, -⟩, hcons⟩ := hc
-  obtain ⟨hpub, hmask⟩ := hh
+  obtain ⟨⟨htk1, hWk1, -⟩, hcons, hkept⟩ := hc
+  obtain ⟨hpub, hbw⟩ := hh
   obtain ⟨hpubD, hpubM⟩ := digests_of_ofWrap hpub
   have hw1 := rk1.hwi
+  -- link k1's slot keeps exactly `rk`'s slots
+  have hmask : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j) := by
+    intro j hj
+    rw [hkept j hj, hbw, hw1]
   -- link k's outgoing messages, read
   let mW := rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut
   let mS := rk.stepOut.messagesForNextStepProof
@@ -490,6 +501,10 @@ structure StepWrapRun (n w : ℕ) (ws : Fin n → ℕ) (ncs kw ks branches ncSte
   wrapFinalizeOut : WrapMainFinalizeOut branches w ncStep kw slotWidths
   /-- The wrap circuit's verify cells. -/
   wrapVerifyOut : WrapMainVerifyOut w ncStep kw ks
+  /-- The wrap circuit's branches' slot counts. -/
+  widths : Vector (Fin (w + 1)) branches
+  /-- The branch the wrap circuit takes. -/
+  b : Fin branches
 
 namespace StepWrapRun
 
@@ -533,14 +548,16 @@ variable {n w : ℕ} {ws : Fin n → ℕ} {ncs kw ks branches ncStep : ℕ}
   {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) w'}
 
 /-- The link `rk` hands its wrap proof to the next link `rk1`: `rk1`'s slot verifies it at `rk`'s
-wrap circuit's public input, over the key `cvk`, at `rk`'s width, and keeps exactly `rk`'s slots.
--/
+wrap circuit's public input, over the key `cvk`, at `rk`'s width; the slot keeps exactly the last
+`widths[b]` slots of `rk`'s wrap circuit, as `wrapStep_kimchiVerify` concludes of the link
+between them, and that branch has `rk`'s slots. -/
 def StepWrapRun.Hands (rk : StepWrapRun n w ws ncs kw ks branches ncStep slotWidths)
     (rk1 : StepWrapRun n' w' ws' ncs' kw ks branches' ncStep' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1) : Prop :=
   CircuitType.Reads rk.Vs rk.wrapStmt (rk1.inp.packedAt cvk rk1.Vg rk1.ms) ∧
   ws' rk1.i = w ∧
-  ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j)
+  (∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (w - (rk.widths[rk.b] : ℕ) ≤ j)) ∧
+  (rk.widths[rk.b] : ℕ) = n
 
 /-- The wrap message `rk` sends and the one the next link `rk1` rebuilds for its slot collide
 (`WrapMsgCollision`). -/
@@ -575,7 +592,11 @@ theorem opened_by_next_wrap
   intro he hc hh
   obtain ⟨⟨hpub, hSk, hWk⟩, hA⟩ := he
   obtain ⟨⟨hpub1, hS1, hW1⟩, hcons⟩ := hc
-  obtain ⟨htie, hw1, hmask⟩ := hh
+  obtain ⟨htie, hw1, hkept, hbw⟩ := hh
+  -- the slot keeps exactly `rk`'s slots
+  have hmask : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j) := by
+    intro j hj
+    rw [hkept j hj, hbw, hw1]
   obtain ⟨hpubD, -⟩ := digests_of_ofWrap hpub
   obtain ⟨-, hpubM1⟩ := digests_of_ofWrap hpub1
   -- link k's outgoing messages, read
