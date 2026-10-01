@@ -33,20 +33,22 @@ import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainChunks2
-  :: IvpWrapParams
+  :: CRS PallasG
+  -> IvpWrapParams
   -> StepMainChunks2Params
   -> Effect WrapArtifact
-compileWrapMainChunks2 { blindingH } stepParams = do
+compileWrapMainChunks2 pallasSrs { blindingH } stepParams = do
   stepArt <- compileStepMainChunks2 stepParams
   vestaSrs <- createCRS @StepField
-  pallasSrs <- createCRS @WrapField
   stepKey <- deriveStepKey @0 vestaSrs stepArt.stepCs
   let stepComms = extractStepVKComms @2 stepKey.verifierIndex
   let realStepVK = stepVkForCircuit stepComms

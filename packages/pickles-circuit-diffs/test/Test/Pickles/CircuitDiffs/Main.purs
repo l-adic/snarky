@@ -221,7 +221,7 @@ withSelfKey wrapArt r = do
 -- | use `override_wrap_domain:N1`.
 simpleChainN2Wrap :: SrsBundle -> Effect WrapArtifact
 simpleChainN2Wrap bundle =
-  compileWrapMainN2
+  compileWrapMainN2 bundle.pallasCrs15
     { lagrangeAt: mkConstLagrangeBaseLookup \i ->
         Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
     , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
@@ -233,7 +233,7 @@ simpleChainN2Wrap bundle =
 -- | own at 2^14.
 treeProofReturnWrap :: SrsBundle -> Effect WrapArtifact
 treeProofReturnWrap bundle =
-  compileWrapMainTreeProofReturn
+  compileWrapMainTreeProofReturn bundle.pallasCrs15
     { lagrangeAt: mkConstLagrangeBaseLookup \i ->
         Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
     , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
@@ -243,13 +243,13 @@ treeProofReturnWrap bundle =
 -- | `two_phase_chain`'s wrap circuit (`simpleChainN2Wrap`): two branches,
 -- | make_zero and increment, sharing one wrap key.
 twoPhaseChainWrap :: SrsBundle -> Effect WrapArtifact
-twoPhaseChainWrap bundle = compileWrapMainTwoPhaseChain (twoPhaseChainParams bundle)
+twoPhaseChainWrap bundle = compileWrapMainTwoPhaseChain bundle.pallasCrs15 (twoPhaseChainParams bundle)
 
 -- | `import_two_phase_chain`'s wrap circuit (`simpleChainN2Wrap`). No
 -- | OCaml fixture: it is compiled for its key alone.
 importTwoPhaseChainWrap :: SrsBundle -> Effect WrapArtifact
 importTwoPhaseChainWrap bundle =
-  compileWrapMainImportTwoPhaseChain
+  compileWrapMainImportTwoPhaseChain bundle.pallasCrs15
     { lagrangeAt: mkConstLagrangeBaseLookup \i ->
         Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
     , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
@@ -828,7 +828,7 @@ spec bundle =
         -- commitment pipeline (mirrors the wrap_main_n2_circuit fix at
         -- commit `cf352650`).
         exactMatchWith "wrap_main_circuit"
-          (withWrapConstants =<< compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
+          (withWrapConstants =<< compileWrapMainN1 bundle.pallasCrs15 wrapMainSrsData wrapMainN1StepSrsData)
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
@@ -850,7 +850,7 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchWith "wrap_main_side_loaded_main_circuit"
-          (withWrapConstants =<< compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
+          (withWrapConstants =<< compileWrapMainSideLoadedMain bundle.pallasCrs15 wrapMainSrsData wrapMainSlmStepSrsData)
         -- N=2 Input mode (Simple_chain_n2). step_widths=[2], padded=[[0;2];[0;2]].
         -- `compileWrapMainN2` deterministically computes the step VK by
         -- recompiling the matching step CS and running the kimchi
@@ -892,7 +892,7 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchWith "wrap_main_add_one_return_circuit"
-          (withWrapConstants =<< compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
+          (withWrapConstants =<< compileWrapMainAddOneReturn bundle.pallasCrs15 wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=0, num_chunks=2 wrap. Same branch/widths/Max_widths layout
         -- as `wrap_main_add_one_return_circuit` but with `stepChunks=2`
         -- at `wrapMainForPrevs`, so the IVP MSM walks 2 chunks per
@@ -907,7 +907,7 @@ spec bundle =
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatchWith "chunks2_wrap_main_circuit"
-          (withWrapConstants =<< compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
+          (withWrapConstants =<< compileWrapMainChunks2 bundle.pallasCrs15 chunks2WrapSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
@@ -994,7 +994,7 @@ spec bundle =
         exactMatchWith "step_main_simple_chain_n2_circuit" do
           wrapArt <- simpleChainN2Wrap bundle
           withSelfKey wrapArt
-            =<< compileStepMainSimpleChainN2WithConstants stepMainN2SrsData
+            =<< compileStepMainSimpleChainN2WithConstants bundle.pallasCrs15 stepMainN2SrsData
         -- N=0, Input_and_output mode — Add_one_return. No recursion,
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573
@@ -1064,13 +1064,13 @@ spec bundle =
         exactMatchWith "step_main_tree_proof_return_circuit" do
           wrapArt <- treeProofReturnWrap bundle
           withSelfKey wrapArt
-            =<< compileStepMainTreeProofReturnWithConstants treeProofReturnSrsData
+            =<< compileStepMainTreeProofReturnWithConstants bundle.pallasCrs15 treeProofReturnSrsData
         -- N=2: an External slot over `two_phase_chain` (step domains 9 and
         -- 14) beside a Self slot; both slots read the 2^14 Lagrange basis.
         exactMatchWith "step_main_import_two_phase_chain_circuit" do
           wrapArt <- importTwoPhaseChainWrap bundle
           withSelfKey wrapArt
-            =<< compileStepMainImportTwoPhaseChainWithConstants (importTwoPhaseChainParams bundle)
+            =<< compileStepMainImportTwoPhaseChainWithConstants bundle.pallasCrs15 (importTwoPhaseChainParams bundle)
         -- N=1 parent + single side-loaded prev (mpv=N2 upper bound).
         -- The three per-domain lagrange tables sit at log2 ∈ {13, 14,
         -- 15} (= the wrap-domain log2s for `actualWrapDomainSize ∈
@@ -1148,10 +1148,10 @@ spec bundle =
         -- artifact (passed as a separate arg, supplying the multi-branch
         -- FOP domain dispatch list's `[makeZero, increment]` head).
         exactMatchWith "step_main_two_phase_chain_increment_circuit" $ do
-          makeZeroArt <- compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData
+          makeZeroArt <- compileStepMainTwoPhaseChainMakeZero bundle.pallasCrs15 twoPhaseChainMakeZeroSrsData
           wrapArt <- twoPhaseChainWrap bundle
           withSelfKey wrapArt
-            =<< compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt
+            =<< compileStepMainTwoPhaseChainIncrementWithConstants bundle.pallasCrs15 makeZeroArt
               twoPhaseChainIncrementSrsData
         -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule
         -- has no prevs but the multi-branch wrap is mpv=N1, so the
@@ -1159,7 +1159,7 @@ spec bundle =
         -- Step domain log2 = 9. Body asserts `self_v = 0` (single R1CS).
         exactMatchWith "step_main_two_phase_chain_make_zero_circuit"
           ( withStepConstants
-              =<< compileStepMainTwoPhaseChainMakeZeroWithConstants twoPhaseChainMakeZeroSrsData
+              =<< compileStepMainTwoPhaseChainMakeZeroWithConstants bundle.pallasCrs15 twoPhaseChainMakeZeroSrsData
           )
       describe "Linearization" do
         exactMatchEff "linearization_step_circuit" (fromCompiledCircuit =<< compileLinearizationStep)

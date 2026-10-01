@@ -28,20 +28,22 @@ import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Pasta (PallasG)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainNoRecursionReturn
-  :: IvpWrapParams
+  :: CRS PallasG
+  -> IvpWrapParams
   -> StepMainNoRecursionReturnParams
   -> Effect WrapArtifact
-compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
+compileWrapMainNoRecursionReturn pallasSrs { lagrangeAt, blindingH } stepParams = do
   -- Compile NRR's step CS first, then bake its derived VK + domain
   -- log2 into the wrap config.
   stepArt <- compileStepMainNoRecursionReturn stepParams
   vestaSrs <- createCRS @StepField
-  pallasSrs <- createCRS @WrapField
   stepKey <- deriveStepKey @0 vestaSrs stepArt.stepCs
   let stepComms = extractStepVKComms @1 stepKey.verifierIndex
   let realStepVK = stepVkForCircuit stepComms

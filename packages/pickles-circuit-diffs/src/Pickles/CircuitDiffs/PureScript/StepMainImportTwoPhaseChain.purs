@@ -43,7 +43,7 @@ import Pickles.Types (StatementIO(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -105,20 +105,22 @@ type Mpv = 2
 
 -- | The chain's step circuit.
 compileStepMainImportTwoPhaseChain
-  :: StepMainImportTwoPhaseChainParams -> Effect StepArtifact
-compileStepMainImportTwoPhaseChain params =
-  _.art <$> compileStepMainImportTwoPhaseChainWithConstants params
+  :: CRS PallasG
+  -> StepMainImportTwoPhaseChainParams -> Effect StepArtifact
+compileStepMainImportTwoPhaseChain pallasSrs params =
+  _.art <$> compileStepMainImportTwoPhaseChainWithConstants pallasSrs params
 
 -- | The chain's step circuit, with the constants it bakes in
 -- | (`stepMainConstants`) for the Lean `check_cs` harness.
 compileStepMainImportTwoPhaseChainWithConstants
-  :: StepMainImportTwoPhaseChainParams
+  :: CRS PallasG
+  -> StepMainImportTwoPhaseChainParams
   -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
-compileStepMainImportTwoPhaseChainWithConstants params = do
+compileStepMainImportTwoPhaseChainWithConstants pallasSrs params = do
   -- `two_phase_chain`'s wrap artifact carries its key and `increment`'s
   -- step domain; `make_zero`'s comes from its own step compile.
-  tpcArt <- compileWrapMainTwoPhaseChain params.twoPhaseChainSrsData
-  makeZeroArt <- compileStepMainTwoPhaseChainMakeZero
+  tpcArt <- compileWrapMainTwoPhaseChain pallasSrs params.twoPhaseChainSrsData
+  makeZeroArt <- compileStepMainTwoPhaseChainMakeZero pallasSrs
     params.twoPhaseChainSrsData.makeZeroStepSrsData
   selfLog2 <- preComputeSelfStepDomainLog2
     (runStepCompile (srsData tpcArt makeZeroArt 1))
@@ -126,7 +128,6 @@ compileStepMainImportTwoPhaseChainWithConstants params = do
   pure
     { art
     , constants: \selfWrapKey -> do
-        pallasSrs <- createCRS @WrapField
         stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @ChainPrevsSpec)))
           (srsData tpcArt makeZeroArt selfLog2)

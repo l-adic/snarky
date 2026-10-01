@@ -45,7 +45,7 @@ import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Pasta (VestaG)
+import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -60,14 +60,14 @@ type WrapMainTwoPhaseChainParams =
   }
 
 compileWrapMainTwoPhaseChain
-  :: WrapMainTwoPhaseChainParams -> Effect WrapArtifact
-compileWrapMainTwoPhaseChain { vestaSrs, blindingH, makeZeroStepSrsData, incrementStepSrsData } = do
+  :: CRS PallasG
+  -> WrapMainTwoPhaseChainParams -> Effect WrapArtifact
+compileWrapMainTwoPhaseChain pallasSrs { vestaSrs, blindingH, makeZeroStepSrsData, incrementStepSrsData } = do
   -- Compile both branches' step CSes. make_zero first (so its artifact
   -- is available for increment's per-branch FOP domain dispatch).
-  makeZeroArt <- compileStepMainTwoPhaseChainMakeZero makeZeroStepSrsData
-  incrementArt <- compileStepMainTwoPhaseChainIncrement makeZeroArt incrementStepSrsData
+  makeZeroArt <- compileStepMainTwoPhaseChainMakeZero pallasSrs makeZeroStepSrsData
+  incrementArt <- compileStepMainTwoPhaseChainIncrement pallasSrs makeZeroArt incrementStepSrsData
   vestaSrs' <- createCRS @StepField
-  pallasSrs <- createCRS @WrapField
   makeZeroKey <- deriveStepKey @0 vestaSrs' makeZeroArt.stepCs
   incrementKey <- deriveStepKey @1 vestaSrs' incrementArt.stepCs
   let

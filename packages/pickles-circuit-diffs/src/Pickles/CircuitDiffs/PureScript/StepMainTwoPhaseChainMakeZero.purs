@@ -29,16 +29,17 @@ import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Dump.Constants (stepMainConstants)
 import Pickles.CircuitDiffs.Types (Constants)
-import Pickles.Field (StepField, WrapField)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Slots (PrevValues, slotWidthInt, slotWidthsOf, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -67,16 +68,18 @@ makeZeroRule _ appState = do
 type Mpv = 1
 
 compileStepMainTwoPhaseChainMakeZero
-  :: StepMainTwoPhaseChainMakeZeroParams -> Effect StepArtifact
-compileStepMainTwoPhaseChainMakeZero params =
-  _.art <$> compileStepMainTwoPhaseChainMakeZeroWithConstants params
+  :: CRS PallasG
+  -> StepMainTwoPhaseChainMakeZeroParams -> Effect StepArtifact
+compileStepMainTwoPhaseChainMakeZero pallasSrs params =
+  _.art <$> compileStepMainTwoPhaseChainMakeZeroWithConstants pallasSrs params
 
 -- | `compileStepMainTwoPhaseChainMakeZero`, with the constants the circuit
 -- | bakes in (`stepMainConstants`) for the Lean `check_cs` harness.
 compileStepMainTwoPhaseChainMakeZeroWithConstants
-  :: StepMainTwoPhaseChainMakeZeroParams
+  :: CRS PallasG
+  -> StepMainTwoPhaseChainMakeZeroParams
   -> Effect { art :: StepArtifact, constants :: Constants }
-compileStepMainTwoPhaseChainMakeZeroWithConstants params = do
+compileStepMainTwoPhaseChainMakeZeroWithConstants pallasSrs params = do
   throwawayCaptureRef <- Ref.new Nothing
   let
     dummyAdvice = unsafeCoerce unit
@@ -98,7 +101,6 @@ compileStepMainTwoPhaseChainMakeZeroWithConstants params = do
           dummyAdvice
           throwawayCaptureRef
       )
-  pallasSrs <- createCRS @WrapField
   constants <- stepMainConstants
     (map slotWidthInt (slotWidthsOf (Proxy @Unit)))
     srsData

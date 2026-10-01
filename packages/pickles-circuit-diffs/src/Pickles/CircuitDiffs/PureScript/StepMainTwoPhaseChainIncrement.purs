@@ -41,7 +41,7 @@ import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthI
 import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_, exists, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -82,22 +82,24 @@ incrementRule getPrevStates appState = do
 type Mpv = 1
 
 compileStepMainTwoPhaseChainIncrement
-  :: StepArtifact
+  :: CRS PallasG
+  -> StepArtifact
   -- ^ Make_zero's compiled step artifact. Slot 0's `perSlotFopDomainLog2s`
   -- entry is `[makeZero, increment]` — make_zero's step domain
   -- log2 is read from this artifact, increment's own is shape-passed.
   -> StepMainTwoPhaseChainIncrementParams
   -> Effect StepArtifact
-compileStepMainTwoPhaseChainIncrement makeZeroArt params =
-  _.art <$> compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params
+compileStepMainTwoPhaseChainIncrement pallasSrs makeZeroArt params =
+  _.art <$> compileStepMainTwoPhaseChainIncrementWithConstants pallasSrs makeZeroArt params
 
 -- | `compileStepMainTwoPhaseChainIncrement`, with the constants the circuit
 -- | bakes in (`stepMainConstants`) for the Lean `check_cs` harness.
 compileStepMainTwoPhaseChainIncrementWithConstants
-  :: StepArtifact
+  :: CRS PallasG
+  -> StepArtifact
   -> StepMainTwoPhaseChainIncrementParams
   -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
-compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params = do
+compileStepMainTwoPhaseChainIncrementWithConstants pallasSrs makeZeroArt params = do
   -- Slot 0's source = self (the 2-branch proof system). Its candidate
   -- list: make_zero's step domain (from artifact) + increment's own
   -- step domain (shape-passed).
@@ -107,7 +109,6 @@ compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params = do
   pure
     { art
     , constants: \selfWrapKey -> do
-        pallasSrs <- createCRS @WrapField
         stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @IncrementPrevsSpec)))
           (srsData makeZeroLog2 selfLog2)

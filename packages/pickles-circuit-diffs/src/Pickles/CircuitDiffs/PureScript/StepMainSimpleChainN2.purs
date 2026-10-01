@@ -29,7 +29,7 @@ import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthI
 import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -79,16 +79,18 @@ simpleChainN2Rule getPrevStates appState = do
 type Mpv = 2
 
 compileStepMainSimpleChainN2
-  :: StepMainSimpleChainN2Params -> Effect StepArtifact
-compileStepMainSimpleChainN2 params =
-  _.art <$> compileStepMainSimpleChainN2WithConstants params
+  :: CRS PallasG
+  -> StepMainSimpleChainN2Params -> Effect StepArtifact
+compileStepMainSimpleChainN2 pallasSrs params =
+  _.art <$> compileStepMainSimpleChainN2WithConstants pallasSrs params
 
 -- | `compileStepMainSimpleChainN2`, with the constants the circuit bakes
 -- | in (`stepMainConstants`) for the Lean `check_cs` harness.
 compileStepMainSimpleChainN2WithConstants
-  :: StepMainSimpleChainN2Params
+  :: CRS PallasG
+  -> StepMainSimpleChainN2Params
   -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
-compileStepMainSimpleChainN2WithConstants params = do
+compileStepMainSimpleChainN2WithConstants pallasSrs params = do
   -- Both prev slots are self → both FOP domain log2s = this rule's own
   -- step domain log2. Resolved via two-pass compile (mirrors OCaml
   -- `Fix_domains.domains`).
@@ -97,7 +99,6 @@ compileStepMainSimpleChainN2WithConstants params = do
   pure
     { art
     , constants: \selfWrapKey -> do
-        pallasSrs <- createCRS @WrapField
         stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @SimpleChainN2PrevsSpec)))
           (srsData selfLog2)

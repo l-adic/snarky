@@ -30,18 +30,20 @@ import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Pasta (PallasG)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainTreeProofReturn
-  :: IvpWrapParams
+  :: CRS PallasG
+  -> IvpWrapParams
   -> StepMainTreeProofReturnParams
   -> Effect WrapArtifact
-compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
-  stepArt <- compileStepMainTreeProofReturn stepParams
+compileWrapMainTreeProofReturn pallasSrs { lagrangeAt, blindingH } stepParams = do
+  stepArt <- compileStepMainTreeProofReturn pallasSrs stepParams
   vestaSrs <- createCRS @StepField
-  pallasSrs <- createCRS @WrapField
   stepKey <- deriveStepKey @2 vestaSrs stepArt.stepCs
   let stepComms = extractStepVKComms @1 stepKey.verifierIndex
   let realStepVK = stepVkForCircuit stepComms

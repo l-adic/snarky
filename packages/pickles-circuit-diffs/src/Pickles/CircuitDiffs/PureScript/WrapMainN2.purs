@@ -32,18 +32,20 @@ import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Pasta (PallasG)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainN2
-  :: IvpWrapParams
+  :: CRS PallasG
+  -> IvpWrapParams
   -> StepMainSimpleChainN2Params
   -> Effect WrapArtifact
-compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
-  stepArt <- compileStepMainSimpleChainN2 stepParams
+compileWrapMainN2 pallasSrs { lagrangeAt, blindingH } stepParams = do
+  stepArt <- compileStepMainSimpleChainN2 pallasSrs stepParams
   vestaSrs <- createCRS @StepField
-  pallasSrs <- createCRS @WrapField
   stepKey <- deriveStepKey @2 vestaSrs stepArt.stepCs
   let stepComms = extractStepVKComms @1 stepKey.verifierIndex
   let realStepVK = stepVkForCircuit stepComms
