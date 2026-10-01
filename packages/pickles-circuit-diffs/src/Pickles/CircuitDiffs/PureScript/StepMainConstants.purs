@@ -1,10 +1,10 @@
--- | The constants a `step_main_*` circuit bakes in, as JSON for the Lean
--- | `check_cs` harness: what `Pickles.Step.Main.stepMain` takes beyond the
--- | rule. The statement width `mpv`, the blinding `h`, and per slot, in the
--- | rule's order: its source (`self` or `external`), width, chunk count,
--- | candidate step domains, the Lagrange bases its public-input commitment
--- | reads, and the wrap key it verifies against (whole, as the proof cache
--- | stores it). Every value is written by its own `WriteForeign` instance.
+-- | The constants a `step_main_*` circuit bakes in, as its comparison dump
+-- | carries them: what `Pickles.Step.Main.stepMain` takes beyond the rule. The
+-- | blinding `h`, and per slot, in the rule's order, by its source (self,
+-- | external or side-loaded): its width, chunk count and candidate step
+-- | domains, and for a self or external slot the Lagrange bases its
+-- | public-input commitment reads and the wrap key it verifies against
+-- | (whole, as the proof cache stores it).
 module Pickles.CircuitDiffs.PureScript.StepMainConstants
   ( stepMainConstants
   ) where
@@ -21,34 +21,34 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
+import JS.BigInt as BigInt
 import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, KeyExport, srsLagrangeAt, wrapKeyExport)
+import Pickles.CircuitDiffs.Types (Chunked, Constants(..), Point, StepSlot(..))
 import Pickles.Field (StepField, WrapField)
 import Pickles.IncrementallyVerifyProof (PackedWrapStatement)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (SlotVkBlueprint(..), StepMainSrsData)
 import Pickles.Types (StepIPARounds, WrapVkChunks)
-import Simple.JSON (writeJSON)
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F, sizeInFields)
+import Snarky.Circuit.DSL (F(..), sizeInFields)
 import Snarky.Circuit.Kimchi (Type1)
+import Snarky.Curves.Class (toBigInt)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
--- | The constants as JSON. `widths` are the prevs spec's slot widths and
--- | `keys` each slot's wrap key, derived over `srs`; a side-loaded slot is
--- | `side_loaded`, with neither Lagrange bases nor key. A self or external
--- | slot's Lagrange table must be `srs`'s Lagrange commitments on its key's
--- | domain, or this throws before anything is written.
+-- | The constants. `widths` are the prevs spec's slot widths and `keys` each
+-- | slot's wrap key, derived over `srs`; a side-loaded slot has none. A self
+-- | or external slot's Lagrange table must be `srs`'s Lagrange commitments on
+-- | its key's domain, or this throws.
 stepMainConstants
   :: forall len
-   . Int
-  -> Vector len Int
+   . Vector len Int
   -> StepMainSrsData len
   -> CRS PallasG
   -> Vector len (Maybe (DerivedKey PallasG WrapField))
-  -> Effect String
-stepMainConstants mpv widths srsData srs keys = do
+  -> Effect Constants
+stepMainConstants widths srsData srs keys = do
   slots <- traverse slot
     ( Vector.toUnfoldable
         ( Vector.zipWith (/\)
@@ -59,27 +59,22 @@ stepMainConstants mpv widths srsData srs keys = do
             (Vector.zipWith (/\) srsData.perSlotVkBlueprints keys)
         ) :: Array _
     )
-  pure $ writeJSON { mpv, blindingH: srsData.blindingH, slots }
+  pure $ StepMain { h: point srsData.blindingH, slots }
   where
-  slot (((width /\ numChunks) /\ domainLog2s) /\ (blueprint /\ key)) = do
-    src <- case blueprint, key of
-      BlueprintSelf lagrange, Just k -> do
-        checkTable k lagrange
-        pure { source: "self", lagrange: bases lagrange, key: Just (export k) }
-      BlueprintExternal lagrange _, Just k -> do
-        checkTable k lagrange
-        pure { source: "external", lagrange: bases lagrange, key: Just (export k) }
-      BlueprintSideLoaded _, Nothing ->
-        pure { source: "side_loaded", lagrange: [], key: Nothing }
-      _, _ -> throw "step_main: a self or external slot needs its wrap key, a side-loaded one none"
-    pure
-      { source: src.source
-      , width
-      , numChunks
-      , domainLog2s: NEA.toArray domainLog2s
-      , lagrange: src.lagrange
-      , key: src.key
-      }
+  slot (((width /\ numChunks) /\ domainLog2s) /\ (blueprint /\ key)) =
+    let
+      domains = NEA.toArray domainLog2s
+    in
+      case blueprint, key of
+        BlueprintSelf lagrange, Just k -> do
+          checkTable k lagrange
+          pure $ SelfSlot { width, numChunks, domains, key: export k, lagrange: bases lagrange }
+        BlueprintExternal lagrange _, Just k -> do
+          checkTable k lagrange
+          pure $ ExternalSlot { width, numChunks, domains, key: export k, lagrange: bases lagrange }
+        BlueprintSideLoaded _, Nothing ->
+          pure $ SideLoadedSlot { width, numChunks, domains }
+        _, _ -> throw "step_main: a self or external slot needs its wrap key, a side-loaded one none"
 
   export :: DerivedKey PallasG WrapField -> KeyExport
   export k = wrapKeyExport k.verifierIndex
@@ -99,7 +94,10 @@ stepMainConstants mpv widths srsData srs keys = do
   lagrangeCount = sizeInFields (Proxy @StepField)
     (Proxy @(PackedWrapStatement StepIPARounds (F StepField) (Type1 (F StepField))))
 
-  bases
-    :: LagrangeBaseLookup WrapVkChunks StepField
-    -> Array (Vector WrapVkChunks (AffinePoint (F StepField)))
-  bases lagrange = Array.range 0 (lagrangeCount - 1) <#> \i -> (lagrange i).constant
+  bases :: LagrangeBaseLookup WrapVkChunks StepField -> Array Chunked
+  bases lagrange = Array.range 0 (lagrangeCount - 1) <#> \i ->
+    map point (Vector.toUnfoldable (lagrange i).constant :: Array _)
+
+  point :: AffinePoint (F StepField) -> Point
+  point (AffinePoint { x: F x, y: F y }) =
+    [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]

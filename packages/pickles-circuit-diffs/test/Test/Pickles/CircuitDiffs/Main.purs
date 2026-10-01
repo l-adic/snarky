@@ -84,7 +84,8 @@ import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatBranches (compileXhatBranches)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
-import Pickles.CircuitDiffs.Types (CircuitComparison)
+import Pickles.CircuitDiffs.Types (CircuitComparison, Constants(..))
+import Pickles.CircuitDiffs.Types as Dump
 import Pickles.PublicInputCommit (LagrangeBaseLookup, mkConstLagrangeBaseLookup)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
@@ -150,46 +151,67 @@ resultsDir = "packages/pickles-circuit-diffs/circuits/results/"
 writeComparison :: String -> CircuitComparison -> Effect Unit
 writeComparison path c = FS.writeTextFile UTF8 path (writeJSON c)
 
--- | A point as its decimal `[x, y]` pair, the form the Lean `check_cs` harness parses.
-ptToJson :: forall f. PrimeField f => AffinePoint f -> Array String
-ptToJson (AffinePoint { x, y }) = [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+-- | A circuit and the constants it was compiled with, as its comparison dump carries them.
+type Compared f = { circuit :: Circuit f, constants :: Maybe Constants }
 
--- | Write the first `count` Lagrange bases of a step-side SRS at domain `2^log2`, with its
--- | blinding `h`, to `file` in `resultsDir` for the Lean `check_cs` harness. Emitted inside
--- | an `it`, so it runs after `resetOutputDirs` has created the directory.
-dumpStepLagrange :: String -> CRS PallasG -> Int -> Int -> Effect Unit
-dumpStepLagrange file srs log2 count =
-  FS.writeTextFile UTF8 (resultsDir <> file)
-    ( writeJSON
-        { lagrange: Array.range 0 (count - 1) <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt srs log2 i)
-        , h: ptToJson (vestaSrsBlindingGenerator srs)
-        }
-    )
+-- | A point as its decimal coordinates.
+fPoint :: forall f. PrimeField f => AffinePoint (F f) -> Dump.Point
+fPoint (AffinePoint { x: F x, y: F y }) = [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
 
--- | A wrap artifact's circuit, after writing the constants it bakes in to
--- | `<name>_constants.json` in `resultsDir` for the Lean `check_cs` harness.
-wrapWithConstants :: String -> WrapArtifact -> Effect (Circuit Fq)
-wrapWithConstants name art = do
-  FS.writeTextFile UTF8 (resultsDir <> name <> "_constants.json") art.constants
-  fromCompiledCircuit art.wrapCs
+-- | A circuit compiled over `srsData`, with its `Xhat` constants: the blinding base and the
+-- | first `count` Lagrange bases.
+withXhat
+  :: forall n f r g
+   . PrimeField f
+  => Int
+  -> { lagrangeAt :: LagrangeBaseLookup n f, blindingH :: AffinePoint (F f) | r }
+  -> Circuit g
+  -> Compared g
+withXhat count srsData circuit =
+  { circuit
+  , constants: Just $ Xhat
+      { h: fPoint srsData.blindingH
+      , lagrange: Array.range 0 (count - 1) <#> \i ->
+          map fPoint (Vector.toUnfoldable (srsData.lagrangeAt i).constant)
+      }
+  }
 
--- | A step artifact's circuit, after writing the constants it bakes in to
--- | `<name>_constants.json` in `resultsDir` for the Lean `check_cs` harness.
-stepWithConstants :: String -> { art :: StepArtifact, constants :: String } -> Effect (Circuit Fp)
-stepWithConstants name r = do
-  FS.writeTextFile UTF8 (resultsDir <> name <> "_constants.json") r.constants
-  fromCompiledCircuit r.art.stepCs
+-- | A circuit compiled over per-branch Lagrange tables, with its `XhatBranches` constants:
+-- | the blinding base and each branch's first `count` bases.
+withXhatBranches
+  :: forall branches n r g
+   . { lagrangeTable :: Int -> Vector branches (Vector n (AffinePoint (F Fq))), blindingH :: AffinePoint (F Fq) | r }
+  -> Int
+  -> Circuit g
+  -> Compared g
+withXhatBranches config count circuit =
+  { circuit
+  , constants: Just $ XhatBranches
+      { h: fPoint config.blindingH
+      , lagrange: Array.transpose $ Array.range 0 (count - 1) <#> \i ->
+          map (map fPoint <<< Vector.toUnfoldable) (Vector.toUnfoldable (config.lagrangeTable i))
+      }
+  }
 
--- | `stepWithConstants` for a step circuit whose self slots verify against
+-- | A wrap artifact's circuit, with the constants it bakes in.
+withWrapConstants :: WrapArtifact -> Effect (Compared Fq)
+withWrapConstants art =
+  fromCompiledCircuit art.wrapCs <#> \circuit -> { circuit, constants: Just art.constants }
+
+-- | A step artifact's circuit, with the constants it bakes in.
+withStepConstants :: { art :: StepArtifact, constants :: Constants } -> Effect (Compared Fp)
+withStepConstants r =
+  fromCompiledCircuit r.art.stepCs <#> \circuit -> { circuit, constants: Just r.constants }
+
+-- | `withStepConstants` for a step circuit whose self slots verify against
 -- | its tag's wrap key, `wrapArt`'s.
-stepWithSelfKey
-  :: String
-  -> WrapArtifact
-  -> { art :: StepArtifact, constants :: DerivedKey PallasG Fq -> Effect String }
-  -> Effect (Circuit Fp)
-stepWithSelfKey name wrapArt r = do
+withSelfKey
+  :: WrapArtifact
+  -> { art :: StepArtifact, constants :: DerivedKey PallasG Fq -> Effect Constants }
+  -> Effect (Compared Fp)
+withSelfKey wrapArt r = do
   constants <- r.constants wrapArt.wrapKey
-  stepWithConstants name { art: r.art, constants }
+  withStepConstants { art: r.art, constants }
 
 -- | The wrap circuits of the tags whose step circuits are dumped: each
 -- | `wrap_main_*` fixture of such a tag, and the key its step circuit's
@@ -565,16 +587,28 @@ exactMatchEff
   => String
   -> Effect (Circuit f)
   -> SpecT Aff Unit Aff Unit
-exactMatchEff name effPs =
+exactMatchEff name effPs = exactMatchWith name (effPs <#> \circuit -> { circuit, constants: Nothing })
+
+-- | The general form: the produced circuit and the constants it was compiled with, which the
+-- | comparison JSON written to `circuits/results/` carries.
+exactMatchWith
+  :: forall f
+   . Ord f
+  => SerdeHex f
+  => PrimeField f
+  => String
+  -> Effect (Compared f)
+  -> SpecT Aff Unit Aff Unit
+exactMatchWith name effPs =
   it (name <> " matches OCaml") do
-    ps <- liftEffect effPs
+    { circuit: ps, constants } <- liftEffect effPs
     ocaml <- liftEffect $ (loadOcamlCircuit name :: Effect (Circuit f))
     let psCircuit = comparable ps
     let ocamlCircuit = comparable ocaml
     let psNoCtx = stripMetadata psCircuit
     let ocamlNoCtx = stripMetadata ocamlCircuit
     let status = if psNoCtx == ocamlNoCtx then "match" else "mismatch"
-    let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit }
+    let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit, constants }
     liftEffect do
       writeComparison (resultsDir <> name <> ".json") comparison
       appendManifest name status
@@ -701,12 +735,7 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "xhat_step_circuit" (fromCompiledCircuit =<< compileXhatStep stepSrsData)
-        -- The step-side twin of the `xhat_wrap_lagrange.json` dump below: the 30 Pallas
-        -- Lagrange bases + blinding `h` baked into `xhat_step_circuit`, for the Lean
-        -- `check_cs` harness (`xhatStepCircuit`), which derives the corrections itself.
-        it "dumps the xhat_step Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "xhat_step_lagrange.json" stepSrs 16 30
+        exactMatchWith "xhat_step_circuit" (withXhat 30 stepSrsData <$> (fromCompiledCircuit =<< compileXhatStep stepSrsData))
         exactMatchEff "check_bulletproof_step_circuit" (fromCompiledCircuit =<< compileCheckBulletproofStep stepSrsData.blindingH)
       describe "Pickles Wrap sub-circuits" do
         exactMatchEff "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesWrap)
@@ -724,44 +753,26 @@ spec bundle =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
-        exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat @1 wrapSrsData)
+        exactMatchWith "xhat_wrap_circuit" (withXhat 34 wrapSrsData <$> (fromCompiledCircuit =<< compileXhat @1 wrapSrsData))
         -- `x_hat` at two branches, through the wrap circuit's `maskedLagrangeAt`: step
         -- domains `2^16, 2^16` (one shared table) and `2^15, 2^16` (per-branch tables).
         let
           lagrangeOne :: Int -> Int -> Vector 1 (AffinePoint (F Fq))
           lagrangeOne log2 i = Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs log2 i))
-        exactMatchEff "xhat_wrap_branches_same_circuit" $ fromCompiledCircuit =<< compileXhatBranches
-          { domainLog2s: 16 :< 16 :< Vector.nil
-          , lagrangeTable: \i -> lagrangeOne 16 i :< lagrangeOne 16 i :< Vector.nil
-          , blindingH: wrapSrsData.blindingH
-          }
-        exactMatchEff "xhat_wrap_branches_diff_circuit" $ fromCompiledCircuit =<< compileXhatBranches
-          { domainLog2s: 15 :< 16 :< Vector.nil
-          , lagrangeTable: \i -> lagrangeOne 15 i :< lagrangeOne 16 i :< Vector.nil
-          , blindingH: wrapSrsData.blindingH
-          }
-        -- The bases both branch circuits read, at `2^15` and `2^16`, and `h`, for the Lean
-        -- `check_cs` harness.
-        it "dumps the xhat_wrap_branches Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            at log2 = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs log2 i)
-          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_branches_lagrange.json")
-            (writeJSON { lagrange15: at 15, lagrange16: at 16, h: ptToJson (pallasSrsBlindingGenerator srs) })
-        -- Dump the 34 Lagrange bases + blinding `h` (the SRS constants baked into
-        -- `xhat_wrap_circuit`) so the Lean `check_cs` harness can reproduce the gadget:
-        -- Lean cannot compute Lagrange commitments (no SRS/FFI); it derives the corrections
-        -- (`-2^L·base`) itself via `smulFast`. Format: `[x, y]` decimal pairs (`parseSWPoint`).
-        -- Written into `resultsDir` beside the comparison dumps, so it rides the same
-        -- artifact to the Lean checker; the visualizer, which scans the dir, skips it — it
-        -- carries no `purescript` field and no manifest entry.
-        -- Emitted inside an `it` so it runs after the `beforeAll_` `resetOutputDirs` has created
-        -- (and not since wiped) `resultsDir`; a bare effect here would run at spec-construction
-        -- time, before the directory exists.
-        it "dumps the xhat_wrap Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            lagr = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs 16 i)
-          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_lagrange.json")
-            (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
+          sameConfig =
+            { domainLog2s: 16 :< 16 :< Vector.nil
+            , lagrangeTable: \i -> lagrangeOne 16 i :< lagrangeOne 16 i :< Vector.nil
+            , blindingH: wrapSrsData.blindingH
+            }
+          diffConfig =
+            { domainLog2s: 15 :< 16 :< Vector.nil
+            , lagrangeTable: \i -> lagrangeOne 15 i :< lagrangeOne 16 i :< Vector.nil
+            , blindingH: wrapSrsData.blindingH
+            }
+        exactMatchWith "xhat_wrap_branches_same_circuit"
+          (withXhatBranches sameConfig 34 <$> (fromCompiledCircuit =<< compileXhatBranches sameConfig))
+        exactMatchWith "xhat_wrap_branches_diff_circuit"
+          (withXhatBranches diffConfig 34 <$> (fromCompiledCircuit =<< compileXhatBranches diffConfig))
         -- `xhat_wrap_circuit` at a 2^17 domain over the same 2^16 SRS: every Lagrange base
         -- is two chunks, and the gadget folds one accumulator per chunk.
         let
@@ -773,15 +784,8 @@ spec bundle =
             { lagrangeAt: mkConstLagrangeBaseLookup \i -> (coerce (chunks2At i) :: Vector 2 (AffinePoint (F Fq)))
             , blindingH: wrapSrsData.blindingH
             }
-        exactMatchEff "xhat_wrap_chunks2_circuit" (fromCompiledCircuit =<< compileXhat @2 wrapSrsDataChunks2)
-        -- The chunked twin of `xhat_wrap_lagrange.json`: each of the 34 bases as its two
-        -- chunks, for the Lean `check_cs` harness.
-        it "dumps the xhat_wrap_chunks2 Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            lagr :: Array (Array (Array String))
-            lagr = Array.range 0 33 <#> \i -> ptToJson <$> Vector.toUnfoldable (chunks2At i)
-          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_chunks2_lagrange.json")
-            (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
+        exactMatchWith "xhat_wrap_chunks2_circuit"
+          (withXhat 34 wrapSrsDataChunks2 <$> (fromCompiledCircuit =<< compileXhat @2 wrapSrsDataChunks2))
         exactMatchEff "check_bulletproof_wrap_circuit" (fromCompiledCircuit =<< compileCheckBulletproofWrap wrapSrsData.blindingH)
       describe "IVP" do
         let
@@ -791,8 +795,8 @@ spec bundle =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
-        exactMatchEff "ivp_wrap_circuit" (fromCompiledCircuit =<< compileIvpWrap wrapSrsData)
-        exactMatchEff "wrap_verify_circuit" (fromCompiledCircuit =<< compileWrapVerify wrapSrsData)
+        exactMatchWith "ivp_wrap_circuit" (withXhat 34 wrapSrsData <$> (fromCompiledCircuit =<< compileIvpWrap wrapSrsData))
+        exactMatchWith "wrap_verify_circuit" (withXhat 34 wrapSrsData <$> (fromCompiledCircuit =<< compileWrapVerify wrapSrsData))
         exactMatchEff "wrap_verify_n2_circuit" (fromCompiledCircuit =<< compileWrapVerifyN2 wrapSrsData)
         let
           -- wrap_main_circuit fixture uses domainLog2 = 14 to match the
@@ -821,8 +825,8 @@ spec bundle =
         -- recompiling the matching step CS and running the kimchi
         -- commitment pipeline (mirrors the wrap_main_n2_circuit fix at
         -- commit `cf352650`).
-        exactMatchEff "wrap_main_circuit"
-          (wrapWithConstants "wrap_main_circuit" =<< compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
+        exactMatchWith "wrap_main_circuit"
+          (withWrapConstants =<< compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
@@ -843,8 +847,8 @@ spec bundle =
                   :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "wrap_main_side_loaded_main_circuit"
-          (wrapWithConstants "wrap_main_side_loaded_main_circuit" =<< compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
+        exactMatchWith "wrap_main_side_loaded_main_circuit"
+          (withWrapConstants =<< compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
         -- N=2 Input mode (Simple_chain_n2). step_widths=[2], padded=[[0;2];[0;2]].
         -- `compileWrapMainN2` deterministically computes the step VK by
         -- recompiling the matching step CS and running the kimchi
@@ -855,8 +859,8 @@ spec bundle =
         -- `wrap_main_circuit`): `dump_simple_chain_n2.ml` passes
         -- `~override_wrap_domain:Proofs_verified.N1`, so the wrap
         -- domain is N1 = Pow_2_roots_of_unity 14.
-        exactMatchEff "wrap_main_n2_circuit"
-          (wrapWithConstants "wrap_main_n2_circuit" =<< simpleChainN2Wrap bundle)
+        exactMatchWith "wrap_main_n2_circuit"
+          (withWrapConstants =<< simpleChainN2Wrap bundle)
         -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
         -- padded=[[0];[0]]. First (and only) N=0 wrap fixture — exercises
         -- the wrap verify-one-of-step path with a step proof whose own
@@ -885,8 +889,8 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt aorStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "wrap_main_add_one_return_circuit"
-          (wrapWithConstants "wrap_main_add_one_return_circuit" =<< compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
+        exactMatchWith "wrap_main_add_one_return_circuit"
+          (withWrapConstants =<< compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=0, num_chunks=2 wrap. Same branch/widths/Max_widths layout
         -- as `wrap_main_add_one_return_circuit` but with `stepChunks=2`
         -- at `wrapMainForPrevs`, so the IVP MSM walks 2 chunks per
@@ -900,8 +904,8 @@ spec bundle =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 17 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
-        exactMatchEff "chunks2_wrap_main_circuit"
-          (wrapWithConstants "chunks2_wrap_main_circuit" =<< compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
+        exactMatchWith "chunks2_wrap_main_circuit"
+          (withWrapConstants =<< compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
@@ -910,8 +914,8 @@ spec bundle =
         -- circuit uses override_wrap_domain:N1 → wrap domain log2 = 14.
         -- The IVP MSM lagrange lookup is at the STEP domain log2 (15),
         -- matching `domainLog2s` in the WrapMainConfig.
-        exactMatchEff "wrap_main_tree_proof_return_circuit"
-          (wrapWithConstants "wrap_main_tree_proof_return_circuit" =<< treeProofReturnWrap bundle)
+        exactMatchWith "wrap_main_tree_proof_return_circuit"
+          (withWrapConstants =<< treeProofReturnWrap bundle)
         -- Multi-branch (2 branches: make_zero + increment) sharing ONE wrap
         -- key. step_widths=[0;1], padded=[[0;0];[0;1]]; per-branch step
         -- domains [9; 14] differ (make_zero is tiny, increment full),
@@ -919,8 +923,8 @@ spec bundle =
         -- Lagrange lookup is per-branch — needs the wrap SRS directly.
         -- Step VKs are derived per-branch (mirrors the deterministic
         -- VK fix family — wrap_main_circuit, wrap_main_tree_proof_return).
-        exactMatchEff "wrap_main_two_phase_chain_circuit"
-          (wrapWithConstants "wrap_main_two_phase_chain_circuit" =<< twoPhaseChainWrap bundle)
+        exactMatchWith "wrap_main_two_phase_chain_circuit"
+          (withWrapConstants =<< twoPhaseChainWrap bundle)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = bundle.pallasCrs15
@@ -929,12 +933,7 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "ivp_step_circuit" (fromCompiledCircuit =<< compileIvpStep stepSrsData)
-        -- The `pallasCrs15` twin of `xhat_step_lagrange.json`: the 30 Lagrange bases at domain
-        -- 15 and the blinding `h` baked into `ivp_step_circuit` (and `step_verify_circuit`),
-        -- for the Lean `check_cs` harness (`ivpStepCircuit`), which derives the corrections.
-        it "dumps the ivp_step Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "ivp_step_lagrange.json" stepSrs 15 30
+        exactMatchWith "ivp_step_circuit" (withXhat 30 stepSrsData <$> (fromCompiledCircuit =<< compileIvpStep stepSrsData))
       describe "Step verify" do
         let
           -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
@@ -944,11 +943,8 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "step_verify_circuit" (fromCompiledCircuit =<< compileStepVerify stepVerifySrsData)
-        -- The same `pallasCrs15` export as `ivp_step_lagrange.json`, written here too so a run
-        -- narrowed to `step_verify_circuit` carries it (a narrowed run resets the results dir).
-        it "dumps the step_verify_circuit Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "ivp_step_lagrange.json" stepVerifySrs 15 30
+        exactMatchWith "step_verify_circuit"
+          (withXhat 30 stepVerifySrsData <$> (fromCompiledCircuit =<< compileStepVerify stepVerifySrsData))
         let
           stepVerifyN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -964,7 +960,8 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "full_step_verify_one_circuit" (fromCompiledCircuit =<< compileFullStepVerifyOne fullStepSrsData)
+        exactMatchWith "full_step_verify_one_circuit"
+          (withXhat 30 fullStepSrsData <$> (fromCompiledCircuit =<< compileFullStepVerifyOne fullStepSrsData))
         let
           fullStepN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -972,11 +969,6 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "full_step_verify_one_n2_circuit" (fromCompiledCircuit =<< compileFullStepVerifyOneN2 fullStepN2SrsData)
-        -- The `pallasCrs15` Lagrange bases at domain 14 and the blinding `h` baked into
-        -- `full_step_verify_one_circuit` and the step-main circuits, for the Lean `check_cs`
-        -- harness, which derives the corrections.
-        it "dumps the full_step_verify_one Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "full_step_lagrange.json" fullStepSrs 14 30
       describe "Typ checks" do
         exactMatchEff "other_field_check_step_circuit" (fromCompiledCircuit =<< compileOtherFieldCheck)
       describe "Step main" do
@@ -997,14 +989,10 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
-        exactMatchEff "step_main_simple_chain_n2_circuit" do
+        exactMatchWith "step_main_simple_chain_n2_circuit" do
           wrapArt <- simpleChainN2Wrap bundle
-          stepWithSelfKey "step_main_simple_chain_n2_circuit" wrapArt
+          withSelfKey wrapArt
             =<< compileStepMainSimpleChainN2WithConstants stepMainN2SrsData
-        -- The same `pallasCrs15` domain-14 export as `full_step_lagrange.json`, written here too
-        -- so a run narrowed to the step-main circuits carries it.
-        it "dumps the step_main Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "full_step_lagrange.json" stepMainSrs 14 30
         -- N=0, Input_and_output mode — Add_one_return. No recursion,
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573
@@ -1071,15 +1059,15 @@ spec bundle =
             , nrrWrapSrsData: tprNrrWrapSrsData
             , nrrStepSrsData: tprNrrStepSrsData
             }
-        exactMatchEff "step_main_tree_proof_return_circuit" do
+        exactMatchWith "step_main_tree_proof_return_circuit" do
           wrapArt <- treeProofReturnWrap bundle
-          stepWithSelfKey "step_main_tree_proof_return_circuit" wrapArt
+          withSelfKey wrapArt
             =<< compileStepMainTreeProofReturnWithConstants treeProofReturnSrsData
         -- N=2: an External slot over `two_phase_chain` (step domains 9 and
         -- 14) beside a Self slot; both slots read the 2^14 Lagrange basis.
-        exactMatchEff "step_main_import_two_phase_chain_circuit" do
+        exactMatchWith "step_main_import_two_phase_chain_circuit" do
           wrapArt <- importTwoPhaseChainWrap bundle
-          stepWithSelfKey "step_main_import_two_phase_chain_circuit" wrapArt
+          withSelfKey wrapArt
             =<< compileStepMainImportTwoPhaseChainWithConstants (importTwoPhaseChainParams bundle)
         -- N=1 parent + single side-loaded prev (mpv=N2 upper bound).
         -- The three per-domain lagrange tables sit at log2 ∈ {13, 14,
@@ -1157,18 +1145,18 @@ spec bundle =
         -- first to obtain its artifact, then increment with that
         -- artifact (passed as a separate arg, supplying the multi-branch
         -- FOP domain dispatch list's `[makeZero, increment]` head).
-        exactMatchEff "step_main_two_phase_chain_increment_circuit" $ do
+        exactMatchWith "step_main_two_phase_chain_increment_circuit" $ do
           makeZeroArt <- compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData
           wrapArt <- twoPhaseChainWrap bundle
-          stepWithSelfKey "step_main_two_phase_chain_increment_circuit" wrapArt
+          withSelfKey wrapArt
             =<< compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt
               twoPhaseChainIncrementSrsData
         -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule
         -- has no prevs but the multi-branch wrap is mpv=N1, so the
         -- step PI is 34 entries (mpvPad=1 → 1 front-padded dummy slot).
         -- Step domain log2 = 9. Body asserts `self_v = 0` (single R1CS).
-        exactMatchEff "step_main_two_phase_chain_make_zero_circuit"
-          ( stepWithConstants "step_main_two_phase_chain_make_zero_circuit"
+        exactMatchWith "step_main_two_phase_chain_make_zero_circuit"
+          ( withStepConstants
               =<< compileStepMainTwoPhaseChainMakeZeroWithConstants twoPhaseChainMakeZeroSrsData
           )
       describe "Linearization" do

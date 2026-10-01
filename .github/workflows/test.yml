@@ -246,11 +246,8 @@ jobs:
         NODE_OPTIONS: "--max-old-space-size=8192"
 
     # Run-scoped transport to the `check-cs` job — the checker can only ever see the
-    # dumps its own commit generated.
-    # Includes xhat_wrap_lagrange.json (the x_hat wrap gadget's Lagrange bases, SRS
-    # constants Lean cannot compute) — scripts/check_cs.lean's xhat_wrap_circuit target
-    # reads it from this dir. It carries no `purescript` field and no manifest entry, so
-    # the visualizer, which scans the dir for comparison dumps, skips it.
+    # dumps its own commit generated. A dump carries the constants its circuit was compiled
+    # with (SRS points, keys) that Lean cannot compute.
     - name: Upload the comparison dumps for the Lean checker
       uses: actions/upload-artifact@v4
       with:
@@ -340,8 +337,6 @@ jobs:
     - name: Setup Lean + build the library
       uses: ./.github/actions/setup-lean
 
-    # Includes xhat_wrap_lagrange.json, read by scripts/check_cs.lean's xhat_wrap_circuit
-    # target from this same dir.
     - name: Download the comparison dumps
       uses: actions/download-artifact@v4
       with:

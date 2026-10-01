@@ -22,13 +22,13 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero
 import Prelude
 
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
+import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -75,7 +75,7 @@ compileStepMainTwoPhaseChainMakeZero params =
 -- | bakes in (`stepMainConstants`) for the Lean `check_cs` harness.
 compileStepMainTwoPhaseChainMakeZeroWithConstants
   :: StepMainTwoPhaseChainMakeZeroParams
-  -> Effect { art :: StepArtifact, constants :: String }
+  -> Effect { art :: StepArtifact, constants :: Constants }
 compileStepMainTwoPhaseChainMakeZeroWithConstants params = do
   throwawayCaptureRef <- Ref.new Nothing
   let
@@ -99,7 +99,7 @@ compileStepMainTwoPhaseChainMakeZeroWithConstants params = do
           throwawayCaptureRef
       )
   pallasSrs <- createCRS @WrapField
-  constants <- stepMainConstants (reflectType (Proxy @Mpv))
+  constants <- stepMainConstants
     (map slotWidthInt (slotWidthsOf (Proxy @Unit)))
     srsData
     pallasSrs

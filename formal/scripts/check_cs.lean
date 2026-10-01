@@ -857,7 +857,7 @@ def checkBulletproofWrapCircuit (blindingH : AffinePoint (FVar Fq)) (input : Vec
 
 The wrap-side `x_hat` MSM (`Pickles.publicInputCommitFull`) against the PS `Xhat` harness's
 `xhat_wrap_circuit`. The 34 Vesta Lagrange bases and blinding `h` are SRS constants Lean
-cannot compute; they arrive in `xhat_wrap_lagrange.json` (the circuit-diffs export). The
+cannot compute; they arrive in the dump's `xhat` constants (`xhatOf`). The
 per-leaf shift corrections `-(2^L)·base` are derived HERE via CompElliptic's `smulFast`, so
 only the bases are dumped. Packing (`Pickles.PackedStepPublicInput 1 15` walked by the
 `PublicInputCommit` typeclass, through nested tuples — no field reorder) fixes the leaf
@@ -920,10 +920,56 @@ def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatCurve.Point)
 
 /-! ## The wrap circuits (`wrap_main_*`)
 
-`Pickles.wrapMain` at each dump's branches, slots and chunks, its config from
-`<name>_constants.json` (the circuit-diffs export): the branches' slot counts, step domains
-and step keys, the Lagrange bases per public-input scalar and branch, the blinding `h`, the
-wrap domain pins (`-1` for a side-loaded slot), the slot widths and the padding challenges. -/
+`Pickles.wrapMain` at each dump's branches, slots and chunks, its config from the dump's
+`wrapMain` constants (`wrapMainOf`): the branches' slot counts, step domains and step keys, the
+Lagrange bases per public-input scalar and branch, the blinding `h`, the wrap domain pins (none
+for a side-loaded slot), the slot widths and the padding challenges. -/
+
+/-- A dump's constants of variant `kind`: the `constants` object the PureScript side wrote beside
+the circuit it compiled. A dump without constants, or with another variant's, fails here. -/
+def constantsOf (kind : String) (j : Json) : Except String Json := do
+  let .ok c := j.getObjVal? "constants" | throw s!"the dump carries no constants, expected {kind}"
+  if c.isNull then throw s!"the dump carries no constants, expected {kind}"
+  let k ← (← c.getObjVal? "kind").getStr?
+  unless k == kind do throw s!"constants of kind {k}, expected {kind}"
+  return c
+
+/-- A table entry's `nc` chunks, as points of `C`. -/
+def chunksOf (C : Bulletproof.Ipa.KimchiCurve) (nc : ℕ) (j : Json) :
+    Except String (Vector C.Point nc) := do
+  let pts ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt C) j
+  if h : pts.size = nc then pure ⟨pts, h⟩ else throw s!"{pts.size} chunks, expected {nc}"
+
+/-- An `x_hat` circuit's constants (`xhat`): its Lagrange bases at `nc` chunks, as points of
+`C` — `IpaVesta` on the wrap side, `IpaPallas` on the step side — and its blinding `h`. The
+corrections are derived in-circuit. -/
+def xhatOf (C : Bulletproof.Ipa.KimchiCurve) (nc : ℕ) (j : Json) :
+    Except String (Array (Vector C.Point nc) × C.Point) := do
+  let c ← constantsOf "xhat" j
+  return (← FixtureKit.parseArrOf (chunksOf C nc) (← c.getObjVal? "lagrange"),
+    ← Bulletproof.Fixture.parsePt C (← c.getObjVal? "h"))
+
+/-- `xhatOf` at one chunk, each base as its one point. -/
+def xhat1Of (C : Bulletproof.Ipa.KimchiCurve) (j : Json) :
+    Except String (Array C.Point × C.Point) :=
+  return (← xhatOf C 1 j).map (·.map fun (v : Vector C.Point 1) => v[0]) id
+
+/-- The branches `x_hat` circuit's constants (`xhatBranches`): its two branches' one-chunk
+Lagrange bases on the wrap side, and the blinding `h`. -/
+def xhatBranchesOf (j : Json) :
+    Except String (Vector (Array XhatCurve.Point) 2 × XhatCurve.Point) := do
+  let c ← constantsOf "xhatBranches" j
+  let branch (b : Json) : Except String (Array XhatCurve.Point) := do
+    return (← FixtureKit.parseArrOf (chunksOf XhatCurve 1) b).map
+      fun (v : Vector XhatCurve.Point 1) => v[0]
+  let ls ← FixtureKit.parseArrOf branch (← c.getObjVal? "lagrange")
+  let some ls := (if h : ls.size = 2 then some (⟨ls, h⟩ : Vector _ 2) else none)
+    | throw s!"{ls.size} branches, expected 2"
+  return (ls, ← Bulletproof.Fixture.parsePt XhatCurve (← c.getObjVal? "h"))
+
+/-- A target whose circuit is built from its own dump's constants, read by `read`. -/
+def withConstants {α : Type} (read : Json → Except String α) (mk : α → Comparison) : Comparison :=
+  fun j => do mk (← read j) j
 
 /-- A key a dump exports whole (`{vk, digest}`, the proof cache's encoding), at `nc` chunks: it
 passes the wire check (`Wire.KimchiVK.check`) and the pickles key's (`Pickles.Key.check`), and
@@ -953,42 +999,40 @@ structure WrapMainConsts (nc : ℕ) where
   lagrange : Array (List (Vector XhatCurve.Point nc))
   /-- The blinding base. -/
   h : XhatCurve.Point
-  /-- Per branch, each slot's wrap domain index, `-1` when side-loaded. -/
-  pins : List (List Int)
+  /-- Per branch, each slot's wrap domain index, `none` when side-loaded. -/
+  pins : List (List (Option ℕ))
   /-- Each slot's challenge-stack height. -/
   slotWidths : List ℕ
   /-- The padding challenge vector. -/
   dummy : Vector Fq 15
 
-/-- `<name>_constants.json`, parsed at `nc` step chunks. -/
-def wrapMainConsts (nc : ℕ) (path : System.FilePath) : IO (WrapMainConsts nc) := do
-  let raw ← IO.FS.readFile path
-  let parsed : Except String (WrapMainConsts nc) := do
-    let j ← Json.parse raw
-    let pt := Bulletproof.Fixture.parsePt XhatCurve
-    let chunks (j : Json) : Except String (Vector XhatCurve.Point nc) := do
-      let pts ← FixtureKit.parseArrOf pt j
-      if h : pts.size = nc then pure ⟨pts, h⟩ else throw s!"{pts.size} chunks, expected {nc}"
-    let nats (k : String) : Except String (List ℕ) := do
-      pure (← FixtureKit.parseArrOf (fun j => j.getNat?) (← j.getObjVal? k)).toList
-    pure
-      { stepWidths := ← nats "stepWidths"
-        keys := (← FixtureKit.parseArrOf
-          (checkedKey Bulletproof.IpaVesta.curve Pickles.StepIPARounds nc)
-          (← j.getObjVal? "stepKeys")).toList
-        lagrange := ← FixtureKit.parseArrOf
-          (fun j => do pure (← FixtureKit.parseArrOf chunks j).toList) (← j.getObjVal? "lagrange")
-        h := ← pt (← j.getObjVal? "h")
-        pins := (← FixtureKit.parseArrOf
-          (fun j => do pure (← FixtureKit.parseArrOf (fun j => j.getInt?) j).toList)
-          (← j.getObjVal? "pins")).toList
-        slotWidths := ← nats "slotWidths"
-        dummy := ← do
-          let d ← FixtureKit.parseArrOf FixtureKit.parseZMod (← j.getObjVal? "dummyWrapExpanded")
-          if h : d.size = 15 then pure ⟨d, h⟩ else throw s!"dummy: {d.size} challenges" }
-  match parsed with
-  | .ok r => return r
-  | .error e => throw (IO.userError s!"{path}: {e}")
+/-- A wrap main's constants (`wrapMain`), at `nc` step chunks: per branch its slot count, its
+step key (checked at the step SRS) and its table, transposed here to per scalar; the blinding
+`h`, the pins, the slot widths and the padding challenges. -/
+def wrapMainOf (nc : ℕ) (j : Json) : Except String (WrapMainConsts nc) := do
+  let c ← constantsOf "wrapMain" j
+  let nats (k : String) : Except String (List ℕ) := do
+    pure (← FixtureKit.parseArrOf (fun j => j.getNat?) (← c.getObjVal? k)).toList
+  let branches ← (← c.getObjVal? "branches").getArr?
+  let tables ← branches.mapM fun b => do
+    FixtureKit.parseArrOf (chunksOf XhatCurve nc) (← b.getObjVal? "lagrange")
+  unless (tables.map (·.size)).toList.eraseDups.length ≤ 1 do
+    throw "the branches' tables differ in length"
+  pure
+    { stepWidths := (← branches.mapM fun b => do (← b.getObjVal? "width").getNat?).toList
+      keys := (← branches.mapM fun b => do
+        checkedKey Bulletproof.IpaVesta.curve Pickles.StepIPARounds nc
+          (← b.getObjVal? "key")).toList
+      lagrange := (List.transpose (tables.toList.map (·.toList))).toArray
+      h := ← Bulletproof.Fixture.parsePt XhatCurve (← c.getObjVal? "h")
+      pins := (← FixtureKit.parseArrOf
+        (fun j => do pure (← FixtureKit.parseArrOf
+          (fun j => if j.isNull then pure none else some <$> j.getNat?) j).toList)
+        (← c.getObjVal? "pins")).toList
+      slotWidths := ← nats "slotWidths"
+      dummy := ← do
+        let d ← FixtureKit.parseArrOf FixtureKit.parseZMod (← c.getObjVal? "dummy")
+        if h : d.size = 15 then pure ⟨d, h⟩ else throw s!"dummy: {d.size} challenges" }
 
 /-- `n` exported counts, each at most `cap`, when they are: the branches' slot counts, the
 slots' challenge-stack heights. -/
@@ -1005,15 +1049,14 @@ def wrapMainKeys? {nc : ℕ} (bp : ℕ)
   if h : ks.length = bp + 1 then some ⟨ks.toArray, by simpa using h⟩ else none
 
 /-- The exported pins as each slot's column over the branches, when every branch has one entry
-per slot: a negative entry marks a side-loaded predecessor, any other the wrap domain index. -/
-def wrapMainPins? (bp mpv : ℕ) (pins : List (List Int)) :
+per slot: `none` marks a side-loaded predecessor, `some` the wrap domain index. -/
+def wrapMainPins? (bp mpv : ℕ) (pins : List (List (Option ℕ))) :
     Option (Vector (Vector (Option ℕ) (bp + 1)) mpv) :=
   if h : pins.length = bp + 1 ∧ ∀ row ∈ pins, row.length = mpv then
     some (Vector.ofFn fun s => Vector.ofFn fun b =>
-      let v := (pins[b.val]'(by omega))[s.val]'(by
+      (pins[b.val]'(by omega))[s.val]'(by
         rw [h.2 _ (List.getElem_mem _)]
-        exact s.2)
-      if v < 0 then none else some v.toNat)
+        exact s.2))
   else none
 
 /-- The exported Lagrange bases as one table per branch, when there are `m` scalars with one
@@ -1087,7 +1130,7 @@ def branchRules : List (String × ℕ × String) :=
 /-- Which wrap main's proofs each step main's slot verifies, by dump name, where both are
 dumped. The handover theorems need the slot at that wrap circuit's width (`wrapStep_kimchiVerify`'s
 `hwi`, `StepWrapRun.Hands`). Two slots are not listed: the import's self slot, whose width the
-constants parser (`stepMainConsts`) pins to its own tag's, and tree-proof-return's slot 0, which
+constants parser (`stepMainOf`) pins to its own tag's, and tree-proof-return's slot 0, which
 verifies `No_recursion_return`, whose wrap main is not dumped. -/
 def slotTags : List (String × ℕ × String) :=
   [ ("step_main_simple_chain_n2_circuit", 0, "wrap_main_n2_circuit"),
@@ -1096,44 +1139,11 @@ def slotTags : List (String × ℕ × String) :=
     ("step_main_two_phase_chain_increment_circuit", 0, "wrap_main_two_phase_chain_circuit"),
     ("step_main_import_two_phase_chain_circuit", 0, "wrap_main_two_phase_chain_circuit") ]
 
-/-- The Lagrange bases and blinding `h` of an `x_hat` circuit, from its circuit-diffs export
-(`{lagrange : [[x,y]×n], h : [x,y]}`, decimal pairs), parsed as points of `C` — `IpaVesta` for
-`xhat_wrap_lagrange.json`, `IpaPallas` for `xhat_step_lagrange.json`. The corrections are
-derived in-circuit. -/
-def xhatPoints (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) :
-    IO (Array C.Point × C.Point) := do
-  let raw ← IO.FS.readFile path
-  let parsed : Except String (Array C.Point × C.Point) := do
-    let j ← Json.parse raw
-    let lagr ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt C) (← j.getObjVal? "lagrange")
-    let h ← Bulletproof.Fixture.parsePt C (← j.getObjVal? "h")
-    pure (lagr, h)
-  match parsed with
-  | .ok r => return r
-  | .error e => throw (IO.userError s!"{path}: {e}")
-
-/-- `xhatPoints` for a chunked export (`{lagrange : [[[x,y]×nc]×n], h : [x,y]}`): each base as
-its `nc` chunks. -/
-def xhatPointsChunks (C : Bulletproof.Ipa.KimchiCurve) (nc : ℕ) (path : System.FilePath) :
-    IO (Array (Vector C.Point nc) × C.Point) := do
-  let raw ← IO.FS.readFile path
-  let chunks (j : Json) : Except String (Vector C.Point nc) := do
-    let pts ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt C) j
-    if h : pts.size = nc then pure ⟨pts, h⟩ else throw s!"{pts.size} chunks, expected {nc}"
-  let parsed : Except String (Array (Vector C.Point nc) × C.Point) := do
-    let j ← Json.parse raw
-    let lagr ← FixtureKit.parseArrOf chunks (← j.getObjVal? "lagrange")
-    let h ← Bulletproof.Fixture.parsePt C (← j.getObjVal? "h")
-    pure (lagr, h)
-  match parsed with
-  | .ok (lagr, h) => return (lagr, h)
-  | .error e => throw (IO.userError s!"{path}: {e}")
-
 /-! ### The step side (`xhat_step_circuit`)
 
 The step-side `x_hat` MSM (`Pickles.publicInputCommitKnown`, OCaml `multiscale_known`) against
 the PS `XhatStep` harness's `xhat_step_circuit`: 30 Pallas Lagrange bases (Fp coordinates) and
-the blinding `h` from `xhat_step_lagrange.json`. The leaf widths follow
+the blinding `h` from the dump's `xhat` constants. The leaf widths follow
 `XhatStep.parseXhatStepInput`: `full` (255-bit) at {0..4, 10..12}, `b128` at {5..9, 13..28},
 `b10` at {29}; no `condAdd`. In `PureCorrections` mode the corrections are constants: the
 gadget takes the first leaf's correction (`corrHead`, the seed PS uses only when the first
@@ -1215,7 +1225,7 @@ commitments are the dummy generator and the two `sg_old` the dummy wrap `sg` (PS
 The standalone PS harness derives the index digest by absorbing the key's commitments into a
 fresh sponge (`IncrementallyVerifyProof.purs`, the `Nothing` branch), so this harness replays
 that absorb before handing the sponge to the gadget. The 30 Lagrange bases and `h` are the
-`pallasCrs15` SRS's at domain 15 (`ivp_step_lagrange.json`), not `xhat_step_circuit`'s. -/
+`pallasCrs15` SRS's at domain 15 (the dump's `xhat` constants), not `xhat_step_circuit`'s. -/
 
 /-- The dummy `sg_old` (PS `dummyWrapSg`), a point of the wrap proofs' curve. -/
 def dummyWrapSgPt : Bulletproof.IpaPallas.curve.Point :=
@@ -1351,7 +1361,7 @@ def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurve.Point
 
 Transcribes `Pickles.CircuitDiffs.PureScript.FullStepVerifyOne`: `Pickles.verifyOneBy` over one
 previous proof of width 1, the check against `verifyProofWith` at `pallasCrs15`'s Lagrange bases
-at domain 14 (`full_step_lagrange.json`), the finalize at the dump's one known domain of
+at domain 14 (the dump's `xhat` constants), the finalize at the dump's one known domain of
 `log2 = 16`, the key's commitments the dummy generator and the padded `sg_old` the dummy wrap
 `sg`.
 
@@ -1406,9 +1416,9 @@ def fullStepVerifyOneCircuit (pts : Array XhatStepCurve.Point) (h : XhatStepCurv
 
 /-! ## The step circuits (`step_main_*`)
 
-`Pickles.stepMain` at each dump's slots, its configuration from `<name>_constants.json` (the
-circuit-diffs export, `StepMainConstants`): the tag's width, the blinding `h`, and per slot its
-source, width, candidate step domains and Lagrange bases, with an external slot's wrap key. Only
+`Pickles.stepMain` at each dump's slots, its configuration from the dump's `stepMain` constants
+(`stepMainOf`): the blinding `h`, and per slot its kind, width, candidate step domains, Lagrange
+bases and wrap key. The tag's width is transcribed beside the rule. Only
 the rule is transcribed per dump. `simple_chain_n2` has two self slots of width 2;
 `two_phase_chain_make_zero` no slot in a tag of width 1, so one dummy unfinalized entry and one
 padding message; `two_phase_chain_increment` one self slot of width 1 over the tag's two step
@@ -1548,56 +1558,44 @@ theorem StepSlotConsts.width_le (s : StepSlotConsts) {w : ℕ} (hw : w ≤ Pickl
   · exact hw
   · exact Nat.le_of_lt_succ s.width.isLt
 
-/-- `<name>_constants.json` of a `step_main_*` dump with `n` slots at the tag's width `w`: a
-self slot's width must be `w`, and the self slots share this compile's step domains. -/
-def stepMainConsts (n w : ℕ) (path : System.FilePath) : IO (StepMainConsts n) := do
-  let raw ← IO.FS.readFile path
-  let parsed : Except String (StepMainConsts n) := do
-    let j ← Json.parse raw
-    let pt (j : Json) : Except String XhatStepCurve.Point := do
-      let x ← Kimchi.Fixture.PS.parseHexLE (m := XhatStepCurve.base) (← j.getObjVal? "x")
-      let y ← Kimchi.Fixture.PS.parseHexLE (m := XhatStepCurve.base) (← j.getObjVal? "y")
-      FixtureKit.swPointOfCoords XhatStepCurve.E (x, y)
-    let chunk (j : Json) : Except String (Vector XhatStepCurve.Point 1) := do
-      let pts ← FixtureKit.parseArrOf pt j
-      if h : pts.size = 1 then pure ⟨pts, h⟩ else throw s!"{pts.size} chunks, expected 1"
-    let domains (ls : List ℕ) : Except String (Pickles.KnownDomains 1) := do
-      let some d := Pickles.KnownDomains.ofList? 1 ls | throw s!"step domains {ls} are no domains"
-      pure d
-    let mpv ← (← j.getObjVal? "mpv").getNat?
-    unless mpv = w do throw s!"mpv {mpv}, expected {w}"
-    let slot (j : Json) : Except String StepSlotConsts := do
-      let chunks ← (← j.getObjVal? "numChunks").getNat?
-      unless chunks = 1 do throw s!"{chunks} chunks, expected 1"
-      let wd ← (← j.getObjVal? "width").getNat?
-      let some width := (if h : wd < Pickles.MaxProofsVerified + 1 then some ⟨wd, h⟩ else none)
-        | throw s!"width {wd} above MaxProofsVerified"
-      let self ← match ← (← j.getObjVal? "source").getStr? with
-        | "self" =>
-          unless wd = w do throw s!"a self slot of width {wd} in a tag of width {w}"
-          pure true
-        | "external" => pure false
-        | src => throw s!"unsupported slot source {src}"
-      pure { self, width
-             key := ← checkedKey Bulletproof.IpaPallas.curve Pickles.WrapIPARounds 1
-               (← j.getObjVal? "key")
-             domains := ← domains (← FixtureKit.parseArrOf (fun j => j.getNat?)
-               (← j.getObjVal? "domainLog2s")).toList
-             lagrange := ← do
-               let pts ← FixtureKit.parseArrOf chunk (← j.getObjVal? "lagrange")
-               let m := CircuitType.size Fp
-                 (Pickles.PackedWrapStatement Pickles.StepIPARounds (Type1 Fp) Fp)
-               if h : pts.size = m then pure ⟨pts, h⟩
-               else throw s!"{pts.size} Lagrange bases, expected {m}" }
-    let slots ← FixtureKit.parseArrOf slot (← j.getObjVal? "slots")
-    let some slots := (if h : slots.size = n then some (⟨slots, h⟩ : Vector _ n) else none)
-      | throw s!"{slots.size} slots, expected {n}"
-    let own := (slots.toList.filter (·.self)).map (·.domains.log2s)
-    unless own.all (· == own.headD []) do throw s!"self slots disagree on step domains {own}"
-    pure { h := ← pt (← j.getObjVal? "blindingH"), slots, ownDomains := ← domains (own.headD []) }
-  match parsed with
-  | .ok r => return r
-  | .error e => throw (IO.userError s!"{path}: {e}")
+/-- A step main's constants (`stepMain`), with `n` slots at the tag's width `w`: a self slot's
+width must be `w`, and the self slots share this compile's step domains. Side-loaded slots are
+outside this corpus. -/
+def stepMainOf (n w : ℕ) (j : Json) : Except String (StepMainConsts n) := do
+  let c ← constantsOf "stepMain" j
+  let domains (ls : List ℕ) : Except String (Pickles.KnownDomains 1) := do
+    let some d := Pickles.KnownDomains.ofList? 1 ls | throw s!"step domains {ls} are no domains"
+    pure d
+  let slot (j : Json) : Except String StepSlotConsts := do
+    let chunks ← (← j.getObjVal? "numChunks").getNat?
+    unless chunks = 1 do throw s!"{chunks} chunks, expected 1"
+    let wd ← (← j.getObjVal? "width").getNat?
+    let some width := (if h : wd < Pickles.MaxProofsVerified + 1 then some ⟨wd, h⟩ else none)
+      | throw s!"width {wd} above MaxProofsVerified"
+    let self ← match ← (← j.getObjVal? "kind").getStr? with
+      | "self" =>
+        unless wd = w do throw s!"a self slot of width {wd} in a tag of width {w}"
+        pure true
+      | "external" => pure false
+      | kind => throw s!"unsupported slot kind {kind}"
+    pure { self, width
+           key := ← checkedKey Bulletproof.IpaPallas.curve Pickles.WrapIPARounds 1
+             (← j.getObjVal? "key")
+           domains := ← domains (← FixtureKit.parseArrOf (fun j => j.getNat?)
+             (← j.getObjVal? "domains")).toList
+           lagrange := ← do
+             let pts ← FixtureKit.parseArrOf (chunksOf XhatStepCurve 1) (← j.getObjVal? "lagrange")
+             let m := CircuitType.size Fp
+               (Pickles.PackedWrapStatement Pickles.StepIPARounds (Type1 Fp) Fp)
+             if h : pts.size = m then pure ⟨pts, h⟩
+             else throw s!"{pts.size} Lagrange bases, expected {m}" }
+  let slots ← FixtureKit.parseArrOf slot (← c.getObjVal? "slots")
+  let some slots := (if h : slots.size = n then some (⟨slots, h⟩ : Vector _ n) else none)
+    | throw s!"{slots.size} slots, expected {n}"
+  let own := (slots.toList.filter (·.self)).map (·.domains.log2s)
+  unless own.all (· == own.headD []) do throw s!"self slots disagree on step domains {own}"
+  pure { h := ← Bulletproof.Fixture.parsePt XhatStepCurve (← c.getObjVal? "h"), slots,
+         ownDomains := ← domains (own.headD []) }
 
 /-- What `stepWrap_kimchiVerify` assumes of a step main's constants beyond its keys, decided
 with no MSM: `h` is the wrap SRS's blinding base, the dummy `sg` is finite (`hdummySg`), and
@@ -1651,7 +1649,7 @@ Transcribes `Pickles.CircuitDiffs.PureScript.IvpWrap`: the wrap circuit's group 
 step proof, at the conditional sponge with no `sg_old`, the key's commitments the dummy Vesta
 generator, and `x_hat` the in-circuit-correction commitment of the packed step statement
 (`PackedStepPublicInput 1 15`, one slot at the wrap SRS's 15 rounds). The Lagrange bases are
-`xhat_wrap_lagrange.json`'s, which the PS harness builds from the same `vestaCrs16` data it
+the dump's `xhat` constants, which the PS harness builds from the same `vestaCrs16` data it
 gives `xhat_wrap_circuit`.
 
 The 177-cell layout: the statement slot at 0-31 (the five split claims as `(half, parity)`
@@ -1927,77 +1925,44 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
     ("hash_messages_for_next_wrap_proof_circuit",
       wrapTarget (a := Vector Fq 33) (b := PUnit) hashMessagesWrapCircuit) ]
 
-/-- The two step domains' Lagrange bases and blinding `h` from
-`xhat_wrap_branches_lagrange.json` (`{lagrange15, lagrange16 : [[x,y]×34], h : [x,y]}`). -/
-def xhatBranchesPoints (path : System.FilePath) :
-    IO (Array XhatCurve.Point × Array XhatCurve.Point × XhatCurve.Point) := do
-  let raw ← IO.FS.readFile path
-  let parsed : Except String (Array XhatCurve.Point × Array XhatCurve.Point × XhatCurve.Point) :=
-    do
-    let j ← Json.parse raw
-    let at_ (k : String) := do
-      FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt XhatCurve) (← j.getObjVal? k)
-    let h ← Bulletproof.Fixture.parsePt XhatCurve (← j.getObjVal? "h")
-    pure (← at_ "lagrange15", ← at_ "lagrange16", h)
-  match parsed with
-  | .ok r => return r
-  | .error e => throw (IO.userError s!"{path}: {e}")
-
-/-- The targets baked over a Lagrange export, each present only when its export is (a
-narrowed local PS run regenerates one column's exports; the unfiltered run has all). -/
-def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
-    (wrap2 : Option (Array (Vector XhatCurve.Point 2) × XhatCurve.Point))
-    (step : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
-    (ivpStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
-    (branches : Option (Array XhatCurve.Point × Array XhatCurve.Point × XhatCurve.Point))
-    (wrapMains : List (String × Comparison))
-    (fullStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point)) :
-    List (String × Comparison) :=
-  (fullStep.toList.map fun (pts, h) =>
-    ("full_step_verify_one_circuit",
-      stepTarget (a := Vector Fp 286) (b := PUnit) (fullStepVerifyOneCircuit pts h)))
-  ++ (step.toList.map fun (pts, h) =>
-    ("xhat_step_circuit",
-      stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts (xhatStepCell h))))
-  ++ (ivpStep.toList.map fun (pts, h) =>
-    ("ivp_step_circuit",
-      stepTarget (a := Vector Fp 175) (b := PUnit) (ivpStepCircuit pts (xhatStepCell h))))
-  ++ (ivpStep.toList.map fun (pts, h) =>
-    ("step_verify_circuit",
-      stepTarget (a := Vector Fp 268) (b := PUnit) (stepVerifyCircuit pts h)))
-  ++ (wrap.toList.map fun (pts, h) =>
-    ("xhat_wrap_circuit",
-      wrapTarget (a := Vector Fq 34) (b := PUnit)
-        (xhatWrapCircuit (pts.map (#v[·])) (xhatWrapCell h))))
-  ++ (wrap2.toList.map fun (pts, h) =>
-    ("xhat_wrap_chunks2_circuit",
-      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts (xhatWrapCell h))))
-  ++ (wrap.toList.map fun (pts, h) =>
-    ("ivp_wrap_circuit",
-      wrapTarget (a := Vector Fq 177) (b := PUnit) (ivpWrapCircuit pts (xhatWrapCell h))))
-  ++ wrapMains
-  ++ (branches.toList.map fun (_, l16, h) =>
-    ("xhat_wrap_branches_same_circuit",
+/-- The targets whose circuits are built from their own dumps' `x_hat` constants. -/
+def xhatTargets : List (String × Comparison) :=
+  [ ("full_step_verify_one_circuit", withConstants (xhat1Of XhatStepCurve) fun (pts, h) =>
+      stepTarget (a := Vector Fp 286) (b := PUnit) (fullStepVerifyOneCircuit pts h)),
+    ("xhat_step_circuit", withConstants (xhat1Of XhatStepCurve) fun (pts, h) =>
+      stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts (xhatStepCell h))),
+    ("ivp_step_circuit", withConstants (xhat1Of XhatStepCurve) fun (pts, h) =>
+      stepTarget (a := Vector Fp 175) (b := PUnit) (ivpStepCircuit pts (xhatStepCell h))),
+    ("step_verify_circuit", withConstants (xhat1Of XhatStepCurve) fun (pts, h) =>
+      stepTarget (a := Vector Fp 268) (b := PUnit) (stepVerifyCircuit pts h)),
+    ("xhat_wrap_circuit", withConstants (xhatOf XhatCurve 1) fun (pts, h) =>
+      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts (xhatWrapCell h))),
+    ("xhat_wrap_chunks2_circuit", withConstants (xhatOf XhatCurve 2) fun (pts, h) =>
+      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts (xhatWrapCell h))),
+    ("ivp_wrap_circuit", withConstants (xhat1Of XhatCurve) fun (pts, h) =>
+      wrapTarget (a := Vector Fq 177) (b := PUnit) (ivpWrapCircuit pts (xhatWrapCell h))),
+    ("wrap_verify_circuit", withConstants (xhat1Of XhatCurve) fun (pts, h) =>
+      wrapTarget (a := Vector Fq 196) (b := PUnit) (wrapVerifyCircuit pts h)),
+    ("xhat_wrap_branches_same_circuit", withConstants xhatBranchesOf fun (ls, h) =>
       wrapTarget (a := Vector Fq 35) (b := PUnit)
-        (xhatBranchesCircuit true l16 l16 (xhatWrapCell h))))
-  ++ (branches.toList.map fun (l15, l16, h) =>
-    ("xhat_wrap_branches_diff_circuit",
+        (xhatBranchesCircuit true ls[0] ls[1] (xhatWrapCell h))),
+    ("xhat_wrap_branches_diff_circuit", withConstants xhatBranchesOf fun (ls, h) =>
       wrapTarget (a := Vector Fq 35) (b := PUnit)
-        (xhatBranchesCircuit false l15 l16 (xhatWrapCell h))))
-  ++ (wrap.toList.map fun (pts, h) =>
-    ("wrap_verify_circuit", wrapTarget (a := Vector Fq 196) (b := PUnit) (wrapVerifyCircuit pts h)))
+        (xhatBranchesCircuit false ls[0] ls[1] (xhatWrapCell h))) ]
 
-/-- Load an `x_hat` Lagrange export when present. Under `KIMCHI_CS_FILTER` a missing export
-skips its target (a narrowed PS run regenerates only the selected circuits' exports); in the
-unfiltered run — CI — it is an error. -/
-def optionalExport {α : Type} (filter : String) (path : System.FilePath)
-    (load : System.FilePath → IO α) : IO (Option α) := do
+/-- A dump's constants, read by `read`, when the dump is present. Under `KIMCHI_CS_FILTER` a
+missing dump is skipped (a narrowed PS run writes only the selected circuits); in the unfiltered
+run — CI — it is an error. -/
+def dumpConstants {α : Type} (filter : String) (path : System.FilePath)
+    (read : Json → Except String α) : IO (Option α) := do
   if ← path.pathExists then
-    some <$> load path
+    match Json.parse (← IO.FS.readFile path) >>= read with
+    | .ok a => pure (some a)
+    | .error e => throw (IO.userError s!"{path}: {e}")
   else if filter.isEmpty then
-    throw (IO.userError s!"missing export: {path}")
+    throw (IO.userError s!"missing dump: {path}")
   else
-    IO.println s!"· {path.fileName.getD path.toString} not exported: its target is skipped"
+    IO.println s!"· {path.fileName.getD path.toString} not dumped: its constants are skipped"
     pure none
 
 def main : IO Unit := do
@@ -2010,17 +1975,8 @@ def main : IO Unit := do
   -- `KIMCHI_CS_FILTER` narrows the corpus to targets whose name contains it — for local
   -- validation of one circuit against a partial results dir. Unset (CI) runs the whole corpus.
   let filter := (← IO.getEnv "KIMCHI_CS_FILTER").getD ""
-  -- The `x_hat` Lagrange dumps sit in the results dir beside the comparison dumps (they
-  -- carry no `purescript` field and no manifest entry, so the other consumers skip them).
-  let xhatWrap ← optionalExport filter (dir / "xhat_wrap_lagrange.json") (xhatPoints XhatCurve)
-  let xhatWrap2 ← optionalExport filter (dir / "xhat_wrap_chunks2_lagrange.json")
-    (xhatPointsChunks XhatCurve 2)
-  let xhatStep ← optionalExport filter (dir / "xhat_step_lagrange.json") (xhatPoints XhatStepCurve)
-  let ivpStep ← optionalExport filter (dir / "ivp_step_lagrange.json") (xhatPoints XhatStepCurve)
-  let xhatBranches ← optionalExport filter (dir / "xhat_wrap_branches_lagrange.json")
-    xhatBranchesPoints
   let wrapMainsK ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
-    let k ← optionalExport filter (dir / s!"{name}_constants.json") (wrapMainConsts nc)
+    let k ← dumpConstants filter (dir / s!"{name}.json") (wrapMainOf nc)
     k.mapM fun k => do
       let some widths := wrapMainWidths? (bp + 1) mpv k.stepWidths
         | throw (IO.userError s!"{name}: slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}")
@@ -2040,10 +1996,8 @@ def main : IO Unit := do
         (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths pins tables)), k.stepWidths,
         k.dummy)
   let wrapMains := wrapMainsK.map (·.1)
-  let fullStep ← optionalExport filter (dir / "full_step_lagrange.json")
-    (xhatPoints XhatStepCurve)
   let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n)) := do
-    let k ← optionalExport filter (dir / s!"{name}_constants.json") (stepMainConsts n w)
+    let k ← dumpConstants filter (dir / s!"{name}.json") (stepMainOf n w)
     for k in k.toList do
       if let .error e := stepMainHyps k hStepPt then throw (IO.userError s!"{name}: {e}")
       unless n ≤ w do throw (IO.userError s!"{name}: {n} slots exceed the tag's width {w}")
@@ -2143,7 +2097,7 @@ def main : IO Unit := do
   let named : List (String × String ×
       Comparison) :=
     (targets hStep hWrap
-      ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches wrapMains fullStep
+      ++ xhatTargets ++ wrapMains
       ++ stepMains).map fun (n, c) => (n, n, c)
   let selected := (named ++ importTpcUnsorted).filter fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1

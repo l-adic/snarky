@@ -47,6 +47,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
+import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.VerificationKey (VerificationKey, verifierIndexDigest)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
@@ -273,8 +274,8 @@ type WrapArtifact =
   -- ^ The wrap circuit's own key, whole: a step circuit's slot verifies
   -- its proofs against it.
   , wrapKey :: DerivedKey PallasG WrapField
-  -- ^ The constants the wrap circuit bakes in, as JSON (`wrapMainConstants`).
-  , constants :: String
+  , constants :: Constants
+  -- ^ The constants the wrap circuit bakes in (`wrapMainConstants`).
   }
 
 -- | Construct a `StepArtifact` from a compiled step CS, deriving the

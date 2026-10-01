@@ -307,7 +307,10 @@
         "path": "packages/pickles-circuit-diffs-types",
         "core": {
           "dependencies": [
-            "maybe"
+            "foreign",
+            "maybe",
+            "prelude",
+            "simple-json"
           ]
         },
         "test": {

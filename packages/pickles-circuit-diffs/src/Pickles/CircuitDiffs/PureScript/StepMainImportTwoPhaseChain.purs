@@ -24,7 +24,6 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (reflectType)
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -34,6 +33,7 @@ import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, WrapArt
 import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero)
 import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (WrapMainTwoPhaseChainParams, compileWrapMainTwoPhaseChain)
+import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
@@ -113,7 +113,7 @@ compileStepMainImportTwoPhaseChain params =
 -- | (`stepMainConstants`) for the Lean `check_cs` harness.
 compileStepMainImportTwoPhaseChainWithConstants
   :: StepMainImportTwoPhaseChainParams
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect String }
+  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
 compileStepMainImportTwoPhaseChainWithConstants params = do
   -- `two_phase_chain`'s wrap artifact carries its key and `increment`'s
   -- step domain; `make_zero`'s comes from its own step compile.
@@ -127,7 +127,7 @@ compileStepMainImportTwoPhaseChainWithConstants params = do
     { art
     , constants: \selfWrapKey -> do
         pallasSrs <- createCRS @WrapField
-        stepMainConstants (reflectType (Proxy @Mpv))
+        stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @ChainPrevsSpec)))
           (srsData tpcArt makeZeroArt selfLog2)
           pallasSrs

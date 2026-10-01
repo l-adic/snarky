@@ -25,7 +25,6 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (reflectType)
 import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -33,6 +32,7 @@ import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
+import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
@@ -96,7 +96,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params =
 compileStepMainTwoPhaseChainIncrementWithConstants
   :: StepArtifact
   -> StepMainTwoPhaseChainIncrementParams
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect String }
+  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
 compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params = do
   -- Slot 0's source = self (the 2-branch proof system). Its candidate
   -- list: make_zero's step domain (from artifact) + increment's own
@@ -108,7 +108,7 @@ compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params = do
     { art
     , constants: \selfWrapKey -> do
         pallasSrs <- createCRS @WrapField
-        stepMainConstants (reflectType (Proxy @Mpv))
+        stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @IncrementPrevsSpec)))
           (srsData makeZeroLog2 selfLog2)
           pallasSrs
