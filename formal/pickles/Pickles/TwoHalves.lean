@@ -47,9 +47,9 @@ do (`xiExact_of_constrained`), so both theorems are equivalences at either proof
 ## Scope
 
 `SgOk` is no circuit's output: pickles defers it to the next proof's batch opening, and here it
-is a conjunct of `twoHalves_kimchiVerify`. Where the next proof carries the obligation (`carry`),
-`SgOk` is that accumulator's `accOk` (`sgOk_iff_accOk_of_carry`). The message digests are
-entries of `pub` like any other, and the packing of statements across the cycle is `verify`'s.
+is a conjunct of `twoHalves_kimchiVerify`; the next proof's batch opens it as an old accumulator
+(`opened_by_next`). The message digests are entries of `pub` like any other, and the packing of
+statements across the cycle is `verify`'s.
 
 ## Implementation notes
 
@@ -388,42 +388,6 @@ theorem carryWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C
     {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) :
     carryWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub cp' i = carry σ cvk cp pub cp' i := by
   simp only [carryWith, carry, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
-
-/-! ### The deferred equation, carried
-
-Under `carry` the accumulator is `cp`'s opening `sg` with `cp`'s wire challenges, so `cp`'s
-deferred equation and the accumulator's `accOk` are one equation. -/
-
-/-- `kimchiVerify` accepting includes the deferred equation: `SgOk` is `verifyWith`'s second
-conjunct. -/
-theorem sgOk_of_kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (h : kimchiVerify C σ cvk cp pub = true) : SgOk σ cvk cp pub := by
-  rw [kimchiVerify_reflects] at h
-  simp only [Ipa.verifyFrom, transcriptFrom, verifyWith_eq] at h
-  simp only [SgOk, wireChallenges, transcriptFrom]
-  exact h.2.2
-
-/-- `cp'` carries `cp`'s deferred obligation as its old accumulator `i` exactly when that
-accumulator is `cp`'s opening `sg` with `cp`'s wire challenges. -/
-theorem carry_eq_true_iff {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) :
-    carry σ cvk cp pub cp' i = true ↔
-      cp'.olds[i].sg = (runInput C σ cvk cp pub).proof.sg ∧
-        cp'.olds[i].u = wireChallenges σ cvk cp pub := by
-  simp only [carry, carryWith, decide_eq_true_eq]
-  rfl
-
-/-- When `cp'` carries `cp`'s deferred obligation as its old accumulator `i`, `cp`'s deferred
-`sg` equation is that accumulator's `accOk`. -/
-theorem sgOk_iff_accOk_of_carry {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size)
-    (h : carry σ cvk cp pub cp' i = true) :
-    SgOk σ cvk cp pub ↔ accOk σ cp'.olds[i] = true := by
-  obtain ⟨hsg, hu⟩ := (carry_eq_true_iff σ cvk cp pub cp' i).mp h
-  simp only [SgOk, accOk, decide_eq_true_eq, hsg, hu]
 
 /-! ### Reading the wire's batch through the scalar half's rows -/
 

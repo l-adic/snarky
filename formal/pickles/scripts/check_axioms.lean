@@ -97,7 +97,6 @@ def roots : List Name :=
     `Pickles.wrapProof_kimchiVerify_pallas,
     `Pickles.stepWrap_kimchiVerify,
     `Pickles.wrapStep_kimchiVerify,
-    `Pickles.chain_kimchiVerify_iff,
     `Pickles.opened_by_next,
     `Pickles.opened_by_next_wrap,
     `Pickles.StepStatement.ofWrap_toFields,

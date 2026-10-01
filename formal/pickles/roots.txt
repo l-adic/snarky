@@ -13,10 +13,8 @@ Pickles.wrapProof_kimchiVerify_pallas
 Pickles.stepWrap_kimchiVerify
 Pickles.wrapStep_kimchiVerify
 
--- The handover along a chain: every proof of a carried chain verifies exactly when every
--- carried accumulator passes the deferred check, and the accumulator one link emits is an old
--- accumulator of the proof the next link verifies, step or wrap, unless Poseidon collides.
-Pickles.chain_kimchiVerify_iff
+-- The handover along a chain: the accumulator one link emits is an old accumulator of the
+-- proof the next link verifies, step or wrap, unless Poseidon collides.
 Pickles.opened_by_next
 Pickles.opened_by_next_wrap
 
