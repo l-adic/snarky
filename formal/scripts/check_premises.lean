@@ -27,7 +27,7 @@ open Lean Snarky Snarky.Kimchi Kimchi CompElliptic.Fields.Pasta
 open PicklesFixture
 
 /-- A step main's dump name, slot count, and slots' widths at the tag's width `w`. -/
-def stepMainShape {n : ℕ} (name : String) (w : ℕ) (k : StepMainConsts n) :
+def stepMainShape {n ncs : ℕ} (name : String) (w : ℕ) (k : StepMainConsts n ncs) :
     String × ℕ × List ℕ :=
   (name, n, k.slots.toList.map fun s => s.source.width w)
 
@@ -85,7 +85,7 @@ def main : IO Unit := do
     pure (name, k.stepWidths, k.dummy)
   IO.println s!"✓ the wrap mains' keys and tables ({wrapMains.length} circuits)"
   let stepShapes ← stepMainDumps.mapM fun (name, n, w) => do
-    let k ← readConstants (dir / s!"{name}.json") (stepMainOf n w)
+    let k ← readConstants (dir / s!"{name}.json") (stepMainOf n w 1)
     if let .error e := stepMainHyps k hStepPt then throw (IO.userError s!"{name}: {e}")
     unless n ≤ w do throw (IO.userError s!"{name}: {n} slots exceed the tag's width {w}")
     pure (stepMainShape name w k)

@@ -10,8 +10,9 @@ those constants (`wrapMainHyps`, `stepMainHyps`), with each branch's slot count 
 
 Across tags: each slot verifies a dumped tag's proofs — its own tag's for a self slot, the tag
 whose wrap key it carries for an external one (keys are matched by digest, which the key check
-ties to the commitments) — at that tag's width, and reads a previous statement of the size every
-branch of that tag emits; and every wrap circuit pads with one set of challenges.
+ties to the commitments) — at that tag's width and step chunk count, and reads a previous
+statement of the size every branch of that tag emits; and every wrap circuit pads with one set of
+challenges.
 
 Run from `formal/`:  PICKLES_DUMP_DIR=<dir> lake exe check-tags
 (`BULLETPROOF_FIXTURES_DIR` overrides the blinding bases' fixtures.)
@@ -29,7 +30,8 @@ open PicklesFixture
 abbrev Digest := Bulletproof.IpaPallas.curve.BaseField
 
 /-- What the cross-tag checks read of a slot: whether it verifies its own tag, the digest of the
-wrap key it verifies against, its width, and the size of the previous statement it reads. -/
+wrap key it verifies against, its width, the chunk count of the step proofs it finalizes, and the
+size of the previous statement it reads. -/
 structure SlotSummary where
   /-- Whether the slot verifies its own tag's proofs. -/
   self : Bool
@@ -37,11 +39,14 @@ structure SlotSummary where
   digest : Digest
   /-- Its width. -/
   width : ℕ
+  /-- The chunk count of the step proofs it finalizes. -/
+  chunks : ℕ
   /-- The size of the previous statement it reads. -/
   readSize : ℕ
 
-/-- What the cross-tag checks read of a tag: its name, its wrap key's digest, its width, its
-padding challenges, each branch's application-state size, and each branch's slots. -/
+/-- What the cross-tag checks read of a tag: its name, its wrap key's digest, its width, its step
+proofs' chunk count, its padding challenges, each branch's application-state size, and each
+branch's slots. -/
 structure TagSummary where
   /-- `app/tag`. -/
   name : String
@@ -49,12 +54,25 @@ structure TagSummary where
   digest : Digest
   /-- Its width, the wrap circuit's slot count. -/
   width : ℕ
+  /-- Its step proofs' chunk count. -/
+  stepChunks : ℕ
   /-- Its wrap circuit's padding challenges. -/
   dummy : Vector Fq 15
   /-- Each branch's application state size: its rule's input and output cells. -/
   appSizes : List ℕ
   /-- Each branch's slots. -/
   slots : List (List SlotSummary)
+
+/-- The chunk count of a step main's slots' step proofs, which the step circuit takes as one count
+for all its slots; a step circuit with no slot finalizes no step proof, so any count builds it. -/
+def slotChunks (stepMain : Json) : Except String ℕ := do
+  let slots ← (← (← constantsOf "stepMain" stepMain).getObjVal? "slots").getArr?
+  let counts ← slots.toList.mapM fun s => do (← s.getObjVal? "numChunks").getNat?
+  match counts with
+  | [] => return 1
+  | c :: cs =>
+    unless cs.all (· == c) do throw s!"the slots' step chunk counts {counts} differ"
+    return c
 
 /-- One branch: its step circuit's comparisons, the premises on its constants, and its slots. -/
 def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (branch : Json) :
@@ -65,11 +83,12 @@ def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (br
     throw s!"the wrap circuit gives the branch {stepWidth} slots, its rule has {n}"
   let stepMain ← branch.getObjVal? "stepMain"
   let raw : Raw Fp ← parseGates (← stepMain.getObjVal? "circuit")
-  let k ← stepMainOf n w stepMain
+  let ncs ← slotChunks stepMain
+  let k ← stepMainOf n w ncs stepMain
   stepMainHyps k h
   let slots := (List.finRange n).map fun i =>
     let s := k.slots[i]
-    { self := s.self, digest := s.key.digest, width := s.source.width w
+    { self := s.self, digest := s.key.digest, width := s.source.width w, chunks := ncs
       readSize := rule.prevs[i].1.size }
   if hw : w ≤ Pickles.MaxProofsVerified then
     let checks := compareWith (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
@@ -110,10 +129,13 @@ def checkTag (name : String) (hWrap : XhatCurve.Point) (hStep : XhatStepCurve.Po
     circuits := circuits ++ [(s!"branch {b} step_main", checks)]
     appSizes := appSizes ++ [appSize]
     slots := slots ++ [ss]
-  return (circuits, { name, digest := key.digest, width := w, dummy := k.dummy, appSizes, slots })
+  return (circuits,
+    { name := name, digest := key.digest, width := w, stepChunks := nc, dummy := k.dummy
+      appSizes := appSizes, slots := slots })
 
-/-- The cross-tag checks over one app's tags: each slot's source is a dumped tag, the slot is at
-its width and reads the size its branches emit. Returns the slots checked. -/
+/-- The cross-tag checks over one app's tags: each slot's source is a dumped tag, and the slot is
+at its width, finalizes step proofs at its chunk count, and reads the size its branches emit.
+Returns the slots checked. -/
 def checkSources (tags : List TagSummary) : Except String ℕ := do
   let mut count := 0
   for t in tags do
@@ -126,6 +148,8 @@ def checkSources (tags : List TagSummary) : Except String ℕ := do
           throw s!"{where_}: a self slot verifying {src.name}'s key"
         unless s.width == src.width do
           throw s!"{where_}: width {s.width}, {src.name} has width {src.width}"
+        unless s.chunks == src.stepChunks do
+          throw s!"{where_}: step proofs at {s.chunks} chunks, {src.name}'s are at {src.stepChunks}"
         unless src.appSizes.all (· == s.readSize) do
           throw s!"{where_}: reads {s.readSize} statement cells, {src.name} emits {src.appSizes}"
         count := count + 1
@@ -170,8 +194,8 @@ def main : IO Unit := do
     | .ok n => slots := slots + n
     all := all ++ tags
   if sourceFailures = 0 then
-    IO.println
-      s!"✓ slots are at their sources' widths and read their statement sizes ({slots} slots)"
+    IO.println (s!"✓ slots are at their sources' widths and chunk counts and read their " ++
+      s!"statement sizes ({slots} slots)")
   failures := failures + sourceFailures
   unless all.all fun t => decide (some t.dummy = (all.head?.map (·.dummy))) do
     failures := failures + 1

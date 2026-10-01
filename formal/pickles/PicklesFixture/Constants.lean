@@ -185,8 +185,8 @@ def wrapMainDumps : List (String × ℕ × ℕ × ℕ) :=
     ("wrap_main_tree_proof_return_circuit", 0, 2, 1),
     ("wrap_main_two_phase_chain_circuit", 1, 1, 1) ]
 
-/-- One slot of a `step_main_*` dump's constants, at one chunk. -/
-structure StepSlotConsts where
+/-- One slot of a `step_main_*` dump's constants, the step proofs it finalizes at `ncs` chunks. -/
+structure StepSlotConsts (ncs : ℕ) where
   /-- Whether the slot verifies this tag's proofs rather than another's. -/
   self : Bool
   /-- The wrap key the slot verifies against, checked at the wrap SRS (`checkedKey`). -/
@@ -194,45 +194,47 @@ structure StepSlotConsts where
   /-- The slot's width, at most `MaxProofsVerified`. -/
   width : Fin (Pickles.MaxProofsVerified + 1)
   /-- Its candidate step domains. -/
-  domains : Pickles.KnownDomains 1
+  domains : Pickles.KnownDomains ncs
   /-- The Lagrange bases its public-input commitment reads, one per packed statement cell. -/
   lagrange : Pickles.SlotLagrange 1 Pickles.StepIPARounds
 
-/-- The constants of a `step_main_*` dump with `n` slots: the blinding `h`, each slot's, and this
-compile's own step domains (its self slots'). -/
-structure StepMainConsts (n : ℕ) where
+/-- The constants of a `step_main_*` dump with `n` slots, whose step proofs are at `ncs` chunks:
+the blinding `h`, each slot's, and this compile's own step domains (its self slots'). -/
+structure StepMainConsts (n ncs : ℕ) where
   /-- The blinding base. -/
   h : XhatStepCurve.Point
   /-- Each slot's constants, in the rule's order. -/
-  slots : Vector StepSlotConsts n
+  slots : Vector (StepSlotConsts ncs) n
   /-- This compile's own step domains. -/
-  ownDomains : Pickles.KnownDomains 1
+  ownDomains : Pickles.KnownDomains ncs
 
 /-- A slot's source: an external slot carries its checked wrap key's commitments, its Lagrange
 bases and its candidate domains. -/
-def StepSlotConsts.source (s : StepSlotConsts) : Pickles.SlotSource 1 Pickles.StepIPARounds :=
+def StepSlotConsts.source {ncs : ℕ} (s : StepSlotConsts ncs) :
+    Pickles.SlotSource 1 Pickles.StepIPARounds :=
   if s.self then .self s.lagrange
   else .external s.key.comms s.lagrange s.width.val s.domains.list
 
 /-- A slot's width is at most `MaxProofsVerified` when the tag's is. -/
-theorem StepSlotConsts.width_le (s : StepSlotConsts) {w : ℕ} (hw : w ≤ Pickles.MaxProofsVerified) :
+theorem StepSlotConsts.width_le {ncs : ℕ} (s : StepSlotConsts ncs) {w : ℕ}
+    (hw : w ≤ Pickles.MaxProofsVerified) :
     s.source.width w ≤ Pickles.MaxProofsVerified := by
   unfold StepSlotConsts.source
   split
   · exact hw
   · exact Nat.le_of_lt_succ s.width.isLt
 
-/-- A step main's constants (`stepMain`), with `n` slots at the tag's width `w`: a self slot's
-width must be `w`, and the self slots share this compile's step domains. Side-loaded slots are
-outside this corpus. -/
-def stepMainOf (n w : ℕ) (j : Json) : Except String (StepMainConsts n) := do
+/-- A step main's constants (`stepMain`), with `n` slots at the tag's width `w`, every slot's step
+proofs at `ncs` chunks: a self slot's width must be `w`, and the self slots share this compile's
+step domains. Side-loaded slots are outside this corpus. -/
+def stepMainOf (n w ncs : ℕ) (j : Json) : Except String (StepMainConsts n ncs) := do
   let c ← constantsOf "stepMain" j
-  let domains (ls : List ℕ) : Except String (Pickles.KnownDomains 1) := do
-    let some d := Pickles.KnownDomains.ofList? 1 ls | throw s!"step domains {ls} are no domains"
+  let domains (ls : List ℕ) : Except String (Pickles.KnownDomains ncs) := do
+    let some d := Pickles.KnownDomains.ofList? ncs ls | throw s!"step domains {ls} are no domains"
     pure d
-  let slot (j : Json) : Except String StepSlotConsts := do
+  let slot (j : Json) : Except String (StepSlotConsts ncs) := do
     let chunks ← (← j.getObjVal? "numChunks").getNat?
-    unless chunks = 1 do throw s!"{chunks} chunks, expected 1"
+    unless chunks = ncs do throw s!"{chunks} chunks, expected {ncs}"
     let wd ← (← j.getObjVal? "width").getNat?
     let some width := (if h : wd < Pickles.MaxProofsVerified + 1 then some ⟨wd, h⟩ else none)
       | throw s!"width {wd} above MaxProofsVerified"

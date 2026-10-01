@@ -2117,8 +2117,8 @@ def main : IO Unit := do
     k.mapM fun k => do
       let main ← IO.ofExcept ((wrapMainCircuitOf bp mpv nc k).mapError (s!"{name}: " ++ ·))
       pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit) main)
-  let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n)) :=
-    dumpConstants filter (dir / s!"{name}.json") (stepMainOf n w)
+  let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n 1)) :=
+    dumpConstants filter (dir / s!"{name}.json") (stepMainOf n w 1)
   let chainN2 ← stepConsts "step_main_simple_chain_n2_circuit" 2 2
   let makeZero ← stepConsts "step_main_two_phase_chain_make_zero_circuit" 0 1
   let increment ← stepConsts "step_main_two_phase_chain_increment_circuit" 1 1
@@ -2147,7 +2147,7 @@ def main : IO Unit := do
           fun _ => importTwoPhaseChainRule)))
   -- the import's candidates reversed and repeated: the circuit sorts and dedups them, so the
   -- dump is the same
-  let importTpcUnsorted := importTpc.toList.map fun (k : StepMainConsts 2) =>
+  let importTpcUnsorted := importTpc.toList.map fun (k : StepMainConsts 2 1) =>
     let s0 := k.slots[0]
     let d : Pickles.KnownDomains 1 :=
       { log2s := s0.domains.log2s.reverse ++ s0.domains.log2s

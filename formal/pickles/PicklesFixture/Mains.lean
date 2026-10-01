@@ -52,14 +52,14 @@ dropped: compiled, that is the theorem's `compileWith` system (`Snarky.compileWi
 The advice is inert: the comparison is on the constraint system. -/
 def stepMainDumpCircuit {n : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     [CheckedType Fp C inVal inVar] {outVal outVar : Type} [CircuitType Fp outVal outVar]
-    {ss : Fin n → ℕ} (w : ℕ) (hw : w ≤ MaxProofsVerified) (k : StepMainConsts n)
+    {ss : Fin n → ℕ} {ncs : ℕ} (w : ℕ) (hw : w ≤ MaxProofsVerified) (k : StepMainConsts n ncs)
     (dummyUnf : UnfVal 15)
     (rule : inVar → CircuitM Fp C (((i : Fin n) → PrevStatement (ss i)) × outVar)) :
     Unit → CircuitM Fp C (StepStatement (UnfVar 15) (FVar Fp) w) := fun u =>
-  Prod.fst <$> stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := 1) (k := 15)
+  Prod.fst <$> stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := ncs) (k := 15)
     (ks := StepIPARounds) (inVal := inVal) (outVal := outVal)
     (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h
-    (PicklesFixture.fopStepParams 1) k.ownDomains.list (constPt dummyWrapSgPt) dummyUnf rule
+    (PicklesFixture.fopStepParams ncs) k.ownDomains.list (constPt dummyWrapSgPt) dummyUnf rule
     ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩ u
 
