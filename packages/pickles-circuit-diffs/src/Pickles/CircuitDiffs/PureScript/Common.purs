@@ -23,13 +23,8 @@ module Pickles.CircuitDiffs.PureScript.Common
   , srsLengthLog2
   , wrapDomainLog2
   , wrapSrsLengthLog2
-  , DerivedKey
   , deriveStepKey
   , deriveWrapKey
-  , KeyExport
-  , stepKeyExport
-  , wrapKeyExport
-  , srsLagrangeAt
   ) where
 
 import Prelude
@@ -43,18 +38,18 @@ import Effect (Effect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.Types (Constants)
+import Pickles.Dump.Constants (DerivedKey)
 import Pickles.Field (StepField, WrapField)
-import Pickles.VerificationKey (VerificationKey, verifierIndexDigest)
+import Pickles.VerificationKey (VerificationKey)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex, crsSize)
-import Snarky.Backend.Kimchi.Proof (class ProofFFI, proverIndexDomainLog2, srsLagrangeCommitmentChunksAt)
-import Snarky.Backend.Kimchi.ProofCache (pallasVerifierIndexJsonKey, vestaVerifierIndexJsonKey)
-import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
+import Snarky.Backend.Kimchi.Proof (proverIndexDomainLog2)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine, toBigInt)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -116,10 +111,6 @@ wrapSrsLengthLog2 = 15
 --------------------------------------------------------------------------------
 -- VK derivation
 --------------------------------------------------------------------------------
-
--- | A verifier index derived from a compiled circuit, with its domain's
--- | `log2`.
-type DerivedKey g f = { verifierIndex :: VerifierIndex g f, domainLog2 :: Int }
 
 -- | Derive a step `VerifierIndex` from a compiled step constraint system,
 -- | with its domain.
@@ -189,39 +180,6 @@ deriveWrapKey pallasSrs builtState = do
     { verifierIndex: createVerifierIndex @WrapField @PallasG proverIndex
     , domainLog2: proverIndexDomainLog2 proverIndex
     }
-
--- | A key as a dump carries it for the Lean `check_cs` harness: the
--- | verifier index's JSON, as the proof cache stores it, and its digest,
--- | which the cache keys it by.
-type KeyExport = { vk :: String, digest :: String }
-
--- | A step key, exported.
-stepKeyExport :: VerifierIndex VestaG StepField -> KeyExport
-stepKeyExport vk =
-  { vk: pallasVerifierIndexJsonKey vk
-  , digest: BigInt.toString (toBigInt (verifierIndexDigest vk))
-  }
-
--- | A wrap key, exported.
-wrapKeyExport :: VerifierIndex PallasG WrapField -> KeyExport
-wrapKeyExport vk =
-  { vk: vestaVerifierIndexJsonKey vk
-  , digest: BigInt.toString (toBigInt (verifierIndexDigest vk))
-  }
-
--- | The SRS's `i`-th Lagrange commitment at domain `2^log2`, every chunk,
--- | as a circuit's Lagrange table holds it. A harness checks its table
--- | against the key it serves with it.
-srsLagrangeAt
-  :: forall f g c
-   . ProofFFI f g c
-  => CRS g
-  -> Int
-  -> Int
-  -> Array (AffinePoint (F c))
-srsLagrangeAt srs log2 i =
-  map (\(AffinePoint p) -> AffinePoint { x: F p.x, y: F p.y })
-    (srsLagrangeCommitmentChunksAt srs log2 i)
 
 -------------------------------------------------------------------------------
 -- | Compile-result artifacts

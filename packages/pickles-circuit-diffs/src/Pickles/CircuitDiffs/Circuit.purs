@@ -1,10 +1,5 @@
 module Pickles.CircuitDiffs.Circuit
-  ( Circuit
-  , GateData
-  , CachedConstant
-  , comparable
-  , fromCompiledCircuit
-  , parseOcamlFixtures
+  ( parseOcamlFixtures
   , parseCircuitJson
   , parseCachedConstants
   , parseGateLabels
@@ -13,207 +8,20 @@ module Pickles.CircuitDiffs.Circuit
 
 import Prelude
 
-import Data.Array (concatMap, replicate)
 import Data.Array as Array
 import Data.Either (Either, note)
 import Data.Int as Int
-import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Newtype (un)
-import Data.Set as Set
 import Data.String as String
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
 import Data.Vector as Vector
-import Effect (Effect)
 import Foreign (ForeignError(..), MultipleErrors)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.Types (CircuitComparison, ComparableCircuit, ComparableGate) as ReExports
-import Pickles.CircuitDiffs.Types (ComparableCircuit)
+import Pickles.Dump.Circuit (CachedConstant, Circuit, GateData)
 import Simple.JSON (class ReadForeign, readJSON)
-import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
-import Snarky.Backend.Kimchi (makeGateData)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateGetWires)
-import Snarky.Backend.Kimchi.Types (Gate, gateWiresGetWire, wireGetCol, wireGetRow)
-import Snarky.Circuit.CVar (getVariable)
-import Snarky.Constraint.Kimchi (KimchiGate)
-import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe, modulus, toBigInt)
-
-gateKindToString :: GateKind -> String
-gateKindToString = case _ of
-  Zero -> "Zero"
-  GenericPlonkGate -> "Generic"
-  PoseidonGate -> "Poseidon"
-  AddCompleteGate -> "CompleteAdd"
-  VarBaseMul -> "VarBaseMul"
-  EndoMul -> "EndoMul"
-  EndoScalar -> "EndoMulScalar"
-
--- | Convert a field element to a signed decimal string.
--- | Values > p/2 are shown as negative (e.g. p-1 becomes "-1").
-toSignedDecimal :: forall f. PrimeField f => f -> String
-toSignedDecimal x =
-  let
-    n = toBigInt x
-    p = modulus @f
-    half = p / BigInt.fromInt 2
-  in
-    if n > half then "-" <> BigInt.toString (p - n)
-    else BigInt.toString n
-
--- | Convert variable vector to Maybe array.
--- | Returns Nothing if all variables are unset (e.g. OCaml-parsed gates).
-varsToMaybe :: Vector 15 (Maybe Int) -> Maybe (Array Int)
-varsToMaybe v =
-  let
-    arr = Vector.toUnfoldable v :: Array (Maybe Int)
-    toInt = case _ of
-      Nothing -> -1
-      Just x -> x
-  in
-    if Array.all (_ == Nothing) arr then Nothing
-    else Just (map toInt arr)
-
-comparable :: forall f. Ord f => PrimeField f => SerdeHex f => Circuit f -> ComparableCircuit
-comparable c =
-  { publicInputSize: c.publicInputSize
-  , gates: map
-      ( \g ->
-          { kind: gateKindToString g.kind
-          , wires: g.wires
-          , variables: varsToMaybe g.variables
-          , coeffs: map toSignedDecimal g.coeffs
-          , context: g.context
-          }
-      )
-      c.gates
-  , cachedConstants: Array.sortWith _.variable $ map (\cc -> { variable: cc.variable, varType: cc.varType, value: toSignedDecimal cc.value }) c.cachedConstants
-  }
-
---------------------------------------------------------------------------------
--- Types
-
-type GateData f =
-  { kind :: GateKind
-  , wires :: Array { row :: Int, col :: Int }
-  , variables :: Vector 15 (Maybe Int)
-  , coeffs :: Array f
-  , context :: Array String
-  }
-
-type CachedConstant f =
-  { variable :: Int
-  , varType :: String
-  , value :: f
-  }
-
-type Circuit f =
-  { publicInputSize :: Int
-  , gates :: Array (GateData f)
-  , cachedConstants :: Array (CachedConstant f)
-  }
-
---------------------------------------------------------------------------------
--- From compiled PureScript circuit
-
--- | The one `makeGateData` of a compiled circuit.
-gateDataOf
-  :: forall f g
-   . CircuitGateConstructor f g
-  => PrimeField f
-  => CircuitBuilderState (KimchiGate f) (AuxState f)
-  -> Effect
-       { constraints :: Array (KimchiRow f)
-       , gates :: Array (Gate f)
-       , publicInputSize :: Int
-       }
-gateDataOf s = makeGateData @f
-  { constraints: concatMap (toKimchiRows <<< _.constraint) (constraintsToArray s.constraints)
-  , publicInputs: s.publicInputs
-  , unionFind: (un AuxState s.aux).wireState.unionFind
-  }
-
-fromCompiledCircuit
-  :: forall f g
-   . CircuitGateConstructor f g
-  => PrimeField f
-  => Ord f
-  => CircuitBuilderState (KimchiGate f) (AuxState f)
-  -> Effect (Circuit f)
-fromCompiledCircuit s = fromGateData s <$> gateDataOf s
-
--- | Assemble the `Circuit` view from a compiled state and its gate data.
-fromGateData
-  :: forall f g
-   . CircuitGateConstructor f g
-  => PrimeField f
-  => Ord f
-  => CircuitBuilderState (KimchiGate f) (AuxState f)
-  -> { constraints :: Array (KimchiRow f)
-     , gates :: Array (Gate f)
-     , publicInputSize :: Int
-     }
-  -> Circuit f
-fromGateData s gd =
-  let
-
-    contexts = piContexts <> gateContexts
-      where
-      piContexts = replicate (Array.length s.publicInputs) []
-      gateContexts = concatMap
-        (\lc -> replicate (Array.length (toKimchiRows lc.constraint :: Array (KimchiRow f))) lc.context)
-        (constraintsToArray s.constraints)
-
-    gates = Array.mapWithIndex
-      ( \i row ->
-          let
-            gateWires = circuitGateGetWires (gd.gates `unsafeIdx` i)
-            wires = Array.mapWithIndex
-              ( \j _ ->
-                  let
-                    w = gateWiresGetWire gateWires j
-                  in
-                    { row: wireGetRow w, col: wireGetCol w }
-              )
-              (Array.replicate 7 unit)
-            variables = map (map getVariable) row.variables
-            context = case Array.index contexts i of
-              Just ctx -> ctx
-              Nothing -> []
-          in
-            { kind: row.kind
-            , wires
-            , variables
-            , coeffs: row.coeffs
-            , context
-            }
-      )
-      gd.constraints
-
-    AuxState aux = s.aux
-    cachedConstants =
-      Array.sortWith (_.variable)
-        $ map
-            ( \(Tuple fieldVal var) ->
-                { variable: getVariable var
-                , varType: if Set.member var aux.wireState.internalVariables then "internal" else "external"
-                , value: fieldVal
-                }
-            )
-        $ (Map.toUnfoldable aux.wireState.cachedConstants)
-  in
-    { publicInputSize: gd.publicInputSize
-    , gates
-    , cachedConstants
-    }
-  where
-  unsafeIdx :: forall a. Array a -> Int -> a
-  unsafeIdx arr i = case Array.index arr i of
-    Just x -> x
-    Nothing -> unsafeCrashWith ("fromGateData: gate index out of bounds: " <> show i)
+import Snarky.Constraint.Kimchi.Types (GateKind(..))
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe)
 
 --------------------------------------------------------------------------------
 -- From OCaml fixture files

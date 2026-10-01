@@ -27,7 +27,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
-import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
+import Pickles.Dump.Constants (stepMainConstants)
 import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
