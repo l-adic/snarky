@@ -348,13 +348,20 @@ private theorem digests_of_ofWrap {k w : ℕ} {Vs : Valuation Fp} {Vw : Valuatio
 link `rk1` consumes the olds of the step proof `cp` that `rk`'s step circuit made. Then `A` is one
 of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
 the messages passed between the links. -/
-theorem opened_by_next (rk : WrapStepRun branches w ncStep kw ks n wNext ws slotWidths)
+theorem opened_by_next
+    (rk : WrapStepRun branches w ncStep kw ks n wNext ws slotWidths)
     (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' slotWidths')
-    (hn : n ≤ wNext) (cvk cvk1 : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
-    (A : Accumulator IpaVesta.curve ks) (cp : KimchiProof IpaVesta.curve ncStep' ks)
-    (he : rk.Emits cvk dummy A) (hc : rk1.Consumes cvk1 dummy cp.olds.toList)
-    (hh : rk.Hands rk1) :
+    (hn : n ≤ wNext)
+    (cvk : KimchiVK IpaPallas.curve 1)
+    (cvk1 : KimchiVK IpaPallas.curve 1)
+    (dummy : Vector Fq kw)
+    (A : Accumulator IpaVesta.curve ks)
+    (cp : KimchiProof IpaVesta.curve ncStep' ks) :
+    rk.Emits cvk dummy A →
+    rk1.Consumes cvk1 dummy cp.olds.toList →
+    rk.Hands rk1 →
     A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 hn dummy ∨ rk.StepCollision rk1 cvk1 := by
+  intro he hc hh
   obtain ⟨⟨htk, hWk, hSk⟩, hA⟩ := he
   obtain ⟨⟨htk1, hWk1, -⟩, hcons⟩ := hc
   obtain ⟨hpub, hmask⟩ := hh
@@ -544,12 +551,18 @@ def StepWrapRun.StepCollision (rk : StepWrapRun n w ws ncs kw ks branches ncStep
 link `rk1` consumes the olds of the wrap proof `cp` that `rk`'s wrap circuit made. Then `A` is one
 of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
 the messages passed between the links. -/
-theorem opened_by_next_wrap (rk : StepWrapRun n w ws ncs kw ks branches ncStep slotWidths)
+theorem opened_by_next_wrap
+    (rk : StepWrapRun n w ws ncs kw ks branches ncStep slotWidths)
     (rk1 : StepWrapRun n' w' ws' ncs' kw ks branches' ncStep' slotWidths')
-    (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
-    (A : Accumulator IpaPallas.curve kw) (cp : KimchiProof IpaPallas.curve 1 kw)
-    (he : rk.Emits dummy A) (hc : rk1.Consumes dummy cp.olds.toList) (hh : rk.Hands rk1 cvk) :
+    (cvk : KimchiVK IpaPallas.curve 1)
+    (dummy : Vector Fq kw)
+    (A : Accumulator IpaPallas.curve kw)
+    (cp : KimchiProof IpaPallas.curve 1 kw) :
+    rk.Emits dummy A →
+    rk1.Consumes dummy cp.olds.toList →
+    rk.Hands rk1 cvk →
     A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 dummy ∨ rk.StepCollision rk1 cvk := by
+  intro he hc hh
   obtain ⟨⟨hpub, hSk, hWk⟩, hA⟩ := he
   obtain ⟨⟨hpub1, hS1, hW1⟩, hcons⟩ := hc
   obtain ⟨htie, hw1, hmask⟩ := hh
