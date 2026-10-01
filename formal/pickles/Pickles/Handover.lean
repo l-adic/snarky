@@ -1,4 +1,3 @@
-import Kimchi.Columns
 import Pickles.StepWrap
 import Pickles.WrapStep
 
@@ -53,7 +52,6 @@ section Links
 
 open Snarky Snarky.Kimchi
 open CompElliptic.Fields.Pasta
-open scoped Kimchi
 
 /-! ## Collisions between two links -/
 
@@ -110,6 +108,8 @@ structure WrapStepRun (branches w ncStep kw ks n wNext : ℕ) (ws ss : Fin n →
   wrapVerifyOut : WrapMainVerifyOut w ncStep kw ks
   /-- The step circuit's cells. -/
   stepOut : StepMainOut n wNext ws ss sa 1 ncStep kw ks
+  /-- The rule verifies at most the tag's `wNext` slots. -/
+  hn : n ≤ wNext
   /-- Each slot verifies at most `MaxProofsVerified` accumulators. -/
   hws : ∀ i, ws i ≤ MaxProofsVerified
   /-- The `sg` padding the missing accumulators. -/
@@ -120,8 +120,6 @@ structure WrapStepRun (branches w ncStep kw ks n wNext : ℕ) (ws ss : Fin n →
   hwi : ws i = w
   /-- The slot's mask. -/
   ms : Vector Bool (ws i)
-  /-- The slot's key cells. -/
-  key : VkComms 1 (AffinePoint (FVar Fp))
 
 namespace WrapStepRun
 
@@ -153,8 +151,8 @@ def Emits (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
 def Consumes (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
     (olds : List (Accumulator IpaVesta.curve ks)) : Prop :=
   r.Hashes cvk dummy ∧
-  WrapStep.consumedAccumulators r.Vw r.Vs r.wrapFinalizeOut (r.inp.messagesForNextStepProof r.key)
-    r.hwi r.ms = olds ∧
+  WrapStep.consumedAccumulators r.Vw r.Vs r.wrapFinalizeOut r.inp.prevChallenges r.hwi r.ms
+    = olds ∧
   ∃ k ≤ w, ∀ (j : ℕ) (hj : j < ws r.i), r.ms[j] = decide (w - k ≤ j)
 
 end WrapStepRun
@@ -176,17 +174,17 @@ def WrapStepRun.Hands (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa
   ss' rk1.i = sa
 
 /-- The next link's wrap slot of the slot `rk.i`: the step statement front-pads. -/
-def WrapStepRun.slotIndex (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
-    (hn : n ≤ wNext) : Fin wNext :=
-  ⟨wNext - n + rk.i, by omega⟩
+def WrapStepRun.slotIndex (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths) :
+    Fin wNext :=
+  ⟨wNext - n + rk.i, by have := rk.hn; omega⟩
 
 /-- The wrap message `rk` sends and the one the next link `rk1` rebuilds for it collide
 (`WrapMsgCollision`). -/
 def WrapStepRun.WrapCollision (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
     (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' sa' slotWidths')
-    (hn : n ≤ wNext) (dummy : Vector Fq kw) : Prop :=
+    (dummy : Vector Fq kw) : Prop :=
   WrapMsgCollision rk.Vw rk.wrapVerifyOut rk.wrapFinalizeOut rk1.Vw rk1.wrapFinalizeOut
-    (rk.slotIndex hn) dummy
+    rk.slotIndex dummy
 
 /-- The step message `rk` sends and the one the next link `rk1`'s slot rebuilds collide
 (`StepMsgCollision`). -/
@@ -259,12 +257,6 @@ private theorem keptValues_front {m n k : ℕ} (V : Valuation F) (ms : Vector Bo
   unfold keptValues
   rw [hL, List.flatten_append]
   simp
-
-private theorem mem_applyMask {α : Type} {m : ℕ} (v : Vector α m) (ms : Vector Bool m) (j : ℕ)
-    (hj : j < m) (h : ms[j] = true) : v[j] ∈ v.applyMask ms := by
-  unfold Vector.applyMask
-  refine List.mem_map.mpr ⟨(v[j], ms[j]), List.mem_filter.mpr ⟨?_, by simpa using h⟩, rfl⟩
-  exact List.mem_iff_getElem.mpr ⟨j, by simpa using hj, by simp⟩
 
 end Helpers
 
@@ -408,6 +400,142 @@ private theorem digests_of_ofWrap {k w : ℕ} {Vs : Valuation Fp} {Vw : Valuatio
   simp only [StepStatement.ofWrap, Vector.getElem_map]
   rfl
 
+/-- A wrap message and the next wrap circuit's rebuild of it hash alike. The step circuit between
+them verifies the first wrap circuit's proof in slot `i`, so the digest crosses the slot's
+statement and the step statement, past its padding, into the next wrap circuit's slot `j`. That
+circuit's ladder bounds the cell below `2^254 < p`, so the reduction into the step field loses
+nothing. -/
+private theorem wrapMsgDigest_eq
+    {branches mpv ncStep kw ks : ℕ} {slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv}
+    {branches' w ncStep' ks' : ℕ} {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) w}
+    {n : ℕ} {ws ss : Fin n → ℕ} {sa ncs ksS s k' ncs' w'' : ℕ}
+    {Vw Vw' : Valuation Fq} {Vg : Valuation Fp} {dummy : Vector Fq kw}
+    {stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)}
+    {fin : WrapMainFinalizeOut branches mpv ncStep kw slotWidths}
+    {out : WrapMainVerifyOut mpv ncStep kw ks}
+    {stmt' : StatementPacked ks' (Type1 (FVar Fq)) (FVar Fq)}
+    {fin' : WrapMainFinalizeOut branches' w ncStep' kw slotWidths'}
+    {out' : WrapMainVerifyOut w ncStep' kw ks'}
+    {stepOut : StepMainOut n w ws ss sa 1 ncs kw ksS}
+    {inp : VerifyOneInput s ks k' 1 ncs' w''} {cvk : KimchiVK IpaPallas.curve 1}
+    {ms : Vector Bool w''} (hn : n ≤ w) (i : Fin n) (j : Fin w) (hj : (j : ℕ) = w - n + i)
+    (hW : out.HashesMessages Vw dummy stmt fin)
+    (htie : CircuitType.Reads Vw stmt (inp.packedAt cvk Vg ms))
+    (hmsg : inp.messagesForNextWrapProof = stepOut.msgs[i])
+    (hS : stepOut.HashesMessages Vg)
+    (hpub : CircuitType.Reads Vg stepOut.out (StepStatement.ofWrap Vw' out'.statement))
+    (hW' : out'.HashesMessages Vw' dummy stmt' fin')
+    {sg sg' : AffinePoint Fq} {chals : Vector (Vector Fq kw) mpv}
+    {chals' : Vector (Vector Fq kw) slotWidths'[j]}
+    (hsg : CircuitType.Reads Vw (out.messagesForNextWrapProof fin).challengePolynomialCommitment sg)
+    (hch : CircuitType.Reads Vw (out.messagesForNextWrapProof fin).oldBulletproofChallenges chals)
+    (hsg' : CircuitType.Reads Vw' (fin'.messagesForNextWrapProof j).challengePolynomialCommitment
+      sg')
+    (hch' : CircuitType.Reads Vw' (fin'.messagesForNextWrapProof j).oldBulletproofChallenges
+      chals') :
+    wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chals⟩
+      = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chals'⟩ := by
+  obtain ⟨j, hjw⟩ := j
+  simp only at hj
+  subst hj
+  have h5 : (out'.statement.messagesForNextWrapProof[w - n + i]).val Vw'
+      = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chals'⟩ :=
+    hW'.2.1 ⟨w - n + i, hjw⟩ sg' chals' hsg' hch'
+  -- the step circuit reads the bounded digest exactly
+  have h6 : ZMod.val ((out'.statement.messagesForNextWrapProof[w - n + i]).val Vw') < 2 ^ 254 :=
+    hW'.2.2.2 ⟨w - n + i, hjw⟩
+  rw [← hW.1 sg chals hsg hch, (digests_of_tie htie).1, hmsg, ← hS.2 hn i,
+    (digests_of_ofWrap hpub).2 (w - n + i) (by omega), redFq_toFp_of_lt _ h6, h5]
+
+/-- A step message and a slot's rebuild of it hash alike, when a wrap circuit carries the
+message's digest from the step circuit's statement to the public input the slot verifies. -/
+private theorem hash_stepInput_eq {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ksS : ℕ}
+    {branches ncStep ks : ℕ} {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
+    {s k' ncs' w' : ℕ} {Vg V' : Valuation Fp} {Vw : Valuation Fq} {dummy : Vector Fq kw}
+    {stepOut : StepMainOut n w ws ss sa 1 ncs kw ksS}
+    {stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)}
+    {fin : WrapMainFinalizeOut branches w ncStep kw slotWidths}
+    {out : WrapMainVerifyOut w ncStep kw ks} {inp : VerifyOneInput s ks k' 1 ncs' w'}
+    {cvk : KimchiVK IpaPallas.curve 1} {ms : Vector Bool w'}
+    (hS : stepOut.HashesMessages Vg)
+    (hpub : CircuitType.Reads Vg stepOut.out (StepStatement.ofWrap Vw out.statement))
+    (hW : out.HashesMessages Vw dummy stmt fin)
+    (htie : CircuitType.Reads Vw stmt (inp.packedAt cvk V' ms))
+    {vk : VkComms 1 (AffinePoint Fp)} {sgs : Vector (AffinePoint Fp) n}
+    {chals : Vector (Vector Fp ksS) n}
+    (hvk : CircuitType.Reads Vg stepOut.messagesForNextStepProof.dlogPlonkIndex vk)
+    (hsgs : CircuitType.Reads Vg stepOut.messagesForNextStepProof.challengePolynomialCommitments
+      sgs)
+    (hch : CircuitType.Reads Vg stepOut.messagesForNextStepProof.oldBulletproofChallenges chals) :
+    Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
+        (stepMsgInput ⟨stepOut.messagesForNextStepProof.appState.map (·.val Vg), vk, sgs, chals⟩)
+      = Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
+        (cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y]) ++ inp.appState.toList.map (·.val V')
+          ++ keptValues V' ms (inp.prevSgs.zip inp.prevChallenges)) := by
+  have h4 := (digests_of_tie htie).2
+  rw [hW.2.2.1] at h4
+  have hpubD := (digests_of_ofWrap hpub).1
+  rw [h4, toFp_redFq] at hpubD
+  rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
+  have e := (hS.1 vk sgs chals hvk hsgs hch).symm.trans hpubD
+  simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState] at e
+  simp only [Poseidon.absorb, List.foldl_append] at e ⊢
+  exact e
+
+/-- A step message carrying `n` proofs and a slot's rebuild of it keeping a suffix of `k`, over a
+statement of the message's size, that hash alike: *either* `k = n` and the inputs are equal, *or*
+they collide. -/
+private theorem stepInput_eq_or_collision {n m k ks sa s' : ℕ} {V : Valuation Fp}
+    (cvk : KimchiVK IpaPallas.curve 1) {app : Vector Fp sa} {vk : VkComms 1 (AffinePoint Fp)}
+    {sgs : Vector (AffinePoint Fp) n} {chals : Vector (Vector Fp ks) n}
+    {app' : Vector (FVar Fp) s'} {ms : Vector Bool m} {psgs : Vector (AffinePoint (FVar Fp)) m}
+    {pchals : Vector (Vector (FVar Fp) ks) m} (hs : s' = sa)
+    (hmask : ∀ (j : ℕ) (hj : j < m), ms[j] = decide (m - k ≤ j)) (hkm : k ≤ m)
+    (hh : Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
+        (stepMsgInput ⟨app, vk, sgs, chals⟩)
+      = Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
+        (cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y]) ++ app'.toList.map (·.val V)
+          ++ keptValues V ms (psgs.zip pchals))) :
+    (k = n ∧ stepMsgInput ⟨app, vk, sgs, chals⟩
+        = cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y]) ++ app'.toList.map (·.val V)
+          ++ keptValues V ms (psgs.zip pchals)) ∨
+      Collision IpaPallas.curve.sponge.params (stepMsgInput ⟨app, vk, sgs, chals⟩)
+        (cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y]) ++ app'.toList.map (·.val V)
+          ++ keptValues V ms (psgs.zip pchals)) := by
+  have hl := length_stepInput cvk hs hmask hkm (app := app) (vk := vk) (sgs := sgs)
+    (chals := chals) (V := V) (app' := app') (psgs := psgs) (pchals := pchals)
+  by_cases hkn : k = n
+  · subst hkn
+    by_cases hX : stepMsgInput ⟨app, vk, sgs, chals⟩
+        = cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y]) ++ app'.toList.map (·.val V)
+          ++ keptValues V ms (psgs.zip pchals)
+    · exact Or.inl ⟨rfl, hX⟩
+    · exact Or.inr (Collision.of_length_eq (Nat.add_right_cancel hl) hX hh)
+  · -- keeping other than `n` proofs, the rebuild is two or more cells off
+    exact Or.inr (Collision.of_length_apart
+      (List.append_ne_nil_of_left_ne_nil
+        (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
+      (List.append_ne_nil_of_left_ne_nil
+        (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
+      (length_apart hl hkn) hh)
+
+/-- Two wrap messages' inputs, each with at most `MaxProofsVerified` stacks, that hash alike:
+*either* they are equal, *or* they collide. -/
+private theorem wrapInput_eq_or_collision {k w w' : ℕ} (dummy : Vector Fq k)
+    (hw : w ≤ MaxProofsVerified) (hw' : w' ≤ MaxProofsVerified) {sg sg' : AffinePoint Fq}
+    {chals : Vector (Vector Fq k) w} {chals' : Vector (Vector Fq k) w'}
+    (hh : wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chals⟩
+      = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chals'⟩) :
+    wrapMsgInput dummy ⟨sg, chals⟩ = wrapMsgInput dummy ⟨sg', chals'⟩ ∨
+      Collision IpaVesta.curve.sponge.params (wrapMsgInput dummy ⟨sg, chals⟩)
+        (wrapMsgInput dummy ⟨sg', chals'⟩) := by
+  by_cases hW : wrapMsgInput dummy ⟨sg, chals⟩ = wrapMsgInput dummy ⟨sg', chals'⟩
+  · exact Or.inl hW
+  · refine Or.inr (Collision.of_length_eq
+      (length_wrapMsgInput dummy hw hw' _ _ _ _) hW ?_)
+    rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
+    exact hh
+
 /-- **The next step proof opens each emitted accumulator.** The link `rk` emits `A`, and the next
 link `rk1` consumes the olds of the step proof `cp` that `rk`'s step circuit made. Then `A` is one
 of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
@@ -415,7 +543,6 @@ the messages passed between the links. -/
 theorem opened_by_next_step
     (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
     (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' sa' slotWidths')
-    (hn : n ≤ wNext)
     (cvk : KimchiVK IpaPallas.curve 1)
     (cvk1 : KimchiVK IpaPallas.curve 1)
     (dummy : Vector Fq kw)
@@ -424,12 +551,12 @@ theorem opened_by_next_step
     rk.Emits cvk dummy A →
     rk1.Consumes cvk1 dummy cp.olds.toList →
     rk.Hands rk1 →
-    A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 hn dummy ∨ rk.StepCollision rk1 cvk1 := by
+    A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 dummy ∨ rk.StepCollision rk1 cvk1 := by
   intro he hc hh
+  have hn := rk.hn
   obtain ⟨⟨htk, hWk, hSk⟩, hA⟩ := he
   obtain ⟨⟨htk1, hWk1, -⟩, hcons, k, hkw, hkept⟩ := hc
   obtain ⟨hpub, hss⟩ := hh
-  obtain ⟨hpubD, hpubM⟩ := digests_of_ofWrap hpub
   have hw1 := rk1.hwi
   -- link k1's slot keeps the last `k` of its slots
   have hkm : k ≤ ws' rk1.i := by omega
@@ -447,76 +574,30 @@ theorem opened_by_next_step
     (⟨P.x.val rk.Vs, P.y.val rk.Vs⟩ : AffinePoint Fp)
   let chals := mS.oldBulletproofChallenges.map (·.map (·.val rk.Vs))
   -- link k1's rebuilt wrap message for the slot, read
-  let j := rk.slotIndex hn
+  let j := rk.slotIndex
   let mW' := rk1.wrapFinalizeOut.messagesForNextWrapProof j
   let sg' : AffinePoint Fq :=
     ⟨mW'.challengePolynomialCommitment.x.val rk1.Vw, mW'.challengePolynomialCommitment.y.val rk1.Vw⟩
   let chalsW' := mW'.oldBulletproofChallenges.map (·.map (·.val rk1.Vw))
   -- the wrap digest, from link k's wrap circuit through its step circuit to link k1's wrap circuit
-  have hwrapD : wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chalsW⟩
-      = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩ := by
-    have h1 := hWk.1 sg chalsW (reads_pt _ _) (reads_vecs _ _)
-    have h2 := (digests_of_tie htk).1
-    have h3 := hSk.2 hn rk.i
-    have h4 := hpubM (wNext - n + rk.i) (by omega)
-    have h5 : (rk1.wrapVerifyOut.statement.messagesForNextWrapProof[wNext - n + rk.i]).val rk1.Vw
-        = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩ :=
-      hWk1.2.1 j sg' chalsW' (reads_pt _ _) (reads_vecs _ _)
-    -- the step circuit reads the bounded digest exactly
-    have h6 : ZMod.val
-        ((rk1.wrapVerifyOut.statement.messagesForNextWrapProof[wNext - n + rk.i]).val rk1.Vw)
-        < 2 ^ 254 := hWk1.2.2.2 j
-    rw [← h1, h2]
-    show redFq (rk.stepOut.msgs[rk.i].val rk.Vs) = _
-    rw [← h3, h4, redFq_toFp_of_lt _ h6, h5]
+  have hwrapD := wrapMsgDigest_eq hn rk.i j rfl hWk htk rfl hSk hpub hWk1 (sg := sg) (sg' := sg')
+    (chals := chalsW) (chals' := chalsW') (reads_pt _ _) (reads_vecs _ _) (reads_pt _ _)
+    (reads_vecs _ _)
   -- the step digest, from link k's step circuit through link k1's wrap circuit to its slot
-  have hstepD : Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
-        (stepMsgInput ⟨mS.appState.map (·.val rk.Vs), vk, sgs, chals⟩)
-      = Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
-        (cvk1.comms.indexPoints.flatMap (fun P => [P.x, P.y])
-          ++ rk1.inp.appState.toList.map (·.val rk1.Vs)
-          ++ keptValues rk1.Vs rk1.ms (rk1.inp.prevSgs.zip rk1.inp.prevChallenges)) := by
-    have h1 := hSk.1 vk sgs chals (reads_key _ _) (reads_pts _ _) (reads_vecs _ _)
-    have h3 := hWk1.2.2.1
-    have h4 := (digests_of_tie htk1).2
-    rw [h3] at h4
-    rw [h4, toFp_redFq] at hpubD
-    rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
-    have e := h1.symm.trans hpubD
-    simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState] at e
-    simp only [Poseidon.absorb, List.foldl_append] at e ⊢
-    exact e
-  -- a slot keeping other than `rk`'s `n` proofs rebuilds a step input of another length
-  by_cases hkn : k = n
+  have hstepD := hash_stepInput_eq hSk hpub hWk1 htk1 (vk := vk) (sgs := sgs) (chals := chals)
+    (reads_key _ _) (reads_pts _ _) (reads_vecs _ _)
+  rcases stepInput_eq_or_collision cvk1 hss hmaskk hkm hstepD with ⟨hkn, hX⟩ | hcol
   swap
-  · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
-      Collision.of_length_apart
-        (List.append_ne_nil_of_left_ne_nil
-          (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
-        (List.append_ne_nil_of_left_ne_nil
-          (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
-        (length_apart (length_stepInput cvk1 hss hmaskk hkm) hkn) hstepD⟩)
+  · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _, hcol⟩)
   -- link k1's slot keeps exactly `rk`'s slots
   have hmask : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j) := by
     intro j hj
     rw [hmaskk j hj, hkn]
-  -- distinct step inputs collide
-  by_cases hX : stepMsgInput ⟨mS.appState.map (·.val rk.Vs), vk, sgs, chals⟩
-      = cvk1.comms.indexPoints.flatMap (fun P => [P.x, P.y])
-          ++ rk1.inp.appState.toList.map (·.val rk1.Vs)
-          ++ keptValues rk1.Vs rk1.ms (rk1.inp.prevSgs.zip rk1.inp.prevChallenges)
+  rcases wrapInput_eq_or_collision dummy (rk.hwi ▸ rk.hws rk.i)
+    (Nat.lt_succ_iff.mp (slotWidths'[j]).isLt) hwrapD with hW | hcol
   swap
-  · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
-      Collision.of_length_eq (Nat.add_right_cancel (length_stepInput cvk1 hss hmask (by omega)))
-        hX hstepD⟩)
-  -- distinct wrap inputs collide
-  by_cases hW : wrapMsgInput dummy ⟨sg, chalsW⟩ = wrapMsgInput dummy ⟨sg', chalsW'⟩
-  swap
-  · refine Or.inr (Or.inl ⟨sg, sg', chalsW, chalsW', reads_pt _ _, reads_vecs _ _, reads_pt _ _,
-      reads_vecs _ _, Collision.of_length_eq (length_wrapMsgInput dummy (rk.hwi ▸ rk.hws rk.i)
-        (Nat.lt_succ_iff.mp (slotWidths'[j]).isLt) _ _ _ _) hW ?_⟩)
-    rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
-    exact hwrapD
+  · exact Or.inr (Or.inl ⟨sg, sg', chalsW, chalsW', reads_pt _ _, reads_vecs _ _, reads_pt _ _,
+      reads_vecs _ _, hcol⟩)
   left
   -- the commitment: both wrap inputs end with it
   obtain ⟨-, hsg⟩ := List.append_inj' hW rfl
@@ -527,12 +608,14 @@ theorem opened_by_next_step
   obtain ⟨-, -, hu⟩ := kept_of_stepInput_eq cvk1 hmask hmn hX rk.i
   -- `A` is the kept entry at link k1's slot `j`
   have hb' : m - n + rk.i < m := by omega
-  rw [← hcons, ← hA]
-  convert mem_applyMask _ rk1.ms (m - n + rk.i) hb' (by rw [hmask]; simp; omega) using 1
-  have hj : (⟨m - n + rk.i, by omega⟩ : Fin wNext) = j :=
+  rw [← hcons, ← hA, WrapStep.consumedAccumulators]
+  refine List.mem_map.mpr ⟨⟨m - n + rk.i, hb'⟩, List.mem_filter.mpr ⟨List.mem_finRange _, ?_⟩, ?_⟩
+  · simp only [Fin.getElem_fin, hmask, decide_eq_true_eq]
+    omega
+  symm
+  have hj : Fin.cast rk1.hwi ⟨m - n + rk.i, hb'⟩ = j :=
     Fin.ext (by simp [j, WrapStepRun.slotIndex]; omega)
-  simp only [WrapStep.emittedAccumulator, Accumulator.ofCells, Vector.getElem_zipWith,
-    Vector.getElem_cast, Vector.getElem_finRange, VerifyOneInput.messagesForNextStepProof, hj]
+  simp only [WrapStep.emittedAccumulator, Accumulator.ofCells, Fin.getElem_fin, hj]
   congr 1
   · exact readPt_congr hsg.1 hsg.2
   · rw [hu]
@@ -663,8 +746,6 @@ theorem opened_by_next_wrap
   have hmaskk : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - k ≤ j) := by
     intro j hj
     rw [hkept j hj, hw1]
-  obtain ⟨hpubD, -⟩ := digests_of_ofWrap hpub
-  obtain ⟨-, hpubM1⟩ := digests_of_ofWrap hpub1
   -- link k's outgoing messages, read
   let mW := rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut
   let mS := rk.stepOut.messagesForNextStepProof
@@ -681,71 +762,24 @@ theorem opened_by_next_wrap
     ⟨mW'.challengePolynomialCommitment.x.val rk1.Vs, mW'.challengePolynomialCommitment.y.val rk1.Vs⟩
   let chalsW' := mW'.oldBulletproofChallenges.map (·.map (·.val rk1.Vs))
   -- the wrap digest, from link k's wrap circuit through link k1's step circuit to its wrap circuit
-  have hwrapD : wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chalsW⟩
-      = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩ := by
-    have hn1 := rk1.hn
-    have h1 := hWk.1 sg chalsW (reads_pt _ _) (reads_vecs _ _)
-    have h2 := (digests_of_tie htie).1
-    have h3 := hS1.2 rk1.hn rk1.i
-    have h4 := hpubM1 (w' - n' + rk1.i) (by omega)
-    have h5 : (rk1.wrapVerifyOut.statement.messagesForNextWrapProof[w' - n' + rk1.i]).val rk1.Vs
-        = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg', chalsW'⟩ :=
-      hW1.2.1 rk1.jf sg' chalsW' (reads_pt _ _) (reads_vecs _ _)
-    -- the step circuit reads the bounded digest exactly
-    have h6 : ZMod.val
-        ((rk1.wrapVerifyOut.statement.messagesForNextWrapProof[w' - n' + rk1.i]).val rk1.Vs)
-        < 2 ^ 254 := hW1.2.2.2 rk1.jf
-    rw [← h1, h2]
-    show redFq (rk1.stepOut.msgs[rk1.i].val rk1.Vg) = _
-    rw [← h3, h4, redFq_toFp_of_lt _ h6, h5]
+  have hwrapD := wrapMsgDigest_eq rk1.hn rk1.i rk1.jf rfl hWk htie rfl hS1 hpub1 hW1 (sg := sg)
+    (sg' := sg') (chals := chalsW) (chals' := chalsW') (reads_pt _ _) (reads_vecs _ _)
+    (reads_pt _ _) (reads_vecs _ _)
   -- the step digest, from link k's step circuit through its wrap circuit to link k1's slot
-  have hstepD : Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
-        (stepMsgInput ⟨mS.appState.map (·.val rk.Vg), vk, sgs, chals⟩)
-      = Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params
-        (cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y])
-          ++ rk1.inp.appState.toList.map (·.val rk1.Vg)
-          ++ keptValues rk1.Vg rk1.ms (rk1.inp.prevSgs.zip rk1.inp.prevChallenges)) := by
-    have h1 := hSk.1 vk sgs chals (reads_key _ _) (reads_pts _ _) (reads_vecs _ _)
-    have h3 := hWk.2.2.1
-    have h4 := (digests_of_tie htie).2
-    rw [h3] at h4
-    rw [h4, toFp_redFq] at hpubD
-    rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
-    have e := h1.symm.trans hpubD
-    simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState] at e
-    simp only [Poseidon.absorb, List.foldl_append] at e ⊢
-    exact e
-  -- a slot keeping other than `rk`'s `n` proofs rebuilds a step input of another length
-  by_cases hkn : k = n
+  have hstepD := hash_stepInput_eq hSk hpub hWk htie (vk := vk) (sgs := sgs) (chals := chals)
+    (reads_key _ _) (reads_pts _ _) (reads_vecs _ _)
+  rcases stepInput_eq_or_collision cvk hss hmaskk hkm hstepD with ⟨hkn, hX⟩ | hcol
   swap
-  · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
-      Collision.of_length_apart
-        (List.append_ne_nil_of_left_ne_nil
-          (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
-        (List.append_ne_nil_of_left_ne_nil
-          (List.append_ne_nil_of_left_ne_nil (indexCoords_ne_nil _ _ _) _) _)
-        (length_apart (length_stepInput cvk hss hmaskk hkm) hkn) hstepD⟩)
+  · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _, hcol⟩)
   -- the slot keeps exactly `rk`'s slots
   have hmask : ∀ (j : ℕ) (hj : j < ws' rk1.i), rk1.ms[j] = decide (ws' rk1.i - n ≤ j) := by
     intro j hj
     rw [hmaskk j hj, hkn]
-  -- distinct step inputs collide
-  by_cases hX : stepMsgInput ⟨mS.appState.map (·.val rk.Vg), vk, sgs, chals⟩
-      = cvk.comms.indexPoints.flatMap (fun P => [P.x, P.y])
-          ++ rk1.inp.appState.toList.map (·.val rk1.Vg)
-          ++ keptValues rk1.Vg rk1.ms (rk1.inp.prevSgs.zip rk1.inp.prevChallenges)
+  rcases wrapInput_eq_or_collision dummy rk.hw (Nat.lt_succ_iff.mp (slotWidths'[rk1.jf]).isLt)
+    hwrapD with hW | hcol
   swap
-  · exact Or.inr (Or.inr ⟨vk, sgs, chals, reads_key _ _, reads_pts _ _, reads_vecs _ _,
-      Collision.of_length_eq (Nat.add_right_cancel (length_stepInput cvk hss hmask (by omega)))
-        hX hstepD⟩)
-  -- distinct wrap inputs collide
-  by_cases hW : wrapMsgInput dummy ⟨sg, chalsW⟩ = wrapMsgInput dummy ⟨sg', chalsW'⟩
-  swap
-  · refine Or.inr (Or.inl ⟨sg, sg', chalsW, chalsW', reads_pt _ _, reads_vecs _ _, reads_pt _ _,
-      reads_vecs _ _, Collision.of_length_eq (length_wrapMsgInput dummy rk.hw
-        (Nat.lt_succ_iff.mp (slotWidths'[rk1.jf]).isLt) _ _ _ _) hW ?_⟩)
-    rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
-    exact hwrapD
+  · exact Or.inr (Or.inl ⟨sg, sg', chalsW, chalsW', reads_pt _ _, reads_vecs _ _, reads_pt _ _,
+      reads_vecs _ _, hcol⟩)
   left
   set m := ws' rk1.i with hm
   have hmn : n ≤ m := hw1 ▸ rk.hn

@@ -592,16 +592,8 @@ theorem stepWrap_kimchiVerify
     slotWidths advW
     (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hw hbr
   obtain ⟨b', hb', hwb, -, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp hreads _ hbody
-  have hhash := (builder_spec_iff _ _).mp
-    (wrapMain_hashesMessages Vs (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens)
-      widths (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
-      (srsLagrangeTable σStep ncStep
-        (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w))) σStep.h dummy
-      slotWidths advW
-      (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
-      (stepKeys[0]'(Nat.pos_of_neZero branches)).nc_pos) _ hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
-  obtain ⟨hsplitsEq, hsr, hbnd, hslots⟩ := (builder_spec_iff _ _).mp
+  obtain ⟨hsplitsEq, hsr, hbnd, hslots, hhash⟩ := (builder_spec_iff _ _).mp
     (wrapMain_statement (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens) Vs widths
       (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
       (srsLagrangeTable σStep ncStep
@@ -612,10 +604,6 @@ theorem stepWrap_kimchiVerify
       hbody
   have hout := (builder_spec_iff _ _).mp
     (stepMain_out (outVal := outVal) srcs hws S.σ.h P domains (constPt dummySg) dummyUnf rule adv) 0
-    (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
-  have hhashG := (builder_spec_iff _ _).mp
-    (stepMain_hashesMessages (outVal := outVal) srcs hws S.σ.h P domains (constPt dummySg)
-      dummyUnf rule adv) 0
     (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
   -- slot `i` is entry `(w − n) + i` on both sides of the tie
   have hjv : jf.val = w - n + i := rfl
@@ -651,9 +639,9 @@ theorem stepWrap_kimchiVerify
   subst hbb
   obtain ⟨hE, hK⟩ := hfin K j hdom _ hpin (reads_true_of_tie hsf hsfG) cp _ Vg inp.unfinalized v
     hv hv1 hc hf
-  refine ⟨cp, ms, hwire, hf, ?_, ?_, hhashG, hhash, hK⟩
+  refine ⟨cp, ms, hwire, hf, ?_, ?_, hout.2.2, hhash, hK⟩
   · have hsgs : stepOut.messagesForNextStepProof.challengePolynomialCommitments
-        = Vector.ofFn fun i => (stepOut.slots i).sg.pt := hout.2
+        = Vector.ofFn fun i => (stepOut.slots i).sg.pt := hout.2.1
     simp only [StepWrap.emittedAccumulator, Accumulator.ofCells, Fin.getElem_fin,
       Vector.getElem_map, hsgs, Vector.getElem_ofFn] at hE ⊢
     rw [hE]

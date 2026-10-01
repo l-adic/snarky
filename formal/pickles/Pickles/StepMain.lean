@@ -308,7 +308,8 @@ open Std.Do
 variable {V : Valuation Fp}
 
 /-- The step statement's unfinalized entries are the circuit's, front-padded to `w` with the
-constant `dummyUnf`, and the step message's commitments are the slots' `sg` cells. -/
+constant `dummyUnf`, the step message's commitments are the slots' `sg` cells, and the circuit
+hashes its messages (`HashesMessages`). -/
 theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
     {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
@@ -326,33 +327,8 @@ theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType 
       then CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf
       else r.unfs[j.val - (w - n)]'(by omega)) ∧
       r.messagesForNextStepProof.challengePolynomialCommitments
-        = Vector.ofFn fun i => (r.slots i).sg.pt⌝⦄ := by
-  have hrule := fun x => builder_spec_true (rule x)
-  have hmap := fun (f : Fin n → CircuitM Fp (Builder V (KimchiConstraint Fp))
-      (FopOutput Fp ks × BoolVar Fp)) => builder_spec_true ((Vector.finRange n).mapM f)
-  have hall := fun bs => builder_spec_true
-    (assertAll (c := Builder V (KimchiConstraint Fp)) bs)
-  have hhash := fun (p : Poseidon.Params Fp) m =>
-    builder_spec_true (hashMessagesForNextStepProof (c := Builder V (KimchiConstraint Fp))
-      (nc := ncw) (n := n) (k := ks)
-      (s := CircuitType.size Fp inVal + CircuitType.size Fp outVal) p m)
-  simp only [stepMain]
-  mvcgen [hrule, hmap, hall, hhash, -Snarky.assertAll_spec]
-
-/-- The step circuit hashes its messages (`HashesMessages`). -/
-theorem stepMain_hashesMessages {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
-    [CircuitType Fp inVal inVar] {outVal outVar : Type} [CircuitType Fp outVal outVar]
-    {ss : Fin n → ℕ} [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
-    (srcs : Fin n → SlotSource ncw ks)
-    (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
-    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
-    (dummyUnf : UnfVal k)
-    (rule : inVar →
-      CircuitM Fp (Builder V (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) × outVar))
-    (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
-    ⦃⌜True⌝⦄
-    stepMain (outVal := outVal) srcs hws h P domains dummySg dummyUnf rule adv
-    ⦃⇓ r _ => ⌜r.HashesMessages V⌝⦄ := by
+        = (Vector.ofFn fun i => (r.slots i).sg.pt) ∧
+      r.HashesMessages V⌝⦄ := by
   have hrule := fun x => builder_spec_true (rule x)
   have hmap := fun (f : Fin n → CircuitM Fp (Builder V (KimchiConstraint Fp))
       (FopOutput Fp ks × BoolVar Fp)) => builder_spec_true ((Vector.finRange n).mapM f)
@@ -364,7 +340,7 @@ theorem stepMain_hashesMessages {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
   simp only [stepMain]
   mvcgen [hrule, hmap, hall, hhash, -Snarky.assertAll_spec]
   rename_i hdigest
-  refine ⟨hdigest, fun hn i => ?_⟩
+  refine ⟨trivial, trivial, hdigest, fun hn i => ?_⟩
   -- slot `i` sits past the `w − n` padding entries
   simp only [Vector.getElem_ofFn, show ¬(w - n + i < w - n) by omega, dite_false,
     show w - n + i - (w - n) = i by omega, Fin.getElem_fin]

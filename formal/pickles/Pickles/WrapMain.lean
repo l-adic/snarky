@@ -1039,8 +1039,9 @@ theorem wrapMainFinalize_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
   exact ⟨b, hb, hwb, hbits, hmask, hck' ⟨b, hb⟩ hbits, hbd,
     fun K j hdom => hfin' (⟨b, hb⟩, j, K) hbits hdom⟩
 /-- The step statement the verify half packs, for any branch, table and key: its slots are the
-split claims, each split reading as the allocated claims it splits, and the public-input
-ladders bound every packed scalar (`PackedScalar.Bound`). -/
+split claims, each split reading as the allocated claims it splits, the public-input ladders
+bound every packed scalar (`PackedScalar.Bound`), and the half hashes its messages
+(`HashesMessages`). -/
 theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} [NeZero branches]
     (Vs : Valuation Fq)
     (log2s : Vector ℕ branches) (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
@@ -1056,14 +1057,20 @@ theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} [NeZero branch
     ⦃⇓ out _ => ⌜out.statement.proofState.unfinalizedProofs = out.splits ∧
       (∀ i : Fin mpv,
         SplitClaimsRead Vs fin.proofState.unfinalizedProofs[i].toUnfinalized out.splits[i]) ∧
-      ∀ x ∈ out.statement.packed.toList, x.Bound Vs⌝⦄ := by
+      (∀ x ∈ out.statement.packed.toList, x.Bound Vs) ∧
+      out.HashesMessages Vs dummy stmt fin⌝⦄ := by
+  have hsp := IpaVesta.curve.sponge.hsize
   have hmsg := builder_spec_vector_mapM_get (fun j : Fin mpv =>
       hashMessagesForNextWrapProof (c := Builder Vs (KimchiConstraint Fq))
         IpaVesta.curve.sponge.params
         (wrapPaddingSponge IpaVesta.curve.sponge.params dummy
           (MaxProofsVerified - slotWidths[j]))
         (fin.messagesForNextWrapProof j))
-    (fun _ _ => True) (fun _ => builder_spec_true _) (Vector.finRange mpv).reverse
+    (fun (j : Fin mpv) d => ∀ (sgv : AffinePoint Fq) (cv : Vector (Vector Fq k) slotWidths[j]),
+      CircuitType.Reads Vs fin.stepAccs[j].pt sgv → CircuitType.Reads Vs (fin.real j) cv →
+        d.val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sgv, cv⟩)
+    (fun j => hashMessagesForNextWrapProof_padded (V := Vs) _ hsp dummy (fin.real j)
+      fin.stepAccs[j].pt) (Vector.finRange mpv).reverse
   have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
       (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
     (fun a r => SplitClaimsRead Vs a.toUnfinalized r)
@@ -1074,23 +1081,52 @@ theorem wrapMainVerify_statement {branches mpv ncStep k ks : ℕ} [NeZero branch
   have hwv := fun (sv : SpongeVar Fq) (st : StepStatement (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
       (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) mpv)
       (cells : IvpInput ks ncStep mpv (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) =>
-    wrapVerify_frame (V := Vs) IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
-      (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h) sv
-      (publicInputCommitMasked (C := IpaVesta.curve)
-        (log2s.toList.all (· == log2s[(0 : Fin branches)])) (constPt h) fin.bits st.packed
-        (log2s.map lagrange))
-      (wrapPaddingSponge IpaVesta.curve.sponge.params dummy (MaxProofsVerified - mpv))
-      (fin.outs.map (·.expandedChallenges)) stmt.digests[1] stmt.claims cells
-      (∀ x ∈ st.packed.toList, x.Bound Vs)
-      (by
-        have hb : ⦃⌜True⌝⦄ publicInputCommitMasked (S := Builder Vs (KimchiConstraint Fq))
-            (C := IpaVesta.curve) (log2s.toList.all (· == log2s[(0 : Fin branches)]))
-            (constPt h) fin.bits st.packed (log2s.map lagrange)
-            ⦃⇓ _ _ => ⌜∀ x ∈ st.packed.toList, x.Bound Vs⌝⦄ :=
-          publicInputCommitMasked_bound hnc _ _ _ _ _
-        mvcgen -trivial [hb])
+    -- the emitted digest, and the public-input ladders' bounds on the step statement
+    builder_spec_and _ _ _
+      (wrapVerify_msgDigest (V := Vs) IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
+        hsp (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h)
+        sv
+        (publicInputCommitMasked (C := IpaVesta.curve)
+          (log2s.toList.all (· == log2s[(0 : Fin branches)])) (constPt h) fin.bits st.packed
+          (log2s.map lagrange))
+        dummy (fin.outs.map (·.expandedChallenges)) stmt.digests[1] stmt.claims cells)
+      (wrapVerify_frame (V := Vs) IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
+        (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h) sv
+        (publicInputCommitMasked (C := IpaVesta.curve)
+          (log2s.toList.all (· == log2s[(0 : Fin branches)])) (constPt h) fin.bits st.packed
+          (log2s.map lagrange))
+        (wrapPaddingSponge IpaVesta.curve.sponge.params dummy (MaxProofsVerified - mpv))
+        (fin.outs.map (·.expandedChallenges)) stmt.digests[1] stmt.claims cells
+        (∀ x ∈ st.packed.toList, x.Bound Vs)
+        (by
+          have hb : ⦃⌜True⌝⦄ publicInputCommitMasked (S := Builder Vs (KimchiConstraint Fq))
+              (C := IpaVesta.curve) (log2s.toList.all (· == log2s[(0 : Fin branches)]))
+              (constPt h) fin.bits st.packed (log2s.map lagrange)
+              ⦃⇓ _ _ => ⌜∀ x ∈ st.packed.toList, x.Bound Vs⌝⦄ :=
+            publicInputCommitMasked_bound hnc _ _ _ _ _
+          mvcgen -trivial [hb]))
   simp only [wrapMainVerify]
   mvcgen [hmsg, hsplit, hsai, hwv]
+  rename_i rev _ hrev _ _ h12 _ _ _ _ _ _ _ _ _ _ _ _ _ hver
+  refine ⟨by first | trivial | rfl, by first | trivial | assumption, hver.2, ?_⟩
+  unfold WrapMainVerifyOut.HashesMessages
+  refine ⟨fun sg chals hsg hch => hver.1 sg chals hsg hch, ?_, h12, fun j => ?_⟩
+  swap
+  -- each slot's digest is a `full` scalar of the statement, bounded by its ladder
+  · refine PackedScalar.val_lt_of_bound (k := .full _) (hver.2 _ ?_)
+    simp only [StepStatement.packed, Vector.toList_mk, List.mem_append, List.mem_map]
+    exact Or.inr ⟨_, Vector.mem_toList_iff.mpr (Vector.getElem_mem _), rfl⟩
+  -- each slot's digest, from the right-to-left run
+  intro i sg chals hsg hch
+  have hi := hrev ⟨mpv - 1 - i, by omega⟩
+  generalize hj : (Vector.finRange mpv).reverse[(⟨mpv - 1 - i, by omega⟩ : Fin mpv)] = j at hi
+  obtain rfl : i = j := by
+    subst hj
+    ext
+    simp only [Fin.getElem_fin, Vector.getElem_reverse, Vector.getElem_finRange]
+    omega
+  rw [Fin.getElem_fin, Vector.getElem_reverse]
+  exact hi sg chals hsg hch
 
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- A checked point's post is Vesta's curve equation. -/
@@ -1332,110 +1368,6 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
       rfl
     · exact hmpv
 
-/-- The wrap circuit's verify half hashes its messages (`HashesMessages`). -/
-theorem wrapMainVerify_hashesMessages {branches mpv ncStep k ks : ℕ} [NeZero branches]
-    (Vs : Valuation Fq)
-    (log2s : Vector ℕ branches) (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))
-    (h : IpaVesta.curve.Point) (dummy : Vector Fq k)
-    (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
-    (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
-    (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
-    (fin : WrapMainFinalizeOut branches mpv ncStep k slotWidths) (hnc : 0 < ncStep) :
-    ⦃⌜True⌝⦄
-    wrapMainVerify (c := Builder Vs (KimchiConstraint Fq)) log2s lagrange h dummy slotWidths adv
-      stmt fin
-    ⦃⇓ out _ => ⌜out.HashesMessages Vs dummy stmt fin⌝⦄ := by
-  have hsp := IpaVesta.curve.sponge.hsize
-  have hmsg := builder_spec_vector_mapM_get (fun j : Fin mpv =>
-      hashMessagesForNextWrapProof (c := Builder Vs (KimchiConstraint Fq))
-        IpaVesta.curve.sponge.params
-        (wrapPaddingSponge IpaVesta.curve.sponge.params dummy
-          (MaxProofsVerified - slotWidths[j]))
-        (fin.messagesForNextWrapProof j))
-    (fun (j : Fin mpv) d => ∀ (sgv : AffinePoint Fq) (cv : Vector (Vector Fq k) slotWidths[j]),
-      CircuitType.Reads Vs fin.stepAccs[j].pt sgv → CircuitType.Reads Vs (fin.real j) cv →
-        d.val Vs = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sgv, cv⟩)
-    (fun j => hashMessagesForNextWrapProof_padded (V := Vs) _ hsp dummy (fin.real j)
-      fin.stepAccs[j].pt) (Vector.finRange mpv).reverse
-  have hsplit := builder_spec_vector_mapM_get (fun a : AllocUnfinalized k (FVar Fq) (BoolVar Fq)
-      (Type2 (FVar Fq)) => splitUnfinalized (c := Builder Vs (KimchiConstraint Fq)) a.toUnfinalized)
-    (fun _ _ => True) (fun _ => builder_spec_true _) fin.proofState.unfinalizedProofs
-  have hsai := builder_spec_true
-    (spongeAfterIndex (c := Builder Vs (KimchiConstraint Fq)) IpaVesta.curve.sponge.params
-      fin.key)
-  have hwv := fun (sv : SpongeVar Fq) (st : StepStatement (UnfinalizedProof k (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) mpv)
-      (cells : IvpInput ks ncStep mpv (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) =>
-    -- the emitted digest, and the public-input ladders' bounds on the step statement
-    builder_spec_and _ _ _
-      (wrapVerify_msgDigest (V := Vs) IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
-        hsp (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h)
-        sv
-        (publicInputCommitMasked (C := IpaVesta.curve)
-          (log2s.toList.all (· == log2s[(0 : Fin branches)])) (constPt h) fin.bits st.packed
-          (log2s.map lagrange))
-        dummy (fin.outs.map (·.expandedChallenges)) stmt.digests[1] stmt.claims cells)
-      (wrapVerify_frame (V := Vs) IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
-        (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt h) sv
-        (publicInputCommitMasked (C := IpaVesta.curve)
-          (log2s.toList.all (· == log2s[(0 : Fin branches)])) (constPt h) fin.bits st.packed
-          (log2s.map lagrange))
-        (wrapPaddingSponge IpaVesta.curve.sponge.params dummy (MaxProofsVerified - mpv))
-        (fin.outs.map (·.expandedChallenges)) stmt.digests[1] stmt.claims cells
-        (∀ x ∈ st.packed.toList, x.Bound Vs)
-        (by
-          have hb : ⦃⌜True⌝⦄ publicInputCommitMasked (S := Builder Vs (KimchiConstraint Fq))
-              (C := IpaVesta.curve) (log2s.toList.all (· == log2s[(0 : Fin branches)]))
-              (constPt h) fin.bits st.packed (log2s.map lagrange)
-              ⦃⇓ _ _ => ⌜∀ x ∈ st.packed.toList, x.Bound Vs⌝⦄ :=
-            publicInputCommitMasked_bound hnc _ _ _ _ _
-          mvcgen -trivial [hb]))
-  simp only [wrapMainVerify]
-  mvcgen [hmsg, hsplit, hsai, hwv]
-  rename_i rev _ hrev _ _ h12 _ _ _ _ _ _ _ _ _ _ _ _ _ hver
-  unfold WrapMainVerifyOut.HashesMessages
-  refine ⟨fun sg chals hsg hch => hver.1 sg chals hsg hch, ?_, h12, fun j => ?_⟩
-  swap
-  -- each slot's digest is a `full` scalar of the statement, bounded by its ladder
-  · refine PackedScalar.val_lt_of_bound (k := .full _) (hver.2 _ ?_)
-    simp only [StepStatement.packed, Vector.toList_mk, List.mem_append, List.mem_map]
-    exact Or.inr ⟨_, Vector.mem_toList_iff.mpr (Vector.getElem_mem _), rfl⟩
-  -- each slot's digest, from the right-to-left run
-  intro i sg chals hsg hch
-  have hi := hrev ⟨mpv - 1 - i, by omega⟩
-  generalize hj : (Vector.finRange mpv).reverse[(⟨mpv - 1 - i, by omega⟩ : Fin mpv)] = j at hi
-  obtain rfl : i = j := by
-    subst hj
-    ext
-    simp only [Fin.getElem_fin, Vector.getElem_reverse, Vector.getElem_finRange]
-    omega
-  rw [Fin.getElem_fin, Vector.getElem_reverse]
-  exact hi sg chals hsg hch
-
-/-- The wrap circuit hashes its messages (`HashesMessages`), over the whole circuit. -/
-theorem wrapMain_hashesMessages {branches mpv ncStep k ks : ℕ} [NeZero branches]
-    (Vs : Valuation Fq) (P : FopParams Fq)
-    (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
-    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
-    (pins : Vector (Vector (Option ℕ) branches) mpv)
-    (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))
-    (h : IpaVesta.curve.Point) (dummy : Vector Fq k)
-    (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
-    (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
-    (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) (hnc : 0 < ncStep) :
-    ⦃⌜True⌝⦄
-    wrapMain (c := Builder Vs (KimchiConstraint Fq)) P widths log2s stepKeys pins lagrange h dummy
-      slotWidths adv stmt
-    ⦃⇓ r _ => ⌜r.2.HashesMessages Vs dummy stmt r.1⌝⦄ := by
-  have hf := builder_spec_true (wrapMainFinalize (c := Builder Vs (KimchiConstraint Fq)) P widths
-    log2s stepKeys pins dummy slotWidths adv stmt.branchData)
-  have hv := fun fin => wrapMainVerify_hashesMessages Vs log2s lagrange h dummy slotWidths adv
-    stmt fin hnc
-  simp only [wrapMain]
-  mvcgen [hf, hv]
-
 /-- **The wrap circuit's finalize read**, over the whole circuit: `wrapMainFinalize_reads` at the
 statement's branch data. -/
 theorem wrapMain_reads {branches mpv ncStep ks : ℕ} [NeZero branches]
@@ -1534,8 +1466,8 @@ theorem wrapMainFinalize_accs {branches mpv ncStep k ks : ℕ} [NeZero branches]
 
 /-- The step statement the wrap circuit verifies at, for any branch, table and key: its slots
 are the split claims, each reading as the allocated claims each finalize slot finalizes over its
-padded challenge stacks, and the public-input ladders bound every packed scalar
-(`wrapMainVerify_statement`). -/
+padded challenge stacks, the public-input ladders bound every packed scalar, and the circuit
+hashes its messages (`wrapMainVerify_statement`). -/
 theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
     (Vs : Valuation Fq) (widths : Vector (Fin (mpv + 1)) branches)
     (log2s : Vector ℕ branches)
@@ -1553,10 +1485,11 @@ theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P
       (∀ i : Fin mpv,
         SplitClaimsRead Vs r.1.proofState.unfinalizedProofs[i].toUnfinalized r.2.splits[i]) ∧
       (∀ x ∈ r.2.statement.packed.toList, x.Bound Vs) ∧
-      ∀ j : Fin mpv,
+      (∀ j : Fin mpv,
         r.1.slots[j].unfinalized = r.1.proofState.unfinalizedProofs[j].toUnfinalized ∧
         r.1.slots[j].prevChallenges
-          = padChallenges dummy (r.1.real j) (Nat.lt_succ_iff.mp slotWidths[j].isLt)⌝⦄ := by
+          = padChallenges dummy (r.1.real j) (Nat.lt_succ_iff.mp slotWidths[j].isLt)) ∧
+      r.2.HashesMessages Vs dummy stmt r.1⌝⦄ := by
   simp only [wrapMain]
   have hf := wrapMainFinalize_slots Vs P widths log2s stepKeys pins dummy slotWidths adv
     stmt.branchData
@@ -1564,7 +1497,7 @@ theorem wrapMain_statement {branches mpv ncStep k ks : ℕ} [NeZero branches] (P
     hnc
   mvcgen [hf, hv]
   rename_i _ _ hsl _ _ hst
-  exact ⟨hst.1, hst.2.1, hst.2.2, hsl⟩
+  exact ⟨hst.1, hst.2.1, hst.2.2.1, hsl, hst.2.2.2⟩
 
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- The wrap circuit's step proof cells (`wrapMainVerify_cells`), its accumulators on the curve

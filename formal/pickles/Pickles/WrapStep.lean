@@ -139,18 +139,16 @@ def WrapStep.emittedAccumulator {branches mpv ncStep kw ks n wNext sa ncw ncs k 
     (verifyOut.messagesForNextWrapProof finalizeOut).challengePolynomialCommitment
     stepOut.messagesForNextStepProof.oldBulletproofChallenges[i]
 
-/-- The accumulators a wrap circuit and the next step circuit consume: each slot's rebuilt wrap
-message's commitment, with the rebuilt step message's challenges, kept by the slot's mask. -/
-def WrapStep.consumedAccumulators {branches w ncStep kw ks n s ncw : ℕ}
+/-- The accumulators a wrap circuit and the next step circuit consume: each slot the mask keeps,
+its rebuilt wrap message's commitment with the slot's challenges `chals`. -/
+def WrapStep.consumedAccumulators {branches w ncStep kw ks n : ℕ}
     {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
     (Vw : Valuation Fq) (Vs : Valuation Fp)
     (finalizeOut : WrapMainFinalizeOut branches w ncStep kw slotWidths)
-    (stepMsg : MessagesForNextStepProof (VkComms ncw (AffinePoint (FVar Fp))) (Vector (FVar Fp) s)
-      (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n))
-    (hn : n = w) (ms : Vector Bool n) : List (Accumulator IpaVesta.curve ks) :=
-  (Vector.zipWith (fun j u => Accumulator.ofCells Vw Vs
-      (finalizeOut.messagesForNextWrapProof j).challengePolynomialCommitment u)
-    ((Vector.finRange w).cast hn.symm) stepMsg.oldBulletproofChallenges).applyMask ms
+    (chals : Vector (Vector (FVar Fp) ks) n) (hn : n = w) (ms : Vector Bool n) :
+    List (Accumulator IpaVesta.curve ks) :=
+  ((List.finRange n).filter (ms[·])).map fun j => Accumulator.ofCells Vw Vs
+    (finalizeOut.messagesForNextWrapProof (j.cast hn)).challengePolynomialCommitment chals[j]
 
 /-- `wrapStep_kimchiVerify` for one slot of the next step circuit, from its readings, over the
 wrap circuit's constants as given, tied to the step key `KStep` over the step SRS `SStep` by
@@ -217,7 +215,7 @@ private theorem wrapStep_kimchiVerify_core
     -- exponent and a mask
     ∀ (dummySg : AffinePoint (FVar Fp)) (prev : PrevStatement sp)
       (s : SlotVar w 1 ncStep σ.k SStep.σ.k) (u : UnfVar σ.k) (msg : FVar Fp)
-      (vk : VkComms 1 (AffinePoint (FVar Fp))) (expanded : Vector (FVar Fp) SStep.σ.k),
+      (expanded : Vector (FVar Fp) SStep.σ.k),
     let inp := slotInput hw dummySg prev s u msg
     inp.ScalarReads SStep.σ KStep.cvk Vs expanded →
     ∀ (n0 : ℕ) (ms0 : Vector Bool MaxProofsVerified), n0 < 2 ^ 16 →
@@ -248,7 +246,7 @@ private theorem wrapStep_kimchiVerify_core
             expanded
           = ⟨cp.opening.sg, wireChallenges SStep.σ KStep.cvk cp pub⟩ ∧
         -- the link consumes `cp`'s old accumulators
-        WrapStep.consumedAccumulators Vw Vs wrapFinalizeOut (inp.messagesForNextStepProof vk) rfl ms
+        WrapStep.consumedAccumulators Vw Vs wrapFinalizeOut inp.prevChallenges rfl ms
           = cp.olds.toList ∧
         -- the slot's mask keeps exactly the last `widths[b]` slots
         (∀ (j : ℕ) (hj : j < w), ms[j] = decide (w - (widths[b] : ℕ) ≤ j)) ∧
@@ -260,7 +258,7 @@ private theorem wrapStep_kimchiVerify_core
           kimchiVerify IpaVesta.curve SStep.σ KStep.cvk cp pub = true) := by
   intro wrap hwrap
   rw [show wrap.result.1.2 = _ from compileWith_wrapMainCircuit_cells _ _ _ _ _ _ _ _ _ _]
-  intro stmt wrapFinalizeOut wrapVerifyOut hb dummySg prev s u msg vk expanded inp hscal n0 ms0
+  intro stmt wrapFinalizeOut wrapVerifyOut hb dummySg prev s u msg expanded inp hscal n0 ms0
       hn0 hdv hmsR ms hms htie
   -- the wrap side: the body's constraints hold, so its reads do
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
@@ -284,9 +282,9 @@ private theorem wrapStep_kimchiVerify_core
   obtain ⟨hacc, pr, hcells, hon⟩ := (builder_spec_iff _ _).mp
     (wrapMain_cells (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens) Vw widths log2s
       stepKeys pins lagrange h dummy slotWidths advW stmt) _ hbody
-  have hhash := (builder_spec_iff _ _).mp
-    (wrapMain_hashesMessages Vw (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens) widths
-      log2s stepKeys pins lagrange h dummy slotWidths advW stmt KStep.cvk.nc_pos) _ hbody
+  have hhash := ((builder_spec_iff _ _).mp
+    (wrapMain_statement (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens) Vw widths
+      log2s stepKeys pins lagrange h dummy slotWidths advW stmt KStep.cvk.nc_pos) _ hbody).2.2.2.2
   -- cell `29` carries the branch data across the tie: `4·n₀ + ms₀[0] + 2·ms₀[1]` on the step
   -- side, `4·log2s[b] + Σᵢ 2^(1−i)·[i < widths[b]]` on the wrap side
   have hcell : stmt.branchData.val Vw
@@ -378,11 +376,9 @@ private theorem wrapStep_kimchiVerify_core
   have hsg : readPt (C := IpaVesta.curve) Vw wrapVerifyOut.cells.opening.sg = cp.opening.sg := by
     rw [hcells']
     rfl
-  have hcons : WrapStep.consumedAccumulators Vw Vs wrapFinalizeOut (inp.messagesForNextStepProof vk)
-      rfl ms = cp.olds.toList := by
-    simp only [WrapStep.consumedAccumulators, Vector.cast_rfl]
-    rw [applyMask_zipWith_finRange]
-    simp [cp, IvpProof.read, P, U, Accumulator.ofCells, VerifyOneInput.messagesForNextStepProof]
+  have hcons : WrapStep.consumedAccumulators Vw Vs wrapFinalizeOut inp.prevChallenges rfl ms
+      = cp.olds.toList := by
+    simp [WrapStep.consumedAccumulators, cp, IvpProof.read, P, U, Accumulator.ofCells]
   clear_value oldsW cp U P
   obtain ⟨hE, hK⟩ := hscal hdom cp (wrapPublicInput SStep.σ KStep.cvk Vw wrapVerifyOut.statement) Vw
     stmt.claims v hv hv1 hcc hf
@@ -539,8 +535,7 @@ theorem wrapStep_kimchiVerify
           WrapStep.emittedAccumulator Vw Vs i wrapVerifyOut wrapFinalizeOut stepOut
             = ⟨cp.opening.sg, wireChallenges SStep.σ stepKeys[b] cp pub⟩ ∧
           -- the link consumes `cp`'s old accumulators, as its incoming messages were rebuilt
-          WrapStep.consumedAccumulators Vw Vs wrapFinalizeOut
-              (inp.messagesForNextStepProof ((srcs i).keyCells stepOut.vk.points)) hwi ms
+          WrapStep.consumedAccumulators Vw Vs wrapFinalizeOut inp.prevChallenges hwi ms
             = cp.olds.toList ∧
           -- the slot's mask keeps exactly the last `widths[b]` slots
           (∀ (j : ℕ) (hj : j < SlotSource.widths wNext srcs i),
@@ -587,11 +582,11 @@ theorem wrapStep_kimchiVerify
       hn hws dummySg dummyUnf rule adv
       (by rw [hσk, hE]; decide))
       0 (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv
-  have hhashS := (builder_spec_iff _ _).mp
-    (stepMain_hashesMessages (outVal := outVal) srcs hws σ.h
+  have hhashS := ((builder_spec_iff _ _).mp
+    (stepMain_out (outVal := outVal) srcs hws σ.h
       (FopParams.of IpaVesta.curve ncStep SStep.σ.k Linearization.fpTokens) domains dummySg
       dummyUnf rule adv) 0
-    (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
+    (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))).2.2
   -- the slot is at this tag's width
   subst hwi
   obtain ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hkept, hhashW, hK⟩ :=
@@ -601,7 +596,7 @@ theorem wrapStep_kimchiVerify
       (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp _))) SStep.σ.h dummy
     slotWidths advW hbr b (by simp [stepKeyCells, hkey]) hlag
     rfl hnz havoidS hlog hw Vs hwrap hb dummySg (stepOut.prevs i) (stepOut.slots i) stepOut.unfs[i]
-        stepOut.msgs[i] ((srcs i).keyCells stepOut.vk.points) _
+        stepOut.msgs[i] _
     (hscal hdi) n0 ms0 hn0 hdv hmsR ms hms htie
   exact ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hkept, hhashW, hhashS, hK⟩
 
