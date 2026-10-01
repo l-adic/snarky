@@ -30,6 +30,8 @@ inductive RuleOp where
   | alloc (n : ℕ)
   /-- Emit a basic constraint. -/
   | constrain (c : Basic Fp)
+  /-- Emit a padding row over seven cells. -/
+  | pad (vs : Vector (FVar Fp) 7)
 
 /-- A rule's body as dumped: its input's size, its operations in order, and per slot the
 previous statement's cells and the must-verify flag, then its public output. -/
@@ -81,11 +83,8 @@ private def parseTwo (j : Json) : Except String (FVar Fp × FVar Fp) := do
   let #[a, b] ← j.getArr? | throw "expected two operands"
   return (← parseLocal a, ← parseLocal b)
 
-/-- A constraint of a rule dump. Only the basic constraints are replayed; a rule emitting any
-other kind is refused. -/
-def parseConstraint (j : Json) : Except String (Basic Fp) := do
-  let .ok b := j.getObjVal? "basic"
-    | throw s!"a rule constraint other than a basic one: {j.compress.take 80}"
+/-- A basic constraint of a rule dump. -/
+def parseBasic (b : Json) : Except String (Basic Fp) := do
   if let .ok r := b.getObjVal? "r1cs" then
     return .r1cs (← parseLocal (← r.getObjVal? "left")) (← parseLocal (← r.getObjVal? "right"))
       (← parseLocal (← r.getObjVal? "output"))
@@ -98,10 +97,16 @@ def parseConstraint (j : Json) : Except String (Basic Fp) := do
   if let .ok x := b.getObjVal? "boolean" then return .boolean (← parseLocal x)
   throw s!"not a basic constraint: {b.compress.take 80}"
 
-/-- An operation of a rule dump: `{alloc: n}` or `{constraint: c}`. -/
+/-- An operation of a rule dump: `{alloc: n}`, or `{constraint: c}` with `c` a basic constraint
+or a padding row. A rule emitting any other kind of constraint is refused. -/
 def parseOp (j : Json) : Except String RuleOp := do
   if let .ok n := j.getObjVal? "alloc" then return .alloc (← n.getNat?)
-  return .constrain (← parseConstraint (← j.getObjVal? "constraint"))
+  let c ← j.getObjVal? "constraint"
+  if let .ok b := c.getObjVal? "basic" then return .constrain (← parseBasic b)
+  if let .ok p := c.getObjVal? "pad" then
+    let vs ← FixtureKit.parseArrOf parseLocal p
+    if h : vs.size = 7 then return .pad ⟨vs, h⟩ else throw s!"a padding row of {vs.size} cells"
+  throw s!"a rule constraint other than a basic one or a padding row: {c.compress.take 80}"
 
 /-- Whether every local id a constraint reads is below `n`. -/
 def scopedBasicBelow (n : ℕ) : Basic Fp → Bool
@@ -117,6 +122,7 @@ def scopeAfter : ℕ → List RuleOp → Option ℕ
   | n, [] => some n
   | n, .alloc m :: ops => scopeAfter (n + m) ops
   | n, .constrain c :: ops => if scopedBasicBelow n c then scopeAfter n ops else none
+  | n, .pad vs :: ops => if vs.all (scopedBelow n) then scopeAfter n ops else none
 
 /-- A rule's dump, read and checked: every constraint reads only ids allocated before it, and
 the outputs only ids the body allocated. -/
@@ -142,6 +148,8 @@ def replayOps : List RuleOp → Array (FVar Fp) → CircuitM Fp C (Array (FVar F
     .existsOp n (AsProver.throw "advice") fun vs => replayOps ops (env ++ vs.toArray.map .var)
   | .constrain c :: ops, env =>
     .addConstraintOp (.basic (substBasic env c)) (replayOps ops env)
+  | .pad vs :: ops, env =>
+    .addConstraintOp (.pad (vs.map (substLocal env))) (replayOps ops env)
 
 /-- A rule's dump as the rule it records: the input's cells are the first local ids, the body's
 operations replay in order, and each slot's previous statement, its must-verify flag and the
