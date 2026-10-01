@@ -82,3 +82,9 @@ path = "pickles"
 [[lean_exe]]
 name = "check-cs"
 root = "scripts.check_cs"
+
+# The capstones' constant premises (scripts/check_premises.lean), decided on the same dumps'
+# constants; compiled and run beside `check-cs`.
+[[lean_exe]]
+name = "check-premises"
+root = "scripts.check_premises"

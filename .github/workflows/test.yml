@@ -361,6 +361,16 @@ jobs:
         KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
           lake exe check-cs
 
+    # The capstones' constant premises, decided on the same dumps' constants: the keys and
+    # tables each main circuit bakes in, and the slot widths and statement sizes the step and
+    # wrap mains hand over to each other.
+    - name: Check the capstones' constant premises
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
+          lake exe check-premises
+
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,
   # base-pathed for the project page (/snarky/). Heavy (wasm + backend-es

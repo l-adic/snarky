@@ -327,6 +327,8 @@ pickles/scripts/check_axioms.sh              # the linearization results (the tw
 pickles/scripts/check_polish.lean            # the ported token interpreter vs the production scalar side
 scripts/check_cs.lean                        # compiled constraint systems vs the PureScript dumps (workspace-level;
                                              # needs the circuit-diffs exports, so CI runs it from test.yml)
+scripts/check_premises.lean                  # the capstones' constant premises on the same dumps' constants
+                                             # (workspace-level; CI runs it beside check-cs)
 ```
 
 (Every package-local check reads its data through an env var whose **default is relative

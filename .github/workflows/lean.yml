@@ -92,10 +92,10 @@ jobs:
     # check-cs` rather than `lean --run`. Building the exe needs no fixtures — it reads the
     # dumps at run time — so it fits the library build job. The compile fee is paid once
     # per `formal/**/*.lean` change (the cache key), not once per consumer run.
-    - name: Compile the CS-equality checker (cached for its consumers)
+    - name: Compile the CS-equality and premise checkers (cached for their consumers)
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        lake build check-cs
+        lake build check-cs check-premises
 
     # The halves driver likewise: interpreted, one group-half `prove` alone is far past the
     # runner's patience; compiled, the whole corpus is minutes. Same cache, same fee.

@@ -20,10 +20,13 @@ namespace PicklesFixture
 
 open Snarky Snarky.Kimchi Kimchi Kimchi.Verifier Pickles CompElliptic.Fields.Pasta
 
-/-! ## The step-side public-input tables -/
+/-! ## The public-input tables -/
 
 /-- The Pallas curve of the step-side Lagrange bases (Fp coordinates). -/
 abbrev XhatStepCurve := Bulletproof.IpaPallas.curve
+
+/-- The Vesta curve of the wrap-side Lagrange bases (Fq coordinates). -/
+abbrev XhatCurve := Bulletproof.IpaVesta.curve
 
 /-- A native Pallas point as a constant cell at the step field. -/
 def xhatStepCell (P : XhatStepCurve.Point) : AffinePoint (FVar Fp) := ⟨.const P.x, .const P.y⟩
