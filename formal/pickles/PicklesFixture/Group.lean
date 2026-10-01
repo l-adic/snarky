@@ -115,7 +115,7 @@ point under its keep bit (the branch data's mask past its first `pad` bits), the
 round-challenge assertions against the wrap statement. Returns the success bit. -/
 def groupWrapOn {nc ks kw pad : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
     (basis : Vector (Vector XhatWrapCurve.Point nc)
-      (CircuitType.size Fp (StmtVal kw (MaxProofsVerified - pad))))
+      (CircuitType.size Fp (StepStatement (UnfVal kw) Fp (MaxProofsVerified - pad))))
     (blindingH : AffinePoint (FVar Fq)) (v : WrapGroup ks kw pad nc (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
   let sv ← wrapIndexSponge key

@@ -36,7 +36,8 @@ open scoped Kimchi
 /-- One slot's witness cells: `w` accumulators, the wrap proof at `ncw` chunks with its opening
 at `k` rounds, the previous step proof at `ncs` chunks with its challenges at `ks`. -/
 abbrev SlotVar (w ncw ncs k ks : ℕ) : Type :=
-  SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp) StepSf (PallasPt (FVar Fp))
+  SlotWitness w ncw ncs k ks (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))
+      (PallasPt (FVar Fp))
 
 /-- One slot's witness values. -/
 abbrev SlotVal (w ncw ncs k ks : ℕ) : Type :=
@@ -99,11 +100,11 @@ def Fits (σ : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPallas.curve ncw)
 
 end SlotSource
 
-/-- What the rule returns for one slot: the previous proof's statement, as field cells, and
-whether it must verify. -/
-structure PrevStatement where
+/-- What the rule returns for one slot: the previous proof's statement, as its `s` field cells,
+and whether it must verify. -/
+structure PrevStatement (s : ℕ) where
   /-- The previous proof's statement. -/
-  appState : List (FVar Fp)
+  appState : Vector (FVar Fp) s
   /-- Whether the slot must verify. -/
   mustVerify : BoolVar Fp
 
@@ -126,9 +127,9 @@ structure StepMainAdvice (n w : ℕ) (ws : Fin n → ℕ) (ncw ncs k ks : ℕ) (
 /-- One slot's `verifyOneBy` input from its cells: the previous statement, the witness, the
 unfinalized entry and the wrap-side message; the accumulator points widened to
 `MaxProofsVerified` with `dummySg` at the front, the mask trimmed to the slot's `w`. -/
-def slotInput {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified) (dummySg : AffinePoint (FVar Fp))
-    (prev : PrevStatement) (s : SlotVar w ncw ncs k ks) (u : UnfVar k) (msg : FVar Fp) :
-    VerifyOneInput ks k ncw ncs w where
+def slotInput {sp w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified)
+    (dummySg : AffinePoint (FVar Fp)) (prev : PrevStatement sp) (s : SlotVar w ncw ncs k ks)
+    (u : UnfVar k) (msg : FVar Fp) : VerifyOneInput sp ks k ncw ncs w where
   appState := prev.appState
   deferred := ⟨⟨⟨s.alpha⟩, ⟨s.beta⟩, ⟨s.gamma⟩, ⟨s.zeta⟩, ⟨s.perm⟩, ⟨s.zetaToSrsLength⟩,
       ⟨s.zetaToDomainSize⟩⟩, ⟨s.cip⟩, ⟨s.xi⟩, s.bulletproofChallenges.map SizedF.mk, ⟨s.b⟩⟩
@@ -148,12 +149,13 @@ def slotInput {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified) (dummySg : A
   mustVerify := prev.mustVerify
 
 /-- What the step circuit allocated and returns: the step statement's cells, and the cells it
-read them from, so a statement about the circuit can name them. -/
-structure StepMainOut (n w : ℕ) (ws : Fin n → ℕ) (ncw ncs k ks : ℕ) where
+read them from, so a statement about the circuit can name them. Slot `i`'s previous statement
+has `ss i` cells, the application state the step message carries `sa`. -/
+structure StepMainOut (n w : ℕ) (ws ss : Fin n → ℕ) (sa ncw ncs k ks : ℕ) where
   /-- The step statement: the unfinalized entries, the digest, the wrap-side messages. -/
-  out : StmtVar k w
+  out : StepStatement (UnfVar k) (FVar Fp) w
   /-- What the rule returned for each slot. -/
-  prevs : Vector PrevStatement n
+  prevs : (i : Fin n) → PrevStatement (ss i)
   /-- This system's wrap key. -/
   vk : VkComms ncw (PallasPt (FVar Fp))
   /-- Each slot's witness, at its width. -/
@@ -164,7 +166,22 @@ structure StepMainOut (n w : ℕ) (ws : Fin n → ℕ) (ncw ncs k ks : ℕ) wher
   msgs : Vector (FVar Fp) n
   /-- The message the statement's step-message digest hashes. -/
   messagesForNextStepProof : MessagesForNextStepProof (VkComms ncw (AffinePoint (FVar Fp)))
-    (List (FVar Fp)) (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n)
+    (Vector (FVar Fp) sa) (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n)
+
+/-- The step circuit's message hashing: its outgoing message hashes to its statement's step
+digest, and each slot's wrap digest passes through to the statement, after the padding. -/
+def StepMainOut.HashesMessages {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncw ncs k ks : ℕ}
+    (V : Valuation Fp) (out : StepMainOut n w ws ss sa ncw ncs k ks) : Prop :=
+  (∀ (vk : VkComms ncw (AffinePoint Fp)) (sgs : Vector (AffinePoint Fp) n)
+    (chals : Vector (Vector Fp ks) n),
+    CircuitType.Reads V out.messagesForNextStepProof.dlogPlonkIndex vk →
+    CircuitType.Reads V out.messagesForNextStepProof.challengePolynomialCommitments sgs →
+    CircuitType.Reads V out.messagesForNextStepProof.oldBulletproofChallenges chals →
+    out.out.proofState.messagesForNextStepProof.val V
+      = stepMsgDigest IpaPallas.curve.sponge.params
+          ⟨out.messagesForNextStepProof.appState.map (·.val V), vk, sgs, chals⟩) ∧
+  ∀ (hn : n ≤ w) (i : Fin n),
+    (out.out.messagesForNextWrapProof[w - n + i]'(by omega)).val V = out.msgs[i].val V
 
 variable {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
 
@@ -178,14 +195,16 @@ constant `dummyUnf` entries and `w − n` fresh message cells. The cells it was 
 returned beside it. -/
 def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
     {inVal inVar : Type} [CircuitType Fp inVal inVar] [CheckedType Fp c inVal inVar]
+    {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp c (AllocBranchData Fp Bool) (AllocBranchData (FVar Fp) (BoolVar Fp))]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
     (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
-    (rule : inVar → CircuitM Fp c (Vector PrevStatement n × List (FVar Fp)))
+    (rule : inVar → CircuitM Fp c (((i : Fin n) → PrevStatement (ss i)) × outVar))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
-    CircuitM Fp c (StepMainOut n w (SlotSource.widths w srcs) ncw ncs k ks) := do
+    CircuitM Fp c (StepMainOut n w (SlotSource.widths w srcs) ss
+      (CircuitType.size Fp inVal + CircuitType.size Fp outVal) ncw ncs k ks) := do
   let publicInput ← witness (val := inVal) adv.publicInput
   let (prevs, publicOutput) ← rule publicInput
   let vk ← witness (val := VkComms ncw (PallasPt Fp)) adv.vk
@@ -196,11 +215,12 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
   let msgsPad ← witness (val := Vector Fp (w - n)) adv.msgsPad
   let results ← (Vector.finRange n).mapM fun i =>
     verifyOneBy (verifyProofWith h (srcs i).lagrange) P ((srcs i).domains domains)
-      ((srcs i).keyCells vk.points) (slotInput (hws i) dummySg prevs[i] (slots i) unfs[i] msgs[i])
+      ((srcs i).keyCells vk.points) (slotInput (hws i) dummySg (prevs i) (slots i) unfs[i] msgs[i])
   assertAll (results.toList.map (·.2))
-  let appFields := (CircuitType.varToFields (F := Fp) (val := inVal) publicInput).toList ++
-    publicOutput
-  let msgNext : MessagesForNextStepProof (VkComms ncw (AffinePoint (FVar Fp))) (List (FVar Fp))
+  let appFields := CircuitType.varToFields (F := Fp) (val := inVal) publicInput ++
+    CircuitType.varToFields (F := Fp) (val := outVal) publicOutput
+  let msgNext : MessagesForNextStepProof (VkComms ncw (AffinePoint (FVar Fp)))
+      (Vector (FVar Fp) (CircuitType.size Fp inVal + CircuitType.size Fp outVal))
       (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n) :=
     ⟨appFields, vk.points, Vector.ofFn fun i => (slots i).sg.pt,
       results.map (·.1.expandedChallenges)⟩
@@ -211,7 +231,7 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
     else unfs[j.val - (w - n)]'(by omega)
   let msgsW := Vector.ofFn fun j : Fin w =>
     if h : j.val < w - n then msgsPad[j.val] else msgs[j.val - (w - n)]'(by omega)
-  pure ⟨(unfsW, digest, msgsW), prevs, vk, slots, unfs, msgs, msgNext⟩
+  pure ⟨⟨⟨unfsW, digest⟩, msgsW⟩, prevs, vk, slots, unfs, msgs, msgNext⟩
 
 /-- The step circuit as a circuit of its statement: no input cells (the `Unit` argument is
 `Snarky.compileWith`'s empty input), the output `stepMain`'s statement, and `stepMain`'s cells
@@ -219,32 +239,39 @@ kept beside it. -/
 @[nolint unusedArguments]
 def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
     {inVal inVar : Type} [CircuitType Fp inVal inVar] [CheckedType Fp c inVal inVar]
+    {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp c (AllocBranchData Fp Bool) (AllocBranchData (FVar Fp) (BoolVar Fp))]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
     (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
-    (rule : inVar → CircuitM Fp c (Vector PrevStatement n × List (FVar Fp)))
+    (rule : inVar → CircuitM Fp c (((i : Fin n) → PrevStatement (ss i)) × outVar))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) (_ : Unit) :
-    CircuitM Fp c (StmtVar k w × StepMainOut n w (SlotSource.widths w srcs) ncw ncs k ks) :=
-  (fun r => (r.out, r)) <$> stepMain srcs hws h P domains dummySg dummyUnf rule adv
+    CircuitM Fp c (StepStatement (UnfVar k) (FVar Fp) w × StepMainOut n w
+        (SlotSource.widths w srcs) ss (CircuitType.size Fp inVal + CircuitType.size Fp outVal)
+        ncw ncs k ks) :=
+  (fun r => (r.out, r)) <$>
+    stepMain (outVal := outVal) srcs hws h P domains dummySg dummyUnf rule adv
 
 /-- The compiled step circuit's rows contain `stepMain`'s, built from the first variable: the
 statement has no input cells, so the body starts there. -/
 theorem mem_compileWith_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
-    [CircuitType Fp inVal inVar] {V : Valuation Fp}
+    [CircuitType Fp inVal inVar] {outVal outVar : Type} [CircuitType Fp outVal outVar]
+    {ss : Fin n → ℕ} {V : Valuation Fp}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
     (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
     (rule : inVar →
-      CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) × outVar))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal)
     {con : KimchiConstraint Fp}
-    (hc : con ∈ (build (stepMain srcs hws h P domains dummySg dummyUnf rule adv) 0).constraints) :
-    con ∈ (compileWith (a := Unit) (b := StmtVal k w)
-      (stepMainCircuit srcs hws h P domains dummySg dummyUnf rule adv)).constraints := by
+    (hc : con ∈ (build (stepMain (outVal := outVal) srcs hws h P domains dummySg dummyUnf rule
+      adv) 0).constraints) :
+    con ∈ (compileWith (a := Unit) (b := StepStatement (UnfVal k) Fp w)
+      (stepMainCircuit (outVal := outVal) srcs hws h P domains dummySg dummyUnf rule
+        adv)).constraints := by
   refine mem_compileWith_of_mem_body ?_
   unfold stepMainCircuit
   erw [map_eq_pure_bind, build_bind]
@@ -252,18 +279,21 @@ theorem mem_compileWith_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : 
 
 /-- The compiled step circuit's cells are `stepMain`'s run, built from the first variable. -/
 theorem compileWith_stepMainCircuit_cells {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
-    [CircuitType Fp inVal inVar] {V : Valuation Fp}
+    [CircuitType Fp inVal inVar] {outVal outVar : Type} [CircuitType Fp outVal outVar]
+    {ss : Fin n → ℕ} {V : Valuation Fp}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
     (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
     (rule : inVar →
-      CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) × outVar))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
-    (compileWith (a := Unit) (b := StmtVal k w)
-      (stepMainCircuit srcs hws h P domains dummySg dummyUnf rule adv)).result.1.2
-      = (build (stepMain srcs hws h P domains dummySg dummyUnf rule adv) 0).result := by
+    (compileWith (a := Unit) (b := StepStatement (UnfVal k) Fp w)
+      (stepMainCircuit (outVal := outVal) srcs hws h P domains dummySg dummyUnf rule
+        adv)).result.1.2
+      = (build (stepMain (outVal := outVal) srcs hws h P domains dummySg dummyUnf rule
+        adv) 0).result := by
   rw [compileWith_result]
   unfold stepMainCircuit
   erw [map_eq_pure_bind, build_bind]
@@ -278,36 +308,47 @@ open Std.Do
 variable {V : Valuation Fp}
 
 /-- The step statement's unfinalized entries are the circuit's, front-padded to `w` with the
-constant `dummyUnf`. -/
+constant `dummyUnf`, the step message's commitments are the slots' `sg` cells, and the circuit
+hashes its messages (`HashesMessages`). -/
 theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+    {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
     (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
     (rule : inVar →
-      CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) × outVar))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
     ⦃⌜True⌝⦄
-    stepMain srcs hws h P domains dummySg dummyUnf rule adv
-    ⦃⇓ r _ => ⌜r.out.1 = Vector.ofFn fun j : Fin w => if h : j.val < w - n
+    stepMain (outVal := outVal) srcs hws h P domains dummySg dummyUnf rule adv
+    ⦃⇓ r _ => ⌜(r.out.proofState.unfinalizedProofs = Vector.ofFn fun j : Fin w =>
+      if h : j.val < w - n
       then CircuitType.constVar (F := Fp) (var := UnfVar k) dummyUnf
-      else r.unfs[j.val - (w - n)]'(by omega)⌝⦄ := by
+      else r.unfs[j.val - (w - n)]'(by omega)) ∧
+      r.messagesForNextStepProof.challengePolynomialCommitments
+        = (Vector.ofFn fun i => (r.slots i).sg.pt) ∧
+      r.HashesMessages V⌝⦄ := by
   have hrule := fun x => builder_spec_true (rule x)
   have hmap := fun (f : Fin n → CircuitM Fp (Builder V (KimchiConstraint Fp))
       (FopOutput Fp ks × BoolVar Fp)) => builder_spec_true ((Vector.finRange n).mapM f)
   have hall := fun bs => builder_spec_true
     (assertAll (c := Builder V (KimchiConstraint Fp)) bs)
-  have hhash := fun (p : Poseidon.Params Fp) m =>
-    builder_spec_true (hashMessagesForNextStepProof (c := Builder V (KimchiConstraint Fp))
-      (nc := ncw) (n := n) (k := ks) p m)
+  have hhash := fun m => hashMessagesForNextStepProof_spec (V := V) (nc := ncw) (n := n) (k := ks)
+    (s := CircuitType.size Fp inVal + CircuitType.size Fp outVal) IpaPallas.curve.sponge.params
+    IpaPallas.curve.sponge.hsize m
   simp only [stepMain]
   mvcgen [hrule, hmap, hall, hhash, -Snarky.assertAll_spec]
+  rename_i hdigest
+  refine ⟨trivial, trivial, hdigest, fun hn i => ?_⟩
+  -- slot `i` sits past the `w − n` padding entries
+  simp only [Vector.getElem_ofFn, show ¬(w - n + i < w - n) by omega, dite_false,
+    show w - n + i - (w - n) = i by omega, Fin.getElem_fin]
 
 /-- A slot's kept mask cells are its branch data's mask cells: when those read as bits, the
 kept ones read as some mask. -/
-private theorem slotInput_mask_reads {w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified)
-    (dummySg : AffinePoint (FVar Fp)) (prev : PrevStatement) {s : SlotVar w ncw ncs k ks}
+private theorem slotInput_mask_reads {sp w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified)
+    (dummySg : AffinePoint (FVar Fp)) (prev : PrevStatement sp) {s : SlotVar w ncw ncs k ks}
     (u : UnfVar k) (msg : FVar Fp)
     (hm : ∀ m ∈ s.branch.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) :
     ∃ ms : Vector Bool w,
@@ -329,50 +370,54 @@ source fits (the group half accepts any wrap proof its cells read as, at the slo
 carrying the step-message digest). The rule is opaque; the slots' parity bits, mask bits and
 verdicts are bits by their allocation checks. -/
 theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+    {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (σ : SRS IpaPallas.curve.Point) (P : FopParams Fp) (domains : List (KnownDomain Fp))
     (hks : MaxProofsVerified * ks < 2 ^ 128)
     -- each slot's source
     (srcs : Fin n → SlotSource ncw ks)
-    -- what the slot's finalize establishes of an accepted slot
-    (Q : (i : Fin n) → VerifyOneInput ks σ.k ncw ncs (SlotSource.widths w srcs i) → Prop)
+    -- what the slot's finalize establishes of an accepted slot, at its expanded challenges
+    (Q : (i : Fin n) → VerifyOneInput (ss i) ks σ.k ncw ncs (SlotSource.widths w srcs i) →
+      Vector (FVar Fp) ks → Prop)
     (hQ : ∀ (i : Fin n) (vk : VkComms ncw (AffinePoint (FVar Fp)))
-        (inp : VerifyOneInput ks σ.k ncw ncs (SlotSource.widths w srcs i)),
+        (inp : VerifyOneInput (ss i) ks σ.k ncw ncs (SlotSource.widths w srcs i)),
       ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp))
         (verifyProofWith σ.h (srcs i).lagrange) P ((srcs i).domains domains) vk inp
       ⦃⇓ o _ => ⌜(∃ ms : Vector Bool (SlotSource.widths w srcs i),
           CircuitType.Reads V inp.proofMask ms) →
-        CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 → Q i inp⌝⦄)
+        CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
+        Q i inp o.1.expandedChallenges⌝⦄)
     (hn : n ≤ MaxProofsVerified) (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified)
     (dummySg : AffinePoint (FVar Fp)) (dummyUnf : UnfVal σ.k)
     (rule : inVar →
-      CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) × outVar))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs σ.k ks inVal)
     -- the statement's shape against the SRS
     (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ σ.k) :
     ⦃⌜True⌝⦄
-    stepMain (c := Builder V (KimchiConstraint Fp)) srcs hws σ.h
+    stepMain (c := Builder V (KimchiConstraint Fp)) (outVal := outVal) srcs hws σ.h
       P domains dummySg dummyUnf rule adv
-    ⦃⇓ r _ => ⌜∀ i : Fin n, CircuitType.Reads V r.prevs[i].mustVerify true →
+    ⦃⇓ r _ => ⌜∀ i : Fin n, CircuitType.Reads V (r.prevs i).mustVerify true →
       CircuitType.Reads V r.unfs[i].shouldFinalize true ∧
       -- over the SRS once checked, at any key its source fits, whose statements' relations the
       -- SRS avoids
       (∀ S : Srs IpaPallas.curve, S.σ = σ →
         ∀ K : Key IpaPallas.curve ncw, ncw = chunkCount σ.k K.cvk.domainLog2 →
         (srcs i).Fits σ K.cvk →
-        (∀ (inp : VerifyOneInput ks σ.k ncw ncs (SlotSource.widths w srcs i)) msg,
+        (∀ (inp : VerifyOneInput (ss i) ks σ.k ncw ncs (SlotSource.widths w srcs i)) msg,
           σ.Avoids (stepRelationsAt σ K.cvk (inp.statement msg))) →
-        (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]).SlotReads
+        (slotInput (hws i) dummySg (r.prevs i) (r.slots i) r.unfs[i] r.msgs[i]).SlotReads
           σ K.cvk V ((srcs i).keyCells r.vk.points)) ∧
-      Q i (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]) ∧
+      Q i (slotInput (hws i) dummySg (r.prevs i) (r.slots i) r.unfs[i] r.msgs[i])
+        r.messagesForNextStepProof.oldBulletproofChallenges[i] ∧
       SlotWitness.PointsOnCurve V (r.slots i) ∧
       (∃ ms : Vector Bool (SlotSource.widths w srcs i), CircuitType.Reads V
-        (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i] r.msgs[i]).proofMask ms) ∧
+        (slotInput (hws i) dummySg (r.prevs i) (r.slots i) r.unfs[i] r.msgs[i]).proofMask ms) ∧
       ∃ (d : ℕ) (ms : Vector Bool MaxProofsVerified), d < 2 ^ 16 ∧
-        (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i]
+        (slotInput (hws i) dummySg (r.prevs i) (r.slots i) r.unfs[i]
           r.msgs[i]).branchData.domainLog2.val V = (d : Fp) ∧
         CircuitType.Reads V
-          (slotInput (hws i) dummySg r.prevs[i] (r.slots i) r.unfs[i]
+          (slotInput (hws i) dummySg (r.prevs i) (r.slots i) r.unfs[i]
             r.msgs[i]).branchData.proofsVerifiedMask
           ms⌝⦄ := by
   have hinj := castInj128_of_lt PALLAS_BASE_CARD (by decide)
@@ -389,13 +434,13 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
   have hmap := fun (vk : VkComms ncw (PallasPt (FVar Fp)))
       (slots : (i : Fin n) → SlotVar (SlotSource.widths w srcs i) ncw ncs σ.k ks)
       (unfs : Vector (UnfVar σ.k) n) (msgs : Vector (FVar Fp) n)
-      (prevs : Vector PrevStatement n) =>
+      (prevs : (i : Fin n) → PrevStatement (ss i)) =>
     builder_spec_vector_mapM_get (V := V) (c := KimchiConstraint Fp)
       (fun i : Fin n => verifyOneBy (verifyProofWith σ.h (srcs i).lagrange) P
         ((srcs i).domains domains) ((srcs i).keyCells vk.points)
-        (slotInput (hws i) dummySg prevs[i] (slots i) unfs[i] msgs[i]))
+        (slotInput (hws i) dummySg (prevs i) (slots i) unfs[i] msgs[i]))
       (fun (i : Fin n) o =>
-        let inp := slotInput (hws i) dummySg prevs[i] (slots i) unfs[i] msgs[i]
+        let inp := slotInput (hws i) dummySg (prevs i) (slots i) unfs[i] msgs[i]
         ((∃ bb : Bool, (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = bit bb) →
           ∃ bb : Bool, (↑o.2 : CVar Fp).val V = bit bb) ∧
         (∀ SK : {SK : Srs IpaPallas.curve × Key IpaPallas.curve ncw //
@@ -408,7 +453,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
           inp.SlotReads σ SK.1.2.cvk V ((srcs i).keyCells vk.points)) ∧
         ((∃ ms : Vector Bool (SlotSource.widths w srcs i), CircuitType.Reads V inp.proofMask ms) →
           CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
-          Q i inp) ∧
+          Q i inp o.1.expandedChallenges) ∧
         (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = (↑inp.mustVerify : CVar Fp).val V)
       (fun i => by
         beta_reduce
@@ -430,7 +475,8 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
       (Vector.finRange n)
   have hhash := fun (p : Poseidon.Params Fp) m =>
     builder_spec_true (hashMessagesForNextStepProof (c := Builder V (KimchiConstraint Fp))
-      (nc := ncw) (n := n) (k := ks) p m)
+      (nc := ncw) (n := n) (k := ks)
+      (s := CircuitType.size Fp inVal + CircuitType.size Fp outVal) p m)
   have hall : ∀ bs : List (BoolVar Fp), ⦃⌜True⌝⦄ assertAll (c := Builder V (KimchiConstraint Fp)) bs
       ⦃⇓ _ _ => ⌜bs.length ≤ MaxProofsVerified →
         (∀ b ∈ bs, (↑b : CVar Fp).val V = 0 ∨ (↑b : CVar Fp).val V = 1) →
@@ -467,10 +513,11 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
   have h1 := hassert (by simpa using hn) hbits results[i].2
     (List.mem_map.mpr ⟨_, Vector.mem_toList_iff.mpr (Vector.getElem_mem i.isLt), rfl⟩)
   have hz := SlotWitness.of_post ((CheckedType.post_finFamily V slots).mp hcheck i)
-  have hmask := slotInput_mask_reads (hws i) dummySg rout.1[i] unfs[i] msgs[i] hz.2.2.1
+  have hmask := slotInput_mask_reads (hws i) dummySg (rout.1 i) unfs[i] msgs[i] hz.2.2.1
   refine ⟨CircuitType.reads_boolVar.mpr (hsf.trans (CircuitType.reads_boolVar.mp hmv)),
     fun S hS K hK hfit hav => hacc ⟨(S, K), hS, hK⟩ hfit (hav _) hmv h1 fun x hx => ?_,
-    hsc hmask hmv h1, hz.2.2.2.2, hmask, ?_⟩
+    by simpa only [Fin.getElem_fin, Vector.getElem_map] using hsc hmask hmv h1, hz.2.2.2.2,
+    hmask, ?_⟩
   rotate_left
   · obtain ⟨-, -, hmb, ⟨m, hm, hdv⟩, -⟩ := hz
     obtain ⟨bs, hbs⟩ := CircuitType.exists_reads_vector (vs := (slots i).branch.mask) fun j hj =>

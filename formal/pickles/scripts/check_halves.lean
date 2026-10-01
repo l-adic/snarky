@@ -127,7 +127,8 @@ split claims `cip, b, ζ^{2^k}, ζⁿ, perm` as `(half, parity)` pairs at 0–9,
 last; then `messages_for_next_step_proof` and the `n` `messages_for_next_wrap_proof`
 digests. -/
 def stepStatementOf {F : Type} [Field F] (conv : Fp → F) (k n : ℕ) (c : Array Fp) :
-    Except String (Pickles.StepStatement k n F Bool (Type2 (SplitField F Bool))) := do
+    Except String (Pickles.StepStatement (Pickles.UnfinalizedProof k F Bool
+        (Type2 (SplitField F Bool))) F n) := do
   let slotSize := 17 + k
   unless c.size = n * slotSize + 1 + n do
     throw s!"step public input: {c.size} cells, expected {n * slotSize + 1 + n} at {n} slots \
@@ -531,9 +532,10 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let dv := wst.proofState.deferredValues
     let hdom := decide (dv.branchData.domainLog2 = (s.vk.domainLog2 : Fq))
     -- the statement as constant cells: every reading below is the value's own
-    let stVar : Pickles.StepStatement Pickles.WrapIPARounds (Pickles.MaxProofsVerified - padN)
-        (FVar Fq) (BoolVar Fq)
-        (Type2 (SplitField (FVar Fq) (BoolVar Fq))) := CircuitType.constVar (F := Fq) st
+    let stVar : Pickles.StepStatement
+        (Pickles.UnfinalizedProof Pickles.WrapIPARounds (FVar Fq) (BoolVar Fq)
+          (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+        (FVar Fq) (Pickles.MaxProofsVerified - padN) := CircuitType.constVar (F := Fq) st
     let V : Valuation Fq := fun _ => 0
     let pub := Pickles.wrapPublicInput σ cvk V stVar
     let pubOk := decide (pub = s.publicInput)
@@ -549,7 +551,8 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let guards := decide (cp.olds.size = cvk.prevChallenges ∧ pub.size = cvk.publicCount)
     let L ← basisFor CS "vesta" σ nc s
     let tab ← IO.ofExcept (firstBases? (m := CircuitType.size Fp
-      (Pickles.StmtVal Pickles.WrapIPARounds (Pickles.MaxProofsVerified - padN))) L)
+      (Pickles.StepStatement (Pickles.UnfVal Pickles.WrapIPARounds) Fp
+        (Pickles.MaxProofsVerified - padN))) L)
     let sg' ← memoized memo.sg (memoKey CS "vesta" σ.k s pub) fun _ =>
       Pickles.sgOkWith σ cvk L cp pub
     let kv ← memoized memo.verify (memoKey CS "vesta" σ.k s pub) fun _ =>

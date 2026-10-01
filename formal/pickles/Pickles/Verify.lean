@@ -26,8 +26,8 @@ different proofs in one circuit; that composition is not ported.
 
 ## Main definitions
 
-* `AllocUnfinalized`, `UnfVal`, `StmtVal`: one entry of the step statement's unfinalized
-  proofs, as allocated, and the step statement's values;
+* `AllocUnfinalized`, `UnfVal`: one entry of the step statement's unfinalized proofs, as
+  allocated, and its values;
 * `WrapStatement.packed`, `packLeaves`: the wrap statement as the public-input leaf list;
 * `UnfinalizedProof.packed`, `StepStatement.packed`: one slot, and the step statement, as
   packed scalars;
@@ -118,21 +118,13 @@ def AllocUnfinalized.toUnfinalized {k : ℕ} {f bc sf : Type} (u : AllocUnfinali
 
 /-! ## The step statement -/
 
-/-- The step statement's shifted claims, at the step field. -/
-abbrev StepSf : Type := Type2 (SplitField (FVar Fp) (BoolVar Fp))
-
 /-- One unfinalized entry's cells, at `k` rounds. -/
-abbrev UnfVar (k : ℕ) : Type := AllocUnfinalized k (FVar Fp) (BoolVar Fp) StepSf
+abbrev UnfVar (k : ℕ) : Type :=
+  AllocUnfinalized k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))
 
 /-- One unfinalized entry's values. -/
 abbrev UnfVal (k : ℕ) : Type := AllocUnfinalized k Fp Bool (Type2 (SplitField Fp Bool))
 
-/-- The step statement's cells at the tag's `w` slots, in wire order: the unfinalized entries,
-the step-message digest, the wrap-side messages. -/
-abbrev StmtVar (k w : ℕ) : Type := Vector (UnfVar k) w × FVar Fp × Vector (FVar Fp) w
-
-/-- The step statement's values, in wire order. -/
-abbrev StmtVal (k w : ℕ) : Type := Vector (UnfVal k) w × Fp × Vector Fp w
 
 /-! ## Packing the wrap statement -/
 
@@ -213,12 +205,14 @@ def UnfinalizedProof.packed
 then the `messagesForNextStepProof` digest and the slots' `messagesForNextWrapProof` digests,
 full. -/
 def StepStatement.packed {n : ℕ}
-    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    Vector (PackedScalar F) (CircuitType.size Fp (StmtVal k n)) :=
+    (st : StepStatement (UnfinalizedProof k (FVar F) (BoolVar F)
+      (Type2 (SplitField (FVar F) (BoolVar F)))) (FVar F) n) :
+    Vector (PackedScalar F) (CircuitType.size Fp (StepStatement (UnfVal k) Fp n)) :=
   ⟨List.toArray (st.proofState.unfinalizedProofs.toList.flatMap (fun u => u.packed.toList)
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full), by
     have h1 : CircuitType.size Fp Fp = 1 := rfl
+    rw [StepStatement.size_eq]
     simp [h1]
     ring⟩
 

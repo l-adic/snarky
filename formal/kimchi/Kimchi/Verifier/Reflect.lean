@@ -170,6 +170,16 @@ def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
   runInputP C σ cvk cp pub (runPubEvals C σ cvk cp pub)
     (runFrOracles C σ cvk cp pub).xi (runFrOracles C σ cvk cp pub).r
 
+/-- The stream opens each old accumulator first: entry `i` is accumulator `i`'s `sg`, with its
+challenge polynomial evaluated at `ζ` and `ζω`. -/
+theorem runStreamP_olds (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField)
+    (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) (i : Fin cp.olds.size) :
+    (runStreamP C σ cvk cp pub pe)[i.val] =
+      (cp.olds[i].sg, bPoly cp.olds[i].u.get (runOracles C σ cvk cp pub).zeta,
+        bPoly cp.olds[i].u.get (runZetaOmega C σ cvk cp pub)) := by
+  simp [runStreamP, Vector.getElem_append_left]
+
 /-! ## Zero public-input cells
 
 Zero cells past the end of the public input change no run function: the input enters only

@@ -20,9 +20,9 @@ two fields of the cycle:
 
 This module composes them without running a circuit. From the two reads (`GroupHalf.Reads`,
 `FopVerifyReads`) and the ties between the two circuits' cells (`HalvesTies`, `FopTies`), both
-bits reading `1` is the wire's Schnorr equation at honest claims (`twoHalves_schnorr`); with
-the deferred `SgOk` it is `kimchiVerify`'s acceptance at honest claims
-(`twoHalves_kimchiVerify`).
+bits reading `1` is the wire's Schnorr equation at honest claims, and makes the scalar half's
+expanded challenges the wire's round challenges (`twoHalves_schnorr`); with the deferred `SgOk`
+it is `kimchiVerify`'s acceptance at honest claims (`twoHalves_kimchiVerify`).
 
 ## The arguments
 
@@ -47,8 +47,9 @@ do (`xiExact_of_constrained`), so both theorems are equivalences at either proof
 ## Scope
 
 `SgOk` is no circuit's output: pickles defers it to the next proof's batch opening, and here it
-is a conjunct of `twoHalves_kimchiVerify`. The message digests are entries of `pub` like any
-other, and the packing of statements across the cycle is `verify`'s.
+is a conjunct of `twoHalves_kimchiVerify`; the next proof's batch opens it as an old accumulator
+(`WrapStepRun.mem_olds_or_collision`). The message digests are entries of `pub` like any other,
+and the packing of statements across the cycle is `verify`'s.
 
 ## Implementation notes
 
@@ -304,13 +305,18 @@ def ScalarHalf.ClaimsHonest {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.plonk.zetaToSrsLength)
     (Sc.side.decode dv.plonk.zetaToDomainSize) Sc.V dv.xi
 
+/-- The wire's round challenges of `cp`: the IPA transcript's prechallenges, endo-expanded, from
+the run's warm sponge on its own input. -/
+def wireChallenges {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) : Vector C.ScalarField σ.k :=
+  (transcriptFrom C (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub)).2.1
+
 /-- The deferred `sg`-correctness equation of the proof's opening at the wire's round
 challenges (`verifyWith`'s second conjunct), which pickles checks one proof later. -/
 def SgOk {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField) : Prop :=
-  let run := runInput C σ cvk cp pub
-  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
-  run.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i])
+  (runInput C σ cvk cp pub).proof.sg
+    = msm C σ.g (bPolyCoefficients fun i => (wireChallenges σ cvk cp pub)[i])
 
 /-- `sgOk` at the Lagrange points `L`: the deferred check on the verifier's run (`runAt`) at the
 public commitment to `L`, computed once. -/
@@ -339,6 +345,12 @@ over the SRS: `SgOk` with the proof's opening and transcript replaced by what th
 carries. -/
 def accOk (σ : SRS C.Point) (a : Accumulator C σ.k) : Bool :=
   decide (a.sg = msm C σ.g (bPolyCoefficients fun i => a.u[i]))
+
+/-- An accumulator read from cells: its commitment from a base-field circuit at `Vb`, its
+challenges from a scalar-field circuit at `Vs`. -/
+def Accumulator.ofCells {k : ℕ} (Vb : Valuation C.BaseField) (Vs : Valuation C.ScalarField)
+    (sg : AffinePoint (FVar C.BaseField)) (u : Vector (FVar C.ScalarField) k) : Accumulator C k :=
+  ⟨readPt Vb sg, u.map (·.val Vs)⟩
 
 /-- `carry` at the Lagrange points `L`: the handover on the verifier's run (`runAt`) at the
 public commitment to `L`, computed once. -/
@@ -503,9 +515,10 @@ private theorem pointFn_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
   fin_cases j <;> rfl
 
 /-- **The two bits read `1` exactly when the claims are honest and the wire's Schnorr equation
-holds.** The Schnorr equation is `verifyWith`'s first conjunct, at the wire's transcript;
-`SgOk` is not needed. The group read's three `ft` scalars are supplied, not assumed (module
-docstring, implementation notes). -/
+holds, and then the scalar half's expanded challenges are the wire's round challenges.** The
+Schnorr equation is `verifyWith`'s first conjunct, at the wire's transcript; `SgOk` is not
+needed. The group read's three `ft` scalars are supplied, not assumed (module docstring,
+implementation notes). -/
 theorem twoHalves_schnorr
     {nc : ℕ} (σ : SRS C.Point) (K : Key C nc)
     (hbase : 2 ^ 128 < C.base)
@@ -527,12 +540,15 @@ theorem twoHalves_schnorr
     (ht : HalvesTies G Sc) (hf : FopTies σ K.cvk cp pub Sc) :
     let run := runInput C σ K.cvk cp pub
     let tr := transcriptFrom C (runOracles C σ K.cvk cp pub).warm run
-    ((↑success : CVar C.BaseField).val G.V = 1
+    (((↑success : CVar C.BaseField).val G.V = 1
         ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
       ↔ Sc.ClaimsHonest σ K.cvk cp pub ∧
         schnorrAt C σ tr.1 tr.2.1 tr.2.2 (cipOf run)
           (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
-          (combineCommitments C run.polyscale run.commitments.toArray) run.proof := by
+          (combineCommitments C run.polyscale run.commitments.toArray) run.proof) ∧
+    (((↑success : CVar C.BaseField).val G.V = 1
+        ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1) →
+      out.expandedChallenges.map (·.val Sc.V) = wireChallenges σ K.cvk cp pub) := by
   intro run tr
   have hinjG := castInj128_of_lt _ hbase
   have hinjS := castInj128_of_lt _ hscalar
@@ -577,7 +593,7 @@ theorem twoHalves_schnorr
   simp only [FopReadsWire, FopChecks, FopParams.of, FopSide.unshiftV_read] at hs
   -- the zero-knowledge rows are the chunk count's, which the key's are
   simp only [← K.zkRows_eq] at hs
-  obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiF, -, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
+  obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiF, -, hĉ, hcipC, hbC, hpermC, hfin, hexp⟩ := hs
   obtain rfl : ξ₀ = ξ₀' := Reads128.unique hinjS hξSx hξS
   -- the scalar half's inputs are the run's
   have hζ : endoExpand C.lam z₀.val = (runOracles C σ K.cvk cp pub).zeta := by
@@ -646,12 +662,15 @@ theorem twoHalves_schnorr
         Sc.side.decode Sc.claims.deferredValues.plonk.zetaToDomainSize
           = runZetaN C σ K.cvk cp pub) → False := fun h =>
       hG ⟨htperm.symm.trans h.1, htzetaM.symm.trans h.2.1, htzetaN.symm.trans h.2.2⟩
-    refine ⟨fun hA => absurd (hplonkIff.mp ?_) hGof,
-      fun hB => absurd ⟨hB.1.2.2.1, hB.1.2.2.2.1, hB.1.2.2.2.2.1⟩ hGof⟩
-    have hA2 := hA.2
-    rw [hfin] at hA2
-    by_contra hne
-    simp [hne] at hA2
+    have hnA : ¬((↑success : CVar C.BaseField).val G.V = 1
+        ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1) := fun hA => by
+      refine absurd (hplonkIff.mp ?_) hGof
+      have hA2 := hA.2
+      rw [hfin] at hA2
+      by_contra hne
+      simp [hne] at hA2
+    exact ⟨⟨fun hA => absurd hA hnA,
+      fun hB => absurd ⟨hB.1.2.2.1, hB.1.2.2.2.1, hB.1.2.2.2.2.1⟩ hGof⟩, fun hA => absurd hA hnA⟩
   obtain ⟨hpermG, hzetaM, hzetaN⟩ := hG
   -- the opening clause, at the three `ft` scalars
   obtain ⟨U, ns, c₀, chals, rfl, hns, rfl, rfl, hchals, hiff⟩ :=
@@ -698,6 +717,23 @@ theorem twoHalves_schnorr
       = (fqRun C K.cvk cp (runPublicComm C σ K.cvk pub)).warm := by
     simp only [runOracles, fqOracles, FqRun.expand]
   rw [hproof] at hiff
+  refine ⟨?_, fun hA => ?_⟩
+  swap
+  · -- the expanded challenges: the claims' prechallenges, at the wire's inner product once the
+    -- bits read `1`
+    have hA2 := hA.2
+    rw [hfin] at hA2
+    simp only [ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not] at hA2
+    obtain ⟨hxiC, -, hcip, -⟩ := hA2
+    have hcipG : G.side.decode G.claims.deferredValues.combinedInnerProduct = cipOf run :=
+      htcip.symm.trans ((hcipIff (hξrun (hxiF' hxiC))).1 hcip)
+    rw [hcipG] at hĉeq
+    refine Vector.ext fun i hi => ?_
+    have he := CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp hexp i hi)
+    simp only [Vector.getElem_map] at he ⊢
+    rw [he, hĉeq]
+    simp only [wireChallenges, transcriptFrom, ipaRun, hwarm, hproof, Vector.getElem_map]
+    rfl
   simp only [ScalarHalf.ClaimsHonest, ClaimsHonest, run, tr, transcriptFrom, hwarm, hproof]
   rw [hfin]
   simp only [ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
@@ -753,11 +789,11 @@ theorem twoHalves_kimchiVerify
         ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
         ∧ SgOk σ K.cvk cp pub
       ↔ kimchiVerify C σ K.cvk cp pub = true ∧ Sc.ClaimsHonest σ K.cvk cp pub := by
-  have h := twoHalves_schnorr σ K hbase hscalar cp pub G success hg Sc out hs ht hf
+  have h := (twoHalves_schnorr σ K hbase hscalar cp pub G success hg Sc out hs ht hf).1
   -- the body reflection: under the guards, the warm-sponge IPA finish on the run's input
   simp only [transcriptFrom] at h
   rw [h, kimchiVerify_reflects, and_iff_right hguard]
-  simp only [SgOk, verifyFrom, transcriptFrom, verifyWith_eq]
+  simp only [SgOk, wireChallenges, verifyFrom, transcriptFrom, verifyWith_eq]
   exact ⟨fun ⟨⟨hc, hs⟩, hsg⟩ => ⟨⟨hs, hsg⟩, hc⟩, fun ⟨⟨hs, hsg⟩, hc⟩ => ⟨⟨hc, hs⟩, hsg⟩⟩
 
 end Ties

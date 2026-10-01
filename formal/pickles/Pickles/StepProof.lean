@@ -165,7 +165,8 @@ theorem stepProof_kimchiVerify_vesta {kw pad nc : ℕ}
     (hc : ClaimsCast Vg (groupInput S.σ.k kw pad nc).claims Vs (scalarInput S.σ.k nc).claims)
     -- the SRS avoids the key's Lagrange relations, one per packed scalar
     (havoid : S.σ.Avoids
-      (K.cvk.lagrangeRelations S.σ.k (CircuitType.size Fp (StmtVal kw (MaxProofsVerified - pad)))))
+      (K.cvk.lagrangeRelations S.σ.k (CircuitType.size Fp (StepStatement (UnfVal kw) Fp
+        (MaxProofsVerified - pad)))))
     -- of the proof itself
     (hguard : Guards IpaVesta.curve K.cvk cp pub)
     (hsg : SgOk S.σ K.cvk cp pub) :

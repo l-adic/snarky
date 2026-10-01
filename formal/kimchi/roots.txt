@@ -54,6 +54,11 @@ Kimchi.Permutation.sigmaSide_eval_row
 Kimchi.card_badAlphas_le
 Kimchi.card_badZetas_le
 
+-- The verifier body: its batch opens each old accumulator first, which is what an
+-- accumulator's membership in a proof's olds
+-- (`Pickles.WrapStepRun.mem_olds_or_collision`) means to it.
+Kimchi.Verifier.runStreamP_olds
+
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Kimchi.Index.instDecidableSatisfies -- synthesis: found by class resolution, never by name
