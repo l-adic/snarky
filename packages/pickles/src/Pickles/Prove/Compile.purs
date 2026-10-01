@@ -79,6 +79,8 @@ import Pickles.ProofsVerified (ProofsVerified(..), allPossibleDomainLog2s, boolV
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
+import Pickles.Prove.RuleDump (RuleDump)
+import Pickles.Prove.RuleDump as RuleDump
 import Pickles.Prove.Slot (CompiledTagData, SlotWrapKey(..), slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
 import Pickles.Prove.Slot as RuntimeSlot
 import Pickles.Prove.Step
@@ -1799,6 +1801,8 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
   , slotVKs :: Vector mpv (Maybe SlotWrapKey)
+  -- | The rule's body as data (`recordRule`), for the theorems' dump.
+  , recordRule :: Effect RuleDump
   }
 
 -- | A `RuleEntry` whose closures capture the given rule and invoke it
@@ -1905,6 +1909,7 @@ mkRuleEntry rule compiledKeys = do
           advice
           prevProofs
     , slotVKs
+    , recordRule: RuleDump.recordRule @mpv @r @inputVal @outputVal rule
     }
 
 -- A local name for `StepRuleAt`, to keep the `RuleEntry` field types

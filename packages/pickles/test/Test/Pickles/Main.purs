@@ -22,6 +22,7 @@ import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.SimpleChainN2 as SimpleChainN2
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
+import Test.Pickles.RuleDumpSpec as RuleDump
 import Test.Pickles.SharedSrs (buildSharedSrs)
 import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
 import Test.Pickles.Sideload.DigestVkSpec as SideloadDigestVk
@@ -49,6 +50,7 @@ import Test.Spec.Runner.Node.Config as Cfg
 spec :: SpecT (LoggerT Message Aff) Unit Aff Unit
 spec = beforeAll buildSharedSrs do
   WrapDomainShifts.spec
+  RuleDump.spec
   CompileValidation.spec
   NoRecursionReturn.spec
   Codecs.spec
