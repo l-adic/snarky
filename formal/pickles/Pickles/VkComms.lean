@@ -1,5 +1,6 @@
 import Snarky.Encoding
 import Snarky.Prover
+import Snarky.Witness
 import Kimchi.Columns
 
 /-!
@@ -68,5 +69,26 @@ def map {f' : Type} (g : f → f') (k : VkComms nc f) : VkComms nc f' :=
     k.endomulScalarComm.map g⟩
 
 end VkComms
+
+/-- A key's commitments are its permutation, coefficient and six selector commitments, in
+absorb order. -/
+def VkComms.equivProd (nc : ℕ) (f : Type) :
+    VkComms nc f ≃ Vector (Vector f nc) permCols × Vector (Vector f nc) coeffCols ×
+      Vector f nc × Vector f nc × Vector f nc × Vector f nc × Vector f nc × Vector f nc :=
+  ⟨fun k => (k.sigmaComm, k.coefficientsComm, k.genericComm, k.poseidonComm, k.completeAddComm,
+      k.mulComm, k.emulComm, k.endomulScalarComm),
+    fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1,
+      p.2.2.2.2.2.2.2⟩,
+    fun _ => rfl, fun _ => rfl⟩
+
+instance instVkCommsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
+    CircuitType F (VkComms nc v) (VkComms nc w) :=
+  CircuitType.ofEquiv (VkComms.equivProd nc v) (VkComms.equivProd nc w)
+
+/-- A key is checked commitment by commitment: at checked points, every chunk on the curve. -/
+instance instVkCommsCheckedType {F c v w : Type} {nc : ℕ} [Field F]
+    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F v w] [CheckedType F c v w] :
+    CheckedType F c (VkComms nc v) (VkComms nc w) :=
+  CheckedType.ofEquiv (VkComms.equivProd nc v) (VkComms.equivProd nc w)
 
 end Pickles

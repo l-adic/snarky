@@ -515,7 +515,9 @@ theorem stepWrap_kimchiVerify
     (∀ con ∈ wrap.constraints, ConstraintHolds.Holds Vs con) →
     -- the step circuit's run
     let stepOut := step.result.1.2
-    -- the wrap circuit's cells over its statement
+    -- the wrap circuit's statement
+    let wrapStmt := inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)
+    -- the wrap circuit's cells over it
     let wrapFinalizeOut := wrap.result.1.2.1
     let wrapVerifyOut := wrap.result.1.2.2
     -- the wrap circuit's branch index reads as `b`
@@ -554,6 +556,9 @@ theorem stepWrap_kimchiVerify
           = ⟨cp.opening.sg, wireChallenges S.σ K.cvk cp pub⟩ ∧
         -- the link consumes `cp`'s old accumulators
         StepWrap.consumedAccumulators Vg Vs inp sl = cp.olds.toList ∧
+        -- the step circuit and the next wrap circuit hash their messages
+        stepOut.HashesMessages Vg ∧
+        wrapVerifyOut.HashesMessages Vs dummy wrapStmt wrapFinalizeOut ∧
         -- of `cp` itself: the guards and the deferred `sg` equation
         (Guards IpaPallas.curve K.cvk cp pub →
           SgOk S.σ K.cvk cp pub →
@@ -561,8 +566,8 @@ theorem stepWrap_kimchiVerify
   intro step wrap hstep hwrap
   rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _,
     show wrap.result.1.2 = _ from compileWith_wrapMainCircuit_cells _ _ _ _ _ _ _ _ _ _]
-  intro stepOut wrapFinalizeOut wrapVerifyOut hb htie i hmv inp jf sl K hK hfit hkey havoid j hpin
-      hdom
+  intro stepOut wrapStmt wrapFinalizeOut wrapVerifyOut hb htie i hmv inp jf sl K hK hfit hkey havoid
+      j hpin hdom
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads S.σ P domains (by norm_num [MaxProofsVerified, StepIPARounds]) srcs
@@ -601,6 +606,13 @@ theorem stepWrap_kimchiVerify
     slotWidths advW
     (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hw hbr
   obtain ⟨b', hb', hwb, -, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp hreads _ hbody
+  have hhash := (builder_spec_iff _ _).mp
+    (wrapMain_hashesMessages Vs (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens)
+      widths (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
+      (srsLagrangeTable σStep ncStep
+        (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w))) σStep.h dummy
+      slotWidths advW
+      (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))) _ hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
   obtain ⟨hsplitsEq, hsr, hbnd, hslots⟩ := (builder_spec_iff _ _).mp
     (wrapMain_statement (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens) Vs widths
@@ -613,6 +625,9 @@ theorem stepWrap_kimchiVerify
       hbody
   have hout := (builder_spec_iff _ _).mp
     (stepMain_out srcs hws S.σ.h P domains (constPt dummySg) dummyUnf rule adv) 0
+    (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
+  have hhashG := (builder_spec_iff _ _).mp
+    (stepMain_hashesMessages srcs hws S.σ.h P domains (constPt dummySg) dummyUnf rule adv) 0
     (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
   -- slot `i` is entry `(w − n) + i` on both sides of the tie
   have hjv : jf.val = w - n + i := rfl
@@ -648,12 +663,11 @@ theorem stepWrap_kimchiVerify
   subst hbb
   obtain ⟨hE, hK⟩ := hfin K j hdom _ hpin (reads_true_of_tie hsf hsfG) cp _ Vg inp.unfinalized v
     hv hv1 hc hf
-  refine ⟨cp, ms, hwire, hf, ?_, ?_, hK⟩
+  refine ⟨cp, ms, hwire, hf, ?_, ?_, hhashG, hhash, hK⟩
   · have hsgs : stepOut.messagesForNextStepProof.challengePolynomialCommitments
         = Vector.ofFn fun i => (stepOut.slots i).sg.pt := hout.2
-    simp only [StepWrap.emittedAccumulator, Accumulator.ofCells,
-      WrapMainVerifyOut.messagesForNextWrapProof, Fin.getElem_fin, Vector.getElem_map, hsgs,
-      Vector.getElem_ofFn] at hE ⊢
+    simp only [StepWrap.emittedAccumulator, Accumulator.ofCells, Fin.getElem_fin,
+      Vector.getElem_map, hsgs, Vector.getElem_ofFn] at hE ⊢
     rw [hE]
     rfl
   · rfl

@@ -167,6 +167,19 @@ structure StepMainOut (n w : ℕ) (ws : Fin n → ℕ) (ncw ncs k ks : ℕ) wher
   messagesForNextStepProof : MessagesForNextStepProof (VkComms ncw (AffinePoint (FVar Fp)))
     (List (FVar Fp)) (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n)
 
+/-- The step circuit's message hashing: its outgoing message hashes to its statement's step
+digest. -/
+def StepMainOut.HashesMessages {n w : ℕ} {ws : Fin n → ℕ} {ncw ncs k ks : ℕ} (V : Valuation Fp)
+    (out : StepMainOut n w ws ncw ncs k ks) : Prop :=
+  ∀ (vk : VkComms ncw (AffinePoint Fp)) (sgs : Vector (AffinePoint Fp) n)
+    (chals : Vector (Vector Fp ks) n),
+    CircuitType.Reads V out.messagesForNextStepProof.dlogPlonkIndex vk →
+    CircuitType.Reads V out.messagesForNextStepProof.challengePolynomialCommitments sgs →
+    CircuitType.Reads V out.messagesForNextStepProof.oldBulletproofChallenges chals →
+    out.out.proofState.messagesForNextStepProof.val V
+      = stepMsgDigest IpaPallas.curve.sponge.params
+          ⟨out.messagesForNextStepProof.appState.map (·.val V), vk, sgs, chals⟩
+
 variable {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
 
 /-- The step circuit of a rule with `n` slots, slot `i` from source `srcs i`, over wrap proofs at
@@ -306,6 +319,29 @@ theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType 
   have hhash := fun (p : Poseidon.Params Fp) m =>
     builder_spec_true (hashMessagesForNextStepProof (c := Builder V (KimchiConstraint Fp))
       (nc := ncw) (n := n) (k := ks) p m)
+  simp only [stepMain]
+  mvcgen [hrule, hmap, hall, hhash, -Snarky.assertAll_spec]
+
+/-- The step circuit hashes its messages (`HashesMessages`). -/
+theorem stepMain_hashesMessages {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
+    [CircuitType Fp inVal inVar] [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
+    (srcs : Fin n → SlotSource ncw ks)
+    (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
+    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (dummyUnf : UnfVal k)
+    (rule : inVar →
+      CircuitM Fp (Builder V (KimchiConstraint Fp)) (Vector PrevStatement n × List (FVar Fp)))
+    (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
+    ⦃⌜True⌝⦄
+    stepMain srcs hws h P domains dummySg dummyUnf rule adv
+    ⦃⇓ r _ => ⌜r.HashesMessages V⌝⦄ := by
+  have hrule := fun x => builder_spec_true (rule x)
+  have hmap := fun (f : Fin n → CircuitM Fp (Builder V (KimchiConstraint Fp))
+      (FopOutput Fp ks × BoolVar Fp)) => builder_spec_true ((Vector.finRange n).mapM f)
+  have hall := fun bs => builder_spec_true
+    (assertAll (c := Builder V (KimchiConstraint Fp)) bs)
+  have hhash := fun m => hashMessagesForNextStepProof_spec (V := V) (nc := ncw) (n := n) (k := ks)
+    IpaPallas.curve.sponge.params IpaPallas.curve.sponge.hsize m
   simp only [stepMain]
   mvcgen [hrule, hmap, hall, hhash, -Snarky.assertAll_spec]
 

@@ -92,6 +92,38 @@ theorem wrapVerify_frame {sf : Type} {k kw nw np : ℕ}
   mvcgen [hivp, hh] invariants
     · ⇓⟨_, _⟩ => ⌜P⌝
 
+open Std.Do in
+/-- The verify block asserts its message's digest: at the padding sponge, `claimedMsgDigest` reads
+as the wrap-message digest of the opening `sg` and the new challenges the cells read as. -/
+theorem wrapVerify_msgDigest {sf : Type} {k kw nw np : ℕ}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
+    (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
+    (dummy : Vector F kw) (newBpChallenges : Vector (Vector (FVar F) kw) nw)
+    (claimedMsgDigest : FVar F) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
+    (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) :
+    ⦃⌜True⌝⦄
+    wrapVerify ops e p endo gm sqrtF blindingH spongeAfterIndex computeXHat
+      (wrapPaddingSponge p dummy (MaxProofsVerified - nw)) newBpChallenges claimedMsgDigest u cells
+    ⦃⇓ _ _ => ⌜∀ (sgv : AffinePoint F) (cv : Vector (Vector F kw) nw),
+      CircuitType.Reads V cells.opening.sg sgv → CircuitType.Reads V newBpChallenges cv →
+      claimedMsgDigest.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩⌝⦄ := by
+  have hivp := builder_spec_true (incrementallyVerifyProof ops e p endo gm sqrtF true blindingH
+    spongeAfterIndex computeXHat (cells.withClaims u))
+  have hh := hashMessagesForNextWrapProof_padded (V := V) p hsize dummy newBpChallenges
+    cells.opening.sg
+  simp only [wrapVerify]
+  mvcgen [hivp, hh] invariants
+    · ⇓⟨_, _⟩ => ⌜∀ (sgv : AffinePoint F) (cv : Vector (Vector F kw) nw),
+      CircuitType.Reads V cells.opening.sg sgv → CircuitType.Reads V newBpChallenges cv →
+      claimedMsgDigest.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩⌝
+  rename_i hd _ _ heq _ _ _
+  intro sgv cv hs hc
+  rw [heq]
+  exact hd sgv cv hs hc
+
 end Frame
 
 /-! ## The read -/
