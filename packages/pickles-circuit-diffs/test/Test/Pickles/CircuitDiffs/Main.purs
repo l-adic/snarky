@@ -5,27 +5,22 @@ import Prelude
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Int as Int
 import Data.Int.Bits as Bits
-import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Monoid (power)
-import Data.Newtype (un)
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Console as Console
 import Effect.Exception (throw)
 import JS.BigInt as BigInt
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
 import Node.FS.Sync as FS
-import Node.Process as Process
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, fromGateData, gateDataOf, parseOcamlFixtures)
+import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, parseOcamlFixtures)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect, compileBCorrectWrap)
 import Pickles.CircuitDiffs.PureScript.BindVk (compileBindVkStep)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
@@ -89,40 +84,30 @@ import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatBranches (compileXhatBranches)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
-import Pickles.CircuitDiffs.Types (CircuitComparison, WitnessExport)
+import Pickles.CircuitDiffs.Types (CircuitComparison)
 import Pickles.PublicInputCommit (LagrangeBaseLookup, mkConstLagrangeBaseLookup)
-import Random.LCG (mkSeed)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Builder (constraintsToArray)
-import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
-import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
-import Snarky.Backend.Kimchi.Class (createProverIndex)
+import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
-import Snarky.Backend.Kimchi.Proof (createProof)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class BasicSystem, class CheckedType, class CircuitType, BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (Snarky)
-import Snarky.Circuit.DSL.SizedF (toField) as SzF
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, generator, toAffine, toBigInt)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
-import Test.Pickles.CircuitDiffs.WitnessDump (buildWitnessExport)
-import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (Gen, chooseInt, evalGen, suchThat)
 import Test.Spec (SpecT, beforeAll_, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -494,37 +479,6 @@ boolAssertCircuit x = assert_ x
 --------------------------------------------------------------------------------
 -- Kimchi gate circuits
 
--- | A Pallas point as affine coordinates — solver inputs for the gate dumps.
-affinePt :: Pallas.G -> AffinePoint Fp
-affinePt g = case toAffine g of
-  Just c -> AffinePoint c
-  Nothing -> unsafeCrashWith "affinePt: unexpected point at infinity"
-
--- | A random Pallas point: a nonzero scalar multiple of the generator.
-genPallasPoint :: Gen (AffinePoint Fp)
-genPallasPoint = affinePt <<< power generator <$> chooseInt 1 top
-
--- | A nonzero field element — the honest domain of `inv_`'s witness (which throws
--- | `DivisionByZero` on zero) and of the nonzero assertions.
-genNonZeroF :: Gen (F Fp)
-genNonZeroF = arbitrary `suchThat` (_ /= zero)
-
--- | A random 128-bit scalar for the endo-scalar / endo-mul gadgets, which decode their input
--- | as a `SizedF 128`. Sampling a `SizedF 128` (its `Arbitrary` draws exactly 128 bits) and
--- | projecting to the field keeps the value inside the gate's real domain.
--- |
--- | This can't be a bare `arbitrary :: Gen (F Fp)` like the other gates, and the reason is the
--- | one place the OCaml diff and the Lean check diverge: the OCaml diff compares only the
--- | *constraint system* (input-independent), and the PureScript solver happily produces a
--- | witness for any field element — so both accept a full-range scalar. But the Lean
--- | index-model checker (`formal/scripts/check_ps_witness.lean`) is faithful to the actual
--- | EndoMulScalar / EndoMul gate, whose constraints require the 128-bit crumb reconstruction to
--- | equal the scalar. A full-range (255-bit) value is a malformed 128-bit challenge, so Lean
--- | rejects it while OCaml/PureScript accept it. Bounding the sample to 128 bits keeps all three
--- | in agreement.
-genScalar128 :: Gen (F Fp)
-genScalar128 = SzF.toField <$> (arbitrary :: Gen (SizedF 128 (F Fp)))
-
 addCompleteCircuit
   :: forall r
    . PrimeField Fp
@@ -587,13 +541,12 @@ loadOcamlCircuit name = do
     Right c -> pure c
     Left e -> throw $ "Failed to parse OCaml fixtures: " <> show e
 
--- | Strip metadata fields for equality comparison (context, variables, and the solved
--- | witness are not part of the constraint system)
+-- | Strip metadata fields for equality comparison (context and variables are not part of
+-- | the constraint system)
 stripMetadata :: ComparableCircuit -> ComparableCircuit
 stripMetadata c = c
   { gates = map (_ { context = [], variables = Nothing }) c.gates
   , cachedConstants = Array.sort $ map (\cc -> cc { variable = 0 }) c.cachedConstants
-  , witness = Nothing
   }
 
 exactMatch :: forall f. Ord f => SerdeHex f => PrimeField f => String -> Circuit f -> SpecT Aff Unit Aff Unit
@@ -613,24 +566,11 @@ exactMatchEff
   -> Effect (Circuit f)
   -> SpecT Aff Unit Aff Unit
 exactMatchEff name effPs =
-  exactMatchWith name (effPs <#> { circuit: _, witness: Nothing })
-
--- | The general form: the produced circuit plus an optional solved-witness export,
--- | carried on the PureScript side of the comparison JSON written to `circuits/results/`.
-exactMatchWith
-  :: forall f
-   . Ord f
-  => SerdeHex f
-  => PrimeField f
-  => String
-  -> Effect { circuit :: Circuit f, witness :: Maybe WitnessExport }
-  -> SpecT Aff Unit Aff Unit
-exactMatchWith name effPs =
   it (name <> " matches OCaml") do
-    { circuit: ps, witness } <- liftEffect effPs
+    ps <- liftEffect effPs
     ocaml <- liftEffect $ (loadOcamlCircuit name :: Effect (Circuit f))
-    let psCircuit = comparable witness ps
-    let ocamlCircuit = comparable Nothing ocaml
+    let psCircuit = comparable ps
+    let ocamlCircuit = comparable ocaml
     let psNoCtx = stripMetadata psCircuit
     let ocamlNoCtx = stripMetadata ocamlCircuit
     let status = if psNoCtx == ocamlNoCtx then "match" else "mismatch"
@@ -641,96 +581,18 @@ exactMatchWith name effPs =
     unless (status == "match") $
       psNoCtx `shouldEqual` ocamlNoCtx
 
--- | Like `exactMatchEff`, but when `CIRCUIT_DIFFS_WITNESS_EXPORT` is set the one
--- | compilation also runs the solver on a `Gen`-sampled input (seeded by
--- | `CIRCUIT_DIFFS_WITNESS_SEED`, default 42, logged for reproducibility) and carries
--- | the solved witness on the PureScript side of the comparison JSON.
-exactMatchWitnessEff
+-- | Compile a circuit over its input and output types and compare it.
+exactMatchCompiled
   :: forall @a @b avar bvar
    . CircuitType Fp a avar
   => CircuitType Fp b bvar
   => CheckedType Fp (KimchiConstraint Fp) avar
   => String
   -> (forall r. avar -> Snarky Fp (KimchiConstraint Fp) r bvar)
-  -> Gen a
   -> SpecT Aff Unit Aff Unit
-exactMatchWitnessEff name circuit gen =
-  exactMatchWith name do
-    builtState <- compile @Fp noAdvice (Proxy @a) (Proxy @b) (Proxy @(KimchiConstraint Fp))
-      circuit
-    gd <- gateDataOf builtState
-    exportEnabled <- Process.lookupEnv "CIRCUIT_DIFFS_WITNESS_EXPORT" <#> case _ of
-      Nothing -> false
-      Just v -> not (v == "" || v == "0" || v == "false")
-    witness <-
-      if not exportEnabled then pure Nothing
-      else do
-        seed <- fromMaybe 42 <<< (_ >>= Int.fromString) <$>
-          Process.lookupEnv "CIRCUIT_DIFFS_WITNESS_SEED"
-        Console.log ("[witness export] " <> name <> ": sampling input with seed " <> show seed)
-        let
-          input = evalGen gen { newSeed: mkSeed seed, size: 10 }
-          solver =
-            makeSolver (Proxy @(KimchiConstraint Fp)) circuit
-              :: Solver Fp (KimchiConstraint Fp) a b
-        Just <$> buildWitnessExport
-          { constraints: map _.variables gd.constraints
-          , publicInputs: builtState.publicInputs
-          }
-          solver
-          input
-    pure { circuit: fromGateData builtState gd, witness }
-
---------------------------------------------------------------------------------
--- Standalone kimchi prover for chunks2 app body — invokes the kimchi
--- prover directly (no pickles step/wrap wrapping) so that
--- `KIMCHI_WITNESS_DUMP=<path>` captures only the app body's witness
--- assignments. The OCaml side is
--- `dump_app_circuit_chunks2_witness.exe`.
-runChunks2AppWitnessProve :: CRS VestaG -> Effect Unit
-runChunks2AppWitnessProve crs = do
-  builtState <- compile @Fp noAdvice (Proxy @Unit) (Proxy @Unit)
-    (Proxy @(KimchiConstraint Fp))
-    chunks2AppCircuit
-  let
-    kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
-    -- With our ~65538-row circuit the domain rounds up to 2^17,
-    -- triggering num_chunks = 2. The 2^16 SRS is built once in `main`.
-    maxPolySize = 1 `Bits.shl` 16
-  csResult <- makeConstraintSystemWithPrevChallenges @Fp
-    { constraints: kimchiRows
-    , publicInputs: builtState.publicInputs
-    , unionFind: (un AuxState builtState.aux).wireState.unionFind
-    , prevChallengesCount: 0
-    , maxPolySize
-    }
-  let
-    proverIndex = createProverIndex @Fp @VestaG
-      { gates: csResult.gates
-      , publicInputSize: csResult.publicInputSize
-      , prevChallengesCount: csResult.prevChallengesCount
-      , maxPolySize: csResult.maxPolySize
-      , crs
-      }
-
-    rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit
-    rawSolver = makeSolver (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
-  runSolver rawSolver unit >>= case _ of
-    Left e -> throw $ "chunks2 app solver: " <> show e
-    Right (Tuple _publicOutputs assignments) -> do
-      let
-        { witness } = makeWitness
-          { assignments
-          , constraints: map _.variables csResult.constraints
-          , publicInputs: builtState.publicInputs
-          }
-        -- The prove is what fires the `KIMCHI_WITNESS_DUMP` hook inside
-        -- kimchi's `ProverProof::create_recursive`; the proof itself is
-        -- discarded (witness equality vs OCaml is the assertion, checked
-        -- by tools/witness_diff.sh).
-        _proof = createProof { proverIndex, witness }
-      pure unit
+exactMatchCompiled name circuit =
+  exactMatchEff name $ fromCompiledCircuit
+    =<< compile @Fp noAdvice (Proxy @a) (Proxy @b) (Proxy @(KimchiConstraint Fp)) circuit
 
 --------------------------------------------------------------------------------
 -- Test spec
@@ -761,43 +623,27 @@ spec :: SrsBundle -> SpecT Aff Unit Aff Unit
 spec bundle =
   beforeAll_ (liftEffect resetOutputDirs) $
     describe "Circuit comparison" do
-      -- The basic-gadget registrations are all witness-carrying: the sampled input
-      -- must satisfy the circuit — the production solver checks nothing, but the Lean
-      -- index-model checker decides the real constraints (see `genScalar128`'s note) —
-      -- so the assertion circuits sample from their satisfying domains.
       describe "Field arithmetic" do
-        exactMatchWitnessEff @(F Fp) @(F Fp) "mul_step_circuit" mulCircuit arbitrary
-        exactMatchWitnessEff @(F Fp) @(F Fp) "inv_step_circuit" invCircuit genNonZeroF
-        exactMatchWitnessEff @(F Fp) @(F Fp) "div_step_circuit" divCircuit arbitrary
-        exactMatchWitnessEff @(F Fp) @(F Fp) "if_step_circuit" ifCircuit arbitrary
-        exactMatchWitnessEff @(F Fp) @Boolean "equals_step_circuit" equalsCircuit arbitrary
-        exactMatchWitnessEff @(F Fp) @(F Fp) "pow7_step_circuit" pow7Circuit arbitrary
-        exactMatchWitnessEff @(F Fp) @(F Fp) "pow8_step_circuit" pow8Circuit arbitrary
+        exactMatchCompiled @(F Fp) @(F Fp) "mul_step_circuit" mulCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "inv_step_circuit" invCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "div_step_circuit" divCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "if_step_circuit" ifCircuit
+        exactMatchCompiled @(F Fp) @Boolean "equals_step_circuit" equalsCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "pow7_step_circuit" pow7Circuit
+        exactMatchCompiled @(F Fp) @(F Fp) "pow8_step_circuit" pow8Circuit
       describe "Assertions" do
-        exactMatchWitnessEff @(F Fp) @Unit "assert_equal_step_circuit" assertEqualCircuit
-          (pure zero)
-        exactMatchWitnessEff @(F Fp) @Unit "assert_non_zero_step_circuit"
-          assertNonZeroCircuit
-          genNonZeroF
-        exactMatchWitnessEff @(F Fp) @Unit "assert_not_equal_step_circuit"
-          assertNotEqualCircuit
-          genNonZeroF
-        exactMatchWitnessEff @(F Fp) @Unit "assert_square_step_circuit" assertSquareCircuit
-          (pure zero)
-        exactMatchWitnessEff @(F Fp) @Unit "unpack_step_circuit" unpackCircuit arbitrary
+        exactMatchCompiled @(F Fp) @Unit "assert_equal_step_circuit" assertEqualCircuit
+        exactMatchCompiled @(F Fp) @Unit "assert_non_zero_step_circuit" assertNonZeroCircuit
+        exactMatchCompiled @(F Fp) @Unit "assert_not_equal_step_circuit" assertNotEqualCircuit
+        exactMatchCompiled @(F Fp) @Unit "assert_square_step_circuit" assertSquareCircuit
+        exactMatchCompiled @(F Fp) @Unit "unpack_step_circuit" unpackCircuit
       describe "Boolean" do
-        exactMatchWitnessEff @Boolean @Boolean "bool_and_step_circuit" boolAndCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Boolean "bool_or_step_circuit" boolOrCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Boolean "bool_xor_step_circuit" boolXorCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Boolean "bool_all_step_circuit" boolAllCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Boolean "bool_any_step_circuit" boolAnyCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Unit "bool_assert_step_circuit" boolAssertCircuit
-          (pure true)
+        exactMatchCompiled @Boolean @Boolean "bool_and_step_circuit" boolAndCircuit
+        exactMatchCompiled @Boolean @Boolean "bool_or_step_circuit" boolOrCircuit
+        exactMatchCompiled @Boolean @Boolean "bool_xor_step_circuit" boolXorCircuit
+        exactMatchCompiled @Boolean @Boolean "bool_all_step_circuit" boolAllCircuit
+        exactMatchCompiled @Boolean @Boolean "bool_any_step_circuit" boolAnyCircuit
+        exactMatchCompiled @Boolean @Unit "bool_assert_step_circuit" boolAssertCircuit
       describe "Two-phase chain application circuits" do
         -- App-level rule bodies for `dump_two_phase_chain` (the
         -- minimal multi-branch fixture). We byte-compare ONLY the
@@ -808,22 +654,11 @@ spec bundle =
         -- deferred values, wrap_main) is rooted in noise. The full
         -- multi-branch step_main diff comes later, once PS supports
         -- multi-branch compile.
-        exactMatchWitnessEff @(F Fp) @Unit "app_circuit_two_phase_chain_make_zero"
+        exactMatchCompiled @(F Fp) @Unit "app_circuit_two_phase_chain_make_zero"
           makeZeroAppCircuit
-          (pure zero)
-        exactMatchWitnessEff @(F Fp) @Unit "app_circuit_two_phase_chain_increment"
+        exactMatchCompiled @(F Fp) @Unit "app_circuit_two_phase_chain_increment"
           incrementAppCircuit
-          (pure one)
         exactMatchEff "app_circuit_chunks2" (compileUU chunks2AppCircuit)
-      describe "Witness dump" $
-        -- | Gated on `KIMCHI_WITNESS_DUMP` env var. When set, runs the
-        -- | standalone kimchi prover for chunks2 app body so the dump
-        -- | fires; otherwise no-op. Paired with OCaml's
-        -- | `dump_app_circuit_chunks2_witness.exe`.
-        it "app_circuit_chunks2 witness" do
-          liftEffect (Process.lookupEnv "KIMCHI_WITNESS_DUMP") >>= case _ of
-            Nothing -> pure unit
-            Just _ -> liftEffect (runChunks2AppWitnessProve bundle.vestaCrs16)
       describe "Schnorr signature" do
         -- Iteration 1 fixture: zero-seed sponge (matches PS
         -- `Snarky.Circuit.RandomOracle.Sponge` initial state). 5 public
@@ -832,16 +667,12 @@ spec bundle =
         -- `mina/src/lib/crypto/pickles/dump_circuit_impl.ml`.
         exactMatchEff "schnorr_verify_step_circuit" (fromCompiledCircuit =<< compileSchnorrVerify)
       describe "Kimchi gates" do
-        exactMatchWitnessEff @TwoPoints @Point "add_complete_step_circuit" addCompleteCircuit
-          (Tuple <$> genPallasPoint <*> genPallasPoint)
-        exactMatchWitnessEff @(F Fp) @(F Fp) "endo_scalar_step_circuit" endoScalarCircuit
-          genScalar128
-        exactMatchWitnessEff @PointField @Point "var_base_mul_step_circuit" varBaseMulCircuit
-          (Tuple <$> genPallasPoint <*> arbitrary)
-        exactMatchWitnessEff @PointField @Point "endo_mul_step_circuit" endoMulCircuit
-          (Tuple <$> genPallasPoint <*> genScalar128)
+        exactMatchCompiled @TwoPoints @Point "add_complete_step_circuit" addCompleteCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "endo_scalar_step_circuit" endoScalarCircuit
+        exactMatchCompiled @PointField @Point "var_base_mul_step_circuit" varBaseMulCircuit
+        exactMatchCompiled @PointField @Point "endo_mul_step_circuit" endoMulCircuit
         exactMatchEff "scale_fast2_128_step_circuit" (compilePF scaleFast2_128Circuit)
-        exactMatchWitnessEff @V3 @V3 "poseidon_step_circuit" poseidonCircuit arbitrary
+        exactMatchCompiled @V3 @V3 "poseidon_step_circuit" poseidonCircuit
       describe "Pickles Step sub-circuits" do
         exactMatchEff "pow2_pow_step_circuit" (fromCompiledCircuit =<< compilePow2Pow)
         exactMatchEff "b_correct_step_circuit" (fromCompiledCircuit =<< compileBCorrect)
@@ -921,8 +752,8 @@ spec bundle =
         -- Lean cannot compute Lagrange commitments (no SRS/FFI); it derives the corrections
         -- (`-2^L·base`) itself via `smulFast`. Format: `[x, y]` decimal pairs (`parseSWPoint`).
         -- Written into `resultsDir` beside the comparison dumps, so it rides the same
-        -- artifact to the Lean checker; the consumers that scan the dir (the witness checker,
-        -- the visualizer) skip it — it carries no `purescript` field and no manifest entry.
+        -- artifact to the Lean checker; the visualizer, which scans the dir, skips it — it
+        -- carries no `purescript` field and no manifest entry.
         -- Emitted inside an `it` so it runs after the `beforeAll_` `resetOutputDirs` has created
         -- (and not since wiped) `resultsDir`; a bare effect here would run at spec-construction
         -- time, before the directory exists.

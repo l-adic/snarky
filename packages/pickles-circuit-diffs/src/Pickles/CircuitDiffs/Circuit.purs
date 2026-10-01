@@ -3,9 +3,7 @@ module Pickles.CircuitDiffs.Circuit
   , GateData
   , CachedConstant
   , comparable
-  , gateDataOf
   , fromCompiledCircuit
-  , fromGateData
   , parseOcamlFixtures
   , parseCircuitJson
   , parseCachedConstants
@@ -32,8 +30,8 @@ import Effect (Effect)
 import Foreign (ForeignError(..), MultipleErrors)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.CircuitDiffs.Types (CircuitComparison, ComparableCircuit, ComparableGate, WitnessExport) as ReExports
-import Pickles.CircuitDiffs.Types (ComparableCircuit, WitnessExport)
+import Pickles.CircuitDiffs.Types (CircuitComparison, ComparableCircuit, ComparableGate) as ReExports
+import Pickles.CircuitDiffs.Types (ComparableCircuit)
 import Simple.JSON (class ReadForeign, readJSON)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeGateData)
@@ -79,10 +77,9 @@ varsToMaybe v =
     if Array.all (_ == Nothing) arr then Nothing
     else Just (map toInt arr)
 
-comparable :: forall f. Ord f => PrimeField f => SerdeHex f => Maybe WitnessExport -> Circuit f -> ComparableCircuit
-comparable witness c =
+comparable :: forall f. Ord f => PrimeField f => SerdeHex f => Circuit f -> ComparableCircuit
+comparable c =
   { publicInputSize: c.publicInputSize
-  , witness
   , gates: map
       ( \g ->
           { kind: gateKindToString g.kind
@@ -122,8 +119,7 @@ type Circuit f =
 --------------------------------------------------------------------------------
 -- From compiled PureScript circuit
 
--- | The one `makeGateData` of a compiled circuit — shared between `fromGateData`
--- | (the comparable gate list) and witness generation (the per-row variable layout).
+-- | The one `makeGateData` of a compiled circuit.
 gateDataOf
   :: forall f g
    . CircuitGateConstructor f g
@@ -149,8 +145,7 @@ fromCompiledCircuit
   -> Effect (Circuit f)
 fromCompiledCircuit s = fromGateData s <$> gateDataOf s
 
--- | Assemble the `Circuit` view from a compiled state and its gate data (pure — the
--- | effect is `gateDataOf`).
+-- | Assemble the `Circuit` view from a compiled state and its gate data.
 fromGateData
   :: forall f g
    . CircuitGateConstructor f g

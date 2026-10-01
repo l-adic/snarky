@@ -1,11 +1,9 @@
 /-
 The CS-equality seam: compile the gadget circuits with the Lean kimchi backend and
 compare the assembled constraint system — gate types, coefficients, wiring, per-cell
-variable ids, public size, witness, and public values — against the recorded
-PureScript dumps (`KimchiFixture.PS` decodes the JSON schema; the fixture witness
-table is column-major, so the comparison transposes). The witness comparison
-re-solves with the fixture's own public input, so it checks the deterministic
-pipeline, not the sampled randomness.
+variable ids and public size — against the recorded PureScript dumps (`KimchiFixture.PS`
+decodes the JSON schema). The dumps carry no witness: the comparison is on the constraint
+system alone.
 
 The variable-ids check is the allocation-order contract, compared UP TO A GLOBAL
 RENAMING: this backend numbers the reduction's internal variables above the circuit's
@@ -24,12 +22,11 @@ Native constant folding (generators, their powers, endomorphism coefficients) is
 circuit logic.
 
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
-(packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
+(packages/pickles-circuit-diffs/test/): every circuit built from the
 `Basic` gadget vocabulary, the landed gate gadgets (poseidon, endo_scalar,
 endo_mul), the gadget-complete pickles sub-circuits (pow2_pow, b_correct,
 bullet_reduce_one_step, bullet_reduce_step — composition fixtures, the bullet pair
-composing endoInv + endoMul + addComplete; their dumps are witness-less, so the
-checks are CS-side only), ft_eval0_step (the proved `Pickles.ftEval0Circuit` under
+composing endoInv + endoMul + addComplete), ft_eval0_step (the proved `Pickles.ftEval0Circuit` under
 the linearization prelude, against the PS `FtEval0Common` harness), and cip_{step,wrap}
 (the proved `Pickles.combinedInnerProduct` over `Pickles.bPolyCircuit`, against the PS
 `Cip` harness — the wrap column's first pickles sub-circuit), and the scalar side's
@@ -60,7 +57,7 @@ Vesta's parameters and the wrap linearization over `Pickles.Linearization.fqToke
 both deployed token streams are compared against their PureScript circuits.
 
 The dumps are the PS suite's gitignored export: generate with
-`CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
+`npx spago test -p pickles-circuit-diffs`. CI runs
 this check against the exports its own commit just produced.
 
 Run from `formal/`:  lake env lean --run scripts/check_cs.lean
@@ -267,10 +264,7 @@ def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
 
 Composition fixtures: PS sub-circuits built only from gadgets this tree already
 carries, transcribed from `Test.Pickles.CircuitDiffs.Main` the same way the gadget
-circuits are — these are the first fixtures exercising the gadgets IN COMPOSITION.
-Their dumps are witness-less (`exactMatchEff` registrations), so the comparison
-checks the constraint-system side only: gate types, coefficients, wires, per-cell
-variable ids, public size. -/
+circuits are — these are the first fixtures exercising the gadgets IN COMPOSITION. -/
 
 /-- `pow2_pow_step_circuit` (`Pickles.Util.Pow2.pow2PowSquare` at 16 squarings —
 sixteen `square` rows chained). -/
@@ -365,61 +359,45 @@ def varsAgreeUpToRenaming {F : Type} (rows : List (KimchiRow F))
       | _, _ => return false
   return true
 
-/-- Compare one circuit's assembled system and re-solved witness against its dump:
-the CS data (types, coefficients, wires, public size) is input-independent; the
-witness re-solve seeds the fixture's recorded public inputs. -/
-def compareWith {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
-    {a b avar bvar : Type} [A : CircuitType (ZMod p) a avar]
-    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a avar] [B : CircuitType (ZMod p) b bvar]
+/-- Compare one circuit's assembled system against its dump: types, coefficients, wires,
+public size and the variable ids up to renaming. -/
+def compareWith {p : ℕ} [Fact p.Prime]
+    {a b avar bvar : Type} [CircuitType (ZMod p) a avar]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a avar] [CircuitType (ZMod p) b bvar]
     (main : avar → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) bvar) (raw : Raw (ZMod p)) :
     List (String × Bool) :=
   let (rows, gates, pubVars) := kimchiGateData (a := a) (b := b) main
-  let pubSize := pubVars.length
-  let csChecks :=
-    [ ("publicInputSize", pubSize == raw.publicInputSize),
-      ("gate count", gates.length == raw.typs.size),
-      ("gate types", (gates.map (kindType ·.kind)).toArray == raw.typs),
-      ("coefficients", (gates.map (·.coeffs.toArray)).toArray == raw.coeffs),
-      ("wires",
-        (gates.map fun g =>
-          (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray
-          == raw.wires),
-      ("gate count matches wires", gates.length == raw.wires.size),
-      ("variables (up to renaming)", varsAgreeUpToRenaming rows raw.vars) ]
-  let input : a := A.fieldsToValue (Vector.ofFn fun i => raw.pub.getD i 0)
-  -- A witness-less dump (the `exactMatchEff` registrations) has no witness side to
-  -- compare; `main` reports which circuits were checked CS-side only.
-  let witChecks := if raw.witness.isEmpty then [] else
-    match kimchiSolve (a := a) (b := b) main input with
-    | .error _ => [("solve", false)]
-    | .ok (_, env) =>
-      let (wit, pubs) := makeWitness env rows pubVars
-      [ ("witness",
-          (List.range 15).map (fun j => wit.map fun row => row.toList.getD j 0)
-            == raw.witness.toList.map (·.toList)),
-        ("public values", pubs == raw.pub.toList),
-        ("index round-trip", indexRoundTrip side rows gates pubSize wit pubs) ]
-  csChecks ++ witChecks
+  [ ("publicInputSize", pubVars.length == raw.publicInputSize),
+    ("gate count", gates.length == raw.typs.size),
+    ("gate types", (gates.map (kindType ·.kind)).toArray == raw.typs),
+    ("coefficients", (gates.map (·.coeffs.toArray)).toArray == raw.coeffs),
+    ("wires",
+      (gates.map fun g =>
+        (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray
+        == raw.wires),
+    ("gate count matches wires", gates.length == raw.wires.size),
+    ("variables (up to renaming)", varsAgreeUpToRenaming rows raw.vars) ]
+
+/-- A corpus entry's comparison: parse a dump and compare it, `none` when the JSON is not a
+comparison dump. -/
+abbrev Comparison := Json → Except String (Option (List (String × Bool)))
 
 /-- A corpus entry: parse the dump at the target's field and compare. -/
-def target {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
+def target {p : ℕ} [Fact p.Prime]
     {a b avar bvar : Type} [CircuitType (ZMod p) a avar]
     [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a avar] [CircuitType (ZMod p) b bvar]
-    (main : avar → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) bvar) (j : Json) :
-    Except String (Option (Bool × List (String × Bool))) := do
-  match ← parseComparisonCs? (m := p) j with
-  | none => return none
-  | some raw => return some (raw.witness.isEmpty, compareWith side (a := a) (b := b) main raw)
+    (main : avar → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) bvar) : Comparison := fun j => do
+  return (← parseComparisonCs? (m := p) j).map (compareWith (a := a) (b := b) main)
 
 /-- A step-side entry. -/
 def stepTarget {a b avar bvar : Type} [CircuitType Fp a avar] [CheckedType Fp C a avar]
-    [CircuitType Fp b bvar] (main : avar → CircuitM Fp C bvar) :=
-  target Kimchi.Fixture.PS.fpSide (a := a) (b := b) main
+    [CircuitType Fp b bvar] (main : avar → CircuitM Fp C bvar) : Comparison :=
+  target (a := a) (b := b) main
 
 /-- A wrap-side entry. -/
 def wrapTarget {a b avar bvar : Type} [CircuitType Fq a avar] [CheckedType Fq Cq a avar]
-    [CircuitType Fq b bvar] (main : avar → CircuitM Fq Cq bvar) :=
-  target Kimchi.Fixture.PS.fqSide (a := a) (b := b) main
+    [CircuitType Fq b bvar] (main : avar → CircuitM Fq Cq bvar) : Comparison :=
+  target (a := a) (b := b) main
 
 /-! ## The linearization circuit
 
@@ -1821,7 +1799,7 @@ def hashMessagesStepCircuit (input : Vector (FVar Fp) 91) : CircuitM Fp C PUnit 
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
 blinding bases. -/
 def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
-    List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
+    List (String × Comparison) :=
   [ ("mul_step_circuit", stepTarget (a := Fp) (b := Fp) mulCircuit),
     ("inv_step_circuit", stepTarget (a := Fp) (b := Fp) invCircuit),
     ("div_step_circuit", stepTarget (a := Fp) (b := Fp) divCircuit),
@@ -1972,9 +1950,9 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × XhatCurve.Point))
     (step : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
     (ivpStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point))
     (branches : Option (Array XhatCurve.Point × Array XhatCurve.Point × XhatCurve.Point))
-    (wrapMains : List (String × (Json → Except String (Option (Bool × List (String × Bool))))))
+    (wrapMains : List (String × Comparison))
     (fullStep : Option (Array XhatStepCurve.Point × XhatStepCurve.Point)) :
-    List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
+    List (String × Comparison) :=
   (fullStep.toList.map fun (pts, h) =>
     ("full_step_verify_one_circuit",
       stepTarget (a := Vector Fp 286) (b := PUnit) (fullStepVerifyOneCircuit pts h)))
@@ -2163,7 +2141,7 @@ def main : IO Unit := do
         (stepMainDumpCircuit (inVal := Unit) (outVal := Fp) 2 (by decide)
           { k with slots := k.slots.set 0 s0' } dummyUnfN0 importTwoPhaseChainRule))
   let named : List (String × String ×
-      (Json → Except String (Option (Bool × List (String × Bool))))) :=
+      Comparison) :=
     (targets hStep hWrap
       ++ xhatTargets xhatWrap xhatWrap2 xhatStep ivpStep xhatBranches wrapMains fullStep
       ++ stepMains).map fun (n, c) => (n, n, c)
@@ -2180,11 +2158,10 @@ def main : IO Unit := do
     | .ok none =>
       failures := failures + 1
       IO.println s!"✗ {name}: not a comparison dump"
-    | .ok (some (witnessLess, checks)) =>
+    | .ok (some checks) =>
       let bad := checks.filter (!·.2)
       if bad.isEmpty then
-        let note := if witnessLess then "  (CS-side only: witness-less dump)" else ""
-        IO.println s!"✓ {name}{note}"
+        IO.println s!"✓ {name}"
       else
         failures := failures + 1
         IO.println s!"✗ {name}: {String.intercalate ", " (bad.map (·.1))}"

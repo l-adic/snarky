@@ -5,6 +5,7 @@ import Prelude
 import Colog (LoggerT, Message, richMessageStdout, usingLoggerT)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Test.Pickles.KimchiAppWitness as KimchiAppWitness
 import Test.Pickles.Prove.Chunks2 as Chunks2
 import Test.Pickles.Prove.Chunks4 as Chunks4
 import Test.Pickles.Prove.Codecs as Codecs
@@ -71,6 +72,7 @@ spec = beforeAll buildSharedSrs do
   SideloadVerifyNrr.spec
   SideloadVerifyFixtures.spec
   SideloadLeanInputs.spec
+  KimchiAppWitness.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'

@@ -88,7 +88,7 @@ jobs:
     # Compile the CS-equality checker HERE, in the one job that SAVES the build cache, so
     # its native binary and the project's `.c.o` objects ride the shared cache to every
     # consumer. The check_cs corpus is heavy interpreted (~35-57 min); compiled it runs in
-    # seconds, so `check-ps-witness` (test.yml) restores this cache and runs `lake exe
+    # seconds, so `check-cs` (test.yml) restores this cache and runs `lake exe
     # check-cs` rather than `lean --run`. Building the exe needs no fixtures — it reads the
     # dumps at run time — so it fits the library build job. The compile fee is paid once
     # per `formal/**/*.lean` change (the cache key), not once per consumer run.

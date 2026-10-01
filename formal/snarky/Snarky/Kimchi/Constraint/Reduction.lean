@@ -14,7 +14,7 @@ interpreters — the builder (rows, gate batching, wiring, constant cache) and t
 ## Implementation notes
 
 - Both interpreters thread one variable counter, borrowed from and handed back to the
-  caller (`kimchiCompile`, `kimchiSolve`). The builder accumulates rows newest-first and
+  caller (`kimchiCompile`, `reduceSolved`). The builder accumulates rows newest-first and
   reverses once in `reduceAsBuilder`; the emission order is fixture bytes.
 - The class has no `Monad` superclass (the algorithms take `[Monad m]`), and each
   definition asks for the weakest field classes it needs; division appears only in the

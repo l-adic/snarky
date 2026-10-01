@@ -7,7 +7,8 @@
 -- | under `KIMCHI_WITNESS_DUMP` — which a byte-for-byte diff against
 -- | the reference dump compares.
 module Test.Pickles.Prove.Chunks2
-  ( chunks2Rule
+  ( chunks2Body
+  , chunks2Rule
   , spec
   ) where
 
@@ -29,7 +30,7 @@ import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
-import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
+import Snarky.Circuit.DSL (F, Snarky, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -39,8 +40,8 @@ import Test.Spec.Assertions (shouldEqual)
 -- | kimchi row, so 2^16 + 1 rows — then one 7-wire Raw Generic with
 -- | zero coefficients, which pushes the 7th permuted column's degree
 -- | above 2^16.
-chunks2Rule :: StepRule Unit Unit Unit Unit Unit
-chunks2Rule _ _ = do
+chunks2Body :: forall r. Snarky StepField (KimchiConstraint StepField) r Unit
+chunks2Body = do
   let
     freshZero = exists (pure (zero :: F StepField))
     iters = (1 `Bits.shl` 17) + 1
@@ -58,6 +59,11 @@ chunks2Rule _ _ = do
   z <- freshZero
   addConstraint $ KimchiPad
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
+
+-- | The chunked rule: `chunks2Body`, with no prevs.
+chunks2Rule :: StepRule Unit Unit Unit Unit Unit
+chunks2Rule _ _ = do
+  chunks2Body
   pure
     { prevs: toPrevs unit
     , publicOutput: unit
