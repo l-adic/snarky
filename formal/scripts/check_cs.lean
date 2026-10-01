@@ -1108,7 +1108,9 @@ def branchRules : List (String × ℕ × String) :=
 
 /-- Which wrap main's proofs each step main's slot verifies, by dump name, where both are
 dumped. The handover theorems need the slot at that wrap circuit's width (`wrapStep_kimchiVerify`'s
-`hwi`, `StepWrapRun.Hands`). -/
+`hwi`, `StepWrapRun.Hands`). Two slots are not listed: the import's self slot, whose width the
+constants parser (`stepMainConsts`) pins to its own tag's, and tree-proof-return's slot 0, which
+verifies `No_recursion_return`, whose wrap main is not dumped. -/
 def slotTags : List (String × ℕ × String) :=
   [ ("step_main_simple_chain_n2_circuit", 0, "wrap_main_n2_circuit"),
     ("step_main_simple_chain_n2_circuit", 1, "wrap_main_n2_circuit"),
