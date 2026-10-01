@@ -15,7 +15,7 @@ Pickles.wrapStep_kimchiVerify
 
 -- The handover along a chain: the accumulator one link emits is an old accumulator of the
 -- proof the next link verifies, step or wrap, unless Poseidon collides.
-Pickles.opened_by_next
+Pickles.opened_by_next_step
 Pickles.opened_by_next_wrap
 
 -- The capstones' typed public-input ties are the wire's public input: the step circuit's

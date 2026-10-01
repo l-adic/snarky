@@ -23,9 +23,9 @@ accumulator of the proof the next link verifies, which that proof's batch opens.
 
 ## Main results
 
-* `opened_by_next`, `opened_by_next_wrap`: the accumulator a link emits is an old accumulator of
-  the step, respectively wrap, proof the next link verifies, unless Poseidon collides on the
-  messages passed between them.
+* `opened_by_next_step`, `opened_by_next_wrap`: the accumulator a link emits is an old
+  accumulator of the step, respectively wrap, proof the next link verifies, unless Poseidon
+  collides on the messages passed between them.
 
 ## Implementation notes
 
@@ -348,7 +348,7 @@ private theorem digests_of_ofWrap {k w : ℕ} {Vs : Valuation Fp} {Vw : Valuatio
 link `rk1` consumes the olds of the step proof `cp` that `rk`'s step circuit made. Then `A` is one
 of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
 the messages passed between the links. -/
-theorem opened_by_next
+theorem opened_by_next_step
     (rk : WrapStepRun branches w ncStep kw ks n wNext ws slotWidths)
     (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' slotWidths')
     (hn : n ≤ wNext)
