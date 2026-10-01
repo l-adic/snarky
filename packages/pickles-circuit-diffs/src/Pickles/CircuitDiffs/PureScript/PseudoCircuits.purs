@@ -23,16 +23,18 @@ module Pickles.CircuitDiffs.PureScript.PseudoCircuits
   ) where
 
 -- | Pseudo module sub-circuit tests matching OCaml fixtures.
--- | Each circuit takes a flat input array and calls the corresponding Pseudo function.
+-- | Each circuit takes its typed input and calls the corresponding Pseudo function.
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
+import Data.Fin (reflectFinite)
+import Data.Reflectable (class Reflectable)
+import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import JS.BigInt (fromInt)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.ProofsVerified (wrapDomainShifts)
@@ -45,7 +47,7 @@ import Pickles.Types (ChunkedCommitment(..))
 import Pickles.VerificationKey (chooseKey)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_, exists, label)
+import Snarky.Circuit.DSL (class CircuitType, F(..), FVar, Snarky, UnChecked(..), const_, exists, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, label)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -59,19 +61,18 @@ import Type.Proxy (Proxy(..))
 oneHotN1Circuit
   :: forall f r
    . PrimeField f
-  => Vector 1 (FVar f)
+  => FVar f
   -> Snarky f (KimchiConstraint f) r Unit
-oneHotN1Circuit inputs = do
-  let at = unsafeIdx inputs
-  _ <- label "one_hot_n1" $ (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
+oneHotN1Circuit index = do
+  _ <- label "one_hot_n1" $ (oneHotVector :: _ -> _ (Vector 1 _)) index
   pure unit
 
 compileOneHotN1Step :: Effect (CompiledCircuit StepField)
-compileOneHotN1Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN1Step = compile noAdvice (Proxy @(F StepField)) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN1Circuit
 
 compileOneHotN1Wrap :: Effect (CompiledCircuit WrapField)
-compileOneHotN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN1Wrap = compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN1Circuit
 
 --------------------------------------------------------------------------------
@@ -82,92 +83,127 @@ compileOneHotN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy 
 oneHotN3Circuit
   :: forall f r
    . PrimeField f
-  => Vector 1 (FVar f)
+  => FVar f
   -> Snarky f (KimchiConstraint f) r Unit
-oneHotN3Circuit inputs = do
-  let at = unsafeIdx inputs
-  _ <- label "one_hot_n3" $ (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
+oneHotN3Circuit index = do
+  _ <- label "one_hot_n3" $ (oneHotVector :: _ -> _ (Vector 3 _)) index
   pure unit
 
 compileOneHotN3Step :: Effect (CompiledCircuit StepField)
-compileOneHotN3Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN3Step = compile noAdvice (Proxy @(F StepField)) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN3Circuit
 
 compileOneHotN3Wrap :: Effect (CompiledCircuit WrapField)
-compileOneHotN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN3Wrap = compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN3Circuit
 
 --------------------------------------------------------------------------------
 -- to_domain over the three wrap domains
 --------------------------------------------------------------------------------
 
--- | Takes the domain index and `zeta`: the one-hot of the index, then the
--- | selected wrap domain's vanishing polynomial at `zeta`, as `wrapMain`
--- | selects each slot's finalize domain.
+-- | `pseudo_to_domain_wrap_circuit`'s input: the domain index and `zeta`.
+newtype PseudoToDomainInput f = PseudoToDomainInput
+  { index :: f
+  , zeta :: f
+  }
+
+-- | The wire order.
+type PseudoToDomainTuple f = Tuple2 f f
+
+instance CircuitType f fa fv => CircuitType f (PseudoToDomainInput fa) (PseudoToDomainInput fv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(PseudoToDomainTuple fa))
+  valueToFields = genericValueToFields <<< toDomainTuple
+  fieldsToValue = toDomainInput <<< genericFieldsToValue
+  varToFields = genericVarToFields @(PseudoToDomainTuple fa) <<< toDomainTuple
+  fieldsToVar = toDomainInput <<< genericFieldsToVar @(PseudoToDomainTuple fa)
+
+toDomainTuple :: forall f. PseudoToDomainInput f -> PseudoToDomainTuple f
+toDomainTuple (PseudoToDomainInput i) = tuple2 i.index i.zeta
+
+toDomainInput :: forall f. PseudoToDomainTuple f -> PseudoToDomainInput f
+toDomainInput = uncurry2 \index zeta -> PseudoToDomainInput { index, zeta }
+
+-- | The one-hot of the index, then the selected wrap domain's vanishing polynomial at `zeta`,
+-- | as `wrapMain` selects each slot's finalize domain.
 pseudoToDomainWrapCircuit
   :: forall r
-   . Vector 2 (FVar WrapField)
+   . UnChecked (PseudoToDomainInput (FVar WrapField))
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
-pseudoToDomainWrapCircuit inputs = do
-  let { head: index, tail } = Vector.uncons inputs
-  which <- Pseudo.oneHotVector @3 index
+pseudoToDomainWrapCircuit (UnChecked (PseudoToDomainInput i)) = do
+  which <- Pseudo.oneHotVector @3 i.index
   domain <- Pseudo.toDomain @16
     { shifts: wrapDomainShifts
     , domainGenerator: LinFFI.domainGenerator @WrapField
     }
     which
-    (unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil)
-  _ <- label "pseudo_to_domain" $ domain.vanishingPolynomial (Vector.head tail)
+    (reflectFinite @13 :< reflectFinite @14 :< reflectFinite @15 :< Vector.nil)
+  _ <- label "pseudo_to_domain" $ domain.vanishingPolynomial i.zeta
   pure unit
 
 compilePseudoToDomainWrap :: Effect (CompiledCircuit WrapField)
-compilePseudoToDomainWrap = compile noAdvice (Proxy @(Vector 2 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoToDomainWrap = compile noAdvice (Proxy @(UnChecked (PseudoToDomainInput (F WrapField)))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoToDomainWrapCircuit
 
 --------------------------------------------------------------------------------
--- pseudo_mask N1
+-- pseudo_mask N1, N3
 --------------------------------------------------------------------------------
+
+-- | `pseudo_mask_n{1,3}`'s input: the index to select, then the `n` values to mask.
+newtype PseudoMaskInput n f = PseudoMaskInput
+  { index :: f
+  , values :: Vector n f
+  }
+
+-- | The wire order.
+type PseudoMaskTuple n f = Tuple2 f (Vector n f)
+
+instance (Reflectable n Int, CircuitType f fa fv) => CircuitType f (PseudoMaskInput n fa) (PseudoMaskInput n fv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(PseudoMaskTuple n fa))
+  valueToFields = genericValueToFields <<< maskTuple
+  fieldsToValue = maskInput <<< genericFieldsToValue
+  varToFields = genericVarToFields @(PseudoMaskTuple n fa) <<< maskTuple
+  fieldsToVar = maskInput <<< genericFieldsToVar @(PseudoMaskTuple n fa)
+
+maskTuple :: forall n f. PseudoMaskInput n f -> PseudoMaskTuple n f
+maskTuple (PseudoMaskInput i) = tuple2 i.index i.values
+
+maskInput :: forall n f. PseudoMaskTuple n f -> PseudoMaskInput n f
+maskInput = uncurry2 \index values -> PseudoMaskInput { index, values }
 
 pseudoMaskN1Circuit
   :: forall f r
    . PrimeField f
-  => Vector 2 (FVar f)
+  => UnChecked (PseudoMaskInput 1 (FVar f))
   -> Snarky f (KimchiConstraint f) r Unit
-pseudoMaskN1Circuit inputs = do
-  let at = unsafeIdx inputs
-  bits <- (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
-  _ <- label "pseudo_mask_n1" $ choose bits ((at 1 :< Vector.nil)) identity
+pseudoMaskN1Circuit (UnChecked (PseudoMaskInput i)) = do
+  bits <- (oneHotVector :: _ -> _ (Vector 1 _)) i.index
+  _ <- label "pseudo_mask_n1" $ choose bits i.values identity
   pure unit
 
 compilePseudoMaskN1Step :: Effect (CompiledCircuit StepField)
-compilePseudoMaskN1Step = compile noAdvice (Proxy @(Vector 2 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN1Step = compile noAdvice (Proxy @(UnChecked (PseudoMaskInput 1 (F StepField)))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN1Circuit
 
 compilePseudoMaskN1Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoMaskN1Wrap = compile noAdvice (Proxy @(Vector 2 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN1Wrap = compile noAdvice (Proxy @(UnChecked (PseudoMaskInput 1 (F WrapField)))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN1Circuit
-
---------------------------------------------------------------------------------
--- pseudo_mask N3
---------------------------------------------------------------------------------
 
 pseudoMaskN3Circuit
   :: forall f r
    . PrimeField f
-  => Vector 4 (FVar f)
+  => UnChecked (PseudoMaskInput 3 (FVar f))
   -> Snarky f (KimchiConstraint f) r Unit
-pseudoMaskN3Circuit inputs = do
-  let at = unsafeIdx inputs
-  bits <- (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
-  _ <- label "pseudo_mask_n3" $ choose bits (at 1 :< at 2 :< at 3 :< Vector.nil) identity
+pseudoMaskN3Circuit (UnChecked (PseudoMaskInput i)) = do
+  bits <- (oneHotVector :: _ -> _ (Vector 3 _)) i.index
+  _ <- label "pseudo_mask_n3" $ choose bits i.values identity
   pure unit
 
 compilePseudoMaskN3Step :: Effect (CompiledCircuit StepField)
-compilePseudoMaskN3Step = compile noAdvice (Proxy @(Vector 4 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN3Step = compile noAdvice (Proxy @(UnChecked (PseudoMaskInput 3 (F StepField)))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN3Circuit
 
 compilePseudoMaskN3Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoMaskN3Wrap = compile noAdvice (Proxy @(Vector 4 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN3Wrap = compile noAdvice (Proxy @(UnChecked (PseudoMaskInput 3 (F WrapField)))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN3Circuit
 
 --------------------------------------------------------------------------------
@@ -177,21 +213,20 @@ compilePseudoMaskN3Wrap = compile noAdvice (Proxy @(Vector 4 (F WrapField))) (Pr
 pseudoChooseN1Circuit
   :: forall f r
    . PrimeField f
-  => Vector 1 (FVar f)
+  => FVar f
   -> Snarky f (KimchiConstraint f) r Unit
-pseudoChooseN1Circuit inputs = do
-  let at = unsafeIdx inputs
-  bits <- (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
+pseudoChooseN1Circuit index = do
+  bits <- (oneHotVector :: _ -> _ (Vector 1 _)) index
   _ <- label "pseudo_choose_n1" $
     choose bits ((42 :< Vector.nil)) (\x -> const_ (fromBigInt (fromInt x)))
   pure unit
 
 compilePseudoChooseN1Step :: Effect (CompiledCircuit StepField)
-compilePseudoChooseN1Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoChooseN1Step = compile noAdvice (Proxy @(F StepField)) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoChooseN1Circuit
 
 compilePseudoChooseN1Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoChooseN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoChooseN1Wrap = compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoChooseN1Circuit
 
 --------------------------------------------------------------------------------
@@ -201,21 +236,20 @@ compilePseudoChooseN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (
 pseudoChooseN3Circuit
   :: forall f r
    . PrimeField f
-  => Vector 1 (FVar f)
+  => FVar f
   -> Snarky f (KimchiConstraint f) r Unit
-pseudoChooseN3Circuit inputs = do
-  let at = unsafeIdx inputs
-  bits <- (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
+pseudoChooseN3Circuit index = do
+  bits <- (oneHotVector :: _ -> _ (Vector 3 _)) index
   _ <- label "pseudo_choose_n3" $
     choose bits (13 :< 14 :< 15 :< Vector.nil) (\x -> const_ (fromBigInt (fromInt x)))
   pure unit
 
 compilePseudoChooseN3Step :: Effect (CompiledCircuit StepField)
-compilePseudoChooseN3Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoChooseN3Step = compile noAdvice (Proxy @(F StepField)) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoChooseN3Circuit
 
 compilePseudoChooseN3Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoChooseN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoChooseN3Wrap = compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoChooseN3Circuit
 
 --------------------------------------------------------------------------------
@@ -227,11 +261,10 @@ compilePseudoChooseN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (
 chooseKeyN1WrapCircuit
   :: forall r
    . PrimeField WrapField
-  => Vector 1 (FVar WrapField)
+  => FVar WrapField
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
-chooseKeyN1WrapCircuit inputs = do
+chooseKeyN1WrapCircuit branch = do
   let
-    at = unsafeIdx inputs
     AffinePoint { x: F dummyX, y: F dummyY } = dummyVestaPt
     dummyPt = AffinePoint { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
     dummyPtChunks = ChunkedCommitment (Vector.singleton dummyPt)
@@ -245,12 +278,12 @@ chooseKeyN1WrapCircuit inputs = do
       , emulComm: dummyPtChunks
       , endomulScalarComm: dummyPtChunks
       }
-  whichBranch <- label "one_hot" $ (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
+  whichBranch <- label "one_hot" $ (oneHotVector :: _ -> _ (Vector 1 _)) branch
   _ <- chooseKey whichBranch (dummyVK :< Vector.nil)
   pure unit
 
 compileChooseKeyN1Wrap :: Effect (CompiledCircuit WrapField)
-compileChooseKeyN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileChooseKeyN1Wrap = compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   chooseKeyN1WrapCircuit
 
 --------------------------------------------------------------------------------
@@ -263,19 +296,18 @@ compileChooseKeyN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Pro
 utilsOnesVectorN16Circuit
   :: forall f r
    . PrimeField f
-  => Vector 1 (FVar f)
+  => FVar f
   -> Snarky f (KimchiConstraint f) r Unit
-utilsOnesVectorN16Circuit inputs = do
-  let at = unsafeIdx inputs
-  _ <- label "ones_vector_n16" $ FOP.mkSideLoadedOnesPrefixMask (at 0)
+utilsOnesVectorN16Circuit firstZero = do
+  _ <- label "ones_vector_n16" $ FOP.mkSideLoadedOnesPrefixMask firstZero
   pure unit
 
 compileUtilsOnesVectorN16Step :: Effect (CompiledCircuit StepField)
-compileUtilsOnesVectorN16Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileUtilsOnesVectorN16Step = compile noAdvice (Proxy @(F StepField)) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   utilsOnesVectorN16Circuit
 
 compileUtilsOnesVectorN16Wrap :: Effect (CompiledCircuit WrapField)
-compileUtilsOnesVectorN16Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileUtilsOnesVectorN16Wrap = compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   utilsOnesVectorN16Circuit
 
 --------------------------------------------------------------------------------
@@ -288,19 +320,18 @@ compileUtilsOnesVectorN16Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField)
 oneHotN17Circuit
   :: forall f r
    . PrimeField f
-  => Vector 1 (FVar f)
+  => FVar f
   -> Snarky f (KimchiConstraint f) r Unit
-oneHotN17Circuit inputs = do
-  let at = unsafeIdx inputs
-  _ <- label "one_hot_n17" $ (oneHotVector :: _ -> _ (Vector 17 _)) (at 0)
+oneHotN17Circuit index = do
+  _ <- label "one_hot_n17" $ (oneHotVector :: _ -> _ (Vector 17 _)) index
   pure unit
 
 compileOneHotN17Step :: Effect (CompiledCircuit StepField)
-compileOneHotN17Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN17Step = compile noAdvice (Proxy @(F StepField)) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN17Circuit
 
 compileOneHotN17Wrap :: Effect (CompiledCircuit WrapField)
-compileOneHotN17Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN17Wrap = compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN17Circuit
 
 --------------------------------------------------------------------------------
@@ -312,11 +343,10 @@ compileOneHotN17Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy
 pseudoMaskN17Circuit
   :: forall f r
    . PrimeField f
-  => Vector 1 (FVar f)
+  => FVar f
   -> Snarky f (KimchiConstraint f) r Unit
-pseudoMaskN17Circuit inputs = do
-  let at = unsafeIdx inputs
-  bits <- (oneHotVector :: _ -> _ (Vector 17 _)) (at 0)
+pseudoMaskN17Circuit index = do
+  bits <- (oneHotVector :: _ -> _ (Vector 17 _)) index
   let
     gens :: Vector 17 (FVar _)
     gens = map (\i -> const_ (fromBigInt (fromInt i)))
@@ -332,11 +362,11 @@ pseudoMaskN17Circuit inputs = do
   pure unit
 
 compilePseudoMaskN17Step :: Effect (CompiledCircuit StepField)
-compilePseudoMaskN17Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN17Step = compile noAdvice (Proxy @(F StepField)) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN17Circuit
 
 compilePseudoMaskN17Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoMaskN17Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN17Wrap = compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN17Circuit
 
 --------------------------------------------------------------------------------

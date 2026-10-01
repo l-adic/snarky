@@ -6,16 +6,10 @@ import Pasta.Endo
 import Pickles.Statement
 
 /-!
-# The dumps' input layouts and the production constants they carry
+# The drivers' constraint types
 
-The circuit dumps hand a driver one flat vector of field cells per circuit, and a harness
-lays that vector out as the records the library gadgets take. This module holds the parts
-of that layout shared by more than one driver: the two constraint types, the GLV
-eigenvalues, the step field's coset shifts, and the two block readers (the previous
-challenge vectors and the evaluation record).
-
-The coset shifts are read off the curves (`KimchiCurve.shifts`), never written out again
-here or in any one driver: a second copy is a second thing to drift.
+What more than one driver shares: the kimchi constraint type at each Pasta field, and the
+fields' `ToNat` instances `unpack`'s bit reads go through.
 -/
 
 namespace PicklesFixture
@@ -33,31 +27,5 @@ abbrev C := KimchiConstraint Fp
 
 /-- The kimchi constraint sum at the wrap field. -/
 abbrev Cq := KimchiConstraint Fq
-
-/-- The `Pickles.MaxProofsVerified` previous-challenge vectors from `base`, `rounds` entries
-each. -/
-def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) (rounds : ℕ := 16) :
-    Vector (Vector (FVar (ZMod p)) rounds) Pickles.MaxProofsVerified :=
-  Vector.ofFn fun j => Vector.ofFn fun i => get (base + rounds * j + i)
-
-open Kimchi.Verifier in
-/-- The public pair and the evaluation record from the dumps' layout, the public pair at
-`pubBase`: then the 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `s` pairs and the 6
-selector pairs. -/
-def evalsAt {p : ℕ} (get : ℕ → FVar (ZMod p)) (pubBase : ℕ) :
-    PointEvaluations (FVar (ZMod p)) × ProofEvaluations (FVar (ZMod p)) :=
-  let pair (i : ℕ) : PointEvaluations (FVar (ZMod p)) :=
-    ⟨get (pubBase + i), get (pubBase + i + 1)⟩
-  (pair 0,
-   { w := Vector.ofFn fun j => pair (2 + 2 * j)
-     coefficients := Vector.ofFn fun j => pair (32 + 2 * j)
-     z := pair 62
-     s := Vector.ofFn fun j => pair (64 + 2 * j)
-     genericSelector := pair 76
-     poseidonSelector := pair 78
-     completeAddSelector := pair 80
-     mulSelector := pair 82
-     emulSelector := pair 84
-     endomulScalarSelector := pair 86 })
 
 end PicklesFixture

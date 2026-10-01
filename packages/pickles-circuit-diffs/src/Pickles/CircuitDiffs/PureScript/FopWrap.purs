@@ -1,137 +1,78 @@
 module Pickles.CircuitDiffs.PureScript.FopWrap
-  ( FopWrapInput
-  , FopWrapInputAt
-  , parseFopWrapInput
-  , parseFopWrapInputAt
-  , fopWrapCircuit
+  ( FopWrapInput(..)
   , compileFopWrap
   ) where
 
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Fin (Finite, getFinite)
-import Data.Reflectable (class Reflectable, reflectType)
+import Data.Reflectable (class Reflectable)
+import Data.Tuple.Nested (Tuple4, tuple4, uncurry4)
 import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
+import Pickles.CircuitDiffs.PureScript.PerProofWitness (DeferredHlist, deferredFromHlist, deferredToHlist)
 import Pickles.Constants (zkRowsByDefault)
+import Pickles.DeferredValues (DeferredValues)
 import Pickles.Field (WrapField)
-import Pickles.FinalizeOtherProof (DomainMode(..), Output)
+import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
+import Pickles.Types (AllocEvals(..))
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
-import Snarky.Circuit.Kimchi (Type2(..))
+import Snarky.Circuit.DSL (class CircuitType, Bool(..), F, FVar, Snarky, UnChecked(..), const_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, sub_)
+import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
--- | The 16-round input `finalize_other_proof_wrap_circuit` takes.
-type FopWrapInput = FopWrapInputAt 16
-
--- | One slot's finalize input at `rounds` bullet-proof rounds.
-type FopWrapInputAt rounds =
-  { plonk ::
-      { alpha :: SizedF 128 (FVar WrapField)
-      , beta :: SizedF 128 (FVar WrapField)
-      , gamma :: SizedF 128 (FVar WrapField)
-      , zeta :: SizedF 128 (FVar WrapField)
-      , zetaToSrsLength :: Type2 (FVar WrapField)
-      , zetaToDomainSize :: Type2 (FVar WrapField)
-      , perm :: Type2 (FVar WrapField)
-      }
-  , combinedInnerProduct :: Type2 (FVar WrapField)
-  , b :: Type2 (FVar WrapField)
-  , xi :: SizedF 128 (FVar WrapField)
-  , bulletproofChallenges :: Vector rounds (SizedF 128 (FVar WrapField))
-  , spongeDigestBeforeEvaluations :: FVar WrapField
-  , allEvals ::
-      { ftEval1 :: FVar WrapField
-      , publicEvals :: { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
-      , witnessEvals :: Vector 15 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
-      , coeffEvals :: Vector 15 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
-      , zEvals :: { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
-      , sigmaEvals :: Vector 6 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
-      , indexEvals :: Vector 6 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
-      }
-  , prevChallenges :: Vector 2 (Vector rounds (FVar WrapField))
+-- | A wrap-side finalize input at `d` rounds (OCaml `dump_circuit_impl.ml`): the step proof's
+-- | deferred values in OCaml's hlist order, shifted values `s`, the evaluations, the two
+-- | previous challenge vectors and the sponge digest.
+newtype FopWrapInput d f s = FopWrapInput
+  { deferredValues :: DeferredValues d f s
+  , evals :: AllocEvals f
+  , prevChallenges :: Vector 2 (Vector d f)
+  , spongeDigest :: f
   }
 
-parseFopWrapInput :: Vector 148 (FVar WrapField) -> FopWrapInput
-parseFopWrapInput inputs = parseFopWrapInputAt @16 (unsafeIdx inputs)
+-- | The wire order.
+type FopWrapTuple d f s = Tuple4 (DeferredHlist d f s) (AllocEvals f) (Vector 2 (Vector d f)) f
 
--- | One slot's finalize input read through `at`, in the layout of
--- | `finalize_other_proof_wrap_circuit` at `rounds` rounds: the deferred
--- | values with `rounds` challenges, the evaluations, the two padded
--- | previous-challenge vectors and the sponge digest.
-parseFopWrapInputAt
-  :: forall @rounds
-   . Reflectable rounds Int
-  => (Int -> FVar WrapField)
-  -> FopWrapInputAt rounds
-parseFopWrapInputAt at =
-  let
-    r = reflectType (Proxy @rounds)
-    -- the evaluations follow the challenges; the previous challenges and
-    -- the digest follow the evaluations
-    ev = 10 + r
-    prev = ev + 89
+toTuple :: forall d f s. FopWrapInput d f s -> FopWrapTuple d f s
+toTuple (FopWrapInput i) =
+  tuple4 (deferredToHlist i.deferredValues) i.evals i.prevChallenges i.spongeDigest
 
-    evalPair :: forall n. Int -> Finite n -> { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
-    evalPair base j =
-      { zeta: at (base + 2 * getFinite j)
-      , omegaTimesZeta: at (base + 2 * getFinite j + 1)
-      }
-  in
-    { plonk:
-        { alpha: asSizedF128 (at 0)
-        , beta: asSizedF128 (at 1)
-        , gamma: asSizedF128 (at 2)
-        , zeta: asSizedF128 (at 3)
-        , zetaToSrsLength: Type2 (at 4)
-        , zetaToDomainSize: Type2 (at 5)
-        , perm: Type2 (at 6)
-        }
-    , combinedInnerProduct: Type2 (at 7)
-    , b: Type2 (at 8)
-    , xi: asSizedF128 (at 9)
-    , bulletproofChallenges: Vector.generate \j -> asSizedF128 (at (10 + getFinite j))
-    , spongeDigestBeforeEvaluations: at (prev + 2 * r)
-    , allEvals:
-        { ftEval1: at (ev + 88)
-        , publicEvals: { zeta: at ev, omegaTimesZeta: at (ev + 1) }
-        , witnessEvals: Vector.generate (evalPair (ev + 2))
-        , coeffEvals: Vector.generate (evalPair (ev + 32))
-        , zEvals: { zeta: at (ev + 62), omegaTimesZeta: at (ev + 63) }
-        , sigmaEvals: Vector.generate (evalPair (ev + 64))
-        , indexEvals: Vector.generate (evalPair (ev + 76))
-        }
-    , prevChallenges: Vector.generate \j ->
-        Vector.generate \k -> at (prev + r * getFinite j + getFinite k)
-    }
+fromTuple :: forall d f s. FopWrapTuple d f s -> FopWrapInput d f s
+fromTuple = uncurry4 \dv evals prevChallenges spongeDigest ->
+  FopWrapInput { deferredValues: deferredFromHlist dv, evals, prevChallenges, spongeDigest }
 
+instance
+  ( Reflectable d Int
+  , CircuitType f fa fv
+  , CircuitType f sa sv
+  ) =>
+  CircuitType f (FopWrapInput d fa sa) (FopWrapInput d fv sv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(FopWrapTuple d fa sa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(FopWrapTuple d fa sa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(FopWrapTuple d fa sa)
+
+-- | `finalize_other_proof_wrap_circuit`: the wrap-side finalize at 16 rounds, Type2-shifted.
 fopWrapCircuit
   :: forall r
-   . PrimeField WrapField
-  => FopWrapInput
-  -> Snarky WrapField (KimchiConstraint WrapField) r (Output 16 WrapField)
-fopWrapCircuit input =
+   . UnChecked (FopWrapInput 16 (FVar WrapField) (Type2 (FVar WrapField)))
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
+fopWrapCircuit (UnChecked (FopWrapInput i)) =
   let
+    AllocEvals allEvals = i.evals
     unfinalized =
-      { deferredValues:
-          { plonk: input.plonk
-          , combinedInnerProduct: input.combinedInnerProduct
-          , b: input.b
-          , xi: input.xi
-          , bulletproofChallenges: input.bulletproofChallenges
-          }
+      { deferredValues: i.deferredValues
       , shouldFinalize: coerce (const_ one :: FVar WrapField)
-      , spongeDigestBeforeEvaluations: input.spongeDigestBeforeEvaluations
+      , spongeDigestBeforeEvaluations: i.spongeDigest
       }
     params =
       { domains:
@@ -150,13 +91,16 @@ fopWrapCircuit input =
       zetaToN <- pow2PowMul z wrapDomainLog2
       pure (zetaToN `sub_` const_ one)
   in
-    wrapFinalizeOtherProofCircuit params vanishingPoly
+    void $ wrapFinalizeOtherProofCircuit params vanishingPoly
       { unfinalized
-      , allEvals: input.allEvals
-      , prevChallenges: input.prevChallenges
+      , allEvals
+      , prevChallenges: i.prevChallenges
       }
 
 compileFopWrap :: Effect (CompiledCircuit WrapField)
 compileFopWrap =
-  compile noAdvice (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\inputs -> void $ fopWrapCircuit (parseFopWrapInput inputs))
+  compile noAdvice
+    (Proxy @(UnChecked (FopWrapInput 16 (F WrapField) (Type2 (F WrapField)))))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint WrapField))
+    fopWrapCircuit

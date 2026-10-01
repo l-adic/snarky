@@ -1,13 +1,10 @@
 module Pickles.CircuitDiffs.PureScript.GroupMapStep
-  ( parseGroupMapStepInput
-  , groupMapStepCircuit
+  ( groupMapStepCircuit
   , compileGroupMapStep
   ) where
 
 import Prelude
 
-import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
@@ -21,9 +18,6 @@ import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
-parseGroupMapStepInput :: Vector 1 (FVar StepField) -> FVar StepField
-parseGroupMapStepInput = Vector.head
-
 groupMapStepCircuit
   :: forall r
    . PrimeField StepField
@@ -33,5 +27,5 @@ groupMapStepCircuit = Kimchi.groupMapCircuit (Kimchi.groupMapParams (Proxy @Pall
 
 compileGroupMapStep :: Effect (CompiledCircuit StepField)
 compileGroupMapStep =
-  compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    (\inputs -> void $ groupMapStepCircuit (parseGroupMapStepInput inputs))
+  compile noAdvice (Proxy @(F StepField)) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+    (void <<< groupMapStepCircuit)

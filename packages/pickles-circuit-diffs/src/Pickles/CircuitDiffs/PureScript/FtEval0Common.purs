@@ -1,32 +1,55 @@
 module Pickles.CircuitDiffs.PureScript.FtEval0Common
-  ( ftEval0CircuitM
+  ( FtEval0Input
+  , ftEval0CircuitM
   ) where
 
 import Prelude
 
-import Data.Fin (getFinite, unsafeFinite)
+import Data.Fin (unsafeFinite)
 import Data.Int (pow) as Int
-import Data.Vector (Vector, (!!))
+import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
 import Data.Vector as Vector
+import Pickles.CircuitDiffs.PureScript.LinearizationCommon (LinearizationInput(..), evalPointOf)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
-import Pickles.Linearization.Env (CurrOrNext(..), GateType(..)) as Env
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator, domainShifts)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (PolishToken)
 import Pickles.PlonkChecks (permContributionCircuit, zkPolynomial)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.CVar (CVar(..), const_)
-import Snarky.Circuit.DSL (FVar, Snarky, label, pow_, sub_)
+import Snarky.Circuit.CVar (const_)
+import Snarky.Circuit.DSL (class CircuitType, FVar, Snarky, UnChecked(..), genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, label, pow_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
+import Type.Proxy (Proxy(..))
+
+-- | `ft_eval0_step_circuit`'s input (OCaml `dump_circuit_impl.ml`): the linearization input
+-- | and the public-input polynomial at zeta.
+newtype FtEval0Input f = FtEval0Input
+  { linearization :: LinearizationInput f
+  , pEval0 :: f
+  }
+
+-- | The wire order.
+type FtEval0Tuple f = Tuple2 (LinearizationInput f) f
+
+toTuple :: forall f. FtEval0Input f -> FtEval0Tuple f
+toTuple (FtEval0Input i) = tuple2 i.linearization i.pEval0
+
+fromTuple :: forall f. FtEval0Tuple f -> FtEval0Input f
+fromTuple = uncurry2 \linearization pEval0 -> FtEval0Input { linearization, pEval0 }
+
+instance CircuitType f fa fv => CircuitType f (FtEval0Input fa) (FtEval0Input fv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(FtEval0Tuple fa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(FtEval0Tuple fa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(FtEval0Tuple fa)
 
 -- | Circuit computing `ft_eval0`, mirroring OCaml `dump_circuit_impl.ml`'s
 -- | `ft_eval0_circuit` (`Plonk_checks.ft_eval0` over a `scalars_env` built
 -- | at a CONSTANT domain — generator and shifts are constants, so no omega
 -- | rows are emitted, unlike the in-circuit omega powers of
 -- | `Pickles.Step.FinalizeOtherProof`):
--- | - 91 input fields: the linearization layout (see `LinearizationCommon`)
--- |   plus `p_eval0` at index 90
 -- | - Precomputed alpha powers, eager `zk_polynomial` and eager `zeta^n - 1`
 -- |   (the `scalars_env` prelude, in OCaml's emission order)
 -- | - The permutation recurrence + boundary quotient via the library gadget
@@ -41,65 +64,20 @@ ftEval0CircuitM
   => LinearizationFFI f
   => Int -- ^ domainLog2
   -> Array PolishToken
-  -> Vector 91 (FVar f)
+  -> UnChecked (FtEval0Input (FVar f))
   -> Snarky f (KimchiConstraint f) r (FVar f)
-ftEval0CircuitM domLog2 tokens inputs = do
+ftEval0CircuitM domLog2 tokens (UnChecked (FtEval0Input input)) = do
   let
-    at i = inputs !! unsafeFinite i
-
-    witnessEval row col =
-      let
-        base = 2 * getFinite col
-      in
-        case row of
-          Env.Curr -> at base
-          Env.Next -> at (base + 1)
-
-    coeffEval col = at (30 + 2 * getFinite col)
-
-    selectorEval row gt =
-      let
-        idx = case gt of
-          Env.Generic -> 0
-          Env.Poseidon -> 1
-          Env.CompleteAdd -> 2
-          Env.VarBaseMul -> 3
-          Env.EndoMul -> 4
-          Env.EndoMulScalar -> 5
-          _ -> 0
-        base = 74 + 2 * idx
-      in
-        case row of
-          Env.Curr -> at base
-          Env.Next -> at (base + 1)
+    LinearizationInput i = input.linearization
+    { alpha, beta, gamma, zeta } = i
+    pEval0 = input.pEval0
+    evalPoint = evalPointOf input.linearization
 
     -- w(zeta), 15 entries; s(zeta), 6 entries; z(zeta), z(zeta omega)
-    w0 :: Vector 15 (FVar f)
-    w0 = Vector.generate \i -> at (2 * getFinite i)
-
-    s0 :: Vector 6 (FVar f)
-    s0 = Vector.generate \i -> at (62 + 2 * getFinite i)
-
-    zZeta = at 60
-    zOmegaTimesZeta = at 61
-
-    alpha = at 86
-    beta = at 87
-    gamma = at 88
-    zeta = at 89
-    pEval0 = at 90
-
-    evalPoint =
-      { witness: \row col -> witnessEval row col
-      , coefficient: \col -> coeffEval col
-      , index: \row gt -> selectorEval row gt
-      , lookupAggreg: \_ -> Const zero
-      , lookupSorted: \_ _ -> Const zero
-      , lookupTable: \_ -> Const zero
-      , lookupRuntimeTable: \_ -> Const zero
-      , lookupRuntimeSelector: \_ -> Const zero
-      , lookupKindIndex: \_ -> Const zero
-      }
+    w0 = map _.zeta i.witnessEvals
+    s0 = map _.zeta i.sigmaEvals
+    zZeta = i.zEvals.zeta
+    zOmegaTimesZeta = i.zEvals.omegaTimesZeta
 
     -- The constant domain: generator and coset shifts from the FFI, omega
     -- powers folded as constants (no circuit constraints).

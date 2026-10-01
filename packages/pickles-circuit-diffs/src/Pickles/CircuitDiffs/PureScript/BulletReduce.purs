@@ -1,52 +1,62 @@
 module Pickles.CircuitDiffs.PureScript.BulletReduce
-  ( BulletReduceInput
-  , parseBulletReduceInput
-  , bulletReduceWrapCircuit
+  ( BulletReduceInput(..)
   , compileBulletReduce
   ) where
 
 import Prelude
 
-import Data.Fin (getFinite)
+import Data.Reflectable (class Reflectable)
+import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
 import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (WrapField)
-import Pickles.IPA (bulletReduceCircuit)
+import Pickles.IPA (LrPair, bulletReduceCircuit)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky)
+import Snarky.Circuit.DSL (class CircuitType, F, FVar, SizedF, Snarky, UnChecked(..), genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
-type BulletReduceInput n f =
-  { pairs :: Vector n { l :: AffinePoint (FVar f), r :: AffinePoint (FVar f) }
-  , challenges :: Vector n (SizedF 128 (FVar f))
+-- | `bullet_reduce_{step,wrap}_circuit`'s input (OCaml `dump_circuit_impl.ml`): the `n`
+-- | `(L, R)` pairs, then the `n` raw round prechallenges.
+newtype BulletReduceInput n f sf = BulletReduceInput
+  { pairs :: Vector n (LrPair f)
+  , challenges :: Vector n sf
   }
 
-parseBulletReduceInput :: Vector 80 (FVar WrapField) -> BulletReduceInput 16 WrapField
-parseBulletReduceInput inputs =
-  let
-    at = unsafeIdx inputs
-    readPt i = AffinePoint { x: at i, y: at (i + 1) }
-  in
-    { pairs: Vector.generate \j ->
-        { l: readPt (4 * getFinite j), r: readPt (4 * getFinite j + 2) }
-    , challenges: Vector.generate \j -> asSizedF128 (at (64 + getFinite j))
-    }
+-- | The wire order.
+type BulletReduceTuple n f sf = Tuple2 (Vector n (LrPair f)) (Vector n sf)
+
+toTuple :: forall n f sf. BulletReduceInput n f sf -> BulletReduceTuple n f sf
+toTuple (BulletReduceInput i) = tuple2 i.pairs i.challenges
+
+fromTuple :: forall n f sf. BulletReduceTuple n f sf -> BulletReduceInput n f sf
+fromTuple = uncurry2 \pairs challenges -> BulletReduceInput { pairs, challenges }
+
+instance
+  ( Reflectable n Int
+  , CircuitType f (LrPair fa) (LrPair fv)
+  , CircuitType f sa sv
+  ) =>
+  CircuitType f (BulletReduceInput n fa sa) (BulletReduceInput n fv sv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(BulletReduceTuple n fa sa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(BulletReduceTuple n fa sa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(BulletReduceTuple n fa sa)
 
 bulletReduceWrapCircuit
   :: forall r
-   . PrimeField WrapField
-  => BulletReduceInput 16 WrapField
-  -> Snarky WrapField (KimchiConstraint WrapField) r { p :: AffinePoint (FVar WrapField), isInfinity :: BoolVar WrapField }
-bulletReduceWrapCircuit = bulletReduceCircuit @WrapField @VestaG
+   . UnChecked (BulletReduceInput 16 (FVar WrapField) (SizedF 128 (FVar WrapField)))
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
+bulletReduceWrapCircuit (UnChecked (BulletReduceInput i)) =
+  void $ bulletReduceCircuit @WrapField @VestaG i
 
 compileBulletReduce :: Effect (CompiledCircuit WrapField)
 compileBulletReduce =
-  compile noAdvice (Proxy @(Vector 80 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\inputs -> void $ bulletReduceWrapCircuit (parseBulletReduceInput inputs))
+  compile noAdvice (Proxy @(UnChecked (BulletReduceInput 16 WrapField (SizedF 128 (F WrapField)))))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint WrapField))
+    bulletReduceWrapCircuit

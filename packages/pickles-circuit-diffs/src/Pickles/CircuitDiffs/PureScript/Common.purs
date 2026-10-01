@@ -14,9 +14,6 @@ module Pickles.CircuitDiffs.PureScript.Common
   , mkStepArtifact
   , domainLog2OfCompiled
   , preComputeSelfStepDomainLog2
-  , unsafeIdx
-  , asSizedF128
-  , asSizedF10
   , dummyVestaPt
   , dummyPallasPt
   , dummyWrapSg
@@ -42,8 +39,6 @@ import Data.Array as Array
 import Data.Maybe (fromJust)
 import Data.Newtype (un)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
@@ -56,7 +51,7 @@ import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex, crsS
 import Snarky.Backend.Kimchi.Proof (class ProofFFI, proverIndexDomainLog2, srsLagrangeCommitmentChunksAt)
 import Snarky.Backend.Kimchi.ProofCache (pallasVerifierIndexJsonKey, vestaVerifierIndexJsonKey)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
-import Snarky.Circuit.DSL (F(..), FVar, SizedF)
+import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine, toBigInt)
@@ -65,30 +60,12 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint)
 import Type.Proxy (Proxy(..))
-import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
 -- | Compiled circuit type
 -------------------------------------------------------------------------------
 
 type CompiledCircuit f = CircuitBuilderState (KimchiGate f) (AuxState f)
-
--------------------------------------------------------------------------------
--- | Input parsing helpers
--------------------------------------------------------------------------------
-
-unsafeIdx :: forall n f. Vector n f -> Int -> f
-unsafeIdx v i =
-  let
-    arr = Vector.toUnfoldable v :: Array f
-  in
-    unsafePartial $ Array.unsafeIndex arr i
-
-asSizedF128 :: forall f. FVar f -> SizedF 128 (FVar f)
-asSizedF128 = unsafeCoerce
-
-asSizedF10 :: forall f. FVar f -> SizedF 10 (FVar f)
-asSizedF10 = unsafeCoerce
 
 -------------------------------------------------------------------------------
 -- | Dummy points

@@ -1,35 +1,37 @@
 module Pickles.CircuitDiffs.PureScript.StepVerify
-  ( compileStepVerify
+  ( StepVerifyInput(..)
   , StepVerifyParams
+  , stepVerifyBody
+  , compileStepVerify
   ) where
-
--- | Step_verifier.verify circuit test.
--- | Parses flat inputs, builds WrapStatement, calls packStatement + verify.
 
 import Prelude
 
-import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (Tuple5, tuple5, uncurry5)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyPallasPt, dummyWrapSg, stepEndo)
+import Pickles.CircuitDiffs.PureScript.PerProofWitness (PerProofWitnessInput(..), unfinalizedDeferredValues)
 import Pickles.Field (StepField)
 import Pickles.IncrementallyVerifyProof (incrementallyVerifyProof, packStatement)
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (ChunkedCommitment(..))
+import Pickles.Step.Types (WrapProof(..))
+import Pickles.Types (ChunkedCommitment(..), PerProofUnfinalized(..), WrapProofMessages(..), WrapProofOpening(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, if_)
-import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
+import Snarky.Circuit.DSL (class CircuitType, BoolVar, F(..), FVar, Snarky, UnChecked(..), assertEq, const_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, if_)
+import Snarky.Circuit.Kimchi (SplitField, Type2, groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField, curveParams)
+import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -38,105 +40,77 @@ import Type.Proxy (Proxy(..))
 -- |   1. packStatement (Spec.pack equivalent)
 -- |   2. incrementallyVerifyProof
 -- |   3. Assertions (digest + bp challenges)
--- |
--- | Input layout (268 fields):
--- |   0-113:   wrap_proof (114 fields)
--- |   114-143: proof_state (30 fields)
--- |   144-232: all_evals (89 fields, dead inputs)
--- |   233-264: unfinalized (32 fields)
--- |   265:     is_base_case
--- |   266:     messages_for_next_wrap_proof
--- |   267:     messages_for_next_step_proof
 
 type StepVerifyParams =
   { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
-stepVerifyCircuit
-  :: forall r
-   . PrimeField StepField
-  => StepVerifyParams
-  -> Vector 268 (FVar StepField)
-  -> Snarky StepField (KimchiConstraint StepField) r Unit
-stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
-  let
-    at = unsafeIdx inputs
-    readPt i = AffinePoint { x: at i, y: at (i + 1) }
-    readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
+-- | `step_verify{,_n2}_circuit`'s input (OCaml `dump_circuit_impl.ml`) at `w` previous proofs:
+-- | the per-proof witness with no application state (its evaluations dead inputs), the
+-- | unfinalized proof it is checked against, `is_base_case`, and the two message digests.
+newtype StepVerifyInput w f b pt = StepVerifyInput
+  { witness :: PerProofWitnessInput Unit w f b pt
+  , unfinalized :: PerProofUnfinalized 15 (Type2 (SplitField f b)) f b
+  , isBaseCase :: b
+  , messagesForNextWrapProof :: f
+  , messagesForNextStepProof :: f
+  }
 
-    constDummySg :: AffinePoint (FVar StepField)
-    constDummySg = AffinePoint { x: const_ (unwrap dummyWrapSg).x, y: const_ (unwrap dummyWrapSg).y }
+-- | The wire order.
+type StepVerifyTuple w f b pt =
+  Tuple5 (PerProofWitnessInput Unit w f b pt) (PerProofUnfinalized 15 (Type2 (SplitField f b)) f b) b f f
+
+toTuple :: forall w f b pt. StepVerifyInput w f b pt -> StepVerifyTuple w f b pt
+toTuple (StepVerifyInput i) =
+  tuple5 i.witness i.unfinalized i.isBaseCase i.messagesForNextWrapProof i.messagesForNextStepProof
+
+fromTuple :: forall w f b pt. StepVerifyTuple w f b pt -> StepVerifyInput w f b pt
+fromTuple = uncurry5 \witness unfinalized isBaseCase messagesForNextWrapProof messagesForNextStepProof ->
+  StepVerifyInput { witness, unfinalized, isBaseCase, messagesForNextWrapProof, messagesForNextStepProof }
+
+instance
+  ( Reflectable w Int
+  , CircuitType f fa fv
+  , CircuitType f ba bv
+  , CircuitType f (PerProofWitnessInput Unit w fa ba pa) (PerProofWitnessInput Unit w fv bv pv)
+  , CircuitType f (PerProofUnfinalized 15 (Type2 (SplitField fa ba)) fa ba) (PerProofUnfinalized 15 (Type2 (SplitField fv bv)) fv bv)
+  ) =>
+  CircuitType f (StepVerifyInput w fa ba pa) (StepVerifyInput w fv bv pv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(StepVerifyTuple w fa ba pa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(StepVerifyTuple w fa ba pa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(StepVerifyTuple w fa ba pa)
+
+-- | The circuit over the input with the given `sg_old`: the packed statement, the
+-- | incrementally verified wrap proof, the digest asserted unconditionally
+-- | (step_verifier.ml:1294), the challenges gated by `is_base_case` (step_verifier.ml:1300-1314).
+stepVerifyBody
+  :: forall w r
+   . StepVerifyParams
+  -> Vector 2 (AffinePoint (FVar StepField))
+  -> StepVerifyInput w (FVar StepField) (BoolVar StepField) (AffinePoint (FVar StepField))
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
+stepVerifyBody { lagrangeAt, blindingH } sgOld (StepVerifyInput input) = do
+  let
+    PerProofWitnessInput witness = input.witness
+    WrapProof proof = witness.wrapProof
+    WrapProofMessages m = proof.messages
+    WrapProofOpening o = proof.opening
+    PerProofUnfinalized u = input.unfinalized
+    deferredValues = unfinalizedDeferredValues input.unfinalized
     constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyPallasPt in AffinePoint { x: const_ x', y: const_ y' }
 
-    -- Parse wrap_proof (0-113)
-    wComm :: Vector 15 (AffinePoint (FVar StepField))
-    wComm = Vector.generate \j -> readPt (2 * getFinite j)
-    zComm = readPt 30
-
-    tComm :: Vector 7 (AffinePoint (FVar StepField))
-    tComm = Vector.generate \j -> readPt (32 + 2 * getFinite j)
-
-    lr :: Vector 15 { l :: AffinePoint (FVar StepField), r :: AffinePoint (FVar StepField) }
-    lr = Vector.generate \j ->
-      { l: readPt (46 + 4 * getFinite j)
-      , r: readPt (46 + 4 * getFinite j + 2)
-      }
-
-    -- Parse proof_state (114-143) into WrapStatement
-    -- Hlist order: plonk(alpha,beta,gamma,zeta,zetaToSrs,zetaToDom,perm),
-    --             cip, b, xi, bp_challenges(16), mask(2), domain_log2, digest
-    statement =
-      { proofState:
-          { deferredValues:
-              { plonk:
-                  { alpha: asSizedF128 (at 114)
-                  , beta: asSizedF128 (at 115)
-                  , gamma: asSizedF128 (at 116)
-                  , zeta: asSizedF128 (at 117)
-                  , perm: Type1 (at 120)
-                  , zetaToSrsLength: Type1 (at 118)
-                  , zetaToDomainSize: Type1 (at 119)
-                  }
-              , combinedInnerProduct: Type1 (at 121)
-              , b: Type1 (at 122)
-              , xi: asSizedF128 (at 123)
-              , bulletproofChallenges:
-                  (Vector.generate \j -> asSizedF128 (at (124 + getFinite j))) :: Vector 16 _
-              , branchData:
-                  { domainLog2: at 142
-                  , proofsVerifiedMask: (coerce (at 140) :: BoolVar StepField) :< (coerce (at 141) :: BoolVar StepField) :< Vector.nil
-                  }
-              }
-          , spongeDigestBeforeEvaluations: at 143
-          , messagesForNextWrapProof: at 266
-          }
-      , messagesForNextStepProof: at 267
-      }
-
     -- packStatement: Spec.pack(to_data(statement))
-    publicInput = packStatement statement
-
-    -- Parse unfinalized (233-264)
-    deferredValues =
-      { plonk:
-          { alpha: asSizedF128 (at 246)
-          , beta: asSizedF128 (at 244)
-          , gamma: asSizedF128 (at 245)
-          , zeta: asSizedF128 (at 247)
-          , perm: readOtherField 241
-          , zetaToSrsLength: readOtherField 237
-          , zetaToDomainSize: readOtherField 239
+    publicInput = packStatement
+      { proofState:
+          { deferredValues: witness.deferredValues
+          , spongeDigestBeforeEvaluations: witness.spongeDigest
+          , messagesForNextWrapProof: input.messagesForNextWrapProof
           }
-      , combinedInnerProduct: readOtherField 233
-      , b: readOtherField 235
-      , xi: asSizedF128 (at 248)
-      , bulletproofChallenges:
-          (Vector.generate \j -> asSizedF128 (at (249 + getFinite j))) :: Vector 15 _
+      , messagesForNextStepProof: input.messagesForNextStepProof
       }
-
-    isBaseCase = coerce (at 265) :: BoolVar StepField
-    claimedDigest = at 243
 
     ivpParams =
       { curveParams: curveParams (Proxy @PallasG)
@@ -150,7 +124,7 @@ stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
 
     ivpInput =
       { publicInput
-      , sgOld: constDummySg :< constDummySg :< Vector.nil
+      , sgOld
       , sgOldMask: Nothing
       , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:
@@ -159,31 +133,35 @@ stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
           , sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
           }
       , deferredValues
-      , wComm: map (ChunkedCommitment <<< Vector.singleton) wComm
-      , zComm: ChunkedCommitment (Vector.singleton zComm)
-      , tComm
-      , opening:
-          { delta: readPt 110
-          , sg: readPt 112
-          , lr
-          , z1: readOtherField 106
-          , z2: readOtherField 108
-          }
+      , wComm: m.wComm
+      , zComm: m.zComm
+      , tComm: Vector.concat (coerce m.tComm :: Vector 7 (Vector 1 (AffinePoint (FVar StepField))))
+      , opening: { delta: o.delta, sg: o.sg, lr: o.lr, z1: o.z1, z2: o.z2 }
       }
 
-  -- Run IVP
   output <- evalSpongeM initialSpongeCircuit $
     incrementallyVerifyProof @PallasG StepOtherField.ipaScalarOps ivpParams ivpInput Nothing
-
-  -- Assert digest — UNCONDITIONAL (step_verifier.ml:1294)
-  assertEq claimedDigest output.spongeDigestBeforeEvaluations
-
-  -- Assert bp challenges — gated by is_base_case (step_verifier.ml:1300-1314)
+  assertEq u.spongeDigest output.spongeDigestBeforeEvaluations
   for_ (Vector.zip deferredValues.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) -> do
-    c2' <- if_ isBaseCase c1 c2
+    c2' <- if_ input.isBaseCase c1 c2
     assertEq c1 c2'
+
+-- | `step_verify_circuit`: no previous proofs; the two `sg_old` the dummy wrap `sg`.
+stepVerifyCircuit
+  :: forall r
+   . StepVerifyParams
+  -> UnChecked (StepVerifyInput 0 (FVar StepField) (BoolVar StepField) (AffinePoint (FVar StepField)))
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
+stepVerifyCircuit params (UnChecked input) =
+  let
+    constDummySg = AffinePoint { x: const_ (unwrap dummyWrapSg).x, y: const_ (unwrap dummyWrapSg).y }
+  in
+    stepVerifyBody params (constDummySg :< constDummySg :< Vector.nil) input
 
 compileStepVerify :: StepVerifyParams -> Effect (CompiledCircuit StepField)
 compileStepVerify srsData =
-  compile noAdvice (Proxy @(Vector 268 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    (\inputs -> stepVerifyCircuit srsData inputs)
+  compile noAdvice
+    (Proxy @(UnChecked (StepVerifyInput 0 (F StepField) Boolean (AffinePoint StepField))))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint StepField))
+    (stepVerifyCircuit srsData)

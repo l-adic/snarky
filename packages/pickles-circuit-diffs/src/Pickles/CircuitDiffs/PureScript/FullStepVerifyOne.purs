@@ -1,21 +1,24 @@
 module Pickles.CircuitDiffs.PureScript.FullStepVerifyOne
-  ( compileFullStepVerifyOne
+  ( FullStepVerifyOneInput(..)
   , FullStepVerifyOneParams
+  , verifyOneInputOf
+  , compileFullStepVerifyOne
   ) where
 
--- | Thin wrapper around Pickles.Step.VerifyOne.verifyOne for circuit diff testing.
--- | Parses 286 flat inputs and calls the library function.
+-- | Thin wrapper around Pickles.Step.VerifyOne.verifyOne for circuit diff testing, over the
+-- | dump's typed input.
 
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Fin (getFinite)
-import Data.Fin as Fin
 import Data.Newtype (unwrap)
+import Data.Reflectable (class Reflectable)
+import Data.Tuple.Nested (Tuple4, tuple4, uncurry4)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyPallasPt, dummyWrapSg, stepEndo)
+import Pickles.CircuitDiffs.PureScript.PerProofWitness (PerProofWitnessInput(..), unfinalizedDeferredValues)
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -23,15 +26,16 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PlonkChecks (singleChunkEvals)
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
-import Pickles.Step.VerifyOne (verifyOne)
-import Pickles.Types (ChunkedCommitment(..))
+import Pickles.Step.Types (WrapProof(..))
+import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
+import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, const_)
-import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
+import Snarky.Circuit.DSL (class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), const_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.Kimchi (SplitField, Type2, groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField, curveParams)
+import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -41,116 +45,114 @@ type FullStepVerifyOneParams =
   , blindingH :: AffinePoint (F StepField)
   }
 
+-- | `full_step_verify_one{,_n2}_circuit`'s input (OCaml `dump_circuit_impl.ml`) at `w`
+-- | previous proofs: the per-proof witness with a one-field application state, the
+-- | unfinalized proof, the claimed `messages_for_next_wrap_proof` digest, and `must_verify`.
+newtype FullStepVerifyOneInput w f b pt = FullStepVerifyOneInput
+  { witness :: PerProofWitnessInput f w f b pt
+  , unfinalized :: PerProofUnfinalized 15 (Type2 (SplitField f b)) f b
+  , messagesForNextWrapProof :: f
+  , mustVerify :: b
+  }
+
+-- | The wire order.
+type FullStepVerifyOneTuple w f b pt =
+  Tuple4 (PerProofWitnessInput f w f b pt) (PerProofUnfinalized 15 (Type2 (SplitField f b)) f b) f b
+
+toTuple :: forall w f b pt. FullStepVerifyOneInput w f b pt -> FullStepVerifyOneTuple w f b pt
+toTuple (FullStepVerifyOneInput i) =
+  tuple4 i.witness i.unfinalized i.messagesForNextWrapProof i.mustVerify
+
+fromTuple :: forall w f b pt. FullStepVerifyOneTuple w f b pt -> FullStepVerifyOneInput w f b pt
+fromTuple = uncurry4 \witness unfinalized messagesForNextWrapProof mustVerify ->
+  FullStepVerifyOneInput { witness, unfinalized, messagesForNextWrapProof, mustVerify }
+
+instance
+  ( Reflectable w Int
+  , CircuitType f fa fv
+  , CircuitType f ba bv
+  , CircuitType f (PerProofWitnessInput fa w fa ba pa) (PerProofWitnessInput fv w fv bv pv)
+  , CircuitType f (PerProofUnfinalized 15 (Type2 (SplitField fa ba)) fa ba) (PerProofUnfinalized 15 (Type2 (SplitField fv bv)) fv bv)
+  ) =>
+  CircuitType f (FullStepVerifyOneInput w fa ba pa) (FullStepVerifyOneInput w fv bv pv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(FullStepVerifyOneTuple w fa ba pa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(FullStepVerifyOneTuple w fa ba pa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(FullStepVerifyOneTuple w fa ba pa)
+
+-- | `verifyOne`'s input from the dump's, at the given proof mask and `sg_old`, the key the
+-- | dummy.
+verifyOneInputOf
+  :: forall w
+   . Vector w (BoolVar StepField)
+  -> Vector 2 (AffinePoint (FVar StepField))
+  -> FullStepVerifyOneInput w (FVar StepField) (BoolVar StepField) (AffinePoint (FVar StepField))
+  -> VerifyOneInput w WrapVkChunks 7 WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+verifyOneInputOf proofMask sgOld (FullStepVerifyOneInput input) =
+  let
+    PerProofWitnessInput witness = input.witness
+    WrapProof proof = witness.wrapProof
+    WrapProofMessages m = proof.messages
+    WrapProofOpening o = proof.opening
+    AllocEvals evals = witness.evals
+    PerProofUnfinalized u = input.unfinalized
+    dv = witness.deferredValues
+    constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyPallasPt in AffinePoint { x: const_ x', y: const_ y' }
+  in
+    { appStateFields: [ witness.appState ]
+    , wComm: m.wComm
+    , zComm: m.zComm
+    , tComm: Vector.concat (coerce m.tComm :: Vector 7 (Vector 1 (AffinePoint (FVar StepField))))
+    , lr: o.lr
+    , z1: o.z1
+    , z2: o.z2
+    , delta: o.delta
+    , sg: o.sg
+    , proofState:
+        { plonk: dv.plonk
+        , combinedInnerProduct: dv.combinedInnerProduct
+        , b: dv.b
+        , xi: dv.xi
+        , bulletproofChallenges: dv.bulletproofChallenges
+        , spongeDigest: witness.spongeDigest
+        }
+    , chunkedEvals: singleChunkEvals evals
+    , prevChallenges: witness.prevChallenges
+    , prevSgs: witness.prevSgs
+    , unfinalized:
+        { deferredValues: unfinalizedDeferredValues input.unfinalized
+        , shouldFinalize: u.shouldFinalize
+        , claimedDigest: u.spongeDigest
+        }
+    , messagesForNextWrapProof: input.messagesForNextWrapProof
+    , mustVerify: input.mustVerify
+    , branchData:
+        { proofsVerifiedMask: map coerce dv.branchData.proofsVerifiedMask
+        , domainLog2: dv.branchData.domainLog2
+        }
+    , proofMask
+    , vkComms:
+        { sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
+        , sigmaLast: ChunkedCommitment (Vector.singleton constDummyPt)
+        , coeff: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 15 _
+        , index: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
+        }
+    , sgOld
+    }
+
+-- | One previous proof: the mask trimmed to its last bit, `sg_old` the dummy wrap `sg` then
+-- | the proof's.
 fullStepVerifyOneCircuit
   :: forall r
-   . PrimeField StepField
-  => FullStepVerifyOneParams
-  -> Vector 286 (FVar StepField)
+   . FullStepVerifyOneParams
+  -> UnChecked (FullStepVerifyOneInput 1 (FVar StepField) (BoolVar StepField) (AffinePoint (FVar StepField)))
   -> Snarky StepField (KimchiConstraint StepField) r Unit
-fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
+fullStepVerifyOneCircuit { lagrangeAt, blindingH } (UnChecked input@(FullStepVerifyOneInput i)) = do
   let
-    at = unsafeIdx inputs
-    readPt i = AffinePoint { x: at i, y: at (i + 1) }
-    readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
-
-    constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyPallasPt in AffinePoint { x: const_ x', y: const_ y' }
-
-    constDummySg :: AffinePoint (FVar StepField)
+    PerProofWitnessInput witness = i.witness
     constDummySg = AffinePoint { x: const_ (unwrap dummyWrapSg).x, y: const_ (unwrap dummyWrapSg).y }
-
-    o = 1 -- offset for app_state
-
-    -- Parse flat inputs into VerifyOneInput
-    evalPair :: forall n. Int -> Fin.Finite n -> { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-    evalPair base j =
-      { zeta: at (base + 2 * Fin.getFinite j)
-      , omegaTimesZeta: at (base + 2 * Fin.getFinite j + 1)
-      }
-
-    proofStateBase = o + 114
-    evalsBase = o + 144
-    unfBase = 252
-    mask0 = at (proofStateBase + 26)
-    mask1 = at (proofStateBase + 27)
-
-    input =
-      { appStateFields: [ at 0 ]
-      , wComm: (Vector.generate \j -> ChunkedCommitment (Vector.singleton (readPt (o + 2 * getFinite j)))) :: Vector 15 (ChunkedCommitment 1 _)
-      , zComm: ChunkedCommitment (Vector.singleton (readPt (o + 30)))
-      , tComm: (Vector.generate \j -> readPt (o + 32 + 2 * getFinite j)) :: Vector 7 _
-      , lr:
-          ( Vector.generate \j ->
-              { l: readPt (o + 46 + 4 * getFinite j)
-              , r: readPt (o + 46 + 4 * getFinite j + 2)
-              }
-          ) :: Vector 15 _
-      , z1: readOtherField (o + 106)
-      , z2: readOtherField (o + 108)
-      , delta: readPt (o + 110)
-      , sg: readPt (o + 112)
-      , proofState:
-          { plonk:
-              { alpha: asSizedF128 (at proofStateBase)
-              , beta: asSizedF128 (at (proofStateBase + 1))
-              , gamma: asSizedF128 (at (proofStateBase + 2))
-              , zeta: asSizedF128 (at (proofStateBase + 3))
-              , perm: Type1 (at (proofStateBase + 6))
-              , zetaToSrsLength: Type1 (at (proofStateBase + 4))
-              , zetaToDomainSize: Type1 (at (proofStateBase + 5))
-              }
-          , combinedInnerProduct: Type1 (at (proofStateBase + 7))
-          , b: Type1 (at (proofStateBase + 8))
-          , xi: asSizedF128 (at (proofStateBase + 9))
-          , bulletproofChallenges:
-              (Vector.generate \j -> asSizedF128 (at (proofStateBase + 10 + getFinite j))) :: Vector 16 _
-          , spongeDigest: at (proofStateBase + 29)
-          }
-      , chunkedEvals: singleChunkEvals
-          { ftEval1: at (evalsBase + 88)
-          , publicEvals: { zeta: at evalsBase, omegaTimesZeta: at (evalsBase + 1) }
-          , witnessEvals: (Vector.generate (evalPair (evalsBase + 2))) :: Vector 15 _
-          , coeffEvals: (Vector.generate (evalPair (evalsBase + 32))) :: Vector 15 _
-          , zEvals: { zeta: at (evalsBase + 62), omegaTimesZeta: at (evalsBase + 63) }
-          , sigmaEvals: (Vector.generate (evalPair (evalsBase + 64))) :: Vector 6 _
-          , indexEvals: (Vector.generate (evalPair (evalsBase + 76))) :: Vector 6 _
-          }
-      , prevChallenges: (\x -> x :< Vector.nil) (Vector.generate \j -> at (234 + getFinite j))
-      , prevSgs: readPt 250 :< Vector.nil
-      , unfinalized:
-          { deferredValues:
-              { plonk:
-                  { alpha: asSizedF128 (at (unfBase + 13))
-                  , beta: asSizedF128 (at (unfBase + 11))
-                  , gamma: asSizedF128 (at (unfBase + 12))
-                  , zeta: asSizedF128 (at (unfBase + 14))
-                  , perm: readOtherField (unfBase + 8)
-                  , zetaToSrsLength: readOtherField (unfBase + 4)
-                  , zetaToDomainSize: readOtherField (unfBase + 6)
-                  }
-              , combinedInnerProduct: readOtherField (unfBase + 0)
-              , b: readOtherField (unfBase + 2)
-              , xi: asSizedF128 (at (unfBase + 15))
-              , bulletproofChallenges:
-                  (Vector.generate \j -> asSizedF128 (at (unfBase + 16 + getFinite j))) :: Vector 15 _
-              }
-          , shouldFinalize: coerce (at (unfBase + 31)) :: BoolVar StepField
-          , claimedDigest: at (unfBase + 10)
-          }
-      , messagesForNextWrapProof: at 284
-      , mustVerify: coerce (at 285) :: BoolVar StepField
-      , branchData:
-          { proofsVerifiedMask: mask0 :< mask1 :< Vector.nil
-          , domainLog2: at (proofStateBase + 28)
-          }
-      , proofMask: (coerce mask1) :< Vector.nil
-      , vkComms:
-          { sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
-          , sigmaLast: ChunkedCommitment (Vector.singleton constDummyPt)
-          , coeff: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 15 _
-          , index: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
-          }
-      , sgOld: constDummySg :< readPt 250 :< Vector.nil
-      }
+    proofMask = Vector.drop @1 witness.deferredValues.branchData.proofsVerifiedMask
 
     domainLog2 = 16
     fopParams =
@@ -177,10 +179,13 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
       , useOptSponge: false
       }
 
-  _result <- verifyOne fopParams input ivpParams
+  _result <- verifyOne fopParams (verifyOneInputOf proofMask (constDummySg :< witness.prevSgs) input) ivpParams
   pure unit
 
 compileFullStepVerifyOne :: FullStepVerifyOneParams -> Effect (CompiledCircuit StepField)
 compileFullStepVerifyOne params =
-  compile noAdvice (Proxy @(Vector 286 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    (\inputs -> fullStepVerifyOneCircuit params inputs)
+  compile noAdvice
+    (Proxy @(UnChecked (FullStepVerifyOneInput 1 (F StepField) Boolean (AffinePoint StepField))))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint StepField))
+    (fullStepVerifyOneCircuit params)
