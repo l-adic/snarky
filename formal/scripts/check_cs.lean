@@ -2115,21 +2115,8 @@ def main : IO Unit := do
   let wrapMains ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
     let k ← dumpConstants filter (dir / s!"{name}.json") (wrapMainOf nc)
     k.mapM fun k => do
-      let some widths := wrapMainWidths? (bp + 1) mpv k.stepWidths
-        | throw (IO.userError s!"{name}: slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}")
-      let some keys := wrapMainKeys? bp k.keys
-        | throw (IO.userError s!"{name}: {k.keys.length} step keys, not {bp + 1}")
-      let some slotWidths := wrapMainWidths? mpv Pickles.MaxProofsVerified k.slotWidths
-        | throw (IO.userError
-            s!"{name}: stack heights {k.slotWidths} are not {mpv} ≤ {Pickles.MaxProofsVerified}")
-      let some pins := wrapMainPins? bp mpv k.pins
-        | throw (IO.userError s!"{name}: pins {k.pins} are not {bp + 1} rows of {mpv}")
-      let m := CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv)
-      let some tables := wrapMainTables? bp nc m k.lagrange
-        | throw (IO.userError (s!"{name}: Lagrange bases are not {m} rows of {bp + 1}: " ++
-            s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}"))
-      pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
-        (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths pins tables))
+      let main ← IO.ofExcept ((wrapMainCircuitOf bp mpv nc k).mapError (s!"{name}: " ++ ·))
+      pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit) main)
   let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n)) :=
     dumpConstants filter (dir / s!"{name}.json") (stepMainOf n w)
   let chainN2 ← stepConsts "step_main_simple_chain_n2_circuit" 2 2

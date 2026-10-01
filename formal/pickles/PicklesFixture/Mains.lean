@@ -87,4 +87,25 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
       AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
       AsProver.throw "advice", AsProver.throw "advice"⟩ stmt
 
+/-- A `wrap_main_*` circuit at a dump's constants, the shapes the circuit takes them in checked:
+`bp + 1` branches of at most `mpv` slots, `mpv` stack heights of at most `MaxProofsVerified`, a
+pin per branch and slot, `bp + 1` step keys, and a table of one base per packed statement cell per
+branch. -/
+def wrapMainCircuitOf (bp mpv nc : ℕ) (k : WrapMainConsts nc) :
+    Except String
+      (Pickles.StatementPacked 16 (Type1 (FVar Fq)) (FVar Fq) → CircuitM Fq Cq Unit) := do
+  let some widths := wrapMainWidths? (bp + 1) mpv k.stepWidths
+    | throw s!"slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}"
+  let some keys := wrapMainKeys? bp k.keys
+    | throw s!"{k.keys.length} step keys, not {bp + 1}"
+  let some slotWidths := wrapMainWidths? mpv Pickles.MaxProofsVerified k.slotWidths
+    | throw s!"stack heights {k.slotWidths} are not {mpv} ≤ {Pickles.MaxProofsVerified}"
+  let some pins := wrapMainPins? bp mpv k.pins
+    | throw s!"pins {k.pins} are not {bp + 1} rows of {mpv}"
+  let m := CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv)
+  let some tables := wrapMainTables? bp nc m k.lagrange
+    | throw (s!"Lagrange bases are not {m} rows of {bp + 1}: " ++
+        s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}")
+  return wrapMainDumpCircuit bp mpv nc k widths keys slotWidths pins tables
+
 end PicklesFixture

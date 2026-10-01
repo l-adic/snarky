@@ -6,6 +6,7 @@ import PicklesFixture.Constants
 import PicklesFixture.Rules
 import PicklesFixture.Compare
 import PicklesFixture.Mains
+import PicklesFixture.Premises
 import PicklesFixture.Rule
 
 /-!
