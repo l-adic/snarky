@@ -168,17 +168,19 @@ structure StepMainOut (n w : ℕ) (ws : Fin n → ℕ) (ncw ncs k ks : ℕ) wher
     (List (FVar Fp)) (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n)
 
 /-- The step circuit's message hashing: its outgoing message hashes to its statement's step
-digest. -/
+digest, and each slot's wrap digest passes through to the statement, after the padding. -/
 def StepMainOut.HashesMessages {n w : ℕ} {ws : Fin n → ℕ} {ncw ncs k ks : ℕ} (V : Valuation Fp)
     (out : StepMainOut n w ws ncw ncs k ks) : Prop :=
-  ∀ (vk : VkComms ncw (AffinePoint Fp)) (sgs : Vector (AffinePoint Fp) n)
+  (∀ (vk : VkComms ncw (AffinePoint Fp)) (sgs : Vector (AffinePoint Fp) n)
     (chals : Vector (Vector Fp ks) n),
     CircuitType.Reads V out.messagesForNextStepProof.dlogPlonkIndex vk →
     CircuitType.Reads V out.messagesForNextStepProof.challengePolynomialCommitments sgs →
     CircuitType.Reads V out.messagesForNextStepProof.oldBulletproofChallenges chals →
     out.out.proofState.messagesForNextStepProof.val V
       = stepMsgDigest IpaPallas.curve.sponge.params
-          ⟨out.messagesForNextStepProof.appState.map (·.val V), vk, sgs, chals⟩
+          ⟨out.messagesForNextStepProof.appState.map (·.val V), vk, sgs, chals⟩) ∧
+  ∀ (hn : n ≤ w) (i : Fin n),
+    (out.out.messagesForNextWrapProof[w - n + i]'(by omega)).val V = out.msgs[i].val V
 
 variable {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
 
@@ -344,6 +346,11 @@ theorem stepMain_hashesMessages {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
     IpaPallas.curve.sponge.params IpaPallas.curve.sponge.hsize m
   simp only [stepMain]
   mvcgen [hrule, hmap, hall, hhash, -Snarky.assertAll_spec]
+  rename_i hdigest
+  refine ⟨hdigest, fun hn i => ?_⟩
+  -- slot `i` sits past the `w − n` padding entries
+  simp only [Vector.getElem_ofFn, show ¬(w - n + i < w - n) by omega, dite_false,
+    show w - n + i - (w - n) = i by omega, Fin.getElem_fin]
 
 /-- A slot's kept mask cells are its branch data's mask cells: when those read as bits, the
 kept ones read as some mask. -/

@@ -377,7 +377,7 @@ private theorem wrapStep_kimchiVerify_core
   obtain ⟨hE, hK⟩ := hscal hdom cp (wrapPublicInput SStep.σ KStep.cvk Vw wrapVerifyOut.statement) Vw
     stmt.claims v hv hv1 hcc hf
   refine ⟨cp, oldsW, hpr, hol, hf, ?_, hcons, hhash, hK⟩
-  simp only [Accumulator.ofCells, WrapMainVerifyOut.messagesForNextWrapProof, hsg, hE]
+  simp only [Accumulator.ofCells, hsg, hE]
 
 /-- **The wrap circuit's step proof verifies.** Let `Vw` satisfy the wrap circuit built from the
 tag's step keys `stepKeys` and the step SRS `SStep`, its branch index reading as branch `b`,

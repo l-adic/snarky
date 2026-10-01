@@ -277,8 +277,8 @@ abbrev WrapMainVerifyOut.messagesForNextWrapProof {branches mpv ncStep k ks : �
   ⟨out.cells.opening.sg, fin.outs.map (·.expandedChallenges)⟩
 
 /-- The wrap circuit's message hashing, at the padding challenges `dummy`: its outgoing message
-hashes to its statement's wrap digest, each slot's rebuilt incoming message to that slot's
-digest cell, and the step digest passes through. -/
+hashes to its statement's wrap digest, each slot's rebuilt incoming message to that slot's digest
+in the step statement it verifies, and that statement's step digest is its own. -/
 def WrapMainVerifyOut.HashesMessages {branches mpv ncStep k ks : ℕ}
     {slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv} (Vw : Valuation Fq)
     (dummy : Vector Fq k) (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
@@ -291,8 +291,9 @@ def WrapMainVerifyOut.HashesMessages {branches mpv ncStep k ks : ℕ}
   (∀ (j : Fin mpv) (sg : AffinePoint Fq) (chals : Vector (Vector Fq k) slotWidths[j]),
     CircuitType.Reads Vw (fin.messagesForNextWrapProof j).challengePolynomialCommitment sg →
     CircuitType.Reads Vw (fin.messagesForNextWrapProof j).oldBulletproofChallenges chals →
-    out.msgs[j].val Vw = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chals⟩) ∧
-  stmt.digests[2].val Vw = fin.proofState.messagesForNextStepProof.val Vw
+    out.statement.messagesForNextWrapProof[j].val Vw
+      = wrapMsgDigest IpaVesta.curve.sponge.params dummy ⟨sg, chals⟩) ∧
+  stmt.digests[2].val Vw = out.statement.proofState.messagesForNextStepProof.val Vw
 
 variable {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
 

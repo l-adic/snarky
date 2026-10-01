@@ -4,6 +4,7 @@ import Pickles.ListLemmas
 import Pickles.OptSponge
 import Pickles.Statement
 import Pickles.VkComms
+import Poseidon.RandomOracle
 
 set_option mvcgen.warning false
 
@@ -56,15 +57,19 @@ def wrapPaddingSponge {k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k) (pa
     SpongeVar F :=
   SpongeVar.ofConstants (wrapPaddingState p dummy pad)
 
-/-- The wire's messages-for-next-wrap-proof digest of the message `m`: its old bulletproof
-challenges, front-padded with `dummy` to `MaxProofsVerified`, then its commitment, absorbed from
-the fresh sponge and squeezed. -/
+/-- What the wrap digest of the message `m` absorbs: its old bulletproof challenges,
+front-padded with `dummy` to `MaxProofsVerified`, then its commitment. -/
+def wrapMsgInput {w k : ℕ} (dummy : Vector F k)
+    (m : MessagesForNextWrapProof (AffinePoint F) (Vector (Vector F k) w)) : List F :=
+  (List.replicate (MaxProofsVerified - w) dummy.toList).flatten
+    ++ m.oldBulletproofChallenges.flatten.toList
+    ++ [m.challengePolynomialCommitment.x, m.challengePolynomialCommitment.y]
+
+/-- The wire's messages-for-next-wrap-proof digest of the message `m`: `wrapMsgInput` absorbed
+from the fresh sponge and squeezed. -/
 def wrapMsgDigest {w k : ℕ} (p : Poseidon.Params F) (dummy : Vector F k)
     (m : MessagesForNextWrapProof (AffinePoint F) (Vector (Vector F k) w)) : F :=
-  (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
-    ((List.replicate (MaxProofsVerified - w) dummy.toList).flatten
-      ++ m.oldBulletproofChallenges.flatten.toList
-      ++ [m.challengePolynomialCommitment.x, m.challengePolynomialCommitment.y]))).1
+  (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init (wrapMsgInput dummy m))).1
 
 /-- The sponge after the key: its commitments absorbed chunk by chunk, `x` then `y`, in the
 order `σ₀…σ₆`, the coefficients, the selectors. -/
@@ -89,15 +94,24 @@ def hashMessagesForNextStepProof [ConstraintHolds F c] {nc n k : ℕ} (p : Posei
   let (digest, _) ← SpongeVar.squeeze p sv
   pure digest
 
-/-- The wire's messages-for-next-step-proof digest of the message `m`: its key's coordinates, its
-application state, then per proof `sg` and its challenges, absorbed from the fresh sponge and
-squeezed. -/
+/-- What the step digest of the message `m` absorbs: its key's coordinates, its application
+state, then per proof `sg` and its challenges. -/
+def stepMsgInput {nc n k : ℕ}
+    (m : MessagesForNextStepProof (VkComms nc (AffinePoint F)) (List F)
+      (Vector (AffinePoint F) n) (Vector (Vector F k) n)) : List F :=
+  m.dlogPlonkIndex.indexPoints.flatMap (fun P => [P.x, P.y]) ++ m.appState ++
+    m.proofs.toList.flatMap fun (sg, chals) => sg.x :: sg.y :: chals.toList
+
+/-- The wire's messages-for-next-step-proof digest of the message `m`: `stepMsgInput` absorbed
+from the fresh sponge and squeezed. -/
 def stepMsgDigest {nc n k : ℕ} (p : Poseidon.Params F)
     (m : MessagesForNextStepProof (VkComms nc (AffinePoint F)) (List F)
       (Vector (AffinePoint F) n) (Vector (Vector F k) n)) : F :=
-  (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
-    (m.dlogPlonkIndex.indexPoints.flatMap (fun P => [P.x, P.y]) ++ m.appState ++
-      m.proofs.toList.flatMap fun (sg, chals) => sg.x :: sg.y :: chals.toList))).1
+  (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init (stepMsgInput m))).1
+
+/-- The inputs `xs` and `ys` differ, but their Poseidon digests read alike under `read`. -/
+def Collision {R : Type} (p : Poseidon.Params F) (read : F → R) (xs ys : List F) : Prop :=
+  xs ≠ ys ∧ read (Poseidon.RandomOracle.hash p xs) = read (Poseidon.RandomOracle.hash p ys)
 
 /-- The digest of the step message `m` with each proof's advice kept under its bit of `mask`, and
 the sponge after the key, which the verify block resumes from: after the key and the application
@@ -181,8 +195,8 @@ theorem hashMessagesForNextWrapProof_padded {w k : ℕ} (p : Poseidon.Params F)
       have := (CircuitType.reads_vector.mp hr) i (by simpa using h2)
       simpa [CircuitType.reads_fvar] using this
   have hcv' := CircuitType.reads_vector_iff_forall₂.mp hcv
-  simp only [wrapMsgDigest, wrapPaddingState, Poseidon.absorb, List.foldl_append, toList_flatten',
-    hvals hcv', hx, hy]
+  simp only [wrapMsgDigest, wrapMsgInput, wrapPaddingState, Poseidon.absorb, List.foldl_append,
+    toList_flatten', hvals hcv', hx, hy]
 
 /-- Under any valuation satisfying the emitted constraints, the sponge after the key reads as
 the fresh value sponge after absorbing the key's coordinates in order. -/
@@ -287,7 +301,7 @@ theorem hashMessagesForNextStepProof_spec {nc n k : ℕ} (p : Poseidon.Params F)
     rw [Vector.getElem_map, Vector.getElem_map, ← CircuitType.reads_fvar.mp
       (CircuitType.reads_vector.mp (CircuitType.reads_vector.mp hc i hi) j hj)]
   subst hsgs hchals
-  rw [(hsq' _ hafter).1, stepMsgDigest, VkComms.indexCoords_of_reads hk]
+  rw [(hsq' _ hafter).1, stepMsgDigest, stepMsgInput, VkComms.indexCoords_of_reads hk]
   simp [MessagesForNextStepProof.proofs, Vector.toList_zip, Vector.toList_map, List.zip_map,
     List.flatMap_map, List.map_flatMap]
 
