@@ -20,8 +20,8 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Exception (throw)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.Types (ComparableCircuit)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeGateData)
@@ -133,9 +133,17 @@ fromCompiledCircuit
   => Ord f
   => CircuitBuilderState (KimchiGate f) (AuxState f)
   -> Effect (Circuit f)
-fromCompiledCircuit s = fromGateData s <$> gateDataOf s
+fromCompiledCircuit s = do
+  gd <- gateDataOf s
+  unless (Array.length gd.gates == Array.length gd.constraints)
+    $ throw
+    $ "fromCompiledCircuit: " <> show (Array.length gd.gates) <> " gates for "
+        <> show (Array.length gd.constraints)
+        <> " rows"
+  pure (fromGateData s gd)
 
--- | Assemble the `Circuit` view from a compiled state and its gate data.
+-- | Assemble the `Circuit` view from a compiled state and its gate data, one
+-- | gate per row (`fromCompiledCircuit` checks the counts agree).
 fromGateData
   :: forall f g
    . CircuitGateConstructor f g
@@ -158,9 +166,9 @@ fromGateData s gd =
         (constraintsToArray s.constraints)
 
     gates = Array.mapWithIndex
-      ( \i row ->
+      ( \i (Tuple row gate) ->
           let
-            gateWires = circuitGateGetWires (gd.gates `unsafeIdx` i)
+            gateWires = circuitGateGetWires gate
             wires = Array.mapWithIndex
               ( \j _ ->
                   let
@@ -181,7 +189,7 @@ fromGateData s gd =
             , context
             }
       )
-      gd.constraints
+      (Array.zip gd.constraints gd.gates)
 
     AuxState aux = s.aux
     cachedConstants =
@@ -199,8 +207,3 @@ fromGateData s gd =
     , gates
     , cachedConstants
     }
-  where
-  unsafeIdx :: forall a. Array a -> Int -> a
-  unsafeIdx arr i = case Array.index arr i of
-    Just x -> x
-    Nothing -> unsafeCrashWith ("fromGateData: gate index out of bounds: " <> show i)
