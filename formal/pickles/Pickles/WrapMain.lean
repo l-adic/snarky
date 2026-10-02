@@ -495,13 +495,6 @@ def stepDomainLog2s {branches ncStep : ℕ}
     (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches) : Vector ℕ branches :=
   stepKeys.map (·.domainLog2)
 
-/-- The Lagrange table a wrap circuit is compiled with: at each step domain, the SRS's first
-`count` Lagrange commitments over that domain. -/
-def srsLagrangeTable (σ : SRS IpaVesta.curve.Point) (nc count d : ℕ) :
-    Vector (Vector IpaVesta.curve.Point nc) count :=
-  ⟨Ipa.lagrangeBasis IpaVesta.curve σ nc (2 ^ d) (domainGenerator IpaVesta.curve d) count,
-    by simp [Ipa.lagrangeBasis]⟩
-
 end Main
 
 /-! ## The compiled wrap circuit -/
