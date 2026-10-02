@@ -202,4 +202,7 @@ def main : IO Unit := do
     IO.println "✗ the wrap circuits' padding challenges differ"
   if failures > 0 then
     throw <| IO.userError s!"tag dumps FAILED ({failures} failure(s))"
+  if all.isEmpty then
+    throw <| IO.userError s!"no tag dumps under {dir}: run the pickles prove tests with \
+      PICKLES_DUMP_DIR set first"
   IO.println s!"── tag dumps OK ({circuits} circuits, {all.length} tags) ──"
