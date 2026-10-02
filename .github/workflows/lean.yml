@@ -106,9 +106,11 @@ jobs:
 
     # Save even when the build (or a source gate rerun) failed: a red PR iteration
     # then restarts from the partial build instead of the last green one. On an exact
-    # primary-key hit the save is a no-op warning.
+    # primary-key hit the save is a no-op warning. Not on a cancelled run: its partial
+    # build would hold the key, and a later run on the same Lean sources could not
+    # replace it.
     - name: Save the build cache
-      if: always()
+      if: ${{ !cancelled() }}
       uses: actions/cache/save@v4
       with:
         path: |
