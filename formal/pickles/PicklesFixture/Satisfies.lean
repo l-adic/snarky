@@ -1,5 +1,6 @@
 import Snarky.Kimchi.Backend.Assemble
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Kimchi.Semantics
 import KimchiFixture.PS
 
 /-!
@@ -16,6 +17,11 @@ The reduction and the assembly are `Snarky.Kimchi.Backend.Compile`'s (`reduceBui
 `gateDataOf`, `reduceSolved`), at the `Built` level so that a driver which keeps the
 circuit's output as data — `FopOutput`'s bits, off a `build`/`prove` pair — runs the same
 code as `kimchiGateData` does over `compile`.
+
+A main circuit runs as its capstone compiles it (`PicklesFixture.runMain`, over
+`Snarky.compileWith`), and its run also decides the capstone's own hypothesis: the prover's
+valuation satisfies every compiled constraint (`Snarky.Kimchi.KimchiConstraint.Holds`). The
+capstones state that system at the soundness tag `Builder V`, which is the same system.
 -/
 
 namespace PicklesFixture
@@ -102,6 +108,47 @@ def runHalf {p : ℕ} [Fact p.Prime] {a av β : Type} [CircuitType (ZMod p) a av
           ({nwit} rows) · index build {t5 - t4} ms (n = {inst.n}) · decide {t6 - t5} ms"
         pure sat
     return (sat, bits)
+
+/-- One run of a main circuit as its capstone compiles it (`Snarky.compileWith`), proved on its
+input. -/
+structure MainRun (F bvar α : Type) where
+  /-- The prover's valuation. -/
+  V : Valuation F
+  /-- Whether `V` satisfies every compiled constraint: the capstone's hypothesis, decided. -/
+  holds : Bool
+  /-- Whether the run's table satisfies the assembled system. -/
+  satisfies : Bool
+  /-- The table's public input: the input's cells, then the output's. -/
+  pub : List F
+  /-- The run's output and cells, and its public output. -/
+  result : (bvar × α) × bvar
+
+/-- A main circuit `body` compiled with its cells (`Snarky.compileWith`), proved on `inp`: whether
+the prover's valuation satisfies every compiled constraint, and whether the table, its public
+rows the input's then the output's cells, satisfies the assembled system. -/
+def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType (ZMod p) a av]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a av] [CircuitType (ZMod p) b bv]
+    (side : Kimchi.Fixture.PS.Side p)
+    (body : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (bv × α)) (inp : a) :
+    IO (MainRun (ZMod p) bv α) := do
+  let built := compileWith (a := a) (b := b) body
+  let st := seed (F := ZMod p) (avar := av) inp
+  let pr ← match prove (compileWithBody (a := a) (b := b) body) st.nv st.env with
+    | .error e => throw (IO.userError s!"prove failed: {repr e}") | .ok pr => pure pr
+  let V := pr.assignments.get
+  let holds := decide (∀ con ∈ built.constraints, KimchiConstraint.Holds V con)
+  let pubVars := (allocRange 0 A.size).toList ++ bundleVars (F := ZMod p) (b := b) built.result.2
+  let (rows, gates, _) := gateDataOf (reduceBuilt built) pubVars
+  let env' ← match reduceSolved built pr.assignments with
+    | .error e => throw (IO.userError s!"reduction failed: {repr e}") | .ok e => pure e
+  let (wit, pub) := makeWitness env' rows pubVars
+  let satisfies ← match Kimchi.Fixture.PS.build side
+      (assembledRaw rows gates pubVars.length wit pub) with
+    | .error e => throw (IO.userError s!"index build failed: {e}")
+    | .ok inst =>
+      haveI : NeZero inst.n := inst.nz
+      pure (decide (Kimchi.Index.Satisfies inst.idx inst.wit.pub inst.wit.tab))
+  return { V, holds, satisfies, pub, result := built.result }
 
 /-- `jobs` on `n` workers, each job's output captured on its worker thread (stdout is per
 thread) and printed in job order as soon as the jobs before it are done; the verdicts, in
