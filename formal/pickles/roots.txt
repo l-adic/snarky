@@ -65,4 +65,8 @@ Pickles.carryWith_lagrangePoints -- the drivers decide the carry at memoized poi
 Pickles.sgOkWith_lagrangePoints -- the drivers decide sgOk at memoized points
 Pickles.KeyReads.of_readPt -- check-tags decides its premises for a slot's key cells
 Pickles.instDecidableEqVkComms -- check-tags compares a slot's key cells with its key
+Pickles.IvpProof.read_eq -- check-tags decides its premises: a proof's cells read off the cached proof
+Pickles.OldsRead.of_readPt -- check-tags decides its premises for the old-accumulator cells
+Pickles.pubEvalsWith -- check-tags decides FopTies' public evaluations at memoised Lagrange points
+Pickles.pubEvalsWith_lagrangePoints -- which is runPubEvals at the key's points
 -- script-surface:end

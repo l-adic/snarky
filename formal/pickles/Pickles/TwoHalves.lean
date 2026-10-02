@@ -389,6 +389,24 @@ theorem carryWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C
     carryWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub cp' i = carry σ cvk cp pub cp' i := by
   simp only [carryWith, carry, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
 
+/-- The run's public evaluations at the Lagrange points `L`: `runPubEvals` at the public
+commitment to `L`, computed once. -/
+def pubEvalsWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
+    PointEvaluations (Vector C.ScalarField nc) :=
+  let zeta := (fqOracles C cvk cp (publicCommitment C σ L pub)).zeta
+  let zetaOmega := zeta * cvk.omega
+  publicEvalChunks cp cvk.n cvk.omega zeta zetaOmega (powPow2 zeta cvk.domainLog2)
+    (powPow2 zetaOmega cvk.domainLog2) pub
+
+/-- `pubEvalsWith` at the key's Lagrange points, at least one per public-input cell, is
+`runPubEvals`. -/
+theorem pubEvalsWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m) :
+    pubEvalsWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub = runPubEvals C σ cvk cp pub := by
+  simp only [pubEvalsWith, runPubEvals, runOracles, runZetaOmega, runZetaN, runZetaOmegaN,
+    runPublicComm, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
+
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
 /-- The proof's combined evaluations are the linearization view of its evaluations recombined

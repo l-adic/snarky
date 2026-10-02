@@ -72,6 +72,7 @@ structure PointEvaluations (F : Type*) where
   zeta : F
   /-- The evaluation at `ζω`. -/
   zetaOmega : F
+deriving DecidableEq
 
 /-- The pair as a row of the batch's evaluation matrix: `ζ` then `ζω`. -/
 def PointEvaluations.toVector {F : Type*} (e : PointEvaluations F) : Vector F evalPts :=
@@ -102,6 +103,7 @@ structure ProofEvaluations (E : Type*) where
   emulSelector : PointEvaluations E
   /-- The endoScalar selector's evaluation pair. -/
   endomulScalarSelector : PointEvaluations E
+deriving DecidableEq
 
 /-- Push a map through an evaluation pair. -/
 def PointEvaluations.map {α β : Type*} (f : α → β) (e : PointEvaluations α) :

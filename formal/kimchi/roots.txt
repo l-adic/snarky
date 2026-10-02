@@ -72,4 +72,6 @@ Kimchi.Fixture.PS.build
 Kimchi.Fixture.PS.fpSide
 Kimchi.Fixture.PS.fqSide
 Kimchi.Fixture.PS.parseComparisonCs?
+Kimchi.Verifier.instDecidableEqPointEvaluations -- check-tags compares a proof's evaluations with its cells
+Kimchi.Verifier.instDecidableEqProofEvaluations -- check-tags compares a proof's evaluations with its cells
 -- script-surface:end
