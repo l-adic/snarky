@@ -43,8 +43,9 @@ The carry (e): a proof's deferred `sg` obligation is an old accumulator of the n
 its curve — wrap k−1's in wrap k's, through the step between them; step k−1's in step k's,
 through the wrap between them. Per linked pair, `Pickles.carry` is decided on the two checked
 proofs (the accumulator is the predecessor's `sg` with the wire's round challenges of the
-predecessor), `Pickles.accOk` on the accumulator, `Pickles.sgOk` on the predecessor, and the
-two verdicts must agree. An unlinked accumulator — a front pad, a base-case slot — must
+predecessor; at the memoized Lagrange points, `Pickles.carryWith_lagrangePoints`),
+`Pickles.accOk` on the accumulator, `Pickles.sgOk` on the predecessor, and the two verdicts
+must agree. An unlinked accumulator — a front pad, a base-case slot — must
 satisfy `accOk` on its own: the dummy's `sg` commits the dummy
 challenges. So no accumulator in the file is taken from the prover's list on trust.
 
@@ -188,32 +189,6 @@ def wrapFopInput (s : Cache.Entry CS) (slot : ℕ) {k : ℕ}
     if h : accs.size = Pickles.MaxProofsVerified then pure ⟨accs, h⟩
     else throw s!"wrap accumulators: {accs.size}, expected {Pickles.MaxProofsVerified}"
   return { claims := u, evals := ← chunkedEvalsOf CW cpW, prev }
-
-/-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on
-`C`: `carry` decided on the two checked proofs, `accOk` on the accumulator, `sgOk` on `pred`,
-and the last two agreeing. `carry` and `sgOk` are decided at the memoized Lagrange points
-(`carryWith_lagrangePoints`, `sgOkWith_lagrangePoints`). -/
-def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point)))
-    (keys : IO.Ref (List (String × Checked C))) (memo : Memo)
-    (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
-  let ⟨nc, S, K⟩ ← keyFor C name sqrt loaded keys pred
-  unless succ.proof.opening.lr.size = S.σ.k do
-    throw (IO.userError s!"round counts differ: {S.σ.k} and {succ.proof.opening.lr.size}")
-  let cp ← checkedFor C nc S.σ pred
-  let ⟨_, _, cp'⟩ ← checkedAny C S.σ succ
-  if h : slot < cp'.olds.size then
-    -- `sgOk` is the predecessor's shared verdict (`memo`); `accOk` is the successor's own
-    -- accumulator and stays a computation of its own, since its agreeing with `sgOk` is what
-    -- the carry says
-    let L ← basisFor C name S.σ nc pred
-    let c := Pickles.carryWith S.σ K.cvk L cp pred.publicInput cp' ⟨slot, h⟩
-    let s ← memoized memo.sg (memoKey C name S.σ.k pred pred.publicInput) fun _ =>
-      Pickles.sgOkWith S.σ K.cvk L cp pred.publicInput
-    let a := Pickles.accOk S.σ cp'.olds[slot]
-    IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
-    return c && a && s && (s == a)
-  else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
 
 /-- The hypotheses of `Pickles.stepProof_kimchiVerify_vesta` that are facts about data,
 decided on a wrap entry and the step entry it wrapped — so the theorem's assumptions are
@@ -404,15 +379,6 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
     (fun _ => []) ⟨ginp⟩
   IO.println s!"    groupCircuit: satisfies={satG}"
   return pubOk && smallOk && avoidOk && guards && sg' && kv && satS && satG
-
-/-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `accOk` on its
-own. -/
-def padOk (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) (slot : ℕ) : IO Bool := do
-  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let ⟨_, _, cp⟩ ← checkedAny C σ e
-  if h : slot < cp.olds.size then return Pickles.accOk σ cp.olds[slot]
-  else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
 
 def main : IO Unit := do
   let path := (← IO.getEnv "PROOF_CACHE").getD

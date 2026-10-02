@@ -3,6 +3,7 @@ import BulletproofFixture
 import BulletproofFixture.SRSLoader
 import KimchiFixture.Cache
 import Pickles.Env
+import Pickles.TwoHalves
 
 /-!
 # Verdicts on cached proofs
@@ -11,8 +12,11 @@ What the drivers decide of a cached proof beyond its circuits, computed once: th
 to the proof's round count, loaded once per count (`PicklesFixture.srsAt`); the key's Lagrange
 points, memoised on disk (`PicklesFixture.basisFor`); the entry's records checked at the SRS
 (`PicklesFixture.checkedAny`), and its SRS and key checked once per key
-(`PicklesFixture.keyFor`); and the `kimchiVerify` and `sgOk` verdicts several checks ask of one
-proof, memoised per proof and public input (`PicklesFixture.Memo`, `PicklesFixture.verifies`).
+(`PicklesFixture.keyFor`); the `kimchiVerify` and `sgOk` verdicts several checks ask of one
+proof, memoised per proof and public input (`PicklesFixture.Memo`, `PicklesFixture.verifies`);
+and the carry of a proof's deferred obligation into the next proof's old accumulators
+(`PicklesFixture.carriesInto`), an unlinked accumulator satisfying `accOk` on its own
+(`PicklesFixture.padOk`).
 -/
 
 namespace PicklesFixture
@@ -135,5 +139,40 @@ def keyFor1 (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option
   let ⟨nc, S, K⟩ ← keyFor C name sqrt loaded keys e
   if h : nc = 1 then return (S, h ▸ K)
   else throw (IO.userError s!"the entry runs at {nc} chunks; this lane is one-chunk")
+
+/-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on
+`C`: `carry` decided on the two checked proofs, `accOk` on the accumulator, `sgOk` on `pred`,
+and the last two agreeing. `carry` and `sgOk` are decided at the memoized Lagrange points
+(`carryWith_lagrangePoints`, `sgOkWith_lagrangePoints`). -/
+def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point)))
+    (keys : IO.Ref (List (String × Checked C))) (memo : Memo)
+    (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
+  let ⟨nc, S, K⟩ ← keyFor C name sqrt loaded keys pred
+  unless succ.proof.opening.lr.size = S.σ.k do
+    throw (IO.userError s!"round counts differ: {S.σ.k} and {succ.proof.opening.lr.size}")
+  let cp ← checkedFor C nc S.σ pred
+  let ⟨_, _, cp'⟩ ← checkedAny C S.σ succ
+  if h : slot < cp'.olds.size then
+    -- `sgOk` is the predecessor's shared verdict (`memo`); `accOk` is the successor's own
+    -- accumulator and stays a computation of its own, since its agreeing with `sgOk` is what
+    -- the carry says
+    let L ← basisFor C name S.σ nc pred
+    let c := Pickles.carryWith S.σ K.cvk L cp pred.publicInput cp' ⟨slot, h⟩
+    let s ← memoized memo.sg (memoKey C name S.σ.k pred pred.publicInput) fun _ =>
+      Pickles.sgOkWith S.σ K.cvk L cp pred.publicInput
+    let a := Pickles.accOk S.σ cp'.olds[slot]
+    IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
+    return c && a && s && (s == a)
+  else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
+
+/-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `accOk` on its
+own. -/
+def padOk (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) (slot : ℕ) : IO Bool := do
+  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
+  let ⟨_, _, cp⟩ ← checkedAny C σ e
+  if h : slot < cp.olds.size then return Pickles.accOk σ cp.olds[slot]
+  else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
 
 end PicklesFixture
