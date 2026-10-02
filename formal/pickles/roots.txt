@@ -68,6 +68,7 @@ Pickles.pubEvalsWith -- check-tags decides FopTies' public evaluations at memois
 Pickles.pubEvalsWith_lagrangePoints -- which is runPubEvals at the key's points
 Pickles.sgOkWith_of_kimchiVerifyWith -- check-tags takes SgOk from kimchiVerify's own sg equation
 Pickles.accOk_of_carryWith -- check-tags takes a carried accumulator's accOk from its predecessor's SgOk
+Pickles.corrSumPt_packed_congr -- check-tags discharges a slot's Avoids from one statement's decision
 Pickles.pow2PowMul -- check-cs pins the gadget's constraint system
 Pickles.pow2PowMul_spec -- check-axioms audits the gadget's read
 Pickles.wrapVerifyWith -- check-cs pins the verify block at its dumps' points

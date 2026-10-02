@@ -209,6 +209,33 @@ theorem avoids_stepRelationsAt_iff {ks nc : ℕ} (σ : SRS IpaPallas.curve.Point
     exact hsum c
   · exact (Key.avoids_lagrangeRelations_iff pastaShapePallas σ hnc _).2 hL a ha hne
 
+/-- The correction sum reads the packing's kinds only: two wrap statements of one shape have
+one correction sum. -/
+theorem corrSumPt_packed_congr {ks nc : ℕ}
+    (s s' : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (lb : List (Vector IpaPallas.curve.Point nc)) (ci : Fin nc) :
+    corrSumPt (C := IpaPallas.curve) s.packed.toList lb ci
+      = corrSumPt (C := IpaPallas.curve) s'.packed.toList lb ci := by
+  -- compare the packings at one cell per kind
+  let canon : PackedScalar Fp → PackedScalar Fp
+    | .full _ => .full (.const 0)
+    | .b128 _ => .b128 (.const 0)
+    | .b10 _ => .b10 (.const 0)
+    | .bit b => .bit b
+  have hk : s.packed.toList.map canon = s'.packed.toList.map canon := by
+    simp [WrapStatement.packed, canon, Function.comp_def]
+  unfold corrSumPt
+  congr 1
+  refine List.ext_getElem (by simp) fun i h h' => ?_
+  rw [List.length_zipWith] at h h'
+  have hi : canon s.packed.toList[i] = canon s'.packed.toList[i] := by
+    have := List.getElem_of_eq hk (by simpa using lt_of_lt_of_le h (min_le_left _ _))
+    rwa [List.getElem_map, List.getElem_map] at this
+  simp only [List.getElem_zipWith]
+  generalize s.packed.toList[i] = a at hi ⊢
+  generalize s'.packed.toList[i] = b at hi ⊢
+  cases a <;> cases b <;> (try simp [canon] at hi) <;> rfl
+
 /-- `verifyProof` at the deployed Pallas scalar ops, endomorphism, sponge, group map and
 square root, with the blinding base `h` as a constant cell and the public-input commitment
 table of the Lagrange points `lagrange`. The constraint-system check compares it to the
