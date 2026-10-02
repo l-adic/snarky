@@ -222,6 +222,9 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
   -- | The cache key of the step proof being wrapped, recorded on the
   -- | wrap proof's entry so a chain is walkable from the cache alone.
   , step :: ProofRef
+  -- | Per slot of that step proof, on a base-case slot, the cells this
+  -- | circuit allocates for the slot's evaluations, recorded beside it.
+  , baseCases :: Array (Maybe (Array WrapField))
   -- | Kimchi-level `prev_challenges`, padded to `PaddedLength = 2`
   -- | entries. Each holds an sg (Pallas point, step-field coordinates)
   -- | and its expanded challenges.
@@ -444,6 +447,7 @@ wrapSolveAndProve ctx compileResult = do
               Nothing -> do
                 let proof = Lazy.force p
                 setVestaProof cache vkDigest compileResult.verifierIndex publicInputs proof ctx.step
+                  ctx.baseCases
                 pure proof
       pure $ Right
         { proverIndex: compileResult.proverIndex

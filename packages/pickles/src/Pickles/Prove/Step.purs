@@ -87,7 +87,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, getPallasProof, setPallasProof)
+import Snarky.Backend.Kimchi.ProofCache (Prev, ProofCache, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
@@ -1278,10 +1278,10 @@ stepSolveAndProve
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
-  -- Per slot, the cache key of the wrap proof this proof verifies there
-  -- (`Nothing` on a base-case slot), recorded on its cache entry so a
-  -- chain is walkable from the cache alone.
-  -> Array (Maybe ProofRef)
+  -- Per slot, the cache key of the wrap proof this proof verifies there,
+  -- or on a base-case slot the cells allocated for it, recorded on its
+  -- cache entry so a chain is walkable from the cache alone.
+  -> Array (Prev StepField)
   -> Effect (Either EvaluationError StepProveResult)
 stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
   -- Capture channel for the rule's user `publicOutput` FVars. The

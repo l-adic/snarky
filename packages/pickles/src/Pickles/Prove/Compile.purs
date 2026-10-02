@@ -72,7 +72,7 @@ import Pickles.DeferredValues (toPlonkMinimal)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Dump.Circuit (comparable, fromCompiledCircuit)
 import Pickles.Dump.Constants (DerivedKey, stepMainConstants, wrapKeyExport, wrapMainConstants)
-import Pickles.Dump.Tag (BranchDump, writeTagDump)
+import Pickles.Dump.Tag (BranchDump, wrapPadding, writeTagDump)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IncrementallyVerifyProof (class StepChunkLayout)
 import Pickles.Linearization (pallas) as Linearization
@@ -162,10 +162,10 @@ import Snarky.Backend.Kimchi.Proof
   , srsBlindingGenerator
   , srsLagrangeCommitmentChunksAt
   ) as ProofFFI
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, piKey)
+import Snarky.Backend.Kimchi.ProofCache (Prev(..), ProofCache, piKey)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError)
-import Snarky.Circuit.DSL (F(..), UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (F(..), UnChecked(..), coerceViaBits, valueToFields)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
@@ -600,7 +600,7 @@ slotStepAdvice
   -> Effect
        { contrib :: SlotAdviceContrib
        , wrapPublicInput :: Array WrapField
-       , proofRef :: Maybe ProofRef
+       , prev :: Prev StepField
        }
 slotStepAdvice _ srs appInput slotParams headSlot = do
   contrib <- buildSlotAdvice @w
@@ -630,14 +630,18 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
   pure
     { contrib
     , wrapPublicInput: slotData.wrapPublicInputArr
-    -- A base-case slot's dummy proof is not cached.
-    , proofRef:
+    -- A base-case slot's dummy proof is not cached, so the cells the
+    -- step circuit allocates for the slot are.
+    , prev:
         if slotData.mustVerify then
-          Just
+          Verified
             { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest slotParams.slotWrapVK))
             , publicInput: piKey slotData.wrapPublicInputArr
             }
-        else Nothing
+        else BaseCase
+          ( (Step.perProofWitnessTyp { width: slotW, numChunks: slotParams.slotStepNumChunks }).toFields
+              contrib.slotSppw
+          )
     }
   where
   slotW = reflectType (Proxy :: Proxy w)
@@ -1294,7 +1298,7 @@ mkStepAdvice
              valCarrier
        , challengePolynomialCommitments :: Vector mpv (AffinePoint StepField)
        , baseCaseWrapPublicInputs :: Vector mpv (Array WrapField)
-       , prevProofRefs :: Array (Maybe ProofRef)
+       , cachePrevs :: Array (Prev StepField)
        }
 mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
   perSlot <- forWithIndex slots \i slot ->
@@ -1318,7 +1322,7 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
         }
     , challengePolynomialCommitments: map _.contrib.challengePolynomialCommitment perSlot
     , baseCaseWrapPublicInputs: map _.wrapPublicInput perSlot
-    , prevProofRefs: Array.fromFoldable (map _.proofRef perSlot)
+    , cachePrevs: Array.fromFoldable (map _.prev perSlot)
     }
   where
   -- A side-loaded slot's wrap VK is a runtime witness, so its domains
@@ -1882,8 +1886,9 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
            inputVal
            mpv
            valCarrier
-      -- Per slot, the cache key of the wrap proof verified there.
-      -> Array (Maybe ProofRef)
+      -- Per slot, the cache key of the wrap proof verified there, or a
+      -- base case's cells.
+      -> Array (Prev StepField)
       -> Effect (Either EvaluationError PProveStep.StepProveResult)
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
@@ -2217,7 +2222,7 @@ runMultiProverBody
     stepProveCtx = stepProveContextOf perRuleCfg (map slotWidthInt widths)
       allStepDomainLog2s
 
-  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, prevProofRefs } <-
+  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, cachePrevs } <-
     mkStepAdvice perRuleCfg stepCR wrapResult appInput widths split.values
       split.slots
 
@@ -2241,7 +2246,7 @@ runMultiProverBody
 
     proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
 
-  eStepResult <- r.stepProveFn handler stepProveCtx stepCR stepAdvice prevProofRefs
+  eStepResult <- r.stepProveFn handler stepProveCtx stepCR stepAdvice cachePrevs
   case eStepResult of
     Left e -> pure (Left e)
     Right stepResult -> do
@@ -2391,6 +2396,13 @@ runMultiProverBody
               { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest stepCR.verifierIndex))
               , publicInput: piKey stepResult.publicInputs
               }
+          , baseCases: Array.zipWith
+              ( \prev evals -> case prev of
+                  Verified _ -> Nothing
+                  BaseCase _ -> Just (valueToFields @WrapField evals)
+              )
+              cachePrevs
+              (Vector.toUnfoldable proveData.prevEvals)
           , kimchiPrevChallenges: kimchiPrevPadded
           }
 
@@ -2587,8 +2599,15 @@ compileMulti cfg rules = do
       )
       ruleFns
       stepResults
+    let pad = wrapPadDummies cfg.srs
     writeTagDump path
-      { wrapMain: { circuit, constants, key: wrapKeyExport wrapResult.verifierIndex }
+      { wrapMain:
+          { circuit
+          , constants
+          , key: wrapKeyExport wrapResult.verifierIndex
+          , padding: wrapPadding
+              { stepAcc: pad.dummyPrevStepAcc, evals: pad.dummyPrevEvals, domain: paddingWrapDomain }
+          }
       , branches: Vector.toUnfoldable branches
       }
 
