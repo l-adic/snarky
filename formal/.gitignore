@@ -19,5 +19,10 @@
 /docs/module-deps.dot
 /docs/module-deps.svg
 
-# The Lagrange-basis memo the fixture drivers compute from the SRS (lagrangeBasisCached).
-/lagrange-cache/
+# The Lagrange-basis memo the fixture drivers compute from the SRS (lagrangeBasisCached). The
+# memos `basisFor` names (`<curve>-k<rounds>-2^<domain>-<chunks>c.json`) are committed, like the
+# proof cache they serve: each is determined by the SRS and its key's domain, chunk count and
+# public-input count. Regenerate them (delete and rerun the drivers) on a proof-systems or SRS
+# bump; a stale memo makes the verifier reject, never pass. Other names stay local.
+/lagrange-cache/*
+!/lagrange-cache/*-k*-2^*-*c.json
