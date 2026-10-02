@@ -1196,6 +1196,77 @@ padShapeProveData dummies slotWidths sd =
         <> sd.slotsValue
   }
 
+-- | One entry of each field `padShapeProveData` front-pads: the
+-- | base-case dummies at `maxProofsVerified = 0` and the SRSes' dummy
+-- | sgs. A constant of the SRSes, which the tag dump also records.
+wrapPadDummies :: { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG } -> PadProveDataDummies
+wrapPadDummies srs =
+  { dummyPrevSg: dummyStepSgInWrapField
+  , dummyPrevStepChals: dummyIpaChallenges.stepExpanded
+  , dummyMsgWrapChal: dummyIpaChallenges.wrapExpanded
+  , dummyPrevUnfinalizedProof: dummyPpu
+  , dummyPrevStepAcc:
+      WeierstrassAffinePoint
+        { x: F (unwrap dummyStepSgInWrapField).x, y: F (unwrap dummyStepSgInWrapField).y }
+  , dummyPrevEvals: dummyPrevEvalsMax
+  , dummyKimchiPrevEntry:
+      { sgX: (unwrap dummyWrapSgInStepField).x
+      , sgY: (unwrap dummyWrapSgInStepField).y
+      , challenges: dummyIpaChallenges.wrapExpanded
+      }
+  , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
+  }
+  where
+  -- `maxProofsVerified: 0`, not `mpvMax`: that is the
+  -- `forceOrderFor` sequence which draws
+  -- `unfinalizedConstantDummy` first, putting its four challenges
+  -- on the random oracle's first four counters.
+  bcdMax = baseCaseDummies { maxProofsVerified: 0 }
+  dummySgsMax = computeDummySgValues bcdMax srs.pallasSrs srs.vestaSrs
+  -- The two dummy sgs live on different curves: `prevSgs` and
+  -- `prevStepAccs` take the Pallas one, `kimchiPrevEntries` the
+  -- Vesta one.
+  dummyStepSgInWrapField = dummySgsMax.ipa.step.sg -- AffinePoint WrapField
+  dummyWrapSgInStepField = dummySgsMax.ipa.wrap.sg -- AffinePoint StepField
+
+  -- `wrapDummyUnfinalizedProof`'s nested shape, flattened into the
+  -- `PerProofUnfinalized` record `ShapeProveData` carries. Both
+  -- sides are already wrap-field, so nothing crosses fields here.
+  dummyUnfRaw = wrapDummyUnfinalizedProof bcdMax
+  dummyUnfDv = dummyUnfRaw.deferredValues
+  dummyPlonk = dummyUnfDv.plonk
+
+  dummyPpu = PerProofUnfinalized
+    { combinedInnerProduct: dummyUnfDv.combinedInnerProduct
+    , b: dummyUnfDv.b
+    , zetaToSrsLength: dummyPlonk.zetaToSrsLength
+    , zetaToDomainSize: dummyPlonk.zetaToDomainSize
+    , perm: dummyPlonk.perm
+    , spongeDigest: dummyUnfRaw.spongeDigestBeforeEvaluations
+    , beta: UnChecked dummyPlonk.beta
+    , gamma: UnChecked dummyPlonk.gamma
+    , alpha: UnChecked dummyPlonk.alpha
+    , zeta: UnChecked dummyPlonk.zeta
+    , xi: UnChecked dummyUnfDv.xi
+    , bulletproofChallenges: map UnChecked dummyUnfDv.bulletproofChallenges
+    , shouldFinalize: dummyUnfRaw.shouldFinalize
+    }
+
+  -- Every field of the dummy evaluations, `publicEvals` included,
+  -- is a random-oracle draw rather than a zero placeholder.
+  de = bcdMax.dummyEvals
+  pe pe' = { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+
+  dummyPrevEvalsMax = AllocEvals
+    { ftEval1: F de.ftEval1
+    , publicEvals: pe de.publicEvals
+    , zEvals: pe de.zEvals
+    , witnessEvals: map pe de.witnessEvals
+    , coeffEvals: map pe de.coeffEvals
+    , sigmaEvals: map pe de.sigmaEvals
+    , indexEvals: map pe de.indexEvals
+    }
+
 --------------------------------------------------------------------------------
 -- The prove call's per-slot data
 --------------------------------------------------------------------------------
@@ -2163,72 +2234,10 @@ runMultiProverBody
       widths
       split.slots
 
-    -- `maxProofsVerified: 0`, not `mpvMax`: that is the
-    -- `forceOrderFor` sequence which draws
-    -- `unfinalizedConstantDummy` first, putting its four challenges
-    -- on the random oracle's first four counters.
-    bcdMax = baseCaseDummies { maxProofsVerified: 0 }
-    dummySgsMax = computeDummySgValues bcdMax cfg.srs.pallasSrs cfg.srs.vestaSrs
-    -- The two dummy sgs live on different curves: `prevSgs` and
-    -- `prevStepAccs` take the Pallas one, `kimchiPrevEntries` the
-    -- Vesta one.
-    dummyStepSgInWrapField = dummySgsMax.ipa.step.sg -- AffinePoint WrapField
-    dummyWrapSgInStepField = dummySgsMax.ipa.wrap.sg -- AffinePoint StepField
-
-    -- `wrapDummyUnfinalizedProof`'s nested shape, flattened into the
-    -- `PerProofUnfinalized` record `ShapeProveData` carries. Both
-    -- sides are already wrap-field, so nothing crosses fields here.
-    dummyUnfRaw = wrapDummyUnfinalizedProof bcdMax
-    dummyUnfDv = dummyUnfRaw.deferredValues
-    dummyPlonk = dummyUnfDv.plonk
-
-    dummyPpu = PerProofUnfinalized
-      { combinedInnerProduct: dummyUnfDv.combinedInnerProduct
-      , b: dummyUnfDv.b
-      , zetaToSrsLength: dummyPlonk.zetaToSrsLength
-      , zetaToDomainSize: dummyPlonk.zetaToDomainSize
-      , perm: dummyPlonk.perm
-      , spongeDigest: dummyUnfRaw.spongeDigestBeforeEvaluations
-      , beta: UnChecked dummyPlonk.beta
-      , gamma: UnChecked dummyPlonk.gamma
-      , alpha: UnChecked dummyPlonk.alpha
-      , zeta: UnChecked dummyPlonk.zeta
-      , xi: UnChecked dummyUnfDv.xi
-      , bulletproofChallenges: map UnChecked dummyUnfDv.bulletproofChallenges
-      , shouldFinalize: dummyUnfRaw.shouldFinalize
-      }
-
-    -- Every field of the dummy evaluations, `publicEvals` included,
-    -- is a random-oracle draw rather than a zero placeholder.
-    de = bcdMax.dummyEvals
-    pe pe' = { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
-
-    dummyPrevEvalsMax = AllocEvals
-      { ftEval1: F de.ftEval1
-      , publicEvals: pe de.publicEvals
-      , zEvals: pe de.zEvals
-      , witnessEvals: map pe de.witnessEvals
-      , coeffEvals: map pe de.coeffEvals
-      , sigmaEvals: map pe de.sigmaEvals
-      , indexEvals: map pe de.indexEvals
-      }
-
-    padDummies =
-      { dummyPrevSg: dummyStepSgInWrapField
-      , dummyPrevStepChals: dummyIpaChallenges.stepExpanded
-      , dummyMsgWrapChal: dummyIpaChallenges.wrapExpanded
-      , dummyPrevUnfinalizedProof: dummyPpu
-      , dummyPrevStepAcc:
-          WeierstrassAffinePoint
-            { x: F (unwrap dummyStepSgInWrapField).x, y: F (unwrap dummyStepSgInWrapField).y }
-      , dummyPrevEvals: dummyPrevEvalsMax
-      , dummyKimchiPrevEntry:
-          { sgX: (unwrap dummyWrapSgInStepField).x
-          , sgY: (unwrap dummyWrapSgInStepField).y
-          , challenges: dummyIpaChallenges.wrapExpanded
-          }
-      , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
-      }
+    padDummies = wrapPadDummies cfg.srs
+    -- The Vesta dummy sg, which the kimchi entries below also pad with.
+    dummyWrapSgInStepField = AffinePoint
+      { x: padDummies.dummyKimchiPrevEntry.sgX, y: padDummies.dummyKimchiPrevEntry.sgY }
 
     proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
 
