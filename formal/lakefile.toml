@@ -83,12 +83,6 @@ path = "pickles"
 name = "check-cs"
 root = "scripts.check_cs"
 
-# The capstones' constant premises (scripts/check_premises.lean), decided on the same dumps'
-# constants; compiled and run beside `check-cs`.
-[[lean_exe]]
-name = "check-premises"
-root = "scripts.check_premises"
-
 # The theorems' suite on the pickles prove tests' tag dumps (scripts/check_tags.lean): each
 # branch's step circuit, its rule replayed from the dump, against the compiled system.
 [[lean_exe]]

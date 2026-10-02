@@ -11,17 +11,16 @@ import PicklesFixture.Group
 
 The constants a circuit-diffs dump carries beside its circuit (the `constants` object, one
 variant per kind of circuit): the readers that decode the main circuits' variants, the shapes
-the wrap circuit's builder takes them in, and the main-circuit dumps by name. The dump
-comparison builds the circuits from them; the premise check decides the capstones' constant
-premises on them.
+the wrap circuit's builder takes them in, and the wrap-circuit dumps by name. The dump
+comparison builds the circuits from them, and the tag-dump check reads the same variants out of
+the prove tests' dumps.
 
 ## Main definitions
 
 * `PicklesFixture.WrapMainConsts`, `PicklesFixture.wrapMainOf`: a wrap main's constants and
   their reader.
 * `PicklesFixture.StepMainConsts`, `PicklesFixture.stepMainOf`: a step main's.
-* `PicklesFixture.wrapMainDumps`, `PicklesFixture.stepMainDumps`: the main-circuit dumps with
-  their shapes.
+* `PicklesFixture.wrapMainDumps`: the wrap-circuit dumps with their shapes.
 -/
 
 namespace PicklesFixture
@@ -36,7 +35,8 @@ def resultsDir : IO System.FilePath := do
     return ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
 
 /-- A dump's constants, read by `read`; a missing dump is an error. -/
-def readConstants {α : Type} (path : System.FilePath) (read : Json → Except String α) : IO α := do
+private def readConstants {α : Type} (path : System.FilePath) (read : Json → Except String α) :
+    IO α := do
   unless ← path.pathExists do throw (IO.userError s!"missing dump: {path}")
   match Json.parse (← IO.FS.readFile path) >>= read with
   | .ok a => pure a
@@ -262,14 +262,6 @@ def stepMainOf (n w ncs : ℕ) (j : Json) : Except String (StepMainConsts n ncs)
   unless own.all (· == own.headD []) do throw s!"self slots disagree on step domains {own}"
   pure { h := ← Bulletproof.Fixture.parsePt XhatStepCurve (← c.getObjVal? "h"), slots,
          ownDomains := ← domains (own.headD []) }
-
-/-- The `step_main_*` dumps with their slot count and their tag's width. -/
-def stepMainDumps : List (String × ℕ × ℕ) :=
-  [ ("step_main_simple_chain_n2_circuit", 2, 2),
-    ("step_main_two_phase_chain_make_zero_circuit", 0, 1),
-    ("step_main_two_phase_chain_increment_circuit", 1, 1),
-    ("step_main_tree_proof_return_circuit", 2, 2),
-    ("step_main_import_two_phase_chain_circuit", 2, 2) ]
 
 /-- The dummy `sg_old` (PS `dummyWrapSg`), a point of the wrap proofs' curve. -/
 def dummyWrapSgPt : Bulletproof.IpaPallas.curve.Point :=
