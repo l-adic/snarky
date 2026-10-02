@@ -186,6 +186,17 @@ private def wiringPred {n : ℕ} (tab : Array (Option (Fin permCols × Fin n)))
     (y : Fin permCols × Fin n) : Fin permCols × Fin n :=
   ((tab[cellIdx y]?).bind id).getD y
 
+/-- A `∀` over `Fin n` decided by walking `List.finRange n` (`List.decidableBAll`), linear in
+`n`. Left to resolution, such a decision takes core's `Nat.decidableForallFin`, which is
+quadratic: at a `2^17` domain, minutes per row-quantified law. -/
+@[reducible] def decidableForallFinRange {n : ℕ} {P : Fin n → Prop} [DecidablePred P] :
+    Decidable (∀ i, P i) :=
+  @decidable_of_iff (∀ i, P i) (∀ i ∈ List.finRange n, P i)
+    ⟨fun h i => h i (List.mem_finRange i), fun h i _ => h i⟩
+    (List.decidableBAll P (List.finRange n))
+
+attribute [local instance high] decidableForallFinRange
+
 /-- Construct an index from raw data by deciding every law: the generator and shift laws
 through `primitiveRootCertificate` and `cosetShiftsCertificate`, the wiring's bijectivity
 through two round trips with its predecessor table (linear in the cells, where deciding
