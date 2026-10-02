@@ -14,6 +14,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
+import Foreign (Foreign)
 import JS.BigInt as BigInt
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
@@ -88,6 +89,7 @@ import Pickles.CircuitDiffs.Types (CircuitComparison, Constants(..))
 import Pickles.CircuitDiffs.Types as Dump
 import Pickles.Dump.Circuit (Circuit, comparable, fromCompiledCircuit)
 import Pickles.Dump.Constants (DerivedKey)
+import Pickles.Prove.RuleDump (RuleDump, encodeRuleDump)
 import Pickles.PublicInputCommit (LagrangeBaseLookup, mkConstLagrangeBaseLookup)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
@@ -153,8 +155,9 @@ resultsDir = "packages/pickles-circuit-diffs/circuits/results/"
 writeComparison :: String -> CircuitComparison -> Effect Unit
 writeComparison path c = FS.writeTextFile UTF8 path (writeJSON c)
 
--- | A circuit and the constants it was compiled with, as its comparison dump carries them.
-type Compared f = { circuit :: Circuit f, constants :: Maybe Constants }
+-- | A circuit, the constants it was compiled with and a step main's rule, as its comparison
+-- | dump carries them.
+type Compared f = { circuit :: Circuit f, constants :: Maybe Constants, rule :: Maybe Foreign }
 
 -- | A point as its decimal coordinates.
 fPoint :: forall f. PrimeField f => AffinePoint (F f) -> Dump.Point
@@ -176,6 +179,7 @@ withXhat count srsData circuit =
       , lagrange: Array.range 0 (count - 1) <#> \i ->
           map fPoint (Vector.toUnfoldable (srsData.lagrangeAt i).constant)
       }
+  , rule: Nothing
   }
 
 -- | A circuit compiled over per-branch Lagrange tables, with its `XhatBranches` constants:
@@ -193,27 +197,31 @@ withXhatBranches config count circuit =
       , lagrange: Array.transpose $ Array.range 0 (count - 1) <#> \i ->
           map (map fPoint <<< Vector.toUnfoldable) (Vector.toUnfoldable (config.lagrangeTable i))
       }
+  , rule: Nothing
   }
 
 -- | A wrap artifact's circuit, with the constants it bakes in.
 withWrapConstants :: WrapArtifact -> Effect (Compared Fq)
 withWrapConstants art =
-  fromCompiledCircuit art.wrapCs <#> \circuit -> { circuit, constants: Just art.constants }
+  fromCompiledCircuit art.wrapCs <#> \circuit ->
+    { circuit, constants: Just art.constants, rule: Nothing }
 
--- | A step artifact's circuit, with the constants it bakes in.
-withStepConstants :: { art :: StepArtifact, constants :: Constants } -> Effect (Compared Fp)
+-- | A step artifact's circuit, with the constants it bakes in and its rule.
+withStepConstants
+  :: { art :: StepArtifact, constants :: Constants, rule :: RuleDump } -> Effect (Compared Fp)
 withStepConstants r =
-  fromCompiledCircuit r.art.stepCs <#> \circuit -> { circuit, constants: Just r.constants }
+  fromCompiledCircuit r.art.stepCs <#> \circuit ->
+    { circuit, constants: Just r.constants, rule: Just (encodeRuleDump r.rule) }
 
 -- | `withStepConstants` for a step circuit whose self slots verify against
 -- | its tag's wrap key, `wrapArt`'s.
 withSelfKey
   :: WrapArtifact
-  -> { art :: StepArtifact, constants :: DerivedKey PallasG Fq -> Effect Constants }
+  -> { art :: StepArtifact, constants :: DerivedKey PallasG Fq -> Effect Constants, rule :: RuleDump }
   -> Effect (Compared Fp)
 withSelfKey wrapArt r = do
   constants <- r.constants wrapArt.wrapKey
-  withStepConstants { art: r.art, constants }
+  withStepConstants { art: r.art, constants, rule: r.rule }
 
 -- | The wrap circuits of the tags whose step circuits are dumped: each
 -- | `wrap_main_*` fixture of such a tag, and the key its step circuit's
@@ -589,10 +597,11 @@ exactMatchEff
   => String
   -> Effect (Circuit f)
   -> SpecT Aff Unit Aff Unit
-exactMatchEff name effPs = exactMatchWith name (effPs <#> \circuit -> { circuit, constants: Nothing })
+exactMatchEff name effPs =
+  exactMatchWith name (effPs <#> \circuit -> { circuit, constants: Nothing, rule: Nothing })
 
--- | The general form: the produced circuit and the constants it was compiled with, which the
--- | comparison JSON written to `circuits/results/` carries.
+-- | The general form: the produced circuit, the constants it was compiled with and a step
+-- | main's rule, which the comparison JSON written to `circuits/results/` carries.
 exactMatchWith
   :: forall f
    . Ord f
@@ -603,14 +612,14 @@ exactMatchWith
   -> SpecT Aff Unit Aff Unit
 exactMatchWith name effPs =
   it (name <> " matches OCaml") do
-    { circuit: ps, constants } <- liftEffect effPs
+    { circuit: ps, constants, rule } <- liftEffect effPs
     ocaml <- liftEffect $ (loadOcamlCircuit name :: Effect (Circuit f))
     let psCircuit = comparable ps
     let ocamlCircuit = comparable ocaml
     let psNoCtx = stripMetadata psCircuit
     let ocamlNoCtx = stripMetadata ocamlCircuit
     let status = if psNoCtx == ocamlNoCtx then "match" else "mismatch"
-    let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit, constants }
+    let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit, constants, rule }
     liftEffect do
       writeComparison (resultsDir <> name <> ".json") comparison
       appendManifest name status

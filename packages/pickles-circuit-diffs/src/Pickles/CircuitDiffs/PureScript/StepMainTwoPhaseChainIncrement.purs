@@ -34,6 +34,7 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.RuleDump (RuleDump, recordRule)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
@@ -93,12 +94,17 @@ compileStepMainTwoPhaseChainIncrement pallasSrs makeZeroArt params =
   _.art <$> compileStepMainTwoPhaseChainIncrementWithConstants pallasSrs makeZeroArt params
 
 -- | `compileStepMainTwoPhaseChainIncrement`, with the constants the circuit
--- | bakes in (`stepMainConstants`) for the Lean `check_cs` harness.
+-- | bakes in (`stepMainConstants`) and its rule (`recordRule`), for the
+-- | Lean `check_cs` harness.
 compileStepMainTwoPhaseChainIncrementWithConstants
   :: CRS PallasG
   -> StepArtifact
   -> StepMainTwoPhaseChainIncrementParams
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
+  -> Effect
+       { art :: StepArtifact
+       , constants :: DerivedKey PallasG WrapField -> Effect Constants
+       , rule :: RuleDump
+       }
 compileStepMainTwoPhaseChainIncrementWithConstants pallasSrs makeZeroArt params = do
   -- Slot 0's source = self (the 2-branch proof system). Its candidate
   -- list: make_zero's step domain (from artifact) + increment's own
@@ -106,8 +112,10 @@ compileStepMainTwoPhaseChainIncrementWithConstants pallasSrs makeZeroArt params 
   let makeZeroLog2 = makeZeroArt.stepDomainLog2
   selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData makeZeroLog2 1))
   art <- mkStepArtifact <$> runStepCompile (srsData makeZeroLog2 selfLog2)
+  rule <- recordRule @1 @() @(F StepField) @Unit incrementRule
   pure
     { art
+    , rule
     , constants: \selfWrapKey -> do
         stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @IncrementPrevsSpec)))

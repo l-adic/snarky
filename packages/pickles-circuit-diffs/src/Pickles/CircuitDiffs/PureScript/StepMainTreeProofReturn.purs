@@ -34,6 +34,7 @@ import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMai
 import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.RuleDump (RuleDump, recordRule)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
@@ -119,19 +120,26 @@ compileStepMainTreeProofReturn pallasSrs params =
   _.art <$> compileStepMainTreeProofReturnWithConstants pallasSrs params
 
 -- | `compileStepMainTreeProofReturn`, with the constants the circuit bakes
--- | in (`stepMainConstants`) for the Lean `check_cs` harness.
+-- | in (`stepMainConstants`) and its rule (`recordRule`), for the Lean
+-- | `check_cs` harness.
 compileStepMainTreeProofReturnWithConstants
   :: CRS PallasG
   -> StepMainTreeProofReturnParams
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
+  -> Effect
+       { art :: StepArtifact
+       , constants :: DerivedKey PallasG WrapField -> Effect Constants
+       , rule :: RuleDump
+       }
 compileStepMainTreeProofReturnWithConstants pallasSrs params = do
   nrrArt <- compileWrapMainNoRecursionReturn pallasSrs
     params.nrrWrapSrsData
     params.nrrStepSrsData
   selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData nrrArt 1))
   art <- mkStepArtifact <$> runStepCompile (srsData nrrArt selfLog2)
+  rule <- recordRule @2 @() @Unit @(F StepField) treeProofReturnRule
   pure
     { art
+    , rule
     , constants: \selfWrapKey -> do
         stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @TreeProofReturnPrevsSpec)))

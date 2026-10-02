@@ -22,6 +22,7 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.RuleDump (RuleDump, recordRule)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
@@ -86,19 +87,26 @@ compileStepMainSimpleChainN2 pallasSrs params =
   _.art <$> compileStepMainSimpleChainN2WithConstants pallasSrs params
 
 -- | `compileStepMainSimpleChainN2`, with the constants the circuit bakes
--- | in (`stepMainConstants`) for the Lean `check_cs` harness.
+-- | in (`stepMainConstants`) and its rule (`recordRule`), for the Lean
+-- | `check_cs` harness.
 compileStepMainSimpleChainN2WithConstants
   :: CRS PallasG
   -> StepMainSimpleChainN2Params
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
+  -> Effect
+       { art :: StepArtifact
+       , constants :: DerivedKey PallasG WrapField -> Effect Constants
+       , rule :: RuleDump
+       }
 compileStepMainSimpleChainN2WithConstants pallasSrs params = do
   -- Both prev slots are self → both FOP domain log2s = this rule's own
   -- step domain log2. Resolved via two-pass compile (mirrors OCaml
   -- `Fix_domains.domains`).
   selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData 1))
   art <- mkStepArtifact <$> runStepCompile (srsData selfLog2)
+  rule <- recordRule @2 @() @(F StepField) @Unit simpleChainN2Rule
   pure
     { art
+    , rule
     , constants: \selfWrapKey -> do
         stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @SimpleChainN2PrevsSpec)))

@@ -35,6 +35,7 @@ import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (WrapMainTwoPhaseCh
 import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.RuleDump (RuleDump, recordRule)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
@@ -112,11 +113,16 @@ compileStepMainImportTwoPhaseChain pallasSrs params =
   _.art <$> compileStepMainImportTwoPhaseChainWithConstants pallasSrs params
 
 -- | The chain's step circuit, with the constants it bakes in
--- | (`stepMainConstants`) for the Lean `check_cs` harness.
+-- | (`stepMainConstants`) and its rule (`recordRule`), for the Lean
+-- | `check_cs` harness.
 compileStepMainImportTwoPhaseChainWithConstants
   :: CRS PallasG
   -> StepMainImportTwoPhaseChainParams
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect Constants }
+  -> Effect
+       { art :: StepArtifact
+       , constants :: DerivedKey PallasG WrapField -> Effect Constants
+       , rule :: RuleDump
+       }
 compileStepMainImportTwoPhaseChainWithConstants pallasSrs params = do
   -- `two_phase_chain`'s wrap artifact carries its key and `increment`'s
   -- step domain; `make_zero`'s comes from its own step compile.
@@ -126,8 +132,10 @@ compileStepMainImportTwoPhaseChainWithConstants pallasSrs params = do
   selfLog2 <- preComputeSelfStepDomainLog2
     (runStepCompile (srsData tpcArt makeZeroArt 1))
   art <- mkStepArtifact <$> runStepCompile (srsData tpcArt makeZeroArt selfLog2)
+  rule <- recordRule @2 @() @Unit @(F StepField) chainRule
   pure
     { art
+    , rule
     , constants: \selfWrapKey -> do
         stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @ChainPrevsSpec)))

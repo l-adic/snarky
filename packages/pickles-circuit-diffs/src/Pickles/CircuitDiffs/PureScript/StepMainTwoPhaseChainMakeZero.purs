@@ -30,6 +30,7 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.CircuitDiffs.Types (Constants)
 import Pickles.Dump.Constants (stepMainConstants)
 import Pickles.Field (StepField)
+import Pickles.Prove.RuleDump (RuleDump, recordRule)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Slots (PrevValues, slotWidthInt, slotWidthsOf, toPrevs)
@@ -75,11 +76,12 @@ compileStepMainTwoPhaseChainMakeZero pallasSrs params =
   _.art <$> compileStepMainTwoPhaseChainMakeZeroWithConstants pallasSrs params
 
 -- | `compileStepMainTwoPhaseChainMakeZero`, with the constants the circuit
--- | bakes in (`stepMainConstants`) for the Lean `check_cs` harness.
+-- | bakes in (`stepMainConstants`) and its rule (`recordRule`), for the
+-- | Lean `check_cs` harness.
 compileStepMainTwoPhaseChainMakeZeroWithConstants
   :: CRS PallasG
   -> StepMainTwoPhaseChainMakeZeroParams
-  -> Effect { art :: StepArtifact, constants :: Constants }
+  -> Effect { art :: StepArtifact, constants :: Constants, rule :: RuleDump }
 compileStepMainTwoPhaseChainMakeZeroWithConstants pallasSrs params = do
   throwawayCaptureRef <- Ref.new Nothing
   let
@@ -107,7 +109,8 @@ compileStepMainTwoPhaseChainMakeZeroWithConstants pallasSrs params = do
     srsData
     pallasSrs
     Vector.nil
-  pure { art, constants }
+  rule <- recordRule @0 @() @(F StepField) @Unit makeZeroRule
+  pure { art, constants, rule }
   where
   srsData =
     { blindingH: params.blindingH

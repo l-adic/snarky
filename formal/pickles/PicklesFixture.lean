@@ -15,7 +15,7 @@ import PicklesFixture.Rule
 The dump comparison (`formal/scripts/check_cs.lean`), the tag-dump check
 (`formal/scripts/check_tags.lean`) and the satisfiability check lay out the same production
 dumps and call the same library gadgets on them. What they share lives here: the input
-layouts, the production constants, the dumps' constants, the transcribed and replayed rules,
+layouts, the production constants, the dumps' constants, the replayed rules,
 the main circuits, the comparison, the constant premises and the gadget harnesses.
 
 Kept out of the `Pickles` library, as the kimchi fixture library is kept out of `Kimchi`:

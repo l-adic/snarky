@@ -13,7 +13,7 @@ module Pickles.CircuitDiffs.Types
 import Prelude
 
 import Data.Maybe (Maybe)
-import Foreign (ForeignError(..), fail)
+import Foreign (Foreign, ForeignError(..), fail)
 import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 
 type ComparableGate =
@@ -30,14 +30,16 @@ type ComparableCircuit =
   , cachedConstants :: Array { variable :: Int, varType :: String, value :: String }
   }
 
--- | A comparison dump: both sides' circuits, and the constants the PureScript side was
--- | compiled with, absent for a circuit compiled with none.
+-- | A comparison dump: both sides' circuits, the constants the PureScript side was
+-- | compiled with, absent for a circuit compiled with none, and a step main's rule
+-- | (`encodeRuleDump`).
 type CircuitComparison =
   { name :: String
   , status :: String
   , purescript :: ComparableCircuit
   , ocaml :: ComparableCircuit
   , constants :: Maybe Constants
+  , rule :: Maybe Foreign
   }
 
 -- | A point as its decimal coordinates, `[x, y]`.
