@@ -12,11 +12,14 @@ proof's public input, its rule's witness, the tag's wrap key and, per slot, the 
 slot verified and the step proof that wrap proof wrapped; the wrap circuit's from the step proof
 it wraps, its public input and the wrap proofs that step proof verified.
 
-A slot with no proof (a base case) and a wrap slot beyond the step proof's own carry the
-compile's padding values, which the cache does not hold; the builders refuse them.
+A base-case slot verifies a dummy proof, which the cache does not hold: each entry carries the
+cells its circuit allocated for such a slot instead. A wrap slot the rule lacks takes the
+padding the tag dump records (`PicklesFixture.WrapPadding`).
 
 ## Main definitions
 
+* `PicklesFixture.StepPrev`, `PicklesFixture.stepPrevsOf`: a step proof's slots, off the cache.
+* `PicklesFixture.WrapPrev`, `PicklesFixture.wrapPrevsOf`: the wrap circuit's slots.
 * `PicklesFixture.stepMainAdviceOf`: the step circuit's advice at a cached step proof.
 * `PicklesFixture.wrapMainAdviceOf`: the wrap circuit's advice at the step proof it wraps.
 -/
@@ -72,6 +75,37 @@ def lastPadded {α : Type} (m : ℕ) (pad : α) (xs : Array α) : Except String 
   let all := Array.replicate (m - xs.size) pad ++ xs.extract (xs.size - m) xs.size
   if h : all.size = m then .ok ⟨all, h⟩ else .error s!"{xs.size} entries for {m} slots"
 
+/-- A value off its cells, when there are as many as its type takes. -/
+def ofCells (F : Type) {α v : Type} [CircuitType F α v] (cells : Array F) : Except String α :=
+  if h : cells.size = CircuitType.size F α then .ok (CircuitType.fieldsToValue ⟨cells, h⟩)
+  else .error s!"{cells.size} cells, not {CircuitType.size F α}"
+
+/-- One of a step proof's slots: the wrap proof it verified there, with the step proof that
+wrap proof wrapped, or a base case, with the cells the step circuit allocated for it. -/
+inductive StepPrev where
+  /-- A verified slot: the wrap proof and the step proof it wrapped. -/
+  | proof (W : Cache.Entry CW) (S : Cache.Entry CS)
+  /-- A base-case slot: the step circuit's cells for it. -/
+  | baseCase (cells : Array Fp)
+
+/-- The `n` slots of the cached step proof `S0`, its links resolved in `wraps` and `steps`. -/
+def stepPrevsOf (n : ℕ) (wraps : Array (Cache.Entry CW)) (steps : Array (Cache.Entry CS))
+    (S0 : Cache.Entry CS) : Except String (Vector StepPrev n) := do
+  let find {C : Ipa.KimchiCurve} (es : Array (Cache.Entry C)) (link : String × String) :
+      Except String (Cache.Entry C) :=
+    match es.find? fun e => e.vkDigest = link.1 ∧ e.publicInputKey = link.2 with
+    | some e => .ok e
+    | none => .error s!"no cached proof at {link.1.take 12}…/{link.2.take 12}…"
+  let prevs ← (S0.prevs.zip S0.baseCases).mapM fun
+    | (some link, none) => do
+      let W ← find wraps link
+      let some l := W.step | throw "a wrap proof without its step proof"
+      return StepPrev.proof W (← find steps l)
+    | (none, some cells) => return StepPrev.baseCase cells
+    | _ => throw "a slot neither verified nor a base case"
+  if h : prevs.size = n then return ⟨prevs, h⟩
+  else throw s!"{prevs.size} slots, not {n}"
+
 /-- One slot's witness, at the slot's width `w`: the wrap proof `W` the slot verified (its
 commitments, opening and old accumulators' points), the wrap statement it carries (the deferred
 values of the step proof it verified, and its branch data), and that step proof `S` (its
@@ -117,12 +151,11 @@ def finSequence {ε : Type} : {n : ℕ} → {β : Fin n → Type} → ((i : Fin 
     return Fin.cons h t
 
 /-- The step circuit's advice at the step proof `S0` of a tag of width `w` with the step
-constants `k`: the rule's witness as its input, the tag's wrap key `wrapKey`, per slot the
-wrap proof it verified and the step proof that wrap proof wrapped (`prevs`), and the
-unfinalized entries and messages off `S0`'s statement, the padding ones in front. -/
+constants `k`: the rule's witness as its input, the tag's wrap key `wrapKey`, per slot its
+witness off `prevs`, and the unfinalized entries and messages off `S0`'s statement, the
+padding ones in front. -/
 def stepMainAdviceOf {n ncs : ℕ} (w : ℕ) (k : StepMainConsts n ncs) (inputSize : ℕ)
-    (wrapKey : Kimchi.Verifier.KimchiVK CW 1) (S0 : Cache.Entry CS)
-    (prevs : Fin n → Option (Cache.Entry CW × Cache.Entry CS)) :
+    (wrapKey : Kimchi.Verifier.KimchiVK CW 1) (S0 : Cache.Entry CS) (prevs : Vector StepPrev n) :
     Except String (Pickles.StepMainAdvice n w
       (Pickles.SlotSource.widths w fun i => k.slots[i].source) 1 ncs 15 Pickles.StepIPARounds
       (Vector Fp inputSize)) := do
@@ -130,9 +163,10 @@ def stepMainAdviceOf {n ncs : ℕ} (w : ℕ) (k : StepMainConsts n ncs) (inputSi
   let input : Vector Fp inputSize ←
     if h : rule.input.size = inputSize then pure ⟨rule.input, h⟩
     else throw s!"the rule witness has {rule.input.size} input cells, not {inputSize}"
-  let slots ← finSequence fun i => do
-    let some (W, S) := prevs i | throw s!"slot {i} is a base case, whose padding is not cached"
-    slotValOf (Pickles.SlotSource.widths w (fun i => k.slots[i].source) i) ncs W S
+  let slots ← finSequence fun i =>
+    match prevs[i] with
+    | .proof W S => slotValOf (Pickles.SlotSource.widths w (fun i => k.slots[i].source) i) ncs W S
+    | .baseCase cells => (ofCells Fp cells).mapError (s!"slot {i}'s base case: " ++ ·)
   let st ← stepStatementOf id 15 w S0.publicInput
   if hnw : n ≤ w then
     let unfs : Vector (Pickles.UnfVal 15) n := Vector.ofFn fun i =>
@@ -158,47 +192,95 @@ def AllocUnfinalized.joinSplits {k : ℕ} {f bc : Type} [Field f]
            zetaToSrsLength := joinSplit u.zetaToSrsLength
            zetaToDomainSize := joinSplit u.zetaToDomainSize, perm := joinSplit u.perm }
 
+/-- What the wrap prover allocates for a slot its rule lacks, as a tag dump records it: the
+step proof's accumulator, the evaluations and the wrap domain's index. -/
+structure WrapPadding where
+  /-- The step proof's accumulator. -/
+  stepAcc : Pickles.VestaPt Fq
+  /-- The evaluations. -/
+  evals : Pickles.AllocEvals 1 Fq
+  /-- The wrap domain's index. -/
+  domain : Fq
+
+/-- A tag dump's wrap padding, off its `wrapMain`. -/
+def WrapPadding.ofJson (wrapMain : Json) : Except String WrapPadding := do
+  let p ← wrapMain.getObjVal? "padding"
+  let P ← Bulletproof.Fixture.parsePt XhatWrapCurve (← p.getObjVal? "stepAcc")
+  return { stepAcc := ⟨⟨P.x, P.y⟩⟩
+           evals := ← ofCells Fq
+             (← FixtureKit.parseArrOf FixtureKit.parseZMod (← p.getObjVal? "evals"))
+           domain := ((← (← p.getObjVal? "domain").getNat?) : Fq) }
+
+/-- One of the wrap circuit's slots: the wrap proof the step proof verified there, a base case,
+with the cells the wrap circuit allocated for its evaluations and its wrap domain's index, or a
+slot the rule lacks. -/
+inductive WrapPrev where
+  /-- A verified slot: the wrap proof. -/
+  | proof (W : Cache.Entry CW)
+  /-- A base-case slot: its evaluations' cells and its wrap domain's index. -/
+  | baseCase (evals : Array Fq) (domain : Fq)
+  /-- A slot the rule lacks. -/
+  | padding
+
+/-- The `mpv` slots of the wrap circuit at a step proof with slots `prevs`, wrapped by `W0`: the
+rule's slots last, a base case's evaluations off `W0` and its wrap domain its branch's pin in
+`pins`, one per wrap slot. -/
+def wrapPrevsOf {n : ℕ} (mpv : ℕ) (pins : List (Option ℕ)) (W0 : Cache.Entry CW)
+    (prevs : Vector StepPrev n) : Except String (Vector WrapPrev mpv) := do
+  let own ← (List.finRange n).mapM fun i => match prevs[i] with
+    | .proof W _ => pure (WrapPrev.proof W)
+    | .baseCase _ => do
+      let some (some evals) := W0.baseCases[i.val]?
+        | throw s!"slot {i}: the wrap proof has no base case's cells"
+      let some (some d) := pins[mpv - n + i.val]?
+        | throw s!"slot {i}: a base case with no pinned wrap domain"
+      pure (WrapPrev.baseCase evals (d : Fq))
+  let all := List.replicate (mpv - n) WrapPrev.padding ++ own
+  if h : all.length = mpv then return ⟨all.toArray, by simpa⟩
+  else throw s!"{n} slots in a wrap circuit of {mpv}"
+
 /-- The wrap circuit's advice for a tag with `mpv` slots of stack heights `slotWidths`, at the
 step proof `S0` it wraps at `ncStep` chunks, of branch `b`: the step proof's statement in the
 wrap field (its split registers joined), its old accumulators' points, its opening and
-commitments, and per slot the wrap proof `S0` verified there (`prevs`): its evaluations, its old
-accumulators' challenges at the slot's height and its wrap domain's index. -/
+commitments, and per slot off `prevs` its evaluations, its old accumulators' challenges at the
+slot's height and its wrap domain's index; padding from `pad` and the challenges `dummy`. -/
 def wrapMainAdviceOf {mpv : ℕ} (ncStep b : ℕ)
-    (slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv) (S0 : Cache.Entry CS)
-    (prevs : Fin mpv → Option (Cache.Entry CW)) :
+    (slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv) (pad : WrapPadding)
+    (dummy : Vector Fq 15) (S0 : Cache.Entry CS) (prevs : Vector WrapPrev mpv) :
     Except String (Pickles.WrapMainAdvice mpv ncStep 15 Pickles.StepIPARounds
       (slotWidths.map Fin.val).sum) := do
   let (_, cpS) ← checkedEntryAt CS Pickles.StepIPARounds ncStep S0
   let st ← stepStatementOf toWrap 15 mpv S0.publicInput
   let cell (P : AffinePoint Fq) : Pickles.VestaPt Fq := ⟨P⟩
-  let accs ← lastPadded mpv none (cpS.olds.map fun a => some (cell ⟨a.sg.x, a.sg.y⟩))
-  let stepAccs ← finSequence fun j => match accs[j] with
-    | some P => .ok P
-    | none => .error s!"slot {j} pads the step proof's accumulators, which the cache lacks"
-  let wraps ← finSequence fun j => do
-    let some W := prevs j | throw s!"slot {j} is padding, which the cache lacks"
-    checkedEntryAt CW 15 1 W
-  let evals ← finSequence fun j => do return allocEvalsOf (← chunkedEvalsOf CW (wraps j).2)
-  let chalStacks ← (List.finRange mpv).flatMapM fun j => do
-    let chals ← lastPadded slotWidths[j].val (Vector.replicate 15 0) ((wraps j).2.olds.map (·.u))
-    pure chals.toList
+  let stepAccs ← lastPadded mpv pad.stepAcc (cpS.olds.map fun a => cell ⟨a.sg.x, a.sg.y⟩)
+  let slots ← finSequence fun j =>
+    show Except String (Pickles.AllocEvals 1 Fq × Vector (Vector Fq 15) slotWidths[j].val × Fq)
+    from match prevs[j] with
+    | .proof W => do
+      let (vkW, cpW) ← checkedEntryAt CW 15 1 W
+      let l := vkW.domainLog2
+      unless l ∈ Pickles.wrapDomainLog2s do throw s!"slot {j}: wrap domain 2^{l} is no wrap domain"
+      return (allocEvalsOf (← chunkedEvalsOf CW cpW),
+        ← lastPadded slotWidths[j].val (Vector.replicate 15 0) (cpW.olds.map (·.u)),
+        ((Pickles.wrapDomainLog2s.idxOf l : ℕ) : Fq))
+    | .baseCase cells d => do
+      return (← (ofCells Fq cells).mapError (s!"slot {j}'s base case: " ++ ·),
+        Vector.replicate _ dummy, d)
+    | .padding => return (pad.evals, Vector.replicate _ dummy, pad.domain)
+  let chalStacks := (List.finRange mpv).flatMap fun j => (slots j).2.1.toList
   let oldChallenges : Vector (Vector Fq 15) (slotWidths.map Fin.val).sum ←
     if h : chalStacks.length = (slotWidths.map Fin.val).sum then pure ⟨chalStacks.toArray, by simpa⟩
     else throw s!"{chalStacks.length} challenge stacks, not {(slotWidths.map Fin.val).sum}"
-  let domainIndices ← finSequence fun j => do
-    let l := (wraps j).1.domainLog2
-    unless l ∈ Pickles.wrapDomainLog2s do throw s!"slot {j}: wrap domain 2^{l} is no wrap domain"
-    return ((Pickles.wrapDomainLog2s.idxOf l : ℕ) : Fq)
   let iv ← ivpProofOf CS (fun z => toWrap (Pasta.Shifted.shiftType1 255 z)) cpS
   return { whichBranch := pure (b : Fq)
            proofState := pure
              ⟨st.proofState.unfinalizedProofs.map fun u =>
                AllocUnfinalized.joinSplits (allocUnfinalizedOf u),
               st.proofState.messagesForNextStepProof⟩
-           stepAccs := pure (Vector.ofFn stepAccs)
+           stepAccs := pure stepAccs
            oldChallenges := pure oldChallenges
-           evals := pure (Vector.ofFn evals)
-           domainIndices := pure (Vector.ofFn domainIndices)
+           evals := pure (Vector.ofFn fun j => (slots j).1)
+           domainIndices := pure (Vector.ofFn fun j => (slots j).2.2)
            opening := pure (iv.opening.lr.map (fun (l, r) => (cell l, cell r)), iv.opening.z1,
              iv.opening.z2, cell iv.opening.delta, cell iv.opening.sg)
            messages := pure (iv.wComm.map (·.map cell), iv.zComm.map cell,

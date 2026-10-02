@@ -9,8 +9,9 @@ The pickles test suite memoises every kimchi proof it produces under
 `packages/snarky-kimchi/src/Snarky/Backend/Kimchi/ProofCache.purs`:
 `{ "<vkDigest>": { "<publicInput>": entry } }`. An entry holds the verification key's JSON,
 the proof's serde JSON, and links to the proofs it is built on (`step` on a wrap proof,
-`prevs` on a step proof, which also carries its application rule's witness, `rule`). This
-module reads a file into `Entry` records.
+`prevs` on a step proof, which also carries its application rule's witness, `rule`), and on
+both, per slot of the step proof, a base-case slot's cells (`baseCases`). This module reads a
+file into `Entry` records.
 
 Two encodings meet here:
 
@@ -169,6 +170,9 @@ structure Entry (C : Ipa.KimchiCurve) where
   prevs : Array (Option (String × String))
   /-- The rule's witness, on a step proof. -/
   rule : Option (RuleWitness C)
+  /-- Per slot of the step proof (this one, or the one this wrap proof wrapped), on a base-case
+  slot, the cells this proof's circuit allocated for the slot — `none` on any other slot. -/
+  baseCases : Array (Option (Array C.ScalarField))
 
 /-- A link: the cache key of another entry. -/
 private def parseRef (j : Json) : Except String (String × String) := do
@@ -193,14 +197,19 @@ private def parseEntry (C : Ipa.KimchiCurve) (endo : C.ScalarField)
     let t ← j.getStr?
     match t.toNat? with
     | some v => pure (v : C.ScalarField)
-    | none => throw s!"rule witness: not a numeral: {t.take 40}"
+    | none => throw s!"not a numeral: {t.take 40}"
   let rule ← match (e.getObjVal? "rule").toOption with
     | some Json.null | none => pure none
     | some rj => pure (some { input := ← parseArrOf numeral (← rj.getObjVal? "input")
                               values := ← parseArrOf numeral (← rj.getObjVal? "values") })
+  let baseCases ← match (e.getObjVal? "baseCases").toOption with
+    | some Json.null | none => pure #[]
+    | some bj => parseArrOf (fun c => match c with
+        | Json.null => pure none
+        | _ => some <$> parseArrOf numeral c) bj
   return { vkDigest, publicInputKey := pi, publicInput := ← parsePublicInput C pi
            vk := ← parseVK C endo (d : C.BaseField) vkJ
-           proof := ← parseProof C sqrt proofJ, step, prevs, rule }
+           proof := ← parseProof C sqrt proofJ, step, prevs, rule, baseCases }
 
 /-- Whether a cache entry's verification key lies on `C`: its first σ commitment's
 coordinates satisfy `C`'s equation. -/
