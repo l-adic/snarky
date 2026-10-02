@@ -3,9 +3,9 @@ The theorems' suite on the pickles prove tests' own dumps. A tag's dump is one f
 `<app>/<tag>.json` under `PICKLES_DUMP_DIR`, written by `compileMulti` when its config names it;
 the prove tests write one per tag (`PICKLES_DUMP_DIR=… npx spago test -p pickles`).
 
-Per tag: the wrap circuit, rebuilt in Lean at the dump's constants (`wrapMainCircuitOf`), and each
-branch's step circuit, rebuilt at its constants with the branch's rule replayed from its dump
-(`replayRule`), against the systems the tests compiled; and the capstones' constant premises on
+Per tag: the wrap circuit, `Pickles.wrapMainCircuit` at the dump's constants, and each branch's
+step circuit, `Pickles.stepMainCircuit` at its constants with the branch's rule replayed from its
+dump (`replayRule`), against the systems the tests compiled; and the capstones' constant premises on
 those constants (`wrapMainHyps`, `stepMainHyps`), with each branch's slot count its rule's.
 
 Across tags: each slot verifies a dumped tag's proofs — its own tag's for a self slot, the tag
@@ -26,7 +26,7 @@ Run from `formal/`:  PICKLES_DUMP_DIR=<dir> lake exe check-tags
 -/
 import KimchiFixture.PS
 import PicklesFixture.Compare
-import PicklesFixture.Mains
+import PicklesFixture.Fop
 import PicklesFixture.Premises
 import PicklesFixture.Rule
 import PicklesFixture.Advice
@@ -101,8 +101,11 @@ def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (br
       readSize := rule.prevs[i].1.size }
   if hw : w ≤ Pickles.MaxProofsVerified then
     let checks := compareWith (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
-      (stepMainDumpCircuit (inVal := Vector Fp rule.inputSize)
-        (outVal := Vector Fp rule.publicOutput.size) w hw k dummyUnfN0 (replayRule rule none)) raw
+      (fun u => Prod.fst <$> Pickles.stepMainCircuit (w := w) (ncw := 1) (ncs := ncs) (k := 15)
+        (ks := Pickles.StepIPARounds) (inVal := Vector Fp rule.inputSize)
+        (outVal := Vector Fp rule.publicOutput.size) (fun i => k.slots[i].source)
+        (fun i => k.slots[i].width_le hw) k.h (fopStepParams ncs) k.ownDomains.list
+        (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule none) inertStepAdvice u) raw
     return (checks, rule.inputSize + rule.publicOutput.size, slots)
   else throw s!"the tag's width {w} exceeds {Pickles.MaxProofsVerified}"
 
@@ -122,12 +125,14 @@ def checkTag (name : String) (hWrap : XhatWrapCurve.Point) (hStep : XhatStepCurv
   let some l0 := (← (← b0.getObjVal? "lagrange").getArr?)[0]? | throw "the branch has no table"
   let nc := (← l0.getArr?).size
   let k ← wrapMainOf nc wrapMain
-  let (main, tables) ← wrapMainCircuitOf bp w nc k
-  wrapMainHyps k tables hWrap
+  let sh ← wrapMainShapesOf bp w nc k
+  wrapMainHyps k sh.tables hWrap
   let key ← checkedKey Bulletproof.IpaPallas.curve 15 1 (← wrapMain.getObjVal? "key")
   let wrapRaw : Raw Fq ← parseGates (← wrapMain.getObjVal? "circuit")
   let wrapChecks := compareWith (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
-    main wrapRaw
+    (fun stmt => Prod.fst <$> Pickles.wrapMainCircuit (k := 15) (ks := 16) fopWrapParams sh.widths
+      (Pickles.stepDomainLog2s sh.keys) (Pickles.stepKeyCells sh.keys) sh.pins sh.lagrange k.h
+      k.dummy sh.slotWidths inertWrapAdvice stmt) wrapRaw
   let mut circuits := [("wrap_main", wrapChecks)]
   let mut appSizes := []
   let mut slots := []
@@ -163,12 +168,6 @@ def checkSources (tags : List TagSummary) : Except String ℕ := do
         count := count + 1
   return count
 
-/-- The inert wrap advice. -/
-def inertWrapAdvice {mpv nc wsum : ℕ} : Pickles.WrapMainAdvice mpv nc 15 16 wsum :=
-  ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-    AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-    AsProver.throw "advice", AsProver.throw "advice"⟩
-
 /-- The links of one tag, as jobs: per cached step proof of each branch, the step circuit at
 its advice, and the wrap circuit at the wrap proof that wrapped it, each through the prover and
 its table decided against its system; with the cache keys of the proofs they cover. -/
@@ -186,8 +185,7 @@ def linkJobs (name : String) (j : Json) (wraps : Array (Cache.Entry CW))
   let k ← ex (wrapMainOf nc wrapMain)
   let pad ← ex (WrapPadding.ofJson wrapMain)
   let wrapKey ← ex (checkedKey Bulletproof.IpaPallas.curve 15 1 (← ex (wrapMain.getObjVal? "key")))
-  let some slotWidths := wrapMainWidths? w Pickles.MaxProofsVerified k.slotWidths
-    | throw (IO.userError s!"{name}: slot widths")
+  let sh ← ex (wrapMainShapesOf bp w nc k)
   let hw' : PLift (w ≤ Pickles.MaxProofsVerified) ←
     if h : w ≤ Pickles.MaxProofsVerified then pure (PLift.up h)
     else throw (IO.userError s!"{name}: width {w}")
@@ -216,9 +214,11 @@ def linkJobs (name : String) (j : Json) (wraps : Array (Cache.Entry CW))
         let adv ← exT (stepMainAdviceOf w kb rule.inputSize wrapKey S0 prevs)
         let t0 ← IO.monoMsNow
         let (sat, _) ← runHalf fpSide
-          (stepMainDumpCircuit (inVal := Vector Fp rule.inputSize)
-            (outVal := Vector Fp rule.publicOutput.size) w hw kb dummyUnfN0
-            (replayRule rule (some vals)) adv)
+          (fun u => Prod.fst <$> Pickles.stepMainCircuit (w := w) (ncw := 1) (ncs := ncs) (k := 15)
+            (ks := Pickles.StepIPARounds) (inVal := Vector Fp rule.inputSize)
+            (outVal := Vector Fp rule.publicOutput.size) (fun i => kb.slots[i].source)
+            (fun i => kb.slots[i].width_le hw) kb.h (fopStepParams ncs) kb.ownDomains.list
+            (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule (some vals)) adv u)
           (fun _ => []) ()
         IO.println s!"{if sat then "✓" else "✗"} {tag}: step circuit {(← IO.monoMsNow) - t0} ms"
         return sat
@@ -227,12 +227,14 @@ def linkJobs (name : String) (j : Json) (wraps : Array (Cache.Entry CW))
       jobs := jobs.push do
         let prevs ← exT (stepPrevsOf n wraps steps S0)
         let wprevs ← exT (wrapPrevsOf w pins W0 prevs)
-        let _ ← exT (wrapMainAdviceOf nc b slotWidths pad k.dummy S0 wprevs)
+        let advW ← exT (wrapMainAdviceOf nc b sh.slotWidths pad k.dummy S0 wprevs)
         let inp ← exT (wrapInputOf W0)
-        let (main, _) ← ex (wrapMainCircuitOf bp w nc k fun sw =>
-          (wrapMainAdviceOf nc b sw pad k.dummy S0 wprevs).toOption.getD inertWrapAdvice)
         let t0 ← IO.monoMsNow
-        let (sat, _) ← runHalf fqSide main (fun _ => []) inp
+        let (sat, _) ← runHalf fqSide
+          (fun stmt => Prod.fst <$> Pickles.wrapMainCircuit (k := 15) (ks := 16) fopWrapParams
+            sh.widths (Pickles.stepDomainLog2s sh.keys) (Pickles.stepKeyCells sh.keys) sh.pins
+            sh.lagrange k.h k.dummy sh.slotWidths advW stmt)
+          (fun _ => []) inp
         IO.println s!"{if sat then "✓" else "✗"} {tag}: wrap circuit {(← IO.monoMsNow) - t0} ms"
         return sat
   return (jobs, covered)

@@ -1330,7 +1330,8 @@ def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatWrapCurve.Point)
 `wrapMain` constants (`wrapMainOf`): the branches' slot counts, step domains and step keys, the
 Lagrange bases per public-input scalar and branch, the blinding `h`, the wrap domain pins (none
 for a side-loaded slot), the slot widths and the padding challenges. Each target compiles
-`wrapMainDumpCircuit`'s output alone, the capstones' system (`Snarky.compileWith_constraints`). -/
+`Pickles.wrapMainCircuit`'s output alone, the capstones' system
+(`Snarky.compileWith_constraints`). -/
 
 /-- An `x_hat` circuit's constants (`xhat`): its Lagrange bases at `nc` chunks, as points of
 `C` — `IpaVesta` on the wrap side, `IpaPallas` on the step side — and its blinding `h`. The
@@ -1757,8 +1758,11 @@ def replayedStepMain (w : ℕ) (hw : w ≤ Pickles.MaxProofsVerified)
   let rule ← RuleDump.ofJson (← j.getObjVal? "rule")
   let k ← adjust (← stepMainOf rule.prevs.size w 1 j)
   stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
-    (stepMainDumpCircuit (inVal := Vector Fp rule.inputSize)
-      (outVal := Vector Fp rule.publicOutput.size) w hw k dummyUnfN0 (replayRule rule none)) j
+    (fun u => Prod.fst <$> Pickles.stepMainCircuit (w := w) (ncw := 1) (ncs := 1) (k := 15)
+      (ks := Pickles.StepIPARounds) (inVal := Vector Fp rule.inputSize)
+      (outVal := Vector Fp rule.publicOutput.size) (fun i => k.slots[i].source)
+      (fun i => k.slots[i].width_le hw) k.h (fopStepParams 1) k.ownDomains.list
+      (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule none) inertStepAdvice u) j
 
 /-! ## The wrap side's `incrementally_verify_proof`
 
@@ -2131,9 +2135,12 @@ def main : IO Unit := do
   let filter := (← IO.getEnv "KIMCHI_CS_FILTER").getD ""
   let wrapMains := wrapMainDumps.map fun (name, bp, mpv, nc) =>
     (name, withConstants (wrapMainOf nc) fun k j => do
-      let (main, tables) ← wrapMainCircuitOf bp mpv nc k
-      wrapMainHyps k tables hWrapPt
-      wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit) main j)
+      let sh ← wrapMainShapesOf bp mpv nc k
+      wrapMainHyps k sh.tables hWrapPt
+      wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
+        (fun stmt => Prod.fst <$> Pickles.wrapMainCircuit (k := 15) (ks := 16) fopWrapParams
+          sh.widths (Pickles.stepDomainLog2s sh.keys) (Pickles.stepKeyCells sh.keys) sh.pins
+          sh.lagrange k.h k.dummy sh.slotWidths inertWrapAdvice stmt) j)
   let stepMains : List (String × Comparison) :=
     [ ("step_main_simple_chain_n2_circuit", replayedStepMain 2 (by decide)),
       ("step_main_two_phase_chain_make_zero_circuit", replayedStepMain 1 (by decide)),

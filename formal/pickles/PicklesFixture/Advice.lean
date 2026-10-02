@@ -29,6 +29,18 @@ namespace PicklesFixture
 open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Fixture Bulletproof CompElliptic.Fields.Pasta
 open scoped Kimchi
 
+/-- The step circuit's advice, inert: a compile reads none of it. -/
+def inertStepAdvice {n w : ℕ} {ws : Fin n → ℕ} {ncw ncs k ks : ℕ} {inVal : Type} :
+    Pickles.StepMainAdvice n w ws ncw ncs k ks inVal :=
+  ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+    AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
+
+/-- The wrap circuit's advice, inert: a compile reads none of it. -/
+def inertWrapAdvice {mpv nc k ks wsum : ℕ} : Pickles.WrapMainAdvice mpv nc k ks wsum :=
+  ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+    AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+    AsProver.throw "advice", AsProver.throw "advice"⟩
+
 /-- A cache entry's records checked at `k` rounds, at the chunk count an SRS of `2 ^ k` points
 gives its domain. -/
 def checkedEntry (C : Ipa.KimchiCurve) (k : ℕ) (e : Cache.Entry C) :

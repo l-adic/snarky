@@ -4,6 +4,7 @@ import BulletproofFixture
 import FixtureKit.Parse
 import Pickles.Env
 import Pickles.StepMain
+import Pickles.WrapMain
 import PicklesFixture.Group
 
 /-!
@@ -18,7 +19,8 @@ the prove tests' dumps.
 ## Main definitions
 
 * `PicklesFixture.WrapMainConsts`, `PicklesFixture.wrapMainOf`: a wrap main's constants and
-  their reader.
+  their reader; `PicklesFixture.WrapMainShapes`, `PicklesFixture.wrapMainShapesOf`: the same
+  at the shapes `Pickles.wrapMainCircuit` takes them in.
 * `PicklesFixture.StepMainConsts`, `PicklesFixture.stepMainOf`: a step main's.
 * `PicklesFixture.wrapMainDumps`: the wrap-circuit dumps with their shapes.
 -/
@@ -156,6 +158,47 @@ def wrapMainTables? (bp nc m : ℕ) (lagrange : Array (List (Vector XhatWrapCurv
         exact b.2))
   else none
 
+/-- A wrap main's constants at the shapes `Pickles.wrapMainCircuit` takes them in: `bp + 1`
+branches of at most `mpv` slots, `mpv` stack heights of at most `MaxProofsVerified`, a pin per
+branch and slot, `bp + 1` step keys, and a table of one base per packed statement cell per
+branch. -/
+structure WrapMainShapes (bp mpv nc : ℕ) where
+  /-- Each branch's slot count. -/
+  widths : Vector (Fin (mpv + 1)) (bp + 1)
+  /-- Each branch's step key. -/
+  keys : Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1)
+  /-- Each slot's challenge-stack height. -/
+  slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv
+  /-- Each slot's wrap domain index per branch, `none` when side-loaded. -/
+  pins : Vector (Vector (Option ℕ) (bp + 1)) mpv
+  /-- Each branch's Lagrange bases, one per packed statement cell. -/
+  tables : Vector (Vector (Vector XhatWrapCurve.Point nc)
+    (CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv))) (bp + 1)
+
+/-- A wrap main's constants at its shapes, when they have them. -/
+def wrapMainShapesOf (bp mpv nc : ℕ) (k : WrapMainConsts nc) :
+    Except String (WrapMainShapes bp mpv nc) := do
+  let some widths := wrapMainWidths? (bp + 1) mpv k.stepWidths
+    | throw s!"slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}"
+  let some keys := wrapMainKeys? bp k.keys
+    | throw s!"{k.keys.length} step keys, not {bp + 1}"
+  let some slotWidths := wrapMainWidths? mpv Pickles.MaxProofsVerified k.slotWidths
+    | throw s!"stack heights {k.slotWidths} are not {mpv} ≤ {Pickles.MaxProofsVerified}"
+  let some pins := wrapMainPins? bp mpv k.pins
+    | throw s!"pins {k.pins} are not {bp + 1} rows of {mpv}"
+  let m := CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv)
+  let some tables := wrapMainTables? bp nc m k.lagrange
+    | throw (s!"Lagrange bases are not {m} rows of {bp + 1}: " ++
+        s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}")
+  return { widths, keys, slotWidths, pins, tables }
+
+/-- The Lagrange table at a step domain: the first branch's at it, the first branch's when no
+branch has it (such a domain is never read). -/
+def WrapMainShapes.lagrange {bp mpv nc : ℕ} (sh : WrapMainShapes bp mpv nc) (l : ℕ) :
+    Vector (Vector XhatWrapCurve.Point nc)
+      (CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv)) :=
+  sh.tables[(Pickles.stepDomainLog2s sh.keys).toList.idxOf l]?.getD sh.tables[0]
+
 /-- The `wrap_main_*` dumps with their branch, slot and chunk counts. -/
 def wrapMainDumps : List (String × ℕ × ℕ × ℕ) :=
   [ ("wrap_main_circuit", 0, 1, 1),
@@ -249,5 +292,32 @@ def dummyWrapSgPt : Bulletproof.IpaPallas.curve.Point :=
   ⟨8063668238751197448664615329057427953229339439010717262869116690340613895496,
    2694491010813221541025626495812026140144933943906714931997499229912601205355,
    Or.inl (by decide)⟩
+
+/-- The unfinalized entry padding the statement of a rule verifying no proofs (PS
+`Dummy.baseCaseDummies { maxProofsVerified: 0 }`), at the wrap circuit's 15 rounds. -/
+def dummyUnfN0 : Pickles.UnfVal 15 :=
+  let sf (x : Fp) : Type2 (SplitField Fp Bool) := ⟨⟨x, true⟩⟩
+  { cip := sf 10733637291412775405099085909742784243308064411873129175045178535313137524648
+    b := sf 12005690365207186104828106725404484059974178413747419366262848828074459318671
+    zetaToSrsLength :=
+      sf 7826322391957027530016555805456769916486940393993472644155614648591765317494
+    zetaToDomainSize :=
+      sf 7826322391957027530016555805456769916486940393993472644155614648591765317494
+    perm := sf 11720302720943076563339347688798825215517484960467558296985186859509025408993
+    spongeDigest := 6277101735386680764176071790128604879584176795969512275969
+    beta := 152341587173296550850923210387509020609
+    gamma := 239197809892340837260422696781281951881
+    alpha := 236185100527557585826515066705725312805
+    zeta := 260445934505999659442479615932459762956
+    xi := 18446744073709551617
+    bulletproofChallenges := #v[161621990286339861369413299182831583087,
+      294397517322790754025793051151124957079, 10455894452509500744048069718178570187,
+      224814704134265519234947971901913897491, 330128161163701260858569889180053145483,
+      102493828312258879830323023652412497031, 215326567078568560823705023668614618897,
+      120359744259981153545389569741970563149, 221360828059242236386510005024107555656,
+      257571901803291014519404945390244881518, 209025140278641004900167089918138330057,
+      201591733645229477386800950847198767694, 318881875946480425567146057353930829431,
+      198219236102229943192453714701868046676, 122049445183499159876948789073679959987]
+    shouldFinalize := false }
 
 end PicklesFixture
