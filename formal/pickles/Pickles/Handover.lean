@@ -22,15 +22,15 @@ accumulator of the proof the next link verifies, which that proof's batch opens.
 
 ## Main results
 
-* `WrapStepRun.mem_olds_or_collision`, `StepWrapRun.mem_olds_or_collision`: the accumulator a
-  link emits is an old accumulator of the step, respectively wrap, proof the next link
-  verifies, unless Poseidon collides on the messages passed between them.
+* `WrapStepRun.handover_or_collision`, `StepWrapRun.handover_or_collision`: both complete
+  messages agree and the earlier proof accepts, or the accepted later proof exhibits
+  `AccumulatorFailure`, unless Poseidon collides on the messages passed between them.
 
 ## Implementation notes
 
-The handover is deterministic: nothing here says that a proof's acceptance certifies the
-accumulators it carries. The first opening equation can be solved for any old `sg`, so that
-implication is cryptographic and stays out of the tree.
+The handover is deterministic. `AccumulatorFailure` names acceptance with an invalid old
+accumulator; excluding that event requires a cryptographic argument outside this development.
+Message equality holds in both the acceptance and accumulator-failure alternatives.
 
 Two links share no cells: each circuit run has its own valuation, and an accumulator reaches the
 next link only through the digests of its messages, carried in public inputs. The wrap digest
@@ -52,6 +52,81 @@ section Links
 
 open Snarky Snarky.Kimchi
 open CompElliptic.Fields.Pasta
+
+/-- Read the affine coordinates of a message commitment. -/
+def readPoint {F : Type} [Field F]
+    (V : Valuation F) (p : AffinePoint (FVar F)) : AffinePoint F :=
+  ⟨p.x.val V, p.y.val V⟩
+
+/-- The message entries selected by a slot mask, in their original order. -/
+def keep {α : Type} {n : Nat} (mask : Vector Bool n) (xs : Vector α n) : List α :=
+  ((List.finRange n).filter fun i => mask[i]).map fun i => xs[i]
+
+/-- A step message with its application state and predecessor entries read as lists. -/
+abbrev StepMessageValue (ks : Nat) :=
+  MessagesForNextStepProof
+    (VkComms 1 (AffinePoint Fp)) (List Fp)
+    (List (AffinePoint Fp)) (List (Vector Fp ks))
+
+/-- A wrap message with its challenge stack padded to the protocol width. -/
+abbrev WrapMessageValue (kw : Nat) :=
+  MessagesForNextWrapProof (AffinePoint Fq) (List (Vector Fq kw))
+
+/-- Read every component of a sent step message. -/
+def readStepMessage {sa n ks : Nat} (V : Valuation Fp)
+    (m : MessagesForNextStepProof
+      (VkComms 1 (AffinePoint (FVar Fp))) (Vector (FVar Fp) sa)
+      (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n)) :
+    StepMessageValue ks where
+  appState := m.appState.toList.map (·.val V)
+  dlogPlonkIndex := m.dlogPlonkIndex.map (readPoint V)
+  challengePolynomialCommitments :=
+    m.challengePolynomialCommitments.toList.map (readPoint V)
+  oldBulletproofChallenges := m.oldBulletproofChallenges.toList.map (·.map (·.val V))
+
+/-- Rebuild the complete step message received by a verifier slot. -/
+def rebuildStepMessage {s ks kw ncs w : Nat} (V : Valuation Fp)
+    (vk : KimchiVK IpaPallas.curve 1)
+    (inp : VerifyOneInput s ks kw 1 ncs w) (mask : Vector Bool w) :
+    StepMessageValue ks where
+  appState := inp.appState.toList.map (·.val V)
+  dlogPlonkIndex := vk.comms.map fun p => ⟨p.x, p.y⟩
+  challengePolynomialCommitments := (keep mask inp.prevSgs).map (readPoint V)
+  oldBulletproofChallenges := (keep mask inp.prevChallenges).map (·.map (·.val V))
+
+/-- Read a wrap message, including its dummy challenge padding. -/
+def readWrapMessage {w kw : Nat} (V : Valuation Fq) (dummy : Vector Fq kw)
+    (m : MessagesForNextWrapProof
+      (AffinePoint (FVar Fq)) (Vector (Vector (FVar Fq) kw) w)) :
+    WrapMessageValue kw where
+  challengePolynomialCommitment := readPoint V m.challengePolynomialCommitment
+  oldBulletproofChallenges := List.replicate (MaxProofsVerified - w) dummy ++
+    m.oldBulletproofChallenges.toList.map (·.map (·.val V))
+
+/-- An accepted proof carries an old accumulator whose deferred equation is false. -/
+def AccumulatorFailure {C : KimchiCurve} {nc : Nat}
+    (σ : SRS C.Point) (vk : KimchiVK C nc)
+    (q : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Prop :=
+  kimchiVerify C σ vk q pub = true ∧
+    ∃ a ∈ q.olds.toList, accOk σ a = false
+
+
+/-- Once handover gives membership, acceptance closes the earlier proof or witnesses failure. -/
+theorem accepts_or_accumulatorFailure {C : KimchiCurve} {nc nc' : Nat}
+    (σ : SRS C.Point) (vk : KimchiVK C nc) (p : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField)
+    (nextVk : KimchiVK C nc') (q : KimchiProof C nc' σ.k) (nextPub : Array C.ScalarField)
+    (hmem : (⟨p.opening.sg, wireChallenges σ vk p pub⟩ : Accumulator C σ.k) ∈ q.olds.toList)
+    (hAccept : kimchiVerify C σ nextVk q nextPub = true)
+    (hCapstone : SgOk σ vk p pub → kimchiVerify C σ vk p pub = true) :
+    kimchiVerify C σ vk p pub = true ∨ AccumulatorFailure σ nextVk q nextPub := by
+  by_cases hAcc : accOk σ ⟨p.opening.sg, wireChallenges σ vk p pub⟩ = true
+  · have hSg : SgOk σ vk p pub := by
+      simp only [accOk, decide_eq_true_eq] at hAcc
+      exact hAcc
+    exact Or.inl (hCapstone hSg)
+  · exact Or.inr ⟨hAccept, _, hmem, Bool.eq_false_iff.mpr hAcc⟩
+
 
 /-! ## Collisions between two links -/
 
@@ -235,6 +310,62 @@ private theorem flatten_inj {α : Type} {m : ℕ} :
   | [], _ :: _, _, _, hl, _ => by simp at hl
   | _ :: _, [], _, _, hl, _ => by simp at hl
 
+/-- A suffix mask selects the corresponding suffix of a vector. -/
+private theorem keep_front {α : Type} {m n : ℕ} (ms : Vector Bool m) (xs : Vector α m)
+    (hms : ∀ (j : ℕ) (hj : j < m), ms[j] = decide (m - n ≤ j)) :
+    keep ms xs = xs.toList.drop (m - n) := by
+  have hL : (Vector.zipWith (fun b x => if b then [x] else []) ms xs).toList =
+      List.replicate (m - n) [] ++ (xs.toList.drop (m - n)).map (fun x => [x]) := by
+    apply List.ext_getElem (by simp)
+    intro j h1 h2
+    simp only [Vector.getElem_toList, Vector.getElem_zipWith, hms j (by simpa using h1)]
+    by_cases hj : j < m - n
+    · rw [List.getElem_append_left (by simpa using hj)]
+      simp [show ¬(m - n ≤ j) by omega]
+    · rw [List.getElem_append_right (by simpa using hj)]
+      simp [show m - n ≤ j by omega, show m - n + (j - (m - n)) = j by omega]
+  have hf := congrArg List.flatten hL
+  have hv {β : Type} (v : Vector β m) : v.toList = List.ofFn (fun i : Fin m => v[i]) := by
+    apply List.ext_getElem <;> simp
+  rw [Vector.toList_zipWith, hv ms, hv xs, flatten_zipWith_keep] at hf
+  rw [show xs.toList = List.ofFn (fun i : Fin m => xs[i]) from hv xs]
+  simpa only [keep, ← List.map_drop, List.flatten_append, List.flatten_replicate_nil,
+    List.nil_append, ← List.flatMap_def, List.flatMap_singleton'] using hf
+
+private theorem indexPoints_injective {α : Type} {nc : ℕ} :
+    Function.Injective (VkComms.indexPoints (nc := nc) (f := α)) := by
+  intro a b h
+  have hchunks := flatten_inj (m := nc)
+    (by simp only [List.mem_map]; rintro _ ⟨v, -, rfl⟩; simp)
+    (by simp only [List.mem_map]; rintro _ ⟨v, -, rfl⟩; simp)
+    (by simp) (show _ = _ from h)
+  have hv : a.sigmaComm.toList ++ a.coefficientsComm.toList ++ a.selectors.toList =
+      b.sigmaComm.toList ++ b.coefficientsComm.toList ++ b.selectors.toList :=
+    (List.map_inj_right (fun _ _ h => Vector.toList_inj.mp h)).mp hchunks
+  obtain ⟨hp, hs⟩ := List.append_inj hv (by simp)
+  obtain ⟨hσ, hc⟩ := List.append_inj hp (by simp)
+  have hσ := Vector.toList_inj.mp hσ
+  have hc := Vector.toList_inj.mp hc
+  simp only [VkComms.selectors, Vector.toList_mk, List.cons.injEq, and_true] at hs
+  cases a; cases b
+  simp_all
+
+private theorem keyCoords_injective {α : Type} {nc : ℕ}
+    (a b : VkComms nc (AffinePoint α))
+    (h : a.indexPoints.flatMap (fun p => [p.x, p.y]) =
+      b.indexPoints.flatMap (fun p => [p.x, p.y])) : a = b := by
+  apply indexPoints_injective
+  have hc := flatten_inj (m := 2)
+    (by simp only [List.mem_map]; rintro _ ⟨p, -, rfl⟩; rfl)
+    (by simp only [List.mem_map]; rintro _ ⟨p, -, rfl⟩; rfl)
+    (by simp [VkComms.indexPoints, List.length_flatMap, VkComms.selectors]) h
+  exact (List.map_inj_right (by intro p q h; cases p; cases q; simpa using h)).mp hc
+
+private theorem indexPoints_map {α β : Type} {nc : ℕ} (f : α → β) (k : VkComms nc α) :
+    (k.map f).indexPoints = k.indexPoints.map f := by
+  simp [VkComms.indexPoints, VkComms.map, VkComms.selectors, Vector.toList_map, List.flatMap_map,
+    List.map_flatMap]
+
 /-- With the first `m − n` entries masked out, the kept values are the last `n` entries'. -/
 private theorem keptValues_front {m n k : ℕ} (V : Valuation F) (ms : Vector Bool m)
     (proofs : Vector (AffinePoint (FVar F) × Vector (FVar F) k) m)
@@ -306,6 +437,74 @@ private theorem kept_of_stepInput_eq {n m ks sa s' : ℕ} {V : Valuation Fp}
   obtain ⟨rfl, rfl⟩ := hab
   refine ⟨by simpa using hx, by simpa using hy, Vector.toList_inj.mp ?_⟩
   simpa [Vector.toList_map] using hb
+
+/-- Equality of the absorbed step inputs determines every field of the complete messages. -/
+private theorem stepMessage_eq_of_input_eq {n sa s ks kw ncs m : ℕ}
+    (V V' : Valuation Fp)
+    (msg : MessagesForNextStepProof (VkComms 1 (AffinePoint (FVar Fp)))
+      (Vector (FVar Fp) sa) (Vector (AffinePoint (FVar Fp)) n)
+      (Vector (Vector (FVar Fp) ks) n))
+    (cvk : KimchiVK IpaPallas.curve 1) (inp : VerifyOneInput s ks kw 1 ncs m)
+    (ms : Vector Bool m) (hs : s = sa) (hn : n ≤ m)
+    (hmask : ∀ (j : ℕ) (hj : j < m), ms[j] = decide (m - n ≤ j))
+    (h : stepMsgInput ⟨msg.appState.map (·.val V), msg.dlogPlonkIndex.map (readPoint V),
+        msg.challengePolynomialCommitments.map (readPoint V),
+        msg.oldBulletproofChallenges.map (·.map (·.val V))⟩ =
+      cvk.comms.indexPoints.flatMap (fun p => [p.x, p.y]) ++
+        inp.appState.toList.map (·.val V') ++
+        keptValues V' ms (inp.prevSgs.zip inp.prevChallenges)) :
+    readStepMessage V msg = rebuildStepMessage V' cvk inp ms := by
+  have hpre := (List.append_inj h (by
+    simp [VkComms.indexPoints, VkComms.selectors, List.length_flatMap, hs])).1
+  obtain ⟨hkey, happ⟩ := List.append_inj hpre (by
+    simp [VkComms.indexPoints, VkComms.selectors, List.length_flatMap])
+  have hkey' : msg.dlogPlonkIndex.map (readPoint V) =
+      cvk.comms.map (fun p => (⟨p.x, p.y⟩ : AffinePoint Fp)) := by
+    apply keyCoords_injective
+    simpa [indexPoints_map, List.flatMap_map] using hkey
+  have hi := kept_of_stepInput_eq cvk hmask hn h
+  simp only [readStepMessage, rebuildStepMessage, MessagesForNextStepProof.mk.injEq,
+    keep_front ms _ hmask]
+  refine ⟨by simpa [Vector.toList_map] using happ, hkey', ?_, ?_⟩
+  · apply List.ext_getElem (by simp; omega)
+    intro j hj hj'
+    have he := hi ⟨j, by simpa using hj⟩
+    simp only [List.getElem_map, List.getElem_drop, Vector.getElem_toList]
+    simp only [Fin.getElem_fin, Vector.getElem_map, readPoint] at he
+    simp only [readPoint, AffinePoint.mk.injEq]
+    exact ⟨he.1.symm, he.2.1.symm⟩
+  · apply List.ext_getElem (by simp; omega)
+    intro j hj hj'
+    have he := (hi ⟨j, by simpa using hj⟩).2.2
+    simpa using he.symm
+
+/-- Equality of the absorbed wrap inputs determines the commitment and padded challenge stack. -/
+private theorem wrapMessage_eq_of_input_eq {w w' kw : ℕ}
+    (V V' : Valuation Fq) (dummy : Vector Fq kw)
+    (msg : MessagesForNextWrapProof (AffinePoint (FVar Fq))
+      (Vector (Vector (FVar Fq) kw) w))
+    (msg' : MessagesForNextWrapProof (AffinePoint (FVar Fq))
+      (Vector (Vector (FVar Fq) kw) w'))
+    (hw : w ≤ MaxProofsVerified) (hw' : w' ≤ MaxProofsVerified)
+    (h : wrapMsgInput dummy ⟨readPoint V msg.challengePolynomialCommitment,
+        msg.oldBulletproofChallenges.map (·.map (·.val V))⟩ =
+      wrapMsgInput dummy ⟨readPoint V' msg'.challengePolynomialCommitment,
+        msg'.oldBulletproofChallenges.map (·.map (·.val V'))⟩) :
+    readWrapMessage V dummy msg = readWrapMessage V' dummy msg' := by
+  obtain ⟨hpre, hsg⟩ := List.append_inj' h rfl
+  have hc : (readWrapMessage V dummy msg).oldBulletproofChallenges.map Vector.toList =
+      (readWrapMessage V' dummy msg').oldBulletproofChallenges.map Vector.toList := by
+    apply flatten_inj (m := kw)
+    · simp only [List.mem_map]; rintro _ ⟨v, -, rfl⟩; simp
+    · simp only [List.mem_map]; rintro _ ⟨v, -, rfl⟩; simp
+    · simp only [readWrapMessage, List.length_map, List.length_append, List.length_replicate,
+        Vector.length_toList]
+      omega
+    · simpa [readWrapMessage, List.map_append, List.flatten_append, toList_flatten',
+        Vector.toList_map, List.map_map, Function.comp_def] using hpre
+  have hc' := (List.map_inj_right (fun _ _ h => Vector.toList_inj.mp h)).mp hc
+  simp only [readWrapMessage, MessagesForNextWrapProof.mk.injEq]
+  exact ⟨by simpa [readPoint, AffinePoint.mk.injEq] using hsg, hc'⟩
 
 /-- A step message carrying `n` proofs and a slot's rebuild of it keeping a suffix of `k`, over a
 statement of the message's size: their lengths differ by the `ks + 2` cells of each proof one
@@ -536,11 +735,9 @@ private theorem wrapInput_eq_or_collision {k w w' : ℕ} (dummy : Vector Fq k)
     rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
     exact hh
 
-/-- **The next step proof opens each emitted accumulator.** The link `rk` emits `A`, and the next
-link `rk1` consumes the olds of the step proof `cp` that `rk`'s step circuit made. Then `A` is one
-of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
-the messages passed between the links. -/
-theorem WrapStepRun.mem_olds_or_collision
+/-- Equal complete messages carry the emitted accumulator into the next step proof's olds,
+unless a message hash collides. -/
+private theorem WrapStepRun.messages_mem_or_collision
     (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
     (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' sa' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1)
@@ -551,7 +748,13 @@ theorem WrapStepRun.mem_olds_or_collision
     rk.Emits cvk dummy A →
     rk1.Consumes cvk1 dummy cp.olds.toList →
     rk.Hands rk1 →
-    A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 dummy ∨ rk.StepCollision rk1 cvk1 := by
+    (readStepMessage rk.Vs rk.stepOut.messagesForNextStepProof =
+        rebuildStepMessage rk1.Vs cvk1 rk1.inp rk1.ms ∧
+      readWrapMessage rk.Vw dummy
+          (rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut) =
+        readWrapMessage rk1.Vw dummy
+          (rk1.wrapFinalizeOut.messagesForNextWrapProof rk.slotIndex) ∧
+      A ∈ cp.olds.toList) ∨ rk.WrapCollision rk1 dummy ∨ rk.StepCollision rk1 cvk1 := by
   intro he hc hh
   have hn := rk.hn
   obtain ⟨⟨htk, hWk, hSk⟩, hA⟩ := he
@@ -598,7 +801,9 @@ theorem WrapStepRun.mem_olds_or_collision
   swap
   · exact Or.inr (Or.inl ⟨sg, sg', chalsW, chalsW', reads_pt _ _, reads_vecs _ _, reads_pt _ _,
       reads_vecs _ _, hcol⟩)
-  left
+  refine Or.inl ⟨stepMessage_eq_of_input_eq rk.Vs rk1.Vs mS cvk1 rk1.inp rk1.ms hss
+    (by omega) hmask hX, wrapMessage_eq_of_input_eq rk.Vw rk1.Vw dummy mW mW'
+    (rk.hwi ▸ rk.hws rk.i) (Nat.lt_succ_iff.mp (slotWidths'[j]).isLt) hW, ?_⟩
   -- the commitment: both wrap inputs end with it
   obtain ⟨-, hsg⟩ := List.append_inj' hW rfl
   simp only [List.cons.injEq, and_true] at hsg
@@ -620,6 +825,44 @@ theorem WrapStepRun.mem_olds_or_collision
   · exact readPt_congr hsg.1 hsg.2
   · rw [hu]
     simp [chals, mS]
+
+/-- Complete messages agree and the earlier proof accepts, or the accepted later proof carries
+an invalid accumulator, unless one of the two message hashes collides. -/
+theorem WrapStepRun.handover_or_collision
+    (σ : SRS IpaVesta.curve.Point)
+    (rk : WrapStepRun branches w ncStep kw σ.k n wNext ws ss sa slotWidths)
+    (rk1 : WrapStepRun branches' wNext ncStep' kw σ.k n' wNext' ws' ss' sa' slotWidths')
+    (cvk cvk1 : KimchiVK IpaPallas.curve 1)
+    (dummy : Vector Fq kw)
+    (vk : KimchiVK IpaVesta.curve ncStep)
+    (p : KimchiProof IpaVesta.curve ncStep σ.k)
+    (pub : Array Fp)
+    (nextVk : KimchiVK IpaVesta.curve ncStep')
+    (q : KimchiProof IpaVesta.curve ncStep' σ.k)
+    (nextPub : Array Fp) :
+  let sentStep := readStepMessage rk.Vs rk.stepOut.messagesForNextStepProof
+  let receivedStep := rebuildStepMessage rk1.Vs cvk1 rk1.inp rk1.ms
+  let sentWrap := readWrapMessage rk.Vw dummy
+    (rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut)
+  let receivedWrap := readWrapMessage rk1.Vw dummy
+    (rk1.wrapFinalizeOut.messagesForNextWrapProof rk.slotIndex)
+  rk.Emits cvk dummy ⟨p.opening.sg, wireChallenges σ vk p pub⟩ →
+  rk1.Consumes cvk1 dummy q.olds.toList →
+  rk.Hands rk1 →
+  kimchiVerify IpaVesta.curve σ nextVk q nextPub = true →
+  (SgOk σ vk p pub → kimchiVerify IpaVesta.curve σ vk p pub = true) →
+  (sentStep = receivedStep ∧
+   sentWrap = receivedWrap ∧
+   (kimchiVerify IpaVesta.curve σ vk p pub = true ∨
+    AccumulatorFailure σ nextVk q nextPub)) ∨
+  rk.WrapCollision rk1 dummy ∨
+  rk.StepCollision rk1 cvk1 := by
+  dsimp only
+  intro he hc hh hAccept hCapstone
+  rcases rk.messages_mem_or_collision rk1 cvk cvk1 dummy _ q he hc hh with h | h
+  · exact Or.inl ⟨h.1, h.2.1,
+      accepts_or_accumulatorFailure σ vk p pub nextVk q nextPub h.2.2 hAccept hCapstone⟩
+  · exact Or.inr h
 
 /-! ## A step-wrap link -/
 
@@ -722,11 +965,9 @@ def StepWrapRun.StepCollision (rk : StepWrapRun n w ws ss sa ncs kw ks branches 
     (cvk : KimchiVK IpaPallas.curve 1) : Prop :=
   StepMsgCollision rk.Vg rk.stepOut rk1.Vg rk1.inp rk1.ms cvk
 
-/-- **The next wrap proof opens each emitted accumulator.** The link `rk` emits `A`, and the next
-link `rk1` consumes the olds of the wrap proof `cp` that `rk`'s wrap circuit made. Then `A` is one
-of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
-the messages passed between the links. -/
-theorem StepWrapRun.mem_olds_or_collision
+/-- Equal complete messages carry the emitted accumulator into the next wrap proof's olds,
+unless a message hash collides. -/
+private theorem StepWrapRun.messages_mem_or_collision
     (rk : StepWrapRun n w ws ss sa ncs kw ks branches ncStep slotWidths)
     (rk1 : StepWrapRun n' w' ws' ss' sa' ncs' kw ks branches' ncStep' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1)
@@ -736,7 +977,13 @@ theorem StepWrapRun.mem_olds_or_collision
     rk.Emits dummy A →
     rk1.Consumes dummy cp.olds.toList →
     rk.Hands rk1 cvk →
-    A ∈ cp.olds.toList ∨ rk.WrapCollision rk1 dummy ∨ rk.StepCollision rk1 cvk := by
+    (readStepMessage rk.Vg rk.stepOut.messagesForNextStepProof =
+        rebuildStepMessage rk1.Vg cvk rk1.inp rk1.ms ∧
+      readWrapMessage rk.Vs dummy
+          (rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut) =
+        readWrapMessage rk1.Vs dummy
+          (rk1.wrapFinalizeOut.messagesForNextWrapProof rk1.jf) ∧
+      A ∈ cp.olds.toList) ∨ rk.WrapCollision rk1 dummy ∨ rk.StepCollision rk1 cvk := by
   intro he hc hh
   obtain ⟨⟨hpub, hSk, hWk⟩, hA⟩ := he
   obtain ⟨⟨hpub1, hS1, hW1⟩, hcons, -⟩ := hc
@@ -780,7 +1027,9 @@ theorem StepWrapRun.mem_olds_or_collision
   swap
   · exact Or.inr (Or.inl ⟨sg, sg', chalsW, chalsW', reads_pt _ _, reads_vecs _ _, reads_pt _ _,
       reads_vecs _ _, hcol⟩)
-  left
+  refine Or.inl ⟨stepMessage_eq_of_input_eq rk.Vg rk1.Vg mS cvk rk1.inp rk1.ms hss
+    (by have := rk.hn; omega) hmask hX, wrapMessage_eq_of_input_eq rk.Vs rk1.Vs dummy mW mW'
+    rk.hw (Nat.lt_succ_iff.mp (slotWidths'[rk1.jf]).isLt) hW, ?_⟩
   set m := ws' rk1.i with hm
   have hmn : n ≤ m := hw1 ▸ rk.hn
   -- the commitment: link k1's kept slot is link k's slot `i`
@@ -825,6 +1074,45 @@ theorem StepWrapRun.mem_olds_or_collision
     have hidx : MaxProofsVerified - n + ↑rk.i - (MaxProofsVerified - w) = w - n + rk.i := by
       omega
     simp [chalsW, mW, StepWrapRun.jf, hidx]
+
+/-- Complete messages agree and the earlier proof accepts, or the accepted later proof carries
+an invalid accumulator, unless one of the two message hashes collides. -/
+theorem StepWrapRun.handover_or_collision
+    (σ : SRS IpaPallas.curve.Point)
+    {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
+    {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) w'}
+    (rk : StepWrapRun n w ws ss sa ncs σ.k ks branches ncStep slotWidths)
+    (rk1 : StepWrapRun n' w' ws' ss' sa' ncs' σ.k ks branches' ncStep' slotWidths')
+    (dummy : Vector Fq σ.k)
+    (vk : KimchiVK IpaPallas.curve 1)
+    (p : KimchiProof IpaPallas.curve 1 σ.k)
+    (pub : Array Fq)
+    (nextVk : KimchiVK IpaPallas.curve 1)
+    (q : KimchiProof IpaPallas.curve 1 σ.k)
+    (nextPub : Array Fq) :
+  let sentStep := readStepMessage rk.Vg rk.stepOut.messagesForNextStepProof
+  let receivedStep := rebuildStepMessage rk1.Vg nextVk rk1.inp rk1.ms
+  let sentWrap := readWrapMessage rk.Vs dummy
+    (rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut)
+  let receivedWrap := readWrapMessage rk1.Vs dummy
+    (rk1.wrapFinalizeOut.messagesForNextWrapProof rk1.jf)
+  rk.Emits dummy ⟨p.opening.sg, wireChallenges σ vk p pub⟩ →
+  rk1.Consumes dummy q.olds.toList →
+  rk.Hands rk1 nextVk →
+  kimchiVerify IpaPallas.curve σ nextVk q nextPub = true →
+  (SgOk σ vk p pub → kimchiVerify IpaPallas.curve σ vk p pub = true) →
+  (sentStep = receivedStep ∧
+   sentWrap = receivedWrap ∧
+   (kimchiVerify IpaPallas.curve σ vk p pub = true ∨
+    AccumulatorFailure σ nextVk q nextPub)) ∨
+  rk.WrapCollision rk1 dummy ∨
+  rk.StepCollision rk1 nextVk := by
+  dsimp only
+  intro he hc hh hAccept hCapstone
+  rcases rk.messages_mem_or_collision rk1 nextVk dummy _ q he hc hh with h | h
+  · exact Or.inl ⟨h.1, h.2.1,
+      accepts_or_accumulatorFailure σ vk p pub nextVk q nextPub h.2.2 hAccept hCapstone⟩
+  · exact Or.inr h
 
 end StepWrapLinks
 
