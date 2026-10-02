@@ -151,13 +151,17 @@ def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType (ZMo
   return { V, holds, satisfies, pub, result := built.result }
 
 /-- `jobs` on `n` workers, each job's output captured on its worker thread (stdout is per
-thread) and printed in job order as soon as the jobs before it are done; the verdicts, in
-order. A job that throws prints its error and fails. -/
+thread) and printed, flushed, in job order as soon as the jobs before it are done; the verdicts,
+in order. A worker reports each job it finishes on stderr at once (`· k/N done`), so progress
+shows in any order. A job that throws prints its error and fails. -/
 def runPool (n : ℕ) (jobs : Array (IO Bool)) : IO (Array Bool) := do
   let work ← jobs.mapM fun job => do
     let p ← IO.Promise.new (α := String × Bool)
     pure (job, p)
   let next ← IO.mkRef 0
+  let done ← IO.mkRef 0
+  let stdout ← IO.getStdout
+  let stderr ← IO.getStderr
   let worker : IO Unit := do
     repeat
       let i ← next.modifyGet fun i => (i, i + 1)
@@ -168,12 +172,16 @@ def runPool (n : ℕ) (jobs : Array (IO Bool)) : IO (Array Bool) := do
             IO.println s!"  ✗ {e}"
             pure false
         p.resolve r
+        let k ← done.modifyGet fun k => (k + 1, k + 1)
+        stderr.putStrLn s!"· {k}/{work.size} done{if r.2 then "" else " ✗"}"
+        stderr.flush
       else break
   let tasks ← (List.range (max n 1)).mapM fun _ => IO.asTask worker
   let mut oks := #[]
   for (_, p) in work do
     let (out, ok) ← IO.wait p.result!
-    IO.print out
+    stdout.putStr out
+    stdout.flush
     oks := oks.push ok
   for t in tasks do
     if let .error e ← IO.wait t then throw e

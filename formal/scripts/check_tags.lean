@@ -14,8 +14,9 @@ ties to the commitments) — at that tag's width and step chunk count, and reads
 statement of the size every branch of that tag emits; and every wrap circuit pads with one set of
 challenges.
 
-The links (`LINKS=all`, or `LINKS=<app>,…`), instead: every proof in the apps' proof caches
-(`PICKLES_PROOF_CACHE_DIR`) has its circuit run through the prover at advice read off the cache —
+The links (`LINKS=all`, every app but those in `linksAllSkips`, or `LINKS=<app>,…`), instead:
+every proof in the apps' proof caches (`PICKLES_PROOF_CACHE_DIR`) has its circuit run through the
+prover at advice read off the cache —
 a step proof's step circuit at its rule's witness and its slots (`stepMainAdviceOf`), a wrap
 proof's wrap circuit at the step proof it wrapped (`wrapMainAdviceOf`), a base case at the cells
 the cache records and a slot the rule lacks at the dump's padding — compiled as the capstones
@@ -555,6 +556,7 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
         let _ ← basisFor CS "vesta" σS nc e
         warmed := key :: warmed
   IO.println s!"warm-up: {warmed.length} Lagrange memos in {(← IO.monoMsNow) - t0} ms"
+  (← IO.getStdout).flush
   let mut jobs : Array (IO Bool) := #[]
   let mut uncovered := 0
   for app in apps do
@@ -574,12 +576,17 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
       uncovered := uncovered + 1
       IO.println s!"✗ {app}: the cached proof {d.take 12}…/{pi.take 12}… is in no link"
   IO.println s!"{jobs.size} run(s) on {nJobs} worker(s)"
+  (← IO.getStdout).flush
   let oks ← runPool nJobs jobs
   unless uncovered = 0 && oks.all id do
     throw (IO.userError s!"links FAILED ({oks.toList.count false} run(s), {uncovered} uncovered)")
   IO.println s!"✓ {jobs.size} run(s): every compiled system holds under its prover's valuation, \
     every table satisfies its system, every public input is its cached proof's, every link \
     hypothesis holds"
+
+/-- The apps `LINKS=all` leaves out: `Chunks4`, whose four-chunk step key needs a `2^18` Lagrange
+basis and the lane's longest runs, while `Chunks2` exercises the same chunking. Named, it runs. -/
+def linksAllSkips : List String := ["Chunks4"]
 
 def main : IO Unit := do
   let some dir ← IO.getEnv "PICKLES_DUMP_DIR"
@@ -593,7 +600,9 @@ def main : IO Unit := do
     let cacheDir := (← IO.getEnv "PICKLES_PROOF_CACHE_DIR").getD
       "../packages/pickles/test/fixtures/proof-cache"
     let names ← if links = "all" then
-        apps.toList.filterMapM fun a => do pure (if ← a.path.isDir then some a.fileName else none)
+        apps.toList.filterMapM fun a => do
+          pure (if (← a.path.isDir) && !linksAllSkips.contains a.fileName then some a.fileName
+            else none)
       else pure (links.splitOn ",")
     let nJobs := ((← IO.getEnv "LINKS_JOBS").bind String.toNat?).getD 4
     runLinks dir cacheDir names nJobs
