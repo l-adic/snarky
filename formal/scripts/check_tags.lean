@@ -113,9 +113,7 @@ def checkTag (name : String) (hWrap : XhatWrapCurve.Point) (hStep : XhatStepCurv
   let some l0 := (← (← b0.getObjVal? "lagrange").getArr?)[0]? | throw "the branch has no table"
   let nc := (← l0.getArr?).size
   let k ← wrapMainOf nc wrapMain
-  let main ← wrapMainCircuitOf bp w nc k
-  let m := CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
-  let some tables := wrapMainTables? bp nc m k.lagrange | throw "the tables' shape"
+  let (main, tables) ← wrapMainCircuitOf bp w nc k
   wrapMainHyps k tables hWrap
   let key ← checkedKey Bulletproof.IpaPallas.curve 15 1 (← wrapMain.getObjVal? "key")
   let wrapRaw : Raw Fq ← parseGates (← wrapMain.getObjVal? "circuit")

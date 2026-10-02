@@ -2115,10 +2115,8 @@ def main : IO Unit := do
   let wrapMains ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
     let k ← dumpConstants filter (dir / s!"{name}.json") (wrapMainOf nc)
     k.mapM fun k => do
-      let main ← IO.ofExcept ((wrapMainCircuitOf bp mpv nc k).mapError (s!"{name}: " ++ ·))
-      let m := CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv)
-      let some tables := wrapMainTables? bp nc m k.lagrange
-        | throw (IO.userError s!"{name}: the tables' shape")
+      let (main, tables) ←
+        IO.ofExcept ((wrapMainCircuitOf bp mpv nc k).mapError (s!"{name}: " ++ ·))
       IO.ofExcept ((wrapMainHyps k tables hWrapPt).mapError (s!"{name}: " ++ ·))
       pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit) main)
   let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n 1)) :=
