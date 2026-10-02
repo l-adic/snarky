@@ -30,7 +30,7 @@ import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
+import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, readCVar, true_)
 import Snarky.Curves.Class (fromInt)
 import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
@@ -52,7 +52,7 @@ treeProofReturnRule
 treeProofReturnRule getPrevStates _ = do
   nrrInput <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { output: nrrOut } /\ _) -> nrrOut
   prevInput <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut
-  isBaseCase <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut == F (negate one)
+  isBaseCase <- exists $ readCVar prevInput <#> (_ == F (negate one))
   let proofMustVerifySlot1 = not_ isBaseCase
   selfVal <- if_ isBaseCase (const_ zero) (CVar.add_ (const_ one) prevInput)
   pure

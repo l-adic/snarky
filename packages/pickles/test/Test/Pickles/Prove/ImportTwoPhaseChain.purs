@@ -32,7 +32,7 @@ import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (F(..), FVar, exists, if_, not_, true_)
+import Snarky.Circuit.DSL (F(..), FVar, exists, if_, not_, readCVar, true_)
 import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.Prove.TwoPhaseChain (incrementRule, makeZeroRule)
 import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
@@ -60,7 +60,7 @@ chainRule
 chainRule getPrevStates _ = do
   tx <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input: txIn } /\ _) -> txIn
   prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut
-  isBaseCase <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut == F (negate one)
+  isBaseCase <- exists $ readCVar prev <#> (_ == F (negate one))
   selfVal <- if_ isBaseCase tx (CVar.add_ prev tx)
   pure
     { prevs: toPrevs $
