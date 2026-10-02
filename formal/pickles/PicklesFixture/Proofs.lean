@@ -8,10 +8,10 @@ import KimchiFixture.Cache
 
 A cached proof's records as the circuits take them: its public input as the wrap or step
 statement it packs (`PicklesFixture.wrapStatementOf`, `PicklesFixture.stepStatementOf`), its
-commitments and opening as cells (`PicklesFixture.ivpProofOf`), its old accumulators' points
-(`PicklesFixture.sgOldOf`) and its evaluations (`PicklesFixture.chunkedEvalsOf`). A wrap
-proof's statement lives in the wrap field and a step proof's in the step field;
-`PicklesFixture.toStep` and `PicklesFixture.toWrap` carry a cell across by value.
+commitments and opening as cells (`PicklesFixture.ivpProofOf`) and its evaluations
+(`PicklesFixture.chunkedEvalsOf`). A wrap proof's statement lives in the wrap field and a step
+proof's in the step field; `PicklesFixture.toStep` and `PicklesFixture.toWrap` carry a cell
+across by value.
 -/
 
 namespace PicklesFixture
@@ -115,20 +115,5 @@ def ivpProofOf (C : Ipa.KimchiCurve) {k nc : ℕ} {sf : Type} (shift : C.ScalarF
            opening := { lr := cp.opening.lr.map fun q => (pt q.1, pt q.2)
                         z1 := shift cp.opening.z1, z2 := shift cp.opening.z2
                         delta := pt cp.opening.delta, sg := pt cp.opening.sg } }
-
-/-- A checked proof's accumulators' `sg`, as `m` affine points: the proof's own in the LAST
-slots (`unpackBranchData`), `pad` in front of them. A proof carries one accumulator per real
-predecessor of its rule, which a statement padded to the system's width exceeds — a
-heterogeneous system has rules with fewer predecessors than slots — and a padding slot's
-keep bit is off, so its point is never absorbed; it only has to be a point. -/
-def sgOldOf (C : Ipa.KimchiCurve) {k nc : ℕ} (m : ℕ) (pad : C.Point)
-    (cp : Kimchi.Verifier.KimchiProof C nc k) :
-    Except String (Vector (AffinePoint C.BaseField) m) :=
-  let pt (P : C.Point) : AffinePoint C.BaseField := ⟨P.x, P.y⟩
-  let sgs := cp.olds.map fun a => pt a.sg
-  if sgs.size ≤ m then
-    let all := Array.replicate (m - sgs.size) (pt pad) ++ sgs
-    if h : all.size = m then pure ⟨all, h⟩ else throw s!"accumulators: {sgs.size} of {m}"
-  else throw s!"accumulators: {sgs.size}, more than the {m} slots"
 
 end PicklesFixture

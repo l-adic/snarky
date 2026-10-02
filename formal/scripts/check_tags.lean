@@ -4,9 +4,12 @@ The theorems' suite on the pickles prove tests' own dumps. A tag's dump is one f
 the prove tests write one per tag (`PICKLES_DUMP_DIR=… npx spago test -p pickles`).
 
 Per tag: the wrap circuit, `Pickles.wrapMainCircuit` at the dump's constants, and each branch's
-step circuit, `Pickles.stepMainCircuit` at its constants with the branch's rule replayed from its
-dump (`replayRule`), against the systems the tests compiled; and the capstones' constant premises on
-those constants (`wrapMainHyps`, `stepMainHyps`), with each branch's slot count its rule's.
+step circuit, `Pickles.stepMainCircuit` at its constants (its domains by
+`Pickles.KnownDomains.ofList?`) with the branch's rule replayed from its dump (`replayRule`),
+against the systems the tests compiled; and the capstones' constant premises on those constants
+(`wrapMainHyps`, `stepMainHyps`; a key's avoidance premise as the right side of
+`Pickles.Key.avoids_lagrangeRelations_iff` or `Pickles.avoids_stepRelationsAt_iff`), with each
+branch's slot count its rule's.
 
 Across tags: each slot verifies a dumped tag's proofs — its own tag's for a self slot, the tag
 whose wrap key it carries for an external one (keys are matched by digest, which the key check
@@ -14,29 +17,32 @@ ties to the commitments) — at that tag's width and step chunk count, and reads
 statement of the size every branch of that tag emits; and every wrap circuit pads with one set of
 challenges.
 
-The links (`LINKS=all`, every app but those in `linksAllSkips`, or `LINKS=<app>,…`), instead:
-every proof in the apps' proof caches (`PICKLES_PROOF_CACHE_DIR`) has its circuit run through the
-prover at advice read off the cache —
-a step proof's step circuit at its rule's witness and its slots (`stepMainAdviceOf`), a wrap
-proof's wrap circuit at the step proof it wrapped (`wrapMainAdviceOf`), a base case at the cells
-the cache records and a slot the rule lacks at the dump's padding — compiled as the capstones
-compile it (`runMain`): the capstones' hypothesis that its constraints hold under the prover's
-valuation is decided (`Snarky.Kimchi.KimchiConstraint.decidableHolds`), its table against its
-assembled system, and its public input against the cached proof's; and the capstones' hypotheses
-on its cells (`stepHyps`, `wrapHyps`, through `Snarky.CircuitType.decidableReads`, and
-`Pickles.KeyReads.of_readPt` for a slot's key cells, compared by `Pickles.instDecidableEqVkComms`);
-and what the capstones conclude, against the cache (`stepConclusions`, `wrapConclusions`): the
-cells read off the cached proofs (`Pickles.IvpProof.read_eq`, `Pickles.OldsRead.of_readPt`), the
-finalize cells hold their evaluations (`Kimchi.Verifier.instDecidableEqProofEvaluations`,
+The links (`LINKS=all`, every app but those in `linksAllSkips`, or `LINKS=<app>,…`), instead: every
+proof in the apps' proof caches (`PICKLES_PROOF_CACHE_DIR`) has its circuit run through the prover
+at advice read off the cache — a step proof's step circuit at its rule's witness and its slots
+(`stepMainAdviceOf`), a wrap proof's wrap circuit at the step proof it wrapped (`wrapMainAdviceOf`),
+a base case at the cells the cache records and a slot the rule lacks at the dump's padding —
+compiled as the capstones compile it (`runMain`): the capstones' hypothesis that its constraints
+hold under the prover's valuation is decided (`Snarky.Kimchi.KimchiConstraint.decidableHolds`), its
+table against its assembled system (the assignments reduced by `Snarky.Kimchi.reduceSolved`, the
+witness laid out by `Snarky.Kimchi.makeWitness`), and its public input against the cached proof's;
+and the capstones' hypotheses on its cells (`stepHyps`, `wrapHyps`, through
+`Snarky.CircuitType.decidableReads`, and `Pickles.KeyReads.of_readPt` for a slot's key cells,
+compared by `Pickles.instDecidableEqVkComms`); and what the capstones conclude, against the cache
+(`stepConclusions`, `wrapConclusions`): the cells read off the cached proofs
+(`Pickles.IvpProof.read_eq`, `Pickles.OldsRead.of_readPt`), the finalize cells hold their
+evaluations (`Kimchi.Verifier.instDecidableEqProofEvaluations`,
 `Kimchi.Verifier.instDecidableEqPointEvaluations`, at the memoised Lagrange points of
-`Pickles.pubEvalsWith`, by `Pickles.pubEvalsWith_lagrangePoints`), and `Guards` and
-`kimchiVerify` hold of them, which gives `SgOk` (`Pickles.sgOkWith_of_kimchiVerifyWith`); and the
-handover: each verified proof's accumulator is the next proof's old accumulator of its slot
-(`PicklesFixture.carries`), which with its `SgOk` passes `accOk`
-(`Pickles.accOk_of_carryWith`), an unlinked one passing `accOk` on its own
+`Pickles.pubEvalsWith`, by `Pickles.pubEvalsWith_lagrangePoints`), and `Guards` and `kimchiVerify`
+hold of them, which gives `SgOk` (`Pickles.sgOkWith_of_kimchiVerifyWith`); and the handover: each
+verified proof's accumulator is the next proof's old accumulator of its slot
+(`PicklesFixture.carries`, at the memoised points by `Pickles.carryWith_lagrangePoints`), which with
+its `SgOk` passes `accOk` (`Pickles.accOk_of_carryWith`), an unlinked one passing `accOk` on its own
 (`PicklesFixture.padOkMemo`). Each proof's `sg` multi-scalar multiplication runs once, inside
-`kimchiVerify`, and the Lagrange points every proof reads are computed before the pool. On
-`LINKS_JOBS` workers (4); a cached proof in no link fails the run.
+`kimchiVerify`, and the Lagrange points every proof reads are computed before the pool, from the SRS
+(`Bulletproof.Fixture.SRSLoader.loadSRS`) and memoised under `lagrange-cache/`
+(`Bulletproof.Fixture.lagrangeBasisCached`). On `LINKS_JOBS` workers (4); a cached proof in no link
+fails the run.
 
 Run from `formal/`:  PICKLES_DUMP_DIR=<dir> lake exe check-tags
 (`BULLETPROOF_FIXTURES_DIR` overrides the blinding bases' fixtures.)

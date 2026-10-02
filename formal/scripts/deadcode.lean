@@ -19,8 +19,9 @@ by class resolution, not by name).
 Every package is audited. A root is in a manifest for one of four reasons, and the manifests'
 sections say which:
 
-* the two pickles capstones (`stepProof_kimchiVerify_vesta`, `wrapProof_kimchiVerify_pallas`),
-  from which the whole in-circuit verifier must stay reachable;
+* the four pickles capstones (`stepWrap_kimchiVerify`, `wrapStep_kimchiVerify` and the two
+  `mem_olds_or_collision` handovers), from which the whole in-circuit verifier must stay
+  reachable;
 * a gadget's soundness or completeness result — kept even where nothing consumes it yet, so
   that a gadget and its proofs stand or fall together;
 * a name one of the CI check scripts consumes (the `script-surface` blocks);

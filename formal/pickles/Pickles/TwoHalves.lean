@@ -33,8 +33,8 @@ it is `kimchiVerify`'s acceptance at honest claims (`twoHalves_kimchiVerify`).
   inputs only; the bit its circuit produces is an argument of the read. The wire recomputes
   what the cells claim (`ClaimsHonest`), and the theorems force the cells to it.
 
-The half modules discharge each read from its circuit, and `stepProof_kimchiVerify_vesta`,
-`wrapProof_kimchiVerify_pallas` compose both circuits into the top-level theorems.
+The half modules discharge each read from its circuit, and `stepWrap_kimchiVerify`,
+`wrapStep_kimchiVerify` compose both circuits into the top-level theorems.
 
 ## The direction
 

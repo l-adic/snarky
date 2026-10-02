@@ -168,19 +168,6 @@ instance instBranchDataCircuitType {F f w b vb : Type} [CircuitType F f w] [Circ
     CircuitType F (BranchData f b) (BranchData w vb) :=
   CircuitType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
 
-/-- The branch data's check, through the same decomposition: nothing on the log2, the
-boolean constraint on each mask bit.
-
-The deployed check also range-checks the log2 by expanding its 16 bits through the endo at one
-row; `toField_spec` is proved at 8 rows only, so that check is absent here and this one emits
-fewer rows. The deployed allocation also puts the mask bits before the log2, a variable order
-a dump comparison would see. -/
-instance instBranchDataCheckedType {F c f w b vb : Type} [Field F]
-    [BasicSystem F c] [ConstraintHolds F c] [CircuitType F f w] [CircuitType F b vb]
-    [CheckedType F c f w]
-    [CheckedType F c b vb] : CheckedType F c (BranchData f b) (BranchData w vb) :=
-  CheckedType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
-
 /-- A wrap statement's deferred values are the deferred values and the branch data. -/
 def WrapDeferredValues.equivProd (k : ℕ) (f bc sf : Type) :
     WrapDeferredValues k f bc sf ≃ DeferredValues k f sf × BranchData f bc :=
@@ -287,30 +274,6 @@ theorem StepStatement.toList_valueToFields {F u vu f w : Type} {n : ℕ} [Circui
           ((x.proofState.unfinalizedProofs, x.proofState.messagesForNextStepProof),
             x.messagesForNextWrapProof)).toList :=
   rfl
-
-/-! ## The scalar half's input -/
-
-/-- What a circuit's scalar half is given for one slot: its deferred claims, the evaluations
-and the previous challenges. -/
-structure FopInput (k nc : ℕ) (f bc sf : Type) where
-  /-- The slot's deferred claims. -/
-  claims : UnfinalizedProof k f bc sf
-  /-- The evaluation cells, at `nc` chunks. -/
-  evals : ChunkedEvals nc f
-  /-- The previous challenges, one vector per slot. -/
-  prev : Vector (Vector f k) MaxProofsVerified
-
-/-- A scalar half's input is its claims, its evaluations and its previous challenges. -/
-def FopInput.equivProd (k nc : ℕ) (f bc sf : Type) :
-    FopInput k nc f bc sf ≃
-      UnfinalizedProof k f bc sf × ChunkedEvals nc f × Vector (Vector f k) MaxProofsVerified :=
-  ⟨fun i => (i.claims, i.evals, i.prev), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
-   fun _ => rfl⟩
-
-instance instFopInputCircuitType {F f w b vb sv sf : Type} {k nc : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] [CircuitType F sv sf] :
-    CircuitType F (FopInput k nc f b sv) (FopInput k nc w vb sf) :=
-  CircuitType.ofEquiv (FopInput.equivProd k nc f b sv) (FopInput.equivProd k nc w vb sf)
 
 /-! ## The opening -/
 

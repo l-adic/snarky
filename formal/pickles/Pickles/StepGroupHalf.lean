@@ -10,44 +10,14 @@ The step circuit's `verifyProof` at a key: the deployed Pallas constants, the SR
 blinding base as a constant cell, and the public-input commitment table computed from the key's
 Lagrange points (`XhatTable.ofKeyKnown`). The public input is the wrap circuit's packed statement,
 flattened (`stepPublicInput`), and what the table reads as is proved from the key's invariants
-rather than assumed (`verifyProofAt_reads`).
-
-`WrapProof.groupCircuit` is the gadget as a circuit of its input, its success bit asserted;
-its read `WrapProof.groupCircuit_reads` is what `wrapProof_kimchiVerify_pallas` compiles.
+rather than assumed (`verifyProofAt_reads`), the read the step circuit's slot read composes
+(`verifyOne_reads`).
 -/
 
 namespace Pickles
 
 open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
-
-/-- The input of the step circuit's group half, over cells `f` and bits `b`: a wrap statement
-at `ks` rounds, and a wrap proof at `kw` rounds whose commitments have `nc` chunks each. -/
-structure StepGroup (ks kw nc : ℕ) (f b : Type) where
-  /-- The wrap statement: the verified proof's public input. -/
-  statement : WrapStatement ks f b (Type1 f)
-  /-- The unfinalized proof the wrap proof is checked against: the step statement's slot. -/
-  claims : UnfinalizedProof kw f b (Type2 (SplitField f b))
-  /-- The wrap proof. -/
-  proof : IvpProof kw nc f (Type2 (SplitField f b))
-  /-- The old accumulators' `sg` points, one per slot. -/
-  sgOld : Vector (AffinePoint f) MaxProofsVerified
-  /-- Whether the slot is a base case: the negation of its must-verify flag. -/
-  isBaseCase : b
-
-/-- `StepGroup` as the tuple of its fields. -/
-def StepGroup.equivProd (ks kw nc : ℕ) (f b : Type) :
-    StepGroup ks kw nc f b ≃
-      WrapStatement ks f b (Type1 f) × UnfinalizedProof kw f b (Type2 (SplitField f b)) ×
-        IvpProof kw nc f (Type2 (SplitField f b)) × Vector (AffinePoint f) MaxProofsVerified ×
-          b :=
-  ⟨fun g => (g.statement, g.claims, g.proof, g.sgOld, g.isBaseCase),
-   fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2⟩, fun _ => rfl, fun _ => rfl⟩
-
-instance instStepGroupCircuitType {F : Type} {ks kw nc : ℕ} [CircuitType F Bool (BoolVar F)] :
-    CircuitType F (StepGroup ks kw nc F Bool) (StepGroup ks kw nc (FVar F) (BoolVar F)) :=
-  CircuitType.ofEquiv (StepGroup.equivProd ks kw nc F Bool)
-    (StepGroup.equivProd ks kw nc (FVar F) (BoolVar F))
 
 /-- The public-input commitment table at a key, computed from the key's Lagrange
 points at the statement's packing, one point per packed scalar. It reads the packing's kinds,
@@ -100,23 +70,6 @@ theorem stepPublicInput_congr_msg {ks : ℕ} (V : Valuation Fp)
     stepPublicInput V { st with messagesForNextStepProof := a }
       = stepPublicInput V { st with messagesForNextStepProof := b } := by
   simp only [stepPublicInput, WrapStatement.toPacked, h]
-
-/-- The public input has a cell per packed scalar: the packed statement, then the
-optional-feature cells. -/
-theorem packed_length_le_stepPublicInput {ks : ℕ} (V : Valuation Fp)
-    (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
-    CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ (stepPublicInput V st).size := by
-  have hs : (stepPublicInput V st).size = CircuitType.size Fq (Vector (Type1 Fq) 5 ×
-      Vector Fq 2 × Vector Fq 3 × Vector Fq 3 × Vector Fq ks × Fq × Vector Fq 8 × Fq × Fq) := by
-    simp only [stepPublicInput, Vector.size_toArray]
-    rfl
-  have h1 : CircuitType.size Fq Fq = 1 := rfl
-  have ht : CircuitType.size Fq (Type1 Fq) = 1 := rfl
-  have h1' : CircuitType.size Fp Fp = 1 := rfl
-  have ht' : CircuitType.size Fp (Type1 Fp) = 1 := rfl
-  rw [hs]
-  simp only [CircuitType.size_prod, CircuitType.size_vector, h1, ht, h1', ht']
-  omega
 
 /-- **The packed statement is the leaves' public input, then zero cells.** Flattened, `toPacked`
 is the public input the leaves commit to (`pubOf`), followed by the optional-feature cells, all
@@ -437,122 +390,6 @@ theorem verifyProofWith_success_bit {ks k nc np : ℕ} {V : Valuation Fp}
       isBaseCase statement u cells
     ⦃⇓ v _ => ⌜∃ b : Bool, (↑v : CVar Fp).val V = bit b⌝⦄ :=
   verifyProof_success_bit _ _ _ _ _ _ _ _ _ _ _ _ _
-
-/-! ## The circuit of its input -/
-
-namespace WrapProof
-
-variable {ks k nc : ℕ}
-
-/-- The group circuit's input: a `StepGroup` of values, allocated with no check. -/
-abbrev GroupIn (ks k nc : ℕ) : Type := UnChecked (StepGroup ks k nc Fp Bool)
-/-- `GroupIn`, as cells. -/
-abbrev GroupVar (ks k nc : ℕ) : Type := UnChecked (StepGroup ks k nc (FVar Fp) (BoolVar Fp))
-
-/-- The wrap statement: the verified proof's public input. -/
-def GroupVar.statement (g : GroupVar ks k nc) :
-    WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) := g.val.statement
-/-- The slot's deferred claims. -/
-def GroupVar.claims (g : GroupVar ks k nc) :
-    UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
-  g.val.claims
-/-- Whether the slot is a base case. -/
-def GroupVar.isBaseCase (g : GroupVar ks k nc) : BoolVar Fp := g.val.isBaseCase
-open scoped Kimchi in
-/-- The wrap proof's witness commitments, `nc` chunks each. -/
-def GroupVar.wComm (g : GroupVar ks k nc) : Vector (Vector (AffinePoint (FVar Fp)) nc) wCols :=
-  g.val.proof.wComm
-/-- The wrap proof's permutation-accumulator commitment, `nc` chunks. -/
-def GroupVar.zComm (g : GroupVar ks k nc) : Vector (AffinePoint (FVar Fp)) nc :=
-  g.val.proof.zComm
-open scoped Kimchi in
-/-- The wrap proof's `7 · nc` quotient chunks. -/
-def GroupVar.tComm (g : GroupVar ks k nc) : Vector (AffinePoint (FVar Fp)) (quotChunks * nc) :=
-  g.val.proof.tComm
-/-- The wrap proof's opening. -/
-def GroupVar.opening (g : GroupVar ks k nc) :
-    BulletproofOpening k (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
-  g.val.proof.opening
-/-- The old accumulators' `sg` cells, one per slot. -/
-def GroupVar.sgOld (g : GroupVar ks k nc) : Vector (AffinePoint (FVar Fp)) MaxProofsVerified :=
-  g.val.sgOld
-/-- The shifted scalars the block scales by: the claims' `perm`, `ζ^{2^k}`, `ζⁿ`, `cip`, `b`
-and the opening's `z₁`, `z₂`. -/
-def GroupVar.shifted (g : GroupVar ks k nc) :
-    List (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
-  let dv := g.claims.deferredValues
-  [dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize, dv.combinedInnerProduct,
-   dv.b, g.opening.z1, g.opening.z2]
-/-- What `incrementallyVerifyProof` consumes: the claims, every `sg` unmasked, the key's
-cells and the proof. -/
-def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fp))) (g : GroupVar ks k nc) :
-    IvpInput k nc MaxProofsVerified (FVar Fp) (BoolVar Fp)
-      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
-  ivpInputOf g.claims.deferredValues (g.sgOld.map (none, ·)) keyCells g.val.proof
-/-- The group circuit as a `GroupHalf`. -/
-abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k nc) :
-    GroupHalf IpaPallas.curve (Type2 (SplitField (FVar Fp) (BoolVar Fp))) k :=
-  GroupHalf.step V g.claims
-
-/-- `verifyProofWith` as a circuit of its input, its success bit asserted, at the blinding base
-`h` and the Lagrange points `lagrange`: what a driver runs at points it computed once. Before
-it, the shifted scalars' parity cells are asserted boolean (`assertClaimBitsStep`), the
-allocation check the deployed circuit's split type makes and this harness's unchecked input
-lacks. -/
-def groupCircuitWith {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
-    [KimchiSystem Fp c]
-    (h : IpaPallas.curve.Point)
-    (lagrange : Vector (Vector IpaPallas.curve.Point nc)
-      (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
-    (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
-    (g : GroupVar ks k nc) : CircuitM Fp c Unit := do
-  assertClaimBitsStep g.shifted
-  let v ← verifyProofWith h lagrange spongeAfterIndex g.isBaseCase g.statement g.claims
-    (g.cells keyCells)
-  assert v
-
-/-- `groupCircuitWith` at the SRS blinding base and the key's Lagrange points, one per packed
-scalar: `verifyProofAt` as a circuit of its input. -/
-def groupCircuit {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
-    [KimchiSystem Fp c]
-    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
-    (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
-    (g : GroupVar ks k nc) : CircuitM Fp c Unit :=
-  groupCircuitWith σ.h
-    (cvk.lagrangePoints σ (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
-    keyCells spongeAfterIndex g
-
-/-- **The group circuit's read**: the group half's read at a bit that reads `1`. -/
-theorem groupCircuit_reads {V : Valuation Fp} (S : Srs IpaPallas.curve)
-    (K : Key IpaPallas.curve nc) (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
-    (cp : KimchiProof IpaPallas.curve nc S.σ.k)
-    (keyCells : VkComms nc (AffinePoint (FVar Fp))) (spongeAfterIndex : SpongeVar Fp)
-    (g : GroupVar ks S.σ.k nc)
-    (hbase : CircuitType.Reads V g.isBaseCase false)
-    (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.σ.k)
-    (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.cvk.n)
-    (havoid : S.σ.Avoids (stepRelationsAt S.σ K.cvk g.statement))
-    (hivp : (∀ x ∈ g.shifted, (stepSide V).ClaimOk x) →
-      ∃ oldsW, IvpHyps (stepSide V) S.σ K.cvk cp (stepPublicInput V g.statement) false
-        spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :
-    ⦃⌜True⌝⦄
-    groupCircuit (c := Builder V (KimchiConstraint Fp)) S.σ K.cvk keyCells spongeAfterIndex g
-    ⦃⇓ _ _ => ⌜∃ v : BoolVar Fp,
-      (g.half V).Reads S.σ K.cvk cp (stepPublicInput V g.statement) v ∧
-        (↑v : CVar Fp).val V = 1⌝⦄ := by
-  simp only [groupCircuit, groupCircuitWith]
-  refine builder_spec_bind_of _ _ _ _ (assertClaimBitsStep_spec (V := V) g.shifted)
-    fun hclaimOk _ => ?_
-  obtain ⟨oldsW, hivp⟩ := hivp hclaimOk
-  have hv := verifyProofAt_reads (V := V) S K hnc cp spongeAfterIndex g.isBaseCase g.statement
-    g.claims (g.cells keyCells) oldsW hbase hsmall hn havoid hivp
-  unfold verifyProofAt at hv
-  mvcgen -trivial [hv]
-  rename_i v _ hr _ _
-  intro h1
-  exact ⟨v, hr, h1⟩
-
-end WrapProof
 
 /-! The gadget is sealed after its read: a consumer composes `verifyProofAt_reads`, never the
 body. -/

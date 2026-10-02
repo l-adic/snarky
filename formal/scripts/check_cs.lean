@@ -1807,9 +1807,9 @@ def ivpWrapCircuit (pts : Array XhatWrapCurve.Point) (h : AffinePoint (FVar Fq))
 
 /-! ## The wrap circuit's verify block
 
-Transcribes `Pickles.CircuitDiffs.PureScript.WrapVerify`: `Pickles.wrapVerifyWith` — the gadget
-`wrapVerifyAt` is at an environment's data — at the dump's points, over `ivp_wrap_circuit`'s
-input, now with one real accumulator, its `sg_old` under a constant keep bit. -/
+Transcribes `Pickles.CircuitDiffs.PureScript.WrapVerify`: `Pickles.wrapVerifyWith` at the dump's
+points, over `ivp_wrap_circuit`'s input, now with one real accumulator, its `sg_old` under a
+constant keep bit. -/
 
 /-- The message-hash sponge `wrap_verify_circuit` starts from: the state after absorbing the
 one dummy challenge vector that pads its single real slot to `MaxProofsVerified` (PS
