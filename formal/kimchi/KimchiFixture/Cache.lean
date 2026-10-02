@@ -9,7 +9,8 @@ The pickles test suite memoises every kimchi proof it produces under
 `packages/snarky-kimchi/src/Snarky/Backend/Kimchi/ProofCache.purs`:
 `{ "<vkDigest>": { "<publicInput>": entry } }`. An entry holds the verification key's JSON,
 the proof's serde JSON, and links to the proofs it is built on (`step` on a wrap proof,
-`prevs` on a step proof). This module reads a file into `Entry` records.
+`prevs` on a step proof, which also carries its application rule's witness, `rule`). This
+module reads a file into `Entry` records.
 
 Two encodings meet here:
 
@@ -141,6 +142,14 @@ private def parsePublicInput (C : Ipa.KimchiCurve) (s : String) :
     | some v => pure (v : C.ScalarField)
     | none => throw s!"public input: not a numeral: {t.take 40}"
 
+/-- A step proof's application rule at that proof: its input's cells and the values of its
+allocations, in order, as the rule's dump numbers its variables. -/
+structure RuleWitness (C : Ipa.KimchiCurve) where
+  /-- The input's cells. -/
+  input : Array C.ScalarField
+  /-- The allocations' values, in order. -/
+  values : Array C.ScalarField
+
 /-- One cached proof, decoded: its key, its records, and the proofs it is built on. -/
 structure Entry (C : Ipa.KimchiCurve) where
   /-- The verification key's digest, as the cache keys it. -/
@@ -158,6 +167,8 @@ structure Entry (C : Ipa.KimchiCurve) where
   /-- Per slot of this (step) proof, the cache key of the wrap proof it verified there —
   `none` on a base-case slot. -/
   prevs : Array (Option (String × String))
+  /-- The rule's witness, on a step proof. -/
+  rule : Option (RuleWitness C)
 
 /-- A link: the cache key of another entry. -/
 private def parseRef (j : Json) : Except String (String × String) := do
@@ -178,9 +189,18 @@ private def parseEntry (C : Ipa.KimchiCurve) (endo : C.ScalarField)
     | some pj => parseArrOf (fun r => match r with
         | Json.null => pure none
         | _ => some <$> parseRef r) pj
+  let numeral (j : Json) : Except String C.ScalarField := do
+    let t ← j.getStr?
+    match t.toNat? with
+    | some v => pure (v : C.ScalarField)
+    | none => throw s!"rule witness: not a numeral: {t.take 40}"
+  let rule ← match (e.getObjVal? "rule").toOption with
+    | some Json.null | none => pure none
+    | some rj => pure (some { input := ← parseArrOf numeral (← rj.getObjVal? "input")
+                              values := ← parseArrOf numeral (← rj.getObjVal? "values") })
   return { vkDigest, publicInputKey := pi, publicInput := ← parsePublicInput C pi
            vk := ← parseVK C endo (d : C.BaseField) vkJ
-           proof := ← parseProof C sqrt proofJ, step, prevs }
+           proof := ← parseProof C sqrt proofJ, step, prevs, rule }
 
 /-- Whether a cache entry's verification key lies on `C`: its first σ commitment's
 coordinates satisfy `C`'s equation. -/

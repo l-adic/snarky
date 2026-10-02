@@ -54,14 +54,17 @@ def stepMainDumpCircuit {n : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inV
     [CheckedType Fp C inVal inVar] {outVal outVar : Type} [CircuitType Fp outVal outVar]
     {ss : Fin n → ℕ} {ncs : ℕ} (w : ℕ) (hw : w ≤ MaxProofsVerified) (k : StepMainConsts n ncs)
     (dummyUnf : UnfVal 15)
-    (rule : inVar → CircuitM Fp C (((i : Fin n) → PrevStatement (ss i)) × outVar)) :
+    (rule : inVar → CircuitM Fp C (((i : Fin n) → PrevStatement (ss i)) × outVar))
+    (adv : StepMainAdvice n w (SlotSource.widths w fun i => k.slots[i].source) 1 ncs 15
+      StepIPARounds inVal :=
+      ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+        AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩) :
     Unit → CircuitM Fp C (StepStatement (UnfVar 15) (FVar Fp) w) := fun u =>
   Prod.fst <$> stepMainCircuit (n := n) (w := w) (ncw := 1) (ncs := ncs) (k := 15)
     (ks := StepIPARounds) (inVal := inVal) (outVal := outVal)
     (fun i => k.slots[i].source) (fun i => k.slots[i].width_le hw) k.h
     (PicklesFixture.fopStepParams ncs) k.ownDomains.list (constPt dummyWrapSgPt) dummyUnf rule
-    ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-      AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩ u
+    adv u
 
 /-- A `wrap_main_*` circuit: `Pickles.wrapMainCircuit` at `bp + 1` branches, `mpv` slots and
 `nc` step chunks, as `wrapStep_kimchiVerify` states it: the branches' domains and key cells are
@@ -76,22 +79,26 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (pins : Vector (Vector (Option ℕ) (bp + 1)) mpv)
     (tables : Vector (Vector (Vector XhatWrapCurve.Point nc)
       (CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv))) (bp + 1))
+    (advW : Pickles.WrapMainAdvice mpv nc 15 16 (slotWidths.map Fin.val).sum)
     (stmt : Pickles.StatementPacked 16 (Type1 (FVar Fq)) (FVar Fq)) :
     CircuitM Fq Cq Unit :=
   Prod.fst <$> Pickles.wrapMainCircuit (branches := bp + 1) (mpv := mpv) (ncStep := nc) (k := 15)
     (ks := 16)
     fopWrapParams widths (Pickles.stepDomainLog2s keys) (Pickles.stepKeyCells keys)
     pins (fun l => tables[(Pickles.stepDomainLog2s keys).toList.idxOf l]?.getD tables[0])
-    k.h k.dummy slotWidths
-    ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-      AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-      AsProver.throw "advice", AsProver.throw "advice"⟩ stmt
+    k.h k.dummy slotWidths advW stmt
 
 /-- A `wrap_main_*` circuit at a dump's constants, with its tables, the shapes the circuit takes
 them in checked: `bp + 1` branches of at most `mpv` slots, `mpv` stack heights of at most
 `MaxProofsVerified`, a pin per branch and slot, `bp + 1` step keys, and a table of one base per
-packed statement cell per branch. -/
-def wrapMainCircuitOf (bp mpv nc : ℕ) (k : WrapMainConsts nc) :
+packed statement cell per branch. Its advice is `adv` at the checked slot widths, inert
+unless given. -/
+def wrapMainCircuitOf (bp mpv nc : ℕ) (k : WrapMainConsts nc)
+    (adv : (slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv) →
+      Pickles.WrapMainAdvice mpv nc 15 16 (slotWidths.map Fin.val).sum := fun _ =>
+      ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+        AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+        AsProver.throw "advice", AsProver.throw "advice"⟩) :
     Except String
       ((Pickles.StatementPacked 16 (Type1 (FVar Fq)) (FVar Fq) → CircuitM Fq Cq Unit) ×
         Vector (Vector (Vector XhatWrapCurve.Point nc)
@@ -108,6 +115,7 @@ def wrapMainCircuitOf (bp mpv nc : ℕ) (k : WrapMainConsts nc) :
   let some tables := wrapMainTables? bp nc m k.lagrange
     | throw (s!"Lagrange bases are not {m} rows of {bp + 1}: " ++
         s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}")
-  return (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths pins tables, tables)
+  return (wrapMainDumpCircuit bp mpv nc k widths keys slotWidths pins tables (adv slotWidths),
+    tables)
 
 end PicklesFixture

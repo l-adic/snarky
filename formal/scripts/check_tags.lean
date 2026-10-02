@@ -22,8 +22,10 @@ import PicklesFixture.Compare
 import PicklesFixture.Mains
 import PicklesFixture.Premises
 import PicklesFixture.Rule
+import PicklesFixture.Advice
+import PicklesFixture.Satisfies
 
-open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Fixture.PS CompElliptic.Fields.Pasta
+open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Fixture Kimchi.Fixture.PS CompElliptic.Fields.Pasta
 open PicklesFixture
 
 /-- A wrap key's digest. -/
@@ -93,7 +95,7 @@ def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (br
   if hw : w ≤ Pickles.MaxProofsVerified then
     let checks := compareWith (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
       (stepMainDumpCircuit (inVal := Vector Fp rule.inputSize)
-        (outVal := Vector Fp rule.publicOutput.size) w hw k dummyUnfN0 (replayRule rule)) raw
+        (outVal := Vector Fp rule.publicOutput.size) w hw k dummyUnfN0 (replayRule rule none)) raw
     return (checks, rule.inputSize + rule.publicOutput.size, slots)
   else throw s!"the tag's width {w} exceeds {Pickles.MaxProofsVerified}"
 
@@ -154,6 +156,78 @@ def checkSources (tags : List TagSummary) : Except String ℕ := do
         count := count + 1
   return count
 
+/-- The inert wrap advice. -/
+def inertWrapAdvice {mpv nc wsum : ℕ} : Pickles.WrapMainAdvice mpv nc 15 16 wsum :=
+  ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+    AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+    AsProver.throw "advice", AsProver.throw "advice"⟩
+
+/-- The links of one tag, run: per cached step proof of each branch, the step circuit at its
+advice and the wrap circuit that wrapped it, each through the prover and its table decided
+against its system, with the runs' phases timed. -/
+def runLinks (name : String) (j : Json) (wraps : Array (Cache.Entry CW))
+    (steps : Array (Cache.Entry CS)) : IO Unit := do
+  let ex {α : Type} (e : Except String α) : IO α := IO.ofExcept (e.mapError (s!"{name}: " ++ ·))
+  let wrapMain ← ex (j.getObjVal? "wrapMain")
+  let wc ← ex (constantsOf "wrapMain" wrapMain)
+  let w := (← ex ((← ex (wc.getObjVal? "slotWidths")).getArr?)).size
+  let branches ← ex ((← ex (j.getObjVal? "branches")).getArr?)
+  let bp := branches.size - 1
+  let some b0 := (← ex ((← ex (wc.getObjVal? "branches")).getArr?))[0]? | throw (IO.userError "")
+  let some l0 := (← ex ((← ex (b0.getObjVal? "lagrange")).getArr?))[0]? | throw (IO.userError "")
+  let nc := (← ex l0.getArr?).size
+  let k ← ex (wrapMainOf nc wrapMain)
+  let wrapKey ← ex (checkedKey Bulletproof.IpaPallas.curve 15 1 (← ex (wrapMain.getObjVal? "key")))
+  let some slotWidths := wrapMainWidths? w Pickles.MaxProofsVerified k.slotWidths
+    | throw (IO.userError s!"{name}: slot widths")
+  let wrapOf (link : String × String) : Option (Cache.Entry CW) :=
+    wraps.find? fun W => W.vkDigest = link.1 ∧ W.publicInputKey = link.2
+  let stepOf (link : String × String) : Option (Cache.Entry CS) :=
+    steps.find? fun S => S.vkDigest = link.1 ∧ S.publicInputKey = link.2
+  for (bj, b) in branches.toList.zipIdx do
+    let rule ← ex (RuleDump.ofJson (← ex (bj.getObjVal? "rule")))
+    let n := rule.prevs.size
+    let stepMainJ ← ex (bj.getObjVal? "stepMain")
+    let ncs ← ex (slotChunks stepMainJ)
+    let kb ← ex (stepMainOf n w ncs stepMainJ)
+    let some stepKey := k.keys[b]? | throw (IO.userError s!"{name}: no step key for branch {b}")
+    let digest := toString stepKey.digest.val
+    for S0 in steps.filter (·.vkDigest = digest) do
+      let tag := s!"{name} branch {b} step {S0.publicInputKey.take 12}…"
+      let prevs (i : Fin n) : Option (Cache.Entry CW × Cache.Entry CS) := do
+        let W ← wrapOf (← (← S0.prevs[i.val]?))
+        let S ← stepOf (← W.step)
+        pure (W, S)
+      let some vals := S0.rule.map (·.values) | throw (IO.userError s!"{tag}: no rule witness")
+      unless vals.size = rule.allocated do
+        throw (IO.userError s!"{tag}: {vals.size} witness values, the rule allocates \
+          {rule.allocated}")
+      match stepMainAdviceOf w kb rule.inputSize wrapKey S0 prevs with
+      | .error e => IO.println s!"· {tag}: step circuit skipped: {e}"
+      | .ok adv =>
+        if hw : w ≤ Pickles.MaxProofsVerified then
+          let t0 ← IO.monoMsNow
+          let (sat, _) ← runHalf fpSide
+            (stepMainDumpCircuit (inVal := Vector Fp rule.inputSize)
+              (outVal := Vector Fp rule.publicOutput.size) w hw kb dummyUnfN0
+              (replayRule rule (some vals)) adv)
+            (fun _ => []) ()
+          IO.println s!"{if sat then "✓" else "✗"} {tag}: step circuit {(← IO.monoMsNow) - t0} ms"
+        else throw (IO.userError s!"{name}: width {w}")
+      let some W0 := wraps.find? (·.step = some (S0.vkDigest, S0.publicInputKey))
+        | IO.println s!"· {tag}: no wrap proof wraps it"; continue
+      let prevsW (jw : Fin w) : Option (Cache.Entry CW) :=
+        if jw.val < w - n then none
+        else (S0.prevs[jw.val - (w - n)]?).bind fun l => l.bind wrapOf
+      match wrapMainAdviceOf nc b slotWidths S0 prevsW, wrapInputOf W0 with
+      | .error e, _ | _, .error e => IO.println s!"· {tag}: wrap circuit skipped: {e}"
+      | .ok _, .ok inp =>
+        let (main, _) ← ex (wrapMainCircuitOf bp w nc k fun sw =>
+          (wrapMainAdviceOf nc b sw S0 prevsW).toOption.getD inertWrapAdvice)
+        let t0 ← IO.monoMsNow
+        let (sat, _) ← runHalf fqSide main (fun _ => []) inp
+        IO.println s!"{if sat then "✓" else "✗"} {tag}: wrap circuit {(← IO.monoMsNow) - t0} ms"
+
 def main : IO Unit := do
   let some dir ← IO.getEnv "PICKLES_DUMP_DIR"
     | throw (IO.userError "PICKLES_DUMP_DIR is not set")
@@ -161,6 +235,18 @@ def main : IO Unit := do
   let hStep ← blindingBase Bulletproof.IpaPallas.curve s!"{fdir}/ipa_batch_pallas.json"
   let hWrap ← blindingBase Bulletproof.IpaVesta.curve s!"{fdir}/ipa_batch_vesta.json"
   let apps := (← System.FilePath.readDir dir).qsort (·.fileName < ·.fileName)
+  -- `LINKS=<app>` runs that app's links through the prover instead, timed (measurement)
+  if let some linksApp ← IO.getEnv "LINKS" then
+    let cacheDir := (← IO.getEnv "PICKLES_PROOF_CACHE_DIR").getD
+      "../packages/pickles/test/fixtures/proof-cache"
+    let raw ← IO.FS.readFile s!"{cacheDir}/{linksApp}.json"
+    let (wraps, _) ← IO.ofExcept (Cache.parseFile CW fqSide.endo pallasBase.sqrt? raw)
+    let (steps, _) ← IO.ofExcept (Cache.parseFile CS fpSide.endo vestaBase.sqrt? raw)
+    for tag in (← (System.FilePath.mk dir / linksApp).readDir).qsort (·.fileName < ·.fileName) do
+      unless tag.path.extension == some "json" do continue
+      runLinks s!"{linksApp}/{tag.path.fileStem.getD tag.fileName}"
+        (← IO.ofExcept (Json.parse (← IO.FS.readFile tag.path))) wraps steps
+    return
   let mut failures := 0
   let mut circuits := 0
   let mut slots := 0

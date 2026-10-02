@@ -7,6 +7,7 @@ import PicklesFixture.Compare
 import PicklesFixture.Mains
 import PicklesFixture.Premises
 import PicklesFixture.Proofs
+import PicklesFixture.Advice
 import PicklesFixture.Rule
 
 /-!

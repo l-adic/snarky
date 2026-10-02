@@ -1758,7 +1758,7 @@ def replayedStepMain (w : ℕ) (hw : w ≤ Pickles.MaxProofsVerified)
   let k ← adjust (← stepMainOf rule.prevs.size w 1 j)
   stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
     (stepMainDumpCircuit (inVal := Vector Fp rule.inputSize)
-      (outVal := Vector Fp rule.publicOutput.size) w hw k dummyUnfN0 (replayRule rule)) j
+      (outVal := Vector Fp rule.publicOutput.size) w hw k dummyUnfN0 (replayRule rule none)) j
 
 /-! ## The wrap side's `incrementally_verify_proof`
 
