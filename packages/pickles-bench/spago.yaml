@@ -25,6 +25,8 @@ workspace:
       path: ../curves
     pickles:
       path: ../pickles
+    pickles-circuit-diffs-types:
+      path: ../pickles-circuit-diffs-types
     pickles-linearization-types:
       path: ../pickles-linearization-types
     poseidon:

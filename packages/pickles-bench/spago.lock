@@ -622,6 +622,9 @@
       "pickles": {
         "path": "../pickles"
       },
+      "pickles-circuit-diffs-types": {
+        "path": "../pickles-circuit-diffs-types"
+      },
       "pickles-linearization-types": {
         "path": "../pickles-linearization-types"
       },
@@ -1543,7 +1546,6 @@
       "dependencies": [
         "arrays",
         "blake2",
-        "const",
         "curves",
         "effect",
         "either",
@@ -1552,7 +1554,6 @@
         "exists",
         "foldable-traversable",
         "foreign",
-        "functors",
         "integers",
         "js-bigints",
         "lagrange-cache",
@@ -1563,7 +1564,9 @@
         "node-buffer",
         "node-fs",
         "node-process",
+        "ordered-collections",
         "partial",
+        "pickles-circuit-diffs-types",
         "pickles-linearization-types",
         "poseidon",
         "prelude",
@@ -1579,6 +1582,16 @@
         "tuples",
         "unsafe-coerce",
         "vector-sized"
+      ]
+    },
+    "pickles-circuit-diffs-types": {
+      "type": "local",
+      "path": "../pickles-circuit-diffs-types",
+      "dependencies": [
+        "foreign",
+        "maybe",
+        "prelude",
+        "simple-json"
       ]
     },
     "pickles-linearization-types": {
