@@ -61,7 +61,8 @@ type WrapMainTwoPhaseChainParams =
 
 compileWrapMainTwoPhaseChain
   :: CRS PallasG
-  -> WrapMainTwoPhaseChainParams -> Effect WrapArtifact
+  -> WrapMainTwoPhaseChainParams
+  -> Effect WrapArtifact
 compileWrapMainTwoPhaseChain pallasSrs { vestaSrs, blindingH, makeZeroStepSrsData, incrementStepSrsData } = do
   -- Compile both branches' step CSes. make_zero first (so its artifact
   -- is available for increment's per-branch FOP domain dispatch).

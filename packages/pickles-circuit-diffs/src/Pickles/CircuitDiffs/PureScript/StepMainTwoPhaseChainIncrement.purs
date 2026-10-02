@@ -31,8 +31,8 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
-import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.CircuitDiffs.Types (Constants)
+import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)

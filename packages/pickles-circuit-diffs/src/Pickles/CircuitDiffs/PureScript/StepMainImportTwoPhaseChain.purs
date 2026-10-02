@@ -30,10 +30,10 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, WrapArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
-import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero)
 import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (WrapMainTwoPhaseChainParams, compileWrapMainTwoPhaseChain)
 import Pickles.CircuitDiffs.Types (Constants)
+import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
@@ -106,7 +106,8 @@ type Mpv = 2
 -- | The chain's step circuit.
 compileStepMainImportTwoPhaseChain
   :: CRS PallasG
-  -> StepMainImportTwoPhaseChainParams -> Effect StepArtifact
+  -> StepMainImportTwoPhaseChainParams
+  -> Effect StepArtifact
 compileStepMainImportTwoPhaseChain pallasSrs params =
   _.art <$> compileStepMainImportTwoPhaseChainWithConstants pallasSrs params
 

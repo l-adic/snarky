@@ -27,8 +27,8 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
-import Pickles.Dump.Constants (stepMainConstants)
 import Pickles.CircuitDiffs.Types (Constants)
+import Pickles.Dump.Constants (stepMainConstants)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -69,7 +69,8 @@ type Mpv = 1
 
 compileStepMainTwoPhaseChainMakeZero
   :: CRS PallasG
-  -> StepMainTwoPhaseChainMakeZeroParams -> Effect StepArtifact
+  -> StepMainTwoPhaseChainMakeZeroParams
+  -> Effect StepArtifact
 compileStepMainTwoPhaseChainMakeZero pallasSrs params =
   _.art <$> compileStepMainTwoPhaseChainMakeZeroWithConstants pallasSrs params
 
