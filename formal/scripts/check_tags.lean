@@ -21,13 +21,16 @@ proof's wrap circuit at the step proof it wrapped (`wrapMainAdviceOf`), a base c
 the cache records and a slot the rule lacks at the dump's padding — compiled as the capstones
 compile it (`runMain`): the capstones' hypothesis that its constraints hold under the prover's
 valuation is decided (`Snarky.Kimchi.KimchiConstraint.decidableHolds`), its table against its
-assembled system, and its public input against the cached proof's, on `LINKS_JOBS` workers (4).
-A cached proof in no link fails the run.
+assembled system, and its public input against the cached proof's; and the capstones' hypotheses
+on its cells (`stepHyps`, `wrapHyps`, through `Snarky.CircuitType.decidableReads`, and
+`Pickles.KeyReads.of_readPt` for a slot's key cells, compared by `Pickles.instDecidableEqVkComms`),
+on `LINKS_JOBS` workers (4). A cached proof in no link fails the run.
 
 Run from `formal/`:  PICKLES_DUMP_DIR=<dir> lake exe check-tags
 (`BULLETPROOF_FIXTURES_DIR` overrides the blinding bases' fixtures.)
 -/
 import KimchiFixture.PS
+import Pickles.StepWrap
 import PicklesFixture.Compare
 import PicklesFixture.Fop
 import PicklesFixture.Premises
@@ -172,15 +175,82 @@ def checkSources (tags : List TagSummary) : Except String ℕ := do
   return count
 
 /-- A main circuit's run, judged against the cached proof it makes: its compiled constraints
-hold under the prover's valuation, its table satisfies its system, and its public input is the
-cached proof's `pub`; printed under `tag`. -/
+hold under the prover's valuation, its table satisfies its system, its public input is the
+cached proof's `pub`, and every capstone hypothesis in `hyps` holds of its cells; printed under
+`tag`, with each failed hypothesis named. -/
 def verdict {F bv α : Type} [DecidableEq F] (tag : String) (r : MainRun F bv α) (pub : Array F)
-    (ms : ℕ) : IO Bool := do
+    (hyps : List (String × Bool)) (ms : ℕ) : IO Bool := do
   let pubOk := decide (r.pub = pub.toList)
-  let ok := r.holds && r.satisfies && pubOk
+  let failed := hyps.filter (!·.2)
+  let ok := r.holds && r.satisfies && pubOk && failed.isEmpty
   IO.println s!"{if ok then "✓" else "✗"} {tag} {ms} ms: constraints hold {r.holds}, table \
-    satisfies {r.satisfies}, public input is the cached proof's {pubOk}"
+    satisfies {r.satisfies}, public input is the cached proof's {pubOk}, \
+    {hyps.length - failed.length}/{hyps.length} link hypotheses"
+  for (label, _) in failed do IO.println s!"    ✗ {label}"
   return ok
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- What `stepWrap_kimchiVerify` and `wrapStep_kimchiVerify` assume of a step circuit's cells,
+decided under its valuation `V`: its statement reads the step proof's public input `pub`, and per
+slot verifying a cached wrap proof, the slot is marked must-verify, its key `K` (`Key.check` of
+the slot's key) runs at one chunk, the slot's key cells read as `K` (`KeyReads.of_readPt`'s
+premises), its proof mask reads, and the statement the slot rebuilds packs to that wrap proof's
+public input. A base case is not marked must-verify. -/
+def stepHyps {n w ncs : ℕ} {ss : Fin n → ℕ} {sa : ℕ} (hw : w ≤ Pickles.MaxProofsVerified)
+    (k : StepMainConsts n ncs) (V : Valuation Fp)
+    (out : Pickles.StepMainOut n w (Pickles.SlotSource.widths w fun i => k.slots[i].source) ss sa
+      1 ncs 15 Pickles.StepIPARounds)
+    (pub : Array Fp) (prevs : Vector StepPrev n) : List (String × Bool) :=
+  ("its statement reads its public input",
+    decide ((mapVec (·.val V) (CircuitType.varToFields (F := Fp)
+      (val := Pickles.StepStatement (Pickles.UnfVal 15) Fp w) out.out)).toList = pub.toList)) ::
+  (List.finRange n).flatMap fun i =>
+    let mv := decide (CircuitType.Reads V (out.prevs i).mustVerify true)
+    match prevs[i] with
+    | .baseCase _ => [(s!"slot {i}: its base case is not must-verify", !mv)]
+    | .proof W _ =>
+      match Pickles.Key.check k.slots[i].key with
+      | none => [(s!"slot {i}: its key is checked", false)]
+      | some K =>
+        let cells := k.slots[i].source.keyCells out.vk.points
+        let inp := Pickles.slotInput (k.slots[i].width_le hw) (Pickles.constPt dummyWrapSgPt)
+          (out.prevs i) (out.slots i) out.unfs[i] out.msgs[i]
+        let ms := CircuitType.readVal V inp.proofMask
+        [(s!"slot {i}: it must verify", mv),
+         (s!"slot {i}: its key runs at one chunk",
+           decide (1 = Kimchi.Verifier.chunkCount 15 K.cvk.domainLog2)),
+         (s!"slot {i}: its key cells lie on the curve", cells.indexPoints.all fun p =>
+           decide (OnCurve Bulletproof.IpaPallas.curve.E.A Bulletproof.IpaPallas.curve.E.B
+             (p.x.val V, p.y.val V))),
+         (s!"slot {i}: its key cells read as its key",
+           decide (cells.map (Pickles.readPt (C := Bulletproof.IpaPallas.curve) V) = K.cvk.comms)),
+         (s!"slot {i}: its proof mask reads", decide (CircuitType.Reads V inp.proofMask ms)),
+         (s!"slot {i}: its wrap proof is made at the statement it rebuilds",
+           decide ((CircuitType.valueToFields (F := Fq) (inp.packedAt K.cvk V ms)).toList =
+             W.publicInput.toList))]
+
+/-- What `stepWrap_kimchiVerify` and `wrapStep_kimchiVerify` assume of a wrap circuit's cells,
+decided under its valuation `V`: its branch index reads `b`, its step statement reads as the step
+proof's public input `pub` (`StepStatement.ofWrap`), and per step slot `i` verifying a cached wrap
+proof, its wrap slot is pinned, on branch `b`, at the domain of the slot's key. -/
+def wrapHyps {bp mpv nc n ncs : ℕ} {slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv}
+    (b : ℕ) (k : StepMainConsts n ncs) (V : Valuation Fq)
+    (fin : Pickles.WrapMainFinalizeOut (bp + 1) mpv nc 15 slotWidths)
+    (ver : Pickles.WrapMainVerifyOut mpv nc 15 16) (pub : Array Fp) (prevs : Vector StepPrev n) :
+    List (String × Bool) :=
+  ("its branch index reads its branch", decide (fin.whichBranch.val V = (b : Fq))) ::
+  ("its step statement reads the step proof's public input",
+    decide ((CircuitType.valueToFields (F := Fp)
+      (Pickles.StepStatement.ofWrap V ver.statement)).toList = pub.toList)) ::
+  (List.finRange n).flatMap fun i =>
+    match prevs[i], Pickles.Key.check k.slots[i].key with
+    | .baseCase _, _ => []
+    | .proof _ _, none => [(s!"slot {i}: its key is checked", false)]
+    | .proof _ _, some K =>
+      [(s!"slot {i}: its wrap slot is pinned at its key's domain",
+        match (fin.slots[mpv - n + i.val]?).bind (·.pins[b]?) with
+        | some (some j) => decide (Pickles.wrapDomainLog2s[j]? = some K.cvk.domainLog2)
+        | _ => true)]
 
 /-- The links of one tag, as jobs: per cached step proof of each branch, the step circuit at
 its advice, and the wrap circuit at the wrap proof that wrapped it, each through the prover and
@@ -233,7 +303,8 @@ def linkJobs (name : String) (j : Json) (wraps : Array (Cache.Entry CW))
             (outVal := Vector Fp rule.publicOutput.size) (fun i => kb.slots[i].source)
             (fun i => kb.slots[i].width_le hw) kb.h (fopStepParams ncs) kb.ownDomains.list
             (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule (some vals)) adv u) ()
-        verdict s!"{tag}: step circuit" r S0.publicInput ((← IO.monoMsNow) - t0)
+        verdict s!"{tag}: step circuit" r S0.publicInput
+          (stepHyps hw kb r.V r.result.1.2 S0.publicInput prevs) ((← IO.monoMsNow) - t0)
       let some W0 := wraps.find? (·.step = some (S0.vkDigest, S0.publicInputKey)) | continue
       covered := (W0.vkDigest, W0.publicInputKey) :: covered
       jobs := jobs.push do
@@ -246,7 +317,9 @@ def linkJobs (name : String) (j : Json) (wraps : Array (Cache.Entry CW))
           (fun stmt => Pickles.wrapMainCircuit (k := 15) (ks := 16) fopWrapParams sh.widths
             (Pickles.stepDomainLog2s sh.keys) (Pickles.stepKeyCells sh.keys) sh.pins sh.lagrange
             k.h k.dummy sh.slotWidths advW stmt) inp
-        verdict s!"{tag}: wrap circuit" r W0.publicInput ((← IO.monoMsNow) - t0)
+        verdict s!"{tag}: wrap circuit" r W0.publicInput
+          (wrapHyps b kb r.V r.result.1.2.1 r.result.1.2.2 S0.publicInput prevs)
+          ((← IO.monoMsNow) - t0)
   return (jobs, covered)
 
 /-- Every link of the apps `apps` under `dir`, run on `nJobs` workers against the apps' proof
@@ -275,7 +348,8 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
   unless uncovered = 0 && oks.all id do
     throw (IO.userError s!"links FAILED ({oks.toList.count false} run(s), {uncovered} uncovered)")
   IO.println s!"✓ {jobs.size} run(s): every compiled system holds under its prover's valuation, \
-    every table satisfies its system, every public input is its cached proof's"
+    every table satisfies its system, every public input is its cached proof's, every link \
+    hypothesis holds"
 
 def main : IO Unit := do
   let some dir ← IO.getEnv "PICKLES_DUMP_DIR"

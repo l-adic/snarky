@@ -292,6 +292,28 @@ theorem commReads_readPt {C : KimchiCurve} {V : Valuation C.BaseField}
     CommReads C V cells (cells.map (readPt V)) :=
   List.forall₂_map_right_iff.mpr (List.forall₂_same.mpr fun p hp => onCurveAt_readPt (h p hp))
 
+/-- Key cells on the curve, whose points are the key's commitments, read as the key. -/
+theorem KeyReads.of_readPt {C : KimchiCurve} {V : Valuation C.BaseField} {nc : ℕ}
+    {key : VkComms nc (AffinePoint (FVar C.BaseField))} {cvk : KimchiVK C nc}
+    (hon : ∀ p ∈ key.indexPoints, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V))
+    (hread : key.map (readPt V) = cvk.comms) : KeyReads C V key cvk := by
+  have hcol : ∀ {m : ℕ} (cols : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m)
+      (Ps : Vector (Vector C.Point nc) m), cols.map (·.map (readPt V)) = Ps →
+      (∀ c ∈ cols.toList, ∀ p ∈ c.toList, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V)) →
+      ColumnsRead C V cols Ps := by
+    intro m cols Ps h hon i
+    subst h
+    simpa [Vector.toList_map] using
+      commReads_readPt (hon _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem i.isLt)))
+  have hmem : ∀ c ∈ key.sigmaComm.toList ++ key.coefficientsComm.toList ++ key.selectors.toList,
+      ∀ p ∈ c.toList, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V) :=
+    fun c hc p hp => hon p (List.mem_flatMap.mpr ⟨c, hc, hp⟩)
+  simp only [VkComms.map, KimchiVK.comms, VkComms.mk.injEq] at hread
+  obtain ⟨hσ, hc, hg, hp, ha, hm, he, hs⟩ := hread
+  refine ⟨hcol _ _ hσ fun c h => hmem c (by simp [h]),
+    hcol _ _ hc fun c h => hmem c (by simp [h]), hcol _ _ ?_ fun c h => hmem c (by simp [h])⟩
+  simp [VkComms.selectors, KimchiVK.comms, hg, hp, ha, hm, he, hs]
+
 /-- The wire proof the cells `pr` hold, beside the evaluations and old accumulators other cells
 hold: each point cell reads as its `readPt`, and the opening's scalars decode by `S`. -/
 def IvpProof.read {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}

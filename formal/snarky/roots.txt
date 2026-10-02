@@ -112,4 +112,5 @@ Snarky.Kimchi.reduceSolved -- check-halves completes its half circuits' tables
 Snarky.Kimchi.SpongeVar.ofConstants
 Snarky.compileWith_constraints -- check-cs compiles a circuit's output alone as the capstones' system
 Snarky.Kimchi.KimchiConstraint.decidableHolds -- check-tags decides the capstones' constraint hypothesis on each run
+Snarky.CircuitType.decidableReads -- check-tags decides the capstones' reading hypotheses on each run
 -- script-surface:end

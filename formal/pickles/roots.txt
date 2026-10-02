@@ -63,4 +63,6 @@ Pickles.KnownDomains.ofList?
 Pickles.accOk
 Pickles.carryWith_lagrangePoints -- the drivers decide the carry at memoized points
 Pickles.sgOkWith_lagrangePoints -- the drivers decide sgOk at memoized points
+Pickles.KeyReads.of_readPt -- check-tags decides its premises for a slot's key cells
+Pickles.instDecidableEqVkComms -- check-tags compares a slot's key cells with its key
 -- script-surface:end

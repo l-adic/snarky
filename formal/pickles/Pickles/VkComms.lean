@@ -39,6 +39,7 @@ structure VkComms (nc : ℕ) (f : Type) where
   emulComm : Vector f nc
   /-- The endo-mul-scalar selector's commitment. -/
   endomulScalarComm : Vector f nc
+deriving DecidableEq
 
 namespace VkComms
 
