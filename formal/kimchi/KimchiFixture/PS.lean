@@ -9,9 +9,9 @@ import Lean.Data.Json
 /-!
 # Ingesting PureScript circuit dumps
 
-Decoders for the comparison JSON the PureScript circuit-diff harness writes. Its PureScript
-side carries the compiled gate list and, when the harness ran witness generation, a solved
-witness. Field elements are 32-byte little-endian hex; gate coefficients are signed decimals.
+Decoders for the comparison JSON the PureScript circuit-diff harness writes, whose PureScript
+side carries the compiled gate list (coefficients as signed decimals), and the index model's
+ingestion of a gate table with a witness, which the fixture drivers solve themselves.
 
 The dump carries no domain data, so `build` synthesizes it and lets `Index.build?` decide
 every law: rows pad to the smallest two-power holding the gates plus `zkRows`, and `ω` and
@@ -73,9 +73,9 @@ private def parseGateKind : String → Except String GateType
 
 /-! ## The comparison JSON's PureScript side -/
 
-/-- A witness-carrying PureScript circuit: the gate table columns of the dump and the
-solved witness. Wires are `(column, row)` targets in kimchi's cyclic-successor
-encoding, one per column position. -/
+/-- A circuit's gate table columns, as a comparison dump records them, and a solved witness
+for it (empty when parsed from a dump). Wires are `(column, row)` targets in kimchi's
+cyclic-successor encoding, one per column position. -/
 structure Raw (F : Type) where
   /-- The circuit's declared public-input size. -/
   publicInputSize : ℕ
@@ -102,8 +102,9 @@ private def parseVarId (j : Json) : Except String (Option ℕ) := do
   let i ← j.getInt?
   return if i < 0 then none else some i.toNat
 
-/-- The gate table of a comparison JSON's PureScript side, with the witness fields empty. -/
-private def parseGates {m : ℕ} (ps : Json) : Except String (Raw (ZMod m)) := do
+/-- A dumped gate table, with the witness fields empty: a comparison JSON's PureScript side, or a
+circuit of a tag dump. -/
+def parseGates {m : ℕ} (ps : Json) : Except String (Raw (ZMod m)) := do
   let gatesJ ← (← ps.getObjVal? "gates").getArr?
   let typs ← gatesJ.mapM fun g => do parseGateKind (← (← g.getObjVal? "kind").getStr?)
   let coeffs ← gatesJ.mapM fun g => do
@@ -119,31 +120,11 @@ private def parseGates {m : ℕ} (ps : Json) : Except String (Raw (ZMod m)) := d
     witness := #[]
     pub := #[] }
 
-/-- The PureScript side of a comparison JSON; `none` when the JSON is not a comparison
-or carries no witness. -/
-def parseComparison? {m : ℕ} (j : Json) : Except String (Option (Raw (ZMod m))) := do
-  let .ok ps := j.getObjVal? "purescript" | return none
-  let .ok w := ps.getObjVal? "witness" | return none
-  if w.isNull then return none
-  let raw ← parseGates ps
-  return some
-    { raw with
-      witness := ← parseArrOf (parseArrOf parseHexLE) (← w.getObjVal? "witness")
-      pub := ← parseArrOf parseHexLE (← w.getObjVal? "publicInputs") }
-
-/-- Like `parseComparison?`, but a comparison without a witness parses too, with empty
-`witness` and `pub`: every dump carries the constraint-system fields. -/
+/-- The PureScript side of a comparison JSON, its gate table with the witness fields empty;
+`none` when the JSON is not a comparison. -/
 def parseComparisonCs? {m : ℕ} (j : Json) : Except String (Option (Raw (ZMod m))) := do
   let .ok ps := j.getObjVal? "purescript" | return none
-  let raw ← parseGates ps
-  match ps.getObjVal? "witness" with
-  | .error _ => return some raw
-  | .ok w =>
-    if w.isNull then return some raw
-    return some
-      { raw with
-        witness := ← parseArrOf (parseArrOf parseHexLE) (← w.getObjVal? "witness")
-        pub := ← parseArrOf parseHexLE (← w.getObjVal? "publicInputs") }
+  return some (← parseGates ps)
 
 /-! ## Domain synthesis -/
 

@@ -14,7 +14,7 @@ witness matrix, and the whole thing ingested by `Kimchi.Fixture.PS.build` so tha
 The reduction and the assembly are `Snarky.Kimchi.Backend.Compile`'s (`reduceBuilt`,
 `gateDataOf`, `reduceSolved`), at the `Built` level so that a driver which keeps the
 circuit's output as data — `FopOutput`'s bits, off a `build`/`prove` pair — runs the same
-code as `kimchiGateData`/`kimchiSolve` do over `compile`.
+code as `kimchiGateData` does over `compile`.
 -/
 
 namespace PicklesFixture

@@ -13,15 +13,16 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (reflectType)
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
-import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
-import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.Types (Constants)
+import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.RuleDump (RuleDump, recordRule)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
@@ -29,7 +30,7 @@ import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthI
 import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -79,26 +80,35 @@ simpleChainN2Rule getPrevStates appState = do
 type Mpv = 2
 
 compileStepMainSimpleChainN2
-  :: StepMainSimpleChainN2Params -> Effect StepArtifact
-compileStepMainSimpleChainN2 params =
-  _.art <$> compileStepMainSimpleChainN2WithConstants params
+  :: CRS PallasG
+  -> StepMainSimpleChainN2Params
+  -> Effect StepArtifact
+compileStepMainSimpleChainN2 pallasSrs params =
+  _.art <$> compileStepMainSimpleChainN2WithConstants pallasSrs params
 
 -- | `compileStepMainSimpleChainN2`, with the constants the circuit bakes
--- | in (`stepMainConstants`) for the Lean `check_cs` harness.
+-- | in (`stepMainConstants`) and its rule (`recordRule`), for the Lean
+-- | `check_cs` harness.
 compileStepMainSimpleChainN2WithConstants
-  :: StepMainSimpleChainN2Params
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect String }
-compileStepMainSimpleChainN2WithConstants params = do
+  :: CRS PallasG
+  -> StepMainSimpleChainN2Params
+  -> Effect
+       { art :: StepArtifact
+       , constants :: DerivedKey PallasG WrapField -> Effect Constants
+       , rule :: RuleDump
+       }
+compileStepMainSimpleChainN2WithConstants pallasSrs params = do
   -- Both prev slots are self → both FOP domain log2s = this rule's own
   -- step domain log2. Resolved via two-pass compile (mirrors OCaml
   -- `Fix_domains.domains`).
   selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData 1))
   art <- mkStepArtifact <$> runStepCompile (srsData selfLog2)
+  rule <- recordRule @2 @() @(F StepField) @Unit simpleChainN2Rule
   pure
     { art
+    , rule
     , constants: \selfWrapKey -> do
-        pallasSrs <- createCRS @WrapField
-        stepMainConstants (reflectType (Proxy @Mpv))
+        stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @SimpleChainN2PrevsSpec)))
           (srsData selfLog2)
           pallasSrs

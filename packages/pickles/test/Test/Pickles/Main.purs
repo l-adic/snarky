@@ -5,6 +5,7 @@ import Prelude
 import Colog (LoggerT, Message, richMessageStdout, usingLoggerT)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Test.Pickles.KimchiAppWitness as KimchiAppWitness
 import Test.Pickles.Prove.Chunks2 as Chunks2
 import Test.Pickles.Prove.Chunks4 as Chunks4
 import Test.Pickles.Prove.Codecs as Codecs
@@ -21,6 +22,7 @@ import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.SimpleChainN2 as SimpleChainN2
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
+import Test.Pickles.RuleDumpSpec as RuleDump
 import Test.Pickles.SharedSrs (buildSharedSrs)
 import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
 import Test.Pickles.Sideload.DigestVkSpec as SideloadDigestVk
@@ -48,6 +50,7 @@ import Test.Spec.Runner.Node.Config as Cfg
 spec :: SpecT (LoggerT Message Aff) Unit Aff Unit
 spec = beforeAll buildSharedSrs do
   WrapDomainShifts.spec
+  RuleDump.spec
   CompileValidation.spec
   NoRecursionReturn.spec
   Codecs.spec
@@ -71,6 +74,7 @@ spec = beforeAll buildSharedSrs do
   SideloadVerifyNrr.spec
   SideloadVerifyFixtures.spec
   SideloadLeanInputs.spec
+  KimchiAppWitness.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'

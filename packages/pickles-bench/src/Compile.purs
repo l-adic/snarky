@@ -55,7 +55,7 @@ fullCompile srs = do
   nrr <- compileMulti
     @(F StepField)
     @1
-    { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
+    { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing, dump: Nothing }
     (tuple1 nrrEntry)
   treeEntry <- pinCompileEntry <$> mkRuleEntry @(F StepField) @()
     benchTreeRule
@@ -63,7 +63,7 @@ fullCompile srs = do
   tree <- compileMulti
     @(F StepField)
     @1
-    { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
+    { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing, dump: Nothing }
     (tuple1 treeEntry)
 
   -- Force the step constraint system so the compile is not deferred.

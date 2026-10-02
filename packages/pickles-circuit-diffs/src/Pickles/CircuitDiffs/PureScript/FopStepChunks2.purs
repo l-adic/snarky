@@ -3,28 +3,21 @@
 -- | at two chunks, so the circuit absorbs every chunk and recombines
 -- | them in circuit. Every other parameter is `FopStep`'s, except
 -- | `zkRows`, which follows the chunk count.
--- |
--- | The input layout is `FopStep`'s with each evaluation widened: 29
--- | deferred-value cells, then 44 columns of four cells each (the two
--- | `zeta` chunks, then the two `omega*zeta` chunks) in the order
--- | public, witness (15), coefficients (15), `z`, sigma (6), index
--- | (6), then `ftEval1`, the two previous challenge vectors and the
--- | sponge digest.
 module Pickles.CircuitDiffs.PureScript.FopStepChunks2
   ( compileFopStepChunks2
   ) where
 
 import Prelude
 
-import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
-import Data.Fin (getFinite)
 import Data.Reflectable (class Reflectable)
+import Data.Tuple.Nested (Tuple2, Tuple7, tuple2, tuple7, uncurry2, uncurry7)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, domainLog2, srsLengthLog2, stepEndo)
+import Pickles.CircuitDiffs.PureScript.FopStep (FopStepInput(..))
 import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -36,79 +29,118 @@ import Pickles.Step.OtherField as StepOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (Bool(..), F, FVar, const_)
-import Snarky.Circuit.Kimchi (Type1(..))
+import Snarky.Circuit.DSL (class CircuitType, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), const_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Type.Proxy (Proxy(..))
 
-numChunks :: Int
-numChunks = 2
+-- | The evaluations at `nc` chunks, as the dump lays them out: each column its `zeta` chunks
+-- | then its `omega*zeta` chunks, in the order public, witness (15), coefficients (15), `z`,
+-- | sigma (6), index (6), then `ftEval1`.
+newtype ChunkedAllocEvals nc f = ChunkedAllocEvals
+  { publicEvals :: PointEval (Vector nc f)
+  , witnessEvals :: Vector 15 (PointEval (Vector nc f))
+  , coeffEvals :: Vector 15 (PointEval (Vector nc f))
+  , zEvals :: PointEval (Vector nc f)
+  , sigmaEvals :: Vector 6 (PointEval (Vector nc f))
+  , indexEvals :: Vector 6 (PointEval (Vector nc f))
+  , ftEval1 :: f
+  }
+
+-- | One column as its `(zeta, zetaw)` chunk pair.
+type Column nc f = Tuple2 (Vector nc f) (Vector nc f)
+
+-- | The wire order.
+type ChunkedEvalsTuple nc f =
+  Tuple7 (Column nc f) (Vector 15 (Column nc f)) (Vector 15 (Column nc f)) (Column nc f)
+    (Vector 6 (Column nc f))
+    (Vector 6 (Column nc f))
+    f
+
+toTuple :: forall nc f. ChunkedAllocEvals nc f -> ChunkedEvalsTuple nc f
+toTuple (ChunkedAllocEvals e) =
+  tuple7 (col e.publicEvals) (map col e.witnessEvals) (map col e.coeffEvals) (col e.zEvals)
+    (map col e.sigmaEvals)
+    (map col e.indexEvals)
+    e.ftEval1
+  where
+  col p = tuple2 p.zeta p.omegaTimesZeta
+
+fromTuple :: forall nc f. ChunkedEvalsTuple nc f -> ChunkedAllocEvals nc f
+fromTuple = uncurry7 \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
+  ChunkedAllocEvals
+    { publicEvals: point publicEvals
+    , witnessEvals: map point witnessEvals
+    , coeffEvals: map point coeffEvals
+    , zEvals: point zEvals
+    , sigmaEvals: map point sigmaEvals
+    , indexEvals: map point indexEvals
+    , ftEval1
+    }
+  where
+  point = uncurry2 \zeta omegaTimesZeta -> { zeta, omegaTimesZeta }
+
+instance (Reflectable nc Int, CircuitType f fa fv) => CircuitType f (ChunkedAllocEvals nc fa) (ChunkedAllocEvals nc fv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(ChunkedEvalsTuple nc fa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(ChunkedEvalsTuple nc fa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(ChunkedEvalsTuple nc fa)
+
+-- | A column's evaluations, chunk by chunk.
+chunks :: forall f. PointEval (Vector 2 f) -> NonEmptyArray (PointEval f)
+chunks p = Vector.toUnfoldable1 (Vector.zipWith (\zeta omegaTimesZeta -> { zeta, omegaTimesZeta }) p.zeta p.omegaTimesZeta)
+
+fopStepChunks2Circuit
+  :: forall r
+   . UnChecked (FopStepInput (ChunkedAllocEvals 2 (FVar StepField)) (FVar StepField) (BoolVar StepField))
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
+fopStepChunks2Circuit (UnChecked (FopStepInput i)) =
+  let
+    dv = i.deferredValues
+    ChunkedAllocEvals e = i.evals
+  in
+    void $ finalizeOtherProofCircuit StepOtherField.fopShiftOps
+      { domains:
+          NEA.singleton
+            { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
+            , log2: domainLog2
+            }
+      , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
+      , srsLengthLog2
+      , zkRows: zkRowsForNumChunks 2
+      , endo: stepEndo
+      , linearizationPoly: Linearization.pallas
+      , domainMode: KnownDomainsMode
+      }
+      { unfinalized:
+          { deferredValues:
+              { plonk: dv.plonk
+              , combinedInnerProduct: dv.combinedInnerProduct
+              , b: dv.b
+              , xi: dv.xi
+              , bulletproofChallenges: dv.bulletproofChallenges
+              }
+          , shouldFinalize: coerce (const_ one :: FVar StepField)
+          , spongeDigestBeforeEvaluations: i.spongeDigest
+          }
+      , chunkedEvals:
+          { ftEval1: e.ftEval1
+          , publicEvals: chunks e.publicEvals
+          , witnessEvals: map chunks e.witnessEvals
+          , coeffEvals: map chunks e.coeffEvals
+          , zEvals: chunks e.zEvals
+          , sigmaEvals: map chunks e.sigmaEvals
+          , indexEvals: map chunks e.indexEvals
+          }
+      , mask: dv.branchData.proofsVerifiedMask
+      , prevChallenges: i.prevChallenges
+      , domainLog2Var: dv.branchData.domainLog2
+      }
 
 compileFopStepChunks2 :: Effect (CompiledCircuit StepField)
 compileFopStepChunks2 =
-  compile noAdvice (Proxy @(Vector 239 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    \inputs ->
-      let
-        at = unsafeIdx inputs
-        tail = 29 + 88 * numChunks
-
-        column :: Int -> NonEmptyArray (PointEval (FVar StepField))
-        column k =
-          let
-            base = 29 + 2 * numChunks * k
-            chunk c = { zeta: at (base + c), omegaTimesZeta: at (base + numChunks + c) }
-          in
-            NEA.cons' (chunk 0) (map chunk (Array.drop 1 (Array.range 0 (numChunks - 1))))
-
-        columns :: forall n. Reflectable n Int => Int -> Vector n (NonEmptyArray (PointEval (FVar StepField)))
-        columns from = Vector.generate \j -> column (from + getFinite j)
-      in
-        void $ finalizeOtherProofCircuit StepOtherField.fopShiftOps
-          { domains:
-              NEA.singleton
-                { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
-                , log2: domainLog2
-                }
-          , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
-          , srsLengthLog2
-          , zkRows: zkRowsForNumChunks numChunks
-          , endo: stepEndo
-          , linearizationPoly: Linearization.pallas
-          , domainMode: KnownDomainsMode
-          }
-          { unfinalized:
-              { deferredValues:
-                  { plonk:
-                      { alpha: asSizedF128 (at 0)
-                      , beta: asSizedF128 (at 1)
-                      , gamma: asSizedF128 (at 2)
-                      , zeta: asSizedF128 (at 3)
-                      , zetaToSrsLength: Type1 (at 4)
-                      , zetaToDomainSize: Type1 (at 5)
-                      , perm: Type1 (at 6)
-                      }
-                  , combinedInnerProduct: Type1 (at 7)
-                  , b: Type1 (at 8)
-                  , xi: asSizedF128 (at 9)
-                  , bulletproofChallenges:
-                      (Vector.generate (\j -> asSizedF128 (at (10 + getFinite j))) :: Vector 16 _)
-                  }
-              , shouldFinalize: coerce (const_ one :: FVar StepField)
-              , spongeDigestBeforeEvaluations: at (tail + 33)
-              }
-          , chunkedEvals:
-              { ftEval1: at tail
-              , publicEvals: column 0
-              , witnessEvals: columns 1
-              , coeffEvals: columns 16
-              , zEvals: column 31
-              , sigmaEvals: columns 32
-              , indexEvals: columns 38
-              }
-          , mask: (Vector.generate (\j -> coerce (at (26 + getFinite j))) :: Vector 2 _)
-          , prevChallenges:
-              ( Vector.generate \j ->
-                  Vector.generate \k -> at (tail + 1 + 16 * getFinite j + getFinite k)
-              ) :: Vector 2 (Vector 16 _)
-          , domainLog2Var: at 28
-          }
+  compile noAdvice
+    (Proxy @(UnChecked (FopStepInput (ChunkedAllocEvals 2 (F StepField)) (F StepField) Boolean)))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint StepField))
+    fopStepChunks2Circuit

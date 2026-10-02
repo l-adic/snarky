@@ -22,6 +22,8 @@ module Pickles.Types
   , Evals
   , ChunkedEvals
   , AllocEvals(..)
+  , evalPair
+  , pairEval
   , PerProofUnfinalized(..)
   ) where
 

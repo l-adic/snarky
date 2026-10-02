@@ -21,7 +21,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepKey, deriveWrapKey)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainImportTwoPhaseChain (StepMainImportTwoPhaseChainParams, compileStepMainImportTwoPhaseChain)
-import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
+import Pickles.Dump.Constants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
 import Pickles.Prove.Step (extractWrapVKCommsAdvice)
@@ -31,18 +31,20 @@ import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Pasta (PallasG)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainImportTwoPhaseChain
-  :: IvpWrapParams
+  :: CRS PallasG
+  -> IvpWrapParams
   -> StepMainImportTwoPhaseChainParams
   -> Effect WrapArtifact
-compileWrapMainImportTwoPhaseChain { lagrangeAt, blindingH } stepParams = do
-  stepArt <- compileStepMainImportTwoPhaseChain stepParams
+compileWrapMainImportTwoPhaseChain pallasSrs { lagrangeAt, blindingH } stepParams = do
+  stepArt <- compileStepMainImportTwoPhaseChain pallasSrs stepParams
   vestaSrs <- createCRS @StepField
-  pallasSrs <- createCRS @WrapField
   stepKey <- deriveStepKey @2 vestaSrs stepArt.stepCs
   let realStepVK = stepVkForCircuit (extractStepVKComms @1 stepKey.verifierIndex)
   let

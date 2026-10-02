@@ -1,13 +1,10 @@
 module Pickles.CircuitDiffs.PureScript.GroupMap
-  ( parseGroupMapInput
-  , groupMapCircuit
+  ( groupMapCircuit
   , compileGroupMap
   ) where
 
 import Prelude
 
-import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (WrapField)
@@ -21,9 +18,6 @@ import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
-parseGroupMapInput :: Vector 1 (FVar WrapField) -> FVar WrapField
-parseGroupMapInput = Vector.head
-
 groupMapCircuit
   :: forall r
    . PrimeField WrapField
@@ -33,5 +27,5 @@ groupMapCircuit = Kimchi.groupMapCircuit (Kimchi.groupMapParams (Proxy @VestaG))
 
 compileGroupMap :: Effect (CompiledCircuit WrapField)
 compileGroupMap =
-  compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\inputs -> void $ groupMapCircuit (parseGroupMapInput inputs))
+  compile noAdvice (Proxy @(F WrapField)) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+    (void <<< groupMapCircuit)

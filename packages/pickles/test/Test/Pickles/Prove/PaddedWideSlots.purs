@@ -37,11 +37,10 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), SlotWrapKey(..), StatementIO, StepField, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F(..))
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.Prove.SimpleChainN2 (simpleChainN2Rule)
 import Test.Pickles.Prove.TwoPhaseChain (makeZeroRule)
 import Test.Pickles.SharedSrs (SharedSrs)
@@ -53,8 +52,7 @@ type Stmt = StatementIO (F StepField) Unit
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.PaddedWideSlots" do
   it "proves the front-padded branch of a program whose slots are wider than one" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR"
-      <#> map \dir -> mkProofCache (dir <> "/PaddedWideSlots.json")
+    outputs <- liftEffect $ appOutputs "PaddedWideSlots"
 
     let
       cfg =
@@ -62,8 +60,9 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
         , debug: false
         -- The wrap circuit is the N2 shape, as in `SimpleChainN2`.
         , wrapDomainOverride: Just 14
-        , proofCache: cache
+        , proofCache: outputs.proofCache
         , lagrangeCache: Just lagrangeCache
+        , dump: outputs.dumpAt "padded_wide_slots"
         }
 
     baseEntry <- liftEffect $ mkRuleEntry @Unit makeZeroRule Vector.nil

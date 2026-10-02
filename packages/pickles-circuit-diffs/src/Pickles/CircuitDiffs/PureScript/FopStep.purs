@@ -1,121 +1,86 @@
 module Pickles.CircuitDiffs.PureScript.FopStep
-  ( FopStepInput
-  , parseFopStepInput
-  , fopStepCircuit
+  ( FopStepInput(..)
   , compileFopStep
   ) where
 
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Fin (Finite, getFinite)
+import Data.Tuple.Nested (Tuple4, tuple4, uncurry4)
 import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, domainLog2, srsLengthLog2, stepEndo)
+import Pickles.CircuitDiffs.PureScript.PerProofWitness (WrapDeferredHlist, wrapDeferredFromHlist, wrapDeferredToHlist)
 import Pickles.Constants (zkRowsByDefault)
+import Pickles.DeferredValues (WrapDeferredValues)
 import Pickles.Field (StepField)
-import Pickles.FinalizeOtherProof (DomainMode(..), Output)
+import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PlonkChecks (singleChunkEvals)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
+import Pickles.Types (AllocEvals(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
-import Snarky.Circuit.Kimchi (Type1(..))
+import Snarky.Circuit.DSL (class CircuitType, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), const_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
-type FopStepInput =
-  { plonk ::
-      { alpha :: SizedF 128 (FVar StepField)
-      , beta :: SizedF 128 (FVar StepField)
-      , gamma :: SizedF 128 (FVar StepField)
-      , zeta :: SizedF 128 (FVar StepField)
-      , zetaToSrsLength :: Type1 (FVar StepField)
-      , zetaToDomainSize :: Type1 (FVar StepField)
-      , perm :: Type1 (FVar StepField)
-      }
-  , combinedInnerProduct :: Type1 (FVar StepField)
-  , b :: Type1 (FVar StepField)
-  , xi :: SizedF 128 (FVar StepField)
-  , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar StepField))
-  , mask :: Vector 2 (BoolVar StepField)
-  , spongeDigestBeforeEvaluations :: FVar StepField
-  , domainLog2Var :: FVar StepField
-  , allEvals ::
-      { ftEval1 :: FVar StepField
-      , publicEvals :: { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , witnessEvals :: Vector 15 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , coeffEvals :: Vector 15 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , zEvals :: { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , sigmaEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , indexEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      }
-  , prevChallenges :: Vector 2 (Vector 16 (FVar StepField))
+-- | `finalize_other_proof{,_chunks2}_step_circuit`'s input (OCaml `dump_circuit_impl.ml`): the
+-- | wrap statement's deferred values in OCaml's hlist order, the evaluations `ev`, the two
+-- | previous challenge vectors and the sponge digest.
+newtype FopStepInput ev f b = FopStepInput
+  { deferredValues :: WrapDeferredValues 16 f (Type1 f) b
+  , evals :: ev
+  , prevChallenges :: Vector 2 (Vector 16 f)
+  , spongeDigest :: f
   }
 
-parseFopStepInput :: Vector 151 (FVar StepField) -> FopStepInput
-parseFopStepInput inputs =
-  let
-    at = unsafeIdx inputs
+-- | The wire order.
+type FopStepTuple ev f b = Tuple4 (WrapDeferredHlist f b) ev (Vector 2 (Vector 16 f)) f
 
-    evalPair :: forall n. Int -> Finite n -> { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-    evalPair base j =
-      { zeta: at (base + 2 * getFinite j)
-      , omegaTimesZeta: at (base + 2 * getFinite j + 1)
-      }
-  in
-    { plonk:
-        { alpha: asSizedF128 (at 0)
-        , beta: asSizedF128 (at 1)
-        , gamma: asSizedF128 (at 2)
-        , zeta: asSizedF128 (at 3)
-        , zetaToSrsLength: Type1 (at 4)
-        , zetaToDomainSize: Type1 (at 5)
-        , perm: Type1 (at 6)
-        }
-    , combinedInnerProduct: Type1 (at 7)
-    , b: Type1 (at 8)
-    , xi: asSizedF128 (at 9)
-    , bulletproofChallenges: Vector.generate \j -> asSizedF128 (at (10 + getFinite j))
-    , mask: Vector.generate \j -> coerce (at (26 + getFinite j))
-    , spongeDigestBeforeEvaluations: at 150
-    , domainLog2Var: at 28
-    , allEvals:
-        { ftEval1: at 117
-        , publicEvals: { zeta: at 29, omegaTimesZeta: at 30 }
-        , witnessEvals: Vector.generate (evalPair 31)
-        , coeffEvals: Vector.generate (evalPair 61)
-        , zEvals: { zeta: at 91, omegaTimesZeta: at 92 }
-        , sigmaEvals: Vector.generate (evalPair 93)
-        , indexEvals: Vector.generate (evalPair 105)
-        }
-    , prevChallenges: Vector.generate \j ->
-        Vector.generate \k -> at (118 + 16 * getFinite j + getFinite k)
-    }
+toTuple :: forall ev f b. FopStepInput ev f b -> FopStepTuple ev f b
+toTuple (FopStepInput i) =
+  tuple4 (wrapDeferredToHlist i.deferredValues) i.evals i.prevChallenges i.spongeDigest
+
+fromTuple :: forall ev f b. FopStepTuple ev f b -> FopStepInput ev f b
+fromTuple = uncurry4 \dv evals prevChallenges spongeDigest ->
+  FopStepInput { deferredValues: wrapDeferredFromHlist dv, evals, prevChallenges, spongeDigest }
+
+instance
+  ( CircuitType f ea ev
+  , CircuitType f fa fv
+  , CircuitType f ba bv
+  , CircuitType f (Type1 fa) (Type1 fv)
+  ) =>
+  CircuitType f (FopStepInput ea fa ba) (FopStepInput ev fv bv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(FopStepTuple ea fa ba))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(FopStepTuple ea fa ba) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(FopStepTuple ea fa ba)
 
 fopStepCircuit
   :: forall r
-   . PrimeField StepField
-  => FopStepInput
-  -> Snarky StepField (KimchiConstraint StepField) r (Output 16 StepField)
-fopStepCircuit input =
+   . UnChecked (FopStepInput (AllocEvals (FVar StepField)) (FVar StepField) (BoolVar StepField))
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
+fopStepCircuit (UnChecked (FopStepInput i)) =
   let
+    dv = i.deferredValues
+    AllocEvals evals = i.evals
     unfinalized =
       { deferredValues:
-          { plonk: input.plonk
-          , combinedInnerProduct: input.combinedInnerProduct
-          , b: input.b
-          , xi: input.xi
-          , bulletproofChallenges: input.bulletproofChallenges
+          { plonk: dv.plonk
+          , combinedInnerProduct: dv.combinedInnerProduct
+          , b: dv.b
+          , xi: dv.xi
+          , bulletproofChallenges: dv.bulletproofChallenges
           }
       , shouldFinalize: coerce (const_ one :: FVar StepField)
-      , spongeDigestBeforeEvaluations: input.spongeDigestBeforeEvaluations
+      , spongeDigestBeforeEvaluations: i.spongeDigest
       }
     params =
       { domains:
@@ -131,15 +96,18 @@ fopStepCircuit input =
       , domainMode: KnownDomainsMode
       }
   in
-    finalizeOtherProofCircuit StepOtherField.fopShiftOps params
+    void $ finalizeOtherProofCircuit StepOtherField.fopShiftOps params
       { unfinalized
-      , chunkedEvals: singleChunkEvals input.allEvals
-      , mask: input.mask
-      , prevChallenges: input.prevChallenges
-      , domainLog2Var: input.domainLog2Var
+      , chunkedEvals: singleChunkEvals evals
+      , mask: dv.branchData.proofsVerifiedMask
+      , prevChallenges: i.prevChallenges
+      , domainLog2Var: dv.branchData.domainLog2
       }
 
 compileFopStep :: Effect (CompiledCircuit StepField)
 compileFopStep =
-  compile noAdvice (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    (\inputs -> void $ fopStepCircuit (parseFopStepInput inputs))
+  compile noAdvice
+    (Proxy @(UnChecked (FopStepInput (AllocEvals (F StepField)) (F StepField) Boolean)))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint StepField))
+    fopStepCircuit

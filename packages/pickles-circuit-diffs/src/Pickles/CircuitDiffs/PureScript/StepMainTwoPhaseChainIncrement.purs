@@ -25,15 +25,16 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (reflectType)
 import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
-import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
-import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.Types (Constants)
+import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.RuleDump (RuleDump, recordRule)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
@@ -41,7 +42,7 @@ import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthI
 import Pickles.Types (StatementIO(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_, exists, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -82,33 +83,41 @@ incrementRule getPrevStates appState = do
 type Mpv = 1
 
 compileStepMainTwoPhaseChainIncrement
-  :: StepArtifact
+  :: CRS PallasG
+  -> StepArtifact
   -- ^ Make_zero's compiled step artifact. Slot 0's `perSlotFopDomainLog2s`
   -- entry is `[makeZero, increment]` — make_zero's step domain
   -- log2 is read from this artifact, increment's own is shape-passed.
   -> StepMainTwoPhaseChainIncrementParams
   -> Effect StepArtifact
-compileStepMainTwoPhaseChainIncrement makeZeroArt params =
-  _.art <$> compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params
+compileStepMainTwoPhaseChainIncrement pallasSrs makeZeroArt params =
+  _.art <$> compileStepMainTwoPhaseChainIncrementWithConstants pallasSrs makeZeroArt params
 
 -- | `compileStepMainTwoPhaseChainIncrement`, with the constants the circuit
--- | bakes in (`stepMainConstants`) for the Lean `check_cs` harness.
+-- | bakes in (`stepMainConstants`) and its rule (`recordRule`), for the
+-- | Lean `check_cs` harness.
 compileStepMainTwoPhaseChainIncrementWithConstants
-  :: StepArtifact
+  :: CRS PallasG
+  -> StepArtifact
   -> StepMainTwoPhaseChainIncrementParams
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect String }
-compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt params = do
+  -> Effect
+       { art :: StepArtifact
+       , constants :: DerivedKey PallasG WrapField -> Effect Constants
+       , rule :: RuleDump
+       }
+compileStepMainTwoPhaseChainIncrementWithConstants pallasSrs makeZeroArt params = do
   -- Slot 0's source = self (the 2-branch proof system). Its candidate
   -- list: make_zero's step domain (from artifact) + increment's own
   -- step domain (shape-passed).
   let makeZeroLog2 = makeZeroArt.stepDomainLog2
   selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData makeZeroLog2 1))
   art <- mkStepArtifact <$> runStepCompile (srsData makeZeroLog2 selfLog2)
+  rule <- recordRule @1 @() @(F StepField) @Unit incrementRule
   pure
     { art
+    , rule
     , constants: \selfWrapKey -> do
-        pallasSrs <- createCRS @WrapField
-        stepMainConstants (reflectType (Proxy @Mpv))
+        stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @IncrementPrevsSpec)))
           (srsData makeZeroLog2 selfLog2)
           pallasSrs

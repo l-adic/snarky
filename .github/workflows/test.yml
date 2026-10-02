@@ -119,10 +119,22 @@ jobs:
     - name: Populate SRS cache
       run: make fetch-srs
 
+    # The pickles prove tests also write the theorems' dump of every tag they compile
+    # (`<app>/<tag>.json`: its circuits, constants, keys and rules) for the `check-tags` job.
     - name: Test all libraries (excludes pickles-circuit-diffs)
       run: make test-libs
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
+        PICKLES_DUMP_DIR: ${{ github.workspace }}/pickles-dumps
+
+    # Run-scoped transport to the `check-tags` job, as for the comparison dumps: the checker
+    # only ever sees the dumps its own commit's prove tests wrote.
+    - name: Upload the tag dumps for the Lean checker
+      uses: actions/upload-artifact@v4
+      with:
+        name: pickles-tag-dumps
+        path: pickles-dumps/
+        retention-days: 1
 
   test-example:
     if: github.event_name != 'workflow_dispatch'
@@ -244,21 +256,14 @@ jobs:
       run: make test-pickles-circuit-diffs
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
-        # Witness-carrying registrations also solve on a Gen-sampled input and
-        # embed the witness in their results JSON, for the Lean checker below.
-        CIRCUIT_DIFFS_WITNESS_EXPORT: "1"
 
-    # Run-scoped transport to the `check-ps-witness` job — the checker can only
-    # ever see the witness its own commit generated.
-    # Includes xhat_wrap_lagrange.json (the x_hat wrap gadget's Lagrange bases, SRS
-    # constants Lean cannot compute) — scripts/check_cs.lean's xhat_wrap_circuit target
-    # reads it from this dir. It carries no `purescript` field and no manifest entry, so
-    # the witness checker and the visualizer, which scan the dir for comparison dumps, skip
-    # it.
-    - name: Upload witness-carrying results for the Lean checker
+    # Run-scoped transport to the `check-cs` job — the checker can only ever see the
+    # dumps its own commit generated. A dump carries the constants its circuit was compiled
+    # with (SRS points, keys) that Lean cannot compute.
+    - name: Upload the comparison dumps for the Lean checker
       uses: actions/upload-artifact@v4
       with:
-        name: circuit-diff-witnesses
+        name: circuit-diff-results
         path: packages/pickles-circuit-diffs/circuits/results/*.json
         retention-days: 1
 
@@ -325,15 +330,12 @@ jobs:
       run: cargo build
       working-directory: tools/fixture-dump
 
-  # ---- verified witness check (Lean) ----------------------------------
-  # The harness's witness-carrying results are checked against the Lean index
-  # model (formal/kimchi/scripts/check_ps_witness.lean): decide `Satisfies` on the dumped
-  # witness plus corruption rejections. Lives here (not lean.yml) because it
-  # consumes the artifact from test-circuit-diffs — `needs:`/artifacts only span
-  # a single workflow. On a Kimchi build-cache hit this is a few minutes; it
-  # only rebuilds the library when `formal/` changed (in parallel with lean.yml
-  # doing the same).
-  check-ps-witness:
+  # ---- the CS-equality corpus (Lean) -----------------------------------
+  # Lives here (not lean.yml) because it consumes the artifact from
+  # test-circuit-diffs — `needs:`/artifacts only span a single workflow. On a
+  # build-cache hit this is a few minutes; it only rebuilds the library when
+  # `formal/` changed (in parallel with lean.yml doing the same).
+  check-cs:
     if: github.event_name != 'workflow_dispatch'
     needs: test-circuit-diffs
     runs-on: ubuntu-latest
@@ -347,26 +349,15 @@ jobs:
     - name: Setup Lean + build the library
       uses: ./.github/actions/setup-lean
 
-    # Includes xhat_wrap_lagrange.json, read by scripts/check_cs.lean's xhat_wrap_circuit
-    # target from this same dir.
-    - name: Download the witness-carrying results
+    - name: Download the comparison dumps
       uses: actions/download-artifact@v4
       with:
-        name: circuit-diff-witnesses
+        name: circuit-diff-results
         path: packages/pickles-circuit-diffs/circuits/results/
 
-    - name: Check witnesses against the index model
-      run: |
-        export PATH="$HOME/.elan/bin:$PATH"
-        cd formal
-        export PATH="$HOME/.elan/bin:$PATH"
-        KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
-          lake env lean kimchi/scripts/check_ps_witness.lean
-
     # The CS-equality corpus: the kimchi backend's assembled constraint systems
-    # replay byte-equal against this commit's own exports, and each round-trips
-    # through the verified index model on the recorded witness. This workflow has
-    # no path filter, so every PR — PS-side or formal-side — is gated here.
+    # replay byte-equal against this commit's own exports. This workflow has no
+    # path filter, so every PR — PS-side or formal-side — is gated here.
     # A WORKSPACE script (formal/scripts/), not a package one: the corpus spans
     # packages, the linearization circuit coming from pickles and the gadgets from
     # snarky, so no single package can import every circuit under comparison.
@@ -381,6 +372,35 @@ jobs:
         cd formal
         KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
           lake exe check-cs
+
+  # ---- the theorems' suite on the prove tests' tag dumps (Lean) --------
+  # Every tag the pickles prove tests compiled, rebuilt in Lean from its dump — the wrap
+  # circuit at its constants, each branch's step circuit with the rule replayed from the
+  # dump — against the systems the tests compiled, with the capstones' constant premises
+  # and the cross-tag slot checks. Compiled by the lean.yml build job, like check-cs.
+  check-tags:
+    if: github.event_name != 'workflow_dispatch'
+    needs: test-libs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: false
+
+    - name: Setup Lean + build the library
+      uses: ./.github/actions/setup-lean
+
+    - name: Download the tag dumps
+      uses: actions/download-artifact@v4
+      with:
+        name: pickles-tag-dumps
+        path: pickles-dumps/
+
+    - name: Check the tag dumps
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-tags
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

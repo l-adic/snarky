@@ -28,13 +28,12 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, true_)
 import Snarky.Curves.Class (fromInt)
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -96,7 +95,7 @@ absorbRule getPrevStates _ = do
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.HeterogeneousPrevs" do
   it "b0..b2 across two branches whose slots carry 1- and 2-field statements" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/HeterogeneousPrevs.json")
+    outputs <- liftEffect $ appOutputs "HeterogeneousPrevs"
 
     let dummies = mkWidthDummies pallasSrs vestaSrs
 
@@ -108,8 +107,9 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "child"
       }
       (tuple1 childEntry)
 
@@ -134,8 +134,9 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "application"
       }
       (tuple2 baseEntry absorbEntry)
 

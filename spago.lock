@@ -219,7 +219,9 @@
             "node-buffer",
             "node-fs",
             "node-process",
+            "ordered-collections",
             "partial",
+            "pickles-circuit-diffs-types",
             "pickles-linearization-types",
             "poseidon",
             "prelude",
@@ -261,7 +263,6 @@
             "curves",
             "effect",
             "either",
-            "enums",
             "exceptions",
             "foldable-traversable",
             "foreign",
@@ -269,7 +270,6 @@
             "js-bigints",
             "maybe",
             "newtype",
-            "ordered-collections",
             "partial",
             "pickles",
             "pickles-circuit-diffs-types",
@@ -294,14 +294,10 @@
         "test": {
           "dependencies": [
             "aff",
-            "console",
             "effect",
             "exceptions",
-            "lcg",
             "node-buffer",
             "node-fs",
-            "node-process",
-            "quickcheck",
             "spec",
             "spec-node"
           ]
@@ -311,7 +307,10 @@
         "path": "packages/pickles-circuit-diffs-types",
         "core": {
           "dependencies": [
-            "maybe"
+            "foreign",
+            "maybe",
+            "prelude",
+            "simple-json"
           ]
         },
         "test": {

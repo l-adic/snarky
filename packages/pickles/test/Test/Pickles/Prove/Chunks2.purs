@@ -7,7 +7,8 @@
 -- | under `KIMCHI_WITNESS_DUMP` — which a byte-for-byte diff against
 -- | the reference dump compares.
 module Test.Pickles.Prove.Chunks2
-  ( chunks2Rule
+  ( chunks2Body
+  , chunks2Rule
   , spec
   ) where
 
@@ -25,12 +26,11 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
-import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
+import Snarky.Circuit.DSL (F, Snarky, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -39,8 +39,8 @@ import Test.Spec.Assertions (shouldEqual)
 -- | kimchi row, so 2^16 + 1 rows — then one 7-wire Raw Generic with
 -- | zero coefficients, which pushes the 7th permuted column's degree
 -- | above 2^16.
-chunks2Rule :: StepRule Unit Unit Unit Unit Unit
-chunks2Rule _ _ = do
+chunks2Body :: forall r. Snarky StepField (KimchiConstraint StepField) r Unit
+chunks2Body = do
   let
     freshZero = exists (pure (zero :: F StepField))
     iters = (1 `Bits.shl` 17) + 1
@@ -58,6 +58,11 @@ chunks2Rule _ _ = do
   z <- freshZero
   addConstraint $ KimchiPad
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
+
+-- | The chunked rule: `chunks2Body`, with no prevs.
+chunks2Rule :: StepRule Unit Unit Unit Unit Unit
+chunks2Rule _ _ = do
+  chunks2Body
   pure
     { prevs: toPrevs unit
     , publicOutput: unit
@@ -66,7 +71,7 @@ chunks2Rule _ _ = do
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks2" do
   it "base case (b0) — chunks=2 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks2.json")
+    outputs <- liftEffect $ appOutputs "Chunks2"
 
     -- The step SRS has depth 2^16, and this rule's 2^16 rows round the
     -- step domain up to 2^17, giving two chunks. The wrap SRS has depth
@@ -82,8 +87,9 @@ spec = describe "Pickles.Prove.Chunks2" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "chunks2"
       }
       rules
 

@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix lean-dep-graph lean-lint lean-shake lean-deadcode lean-spec-locality lean-kernel-check lean-prune-stale build-ps gen-linearization gen-linearization-lean dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-style lean-style-fix lean-dep-graph lean-lint lean-shake lean-deadcode lean-spec-locality lean-kernel-check lean-prune-stale build-ps gen-linearization gen-linearization-lean dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -133,9 +133,6 @@ lint: ## Format, tidy, and lint all code (Rust + PureScript + Lean)
 
 lean-build: ## Build the Lean (formal/) project
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Pickles
-
-lean-check-witnesses: lean-build ## Check witness-carrying harness results against the index model (run the harness with CIRCUIT_DIFFS_WITNESS_EXPORT=1 first)
-	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake env lean kimchi/scripts/check_ps_witness.lean
 
 lean-dep-graph: ## Generate the Lean module dependency graph (formal/docs/module-deps.{dot,svg})
 	bash formal/scripts/module-deps.sh

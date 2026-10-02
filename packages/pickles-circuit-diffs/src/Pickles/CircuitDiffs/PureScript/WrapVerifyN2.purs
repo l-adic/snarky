@@ -2,46 +2,41 @@ module Pickles.CircuitDiffs.PureScript.WrapVerifyN2
   ( compileWrapVerifyN2
   ) where
 
--- | Wrap verify circuit (N2): thin wrapper that parses 212 flat inputs
--- | and calls the library wrapVerify function.
+-- | Wrap verify circuit (N2): the library `wrapVerify` over the dump's typed input.
 
 import Prelude
 
-import Data.Fin (getFinite)
 import Data.Maybe (Maybe(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx, wrapEndo)
-import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams, parseIvpWrapInput)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, wrapEndo)
+import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpHarnessInput(..), IvpWrapParams)
+import Pickles.CircuitDiffs.PureScript.WrapVerify (WrapVerifyInput(..))
 import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (CorrectionMode(..))
-import Pickles.Types (ChunkedCommitment(..), WrapIPARounds)
+import Pickles.Types (ChunkedCommitment(..), WrapProofMessages(..))
 import Pickles.Wrap.Verify (wrapVerify)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_)
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky, UnChecked(..), const_)
 import Snarky.Circuit.Kimchi (groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField, curveParams)
+import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
-type N = 2
-type InputSize = 212
-
 wrapVerifyN2Circuit
   :: forall r
-   . PrimeField WrapField
-  => IvpWrapParams
-  -> Vector InputSize (FVar WrapField)
+   . IvpWrapParams
+  -> UnChecked (WrapVerifyInput 2 Unit (FVar WrapField) (BoolVar WrapField) (AffinePoint (FVar WrapField)))
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
-wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
+wrapVerifyN2Circuit { lagrangeAt, blindingH } (UnChecked (WrapVerifyInput input)) = do
   let
-    at = unsafeIdx inputs
-    readPt i = AffinePoint { x: at i, y: at (i + 1) }
-    ivpInput = parseIvpWrapInput (Vector.take inputs)
+    IvpHarnessInput ivp = input.ivp
+    WrapProofMessages m = ivp.messages
     constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyVestaPt in AffinePoint { x: const_ x', y: const_ y' }
 
     ivpParams =
@@ -55,8 +50,8 @@ wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
       }
 
     fullIvpInput =
-      { publicInput: ivpInput.publicInput
-      , sgOld: readPt 208 :< readPt 210 :< Vector.nil
+      { publicInput: ivp.publicInput
+      , sgOld: input.sgOld
       , sgOldMask: Just (Vector.replicate (const_ one))
       , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:
@@ -64,27 +59,27 @@ wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
           , coeff: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 15 _
           , sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
           }
-      , deferredValues: ivpInput.deferredValues
-      , wComm: map (ChunkedCommitment <<< Vector.singleton) ivpInput.wComm
-      , zComm: ChunkedCommitment (Vector.singleton ivpInput.zComm)
-      , tComm: ivpInput.tComm
-      , opening: ivpInput.opening
+      , deferredValues: ivp.deferredValues
+      , wComm: m.wComm
+      , zComm: m.zComm
+      , tComm: Vector.concat (coerce m.tComm :: Vector 7 (Vector 1 (AffinePoint (FVar WrapField))))
+      , opening: ivp.opening
       }
 
     verifyInput =
-      { spongeDigestBeforeEvaluations: ivpInput.claimedDigest
-      , messagesForNextWrapProofDigest: at 177
-      , bulletproofChallenges: ivpInput.deferredValues.bulletproofChallenges
-      , newBpChallenges:
-          ((Vector.generate \j -> at (178 + getFinite j)) :: Vector WrapIPARounds _)
-            :< ((Vector.generate \j -> at (193 + getFinite j)) :: Vector WrapIPARounds _)
-            :< Vector.nil
-      , sg: ivpInput.opening.sg
+      { spongeDigestBeforeEvaluations: ivp.claimedDigest
+      , messagesForNextWrapProofDigest: input.messagesForNextWrapProofDigest
+      , bulletproofChallenges: ivp.deferredValues.bulletproofChallenges
+      , newBpChallenges: input.newBpChallenges
+      , sg: ivp.opening.sg
       }
 
   wrapVerify ivpParams fullIvpInput verifyInput
 
 compileWrapVerifyN2 :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileWrapVerifyN2 srsData =
-  compile noAdvice (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\inputs -> wrapVerifyN2Circuit srsData inputs)
+  compile noAdvice
+    (Proxy @(UnChecked (WrapVerifyInput 2 Unit (F WrapField) Boolean (AffinePoint WrapField))))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint WrapField))
+    (wrapVerifyN2Circuit srsData)

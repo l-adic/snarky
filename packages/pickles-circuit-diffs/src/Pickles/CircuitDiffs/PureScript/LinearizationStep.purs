@@ -2,22 +2,21 @@ module Pickles.CircuitDiffs.PureScript.LinearizationStep
   ( compileLinearizationStep
   ) where
 
-import Data.Vector (Vector)
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, domainLog2)
-import Pickles.CircuitDiffs.PureScript.LinearizationCommon (linearizationCircuitM)
+import Pickles.CircuitDiffs.PureScript.LinearizationCommon (LinearizationInput, linearizationCircuitM)
 import Pickles.Field (StepField)
 import Pickles.Linearization.Pallas as PallasTokens
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (F)
+import Snarky.Circuit.DSL (F, UnChecked)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Type.Proxy (Proxy(..))
 
 compileLinearizationStep :: Effect (CompiledCircuit StepField)
 compileLinearizationStep =
   compile noAdvice
-    (Proxy @(Vector 90 (F StepField)))
+    (Proxy @(UnChecked (LinearizationInput (F StepField))))
     (Proxy @(F StepField))
     (Proxy @(KimchiConstraint StepField))
     (linearizationCircuitM domainLog2 PallasTokens.constantTermTokens)

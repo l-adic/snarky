@@ -7,7 +7,7 @@ import Snarky.Kimchi.Circuit.Poseidon
 
 Transcribes packages/random-oracle/src/Snarky/Circuit/RandomOracle/Sponge.purs: the
 absorb/squeeze automaton of `Poseidon.absorb1`/`Poseidon.squeeze` with the state as
-circuit variables (a `SpongeState`, reading as a `Poseidon.Triple`), the permutation as
+circuit variables (a `SpongeState`, reading as a `SpongeStateVal`), the permutation as
 the `poseidon` gadget, and every absorption sealed by `sealVar`.
 
 The state cells are the only circuit data; the mode (`Poseidon.SpongeMode`) is metadata
@@ -54,7 +54,7 @@ forward by `monotone_reads`), as with `OnCurveAt`/`OnCurveAs`. -/
 /-- The sponge's reading under a valuation: cells and mode. -/
 def ReadsAt [Add F] [Mul F] [Zero F] (V : Valuation F) (sv : SpongeVar F)
     (s : Poseidon.State F) : Prop :=
-  CircuitType.readVal (val := Poseidon.Triple F) V sv.state = s.state ∧ sv.mode = s.mode
+  CircuitType.readVal (val := SpongeStateVal F) V sv.state = s.state ∧ sv.mode = s.mode
 
 /-- The fresh circuit sponge reads as the fresh value sponge. -/
 theorem ReadsAt.init [Field F] {V : Valuation F} :
@@ -69,7 +69,7 @@ theorem ReadsAt.ofConstants [Field F] {V : Valuation F} (s : Poseidon.State F) :
 /-- The sponge's reading at a table: in scope, and reading this value sponge. -/
 def Reads [Add F] [Mul F] [Zero F] (st : ProverState F) (sv : SpongeVar F)
     (s : Poseidon.State F) : Prop :=
-  CircuitType.ReadsAs (val := Poseidon.Triple F) st sv.state s.state ∧ sv.mode = s.mode
+  CircuitType.ReadsAs (val := SpongeStateVal F) st sv.state s.state ∧ sv.mode = s.mode
 
 /-- A sponge's reading survives the table's growth. -/
 @[complete_mono] theorem monotone_reads [Add F] [Mul F] [Zero F] {sv : SpongeVar F}
@@ -107,8 +107,8 @@ input state's reading — the seal reads as the sum, in either operand order. -/
     (s : SpongeState F) (n : Fin 3) (x : FVar F) :
     ⦃⌜True⌝⦄
     addSlotVar (c := Builder V c) s n x
-    ⦃⇓ r _ => ⌜CircuitType.readVal (val := Poseidon.Triple F) V r
-      = Poseidon.addSlot (CircuitType.readVal (val := Poseidon.Triple F) V s) n
+    ⦃⇓ r _ => ⌜CircuitType.readVal (val := SpongeStateVal F) V r
+      = Poseidon.addSlot (CircuitType.readVal (val := SpongeStateVal F) V s) n
           (x.val V)⌝⦄ := by
   match n with
   | 0 =>
@@ -131,16 +131,16 @@ private theorem addSlotVar_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (s : SpongeState F) (n : Fin 3)
     (x : FVar F) (sv : Poseidon.Triple F) (xv : F) :
     Complete (F := F) (c := c)
-      (fun st => CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv ∧
+      (fun st => CircuitType.ReadsAs (val := SpongeStateVal F) st s sv ∧
         CircuitType.ReadsAs (val := F) st x xv)
       (addSlotVar (c := c) s n x)
-      (fun r st' => CircuitType.ReadsAs (val := Poseidon.Triple F) st' r
+      (fun r st' => CircuitType.ReadsAs (val := SpongeStateVal F) st' r
         (Poseidon.addSlot sv n xv)) := by
   match n with
   | 0 =>
     simp only [addSlotVar]
     have hsum : ∀ {st : ProverState F},
-        CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv →
+        CircuitType.ReadsAs (val := SpongeStateVal F) st s sv →
         CircuitType.ReadsAs (val := F) st x xv →
         CircuitType.ReadsAs (val := F) st (CVar.add_ x s.s0) (xv + sv.1) :=
       fun hs hx => ⟨CircuitType.scoped_fvar.mpr
@@ -163,7 +163,7 @@ private theorem addSlotVar_complete [Field F] [DecidableEq F] [BasicSystem F c]
   | 1 =>
     simp only [addSlotVar]
     have hsum : ∀ {st : ProverState F},
-        CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv →
+        CircuitType.ReadsAs (val := SpongeStateVal F) st s sv →
         CircuitType.ReadsAs (val := F) st x xv →
         CircuitType.ReadsAs (val := F) st (CVar.add_ x s.s1) (xv + sv.2.1) :=
       fun hs hx => ⟨CircuitType.scoped_fvar.mpr
@@ -186,7 +186,7 @@ private theorem addSlotVar_complete [Field F] [DecidableEq F] [BasicSystem F c]
   | 2 =>
     simp only [addSlotVar]
     have hsum : ∀ {st : ProverState F},
-        CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv →
+        CircuitType.ReadsAs (val := SpongeStateVal F) st s sv →
         CircuitType.ReadsAs (val := F) st x xv →
         CircuitType.ReadsAs (val := F) st (CVar.add_ x s.s2) (xv + sv.2.2) :=
       fun hs hx => ⟨CircuitType.scoped_fvar.mpr
@@ -294,7 +294,7 @@ theorem absorb_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
   subst hm
   -- the state's reading, off the sponge's — the walk's way into the `Reads` bundle
   have hstate : ∀ {st : ProverState F}, Reads st ⟨stv, mode⟩ ⟨sst, mode⟩ →
-      CircuitType.ReadsAs (val := Poseidon.Triple F) st stv sst := fun h => h.1
+      CircuitType.ReadsAs (val := SpongeStateVal F) st stv sst := fun h => h.1
   cases mode with
   | absorbed n =>
     by_cases hn : n.val = 2
@@ -326,7 +326,7 @@ private def slotVar (s : SpongeState F) : Fin 3 → FVar F
 
 /-- `slotVar` reads the value sponge's slot. -/
 private theorem slotVar_val [Field F] {V : Valuation F} {s : SpongeState F}
-    {v : Poseidon.Triple F} (h : CircuitType.readVal (val := Poseidon.Triple F) V s = v) :
+    {v : Poseidon.Triple F} (h : CircuitType.readVal (val := SpongeStateVal F) V s = v) :
     ∀ n : Fin 3, (slotVar s n).val V = Poseidon.slot v n := by
   intro n
   subst h
@@ -337,7 +337,7 @@ private theorem slotVar_val [Field F] {V : Valuation F} {s : SpongeState F}
 
 /-- `slotVar` is one of the state's cells, so it is in scope when the state is. -/
 private theorem slotVar_scoped [Field F] {st : ProverState F} {s : SpongeState F}
-    (h : CircuitType.Scoped (val := Poseidon.Triple F) st s) :
+    (h : CircuitType.Scoped (val := SpongeStateVal F) st s) :
     ∀ n : Fin 3, (slotVar s n).Scoped st := by
   rw [scoped_spongeState] at h
   intro n
@@ -418,7 +418,7 @@ theorem squeeze_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
   obtain ⟨stv, mode⟩ := sv
   obtain ⟨sst, smode⟩ := s
   have hslot : ∀ (stk : ProverState F) (t : SpongeState F) (v : Poseidon.Triple F),
-      CircuitType.ReadsAs (val := Poseidon.Triple F) stk t v → ∀ k : Fin 3,
+      CircuitType.ReadsAs (val := SpongeStateVal F) stk t v → ∀ k : Fin 3,
         CircuitType.ReadsAs (val := F) stk (slotVar t k) (Poseidon.slot v k) := by
     intro stk t v h k
     exact ⟨CircuitType.scoped_fvar.mpr (slotVar_scoped h.1 k),
@@ -431,7 +431,7 @@ theorem squeeze_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
   subst hm
   -- the state's reading, off the sponge's — the walk's way into the `Reads` bundle
   have hstate : ∀ {st : ProverState F}, Reads st ⟨stv, mode⟩ ⟨sst, mode⟩ →
-      CircuitType.ReadsAs (val := Poseidon.Triple F) st stv sst := fun h => h.1
+      CircuitType.ReadsAs (val := SpongeStateVal F) st stv sst := fun h => h.1
   cases mode with
   | squeezed n =>
     by_cases hn : n.val = 2

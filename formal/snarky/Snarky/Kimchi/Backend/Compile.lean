@@ -9,7 +9,7 @@ The base `compileBody` program is backend-generic (it speaks `BasicSystem`), so 
 kimchi entry points run the reduction as a POST-PASS over what the base `compile`
 and `solve` produce, rather than through a per-constraint hook inside the
 interpreters: `kimchiCompile` folds the builder's reduction over the compiled
-constraint list, `kimchiSolve` folds the prover's reduction over the same list from
+constraint list, `reduceSolved` folds the prover's reduction over the same list from
 the table a base solve returned, and `kimchiGateData` carries a compiled circuit
 through row dispatch and the CS assembly — the full pure pipeline the CS-equality
 seam compares against the fixture corpus.
@@ -89,19 +89,6 @@ def reduceSolved [Field F] [DecidableEq F] {α : Type} (built : Built (KimchiCon
   match reduceTable built.constraints ⟨built.nextVar, env⟩ with
   | .error e => .error e
   | .ok s => .ok s.assignments
-
-/-- Solve a circuit at the kimchi backend: the base solve, then the prover's
-reduction over the compiled constraints from the compilation's counter. -/
-def kimchiSolve [Field F] [DecidableEq F] [CircuitType F a avar]
-    [CheckedType F (KimchiConstraint F) a avar] [CircuitType F b bvar]
-    (main : avar → CircuitM F (KimchiConstraint F) bvar) (input : a) :
-    Except EvalError (b × Assignments F) :=
-  match solve (a := a) (b := b) main input with
-  | .error e => .error e
-  | .ok (outVal, env) =>
-    match reduceSolved (compile (a := a) (b := b) main) env with
-    | .error e => .error e
-    | .ok env' => .ok (outVal, env')
 
 /-- The variables backing a bundle of plain variables — the witnessed public output
 slots, whose ids the assembly needs but whose numbering it does not care about. -/

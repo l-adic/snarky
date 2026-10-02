@@ -19,13 +19,12 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Exception (try)
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), StatementIO(..), StepField, StepRule, WrapVkChunks, bindVk, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (digestVk, mkBundle, projectVk) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F(..), FVar, exists, true_)
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.Prove.SideLoadedMain (SideLoadedMainPrevsSpec, noRecursionInputRule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -58,14 +57,15 @@ sideLoadedBoundRule getPrevStates self = do
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SideLoadedBound" do
   it "proves at the side-loaded key's digest and fails at any other" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SideLoadedBound.json")
+    outputs <- liftEffect $ appOutputs "SideLoadedBound"
     let
       compileCfg =
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
-        , proofCache: cache
+        , proofCache: outputs.proofCache
         , lagrangeCache: Just lagrangeCache
+        , dump: Nothing
         }
 
     childEntry <- liftEffect $ mkRuleEntry @Unit noRecursionInputRule Vector.nil

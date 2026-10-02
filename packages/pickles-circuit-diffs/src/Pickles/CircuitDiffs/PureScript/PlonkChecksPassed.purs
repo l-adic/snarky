@@ -5,61 +5,64 @@ module Pickles.CircuitDiffs.PureScript.PlonkChecksPassed
 
 import Prelude
 
-import Data.Fin (getFinite)
+import Data.Tuple.Nested (Tuple8, tuple8, uncurry8)
 import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PlonkChecks (permScalarCircuit)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (F, FVar, Snarky, pow_)
-import Snarky.Circuit.Kimchi (Type1(..), Type2(..), shiftedEqualType1, shiftedEqualType2)
+import Snarky.Circuit.DSL (class CircuitType, F, FVar, Snarky, UnChecked(..), genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, pow_)
+import Snarky.Circuit.Kimchi (Type1, Type2, shiftedEqualType1, shiftedEqualType2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
--- | `plonk_checks_passed_{step,wrap}_circuit` (OCaml `dump_circuit_impl.ml`): alpha at
--- | 0, beta 1, gamma 2, zkPolynomial 3, z(zeta*omega) 4, sigma[0..5] at 5-10,
--- | w[0..5] at 11-16, and the claimed perm at 17 as a Type1 (step) or Type2 (wrap)
--- | shifted value. `alpha^21` is computed by `pow_` as the dump does, then the perm
--- | scalar is compared with the claim through the shifted equality.
--- |
--- | Layout only: the rows are the DSL's `pow_`, the library's `permScalarCircuit`
--- | (the verifiers' perm scalar) and the library's `shiftedEqualType1`/`Type2`.
-type PermInputs f =
-  { alpha :: FVar f
-  , beta :: FVar f
-  , gamma :: FVar f
-  , zkPolynomial :: FVar f
-  , zOmega :: FVar f
-  , sigma :: Vector 6 (FVar f)
-  , w :: Vector 6 (FVar f)
-  , claimed :: FVar f
+-- | `plonk_checks_passed_{step,wrap}_circuit`'s input (OCaml `dump_circuit_impl.ml`): the
+-- | claimed perm is a Type1 (step) or Type2 (wrap) shifted value. `sigma` and `w` are the
+-- | first six columns' evaluations at zeta.
+newtype PlonkChecksPassedInput f s = PlonkChecksPassedInput
+  { alpha :: f
+  , beta :: f
+  , gamma :: f
+  , zkPolynomial :: f
+  , zOmega :: f
+  , sigma :: Vector 6 f
+  , w :: Vector 6 f
+  , claimedPerm :: s
   }
 
-parsePermInputs :: forall f. Vector 18 (FVar f) -> PermInputs f
-parsePermInputs inputs =
-  let
-    at = unsafeIdx inputs
-  in
-    { alpha: at 0
-    , beta: at 1
-    , gamma: at 2
-    , zkPolynomial: at 3
-    , zOmega: at 4
-    , sigma: Vector.generate \j -> at (5 + getFinite j)
-    , w: Vector.generate \j -> at (11 + getFinite j)
-    , claimed: at 17
-    }
+-- | The wire order.
+type PlonkChecksPassedTuple f s = Tuple8 f f f f f (Vector 6 f) (Vector 6 f) s
 
+toTuple :: forall f s. PlonkChecksPassedInput f s -> PlonkChecksPassedTuple f s
+toTuple (PlonkChecksPassedInput i) =
+  tuple8 i.alpha i.beta i.gamma i.zkPolynomial i.zOmega i.sigma i.w i.claimedPerm
+
+fromTuple :: forall f s. PlonkChecksPassedTuple f s -> PlonkChecksPassedInput f s
+fromTuple = uncurry8 \alpha beta gamma zkPolynomial zOmega sigma w claimedPerm ->
+  PlonkChecksPassedInput { alpha, beta, gamma, zkPolynomial, zOmega, sigma, w, claimedPerm }
+
+instance
+  ( CircuitType f fa fv
+  , CircuitType f sa sv
+  ) =>
+  CircuitType f (PlonkChecksPassedInput fa sa) (PlonkChecksPassedInput fv sv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(PlonkChecksPassedTuple fa sa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(PlonkChecksPassedTuple fa sa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(PlonkChecksPassedTuple fa sa)
+
+-- | `alpha^21` is computed by `pow_` as the dump does, then the library's `permScalarCircuit`
+-- | (the verifiers' perm scalar).
 permScalarOf
-  :: forall f r
+  :: forall f s r
    . PrimeField f
-  => PermInputs f
+  => PlonkChecksPassedInput (FVar f) s
   -> Snarky f (KimchiConstraint f) r (FVar f)
-permScalarOf i = do
+permScalarOf (PlonkChecksPassedInput i) = do
   alphaPow21 <- pow_ i.alpha 21
   permScalarCircuit
     { w: i.w
@@ -71,32 +74,33 @@ permScalarOf i = do
     , alphaPow21
     }
 
+-- | The perm scalar against the claim, through the library's shifted equality.
 plonkChecksPassedStepCircuit
   :: forall r
-   . Vector 18 (FVar StepField)
+   . UnChecked (PlonkChecksPassedInput (FVar StepField) (Type1 (FVar StepField)))
   -> Snarky StepField (KimchiConstraint StepField) r Unit
-plonkChecksPassedStepCircuit inputs = do
-  let i = parsePermInputs inputs
-  actual <- permScalarOf i
-  void $ shiftedEqualType1 (Type1 i.claimed) actual
+plonkChecksPassedStepCircuit (UnChecked input@(PlonkChecksPassedInput i)) = do
+  actual <- permScalarOf input
+  void $ shiftedEqualType1 i.claimedPerm actual
 
 plonkChecksPassedWrapCircuit
   :: forall r
-   . Vector 18 (FVar WrapField)
+   . UnChecked (PlonkChecksPassedInput (FVar WrapField) (Type2 (FVar WrapField)))
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
-plonkChecksPassedWrapCircuit inputs = do
-  let i = parsePermInputs inputs
-  actual <- permScalarOf i
-  void $ shiftedEqualType2 (Type2 i.claimed) actual
+plonkChecksPassedWrapCircuit (UnChecked input@(PlonkChecksPassedInput i)) = do
+  actual <- permScalarOf input
+  void $ shiftedEqualType2 i.claimedPerm actual
 
 compilePlonkChecksPassedStep :: Effect (CompiledCircuit StepField)
 compilePlonkChecksPassedStep =
-  compile noAdvice (Proxy @(Vector 18 (F StepField))) (Proxy @Unit)
+  compile noAdvice (Proxy @(UnChecked (PlonkChecksPassedInput (F StepField) (Type1 (F StepField)))))
+    (Proxy @Unit)
     (Proxy @(KimchiConstraint StepField))
     plonkChecksPassedStepCircuit
 
 compilePlonkChecksPassedWrap :: Effect (CompiledCircuit WrapField)
 compilePlonkChecksPassedWrap =
-  compile noAdvice (Proxy @(Vector 18 (F WrapField))) (Proxy @Unit)
+  compile noAdvice (Proxy @(UnChecked (PlonkChecksPassedInput (F WrapField) (Type2 (F WrapField)))))
+    (Proxy @Unit)
     (Proxy @(KimchiConstraint WrapField))
     plonkChecksPassedWrapCircuit

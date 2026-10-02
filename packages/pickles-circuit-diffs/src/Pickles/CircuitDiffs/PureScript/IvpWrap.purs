@@ -1,36 +1,37 @@
 module Pickles.CircuitDiffs.PureScript.IvpWrap
-  ( IvpWrapInput
+  ( IvpHarnessInput(..)
+  , IvpWrapInput
   , IvpWrapParams
-  , parseIvpWrapInput
-  , ivpWrapCircuit
+  , IvpOpening
   , compileIvpWrap
   ) where
 
 import Prelude
 
-import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
+import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
-import Data.Tuple.Nested (tuple3, tuple6)
-import Data.Vector (Vector, (:<))
+import Data.Tuple.Nested (Tuple10, Tuple2, Tuple5, tuple10, tuple2, tuple5, uncurry10, uncurry2, uncurry5)
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapEndo)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, wrapEndo)
+import Pickles.DeferredValues (DeferredValues)
 import Pickles.Field (WrapField)
 import Pickles.IncrementallyVerifyProof (incrementallyVerifyProof)
-import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup)
+import Pickles.PackedStatement (PackedStepPublicInput)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Types (ChunkedCommitment(..))
+import Pickles.Types (ChunkedCommitment(..), WrapProofMessages(..))
 import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
-import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
+import Snarky.Circuit.DSL (class CircuitType, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), assertEq, assertEqual_, const_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.Kimchi (Type1, groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField, curveParams)
+import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -40,108 +41,102 @@ type IvpWrapParams =
   , blindingH :: AffinePoint (F WrapField)
   }
 
-type IvpWrapInput pi =
-  { publicInput :: pi
-  , deferredValues ::
-      { plonk ::
-          { alpha :: SizedF 128 (FVar WrapField)
-          , beta :: SizedF 128 (FVar WrapField)
-          , gamma :: SizedF 128 (FVar WrapField)
-          , zeta :: SizedF 128 (FVar WrapField)
-          , perm :: Type1 (FVar WrapField)
-          , zetaToSrsLength :: Type1 (FVar WrapField)
-          , zetaToDomainSize :: Type1 (FVar WrapField)
-          }
-      , combinedInnerProduct :: Type1 (FVar WrapField)
-      , b :: Type1 (FVar WrapField)
-      , xi :: SizedF 128 (FVar WrapField)
-      , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar WrapField))
-      }
-  , wComm :: Vector 15 (AffinePoint (FVar WrapField))
-  , zComm :: AffinePoint (FVar WrapField)
-  , tComm :: Vector 7 (AffinePoint (FVar WrapField))
-  , opening ::
-      { delta :: AffinePoint (FVar WrapField)
-      , sg :: AffinePoint (FVar WrapField)
-      , lr :: Vector 16 { l :: AffinePoint (FVar WrapField), r :: AffinePoint (FVar WrapField) }
-      , z1 :: Type1 (FVar WrapField)
-      , z2 :: Type1 (FVar WrapField)
-      }
-  , claimedDigest :: FVar WrapField
+-- | A proof's opening, as `incrementallyVerifyProof` takes it, at `n` rounds.
+type IvpOpening n pt s =
+  { delta :: pt
+  , sg :: pt
+  , lr :: Vector n { l :: pt, r :: pt }
+  , z1 :: s
+  , z2 :: s
   }
 
-parseIvpWrapInput :: Vector 177 (FVar WrapField) -> IvpWrapInput (PackedStepPublicInput 1 15 (FVar WrapField) (BoolVar WrapField))
-parseIvpWrapInput inputs =
-  let
-    at = unsafeIdx inputs
-    readPt i = AffinePoint { x: at i, y: at (i + 1) }
-    splitField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
+-- | An `ivp_{step,wrap}_circuit` input (OCaml `dump_circuit_impl.ml`): the public input `pi`,
+-- | the verified proof's deferred values at `d` rounds and shifted values `s`, its messages and
+-- | opening at one chunk, and the claimed sponge digest before evaluations. The deferred
+-- | values travel as the plonk challenges `alpha`, `beta`, `gamma`, `zeta`, then `perm`,
+-- | `zetaToSrsLength`, `zetaToDomainSize`, `cip`, `b`, `xi` and the challenges; the opening as
+-- | `delta`, `sg`, the `(L, R)` pairs, `z1`, `z2`.
+newtype IvpHarnessInput pi d f pt s = IvpHarnessInput
+  { publicInput :: pi
+  , deferredValues :: DeferredValues d f s
+  , messages :: WrapProofMessages 1 pt
+  , opening :: IvpOpening d pt s
+  , claimedDigest :: f
+  }
 
-    perProofTuple =
-      tuple6
-        ( splitField 0 :< splitField 2 :< splitField 4
-            :< splitField 6
-            :< splitField 8
-            :< Vector.nil
-        )
-        (at 10)
-        (asSizedF128 (at 11) :< asSizedF128 (at 12) :< Vector.nil)
-        ( asSizedF128 (at 13) :< asSizedF128 (at 14)
-            :< asSizedF128 (at 15)
-            :< Vector.nil
-        )
-        ( (Vector.generate \j -> asSizedF128 (at (16 + getFinite j)))
-            :: Vector 15 (SizedF 128 (FVar WrapField))
-        )
-        (coerce (at 31) :: BoolVar WrapField)
-    stmtTuple =
-      tuple3
-        (perProofTuple :< Vector.nil)
-        (at 32)
-        (at 33 :< Vector.nil)
-  in
-    { publicInput: fromPackedTuple stmtTuple
-    , deferredValues:
-        { plonk:
-            { alpha: asSizedF128 (at 34)
-            , beta: asSizedF128 (at 35)
-            , gamma: asSizedF128 (at 36)
-            , zeta: asSizedF128 (at 37)
-            , perm: Type1 (at 38)
-            , zetaToSrsLength: Type1 (at 39)
-            , zetaToDomainSize: Type1 (at 40)
-            }
-        , combinedInnerProduct: Type1 (at 41)
-        , b: Type1 (at 42)
-        , xi: asSizedF128 (at 43)
-        , bulletproofChallenges: Vector.generate \j -> asSizedF128 (at (44 + getFinite j))
-        }
-    , wComm: Vector.generate \j -> readPt (60 + 2 * getFinite j)
-    , zComm: readPt 90
-    , tComm: Vector.generate \j -> readPt (92 + 2 * getFinite j)
-    , opening:
-        { delta: readPt 106
-        , sg: readPt 108
-        , lr: Vector.generate \j ->
-            { l: readPt (110 + 4 * getFinite j)
-            , r: readPt (110 + 4 * getFinite j + 2)
-            }
-        , z1: Type1 (at 174)
-        , z2: Type1 (at 175)
-        }
-    , claimedDigest: at 176
+-- | `ivp_wrap_circuit`'s input: the packed step statement at one proof and 15 rounds, the step
+-- | proof at 16 rounds, Type1-shifted.
+type IvpWrapInput f b pt = IvpHarnessInput (PackedStepPublicInput 1 15 f b) 16 f pt (Type1 f)
+
+-- | The deferred values in the dump's order.
+type DeferredTuple d f s =
+  Tuple10 (SizedF 128 f) (SizedF 128 f) (SizedF 128 f) (SizedF 128 f) s s s s s
+    (Tuple2 (SizedF 128 f) (Vector d (SizedF 128 f)))
+
+-- | The opening in the dump's order.
+type OpeningTuple d pt s = Tuple5 pt pt (Vector d { l :: pt, r :: pt }) s s
+
+-- | The wire order.
+type IvpTuple pi d f pt s =
+  Tuple5 pi (DeferredTuple d f s) (WrapProofMessages 1 pt) (OpeningTuple d pt s) f
+
+toTuple :: forall pi d f pt s. IvpHarnessInput pi d f pt s -> IvpTuple pi d f pt s
+toTuple (IvpHarnessInput i) =
+  tuple5 i.publicInput
+    ( tuple10 p.alpha p.beta p.gamma p.zeta p.perm p.zetaToSrsLength p.zetaToDomainSize
+        dv.combinedInnerProduct
+        dv.b
+        (tuple2 dv.xi dv.bulletproofChallenges)
+    )
+    i.messages
+    (tuple5 i.opening.delta i.opening.sg i.opening.lr i.opening.z1 i.opening.z2)
+    i.claimedDigest
+  where
+  dv = i.deferredValues
+  p = dv.plonk
+
+fromTuple :: forall pi d f pt s. IvpTuple pi d f pt s -> IvpHarnessInput pi d f pt s
+fromTuple = uncurry5 \publicInput dv messages opening claimedDigest ->
+  IvpHarnessInput
+    { publicInput
+    , deferredValues: dv # uncurry10 \alpha beta gamma zeta perm zetaToSrsLength zetaToDomainSize combinedInnerProduct b rest ->
+        rest # uncurry2 \xi bulletproofChallenges ->
+          { plonk: { alpha, beta, gamma, zeta, perm, zetaToSrsLength, zetaToDomainSize }
+          , combinedInnerProduct
+          , xi
+          , bulletproofChallenges
+          , b
+          }
+    , messages
+    , opening: opening # uncurry5 \delta sg lr z1 z2 -> { delta, sg, lr, z1, z2 }
+    , claimedDigest
     }
 
+instance
+  ( Reflectable d Int
+  , CircuitType f ia iv
+  , CircuitType f fa fv
+  , CircuitType f pa pv
+  , CircuitType f sa sv
+  ) =>
+  CircuitType f (IvpHarnessInput ia d fa pa sa) (IvpHarnessInput iv d fv pv sv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(IvpTuple ia d fa pa sa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(IvpTuple ia d fa pa sa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(IvpTuple ia d fa pa sa)
+
+-- | The library's `incrementallyVerifyProof` on the wrap side, at the conditional sponge
+-- | with no `sg_old` and the dummy key, then the digest and challenges against the claims.
 ivpWrapCircuit
-  :: forall pi r
-   . PrimeField WrapField
-  => PublicInputCommit pi WrapField
-  => IvpWrapParams
-  -> IvpWrapInput pi
+  :: forall r
+   . IvpWrapParams
+  -> UnChecked (IvpWrapInput (FVar WrapField) (BoolVar WrapField) (AffinePoint (FVar WrapField)))
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
-ivpWrapCircuit { lagrangeAt, blindingH } input = do
+ivpWrapCircuit { lagrangeAt, blindingH } (UnChecked (IvpHarnessInput input)) = do
   let
     constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyVestaPt in AffinePoint { x: const_ x', y: const_ y' }
+    WrapProofMessages m = input.messages
 
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
@@ -164,9 +159,9 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
           , sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
           }
       , deferredValues: input.deferredValues
-      , wComm: map (ChunkedCommitment <<< Vector.singleton) input.wComm
-      , zComm: ChunkedCommitment (Vector.singleton input.zComm)
-      , tComm: input.tComm
+      , wComm: m.wComm
+      , zComm: m.zComm
+      , tComm: Vector.concat (coerce m.tComm :: Vector 7 (Vector 1 (AffinePoint (FVar WrapField))))
       , opening: input.opening
       }
   output <- evalSpongeM initialSpongeCircuit $
@@ -177,5 +172,8 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
 
 compileIvpWrap :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileIvpWrap srsData =
-  compile noAdvice (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\inputs -> ivpWrapCircuit srsData (parseIvpWrapInput inputs))
+  compile noAdvice
+    (Proxy @(UnChecked (IvpWrapInput (F WrapField) Boolean (AffinePoint WrapField))))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint WrapField))
+    (ivpWrapCircuit srsData)

@@ -20,7 +20,9 @@ package:
     - node-buffer
     - node-fs
     - node-process
+    - ordered-collections
     - partial
+    - pickles-circuit-diffs-types
     - pickles-linearization-types
     - poseidon
     - prelude

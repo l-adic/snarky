@@ -5,27 +5,23 @@ import Prelude
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Int as Int
 import Data.Int.Bits as Bits
-import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Monoid (power)
-import Data.Newtype (un)
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Console as Console
 import Effect.Exception (throw)
+import Foreign (Foreign)
 import JS.BigInt as BigInt
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
 import Node.FS.Sync as FS
-import Node.Process as Process
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, fromGateData, gateDataOf, parseOcamlFixtures)
+import Pickles.CircuitDiffs.Circuit (ComparableCircuit, parseOcamlFixtures)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect, compileBCorrectWrap)
 import Pickles.CircuitDiffs.PureScript.BindVk (compileBindVkStep)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
@@ -36,7 +32,7 @@ import Pickles.CircuitDiffs.PureScript.CheckBulletproofStep (compileCheckBulletp
 import Pickles.CircuitDiffs.PureScript.CheckBulletproofWrap (compileCheckBulletproofWrap)
 import Pickles.CircuitDiffs.PureScript.Cip (compileCipStep, compileCipWrap)
 import Pickles.CircuitDiffs.PureScript.CombinePoly (compileCombinePoly)
-import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, WrapArtifact)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, WrapArtifact)
 import Pickles.CircuitDiffs.PureScript.ExpandPlonk (compileExpandPlonkStep, compileExpandPlonkWrap)
 import Pickles.CircuitDiffs.PureScript.FopStep (compileFopStep)
 import Pickles.CircuitDiffs.PureScript.FopStepChunks2 (compileFopStepChunks2)
@@ -89,40 +85,34 @@ import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatBranches (compileXhatBranches)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
-import Pickles.CircuitDiffs.Types (CircuitComparison, WitnessExport)
+import Pickles.CircuitDiffs.Types (CircuitComparison, Constants(..))
+import Pickles.CircuitDiffs.Types as Dump
+import Pickles.Dump.Circuit (Circuit, comparable, fromCompiledCircuit)
+import Pickles.Dump.Constants (DerivedKey)
+import Pickles.Prove.RuleDump (RuleDump, encodeRuleDump)
 import Pickles.PublicInputCommit (LagrangeBaseLookup, mkConstLagrangeBaseLookup)
-import Random.LCG (mkSeed)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Builder (constraintsToArray)
-import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
-import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
-import Snarky.Backend.Kimchi.Class (createProverIndex)
+import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
-import Snarky.Backend.Kimchi.Proof (createProof)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class BasicSystem, class CheckedType, class CircuitType, BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (Snarky)
-import Snarky.Circuit.DSL.SizedF (toField) as SzF
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, generator, toAffine, toBigInt)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
-import Test.Pickles.CircuitDiffs.WitnessDump (buildWitnessExport)
-import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (Gen, chooseInt, evalGen, suchThat)
 import Test.Spec (SpecT, beforeAll_, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -165,46 +155,73 @@ resultsDir = "packages/pickles-circuit-diffs/circuits/results/"
 writeComparison :: String -> CircuitComparison -> Effect Unit
 writeComparison path c = FS.writeTextFile UTF8 path (writeJSON c)
 
--- | A point as its decimal `[x, y]` pair, the form the Lean `check_cs` harness parses.
-ptToJson :: forall f. PrimeField f => AffinePoint f -> Array String
-ptToJson (AffinePoint { x, y }) = [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+-- | A circuit, the constants it was compiled with and a step main's rule, as its comparison
+-- | dump carries them.
+type Compared f = { circuit :: Circuit f, constants :: Maybe Constants, rule :: Maybe Foreign }
 
--- | Write the first `count` Lagrange bases of a step-side SRS at domain `2^log2`, with its
--- | blinding `h`, to `file` in `resultsDir` for the Lean `check_cs` harness. Emitted inside
--- | an `it`, so it runs after `resetOutputDirs` has created the directory.
-dumpStepLagrange :: String -> CRS PallasG -> Int -> Int -> Effect Unit
-dumpStepLagrange file srs log2 count =
-  FS.writeTextFile UTF8 (resultsDir <> file)
-    ( writeJSON
-        { lagrange: Array.range 0 (count - 1) <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt srs log2 i)
-        , h: ptToJson (vestaSrsBlindingGenerator srs)
-        }
-    )
+-- | A point as its decimal coordinates.
+fPoint :: forall f. PrimeField f => AffinePoint (F f) -> Dump.Point
+fPoint (AffinePoint { x: F x, y: F y }) = [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
 
--- | A wrap artifact's circuit, after writing the constants it bakes in to
--- | `<name>_constants.json` in `resultsDir` for the Lean `check_cs` harness.
-wrapWithConstants :: String -> WrapArtifact -> Effect (Circuit Fq)
-wrapWithConstants name art = do
-  FS.writeTextFile UTF8 (resultsDir <> name <> "_constants.json") art.constants
-  fromCompiledCircuit art.wrapCs
+-- | A circuit compiled over `srsData`, with its `Xhat` constants: the blinding base and the
+-- | first `count` Lagrange bases.
+withXhat
+  :: forall n f r g
+   . PrimeField f
+  => Int
+  -> { lagrangeAt :: LagrangeBaseLookup n f, blindingH :: AffinePoint (F f) | r }
+  -> Circuit g
+  -> Compared g
+withXhat count srsData circuit =
+  { circuit
+  , constants: Just $ Xhat
+      { h: fPoint srsData.blindingH
+      , lagrange: Array.range 0 (count - 1) <#> \i ->
+          map fPoint (Vector.toUnfoldable (srsData.lagrangeAt i).constant)
+      }
+  , rule: Nothing
+  }
 
--- | A step artifact's circuit, after writing the constants it bakes in to
--- | `<name>_constants.json` in `resultsDir` for the Lean `check_cs` harness.
-stepWithConstants :: String -> { art :: StepArtifact, constants :: String } -> Effect (Circuit Fp)
-stepWithConstants name r = do
-  FS.writeTextFile UTF8 (resultsDir <> name <> "_constants.json") r.constants
-  fromCompiledCircuit r.art.stepCs
+-- | A circuit compiled over per-branch Lagrange tables, with its `XhatBranches` constants:
+-- | the blinding base and each branch's first `count` bases.
+withXhatBranches
+  :: forall branches n r g
+   . { lagrangeTable :: Int -> Vector branches (Vector n (AffinePoint (F Fq))), blindingH :: AffinePoint (F Fq) | r }
+  -> Int
+  -> Circuit g
+  -> Compared g
+withXhatBranches config count circuit =
+  { circuit
+  , constants: Just $ XhatBranches
+      { h: fPoint config.blindingH
+      , lagrange: Array.transpose $ Array.range 0 (count - 1) <#> \i ->
+          map (map fPoint <<< Vector.toUnfoldable) (Vector.toUnfoldable (config.lagrangeTable i))
+      }
+  , rule: Nothing
+  }
 
--- | `stepWithConstants` for a step circuit whose self slots verify against
+-- | A wrap artifact's circuit, with the constants it bakes in.
+withWrapConstants :: WrapArtifact -> Effect (Compared Fq)
+withWrapConstants art =
+  fromCompiledCircuit art.wrapCs <#> \circuit ->
+    { circuit, constants: Just art.constants, rule: Nothing }
+
+-- | A step artifact's circuit, with the constants it bakes in and its rule.
+withStepConstants
+  :: { art :: StepArtifact, constants :: Constants, rule :: RuleDump } -> Effect (Compared Fp)
+withStepConstants r =
+  fromCompiledCircuit r.art.stepCs <#> \circuit ->
+    { circuit, constants: Just r.constants, rule: Just (encodeRuleDump r.rule) }
+
+-- | `withStepConstants` for a step circuit whose self slots verify against
 -- | its tag's wrap key, `wrapArt`'s.
-stepWithSelfKey
-  :: String
-  -> WrapArtifact
-  -> { art :: StepArtifact, constants :: DerivedKey PallasG Fq -> Effect String }
-  -> Effect (Circuit Fp)
-stepWithSelfKey name wrapArt r = do
+withSelfKey
+  :: WrapArtifact
+  -> { art :: StepArtifact, constants :: DerivedKey PallasG Fq -> Effect Constants, rule :: RuleDump }
+  -> Effect (Compared Fp)
+withSelfKey wrapArt r = do
   constants <- r.constants wrapArt.wrapKey
-  stepWithConstants name { art: r.art, constants }
+  withStepConstants { art: r.art, constants, rule: r.rule }
 
 -- | The wrap circuits of the tags whose step circuits are dumped: each
 -- | `wrap_main_*` fixture of such a tag, and the key its step circuit's
@@ -212,7 +229,7 @@ stepWithSelfKey name wrapArt r = do
 -- | use `override_wrap_domain:N1`.
 simpleChainN2Wrap :: SrsBundle -> Effect WrapArtifact
 simpleChainN2Wrap bundle =
-  compileWrapMainN2
+  compileWrapMainN2 bundle.pallasCrs15
     { lagrangeAt: mkConstLagrangeBaseLookup \i ->
         Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
     , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
@@ -224,7 +241,7 @@ simpleChainN2Wrap bundle =
 -- | own at 2^14.
 treeProofReturnWrap :: SrsBundle -> Effect WrapArtifact
 treeProofReturnWrap bundle =
-  compileWrapMainTreeProofReturn
+  compileWrapMainTreeProofReturn bundle.pallasCrs15
     { lagrangeAt: mkConstLagrangeBaseLookup \i ->
         Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
     , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
@@ -234,13 +251,13 @@ treeProofReturnWrap bundle =
 -- | `two_phase_chain`'s wrap circuit (`simpleChainN2Wrap`): two branches,
 -- | make_zero and increment, sharing one wrap key.
 twoPhaseChainWrap :: SrsBundle -> Effect WrapArtifact
-twoPhaseChainWrap bundle = compileWrapMainTwoPhaseChain (twoPhaseChainParams bundle)
+twoPhaseChainWrap bundle = compileWrapMainTwoPhaseChain bundle.pallasCrs15 (twoPhaseChainParams bundle)
 
 -- | `import_two_phase_chain`'s wrap circuit (`simpleChainN2Wrap`). No
 -- | OCaml fixture: it is compiled for its key alone.
 importTwoPhaseChainWrap :: SrsBundle -> Effect WrapArtifact
 importTwoPhaseChainWrap bundle =
-  compileWrapMainImportTwoPhaseChain
+  compileWrapMainImportTwoPhaseChain bundle.pallasCrs15
     { lagrangeAt: mkConstLagrangeBaseLookup \i ->
         Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt bundle.vestaCrs16 15 i))
     , blindingH: coerce $ pallasSrsBlindingGenerator bundle.vestaCrs16
@@ -494,37 +511,6 @@ boolAssertCircuit x = assert_ x
 --------------------------------------------------------------------------------
 -- Kimchi gate circuits
 
--- | A Pallas point as affine coordinates — solver inputs for the gate dumps.
-affinePt :: Pallas.G -> AffinePoint Fp
-affinePt g = case toAffine g of
-  Just c -> AffinePoint c
-  Nothing -> unsafeCrashWith "affinePt: unexpected point at infinity"
-
--- | A random Pallas point: a nonzero scalar multiple of the generator.
-genPallasPoint :: Gen (AffinePoint Fp)
-genPallasPoint = affinePt <<< power generator <$> chooseInt 1 top
-
--- | A nonzero field element — the honest domain of `inv_`'s witness (which throws
--- | `DivisionByZero` on zero) and of the nonzero assertions.
-genNonZeroF :: Gen (F Fp)
-genNonZeroF = arbitrary `suchThat` (_ /= zero)
-
--- | A random 128-bit scalar for the endo-scalar / endo-mul gadgets, which decode their input
--- | as a `SizedF 128`. Sampling a `SizedF 128` (its `Arbitrary` draws exactly 128 bits) and
--- | projecting to the field keeps the value inside the gate's real domain.
--- |
--- | This can't be a bare `arbitrary :: Gen (F Fp)` like the other gates, and the reason is the
--- | one place the OCaml diff and the Lean check diverge: the OCaml diff compares only the
--- | *constraint system* (input-independent), and the PureScript solver happily produces a
--- | witness for any field element — so both accept a full-range scalar. But the Lean
--- | index-model checker (`formal/scripts/check_ps_witness.lean`) is faithful to the actual
--- | EndoMulScalar / EndoMul gate, whose constraints require the 128-bit crumb reconstruction to
--- | equal the scalar. A full-range (255-bit) value is a malformed 128-bit challenge, so Lean
--- | rejects it while OCaml/PureScript accept it. Bounding the sample to 128 bits keeps all three
--- | in agreement.
-genScalar128 :: Gen (F Fp)
-genScalar128 = SzF.toField <$> (arbitrary :: Gen (SizedF 128 (F Fp)))
-
 addCompleteCircuit
   :: forall r
    . PrimeField Fp
@@ -587,13 +573,12 @@ loadOcamlCircuit name = do
     Right c -> pure c
     Left e -> throw $ "Failed to parse OCaml fixtures: " <> show e
 
--- | Strip metadata fields for equality comparison (context, variables, and the solved
--- | witness are not part of the constraint system)
+-- | Strip metadata fields for equality comparison (context and variables are not part of
+-- | the constraint system)
 stripMetadata :: ComparableCircuit -> ComparableCircuit
 stripMetadata c = c
   { gates = map (_ { context = [], variables = Nothing }) c.gates
   , cachedConstants = Array.sort $ map (\cc -> cc { variable = 0 }) c.cachedConstants
-  , witness = Nothing
   }
 
 exactMatch :: forall f. Ord f => SerdeHex f => PrimeField f => String -> Circuit f -> SpecT Aff Unit Aff Unit
@@ -613,124 +598,46 @@ exactMatchEff
   -> Effect (Circuit f)
   -> SpecT Aff Unit Aff Unit
 exactMatchEff name effPs =
-  exactMatchWith name (effPs <#> { circuit: _, witness: Nothing })
+  exactMatchWith name (effPs <#> \circuit -> { circuit, constants: Nothing, rule: Nothing })
 
--- | The general form: the produced circuit plus an optional solved-witness export,
--- | carried on the PureScript side of the comparison JSON written to `circuits/results/`.
+-- | The general form: the produced circuit, the constants it was compiled with and a step
+-- | main's rule, which the comparison JSON written to `circuits/results/` carries.
 exactMatchWith
   :: forall f
    . Ord f
   => SerdeHex f
   => PrimeField f
   => String
-  -> Effect { circuit :: Circuit f, witness :: Maybe WitnessExport }
+  -> Effect (Compared f)
   -> SpecT Aff Unit Aff Unit
 exactMatchWith name effPs =
   it (name <> " matches OCaml") do
-    { circuit: ps, witness } <- liftEffect effPs
+    { circuit: ps, constants, rule } <- liftEffect effPs
     ocaml <- liftEffect $ (loadOcamlCircuit name :: Effect (Circuit f))
-    let psCircuit = comparable witness ps
-    let ocamlCircuit = comparable Nothing ocaml
+    let psCircuit = comparable ps
+    let ocamlCircuit = comparable ocaml
     let psNoCtx = stripMetadata psCircuit
     let ocamlNoCtx = stripMetadata ocamlCircuit
     let status = if psNoCtx == ocamlNoCtx then "match" else "mismatch"
-    let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit }
+    let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit, constants, rule }
     liftEffect do
       writeComparison (resultsDir <> name <> ".json") comparison
       appendManifest name status
     unless (status == "match") $
       psNoCtx `shouldEqual` ocamlNoCtx
 
--- | Like `exactMatchEff`, but when `CIRCUIT_DIFFS_WITNESS_EXPORT` is set the one
--- | compilation also runs the solver on a `Gen`-sampled input (seeded by
--- | `CIRCUIT_DIFFS_WITNESS_SEED`, default 42, logged for reproducibility) and carries
--- | the solved witness on the PureScript side of the comparison JSON.
-exactMatchWitnessEff
+-- | Compile a circuit over its input and output types and compare it.
+exactMatchCompiled
   :: forall @a @b avar bvar
    . CircuitType Fp a avar
   => CircuitType Fp b bvar
   => CheckedType Fp (KimchiConstraint Fp) avar
   => String
   -> (forall r. avar -> Snarky Fp (KimchiConstraint Fp) r bvar)
-  -> Gen a
   -> SpecT Aff Unit Aff Unit
-exactMatchWitnessEff name circuit gen =
-  exactMatchWith name do
-    builtState <- compile @Fp noAdvice (Proxy @a) (Proxy @b) (Proxy @(KimchiConstraint Fp))
-      circuit
-    gd <- gateDataOf builtState
-    exportEnabled <- Process.lookupEnv "CIRCUIT_DIFFS_WITNESS_EXPORT" <#> case _ of
-      Nothing -> false
-      Just v -> not (v == "" || v == "0" || v == "false")
-    witness <-
-      if not exportEnabled then pure Nothing
-      else do
-        seed <- fromMaybe 42 <<< (_ >>= Int.fromString) <$>
-          Process.lookupEnv "CIRCUIT_DIFFS_WITNESS_SEED"
-        Console.log ("[witness export] " <> name <> ": sampling input with seed " <> show seed)
-        let
-          input = evalGen gen { newSeed: mkSeed seed, size: 10 }
-          solver =
-            makeSolver (Proxy @(KimchiConstraint Fp)) circuit
-              :: Solver Fp (KimchiConstraint Fp) a b
-        Just <$> buildWitnessExport
-          { constraints: map _.variables gd.constraints
-          , publicInputs: builtState.publicInputs
-          }
-          solver
-          input
-    pure { circuit: fromGateData builtState gd, witness }
-
---------------------------------------------------------------------------------
--- Standalone kimchi prover for chunks2 app body — invokes the kimchi
--- prover directly (no pickles step/wrap wrapping) so that
--- `KIMCHI_WITNESS_DUMP=<path>` captures only the app body's witness
--- assignments. The OCaml side is
--- `dump_app_circuit_chunks2_witness.exe`.
-runChunks2AppWitnessProve :: CRS VestaG -> Effect Unit
-runChunks2AppWitnessProve crs = do
-  builtState <- compile @Fp noAdvice (Proxy @Unit) (Proxy @Unit)
-    (Proxy @(KimchiConstraint Fp))
-    chunks2AppCircuit
-  let
-    kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
-    -- With our ~65538-row circuit the domain rounds up to 2^17,
-    -- triggering num_chunks = 2. The 2^16 SRS is built once in `main`.
-    maxPolySize = 1 `Bits.shl` 16
-  csResult <- makeConstraintSystemWithPrevChallenges @Fp
-    { constraints: kimchiRows
-    , publicInputs: builtState.publicInputs
-    , unionFind: (un AuxState builtState.aux).wireState.unionFind
-    , prevChallengesCount: 0
-    , maxPolySize
-    }
-  let
-    proverIndex = createProverIndex @Fp @VestaG
-      { gates: csResult.gates
-      , publicInputSize: csResult.publicInputSize
-      , prevChallengesCount: csResult.prevChallengesCount
-      , maxPolySize: csResult.maxPolySize
-      , crs
-      }
-
-    rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit
-    rawSolver = makeSolver (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
-  runSolver rawSolver unit >>= case _ of
-    Left e -> throw $ "chunks2 app solver: " <> show e
-    Right (Tuple _publicOutputs assignments) -> do
-      let
-        { witness } = makeWitness
-          { assignments
-          , constraints: map _.variables csResult.constraints
-          , publicInputs: builtState.publicInputs
-          }
-        -- The prove is what fires the `KIMCHI_WITNESS_DUMP` hook inside
-        -- kimchi's `ProverProof::create_recursive`; the proof itself is
-        -- discarded (witness equality vs OCaml is the assertion, checked
-        -- by tools/witness_diff.sh).
-        _proof = createProof { proverIndex, witness }
-      pure unit
+exactMatchCompiled name circuit =
+  exactMatchEff name $ fromCompiledCircuit
+    =<< compile @Fp noAdvice (Proxy @a) (Proxy @b) (Proxy @(KimchiConstraint Fp)) circuit
 
 --------------------------------------------------------------------------------
 -- Test spec
@@ -761,43 +668,27 @@ spec :: SrsBundle -> SpecT Aff Unit Aff Unit
 spec bundle =
   beforeAll_ (liftEffect resetOutputDirs) $
     describe "Circuit comparison" do
-      -- The basic-gadget registrations are all witness-carrying: the sampled input
-      -- must satisfy the circuit — the production solver checks nothing, but the Lean
-      -- index-model checker decides the real constraints (see `genScalar128`'s note) —
-      -- so the assertion circuits sample from their satisfying domains.
       describe "Field arithmetic" do
-        exactMatchWitnessEff @(F Fp) @(F Fp) "mul_step_circuit" mulCircuit arbitrary
-        exactMatchWitnessEff @(F Fp) @(F Fp) "inv_step_circuit" invCircuit genNonZeroF
-        exactMatchWitnessEff @(F Fp) @(F Fp) "div_step_circuit" divCircuit arbitrary
-        exactMatchWitnessEff @(F Fp) @(F Fp) "if_step_circuit" ifCircuit arbitrary
-        exactMatchWitnessEff @(F Fp) @Boolean "equals_step_circuit" equalsCircuit arbitrary
-        exactMatchWitnessEff @(F Fp) @(F Fp) "pow7_step_circuit" pow7Circuit arbitrary
-        exactMatchWitnessEff @(F Fp) @(F Fp) "pow8_step_circuit" pow8Circuit arbitrary
+        exactMatchCompiled @(F Fp) @(F Fp) "mul_step_circuit" mulCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "inv_step_circuit" invCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "div_step_circuit" divCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "if_step_circuit" ifCircuit
+        exactMatchCompiled @(F Fp) @Boolean "equals_step_circuit" equalsCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "pow7_step_circuit" pow7Circuit
+        exactMatchCompiled @(F Fp) @(F Fp) "pow8_step_circuit" pow8Circuit
       describe "Assertions" do
-        exactMatchWitnessEff @(F Fp) @Unit "assert_equal_step_circuit" assertEqualCircuit
-          (pure zero)
-        exactMatchWitnessEff @(F Fp) @Unit "assert_non_zero_step_circuit"
-          assertNonZeroCircuit
-          genNonZeroF
-        exactMatchWitnessEff @(F Fp) @Unit "assert_not_equal_step_circuit"
-          assertNotEqualCircuit
-          genNonZeroF
-        exactMatchWitnessEff @(F Fp) @Unit "assert_square_step_circuit" assertSquareCircuit
-          (pure zero)
-        exactMatchWitnessEff @(F Fp) @Unit "unpack_step_circuit" unpackCircuit arbitrary
+        exactMatchCompiled @(F Fp) @Unit "assert_equal_step_circuit" assertEqualCircuit
+        exactMatchCompiled @(F Fp) @Unit "assert_non_zero_step_circuit" assertNonZeroCircuit
+        exactMatchCompiled @(F Fp) @Unit "assert_not_equal_step_circuit" assertNotEqualCircuit
+        exactMatchCompiled @(F Fp) @Unit "assert_square_step_circuit" assertSquareCircuit
+        exactMatchCompiled @(F Fp) @Unit "unpack_step_circuit" unpackCircuit
       describe "Boolean" do
-        exactMatchWitnessEff @Boolean @Boolean "bool_and_step_circuit" boolAndCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Boolean "bool_or_step_circuit" boolOrCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Boolean "bool_xor_step_circuit" boolXorCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Boolean "bool_all_step_circuit" boolAllCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Boolean "bool_any_step_circuit" boolAnyCircuit
-          arbitrary
-        exactMatchWitnessEff @Boolean @Unit "bool_assert_step_circuit" boolAssertCircuit
-          (pure true)
+        exactMatchCompiled @Boolean @Boolean "bool_and_step_circuit" boolAndCircuit
+        exactMatchCompiled @Boolean @Boolean "bool_or_step_circuit" boolOrCircuit
+        exactMatchCompiled @Boolean @Boolean "bool_xor_step_circuit" boolXorCircuit
+        exactMatchCompiled @Boolean @Boolean "bool_all_step_circuit" boolAllCircuit
+        exactMatchCompiled @Boolean @Boolean "bool_any_step_circuit" boolAnyCircuit
+        exactMatchCompiled @Boolean @Unit "bool_assert_step_circuit" boolAssertCircuit
       describe "Two-phase chain application circuits" do
         -- App-level rule bodies for `dump_two_phase_chain` (the
         -- minimal multi-branch fixture). We byte-compare ONLY the
@@ -808,22 +699,11 @@ spec bundle =
         -- deferred values, wrap_main) is rooted in noise. The full
         -- multi-branch step_main diff comes later, once PS supports
         -- multi-branch compile.
-        exactMatchWitnessEff @(F Fp) @Unit "app_circuit_two_phase_chain_make_zero"
+        exactMatchCompiled @(F Fp) @Unit "app_circuit_two_phase_chain_make_zero"
           makeZeroAppCircuit
-          (pure zero)
-        exactMatchWitnessEff @(F Fp) @Unit "app_circuit_two_phase_chain_increment"
+        exactMatchCompiled @(F Fp) @Unit "app_circuit_two_phase_chain_increment"
           incrementAppCircuit
-          (pure one)
         exactMatchEff "app_circuit_chunks2" (compileUU chunks2AppCircuit)
-      describe "Witness dump" $
-        -- | Gated on `KIMCHI_WITNESS_DUMP` env var. When set, runs the
-        -- | standalone kimchi prover for chunks2 app body so the dump
-        -- | fires; otherwise no-op. Paired with OCaml's
-        -- | `dump_app_circuit_chunks2_witness.exe`.
-        it "app_circuit_chunks2 witness" do
-          liftEffect (Process.lookupEnv "KIMCHI_WITNESS_DUMP") >>= case _ of
-            Nothing -> pure unit
-            Just _ -> liftEffect (runChunks2AppWitnessProve bundle.vestaCrs16)
       describe "Schnorr signature" do
         -- Iteration 1 fixture: zero-seed sponge (matches PS
         -- `Snarky.Circuit.RandomOracle.Sponge` initial state). 5 public
@@ -832,16 +712,12 @@ spec bundle =
         -- `mina/src/lib/crypto/pickles/dump_circuit_impl.ml`.
         exactMatchEff "schnorr_verify_step_circuit" (fromCompiledCircuit =<< compileSchnorrVerify)
       describe "Kimchi gates" do
-        exactMatchWitnessEff @TwoPoints @Point "add_complete_step_circuit" addCompleteCircuit
-          (Tuple <$> genPallasPoint <*> genPallasPoint)
-        exactMatchWitnessEff @(F Fp) @(F Fp) "endo_scalar_step_circuit" endoScalarCircuit
-          genScalar128
-        exactMatchWitnessEff @PointField @Point "var_base_mul_step_circuit" varBaseMulCircuit
-          (Tuple <$> genPallasPoint <*> arbitrary)
-        exactMatchWitnessEff @PointField @Point "endo_mul_step_circuit" endoMulCircuit
-          (Tuple <$> genPallasPoint <*> genScalar128)
+        exactMatchCompiled @TwoPoints @Point "add_complete_step_circuit" addCompleteCircuit
+        exactMatchCompiled @(F Fp) @(F Fp) "endo_scalar_step_circuit" endoScalarCircuit
+        exactMatchCompiled @PointField @Point "var_base_mul_step_circuit" varBaseMulCircuit
+        exactMatchCompiled @PointField @Point "endo_mul_step_circuit" endoMulCircuit
         exactMatchEff "scale_fast2_128_step_circuit" (compilePF scaleFast2_128Circuit)
-        exactMatchWitnessEff @V3 @V3 "poseidon_step_circuit" poseidonCircuit arbitrary
+        exactMatchCompiled @V3 @V3 "poseidon_step_circuit" poseidonCircuit
       describe "Pickles Step sub-circuits" do
         exactMatchEff "pow2_pow_step_circuit" (fromCompiledCircuit =<< compilePow2Pow)
         exactMatchEff "b_correct_step_circuit" (fromCompiledCircuit =<< compileBCorrect)
@@ -870,12 +746,7 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "xhat_step_circuit" (fromCompiledCircuit =<< compileXhatStep stepSrsData)
-        -- The step-side twin of the `xhat_wrap_lagrange.json` dump below: the 30 Pallas
-        -- Lagrange bases + blinding `h` baked into `xhat_step_circuit`, for the Lean
-        -- `check_cs` harness (`xhatStepCircuit`), which derives the corrections itself.
-        it "dumps the xhat_step Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "xhat_step_lagrange.json" stepSrs 16 30
+        exactMatchWith "xhat_step_circuit" (withXhat 30 stepSrsData <$> (fromCompiledCircuit =<< compileXhatStep stepSrsData))
         exactMatchEff "check_bulletproof_step_circuit" (fromCompiledCircuit =<< compileCheckBulletproofStep stepSrsData.blindingH)
       describe "Pickles Wrap sub-circuits" do
         exactMatchEff "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesWrap)
@@ -893,44 +764,26 @@ spec bundle =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
-        exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat @1 wrapSrsData)
+        exactMatchWith "xhat_wrap_circuit" (withXhat 34 wrapSrsData <$> (fromCompiledCircuit =<< compileXhat @1 wrapSrsData))
         -- `x_hat` at two branches, through the wrap circuit's `maskedLagrangeAt`: step
         -- domains `2^16, 2^16` (one shared table) and `2^15, 2^16` (per-branch tables).
         let
           lagrangeOne :: Int -> Int -> Vector 1 (AffinePoint (F Fq))
           lagrangeOne log2 i = Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs log2 i))
-        exactMatchEff "xhat_wrap_branches_same_circuit" $ fromCompiledCircuit =<< compileXhatBranches
-          { domainLog2s: 16 :< 16 :< Vector.nil
-          , lagrangeTable: \i -> lagrangeOne 16 i :< lagrangeOne 16 i :< Vector.nil
-          , blindingH: wrapSrsData.blindingH
-          }
-        exactMatchEff "xhat_wrap_branches_diff_circuit" $ fromCompiledCircuit =<< compileXhatBranches
-          { domainLog2s: 15 :< 16 :< Vector.nil
-          , lagrangeTable: \i -> lagrangeOne 15 i :< lagrangeOne 16 i :< Vector.nil
-          , blindingH: wrapSrsData.blindingH
-          }
-        -- The bases both branch circuits read, at `2^15` and `2^16`, and `h`, for the Lean
-        -- `check_cs` harness.
-        it "dumps the xhat_wrap_branches Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            at log2 = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs log2 i)
-          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_branches_lagrange.json")
-            (writeJSON { lagrange15: at 15, lagrange16: at 16, h: ptToJson (pallasSrsBlindingGenerator srs) })
-        -- Dump the 34 Lagrange bases + blinding `h` (the SRS constants baked into
-        -- `xhat_wrap_circuit`) so the Lean `check_cs` harness can reproduce the gadget:
-        -- Lean cannot compute Lagrange commitments (no SRS/FFI); it derives the corrections
-        -- (`-2^L·base`) itself via `smulFast`. Format: `[x, y]` decimal pairs (`parseSWPoint`).
-        -- Written into `resultsDir` beside the comparison dumps, so it rides the same
-        -- artifact to the Lean checker; the consumers that scan the dir (the witness checker,
-        -- the visualizer) skip it — it carries no `purescript` field and no manifest entry.
-        -- Emitted inside an `it` so it runs after the `beforeAll_` `resetOutputDirs` has created
-        -- (and not since wiped) `resultsDir`; a bare effect here would run at spec-construction
-        -- time, before the directory exists.
-        it "dumps the xhat_wrap Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            lagr = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs 16 i)
-          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_lagrange.json")
-            (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
+          sameConfig =
+            { domainLog2s: 16 :< 16 :< Vector.nil
+            , lagrangeTable: \i -> lagrangeOne 16 i :< lagrangeOne 16 i :< Vector.nil
+            , blindingH: wrapSrsData.blindingH
+            }
+          diffConfig =
+            { domainLog2s: 15 :< 16 :< Vector.nil
+            , lagrangeTable: \i -> lagrangeOne 15 i :< lagrangeOne 16 i :< Vector.nil
+            , blindingH: wrapSrsData.blindingH
+            }
+        exactMatchWith "xhat_wrap_branches_same_circuit"
+          (withXhatBranches sameConfig 34 <$> (fromCompiledCircuit =<< compileXhatBranches sameConfig))
+        exactMatchWith "xhat_wrap_branches_diff_circuit"
+          (withXhatBranches diffConfig 34 <$> (fromCompiledCircuit =<< compileXhatBranches diffConfig))
         -- `xhat_wrap_circuit` at a 2^17 domain over the same 2^16 SRS: every Lagrange base
         -- is two chunks, and the gadget folds one accumulator per chunk.
         let
@@ -942,15 +795,8 @@ spec bundle =
             { lagrangeAt: mkConstLagrangeBaseLookup \i -> (coerce (chunks2At i) :: Vector 2 (AffinePoint (F Fq)))
             , blindingH: wrapSrsData.blindingH
             }
-        exactMatchEff "xhat_wrap_chunks2_circuit" (fromCompiledCircuit =<< compileXhat @2 wrapSrsDataChunks2)
-        -- The chunked twin of `xhat_wrap_lagrange.json`: each of the 34 bases as its two
-        -- chunks, for the Lean `check_cs` harness.
-        it "dumps the xhat_wrap_chunks2 Lagrange bases for the Lean check_cs harness" $ liftEffect do
-          let
-            lagr :: Array (Array (Array String))
-            lagr = Array.range 0 33 <#> \i -> ptToJson <$> Vector.toUnfoldable (chunks2At i)
-          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_chunks2_lagrange.json")
-            (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
+        exactMatchWith "xhat_wrap_chunks2_circuit"
+          (withXhat 34 wrapSrsDataChunks2 <$> (fromCompiledCircuit =<< compileXhat @2 wrapSrsDataChunks2))
         exactMatchEff "check_bulletproof_wrap_circuit" (fromCompiledCircuit =<< compileCheckBulletproofWrap wrapSrsData.blindingH)
       describe "IVP" do
         let
@@ -960,8 +806,8 @@ spec bundle =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
-        exactMatchEff "ivp_wrap_circuit" (fromCompiledCircuit =<< compileIvpWrap wrapSrsData)
-        exactMatchEff "wrap_verify_circuit" (fromCompiledCircuit =<< compileWrapVerify wrapSrsData)
+        exactMatchWith "ivp_wrap_circuit" (withXhat 34 wrapSrsData <$> (fromCompiledCircuit =<< compileIvpWrap wrapSrsData))
+        exactMatchWith "wrap_verify_circuit" (withXhat 34 wrapSrsData <$> (fromCompiledCircuit =<< compileWrapVerify wrapSrsData))
         exactMatchEff "wrap_verify_n2_circuit" (fromCompiledCircuit =<< compileWrapVerifyN2 wrapSrsData)
         let
           -- wrap_main_circuit fixture uses domainLog2 = 14 to match the
@@ -990,8 +836,8 @@ spec bundle =
         -- recompiling the matching step CS and running the kimchi
         -- commitment pipeline (mirrors the wrap_main_n2_circuit fix at
         -- commit `cf352650`).
-        exactMatchEff "wrap_main_circuit"
-          (wrapWithConstants "wrap_main_circuit" =<< compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
+        exactMatchWith "wrap_main_circuit"
+          (withWrapConstants =<< compileWrapMainN1 bundle.pallasCrs15 wrapMainSrsData wrapMainN1StepSrsData)
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
@@ -1012,8 +858,8 @@ spec bundle =
                   :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "wrap_main_side_loaded_main_circuit"
-          (wrapWithConstants "wrap_main_side_loaded_main_circuit" =<< compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
+        exactMatchWith "wrap_main_side_loaded_main_circuit"
+          (withWrapConstants =<< compileWrapMainSideLoadedMain bundle.pallasCrs15 wrapMainSrsData wrapMainSlmStepSrsData)
         -- N=2 Input mode (Simple_chain_n2). step_widths=[2], padded=[[0;2];[0;2]].
         -- `compileWrapMainN2` deterministically computes the step VK by
         -- recompiling the matching step CS and running the kimchi
@@ -1024,8 +870,8 @@ spec bundle =
         -- `wrap_main_circuit`): `dump_simple_chain_n2.ml` passes
         -- `~override_wrap_domain:Proofs_verified.N1`, so the wrap
         -- domain is N1 = Pow_2_roots_of_unity 14.
-        exactMatchEff "wrap_main_n2_circuit"
-          (wrapWithConstants "wrap_main_n2_circuit" =<< simpleChainN2Wrap bundle)
+        exactMatchWith "wrap_main_n2_circuit"
+          (withWrapConstants =<< simpleChainN2Wrap bundle)
         -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
         -- padded=[[0];[0]]. First (and only) N=0 wrap fixture — exercises
         -- the wrap verify-one-of-step path with a step proof whose own
@@ -1054,8 +900,8 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt aorStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "wrap_main_add_one_return_circuit"
-          (wrapWithConstants "wrap_main_add_one_return_circuit" =<< compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
+        exactMatchWith "wrap_main_add_one_return_circuit"
+          (withWrapConstants =<< compileWrapMainAddOneReturn bundle.pallasCrs15 wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=0, num_chunks=2 wrap. Same branch/widths/Max_widths layout
         -- as `wrap_main_add_one_return_circuit` but with `stepChunks=2`
         -- at `wrapMainForPrevs`, so the IVP MSM walks 2 chunks per
@@ -1069,8 +915,8 @@ spec bundle =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 17 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
-        exactMatchEff "chunks2_wrap_main_circuit"
-          (wrapWithConstants "chunks2_wrap_main_circuit" =<< compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
+        exactMatchWith "chunks2_wrap_main_circuit"
+          (withWrapConstants =<< compileWrapMainChunks2 bundle.pallasCrs15 chunks2WrapSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
@@ -1079,8 +925,8 @@ spec bundle =
         -- circuit uses override_wrap_domain:N1 → wrap domain log2 = 14.
         -- The IVP MSM lagrange lookup is at the STEP domain log2 (15),
         -- matching `domainLog2s` in the WrapMainConfig.
-        exactMatchEff "wrap_main_tree_proof_return_circuit"
-          (wrapWithConstants "wrap_main_tree_proof_return_circuit" =<< treeProofReturnWrap bundle)
+        exactMatchWith "wrap_main_tree_proof_return_circuit"
+          (withWrapConstants =<< treeProofReturnWrap bundle)
         -- Multi-branch (2 branches: make_zero + increment) sharing ONE wrap
         -- key. step_widths=[0;1], padded=[[0;0];[0;1]]; per-branch step
         -- domains [9; 14] differ (make_zero is tiny, increment full),
@@ -1088,8 +934,8 @@ spec bundle =
         -- Lagrange lookup is per-branch — needs the wrap SRS directly.
         -- Step VKs are derived per-branch (mirrors the deterministic
         -- VK fix family — wrap_main_circuit, wrap_main_tree_proof_return).
-        exactMatchEff "wrap_main_two_phase_chain_circuit"
-          (wrapWithConstants "wrap_main_two_phase_chain_circuit" =<< twoPhaseChainWrap bundle)
+        exactMatchWith "wrap_main_two_phase_chain_circuit"
+          (withWrapConstants =<< twoPhaseChainWrap bundle)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = bundle.pallasCrs15
@@ -1098,12 +944,7 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "ivp_step_circuit" (fromCompiledCircuit =<< compileIvpStep stepSrsData)
-        -- The `pallasCrs15` twin of `xhat_step_lagrange.json`: the 30 Lagrange bases at domain
-        -- 15 and the blinding `h` baked into `ivp_step_circuit` (and `step_verify_circuit`),
-        -- for the Lean `check_cs` harness (`ivpStepCircuit`), which derives the corrections.
-        it "dumps the ivp_step Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "ivp_step_lagrange.json" stepSrs 15 30
+        exactMatchWith "ivp_step_circuit" (withXhat 30 stepSrsData <$> (fromCompiledCircuit =<< compileIvpStep stepSrsData))
       describe "Step verify" do
         let
           -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
@@ -1113,11 +954,8 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "step_verify_circuit" (fromCompiledCircuit =<< compileStepVerify stepVerifySrsData)
-        -- The same `pallasCrs15` export as `ivp_step_lagrange.json`, written here too so a run
-        -- narrowed to `step_verify_circuit` carries it (a narrowed run resets the results dir).
-        it "dumps the step_verify_circuit Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "ivp_step_lagrange.json" stepVerifySrs 15 30
+        exactMatchWith "step_verify_circuit"
+          (withXhat 30 stepVerifySrsData <$> (fromCompiledCircuit =<< compileStepVerify stepVerifySrsData))
         let
           stepVerifyN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -1133,7 +971,8 @@ spec bundle =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "full_step_verify_one_circuit" (fromCompiledCircuit =<< compileFullStepVerifyOne fullStepSrsData)
+        exactMatchWith "full_step_verify_one_circuit"
+          (withXhat 30 fullStepSrsData <$> (fromCompiledCircuit =<< compileFullStepVerifyOne fullStepSrsData))
         let
           fullStepN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -1141,11 +980,6 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "full_step_verify_one_n2_circuit" (fromCompiledCircuit =<< compileFullStepVerifyOneN2 fullStepN2SrsData)
-        -- The `pallasCrs15` Lagrange bases at domain 14 and the blinding `h` baked into
-        -- `full_step_verify_one_circuit` and the step-main circuits, for the Lean `check_cs`
-        -- harness, which derives the corrections.
-        it "dumps the full_step_verify_one Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "full_step_lagrange.json" fullStepSrs 14 30
       describe "Typ checks" do
         exactMatchEff "other_field_check_step_circuit" (fromCompiledCircuit =<< compileOtherFieldCheck)
       describe "Step main" do
@@ -1166,14 +1000,10 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
-        exactMatchEff "step_main_simple_chain_n2_circuit" do
+        exactMatchWith "step_main_simple_chain_n2_circuit" do
           wrapArt <- simpleChainN2Wrap bundle
-          stepWithSelfKey "step_main_simple_chain_n2_circuit" wrapArt
-            =<< compileStepMainSimpleChainN2WithConstants stepMainN2SrsData
-        -- The same `pallasCrs15` domain-14 export as `full_step_lagrange.json`, written here too
-        -- so a run narrowed to the step-main circuits carries it.
-        it "dumps the step_main Lagrange bases for the Lean check_cs harness" $ liftEffect $
-          dumpStepLagrange "full_step_lagrange.json" stepMainSrs 14 30
+          withSelfKey wrapArt
+            =<< compileStepMainSimpleChainN2WithConstants bundle.pallasCrs15 stepMainN2SrsData
         -- N=0, Input_and_output mode — Add_one_return. No recursion,
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573
@@ -1240,16 +1070,16 @@ spec bundle =
             , nrrWrapSrsData: tprNrrWrapSrsData
             , nrrStepSrsData: tprNrrStepSrsData
             }
-        exactMatchEff "step_main_tree_proof_return_circuit" do
+        exactMatchWith "step_main_tree_proof_return_circuit" do
           wrapArt <- treeProofReturnWrap bundle
-          stepWithSelfKey "step_main_tree_proof_return_circuit" wrapArt
-            =<< compileStepMainTreeProofReturnWithConstants treeProofReturnSrsData
+          withSelfKey wrapArt
+            =<< compileStepMainTreeProofReturnWithConstants bundle.pallasCrs15 treeProofReturnSrsData
         -- N=2: an External slot over `two_phase_chain` (step domains 9 and
         -- 14) beside a Self slot; both slots read the 2^14 Lagrange basis.
-        exactMatchEff "step_main_import_two_phase_chain_circuit" do
+        exactMatchWith "step_main_import_two_phase_chain_circuit" do
           wrapArt <- importTwoPhaseChainWrap bundle
-          stepWithSelfKey "step_main_import_two_phase_chain_circuit" wrapArt
-            =<< compileStepMainImportTwoPhaseChainWithConstants (importTwoPhaseChainParams bundle)
+          withSelfKey wrapArt
+            =<< compileStepMainImportTwoPhaseChainWithConstants bundle.pallasCrs15 (importTwoPhaseChainParams bundle)
         -- N=1 parent + single side-loaded prev (mpv=N2 upper bound).
         -- The three per-domain lagrange tables sit at log2 ∈ {13, 14,
         -- 15} (= the wrap-domain log2s for `actualWrapDomainSize ∈
@@ -1326,19 +1156,19 @@ spec bundle =
         -- first to obtain its artifact, then increment with that
         -- artifact (passed as a separate arg, supplying the multi-branch
         -- FOP domain dispatch list's `[makeZero, increment]` head).
-        exactMatchEff "step_main_two_phase_chain_increment_circuit" $ do
-          makeZeroArt <- compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData
+        exactMatchWith "step_main_two_phase_chain_increment_circuit" $ do
+          makeZeroArt <- compileStepMainTwoPhaseChainMakeZero bundle.pallasCrs15 twoPhaseChainMakeZeroSrsData
           wrapArt <- twoPhaseChainWrap bundle
-          stepWithSelfKey "step_main_two_phase_chain_increment_circuit" wrapArt
-            =<< compileStepMainTwoPhaseChainIncrementWithConstants makeZeroArt
+          withSelfKey wrapArt
+            =<< compileStepMainTwoPhaseChainIncrementWithConstants bundle.pallasCrs15 makeZeroArt
               twoPhaseChainIncrementSrsData
         -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule
         -- has no prevs but the multi-branch wrap is mpv=N1, so the
         -- step PI is 34 entries (mpvPad=1 → 1 front-padded dummy slot).
         -- Step domain log2 = 9. Body asserts `self_v = 0` (single R1CS).
-        exactMatchEff "step_main_two_phase_chain_make_zero_circuit"
-          ( stepWithConstants "step_main_two_phase_chain_make_zero_circuit"
-              =<< compileStepMainTwoPhaseChainMakeZeroWithConstants twoPhaseChainMakeZeroSrsData
+        exactMatchWith "step_main_two_phase_chain_make_zero_circuit"
+          ( withStepConstants
+              =<< compileStepMainTwoPhaseChainMakeZeroWithConstants bundle.pallasCrs15 twoPhaseChainMakeZeroSrsData
           )
       describe "Linearization" do
         exactMatchEff "linearization_step_circuit" (fromCompiledCircuit =<< compileLinearizationStep)

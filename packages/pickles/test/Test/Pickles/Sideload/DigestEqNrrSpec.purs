@@ -44,6 +44,7 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
       , wrapDomainOverride: Nothing
       , proofCache: Nothing
       , lagrangeCache: Just lagrangeCache
+      , dump: Nothing
       }
       rules
 

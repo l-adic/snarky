@@ -24,13 +24,12 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
 import Snarky.Curves.Class (fromInt) as Curves
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -90,15 +89,16 @@ type IncrementPrevsSpec =
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.TwoPhaseChain" do
   it "b0..b3 chain prove + verify under shared wrap VK" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TwoPhaseChain.json")
+    outputs <- liftEffect $ appOutputs "TwoPhaseChain"
 
     let
       cfg =
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
-        , proofCache: cache
+        , proofCache: outputs.proofCache
         , lagrangeCache: Just lagrangeCache
+        , dump: outputs.dumpAt "two_phase_chain"
         }
 
     makeZeroEntry <- liftEffect $ mkRuleEntry @Unit makeZeroRule Vector.nil

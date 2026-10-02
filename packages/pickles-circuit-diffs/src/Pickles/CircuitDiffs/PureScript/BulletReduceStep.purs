@@ -1,47 +1,31 @@
 module Pickles.CircuitDiffs.PureScript.BulletReduceStep
-  ( parseBulletReduceStepInput
-  , bulletReduceStepCircuit
-  , compileBulletReduceStep
+  ( compileBulletReduceStep
   ) where
 
 import Prelude
 
-import Data.Fin (getFinite)
-import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.BulletReduce (BulletReduceInput)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.BulletReduce (BulletReduceInput(..))
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
 import Pickles.IPA (bulletReduceCircuit)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (BoolVar, F, FVar, Snarky)
+import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky, UnChecked(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
-
-parseBulletReduceStepInput :: Vector 75 (FVar StepField) -> BulletReduceInput 15 StepField
-parseBulletReduceStepInput inputs =
-  let
-    at = unsafeIdx inputs
-    readPt i = AffinePoint { x: at i, y: at (i + 1) }
-  in
-    { pairs: Vector.generate \j ->
-        { l: readPt (4 * getFinite j), r: readPt (4 * getFinite j + 2) }
-    , challenges: Vector.generate \j -> asSizedF128 (at (60 + getFinite j))
-    }
 
 bulletReduceStepCircuit
   :: forall r
-   . PrimeField StepField
-  => BulletReduceInput 15 StepField
-  -> Snarky StepField (KimchiConstraint StepField) r { p :: AffinePoint (FVar StepField), isInfinity :: BoolVar StepField }
-bulletReduceStepCircuit = bulletReduceCircuit @StepField @PallasG
+   . UnChecked (BulletReduceInput 15 (FVar StepField) (SizedF 128 (FVar StepField)))
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
+bulletReduceStepCircuit (UnChecked (BulletReduceInput i)) =
+  void $ bulletReduceCircuit @StepField @PallasG i
 
 compileBulletReduceStep :: Effect (CompiledCircuit StepField)
 compileBulletReduceStep =
-  compile noAdvice (Proxy @(Vector 75 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    (\inputs -> void $ bulletReduceStepCircuit (parseBulletReduceStepInput inputs))
+  compile noAdvice (Proxy @(UnChecked (BulletReduceInput 15 StepField (SizedF 128 (F StepField)))))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint StepField))
+    bulletReduceStepCircuit

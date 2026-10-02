@@ -18,7 +18,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepKey, deriveWrapKey)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (StepMainAddOneReturnParams, compileStepMainAddOneReturn)
-import Pickles.CircuitDiffs.PureScript.WrapMainConstants (wrapMainConstants)
+import Pickles.Dump.Constants (wrapMainConstants)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Prove.Step (extractWrapVKCommsAdvice)
 import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
@@ -27,18 +27,20 @@ import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Pasta (PallasG)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainAddOneReturn
-  :: IvpWrapParams
+  :: CRS PallasG
+  -> IvpWrapParams
   -> StepMainAddOneReturnParams
   -> Effect WrapArtifact
-compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
+compileWrapMainAddOneReturn pallasSrs { lagrangeAt, blindingH } stepParams = do
   stepArt <- compileStepMainAddOneReturn stepParams
   vestaSrs <- createCRS @StepField
-  pallasSrs <- createCRS @WrapField
   stepKey <- deriveStepKey @0 vestaSrs stepArt.stepCs
   let stepComms = extractStepVKComms @1 stepKey.verifierIndex
   let realStepVK = stepVkForCircuit stepComms

@@ -65,7 +65,7 @@ cfg() {
       # so counters 4-7 repeat 0-3 and go unread.
       echo "test/chunked_circuits/chunks2|pickles|Test.Pickles.Main|RecurseOverChunks|chunks2_step chunks2_wrap recurse_step recurse_wrap" ;;
     app_circuit_chunks2)
-      echo "dump_app_circuit_chunks2_witness|pickles-circuit-diffs|Test.Pickles.CircuitDiffs.Main|app_circuit_chunks2 witness|app" ;;
+      echo "dump_app_circuit_chunks2_witness|pickles|Test.Pickles.Main|Kimchi app-body witness|app" ;;
     *) return 1 ;;
   esac
 }

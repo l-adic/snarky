@@ -25,14 +25,13 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, addConstraint, assertAny_, const_, equals_, exists, mul_, not_)
 import Snarky.Circuit.Types (NoOutput(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
+import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -83,7 +82,7 @@ type SelfRecursiveChunksPrevsSpec =
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SelfRecursiveChunks" do
   it "a chunks=2 self-recursive chain proves its base case and one step" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
-    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SelfRecursiveChunks.json")
+    outputs <- liftEffect $ appOutputs "SelfRecursiveChunks"
 
     entry <- liftEffect $ mkRuleEntry @NoOutput selfRecursiveChunksRule (Self :< Vector.nil)
 
@@ -94,8 +93,9 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: cache
+      , proofCache: outputs.proofCache
       , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "self_recursive_chunks"
       }
       (tuple1 entry)
 

@@ -71,6 +71,5 @@ Kimchi.Fixture.parseVK
 Kimchi.Fixture.PS.build
 Kimchi.Fixture.PS.fpSide
 Kimchi.Fixture.PS.fqSide
-Kimchi.Fixture.PS.parseComparison?
 Kimchi.Fixture.PS.parseComparisonCs?
 -- script-surface:end

@@ -1,27 +1,112 @@
 module Pickles.CircuitDiffs.PureScript.LinearizationCommon
-  ( linearizationCircuitM
+  ( LinearizationInput(..)
+  , evalPointOf
+  , linearizationCircuitM
   ) where
 
 import Prelude
 
-import Data.Fin (getFinite, unsafeFinite)
+import Data.Fin (reflectFinite)
 import Data.Int (pow) as Int
+import Data.Tuple.Nested (Tuple2, Tuple9, tuple9, uncurry9)
 import Data.Vector (Vector, (!!))
 import Pickles.Linearization.Env (CurrOrNext(..), GateType(..)) as Env
-import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
-import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
+import Pickles.Linearization.Env (EnvM, EvalPoint, buildCircuitEnvM, precomputeAlphaPowers)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (PolishToken)
 import Pickles.PlonkChecks (zkPolynomial)
+import Pickles.Types (evalPair, pairEval)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.CVar (CVar(..), const_)
-import Snarky.Circuit.DSL (FVar, Snarky, pow_, sub_)
+import Snarky.Circuit.DSL (class CircuitType, FVar, Snarky, UnChecked(..), genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, pow_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
+import Type.Proxy (Proxy(..))
+
+-- | The input the linearization and `ft_eval0` dumps share (OCaml `dump_circuit_impl.ml`).
+-- | The selectors (`indexEvals`) are generic, poseidon, complete-add, var-base-mul,
+-- | endo-mul, endo-mul-scalar.
+newtype LinearizationInput f = LinearizationInput
+  { witnessEvals :: Vector 15 (PointEval f)
+  , coeffEvals :: Vector 15 (PointEval f)
+  , zEvals :: PointEval f
+  , sigmaEvals :: Vector 6 (PointEval f)
+  , indexEvals :: Vector 6 (PointEval f)
+  , alpha :: f
+  , beta :: f
+  , gamma :: f
+  , zeta :: f
+  }
+
+-- | The wire order, each evaluation as its `(zeta, zetaw)` pair.
+type LinearizationTuple f =
+  Tuple9 (Vector 15 (Tuple2 f f)) (Vector 15 (Tuple2 f f)) (Tuple2 f f) (Vector 6 (Tuple2 f f))
+    (Vector 6 (Tuple2 f f))
+    f
+    f
+    f
+    f
+
+toTuple :: forall f. LinearizationInput f -> LinearizationTuple f
+toTuple (LinearizationInput i) =
+  tuple9 (map evalPair i.witnessEvals) (map evalPair i.coeffEvals) (evalPair i.zEvals)
+    (map evalPair i.sigmaEvals)
+    (map evalPair i.indexEvals)
+    i.alpha
+    i.beta
+    i.gamma
+    i.zeta
+
+fromTuple :: forall f. LinearizationTuple f -> LinearizationInput f
+fromTuple = uncurry9 \witnessEvals coeffEvals zEvals sigmaEvals indexEvals alpha beta gamma zeta ->
+  LinearizationInput
+    { witnessEvals: map pairEval witnessEvals
+    , coeffEvals: map pairEval coeffEvals
+    , zEvals: pairEval zEvals
+    , sigmaEvals: map pairEval sigmaEvals
+    , indexEvals: map pairEval indexEvals
+    , alpha
+    , beta
+    , gamma
+    , zeta
+    }
+
+instance CircuitType f fa fv => CircuitType f (LinearizationInput fa) (LinearizationInput fv) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(LinearizationTuple fa))
+  valueToFields = genericValueToFields <<< toTuple
+  fieldsToValue = fromTuple <<< genericFieldsToValue
+  varToFields = genericVarToFields @(LinearizationTuple fa) <<< toTuple
+  fieldsToVar = fromTuple <<< genericFieldsToVar @(LinearizationTuple fa)
+
+-- | The interpreter's evaluation point over the input's evaluations: the coefficients'
+-- | `zeta` halves only, no lookups, and an unsupported gate's selector read as generic's.
+evalPointOf :: forall f. PrimeField f => LinearizationInput (FVar f) -> EvalPoint (FVar f)
+evalPointOf (LinearizationInput i) =
+  { witness: \row col -> at row (i.witnessEvals !! col)
+  , coefficient: \col -> (i.coeffEvals !! col).zeta
+  , index: \row gt -> at row case gt of
+      Env.Generic -> i.indexEvals !! reflectFinite @0
+      Env.Poseidon -> i.indexEvals !! reflectFinite @1
+      Env.CompleteAdd -> i.indexEvals !! reflectFinite @2
+      Env.VarBaseMul -> i.indexEvals !! reflectFinite @3
+      Env.EndoMul -> i.indexEvals !! reflectFinite @4
+      Env.EndoMulScalar -> i.indexEvals !! reflectFinite @5
+      _ -> i.indexEvals !! reflectFinite @0
+  , lookupAggreg: \_ -> Const zero
+  , lookupSorted: \_ _ -> Const zero
+  , lookupTable: \_ -> Const zero
+  , lookupRuntimeTable: \_ -> Const zero
+  , lookupRuntimeSelector: \_ -> Const zero
+  , lookupKindIndex: \_ -> Const zero
+  }
+  where
+  at = case _ of
+    Env.Curr -> _.zeta
+    Env.Next -> _.omegaTimesZeta
 
 -- | Circuit that evaluates the linearization polynomial using the monadic
 -- | interpreter with compact Store/Load token stream:
--- | - 90 input fields (matching OCaml dump_circuit_impl.ml layout)
 -- | - Precomputed alpha powers via successive multiplication
 -- | - Domain values computed from zeta (omega constants for lagrange basis)
 -- | - Monadic interpreter (evaluateM) with peephole alpha optimization
@@ -33,67 +118,12 @@ linearizationCircuitM
   => LinearizationFFI f
   => Int -- ^ domainLog2
   -> Array PolishToken
-  -> Vector 90 (FVar f)
+  -> UnChecked (LinearizationInput (FVar f))
   -> Snarky f (KimchiConstraint f) r (FVar f)
-linearizationCircuitM domLog2 tokens inputs = do
+linearizationCircuitM domLog2 tokens (UnChecked input@(LinearizationInput i)) = do
   let
-    -- Unpack 90 inputs matching OCaml layout:
-    -- 0-29: witness evals (15 pairs of (zeta, zetaw))
-    -- 30-59: coefficient evals (15 pairs of (zeta, zetaw))
-    -- 60-61: z eval (unused in constant_term)
-    -- 62-73: s evals (6 pairs, unused in constant_term)
-    -- 74-85: selector evals (6 pairs: generic, poseidon, completeadd, vbm, emul, emulscalar)
-    -- 86: alpha, 87: beta, 88: gamma, 89: zeta
-    at i = inputs !! unsafeFinite i
-
-    -- Witness evals: 15 pairs at indices 0-29
-    witnessEval row col =
-      let
-        base = 2 * getFinite col
-      in
-        case row of
-          Env.Curr -> at base
-          Env.Next -> at (base + 1)
-
-    -- Coefficient evals: 15 pairs at indices 30-59
-    -- OCaml treats coefficients as pairs (zeta, zetaw) but we only use zeta
-    coeffEval col = at (30 + 2 * getFinite col)
-
-    -- Selector evals: 6 pairs at indices 74-85
-    -- Order: Generic=0, Poseidon=1, CompleteAdd=2, VarBaseMul=3, EndoMul=4, EndoMulScalar=5
-    selectorEval row gt =
-      let
-        idx = case gt of
-          Env.Generic -> 0
-          Env.Poseidon -> 1
-          Env.CompleteAdd -> 2
-          Env.VarBaseMul -> 3
-          Env.EndoMul -> 4
-          Env.EndoMulScalar -> 5
-          _ -> 0 -- Unsupported gates default to generic
-        base = 74 + 2 * idx
-      in
-        case row of
-          Env.Curr -> at base
-          Env.Next -> at (base + 1)
-
-    alpha = at 86
-    beta = at 87
-    gamma = at 88
-    zeta = at 89
-
-    -- Build eval point using direct lookups
-    evalPoint =
-      { witness: \row col -> witnessEval row col
-      , coefficient: \col -> coeffEval col
-      , index: \row gt -> selectorEval row gt
-      , lookupAggreg: \_ -> Const zero
-      , lookupSorted: \_ _ -> Const zero
-      , lookupTable: \_ -> Const zero
-      , lookupRuntimeTable: \_ -> Const zero
-      , lookupRuntimeSelector: \_ -> Const zero
-      , lookupKindIndex: \_ -> Const zero
-      }
+    { alpha, beta, gamma, zeta } = i
+    evalPoint = evalPointOf input
 
     -- Domain generator is a constant (from FFI)
     gen = domainGenerator @f domLog2

@@ -10,12 +10,6 @@
 -- | silently corrupts the encoding.
 module Pickles.PackedStatement
   ( PackedStepPublicInput(..)
-  -- Exported for `pickles-circuit-diffs`, which builds a
-  -- `PackedStepPublicInput` from a flat input array.
-  , PerProofTuple
-  , StmtTuple
-  , fromPackedTuple
-  , toPackedTuple
   ) where
 
 import Prelude

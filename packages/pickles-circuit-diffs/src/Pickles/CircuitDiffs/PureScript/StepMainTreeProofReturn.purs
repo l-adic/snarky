@@ -22,18 +22,19 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (reflectType)
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
-import Pickles.CircuitDiffs.PureScript.Common (DerivedKey, StepArtifact, WrapArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, WrapArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
-import Pickles.CircuitDiffs.PureScript.StepMainConstants (stepMainConstants)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
 import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
+import Pickles.CircuitDiffs.Types (Constants)
+import Pickles.Dump.Constants (DerivedKey, stepMainConstants)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Prove.RuleDump (RuleDump, recordRule)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
@@ -42,7 +43,7 @@ import Pickles.Types (StatementIO(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -112,26 +113,35 @@ type TreeProofReturnPrevsSpec =
 type Mpv = 2
 
 compileStepMainTreeProofReturn
-  :: StepMainTreeProofReturnParams -> Effect StepArtifact
-compileStepMainTreeProofReturn params =
-  _.art <$> compileStepMainTreeProofReturnWithConstants params
+  :: CRS PallasG
+  -> StepMainTreeProofReturnParams
+  -> Effect StepArtifact
+compileStepMainTreeProofReturn pallasSrs params =
+  _.art <$> compileStepMainTreeProofReturnWithConstants pallasSrs params
 
 -- | `compileStepMainTreeProofReturn`, with the constants the circuit bakes
--- | in (`stepMainConstants`) for the Lean `check_cs` harness.
+-- | in (`stepMainConstants`) and its rule (`recordRule`), for the Lean
+-- | `check_cs` harness.
 compileStepMainTreeProofReturnWithConstants
-  :: StepMainTreeProofReturnParams
-  -> Effect { art :: StepArtifact, constants :: DerivedKey PallasG WrapField -> Effect String }
-compileStepMainTreeProofReturnWithConstants params = do
-  nrrArt <- compileWrapMainNoRecursionReturn
+  :: CRS PallasG
+  -> StepMainTreeProofReturnParams
+  -> Effect
+       { art :: StepArtifact
+       , constants :: DerivedKey PallasG WrapField -> Effect Constants
+       , rule :: RuleDump
+       }
+compileStepMainTreeProofReturnWithConstants pallasSrs params = do
+  nrrArt <- compileWrapMainNoRecursionReturn pallasSrs
     params.nrrWrapSrsData
     params.nrrStepSrsData
   selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile (srsData nrrArt 1))
   art <- mkStepArtifact <$> runStepCompile (srsData nrrArt selfLog2)
+  rule <- recordRule @2 @() @Unit @(F StepField) treeProofReturnRule
   pure
     { art
+    , rule
     , constants: \selfWrapKey -> do
-        pallasSrs <- createCRS @WrapField
-        stepMainConstants (reflectType (Proxy @Mpv))
+        stepMainConstants
           (map slotWidthInt (slotWidthsOf (Proxy @TreeProofReturnPrevsSpec)))
           (srsData nrrArt selfLog2)
           pallasSrs
