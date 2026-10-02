@@ -26,12 +26,9 @@ compiled as the capstones compile it (`runMain`): the capstones' hypothesis that
 hold under the prover's valuation is decided (`Snarky.Kimchi.KimchiConstraint.decidableHolds`), its
 table against its assembled system (the assignments reduced by `Snarky.Kimchi.reduceSolved`, the
 witness laid out by `Snarky.Kimchi.makeWitness`), and its public input against the cached proof's;
-and the capstones' hypotheses on its cells (`stepHyps`, `wrapHyps`, through
-`Snarky.CircuitType.decidableReads`, and `Pickles.KeyReads.of_readPt` for a slot's key cells,
-compared by `Pickles.instDecidableEqVkComms`); and what the capstones conclude, against the cache
-(`stepConclusions`, `wrapConclusions`): the cells read off the cached proofs
-(`Pickles.IvpProof.read_eq`, `Pickles.OldsRead.of_readPt`), the finalize cells hold their
-evaluations (`Kimchi.Verifier.instDecidableEqProofEvaluations`,
+and what the capstones conclude, against the cache (`stepConclusions`, `wrapConclusions`): the cells
+read off the cached proofs (`Pickles.IvpProof.read_eq`, `Pickles.OldsRead.of_readPt`), the finalize
+cells hold their evaluations (`Kimchi.Verifier.instDecidableEqProofEvaluations`,
 `Kimchi.Verifier.instDecidableEqPointEvaluations`, at the memoised Lagrange points of
 `Pickles.pubEvalsWith`, by `Pickles.pubEvalsWith_lagrangePoints`), and `Guards` and `kimchiVerify`
 hold of them, which gives `SgOk` (`Pickles.sgOkWith_of_kimchiVerifyWith`); and the handover: each
@@ -45,8 +42,10 @@ its `SgOk` passes `accOk` (`Pickles.accOk_of_carryWith`), an unlinked one passin
 fails the run. After the runs, the capstones themselves: each step run and the wrap run that wrapped
 it through `Pickles.stepWrap_kimchiVerify` (`stepWrapLink`), each slot verifying a cached wrap proof
 with that proof's wrap run through `Pickles.wrapStep_kimchiVerify` (`wrapStepLink`), every
-hypothesis decided on the runs and passed to the capstone; and every two adjacent links through the
-handover theorems (`stepWrapGlue`, `wrapStepGlue`), their meeting decided on the runs.
+hypothesis decided on the runs (their reads through `Snarky.CircuitType.decidableReads`, a slot's
+key cells through `Pickles.KeyReads.of_readPt`, compared by `Pickles.instDecidableEqVkComms`) and
+passed to the capstone; and every two adjacent links through the handover theorems (`stepWrapGlue`,
+`wrapStepGlue`), their meeting decided on the runs.
 
 Run from `formal/`:  PICKLES_DUMP_DIR=<dir> lake exe check-tags
 (`BULLETPROOF_FIXTURES_DIR` overrides the blinding bases' fixtures.)
@@ -201,87 +200,24 @@ def checkSources (tags : List TagSummary) : Except String ℕ := do
 
 /-- A main circuit's run, judged against the cached proof it makes: its compiled constraints
 hold under the prover's valuation, its table satisfies its system, its public input is the
-cached proof's `pub`, and every capstone hypothesis in `hyps` holds of its cells; printed under
-`tag`, with each failed hypothesis named. -/
+cached proof's `pub`, and every check in `checks` holds of its cells against the cache; printed
+under `tag`, with each failed check named. -/
 def verdict {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [CircuitType (ZMod p) a av]
     [∀ V : Valuation (ZMod p), CheckedType (ZMod p) (Builder V (KimchiConstraint (ZMod p))) a av]
     [CircuitType (ZMod p) b bv]
     {body : (V : Valuation (ZMod p)) → av →
       CircuitM (ZMod p) (Builder V (KimchiConstraint (ZMod p))) (bv × α)}
     (tag : String) (r : MainRun (a := a) (b := b) body) (pub : Array (ZMod p))
-    (hyps : List (String × Bool)) (ms : ℕ) : IO Bool := do
+    (checks : List (String × Bool)) (ms : ℕ) : IO Bool := do
   let pubOk := decide (r.pub = pub.toList)
   let holds := @decide _ r.holds
-  let failed := hyps.filter (!·.2)
+  let failed := checks.filter (!·.2)
   let ok := holds && r.satisfies && pubOk && failed.isEmpty
   IO.println s!"{if ok then "✓" else "✗"} {tag} {ms} ms: constraints hold {holds}, table \
     satisfies {r.satisfies}, public input is the cached proof's {pubOk}, \
-    {hyps.length - failed.length}/{hyps.length} link hypotheses"
+    {checks.length - failed.length}/{checks.length} checks against the cache"
   for (label, _) in failed do IO.println s!"    ✗ {label}"
   return ok
-
-open CompElliptic.CurveForms.ShortWeierstrass in
-/-- What `stepWrap_kimchiVerify` and `wrapStep_kimchiVerify` assume of a step circuit's cells,
-decided under its valuation `V`: its statement reads the step proof's public input `pub`, and per
-slot verifying a cached wrap proof, the slot is marked must-verify, its key `K` (`Key.check` of
-the slot's key) runs at one chunk, the slot's key cells read as `K` (`KeyReads.of_readPt`'s
-premises), its proof mask reads, and the statement the slot rebuilds packs to that wrap proof's
-public input. A base case is not marked must-verify. -/
-def stepHyps {n w ncs : ℕ} {ss : Fin n → ℕ} {sa : ℕ} (hw : w ≤ Pickles.MaxProofsVerified)
-    (k : StepMainConsts n ncs) (V : Valuation Fp)
-    (out : Pickles.StepMainOut n w (Pickles.SlotSource.widths w fun i => k.slots[i].source) ss sa
-      1 ncs 15 Pickles.StepIPARounds)
-    (pub : Array Fp) (prevs : Vector StepPrev n) : List (String × Bool) :=
-  ("its statement reads its public input",
-    decide ((mapVec (·.val V) (CircuitType.varToFields (F := Fp)
-      (val := Pickles.StepStatement (Pickles.UnfVal 15) Fp w) out.out)).toList = pub.toList)) ::
-  (List.finRange n).flatMap fun i =>
-    let mv := decide (CircuitType.Reads V (out.prevs i).mustVerify true)
-    match prevs[i] with
-    | .baseCase _ => [(s!"slot {i}: its base case is not must-verify", !mv)]
-    | .proof W _ =>
-      match Pickles.Key.check k.slots[i].key with
-      | none => [(s!"slot {i}: its key is checked", false)]
-      | some K =>
-        let cells := k.slots[i].source.keyCells out.vk.points
-        let inp := Pickles.slotInput (k.slots[i].width_le hw) (Pickles.constPt dummyWrapSgPt)
-          (out.prevs i) (out.slots i) out.unfs[i] out.msgs[i]
-        let ms := CircuitType.readVal V inp.proofMask
-        [(s!"slot {i}: it must verify", mv),
-         (s!"slot {i}: its key runs at one chunk",
-           decide (1 = Kimchi.Verifier.chunkCount 15 K.cvk.domainLog2)),
-         (s!"slot {i}: its key cells lie on the curve", cells.indexPoints.all fun p =>
-           decide (OnCurve Bulletproof.IpaPallas.curve.E.A Bulletproof.IpaPallas.curve.E.B
-             (p.x.val V, p.y.val V))),
-         (s!"slot {i}: its key cells read as its key",
-           decide (cells.map (Pickles.readPt (C := Bulletproof.IpaPallas.curve) V) = K.cvk.comms)),
-         (s!"slot {i}: its proof mask reads", decide (CircuitType.Reads V inp.proofMask ms)),
-         (s!"slot {i}: its wrap proof is made at the statement it rebuilds",
-           decide ((CircuitType.valueToFields (F := Fq) (inp.packedAt K.cvk V ms)).toList =
-             W.publicInput.toList))]
-
-/-- What `stepWrap_kimchiVerify` and `wrapStep_kimchiVerify` assume of a wrap circuit's cells,
-decided under its valuation `V`: its branch index reads `b`, its step statement reads as the step
-proof's public input `pub` (`StepStatement.ofWrap`), and per step slot `i` verifying a cached wrap
-proof, its wrap slot is pinned, on branch `b`, at the domain of the slot's key. -/
-def wrapHyps {bp mpv nc n ncs : ℕ} {slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv}
-    (b : ℕ) (k : StepMainConsts n ncs) (V : Valuation Fq)
-    (fin : Pickles.WrapMainFinalizeOut (bp + 1) mpv nc 15 slotWidths)
-    (ver : Pickles.WrapMainVerifyOut mpv nc 15 16) (pub : Array Fp) (prevs : Vector StepPrev n) :
-    List (String × Bool) :=
-  ("its branch index reads its branch", decide (fin.whichBranch.val V = (b : Fq))) ::
-  ("its step statement reads the step proof's public input",
-    decide ((CircuitType.valueToFields (F := Fp)
-      (Pickles.StepStatement.ofWrap V ver.statement)).toList = pub.toList)) ::
-  (List.finRange n).flatMap fun i =>
-    match prevs[i], Pickles.Key.check k.slots[i].key with
-    | .baseCase _, _ => []
-    | .proof _ _, none => [(s!"slot {i}: its key is checked", false)]
-    | .proof _ _, some K =>
-      [(s!"slot {i}: its wrap slot is pinned at its key's domain",
-        match (fin.slots[mpv - n + i.val]?).bind (·.pins[b]?) with
-        | some (some j) => decide (Pickles.wrapDomainLog2s[j]? = some K.cvk.domainLog2)
-        | _ => true)]
 
 /-- What the conclusion checks share across workers: each curve's SRS, loaded once per round
 count, its checked keys, and the `kimchiVerify` and `sgOk` verdicts, computed once per proof and
@@ -757,9 +693,10 @@ set_option cleanup.letToHave false in
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- `Pickles.stepWrap_kimchiVerify` applied to one link: the run `rS` of a step circuit and the
 run `rW` of the wrap circuit that wrapped its proof, each compiled as the capstone compiles it.
-Per slot that must verify, every hypothesis is decided on the runs and passed to the capstone,
-whose statement thereby fixes what is decided; the label of the first one failing is returned.
-The application's one open premise is the slot's dumped Lagrange table being its key's points
+Each slot verifying a cached proof (`verifies`) must be must-verify, and a base case must not; per
+slot that must verify, every hypothesis is decided on the runs and passed to the capstone, whose
+statement thereby fixes what is decided. The label of the first one failing is returned. The
+application's one open premise is the slot's dumped Lagrange table being its key's points
 (`Fits`). -/
 def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
     (kb : StepMainConsts rule.prevs.size ncs) (hw : w ≤ Pickles.MaxProofsVerified)
@@ -782,7 +719,7 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
           Pickles.Linearization.fqTokens) sh.widths
         (Pickles.stepDomainLog2s sh.keys) (Pickles.stepKeyCells sh.keys) sh.pins
         sh.lagrange σS.h dummy sh.slotWidths advW)
-    (verifies : Fin rule.prevs.size → String × String) (makes : String × String) :
+    (verifies : Fin rule.prevs.size → Option (String × String)) (makes : String × String) :
     List (String × Bool × Option StepWrapOut) :=
   let S := wrapSrs σW hk hh
   let n := rule.prevs.size
@@ -800,6 +737,12 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
     if hbr : bp + 1 ≤ PALLAS_SCALAR_CARD then
     if hd : dummyWrapSgPt ≠ 0 then
       (List.finRange n).flatMap fun i =>
+        match verifies i with
+        | none =>
+          if CircuitType.Reads rS.V (rS.result.1.2.prevs i).mustVerify true then
+            [(s!"slot {i}: its base case is not must-verify", false, none)]
+          else []
+        | some key =>
         if hmv : CircuitType.Reads rS.V (rS.result.1.2.prevs i).mustVerify true then
           match Pickles.Key.check kb.slots[i].key with
           | none => [(s!"slot {i}: its key is checked", false, none)]
@@ -839,7 +782,7 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
                   let out : StepWrapOut :=
                     { n := _, w := _, ws := _, ss := _, sa := _, ncs := _, branches := _
                       ncStep := _, slotWidths := _, rk, dummy, cvk := K.cvk
-                      verifies := verifies i, makes
+                      verifies := key, makes
                       premise := (srcs i).lagrange = K.cvk.lagrangePoints S.σ m
                       concl := fun hTs => by
                         obtain ⟨cp, ms', hc⟩ := Pickles.stepWrap_kimchiVerify
@@ -880,7 +823,7 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
             else [(s!"slot {i}: its packed statement fits the SRS", false, none)]
             else [(s!"slot {i}: its packed statement fits its key's domain", false, none)]
             else [(s!"slot {i}: its key runs at one chunk", false, none)]
-        else []
+        else [(s!"slot {i}: it must verify", false, none)]
     else [("the dummy sg is finite", false, none)]
     else [("the wrap circuit's branches fit the scalar field", false, none)]
     else [("the rule's slots fit the tag's width", false, none)]
@@ -1040,8 +983,7 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
             (replayRule rule (some vals)) adv) ()
         stepRun.set (some r)
         let concl ← stepConclusions ctx hw kb r.V r.result.1.2 S0 prevs
-        verdict s!"{tag}: step circuit" r S0.publicInput
-          (stepHyps hw kb r.V r.result.1.2 S0.publicInput prevs ++ concl) ((← IO.monoMsNow) - t0)
+        verdict s!"{tag}: step circuit" r S0.publicInput concl ((← IO.monoMsNow) - t0)
       let some W0 := wraps.find? (·.step = some (S0.vkDigest, S0.publicInputKey)) | continue
       covered := (W0.vkDigest, W0.publicInputKey) :: covered
       let wprevs ← exT (wrapPrevsOf w pins W0 prevs)
@@ -1062,16 +1004,14 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
           { bp, w, nc, sh, dummy := k.dummy, b := ⟨b, hb⟩, advW, run := r }) :: ·)
         let concl ← wrapConclusions ctx b sh.keys kb r.V r.result.1.2.1 r.result.1.2.2 S0 W0
           prevs
-        verdict s!"{tag}: wrap circuit" r W0.publicInput
-          (wrapHyps b kb r.V r.result.1.2.1 r.result.1.2.2 S0.publicInput prevs ++ concl)
-          ((← IO.monoMsNow) - t0)
+        verdict s!"{tag}: wrap circuit" r W0.publicInput concl ((← IO.monoMsNow) - t0)
       links := links.push do
         let (some rS, some rW) := (← stepRun.get, ← wrapRun.get)
           | IO.println s!"✗ {tag}: stepWrap_kimchiVerify: a run failed"; return false
         let hyps := stepWrapLink rule vals kb hw σW hW hh σS sh k.dummy ⟨b, hb⟩ adv advW rS rW
           (fun i => match prevs[i] with
-            | .proof W _ => (W.vkDigest, W.publicInputKey)
-            | .baseCase _ => ("", ""))
+            | .proof W _ => some (W.vkDigest, W.publicInputKey)
+            | .baseCase _ => none)
           (W0.vkDigest, W0.publicInputKey)
         let failed := hyps.filter (!·.2.1)
         stepWrapOuts.modify (· ++ (hyps.filterMap (·.2.2)).toArray.map fun o =>
@@ -1200,8 +1140,8 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
     throw (IO.userError s!"links FAILED ({oks.toList.count false} run(s), \
       {linked.toList.count false} link(s), {uncovered} uncovered)")
   IO.println s!"✓ {jobs.size} run(s): every compiled system holds under its prover's valuation, \
-    every table satisfies its system, every public input is its cached proof's, every link \
-    hypothesis holds; {links.size} link(s) through stepWrap_kimchiVerify and \
+    every table satisfies its system, every public input is its cached proof's, every check \
+    against the cache holds; {links.size} link(s) through stepWrap_kimchiVerify and \
     wrapStep_kimchiVerify; {pairs} adjacent pair(s) through the handover theorems"
 
 /-- The apps `LINKS=all` leaves out: `Chunks4`, whose four-chunk step key needs a `2^18` Lagrange
