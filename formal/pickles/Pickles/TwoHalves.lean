@@ -407,6 +407,28 @@ theorem pubEvalsWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiV
   simp only [pubEvalsWith, runPubEvals, runOracles, runZetaOmega, runZetaN, runZetaOmegaN,
     runPublicComm, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
 
+/-- `kimchiVerifyWith` accepting gives `sgOkWith` at the same Lagrange points: the opening check
+ends with the deferred `sg` equation. -/
+theorem sgOkWith_of_kimchiVerifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (L : Array (Vector C.Point nc)) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (h : kimchiVerifyWith C σ cvk L cp pub = true) : sgOkWith σ cvk L cp pub = true := by
+  unfold kimchiVerifyWith at h
+  split at h
+  · exact absurd h Bool.false_ne_true
+  · simp only [sgOkWith, Ipa.verifyFrom, Ipa.verifyWith, Bool.and_eq_true] at h ⊢
+    exact h.2
+
+/-- An accumulator `cp` carries into `cp'` passes `accOk` when `cp` passes `sgOkWith` at the
+carry's Lagrange points: the carry makes it `cp`'s `sg` and round challenges. -/
+theorem accOk_of_carryWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (L : Array (Vector C.Point nc)) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size)
+    (hc : carryWith σ cvk L cp pub cp' i = true) (hs : sgOkWith σ cvk L cp pub = true) :
+    accOk σ cp'.olds[i] = true := by
+  simp only [carryWith, sgOkWith, accOk, decide_eq_true_eq] at hc hs ⊢
+  rw [hc.1, hc.2]
+  exact hs
+
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
 /-- The proof's combined evaluations are the linearization view of its evaluations recombined

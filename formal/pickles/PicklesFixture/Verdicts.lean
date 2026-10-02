@@ -72,10 +72,12 @@ structure Memo where
   verify : IO.Ref (Std.HashMap String Bool)
   /-- `sgOk`, per proof and public input. -/
   sg : IO.Ref (Std.HashMap String Bool)
+  /-- `accOk`, per accumulator. -/
+  acc : IO.Ref (Std.HashMap String Bool)
 
 /-- A fresh memo. -/
 def Memo.new : IO Memo := do
-  return { verify := ← IO.mkRef {}, sg := ← IO.mkRef {} }
+  return { verify := ← IO.mkRef {}, sg := ← IO.mkRef {}, acc := ← IO.mkRef {} }
 
 /-- The memo key of an entry's verdict at a public input. -/
 def memoKey (C : Ipa.KimchiCurve) (name : String) (k : ℕ) (e : Cache.Entry C)
@@ -174,5 +176,35 @@ def padOk (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C
   let ⟨_, _, cp⟩ ← checkedAny C σ e
   if h : slot < cp.olds.size then return Pickles.accOk σ cp.olds[slot]
   else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
+
+/-- `padOk` computed once per accumulator: the dummies unlinked accumulators carry repeat across
+proofs. -/
+def padOkMemo (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (memo : Memo) (e : Cache.Entry C) (slot : ℕ) :
+    IO Bool := do
+  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
+  let ⟨_, _, cp⟩ ← checkedAny C σ e
+  if h : slot < cp.olds.size then
+    let a := cp.olds[slot]
+    memoized memo.acc s!"{name}/{σ.k}/{a.sg.x.val}/{a.sg.y.val}/{a.u.toList.map (·.val)}"
+      fun _ => Pickles.accOk σ a
+  else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
+
+/-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on `C`:
+`carry` alone, at the memoised Lagrange points. With `pred`'s `sgOkWith` there, which
+`kimchiVerifyWith` accepting gives (`Pickles.sgOkWith_of_kimchiVerifyWith`), the accumulator
+passes `accOk` (`Pickles.accOk_of_carryWith`), so no second `sg` MSM is run for it. -/
+def carries (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (keys : IO.Ref (List (String × Checked C)))
+    (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
+  let ⟨nc, S, K⟩ ← keyFor C name sqrt loaded keys pred
+  unless succ.proof.opening.lr.size = S.σ.k do
+    throw (IO.userError s!"round counts differ: {S.σ.k} and {succ.proof.opening.lr.size}")
+  let cp ← checkedFor C nc S.σ pred
+  let ⟨_, _, cp'⟩ ← checkedAny C S.σ succ
+  if h : slot < cp'.olds.size then
+    let L ← basisFor C name S.σ nc pred
+    return Pickles.carryWith S.σ K.cvk L cp pred.publicInput cp' ⟨slot, h⟩
+  else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
 
 end PicklesFixture

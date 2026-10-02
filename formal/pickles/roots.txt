@@ -69,4 +69,6 @@ Pickles.IvpProof.read_eq -- check-tags decides its premises: a proof's cells rea
 Pickles.OldsRead.of_readPt -- check-tags decides its premises for the old-accumulator cells
 Pickles.pubEvalsWith -- check-tags decides FopTies' public evaluations at memoised Lagrange points
 Pickles.pubEvalsWith_lagrangePoints -- which is runPubEvals at the key's points
+Pickles.sgOkWith_of_kimchiVerifyWith -- check-tags takes SgOk from kimchiVerify's own sg equation
+Pickles.accOk_of_carryWith -- check-tags takes a carried accumulator's accOk from its predecessor's SgOk
 -- script-surface:end
