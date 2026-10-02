@@ -129,7 +129,7 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
           isNothing missBefore `shouldEqual` true
 
           -- 2. Set then get ⇒ hit, and the retrieved proof verifies.
-          setPallasProof cache vkDigest verifierIndex publicInputs proof []
+          setPallasProof cache vkDigest verifierIndex publicInputs proof [] { input: [], values: [] }
           hit <- getPallasProof cache vkDigest publicInputs
           isJust hit `shouldEqual` true
           case hit of

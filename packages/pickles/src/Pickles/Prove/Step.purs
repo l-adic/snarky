@@ -48,6 +48,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
@@ -65,11 +66,12 @@ import Pickles.PlonkChecks (collapsePointEval, mapChunkedEvals)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
+import Pickles.Prove.RuleDump (ruleWitness)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, mkPrevValues)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -1381,8 +1383,17 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
                   Just proof -> pure proof
                   Nothing -> do
                     let proof = Lazy.force p
-                    setPallasProof cache vkDigest compileResult.verifierIndex publicInputs proof
-                      prevProofs
+                    witness <- ruleWitness @inputVal handler
+                      (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
+                      adv.publicInput
+                      rule
+                    case witness of
+                      Left e -> throw ("stepProve: the rule's witness: " <> show e)
+                      Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
+                        publicInputs
+                        proof
+                        prevProofs
+                        w
                     pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex
