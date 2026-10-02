@@ -148,6 +148,10 @@ def assertEqualCircuit (x : FVar Fp) : CircuitM Fp C PUnit := do
   let y ← witness (val := Fp) (pure 0)
   assertEqual x y
 
+/-- `app_circuit_two_phase_chain_make_zero`: assert the input equals zero. -/
+def makeZeroAppCircuit (x : FVar Fp) : CircuitM Fp C PUnit :=
+  assertEqual x (.const 0)
+
 /-- `app_circuit_two_phase_chain_increment`: assert the input equals `prev + 1`. -/
 def incrementAppCircuit (x : FVar Fp) : CircuitM Fp C PUnit := do
   let prev ← witness (val := Fp) (pure 0)
