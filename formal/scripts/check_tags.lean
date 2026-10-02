@@ -29,8 +29,10 @@ cells read off the cached proofs (`Pickles.IvpProof.read_eq`, `Pickles.OldsRead.
 finalize cells hold their evaluations (`Kimchi.Verifier.instDecidableEqProofEvaluations`,
 `Kimchi.Verifier.instDecidableEqPointEvaluations`, at the memoised Lagrange points of
 `Pickles.pubEvalsWith`, by `Pickles.pubEvalsWith_lagrangePoints`), and `Guards`, `SgOk` and
-`kimchiVerify` hold of them; on `LINKS_JOBS` workers (4). A cached proof in no link fails the
-run.
+`kimchiVerify` hold of them; and the handover: each verified proof's accumulator is the next
+proof's old accumulator of its slot (`PicklesFixture.carriesInto`), an unlinked one satisfying
+`accOk` on its own (`PicklesFixture.padOk`). On `LINKS_JOBS` workers (4); a cached proof in no
+link fails the run.
 
 Run from `formal/`:  PICKLES_DUMP_DIR=<dir> lake exe check-tags
 (`BULLETPROOF_FIXTURES_DIR` overrides the blinding bases' fixtures.)
@@ -260,12 +262,17 @@ def wrapHyps {bp mpv nc n ncs : ℕ} {slotWidths : Vector (Fin (Pickles.MaxProof
         | _ => true)]
 
 /-- What the conclusion checks share across workers: each curve's SRS, loaded once per round
-count, and the `kimchiVerify` and `sgOk` verdicts, computed once per proof and public input. -/
+count, its checked keys, and the `kimchiVerify` and `sgOk` verdicts, computed once per proof and
+public input. -/
 structure VerdictCtx where
   /-- The wrap proofs' SRS (Pallas commitments). -/
   pallas : IO.Ref (List (ℕ × Bulletproof.SRS CW.Point))
   /-- The step proofs' SRS (Vesta commitments). -/
   vesta : IO.Ref (List (ℕ × Bulletproof.SRS CS.Point))
+  /-- The wrap proofs' checked keys. -/
+  pallasKeys : IO.Ref (List (String × Checked CW))
+  /-- The step proofs' checked keys. -/
+  vestaKeys : IO.Ref (List (String × Checked CS))
   /-- The shared verdicts. -/
   memo : Memo
 
@@ -325,12 +332,14 @@ def srsAtK (C : Bulletproof.Ipa.KimchiCurve) (name : String)
 verifying a cached wrap proof `W` under its key `K`, the slot's public input is `W`'s, its proof
 and old-accumulator cells read as `W`'s (`IvpProof.read_eq`, `commReads_readPt`), `Guards`,
 `SgOk` and `kimchiVerify` hold of `W` there, and the slot's finalize cells hold the evaluations
-and old challenges of the step proof `W` wrapped (`FopTies`). -/
+and old challenges of the step proof `W` wrapped (`FopTies`). The handover: that step proof's
+accumulator is the step proof `S0`'s old accumulator of the slot (`carriesInto`); a base-case
+slot's accumulator satisfies `accOk` on its own (`padOk`). -/
 def stepConclusions (ctx : VerdictCtx) {n w ncs : ℕ} {ss : Fin n → ℕ} {sa : ℕ}
     (hw : w ≤ Pickles.MaxProofsVerified) (k : StepMainConsts n ncs) (V : Valuation Fp)
     (out : Pickles.StepMainOut n w (Pickles.SlotSource.widths w fun i => k.slots[i].source) ss sa
       1 ncs 15 Pickles.StepIPARounds)
-    (prevs : Vector StepPrev n) : IO (List (String × Bool)) := do
+    (S0 : Cache.Entry CS) (prevs : Vector StepPrev n) : IO (List (String × Bool)) := do
   let ⟨σW, hW⟩ ← srsAtK CW "pallas" pallasBase.sqrt? ctx.pallas 15
   let ⟨σS, hS⟩ ← srsAtK CS "vesta" vestaBase.sqrt? ctx.vesta 16
   let mut hyps := []
@@ -366,19 +375,30 @@ def stepConclusions (ctx : VerdictCtx) {n w ncs : ℕ} {ss : Fin n → ℕ} {sa 
        (s!"slot {i}: kimchiVerify accepts its wrap proof", kv),
        (s!"slot {i}: its finalize cells hold its step proof's evaluations",
          fopTies σS hS cvkS' LS' (hS ▸ cpS') S'.publicInput (inp.finalizedHalf V))]
+  for i in List.finRange n do
+    match prevs[i] with
+    | .baseCase _ =>
+      hyps := hyps ++ [(s!"slot {i}: its base-case accumulator satisfies accOk",
+        ← padOk CS "vesta" vestaBase.sqrt? ctx.vesta S0 i)]
+    | .proof _ S' =>
+      hyps := hyps ++ [(s!"slot {i}: its step proof's accumulator is carried into the slot's",
+        ← carriesInto CS "vesta" vestaBase.sqrt? ctx.vesta ctx.vestaKeys ctx.memo S' S0 i)]
   return hyps
 
 /-- What the capstones conclude of a wrap circuit's cells, decided against the cache: its step
 proof `S0`'s public input is the one its statement packs to (`wrapPublicInput`), its proof and
 old-accumulator cells read as `S0`'s (`IvpProof.read_eq`, `OldsRead.of_readPt`), `Guards`,
 `SgOk` and `kimchiVerify` hold of `S0` there, and per slot of `S0` verifying a cached wrap proof,
-its finalize slot holds that proof's evaluations and old challenges (`FopTies`). -/
+its finalize slot holds that proof's evaluations and old challenges (`FopTies`). The handover:
+that wrap proof's accumulator is the wrap proof `W0`'s old accumulator of the slot, past the front
+pads (`carriesInto`); a pad or base-case slot's accumulator satisfies `accOk` on its own
+(`padOk`). -/
 def wrapConclusions (ctx : VerdictCtx) {bp mpv nc n ncs : ℕ}
     {slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv} (b : ℕ)
     (keys : Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1))
     (k : StepMainConsts n ncs) (V : Valuation Fq)
     (fin : Pickles.WrapMainFinalizeOut (bp + 1) mpv nc 15 slotWidths)
-    (ver : Pickles.WrapMainVerifyOut mpv nc 15 16) (S0 : Cache.Entry CS)
+    (ver : Pickles.WrapMainVerifyOut mpv nc 15 16) (S0 : Cache.Entry CS) (W0 : Cache.Entry CW)
     (prevs : Vector StepPrev n) : IO (List (String × Bool)) := do
   let ⟨σW, hW⟩ ← srsAtK CW "pallas" pallasBase.sqrt? ctx.pallas 15
   let ⟨σS, hS⟩ ← srsAtK CS "vesta" vestaBase.sqrt? ctx.vesta 16
@@ -424,6 +444,19 @@ def wrapConclusions (ctx : VerdictCtx) {bp mpv nc n ncs : ℕ}
       [(s!"slot {i}: its finalize slot holds its wrap proof's evaluations",
          fopTies σW hW K.cvk LWi (hW ▸ cpWi) Wi.publicInput
            (Pickles.ScalarHalf.wrap V sl.unfinalized sl.evals sl.prevChallenges))]
+  let pad := W0.proof.prevChallenges.size - n
+  for j in List.range pad do
+    hyps := hyps ++ [(s!"pad accumulator {j} satisfies accOk",
+      ← padOk CW "pallas" pallasBase.sqrt? ctx.pallas W0 j)]
+  for i in List.finRange n do
+    match prevs[i] with
+    | .baseCase _ =>
+      hyps := hyps ++ [(s!"slot {i}: its base-case accumulator satisfies accOk",
+        ← padOk CW "pallas" pallasBase.sqrt? ctx.pallas W0 (pad + i))]
+    | .proof Wi _ =>
+      hyps := hyps ++ [(s!"slot {i}: its wrap proof's accumulator is carried into the slot's",
+        ← carriesInto CW "pallas" pallasBase.sqrt? ctx.pallas ctx.pallasKeys ctx.memo Wi W0
+          (pad + i))]
   return hyps
 
 /-- The links of one tag, as jobs: per cached step proof of each branch, the step circuit at
@@ -477,7 +510,7 @@ def linkJobs (ctx : VerdictCtx) (name : String) (j : Json) (wraps : Array (Cache
             (outVal := Vector Fp rule.publicOutput.size) (fun i => kb.slots[i].source)
             (fun i => kb.slots[i].width_le hw) kb.h (fopStepParams ncs) kb.ownDomains.list
             (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule (some vals)) adv u) ()
-        let concl ← stepConclusions ctx hw kb r.V r.result.1.2 prevs
+        let concl ← stepConclusions ctx hw kb r.V r.result.1.2 S0 prevs
         verdict s!"{tag}: step circuit" r S0.publicInput
           (stepHyps hw kb r.V r.result.1.2 S0.publicInput prevs ++ concl) ((← IO.monoMsNow) - t0)
       let some W0 := wraps.find? (·.step = some (S0.vkDigest, S0.publicInputKey)) | continue
@@ -492,7 +525,8 @@ def linkJobs (ctx : VerdictCtx) (name : String) (j : Json) (wraps : Array (Cache
           (fun stmt => Pickles.wrapMainCircuit (k := 15) (ks := 16) fopWrapParams sh.widths
             (Pickles.stepDomainLog2s sh.keys) (Pickles.stepKeyCells sh.keys) sh.pins sh.lagrange
             k.h k.dummy sh.slotWidths advW stmt) inp
-        let concl ← wrapConclusions ctx b sh.keys kb r.V r.result.1.2.1 r.result.1.2.2 S0 prevs
+        let concl ← wrapConclusions ctx b sh.keys kb r.V r.result.1.2.1 r.result.1.2.2 S0 W0
+          prevs
         verdict s!"{tag}: wrap circuit" r W0.publicInput
           (wrapHyps b kb r.V r.result.1.2.1 r.result.1.2.2 S0.publicInput prevs ++ concl)
           ((← IO.monoMsNow) - t0)
@@ -501,7 +535,9 @@ def linkJobs (ctx : VerdictCtx) (name : String) (j : Json) (wraps : Array (Cache
 /-- Every link of the apps `apps` under `dir`, run on `nJobs` workers against the apps' proof
 caches under `cacheDir`; every cached proof must be covered and every run pass its `verdict`. -/
 def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ) : IO Unit := do
-  let ctx : VerdictCtx := { pallas := ← IO.mkRef [], vesta := ← IO.mkRef [], memo := ← Memo.new }
+  let ctx : VerdictCtx :=
+    { pallas := ← IO.mkRef [], vesta := ← IO.mkRef [], pallasKeys := ← IO.mkRef []
+      vestaKeys := ← IO.mkRef [], memo := ← Memo.new }
   -- both SRSes loaded before the pool, so no two workers decompress one
   let _ ← srsAt CW "pallas" pallasBase.sqrt? ctx.pallas 15
   let _ ← srsAt CS "vesta" vestaBase.sqrt? ctx.vesta 16
