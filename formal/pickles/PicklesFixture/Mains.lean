@@ -74,7 +74,7 @@ def wrapMainDumpCircuit (bp mpv nc : ℕ) (k : WrapMainConsts nc)
     (keys : Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1))
     (slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv)
     (pins : Vector (Vector (Option ℕ) (bp + 1)) mpv)
-    (tables : Vector (Vector (Vector XhatCurve.Point nc)
+    (tables : Vector (Vector (Vector XhatWrapCurve.Point nc)
       (CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv))) (bp + 1))
     (stmt : Pickles.StatementPacked 16 (Type1 (FVar Fq)) (FVar Fq)) :
     CircuitM Fq Cq Unit :=

@@ -99,7 +99,8 @@ def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (br
 
 /-- One tag: its circuits' comparisons, by label, and its summary. A failed premise or a malformed
 dump is an error. -/
-def checkTag (name : String) (hWrap : XhatCurve.Point) (hStep : XhatStepCurve.Point) (j : Json) :
+def checkTag (name : String) (hWrap : XhatWrapCurve.Point) (hStep : XhatStepCurve.Point)
+    (j : Json) :
     Except String (List (String × List (String × Bool)) × TagSummary) := do
   let wrapMain ← j.getObjVal? "wrapMain"
   let wc ← constantsOf "wrapMain" wrapMain

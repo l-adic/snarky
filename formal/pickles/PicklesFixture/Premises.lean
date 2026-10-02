@@ -21,7 +21,8 @@ key's index points are finite (`hnz`), and every base is (`havoidS`, by
 `Key.avoids_lagrangeRelations_iff`). The bases are upstream's commitments, which the dump's
 harness checks against the keys. -/
 def wrapMainHyps {nc bp m : ℕ} (k : WrapMainConsts nc)
-    (tables : Vector (Vector (Vector XhatCurve.Point nc) m) (bp + 1)) (h : XhatCurve.Point) :
+    (tables : Vector (Vector (Vector XhatWrapCurve.Point nc) m) (bp + 1))
+    (h : XhatWrapCurve.Point) :
     Except String Unit := do
   unless decide (k.h = h) do throw "h is not the step SRS's blinding base"
   unless k.keys.all fun key => key.comms.indexPoints.all fun P => decide (P ≠ 0) do

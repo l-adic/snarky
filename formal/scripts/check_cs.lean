@@ -1282,13 +1282,13 @@ def WrapStepStatement.unfinalized (st : WrapStepStatement (FVar Fq) (BoolVar Fq)
 `Pickles.publicInputCommitFull` over the packed statement's leaves at `nc` chunks — the boolean
 leaves constrain their own bits inside the gadget. -/
 def xhatWrapCircuit {nc : ℕ}
-    (pts : Vector (Vector XhatCurve.Point nc)
+    (pts : Vector (Vector XhatWrapCurve.Point nc)
       (CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp 1)))
     (h : AffinePoint (FVar Fq)) (input : UnChecked (WrapStepStatement (FVar Fq) (BoolVar Fq))) :
     CircuitM Fq Cq PUnit := do
   let ks := input.val.unfinalized.packed
   let _ ← Pickles.publicInputCommitFull h
-    (Pickles.packLeavesOf ks (Pickles.XhatTable.ofKey (C := XhatCurve) ks pts))
+    (Pickles.packLeavesOf ks (Pickles.XhatTable.ofKey (C := XhatWrapCurve) ks pts))
   pure PUnit.unit
 
 /-- `xhat_wrap_branches_{same,diff}_circuit`'s input: the branch index over two branches, then
@@ -1312,11 +1312,11 @@ instance {F : Type} [Zero F] [One F] [DecidableEq F] [NeZero (1 : F)] :
 /-- `xhat_wrap_branches_{same,diff}_circuit`: the statement committed by
 `Pickles.publicInputCommitMasked` over the branches' Lagrange bases `pts0`/`pts1`, `shared` when
 the branches share one step domain. -/
-def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatCurve.Point)
+def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatWrapCurve.Point)
     (h : AffinePoint (FVar Fq)) (input : UnChecked (XhatBranchesInput (FVar Fq) (BoolVar Fq))) :
     CircuitM Fq Cq PUnit := do
   let bits ← Pickles.oneHotVector 2 input.val.branchIndex
-  let _ ← Pickles.publicInputCommitMasked (C := XhatCurve) shared h bits
+  let _ ← Pickles.publicInputCommitMasked (C := XhatWrapCurve) shared h bits
     input.val.statement.unfinalized.packed #v[oneChunk pts0, oneChunk pts1]
   pure PUnit.unit
 
@@ -1346,24 +1346,24 @@ def xhat1Of (C : Bulletproof.Ipa.KimchiCurve) (j : Json) :
 statement's table (`PicklesFixture.firstBases?`). -/
 def xhatBasesOf (nc : ℕ) (j : Json) :
     Except String
-      (Vector (Vector XhatCurve.Point nc)
+      (Vector (Vector XhatWrapCurve.Point nc)
         (CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp 1)) ×
-        XhatCurve.Point) := do
-  let (pts, h) ← xhatOf XhatCurve nc j
+        XhatWrapCurve.Point) := do
+  let (pts, h) ← xhatOf XhatWrapCurve nc j
   return (← firstBases? pts, h)
 
 /-- The branches `x_hat` circuit's constants (`xhatBranches`): its two branches' one-chunk
 Lagrange bases on the wrap side, and the blinding `h`. -/
 def xhatBranchesOf (j : Json) :
-    Except String (Vector (Array XhatCurve.Point) 2 × XhatCurve.Point) := do
+    Except String (Vector (Array XhatWrapCurve.Point) 2 × XhatWrapCurve.Point) := do
   let c ← constantsOf "xhatBranches" j
-  let branch (b : Json) : Except String (Array XhatCurve.Point) := do
-    return (← FixtureKit.parseArrOf (chunksOf XhatCurve 1) b).map
-      fun (v : Vector XhatCurve.Point 1) => v[0]
+  let branch (b : Json) : Except String (Array XhatWrapCurve.Point) := do
+    return (← FixtureKit.parseArrOf (chunksOf XhatWrapCurve 1) b).map
+      fun (v : Vector XhatWrapCurve.Point 1) => v[0]
   let ls ← FixtureKit.parseArrOf branch (← c.getObjVal? "lagrange")
   let some ls := (if h : ls.size = 2 then some (⟨ls, h⟩ : Vector _ 2) else none)
     | throw s!"{ls.size} branches, expected 2"
-  return (ls, ← Bulletproof.Fixture.parsePt XhatCurve (← c.getObjVal? "h"))
+  return (ls, ← Bulletproof.Fixture.parsePt XhatWrapCurve (← c.getObjVal? "h"))
 
 /-- A target whose circuit is built from its own dump's constants, read by `read`. -/
 def withConstants {α : Type} (read : Json → Except String α) (mk : α → Comparison) : Comparison :=
@@ -1768,7 +1768,7 @@ abbrev IvpWrapInput (f b : Type) : Type :=
 conditional sponge with `x_hat` the packed step statement's commitment, then the harness's two
 assertions — the digest against the claim and each claimed round challenge against the
 returned one. -/
-def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
+def ivpWrapCircuit (pts : Array XhatWrapCurve.Point) (h : AffinePoint (FVar Fq))
     (input : UnChecked (IvpWrapInput (FVar Fq) (BoolVar Fq))) : CircuitM Fq Cq PUnit := do
   let i := input.val
   let dv := i.deferredValues
@@ -1826,7 +1826,7 @@ instance {F : Type} [Zero F] [One F] [DecidableEq F] [NeZero (1 : F)] :
     (WrapVerifyInput.equivProd (FVar F) (BoolVar F))
 
 /-- `wrap_verify_circuit`. -/
-def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : XhatCurve.Point)
+def wrapVerifyCircuit (pts : Array XhatWrapCurve.Point) (h : XhatWrapCurve.Point)
     (input : UnChecked (WrapVerifyInput (FVar Fq) (BoolVar Fq))) : CircuitM Fq Cq PUnit := do
   let i := input.val
   let dv := i.ivp.deferredValues
@@ -2090,10 +2090,10 @@ def xhatTargets : List (String × Comparison) :=
     ("xhat_wrap_chunks2_circuit", withConstants (xhatBasesOf 2) fun (pts, h) =>
       wrapTarget (a := UnChecked (WrapStepStatement Fq Bool)) (b := PUnit)
         (xhatWrapCircuit pts (xhatWrapCell h))),
-    ("ivp_wrap_circuit", withConstants (xhat1Of XhatCurve) fun (pts, h) =>
+    ("ivp_wrap_circuit", withConstants (xhat1Of XhatWrapCurve) fun (pts, h) =>
       wrapTarget (a := UnChecked (IvpWrapInput Fq Bool)) (b := PUnit)
         (ivpWrapCircuit pts (xhatWrapCell h))),
-    ("wrap_verify_circuit", withConstants (xhat1Of XhatCurve) fun (pts, h) =>
+    ("wrap_verify_circuit", withConstants (xhat1Of XhatWrapCurve) fun (pts, h) =>
       wrapTarget (a := UnChecked (WrapVerifyInput Fq Bool)) (b := PUnit) (wrapVerifyCircuit pts h)),
     ("xhat_wrap_branches_same_circuit", withConstants xhatBranchesOf fun (ls, h) =>
       wrapTarget (a := UnChecked (XhatBranchesInput Fq Bool)) (b := PUnit)

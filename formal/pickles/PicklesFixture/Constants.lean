@@ -101,9 +101,9 @@ structure WrapMainConsts (nc : ℕ) where
   /-- Each branch's step key, checked at the step SRS (`checkedKey`). -/
   keys : List (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc)
   /-- Per public-input scalar, each branch's Lagrange base. -/
-  lagrange : Array (List (Vector XhatCurve.Point nc))
+  lagrange : Array (List (Vector XhatWrapCurve.Point nc))
   /-- The blinding base. -/
-  h : XhatCurve.Point
+  h : XhatWrapCurve.Point
   /-- Per branch, each slot's wrap domain index, `none` when side-loaded. -/
   pins : List (List (Option ℕ))
   /-- Each slot's challenge-stack height. -/
@@ -120,7 +120,7 @@ def wrapMainOf (nc : ℕ) (j : Json) : Except String (WrapMainConsts nc) := do
     pure (← FixtureKit.parseArrOf (fun j => j.getNat?) (← c.getObjVal? k)).toList
   let branches ← (← c.getObjVal? "branches").getArr?
   let tables ← branches.mapM fun b => do
-    FixtureKit.parseArrOf (chunksOf XhatCurve nc) (← b.getObjVal? "lagrange")
+    FixtureKit.parseArrOf (chunksOf XhatWrapCurve nc) (← b.getObjVal? "lagrange")
   unless (tables.map (·.size)).toList.eraseDups.length ≤ 1 do
     throw "the branches' tables differ in length"
   pure
@@ -129,7 +129,7 @@ def wrapMainOf (nc : ℕ) (j : Json) : Except String (WrapMainConsts nc) := do
         checkedKey Bulletproof.IpaVesta.curve Pickles.StepIPARounds nc
           (← b.getObjVal? "key")).toList
       lagrange := (List.transpose (tables.toList.map (·.toList))).toArray
-      h := ← Bulletproof.Fixture.parsePt XhatCurve (← c.getObjVal? "h")
+      h := ← Bulletproof.Fixture.parsePt XhatWrapCurve (← c.getObjVal? "h")
       pins := (← FixtureKit.parseArrOf
         (fun j => do pure (← FixtureKit.parseArrOf
           (fun j => if j.isNull then pure none else some <$> j.getNat?) j).toList)
@@ -166,8 +166,8 @@ def wrapMainPins? (bp mpv : ℕ) (pins : List (List (Option ℕ))) :
 
 /-- The exported Lagrange bases as one table per branch, when there are `m` scalars with one
 base per branch each. -/
-def wrapMainTables? (bp nc m : ℕ) (lagrange : Array (List (Vector XhatCurve.Point nc))) :
-    Option (Vector (Vector (Vector XhatCurve.Point nc) m) (bp + 1)) :=
+def wrapMainTables? (bp nc m : ℕ) (lagrange : Array (List (Vector XhatWrapCurve.Point nc))) :
+    Option (Vector (Vector (Vector XhatWrapCurve.Point nc) m) (bp + 1)) :=
   if h : lagrange.size = m ∧ ∀ row ∈ lagrange.toList, row.length = bp + 1 then
     some (Vector.ofFn fun b => Vector.ofFn fun i =>
       (lagrange[i.val]'(by omega))[b.val]'(by
