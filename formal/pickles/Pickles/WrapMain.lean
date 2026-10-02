@@ -1285,8 +1285,7 @@ theorem wrapMainVerify_reads {branches mpv ncStep k : ℕ} [NeZero branches]
         KStep.cvk (wrapPublicInput SStep.σ KStep.cvk Vs st)).toList⌝⦄ := by
     intro st
     have hsz : (wrapPublicInput SStep.σ KStep.cvk Vs st).size = CircuitType.size Fp
-      (StepStatement (UnfVal k) Fp mpv) := by
-      rw [← Array.length_toList, wrapPublicInput_toList, List.length_map, Vector.length_toList]
+      (StepStatement (UnfVal k) Fp mpv) := wrapPublicInput_size _ _ _ _
     have hscalar := st.leafHasScalar_packed
       (KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv)))
     have hpub : wrapPublicInput SStep.σ KStep.cvk Vs st

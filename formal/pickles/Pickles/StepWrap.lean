@@ -1,5 +1,6 @@
 import Pickles.StepMain
 import Pickles.WrapMain
+import Pickles.KeyLayout
 
 set_option mvcgen.warning false
 
@@ -400,7 +401,7 @@ as branch `b`. When the step circuit's output reads as the wrap circuit's public
 must-verify slot whose key cells read as a key `K` its source fits, and whose wrap slot was
 compiled for `K`'s domain, holds a wrap proof in its cells; the next wrap circuit's finalize
 cells hold that proof's evaluations and old challenges, and `kimchiVerify` accepts it at `K`
-under the guards and `SgOk`. -/
+under `SgOk`, with its guards derived from `WrapKeyLayout`. -/
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries,
     -- a self slot's width and the wrap circuit's slots; the step proofs the wrap proofs
@@ -523,6 +524,7 @@ theorem stepWrap_kimchiVerify
       -- the slot's wrap key `K`, one chunk over the wrap SRS: its source fits `K`, its key
       -- cells read as `K`
       ∀ K : Key IpaPallas.curve 1, 1 = chunkCount S.σ.k K.cvk.domainLog2 →
+      WrapKeyLayout K.cvk →
       (srcs i).Fits S.σ K.cvk →
       KeyReads IpaPallas.curve Vg ((srcs i).keyCells stepOut.vk.points) K.cvk →
       -- no relation the slot statements' public-input commitment names commits the SRS to the
@@ -547,15 +549,14 @@ theorem stepWrap_kimchiVerify
         -- the step circuit and the next wrap circuit hash their messages
         stepOut.HashesMessages Vg ∧
         wrapVerifyOut.HashesMessages Vs dummy wrapStmt wrapFinalizeOut ∧
-        -- of `cp` itself: the guards and the deferred `sg` equation
-        (Guards IpaPallas.curve K.cvk cp pub →
-          SgOk S.σ K.cvk cp pub →
+        -- of `cp` itself: only the deferred `sg` equation remains
+        (SgOk S.σ K.cvk cp pub →
           kimchiVerify IpaPallas.curve S.σ K.cvk cp pub = true) := by
   intro step wrap hstep hwrap
   rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _,
     show wrap.result.1.2 = _ from compileWith_wrapMainCircuit_cells _ _ _ _ _ _ _ _ _ _]
-  intro stepOut wrapStmt wrapFinalizeOut wrapVerifyOut hb htie i hmv inp jf sl K hK hfit hkey havoid
-      j hpin hdom
+  intro stepOut wrapStmt wrapFinalizeOut wrapVerifyOut hb htie i hmv inp jf sl K hK hlayout hfit
+      hkey havoid j hpin hdom
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads (outVal := outVal) S.σ P domains
@@ -569,6 +570,12 @@ theorem stepWrap_kimchiVerify
   obtain ⟨hon, holds⟩ := slotInput_onCurve (hws i) hdummySg (stepOut.prevs i) stepOut.unfs[i]
       stepOut.msgs[i] hpts
   let cp := slotProof Vg Vs inp sl.evals sl.prevChallenges
+  have hguards : Guards IpaPallas.curve K.cvk cp (inp.publicInputAt K.cvk Vg ms) := by
+    constructor
+    · rw [hlayout.prevChallenges_eq]
+      exact Vector.size_toArray _
+    · rw [hlayout.publicCount_eq]
+      exact stepPublicInput_size _ _
   have hwire : inp.WireReads K.cvk Vg ((srcs i).keyCells stepOut.vk.points) cp ms :=
     ⟨hms, hkey, IvpProof.read_proofReads _ _ _ _ _ _ hon, slotProof_olds holds⟩
   have hf := slotProof_fopTies (Vg := Vg) (Vs := Vs) S.σ K.cvk (inp := inp) sl.unfinalized
@@ -639,7 +646,7 @@ theorem stepWrap_kimchiVerify
   subst hbb
   obtain ⟨hE, hK⟩ := hfin K j hdom _ hpin (reads_true_of_tie hsf hsfG) cp _ Vg inp.unfinalized v
     hv hv1 hc hf
-  refine ⟨cp, ms, hwire, hf, ?_, ?_, hout.2.2, hhash, hK⟩
+  refine ⟨cp, ms, hwire, hf, ?_, ?_, hout.2.2, hhash, hK hguards⟩
   · have hsgs : stepOut.messagesForNextStepProof.challengePolynomialCommitments
         = Vector.ofFn fun i => (stepOut.slots i).sg.pt := hout.2.1
     simp only [StepWrap.emittedAccumulator, Accumulator.ofCells, Fin.getElem_fin,

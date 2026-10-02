@@ -252,6 +252,14 @@ theorem wrapPublicInput_toList {ks n nc : ℕ} (σ : SRS IpaVesta.curve.Point)
     (cvk.lagrangePoints σ (CircuitType.size Fp (StepStatement (UnfVal ks) Fp n)))]
   exact pubOf_zipWith_constLeaf _ _
 
+/-- The wire public input has the step statement's size at its padded width. -/
+theorem wrapPublicInput_size {ks n nc : ℕ} (σ : SRS IpaVesta.curve.Point)
+    (cvk : KimchiVK IpaVesta.curve nc) (V : Valuation Fq)
+    (st : StepStatement (UnfinalizedProof ks (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) n) :
+    (wrapPublicInput σ cvk V st).size = CircuitType.size Fp (StepStatement (UnfVal ks) Fp n) := by
+  rw [← Array.length_toList, wrapPublicInput_toList, List.length_map, Vector.length_toList]
+
 /-- The verify block at the deployed Vesta constants, the blinding base `h` as a constant cell,
 and the public-input commitment of the packed step statement at the Lagrange points `lagrange`.
 The CS-equality corpus pins this gadget at its dumps' points. -/

@@ -613,7 +613,8 @@ def wrapStepLink {σW : Bulletproof.SRS CW.Point} {hW : σW.k = 15} {hh : σW.h 
                     (outVar := Vector (FVar Fp) rule.publicOutput.size)
                     (outVal := Vector Fp rule.publicOutput.size)
                     (wrapSrs σW hW hh).σ kb.slots[i].key rfl SStep rfl wr.sh.keys wr.b f.KStep
-                    f.hkey f.hnc wr.sh.lagrange hlag wr.run.V wr.sh.widths wr.sh.pins wr.dummy
+                    f.hkey f.hnc wr.sh.lagrange hlag wr.run.V wr.sh.widths
+                    (by rw [f.hkey]; exact wr.sh.layouts wr.b) wr.sh.pins wr.dummy
                     wr.sh.slotWidths wr.advW f.hbr f.hnz
                     (f.hkey ▸ (Pickles.Key.avoids_lagrangeRelations_iff Pickles.pastaShapeVesta
                       SStep.σ f.hnc m).mpr (by rw [← hlag]; exact f.hL))
@@ -737,9 +738,14 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
           else []
         | some key =>
         if hmv : CircuitType.Reads rS.V (rS.result.1.2.prevs i).mustVerify true then
-          match Pickles.Key.check kb.slots[i].key with
+          match hchecked : Pickles.Key.check kb.slots[i].key with
           | none => [(s!"slot {i}: its key is checked", false, none)]
           | some K =>
+            have hlayout : Pickles.WrapKeyLayout K.cvk := by
+              unfold Pickles.Key.check at hchecked
+              split at hchecked
+              · cases hchecked; exact kb.slots[i].layout
+              · cases hchecked
             let m := CircuitType.size Fp (Pickles.PackedWrapStatement Pickles.StepIPARounds
               (Type1 Fp) Fp)
             if hK : 1 = Kimchi.Verifier.chunkCount S.σ.k K.cvk.domainLog2 then
@@ -789,7 +795,7 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
                             dummy sh.slotWidths advW hbr b hstep
                             hwrap (by have h := hb; rw [eW] at h; exact h)
                             (by have h := htie; rw [eS, eW] at h; exact h) i
-                            (by have h := hmv; rw [eS] at h; exact h) K hK ⟨hsize, hTs⟩
+                            (by have h := hmv; rw [eS] at h; exact h) K hK hlayout ⟨hsize, hTs⟩
                             (by
                               have h := Pickles.KeyReads.of_readPt hon hread
                               rw [eS] at h; exact h)

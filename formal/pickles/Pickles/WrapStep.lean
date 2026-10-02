@@ -1,5 +1,6 @@
 import Pickles.StepMain
 import Pickles.WrapMain
+import Pickles.KeyLayout
 
 set_option mvcgen.warning false
 
@@ -149,6 +150,35 @@ def WrapStep.consumedAccumulators {branches w ncStep kw ks n : ℕ}
     List (Accumulator IpaVesta.curve ks) :=
   ((List.finRange n).filter (ms[·])).map fun j => Accumulator.ofCells Vw Vs
     (finalizeOut.messagesForNextWrapProof (j.cast hn)).challengePolynomialCommitment chals[j]
+
+/-- Filtering a finite range by a lower bound keeps its suffix. -/
+private theorem length_kept_finRange (w start : ℕ) :
+    ((List.finRange w).filter fun j => decide (start ≤ j.val)).length = w - start := by
+  induction w with
+  | zero => simp
+  | succ w ih =>
+    simp only [List.finRange_succ_last, List.filter_append, List.filter_map, List.length_append,
+      List.length_map, Function.comp_def, Fin.val_castSucc, List.filter_cons,
+      Fin.val_last, List.filter_nil]
+    change ((List.finRange w).filter fun j => decide (start ≤ j.val)).length +
+      (if decide (start ≤ w) = true then [Fin.last w] else []).length = w + 1 - start
+    rw [ih]
+    split <;> simp_all <;> omega
+
+/-- A mask keeping the selected branch's suffix consumes exactly that branch's slot count. -/
+theorem WrapStep.consumedAccumulators_length {branches w ncStep kw ks n : ℕ}
+    {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
+    (Vw : Valuation Fq) (Vs : Valuation Fp)
+    (finalizeOut : WrapMainFinalizeOut branches w ncStep kw slotWidths)
+    (chals : Vector (Vector (FVar Fp) ks) n) (hn : n = w) (ms : Vector Bool n)
+    (kept : Fin (w + 1))
+    (hms : ∀ (j : ℕ) (hj : j < n), ms[j] = decide (w - kept.val ≤ j)) :
+    (WrapStep.consumedAccumulators Vw Vs finalizeOut chals hn ms).length = kept.val := by
+  subst n
+  simp only [WrapStep.consumedAccumulators, List.length_map]
+  have hm : (fun j : Fin w => ms[j]) = (fun j : Fin w => decide (w - kept.val ≤ j.val)) :=
+    funext fun j => hms j j.isLt
+  rw [hm, length_kept_finRange, Nat.sub_sub_self (Nat.le_of_lt_succ kept.isLt)]
 
 /-- `wrapStep_kimchiVerify` for one slot of the next step circuit, from its readings, over the
 wrap circuit's constants as given, tied to the step key `KStep` over the step SRS `SStep` by
@@ -391,8 +421,8 @@ whose key is the checked key `KStep`, and let `Vs` satisfy the next step circuit
 slots from any sources, compiled with the step proofs' finalize constants (`FopParams.of`). For
 every must-verify slot over the domains `D`, at this tag's width, whose wrap proof was made at
 the wrap circuit's public input, the wrap circuit's cells hold a step proof; the slot's finalize
-cells hold its evaluations and old challenges, and `kimchiVerify` accepts it under the guards
-and `SgOk`. -/
+cells hold its evaluations and old challenges, and `kimchiVerify` accepts it under `SgOk`,
+with its guards derived from `StepKeyLayout`. -/
 theorem wrapStep_kimchiVerify
     -- the next rule's `n` slots, its tag's `wNext`; this tag's `w`, the wrap circuit's slots; the
     -- wrap circuit's `branches`, the step proof it verifies at `ncStep` chunks
@@ -428,6 +458,8 @@ theorem wrapStep_kimchiVerify
     (Vw : Valuation Fq)
     -- the tag's branches' slot counts
     (widths : Vector (Fin (w + 1)) branches)
+    -- the selected key declares this statement's size and this branch's slot count
+    (hlayout : StepKeyLayout KStep.cvk w (widths[b] : ℕ))
     -- each slot's compile-time wrap domain index per branch
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the padding challenges
@@ -549,9 +581,8 @@ theorem wrapStep_kimchiVerify
           -- the wrap circuit and the next step circuit hash their messages
           wrapVerifyOut.HashesMessages Vw dummy wrapStmt wrapFinalizeOut ∧
           stepOut.HashesMessages Vs ∧
-          -- of `cp` itself: the guards and the deferred `sg` equation
-          (Guards IpaVesta.curve stepKeys[b] cp pub →
-            SgOk SStep.σ stepKeys[b] cp pub →
+          -- of `cp` itself: only the deferred `sg` equation remains
+          (SgOk SStep.σ stepKeys[b] cp pub →
             kimchiVerify IpaVesta.curve SStep.σ stepKeys[b] cp pub = true) := by
   rw [← hkey] at hnz havoidS
   -- branch `b`'s domain exponent is its key's
@@ -597,6 +628,12 @@ theorem wrapStep_kimchiVerify
     rfl hnz havoidS hlog hw Vs hwrap hb dummySg (stepOut.prevs i) (stepOut.slots i) stepOut.unfs[i]
         stepOut.msgs[i] _
     (hscal hdi) n0 ms0 hn0 hdv hmsR ms hms htie
-  exact ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hkept, hhashW, hhashS, hK⟩
+  have hguards : Guards IpaVesta.curve KStep.cvk cp
+      (wrapPublicInput SStep.σ KStep.cvk Vw wrapVerifyOut.statement) := by
+    constructor
+    · rw [hlayout.prevChallenges_eq, ← Array.length_toList, ← hcons]
+      exact WrapStep.consumedAccumulators_length _ _ _ _ _ _ _ hkept
+    · rw [hlayout.publicCount_eq, wrapPublicInput_size, hE]
+  exact ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hkept, hhashW, hhashS, hK hguards⟩
 
 end Pickles

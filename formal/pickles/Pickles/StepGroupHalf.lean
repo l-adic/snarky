@@ -63,6 +63,13 @@ def stepPublicInput {ks : ℕ} (V : Valuation Fp)
   (CircuitType.valueToFields (F := Fq) (var := StatementPacked ks (Type1 (FVar Fq)) (FVar Fq))
     (statement.toPacked V)).toArray
 
+/-- The wire public input has the full packed wrap statement's size. -/
+theorem stepPublicInput_size {ks : ℕ} (V : Valuation Fp)
+    (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
+    (stepPublicInput V st).size =
+      CircuitType.size Fq (StatementPacked ks (Type1 Fq) Fq) := by
+  simp only [stepPublicInput, Vector.size_toArray]
+
 /-- The public input reads the step-message digest only through its value. -/
 theorem stepPublicInput_congr_msg {ks : ℕ} (V : Valuation Fp)
     (st : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) (a b : FVar Fp)
