@@ -763,7 +763,8 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
             if hL : ((srcs i).lagrange.toList.all fun Ps => decide (Ps[0] ≠ 0)) then
               let jf := Fin.cast (Nat.sub_add_cancel hn) (Fin.natAdd (w - n) i)
               match hp : rW.result.1.2.1.slots[jf].pins[b] with
-              | none => [(s!"slot {i}: its wrap slot is side-loaded on branch {b}", true, none)]
+              -- an unpinned (side-loaded) slot is outside the corpus: no capstone applies to it
+              | none => [(s!"slot {i}: its wrap slot is pinned on branch {b}", false, none)]
               | some j =>
                 if hdom : Pickles.wrapDomainLog2s[j]? = some K.cvk.domainLog2 then
                 let inp := Pickles.slotInput (kb.slots[i].width_le hw)
