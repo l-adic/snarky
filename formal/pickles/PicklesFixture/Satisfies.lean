@@ -131,23 +131,39 @@ def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType (ZMo
     (side : Kimchi.Fixture.PS.Side p)
     (body : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (bv × α)) (inp : a) :
     IO (MainRun (ZMod p) bv α) := do
-  let built := compileWith (a := a) (b := b) body
+  let t0 ← IO.monoMsNow
+  let built ← IO.lazyPure fun _ => compileWith (a := a) (b := b) body
+  let ncons := built.constraints.length
+  let t1 ← IO.monoMsNow
   let st := seed (F := ZMod p) (avar := av) inp
   let pr ← match prove (compileWithBody (a := a) (b := b) body) st.nv st.env with
     | .error e => throw (IO.userError s!"prove failed: {repr e}") | .ok pr => pure pr
+  let t2 ← IO.monoMsNow
   let V := pr.assignments.get
-  let holds := decide (∀ con ∈ built.constraints, KimchiConstraint.Holds V con)
+  let holds ← IO.lazyPure fun _ => decide (∀ con ∈ built.constraints, KimchiConstraint.Holds V con)
+  let t3 ← IO.monoMsNow
   let pubVars := (allocRange 0 A.size).toList ++ bundleVars (F := ZMod p) (b := b) built.result.2
   let (rows, gates, _) := gateDataOf (reduceBuilt built) pubVars
+  let nrows := rows.length
+  let t4 ← IO.monoMsNow
   let env' ← match reduceSolved built pr.assignments with
     | .error e => throw (IO.userError s!"reduction failed: {repr e}") | .ok e => pure e
   let (wit, pub) := makeWitness env' rows pubVars
-  let satisfies ← match Kimchi.Fixture.PS.build side
+  let nwit := wit.length
+  let t5 ← IO.monoMsNow
+  let (satisfies, n, t6) ← match Kimchi.Fixture.PS.build side
       (assembledRaw rows gates pubVars.length wit pub) with
     | .error e => throw (IO.userError s!"index build failed: {e}")
     | .ok inst =>
-      haveI : NeZero inst.n := inst.nz
-      pure (decide (Kimchi.Index.Satisfies inst.idx inst.wit.pub inst.wit.tab))
+      let t6 ← IO.monoMsNow
+      let sat ← IO.lazyPure fun _ =>
+        haveI : NeZero inst.n := inst.nz
+        decide (Kimchi.Index.Satisfies inst.idx inst.wit.pub inst.wit.tab)
+      pure (sat, inst.n, t6)
+  let t7 ← IO.monoMsNow
+  IO.println s!"    phases: build {t1 - t0} ms ({ncons} constraints, {built.nextVar} vars) · \
+    prove {t2 - t1} ms · holds {t3 - t2} ms · rows {t4 - t3} ms ({nrows} rows) · witness \
+    {t5 - t4} ms ({nwit} rows) · index build {t6 - t5} ms (n = {n}) · decide {t7 - t6} ms"
   return { V, holds, satisfies, pub, result := built.result }
 
 /-- `jobs` on `n` workers, each job's output captured on its worker thread (stdout is per
