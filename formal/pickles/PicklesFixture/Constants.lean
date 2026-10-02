@@ -34,25 +34,6 @@ def resultsDir : IO System.FilePath := do
   | none =>
     return ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
 
-/-- A dump's constants, read by `read`; a missing dump is an error. -/
-private def readConstants {α : Type} (path : System.FilePath) (read : Json → Except String α) :
-    IO α := do
-  unless ← path.pathExists do throw (IO.userError s!"missing dump: {path}")
-  match Json.parse (← IO.FS.readFile path) >>= read with
-  | .ok a => pure a
-  | .error e => throw (IO.userError s!"{path}: {e}")
-
-/-- A dump's constants, read by `read`, when the dump is present. Under `KIMCHI_CS_FILTER` a
-missing dump is skipped (a narrowed PS run writes only the selected circuits); in the unfiltered
-run — CI — it is an error. -/
-def dumpConstants {α : Type} (filter : String) (path : System.FilePath)
-    (read : Json → Except String α) : IO (Option α) := do
-  if (← path.pathExists) || filter.isEmpty then
-    some <$> readConstants path read
-  else
-    IO.println s!"· {path.fileName.getD path.toString} not dumped: its constants are skipped"
-    pure none
-
 /-- The SRS blinding base `h` of a fixture (`srs_h`, the same production SRS the IPA
 fixture checks read). -/
 def blindingBase (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) : IO C.Point := do

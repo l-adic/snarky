@@ -2110,73 +2110,72 @@ def main : IO Unit := do
   let hStep := Pickles.constPt hStepPt
   let hWrap := Pickles.constPt hWrapPt
   -- `KIMCHI_CS_FILTER` narrows the corpus to targets whose name contains it — for local
-  -- validation of one circuit against a partial results dir. Unset (CI) runs the whole corpus.
+  -- validation of one circuit against a partial results dir, where a missing dump is skipped (a
+  -- narrowed PS run writes only the selected circuits). Unset (CI) runs the whole corpus, and a
+  -- missing dump is an error.
   let filter := (← IO.getEnv "KIMCHI_CS_FILTER").getD ""
-  let wrapMains ← wrapMainDumps.filterMapM fun (name, bp, mpv, nc) => do
-    let k ← dumpConstants filter (dir / s!"{name}.json") (wrapMainOf nc)
-    k.mapM fun k => do
-      let (main, tables) ←
-        IO.ofExcept ((wrapMainCircuitOf bp mpv nc k).mapError (s!"{name}: " ++ ·))
-      IO.ofExcept ((wrapMainHyps k tables hWrapPt).mapError (s!"{name}: " ++ ·))
-      pure (name, wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit) main)
-  let stepConsts (name : String) (n w : ℕ) : IO (Option (StepMainConsts n 1)) :=
-    dumpConstants filter (dir / s!"{name}.json") (stepMainOf n w 1)
-  let chainN2 ← stepConsts "step_main_simple_chain_n2_circuit" 2 2
-  let makeZero ← stepConsts "step_main_two_phase_chain_make_zero_circuit" 0 1
-  let increment ← stepConsts "step_main_two_phase_chain_increment_circuit" 1 1
-  let treeReturn ← stepConsts "step_main_tree_proof_return_circuit" 2 2
-  let importTpc ← stepConsts "step_main_import_two_phase_chain_circuit" 2 2
-  let stepMains :=
-    (chainN2.toList.map fun k => ("step_main_simple_chain_n2_circuit",
-      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
-        (stepMainDumpCircuit (inVal := Fp) (outVal := Unit) 2 (by decide) k dummyUnfN0
-          simpleChainN2Rule)))
-    ++ (makeZero.toList.map fun k => ("step_main_two_phase_chain_make_zero_circuit",
-      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 1)
-        (stepMainDumpCircuit (inVal := Fp) (outVal := Unit) 1 (by decide) k dummyUnfN0
-          makeZeroRule)))
-    ++ (increment.toList.map fun k => ("step_main_two_phase_chain_increment_circuit",
-      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 1)
-        (stepMainDumpCircuit (inVal := Fp) (outVal := Unit) 1 (by decide) k dummyUnfN0
-          incrementRule)))
-    ++ (treeReturn.toList.map fun k => ("step_main_tree_proof_return_circuit",
-      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
-        (stepMainDumpCircuit (inVal := Unit) (outVal := Fp) 2 (by decide) k dummyUnfN0
-          fun _ => treeProofReturnRule)))
-    ++ (importTpc.toList.map fun k => ("step_main_import_two_phase_chain_circuit",
-      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
-        (stepMainDumpCircuit (inVal := Unit) (outVal := Fp) 2 (by decide) k dummyUnfN0
-          fun _ => importTwoPhaseChainRule)))
+  let wrapMains := wrapMainDumps.map fun (name, bp, mpv, nc) =>
+    (name, withConstants (wrapMainOf nc) fun k j => do
+      let (main, tables) ← wrapMainCircuitOf bp mpv nc k
+      wrapMainHyps k tables hWrapPt
+      wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit) main j)
+  let stepMains : List (String × Comparison) :=
+    [ ("step_main_simple_chain_n2_circuit", withConstants (stepMainOf 2 2 1) fun k =>
+        stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
+          (stepMainDumpCircuit (inVal := Fp) (outVal := Unit) 2 (by decide) k dummyUnfN0
+            simpleChainN2Rule)),
+      ("step_main_two_phase_chain_make_zero_circuit", withConstants (stepMainOf 0 1 1) fun k =>
+        stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 1)
+          (stepMainDumpCircuit (inVal := Fp) (outVal := Unit) 1 (by decide) k dummyUnfN0
+            makeZeroRule)),
+      ("step_main_two_phase_chain_increment_circuit", withConstants (stepMainOf 1 1 1) fun k =>
+        stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 1)
+          (stepMainDumpCircuit (inVal := Fp) (outVal := Unit) 1 (by decide) k dummyUnfN0
+            incrementRule)),
+      ("step_main_tree_proof_return_circuit", withConstants (stepMainOf 2 2 1) fun k =>
+        stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
+          (stepMainDumpCircuit (inVal := Unit) (outVal := Fp) 2 (by decide) k dummyUnfN0
+            fun _ => treeProofReturnRule)),
+      ("step_main_import_two_phase_chain_circuit", withConstants (stepMainOf 2 2 1) fun k =>
+        stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
+          (stepMainDumpCircuit (inVal := Unit) (outVal := Fp) 2 (by decide) k dummyUnfN0
+            fun _ => importTwoPhaseChainRule)) ]
   -- the import's candidates reversed and repeated: the circuit sorts and dedups them, so the
   -- dump is the same
-  let importTpcUnsorted := importTpc.toList.map fun (k : StepMainConsts 2 1) =>
-    let s0 := k.slots[0]
-    let d : Pickles.KnownDomains 1 :=
-      { log2s := s0.domains.log2s.reverse ++ s0.domains.log2s
-        log2s_le := fun x hx => s0.domains.log2s_le x (by simpa using hx)
-        log2s_zkRows := fun x hx => s0.domains.log2s_zkRows x (by simpa using hx) }
-    let s0' := { s0 with domains := d }
+  let importTpcUnsorted :=
     ("step_main_import_two_phase_chain_circuit (candidates reversed, repeated)",
       "step_main_import_two_phase_chain_circuit",
-      stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
-        (stepMainDumpCircuit (inVal := Unit) (outVal := Fp) 2 (by decide)
-          { k with slots := k.slots.set 0 s0' } dummyUnfN0
-          fun _ => importTwoPhaseChainRule))
+      withConstants (stepMainOf 2 2 1) fun (k : StepMainConsts 2 1) =>
+        let s0 := k.slots[0]
+        let d : Pickles.KnownDomains 1 :=
+          { log2s := s0.domains.log2s.reverse ++ s0.domains.log2s
+            log2s_le := fun x hx => s0.domains.log2s_le x (by simpa using hx)
+            log2s_zkRows := fun x hx => s0.domains.log2s_zkRows x (by simpa using hx) }
+        let s0' := { s0 with domains := d }
+        stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp 2)
+          (stepMainDumpCircuit (inVal := Unit) (outVal := Fp) 2 (by decide)
+            { k with slots := k.slots.set 0 s0' } dummyUnfN0
+            fun _ => importTwoPhaseChainRule))
   let named : List (String × String ×
       Comparison) :=
     (targets hStep hWrap
       ++ xhatTargets ++ wrapMains
       ++ stepMains).map fun (n, c) => (n, n, c)
-  let selected := (named ++ importTpcUnsorted).filter fun (n, _) =>
+  let selected := (named ++ [importTpcUnsorted]).filter fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0
+  let mut compared := 0
   for (name, dump, compare) in selected do
     let path := dir / s!"{dump}.json"
+    unless filter.isEmpty || (← path.pathExists) do
+      IO.println s!"· {name} not dumped: skipped"
+      continue
+    compared := compared + 1
     let raw ← IO.FS.readFile path
     match Json.parse raw >>= compare with
     | .error e =>
       failures := failures + 1
-      IO.println s!"✗ {name}: parse error: {e}"
+      IO.println s!"✗ {name}: {e}"
     | .ok none =>
       failures := failures + 1
       IO.println s!"✗ {name}: not a comparison dump"
@@ -2189,4 +2188,4 @@ def main : IO Unit := do
         IO.println s!"✗ {name}: {String.intercalate ", " (bad.map (·.1))}"
   if failures > 0 then
     throw <| IO.userError s!"CS-equality FAILED ({failures} circuit(s))"
-  IO.println s!"── CS equality OK ({selected.length} circuits) ──"
+  IO.println s!"── CS equality OK ({compared} circuits) ──"
