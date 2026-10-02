@@ -3,6 +3,7 @@ import KimchiFixture.Cache
 import BulletproofFixture
 import FixtureKit.Parse
 import Pickles.Env
+import Pickles.KeyLayout
 import Pickles.StepMain
 import Pickles.WrapMain
 import PicklesFixture.Group
@@ -167,6 +168,8 @@ structure WrapMainShapes (bp mpv nc : ℕ) where
   widths : Vector (Fin (mpv + 1)) (bp + 1)
   /-- Each branch's step key. -/
   keys : Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1)
+  /-- Each key declares this tag's statement size and its branch's slot count. -/
+  layouts : ∀ b : Fin (bp + 1), Pickles.StepKeyLayout keys[b] mpv (widths[b] : ℕ)
   /-- Each slot's challenge-stack height. -/
   slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv
   /-- Each slot's wrap domain index per branch, `none` when side-loaded. -/
@@ -182,15 +185,17 @@ def wrapMainShapesOf (bp mpv nc : ℕ) (k : WrapMainConsts nc) :
     | throw s!"slot counts {k.stepWidths} are not {bp + 1} ≤ {mpv}"
   let some keys := wrapMainKeys? bp k.keys
     | throw s!"{k.keys.length} step keys, not {bp + 1}"
-  let some slotWidths := wrapMainWidths? mpv Pickles.MaxProofsVerified k.slotWidths
-    | throw s!"stack heights {k.slotWidths} are not {mpv} ≤ {Pickles.MaxProofsVerified}"
-  let some pins := wrapMainPins? bp mpv k.pins
-    | throw s!"pins {k.pins} are not {bp + 1} rows of {mpv}"
-  let m := CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv)
-  let some tables := wrapMainTables? bp nc m k.lagrange
-    | throw (s!"Lagrange bases are not {m} rows of {bp + 1}: " ++
-        s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}")
-  return { widths, keys, slotWidths, pins, tables }
+  if hlayouts : ∀ b : Fin (bp + 1), Pickles.StepKeyLayout keys[b] mpv (widths[b] : ℕ) then
+    let some slotWidths := wrapMainWidths? mpv Pickles.MaxProofsVerified k.slotWidths
+      | throw s!"stack heights {k.slotWidths} are not {mpv} ≤ {Pickles.MaxProofsVerified}"
+    let some pins := wrapMainPins? bp mpv k.pins
+      | throw s!"pins {k.pins} are not {bp + 1} rows of {mpv}"
+    let m := CircuitType.size Fp (Pickles.StepStatement (Pickles.UnfVal 15) Fp mpv)
+    let some tables := wrapMainTables? bp nc m k.lagrange
+      | throw (s!"Lagrange bases are not {m} rows of {bp + 1}: " ++
+          s!"{k.lagrange.size} rows of lengths {(k.lagrange.toList.map List.length).eraseDups}")
+    return { widths, keys, layouts := hlayouts, slotWidths, pins, tables }
+  else throw "a step key's public-input or old-accumulator count differs from its circuit layout"
 
 /-- The Lagrange table at a step domain: the first branch's at it, the first branch's when no
 branch has it (such a domain is never read). -/
@@ -215,6 +220,8 @@ structure StepSlotConsts (ncs : ℕ) where
   self : Bool
   /-- The wrap key the slot verifies against, checked at the wrap SRS (`checkedKey`). -/
   key : Kimchi.Verifier.KimchiVK Bulletproof.IpaPallas.curve 1
+  /-- The key declares the full wrap statement and padded accumulator counts. -/
+  layout : Pickles.WrapKeyLayout key
   /-- The slot's width, at most `MaxProofsVerified`. -/
   width : Fin (Pickles.MaxProofsVerified + 1)
   /-- Its candidate step domains. -/
@@ -268,17 +275,20 @@ def stepMainOf (n w ncs : ℕ) (j : Json) : Except String (StepMainConsts n ncs)
         pure true
       | "external" => pure false
       | kind => throw s!"unsupported slot kind {kind}"
-    pure { self, width
-           key := ← checkedKey Bulletproof.IpaPallas.curve Pickles.WrapIPARounds 1
-             (← j.getObjVal? "key")
-           domains := ← domains (← FixtureKit.parseArrOf (fun j => j.getNat?)
-             (← j.getObjVal? "domains")).toList
-           lagrange := ← do
-             let pts ← FixtureKit.parseArrOf (chunksOf XhatStepCurve 1) (← j.getObjVal? "lagrange")
-             let m := CircuitType.size Fp
-               (Pickles.PackedWrapStatement Pickles.StepIPARounds (Type1 Fp) Fp)
-             if h : pts.size = m then pure ⟨pts, h⟩
-             else throw s!"{pts.size} Lagrange bases, expected {m}" }
+    let key ← checkedKey Bulletproof.IpaPallas.curve Pickles.WrapIPARounds 1
+      (← j.getObjVal? "key")
+    if hlayout : Pickles.WrapKeyLayout key then
+      pure { self, width, key, layout := hlayout
+             domains := ← domains (← FixtureKit.parseArrOf (fun j => j.getNat?)
+               (← j.getObjVal? "domains")).toList
+             lagrange := ← do
+               let pts ← FixtureKit.parseArrOf (chunksOf XhatStepCurve 1)
+                 (← j.getObjVal? "lagrange")
+               let m := CircuitType.size Fp
+                 (Pickles.PackedWrapStatement Pickles.StepIPARounds (Type1 Fp) Fp)
+               if h : pts.size = m then pure ⟨pts, h⟩
+               else throw s!"{pts.size} Lagrange bases, expected {m}" }
+    else throw "a wrap key's public-input or old-accumulator count differs from its circuit layout"
   let slots ← FixtureKit.parseArrOf slot (← c.getObjVal? "slots")
   let some slots := (if h : slots.size = n then some (⟨slots, h⟩ : Vector _ n) else none)
     | throw s!"{slots.size} slots, expected {n}"

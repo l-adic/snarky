@@ -52,6 +52,7 @@ Pickles.FopSide.unshiftV_read
 Pickles.buildEvalList
 Pickles.Key.avoids_lagrangeRelations_iff -- the drivers decide its right side
 Pickles.Key.check
+Pickles.instDecidableKeyLayout -- synthesis: the fixture loaders check each key's circuit layout
 Pickles.Srs.check
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
