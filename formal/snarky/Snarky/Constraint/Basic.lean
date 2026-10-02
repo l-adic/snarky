@@ -48,6 +48,14 @@ instance instConstraintHoldsBasic [Add F] [Mul F] [Zero F] [One F] :
     ConstraintHolds F (Basic F) :=
   ⟨Basic.Holds⟩
 
+/-- A row's reading is decidable when equality of field elements is. -/
+instance Basic.decidableHolds [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    (V : Valuation F) : (con : Basic F) → Decidable (Basic.Holds V con)
+  | .r1cs l r o => decEq (l.val V * r.val V) (o.val V)
+  | .equal a b => decEq (a.val V) (b.val V)
+  | .square a sq => decEq (a.val V * a.val V) (sq.val V)
+  | .boolean x => instDecidableOr
+
 /-- The constructors mean what they say: each law is the corresponding arm of `Holds`. -/
 instance instLawfulBasicSystemBasic [Add F] [Mul F] [Zero F] [One F] :
     LawfulBasicSystem F (Basic F) where

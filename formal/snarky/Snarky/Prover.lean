@@ -292,6 +292,11 @@ def CircuitType.Reads [Add F] [Mul F] [inst : CircuitType F val var]
     (V : Valuation F) (v : var) (a : val) : Prop :=
   mapVec (·.val V) (inst.varToFields v) = inst.valueToFields a
 
+/-- Reading is an equation of encodings, decidable when equality of field elements is. -/
+instance CircuitType.decidableReads [Add F] [Mul F] [DecidableEq F] [CircuitType F val var]
+    (V : Valuation F) (v : var) (a : val) : Decidable (CircuitType.Reads V v a) :=
+  inferInstanceAs (Decidable (_ = _))
+
 /-- A value's constant bundle: its encoding as constant expressions. It reads as the
 value at every valuation, which lets `CheckedType.Valid` split factor by factor. -/
 def CircuitType.constVar [inst : CircuitType F val var] (a : val) : var :=

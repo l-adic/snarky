@@ -7,13 +7,12 @@ import Kimchi.Verifier.Wire
 import CompElliptic.Curves.Pasta.Fast.Projective.Core
 
 /-!
-# The two group halves, on the gadgets' records
+# The public-input tables and the keys' cells
 
-The step side (`step_verifier.ml`) verifies a wrap proof with `Pickles.verifyProof`; the wrap
-side (the verify block of `wrap_main.ml`) verifies a step proof with
-`Pickles.incrementallyVerifyProof`. Each half takes one record (`Pickles.StepGroup`,
-`Pickles.WrapGroup`), so a fixture supplies the records a proof projects to. The key's
-commitments and the public-input tables are constants, as in the deployed circuit.
+What the drivers share to build the main circuits' and the gadget harnesses' constants: the two
+curves the Lagrange bases are points of, a native point as a constant cell, the first bases of a
+table, a key's commitments in the index digest's absorb order and the sponge after it, a constant
+key record, and the wrap side's dummy challenges.
 -/
 
 namespace PicklesFixture
@@ -27,6 +26,12 @@ abbrev XhatStepCurve := Bulletproof.IpaPallas.curve
 
 /-- A native Pallas point as a constant cell at the step field. -/
 def xhatStepCell (P : XhatStepCurve.Point) : AffinePoint (FVar Fp) := ⟨.const P.x, .const P.y⟩
+
+/-- The Vesta curve of the wrap-side Lagrange bases (Fq coordinates). -/
+abbrev XhatWrapCurve := Bulletproof.IpaVesta.curve
+
+/-- A native Vesta point as a constant cell at the wrap field. -/
+def xhatWrapCell (P : XhatWrapCurve.Point) : AffinePoint (FVar Fq) := ⟨.const P.x, .const P.y⟩
 
 /-- The first `m` Lagrange bases of `pts`, the bases a public-input table over `m` scalars is
 computed from, when it has that many. -/
@@ -61,63 +66,6 @@ def indexSponge {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [Constr
       SpongeVar.absorb p sv P.y)
     SpongeVar.init
 
-/-- The sponge after the wrap key's index digest, at the step field. -/
-def stepIndexSponge (key : VkComms 1 (AffinePoint (FVar Fp))) : CircuitM Fp C (SpongeVar Fp) :=
-  indexSponge Bulletproof.IpaVesta.curve.frSponge.params key
-
-/-! ## The step circuit's group half, on a wrap proof -/
-
-/-- The step circuit's group half: the key's index sponge, then `verifyProofWith` over the
-record, every old accumulator point unmasked. Returns the success bit. -/
-def groupStepOn {ks kw : ℕ} (key : VkComms 1 (AffinePoint (FVar Fp)))
-    (basis : Vector (Vector XhatStepCurve.Point 1)
-      (CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp)))
-    (blindingH : XhatStepCurve.Point) (v : StepGroup ks kw 1 (FVar Fp) (BoolVar Fp)) :
-    CircuitM Fp C (BoolVar Fp) := do
-  let sv ← stepIndexSponge key
-  verifyProofWith blindingH basis sv v.isBaseCase v.statement v.claims
-    (ivpInputOf v.claims.deferredValues (v.sgOld.map (none, ·)) key v.proof)
-
-/-! ## The wrap circuit's group half, on a step proof -/
-
-/-- The Vesta curve of the wrap-side Lagrange bases (Fq coordinates). -/
-abbrev XhatWrapCurve := Bulletproof.IpaVesta.curve
-
-/-- A native Vesta point as a constant cell at the wrap field. -/
-def xhatWrapCell (P : XhatWrapCurve.Point) : AffinePoint (FVar Fq) := ⟨.const P.x, .const P.y⟩
-
-/-- The sponge after the step key's index digest, at the wrap field. -/
-def wrapIndexSponge {nc : ℕ} (key : VkComms nc (AffinePoint (FVar Fq))) :
-    CircuitM Fq Cq (SpongeVar Fq) :=
-  indexSponge Bulletproof.IpaVesta.curve.sponge.params key
-
-/-- The wrap circuit's group half: the step key's index sponge, the step statement's
-public-input commitment, then `Pickles.incrementallyVerifyProof` with each old accumulator
-point under its keep bit (the branch data's mask past its first `pad` bits), then the digest and
-round-challenge assertions against the wrap statement. Returns the success bit. -/
-def groupWrapOn {nc ks kw pad : ℕ} (key : VkComms nc (AffinePoint (FVar Fq)))
-    (basis : Vector (Vector XhatWrapCurve.Point nc)
-      (CircuitType.size Fp (StepStatement (UnfVal kw) Fp (MaxProofsVerified - pad))))
-    (blindingH : AffinePoint (FVar Fq)) (v : WrapGroup ks kw pad nc (FVar Fq) (BoolVar Fq)) :
-    CircuitM Fq Cq (BoolVar Fq) := do
-  let sv ← wrapIndexSponge key
-  let computeXHat : CircuitM Fq Cq (Vector (AffinePoint (FVar Fq)) nc) :=
-    publicInputCommitFull blindingH
-      (packLeavesOf v.stepStatement.packed
-        (XhatTable.ofKey v.stepStatement.packed basis))
-  let dv := v.statement.proofState.deferredValues
-  let mask := dv.branchData.proofsVerifiedMask.drop pad
-  let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta
-    Bulletproof.IpaVesta.curve.sponge.params (.const Bulletproof.IpaPallas.curve.lam)
-    groupMapParamsVesta
-    vestaBase.sqrt? true blindingH sv computeXHat
-    (ivpInputOf dv.toDeferredValues ((mask.zip v.sgOld).map fun (m, P) => (some m, P))
-      key v.proof)
-  assertEqual v.statement.proofState.spongeDigestBeforeEvaluations o.spongeDigest
-  for c in (dv.bulletproofChallenges.zip o.bulletproofChallenges).toList do
-    assertEqual c.1.val c.2.val
-  pure o.success
-
 /-- The wrap side's dummy IPA challenges, expanded. Transcribed, not derived: they come from
 a Blake2s stream, which nothing in this tree implements. Every wrap proof of the SimpleChain
 fixture carries them in its padding slot; a wrong value moves the sponge checkpoint and the
@@ -138,12 +86,5 @@ def dummyWrapChallenges : Vector Fq 15 :=
     22196219950929618042921320796106738233125483954115679355597636800196070731081,
     13054421325261400802177761929986025883530654947859503505174678618288142017333,
     4799483385651443229337780097631636300491234601736019220096005875687579936102]
-
-/-- The message-hash sponge of a wrap circuit whose step statement has `n` real slots: the
-state after absorbing one dummy challenge vector per padding slot, so the padding costs no
-gates. -/
-def wrapMsgSpongeState (n : ℕ) : Poseidon.State Fq :=
-  Pickles.wrapPaddingState Bulletproof.IpaVesta.curve.sponge.params dummyWrapChallenges
-    (MaxProofsVerified - n)
 
 end PicklesFixture

@@ -182,6 +182,32 @@ def KimchiConstraint.Holds (V : Valuation F) : KimchiConstraint F → Prop
     EndoMul.chainHolds V c.endo (c.s.x.val V, c.s.y.val V, c.nAcc.val V) c.state
   | .pad _ => True
 
+/-- The Poseidon chain reading is decidable, window by window. -/
+instance Poseidon.decidableChainHolds (M : Kimchi.Gate.Poseidon.Mds F) (rc : List (F × F × F)) :
+    (k : ℕ) → (l : List (F × F × F)) → Decidable (Poseidon.chainHolds M rc k l)
+  | k, _ :: _ :: _ :: _ :: _ :: s5 :: rest => by
+    haveI := Poseidon.decidableChainHolds M rc (k + 1) (s5 :: rest)
+    unfold Poseidon.chainHolds; infer_instance
+  | _, [] | _, [_] | _, [_, _] | _, [_, _, _] | _, [_, _, _, _] | _, [_, _, _, _, _] =>
+    isTrue (by simp [Poseidon.chainHolds])
+
+/-- The endomorphism-multiplication chain reading is decidable, round by round. -/
+instance EndoMul.decidableChainHolds (V : Valuation F) (endo : F) (fin : F × F × F) :
+    (rs : List (EndoMulRound F)) → Decidable (EndoMul.chainHolds V endo fin rs)
+  | [] => isTrue trivial
+  | [_] => by unfold EndoMul.chainHolds; infer_instance
+  | _ :: r' :: rest => by
+    haveI := EndoMul.decidableChainHolds V endo fin (r' :: rest)
+    unfold EndoMul.chainHolds; infer_instance
+
+/-- The constraint-level semantics is decidable: each arm is a verified gate's decidable
+predicate, a chain of them, or a reference row. -/
+instance KimchiConstraint.decidableHolds (V : Valuation F) (c : KimchiConstraint F) :
+    Decidable (KimchiConstraint.Holds V c) := by
+  cases c <;> unfold KimchiConstraint.Holds
+  · exact Basic.decidableHolds V _
+  all_goals infer_instance
+
 /-- The semantic reading, packaged for the triple machinery. -/
 instance KimchiConstraint.instConstraintHolds :
     ConstraintHolds F (KimchiConstraint F) :=

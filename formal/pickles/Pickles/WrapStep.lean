@@ -418,6 +418,12 @@ theorem wrapStep_kimchiVerify
     -- its key is a checked key, at the step SRS's chunk count
     (KStep : Key IpaVesta.curve ncStep) (hkey : KStep.cvk = stepKeys[b])
     (hnc : ncStep = chunkCount SStep.σ.k KStep.cvk.domainLog2)
+    -- the Lagrange tables the wrap circuit bakes in, per step domain: at branch `b`'s, its key's
+    -- points
+    (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
+      (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp w)))
+    (hlag : lagrange KStep.cvk.domainLog2
+      = KStep.cvk.lagrangePoints SStep.σ (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp w)))
     -- the wrap circuit's valuation
     (Vw : Valuation Fq)
     -- the tag's branches' slot counts
@@ -463,8 +469,8 @@ theorem wrapStep_kimchiVerify
           outVar))
     -- the next step circuit's advice
     (adv : StepMainAdvice n wNext (SlotSource.widths wNext srcs) 1 ncStep σ.k SStep.σ.k inVal) :
-    -- the compiled wrap circuit, over the branches' keys and domains and the SRS's Lagrange
-    -- points and blinding base
+    -- the compiled wrap circuit, over the branches' keys and domains, the Lagrange tables and the
+    -- SRS's blinding base
     let wrap :=
       compileWith (a := StatementPacked SStep.σ.k (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vw (KimchiConstraint Fq))
@@ -473,7 +479,7 @@ theorem wrapStep_kimchiVerify
           (stepDomainLog2s stepKeys)
           (stepKeyCells stepKeys)
           pins
-          (srsLagrangeTable SStep.σ ncStep (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp w)))
+          lagrange
           SStep.σ.h
           dummy
           slotWidths
@@ -551,17 +557,12 @@ theorem wrapStep_kimchiVerify
   -- branch `b`'s domain exponent is its key's
   have hlog : (stepDomainLog2s stepKeys)[b] = KStep.cvk.domainLog2 := by
     simp [stepDomainLog2s, hkey]
-  -- branch `b`'s table is its key's Lagrange points: both are the SRS's over the key's domain
-  have hlag : srsLagrangeTable SStep.σ ncStep
-      (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp w))
-      (stepDomainLog2s stepKeys)[b]
+  -- branch `b`'s table is its key's Lagrange points
+  have hlagb : lagrange (stepDomainLog2s stepKeys)[b]
       = KStep.cvk.lagrangePoints SStep.σ
           (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp w)) := by
-    rw [hlog, srsLagrangeTable]
-    apply Vector.toArray_inj.mp
-    show _ = Ipa.lagrangeBasis IpaVesta.curve SStep.σ ncStep KStep.cvk.n KStep.cvk.omega _
-    rw [KStep.omega_eq]
-    rfl
+    rw [hlog]
+    exact hlag
   intro wrap step hwrap hstep
   rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _]
   intro stepOut wrapStmt wrapFinalizeOut wrapVerifyOut hb i hmv hdi hwi inp ms hms htie
@@ -591,10 +592,8 @@ theorem wrapStep_kimchiVerify
   subst hwi
   obtain ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hkept, hhashW, hK⟩ :=
     wrapStep_kimchiVerify_core σ cvk SStep KStep hnc Vw widths
-    (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
-    (srsLagrangeTable SStep.σ ncStep
-      (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp _))) SStep.σ.h dummy
-    slotWidths advW hbr b (by simp [stepKeyCells, hkey]) hlag
+    (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins lagrange SStep.σ.h dummy
+    slotWidths advW hbr b (by simp [stepKeyCells, hkey]) hlagb
     rfl hnz havoidS hlog hw Vs hwrap hb dummySg (stepOut.prevs i) (stepOut.slots i) stepOut.unfs[i]
         stepOut.msgs[i] _
     (hscal hdi) n0 ms0 hn0 hdv hmsR ms hms htie

@@ -8,6 +8,7 @@
 -- | from another branch.
 module Test.Pickles.Prove.TwoPhaseChain
   ( spec
+  , IncrementPrevsSpec
   , makeZeroRule
   , incrementRule
   ) where

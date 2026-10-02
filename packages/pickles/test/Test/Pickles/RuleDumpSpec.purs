@@ -3,13 +3,19 @@ module Test.Pickles.RuleDumpSpec (spec) where
 import Prelude
 
 import Colog (LoggerT, Message)
+import Data.Either (Either(..))
+import Data.Tuple (Tuple(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.Field (StepField)
-import Pickles.Prove.RuleDump (encodeRuleDump, recordRule)
+import Pickles.Prove.RuleDump (encodeRuleDump, recordRule, ruleWitness)
+import Pickles.Step.Slots (mkPrevValues)
+import Pickles.Types (StatementIO(..))
 import Simple.JSON (writeJSON)
-import Snarky.Circuit.DSL (F)
-import Test.Pickles.Prove.TwoPhaseChain (incrementRule, makeZeroRule)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Circuit.DSL (F(..))
+import Snarky.Curves.Class (fromInt)
+import Test.Pickles.Prove.TwoPhaseChain (IncrementPrevsSpec, incrementRule, makeZeroRule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -29,3 +35,9 @@ spec = describe "Pickles.Prove.RuleDump" do
     d <- recordRule @1 @() @(F StepField) @Unit incrementRule
     writeJSON (encodeRuleDump d) `shouldEqual`
       """{"publicOutput":[],"prevs":[{"statement":[{"var":1}],"mustVerify":{"const":"1"}}],"ops":[{"alloc":1},{"constraint":{"basic":{"equal":[{"var":0},{"add":[{"const":"1"},{"var":1}]}]}}}],"inputSize":1}"""
+  it "witnesses incrementRule at self = 5 over prev = 4" \_ -> liftEffect do
+    let
+      prev = mkPrevValues @IncrementPrevsSpec
+        (Tuple (StatementIO { input: F (fromInt 4 :: StepField), output: unit }) unit)
+    w <- ruleWitness @(F StepField) noAdvice (pure prev) (F (fromInt 5)) incrementRule
+    w `shouldEqual` Right { input: [ fromInt 5 ], values: [ fromInt 4 ] }

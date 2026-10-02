@@ -8,7 +8,9 @@
 -- | `Backend.Tick/Tock.Proof.{to,of}_yojson`) and the keys of the proofs
 -- | it is built on — a wrap proof's the step proof it wrapped, a step
 -- | proof's the wrap proofs it verified — so a chain is walkable from
--- | the file alone.
+-- | the file alone. Beside them it holds what a consumer rebuilding the
+-- | circuits' witnesses cannot read off those proofs: a step proof's rule
+-- | witness, and on both kinds the cells allocated for a base-case slot.
 -- |
 -- | Why `(vkDigest, publicInput)` is a complete key: the kimchi prover is
 -- | deterministic (shared ChaCha20 seed) and, for pickles circuits, the
@@ -25,7 +27,9 @@ module Snarky.Backend.Kimchi.ProofCache
   , mkProofCache
   , Entry
   , Links(..)
+  , Prev(..)
   , ProofRef
+  , RuleWitness
   , getPallasProof
   , setPallasProof
   , getVestaProof
@@ -40,12 +44,14 @@ import Prelude
 import Data.Argonaut.Core (Json, stringify)
 import Data.Argonaut.Core (fromArray, fromNumber, fromObject, fromString, jsonNull) as Argonaut
 import Data.Array (mapMaybe)
+import Data.Array as Array
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.Nullable (Nullable)
 import Data.Nullable as Nullable
 import Data.String (Pattern(..), lastIndexOf, take)
 import Data.String.Common (joinWith)
+import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Foreign.Object (Object)
@@ -73,38 +79,83 @@ mkProofCache = ProofCache
 -- | The cache key of another entry.
 type ProofRef = { vkDigest :: String, publicInput :: String }
 
--- | What a proof is built on: a wrap proof wraps one step proof; a step
--- | proof verifies, per slot in slot order, a wrap proof — or nothing on
--- | a base-case slot, whose dummy proof is not cached.
+-- | A step proof's application rule at that proof: its input's cells and
+-- | the values of its allocations, in order, as canonical field strings.
+-- | A consumer replays the rule with these values to rebuild the step
+-- | circuit's witness.
+type RuleWitness = { input :: Array String, values :: Array String }
+
+-- | A step proof's slot: the wrap proof it verified there, or, on a
+-- | base-case slot, whose dummy proof is not cached, the cells the step
+-- | circuit allocated for the slot.
+data Prev a
+  = Verified ProofRef
+  | BaseCase (Array a)
+
+derive instance Functor Prev
+
+-- | What a proof is built on: a wrap proof wraps one step proof, and per
+-- | slot of that step proof, on a base-case slot, carries the cells the
+-- | wrap circuit allocated for the slot's evaluations; a step proof
+-- | verifies its slots and carries its rule's witness.
 data Links
-  = Wraps ProofRef
-  | Verifies (Array (Maybe ProofRef))
+  = Wraps ProofRef (Array (Maybe (Array String)))
+  | Verifies (Array (Prev String)) RuleWitness
 
 -- | One cached proof: the verification key's JSON, the proof's serde
 -- | JSON and the proofs it is built on.
 type Entry = { vk :: String, proof :: String, links :: Links }
 
 -- | An entry on disk: the links as a `step` key on a wrap proof and a
--- | `prevs` key on a step proof.
+-- | `prevs` key on a step proof, and on both, per slot of the step proof,
+-- | a `baseCases` key holding a base-case slot's cells (`null` on any
+-- | other slot).
 type EntryJson =
   { vk :: String
   , proof :: String
   , step :: Maybe ProofRef
   , prevs :: Maybe (Array (Maybe ProofRef))
+  , rule :: Maybe RuleWitness
+  , baseCases :: Array (Maybe (Array String))
   }
 
 toJson :: Entry -> EntryJson
 toJson e = case e.links of
-  Wraps step -> { vk: e.vk, proof: e.proof, step: Just step, prevs: Nothing }
-  Verifies prevs -> { vk: e.vk, proof: e.proof, step: Nothing, prevs: Just prevs }
+  Wraps step baseCases ->
+    { vk: e.vk, proof: e.proof, step: Just step, prevs: Nothing, rule: Nothing, baseCases }
+  Verifies prevs rule ->
+    { vk: e.vk
+    , proof: e.proof
+    , step: Nothing
+    , prevs: Just
+        ( prevs <#> case _ of
+            Verified r -> Just r
+            BaseCase _ -> Nothing
+        )
+    , rule: Just rule
+    , baseCases: prevs <#> case _ of
+        Verified _ -> Nothing
+        BaseCase cells -> Just cells
+    }
 
--- | An on-disk entry carries exactly one kind of link; anything else is
--- | decode drift and reads as a miss.
+-- | An on-disk entry carries exactly one kind of link, a step proof's
+-- | with its rule's witness and, per slot, either a wrap proof or a base
+-- | case's cells; anything else is decode drift and reads as a miss.
 fromJson :: EntryJson -> Maybe Entry
-fromJson j = case j.step, j.prevs of
-  Just step, Nothing -> Just { vk: j.vk, proof: j.proof, links: Wraps step }
-  Nothing, Just prevs -> Just { vk: j.vk, proof: j.proof, links: Verifies prevs }
-  _, _ -> Nothing
+fromJson j = case j.step, j.prevs, j.rule of
+  Just step, Nothing, Nothing -> Just { vk: j.vk, proof: j.proof, links: Wraps step j.baseCases }
+  Nothing, Just prevs, Just rule
+    | Array.length prevs == Array.length j.baseCases -> do
+        slots <- sequence $ Array.zipWith
+          ( case _, _ of
+              Just r, Nothing -> Just (Verified r)
+              Nothing, Just cells -> Just (BaseCase cells)
+              _, _ -> Nothing
+          )
+          prevs
+          j.baseCases
+        pure { vk: j.vk, proof: j.proof, links: Verifies slots rule }
+  _, _, _ -> Nothing
 
 type Store = Object (Object Entry)
 
@@ -161,7 +212,7 @@ piKey = joinWith "," <<< map fieldStr
 -- | Cache lookup / store for `pallas*` proofs (Vesta.G commitments,
 -- | Pallas-base-field scalars — what pickles' Tick / Step side produces).
 -- | The key is the verification key's digest, as a decimal string; a step
--- | proof records the wrap proofs it verified.
+-- | proof records its slots and its rule's witness.
 getPallasProof
   :: ProofCache
   -> String
@@ -177,18 +228,21 @@ setPallasProof
   -> VerifierIndex Vesta.G Pallas.BaseField
   -> Array Pallas.BaseField
   -> Proof Vesta.G Pallas.BaseField
-  -> Array (Maybe ProofRef)
+  -> Array (Prev Pallas.BaseField)
+  -> { input :: Array Pallas.BaseField, values :: Array Pallas.BaseField }
   -> Effect Unit
-setPallasProof cache vkDigest vk pis proof prevs =
+setPallasProof cache vkDigest vk pis proof prevs rule =
   setEntry cache vkDigest (piKey pis)
     { vk: pallasVerifierIndexJsonKey vk
     , proof: pallasProofToSerdeJson proof
-    , links: Verifies prevs
+    , links: Verifies (map (map fieldStr) prevs)
+        { input: map fieldStr rule.input, values: map fieldStr rule.values }
     }
 
 -- | Cache lookup / store for `vesta*` proofs (Pallas.G commitments,
 -- | Vesta-base-field scalars — what pickles' Tock / Wrap side produces).
--- | A wrap proof records the step proof it wrapped.
+-- | A wrap proof records the step proof it wrapped and its base-case
+-- | slots' evaluation cells.
 getVestaProof
   :: ProofCache
   -> String
@@ -205,12 +259,13 @@ setVestaProof
   -> Array Vesta.BaseField
   -> Proof Pallas.G Vesta.BaseField
   -> ProofRef
+  -> Array (Maybe (Array Vesta.BaseField))
   -> Effect Unit
-setVestaProof cache vkDigest vk pis proof step =
+setVestaProof cache vkDigest vk pis proof step baseCases =
   setEntry cache vkDigest (piKey pis)
     { vk: vestaVerifierIndexJsonKey vk
     , proof: vestaProofToSerdeJson proof
-    , links: Wraps step
+    , links: Wraps step (map (map (map fieldStr)) baseCases)
     }
 
 --------------------------------------------------------------------------------

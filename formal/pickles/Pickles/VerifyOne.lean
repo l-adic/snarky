@@ -1,7 +1,10 @@
 import Pickles.MessageHash
 import Pickles.StepGroupHalf
 import Pickles.StepScalarHalf
-import Pickles.WrapProof
+import Pickles.WrapScalarHalf
+import Pickles.Encoding
+import Pickles.ListLemmas
+import Snarky.Compile
 
 /-!
 # One previous proof inside the step circuit

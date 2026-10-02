@@ -140,24 +140,36 @@ def RuleDump.ofJson (j : Json) : Except String RuleDump := do
     throw "a rule output reads a variable the rule did not allocate"
   return { inputSize, ops := ops.toList, prevs, publicOutput }
 
+/-- The number of variables a rule's body allocates. -/
+def RuleDump.allocated (d : RuleDump) : ℕ :=
+  d.ops.foldl (fun n op => match op with | .alloc m => n + m | _ => n) 0
+
 /-- Replay `ops`, the local ids read through `env`, which each allocation extends with its
-fresh variables; the result is the final `env`. -/
-def replayOps : List RuleOp → Array (FVar Fp) → CircuitM Fp C (Array (FVar Fp))
-  | [], env => .pure env
-  | .alloc n :: ops, env =>
-    .existsOp n (AsProver.throw "advice") fun vs => replayOps ops (env ++ vs.toArray.map .var)
-  | .constrain c :: ops, env =>
-    .addConstraintOp (.basic (substBasic env c)) (replayOps ops env)
-  | .pad vs :: ops, env =>
-    .addConstraintOp (.pad (vs.map (substLocal env))) (replayOps ops env)
+fresh variables; the result is the final `env`. An allocation's advice is the witness's values
+from `off` on, the allocations so far having taken those before it; with no witness it is
+inert. -/
+def replayOps (vals : Option (Array Fp)) : List RuleOp → ℕ → Array (FVar Fp) →
+    CircuitM Fp C (Array (FVar Fp))
+  | [], _, env => .pure env
+  | .alloc n :: ops, off, env =>
+    .existsOp n
+      (match vals with
+        | none => AsProver.throw "advice"
+        | some vs => pure (Vector.ofFn fun i : Fin n => vs.getD (off + i) 0))
+      fun xs => replayOps vals ops (off + n) (env ++ xs.toArray.map .var)
+  | .constrain c :: ops, off, env =>
+    .addConstraintOp (.basic (substBasic env c)) (replayOps vals ops off env)
+  | .pad vs :: ops, off, env =>
+    .addConstraintOp (.pad (vs.map (substLocal env))) (replayOps vals ops off env)
 
 /-- A rule's dump as the rule it records: the input's cells are the first local ids, the body's
 operations replay in order, and each slot's previous statement, its must-verify flag and the
-public output are read through the ids the replay allocated. -/
-def replayRule (d : RuleDump) (x : Vector (FVar Fp) d.inputSize) :
+public output are read through the ids the replay allocated. With a witness `vals` (its
+`RuleDump.allocated` values, in order) its allocations take them; without, it compiles only. -/
+def replayRule (d : RuleDump) (vals : Option (Array Fp)) (x : Vector (FVar Fp) d.inputSize) :
     CircuitM Fp C (((i : Fin d.prevs.size) → Pickles.PrevStatement d.prevs[i].1.size) ×
       Vector (FVar Fp) d.publicOutput.size) := do
-  let env ← replayOps d.ops x.toArray
+  let env ← replayOps vals d.ops 0 x.toArray
   return (fun i => ⟨⟨d.prevs[i].1.map (substLocal env), by simp⟩,
       .unchecked (substLocal env d.prevs[i].2)⟩,
     ⟨d.publicOutput.map (substLocal env), by simp⟩)

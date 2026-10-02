@@ -25,12 +25,10 @@ import Pickles.Verify
 import Pickles.VkComms
 import Pickles.MessageHash
 import Pickles.StepGroupHalf
-import Pickles.StepProof
 import Pickles.StepScalarHalf
 import Pickles.VerifyOne
 import Pickles.StepSlot
 import Pickles.StepMain
-import Pickles.WrapProof
 import Pickles.WrapScalarHalf
 import Pickles.WrapVerify
 import Pickles.WrapFinalize

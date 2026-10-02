@@ -14,9 +14,10 @@ first witness column to the public input.
 
 **There is no hand-written checker.** `Satisfies` is the definition; executability is a
 derived `Decidable` instance — every gate's `Holds` is `∀ e ∈ constraints, e = 0`, so
-each branch is decided by `List.decidableBAll`, and the conjunction over rows and cells
-by the `Fintype` instances. `decide` is the checker, generated from the predicate
-itself; fixture scripts evaluate it and nothing else.
+each branch is decided by `List.decidableBAll`, the conjunction over rows by the list walk
+`decidableForallFinRange`, linear in the domain, and over cells by the `Fintype` instances.
+`decide` is the checker, generated from the predicate itself; fixture scripts evaluate it and
+nothing else.
 -/
 
 namespace Kimchi.Index
@@ -70,6 +71,8 @@ instance (idx : Index F n) (pub : Fin idx.publicCount → F)
     Decidable (rowSatisfies idx pub wTab i) := by
   unfold rowSatisfies
   split <;> infer_instance
+
+attribute [local instance high] decidableForallFinRange
 
 instance (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F) :
     Decidable (Satisfies idx pub wTab) := by

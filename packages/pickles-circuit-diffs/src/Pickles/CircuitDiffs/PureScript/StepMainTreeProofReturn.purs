@@ -45,7 +45,7 @@ import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
+import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_, readCVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (PallasG)
@@ -88,7 +88,7 @@ treeProofReturnRule
 treeProofReturnRule getPrevStates _ = do
   no_recursive_input <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.output
   prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.output
-  is_base_case <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.output == F (negate one)
+  is_base_case <- exists $ readCVar prev <#> (_ == F (negate one))
   let proofMustVerify = not_ is_base_case
   self <- if_ is_base_case (const_ zero) (CVar.add_ (const_ one) prev)
   pure

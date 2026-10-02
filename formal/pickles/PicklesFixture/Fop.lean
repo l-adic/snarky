@@ -7,12 +7,12 @@ import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 
 /-!
-# The finalize-other-proof harnesses
+# The finalize-other-proof parameters and harness
 
-`Pickles.finalizeOtherProofStep` and `Pickles.finalizeOtherProofWrap` at the deployed
-parameters, on the gadgets' own records (`PicklesFixture.StepFop`, `Pickles.WrapFop`), as a
-satisfiability fixture supplies them. Both return the gadget's `Pickles.FopOutput`; a driver
-that only wants the constraint system discards it.
+The deployed parameters of `Pickles.finalizeOtherProofStep` and `Pickles.finalizeOtherProofWrap`
+(`FopParams.of`), which the main circuits take, and the step side's gadget on its own records
+(`PicklesFixture.StepFop`), as a benchmark supplies them. It returns the gadget's
+`Pickles.FopOutput`; a driver that only wants the constraint system discards it.
 -/
 
 namespace PicklesFixture
@@ -56,13 +56,5 @@ def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) {k nc : ℕ}
 /-- `fopStepOnAt` at the dump's one known domain, of log2 16. -/
 def fopStepOn {k nc : ℕ} (v : StepFopVar k nc) : CircuitM Fp C (Pickles.FopOutput Fp k) :=
   fopStepOnAt [⟨16, Kimchi.Verifier.domainGenerator Bulletproof.IpaVesta.curve 16⟩] v
-
-/-- The wrap side on its records at a constant domain, `ζⁿ − 1` by `pow2PowMul`. -/
-def fopWrapOnAt (domainLog2 : ℕ) {k : ℕ} (v : Pickles.WrapFopVar k 1) :
-    CircuitM Fq Cq (Pickles.FopOutput Fq k) :=
-  Pickles.finalizeOtherProofWrap fopWrapParams
-    (.const (Kimchi.Verifier.domainGenerator Bulletproof.IpaPallas.curve domainLog2))
-    (fun z => do let t ← Pickles.pow2PowMul z domainLog2; pure (CVar.sub_ t (.const 1)))
-    v.claims v.evals v.prev
 
 end PicklesFixture

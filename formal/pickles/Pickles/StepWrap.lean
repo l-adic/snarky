@@ -451,6 +451,9 @@ theorem stepWrap_kimchiVerify
     (widths : Vector (Fin (w + 1)) branches)
     -- the step SRS
     (σStep : SRS IpaVesta.curve.Point)
+    -- the Lagrange tables the wrap circuit bakes in, per step domain
+    (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
+      (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w)))
     -- the tag's step keys, one per branch
     (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots, front-padded
@@ -478,8 +481,8 @@ theorem stepWrap_kimchiVerify
           dummyUnf
           rule
           adv)
-    -- the compiled wrap circuit, over the branches' keys and domains and the SRS's Lagrange
-    -- points and blinding base
+    -- the compiled wrap circuit, over the branches' keys and domains, the Lagrange tables and the
+    -- SRS's blinding base
     let wrap :=
       compileWith (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
@@ -488,7 +491,7 @@ theorem stepWrap_kimchiVerify
           (stepDomainLog2s stepKeys)
           (stepKeyCells stepKeys)
           pins
-          (srsLagrangeTable σStep ncStep (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w)))
+          lagrange
           σStep.h
           dummy
           slotWidths
@@ -576,8 +579,7 @@ theorem stepWrap_kimchiVerify
       (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens) widths
       (stepDomainLog2s stepKeys)
           (stepKeyCells stepKeys) pins
-          (srsLagrangeTable σStep ncStep
-            (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w))) σStep.h dummy
+          lagrange σStep.h dummy
       slotWidths advW
       (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)))
       (bodyStart (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
@@ -587,8 +589,7 @@ theorem stepWrap_kimchiVerify
   -- the finalize reads the slot at `K`
   have hreads := wrapMain_reads S.σ Vs widths (stepDomainLog2s stepKeys)
     (stepKeyCells stepKeys) pins
-    (srsLagrangeTable σStep ncStep
-      (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w))) σStep.h dummy
+    lagrange σStep.h dummy
     slotWidths advW
     (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq)) hw hbr
   obtain ⟨b', hb', hwb, -, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp hreads _ hbody
@@ -596,8 +597,7 @@ theorem stepWrap_kimchiVerify
   obtain ⟨hsplitsEq, hsr, hbnd, hslots, hhash⟩ := (builder_spec_iff _ _).mp
     (wrapMain_statement (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens) Vs widths
       (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
-      (srsLagrangeTable σStep ncStep
-        (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w))) σStep.h dummy
+      lagrange σStep.h dummy
       slotWidths advW
       (inputVar (F := Fq) (a := StatementPacked StepIPARounds (Type1 Fq) Fq))
       (stepKeys[0]'(Nat.pos_of_neZero branches)).nc_pos) _

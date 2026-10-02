@@ -4,12 +4,9 @@
 -- machine and the certificates prove must stay reachable from them, from the linearization
 -- reflection, or from a check script (the `script-surface` blocks).
 
--- The capstones: a proof of each kind is verified by its two circuits, a step circuit's
--- must-verify slots are verified by it and the next wrap circuit's finalize block, and a wrap
--- circuit's step proof by it and the next step circuit's finalize. Everything the package
--- proves stays reachable from these.
-Pickles.stepProof_kimchiVerify_vesta
-Pickles.wrapProof_kimchiVerify_pallas
+-- The capstones: a step circuit's must-verify slots are verified by it and the next wrap
+-- circuit's finalize block, and a wrap circuit's step proof by it and the next step circuit's
+-- finalize. Everything the package proves stays reachable from these.
 Pickles.stepWrap_kimchiVerify
 Pickles.wrapStep_kimchiVerify
 
@@ -63,4 +60,29 @@ Pickles.KnownDomains.ofList?
 Pickles.accOk
 Pickles.carryWith_lagrangePoints -- the drivers decide the carry at memoized points
 Pickles.sgOkWith_lagrangePoints -- the drivers decide sgOk at memoized points
+Pickles.KeyReads.of_readPt -- check-tags decides its premises for a slot's key cells
+Pickles.instDecidableEqVkComms -- check-tags compares a slot's key cells with its key
+Pickles.IvpProof.read_eq -- check-tags decides its premises: a proof's cells read off the cached proof
+Pickles.OldsRead.of_readPt -- check-tags decides its premises for the old-accumulator cells
+Pickles.pubEvalsWith -- check-tags decides FopTies' public evaluations at memoised Lagrange points
+Pickles.pubEvalsWith_lagrangePoints -- which is runPubEvals at the key's points
+Pickles.sgOkWith_of_kimchiVerifyWith -- check-tags takes SgOk from kimchiVerify's own sg equation
+Pickles.accOk_of_carryWith -- check-tags takes a carried accumulator's accOk from its predecessor's SgOk
+Pickles.corrSumPt_packed_congr -- check-tags discharges a slot's Avoids from one statement's decision
+Pickles.pow2PowMul -- check-cs pins the gadget's constraint system
+Pickles.pow2PowMul_spec -- check-axioms audits the gadget's read
+Pickles.wrapVerifyWith -- check-cs pins the verify block at its dumps' points
+Pickles.instBranchDataCircuitType -- synthesis: check-tags allocates it
+Pickles.instDeferredValuesCircuitType -- synthesis: check-tags allocates it
+Pickles.instPlonkInCircuitCircuitType -- synthesis: check-tags and check-cs allocate it
+Pickles.instWrapDeferredValuesCircuitType -- synthesis: check-tags allocates it
+Pickles.instWrapProofStateCircuitType -- synthesis: check-tags allocates it
+Pickles.instWrapStatementCircuitType -- synthesis: check-tags allocates it
+Pickles.instSizedFCircuitType -- synthesis: check-tags and check-cs allocate it
+Pickles.instBulletproofOpeningCircuitType -- synthesis: check-cs allocates it
+Pickles.instIvpProofCircuitType -- synthesis: check-cs allocates it
+Pickles.instUnfinalizedProofCircuitType -- synthesis: bench-fop allocates it
+Pickles.instChunkedEvalsCircuitType -- synthesis: bench-fop allocates it
+Pickles.instProofEvaluationsCircuitType -- synthesis: bench-fop allocates it
+Pickles.instType1CircuitType -- synthesis: bench-fop allocates it
 -- script-surface:end

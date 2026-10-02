@@ -7,18 +7,13 @@ Every shifted scalar a deployed group half scales by is one its ladder reads
 (`IvpSide.ClaimOk`): the ladders' tops are below `4·order − 4`, where no accumulator meets
 `±T` (`HasCurve.LadderRegime`), so no scalar value is excluded. What remains is the step side's
 well-formedness: the parity cell of a split scalar reads as a bit, which the deployed circuit
-gets from the split type's allocation check and the harness asserts on its unchecked input.
-
-## Main definitions
-
-* `assertClaimBitsStep`: the step side's parity cells are boolean.
+gets from the split type's allocation check.
 
 ## Main results
 
 * `wrapSide_claimOk`: every wrap-side scalar satisfies `IvpSide.ClaimOk`;
 * `stepSide_claimOk_of_bit`: a step-side scalar with a boolean parity cell satisfies
-  `IvpSide.ClaimOk`;
-* `assertClaimBitsStep_spec`: the asserted step-side scalars satisfy `IvpSide.ClaimOk`.
+  `IvpSide.ClaimOk`.
 -/
 
 namespace Pickles
@@ -52,22 +47,5 @@ theorem stepSide_claimOk_of_bit {V : Valuation Fp} (x : Type2 (SplitField (FVar 
     (top_lt_of_pinned (by norm_num [PALLAS_SCALAR_CARD]) hpre.2.2.1)⟩
 
 variable {c : Type}
-
-/-- The step side's assertion: each split scalar's parity cell is boolean. -/
-def assertClaimBitsStep [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
-    (xs : List (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) : CircuitM Fp c PUnit :=
-  xs.forM fun x => CheckedType.check (F := Fp) (val := Bool) x.val.sOdd
-
-/-- The asserted step-side scalars satisfy `IvpSide.ClaimOk`. -/
-theorem assertClaimBitsStep_spec {V : Valuation Fp}
-    (xs : List (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
-    ⦃⌜True⌝⦄ assertClaimBitsStep (c := Builder V (KimchiConstraint Fp)) xs
-    ⦃⇓ _ _ => ⌜∀ x ∈ xs, (stepSide V).ClaimOk x⌝⦄ := by
-  refine forM_spec (V := V) (c := KimchiConstraint Fp) _ (fun x => (stepSide V).ClaimOk x)
-    (fun x => ?_) xs
-  rw [builder_spec_iff]
-  intro nv hsat
-  exact stepSide_claimOk_of_bit x
-    (CheckedType.check_sound (F := Fp) (val := Bool) V x.val.sOdd nv hsat)
 
 end Pickles

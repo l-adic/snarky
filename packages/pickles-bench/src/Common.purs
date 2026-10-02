@@ -30,7 +30,7 @@ import Snarky.Backend.Kimchi.Impl.Pallas as P
 import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, mul_, not_, true_)
+import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, mul_, not_, readCVar, true_)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Lagrange.Cache (pallasOps, vestaOps, warmer)
 import Snarky.Lagrange.Cache.FS (defaultDir, fsCache)
@@ -95,7 +95,7 @@ benchTreeRule getPrevStates _ = do
   -- field this rule threads. Read each slot's `.output` through `exists`.
   nrrInput <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { output } /\ _) -> output
   prevInput <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output } /\ _) -> output
-  isBaseCase <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output } /\ _) -> output == F (negate one)
+  isBaseCase <- exists $ readCVar prevInput <#> (_ == F (negate one))
   let proofMustVerifySlot1 = not_ isBaseCase
   selfVal <- if_ isBaseCase (const_ zero) (CVar.add_ (const_ one) prevInput)
   let

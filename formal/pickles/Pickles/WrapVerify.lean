@@ -23,17 +23,14 @@ The message sponge is the caller's: the deployed block starts it from the checkp
 already absorbed the dummy padding, so those absorptions stay out of the circuit.
 
 `wrapVerify_reads` is the block's read, the counterpart of `verifyProof_reads` with the success
-bit forced to `1`. `wrapVerifyAt` fixes the SRS and the key: the SRS blinding base as a constant
-cell, and the public-input commitment `publicInputCommitFull` over the packed step statement at
-the key's Lagrange table (`XhatTable.ofKey`). Its read `wrapVerifyAt_reads` proves the table's
-reading from the key's invariants rather than assuming it. `wrapVerify_frame` carries what the
-public-input commitment's rows force out of the block, and `wrapPublicInput_toList` states the
-wrap public input as the packed step statement reduced into the scalar field
-(`PackedScalar.reduced`).
-
-`StepProof.groupCircuit` is the block as a circuit of its input (`StepProof.GroupIn`), with the
-key's cells and the two sponges as constants; the top-level statement
-(`stepProof_kimchiVerify_vesta`) compiles it.
+bit forced to `1`; `wrapVerify_wrap_reads` is it at the deployed Vesta constants, and
+`ivpHyps_of_reads_wrap` discharges its hypotheses from the cells' reads, the form the wrap
+circuit's read composes (`wrapMainVerify_reads`). `wrapVerify_frame` carries what the
+public-input commitment's rows force out of the block. The packed step statement's leaves sit at
+the key's Lagrange table (`wrapLeavesAt`, `XhatTable.ofKey`), and `wrapPublicInput_toList` states
+the wrap public input as the packed step statement reduced into the scalar field
+(`PackedScalar.reduced`). `wrapVerifyWith` is the block with the SRS blinding base and the
+Lagrange points as constants.
 -/
 
 namespace Pickles
@@ -277,22 +274,6 @@ def wrapVerifyWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
       (packLeavesOf statement.packed (XhatTable.ofKey statement.packed lagrange)))
     msgSponge newBpChallenges claimedMsgDigest u cells
 
-/-- `wrapVerifyWith` at the SRS blinding base and the key's Lagrange points, one per packed
-scalar. -/
-def wrapVerifyAt {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
-    [KimchiSystem Fq c]
-    {ks n k kw nw nc np : ℕ}
-    (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
-    (statement : StepStatement (UnfinalizedProof ks (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) n)
-    (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : Vector (Vector (FVar Fq) kw) nw)
-    (claimedMsgDigest : FVar Fq)
-    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
-  wrapVerifyWith σ.h (cvk.lagrangePoints σ
-      (CircuitType.size Fp (StepStatement (UnfVal ks) Fp n))) statement
-    spongeAfterIndex msgSponge newBpChallenges claimedMsgDigest u cells
-
 /-- A packed step statement opens with a full scalar: the first slot's combined inner product,
 or with no slot the `messagesForNextStepProof` digest. -/
 private theorem StepStatement.packed_head {ks n : ℕ}
@@ -323,69 +304,6 @@ theorem StepStatement.leafHasScalar_packed {ks n nc : ℕ}
     (by simp [StepStatement.size_eq])
   rw [hlb, hx]
   simp [constLeaf, leafHasScalar]
-
-/-- **The block at a key reads as the group half at the packed statement.** The public-input
-and blinding-cell premises of `wrapVerify_wrap_reads` are proved from the SRS and the key
-(`xhatBinding_const`). Left as hypotheses: the SRS avoids the Lagrange relations,
-and `IvpHyps`. The boolean leaves'
-booleanity is not left: the commitment gadget constrains it. -/
-theorem wrapVerifyAt_reads {ks n kw nw nc np : ℕ} {V : Valuation Fq}
-    (S : Srs IpaVesta.curve) (K : Key IpaVesta.curve nc)
-    (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2) (cp : KimchiProof IpaVesta.curve nc S.σ.k)
-    (statement : StepStatement (UnfinalizedProof ks (FVar Fq) (BoolVar Fq)
-      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) n)
-    (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : Vector (Vector (FVar Fq) kw) nw)
-    (claimedMsgDigest : FVar Fq)
-    (u : UnfinalizedProof S.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput S.σ.k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (havoid : S.σ.Avoids (K.cvk.lagrangeRelations S.σ.k
-      (CircuitType.size Fp (StepStatement (UnfVal ks) Fp n))))
-    (hivp : ∃ oldsW, IvpHyps (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V statement) true
-      spongeAfterIndex (cells.withClaims u) oldsW) :
-    ⦃⌜True⌝⦄
-    wrapVerifyAt (c := Builder V (KimchiConstraint Fq)) S.σ K.cvk statement spongeAfterIndex
-      msgSponge newBpChallenges claimedMsgDigest u cells
-    ⦃⇓ _ _ => ⌜∃ v : BoolVar Fq,
-      VerifyReads (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V statement) u false v ∧
-        (↑v : CVar Fq).val V = 1⌝⦄ := by
-  obtain ⟨oldsW, hivp⟩ := hivp
-  have hleaves : wrapLeavesAt S.σ K.cvk statement
-      = List.zipWith constLeaf statement.packed.toList
-        (K.cvk.lagrangePoints S.σ
-          (CircuitType.size Fp (StepStatement (UnfVal ks) Fp n))).toList := by
-    unfold wrapLeavesAt
-    exact packLeavesOf_ofKey (C := IpaVesta.curve) _ _
-  have hsz : (wrapPublicInput S.σ K.cvk V statement).size
-      = CircuitType.size Fp (StepStatement (UnfVal ks) Fp n) := by
-    rw [← Array.length_toList, wrapPublicInput_toList, List.length_map, Vector.length_toList]
-  -- the binding at each chunk, under the boolean leaves' booleanity, which the commitment's
-  -- read supplies
-  have hbind := fun (ci : Fin nc)
-    (hb : ∀ leaf ∈ wrapLeavesAt S.σ K.cvk statement, leaf.bitBoolean V) =>
-    xhatBinding_const (V := V) pastaShapeVesta ci S.σ
-      (K.cvk.lagrangePoints S.σ
-        (CircuitType.size Fp (StepStatement (UnfVal ks) Fp n))) statement.packed S.h_ne
-      (fun Ps h => Key.lagrange_ne pastaShapeVesta S.σ hnc havoid Ps h ci) (hleaves ▸ hb)
-  have hscalar : leafHasScalar (wrapLeavesAt S.σ K.cvk statement) :=
-    hleaves ▸ statement.leafHasScalar_packed _
-  have hX : ⦃⌜True⌝⦄
-      (publicInputCommitFull (S := Builder V (KimchiConstraint Fq))
-        (constPt S.σ.h) (wrapLeavesAt S.σ K.cvk statement))
-      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve V pts.toList (runPublicComm IpaVesta.curve S.σ K.cvk
-        (wrapPublicInput S.σ K.cvk V statement)).toList⌝⦄ := by
-    unfold runPublicComm
-    rw [hsz]
-    have h0 := builder_spec_forall _ (fun _ : Fin nc => True) _ fun ci _ =>
-      xHat_reads_publicCommitment pastaShapeVesta ci S.σ
-        (K.cvk.lagrangePoints S.σ (CircuitType.size Fp (StepStatement (UnfVal ks) Fp n))).toArray
-          (constPt S.σ.h)
-        (wrapLeavesAt S.σ K.cvk statement) _ _ (fun hb => hleaves ▸ hbind ci hb) hscalar
-    mvcgen -trivial [h0]
-    intro hr
-    exact List.forall₂_iff_get.mpr ⟨by simp [wrapPublicInput], fun i h₁ h₂ => by
-      simpa [wrapPublicInput] using hr ⟨i, by simpa using h₁⟩⟩
-  exact wrapVerify_wrap_reads S.σ K.cvk cp _ _ _ _ spongeAfterIndex _ msgSponge newBpChallenges
-    claimedMsgDigest u cells oldsW hX (onCurveAt_constPt S.σ.h S.h_ne) hivp
 
 open scoped Kimchi in
 /-- A step key has at most `2^32` chunks: its domain exponent is at most `Fp`'s two-adicity,
@@ -439,191 +357,7 @@ theorem ivpHyps_of_reads_wrap {nc np : ℕ} {V : Valuation Fq} {S : Srs IpaVesta
 
 end WrapRead
 
-/-! ## The verify block, of its input -/
-
-section Records
-
-open CompElliptic.Fields.Pasta
-
-/-- The wrap circuit's group half of a step proof, polymorphic in its cells, at the wrap
-statement's `ks` rounds (the step proof's), the step statement's `kw` (its slots' wrap proofs')
-and its `MaxProofsVerified - pad` slots: the last of the wrap statement's mask slots, whose bits
-are the accumulators' keep bits. -/
-structure WrapGroup (ks kw pad nc : ℕ) (f b : Type) where
-  /-- The wrap statement. -/
-  statement : WrapStatement ks f b (Type1 f)
-  /-- The step statement: the verified proof's public input. -/
-  stepStatement : StepStatement (UnfinalizedProof kw f b
-      (Type2 (SplitField f b))) f (MaxProofsVerified - pad)
-  /-- The step proof, at `nc` chunks. -/
-  proof : IvpProof ks nc f (Type1 f)
-  /-- The step proof's accumulators' `sg`, one per slot. -/
-  sgOld : Vector (AffinePoint f) (MaxProofsVerified - pad)
-
-/-- A wrap-side group half is its two statements, the proof and the accumulators' `sg`. -/
-def WrapGroup.equivProd (ks kw pad nc : ℕ) (f b : Type) :
-    WrapGroup ks kw pad nc f b ≃
-      WrapStatement ks f b (Type1 f) ×
-        StepStatement (UnfinalizedProof kw f b
-            (Type2 (SplitField f b))) f (MaxProofsVerified - pad) ×
-        IvpProof ks nc f (Type1 f) × Vector (AffinePoint f) (MaxProofsVerified - pad) :=
-  ⟨fun g => (g.statement, g.stepStatement, g.proof, g.sgOld),
-   fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2⟩, fun _ => rfl, fun _ => rfl⟩
-
-instance instWrapGroupCircuitType {F : Type} {ks kw pad nc : ℕ} [CircuitType F Bool (BoolVar F)] :
-    CircuitType F (WrapGroup ks kw pad nc F Bool) (WrapGroup ks kw pad nc (FVar F) (BoolVar F)) :=
-  CircuitType.ofEquiv (WrapGroup.equivProd ks kw pad nc F Bool)
-    (WrapGroup.equivProd ks kw pad nc (FVar F) (BoolVar F))
-
-namespace StepProof
-
-variable {k kw pad nc : ℕ}
-
-/-- The group circuit's input, polymorphic in its cells: the group half and the slots'
-expanded round challenges the message hash absorbs. -/
-structure GroupInput (k kw pad nc : ℕ) (f b : Type) where
-  /-- The group half. -/
-  group : WrapGroup k kw pad nc f b
-  /-- The slots' expanded round challenges. -/
-  newBp : Vector (Vector f kw) (MaxProofsVerified - pad)
-
-/-- A group input is the group half and the expanded round challenges. -/
-def GroupInput.equivProd (k kw pad nc : ℕ) (f b : Type) :
-    GroupInput k kw pad nc f b ≃
-      WrapGroup k kw pad nc f b × Vector (Vector f kw) (MaxProofsVerified - pad) :=
-  ⟨fun g => (g.group, g.newBp), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
-
-instance instGroupInputCircuitType {F : Type} [CircuitType F Bool (BoolVar F)] :
-    CircuitType F (GroupInput k kw pad nc F Bool) (GroupInput k kw pad nc (FVar F) (BoolVar F)) :=
-  CircuitType.ofEquiv (GroupInput.equivProd k kw pad nc F Bool)
-    (GroupInput.equivProd k kw pad nc (FVar F) (BoolVar F))
-
-/-- The group circuit's input, as values. Unchecked: the block's own rows constrain what it
-reads. -/
-abbrev GroupIn (k kw pad nc : ℕ) : Type := UnChecked (GroupInput k kw pad nc Fq Bool)
-
-/-- `GroupIn`, as cells. -/
-abbrev GroupVar (k kw pad nc : ℕ) : Type :=
-  UnChecked (GroupInput k kw pad nc (FVar Fq) (BoolVar Fq))
-
-/-- The step statement: the verified proof's public input. -/
-def GroupVar.stepStatement (g : GroupVar k kw pad nc) :
-    StepStatement (UnfinalizedProof kw (FVar Fq) (BoolVar Fq)
-        (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) (FVar Fq) (MaxProofsVerified - pad) :=
-  g.val.group.stepStatement
-
-/-- The slots' expanded round challenges. -/
-def GroupVar.newBp (g : GroupVar k kw pad nc) :
-    Vector (Vector (FVar Fq) kw) (MaxProofsVerified - pad) :=
-  g.val.newBp
-
-/-- The wrap statement's `messagesForNextWrapProof` digest. -/
-def GroupVar.msgDigest (g : GroupVar k kw pad nc) : FVar Fq :=
-  g.val.group.statement.proofState.messagesForNextWrapProof
-
-/-- The wrap statement's deferred claims, as the unfinalized proof the block verifies. -/
-def GroupVar.claims (g : GroupVar k kw pad nc) :
-    UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
-  { deferredValues := g.val.group.statement.proofState.deferredValues.toDeferredValues
-    shouldFinalize := true_
-    spongeDigestBeforeEvaluations :=
-      g.val.group.statement.proofState.spongeDigestBeforeEvaluations }
-
-open scoped Kimchi in
-/-- The step proof's witness commitments, `nc` chunks each. -/
-def GroupVar.wComm (g : GroupVar k kw pad nc) : Vector (Vector (AffinePoint (FVar Fq)) nc) wCols :=
-  g.val.group.proof.wComm
-
-/-- The step proof's permutation-accumulator commitment, `nc` chunks. -/
-def GroupVar.zComm (g : GroupVar k kw pad nc) : Vector (AffinePoint (FVar Fq)) nc :=
-  g.val.group.proof.zComm
-
-open scoped Kimchi in
-/-- The step proof's `7 · nc` quotient chunks. -/
-def GroupVar.tComm (g : GroupVar k kw pad nc) : Vector (AffinePoint (FVar Fq)) (quotChunks * nc) :=
-  g.val.group.proof.tComm
-
-/-- The step proof's opening. -/
-def GroupVar.opening (g : GroupVar k kw pad nc) :
-    BulletproofOpening k (FVar Fq) (Type1 (FVar Fq)) :=
-  g.val.group.proof.opening
-
-/-- The accumulators' `sg`, each under its keep bit: the branch data's mask past its first
-`pad` slots. -/
-def GroupVar.sgOld (g : GroupVar k kw pad nc) :
-    Vector (Option (BoolVar Fq) × AffinePoint (FVar Fq)) (MaxProofsVerified - pad) :=
-  let bd := g.val.group.statement.proofState.deferredValues.branchData
-  ((bd.proofsVerifiedMask.drop pad).zip g.val.group.sgOld).map fun (m, P) => (some m, P)
-
-/-- The shifted scalars the block scales by: the claims' `perm`, `ζ^{2^k}`, `ζⁿ`, `cip`, `b`
-and the opening's `z₁`, `z₂`. -/
-def GroupVar.shifted (g : GroupVar k kw pad nc) : List (Type1 (FVar Fq)) :=
-  let dv := g.claims.deferredValues
-  [dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize, dv.combinedInnerProduct,
-   dv.b, g.opening.z1, g.opening.z2]
-
-/-- What `incrementallyVerifyProof` consumes: the claims, the accumulators, the key's cells, the
-proof. -/
-def GroupVar.cells (keyCells : VkComms nc (AffinePoint (FVar Fq))) (g : GroupVar k kw pad nc) :
-    IvpInput k nc (MaxProofsVerified - pad) (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
-  ivpInputOf g.val.group.statement.proofState.deferredValues.toDeferredValues g.sgOld keyCells
-    g.val.group.proof
-
-/-- The verify block as a circuit of its input, at the blinding base `h` and the Lagrange points
-`lagrange`: `wrapVerifyWith` on the input, with the key's cells and the two sponges as constants.
-What a driver runs at points it computed once. -/
-def groupCircuitWith {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
-    [LawfulBasicSystem Fq c] [KimchiSystem Fq c]
-    (h : Bulletproof.IpaVesta.curve.Point)
-    (lagrange : Vector (Vector Bulletproof.IpaVesta.curve.Point nc)
-      (CircuitType.size Fp (StepStatement (UnfVal kw) Fp (MaxProofsVerified - pad))))
-    (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
-    (g : GroupVar k kw pad nc) : CircuitM Fq c Unit :=
-  wrapVerifyWith h lagrange g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest
-    g.claims (g.cells keyCells)
-
-/-- `groupCircuitWith` at the SRS blinding base and the key's Lagrange points, one per packed
-scalar: `wrapVerifyAt` as a circuit of its input. -/
-def groupCircuit {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c] [LawfulBasicSystem Fq c]
-    [KimchiSystem Fq c]
-    (σ : Bulletproof.SRS Bulletproof.IpaVesta.curve.Point)
-    (cvk : Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc)
-    (keyCells : VkComms nc (AffinePoint (FVar Fq)))
-    (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw pad nc) : CircuitM Fq c Unit :=
-  groupCircuitWith σ.h
-    (cvk.lagrangePoints σ (CircuitType.size Fp (StepStatement (UnfVal kw) Fp
-      (MaxProofsVerified - pad))))
-    keyCells spongeAfterIndex msgSponge g
-
-open Std.Do in
-/-- **The group circuit's read.** Every wrap-side claim satisfies `IvpSide.ClaimOk`
-(`wrapSide_claimOk`), which `IvpHyps` may assume. With the SRS avoiding the Lagrange relations,
-a satisfying valuation reads as `VerifyReads` with its success bit `1`. -/
-theorem groupCircuit_reads {V : Valuation Fq} (S : Srs Bulletproof.IpaVesta.curve)
-    (K : Key Bulletproof.IpaVesta.curve nc)
-    (hnc : nc = Kimchi.Verifier.chunkCount S.σ.k K.cvk.domainLog2)
-    (cp : Kimchi.Verifier.KimchiProof Bulletproof.IpaVesta.curve nc S.σ.k)
-    (keyCells : VkComms nc (AffinePoint (FVar Fq))) (spongeAfterIndex msgSponge : SpongeVar Fq)
-    (g : GroupVar S.σ.k kw pad nc)
-    (havoid : S.σ.Avoids (K.cvk.lagrangeRelations S.σ.k
-      (CircuitType.size Fp (StepStatement (UnfVal kw) Fp (MaxProofsVerified - pad)))))
-    (hivp : (∀ x ∈ g.shifted, (wrapSide V).ClaimOk x) →
-      ∃ oldsW, IvpHyps (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V g.stepStatement) true
-        spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :
-    ⦃⌜True⌝⦄
-    groupCircuit (c := Builder V (KimchiConstraint Fq)) S.σ K.cvk keyCells spongeAfterIndex
-      msgSponge g
-    ⦃⇓ _ _ => ⌜∃ v : BoolVar Fq,
-      VerifyReads (wrapSide V) S.σ K.cvk cp (wrapPublicInput S.σ K.cvk V g.stepStatement) g.claims
-        false v ∧ (↑v : CVar Fq).val V = 1⌝⦄ :=
-  wrapVerifyAt_reads (V := V) S K hnc cp g.stepStatement spongeAfterIndex msgSponge g.newBp
-    g.msgDigest g.claims (g.cells keyCells) havoid (hivp fun x _ => wrapSide_claimOk V x)
-
-end StepProof
-
-end Records
-
-/-! Sealed after their reads: a consumer composes `wrapVerify_reads` and `wrapVerifyAt_reads`. -/
-attribute [irreducible] wrapVerify wrapVerifyAt
+/-! Sealed after its read: a consumer composes `wrapVerify_reads`. -/
+attribute [irreducible] wrapVerify
 
 end Pickles

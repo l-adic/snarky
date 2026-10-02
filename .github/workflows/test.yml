@@ -402,6 +402,35 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-tags
 
+    # The links read the committed proof caches and the SRS they were made against; the
+    # Lagrange points are committed under formal/lagrange-cache.
+    - name: Cache SRS files
+      uses: actions/cache@v3
+      with:
+        path: srs-cache/
+        key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
+
+    - name: Populate SRS cache
+      run: make fetch-srs
+
+    # Two apps' links, each proof's main circuit run on its cached proof with the capstones'
+    # hypotheses and conclusions decided: self slots, base cases, recursion, and a chunked step
+    # proof verified. `LINKS=all` is too long for every run.
+    - name: Check two apps' links
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps LINKS=TwoPhaseChain,RecurseOverChunks lake exe check-tags
+
+    # On main only: three step domains in one system and slot widths above a rule's predecessor
+    # count, which the two apps above do not reach.
+    - name: Check HeterogeneousPrevs' links
+      if: github.event_name == 'push'
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps LINKS=HeterogeneousPrevs lake exe check-tags
+
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,
   # base-pathed for the project page (/snarky/). Heavy (wasm + backend-es

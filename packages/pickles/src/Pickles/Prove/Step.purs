@@ -48,6 +48,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
@@ -65,11 +66,12 @@ import Pickles.PlonkChecks (collapsePointEval, mapChunkedEvals)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
+import Pickles.Prove.RuleDump (ruleWitness)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, mkPrevValues)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -85,7 +87,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, getPallasProof, setPallasProof)
+import Snarky.Backend.Kimchi.ProofCache (Prev, ProofCache, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
@@ -1276,10 +1278,10 @@ stepSolveAndProve
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
-  -- Per slot, the cache key of the wrap proof this proof verifies there
-  -- (`Nothing` on a base-case slot), recorded on its cache entry so a
-  -- chain is walkable from the cache alone.
-  -> Array (Maybe ProofRef)
+  -- Per slot, the cache key of the wrap proof this proof verifies there,
+  -- or on a base-case slot the cells allocated for it, recorded on its
+  -- cache entry so a chain is walkable from the cache alone.
+  -> Array (Prev StepField)
   -> Effect (Either EvaluationError StepProveResult)
 stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
   -- Capture channel for the rule's user `publicOutput` FVars. The
@@ -1381,8 +1383,17 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
                   Just proof -> pure proof
                   Nothing -> do
                     let proof = Lazy.force p
-                    setPallasProof cache vkDigest compileResult.verifierIndex publicInputs proof
-                      prevProofs
+                    witness <- ruleWitness @inputVal handler
+                      (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
+                      adv.publicInput
+                      rule
+                    case witness of
+                      Left e -> throw ("stepProve: the rule's witness: " <> show e)
+                      Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
+                        publicInputs
+                        proof
+                        prevProofs
+                        w
                     pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex

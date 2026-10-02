@@ -72,7 +72,7 @@ import Pickles.DeferredValues (toPlonkMinimal)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Dump.Circuit (comparable, fromCompiledCircuit)
 import Pickles.Dump.Constants (DerivedKey, stepMainConstants, wrapKeyExport, wrapMainConstants)
-import Pickles.Dump.Tag (BranchDump, writeTagDump)
+import Pickles.Dump.Tag (BranchDump, wrapPadding, writeTagDump)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IncrementallyVerifyProof (class StepChunkLayout)
 import Pickles.Linearization (pallas) as Linearization
@@ -162,10 +162,10 @@ import Snarky.Backend.Kimchi.Proof
   , srsBlindingGenerator
   , srsLagrangeCommitmentChunksAt
   ) as ProofFFI
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, piKey)
+import Snarky.Backend.Kimchi.ProofCache (Prev(..), ProofCache, piKey)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError)
-import Snarky.Circuit.DSL (F(..), UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (F(..), UnChecked(..), coerceViaBits, valueToFields)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
@@ -600,7 +600,7 @@ slotStepAdvice
   -> Effect
        { contrib :: SlotAdviceContrib
        , wrapPublicInput :: Array WrapField
-       , proofRef :: Maybe ProofRef
+       , prev :: Prev StepField
        }
 slotStepAdvice _ srs appInput slotParams headSlot = do
   contrib <- buildSlotAdvice @w
@@ -630,14 +630,18 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
   pure
     { contrib
     , wrapPublicInput: slotData.wrapPublicInputArr
-    -- A base-case slot's dummy proof is not cached.
-    , proofRef:
+    -- A base-case slot's dummy proof is not cached, so the cells the
+    -- step circuit allocates for the slot are.
+    , prev:
         if slotData.mustVerify then
-          Just
+          Verified
             { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest slotParams.slotWrapVK))
             , publicInput: piKey slotData.wrapPublicInputArr
             }
-        else Nothing
+        else BaseCase
+          ( (Step.perProofWitnessTyp { width: slotW, numChunks: slotParams.slotStepNumChunks }).toFields
+              contrib.slotSppw
+          )
     }
   where
   slotW = reflectType (Proxy :: Proxy w)
@@ -1119,8 +1123,7 @@ type SlotProveData =
 --------------------------------------------------------------------------------
 
 -- | One entry's worth of each field `padShapeProveData` front-pads,
--- | built by `runMultiProverBody` from the wrap circuit's dummies and
--- | SRS-derived sg values.
+-- | built once per compile by `wrapPadDummies`.
 type PadProveDataDummies =
   { dummyPrevSg :: AffinePoint WrapField
   , dummyPrevStepChals :: Vector StepIPARounds StepField
@@ -1196,6 +1199,77 @@ padShapeProveData dummies slotWidths sd =
         <> sd.slotsValue
   }
 
+-- | One entry of each field `padShapeProveData` front-pads: the
+-- | base-case dummies at `maxProofsVerified = 0` and the SRSes' dummy
+-- | sgs. A constant of the SRSes, which the tag dump also records.
+wrapPadDummies :: { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG } -> PadProveDataDummies
+wrapPadDummies srs =
+  { dummyPrevSg: dummyStepSgInWrapField
+  , dummyPrevStepChals: dummyIpaChallenges.stepExpanded
+  , dummyMsgWrapChal: dummyIpaChallenges.wrapExpanded
+  , dummyPrevUnfinalizedProof: dummyPpu
+  , dummyPrevStepAcc:
+      WeierstrassAffinePoint
+        { x: F (unwrap dummyStepSgInWrapField).x, y: F (unwrap dummyStepSgInWrapField).y }
+  , dummyPrevEvals: dummyPrevEvalsMax
+  , dummyKimchiPrevEntry:
+      { sgX: (unwrap dummyWrapSgInStepField).x
+      , sgY: (unwrap dummyWrapSgInStepField).y
+      , challenges: dummyIpaChallenges.wrapExpanded
+      }
+  , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
+  }
+  where
+  -- `maxProofsVerified: 0`, not `mpvMax`: that is the
+  -- `forceOrderFor` sequence which draws
+  -- `unfinalizedConstantDummy` first, putting its four challenges
+  -- on the random oracle's first four counters.
+  bcdMax = baseCaseDummies { maxProofsVerified: 0 }
+  dummySgsMax = computeDummySgValues bcdMax srs.pallasSrs srs.vestaSrs
+  -- The two dummy sgs live on different curves: `prevSgs` and
+  -- `prevStepAccs` take the Pallas one, `kimchiPrevEntries` the
+  -- Vesta one.
+  dummyStepSgInWrapField = dummySgsMax.ipa.step.sg -- AffinePoint WrapField
+  dummyWrapSgInStepField = dummySgsMax.ipa.wrap.sg -- AffinePoint StepField
+
+  -- `wrapDummyUnfinalizedProof`'s nested shape, flattened into the
+  -- `PerProofUnfinalized` record `ShapeProveData` carries. Both
+  -- sides are already wrap-field, so nothing crosses fields here.
+  dummyUnfRaw = wrapDummyUnfinalizedProof bcdMax
+  dummyUnfDv = dummyUnfRaw.deferredValues
+  dummyPlonk = dummyUnfDv.plonk
+
+  dummyPpu = PerProofUnfinalized
+    { combinedInnerProduct: dummyUnfDv.combinedInnerProduct
+    , b: dummyUnfDv.b
+    , zetaToSrsLength: dummyPlonk.zetaToSrsLength
+    , zetaToDomainSize: dummyPlonk.zetaToDomainSize
+    , perm: dummyPlonk.perm
+    , spongeDigest: dummyUnfRaw.spongeDigestBeforeEvaluations
+    , beta: UnChecked dummyPlonk.beta
+    , gamma: UnChecked dummyPlonk.gamma
+    , alpha: UnChecked dummyPlonk.alpha
+    , zeta: UnChecked dummyPlonk.zeta
+    , xi: UnChecked dummyUnfDv.xi
+    , bulletproofChallenges: map UnChecked dummyUnfDv.bulletproofChallenges
+    , shouldFinalize: dummyUnfRaw.shouldFinalize
+    }
+
+  -- Every field of the dummy evaluations, `publicEvals` included,
+  -- is a random-oracle draw rather than a zero placeholder.
+  de = bcdMax.dummyEvals
+  pe pe' = { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+
+  dummyPrevEvalsMax = AllocEvals
+    { ftEval1: F de.ftEval1
+    , publicEvals: pe de.publicEvals
+    , zEvals: pe de.zEvals
+    , witnessEvals: map pe de.witnessEvals
+    , coeffEvals: map pe de.coeffEvals
+    , sigmaEvals: map pe de.sigmaEvals
+    , indexEvals: map pe de.indexEvals
+    }
+
 --------------------------------------------------------------------------------
 -- The prove call's per-slot data
 --------------------------------------------------------------------------------
@@ -1223,7 +1297,7 @@ mkStepAdvice
              valCarrier
        , challengePolynomialCommitments :: Vector mpv (AffinePoint StepField)
        , baseCaseWrapPublicInputs :: Vector mpv (Array WrapField)
-       , prevProofRefs :: Array (Maybe ProofRef)
+       , cachePrevs :: Array (Prev StepField)
        }
 mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
   perSlot <- forWithIndex slots \i slot ->
@@ -1247,7 +1321,7 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
         }
     , challengePolynomialCommitments: map _.contrib.challengePolynomialCommitment perSlot
     , baseCaseWrapPublicInputs: map _.wrapPublicInput perSlot
-    , prevProofRefs: Array.fromFoldable (map _.proofRef perSlot)
+    , cachePrevs: Array.fromFoldable (map _.prev perSlot)
     }
   where
   -- A side-loaded slot's wrap VK is a runtime witness, so its domains
@@ -1561,6 +1635,7 @@ class
     => Proxy stepChunks
     -> Int
     -> CompileMultiConfig
+    -> PadProveDataDummies
     -> WrapCompileResult
     -> Vector vecLen (WrapBranchData mpvMax)
     -- ^ every branch's wrap data
@@ -1584,7 +1659,7 @@ instance
     r
   where
   ruleCompileFns _ = Vector.nil
-  buildBranchProvers _ _ _ _ _ _ _ _ _ _ = pure unit
+  buildBranchProvers _ _ _ _ _ _ _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRules restCarrier inputVal outputVal
@@ -1650,6 +1725,7 @@ instance
     ncProxy
     branchIdx
     cfg
+    padDummies
     wrapResult
     perBranchVec
     allStepDomainLog2s
@@ -1676,6 +1752,7 @@ instance
           ncProxy
           branchIdx
           cfg
+          padDummies
           wrapResult
           perBranchVec
           headPins
@@ -1695,6 +1772,7 @@ instance
       ncProxy
       (branchIdx + 1)
       cfg
+      padDummies
       wrapResult
       perBranchVec
       allStepDomainLog2s
@@ -1811,8 +1889,9 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
            inputVal
            mpv
            valCarrier
-      -- Per slot, the cache key of the wrap proof verified there.
-      -> Array (Maybe ProofRef)
+      -- Per slot, the cache key of the wrap proof verified there, or a
+      -- base case's cells.
+      -> Array (Prev StepField)
       -> Effect (Either EvaluationError PProveStep.StepProveResult)
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
@@ -2097,6 +2176,7 @@ runMultiProverBody
   -> Int
   -- ^ branchIdx — baked into the wrap statement's `whichBranch`.
   -> CompileMultiConfig
+  -> PadProveDataDummies
   -> WrapCompileResult
   -> Vector branches (WrapBranchData mpvMax)
   -- ^ the same per-branch vector wrap compile was given, from which
@@ -2118,6 +2198,7 @@ runMultiProverBody
   ncProxy
   branchIdx
   cfg
+  padDummies
   wrapResult
   perBranchVec
   branchPins
@@ -2146,7 +2227,7 @@ runMultiProverBody
     stepProveCtx = stepProveContextOf perRuleCfg (map slotWidthInt widths)
       allStepDomainLog2s
 
-  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, prevProofRefs } <-
+  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, cachePrevs } <-
     mkStepAdvice perRuleCfg stepCR wrapResult appInput widths split.values
       split.slots
 
@@ -2163,76 +2244,13 @@ runMultiProverBody
       widths
       split.slots
 
-    -- `maxProofsVerified: 0`, not `mpvMax`: that is the
-    -- `forceOrderFor` sequence which draws
-    -- `unfinalizedConstantDummy` first, putting its four challenges
-    -- on the random oracle's first four counters.
-    bcdMax = baseCaseDummies { maxProofsVerified: 0 }
-    dummySgsMax = computeDummySgValues bcdMax cfg.srs.pallasSrs cfg.srs.vestaSrs
-    -- The two dummy sgs live on different curves: `prevSgs` and
-    -- `prevStepAccs` take the Pallas one, `kimchiPrevEntries` the
-    -- Vesta one.
-    dummyStepSgInWrapField = dummySgsMax.ipa.step.sg -- AffinePoint WrapField
-    dummyWrapSgInStepField = dummySgsMax.ipa.wrap.sg -- AffinePoint StepField
-
-    -- `wrapDummyUnfinalizedProof`'s nested shape, flattened into the
-    -- `PerProofUnfinalized` record `ShapeProveData` carries. Both
-    -- sides are already wrap-field, so nothing crosses fields here.
-    dummyUnfRaw = wrapDummyUnfinalizedProof bcdMax
-    dummyUnfDv = dummyUnfRaw.deferredValues
-    dummyPlonk = dummyUnfDv.plonk
-
-    dummyPpu = PerProofUnfinalized
-      { combinedInnerProduct: dummyUnfDv.combinedInnerProduct
-      , b: dummyUnfDv.b
-      , zetaToSrsLength: dummyPlonk.zetaToSrsLength
-      , zetaToDomainSize: dummyPlonk.zetaToDomainSize
-      , perm: dummyPlonk.perm
-      , spongeDigest: dummyUnfRaw.spongeDigestBeforeEvaluations
-      , beta: UnChecked dummyPlonk.beta
-      , gamma: UnChecked dummyPlonk.gamma
-      , alpha: UnChecked dummyPlonk.alpha
-      , zeta: UnChecked dummyPlonk.zeta
-      , xi: UnChecked dummyUnfDv.xi
-      , bulletproofChallenges: map UnChecked dummyUnfDv.bulletproofChallenges
-      , shouldFinalize: dummyUnfRaw.shouldFinalize
-      }
-
-    -- Every field of the dummy evaluations, `publicEvals` included,
-    -- is a random-oracle draw rather than a zero placeholder.
-    de = bcdMax.dummyEvals
-    pe pe' = { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
-
-    dummyPrevEvalsMax = AllocEvals
-      { ftEval1: F de.ftEval1
-      , publicEvals: pe de.publicEvals
-      , zEvals: pe de.zEvals
-      , witnessEvals: map pe de.witnessEvals
-      , coeffEvals: map pe de.coeffEvals
-      , sigmaEvals: map pe de.sigmaEvals
-      , indexEvals: map pe de.indexEvals
-      }
-
-    padDummies =
-      { dummyPrevSg: dummyStepSgInWrapField
-      , dummyPrevStepChals: dummyIpaChallenges.stepExpanded
-      , dummyMsgWrapChal: dummyIpaChallenges.wrapExpanded
-      , dummyPrevUnfinalizedProof: dummyPpu
-      , dummyPrevStepAcc:
-          WeierstrassAffinePoint
-            { x: F (unwrap dummyStepSgInWrapField).x, y: F (unwrap dummyStepSgInWrapField).y }
-      , dummyPrevEvals: dummyPrevEvalsMax
-      , dummyKimchiPrevEntry:
-          { sgX: (unwrap dummyWrapSgInStepField).x
-          , sgY: (unwrap dummyWrapSgInStepField).y
-          , challenges: dummyIpaChallenges.wrapExpanded
-          }
-      , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
-      }
+    -- The Vesta dummy sg, which the kimchi entries below also pad with.
+    dummyWrapSgInStepField = AffinePoint
+      { x: padDummies.dummyKimchiPrevEntry.sgX, y: padDummies.dummyKimchiPrevEntry.sgY }
 
     proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
 
-  eStepResult <- r.stepProveFn handler stepProveCtx stepCR stepAdvice prevProofRefs
+  eStepResult <- r.stepProveFn handler stepProveCtx stepCR stepAdvice cachePrevs
   case eStepResult of
     Left e -> pure (Left e)
     Right stepResult -> do
@@ -2316,21 +2334,6 @@ runMultiProverBody
 
         dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
 
-        -- Built from the same dummies as `padDummies` above, so both
-        -- front-paddings come off one random-oracle stream. When
-        -- `mpv < mpvMax`, two streams leave the wrap circuit's
-        -- permutation argument unclosed.
-        dummyKimchiEntry
-          :: { sgX :: StepField
-             , sgY :: StepField
-             , challenges :: Vector WrapIPARounds WrapField
-             }
-        dummyKimchiEntry =
-          { sgX: (unwrap dummyWrapSgInStepField).x
-          , sgY: (unwrap dummyWrapSgInStepField).y
-          , challenges: dummyIpaChallenges.wrapExpanded
-          }
-
         kimchiPrevPadded
           :: Vector PaddedLength
                { sgX :: StepField
@@ -2338,7 +2341,7 @@ runMultiProverBody
                , challenges :: Vector WrapIPARounds WrapField
                }
         kimchiPrevPadded =
-          Vector.append (Vector.replicate @padMax dummyKimchiEntry)
+          Vector.append (Vector.replicate @padMax padDummies.dummyKimchiPrevEntry)
             proveDataMax.kimchiPrevEntries
 
         msgWrap = hashMessagesForNextWrapProofPure dummyWrapExpanded
@@ -2382,6 +2385,13 @@ runMultiProverBody
               { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest stepCR.verifierIndex))
               , publicInput: piKey stepResult.publicInputs
               }
+          , baseCases: Array.zipWith
+              ( \prev evals -> case prev of
+                  Verified _ -> Nothing
+                  BaseCase _ -> Just (valueToFields @WrapField evals)
+              )
+              cachePrevs
+              (Vector.toUnfoldable proveData.prevEvals)
           , kimchiPrevChallenges: kimchiPrevPadded
           }
 
@@ -2562,6 +2572,8 @@ compileMulti cfg rules = do
         <> show actualWrapDomainLog2
         <> ". Set wrapDomainOverride to the correct domain size."
 
+  let padDummies = wrapPadDummies cfg.srs
+
   -- The theorems' dump of this tag, from the circuits just compiled: a
   -- `Self` slot's key is the wrap key built above.
   for_ cfg.dump \path -> do
@@ -2579,7 +2591,13 @@ compileMulti cfg rules = do
       ruleFns
       stepResults
     writeTagDump path
-      { wrapMain: { circuit, constants, key: wrapKeyExport wrapResult.verifierIndex }
+      { wrapMain:
+          { circuit
+          , constants
+          , key: wrapKeyExport wrapResult.verifierIndex
+          , padding: wrapPadding
+              { stepAcc: padDummies.dummyPrevStepAcc, evals: padDummies.dummyPrevEvals, domain: paddingWrapDomain }
+          }
       , branches: Vector.toUnfoldable branches
       }
 
@@ -2596,6 +2614,7 @@ compileMulti cfg rules = do
     (Proxy :: Proxy stepChunks)
     0
     cfg
+    padDummies
     wrapResult
     perBranchVec
     (NonEmptyArray.fromFoldable1 log2s)

@@ -292,6 +292,28 @@ theorem commReads_readPt {C : KimchiCurve} {V : Valuation C.BaseField}
     CommReads C V cells (cells.map (readPt V)) :=
   List.forall₂_map_right_iff.mpr (List.forall₂_same.mpr fun p hp => onCurveAt_readPt (h p hp))
 
+/-- Key cells on the curve, whose points are the key's commitments, read as the key. -/
+theorem KeyReads.of_readPt {C : KimchiCurve} {V : Valuation C.BaseField} {nc : ℕ}
+    {key : VkComms nc (AffinePoint (FVar C.BaseField))} {cvk : KimchiVK C nc}
+    (hon : ∀ p ∈ key.indexPoints, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V))
+    (hread : key.map (readPt V) = cvk.comms) : KeyReads C V key cvk := by
+  have hcol : ∀ {m : ℕ} (cols : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) m)
+      (Ps : Vector (Vector C.Point nc) m), cols.map (·.map (readPt V)) = Ps →
+      (∀ c ∈ cols.toList, ∀ p ∈ c.toList, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V)) →
+      ColumnsRead C V cols Ps := by
+    intro m cols Ps h hon i
+    subst h
+    simpa [Vector.toList_map] using
+      commReads_readPt (hon _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem i.isLt)))
+  have hmem : ∀ c ∈ key.sigmaComm.toList ++ key.coefficientsComm.toList ++ key.selectors.toList,
+      ∀ p ∈ c.toList, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V) :=
+    fun c hc p hp => hon p (List.mem_flatMap.mpr ⟨c, hc, hp⟩)
+  simp only [VkComms.map, KimchiVK.comms, VkComms.mk.injEq] at hread
+  obtain ⟨hσ, hc, hg, hp, ha, hm, he, hs⟩ := hread
+  refine ⟨hcol _ _ hσ fun c h => hmem c (by simp [h]),
+    hcol _ _ hc fun c h => hmem c (by simp [h]), hcol _ _ ?_ fun c h => hmem c (by simp [h])⟩
+  simp [VkComms.selectors, KimchiVK.comms, hg, hp, ha, hm, he, hs]
+
 /-- The wire proof the cells `pr` hold, beside the evaluations and old accumulators other cells
 hold: each point cell reads as its `readPt`, and the opening's scalars decode by `S`. -/
 def IvpProof.read {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
@@ -336,6 +358,50 @@ theorem IvpProof.read_proofReads {C : KimchiCurve} {V : Valuation C.BaseField} {
     refine ⟨onCurveAt_readPt (hon _ ?_), onCurveAt_readPt (hon _ ?_)⟩ <;>
     simp only [IvpProof.points, List.mem_append, List.mem_flatMap] <;>
     exact Or.inl (Or.inr ⟨_, hq, by simp⟩)
+
+/-- A proof whose commitments and opening are the points and scalars the cells `pr` read off is
+`pr.read`'s, at the proof's own evaluations and old accumulators. -/
+theorem IvpProof.read_eq {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
+    {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf} {k nc : ℕ}
+    (S : IvpSide C V ops) (pr : IvpProof k nc (FVar C.BaseField) sf) (cp : KimchiProof C nc k)
+    (hw : pr.wComm.map (·.map (readPt V)) = cp.wComm)
+    (hz : pr.zComm.map (readPt V) = cp.zComm)
+    (ht : (pr.tComm.map (readPt V)).toArray = cp.tComm)
+    (hlr : pr.opening.lr.map (fun q => (readPt V q.1, readPt V q.2)) = cp.opening.lr)
+    (hd : readPt V pr.opening.delta = cp.opening.delta)
+    (hz1 : S.decode pr.opening.z1 = cp.opening.z1) (hz2 : S.decode pr.opening.z2 = cp.opening.z2)
+    (hsg : readPt V pr.opening.sg = cp.opening.sg) :
+    pr.read S cp.evals cp.pubEvals cp.ftEval1 cp.olds = cp := by
+  obtain ⟨_, _, _, _, _, _, _, ⟨_, _, _, _, _⟩, _⟩ := cp
+  simp_all [IvpProof.read]
+
+/-- Old-accumulator cells on the curve, whose points are `oldsW`'s and whose keep bits read as
+`oldsW`'s (no bit, `true`), read as `oldsW`, when its kept points are the proof's old
+accumulators' commitments. -/
+theorem OldsRead.of_readPt {C : KimchiCurve} {nc k np : ℕ} {V : Valuation C.BaseField}
+    {sgOld : Vector (Option (BoolVar C.BaseField) × AffinePoint (FVar C.BaseField)) np}
+    {cp : KimchiProof C nc k} {oldsW : Vector (C.Point × Bool) np}
+    (hon : ∀ m ∈ sgOld.toList, OnCurve C.E.A C.E.B (m.2.x.val V, m.2.y.val V))
+    (hpts : sgOld.map (fun m => readPt V m.2) = oldsW.map (·.1))
+    (hbits : ∀ i : Fin np, match sgOld[i].1 with
+      | none => oldsW[i].2 = true
+      | some keep => (↑keep : CVar C.BaseField).val V = bit oldsW[i].2)
+    (hkept : (oldsW.toList.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList) :
+    OldsRead V sgOld cp oldsW := by
+  refine ⟨?_, hkept⟩
+  rw [List.forall₂_iff_get]
+  refine ⟨by simp, fun i h1 h2 => ?_⟩
+  have hi : i < np := by simpa using h1
+  have hp : readPt V sgOld[i].2 = oldsW[i].1 := by
+    simpa using congrArg (·[i]) hpts
+  simp only [List.get_eq_getElem, List.getElem_map, Vector.getElem_toList]
+  refine ⟨?_, ?_⟩
+  · rw [← hp]
+    exact onCurveAt_readPt (hon _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi)))
+  · have h := hbits ⟨i, hi⟩
+    simp only [Fin.getElem_fin] at h
+    revert h
+    cases sgOld[i].1 <;> simp
 
 /-- A key's commitments as cells, each point through `cell`. -/
 def keyCellsOf {C : KimchiCurve} {F : Type} {nc : ℕ} (cell : C.Point → AffinePoint (FVar F))
