@@ -95,8 +95,8 @@ def roots : List Name :=
     `Pickles.incrementallyVerifyProof_reads,
     `Pickles.stepWrap_kimchiVerify,
     `Pickles.wrapStep_kimchiVerify,
-    `Pickles.WrapStepRun.mem_olds_or_collision,
-    `Pickles.StepWrapRun.mem_olds_or_collision,
+    `Pickles.WrapStepRun.handover_or_collision,
+    `Pickles.StepWrapRun.handover_or_collision,
     `Pickles.StepStatement.ofWrap_toFields,
     `Pickles.stepPublicInput_eq_append ]
 
@@ -120,8 +120,8 @@ def deployedRoots : List Name :=
     `Pickles.wrapPublicInput_toList,
     `Pickles.stepWrap_kimchiVerify,
     `Pickles.wrapStep_kimchiVerify,
-    `Pickles.WrapStepRun.mem_olds_or_collision,
-    `Pickles.StepWrapRun.mem_olds_or_collision,
+    `Pickles.WrapStepRun.handover_or_collision,
+    `Pickles.StepWrapRun.handover_or_collision,
     `Pickles.StepStatement.ofWrap_toFields,
     `Pickles.stepPublicInput_eq_append ]
 

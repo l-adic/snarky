@@ -10,10 +10,10 @@
 Pickles.stepWrap_kimchiVerify
 Pickles.wrapStep_kimchiVerify
 
--- The handover along a chain: the accumulator one link emits is an old accumulator of the
--- proof the next link verifies, step or wrap, unless Poseidon collides.
-Pickles.WrapStepRun.mem_olds_or_collision
-Pickles.StepWrapRun.mem_olds_or_collision
+-- The handover along a chain: complete messages agree and the earlier proof accepts or the
+-- accepted later proof carries an invalid accumulator, unless a message hash collides.
+Pickles.WrapStepRun.handover_or_collision
+Pickles.StepWrapRun.handover_or_collision
 
 -- The capstones' typed public-input ties are the wire's public input: the step circuit's
 -- statement values flatten to what `wrapPublicInput` commits to, and the wrap circuit's packed

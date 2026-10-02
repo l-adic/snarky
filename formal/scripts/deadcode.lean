@@ -20,7 +20,7 @@ Every package is audited. A root is in a manifest for one of four reasons, and t
 sections say which:
 
 * the four pickles capstones (`stepWrap_kimchiVerify`, `wrapStep_kimchiVerify` and the two
-  `mem_olds_or_collision` handovers), from which the whole in-circuit verifier must stay
+  `handover_or_collision` handovers), from which the whole in-circuit verifier must stay
   reachable;
 * a gadget's soundness or completeness result — kept even where nothing consumes it yet, so
   that a gadget and its proofs stand or fall together;
