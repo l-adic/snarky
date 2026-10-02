@@ -103,4 +103,33 @@ def runHalf {p : ℕ} [Fact p.Prime] {a av β : Type} [CircuitType (ZMod p) a av
         pure sat
     return (sat, bits)
 
+/-- `jobs` on `n` workers, each job's output captured on its worker thread (stdout is per
+thread) and printed in job order as soon as the jobs before it are done; the verdicts, in
+order. A job that throws prints its error and fails. -/
+def runPool (n : ℕ) (jobs : Array (IO Bool)) : IO (Array Bool) := do
+  let work ← jobs.mapM fun job => do
+    let p ← IO.Promise.new (α := String × Bool)
+    pure (job, p)
+  let next ← IO.mkRef 0
+  let worker : IO Unit := do
+    repeat
+      let i ← next.modifyGet fun i => (i, i + 1)
+      if h : i < work.size then
+        let (job, p) := work[i]
+        let r ← IO.FS.withIsolatedStreams do
+          try job catch e => do
+            IO.println s!"  ✗ {e}"
+            pure false
+        p.resolve r
+      else break
+  let tasks ← (List.range (max n 1)).mapM fun _ => IO.asTask worker
+  let mut oks := #[]
+  for (_, p) in work do
+    let (out, ok) ← IO.wait p.result!
+    IO.print out
+    oks := oks.push ok
+  for t in tasks do
+    if let .error e ← IO.wait t then throw e
+  return oks
+
 end PicklesFixture
