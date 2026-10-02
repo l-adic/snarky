@@ -119,10 +119,22 @@ jobs:
     - name: Populate SRS cache
       run: make fetch-srs
 
+    # The pickles prove tests also write the theorems' dump of every tag they compile
+    # (`<app>/<tag>.json`: its circuits, constants, keys and rules) for the `check-tags` job.
     - name: Test all libraries (excludes pickles-circuit-diffs)
       run: make test-libs
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
+        PICKLES_DUMP_DIR: ${{ github.workspace }}/pickles-dumps
+
+    # Run-scoped transport to the `check-tags` job, as for the comparison dumps: the checker
+    # only ever sees the dumps its own commit's prove tests wrote.
+    - name: Upload the tag dumps for the Lean checker
+      uses: actions/upload-artifact@v4
+      with:
+        name: pickles-tag-dumps
+        path: pickles-dumps/
+        retention-days: 1
 
   test-example:
     if: github.event_name != 'workflow_dispatch'
@@ -370,6 +382,35 @@ jobs:
         cd formal
         KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
           lake exe check-premises
+
+  # ---- the theorems' suite on the prove tests' tag dumps (Lean) --------
+  # Every tag the pickles prove tests compiled, rebuilt in Lean from its dump — the wrap
+  # circuit at its constants, each branch's step circuit with the rule replayed from the
+  # dump — against the systems the tests compiled, with the capstones' constant premises
+  # and the cross-tag slot checks. Compiled by the lean.yml build job, like check-cs.
+  check-tags:
+    if: github.event_name != 'workflow_dispatch'
+    needs: test-libs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: false
+
+    - name: Setup Lean + build the library
+      uses: ./.github/actions/setup-lean
+
+    - name: Download the tag dumps
+      uses: actions/download-artifact@v4
+      with:
+        name: pickles-tag-dumps
+        path: pickles-dumps/
+
+    - name: Check the tag dumps
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-tags
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,
