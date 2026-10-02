@@ -1123,8 +1123,7 @@ type SlotProveData =
 --------------------------------------------------------------------------------
 
 -- | One entry's worth of each field `padShapeProveData` front-pads,
--- | built by `runMultiProverBody` from the wrap circuit's dummies and
--- | SRS-derived sg values.
+-- | built once per compile by `wrapPadDummies`.
 type PadProveDataDummies =
   { dummyPrevSg :: AffinePoint WrapField
   , dummyPrevStepChals :: Vector StepIPARounds StepField
@@ -1636,6 +1635,7 @@ class
     => Proxy stepChunks
     -> Int
     -> CompileMultiConfig
+    -> PadProveDataDummies
     -> WrapCompileResult
     -> Vector vecLen (WrapBranchData mpvMax)
     -- ^ every branch's wrap data
@@ -1659,7 +1659,7 @@ instance
     r
   where
   ruleCompileFns _ = Vector.nil
-  buildBranchProvers _ _ _ _ _ _ _ _ _ _ = pure unit
+  buildBranchProvers _ _ _ _ _ _ _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRules restCarrier inputVal outputVal
@@ -1725,6 +1725,7 @@ instance
     ncProxy
     branchIdx
     cfg
+    padDummies
     wrapResult
     perBranchVec
     allStepDomainLog2s
@@ -1751,6 +1752,7 @@ instance
           ncProxy
           branchIdx
           cfg
+          padDummies
           wrapResult
           perBranchVec
           headPins
@@ -1770,6 +1772,7 @@ instance
       ncProxy
       (branchIdx + 1)
       cfg
+      padDummies
       wrapResult
       perBranchVec
       allStepDomainLog2s
@@ -2173,6 +2176,7 @@ runMultiProverBody
   -> Int
   -- ^ branchIdx — baked into the wrap statement's `whichBranch`.
   -> CompileMultiConfig
+  -> PadProveDataDummies
   -> WrapCompileResult
   -> Vector branches (WrapBranchData mpvMax)
   -- ^ the same per-branch vector wrap compile was given, from which
@@ -2194,6 +2198,7 @@ runMultiProverBody
   ncProxy
   branchIdx
   cfg
+  padDummies
   wrapResult
   perBranchVec
   branchPins
@@ -2239,7 +2244,6 @@ runMultiProverBody
       widths
       split.slots
 
-    padDummies = wrapPadDummies cfg.srs
     -- The Vesta dummy sg, which the kimchi entries below also pad with.
     dummyWrapSgInStepField = AffinePoint
       { x: padDummies.dummyKimchiPrevEntry.sgX, y: padDummies.dummyKimchiPrevEntry.sgY }
@@ -2330,21 +2334,6 @@ runMultiProverBody
 
         dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
 
-        -- Built from the same dummies as `padDummies` above, so both
-        -- front-paddings come off one random-oracle stream. When
-        -- `mpv < mpvMax`, two streams leave the wrap circuit's
-        -- permutation argument unclosed.
-        dummyKimchiEntry
-          :: { sgX :: StepField
-             , sgY :: StepField
-             , challenges :: Vector WrapIPARounds WrapField
-             }
-        dummyKimchiEntry =
-          { sgX: (unwrap dummyWrapSgInStepField).x
-          , sgY: (unwrap dummyWrapSgInStepField).y
-          , challenges: dummyIpaChallenges.wrapExpanded
-          }
-
         kimchiPrevPadded
           :: Vector PaddedLength
                { sgX :: StepField
@@ -2352,7 +2341,7 @@ runMultiProverBody
                , challenges :: Vector WrapIPARounds WrapField
                }
         kimchiPrevPadded =
-          Vector.append (Vector.replicate @padMax dummyKimchiEntry)
+          Vector.append (Vector.replicate @padMax padDummies.dummyKimchiPrevEntry)
             proveDataMax.kimchiPrevEntries
 
         msgWrap = hashMessagesForNextWrapProofPure dummyWrapExpanded
@@ -2583,6 +2572,8 @@ compileMulti cfg rules = do
         <> show actualWrapDomainLog2
         <> ". Set wrapDomainOverride to the correct domain size."
 
+  let padDummies = wrapPadDummies cfg.srs
+
   -- The theorems' dump of this tag, from the circuits just compiled: a
   -- `Self` slot's key is the wrap key built above.
   for_ cfg.dump \path -> do
@@ -2599,14 +2590,13 @@ compileMulti cfg rules = do
       )
       ruleFns
       stepResults
-    let pad = wrapPadDummies cfg.srs
     writeTagDump path
       { wrapMain:
           { circuit
           , constants
           , key: wrapKeyExport wrapResult.verifierIndex
           , padding: wrapPadding
-              { stepAcc: pad.dummyPrevStepAcc, evals: pad.dummyPrevEvals, domain: paddingWrapDomain }
+              { stepAcc: padDummies.dummyPrevStepAcc, evals: padDummies.dummyPrevEvals, domain: paddingWrapDomain }
           }
       , branches: Vector.toUnfoldable branches
       }
@@ -2624,6 +2614,7 @@ compileMulti cfg rules = do
     (Proxy :: Proxy stepChunks)
     0
     cfg
+    padDummies
     wrapResult
     perBranchVec
     (NonEmptyArray.fromFoldable1 log2s)

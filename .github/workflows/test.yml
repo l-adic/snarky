@@ -422,6 +422,15 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps LINKS=TwoPhaseChain,RecurseOverChunks lake exe check-tags
 
+    # On main only: three step domains in one system and slot widths above a rule's predecessor
+    # count, which the two apps above do not reach.
+    - name: Check HeterogeneousPrevs' links
+      if: github.event_name == 'push'
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps LINKS=HeterogeneousPrevs lake exe check-tags
+
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,
   # base-pathed for the project page (/snarky/). Heavy (wasm + backend-es

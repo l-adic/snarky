@@ -41,22 +41,6 @@ def inertWrapAdvice {mpv nc k ks wsum : ℕ} : Pickles.WrapMainAdvice mpv nc k k
     AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
     AsProver.throw "advice", AsProver.throw "advice"⟩
 
-/-- A cache entry's records checked at `k` rounds, at the chunk count an SRS of `2 ^ k` points
-gives its domain. -/
-def checkedEntry (C : Ipa.KimchiCurve) (k : ℕ) (e : Cache.Entry C) :
-    Except String ((nc : ℕ) × Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc k) :=
-  let nc := Kimchi.Verifier.chunkCount k e.vk.domainLog2
-  match e.vk.check nc, e.proof.check nc k with
-  | some cvk, some cp => .ok ⟨nc, cvk, cp⟩
-  | _, _ => .error "the cache entry's records fail the wire check"
-
-/-- `checkedEntry` at a given chunk count. -/
-def checkedEntryAt (C : Ipa.KimchiCurve) (k nc : ℕ) (e : Cache.Entry C) :
-    Except String (Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc k) := do
-  let ⟨nc', cvk, cp⟩ ← checkedEntry C k e
-  if h : nc' = nc then return (h ▸ cvk, h ▸ cp)
-  else throw s!"the entry runs at {nc'} chunks, not {nc}"
-
 /-- A point as a checked cell value. -/
 def checkedPt {F : Type} {a b : F} (C : Ipa.KimchiCurve) (P : C.Point) :
     CheckedPoint a b C.BaseField :=
@@ -125,8 +109,8 @@ evaluations at `ncs` chunks and its old accumulators' challenges, zero in a slot
 mask bit leaves it unread). -/
 def slotValOf (w ncs : ℕ) (W : Cache.Entry CW) (S : Cache.Entry CS) :
     Except String (Pickles.SlotVal w 1 ncs 15 Pickles.StepIPARounds) := do
-  let (_, cpW) ← checkedEntryAt CW 15 1 W
-  let (_, cpS) ← checkedEntryAt CS Pickles.StepIPARounds ncs S
+  let (_, cpW) ← W.checkedAt 15 1
+  let (_, cpS) ← S.checkedAt Pickles.StepIPARounds ncs
   let split (z : CW.ScalarField) : Type2 (SplitField Fp Bool) :=
     let t := (Pasta.Shifted.shiftType2 255 z).val
     ⟨⟨((t / 2 : ℕ) : Fp), decide (t % 2 = 1)⟩⟩
@@ -261,7 +245,7 @@ def wrapMainAdviceOf {mpv : ℕ} (ncStep b : ℕ)
     (dummy : Vector Fq 15) (S0 : Cache.Entry CS) (prevs : Vector WrapPrev mpv) :
     Except String (Pickles.WrapMainAdvice mpv ncStep 15 Pickles.StepIPARounds
       (slotWidths.map Fin.val).sum) := do
-  let (_, cpS) ← checkedEntryAt CS Pickles.StepIPARounds ncStep S0
+  let (_, cpS) ← S0.checkedAt Pickles.StepIPARounds ncStep
   let st ← stepStatementOf toWrap 15 mpv S0.publicInput
   let cell (P : AffinePoint Fq) : Pickles.VestaPt Fq := ⟨P⟩
   let stepAccs ← lastPadded mpv pad.stepAcc (cpS.olds.map fun a => cell ⟨a.sg.x, a.sg.y⟩)
@@ -269,7 +253,7 @@ def wrapMainAdviceOf {mpv : ℕ} (ncStep b : ℕ)
     show Except String (Pickles.AllocEvals 1 Fq × Vector (Vector Fq 15) slotWidths[j].val × Fq)
     from match prevs[j] with
     | .proof W => do
-      let (vkW, cpW) ← checkedEntryAt CW 15 1 W
+      let (vkW, cpW) ← W.checkedAt 15 1
       let l := vkW.domainLog2
       unless l ∈ Pickles.wrapDomainLog2s do throw s!"slot {j}: wrap domain 2^{l} is no wrap domain"
       return (allocEvalsOf (← chunkedEvalsOf CW cpW),

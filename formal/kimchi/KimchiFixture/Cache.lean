@@ -11,7 +11,8 @@ The pickles test suite memoises every kimchi proof it produces under
 the proof's serde JSON, and links to the proofs it is built on (`step` on a wrap proof,
 `prevs` on a step proof, which also carries its application rule's witness, `rule`), and on
 both, per slot of the step proof, a base-case slot's cells (`baseCases`). This module reads a
-file into `Entry` records.
+file into `Entry` records, and checks an entry's records at an SRS's round count
+(`Entry.checked`).
 
 Two encodings meet here:
 
@@ -174,6 +175,22 @@ structure Entry (C : Ipa.KimchiCurve) where
   slot, the cells this proof's circuit allocated for the slot — `none` on any other slot. -/
   baseCases : Array (Option (Array C.ScalarField))
 
+/-- The entry's records checked at `k` rounds, at the chunk count an SRS of `2 ^ k` points gives
+its domain (`chunkCount`). -/
+def Entry.checked {C : Ipa.KimchiCurve} (e : Entry C) (k : ℕ) :
+    Except String ((nc : ℕ) × Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc k) :=
+  let nc := chunkCount k e.vk.domainLog2
+  match e.vk.check nc, e.proof.check nc k with
+  | some cvk, some cp => .ok ⟨nc, cvk, cp⟩
+  | _, _ => .error "the cache entry's records fail the wire check"
+
+/-- `Entry.checked` at a given chunk count. -/
+def Entry.checkedAt {C : Ipa.KimchiCurve} (e : Entry C) (k nc : ℕ) :
+    Except String (Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc k) := do
+  let ⟨nc', cvk, cp⟩ ← e.checked k
+  if h : nc' = nc then return (h ▸ cvk, h ▸ cp)
+  else throw s!"the entry runs at {nc'} chunks, not {nc}"
+
 /-- A link: the cache key of another entry. -/
 private def parseRef (j : Json) : Except String (String × String) := do
   return (← (← j.getObjVal? "vkDigest").getStr?, ← (← j.getObjVal? "publicInput").getStr?)
@@ -193,20 +210,16 @@ private def parseEntry (C : Ipa.KimchiCurve) (endo : C.ScalarField)
     | some pj => parseArrOf (fun r => match r with
         | Json.null => pure none
         | _ => some <$> parseRef r) pj
-  let numeral (j : Json) : Except String C.ScalarField := do
-    let t ← j.getStr?
-    match t.toNat? with
-    | some v => pure (v : C.ScalarField)
-    | none => throw s!"not a numeral: {t.take 40}"
+  let scalars := parseArrOf (parseZMod (n := C.scalar))
   let rule ← match (e.getObjVal? "rule").toOption with
     | some Json.null | none => pure none
-    | some rj => pure (some { input := ← parseArrOf numeral (← rj.getObjVal? "input")
-                              values := ← parseArrOf numeral (← rj.getObjVal? "values") })
+    | some rj => pure (some { input := ← scalars (← rj.getObjVal? "input")
+                              values := ← scalars (← rj.getObjVal? "values") })
   let baseCases ← match (e.getObjVal? "baseCases").toOption with
     | some Json.null | none => pure #[]
     | some bj => parseArrOf (fun c => match c with
         | Json.null => pure none
-        | _ => some <$> parseArrOf numeral c) bj
+        | _ => some <$> scalars c) bj
   return { vkDigest, publicInputKey := pi, publicInput := ← parsePublicInput C pi
            vk := ← parseVK C endo (d : C.BaseField) vkJ
            proof := ← parseProof C sqrt proofJ, step, prevs, rule, baseCases }

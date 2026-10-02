@@ -17,7 +17,7 @@ ties to the commitments) — at that tag's width and step chunk count, and reads
 statement of the size every branch of that tag emits; and every wrap circuit pads with one set of
 challenges.
 
-The links (`LINKS=all`, every app but those in `linksAllSkips`, or `LINKS=<app>,…`), instead: every
+The links (`LINKS=all`, every dumped app, or `LINKS=<app>,…`), instead: every
 proof in the apps' proof caches (`PICKLES_PROOF_CACHE_DIR`) has its circuit run through the prover
 at advice read off the cache — a step proof's step circuit at its rule's witness and its slots
 (`stepMainAdviceOf`), a wrap proof's wrap circuit at the step proof it wrapped (`wrapMainAdviceOf`),
@@ -39,7 +39,8 @@ its `SgOk` passes `accOk` (`Pickles.accOk_of_carryWith`), an unlinked one passin
 `kimchiVerify`, and the Lagrange points every proof reads are computed before the pool, from the SRS
 (`Bulletproof.Fixture.SRSLoader.loadSRS`) and memoised under `lagrange-cache/`
 (`Bulletproof.Fixture.lagrangeBasisCached`). On `LINKS_JOBS` workers (4); a cached proof in no link
-fails the run. After the runs, the capstones themselves: each step run and the wrap run that wrapped
+fails the run. Chunks4's prove test dumps no tag, its links being too long to run, so its cache
+is not linked. After the runs, the capstones themselves: each step run and the wrap run that wrapped
 it through `Pickles.stepWrap_kimchiVerify` (`stepWrapLink`), each slot verifying a cached wrap proof
 with that proof's wrap run through `Pickles.wrapStep_kimchiVerify` (`wrapStepLink`), every
 hypothesis decided on the runs (their reads through `Snarky.CircuitType.decidableReads`, a slot's
@@ -271,14 +272,6 @@ def fopTies {C : Bulletproof.Ipa.KimchiCurve} {sf' : Type} {k nc w : ℕ}
     decide (Sc.evals.pub.map (fun v => v.map (·.val Sc.V)) =
       Pickles.pubEvalsWith σ cvk L (hk ▸ cp) pub)
 
-/-- An entry's checked key and proof at the SRS `σ` and the chunk count `nc`. -/
-def checkedKeyFor (C : Bulletproof.Ipa.KimchiCurve) (nc : ℕ) (σ : Bulletproof.SRS C.Point)
-    (e : Cache.Entry C) :
-    IO (Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc σ.k) := do
-  let ⟨nc', cvk, cp⟩ ← checkedAny C σ e
-  if h : nc' = nc then return (h ▸ cvk, h ▸ cp)
-  else throw (IO.userError s!"the entry runs at {nc'} chunks, not {nc}")
-
 /-- An SRS at its round count, the count pinned. -/
 def srsAtK (C : Bulletproof.Ipa.KimchiCurve) (name : String)
     (sqrt : C.BaseField → Option C.BaseField) (loaded : IO.Ref (List (ℕ × Bulletproof.SRS C.Point)))
@@ -308,12 +301,12 @@ def stepConclusions (ctx : VerdictCtx) {n w ncs : ℕ} {ss : Fin n → ℕ} {sa 
       (out.prevs i) (out.slots i) out.unfs[i] out.msgs[i]
     let ms := CircuitType.readVal V inp.proofMask
     let pub := inp.publicInputAt K.cvk V ms
-    let (cvkW, cpW) ← checkedKeyFor CW 1 σW W
+    let (cvkW, cpW) ← IO.ofExcept (W.checkedAt σW.k 1)
     let cpR : Kimchi.Verifier.KimchiProof CW 1 15 := hW ▸ cpW
     let L ← basisFor CW "pallas" σW 1 W
     let kv ← memoized ctx.memo.verify (memoKey CW "pallas" σW.k W pub) fun _ =>
       Kimchi.Verifier.kimchiVerifyWith CW σW K.cvk L cpW pub
-    let (cvkS', cpS') ← checkedKeyFor CS ncs σS S'
+    let (cvkS', cpS') ← IO.ofExcept (S'.checkedAt σS.k ncs)
     let LS' ← basisFor CS "vesta" σS ncs S'
     hyps := hyps ++
       [(s!"slot {i}: its key is its wrap proof's",
@@ -358,7 +351,7 @@ def wrapConclusions (ctx : VerdictCtx) {bp mpv nc n ncs : ℕ}
   let some cvk := keys[b]? | throw (IO.userError s!"no step key for branch {b}")
   let some KStep := Pickles.Key.check cvk | return [("its step key is checked", false)]
   let pub := Pickles.wrapPublicInput σS KStep.cvk V ver.statement
-  let cpV ← checkedFor CS nc σS S0
+  let (_, cpV) ← IO.ofExcept (S0.checkedAt σS.k nc)
   let cpR : Kimchi.Verifier.KimchiProof CS nc 16 := hS ▸ cpV
   let L ← basisFor CS "vesta" σS nc S0
   let kv ← memoized ctx.memo.verify (memoKey CS "vesta" σS.k S0 pub) fun _ =>
@@ -388,7 +381,7 @@ def wrapConclusions (ctx : VerdictCtx) {bp mpv nc n ncs : ℕ}
     let .proof Wi _ := prevs[i] | continue
     let some K := Pickles.Key.check k.slots[i].key | continue
     let some sl := fin.slots[mpv - n + i.val]? | continue
-    let (_, cpWi) ← checkedKeyFor CW 1 σW Wi
+    let (_, cpWi) ← IO.ofExcept (Wi.checkedAt σW.k 1)
     let LWi ← basisFor CW "pallas" σW 1 Wi
     hyps := hyps ++
       [(s!"slot {i}: its finalize slot holds its wrap proof's evaluations",
@@ -985,7 +978,8 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
         stepRun.set (some r)
         let concl ← stepConclusions ctx hw kb r.V r.result.1.2 S0 prevs
         verdict s!"{tag}: step circuit" r S0.publicInput concl ((← IO.monoMsNow) - t0)
-      let some W0 := wraps.find? (·.step = some (S0.vkDigest, S0.publicInputKey)) | continue
+      let some W0 := wraps.find? (·.step = some (S0.vkDigest, S0.publicInputKey))
+        | throw (IO.userError s!"{tag}: no wrap proof wraps it")
       covered := (W0.vkDigest, W0.publicInputKey) :: covered
       let wprevs ← exT (wrapPrevsOf w pins W0 prevs)
       let advW ← exT (wrapMainAdviceOf nc b sh.slotWidths pad k.dummy S0 wprevs)
@@ -1067,20 +1061,22 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
   let wrapRuns ← IO.mkRef []
   let stepWrapOuts ← IO.mkRef #[]
   let wrapStepOuts ← IO.mkRef #[]
-  let t0 ← IO.monoMsNow
-  let mut warmed : List String := []
-  for app in apps do
+  let caches ← apps.mapM fun app => do
     let raw ← IO.FS.readFile (cacheDir / s!"{app}.json")
     let (wraps, _) ← IO.ofExcept (Cache.parseFile CW fqSide.endo pallasBase.sqrt? raw)
     let (steps, _) ← IO.ofExcept (Cache.parseFile CS fpSide.endo vestaBase.sqrt? raw)
+    return (app, wraps, steps)
+  let t0 ← IO.monoMsNow
+  let mut warmed : List String := []
+  for (_, wraps, steps) in caches do
     for e in wraps do
-      let ⟨nc, _, _⟩ ← checkedAny CW σW e
+      let ⟨nc, _, _⟩ ← IO.ofExcept (e.checked σW.k)
       let key := s!"pallas/{e.vk.domainLog2}/{nc}/{e.vk.publicCount}"
       unless key ∈ warmed do
         let _ ← basisFor CW "pallas" σW nc e
         warmed := key :: warmed
     for e in steps do
-      let ⟨nc, _, _⟩ ← checkedAny CS σS e
+      let ⟨nc, _, _⟩ ← IO.ofExcept (e.checked σS.k)
       let key := s!"vesta/{e.vk.domainLog2}/{nc}/{e.vk.publicCount}"
       unless key ∈ warmed do
         let _ ← basisFor CS "vesta" σS nc e
@@ -1090,10 +1086,7 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
   let mut jobs : Array (IO Bool) := #[]
   let mut links : Array (IO Bool) := #[]
   let mut uncovered := 0
-  for app in apps do
-    let raw ← IO.FS.readFile (cacheDir / s!"{app}.json")
-    let (wraps, _) ← IO.ofExcept (Cache.parseFile CW fqSide.endo pallasBase.sqrt? raw)
-    let (steps, _) ← IO.ofExcept (Cache.parseFile CS fpSide.endo vestaBase.sqrt? raw)
+  for (app, wraps, steps) in caches do
     let mut covered : List (String × String) := []
     for tag in (← (dir / app).readDir).qsort (·.fileName < ·.fileName) do
       unless tag.path.extension == some "json" do continue
@@ -1145,10 +1138,6 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
     against the cache holds; {links.size} link(s) through stepWrap_kimchiVerify and \
     wrapStep_kimchiVerify; {pairs} adjacent pair(s) through the handover theorems"
 
-/-- The apps `LINKS=all` leaves out: `Chunks4`, whose four-chunk step key needs a `2^18` Lagrange
-basis and the lane's longest runs, while `Chunks2` exercises the same chunking. Named, it runs. -/
-def linksAllSkips : List String := ["Chunks4"]
-
 def main : IO Unit := do
   let some dir ← IO.getEnv "PICKLES_DUMP_DIR"
     | throw (IO.userError "PICKLES_DUMP_DIR is not set")
@@ -1162,8 +1151,7 @@ def main : IO Unit := do
       "../packages/pickles/test/fixtures/proof-cache"
     let names ← if links = "all" then
         apps.toList.filterMapM fun a => do
-          pure (if (← a.path.isDir) && !linksAllSkips.contains a.fileName then some a.fileName
-            else none)
+          pure (if ← a.path.isDir then some a.fileName else none)
       else pure (links.splitOn ",")
     let nJobs := ((← IO.getEnv "LINKS_JOBS").bind String.toNat?).getD 4
     runLinks dir cacheDir names nJobs

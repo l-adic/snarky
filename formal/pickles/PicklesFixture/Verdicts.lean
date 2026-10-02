@@ -11,7 +11,7 @@ import Pickles.TwoHalves
 What the drivers decide of a cached proof beyond its circuits, computed once: the curve's SRS cut
 to the proof's round count, loaded once per count (`PicklesFixture.srsAt`); the key's Lagrange
 points, memoised on disk (`PicklesFixture.basisFor`); the entry's records checked at the SRS
-(`PicklesFixture.checkedAny`), and its SRS and key checked once per key
+(`Kimchi.Fixture.Cache.Entry.checked`), and its SRS and key checked once per key
 (`PicklesFixture.keyFor`); the `kimchiVerify` and `accOk` verdicts several links ask of one
 proof or accumulator, memoised (`PicklesFixture.Memo`); and the carry of a proof's deferred
 obligation into the next proof's old accumulators (`PicklesFixture.carries`), an unlinked
@@ -41,15 +41,6 @@ def basisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (nc : ℕ)
   let memoDir := (← IO.getEnv "LAGRANGE_CACHE_DIR").getD "lagrange-cache"
   Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-k{σ.k}-2^{e.vk.domainLog2}-{nc}c.json" σ nc
     (2 ^ e.vk.domainLog2) e.vk.omega e.vk.publicCount
-
-/-- A cache entry's checked wire records at the SRS `σ`: the records checked at the run's chunk
-count and `σ`'s round count. -/
-def checkedAny (C : Ipa.KimchiCurve) (σ : SRS C.Point) (e : Cache.Entry C) :
-    IO ((nc : ℕ) × Kimchi.Verifier.KimchiVK C nc × Kimchi.Verifier.KimchiProof C nc σ.k) := do
-  let nc := Kimchi.Verifier.Wire.runNc C σ e.vk
-  match e.vk.check nc, e.proof.check nc σ.k with
-  | some cvk, some cp => return ⟨nc, cvk, cp⟩
-  | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
 
 /-- The verdicts several links share, computed once per run: `kimchiVerify` runs the
 `2^k`-point `sg` MSM, and every link that consumes a cached proof verifies it; `accOk` runs one
@@ -86,15 +77,14 @@ def memoized (ref : IO.Ref (Std.HashMap String Bool)) (key : String) (compute : 
 abbrev Checked (C : Ipa.KimchiCurve) := (nc : ℕ) × Pickles.Srs C × Pickles.Key C nc
 
 /-- An entry's checked SRS and key (`Srs.check`, `Key.check`), built once per key and handed
-back for every later entry under the same key. The key is parsed at the run's chunk count
-(`Wire.runNc`), which is the SRS's on its domain (`chunkCount`) by definition. -/
+back for every later entry under the same key. -/
 def keyFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (keys : IO.Ref (List (String × Checked C)))
     (e : Cache.Entry C) : IO (Checked C) := do
   let key := s!"{e.vkDigest}/{e.proof.opening.lr.size}/{e.publicInput.size}"
   if let some E := (← keys.get).lookup key then return E
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let ⟨nc, cvk, _⟩ ← checkedAny C σ e
+  let ⟨nc, cvk, _⟩ ← IO.ofExcept (e.checked σ.k)
   let some S := Pickles.Srs.check σ
     | throw (IO.userError "the SRS breaks an SRS invariant: there is no round or too many for \
         the absorb bound, or the blinding base is the identity")
@@ -106,20 +96,13 @@ def keyFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
   keys.modify ((key, ⟨nc, S, K⟩) :: ·)
   return ⟨nc, S, K⟩
 
-/-- An entry's checked proof at the SRS `σ` and the chunk count `nc`. -/
-def checkedFor (C : Ipa.KimchiCurve) (nc : ℕ) (σ : SRS C.Point)
-    (e : Cache.Entry C) : IO (Kimchi.Verifier.KimchiProof C nc σ.k) := do
-  let ⟨nc', _, cp⟩ ← checkedAny C σ e
-  if h : nc' = nc then return h ▸ cp
-  else throw (IO.userError s!"the entry runs at {nc'} chunks, its key at {nc}")
-
 /-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `accOk` on its
 own, decided once per accumulator: the dummies unlinked accumulators carry repeat across proofs. -/
 def padOkMemo (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (memo : Memo) (e : Cache.Entry C) (slot : ℕ) :
     IO Bool := do
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let ⟨_, _, cp⟩ ← checkedAny C σ e
+  let ⟨_, _, cp⟩ ← IO.ofExcept (e.checked σ.k)
   if h : slot < cp.olds.size then
     let a := cp.olds[slot]
     memoized memo.acc s!"{name}/{σ.k}/{a.sg.x.val}/{a.sg.y.val}/{a.u.toList.map (·.val)}"
@@ -136,8 +119,8 @@ def carries (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option
   let ⟨nc, S, K⟩ ← keyFor C name sqrt loaded keys pred
   unless succ.proof.opening.lr.size = S.σ.k do
     throw (IO.userError s!"round counts differ: {S.σ.k} and {succ.proof.opening.lr.size}")
-  let cp ← checkedFor C nc S.σ pred
-  let ⟨_, _, cp'⟩ ← checkedAny C S.σ succ
+  let (_, cp) ← IO.ofExcept (pred.checkedAt S.σ.k nc)
+  let ⟨_, _, cp'⟩ ← IO.ofExcept (succ.checked S.σ.k)
   if h : slot < cp'.olds.size then
     let L ← basisFor C name S.σ nc pred
     return Pickles.carryWith S.σ K.cvk L cp pred.publicInput cp' ⟨slot, h⟩
