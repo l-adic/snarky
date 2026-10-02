@@ -71,7 +71,7 @@ import Pickles.Constants (roughDomainsLog2, zkRowsForNumChunks)
 import Pickles.DeferredValues (toPlonkMinimal)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Dump.Circuit (comparable, fromCompiledCircuit)
-import Pickles.Dump.Constants (DerivedKey, stepKeyExport, stepMainConstants, wrapKeyExport, wrapMainConstants)
+import Pickles.Dump.Constants (DerivedKey, stepMainConstants, wrapKeyExport, wrapMainConstants)
 import Pickles.Dump.Tag (BranchDump, writeTagDump)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IncrementallyVerifyProof (class StepChunkLayout)
@@ -1917,7 +1917,7 @@ mkRuleEntry rule compiledKeys = do
               (map (map slotKey) slotVKs)
             ruleDump <- recordRule @mpv @r @inputVal @outputVal rule
             pure
-              { stepMain: { circuit, constants, key: stepKeyExport result.verifierIndex }
+              { stepMain: { circuit, constants }
               , rule: ruleDump
               }
         }

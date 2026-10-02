@@ -1,7 +1,8 @@
 -- | The theorems' dump of one tag: its wrap circuit and, per branch, its
 -- | step circuit and rule, each circuit with the constants it was compiled
--- | with and its key. `compileMulti` writes it when its config names a
--- | path; the Lean side rebuilds every circuit from it and compares.
+-- | with, and the wrap circuit's key. `compileMulti` writes it when its
+-- | config names a path; the Lean side rebuilds every circuit from it and
+-- | compares.
 module Pickles.Dump.Tag
   ( CircuitDump
   , BranchDump
@@ -22,23 +23,23 @@ import Pickles.Dump.Constants (KeyExport)
 import Pickles.Prove.RuleDump (RuleDump, encodeRuleDump)
 import Simple.JSON (writeJSON)
 
--- | A circuit as dumped: its constraint system, the constants it bakes in,
--- | and its key.
-type CircuitDump =
+-- | A circuit as dumped: its constraint system and the constants it
+-- | bakes in, with the fields in `r`.
+type CircuitDump r =
   { circuit :: ComparableCircuit
   , constants :: Constants
-  , key :: KeyExport
+  | r
   }
 
 -- | A branch: its step circuit and its rule.
 type BranchDump =
-  { stepMain :: CircuitDump
+  { stepMain :: CircuitDump ()
   , rule :: RuleDump
   }
 
--- | A tag: its wrap circuit and its branches, in rule order.
+-- | A tag: its wrap circuit with its key, and its branches, in rule order.
 type TagDump =
-  { wrapMain :: CircuitDump
+  { wrapMain :: CircuitDump (key :: KeyExport)
   , branches :: Array BranchDump
   }
 

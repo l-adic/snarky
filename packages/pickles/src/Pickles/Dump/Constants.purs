@@ -11,14 +11,13 @@
 -- | (whole, as the proof cache stores it).
 -- |
 -- | `wrapMainConstants`: the constants a `wrap_main_*` circuit bakes in, as its comparison dump
--- | carries them: per branch its slot count, step domain, step key (whole, as
--- | the proof cache stores it) and the Lagrange bases each packed public-input
+-- | carries them: per branch its slot count, step key (whole, as the proof
+-- | cache stores it) and the Lagrange bases each packed public-input
 -- | scalar reads; the blinding `h`, the wrap domain pins, the slot widths and
 -- | the padding challenges.
 module Pickles.Dump.Constants
   ( DerivedKey
   , KeyExport
-  , stepKeyExport
   , wrapKeyExport
   , srsLagrangeAt
   , stepMainConstants
@@ -188,8 +187,7 @@ wrapMainConstants config srs keys slotWidths = do
   pure $ WrapMain
     { h: fPtJson config.blindingH
     , branches: Vector.toUnfoldable $ Vector.generate @branches \b ->
-        branch b (Vector.index config.stepWidths b) (Vector.index config.domainLog2s b)
-          (Vector.index keys b)
+        branch b (Vector.index config.stepWidths b) (Vector.index keys b)
     , pins: map (\slots -> map (map fromEnum) (Vector.toUnfoldable slots :: Array (Maybe _)))
         (Vector.toUnfoldable config.prevWrapDomainPins :: Array _)
     , slotWidths: Vector.toUnfoldable slotWidths :: Array Int
@@ -198,9 +196,8 @@ wrapMainConstants config srs keys slotWidths = do
     }
   where
   -- branch `b`'s table: its column of each scalar's per-branch bases
-  branch b width domainLog2 key =
+  branch b width key =
     { width
-    , domainLog2
     , key: stepKeyExport key.verifierIndex
     , lagrange: Array.range 0 (packedCount - 1) <#> \i ->
         map fPtJson (Vector.toUnfoldable (Vector.index (config.lagrangeTable i) b) :: Array _)

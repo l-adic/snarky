@@ -52,7 +52,6 @@ type Key = { vk :: String, digest :: String }
 -- | A wrap main's branch.
 type WrapBranch =
   { width :: Int -- the rule's slot count
-  , domainLog2 :: Int -- its step domain
   , key :: Key -- its step key
   , lagrange :: Array Chunked -- its table, per public-input cell
   }
