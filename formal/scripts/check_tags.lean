@@ -103,17 +103,6 @@ structure TagSummary where
   /-- Each branch's slots. -/
   slots : List (List SlotSummary)
 
-/-- The chunk count of a step main's slots' step proofs, which the step circuit takes as one count
-for all its slots; a step circuit with no slot finalizes no step proof, so any count builds it. -/
-def slotChunks (stepMain : Json) : Except String ℕ := do
-  let slots ← (← (← constantsOf "stepMain" stepMain).getObjVal? "slots").getArr?
-  let counts ← slots.toList.mapM fun s => do (← s.getObjVal? "numChunks").getNat?
-  match counts with
-  | [] => return 1
-  | c :: cs =>
-    unless cs.all (· == c) do throw s!"the slots' step chunk counts {counts} differ"
-    return c
-
 /-- One branch: its step circuit's comparisons, the premises on its constants, and its slots. -/
 def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (branch : Json) :
     Except String (List (String × Bool) × ℕ × List SlotSummary) := do
@@ -123,19 +112,18 @@ def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (br
     throw s!"the wrap circuit gives the branch {stepWidth} slots, its rule has {n}"
   let stepMain ← branch.getObjVal? "stepMain"
   let raw : Raw Fp ← parseGates (← stepMain.getObjVal? "circuit")
-  let ncs ← slotChunks stepMain
-  let k ← stepMainOf n w ncs stepMain
+  let k ← stepMainOf n w stepMain
   stepMainHyps k h
   let slots := (List.finRange n).map fun i =>
     let s := k.slots[i]
-    { self := s.self, digest := s.key.digest, width := s.source.width w, chunks := ncs
+    { self := s.self, digest := s.key.digest, width := s.source.width w, chunks := s.chunks
       readSize := rule.prevs[i].1.size }
   if hw : w ≤ Pickles.MaxProofsVerified then
     let checks := compareWith (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
-      (fun u => Prod.fst <$> Pickles.stepMainCircuit (w := w) (ncw := 1) (ncs := ncs) (k := 15)
+      (fun u => Prod.fst <$> Pickles.stepMainCircuit (w := w) (ncw := 1) (ncs := k.chunks) (k := 15)
         (ks := Pickles.StepIPARounds) (inVal := Vector Fp rule.inputSize)
         (outVal := Vector Fp rule.publicOutput.size) (fun i => k.slots[i].source)
-        (fun i => k.slots[i].width_le hw) k.h (fopStepParams ncs) k.ownDomains.list
+        (fun i => k.slots[i].width_le hw) k.h (fun i => fopStepParams (k.chunks i)) k.ownDomains
         (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule none) inertStepAdvice u) raw
     return (checks, rule.inputSize + rule.publicOutput.size, slots)
   else throw s!"the tag's width {w} exceeds {Pickles.MaxProofsVerified}"
@@ -286,10 +274,10 @@ read as `W`'s (`IvpProof.read_eq`, `commReads_readPt`), `Guards` and `kimchiVeri
 the step proof `W` wrapped (`FopTies`), and that step proof's accumulator is `S0`'s of the slot
 (`carries`, so `accOk` by `Pickles.accOk_of_carryWith`); a base case's accumulator passes `accOk`
 on its own (`padOkMemo`). -/
-def stepConclusions (ctx : VerdictCtx) {n w ncs : ℕ} {ss : Fin n → ℕ} {sa : ℕ}
-    (hw : w ≤ Pickles.MaxProofsVerified) (k : StepMainConsts n ncs) (V : Valuation Fp)
+def stepConclusions (ctx : VerdictCtx) {n w : ℕ} {ss : Fin n → ℕ} {sa : ℕ}
+    (hw : w ≤ Pickles.MaxProofsVerified) (k : StepMainConsts n) (V : Valuation Fp)
     (out : Pickles.StepMainOut n w (Pickles.SlotSource.widths w fun i => k.slots[i].source) ss sa
-      1 ncs 15 Pickles.StepIPARounds)
+      1 k.chunks 15 Pickles.StepIPARounds)
     (S0 : Cache.Entry CS) (prevs : Vector StepPrev n) : IO (List (String × Bool)) := do
   let ⟨σW, hW⟩ ← srsAtK CW "pallas" pallasBase.sqrt? ctx.pallas 15
   let ⟨σS, hS⟩ ← srsAtK CS "vesta" vestaBase.sqrt? ctx.vesta 16
@@ -306,8 +294,8 @@ def stepConclusions (ctx : VerdictCtx) {n w ncs : ℕ} {ss : Fin n → ℕ} {sa 
     let L ← basisFor CW "pallas" σW 1 W
     let kv ← memoized ctx.memo.verify (memoKey CW "pallas" σW.k W pub) fun _ =>
       Kimchi.Verifier.kimchiVerifyWith CW σW K.cvk L cpW pub
-    let (cvkS', cpS') ← IO.ofExcept (S'.checkedAt σS.k ncs)
-    let LS' ← basisFor CS "vesta" σS ncs S'
+    let (cvkS', cpS') ← IO.ofExcept (S'.checkedAt σS.k (k.chunks i))
+    let LS' ← basisFor CS "vesta" σS (k.chunks i) S'
     hyps := hyps ++
       [(s!"slot {i}: its key is its wrap proof's",
          decide (K.cvk.comms = cvkW.comms ∧ K.cvk.domainLog2 = cvkW.domainLog2)),
@@ -339,10 +327,10 @@ proof `S0`'s public input is the one its statement packs to (`wrapPublicInput`),
 `SgOk`), and per slot of `S0` verifying a cached wrap proof, its finalize slot holds that proof's
 evaluations (`FopTies`) and the proof's accumulator is `W0`'s of the slot, past the front pads
 (`carries`); a pad or base case's accumulator passes `accOk` on its own (`padOkMemo`). -/
-def wrapConclusions (ctx : VerdictCtx) {bp mpv nc n ncs : ℕ}
+def wrapConclusions (ctx : VerdictCtx) {bp mpv nc n : ℕ}
     {slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) mpv} (b : ℕ)
     (keys : Vector (Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc) (bp + 1))
-    (k : StepMainConsts n ncs) (V : Valuation Fq)
+    (k : StepMainConsts n) (V : Valuation Fq)
     (fin : Pickles.WrapMainFinalizeOut (bp + 1) mpv nc 15 slotWidths)
     (ver : Pickles.WrapMainVerifyOut mpv nc 15 16) (S0 : Cache.Entry CS) (W0 : Cache.Entry CW)
     (prevs : Vector StepPrev n) : IO (List (String × Bool)) := do
@@ -455,6 +443,8 @@ structure WrapStepOut where
   ncStep : ℕ
   /-- The next rule's slot count. -/
   n : ℕ
+  /-- Each next-step slot's step chunk count. -/
+  ncs : Fin n → ℕ
   /-- The next tag's width. -/
   wNext : ℕ
   /-- Each slot's width. -/
@@ -466,7 +456,8 @@ structure WrapStepOut where
   /-- Each wrap slot's challenge-stack height. -/
   slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) w
   /-- The link's run. -/
-  rk : Pickles.WrapStepRun branches w ncStep 15 Pickles.StepIPARounds n wNext ws ss sa slotWidths
+  rk : Pickles.WrapStepRun branches w ncStep 15 Pickles.StepIPARounds
+    n wNext ws ss ncs sa slotWidths
   /-- The wrap circuit's padding challenges. -/
   dummy : Vector Fq 15
   /-- The slot's wrap key. -/
@@ -550,17 +541,19 @@ active branch's domain being its step key's Lagrange points (`hlag`). -/
 def wrapStepLink {σW : Bulletproof.SRS CW.Point} {hW : σW.k = 15} {hh : σW.h ≠ 0}
     {σS : Bulletproof.SRS CS.Point} (hS : σS.k = Pickles.StepIPARounds) (hhS : σS.h ≠ 0)
     (wr : WrapRun σW hW hh σS) (rule : RuleDump) (vals : Array Fp) {wNext : ℕ}
-    (kb : StepMainConsts rule.prevs.size wr.nc) (hw : wNext ≤ Pickles.MaxProofsVerified)
+    (kb : StepMainConsts rule.prevs.size) (hw : wNext ≤ Pickles.MaxProofsVerified)
     (adv : Pickles.StepMainAdvice rule.prevs.size wNext
-      (Pickles.SlotSource.widths wNext fun i => kb.slots[i].source) 1 wr.nc 15
+      (Pickles.SlotSource.widths wNext fun i => kb.slots[i].source) 1 kb.chunks 15
       Pickles.StepIPARounds (Vector Fp rule.inputSize))
     (rS : MainRun (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp wNext) fun V =>
       Pickles.stepMainCircuit (c := Builder V (KimchiConstraint Fp)) (ncw := 1)
         (outVal := Vector Fp rule.publicOutput.size)
         (fun i => kb.slots[i].source) (fun i => kb.slots[i].width_le hw) (wrapSrs σW hW hh).σ.h
-        (fopStepParams wr.nc) kb.ownDomains.list (Pickles.constPt dummyWrapSgPt) dummyUnfN0
+        (fun i => fopStepParams (kb.chunks i)) kb.ownDomains
+        (Pickles.constPt dummyWrapSgPt) dummyUnfN0
         (replayRule rule (some vals)) adv)
-    (f : WrapRunFacts hS hhS wr) (i : Fin rule.prevs.size) (makes wrapsStep : String × String) :
+    (f : WrapRunFacts hS hhS wr) (i : Fin rule.prevs.size) (hci : kb.chunks i = wr.nc)
+    (makes wrapsStep : String × String) :
     List (String × Bool × Option WrapStepOut) :=
   let SStep := stepSrs σS hS hhS
   let srcs : Fin rule.prevs.size → Pickles.SlotSource 1 Pickles.StepIPARounds :=
@@ -574,8 +567,8 @@ def wrapStepLink {σW : Bulletproof.SRS CW.Point} {hW : σW.k = 15} {hh : σW.h 
   | isTrue hstep, isTrue hwrap =>
       if hn : rule.prevs.size ≤ Pickles.MaxProofsVerified then
       if hmv : CircuitType.Reads rS.V (rS.result.1.2.prevs i).mustVerify true then
-        let D := if kb.slots[i].self then kb.ownDomains else kb.slots[i].domains
-        if hdi : (srcs i).domains kb.ownDomains.list = D.list then
+        let D : Pickles.KnownDomains wr.nc := hci ▸ kb.slots[i].domains
+        if hdi : (srcs i).domains kb.ownDomains = D.list then
         if hwi : Pickles.SlotSource.widths wNext srcs i = wr.w then
           let inp := Pickles.slotInput (kb.slots[i].width_le hw) (Pickles.constPt dummyWrapSgPt)
             (rS.result.1.2.prevs i) (rS.result.1.2.slots i) rS.result.1.2.unfs[i]
@@ -591,7 +584,7 @@ def wrapStepLink {σW : Bulletproof.SRS CW.Point} {hW : σW.k = 15} {hh : σW.h 
               + CircuitType.size Fp (Vector Fp rule.publicOutput.size)
             let rk : Pickles.WrapStepRun (wr.bp + 1) wr.w wr.nc 15 Pickles.StepIPARounds
                 rule.prevs.size wNext (Pickles.SlotSource.widths wNext srcs)
-                (fun i => rule.prevs[i].1.size) sa wr.sh.slotWidths :=
+                (fun i => rule.prevs[i].1.size) kb.chunks sa wr.sh.slotWidths :=
               { Vw := wr.run.V, Vs := rS.V
                 wrapStmt := inputVar (F := Fq)
                   (a := Pickles.StatementPacked Pickles.StepIPARounds (Type1 Fq) Fq)
@@ -600,7 +593,8 @@ def wrapStepLink {σW : Bulletproof.SRS CW.Point} {hW : σW.k = 15} {hh : σW.h 
                 dummySg := Pickles.constPt dummyWrapSgPt, i, hwi, ms }
             let out : WrapStepOut :=
               { branches := wr.bp + 1, w := wr.w, ncStep := wr.nc, n := rule.prevs.size, wNext
-                ws := Pickles.SlotSource.widths wNext srcs, ss := fun i => rule.prevs[i].1.size, sa
+                ws := Pickles.SlotSource.widths wNext srcs, ss := fun i => rule.prevs[i].1.size
+                ncs := kb.chunks, sa
                 slotWidths := wr.sh.slotWidths, rk, dummy := wr.dummy, cvk := kb.slots[i].key, makes
                 wrapsStep
                 premise :=
@@ -618,10 +612,10 @@ def wrapStepLink {σW : Bulletproof.SRS CW.Point} {hW : σW.k = 15} {hh : σW.h 
                     wr.sh.slotWidths wr.advW f.hbr f.hnz
                     (f.hkey ▸ (Pickles.Key.avoids_lagrangeRelations_iff Pickles.pastaShapeVesta
                       SStep.σ f.hnc m).mpr (by rw [← hlag]; exact f.hL))
-                    kb.ownDomains.list D hn f.hww srcs (fun i => kb.slots[i].width_le hw)
+                    kb.ownDomains D hn f.hww srcs (fun i => kb.slots[i].width_le hw)
                     (Pickles.constPt dummyWrapSgPt) dummyUnfN0 rS.V (replayRule rule (some vals))
                     adv
-                    hwrap hstep (by have h := f.hb; rw [eW] at h; exact h) i
+                    hwrap hstep (by have h := f.hb; rw [eW] at h; exact h) i hci
                     (by have h := hmv; rw [eS] at h; exact h) hdi hwi ms
                     (by have h := hms; simp only [inp] at h; rw [eS] at h; exact h)
                     (by have h := htie; simp only [inp] at h; rw [eS] at h; exact h)
@@ -656,8 +650,8 @@ structure StepWrapOut where
   ss : Fin n → ℕ
   /-- The application state's size. -/
   sa : ℕ
-  /-- The slots' step proofs' chunk count. -/
-  ncs : ℕ
+  /-- Each slot's step-proof chunk count. -/
+  ncs : Fin n → ℕ
   /-- The wrap circuit's branch count. -/
   branches : ℕ
   /-- The wrap circuit's step proofs' chunk count. -/
@@ -692,20 +686,21 @@ slot that must verify, every hypothesis is decided on the runs and passed to the
 statement thereby fixes what is decided. The label of the first one failing is returned. The
 application's one open premise is the slot's dumped Lagrange table being its key's points
 (`Fits`). -/
-def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
-    (kb : StepMainConsts rule.prevs.size ncs) (hw : w ≤ Pickles.MaxProofsVerified)
+def stepWrapLink {bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
+    (kb : StepMainConsts rule.prevs.size) (hw : w ≤ Pickles.MaxProofsVerified)
     (σW : Bulletproof.SRS CW.Point) (hk : σW.k = 15) (hh : σW.h ≠ 0)
     (σS : Bulletproof.SRS CS.Point) (sh : WrapMainShapes bp w nc) (dummy : Vector Fq 15)
     (b : Fin (bp + 1))
     (adv : Pickles.StepMainAdvice rule.prevs.size w
-      (Pickles.SlotSource.widths w fun i => kb.slots[i].source) 1 ncs 15 Pickles.StepIPARounds
+      (Pickles.SlotSource.widths w fun i => kb.slots[i].source) 1 kb.chunks 15 Pickles.StepIPARounds
       (Vector Fp rule.inputSize))
     (advW : Pickles.WrapMainAdvice w nc 15 Pickles.StepIPARounds (sh.slotWidths.map Fin.val).sum)
     (rS : MainRun (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w) fun V =>
       Pickles.stepMainCircuit (c := Builder V (KimchiConstraint Fp)) (ncw := 1)
         (outVal := Vector Fp rule.publicOutput.size)
         (fun i => kb.slots[i].source) (fun i => kb.slots[i].width_le hw) (wrapSrs σW hk hh).σ.h
-        (fopStepParams ncs) kb.ownDomains.list (Pickles.constPt dummyWrapSgPt) dummyUnfN0
+        (fun i => fopStepParams (kb.chunks i)) kb.ownDomains
+        (Pickles.constPt dummyWrapSgPt) dummyUnfN0
         (replayRule rule (some vals)) adv)
     (rW : MainRun (a := Pickles.StatementPacked Pickles.StepIPARounds (Type1 Fq) Fq) (b := Unit)
       fun V => Pickles.wrapMainCircuit (c := Builder V (KimchiConstraint Fq))
@@ -772,8 +767,8 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
                 let ms := CircuitType.readVal rS.V inp.proofMask
                 if hms : CircuitType.Reads rS.V inp.proofMask ms then
                   let rk : Pickles.StepWrapRun n w (Pickles.SlotSource.widths w srcs)
-                      (fun i => rule.prevs[i].1.size) _ ncs 15 Pickles.StepIPARounds (bp + 1) nc
-                      sh.slotWidths :=
+                      (fun i => rule.prevs[i].1.size) _ kb.chunks 15 Pickles.StepIPARounds
+                      (bp + 1) nc sh.slotWidths :=
                     { Vg := rS.V, Vs := rW.V, stepOut := rS.result.1.2
                       hws := fun i => kb.slots[i].width_le hw, dummySg := dummyWrapSgPt, i, hn, hw
                       ms, wrapStmt := inputVar (F := Fq)
@@ -787,7 +782,7 @@ def stepWrapLink {ncs bp nc w : ℕ} (rule : RuleDump) (vals : Array Fp)
                       concl := fun hTs => by
                         obtain ⟨cp, ms', hc⟩ := Pickles.stepWrap_kimchiVerify
                           (outVal := Vector Fp rule.publicOutput.size) S rfl
-                            (fopStepParams ncs) kb.ownDomains.list
+                            (fun i => fopStepParams (kb.chunks i)) kb.ownDomains
                             hn hw dummyWrapSgPt hd dummyUnfN0 srcs
                             (fun i => kb.slots[i].width_le hw) rS.V (replayRule rule (some vals))
                             adv rW.V sh.widths σS sh.lagrange sh.keys
@@ -859,14 +854,14 @@ the step proof `rk`'s step circuit makes. `Pickles.WrapStepRun.mem_olds_or_colli
 `rk`'s emission, `rk1`'s consumption and their meeting (`WrapStepRun.Hands`, decided on the two
 runs): under both links' open premises, what `rk` emits is an old accumulator of the step proof
 `rk1` verifies, unless Poseidon collides. The label of the first failing hypothesis is returned. -/
-def wrapStepGlueAt {branches w ncStep n wNext sa : ℕ} {ws ss : Fin n → ℕ}
+def wrapStepGlueAt {branches w ncStep n wNext sa : ℕ} {ws ss ncs : Fin n → ℕ}
     {slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) w}
-    {branches' ncStep' n' wNext' sa' : ℕ} {ws' ss' : Fin n' → ℕ}
+    {branches' ncStep' n' wNext' sa' : ℕ} {ws' ss' ncs' : Fin n' → ℕ}
     {slotWidths' : Vector (Fin (Pickles.MaxProofsVerified + 1)) wNext}
-    (rk : Pickles.WrapStepRun branches w ncStep 15 Pickles.StepIPARounds n wNext ws ss sa
+    (rk : Pickles.WrapStepRun branches w ncStep 15 Pickles.StepIPARounds n wNext ws ss ncs sa
       slotWidths)
-    (rk1 : Pickles.WrapStepRun branches' wNext ncStep' 15 Pickles.StepIPARounds n' wNext' ws' ss'
-      sa' slotWidths')
+    (rk1 : Pickles.WrapStepRun branches' wNext ncStep' 15 Pickles.StepIPARounds
+      n' wNext' ws' ss' ncs' sa' slotWidths')
     (cvk cvk1 : Kimchi.Verifier.KimchiVK CW 1) (dummy dummy1 : Vector Fq 15) (p p1 : Prop)
     (c : p → ∃ (A : Kimchi.Verifier.Accumulator CS Pickles.StepIPARounds)
       (cp : Kimchi.Verifier.KimchiProof CS ncStep Pickles.StepIPARounds),
@@ -892,17 +887,17 @@ def wrapStepGlueAt {branches w ncStep n wNext sa : ℕ} {ws ss : Fin n → ℕ}
 
 /-- `wrapStepGlueAt` once the second link's wrap circuit is seen to be at the first's next width,
 the index the handover shares between them. -/
-def wrapStepGlueCast {branches w ncStep n wNext sa : ℕ} {ws ss : Fin n → ℕ}
+def wrapStepGlueCast {branches w ncStep n wNext sa : ℕ} {ws ss ncs : Fin n → ℕ}
     {slotWidths : Vector (Fin (Pickles.MaxProofsVerified + 1)) w}
-    (rk : Pickles.WrapStepRun branches w ncStep 15 Pickles.StepIPARounds n wNext ws ss sa
+    (rk : Pickles.WrapStepRun branches w ncStep 15 Pickles.StepIPARounds n wNext ws ss ncs sa
       slotWidths)
     (cvk : Kimchi.Verifier.KimchiVK CW 1) (dummy : Vector Fq 15) (p : Prop)
     (c : p → ∃ (A : Kimchi.Verifier.Accumulator CS Pickles.StepIPARounds)
       (cp : Kimchi.Verifier.KimchiProof CS ncStep Pickles.StepIPARounds),
       rk.Emits cvk dummy A ∧ rk.Consumes cvk dummy cp.olds.toList)
-    {branches' w' ncStep' n' wNext' sa' : ℕ} {ws' ss' : Fin n' → ℕ}
+    {branches' w' ncStep' n' wNext' sa' : ℕ} {ws' ss' ncs' : Fin n' → ℕ}
     {slotWidths' : Vector (Fin (Pickles.MaxProofsVerified + 1)) w'}
-    (rk1 : Pickles.WrapStepRun branches' w' ncStep' 15 Pickles.StepIPARounds n' wNext' ws' ss'
+    (rk1 : Pickles.WrapStepRun branches' w' ncStep' 15 Pickles.StepIPARounds n' wNext' ws' ss' ncs'
       sa' slotWidths')
     (cvk1 : Kimchi.Verifier.KimchiVK CW 1) (dummy1 : Vector Fq 15) (p1 : Prop)
     (c1 : p1 → ∃ (A : Kimchi.Verifier.Accumulator CS Pickles.StepIPARounds)
@@ -953,8 +948,7 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
     let rule ← ex (RuleDump.ofJson (← ex (bj.getObjVal? "rule")))
     let n := rule.prevs.size
     let stepMainJ ← ex (bj.getObjVal? "stepMain")
-    let ncs ← ex (slotChunks stepMainJ)
-    let kb ← ex (stepMainOf n w ncs stepMainJ)
+    let kb ← ex (stepMainOf n w stepMainJ)
     let some stepKey := k.keys[b]? | throw (IO.userError s!"{name}: no step key for branch {b}")
     let some pins := k.pins[b]? | throw (IO.userError s!"{name}: no pins for branch {b}")
     let hb' : PLift (b < bp + 1) ←
@@ -978,8 +972,9 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
         let r ← runMain fpSide (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
           (fun V => Pickles.stepMainCircuit (c := Builder V (KimchiConstraint Fp)) (ncw := 1)
             (outVal := Vector Fp rule.publicOutput.size) (fun i => kb.slots[i].source)
-            (fun i => kb.slots[i].width_le hw) (wrapSrs σW hW hh).σ.h (fopStepParams ncs)
-            kb.ownDomains.list (Pickles.constPt dummyWrapSgPt) dummyUnfN0
+            (fun i => kb.slots[i].width_le hw) (wrapSrs σW hW hh).σ.h
+            (fun i => fopStepParams (kb.chunks i))
+            kb.ownDomains (Pickles.constPt dummyWrapSgPt) dummyUnfN0
             (replayRule rule (some vals)) adv) ()
         stepRun.set (some r)
         let concl ← stepConclusions ctx hw kb r.V r.result.1.2 S0 prevs
@@ -1035,11 +1030,9 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
             match wrapRunFacts hS hhS wr with
             | .error label => [(label, false, none)]
             | .ok f =>
-              if h : ncs = wr.nc then
-                by
-                  subst h
-                  exact wrapStepLink hS hhS wr rule vals kb hw adv rS f i
-                    (S0.vkDigest, S0.publicInputKey) (S'.vkDigest, S'.publicInputKey)
+              if h : kb.chunks i = wr.nc then
+                wrapStepLink hS hhS wr rule vals kb hw adv rS f i h
+                  (S0.vkDigest, S0.publicInputKey) (S'.vkDigest, S'.publicInputKey)
               else [(s!"its step proofs' chunk count is the wrap circuit's", false, none)]
           let failed := hyps.filter (!·.2.1)
           wrapStepOuts.modify (· ++ (hyps.filterMap (·.2.2)).toArray.map fun o =>

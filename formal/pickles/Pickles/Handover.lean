@@ -76,7 +76,7 @@ def WrapMsgCollision {branches w ncStep kw ks branches' w' ncStep' : ℕ}
 
 /-- The step message a step circuit sends (`out`, under `V`) and the one a later slot rebuilds
 (`inp` with mask `ms`, under `V'`, over the key `cvk`) read differently, but hash alike. -/
-def StepMsgCollision {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ks s' k' ncs' w' : ℕ}
+def StepMsgCollision {n w : ℕ} {ws ss ncs : Fin n → ℕ} {sa kw ks s' k' ncs' w' : ℕ}
     (V : Valuation Fp) (out : StepMainOut n w ws ss sa 1 ncs kw ks) (V' : Valuation Fp)
     (inp : VerifyOneInput s' ks k' 1 ncs' w') (ms : Vector Bool w')
     (cvk : KimchiVK IpaPallas.curve 1) : Prop :=
@@ -94,7 +94,7 @@ def StepMsgCollision {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ks s' k' ncs
 
 /-- One link's run, as `wrapStep_kimchiVerify` names it: a wrap circuit's statement and cells,
 the next step circuit's cells, and the slot of it that verifies the wrap proof. -/
-structure WrapStepRun (branches w ncStep kw ks n wNext : ℕ) (ws ss : Fin n → ℕ) (sa : ℕ)
+structure WrapStepRun (branches w ncStep kw ks n wNext : ℕ) (ws ss ncs : Fin n → ℕ) (sa : ℕ)
     (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w) where
   /-- The wrap circuit's valuation. -/
   Vw : Valuation Fq
@@ -107,7 +107,7 @@ structure WrapStepRun (branches w ncStep kw ks n wNext : ℕ) (ws ss : Fin n →
   /-- The wrap circuit's verify cells. -/
   wrapVerifyOut : WrapMainVerifyOut w ncStep kw ks
   /-- The step circuit's cells. -/
-  stepOut : StepMainOut n wNext ws ss sa 1 ncStep kw ks
+  stepOut : StepMainOut n wNext ws ss sa 1 ncs kw ks
   /-- The rule verifies at most the tag's `wNext` slots. -/
   hn : n ≤ wNext
   /-- Each slot verifies at most `MaxProofsVerified` accumulators. -/
@@ -123,12 +123,12 @@ structure WrapStepRun (branches w ncStep kw ks n wNext : ℕ) (ws ss : Fin n →
 
 namespace WrapStepRun
 
-variable {branches w ncStep kw ks n wNext sa : ℕ} {ws ss : Fin n → ℕ}
+variable {branches w ncStep kw ks n wNext sa : ℕ} {ws ss ncs : Fin n → ℕ}
   {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
-  (r : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
+  (r : WrapStepRun branches w ncStep kw ks n wNext ws ss ncs sa slotWidths)
 
 /-- The slot's input cells. -/
-def inp : VerifyOneInput (ss r.i) ks kw 1 ncStep (ws r.i) :=
+def inp : VerifyOneInput (ss r.i) ks kw 1 (ncs r.i) (ws r.i) :=
   slotInput (r.hws r.i) r.dummySg (r.stepOut.prevs r.i) (r.stepOut.slots r.i) r.stepOut.unfs[r.i]
     r.stepOut.msgs[r.i]
 
@@ -159,37 +159,40 @@ end WrapStepRun
 
 /-! ## Two links -/
 
-variable {branches w ncStep kw ks n wNext sa : ℕ} {ws ss : Fin n → ℕ}
+variable {branches w ncStep kw ks n wNext sa : ℕ} {ws ss ncs : Fin n → ℕ}
   {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
-  {branches' ncStep' ks' n' wNext' sa' : ℕ} {ws' ss' : Fin n' → ℕ}
+  {branches' ncStep' ks' n' wNext' sa' : ℕ} {ws' ss' ncs' : Fin n' → ℕ}
   {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) wNext}
 
 /-- The link `rk` hands its step proof to the next link `rk1`: the step proof `rk`'s step circuit
 makes is the one `rk1`'s wrap circuit verifies, and `rk1`'s slot reads a previous statement of the
 size of `rk`'s application state. -/
-def WrapStepRun.Hands (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
-    (rk1 : WrapStepRun branches' wNext ncStep' kw ks' n' wNext' ws' ss' sa' slotWidths') : Prop :=
+def WrapStepRun.Hands (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss ncs sa slotWidths)
+    (rk1 : WrapStepRun branches' wNext ncStep' kw ks' n' wNext' ws' ss' ncs' sa' slotWidths') :
+    Prop :=
   CircuitType.Reads rk.Vs rk.stepOut.out
     (StepStatement.ofWrap rk1.Vw rk1.wrapVerifyOut.statement) ∧
   ss' rk1.i = sa
 
 /-- The next link's wrap slot of the slot `rk.i`: the step statement front-pads. -/
-def WrapStepRun.slotIndex (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths) :
-    Fin wNext :=
+def WrapStepRun.slotIndex
+    (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss ncs sa slotWidths) : Fin wNext :=
   ⟨wNext - n + rk.i, by have := rk.hn; omega⟩
 
 /-- The wrap message `rk` sends and the one the next link `rk1` rebuilds for it collide
 (`WrapMsgCollision`). -/
-def WrapStepRun.WrapCollision (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
-    (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' sa' slotWidths')
+def WrapStepRun.WrapCollision
+    (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss ncs sa slotWidths)
+    (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' ncs' sa' slotWidths')
     (dummy : Vector Fq kw) : Prop :=
   WrapMsgCollision rk.Vw rk.wrapVerifyOut rk.wrapFinalizeOut rk1.Vw rk1.wrapFinalizeOut
     rk.slotIndex dummy
 
 /-- The step message `rk` sends and the one the next link `rk1`'s slot rebuilds collide
 (`StepMsgCollision`). -/
-def WrapStepRun.StepCollision (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
-    (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' sa' slotWidths')
+def WrapStepRun.StepCollision
+    (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss ncs sa slotWidths)
+    (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' ncs' sa' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1) : Prop :=
   StepMsgCollision rk.Vs rk.stepOut rk1.Vs rk1.inp rk1.ms cvk
 
@@ -408,7 +411,7 @@ nothing. -/
 private theorem wrapMsgDigest_eq
     {branches mpv ncStep kw ks : ℕ} {slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv}
     {branches' w ncStep' ks' : ℕ} {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) w}
-    {n : ℕ} {ws ss : Fin n → ℕ} {sa ncs ksS s k' ncs' w'' : ℕ}
+    {n : ℕ} {ws ss ncs : Fin n → ℕ} {sa ksS s k' ncs' w'' : ℕ}
     {Vw Vw' : Valuation Fq} {Vg : Valuation Fp} {dummy : Vector Fq kw}
     {stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)}
     {fin : WrapMainFinalizeOut branches mpv ncStep kw slotWidths}
@@ -449,7 +452,7 @@ private theorem wrapMsgDigest_eq
 
 /-- A step message and a slot's rebuild of it hash alike, when a wrap circuit carries the
 message's digest from the step circuit's statement to the public input the slot verifies. -/
-private theorem hash_stepInput_eq {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ksS : ℕ}
+private theorem hash_stepInput_eq {n w : ℕ} {ws ss ncs : Fin n → ℕ} {sa kw ksS : ℕ}
     {branches ncStep ks : ℕ} {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
     {s k' ncs' w' : ℕ} {Vg V' : Valuation Fp} {Vw : Valuation Fq} {dummy : Vector Fq kw}
     {stepOut : StepMainOut n w ws ss sa 1 ncs kw ksS}
@@ -541,8 +544,8 @@ link `rk1` consumes the olds of the step proof `cp` that `rk`'s step circuit mad
 of `cp`'s olds, which `cp`'s batch opens first (`runStreamP_olds`), unless Poseidon collides on
 the messages passed between the links. -/
 theorem WrapStepRun.mem_olds_or_collision
-    (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss sa slotWidths)
-    (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' sa' slotWidths')
+    (rk : WrapStepRun branches w ncStep kw ks n wNext ws ss ncs sa slotWidths)
+    (rk1 : WrapStepRun branches' wNext ncStep' kw ks n' wNext' ws' ss' ncs' sa' slotWidths')
     (cvk : KimchiVK IpaPallas.curve 1)
     (cvk1 : KimchiVK IpaPallas.curve 1)
     (dummy : Vector Fq kw)
@@ -625,7 +628,8 @@ theorem WrapStepRun.mem_olds_or_collision
 
 /-- One link's run, as `stepWrap_kimchiVerify` names it: a step circuit's cells and its slot that
 verifies a wrap proof, and the next wrap circuit's statement and cells. -/
-structure StepWrapRun (n w : ℕ) (ws ss : Fin n → ℕ) (sa ncs kw ks branches ncStep : ℕ)
+structure StepWrapRun (n w : ℕ) (ws ss : Fin n → ℕ) (sa : ℕ) (ncs : Fin n → ℕ)
+    (kw ks branches ncStep : ℕ)
     (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w) where
   /-- The step circuit's valuation. -/
   Vg : Valuation Fp
@@ -654,12 +658,12 @@ structure StepWrapRun (n w : ℕ) (ws ss : Fin n → ℕ) (sa ncs kw ks branches
 
 namespace StepWrapRun
 
-variable {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ks branches ncStep : ℕ}
+variable {n w : ℕ} {ws ss ncs : Fin n → ℕ} {sa kw ks branches ncStep : ℕ}
   {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
   (r : StepWrapRun n w ws ss sa ncs kw ks branches ncStep slotWidths)
 
 /-- The slot's input cells. -/
-def inp : VerifyOneInput (ss r.i) ks kw 1 ncs (ws r.i) :=
+def inp : VerifyOneInput (ss r.i) ks kw 1 (ncs r.i) (ws r.i) :=
   slotInput (r.hws r.i) (constPt r.dummySg) (r.stepOut.prevs r.i) (r.stepOut.slots r.i)
     r.stepOut.unfs[r.i] r.stepOut.msgs[r.i]
 
@@ -690,9 +694,9 @@ end StepWrapRun
 
 section StepWrapLinks
 
-variable {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncs kw ks branches ncStep : ℕ}
+variable {n w : ℕ} {ws ss ncs : Fin n → ℕ} {sa kw ks branches ncStep : ℕ}
   {slotWidths : Vector (Fin (MaxProofsVerified + 1)) w}
-  {n' w' : ℕ} {ws' ss' : Fin n' → ℕ} {sa' ncs' branches' ncStep' : ℕ}
+  {n' w' : ℕ} {ws' ss' ncs' : Fin n' → ℕ} {sa' branches' ncStep' : ℕ}
   {slotWidths' : Vector (Fin (MaxProofsVerified + 1)) w'}
 
 /-- The link `rk` hands its wrap proof to the next link `rk1` through the wrap-step link between

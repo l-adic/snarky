@@ -87,3 +87,8 @@ root = "scripts.check_cs"
 [[lean_exe]]
 name = "check-tags"
 root = "scripts.check_tags"
+
+# A synthetic mixed-chunk rule, using constants from the selected tag dump.
+[[lean_exe]]
+name = "check-slot-chunks"
+root = "scripts.check_slot_chunks"
