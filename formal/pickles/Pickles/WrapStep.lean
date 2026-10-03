@@ -130,7 +130,7 @@ private theorem claimsCast_of_reads {ks : ℕ} {Vw : Valuation Fq} {Vs : Valuati
 
 /-- The accumulator a wrap circuit and the next step circuit emit for the step proof they
 verify: the wrap message's commitment, with the step message's challenges at slot `i`. -/
-def WrapStep.emittedAccumulator {branches mpv ncStep kw ks n wNext sa ncw ncs k : ℕ}
+def WrapStep.emittedAccumulator {branches mpv ncStep kw ks n wNext sa ncw k : ℕ} {ncs : Fin n → ℕ}
     {slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv} {ws ss : Fin n → ℕ}
     (Vw : Valuation Fq) (Vs : Valuation Fp) (i : Fin n)
     (verifyOut : WrapMainVerifyOut mpv ncStep kw ks)
@@ -426,7 +426,7 @@ with its guards derived from `StepKeyLayout`. -/
 theorem wrapStep_kimchiVerify
     -- the next rule's `n` slots, its tag's `wNext`; this tag's `w`, the wrap circuit's slots; the
     -- wrap circuit's `branches`, the step proof it verifies at `ncStep` chunks
-    {n wNext w branches ncStep : ℕ}
+    {n wNext w branches ncStep : ℕ} {ncs : Fin n → ℕ}
     [NeZero branches]
     -- the next rule's input and output, as values and as cells
     {inVal inVar outVal outVar : Type}
@@ -500,7 +500,7 @@ theorem wrapStep_kimchiVerify
         CircuitM Fp (Builder Vs (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) ×
           outVar))
     -- the next step circuit's advice
-    (adv : StepMainAdvice n wNext (SlotSource.widths wNext srcs) 1 ncStep σ.k SStep.σ.k inVal) :
+    (adv : StepMainAdvice n wNext (SlotSource.widths wNext srcs) 1 ncs σ.k SStep.σ.k inVal) :
     -- the compiled wrap circuit, over the branches' keys and domains, the Lagrange tables and the
     -- SRS's blinding base
     let wrap :=
@@ -523,7 +523,7 @@ theorem wrapStep_kimchiVerify
           srcs
           hws
           σ.h
-          (FopParams.of IpaVesta.curve ncStep SStep.σ.k Linearization.fpTokens)
+          (fun j => FopParams.of IpaVesta.curve (ncs j) SStep.σ.k Linearization.fpTokens)
           domains
           dummySg
           dummyUnf
@@ -542,8 +542,8 @@ theorem wrapStep_kimchiVerify
     let wrapVerifyOut := wrap.result.1.2.2
     -- the wrap circuit's branch index reads as `b`
     wrapFinalizeOut.whichBranch.val Vw = (b : Fq) →
-    -- slot `i` must verify
-    ∀ i : Fin n,
+    -- slot `i` finalizes this wrap circuit's step proofs and must verify
+    ∀ (i : Fin n) (hci : ncs i = ncStep),
       CircuitType.Reads Vs (stepOut.prevs i).mustVerify true →
       -- it finalizes over key `b`'s domains, at this tag's width
       (srcs i).domains domains = D.list →
@@ -568,7 +568,9 @@ theorem wrapStep_kimchiVerify
             cp ∧
           OldsRead Vw wrapVerifyOut.cells.sgOld cp oldsW ∧
           -- the next step circuit's finalize cells hold `cp`'s evaluations and old challenges
-          FopTies SStep.σ stepKeys[b] cp pub (inp.finalizedHalf Vs) ∧
+          FopTies SStep.σ stepKeys[b] cp pub
+            ((hci ▸ inp : VerifyOneInput (ss i) SStep.σ.k σ.k 1 ncStep
+              (SlotSource.widths wNext srcs i)).finalizedHalf Vs) ∧
           -- the link emits `cp`'s deferred obligation, as its outgoing messages carry it
           WrapStep.emittedAccumulator Vw Vs i wrapVerifyOut wrapFinalizeOut stepOut
             = ⟨cp.opening.sg, wireChallenges SStep.σ stepKeys[b] cp pub⟩ ∧
@@ -596,28 +598,31 @@ theorem wrapStep_kimchiVerify
     exact hlag
   intro wrap step hwrap hstep
   rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _]
-  intro stepOut wrapStmt wrapFinalizeOut wrapVerifyOut hb i hmv hdi hwi inp ms hms htie
+  intro stepOut wrapStmt wrapFinalizeOut wrapVerifyOut hb i hci
+  cases hci
+  intro hmv hdi hwi inp ms hms htie
   rw [← hkey]
   -- the step side: slot `i` finalizes, over the domain its branch data names; a slot over
   -- branch `b`'s domains reads as its key's scalar half
   obtain ⟨-, -, hscal, -, -, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
     (stepMain_reads (outVal := outVal) (ks := SStep.σ.k) σ
-      (FopParams.of IpaVesta.curve ncStep SStep.σ.k Linearization.fpTokens) domains
+      (fun j => FopParams.of IpaVesta.curve (ncs j) SStep.σ.k Linearization.fpTokens) domains
       SStep.rounds_small srcs
-      (fun j inp e => (srcs j).domains domains = D.list → inp.ScalarReads SStep.σ KStep.cvk Vs e)
+      (fun j inp e => ∀ (K : Key IpaVesta.curve (ncs j)) (Ds : KnownDomains (ncs j)),
+        (srcs j).domains domains = Ds.list → inp.ScalarReads SStep.σ K.cvk Vs e)
       (fun j vk inp => by
         rw [builder_spec_iff]
-        intro nv hsat hmsk hmv' h1 hdj
+        intro nv hsat hmsk hmv' h1 K Ds hdj
         rw [hdj] at hsat h1 ⊢
-        exact (builder_spec_iff _ _).mp (verifyOne_scalarReads SStep KStep D (hws j)
+        exact (builder_spec_iff _ _).mp (verifyOne_scalarReads SStep K Ds (hws j)
           (verifyProofWith σ.h (srcs j).lagrange) vk inp) nv hsat hmsk hmv' h1)
       hn hws dummySg dummyUnf rule adv
       (by rw [hσk, hE]; decide))
       0 (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv
   have hhashS := ((builder_spec_iff _ _).mp
     (stepMain_out (outVal := outVal) srcs hws σ.h
-      (FopParams.of IpaVesta.curve ncStep SStep.σ.k Linearization.fpTokens) domains dummySg
-      dummyUnf rule adv) 0
+      (fun j => FopParams.of IpaVesta.curve (ncs j) SStep.σ.k Linearization.fpTokens)
+      domains dummySg dummyUnf rule adv) 0
     (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))).2.2
   -- the slot is at this tag's width
   subst hwi
@@ -627,7 +632,7 @@ theorem wrapStep_kimchiVerify
     slotWidths advW hbr b (by simp [stepKeyCells, hkey]) hlagb
     rfl hnz havoidS hlog hw Vs hwrap hb dummySg (stepOut.prevs i) (stepOut.slots i) stepOut.unfs[i]
         stepOut.msgs[i] _
-    (hscal hdi) n0 ms0 hn0 hdv hmsR ms hms htie
+    (hscal KStep D hdi) n0 ms0 hn0 hdv hmsR ms hms htie
   have hguards : Guards IpaVesta.curve KStep.cvk cp
       (wrapPublicInput SStep.σ KStep.cvk Vw wrapVerifyOut.statement) := by
     constructor

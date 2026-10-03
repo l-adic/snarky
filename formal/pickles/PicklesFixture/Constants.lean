@@ -214,8 +214,10 @@ def wrapMainDumps : List (String × ℕ × ℕ × ℕ) :=
     ("wrap_main_tree_proof_return_circuit", 0, 2, 1),
     ("wrap_main_two_phase_chain_circuit", 1, 1, 1) ]
 
-/-- One slot of a `step_main_*` dump's constants, the step proofs it finalizes at `ncs` chunks. -/
-structure StepSlotConsts (ncs : ℕ) where
+/-- One slot of a step circuit's constants, including its own step chunk count. -/
+structure StepSlotConsts where
+  /-- The chunk count of the step proofs this slot finalizes. -/
+  chunks : ℕ
   /-- Whether the slot verifies this tag's proofs rather than another's. -/
   self : Bool
   /-- The wrap key the slot verifies against, checked at the wrap SRS (`checkedKey`). -/
@@ -225,29 +227,33 @@ structure StepSlotConsts (ncs : ℕ) where
   /-- The slot's width, at most `MaxProofsVerified`. -/
   width : Fin (Pickles.MaxProofsVerified + 1)
   /-- Its candidate step domains. -/
-  domains : Pickles.KnownDomains ncs
+  domains : Pickles.KnownDomains chunks
   /-- The Lagrange bases its public-input commitment reads, one per packed statement cell. -/
   lagrange : Pickles.SlotLagrange 1 Pickles.StepIPARounds
 
-/-- The constants of a `step_main_*` dump with `n` slots, whose step proofs are at `ncs` chunks:
-the blinding `h`, each slot's, and this compile's own step domains (its self slots'). -/
-structure StepMainConsts (n ncs : ℕ) where
+/-- A step circuit's constants: the blinding base, each slot's constants at its own chunk
+count, and the shared candidate domains of its Self slots. -/
+structure StepMainConsts (n : ℕ) where
   /-- The blinding base. -/
   h : XhatStepCurve.Point
   /-- Each slot's constants, in the rule's order. -/
-  slots : Vector (StepSlotConsts ncs) n
+  slots : Vector StepSlotConsts n
   /-- This compile's own step domains. -/
-  ownDomains : Pickles.KnownDomains ncs
+  ownDomains : List (Pickles.KnownDomain Fp)
+
+/-- Each slot's step chunk count, in the rule's slot order. -/
+def StepMainConsts.chunks {n : ℕ} (k : StepMainConsts n) (i : Fin n) : ℕ :=
+  k.slots[i].chunks
 
 /-- A slot's source: an external slot carries its checked wrap key's commitments, its Lagrange
 bases and its candidate domains. -/
-def StepSlotConsts.source {ncs : ℕ} (s : StepSlotConsts ncs) :
+def StepSlotConsts.source (s : StepSlotConsts) :
     Pickles.SlotSource 1 Pickles.StepIPARounds :=
   if s.self then .self s.lagrange
   else .external s.key.comms s.lagrange s.width.val s.domains.list
 
 /-- A slot's width is at most `MaxProofsVerified` when the tag's is. -/
-theorem StepSlotConsts.width_le {ncs : ℕ} (s : StepSlotConsts ncs) {w : ℕ}
+theorem StepSlotConsts.width_le (s : StepSlotConsts) {w : ℕ}
     (hw : w ≤ Pickles.MaxProofsVerified) :
     s.source.width w ≤ Pickles.MaxProofsVerified := by
   unfold StepSlotConsts.source
@@ -255,17 +261,16 @@ theorem StepSlotConsts.width_le {ncs : ℕ} (s : StepSlotConsts ncs) {w : ℕ}
   · exact hw
   · exact Nat.le_of_lt_succ s.width.isLt
 
-/-- A step main's constants (`stepMain`), with `n` slots at the tag's width `w`, every slot's step
-proofs at `ncs` chunks: a self slot's width must be `w`, and the self slots share this compile's
-step domains. Side-loaded slots are outside this corpus. -/
-def stepMainOf (n w ncs : ℕ) (j : Json) : Except String (StepMainConsts n ncs) := do
+/-- A step main's constants (`stepMain`), with `n` slots at the tag's width `w`, each slot's step
+proofs at its declared chunk count: a self slot's width must be `w`, and the self slots share
+this compile's step chunk count and domains. Side-loaded slots are outside this corpus. -/
+def stepMainOf (n w : ℕ) (j : Json) : Except String (StepMainConsts n) := do
   let c ← constantsOf "stepMain" j
-  let domains (ls : List ℕ) : Except String (Pickles.KnownDomains ncs) := do
+  let domains (ncs : ℕ) (ls : List ℕ) : Except String (Pickles.KnownDomains ncs) := do
     let some d := Pickles.KnownDomains.ofList? ncs ls | throw s!"step domains {ls} are no domains"
     pure d
-  let slot (j : Json) : Except String (StepSlotConsts ncs) := do
+  let slot (j : Json) : Except String StepSlotConsts := do
     let chunks ← (← j.getObjVal? "numChunks").getNat?
-    unless chunks = ncs do throw s!"{chunks} chunks, expected {ncs}"
     let wd ← (← j.getObjVal? "width").getNat?
     let some width := (if h : wd < Pickles.MaxProofsVerified + 1 then some ⟨wd, h⟩ else none)
       | throw s!"width {wd} above MaxProofsVerified"
@@ -278,8 +283,8 @@ def stepMainOf (n w ncs : ℕ) (j : Json) : Except String (StepMainConsts n ncs)
     let key ← checkedKey Bulletproof.IpaPallas.curve Pickles.WrapIPARounds 1
       (← j.getObjVal? "key")
     if hlayout : Pickles.WrapKeyLayout key then
-      pure { self, width, key, layout := hlayout
-             domains := ← domains (← FixtureKit.parseArrOf (fun j => j.getNat?)
+      pure { chunks, self, width, key, layout := hlayout
+             domains := ← domains chunks (← FixtureKit.parseArrOf (fun j => j.getNat?)
                (← j.getObjVal? "domains")).toList
              lagrange := ← do
                let pts ← FixtureKit.parseArrOf (chunksOf XhatStepCurve 1)
@@ -292,10 +297,15 @@ def stepMainOf (n w ncs : ℕ) (j : Json) : Except String (StepMainConsts n ncs)
   let slots ← FixtureKit.parseArrOf slot (← c.getObjVal? "slots")
   let some slots := (if h : slots.size = n then some (⟨slots, h⟩ : Vector _ n) else none)
     | throw s!"{slots.size} slots, expected {n}"
-  let own := (slots.toList.filter (·.self)).map (·.domains.log2s)
-  unless own.all (· == own.headD []) do throw s!"self slots disagree on step domains {own}"
-  pure { h := ← Bulletproof.Fixture.parsePt XhatStepCurve (← c.getObjVal? "h"), slots,
-         ownDomains := ← domains (own.headD []) }
+  let own := slots.toList.filter (·.self)
+  let ownDomains ← match own with
+    | [] => pure []
+    | first :: rest =>
+      unless rest.all (fun s =>
+          s.chunks == first.chunks && s.domains.log2s == first.domains.log2s) do
+        throw "self slots disagree on step chunk counts or domains"
+      pure first.domains.list
+  pure { h := ← Bulletproof.Fixture.parsePt XhatStepCurve (← c.getObjVal? "h"), slots, ownDomains }
 
 /-- The dummy `sg_old` (PS `dummyWrapSg`), a point of the wrap proofs' curve. -/
 def dummyWrapSgPt : Bulletproof.IpaPallas.curve.Point :=
