@@ -122,7 +122,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     -- Every prev is round-tripped through serialization before it is
     -- consumed, so the chain closes only if that is faithful.
-    let dummies = mkWidthDummies pallasSrs vestaSrs
+    let dummies = mkWidthDummies pallasSrs
 
     -- The same NRR proof fills slot 0 of every tree step, so it is
     -- round-tripped and verified once against its own verifier.

@@ -68,7 +68,6 @@ import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Prove.RuleDump (ruleWitness)
 import Pickles.Step.Advice (StepAdvice(..))
-import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, mkPrevValues)
@@ -152,18 +151,12 @@ extractWrapVKCommsAdvice vk =
 -- | `max_proofs_verified`) up to the compile-wide `mpvMax`. Hashes the
 -- | dummy step sg against `PaddedLength` copies of the dummy expanded
 -- | wrap challenges, then casts the digest across fields.
-mkDummyMsgWrapHash
-  :: Dummy.BaseCaseDummies
-  -> CRS PallasG
-  -> CRS VestaG
-  -> F StepField
-mkDummyMsgWrapHash bcd pallasSrs vestaSrs =
+mkDummyMsgWrapHash :: AffinePoint WrapField -> F StepField
+mkDummyMsgWrapHash dummyStepSg =
   let
-    sgValues = Dummy.computeDummySgValues bcd pallasSrs vestaSrs
-
     msgWrapHashWrap = hashMessagesForNextWrapProofPure dummyIpaChallenges.wrapExpanded
       ( MessagesForNextWrapProof
-          { challengePolynomialCommitment: sgValues.ipa.step.sg
+          { challengePolynomialCommitment: dummyStepSg
           , oldBulletproofChallenges:
               Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
           }

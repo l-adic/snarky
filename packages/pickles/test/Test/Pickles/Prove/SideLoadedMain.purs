@@ -192,7 +192,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     let BranchProver chainProver = fst parent.provers
 
-    let dummies = mkWidthDummies pallasSrs vestaSrs
+    let dummies = mkWidthDummies pallasSrs
 
     -- The parent's prev is the reconstruction, not the original, so
     -- the prove below only succeeds if the round trip is faithful.

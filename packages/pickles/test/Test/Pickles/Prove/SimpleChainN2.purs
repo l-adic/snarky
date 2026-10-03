@@ -97,7 +97,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
 
     -- Every prev is round-tripped through serialization before it is
     -- consumed, so the chain closes only if that is faithful.
-    let dummies = mkWidthDummies pallasSrs vestaSrs
+    let dummies = mkWidthDummies pallasSrs
 
     let
       runStep
