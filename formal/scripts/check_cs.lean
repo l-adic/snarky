@@ -1753,15 +1753,15 @@ reversed and repeated against the same dump. -/
 /-- A `step_main_*` target at the tag's width `w`: `Pickles.stepMain` at the dump's constants,
 after `adjust`, with the dump's rule replayed. -/
 def replayedStepMain (w : ℕ) (hw : w ≤ Pickles.MaxProofsVerified)
-    (adjust : {n : ℕ} → StepMainConsts n 1 → Except String (StepMainConsts n 1) := pure) :
+    (adjust : {n : ℕ} → StepMainConsts n → Except String (StepMainConsts n) := pure) :
     Comparison := fun j => do
   let rule ← RuleDump.ofJson (← j.getObjVal? "rule")
-  let k ← adjust (← stepMainOf rule.prevs.size w 1 j)
+  let k ← adjust (← stepMainOf rule.prevs.size w j)
   stepTarget (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
-    (fun u => Prod.fst <$> Pickles.stepMainCircuit (w := w) (ncw := 1) (ncs := 1) (k := 15)
+    (fun u => Prod.fst <$> Pickles.stepMainCircuit (w := w) (ncw := 1) (ncs := k.chunks) (k := 15)
       (ks := Pickles.StepIPARounds) (inVal := Vector Fp rule.inputSize)
       (outVal := Vector Fp rule.publicOutput.size) (fun i => k.slots[i].source)
-      (fun i => k.slots[i].width_le hw) k.h (fopStepParams 1) k.ownDomains.list
+      (fun i => k.slots[i].width_le hw) k.h (fun i => fopStepParams (k.chunks i)) k.ownDomains
       (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule none) inertStepAdvice u) j
 
 /-! ## The wrap side's `incrementally_verify_proof`
@@ -2155,7 +2155,7 @@ def main : IO Unit := do
       replayedStepMain 2 (by decide) fun {n} k => do
         if h : 0 < n then
           let s0 := k.slots[0]
-          let d : Pickles.KnownDomains 1 :=
+          let d : Pickles.KnownDomains s0.chunks :=
             { log2s := s0.domains.log2s.reverse ++ s0.domains.log2s
               log2s_le := fun x hx => s0.domains.log2s_le x (by simpa using hx)
               log2s_zkRows := fun x hx => s0.domains.log2s_zkRows x (by simpa using hx) }

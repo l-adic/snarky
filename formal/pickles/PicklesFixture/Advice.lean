@@ -30,7 +30,7 @@ open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Fixture Bulletproof CompElliptic.Fi
 open scoped Kimchi
 
 /-- The step circuit's advice, inert: a compile reads none of it. -/
-def inertStepAdvice {n w : ℕ} {ws : Fin n → ℕ} {ncw ncs k ks : ℕ} {inVal : Type} :
+def inertStepAdvice {n w : ℕ} {ws : Fin n → ℕ} {ncw k ks : ℕ} {ncs : Fin n → ℕ} {inVal : Type} :
     Pickles.StepMainAdvice n w ws ncw ncs k ks inVal :=
   ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
     AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
@@ -150,10 +150,10 @@ def finSequence {ε : Type} : {n : ℕ} → {β : Fin n → Type} → ((i : Fin 
 constants `k`: the rule's witness as its input, the tag's wrap key `wrapKey`, per slot its
 witness off `prevs`, and the unfinalized entries and messages off `S0`'s statement, the
 padding ones in front. -/
-def stepMainAdviceOf {n ncs : ℕ} (w : ℕ) (k : StepMainConsts n ncs) (inputSize : ℕ)
+def stepMainAdviceOf {n : ℕ} (w : ℕ) (k : StepMainConsts n) (inputSize : ℕ)
     (wrapKey : Kimchi.Verifier.KimchiVK CW 1) (S0 : Cache.Entry CS) (prevs : Vector StepPrev n) :
     Except String (Pickles.StepMainAdvice n w
-      (Pickles.SlotSource.widths w fun i => k.slots[i].source) 1 ncs 15 Pickles.StepIPARounds
+      (Pickles.SlotSource.widths w fun i => k.slots[i].source) 1 k.chunks 15 Pickles.StepIPARounds
       (Vector Fp inputSize)) := do
   let some rule := S0.rule | throw "the step proof's cache entry has no rule witness"
   let input : Vector Fp inputSize ←
@@ -161,7 +161,8 @@ def stepMainAdviceOf {n ncs : ℕ} (w : ℕ) (k : StepMainConsts n ncs) (inputSi
     else throw s!"the rule witness has {rule.input.size} input cells, not {inputSize}"
   let slots ← finSequence fun i =>
     match prevs[i] with
-    | .proof W S => slotValOf (Pickles.SlotSource.widths w (fun i => k.slots[i].source) i) ncs W S
+    | .proof W S =>
+      slotValOf (Pickles.SlotSource.widths w (fun i => k.slots[i].source) i) (k.chunks i) W S
     | .baseCase cells => (ofCells Fp cells).mapError (s!"slot {i}'s base case: " ++ ·)
   let st ← stepStatementOf id 15 w S0.publicInput
   if hnw : n ≤ w then

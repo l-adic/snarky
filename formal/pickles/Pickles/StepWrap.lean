@@ -306,7 +306,7 @@ private def slotProof {s ks k ncs w : ℕ} (Vg : Valuation Fp) (Vs : Valuation F
 
 /-- The accumulator a step circuit and the next wrap circuit emit for the wrap proof they
 verify: the step message's commitment at slot `i`, with the wrap message's challenges at `jf`. -/
-def StepWrap.emittedAccumulator {n w sa ncw ncs k ks branches mpv ncStep kw ks' : ℕ}
+def StepWrap.emittedAccumulator {n w sa ncw k ks branches mpv ncStep kw ks' : ℕ} {ncs : Fin n → ℕ}
     {ws ss : Fin n → ℕ} {slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv}
     (Vg : Valuation Fp) (Vs : Valuation Fq) (i : Fin n) (jf : Fin mpv)
     (stepOut : StepMainOut n w ws ss sa ncw ncs k ks)
@@ -405,9 +405,9 @@ under `SgOk`, with its guards derived from `WrapKeyLayout`. -/
 theorem stepWrap_kimchiVerify
     -- the rule's `n` slots; the tag's `w`, the accumulators each of its wrap proofs carries,
     -- a self slot's width and the wrap circuit's slots; the step proofs the wrap proofs
-    -- verified at `ncPrevStep`; the wrap circuit's `branches`, the step proof it verifies at
+    -- verified at `ncPrevStep i`; the wrap circuit's `branches`, the step proof it verifies at
     -- `ncStep` chunks
-    {n w ncPrevStep branches ncStep : ℕ}
+    {n w branches ncStep : ℕ} {ncPrevStep : Fin n → ℕ}
     [NeZero branches]
     -- the rule's input and output, as values and as cells
     {inVal inVar outVal outVar : Type}
@@ -419,7 +419,7 @@ theorem stepWrap_kimchiVerify
     -- the wrap SRS has the deployed size, `2 ^ WrapIPARounds` points
     (hE : S.σ.k = WrapIPARounds)
     -- the step circuit's finalize constants
-    (P : FopParams Fp)
+    (P : Fin n → FopParams Fp)
     -- the step domains the step circuit's finalize dispatches over
     (domains : List (KnownDomain Fp))
     -- the rule verifies at most the tag's `w` slots
@@ -529,7 +529,7 @@ theorem stepWrap_kimchiVerify
       KeyReads IpaPallas.curve Vg ((srcs i).keyCells stepOut.vk.points) K.cvk →
       -- no relation the slot statements' public-input commitment names commits the SRS to the
       -- identity
-      (∀ (inp' : VerifyOneInput (ss i) StepIPARounds S.σ.k 1 ncPrevStep
+      (∀ (inp' : VerifyOneInput (ss i) StepIPARounds S.σ.k 1 (ncPrevStep i)
           (SlotSource.widths w srcs i))
         msg, S.σ.Avoids (stepRelationsAt S.σ K.cvk (inp'.statement msg))) →
       -- the active branch compiled its wrap slot for `K`'s domain
