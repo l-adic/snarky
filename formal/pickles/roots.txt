@@ -49,6 +49,11 @@ Pickles.FopSide.unshiftV_read
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
+PicklesFixture.Application.checkMetadata -- independently described layouts against selected tag dumps
+Pickles.Application.Shape.slotAt_paddedSlot -- the layout fixture exercises the padding inverse
+Pickles.Application.Layout.slotWidth_le_wrapWidths -- source widths fit shared wrap capacities
+Pickles.Application.Layout.check_ok_iff -- layout assembly accepts exactly compatible applications
+Pickles.Application.Layout.export -- the next application imports the checked layout interface
 Pickles.buildEvalList
 Pickles.Key.avoids_lagrangeRelations_iff -- the drivers decide its right side
 Pickles.Key.check

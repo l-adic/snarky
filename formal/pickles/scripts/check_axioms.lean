@@ -34,7 +34,12 @@ namespace Pickles.CheckAxioms
 
 /-- Every result this package stands behind. -/
 def roots : List Name :=
-  [ `Pickles.Reflect.circuit_gateLinearization_fp,
+  [ `Pickles.Application.Shape.slots_le_width,
+    `Pickles.Application.Shape.slotAt_paddedSlot,
+    `Pickles.Application.Shape.slotWidth_le_wrapWidth,
+    `Pickles.Application.Layout.slotWidth_le_wrapWidths,
+    `Pickles.Application.Layout.check_ok_iff,
+    `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,
     `Pickles.Reflect.evaluate_fpTokens,
     `Pickles.Reflect.evaluate_fqTokens,

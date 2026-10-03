@@ -98,6 +98,51 @@ of inconsistent Self slots. This tests construction; it supplies no mixed-chunk 
 `check-tags` separately compares dumped circuits, and its selected `LINKS=<app>,…` mode checks
 cached witnesses and applies both capstones and the handover theorems directly.
 
+The application layout check reads only the tag metadata for `TwoPhaseChain` and
+`HeterogeneousPrevs` (including its child tag). It checks independently described
+branch/slot shapes against the dumps and exercises front padding and rejection of
+widths above the protocol bound, without building circuits or running witness checks.
+Synthetic cases additionally exercise shared slots with differing source widths, including
+widths 0/2 and 1/2 in both branch orders. Each shared slot's capacity is the maximum source
+width across branches; source widths remain unchanged. The library proves each source
+width fits its assigned capacity instead of requiring equal widths at overlapping slots.
+
+Each description covers one application. The checker first checks the child's layout,
+then supplies its exported schema and width (and its fixture key) to the parent; the
+parent's layout does not inspect the child's branch descriptions.
+
+```bash
+lake build PicklesFixture.Application
+PICKLES_DUMP_DIR=/path/to/pickles-dumps lake env lean --run scripts/check_application_layouts.lean
+```
+
+### Follow-up: backport shared slot capacities to PureScript
+
+The Lean application layout follows OCaml's per-position maximum
+(`max_local_max_proofs_verifieds` in `mina/src/lib/crypto/pickles/compile.ml`, using
+`Hlist.Maxes` in `mina/src/lib/crypto/plonkish_prelude/hlist.ml`). PureScript's
+`deriveWrapSlotWidths` in `packages/pickles/src/Pickles/Prove/Compile.purs` still rejects
+differing source widths at a shared wrap position. Backport the more flexible layout:
+
+- Compute per-position maxima after front-padding each branch's slot list. Preserve
+  each branch-local source width, statement schema, and key; capacity is separate.
+- Adapt wrap advice/challenge-stack allocation and padding to those capacities. Audit
+  message hashing and scalar finalization so padding to a shared capacity preserves the
+  predecessor proof's message and accumulator interpretation. OCaml's
+  `pad_messages_for_next_wrap_proof` and `Wrap_hack` are reference points; confirm padding
+  order through the whole path rather than changing only the width calculation.
+- Add PureScript applications that share a slot between width-0/width-2 and
+  width-1/width-2 sources, including reversed branch order. Export their ordinary tag
+  metadata, then extend this layout check and run structural and selected link fixtures.
+  The link fixtures must apply the existing capstones and handover theorems directly.
+
+Current boundary: the Lean layout accepts these descriptions, but does not yet build
+their circuits or generate their witnesses. The existing PureScript fixtures validate
+the common supported subset; the mixed-width cases currently validate Lean layout
+assembly only. Circuit/witness construction and its padding correspondence remain work
+for the application framework and the PureScript backport. This layout change does not
+alter the existing StepWrap, WrapStep, or Handover capstones.
+
 ## How to run the formalization loop
 
 ```bash
