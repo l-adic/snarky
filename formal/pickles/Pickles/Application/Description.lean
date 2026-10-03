@@ -1,4 +1,5 @@
-import Pickles.StepMain
+import Pickles.Statement
+import Snarky.Kimchi.Semantics
 
 /-!
 # Application descriptions
@@ -32,7 +33,7 @@ structure Schema where
 attribute [instance] Schema.inputEncoding Schema.outputEncoding Schema.inputCheck
 
 /-- A statement contains its input fields followed by its output fields. -/
-def Schema.size (S : Schema) : Nat :=
+private def Schema.size (S : Schema) : Nat :=
   CircuitType.size Fp S.Input + CircuitType.size Fp S.Output
 
 /-- The layout information a checked application exposes to its importers.

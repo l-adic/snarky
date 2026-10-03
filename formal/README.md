@@ -107,12 +107,31 @@ widths 0/2 and 1/2 in both branch orders. Each shared slot's capacity is the max
 width across branches; source widths remain unchanged. The library proves each source
 width fits its assigned capacity instead of requiring equal widths at overlapping slots.
 
-Each description covers one application. The checker first checks the child's layout,
-then supplies its exported schema and width (and its fixture key) to the parent; the
-parent's layout does not inspect the child's branch descriptions.
+Each description covers one application. The checker first assembles the child's layout
+and wiring, then supplies its exported interface to the parent; the parent does not
+inspect the child's branch descriptions. `Application/Wiring.lean` derives candidate
+step domains from branch keys, resolves Self/External sources, and computes the padded
+wrap-domain pin matrix. It checks key layouts, chunk counts against domain sizes, and
+supported wrap domains. Generic theorems establish source widths, domain selection,
+live-slot pins and the branch-key layouts consumed by the existing capstones.
+
+The same driver compares those assembled circuit parameters with the dumped per-slot
+constants. Backend inputs are the application's wrap key and ordered branch keys, plus
+Lagrange tables. Those tables occur only inside slot constants in the current schema:
+the driver collects one per wrap domain and rejects disagreeing copies. Table selection
+is checked; correspondence with SRS commitments remains the explicit upstream premise.
+Negative cases change key order, key layout, source keys/domains/chunks, Lagrange table
+selection and domain pins. This phase builds static configuration, not circuits or runs.
+
+Source chunk counts are derived per branch-local slot. A synthetic imported interface
+exercises mixed counts 2/1 without imposing an application-wide predecessor chunk count.
+That is a static-wiring check, not a mixed-chunk proof fixture. The existing step circuits,
+capstones and readers accept per-slot counts, so `Wiring.sourceChunks` can supply the
+count family for application circuit construction. Application execution/path wrappers
+remain a later phase.
 
 ```bash
-lake build PicklesFixture.Application
+lake build PicklesFixture.ApplicationWiring
 PICKLES_DUMP_DIR=/path/to/pickles-dumps lake env lean --run scripts/check_application_layouts.lean
 ```
 

@@ -34,11 +34,14 @@ namespace Pickles.CheckAxioms
 
 /-- Every result this package stands behind. -/
 def roots : List Name :=
-  [ `Pickles.Application.Shape.slots_le_width,
-    `Pickles.Application.Shape.slotAt_paddedSlot,
-    `Pickles.Application.Shape.slotWidth_le_wrapWidth,
+  [ `Pickles.Application.Shape.slotAt_paddedSlot,
     `Pickles.Application.Layout.slotWidth_le_wrapWidths,
     `Pickles.Application.Layout.check_ok_iff,
+    `Pickles.Application.Wiring.source_width,
+    `Pickles.Application.Wiring.source_domains,
+    `Pickles.Application.Wiring.pins_at_slot,
+    `Pickles.Application.Wiring.pin_domain,
+    `Pickles.Application.Wiring.step_key_layout,
     `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,
     `Pickles.Reflect.evaluate_fpTokens,
@@ -112,7 +115,12 @@ def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
 streams, each resting on `Certificate.lean`'s decisions, and those at the deployed curves,
 resting on CompElliptic's order and primality certificates. -/
 def deployedRoots : List Name :=
-  [ `Pickles.wrapSide,
+  [ `Pickles.Application.Wiring.source_width,
+    `Pickles.Application.Wiring.source_domains,
+    `Pickles.Application.Wiring.pins_at_slot,
+    `Pickles.Application.Wiring.pin_domain,
+    `Pickles.Application.Wiring.step_key_layout,
+    `Pickles.wrapSide,
     `Pickles.stepSide,
     `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,

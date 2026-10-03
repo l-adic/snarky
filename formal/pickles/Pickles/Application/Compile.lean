@@ -14,7 +14,7 @@ tables, or execution facts and does not yet build the main circuits.
 namespace Pickles.Application
 
 /-- Every branch fits the maximum width computed from all branches. -/
-theorem Shape.slots_le_width (D : Shape) (b : D.Branch) :
+private theorem Shape.slots_le_width (D : Shape) (b : D.Branch) :
     D.slots b ≤ D.width := by
   exact List.le_max_of_mem (List.mem_cons_of_mem 0
     (List.mem_map.mpr ⟨b, List.mem_finRange b, rfl⟩))
@@ -48,12 +48,12 @@ def Shape.widths (D : Shape) : Vector (Fin (D.width + 1)) D.branches :=
 
 /-- Shared capacity: the maximum source width at this wrap position across branches.
 An unused position contributes zero; a live width-zero slot remains present in `slotAt`. -/
-def Shape.wrapWidth (D : Shape) (j : Fin D.width) : Nat :=
+private def Shape.wrapWidth (D : Shape) (j : Fin D.width) : Nat :=
   ((List.finRange D.branches).map fun b =>
     ((D.slotAt b j).map (D.slotWidth b)).getD 0).foldl max 0
 
 /-- Every live slot's source width fits its shared wrap position's computed capacity. -/
-theorem Shape.slotWidth_le_wrapWidth (D : Shape) (b : D.Branch) (i : D.Slot b) :
+private theorem Shape.slotWidth_le_wrapWidth (D : Shape) (b : D.Branch) (i : D.Slot b) :
     D.slotWidth b i ≤ D.wrapWidth (D.paddedSlot b i) := by
   unfold wrapWidth
   apply List.le_max_of_mem (List.mem_cons_of_mem 0 ?_)
@@ -66,7 +66,7 @@ structure Layout (D : Shape) : Prop where
   width_le : D.width ≤ MaxProofsVerified
 
 /-- Self uses this application's checked width; External uses its imported bound. -/
-theorem Layout.slotWidth_le {D : Shape} (L : Layout D) (b : D.Branch) (i : D.Slot b) :
+private theorem Layout.slotWidth_le {D : Shape} (L : Layout D) (b : D.Branch) (i : D.Slot b) :
     D.slotWidth b i ≤ MaxProofsVerified := by
   unfold Shape.slotWidth
   cases D.source b i with
@@ -74,7 +74,7 @@ theorem Layout.slotWidth_le {D : Shape} (L : Layout D) (b : D.Branch) (i : D.Slo
   | external tag => exact Nat.le_of_lt_succ D.imports[tag].width.isLt
 
 /-- Each computed shared width fits the protocol when all target widths do. -/
-theorem Layout.wrapWidth_le {D : Shape} (L : Layout D)
+private theorem Layout.wrapWidth_le {D : Shape} (L : Layout D)
     (j : Fin D.width) : D.wrapWidth j ≤ MaxProofsVerified := by
   apply (List.max_le_iff (List.cons_ne_nil 0 _)).mpr
   intro x hx

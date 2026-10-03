@@ -1,11 +1,14 @@
-import Pickles.Application.Compile
+import Pickles.Application.Wiring
 
 /-!
 # Compiled application framework
 
-The initial layer describes one application's schema, compiled imports, and predecessor
-references and checks its shared circuit layout. It exports the checked schema and width
-for subsequent applications. Shared wrap slots use the maximum source width across
-branches, as in OCaml. Circuit construction and application-level capstones will extend
-this layer; the PureScript compiler still requires equal widths at overlapping slots.
+Describe one application's schema, compiled imports, and predecessor references; check
+its layout and wire its backend keys to the existing circuit parameters. Imported
+interfaces supply source keys, candidate domains and Lagrange tables. Shared wrap slots
+use the maximum source width across branches, as in OCaml, and source chunk counts remain
+per slot. Circuit construction and application-level capstones will extend this layer.
+
+Implementation helpers are private to their defining file. Shared declarations are
+exposed only as needed by other library modules or fixture drivers.
 -/
