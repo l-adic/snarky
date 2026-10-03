@@ -52,6 +52,12 @@ Each adjacent pair checks the receiving link's emitted `accOk` equation, giving 
 its capstone, then applies the complete handover theorem and compares both complete messages.
 The existing Lagrange correspondence premises remain explicit; no accumulator soundness is assumed.
 
+TwoPhaseChain, HeterogeneousPrevs and RecurseOverChunks construct their circuits through
+`Pickles.Application.Circuits`. Their independently declared application shapes determine the
+routing and dimensions. The lane compares the assembled constraint systems with the dumps,
+runs these constructors, and checks exact compiled-system equality before transporting each
+run into the same capstone and handover checks.
+
 Run from `formal/`:  PICKLES_DUMP_DIR=<dir> lake exe check-tags
 (`BULLETPROOF_FIXTURES_DIR` overrides the blinding bases' fixtures.)
 -/
@@ -63,6 +69,7 @@ import PicklesFixture.Compare
 import PicklesFixture.Fop
 import PicklesFixture.Premises
 import PicklesFixture.Rule
+import PicklesFixture.ApplicationRun
 import PicklesFixture.Advice
 import PicklesFixture.Satisfies
 import PicklesFixture.Verdicts
@@ -1104,6 +1111,7 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
     (hhS : σS.h ≠ 0) (wrapRuns : IO.Ref (List ((String × String) × WrapRun σW hW hh σS)))
     (stepWrapOuts : IO.Ref (Array (StepWrapOut (wrapSrs σW hW hh).σ)))
     (wrapStepOuts : IO.Ref (Array (WrapStepOut (stepSrs σS hS hhS).σ)))
+    (application : Option PicklesFixture.Application.Runner)
     (name : String) (j : Json) (wraps : Array (Cache.Entry CW)) (steps : Array (Cache.Entry CS)) :
     IO (Array (IO Bool) × Array (IO Bool) × List (String × String)) := do
   let ex {α : Type} (e : Except String α) : IO α := IO.ofExcept (e.mapError (s!"{name}: " ++ ·))
@@ -1151,13 +1159,18 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
       let stepRun ← IO.mkRef none
       jobs := jobs.push do
         let t0 ← IO.monoMsNow
-        let r ← runMain fpSide (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w)
-          (fun V => Pickles.stepMainCircuit (c := Builder V (KimchiConstraint Fp)) (ncw := 1)
+        let body := fun V =>
+          Pickles.stepMainCircuit (c := Builder V (KimchiConstraint Fp)) (ncw := 1)
             (outVal := Vector Fp rule.publicOutput.size) (fun i => kb.slots[i].source)
             (fun i => kb.slots[i].width_le hw) (wrapSrs σW hW hh).σ.h
             (fun i => fopStepParams (kb.chunks i))
             kb.ownDomains (Pickles.constPt dummyWrapSgPt) dummyUnfN0
-            (replayRule rule (some vals)) adv) ()
+            (replayRule rule (some vals)) adv
+        let r ← match application with
+          | none => runMain fpSide (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w) body ()
+          | some app => do
+            let r ← app.step b S0 prevs.toArray
+            r.atBody (a := Unit) (b := Pickles.StepStatement (Pickles.UnfVal 15) Fp w) body
         stepRun.set (some r)
         let concl ← stepConclusions ctx hw kb r.V r.result.1.2 S0 prevs
         verdict s!"{tag}: step circuit" r S0.publicInput concl ((← IO.monoMsNow) - t0)
@@ -1170,13 +1183,21 @@ def linkJobs (ctx : VerdictCtx) {σW : Bulletproof.SRS CW.Point} (hW : σW.k = 1
       let wrapRun ← IO.mkRef none
       jobs := jobs.push do
         let t0 ← IO.monoMsNow
-        let r ← runMain fqSide (a := Pickles.StatementPacked Pickles.StepIPARounds (Type1 Fq) Fq)
-          (b := Unit)
-          (fun V => Pickles.wrapMainCircuit (c := Builder V (KimchiConstraint Fq))
+        let body := fun V =>
+          Pickles.wrapMainCircuit (c := Builder V (KimchiConstraint Fq))
             (Pickles.FopParams.of Bulletproof.IpaPallas.curve 1 (wrapSrs σW hW hh).σ.k
               Pickles.Linearization.fqTokens) sh.widths
             (Pickles.stepDomainLog2s sh.keys) (Pickles.stepKeyCells sh.keys) sh.pins sh.lagrange
-            σS.h k.dummy sh.slotWidths advW) inp
+            σS.h k.dummy sh.slotWidths advW
+        let r ← match application with
+          | none =>
+            runMain fqSide
+              (a := Pickles.StatementPacked Pickles.StepIPARounds (Type1 Fq) Fq)
+              (b := Unit) body inp
+          | some app => do
+            let r ← app.wrap b S0 W0 prevs.toArray
+            r.atBody (a := Pickles.StatementPacked Pickles.StepIPARounds (Type1 Fq) Fq)
+              (b := Unit) body
         wrapRun.set (some r)
         wrapRuns.modify (((W0.vkDigest, W0.publicInputKey),
           { bp, w, nc, sh, dummy := k.dummy, b := ⟨b, hb⟩, advW, run := r }) :: ·)
@@ -1239,6 +1260,11 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
     if h : σW.h ≠ 0 ∧ σS.h ≠ 0 then pure (PLift.up h)
     else throw (IO.userError "an SRS's blinding base is the identity")
   have hh := hh'.down
+  let applications ← PicklesFixture.Application.runners dir apps
+    { wrap := wrapSrs σW hW hh.1, step := stepSrs σS hS hh.2
+      wrapRounds := rfl, stepRounds := rfl
+      dummySg := dummyWrapSgPt, dummyUnf := dummyUnfN0, dummy := Vector.replicate _ 0 }
+  (← IO.getStdout).flush
   let wrapRuns ← IO.mkRef []
   let stepWrapOuts ← IO.mkRef #[]
   let wrapStepOuts ← IO.mkRef #[]
@@ -1272,6 +1298,7 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
     for tag in (← (dir / app).readDir).qsort (·.fileName < ·.fileName) do
       unless tag.path.extension == some "json" do continue
       let (js, ls, cs) ← linkJobs ctx hW hh.1 hS hh.2 wrapRuns stepWrapOuts wrapStepOuts
+        (applications.lookup s!"{app}/{tag.path.fileStem.getD tag.fileName}")
         s!"{app}/{tag.path.fileStem.getD tag.fileName}"
         (← IO.ofExcept (Json.parse (← IO.FS.readFile tag.path))) wraps steps
       jobs := jobs ++ js

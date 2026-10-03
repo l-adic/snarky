@@ -49,6 +49,11 @@ Pickles.FopSide.unshiftV_read
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
+Pickles.Application.Circuits.stepBuilt_advice_irrel -- audited builder erasure for branch advice
+Pickles.Application.Circuits.wrapBuilt_advice_irrel -- audited builder erasure for wrap advice
+Pickles.Application.Circuits.stepBuilt_rules_congr -- audited transport for replayed rule witnesses
+PicklesFixture.Application.runners -- selected fixtures construct circuits through application assembly
+PicklesFixture.Application.CircuitRun.atBody -- exact compiled systems connect runs to the capstones
 PicklesFixture.Application.checkMetadata -- independently described layouts against selected tag dumps
 PicklesFixture.Application.wrapTablesOf -- collect backend table artifacts before checking their routing
 PicklesFixture.Application.backendOf -- load own artifacts without per-slot source declarations

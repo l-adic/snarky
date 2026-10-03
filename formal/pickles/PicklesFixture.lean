@@ -11,6 +11,7 @@ import PicklesFixture.Advice
 import PicklesFixture.Rule
 import PicklesFixture.Application
 import PicklesFixture.ApplicationWiring
+import PicklesFixture.ApplicationRun
 
 /-!
 # The pickles circuit harnesses the drivers share

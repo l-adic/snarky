@@ -31,6 +31,15 @@ private def pairOutputSchema : Schema where
   outputEncoding := inferInstance
   inputCheck := inferInstance
 
+private def unitSchema : Schema where
+  Input := Unit
+  InputVar := Unit
+  Output := Unit
+  OutputVar := Unit
+  inputEncoding := inferInstance
+  outputEncoding := inferInstance
+  inputCheck := inferInstance
+
 /-- `TwoPhaseChain`: a field input, a base branch, and a one-slot Self branch. -/
 def twoPhaseChain : Shape where
   schema := inputSchema
@@ -58,6 +67,24 @@ def heterogeneousPrevs (child : LayoutInterface) : Shape where
   branches_pos := by decide
   slots b := if b.val = 0 then 0 else 2
   source _ i := if i.val = 0 then .external ⟨0, by simp⟩ else .self
+
+/-- The zero-slot, unit-statement child of `RecurseOverChunks`, compiled at two chunks. -/
+def chunksChild : Shape where
+  schema := unitSchema
+  imports := #[]
+  branches := 1
+  branches_pos := by decide
+  slots _ := 0
+  source _ i := Fin.elim0 i
+
+/-- `RecurseOverChunks` verifies one external unit-statement proof. -/
+def recurseOverChunks (child : LayoutInterface) : Shape where
+  schema := unitSchema
+  imports := #[child]
+  branches := 1
+  branches_pos := by decide
+  slots _ := 1
+  source _ _ := .external ⟨0, by simp⟩
 
 /-- Compare one checked application with its tag dump. Imports provide only their
 exported wrap keys alongside the interfaces already in the description. -/
