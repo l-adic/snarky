@@ -83,7 +83,8 @@ addFast finiteness p1' p2' = label "add_fast" do
         y1 <- readCVar p1.y
         pure $ (fromInt 3 * x1 * x1) / (fromInt 2 * y1)
       else
-        (readCVar p2.y - readCVar p1.y) / (readCVar p2.x - readCVar p1.x)
+        -- `x21Inv` is `1 / (x2 - x1)` when the x-coordinates differ.
+        (readCVar p2.y - readCVar p1.y) * readCVar x21Inv
   x3 <- exists
     let
       sVal = readCVar s
