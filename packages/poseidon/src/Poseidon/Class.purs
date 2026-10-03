@@ -4,6 +4,7 @@
 -- |
 -- | - Low-level operations (`sbox`, `applyMds`, `fullRound`) for building
 -- |   custom circuits
+-- | - The whole `permutation`, for a sponge outside a circuit
 -- | - High-level `hash` function for direct use
 -- | - Access to Kimchi-specific constants (`getRoundConstants`, `getMdsMatrix`)
 module Poseidon.Class
@@ -11,6 +12,7 @@ module Poseidon.Class
   , sbox
   , applyMds
   , fullRound
+  , permutation
   , getRoundConstants
   , getNumRounds
   , getMdsMatrix
@@ -47,6 +49,10 @@ class PrimeField f <= PoseidonField f where
   -- | A full round applies: S-box → Add round constants → MDS matrix.
   fullRound :: Vector 3 f -> Int -> Vector 3 f
 
+  -- | The whole permutation: `fullRound` at every round, in order, as
+  -- | one operation that does not produce the states in between.
+  permutation :: Vector 3 f -> Vector 3 f
+
   -- | Get the round constants for round `i` (0 to 54 for Kimchi).
   getRoundConstants :: Proxy f -> Int -> Vector 3 f
 
@@ -66,6 +72,7 @@ instance PoseidonField Pallas.BaseField where
   sbox = PallasFFI.sbox
   applyMds = PallasFFI.applyMds
   fullRound = PallasFFI.fullRound
+  permutation = PallasFFI.permutation
   getRoundConstants _ = PallasFFI.getRoundConstants
   getNumRounds _ = PallasFFI.getNumRounds unit
   getMdsMatrix _ = PallasFFI.getMdsMatrix unit
@@ -76,6 +83,7 @@ instance PoseidonField Vesta.BaseField where
   sbox = VestaFFI.sbox
   applyMds = VestaFFI.applyMds
   fullRound = VestaFFI.fullRound
+  permutation = VestaFFI.permutation
   getRoundConstants _ = VestaFFI.getRoundConstants
   getNumRounds _ = VestaFFI.getNumRounds unit
   getMdsMatrix _ = VestaFFI.getMdsMatrix unit
