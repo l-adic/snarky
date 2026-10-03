@@ -119,7 +119,6 @@ import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (Compiled, SideLoaded, SlotOf)
 import Pickles.Step.Dummy
   ( baseCaseDummies
-  , computeDummySgValues
   , dummyWrapProof
   , proofsVerifiedForWrapDomainLog2
   , wrapDomainLog2ForProofsVerified
@@ -142,6 +141,7 @@ import Pickles.Verify
   , verify
   , wrapPublicInputVP
   )
+import Pickles.Verify (DummySgs, dummySgsOf) as Verify
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPure)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)
@@ -466,6 +466,10 @@ statementOf = case _ of
 type CompileConfig :: Int -> Type
 type CompileConfig mpv =
   { srs :: { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
+  -- | The dummy accumulator commitments of `srs`. Both MSMs are
+  -- | constants of the SRSes, so the prover is handed the ones the
+  -- | compile computed instead of recomputing them per proof.
+  , dummySgs :: Verify.DummySgs
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
   , perSlotImportedVKs :: Vector mpv (Maybe SlotWrapKey)
@@ -539,8 +543,7 @@ paddingWrapDomain = N1
 -- | callers pass `roughDomainsLog2` in every position.
 stepProveContextOf
   :: forall mpv
-   . Reflectable mpv Int
-  => CompileConfig mpv
+   . CompileConfig mpv
   -> Vector mpv Int
   -> NonEmptyArray Int
   -> StepProveContext mpv
@@ -552,7 +555,7 @@ stepProveContextOf cfg slotWidths selfStepDomainLog2s =
       , perSlotNumChunks: map _.numChunks entries
       , perSlotVkBlueprints: map _.vkBlueprint entries
       }
-  , dummySg: outerDummySgs.ipa.wrap.sg
+  , dummySg: cfg.dummySgs.wrap
   , crs: cfg.srs.vestaSrs
   , debug: cfg.debug
   , proofCache: cfg.proofCache
@@ -570,11 +573,6 @@ stepProveContextOf cfg slotWidths selfStepDomainLog2s =
     slotWidths
     cfg.perSlotImportedVKs
 
-  outerBcd = Dummy.baseCaseDummies
-    { maxProofsVerified: reflectType (Proxy :: Proxy mpv) }
-  outerDummySgs =
-    Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-
 -- | What one slot contributes to the step prover's advice: its
 -- | oracle-enriched witness, its wrap public input, and the cache key
 -- | of the wrap proof it verifies, if it verifies one.
@@ -587,7 +585,7 @@ slotStepAdvice
   => CircuitType StepField inputVal input
   => CircuitType StepField prevHeadStmt prevHeadStmtVar
   => Proxy w
-  -> { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
+  -> Verify.DummySgs
   -> inputVal
   -> { slotWrapVK :: VerifierIndex PallasG WrapField
      , slotWrapDomainLog2 :: Int
@@ -602,7 +600,7 @@ slotStepAdvice
        , wrapPublicInput :: Array WrapField
        , prev :: Prev StepField
        }
-slotStepAdvice _ srs appInput slotParams headSlot = do
+slotStepAdvice _ dummySgs appInput slotParams headSlot = do
   contrib <- buildSlotAdvice @w
     { publicInput: appInput
     , prevStatement: slotData.prevStatement
@@ -649,9 +647,8 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
   -- Slot-specific dummies sized by this slot's own width, not the
   -- enclosing rule's.
   bcd = Dummy.baseCaseDummies { maxProofsVerified: slotW }
-  dummySgs = Dummy.computeDummySgValues bcd srs.pallasSrs srs.vestaSrs
-  dummyWrapSg = dummySgs.ipa.wrap.sg
-  dummyStepSg = dummySgs.ipa.step.sg
+  dummyWrapSg = dummySgs.wrap
+  dummyStepSg = dummySgs.step
 
   proofsVerifiedMask = (slotW >= 2) :< (slotW >= 1) :< Vector.nil
 
@@ -827,7 +824,7 @@ slotStepAdvice _ srs appInput slotParams headSlot = do
 slotProveData
   :: forall prevHeadInput n stmt stmtVar
    . CircuitType StepField stmt stmtVar
-  => { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
+  => Verify.DummySgs
   -> { slotWrapVK :: VerifierIndex PallasG WrapField
      , slotWrapDomain :: ProofsVerified
      , slotWidth :: Int
@@ -843,7 +840,7 @@ slotProveData
      }
   -> PrevSlot prevHeadInput n stmt
   -> SlotProveData
-slotProveData srs slotParams stepSide headSlot =
+slotProveData dummySgs slotParams stepSide headSlot =
   { prevSg: slotData.prevSg
   , prevStepChallenges: slotData.prevStepChals
   , msgWrapChallenges: msgForNextWrapRealChals
@@ -863,8 +860,7 @@ slotProveData srs slotParams stepSide headSlot =
   -- a rule's slots can have different widths, and each slot's dummies
   -- have to match its own.
   bcd = Dummy.baseCaseDummies { maxProofsVerified: slotParams.slotWidth }
-  dummySgs = Dummy.computeDummySgValues bcd srs.pallasSrs srs.vestaSrs
-  stepSgD = dummySgs.ipa.step.sg -- AffinePoint WrapField
+  stepSgD = dummySgs.step
 
   PerProofUnfinalized headUnfRaw = stepSide.unfinalized
   headChalPolyComm = stepSide.challengePolynomialCommitment
@@ -923,8 +919,8 @@ slotProveData srs slotParams stepSide headSlot =
               , prevChallenges:
                   Vector.toUnfoldable
                     ( Vector.replicate @PaddedLength
-                        { sgX: (unwrap dummySgs.ipa.wrap.sg).x
-                        , sgY: (unwrap dummySgs.ipa.wrap.sg).y
+                        { sgX: (unwrap dummySgs.wrap).x
+                        , sgY: (unwrap dummySgs.wrap).y
                         , challenges:
                             ( Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
                                 :: Array WrapField
@@ -1202,8 +1198,8 @@ padShapeProveData dummies slotWidths sd =
 -- | One entry of each field `padShapeProveData` front-pads: the
 -- | base-case dummies at `maxProofsVerified = 0` and the SRSes' dummy
 -- | sgs. A constant of the SRSes, which the tag dump also records.
-wrapPadDummies :: { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG } -> PadProveDataDummies
-wrapPadDummies srs =
+wrapPadDummies :: Verify.DummySgs -> PadProveDataDummies
+wrapPadDummies dummySgs =
   { dummyPrevSg: dummyStepSgInWrapField
   , dummyPrevStepChals: dummyIpaChallenges.stepExpanded
   , dummyMsgWrapChal: dummyIpaChallenges.wrapExpanded
@@ -1225,12 +1221,11 @@ wrapPadDummies srs =
   -- `unfinalizedConstantDummy` first, putting its four challenges
   -- on the random oracle's first four counters.
   bcdMax = baseCaseDummies { maxProofsVerified: 0 }
-  dummySgsMax = computeDummySgValues bcdMax srs.pallasSrs srs.vestaSrs
   -- The two dummy sgs live on different curves: `prevSgs` and
   -- `prevStepAccs` take the Pallas one, `kimchiPrevEntries` the
   -- Vesta one.
-  dummyStepSgInWrapField = dummySgsMax.ipa.step.sg -- AffinePoint WrapField
-  dummyWrapSgInStepField = dummySgsMax.ipa.wrap.sg -- AffinePoint StepField
+  dummyStepSgInWrapField = dummySgs.step
+  dummyWrapSgInStepField = dummySgs.wrap
 
   -- `wrapDummyUnfinalizedProof`'s nested shape, flattened into the
   -- `PerProofUnfinalized` record `ShapeProveData` carries. Both
@@ -1303,7 +1298,7 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
   perSlot <- forWithIndex slots \i slot ->
     withSlotWidth (widths !! i) \width ->
       withPrevSlot slot.prev \prev ->
-        slotStepAdvice width cfg.srs appInput (slotParams i slot) prev
+        slotStepAdvice width cfg.dummySgs appInput (slotParams i slot) prev
   pure
     { stepAdvice: StepAdvice
         { perProofSlotsCarrier: map _.contrib.slotSppw perSlot
@@ -1311,10 +1306,7 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
         , publicUnfinalizedProofs: map _.contrib.slotUnfinalized perSlot
         , messagesForNextWrapProof: map _.contrib.slotMsgWrapHashStep perSlot
         -- At `maxProofsVerified = 0` whatever the rule's width.
-        , messagesForNextWrapProofDummyHash:
-            mkDummyMsgWrapHash (Dummy.baseCaseDummies { maxProofsVerified: 0 })
-              cfg.srs.pallasSrs
-              cfg.srs.vestaSrs
+        , messagesForNextWrapProofDummyHash: mkDummyMsgWrapHash cfg.dummySgs.step
         , wrapVerifierIndex: extractWrapVKCommsAdvice wrapCR.verifierIndex
         , kimchiPrevChallenges: map _.contrib.slotKimchiPrevEntry perSlot
         , prevAppStates: values
@@ -1398,7 +1390,7 @@ shapeProveData cfg wrapCR sideInfo pins widths slots =
   where
   perSlot = mapWithIndex
     ( \i slot -> withPrevSlot slot.prev \prev ->
-        slotProveData cfg.srs (slotParams i slot)
+        slotProveData cfg.dummySgs (slotParams i slot)
           { challengePolynomialCommitment: sideInfo.challengePolynomialCommitments !! i
           , unfinalized: sideInfo.unfinalizedSlots !! i
           , baseCaseWrapPublicInput: sideInfo.baseCaseWrapPublicInputs !! i
@@ -2057,6 +2049,7 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
   let
     perRuleCfg =
       { srs: cfg.srs
+      , dummySgs: Verify.dummySgsOf cfg.srs
       , perSlotImportedVKs: slotVKs
       , debug: cfg.debug
       , stepNumChunks
@@ -2210,8 +2203,15 @@ runMultiProverBody
   let
     widths = slotWidthsOf (Proxy :: Proxy prevsSpec)
     split = splitPrevs (Proxy :: Proxy prevsSpec) prevs
+    -- The dummy sgs `wrapPadDummies` was built from at compile.
+    dummySgs =
+      { wrap: AffinePoint
+          { x: padDummies.dummyKimchiPrevEntry.sgX, y: padDummies.dummyKimchiPrevEntry.sgY }
+      , step: padDummies.dummyPrevSg
+      }
     perRuleCfg =
       { srs: cfg.srs
+      , dummySgs
       , perSlotImportedVKs: r.slotVKs
       , debug: cfg.debug
       , stepNumChunks: reflectType ncProxy
@@ -2245,8 +2245,7 @@ runMultiProverBody
       split.slots
 
     -- The Vesta dummy sg, which the kimchi entries below also pad with.
-    dummyWrapSgInStepField = AffinePoint
-      { x: padDummies.dummyKimchiPrevEntry.sgX, y: padDummies.dummyKimchiPrevEntry.sgY }
+    dummyWrapSgInStepField = dummySgs.wrap
 
     proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
 
@@ -2572,7 +2571,7 @@ compileMulti cfg rules = do
         <> show actualWrapDomainLog2
         <> ". Set wrapDomainOverride to the correct domain size."
 
-  let padDummies = wrapPadDummies cfg.srs
+  let padDummies = wrapPadDummies (Verify.dummySgsOf cfg.srs)
 
   -- The theorems' dump of this tag, from the circuits just compiled: a
   -- `Self` slot's key is the wrap key built above.

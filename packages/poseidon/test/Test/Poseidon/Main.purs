@@ -4,6 +4,7 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Traversable (for_)
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
@@ -11,7 +12,7 @@ import Effect.Class (liftEffect)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Poseidon (getMdsMatrix, getNumRounds, hash)
+import Poseidon (class PoseidonField, fullRound, getMdsMatrix, getNumRounds, hash, permutation)
 import Simple.JSON as JSON
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (vestaScalarFieldFromHexLe, vestaScalarFieldToHexLe)
@@ -46,6 +47,16 @@ loadTestVectors path = liftEffect do
       pure { name: "error", test_vectors: [] }
     Right vectors -> pure vectors
 
+-- | The permutation spelled out round by round, as a circuit's witness
+-- | computes it.
+allRounds :: forall f. PoseidonField f => Vector 3 f -> Vector 3 f
+allRounds = go 0
+  where
+  numRounds = getNumRounds (Proxy :: Proxy f)
+  go i state
+    | i >= numRounds = state
+    | otherwise = go (i + 1) (fullRound state i)
+
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] spec
 
@@ -61,6 +72,15 @@ spec = do
       let vestaMds = getMdsMatrix (Proxy :: Proxy Vesta.BaseField)
       Vector.length pallasMds `shouldEqual` 3
       Vector.length vestaMds `shouldEqual` 3
+
+  describe "Permutation" do
+    it "is the full rounds in order (Pallas)" do
+      quickCheck \(state :: Vector 3 Pallas.BaseField) ->
+        permutation state === allRounds state
+
+    it "is the full rounds in order (Vesta)" do
+      quickCheck \(state :: Vector 3 Vesta.BaseField) ->
+        permutation state === allRounds state
 
   describe "Variable-Length Hash Properties" do
     it "hash function is deterministic (Pallas)" do

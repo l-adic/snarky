@@ -20,6 +20,8 @@ module Pickles.Verify
   , PrevProofData
   , prevProofDataOf
   , VerifiableProof
+  , DummySgs
+  , dummySgsOf
   , dummyWrapSgOf
   , messageDigests
   , mkVerifier
@@ -98,6 +100,23 @@ type Verifier =
 dummyWrapSgOf :: CRS PallasG -> AffinePoint StepField
 dummyWrapSgOf pallasSrs =
   pallasSrsBPolyCommitmentPoint pallasSrs (Vector.toUnfoldable dummyIpaChallenges.wrapExpanded)
+
+-- | The two commitments a dummy proof's accumulators carry: `wrap` is
+-- | `dummyWrapSgOf`, and `step` is the challenge-polynomial commitment
+-- | of the dummy step challenges on the Vesta SRS.
+type DummySgs =
+  { wrap :: AffinePoint StepField
+  , step :: AffinePoint WrapField
+  }
+
+-- | The `DummySgs` of an SRS pair, one MSM per SRS. They depend on
+-- | nothing else, so a compile computes them once.
+dummySgsOf :: { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG } -> DummySgs
+dummySgsOf srs =
+  { wrap: dummyWrapSgOf srs.pallasSrs
+  , step: vestaSrsBPolyCommitmentPoint srs.vestaSrs
+      (Vector.toUnfoldable dummyIpaChallenges.stepExpanded)
+  }
 
 -- | Build a `Verifier` from the minimum a caller has: a compiled wrap
 -- | VK, the two SRSes, and the step `numChunks` that drives `zk_rows`.

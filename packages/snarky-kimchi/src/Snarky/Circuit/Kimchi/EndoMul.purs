@@ -11,7 +11,7 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
@@ -21,7 +21,7 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (EvaluationError, F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, label, mkWitnessTable, read, readCVar, scale_, seal, throwAsProver)
+import Snarky.Circuit.DSL (EvaluationError(..), F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, label, mkWitnessTable, read, readCVar, scale_, seal, throwAsProver)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
@@ -29,7 +29,7 @@ import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, EndoBase(..), endoBase, fromAffine, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
-import Snarky.Data.EllipticCurve.Projective (doubleAddChain)
+import Snarky.Data.EllipticCurve.Projective (batchInverse, doubleAddChain)
 
 -- | Per-round witness record of `endo` — exactly what the gadget's exists
 -- | body witnesses for one 4-bit round (two double-add steps).
@@ -42,13 +42,15 @@ type EndoRow f =
   , inv :: f
   }
 
--- | The gadget's entire witness chain via `doubleAddChain` (three field
--- | inversions total instead of four PER ROUND — Montgomery's trick over
--- | a projective walk). Each round is two steps `t' = 2·t + Q` with
--- | `Q1 = ((1 + (endo−1)·b1)·xt, (2·b2−1)·yt)` and `Q2` likewise from
--- | b3/b4; the `nAcc` chain is division-free and computed alongside. The
--- | values are the same field elements the sequential body produced, so
--- | witnesses stay byte-identical.
+-- | The gadget's entire witness chain with four field inversions in
+-- | total, instead of five PER ROUND: `doubleAddChain` walks the points
+-- | with three (Montgomery's trick over a projective walk), and the
+-- | rounds' `inv` denominators `(xP − xR)·(xR − xS)` share one more; a
+-- | zero among them is a `DivisionByZero`. Each round is two steps
+-- | `t' = 2·t + Q` with `Q1 = ((1 + (endo−1)·b1)·xt, (2·b2−1)·yt)` and
+-- | `Q2` likewise from b3/b4; the `nAcc` chain is division-free and
+-- | computed alongside. The values are the same field elements the
+-- | sequential body produced, so witnesses stay byte-identical.
 computeEndoChain
   :: forall f
    . PrimeField f
@@ -78,22 +80,30 @@ computeEndoChain { xt, yt, eb, acc0, bitRounds } = do
       bitRounds
     ix arr i = unsafePartial (Array.unsafeIndex arr i)
     AffinePoint a0 = acc0
-  pure $ Array.mapWithIndex
-    ( \j nAccNext ->
-        let
-          e = ix rows (2 * j)
-          o = ix rows (2 * j + 1)
-          xp = if j == 0 then a0.x else (ix rows (2 * j - 1)).xRes
-        in
-          { r: AffinePoint { x: e.xRes, y: e.yRes }
-          , s1: e.s1
-          , s3: o.s1
-          , s: AffinePoint { x: o.xRes, y: o.yRes }
-          , nAccNext
-          , inv: recip ((xp - e.xRes) * (e.xRes - o.xRes))
-          }
+    rounds = Array.mapWithIndex
+      ( \j nAccNext ->
+          let
+            e = ix rows (2 * j)
+            o = ix rows (2 * j + 1)
+            xp = if j == 0 then a0.x else (ix rows (2 * j - 1)).xRes
+          in
+            { e, o, nAccNext, invDenom: (xp - e.xRes) * (e.xRes - o.xRes) }
+      )
+      nAccs
+  when (Array.any (\r -> r.invDenom == zero) rounds) $ Left $ DivisionByZero
+    { context: "endoMul", expression: Just "(xP - xR) * (xR - xS)" }
+  pure $ Array.zipWith
+    ( \{ e, o, nAccNext } inv ->
+        { r: AffinePoint { x: e.xRes, y: e.yRes }
+        , s1: e.s1
+        , s3: o.s1
+        , s: AffinePoint { x: o.xRes, y: o.yRes }
+        , nAccNext
+        , inv
+        }
     )
-    nAccs
+    rounds
+    (batchInverse (map _.invDenom rounds))
 
 {-
 endo satisfies the equation

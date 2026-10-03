@@ -17,8 +17,7 @@ import Data.Fin (unsafeFinite)
 import Data.Maybe (fromMaybe)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Poseidon (class PoseidonField)
-import RandomOracle.Sponge (permute)
+import Poseidon (class PoseidonField, permutation)
 
 -- | The sponge state type
 type State f = Vector 3 f
@@ -70,7 +69,7 @@ sponge perm blocks st =
 
 -- | Update the state with new input
 update :: forall f. PoseidonField f => State f -> Array f -> State f
-update st inputs = sponge permute (toBlocks inputs) st
+update st inputs = sponge permutation (toBlocks inputs) st
 
 -- | Extract the digest from the state (first element)
 digest :: forall f. State f -> Digest f

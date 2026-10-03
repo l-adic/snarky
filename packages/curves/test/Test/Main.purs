@@ -6,6 +6,7 @@ import Effect (Effect)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Curves.BaseField as BaseField
+import Test.Snarky.Curves.Bytes as Bytes
 import Test.Snarky.Curves.Field as Field
 import Test.Snarky.Curves.GroupElement as GroupElement
 import Test.Spec (describe)
@@ -23,4 +24,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     Field.spec (Proxy @Vesta.ScalarField)
   describe "Vesta.BaseField" $
     BaseField.spec (Proxy @Vesta.BaseField)
+  describe "Pallas.ScalarField" $
+    Bytes.spec (Proxy @Pallas.ScalarField)
+  describe "Vesta.ScalarField" $
+    Bytes.spec (Proxy @Vesta.ScalarField)
   GroupElement.spec

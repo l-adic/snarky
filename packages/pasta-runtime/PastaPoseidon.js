@@ -7,8 +7,8 @@
 // The permutation matches `kimchi::circuits::polynomials::poseidon` /
 // `mina_poseidon::permutation::full_round` exactly when parameterized with
 // `poseidonParamsKimchiFp` (which we also vendor in PastaPoseidonConstants.js).
-// Parity verified against kimchi-napi's `caml_pasta_fp_poseidon_block_cipher`
-// in test/poseidon-parity-harness.mjs.
+// Parity with kimchi-napi's `caml_pasta_f{p,q}_poseidon_block_cipher` is a
+// test of the `poseidon` package.
 
 import { Fp, Fq } from "./PastaField.js";
 import { GroupMapPallas } from "./PastaCurve.js";
@@ -90,16 +90,19 @@ function createPoseidon(Fp, params) {
     return Array(stateSize).fill(0n);
   }
 
-  function hash(input) {
-    const state = update(initialState(), input);
+  // `permute` runs the permutation on a state in place. It defaults to
+  // `permutation` below; a caller holding another implementation of the
+  // same function (kimchi-napi's block cipher) passes that instead.
+  function hash(input, permute = permutation) {
+    const state = update(initialState(), input, permute);
     return state[0];
   }
 
-  function update(state_, input) {
+  function update(state_, input, permute = permutation) {
     const state = [...state_];
     // empty input -> single permutation on the zero state
     if (input.length === 0) {
-      permutation(state);
+      permute(state);
       return state;
     }
     // pad input with zeros so its length is a multiple of the rate
@@ -111,7 +114,7 @@ function createPoseidon(Fp, params) {
       for (let i = 0; i < rate; i++) {
         state[i] = Fp.add(state[i], input[blockIndex + i]);
       }
-      permutation(state);
+      permute(state);
     }
     return state;
   }

@@ -19,6 +19,7 @@ module Pickles.Dummy
   , replicateChal
   -- * Helpers shared with `Pickles.Step.Dummy`
   , pow2
+  -- * Endo coefficients
   , wrapEndo
   , stepEndo
   -- * IPA challenge generators

@@ -14,13 +14,10 @@ module RandomOracle.Sponge
   , rate
   , stateSize
   , initialState
-  , permute
   ) where
 
 import Prelude
 
-import Data.Array (foldl)
-import Data.Array as Array
 import Data.Enum (succ)
 import Data.Fin (Finite, unsafeFinite)
 import Data.Generic.Rep (class Generic)
@@ -29,8 +26,7 @@ import Data.Show.Generic (genericShow)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Poseidon (class PoseidonField, fullRound, getNumRounds)
-import Type.Proxy (Proxy(..))
+import Poseidon (class PoseidonField, permutation)
 
 -- | The state size of the Poseidon sponge (always 3)
 stateSize :: Int
@@ -70,14 +66,6 @@ create init =
   , spongeState: Absorbed (unsafeFinite 0)
   }
 
--- | Run the Poseidon permutation (55 full rounds)
-permute :: forall f. PoseidonField f => Vector 3 f -> Vector 3 f
-permute st =
-  let
-    n = getNumRounds (Proxy @f)
-  in
-    foldl (\s i -> fullRound s i) st (Array.range 0 (n - 1))
-
 -- | Absorb a single field element into the sponge
 absorb :: forall f. PoseidonField f => f -> Sponge f -> Sponge f
 absorb x sponge = case sponge.spongeState of
@@ -85,7 +73,7 @@ absorb x sponge = case sponge.spongeState of
     if n == rate then
       -- Rate limit reached, permute first then absorb
       let
-        newState = permute sponge.state
+        newState = permutation sponge.state
         newState' = Vector.modifyAt p0 (add x) newState
       in
         { state: newState', spongeState: Absorbed p1 }
@@ -117,7 +105,7 @@ squeeze sponge = case sponge.spongeState of
     if n == rate then
       -- Rate limit reached, permute first then squeeze
       let
-        newState = permute sponge.state
+        newState = permutation sponge.state
         result = Vector.index newState p0
       in
         { result, sponge: { state: newState, spongeState: Squeezed p1 } }
@@ -132,7 +120,7 @@ squeeze sponge = case sponge.spongeState of
   Absorbed _ ->
     -- Coming from absorbed state, permute first
     let
-      newState = permute sponge.state
+      newState = permutation sponge.state
       result = Vector.index newState p0
     in
       { result, sponge: { state: newState, spongeState: Squeezed p1 } }

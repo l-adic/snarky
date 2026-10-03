@@ -6,9 +6,7 @@
 -- | implementation detail. `computeBaseCaseDummies` fixes that order
 -- | for a given `max_proofs_verified`.
 module Pickles.Step.Dummy
-  ( DummySgValues
-  , computeDummySgValues
-  , wrapDummyUnfinalizedProof
+  ( wrapDummyUnfinalizedProof
   , mkDummyPerProofUnfinalized
   , stepDummyUnfinalizedProof
   , wrapDomainLog2ForProofsVerified
@@ -44,7 +42,7 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.DeferredValues (UnfinalizedProof)
-import Pickles.Dummy (RoM, chal, dummyIpaStepChallenges, dummyIpaWrapChallenges, evalRoM, initialRo, pow2, scalarChal, stepEndo, tick, tock, wrapEndo)
+import Pickles.Dummy (RoM, chal, dummyIpaStepChallenges, dummyIpaWrapChallenges, evalRoM, initialRo, pow2, scalarChal, tick, tock)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
@@ -57,17 +55,13 @@ import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Sponge (initialSponge)
 import Pickles.Types (Evals, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
 import RandomOracle.Sponge as PureSponge
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Proof (Proof, vestaMakeWireProof)
-import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), SizedF, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (class Shifted, SplitField, Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
 
@@ -283,96 +277,6 @@ computeBaseCaseDummies cfg = do
 -- | Views over `BaseCaseDummies`: the expanded, shifted and hashed
 -- | values the step and wrap circuits actually read.
 -------------------------------------------------------------------------------
-
-type DummySgValues =
-  { ipa ::
-      { wrap ::
-          { challengesRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
-          , challengesExpanded :: Vector WrapIPARounds WrapField
-          , sg :: AffinePoint StepField
-          }
-      , step ::
-          { challengesRaw :: Vector StepIPARounds (SizedF 128 StepField)
-          , challengesExpanded :: Vector StepIPARounds StepField
-          , sg :: AffinePoint WrapField
-          }
-      }
-  , unfinalized ::
-      { alphaRaw :: SizedF 128 WrapField
-      , betaRaw :: SizedF 128 WrapField
-      , gammaRaw :: SizedF 128 WrapField
-      , zetaRaw :: SizedF 128 WrapField
-      , xiRaw :: SizedF 128 WrapField
-      , zetaExpanded :: WrapField
-      , alphaExpanded :: WrapField
-      , plonk ::
-          { perm :: Type2 (F WrapField)
-          , zetaToSrsLength :: Type2 (F WrapField)
-          , zetaToDomainSize :: Type2 (F WrapField)
-          }
-      , combinedInnerProduct :: WrapField
-      , b :: WrapField
-      , spongeDigest :: WrapField
-      }
-  }
-
-computeDummySgValues :: BaseCaseDummies -> CRS Pallas.G -> CRS Vesta.G -> DummySgValues
-computeDummySgValues bcd pallasSrs vestaSrs =
-  let
-    u = bcd.unfinalizedConstantDummy
-
-    wrapChalExpanded = map (\c -> toFieldPure c wrapEndo) bcd.ipaWrapChallenges
-    stepChalExpanded = map (\c -> toFieldPure c stepEndo) bcd.ipaStepChallenges
-
-    alphaExpanded = toFieldPure u.plonk.alpha wrapEndo
-    zetaFq = toFieldPure u.plonk.zeta wrapEndo
-
-    wrapSg = PallasImpl.pallasSrsBPolyCommitmentPoint pallasSrs
-      (Vector.toUnfoldable wrapChalExpanded)
-    stepSg = VestaImpl.vestaSrsBPolyCommitmentPoint vestaSrs
-      (Vector.toUnfoldable stepChalExpanded)
-
-    wrapDomainLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
-    zetaPow = Curves.pow zetaFq (pow2 wrapDomainLog2)
-
-    digestDummy = Curves.fromBigInt
-      ( BigInt.fromInt 1
-          + pow2 64
-          + pow2 128
-          + pow2 192
-      )
-  in
-    { ipa:
-        { wrap:
-            { challengesRaw: bcd.ipaWrapChallenges
-            , challengesExpanded: wrapChalExpanded
-            , sg: wrapSg
-            }
-        , step:
-            { challengesRaw: bcd.ipaStepChallenges
-            , challengesExpanded: stepChalExpanded
-            , sg: stepSg
-            }
-        }
-    , unfinalized:
-        { alphaRaw: u.plonk.alpha
-        , betaRaw: u.plonk.beta
-        , gammaRaw: u.plonk.gamma
-        , zetaRaw: u.plonk.zeta
-        , xiRaw: unsafePartial $ fromJust $ SizedF.fromField @128
-            (Curves.fromBigInt (BigInt.fromInt 1 + pow2 64) :: WrapField)
-        , zetaExpanded: zetaFq
-        , alphaExpanded
-        , plonk:
-            { perm: (wrapDummyUnfinalizedProof bcd).deferredValues.plonk.perm
-            , zetaToSrsLength: toShifted (F zetaPow)
-            , zetaToDomainSize: toShifted (F zetaPow)
-            }
-        , combinedInnerProduct: u.combinedInnerProduct
-        , b: u.b
-        , spongeDigest: digestDummy
-        }
-    }
 
 -- | The wrap-side dummy unfinalized proof, with its derived fields
 -- | filled in from `unfinalizedConstantDummy`.

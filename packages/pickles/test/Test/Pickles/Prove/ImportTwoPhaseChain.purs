@@ -86,7 +86,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
         }
       -- Every prev is round-tripped through serialization before it is
       -- consumed, so the chain closes only if that is faithful.
-      dummies = mkWidthDummies pallasSrs vestaSrs
+      dummies = mkWidthDummies pallasSrs
 
     -- The imported system and its two transactions, one per branch.
     makeZeroEntry <- liftEffect $ mkRuleEntry @Unit makeZeroRule Vector.nil
