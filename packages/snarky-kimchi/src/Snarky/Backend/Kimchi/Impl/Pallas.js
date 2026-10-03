@@ -18,7 +18,7 @@
 // values via `Fq.fromBytesLE`. The same applies to `Fp` for curve coords.
 
 import { createRequire } from 'module';
-import { Fp, Fq } from 'pasta-runtime';
+import { Fp, Fq, bigintsToBytes32LE } from 'pasta-runtime';
 
 const require = createRequire(import.meta.url);
 const k = require('kimchi-napi');
@@ -34,13 +34,7 @@ function fpFromBytes(bufLike) {
 }
 
 // FlatVector<NapiPastaFq> wire layout: a single Uint8Array of n*32 bytes.
-function fqFlatVector(arr) {
-    const out = new Uint8Array(arr.length * 32);
-    for (let i = 0; i < arr.length; i++) {
-        out.set(Fq.toBytesLE(arr[i]), i * 32);
-    }
-    return out;
-}
+const fqFlatVector = bigintsToBytes32LE;
 
 // ---------------------------------------------------------------------------
 // GateKind <-> kimchi-napi `gate_type_from_i32` discriminant

@@ -128,6 +128,23 @@ function bigintToBytes32LE(x) {
   return bytes;
 }
 
+// A whole array as consecutive 32-byte little-endian words: the flat
+// vector layout kimchi-napi takes. The bytes are those of
+// `bigintToBytes32LE` per element, written straight into one buffer
+// (`setBigUint64` keeps the low 64 bits of what it is given).
+function bigintsToBytes32LE(xs) {
+  const out = new Uint8Array(xs.length * 32);
+  const view = new DataView(out.buffer);
+  for (let i = 0, offset = 0; i < xs.length; i++, offset += 32) {
+    const x = xs[i];
+    view.setBigUint64(offset, x, true);
+    view.setBigUint64(offset + 8, x >> 64n, true);
+    view.setBigUint64(offset + 16, x >> 128n, true);
+    view.setBigUint64(offset + 24, x >> 192n, true);
+  }
+  return out;
+}
+
 function bytes32LEToBigint(bytes) {
   if (bytes.byteLength !== 32) {
     throw new Error(`bytes32LEToBigint: expected 32 bytes, got ${bytes.byteLength}`);
@@ -323,6 +340,7 @@ export {
 
   // Codec + helpers
   bigintToBytes32LE,
+  bigintsToBytes32LE,
   bytes32LEToBigint,
   bigintToHexLE32,
   hexLE32ToBigint,

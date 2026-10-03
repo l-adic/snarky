@@ -14,7 +14,7 @@
 //   * `WasmFpSrs`              — Vesta SRS
 
 import { createRequire } from 'module';
-import { Fp, Fq } from 'pasta-runtime';
+import { Fp, Fq, bigintsToBytes32LE } from 'pasta-runtime';
 
 const require = createRequire(import.meta.url);
 const k = require('kimchi-napi');
@@ -27,13 +27,7 @@ function fqFromBytes(bufLike) {
     return Fq.fromBytesLE(bufLike instanceof Uint8Array ? bufLike : new Uint8Array(bufLike));
 }
 
-function fpFlatVector(arr) {
-    const out = new Uint8Array(arr.length * 32);
-    for (let i = 0; i < arr.length; i++) {
-        out.set(Fp.toBytesLE(arr[i]), i * 32);
-    }
-    return out;
-}
+const fpFlatVector = bigintsToBytes32LE;
 
 // ---------------------------------------------------------------------------
 // GateKind discriminant — same table as Pallas
