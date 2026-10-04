@@ -1,3 +1,4 @@
+import PicklesFixture.Application
 import PicklesFixture.ApplicationWiring
 
 /-!
