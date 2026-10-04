@@ -54,7 +54,7 @@ sequentialDoubleAddRows { xBase, yBase, acc0, bits } =
       xRes = xBase + s2 * s2 - s1Sq
       yRes = (a.x - xRes) * s2 - a.y
     in
-      { acc: AffinePoint { x: xRes, y: yRes }, out: Array.snoc out { s1, s1Sq, s2, xRes, yRes } }
+      { acc: AffinePoint { x: xRes, y: yRes }, out: Array.snoc out { s1, xRes, yRes } }
 
 spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
 spec cfg = do

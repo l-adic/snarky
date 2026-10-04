@@ -60,7 +60,7 @@ varBaseMul
   -> Type1 (FVar f)
   -> Snarky f (KimchiConstraint f) r
        { g :: AffinePoint (FVar f)
-       , lsbBits :: Vector n (FVar f)
+       , lsbBits :: Vector bitsUsed (FVar f)
        }
 varBaseMul base' (Type1 t) = label "var-base-mul" do
   -- Seal the base point once, matching OCaml's `let base = seal base in` at the top
@@ -69,23 +69,23 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
   base <- sealPoint base'
   -- Use F f (field) witnesses, not Boolean — matching OCaml's Field.typ + Boolean.Unsafe.of_cvar.
   -- The VarBaseMul gate itself constrains bits to be boolean, so explicit checks are redundant.
-  lsbBits <- exists do
+  -- Only the `bitsUsed` low bits, the ones the ladder walks, are witnessed, as OCaml's
+  -- `scale_fast_unpack ~num_bits` does; `nAcc == t` below bounds `t` by them.
+  lsbBits :: Vector bitsUsed (FVar f) <- exists do
     F vVal <- readCVar t
     pure
       $ map (\b -> if b then one else zero :: F f)
-      $
-        unpackPure vVal (Proxy @n)
+      $ Vector.take @bitsUsed
+      $ unpackPure vVal (Proxy @n)
   -- Use addFast CheckFinite to match OCaml's add_fast (default check_finite=true),
   -- where inf = Field.zero (constant). This ensures inf shares the cached constant
   -- variable with nPrev = const_ zero, matching OCaml's permutation wiring.
   { p } <- addFast CheckFinite base base
   let
-    -- Take bottom bitsUsed LSB bits, then reverse to MSB-first within range.
+    -- Reverse to MSB-first.
     -- Matches OCaml's: List.take num_bits |> Array.of_list_rev_map
-    lsbBitsUsed = Vector.take @bitsUsed lsbBits
-
     msbBitsUsed :: Vector bitsUsed (FVar f)
-    msbBitsUsed = coerce $ Vector.reverse lsbBitsUsed
+    msbBitsUsed = coerce $ Vector.reverse lsbBits
 
     chunks :: Vector nChunks (Vector 5 (FVar f))
     chunks = Vector.chunks @5 msbBitsUsed
@@ -105,17 +105,13 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
           nAccPrevVal :: F f <- readCVar s.nAccPrev
           bsVal <- read @(Vector _ _) bs
           pure $ foldl (\a b -> double a + b) nAccPrevVal bsVal
-        -- Individual exists per variable to match OCaml's allocation order:
-        -- s1, s1_squared, s2, x_res, y_res per bit step
+        -- One exists per variable, in OCaml's order: s1, x_res, y_res per bit
+        -- step. OCaml also allocates s1_squared and s2 in between, as storage
+        -- for intermediates no row reads; `doubleAddChain` keeps those local.
         Tuple accs slopes <- Vector.unzip <<< fst <$> do
           mapAccumM
             ( \i _b -> do
                 s1 <- exists (chainAt i <#> _.s1)
-                -- s1Sq and s2 are allocated (in this exact order, for OCaml
-                -- allocation parity) and assigned, but no constraint row and
-                -- no later body reads the variables back.
-                _s1Sq <- exists (chainAt i <#> _.s1Sq)
-                _s2 <- exists (chainAt i <#> _.s2)
                 xRes <- exists (chainAt i <#> _.xRes)
                 yRes <- exists (chainAt i <#> _.yRes)
                 let a' = AffinePoint { x: xRes, y: yRes }
@@ -194,7 +190,7 @@ scaleFast2
        (AffinePoint (FVar f))
 scaleFast2 base split = scaleFast2From @nChunks (reflectType (Proxy @sDiv2Bits)) base split
 
--- | `scaleFast2` with the pin boundary as a value: the ladder on `sDiv2`, every lsb bit
+-- | `scaleFast2` with the pin boundary as a value: the ladder on `sDiv2`, every ladder bit
 -- | from index `pinFrom` on asserted zero, then the parity fold. `scaleFast2` pins from
 -- | `sDiv2Bits`; `scaleFast2'` pins one bit lower at the full field width (see there).
 scaleFast2From
