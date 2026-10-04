@@ -7,13 +7,13 @@ import Pickles.WrapStep
 Pickles never checks a proof's deferred `sg` equation (`SgOk`) on the proof itself: the proof's
 `(sg, round challenges)` becomes an old accumulator of the next proof on the same curve, whose
 batch opening checks it. Each capstone gives its proof `kimchiVerify` from `SgOk`. This module
-shows that the circuits hand the accumulator over: the accumulator one link emits is an old
+shows that the circuits hand the accumulator over: the accumulator one link produces is an old
 accumulator of the proof the next link verifies, which that proof's batch opens.
 
 ## Main definitions
 
 * `WrapStepRun`: one link's run, a wrap circuit and the next step circuit with the slot of it
-  that verifies the wrap proof; `WrapStepRun.Emits` and `WrapStepRun.Consumes` are what the
+  that verifies the wrap proof; `WrapStepRun.Produces` and `WrapStepRun.Consumes` are what the
   capstone says of it, `WrapStepRun.Hands` the tie between two links.
 * `StepWrapRun`: the same for a step circuit's slot verifying a wrap proof and the next wrap
   circuit.
@@ -215,8 +215,8 @@ def Hashes (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw) : Prop :=
   r.wrapVerifyOut.HashesMessages r.Vw dummy r.wrapStmt r.wrapFinalizeOut ∧
   r.stepOut.HashesMessages r.Vs
 
-/-- The link emits `A`, as `wrapStep_kimchiVerify` concludes. -/
-def Emits (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
+/-- The link produces `A`, as `wrapStep_kimchiVerify` concludes. -/
+def Produces (cvk : KimchiVK IpaPallas.curve 1) (dummy : Vector Fq kw)
     (A : Accumulator IpaVesta.curve ks) : Prop :=
   r.Hashes cvk dummy ∧
   WrapStep.emittedAccumulator r.Vw r.Vs r.i r.wrapVerifyOut r.wrapFinalizeOut r.stepOut = A
@@ -748,7 +748,7 @@ private theorem WrapStepRun.messages_mem_or_collision
     (dummy : Vector Fq kw)
     (A : Accumulator IpaVesta.curve ks)
     (cp : KimchiProof IpaVesta.curve ncStep' ks) :
-    rk.Emits cvk dummy A →
+    rk.Produces cvk dummy A →
     rk1.Consumes cvk1 dummy cp.olds.toList →
     rk.Hands rk1 →
     (readStepMessage rk.Vs rk.stepOut.messagesForNextStepProof =
@@ -849,7 +849,7 @@ theorem WrapStepRun.handover_or_collision
     (rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut)
   let receivedWrap := readWrapMessage rk1.Vw dummy
     (rk1.wrapFinalizeOut.messagesForNextWrapProof rk.slotIndex)
-  rk.Emits cvk dummy ⟨p.opening.sg, wireChallenges σ vk p pub⟩ →
+  rk.Produces cvk dummy ⟨p.opening.sg, wireChallenges σ vk p pub⟩ →
   rk1.Consumes cvk1 dummy q.olds.toList →
   rk.Hands rk1 →
   kimchiVerify IpaVesta.curve σ nextVk q nextPub = true →
@@ -921,8 +921,8 @@ def Hashes (dummy : Vector Fq kw) : Prop :=
   r.stepOut.HashesMessages r.Vg ∧
   r.wrapVerifyOut.HashesMessages r.Vs dummy r.wrapStmt r.wrapFinalizeOut
 
-/-- The link emits `A`, as `stepWrap_kimchiVerify` concludes. -/
-def Emits (dummy : Vector Fq kw) (A : Accumulator IpaPallas.curve kw) : Prop :=
+/-- The link produces `A`, as `stepWrap_kimchiVerify` concludes. -/
+def Produces (dummy : Vector Fq kw) (A : Accumulator IpaPallas.curve kw) : Prop :=
   r.Hashes dummy ∧
   StepWrap.emittedAccumulator r.Vg r.Vs r.i r.jf r.stepOut r.wrapVerifyOut r.wrapFinalizeOut = A
 
@@ -978,7 +978,7 @@ private theorem StepWrapRun.messages_mem_or_collision
     (dummy : Vector Fq kw)
     (A : Accumulator IpaPallas.curve kw)
     (cp : KimchiProof IpaPallas.curve 1 kw) :
-    rk.Emits dummy A →
+    rk.Produces dummy A →
     rk1.Consumes dummy cp.olds.toList →
     rk.Hands rk1 cvk →
     (readStepMessage rk.Vg rk.stepOut.messagesForNextStepProof =
@@ -1100,7 +1100,7 @@ theorem StepWrapRun.handover_or_collision
     (rk.wrapVerifyOut.messagesForNextWrapProof rk.wrapFinalizeOut)
   let receivedWrap := readWrapMessage rk1.Vs dummy
     (rk1.wrapFinalizeOut.messagesForNextWrapProof rk1.jf)
-  rk.Emits dummy ⟨p.opening.sg, wireChallenges σ vk p pub⟩ →
+  rk.Produces dummy ⟨p.opening.sg, wireChallenges σ vk p pub⟩ →
   rk1.Consumes dummy q.olds.toList →
   rk.Hands rk1 nextVk →
   kimchiVerify IpaPallas.curve σ nextVk q nextPub = true →

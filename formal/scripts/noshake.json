@@ -49,6 +49,9 @@
     ],
     "Pickles.Linearization.Types": [
       "Init"
+    ],
+    "Pickles.Application.Verify": [
+      "Pickles.Application.Proof"
     ]
   }
 }

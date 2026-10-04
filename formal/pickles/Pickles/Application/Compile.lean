@@ -14,7 +14,7 @@ tables, or execution facts and does not yet build the main circuits.
 namespace Pickles.Application
 
 /-- Every branch fits the maximum width computed from all branches. -/
-private theorem Shape.slots_le_width (D : Shape) (b : D.Branch) :
+theorem Shape.slots_le_width (D : Shape) (b : D.Branch) :
     D.slots b ≤ D.width := by
   exact List.le_max_of_mem (List.mem_cons_of_mem 0
     (List.mem_map.mpr ⟨b, List.mem_finRange b, rfl⟩))

@@ -1,4 +1,4 @@
-import Pickles.Application
+import Pickles.Application.Compile
 import Lean.Data.Json
 
 /-!

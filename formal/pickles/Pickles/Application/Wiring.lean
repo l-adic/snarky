@@ -144,7 +144,7 @@ def Wiring.export {D : Shape} {L : Layout D} (W : Wiring D L) : CircuitInterface
   wrapLagrange := W.backend.wrapLagrange
 
 /-- The source layout attached to a branch-local slot. -/
-private def Shape.sourceLayout (D : Shape) (L : Layout D) (b : D.Branch) (i : D.Slot b) :
+def Shape.sourceLayout (D : Shape) (L : Layout D) (b : D.Branch) (i : D.Slot b) :
     LayoutInterface :=
   match D.source b i with
   | .self => L.export

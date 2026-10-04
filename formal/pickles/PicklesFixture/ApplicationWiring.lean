@@ -1,4 +1,4 @@
-import PicklesFixture.Application
+import Pickles.Application.Wiring
 import PicklesFixture.Constants
 
 /-!

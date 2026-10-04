@@ -102,3 +102,9 @@ Pickles.instChunkedEvalsCircuitType -- synthesis: bench-fop allocates it
 Pickles.instProofEvaluationsCircuitType -- synthesis: bench-fop allocates it
 Pickles.instType1CircuitType -- synthesis: bench-fop allocates it
 -- script-surface:end
+Pickles.Application.StepWrapLink.verifies_proof -- wrap proof reconstructed from application executions
+Pickles.Application.WrapStepLink.verifies_proof -- step proof reconstructed from application executions
+Pickles.Application.StepProofHandover.handover_or_collision -- complete messages and step verification
+Pickles.Application.WrapProofHandover.handover_or_collision -- complete messages and wrap verification
+Pickles.Application.WrapProofHandover.appState_eq_or_collision -- the consumer reads the producer state
+PicklesFixture.Application.validate -- selected runs apply application capstones and both handovers

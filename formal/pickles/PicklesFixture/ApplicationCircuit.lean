@@ -1,7 +1,8 @@
 import PicklesFixture.ApplicationWiring
+import PicklesFixture.Application
+import Pickles.Application.Circuit
 import PicklesFixture.Rule
 import PicklesFixture.Advice
-import PicklesFixture.Compare
 
 /-!
 # Application circuits against tag dumps
@@ -143,9 +144,22 @@ private def oneImport {I : LayoutInterface} (C : CircuitInterface I) :
     subst t
     exact C
 
+/-- The five independently described tags in the application fixture corpus. -/
+inductive Tag where
+  | chain | child | parent | chunks | recurse
+  deriving DecidableEq
+
+/-- A fixture tag's fixed application description. -/
+def Tag.shape : Tag → Shape
+  | .chain => twoPhaseChain
+  | .child => heterogeneousChild
+  | .parent => heterogeneousPrevs (Layout.export (D := heterogeneousChild) ⟨by decide⟩)
+  | .chunks => chunksChild
+  | .recurse => recurseOverChunks (Layout.export (D := chunksChild) ⟨by decide⟩)
+
 /-- Assemble the selected fixture applications in import order; missing requested files fail. -/
 def selected {α : Type} (dir : System.FilePath) (apps : List String)
-    (f : (D : Shape) → Assembled D → String → Json → IO α) : IO (List (String × α)) := do
+    (f : (t : Tag) → Assembled t.shape → String → Json → IO α) : IO (List (String × α)) := do
   let names :=
     (if "TwoPhaseChain" ∈ apps then ["TwoPhaseChain/two_phase_chain"] else []) ++
     (if "HeterogeneousPrevs" ∈ apps then
@@ -167,22 +181,22 @@ def selected {α : Type} (dir : System.FilePath) (apps : List String)
   if "TwoPhaseChain" ∈ apps then
     let name := "TwoPhaseChain/two_phase_chain"
     let A ← make twoPhaseChain (fun t => Fin.elim0 t) name
-    result := result ++ [(name, ← f twoPhaseChain A name (← get name))]
+    result := result ++ [(name, ← f .chain A name (← get name))]
   if "HeterogeneousPrevs" ∈ apps then
     let child ← make heterogeneousChild (fun t => Fin.elim0 t) "HeterogeneousPrevs/child"
     let D := heterogeneousPrevs child.layout.export
     let A ← make D (oneImport child.wiring.export) "HeterogeneousPrevs/application"
     for (name, action) in
-        [("HeterogeneousPrevs/child", f heterogeneousChild child),
-         ("HeterogeneousPrevs/application", f D A)] do
+        [("HeterogeneousPrevs/child", f .child child),
+         ("HeterogeneousPrevs/application", f .parent A)] do
       result := result ++ [(name, ← action name (← get name))]
   if "RecurseOverChunks" ∈ apps then
     let child ← make chunksChild (fun t => Fin.elim0 t) "RecurseOverChunks/chunks2"
     let D := recurseOverChunks child.layout.export
     let A ← make D (oneImport child.wiring.export) "RecurseOverChunks/recurse"
     for (name, action) in
-        [("RecurseOverChunks/chunks2", f chunksChild child),
-         ("RecurseOverChunks/recurse", f D A)] do
+        [("RecurseOverChunks/chunks2", f .chunks child),
+         ("RecurseOverChunks/recurse", f .recurse A)] do
       result := result ++ [(name, ← action name (← get name))]
   return result
 

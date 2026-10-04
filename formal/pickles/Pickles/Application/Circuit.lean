@@ -88,7 +88,7 @@ abbrev Circuits.WrapCells (C : Circuits D L) :=
   WrapMainVerifyOut D.width C.wiring.backend.stepChunks WrapIPARounds StepIPARounds
 
 /-- Every resolved source fits the protocol's accumulator bound. -/
-private theorem Circuits.source_bound (C : Circuits D L) (b : D.Branch) (i : D.Slot b) :
+theorem Circuits.source_bound (C : Circuits D L) (b : D.Branch) (i : D.Slot b) :
     SlotSource.widths D.width (C.wiring.sources b) i ≤ MaxProofsVerified := by
   rw [SlotSource.widths, C.wiring.source_width]
   exact (L.slotWidth_le_wrapWidths b i).trans
