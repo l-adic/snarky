@@ -97,7 +97,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
   it "b0..b2 across two branches whose slots carry 1- and 2-field statements" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     outputs <- liftEffect $ appOutputs "HeterogeneousPrevs"
 
-    let dummies = mkWidthDummies pallasSrs vestaSrs
+    let dummies = mkWidthDummies pallasSrs
 
     childEntry <- liftEffect $ mkRuleEntry @Unit childRule Vector.nil
     logInfo "[HeterogeneousPrevs] compiling child…"

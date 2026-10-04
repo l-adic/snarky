@@ -117,7 +117,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       BranchProver incrementProver = fst (snd output.provers)
       -- Every prev is round-tripped through serialization before it is
       -- consumed, so the chain closes only if that is faithful.
-      dummies = mkWidthDummies pallasSrs vestaSrs
+      dummies = mkWidthDummies pallasSrs
     logInfo "[TwoPhaseChain] proving [step0, wrap0]"
     eRes <- withSpan "[TwoPhaseChain] prove b0" $ liftEffect $ makeZeroProver noAdvice
       { appInput: F zero, prevs: unit }

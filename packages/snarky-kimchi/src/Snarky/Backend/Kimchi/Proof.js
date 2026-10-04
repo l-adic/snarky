@@ -15,7 +15,7 @@
 // (`fpFromBytes`, `fqFromBytes`) decode the bytes back to bigint.
 
 import { createRequire } from 'module';
-import { Fp, Fq, vestaEndoScalar, pallasEndoScalar } from 'pasta-runtime';
+import { Fp, Fq, bigintsToBytes32LE, vestaEndoScalar, pallasEndoScalar } from 'pasta-runtime';
 
 const require = createRequire(import.meta.url);
 const k = require('kimchi-napi');
@@ -44,17 +44,10 @@ export const fqFromBytesLE = (b) => fqFromBytes(b);
 // asserts the napi shape; the structural decode is PS-driven from here.
 export const asNapiProof = (x) => x;
 
-// FlatVector<F> wire layout: a single Uint8Array of n*32 bytes.
-function fpFlat(arr) {
-  const out = new Uint8Array(arr.length * 32);
-  for (let i = 0; i < arr.length; i++) out.set(fpToBytes(arr[i]), i * 32);
-  return out;
-}
-function fqFlat(arr) {
-  const out = new Uint8Array(arr.length * 32);
-  for (let i = 0; i < arr.length; i++) out.set(fqToBytes(arr[i]), i * 32);
-  return out;
-}
+// FlatVector<F> wire layout: a single Uint8Array of n*32 bytes. The
+// encoding is the same 32-byte LE word for either field.
+const fpFlat = bigintsToBytes32LE;
+const fqFlat = bigintsToBytes32LE;
 
 // ---------------------------------------------------------------------------
 // Proof creation

@@ -27,9 +27,8 @@ import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Prove.Codecs (decodeVerifiableProofBody, encodeVerifiableProofBody)
-import Pickles.Step.Dummy (baseCaseDummies, computeDummySgValues)
 import Pickles.Types (Evals, PaddedLength, StepIPARounds, WrapIPARounds)
-import Pickles.Verify (CompiledProof(..), CompiledProofWidthData(..), SomeCompiledProofWidthData, VerifiableProof, mkSomeCompiledProofWidthData, toVerifiable)
+import Pickles.Verify (CompiledProof(..), CompiledProofWidthData(..), SomeCompiledProofWidthData, VerifiableProof, dummyWrapSgOf, mkSomeCompiledProofWidthData, toVerifiable)
 import Simple.JSON (class ReadForeign, class WriteForeign, readJSON, writeJSON)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.Types (class CircuitType, valueToFields)
@@ -65,17 +64,14 @@ type WidthDummies =
   , dummyChalPolyComm :: AffinePoint StepField
   }
 
--- | The front-padding dummies for a given SRS pair, independent of any
--- | program's `mpvMax`.
-mkWidthDummies :: CRS PallasG -> CRS VestaG -> WidthDummies
-mkWidthDummies pallasSrs vestaSrs =
-  let
-    dummySgsMax = computeDummySgValues (baseCaseDummies { maxProofsVerified: 0 }) pallasSrs vestaSrs
-  in
-    { dummyOldBp: dummyIpaChallenges.stepExpanded
-    , dummyMsgWrap: dummyIpaChallenges.wrapExpanded
-    , dummyChalPolyComm: dummySgsMax.ipa.wrap.sg
-    }
+-- | The front-padding dummies for a given Pallas SRS, independent of
+-- | any program's `mpvMax`.
+mkWidthDummies :: CRS PallasG -> WidthDummies
+mkWidthDummies pallasSrs =
+  { dummyOldBp: dummyIpaChallenges.stepExpanded
+  , dummyMsgWrap: dummyIpaChallenges.wrapExpanded
+  , dummyChalPolyComm: dummyWrapSgOf pallasSrs
+  }
 
 toSerializableCompiledProof
   :: forall mpv stmtVal stmtVar
@@ -222,4 +218,4 @@ decodeCompiledProof
 decodeCompiledProof srs s = do
   w :: SerializableCompiledProofWire stmtVal <- readJSON s
   scp <- fromWireSCP w
-  pure (reconstructCompiledProof (mkWidthDummies srs.pallasSrs srs.vestaSrs) scp)
+  pure (reconstructCompiledProof (mkWidthDummies srs.pallasSrs) scp)

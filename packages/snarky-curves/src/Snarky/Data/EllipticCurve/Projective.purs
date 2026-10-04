@@ -102,9 +102,9 @@ addProjectiveNonEqual p1@(Point { x: x1, y: y1, z: z1 }) p2@(Point { x: x2, y: y
       in
         Point { x: v * aa, y: u * (r - aa) - vvv * y1z2, z: vvv * z1z2 }
 
--- | Per-step witness row of a "double-add" scalar-mul gadget — the five
+-- | Per-step witness row of a "double-add" scalar-mul gadget — the three
 -- | values its exists bodies witness for one step `acc' = 2·acc + Q`.
-type DoubleAddRow f = { s1 :: f, s1Sq :: f, s2 :: f, xRes :: f, yRes :: f }
+type DoubleAddRow f = { s1 :: f, xRes :: f, yRes :: f }
 
 -- | The entire witness chain of a double-add scalar multiplication with
 -- | THREE field inversions total (instead of two PER STEP): walk
@@ -154,7 +154,7 @@ doubleAddChain context acc0 qs = do
           xRes = q.x + s2 * s2 - s1Sq
           yRes = (r.xAcc - xRes) * s2 - r.yAcc
         in
-          { s1, s1Sq, s2, xRes, yRes }
+          { s1, xRes, yRes }
     )
     (Array.zip affs s1s)
     eInvs

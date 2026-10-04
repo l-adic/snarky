@@ -1,7 +1,8 @@
 -- | FFI bindings for Poseidon over the Vesta base field.
 -- |
--- | These functions call into Rust implementations with Kimchi-compatible
--- | parameters. Use `Poseidon.Class` for the polymorphic interface.
+-- | Kimchi-compatible parameters throughout: the round-level operations
+-- | are pure JS, the whole permutation and `hash` run kimchi's own. Use
+-- | `Poseidon.Class` for the polymorphic interface.
 module Poseidon.FFI.Vesta where
 
 import Data.Vector (Vector)
@@ -16,6 +17,9 @@ foreign import applyMds :: Vector 3 Vesta.BaseField -> Vector 3 Vesta.BaseField
 
 -- | Execute full round `i`: S-box → round constants → MDS.
 foreign import fullRound :: Vector 3 Vesta.BaseField -> Int -> Vector 3 Vesta.BaseField
+
+-- | The whole permutation: every full round, in order.
+foreign import permutation :: Vector 3 Vesta.BaseField -> Vector 3 Vesta.BaseField
 
 -- | Get the 3 round constants for round `i`.
 foreign import getRoundConstants :: Int -> Vector 3 Vesta.BaseField
