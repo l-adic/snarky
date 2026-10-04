@@ -49,7 +49,7 @@ import JS.BigInt as JsBigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync (readTextFile)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Pickles (StepField, StepIPARounds, VerifiableProof, Verifier, WrapField, WrapIPARounds, mkVerifier)
+import Pickles (StepField, StepIPARounds, VerifiableProof, Verifier, WrapField, WrapIPARounds, dummyWrapSgOf, mkVerifier)
 import Pickles.DeferredValues (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Dummy (stepEndo, wrapEndo)
 import Pickles.Linearization.FFI (PointEval)
@@ -220,7 +220,7 @@ loadFixture cfg sharedSrs dir = do
 
     verifier = mkVerifier
       { wrapVK: vk
-      , pallasSrs: sharedSrs.pallasSrs
+      , dummyWrapSg: dummyWrapSgOf sharedSrs.pallasSrs
       , vestaSrs
       , stepNumChunks
       }

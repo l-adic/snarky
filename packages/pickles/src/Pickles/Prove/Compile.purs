@@ -1783,6 +1783,7 @@ runMultiCompileFull
   :: forall branches branchesPred mpvMax
    . Add 1 branchesPred branches
   => CompileMultiConfig
+  -> Verify.DummySgs
   -> Int
   -- ^ the declared `@stepChunks`
   -> Vector branches (RuleCompileFns mpvMax)
@@ -1790,10 +1791,12 @@ runMultiCompileFull
        { stepResults :: Vector branches PProveStep.StepCompileResult
        , log2s :: Vector branches Int
        }
-runMultiCompileFull cfg stepNumChunks rules = do
+runMultiCompileFull cfg dummySgs stepNumChunks rules = do
   let
     placeholder = NonEmptyArray.fromFoldable1 (map (const roughDomainsLog2) rules)
-  log2s <- traverse (\rule -> rule.preComputeStepDomainLog2 cfg stepNumChunks placeholder) rules
+  log2s <- traverse
+    (\rule -> rule.preComputeStepDomainLog2 cfg dummySgs stepNumChunks placeholder)
+    rules
   -- Warming happens here because the pre-pass has just yielded the
   -- real per-branch step domains and no constraint building — which
   -- is what fires the lazy `mkConstLagrangeBaseLookup` reads — has
@@ -1812,7 +1815,7 @@ runMultiCompileFull cfg stepNumChunks rules = do
   let
     selfStepDomainLog2s = NonEmptyArray.fromFoldable1 log2s
   stepResults <- traverse
-    (\rule -> rule.stepCompile cfg stepNumChunks selfStepDomainLog2s)
+    (\rule -> rule.stepCompile cfg dummySgs stepNumChunks selfStepDomainLog2s)
     rules
   pure { stepResults, log2s }
 
@@ -1825,18 +1828,20 @@ runMultiCompileFull cfg stepNumChunks rules = do
 -- | `Vector`. The `Int` arguments are the declared `@stepChunks` and,
 -- | for `wrapBranchData`, the compile's own wrap domain log2; the
 -- | `NonEmptyArray` is every branch's step domain log2, which a `Self`
--- | slot's finalize check selects among.
+-- | slot's finalize check selects among; the `DummySgs` are the
+-- | config's SRSes' own, computed once by the compile.
 type RuleCompileFns mpvMax =
   { -- | The rule's slot widths, in slot order.
     slotWidths :: Array Int
   -- | The rule's step domain log2, counted from a constraint-system
   -- | build against placeholder domains.
   , preComputeStepDomainLog2 ::
-      CompileMultiConfig -> Int -> NonEmptyArray Int -> Effect Int
+      CompileMultiConfig -> Verify.DummySgs -> Int -> NonEmptyArray Int -> Effect Int
   -- | The rule's step compile, after checking that each slot's
   -- | candidate domains share their shifts.
   , stepCompile ::
       CompileMultiConfig
+      -> Verify.DummySgs
       -> Int
       -> NonEmptyArray Int
       -> Effect PProveStep.StepCompileResult
@@ -1853,6 +1858,7 @@ type RuleCompileFns mpvMax =
   -- | slot's key is the tag's own wrap key, passed in.
   , dumpBranch ::
       CompileMultiConfig
+      -> Verify.DummySgs
       -> Int
       -> NonEmptyArray Int
       -> DerivedKey PallasG WrapField
@@ -1927,8 +1933,8 @@ mkRuleEntry rule compiledKeys = do
     (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
     slotVKs
   let
-    ctxAt cfg stepNumChunks selfStepDomainLog2s =
-      buildStepProveCtx @prevsSpec cfg stepNumChunks
+    ctxAt cfg dummySgs stepNumChunks selfStepDomainLog2s =
+      buildStepProveCtx @prevsSpec cfg dummySgs stepNumChunks
         (reflectType (Proxy :: Proxy mpvMax))
         slotVKs
         selfStepDomainLog2s
@@ -1936,7 +1942,7 @@ mkRuleEntry rule compiledKeys = do
     { compileFns:
         { slotWidths:
             Vector.toUnfoldable (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
-        , preComputeStepDomainLog2: \cfg stepNumChunks selfStepDomainLog2s ->
+        , preComputeStepDomainLog2: \cfg dummySgs stepNumChunks selfStepDomainLog2s ->
             PProveStep.preComputeStepDomainLog2
               @prevsSpec
               @outputSize
@@ -1948,10 +1954,10 @@ mkRuleEntry rule compiledKeys = do
               @mpvMax
               @mpvPad
               badAdvice
-              (ctxAt cfg stepNumChunks selfStepDomainLog2s)
+              (ctxAt cfg dummySgs stepNumChunks selfStepDomainLog2s)
               rule
-        , stepCompile: \cfg stepNumChunks selfStepDomainLog2s -> do
-            let ctx = ctxAt cfg stepNumChunks selfStepDomainLog2s
+        , stepCompile: \cfg dummySgs stepNumChunks selfStepDomainLog2s -> do
+            let ctx = ctxAt cfg dummySgs stepNumChunks selfStepDomainLog2s
             requireSharedStepShifts ctx
             PProveStep.stepCompile
               @prevsSpec
@@ -1975,9 +1981,9 @@ mkRuleEntry rule compiledKeys = do
               , prevWrapDomainPins:
                   Vector.append (Vector.replicate @mpvPad (Just paddingWrapDomain)) pins
               }
-        , dumpBranch: \cfg stepNumChunks selfStepDomainLog2s selfKey result -> do
+        , dumpBranch: \cfg dummySgs stepNumChunks selfStepDomainLog2s selfKey result -> do
             let
-              ctx = ctxAt cfg stepNumChunks selfStepDomainLog2s
+              ctx = ctxAt cfg dummySgs stepNumChunks selfStepDomainLog2s
               slotKey = case _ of
                 Self -> selfKey
                 External t -> { verifierIndex: t.wrapVerifierIndex, domainLog2: t.wrapDomainLog2 }
@@ -2030,14 +2036,15 @@ type PStepRule r prevsSpec inputVal inputVar outputVal outputVar =
 -- every proof under it.
 --------------------------------------------------------------------------------
 
--- | One rule's `StepProveContext`: the shared config combined with
--- | that rule's `slotVKs` and run through `stepProveContextOf` for the
--- | per-slot layout.
+-- | One rule's `StepProveContext`: the shared config and its SRSes'
+-- | dummy sgs combined with that rule's `slotVKs` and run through
+-- | `stepProveContextOf` for the per-slot layout.
 buildStepProveCtx
   :: forall @prevsSpec mpv
    . SlotWidths prevsSpec mpv
   => Reflectable mpv Int
   => CompileMultiConfig
+  -> Verify.DummySgs
   -> Int
   -- ^ the declared `@stepChunks`
   -> Int
@@ -2045,11 +2052,11 @@ buildStepProveCtx
   -> Vector mpv (Maybe SlotWrapKey)
   -> NonEmptyArray Int
   -> PProveStep.StepProveContext mpv
-buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
+buildStepProveCtx cfg dummySgs stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
   let
     perRuleCfg =
       { srs: cfg.srs
-      , dummySgs: Verify.dummySgsOf cfg.srs
+      , dummySgs
       , perSlotImportedVKs: slotVKs
       , debug: cfg.debug
       , stepNumChunks
@@ -2494,9 +2501,11 @@ compileMulti cfg rules = do
       rules
     slotWidths = deriveWrapSlotWidths (reflectType (Proxy :: Proxy mpvMax))
       (Vector.toUnfoldable (map _.slotWidths ruleFns))
+    -- One MSM per SRS, shared by every stage below.
+    dummySgs = Verify.dummySgsOf cfg.srs
   -- Step 1: the per-rule pre-pass, then the per-rule step compiles
   -- against the domains it found.
-  { stepResults, log2s } <- runMultiCompileFull cfg
+  { stepResults, log2s } <- runMultiCompileFull cfg dummySgs
     (reflectType (Proxy :: Proxy stepChunks))
     ruleFns
 
@@ -2571,7 +2580,7 @@ compileMulti cfg rules = do
         <> show actualWrapDomainLog2
         <> ". Set wrapDomainOverride to the correct domain size."
 
-  let padDummies = wrapPadDummies (Verify.dummySgsOf cfg.srs)
+  let padDummies = wrapPadDummies dummySgs
 
   -- The theorems' dump of this tag, from the circuits just compiled: a
   -- `Self` slot's key is the wrap key built above.
@@ -2585,7 +2594,7 @@ compileMulti cfg rules = do
       slotWidthsVec
     branches <- sequence $ Vector.zipWith
       ( \ruleFn result ->
-          ruleFn.dumpBranch cfg declaredNumChunks selfStepDomainLog2s selfKey result
+          ruleFn.dumpBranch cfg dummySgs declaredNumChunks selfStepDomainLog2s selfKey result
       )
       ruleFns
       stepResults
@@ -2632,7 +2641,7 @@ compileMulti cfg rules = do
 
     verifier = mkVerifier
       { wrapVK: wrapResult.verifierIndex
-      , pallasSrs: cfg.srs.pallasSrs
+      , dummyWrapSg: dummySgs.wrap
       , vestaSrs: cfg.srs.vestaSrs
       , stepNumChunks: reflectType (Proxy :: Proxy stepChunks)
       }
