@@ -86,6 +86,18 @@ The fixture drivers (`*/scripts/check_*fixture*.sh`, `check_fq_sponge.sh`,
 `check_sponge_vectors.sh`, …) validate the executable layer against data recorded from the
 production Rust code.
 
+Pickles step circuits take a predecessor step chunk count and finalize parameters for each
+slot (`ncs : Fin n → Nat` and `P : Fin n → FopParams Fp`). A uniform circuit supplies constant
+functions. The fixture readers retain each slot's declared count; Self slots must agree with
+each other. `wrapStep_kimchiVerify` requires the selected slot's count to match the step key
+being verified, without restricting the other slots.
+
+`PICKLES_DUMP_DIR=<dir> lake exe check-slot-chunks` uses the TwoPhaseChain dump's constants to
+construct synthetic two-slot circuits at counts `[1, 2]` and `[2, 1]`, and checks reader rejection
+of inconsistent Self slots. This tests construction; it supplies no mixed-chunk proof witness.
+`check-tags` separately compares dumped circuits, and its selected `LINKS=<app>,…` mode checks
+cached witnesses and applies both capstones and the handover theorems directly.
+
 ## How to run the formalization loop
 
 ```bash

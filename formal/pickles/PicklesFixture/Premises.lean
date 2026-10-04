@@ -44,7 +44,7 @@ correction sum finite, which is the SRS avoiding the slot's step relations
 (`avoids_stepRelationsAt_iff`). The correction sum reads the packing's kinds only, so any
 statement of the slot's type stands for all (`zeroWrapStatement`). The bases are upstream's
 commitments, which the dump's harness checks against the keys. -/
-def stepMainHyps {n ncs : ℕ} (k : StepMainConsts n ncs) (h : XhatStepCurve.Point) :
+def stepMainHyps {n : ℕ} (k : StepMainConsts n) (h : XhatStepCurve.Point) :
     Except String Unit := do
   unless decide (k.h = h) do throw "h is not the wrap SRS's blinding base"
   unless decide (dummyWrapSgPt ≠ 0) do throw "the dummy sg is the identity"

@@ -396,6 +396,12 @@ jobs:
         name: pickles-tag-dumps
         path: pickles-dumps/
 
+    - name: Check per-slot chunk counts
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-slot-chunks
+
     - name: Check the tag dumps
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

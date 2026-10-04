@@ -109,14 +109,15 @@ structure PrevStatement (s : ℕ) where
   mustVerify : BoolVar Fp
 
 /-- The prover's values for every allocation of the step circuit, slot `i`'s witness at width
-`ws i`. -/
-structure StepMainAdvice (n w : ℕ) (ws : Fin n → ℕ) (ncw ncs k ks : ℕ) (inVal : Type) where
+`ws i` and step chunk count `ncs i`. -/
+structure StepMainAdvice (n w : ℕ) (ws : Fin n → ℕ) (ncw : ℕ) (ncs : Fin n → ℕ)
+    (k ks : ℕ) (inVal : Type) where
   /-- The public input. -/
   publicInput : AsProver Fp inVal
   /-- This system's wrap key. -/
   vk : AsProver Fp (VkComms ncw (PallasPt Fp))
-  /-- Every slot's witness, each at its width. -/
-  slots : AsProver Fp ((i : Fin n) → SlotVal (ws i) ncw ncs k ks)
+  /-- Every slot's witness, each at its width and step chunk count. -/
+  slots : AsProver Fp ((i : Fin n) → SlotVal (ws i) ncw (ncs i) k ks)
   /-- The unfinalized proofs. -/
   unfinalized : AsProver Fp (Vector (UnfVal k) n)
   /-- The wrap-side messages. -/
@@ -151,15 +152,15 @@ def slotInput {sp w ncw ncs k ks : ℕ} (hw : w ≤ MaxProofsVerified)
 /-- What the step circuit allocated and returns: the step statement's cells, and the cells it
 read them from, so a statement about the circuit can name them. Slot `i`'s previous statement
 has `ss i` cells, the application state the step message carries `sa`. -/
-structure StepMainOut (n w : ℕ) (ws ss : Fin n → ℕ) (sa ncw ncs k ks : ℕ) where
+structure StepMainOut (n w : ℕ) (ws ss : Fin n → ℕ) (sa ncw : ℕ) (ncs : Fin n → ℕ) (k ks : ℕ) where
   /-- The step statement: the unfinalized entries, the digest, the wrap-side messages. -/
   out : StepStatement (UnfVar k) (FVar Fp) w
   /-- What the rule returned for each slot. -/
   prevs : (i : Fin n) → PrevStatement (ss i)
   /-- This system's wrap key. -/
   vk : VkComms ncw (PallasPt (FVar Fp))
-  /-- Each slot's witness, at its width. -/
-  slots : (i : Fin n) → SlotVar (ws i) ncw ncs k ks
+  /-- Each slot's witness, at its width and step chunk count. -/
+  slots : (i : Fin n) → SlotVar (ws i) ncw (ncs i) k ks
   /-- The unfinalized proofs. -/
   unfs : Vector (UnfVar k) n
   /-- The wrap-side messages. -/
@@ -170,7 +171,7 @@ structure StepMainOut (n w : ℕ) (ws ss : Fin n → ℕ) (sa ncw ncs k ks : ℕ
 
 /-- The step circuit's message hashing: its outgoing message hashes to its statement's step
 digest, and each slot's wrap digest passes through to the statement, after the padding. -/
-def StepMainOut.HashesMessages {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncw ncs k ks : ℕ}
+def StepMainOut.HashesMessages {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncw k ks : ℕ} {ncs : Fin n → ℕ}
     (V : Valuation Fp) (out : StepMainOut n w ws ss sa ncw ncs k ks) : Prop :=
   (∀ (vk : VkComms ncw (AffinePoint Fp)) (sgs : Vector (AffinePoint Fp) n)
     (chals : Vector (Vector Fp ks) n),
@@ -186,20 +187,20 @@ def StepMainOut.HashesMessages {n w : ℕ} {ws ss : Fin n → ℕ} {sa ncw ncs k
 variable {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
 
 /-- The step circuit of a rule with `n` slots, slot `i` from source `srcs i`, over wrap proofs at
-`ncw` chunks and the step proofs they verified at `ncs`. Slot `i`'s wrap proof is checked by
-`verifyProofWith` at the blinding base `h` and its source's Lagrange points and key cells; `P` are
-the finalize's parameters, `domains` this compile's candidate step domains. The statement is the
+`ncw` chunks and the step proofs they verified at `ncs i`. Slot `i`'s wrap proof is checked by
+`verifyProofWith` at the blinding base `h` and its source's Lagrange points and key cells; `P i` are
+the slot's finalize parameters, `domains` this compile's candidate step domains. The statement is
 unfinalized proofs' cells, the step-message digest, the wrap-side messages, each front-padded to
 the tag's `w` slots: `w − n`
 constant `dummyUnf` entries and `w − n` fresh message cells. The cells it was read from are
 returned beside it. -/
-def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
+def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw k ks : ℕ} {ncs : Fin n → ℕ}
     {inVal inVar : Type} [CircuitType Fp inVal inVar] [CheckedType Fp c inVal inVar]
     {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp c (AllocBranchData Fp Bool) (AllocBranchData (FVar Fp) (BoolVar Fp))]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
-    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (P : Fin n → FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
     (rule : inVar → CircuitM Fp c (((i : Fin n) → PrevStatement (ss i)) × outVar))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) :
@@ -208,13 +209,13 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
   let publicInput ← witness (val := inVal) adv.publicInput
   let (prevs, publicOutput) ← rule publicInput
   let vk ← witness (val := VkComms ncw (PallasPt Fp)) adv.vk
-  let slots ← witness (val := (i : Fin n) → SlotVal (SlotSource.widths w srcs i) ncw ncs k ks)
+  let slots ← witness (val := (i : Fin n) → SlotVal (SlotSource.widths w srcs i) ncw (ncs i) k ks)
     adv.slots
   let unfs ← witness (val := Vector (UnfVal k) n) adv.unfinalized
   let msgs ← witness (val := Vector Fp n) adv.msgs
   let msgsPad ← witness (val := Vector Fp (w - n)) adv.msgsPad
   let results ← (Vector.finRange n).mapM fun i =>
-    verifyOneBy (verifyProofWith h (srcs i).lagrange) P ((srcs i).domains domains)
+    verifyOneBy (verifyProofWith h (srcs i).lagrange) (P i) ((srcs i).domains domains)
       ((srcs i).keyCells vk.points) (slotInput (hws i) dummySg (prevs i) (slots i) unfs[i] msgs[i])
   assertAll (results.toList.map (·.2))
   let appFields := CircuitType.varToFields (F := Fp) (val := inVal) publicInput ++
@@ -237,13 +238,14 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks :
 `Snarky.compileWith`'s empty input), the output `stepMain`'s statement, and `stepMain`'s cells
 kept beside it. -/
 @[nolint unusedArguments]
-def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs k ks : ℕ}
+def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
+    {n w ncw k ks : ℕ} {ncs : Fin n → ℕ}
     {inVal inVar : Type} [CircuitType Fp inVal inVar] [CheckedType Fp c inVal inVar]
     {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp c (AllocBranchData Fp Bool) (AllocBranchData (FVar Fp) (BoolVar Fp))]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
-    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (P : Fin n → FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
     (rule : inVar → CircuitM Fp c (((i : Fin n) → PrevStatement (ss i)) × outVar))
     (adv : StepMainAdvice n w (SlotSource.widths w srcs) ncw ncs k ks inVal) (_ : Unit) :
@@ -255,13 +257,13 @@ def stepMainCircuit [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw ncs
 
 /-- The compiled step circuit's rows contain `stepMain`'s, built from the first variable: the
 statement has no input cells, so the body starts there. -/
-theorem mem_compileWith_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
+theorem mem_compileWith_stepMainCircuit {n w ncw k ks : ℕ} {ncs : Fin n → ℕ} {inVal inVar : Type}
     [CircuitType Fp inVal inVar] {outVal outVar : Type} [CircuitType Fp outVal outVar]
     {ss : Fin n → ℕ} {V : Valuation Fp}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
-    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (P : Fin n → FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
     (rule : inVar →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) × outVar))
@@ -278,13 +280,13 @@ theorem mem_compileWith_stepMainCircuit {n w ncw ncs k ks : ℕ} {inVal inVar : 
   exact List.mem_append_left _ hc
 
 /-- The compiled step circuit's cells are `stepMain`'s run, built from the first variable. -/
-theorem compileWith_stepMainCircuit_cells {n w ncw ncs k ks : ℕ} {inVal inVar : Type}
+theorem compileWith_stepMainCircuit_cells {n w ncw k ks : ℕ} {ncs : Fin n → ℕ} {inVal inVar : Type}
     [CircuitType Fp inVal inVar] {outVal outVar : Type} [CircuitType Fp outVal outVar]
     {ss : Fin n → ℕ} {V : Valuation Fp}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
-    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (P : Fin n → FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
     (rule : inVar →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) × outVar))
@@ -310,12 +312,13 @@ variable {V : Valuation Fp}
 /-- The step statement's unfinalized entries are the circuit's, front-padded to `w` with the
 constant `dummyUnf`, the step message's commitments are the slots' `sg` cells, and the circuit
 hashes its messages (`HashesMessages`). -/
-theorem stepMain_out {n w ncw ncs k ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+theorem stepMain_out {n w ncw k ks : ℕ} {ncs : Fin n → ℕ}
+    {inVal inVar : Type} [CircuitType Fp inVal inVar]
     {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
     (srcs : Fin n → SlotSource ncw ks)
     (hws : ∀ i, SlotSource.widths w srcs i ≤ MaxProofsVerified) (h : IpaPallas.curve.Point)
-    (P : FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
+    (P : Fin n → FopParams Fp) (domains : List (KnownDomain Fp)) (dummySg : AffinePoint (FVar Fp))
     (dummyUnf : UnfVal k)
     (rule : inVar →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) × outVar))
@@ -364,25 +367,26 @@ private theorem slotInput_mask_reads {sp w ncw ncs k ks : ℕ} (hw : w ≤ MaxPr
 /-- **The step circuit's slots read as their proofs' halves.** For any rule, under a valuation
 satisfying the emitted constraints, every slot the rule marks must-verify has its unfinalized
 entry's `shouldFinalize` set, satisfies `Q`, any property the slot's `verifyOneBy` establishes
-of an accepted slot (`ScalarReads` at a step key whose finalize constants are `P`, `domains`),
+of an accepted slot (`ScalarReads` at a step key with that slot's finalize constants),
 and, over the shared SRS `σ` once checked, `SlotReads` at any checked wrap key `K` that its
 source fits (the group half accepts any wrap proof its cells read as, at the slot's statement
 carrying the step-message digest). The rule is opaque; the slots' parity bits, mask bits and
 verdicts are bits by their allocation checks. -/
-theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType Fp inVal inVar]
+theorem stepMain_reads {n w ncw ks : ℕ} {ncs : Fin n → ℕ}
+    {inVal inVar : Type} [CircuitType Fp inVal inVar]
     {outVal outVar : Type} [CircuitType Fp outVal outVar] {ss : Fin n → ℕ}
     [CheckedType Fp (Builder V (KimchiConstraint Fp)) inVal inVar]
-    (σ : SRS IpaPallas.curve.Point) (P : FopParams Fp) (domains : List (KnownDomain Fp))
+    (σ : SRS IpaPallas.curve.Point) (P : Fin n → FopParams Fp) (domains : List (KnownDomain Fp))
     (hks : MaxProofsVerified * ks < 2 ^ 128)
     -- each slot's source
     (srcs : Fin n → SlotSource ncw ks)
     -- what the slot's finalize establishes of an accepted slot, at its expanded challenges
-    (Q : (i : Fin n) → VerifyOneInput (ss i) ks σ.k ncw ncs (SlotSource.widths w srcs i) →
+    (Q : (i : Fin n) → VerifyOneInput (ss i) ks σ.k ncw (ncs i) (SlotSource.widths w srcs i) →
       Vector (FVar Fp) ks → Prop)
     (hQ : ∀ (i : Fin n) (vk : VkComms ncw (AffinePoint (FVar Fp)))
-        (inp : VerifyOneInput (ss i) ks σ.k ncw ncs (SlotSource.widths w srcs i)),
+        (inp : VerifyOneInput (ss i) ks σ.k ncw (ncs i) (SlotSource.widths w srcs i)),
       ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp))
-        (verifyProofWith σ.h (srcs i).lagrange) P ((srcs i).domains domains) vk inp
+        (verifyProofWith σ.h (srcs i).lagrange) (P i) ((srcs i).domains domains) vk inp
       ⦃⇓ o _ => ⌜(∃ ms : Vector Bool (SlotSource.widths w srcs i),
           CircuitType.Reads V inp.proofMask ms) →
         CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
@@ -404,7 +408,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
       (∀ S : Srs IpaPallas.curve, S.σ = σ →
         ∀ K : Key IpaPallas.curve ncw, ncw = chunkCount σ.k K.cvk.domainLog2 →
         (srcs i).Fits σ K.cvk →
-        (∀ (inp : VerifyOneInput (ss i) ks σ.k ncw ncs (SlotSource.widths w srcs i)) msg,
+        (∀ (inp : VerifyOneInput (ss i) ks σ.k ncw (ncs i) (SlotSource.widths w srcs i)) msg,
           σ.Avoids (stepRelationsAt σ K.cvk (inp.statement msg))) →
         (slotInput (hws i) dummySg (r.prevs i) (r.slots i) r.unfs[i] r.msgs[i]).SlotReads
           σ K.cvk V ((srcs i).keyCells r.vk.points)) ∧
@@ -432,11 +436,11 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
     unfold verifyProofAt
     rw [hfit.2]
   have hmap := fun (vk : VkComms ncw (PallasPt (FVar Fp)))
-      (slots : (i : Fin n) → SlotVar (SlotSource.widths w srcs i) ncw ncs σ.k ks)
+      (slots : (i : Fin n) → SlotVar (SlotSource.widths w srcs i) ncw (ncs i) σ.k ks)
       (unfs : Vector (UnfVar σ.k) n) (msgs : Vector (FVar Fp) n)
       (prevs : (i : Fin n) → PrevStatement (ss i)) =>
     builder_spec_vector_mapM_get (V := V) (c := KimchiConstraint Fp)
-      (fun i : Fin n => verifyOneBy (verifyProofWith σ.h (srcs i).lagrange) P
+      (fun i : Fin n => verifyOneBy (verifyProofWith σ.h (srcs i).lagrange) (P i)
         ((srcs i).domains domains) ((srcs i).keyCells vk.points)
         (slotInput (hws i) dummySg (prevs i) (slots i) unfs[i] msgs[i]))
       (fun (i : Fin n) o =>
@@ -466,7 +470,7 @@ theorem stepMain_reads {n w ncw ncs ks : ℕ} {inVal inVar : Type} [CircuitType 
               obtain ⟨⟨S, K⟩, hS, hnc⟩ := SK
               subst hS
               rw [hv i K.cvk hK.1]
-              exact verifyOne_slotReads S K hnc P ((srcs i).domains domains)
+              exact verifyOne_slotReads S K hnc (P i) ((srcs i).domains domains)
                 hks (hws i) ((srcs i).keyCells vk.points) _ hsmall hK.1.1 hK.2)
             (builder_spec_and _ _ _
               (hQ i ((srcs i).keyCells vk.points) _)
