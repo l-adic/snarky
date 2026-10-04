@@ -48,7 +48,7 @@ do (`xiExact_of_constrained`), so both theorems are equivalences at either proof
 
 `SgOk` is no circuit's output: pickles defers it to the next proof's batch opening, and here it
 is a conjunct of `twoHalves_kimchiVerify`; the next proof's batch opens it as an old accumulator
-(`WrapStepRun.mem_olds_or_collision`). The message digests are entries of `pub` like any other,
+(`WrapStepRun.handover_or_collision`). The message digests are entries of `pub` like any other,
 and the packing of statements across the cycle is `verify`'s.
 
 ## Implementation notes
