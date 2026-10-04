@@ -82,7 +82,7 @@ import Pickles.ProofsVerified (ProofsVerified(..), allPossibleDomainLog2s, boolV
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
-import Pickles.Prove.RuleDump (recordRule)
+import Pickles.Prove.RuleDump (RuleDumpJson(..), recordRule)
 import Pickles.Prove.Slot (CompiledTagData, SlotWrapKey(..), slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
 import Pickles.Prove.Slot as RuntimeSlot
 import Pickles.Prove.Step
@@ -1989,7 +1989,7 @@ mkRuleEntry rule compiledKeys = do
             ruleDump <- recordRule @mpv @r @inputVal @outputVal rule
             pure
               { stepMain: { circuit, constants }
-              , rule: ruleDump
+              , rule: RuleDumpJson ruleDump
               }
         }
     , stepProveFn: \handler ctx compileResult advice prevProofs ->

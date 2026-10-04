@@ -14,6 +14,7 @@
 -- | replay needs to rebuild the step circuit's witness.
 module Pickles.Prove.RuleDump
   ( RuleDump
+  , RuleDumpJson(..)
   , RuleOp(..)
   , RulePrev
   , RuleWitness
@@ -45,7 +46,7 @@ import Pickles.Field (StepField)
 import Pickles.Step.Main (RuleOutput)
 import Pickles.Step.Slots (EncodedPrev, PrevValues, prevsVector)
 import Safe.Coerce (coerce)
-import Simple.JSON (writeImpl)
+import Simple.JSON (class WriteForeign, writeImpl)
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable(..))
@@ -64,6 +65,13 @@ type RuleDump =
   , prevs :: Array RulePrev
   , publicOutput :: Array (FVar StepField)
   }
+
+-- | The rule's wire representation. The rule itself remains the recorder's
+-- | typed result; wrapping it selects its custom Simple.JSON encoding.
+newtype RuleDumpJson = RuleDumpJson RuleDump
+
+instance WriteForeign RuleDumpJson where
+  writeImpl (RuleDumpJson d) = encodeRuleDump d
 
 -- | One slot's previous statement: its cells and its must-verify flag.
 type RulePrev =

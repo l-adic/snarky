@@ -3,5 +3,6 @@ package:
   dependencies:
     - foreign
     - maybe
+    - nullable
     - prelude
     - simple-json

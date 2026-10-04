@@ -1,4 +1,4 @@
--- | The theorems' dump of one tag: its wrap circuit and, per branch, its
+-- | The theorems' fixture of one tag: its wrap circuit and, per branch, its
 -- | step circuit and rule, each circuit with the constants it was compiled
 -- | with, the wrap circuit's key, and the values its prover pads a slot a
 -- | rule lacks with. `compileMulti` writes it when its config names a
@@ -6,7 +6,7 @@
 module Pickles.Dump.Tag
   ( CircuitDump
   , BranchDump
-  , TagDump
+  , TagFixture
   , WrapPadding
   , wrapPadding
   , writeTagDump
@@ -26,7 +26,7 @@ import Pickles.CircuitDiffs.Types (ComparableCircuit, Constants, Point)
 import Pickles.Dump.Constants (KeyExport)
 import Pickles.Field (WrapField)
 import Pickles.ProofsVerified (ProofsVerified)
-import Pickles.Prove.RuleDump (RuleDump, encodeRuleDump)
+import Pickles.Prove.RuleDump (RuleDumpJson)
 import Pickles.Types (AllocEvals)
 import Simple.JSON (writeJSON)
 import Snarky.Circuit.DSL (F(..), valueToFields)
@@ -45,7 +45,7 @@ type CircuitDump r =
 -- | A branch: its step circuit and its rule.
 type BranchDump =
   { stepMain :: CircuitDump ()
-  , rule :: RuleDump
+  , rule :: RuleDumpJson
   }
 
 -- | What the wrap prover allocates for a slot its rule lacks: the step
@@ -72,18 +72,15 @@ wrapPadding p =
 
 -- | A tag: its wrap circuit with its key and padding, and its branches, in
 -- | rule order.
-type TagDump =
+type TagFixture =
   { wrapMain :: CircuitDump (key :: KeyExport, padding :: WrapPadding)
   , branches :: Array BranchDump
   }
 
 -- | Write a tag's dump to `path`, creating its directory if needed.
-writeTagDump :: String -> TagDump -> Effect Unit
+writeTagDump :: String -> TagFixture -> Effect Unit
 writeTagDump path d = do
   case lastIndexOf (Pattern "/") path of
     Just i -> mkdir' (take i path) { recursive: true, mode: permsAll }
     Nothing -> pure unit
-  writeTextFile UTF8 path $ writeJSON
-    { wrapMain: d.wrapMain
-    , branches: d.branches <#> \b -> { stepMain: b.stepMain, rule: encodeRuleDump b.rule }
-    }
+  writeTextFile UTF8 path (writeJSON d)

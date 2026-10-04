@@ -37,6 +37,8 @@ module Snarky.Backend.Kimchi.ProofCache
   , piKey
   , pallasVerifierIndexJsonKey
   , vestaVerifierIndexJsonKey
+  , pallasVerifierIndexDump
+  , vestaVerifierIndexDump
   ) where
 
 import Prelude
@@ -294,6 +296,68 @@ pallasVerifierIndexJsonKey = stringify <<< vkRawToJson <<< _vkRaw
 
 vestaVerifierIndexJsonKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
 vestaVerifierIndexJsonKey = stringify <<< vkRawToJson <<< _vkRaw
+
+-- | Fixture representation of a verifier index. Unlike the cache key, this
+-- | remains a typed record until Simple.JSON writes the enclosing fixture.
+type VerifierIndexDump =
+  { domain :: { logSizeOfGroup :: Int, groupGen :: String }
+  , maxPolySize :: Int
+  , public :: Int
+  , prevChallenges :: Int
+  , evals ::
+      { sigmaComm :: Array (Array (Array String))
+      , coefficientsComm :: Array (Array (Array String))
+      , genericComm :: Array (Array String)
+      , psmComm :: Array (Array String)
+      , completeAddComm :: Array (Array String)
+      , mulComm :: Array (Array String)
+      , emulComm :: Array (Array String)
+      , endomulScalarComm :: Array (Array String)
+      , xorComm :: Nullable (Array (Array String))
+      , rangeCheck0Comm :: Nullable (Array (Array String))
+      , rangeCheck1Comm :: Nullable (Array (Array String))
+      , foreignFieldAddComm :: Nullable (Array (Array String))
+      , foreignFieldMulComm :: Nullable (Array (Array String))
+      , rotComm :: Nullable (Array (Array String))
+      }
+  , shifts :: Array String
+  , zkRows :: Int
+  }
+
+pallasVerifierIndexDump :: VerifierIndex Vesta.G Pallas.BaseField -> VerifierIndexDump
+pallasVerifierIndexDump = vkRawToDump <<< _vkRaw
+
+vestaVerifierIndexDump :: VerifierIndex Pallas.G Vesta.BaseField -> VerifierIndexDump
+vestaVerifierIndexDump = vkRawToDump <<< _vkRaw
+
+vkRawToDump :: VkRaw -> VerifierIndexDump
+vkRawToDump r =
+  { domain: r.domain
+  , maxPolySize: r.maxPolySize
+  , public: r.publicInputs
+  , prevChallenges: r.prevChallenges
+  , evals:
+      { sigmaComm: map comm r.evals.sigmaComm
+      , coefficientsComm: map comm r.evals.coefficientsComm
+      , genericComm: comm r.evals.genericComm
+      , psmComm: comm r.evals.psmComm
+      , completeAddComm: comm r.evals.completeAddComm
+      , mulComm: comm r.evals.mulComm
+      , emulComm: comm r.evals.emulComm
+      , endomulScalarComm: comm r.evals.endomulScalarComm
+      , xorComm: optionalComm r.evals.xorComm
+      , rangeCheck0Comm: optionalComm r.evals.rangeCheck0Comm
+      , rangeCheck1Comm: optionalComm r.evals.rangeCheck1Comm
+      , foreignFieldAddComm: optionalComm r.evals.foreignFieldAddComm
+      , foreignFieldMulComm: optionalComm r.evals.foreignFieldMulComm
+      , rotComm: optionalComm r.evals.rotComm
+      }
+  , shifts: r.shifts
+  , zkRows: r.zkRows
+  }
+  where
+  comm c = map (\p -> [ p.x, p.y ]) c.unshifted
+  optionalComm = Nullable.toNullable <<< map comm <<< Nullable.toMaybe
 
 -- | Raw decomposition of a kimchi `VerifierIndex` napi-object into PS.
 -- | Bytes come pre-hex-encoded from JS. Optional gate-commitments are
