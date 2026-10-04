@@ -6,8 +6,8 @@ module Snarky.Constraint.Kimchi.Reduction
   , createInternalVariable
   , finalizeGateQueue
   , mkPadRow
-  , reduceAffineExpression
   , reduceAsBuilder
+  , reduceCVar
   , reduceToVariable
   ) where
 
@@ -30,7 +30,7 @@ import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, Variable(..), incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), CVar(..), Variable(..), incrementVariable, reduceToAffineExpression)
 import Snarky.Circuit.DSL (Variable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), GateKind(..), GenericPlonkConstraint, KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -88,26 +88,42 @@ reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldabl
     addGenericPlonkConstraint { cl: ls, vl: Just lx, cr: rs, vr: Just rx, co: -one, vo: Just vo, m: zero, c: zero }
     pure $ Tuple vo one
 
+-- | A `CVar` as `a * x` (or a constant `a`): `reduceAffineExpression`
+-- | of its affine form. A bare variable or constant is that form
+-- | already, so neither is expanded into an affine expression first.
+reduceCVar
+  :: forall f m
+   . PlonkReductionM m f
+  => CVar f Variable
+  -> m (Tuple (Maybe Variable) f)
+reduceCVar = case _ of
+  Var v -> pure (Tuple (Just v) one)
+  Const c -> pure (Tuple Nothing c)
+  var -> reduceAffineExpression (reduceToAffineExpression var)
+
 reduceToVariable
   :: forall f m
    . PlonkReductionM m f
   => CVar f Variable
   -> m Variable
-reduceToVariable var = do
-  Tuple mvar c <- reduceAffineExpression $ reduceToAffineExpression var
-  case mvar of
-    Nothing -> do
-      vl <- createInternalVariable $ AffineExpression { constant: Just c, terms: mempty }
-      addEqualsConstraint { cl: one, vl: Just vl, cr: c, vr: Nothing }
-      pure vl
-    -- result is c * v
-    Just v ->
-      if c == one then pure v
-      else do
-        c_times_v <- createInternalVariable $ AffineExpression { constant: zero, terms: [ Tuple v c ] }
-        -- c * v - c_times_v = 0
-        addGenericPlonkConstraint { cl: c, vl: Just v, cr: zero, vr: Nothing, co: -one, vo: Just c_times_v, m: zero, c: zero }
-        pure c_times_v
+reduceToVariable = case _ of
+  -- Most cells of a gate are sealed variables: nothing to reduce.
+  Var v -> pure v
+  var -> do
+    Tuple mvar c <- reduceCVar var
+    case mvar of
+      Nothing -> do
+        vl <- createInternalVariable $ AffineExpression { constant: Just c, terms: mempty }
+        addEqualsConstraint { cl: one, vl: Just vl, cr: c, vr: Nothing }
+        pure vl
+      -- result is c * v
+      Just v ->
+        if c == one then pure v
+        else do
+          c_times_v <- createInternalVariable $ AffineExpression { constant: zero, terms: [ Tuple v c ] }
+          -- c * v - c_times_v = 0
+          addGenericPlonkConstraint { cl: c, vl: Just v, cr: zero, vr: Nothing, co: -one, vo: Just c_times_v, m: zero, c: zero }
+          pure c_times_v
 
 newtype Rows f = Rows (KimchiRow f)
 
