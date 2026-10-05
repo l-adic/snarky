@@ -20,12 +20,13 @@ import Data.Either (Either(..), note)
 import Data.Foldable as Foldable
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..))
-import Effect (Effect)
+import Effect (Effect, forE)
 import Effect.Ref as Ref
+import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (AffineExpression, EvaluationError(..), Variable, evalAffineExpression, incrementVariable)
+import Snarky.Circuit.CVar (AffineExpression, EvaluationError(..), Variable(..), evalAffineExpression, incrementVariable)
 import Snarky.Circuit.DSL.Monad (AsProver(..), AsProverCtx(..), CircuitOps(..), Snarky(..))
 import Snarky.Circuit.EvalError (catchEvalError, throwEvalError)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
@@ -60,18 +61,16 @@ allocAssignments
   -> Array f
   -> ProverState f
   -> Effect (Tuple (Array Variable) (ProverState f))
-allocAssignments n values s0 = go 0 s0 []
-  where
-  go i s acc
-    | i >= n = pure (Tuple acc s)
-    | otherwise = do
-        let
-          v = s.nextVar
-          s' = s { nextVar = incrementVariable v }
-        case Array.index values i of
-          Just f -> Assignments.set v f s.assignments
-          Nothing -> pure unit
-        go (i + 1) s' (Array.snoc acc v)
+allocAssignments n values s
+  | n <= 0 = pure (Tuple [] s)
+  | otherwise = do
+      let
+        Variable first = s.nextVar
+        vars = coerce (Array.range first (first + n - 1)) :: Array Variable
+      forE 0 (min n (Array.length values)) \i -> case Array.index values i of
+        Just f -> Assignments.set (Variable (first + i)) f s.assignments
+        Nothing -> pure unit
+      pure (Tuple vars (s { nextVar = Variable (first + n) }))
 
 -- | Whether the variable counter stands on an internal variable.
 atInternal :: forall f. ProverState f -> Boolean
