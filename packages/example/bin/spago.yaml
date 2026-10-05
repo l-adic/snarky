@@ -1,0 +1,38 @@
+package:
+  name: example-fixtures
+  dependencies:
+    - aff
+    - arrays
+    - console
+    - curves
+    - effect
+    - either
+    - example
+    - exceptions
+    - foldable-traversable
+    - foreign
+    - foreign-object
+    - lagrange-cache
+    - lcg
+    - maybe
+    - merkle-tree
+    - node-buffer
+    - node-fs
+    - node-path
+    - node-process
+    - node-workerbees
+    - parallel
+    - pickles
+    - prelude
+    - quickcheck
+    - refs
+    - schnorr
+    - simple-json
+    - snarky
+    - snarky-kimchi
+    - tuples
+    - vector-sized
+  build:
+    strict: true
+  run:
+    main: Example.FixtureDump

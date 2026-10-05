@@ -201,6 +201,29 @@ jobs:
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
 
+    - name: Export the transaction application fixtures
+      run: npm exec -- spago run -p example-fixtures
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+        PICKLES_DUMP_DIR: ${{ github.workspace }}/pickles-dumps
+        PICKLES_PROOF_CACHE_DIR: ${{ github.workspace }}/packages/example/bin/fixtures/proof-cache
+
+    - name: Upload the transaction circuit and application fixtures
+      uses: actions/upload-artifact@v4
+      with:
+        name: example-tag-dumps
+        path: pickles-dumps/
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Upload the transaction proof cache
+      uses: actions/upload-artifact@v4
+      with:
+        name: example-proof-cache
+        path: packages/example/bin/fixtures/proof-cache/
+        if-no-files-found: error
+        retention-days: 1
+
     # Runs only if the example tests passed (a failed step aborts the job).
     # Full one-block pipeline on the purs-backend-es optimized output:
     # circuit compile, genesis, 4 base proofs + 3 merges, root verification.
@@ -380,7 +403,7 @@ jobs:
   # and the cross-tag slot checks. Compiled by the lean.yml build job, like check-cs.
   check-tags:
     if: github.event_name != 'workflow_dispatch'
-    needs: test-libs
+    needs: [test-libs, test-example]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -395,6 +418,18 @@ jobs:
       with:
         name: pickles-tag-dumps
         path: pickles-dumps/
+
+    - name: Download the transaction circuit and application fixtures
+      uses: actions/download-artifact@v4
+      with:
+        name: example-tag-dumps
+        path: pickles-dumps/
+
+    - name: Download the transaction proof cache
+      uses: actions/download-artifact@v4
+      with:
+        name: example-proof-cache
+        path: example-proof-cache/
 
     - name: Check per-slot chunk counts
       run: |
@@ -442,14 +477,22 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps LINKS=TwoPhaseChain,RecurseOverChunks lake exe check-tags
 
-    # On main only: three step domains in one system and slot widths above a rule's predecessor
-    # count, which the two apps above do not reach.
-    - name: Check HeterogeneousPrevs' links
+    # On main only: heterogeneous sources, partial padding and dynamic mustVerify.
+    - name: Check additional applications' links
       if: github.event_name == 'push'
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
-        PICKLES_DUMP_DIR=../pickles-dumps LINKS=HeterogeneousPrevs lake exe check-tags
+        PICKLES_DUMP_DIR=../pickles-dumps \
+          LINKS=HeterogeneousPrevs,SimpleChain,PaddedWideSlots lake exe check-tags
+
+    - name: Check the transaction application's links
+      if: github.event_name == 'push'
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps PICKLES_PROOF_CACHE_DIR=../example-proof-cache \
+          LINKS=ExampleTransaction lake exe check-tags
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

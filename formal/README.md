@@ -162,6 +162,10 @@ Unknown, empty or duplicate selections fail. Every listed circuit and sidecar mu
 checked before loading SRSs. Adding a fixture requires adding its application/tag entry
 to the manifest. Other files do not add tests to the corpus.
 
+The example's transaction application is exported by the dedicated `example-fixtures`
+executable under `packages/example/bin/`. Its manifest entry is `ExampleTransaction`.
+See that directory's README for generation and selected reconstruction commands.
+
 `Chunks4`, `SideLoadedMain` and `SideLoadedBound` do not currently export application
 sidecars and are outside this reconstruction corpus. Their PureScript tests remain in
 the suite. Old sidecars need regeneration because wrap-padding evaluations are required.

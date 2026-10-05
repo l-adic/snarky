@@ -103,6 +103,47 @@
           ]
         }
       },
+      "example-fixtures": {
+        "path": "packages/example/bin",
+        "core": {
+          "dependencies": [
+            "aff",
+            "arrays",
+            "console",
+            "curves",
+            "effect",
+            "either",
+            "example",
+            "exceptions",
+            "foldable-traversable",
+            "foreign",
+            "foreign-object",
+            "lagrange-cache",
+            "lcg",
+            "maybe",
+            "merkle-tree",
+            "node-buffer",
+            "node-fs",
+            "node-path",
+            "node-process",
+            "node-workerbees",
+            "parallel",
+            "pickles",
+            "prelude",
+            "quickcheck",
+            "refs",
+            "schnorr",
+            "simple-json",
+            "snarky",
+            "snarky-kimchi",
+            "tuples",
+            "vector-sized"
+          ]
+        },
+        "test": {
+          "dependencies": []
+        }
+      },
       "lagrange-cache": {
         "path": "packages/lagrange-cache",
         "core": {
@@ -2127,6 +2168,29 @@
         "st",
         "tailrec",
         "unsafe-coerce"
+      ]
+    },
+    "node-workerbees": {
+      "type": "registry",
+      "version": "0.3.1",
+      "integrity": "sha256-jpYs0T2IUsp1uT1OI4M38Nr63km1vdzfg8LxYj21JKQ=",
+      "dependencies": [
+        "aff",
+        "argonaut-core",
+        "arraybuffer-types",
+        "arrays",
+        "avar",
+        "effect",
+        "either",
+        "exceptions",
+        "foldable-traversable",
+        "foreign-object",
+        "newtype",
+        "parallel",
+        "prelude",
+        "transformers",
+        "tuples",
+        "variant"
       ]
     },
     "nonempty": {

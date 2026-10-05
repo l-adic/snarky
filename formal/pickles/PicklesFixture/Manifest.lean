@@ -20,6 +20,7 @@ structure Application where
 private def applications : List Application :=
   [ ⟨"Chunks2", ["chunks2"]⟩
   , ⟨"Codecs", ["nrr"]⟩
+  , ⟨"ExampleTransaction", ["transaction"]⟩
   , ⟨"HeterogeneousPrevs", ["child", "application"]⟩
   , ⟨"ImportTwoPhaseChain", ["two_phase_chain", "chain"]⟩
   , ⟨"NoRecursionReturn", ["nrr"]⟩
