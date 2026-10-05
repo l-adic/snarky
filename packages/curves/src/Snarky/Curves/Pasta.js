@@ -78,6 +78,11 @@ export const _pallasInvert = (x) => {
   return r;
 };
 export const _pallasEq = (x) => (y) => Fq.equal(x, y);
+// The same four as two-argument functions (`PrimeField`'s `mulFn` and friends).
+export const _pallasMulFn = (x, y) => Fq.mul(x, y);
+export const _pallasAddFn = (x, y) => Fq.add(x, y);
+export const _pallasSubFn = (x, y) => Fq.sub(x, y);
+export const _pallasEqFn = (x, y) => Fq.equal(x, y);
 export const _pallasToString = (x) => x.toString();
 export const _pallasRand = (seed) => seedToFq(seed);
 export const _pallasFromBigInt = (x) => Fq.fromBigint(x);
@@ -136,6 +141,11 @@ export const _vestaScalarFieldInvert = (x) => {
   return r;
 };
 export const _vestaScalarFieldEq = (x) => (y) => Fp.equal(x, y);
+// The same four as two-argument functions (`PrimeField`'s `mulFn` and friends).
+export const _vestaScalarFieldMulFn = (x, y) => Fp.mul(x, y);
+export const _vestaScalarFieldAddFn = (x, y) => Fp.add(x, y);
+export const _vestaScalarFieldSubFn = (x, y) => Fp.sub(x, y);
+export const _vestaScalarFieldEqFn = (x, y) => Fp.equal(x, y);
 export const _vestaScalarFieldToString = (x) => x.toString();
 export const _vestaScalarFieldRand = (seed) => seedToFp(seed);
 export const _vestaScalarFieldFromBigInt = (x) => Fp.fromBigint(x);

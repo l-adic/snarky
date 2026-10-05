@@ -32,7 +32,7 @@ module Snarky.Curves.Pasta
 import Prelude
 
 import Data.Array as Array
-import Data.Function.Uncurried (Fn3, runFn3)
+import Data.Function.Uncurried (Fn2, Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import Foreign (F)
 import JS.BigInt (BigInt)
@@ -62,6 +62,10 @@ foreign import _pallasSub :: PallasScalarField -> PallasScalarField -> PallasSca
 foreign import _pallasDiv :: PallasScalarField -> PallasScalarField -> PallasScalarField
 foreign import _pallasInvert :: PallasScalarField -> PallasScalarField
 foreign import _pallasEq :: PallasScalarField -> PallasScalarField -> Boolean
+foreign import _pallasMulFn :: Fn2 PallasScalarField PallasScalarField PallasScalarField
+foreign import _pallasAddFn :: Fn2 PallasScalarField PallasScalarField PallasScalarField
+foreign import _pallasSubFn :: Fn2 PallasScalarField PallasScalarField PallasScalarField
+foreign import _pallasEqFn :: Fn2 PallasScalarField PallasScalarField Boolean
 foreign import _pallasToString :: PallasScalarField -> String
 foreign import _pallasRand :: Int -> PallasScalarField
 foreign import _pallasFromBigInt :: BigInt -> PallasScalarField
@@ -108,6 +112,10 @@ instance PrimeField PallasScalarField where
   toBigInt = _pallasToBigInt
   modulus = _pallasModulus unit
   pow = _pallasPow
+  mulFn = _pallasMulFn
+  addFn = _pallasAddFn
+  subFn = _pallasSubFn
+  eqFn = _pallasEqFn
 
 -- | Pasta primes both have 2-adicity 32 with field-specific 2-adic roots
 -- | (taken from o1js's `bindings/crypto/finite-field.ts` / our vendored
@@ -229,6 +237,10 @@ foreign import _vestaScalarFieldSub :: VestaScalarField -> VestaScalarField -> V
 foreign import _vestaScalarFieldDiv :: VestaScalarField -> VestaScalarField -> VestaScalarField
 foreign import _vestaScalarFieldInvert :: VestaScalarField -> VestaScalarField
 foreign import _vestaScalarFieldEq :: VestaScalarField -> VestaScalarField -> Boolean
+foreign import _vestaScalarFieldMulFn :: Fn2 VestaScalarField VestaScalarField VestaScalarField
+foreign import _vestaScalarFieldAddFn :: Fn2 VestaScalarField VestaScalarField VestaScalarField
+foreign import _vestaScalarFieldSubFn :: Fn2 VestaScalarField VestaScalarField VestaScalarField
+foreign import _vestaScalarFieldEqFn :: Fn2 VestaScalarField VestaScalarField Boolean
 foreign import _vestaScalarFieldToString :: VestaScalarField -> String
 foreign import _vestaScalarFieldRand :: Int -> VestaScalarField
 foreign import _vestaScalarFieldFromBigInt :: BigInt -> VestaScalarField
@@ -275,6 +287,10 @@ instance PrimeField VestaScalarField where
   toBigInt = _vestaScalarFieldToBigInt
   pow = _vestaScalarFieldPow
   modulus = _vestaScalarFieldModulus unit
+  mulFn = _vestaScalarFieldMulFn
+  addFn = _vestaScalarFieldAddFn
+  subFn = _vestaScalarFieldSubFn
+  eqFn = _vestaScalarFieldEqFn
 
 instance TwoAdicField VestaScalarField where
   -- 0x2bce74deac30ebda362120830561f81aea322bf2b7bb7584bdad6fabd87ea32f, the

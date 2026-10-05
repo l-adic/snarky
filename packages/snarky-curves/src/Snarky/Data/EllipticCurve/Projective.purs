@@ -12,17 +12,40 @@ module Snarky.Data.EllipticCurve.Projective
   , doubleAddChain
   ) where
 
-import Prelude
+import Prelude hiding ((*), (+), (-), (==))
 
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (foldM)
+import Data.Function.Uncurried (runFn2)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafePartial)
+import Prelude as P
 import Snarky.Circuit.DSL (EvaluationError(..))
-import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Class (class PrimeField, addFn, eqFn, mulFn, subFn)
 import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams, Point(..), fromAffine)
+
+-- | This module's `*`, `+`, `-` and `==` are the field's two-argument
+-- | operations: a saturated use is one call, where the Prelude operators
+-- | build a partial application through the class dictionary on every use.
+-- | `Int` arithmetic below spells out the Prelude ones (`P.-`).
+mulField :: forall f. PrimeField f => f -> f -> f
+mulField a b = runFn2 mulFn a b
+
+addField :: forall f. PrimeField f => f -> f -> f
+addField a b = runFn2 addFn a b
+
+subField :: forall f. PrimeField f => f -> f -> f
+subField a b = runFn2 subFn a b
+
+eqField :: forall f. PrimeField f => f -> f -> Boolean
+eqField a b = runFn2 eqFn a b
+
+infixl 7 mulField as *
+infixl 6 addField as +
+infixl 6 subField as -
+infix 4 eqField as ==
 
 -- | Invert every element of an array paying a SINGLE field inversion
 -- | (plus ~4n multiplications) instead of n inversions — Montgomery's
@@ -39,16 +62,18 @@ batchInverse xs
   | otherwise =
       let
         n = Array.length xs
-        prefixes = Array.scanl (*) one xs -- prefixes !! i = x₀·…·xᵢ
-        suffixes = Array.scanr (*) one xs -- suffixes !! i = xᵢ·…·xₙ₋₁
+        -- `mul` is the Prelude's: a scan applies its function one argument
+        -- at a time, so the two-argument form buys nothing here.
+        prefixes = Array.scanl mul one xs -- prefixes !! i = x₀·…·xᵢ
+        suffixes = Array.scanr mul one xs -- suffixes !! i = xᵢ·…·xₙ₋₁
         ix arr i = unsafePartial (Array.unsafeIndex arr i)
-        totalInv = recip (ix prefixes (n - 1))
+        totalInv = recip (ix prefixes (n P.- 1))
       in
         Array.mapWithIndex
           ( \i _ ->
               let
-                pre = if i == 0 then one else ix prefixes (i - 1)
-                suf = if i == n - 1 then one else ix suffixes (i + 1)
+                pre = if i P.== 0 then one else ix prefixes (i P.- 1)
+                suf = if i P.== n P.- 1 then one else ix suffixes (i P.+ 1)
               in
                 pre * suf * totalInv
           )

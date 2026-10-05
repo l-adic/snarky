@@ -4,9 +4,10 @@ import Prelude
 
 import Data.Array (replicate)
 import Data.Foldable (foldr)
+import Data.Function.Uncurried (runFn2)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
-import Snarky.Curves.Class (class PrimeField, fromBigInt, pow, toBigInt)
+import Snarky.Curves.Class (class PrimeField, addFn, eqFn, fromBigInt, mulFn, pow, subFn, toBigInt)
 import Test.QuickCheck (arbitrary, quickCheckGen, (===))
 import Test.QuickCheck.Gen (chooseInt)
 import Test.QuickCheck.Laws.Data as Laws
@@ -33,6 +34,17 @@ spec proxy = describe "Field Laws" do
 
   it "satisfies DivisionRing laws" $ liftEffect $
     Laws.checkDivisionRing proxy
+
+  it "the two-argument operations are the operators" $ liftEffect $ quickCheckGen do
+    a :: f <- arbitrary
+    b :: f <- arbitrary
+    -- half the time compare an element with itself, so `eqFn` sees `true`
+    same <- arbitrary
+    let c = if same then a else b
+    pure $ runFn2 mulFn a b == a * b
+      && runFn2 addFn a b == a + b
+      && runFn2 subFn a b == a - b
+      && runFn2 eqFn a c == (a == c)
 
   bigIntHomomorphismSpec proxy
 

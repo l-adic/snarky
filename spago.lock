@@ -527,6 +527,7 @@
             "curves",
             "either",
             "foldable-traversable",
+            "functions",
             "maybe",
             "newtype",
             "partial",
