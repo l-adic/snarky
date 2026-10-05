@@ -74,6 +74,7 @@ import Pickles.DeferredValues (toPlonkMinimal)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Dump.Circuit (comparable, fromCompiledCircuit)
 import Pickles.Dump.Constants (DerivedKey, stepMainConstants, wrapKeyExport, wrapMainConstants)
+import Pickles.Dump.Environment (environmentDump)
 import Pickles.Dump.Shape (BranchShapeSeed, FieldLayoutDump, SlotSourceSeed(..), assembleShape)
 import Pickles.Dump.Tag (BranchDump, wrapPadding, writeTagDump)
 import Pickles.Field (StepField, WrapField)
@@ -2679,7 +2680,7 @@ compileMulti cfg rules = do
       )
       ruleFns
       stepResults
-    writeTagDump path shape
+    writeTagDump path shape declaredNumChunks (environmentDump cfg.srs paddingWrapDomain)
       { wrapMain:
           { circuit
           , constants

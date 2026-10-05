@@ -155,7 +155,11 @@ def replayOps (vals : Option (Array Fp)) : List RuleOp → ℕ → Array (FVar F
     .existsOp n
       (match vals with
         | none => AsProver.throw "advice"
-        | some vs => pure (Vector.ofFn fun i : Fin n => vs.getD (off + i) 0))
+        | some vs =>
+          if h : off + n ≤ vs.size then
+            pure (Vector.ofFn fun i : Fin n => vs[off + i.val]'(by omega))
+          else AsProver.throw s!"rule witness: allocation at {off} needs {n} values, \
+            but the witness has {vs.size}")
       fun xs => replayOps vals ops (off + n) (env ++ xs.toArray.map .var)
   | .constrain c :: ops, off, env =>
     .addConstraintOp (.basic (substBasic env c)) (replayOps vals ops off env)

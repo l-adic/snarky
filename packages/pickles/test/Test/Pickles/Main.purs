@@ -5,6 +5,7 @@ import Prelude
 import Colog (LoggerT, Message, richMessageStdout, usingLoggerT)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Test.Pickles.EnvironmentDumpSpec as EnvironmentDump
 import Test.Pickles.KimchiAppWitness as KimchiAppWitness
 import Test.Pickles.Prove.Chunks2 as Chunks2
 import Test.Pickles.Prove.Chunks4 as Chunks4
@@ -53,6 +54,7 @@ spec = beforeAll buildSharedSrs do
   WrapDomainShifts.spec
   RuleDump.spec
   ShapeDump.spec
+  EnvironmentDump.spec
   CompileValidation.spec
   NoRecursionReturn.spec
   Codecs.spec

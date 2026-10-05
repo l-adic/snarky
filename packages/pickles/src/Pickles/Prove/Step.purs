@@ -1372,22 +1372,23 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
               Just cache -> do
                 let vkDigest = BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex))
                 mp <- getPallasProof cache vkDigest publicInputs
-                case mp of
+                proof <- case mp of
                   Just proof -> pure proof
-                  Nothing -> do
-                    let proof = Lazy.force p
-                    witness <- ruleWitness @inputVal handler
-                      (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
-                      adv.publicInput
-                      rule
-                    case witness of
-                      Left e -> throw ("stepProve: the rule's witness: " <> show e)
-                      Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
-                        publicInputs
-                        proof
-                        prevProofs
-                        w
-                    pure proof
+                  Nothing -> pure $ Lazy.force p
+                -- Refresh replay advice even when the proof is cached: its
+                -- local allocation numbering belongs to the current recorder.
+                witness <- ruleWitness @inputVal handler
+                  (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
+                  adv.publicInput
+                  rule
+                case witness of
+                  Left e -> throw ("stepProve: the rule's witness: " <> show e)
+                  Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
+                    publicInputs
+                    proof
+                    prevProofs
+                    w
+                pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex
             , verifierIndex: compileResult.verifierIndex
@@ -1400,4 +1401,3 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
             , assignments
             , userPublicOutputFields
             }
-

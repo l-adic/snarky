@@ -12,6 +12,7 @@ module Pickles.Step.Main
   , StepMainSrsData
   , UnfinalizedProof
   , liftDummyPerProofUnfinalized
+  , runRuleWithInput
   , stepMain
   , mpvFrontPad
   , mpvFrontPadVec
@@ -85,6 +86,25 @@ type RuleOutput prevsSpec output =
   { prevs :: Prevs prevsSpec
   , publicOutput :: output
   }
+
+-- | Allocate and check the application input, then run its rule.
+-- | Shared by `stepMain` and the rule replay recorders.
+runRuleWithInput
+  :: forall @inputVal r prevsSpec inputVar outputVar
+   . CircuitType StepField inputVal inputVar
+  => CheckedType StepField (KimchiConstraint StepField) inputVar
+  => ( AsProver StepField r (PrevValues prevsSpec)
+       -> inputVar
+       -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput prevsSpec outputVar)
+     )
+  -> AsProver StepField r inputVal
+  -> AsProver StepField r (PrevValues prevsSpec)
+  -> Snarky StepField (KimchiConstraint StepField) r
+       { input :: inputVar, output :: RuleOutput prevsSpec outputVar }
+runRuleWithInput rule inputAdvice prevStates = do
+  input <- exists inputAdvice
+  output <- label "rule_main" (rule prevStates input)
+  pure { input, output }
 
 -- | One `SlotVkSource` per slot, from its compile-time blueprint and
 -- | the entry the rule returned for it.
@@ -570,26 +590,15 @@ stepMain
   dummySg
   advice
   captureRef = do
-  -- Projecting the public input out of the advice from inside the
-  -- `exists` body defers the read to solve time: compile discards
-  -- that body, so the dummy advice is never projected.
-  publicInput <- exists (pure advice <#> \(StepAdvice r) -> r.publicInput)
-
-  { prevs, publicOutput } <-
-    label "rule_main" do
-      -- The rule reads previous proofs' statements through this
-      -- deferred getter, forced only inside the rule's own `exists`
-      -- bodies. A side-loaded slot's key is allocated by the rule too,
-      -- and comes back bound to the rule's statement.
-      result <- rule
-        (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
-        publicInput
-      pure
-        { prevs: prevsVector @len result.prevs
-        , publicOutput: result.publicOutput
-        }
+  -- Both advice projections are deferred to solve time: compilation
+  -- discards `exists` bodies, so dummy advice is never projected.
+  { input: publicInput, output: ruleOutput } <- runRuleWithInput @inputVal rule
+    (pure advice <#> \(StepAdvice r) -> r.publicInput)
+    (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
 
   let
+    prevs = prevsVector @len ruleOutput.prevs
+    publicOutput = ruleOutput.publicOutput
     perSlotVkSources = buildSlotVkSources perSlotVkBlueprints prevs
     slotWidths = slotWidthsOf (Proxy :: Proxy prevsSpec)
 
@@ -882,4 +891,3 @@ stepMain
     outputV = unfsFlat `Vector.append` digestVec `Vector.append` msgsWrap
 
   pure outputV
-

@@ -35,7 +35,7 @@ private def checkEntries (S : Setup)
   match entries with
   | [] => pure ()
   | (name, tag, raw) :: rest =>
-    let shape ← IO.ofExcept (ShapeDump.ofJson raw)
+    let shape ← IO.ofExcept (raw.getObjVal? "shape" >>= ShapeDump.ofJson)
     match shape.load tag known with
     | .error e => throw (IO.userError s!"{name}: {e}")
     | .ok loaded =>
