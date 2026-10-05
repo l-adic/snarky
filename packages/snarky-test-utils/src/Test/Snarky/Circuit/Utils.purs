@@ -218,7 +218,7 @@ circuitTest'
   -> Aff { builtState :: CircuitBuilderState c aux, solver :: Solver f c' a b }
 circuitTest' { checker, postCondition } scenarios circuit = do
   builtState <- liftEffect $ compile' noAdvice { debug: true } (Proxy @a) (Proxy @b) (Proxy @c') circuit
-  let solver = makeSolver' { debug: true } (Proxy @c') circuit
+  let solver = makeSolver' { debug: true } builtState circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenario idx (runTest { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }
@@ -244,7 +244,7 @@ circuitTestM'
   -> Aff { builtState :: CircuitBuilderState c aux, solver :: SolverT f c' r a b }
 circuitTestM' { handler, beforeEach } { checker, postCondition } scenarios circuit = do
   builtState <- liftEffect $ compile' handler { debug: true } (Proxy @a) (Proxy @b) (Proxy @c') circuit
-  let solver = makeSolver' { debug: true } (Proxy @c') circuit
+  let solver = makeSolver' { debug: true } builtState circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenarioM idx beforeEach (runTestM handler { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }

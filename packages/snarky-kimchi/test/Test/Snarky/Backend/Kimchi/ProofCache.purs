@@ -105,7 +105,7 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
         verifierIndex = createVerifierIndex @Pallas.BaseField @VestaG proverIndex
 
         solver :: Solver Pallas.BaseField (KimchiConstraint Pallas.BaseField) (F Pallas.BaseField) (F Pallas.BaseField)
-        solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) squareCircuit
+        solver = makeSolver builtState squareCircuit
 
       runSolver solver (F (fromInt 7)) >>= case _ of
         Left e -> throw $ "Squaring-circuit solver failed: " <> show e

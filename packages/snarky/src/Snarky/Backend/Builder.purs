@@ -12,6 +12,7 @@ module Snarky.Backend.Builder
   , class CompileCircuit
   , appendBuilderConstraint
   , finalize
+  , internalVariables
   , Labeled
   , Constraints
   , emptyConstraints
@@ -26,6 +27,8 @@ import Prelude
 import Data.Array as Array
 import Data.Foldable (foldl) as F
 import Data.List (List(..), reverse) as L
+import Data.Map (Map)
+import Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -33,7 +36,7 @@ import Effect.Ref as Ref
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (Variable, incrementVariable, v0)
+import Snarky.Circuit.CVar (AffineExpression, Variable, incrementVariable, v0)
 import Snarky.Circuit.DSL.Monad (CircuitOps(..), Snarky(..))
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
@@ -95,12 +98,18 @@ class BasicSystem f c' <= CompileCircuit f c c' aux | f c -> c' aux, c' -> c, c 
   -- | all mutable parts) per `compile` invocation — initial states are
   -- | never shared, by construction.
   initialBuilderState :: Effect (CircuitBuilderState c aux)
+  -- | The variables the backend introduced while storing a built
+  -- | circuit's constraints, each with the expression that defines it. An
+  -- | expression mentions only variables of smaller index, so a prover
+  -- | can compute them in increasing order.
+  internalVariables :: CircuitBuilderState c aux -> Map Variable (AffineExpression f)
 
 instance PrimeField f => CompileCircuit f (Basic f) (Basic f) Unit where
   appendBuilderConstraint c s =
     pure s { constraints = snocConstraint { constraint: c, context: s.labelStack } s.constraints }
   finalize = identity
   initialBuilderState = emptyBuilderState unit
+  internalVariables _ = Map.empty
 
 -- | Fresh builder state over any aux value (helper for
 -- | `initialBuilderState` instances).

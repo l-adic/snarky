@@ -1,7 +1,8 @@
 -- | High-level circuit compilation and solving.
 -- |
 -- | - `compile`: interprets a circuit with the builder to extract constraints
--- | - `makeSolver`: creates a witness solver interpreting with the prover
+-- | - `makeSolver`: creates a witness solver for a compiled circuit,
+-- |   interpreting with the prover
 -- |
 -- | Both handle public input/output variable allocation (deterministically,
 -- | from the initial state's `nextVar`) and constrain the circuit's output
@@ -26,13 +27,14 @@ import Data.Array (zip)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (for_)
+import Data.Map as Map
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Snarky.Backend.Advice (AdviceHandler, noAdvice)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, allocVars, finalize, initialBuilderState, runCircuitBuilder)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, allocVars, finalize, initialBuilderState, internalVariables, runCircuitBuilder)
 import Snarky.Backend.Prover (class SolveCircuit, allocAssignments, runCircuitProver)
-import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable, v0)
+import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, v0)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CheckedType, Snarky, assignVars, check, read, runAsProver)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
@@ -90,19 +92,22 @@ compile
   -> Effect (CircuitBuilderState c aux)
 compile handler = compile' handler { debug: false }
 
--- | Create a solver with an explicit initial prover state.
--- | Useful for enabling debug mode: pass `{ debug: true }`.
+-- | Create a solver for a compiled circuit: it runs the circuit's witness
+-- | computations and computes the internal variables the compile
+-- | introduced, from their expressions. `debug` enables the
+-- | per-constraint checks.
 makeSolver'
-  :: forall f a b c r avar bvar
-   . SolveCircuit f c
-  => CheckedType f c avar
+  :: forall f a b c c' aux r avar bvar
+   . CompileCircuit f c c' aux
+  => SolveCircuit f c'
+  => CheckedType f c' avar
   => CircuitType f a avar
   => CircuitType f b bvar
   => { debug :: Boolean }
-  -> Proxy c
-  -> (avar -> Snarky f c r bvar)
-  -> SolverT f c r a b
-makeSolver' { debug } _ circuit = \handler inputs -> do
+  -> CircuitBuilderState c aux
+  -> (avar -> Snarky f c' r bvar)
+  -> SolverT f c' r a b
+makeSolver' { debug } compiled circuit = \handler inputs -> do
   let
     n = sizeInFields (Proxy @f) (Proxy @a)
     m = sizeInFields (Proxy @f) (Proxy @b)
@@ -110,19 +115,17 @@ makeSolver' { debug } _ circuit = \handler inputs -> do
   -- reused across e.g. QuickCheck trials, so it must not be captured).
   store <- Assignments.fresh
   Tuple vars st1 <- allocAssignments (n + m) (valueToFields inputs)
-    { nextVar: v0, assignments: store, debug, labelStack: [] }
+    { nextVar: v0, assignments: store, debug, labelStack: [], internals, internalsPassed: 0 }
   let
     { before: avars, after: bvars } = Array.splitAt n vars
     avar = fieldsToVar @f @a (map Var avars)
 
-    prog :: Snarky f c r bvar
+    prog :: Snarky f c' r bvar
     prog = do
       check avar
       out <- circuit avar
       -- Bind the circuit's output to the preallocated public-output
-      -- variables, then constrain them equal — INSIDE the prover, so
-      -- backend reductions allocate/assign their intermediates exactly
-      -- as the builder did at compile time.
+      -- variables, then constrain them equal, as the compile did.
       assignVars bvars (map valueToFields (read @b out))
       for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
         assertEqual_ v1 v2
@@ -130,19 +133,27 @@ makeSolver' { debug } _ circuit = \handler inputs -> do
   Tuple eOut s <- runCircuitProver handler st1 prog
   case eOut of
     Left e -> pure (Left e)
+    -- The run is the compiled circuit's only if it reached every internal
+    -- variable and its variable counter ends where the compile's did.
+    Right _
+      | s.internalsPassed /= Array.length internals || s.nextVar /= compiled.nextVar ->
+          pure $ Left $ FailedAssertion "the prover's run does not match its compiled circuit"
     Right outVar -> runAsProver handler s.assignments (read outVar) >>= case _ of
       Left e -> pure (Left e)
       Right output -> Assignments.freeze s.assignments <#> (Right <<< Tuple output)
+  where
+  internals = Map.toUnfoldable (internalVariables compiled)
 
 makeSolver
-  :: forall f a b c r avar bvar
-   . SolveCircuit f c
-  => CheckedType f c avar
+  :: forall f a b c c' aux r avar bvar
+   . CompileCircuit f c c' aux
+  => SolveCircuit f c'
+  => CheckedType f c' avar
   => CircuitType f a avar
   => CircuitType f b bvar
-  => Proxy c
-  -> (avar -> Snarky f c r bvar)
-  -> SolverT f c r a b
+  => CircuitBuilderState c aux
+  -> (avar -> Snarky f c' r bvar)
+  -> SolverT f c' r a b
 makeSolver = makeSolver' { debug: false }
 
 -- | A solver: given a handler for the circuit's advice effects and the

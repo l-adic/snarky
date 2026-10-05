@@ -18,6 +18,7 @@ import Test.Snarky.Circuit.Kimchi.EndoMul as EndoMulTests
 import Test.Snarky.Circuit.Kimchi.EndoScalar as EndoScalarTests
 import Test.Snarky.Circuit.Kimchi.GenericTest as GenericTests
 import Test.Snarky.Circuit.Kimchi.GroupMap as GroupMapTests
+import Test.Snarky.Circuit.Kimchi.InternalVariables as InternalVariablesTests
 import Test.Snarky.Circuit.Kimchi.Poseidon as PoseidonTests
 import Test.Snarky.Circuit.Kimchi.VarBaseMul as VarBaseMulTests
 import Test.Snarky.Circuit.Utils (TestConfig)
@@ -57,6 +58,7 @@ spec = do
   ShiftedTests.spec kimchiTestConfig
   GroupMapTests.spec kimchiTestConfig
   DebuggerTests.spec
+  InternalVariablesTests.spec
   -- End-to-end kimchi FFI smoke tests (proof create/verify + on-disk
   -- proof cache round-trip). These live in `snarky-kimchi/test`
   -- rather than `pickles/test` because they exercise only the kimchi
