@@ -92,3 +92,9 @@ root = "scripts.check_tags"
 [[lean_exe]]
 name = "check-slot-chunks"
 root = "scripts.check_slot_chunks"
+
+# Reconstruct selected applications from PureScript shape sidecars, then compare their
+# assembled step and wrap circuits with the independently dumped systems.
+[[lean_exe]]
+name = "check-application-shapes"
+root = "scripts.check_application_shapes"

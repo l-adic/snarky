@@ -143,7 +143,7 @@ structure Runner where
   wrap : Nat → Cache.Entry CS → Cache.Entry CW → Array StepPrev →
     IO (CircuitRun PALLAS_SCALAR_CARD)
 
-private def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
+def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
     (name : String) (tag : Json) : IO Unit := do
   let C := A.circuits S (fun _ => none)
   let branches ← IO.ofExcept ((tag.getObjVal? "branches") >>= Json.getArr?)

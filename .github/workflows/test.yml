@@ -426,6 +426,12 @@ jobs:
     - name: Populate SRS cache
       run: make fetch-srs
 
+    - name: Reconstruct application circuits from shape sidecars
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-shapes
+
     # Two apps' links, each proof's main circuit run on its cached proof with the capstones'
     # hypotheses and conclusions decided: self slots, base cases, recursion, and a chunked step
     # proof verified. `LINKS=all` is too long for every run.

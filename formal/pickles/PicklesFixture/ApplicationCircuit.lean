@@ -116,7 +116,7 @@ private def stepTablesOf {D : Shape} {L : Layout D} (W : Wiring D L) (j : Json) 
   else throw "the step-domain table count differs from the declared branches"
 
 /-- Assemble one declared application, checking its exported configuration against the dump. -/
-private def assembleOf (D : Shape)
+def assembleOf (D : Shape)
     (imports : (t : Fin D.imports.size) → CircuitInterface D.imports[t])
     (tables : List (Nat × SlotLagrange 1 StepIPARounds)) (name : String) (j : Json) :
     Except String (Assembled D) := do
