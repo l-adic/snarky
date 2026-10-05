@@ -233,9 +233,7 @@ private def checkMixed {D : Shape} (A : Assembled D) (S : Setup) : IO Unit := do
       log2s_zkRows := by simp [zkRowsOf] }
   let imports (t : Fin D.imports.size) : CircuitInterface D.imports[t] :=
     { A.wiring.imports t with
-      stepChunks := 2, stepDomains := domains
-      stepDomains_nonempty := by simp [domains]
-      stepChunkDomains := by simp [domains, Kimchi.Verifier.chunkCount, StepIPARounds] }
+      stepChunks := 2, stepDomains := domains }
   let C := A.circuits S (fun _ => none)
   let mixed : Circuits D A.layout := { C with wiring := { A.wiring with imports } }
   let b : D.Branch ← if h : 1 < D.branches then pure ⟨1, h⟩

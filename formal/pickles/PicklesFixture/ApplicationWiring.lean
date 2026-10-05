@@ -101,7 +101,6 @@ def checkWiring {D : Shape} {L : Layout D} (W : Wiring D L) (name : String) (tag
     let sc ← constantsOf "stepMain" (← branch.getObjVal? "stepMain")
     let slots ← (← sc.getObjVal? "slots").getArr?
     unless slots.size == D.slots b do throw s!"{name}: branch slot count differs from description"
-    have _ := W.step_key_layout b
     for i in List.finRange (D.slots b) do
       let some slot := slots[i.val]? | throw s!"{name}: missing slot {i.val}"
       let C := W.source b i
@@ -127,8 +126,5 @@ def checkWiring {D : Shape} {L : Layout D} (W : Wiring D L) (name : String) (tag
         throw s!"{name}/{b.val}/{i.val}: source domains differ from branch keys"
       unless (← wrapLagrangeOf (← slot.getObjVal? "lagrange")) == (W.sources b i).lagrange do
         throw s!"{name}/{b.val}/{i.val}: source Lagrange table differs from assembly"
-      have _ := W.source_width b i
-      have _ := W.source_domains b i
-      have _ := W.pin_domain b i C.wrapIndex (W.pins_at_slot b i)
 
 end PicklesFixture.Application

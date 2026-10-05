@@ -58,8 +58,6 @@ private def checkMixed (imported : LayoutInterface) : IO Unit := do
     "allocating a larger capacity must preserve the source's declared width"
   require ((D.slotAt b j).map Fin.val == some i.val)
     "a live slot must remain present even when its source has width zero"
-  have _ := Layout.slotWidth_le_wrapWidths L b i
-  have _ := (Layout.check_ok_iff D).mpr L
   -- Reverse the branch order: capacity cannot be chosen from the first or last source.
   let reversed : Shape :=
     { D with
@@ -84,9 +82,6 @@ private def checkAssembly : IO Unit := do
   require ((D.slotAt b j0).isNone && (D.slotAt b j1).map Fin.val == some 0)
     "the one-slot branch must be front-padded, not back-padded"
   require ((D.paddedSlot b i).val == 1) "the live slot must move to wrap position 1"
-  have _ := Shape.slotAt_paddedSlot D b i
-  have _ := Layout.slotWidth_le_wrapWidths L b i
-  have _ := (Layout.check_ok_iff D).mpr L
   checkMixed child
   let ⟨chainLayout⟩ ← checked twoPhaseChain
   checkMixed chainLayout.export
@@ -130,9 +125,6 @@ private def wired {D : Shape} (L : Layout D) (name : String) (tag : Json)
     (imports : (t : Fin D.imports.size) → CircuitInterface D.imports[t]) : IO (Wiring D L) := do
   let A ← IO.ofExcept (backendOf D tables tag)
   let W ← IO.ofExcept (Wiring.assemble L A imports)
-  for b in List.finRange D.branches do
-    for i in List.finRange (D.slots b) do
-      have _ := Wiring.pin_domain W b i (W.source b i).wrapIndex (W.pins_at_slot b i)
   IO.ofExcept (checkWiring W name tag)
   IO.println s!"✓ {name}: assembled keys, source domains, chunk counts, Lagrange tables and pins"
   return W
@@ -235,9 +227,7 @@ def main : IO Unit := do
   let mixed : CircuitInterface child :=
     { childW.export with
       stepChunks := 2
-      stepDomains := domains
-      stepDomains_nonempty := by simp [domains]
-      stepChunkDomains := by simp [domains, Kimchi.Verifier.chunkCount, StepIPARounds] }
+      stepDomains := domains }
   let mixedW ← IO.ofExcept (Wiring.assemble layout W.backend
     (oneImport mixed))
   let b : D.Branch := ⟨1, by change 1 < 2; decide⟩

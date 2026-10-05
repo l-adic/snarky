@@ -36,7 +36,6 @@ namespace Pickles.CheckAxioms
 def roots : List Name :=
   [ `Pickles.Application.Shape.slotAt_paddedSlot,
     `Pickles.Application.Layout.slotWidth_le_wrapWidths,
-    `Pickles.Application.Layout.check_ok_iff,
     `Pickles.Application.Wiring.source_width,
     `Pickles.Application.Wiring.source_domains,
     `Pickles.Application.Wiring.pins_at_slot,

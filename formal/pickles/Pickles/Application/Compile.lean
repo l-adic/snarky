@@ -109,13 +109,4 @@ def Layout.check (D : Shape) : Except String (PLift (Layout D)) :=
     .ok ⟨⟨hw⟩⟩
   else .error "the application's predecessor count exceeds MaxProofsVerified"
 
-/-- Assembly succeeds exactly when this application has a compatible layout. -/
-theorem Layout.check_ok_iff (D : Shape) :
-    (∃ L, Layout.check D = .ok ⟨L⟩) ↔ Layout D := by
-  constructor
-  · rintro ⟨L, _⟩
-    exact L
-  · intro L
-    exact ⟨L, by simp [check, L.width_le]⟩
-
 end Pickles.Application

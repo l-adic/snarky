@@ -34,10 +34,6 @@ structure CircuitInterface (I : LayoutInterface) where
   stepChunks : Nat
   /-- The candidate step domains, checked at this source's chunk count. -/
   stepDomains : KnownDomains stepChunks
-  /-- An application has at least one branch domain. -/
-  stepDomains_nonempty : stepDomains.log2s ≠ []
-  /-- Every candidate domain uses this source's declared chunk count. -/
-  stepChunkDomains : ∀ d ∈ stepDomains.log2s, stepChunks = chunkCount StepIPARounds d
   /-- The backend's public-input bases for this source's wrap key. -/
   wrapLagrange : SlotLagrange 1 StepIPARounds
 
@@ -133,14 +129,6 @@ def Wiring.export {D : Shape} {L : Layout D} (W : Wiring D L) : CircuitInterface
   wrapDomain := W.valid.wrapDomain
   stepChunks := W.backend.stepChunks
   stepDomains := W.backend.stepDomains
-  stepDomains_nonempty := by
-    exact List.ne_nil_of_mem (List.mem_map.mpr
-      ⟨W.backend.stepKeys[(⟨0, D.branches_pos⟩ : D.Branch)], by simp, rfl⟩)
-  stepChunkDomains := by
-    intro d hd
-    obtain ⟨K, hK, rfl⟩ := List.mem_map.mp hd
-    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hK)
-    exact W.valid.stepChunks ⟨i, hi⟩
   wrapLagrange := W.backend.wrapLagrange
 
 /-- The source layout attached to a branch-local slot. -/

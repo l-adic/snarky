@@ -167,7 +167,7 @@ private theorem WrapStepLink.verifies
     producer.wiring.stepKeys producerBranch producer.wiring.backend.stepKeys[producerBranch]
     (by simp [Wiring.stepKeys]) (producer.wiring.valid.stepChunks producerBranch)
     producer.stepLagrange hAssumptions.lagrange e.wrap.V producerD.widths
-    (by simpa [Shape.widths] using producer.wiring.valid.stepLayouts producerBranch)
+    (by simpa [Wiring.stepKeys] using producer.wiring.step_key_layout producerBranch)
     producer.wiring.pins producer.setup.dummy producerL.wrapWidths e.wrap.advice
     producer.wiring.valid.branches_le
     (by simpa [Wiring.stepKeys] using hAssumptions.points_ne)

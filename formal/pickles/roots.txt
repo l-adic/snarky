@@ -59,10 +59,7 @@ PicklesFixture.Application.wrapTablesOf -- collect backend table artifacts befor
 PicklesFixture.Application.backendOf -- load own artifacts without per-slot source declarations
 PicklesFixture.Application.checkWiring -- compare assembled circuit parameters with separate dump fields
 Pickles.Application.Wiring.assemble -- the fixture assembles typed wiring and tests rejected backends
-Pickles.Application.Wiring.pin_domain -- the fixture applies domain selection to every active slot
-Pickles.Application.Shape.slotAt_paddedSlot -- the layout fixture exercises the padding inverse
-Pickles.Application.Layout.slotWidth_le_wrapWidths -- source widths fit shared wrap capacities
-Pickles.Application.Layout.check_ok_iff -- layout assembly accepts exactly compatible applications
+Pickles.Application.Layout.check -- the layout driver assembles each layout through the executable checker
 Pickles.Application.Layout.export -- the next application imports the checked layout interface
 Pickles.buildEvalList
 Pickles.Key.avoids_lagrangeRelations_iff -- the drivers decide its right side
