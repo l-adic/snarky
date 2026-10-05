@@ -20,10 +20,14 @@ structure ImportedApplication where
   shape : Shape
   /-- Checked wiring and replayed branch rules. -/
   assembled : Assembled shape
+  /-- Canonical statement encodings for resolving producer/consumer interfaces. -/
+  schemas : FieldSchemas shape
+  /-- Advice used by the wrap prover in positions absent from its selected branch. -/
+  padding : WrapPadding
   /-- SRSs and the decoded or derived padding values. -/
   setup : Setup
 
-private def sameKey (a b : Key IpaPallas.curve 1) : Bool :=
+def sameKey (a b : Key IpaPallas.curve 1) : Bool :=
   decide (a.cvk.comms = b.cvk.comms) && a.cvk.domainLog2 == b.cvk.domainLog2 &&
     a.cvk.publicCount == b.cvk.publicCount && a.cvk.prevChallenges == b.cvk.prevChallenges
 
@@ -36,7 +40,7 @@ private def resolve (raw : ApplicationDump) (known : Array ImportedApplication) 
       let source := p.assembled.wiring.export
       if imp.stepChunks == source.stepChunks &&
           imp.stepDomains.toList == source.stepDomains.log2s then
-        .ok ⟨imp.wrapKey, p.assembled.layout.export, source⟩
+        .ok ⟨imp.wrapKey, p.assembled.layout.export, source, p.schemas.own, p.schemas.own_eq⟩
       else .error "an import's domains or chunks disagree with its producer"
 
 private def setupOf (E : EnvironmentDump)
@@ -75,7 +79,7 @@ private def assembleFor (raw : ApplicationDump) (loaded : LoadedShape)
       (wiring.backend.stepKeys[0]'D.branches_pos)
     (d, key.cvk.lagrangePoints step.σ m)
   let stepLagrange := fun d => (tables.lookup d).getD (Vector.replicate m (Vector.replicate _ 0))
-  return (⟨loaded.layout, wiring, rules, stepLagrange, raw.environment.wrapChallenges.expanded⟩, S)
+  return (⟨loaded.layout, wiring, rules, stepLagrange⟩, S)
 
 /-- Reconstruct checked application circuits using only the sidecar, shared SRSs and imports. -/
 def ApplicationDump.assemble (raw : ApplicationDump)
@@ -91,6 +95,11 @@ def ApplicationDump.assemble (raw : ApplicationDump)
     | .error e => .error e
     | .ok loaded => match assembleFor raw loaded wrap step with
       | .error e => .error e
-      | .ok (A, S) => .ok ⟨loaded.shape, A, S⟩
+      | .ok (A, S) =>
+        let u := raw.environment.stepChallenges.expanded.cast S.stepRounds.symm
+        let sg := Ipa.msm IpaVesta.curve S.step.σ.g (bPolyCoefficients fun i => u[i])
+        let pad : WrapPadding :=
+          ⟨⟨⟨sg.x, sg.y⟩⟩, raw.environment.wrapEvals, raw.environment.wrapDomain.val⟩
+        .ok ⟨loaded.shape, A, loaded.schemas, pad, S⟩
 
 end PicklesFixture.Application

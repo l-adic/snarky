@@ -18,6 +18,7 @@
 module Pickles.Dump.Constants
   ( DerivedKey
   , KeyExport
+  , stepKeyExport
   , wrapKeyExport
   , srsLagrangeAt
   , stepMainConstants

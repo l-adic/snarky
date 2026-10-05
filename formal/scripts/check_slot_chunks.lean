@@ -3,8 +3,8 @@ import PicklesFixture.Fop
 
 /-!
 Construct step circuits with different predecessor step chunk counts in the same rule.
-The selected TwoPhaseChain dump supplies real wrap-key and Lagrange constants; the slot
-counts and candidate step domains below are synthetic. This checks decoding and circuit
+The TwoPhaseChain sidecar supplies the wrap key and blinding base. Lagrange entries,
+slot counts and candidate step domains below are synthetic. This checks decoding and circuit
 construction, not a mixed-chunk proof or a satisfying witness.
 
 Run from `formal/`: `PICKLES_DUMP_DIR=<dir> lake exe check-slot-chunks`.
@@ -52,13 +52,16 @@ def main : IO Unit := do
   let some dir ← IO.getEnv "PICKLES_DUMP_DIR"
     | throw (IO.userError "PICKLES_DUMP_DIR is not set")
   let tag ← IO.ofExcept (Json.parse (← IO.FS.readFile
-    (System.FilePath.mk dir / "TwoPhaseChain" / "two_phase_chain.json")))
-  let branches ← IO.ofExcept ((tag.getObjVal? "branches") >>= Json.getArr?)
-  let some branch := branches[1]? | throw (IO.userError "missing recursive branch")
-  let step ← IO.ofExcept (branch.getObjVal? "stepMain")
-  let c ← IO.ofExcept (step.getObjVal? "constants")
-  let slots ← IO.ofExcept ((c.getObjVal? "slots") >>= Json.getArr?)
-  let some slot := slots[0]? | throw (IO.userError "missing recursive slot")
+    (System.FilePath.mk dir / "TwoPhaseChain" / "shapes" / "two_phase_chain.json")))
+  let key ← IO.ofExcept (tag.getObjVal? "resolved" >>= (·.getObjVal? "wrapKey"))
+  let h ← IO.ofExcept (tag.getObjVal? "environment" >>= (·.getObjVal? "srs") >>=
+    (·.getObjVal? "wrap") >>= (·.getObjVal? "h"))
+  let m := CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp)
+  let slot := Json.mkObj [("kind", toJson "self"), ("width", toJson (2 : Nat)),
+    ("numChunks", toJson (1 : Nat)), ("domains", toJson [14]), ("key", key),
+    ("lagrange", Json.arr (Array.replicate m (Json.arr #[h])))]
+  let step := Json.mkObj [("constants", Json.mkObj
+    [("kind", toJson "stepMain"), ("h", h), ("slots", Json.arr #[slot])])]
   let one := externalSlot slot 1
   let two := externalSlot slot 2
   let read (slots : Array Json) := withSlots step slots >>= stepMainOf 2 2

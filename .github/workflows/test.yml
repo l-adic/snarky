@@ -120,7 +120,7 @@ jobs:
       run: make fetch-srs
 
     # The pickles prove tests also write the theorems' dump of every tag they compile
-    # (`<app>/<tag>.json`: its circuits, constants, keys and rules) for the `check-tags` job.
+    # (`<app>/<tag>.json`: comparison circuits; `shapes/<tag>.json`: reconstruction inputs).
     - name: Test all libraries (excludes pickles-circuit-diffs)
       run: make test-libs
       env:
@@ -402,21 +402,15 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-slot-chunks
 
-    - name: Check application layouts and wiring against tag metadata
+    - name: Check application layouts and wiring against sidecars
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
-        lake build PicklesFixture.Application PicklesFixture.ApplicationWiring
+        lake build PicklesFixture.Application PicklesFixture.ApplicationImport
         PICKLES_DUMP_DIR=../pickles-dumps lake env lean --run scripts/check_application_layouts.lean
 
-    - name: Check the tag dumps
-      run: |
-        export PATH="$HOME/.elan/bin:$PATH"
-        cd formal
-        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-tags
-
-    # The links read the committed proof caches and the SRS they were made against; the
-    # Lagrange points are committed under formal/lagrange-cache.
+    # Application reconstruction derives its bases from the shared SRS. Link checks
+    # additionally read committed proof caches and memoized verifier bases.
     - name: Cache SRS files
       uses: actions/cache@v3
       with:
@@ -426,17 +420,22 @@ jobs:
     - name: Populate SRS cache
       run: make fetch-srs
 
-    - name: Reconstruct application circuits from sidecars and SRS
+    - name: Check the tag dumps
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-tags
+
+    - name: Check rule replay and malformed application inputs
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        lake env lean --run scripts/check_application_manifest.lean
         lake exe check-rule-replay
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-inputs
-        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-shapes
 
-    # Two apps' links, each proof's main circuit run on its cached proof with the capstones'
-    # hypotheses and conclusions decided: self slots, base cases, recursion, and a chunked step
-    # proof verified. `LINKS=all` is too long for every run.
+    # Reconstructed applications invoke the verification and handover capstones directly:
+    # Self recursion, base branches and a two-chunk imported source.
     - name: Check two apps' links
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

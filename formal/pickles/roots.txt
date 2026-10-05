@@ -49,40 +49,23 @@ Pickles.FopSide.unshiftV_read
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
+PicklesFixture.srsAt -- shared SRS loader used by the application drivers
+PicklesFixture.stepMainOf -- synthetic mixed-chunk reader regression
 Pickles.Application.Circuits.stepBuilt_advice_irrel -- audited builder erasure for branch advice
 Pickles.Application.Circuits.wrapBuilt_advice_irrel -- audited builder erasure for wrap advice
 Pickles.Application.Circuits.stepBuilt_rules_congr -- audited transport for replayed rule witnesses
-PicklesFixture.Application.runners -- selected fixtures construct circuits through application assembly
 PicklesFixture.Application.checkSelectedFromShape -- reconstruct selected circuits from sidecar shapes
-PicklesFixture.Application.CircuitRun.atBody -- exact compiled systems connect runs to the capstones
-PicklesFixture.Application.checkMetadata -- independently described layouts against selected tag dumps
-PicklesFixture.Application.wrapTablesOf -- collect backend table artifacts before checking their routing
-PicklesFixture.Application.backendOf -- load own artifacts without per-slot source declarations
-PicklesFixture.Application.checkWiring -- compare assembled circuit parameters with separate dump fields
 Pickles.Application.Wiring.assemble -- the fixture assembles typed wiring and tests rejected backends
 Pickles.Application.Layout.check -- the layout driver assembles each layout through the executable checker
 Pickles.Application.Layout.export -- the next application imports the checked layout interface
 Pickles.buildEvalList
-Pickles.Key.avoids_lagrangeRelations_iff -- the drivers decide its right side
 Pickles.Key.check
 Pickles.instDecidableKeyLayout -- synthesis: the fixture loaders check each key's circuit layout
 Pickles.Srs.check
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
-Pickles.avoids_stepRelationsAt_iff -- the drivers decide its right side
-Pickles.KnownDomains.ofList?
 Pickles.accOk
-Pickles.carryWith_lagrangePoints -- the drivers decide the carry at memoized points
 Pickles.sgOkWith_lagrangePoints -- the drivers decide sgOk at memoized points
-Pickles.KeyReads.of_readPt -- check-tags decides its premises for a slot's key cells
-Pickles.instDecidableEqVkComms -- check-tags compares a slot's key cells with its key
-Pickles.IvpProof.read_eq -- check-tags decides its premises: a proof's cells read off the cached proof
-Pickles.OldsRead.of_readPt -- check-tags decides its premises for the old-accumulator cells
-Pickles.pubEvalsWith -- check-tags decides FopTies' public evaluations at memoised Lagrange points
-Pickles.pubEvalsWith_lagrangePoints -- which is runPubEvals at the key's points
-Pickles.sgOkWith_of_kimchiVerifyWith -- check-tags takes SgOk from kimchiVerify's own sg equation
-Pickles.accOk_of_carryWith -- check-tags takes a carried accumulator's accOk from its predecessor's SgOk
-Pickles.corrSumPt_packed_congr -- check-tags discharges a slot's Avoids from one statement's decision
 Pickles.pow2PowMul -- check-cs pins the gadget's constraint system
 Pickles.pow2PowMul_spec -- check-axioms audits the gadget's read
 Pickles.wrapVerifyWith -- check-cs pins the verify block at its dumps' points
@@ -106,3 +89,11 @@ Pickles.Application.StepProofHandover.handover_or_collision -- complete messages
 Pickles.Application.WrapProofHandover.handover_or_collision -- complete messages and wrap verification
 Pickles.Application.WrapProofHandover.appState_eq_or_collision -- the consumer reads the producer state
 PicklesFixture.Application.validate -- selected runs apply application capstones and both handovers
+PicklesFixture.Application.runner -- imported applications retain satisfying typed runs
+
+-- Public bridges for consumers relating verifier computations, read cells and accumulators.
+Pickles.OldsRead.of_readPt
+Pickles.carryWith_lagrangePoints
+Pickles.pubEvalsWith_lagrangePoints
+Pickles.sgOkWith_of_kimchiVerifyWith
+Pickles.accOk_of_carryWith

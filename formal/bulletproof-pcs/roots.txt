@@ -8,7 +8,6 @@ Bulletproof.Ipa.Wire.Input.check
 Bulletproof.Ipa.verify
 Bulletproof.Fixture.Raw.toInput
 Bulletproof.Fixture.RawBatch.toFlatInput
-Bulletproof.Fixture.lagrangeBasisCached
 Bulletproof.Fixture.parseRaw
 Bulletproof.Fixture.parseRawBatch
 Bulletproof.Fixture.parseSRS
@@ -16,5 +15,4 @@ Bulletproof.Fixture.recombinePoint
 Bulletproof.Fixture.recombineScalar
 Bulletproof.Fixture.segmentCombinePoint
 Bulletproof.Fixture.segmentCombineScalar
-Bulletproof.Fixture.SRSLoader.loadSRS
 -- script-surface:end

@@ -10,8 +10,12 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Foreign (MultipleErrors)
 import Pickles.Dump.Environment (EnvironmentDump, environmentDump)
+import Pickles.Field (WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
+import Pickles.Step.Dummy (baseCaseDummies)
+import Pickles.Types (AllocEvals(..))
 import Simple.JSON (readJSON, writeJSON)
+import Snarky.Circuit.DSL (F(..))
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -21,13 +25,14 @@ spec = describe "Pickles.Dump.Environment" do
   it "round-trips the shared environment through Simple.JSON" \{ pallasSrs, vestaSrs } -> liftEffect do
     let
       environment = environmentDump { pallasSrs, vestaSrs } N1
+        paddingEvals
       json = writeJSON environment
     case (readJSON json :: Either MultipleErrors EnvironmentDump) of
       Left _ -> throw "environment JSON did not decode"
       Right decoded -> decoded `shouldEqual` environment
 
   it "retains the distinct one-predecessor unfinalized padding" \{ pallasSrs, vestaSrs } -> liftEffect do
-    let { padding } = environmentDump { pallasSrs, vestaSrs } N1
+    let { padding } = environmentDump { pallasSrs, vestaSrs } N1 paddingEvals
     case padding.unfinalized of
       [ n0, n1, n2 ] -> do
         map _.predecessors padding.unfinalized `shouldEqual` [ 0, 1, 2 ]
@@ -39,4 +44,19 @@ spec = describe "Pickles.Dump.Environment" do
     Array.length padding.wrapChallenges.expanded `shouldEqual` 15
     Array.length padding.stepChallenges.raw `shouldEqual` 16
     Array.length padding.stepChallenges.expanded `shouldEqual` 16
+    Array.length padding.wrapEvals `shouldEqual` 89
     padding.wrapDomain `shouldEqual` 1
+
+paddingEvals :: AllocEvals (F WrapField)
+paddingEvals = AllocEvals
+  { ftEval1: F d.ftEval1
+  , publicEvals: point d.publicEvals
+  , zEvals: point d.zEvals
+  , witnessEvals: map point d.witnessEvals
+  , coeffEvals: map point d.coeffEvals
+  , sigmaEvals: map point d.sigmaEvals
+  , indexEvals: map point d.indexEvals
+  }
+  where
+  d = (baseCaseDummies { maxProofsVerified: 0 }).dummyEvals
+  point p = { zeta: F p.zeta, omegaTimesZeta: F p.omegaTimesZeta }

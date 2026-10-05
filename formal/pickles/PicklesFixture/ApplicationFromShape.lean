@@ -1,54 +1,64 @@
 import PicklesFixture.ApplicationImport
 import PicklesFixture.ApplicationRun
+import PicklesFixture.Manifest
 
 /-!
-# Reconstruct applications from PureScript shape sidecars
+# Reconstruct applications from PureScript sidecars
 
-The sidecar supplies the shape, rules, resolved keys and protocol padding. Shared SRS files
-supply the generators for deriving commitments and Lagrange bases. Only after assembly does
-the driver open the independent circuit dump, for full step and wrap comparison.
+Applications are selected from the fixture manifest and assembled in dependency order,
+using full wrap keys to resolve imports. Independent circuit dumps are opened only afterward.
 -/
 
 namespace PicklesFixture.Application
 
 open Lean Pickles Pickles.Application
 
-/-- The selected fixture applications, each in producer-before-consumer order. -/
-private def selectedNames (apps : List String) : List (String × String) :=
-  (if "TwoPhaseChain" ∈ apps then [("TwoPhaseChain", "two_phase_chain")] else []) ++
-  (if "HeterogeneousPrevs" ∈ apps then
-    [("HeterogeneousPrevs", "child"), ("HeterogeneousPrevs", "application")] else []) ++
-  (if "RecurseOverChunks" ∈ apps then
-    [("RecurseOverChunks", "chunks2"), ("RecurseOverChunks", "recurse")] else []) ++
-  (if "PaddedWideSlots" ∈ apps then [("PaddedWideSlots", "padded_wide_slots")] else [])
-
 private def readJson (path : System.FilePath) : IO Json := do
-  match Json.parse (← IO.FS.readFile path) with
-  | .ok j => return j
-  | .error e => throw (IO.userError s!"{path}: {e}")
+  IO.ofExcept (Json.parse (← IO.FS.readFile path))
 
-private def checkEntries (dir : System.FilePath)
-    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
-    (entries : List (String × String)) (known : Array ImportedApplication) : IO Unit := do
-  match entries with
-  | [] => pure ()
-  | (app, tagName) :: rest =>
-    let name := s!"{app}/{tagName}"
-    let raw ← readJson (dir / app / "shapes" / s!"{tagName}.json")
-    let dump ← IO.ofExcept (ApplicationDump.ofJson raw)
+private def assembleEntries (wrap : Srs Bulletproof.IpaPallas.curve)
+    (step : Srs Bulletproof.IpaVesta.curve)
+    (finish : List (String × ImportedApplication) → IO Unit) :
+    Nat → List (String × ApplicationDump) →
+    List (String × ImportedApplication) → IO Unit
+  | 0, [], known => finish known
+  | 0, _, _ => throw (IO.userError "unresolved application imports or cyclic dependencies")
+  | fuel + 1, pending, known => do
+    if pending.isEmpty then return ← finish known
+    let ready := pending.find? fun (_, dump) =>
+      dump.imports.all fun imp => known.any fun (_, p) =>
+        sameKey p.assembled.wiring.backend.wrapKey imp.wrapKey
+    let some (name, dump) := ready
+      | throw (IO.userError s!"unresolved imports in {pending.map (·.1)}")
     IO.println s!"{name}: reconstructing from sidecar and SRS"
     (← IO.getStdout).flush
-    match dump.assemble wrap step known with
+    match dump.assemble wrap step (known.map (·.2)).toArray with
     | .error e => throw (IO.userError s!"{name}: {e}")
-    | .ok A => do
-      let tag ← readJson (dir / s!"{name}.json")
-      checkCompiled A.assembled A.setup name tag
-      checkEntries dir wrap step rest (known.push A)
-termination_by entries.length
+    | .ok A =>
+      assembleEntries wrap step finish fuel (pending.filter (·.1 != name)) (known ++ [(name, A)])
 
-/-- Reconstruct the selected applications before reading their independent circuit dumps. -/
-def checkSelectedFromShape (dir : System.FilePath) (apps : List String)
-    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve) : IO Unit :=
-  checkEntries dir wrap step (selectedNames apps) #[]
+/-- Load each selected manifest entry's required sidecars, then assemble in import order. -/
+def loadApplications (dir : System.FilePath) (apps : List Manifest.Application)
+    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
+    (finish : List (String × ImportedApplication) → IO Unit) : IO Unit := do
+  unless !apps.isEmpty do throw (IO.userError "no applications selected")
+  let mut entries := []
+  for app in apps do
+    for tag in app.tags do
+      let path := dir / app.name / "shapes" / s!"{tag}.json"
+      let dump ← IO.ofExcept (ApplicationDump.ofJson (← readJson path))
+      entries := entries ++ [(s!"{app.name}/{tag}", dump)]
+  assembleEntries wrap step finish entries.length entries []
+
+/-- Compare every step and wrap circuit after reconstruction has finished. -/
+def compareApplications (dir : System.FilePath) (apps : List (String × ImportedApplication)) :
+    IO Unit := do
+  for (name, A) in apps do
+    checkCompiled A.assembled A.setup name (← readJson (dir / s!"{name}.json"))
+
+/-- Reconstruct selected applications before reading their independent circuit dumps. -/
+def checkSelectedFromShape (dir : System.FilePath) (apps : List Manifest.Application)
+    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve) : IO Unit := do
+  loadApplications dir apps wrap step (compareApplications dir)
 
 end PicklesFixture.Application

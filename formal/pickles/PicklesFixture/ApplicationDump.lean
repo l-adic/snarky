@@ -40,6 +40,8 @@ structure EnvironmentDump where
   stepChallenges : ChallengesDump IpaVesta.curve StepIPARounds
   /-- Unfinalized padding indexed by the branch's predecessor count. -/
   unfinalized : Vector (UnfVal WrapIPARounds) (MaxProofsVerified + 1)
+  /-- The wrap prover's evaluation padding for absent slots. -/
+  wrapEvals : AllocEvals 1 Fq
   /-- The supported wrap-domain index used in prover padding. -/
   wrapDomain : Fin wrapDomainLog2s.length
 
@@ -124,6 +126,9 @@ private def environmentOf (j : Json) : Except String EnvironmentDump := do
       stepChallenges := ← challengesOf IpaVesta.curve StepIPARounds
         (← padding.getObjVal? "stepChallenges")
       unfinalized := ← unfinalizedOf (← padding.getObjVal? "unfinalized")
+      wrapEvals := CircuitType.fieldsToValue (F := Fq) (val := AllocEvals 1 Fq)
+        (← vectorOf (CircuitType.size Fq (AllocEvals 1 Fq)) FixtureKit.parseZMod
+          (← padding.getObjVal? "wrapEvals"))
       wrapDomain := ⟨wrapDomain, h⟩ }
   else throw "unsupported padding wrap domain"
 

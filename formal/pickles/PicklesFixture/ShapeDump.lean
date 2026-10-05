@@ -59,7 +59,7 @@ def ShapeDump.ofJson (j : Json) : Except String ShapeDump := do
     (← (← b.getObjVal? "slots").getArr?).mapM SlotSourceDump.ofJson
   return ⟨statement, imports, branches⟩
 
-private def fieldSchema (s : FieldLayoutDump) : Schema where
+def fieldSchema (s : FieldLayoutDump) : Schema where
   Input := Vector Fp s.inputFields
   InputVar := Vector (FVar Fp) s.inputFields
   Output := Vector Fp s.outputFields
@@ -68,16 +68,30 @@ private def fieldSchema (s : FieldLayoutDump) : Schema where
   outputEncoding := inferInstance
   inputCheck := inferInstance
 
+/-- Canonical field-vector schemas retained when loading an application's shape. -/
+structure FieldSchemas (D : Shape) where
+  /-- The application's flattened input/output layout. -/
+  own : FieldLayoutDump
+  /-- The shape uses the canonical field encoding. -/
+  own_eq : D.schema = fieldSchema own
+  /-- Each imported application's flattened layout. -/
+  imports : (i : Fin D.imports.size) → FieldLayoutDump
+  /-- Imported encodings are canonical too. -/
+  imports_eq : ∀ i, D.imports[i].schema = fieldSchema (imports i)
+
 /-- An application already assembled in compilation order, identified by its exported key. -/
 structure KnownTag where
   key : Pickles.Key Bulletproof.IpaPallas.curve 1
   interface : LayoutInterface
   circuit : CircuitInterface interface
+  statement : FieldLayoutDump
+  schema_eq : interface.schema = fieldSchema statement
 
 /-- A decoded shape and the already assembled interfaces its slots use. -/
 structure LoadedShape where
   shape : Shape
   layout : Layout shape
+  schemas : FieldSchemas shape
   imports : (i : Fin shape.imports.size) → CircuitInterface shape.imports[i]
 
 private def checkImportLayouts (raw : ShapeDump) (resolved : Array KnownTag) :
@@ -136,7 +150,14 @@ def ShapeDump.load (raw : ShapeDump) (resolved : Array KnownTag) : Except String
           let importFn : (i : Fin D.imports.size) → CircuitInterface D.imports[i] := fun i => by
             have hi : i.val < resolved.size := by simpa [D, interfaces] using i.isLt
             simpa [D, interfaces] using (resolved[i.val]'hi).circuit
-          .ok ⟨D, L, importFn⟩
+          let schemas : FieldSchemas D :=
+            { own := raw.statement, own_eq := rfl
+              imports := fun i => resolved[i.val]'
+                (by simpa [D, interfaces] using i.isLt) |>.statement
+              imports_eq := fun i => by
+                have hi : i.val < resolved.size := by simpa [D, interfaces] using i.isLt
+                simpa [D, interfaces] using (resolved[i.val]'hi).schema_eq }
+          .ok ⟨D, L, schemas, importFn⟩
       else .error "an application shape must have at least one branch"
 
 end PicklesFixture.Application

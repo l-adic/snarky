@@ -16,13 +16,13 @@ import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.CircuitDiffs.Types (Point)
 import Pickles.Dummy (dummyIpaChallenges)
-import Pickles.Field (StepField)
+import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.Step.Dummy (baseCaseDummies, mkDummyPerProofUnfinalized)
-import Pickles.Types (MaxProofsVerified, StepIPARounds, WrapIPARounds)
+import Pickles.Types (AllocEvals, MaxProofsVerified, StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Kimchi.Proof (srsBlindingGenerator)
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (valueToFields)
+import Snarky.Circuit.DSL (F, valueToFields)
 import Snarky.Circuit.DSL.SizedF (toField)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -40,6 +40,7 @@ type EnvironmentDump =
       { wrapChallenges :: ChallengesDump
       , stepChallenges :: ChallengesDump
       , unfinalized :: Array { predecessors :: Int, fields :: Array String }
+      , wrapEvals :: Array String
       , wrapDomain :: Int -- ^ The `ProofsVerified` index, not a domain log2.
       }
   }
@@ -49,8 +50,9 @@ type EnvironmentDump =
 environmentDump
   :: { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG }
   -> ProofsVerified
+  -> AllocEvals (F WrapField)
   -> EnvironmentDump
-environmentDump srs wrapDomain =
+environmentDump srs wrapDomain wrapEvals =
   { srs:
       { wrap:
           { curve: "pallas"
@@ -77,6 +79,7 @@ environmentDump srs wrapDomain =
           , fields: map field $ valueToFields @StepField $ mkDummyPerProofUnfinalized $
               baseCaseDummies { maxProofsVerified: predecessors }
           }
+      , wrapEvals: map field (valueToFields @WrapField wrapEvals)
       , wrapDomain: fromEnum wrapDomain
       }
   }

@@ -73,10 +73,10 @@ import Pickles.Constants (roughDomainsLog2, zkRowsForNumChunks)
 import Pickles.DeferredValues (toPlonkMinimal)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Dump.Circuit (comparable, fromCompiledCircuit)
-import Pickles.Dump.Constants (DerivedKey, stepMainConstants, wrapKeyExport, wrapMainConstants)
+import Pickles.Dump.Constants (stepKeyExport, wrapKeyExport)
 import Pickles.Dump.Environment (environmentDump)
 import Pickles.Dump.Shape (BranchShapeSeed, FieldLayoutDump, SlotSourceSeed(..), assembleShape)
-import Pickles.Dump.Tag (BranchDump, wrapPadding, writeTagDump)
+import Pickles.Dump.Tag (BranchDump, writeTagDump)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IncrementallyVerifyProof (class StepChunkLayout)
 import Pickles.Linearization (pallas) as Linearization
@@ -1122,8 +1122,8 @@ type SlotProveData =
 -- padShapeProveData
 --------------------------------------------------------------------------------
 
--- | One entry's worth of each field `padShapeProveData` front-pads,
--- | built once per compile by `wrapPadDummies`.
+-- | One entry of each field padded by `padShapeProveData`. The
+-- | unfinalized proof is selected at the branch's predecessor count.
 type PadProveDataDummies =
   { dummyPrevSg :: AffinePoint WrapField
   , dummyPrevStepChals :: Vector StepIPARounds StepField
@@ -1199,11 +1199,10 @@ padShapeProveData dummies slotWidths sd =
         <> sd.slotsValue
   }
 
--- | One entry of each field `padShapeProveData` front-pads: the
--- | base-case dummies at `maxProofsVerified = 0` and the SRSes' dummy
--- | sgs. A constant of the SRSes, which the tag dump also records.
-wrapPadDummies :: Verify.DummySgs -> PadProveDataDummies
-wrapPadDummies dummySgs =
+-- | Padding at a branch's predecessor count and the shared SRS
+-- | commitments. The evaluation padding is independent of the count.
+wrapPadDummies :: Int -> Verify.DummySgs -> PadProveDataDummies
+wrapPadDummies predecessors dummySgs =
   { dummyPrevSg: dummyStepSgInWrapField
   , dummyPrevStepChals: dummyIpaChallenges.stepExpanded
   , dummyMsgWrapChal: dummyIpaChallenges.wrapExpanded
@@ -1220,11 +1219,9 @@ wrapPadDummies dummySgs =
   , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
   }
   where
-  -- `maxProofsVerified: 0`, not `mpvMax`: that is the
-  -- `forceOrderFor` sequence which draws
-  -- `unfinalizedConstantDummy` first, putting its four challenges
-  -- on the random oracle's first four counters.
-  bcdMax = baseCaseDummies { maxProofsVerified: 0 }
+  -- The unfinalized padding must match the selected step branch's
+  -- predecessor count. Its random-oracle draw order differs at one.
+  bcdMax = baseCaseDummies { maxProofsVerified: predecessors }
   -- The two dummy sgs live on different curves: `prevSgs` and
   -- `prevStepAccs` take the Pallas one, `kimchiPrevEntries` the
   -- Vesta one.
@@ -1883,16 +1880,8 @@ type RuleCompileFns mpvMax =
       Int
       -> PProveStep.StepCompileResult
       -> Either String (WrapBranchData mpvMax)
-  -- | The branch's part of the tag's dump, once the wrap circuit exists:
-  -- | its step circuit with constants and key, and its rule. A `Self`
-  -- | slot's key is the tag's own wrap key, passed in.
-  , dumpBranch ::
-      CompileMultiConfig
-      -> Int
-      -> NonEmptyArray Int
-      -> DerivedKey PallasG WrapField
-      -> PProveStep.StepCompileResult
-      -> Effect BranchDump
+  -- | Rule replay, source interfaces and the independently compiled step circuit.
+  , dumpBranch :: PProveStep.StepCompileResult -> Effect BranchDump
   }
 
 -- | One branch, as the rules carrier stores it: monomorphic closures
@@ -2044,20 +2033,21 @@ mkRuleEntry rule compiledKeys = do
               , prevWrapDomainPins:
                   Vector.append (Vector.replicate @mpvPad (Just paddingWrapDomain)) pins
               }
-        , dumpBranch: \cfg stepNumChunks selfStepDomainLog2s selfKey result -> do
+        , dumpBranch: \result -> do
             let
-              ctx = ctxAt cfg stepNumChunks selfStepDomainLog2s
-              slotKey = case _ of
-                Self -> selfKey
-                External t -> { verifierIndex: t.wrapVerifierIndex, domainLog2: t.wrapDomainLog2 }
+              source = case _ of
+                Just (External t) -> Just
+                  { wrapKey: wrapKeyExport t.wrapVerifierIndex
+                  , stepChunks: t.numChunks
+                  , stepDomains: NonEmptyArray.toArray t.stepDomainLog2s
+                  }
+                _ -> Nothing
             circuit <- comparable <$> fromCompiledCircuit result.builtState
-            constants <- stepMainConstants (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
-              ctx.srsData
-              cfg.srs.pallasSrs
-              (map (map slotKey) slotVKs)
             ruleDump <- recordRule @mpv @r @inputVal @outputVal rule
             pure
-              { stepMain: { circuit, constants }
+              { circuit
+              , key: stepKeyExport result.verifierIndex
+              , sources: Vector.toUnfoldable (map source slotVKs)
               , rule: RuleDumpJson ruleDump
               }
         }
@@ -2333,7 +2323,11 @@ runMultiProverBody
     -- The Vesta dummy sg, which the kimchi entries below also pad with.
     dummyWrapSgInStepField = dummySgs.wrap
 
-    proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
+    branchPadding = padDummies
+      { dummyPrevUnfinalizedProof =
+          (wrapPadDummies (reflectType (Proxy @mpv)) dummySgs).dummyPrevUnfinalizedProof
+      }
+    proveDataMax = padShapeProveData branchPadding wrapResult.slotWidths proveData
 
   eStepResult <- r.stepProveFn handler stepProveCtx stepCR stepAdvice cachePrevs
   case eStepResult of
@@ -2660,34 +2654,21 @@ compileMulti cfg rules = do
         <> show actualWrapDomainLog2
         <> ". Set wrapDomainOverride to the correct domain size."
 
-  let padDummies = wrapPadDummies (Verify.dummySgsOf cfg.srs)
+  let padDummies = wrapPadDummies 0 (Verify.dummySgsOf cfg.srs)
 
   -- The theorems' dump of this tag, from the circuits just compiled: a
   -- `Self` slot's key is the wrap key built above.
   for_ cfg.dump \path -> do
     shape <- either Exc.throw pure $ assembleShape
       (Vector.toUnfoldable (map (\r -> r.shape unit) ruleFns))
-    let
-      selfKey = { verifierIndex: wrapResult.verifierIndex, domainLog2: actualWrapDomainLog2 }
-      selfStepDomainLog2s = NonEmptyArray.fromFoldable1 log2s
     circuit <- comparable <$> fromCompiledCircuit wrapResult.builtState
-    constants <- wrapMainConstants wrapMainConfig cfg.srs.vestaSrs
-      (perBranchVec <#> \b -> { verifierIndex: b.stepVK, domainLog2: b.stepDomainLog2 })
-      slotWidthsVec
-    branches <- sequence $ Vector.zipWith
-      ( \ruleFn result ->
-          ruleFn.dumpBranch cfg declaredNumChunks selfStepDomainLog2s selfKey result
-      )
+    branches <- sequence $ Vector.zipWith (\ruleFn result -> ruleFn.dumpBranch result)
       ruleFns
       stepResults
-    writeTagDump path shape declaredNumChunks (environmentDump cfg.srs paddingWrapDomain)
-      { wrapMain:
-          { circuit
-          , constants
-          , key: wrapKeyExport wrapResult.verifierIndex
-          , padding: wrapPadding
-              { stepAcc: padDummies.dummyPrevStepAcc, evals: padDummies.dummyPrevEvals, domain: paddingWrapDomain }
-          }
+    writeTagDump path shape declaredNumChunks
+      (environmentDump cfg.srs paddingWrapDomain padDummies.dummyPrevEvals)
+      { circuit
+      , key: wrapKeyExport wrapResult.verifierIndex
       , branches: Vector.toUnfoldable branches
       }
 

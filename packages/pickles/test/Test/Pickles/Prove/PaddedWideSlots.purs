@@ -20,7 +20,7 @@
 -- |
 -- | Branches 0 and 2 use different unfinalized padding constants. Their
 -- | exported circuits exercise predecessor-count selection in reconstruction.
--- | Proving branch 0 checks the fully padded witness path.
+-- | Proving branches 0 and 2 checks fully and partially padded witnesses.
 module Test.Pickles.Prove.PaddedWideSlots
   ( spec
   ) where
@@ -30,14 +30,14 @@ import Prelude
 import Colog (LoggerT, Message, logInfo, withSpan)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
-import Data.Tuple (fst)
-import Data.Tuple.Nested (Tuple1, tuple3, (/\))
+import Data.Tuple (fst, snd)
+import Data.Tuple.Nested (Tuple1, tuple1, tuple3, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
@@ -102,5 +102,11 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
       Left e -> liftEffect $ Exc.throw ("PaddedWideSlots base prover: " <> show e)
       Right p -> pure p
 
-    verifyBatch output.verifier (map toVerifiable [ b0 ]) `shouldEqual` true
+    let BranchProver incrementProver = fst (snd (snd output.provers))
+    eB1 <- withSpan "[PaddedWideSlots] prove branch 2" $ liftEffect $ incrementProver noAdvice
+      { appInput: F one, prevs: tuple1 (InductivePrev b0 output.tag) }
+    b1 <- case eB1 of
+      Left e -> liftEffect $ Exc.throw ("PaddedWideSlots increment prover: " <> show e)
+      Right p -> pure p
+    verifyBatch output.verifier (map toVerifiable [ b0, b1 ]) `shouldEqual` true
     logInfo "[PaddedWideSlots] verified"

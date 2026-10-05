@@ -139,14 +139,15 @@ def isAudited (n : Name) : Bool :=
   isOurs n
 
 /-- Transitive closure of the dependency graph from `roots`, restricted to our packages'
-    edges (Mathlib/CompElliptic never reference our code, so nothing of ours is reachable
-    that way). -/
+    edges and the fixture harnesses called by script roots. Mathlib/CompElliptic never reference
+    our code, so their edges need not be followed. -/
 partial def reachable (env : Environment) (roots : Array Name) : NameSet :=
   let rec go (seen : NameSet) : List Name → NameSet
     | [] => seen
     | n :: rest =>
       let fresh := (directDeps env n).filter fun d =>
-        isOurs d && !seen.contains d
+        (isOurs d || (`PicklesFixture).isPrefixOf ((privateToUserName? d).getD d)) &&
+          !seen.contains d
       go (fresh.foldl (·.insert ·) seen) (fresh.toList ++ rest)
   go (roots.foldl (·.insert ·) ∅) roots.toList
 

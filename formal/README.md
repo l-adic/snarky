@@ -92,14 +92,14 @@ functions. The fixture readers retain each slot's declared count; Self slots mus
 each other. `wrapStep_kimchiVerify` requires the selected slot's count to match the step key
 being verified, without restricting the other slots.
 
-`PICKLES_DUMP_DIR=<dir> lake exe check-slot-chunks` uses the TwoPhaseChain dump's constants to
+`PICKLES_DUMP_DIR=<dir> lake exe check-slot-chunks` uses the TwoPhaseChain sidecar's key to
 construct synthetic two-slot circuits at counts `[1, 2]` and `[2, 1]`, and checks reader rejection
 of inconsistent Self slots. This tests construction; it supplies no mixed-chunk proof witness.
 `check-tags` separately compares dumped circuits, reading each branch's unfinalized padding
 from its tag's sidecar by predecessor count. Its selected `LINKS=<app>,…` mode checks cached
 witnesses and applies both capstones and the handover theorems directly.
 
-The application layout check reads only the tag metadata for `TwoPhaseChain` and
+The application layout check reads only the sidecar metadata for `TwoPhaseChain` and
 `HeterogeneousPrevs` (including its child tag). It checks independently described
 branch/slot shapes against the dumps and exercises front padding and rejection of
 widths above the protocol bound, without building circuits or running witness checks.
@@ -116,29 +116,26 @@ wrap-domain pin matrix. It checks key layouts, chunk counts against domain sizes
 supported wrap domains. Generic theorems establish source widths, domain selection,
 live-slot pins and the branch-key layouts consumed by the existing capstones.
 
-The same driver compares those assembled circuit parameters with the dumped per-slot
-constants. Backend inputs are the application's wrap key and ordered branch keys, plus
-Lagrange tables. Those tables occur only inside slot constants in the current schema:
-the driver collects one per wrap domain and rejects disagreeing copies. Table selection
-is checked; correspondence with SRS commitments remains the explicit upstream premise.
-Negative cases change key order, key layout, source keys/domains/chunks, Lagrange table
-selection and domain pins. This phase builds static configuration, not circuits or runs.
+The same driver checks backend metadata from the application's wrap key and ordered
+branch keys. Its synthetic Lagrange values suffice for layout checks. Reconstruction
+derives the actual tables from the shared SRS, and cached-run capstone checks establish
+their correspondence explicitly. Negative cases change key order, key layouts,
+domains and chunk counts.
 
 Source chunk counts are derived per branch-local slot. A synthetic imported interface
 exercises mixed counts 2/1 without imposing an application-wide predecessor chunk count.
 That is a static-wiring check, not a mixed-chunk proof fixture. The existing step circuits,
 capstones and readers accept per-slot counts, so `Wiring.sourceChunks` can supply the
-count family for application circuit construction. Application execution/path wrappers
-remain a later phase.
+count family for application circuit construction.
 
 ```bash
-lake build PicklesFixture.Application PicklesFixture.ApplicationWiring
+lake build PicklesFixture.Application PicklesFixture.ApplicationImport
 PICKLES_DUMP_DIR=/path/to/pickles-dumps lake env lean --run scripts/check_application_layouts.lean
 ```
 
 ### Reconstruction from application sidecars
 
-`check-application-shapes` reconstructs each application from its single
+`check-tags` and `check-application-shapes` reconstruct each application from its single
 `shapes/<tag>.json` sidecar and the shared SRS files. The sidecar carries the shape,
 input checks and rule operations, resolved keys and protocol padding. Imports resolve
 against previously reconstructed producers. Lagrange tables and the padding accumulator
@@ -148,12 +145,26 @@ an on-disk Lagrange cache.
 The result retains the existing `Assembled` application and its `Setup`. Only after
 assembly does the driver read `<tag>.json` to compare every step branch and the shared
 wrap circuit: public-input size, gate types, coefficients, permutation wiring and cell
-variable identities up to renaming. The selected corpus is `TwoPhaseChain`,
-`HeterogeneousPrevs`, `RecurseOverChunks` and `PaddedWideSlots` (16 circuits across six tags).
+variable identities up to renaming. Circuit dumps contain only those comparison inputs;
+keys, rule operations and padding are in the sidecar, and witness advice is in the proof cache.
 `PaddedWideSlots` has zero-, two- and one-predecessor branches at width two, so its
 padded branches exercise distinct entries of the unfinalized padding table.
-The reconstruction reader has no circuit-dump or proof-cache argument. Cached-run
-capstone checks still use the existing application harness.
+The reconstruction reader has no circuit-dump or proof-cache argument. With `LINKS=<app>,…`,
+`check-tags` also runs the reconstructed circuits on cached advice, checks source and
+backend satisfaction and public inputs, and directly applies the application verification
+and handover capstones. Every selected cache entry must be covered.
+
+`pickles/PicklesFixture/Manifest.lean` is the required corpus: an explicit list of fixture
+test names and all tags each must emit. Neither driver discovers applications or tags
+from directories. Both default to the complete manifest. `APPLICATION_SHAPES=<app>,…`
+selects a subset for reconstruction; `LINKS=<app>,…` selects a subset with cached runs.
+Unknown, empty or duplicate selections fail. Every listed circuit and sidecar must exist,
+checked before loading SRSs. Adding a fixture requires adding its application/tag entry
+to the manifest. Other files do not add tests to the corpus.
+
+`Chunks4`, `SideLoadedMain` and `SideLoadedBound` do not currently export application
+sidecars and are outside this reconstruction corpus. Their PureScript tests remain in
+the suite. Old sidecars need regeneration because wrap-padding evaluations are required.
 
 Rule replay covers all seven exported Kimchi variants. It retains dynamic `mustVerify`
 expressions, rejects out-of-scope references, and fails on missing witness allocations.
@@ -168,6 +179,7 @@ actual shared generator files.
 
 ```bash
 lake build check-rule-replay check-application-inputs check-application-shapes
+lake env lean --run scripts/check_application_manifest.lean
 lake exe check-rule-replay
 PICKLES_DUMP_DIR=/path/to/pickles-dumps lake exe check-application-inputs
 PICKLES_DUMP_DIR=/path/to/pickles-dumps \

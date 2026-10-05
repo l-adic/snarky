@@ -30,6 +30,7 @@ def main : IO Unit := do
       ("missing step key", ["resolved", "stepKeys"], Json.arr #[]),
       ("wrong SRS curve", ["environment", "srs", "wrap", "curve"], toJson "vesta"),
       ("wrong SRS rounds", ["environment", "srs", "step", "rounds"], toJson (15 : Nat)),
+      ("missing wrap evaluations", ["environment", "padding", "wrapEvals"], Json.arr #[]),
       ("missing padding", ["environment", "padding", "unfinalized"], Json.arr #[]),
       ("wrong challenge count", ["environment", "padding", "wrapChallenges", "raw"],
         Json.arr #[])] do
