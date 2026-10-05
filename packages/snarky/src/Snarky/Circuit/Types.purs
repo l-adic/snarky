@@ -83,7 +83,6 @@ import Prelude
 
 import Data.Array as Array
 import Data.Const (Const(..))
-import Data.Foldable (foldMap)
 import Data.Functor.Product (Product(..)) as FP
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments(..), Product(..), from, repOf, to)
 import Data.Maybe (fromJust)
@@ -341,7 +340,7 @@ instance CircuitType f a var => CircuitType f (UnChecked a) (UnChecked var) wher
   fieldsToVar a = UnChecked $ fieldsToVar @f @a a
 
 instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
-  valueToFields as = foldMap valueToFields as
+  valueToFields as = Array.concatMap valueToFields (Vector.toUnfoldable as)
   fieldsToValue as =
     let
       elemSize = sizeInFields (Proxy @f) (Proxy @a)
@@ -354,7 +353,7 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
     in
       unsafePartial $ fromJust $ toVector @n vals
   sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
-  varToFields as = foldMap (varToFields @f @a) as
+  varToFields as = Array.concatMap (varToFields @f @a) (Vector.toUnfoldable as)
   fieldsToVar as =
     let
       elemSize = sizeInFields (Proxy @f) (Proxy @a)

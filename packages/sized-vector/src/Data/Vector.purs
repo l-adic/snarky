@@ -317,14 +317,10 @@ replicate a = generate (const a)
 -- | Split an array into chunks of the specified size (internal helper).
 chunk :: forall a. Int -> Array a -> Array (Array a)
 chunk n arr
-  | n <= 0 = []
-  | Array.null arr = []
+  | n <= 0 || Array.null arr = []
   | otherwise =
-      let
-        current = Array.take n arr
-        rest = Array.drop n arr
-      in
-        [ current ] <> chunk n rest
+      Array.range 0 ((Array.length arr - 1) / n) <#> \i ->
+        Array.slice (i * n) (i * n + n) arr
 
 -- | Fold from the left, keeping all intermediate results.
 scanl :: forall a b n. (b -> a -> b) -> b -> Vector n a -> Vector n b
