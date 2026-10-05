@@ -28,6 +28,10 @@ module Snarky.Curves.Class
   , toBigInt
   , modulus
   , pow
+  , mulFn
+  , addFn
+  , subFn
+  , eqFn
   , class TwoAdicField
   , twoAdicRoot
   , twoAdicity
@@ -59,6 +63,7 @@ module Snarky.Curves.Class
 
 import Prelude
 
+import Data.Function.Uncurried (Fn2)
 import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable)
 import JS.BigInt (BigInt)
@@ -80,6 +85,12 @@ class (Eq f, Ord f, Show f, Field f, Arbitrary f) <= PrimeField f where
   modulus :: BigInt
   -- | Exponentiation: `pow x n = x^n`.
   pow :: f -> BigInt -> f
+  -- | `(*)`, `(+)`, `(-)` and `(==)` as two-argument functions: a
+  -- | saturated `runFn2` call builds no partial application.
+  mulFn :: Fn2 f f f
+  addFn :: Fn2 f f f
+  subFn :: Fn2 f f f
+  eqFn :: Fn2 f f Boolean
 
 -- | Convert an `Int` to a field element.
 fromInt :: forall @f. PrimeField f => Int -> f

@@ -50,22 +50,26 @@ function gateKindToTyp(name) {
 }
 
 // ---------------------------------------------------------------------------
-// Gates — NapiFpGate shape: { typ, wires, coeffs: number[] flat LE bytes }
+// Gates — { typ, wires, coeffs }, `coeffs` the field elements as given
 // ---------------------------------------------------------------------------
+
+// kimchi-napi's `NapiFpGate` takes `coeffs` as a plain array of byte
+// values, 32 per coefficient; `napiGate` makes that form for the one call
+// that hands a gate over, so it does not outlive the call.
+function napiGate(gate) {
+    const coeffs = gate.coeffs;
+    const coeffBytes = new Array(coeffs.length * 32);
+    for (let i = 0; i < coeffs.length; i++) {
+        const b = Fp.toBytesLE(coeffs[i]);
+        for (let j = 0; j < 32; j++) coeffBytes[i * 32 + j] = b[j];
+    }
+    return { typ: gate.typ, wires: gate.wires, coeffs: coeffBytes };
+}
 
 export function vestaCircuitGateNew(gateKind) {
     return function(wires) {
         return function(coeffs) {
-            const coeffBytes = new Array(coeffs.length * 32);
-            for (let i = 0; i < coeffs.length; i++) {
-                const b = Fp.toBytesLE(coeffs[i]);
-                for (let j = 0; j < 32; j++) coeffBytes[i * 32 + j] = b[j];
-            }
-            return {
-                typ: gateKindToTyp(gateKind),
-                wires,
-                coeffs: coeffBytes,
-            };
+            return { typ: gateKindToTyp(gateKind), wires, coeffs };
         };
     };
 }
@@ -75,15 +79,12 @@ export function vestaCircuitGateGetWires(gate) {
 }
 
 export function vestaCircuitGateCoeffCount(gate) {
-    return (gate.coeffs.length / 32) | 0;
+    return gate.coeffs.length;
 }
 
 export function vestaCircuitGateGetCoeff(gate) {
     return function(index) {
-        const off = index * 32;
-        const slice = new Uint8Array(32);
-        for (let j = 0; j < 32; j++) slice[j] = gate.coeffs[off + j];
-        return Fp.fromBytesLE(slice);
+        return gate.coeffs[index];
     };
 }
 
@@ -164,7 +165,7 @@ export function vestaGatesToJson(gates) {
     return function(publicInputSize) {
         const gv = k.caml_pasta_fp_plonk_gate_vector_create();
         for (const g of gates) {
-            k.caml_pasta_fp_plonk_gate_vector_add(gv, g);
+            k.caml_pasta_fp_plonk_gate_vector_add(gv, napiGate(g));
         }
         return k.caml_pasta_fp_plonk_circuit_serialize(publicInputSize, gv);
     };
@@ -184,7 +185,7 @@ export function vestaProverIndexCreate({
     void maxPolySize;
     const gv = k.caml_pasta_fp_plonk_gate_vector_create();
     for (const g of gates) {
-        k.caml_pasta_fp_plonk_gate_vector_add(gv, g);
+        k.caml_pasta_fp_plonk_gate_vector_add(gv, napiGate(g));
     }
     return k.caml_pasta_fp_plonk_index_create(
         gv,

@@ -83,7 +83,6 @@ import Prelude
 
 import Data.Array as Array
 import Data.Const (Const(..))
-import Data.Foldable (foldMap)
 import Data.Functor.Product (Product(..)) as FP
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments(..), Product(..), from, repOf, to)
 import Data.Maybe (fromJust)
@@ -101,7 +100,7 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Simple.JSON (class ReadForeign, class WriteForeign, writeImpl)
 import Snarky.Circuit.CVar (CVar, Variable)
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), endoBase, endoScalar, fromBigInt, modulus, pow, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), addFn, endoBase, endoScalar, eqFn, fromBigInt, modulus, mulFn, pow, subFn, toBigInt)
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 
@@ -156,6 +155,10 @@ instance PrimeField f => PrimeField (F f) where
   toBigInt (F x) = toBigInt x
   modulus = modulus @f
   pow (F f) n = F $ pow @f f n
+  mulFn = coerce (mulFn @f)
+  addFn = coerce (addFn @f)
+  subFn = coerce (subFn @f)
+  eqFn = coerce (eqFn @f)
 
 -- | Wrapper indicating a value should not have constraints checked.
 -- |
@@ -341,7 +344,7 @@ instance CircuitType f a var => CircuitType f (UnChecked a) (UnChecked var) wher
   fieldsToVar a = UnChecked $ fieldsToVar @f @a a
 
 instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
-  valueToFields as = foldMap valueToFields as
+  valueToFields as = Array.concatMap valueToFields (Vector.toUnfoldable as)
   fieldsToValue as =
     let
       elemSize = sizeInFields (Proxy @f) (Proxy @a)
@@ -354,7 +357,7 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
     in
       unsafePartial $ fromJust $ toVector @n vals
   sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
-  varToFields as = foldMap (varToFields @f @a) as
+  varToFields as = Array.concatMap (varToFields @f @a) (Vector.toUnfoldable as)
   fieldsToVar as =
     let
       elemSize = sizeInFields (Proxy @f) (Proxy @a)

@@ -76,7 +76,7 @@ proveAppBody crs = do
       }
 
     solver :: Solver StepField (KimchiConstraint StepField) Unit Unit
-    solver = makeSolver (Proxy @(KimchiConstraint StepField)) (const chunks2Body)
+    solver = makeSolver builtState (const chunks2Body)
   runSolver solver unit >>= case _ of
     Left e -> throw $ "app body solver: " <> show e
     Right (Tuple _ assignments) -> do

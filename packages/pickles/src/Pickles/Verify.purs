@@ -119,26 +119,27 @@ dummySgsOf srs =
   }
 
 -- | Build a `Verifier` from the minimum a caller has: a compiled wrap
--- | VK, the two SRSes, and the step `numChunks` that drives `zk_rows`.
--- | Everything else — endo, linearization, the dummy accumulator — is
--- | fixed by the Pickles setup. The step domain log2 is not among
--- | them: it varies per proof, so `expandDv` rebuilds the generator and
--- | shifts from each `VerifiableProof`'s `stepDomainLog2`.
+-- | VK, the Vesta SRS, the Pallas SRS's dummy accumulator
+-- | (`dummyWrapSgOf`), and the step `numChunks` that drives `zk_rows`.
+-- | Everything else — endo, linearization — is fixed by the Pickles
+-- | setup. The step domain log2 is not among them: it varies per
+-- | proof, so `expandDv` rebuilds the generator and shifts from each
+-- | `VerifiableProof`'s `stepDomainLog2`.
 mkVerifier
   :: { wrapVK :: VerifierIndex PallasG WrapField
-     , pallasSrs :: CRS PallasG
+     , dummyWrapSg :: AffinePoint StepField
      , vestaSrs :: CRS VestaG
      , stepNumChunks :: Int
      }
   -> Verifier
-mkVerifier { wrapVK, pallasSrs, vestaSrs, stepNumChunks } =
+mkVerifier { wrapVK, dummyWrapSg, vestaSrs, stepNumChunks } =
   { wrapVK
   , vestaSrs
   , stepZkRows: zkRowsForNumChunks stepNumChunks
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
   , stepEndo: case (endoScalar) of EndoScalar e -> e
   , linearizationPoly: Linearization.pallas
-  , dummyWrapSg: dummyWrapSgOf pallasSrs
+  , dummyWrapSg
   }
 
 -- | The fields of a `CompiledProof` sized by the rule's actual prev

@@ -121,14 +121,13 @@ transferSpec _ = do
       -> Snarky Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) (TransferAdvice d) (Digest (FVar Vesta.ScalarField))
     circuit tx = applyTxChecked @d chainId rootVar tx
 
-    solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-
   s <- liftEffect $
     compile badAdvice
       (Proxy @(SignedTransaction Vesta.ScalarField))
       (Proxy @(Digest Vesta.ScalarField))
       (Proxy @(KimchiConstraint Vesta.ScalarField))
       circuit
+  let solver = makeSolver s circuit
 
   ref <- liftEffect $ Ref.new ledger
 

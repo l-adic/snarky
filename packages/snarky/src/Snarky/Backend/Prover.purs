@@ -8,23 +8,25 @@ module Snarky.Backend.Prover
   ( runCircuitProver
   , ProverState
   , class SolveCircuit
-  , proverConstraint
+  , checkConstraint
   , allocAssignments
   ) where
 
 import Prelude
 
+import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
-import Data.Either (Either(..))
+import Data.Either (Either(..), note)
 import Data.Foldable as Foldable
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..))
-import Effect (Effect)
+import Effect (Effect, forE)
 import Effect.Ref as Ref
+import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (EvaluationError(..), Variable, incrementVariable)
+import Snarky.Circuit.CVar (AffineExpression, EvaluationError(..), Variable(..), evalAffineExpression, incrementVariable)
 import Snarky.Circuit.DSL.Monad (AsProver(..), AsProverCtx(..), CircuitOps(..), Snarky(..))
 import Snarky.Circuit.EvalError (catchEvalError, throwEvalError)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
@@ -36,26 +38,20 @@ type ProverState f =
   , assignments :: Assignments f
   , debug :: Boolean
   , labelStack :: Array String
+  -- | The compiled circuit's internal variables with their expressions,
+  -- | in increasing order, and how many of them the variable counter has
+  -- | passed.
+  , internals :: Array (Tuple Variable (AffineExpression f))
+  , internalsPassed :: Int
   }
 
--- | How a backend handles an emitted constraint in prover mode: a transform
--- | of the prover state in `Effect` (backends like kimchi ALLOCATE and
--- | ASSIGN variables in the mutable store while reducing constraints),
--- | failing with an evaluation error. Replaces the old
--- | `ConstraintM (ProverT f)` instances.
+-- | A backend's check of one constraint against the assignments, run in
+-- | debug mode for its error message: `Nothing` when the constraint holds.
 class BasicSystem f c <= SolveCircuit f c | c -> f where
-  proverConstraint :: c -> ProverState f -> Effect (Either EvaluationError (ProverState f))
+  checkConstraint :: (Variable -> Maybe f) -> c -> Maybe EvaluationError
 
--- | `Basic` constraints do no prover-side work; in debug mode they are
--- | checked against the current assignments for rich error messages.
 instance PrimeField f => SolveCircuit f (Basic f) where
-  proverConstraint c s
-    | s.debug = do
-        lookupFn <- Assignments.toLookup s.assignments
-        pure case Basic.debugCheck lookupFn c of
-          Nothing -> Right s
-          Just e -> Left e
-    | otherwise = pure (Right s)
+  checkConstraint = Basic.debugCheck
 
 -- | Allocate `n` consecutive variables and assign them the given values
 -- | (writing into the state's mutable store).
@@ -65,18 +61,34 @@ allocAssignments
   -> Array f
   -> ProverState f
   -> Effect (Tuple (Array Variable) (ProverState f))
-allocAssignments n values s0 = go 0 s0 []
-  where
-  go i s acc
-    | i >= n = pure (Tuple acc s)
-    | otherwise = do
-        let
-          v = s.nextVar
-          s' = s { nextVar = incrementVariable v }
-        case Array.index values i of
-          Just f -> Assignments.set v f s.assignments
-          Nothing -> pure unit
-        go (i + 1) s' (Array.snoc acc v)
+allocAssignments n values s
+  | n <= 0 = pure (Tuple [] s)
+  | otherwise = do
+      let
+        Variable first = s.nextVar
+        vars = coerce (Array.range first (first + n - 1)) :: Array Variable
+      forE 0 (min n (Array.length values)) \i -> case Array.index values i of
+        Just f -> Assignments.set (Variable (first + i)) f s.assignments
+        Nothing -> pure unit
+      pure (Tuple vars (s { nextVar = Variable (first + n) }))
+
+-- | Whether the variable counter stands on an internal variable.
+atInternal :: forall f. ProverState f -> Boolean
+atInternal s = case Array.index s.internals s.internalsPassed of
+  Just (Tuple var _) -> var == s.nextVar
+  Nothing -> false
+
+-- | Move the variable counter past the internal variables it stands on,
+-- | assigning each the value of its expression. The compile gave them
+-- | these ids, and an expression mentions only smaller ones.
+passInternals :: forall f. PrimeField f => ProverState f -> Effect (ProverState f)
+passInternals = tailRecM \s -> case Array.index s.internals s.internalsPassed of
+  Just (Tuple var expr) | var == s.nextVar ->
+    case evalAffineExpression expr (\v -> note (MissingVariable v) (Assignments.lookup v s.assignments)) of
+      Left e -> throwEvalError e
+      Right a -> Assignments.set var a s.assignments $>
+        Loop s { nextVar = incrementVariable var, internalsPassed = s.internalsPassed + 1 }
+  _ -> pure (Done s)
 
 -- | Wrap an error with the current label context (debug mode only), matching
 -- | the old `WithLabel (ProverT f)` behavior.
@@ -86,8 +98,9 @@ contextualize s e
   | otherwise = e
 
 -- | Interpret a circuit in prover mode: run witness computations against
--- | the live assignments, recording results; constraints do backend-
--- | specific prover work (`proverConstraint`). The SAME advice handler
+-- | the live assignments, recording results, and compute the compiled
+-- | circuit's internal variables as the variable counter reaches them;
+-- | constraints are only checked, in debug mode. The SAME advice handler
 -- | serves every witness computation. A failing witness or constraint
 -- | throws (`Snarky.Circuit.EvalError`); this boundary recovers it as
 -- | `Either`, alongside the final prover state.
@@ -100,7 +113,11 @@ runCircuitProver
   -> Effect (Tuple (Either EvaluationError a) (ProverState f))
 runCircuitProver advice s0 (Snarky g) = do
   ref <- Ref.new s0
-  ea <- catchEvalError (g (proverOps advice ref))
+  ea <- catchEvalError do
+    a <- g (proverOps advice ref)
+    -- The last constraints' internal variables, which no allocation follows.
+    Ref.read ref >>= passInternals >>= flip Ref.write ref
+    pure a
   s <- Ref.read ref
   pure (Tuple ea s)
 
@@ -113,16 +130,18 @@ proverOps
   -> CircuitOps f c r
 proverOps advice ref = CircuitOps
   { freshOp: do
-      s <- Ref.read ref
+      s <- atFreeVar
       Ref.write (s { nextVar = incrementVariable s.nextVar }) ref
       pure s.nextVar
   , addConstraintOp: \c -> do
       s <- Ref.read ref
-      proverConstraint c s >>= case _ of
-        Right s' -> Ref.write s' ref
-        Left e -> throwEvalError (contextualize s e)
+      -- `if`, not `when`: its argument would be built for every constraint.
+      if s.debug then do
+        lookup <- Assignments.toLookup s.assignments
+        Foldable.for_ (checkConstraint lookup c) (throwEvalError <<< contextualize s)
+      else pure unit
   , existsOp: \n w -> do
-      s <- Ref.read ref
+      s <- atFreeVar
       fields <- runWitness s w
       Tuple vs s' <- allocAssignments n fields s
       Ref.write s' ref
@@ -136,6 +155,12 @@ proverOps advice ref = CircuitOps
   , popLabelOp: Ref.modify_ (\s -> s { labelStack = Array.init s.labelStack # fromMaybe [] }) ref
   }
   where
+  -- The state, its variable counter moved past any internal variables.
+  atFreeVar :: Effect (ProverState f)
+  atFreeVar = do
+    s <- Ref.read ref
+    if atInternal s then passInternals s else pure s
+
   -- In debug mode, witness failures are wrapped with the label context at
   -- the point of failure (rethrown; recovered at the interpreter boundary).
   runWitness :: ProverState f -> AsProver f r (Array f) -> Effect (Array f)
