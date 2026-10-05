@@ -10,6 +10,7 @@ module Pickles.Linearization.FFI
   , PointEval
   ) where
 
+import Data.Function.Memoize (memoize)
 import Data.Vector (Vector)
 import Snarky.Backend.Kimchi.Domain as Domain
 import Snarky.Curves.Class (class TwoAdicField)
@@ -45,12 +46,20 @@ unnormalizedLagrangeBasis = Domain.unnormalizedLagrangeBasis @f
 foreign import pallasDomainShifts :: Int -> Vector 7 Pallas.BaseField
 foreign import vestaDomainShifts :: Int -> Vector 7 Vesta.BaseField
 
+-- | The foreign shifts, each domain size computed on first use: kimchi
+-- | finds a domain's shifts by search, at a cost that grows with it.
+pallasShifts :: Int -> Vector 7 Pallas.BaseField
+pallasShifts = memoize pallasDomainShifts
+
+vestaShifts :: Int -> Vector 7 Vesta.BaseField
+vestaShifts = memoize vestaDomainShifts
+
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
 
 instance LinearizationFFI Pallas.BaseField where
-  domainShifts = pallasDomainShifts
+  domainShifts = pallasShifts
 
 instance LinearizationFFI Vesta.BaseField where
-  domainShifts = vestaDomainShifts
+  domainShifts = vestaShifts
