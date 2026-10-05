@@ -26,6 +26,7 @@ module Snarky.Circuit.CVar
   , negate_
   , scale_
   , eval
+  , evalAssigned
   , genWithAssignments
   , reduceToAffineExpression
   , AffineExpression(..)
@@ -39,6 +40,7 @@ import Data.Array ((..))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor)
+import Data.Either (Either(..))
 import Data.Foldable (class Foldable, foldM, foldl)
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map, toUnfoldable)
@@ -166,6 +168,29 @@ eval lookup c = case c of
   Var i -> lookup i
   Add l r -> add <$> eval lookup l <*> eval lookup r
   ScalarMul scalar expr -> mul scalar <$> eval lookup expr
+
+-- | `eval` against a partial assignment by plain recursion, failing at
+-- | the first variable the assignment lacks.
+evalAssigned
+  :: forall f
+   . PrimeField f
+  => (Variable -> Maybe f)
+  -> CVar f Variable
+  -> Either EvaluationError f
+evalAssigned lookup = go
+  where
+  go = case _ of
+    Const f -> Right f
+    Var i -> case lookup i of
+      Just f -> Right f
+      Nothing -> Left (MissingVariable i)
+    Add l r -> case go l, go r of
+      Right a, Right b -> Right (a + b)
+      Left e, _ -> Left e
+      _, Left e -> Left e
+    ScalarMul scalar expr -> case go expr of
+      Right a -> Right (scalar * a)
+      Left e -> Left e
 
 newtype AffineExpression f = AffineExpression { constant :: Maybe f, terms :: Array (Tuple Variable f) }
 

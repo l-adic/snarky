@@ -6,11 +6,11 @@ import Data.Either (Either(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Effect.Class (liftEffect)
-import Snarky.Circuit.CVar (EvaluationError(..), eval, evalAffineExpression, reduceToAffineExpression, v0)
+import Snarky.Circuit.CVar (EvaluationError(..), eval, evalAffineExpression, evalAssigned, reduceToAffineExpression, v0)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (quickCheckGen)
+import Test.QuickCheck (arbitrary, quickCheckGen)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy)
 
@@ -29,6 +29,19 @@ spec pf = describe "Constraint Spec" do
         lhs = evalAffineExpression (reduceToAffineExpression cvar) _lookup
       let rhs = eval _lookup cvar
       pure $ lhs == rhs
+
+  it "CVar.evalAssigned equals CVar.eval on full and partial assignments" do
+    liftEffect $ quickCheckGen do
+      { cvar, assignments: full } <- CVar.genWithAssignments pf v0
+      dropOne <- arbitrary
+      let
+        assignments = case Map.findMin full of
+          Just { key } | dropOne -> Map.delete key full
+          _ -> full
+        _lookup v = case Map.lookup v assignments of
+          Nothing -> Left $ MissingVariable v
+          Just a -> pure a
+      pure $ evalAssigned (\v -> Map.lookup v assignments) cvar == eval _lookup cvar
 
   it "basic constraint gen is valid" do
     liftEffect $ quickCheckGen do
