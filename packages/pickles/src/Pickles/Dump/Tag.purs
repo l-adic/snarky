@@ -24,6 +24,7 @@ import Node.FS.Perms (permsAll)
 import Node.FS.Sync (mkdir', writeTextFile)
 import Pickles.CircuitDiffs.Types (ComparableCircuit, Constants, Point)
 import Pickles.Dump.Constants (KeyExport)
+import Pickles.Dump.Shape (ShapeDump)
 import Pickles.Field (WrapField)
 import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.Prove.RuleDump (RuleDumpJson)
@@ -73,7 +74,8 @@ wrapPadding p =
 -- | A tag: its wrap circuit with its key and padding, and its branches, in
 -- | rule order.
 type TagFixture =
-  { wrapMain :: CircuitDump (key :: KeyExport, padding :: WrapPadding)
+  { shape :: ShapeDump
+  , wrapMain :: CircuitDump (key :: KeyExport, padding :: WrapPadding)
   , branches :: Array BranchDump
   }
 
