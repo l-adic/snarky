@@ -17,6 +17,7 @@ import Prelude
 import Data.Enum (fromEnum)
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), lastIndexOf, take)
+import Data.String.CodeUnits as CodeUnits
 import Effect (Effect)
 import JS.BigInt as BigInt
 import Node.Encoding (Encoding(..))
@@ -71,18 +72,23 @@ wrapPadding p =
   field :: WrapField -> String
   field = BigInt.toString <<< toBigInt
 
--- | A tag: its wrap circuit with its key and padding, and its branches, in
--- | rule order.
+-- | A tag's circuit comparison data, separate from its small shape file.
 type TagFixture =
-  { shape :: ShapeDump
-  , wrapMain :: CircuitDump (key :: KeyExport, padding :: WrapPadding)
+  { wrapMain :: CircuitDump (key :: KeyExport, padding :: WrapPadding)
   , branches :: Array BranchDump
   }
 
--- | Write a tag's dump to `path`, creating its directory if needed.
-writeTagDump :: String -> TagFixture -> Effect Unit
-writeTagDump path d = do
-  case lastIndexOf (Pattern "/") path of
-    Just i -> mkdir' (take i path) { recursive: true, mode: permsAll }
-    Nothing -> pure unit
+-- | Write the circuit fixture at `path` and its shape at the adjacent
+-- | `shapes/<tag>.json`. Existing circuit readers only scan the parent
+-- | directory for JSON files, so they do not mistake shapes for tags.
+writeTagDump :: String -> ShapeDump -> TagFixture -> Effect Unit
+writeTagDump path shape d = do
+  let
+    { dir, fileName } = case lastIndexOf (Pattern "/") path of
+      Just i -> { dir: take i path, fileName: CodeUnits.drop (i + 1) path }
+      Nothing -> { dir: ".", fileName: path }
+    shapesDir = dir <> "/shapes"
+  mkdir' dir { recursive: true, mode: permsAll }
+  mkdir' shapesDir { recursive: true, mode: permsAll }
   writeTextFile UTF8 path (writeJSON d)
+  writeTextFile UTF8 (shapesDir <> "/" <> fileName) (writeJSON shape)

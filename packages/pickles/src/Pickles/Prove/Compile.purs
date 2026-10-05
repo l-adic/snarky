@@ -1857,6 +1857,9 @@ runMultiCompileFull cfg stepNumChunks rules = do
 type RuleCompileFns mpvMax =
   { -- | The rule's slot widths, in slot order.
     slotWidths :: Array Int
+  -- | The shared application statement layout, available without
+  -- | serializing the rule's imported keys.
+  , statementLayout :: FieldLayoutDump
   -- | The branch's static statement and predecessor layouts, captured
   -- | from its types and key sources before circuit compilation.
   , shape :: Unit -> BranchShapeSeed
@@ -1956,7 +1959,12 @@ mkRuleEntry rule compiledKeys = do
   let
     slotVKs = slotKeysOf (Proxy :: Proxy prevsSpec) compiledKeys
     slotWidths = slotWidthsOf (Proxy :: Proxy prevsSpec)
-  requireSlotWidths (reflectType (Proxy :: Proxy mpvMax))
+    statementLayout =
+      { inputFields: sizeInFields (Proxy @StepField) (Proxy @inputVal)
+      , outputFields: sizeInFields (Proxy @StepField) (Proxy @outputVal)
+      }
+  requireSlotCompatibility (reflectType (Proxy :: Proxy mpvMax)) statementLayout
+    (slotStatementLayoutsOf (Proxy :: Proxy prevsSpec))
     (map slotWidthInt slotWidths)
     slotVKs
   let
@@ -1969,6 +1977,7 @@ mkRuleEntry rule compiledKeys = do
     { compileFns:
         { slotWidths:
             Vector.toUnfoldable (map slotWidthInt slotWidths)
+        , statementLayout
         , shape: \_ ->
             let
               slotLayouts = slotStatementLayoutsOf (Proxy :: Proxy prevsSpec)
@@ -1983,6 +1992,7 @@ mkRuleEntry rule compiledKeys = do
                             Just Self -> SelfSeed
                             Just (External tag) -> ExternalSeed
                               { key: vestaVerifierIndexJsonKey tag.wrapVerifierIndex
+                              , statement: tag.statementLayout
                               , width: tag.maxProofsVerified
                               }
                         }
@@ -1991,10 +2001,7 @@ mkRuleEntry rule compiledKeys = do
                     slotVKs
                 )
             in
-              { statement:
-                  { inputFields: sizeInFields (Proxy @StepField) (Proxy @inputVal)
-                  , outputFields: sizeInFields (Proxy @StepField) (Proxy @outputVal)
-                  }
+              { statement: statementLayout
               , slots: Vector.toUnfoldable slotSeeds
               }
         , preComputeStepDomainLog2: \cfg stepNumChunks selfStepDomainLog2s ->
@@ -2123,35 +2130,52 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
       (map slotWidthInt (slotWidthsOf (Proxy :: Proxy prevsSpec)))
       selfStepDomainLog2s
 
--- | Fails unless every compiled slot's declared width is its source's
--- | `max_proofs_verified`: the tag's own `mpvMax` for a `Self` slot,
--- | the imported system's for an `External` one. OCaml reads a slot's
--- | width off its tag; here the prevs spec declares it, so the two can
--- | disagree. A side-loaded slot takes its key at prove time and is
--- | not checked here.
-requireSlotWidths
+-- | Fails unless every compiled slot's width and flattened statement
+-- | size match its source. The branch may use a different input/output
+-- | split for the same field vector. A side-loaded slot takes its key
+-- | at prove time and cannot be checked here.
+requireSlotCompatibility
   :: forall len
    . Reflectable len Int
   => Int
+  -> FieldLayoutDump
+  -> Vector len FieldLayoutDump
   -> Vector len Int
   -> Vector len (Maybe SlotWrapKey)
   -> Effect Unit
-requireSlotWidths mpvMax widths keys =
-  forWithIndex_ (Vector.zip widths keys) \slot (width /\ key) ->
-    for_ (sourceWidth key) \n ->
-      when (width /= n)
-        $ Exc.throw
-        $ "mkRuleEntry: slot "
-            <> show (getFinite slot)
-            <> " declares width "
-            <> show width
-            <> ", but its source verifies "
-            <> show n
-            <> " proofs"
+requireSlotCompatibility mpvMax ownStatement statements widths keys =
+  forWithIndex_ (Vector.zip (Vector.zip statements widths) keys)
+    \slot ((statement /\ width) /\ key) -> do
+      for_ (sourceWidth key) \n ->
+        when (width /= n)
+          $ Exc.throw
+          $ "mkRuleEntry: slot "
+              <> show (getFinite slot)
+              <> " declares width "
+              <> show width
+              <> ", but its source verifies "
+              <> show n
+              <> " proofs"
+      for_ (sourceStatement key) \source ->
+        when (fieldCount statement /= fieldCount source)
+          $ Exc.throw
+          $ "mkRuleEntry: slot "
+              <> show (getFinite slot)
+              <> " declares statement field count "
+              <> show (fieldCount statement)
+              <> ", but its source has "
+              <> show (fieldCount source)
   where
+  fieldCount layout = layout.inputFields + layout.outputFields
+
   sourceWidth = case _ of
     Just Self -> Just mpvMax
     Just (External d) -> Just d.maxProofsVerified
+    Nothing -> Nothing
+
+  sourceStatement = case _ of
+    Just Self -> Just ownStatement
+    Just (External d) -> Just d.statementLayout
     Nothing -> Nothing
 
 -- | Fails unless each slot's candidate step domains share their
@@ -2555,6 +2579,9 @@ compileMulti cfg rules = do
       rules
     slotWidths = deriveWrapSlotWidths (reflectType (Proxy :: Proxy mpvMax))
       (Vector.toUnfoldable (map _.slotWidths ruleFns))
+    statementLayout = case Array.head (Vector.toUnfoldable ruleFns) of
+      Just r -> r.statementLayout
+      Nothing -> unsafeThrow "compileMulti: no rules"
   -- Step 1: the per-rule pre-pass, then the per-rule step compiles
   -- against the domains it found.
   { stepResults, log2s } <- runMultiCompileFull cfg
@@ -2652,9 +2679,8 @@ compileMulti cfg rules = do
       )
       ruleFns
       stepResults
-    writeTagDump path
-      { shape
-      , wrapMain:
+    writeTagDump path shape
+      { wrapMain:
           { circuit
           , constants
           , key: wrapKeyExport wrapResult.verifierIndex
@@ -2713,6 +2739,7 @@ compileMulti cfg rules = do
         }
     , tagData:
         { wrapVerifierIndex: wrapResult.verifierIndex
+        , statementLayout
         , wrapDomainLog2
         , stepDomainLog2s:
             NonEmptyArray.nub (NonEmptyArray.fromFoldable1 (map _.stepDomainLog2 perBranchVec))

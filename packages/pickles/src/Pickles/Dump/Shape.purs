@@ -65,7 +65,7 @@ type ShapeDump =
 -- | to register it. The key is internal and never appears in `ShapeDump`.
 data SlotSourceSeed
   = SelfSeed
-  | ExternalSeed { key :: String, width :: Int }
+  | ExternalSeed { key :: String, statement :: FieldLayoutDump, width :: Int }
   | SideLoadedSeed
 
 -- | Captured from one rule's slot specification and its supplied key
@@ -97,9 +97,13 @@ check :: Boolean -> String -> Either String Unit
 check true _ = pure unit
 check false message = Left message
 
+fieldCount :: FieldLayoutDump -> Int
+fieldCount layout = layout.inputFields + layout.outputFields
+
 -- | Resolve branch-local sources to a deterministic import registry. The
--- | same complete wrap key must always carry the same statement layout and
--- | declared width. Self slots must agree with this application's layout.
+-- | same complete wrap key must always carry the same source layout and
+-- | declared width. A slot's own encoding need only have the source's total
+-- | number of fields; its input/output split may differ.
 assembleShape :: Array BranchShapeSeed -> Either String ShapeDump
 assembleShape seeds = do
   first <- case Array.head seeds of
@@ -153,23 +157,26 @@ assembleSlot statement width branch { imports, slots } { slot, seed } = do
   case seed.source of
     SideLoadedSeed -> pure (append (SideLoadedSource layout) imports)
     SelfSeed -> do
-      check (seed.statement == statement)
-        (label <> " has a Self statement layout different from its application")
+      check (fieldCount seed.statement == fieldCount statement)
+        (label <> " has a Self statement field count different from its application")
       check (seed.width == width)
         (label <> " has a Self width different from its application")
       pure (append SelfSource imports)
     ExternalSeed source -> do
+      let sourceLayout = { statement: source.statement, width: source.width }
+      check (fieldCount seed.statement == fieldCount source.statement)
+        (label <> " has a statement field count different from its imported application")
       check (seed.width == source.width)
         (label <> " has a width different from its imported application")
       case Array.findIndex (\entry -> entry.key == source.key) imports of
         Nothing -> pure
           ( append (ExternalSource (Array.length imports))
-              (Array.snoc imports { key: source.key, layout })
+              (Array.snoc imports { key: source.key, layout: sourceLayout })
           )
         Just importIndex -> do
           entry <- case Array.index imports importIndex of
             Just found -> pure found
             Nothing -> Left (label <> " has an invalid import index")
-          check (entry.layout == layout)
-            (label <> " reuses an imported key with a different statement layout or width")
+          check (entry.layout == sourceLayout)
+            (label <> " reuses an imported key with a different source layout or width")
           pure (append (ExternalSource importIndex) imports)

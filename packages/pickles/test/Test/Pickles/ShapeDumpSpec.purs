@@ -59,10 +59,10 @@ spec = describe "Pickles.Dump.Shape" do
       Left _ -> throw "valid shape assembly failed"
       Right shape -> writeJSON shape `shouldEqual` writeJSON expected
 
-  it "rejects a Self slot with a different statement layout" \_ -> liftEffect do
+  it "rejects a Self slot with a different statement field count" \_ -> liftEffect do
     let
       statement = { inputFields: 1, outputFields: 0 }
-      other = { inputFields: 0, outputFields: 1 }
+      other = { inputFields: 0, outputFields: 2 }
     case assembleShape [ { statement, slots: [ { statement: other, width: 1, source: SelfSeed } ] } ] of
       Left _ -> pure unit
       Right _ -> throw "a mismatched Self statement was accepted"
@@ -71,11 +71,12 @@ spec = describe "Pickles.Dump.Shape" do
     let
       statement = { inputFields: 0, outputFields: 1 }
       imported = { inputFields: 1, outputFields: 0 }
-      source = ExternalSeed { key: "complete verifier index A", width: 0 }
+      source = ExternalSeed { key: "complete verifier index A", statement: imported, width: 0 }
       slot = { statement: imported, width: 0, source }
+      reinterpretedSlot = { statement, width: 0, source }
       result = assembleShape
         [ { statement, slots: [ slot ] }
-        , { statement, slots: [ slot, slot ] }
+        , { statement, slots: [ reinterpretedSlot, slot ] }
         ]
 
       expected :: ShapeDump
@@ -91,14 +92,17 @@ spec = describe "Pickles.Dump.Shape" do
       Left _ -> throw "repeated import assembly failed"
       Right shape -> writeJSON shape `shouldEqual` writeJSON expected
 
-  it "rejects one key with conflicting statement layouts" \_ -> liftEffect do
+  it "rejects one key with conflicting source layouts" \_ -> liftEffect do
     let
       statement = { inputFields: 0, outputFields: 1 }
-      key = ExternalSeed { key: "complete verifier index A", width: 0 }
+      sourceA = ExternalSeed
+        { key: "complete verifier index A", statement: { inputFields: 1, outputFields: 0 }, width: 0 }
+      sourceB = ExternalSeed
+        { key: "complete verifier index A", statement: { inputFields: 0, outputFields: 1 }, width: 0 }
     case
       assembleShape
-        [ { statement, slots: [ { statement: { inputFields: 1, outputFields: 0 }, width: 0, source: key } ] }
-        , { statement, slots: [ { statement: { inputFields: 0, outputFields: 1 }, width: 0, source: key } ] }
+        [ { statement, slots: [ { statement, width: 0, source: sourceA } ] }
+        , { statement, slots: [ { statement, width: 0, source: sourceB } ] }
         ]
       of
       Left _ -> pure unit
