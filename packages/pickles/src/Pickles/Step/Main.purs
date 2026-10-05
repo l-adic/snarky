@@ -46,6 +46,7 @@ import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), mkSideloadedLagrangeLookup)
+import Pickles.RuleWitness (RuleCapture, captureAllocations)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (StepAdvice(..))
@@ -579,6 +580,7 @@ stepMain
   -> AffinePoint StepField
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
   -> Ref (Maybe (Array (FVar StepField)))
+  -> Maybe RuleCapture
   -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
 stepMain
   rule
@@ -589,10 +591,11 @@ stepMain
   }
   dummySg
   advice
-  captureRef = do
+  captureRef
+  ruleCapture = do
   -- Both advice projections are deferred to solve time: compilation
   -- discards `exists` bodies, so dummy advice is never projected.
-  { input: publicInput, output: ruleOutput } <- runRuleWithInput @inputVal rule
+  { input: publicInput, output: ruleOutput } <- captureAllocations ruleCapture $ runRuleWithInput @inputVal rule
     (pure advice <#> \(StepAdvice r) -> r.publicInput)
     (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
 

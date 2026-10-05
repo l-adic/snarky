@@ -6,15 +6,13 @@
 -- | its input's cells, and each allocation takes the next ids in order.
 -- | Advice is never run, as in the builder.
 -- |
--- | `ruleWitness` supplies the check/body allocations in that numbering.
+-- | The step solve captures witness values in that same numbering.
 module Pickles.Prove.RuleDump
   ( RuleDump
   , RuleDumpJson(..)
   , RuleOp(..)
   , RulePrev
-  , RuleWitness
   , recordRule
-  , ruleWitness
   , encodeRuleDump
   ) where
 
@@ -22,14 +20,11 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Either (Either(..), either)
-import Data.Foldable (for_)
 import Data.List (List(..))
 import Data.List as List
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
@@ -41,12 +36,9 @@ import Pickles.Step.Main (RuleOutput, runRuleWithInput)
 import Pickles.Step.Slots (EncodedPrev, PrevValues, prevsVector)
 import Safe.Coerce (coerce)
 import Simple.JSON (class WriteForeign, writeImpl)
-import Snarky.Backend.Advice (AdviceHandler)
-import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable(..))
-import Snarky.Circuit.DSL (class CircuitType, Basic(..), Bool(..), FVar, sizeInFields, valueToFields, varToFields)
-import Snarky.Circuit.DSL.Monad (class CheckedType, AsProver, CircuitOps(..), Snarky(..), runAsProver, throwAsProver)
-import Snarky.Circuit.EvalError (catchEvalError, throwEvalError)
+import Snarky.Circuit.DSL (class CircuitType, Basic(..), Bool(..), FVar, sizeInFields, varToFields)
+import Snarky.Circuit.DSL.Monad (class CheckedType, AsProver, CircuitOps(..), Snarky(..), throwAsProver)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -140,58 +132,6 @@ recordRule rule = do
   prevOf e = case e.verificationKey of
     Nothing -> pure { statement: e.fields, mustVerify: coerce e.proofMustVerify }
     Just _ -> throw "a rule dump covers compiled slots, not a side-loaded slot"
-
--- | The input cells and check/body allocations in `recordRule`'s order.
-type RuleWitness = { input :: Array StepField, values :: Array StepField }
-
--- | The input check and rule run with advice, without Kimchi reduction
--- | allocations. `prevStates` supplies the predecessor statements.
-ruleWitness
-  :: forall @inputVal r prevsSpec inputVar outputVar
-   . CircuitType StepField inputVal inputVar
-  => CheckedType StepField (KimchiConstraint StepField) inputVar
-  => AdviceHandler r
-  -> AsProver StepField r (PrevValues prevsSpec)
-  -> inputVal
-  -> ( AsProver StepField r (PrevValues prevsSpec)
-       -> inputVar
-       -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput prevsSpec outputVar)
-     )
-  -> Effect (Either EvaluationError RuleWitness)
-ruleWitness handler prevStates inputValue rule = do
-  let
-    input = valueToFields @StepField @inputVal inputValue
-    inputSize = Array.length input
-  assignments <- Assignments.fresh
-  next <- Ref.new 0
-  let
-    run :: forall a. AsProver StepField r a -> Effect a
-    run w = runAsProver handler assignments w >>= either throwEvalError pure
-    assign vars fields = for_ (Array.zip vars fields) \(Tuple v x) -> Assignments.set v x assignments
-    bump n = Ref.modify' (\c -> { state: c + n, value: c }) next
-    ops = CircuitOps
-      { freshOp: Variable <$> bump 1
-      , addConstraintOp: \_ -> pure unit
-      , existsOp: \n w -> do
-          fields <- run w
-          v <- bump n
-          let vars = if n <= 0 then [] else map Variable (Array.range v (v + n - 1))
-          assign vars fields
-          pure vars
-      , assignOp: \vars w -> run w >>= assign vars
-      , pushLabelOp: \_ -> pure unit
-      , popLabelOp: pure unit
-      }
-    Snarky body = runRuleWithInput @inputVal rule (pure inputValue) prevStates
-  catchEvalError (body ops) >>= case _ of
-    Left e -> pure (Left e)
-    Right _ -> do
-      end <- Ref.read next
-      let
-        allocated = if end <= inputSize then [] else Array.range inputSize (end - 1)
-      pure case traverse (\v -> Assignments.lookup (Variable v) assignments) allocated of
-        Just values -> Right { input, values }
-        Nothing -> Left (FailedAssertion "a rule allocation took no value")
 
 -- | The dump's JSON: field elements as decimal strings, a variable
 -- | expression as `{var}`, `{const}`, `{add: [a, b]}` or `{scale: {k, x}}`,

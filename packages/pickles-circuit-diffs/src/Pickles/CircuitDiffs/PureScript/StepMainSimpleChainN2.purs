@@ -144,4 +144,5 @@ compileStepMainSimpleChainN2WithConstants pallasSrs params = do
           dummyWrapSg
           dummyAdvice
           throwawayCaptureRef
+          Nothing
       )

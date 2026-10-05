@@ -130,4 +130,5 @@ compileStepMainSideLoadedMain params = do
           dummyWrapSg
           dummyAdvice
           throwawayCaptureRef
+          Nothing
       )
