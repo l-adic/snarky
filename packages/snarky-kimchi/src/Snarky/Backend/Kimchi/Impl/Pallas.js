@@ -64,21 +64,24 @@ function gateKindToTyp(name) {
 // Gates
 // ---------------------------------------------------------------------------
 
-// `gate` is the kimchi-napi `NapiFqGate` object literal:
-//   { typ: i32, wires: NapiGateWires, coeffs: number[] (flat LE bytes) }
+// A gate is `{ typ, wires, coeffs }`, `coeffs` the field elements as
+// given. kimchi-napi's `NapiFqGate` takes `coeffs` as a plain array of
+// byte values, 32 per coefficient; `napiGate` makes that form for the one
+// call that hands a gate over, so it does not outlive the call.
+function napiGate(gate) {
+    const coeffs = gate.coeffs;
+    const coeffBytes = new Array(coeffs.length * 32);
+    for (let i = 0; i < coeffs.length; i++) {
+        const b = Fq.toBytesLE(coeffs[i]);
+        for (let j = 0; j < 32; j++) coeffBytes[i * 32 + j] = b[j];
+    }
+    return { typ: gate.typ, wires: gate.wires, coeffs: coeffBytes };
+}
+
 export function pallasCircuitGateNew(gateKind) {
     return function(wires) {
         return function(coeffs) {
-            const coeffBytes = new Array(coeffs.length * 32);
-            for (let i = 0; i < coeffs.length; i++) {
-                const b = Fq.toBytesLE(coeffs[i]);
-                for (let j = 0; j < 32; j++) coeffBytes[i * 32 + j] = b[j];
-            }
-            return {
-                typ: gateKindToTyp(gateKind),
-                wires,
-                coeffs: coeffBytes,
-            };
+            return { typ: gateKindToTyp(gateKind), wires, coeffs };
         };
     };
 }
@@ -88,15 +91,12 @@ export function pallasCircuitGateGetWires(gate) {
 }
 
 export function pallasCircuitGateCoeffCount(gate) {
-    return (gate.coeffs.length / 32) | 0;
+    return gate.coeffs.length;
 }
 
 export function pallasCircuitGateGetCoeff(gate) {
     return function(index) {
-        const off = index * 32;
-        const slice = new Uint8Array(32);
-        for (let j = 0; j < 32; j++) slice[j] = gate.coeffs[off + j];
-        return Fq.fromBytesLE(slice);
+        return gate.coeffs[index];
     };
 }
 
@@ -186,7 +186,7 @@ export function pallasGatesToJson(gates) {
     return function(publicInputSize) {
         const gv = k.caml_pasta_fq_plonk_gate_vector_create();
         for (const g of gates) {
-            k.caml_pasta_fq_plonk_gate_vector_add(gv, g);
+            k.caml_pasta_fq_plonk_gate_vector_add(gv, napiGate(g));
         }
         return k.caml_pasta_fq_plonk_circuit_serialize(publicInputSize, gv);
     };
@@ -214,7 +214,7 @@ export function pallasProverIndexCreate({
     void maxPolySize; // kimchi-napi derives chunking from srs + domain automatically
     const gv = k.caml_pasta_fq_plonk_gate_vector_create();
     for (const g of gates) {
-        k.caml_pasta_fq_plonk_gate_vector_add(gv, g);
+        k.caml_pasta_fq_plonk_gate_vector_add(gv, napiGate(g));
     }
     return k.caml_pasta_fq_plonk_index_create(
         gv,
