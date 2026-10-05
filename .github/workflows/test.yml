@@ -406,7 +406,7 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
-        lake build PicklesFixture.ApplicationWiring
+        lake build PicklesFixture.Application PicklesFixture.ApplicationWiring
         PICKLES_DUMP_DIR=../pickles-dumps lake env lean --run scripts/check_application_layouts.lean
 
     - name: Check the tag dumps

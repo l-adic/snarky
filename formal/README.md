@@ -131,7 +131,7 @@ count family for application circuit construction. Application execution/path wr
 remain a later phase.
 
 ```bash
-lake build PicklesFixture.ApplicationWiring
+lake build PicklesFixture.Application PicklesFixture.ApplicationWiring
 PICKLES_DUMP_DIR=/path/to/pickles-dumps lake env lean --run scripts/check_application_layouts.lean
 ```
 

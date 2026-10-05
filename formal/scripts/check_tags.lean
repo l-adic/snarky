@@ -1337,10 +1337,10 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
       linked := linked.push ok
       pairs := pairs + 1
     (← IO.getStdout).flush
-  PicklesFixture.Application.validate applicationRuns
   unless uncovered = 0 && oks.all id && linked.all id do
     throw (IO.userError s!"links FAILED ({oks.toList.count false} run(s), \
       {linked.toList.count false} link(s), {uncovered} uncovered)")
+  PicklesFixture.Application.validate applicationRuns
   IO.println s!"✓ {jobs.size} run(s): every compiled system holds under its prover's valuation, \
     every table satisfies its system, every public input is its cached proof's, every check \
     against the cache holds; {links.size} link(s) through stepWrap_kimchiVerify and \
