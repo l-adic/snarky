@@ -147,6 +147,8 @@ def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
     (name : String) (tag : Json) : IO Unit := do
   let C := A.circuits S (fun _ => none)
   let branches ← IO.ofExcept ((tag.getObjVal? "branches") >>= Json.getArr?)
+  unless branches.size == D.branches do
+    throw (IO.userError "comparison dump branch count differs from the reconstructed application")
   let report (label : String) (checks : List (String × Bool)) : IO Unit := do
     let bad := checks.filter (!·.2)
     unless bad.isEmpty do

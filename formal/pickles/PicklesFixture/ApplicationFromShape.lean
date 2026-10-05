@@ -1,13 +1,12 @@
-import PicklesFixture.ShapeDump
+import PicklesFixture.ApplicationImport
 import PicklesFixture.ApplicationRun
 
 /-!
 # Reconstruct applications from PureScript shape sidecars
 
-The sidecar supplies the application schema and branch/slot routing. Its imported tags are
-resolved in compilation order by complete wrap key. Rule operations, backend metadata, and the
-independently emitted circuits come from the tag dumps. This selected check uses no handwritten
-Lean application shape.
+The sidecar supplies the shape, rules, resolved keys and protocol padding. Shared SRS files
+supply the generators for deriving commitments and Lagrange bases. Only after assembly does
+the driver open the independent circuit dump, for full step and wrap comparison.
 -/
 
 namespace PicklesFixture.Application
@@ -20,40 +19,36 @@ private def selectedNames (apps : List String) : List (String × String) :=
   (if "HeterogeneousPrevs" ∈ apps then
     [("HeterogeneousPrevs", "child"), ("HeterogeneousPrevs", "application")] else []) ++
   (if "RecurseOverChunks" ∈ apps then
-    [("RecurseOverChunks", "chunks2"), ("RecurseOverChunks", "recurse")] else [])
+    [("RecurseOverChunks", "chunks2"), ("RecurseOverChunks", "recurse")] else []) ++
+  (if "PaddedWideSlots" ∈ apps then [("PaddedWideSlots", "padded_wide_slots")] else [])
 
 private def readJson (path : System.FilePath) : IO Json := do
   match Json.parse (← IO.FS.readFile path) with
   | .ok j => return j
   | .error e => throw (IO.userError s!"{path}: {e}")
 
-/-- Reconstruct each selected tag from its shape sidecar and compare every assembled step and
-wrap circuit with the independently emitted PureScript constraint system. -/
-private def checkEntries (S : Setup)
-    (tables : List (Nat × SlotLagrange 1 StepIPARounds))
-    (entries : List (String × Json × Json)) (known : Array KnownTag) : IO Unit := do
+private def checkEntries (dir : System.FilePath)
+    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
+    (entries : List (String × String)) (known : Array ImportedApplication) : IO Unit := do
   match entries with
   | [] => pure ()
-  | (name, tag, raw) :: rest =>
-    let shape ← IO.ofExcept (raw.getObjVal? "shape" >>= ShapeDump.ofJson)
-    match shape.load tag known with
+  | (app, tagName) :: rest =>
+    let name := s!"{app}/{tagName}"
+    let raw ← readJson (dir / app / "shapes" / s!"{tagName}.json")
+    let dump ← IO.ofExcept (ApplicationDump.ofJson raw)
+    IO.println s!"{name}: reconstructing from sidecar and SRS"
+    (← IO.getStdout).flush
+    match dump.assemble wrap step known with
     | .error e => throw (IO.userError s!"{name}: {e}")
-    | .ok loaded =>
-      match assembleOf loaded.shape loaded.imports tables name tag with
-      | .error e => throw (IO.userError s!"{name}: {e}")
-      | .ok A => do
-        checkCompiled A S name tag
-        let key ← IO.ofExcept ((← IO.ofExcept (tag.getObjVal? "wrapMain")).getObjVal? "key")
-        checkEntries S tables rest (known.push ⟨key, A.layout.export, A.wiring.export⟩)
+    | .ok A => do
+      let tag ← readJson (dir / s!"{name}.json")
+      checkCompiled A.assembled A.setup name tag
+      checkEntries dir wrap step rest (known.push A)
 termination_by entries.length
 
-def checkSelectedFromShape (dir : System.FilePath) (apps : List String) (S : Setup) : IO Unit := do
-  let entries ← (selectedNames apps).mapM fun (app, tagName) => do
-    let name := s!"{app}/{tagName}"
-    let tag ← readJson (dir / s!"{name}.json")
-    let raw ← readJson (dir / app / "shapes" / s!"{tagName}.json")
-    return (name, tag, raw)
-  let tables ← IO.ofExcept (wrapTablesOf (entries.map (fun (_, tag, _) => tag)).toArray)
-  checkEntries S tables entries #[]
+/-- Reconstruct the selected applications before reading their independent circuit dumps. -/
+def checkSelectedFromShape (dir : System.FilePath) (apps : List String)
+    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve) : IO Unit :=
+  checkEntries dir wrap step (selectedNames apps) #[]
 
 end PicklesFixture.Application

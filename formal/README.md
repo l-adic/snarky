@@ -95,8 +95,9 @@ being verified, without restricting the other slots.
 `PICKLES_DUMP_DIR=<dir> lake exe check-slot-chunks` uses the TwoPhaseChain dump's constants to
 construct synthetic two-slot circuits at counts `[1, 2]` and `[2, 1]`, and checks reader rejection
 of inconsistent Self slots. This tests construction; it supplies no mixed-chunk proof witness.
-`check-tags` separately compares dumped circuits, and its selected `LINKS=<app>,…` mode checks
-cached witnesses and applies both capstones and the handover theorems directly.
+`check-tags` separately compares dumped circuits, reading each branch's unfinalized padding
+from its tag's sidecar by predecessor count. Its selected `LINKS=<app>,…` mode checks cached
+witnesses and applies both capstones and the handover theorems directly.
 
 The application layout check reads only the tag metadata for `TwoPhaseChain` and
 `HeterogeneousPrevs` (including its child tag). It checks independently described
@@ -133,6 +134,45 @@ remain a later phase.
 ```bash
 lake build PicklesFixture.Application PicklesFixture.ApplicationWiring
 PICKLES_DUMP_DIR=/path/to/pickles-dumps lake env lean --run scripts/check_application_layouts.lean
+```
+
+### Reconstruction from application sidecars
+
+`check-application-shapes` reconstructs each application from its single
+`shapes/<tag>.json` sidecar and the shared SRS files. The sidecar carries the shape,
+input checks and rule operations, resolved keys and protocol padding. Imports resolve
+against previously reconstructed producers. Lagrange tables and the padding accumulator
+commitment are computed from the supplied SRS; no tables are read from circuit dumps or
+an on-disk Lagrange cache.
+
+The result retains the existing `Assembled` application and its `Setup`. Only after
+assembly does the driver read `<tag>.json` to compare every step branch and the shared
+wrap circuit: public-input size, gate types, coefficients, permutation wiring and cell
+variable identities up to renaming. The selected corpus is `TwoPhaseChain`,
+`HeterogeneousPrevs`, `RecurseOverChunks` and `PaddedWideSlots` (16 circuits across six tags).
+`PaddedWideSlots` has zero-, two- and one-predecessor branches at width two, so its
+padded branches exercise distinct entries of the unfinalized padding table.
+The reconstruction reader has no circuit-dump or proof-cache argument. Cached-run
+capstone checks still use the existing application harness.
+
+Rule replay covers all seven exported Kimchi variants. It retains dynamic `mustVerify`
+expressions, rejects out-of-scope references, and fails on missing witness allocations.
+`build_replayRule_irrel` establishes that replay advice cannot change the built circuit.
+The focused tests cover every constraint payload, non-contiguous input variables,
+returned expressions, scope errors, witness bounds and malformed sidecars.
+
+The loader supports Self/External slots. Side-loaded slots are rejected. Each step branch
+selects its unfinalized padding from the exported table by its own predecessor count.
+SRS references check curves, round counts and blinding bases; the caller supplies the
+actual shared generator files.
+
+```bash
+lake build check-rule-replay check-application-inputs check-application-shapes
+lake exe check-rule-replay
+PICKLES_DUMP_DIR=/path/to/pickles-dumps lake exe check-application-inputs
+PICKLES_DUMP_DIR=/path/to/pickles-dumps \
+  APPLICATION_SHAPES=TwoPhaseChain,HeterogeneousPrevs,RecurseOverChunks,PaddedWideSlots \
+  lake exe check-application-shapes
 ```
 
 ### Follow-up: backport shared slot capacities to PureScript

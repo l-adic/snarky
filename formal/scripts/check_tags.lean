@@ -9,7 +9,8 @@ step circuit, `Pickles.stepMainCircuit` at its constants (its domains by
 against the systems the tests compiled; and the capstones' constant premises on those constants
 (`wrapMainHyps`, `stepMainHyps`; a key's avoidance premise as the right side of
 `Pickles.Key.avoids_lagrangeRelations_iff` or `Pickles.avoids_stepRelationsAt_iff`), with each
-branch's slot count its rule's.
+branch's slot count its rule's. Step-statement padding comes from the tag's sidecar,
+selected by that count.
 
 Across tags: each slot verifies a dumped tag's proofs — its own tag's for a self slot, the tag
 whose wrap key it carries for an external one (keys are matched by digest, which the key check
@@ -70,6 +71,7 @@ import PicklesFixture.Fop
 import PicklesFixture.Premises
 import PicklesFixture.Rule
 import PicklesFixture.ApplicationVerify
+import PicklesFixture.ApplicationDump
 import PicklesFixture.Advice
 import PicklesFixture.Satisfies
 import PicklesFixture.Verdicts
@@ -115,10 +117,12 @@ structure TagSummary where
   slots : List (List SlotSummary)
 
 /-- One branch: its step circuit's comparisons, the premises on its constants, and its slots. -/
-def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (branch : Json) :
+def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point)
+    (padding : Vector (Pickles.UnfVal 15) (Pickles.MaxProofsVerified + 1)) (branch : Json) :
     Except String (List (String × Bool) × ℕ × List SlotSummary) := do
   let rule ← RuleDump.ofJson (← branch.getObjVal? "rule")
   let n := rule.prevs.size
+  let some dummyUnf := padding[n]? | throw "unsupported padding predecessor count"
   unless stepWidth == some n do
     throw s!"the wrap circuit gives the branch {stepWidth} slots, its rule has {n}"
   let stepMain ← branch.getObjVal? "stepMain"
@@ -135,13 +139,14 @@ def checkBranch (w : ℕ) (stepWidth : Option ℕ) (h : XhatStepCurve.Point) (br
         (ks := Pickles.StepIPARounds) (inVal := Vector Fp rule.inputSize)
         (outVal := Vector Fp rule.publicOutput.size) (fun i => k.slots[i].source)
         (fun i => k.slots[i].width_le hw) k.h (fun i => fopStepParams (k.chunks i)) k.ownDomains
-        (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule none) inertStepAdvice u) raw
+        (Pickles.constPt dummyWrapSgPt) dummyUnf (replayRule rule none) inertStepAdvice u) raw
     return (checks, rule.inputSize + rule.publicOutput.size, slots)
   else throw s!"the tag's width {w} exceeds {Pickles.MaxProofsVerified}"
 
 /-- One tag: its circuits' comparisons, by label, and its summary. A failed premise or a malformed
 dump is an error. -/
 def checkTag (name : String) (hWrap : XhatWrapCurve.Point) (hStep : XhatStepCurve.Point)
+    (padding : Vector (Pickles.UnfVal 15) (Pickles.MaxProofsVerified + 1))
     (j : Json) :
     Except String (List (String × List (String × Bool)) × TagSummary) := do
   let wrapMain ← j.getObjVal? "wrapMain"
@@ -167,7 +172,7 @@ def checkTag (name : String) (hWrap : XhatWrapCurve.Point) (hStep : XhatStepCurv
   let mut appSizes := []
   let mut slots := []
   for (bj, b) in branches.toList.zipIdx do
-    let (checks, appSize, ss) ← (checkBranch w k.stepWidths[b]? hStep bj).mapError
+    let (checks, appSize, ss) ← (checkBranch w k.stepWidths[b]? hStep padding bj).mapError
       (s!"branch {b}: " ++ ·)
     circuits := circuits ++ [(s!"branch {b} step_main", checks)]
     appSizes := appSizes ++ [appSize]
@@ -1260,7 +1265,8 @@ def runLinks (dir cacheDir : System.FilePath) (apps : List String) (nJobs : ℕ)
   let (applications, applicationRuns) ← PicklesFixture.Application.runners dir apps
     { wrap := wrapSrs σW hW hh.1, step := stepSrs σS hS hh.2
       wrapRounds := rfl, stepRounds := rfl
-      dummySg := dummyWrapSgPt, dummyUnf := dummyUnfN0, dummy := Vector.replicate _ 0 }
+      dummySg := dummyWrapSgPt, dummyUnf := Vector.replicate _ dummyUnfN0
+      dummy := Vector.replicate _ 0 }
   (← IO.getStdout).flush
   let wrapRuns ← IO.mkRef []
   let stepWrapOuts ← IO.mkRef #[]
@@ -1373,7 +1379,12 @@ def main : IO Unit := do
     for tag in (← app.path.readDir).qsort (·.fileName < ·.fileName) do
       unless tag.path.extension == some "json" do continue
       let name := s!"{app.fileName}/{tag.path.fileStem.getD tag.fileName}"
-      match Json.parse (← IO.FS.readFile tag.path) >>= checkTag name hWrap hStep with
+      let sidecar ← IO.FS.readFile (app.path / "shapes" / tag.fileName)
+      let circuit ← IO.FS.readFile tag.path
+      let checked := do
+        let dump ← Json.parse sidecar >>= PicklesFixture.Application.ApplicationDump.ofJson
+        Json.parse circuit >>= checkTag name hWrap hStep dump.environment.unfinalized
+      match checked with
       | .error e =>
         failures := failures + 1
         IO.println s!"✗ {name}: {e}"

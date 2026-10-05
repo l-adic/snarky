@@ -28,10 +28,8 @@ open Lean Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 inductive RuleOp where
   /-- Allocate `n` fresh variables. -/
   | alloc (n : ℕ)
-  /-- Emit a basic constraint. -/
-  | constrain (c : Basic Fp)
-  /-- Emit a padding row over seven cells. -/
-  | pad (vs : Vector (FVar Fp) 7)
+  /-- Emit a Kimchi constraint over local variable expressions. -/
+  | constrain (c : KimchiConstraint Fp)
 
 /-- A rule's body as dumped: its input's size, its operations in order, and per slot the
 previous statement's cells and the must-verify flag, then its public output. -/
@@ -51,14 +49,6 @@ def substLocal (env : Array (FVar Fp)) : FVar Fp → FVar Fp
   | .const c => .const c
   | .add a b => .add (substLocal env a) (substLocal env b)
   | .scale k x => .scale k (substLocal env x)
-
-/-- A basic constraint's local ids, read through `env`. -/
-def substBasic (env : Array (FVar Fp)) : Basic Fp → Basic Fp
-  | .r1cs l r o => .r1cs (PicklesFixture.substLocal env l) (PicklesFixture.substLocal env r)
-      (PicklesFixture.substLocal env o)
-  | .equal a b => .equal (PicklesFixture.substLocal env a) (PicklesFixture.substLocal env b)
-  | .square a s => .square (PicklesFixture.substLocal env a) (PicklesFixture.substLocal env s)
-  | .boolean x => .boolean (PicklesFixture.substLocal env x)
 
 /-- Whether every local id of an expression is below `n`. -/
 def scopedBelow (n : ℕ) : FVar Fp → Bool
@@ -97,32 +87,159 @@ def parseBasic (b : Json) : Except String (Basic Fp) := do
   if let .ok x := b.getObjVal? "boolean" then return .boolean (← parseLocal x)
   throw s!"not a basic constraint: {b.compress.take 80}"
 
-/-- An operation of a rule dump: `{alloc: n}`, or `{constraint: c}` with `c` a basic constraint
-or a padding row. A rule emitting any other kind of constraint is refused. -/
+private def localVector (n : Nat) (j : Json) : Except String (Vector (FVar Fp) n) := do
+  let xs ← FixtureKit.parseArrOf parseLocal j
+  if h : xs.size = n then return ⟨xs, h⟩ else throw s!"expected {n} rule cells, got {xs.size}"
+
+private def localPoint (j : Json) : Except String (AffinePoint (FVar Fp)) := do
+  return ⟨← parseLocal (← j.getObjVal? "x"), ← parseLocal (← j.getObjVal? "y")⟩
+
+private def localField (j : Json) (key : String) := j.getObjVal? key >>= parseLocal
+
+private def parseScaleRound (j : Json) : Except String (ScaleRound Fp) := do
+  let #[a0, a1, a2, a3, a4, a5] ← (← j.getObjVal? "accs").getArr?
+    | throw "a variable-base round needs six accumulator points"
+  let bits ← localVector 5 (← j.getObjVal? "bits")
+  let slopes ← localVector 5 (← j.getObjVal? "slopes")
+  return { acc0 := ← localPoint a0, acc1 := ← localPoint a1, acc2 := ← localPoint a2
+           acc3 := ← localPoint a3, acc4 := ← localPoint a4, acc5 := ← localPoint a5
+           bit0 := bits[0], bit1 := bits[1], bit2 := bits[2], bit3 := bits[3], bit4 := bits[4]
+           slope0 := slopes[0], slope1 := slopes[1], slope2 := slopes[2]
+           slope3 := slopes[3], slope4 := slopes[4]
+           nPrev := ← localField j "nPrev", nNext := ← localField j "nNext"
+           base := ← localPoint (← j.getObjVal? "base") }
+
+private def parseEndoRound (j : Json) : Except String (EndoMulRound Fp) := do
+  let bits ← localVector 4 (← j.getObjVal? "bits")
+  return { t := ← localPoint (← j.getObjVal? "t"), p := ← localPoint (← j.getObjVal? "p")
+           r := ← localPoint (← j.getObjVal? "r"), s := ← localPoint (← j.getObjVal? "s")
+           s1 := ← localField j "s1", s3 := ← localField j "s3"
+           nAcc := ← localField j "nAcc", nAccNext := ← localField j "nAccNext"
+           bit0 := bits[0], bit1 := bits[1], bit2 := bits[2], bit3 := bits[3]
+           inv := ← localField j "inv" }
+
+private def parseConstraint (c : Json) : Except String (KimchiConstraint Fp) := do
+  if let .ok b := c.getObjVal? "basic" then return .basic (← parseBasic b)
+  if let .ok p := c.getObjVal? "pad" then return .pad (← localVector 7 p)
+  if let .ok a := c.getObjVal? "addComplete" then
+    return .addComplete {
+      p1 := ← localPoint (← a.getObjVal? "p1"), p2 := ← localPoint (← a.getObjVal? "p2")
+      p3 := ← localPoint (← a.getObjVal? "p3"), inf := ← localField a "inf"
+      sameX := ← localField a "sameX", s := ← localField a "s"
+      infZ := ← localField a "infZ", x21Inv := ← localField a "x21Inv" }
+  if let .ok p := c.getObjVal? "poseidon" then
+    let states ← (← p.getObjVal? "state").getArr? >>= (·.mapM (localVector 3))
+    unless states.size = 56 do throw "a Poseidon block needs 56 states"
+    return .poseidon {
+      mds := Poseidon.fpParams.mds, rc := Poseidon.fpParams.roundConstants.toList
+      state := states.toList.map fun (s : Vector (FVar Fp) 3) => (s[0], s[1], s[2]) }
+  if let .ok rs := c.getObjVal? "varBaseMul" then
+    return .varBaseMul (← rs.getArr? >>= (·.toList.mapM parseScaleRound))
+  if let .ok rs := c.getObjVal? "endoScalar" then
+    return .endoScalar (← rs.getArr? >>= (·.toList.mapM fun r => do
+      return { n0 := ← localField r "n0", n8 := ← localField r "n8"
+               a0 := ← localField r "a0", a8 := ← localField r "a8"
+               b0 := ← localField r "b0", b8 := ← localField r "b8"
+               xs := ← localVector 8 (← r.getObjVal? "xs") }))
+  if let .ok e := c.getObjVal? "endoMul" then
+    let state ← (← e.getObjVal? "state").getArr? >>= (·.toList.mapM parseEndoRound)
+    unless !state.isEmpty do throw "an endomorphism multiplication needs a round"
+    return .endoMul {
+      state, s := ← localPoint (← e.getObjVal? "s")
+      nAcc := ← localField e "nAcc", endo := Bulletproof.IpaPallas.curve.endo.coeff }
+  throw s!"unsupported rule constraint: {c.compress.take 80}"
+
+/-- An allocation or a constraint in the exported Kimchi vocabulary. -/
 def parseOp (j : Json) : Except String RuleOp := do
   if let .ok n := j.getObjVal? "alloc" then return .alloc (← n.getNat?)
-  let c ← j.getObjVal? "constraint"
-  if let .ok b := c.getObjVal? "basic" then return .constrain (← parseBasic b)
-  if let .ok p := c.getObjVal? "pad" then
-    let vs ← FixtureKit.parseArrOf parseLocal p
-    if h : vs.size = 7 then return .pad ⟨vs, h⟩ else throw s!"a padding row of {vs.size} cells"
-  throw s!"a rule constraint other than a basic one or a padding row: {c.compress.take 80}"
+  return .constrain (← parseConstraint (← j.getObjVal? "constraint"))
 
-/-- Whether every local id a constraint reads is below `n`. -/
-def scopedBasicBelow (n : ℕ) : Basic Fp → Bool
-  | .r1cs l r o => PicklesFixture.scopedBelow n l && PicklesFixture.scopedBelow n r &&
-      PicklesFixture.scopedBelow n o
-  | .equal a b => PicklesFixture.scopedBelow n a && PicklesFixture.scopedBelow n b
-  | .square a s => PicklesFixture.scopedBelow n a && PicklesFixture.scopedBelow n s
-  | .boolean x => PicklesFixture.scopedBelow n x
+private def traverseConstraint {m : Type → Type} [Monad m]
+    (f : FVar Fp → m (FVar Fp)) : KimchiConstraint Fp → m (KimchiConstraint Fp)
+  | .basic b => .basic <$> (match b with
+    | .r1cs l r o => return .r1cs (← f l) (← f r) (← f o)
+    | .equal a b => return .equal (← f a) (← f b)
+    | .square a b => return .square (← f a) (← f b)
+    | .boolean a => return .boolean (← f a))
+  | .pad xs => .pad <$> xs.mapM f
+  | .poseidon p => do
+    return .poseidon { p with state := ← p.state.mapM fun (a, b, c) =>
+      return (← f a, ← f b, ← f c) }
+  | .addComplete p => do
+    return .addComplete {
+      p1 := ← pt p.p1,
+      p2 := ← pt p.p2,
+      p3 := ← pt p.p3,
+      inf := ← f p.inf,
+      sameX := ← f p.sameX,
+      s := ← f p.s,
+      infZ := ← f p.infZ,
+      x21Inv := ← f p.x21Inv }
+  | .varBaseMul rs => do
+    return .varBaseMul (← rs.mapM fun p => do
+      return {
+        acc0 := ← pt p.acc0,
+        acc1 := ← pt p.acc1,
+        acc2 := ← pt p.acc2,
+        acc3 := ← pt p.acc3,
+        acc4 := ← pt p.acc4,
+        acc5 := ← pt p.acc5,
+        bit0 := ← f p.bit0,
+        bit1 := ← f p.bit1,
+        bit2 := ← f p.bit2,
+        bit3 := ← f p.bit3,
+        bit4 := ← f p.bit4,
+        slope0 := ← f p.slope0,
+        slope1 := ← f p.slope1,
+        slope2 := ← f p.slope2,
+        slope3 := ← f p.slope3,
+        slope4 := ← f p.slope4,
+        nPrev := ← f p.nPrev,
+        nNext := ← f p.nNext,
+        base := ← pt p.base })
+  | .endoScalar rs => do
+    return .endoScalar (← rs.mapM fun p => do
+      return {
+        n0 := ← f p.n0,
+        n8 := ← f p.n8,
+        a0 := ← f p.a0,
+        a8 := ← f p.a8,
+        b0 := ← f p.b0,
+        b8 := ← f p.b8,
+        xs := ← p.xs.mapM f })
+  | .endoMul e => do
+    let state ← e.state.mapM fun p => do
+      return {
+        t := ← pt p.t,
+        p := ← pt p.p,
+        r := ← pt p.r,
+        s := ← pt p.s,
+        s1 := ← f p.s1,
+        s3 := ← f p.s3,
+        nAcc := ← f p.nAcc,
+        nAccNext := ← f p.nAccNext,
+        bit0 := ← f p.bit0,
+        bit1 := ← f p.bit1,
+        bit2 := ← f p.bit2,
+        bit3 := ← f p.bit3,
+        inv := ← f p.inv }
+    return .endoMul { e with state, s := ← pt e.s, nAcc := ← f e.nAcc }
+  where
+  pt (p : AffinePoint (FVar Fp)) : m (AffinePoint (FVar Fp)) := do
+    return ⟨← f p.x, ← f p.y⟩
+
+private def substConstraint (env : Array (FVar Fp)) (c : KimchiConstraint Fp) :=
+  Id.run (traverseConstraint (m := Id) (fun x => pure (substLocal env x)) c)
+
+private def scopedConstraint (n : Nat) (c : KimchiConstraint Fp) : Bool :=
+  (traverseConstraint (m := Option) (fun x => if scopedBelow n x then some x else none) c).isSome
 
 /-- The number of local ids in scope after `ops`, starting from `n`, when every constraint reads
 only ids already in scope. -/
 def scopeAfter : ℕ → List RuleOp → Option ℕ
   | n, [] => some n
   | n, .alloc m :: ops => scopeAfter (n + m) ops
-  | n, .constrain c :: ops => if scopedBasicBelow n c then scopeAfter n ops else none
-  | n, .pad vs :: ops => if vs.all (scopedBelow n) then scopeAfter n ops else none
+  | n, .constrain c :: ops => if scopedConstraint n c then scopeAfter n ops else none
 
 /-- A rule's dump, read and checked: every constraint reads only ids allocated before it, and
 the outputs only ids the body allocated. -/
@@ -162,9 +279,7 @@ def replayOps (vals : Option (Array Fp)) : List RuleOp → ℕ → Array (FVar F
             but the witness has {vs.size}")
       fun xs => replayOps vals ops (off + n) (env ++ xs.toArray.map .var)
   | .constrain c :: ops, off, env =>
-    .addConstraintOp (.basic (substBasic env c)) (replayOps vals ops off env)
-  | .pad vs :: ops, off, env =>
-    .addConstraintOp (.pad (vs.map (substLocal env))) (replayOps vals ops off env)
+    .addConstraintOp (substConstraint env c) (replayOps vals ops off env)
 
 private theorem build_replayOps_irrel (vals vals' : Option (Array Fp)) (ops : List RuleOp)
     (off : ℕ) (env : Array (FVar Fp)) (nv : ℕ) :

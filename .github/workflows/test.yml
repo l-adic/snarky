@@ -426,10 +426,12 @@ jobs:
     - name: Populate SRS cache
       run: make fetch-srs
 
-    - name: Reconstruct application circuits from shape sidecars
+    - name: Reconstruct application circuits from sidecars and SRS
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
+        lake exe check-rule-replay
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-inputs
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-shapes
 
     # Two apps' links, each proof's main circuit run on its cached proof with the capstones'

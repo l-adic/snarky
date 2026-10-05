@@ -98,3 +98,12 @@ root = "scripts.check_slot_chunks"
 [[lean_exe]]
 name = "check-application-shapes"
 root = "scripts.check_application_shapes"
+
+# Focused replay and sidecar-reader checks, independent of proof generation.
+[[lean_exe]]
+name = "check-rule-replay"
+root = "scripts.check_rule_replay"
+
+[[lean_exe]]
+name = "check-application-inputs"
+root = "scripts.check_application_inputs"

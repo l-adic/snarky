@@ -33,9 +33,9 @@ structure CheckedRule (D : Shape) (b : D.Branch) where
   /-- Each predecessor has its source application's statement size. -/
   prevSizes : ∀ i : D.Slot b, dump.prevs[i.cast slots].1.size = D.prevSize b i
 
-private def checkedRuleOf (D : Shape) (b : D.Branch) (j : Json) :
+/-- Check a replay against its branch's input, output and predecessor layouts. -/
+def CheckedRule.check (D : Shape) (b : D.Branch) (dump : RuleDump) :
     Except String (CheckedRule D b) := do
-  let dump ← RuleDump.ofJson j
   let ⟨hi⟩ ← requireProof (dump.inputSize = CircuitType.size Fp D.schema.Input)
     "the rule's input differs from the application schema"
   let ⟨ho⟩ ← requireProof (dump.publicOutput.size = CircuitType.size Fp D.schema.Output)
@@ -127,7 +127,7 @@ def assembleOf (D : Shape)
   let branches ← (← j.getObjVal? "branches").getArr?
   let rules ← finSequence fun b : D.Branch => do
     let some branch := branches[b.val]? | throw "a declared branch is missing"
-    checkedRuleOf D b (← branch.getObjVal? "rule")
+    CheckedRule.check D b (← RuleDump.ofJson (← branch.getObjVal? "rule"))
   let c ← constantsOf "wrapMain" (← j.getObjVal? "wrapMain")
   let ds ← FixtureKit.parseArrOf FixtureKit.parseZMod (← c.getObjVal? "dummy")
   let dummy ← if h : ds.size = WrapIPARounds then pure (⟨ds, h⟩ : Vector Fq WrapIPARounds)
