@@ -153,7 +153,7 @@ def mkPadRow (vs : Vector Variable 7) : Rows F :=
      coeffs := [] }⟩
 
 /-- The five coefficient cells of one queued constraint, in row order. -/
-private def constraintToCoeffs (g : GenericPlonkConstraint F) : List F :=
+def constraintToCoeffs (g : GenericPlonkConstraint F) : List F :=
   [g.cl, g.cr, g.co, g.m, g.c]
 
 /-- Flush a half-full gate queue into its single-constraint row. -/
@@ -180,7 +180,7 @@ abbrev PlonkBuilder (F : Type) := StateM (BuilderReductionState F)
 
 /-- Pack the queued and the incoming constraint into one double Generic row, the
 incoming gate's cells first. -/
-private def emitDoubleGateRow (queued new : GenericPlonkConstraint F) : KimchiRow F :=
+def emitDoubleGateRow (queued new : GenericPlonkConstraint F) : KimchiRow F :=
   { kind := .generic,
     vars := ⟨⟨[new.vl, new.vr, new.vo, queued.vl, queued.vr, queued.vo] ++
       List.replicate 9 none⟩, by simp⟩,
@@ -277,6 +277,21 @@ instance [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] :
   createInternalVariable _ := createInternalB
   addGenericPlonkConstraint := addGenericB
   addEqualsConstraint := addEqualsB
+
+/-- The builder's generic-constraint op, as a state transition: an empty queue takes the
+constraint; an occupied one packs its constraint behind the incoming one into a row and
+empties. -/
+theorem addGenericPlonkConstraint_apply [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+    (g : GenericPlonkConstraint F) (s : BuilderReductionState F) :
+    (addGenericPlonkConstraint g : PlonkBuilder F Unit) s =
+      ((), match s.aux.queuedGenericGate with
+        | none => { s with aux.queuedGenericGate := some g }
+        | some queued =>
+          { s with constraints := emitDoubleGateRow queued g :: s.constraints,
+                   aux.queuedGenericGate := none }) := by
+  show addGenericB g s = _
+  unfold addGenericB handleGateBatching
+  cases s.aux.queuedGenericGate <;> rfl
 
 /-- Run a reduction in the builder from a borrowed counter and auxiliary state: the
 result, the emitted rows in emission order, and the counter and auxiliary state to hand

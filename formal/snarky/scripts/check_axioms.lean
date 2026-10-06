@@ -28,6 +28,7 @@ import Snarky.Kimchi.Backend.Trace
 import Snarky.Kimchi.Backend.TraceChecks
 import Snarky.Kimchi.Backend.TraceSemantics
 import Snarky.Kimchi.Backend.RowCorrespondence
+import Snarky.Kimchi.Backend.Receipts
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -132,6 +133,10 @@ def roots : List Name :=
     `Snarky.Kimchi.recordBuilt_bodyRows,
     `Snarky.Kimchi.getElem_bodyRows_generic,
     `Snarky.Kimchi.getElem_bodyRows_gate,
+    `Snarky.Kimchi.record_constraint_replays,
+    `Snarky.Kimchi.receipts_located,
+    `Snarky.Kimchi.receipts_complete,
+    `Snarky.Kimchi.genericValue_of_located,
     `Snarky.Kimchi.recorded_batching,
     `Snarky.Kimchi.recorded_wiring,
     `Snarky.Kimchi.recorded_constantCache,

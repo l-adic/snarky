@@ -43,6 +43,7 @@ import Snarky.Kimchi.Backend.Trace
 import Snarky.Kimchi.Backend.TraceChecks
 import Snarky.Kimchi.Backend.TraceSemantics
 import Snarky.Kimchi.Backend.RowCorrespondence
+import Snarky.Kimchi.Backend.Receipts
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck

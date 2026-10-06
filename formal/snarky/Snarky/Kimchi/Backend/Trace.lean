@@ -17,12 +17,15 @@ history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` re
   state handed back; `RecordedReduction.erase` forgets the events.
 - `RecordingBuilder`: the recording interpreter, and `recordReduction`, its run from a
   borrowed counter and auxiliary state.
+- `replay`: an event list re-executed through the builder's primitives, and
+  `RecordedReduction.finish`, a recorded reduction's final builder state.
 
 ## Main results
 
 - `record_reduceToVariable_erases`, `record_basic_erases`, `record_addComplete_erases`: the
   reducers the direct fragment and its operands run, recorded, erase to their ordinary
   reductions; `record_constraint_erases` is the same for the dispatch over every constraint.
+- `record_constraint_replays`: a recorded reduction ends in the replay of its own events.
 
 ## Implementation notes
 
@@ -125,55 +128,84 @@ def recordReduction (nextVariable : Variable) (aux : AuxState F) (x : RecordingB
   { result := a, events := s.eventsRev.reverse, rows := s.core.constraints.reverse.map Rows.mk
     nextVariable := s.core.nextVariable, aux := s.core.aux }
 
+/-! ## Replay -/
+
+section Replay
+
+variable [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+
+/-- The builder's primitive for one event, on the builder's state: an allocation, the logged
+variable ignored; a generic constraint's batching; an equality's wiring, cache or emission. -/
+def replayEvent (s : BuilderReductionState F) : ReductionEvent F → BuilderReductionState F
+  | .alloc _ e => ((createInternalVariable e : PlonkBuilder F Variable) s).2
+  | .generic g => ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2
+  | .equal c => ((addEqualsConstraint c : PlonkBuilder F Unit) s).2
+
+/-- Re-execute an event list through the builder's primitives, in order. -/
+def replay (s : BuilderReductionState F) (events : List (ReductionEvent F)) :
+    BuilderReductionState F :=
+  events.foldl replayEvent s
+
+private theorem replay_append (s : BuilderReductionState F) (es₁ es₂ : List (ReductionEvent F)) :
+    replay s (es₁ ++ es₂) = replay (replay s es₁) es₂ :=
+  List.foldl_append
+
+/-- A recorded reduction's final builder state: its rows newest first, the counter and the
+auxiliary state. -/
+def RecordedReduction.finish (r : RecordedReduction F α) : BuilderReductionState F :=
+  { constraints := (r.rows.map (·.row)).reverse, nextVariable := r.nextVariable, aux := r.aux }
+
 /-! ## Erasure -/
 
 /-- A recording computation simulates a builder computation: from every recording state it
-returns the builder's result and carries the builder's state as its core. -/
+returns the builder's result, carries the builder's state as its core, and appends the events
+whose replay is the builder's state change. -/
 private def Simulates (b : PlonkBuilder F α) (r : RecordingBuilder F α) : Prop :=
-  ∀ s : RecordingState F, (r s).1 = (b s.core).1 ∧ (r s).2.core = (b s.core).2
+  ∀ s : RecordingState F, (r s).1 = (b s.core).1 ∧ (r s).2.core = (b s.core).2 ∧
+    ∃ es, (r s).2.eventsRev = es.reverse ++ s.eventsRev ∧ (b s.core).2 = replay s.core es
 
 private theorem simulates_pure (a : α) : Simulates (pure a : PlonkBuilder F α) (pure a) :=
-  fun _ => ⟨rfl, rfl⟩
+  fun _ => ⟨rfl, rfl, [], rfl, rfl⟩
 
 private theorem simulates_map {b : PlonkBuilder F α} {r : RecordingBuilder F α} (f : α → β)
     (hb : Simulates b r) : Simulates (f <$> b) (f <$> r) := by
   intro s
-  obtain ⟨h1, h2⟩ := hb s
-  show f (r s).1 = f (b s.core).1 ∧ (r s).2.core = (b s.core).2
+  obtain ⟨h1, h2, es, h3, h4⟩ := hb s
+  show f (r s).1 = f (b s.core).1 ∧ (r s).2.core = (b s.core).2 ∧
+    ∃ es, (r s).2.eventsRev = es.reverse ++ s.eventsRev ∧ (b s.core).2 = replay s.core es
   rw [h1]
-  exact ⟨rfl, h2⟩
+  exact ⟨rfl, h2, es, h3, h4⟩
 
 private theorem simulates_bind {b : PlonkBuilder F α} {r : RecordingBuilder F α}
     {f : α → PlonkBuilder F β} {g : α → RecordingBuilder F β}
     (hb : Simulates b r) (hf : ∀ x, Simulates (f x) (g x)) :
     Simulates (b >>= f) (r >>= g) := by
   intro s
-  obtain ⟨h1, h2⟩ := hb s
-  obtain ⟨h3, h4⟩ := hf (r s).1 (r s).2
+  obtain ⟨h1, h2, es₁, h3, h4⟩ := hb s
+  obtain ⟨h5, h6, es₂, h7, h8⟩ := hf (r s).1 (r s).2
   show (g (r s).1 (r s).2).1 = (f (b s.core).1 (b s.core).2).1 ∧
-    (g (r s).1 (r s).2).2.core = (f (b s.core).1 (b s.core).2).2
-  rw [h3, h4, h2, h1]
-  exact ⟨rfl, rfl⟩
-
-section Operations
-
-variable [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+    (g (r s).1 (r s).2).2.core = (f (b s.core).1 (b s.core).2).2 ∧
+    ∃ es, (g (r s).1 (r s).2).2.eventsRev = es.reverse ++ s.eventsRev ∧
+      (f (b s.core).1 (b s.core).2).2 = replay s.core es
+  refine ⟨?_, ?_, es₁ ++ es₂, ?_, ?_⟩
+  · rw [h5, h2, h1]
+  · rw [h6, h2, h1]
+  · rw [h7, h3, List.reverse_append, List.append_assoc]
+  · rw [← h1, ← h2, h8, h2, h4, replay_append]
 
 private theorem simulates_createInternalVariable (e : AffineExpression F) :
     Simulates (createInternalVariable e : PlonkBuilder F Variable)
       (createInternalVariable e) :=
-  fun _ => ⟨rfl, rfl⟩
+  fun _ => ⟨rfl, rfl, [.alloc _ e], rfl, rfl⟩
 
 private theorem simulates_addGenericPlonkConstraint (g : GenericPlonkConstraint F) :
     Simulates (addGenericPlonkConstraint g : PlonkBuilder F Unit)
       (addGenericPlonkConstraint g) :=
-  fun _ => ⟨rfl, rfl⟩
+  fun _ => ⟨rfl, rfl, [.generic g], rfl, rfl⟩
 
 private theorem simulates_addEqualsConstraint (c : EqualsConstraint F) :
     Simulates (addEqualsConstraint c : PlonkBuilder F Unit) (addEqualsConstraint c) :=
-  fun _ => ⟨rfl, rfl⟩
-
-end Operations
+  fun _ => ⟨rfl, rfl, [.equal c], rfl, rfl⟩
 
 /-- Close a simulation goal by walking the reducer's structure: an operation or `pure` closes
 the goal, a `bind` splits into the simulations of its two parts, and a `match` or `if` is
@@ -199,15 +231,28 @@ state. -/
 private theorem erase_recordReduction {b : PlonkBuilder F α} {r : RecordingBuilder F α}
     (h : Simulates b r) (nv : Variable) (aux : AuxState F) :
     (recordReduction nv aux r).erase = reduceAsBuilder nv aux b := by
-  obtain ⟨h1, h2⟩ := h ⟨⟨[], nv, aux⟩, []⟩
+  obtain ⟨h1, h2, -⟩ := h ⟨⟨[], nv, aux⟩, []⟩
   show ((r _).1, ((r _).2.core.constraints.reverse.map Rows.mk), (r _).2.core.nextVariable,
       (r _).2.core.aux) =
     ((b _).1, ((b _).2.constraints.reverse.map Rows.mk), (b _).2.nextVariable, (b _).2.aux)
   rw [h1, h2]
 
+/-- A simulating recording's final state is the replay of its events from its start. -/
+private theorem finish_recordReduction {b : PlonkBuilder F α} {r : RecordingBuilder F α}
+    (h : Simulates b r) (nv : Variable) (aux : AuxState F) :
+    (recordReduction nv aux r).finish =
+      replay ⟨[], nv, aux⟩ (recordReduction nv aux r).events := by
+  obtain ⟨-, h2, es, h3, h4⟩ := h ⟨⟨[], nv, aux⟩, []⟩
+  show (⟨(((r _).2.core.constraints.reverse.map Rows.mk).map (·.row)).reverse,
+      (r _).2.core.nextVariable, (r _).2.core.aux⟩ : BuilderReductionState F) =
+    replay ⟨[], nv, aux⟩ ((r _).2.eventsRev.reverse)
+  rw [h3, List.append_nil, List.reverse_reverse, ← h4, ← h2, List.map_map]
+  have hid : ((fun x : Rows F => x.row) ∘ Rows.mk) = id := rfl
+  rw [hid, List.map_id, List.reverse_reverse]
+
 section Reducers
 
-variable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F]
+variable [Add F] [Mul F] [One F]
 
 omit [Add F] [Mul F] in
 private theorem simulates_completelyReduce (single : Variable × F) :
@@ -349,6 +394,14 @@ theorem record_constraint_erases (nv : Variable) (aux : AuxState F) (c : KimchiC
     (recordReduction nv aux c.reduce).erase = reduceAsBuilder nv aux c.reduce :=
   erase_recordReduction (simulates_constraint_reduce c) nv aux
 
+/-- Recording any constraint's reduction ends in the replay of its events from its start. -/
+theorem record_constraint_replays (nv : Variable) (aux : AuxState F) (c : KimchiConstraint F) :
+    (recordReduction nv aux c.reduce).finish =
+      replay ⟨[], nv, aux⟩ (recordReduction nv aux c.reduce).events :=
+  finish_recordReduction (simulates_constraint_reduce c) nv aux
+
 end Reducers
+
+end Replay
 
 end Snarky.Kimchi
