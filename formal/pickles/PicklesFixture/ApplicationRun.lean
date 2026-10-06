@@ -102,6 +102,8 @@ structure Context (S : Setup) (D : Shape) where
   assembled : Assembled D
   /-- Canonical field encodings read from the sidecar. -/
   schemas : FieldSchemas D
+  /-- The fixture test whose cache holds this application's runs. -/
+  fixture : String
   /-- The fixture path used in reports. -/
   name : String
   /-- Satisfying executions of the application branches. -/
@@ -234,7 +236,7 @@ private def checkMixed {D : Shape} (A : Assembled D) (S : Setup) : IO Unit := do
   (← IO.getStdout).flush
 
 /-- Retain typed runs for one imported application and expose its executable circuits. -/
-def runner (S : Setup) (A : ImportedApplication) (name : String) :
+def runner (S : Setup) (A : ImportedApplication) (fixture name : String) :
     IO (Runner × Context S A.shape) := do
   unless A.setup.dummy == S.dummy && A.setup.dummySg == S.dummySg &&
       A.setup.dummyUnf.map (CircuitType.valueToFields (F := Fp)) ==
@@ -247,6 +249,6 @@ def runner (S : Setup) (A : ImportedApplication) (name : String) :
   let wrapParameters ← IO.mkRef []
   return (⟨fun b p ps => runStep A.assembled S b p ps steps,
     fun b p q ps => runWrap A.assembled S A.padding b p q ps wraps⟩,
-    ⟨A.assembled, A.schemas, name, steps, wraps, stepParameters, wrapParameters⟩)
+    ⟨A.assembled, A.schemas, fixture, name, steps, wraps, stepParameters, wrapParameters⟩)
 
 end PicklesFixture.Application

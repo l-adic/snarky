@@ -58,7 +58,7 @@ private def runApplications (S : Setup) (caches : List ProofCache) (workers : Na
     let app := (name.splitOn "/").head!
     let some cache := caches.find? (·.app == app)
       | throw (IO.userError s!"missing proof cache for {name}")
-    let (run, context) ← runner S A name
+    let (run, context) ← runner S A app name
     let mut jobs : Array (IO Bool) := #[]
     for b in List.finRange A.shape.branches do
       let vk := A.assembled.wiring.backend.stepKeys[b].cvk

@@ -382,11 +382,13 @@ private structure Store {S : Setup} (contexts : List ((D : Shape) × Context S D
   disabled : IO.Ref Nat
   negatives : IO.Ref Nat
 
-/-- The selected application whose wrap key produced `cached`. -/
+/-- The consumer's fixture's application whose wrap key produced `cached`: a cache holds one
+fixture's runs, so a cached predecessor's producer is a tag of the same fixture. -/
 private def findProducer {S : Setup} (contexts : List ((D : Shape) × Context S D))
-    (cached : Cache.Entry CW) : Option (Fin contexts.length) :=
+    (fixture : String) (cached : Cache.Entry CW) : Option (Fin contexts.length) :=
   (List.finRange contexts.length).find? fun k =>
-    toString contexts[k].2.assembled.wiring.backend.wrapKey.cvk.digest.val == cached.vkDigest
+    contexts[k].2.fixture == fixture &&
+      toString contexts[k].2.assembled.wiring.backend.wrapKey.cvk.digest.val == cached.vkDigest
 
 /-- The run whose wrap proof is `cached`, each of its verified slots checked once: both
 verification capstones against the cache, and both handovers against each verified slot of the
@@ -410,7 +412,7 @@ private def nodeOf {S : Setup} {contexts : List ((D : Shape) × Context S D)}
             (IO.userError "base-case slot must disable verification")
           store.disabled.modify (· + 1)
           return none
-        let some k := findProducer contexts older
+        let some k := findProducer contexts B.fixture older
           | throw (IO.userError "cached proof has no reconstructed producer")
         let A := contexts[k].2
         let n ← nodeOf stores fuel (stores k) older
