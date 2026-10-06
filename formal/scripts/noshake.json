@@ -35,6 +35,9 @@
     "Kimchi.Columns": [
       "Init"
     ],
+    "Kimchi.Index.GateType": [
+      "Init"
+    ],
     "Pickles.Linearization.Circuit": [
       "Pickles.Linearization.Map"
     ],

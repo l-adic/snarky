@@ -34,7 +34,7 @@ structure Wire where
 the coefficients. -/
 structure AssembledGate (F : Type u) where
   /-- The gate tag. -/
-  kind : GateKind
+  kind : Kimchi.Index.GateType
   /-- The wiring target of each permutation cell. -/
   wires : Vector Wire 7
   /-- The coefficient row. -/
@@ -80,7 +80,7 @@ first cell. -/
 def makePublicInputRows [Zero F] [One F] (publicInputs : List Variable) :
     List (KimchiRow F) :=
   publicInputs.map fun v =>
-    { kind := .genericPlonk,
+    { kind := .generic,
       vars := ⟨⟨[some v, none, none, none, none, none, none, none, none, none,
                  none, none, none, none, none]⟩, by simp⟩,
       coeffs := [1, 0, 0, 0, 0] }

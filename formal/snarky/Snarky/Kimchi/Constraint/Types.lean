@@ -1,3 +1,4 @@
+import Kimchi.Index.GateType
 import Snarky.CVar
 import Snarky.Kimchi.UnionFind
 
@@ -7,8 +8,8 @@ import Snarky.Kimchi.UnionFind
 Transcribes packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/Types.purs: the types the
 kimchi backend reduces into — the queued generic constraint, the gate row, the wire state,
 and the `ToKimchiRows` emission class. Names are kept, except that `KimchiRow.vars` renames
-a field whose upstream name is a Lean command keyword, and `GateKind`'s constructors are
-lowerCamel, as in `Kimchi.Index.GateType`.
+a field whose upstream name is a Lean command keyword, and the gate tag on a row is the
+index model's `Kimchi.Index.GateType` rather than a tag type of this layer's own.
 
 ## Deviations from the source
 
@@ -19,8 +20,8 @@ lowerCamel, as in `Kimchi.Index.GateType`.
 - The wire state is pure: the mutable union-find becomes `UnionFind`, the internal-variable
   set a `List` (its one insertion adds a fresh variable), and the constant cache an assoc
   list read by first-match lookup.
-- `GateKind` stays apart from `Kimchi.Index.GateType` so this layer imports no `Kimchi` module;
-  `PicklesFixture.kindType` maps one to the other.
+- The gate tag is `Kimchi.Index.GateType` itself, from its import-free module, so the
+  emitted rows meet the index with no conversion.
 -/
 
 namespace Snarky.Kimchi
@@ -49,27 +50,10 @@ structure GenericPlonkConstraint (F : Type u) where
   c : F
 
 
-/-- The gate tag on an emitted row. -/
-inductive GateKind where
-  /-- A packed Generic gate row. -/
-  | genericPlonk
-  /-- A complete-addition row. -/
-  | addComplete
-  /-- A Poseidon block row. -/
-  | poseidon
-  /-- A variable-base scalar-multiplication row. -/
-  | varBaseMul
-  /-- An endomorphism scalar-multiplication row. -/
-  | endoMul
-  /-- An endo-scalar decomposition row. -/
-  | endoScalar
-  /-- The zero gate: an unconstrained row holding a block's final state. -/
-  | zero
-
 /-- One emitted gate row. -/
 structure KimchiRow (F : Type u) where
   /-- The gate tag. -/
-  kind : GateKind
+  kind : Kimchi.Index.GateType
   /-- The witness-cell variables; `none` leaves a cell unconstrained. -/
   vars : Vector (Option Variable) 15
   /-- The coefficient row, of per-gate length (see the module docstring). -/

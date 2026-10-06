@@ -300,7 +300,7 @@ The final single flush puts the queued equation in the first half. A queue can
 survive across custom gates. Never require a custom block's supporting equations
 to occur before it, or within its source step's row span.
 
-For the pilot, give each `.generic` event an eventual `(row, half)` receipt:
+For the fragment, give each `.generic` event an eventual `(row, half)` receipt:
 
 ```lean
 structure GenericReceipt where
@@ -313,10 +313,10 @@ structure GenericReceipt where
 The recording fold carries the pending event reference alongside the unchanged
 existing queue. On pairing, assign receipts to both events in the order above;
 on final flush, assign the pending receipt. Validate exact slot variables and
-coefficients. All pilot generic events need a receipt; none may remain pending
+coefficients. All of the fragment's generic events need a receipt; none may remain pending
 after finalization. Rows and halves are relative to the body, before public rows.
 
-The first receipt builder is explicitly limited to the pilot's allocation/equality-free
+The first receipt builder is explicitly limited to the direct fragment's allocation/equality-free
 event stream. If offered unsupported events, it must reject them, not silently omit
 their obligations. General recording and its erasure theorem can still support those
 events before general receipt certification does.
@@ -331,14 +331,14 @@ vr = none → cr = 0 ∧ m = 0
 vo = none → co = 0
 ```
 
-Prove that the pilot's generated generic equations meet this condition, and prove
+Prove that the fragment's generated generic equations meet this condition, and prove
 the packing lemma for payloads satisfying it. Apply ordinary generic equations
 only outside the public prefix; public rows use `Generic.withPublic` instead.
 
 Equality operations are a later extension to receipt certification. They may be
 discharged by a trivial identity, a union, a pinning equation, or a cache hit backed
 by an earlier pinning equation. The recording layer supports `.equal` now, and
-the local semantic lemmas may assume its meaning. The pilot below uses no equality
+the local semantic lemmas may assume its meaning. The direct fragment below uses no equality
 operations. Do not report general `ReductionFacts` reconstruction as proved until
 these equality paths are actually covered.
 
@@ -403,7 +403,7 @@ The index/row correspondence record must contain only these explicit structural 
 Call this proposed record `RowsInIndex`. Its fields must not contain `Realizes`,
 `ReductionFacts`, source satisfaction, or an implication from `Satisfies` to any of
 them. Those are conclusions of the soundness theorem, not structural validation.
-For the pilot, derive its copy-path field from the emitted wiring. Do not make a
+For the direct fragment, derive its copy-path field from the emitted wiring. Do not make a
 caller postulate it for a supposedly arbitrary application.
 
 ## 6. The first closed fragment and its theorem
@@ -413,29 +413,29 @@ matrix theorem, deliberately avoid proving the entire equality/cache/union-find
 backend. Use a source list containing only:
 
 ```lean
-inductive PilotConstraint where
-  | boolean (v : Variable)
-  | addComplete (operands : Vector Variable 11)
-
-def PilotConstraint.toConstraint : PilotConstraint → KimchiConstraint F := ...
+/-- A constraint the lowering places directly: a Boolean on a bare variable, or a complete
+addition whose eleven operands are bare variables. -/
+def KimchiConstraint.Direct : KimchiConstraint F → Prop
+  | .basic (.boolean (.var _)) => True
+  | .addComplete c => ∀ x ∈ c.operands.toList, x.var?.isSome
+  | _ => False
 ```
 
-The vector is in AddComplete **column order**:
-`x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv`. Embed every operand as `.var`.
-This small constructor is an experiment carrier; keep it in the pilot module.
-It must invoke the actual existing reducers through `toConstraint`, not implement
-a separate direct row emitter.
+The operands are in AddComplete **column order**:
+`x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv`. The fragment is a predicate on the existing
+constraint type, so the closed theorem quantifies over real source lists and the actual
+existing reducers run on them unchanged; there is no carrier type and no embedding.
 
-Define a finite, decidable `PilotScoped` condition with all of the following:
+Define a finite, decidable `Direct.Scoped` condition with all of the following:
 
 1. Every operand and public variable is below the initial next-variable counter.
 2. Each AddComplete operand at positions 7..10 occurs exactly once across **all**
    source operand occurrences and the ordered public-variable list.
-3. Source constraints have only the two forms above (ensured by the type).
+3. Every source constraint is `Direct`.
 
 An auxiliary identifier cannot be shared with another auxiliary, a Boolean operand,
 a coordinate, or a public variable. Coordinate/flag identifiers in positions 0..6
-may repeat: copy wiring handles them. This is a sufficient pilot restriction,
+may repeat: copy wiring handles them. This is a sufficient restriction of the fragment,
 not a claim of necessary conditions for the production circuits.
 
 Starting from `initialAuxState`, this fragment has no allocations or equality
@@ -447,27 +447,25 @@ The acceptance theorem must have this shape, with every named contract defined:
 
 ```lean
 -- Proposed signature; source/public vectors and index adapters need explicit binders.
-theorem pilot_matrix_to_source
-    (hscope : PilotScoped source publicVars nv)
-    (hindex : IndexOfPilot source publicVars nv idx)
+theorem Direct.holds_of_satisfies
+    (hscope : Direct.Scoped nv source publicVars)
+    (hindex : IndexOf source publicVars nv idx)
     (hsat : Kimchi.Index.Satisfies idx pub table) :
     ∃ V : Valuation F,
       (∀ c ∈ source, KimchiConstraint.Holds V c.toConstraint) ∧
       (∀ i : Fin publicVars.length, V publicVars[i] = pub (publicIndex hindex i)) := ...
 ```
 
-`IndexOfPilot` must identify the actual existing lowering/assembly output:
+`IndexOf` must identify the actual existing lowering/assembly output:
 public count, gate kinds, zero-extended coefficients, and wires are exactly the
 output at their corresponding positions; the rows fit in the unmasked prefix.
 It can leave the remaining domain rows to the existing index invariants. It must
 not include `LabelsConnected` as an unexplained premise. Prove the latter from
-`PilotScoped` and the actual assembly algorithm, then construct `RowsInIndex`.
+`Direct.Scoped` and the actual assembly algorithm, then construct `RowsInIndex`.
 `publicIndex` transports the ordered index through the public-count equality.
 
-Keep this structural index adapter small. The existing `kindType` adapter is in
-`PicklesFixture.Satisfies`, which a library theorem must not import. Introduce a
-library-level conversion only when the pilot needs it; prove its agreement with
-the existing conversion or reuse it from the fixture module in a later cleanup.
+Keep this structural index adapter small. The emitted row's gate tag is the index
+model's own `GateType`, so no tag conversion exists to adapt or to prove agreement for.
 Do not move all fixture parsing into the library.
 
 This theorem is intentionally restricted. It must not be advertised as soundness
@@ -483,7 +481,7 @@ Use new modules under `snarky/Snarky/Kimchi/Backend/`:
 | `Trace.lean` | event data, recording interpreter, structural replay/erasure |
 | `TraceSemantics.lean` | event readings, affine/Boolean/AddComplete local lemmas |
 | `RowCorrespondence.lean` | slices, generic packing, copy paths, valuation recovery |
-| `TracePilot.lean` | restricted source fragment, actual assembly connection, closed theorem |
+| `Direct.lean` | the direct fragment, actual assembly connection, closed theorem |
 
 Split further only if dependencies or size justify it. Keep the recording data
 independent of `Kimchi.Index` and gate semantics; the proof modules can import them.
@@ -491,15 +489,15 @@ Do not expose all new helpers through the top-level library automatically.
 
 Implement in this order:
 
-1. Elaborate the core data definitions and **final pilot theorem signature**. Define
-   `PilotScoped` and `IndexOfPilot` concretely before proving convenience lemmas.
+1. Elaborate the core data definitions and **final theorem signature**. Define
+   `Direct.Scoped` and `IndexOf` concretely before proving convenience lemmas.
 2. Implement recording for existing operations; prove operation simulation and
    the three erasure statements. Check empty and nonempty initial queues.
 3. Define event semantics; prove affine reading, Booleanity, and AddComplete reading.
 4. Add placement and generic receipts. Prove packed-row correspondence and final flush.
-5. Prove copy-path equality and valuation recovery. Prove the pilot's assembly
+5. Prove copy-path equality and valuation recovery. Prove the fragment's assembly
    produces connected labels under its precise locality restriction.
-6. Prove `pilot_matrix_to_source`, including ordered public inputs.
+6. Prove `Direct.holds_of_satisfies`, including ordered public inputs.
 7. Run bounded examples and regressions below. Report exactly which general compiler
    obligations remain, without replacing any of them by an opaque assumption.
 
@@ -523,7 +521,7 @@ Small regression examples must cover:
 - Repeated coordinates/flags across AddComplete rows and the public prefix.
 - Singleton local auxiliary identifiers outside the seven permutation columns.
 - Affine/constant/scaled expressions in the local reduction lemmas; these need
-  not be in the closed pilot fragment.
+  not be in the closed direct fragment.
 - A nonzero public prefix, preserving public order and repeated public variables.
 
 Negative controls for structural certification must reject:
@@ -539,7 +537,7 @@ For coefficient/placement changes, test rejection by the structural relation/che
 For wiring changes, choose a case where a required nontrivial connection is broken;
 identity wiring for a singleton is valid and must not be rejected merely for being identity.
 
-At least one explicit satisfying pilot instance should be constructed to rule out
+At least one explicit satisfying instance of the fragment should be constructed to rule out
 an accidentally empty set of accepted examples. Use an existing AddComplete witness
 constructor/completeness lemma when suitable. Do not require on-curve points in the
 general compiler theorem: its target is the source `Holds` predicate, not an EC spec.
@@ -574,6 +572,6 @@ The general compiler theorem still needs:
 - certified cross-language constraint-system correspondence and application imports.
 
 The trace solves provenance and organizes these proofs. It cannot supply equality
-that the emitted constraints do not enforce. In particular, the pilot's locality
+that the emitted constraints do not enforce. In particular, the fragment's locality
 condition must be revisited against actual gadget-generated source constraints
 before claiming coverage of Pickles applications.

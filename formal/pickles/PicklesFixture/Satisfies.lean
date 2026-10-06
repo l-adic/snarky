@@ -24,23 +24,13 @@ namespace PicklesFixture
 
 open Snarky Snarky.Kimchi Kimchi Kimchi.Index Kimchi.Fixture.PS
 
-/-- The emitter tag as the index model's gate type. -/
-def kindType : GateKind → GateType
-  | .genericPlonk => .generic
-  | .addComplete => .completeAdd
-  | .poseidon => .poseidon
-  | .varBaseMul => .varBaseMul
-  | .endoMul => .endoMul
-  | .endoScalar => .endoScalar
-  | .zero => .zero
-
 /-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
 column-major recording). -/
 def assembledRaw {F : Type} [Zero F] (rows : List (KimchiRow F))
     (gates : List (AssembledGate F)) (pubSize : Nat) (wit : List (Vector F 15))
     (pubs : List F) : Raw F :=
   { publicInputSize := pubSize
-    typs := (gates.map (kindType ·.kind)).toArray
+    typs := (gates.map (·.kind)).toArray
     coeffs := (gates.map (·.coeffs.toArray)).toArray
     wires := (gates.map fun g =>
       (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray

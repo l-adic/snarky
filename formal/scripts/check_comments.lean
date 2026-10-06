@@ -34,6 +34,8 @@ import Kimchi
 import Poseidon
 import Snarky
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Kimchi.Backend.Direct
+import Snarky.Kimchi.Backend.Trace
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck

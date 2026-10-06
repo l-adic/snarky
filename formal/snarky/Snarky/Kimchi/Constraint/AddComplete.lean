@@ -72,7 +72,7 @@ def AddComplete.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
   let s ← reduceToVariable c.s
   let sameX ← reduceToVariable c.sameX
   let inf ← reduceToVariable c.inf
-  pure ⟨{ kind := .addComplete,
+  pure ⟨{ kind := .completeAdd,
           vars := ⟨⟨[some p1.x, some p1.y, some p2.x, some p2.y, some p3.x,
                      some p3.y, some inf, some sameX, some s, some infZ,
                      some x21Inv] ++ List.replicate 4 none⟩, by simp⟩,

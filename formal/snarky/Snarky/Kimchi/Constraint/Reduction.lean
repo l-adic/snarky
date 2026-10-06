@@ -148,7 +148,7 @@ instance : ToKimchiRows F (Rows F) where
 /-- The padding row: a Generic-kind row over `permCols` wired cells and no
 coefficients, so its only content is its wiring. -/
 def mkPadRow (vs : Vector Variable 7) : Rows F :=
-  ⟨{ kind := .genericPlonk,
+  ⟨{ kind := .generic,
      vars := ⟨⟨vs.toList.map some ++ List.replicate 8 none⟩, by simp⟩,
      coeffs := [] }⟩
 
@@ -159,7 +159,7 @@ private def constraintToCoeffs (g : GenericPlonkConstraint F) : List F :=
 /-- Flush a half-full gate queue into its single-constraint row. -/
 def finalizeGateQueue (queued : Option (GenericPlonkConstraint F)) : Option (Rows F) :=
   queued.map fun g =>
-    ⟨{ kind := .genericPlonk,
+    ⟨{ kind := .generic,
        vars := ⟨⟨[g.vl, g.vr, g.vo] ++ List.replicate 12 none⟩, by simp⟩,
        coeffs := constraintToCoeffs g }⟩
 
@@ -181,7 +181,7 @@ abbrev PlonkBuilder (F : Type) := StateM (BuilderReductionState F)
 /-- Pack the queued and the incoming constraint into one double Generic row, the
 incoming gate's cells first. -/
 private def emitDoubleGateRow (queued new : GenericPlonkConstraint F) : KimchiRow F :=
-  { kind := .genericPlonk,
+  { kind := .generic,
     vars := ⟨⟨[new.vl, new.vr, new.vo, queued.vl, queued.vr, queued.vo] ++
       List.replicate 9 none⟩, by simp⟩,
     coeffs := constraintToCoeffs new ++ constraintToCoeffs queued }
