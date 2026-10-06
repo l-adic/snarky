@@ -46,7 +46,7 @@ structure PoseidonConstraint (F : Type u) where
 variable {F : Type} {m : Type → Type}
 
 /-- Pin one state triple, left to right. -/
-private def reduceState [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
+def reduceState [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
     [PlonkReductionM F m] (t : FVar F × FVar F × FVar F) :
     m (Variable × Variable × Variable) := do
   let a ← reduceToVariable t.1
@@ -55,7 +55,7 @@ private def reduceState [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
   pure (a, b, c)
 
 /-- Pin the states in index order. -/
-private def reduceStates [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
+def reduceStates [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
     [PlonkReductionM F m] :
     List (FVar F × FVar F × FVar F) → m (List (Variable × Variable × Variable))
   | [] => pure []

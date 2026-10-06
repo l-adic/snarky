@@ -1,5 +1,4 @@
-import Snarky.Kimchi.Constraint.GenericPlonk
-import Snarky.Kimchi.Constraint.AddComplete
+import Snarky.Kimchi.Constraint
 
 /-!
 # The lowering trace
@@ -23,7 +22,7 @@ history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` re
 
 - `record_reduceToVariable_erases`, `record_basic_erases`, `record_addComplete_erases`: the
   reducers the direct fragment and its operands run, recorded, erase to their ordinary
-  reductions.
+  reductions; `record_constraint_erases` is the same for the dispatch over every constraint.
 
 ## Implementation notes
 
@@ -136,6 +135,14 @@ private def Simulates (b : PlonkBuilder F α) (r : RecordingBuilder F α) : Prop
 private theorem simulates_pure (a : α) : Simulates (pure a : PlonkBuilder F α) (pure a) :=
   fun _ => ⟨rfl, rfl⟩
 
+private theorem simulates_map {b : PlonkBuilder F α} {r : RecordingBuilder F α} (f : α → β)
+    (hb : Simulates b r) : Simulates (f <$> b) (f <$> r) := by
+  intro s
+  obtain ⟨h1, h2⟩ := hb s
+  show f (r s).1 = f (b s.core).1 ∧ (r s).2.core = (b s.core).2
+  rw [h1]
+  exact ⟨rfl, h2⟩
+
 private theorem simulates_bind {b : PlonkBuilder F α} {r : RecordingBuilder F α}
     {f : α → PlonkBuilder F β} {g : α → RecordingBuilder F β}
     (hb : Simulates b r) (hf : ∀ x, Simulates (f x) (g x)) :
@@ -184,6 +191,7 @@ local macro_rules
         | exact simulates_addEqualsConstraint _
         $[| exact $ts]*
         | refine simulates_bind ?_ fun _ => ?_
+        | refine simulates_map _ ?_
         | split)
 
 /-- A simulating recording erases to the builder's run from the same counter and auxiliary
@@ -256,6 +264,90 @@ theorem record_basic_erases (nv : Variable) (aux : AuxState F) (c : Basic F) :
 theorem record_addComplete_erases (nv : Variable) (aux : AuxState F) (c : AddComplete F) :
     (recordReduction nv aux c.reduce).erase = reduceAsBuilder nv aux c.reduce :=
   erase_recordReduction (simulates_addComplete_reduce c) nv aux
+
+private theorem simulates_scaleRound_reduce (c : ScaleRound F) :
+    Simulates (c.reduce : PlonkBuilder F (KimchiRow F × KimchiRow F)) c.reduce := by
+  unfold ScaleRound.reduce
+  simulates [simulates_reduceToVariable _]
+
+private theorem simulates_varBaseMul_reduce :
+    (c : VarBaseMul F) →
+      Simulates (VarBaseMul.reduce c : PlonkBuilder F (List (KimchiRow F × KimchiRow F)))
+        (VarBaseMul.reduce c)
+  | [] => simulates_pure _
+  | round :: rest => by
+    unfold VarBaseMul.reduce
+    simulates [simulates_scaleRound_reduce _, simulates_varBaseMul_reduce rest]
+
+private theorem simulates_endoScalarRound_reduce (c : EndoScalarRound F) :
+    Simulates (c.reduce : PlonkBuilder F (KimchiRow F)) c.reduce := by
+  unfold EndoScalarRound.reduce
+  simulates [simulates_reduceToVariable _]
+
+private theorem simulates_endoScalar_reduce :
+    (c : EndoScalar F) →
+      Simulates (EndoScalar.reduce c : PlonkBuilder F (List (KimchiRow F))) (EndoScalar.reduce c)
+  | [] => simulates_pure _
+  | round :: rest => by
+    unfold EndoScalar.reduce
+    simulates [simulates_endoScalarRound_reduce _, simulates_endoScalar_reduce rest]
+
+private theorem simulates_endoMulRound_reduce (c : EndoMulRound F) :
+    Simulates (c.reduce : PlonkBuilder F (KimchiRow F)) c.reduce := by
+  unfold EndoMulRound.reduce
+  simulates [simulates_reduceToVariable _]
+
+private theorem simulates_endoMul_reduceRounds :
+    (rounds : List (EndoMulRound F)) →
+      Simulates (EndoMul.reduceRounds rounds : PlonkBuilder F (List (KimchiRow F)))
+        (EndoMul.reduceRounds rounds)
+  | [] => simulates_pure _
+  | round :: rest => by
+    unfold EndoMul.reduceRounds
+    simulates [simulates_endoMulRound_reduce _, simulates_endoMul_reduceRounds rest]
+
+private theorem simulates_endoMul_reduce (c : EndoMul F) :
+    Simulates (c.reduce : PlonkBuilder F (List (KimchiRow F))) c.reduce := by
+  unfold EndoMul.reduce
+  simulates [simulates_reduceToVariable _, simulates_endoMul_reduceRounds _]
+
+private theorem simulates_reduceState (t : FVar F × FVar F × FVar F) :
+    Simulates (reduceState t : PlonkBuilder F (Variable × Variable × Variable))
+      (reduceState t) := by
+  unfold reduceState
+  simulates [simulates_reduceToVariable _]
+
+private theorem simulates_reduceStates :
+    (ts : List (FVar F × FVar F × FVar F)) →
+      Simulates (reduceStates ts : PlonkBuilder F (List (Variable × Variable × Variable)))
+        (reduceStates ts)
+  | [] => simulates_pure _
+  | t :: rest => by
+    unfold reduceStates
+    simulates [simulates_reduceState _, simulates_reduceStates rest]
+
+private theorem simulates_poseidon_reduce (c : PoseidonConstraint F) :
+    Simulates (c.reduce : PlonkBuilder F (List (KimchiRow F))) c.reduce := by
+  unfold PoseidonConstraint.reduce
+  simulates [simulates_reduceStates _]
+
+private theorem simulates_reducePad (vs : Vector (FVar F) 7) :
+    Simulates (reducePad vs : PlonkBuilder F (Rows F)) (reducePad vs) := by
+  unfold reducePad
+  simulates [simulates_reduceToVariable _]
+
+/-- The dispatch over every constraint simulates: each arm is its gate's reducer, wrapped. -/
+private theorem simulates_constraint_reduce (c : KimchiConstraint F) :
+    Simulates (c.reduce : PlonkBuilder F (KimchiGate F)) c.reduce := by
+  cases c <;> unfold KimchiConstraint.reduce <;>
+    simulates [simulates_reduce _, simulates_addComplete_reduce _, simulates_poseidon_reduce _,
+      simulates_varBaseMul_reduce _, simulates_endoScalar_reduce _, simulates_endoMul_reduce _,
+      simulates_reducePad _]
+
+/-- Recording any constraint's reduction erases to its ordinary reduction. -/
+theorem record_constraint_erases (nv : Variable) (aux : AuxState F) (c : KimchiConstraint F) :
+    (recordReduction nv aux c.reduce).erase = reduceAsBuilder nv aux c.reduce :=
+  erase_recordReduction (simulates_constraint_reduce c) nv aux
 
 end Reducers
 

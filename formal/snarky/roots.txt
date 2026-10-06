@@ -118,6 +118,9 @@ Snarky.Kimchi.directGates -- the fragment's assembled gate table, which `IndexOf
 Snarky.Kimchi.record_reduceToVariable_erases
 Snarky.Kimchi.record_basic_erases
 Snarky.Kimchi.record_addComplete_erases
+Snarky.Kimchi.record_constraint_erases
+Snarky.Kimchi.recordGates_erase
+Snarky.Kimchi.recordBuilt_erase
 Snarky.Kimchi.recorded_batching
 Snarky.Kimchi.recorded_wiring
 Snarky.Kimchi.recorded_constantCache

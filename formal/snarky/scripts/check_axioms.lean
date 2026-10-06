@@ -27,6 +27,7 @@ import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Backend.Trace
 import Snarky.Kimchi.Backend.TraceChecks
 import Snarky.Kimchi.Backend.TraceSemantics
+import Snarky.Kimchi.Backend.RowCorrespondence
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -125,6 +126,9 @@ def roots : List Name :=
     `Snarky.Kimchi.record_reduceToVariable_erases,
     `Snarky.Kimchi.record_basic_erases,
     `Snarky.Kimchi.record_addComplete_erases,
+    `Snarky.Kimchi.record_constraint_erases,
+    `Snarky.Kimchi.recordGates_erase,
+    `Snarky.Kimchi.recordBuilt_erase,
     `Snarky.Kimchi.recorded_batching,
     `Snarky.Kimchi.recorded_wiring,
     `Snarky.Kimchi.recorded_constantCache,
