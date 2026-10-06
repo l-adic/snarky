@@ -19,13 +19,15 @@ history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` re
   borrowed counter and auxiliary state.
 - `replay`: an event list re-executed through the builder's primitives, and
   `RecordedReduction.finish`, a recorded reduction's final builder state.
+- `AllocationsFresh`: every allocation's logged variable is the counter at its point.
 
 ## Main results
 
 - `record_reduceToVariable_erases`, `record_basic_erases`, `record_addComplete_erases`: the
   reducers the direct fragment and its operands run, recorded, erase to their ordinary
   reductions; `record_constraint_erases` is the same for the dispatch over every constraint.
-- `record_constraint_replays`: a recorded reduction ends in the replay of its own events.
+- `record_constraint_replays`, `record_constraint_allocates`: a recorded reduction ends in
+  the replay of its own events, whose allocations log the counter.
 
 ## Implementation notes
 
@@ -155,57 +157,83 @@ auxiliary state. -/
 def RecordedReduction.finish (r : RecordedReduction F α) : BuilderReductionState F :=
   { constraints := (r.rows.map (·.row)).reverse, nextVariable := r.nextVariable, aux := r.aux }
 
+/-- Every allocation's logged variable is the counter at its point: the events replayed from
+`s`, each allocation checked before its own effect. -/
+def AllocationsFresh (s : BuilderReductionState F) : List (ReductionEvent F) → Prop
+  | [] => True
+  | .alloc v e :: es => v = s.nextVariable ∧ AllocationsFresh (replayEvent s (.alloc v e)) es
+  | e :: es => AllocationsFresh (replayEvent s e) es
+
+private theorem allocationsFresh_append (s : BuilderReductionState F)
+    (es₁ es₂ : List (ReductionEvent F)) :
+    AllocationsFresh s (es₁ ++ es₂) ↔
+      AllocationsFresh s es₁ ∧ AllocationsFresh (replay s es₁) es₂ := by
+  induction es₁ generalizing s with
+  | nil => simp [AllocationsFresh, replay]
+  | cons e es ih =>
+    cases e with
+    | alloc v ex =>
+      simp only [List.cons_append, AllocationsFresh, ih, replay, List.foldl_cons, and_assoc]
+    | generic g => simp only [List.cons_append, AllocationsFresh, ih, replay, List.foldl_cons]
+    | equal c => simp only [List.cons_append, AllocationsFresh, ih, replay, List.foldl_cons]
+
 /-! ## Erasure -/
 
 /-- A recording computation simulates a builder computation: from every recording state it
 returns the builder's result, carries the builder's state as its core, and appends the events
-whose replay is the builder's state change. -/
+whose replay is the builder's state change and whose allocations log the counter. -/
 private def Simulates (b : PlonkBuilder F α) (r : RecordingBuilder F α) : Prop :=
   ∀ s : RecordingState F, (r s).1 = (b s.core).1 ∧ (r s).2.core = (b s.core).2 ∧
-    ∃ es, (r s).2.eventsRev = es.reverse ++ s.eventsRev ∧ (b s.core).2 = replay s.core es
+    ∃ es, (r s).2.eventsRev = es.reverse ++ s.eventsRev ∧ (b s.core).2 = replay s.core es ∧
+      AllocationsFresh s.core es
 
 private theorem simulates_pure (a : α) : Simulates (pure a : PlonkBuilder F α) (pure a) :=
-  fun _ => ⟨rfl, rfl, [], rfl, rfl⟩
+  fun _ => ⟨rfl, rfl, [], rfl, rfl, trivial⟩
 
 private theorem simulates_map {b : PlonkBuilder F α} {r : RecordingBuilder F α} (f : α → β)
     (hb : Simulates b r) : Simulates (f <$> b) (f <$> r) := by
   intro s
-  obtain ⟨h1, h2, es, h3, h4⟩ := hb s
+  obtain ⟨h1, h2, es, h3, h4, h5⟩ := hb s
   show f (r s).1 = f (b s.core).1 ∧ (r s).2.core = (b s.core).2 ∧
-    ∃ es, (r s).2.eventsRev = es.reverse ++ s.eventsRev ∧ (b s.core).2 = replay s.core es
+    ∃ es, (r s).2.eventsRev = es.reverse ++ s.eventsRev ∧ (b s.core).2 = replay s.core es ∧
+      AllocationsFresh s.core es
   rw [h1]
-  exact ⟨rfl, h2, es, h3, h4⟩
+  exact ⟨rfl, h2, es, h3, h4, h5⟩
 
 private theorem simulates_bind {b : PlonkBuilder F α} {r : RecordingBuilder F α}
     {f : α → PlonkBuilder F β} {g : α → RecordingBuilder F β}
     (hb : Simulates b r) (hf : ∀ x, Simulates (f x) (g x)) :
     Simulates (b >>= f) (r >>= g) := by
   intro s
-  obtain ⟨h1, h2, es₁, h3, h4⟩ := hb s
-  obtain ⟨h5, h6, es₂, h7, h8⟩ := hf (r s).1 (r s).2
+  obtain ⟨h1, h2, es₁, h3, h4, h9⟩ := hb s
+  obtain ⟨h5, h6, es₂, h7, h8, h10⟩ := hf (r s).1 (r s).2
   show (g (r s).1 (r s).2).1 = (f (b s.core).1 (b s.core).2).1 ∧
     (g (r s).1 (r s).2).2.core = (f (b s.core).1 (b s.core).2).2 ∧
     ∃ es, (g (r s).1 (r s).2).2.eventsRev = es.reverse ++ s.eventsRev ∧
-      (f (b s.core).1 (b s.core).2).2 = replay s.core es
-  refine ⟨?_, ?_, es₁ ++ es₂, ?_, ?_⟩
+      (f (b s.core).1 (b s.core).2).2 = replay s.core es ∧ AllocationsFresh s.core es
+  refine ⟨?_, ?_, es₁ ++ es₂, ?_, ?_, ?_⟩
   · rw [h5, h2, h1]
   · rw [h6, h2, h1]
   · rw [h7, h3, List.reverse_append, List.append_assoc]
   · rw [← h1, ← h2, h8, h2, h4, replay_append]
+  · rw [allocationsFresh_append]
+    refine ⟨h9, ?_⟩
+    rw [← h4, ← h2]
+    exact h10
 
 private theorem simulates_createInternalVariable (e : AffineExpression F) :
     Simulates (createInternalVariable e : PlonkBuilder F Variable)
       (createInternalVariable e) :=
-  fun _ => ⟨rfl, rfl, [.alloc _ e], rfl, rfl⟩
+  fun _ => ⟨rfl, rfl, [.alloc _ e], rfl, rfl, rfl, trivial⟩
 
 private theorem simulates_addGenericPlonkConstraint (g : GenericPlonkConstraint F) :
     Simulates (addGenericPlonkConstraint g : PlonkBuilder F Unit)
       (addGenericPlonkConstraint g) :=
-  fun _ => ⟨rfl, rfl, [.generic g], rfl, rfl⟩
+  fun _ => ⟨rfl, rfl, [.generic g], rfl, rfl, trivial⟩
 
 private theorem simulates_addEqualsConstraint (c : EqualsConstraint F) :
     Simulates (addEqualsConstraint c : PlonkBuilder F Unit) (addEqualsConstraint c) :=
-  fun _ => ⟨rfl, rfl, [.equal c], rfl, rfl⟩
+  fun _ => ⟨rfl, rfl, [.equal c], rfl, rfl, trivial⟩
 
 /-- Close a simulation goal by walking the reducer's structure: an operation or `pure` closes
 the goal, a `bind` splits into the simulations of its two parts, and a `match` or `if` is
@@ -242,13 +270,22 @@ private theorem finish_recordReduction {b : PlonkBuilder F α} {r : RecordingBui
     (h : Simulates b r) (nv : Variable) (aux : AuxState F) :
     (recordReduction nv aux r).finish =
       replay ⟨[], nv, aux⟩ (recordReduction nv aux r).events := by
-  obtain ⟨-, h2, es, h3, h4⟩ := h ⟨⟨[], nv, aux⟩, []⟩
+  obtain ⟨-, h2, es, h3, h4, -⟩ := h ⟨⟨[], nv, aux⟩, []⟩
   show (⟨(((r _).2.core.constraints.reverse.map Rows.mk).map (·.row)).reverse,
       (r _).2.core.nextVariable, (r _).2.core.aux⟩ : BuilderReductionState F) =
     replay ⟨[], nv, aux⟩ ((r _).2.eventsRev.reverse)
   rw [h3, List.append_nil, List.reverse_reverse, ← h4, ← h2, List.map_map]
   have hid : ((fun x : Rows F => x.row) ∘ Rows.mk) = id := rfl
   rw [hid, List.map_id, List.reverse_reverse]
+
+/-- A simulating recording's allocations log the counter at their points. -/
+private theorem allocations_recordReduction {b : PlonkBuilder F α} {r : RecordingBuilder F α}
+    (h : Simulates b r) (nv : Variable) (aux : AuxState F) :
+    AllocationsFresh ⟨[], nv, aux⟩ (recordReduction nv aux r).events := by
+  obtain ⟨-, -, es, h3, -, h5⟩ := h ⟨⟨[], nv, aux⟩, []⟩
+  show AllocationsFresh ⟨[], nv, aux⟩ ((r _).2.eventsRev.reverse)
+  rw [h3, List.append_nil, List.reverse_reverse]
+  exact h5
 
 section Reducers
 
@@ -399,6 +436,13 @@ theorem record_constraint_replays (nv : Variable) (aux : AuxState F) (c : Kimchi
     (recordReduction nv aux c.reduce).finish =
       replay ⟨[], nv, aux⟩ (recordReduction nv aux c.reduce).events :=
   finish_recordReduction (simulates_constraint_reduce c) nv aux
+
+/-- Recording any constraint's reduction logs each allocation's variable as the counter at
+its point. -/
+theorem record_constraint_allocates (nv : Variable) (aux : AuxState F)
+    (c : KimchiConstraint F) :
+    AllocationsFresh ⟨[], nv, aux⟩ (recordReduction nv aux c.reduce).events :=
+  allocations_recordReduction (simulates_constraint_reduce c) nv aux
 
 end Reducers
 

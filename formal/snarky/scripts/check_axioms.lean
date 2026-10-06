@@ -134,6 +134,7 @@ def roots : List Name :=
     `Snarky.Kimchi.getElem_bodyRows_generic,
     `Snarky.Kimchi.getElem_bodyRows_gate,
     `Snarky.Kimchi.record_constraint_replays,
+    `Snarky.Kimchi.record_constraint_allocates,
     `Snarky.Kimchi.receipts_located,
     `Snarky.Kimchi.receipts_complete,
     `Snarky.Kimchi.genericValue_of_located,
