@@ -279,9 +279,8 @@ set_option cleanup.letToHave false in
 private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
     {A : Circuits D L} {B : Circuits E M} {a : D.Branch} {b : E.Branch}
     {i : D.Slot a} {j : E.Slot b} (e : WrapProofHandover A B a b i j)
-    (f : StepFacts e.producer i) (g : StepFacts e.consumer j)
-    (middle : wrapTable A a → WrapStepAssumptions A a) : IO Unit := do
-  have _ : stepTable A a i → stepTable B b j → wrapTable A a →
+    (f : StepFacts e.producer i) (g : StepFacts e.consumer j) : IO Unit := do
+  have _ : stepTable A a i → stepTable B b j →
       (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap ∧
         (kimchiVerify CW A.setup.wrapSrs.σ (A.wiring.source a i).wrapKey.cvk
           (e.producer.proof i) (e.producer.proofPublicInput i) = true ∨
@@ -291,10 +290,10 @@ private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
         (e.consumer.run j (e.consumer.mask j)) A.setup.dummy ∨
       (e.producer.run i (e.producer.mask i)).StepCollision
         (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk := by
-    intro hA hB hM
-    exact e.handover_or_collision (f.assumptions hA) (g.assumptions hB) (middle hM)
+    intro hA hB
+    exact e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
       (by rw [e.sourceFor.setup]; exact g.accepts hB)
-  have _ : stepTable A a i → stepTable B b j → wrapTable A a →
+  have _ : stepTable A a i → stepTable B b j →
       (e.producer.step.cells.messagesForNextStepProof.appState.map
           (·.val e.producer.step.V) =
         ((e.consumer.step.cells.prevs j).appState.map
@@ -303,8 +302,8 @@ private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
         (e.consumer.run j (e.consumer.mask j)) A.setup.dummy ∨
       (e.producer.run i (e.producer.mask i)).StepCollision
         (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk := by
-    intro hA hB hM
-    exact e.appState_eq_or_collision (f.assumptions hA) (g.assumptions hB) (middle hM)
+    intro hA hB
+    exact e.appState_eq_or_collision (f.assumptions hA) (g.assumptions hB)
       (by rw [e.sourceFor.setup]; exact g.accepts hB)
   let _ ← require (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap)
     "application wrap-proof handover messages differ"
@@ -357,7 +356,7 @@ def validate {S : Setup} (contexts : List ((t : Tag) × Context S t)) : IO Unit 
               mustVerifyProducer := fa.mustVerify, keyProducer := fa.keyBound
               mustVerifyConsumer := fb.mustVerify, keyConsumer := fb.keyBound
               middlePublicInput := ab.publicInput }
-          checkWrapHandover w fa fb fab.assumptions
+          checkWrapHandover w fa fb
           wrapPairs := wrapPairs + 1
           let P ← findContext contexts ((t.source b.branch i).source a.branch j)
           let p ← findPair (← pairs P) older

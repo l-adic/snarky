@@ -235,6 +235,45 @@ theorem WrapStepLink.verifies_proof
   · exact ⟨he.1, he.2.trans (congrArg₂ Accumulator.mk hsg.symm hch.symm)⟩
   · exact ⟨hc.1, hc.2.1.trans (congrArg Array.toList ho.symm), hc.2.2⟩
 
+/-- The consumer slot's mask keeps exactly the producer branch's slots: a reading of cells across
+the public-input tie, with no Lagrange-table premise. -/
+theorem WrapStepLink.mask_keeps
+    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
+    {producerBranch : producerD.Branch} {consumerBranch : consumerD.Branch}
+    {slot : consumerD.Slot consumerBranch}
+    (e : WrapStepLink producer consumer producerBranch consumerBranch slot) :
+    ∀ (j : ℕ)
+      (hj : j < SlotSource.widths consumerD.width (consumer.wiring.sources consumerBranch) slot),
+      e.mask[j] = decide (producerD.width - producerD.slots producerBranch ≤ j) := by
+  letI : CheckedType Fp (Builder e.step.V (KimchiConstraint Fp))
+      consumerD.schema.Input consumerD.schema.InputVar := consumerD.schema.inputCheck
+  have hsetup := e.sourceFor.setup
+  have hstep := e.step.holds
+  simp only [Circuits.stepBuilt, Circuits.stepCircuit] at hstep
+  rw [← hsetup] at hstep
+  have hk := Pickles.wrapStep_mask
+    (inVal := consumerD.schema.Input) (outVal := consumerD.schema.Output)
+    producer.setup.wrapSrs.σ producer.wiring.backend.wrapKey.cvk rfl producer.setup.stepSrs rfl
+    producer.wiring.stepKeys producerBranch
+    (by simpa [Wiring.stepKeys] using
+      producer.wiring.backend.stepKeys[producerBranch].domainLog2_le.trans_lt (by decide))
+    producer.stepLagrange e.wrap.V producerD.widths producer.wiring.pins producer.setup.dummy
+    producerL.wrapWidths e.wrap.advice producer.wiring.valid.branches_le
+    consumer.wiring.backend.stepDomains.list
+    ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le) producerL.width_le
+    (consumer.wiring.sources consumerBranch) (consumer.source_bound consumerBranch)
+    (constPt producer.setup.dummySg) producer.setup.dummyUnf e.step.V
+    (consumer.rules consumerBranch) e.step.advice
+    e.wrap.holds hstep e.branch slot
+    (by simpa only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup]
+      using e.mustVerify)
+    e.sourceFor.width e.mask
+    (by simpa only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
+      hsetup] using e.maskReads)
+    (by simpa only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
+      hsetup, wrapStatement] using e.publicInput)
+  simpa [Shape.widths] using hk
+
 set_option cleanup.letToHave false in
 /-- The reconstructed wrap proof inherits the capstone's accumulator and verification facts. -/
 theorem StepWrapLink.verifies_proof {C : Circuits D L} {b : D.Branch} (e : StepWrapLink C b)

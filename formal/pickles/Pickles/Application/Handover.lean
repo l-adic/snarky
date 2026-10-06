@@ -148,8 +148,7 @@ def receivedWrap := readWrapMessage e.consumer.wrap.V producerApp.setup.dummy
 carries an invalid accumulator, unless one of the message hashes collides. -/
 theorem handover_or_collision
     (hProducer : StepWrapAssumptions producerApp producerBranch producerSlot)
-    (hConsumer : StepWrapAssumptions consumerApp consumerBranch consumerSlot)
-    (hMiddle : WrapStepAssumptions producerApp producerBranch) :
+    (hConsumer : StepWrapAssumptions consumerApp consumerBranch consumerSlot) :
     let σ := producerApp.setup.wrapSrs.σ
     let vk := (producerApp.wiring.source producerBranch producerSlot).wrapKey.cvk
     let nextVk := (consumerApp.wiring.source consumerBranch consumerSlot).wrapKey.cvk
@@ -174,7 +173,7 @@ theorem handover_or_collision
       branch := e.producer.branch, mustVerify := e.mustVerifyConsumer
       mask := e.consumer.mask consumerSlot, maskReads := hc.2.2
       publicInput := e.middlePublicInput }
-  obtain ⟨_, _, hk, _⟩ := middle.verifies_proof hMiddle
+  have hk := middle.mask_keeps
   have htie : CircuitType.Reads e.producer.wrap.V wrapStatement
       ((e.consumer.step.inp consumerSlot).packedAt nextVk
         e.consumer.step.V (e.consumer.mask consumerSlot)) := by
@@ -195,8 +194,7 @@ theorem handover_or_collision
 statement, with its length identified by the source interface, unless a message hash collides. -/
 theorem appState_eq_or_collision
     (hProducer : StepWrapAssumptions producerApp producerBranch producerSlot)
-    (hConsumer : StepWrapAssumptions consumerApp consumerBranch consumerSlot)
-    (hMiddle : WrapStepAssumptions producerApp producerBranch) :
+    (hConsumer : StepWrapAssumptions consumerApp consumerBranch consumerSlot) :
     let nextVk := (consumerApp.wiring.source consumerBranch consumerSlot).wrapKey.cvk
     let r := e.producer.run producerSlot (e.producer.mask producerSlot)
     let r' := e.consumer.run consumerSlot (e.consumer.mask consumerSlot)
@@ -208,7 +206,7 @@ theorem appState_eq_or_collision
         (·.val e.consumer.step.V)).cast e.sourceFor.prevSize) ∨
     r.WrapCollision r' producerApp.setup.dummy ∨ r.StepCollision r' nextVk := by
   intro nextVk r r' hAccept
-  rcases e.handover_or_collision hProducer hConsumer hMiddle hAccept with h | h
+  rcases e.handover_or_collision hProducer hConsumer hAccept with h | h
   · left
     apply Vector.toList_inj.mp
     simpa only [Vector.toList_map, Vector.toList_cast] using
