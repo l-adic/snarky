@@ -27,6 +27,7 @@ equality event rather than skipping its obligation; their receipts are later wor
 
 ## Main results
 
+- `receipts_isSome`: a lowering whose events are all generic has receipts.
 - `receipts_located`: every receipt is located in the lowering's rows.
 - `receipts_complete`: every generic event has a receipt.
 - `genericValue_of_located`: at a located receipt, a generic row holding at cells agreeing
@@ -113,6 +114,32 @@ def receipts (r : RecordedGates F) : Option (List (GenericReceipt F)) := do
   return match w.pending with
     | none => w.receipts
     | some g => w.receipts ++ [⟨g, w.row, 0⟩]
+
+private theorem walkEvents_isSome (es : List (ReductionEvent F)) (w : Walk F)
+    (h : ∀ e ∈ es, ∃ g, e = .generic g) : (walkEvents es w).isSome := by
+  induction es generalizing w with
+  | nil => rfl
+  | cons e es ih =>
+    obtain ⟨g, rfl⟩ := h e (List.mem_cons_self ..)
+    have ih' := fun w => ih w fun e he => h e (List.mem_cons_of_mem _ he)
+    simp only [walkEvents]
+    cases w.pending <;> exact ih' _
+
+private theorem walkSteps_isSome (steps : List (RecordedStep F)) (w : Walk F)
+    (h : ∀ s ∈ steps, ∀ e ∈ s.events, ∃ g, e = .generic g) : (walkSteps steps w).isSome := by
+  induction steps generalizing w with
+  | nil => rfl
+  | cons s rest ih =>
+    obtain ⟨w', hw'⟩ := Option.isSome_iff_exists.mp
+      (walkEvents_isSome s.events w (h s (List.mem_cons_self ..)))
+    simp only [walkSteps, Option.bind_eq_bind, hw', Option.bind_some]
+    exact ih _ fun s hs => h s (List.mem_cons_of_mem _ hs)
+
+/-- A recorded lowering whose events are all generic has receipts. -/
+theorem receipts_isSome (r : RecordedGates F)
+    (h : ∀ s ∈ r.steps, ∀ e ∈ s.events, ∃ g, e = .generic g) : (receipts r).isSome := by
+  obtain ⟨w, hw⟩ := Option.isSome_iff_exists.mp (walkSteps_isSome r.steps ⟨0, none, []⟩ h)
+  simp [receipts, hw]
 
 section Walk
 

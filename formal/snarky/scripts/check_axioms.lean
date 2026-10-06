@@ -29,6 +29,7 @@ import Snarky.Kimchi.Backend.TraceChecks
 import Snarky.Kimchi.Backend.TraceSemantics
 import Snarky.Kimchi.Backend.RowCorrespondence
 import Snarky.Kimchi.Backend.Receipts
+import Snarky.Kimchi.Backend.Direct
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -138,6 +139,12 @@ def roots : List Name :=
     `Snarky.Kimchi.receipts_located,
     `Snarky.Kimchi.receipts_complete,
     `Snarky.Kimchi.genericValue_of_located,
+    `Snarky.Kimchi.receipts_isSome,
+    `Snarky.Kimchi.record_boolean_var,
+    `Snarky.Kimchi.record_addComplete_direct,
+    `Snarky.Kimchi.KimchiConstraint.Direct.events_generic,
+    `Snarky.Kimchi.steps_generic_of_direct,
+    `Snarky.Kimchi.receipts_isSome_of_direct,
     `Snarky.Kimchi.recorded_batching,
     `Snarky.Kimchi.recorded_wiring,
     `Snarky.Kimchi.recorded_constantCache,
