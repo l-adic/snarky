@@ -103,6 +103,26 @@ Snarky.Tactic.lawProgramHead
 Snarky.Tactic.stepName
 Snarky.Tactic.walk
 
+-- The direct fragment: the statement vocabulary of its correspondence theorem.
+Snarky.Kimchi.KimchiConstraint.Direct
+Snarky.Kimchi.KimchiConstraint.decidableDirect -- synthesis: found by class resolution, never by name
+Snarky.Kimchi.KimchiConstraint.Direct.Scoped
+Snarky.Kimchi.instDecidableScoped -- synthesis: found by class resolution, never by name
+Snarky.Kimchi.IndexOf
+Snarky.Kimchi.IndexOf.publicIndex
+Snarky.Kimchi.directGates -- the fragment's assembled gate table, which `IndexOf` states per row
+
+-- The lowering trace: a recorded reduction erases to the existing reduction, and the
+-- recorder's output on batching, wiring, the constant cache and allocation, decided by the
+-- kernel.
+Snarky.Kimchi.record_reduceToVariable_erases
+Snarky.Kimchi.record_basic_erases
+Snarky.Kimchi.record_addComplete_erases
+Snarky.Kimchi.recorded_batching
+Snarky.Kimchi.recorded_wiring
+Snarky.Kimchi.recorded_constantCache
+Snarky.Kimchi.recorded_allocation
+
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Snarky.instReprEvalError -- synthesis: found by class resolution, never by name

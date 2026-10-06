@@ -52,7 +52,7 @@ variable {F : Type} {m : Type → Type}
 
 /-- Pin a point's operands, `y` before `x`; the order is emission order, hence fixture
 bytes. -/
-private def reduceAffinePoint [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
+def reduceAffinePoint [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] (p : AffinePoint (FVar F)) :
     m (AffinePoint Variable) := do
   let y ← reduceToVariable p.y

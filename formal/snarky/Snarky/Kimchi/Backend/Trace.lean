@@ -1,23 +1,29 @@
-import Snarky.Kimchi.Constraint.Reduction
+import Snarky.Kimchi.Constraint.GenericPlonk
+import Snarky.Kimchi.Constraint.AddComplete
 
 /-!
 # The lowering trace
 
 The builder's reduction with its provenance kept: which reduction operations a constraint's
-reducer invoked, in execution order, and where its rows land among the emitted body rows.
-The data is compiler-internal, naming no index and no gate semantics, and
-`RecordedReduction.erase` returns exactly what `reduceAsBuilder` returns, so a recorded
-reduction is the existing lowering beside its history.
+reducer invoked, in execution order.
+The data is compiler-internal, naming no index and no gate semantics. The recording
+interpreter runs the existing polymorphic reducers unchanged: each operation delegates to the
+builder's and logs its payload, so a recorded reduction is the existing lowering beside its
+history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` returns.
 
 ## Main definitions
 
 - `ReductionEvent`: one reduction operation with its payload, as the reducer issued it.
 - `RecordedReduction`: a reduction's result, events, rows, and the counter and auxiliary
   state handed back; `RecordedReduction.erase` forgets the events.
-- `RowSpan`, `StepPlacement`: where one source constraint's flushed generic rows and its own
-  gate rows sit among the body rows.
-- `RecordingState`, `RecordingBuilder`: the builder's state beside the events logged so far,
-  and the monad a recording interpreter runs in.
+- `RecordingBuilder`: the recording interpreter, and `recordReduction`, its run from a
+  borrowed counter and auxiliary state.
+
+## Main results
+
+- `record_reduceToVariable_erases`, `record_basic_erases`, `record_addComplete_erases`: the
+  reducers the direct fragment and its operands run, recorded, erase to their ordinary
+  reductions.
 
 ## Implementation notes
 
@@ -25,13 +31,24 @@ An allocation event keeps the affine expression the reducer allocated for. That 
 intended advice computation only: the builder's allocation ignores it, and nothing reads it
 as an equation. Events carry payloads, not state snapshots; a snapshot per event would copy
 the union-find and the constant cache at every operation.
+
+Erasure is proved per reducer, not for arbitrary code in the recording monad: a computation
+written directly in `RecordingBuilder` can change the core without logging, so only the
+reducers, which touch the state through the three operations alone, are shown to simulate.
+A simulation says the recording computation returns the builder's result and carries the
+builder's state as its core, from every state; the operations simulate by reflexivity, the
+lemmas for `pure` and `bind` compose them along a reducer's structure with a file-local
+tactic, and one lemma turns a simulation into the erasure equation. The reducers' arithmetic
+is never reproved.
 -/
 
 namespace Snarky.Kimchi
 
 open Snarky
 
-variable {F α : Type}
+variable {F α β : Type}
+
+/-! ## The trace data -/
 
 /-- One reduction operation as the reducer issued it: an allocation with the affine
 expression it stands for, a generic constraint handed to the batching queue, or a two-sided
@@ -64,21 +81,7 @@ def RecordedReduction.erase (r : RecordedReduction F α) :
     α × List (Rows F) × Variable × AuxState F :=
   (r.result, r.rows, r.nextVariable, r.aux)
 
-/-- A contiguous run of rows: the first row's position and the row count. -/
-structure RowSpan where
-  /-- The first row's position. -/
-  first : Nat
-  /-- The number of rows. -/
-  count : Nat
-
-/-- Where one source constraint's rows sit among the body rows: the generic rows flushed
-while reducing it, then its own gate rows, none for a `Basic` constraint. Positions count
-body rows; the assembled table prepends the public rows. -/
-structure StepPlacement where
-  /-- The generic rows flushed while reducing the constraint. -/
-  genericRows : RowSpan
-  /-- The constraint's own gate rows. -/
-  customRows : RowSpan
+/-! ## The recording interpreter -/
 
 /-- The builder's state beside the events logged so far. -/
 structure RecordingState (F : Type) where
@@ -87,7 +90,173 @@ structure RecordingState (F : Type) where
   /-- The events logged so far, newest first. -/
   eventsRev : List (ReductionEvent F)
 
-/-- The monad a recording interpreter runs in. -/
+/-- The monad the recording interpreter runs in. -/
 abbrev RecordingBuilder (F : Type) := StateM (RecordingState F)
+
+/-- Run a builder computation on the core state, leaving the log alone. -/
+private def liftCore (x : PlonkBuilder F α) : RecordingBuilder F α := fun s =>
+  let (a, core) := x s.core
+  (a, { s with core })
+
+/-- Log one event. -/
+private def record (e : ReductionEvent F) : RecordingBuilder F Unit :=
+  modify fun s => { s with eventsRev := e :: s.eventsRev }
+
+/-- The recording interpreter: each operation delegates to the builder's and logs its payload,
+an allocation with the variable the builder returned. -/
+instance [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] :
+    PlonkReductionM F (RecordingBuilder F) where
+  createInternalVariable e := do
+    let v ← liftCore (createInternalVariable e)
+    record (.alloc v e)
+    pure v
+  addGenericPlonkConstraint g := do
+    liftCore (addGenericPlonkConstraint g)
+    record (.generic g)
+  addEqualsConstraint c := do
+    liftCore (addEqualsConstraint c)
+    record (.equal c)
+
+/-- Run a reduction in the recording interpreter from a borrowed counter and auxiliary
+state: the result, the events in execution order, the rows in emission order, and the
+counter and auxiliary state to hand back. -/
+def recordReduction (nextVariable : Variable) (aux : AuxState F) (x : RecordingBuilder F α) :
+    RecordedReduction F α :=
+  let (a, s) := x ⟨⟨[], nextVariable, aux⟩, []⟩
+  { result := a, events := s.eventsRev.reverse, rows := s.core.constraints.reverse.map Rows.mk
+    nextVariable := s.core.nextVariable, aux := s.core.aux }
+
+/-! ## Erasure -/
+
+/-- A recording computation simulates a builder computation: from every recording state it
+returns the builder's result and carries the builder's state as its core. -/
+private def Simulates (b : PlonkBuilder F α) (r : RecordingBuilder F α) : Prop :=
+  ∀ s : RecordingState F, (r s).1 = (b s.core).1 ∧ (r s).2.core = (b s.core).2
+
+private theorem simulates_pure (a : α) : Simulates (pure a : PlonkBuilder F α) (pure a) :=
+  fun _ => ⟨rfl, rfl⟩
+
+private theorem simulates_bind {b : PlonkBuilder F α} {r : RecordingBuilder F α}
+    {f : α → PlonkBuilder F β} {g : α → RecordingBuilder F β}
+    (hb : Simulates b r) (hf : ∀ x, Simulates (f x) (g x)) :
+    Simulates (b >>= f) (r >>= g) := by
+  intro s
+  obtain ⟨h1, h2⟩ := hb s
+  obtain ⟨h3, h4⟩ := hf (r s).1 (r s).2
+  show (g (r s).1 (r s).2).1 = (f (b s.core).1 (b s.core).2).1 ∧
+    (g (r s).1 (r s).2).2.core = (f (b s.core).1 (b s.core).2).2
+  rw [h3, h4, h2, h1]
+  exact ⟨rfl, rfl⟩
+
+section Operations
+
+variable [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+
+private theorem simulates_createInternalVariable (e : AffineExpression F) :
+    Simulates (createInternalVariable e : PlonkBuilder F Variable)
+      (createInternalVariable e) :=
+  fun _ => ⟨rfl, rfl⟩
+
+private theorem simulates_addGenericPlonkConstraint (g : GenericPlonkConstraint F) :
+    Simulates (addGenericPlonkConstraint g : PlonkBuilder F Unit)
+      (addGenericPlonkConstraint g) :=
+  fun _ => ⟨rfl, rfl⟩
+
+private theorem simulates_addEqualsConstraint (c : EqualsConstraint F) :
+    Simulates (addEqualsConstraint c : PlonkBuilder F Unit) (addEqualsConstraint c) :=
+  fun _ => ⟨rfl, rfl⟩
+
+end Operations
+
+/-- Close a simulation goal by walking the reducer's structure: an operation or `pure` closes
+the goal, a `bind` splits into the simulations of its two parts, and a `match` or `if` is
+cased on. Further closers, such as an induction hypothesis for a recursive reducer, are
+supplied as `simulates [h₁, h₂]`. -/
+local syntax "simulates" (" [" term,* "]")? : tactic
+
+local macro_rules
+  | `(tactic| simulates) => `(tactic| simulates [])
+  | `(tactic| simulates [$ts,*]) => `(tactic|
+      repeat first
+        | exact simulates_pure _
+        | exact simulates_createInternalVariable _
+        | exact simulates_addGenericPlonkConstraint _
+        | exact simulates_addEqualsConstraint _
+        $[| exact $ts]*
+        | refine simulates_bind ?_ fun _ => ?_
+        | split)
+
+/-- A simulating recording erases to the builder's run from the same counter and auxiliary
+state. -/
+private theorem erase_recordReduction {b : PlonkBuilder F α} {r : RecordingBuilder F α}
+    (h : Simulates b r) (nv : Variable) (aux : AuxState F) :
+    (recordReduction nv aux r).erase = reduceAsBuilder nv aux b := by
+  obtain ⟨h1, h2⟩ := h ⟨⟨[], nv, aux⟩, []⟩
+  show ((r _).1, ((r _).2.core.constraints.reverse.map Rows.mk), (r _).2.core.nextVariable,
+      (r _).2.core.aux) =
+    ((b _).1, ((b _).2.constraints.reverse.map Rows.mk), (b _).2.nextVariable, (b _).2.aux)
+  rw [h1, h2]
+
+section Reducers
+
+variable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F]
+
+omit [Add F] [Mul F] in
+private theorem simulates_completelyReduce (single : Variable × F) :
+    (l : List (Variable × F)) →
+      Simulates (completelyReduce single l : PlonkBuilder F (Variable × F))
+        (completelyReduce single l)
+  | [] => simulates_pure _
+  | next :: rest => by
+    unfold completelyReduce
+    simulates [simulates_completelyReduce next rest]
+
+omit [Add F] [Mul F] in
+private theorem simulates_reduceAffineExpression (ae : AffineExpression F) :
+    Simulates (reduceAffineExpression ae : PlonkBuilder F (Option Variable × F))
+      (reduceAffineExpression ae) := by
+  unfold reduceAffineExpression
+  simulates [simulates_completelyReduce _ _]
+
+private theorem simulates_reduceToVariable (x : CVar F) :
+    Simulates (reduceToVariable x : PlonkBuilder F Variable) (reduceToVariable x) := by
+  unfold reduceToVariable
+  simulates [simulates_reduceAffineExpression _]
+
+/-- The `Basic` reducer simulates in every arm: each operand reduction simulates, and the
+surviving shape's one emission is an operation or nothing. -/
+private theorem simulates_reduce (c : Basic F) :
+    Simulates (reduce c : PlonkBuilder F Unit) (reduce c) := by
+  cases c <;> unfold reduce <;> simulates [simulates_reduceAffineExpression _]
+
+private theorem simulates_reduceAffinePoint (p : AffinePoint (FVar F)) :
+    Simulates (reduceAffinePoint p : PlonkBuilder F (AffinePoint Variable))
+      (reduceAffinePoint p) := by
+  unfold reduceAffinePoint
+  simulates [simulates_reduceToVariable _]
+
+private theorem simulates_addComplete_reduce (c : AddComplete F) :
+    Simulates (c.reduce : PlonkBuilder F (Rows F)) c.reduce := by
+  unfold AddComplete.reduce
+  simulates [simulates_reduceAffinePoint _, simulates_reduceToVariable _]
+
+/-- Recording `reduceToVariable` erases to its ordinary reduction. -/
+theorem record_reduceToVariable_erases (nv : Variable) (aux : AuxState F) (x : CVar F) :
+    (recordReduction nv aux (reduceToVariable x)).erase =
+      reduceAsBuilder nv aux (reduceToVariable x) :=
+  erase_recordReduction (simulates_reduceToVariable x) nv aux
+
+/-- Recording a `Basic` constraint's reduction, Booleanity included, erases to its ordinary
+reduction. -/
+theorem record_basic_erases (nv : Variable) (aux : AuxState F) (c : Basic F) :
+    (recordReduction nv aux (reduce c)).erase = reduceAsBuilder nv aux (reduce c) :=
+  erase_recordReduction (simulates_reduce c) nv aux
+
+/-- Recording a complete addition's reduction erases to its ordinary reduction. -/
+theorem record_addComplete_erases (nv : Variable) (aux : AuxState F) (c : AddComplete F) :
+    (recordReduction nv aux c.reduce).erase = reduceAsBuilder nv aux c.reduce :=
+  erase_recordReduction (simulates_addComplete_reduce c) nv aux
+
+end Reducers
 
 end Snarky.Kimchi

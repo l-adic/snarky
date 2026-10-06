@@ -24,6 +24,8 @@ import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Kimchi.Backend.Trace
+import Snarky.Kimchi.Backend.TraceChecks
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -117,6 +119,15 @@ def roots : List Name :=
     `Snarky.instLawfulBasicSystemBasic,
     `Snarky.instLawfulBasicSystemBuilder,
     `Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem,
+
+    -- The lowering trace: a recorded reduction erases to the existing reduction.
+    `Snarky.Kimchi.record_reduceToVariable_erases,
+    `Snarky.Kimchi.record_basic_erases,
+    `Snarky.Kimchi.record_addComplete_erases,
+    `Snarky.Kimchi.recorded_batching,
+    `Snarky.Kimchi.recorded_wiring,
+    `Snarky.Kimchi.recorded_constantCache,
+    `Snarky.Kimchi.recorded_allocation,
 
     -- The Kimchi gadgets.
     `Snarky.Kimchi.sealPoint_spec, `Snarky.Kimchi.sealPoint_complete,

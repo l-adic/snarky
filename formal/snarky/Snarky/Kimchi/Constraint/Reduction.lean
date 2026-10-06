@@ -75,7 +75,7 @@ variable {F : Type} {m : Type → Type}
 /-- Right-recursively reduce a nonempty term list to a single scaled variable, emitting
 one generic constraint per combination step, deepest terms first; the recursion
 direction is the emission order, hence fixture bytes. -/
-private def completelyReduce [Zero F] [One F] [Neg F] [Monad m] [PlonkReductionM F m]
+def completelyReduce [Zero F] [One F] [Neg F] [Monad m] [PlonkReductionM F m]
     (single : Variable × F) : List (Variable × F) → m (Variable × F)
   | [] => pure single
   | next :: rest => do
