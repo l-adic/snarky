@@ -73,8 +73,7 @@ abbrev Circuits.StepAdvice (C : Circuits D L) (b : D.Branch) :=
 /-- The statement and internal cells retained by a branch's step circuit. -/
 abbrev Circuits.StepCells (C : Circuits D L) (b : D.Branch) :=
   StepMainOut (D.slots b) D.width (SlotSource.widths D.width (C.wiring.sources b))
-    (D.prevSize b) (CircuitType.size Fp D.schema.Input + CircuitType.size Fp D.schema.Output)
-    1 (C.wiring.sourceChunks b) WrapIPARounds StepIPARounds
+    (D.prevSize b) D.schema.size 1 (C.wiring.sourceChunks b) WrapIPARounds StepIPARounds
 
 /-- The shared wrap circuit's advice, including its witnessed branch selection. -/
 abbrev Circuits.WrapAdvice (C : Circuits D L) :=

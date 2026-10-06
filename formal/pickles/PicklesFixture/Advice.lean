@@ -137,10 +137,11 @@ def slotValOf (w ncs : ℕ) (W : Cache.Entry CW) (S : Cache.Entry CS) :
            evals := allocEvalsOf (← chunkedEvalsOf CS cpS)
            prevChallenges := chals, prevSgs := sgs }
 
-/-- A function every value of which may fail, as a function or the first failure. -/
-def finSequence {ε : Type} : {n : ℕ} → {β : Fin n → Type} → ((i : Fin n) → Except ε (β i)) →
-    Except ε ((i : Fin n) → β i)
-  | 0, _, _ => .ok fun i => i.elim0
+/-- A function every value of which is an action, as one action running them in index order:
+a function, or the first failure. -/
+def finSequence {m : Type → Type} [Monad m] : {n : ℕ} → {β : Fin n → Type} →
+    ((i : Fin n) → m (β i)) → m ((i : Fin n) → β i)
+  | 0, _, _ => pure fun i => i.elim0
   | _ + 1, _, f => do
     let h ← f 0
     let t ← finSequence fun i => f i.succ

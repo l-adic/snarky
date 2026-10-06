@@ -33,19 +33,16 @@ structure CheckedRule (D : Shape) (b : D.Branch) where
   /-- Each predecessor has its source application's statement size. -/
   prevSizes : ∀ i : D.Slot b, dump.prevs[i.cast slots].1.size = D.prevSize b i
 
-private def require (p : Prop) [Decidable p] (message : String) : Except String (PLift p) :=
-  if h : p then pure ⟨h⟩ else throw message
-
 private def checkedRuleOf (D : Shape) (b : D.Branch) (j : Json) :
     Except String (CheckedRule D b) := do
   let dump ← RuleDump.ofJson j
-  let ⟨hi⟩ ← require (dump.inputSize = CircuitType.size Fp D.schema.Input)
+  let ⟨hi⟩ ← requireProof (dump.inputSize = CircuitType.size Fp D.schema.Input)
     "the rule's input differs from the application schema"
-  let ⟨ho⟩ ← require (dump.publicOutput.size = CircuitType.size Fp D.schema.Output)
+  let ⟨ho⟩ ← requireProof (dump.publicOutput.size = CircuitType.size Fp D.schema.Output)
     "the rule's output differs from the application schema"
-  let ⟨hn⟩ ← require (D.slots b = dump.prevs.size)
+  let ⟨hn⟩ ← requireProof (D.slots b = dump.prevs.size)
     "the rule's predecessor count differs from its declared branch"
-  let ⟨hs⟩ ← require (∀ i : D.Slot b, dump.prevs[i.cast hn].1.size = D.prevSize b i)
+  let ⟨hs⟩ ← requireProof (∀ i : D.Slot b, dump.prevs[i.cast hn].1.size = D.prevSize b i)
     "a rule predecessor's statement differs from the declared source schema"
   return ⟨dump, hi, ho, hn, hs⟩
 
@@ -136,13 +133,6 @@ private def assembleOf (D : Shape)
   let dummy ← if h : ds.size = WrapIPARounds then pure (⟨ds, h⟩ : Vector Fq WrapIPARounds)
     else throw "the wrap padding has the wrong round count"
   return { layout, wiring, rules, stepLagrange := ← stepTablesOf wiring j, dummy }
-
-private def oneImport {I : LayoutInterface} (C : CircuitInterface I) :
-    (t : Fin (#[I] : Array LayoutInterface).size) → CircuitInterface (#[I] : Array _)[t] :=
-  fun t => by
-    have : t = 0 := Fin.eq_zero t
-    subst t
-    exact C
 
 /-- The five independently described tags in the application fixture corpus. -/
 inductive Tag where

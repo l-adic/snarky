@@ -74,14 +74,16 @@ structure MainRun {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [CircuitType (Z
 /-- A main circuit `body` proved on `inp`, then compiled with its cells (`Snarky.compileWith`) at
 the prover's valuation: whether that valuation satisfies every compiled constraint, and whether
 the table, its public rows the input's then the output's cells, satisfies the assembled system.
-The prover never reads the tag's valuation, so it runs at a placeholder. -/
-def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType (ZMod p) a av]
+The prover never reads the tag's valuation, so it runs at a placeholder. The compiled circuit is
+returned beside the run, for a caller that reads its constraints or allocation count. -/
+def runMainBuilt {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType (ZMod p) a av]
     [∀ V : Valuation (ZMod p), CheckedType (ZMod p) (Builder V (KimchiConstraint (ZMod p))) a av]
     [CircuitType (ZMod p) b bv]
     (side : Kimchi.Fixture.PS.Side p)
     (body : (V : Valuation (ZMod p)) → av →
       CircuitM (ZMod p) (Builder V (KimchiConstraint (ZMod p))) (bv × α)) (inp : a) :
-    IO (MainRun (a := a) (b := b) body) := do
+    IO ((r : MainRun (a := a) (b := b) body) ×
+      {built // built = compileWith (a := a) (b := b) (body r.V)}) := do
   let t0 ← IO.monoMsNow
   let st := seed (F := ZMod p) (avar := av) inp
   let pr ← match prove (compileWithBody (a := a) (b := b) (body fun _ => 0)) st.nv st.env with
@@ -117,7 +119,17 @@ def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType (ZMo
   IO.println s!"    phases: prove {t1 - t0} ms · build {t2 - t1} ms ({ncons} constraints, \
     {built.nextVar} vars) · holds {t3 - t2} ms · rows {t4 - t3} ms ({nrows} rows) · witness \
     {t5 - t4} ms ({nwit} rows) · index build {t6 - t5} ms (n = {n}) · decide {t7 - t6} ms"
-  return { V, holds, satisfies, pub, result := built.result, result_eq := rfl }
+  return ⟨{ V, holds, satisfies, pub, result := built.result, result_eq := rfl }, built, rfl⟩
+
+/-- `runMainBuilt`'s run alone. -/
+def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [CircuitType (ZMod p) a av]
+    [∀ V : Valuation (ZMod p), CheckedType (ZMod p) (Builder V (KimchiConstraint (ZMod p))) a av]
+    [CircuitType (ZMod p) b bv]
+    (side : Kimchi.Fixture.PS.Side p)
+    (body : (V : Valuation (ZMod p)) → av →
+      CircuitM (ZMod p) (Builder V (KimchiConstraint (ZMod p))) (bv × α)) (inp : a) :
+    IO (MainRun (a := a) (b := b) body) :=
+  (·.1) <$> runMainBuilt side body inp
 
 /-- `jobs` on `n` workers, each job's output captured on its worker thread (stdout is per
 thread) and printed, flushed, in job order as soon as the jobs before it are done; the verdicts,

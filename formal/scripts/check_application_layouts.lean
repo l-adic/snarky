@@ -13,9 +13,6 @@ child tag. Missing files fail. This driver never builds circuits or runs link ch
 
 open Lean Snarky Pickles Pickles.Application PicklesFixture.Application
 
-private def require (ok : Bool) (label : String) : IO Unit := do
-  unless ok do throw (IO.userError label)
-
 private def checked (D : Shape) : IO (PLift (Layout D)) :=
   match Layout.check D with
   | .ok L => pure L
@@ -52,20 +49,20 @@ private def checkMixed (imported : LayoutInterface) : IO Unit := do
   let b : D.Branch := ⟨0, by simp [D, overlapping]⟩
   let i : D.Slot b := ⟨0, by simp [D, overlapping, b]⟩
   let j := D.paddedSlot b i
-  require ((L.wrapWidths.map Fin.val).toArray == #[imported.width.val, 2])
-    "mixed source widths must use their per-position maximum"
-  require (D.slotWidth b i == imported.width.val && L.wrapWidths[j].val == 2)
-    "allocating a larger capacity must preserve the source's declared width"
-  require ((D.slotAt b j).map Fin.val == some i.val)
-    "a live slot must remain present even when its source has width zero"
+  let _ ← requireProof ((L.wrapWidths.map Fin.val).toArray == #[imported.width.val, 2])
+    (IO.userError "mixed source widths must use their per-position maximum")
+  let _ ← requireProof (D.slotWidth b i == imported.width.val && L.wrapWidths[j].val == 2)
+    (IO.userError "allocating a larger capacity must preserve the source's declared width")
+  let _ ← requireProof ((D.slotAt b j).map Fin.val == some i.val)
+    (IO.userError "a live slot must remain present even when its source has width zero")
   -- Reverse the branch order: capacity cannot be chosen from the first or last source.
   let reversed : Shape :=
     { D with
       slots b := D.slots b.rev
       source b i := D.source b.rev i }
   let ⟨R⟩ ← checked reversed
-  require ((R.wrapWidths.map Fin.val).toArray == (L.wrapWidths.map Fin.val).toArray)
-    "reordering branches must preserve shared capacities"
+  let _ ← requireProof ((R.wrapWidths.map Fin.val).toArray == (L.wrapWidths.map Fin.val).toArray)
+    (IO.userError "reordering branches must preserve shared capacities")
   IO.println s!"✓ shared slot: source widths {imported.width.val} and 2 fit capacity 2"
 
 private def checkAssembly : IO Unit := do
@@ -77,15 +74,16 @@ private def checkAssembly : IO Unit := do
   let i : D.Slot b := ⟨0, by simp [D, overlapping, b]⟩
   let j0 : Fin D.width := ⟨0, by change 0 < 2; decide⟩
   let j1 : Fin D.width := ⟨1, by change 1 < 2; decide⟩
-  require ((L.wrapWidths.map Fin.val).toArray == #[0, 2])
-    "equal-width overlapping slots did not produce [0, 2]"
-  require ((D.slotAt b j0).isNone && (D.slotAt b j1).map Fin.val == some 0)
-    "the one-slot branch must be front-padded, not back-padded"
-  require ((D.paddedSlot b i).val == 1) "the live slot must move to wrap position 1"
+  let _ ← requireProof ((L.wrapWidths.map Fin.val).toArray == #[0, 2])
+    (IO.userError "equal-width overlapping slots did not produce [0, 2]")
+  let _ ← requireProof ((D.slotAt b j0).isNone && (D.slotAt b j1).map Fin.val == some 0)
+    (IO.userError "the one-slot branch must be front-padded, not back-padded")
+  let _ ← requireProof ((D.paddedSlot b i).val == 1)
+    (IO.userError "the live slot must move to wrap position 1")
   checkMixed child
   let ⟨chainLayout⟩ ← checked twoPhaseChain
   checkMixed chainLayout.export
-  require (rejected oversized) "width 3 must exceed MaxProofsVerified"
+  let _ ← requireProof (rejected oversized) (IO.userError "width 3 must exceed MaxProofsVerified")
   IO.println "✓ layout assembly: front padding, equal/mixed source widths, width bound"
   -- Import the newly checked two-slot application into a one-slot application. Its
   -- external slot must keep width 2 while the new application's own width is 1.
@@ -97,9 +95,9 @@ private def checkAssembly : IO Unit := do
       slots _ := 1
       source _ _ := .external ⟨0, by simp⟩ }
   let ⟨consumerLayout⟩ ← checked consumer
-  require (consumerLayout.export.width.val == 1 &&
+  let _ ← requireProof (consumerLayout.export.width.val == 1 &&
       (consumerLayout.wrapWidths.map Fin.val).toArray == #[2])
-    "an imported width must remain independent of its consumer's width"
+    (IO.userError "an imported width must remain independent of its consumer's width")
   IO.println "✓ exported interfaces compose across three independently checked applications"
 
 private def readTag (dir : System.FilePath) (name : String) : IO Json := do
@@ -133,12 +131,6 @@ private def expectError {α : Type} (label : String) (result : Except String α)
   match result with
   | .ok _ => throw (IO.userError s!"accepted {label}")
   | .error e => IO.println s!"✓ rejects {label}: {e}"
-
-private def oneImport {I : LayoutInterface} (C : CircuitInterface I)
-    (t : Fin #[I].size) : CircuitInterface #[I][t] := by
-  have h : t = 0 := Fin.eq_zero t
-  subst t
-  exact C
 
 private def changeSlotField (tag : Json) (b i : Nat) (field : String) (value : Json) :
     Except String Json := do
@@ -233,8 +225,8 @@ def main : IO Unit := do
   let b : D.Branch := ⟨1, by change 1 < 2; decide⟩
   let i0 : D.Slot b := ⟨0, by change 0 < 2; decide⟩
   let i1 : D.Slot b := ⟨1, by change 1 < 2; decide⟩
-  require (mixedW.sourceChunks b i0 == 2 && mixedW.sourceChunks b i1 == 1)
-    "static wiring incorrectly imposed a shared predecessor chunk count"
+  let _ ← requireProof (mixedW.sourceChunks b i0 == 2 && mixedW.sourceChunks b i1 == 1)
+    (IO.userError "static wiring incorrectly imposed a shared predecessor chunk count")
   IO.println "✓ synthetic imported interface preserves mixed 2/1 source chunks"
   -- A checker that only compares total widths would miss this wrong statement schema.
   let wrong : Shape := { D with schema := child.schema }

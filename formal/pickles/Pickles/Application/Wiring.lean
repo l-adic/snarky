@@ -95,10 +95,10 @@ structure Wiring (D : Shape) (L : Layout D) where
   /-- Each import supplies circuit data at its declared layout interface. -/
   imports : (t : Fin D.imports.size) → CircuitInterface D.imports[t]
 
-/-- Check a proposition and retain its proof, or return the supplied error. -/
-private def requireProof (p : Prop) [Decidable p] (error : String) :
-    Except String (PLift p) :=
-  if h : p then .ok ⟨h⟩ else .error error
+/-- Check a proposition and retain its proof, or fail with the supplied error. -/
+def requireProof {m : Type → Type} {ε : Type} [Monad m] [MonadExcept ε m]
+    (p : Prop) [Decidable p] (error : ε) : m (PLift p) :=
+  if h : p then pure ⟨h⟩ else throw error
 
 /-- Validate backend metadata before assembling the configuration; no uniform source-chunk
 condition is imposed. Lagrange correspondence remains a later SRS-dependent premise. -/
@@ -174,12 +174,16 @@ theorem Wiring.source_domains {D : Shape} {L : Layout D} (W : Wiring D L)
   generalize D.source b i = s
   cases s <;> rfl
 
+/-- The wrap-domain index of a padding position: the one-predecessor wrap domain's place in
+`wrapDomainLog2s`, which the wrap circuit pins and its prover supplies. -/
+private def paddingWrapIndex : Nat := 1
+
 /-- Each finalization position's wrap-domain index, across branches. Leading padding
-uses index 1, the fixed dummy domain used by both the circuit and prover. -/
+uses `paddingWrapIndex`. -/
 def Wiring.pins {D : Shape} {L : Layout D} (W : Wiring D L) :
     Vector (Vector (Option Nat) D.branches) D.width :=
   Vector.ofFn fun j => Vector.ofFn fun b =>
-    some (((D.slotAt b j).map fun i => (W.source b i).wrapIndex).getD 1)
+    some (((D.slotAt b j).map fun i => (W.source b i).wrapIndex).getD paddingWrapIndex)
 
 /-- A branch's live slot is pinned to its selected source's wrap domain. -/
 theorem Wiring.pins_at_slot {D : Shape} {L : Layout D} (W : Wiring D L)

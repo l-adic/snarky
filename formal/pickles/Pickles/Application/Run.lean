@@ -86,7 +86,7 @@ structure StepWrapLink (C : Circuits D L) (b : D.Branch) where
 def StepWrapLink.run {C : Circuits D L} {b : D.Branch} (e : StepWrapLink C b)
     (i : D.Slot b) (ms : Vector Bool (SlotSource.widths D.width (C.wiring.sources b) i)) :
     StepWrapRun (D.slots b) D.width (SlotSource.widths D.width (C.wiring.sources b))
-      (D.prevSize b) (CircuitType.size Fp D.schema.Input + CircuitType.size Fp D.schema.Output)
+      (D.prevSize b) D.schema.size
       (C.wiring.sourceChunks b) WrapIPARounds StepIPARounds D.branches
       C.wiring.backend.stepChunks L.wrapWidths where
   Vg := e.step.V
@@ -161,8 +161,7 @@ theorem SourceFor.prevSize
     {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
     {branch : consumerD.Branch} {slot : consumerD.Slot branch}
     (h : SourceFor producer consumer branch slot) :
-    consumerD.prevSize branch slot =
-      CircuitType.size Fp producerD.schema.Input + CircuitType.size Fp producerD.schema.Output := by
+    consumerD.prevSize branch slot = producerD.schema.size := by
   have he := congrArg (fun x : (I : LayoutInterface) × CircuitInterface I =>
     x.1.schema.size) h.source
   cases hs : consumerD.source branch slot <;>
@@ -203,8 +202,7 @@ def WrapStepLink.run
       (consumerD.slots consumerBranch) consumerD.width
       (SlotSource.widths consumerD.width (consumer.wiring.sources consumerBranch))
       (consumerD.prevSize consumerBranch) (consumer.wiring.sourceChunks consumerBranch)
-      (CircuitType.size Fp consumerD.schema.Input + CircuitType.size Fp consumerD.schema.Output)
-      producerL.wrapWidths where
+      consumerD.schema.size producerL.wrapWidths where
   Vw := e.wrap.V
   Vs := e.step.V
   wrapStmt := wrapStatement

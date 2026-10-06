@@ -127,4 +127,12 @@ def checkWiring {D : Shape} {L : Layout D} (W : Wiring D L) (name : String) (tag
       unless (← wrapLagrangeOf (← slot.getObjVal? "lagrange")) == (W.sources b i).lagrange do
         throw s!"{name}/{b.val}/{i.val}: source Lagrange table differs from assembly"
 
+/-- The interfaces of an application with exactly one import. -/
+def oneImport {I : LayoutInterface} (C : CircuitInterface I) :
+    (t : Fin (#[I] : Array LayoutInterface).size) → CircuitInterface (#[I] : Array _)[t] :=
+  fun t => by
+    have : t = 0 := Fin.eq_zero t
+    subst t
+    exact C
+
 end PicklesFixture.Application

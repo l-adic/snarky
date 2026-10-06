@@ -413,8 +413,6 @@ abbrev stepSrs (σ : Bulletproof.SRS CS.Point) (hk : σ.k = Pickles.StepIPARound
     (by decide : Pickles.MaxProofsVerified * Pickles.StepIPARounds < 2 ^ 128),
     (by decide : 0 < Pickles.StepIPARounds), hh⟩
 
-deriving instance DecidableEq for AffinePoint
-
 deriving instance DecidableEq for Pickles.KnownDomain
 
 /-- A wrap circuit's run with the constants it was compiled at, for the step runs of any tag whose
