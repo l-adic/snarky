@@ -9,7 +9,8 @@ import PicklesFixture.Manifest
 
 Typed application runs are joined using the cache's predecessor references. Each checked link
 applies an application verification theorem; adjacent links apply both application handover
-theorems. Lagrange correspondence is checked against the shared SRS before applying them.
+theorems. Each theorem's Lagrange correspondence with the shared SRS is kept as its open premise;
+the assembled tables are the memoised Lagrange bases, which no check recomputes.
 -/
 
 namespace PicklesFixture.Application
@@ -109,27 +110,15 @@ private def pairs {S : Setup} {D : Shape} (A : Context S D) :
     result := result ++ [⟨s.branch, ⟨s.run, w.run, hbranch, hpub⟩, s.proof, w.proof, s.previous⟩]
   return result
 
-private abbrev wrapTable {D : Shape} {L : Layout D} (C : Circuits D L) (b : D.Branch) : Prop :=
-  C.stepLagrange C.wiring.backend.stepKeys[b].cvk.domainLog2 =
-    C.wiring.backend.stepKeys[b].cvk.lagrangePoints C.setup.stepSrs.σ
-      (CircuitType.size Fp (StepStatement (UnfVal WrapIPARounds) Fp D.width))
-
-private abbrev stepTable {D : Shape} {L : Layout D} (C : Circuits D L)
-    (b : D.Branch) (i : D.Slot b) : Prop :=
-  (C.wiring.sources b i).lagrange = (C.wiring.source b i).wrapKey.cvk.lagrangePoints
-    C.setup.wrapSrs.σ (CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp))
-
 private def wrapAssumptions {D : Shape} {L : Layout D} (C : Circuits D L) (b : D.Branch) :
-    IO (PLift (WrapStepAssumptions C b)) := do
-  let ⟨ht⟩ ← requireProof (wrapTable C b)
-    (IO.userError "step Lagrange basis differs from the SRS")
+    IO (PLift (wrapTable C b → WrapStepAssumptions C b)) := do
   let K := C.wiring.backend.stepKeys[b]
   let ⟨hn⟩ ← requireProof (K.cvk.comms.indexPoints.all (fun P => decide (P ≠ 0)) = true)
     (IO.userError "step key has an infinite commitment")
   let ⟨hL⟩ ← requireProof ((C.stepLagrange K.cvk.domainLog2).toList.all fun Ps =>
     (List.finRange C.wiring.backend.stepChunks).all fun c => decide (Ps[c] ≠ 0))
     (IO.userError "step table has an infinite commitment")
-  return ⟨⟨ht,
+  return ⟨fun ht => ⟨ht,
     fun P hP => of_decide_eq_true (List.all_eq_true.mp hn P hP), by
       apply (Key.avoids_lagrangeRelations_iff pastaShapeVesta C.setup.stepSrs.σ
         (C.wiring.valid.stepChunks b) _).mpr
@@ -139,9 +128,7 @@ private def wrapAssumptions {D : Shape} {L : Layout D} (C : Circuits D L) (b : D
 
 private def stepAssumptions {D : Shape} {L : Layout D} (C : Circuits D L)
     (b : D.Branch) (i : D.Slot b) :
-    IO (PLift (StepWrapAssumptions C b i)) := do
-  let ⟨ht⟩ ← requireProof (stepTable C b i)
-    (IO.userError "wrap Lagrange basis differs from the SRS")
+    IO (PLift (stepTable C b i → StepWrapAssumptions C b i)) := do
   let source := C.wiring.source b i
   let K := source.wrapKey
   let m := CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp)
@@ -153,7 +140,7 @@ private def stepAssumptions {D : Shape} {L : Layout D} (C : Circuits D L)
     fun Ps => decide (Ps[0] ≠ 0)) (IO.userError "wrap table has an infinite commitment")
   let ⟨hc⟩ ← requireProof (∀ c : Fin 1, corrSumPt (C := CW) zeroWrapStatement.packed.toList
     (C.wiring.sources b i).lagrange.toList c ≠ 0) (IO.userError "wrap correction sum is infinite")
-  return ⟨⟨hd, ht, fun inp msg =>
+  return ⟨fun ht => ⟨hd, ht, fun inp msg =>
     (avoids_stepRelationsAt_iff C.setup.wrapSrs.σ K source.wrapChunks
       (inp.statement msg) hs.1 hs.2).mpr ⟨fun c => by
         rw [corrSumPt_packed_congr _ zeroWrapStatement, ← ht]
@@ -166,11 +153,13 @@ private def stepAssumptions {D : Shape} {L : Layout D} (C : Circuits D L)
 
 private def Context.stepParametersAt {S : Setup} {D : Shape}
     (A : Context S D) (b : D.Branch) (i : D.Slot b) :
-    IO (PLift (StepWrapAssumptions (A.assembled.circuits S (fun _ => none)) b i)) := do
+    IO (PLift (stepTable (A.assembled.circuits S (fun _ => none)) b i →
+      StepWrapAssumptions (A.assembled.circuits S (fun _ => none)) b i)) := do
   for ⟨b', i', p⟩ in ← A.stepParameters.get do
     if hb : b' = b then
       let j : D.Slot b := hb ▸ i'
-      let q : PLift (StepWrapAssumptions (A.assembled.circuits S (fun _ => none)) b j) := by
+      let q : PLift (stepTable (A.assembled.circuits S (fun _ => none)) b j →
+          StepWrapAssumptions (A.assembled.circuits S (fun _ => none)) b j) := by
         subst b'
         exact p
       if hi : j = i then return hi ▸ q
@@ -180,7 +169,8 @@ private def Context.stepParametersAt {S : Setup} {D : Shape}
 
 private def Context.wrapParametersAt {S : Setup} {D : Shape}
     (A : Context S D) (b : D.Branch) :
-    IO (PLift (WrapStepAssumptions (A.assembled.circuits S (fun _ => none)) b)) := do
+    IO (PLift (wrapTable (A.assembled.circuits S (fun _ => none)) b →
+      WrapStepAssumptions (A.assembled.circuits S (fun _ => none)) b)) := do
   for ⟨b', p⟩ in ← A.wrapParameters.get do
     if hb : b' = b then return hb ▸ p
   let p ← wrapAssumptions (A.assembled.circuits S (fun _ => none)) b
@@ -218,13 +208,13 @@ private structure StepFacts {D : Shape} {L : Layout D} {C : Circuits D L} {b : D
     (e : StepWrapLink C b) (i : D.Slot b) : Prop where
   mustVerify : CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true
   keyBound : e.step.KeyBound i
-  assumptions : StepWrapAssumptions C b i
-  accepts : kimchiVerify CW C.setup.wrapSrs.σ
+  assumptions : stepTable C b i → StepWrapAssumptions C b i
+  accepts : stepTable C b i → kimchiVerify CW C.setup.wrapSrs.σ
     (C.wiring.source b i).wrapKey.cvk (e.proof i) (e.proofPublicInput i) = true
 
 set_option cleanup.letToHave false in
 private def checkStep {D : Shape} {L : Layout D} {C : Circuits D L} {b : D.Branch}
-    (e : StepWrapLink C b) (i : D.Slot b) (hp : StepWrapAssumptions C b i)
+    (e : StepWrapLink C b) (i : D.Slot b) (hp : stepTable C b i → StepWrapAssumptions C b i)
     (cached : Cache.Entry CW) :
     IO (PLift (StepFacts e i)) := do
   let ⟨hmv⟩ ← requireProof (CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true)
@@ -236,8 +226,8 @@ private def checkStep {D : Shape} {L : Layout D} {C : Circuits D L} {b : D.Branc
     (IO.userError "application wrap-proof accumulator is invalid")
   compareProof "pallas" C.setup.wrapSrs.σ (C.wiring.source b i).wrapKey.cvk
     (e.proof i) (e.proofPublicInput i) cached
-  return ⟨⟨hmv, hkey, hp, by
-    obtain ⟨he, _, hv⟩ := e.verifies_proof i hp hmv hkey
+  return ⟨⟨hmv, hkey, hp, fun ht => by
+    obtain ⟨he, _, hv⟩ := e.verifies_proof i (hp ht) hmv hkey
     apply hv
     have hz := (congrArg (accOk C.setup.wrapSrs.σ) he.2).symm.trans ha
     simp only [accOk, decide_eq_true_eq] at hz
@@ -274,14 +264,14 @@ private def connect {D E : Shape} {L : Layout D} {M : Layout E}
 private structure WrapFacts {D E : Shape} {L : Layout D} {M : Layout E}
     {A : Circuits D L} {B : Circuits E M} {a : D.Branch} {b : E.Branch} {i : E.Slot b}
     (e : WrapStepLink A B a b i) : Prop where
-  assumptions : WrapStepAssumptions A a
-  accepts : kimchiVerify CS A.setup.stepSrs.σ
+  assumptions : wrapTable A a → WrapStepAssumptions A a
+  accepts : wrapTable A a → kimchiVerify CS A.setup.stepSrs.σ
     A.wiring.backend.stepKeys[a].cvk e.proof e.proofPublicInput = true
 
 set_option cleanup.letToHave false in
 private def checkWrap {D E : Shape} {L : Layout D} {M : Layout E}
     {A : Circuits D L} {B : Circuits E M} {a : D.Branch} {b : E.Branch} {i : E.Slot b}
-    (e : WrapStepLink A B a b i) (hp : WrapStepAssumptions A a)
+    (e : WrapStepLink A B a b i) (hp : wrapTable A a → WrapStepAssumptions A a)
     (cached : Cache.Entry CS) : IO (PLift (WrapFacts e)) := do
   let r := e.run
   let ⟨ha⟩ ← requireProof (accOk A.setup.stepSrs.σ (WrapStep.emittedAccumulator r.Vw r.Vs
@@ -289,8 +279,8 @@ private def checkWrap {D E : Shape} {L : Layout D} {M : Layout E}
     (IO.userError "application step-proof accumulator is invalid")
   compareProof "vesta" A.setup.stepSrs.σ A.wiring.backend.stepKeys[a].cvk
     e.proof e.proofPublicInput cached
-  return ⟨⟨hp, by
-    obtain ⟨he, _, _, hv⟩ := e.verifies_proof hp
+  return ⟨⟨hp, fun ht => by
+    obtain ⟨he, _, _, hv⟩ := e.verifies_proof (hp ht)
     apply hv
     have hz := (congrArg (accOk A.setup.stepSrs.σ) he.2).symm.trans ha
     simp only [accOk, decide_eq_true_eq] at hz
@@ -302,16 +292,16 @@ private def checkStepHandover {D E G : Shape} {L : Layout D} {M : Layout E} {N :
     {a : D.Branch} {b : E.Branch} {c : G.Branch} {i : E.Slot b} {j : G.Slot c}
     (e : StepProofHandover A B C a b c i j)
     (f : WrapFacts e.producer) (g : WrapFacts e.consumer) : IO Unit := do
-  have _ :
+  have _ : wrapTable A a → wrapTable B b →
       (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap ∧
         (kimchiVerify CS A.setup.stepSrs.σ A.wiring.backend.stepKeys[a].cvk
           e.producer.proof e.producer.proofPublicInput = true ∨
          AccumulatorFailure A.setup.stepSrs.σ B.wiring.backend.stepKeys[b].cvk
           e.consumer.proof e.consumer.proofPublicInput)) ∨
       e.producer.run.WrapCollision e.consumer.run A.setup.dummy ∨
-      e.producer.run.StepCollision e.consumer.run B.wiring.backend.wrapKey.cvk := by
-    exact e.handover_or_collision f.assumptions g.assumptions
-      (by rw [e.producer.sourceFor.setup]; exact g.accepts)
+      e.producer.run.StepCollision e.consumer.run B.wiring.backend.wrapKey.cvk := fun hA hB =>
+    e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
+      (by rw [e.producer.sourceFor.setup]; exact g.accepts hB)
   let _ ← requireProof (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap)
     (IO.userError "application step-proof handover messages differ")
 
@@ -320,7 +310,7 @@ private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
     {A : Circuits D L} {B : Circuits E M} {a : D.Branch} {b : E.Branch}
     {i : D.Slot a} {j : E.Slot b} (e : WrapProofHandover A B a b i j)
     (f : StepFacts e.producer i) (g : StepFacts e.consumer j) : IO Unit := do
-  have _ :
+  have _ : stepTable A a i → stepTable B b j →
       (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap ∧
         (kimchiVerify CW A.setup.wrapSrs.σ (A.wiring.source a i).wrapKey.cvk
           (e.producer.proof i) (e.producer.proofPublicInput i) = true ∨
@@ -329,10 +319,10 @@ private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
       (e.producer.run i (e.producer.mask i)).WrapCollision
         (e.consumer.run j (e.consumer.mask j)) A.setup.dummy ∨
       (e.producer.run i (e.producer.mask i)).StepCollision
-        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk := by
-    exact e.handover_or_collision f.assumptions g.assumptions
-      (by rw [e.sourceFor.setup]; exact g.accepts)
-  have _ :
+        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk :=
+    fun hA hB => e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
+      (by rw [e.sourceFor.setup]; exact g.accepts hB)
+  have _ : stepTable A a i → stepTable B b j →
       (e.producer.step.cells.messagesForNextStepProof.appState.map
           (·.val e.producer.step.V) =
         ((e.consumer.step.cells.prevs j).appState.map
@@ -340,9 +330,9 @@ private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
       (e.producer.run i (e.producer.mask i)).WrapCollision
         (e.consumer.run j (e.consumer.mask j)) A.setup.dummy ∨
       (e.producer.run i (e.producer.mask i)).StepCollision
-        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk := by
-    exact e.appState_eq_or_collision f.assumptions g.assumptions
-      (by rw [e.sourceFor.setup]; exact g.accepts)
+        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk :=
+    fun hA hB => e.appState_eq_or_collision (f.assumptions hA) (g.assumptions hB)
+      (by rw [e.sourceFor.setup]; exact g.accepts hB)
   let _ ← requireProof (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap)
     (IO.userError "application wrap-proof handover messages differ")
 
@@ -459,8 +449,8 @@ private def nodeOf {S : Setup} {contexts : List ((D : Shape) × Context S D)}
     store.nodes.modify (n :: ·)
     return n
 
-/-- Apply the application capstones and handovers to every selected verified slot and pair.
-Lagrange correspondence is decided against the shared SRS. -/
+/-- Apply the application capstones and handovers to every selected verified slot and pair,
+under the open premise that every assembled Lagrange table is its key's SRS Lagrange points. -/
 def validate {S : Setup} (contexts : List ((D : Shape) × Context S D)) : IO Unit := do
   IO.println s!"application capstones: checking {contexts.length} selected tags"
   (← IO.getStdout).flush
@@ -509,6 +499,6 @@ def validate {S : Setup} (contexts : List ((D : Shape) × Context S D)) : IO Uni
       the cache requires {expectedLinks} and {expectedPairs}")
   IO.println s!"✓ application capstones: {links} links, {handovers} step-proof and \
     {handovers} wrap-proof handovers, {disabled} disabled slots, {negatives} rejected mismatches; \
-    SRS Lagrange correspondence checked"
+    the tables' SRS Lagrange correspondence is the open premise"
 
 end PicklesFixture.Application
