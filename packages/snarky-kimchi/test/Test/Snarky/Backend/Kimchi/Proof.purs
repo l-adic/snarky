@@ -101,7 +101,7 @@ runProofRoundtrip = do
 
     -- 3. Solve for x = 7 (so y = 49).
     solver :: Solver Pallas.BaseField (KimchiConstraint Pallas.BaseField) (F Pallas.BaseField) (F Pallas.BaseField)
-    solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) squareCircuit
+    solver = makeSolver builtState squareCircuit
   runSolver solver (F (fromInt 7)) >>= case _ of
     Left e -> throw $ "Squaring-circuit solver failed: " <> show e
     Right (Tuple _output assignments) -> do

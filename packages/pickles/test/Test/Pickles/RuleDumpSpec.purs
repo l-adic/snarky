@@ -20,7 +20,7 @@ import Pickles.Step.Slots (PrevValues, mkPrevValues)
 import Pickles.Types (StatementIO(..))
 import Simple.JSON (writeJSON)
 import Snarky.Backend.Advice (AdviceHandler, noAdvice)
-import Snarky.Backend.Compile (SolverT, makeSolver')
+import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..))
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitType, AsProver, BoolVar, F(..), FVar, Snarky, assertEqual_, const_, exists, fieldsToValue, fieldsToVar, read, sizeInFields, valueToFields, varToFields)
@@ -79,12 +79,16 @@ solveRule
 solveRule handler prevs input rule = do
   capture <- Ref.new Nil
   let
-    solver :: SolverT StepField (KimchiConstraint StepField) r Unit Unit
-    solver = makeSolver' { debug: true } (Proxy @(KimchiConstraint StepField)) \(_ :: Unit) -> do
+    circuit captured (_ :: Unit) = do
       _ <- exists (pure (F (fromInt 99 :: StepField)))
-      void $ captureAllocations (Just capture) $ runRuleWithInput @inputVal rule (pure input) prevs
+      void $ captureAllocations captured $ runRuleWithInput @inputVal rule (pure input) prevs
       _ <- exists (pure (F (fromInt 100 :: StepField)))
       pure unit
+  compiled <- compile handler (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+    (circuit Nothing)
+  let
+    solver :: SolverT StepField (KimchiConstraint StepField) r Unit Unit
+    solver = makeSolver' { debug: true } compiled (circuit (Just capture))
   result <- solver handler unit
   vars <- Ref.read capture
   pure $ case result of

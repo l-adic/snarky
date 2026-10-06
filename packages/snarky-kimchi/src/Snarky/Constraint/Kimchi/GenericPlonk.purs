@@ -8,9 +8,8 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
-import Snarky.Circuit.CVar (reduceToAffineExpression)
 import Snarky.Circuit.DSL (Basic(..))
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addEqualsConstraint, addGenericPlonkConstraint, reduceAffineExpression)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addEqualsConstraint, addGenericPlonkConstraint, reduceCVar)
 
 reduce
   :: forall f m
@@ -19,9 +18,9 @@ reduce
   -> m Unit
 reduce = case _ of
   R1CS { left, right, output } -> do
-    Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression left
-    Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression right
-    Tuple mvo co <- reduceAffineExpression $ reduceToAffineExpression output
+    Tuple mvl cl <- reduceCVar left
+    Tuple mvr cr <- reduceCVar right
+    Tuple mvo co <- reduceCVar output
     case mvl, mvr, mvo of
       -- (cl * vl) * (cr * vr) = (co * vo)
       Just vl, Just vr, Just vo -> do
@@ -56,8 +55,8 @@ reduce = case _ of
           )
         else pure unit
   Square v1 v2 -> do
-    Tuple mv1 s1 <- reduceAffineExpression $ reduceToAffineExpression v1
-    Tuple mv2 s2 <- reduceAffineExpression $ reduceToAffineExpression v2
+    Tuple mv1 s1 <- reduceCVar v1
+    Tuple mv2 s2 <- reduceCVar v2
     case mv1, mv2 of
       -- (s1 * x1)^2 = s2 * x2  →  s1^2 * x1 * x1 - s2 * x2 = 0
       Just x1, Just x2 ->
@@ -74,11 +73,11 @@ reduce = case _ of
           unsafeThrowException $ error $ "Contradiction while reducing square to plonk gates: " <> show (s1 * s1) <> " /= " <> show s2
         else pure unit
   Equal a b -> do
-    Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression a
-    Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression b
+    Tuple mvl cl <- reduceCVar a
+    Tuple mvr cr <- reduceCVar b
     addEqualsConstraint { vl: mvl, cl, vr: mvr, cr }
   Boolean b -> do
-    Tuple mv c <- reduceAffineExpression $ reduceToAffineExpression b
+    Tuple mv c <- reduceCVar b
     case mv of
       Nothing ->
         if (c * c /= c) then

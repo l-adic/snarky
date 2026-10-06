@@ -12,7 +12,7 @@ import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
 import Snarky.Backend.Compile (compile', makeSolver')
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
@@ -32,18 +32,19 @@ type KG = KimchiGate Pallas.BaseField
 type AS = AuxState Pallas.BaseField
 
 debugCircuitPure
-  :: forall f c a b avar bvar
-   . SolveCircuit f c
-  => CheckedType f c avar
+  :: forall f c c' aux a b avar bvar
+   . CompileCircuit f c c' aux
+  => SolveCircuit f c'
+  => CheckedType f c' avar
   => CircuitType f a avar
   => CircuitType f b bvar
-  => Proxy c
-  -> (avar -> Snarky f c () bvar)
+  => Proxy c'
+  -> (avar -> Snarky f c' () bvar)
   -> a
   -> Either EvaluationError b
-debugCircuitPure pc circuit inputs =
-  unsafePerformEffect (makeSolver' { debug: true } pc circuit noAdvice inputs)
-    <#> fst
+debugCircuitPure pc circuit inputs = unsafePerformEffect do
+  compiled <- compile' noAdvice { debug: true } (Proxy @a) (Proxy @b) pc circuit
+  makeSolver' { debug: true } compiled circuit noAdvice inputs <#> map fst
 
 spec :: Spec Unit
 spec = describe "ProverT debug mode" do

@@ -17,13 +17,12 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
-import Data.Set (Set)
-import Data.Set as Set
 import Data.Show.Generic (genericShow)
 import Data.UnionFind.Mutable (MutableUF)
 import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector)
 import Effect (Effect)
+import Snarky.Circuit.CVar (AffineExpression)
 import Snarky.Circuit.DSL (Variable)
 
 type GenericPlonkConstraint f =
@@ -76,7 +75,9 @@ type KimchiRow f =
 
 -- Wire placement state for Kimchi constraint system
 type KimchiWireRow f =
-  { internalVariables :: Set Variable
+  -- Each variable a reduction introduced, with the expression that
+  -- defines it.
+  { internalVariables :: Map Variable (AffineExpression f)
   , unionFind :: MutableUF
   , cachedConstants :: Map f Variable
   }
@@ -84,7 +85,7 @@ type KimchiWireRow f =
 -- Initial empty wire state
 emptyKimchiWireState :: forall f. MutableUF -> KimchiWireRow f
 emptyKimchiWireState uf =
-  { internalVariables: Set.empty
+  { internalVariables: Map.empty
   , unionFind: uf
   , cachedConstants: Map.empty
   }

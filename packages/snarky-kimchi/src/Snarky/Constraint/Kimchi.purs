@@ -9,7 +9,6 @@ module Snarky.Constraint.Kimchi
 import Prelude
 
 import Data.Array (all)
-import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over, un)
 import Data.Set as Set
@@ -19,12 +18,11 @@ import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector)
 import Effect (Effect)
 import Poseidon (class PoseidonField)
-import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, Labeled)
 import Snarky.Backend.Builder as CircuitBuilder
-import Snarky.Backend.Prover (class SolveCircuit, ProverState)
+import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.CVar (Variable(..))
-import Snarky.Circuit.DSL (class BasicSystem, Basic(..), EvaluationError, FVar)
+import Snarky.Circuit.DSL (class BasicSystem, Basic(..), FVar)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
@@ -35,7 +33,7 @@ import Snarky.Constraint.Kimchi.EndoScalar as EndoScalar
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, finalizeGateQueue, mkPadRow, reduceAsBuilder, reduceAsProver, reduceToVariable)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, finalizeGateQueue, mkPadRow, reduceAsBuilder, reduceToVariable)
 import Snarky.Constraint.Kimchi.Reduction as Reduction
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), initialAuxState, toKimchiRows)
 import Snarky.Constraint.Kimchi.VarBaseMul (VarBaseMul)
@@ -140,45 +138,14 @@ instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f)
             s.aux
         }
 
-instance (KimchiVerify f f') => SolveCircuit f (KimchiConstraint f) where
-  proverConstraint kc s = case kc of
-    KimchiAddComplete c -> go AddComplete.reduce c
-    KimchiPoseidon c -> go Poseidon.reduce c
-    KimchiBasic c -> goBasic c
-    KimchiVarBaseMul c -> go VarBaseMul.reduce c
-    KimchiEndoScalar c -> go EndoScalar.reduce c
-    KimchiEndoMul c -> go EndoMul.reduce c
-    KimchiPad vs -> go reducePad vs
-    where
-    -- Run the reducer and update prover state. Per-gate equation checks
-    -- (formerly in `goDebug`'s `when s.debug …` branch) were removed in
-    -- favor of the circuit-diffs JSON byte-equality check, which is a
-    -- strictly stronger correctness signal.
-    go
-      :: forall c g
-       . ToKimchiRows f g
-      => (forall n. PlonkReductionM n f => c -> n g)
-      -> c
-      -> Effect (Either EvaluationError (ProverState f))
-    go reducer c =
-      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) <#> map
-        \(Tuple _ res) -> s { assignments = res.assignments, nextVar = res.nextVariable }
+  internalVariables { aux: AuxState aux } = aux.wireState.internalVariables
 
-    -- Basic constraints keep their `debugCheck` (pure-PS, no FFI) for
-    -- richer error messages (e.g. "R1CS failed: 42 * 7 != 293") when
-    -- the prover state has `debug: true`.
-    goBasic :: Basic f -> Effect (Either EvaluationError (ProverState f))
-    goBasic c =
-      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (GenericPlonk.reduce c) >>= case _ of
-        Left e -> pure (Left e)
-        Right (Tuple _ res) -> do
-          let s' = s { assignments = res.assignments, nextVar = res.nextVariable }
-          if s.debug then do
-            lookupFn <- Assignments.toLookup res.assignments
-            pure case Basic.debugCheck lookupFn c of
-              Nothing -> Right s'
-              Just e -> Left e
-          else pure (Right s')
+-- | Only the basic constraints are checked, for their error messages
+-- | (e.g. "R1CS failed: 42 * 7 != 293").
+instance PrimeField f => SolveCircuit f (KimchiConstraint f) where
+  checkConstraint lookup = case _ of
+    KimchiBasic c -> Basic.debugCheck lookup c
+    _ -> Nothing
 
 postCondition
   :: forall f

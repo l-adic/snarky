@@ -12,6 +12,7 @@ module Snarky.Backend.Builder
   , class CompileCircuit
   , appendBuilderConstraint
   , finalize
+  , internalVariables
   , Labeled
   , Constraints
   , emptyConstraints
@@ -25,15 +26,19 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (foldl) as F
+import Data.Foldable (for_)
 import Data.List (List(..), reverse) as L
+import Data.Map (Map)
+import Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Ref as Ref
+import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (Variable, incrementVariable, v0)
+import Snarky.Circuit.CVar (AffineExpression, Variable(..), v0)
 import Snarky.Circuit.DSL.Monad (CircuitOps(..), Snarky(..))
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
@@ -95,12 +100,18 @@ class BasicSystem f c' <= CompileCircuit f c c' aux | f c -> c' aux, c' -> c, c 
   -- | all mutable parts) per `compile` invocation — initial states are
   -- | never shared, by construction.
   initialBuilderState :: Effect (CircuitBuilderState c aux)
+  -- | The variables the backend introduced while storing a built
+  -- | circuit's constraints, each with the expression that defines it. An
+  -- | expression mentions only variables of smaller index, so a prover
+  -- | can compute them in increasing order.
+  internalVariables :: CircuitBuilderState c aux -> Map Variable (AffineExpression f)
 
 instance PrimeField f => CompileCircuit f (Basic f) (Basic f) Unit where
   appendBuilderConstraint c s =
     pure s { constraints = snocConstraint { constraint: c, context: s.labelStack } s.constraints }
   finalize = identity
   initialBuilderState = emptyBuilderState unit
+  internalVariables _ = Map.empty
 
 -- | Fresh builder state over any aux value (helper for
 -- | `initialBuilderState` instances).
@@ -125,14 +136,17 @@ allocVars
    . Int
   -> CircuitBuilderState c aux
   -> Effect (Tuple (Array Variable) (CircuitBuilderState c aux))
-allocVars n s0 = go 0 s0 []
-  where
-  go i s acc
-    | i >= n = pure (Tuple acc s)
-    | otherwise = do
-        let v = s.nextVar
-        when s.debug $ Assignments.set v s.labelStack s.varMetadata
-        go (i + 1) (s { nextVar = incrementVariable v }) (Array.snoc acc v)
+allocVars n s
+  | n <= 0 = pure (Tuple [] s)
+  | otherwise = do
+      let
+        Variable first = s.nextVar
+        vars = coerce (Array.range first (first + n - 1)) :: Array Variable
+      -- `if`, not `when`: its argument would be built for every
+      -- allocation, debug or not.
+      if s.debug then for_ vars \v -> Assignments.set v s.labelStack s.varMetadata
+      else pure unit
+      pure (Tuple vars (s { nextVar = Variable (first + n) }))
 
 -- | Interpret a circuit in builder mode: collect constraints, allocate
 -- | variables, DISCARD witness computations. The advice handler is unused —

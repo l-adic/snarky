@@ -13,31 +13,38 @@ namespace PicklesFixture.Application
 
 open Lean Snarky Snarky.Kimchi CompElliptic.Fields.Pasta Pickles.Application
 
+/-- Field counts of the application's public input and output. -/
 structure FieldLayoutDump where
+  /-- Number of flattened input fields. -/
   inputFields : Nat
+  /-- Number of flattened output fields. -/
   outputFields : Nat
-  deriving Repr, DecidableEq, Inhabited
+  deriving DecidableEq, Inhabited
 
 private def FieldLayoutDump.ofJson (j : Json) : Except String FieldLayoutDump := do
   let inputFields ← (← j.getObjVal? "inputFields").getNat?
   let outputFields ← (← j.getObjVal? "outputFields").getNat?
   return ⟨inputFields, outputFields⟩
 
+/-- Statement layout and recursion width declared for an imported application. -/
 structure ImportedLayoutDump where
+  /-- The imported application's flattened statement layout. -/
   statement : FieldLayoutDump
+  /-- Maximum predecessor count of the imported application. -/
   width : Nat
-  deriving Repr, DecidableEq, Inhabited
+  deriving DecidableEq, Inhabited
 
 private def ImportedLayoutDump.ofJson (j : Json) : Except String ImportedLayoutDump := do
   let statement ← FieldLayoutDump.ofJson (← j.getObjVal? "statement")
   let width ← (← j.getObjVal? "width").getNat?
   return ⟨statement, width⟩
 
+/-- Source of a branch's predecessor proof in the serialized shape. -/
 inductive SlotSourceDump where
   | self
   | external (importIndex : Nat)
   | sideLoaded (layout : ImportedLayoutDump)
-  deriving Repr, DecidableEq, Inhabited
+  deriving DecidableEq, Inhabited
 
 private def SlotSourceDump.ofJson (j : Json) : Except String SlotSourceDump := do
   match ← (← j.getObjVal? "kind").getStr? with
@@ -46,12 +53,16 @@ private def SlotSourceDump.ofJson (j : Json) : Except String SlotSourceDump := d
   | "sideLoaded" => return .sideLoaded (← ImportedLayoutDump.ofJson j)
   | kind => throw s!"unknown predecessor source {kind}"
 
+/-- Statement layout, imported interfaces and ordered branch slots from the sidecar. -/
 structure ShapeDump where
+  /-- The application's flattened statement layout. -/
   statement : FieldLayoutDump
+  /-- Imported application layouts in first-use order. -/
   imports : Array ImportedLayoutDump
+  /-- Each branch's predecessor sources in slot order. -/
   branches : Array (Array SlotSourceDump)
-  deriving Repr
 
+/-- Decode the statement layout, imports and branch slots before checking their coherence. -/
 def ShapeDump.ofJson (j : Json) : Except String ShapeDump := do
   let statement ← FieldLayoutDump.ofJson (← j.getObjVal? "statement")
   let imports ← (← (← j.getObjVal? "imports").getArr?).mapM ImportedLayoutDump.ofJson
@@ -59,6 +70,7 @@ def ShapeDump.ofJson (j : Json) : Except String ShapeDump := do
     (← (← b.getObjVal? "slots").getArr?).mapM SlotSourceDump.ofJson
   return ⟨statement, imports, branches⟩
 
+/-- Represent a flattened statement with field-vector values and variables. -/
 def fieldSchema (s : FieldLayoutDump) : Schema where
   Input := Vector Fp s.inputFields
   InputVar := Vector (FVar Fp) s.inputFields
@@ -81,17 +93,26 @@ structure FieldSchemas (D : Shape) where
 
 /-- An application already assembled in compilation order, identified by its exported key. -/
 structure KnownTag where
+  /-- The producer's checked wrap key. -/
   key : Pickles.Key Bulletproof.IpaPallas.curve 1
+  /-- The producer's exported statement schema and width. -/
   interface : LayoutInterface
+  /-- Backend parameters attached to the exported layout. -/
   circuit : CircuitInterface interface
+  /-- The producer's flattened statement layout. -/
   statement : FieldLayoutDump
+  /-- The interface uses the canonical encoding of its declared field counts. -/
   schema_eq : interface.schema = fieldSchema statement
 
 /-- A decoded shape and the already assembled interfaces its slots use. -/
 structure LoadedShape where
+  /-- The decoded application shape with resolved predecessor sources. -/
   shape : Shape
+  /-- Checked slot capacities and padding positions. -/
   layout : Layout shape
+  /-- Canonical statement encodings for the application and its imports. -/
   schemas : FieldSchemas shape
+  /-- Backend parameters of each resolved producer. -/
   imports : (i : Fin shape.imports.size) → CircuitInterface shape.imports[i]
 
 private def checkImportLayouts (raw : ShapeDump) (resolved : Array KnownTag) :

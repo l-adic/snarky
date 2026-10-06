@@ -20,6 +20,7 @@ package:
     - node-buffer
     - node-fs
     - node-process
+    - open-memoize
     - ordered-collections
     - partial
     - pickles-circuit-diffs-types

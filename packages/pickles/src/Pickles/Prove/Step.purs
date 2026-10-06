@@ -1294,8 +1294,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
            Unit
            (Vector outputSize (F StepField))
     rawSolver =
-      makeSolver' { debug: ctx.debug }
-        (Proxy @(KimchiConstraint StepField))
+      makeSolver' { debug: ctx.debug } compileResult.builtState
         ( \_ ->
             stepMain
               @prevsSpec

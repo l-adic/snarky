@@ -397,7 +397,7 @@ wrapSolveAndProve ctx compileResult = do
            (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
-      makeSolver' { debug: ctx.debug } (Proxy @(KimchiConstraint WrapField))
+      makeSolver' { debug: ctx.debug } compileResult.builtState
         ( \stmt -> wrapMain @branches @mpv @stepChunks ctx.wrapMainConfig stmt ctx.advice
             -- Read back from the artifact the gates were built from, so
             -- the allocation here cannot disagree with that one.

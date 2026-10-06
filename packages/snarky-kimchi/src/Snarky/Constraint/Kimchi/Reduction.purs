@@ -6,9 +6,8 @@ module Snarky.Constraint.Kimchi.Reduction
   , createInternalVariable
   , finalizeGateQueue
   , mkPadRow
-  , reduceAffineExpression
   , reduceAsBuilder
-  , reduceAsProver
+  , reduceCVar
   , reduceToVariable
   ) where
 
@@ -16,7 +15,6 @@ import Prelude
 
 import Data.Array as Array
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..))
 import Data.List (reverse) as List
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
@@ -24,7 +22,6 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, over, un)
 import Data.NonEmpty (NonEmpty(..))
-import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import Data.UnionFind.Mutable as MutableUF
 import Data.Vector ((:<))
@@ -33,10 +30,8 @@ import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
-import Snarky.Backend.Assignments (Assignments)
-import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, Variable(..), evalAffineExpression, incrementVariable, reduceToAffineExpression)
-import Snarky.Circuit.DSL (EvaluationError(..), Variable)
+import Snarky.Circuit.CVar (AffineExpression(..), CVar(..), Variable(..), incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.DSL (Variable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), GateKind(..), GenericPlonkConstraint, KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -93,26 +88,42 @@ reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldabl
     addGenericPlonkConstraint { cl: ls, vl: Just lx, cr: rs, vr: Just rx, co: -one, vo: Just vo, m: zero, c: zero }
     pure $ Tuple vo one
 
+-- | A `CVar` as `a * x` (or a constant `a`): `reduceAffineExpression`
+-- | of its affine form. A bare variable or constant is that form
+-- | already, so neither is expanded into an affine expression first.
+reduceCVar
+  :: forall f m
+   . PlonkReductionM m f
+  => CVar f Variable
+  -> m (Tuple (Maybe Variable) f)
+reduceCVar = case _ of
+  Var v -> pure (Tuple (Just v) one)
+  Const c -> pure (Tuple Nothing c)
+  var -> reduceAffineExpression (reduceToAffineExpression var)
+
 reduceToVariable
   :: forall f m
    . PlonkReductionM m f
   => CVar f Variable
   -> m Variable
-reduceToVariable var = do
-  Tuple mvar c <- reduceAffineExpression $ reduceToAffineExpression var
-  case mvar of
-    Nothing -> do
-      vl <- createInternalVariable $ AffineExpression { constant: Just c, terms: mempty }
-      addEqualsConstraint { cl: one, vl: Just vl, cr: c, vr: Nothing }
-      pure vl
-    -- result is c * v
-    Just v ->
-      if c == one then pure v
-      else do
-        c_times_v <- createInternalVariable $ AffineExpression { constant: zero, terms: [ Tuple v c ] }
-        -- c * v - c_times_v = 0
-        addGenericPlonkConstraint { cl: c, vl: Just v, cr: zero, vr: Nothing, co: -one, vo: Just c_times_v, m: zero, c: zero }
-        pure c_times_v
+reduceToVariable = case _ of
+  -- Most cells of a gate are sealed variables: nothing to reduce.
+  Var v -> pure v
+  var -> do
+    Tuple mvar c <- reduceCVar var
+    case mvar of
+      Nothing -> do
+        vl <- createInternalVariable $ AffineExpression { constant: Just c, terms: mempty }
+        addEqualsConstraint { cl: one, vl: Just vl, cr: c, vr: Nothing }
+        pure vl
+      -- result is c * v
+      Just v ->
+        if c == one then pure v
+        else do
+          c_times_v <- createInternalVariable $ AffineExpression { constant: zero, terms: [ Tuple v c ] }
+          -- c * v - c_times_v = 0
+          addGenericPlonkConstraint { cl: c, vl: Just v, cr: zero, vr: Nothing, co: -one, vo: Just c_times_v, m: zero, c: zero }
+          pure c_times_v
 
 newtype Rows f = Rows (KimchiRow f)
 
@@ -152,25 +163,6 @@ reduceAsBuilder { nextVariable, aux } m = do
           (map Rows (Array.fromFoldable (List.reverse s.constraints)))
           s
       )
-
-reduceAsProver
-  :: forall f a
-   . PrimeField f
-  => { nextVariable :: Variable
-     , assignments :: Assignments f
-     }
-  -> (forall m. PlonkReductionM m f => m a)
-  -> Effect
-       ( Either
-           EvaluationError
-           ( Tuple
-               a
-               { nextVariable :: Variable
-               , assignments :: Assignments f
-               }
-           )
-       )
-reduceAsProver s m = un PlonkProver m s
 
 --------------------------------------------------------------------------------
 
@@ -302,7 +294,7 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
       Nothing -> pure unit
       Just c' -> modifyB_ \s ->
         s { constraints = Cons c' s.constraints }
-  createInternalVariable _ = do
+  createInternalVariable e = do
     nextVariable <- getsB _.nextVariable
     void $ findB nextVariable
     modifyB_ \s -> s
@@ -310,7 +302,7 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
       , aux = over AuxState
           ( \st -> st
               { wireState = st.wireState
-                  { internalVariables = Set.insert nextVariable st.wireState.internalVariables
+                  { internalVariables = Map.insert nextVariable e st.wireState.internalVariables
                   }
               }
           )
@@ -392,46 +384,3 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
         addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Nothing, cr: zero, co: zero, vo: Nothing, m: zero, c: c.cl }
     | Nothing <- c.vl, Nothing <- c.vr, c.cl == c.cr = pure unit
     | otherwise = unsafeThrow $ "Contradiction: " <> show c.cl <> " ≠ " <> show c.cr
-
-type ProverReductionState f =
-  { nextVariable :: Variable
-  , assignments :: Assignments f
-  }
-
--- | Hand-rolled fused state + error monad over `Effect` (the prover's
--- | assignment store is mutable; see `Snarky.Backend.Assignments`).
-newtype PlonkProver f a = PlonkProver (ProverReductionState f -> Effect (Either EvaluationError (Tuple a (ProverReductionState f))))
-
-derive instance Newtype (PlonkProver f a) _
-
-instance Functor (PlonkProver f) where
-  map f (PlonkProver g) = PlonkProver \s -> g s <#> map \(Tuple a s') -> Tuple (f a) s'
-
-instance Apply (PlonkProver f) where
-  apply = ap
-
-instance Applicative (PlonkProver f) where
-  pure a = PlonkProver \s -> pure (Right (Tuple a s))
-
-instance Bind (PlonkProver f) where
-  bind (PlonkProver g) f = PlonkProver \s -> g s >>= case _ of
-    Left e -> pure (Left e)
-    Right (Tuple a s') -> un PlonkProver (f a) s'
-
-instance Monad (PlonkProver f)
-
-instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
-  addGenericPlonkConstraint _ = pure unit
-  createInternalVariable e = PlonkProver \s ->
-    let
-      _lookup v = case Assignments.lookup v s.assignments of
-        Nothing -> Left $ MissingVariable v
-        Just a -> Right a
-    in
-      case evalAffineExpression e _lookup of
-        Left e' -> pure (Left e')
-        Right a -> do
-          Assignments.set s.nextVariable a s.assignments
-          pure $ Right $ Tuple s.nextVariable
-            (s { nextVariable = incrementVariable s.nextVariable })
-  addEqualsConstraint _ = pure unit

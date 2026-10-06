@@ -125,6 +125,7 @@ structure Runner where
   wrap : Nat → Cache.Entry CS → Cache.Entry CW → Array StepPrev →
     IO (CircuitRun PALLAS_SCALAR_CARD)
 
+/-- Compare every reconstructed step branch and the wrap circuit with the independent dump. -/
 def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
     (name : String) (tag : Json) : IO Unit := do
   let C := A.circuits S (fun _ => none)

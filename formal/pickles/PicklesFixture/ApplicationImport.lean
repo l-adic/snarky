@@ -27,6 +27,7 @@ structure ImportedApplication where
   /-- SRSs and the decoded or derived padding values. -/
   setup : Setup
 
+/-- Compare wrap keys by commitments and metadata; their remaining fields are pinned by `Key`. -/
 def sameKey (a b : Key IpaPallas.curve 1) : Bool :=
   decide (a.cvk.comms = b.cvk.comms) && a.cvk.domainLog2 == b.cvk.domainLog2 &&
     a.cvk.publicCount == b.cvk.publicCount && a.cvk.prevChallenges == b.cvk.prevChallenges

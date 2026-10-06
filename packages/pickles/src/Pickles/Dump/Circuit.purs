@@ -15,7 +15,6 @@ import Data.Array as Array
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
-import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -197,7 +196,7 @@ fromGateData s gd =
         $ map
             ( \(Tuple fieldVal var) ->
                 { variable: getVariable var
-                , varType: if Set.member var aux.wireState.internalVariables then "internal" else "external"
+                , varType: if Map.member var aux.wireState.internalVariables then "internal" else "external"
                 , value: fieldVal
                 }
             )

@@ -196,9 +196,10 @@ runAsProver advice assignments (AsProver g) =
   EvalError.catchEvalError (g (AsProverCtx { assignments, advice }))
 
 readCVar :: forall f r. PrimeField f => FVar f -> AsProver f r (F f)
-readCVar v = AsProver \(AsProverCtx ctx) -> do
-  let _lookup var = maybe (throwEvalError $ MissingVariable var) pure $ Assignments.lookup var ctx.assignments
-  F <$> CVar.eval _lookup v
+readCVar v = AsProver \(AsProverCtx ctx) ->
+  case CVar.evalAssigned (\i -> Assignments.lookup i ctx.assignments) v of
+    Right a -> pure (F a)
+    Left e -> throwEvalError e
 
 read
   :: forall f var @a r
@@ -208,9 +209,9 @@ read
   -> AsProver f r a
 read var = AsProver \(AsProverCtx ctx) -> do
   let fieldVars = varToFields @f @a var
-  let _lookup v = maybe (throwEvalError $ MissingVariable v) pure $ Assignments.lookup v ctx.assignments
-  fields <- traverse (CVar.eval _lookup) fieldVars
-  pure $ fieldsToValue fields
+  case traverse (CVar.evalAssigned (\i -> Assignments.lookup i ctx.assignments)) fieldVars of
+    Right fields -> pure (fieldsToValue fields)
+    Left e -> throwEvalError e
 
 throwAsProver :: forall f r a. EvaluationError -> AsProver f r a
 throwAsProver e = AsProver \_ -> throwEvalError e
