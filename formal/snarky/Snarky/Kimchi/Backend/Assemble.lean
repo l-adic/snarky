@@ -63,16 +63,20 @@ def wireMap (roots : Array Variable) (rows : List (KimchiRow F)) :
       m := m.insert cells[k]! ⟨t.1, t.2⟩
   return m
 
-/-- The gate table: per row the tag, each permutation cell's wiring target (itself when
-outside every class), and the coefficients. -/
+/-- A permutation cell's wiring target under a wire map: the next cell of its class, itself
+when outside every class. -/
+def wireTarget (wm : Std.HashMap (Nat × Nat) Wire) (i j : Nat) : Wire :=
+  wm.getD (i, j) ⟨i, j⟩
+
+/-- The gate table: per row the tag, each permutation cell's wiring target, and the
+coefficients. -/
 def assembleGates (roots : Array Variable) (rows : List (KimchiRow F)) :
     List (AssembledGate F) :=
   let wm := wireMap roots rows
-  let target (i j : Nat) : Wire := wm.getD (i, j) ⟨i, j⟩
   rows.zipIdx.map fun (row, i) =>
     { kind := row.kind,
-      wires := ⟨⟨[target i 0, target i 1, target i 2, target i 3, target i 4, target i 5,
-                  target i 6]⟩, by simp⟩,
+      wires := ⟨⟨[wireTarget wm i 0, wireTarget wm i 1, wireTarget wm i 2, wireTarget wm i 3,
+                  wireTarget wm i 4, wireTarget wm i 5, wireTarget wm i 6]⟩, by simp⟩,
       coeffs := row.coeffs }
 
 /-- The public-input rows: one generic row per public variable, coefficient `1` on its
