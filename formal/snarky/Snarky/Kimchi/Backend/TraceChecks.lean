@@ -19,8 +19,8 @@ namespace Snarky.Kimchi
 
 open Snarky
 
-deriving instance DecidableEq for GenericPlonkConstraint, EqualsConstraint, AffineExpression,
-  ReductionEvent, KimchiRow, Rows
+deriving instance DecidableEq for EqualsConstraint, AffineExpression, ReductionEvent, KimchiRow,
+  Rows
 
 /-- The generic equation of a Boolean on variable `v`: `-l + l·r = 0` at `l = r = v`. -/
 private def booleanGate (v : Variable) : GenericPlonkConstraint ℚ :=

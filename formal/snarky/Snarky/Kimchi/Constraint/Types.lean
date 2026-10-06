@@ -48,6 +48,7 @@ structure GenericPlonkConstraint (F : Type u) where
   m : F
   /-- The constant term. -/
   c : F
+  deriving DecidableEq
 
 
 /-- One emitted gate row. -/

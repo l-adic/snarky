@@ -16,6 +16,8 @@ class, which is what a satisfying table's copy constraints give.
 
 - `keyedCells`: the wired cells with their roots, in row-major order.
 - `classCells`: one root's cells, in row-major order.
+- `classTarget`: the wiring target as a function of the classes, which computes where the
+  hash map does not reduce.
 
 ## Main results
 
@@ -23,8 +25,10 @@ class, which is what a satisfying table's copy constraints give.
   the first.
 - `length_assembleGates`, `getElem_assembleGates`: an assembled row's tag, coefficients
   and wiring targets.
-- `classCells_bounds`, `mem_classCells_of_label`: a class's cells are labelled cells of the
-  wired columns, and every such cell is in its root's class.
+- `classCells_bounds`, `label_of_mem_classCells`, `mem_classCells_of_label`: a class's cells
+  are labelled cells of the wired columns, and every such cell is in its root's class.
+- `wireMap_getElem?_eq_none`, `wireTarget_eq`: a cell of no class is absent from the wire
+  map, so the assembled target is the class-based one.
 - `classCells_values_eq`: values agreeing across every wire of a class agree across it.
 -/
 
@@ -463,6 +467,14 @@ theorem classCells_bounds {roots : Array Variable} {rows : List (KimchiRow F)} {
   obtain ⟨-, hr, hj, -⟩ := (mem_keyedFrom_iff roots rows 0 k c).mp (mem_classCells.mp h)
   exact ⟨by simpa using hr, hj⟩
 
+/-- A class's cells are labelled: each carries a variable whose root is the class's. -/
+theorem label_of_mem_classCells {roots : Array Variable} {rows : List (KimchiRow F)}
+    {k : Variable} {c : Nat × Nat} (h : c ∈ classCells roots rows k) :
+    ∃ (hr : c.1 < rows.length) (hj : c.2 < 7) (v : Variable),
+      rows[c.1].vars[c.2]'(by omega) = some v ∧ roots.getD v v = k := by
+  obtain ⟨-, hr, hj, v, hv, hk⟩ := (mem_keyedFrom_iff roots rows 0 k c).mp (mem_classCells.mp h)
+  exact ⟨by simpa using hr, hj, v, by simpa using hv, hk⟩
+
 /-- A labelled cell in the first seven columns is in its root's class. -/
 theorem mem_classCells_of_label {roots : Array Variable} {rows : List (KimchiRow F)} {r j : Nat}
     (hr : r < rows.length) (hj : j < 7) {v : Variable}
@@ -544,6 +556,61 @@ theorem getElem_assembleGates (roots : Array Variable) (rows : List (KimchiRow F
           wireTarget (wireMap roots rows) i 6]⟩, by simp⟩,
         coeffs := rows[i].coeffs } := by
   simp [assembleGates, List.getElem_zipIdx]
+
+/-- A cell of no class is absent from the wire map. -/
+theorem wireMap_getElem?_eq_none (roots : Array Variable) (rows : List (KimchiRow F))
+    (c : Nat × Nat) (h : ∀ k, c ∉ classCells roots rows k) : (wireMap roots rows)[c]? = none := by
+  rw [wireMap_eq]
+  show (Id.run (forIn (m := Id) (forIn (m := Id) rows (⟨∅, 0⟩ : MProd Classes Nat)
+    (classOuter roots)).fst ∅ cycleOuter))[c]? = none
+  rw [forIn_classOuter, Std.HashMap.forIn_eq_forIn_toList, forIn_cycleOuter]
+  show (cyclesFold (classFold ∅ (keyedFrom roots rows 0)).toList ∅)[c]? = none
+  rw [getElem?_cyclesFold_of_notMem]
+  · exact Std.HashMap.getElem?_empty
+  · intro x hx
+    rw [classFold_eq_classCells roots rows hx, List.toList_toArray]
+    exact h x.1
+
+/-- The wiring target as a function of the classes: a labelled wired cell goes to the next
+cell of its root's class, the last to the first; any other cell to itself. -/
+def classTarget (roots : Array Variable) (rows : List (KimchiRow F)) (i j : Nat) : Wire :=
+  if h : i < rows.length ∧ j < 7 then
+    match rows[i].vars[j]'(by omega) with
+    | some v =>
+      match (classCells roots rows (roots.getD v v)).idxOf? (i, j) with
+      | some q =>
+        let cs := classCells roots rows (roots.getD v v)
+        let t := cs[(q + 1) % cs.length]!
+        ⟨t.1, t.2⟩
+      | none => ⟨i, j⟩
+    | none => ⟨i, j⟩
+  else ⟨i, j⟩
+
+/-- The assembled target is the class-based one. -/
+theorem wireTarget_eq (roots : Array Variable) (rows : List (KimchiRow F)) (i j : Nat) :
+    wireTarget (wireMap roots rows) i j = classTarget roots rows i j := by
+  unfold wireTarget classTarget
+  rw [Std.HashMap.getD_eq_getD_getElem?]
+  by_cases hb : i < rows.length ∧ j < 7
+  · rw [dif_pos hb]
+    rcases hl : rows[i].vars[j]'(by omega) with _ | v
+    · rw [wireMap_getElem?_eq_none]
+      · rfl
+      · intro k hk
+        obtain ⟨hr, hj, v, hv, -⟩ := label_of_mem_classCells hk
+        exact absurd (hv.symm.trans hl) (by simp)
+    · have hmem := mem_classCells_of_label (roots := roots) hb.1 hb.2 hl
+      obtain ⟨q, hq⟩ := Option.isSome_iff_exists.mp (List.isSome_idxOf?.mpr hmem)
+      obtain ⟨hqlt, hcq, -⟩ := List.idxOf?_eq_some_iff.mp hq
+      dsimp only
+      rw [hq]
+      dsimp only
+      rw [← hcq, wireMap_getElem? roots rows _ q hqlt, Option.getD_some,
+        getElem!_pos (classCells roots rows (roots.getD v v)) _ (Nat.mod_lt _ (by omega))]
+  · rw [dif_neg hb, wireMap_getElem?_eq_none]
+    · rfl
+    · intro k hk
+      exact hb (classCells_bounds hk)
 
 /-- Values agreeing across every wire of a class agree across the class. -/
 theorem classCells_values_eq (roots : Array Variable) (rows : List (KimchiRow F))

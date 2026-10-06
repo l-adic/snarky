@@ -33,6 +33,8 @@ and the public rows.
 - `KimchiConstraint.Direct.holds_of_satisfies`: any table satisfying an index of the
   fragment's lowering yields a valuation satisfying every source constraint and reading the
   public variables as the public input.
+- `indexOf_of_classTarget`: an index matching the lowering's rows and the class-based wiring
+  agrees with the assembly, so `IndexOf` is decided on concrete data.
 
 ## Implementation notes
 
@@ -241,12 +243,12 @@ private abbrev lowering (source : List (KimchiConstraint F)) (nv : Variable) :
 
 /-- The rows the fragment's assembly wires: the public rows, then the recorded lowering's
 rows with the final flush. -/
-private def directRows (source : List (KimchiConstraint F)) (publicVars : List Variable)
+def directRows (source : List (KimchiConstraint F)) (publicVars : List Variable)
     (nv : Variable) : List (KimchiRow F) :=
   makePublicInputRows publicVars ++ (lowering source nv).allRows
 
 /-- The roots the fragment's assembly wires through. -/
-private def directRoots (source : List (KimchiConstraint F)) (nv : Variable) : Array Variable :=
+def directRoots (source : List (KimchiConstraint F)) (nv : Variable) : Array Variable :=
   UnionFind.rootOf (directBuilt source nv).aux.wireState.unionFind
 
 private theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars : List Variable)
@@ -258,10 +260,70 @@ private theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars 
   simp only [directGates, directBuilt, gateDataOf, makeGateData, directRows, directRoots, h]
   rfl
 
-private theorem length_directGates (source : List (KimchiConstraint F))
+/-- The fragment's gate table has one row per row of the lowering. -/
+theorem length_directGates (source : List (KimchiConstraint F))
     (publicVars : List Variable) (nv : Variable) :
     (directGates source publicVars nv).length = (directRows source publicVars nv).length := by
   rw [directGates_eq, length_assembleGates]
+
+/-- An assembled row of the fragment: its row's tag and coefficients, and the wire map's
+targets at its permutation cells. -/
+theorem getElem_directGates (source : List (KimchiConstraint F)) (publicVars : List Variable)
+    (nv : Variable) (r : Nat) (hr : r < (directRows source publicVars nv).length) :
+    (directGates source publicVars nv)[r]'((length_directGates source publicVars nv).symm ▸ hr) =
+      { kind := (directRows source publicVars nv)[r].kind,
+        wires := ⟨⟨[wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv))
+            r 0,
+          wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 1,
+          wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 2,
+          wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 3,
+          wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 4,
+          wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 5,
+          wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 6]⟩,
+          by simp⟩,
+        coeffs := (directRows source publicVars nv)[r].coeffs } := by
+  rw [List.getElem_of_eq (directGates_eq source publicVars nv)]
+  exact getElem_assembleGates _ _ r hr
+
+/-- An index agrees with the fragment's assembly when its rows carry the lowering's tags and
+coefficients and the class-based wiring targets, which compute where the assembly's hash map
+does not. -/
+theorem indexOf_of_classTarget {n : ℕ} (source : List (KimchiConstraint F))
+    (publicVars : List Variable) (nv : Variable) (idx : Index F n)
+    (hpub : idx.publicCount = publicVars.length)
+    (hfits : (directRows source publicVars nv).length ≤ n - idx.zkRows)
+    (htyp : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length),
+      (idx.gates i).typ = (directRows source publicVars nv)[i.val].kind)
+    (hcoeffs : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length)
+      (c : Fin coeffCols),
+      (idx.gates i).coeffs c = (directRows source publicVars nv)[i.val].coeffs.getD c.val 0)
+    (hwires : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length)
+      (c : Fin permCols),
+      (((idx.gates i).wires c).1 : ℕ) =
+          (classTarget (directRoots source nv) (directRows source publicVars nv) i.val c.val).col ∧
+        (((idx.gates i).wires c).2 : ℕ) =
+          (classTarget (directRoots source nv) (directRows source publicVars nv) i.val c.val).row) :
+    IndexOf source publicVars nv idx where
+  publicCount := hpub
+  fits := by
+    rw [length_directGates]
+    exact hfits
+  typ i hi := by
+    have hi' : i.val < (directRows source publicVars nv).length := by
+      rwa [length_directGates] at hi
+    rw [getElem_directGates source publicVars nv i.val hi']
+    exact htyp i hi'
+  coeffs i hi c := by
+    have hi' : i.val < (directRows source publicVars nv).length := by
+      rwa [length_directGates] at hi
+    rw [getElem_directGates source publicVars nv i.val hi']
+    exact hcoeffs i hi' c
+  wires i hi c := by
+    have hi' : i.val < (directRows source publicVars nv).length := by
+      rwa [length_directGates] at hi
+    rw [getElem_directGates source publicVars nv i.val hi']
+    obtain ⟨h1, h2⟩ := hwires i hi' c
+    fin_cases c <;> simp only [wireTarget_eq] <;> exact ⟨h1, h2⟩
 
 /-! ## Provenance of the rows -/
 
@@ -900,22 +962,7 @@ theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
     simp [makePublicInputRows]
   have hpub_le : publicVars.length ≤ (directRows source publicVars nv).length := by
     simp [directRows, hlenPub]
-  have hgate : ∀ (r : Nat) (hr : r < (directRows source publicVars nv).length),
-      (directGates source publicVars nv)[r]'(hlenG ▸ hr) =
-        { kind := (directRows source publicVars nv)[r].kind,
-          wires := ⟨⟨[wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv))
-              r 0,
-            wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 1,
-            wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 2,
-            wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 3,
-            wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 4,
-            wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 5,
-            wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r 6]⟩,
-            by simp⟩,
-          coeffs := (directRows source publicVars nv)[r].coeffs } := by
-    intro r hr
-    rw [List.getElem_of_eq (directGates_eq source publicVars nv) (hlenG ▸ hr)]
-    exact getElem_assembleGates _ _ r hr
+  have hgate := getElem_directGates source publicVars nv
   have htyp : ∀ (r : Nat) (hr : r < (directRows source publicVars nv).length),
       (idx.gates ⟨r, by omega⟩).typ = (directRows source publicVars nv)[r].kind := fun r hr =>
     (hindex.typ ⟨r, by omega⟩ (hlenG ▸ hr)).trans (congrArg AssembledGate.kind (hgate r hr))

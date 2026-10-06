@@ -53,6 +53,7 @@ structure GenericReceipt (F : Type) where
   row : Nat
   /-- The half of that row. -/
   half : Fin 2
+  deriving DecidableEq
 
 /-- The three cells of a packed row's half. -/
 def halfCells (row : KimchiRow F) (half : Fin 2) :
@@ -71,6 +72,23 @@ def GenericReceipt.Located (body : List (KimchiRow F)) (rc : GenericReceipt F) :
   ∃ row, body[rc.row]? = some row ∧ row.kind = .generic ∧
     halfCells row rc.half = (rc.gate.vl, rc.gate.vr, rc.gate.vo) ∧
     halfCoeffs row rc.half = [rc.gate.cl, rc.gate.cr, rc.gate.co, rc.gate.m, rc.gate.c]
+
+instance [DecidableEq F] (body : List (KimchiRow F)) (rc : GenericReceipt F) :
+    Decidable (rc.Located body) :=
+  match h : body[rc.row]? with
+  | none => isFalse fun hloc => by
+      obtain ⟨_, h', -⟩ := hloc
+      rw [h] at h'
+      exact absurd h' (by simp)
+  | some row =>
+    decidable_of_iff (row.kind = .generic ∧
+      halfCells row rc.half = (rc.gate.vl, rc.gate.vr, rc.gate.vo) ∧
+      halfCoeffs row rc.half = [rc.gate.cl, rc.gate.cr, rc.gate.co, rc.gate.m, rc.gate.c])
+      ⟨fun ⟨a, b, c⟩ => Exists.intro row ⟨h, a, b, c⟩, fun hloc => by
+        obtain ⟨row', h', a, b, c⟩ := hloc
+        rw [h, Option.some.injEq] at h'
+        subst h'
+        exact ⟨a, b, c⟩⟩
 
 private theorem GenericReceipt.Located.append {body : List (KimchiRow F)} {rc : GenericReceipt F}
     (h : rc.Located body) (more : List (KimchiRow F)) : rc.Located (body ++ more) := by
