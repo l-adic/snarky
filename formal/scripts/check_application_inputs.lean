@@ -24,6 +24,14 @@ def main : IO Unit := do
   let path := s!"{dir}/TwoPhaseChain/shapes/two_phase_chain.json"
   let raw ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
   let parsed ← IO.ofExcept (ApplicationDump.ofJson raw)
+  let imp : ImportDump := ⟨parsed.wrapKey, 1, #[14]⟩
+  unless imp.domainsMatch 1 [14, 14] &&
+      ({ imp with stepDomains := #[15, 14, 15] }).domainsMatch 1 [14, 15, 14] do
+    throw (IO.userError "shared branch domains or reordered candidates rejected")
+  for (chunks, domains) in [(2, [14, 14]), (1, []), (1, [15]), (1, [14, 15])] do
+    if imp.domainsMatch chunks domains then
+      throw (IO.userError "different source chunks or candidate domains accepted")
+  IO.println "✓ import domains: duplicates accepted; different domains and chunks rejected"
   for (label, path, value) in [
       ("missing rules", ["rules"], Json.arr #[]),
       ("zero chunk count", ["resolved", "stepChunks"], toJson (0 : Nat)),

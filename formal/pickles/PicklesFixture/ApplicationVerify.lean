@@ -2,6 +2,7 @@ import PicklesFixture.ApplicationRun
 import Pickles.Application.Handover
 import PicklesFixture.Premises
 import PicklesFixture.Verdicts
+import PicklesFixture.Manifest
 
 /-!
 # Application capstones on cached executions
@@ -496,8 +497,11 @@ def validate {S : Setup} (contexts : List ((D : Shape) × Context S D)) : IO Uni
   let mut handovers := 0
   let mut disabled := 0
   for k in List.finRange contexts.length do
-    links := links + 2 * (← (stores k).verified.get)
-    handovers := handovers + (← (stores k).handovers.get)
+    let verified ← (stores k).verified.get
+    let adjacent ← (stores k).handovers.get
+    IO.ofExcept (Manifest.checkCoverage contexts[k].2.name verified adjacent)
+    links := links + 2 * verified
+    handovers := handovers + adjacent
     disabled := disabled + (← (stores k).disabled.get)
     negatives := negatives + (← (stores k).negatives.get)
   unless links == expectedLinks && handovers == expectedPairs do

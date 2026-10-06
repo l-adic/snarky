@@ -45,9 +45,9 @@ def loadApplications (dir : System.FilePath) (apps : List Manifest.Application)
   let mut entries := []
   for app in apps do
     for tag in app.tags do
-      let path := dir / app.name / "shapes" / s!"{tag}.json"
+      let path := dir / app.name / "shapes" / s!"{tag.name}.json"
       let dump ← IO.ofExcept (ApplicationDump.ofJson (← readJson path))
-      entries := entries ++ [(s!"{app.name}/{tag}", dump)]
+      entries := entries ++ [(s!"{app.name}/{tag.name}", dump)]
   assembleEntries wrap step finish entries.length entries []
 
 /-- Compare every step and wrap circuit after reconstruction has finished. -/

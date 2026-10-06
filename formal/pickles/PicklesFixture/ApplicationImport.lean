@@ -31,6 +31,11 @@ def sameKey (a b : Key IpaPallas.curve 1) : Bool :=
   decide (a.cvk.comms = b.cvk.comms) && a.cvk.domainLog2 == b.cvk.domainLog2 &&
     a.cvk.publicCount == b.cvk.publicCount && a.cvk.prevChallenges == b.cvk.prevChallenges
 
+/-- Match source chunks and candidate domains, ignoring repeated domains and their order. -/
+def ImportDump.domainsMatch (imp : ImportDump) (chunks : Nat) (domains : List Nat) : Bool :=
+  imp.stepChunks == chunks &&
+    imp.stepDomains.toList.mergeSort.eraseDups == domains.mergeSort.eraseDups
+
 private def resolve (raw : ApplicationDump) (known : Array ImportedApplication) :
     Except String (Array KnownTag) :=
   raw.imports.mapM fun imp =>
@@ -38,8 +43,7 @@ private def resolve (raw : ApplicationDump) (known : Array ImportedApplication) 
     | none => .error "an import has no previously reconstructed producer"
     | some p =>
       let source := p.assembled.wiring.export
-      if imp.stepChunks == source.stepChunks &&
-          imp.stepDomains.toList == source.stepDomains.log2s then
+      if imp.domainsMatch source.stepChunks source.stepDomains.log2s then
         .ok ⟨imp.wrapKey, p.assembled.layout.export, source, p.schemas.own, p.schemas.own_eq⟩
       else .error "an import's domains or chunks disagree with its producer"
 
