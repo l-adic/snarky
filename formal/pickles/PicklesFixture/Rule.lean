@@ -162,6 +162,14 @@ def replayOps (vals : Option (Array Fp)) : List RuleOp → ℕ → Array (FVar F
   | .pad vs :: ops, off, env =>
     .addConstraintOp (.pad (vs.map (substLocal env))) (replayOps vals ops off env)
 
+private theorem build_replayOps_irrel (vals vals' : Option (Array Fp)) (ops : List RuleOp)
+    (off : ℕ) (env : Array (FVar Fp)) (nv : ℕ) :
+    build (replayOps vals ops off env) nv = build (replayOps vals' ops off env) nv := by
+  induction ops generalizing off env nv with
+  | nil => rfl
+  | cons op ops ih =>
+    cases op <;> simp only [replayOps, build, ih]
+
 /-- A rule's dump as the rule it records: the input's cells are the first local ids, the body's
 operations replay in order, and each slot's previous statement, its must-verify flag and the
 public output are read through the ids the replay allocated. With a witness `vals` (its
@@ -173,5 +181,11 @@ def replayRule (d : RuleDump) (vals : Option (Array Fp)) (x : Vector (FVar Fp) d
   return (fun i => ⟨⟨d.prevs[i].1.map (substLocal env), by simp⟩,
       .unchecked (substLocal env d.prevs[i].2)⟩,
     ⟨d.publicOutput.map (substLocal env), by simp⟩)
+
+/-- Installing cached rule witnesses preserves its cells, allocation and constraints. -/
+theorem build_replayRule_irrel (d : RuleDump) (vals vals' : Option (Array Fp))
+    (x : Vector (FVar Fp) d.inputSize) (nv : ℕ) :
+    build (replayRule d vals x) nv = build (replayRule d vals' x) nv := by
+  simp only [replayRule, build_bind, build_replayOps_irrel vals vals']
 
 end PicklesFixture

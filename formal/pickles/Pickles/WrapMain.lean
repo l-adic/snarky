@@ -1428,6 +1428,52 @@ theorem wrapMainFinalize_slots {branches mpv ncStep k ks : ℕ} [NeZero branches
   intro j
   simp
 
+/-- Each allocated finalize slot retains its configured domain pins. -/
+private theorem wrapMainFinalize_pins {branches mpv ncStep k ks : ℕ} [NeZero branches]
+    (Vs : Valuation Fq) (P : FopParams Fq)
+    (widths : Vector (Fin (mpv + 1)) branches) (log2s : Vector ℕ branches)
+    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
+    (pins : Vector (Vector (Option ℕ) branches) mpv) (dummy : Vector Fq k)
+    (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
+    (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
+    (branchData : FVar Fq) :
+    ⦃⌜True⌝⦄
+    wrapMainFinalize (c := Builder Vs (KimchiConstraint Fq)) P widths log2s stepKeys pins
+      dummy slotWidths adv branchData
+    ⦃⇓ hd _ => ⌜∀ j : Fin mpv, hd.slots[j].pins = pins[j]⌝⦄ := by
+  have hbb := fun wb => builder_spec_true (wrapBranchBlock (c := Builder Vs (KimchiConstraint Fq))
+    branches mpv widths log2s wb branchData)
+  have hck := fun bs => builder_spec_true
+    (chooseKey (c := Builder Vs (KimchiConstraint Fq)) bs stepKeys)
+  have hfin := fun bs (sl : Vector (WrapFinalizeSlot branches k 1 Fq) mpv) => builder_spec_true
+    (wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq)) P bs sl)
+  simp only [wrapMainFinalize]
+  mvcgen [hbb, hck, hfin]
+  intro j
+  simp
+
+/-- The wrap circuit's retained finalize slots carry its configured domain pins. -/
+theorem wrapMain_pins {branches mpv ncStep k ks : ℕ} [NeZero branches] (P : FopParams Fq)
+    (Vs : Valuation Fq) (widths : Vector (Fin (mpv + 1)) branches)
+    (log2s : Vector ℕ branches)
+    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
+    (pins : Vector (Vector (Option ℕ) branches) mpv)
+    (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
+      (CircuitType.size Fp (StepStatement (UnfVal k) Fp mpv))) (h : IpaVesta.curve.Point)
+    (dummy : Vector Fq k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) mpv)
+    (adv : WrapMainAdvice mpv ncStep k ks (slotWidths.map Fin.val).sum)
+    (stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)) :
+    ⦃⌜True⌝⦄
+    wrapMain (c := Builder Vs (KimchiConstraint Fq)) P widths log2s stepKeys pins lagrange h
+      dummy slotWidths adv stmt
+    ⦃⇓ r _ => ⌜∀ j : Fin mpv, r.1.slots[j].pins = pins[j]⌝⦄ := by
+  simp only [wrapMain]
+  have hf := wrapMainFinalize_pins Vs P widths log2s stepKeys pins dummy slotWidths adv
+    stmt.branchData
+  have hv := fun fin => builder_spec_true (wrapMainVerify (c := Builder Vs (KimchiConstraint Fq))
+    log2s lagrange h dummy slotWidths adv stmt fin)
+  mvcgen [hf, hv]
+
 open CompElliptic.CurveForms.ShortWeierstrass in
 /-- The finalize half's accumulators lie on the curve. -/
 theorem wrapMainFinalize_accs {branches mpv ncStep k ks : ℕ} [NeZero branches]

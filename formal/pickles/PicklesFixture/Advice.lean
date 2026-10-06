@@ -137,24 +137,22 @@ def slotValOf (w ncs : ℕ) (W : Cache.Entry CW) (S : Cache.Entry CS) :
            evals := allocEvalsOf (← chunkedEvalsOf CS cpS)
            prevChallenges := chals, prevSgs := sgs }
 
-/-- A function every value of which may fail, as a function or the first failure. -/
-def finSequence {ε : Type} : {n : ℕ} → {β : Fin n → Type} → ((i : Fin n) → Except ε (β i)) →
-    Except ε ((i : Fin n) → β i)
-  | 0, _, _ => .ok fun i => i.elim0
+/-- A function every value of which is an action, as one action running them in index order:
+a function, or the first failure. -/
+def finSequence {m : Type → Type} [Monad m] : {n : ℕ} → {β : Fin n → Type} →
+    ((i : Fin n) → m (β i)) → m ((i : Fin n) → β i)
+  | 0, _, _ => pure fun i => i.elim0
   | _ + 1, _, f => do
     let h ← f 0
     let t ← finSequence fun i => f i.succ
     return Fin.cons h t
 
-/-- The step circuit's advice at the step proof `S0` of a tag of width `w` with the step
-constants `k`: the rule's witness as its input, the tag's wrap key `wrapKey`, per slot its
-witness off `prevs`, and the unfinalized entries and messages off `S0`'s statement, the
-padding ones in front. -/
-def stepMainAdviceOf {n : ℕ} (w : ℕ) (k : StepMainConsts n) (inputSize : ℕ)
+/-- Cached step advice at the supplied slot widths, chunk counts and input encoding. -/
+def stepAdviceOf {n : ℕ} (w : ℕ) (ws ncs : Fin n → ℕ)
+    {inVal inVar : Type} [CircuitType Fp inVal inVar]
     (wrapKey : Kimchi.Verifier.KimchiVK CW 1) (S0 : Cache.Entry CS) (prevs : Vector StepPrev n) :
-    Except String (Pickles.StepMainAdvice n w
-      (Pickles.SlotSource.widths w fun i => k.slots[i].source) 1 k.chunks 15 Pickles.StepIPARounds
-      (Vector Fp inputSize)) := do
+    Except String (Pickles.StepMainAdvice n w ws 1 ncs 15 Pickles.StepIPARounds inVal) := do
+  let inputSize := CircuitType.size Fp inVal
   let some rule := S0.rule | throw "the step proof's cache entry has no rule witness"
   let input : Vector Fp inputSize ←
     if h : rule.input.size = inputSize then pure ⟨rule.input, h⟩
@@ -162,7 +160,7 @@ def stepMainAdviceOf {n : ℕ} (w : ℕ) (k : StepMainConsts n) (inputSize : ℕ
   let slots ← finSequence fun i =>
     match prevs[i] with
     | .proof W S =>
-      slotValOf (Pickles.SlotSource.widths w (fun i => k.slots[i].source) i) (k.chunks i) W S
+      slotValOf (ws i) (ncs i) W S
     | .baseCase cells => (ofCells Fp cells).mapError (s!"slot {i}'s base case: " ++ ·)
   let st ← stepStatementOf id 15 w S0.publicInput
   if hnw : n ≤ w then
@@ -172,10 +170,20 @@ def stepMainAdviceOf {n : ℕ} (w : ℕ) (k : StepMainConsts n) (inputSize : ℕ
       Vector.ofFn fun i => st.messagesForNextWrapProof[w - n + i.val]'(by omega)
     let msgsPad : Vector Fp (w - n) :=
       Vector.ofFn fun i => st.messagesForNextWrapProof[i.val]'(by omega)
-    return { publicInput := pure input, vk := pure (wrapKey.comms.map (checkedPt CW))
+    return { publicInput := pure (CircuitType.fieldsToValue input)
+             vk := pure (wrapKey.comms.map (checkedPt CW))
              slots := pure slots, unfinalized := pure unfs, msgs := pure msgs
              msgsPad := pure msgsPad }
   else throw s!"{n} slots in a tag of width {w}"
+
+/-- The step circuit's advice from a dumped configuration and a cached proof. -/
+def stepMainAdviceOf {n : ℕ} (w : ℕ) (k : StepMainConsts n) (inputSize : ℕ)
+    (wrapKey : Kimchi.Verifier.KimchiVK CW 1) (S0 : Cache.Entry CS) (prevs : Vector StepPrev n) :
+    Except String (Pickles.StepMainAdvice n w
+      (Pickles.SlotSource.widths w fun i => k.slots[i].source) 1 k.chunks 15 Pickles.StepIPARounds
+      (Vector Fp inputSize)) :=
+  stepAdviceOf w (Pickles.SlotSource.widths w fun i => k.slots[i].source) k.chunks
+    wrapKey S0 prevs
 
 /-- A shifted register split as `(half, parity)`, as one register `2·half + parity`. -/
 def joinSplit {f : Type} [Field f] (x : Type2 (SplitField f Bool)) : Type2 f :=

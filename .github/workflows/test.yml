@@ -402,6 +402,13 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-slot-chunks
 
+    - name: Check application layouts and wiring against tag metadata
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        lake build PicklesFixture.Application PicklesFixture.ApplicationWiring
+        PICKLES_DUMP_DIR=../pickles-dumps lake env lean --run scripts/check_application_layouts.lean
+
     - name: Check the tag dumps
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

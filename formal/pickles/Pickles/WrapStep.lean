@@ -20,6 +20,8 @@ wrap proof was made at the wrap circuit's public input.
   the public-input tie between the wrap circuit and the slot, give a step proof the wrap
   circuit's cells hold, which `kimchiVerify` accepts. That the two halves hold one set of claims is
   derived from the tie (`ClaimsCast`, `halvesTies_of_cast`).
+* `wrapStep_mask`: the same two runs and tie alone make the slot's mask the selected branch's
+  slot suffix. A reading of cells: no key, Lagrange-table or SRS-avoidance premise.
 
 ## Implementation notes
 
@@ -180,6 +182,90 @@ theorem WrapStep.consumedAccumulators_length {branches w ncStep kw ks n : ℕ}
     funext fun j => hms j j.isLt
   rw [hm, length_kept_finRange, Nat.sub_sub_self (Nat.le_of_lt_succ kept.isLt)]
 
+/-- The mask tie, over the wrap circuit's body run on its statement: with the branch index
+reading as `b`, a slot whose packed statement the wrap statement reads as names `b`'s domain
+exponent, keeps exactly the last `widths[b]` slots, and the wrap circuit's keep bits read as
+that mask. Cell readings across the tie only: no key, Lagrange table or SRS premise. -/
+private theorem wrapStep_mask_core
+    {w branches ncStep ncSlot ks : ℕ} [NeZero branches] {sp : ℕ}
+    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve 1) (Vw : Valuation Fq)
+    (widths : Vector (Fin (w + 1)) branches) (log2s : Vector ℕ branches)
+    (stepKeys : Vector (VkComms ncStep (AffinePoint (FVar Fq))) branches)
+    (pins : Vector (Vector (Option ℕ) branches) w)
+    (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
+      (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp w)))
+    (h : IpaVesta.curve.Point)
+    (dummy : Vector Fq σ.k) (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
+    (advW : WrapMainAdvice w ncStep σ.k ks (slotWidths.map Fin.val).sum)
+    (hbr : branches ≤ PALLAS_SCALAR_CARD) (hw : w ≤ MaxProofsVerified)
+    -- the active branch, with a domain exponent below the field's branch-data packing bound
+    (b : Fin branches) (hlog : log2s[b] < 255)
+    -- the next step circuit's valuation
+    (Vs : Valuation Fp) :
+    let stmt := inputVar (F := Fq) (a := StatementPacked ks (Type1 Fq) Fq)
+    let r := build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
+      (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens) widths log2s stepKeys pins
+      lagrange h dummy slotWidths advW stmt)
+      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
+        (a := StatementPacked ks (Type1 Fq) Fq))
+    (∀ con ∈ r.constraints, ConstraintHolds.Holds Vw con) →
+    r.result.1.whichBranch.val Vw = (b : Fq) →
+    ∀ (dummySg : AffinePoint (FVar Fp)) (prev : PrevStatement sp)
+      (s : SlotVar w 1 ncSlot σ.k ks) (u : UnfVar σ.k) (msg : FVar Fp),
+    let inp := slotInput hw dummySg prev s u msg
+    ∀ (n0 : ℕ) (ms0 : Vector Bool MaxProofsVerified), n0 < 2 ^ 16 →
+      inp.branchData.domainLog2.val Vs = (n0 : Fp) →
+      CircuitType.Reads Vs inp.branchData.proofsVerifiedMask ms0 →
+    ∀ ms : Vector Bool w, CircuitType.Reads Vs inp.proofMask ms →
+      CircuitType.Reads Vw stmt (inp.packedAt cvk Vs ms) →
+      n0 = log2s[b] ∧
+      (∀ (j : ℕ) (hj : j < w), ms[j] = decide (w - (widths[b] : ℕ) ≤ j)) ∧
+      ∀ j : Fin w, (↑r.result.1.mask.reverse[j] : CVar Fq).val Vw = bit ms[j] := by
+  intro stmt r hbody hb dummySg prev s u msg inp n0 ms0 hn0 hdv hmsR ms hms htie
+  obtain ⟨b', hb', hwb, -, hmask, -, hbd, -⟩ := (builder_spec_iff _ _).mp
+    (wrapMain_reads σ Vw widths log2s stepKeys pins lagrange h dummy slotWidths advW stmt hw
+      hbr) _ hbody
+  -- the circuit's branch is `b`: both are below the field's characteristic
+  have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
+    (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
+  subst hbb
+  -- cell `29` carries the branch data across the tie: `4·n₀ + ms₀[0] + 2·ms₀[1]` on the step
+  -- side, `4·log2s[b] + Σᵢ 2^(1−i)·[i < widths[b]]` on the wrap side
+  have hcell : stmt.branchData.val Vw
+      = ((ToNat.toNat (inp.branchData.packed.val Vs) : ℕ) : Fq) := by
+    simp only [CircuitType.reads_ofEquiv, StatementPacked.equivProd, Equiv.coe_fn_mk,
+      CircuitType.reads_prod] at htie
+    exact CircuitType.reads_fvar.mp htie.2.2.2.2.2.1
+  rw [hcell, BranchData.packed_val inp.branchData n0 ms0 hdv hmsR] at hbd
+  obtain ⟨hs3, hsum⟩ := maskSum_natCast hw fun l => decide (l < (widths[b.val] : ℕ))
+  set t := (if ms0[0] then 1 else 0) + 2 * (if ms0[1] then 1 else 0) with htdef
+  set sN := ((List.range w).map fun i =>
+    2 ^ (1 - i) * (if decide (i < (widths[b.val] : ℕ)) then 1 else 0)).sum
+  have ht3 : t ≤ 3 := by rw [htdef]; split <;> split <;> omega
+  have hlog' : log2s[b.val] < 255 := hlog
+  have hn0p : 4 * n0 + t < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]; omega
+  rw [hsum] at hbd
+  simp only [ToNat.toNat, ZMod.val_natCast_of_lt hn0p] at hbd
+  have hnat : 4 * n0 + t = 4 * log2s[b.val] + sN :=
+    CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
+    (Set.mem_Iio.2 (by norm_num [PALLAS_SCALAR_CARD]; omega))
+    (Set.mem_Iio.2 (by norm_num [PALLAS_SCALAR_CARD]; omega)) (by push_cast at hbd ⊢; exact hbd)
+  -- the slot's mask is the wrap mask reversed
+  have hrev := mask_rev hw _ ms0 (htdef ▸ (by omega : t = sN))
+  have hmsj : ∀ j : Fin w, ms[j] = ms0[MaxProofsVerified - w + j] :=
+    reads_drop (by simpa [MaxProofsVerified] using hw) hmsR hms
+  have hwv : (widths[b] : ℕ) = widths[b.val] := rfl
+  refine ⟨by rw [Fin.getElem_fin]; omega, fun j hj => ?_, fun j => ?_⟩
+  -- so it keeps exactly the last `widths[b]` slots
+  · rw [show ms[j] = ms[(⟨j, hj⟩ : Fin w)] from rfl, hmsj ⟨j, hj⟩, hrev ⟨j, hj⟩]
+    simp only [decide_eq_decide]
+    omega
+  -- so the wrap circuit's keep bit for slot `j` reads as `ms[j]`
+  · have h := CircuitType.reads_boolVar.mp
+      (CircuitType.reads_vector.mp hmask (w - 1 - j) (by omega))
+    simp only [Vector.getElem_ofFn] at h
+    rw [Fin.getElem_fin, Vector.getElem_reverse, h, hmsj j, hrev j]
+
 /-- `wrapStep_kimchiVerify` for one slot of the next step circuit, from its readings, over the
 wrap circuit's constants as given, tied to the step key `KStep` over the step SRS `SStep` by
 hypotheses. -/
@@ -298,13 +384,6 @@ private theorem wrapStep_kimchiVerify_core
         (a := StatementPacked SStep.σ.k (Type1 Fq) Fq))
       ).constraints, ConstraintHolds.Holds Vw con := fun con hc =>
     hwrap con (mem_compileWith_wrapMainCircuit _ _ _ _ _ _ _ _ _ _ hc)
-  obtain ⟨b', hb', hwb, -, hmask, -, hbd, -⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_reads σ Vw widths log2s stepKeys pins lagrange h dummy slotWidths advW stmt hw
-      hbr) _ hbody
-  -- the circuit's branch is `b`: both are below the field's characteristic
-  have hbb : b' = b.val := CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
-    (Set.mem_Iio.2 (by omega)) (Set.mem_Iio.2 (by omega)) (hwb.symm.trans hb)
-  subst hbb
   obtain ⟨-, -, -, hgrp⟩ := (builder_spec_iff _ _).mp
     (wrapMain_verifyReads σ SStep KStep hnc Vw widths log2s stepKeys pins lagrange h dummy
       slotWidths advW stmt hw hbr hh hnz havoidS) _ hbody b hb hkeyB hlag
@@ -315,48 +394,14 @@ private theorem wrapStep_kimchiVerify_core
   have hhash := ((builder_spec_iff _ _).mp
     (wrapMain_statement (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens) Vw widths
       log2s stepKeys pins lagrange h dummy slotWidths advW stmt KStep.cvk.nc_pos) _ hbody).2.2.2.2
-  -- cell `29` carries the branch data across the tie: `4·n₀ + ms₀[0] + 2·ms₀[1]` on the step
-  -- side, `4·log2s[b] + Σᵢ 2^(1−i)·[i < widths[b]]` on the wrap side
-  have hcell : stmt.branchData.val Vw
-      = ((ToNat.toNat (inp.branchData.packed.val Vs) : ℕ) : Fq) := by
-    simp only [CircuitType.reads_ofEquiv, StatementPacked.equivProd, Equiv.coe_fn_mk,
-      CircuitType.reads_prod] at htie
-    exact CircuitType.reads_fvar.mp htie.2.2.2.2.2.1
-  rw [hcell, BranchData.packed_val inp.branchData n0 ms0 hdv hmsR] at hbd
-  obtain ⟨hs3, hsum⟩ := maskSum_natCast hw fun l => decide (l < (widths[b.val] : ℕ))
-  set t := (if ms0[0] then 1 else 0) + 2 * (if ms0[1] then 1 else 0) with htdef
-  set sN := ((List.range w).map fun i =>
-    2 ^ (1 - i) * (if decide (i < (widths[b.val] : ℕ)) then 1 else 0)).sum
-  have ht3 : t ≤ 3 := by rw [htdef]; split <;> split <;> omega
-  have hL : KStep.cvk.domainLog2 < 255 := KStep.domainLog2_le.trans_lt (by decide)
-  have hn0p : 4 * n0 + t < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]; omega
-  have hlog' : log2s[b.val] = KStep.cvk.domainLog2 := by simpa using hlog
-  rw [hsum, hlog'] at hbd
-  simp only [ToNat.toNat, ZMod.val_natCast_of_lt hn0p] at hbd
-  have hnat : 4 * n0 + t = 4 * KStep.cvk.domainLog2 + sN :=
-    CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
-    (Set.mem_Iio.2 (by norm_num [PALLAS_SCALAR_CARD]; omega))
-    (Set.mem_Iio.2 (by norm_num [PALLAS_SCALAR_CARD]; omega)) (by push_cast at hbd ⊢; exact hbd)
+  -- the mask tie: the slot names the key's domain, keeps exactly the last `widths[b]` slots,
+  -- and the wrap circuit's keep bits read as its mask
+  obtain ⟨hn0eq, hkept, hkeep⟩ := wrapStep_mask_core σ cvk Vw widths log2s stepKeys pins lagrange
+    h dummy slotWidths advW hbr hw b (hlog ▸ KStep.domainLog2_le.trans_lt (by decide)) Vs hbody hb
+    dummySg prev s u msg n0 ms0 hn0 hdv hmsR ms hms htie
   -- the slot's domain is the key's
   have hdom : inp.branchData.domainLog2.val Vs = (KStep.cvk.domainLog2 : Fp) := by
-    rw [hdv, show n0 = KStep.cvk.domainLog2 by omega]
-  -- the slot's mask is the wrap mask reversed
-  have hrev := mask_rev hw _ ms0 (htdef ▸ (by omega : t = sN))
-  have hmsj : ∀ j : Fin w, ms[j] = ms0[MaxProofsVerified - w + j] :=
-    reads_drop (by simpa [MaxProofsVerified] using hw) hmsR hms
-  -- so it keeps exactly the last `widths[b]` slots
-  have hkept : ∀ (j : ℕ) (hj : j < w), ms[j] = decide (w - (widths[b.val] : ℕ) ≤ j) := by
-    intro j hj
-    rw [show ms[j] = ms[(⟨j, hj⟩ : Fin w)] from rfl, hmsj ⟨j, hj⟩, hrev ⟨j, hj⟩]
-    simp only [decide_eq_decide]
-    omega
-  -- so the wrap circuit's keep bit for slot `j` reads as `ms[j]`
-  have hkeep : ∀ j : Fin w, (↑wrapFinalizeOut.mask.reverse[j] : CVar Fq).val Vw = bit ms[j] := by
-    intro j
-    have h := CircuitType.reads_boolVar.mp
-      (CircuitType.reads_vector.mp hmask (w - 1 - j) (by omega))
-    simp only [Vector.getElem_ofFn] at h
-    rw [Fin.getElem_fin, Vector.getElem_reverse, h, hmsj j, hrev j]
+    rw [hdv, hn0eq, hlog]
   -- the step proof the cells hold: its group half from the wrap circuit's cells, its evaluations
   -- and kept old challenges from the next step circuit's
   have hcells' : wrapVerifyOut.cells = ivpInputOf stmt.claims.deferredValues wrapFinalizeOut.sgOld
@@ -640,5 +685,114 @@ theorem wrapStep_kimchiVerify
       exact WrapStep.consumedAccumulators_length _ _ _ _ _ _ _ hkept
     · rw [hlayout.publicCount_eq, wrapPublicInput_size, hE]
   exact ⟨cp, oldsW, hpr, hol, hf, hemit, hcons, hkept, hhashW, hhashS, hK hguards⟩
+
+/-- **The slot's mask is the branch's.** Let `Vw` satisfy the wrap circuit, its branch index
+reading as `b`, and `Vs` the next step circuit of any tag. Every must-verify slot at this tag's
+width whose wrap proof was made at the wrap circuit's public input keeps exactly the last
+`widths[b]` slots. A reading of cells across the public-input tie: no key, Lagrange-table or
+SRS-avoidance premise; the SRSes supply only the circuits' constants. -/
+theorem wrapStep_mask
+    {n wNext w branches ncStep : ℕ} {ncs : Fin n → ℕ}
+    [NeZero branches]
+    {inVal inVar outVal outVar : Type}
+    [CircuitType Fp inVal inVar] [CircuitType Fp outVal outVar]
+    {ss : Fin n → ℕ}
+    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve 1)
+    (hE : σ.k = WrapIPARounds)
+    (SStep : Srs IpaVesta.curve)
+    (hσk : SStep.σ.k = StepIPARounds)
+    (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
+    (b : Fin branches)
+    -- branch `b`'s domain exponent is below the branch-data packing bound
+    (hlog : stepKeys[b].domainLog2 < 255)
+    (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
+      (CircuitType.size Fp (StepStatement (UnfVal σ.k) Fp w)))
+    (Vw : Valuation Fq)
+    (widths : Vector (Fin (w + 1)) branches)
+    (pins : Vector (Vector (Option ℕ) branches) w)
+    (dummy : Vector Fq σ.k)
+    (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
+    (advW : WrapMainAdvice w ncStep σ.k SStep.σ.k (slotWidths.map Fin.val).sum)
+    (hbr : branches ≤ PALLAS_SCALAR_CARD)
+    (domains : List (KnownDomain Fp))
+    (hn : n ≤ MaxProofsVerified)
+    (hw : w ≤ MaxProofsVerified)
+    (srcs : Fin n → SlotSource 1 SStep.σ.k)
+    (hws : ∀ i, SlotSource.widths wNext srcs i ≤ MaxProofsVerified)
+    (dummySg : AffinePoint (FVar Fp))
+    (dummyUnf : UnfVal σ.k)
+    (Vs : Valuation Fp)
+    [CheckedType Fp (Builder Vs (KimchiConstraint Fp)) inVal inVar]
+    (rule :
+      inVar →
+        CircuitM Fp (Builder Vs (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) ×
+          outVar))
+    (adv : StepMainAdvice n wNext (SlotSource.widths wNext srcs) 1 ncs σ.k SStep.σ.k inVal) :
+    let wrap :=
+      compileWith (a := StatementPacked SStep.σ.k (Type1 Fq) Fq) (b := Unit)
+        (wrapMainCircuit (c := Builder Vw (KimchiConstraint Fq))
+          (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens)
+          widths
+          (stepDomainLog2s stepKeys)
+          (stepKeyCells stepKeys)
+          pins
+          lagrange
+          SStep.σ.h
+          dummy
+          slotWidths
+          advW)
+    let step :=
+      compileWith (a := Unit) (b := StepStatement (UnfVal σ.k) Fp wNext)
+        (stepMainCircuit (c := Builder Vs (KimchiConstraint Fp)) (outVal := outVal)
+          srcs
+          hws
+          σ.h
+          (fun j => FopParams.of IpaVesta.curve (ncs j) SStep.σ.k Linearization.fpTokens)
+          domains
+          dummySg
+          dummyUnf
+          rule
+          adv)
+    (∀ con ∈ wrap.constraints, ConstraintHolds.Holds Vw con) →
+    (∀ con ∈ step.constraints, ConstraintHolds.Holds Vs con) →
+    let stepOut := step.result.1.2
+    let wrapStmt := inputVar (F := Fq) (a := StatementPacked SStep.σ.k (Type1 Fq) Fq)
+    let wrapFinalizeOut := wrap.result.1.2.1
+    wrapFinalizeOut.whichBranch.val Vw = (b : Fq) →
+    ∀ i : Fin n, CircuitType.Reads Vs (stepOut.prevs i).mustVerify true →
+      SlotSource.widths wNext srcs i = w →
+      let inp := slotInput (hws i) dummySg (stepOut.prevs i) (stepOut.slots i) stepOut.unfs[i]
+          stepOut.msgs[i]
+      ∀ ms : Vector Bool (SlotSource.widths wNext srcs i),
+        CircuitType.Reads Vs inp.proofMask ms →
+        CircuitType.Reads Vw wrapStmt (inp.packedAt cvk Vs ms) →
+        ∀ (j : ℕ) (hj : j < SlotSource.widths wNext srcs i),
+          ms[j] = decide (w - (widths[b] : ℕ) ≤ j) := by
+  intro wrap step hwrap hstep
+  rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _,
+    show wrap.result.1.2 = _ from compileWith_wrapMainCircuit_cells _ _ _ _ _ _ _ _ _ _]
+  intro stepOut wrapStmt wrapFinalizeOut hb i hmv hwi inp ms hms htie
+  have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vw (KimchiConstraint Fq))
+      (FopParams.of IpaPallas.curve 1 σ.k Linearization.fqTokens) widths
+      (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins lagrange SStep.σ.h dummy
+      slotWidths advW wrapStmt)
+      (bodyStart (F := Fq) (c := Builder Vw (KimchiConstraint Fq))
+        (a := StatementPacked SStep.σ.k (Type1 Fq) Fq))
+      ).constraints, ConstraintHolds.Holds Vw con := fun con hc =>
+    hwrap con (mem_compileWith_wrapMainCircuit _ _ _ _ _ _ _ _ _ _ hc)
+  -- the step side: the must-verify slot's branch data reads as a domain exponent and a mask
+  obtain ⟨-, -, -, -, -, n0, ms0, hn0, hdv, hmsR⟩ := (builder_spec_iff _ _).mp
+    (stepMain_reads (outVal := outVal) (ks := SStep.σ.k) σ
+      (fun j => FopParams.of IpaVesta.curve (ncs j) SStep.σ.k Linearization.fpTokens) domains
+      SStep.rounds_small srcs (fun _ _ _ => True)
+      (fun _ _ _ => by rw [builder_spec_iff]; intros; trivial)
+      hn hws dummySg dummyUnf rule adv
+      (by rw [hσk, hE]; decide))
+    0 (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc)) i hmv
+  subst hwi
+  exact (wrapStep_mask_core σ cvk Vw widths (stepDomainLog2s stepKeys) (stepKeyCells stepKeys)
+    pins lagrange SStep.σ.h dummy slotWidths advW hbr hw b (by simpa [stepDomainLog2s] using hlog)
+    Vs hbody hb dummySg (stepOut.prevs i) (stepOut.slots i) stepOut.unfs[i] stepOut.msgs[i]
+    n0 ms0 hn0 hdv hmsR ms hms htie).2.1
 
 end Pickles

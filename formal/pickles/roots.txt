@@ -49,6 +49,18 @@ Pickles.FopSide.unshiftV_read
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
+Pickles.Application.Circuits.stepBuilt_advice_irrel -- audited builder erasure for branch advice
+Pickles.Application.Circuits.wrapBuilt_advice_irrel -- audited builder erasure for wrap advice
+Pickles.Application.Circuits.stepBuilt_rules_congr -- audited transport for replayed rule witnesses
+PicklesFixture.Application.runners -- selected fixtures construct circuits through application assembly
+PicklesFixture.Application.CircuitRun.atBody -- exact compiled systems connect runs to the capstones
+PicklesFixture.Application.checkMetadata -- independently described layouts against selected tag dumps
+PicklesFixture.Application.wrapTablesOf -- collect backend table artifacts before checking their routing
+PicklesFixture.Application.backendOf -- load own artifacts without per-slot source declarations
+PicklesFixture.Application.checkWiring -- compare assembled circuit parameters with separate dump fields
+Pickles.Application.Wiring.assemble -- the fixture assembles typed wiring and tests rejected backends
+Pickles.Application.Layout.check -- the layout driver assembles each layout through the executable checker
+Pickles.Application.Layout.export -- the next application imports the checked layout interface
 Pickles.buildEvalList
 Pickles.Key.avoids_lagrangeRelations_iff -- the drivers decide its right side
 Pickles.Key.check
@@ -87,3 +99,9 @@ Pickles.instChunkedEvalsCircuitType -- synthesis: bench-fop allocates it
 Pickles.instProofEvaluationsCircuitType -- synthesis: bench-fop allocates it
 Pickles.instType1CircuitType -- synthesis: bench-fop allocates it
 -- script-surface:end
+Pickles.Application.StepWrapLink.verifies_proof -- wrap proof reconstructed from application executions
+Pickles.Application.WrapStepLink.verifies_proof -- step proof reconstructed from application executions
+Pickles.Application.StepProofHandover.handover_or_collision -- complete messages and step verification
+Pickles.Application.WrapProofHandover.handover_or_collision -- complete messages and wrap verification
+Pickles.Application.WrapProofHandover.appState_eq_or_collision -- the consumer reads the producer state
+PicklesFixture.Application.validate -- selected runs apply application capstones and both handovers
