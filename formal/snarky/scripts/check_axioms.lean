@@ -26,6 +26,7 @@ import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Backend.Trace
 import Snarky.Kimchi.Backend.TraceChecks
+import Snarky.Kimchi.Backend.TraceSemantics
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -128,6 +129,10 @@ def roots : List Name :=
     `Snarky.Kimchi.recorded_wiring,
     `Snarky.Kimchi.recorded_constantCache,
     `Snarky.Kimchi.recorded_allocation,
+    `Snarky.Kimchi.reduceToVariable_reads,
+    `Snarky.Kimchi.boolean_of_reductionFacts,
+    `Snarky.Kimchi.addComplete_read_eq,
+    `Snarky.Kimchi.addComplete_holds_of_reductionFacts,
 
     -- The Kimchi gadgets.
     `Snarky.Kimchi.sealPoint_spec, `Snarky.Kimchi.sealPoint_complete,

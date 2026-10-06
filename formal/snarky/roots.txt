@@ -123,6 +123,13 @@ Snarky.Kimchi.recorded_wiring
 Snarky.Kimchi.recorded_constantCache
 Snarky.Kimchi.recorded_allocation
 
+-- The events' reading: when a reducer's recorded events hold at a valuation, its source
+-- constraint holds there.
+Snarky.Kimchi.reduceToVariable_reads
+Snarky.Kimchi.boolean_of_reductionFacts
+Snarky.Kimchi.addComplete_read_eq
+Snarky.Kimchi.addComplete_holds_of_reductionFacts
+
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Snarky.instReprEvalError -- synthesis: found by class resolution, never by name
