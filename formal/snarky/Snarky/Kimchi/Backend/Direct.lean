@@ -19,8 +19,7 @@ and the public rows.
 
 - `KimchiConstraint.Direct`: membership in the fragment.
 - `KimchiConstraint.Direct.Scoped`: the scoping condition on a source list and its public
-  variables: every variable below the initial counter, and every operand of an unwired
-  column occurring once.
+  variables: every constraint direct, and every operand of an unwired column occurring once.
 - `IndexOf`: an index whose gate table is the fragment's actual lowering and assembly.
 
 ## Main results
@@ -96,25 +95,22 @@ private def occurrences (source : List (KimchiConstraint F)) (publicVars : List 
   source.flatMap KimchiConstraint.directVars ++ publicVars
 
 /-- The scoping condition under which any table satisfying the fragment's index determines
-a valuation: every constraint is direct, every operand and public variable lies below the
-initial counter `nv`, and every operand of an unwired column occurs exactly once among the
-operand occurrences and the public variables. -/
-structure KimchiConstraint.Direct.Scoped (nv : Variable) (source : List (KimchiConstraint F))
+a valuation: every constraint is direct, and every operand of an unwired column occurs
+exactly once among the operand occurrences and the public variables. -/
+structure KimchiConstraint.Direct.Scoped (source : List (KimchiConstraint F))
     (publicVars : List Variable) : Prop where
   /-- Every constraint is in the fragment. -/
   direct : ∀ c ∈ source, c.Direct
-  /-- Every operand and public variable lies below the initial counter. -/
-  below : ∀ v ∈ occurrences source publicVars, v < nv
   /-- Every operand of an unwired column occurs exactly once among the operand occurrences
   and the public variables. -/
   unwiredOnce : ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (occurrences source publicVars).count v = 1
 
-instance (nv : Variable) (source : List (KimchiConstraint F)) (publicVars : List Variable) :
-    Decidable (KimchiConstraint.Direct.Scoped nv source publicVars) :=
+instance (source : List (KimchiConstraint F)) (publicVars : List Variable) :
+    Decidable (KimchiConstraint.Direct.Scoped source publicVars) :=
   decidable_of_iff
-    ((∀ c ∈ source, c.Direct) ∧ (∀ v ∈ occurrences source publicVars, v < nv) ∧
+    ((∀ c ∈ source, c.Direct) ∧
       ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (occurrences source publicVars).count v = 1)
-    ⟨fun ⟨a, b, c⟩ => ⟨a, b, c⟩, fun ⟨a, b, c⟩ => ⟨a, b, c⟩⟩
+    ⟨fun ⟨a, b⟩ => ⟨a, b⟩, fun ⟨a, b⟩ => ⟨a, b⟩⟩
 
 variable [Field F] [DecidableEq F]
 
@@ -762,7 +758,7 @@ private theorem two_le_count_flatMap_same (f : KimchiConstraint F → List Varia
 
 /-- A label in an unwired column names a cell no other cell carries. -/
 private theorem unwired_unique {source : List (KimchiConstraint F)} {publicVars : List Variable}
-    {nv : Variable} (hscope : KimchiConstraint.Direct.Scoped nv source publicVars)
+    {nv : Variable} (hscope : KimchiConstraint.Direct.Scoped source publicVars)
     (r j r' j' : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
     (hr' : r' < (directRows source publicVars nv).length) (hj' : j' < wCols) (v : Variable)
     (h7 : 7 ≤ j) (hv : (directRows source publicVars nv)[r].vars[j] = some v)
@@ -889,7 +885,7 @@ lowering, at a public input, yields a valuation satisfying every source constrai
 reading each public variable as its public input. -/
 theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
     {source : List (KimchiConstraint F)} {publicVars : List Variable} {nv : Variable}
-    {idx : Index F n} (hscope : KimchiConstraint.Direct.Scoped nv source publicVars)
+    {idx : Index F n} (hscope : KimchiConstraint.Direct.Scoped source publicVars)
     (hindex : IndexOf source publicVars nv idx) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F) (hsat : idx.Satisfies pub wTab) :
     ∃ V : Valuation F, (∀ c ∈ source, KimchiConstraint.Holds V c) ∧
