@@ -29,27 +29,17 @@ This phase deliberately stops before the entire compiler theorem. It must delive
 4. A small theorem from **arbitrary matrix satisfaction**, closing the semantic
    premises for a precisely restricted fragment described below.
 
-Only this document is being added now. The proposed declarations below are design
-signatures, not existing or elaboration-checked Lean. Bodies marked `...` are work
-items; no corresponding `sorry` or axiom should be added to the library. Names may
-change during elaboration; the direction and assumptions of the contracts must not.
+The design below has landed in `snarky/Snarky/Kimchi/Backend/` (see section 7 for the
+modules and section 8 for the checks). The declarations quoted in sections 1 to 5 are the
+design signatures the implementation was elaborated from; where a landed name or shape
+differs, section 6 onward states the landed one. No `sorry` or axiom was added.
 
-## Starting point for the implementing agent
+## Starting point
 
-Inspected at commit `82d132f9`, branch `formal/application-layout`. At writing, these
-files already have unrelated working-tree changes; preserve them:
-
-```text
-.github/workflows/test.yml
-formal/README.md
-formal/scripts/check_tags.lean
-```
-
-Read `CLAUDE.md` and `formal/CLAUDE.md` before implementation. Use the existing
-Lean skill. Keep new helpers private until a concrete consumer needs them.
-Do not change the Pickles capstones, fixture schema, emitted rows, or wiring.
-No commit, branch operation, PR, or full fixture run is requested by this handoff.
-Never run `LINKS=all`; use explicitly selected fixtures if regression testing needs them.
+The trace and its theorems live on branch `formal/compiler-trace`. Read `CLAUDE.md` and
+`formal/CLAUDE.md` before touching them. Helpers stay private until a concrete consumer
+needs them. The Pickles capstones, the fixture schema, the emitted rows and the wiring are
+unchanged.
 
 Relevant existing files, relative to `formal/`:
 
@@ -426,12 +416,15 @@ The operands are in AddComplete **column order**:
 constraint type, so the closed theorem quantifies over real source lists and the actual
 existing reducers run on them unchanged; there is no carrier type and no embedding.
 
-Define a finite, decidable `Direct.Scoped` condition with all of the following:
+`Direct.Scoped source publicVars` is the finite, decidable condition with both of:
 
-1. Every operand and public variable is below the initial next-variable counter.
+1. Every source constraint is `Direct`.
 2. Each AddComplete operand at positions 7..10 occurs exactly once across **all**
    source operand occurrences and the ordered public-variable list.
-3. Every source constraint is `Direct`.
+
+The fragment allocates nothing, so no bound on the operands against the initial
+next-variable counter is needed and none is stated; the counter parameterizes only the
+lowering itself.
 
 An auxiliary identifier cannot be shared with another auxiliary, a Boolean operand,
 a coordinate, or a public variable. Coordinate/flag identifiers in positions 0..6
@@ -443,26 +436,29 @@ operations; all generic events come from Boolean constraints. It still exercises
 custom blocks, generic queueing across blocks, final flush, repeated wired variables,
 unwired local auxiliaries, and public rows.
 
-The acceptance theorem must have this shape, with every named contract defined:
+The acceptance theorem, as landed in `Direct.lean`:
 
 ```lean
--- Proposed signature; source/public vectors and index adapters need explicit binders.
-theorem Direct.holds_of_satisfies
-    (hscope : Direct.Scoped nv source publicVars)
-    (hindex : IndexOf source publicVars nv idx)
-    (hsat : Kimchi.Index.Satisfies idx pub table) :
-    ∃ V : Valuation F,
-      (∀ c ∈ source, KimchiConstraint.Holds V c.toConstraint) ∧
-      (∀ i : Fin publicVars.length, V publicVars[i] = pub (publicIndex hindex i)) := ...
+theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
+    {source : List (KimchiConstraint F)} {publicVars : List Variable} {nv : Variable}
+    {idx : Index F n} (hscope : KimchiConstraint.Direct.Scoped source publicVars)
+    (hindex : IndexOf source publicVars nv idx) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin wCols → F) (hsat : idx.Satisfies pub wTab) :
+    ∃ V : Valuation F, (∀ c ∈ source, KimchiConstraint.Holds V c) ∧
+      ∀ i : Fin publicVars.length, V publicVars[i] = pub (hindex.publicIndex i)
 ```
 
-`IndexOf` must identify the actual existing lowering/assembly output:
+`IndexOf` identifies the actual existing lowering/assembly output (`directGates`):
 public count, gate kinds, zero-extended coefficients, and wires are exactly the
 output at their corresponding positions; the rows fit in the unmasked prefix.
-It can leave the remaining domain rows to the existing index invariants. It must
-not include `LabelsConnected` as an unexplained premise. Prove the latter from
-`Direct.Scoped` and the actual assembly algorithm, then construct `RowsInIndex`.
-`publicIndex` transports the ordered index through the public-count equality.
+It leaves the remaining domain rows to the existing index invariants and carries no
+connectivity premise: label connectivity is proved from the assembly algorithm
+(`Wiring.lean`, `classCells_values_eq`). `publicIndex` transports the ordered index
+through the public-count equality. The assembly's wire map is a hash map, which the
+kernel cannot evaluate, so `IndexOf` is decided on concrete data through
+`indexOf_of_classTarget`: an index matching the lowering's rows and the pure
+class-based target `classTarget` (proved equal to the assembled one by `wireTarget_eq`)
+agrees with the assembly.
 
 Keep this structural index adapter small. The emitted row's gate tag is the index
 model's own `GateType`, so no tag conversion exists to adapt or to prove agreement for.
@@ -472,78 +468,65 @@ This theorem is intentionally restricted. It must not be advertised as soundness
 of `reduceBuilt` for arbitrary source constraints. The affine local lemmas and
 recording layer remain reusable when the remaining state invariants are proved.
 
-## 7. Work order and proposed modules
+## 7. Modules
 
-Use new modules under `snarky/Snarky/Kimchi/Backend/`:
+Under `snarky/Snarky/Kimchi/Backend/`:
 
 | Module | Responsibility |
 | --- | --- |
-| `Trace.lean` | event data, recording interpreter, structural replay/erasure |
+| `Trace.lean` | event data, recording interpreter, erasure, replay, allocation labels |
+| `TraceChecks.lean` | decided recordings over `ℚ`: batching, wiring, constant cache, allocation |
 | `TraceSemantics.lean` | event readings, affine/Boolean/AddComplete local lemmas |
-| `RowCorrespondence.lean` | slices, generic packing, copy paths, valuation recovery |
-| `Direct.lean` | the direct fragment, actual assembly connection, closed theorem |
+| `RowCorrespondence.lean` | the recorded fold, its erasure, placement of each step's rows |
+| `Receipts.lean` | generic receipts: location, completeness, the packing lemma |
+| `Wiring.lean` | the wire map's cycles, the class-based target, class agreement |
+| `Direct.lean` | the direct fragment, provenance of its rows, the closed theorem |
+| `DirectChecks.lean` | a decided instance invoking the closed theorem, and the boundaries |
 
-Split further only if dependencies or size justify it. Keep the recording data
-independent of `Kimchi.Index` and gate semantics; the proof modules can import them.
-Do not expose all new helpers through the top-level library automatically.
+The recording data is independent of `Kimchi.Index` and gate semantics; the proof
+modules import them. Helpers are private to their modules; public results are rooted in
+`snarky/roots.txt` and audited by `snarky/scripts/check_axioms.lean`. The reducers
+`completelyReduce`, `constraintToCoeffs`, `emitDoubleGateRow`, `reduceAffinePoint`, the
+Poseidon and EndoMul round reducers and `reducePad` were made public for the simulation
+lemmas; the assembly names its wiring target (`wireTarget`), unchanged in behaviour.
 
-Implement in this order:
+## 8. Validation
 
-1. Elaborate the core data definitions and **final theorem signature**. Define
-   `Direct.Scoped` and `IndexOf` concretely before proving convenience lemmas.
-2. Implement recording for existing operations; prove operation simulation and
-   the three erasure statements. Check empty and nonempty initial queues.
-3. Define event semantics; prove affine reading, Booleanity, and AddComplete reading.
-4. Add placement and generic receipts. Prove packed-row correspondence and final flush.
-5. Prove copy-path equality and valuation recovery. Prove the fragment's assembly
-   produces connected labels under its precise locality restriction.
-6. Prove `Direct.holds_of_satisfies`, including ordered public inputs.
-7. Run bounded examples and regressions below. Report exactly which general compiler
-   obligations remain, without replacing any of them by an opaque assumption.
+Every theorem is kernel checked without `sorryAx`, new axioms, or `native_decide`
+(`snarky/scripts/check_axioms.sh`). The checks are `decide +kernel` theorems, rooted
+like every other result.
 
-If existing private definitions obstruct a proof, prefer a narrow lemma in their
-defining module over exposing all implementation helpers. If the recording instance
-requires extracting a shared primitive implementation, prove erasure and retain
-the same emitted rows, variable counter, queue, cache, and union-find state.
+`TraceChecks.lean`, over `ℚ`:
 
-## 8. Validation and completion criteria
+- two Booleans pack with the incoming equation in the first half, and a Boolean followed by
+  a complete addition outlives the custom block to be flushed after the addition's row
+  (`recorded_batching`);
+- an equality of two variables is discharged by wiring alone (`recorded_wiring`);
+- a constant pinned twice is cached once (`recorded_constantCache`);
+- a sum reduced from an occupied queue logs its allocation and packs in front of the
+  waiting equation (`recorded_allocation`).
 
-Formal checks are the main deliverable. Every finished theorem must be kernel
-checked without `sorryAx`, new axioms, or `native_decide`.
+`DirectChecks.lean`, over a field of 113 elements with a domain of 16 rows: a public
+prefix of two variables, a Boolean queued across a complete addition, the pair packed after
+it, one equation flushed; the addition's `inf` flag is the first public variable, so a wired
+operand repeats across the public row, a Boolean's cells and the addition's row; the
+addition's four auxiliaries are singletons in unwired columns. The index is built from the
+lowering's rows by `Index.build?`, the table satisfies it, and `direct_example_holds`
+invokes the closed theorem on them. The boundaries, `direct_rejections` and
+`direct_rejections_index`: an auxiliary aliased with a Boolean's variable, with a public
+variable, or with another auxiliary is out of scope; each receipt is located and none is
+once moved to the other half; a table zeroing the packed Boolean's two cells still satisfies
+every gate but not the copy to its public row; an index with that row's coefficients
+altered, or with the copy cycle through that row rerouted (still a permutation), is not the
+lowering's.
 
-Small regression examples must cover:
+Not exercised: repeated public variables (the example's are distinct), and rejections of a
+shifted custom-block start or of an unflushed equation, which are not certificates here:
+placements and receipts are computed from the recorded fold, and `receipts_isSome_of_direct`
+with `receipts_complete` make them total for the fragment.
 
-- A Boolean followed by AddComplete followed by another Boolean: the first Boolean
-  remains pending across the custom block and shares a later generic row.
-- One Boolean followed by AddComplete and finalization: its equation is flushed
-  **after** the AddComplete row.
-- Two Booleans: verify incoming/queued half order, including distinct variables.
-- Repeated coordinates/flags across AddComplete rows and the public prefix.
-- Singleton local auxiliary identifiers outside the seven permutation columns.
-- Affine/constant/scaled expressions in the local reduction lemmas; these need
-  not be in the closed direct fragment.
-- A nonzero public prefix, preserving public order and repeated public variables.
-
-Negative controls for structural certification must reject:
-
-- a shifted custom-block start or wrong block length;
-- a generic receipt assigned to the wrong half;
-- an unflushed pending generic event;
-- a repeated auxiliary identifier in an unwired column;
-- an auxiliary identifier also appearing in a public row;
-- altered coefficients or wiring that destroys a required copy path.
-
-For coefficient/placement changes, test rejection by the structural relation/checker.
-For wiring changes, choose a case where a required nontrivial connection is broken;
-identity wiring for a singleton is valid and must not be rejected merely for being identity.
-
-At least one explicit satisfying instance of the fragment should be constructed to rule out
-an accidentally empty set of accepted examples. Use an existing AddComplete witness
-constructor/completeness lemma when suitable. Do not require on-curve points in the
-general compiler theorem: its target is the source `Holds` predicate, not an EC spec.
-
-The closed theorem must quantify over arbitrary satisfying tables. Merely deciding
-both predicates on a prover-generated table does not meet this criterion.
+The closed theorem quantifies over arbitrary satisfying tables; the decided instance only
+rules out an empty set of accepted examples.
 
 Build changed modules incrementally. From `formal/`, the bounded library gate is
 `lake build Snarky`; bare `lake build` there is not a useful gate. Use the snarky
@@ -558,12 +541,14 @@ semantic oracle premises. If a structural obstruction prevents that theorem,
 provide a minimal concrete example and identify the failed field; do not quietly
 add `Realizes` or source satisfaction to its assumptions.
 
-## 9. What remains after this phase
+## 9. What remains
 
 The general compiler theorem still needs:
 
-- equality-operation receipts, constant-cache invariants, and union-find soundness;
-- scope/freshness across generated intermediate variables;
+- equality-operation receipts, constant-cache invariants, and union-find soundness (the wire
+  map's characterisation already holds for any root map);
+- scope/freshness across generated intermediate variables (`record_constraint_allocates`
+  gives the recorded labels; the state invariant is not stated);
 - a suitable treatment of repeated operands outside permutation columns;
 - other Basic cases, then EndoScalar and multirow gates;
 - Poseidon MDS and EndoMul endomorphism-parameter agreement with the index;
