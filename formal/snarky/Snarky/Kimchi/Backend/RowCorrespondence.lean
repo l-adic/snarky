@@ -26,7 +26,9 @@ rows.
 
 - `recordGates_erase`, `recordBuilt_erase`: the recorded folds erase to the ordinary ones.
 - `recordBuilt_bodyRows`: the whole circuit's body rows are the steps' rows, then the flush.
-- `getElem_bodyRows_generic`, `getElem_bodyRows_gate`: a row at a step's located position is
+- `RecordedGates.length_placements`, `bodyRows_placed`, `placements_genericRows_count`,
+  `placements_customRows_count`, `placements_customRows_le`,
+  `getElem_bodyRows_generic`, `getElem_bodyRows_gate`: a row at a step's located position is
   that step's flushed generic row or gate row.
 -/
 
@@ -196,6 +198,10 @@ structure StepPlacement where
   /-- The constraint's own gate rows. -/
   customRows : RowSpan
 
+/-- A span contains a row position. -/
+def RowSpan.Contains (sp : RowSpan) (k : Nat) : Prop :=
+  sp.first ≤ k ∧ k < sp.first + sp.count
+
 /-- Each step's placement, the first at `offset`, each next at the end of the one before. -/
 private def placements : List (RecordedStep F) → Nat → List StepPlacement
   | [], _ => []
@@ -253,6 +259,96 @@ private theorem getElem_flatMap_bodyRows (steps : List (RecordedStep F)) (i : Na
       have := ih i (Nat.lt_of_succ_lt_succ hi) hj (by omega)
       convert this using 2
       omega
+
+/-- One placement per step. -/
+theorem RecordedGates.length_placements (r : RecordedGates F) :
+    r.placements.length = r.steps.length :=
+  Snarky.Kimchi.length_placements r.steps 0
+
+private theorem placements_count (steps : List (RecordedStep F)) (offset : Nat) (i : Nat)
+    (hi : i < steps.length) :
+    ((placements steps offset)[i]'((length_placements _ _).symm ▸ hi)).genericRows.count =
+        steps[i].rows.length ∧
+      ((placements steps offset)[i]'((length_placements _ _).symm ▸ hi)).customRows.count =
+        steps[i].gateRows.length := by
+  induction steps generalizing offset i with
+  | nil => exact absurd hi (Nat.not_lt_zero _)
+  | cons s rest ih =>
+    cases i with
+    | zero => exact ⟨rfl, rfl⟩
+    | succ i => exact ih _ i (Nat.lt_of_succ_lt_succ hi)
+
+/-- A step's generic span counts its flushed rows. -/
+theorem placements_genericRows_count (r : RecordedGates F) (i : Nat) (hi : i < r.steps.length) :
+    (r.placements[i]'((length_placements _ _).symm ▸ hi)).genericRows.count =
+      r.steps[i].rows.length :=
+  (placements_count r.steps 0 i hi).1
+
+/-- A step's gate span counts its gate rows. -/
+theorem placements_customRows_count (r : RecordedGates F) (i : Nat) (hi : i < r.steps.length) :
+    (r.placements[i]'((length_placements _ _).symm ▸ hi)).customRows.count =
+      r.steps[i].gateRows.length :=
+  (placements_count r.steps 0 i hi).2
+
+private theorem placements_le (steps : List (RecordedStep F)) (offset : Nat) (i : Nat)
+    (hi : i < steps.length) :
+    ((placements steps offset)[i]'((length_placements _ _).symm ▸ hi)).customRows.first +
+        ((placements steps offset)[i]'((length_placements _ _).symm ▸ hi)).customRows.count ≤
+      offset + (steps.flatMap RecordedStep.bodyRows).length := by
+  induction steps generalizing offset i with
+  | nil => exact absurd hi (Nat.not_lt_zero _)
+  | cons s rest ih =>
+    simp only [List.flatMap_cons, List.length_append]
+    cases i with
+    | zero =>
+      simp only [placements, List.getElem_cons_zero, RecordedStep.bodyRows, List.length_append,
+        List.length_map]
+      omega
+    | succ i =>
+      have := ih (offset + s.bodyRows.length) i (Nat.lt_of_succ_lt_succ hi)
+      simp only [placements, List.getElem_cons_succ]
+      omega
+
+/-- A step's gate span ends within the body rows. -/
+theorem placements_customRows_le (r : RecordedGates F) (i : Nat) (hi : i < r.steps.length) :
+    (r.placements[i]'((length_placements _ _).symm ▸ hi)).customRows.first +
+        (r.placements[i]'((length_placements _ _).symm ▸ hi)).customRows.count ≤
+      r.bodyRows.length := by
+  have := placements_le r.steps 0 i hi
+  simpa only [RecordedGates.placements, RecordedGates.bodyRows, Nat.zero_add] using this
+
+private theorem placed (steps : List (RecordedStep F)) (offset k : Nat)
+    (hk : k < (steps.flatMap RecordedStep.bodyRows).length) :
+    ∃ (i : Nat) (hi : i < steps.length),
+      ((placements steps offset)[i]'((length_placements _ _).symm ▸ hi)).genericRows.Contains
+          (offset + k) ∨
+        ((placements steps offset)[i]'((length_placements _ _).symm ▸ hi)).customRows.Contains
+          (offset + k) := by
+  induction steps generalizing offset k with
+  | nil => simp at hk
+  | cons s rest ih =>
+    simp only [List.flatMap_cons, List.length_append] at hk
+    by_cases h : k < s.bodyRows.length
+    · refine ⟨0, Nat.succ_pos _, ?_⟩
+      simp only [placements, List.getElem_cons_zero, RowSpan.Contains]
+      simp only [RecordedStep.bodyRows, List.length_append, List.length_map] at h
+      by_cases h2 : k < s.rows.length
+      · exact Or.inl ⟨by omega, by omega⟩
+      · exact Or.inr ⟨by omega, by omega⟩
+    · obtain ⟨i, hi, hc⟩ := ih (offset + s.bodyRows.length) (k - s.bodyRows.length) (by omega)
+      refine ⟨i + 1, Nat.succ_lt_succ hi, ?_⟩
+      simp only [placements, List.getElem_cons_succ]
+      have e : offset + s.bodyRows.length + (k - s.bodyRows.length) = offset + k := by omega
+      rw [e] at hc
+      exact hc
+
+/-- Every body row lies in one step's placement: in its generic span or its gate span. -/
+theorem bodyRows_placed (r : RecordedGates F) (k : Nat) (hk : k < r.bodyRows.length) :
+    ∃ (i : Nat) (hi : i < r.steps.length),
+      (r.placements[i]'((length_placements _ _).symm ▸ hi)).genericRows.Contains k ∨
+        (r.placements[i]'((length_placements _ _).symm ▸ hi)).customRows.Contains k := by
+  have := placed r.steps 0 k hk
+  simpa only [RecordedGates.placements, Nat.zero_add] using this
 
 /-- A row at a position of a step's generic span is that step's flushed generic row. -/
 theorem getElem_bodyRows_generic (r : RecordedGates F) (i : Nat) (hi : i < r.steps.length)
