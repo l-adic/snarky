@@ -66,13 +66,10 @@ Kimchi.Verifier.Wire.KimchiProof.check
 Kimchi.Verifier.Wire.KimchiVK.check
 Kimchi.Verifier.Wire.runNc
 Kimchi.Fixture.Cache.parseFile
-Kimchi.Fixture.Cache.Entry.checkedAt -- check-tags validates cached keys and proofs at each link
 Kimchi.Fixture.parseKimchiProof
 Kimchi.Fixture.parseVK
 Kimchi.Fixture.PS.build
 Kimchi.Fixture.PS.fpSide
 Kimchi.Fixture.PS.fqSide
 Kimchi.Fixture.PS.parseComparisonCs?
-Kimchi.Verifier.instDecidableEqPointEvaluations -- check-tags compares a proof's evaluations with its cells
-Kimchi.Verifier.instDecidableEqProofEvaluations -- check-tags compares a proof's evaluations with its cells
 -- script-surface:end

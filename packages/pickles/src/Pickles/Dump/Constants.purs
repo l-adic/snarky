@@ -8,7 +8,7 @@
 -- | external or side-loaded): its width, chunk count and candidate step
 -- | domains, and for a self or external slot the Lagrange bases its
 -- | public-input commitment reads and the wrap key it verifies against
--- | (whole, as the proof cache stores it).
+-- | (whole, as a structured fixture key).
 -- |
 -- | `wrapMainConstants`: the constants a `wrap_main_*` circuit bakes in, as its comparison dump
 -- | carries them: per branch its slot count, step key (whole, as the proof
@@ -18,6 +18,7 @@
 module Pickles.Dump.Constants
   ( DerivedKey
   , KeyExport
+  , stepKeyExport
   , wrapKeyExport
   , srsLagrangeAt
   , stepMainConstants
@@ -39,7 +40,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import JS.BigInt as BigInt
-import Pickles.CircuitDiffs.Types (Chunked, Constants(..), Point, StepSlot(..))
+import Pickles.CircuitDiffs.Types (Chunked, Constants(..), Key, Point, StepSlot(..))
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IncrementallyVerifyProof (PackedWrapStatement)
@@ -50,7 +51,7 @@ import Pickles.Types (StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.VerificationKey (verifierIndexDigest)
 import Pickles.Wrap.Main (WrapMainConfig)
 import Snarky.Backend.Kimchi.Proof (class ProofFFI, srsLagrangeCommitmentChunksAt)
-import Snarky.Backend.Kimchi.ProofCache (pallasVerifierIndexJsonKey, vestaVerifierIndexJsonKey)
+import Snarky.Backend.Kimchi.ProofCache (pallasVerifierIndexDump, vestaVerifierIndexDump)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.DSL (class CircuitType, BoolVar, F(..), FVar, sizeInFields)
 import Snarky.Circuit.Kimchi (Type1)
@@ -63,22 +64,20 @@ import Type.Proxy (Proxy(..))
 -- | `log2`.
 type DerivedKey g f = { verifierIndex :: VerifierIndex g f, domainLog2 :: Int }
 
--- | A key as a dump carries it for the Lean `check_cs` harness: the
--- | verifier index's JSON, as the proof cache stores it, and its digest,
--- | which the cache keys it by.
-type KeyExport = { vk :: String, digest :: String }
+-- | A fixture key: the structured verifier index and its checked digest.
+type KeyExport = Key
 
 -- | A step key, exported.
 stepKeyExport :: VerifierIndex VestaG StepField -> KeyExport
 stepKeyExport vk =
-  { vk: pallasVerifierIndexJsonKey vk
+  { vk: pallasVerifierIndexDump vk
   , digest: BigInt.toString (toBigInt (verifierIndexDigest vk))
   }
 
 -- | A wrap key, exported.
 wrapKeyExport :: VerifierIndex PallasG WrapField -> KeyExport
 wrapKeyExport vk =
-  { vk: vestaVerifierIndexJsonKey vk
+  { vk: vestaVerifierIndexDump vk
   , digest: BigInt.toString (toBigInt (verifierIndexDigest vk))
   }
 

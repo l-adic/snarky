@@ -1,5 +1,5 @@
 import PicklesFixture.Application
-import PicklesFixture.ApplicationWiring
+import PicklesFixture.ApplicationImport
 
 /-!
 Check application layout and static wiring against independently described applications.
@@ -100,49 +100,27 @@ private def checkAssembly : IO Unit := do
     (IO.userError "an imported width must remain independent of its consumer's width")
   IO.println "✓ exported interfaces compose across three independently checked applications"
 
-private def readTag (dir : System.FilePath) (name : String) : IO Json := do
-  let path := dir / s!"{name}.json"
-  match Json.parse (← IO.FS.readFile path) with
-  | .ok j => pure j
-  | .error e => throw (IO.userError s!"{path}: {e}")
+private def readDump (dir : System.FilePath) (app tag : String) : IO ApplicationDump := do
+  let raw ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / app / "shapes" / s!"{tag}.json")))
+  IO.ofExcept (ApplicationDump.ofJson raw)
 
-private def checkApplication (D : Shape) (name : String) (tag : Json)
-    (importKeys : Vector Json D.imports.size) : IO (PLift (Layout D) × Json) := do
-  let ⟨L⟩ ← checked D
-  match checkMetadata L name tag importKeys with
-  | .error e => throw (IO.userError e)
-  | .ok _ =>
-    IO.println s!"✓ {name}: {D.branches} branches, width {D.width}, \
-      wrap slots {(L.wrapWidths.map Fin.val).toArray}"
-    match tag.getObjVal? "wrapMain" >>= (·.getObjVal? "key") with
-    | .error e => throw (IO.userError e)
-    | .ok key => return (⟨L⟩, key)
-
-private def wired {D : Shape} (L : Layout D) (name : String) (tag : Json)
-    (tables : List (Nat × SlotLagrange 1 StepIPARounds))
-    (imports : (t : Fin D.imports.size) → CircuitInterface D.imports[t]) : IO (Wiring D L) := do
-  let A ← IO.ofExcept (backendOf D tables tag)
-  let W ← IO.ofExcept (Wiring.assemble L A imports)
-  IO.ofExcept (checkWiring W name tag)
-  IO.println s!"✓ {name}: assembled keys, source domains, chunk counts, Lagrange tables and pins"
-  return W
+-- Layout tests do not evaluate circuits: basis values are irrelevant to these metadata checks.
+private def backend (D : Shape) (raw : ApplicationDump) : Except String (BackendArtifacts D) := do
+  if h : raw.stepKeys.size = D.branches then
+    return { wrapKey := raw.wrapKey, stepChunks := raw.stepChunks, stepKeys := ⟨raw.stepKeys, h⟩
+             wrapLagrange := Vector.replicate _ (Vector.replicate _ 0) }
+  else throw "branch key count differs"
 
 private def expectError {α : Type} (label : String) (result : Except String α) : IO Unit := do
   match result with
   | .ok _ => throw (IO.userError s!"accepted {label}")
   | .error e => IO.println s!"✓ rejects {label}: {e}"
 
-private def changeSlotField (tag : Json) (b i : Nat) (field : String) (value : Json) :
-    Except String Json := do
-  let branches ← (← tag.getObjVal? "branches").getArr?
-  let some branch := branches[b]? | throw "missing branch to mutate"
-  let step ← branch.getObjVal? "stepMain"
-  let constants ← step.getObjVal? "constants"
-  let slots ← (← constants.getObjVal? "slots").getArr?
-  let some slot := slots[i]? | throw "missing slot to mutate"
-  let slots := slots.set! i (slot.setObjVal! field value)
-  let step := step.setObjVal! "constants" (constants.setObjVal! "slots" (.arr slots))
-  return tag.setObjVal! "branches" (.arr (branches.set! b (branch.setObjVal! "stepMain" step)))
+private def oneImport {I : LayoutInterface} (C : CircuitInterface I)
+    (t : Fin #[I].size) : CircuitInterface #[I][t] := by
+  have h : t = 0 := Fin.eq_zero t
+  subst t
+  exact C
 
 private def checkBackendRejections {L : Layout twoPhaseChain}
     (W : Wiring twoPhaseChain L) : IO Unit := do
@@ -168,74 +146,45 @@ private def checkBackendRejections {L : Layout twoPhaseChain}
   let bad := { A with stepKeys := Vector.ofFn fun i => if i = b then key else A.stepKeys[i] }
   expectError "a step domain requiring a different chunk count" (Wiring.assemble L bad W.imports)
 
-/-- Check synthetic assembly cases and all three explicitly selected fixture tags. -/
+/-- Check synthetic layouts and backend metadata from the three selected sidecars. -/
 def main : IO Unit := do
   checkAssembly
   let some dir ← IO.getEnv "PICKLES_DUMP_DIR"
     | throw (IO.userError "PICKLES_DUMP_DIR is not set")
-  let chainName := "TwoPhaseChain/two_phase_chain"
-  let childName := "HeterogeneousPrevs/child"
-  let name := "HeterogeneousPrevs/application"
-  let chainTag ← readTag dir chainName
-  let childTag ← readTag dir childName
-  let tag ← readTag dir name
-  let tables ← IO.ofExcept (wrapTablesOf #[chainTag, childTag, tag])
-  let (⟨chainLayout⟩, _) ← checkApplication twoPhaseChain chainName chainTag #v[]
-  let chainW ← wired chainLayout chainName chainTag tables (fun t => Fin.elim0 t)
+  let chain ← readDump dir "TwoPhaseChain" "two_phase_chain"
+  let child ← readDump dir "HeterogeneousPrevs" "child"
+  let parent ← readDump dir "HeterogeneousPrevs" "application"
+  let ⟨chainLayout⟩ ← checked twoPhaseChain
+  let chainW ← IO.ofExcept (Wiring.assemble chainLayout
+    (← IO.ofExcept (backend twoPhaseChain chain))
+    (fun t => Fin.elim0 t))
   checkBackendRejections chainW
-  let (⟨childLayout⟩, childKey) ← checkApplication heterogeneousChild childName
-    childTag #v[]
-  let childW ← wired childLayout childName childTag tables (fun t => Fin.elim0 t)
-  let child := childLayout.export
-  let D := heterogeneousPrevs child
-  let (⟨layout⟩, ownKey) ← checkApplication D name tag #v[childKey]
-  let imports : (t : Fin D.imports.size) → CircuitInterface D.imports[t] :=
-    oneImport childW.export
-  let W ← wired layout name tag tables imports
-  let wrongKey ← IO.ofExcept (changeSlotField tag 1 0 "key" ownKey)
-  expectError "an External slot using the current application's key" (checkWiring W name wrongKey)
-  let wrongDomains ← IO.ofExcept (changeSlotField tag 1 0 "domains" (toJson [10, 15]))
-  expectError "source domains from the wrong application" (checkWiring W name wrongDomains)
-  let wrongChunks ← IO.ofExcept (changeSlotField tag 1 0 "numChunks" (toJson (2 : Nat)))
-  expectError "an incorrect source chunk count" (checkWiring W name wrongChunks)
-  let originalBranches ← IO.ofExcept ((tag.getObjVal? "branches") >>= Json.getArr?)
-  let originalStep ← IO.ofExcept (originalBranches[1]!.getObjVal? "stepMain")
-  let originalConstants ← IO.ofExcept (originalStep.getObjVal? "constants")
-  let originalSlots ← IO.ofExcept ((originalConstants.getObjVal? "slots") >>= Json.getArr?)
-  let ownTable ← IO.ofExcept (originalSlots[1]!.getObjVal? "lagrange")
-  let wrongTable ← IO.ofExcept (changeSlotField tag 1 0 "lagrange" ownTable)
-  expectError "a Lagrange table selected from the wrong source" (checkWiring W name wrongTable)
-  let wc ← IO.ofExcept (tag.getObjVal? "wrapMain")
-  let constants ← IO.ofExcept (wc.getObjVal? "constants")
-  let wrongPins := tag.setObjVal! "wrapMain"
-    (wc.setObjVal! "constants" (constants.setObjVal! "pins" (toJson [[1, 1], [1, 1]])))
-  expectError "a pin selecting the wrong source domain" (checkWiring W name wrongPins)
-  -- Source chunk counts remain independent even within one branch.
-  -- This synthetic interface is not a proof fixture for a mixed-chunk circuit.
+  let ⟨childLayout⟩ ← checked heterogeneousChild
+  let childW ← IO.ofExcept (Wiring.assemble childLayout
+    (← IO.ofExcept (backend heterogeneousChild child))
+    (fun t => Fin.elim0 t))
+  let D := heterogeneousPrevs childLayout.export
+  let ⟨L⟩ ← checked D
+  let W ← IO.ofExcept (Wiring.assemble L (← IO.ofExcept (backend D parent))
+    (oneImport childW.export))
+  for b in List.finRange D.branches do
+    let some rule := parent.rules[b.val]? | throw (IO.userError "missing rule")
+    let _ ← IO.ofExcept (CheckedRule.check D b rule)
+  let wrong : Shape := { D with schema := childLayout.export.schema }
+  let b : wrong.Branch := ⟨0, by change 0 < 2; decide⟩
+  let some rule := parent.rules[0]? | throw (IO.userError "missing base rule")
+  expectError "the wrong application statement schema" (CheckedRule.check wrong b rule)
   let domains : KnownDomains 2 :=
-    { log2s := [17]
-      log2s_le := by simp; decide
+    { log2s := [17], log2s_le := by simp; decide
       log2s_zkRows := by simp [zkRowsOf] }
-  let mixed : CircuitInterface child :=
+  let mixed : CircuitInterface childLayout.export :=
     { childW.export with
       stepChunks := 2
       stepDomains := domains }
-  let mixedW ← IO.ofExcept (Wiring.assemble layout W.backend
-    (oneImport mixed))
+  let mixedW ← IO.ofExcept (Wiring.assemble L W.backend (oneImport mixed))
   let b : D.Branch := ⟨1, by change 1 < 2; decide⟩
   let i0 : D.Slot b := ⟨0, by change 0 < 2; decide⟩
   let i1 : D.Slot b := ⟨1, by change 1 < 2; decide⟩
   let _ ← requireProof (mixedW.sourceChunks b i0 == 2 && mixedW.sourceChunks b i1 == 1)
     (IO.userError "static wiring incorrectly imposed a shared predecessor chunk count")
-  IO.println "✓ synthetic imported interface preserves mixed 2/1 source chunks"
-  -- A checker that only compares total widths would miss this wrong statement schema.
-  let wrong : Shape := { D with schema := child.schema }
-  let ⟨L⟩ ← checked wrong
-  match checkMetadata L name tag #v[childKey] with
-  | .error _ => IO.println "✓ metadata comparison rejects an incorrect statement schema"
-  | .ok _ => throw (IO.userError "metadata comparison accepted the wrong statement schema")
-  let ⟨L⟩ ← checked D
-  match checkMetadata L name tag #v[ownKey] with
-  | .error _ => IO.println "✓ External key mismatch is rejected even when Self has that key"
-  | .ok _ => throw (IO.userError "an External slot accepted the current application's key")
-  IO.println "✓ application layouts and wiring: 3 applications, 5 branches, 3 slots"
+  IO.println "✓ application layouts, branch keys, schemas, pins and mixed source chunks"

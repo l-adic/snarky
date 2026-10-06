@@ -104,7 +104,9 @@ private theorem StepWrapLink.verifies {C : Circuits D L} {b : D.Branch} (e : Ste
     (fun i => FopParams.of IpaVesta.curve (C.wiring.sourceChunks b i)
       StepIPARounds Linearization.fpTokens)
     C.wiring.backend.stepDomains.list (D.slots_le_width b) L.width_le
-    C.setup.dummySg hAssumptions.dummy_ne C.setup.dummyUnf (C.wiring.sources b)
+    C.setup.dummySg hAssumptions.dummy_ne
+    (C.setup.dummyUnf[D.slots b]'(Nat.lt_succ_of_le ((D.slots_le_width b).trans L.width_le)))
+    (C.wiring.sources b)
     (C.source_bound b) e.step.V (C.rules b) e.step.advice e.wrap.V D.widths
     C.setup.step.σ C.stepLagrange C.wiring.stepKeys C.wiring.pins C.setup.dummy
     L.wrapWidths e.wrap.advice C.wiring.valid.branches_le b
@@ -175,7 +177,9 @@ private theorem WrapStepLink.verifies
     consumer.wiring.backend.stepDomains.list producer.wiring.backend.stepDomains
     ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le) producerL.width_le
     (consumer.wiring.sources consumerBranch) (consumer.source_bound consumerBranch)
-    (constPt producer.setup.dummySg) producer.setup.dummyUnf e.step.V
+    (constPt producer.setup.dummySg)
+    (producer.setup.dummyUnf[consumerD.slots consumerBranch]'(Nat.lt_succ_of_le
+      ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le))) e.step.V
     (consumer.rules consumerBranch) e.step.advice
     e.wrap.holds hstep e.branch slot e.sourceFor.chunks
     (by simpa only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup]
@@ -262,7 +266,9 @@ theorem WrapStepLink.mask_keeps
     consumer.wiring.backend.stepDomains.list
     ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le) producerL.width_le
     (consumer.wiring.sources consumerBranch) (consumer.source_bound consumerBranch)
-    (constPt producer.setup.dummySg) producer.setup.dummyUnf e.step.V
+    (constPt producer.setup.dummySg)
+    (producer.setup.dummyUnf[consumerD.slots consumerBranch]'(Nat.lt_succ_of_le
+      ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le))) e.step.V
     (consumer.rules consumerBranch) e.step.advice
     e.wrap.holds hstep e.branch slot
     (by simpa only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup]

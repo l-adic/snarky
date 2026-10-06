@@ -38,6 +38,7 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Lazy as Lazy
+import Data.List (List(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -66,11 +67,11 @@ import Pickles.PlonkChecks (collapsePointEval, mapChunkedEvals)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Prove.RuleDump (ruleWitness)
+import Pickles.RuleWitness (ruleWitness)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, mkPrevValues)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -94,7 +95,7 @@ import Snarky.Circuit.DSL (AsProver, F(..), SizedF, Snarky, UnChecked(..), coerc
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Circuit.Types (class CircuitType, valueToFields)
+import Snarky.Circuit.Types (class CircuitType, sizeInFields, valueToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, toBigInt)
@@ -1062,6 +1063,7 @@ buildStepCircuit handler ctx rule = do
             ctx.dummySg
             dummyAdvice
             throwawayCaptureRef
+            Nothing
       )
 
   pure
@@ -1277,13 +1279,12 @@ stepSolveAndProve
   -> Array (Prev StepField)
   -> Effect (Either EvaluationError StepProveResult)
 stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
-  -- Capture channel for the rule's user `publicOutput` FVars. The
-  -- solver makes `stepMain`'s whole return value public, and these
-  -- FVars must not be, so they ride a Ref instead: passed into
-  -- `stepMain`, written inside an `exists` body at solve time, read
-  -- back here. It is the only mutable channel — the read-only advice
-  -- flows as a plain argument.
+  -- The rule's output cells are internal to the step statement. Read
+  -- them after solving; capture source allocations only for fixtures.
   captureRef <- Ref.new Nothing
+  ruleCapture <- case ctx.proofCache of
+    Nothing -> pure Nothing
+    Just _ -> Just <$> Ref.new Nil
   let
     StepAdvice adv = advice
 
@@ -1306,6 +1307,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
               ctx.dummySg
               advice
               captureRef
+              ruleCapture
         )
 
   eRes <- rawSolver handler unit
@@ -1371,22 +1373,25 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
               Just cache -> do
                 let vkDigest = BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex))
                 mp <- getPallasProof cache vkDigest publicInputs
-                case mp of
+                proof <- case mp of
                   Just proof -> pure proof
-                  Nothing -> do
-                    let proof = Lazy.force p
-                    witness <- ruleWitness @inputVal handler
-                      (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
-                      adv.publicInput
-                      rule
-                    case witness of
-                      Left e -> throw ("stepProve: the rule's witness: " <> show e)
-                      Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
-                        publicInputs
-                        proof
-                        prevProofs
-                        w
-                    pure proof
+                  Nothing -> pure $ Lazy.force p
+                capturedRule <- case ruleCapture of
+                  Nothing -> throw "stepProve: missing rule allocation capture"
+                  Just ref -> Ref.read ref
+                let
+                  witness = ruleWitness
+                    (sizeInFields (Proxy @StepField) (Proxy @inputVal))
+                    capturedRule
+                    assignments
+                case witness of
+                  Left e -> throw ("stepProve: the rule's witness: " <> show e)
+                  Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
+                    publicInputs
+                    proof
+                    prevProofs
+                    w
+                pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex
             , verifierIndex: compileResult.verifierIndex
@@ -1399,4 +1404,3 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
             , assignments
             , userPublicOutputFields
             }
-

@@ -41,6 +41,9 @@ import Snarky.Curves.Pasta (PallasG)
 -- | the use site, where `wrapVkChunks` is pinned.
 type CompiledTagData =
   { wrapVerifierIndex :: VerifierIndex PallasG WrapField
+  -- | The source application's statement encoding, before a consumer
+  -- | chooses how to interpret its flattened field vector.
+  , statementLayout :: { inputFields :: Int, outputFields :: Int }
   -- | The imported system's wrap domain log2: 13 for 0 proofs
   -- | verified, 14 for 1, 15 for 2.
   , wrapDomainLog2 :: Int

@@ -1,89 +1,166 @@
--- | The theorems' dump of one tag: its wrap circuit and, per branch, its
--- | step circuit and rule, each circuit with the constants it was compiled
--- | with, the wrap circuit's key, and the values its prover pads a slot a
--- | rule lacks with. `compileMulti` writes it when its config names a
--- | path; the Lean side rebuilds every circuit from it and compares.
+-- | A tag's independent circuit dump and application reconstruction
+-- | sidecar, written by `compileMulti` when dumping is enabled.
 module Pickles.Dump.Tag
-  ( CircuitDump
-  , BranchDump
-  , TagDump
-  , WrapPadding
-  , wrapPadding
+  ( BranchDump
+  , TagFixture
+  , ApplicationDump
+  , ResolvedDump
+  , ImportDump
   , writeTagDump
   ) where
 
 import Prelude
 
-import Data.Enum (fromEnum)
+import Data.Array as Array
+import Data.Either (Either(..), either)
+import Data.Foldable (foldM)
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), lastIndexOf, take)
+import Data.String.CodeUnits as CodeUnits
+import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import JS.BigInt as BigInt
+import Effect.Exception (throw)
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (permsAll)
 import Node.FS.Sync (mkdir', writeTextFile)
-import Pickles.CircuitDiffs.Types (ComparableCircuit, Constants, Point)
+import Pickles.CircuitDiffs.Types (ComparableCircuit)
 import Pickles.Dump.Constants (KeyExport)
-import Pickles.Field (WrapField)
-import Pickles.ProofsVerified (ProofsVerified)
-import Pickles.Prove.RuleDump (RuleDump, encodeRuleDump)
-import Pickles.Types (AllocEvals)
+import Pickles.Dump.Environment (EnvironmentDump)
+import Pickles.Dump.Shape (ShapeDump, SlotSourceDump(..))
+import Pickles.Prove.RuleDump (RuleDumpJson)
 import Simple.JSON (writeJSON)
-import Snarky.Circuit.DSL (F(..), valueToFields)
-import Snarky.Curves.Class (toBigInt)
-import Snarky.Curves.Pasta (VestaG)
-import Snarky.Data.EllipticCurve (WeierstrassAffinePoint(..))
 
--- | A circuit as dumped: its constraint system and the constants it
--- | bakes in, with the fields in `r`.
-type CircuitDump r =
-  { circuit :: ComparableCircuit
-  , constants :: Constants
-  | r
-  }
-
--- | A branch: its step circuit and its rule.
+-- | Branch reconstruction inputs and its independently compiled circuit.
 type BranchDump =
-  { stepMain :: CircuitDump ()
-  , rule :: RuleDump
+  { circuit :: ComparableCircuit
+  , rule :: RuleDumpJson
+  , key :: KeyExport
+  , sources :: Array (Maybe ImportDump)
   }
 
--- | What the wrap prover allocates for a slot its rule lacks: the step
--- | proof's accumulator, the evaluations' cells and the wrap domain's
--- | index.
-type WrapPadding = { stepAcc :: Point, evals :: Array String, domain :: Int }
-
--- | The padding values as the dump records them.
-wrapPadding
-  :: { stepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
-     , evals :: AllocEvals (F WrapField)
-     , domain :: ProofsVerified
-     }
-  -> WrapPadding
-wrapPadding p =
-  { stepAcc: case p.stepAcc of
-      WeierstrassAffinePoint { x: F x, y: F y } -> [ field x, field y ]
-  , evals: map field (valueToFields @WrapField p.evals)
-  , domain: fromEnum p.domain
-  }
-  where
-  field :: WrapField -> String
-  field = BigInt.toString <<< toBigInt
-
--- | A tag: its wrap circuit with its key and padding, and its branches, in
--- | rule order.
-type TagDump =
-  { wrapMain :: CircuitDump (key :: KeyExport, padding :: WrapPadding)
+-- | In-memory inputs to the two application fixture files.
+type TagFixture =
+  { circuit :: ComparableCircuit
+  , key :: KeyExport
   , branches :: Array BranchDump
   }
 
--- | Write a tag's dump to `path`, creating its directory if needed.
-writeTagDump :: String -> TagDump -> Effect Unit
-writeTagDump path d = do
-  case lastIndexOf (Pattern "/") path of
-    Just i -> mkdir' (take i path) { recursive: true, mode: permsAll }
-    Nothing -> pure unit
-  writeTextFile UTF8 path $ writeJSON
-    { wrapMain: d.wrapMain
-    , branches: d.branches <#> \b -> { stepMain: b.stepMain, rule: encodeRuleDump b.rule }
+-- | The independent comparison target: gates, wiring and variable identities.
+-- | Prover constant caches and diagnostic labels are not comparison inputs.
+type CircuitFixture =
+  { publicInputSize :: Int
+  , gates ::
+      Array
+        { kind :: String
+        , wires :: Array { row :: Int, col :: Int }
+        , variables :: Maybe (Array Int)
+        , coeffs :: Array String
+        }
+  }
+
+comparison :: ComparableCircuit -> CircuitFixture
+comparison c =
+  { publicInputSize: c.publicInputSize
+  , gates: c.gates <#> \g ->
+      { kind: g.kind, wires: g.wires, variables: g.variables, coeffs: g.coeffs }
+  }
+
+-- | Backend data for an import, in the shape's import-index order.
+type ImportDump =
+  { wrapKey :: KeyExport
+  , stepChunks :: Int
+  , stepDomains :: Array Int
+  }
+
+type ResolvedDump =
+  { wrapKey :: KeyExport
+  , stepKeys :: Array KeyExport
+  , stepChunks :: Int
+  , imports :: Array ImportDump
+  }
+
+-- | One application's reconstruction inputs, without gates or witnesses.
+-- | Lagrange tables are derived from the shared SRS and key domains.
+type ApplicationDump =
+  { shape :: ShapeDump
+  , rules :: Array RuleDumpJson
+  , resolved :: ResolvedDump
+  , environment :: EnvironmentDump
+  }
+
+-- | Assemble the sidecar from shape and backend metadata. No compiled
+-- | gate rows or witness assignments are read.
+applicationDump
+  :: ShapeDump
+  -> Int
+  -> EnvironmentDump
+  -> TagFixture
+  -> Either String ApplicationDump
+applicationDump shape stepChunks environment d = do
+  require (stepChunks > 0) "the step chunk count is not positive"
+  require (Array.length shape.branches == Array.length d.branches)
+    "the shape and circuit branch counts differ"
+  imports <- foldM collectBranch (Array.replicate (Array.length shape.imports) Nothing)
+    (Array.zip shape.branches d.branches)
+  resolvedImports <- traverse maybeImport imports
+  pure
+    { shape
+    , rules: map _.rule d.branches
+    , resolved:
+        { wrapKey: d.key
+        , stepKeys: map _.key d.branches
+        , stepChunks
+        , imports: resolvedImports
+        }
+    , environment
     }
+  where
+  maybeImport = case _ of
+    Just entry -> Right entry
+    Nothing -> Left "application dump: an import has no backend metadata"
+
+  collectBranch imports (Tuple branch dumped) = do
+    require (Array.length branch.slots == Array.length dumped.sources)
+      "the shape and backend slot counts differ"
+    foldM collectSlot imports (Array.zip branch.slots dumped.sources)
+
+  collectSlot imports = case _ of
+    Tuple SelfSource Nothing -> pure imports
+    Tuple (ExternalSource i) (Just entry) -> do
+      case Array.index imports i of
+        Nothing -> Left "application dump: an import index is out of bounds"
+        Just (Just previous) -> do
+          require (writeJSON entry == writeJSON previous)
+            "an imported source has inconsistent backend metadata"
+          pure imports
+        Just Nothing -> case Array.updateAt i (Just entry) imports of
+          Just updated -> pure updated
+          Nothing -> Left "application dump: an import index is out of bounds"
+    Tuple (SideLoadedSource _) _ ->
+      Left "application dump: side-loaded rules are not replayable"
+    _ -> Left "application dump: the shape and backend slot kinds differ"
+
+require :: Boolean -> String -> Either String Unit
+require true _ = Right unit
+require false message = Left ("application dump: " <> message)
+
+-- | Write the circuit fixture and one reconstruction sidecar at
+-- | `shapes/<tag>.json`. Both are serialized from typed records.
+writeTagDump :: String -> ShapeDump -> Int -> EnvironmentDump -> TagFixture -> Effect Unit
+writeTagDump path shape stepChunks environment d = do
+  application <- either throw pure (applicationDump shape stepChunks environment d)
+  let
+    { dir, fileName } = case lastIndexOf (Pattern "/") path of
+      Just i -> { dir: take i path, fileName: CodeUnits.drop (i + 1) path }
+      Nothing -> { dir: ".", fileName: path }
+    shapesDir = dir <> "/shapes"
+  mkdir' dir { recursive: true, mode: permsAll }
+  mkdir' shapesDir { recursive: true, mode: permsAll }
+  let
+    circuits =
+      { wrapMain: { circuit: comparison d.circuit }
+      , branches: d.branches <#> \b -> { stepMain: { circuit: comparison b.circuit } }
+      }
+  writeTextFile UTF8 path (writeJSON circuits)
+  writeTextFile UTF8 (shapesDir <> "/" <> fileName) (writeJSON application)

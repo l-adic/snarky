@@ -1,7 +1,7 @@
 -- | Where a prove test writes: its proof cache, under
 -- | `PICKLES_PROOF_CACHE_DIR/<app>.json`, and each of its tags' dumps,
--- | under `PICKLES_DUMP_DIR/<app>/<tag>.json`, each only when its
--- | variable is set.
+-- | under `PICKLES_DUMP_DIR/<app>/<tag>.json`. Reconstruction inputs go to
+-- | `PICKLES_DUMP_DIR/<app>/shapes/<tag>.json` when dumping is on.
 module Test.Pickles.Outputs
   ( AppOutputs
   , appOutputs

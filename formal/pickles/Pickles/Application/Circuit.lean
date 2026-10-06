@@ -36,8 +36,8 @@ structure Setup where
   stepRounds : step.σ.k = StepIPARounds
   /-- The padding commitment for a slot's old accumulators. -/
   dummySg : IpaPallas.curve.Point
-  /-- The padding entry for a branch's step statement. -/
-  dummyUnf : UnfVal WrapIPARounds
+  /-- Step-statement padding indexed by the active branch's predecessor count. -/
+  dummyUnf : Vector (UnfVal WrapIPARounds) (MaxProofsVerified + 1)
   /-- The padding challenges for wrap messages. -/
   dummy : Vector Fq WrapIPARounds
 
@@ -104,7 +104,8 @@ def Circuits.stepCircuit (C : Circuits D L) (V : Valuation Fp)
     (C.wiring.sources b) (C.source_bound b) C.setup.wrap.σ.h
     (fun i => FopParams.of IpaVesta.curve (C.wiring.sourceChunks b i)
       StepIPARounds Linearization.fpTokens)
-    C.wiring.backend.stepDomains.list (constPt C.setup.dummySg) C.setup.dummyUnf
+    C.wiring.backend.stepDomains.list (constPt C.setup.dummySg)
+    (C.setup.dummyUnf[D.slots b]'(Nat.lt_succ_of_le ((D.slots_le_width b).trans L.width_le)))
     (C.rules b) advice
 
 /-- The shared wrap circuit, with no public output and both blocks' cells retained. -/

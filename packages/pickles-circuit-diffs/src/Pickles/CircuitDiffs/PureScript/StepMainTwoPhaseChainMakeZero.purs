@@ -103,6 +103,7 @@ compileStepMainTwoPhaseChainMakeZeroWithConstants pallasSrs params = do
           dummyWrapSg
           dummyAdvice
           throwawayCaptureRef
+          Nothing
       )
   constants <- stepMainConstants
     (map slotWidthInt (slotWidthsOf (Proxy @Unit)))

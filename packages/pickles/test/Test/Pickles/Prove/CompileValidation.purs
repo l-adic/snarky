@@ -69,13 +69,13 @@ numChunksSpec = describe "Pickles.Prove.Compile.validateNumChunks" do
 -- | width 2, in a tag with two slots. Built with keys that disagree,
 -- | the entry must throw before any compile.
 slotWidthsSpec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
-slotWidthsSpec = describe "Pickles.Prove.Compile.requireSlotWidths" do
+slotWidthsSpec = describe "Pickles.Prove.Compile.requireSlotCompatibility" do
   it "throws when a Self slot's width is not the tag's" \_ -> do
     result :: Either Exc.Error (RuleEntry _ _ 2 _ Unit _) <- liftEffect $ Exc.try $
       mkRuleEntry @(F StepField) @() treeProofReturnRule (Self :< Self :< Vector.nil)
-    expectWidthError "slot 0 declares width 0, but its source verifies 2" result
+    expectSlotError "slot 0 declares width 0, but its source verifies 2" result
 
-  it "throws when an External slot's width is not its source's" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
+  it "rejects an External slot's wrong width or statement count" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     nrrEntry :: RuleEntry _ _ _ _ Unit _ <-
       liftEffect $ mkRuleEntry @(F StepField) nrrRule Vector.nil
     nrr <- withSpan "[CompileValidation] compile nrr" $ liftEffect $ compileMulti
@@ -92,11 +92,16 @@ slotWidthsSpec = describe "Pickles.Prove.Compile.requireSlotWidths" do
     result :: Either Exc.Error (RuleEntry _ _ 2 _ Unit _) <- liftEffect $ Exc.try $
       mkRuleEntry @(F StepField) @() treeProofReturnRule
         (External nrr.tagData :< External nrr.tagData :< Vector.nil)
-    expectWidthError "slot 1 declares width 2, but its source verifies 0" result
+    expectSlotError "slot 1 declares width 2, but its source verifies 0" result
+    let badTagData = nrr.tagData { statementLayout = { inputFields: 0, outputFields: 2 } }
+    wrongStatement :: Either Exc.Error (RuleEntry _ _ 2 _ Unit _) <- liftEffect $ Exc.try $
+      mkRuleEntry @(F StepField) @() treeProofReturnRule
+        (External badTagData :< Self :< Vector.nil)
+    expectSlotError "slot 0 declares statement field count 1, but its source has 2" wrongStatement
 
 -- | Fails unless `result` is an error containing `expected`.
-expectWidthError :: forall a. String -> Either Exc.Error a -> LoggerT Message Aff Unit
-expectWidthError expected = case _ of
+expectSlotError :: forall a. String -> Either Exc.Error a -> LoggerT Message Aff Unit
+expectSlotError expected = case _ of
   Right _ -> fail $ "expected mkRuleEntry to throw: " <> expected
   Left err ->
     when (not (contains (Pattern expected) (Exc.message err)))

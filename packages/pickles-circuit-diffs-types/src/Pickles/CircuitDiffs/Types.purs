@@ -6,6 +6,7 @@ module Pickles.CircuitDiffs.Types
   , Point
   , Chunked
   , Key
+  , VerifierIndexDump
   , WrapBranch
   , StepSlot(..)
   ) where
@@ -13,6 +14,7 @@ module Pickles.CircuitDiffs.Types
 import Prelude
 
 import Data.Maybe (Maybe)
+import Data.Nullable (Nullable)
 import Foreign (Foreign, ForeignError(..), fail)
 import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 
@@ -48,8 +50,36 @@ type Point = Array String
 -- | A commitment's chunks.
 type Chunked = Array Point
 
--- | A verifier key: its JSON, as the proof cache stores it, and its digest.
-type Key = { vk :: String, digest :: String }
+-- | The verifier-index fields exported by kimchi, with points represented by
+-- | pairs of hexadecimal coordinates. This is a JSON object in fixtures; the
+-- | proof cache's canonical JSON string is a separate encoding.
+type VerifierIndexDump =
+  { domain :: { logSizeOfGroup :: Int, groupGen :: String }
+  , maxPolySize :: Int
+  , public :: Int
+  , prevChallenges :: Int
+  , evals ::
+      { sigmaComm :: Array (Array Point)
+      , coefficientsComm :: Array (Array Point)
+      , genericComm :: Array Point
+      , psmComm :: Array Point
+      , completeAddComm :: Array Point
+      , mulComm :: Array Point
+      , emulComm :: Array Point
+      , endomulScalarComm :: Array Point
+      , xorComm :: Nullable (Array Point)
+      , rangeCheck0Comm :: Nullable (Array Point)
+      , rangeCheck1Comm :: Nullable (Array Point)
+      , foreignFieldAddComm :: Nullable (Array Point)
+      , foreignFieldMulComm :: Nullable (Array Point)
+      , rotComm :: Nullable (Array Point)
+      }
+  , shifts :: Array String
+  , zkRows :: Int
+  }
+
+-- | A fixture key and the digest checked by the Lean reader.
+type Key = { vk :: VerifierIndexDump, digest :: String }
 
 -- | A wrap main's branch.
 type WrapBranch =

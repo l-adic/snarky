@@ -1,9 +1,10 @@
--- | A two-branch program whose branches have different prev counts, and
+-- | A three-branch program whose branches have different prev counts, and
 -- | whose slots are wider than one.
 -- |
 -- |   * branch 0 — no prevs (`mpv = 0`)
 -- |   * branch 1 — two self prevs, each a proof of this system, so
 -- |     each slot is `Slot 2` (`mpv = 2`)
+-- |   * branch 2 — one self prev at width 2 (`mpv = 1`)
 -- |
 -- | `mpvMax = 2`, so branch 0 is front-padded by two slots, and those
 -- | dummy slots are two challenge stacks wide apiece. Nothing else in
@@ -17,10 +18,9 @@
 -- | witness supply two, and the unassigned variables would surface as
 -- | `MissingVariable` inside `b-poly`.
 -- |
--- | Proving branch 0 is the whole test: front-padding happens at prove
--- | time, and the base case is where all of it is dummy. Both rule
--- | bodies are borrowed — what is under test is the branch arrangement,
--- | not the arithmetic.
+-- | Branches 0 and 2 use different unfinalized padding constants. Their
+-- | exported circuits exercise predecessor-count selection in reconstruction.
+-- | Proving branches 0 and 2 checks fully and partially padded witnesses.
 module Test.Pickles.Prove.PaddedWideSlots
   ( spec
   ) where
@@ -30,16 +30,17 @@ import Prelude
 import Colog (LoggerT, Message, logInfo, withSpan)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
-import Data.Tuple (fst)
-import Data.Tuple.Nested (tuple2)
+import Data.Tuple (fst, snd)
+import Data.Tuple.Nested (Tuple1, tuple1, tuple3, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), SlotWrapKey(..), StatementIO, StepField, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Circuit.DSL (F(..))
+import Snarky.Circuit.CVar (add_) as CVar
+import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
 import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.Prove.SimpleChainN2 (simpleChainN2Rule)
 import Test.Pickles.Prove.TwoPhaseChain (makeZeroRule)
@@ -48,6 +49,18 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 type Stmt = StatementIO (F StepField) Unit
+
+-- | Increment a single predecessor from this width-two application.
+incrementRule :: StepRule (Tuple1 (Slot 2 Stmt)) (F StepField) (FVar StepField) Unit Unit
+incrementRule getPrevStates self = do
+  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input } /\ _) -> input
+  assertEqual_ self (CVar.add_ (const_ one) prev)
+  pure
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+          /\ unit
+    , publicOutput: unit
+    }
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.PaddedWideSlots" do
@@ -69,7 +82,8 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
     mergeEntry <- liftEffect $ mkRuleEntry @Unit
       simpleChainN2Rule
       (Self :< Self :< Vector.nil)
-    let rules = tuple2 baseEntry mergeEntry
+    incrementEntry <- liftEffect $ mkRuleEntry @Unit incrementRule (Self :< Vector.nil)
+    let rules = tuple3 baseEntry mergeEntry incrementEntry
 
     logInfo "[PaddedWideSlots] compiling…"
     output <- withSpan "[PaddedWideSlots] compile" $ liftEffect $ compileMulti
@@ -88,5 +102,11 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
       Left e -> liftEffect $ Exc.throw ("PaddedWideSlots base prover: " <> show e)
       Right p -> pure p
 
-    verifyBatch output.verifier (map toVerifiable [ b0 ]) `shouldEqual` true
+    let BranchProver incrementProver = fst (snd (snd output.provers))
+    eB1 <- withSpan "[PaddedWideSlots] prove branch 2" $ liftEffect $ incrementProver noAdvice
+      { appInput: F one, prevs: tuple1 (InductivePrev b0 output.tag) }
+    b1 <- case eB1 of
+      Left e -> liftEffect $ Exc.throw ("PaddedWideSlots increment prover: " <> show e)
+      Right p -> pure p
+    verifyBatch output.verifier (map toVerifiable [ b0, b1 ]) `shouldEqual` true
     logInfo "[PaddedWideSlots] verified"

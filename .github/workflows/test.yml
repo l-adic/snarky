@@ -120,7 +120,7 @@ jobs:
       run: make fetch-srs
 
     # The pickles prove tests also write the theorems' dump of every tag they compile
-    # (`<app>/<tag>.json`: its circuits, constants, keys and rules) for the `check-tags` job.
+    # (`<app>/<tag>.json`: comparison circuits; `shapes/<tag>.json`: reconstruction inputs).
     - name: Test all libraries (excludes pickles-circuit-diffs)
       run: make test-libs
       env:
@@ -200,6 +200,29 @@ jobs:
       run: make test-example
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
+
+    - name: Export the transaction application fixtures
+      run: npm exec -- spago run -p example-fixtures
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+        PICKLES_DUMP_DIR: ${{ github.workspace }}/pickles-dumps
+        PICKLES_PROOF_CACHE_DIR: ${{ github.workspace }}/packages/example/bin/fixtures/proof-cache
+
+    - name: Upload the transaction circuit and application fixtures
+      uses: actions/upload-artifact@v4
+      with:
+        name: example-tag-dumps
+        path: pickles-dumps/
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Upload the transaction proof cache
+      uses: actions/upload-artifact@v4
+      with:
+        name: example-proof-cache
+        path: packages/example/bin/fixtures/proof-cache/
+        if-no-files-found: error
+        retention-days: 1
 
     # Runs only if the example tests passed (a failed step aborts the job).
     # Full one-block pipeline on the purs-backend-es optimized output:
@@ -380,7 +403,7 @@ jobs:
   # and the cross-tag slot checks. Compiled by the lean.yml build job, like check-cs.
   check-tags:
     if: github.event_name != 'workflow_dispatch'
-    needs: test-libs
+    needs: [test-libs, test-example]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -396,27 +419,33 @@ jobs:
         name: pickles-tag-dumps
         path: pickles-dumps/
 
+    - name: Download the transaction circuit and application fixtures
+      uses: actions/download-artifact@v4
+      with:
+        name: example-tag-dumps
+        path: pickles-dumps/
+
+    - name: Download the transaction proof cache
+      uses: actions/download-artifact@v4
+      with:
+        name: example-proof-cache
+        path: example-proof-cache/
+
     - name: Check per-slot chunk counts
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-slot-chunks
 
-    - name: Check application layouts and wiring against tag metadata
+    - name: Check application layouts and wiring against sidecars
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
-        lake build PicklesFixture.Application PicklesFixture.ApplicationWiring
+        lake build PicklesFixture.Application PicklesFixture.ApplicationImport
         PICKLES_DUMP_DIR=../pickles-dumps lake env lean --run scripts/check_application_layouts.lean
 
-    - name: Check the tag dumps
-      run: |
-        export PATH="$HOME/.elan/bin:$PATH"
-        cd formal
-        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-tags
-
-    # The links read the committed proof caches and the SRS they were made against; the
-    # Lagrange points are committed under formal/lagrange-cache.
+    # Application reconstruction derives its bases from the shared SRS. Link checks
+    # additionally read committed proof caches and memoized verifier bases.
     - name: Cache SRS files
       uses: actions/cache@v3
       with:
@@ -426,23 +455,44 @@ jobs:
     - name: Populate SRS cache
       run: make fetch-srs
 
-    # Two apps' links, each proof's main circuit run on its cached proof with the capstones'
-    # hypotheses and conclusions decided: self slots, base cases, recursion, and a chunked step
-    # proof verified. `LINKS=all` is too long for every run.
+    - name: Check the tag dumps
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-tags
+
+    - name: Check rule replay and malformed application inputs
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        lake env lean --run scripts/check_application_manifest.lean
+        lake exe check-rule-replay
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-inputs
+
+    # Reconstructed applications invoke the verification and handover capstones directly:
+    # Self recursion, base branches and a two-chunk imported source.
     - name: Check two apps' links
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps LINKS=TwoPhaseChain,RecurseOverChunks lake exe check-tags
 
-    # On main only: three step domains in one system and slot widths above a rule's predecessor
-    # count, which the two apps above do not reach.
-    - name: Check HeterogeneousPrevs' links
+    # On main only: heterogeneous sources, partial padding and dynamic mustVerify.
+    - name: Check additional applications' links
       if: github.event_name == 'push'
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
-        PICKLES_DUMP_DIR=../pickles-dumps LINKS=HeterogeneousPrevs lake exe check-tags
+        PICKLES_DUMP_DIR=../pickles-dumps \
+          LINKS=HeterogeneousPrevs,SimpleChain,PaddedWideSlots lake exe check-tags
+
+    - name: Check the transaction application's links
+      if: github.event_name == 'push'
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps PICKLES_PROOF_CACHE_DIR=../example-proof-cache \
+          LINKS=ExampleTransaction lake exe check-tags
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

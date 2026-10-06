@@ -106,10 +106,6 @@ Snarky.Tactic.walk
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 Snarky.instReprEvalError -- synthesis: found by class resolution, never by name
-Snarky.Kimchi.makeWitness
 Snarky.Kimchi.kimchiGateData
-Snarky.Kimchi.reduceSolved -- check-tags completes its main circuits' tables
 Snarky.compileWith_constraints -- check-cs compiles a circuit's output alone as the capstones' system
-Snarky.Kimchi.KimchiConstraint.decidableHolds -- check-tags decides the capstones' constraint hypothesis on each run
-Snarky.CircuitType.decidableReads -- check-tags decides the capstones' reading hypotheses on each run
 -- script-surface:end

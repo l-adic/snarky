@@ -71,6 +71,10 @@ test-pickles: build-napi gen-linearization ## Test pickles package (requires cod
 	cd packages/pickles && npx spago test
 
 test-pickles-circuit-diffs: build-napi gen-linearization fixtures-unpack ## Test pickles circuit diffs package (requires codegen)
+	# `spago test` runs `purs graph` over the sources of every package some
+	# workspace package depends on, but downloads only this package's
+	# closure; fetch the workspace's dependencies so that graph resolves.
+	npx spago fetch
 	cd packages/pickles-circuit-diffs && npx spago test
 
 test-libs: ## Test every package EXCEPT example and pickles-circuit-diffs (each its own CI parallel job)

@@ -20,7 +20,7 @@ padding the tag dump records (`PicklesFixture.WrapPadding`).
 
 * `PicklesFixture.StepPrev`, `PicklesFixture.stepPrevsOf`: a step proof's slots, off the cache.
 * `PicklesFixture.WrapPrev`, `PicklesFixture.wrapPrevsOf`: the wrap circuit's slots.
-* `PicklesFixture.stepMainAdviceOf`: the step circuit's advice at a cached step proof.
+* `PicklesFixture.stepAdviceOf`: the step circuit's advice at a cached step proof.
 * `PicklesFixture.wrapMainAdviceOf`: the wrap circuit's advice at the step proof it wraps.
 -/
 
@@ -107,7 +107,8 @@ commitments, opening and old accumulators' points), the wrap statement it carrie
 values of the step proof it verified, and its branch data), and that step proof `S` (its
 evaluations at `ncs` chunks and its old accumulators' challenges, zero in a slot it lacks, whose
 mask bit leaves it unread). -/
-def slotValOf (w ncs : ℕ) (W : Cache.Entry CW) (S : Cache.Entry CS) :
+def slotValOf (w ncs : ℕ) (W : Cache.Entry CW) (S : Cache.Entry CS)
+    (dummySg : CW.Point := dummyWrapSgPt) :
     Except String (Pickles.SlotVal w 1 ncs 15 Pickles.StepIPARounds) := do
   let (_, cpW) ← W.checkedAt 15 1
   let (_, cpS) ← S.checkedAt Pickles.StepIPARounds ncs
@@ -118,7 +119,7 @@ def slotValOf (w ncs : ℕ) (W : Cache.Entry CW) (S : Cache.Entry CS) :
   let st ← wrapStatementOf toStep Pickles.StepIPARounds W.publicInput
   let dv := st.proofState.deferredValues
   let cell (P : AffinePoint Fp) : Pickles.PallasPt Fp := ⟨P⟩
-  let sgs ← lastPadded w (cell ⟨dummyWrapSgPt.x, dummyWrapSgPt.y⟩)
+  let sgs ← lastPadded w (cell ⟨dummySg.x, dummySg.y⟩)
     (cpW.olds.map fun a => cell ⟨a.sg.x, a.sg.y⟩)
   let chals ← lastPadded w (Vector.replicate Pickles.StepIPARounds 0) (cpS.olds.map (·.u))
   return { wComm := iv.wComm.map (·.map cell), zComm := iv.zComm.map cell
@@ -150,7 +151,8 @@ def finSequence {m : Type → Type} [Monad m] : {n : ℕ} → {β : Fin n → Ty
 /-- Cached step advice at the supplied slot widths, chunk counts and input encoding. -/
 def stepAdviceOf {n : ℕ} (w : ℕ) (ws ncs : Fin n → ℕ)
     {inVal inVar : Type} [CircuitType Fp inVal inVar]
-    (wrapKey : Kimchi.Verifier.KimchiVK CW 1) (S0 : Cache.Entry CS) (prevs : Vector StepPrev n) :
+    (wrapKey : Kimchi.Verifier.KimchiVK CW 1) (S0 : Cache.Entry CS) (prevs : Vector StepPrev n)
+    (dummySg : CW.Point := dummyWrapSgPt) :
     Except String (Pickles.StepMainAdvice n w ws 1 ncs 15 Pickles.StepIPARounds inVal) := do
   let inputSize := CircuitType.size Fp inVal
   let some rule := S0.rule | throw "the step proof's cache entry has no rule witness"
@@ -160,7 +162,7 @@ def stepAdviceOf {n : ℕ} (w : ℕ) (ws ncs : Fin n → ℕ)
   let slots ← finSequence fun i =>
     match prevs[i] with
     | .proof W S =>
-      slotValOf (ws i) (ncs i) W S
+      slotValOf (ws i) (ncs i) W S dummySg
     | .baseCase cells => (ofCells Fp cells).mapError (s!"slot {i}'s base case: " ++ ·)
   let st ← stepStatementOf id 15 w S0.publicInput
   if hnw : n ≤ w then
@@ -175,15 +177,6 @@ def stepAdviceOf {n : ℕ} (w : ℕ) (ws ncs : Fin n → ℕ)
              slots := pure slots, unfinalized := pure unfs, msgs := pure msgs
              msgsPad := pure msgsPad }
   else throw s!"{n} slots in a tag of width {w}"
-
-/-- The step circuit's advice from a dumped configuration and a cached proof. -/
-def stepMainAdviceOf {n : ℕ} (w : ℕ) (k : StepMainConsts n) (inputSize : ℕ)
-    (wrapKey : Kimchi.Verifier.KimchiVK CW 1) (S0 : Cache.Entry CS) (prevs : Vector StepPrev n) :
-    Except String (Pickles.StepMainAdvice n w
-      (Pickles.SlotSource.widths w fun i => k.slots[i].source) 1 k.chunks 15 Pickles.StepIPARounds
-      (Vector Fp inputSize)) :=
-  stepAdviceOf w (Pickles.SlotSource.widths w fun i => k.slots[i].source) k.chunks
-    wrapKey S0 prevs
 
 /-- A shifted register split as `(half, parity)`, as one register `2·half + parity`. -/
 def joinSplit {f : Type} [Field f] (x : Type2 (SplitField f Bool)) : Type2 f :=
@@ -206,15 +199,6 @@ structure WrapPadding where
   evals : Pickles.AllocEvals 1 Fq
   /-- The wrap domain's index. -/
   domain : Fq
-
-/-- A tag dump's wrap padding, off its `wrapMain`. -/
-def WrapPadding.ofJson (wrapMain : Json) : Except String WrapPadding := do
-  let p ← wrapMain.getObjVal? "padding"
-  let P ← Bulletproof.Fixture.parsePt XhatWrapCurve (← p.getObjVal? "stepAcc")
-  return { stepAcc := ⟨⟨P.x, P.y⟩⟩
-           evals := ← ofCells Fq
-             (← FixtureKit.parseArrOf FixtureKit.parseZMod (← p.getObjVal? "evals"))
-           domain := ((← (← p.getObjVal? "domain").getNat?) : Fq) }
 
 /-- One of the wrap circuit's slots: the wrap proof the step proof verified there, a base case,
 with the cells the wrap circuit allocated for its evaluations and its wrap domain's index, or a

@@ -2,13 +2,15 @@ import PicklesFixture.ApplicationRun
 import Pickles.Application.Handover
 import PicklesFixture.Premises
 import PicklesFixture.Verdicts
+import PicklesFixture.Manifest
 
 /-!
 # Application capstones on cached executions
 
 Typed application runs are joined using the cache's predecessor references. Each checked link
 applies an application verification theorem; adjacent links apply both application handover
-theorems. SRS correspondence of the dumped Lagrange tables remains an explicit premise.
+theorems. Each theorem's Lagrange correspondence with the shared SRS is kept as its open premise;
+the assembled tables are the memoised Lagrange bases, which no check recomputes.
 -/
 
 namespace PicklesFixture.Application
@@ -18,23 +20,6 @@ open CompElliptic.Fields.Pasta Kimchi.Fixture Kimchi.Verifier
 
 private def key {C : Ipa.KimchiCurve} (p : Cache.Entry C) :=
   (p.vkDigest, p.publicInputKey)
-
-private def Tag.imports : (t : Tag) → Fin t.shape.imports.size → Tag
-  | .chain, k => Fin.elim0 k
-  | .child, k => Fin.elim0 k
-  | .parent, _ => .child
-  | .chunks, k => Fin.elim0 k
-  | .recurse, _ => .chunks
-
-private def Tag.source (t : Tag) (b : t.shape.Branch) (i : t.shape.Slot b) : Tag :=
-  match t.shape.source b i with
-  | .self => t
-  | .external k => t.imports k
-
-private theorem Tag.source_layout (t : Tag) (b : t.shape.Branch) (i : t.shape.Slot b)
-    (L : Layout t.shape) (M : Layout (t.source b i).shape) :
-    t.shape.sourceLayout L b i = M.export := by
-  cases t <;> fin_cases b <;> fin_cases i <;> rfl
 
 deriving instance DecidableEq for Kimchi.Verifier.KimchiVK
 deriving instance DecidableEq for Kimchi.Verifier.Accumulator
@@ -60,18 +45,46 @@ attribute [nolint defsWithUnderscore] instDecidableEqKnownDomains_picklesFixture
 attribute [nolint defsWithUnderscore] instDecidableEqCircuitInterface_picklesFixture
   instDecidableEqCircuitInterface_picklesFixture.decEq
 
-private def sourceFor {S : Setup} {t : Tag} (consumer : Context S t)
-    (branch : t.shape.Branch) (slot : t.shape.Slot branch)
-    (producer : Context S (t.source branch slot)) :
+private def FieldSchemas.source {D : Shape} (F : FieldSchemas D)
+    (b : D.Branch) (i : D.Slot b) : FieldLayoutDump :=
+  match D.source b i with
+  | .self => F.own
+  | .external t => F.imports t
+
+private theorem FieldSchemas.source_eq {D : Shape} (F : FieldSchemas D) (L : Layout D)
+    (b : D.Branch) (i : D.Slot b) :
+    (D.sourceLayout L b i).schema = fieldSchema (F.source b i) := by
+  cases h : D.source b i with
+  | self => simpa [Shape.sourceLayout, FieldSchemas.source, h, Layout.export] using F.own_eq
+  | external t => simpa [Shape.sourceLayout, FieldSchemas.source, h] using F.imports_eq t
+
+private theorem interface_eq {I J : LayoutInterface}
+    (hs : I.schema = J.schema) (hw : I.width = J.width) : I = J := by
+  cases I
+  cases J
+  cases hs
+  cases hw
+  rfl
+
+private def sourceFor {S : Setup} {D E : Shape} (consumer : Context S E)
+    (branch : E.Branch) (slot : E.Slot branch) (producer : Context S D) :
     IO (PLift (SourceFor (producer.assembled.circuits S (fun _ => none))
       (consumer.assembled.circuits S (fun _ => none)) branch slot)) := do
-  let ⟨hd⟩ ← requireProof (producer.assembled.dummy = consumer.assembled.dummy)
-    (IO.userError "application padding differs")
-  have hl := t.source_layout branch slot consumer.assembled.layout producer.assembled.layout
+  let ⟨hs⟩ ← requireProof (consumer.schemas.source branch slot = producer.schemas.own)
+    (IO.userError "slot statement encoding differs from its producer")
+  let ⟨hw⟩ ← requireProof
+    ((E.sourceLayout consumer.assembled.layout branch slot).width =
+      producer.assembled.layout.export.width)
+    (IO.userError "slot width differs from its producer")
+  have hl : E.sourceLayout consumer.assembled.layout branch slot =
+      producer.assembled.layout.export := by
+    have he := (consumer.schemas.source_eq consumer.assembled.layout branch slot).trans
+      ((congrArg fieldSchema hs).trans producer.schemas.own_eq.symm)
+    exact interface_eq he hw
   let ⟨hi⟩ ← requireProof
     (hl ▸ consumer.assembled.wiring.source branch slot = producer.assembled.wiring.export)
     (IO.userError "slot interface differs from its declared producer")
-  return ⟨⟨by simp only [Assembled.circuits, hd], by
+  return ⟨⟨rfl, by
     exact (Sigma.mk.inj_iff.mpr ⟨hl, (eqRec_heq hl _).symm.trans (heq_of_eq hi)⟩)⟩⟩
 
 private structure Pair {D : Shape} {L : Layout D} (C : Circuits D L) where
@@ -81,7 +94,7 @@ private structure Pair {D : Shape} {L : Layout D} (C : Circuits D L) where
   wrap : Cache.Entry CW
   previous : Vector StepPrev (D.slots branch)
 
-private def pairs {S : Setup} {t : Tag} (A : Context S t) :
+private def pairs {S : Setup} {D : Shape} (A : Context S D) :
     IO (List (Pair (A.assembled.circuits S (fun _ => none)))) := do
   let mut result := []
   for w in ← A.wraps.get do
@@ -96,16 +109,6 @@ private def pairs {S : Setup} {t : Tag} (A : Context S t) :
       (IO.userError "step/wrap public inputs differ")
     result := result ++ [⟨s.branch, ⟨s.run, w.run, hbranch, hpub⟩, s.proof, w.proof, s.previous⟩]
   return result
-
-private def wrapTable {D : Shape} {L : Layout D} (C : Circuits D L) (b : D.Branch) : Prop :=
-  C.stepLagrange C.wiring.backend.stepKeys[b].cvk.domainLog2 =
-    C.wiring.backend.stepKeys[b].cvk.lagrangePoints C.setup.stepSrs.σ
-      (CircuitType.size Fp (StepStatement (UnfVal WrapIPARounds) Fp D.width))
-
-private def stepTable {D : Shape} {L : Layout D} (C : Circuits D L)
-    (b : D.Branch) (i : D.Slot b) : Prop :=
-  (C.wiring.sources b i).lagrange = (C.wiring.source b i).wrapKey.cvk.lagrangePoints
-    C.setup.wrapSrs.σ (CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp))
 
 private def wrapAssumptions {D : Shape} {L : Layout D} (C : Circuits D L) (b : D.Branch) :
     IO (PLift (wrapTable C b → WrapStepAssumptions C b)) := do
@@ -148,6 +151,32 @@ private def stepAssumptions {D : Shape} {L : Layout D} (C : Circuits D L)
         rw [Fin.fin_one_eq_zero c]
         exact of_decide_eq_true (List.all_eq_true.mp hL Ps hPs)⟩⟩⟩
 
+private def Context.stepParametersAt {S : Setup} {D : Shape}
+    (A : Context S D) (b : D.Branch) (i : D.Slot b) :
+    IO (PLift (stepTable (A.assembled.circuits S (fun _ => none)) b i →
+      StepWrapAssumptions (A.assembled.circuits S (fun _ => none)) b i)) := do
+  for ⟨b', i', p⟩ in ← A.stepParameters.get do
+    if hb : b' = b then
+      let j : D.Slot b := hb ▸ i'
+      let q : PLift (stepTable (A.assembled.circuits S (fun _ => none)) b j →
+          StepWrapAssumptions (A.assembled.circuits S (fun _ => none)) b j) := by
+        subst b'
+        exact p
+      if hi : j = i then return hi ▸ q
+  let p ← stepAssumptions (A.assembled.circuits S (fun _ => none)) b i
+  A.stepParameters.modify (⟨b, i, p⟩ :: ·)
+  return p
+
+private def Context.wrapParametersAt {S : Setup} {D : Shape}
+    (A : Context S D) (b : D.Branch) :
+    IO (PLift (wrapTable (A.assembled.circuits S (fun _ => none)) b →
+      WrapStepAssumptions (A.assembled.circuits S (fun _ => none)) b)) := do
+  for ⟨b', p⟩ in ← A.wrapParameters.get do
+    if hb : b' = b then return hb ▸ p
+  let p ← wrapAssumptions (A.assembled.circuits S (fun _ => none)) b
+  A.wrapParameters.modify (⟨b, p⟩ :: ·)
+  return p
+
 private def compareProof {C : Ipa.KimchiCurve} {nc : Nat} (name : String)
     (σ : SRS C.Point) (vk : Kimchi.Verifier.KimchiVK C nc)
     (q : Kimchi.Verifier.KimchiProof C nc σ.k) (pub : Array C.ScalarField)
@@ -185,9 +214,9 @@ private structure StepFacts {D : Shape} {L : Layout D} {C : Circuits D L} {b : D
 
 set_option cleanup.letToHave false in
 private def checkStep {D : Shape} {L : Layout D} {C : Circuits D L} {b : D.Branch}
-    (e : StepWrapLink C b) (i : D.Slot b) (cached : Cache.Entry CW) :
+    (e : StepWrapLink C b) (i : D.Slot b) (hp : stepTable C b i → StepWrapAssumptions C b i)
+    (cached : Cache.Entry CW) :
     IO (PLift (StepFacts e i)) := do
-  let ⟨hp⟩ ← stepAssumptions C b i
   let ⟨hmv⟩ ← requireProof (CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true)
     (IO.userError "verified application slot is not mustVerify")
   let ⟨hkey⟩ ← keyBound e.step i
@@ -242,8 +271,8 @@ private structure WrapFacts {D E : Shape} {L : Layout D} {M : Layout E}
 set_option cleanup.letToHave false in
 private def checkWrap {D E : Shape} {L : Layout D} {M : Layout E}
     {A : Circuits D L} {B : Circuits E M} {a : D.Branch} {b : E.Branch} {i : E.Slot b}
-    (e : WrapStepLink A B a b i) (cached : Cache.Entry CS) : IO (PLift (WrapFacts e)) := do
-  let ⟨hp⟩ ← wrapAssumptions A a
+    (e : WrapStepLink A B a b i) (hp : wrapTable A a → WrapStepAssumptions A a)
+    (cached : Cache.Entry CS) : IO (PLift (WrapFacts e)) := do
   let r := e.run
   let ⟨ha⟩ ← requireProof (accOk A.setup.stepSrs.σ (WrapStep.emittedAccumulator r.Vw r.Vs
     r.i r.wrapVerifyOut r.wrapFinalizeOut r.stepOut) = true)
@@ -270,9 +299,8 @@ private def checkStepHandover {D E G : Shape} {L : Layout D} {M : Layout E} {N :
          AccumulatorFailure A.setup.stepSrs.σ B.wiring.backend.stepKeys[b].cvk
           e.consumer.proof e.consumer.proofPublicInput)) ∨
       e.producer.run.WrapCollision e.consumer.run A.setup.dummy ∨
-      e.producer.run.StepCollision e.consumer.run B.wiring.backend.wrapKey.cvk := by
-    intro hA hB
-    exact e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
+      e.producer.run.StepCollision e.consumer.run B.wiring.backend.wrapKey.cvk := fun hA hB =>
+    e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
       (by rw [e.producer.sourceFor.setup]; exact g.accepts hB)
   let _ ← requireProof (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap)
     (IO.userError "application step-proof handover messages differ")
@@ -291,9 +319,8 @@ private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
       (e.producer.run i (e.producer.mask i)).WrapCollision
         (e.consumer.run j (e.consumer.mask j)) A.setup.dummy ∨
       (e.producer.run i (e.producer.mask i)).StepCollision
-        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk := by
-    intro hA hB
-    exact e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
+        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk :=
+    fun hA hB => e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
       (by rw [e.sourceFor.setup]; exact g.accepts hB)
   have _ : stepTable A a i → stepTable B b j →
       (e.producer.step.cells.messagesForNextStepProof.appState.map
@@ -303,9 +330,8 @@ private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
       (e.producer.run i (e.producer.mask i)).WrapCollision
         (e.consumer.run j (e.consumer.mask j)) A.setup.dummy ∨
       (e.producer.run i (e.producer.mask i)).StepCollision
-        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk := by
-    intro hA hB
-    exact e.appState_eq_or_collision (f.assumptions hA) (g.assumptions hB)
+        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk :=
+    fun hA hB => e.appState_eq_or_collision (f.assumptions hA) (g.assumptions hB)
       (by rw [e.sourceFor.setup]; exact g.accepts hB)
   let _ ← requireProof (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap)
     (IO.userError "application wrap-proof handover messages differ")
@@ -316,76 +342,93 @@ private def findPair {D : Shape} {L : Layout D} {C : Circuits D L} (ps : List (P
   | some p => pure p
   | none => throw (IO.userError "cached predecessor has no typed application run")
 
-/-- What a verified slot established: the run whose wrap proof it verifies, the connection to
-that run, and the decided facts of both links. -/
-private structure SlotFacts {S : Setup} {t : Tag} {B : Context S t}
-    (b : Pair (B.assembled.circuits S fun _ => none)) (i : t.shape.Slot b.branch) where
-  producer : Context S (t.source b.branch i)
-  run : Pair (producer.assembled.circuits S fun _ => none)
-  source : SourceFor (producer.assembled.circuits S fun _ => none)
+/-- What a verified slot established: the producing application, the run whose wrap proof the
+slot verifies, the connection to that run, and the decided facts of both links. -/
+private structure SlotFacts {S : Setup} (contexts : List ((D : Shape) × Context S D))
+    {D : Shape} {B : Context S D} (b : Pair (B.assembled.circuits S fun _ => none))
+    (i : D.Slot b.branch) where
+  producer : Fin contexts.length
+  run : Pair (contexts[producer].2.assembled.circuits S fun _ => none)
+  source : SourceFor (contexts[producer].2.assembled.circuits S fun _ => none)
     (B.assembled.circuits S fun _ => none) b.branch i
   connection : Connection run b i
   step : StepFacts b.link i
   wrap : WrapFacts (connection.link source)
 
 /-- A typed run with what each of its verified slots established. -/
-private structure Node {S : Setup} {t : Tag} (B : Context S t) where
+private structure Node {S : Setup} (contexts : List ((D : Shape) × Context S D))
+    {D : Shape} (B : Context S D) where
   pair : Pair (B.assembled.circuits S fun _ => none)
-  slots : (i : t.shape.Slot pair.branch) → Option (SlotFacts pair i)
+  slots : (i : D.Slot pair.branch) → Option (SlotFacts contexts pair i)
 
-/-- A selected application: its typed runs, joined once, the runs checked so far, and the
-counts of its verified slots and of their adjacent pairs. -/
-private structure Store (S : Setup) (t : Tag) where
-  context : Context S t
-  pairs : List (Pair (context.assembled.circuits S fun _ => none))
-  nodes : IO.Ref (List (Node context))
+/-- A selected application's typed runs, joined once, the runs checked so far, and the counts
+of its verified slots, of their adjacent pairs, of its disabled slots and of the foreign
+producer interfaces its slots rejected. -/
+private structure Store {S : Setup} (contexts : List ((D : Shape) × Context S D))
+    {D : Shape} (B : Context S D) where
+  pairs : List (Pair (B.assembled.circuits S fun _ => none))
+  nodes : IO.Ref (List (Node contexts B))
   verified : IO.Ref Nat
   handovers : IO.Ref Nat
+  disabled : IO.Ref Nat
+  negatives : IO.Ref Nat
 
-private def findStore {S : Setup} (stores : List ((t : Tag) × Store S t)) (t : Tag) :
-    IO (Store S t) := do
-  for ⟨u, c⟩ in stores do
-    if h : u = t then return h ▸ c
-  throw (IO.userError "missing declared source application")
-
-/-- The verified slots among a tag's cached runs. A pin on the committed proof cache: a cache
-regenerated with another number of chained runs changes these counts. -/
-private def Tag.verifiedSlots : Tag → Nat
-  | .chain => 3 | .parent => 4 | .recurse => 1 | .child | .chunks => 0
-
-/-- The adjacent pairs of verified slots among a tag's cached runs, pinned on the same cache as
-`Tag.verifiedSlots`. -/
-private def Tag.handovers : Tag → Nat
-  | .chain | .parent => 2 | .recurse | .child | .chunks => 0
+/-- The consumer's fixture's application whose wrap key produced `cached`: a cache holds one
+fixture's runs, so a cached predecessor's producer is a tag of the same fixture. -/
+private def findProducer {S : Setup} (contexts : List ((D : Shape) × Context S D))
+    (fixture : String) (cached : Cache.Entry CW) : Option (Fin contexts.length) :=
+  (List.finRange contexts.length).find? fun k =>
+    contexts[k].2.fixture == fixture &&
+      toString contexts[k].2.assembled.wiring.backend.wrapKey.cvk.digest.val == cached.vkDigest
 
 /-- The run whose wrap proof is `cached`, each of its verified slots checked once: both
 verification capstones against the cache, and both handovers against each verified slot of the
 producing run, itself checked first. `fuel` bounds the chain of predecessors. -/
-private def nodeOf {S : Setup} (stores : List ((t : Tag) × Store S t)) (fuel : Nat) {t : Tag}
-    (B : Store S t) (cached : Cache.Entry CW) : IO (Node B.context) :=
+private def nodeOf {S : Setup} {contexts : List ((D : Shape) × Context S D)}
+    (stores : (k : Fin contexts.length) → Store contexts contexts[k].2) (fuel : Nat)
+    {D : Shape} {B : Context S D} (store : Store contexts B) (cached : Cache.Entry CW) :
+    IO (Node contexts B) :=
   match fuel with
   | 0 => throw (IO.userError
-      s!"{B.context.name}: a chain of cached predecessors is longer than the typed runs")
+      s!"{B.name}: a chain of cached predecessors is longer than the typed runs")
   | fuel + 1 => do
-    if let some n := (← B.nodes.get).find? (fun n => key n.pair.wrap == key cached) then
+    if let some n := (← store.nodes.get).find? (fun n => key n.pair.wrap == key cached) then
       return n
-    let b ← findPair B.pairs cached
-    let slots ← finSequence (β := fun i => Option (SlotFacts b i))
-      fun i : Fin (t.shape.slots b.branch) => do
-        let .proof older _ := b.previous[i] | return none
-        let A ← findStore stores (t.source b.branch i)
-        let n ← nodeOf stores fuel A older
+    let b ← findPair store.pairs cached
+    let slots ← finSequence (β := fun i => Option (SlotFacts contexts b i))
+      fun i : Fin (D.slots b.branch) => do
+        let .proof older _ := b.previous[i] | do
+          let _ ← requireProof (CircuitType.Reads b.link.step.V
+            (b.link.step.cells.prevs i).mustVerify false)
+            (IO.userError "base-case slot must disable verification")
+          store.disabled.modify (· + 1)
+          return none
+        let some k := findProducer contexts B.fixture older
+          | throw (IO.userError "cached proof has no reconstructed producer")
+        let A := contexts[k].2
+        let n ← nodeOf stores fuel (stores k) older
         let a := n.pair
-        let ⟨h⟩ ← sourceFor B.context b.branch i A.context
+        for ⟨_, wrong⟩ in contexts do
+          unless sameKey wrong.assembled.wiring.backend.wrapKey
+              A.assembled.wiring.backend.wrapKey do
+            let accepted ← try
+              let _ ← sourceFor B b.branch i wrong
+              pure true
+            catch _ => pure false
+            if accepted then throw (IO.userError "a slot accepted another producer interface")
+            store.negatives.modify (· + 1)
+        let ⟨h⟩ ← sourceFor B b.branch i A
         let ⟨connection⟩ ← connect a b i
         let ab := connection.link h
-        let ⟨fb⟩ ← checkStep b.link i older
-        let ⟨fab⟩ ← checkWrap ab a.step
-        B.verified.modify (· + 1)
-        IO.println s!"✓ {B.context.name}/{b.branch.val}/{i.val}: application verification \
-          capstones; reconstructed proofs match cache"
+        let ⟨pb⟩ ← B.stepParametersAt b.branch i
+        let ⟨fb⟩ ← checkStep b.link i pb older
+        let ⟨pab⟩ ← A.wrapParametersAt a.branch
+        let ⟨fab⟩ ← checkWrap ab pab a.step
+        store.verified.modify (· + 1)
+        IO.println s!"✓ {B.name}/{b.branch.val}/{i.val}: application verification capstones; \
+          reconstructed proofs match cache"
         (← IO.getStdout).flush
-        for j in List.finRange ((t.source b.branch i).shape.slots a.branch) do
+        for j in List.finRange (contexts[k].1.slots a.branch) do
           let some g := n.slots j | continue
           let w : WrapProofHandover _ _ a.branch b.branch j i :=
             { producer := a.link, consumer := b.link, sourceFor := h
@@ -397,58 +440,65 @@ private def nodeOf {S : Setup} (stores : List ((t : Tag) × Store S t)) (fuel : 
             { producer := g.connection.link g.source, consumer := ab
               middlePublicInput := a.link.publicInput }
           checkStepHandover s g.wrap fab
-          B.handovers.modify (· + 1)
-          IO.println s!"✓ {A.context.name}/{a.branch.val}/{j.val} → \
-            {B.context.name}/{b.branch.val}/{i.val}: both application handovers; both complete \
-            messages agree"
+          store.handovers.modify (· + 1)
+          IO.println s!"✓ {A.name}/{a.branch.val}/{j.val} → {B.name}/{b.branch.val}/{i.val}: \
+            both application handovers; both complete messages agree"
           (← IO.getStdout).flush
-        return some ⟨A.context, a, h, connection, fb, fab⟩
-    let n : Node B.context := ⟨b, slots⟩
-    B.nodes.modify (n :: ·)
+        return some ⟨k, a, h, connection, fb, fab⟩
+    let n : Node contexts B := ⟨b, slots⟩
+    store.nodes.modify (n :: ·)
     return n
 
-/-- Apply the application capstones and handovers to every selected verified slot and pair.
-The only unchecked premises are the two families of SRS Lagrange-table equalities. -/
-def validate {S : Setup} (contexts : List ((t : Tag) × Context S t)) : IO Unit := do
+/-- Apply the application capstones and handovers to every selected verified slot and pair,
+under the open premise that every assembled Lagrange table is its key's SRS Lagrange points. -/
+def validate {S : Setup} (contexts : List ((D : Shape) × Context S D)) : IO Unit := do
   IO.println s!"application capstones: checking {contexts.length} selected tags"
   (← IO.getStdout).flush
-  let stores : List ((t : Tag) × Store S t) ← contexts.mapM fun ⟨t, B⟩ => do
+  let mut expectedLinks := 0
+  let mut expectedPairs := 0
+  for ⟨_, B⟩ in contexts do
+    for s in ← B.steps.get do
+      expectedLinks := expectedLinks + 2 * s.proof.prevs.countP Option.isSome
+      for prev in s.previous do
+        if let .proof _ older := prev then
+          expectedPairs := expectedPairs + older.prevs.countP Option.isSome
+  let stores ← finSequence (β := fun k => Store contexts contexts[k].2) fun k => do
+    let B := contexts[k].2
     let ps ← pairs B
     unless !ps.isEmpty do throw (IO.userError s!"{B.name}: no typed application runs")
-    let nodes ← IO.mkRef ([] : List (Node B))
-    return ⟨t, ⟨B, ps, nodes, ← IO.mkRef 0, ← IO.mkRef 0⟩⟩
+    let nodes ← IO.mkRef ([] : List (Node contexts B))
+    return ⟨ps, nodes, ← IO.mkRef 0, ← IO.mkRef 0, ← IO.mkRef 0, ← IO.mkRef 0⟩
   let mut negatives := 0
-  for ⟨_, B⟩ in stores do
+  for k in List.finRange contexts.length do
     -- Distinct statements must not pass the public-input connection used by a link.
-    for b in B.pairs do
-      for b' in B.pairs do
+    for b in (stores k).pairs do
+      for b' in (stores k).pairs do
         if b.step.publicInput != b'.step.publicInput then
           let _ ← requireProof (¬ CircuitType.Reads b.link.step.V b.link.step.cells.out
             (StepStatement.ofWrap b'.link.wrap.V b'.link.wrap.cells.2.statement))
             (IO.userError "mismatched application statements passed the connection check")
           negatives := negatives + 1
   -- A chain of predecessors visits each run at most once.
-  let fuel := (stores.map fun s => s.2.pairs.length).sum
-  for ⟨_, B⟩ in stores do
-    for b in B.pairs do
-      let _ ← nodeOf stores fuel B b.wrap
+  let fuel := ((List.finRange contexts.length).map fun k => (stores k).pairs.length).sum
+  for k in List.finRange contexts.length do
+    for b in (stores k).pairs do
+      let _ ← nodeOf stores fuel (stores k) b.wrap
   let mut links := 0
   let mut handovers := 0
-  for ⟨t, B⟩ in stores do
-    let verified ← B.verified.get
-    unless verified = t.verifiedSlots do
-      throw (IO.userError s!"{B.context.name}: {verified} verified slots, expected \
-        {t.verifiedSlots}; the proof cache's runs are pinned in `Tag.verifiedSlots`")
-    let adjacent ← B.handovers.get
-    unless adjacent = t.handovers do
-      throw (IO.userError s!"{B.context.name}: {adjacent} adjacent verified slots, expected \
-        {t.handovers}; the proof cache's runs are pinned in `Tag.handovers`")
+  let mut disabled := 0
+  for k in List.finRange contexts.length do
+    let verified ← (stores k).verified.get
+    let adjacent ← (stores k).handovers.get
+    IO.ofExcept (Manifest.checkCoverage contexts[k].2.name verified adjacent)
     links := links + 2 * verified
     handovers := handovers + adjacent
-  unless stores.isEmpty || (links > 0 && (handovers = 0 || negatives > 0)) do
-    throw (IO.userError "application verification or negative connection coverage is empty")
+    disabled := disabled + (← (stores k).disabled.get)
+    negatives := negatives + (← (stores k).negatives.get)
+  unless links == expectedLinks && handovers == expectedPairs do
+    throw (IO.userError s!"capstone coverage: {links} links and {handovers} handovers; \
+      the cache requires {expectedLinks} and {expectedPairs}")
   IO.println s!"✓ application capstones: {links} links, {handovers} step-proof and \
-    {handovers} wrap-proof handovers, {negatives} rejected statement mismatches; \
-    conditional only on Lagrange correspondence"
+    {handovers} wrap-proof handovers, {disabled} disabled slots, {negatives} rejected mismatches; \
+    the tables' SRS Lagrange correspondence is the open premise"
 
 end PicklesFixture.Application
