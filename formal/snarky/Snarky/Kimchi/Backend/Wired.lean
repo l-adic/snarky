@@ -4,10 +4,10 @@ import Snarky.Kimchi.Backend.Direct
 # The wired fragment
 
 The source constraints whose lowering wires: any `Basic` constraint over affine operands, and
-a complete addition whose operands in the unwired columns are bare variables. Their reduction
-allocates intermediates, pins constants through the cache and fuses classes, so the union-find,
-the constant cache and the generic queue all move; the direct fragment is the special case in
-which none of them does.
+an admitted gate whose operands in the unwired columns are bare variables; the admitted gates
+are the complete addition so far. Their reduction allocates intermediates, pins constants
+through the cache and fuses classes, so the union-find, the constant cache and the generic
+queue all move; the direct fragment is the special case in which none of them does.
 
 A satisfying table determines a valuation by class: a variable reads the value in any cell of
 its root's class, the permutation forcing those cells to agree. A fusion the log records, a
@@ -19,8 +19,9 @@ and no other cell carries it.
 
 ## Main definitions
 
-- `KimchiConstraint.Wired`, `KimchiConstraint.Wired.Scoped`: membership in the fragment, and
-  the scoping condition on a source list, its public variables and the counter: every
+- `KimchiConstraint.Wired`, `KimchiConstraint.Wired.Scoped`: membership in the fragment, an
+  admitted constructor whose cells in the unwired columns of `rowOperands` are bare or empty,
+  and the scoping condition on a source list, its public variables and the counter: every
   constraint wired, every named variable below the counter, and every operand of an unwired
   column occurring once.
 
@@ -41,9 +42,11 @@ and no other cell carries it.
 The folds over the recorded steps thread the union-find invariant of `Snarky.Kimchi.UnionFind`
 from the empty structure and the queue invariant from the empty queue, each step's effect being
 the replay of its own faithful log; the cache fold starts from the empty cache, so a hit's
-constant is never inherited. Provenance is membership only: the names of a step's events are
-terms of its operands or its allocations, by `basic_names` and `addComplete_names`, and an
-unwired operand's one occurrence is a bare operand, so a second naming would be a second
+constant is never inherited. Provenance is membership and position: a `Basic` step's events
+name terms of its operands or its allocations, by `basic_names`; a gate step is `Placed`, its
+events naming terms of its placed operands or its allocations and its block's cells carrying
+its operands' variables position by position. An unwired operand's one occurrence is a bare
+operand at an unwired position, so a second naming or a second cell would be a second
 occurrence.
 -/
 
@@ -59,16 +62,34 @@ section Fragment
 
 variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
-/-- A constraint the lowering wires: any `Basic` constraint, or a complete addition whose
-operands in the unwired columns `7` to `10` are bare variables. -/
-def KimchiConstraint.Wired : KimchiConstraint F → Prop
+/-- The constructors the fragment admits so far. -/
+private def KimchiConstraint.Admitted : KimchiConstraint F → Prop
   | .basic _ => True
-  | .addComplete c => ∀ x ∈ c.operands.toList.drop permCols, x.var?.isSome
+  | .addComplete _ => True
   | _ => False
+
+private instance KimchiConstraint.decidableAdmitted (c : KimchiConstraint F) :
+    Decidable c.Admitted := by
+  unfold KimchiConstraint.Admitted
+  split <;> infer_instance
+
+/-- A cell's operand is bare, or the cell is empty. -/
+private def bareCell : Option (FVar F) → Prop
+  | some x => x.var?.isSome = true
+  | none => True
+
+private instance decidableBareCell (o : Option (FVar F)) : Decidable (bareCell o) := by
+  unfold bareCell
+  split <;> infer_instance
+
+/-- A constraint the lowering wires: an admitted constructor whose operands in the unwired
+columns `7` to `14` are bare variables. -/
+def KimchiConstraint.Wired (c : KimchiConstraint F) : Prop :=
+  c.Admitted ∧ ∀ row ∈ c.rowOperands.toList, ∀ j : Fin wCols, permCols ≤ j.val → bareCell row[j]
 
 instance KimchiConstraint.decidableWired (c : KimchiConstraint F) : Decidable c.Wired := by
   unfold KimchiConstraint.Wired
-  split <;> infer_instance
+  infer_instance
 
 /-- Every variable the source and the public variables name, with repetition. -/
 private def occurrences (source : List (KimchiConstraint F)) (publicVars : List Variable) :
@@ -296,11 +317,10 @@ private theorem recordGates_queued (P : GenericPlonkConstraint F → Prop)
       exact ⟨nv', aux', hnv'', hq'', hstep⟩
 
 /-- Where each row of the lowering comes from: a public row, a packed pair of queued equations
-with the property, the flushed equation with it, or a complete addition's row at its step's gate
-span, recorded from a counter at or above the start. -/
+with the property, the flushed equation with it, or a row of some step's gate block, the step
+recorded from a counter at or above the start. -/
 private theorem wiredRows_cases (P : GenericPlonkConstraint F → Prop)
     {source : List (KimchiConstraint F)} {publicVars : List Variable} {nv : Variable}
-    (hw : ∀ c ∈ source, c.Wired)
     (hP : ∀ c ∈ source, ∀ nv' aux, nv ≤ nv' →
       ∀ e ∈ (recordReduction nv' aux c.reduce).events, ∀ g, e.queued? = some g → P g)
     (r : Nat) (hr : r < (directRows source publicVars nv).length) :
@@ -308,11 +328,18 @@ private theorem wiredRows_cases (P : GenericPlonkConstraint F → Prop)
         (makePublicInputRows (F := F) publicVars)[r]'(by simpa [makePublicInputRows] using h)) ∨
     (∃ q g, P q ∧ P g ∧ (directRows source publicVars nv)[r] = emitDoubleGateRow q g) ∨
     (∃ g, P g ∧ (directRows source publicVars nv)[r] = flushRow g) ∨
-    (∃ (p : Nat) (hp : p < source.length) (c : AddComplete F) (nv' : Variable)
-      (aux' : AuxState F), nv ≤ nv' ∧ source[p] = .addComplete c ∧
-      r = gateRowOf source publicVars nv p hp ∧
-      (directRows source publicVars nv)[r] = (recordReduction nv' aux' c.reduce).result.row)
-    := by
+    (∃ (p : Nat) (hp : p < source.length) (nv' : Variable) (aux' : AuxState F) (k : Nat)
+      (hk : k < ((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+        hp)).gateRows.length),
+      nv ≤ nv' ∧
+      (lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸ hp) =
+        ⟨(recordReduction nv' aux' source[p].reduce).rows,
+          (recordReduction nv' aux' source[p].reduce).result,
+          (recordReduction nv' aux' source[p].reduce).events⟩ ∧
+      r = gateRowOf source publicVars nv p hp + k ∧
+      (directRows source publicVars nv)[r] =
+        ((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+          hp)).gateRows[k]) := by
   have hlen : (makePublicInputRows (F := F) publicVars).length = publicVars.length := by
     simp [makePublicInputRows]
   have hfold := recordGates_queued P source nv hP nv initialAuxState (Nat.le_refl _)
@@ -372,33 +399,20 @@ private theorem wiredRows_cases (P : GenericPlonkConstraint F → Prop)
       have h2' : r - publicVars.length <
         ((lowering source nv).placements[i]'hip).customRows.first +
           (lowering source nv).steps[i].gateRows.length := h2
-      have hwd := hw _ (List.getElem_mem hi')
-      unfold KimchiConstraint.Wired at hwd
-      split at hwd
-      · exfalso
-        have hgr : (lowering source nv).steps[i].gateRows = [] := by
-          rw [hstep, ‹source[i] = _›]
-          rfl
-        rw [hgr] at h2'
-        simp at h2'
+      have hk' : r - publicVars.length - ((lowering source nv).placements[i]'hip).customRows.first <
+        (lowering source nv).steps[i].gateRows.length := by omega
+      have hrow := getElem_bodyRows_gate (lowering source nv) i hi _ hk'
+        (show ((lowering source nv).placements[i]'hip).customRows.first +
+          (r - publicVars.length - ((lowering source nv).placements[i]'hip).customRows.first) <
+          (lowering source nv).bodyRows.length by omega)
+      have eidx : ((lowering source nv).placements[i]'hip).customRows.first +
+          (r - publicVars.length - ((lowering source nv).placements[i]'hip).customRows.first) =
+          r - publicVars.length := by omega
+      refine ⟨i, hi', nv', aux', _, hk', hnv', hstep, ?_, ?_⟩
+      · show r = publicVars.length + ((lowering source nv).placements[i]'hip).customRows.first +
+          (r - publicVars.length - ((lowering source nv).placements[i]'hip).customRows.first)
         omega
-      · obtain ⟨c, hsrc⟩ : ∃ c, source[i] = KimchiConstraint.addComplete c := ⟨_, ‹source[i] = _›⟩
-        have hgr : (lowering source nv).steps[i].gateRows =
-            [(recordReduction nv' aux' c.reduce).result.row] := by
-          rw [hstep, hsrc]
-          rfl
-        rw [hgr, List.length_singleton] at h2'
-        refine ⟨i, hi', c, nv', aux', hnv', hsrc, ?_, ?_⟩
-        · show r = publicVars.length + ((lowering source nv).placements[i]'hip).customRows.first
-          omega
-        · have hrow := getElem_bodyRows_gate (lowering source nv) i hi 0 (by simp [hgr])
-            (show ((lowering source nv).placements[i]'hip).customRows.first + 0 <
-              (lowering source nv).bodyRows.length by omega)
-          have eidx : ((lowering source nv).placements[i]'hip).customRows.first + 0 =
-              r - publicVars.length := by omega
-          rw [(getElem_congr_idx eidx).symm.trans hrow]
-          simp only [hgr, List.getElem_cons_zero]
-      · exact hwd.elim
+      · exact (getElem_congr_idx eidx).symm.trans hrow
   · right; left
     cases hq : (lowering source nv).aux.queuedGenericGate with
     | none =>
@@ -443,47 +457,146 @@ private theorem label_flush' {g : GenericPlonkConstraint F} (j : Nat) (hj : j < 
 
 /-! ## The unwired operands -/
 
-omit [Field F] [DecidableEq F] in
-/-- In the fragment, only a complete addition has operands in unwired columns. -/
-private theorem addComplete_of_unwired {c : KimchiConstraint F} (hw : c.Wired) {v : Variable}
-    (hv : v ∈ c.unwiredVars) : ∃ c', c = .addComplete c' := by
+/-- Every step of the lowering is some constraint's recording from a counter at or above the
+start. -/
+private theorem step_shape {source : List (KimchiConstraint F)} {nv : Variable}
+    {s : RecordedStep F} (hs : s ∈ (lowering source nv).steps) :
+    ∃ (p : Nat) (hp : p < source.length) (nv' : Variable) (aux' : AuxState F), nv ≤ nv' ∧
+      s = ⟨(recordReduction nv' aux' source[p].reduce).rows,
+        (recordReduction nv' aux' source[p].reduce).result,
+        (recordReduction nv' aux' source[p].reduce).events⟩ := by
+  obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hs
+  have hp' : p < source.length := (length_steps source nv initialAuxState) ▸ hp
+  obtain ⟨nv', aux', hnv', -, hstep⟩ := (recordGates_queued (fun _ => True) source nv
+    (fun _ _ _ _ _ _ _ _ _ => trivial) nv initialAuxState (Nat.le_refl _)
+    (fun _ _ => trivial)).1 p hp'
+  exact ⟨p, hp', nv', aux', hnv', hstep⟩
+
+/-- Every admitted gate's recorded reduction is placed; a `Basic` constraint places no row. -/
+private theorem placed_of_wired {c : KimchiConstraint F} (hw : c.Wired) (nv : Variable)
+    (aux : AuxState F) : (∃ b, c = .basic b) ∨ Placed nv aux c := by
   cases c with
-  | addComplete c' => exact ⟨c', rfl⟩
-  | basic _ => exact (List.not_mem_nil hv).elim
-  | poseidon _ => exact hw.elim
-  | varBaseMul _ => exact hw.elim
-  | endoScalar _ => exact hw.elim
-  | endoMul _ => exact hw.elim
-  | pad _ => exact hw.elim
+  | basic b => exact Or.inl ⟨b, rfl⟩
+  | addComplete c => exact Or.inr (addComplete_placed nv aux c)
+  | poseidon _ => exact hw.1.elim
+  | varBaseMul _ => exact hw.1.elim
+  | endoScalar _ => exact hw.1.elim
+  | endoMul _ => exact hw.1.elim
+  | pad _ => exact hw.1.elim
 
 private theorem termVars_var (v : Variable) : (CVar.var v : CVar F).termVars = [v] := rfl
 
-omit [Field F] [DecidableEq F] in
-/-- An unwired operand sits at an unwired column as a bare operand. -/
-private theorem unwired_index {c : AddComplete F} {v : Variable}
-    (hv : v ∈ (KimchiConstraint.addComplete c).unwiredVars) :
-    ∃ (j : Nat) (hj : j < c.operands.toList.length), 7 ≤ j ∧ c.operands.toList[j]'hj = .var v := by
-  simp only [KimchiConstraint.unwiredVars, List.mem_filterMap] at hv
-  obtain ⟨x, hx, hxv⟩ := hv
-  obtain ⟨u, rfl⟩ := CVar.var?_isSome (x := x) (by rw [hxv]; rfl)
-  simp only [CVar.var?, Option.some.injEq] at hxv
-  subst hxv
-  obtain ⟨k, hk, hkx⟩ := List.mem_iff_getElem.mp hx
-  have hk' : k < 4 := by
-    simp only [List.length_drop, Vector.length_toList] at hk
-    omega
-  refine ⟨7 + k, by simp only [Vector.length_toList]; omega, by omega, ?_⟩
-  rw [← hkx]
-  exact List.getElem_drop.symm
+/-- A gate's term variables are those of its placed operands. -/
+private theorem termVars_gate {c : KimchiConstraint F} (hc : ∀ b, c ≠ .basic b) :
+    c.termVars = c.rowOperands.toList.flatMap fun row => row.toList.flatMap cellTerms := by
+  cases c with
+  | basic b => exact absurd rfl (hc b)
+  | _ => rfl
 
-/-- An unwired operand's variable is a term of its constraint. -/
-private theorem mem_termVars_of_unwired {c : AddComplete F} {v : Variable}
-    (hv : v ∈ (KimchiConstraint.addComplete c).unwiredVars) :
-    v ∈ (KimchiConstraint.addComplete c).termVars := by
-  obtain ⟨j, hj, -, hjv⟩ := unwired_index hv
-  exact List.mem_flatMap.mpr ⟨_, List.getElem_mem hj, by
-    rw [hjv, termVars_var]
-    exact List.mem_singleton_self _⟩
+/-- A placed operand's term is a term of the constraint. -/
+private theorem mem_termVars_of_position {c : KimchiConstraint F} {i : Fin c.rowCount}
+    {j : Fin wCols} {x : FVar F} (hx : c.rowOperands[i][j] = some x) {w : Variable}
+    (hw : w ∈ x.termVars) : w ∈ c.termVars := by
+  have hc : ∀ b, c ≠ .basic b := fun b h => by
+    subst h
+    exact i.elim0
+  rw [termVars_gate hc]
+  refine List.mem_flatMap.mpr ⟨c.rowOperands[i],
+    List.mem_iff_getElem.mpr ⟨i.val, by simp, Vector.getElem_toList _⟩,
+    List.mem_flatMap.mpr ⟨some x, ?_, by simp [cellTerms, hw]⟩⟩
+  rw [← hx]
+  exact List.mem_iff_getElem.mpr ⟨j.val, by simp, Vector.getElem_toList _⟩
+
+/-- Two placed operands at different positions sharing a term put it twice among the
+constraint's term variables. -/
+private theorem two_le_count_of_positions {c : KimchiConstraint F} {i i' : Fin c.rowCount}
+    {j j' : Fin wCols} (hne : i ≠ i' ∨ j ≠ j') {x x' : FVar F}
+    (hx : c.rowOperands[i][j] = some x) (hx' : c.rowOperands[i'][j'] = some x') {w : Variable}
+    (hw : w ∈ x.termVars) (hw' : w ∈ x'.termVars) : 2 ≤ c.termVars.count w := by
+  have hc : ∀ b, c ≠ .basic b := fun b h => by
+    subst h
+    exact i.elim0
+  rw [termVars_gate hc]
+  have hrow : ∀ (i : Fin c.rowCount) (j : Fin wCols) (x : FVar F), c.rowOperands[i][j] = some x →
+      w ∈ x.termVars →
+      w ∈ (c.rowOperands.toList[i.val]'(by simp)).toList.flatMap cellTerms := by
+    intro i j x hx hw
+    rw [Vector.getElem_toList]
+    refine List.mem_flatMap.mpr ⟨some x, ?_, by simp [cellTerms, hw]⟩
+    rw [← hx]
+    exact List.mem_iff_getElem.mpr ⟨j.val, by simp, Vector.getElem_toList _⟩
+  by_cases hii : i = i'
+  · subst hii
+    have hjj : j ≠ j' := by
+      rcases hne with h | h
+      · exact absurd rfl h
+      · exact h
+    refine two_le_count_flatMap_same _ (by simp : i.val < c.rowOperands.toList.length) ?_
+    rw [Vector.getElem_toList]
+    refine two_le_count_flatMap cellTerms (by simp : j.val < (c.rowOperands[i]).toList.length)
+      (by simp) (fun h => hjj (Fin.ext h)) ?_ ?_
+    · rw [Vector.getElem_toList]
+      change w ∈ cellTerms c.rowOperands[i][j]
+      rw [hx]
+      simpa [cellTerms] using hw
+    · rw [Vector.getElem_toList]
+      change w ∈ cellTerms c.rowOperands[i][j']
+      rw [hx']
+      simpa [cellTerms] using hw'
+  · exact two_le_count_flatMap _ (by simp) (by simp) (fun h => hii (Fin.ext h))
+      (hrow i j x hx hw) (hrow i' j' x' hx' hw')
+
+omit [Field F] [DecidableEq F] in
+/-- An unwired operand sits bare at an unwired position. -/
+private theorem unwired_position {c : KimchiConstraint F} {v : Variable}
+    (hv : v ∈ c.unwiredVars) :
+    ∃ (i : Fin c.rowCount) (j : Fin wCols), permCols ≤ j.val ∧
+      c.rowOperands[i][j] = some (.var v) := by
+  simp only [KimchiConstraint.unwiredVars, List.mem_flatMap, List.mem_filterMap] at hv
+  obtain ⟨row, hrow, o, ho, hov⟩ := hv
+  obtain ⟨i, hi, hrowi⟩ := List.mem_iff_getElem.mp hrow
+  obtain ⟨k, hk, hok⟩ := List.mem_iff_getElem.mp ho
+  obtain ⟨x, rfl⟩ : ∃ x, o = some x := by
+    cases o with
+    | none => simp at hov
+    | some x => exact ⟨x, rfl⟩
+  simp only [Option.bind_some] at hov
+  obtain ⟨u, rfl⟩ := CVar.var?_isSome (x := x) (by rw [hov]; rfl)
+  simp only [CVar.var?, Option.some.injEq] at hov
+  subst hov
+  have hi' : i < c.rowCount := by simpa using hi
+  have hk' : k < wCols - permCols := by simpa using hk
+  refine ⟨⟨i, hi'⟩, ⟨permCols + k, by omega⟩, by simp, ?_⟩
+  rw [Vector.getElem_toList] at hrowi
+  rw [List.getElem_drop, Vector.getElem_toList] at hok
+  subst hrowi
+  exact hok
+
+omit [Field F] [DecidableEq F] in
+/-- A bare operand at an unwired position is an unwired operand. -/
+private theorem unwired_of_position {c : KimchiConstraint F} {i : Fin c.rowCount} {j : Fin wCols}
+    (hj : permCols ≤ j.val) {u : Variable} (h : c.rowOperands[i][j] = some (.var u)) :
+    u ∈ c.unwiredVars := by
+  simp only [KimchiConstraint.unwiredVars, List.mem_flatMap, List.mem_filterMap]
+  refine ⟨c.rowOperands[i], List.mem_iff_getElem.mpr ⟨i.val, by simp, Vector.getElem_toList _⟩,
+    some (.var u), ?_, by simp [CVar.var?]⟩
+  refine List.mem_iff_getElem.mpr ⟨j.val - permCols, by simp; omega, ?_⟩
+  rw [List.getElem_drop]
+  exact (getElem_congr_idx (show permCols + (j.val - permCols) = j.val by omega)).trans
+    (by rw [Vector.getElem_toList]; exact h)
+
+omit [Field F] [DecidableEq F] in
+/-- A placed operand has a position. -/
+private theorem position_of_placed {c : KimchiConstraint F} {x : FVar F}
+    (hx : x ∈ c.placedOperands) :
+    ∃ (i : Fin c.rowCount) (j : Fin wCols), c.rowOperands[i][j] = some x := by
+  simp only [KimchiConstraint.placedOperands, List.mem_flatMap, List.mem_filterMap, id] at hx
+  obtain ⟨row, hrow, o, ho, rfl⟩ := hx
+  obtain ⟨i, hi, hrowi⟩ := List.mem_iff_getElem.mp hrow
+  obtain ⟨j, hj, hoj⟩ := List.mem_iff_getElem.mp ho
+  rw [Vector.getElem_toList] at hrowi hoj
+  subst hrowi
+  exact ⟨⟨i, by simpa using hi⟩, ⟨j, by simpa using hj⟩, hoj⟩
 
 /-- An unwired operand's variable occurs once: among the terms once, and never as a public
 variable. -/
@@ -499,59 +612,55 @@ logs nothing, and allocations are fresh. -/
 private theorem unwired_not_named_step {source : List (KimchiConstraint F)}
     {publicVars : List Variable} {nv : Variable}
     (hscope : KimchiConstraint.Wired.Scoped nv source publicVars) {q : Nat} (hq : q < source.length)
-    {c : AddComplete F} (hsrc : source[q] = .addComplete c) {v : Variable}
-    (hv : v ∈ (KimchiConstraint.addComplete c).unwiredVars) (p : Nat) (hp : p < source.length)
+    {v : Variable} (hv : v ∈ source[q].unwiredVars) (p : Nat) (hp : p < source.length)
     (nv' : Variable) (aux' : AuxState F) (hnv : nv ≤ nv') :
     ∀ e ∈ (recordReduction nv' aux' source[p].reduce).events, v ∉ e.names := by
   intro e he hname
-  have hvterm := mem_termVars_of_unwired hv
-  have hcount := unwired_count hscope (hsrc ▸ List.getElem_mem hq) hv
-  have hvocc : v ∈ occurrences source publicVars :=
-    List.mem_append_left _ (List.mem_flatMap.mpr ⟨_, List.getElem_mem hq, hsrc ▸ hvterm⟩)
-  have hvlt : v < nv := hscope.below v hvocc
-  have hfresh : ∀ w ∈ allocs (recordReduction nv' aux' source[p].reduce).events, nv' ≤ w :=
-    (allocs_ge (record_constraint_allocates nv' aux' source[p])).1
+  obtain ⟨i₀, j₀, -, hpos₀⟩ := unwired_position hv
+  have hvterm : v ∈ source[q].termVars :=
+    mem_termVars_of_position hpos₀ (by rw [termVars_var]; exact List.mem_singleton_self _)
+  have hcount := unwired_count hscope (List.getElem_mem hq) hv
+  have hvlt : v < nv := hscope.below v
+    (List.mem_append_left _ (List.mem_flatMap.mpr ⟨_, List.getElem_mem hq, hvterm⟩))
+  have hfresh := (allocs_ge (record_constraint_allocates nv' aux' source[p])).1
   have hnotfresh : v ∉ allocs (recordReduction nv' aux' source[p].reduce).events := fun h =>
     Nat.lt_irrefl v (Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le hvlt hnv) (hfresh v h))
-  obtain ⟨j, hj, -, hjv⟩ := unwired_index hv
   have hwd := hscope.wired _ (List.getElem_mem hp)
-  obtain ⟨cp, hsp⟩ : ∃ cp, source[p] = cp := ⟨_, rfl⟩
-  rw [hsp] at he hwd hnotfresh
-  cases cp with
-  | basic b =>
+  rcases placed_of_wired hwd nv' aux' with ⟨b, hb⟩ | hpl
+  · rw [hb] at he hnotfresh
     rcases basic_names nv' aux' b e he v hname with hn | hn
     · have hne : p ≠ q := fun h => by
         subst h
-        rw [hsp] at hsrc
-        cases hsrc
-      have := two_le_count_flatMap KimchiConstraint.termVars hp hq hne (hsp ▸ hn)
-        (hsrc ▸ hvterm)
+        have h0 : source[p].rowCount = 0 := by
+          rw [hb]
+          rfl
+        have := i₀.isLt
+        omega
+      have := two_le_count_flatMap KimchiConstraint.termVars hp hq hne (by rw [hb]; exact hn)
+        hvterm
       omega
     · exact hnotfresh hn
-  | addComplete c' =>
-    obtain ⟨hn, -⟩ := addComplete_names nv' aux' c'
-    rcases hn e he v hname with hn | ⟨x, hx, hxv, hxne⟩
+  · rcases hpl.1 e he v hname with hn | ⟨x, hx, hxv, hxne⟩
     · exact hnotfresh hn
-    · by_cases hpq : p = q
+    · obtain ⟨i, j, hpos⟩ := position_of_placed hx
+      by_cases hpq : p = q
       · subst hpq
-        rw [hsp] at hsrc
-        cases hsrc
-        obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hx
-        have hne : i ≠ j := fun h => by
-          subst h
-          exact hxne hjv
-        have h2 := two_le_count_flatMap CVar.termVars hi hj hne hxv
-          (by rw [hjv, termVars_var]; exact List.mem_singleton_self _)
-        have h3 := two_le_count_flatMap_same KimchiConstraint.termVars hq (by rw [hsp]; exact h2)
+        have hne : i ≠ i₀ ∨ j ≠ j₀ := by
+          rcases em (i = i₀) with hi | hi
+          · rcases em (j = j₀) with hj | hj
+            · subst hi
+              subst hj
+              rw [hpos] at hpos₀
+              exact absurd (Option.some.inj hpos₀) hxne
+            · exact Or.inr hj
+          · exact Or.inl hi
+        have h2 := two_le_count_of_positions hne hpos hpos₀ hxv
+          (by rw [termVars_var]; exact List.mem_singleton_self _)
+        have h3 := two_le_count_flatMap_same KimchiConstraint.termVars hq h2
         omega
       · have := two_le_count_flatMap KimchiConstraint.termVars hp hq hpq
-          (by rw [hsp]; exact List.mem_flatMap.mpr ⟨x, hx, hxv⟩) (hsrc ▸ hvterm)
+          (mem_termVars_of_position hpos hxv) hvterm
         omega
-  | poseidon _ => exact hwd.elim
-  | varBaseMul _ => exact hwd.elim
-  | endoScalar _ => exact hwd.elim
-  | endoMul _ => exact hwd.elim
-  | pad _ => exact hwd.elim
 
 /-- An operand of an unwired column is named by no event of the lowering. -/
 theorem unwired_not_named {source : List (KimchiConstraint F)} {publicVars : List Variable}
@@ -559,61 +668,64 @@ theorem unwired_not_named {source : List (KimchiConstraint F)} {publicVars : Lis
     {c : KimchiConstraint F} (hc : c ∈ source) {v : Variable} (hv : v ∈ c.unwiredVars) :
     ∀ s ∈ (lowering source nv).steps, ∀ e ∈ s.events, v ∉ e.names := by
   intro s hs e he
-  obtain ⟨c', rfl⟩ := addComplete_of_unwired (hscope.wired c hc) hv
-  obtain ⟨q, hq, hsrc⟩ := List.mem_iff_getElem.mp hc
-  obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hs
-  have hp' : p < source.length := (length_steps source nv initialAuxState) ▸ hp
-  obtain ⟨nv', aux', hnv', -, hstep⟩ := (recordGates_queued (fun _ => True) source nv
-    (fun _ _ _ _ _ _ _ _ _ => trivial) nv initialAuxState (Nat.le_refl _)
-    (fun _ _ => trivial)).1 p hp'
-  rw [hstep] at he
-  exact unwired_not_named_step hscope hq hsrc hv p hp' nv' aux' hnv' e he
+  obtain ⟨q, hq, rfl⟩ := List.mem_iff_getElem.mp hc
+  obtain ⟨p, hp, nv', aux', hnv', rfl⟩ := step_shape hs
+  exact unwired_not_named_step hscope hq hv p hp nv' aux' hnv' e he
 
-/-- A complete addition's row read at a cell: the cell is one of the eleven operands' variables,
-which is a term of its operand or fresh, and is the operand when that is bare. -/
-private theorem addComplete_cell (nv' : Variable) (aux' : AuxState F) (c : AddComplete F)
-    (j : Nat) (hj : j < wCols) (w : Variable)
-    (hw : (recordReduction nv' aux' c.reduce).result.row.vars[j] = some w) :
-    ∃ hj' : j < 11,
-      (w ∈ (c.operands.toList[j]'(by simp [AddComplete.operands]; omega)).termVars ∨
-        w ∈ allocs (recordReduction nv' aux' c.reduce).events) ∧
-      ∀ u, c.operands.toList[j]'(by simp [AddComplete.operands]; omega) = .var u → w = u := by
-  obtain ⟨-, vs, hvs, hall⟩ := addComplete_names nv' aux' c
-  have hidx : j < (recordReduction nv' aux' c.reduce).result.row.vars.toList.length := by
-    rw [Vector.length_toList]
-    exact hj
-  have hw' : (recordReduction nv' aux' c.reduce).result.row.vars.toList[j]'hidx = some w := by
-    rw [Vector.getElem_toList]
-    exact hw
-  have hw'' := (List.getElem_of_eq hvs hidx).symm.trans hw'
-  obtain ⟨hlen, hR⟩ := List.forall₂_iff_get.mp hall
-  have hvl : vs.length = 11 := by
-    rw [hlen]
-    simp [AddComplete.operands]
-  have hj11 : j < 11 := by
-    by_contra h
-    rw [List.getElem_append_right (by simp only [List.length_map]; omega),
-      List.getElem_replicate] at hw''
-    cases hw''
-  rw [List.getElem_append_left (by simp only [List.length_map]; omega), List.getElem_map,
-    Option.some.injEq] at hw''
-  obtain ⟨hmem, hbare⟩ := hR j (by omega) (by simp [AddComplete.operands]; omega)
-  simp only [List.get_eq_getElem] at hmem hbare
-  refine ⟨hj11, ?_, fun u hu => ?_⟩
-  · rw [← hw'']
-    exact hmem
-  · rw [← hw'']
-    exact hbare u hu
+/-- A row of a step's gate block, against its placed operands: the cell under a label holds a
+placed operand of the step's constraint. -/
+private theorem cell_of_gateRow {source : List (KimchiConstraint F)} {publicVars : List Variable}
+    {nv : Variable} (hscope : KimchiConstraint.Wired.Scoped nv source publicVars) {p : Nat}
+    (hp : p < source.length) {nv' : Variable} {aux' : AuxState F} {k : Nat}
+    (hk : k < ((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+      hp)).gateRows.length)
+    (hstep : (lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸ hp) =
+      ⟨(recordReduction nv' aux' source[p].reduce).rows,
+        (recordReduction nv' aux' source[p].reduce).result,
+        (recordReduction nv' aux' source[p].reduce).events⟩)
+    (j : Fin wCols) {w : Variable}
+    (hw : (((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+      hp)).gateRows[k]).vars[j] = some w) :
+    ∃ (hk' : k < source[p].rowCount) (x : FVar F),
+      source[p].rowOperands[(⟨k, hk'⟩ : Fin source[p].rowCount)][j] = some x ∧
+      (w ∈ x.termVars ∨ w ∈ allocs (recordReduction nv' aux' source[p].reduce).events) ∧
+      ∀ u, x = .var u → w = u := by
+  have hwd := hscope.wired _ (List.getElem_mem hp)
+  rcases placed_of_wired hwd nv' aux' with ⟨b, hb⟩ | hpl
+  · exfalso
+    have hlen0 : ((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+        hp)).gateRows.length = 0 := by
+      rw [hstep, hb]
+      rfl
+    omega
+  · obtain ⟨-, hlen, hcells⟩ := hpl
+    have hk' : k < source[p].rowCount := by
+      rw [← hlen]
+      rw [hstep] at hk
+      exact hk
+    have hcell := hcells ⟨k, hk'⟩ j
+    have hw' : ((toKimchiRows (F := F) (recordReduction nv' aux' source[p].reduce).result)[k]'(
+        lt_of_lt_of_eq hk' hlen.symm)).vars[j] = some w := by
+      simp only [hstep] at hw
+      exact hw
+    rw [hw'] at hcell
+    cases hop : source[p].rowOperands[(⟨k, hk'⟩ : Fin source[p].rowCount)][j] with
+    | none =>
+      rw [hop] at hcell
+      exact hcell.elim
+    | some x =>
+      rw [hop] at hcell
+      exact ⟨hk', x, hop, hcell.1, hcell.2⟩
 
-/-- A cell of an unwired column carries an operand of an unwired column of some complete
-addition of the source. -/
+/-- A cell of an unwired column carries an operand of an unwired column of some constraint of
+the source. -/
 theorem unwired_of_cell {source : List (KimchiConstraint F)} {publicVars : List Variable}
     {nv : Variable} (hscope : KimchiConstraint.Wired.Scoped nv source publicVars) {r j : Nat}
     (hr : r < (directRows source publicVars nv).length) (hj : j < wCols) (h7 : 7 ≤ j)
     {w : Variable} (hw : (directRows source publicVars nv)[r].vars[j] = some w) :
     ∃ c ∈ source, w ∈ c.unwiredVars := by
-  rcases wiredRows_cases (fun _ => True) hscope.wired (fun _ _ _ _ _ _ _ _ _ => trivial) r hr
-    with ⟨hp, e⟩ | ⟨q, g, -, -, e⟩ | ⟨g, -, e⟩ | ⟨p, hp, c, nv', aux', -, hsrc, -, e⟩
+  rcases wiredRows_cases (fun _ => True) (fun _ _ _ _ _ _ _ _ _ => trivial) r hr
+    with ⟨hp, e⟩ | ⟨q, g, -, -, e⟩ | ⟨g, -, e⟩ | ⟨p, hp, nv', aux', k, hk, -, hstep, -, e⟩
   · rw [e] at hw
     have := (label_public publicVars r hp j hj w hw).1
     omega
@@ -624,50 +736,44 @@ theorem unwired_of_cell {source : List (KimchiConstraint F)} {publicVars : List 
     have := (label_flush' j hj w hw).1
     omega
   · rw [e] at hw
-    obtain ⟨hj11, -, hbare⟩ := addComplete_cell nv' aux' c j hj w hw
+    obtain ⟨hk', x, hop, -, hbare⟩ := cell_of_gateRow hscope hp hk hstep ⟨j, hj⟩ hw
     have hwd := hscope.wired _ (List.getElem_mem hp)
-    rw [hsrc] at hwd
-    have hx : (c.operands.toList[j]'(by simp [AddComplete.operands]; omega)).var?.isSome :=
-      hwd _ (List.mem_iff_getElem.mpr ⟨j - 7, by
-        simp only [List.length_drop, Vector.length_toList]
-        omega, by
-        rw [List.getElem_drop]
-        exact getElem_congr_idx (by omega)⟩)
-    obtain ⟨u, hu⟩ := CVar.var?_isSome hx
-    refine ⟨_, hsrc ▸ List.getElem_mem hp, ?_⟩
-    rw [hbare u hu]
-    simp only [KimchiConstraint.unwiredVars, List.mem_filterMap]
-    refine ⟨.var u, List.mem_iff_getElem.mpr ⟨j - 7, by
-      simp only [List.length_drop, Vector.length_toList]
-      omega, by
-      rw [List.getElem_drop, ← hu]
-      exact getElem_congr_idx (by omega)⟩, rfl⟩
+    have hx : bareCell ((source[p].rowOperands[(⟨k, hk'⟩ : Fin source[p].rowCount)])[(⟨j, hj⟩ :
+        Fin wCols)]) :=
+      hwd.2 _ (List.mem_iff_getElem.mpr ⟨k, by simp [hk'], Vector.getElem_toList _⟩) ⟨j, hj⟩ h7
+    rw [hop] at hx
+    obtain ⟨u, rfl⟩ := CVar.var?_isSome hx
+    refine ⟨_, List.getElem_mem hp, ?_⟩
+    rw [hbare u rfl]
+    exact unwired_of_position h7 hop
 
-/-- Any cell an unwired operand labels is its own: the unwired column of its addition's row. -/
+/-- Any cell an unwired operand labels is its own: its unwired position in its constraint's
+block. -/
 private theorem unwired_cell_at {source : List (KimchiConstraint F)} {publicVars : List Variable}
     {nv : Variable} (hscope : KimchiConstraint.Wired.Scoped nv source publicVars) {q : Nat}
-    (hq : q < source.length) {c : AddComplete F} (hsrc : source[q] = .addComplete c)
-    {v : Variable} (hv : v ∈ (KimchiConstraint.addComplete c).unwiredVars) {j₀ : Nat}
-    (hj₀ : j₀ < c.operands.toList.length) (hj₀v : c.operands.toList[j₀]'hj₀ = .var v)
+    (hq : q < source.length) {v : Variable} (hv : v ∈ source[q].unwiredVars)
+    {i₀ : Fin source[q].rowCount} {j₀ : Fin wCols}
+    (hpos₀ : source[q].rowOperands[i₀][j₀] = some (.var v))
     (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
     (hrow : (directRows source publicVars nv)[r].vars[j] = some v) :
-    r = gateRowOf source publicVars nv q hq ∧ j = j₀ := by
-  have hcount := unwired_count hscope (hsrc ▸ List.getElem_mem hq) hv
-  have hvterm := mem_termVars_of_unwired hv
+    r = gateRowOf source publicVars nv q hq + i₀.val ∧ j = j₀.val := by
+  have hcount := unwired_count hscope (List.getElem_mem hq) hv
+  have hvterm : v ∈ source[q].termVars :=
+    mem_termVars_of_position hpos₀ (by rw [termVars_var]; exact List.mem_singleton_self _)
   have hvlt : v < nv := hscope.below v
-    (List.mem_append_left _ (List.mem_flatMap.mpr ⟨_, List.getElem_mem hq, hsrc ▸ hvterm⟩))
+    (List.mem_append_left _ (List.mem_flatMap.mpr ⟨_, List.getElem_mem hq, hvterm⟩))
   have hP : ∀ (c' : KimchiConstraint F), c' ∈ source → ∀ (nv' : Variable) (aux : AuxState F),
       nv ≤ nv' → ∀ e ∈ (recordReduction nv' aux c'.reduce).events, ∀ g, e.queued? = some g →
         v ∉ g.vars := by
     intro c' hc' nv' aux hnv e he g hg hvg
     obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hc'
-    exact unwired_not_named_step hscope hq hsrc hv p hp nv' aux hnv e he (queued?_vars hg v hvg)
-  rcases wiredRows_cases (fun g => v ∉ g.vars) hscope.wired hP r hr
-    with ⟨hp, e⟩ | ⟨q', g, hq', hg, e⟩ | ⟨g, hg, e⟩ | ⟨p, hp, c', nv', aux', hnv', hsrc', hgr, e⟩
+    exact unwired_not_named_step hscope hq hv p hp nv' aux hnv e he (queued?_vars hg v hvg)
+  rcases wiredRows_cases (fun g => v ∉ g.vars) hP r hr
+    with ⟨hp, e⟩ | ⟨q', g, hq', hg, e⟩ | ⟨g, hg, e⟩ | ⟨p, hp, nv', aux', k, hk, hnv', hstep, hgr, e⟩
   · rw [e] at hrow
     have hpub := (label_public publicVars r hp j hj v hrow).2
     have h1 : 1 ≤ (source.flatMap KimchiConstraint.termVars).count v :=
-      List.one_le_count_iff.mpr (List.mem_flatMap.mpr ⟨_, List.getElem_mem hq, hsrc ▸ hvterm⟩)
+      List.one_le_count_iff.mpr (List.mem_flatMap.mpr ⟨_, List.getElem_mem hq, hvterm⟩)
     have h2 : 1 ≤ publicVars.count v := List.one_le_count_iff.mpr hpub
     omega
   · rw [e] at hrow
@@ -677,27 +783,29 @@ private theorem unwired_cell_at {source : List (KimchiConstraint F)} {publicVars
   · rw [e] at hrow
     exact (hg (label_flush' j hj v hrow).2).elim
   · rw [e] at hrow
-    obtain ⟨hj11, hmem, -⟩ := addComplete_cell nv' aux' c' j hj v hrow
-    have hfresh :=
-      (allocs_ge (record_constraint_allocates nv' aux' (KimchiConstraint.addComplete c'))).1
+    obtain ⟨hk', x, hop, hmem, -⟩ := cell_of_gateRow hscope hp hk hstep ⟨j, hj⟩ hrow
+    have hfresh := (allocs_ge (record_constraint_allocates nv' aux' source[p])).1
     rcases hmem with hmem | hmem
     · by_cases hpq : p = q
       · subst hpq
-        rw [hsrc'] at hsrc
-        cases hsrc
-        refine ⟨hgr, ?_⟩
-        by_contra hne
-        have h2 := two_le_count_flatMap CVar.termVars
-          (by simp only [Vector.length_toList]; omega : j < c.operands.toList.length) hj₀ hne hmem
-          (by rw [hj₀v, termVars_var]; exact List.mem_singleton_self _)
-        have h3 := two_le_count_flatMap_same KimchiConstraint.termVars hq (by rw [hsrc']; exact h2)
-        omega
-      · have := two_le_count_flatMap KimchiConstraint.termVars hp hq hpq
-          (by
-            rw [hsrc']
-            exact List.mem_flatMap.mpr
-              ⟨_, List.getElem_mem (by rw [Vector.length_toList]; exact hj11), hmem⟩)
-          (hsrc ▸ hvterm)
+        rcases em ((⟨k, hk'⟩ : Fin source[p].rowCount) = i₀) with hi | hi
+        · rcases em ((⟨j, hj⟩ : Fin wCols) = j₀) with hj' | hj'
+          · refine ⟨?_, ?_⟩
+            · rw [hgr, ← hi]
+            · rw [← hj']
+          · exfalso
+            have h2 := two_le_count_of_positions (Or.inr hj') hop hpos₀ hmem
+              (by rw [termVars_var]; exact List.mem_singleton_self _)
+            have h3 := two_le_count_flatMap_same KimchiConstraint.termVars hq h2
+            omega
+        · exfalso
+          have h2 := two_le_count_of_positions (Or.inl hi) hop hpos₀ hmem
+            (by rw [termVars_var]; exact List.mem_singleton_self _)
+          have h3 := two_le_count_flatMap_same KimchiConstraint.termVars hq h2
+          omega
+      · exfalso
+        have := two_le_count_flatMap KimchiConstraint.termVars hp hq hpq
+          (mem_termVars_of_position hop hmem) hvterm
         omega
     · exact absurd (hfresh v hmem) (Nat.not_le.mpr (Nat.lt_of_lt_of_le hvlt hnv'))
 
@@ -709,11 +817,10 @@ theorem unwired_cell_unique {source : List (KimchiConstraint F)} {publicVars : L
     (r' j' : Nat) (hr' : r' < (directRows source publicVars nv).length) (hj' : j' < wCols)
     (h1 : (directRows source publicVars nv)[r].vars[j] = some v)
     (h2 : (directRows source publicVars nv)[r'].vars[j'] = some v) : r = r' ∧ j = j' := by
-  obtain ⟨c', rfl⟩ := addComplete_of_unwired (hscope.wired c hc) hv
-  obtain ⟨q, hq, hsrc⟩ := List.mem_iff_getElem.mp hc
-  obtain ⟨j₀, hj₀, -, hj₀v⟩ := unwired_index hv
-  obtain ⟨e1, e2⟩ := unwired_cell_at hscope hq hsrc hv hj₀ hj₀v r j hr hj h1
-  obtain ⟨e3, e4⟩ := unwired_cell_at hscope hq hsrc hv hj₀ hj₀v r' j' hr' hj' h2
+  obtain ⟨q, hq, rfl⟩ := List.mem_iff_getElem.mp hc
+  obtain ⟨i₀, j₀, -, hpos₀⟩ := unwired_position hv
+  obtain ⟨e1, e2⟩ := unwired_cell_at hscope hq hv hpos₀ r j hr hj h1
+  obtain ⟨e3, e4⟩ := unwired_cell_at hscope hq hv hpos₀ r' j' hr' hj' h2
   exact ⟨e1.trans e3.symm, e2.trans e4.symm⟩
 
 /-! ## The valuation -/
@@ -781,21 +888,6 @@ private theorem recoverClass_eq_of_root_eq (roots : Array Variable) (rows : List
 
 /-! ## The theorem -/
 
-/-- Every step of the lowering is some constraint's recording from a counter at or above the
-start. -/
-private theorem step_shape {source : List (KimchiConstraint F)} {nv : Variable}
-    {s : RecordedStep F} (hs : s ∈ (lowering source nv).steps) :
-    ∃ (p : Nat) (hp : p < source.length) (nv' : Variable) (aux' : AuxState F), nv ≤ nv' ∧
-      s = ⟨(recordReduction nv' aux' source[p].reduce).rows,
-        (recordReduction nv' aux' source[p].reduce).result,
-        (recordReduction nv' aux' source[p].reduce).events⟩ := by
-  obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hs
-  have hp' : p < source.length := (length_steps source nv initialAuxState) ▸ hp
-  obtain ⟨nv', aux', hnv', -, hstep⟩ := (recordGates_queued (fun _ => True) source nv
-    (fun _ _ _ _ _ _ _ _ _ => trivial) nv initialAuxState (Nat.le_refl _)
-    (fun _ _ => trivial)).1 p hp'
-  exact ⟨p, hp', nv', aux', hnv', hstep⟩
-
 /-- Every equation any step of the lowering queues carries no coefficient on an absent cell. -/
 private theorem step_absentZero {source : List (KimchiConstraint F)} {nv : Variable}
     (hw : ∀ c ∈ source, c.Wired) {s : RecordedStep F} (hs : s ∈ (lowering source nv).steps) :
@@ -809,11 +901,11 @@ private theorem step_absentZero {source : List (KimchiConstraint F)} {nv : Varia
   cases cp with
   | basic b => exact basic_absentZero nv' aux' b
   | addComplete c => exact addComplete_absentZero nv' aux' c
-  | poseidon _ => exact hwd.elim
-  | varBaseMul _ => exact hwd.elim
-  | endoScalar _ => exact hwd.elim
-  | endoMul _ => exact hwd.elim
-  | pad _ => exact hwd.elim
+  | poseidon _ => exact hwd.1.elim
+  | varBaseMul _ => exact hwd.1.elim
+  | endoScalar _ => exact hwd.1.elim
+  | endoMul _ => exact hwd.1.elim
+  | pad _ => exact hwd.1.elim
 
 omit [Field F] [DecidableEq F] in
 private theorem fusions_of_merge {es : List (ReductionEvent F)} {c : EqualsConstraint F}
@@ -934,23 +1026,6 @@ private theorem queued_holds {n : ℕ} [NeZero n] {source : List (KimchiConstrai
   have hz := genericValue_of_located hloc hrow _ V hw (by rw [hrcg]; exact habsent) hgen
   rw [hrcg] at hz
   exact hz
-
-/-- A complete addition's row carries a variable in each of its eleven operand cells. -/
-private theorem addComplete_cell_some (nv' : Variable) (aux' : AuxState F) (c : AddComplete F)
-    (k : Fin wCols) (hk : k.val < 11) :
-    ∃ w, (recordReduction nv' aux' c.reduce).result.row.vars[k] = some w := by
-  obtain ⟨-, vs, hvs, hall⟩ := addComplete_names nv' aux' c
-  have hvl : vs.length = 11 := by
-    rw [(List.forall₂_iff_get.mp hall).1]
-    simp [AddComplete.operands]
-  have hidx : k.val < (recordReduction nv' aux' c.reduce).result.row.vars.toList.length := by
-    rw [Vector.length_toList]
-    exact k.isLt
-  refine ⟨vs[k.val]'(by omega), ?_⟩
-  have h := List.getElem_of_eq hvs hidx
-  rw [List.getElem_append_left (by simp only [List.length_map]; omega), List.getElem_map] at h
-  rw [Vector.getElem_toList] at h
-  exact h
 
 /-- **The wired fragment's closed theorem.** Any table satisfying an index of the fragment's
 lowering yields a valuation satisfying every source constraint and reading the public
@@ -1083,9 +1158,23 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
           wTab ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩ k =
           rowValues V (recordReduction nv' aux' c.reduce).result.row k := by
         intro k hk
-        obtain ⟨w, hlab⟩ := addComplete_cell_some nv' aux' c k hk
-        rw [hval _ k.val hi' k.isLt _ (by rw [hrowi]; exact hlab)]
-        simp only [rowValues, hlab, Option.map_some, Option.getD_some]
+        obtain ⟨-, hlen, hcell⟩ := addComplete_placed nv' aux' c
+        have h := hcell ⟨0, Nat.one_pos⟩ k
+        have hop : ((KimchiConstraint.addComplete c).rowOperands[(⟨0, Nat.one_pos⟩ :
+            Fin (KimchiConstraint.addComplete c).rowCount)])[k] =
+            some (c.operands.toList[k.val]'(by simp [AddComplete.operands]; omega)) := by
+          show (cellsOf (c.operands.toList.map some))[k.val] = _
+          rw [cellsOf_getElem_lt _ _ (by simp [AddComplete.operands]; omega) k.isLt,
+            List.getElem_map]
+        rw [hop] at h
+        change CellOf _ (recordReduction nv' aux' c.reduce).result.row.vars[k] _ at h
+        cases hlab : (recordReduction nv' aux' c.reduce).result.row.vars[k] with
+        | none =>
+          rw [hlab] at h
+          exact h.elim
+        | some w =>
+          rw [hval _ k.val hi' k.isLt _ (by rw [hrowi]; exact hlab)]
+          simp only [rowValues, hlab, Option.map_some, Option.getD_some]
       have hmap : Lift.Gate.AddComplete.cellMap
           (wTab ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩) =
           Lift.Gate.AddComplete.cellMap
@@ -1095,11 +1184,11 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
       refine addComplete_holds_of_reductionFacts nv' aux' c V hf ?_
       rw [← hmap]
       exact hadd
-    | poseidon _ => exact hwd.elim
-    | varBaseMul _ => exact hwd.elim
-    | endoScalar _ => exact hwd.elim
-    | endoMul _ => exact hwd.elim
-    | pad _ => exact hwd.elim
+    | poseidon _ => exact hwd.1.elim
+    | varBaseMul _ => exact hwd.1.elim
+    | endoScalar _ => exact hwd.1.elim
+    | endoMul _ => exact hwd.1.elim
+    | pad _ => exact hwd.1.elim
   · intro i
     have hi : i.val < (directRows source publicVars nv).length := by
       have := i.isLt

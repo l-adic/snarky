@@ -57,17 +57,6 @@ namespace Snarky
 
 variable {F : Type}
 
-/-- The variable a bare-variable operand names; `none` for any other form. -/
-def CVar.var? : CVar F → Option Variable
-  | .var v => some v
-  | _ => none
-
-/-- An operand with a bare-variable form is that variable. -/
-theorem CVar.var?_isSome {x : CVar F} (h : x.var?.isSome) : ∃ v, x = .var v := by
-  cases x with
-  | var v => exact ⟨v, rfl⟩
-  | _ => exact absurd h (by simp [CVar.var?])
-
 namespace Kimchi
 
 /-- A constraint the lowering places directly: a Boolean on a bare variable, or a complete
@@ -86,29 +75,6 @@ instance KimchiConstraint.decidableDirect (c : KimchiConstraint F) : Decidable c
 private def KimchiConstraint.directVars : KimchiConstraint F → List Variable
   | .basic (.boolean x) => x.var?.toList
   | .addComplete c => c.operands.toList.filterMap CVar.var?
-  | _ => []
-
-/-- The operands a Poseidon block's states place in unwired columns: in each row's five
-states, the second's last two cells and the third's and fourth's three; a trailing single
-state is the terminal row's wired cells, and a shorter tail places nothing. -/
-def Poseidon.unwiredOperands : List (FVar F × FVar F × FVar F) → List (FVar F)
-  | _ :: q1 :: q2 :: q3 :: _ :: rest =>
-    [q1.2.1, q1.2.2, q2.1, q2.2.1, q2.2.2, q3.1, q3.2.1, q3.2.2] ++ unwiredOperands rest
-  | _ => []
-
-/-- The bare operands a constraint places in the unwired columns `7` to `14`: a complete
-addition's `sameX`, `s`, `infZ`, `x21Inv`; a decomposition round's crumbs after the first; a
-scale round's four middle accumulators and five slopes; an endomorphism round's `r`, `s1`,
-`s3` and four bits; a Poseidon block's states off the wired registers. -/
-def KimchiConstraint.unwiredVars : KimchiConstraint F → List Variable
-  | .addComplete c => (c.operands.toList.drop permCols).filterMap CVar.var?
-  | .endoScalar rounds => rounds.flatMap fun r => (r.xs.toList.drop 1).filterMap CVar.var?
-  | .varBaseMul rounds => rounds.flatMap fun r =>
-    [r.acc1.x, r.acc1.y, r.acc2.x, r.acc2.y, r.acc3.x, r.acc3.y, r.acc4.x, r.acc4.y, r.slope0,
-      r.slope1, r.slope2, r.slope3, r.slope4].filterMap CVar.var?
-  | .endoMul c => c.state.flatMap fun r =>
-    [r.r.x, r.r.y, r.s1, r.s3, r.bit0, r.bit1, r.bit2, r.bit3].filterMap CVar.var?
-  | .poseidon c => (Poseidon.unwiredOperands c.state).filterMap CVar.var?
   | _ => []
 
 /-- Every variable the source and the public variables name, with repetition. -/
@@ -869,6 +835,7 @@ private theorem unwiredVars_of_label {c : AddComplete F}
       rw [List.map_drop, List.map_drop]
       exact congrArg (List.drop 7) (map_var?_eq c.operands.toList hc)
     exact filterMap_eq_of_map _ _ hm
+  rw [addComplete_unwiredVars]
   show v ∈ (c.operands.toList.drop 7).filterMap CVar.var?
   rw [hdrop]
   have hl := directVars_length hc

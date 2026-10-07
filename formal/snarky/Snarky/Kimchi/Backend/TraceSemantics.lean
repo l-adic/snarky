@@ -16,9 +16,10 @@ The two `none` conventions differ on purpose.
 
 - `genericValue`, `equalsHolds`, `ReductionEvent.Holds`, `ReductionFacts`: the readings.
 - `rowValues`: a named row's cells at a valuation, an absent cell reading `0`.
-- `CVar.termVars`, `Basic.termVars`, `KimchiConstraint.termVars`: the variables an operand's
-  affine form, a `Basic` constraint and a constraint name, with repetition, every gate's
-  operands counted as the lowering places them.
+- `KimchiConstraint.rowCount`, `KimchiConstraint.rowOperands`, `KimchiConstraint.termVars`,
+  `KimchiConstraint.unwiredVars`: the rows a gate emits and the operands they place, cell by
+  cell, and from them the variables a constraint names with repetition and its bare operands
+  in the unwired columns.
 
 ## Main results
 
@@ -31,9 +32,11 @@ The two `none` conventions differ on purpose.
 - `equalsHolds_of_merge`, `equalsHolds_of_cached`, `equalsHolds_of_pinned`,
   `equalsHolds_of_row`, `equalsHolds_of_trivial`: an equality holds once the fact its logged
   outcome names holds, a merge or cache hit by class, a pin or row by its emitted equation.
-- `basic_names`, `addComplete_names`: the names of a constraint's recorded reduction are terms
-  of its operands or its allocations; an addition's row cells are its operands' variables,
-  position by position, a bare operand's being itself.
+- `basic_names`: the names of a `Basic` constraint's recorded reduction are its terms or its
+  allocations.
+- `Placed`, `addComplete_placed`: a gate's recorded reduction placed, its names terms of placed
+  operands that are not that bare variable, its rows matching `KimchiConstraint.rowOperands`
+  cell by cell (`CellOf`); the addition is.
 - `basic_absentZero`, `addComplete_absentZero`: every equation a constraint's recorded
   reduction queues carries no coefficient on an absent cell.
 - `basic_of_reductionFacts`: when the recorded events hold, any `Basic` constraint holds.
@@ -756,45 +759,115 @@ def _root_.Snarky.Basic.termVars : Basic F → List Variable
   | .square a b => a.termVars ++ b.termVars
   | .boolean x => x.termVars
 
-/-- The variables a decomposition round's operands name: the six registers and the eight
-crumbs. -/
-def EndoScalarRound.termVars (r : EndoScalarRound F) : List Variable :=
-  [r.n0, r.n8, r.a0, r.b0, r.a8, r.b8].flatMap CVar.termVars ++
-    r.xs.toList.flatMap CVar.termVars
+/-- The variable a bare-variable operand names; `none` for any other form. -/
+def _root_.Snarky.CVar.var? (x : CVar F) : Option Variable :=
+  match x with
+  | .var v => some v
+  | _ => none
 
-/-- The variables a scale round's operands name: the base, the six accumulators, the registers,
-the bits and the slopes. -/
-def ScaleRound.termVars (r : ScaleRound F) : List Variable :=
-  [r.base.x, r.base.y, r.acc0.x, r.acc0.y, r.nPrev, r.nNext, r.acc1.x, r.acc1.y, r.acc2.x,
-    r.acc2.y, r.acc3.x, r.acc3.y, r.acc4.x, r.acc4.y, r.acc5.x, r.acc5.y, r.bit0, r.bit1,
-    r.bit2, r.bit3, r.bit4, r.slope0, r.slope1, r.slope2, r.slope3, r.slope4].flatMap
-    CVar.termVars
+omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
+/-- An operand with a bare-variable form is that variable. -/
+theorem _root_.Snarky.CVar.var?_isSome {x : CVar F} (h : x.var?.isSome) : ∃ v, x = .var v := by
+  cases x with
+  | var v => exact ⟨v, rfl⟩
+  | _ => exact absurd h (by simp [CVar.var?])
 
-/-- The variables an endomorphism round's operands name: the fourteen the lowering places;
-the round's own `s` and `nAccNext` are read from the next row and not placed. -/
-def EndoMulRound.termVars (r : EndoMulRound F) : List Variable :=
-  [r.t.x, r.t.y, r.inv, r.p.x, r.p.y, r.nAcc, r.r.x, r.r.y, r.s1, r.s3, r.bit0, r.bit1,
-    r.bit2, r.bit3].flatMap CVar.termVars
+/-- A row's fifteen cells from a prefix of placed operands, the rest empty. -/
+def cellsOf (ops : List (Option (FVar F))) : Vector (Option (FVar F)) wCols :=
+  ⟨⟨ops.take wCols ++ List.replicate (wCols - (ops.take wCols).length) none⟩, by
+    show (ops.take wCols ++ List.replicate (wCols - (ops.take wCols).length) none).length = wCols
+    simp only [List.length_append, List.length_replicate, List.length_take]
+    omega⟩
 
-/-- The variables an endomorphism multiplication's operands name: its rounds' and the final
-accumulator and scalar. -/
-def EndoMul.termVars (c : EndoMul F) : List Variable :=
-  c.state.flatMap EndoMulRound.termVars ++ [c.s.x, c.s.y, c.nAcc].flatMap CVar.termVars
+omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
+/-- A placed cell of a row is its operand. -/
+theorem cellsOf_getElem_lt (ops : List (Option (FVar F))) (k : Nat) (hk : k < ops.length)
+    (hk' : k < wCols) : (cellsOf ops)[k] = ops[k] := by
+  show (ops.take wCols ++ List.replicate (wCols - (ops.take wCols).length) none)[k]'(by
+    simp only [List.length_append, List.length_replicate, List.length_take]; omega) = ops[k]
+  rw [List.getElem_append_left (by simp only [List.length_take]; omega), List.getElem_take]
 
-/-- The variables a Poseidon block's states name. -/
-def PoseidonConstraint.termVars (c : PoseidonConstraint F) : List Variable :=
-  c.state.flatMap fun t => t.1.termVars ++ t.2.1.termVars ++ t.2.2.termVars
+/-- The operands a Poseidon block's rows place: five states per row in the permuted register
+order `s0 s4 s1 s2 s3`, a trailing single state in the terminal row's first three cells, and
+nothing for a shorter tail, as the reducer chunks them. -/
+def Poseidon.rowOperandsList :
+    List (FVar F × FVar F × FVar F) → List (Vector (Option (FVar F)) wCols)
+  | [] => []
+  | [s] => [cellsOf ([s.1, s.2.1, s.2.2].map some)]
+  | q0 :: q1 :: q2 :: q3 :: q4 :: rest =>
+    cellsOf ([q0.1, q0.2.1, q0.2.2, q4.1, q4.2.1, q4.2.2, q1.1, q1.2.1, q1.2.2, q2.1, q2.2.1,
+      q2.2.2, q3.1, q3.2.1, q3.2.2].map some) :: rowOperandsList rest
+  | _ => []
 
-/-- The variables a constraint's operands name, with repetition: every term of every affine
-operand the lowering places. -/
+/-- The operands a constraint's gate rows place, row by row and cell by cell, `none` for an
+empty cell: what each reducer writes, before reduction. A `Basic` constraint places no gate
+row. -/
+def KimchiConstraint.rowOperandsList : KimchiConstraint F → List (Vector (Option (FVar F)) wCols)
+  | .basic _ => []
+  | .addComplete c => [cellsOf (c.operands.toList.map some)]
+  | .poseidon c => Poseidon.rowOperandsList c.state
+  | .varBaseMul rounds => rounds.flatMap fun r =>
+    [cellsOf ([r.base.x, r.base.y, r.acc0.x, r.acc0.y, r.nPrev, r.nNext].map some ++
+        none :: [r.acc1.x, r.acc1.y, r.acc2.x, r.acc2.y, r.acc3.x, r.acc3.y, r.acc4.x,
+          r.acc4.y].map some),
+      cellsOf ([r.acc5.x, r.acc5.y, r.bit0, r.bit1, r.bit2, r.bit3, r.bit4, r.slope0,
+        r.slope1, r.slope2, r.slope3, r.slope4].map some)]
+  | .endoScalar rounds => rounds.map fun r =>
+    cellsOf ([r.n0, r.n8, r.a0, r.b0, r.a8, r.b8].map some ++ r.xs.toList.map some)
+  | .endoMul c =>
+    (c.state.map fun r => cellsOf ([r.t.x, r.t.y, r.inv].map some ++
+      none :: [r.p.x, r.p.y, r.nAcc, r.r.x, r.r.y, r.s1, r.s3, r.bit0, r.bit1, r.bit2,
+        r.bit3].map some)) ++
+    [cellsOf (none :: none :: none :: none :: [c.s.x, c.s.y, c.nAcc].map some)]
+  | .pad vs => [cellsOf (vs.toList.map some)]
+
+/-- The rows a constraint's gate emits. -/
+def KimchiConstraint.rowCount (c : KimchiConstraint F) : Nat :=
+  c.rowOperandsList.length
+
+/-- The placed operands as a vector of rows: position `(i, j)` is row `i`'s cell `j`. -/
+def KimchiConstraint.rowOperands (c : KimchiConstraint F) :
+    Vector (Vector (Option (FVar F)) wCols) c.rowCount :=
+  ⟨⟨c.rowOperandsList⟩, rfl⟩
+
+/-- The variables a cell's operand names; none for an empty cell. -/
+def cellTerms : Option (FVar F) → List Variable
+  | some x => x.termVars
+  | none => []
+
+/-- The variables a constraint's operands name, with repetition: a `Basic` constraint's
+operands, or every term of every operand a gate's rows place. -/
 def KimchiConstraint.termVars : KimchiConstraint F → List Variable
   | .basic b => b.termVars
-  | .addComplete c => c.operands.toList.flatMap CVar.termVars
-  | .poseidon c => c.termVars
-  | .varBaseMul rounds => rounds.flatMap ScaleRound.termVars
-  | .endoScalar rounds => rounds.flatMap EndoScalarRound.termVars
-  | .endoMul c => c.termVars
-  | .pad vs => vs.toList.flatMap CVar.termVars
+  | c => c.rowOperands.toList.flatMap fun row => row.toList.flatMap cellTerms
+
+/-- The operands a constraint places, in row and cell order. -/
+def KimchiConstraint.placedOperands (c : KimchiConstraint F) : List (FVar F) :=
+  c.rowOperands.toList.flatMap fun row => row.toList.filterMap id
+
+/-- The bare operands a constraint places in the unwired columns `7` to `14`. -/
+def KimchiConstraint.unwiredVars (c : KimchiConstraint F) : List Variable :=
+  c.rowOperands.toList.flatMap fun row =>
+    (row.toList.drop permCols).filterMap fun o => o.bind CVar.var?
+
+omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
+/-- A complete addition's unwired operands are the bare ones among `sameX`, `s`, `infZ`,
+`x21Inv`. -/
+theorem addComplete_unwiredVars (c : AddComplete F) :
+    (KimchiConstraint.addComplete c).unwiredVars =
+      (c.operands.toList.drop permCols).filterMap CVar.var? := by
+  show (((cellsOf (c.operands.toList.map some)).toList.drop permCols).filterMap
+    fun o => o.bind CVar.var?) ++ [] = _
+  rw [List.append_nil]
+  rfl
+
+/-- A row cell against its placed operand, within the allocations `A`: both empty, or the
+cell a variable that is a term of the operand or an allocation, and the operand's own
+variable when the operand is bare. -/
+def CellOf (A : List Variable) : Option Variable → Option (FVar F) → Prop
+  | none, none => True
+  | some v, some x => (v ∈ x.termVars ∨ v ∈ A) ∧ ∀ w, x = .var w → v = w
+  | _, _ => False
 
 end Names
 
@@ -1296,16 +1369,28 @@ private theorem records_reduceAffinePoint_names (p : AffinePoint (FVar F)) :
   · exact (hy'.1 e he w hw).imp_right Or.inr
   · exact (hx'.1 e he w hw).imp_right Or.inl
 
+/-- A constraint's recorded reduction placed: every name of its events is an allocation or a
+term of a placed operand that is not that bare variable, and its gate rows correspond cell by
+cell to its placed operands. -/
+def Placed (nv : Variable) (aux : AuxState F) (c : KimchiConstraint F) : Prop :=
+  (∀ e ∈ (recordReduction nv aux c.reduce).events, ∀ w ∈ e.names,
+    w ∈ allocs (recordReduction nv aux c.reduce).events ∨
+      ∃ x ∈ c.placedOperands, w ∈ x.termVars ∧ x ≠ .var w) ∧
+  ∃ hlen : (toKimchiRows (F := F) (recordReduction nv aux c.reduce).result).length = c.rowCount,
+    ∀ (i : Fin c.rowCount) (j : Fin wCols),
+      CellOf (allocs (recordReduction nv aux c.reduce).events)
+        ((toKimchiRows (F := F) (recordReduction nv aux c.reduce).result)[i.val]'(
+          lt_of_lt_of_eq i.isLt hlen.symm)).vars[j]
+        (c.rowOperands[i])[j]
+
 /-- The walk of a complete addition: every name is an allocation or a term of an operand that
-is not that bare variable, and the row's eleven cells are the operands' variables, each a term
-of its operand or an allocation, a bare operand's being itself. -/
+is not that bare variable, and the row's cells are its operands' variables cell by cell. -/
 private theorem records_addComplete_names (c : AddComplete F) :
     Records (c.reduce : RecordingBuilder F (Rows F)) fun row es =>
       (∀ e ∈ es, ∀ w ∈ e.names, w ∈ allocs es ∨
         ∃ x ∈ c.operands.toList, w ∈ x.termVars ∧ x ≠ .var w) ∧
-      ∃ vs : List Variable, row.row.vars.toList = vs.map some ++ List.replicate 4 none ∧
-        List.Forall₂ (fun v x => (v ∈ x.termVars ∨ v ∈ allocs es) ∧ ∀ w, x = .var w → v = w)
-          vs c.operands.toList := by
+      ∀ j : Fin wCols, CellOf (allocs es) row.row.vars[j]
+        (cellsOf (c.operands.toList.map some))[j] := by
   unfold AddComplete.reduce
   refine records_bind (records_reduceAffinePoint_names _) fun p1 es1 h1 => ?_
   refine records_bind (records_reduceAffinePoint_names _) fun p2 es2 h2 => ?_
@@ -1346,8 +1431,7 @@ private theorem records_addComplete_names (c : AddComplete F) :
       (allocs_mono_right (allocs_mono_right (allocs_mono_right (allocs_mono_left hu)))))))
   have hops : c.operands.toList = [c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y, c.inf,
       c.sameX, c.s, c.infZ, c.x21Inv] := rfl
-  refine ⟨fun e he w hw => ?_,
-    [p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, inf, sameX, s, infZ, x21Inv], rfl, ?_⟩
+  refine ⟨fun e he w hw => ?_, fun j => ?_⟩
   · simp only [List.append_nil, List.mem_append] at he
     rw [hops]
     rcases he with he | he | he | he | he | he | he | he
@@ -1379,27 +1463,23 @@ private theorem records_addComplete_names (c : AddComplete F) :
       · exact Or.inl h
       · exact Or.inr ⟨c.inf, by simp, h⟩
   · rw [hops]
-    exact .cons ⟨h1'.2.1, h1'.2.2.2.1⟩ (.cons ⟨h1'.2.2.1, h1'.2.2.2.2⟩
-      (.cons ⟨h2'.2.1, h2'.2.2.2.1⟩ (.cons ⟨h2'.2.2.1, h2'.2.2.2.2⟩
-      (.cons ⟨h3'.2.1, h3'.2.2.2.1⟩ (.cons ⟨h3'.2.2.1, h3'.2.2.2.2⟩
-      (.cons ⟨h8'.2.1, h8'.2.2⟩ (.cons ⟨h7'.2.1, h7'.2.2⟩ (.cons ⟨h6'.2.1, h6'.2.2⟩
-      (.cons ⟨h5'.2.1, h5'.2.2⟩ (.cons ⟨h4'.2.1, h4'.2.2⟩ .nil))))))))))
+    fin_cases j
+    exacts [⟨h1'.2.1, h1'.2.2.2.1⟩, ⟨h1'.2.2.1, h1'.2.2.2.2⟩, ⟨h2'.2.1, h2'.2.2.2.1⟩,
+      ⟨h2'.2.2.1, h2'.2.2.2.2⟩, ⟨h3'.2.1, h3'.2.2.2.1⟩, ⟨h3'.2.2.1, h3'.2.2.2.2⟩,
+      ⟨h8'.2.1, h8'.2.2⟩, ⟨h7'.2.1, h7'.2.2⟩, ⟨h6'.2.1, h6'.2.2⟩, ⟨h5'.2.1, h5'.2.2⟩,
+      ⟨h4'.2.1, h4'.2.2⟩, trivial, trivial, trivial, trivial]
 
-/-- The names of a complete addition's recorded reduction are allocations or terms of operands
-that are not that bare variable, and its row's cells are its operands' variables, each a term
-of its operand or an allocation, a bare operand's being itself. -/
-theorem addComplete_names (nv : Variable) (aux : AuxState F) (c : AddComplete F) :
-    (∀ e ∈ (recordReduction nv aux c.reduce).events, ∀ w ∈ e.names,
-      w ∈ allocs (recordReduction nv aux c.reduce).events ∨
-        ∃ x ∈ c.operands.toList, w ∈ x.termVars ∧ x ≠ .var w) ∧
-    ∃ vs : List Variable,
-      (recordReduction nv aux c.reduce).result.row.vars.toList =
-        vs.map some ++ List.replicate 4 none ∧
-      List.Forall₂ (fun v x => (v ∈ x.termVars ∨
-        v ∈ allocs (recordReduction nv aux c.reduce).events) ∧ ∀ w, x = .var w → v = w)
-        vs c.operands.toList :=
-  recordReduction_of_records (records_addComplete_names c) nv aux
-
+/-- A complete addition's recorded reduction is placed: its names are allocations or terms
+of operands that are not that bare variable, and its one row's cells are its operands'
+variables cell by cell. -/
+theorem addComplete_placed (nv : Variable) (aux : AuxState F) (c : AddComplete F) :
+    Placed nv aux (.addComplete c) := by
+  obtain ⟨hn, hc⟩ := recordReduction_of_records (records_addComplete_names c) nv aux
+  have hplaced : (KimchiConstraint.addComplete c).placedOperands = c.operands.toList := rfl
+  refine ⟨fun e he w hw => (hn e he w hw).imp_right fun ⟨x, hx, h⟩ => ⟨x, hplaced ▸ hx, h⟩, rfl,
+    fun i j => ?_⟩
+  fin_cases i
+  exact hc j
 
 /-! ## Absent cells carry no coefficient -/
 
