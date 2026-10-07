@@ -160,6 +160,11 @@ Snarky.Kimchi.direct_example_satisfies
 Snarky.Kimchi.direct_example_holds
 Snarky.Kimchi.direct_rejections
 Snarky.Kimchi.direct_rejections_index
+Snarky.Kimchi.UnionFind.empty_inv
+Snarky.Kimchi.UnionFind.union_inv
+Snarky.Kimchi.UnionFind.same_union_self
+Snarky.Kimchi.UnionFind.same_union_mono
+Snarky.Kimchi.UnionFind.rootOf_getD_eq
 Snarky.Kimchi.recorded_batching
 Snarky.Kimchi.recorded_wiring
 Snarky.Kimchi.recorded_constantCache
