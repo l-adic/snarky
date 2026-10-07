@@ -95,8 +95,9 @@ instance KimchiConstraint.decidableWired (c : KimchiConstraint F) : Decidable c.
   unfold KimchiConstraint.Wired
   infer_instance
 
-/-- Every variable the source and the public variables name, with repetition. -/
-private def occurrences (source : List (KimchiConstraint F)) (publicVars : List Variable) :
+/-- Every variable the source and the public variables name, with repetition: each
+constraint's term variables in order, then the public variables. -/
+def occurrences (source : List (KimchiConstraint F)) (publicVars : List Variable) :
     List Variable :=
   source.flatMap KimchiConstraint.termVars ++ publicVars
 

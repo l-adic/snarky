@@ -43,6 +43,9 @@ import Snarky.Kimchi.Backend.Wiring
 import Snarky.Kimchi.Backend.DirectChecks
 import Snarky.Kimchi.Backend.Wired
 import Snarky.Kimchi.Backend.WiredChecks
+import Snarky.Kimchi.Backend.WiredFixtures
+import Snarky.Kimchi.Backend.ScopedCheck
+import Snarky.Kimchi.Backend.ScopedCheckChecks
 import Snarky.Kimchi.Backend.Trace
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon

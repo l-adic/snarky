@@ -237,6 +237,12 @@ Snarky.Kimchi.pad_example_satisfies
 Snarky.Kimchi.pad_example_holds
 Snarky.Kimchi.pad_example_layout
 Snarky.Kimchi.pad_rejections
+Snarky.Kimchi.checkScoped_eq_true_iff
+Snarky.Kimchi.checkScoped_accepts
+Snarky.Kimchi.scopedFailure_range
+Snarky.Kimchi.scopedFailure_notWired
+Snarky.Kimchi.scopedFailure_reused
+Snarky.Kimchi.scopedFailure_precedence
 Snarky.Kimchi.UnionFind.empty_inv
 Snarky.Kimchi.UnionFind.find_inv
 Snarky.Kimchi.UnionFind.same_find_mono
