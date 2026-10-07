@@ -20,21 +20,28 @@ history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` re
 - `replay`: an event list re-executed through the builder's primitives, and
   `RecordedReduction.finish`, a recorded reduction's final builder state.
 - `AllocationsFresh`: every allocation's logged variable is the counter at its point.
+- `OutcomesFaithful`: every equality's logged outcome is the equality op's decision at its
+  point.
 
 ## Main results
 
 - `record_reduceToVariable_erases`, `record_basic_erases`, `record_addComplete_erases`: the
   reducers the direct fragment and its operands run, recorded, erase to their ordinary
   reductions; `record_constraint_erases` is the same for the dispatch over every constraint.
-- `record_constraint_replays`, `record_constraint_allocates`: a recorded reduction ends in
-  the replay of its own events, whose allocations log the counter.
+- `record_constraint_replays`, `record_constraint_allocates`, `record_constraint_decides`: a
+  recorded reduction ends in the replay of its own events, whose allocations log the counter
+  and whose equalities log their outcomes.
+- `replayEvent_equal`: a faithful equality event replays as its outcome's effect.
 
 ## Implementation notes
 
 An allocation event keeps the affine expression the reducer allocated for. That records the
 intended advice computation only: the builder's allocation ignores it, and nothing reads it
-as an equation. Events carry payloads, not state snapshots; a snapshot per event would copy
-the union-find and the constant cache at every operation.
+as an equation. An equality event keeps the request and the decision the equality op took on
+it, which depends on the constant cache at that moment; logging the decision lets every later
+reading attribute a merge, a cache hit or a queued row to its event without replaying the
+cache. Events carry payloads, not state snapshots; a snapshot per event would copy the
+union-find and the constant cache at every operation.
 
 Erasure is proved per reducer, not for arbitrary code in the recording monad: a computation
 written directly in `RecordingBuilder` can change the core without logging, so only the
@@ -56,15 +63,15 @@ variable {F α β : Type}
 
 /-- One reduction operation as the reducer issued it: an allocation with the affine
 expression it stands for, a generic constraint handed to the batching queue, or a two-sided
-equality handed to the wiring, the constant cache, or row emission. -/
+equality with what the equality op did with it. -/
 inductive ReductionEvent (F : Type) where
   /-- The variable allocated for an affine expression; the expression is the intended advice
   computation, not an equation. -/
   | alloc (v : Variable) (expression : AffineExpression F)
   /-- A generic constraint handed to the batching queue. -/
   | generic (constraint : GenericPlonkConstraint F)
-  /-- A two-sided equality. -/
-  | equal (constraint : EqualsConstraint F)
+  /-- A two-sided equality, with the equality op's decision on it. -/
+  | equal (constraint : EqualsConstraint F) (outcome : EqualOutcome F)
 
 /-- A reduction run with its provenance: the result, the operations in execution order, the
 emitted rows in emission order, and the counter and auxiliary state handed back. -/
@@ -107,7 +114,8 @@ private def record (e : ReductionEvent F) : RecordingBuilder F Unit :=
   modify fun s => { s with eventsRev := e :: s.eventsRev }
 
 /-- The recording interpreter: each operation delegates to the builder's and logs its payload,
-an allocation with the variable the builder returned. -/
+an allocation with the variable the builder returned, an equality with the decision the op
+takes against the cache it finds. -/
 instance [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] :
     PlonkReductionM F (RecordingBuilder F) where
   createInternalVariable e := do
@@ -118,8 +126,9 @@ instance [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] :
     liftCore (addGenericPlonkConstraint g)
     record (.generic g)
   addEqualsConstraint c := do
+    let s ← get
     liftCore (addEqualsConstraint c)
-    record (.equal c)
+    record (.equal c (outcomeOf c s.core.aux.wireState.cachedConstants))
 
 /-- Run a reduction in the recording interpreter from a borrowed counter and auxiliary
 state: the result, the events in execution order, the rows in emission order, and the
@@ -137,11 +146,12 @@ section Replay
 variable [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
 
 /-- The builder's primitive for one event, on the builder's state: an allocation, the logged
-variable ignored; a generic constraint's batching; an equality's wiring, cache or emission. -/
+variable ignored; a generic constraint's batching; an equality's wiring, cache or emission, the
+logged outcome ignored. -/
 def replayEvent (s : BuilderReductionState F) : ReductionEvent F → BuilderReductionState F
   | .alloc _ e => ((createInternalVariable e : PlonkBuilder F Variable) s).2
   | .generic g => ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2
-  | .equal c => ((addEqualsConstraint c : PlonkBuilder F Unit) s).2
+  | .equal c _ => ((addEqualsConstraint c : PlonkBuilder F Unit) s).2
 
 /-- Re-execute an event list through the builder's primitives, in order. -/
 def replay (s : BuilderReductionState F) (events : List (ReductionEvent F)) :
@@ -175,43 +185,75 @@ private theorem allocationsFresh_append (s : BuilderReductionState F)
     | alloc v ex =>
       simp only [List.cons_append, AllocationsFresh, ih, replay, List.foldl_cons, and_assoc]
     | generic g => simp only [List.cons_append, AllocationsFresh, ih, replay, List.foldl_cons]
-    | equal c => simp only [List.cons_append, AllocationsFresh, ih, replay, List.foldl_cons]
+    | equal c o => simp only [List.cons_append, AllocationsFresh, ih, replay, List.foldl_cons]
+
+/-- Every equality's logged outcome is the equality op's decision at its point: the events
+replayed from `s`, each equality checked against the cache before its own effect. -/
+def OutcomesFaithful (s : BuilderReductionState F) : List (ReductionEvent F) → Prop
+  | [] => True
+  | .equal c o :: es =>
+    o = outcomeOf c s.aux.wireState.cachedConstants ∧
+      OutcomesFaithful (replayEvent s (.equal c o)) es
+  | e :: es => OutcomesFaithful (replayEvent s e) es
+
+private theorem outcomesFaithful_append (s : BuilderReductionState F)
+    (es₁ es₂ : List (ReductionEvent F)) :
+    OutcomesFaithful s (es₁ ++ es₂) ↔
+      OutcomesFaithful s es₁ ∧ OutcomesFaithful (replay s es₁) es₂ := by
+  induction es₁ generalizing s with
+  | nil => simp [OutcomesFaithful, replay]
+  | cons e es ih =>
+    cases e with
+    | alloc v ex => simp only [List.cons_append, OutcomesFaithful, ih, replay, List.foldl_cons]
+    | generic g => simp only [List.cons_append, OutcomesFaithful, ih, replay, List.foldl_cons]
+    | equal c o =>
+      simp only [List.cons_append, OutcomesFaithful, ih, replay, List.foldl_cons, and_assoc]
+
+/-- A faithful equality event replays as its outcome's effect. -/
+theorem replayEvent_equal (s : BuilderReductionState F) (c : EqualsConstraint F)
+    {o : EqualOutcome F} (h : o = outcomeOf c s.aux.wireState.cachedConstants) :
+    replayEvent s (.equal c o) = applyOutcome o s := by
+  subst h
+  show ((addEqualsConstraint c : PlonkBuilder F Unit) s).2 = _
+  rw [addEqualsConstraint_apply]
 
 /-! ## Erasure -/
 
 /-- A recording computation simulates a builder computation: from every recording state it
 returns the builder's result, carries the builder's state as its core, and appends the events
-whose replay is the builder's state change and whose allocations log the counter. -/
+whose replay is the builder's state change, whose allocations log the counter, and whose
+equalities log their outcomes. -/
 private def Simulates (b : PlonkBuilder F α) (r : RecordingBuilder F α) : Prop :=
   ∀ s : RecordingState F, (r s).1 = (b s.core).1 ∧ (r s).2.core = (b s.core).2 ∧
     ∃ es, (r s).2.eventsRev = es.reverse ++ s.eventsRev ∧ (b s.core).2 = replay s.core es ∧
-      AllocationsFresh s.core es
+      AllocationsFresh s.core es ∧ OutcomesFaithful s.core es
 
 private theorem simulates_pure (a : α) : Simulates (pure a : PlonkBuilder F α) (pure a) :=
-  fun _ => ⟨rfl, rfl, [], rfl, rfl, trivial⟩
+  fun _ => ⟨rfl, rfl, [], rfl, rfl, trivial, trivial⟩
 
 private theorem simulates_map {b : PlonkBuilder F α} {r : RecordingBuilder F α} (f : α → β)
     (hb : Simulates b r) : Simulates (f <$> b) (f <$> r) := by
   intro s
-  obtain ⟨h1, h2, es, h3, h4, h5⟩ := hb s
+  obtain ⟨h1, h2, es, h3, h4, h5, h6⟩ := hb s
   show f (r s).1 = f (b s.core).1 ∧ (r s).2.core = (b s.core).2 ∧
     ∃ es, (r s).2.eventsRev = es.reverse ++ s.eventsRev ∧ (b s.core).2 = replay s.core es ∧
-      AllocationsFresh s.core es
+      AllocationsFresh s.core es ∧ OutcomesFaithful s.core es
   rw [h1]
-  exact ⟨rfl, h2, es, h3, h4, h5⟩
+  exact ⟨rfl, h2, es, h3, h4, h5, h6⟩
 
 private theorem simulates_bind {b : PlonkBuilder F α} {r : RecordingBuilder F α}
     {f : α → PlonkBuilder F β} {g : α → RecordingBuilder F β}
     (hb : Simulates b r) (hf : ∀ x, Simulates (f x) (g x)) :
     Simulates (b >>= f) (r >>= g) := by
   intro s
-  obtain ⟨h1, h2, es₁, h3, h4, h9⟩ := hb s
-  obtain ⟨h5, h6, es₂, h7, h8, h10⟩ := hf (r s).1 (r s).2
+  obtain ⟨h1, h2, es₁, h3, h4, h9, h11⟩ := hb s
+  obtain ⟨h5, h6, es₂, h7, h8, h10, h12⟩ := hf (r s).1 (r s).2
   show (g (r s).1 (r s).2).1 = (f (b s.core).1 (b s.core).2).1 ∧
     (g (r s).1 (r s).2).2.core = (f (b s.core).1 (b s.core).2).2 ∧
     ∃ es, (g (r s).1 (r s).2).2.eventsRev = es.reverse ++ s.eventsRev ∧
-      (f (b s.core).1 (b s.core).2).2 = replay s.core es ∧ AllocationsFresh s.core es
-  refine ⟨?_, ?_, es₁ ++ es₂, ?_, ?_, ?_⟩
+      (f (b s.core).1 (b s.core).2).2 = replay s.core es ∧ AllocationsFresh s.core es ∧
+        OutcomesFaithful s.core es
+  refine ⟨?_, ?_, es₁ ++ es₂, ?_, ?_, ?_, ?_⟩
   · rw [h5, h2, h1]
   · rw [h6, h2, h1]
   · rw [h7, h3, List.reverse_append, List.append_assoc]
@@ -220,20 +262,25 @@ private theorem simulates_bind {b : PlonkBuilder F α} {r : RecordingBuilder F �
     refine ⟨h9, ?_⟩
     rw [← h4, ← h2]
     exact h10
+  · rw [outcomesFaithful_append]
+    refine ⟨h11, ?_⟩
+    rw [← h4, ← h2]
+    exact h12
 
 private theorem simulates_createInternalVariable (e : AffineExpression F) :
     Simulates (createInternalVariable e : PlonkBuilder F Variable)
       (createInternalVariable e) :=
-  fun _ => ⟨rfl, rfl, [.alloc _ e], rfl, rfl, rfl, trivial⟩
+  fun _ => ⟨rfl, rfl, [.alloc _ e], rfl, rfl, ⟨rfl, trivial⟩, trivial⟩
 
 private theorem simulates_addGenericPlonkConstraint (g : GenericPlonkConstraint F) :
     Simulates (addGenericPlonkConstraint g : PlonkBuilder F Unit)
       (addGenericPlonkConstraint g) :=
-  fun _ => ⟨rfl, rfl, [.generic g], rfl, rfl, trivial⟩
+  fun _ => ⟨rfl, rfl, [.generic g], rfl, rfl, trivial, trivial⟩
 
 private theorem simulates_addEqualsConstraint (c : EqualsConstraint F) :
     Simulates (addEqualsConstraint c : PlonkBuilder F Unit) (addEqualsConstraint c) :=
-  fun _ => ⟨rfl, rfl, [.equal c], rfl, rfl, trivial⟩
+  fun s => ⟨rfl, rfl, [.equal c (outcomeOf c s.core.aux.wireState.cachedConstants)], rfl, rfl,
+    trivial, rfl, trivial⟩
 
 /-- Close a simulation goal by walking the reducer's structure: an operation or `pure` closes
 the goal, a `bind` splits into the simulations of its two parts, and a `match` or `if` is
@@ -270,7 +317,7 @@ private theorem finish_recordReduction {b : PlonkBuilder F α} {r : RecordingBui
     (h : Simulates b r) (nv : Variable) (aux : AuxState F) :
     (recordReduction nv aux r).finish =
       replay ⟨[], nv, aux⟩ (recordReduction nv aux r).events := by
-  obtain ⟨-, h2, es, h3, h4, -⟩ := h ⟨⟨[], nv, aux⟩, []⟩
+  obtain ⟨-, h2, es, h3, h4, -, -⟩ := h ⟨⟨[], nv, aux⟩, []⟩
   show (⟨(((r _).2.core.constraints.reverse.map Rows.mk).map (·.row)).reverse,
       (r _).2.core.nextVariable, (r _).2.core.aux⟩ : BuilderReductionState F) =
     replay ⟨[], nv, aux⟩ ((r _).2.eventsRev.reverse)
@@ -282,10 +329,19 @@ private theorem finish_recordReduction {b : PlonkBuilder F α} {r : RecordingBui
 private theorem allocations_recordReduction {b : PlonkBuilder F α} {r : RecordingBuilder F α}
     (h : Simulates b r) (nv : Variable) (aux : AuxState F) :
     AllocationsFresh ⟨[], nv, aux⟩ (recordReduction nv aux r).events := by
-  obtain ⟨-, -, es, h3, -, h5⟩ := h ⟨⟨[], nv, aux⟩, []⟩
+  obtain ⟨-, -, es, h3, -, h5, -⟩ := h ⟨⟨[], nv, aux⟩, []⟩
   show AllocationsFresh ⟨[], nv, aux⟩ ((r _).2.eventsRev.reverse)
   rw [h3, List.append_nil, List.reverse_reverse]
   exact h5
+
+/-- A simulating recording's equalities log the equality op's decisions at their points. -/
+private theorem outcomes_recordReduction {b : PlonkBuilder F α} {r : RecordingBuilder F α}
+    (h : Simulates b r) (nv : Variable) (aux : AuxState F) :
+    OutcomesFaithful ⟨[], nv, aux⟩ (recordReduction nv aux r).events := by
+  obtain ⟨-, -, es, h3, -, -, h6⟩ := h ⟨⟨[], nv, aux⟩, []⟩
+  show OutcomesFaithful ⟨[], nv, aux⟩ ((r _).2.eventsRev.reverse)
+  rw [h3, List.append_nil, List.reverse_reverse]
+  exact h6
 
 section Reducers
 
@@ -443,6 +499,12 @@ theorem record_constraint_allocates (nv : Variable) (aux : AuxState F)
     (c : KimchiConstraint F) :
     AllocationsFresh ⟨[], nv, aux⟩ (recordReduction nv aux c.reduce).events :=
   allocations_recordReduction (simulates_constraint_reduce c) nv aux
+
+/-- Recording any constraint's reduction logs each equality's outcome as the equality op's
+decision at its point. -/
+theorem record_constraint_decides (nv : Variable) (aux : AuxState F) (c : KimchiConstraint F) :
+    OutcomesFaithful ⟨[], nv, aux⟩ (recordReduction nv aux c.reduce).events :=
+  outcomes_recordReduction (simulates_constraint_reduce c) nv aux
 
 end Reducers
 

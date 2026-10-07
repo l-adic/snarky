@@ -65,7 +65,7 @@ asserts nothing. -/
 def ReductionEvent.Holds (V : Valuation F) : ReductionEvent F → Prop
   | .alloc _ _ => True
   | .generic g => genericValue V g = 0
-  | .equal e => equalsHolds V e
+  | .equal e _ => equalsHolds V e
 
 /-- Every event of a list holds at the valuation. -/
 def ReductionFacts (V : Valuation F) (events : List (ReductionEvent F)) : Prop :=
@@ -119,8 +119,9 @@ private theorem records_addGenericPlonkConstraint (g : GenericPlonkConstraint F)
   fun _ => ⟨[.generic g], rfl, rfl⟩
 
 private theorem records_addEqualsConstraint (c : EqualsConstraint F) :
-    Records (addEqualsConstraint c : RecordingBuilder F Unit) fun _ es => es = [.equal c] :=
-  fun _ => ⟨[.equal c], rfl, rfl⟩
+    Records (addEqualsConstraint c : RecordingBuilder F Unit) fun _ es =>
+      ∃ o, es = [.equal c o] :=
+  fun s => ⟨[.equal c (outcomeOf c s.core.aux.wireState.cachedConstants)], rfl, _, rfl⟩
 
 end Operations
 
@@ -174,8 +175,8 @@ private theorem facts_generic {V : Valuation F} {g : GenericPlonkConstraint F}
   h _ (List.mem_singleton_self _)
 
 omit [DecidableEq F] in
-private theorem facts_equal {V : Valuation F} {e : EqualsConstraint F}
-    (h : ReductionFacts V [.equal e]) : equalsHolds V e :=
+private theorem facts_equal {V : Valuation F} {e : EqualsConstraint F} {o : EqualOutcome F}
+    (h : ReductionFacts V [.equal e o]) : equalsHolds V e :=
   h _ (List.mem_singleton_self _)
 
 private theorem records_completelyReduce (single : Variable × F) :
@@ -232,7 +233,8 @@ private theorem records_reduceToVariable (x : CVar F) :
       ∀ V : Valuation F, ReductionFacts V es → V v = x.val V := by
   unfold reduceToVariable
   records [records_reduceAffineExpression _]
-  · subst_vars
+  · obtain ⟨o, rfl⟩ := ‹∃ o, _ = [ReductionEvent.equal _ o]›
+    subst_vars
     have hr := ‹∀ V : Valuation F, ReductionFacts V _ → reducedValue V _ = _›
     have hnone := ‹_ = none›
     intro V hV

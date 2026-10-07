@@ -126,15 +126,15 @@ Snarky.Kimchi.getElem_bodyRows_generic
 Snarky.Kimchi.getElem_bodyRows_gate
 Snarky.Kimchi.record_constraint_replays
 Snarky.Kimchi.record_constraint_allocates
+Snarky.Kimchi.record_constraint_decides
+Snarky.Kimchi.replayEvent_equal
 Snarky.Kimchi.receipts_located
 Snarky.Kimchi.receipts_complete
 Snarky.Kimchi.genericValue_of_located
-Snarky.Kimchi.receipts_isSome
 Snarky.Kimchi.record_boolean_var
 Snarky.Kimchi.record_addComplete_direct
 Snarky.Kimchi.KimchiConstraint.Direct.events_generic
 Snarky.Kimchi.steps_generic_of_direct
-Snarky.Kimchi.receipts_isSome_of_direct
 Snarky.Kimchi.wireMap_getElem?
 Snarky.Kimchi.getElem_assembleGates
 Snarky.Kimchi.classCells_values_eq
@@ -171,6 +171,7 @@ Snarky.Kimchi.recorded_batching
 Snarky.Kimchi.recorded_wiring
 Snarky.Kimchi.recorded_constantCache
 Snarky.Kimchi.recorded_allocation
+Snarky.Kimchi.recorded_equalities
 
 -- The events' reading: when a reducer's recorded events hold at a valuation, its source
 -- constraint holds there.

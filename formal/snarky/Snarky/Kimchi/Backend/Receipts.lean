@@ -27,9 +27,8 @@ equality event rather than skipping its obligation; their receipts are later wor
 
 ## Main results
 
-- `receipts_isSome`: a lowering whose events are all generic has receipts.
 - `receipts_located`: every receipt is located in the lowering's rows.
-- `receipts_complete`: every generic event has a receipt.
+- `receipts_complete`: every queued equation has a receipt.
 - `genericValue_of_located`: at a located receipt, a generic row holding at cells agreeing
   with a valuation makes the constraint's equation hold, when its absent cells carry no
   coefficient.
@@ -102,62 +101,45 @@ def RecordedGates.allRows [Zero F] (r : RecordedGates F) : List (KimchiRow F) :=
 
 /-! ## The walk -/
 
+/-- The generic equation an event queued, if any: a generic constraint, or the row an
+equality's outcome queued. -/
+def ReductionEvent.queued? : ReductionEvent F → Option (GenericPlonkConstraint F)
+  | .generic g => some g
+  | .equal _ (.pinned _ _ g) => some g
+  | .equal _ (.row g) => some g
+  | _ => none
+
 /-- The walk's state: the next body row, the queued constraint, and the receipts so far. -/
 private structure Walk (F : Type) where
   row : Nat
   pending : Option (GenericPlonkConstraint F)
   receipts : List (GenericReceipt F)
 
-/-- The builder's batching over one step's events, issuing receipts: an incoming constraint
-packs in front of the queued one into the next row. Any other event is rejected. -/
-private def walkEvents : List (ReductionEvent F) → Walk F → Option (Walk F)
-  | [], w => some w
-  | .generic g :: es, w =>
-    match w.pending with
-    | none => walkEvents es { w with pending := some g }
-    | some q => walkEvents es ⟨w.row + 1, none, w.receipts ++ [⟨g, w.row, 0⟩, ⟨q, w.row, 1⟩]⟩
-  | _ :: _, _ => none
+/-- The builder's batching over one step's events, issuing receipts: a queued equation packs
+in front of the waiting one into the next row; an event queuing nothing is passed over. -/
+private def walkEvents : List (ReductionEvent F) → Walk F → Walk F
+  | [], w => w
+  | e :: es, w =>
+    match e.queued? with
+    | none => walkEvents es w
+    | some g =>
+      match w.pending with
+      | none => walkEvents es { w with pending := some g }
+      | some q => walkEvents es ⟨w.row + 1, none, w.receipts ++ [⟨g, w.row, 0⟩, ⟨q, w.row, 1⟩]⟩
 
 /-- The walk over the steps: each step's events, then its gate's rows. -/
-private def walkSteps : List (RecordedStep F) → Walk F → Option (Walk F)
-  | [], w => some w
-  | s :: rest, w => do
-    let w ← walkEvents s.events w
+private def walkSteps : List (RecordedStep F) → Walk F → Walk F
+  | [], w => w
+  | s :: rest, w =>
+    let w := walkEvents s.events w
     walkSteps rest { w with row := w.row + s.gateRows.length }
 
-/-- Every generic event's receipt, the final flush receiving the queued constraint; `none`
-when an allocation or equality event occurs. -/
-def receipts (r : RecordedGates F) : Option (List (GenericReceipt F)) := do
-  let w ← walkSteps r.steps ⟨0, none, []⟩
-  return match w.pending with
-    | none => w.receipts
-    | some g => w.receipts ++ [⟨g, w.row, 0⟩]
-
-private theorem walkEvents_isSome (es : List (ReductionEvent F)) (w : Walk F)
-    (h : ∀ e ∈ es, ∃ g, e = .generic g) : (walkEvents es w).isSome := by
-  induction es generalizing w with
-  | nil => rfl
-  | cons e es ih =>
-    obtain ⟨g, rfl⟩ := h e (List.mem_cons_self ..)
-    have ih' := fun w => ih w fun e he => h e (List.mem_cons_of_mem _ he)
-    simp only [walkEvents]
-    cases w.pending <;> exact ih' _
-
-private theorem walkSteps_isSome (steps : List (RecordedStep F)) (w : Walk F)
-    (h : ∀ s ∈ steps, ∀ e ∈ s.events, ∃ g, e = .generic g) : (walkSteps steps w).isSome := by
-  induction steps generalizing w with
-  | nil => rfl
-  | cons s rest ih =>
-    obtain ⟨w', hw'⟩ := Option.isSome_iff_exists.mp
-      (walkEvents_isSome s.events w (h s (List.mem_cons_self ..)))
-    simp only [walkSteps, Option.bind_eq_bind, hw', Option.bind_some]
-    exact ih _ fun s hs => h s (List.mem_cons_of_mem _ hs)
-
-/-- A recorded lowering whose events are all generic has receipts. -/
-theorem receipts_isSome (r : RecordedGates F)
-    (h : ∀ s ∈ r.steps, ∀ e ∈ s.events, ∃ g, e = .generic g) : (receipts r).isSome := by
-  obtain ⟨w, hw⟩ := Option.isSome_iff_exists.mp (walkSteps_isSome r.steps ⟨0, none, []⟩ h)
-  simp [receipts, hw]
+/-- Every queued equation's receipt, the final flush receiving the waiting constraint. -/
+def receipts (r : RecordedGates F) : List (GenericReceipt F) :=
+  let w := walkSteps r.steps ⟨0, none, []⟩
+  match w.pending with
+  | none => w.receipts
+  | some g => w.receipts ++ [⟨g, w.row, 0⟩]
 
 section Walk
 
@@ -172,116 +154,198 @@ private theorem located_packed (q g : GenericPlonkConstraint F) (body : List (Ki
     rfl
   exact ⟨⟨emitDoubleGateRow q g, hrow, rfl, rfl, rfl⟩, ⟨emitDoubleGateRow q g, hrow, rfl, rfl, rfl⟩⟩
 
-/-- Walking a step's events from a state agreeing with the builder's: the walk tracks the
-replayed queue and row count, every receipt is located, earlier receipts survive, and every
-generic event seen is receipted or queued. -/
+private theorem outcomesFaithful_cons {s : BuilderReductionState F} {e : ReductionEvent F}
+    {es : List (ReductionEvent F)} (h : OutcomesFaithful s (e :: es)) :
+    OutcomesFaithful s [e] ∧ OutcomesFaithful (replayEvent s e) es := by
+  cases e with
+  | alloc v ex => exact ⟨trivial, h⟩
+  | generic g => exact ⟨trivial, h⟩
+  | equal c o => exact ⟨⟨h.1, trivial⟩, h.2⟩
+
+/-- One faithful event's effect on the queue and the rows: an event queuing an equation batches
+it, any other leaves them. -/
+private theorem replayEvent_queue (s : BuilderReductionState F) (e : ReductionEvent F)
+    (hf : OutcomesFaithful s [e]) :
+    (replayEvent s e).aux.queuedGenericGate =
+        (match e.queued? with
+          | none => s.aux.queuedGenericGate
+          | some g =>
+            match s.aux.queuedGenericGate with
+            | none => some g
+            | some _ => none) ∧
+      (replayEvent s e).constraints =
+        (match e.queued? with
+          | none => s.constraints
+          | some g =>
+            match s.aux.queuedGenericGate with
+            | none => s.constraints
+            | some q => emitDoubleGateRow q g :: s.constraints) := by
+  cases e with
+  | alloc v ex =>
+    show ((createInternalVariable ex : PlonkBuilder F Variable) s).2.aux.queuedGenericGate = _ ∧
+      ((createInternalVariable ex : PlonkBuilder F Variable) s).2.constraints = _
+    rw [createInternalVariable_apply]
+    exact ⟨rfl, rfl⟩
+  | generic g =>
+    show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.queuedGenericGate = _ ∧
+      ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.constraints = _
+    rw [addGenericPlonkConstraint_apply]
+    cases s.aux.queuedGenericGate <;> exact ⟨rfl, rfl⟩
+  | equal c o =>
+    have ho : o = outcomeOf c s.aux.wireState.cachedConstants := hf.1
+    rw [replayEvent_equal s c ho]
+    cases o with
+    | merge l r => exact ⟨rfl, rfl⟩
+    | cached l v k => exact ⟨rfl, rfl⟩
+    | trivial => exact ⟨rfl, rfl⟩
+    | row g =>
+      show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.queuedGenericGate = _ ∧
+        ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.constraints = _
+      rw [addGenericPlonkConstraint_apply]
+      cases s.aux.queuedGenericGate <;> exact ⟨rfl, rfl⟩
+    | pinned v k g =>
+      show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.queuedGenericGate = _ ∧
+        ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.constraints = _
+      rw [addGenericPlonkConstraint_apply]
+      cases s.aux.queuedGenericGate <;> exact ⟨rfl, rfl⟩
+
+/-- Walking faithful events from a state agreeing with the walk's start: the walk ends
+tracking the replay's queue and row count, every receipt is located in the replayed rows,
+earlier receipts persist, and every queued equation is receipted or still waiting. -/
 private theorem walkEvents_spec :
-    ∀ (es : List (ReductionEvent F)) (w w' : Walk F) (s : BuilderReductionState F)
+    ∀ (es : List (ReductionEvent F)) (w : Walk F) (s : BuilderReductionState F)
       (pre : List (KimchiRow F)),
-      walkEvents es w = some w' →
+      OutcomesFaithful s es →
       w.pending = s.aux.queuedGenericGate →
       w.row = pre.length + s.constraints.length →
       (∀ rc ∈ w.receipts, rc.Located (pre ++ s.constraints.reverse)) →
-      w'.pending = (replay s es).aux.queuedGenericGate ∧
-        w'.row = pre.length + (replay s es).constraints.length ∧
-        (∀ rc ∈ w'.receipts, rc.Located (pre ++ (replay s es).constraints.reverse)) ∧
-        (∀ rc ∈ w.receipts, rc ∈ w'.receipts) ∧
-        (∀ g, (.generic g ∈ es ∨ w.pending = some g) →
-          (∃ rc ∈ w'.receipts, rc.gate = g) ∨ w'.pending = some g)
-  | [], w, w', s, pre, hw, hp, hr, hl => by
-    simp only [walkEvents, Option.some.injEq] at hw
-    subst hw
+      (walkEvents es w).pending = (replay s es).aux.queuedGenericGate ∧
+        (walkEvents es w).row = pre.length + (replay s es).constraints.length ∧
+        (∀ rc ∈ (walkEvents es w).receipts,
+          rc.Located (pre ++ (replay s es).constraints.reverse)) ∧
+        (∀ rc ∈ w.receipts, rc ∈ (walkEvents es w).receipts) ∧
+        (∀ g, ((∃ e ∈ es, e.queued? = some g) ∨ w.pending = some g) →
+          (∃ rc ∈ (walkEvents es w).receipts, rc.gate = g) ∨
+            (walkEvents es w).pending = some g)
+  | [], w, s, pre, _, hp, hr, hl => by
     refine ⟨hp, hr, hl, fun _ h => h, fun g hg => ?_⟩
-    simp only [List.not_mem_nil, false_or] at hg
+    simp only [List.not_mem_nil, false_and, exists_false, false_or] at hg
     exact Or.inr hg
-  | .alloc _ _ :: _, _, _, _, _, hw, _, _, _ => by simp [walkEvents] at hw
-  | .equal _ :: _, _, _, _, _, hw, _, _, _ => by simp [walkEvents] at hw
-  | .generic g :: es, w, w', s, pre, hw, hp, hr, hl => by
-    have hstep : replay s (.generic g :: es) =
-        replay ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2 es := rfl
-    rw [hstep, addGenericPlonkConstraint_apply]
-    simp only [walkEvents] at hw
-    rw [← hp]
-    cases hpend : w.pending with
+  | e :: es, w, s, pre, hf, hp, hr, hl => by
+    obtain ⟨hf1, hf2⟩ := outcomesFaithful_cons hf
+    obtain ⟨hq, hc⟩ := replayEvent_queue s e hf1
+    have hstep : replay s (e :: es) = replay (replayEvent s e) es := rfl
+    rw [hstep]
+    cases hqe : e.queued? with
     | none =>
-      rw [hpend] at hw
-      simp only
-      obtain ⟨h1, h2, h3, h4, h5⟩ := walkEvents_spec es _ w'
-        { s with aux.queuedGenericGate := some g } pre hw rfl hr hl
-      refine ⟨h1, h2, h3, h4, fun g' hg => ?_⟩
-      rcases hg with hg | hg
-      · rcases List.mem_cons.mp hg with hg | hg
+      rw [hqe] at hq hc
+      simp only at hq hc
+      simp only [walkEvents, hqe]
+      obtain ⟨h1, h2, h3, h4, h5⟩ := walkEvents_spec es w (replayEvent s e) pre hf2
+        (by rw [hq]; exact hp) (by rw [hc]; exact hr) (by rw [hc]; exact hl)
+      refine ⟨h1, h2, h3, h4, fun g hg => ?_⟩
+      rcases hg with ⟨e', he', hge⟩ | hg
+      · rcases List.mem_cons.mp he' with rfl | he'
+        · rw [hqe] at hge
+          exact absurd hge (by simp)
+        · exact h5 g (Or.inl ⟨e', he', hge⟩)
+      · exact h5 g (Or.inr hg)
+    | some g =>
+      rw [hqe, ← hp] at hq hc
+      simp only [walkEvents, hqe]
+      cases hpend : w.pending with
+      | none =>
+        simp only [hpend] at hq hc
+        obtain ⟨h1, h2, h3, h4, h5⟩ := walkEvents_spec es { w with pending := some g }
+          (replayEvent s e) pre hf2 (by rw [hq]) (by rw [hc]; exact hr) (by rw [hc]; exact hl)
+        refine ⟨h1, h2, h3, h4, fun g' hg => ?_⟩
+        rcases hg with ⟨e', he', hge⟩ | hg
+        · rcases List.mem_cons.mp he' with rfl | he'
+          · rw [hqe] at hge
+            cases hge
+            exact h5 g (Or.inr rfl)
+          · exact h5 g' (Or.inl ⟨e', he', hge⟩)
         · cases hg
-          exact h5 g (Or.inr rfl)
-        · exact h5 g' (Or.inl hg)
-      · cases hg
-    | some q =>
-      rw [hpend] at hw
-      simp only
-      have hloc := located_packed q g (pre ++ s.constraints.reverse)
-      obtain ⟨h1, h2, h3, h4, h5⟩ := walkEvents_spec es _ w'
-        { s with constraints := emitDoubleGateRow q g :: s.constraints,
-                 aux.queuedGenericGate := none } pre hw rfl
-        (by simp only [List.length_cons]; omega)
-        (by
-          intro rc hrc
-          simp only [List.reverse_cons, ← List.append_assoc]
-          simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hrc
-          rcases hrc with hrc | rfl | rfl
-          · exact (hl rc hrc).append _
-          · rw [hr]
-            simpa [List.length_append, List.length_reverse] using hloc.1
-          · rw [hr]
-            simpa [List.length_append, List.length_reverse] using hloc.2)
-      refine ⟨h1, h2, h3, fun rc hrc => h4 rc (by simp [hrc]), fun g' hg => ?_⟩
-      rcases hg with hg | hg
-      · rcases List.mem_cons.mp hg with hg | hg
+      | some q =>
+        simp only [hpend] at hq hc
+        have hloc := located_packed q g (pre ++ s.constraints.reverse)
+        obtain ⟨h1, h2, h3, h4, h5⟩ := walkEvents_spec es
+          ⟨w.row + 1, none, w.receipts ++ [⟨g, w.row, 0⟩, ⟨q, w.row, 1⟩]⟩ (replayEvent s e) pre
+          hf2 (by rw [hq]) (by rw [hc]; simp only [List.length_cons]; omega)
+          (by
+            intro rc hrc
+            rw [hc]
+            simp only [List.reverse_cons, ← List.append_assoc]
+            simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hrc
+            rcases hrc with hrc | rfl | rfl
+            · exact (hl rc hrc).append _
+            · rw [hr]
+              simpa [List.length_append, List.length_reverse] using hloc.1
+            · rw [hr]
+              simpa [List.length_append, List.length_reverse] using hloc.2)
+        refine ⟨h1, h2, h3, fun rc hrc => h4 rc (by simp [hrc]), fun g' hg => ?_⟩
+        rcases hg with ⟨e', he', hge⟩ | hg
+        · rcases List.mem_cons.mp he' with rfl | he'
+          · rw [hqe] at hge
+            cases hge
+            exact Or.inl ⟨⟨g, w.row, 0⟩, h4 _ (by simp), rfl⟩
+          · exact h5 g' (Or.inl ⟨e', he', hge⟩)
         · cases hg
-          exact Or.inl ⟨⟨g, w.row, 0⟩, h4 _ (by simp), rfl⟩
-        · exact h5 g' (Or.inl hg)
-      · cases hg
-        exact Or.inl ⟨⟨q, w.row, 1⟩, h4 _ (by simp), rfl⟩
+          exact Or.inl ⟨⟨q, w.row, 1⟩, h4 _ (by simp), rfl⟩
 
 /-- Walking the recorded fold from a state agreeing with its start: the walk ends tracking the
-fold's queue and row count, every receipt is located in its body rows, and every generic
-event of every step is receipted or queued. -/
+fold's queue and row count, every receipt is located in its body rows, earlier receipts
+persist, and every queued equation of every step is receipted or still waiting. -/
 private theorem walkSteps_fold :
-    ∀ (source : List (KimchiConstraint F)) (nv : Variable) (aux : AuxState F) (w w' : Walk F)
+    ∀ (source : List (KimchiConstraint F)) (nv : Variable) (aux : AuxState F) (w : Walk F)
       (pre : List (KimchiRow F)),
-      walkSteps (recordGates source nv aux).steps w = some w' →
       w.pending = aux.queuedGenericGate →
       w.row = pre.length →
       (∀ rc ∈ w.receipts, rc.Located pre) →
-      w'.pending = (recordGates source nv aux).aux.queuedGenericGate ∧
-        w'.row = pre.length + (recordGates source nv aux).bodyRows.length ∧
-        (∀ rc ∈ w'.receipts, rc.Located (pre ++ (recordGates source nv aux).bodyRows)) ∧
-        (∀ rc ∈ w.receipts, rc ∈ w'.receipts) ∧
-        (∀ s ∈ (recordGates source nv aux).steps, ∀ g, .generic g ∈ s.events →
-          (∃ rc ∈ w'.receipts, rc.gate = g) ∨ w'.pending = some g) ∧
-        (∀ g, w.pending = some g → (∃ rc ∈ w'.receipts, rc.gate = g) ∨ w'.pending = some g)
-  | [], nv, aux, w, w', pre, hw, hp, hr, hl => by
-    simp only [recordGates, walkSteps, Option.some.injEq] at hw
-    subst hw
+      (walkSteps (recordGates source nv aux).steps w).pending =
+          (recordGates source nv aux).aux.queuedGenericGate ∧
+        (walkSteps (recordGates source nv aux).steps w).row =
+          pre.length + (recordGates source nv aux).bodyRows.length ∧
+        (∀ rc ∈ (walkSteps (recordGates source nv aux).steps w).receipts,
+          rc.Located (pre ++ (recordGates source nv aux).bodyRows)) ∧
+        (∀ rc ∈ w.receipts, rc ∈ (walkSteps (recordGates source nv aux).steps w).receipts) ∧
+        (∀ s ∈ (recordGates source nv aux).steps, ∀ g, (∃ e ∈ s.events, e.queued? = some g) →
+          (∃ rc ∈ (walkSteps (recordGates source nv aux).steps w).receipts, rc.gate = g) ∨
+            (walkSteps (recordGates source nv aux).steps w).pending = some g) ∧
+        (∀ g, w.pending = some g →
+          (∃ rc ∈ (walkSteps (recordGates source nv aux).steps w).receipts, rc.gate = g) ∨
+            (walkSteps (recordGates source nv aux).steps w).pending = some g)
+  | [], nv, aux, w, pre, hp, hr, hl => by
+    simp only [recordGates, walkSteps]
     refine ⟨hp, ?_, ?_, fun _ h => h, fun _ h => by simp [recordGates] at h, fun _ h => Or.inr h⟩
-    · simp [recordGates, RecordedGates.bodyRows, hr]
-    · simpa [recordGates, RecordedGates.bodyRows] using hl
-  | con :: cons, nv, aux, w, w', pre, hw, hp, hr, hl => by
-    simp only [recordGates, walkSteps, Option.bind_eq_bind, Option.bind_eq_some_iff] at hw
-    obtain ⟨w₁, hw₁, hw'⟩ := hw
+    · simp [RecordedGates.bodyRows, hr]
+    · simpa [RecordedGates.bodyRows] using hl
+  | con :: cons, nv, aux, w, pre, hp, hr, hl => by
     have hrep := record_constraint_replays nv aux con
     simp only [RecordedReduction.finish] at hrep
     have hrows := congrArg BuilderReductionState.constraints hrep
     have haux := congrArg BuilderReductionState.aux hrep
     simp only at hrows haux
-    obtain ⟨h1, h2, h3, h4, h5⟩ := walkEvents_spec _ w w₁ ⟨[], nv, aux⟩ pre hw₁ hp
-      (by simpa using hr) (by simpa using hl)
+    obtain ⟨h1, h2, h3, h4, h5⟩ := walkEvents_spec _ w ⟨[], nv, aux⟩ pre
+      (record_constraint_decides nv aux con) hp (by simpa using hr) (by simpa using hl)
     rw [← hrows, List.length_reverse, List.length_map] at h2
     rw [← hrows, List.reverse_reverse] at h3
     rw [← haux] at h1
-    obtain ⟨g1, g2, g3, g4, g5, g6⟩ := walkSteps_fold cons _ _ _ w'
+    have hsteps : (recordGates (con :: cons) nv aux).steps =
+        (⟨(recordReduction nv aux con.reduce).rows, (recordReduction nv aux con.reduce).result,
+          (recordReduction nv aux con.reduce).events⟩ : RecordedStep F) ::
+          (recordGates cons (recordReduction nv aux con.reduce).nextVariable
+            (recordReduction nv aux con.reduce).aux).steps := rfl
+    rw [hsteps]
+    simp only [walkSteps]
+    obtain ⟨g1, g2, g3, g4, g5, g6⟩ := walkSteps_fold cons _ _
+      { walkEvents (recordReduction nv aux con.reduce).events w with
+        row := (walkEvents (recordReduction nv aux con.reduce).events w).row +
+          (⟨(recordReduction nv aux con.reduce).rows, (recordReduction nv aux con.reduce).result,
+            (recordReduction nv aux con.reduce).events⟩ : RecordedStep F).gateRows.length }
       (pre ++ (⟨(recordReduction nv aux con.reduce).rows,
         (recordReduction nv aux con.reduce).result,
-        (recordReduction nv aux con.reduce).events⟩ : RecordedStep F).bodyRows) hw' h1
+        (recordReduction nv aux con.reduce).events⟩ : RecordedStep F).bodyRows) h1
       (by simp only [List.length_append, RecordedStep.bodyRows, List.length_map]; omega)
       (by
         intro rc hrc
@@ -303,20 +367,18 @@ private theorem walkSteps_fold :
       · exact Or.inl ⟨rc, g4 rc hrc, hrcg⟩
       · exact g6 g hpend
 
-/-- Every receipt of the recorded lowering of a constraint list is located in its rows. -/
+/-- Every receipt of the recorded lowering of a constraint list, from an empty queue, is
+located in its rows with the final flush. -/
 theorem receipts_located (source : List (KimchiConstraint F)) (nv : Variable)
-    (aux : AuxState F) (hq : aux.queuedGenericGate = none) (rs : List (GenericReceipt F))
-    (h : receipts (recordGates source nv aux) = some rs) :
-    ∀ rc ∈ rs, rc.Located (recordGates source nv aux).allRows := by
-  simp only [receipts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
-    Option.some.injEq] at h
-  obtain ⟨w, hw, rfl⟩ := h
-  obtain ⟨h1, h2, h3, -⟩ := walkSteps_fold source nv aux _ w [] hw (by simpa using hq.symm) rfl
-    (fun _ h => (List.not_mem_nil h).elim)
+    (aux : AuxState F) (hq : aux.queuedGenericGate = none) :
+    ∀ rc ∈ receipts (recordGates source nv aux),
+      rc.Located (recordGates source nv aux).allRows := by
+  obtain ⟨h1, h2, h3, -⟩ := walkSteps_fold source nv aux ⟨0, none, []⟩ [] (by simpa using hq.symm)
+    rfl (fun _ h => (List.not_mem_nil h).elim)
   simp only [List.nil_append, List.length_nil, Nat.zero_add] at h2 h3
-  simp only [RecordedGates.allRows, ← h1]
+  simp only [receipts, RecordedGates.allRows, ← h1]
   intro rc hrc
-  cases hpend : w.pending with
+  cases hpend : (walkSteps (recordGates source nv aux).steps ⟨0, none, []⟩).pending with
   | none =>
     rw [hpend] at hrc
     exact (h3 rc hrc).append _
@@ -331,23 +393,20 @@ theorem receipts_located (source : List (KimchiConstraint F)) (nv : Variable)
       rw [h2, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]
       rfl
 
-/-- Every generic event of the recorded lowering of a constraint list has a receipt. -/
+/-- Every queued equation of the recorded lowering of a constraint list has a receipt. -/
 theorem receipts_complete (source : List (KimchiConstraint F)) (nv : Variable)
-    (aux : AuxState F) (hq : aux.queuedGenericGate = none) (rs : List (GenericReceipt F))
-    (h : receipts (recordGates source nv aux) = some rs) :
-    ∀ s ∈ (recordGates source nv aux).steps, ∀ g, .generic g ∈ s.events →
-      ∃ rc ∈ rs, rc.gate = g := by
-  simp only [receipts, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
-    Option.some.injEq] at h
-  obtain ⟨w, hw, rfl⟩ := h
-  obtain ⟨-, -, -, -, h5, -⟩ := walkSteps_fold source nv aux _ w [] hw (by simpa using hq.symm)
-    rfl (fun _ h => (List.not_mem_nil h).elim)
+    (aux : AuxState F) (hq : aux.queuedGenericGate = none) :
+    ∀ s ∈ (recordGates source nv aux).steps, ∀ g, (∃ e ∈ s.events, e.queued? = some g) →
+      ∃ rc ∈ receipts (recordGates source nv aux), rc.gate = g := by
+  obtain ⟨-, -, -, -, h5, -⟩ := walkSteps_fold source nv aux ⟨0, none, []⟩ []
+    (by simpa using hq.symm) rfl (fun _ h => (List.not_mem_nil h).elim)
   intro s hs g hg
+  simp only [receipts]
   rcases h5 s hs g hg with ⟨rc, hrc, hrcg⟩ | hpend
   · refine ⟨rc, ?_, hrcg⟩
-    cases w.pending <;> simp [hrc]
+    cases (walkSteps (recordGates source nv aux).steps ⟨0, none, []⟩).pending <;> simp [hrc]
   · rw [hpend]
-    exact ⟨⟨g, w.row, 0⟩, by simp, rfl⟩
+    exact ⟨⟨g, (walkSteps (recordGates source nv aux).steps ⟨0, none, []⟩).row, 0⟩, by simp, rfl⟩
 
 end Walk
 

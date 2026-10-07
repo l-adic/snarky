@@ -136,7 +136,7 @@ theorem direct_rejections :
     ¬ KimchiConstraint.Direct.Scoped source [0, 12] ∧
     ¬ KimchiConstraint.Direct.Scoped repeatedSource publicVars ∧
     (receipts (recordGates source 20 initialAuxState) =
-      some [⟨booleanGate 1, 1, 0⟩, ⟨booleanGate 0, 1, 1⟩, ⟨booleanGate 2, 2, 0⟩] ∧
+      [⟨booleanGate 1, 1, 0⟩, ⟨booleanGate 0, 1, 1⟩, ⟨booleanGate 2, 2, 0⟩] ∧
       ∀ rc ∈ [(⟨booleanGate 1, 1, 0⟩ : GenericReceipt K), ⟨booleanGate 0, 1, 1⟩,
           ⟨booleanGate 2, 2, 0⟩],
         rc.Located (recordGates source 20 initialAuxState).allRows ∧

@@ -27,9 +27,8 @@ and the public rows.
 - `record_boolean_var`, `record_addComplete_direct`: the recorded reduction of each fragment
   constraint in closed form: a Boolean's one generic event, a complete addition's empty log
   and its row over the operands.
-- `KimchiConstraint.Direct.events_generic`, `steps_generic_of_direct`,
-  `receipts_isSome_of_direct`: a direct constraint's events are generic with no coefficient
-  on an absent cell, so the fragment's recorded lowering has receipts.
+- `KimchiConstraint.Direct.events_generic`, `steps_generic_of_direct`: a direct constraint's
+  events are generic with no coefficient on an absent cell.
 - `KimchiConstraint.Direct.holds_of_satisfies`: any table satisfying an index of the
   fragment's lowering yields a valuation satisfying every source constraint and reading the
   public variables as the public input.
@@ -225,14 +224,6 @@ theorem steps_generic_of_direct {source : List (KimchiConstraint F)}
     rcases hs' with rfl | hs'
     · exact (hs con (List.mem_cons_self ..)).events_generic nv aux e he
     · exact ih (fun c hc => hs c (List.mem_cons_of_mem _ hc)) _ _ s hs' e he
-
-/-- A direct list's recorded lowering has receipts. -/
-theorem receipts_isSome_of_direct {source : List (KimchiConstraint F)}
-    (hs : ∀ c ∈ source, c.Direct) (nv : Variable) (aux : AuxState F) :
-    (receipts (recordGates source nv aux)).isSome :=
-  receipts_isSome _ fun s hs' e he =>
-    let ⟨g, hg, _⟩ := steps_generic_of_direct hs nv aux s hs' e he
-    ⟨g, hg⟩
 
 /-! ## The lowering's rows -/
 
@@ -1046,8 +1037,6 @@ theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
     · -- a Boolean on a bare variable
       obtain ⟨v, hsrc⟩ : ∃ v, source[p] = KimchiConstraint.basic (.boolean (.var v)) :=
         ⟨_, ‹source[p] = _›⟩
-      obtain ⟨rs, hrs⟩ :=
-        Option.isSome_iff_exists.mp (receipts_isSome_of_direct hs nv initialAuxState)
       have hq0 : (initialAuxState : AuxState F).queuedGenericGate = none := rfl
       have hev : ReductionEvent.generic (booleanGate v) ∈ (lowering source nv).steps[p].events := by
         rw [hstep', hsrc]
@@ -1055,9 +1044,9 @@ theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
           (KimchiConstraint.reduce (F := F) (.basic (.boolean (.var v))))).events
         rw [record_boolean_var]
         exact List.mem_singleton_self _
-      obtain ⟨rc, hrc, hrcg⟩ := receipts_complete source nv initialAuxState hq0 rs hrs _
-        (List.getElem_mem hi) _ hev
-      have hloc := receipts_located source nv initialAuxState hq0 rs hrs rc hrc
+      obtain ⟨rc, hrc, hrcg⟩ := receipts_complete source nv initialAuxState hq0 _
+        (List.getElem_mem hi) _ ⟨_, hev, rfl⟩
+      have hloc := receipts_located source nv initialAuxState hq0 rc hrc
       obtain ⟨row, hrow, hkind, -, -⟩ := id hloc
       obtain ⟨hrowlt, hrow'⟩ := List.getElem?_eq_some_iff.mp hrow
       have hrowlt' : rc.row < (lowering source nv).allRows.length := hrowlt

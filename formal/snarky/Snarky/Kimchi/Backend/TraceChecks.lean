@@ -6,13 +6,15 @@ import Mathlib.Algebra.Field.Rat
 
 Recorded reductions over `ℚ`, decided by the kernel: generic batching across a custom block
 and at the final flush, an equality discharged by wiring, a constant pinned once and reused
-from the cache, and an allocation logged with its expression while the queue it packs into
-was already occupied. Each theorem states the exact events, rows and auxiliary state the
-recorder reports, so a change to the builder's emission order or to the recorder shows here.
+from the cache, the two equalities that queue a row or do nothing, and an allocation logged
+with its expression while the queue it packs into was already occupied. Each theorem states
+the exact events, rows and auxiliary state the recorder reports, so a change to the builder's
+emission order or to the recorder shows here.
 
 ## Main results
 
-- `recorded_batching`, `recorded_wiring`, `recorded_constantCache`, `recorded_allocation`.
+- `recorded_batching`, `recorded_wiring`, `recorded_constantCache`, `recorded_equalities`,
+  `recorded_allocation`.
 -/
 
 namespace Snarky.Kimchi
@@ -84,10 +86,10 @@ theorem recorded_batching :
 private def equalVariables : RecordedReduction ℚ Unit :=
   recordReduction 2 initialAuxState (reduce (F := ℚ) (.equal (.var 0) (.var 1)))
 
-/-- An equality of two variables with equal coefficients logs one equality event, emits no
-row, and puts both variables in one class. -/
+/-- An equality of two variables with equal coefficients logs one equality event, decided as
+a merge, emits no row, and puts both variables in one class. -/
 theorem recorded_wiring :
-    equalVariables.events = [.equal { cl := 1, vl := some 0, cr := 1, vr := some 1 }] ∧
+    equalVariables.events = [.equal { cl := 1, vl := some 0, cr := 1, vr := some 1 } (.merge 0 1)] ∧
     equalVariables.rows = [] ∧ equalVariables.aux.queuedGenericGate = none ∧
     equalVariables.aux.wireState.unionFind.rootOf = #[0, 0] := by
   decide +kernel
@@ -99,18 +101,44 @@ private def pinnedTwice : RecordedReduction ℚ Unit :=
     reduce (F := ℚ) (.equal (.var 0) (.const 5))
     reduce (F := ℚ) (.equal (.var 1) (.const 5)))
 
-/-- Pinning two variables to the same constant logs both equalities. The first queues one
-pinning equation and caches the constant; the second hits the cache and wires to the cached
-variable, emitting nothing. -/
+/-- The pinning equation of a variable to a constant. -/
+private def pinGate (v : Variable) (k : ℚ) : GenericPlonkConstraint ℚ :=
+  { cl := 1, vl := some v, cr := 0, vr := none, co := 0, vo := none, m := 0, c := -k }
+
+/-- Pinning two variables to the same constant logs both equalities with their decisions. The
+first queues one pinning equation and caches the constant; the second hits the cache and wires
+to the cached variable, emitting nothing. -/
 theorem recorded_constantCache :
     pinnedTwice.events =
-      [.equal { cl := 1, vl := some 0, cr := 5, vr := none },
-       .equal { cl := 1, vl := some 1, cr := 5, vr := none }] ∧
+      [.equal { cl := 1, vl := some 0, cr := 5, vr := none } (.pinned 0 5 (pinGate 0 5)),
+       .equal { cl := 1, vl := some 1, cr := 5, vr := none } (.cached 1 0 5)] ∧
     pinnedTwice.aux.queuedGenericGate =
       some { cl := 1, vl := some 0, cr := 0, vr := none, co := 0, vo := none, m := 0, c := -5 } ∧
     pinnedTwice.rows = [] ∧
     pinnedTwice.aux.wireState.cachedConstants = [(5, 0)] ∧
     pinnedTwice.aux.wireState.unionFind.rootOf = #[1, 1] := by
+  decide +kernel
+
+/-! ## The other two decisions -/
+
+private def otherEqualities : RecordedReduction ℚ Unit :=
+  recordReduction 2 initialAuxState (do
+    reduce (F := ℚ) (.equal (.var 0) (.scale 2 (.var 1)))
+    reduce (F := ℚ) (.equal (.const 3) (.const 3)))
+
+/-- Two variables with unequal coefficients queue their equation as a row; two equal
+constants do nothing. -/
+theorem recorded_equalities :
+    otherEqualities.events =
+      [.equal { cl := 1, vl := some 0, cr := 2, vr := some 1 }
+        (.row { cl := 1, vl := some 0, cr := -2, vr := some 1, co := 0, vo := none, m := 0,
+                c := 0 }),
+       .equal { cl := 3, vl := none, cr := 3, vr := none } .trivial] ∧
+    otherEqualities.rows = [] ∧
+    otherEqualities.aux.queuedGenericGate =
+      some { cl := 1, vl := some 0, cr := -2, vr := some 1, co := 0, vo := none, m := 0,
+             c := 0 } ∧
+    otherEqualities.aux.wireState.unionFind.rootOf = #[] := by
   decide +kernel
 
 /-! ## Allocation into an occupied queue -/
