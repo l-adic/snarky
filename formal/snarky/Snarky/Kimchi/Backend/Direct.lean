@@ -20,7 +20,8 @@ and the public rows.
 - `KimchiConstraint.Direct`: membership in the fragment.
 - `KimchiConstraint.Direct.Scoped`: the scoping condition on a source list and its public
   variables: every constraint direct, and every operand of an unwired column occurring once.
-- `IndexOf`: an index whose gate table is the fragment's actual lowering and assembly.
+- `IndexOf`: an index whose gate table is the fragment's actual lowering and assembly, and
+  whose parameters every constraint reading one agrees with (`KimchiConstraint.ParamsAgree`).
 - `lowering`, `directRows`, `directRoots`, `recover`: the recorded lowering, its rows and
   roots, and the valuation read off labelled cells; the wired fragment reuses them.
 
@@ -39,6 +40,7 @@ and the public rows.
 - `IndexOf.rows_le`, `IndexOf.typ_eq`, `IndexOf.coeffs_eq`, `IndexOf.classCells_eq`: what an
   index of the lowering says row by row, and that a satisfying table reads alike on every
   cell of a wiring class; the wired fragment reuses them.
+- `directRows_gateRow`: a row of a step's gate block, located among the lowering's rows.
 
 ## Implementation notes
 
@@ -86,10 +88,27 @@ private def KimchiConstraint.directVars : KimchiConstraint F → List Variable
   | .addComplete c => c.operands.toList.filterMap CVar.var?
   | _ => []
 
-/-- The operands of a direct complete addition in the unwired columns `7` to `10`: `sameX`,
-`s`, `infZ`, `x21Inv`. Empty for any other constraint. -/
+/-- The operands a Poseidon block's states place in unwired columns: in each row's five
+states, the second's last two cells and the third's and fourth's three; a trailing single
+state is the terminal row's wired cells, and a shorter tail places nothing. -/
+def Poseidon.unwiredOperands : List (FVar F × FVar F × FVar F) → List (FVar F)
+  | _ :: q1 :: q2 :: q3 :: _ :: rest =>
+    [q1.2.1, q1.2.2, q2.1, q2.2.1, q2.2.2, q3.1, q3.2.1, q3.2.2] ++ unwiredOperands rest
+  | _ => []
+
+/-- The bare operands a constraint places in the unwired columns `7` to `14`: a complete
+addition's `sameX`, `s`, `infZ`, `x21Inv`; a decomposition round's crumbs after the first; a
+scale round's four middle accumulators and five slopes; an endomorphism round's `r`, `s1`,
+`s3` and four bits; a Poseidon block's states off the wired registers. -/
 def KimchiConstraint.unwiredVars : KimchiConstraint F → List Variable
   | .addComplete c => (c.operands.toList.drop permCols).filterMap CVar.var?
+  | .endoScalar rounds => rounds.flatMap fun r => (r.xs.toList.drop 1).filterMap CVar.var?
+  | .varBaseMul rounds => rounds.flatMap fun r =>
+    [r.acc1.x, r.acc1.y, r.acc2.x, r.acc2.y, r.acc3.x, r.acc3.y, r.acc4.x, r.acc4.y, r.slope0,
+      r.slope1, r.slope2, r.slope3, r.slope4].filterMap CVar.var?
+  | .endoMul c => c.state.flatMap fun r =>
+    [r.r.x, r.r.y, r.s1, r.s3, r.bit0, r.bit1, r.bit2, r.bit3].filterMap CVar.var?
+  | .poseidon c => (Poseidon.unwiredOperands c.state).filterMap CVar.var?
   | _ => []
 
 /-- Every variable the source and the public variables name, with repetition. -/
@@ -128,6 +147,21 @@ def directGates (source : List (KimchiConstraint F)) (publicVars : List Variable
     (nv : Variable) : List (AssembledGate F) :=
   (gateDataOf (directBuilt source nv) publicVars).2.1
 
+deriving instance DecidableEq for Kimchi.Gate.Poseidon.Mds
+
+/-- A constraint's index parameters, when it reads any: a Poseidon block's matrix, an
+endomorphism multiplication's coefficient. -/
+def KimchiConstraint.ParamsAgree (mds : Gate.Poseidon.Mds F) (endoBase : F) :
+    KimchiConstraint F → Prop
+  | .poseidon c => Poseidon.mdsOf c.mds = mds
+  | .endoMul c => c.endo = endoBase
+  | _ => True
+
+instance KimchiConstraint.decidableParamsAgree (mds : Gate.Poseidon.Mds F) (endoBase : F)
+    (c : KimchiConstraint F) : Decidable (c.ParamsAgree mds endoBase) := by
+  unfold KimchiConstraint.ParamsAgree
+  split <;> infer_instance
+
 /-- An index whose gate table is the fragment's lowering and assembly: the public count is
 the public variables', the assembled rows fit before the masked rows, and at each assembled
 row the gate type, the zero-extended coefficients and the seven wire targets are the
@@ -136,6 +170,8 @@ structure IndexOf {n : ℕ} (source : List (KimchiConstraint F)) (publicVars : L
     (nv : Variable) (idx : Index F n) : Prop where
   /-- The public rows are the public variables'. -/
   publicCount : idx.publicCount = publicVars.length
+  /-- Every constraint reading an index parameter reads the index's. -/
+  params : ∀ c ∈ source, c.ParamsAgree idx.mds idx.endoBase
   /-- The assembled rows fit before the masked rows. -/
   fits : (directGates source publicVars nv).length ≤ n - idx.zkRows
   /-- Each assembled row's gate type. -/
@@ -290,6 +326,7 @@ does not. -/
 theorem indexOf_of_classTarget {n : ℕ} (source : List (KimchiConstraint F))
     (publicVars : List Variable) (nv : Variable) (idx : Index F n)
     (hpub : idx.publicCount = publicVars.length)
+    (hparams : ∀ c ∈ source, c.ParamsAgree idx.mds idx.endoBase)
     (hfits : (directRows source publicVars nv).length ≤ n - idx.zkRows)
     (htyp : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length),
       (idx.gates i).typ = (directRows source publicVars nv)[i.val].kind)
@@ -304,6 +341,7 @@ theorem indexOf_of_classTarget {n : ℕ} (source : List (KimchiConstraint F))
           (classTarget (directRoots source nv) (directRows source publicVars nv) i.val c.val).row) :
     IndexOf source publicVars nv idx where
   publicCount := hpub
+  params := hparams
   fits := by
     rw [length_directGates]
     exact hfits
@@ -554,6 +592,38 @@ def gateRowOf (source : List (KimchiConstraint F)) (publicVars : List Variable)
     (nv : Variable) (p : Nat) (hp : p < source.length) : Nat :=
   publicVars.length + ((lowering source nv).placements[p]'(by
     rw [RecordedGates.length_placements, length_steps]; exact hp)).customRows.first
+
+/-- A row of a step's gate block, read among the lowering's rows after the public prefix. -/
+theorem directRows_gateRow (source : List (KimchiConstraint F)) (publicVars : List Variable)
+    (nv : Variable) (p : Nat) (hp : p < source.length) (k : Nat)
+    (hk : k < ((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+      hp)).gateRows.length) :
+    (directRows source publicVars nv)[gateRowOf source publicVars nv p hp + k]? =
+      some (((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+        hp)).gateRows[k]) := by
+  have hi : p < (lowering source nv).steps.length :=
+    (length_steps source nv initialAuxState).symm ▸ hp
+  have hip : p < (lowering source nv).placements.length := by
+    rw [RecordedGates.length_placements]
+    exact hi
+  have hlenPub : (makePublicInputRows (F := F) publicVars).length = publicVars.length := by
+    simp [makePublicInputRows]
+  have hle := placements_customRows_le (lowering source nv) p hi
+  rw [placements_customRows_count _ _ hi] at hle
+  have hle' : ((lowering source nv).placements[p]'hip).customRows.first +
+      (lowering source nv).steps[p].gateRows.length ≤ (lowering source nv).bodyRows.length := hle
+  have hb : ((lowering source nv).placements[p]'hip).customRows.first + k <
+      (lowering source nv).bodyRows.length := by omega
+  have hrow := getElem_bodyRows_gate (lowering source nv) p hi k hk hb
+  show (makePublicInputRows publicVars ++ ((lowering source nv).bodyRows ++
+    ((finalizeGateQueue (lowering source nv).aux.queuedGenericGate).map (·.row)).toList))[
+      publicVars.length + ((lowering source nv).placements[p]'hip).customRows.first + k]? = _
+  rw [List.getElem?_append_right (by omega), List.getElem?_append_left (by omega)]
+  have hidx : publicVars.length + ((lowering source nv).placements[p]'hip).customRows.first + k -
+      (makePublicInputRows (F := F) publicVars).length =
+      ((lowering source nv).placements[p]'hip).customRows.first + k := by omega
+  rw [hidx, List.getElem?_eq_getElem hb]
+  exact congrArg some hrow
 
 /-- Where each row of the fragment's lowering comes from: a public row, a packed pair of
 Booleanity equations, the flushed Booleanity equation, or a direct complete addition's row at

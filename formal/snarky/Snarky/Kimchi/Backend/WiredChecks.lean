@@ -104,7 +104,7 @@ theorem wired_example_scoped : KimchiConstraint.Wired.Scoped 20 source publicVar
 /-- The index is the lowering's assembly. -/
 theorem wired_example_indexOf : IndexOf source publicVars 20 idx :=
   indexOf_of_classTarget source publicVars 20 idx (by decide +kernel) (by decide +kernel)
-    (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
 
 /-- The table satisfies the index at the public input. -/
 theorem wired_example_satisfies : idx.Satisfies pub table := by

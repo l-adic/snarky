@@ -444,11 +444,17 @@ private theorem label_flush' {g : GenericPlonkConstraint F} (j : Nat) (hj : j < 
 /-! ## The unwired operands -/
 
 omit [Field F] [DecidableEq F] in
-private theorem addComplete_of_unwired {c : KimchiConstraint F} {v : Variable}
+/-- In the fragment, only a complete addition has operands in unwired columns. -/
+private theorem addComplete_of_unwired {c : KimchiConstraint F} (hw : c.Wired) {v : Variable}
     (hv : v ∈ c.unwiredVars) : ∃ c', c = .addComplete c' := by
   cases c with
   | addComplete c' => exact ⟨c', rfl⟩
-  | _ => exact (List.not_mem_nil hv).elim
+  | basic _ => exact (List.not_mem_nil hv).elim
+  | poseidon _ => exact hw.elim
+  | varBaseMul _ => exact hw.elim
+  | endoScalar _ => exact hw.elim
+  | endoMul _ => exact hw.elim
+  | pad _ => exact hw.elim
 
 private theorem termVars_var (v : Variable) : (CVar.var v : CVar F).termVars = [v] := rfl
 
@@ -553,7 +559,7 @@ theorem unwired_not_named {source : List (KimchiConstraint F)} {publicVars : Lis
     {c : KimchiConstraint F} (hc : c ∈ source) {v : Variable} (hv : v ∈ c.unwiredVars) :
     ∀ s ∈ (lowering source nv).steps, ∀ e ∈ s.events, v ∉ e.names := by
   intro s hs e he
-  obtain ⟨c', rfl⟩ := addComplete_of_unwired hv
+  obtain ⟨c', rfl⟩ := addComplete_of_unwired (hscope.wired c hc) hv
   obtain ⟨q, hq, hsrc⟩ := List.mem_iff_getElem.mp hc
   obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hs
   have hp' : p < source.length := (length_steps source nv initialAuxState) ▸ hp
@@ -703,7 +709,7 @@ theorem unwired_cell_unique {source : List (KimchiConstraint F)} {publicVars : L
     (r' j' : Nat) (hr' : r' < (directRows source publicVars nv).length) (hj' : j' < wCols)
     (h1 : (directRows source publicVars nv)[r].vars[j] = some v)
     (h2 : (directRows source publicVars nv)[r'].vars[j'] = some v) : r = r' ∧ j = j' := by
-  obtain ⟨c', rfl⟩ := addComplete_of_unwired hv
+  obtain ⟨c', rfl⟩ := addComplete_of_unwired (hscope.wired c hc) hv
   obtain ⟨q, hq, hsrc⟩ := List.mem_iff_getElem.mp hc
   obtain ⟨j₀, hj₀, -, hj₀v⟩ := unwired_index hv
   obtain ⟨e1, e2⟩ := unwired_cell_at hscope hq hsrc hv hj₀ hj₀v r j hr hj h1
@@ -1062,48 +1068,26 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
           [(recordReduction nv' aux' c.reduce).result.row] := by
         rw [hstep, hsp]
         rfl
-      have hip : p < (lowering source nv).placements.length := by
-        rw [RecordedGates.length_placements]
-        exact hi
-      have hle := placements_customRows_le (lowering source nv) p hi
-      rw [placements_customRows_count _ _ hi, hgr, List.length_singleton] at hle
-      have hle' : ((lowering source nv).placements[p]'hip).customRows.first + 1 ≤
-        (lowering source nv).bodyRows.length := hle
-      have hi' : publicVars.length + ((lowering source nv).placements[p]'hip).customRows.first <
-          (directRows source publicVars nv).length := by
-        simp only [directRows, List.length_append, hlenPub, RecordedGates.allRows]
-        omega
-      have hrow := getElem_bodyRows_gate (lowering source nv) p hi 0 (by simp [hgr])
-        (show ((lowering source nv).placements[p]'hip).customRows.first + 0 <
-          (lowering source nv).bodyRows.length by omega)
-      have hrowi : (directRows source publicVars nv)[publicVars.length +
-          ((lowering source nv).placements[p]'hip).customRows.first] =
-          (recordReduction nv' aux' c.reduce).result.row := by
-        simp only [directRows]
-        rw [List.getElem_append_right (by omega)]
-        simp only [hlenPub, Nat.add_sub_cancel_left, RecordedGates.allRows]
-        rw [List.getElem_append_left (by omega)]
-        refine ((getElem_congr_idx (Nat.add_zero _)).symm.trans hrow).trans ?_
-        simp only [hgr, List.getElem_cons_zero]
-      have hadd := hsat.1 ⟨publicVars.length +
-        ((lowering source nv).placements[p]'hip).customRows.first, by omega⟩
-      have htyp' : (idx.gates ⟨publicVars.length +
-          ((lowering source nv).placements[p]'hip).customRows.first, by omega⟩).typ =
+      obtain ⟨hi', hrowi⟩ := List.getElem?_eq_some_iff.mp
+        (directRows_gateRow source publicVars nv p hp 0 (by simp [hgr]))
+      simp only [hgr, List.getElem_cons_zero] at hrowi
+      have hadd := hsat.1 ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩
+      have htyp' : (idx.gates ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩).typ =
           .completeAdd := by
         rw [hindex.typ_eq _ hi', hrowi]
         rfl
       unfold Index.rowSatisfies at hadd
       rw [htyp'] at hadd
       simp only at hadd
-      have hcells : ∀ k : Fin wCols, k.val < 11 → wTab ⟨publicVars.length +
-          ((lowering source nv).placements[p]'hip).customRows.first, by omega⟩ k =
+      have hcells : ∀ k : Fin wCols, k.val < 11 →
+          wTab ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩ k =
           rowValues V (recordReduction nv' aux' c.reduce).result.row k := by
         intro k hk
         obtain ⟨w, hlab⟩ := addComplete_cell_some nv' aux' c k hk
         rw [hval _ k.val hi' k.isLt _ (by rw [hrowi]; exact hlab)]
         simp only [rowValues, hlab, Option.map_some, Option.getD_some]
-      have hmap : Lift.Gate.AddComplete.cellMap (wTab ⟨publicVars.length +
-          ((lowering source nv).placements[p]'hip).customRows.first, by omega⟩) =
+      have hmap : Lift.Gate.AddComplete.cellMap
+          (wTab ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩) =
           Lift.Gate.AddComplete.cellMap
             (rowValues V (recordReduction nv' aux' c.reduce).result.row) := by
         simp only [Lift.Gate.AddComplete.cellMap]

@@ -17,7 +17,8 @@ The two `none` conventions differ on purpose.
 - `genericValue`, `equalsHolds`, `ReductionEvent.Holds`, `ReductionFacts`: the readings.
 - `rowValues`: a named row's cells at a valuation, an absent cell reading `0`.
 - `CVar.termVars`, `Basic.termVars`, `KimchiConstraint.termVars`: the variables an operand's
-  affine form, a `Basic` constraint and a constraint name, with repetition.
+  affine form, a `Basic` constraint and a constraint name, with repetition, every gate's
+  operands counted as the lowering places them.
 
 ## Main results
 
@@ -755,12 +756,45 @@ def _root_.Snarky.Basic.termVars : Basic F → List Variable
   | .square a b => a.termVars ++ b.termVars
   | .boolean x => x.termVars
 
+/-- The variables a decomposition round's operands name: the six registers and the eight
+crumbs. -/
+def EndoScalarRound.termVars (r : EndoScalarRound F) : List Variable :=
+  [r.n0, r.n8, r.a0, r.b0, r.a8, r.b8].flatMap CVar.termVars ++
+    r.xs.toList.flatMap CVar.termVars
+
+/-- The variables a scale round's operands name: the base, the six accumulators, the registers,
+the bits and the slopes. -/
+def ScaleRound.termVars (r : ScaleRound F) : List Variable :=
+  [r.base.x, r.base.y, r.acc0.x, r.acc0.y, r.nPrev, r.nNext, r.acc1.x, r.acc1.y, r.acc2.x,
+    r.acc2.y, r.acc3.x, r.acc3.y, r.acc4.x, r.acc4.y, r.acc5.x, r.acc5.y, r.bit0, r.bit1,
+    r.bit2, r.bit3, r.bit4, r.slope0, r.slope1, r.slope2, r.slope3, r.slope4].flatMap
+    CVar.termVars
+
+/-- The variables an endomorphism round's operands name: the fourteen the lowering places;
+the round's own `s` and `nAccNext` are read from the next row and not placed. -/
+def EndoMulRound.termVars (r : EndoMulRound F) : List Variable :=
+  [r.t.x, r.t.y, r.inv, r.p.x, r.p.y, r.nAcc, r.r.x, r.r.y, r.s1, r.s3, r.bit0, r.bit1,
+    r.bit2, r.bit3].flatMap CVar.termVars
+
+/-- The variables an endomorphism multiplication's operands name: its rounds' and the final
+accumulator and scalar. -/
+def EndoMul.termVars (c : EndoMul F) : List Variable :=
+  c.state.flatMap EndoMulRound.termVars ++ [c.s.x, c.s.y, c.nAcc].flatMap CVar.termVars
+
+/-- The variables a Poseidon block's states name. -/
+def PoseidonConstraint.termVars (c : PoseidonConstraint F) : List Variable :=
+  c.state.flatMap fun t => t.1.termVars ++ t.2.1.termVars ++ t.2.2.termVars
+
 /-- The variables a constraint's operands name, with repetition: every term of every affine
-operand. -/
+operand the lowering places. -/
 def KimchiConstraint.termVars : KimchiConstraint F → List Variable
   | .basic b => b.termVars
   | .addComplete c => c.operands.toList.flatMap CVar.termVars
-  | _ => []
+  | .poseidon c => c.termVars
+  | .varBaseMul rounds => rounds.flatMap ScaleRound.termVars
+  | .endoScalar rounds => rounds.flatMap EndoScalarRound.termVars
+  | .endoMul c => c.termVars
+  | .pad vs => vs.toList.flatMap CVar.termVars
 
 end Names
 
