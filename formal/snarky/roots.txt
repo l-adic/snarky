@@ -180,6 +180,14 @@ Snarky.Kimchi.direct_example_satisfies
 Snarky.Kimchi.direct_example_holds
 Snarky.Kimchi.direct_rejections
 Snarky.Kimchi.direct_rejections_index
+Snarky.Kimchi.wired_example_built
+Snarky.Kimchi.wired_example_scoped
+Snarky.Kimchi.wired_example_indexOf
+Snarky.Kimchi.wired_example_satisfies
+Snarky.Kimchi.wired_example_holds
+Snarky.Kimchi.wired_rejections_scope
+Snarky.Kimchi.wired_rejections_table
+Snarky.Kimchi.wired_rejections_index
 Snarky.Kimchi.UnionFind.empty_inv
 Snarky.Kimchi.UnionFind.find_inv
 Snarky.Kimchi.UnionFind.same_find_mono

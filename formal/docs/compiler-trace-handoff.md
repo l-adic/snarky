@@ -36,8 +36,9 @@ differs, section 6 onward states the landed one. No `sorry` or axiom was added.
 
 ## Starting point
 
-The trace and its theorems live on branch `formal/compiler-trace`. Read `CLAUDE.md` and
-`formal/CLAUDE.md` before touching them. Helpers stay private until a concrete consumer
+The trace and its theorems landed on branch `formal/compiler-trace`, the wired fragment of
+section 10 on `formal/wired-fragment`. Read `CLAUDE.md` and `formal/CLAUDE.md` before
+touching them. Helpers stay private until a concrete consumer
 needs them. The Pickles capstones, the fixture schema, the emitted rows and the wiring are
 unchanged.
 
@@ -325,12 +326,10 @@ Prove that the fragment's generated generic equations meet this condition, and p
 the packing lemma for payloads satisfying it. Apply ordinary generic equations
 only outside the public prefix; public rows use `Generic.withPublic` instead.
 
-Equality operations are a later extension to receipt certification. They may be
-discharged by a trivial identity, a union, a pinning equation, or a cache hit backed
-by an earlier pinning equation. The recording layer supports `.equal` now, and
-the local semantic lemmas may assume its meaning. The direct fragment below uses no equality
-operations. Do not report general `ReductionFacts` reconstruction as proved until
-these equality paths are actually covered.
+Equality operations are discharged by a trivial identity, a union, a pinning equation, or a
+cache hit backed by an earlier pinning equation. The direct fragment below uses none; the
+wired fragment of section 10 covers all four paths, with the receipts walk total over the
+equations an event queues.
 
 ## 5. Recovering a valuation: a concrete structural certificate
 
@@ -480,8 +479,13 @@ Under `snarky/Snarky/Kimchi/Backend/`:
 | `RowCorrespondence.lean` | the recorded fold, its erasure, placement of each step's rows |
 | `Receipts.lean` | generic receipts: location, completeness, the packing lemma |
 | `Wiring.lean` | the wire map's cycles, the class-based target, class agreement |
-| `Direct.lean` | the direct fragment, provenance of its rows, the closed theorem |
+| `Direct.lean` | the direct fragment, provenance of its rows, the closed theorem, the index lemmas |
 | `DirectChecks.lean` | a decided instance invoking the closed theorem, and the boundaries |
+| `Wired.lean` | the wired fragment: the class and cache folds, provenance by membership, the closed theorem |
+| `WiredChecks.lean` | a decided instance with a pin, a merge, a cache hit and affine operands, and the boundaries |
+
+Beside them, `snarky/Snarky/Kimchi/UnionFind.lean` carries the class view of the existing
+union-find (`Inv`, `Same`, and the lemmas that a union joins and no operation splits).
 
 The recording data is independent of `Kimchi.Index` and gate semantics; the proof
 modules import them. Helpers are private to their modules; public results are rooted in
@@ -522,8 +526,20 @@ lowering's.
 
 Not exercised: repeated public variables (the example's are distinct), and rejections of a
 shifted custom-block start or of an unflushed equation, which are not certificates here:
-placements and receipts are computed from the recorded fold, and `receipts_isSome_of_direct`
-with `receipts_complete` make them total for the fragment.
+placements and receipts are computed from the recorded fold, and the walk is total over the
+equations events queue, so `receipts_complete` locates every one.
+
+`WiredChecks.lean`, same field and domain: a public variable pinned to a constant, the two
+public-side variables merged, a complete addition whose first abscissa is a sum and whose
+second ordinate is a scaled variable, a second variable hitting the constant's cache, and a
+Boolean on the merged variable; the pin's row packs with the sum's intermediate, the scaled
+operand's row with the Boolean. `wired_example_holds` invokes the closed theorem on the built
+index and the satisfying table. The boundaries are one per premise: `wired_rejections_scope`
+(a constant in an unwired slot; an unwired operand named again by an equality that writes no
+cell, or by a term of the sum; a variable at the counter), `wired_rejections_table` (a table
+splitting the merged class, or reading the intermediate away from its pinning cell, while
+every gate holds) and `wired_rejections_index` (the packed row's coefficients altered, the
+pinned variable's copy wire cut).
 
 The closed theorem quantifies over arbitrary satisfying tables; the decided instance only
 rules out an empty set of accepted examples.
@@ -545,18 +561,55 @@ add `Realizes` or source satisfaction to its assumptions.
 
 The general compiler theorem still needs:
 
-- equality-operation receipts, constant-cache invariants, and union-find soundness (the wire
-  map's characterisation already holds for any root map);
-- scope/freshness across generated intermediate variables (`record_constraint_allocates`
-  gives the recorded labels; the state invariant is not stated);
-- a suitable treatment of repeated operands outside permutation columns;
-- other Basic cases, then EndoScalar and multirow gates;
+- a suitable treatment of repeated operands outside permutation columns, which both fragments
+  exclude by `unwiredOnce`;
+- EndoScalar and the multirow gates;
 - Poseidon MDS and EndoMul endomorphism-parameter agreement with the index;
 - whole-source-list and full index-construction correctness;
-- integration with `compileWith` and its public input/output layout;
+- integration with `compileWith` and its public input/output layout, with `Wired.Scoped`
+  decided per application;
 - certified cross-language constraint-system correspondence and application imports.
 
 The trace solves provenance and organizes these proofs. It cannot supply equality
 that the emitted constraints do not enforce. In particular, the fragment's locality
 condition must be revisited against actual gadget-generated source constraints
 before claiming coverage of Pickles applications.
+
+## 10. The wired fragment
+
+Phase 4 widened the closed theorem to `Basic` constraints over affine operands and complete
+additions whose wired operands are affine, so the lowering allocates intermediates, pins
+constants through the cache and fuses classes. The design decision was to annotate more and
+replay less: the compiler proofs stay at the level of the log, and the union-find is seen only
+through its class view.
+
+- **The equality op logs its decision.** `.equal c o` carries the `EqualOutcome` the op took
+  (`merge`, `cached`, `pinned`, `row`, `trivial`), `outcomeOf` mirrors the op's guards and
+  `OutcomesFaithful` says the logged outcome is the decision at that point. The receipts walk
+  is total over `ReductionEvent.queued?`, the equation an event queued, so pinning and
+  unequal-coefficient rows are located like generic ones. Each outcome has a reading
+  (`equalsHolds_of_merge` and the others): a merge or cache hit holds by class, a pin or row by
+  its emitted equation, and a pin also yields `V v = k`.
+- **The union-find through `Same`.** `fusion_root_eq` says every logged merge or cache hit
+  shares a root in the roots the assembly wires through, by threading `UnionFind.Inv` from the
+  empty structure. Only this joining direction is used. `pinned_of_cached` says every cache hit
+  names a pin some step logged, since the lowering starts from the empty cache; order is
+  irrelevant because every pin's row holds at the one valuation.
+- **Provenance by membership.** `ReductionEvent.names` lists what an event writes or fuses,
+  and `allocs` what a log allocates, at or above its starting counter. The `Records` walks show
+  every name is a term of the operand or an allocation, a bare operand returns itself with no
+  event, and an addition's row cells are its operands' variables position by position. No
+  multiplicity bound is stated anywhere: a Boolean writes its input twice. For an operand of an
+  unwired column, whose one occurrence is a bare operand, `unwired_not_named`,
+  `unwired_of_cell` and `unwired_cell_unique` follow by counting source occurrences.
+- **The valuation.** A variable reads its own unwired cell if it has one, else any cell of its
+  root's class, else `0`. The permutation step `IndexOf.classCells_eq`, shared with the direct
+  theorem, gives class agreement; uniqueness gives the unwired branch; no converse of the class
+  view is needed.
+- **The theorem.** `KimchiConstraint.Wired.holds_of_satisfies` has the direct theorem's shape
+  under `Wired.Scoped nv source publicVars`: every constraint in the fragment, every named
+  variable below the counter, and every operand of an unwired column occurring once among all
+  terms and the public variables. Queued equations hold by receipt, with `AbsentZero` proved
+  for every equation a reducer queues; a cache hit's constant is recovered from its pin's
+  receipt before any event is discharged; each constraint then holds by
+  `basic_of_reductionFacts` or by the addition's row read cell by cell.

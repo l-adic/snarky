@@ -33,6 +33,7 @@ import Snarky.Kimchi.Backend.Direct
 import Snarky.Kimchi.Backend.Wiring
 import Snarky.Kimchi.Backend.DirectChecks
 import Snarky.Kimchi.Backend.Wired
+import Snarky.Kimchi.Backend.WiredChecks
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -193,6 +194,14 @@ def roots : List Name :=
     `Snarky.Kimchi.direct_example_holds,
     `Snarky.Kimchi.direct_rejections,
     `Snarky.Kimchi.direct_rejections_index,
+    `Snarky.Kimchi.wired_example_built,
+    `Snarky.Kimchi.wired_example_scoped,
+    `Snarky.Kimchi.wired_example_indexOf,
+    `Snarky.Kimchi.wired_example_satisfies,
+    `Snarky.Kimchi.wired_example_holds,
+    `Snarky.Kimchi.wired_rejections_scope,
+    `Snarky.Kimchi.wired_rejections_table,
+    `Snarky.Kimchi.wired_rejections_index,
     -- The union-find's class view.
     `Snarky.Kimchi.UnionFind.empty_inv,
     `Snarky.Kimchi.UnionFind.find_inv,
