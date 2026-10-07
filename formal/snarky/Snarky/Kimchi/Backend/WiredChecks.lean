@@ -35,14 +35,25 @@ every constraint wired and breaks the scope; an accumulator written as a sum is 
 and a table with the second row's output abscissa altered fails the gate at the first row,
 the successor read being real.
 
+Then an endomorphism multiplication of two rounds at a nonzero coefficient, both rounds
+selecting the endomorphism, the first's register pinned to `0`, the second's input
+accumulator and register the first's outputs by the successor read alone, with no cell of
+theirs in the permutation, and the finals public in the terminal row. Its boundaries: a slope
+reused by a Boolean keeps every constraint wired and breaks the scope; a midpoint written as a
+sum is not wired; the terminal row's output abscissa altered fails the gate at the last round's
+row; and an index built at another coefficient disagrees with the source's parameter.
+
 ## Main results
 
 - `wired_example_holds`, `endo_example_holds`, `chain_example_holds`, `scale_example_holds`,
-  `scaleChain_example_holds`: the closed theorem on the decided instances.
+  `scaleChain_example_holds`, `endoMul_example_holds`: the closed theorem on the decided
+  instances.
 - `wired_rejections_scope`, `wired_rejections_table`, `wired_rejections_index`,
-  `endo_rejections`, `scale_rejections`: the boundaries, by premise.
+  `endo_rejections`, `scale_rejections`, `endoMul_rejections`, `endoMul_rejections_index`:
+  the boundaries, by premise.
 - `endo_example_layout`, `chain_example_layout`, `scale_example_layout`,
-  `scaleChain_example_layout`: the lowerings' logs, rows and classes.
+  `scaleChain_example_layout`, `endoMul_example_layout`: the lowerings' logs, rows and
+  classes.
 -/
 
 open Kimchi
@@ -555,5 +566,130 @@ theorem scale_rejections :
     ¬ (KimchiConstraint.varBaseMul [summedScale]).Wired ∧
     ¬ Index.rowSatisfies scaleIdx scalePub shiftedTable ⟨2, by decide⟩ := by
   decide +kernel
+
+/-! ## An endomorphism multiplication -/
+
+/-- A first round from the target `(0, 1)` and the accumulator `(2, 3)`, its register pinned
+to `0`, its inverse `4`, midpoint `(5, 6)`, slopes `7`, `8` and bits `9` to `12`; its unplaced
+output fields name the second round's inputs. -/
+private def emRound1 : EndoMulRound K :=
+  { t := ⟨.var 0, .var 1⟩, p := ⟨.var 2, .var 3⟩, r := ⟨.var 5, .var 6⟩, s := ⟨.var 13, .var 14⟩,
+    s1 := .var 7, s3 := .var 8, nAcc := .const 0, nAccNext := .var 15, bit0 := .var 9,
+    bit1 := .var 10, bit2 := .var 11, bit3 := .var 12, inv := .var 4 }
+
+/-- A second round from the same target, its accumulator `(13, 14)` and register `15` read as
+the first's outputs, its inverse `16`, midpoint `(17, 18)`, slopes `19`, `20` and bits `21` to
+`24`. -/
+private def emRound2 : EndoMulRound K :=
+  { t := ⟨.var 0, .var 1⟩, p := ⟨.var 13, .var 14⟩, r := ⟨.var 17, .var 18⟩,
+    s := ⟨.var 25, .var 26⟩, s1 := .var 19, s3 := .var 20, nAcc := .var 15, nAccNext := .var 27,
+    bit0 := .var 21, bit1 := .var 22, bit2 := .var 23, bit3 := .var 24, inv := .var 16 }
+
+/-- The two rounds at the coefficient `2`, the finals `(25, 26)` and `27`. -/
+private def emul : EndoMul K :=
+  { state := [emRound1, emRound2], s := ⟨.var 25, .var 26⟩, nAcc := .var 27, endo := 2 }
+
+/-- One multiplication, its finals public. -/
+private def endoMulSource : List (KimchiConstraint K) := [.endoMul emul]
+
+private def endoMulPublic : List Variable := [25, 26, 27]
+
+/-- The target `(3, 5)`, the accumulator `(7, 11)`, the bits `1 0 1 1` then `0 1 1 0`, and the
+inverses, midpoints, slopes, outputs and registers solving the gate at the coefficient `2`,
+the pinned register at the allocation `28`. -/
+private def endoMulV : Valuation K := fun v =>
+  [3, 5, 7, 11, 42, 27, 14, 16, 65, 1, 0, 1, 1, 57, 19, 11, 30, 109, 96, 17, 69, 0, 1, 1, 0,
+    73, 91, 69, 0].getD v 0
+
+private def endoMulRows : List (KimchiRow K) := directRows endoMulSource endoMulPublic 28
+
+private def endoMulRoots : Array Variable := directRoots endoMulSource 28
+
+private def endoMulIndex? : Option (Index K 16) :=
+  Index.build? (gatesOf endoMulRoots endoMulRows) endoMulPublic.length 3 40 2 mds shifts
+
+theorem endoMul_example_built : endoMulIndex?.isSome := by
+  decide +kernel
+
+private def endoMulIdx : Index K 16 := endoMulIndex?.get endoMul_example_built
+
+private def endoMulPub : Fin endoMulIdx.publicCount → K := fun i =>
+  endoMulV (endoMulPublic.getD i.val 0)
+
+theorem endoMul_example_scoped :
+    KimchiConstraint.Wired.Scoped 28 endoMulSource endoMulPublic := by
+  decide +kernel
+
+theorem endoMul_example_indexOf : IndexOf endoMulSource endoMulPublic 28 endoMulIdx :=
+  indexOf_of_classTarget endoMulSource endoMulPublic 28 endoMulIdx (by decide +kernel)
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel)
+
+theorem endoMul_example_satisfies :
+    endoMulIdx.Satisfies endoMulPub (tableOf endoMulV endoMulRows) := by
+  decide +kernel
+
+/-- The closed theorem on the two-round instance. -/
+theorem endoMul_example_holds :
+    ∃ W : Valuation K, (∀ c ∈ endoMulSource, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin endoMulPublic.length,
+        W endoMulPublic[i] = endoMulPub (endoMul_example_indexOf.publicIndex i) :=
+  KimchiConstraint.Wired.holds_of_satisfies endoMul_example_scoped endoMul_example_indexOf
+    endoMulPub (tableOf endoMulV endoMulRows) endoMul_example_satisfies
+
+/-- The layout: the register's allocation pinned in the row flushed after the block; the two
+round rows at the fourth and fifth, the terminal row at the sixth; the target one class across
+both round rows; the second round's input accumulator in one cell only, its link to the first
+round being the successor read; the finals' cells joining the public rows. -/
+theorem endoMul_example_layout :
+    (recordGates endoMulSource 28 initialAuxState).steps.map (fun s => allocs s.events) =
+        [[28]] ∧
+      (recordGates endoMulSource 28 initialAuxState).steps.map (fun s => pinsOf s.events) =
+        [[(0, 28)]] ∧
+      endoMulRows.length = 7 ∧ gateRowOf endoMulSource endoMulPublic 28 0 (by decide) = 3 ∧
+      classCells endoMulRoots endoMulRows 28 = [(3, 6), (6, 0)] ∧
+      classCells endoMulRoots endoMulRows 0 = [(3, 0), (4, 0)] ∧
+      classCells endoMulRoots endoMulRows 13 = [(4, 4)] ∧
+      classCells endoMulRoots endoMulRows 25 = [(0, 0), (5, 4)] := by
+  decide +kernel
+
+/-! ## Its boundaries -/
+
+/-- The multiplication with a slope reused by a Boolean. -/
+private def reusedEndoMul : List (KimchiConstraint K) :=
+  endoMulSource ++ [.basic (.boolean (.var 7))]
+
+/-- The first round with its midpoint's abscissa written as a sum. -/
+private def summedEndoMul : EndoMul K :=
+  { emul with state := [{ emRound1 with r := ⟨.add (.var 5) (.var 6), .var 6⟩ }, emRound2] }
+
+/-- The table with the terminal row's output abscissa raised by one. -/
+private def shiftedEndoMulTable : Fin 16 → Fin wCols → K := fun i j =>
+  if i.val = 5 ∧ j.val = 4 then tableOf endoMulV endoMulRows i j + 1
+  else tableOf endoMulV endoMulRows i j
+
+/-- A reused bare slope keeps every constraint wired and breaks the scope; a summed midpoint
+is not wired; the altered terminal row fails the gate at the last round's row. -/
+theorem endoMul_rejections :
+    ((∀ c ∈ reusedEndoMul, c.Wired) ∧
+      ¬ KimchiConstraint.Wired.Scoped 28 reusedEndoMul endoMulPublic) ∧
+    ¬ (KimchiConstraint.endoMul summedEndoMul).Wired ∧
+    ¬ Index.rowSatisfies endoMulIdx endoMulPub shiftedEndoMulTable ⟨4, by decide⟩ := by
+  decide +kernel
+
+/-- The same gate table built at the coefficient `3`. -/
+private def endoMulIndex3? : Option (Index K 16) :=
+  Index.build? (gatesOf endoMulRoots endoMulRows) endoMulPublic.length 3 40 3 mds shifts
+
+private theorem built_endoMul3 : endoMulIndex3?.isSome := by
+  decide +kernel
+
+/-- The index at the other coefficient builds from the same rows and wiring, and is not the
+lowering's: the source's coefficient disagrees with it. -/
+theorem endoMul_rejections_index :
+    ¬ (KimchiConstraint.endoMul emul).ParamsAgree (endoMulIndex3?.get built_endoMul3).mds
+        (endoMulIndex3?.get built_endoMul3).endoBase ∧
+      ¬ IndexOf endoMulSource endoMulPublic 28 (endoMulIndex3?.get built_endoMul3) :=
+  ⟨by decide +kernel, fun h => absurd (h.params _ (List.mem_singleton_self _)) (by decide +kernel)⟩
 
 end Snarky.Kimchi

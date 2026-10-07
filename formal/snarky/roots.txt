@@ -214,6 +214,14 @@ Snarky.Kimchi.scaleChain_example_satisfies
 Snarky.Kimchi.scaleChain_example_holds
 Snarky.Kimchi.scaleChain_example_layout
 Snarky.Kimchi.scale_rejections
+Snarky.Kimchi.endoMul_example_built
+Snarky.Kimchi.endoMul_example_scoped
+Snarky.Kimchi.endoMul_example_indexOf
+Snarky.Kimchi.endoMul_example_satisfies
+Snarky.Kimchi.endoMul_example_holds
+Snarky.Kimchi.endoMul_example_layout
+Snarky.Kimchi.endoMul_rejections
+Snarky.Kimchi.endoMul_rejections_index
 Snarky.Kimchi.UnionFind.empty_inv
 Snarky.Kimchi.UnionFind.find_inv
 Snarky.Kimchi.UnionFind.same_find_mono
