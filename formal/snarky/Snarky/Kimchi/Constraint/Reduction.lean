@@ -413,6 +413,33 @@ theorem addEqualsConstraint_apply [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq 
       · rw [if_neg h1, if_neg h1]
         rfl
 
+/-- A cache hit names a pair the cache held. -/
+theorem outcomeOf_cached_mem [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+    {c : EqualsConstraint F} {cache : List (F × Variable)} {l v : Variable} {k : F}
+    (h : outcomeOf c cache = .cached l v k) : (k, v) ∈ cache := by
+  unfold outcomeOf at h
+  split at h
+  · cases h
+  · split at h
+    · split at h <;> cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+          obtain ⟨l₁, l₂, hl, -⟩ := List.lookup_eq_some_iff.mp ‹List.lookup _ cache = some _›
+          rw [hl]
+          exact List.mem_append_right _ (List.mem_cons_self ..)
+        · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+          obtain ⟨l₁, l₂, hl, -⟩ := List.lookup_eq_some_iff.mp ‹List.lookup _ cache = some _›
+          rw [hl]
+          exact List.mem_append_right _ (List.mem_cons_self ..)
+        · cases h
+    · split at h <;> cases h
+
 /-- Run a reduction in the builder from a borrowed counter and auxiliary state: the
 result, the emitted rows in emission order, and the counter and auxiliary state to hand
 back. -/

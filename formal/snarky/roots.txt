@@ -128,6 +128,14 @@ Snarky.Kimchi.record_constraint_replays
 Snarky.Kimchi.record_constraint_allocates
 Snarky.Kimchi.record_constraint_decides
 Snarky.Kimchi.replayEvent_equal
+Snarky.Kimchi.outcomeOf_cached_mem
+Snarky.Kimchi.cache_replay
+Snarky.Kimchi.cached_mem
+Snarky.Kimchi.equalsHolds_of_merge
+Snarky.Kimchi.equalsHolds_of_cached
+Snarky.Kimchi.equalsHolds_of_pinned
+Snarky.Kimchi.equalsHolds_of_row
+Snarky.Kimchi.equalsHolds_of_trivial
 Snarky.Kimchi.receipts_located
 Snarky.Kimchi.receipts_complete
 Snarky.Kimchi.genericValue_of_located

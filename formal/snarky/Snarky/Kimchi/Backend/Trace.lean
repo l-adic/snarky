@@ -32,6 +32,8 @@ history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` re
   recorded reduction ends in the replay of its own events, whose allocations log the counter
   and whose equalities log their outcomes.
 - `replayEvent_equal`: a faithful equality event replays as its outcome's effect.
+- `cache_replay`, `cached_mem`: a faithful log's replay extends the cache by exactly its pins,
+  so a cache hit names a pin of the log or of the starting cache.
 
 ## Implementation notes
 
@@ -216,6 +218,115 @@ theorem replayEvent_equal (s : BuilderReductionState F) (c : EqualsConstraint F)
   subst h
   show ((addEqualsConstraint c : PlonkBuilder F Unit) s).2 = _
   rw [addEqualsConstraint_apply]
+
+/-- The constants a log pins, newest first, as the cache holds them. -/
+def pinsOf : List (ReductionEvent F) → List (F × Variable)
+  | [] => []
+  | .equal _ (.pinned v k _) :: es => pinsOf es ++ [(k, v)]
+  | _ :: es => pinsOf es
+
+private theorem outcomesFaithful_cons {s : BuilderReductionState F} {e : ReductionEvent F}
+    {es : List (ReductionEvent F)} (h : OutcomesFaithful s (e :: es)) :
+    OutcomesFaithful s [e] ∧ OutcomesFaithful (replayEvent s e) es := by
+  cases e with
+  | alloc v ex => exact ⟨trivial, h⟩
+  | generic g => exact ⟨trivial, h⟩
+  | equal c o => exact ⟨⟨h.1, trivial⟩, h.2⟩
+
+/-- One faithful event's effect on the cache: a pin prepends its pair, any other event leaves
+it. -/
+private theorem cache_replayEvent (s : BuilderReductionState F) (e : ReductionEvent F)
+    (hf : OutcomesFaithful s [e]) :
+    (replayEvent s e).aux.wireState.cachedConstants =
+      match e with
+      | .equal _ (.pinned v k _) => (k, v) :: s.aux.wireState.cachedConstants
+      | _ => s.aux.wireState.cachedConstants := by
+  cases e with
+  | alloc v ex =>
+    show ((createInternalVariable ex : PlonkBuilder F Variable) s).2.aux.wireState.cachedConstants
+      = _
+    rw [createInternalVariable_apply]
+  | generic g =>
+    show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.wireState.cachedConstants
+      = _
+    rw [addGenericPlonkConstraint_apply]
+    cases s.aux.queuedGenericGate <;> rfl
+  | equal c o =>
+    have ho : o = outcomeOf c s.aux.wireState.cachedConstants := hf.1
+    rw [replayEvent_equal s c ho]
+    cases o with
+    | merge l r => rfl
+    | cached l v k => rfl
+    | trivial => rfl
+    | row g =>
+      show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.wireState.cachedConstants
+        = _
+      rw [addGenericPlonkConstraint_apply]
+      cases s.aux.queuedGenericGate <;> rfl
+    | pinned v k g =>
+      show (k, v) ::
+        ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.wireState.cachedConstants = _
+      rw [addGenericPlonkConstraint_apply]
+      cases s.aux.queuedGenericGate <;> rfl
+
+/-- A faithful log's replay extends the cache by exactly its pins. -/
+theorem cache_replay {s : BuilderReductionState F} {es : List (ReductionEvent F)}
+    (hf : OutcomesFaithful s es) :
+    (replay s es).aux.wireState.cachedConstants = pinsOf es ++ s.aux.wireState.cachedConstants := by
+  induction es generalizing s with
+  | nil => rfl
+  | cons e es ih =>
+    obtain ⟨hf1, hf2⟩ := outcomesFaithful_cons hf
+    have hstep : replay s (e :: es) = replay (replayEvent s e) es := rfl
+    rw [hstep, ih hf2, cache_replayEvent s e hf1]
+    cases e with
+    | alloc v ex => rfl
+    | generic g => rfl
+    | equal c o =>
+      cases o with
+      | merge l r => rfl
+      | cached l v k => rfl
+      | trivial => rfl
+      | row g => rfl
+      | pinned v k g => simp [pinsOf]
+
+/-- A faithful log's cache hit names a pin of the log or of the starting cache. -/
+theorem cached_mem {s : BuilderReductionState F} {es : List (ReductionEvent F)}
+    (hf : OutcomesFaithful s es) {c : EqualsConstraint F} {l v : Variable} {k : F}
+    (he : .equal c (.cached l v k) ∈ es) :
+    (k, v) ∈ pinsOf es ∨ (k, v) ∈ s.aux.wireState.cachedConstants := by
+  induction es generalizing s with
+  | nil => exact (List.not_mem_nil he).elim
+  | cons e es ih =>
+    obtain ⟨hf1, hf2⟩ := outcomesFaithful_cons hf
+    rcases List.mem_cons.mp he with rfl | he
+    · exact Or.inr (outcomeOf_cached_mem hf1.1.symm)
+    · rcases ih hf2 he with h | h
+      · left
+        cases e with
+        | alloc v ex => exact h
+        | generic g => exact h
+        | equal c' o =>
+          cases o with
+          | merge l r => exact h
+          | cached l v k => exact h
+          | trivial => exact h
+          | row g => exact h
+          | pinned v' k' g => exact List.mem_append_left _ h
+      · rw [cache_replayEvent s e hf1] at h
+        cases e with
+        | alloc v ex => exact Or.inr h
+        | generic g => exact Or.inr h
+        | equal c' o =>
+          cases o with
+          | merge l r => exact Or.inr h
+          | cached l v k => exact Or.inr h
+          | trivial => exact Or.inr h
+          | row g => exact Or.inr h
+          | pinned v' k' g =>
+            rcases List.mem_cons.mp h with h | h
+            · exact Or.inl (h ▸ List.mem_append_right _ (List.mem_singleton_self _))
+            · exact Or.inr h
 
 /-! ## Erasure -/
 

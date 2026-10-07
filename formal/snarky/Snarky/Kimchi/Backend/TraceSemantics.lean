@@ -25,6 +25,9 @@ The two `none` conventions differ on purpose.
 - `addComplete_read_eq`: when the recorded events hold, the emitted row read cell by cell is
   the gate's witness at the operands' values; `addComplete_holds_of_reductionFacts` transports
   the gate's predicate across it to the source constraint.
+- `equalsHolds_of_merge`, `equalsHolds_of_cached`, `equalsHolds_of_pinned`,
+  `equalsHolds_of_row`, `equalsHolds_of_trivial`: an equality holds once the fact its logged
+  outcome names holds, a merge or cache hit by class, a pin or row by its emitted equation.
 
 ## Implementation notes
 
@@ -380,5 +383,162 @@ theorem addComplete_holds_of_reductionFacts (nv : Variable) (aux : AuxState F)
   rwa [addComplete_read_eq nv aux c V h] at hg
 
 end Reducers
+
+/-! ## Discharging an equality by its outcome -/
+
+section Outcomes
+
+variable [Field F] [DecidableEq F]
+
+/-- A merged equality holds where the two variables agree. -/
+theorem equalsHolds_of_merge {c : EqualsConstraint F} {cache : List (F × Variable)}
+    {l r : Variable} (h : outcomeOf c cache = .merge l r) (V : Valuation F) (hV : V l = V r) :
+    equalsHolds V c := by
+  unfold outcomeOf at h
+  split at h
+  · cases h
+  · split at h
+    · split at h
+      · cases h
+        simp only [equalsHolds, ‹c.vl = some l›, ‹c.vr = some r›, Option.map_some,
+          Option.getD_some, ‹c.cl = c.cr›, hV]
+      · cases h
+    · split at h
+      · cases h
+      · split at h <;> cases h
+    · split at h
+      · cases h
+      · split at h <;> cases h
+    · split at h <;> cases h
+
+/-- A cache-hit equality holds where the variable agrees with the cached one, which reads as
+the constant. -/
+theorem equalsHolds_of_cached {c : EqualsConstraint F} {cache : List (F × Variable)}
+    {l v : Variable} {k : F} (h : outcomeOf c cache = .cached l v k) (V : Valuation F)
+    (hV : V l = V v) (hk : V v = k) : equalsHolds V c := by
+  unfold outcomeOf at h
+  split at h
+  · cases h
+  · split at h
+    · split at h <;> cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+          simp only [equalsHolds, ‹c.vl = some l›, ‹c.vr = none›, Option.map_some,
+            Option.getD_some, Option.map_none, Option.getD_none, hV, hk, mul_one]
+          exact mul_div_cancel₀ _ ‹¬ c.cl = 0›
+        · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+          simp only [equalsHolds, ‹c.vl = none›, ‹c.vr = some l›, Option.map_some,
+            Option.getD_some, Option.map_none, Option.getD_none, hV, hk, mul_one]
+          exact (mul_div_cancel₀ _ ‹¬ c.cr = 0›).symm
+        · cases h
+    · split at h <;> cases h
+
+/-- A pinning equality holds where its row's equation vanishes, and pins its variable to the
+constant. -/
+theorem equalsHolds_of_pinned {c : EqualsConstraint F} {cache : List (F × Variable)}
+    {v : Variable} {k : F} {g : GenericPlonkConstraint F} (h : outcomeOf c cache = .pinned v k g)
+    (V : Valuation F) (hg : genericValue V g = 0) : equalsHolds V c ∧ V v = k := by
+  unfold outcomeOf at h
+  split at h
+  · cases h
+  · split at h
+    · split at h <;> cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · cases h
+          simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+            Option.getD_none, mul_zero, add_zero] at hg
+          have hcl : c.cl * V v = c.cr := by linear_combination hg
+          refine ⟨?_, ?_⟩
+          · simp only [equalsHolds, ‹c.vl = some v›, ‹c.vr = none›, Option.map_some,
+              Option.getD_some, Option.map_none, Option.getD_none, mul_one]
+            exact hcl
+          · rw [eq_div_iff ‹¬ c.cl = 0›, mul_comm]
+            exact hcl
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · cases h
+          simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+            Option.getD_none, mul_zero, zero_mul, add_zero, zero_add] at hg
+          have hcr : c.cr * V v = c.cl := by linear_combination hg
+          refine ⟨?_, ?_⟩
+          · simp only [equalsHolds, ‹c.vl = none›, ‹c.vr = some v›, Option.map_some,
+              Option.getD_some, Option.map_none, Option.getD_none, mul_one]
+            exact hcr.symm
+          · rw [eq_div_iff ‹¬ c.cr = 0›, mul_comm]
+            exact hcr
+    · split at h <;> cases h
+
+/-- An equality queued as a row holds where that row's equation vanishes. -/
+theorem equalsHolds_of_row {c : EqualsConstraint F} {cache : List (F × Variable)}
+    {g : GenericPlonkConstraint F} (h : outcomeOf c cache = .row g) (V : Valuation F)
+    (hg : genericValue V g = 0) : equalsHolds V c := by
+  unfold outcomeOf at h
+  split at h
+  · cases h
+  · split at h
+    · split at h
+      · cases h
+      · cases h
+        simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+          Option.getD_none, mul_zero, zero_mul, add_zero] at hg
+        simp only [equalsHolds, ‹c.vl = some _›, ‹c.vr = some _›, Option.map_some,
+          Option.getD_some]
+        linear_combination hg
+    · split at h
+      · cases h
+        simp only [genericValue, Option.map_none, Option.getD_none, mul_zero,
+          add_zero, zero_add] at hg
+        simp only [equalsHolds, ‹c.vl = some _›, ‹c.vr = none›, Option.map_some,
+          Option.getD_some, Option.map_none, Option.getD_none, ‹c.cl = 0›, hg, zero_mul,
+          mul_one]
+      · split at h <;> cases h
+    · split at h
+      · cases h
+        simp only [genericValue, Option.map_none, Option.getD_none, mul_zero,
+          add_zero, zero_add] at hg
+        simp only [equalsHolds, ‹c.vl = none›, ‹c.vr = some _›, Option.map_some,
+          Option.getD_some, Option.map_none, Option.getD_none, ‹c.cr = 0›, hg, zero_mul,
+          mul_one]
+      · split at h <;> cases h
+    · split at h
+      · cases h
+      · cases h
+        simp only [genericValue, Option.map_none, Option.getD_none, mul_zero,
+          add_zero, zero_add] at hg
+        simp only [equalsHolds, ‹c.vl = none›, ‹c.vr = none›, Option.map_none, Option.getD_none,
+          mul_one]
+        linear_combination hg
+
+/-- A trivial equality holds at every valuation. -/
+theorem equalsHolds_of_trivial {c : EqualsConstraint F} {cache : List (F × Variable)}
+    (h : outcomeOf c cache = .trivial) (V : Valuation F) : equalsHolds V c := by
+  unfold outcomeOf at h
+  split at h
+  · simp only [equalsHolds, ‹c.cl = 0 ∧ c.cr = 0›.1, ‹c.cl = 0 ∧ c.cr = 0›.2, zero_mul]
+  · split at h
+    · split at h <;> cases h
+    · split at h
+      · cases h
+      · split at h <;> cases h
+    · split at h
+      · cases h
+      · split at h <;> cases h
+    · split at h
+      · simp only [equalsHolds, ‹c.vl = none›, ‹c.vr = none›, Option.map_none, Option.getD_none,
+          mul_one, ‹c.cl = c.cr›]
+      · cases h
+
+end Outcomes
 
 end Snarky.Kimchi
