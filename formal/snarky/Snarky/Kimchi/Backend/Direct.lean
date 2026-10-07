@@ -299,7 +299,7 @@ theorem indexOf_of_classTarget {n : ℕ} (source : List (KimchiConstraint F))
     (hcoeffs : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length)
       (c : Fin coeffCols),
       (idx.gates i).coeffs c = (directRows source publicVars nv)[i.val].coeffs.getD c.val 0)
-    (hwires : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length)
+    (hwires : ∀ (i : Fin n) (_hi : i.val < (directRows source publicVars nv).length)
       (c : Fin permCols),
       (((idx.gates i).wires c).1 : ℕ) =
           (classTarget (directRoots source nv) (directRows source publicVars nv) i.val c.val).col ∧
