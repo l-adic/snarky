@@ -3,13 +3,14 @@ import Snarky.Kimchi.Backend.Direct
 /-!
 # The wired fragment
 
-The source constraints whose lowering wires: any `Basic` constraint over affine operands, and
-an admitted gate whose operands in the unwired columns are bare variables; the admitted gates
-are the complete addition, the challenge decomposition, the scalar multiplication, the
-endomorphism multiplication and the Poseidon block of the shape `5w + 1`, the last three read
-by the index through the successor row. Their reduction allocates intermediates, pins
-constants through the cache and fuses classes, so the union-find, the constant cache and the
-generic queue all move; the direct fragment is the special case in which none of them does.
+The source constraints whose lowering wires: every constructor, a gate's operands in the
+unwired columns bare variables and a Poseidon block of the shape `5w + 1`. The gates are the
+complete addition, the challenge decomposition, the scalar multiplication, the endomorphism
+multiplication and the Poseidon block, the last three read by the index through the successor
+row, and the padding row, seven wired cells that assert nothing. Their reduction allocates
+intermediates, pins constants through the cache and fuses classes, so the union-find, the
+constant cache and the generic queue all move; the direct fragment is the special case in
+which none of them does.
 
 A satisfying table determines a valuation by class: a variable reads the value in any cell of
 its root's class, the permutation forcing those cells to agree. A fusion the log records, a
@@ -21,8 +22,8 @@ and no other cell carries it.
 
 ## Main definitions
 
-- `KimchiConstraint.Wired`, `KimchiConstraint.Wired.Scoped`: membership in the fragment, an
-  admitted constructor whose cells in the unwired columns of `rowOperands` are bare or empty,
+- `KimchiConstraint.Wired`, `KimchiConstraint.Wired.Scoped`: membership in the fragment, a
+  Poseidon block of the shape and cells in the unwired columns of `rowOperands` bare or empty,
   and the scoping condition on a source list, its public variables and the counter: every
   constraint wired, every named variable below the counter, and every operand of an unwired
   column occurring once.
@@ -64,16 +65,12 @@ section Fragment
 
 variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
-/-- The constructors the fragment admits: every gate, a Poseidon block under the shape `5w + 1`
-that places every state and keeps every window's successor inside the block. -/
+/-- The fragment's condition on a constructor. Every constructor is admitted; a Poseidon block
+under the shape `5w + 1`, which places every state and keeps every window's successor inside
+the block. -/
 private def KimchiConstraint.Admitted : KimchiConstraint F → Prop
-  | .basic _ => True
-  | .addComplete _ => True
-  | .endoScalar _ => True
-  | .varBaseMul _ => True
-  | .endoMul _ => True
   | .poseidon c => c.state.length % 5 = 1
-  | _ => False
+  | _ => True
 
 private instance KimchiConstraint.decidableAdmitted (c : KimchiConstraint F) :
     Decidable c.Admitted := by
@@ -89,8 +86,8 @@ private instance decidableBareCell (o : Option (FVar F)) : Decidable (bareCell o
   unfold bareCell
   split <;> infer_instance
 
-/-- A constraint the lowering wires: an admitted constructor whose operands in the unwired
-columns `7` to `14` are bare variables. -/
+/-- A constraint the lowering wires: a Poseidon block of the shape `5w + 1`, and any
+constructor's operands in the unwired columns `7` to `14` bare variables. -/
 def KimchiConstraint.Wired (c : KimchiConstraint F) : Prop :=
   c.Admitted ∧ ∀ row ∈ c.rowOperands.toList, ∀ j : Fin wCols, permCols ≤ j.val → bareCell row[j]
 
@@ -489,7 +486,7 @@ private theorem placed_of_wired {c : KimchiConstraint F} (hw : c.Wired) (nv : Va
   | varBaseMul rounds => exact Or.inr (varBaseMul_placed nv aux rounds)
   | endoScalar rounds => exact Or.inr (endoScalar_placed nv aux rounds)
   | endoMul c => exact Or.inr (endoMul_placed nv aux c)
-  | pad _ => exact hw.1.elim
+  | pad vs => exact Or.inr (pad_placed nv aux vs)
 
 private theorem termVars_var (v : Variable) : (CVar.var v : CVar F).termVars = [v] := rfl
 
@@ -895,14 +892,13 @@ private theorem recoverClass_eq_of_root_eq (roots : Array Variable) (rows : List
 
 /-! ## The theorem -/
 
-/-- Every equation any step of the lowering queues carries no coefficient on an absent cell. -/
+/-- Every equation any step of the lowering queues carries no coefficient on an absent cell,
+whatever the source. -/
 private theorem step_absentZero {source : List (KimchiConstraint F)} {nv : Variable}
-    (hw : ∀ c ∈ source, c.Wired) {s : RecordedStep F} (hs : s ∈ (lowering source nv).steps) :
+    {s : RecordedStep F} (hs : s ∈ (lowering source nv).steps) :
     ∀ e ∈ s.events, ∀ g, e.queued? = some g → g.AbsentZero := by
   obtain ⟨p, hp, nv', aux', -, rfl⟩ := step_shape hs
-  have hwd := hw _ (List.getElem_mem hp)
   obtain ⟨cp, hsp⟩ : ∃ cp, source[p] = cp := ⟨_, rfl⟩
-  rw [hsp] at hwd
   show ∀ e ∈ (recordReduction nv' aux' source[p].reduce).events, _
   rw [hsp]
   cases cp with
@@ -912,7 +908,7 @@ private theorem step_absentZero {source : List (KimchiConstraint F)} {nv : Varia
   | varBaseMul rounds => exact varBaseMul_absentZero nv' aux' rounds
   | endoScalar rounds => exact endoScalar_absentZero nv' aux' rounds
   | endoMul c => exact endoMul_absentZero nv' aux' c
-  | pad _ => exact hwd.1.elim
+  | pad vs => exact pad_absentZero nv' aux' vs
 
 omit [Field F] [DecidableEq F] in
 private theorem fusions_of_merge {es : List (ReductionEvent F)} {c : EqualsConstraint F}
@@ -1528,7 +1524,7 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
   have hqueued : ∀ s ∈ (lowering source nv).steps, ∀ e ∈ s.events, ∀ g, e.queued? = some g →
       genericValue V g = 0 :=
     fun s hs e he g hg =>
-      queued_holds hindex pub wTab hsat V hval hs he hg (step_absentZero hscope.wired hs e he g hg)
+      queued_holds hindex pub wTab hsat V hval hs he hg (step_absentZero hs e he g hg)
   -- fused variables read alike
   have hfused : ∀ s ∈ (lowering source nv).steps, ∀ p ∈ fusions s.events, V p.1 = V p.2 := by
     intro s hs p hp
@@ -1595,7 +1591,7 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
     | varBaseMul rounds => exact varBaseMul_branch hindex hsat hrows_le hval hp hstep' hsp hf
     | endoScalar rounds => exact endoScalar_branch hindex hsat hrows_le hval hp hstep' hsp hf
     | endoMul c => exact endoMul_branch hindex hsat hrows_le hval hp hstep' hsp hf
-    | pad _ => exact hwd.1.elim
+    | pad _ => exact trivial
   · intro i
     have hi : i.val < (directRows source publicVars nv).length := by
       have := i.isLt

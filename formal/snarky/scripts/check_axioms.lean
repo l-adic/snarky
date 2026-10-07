@@ -244,6 +244,13 @@ def roots : List Name :=
     `Snarky.Kimchi.poseidon_example_layout,
     `Snarky.Kimchi.poseidon_rejections,
     `Snarky.Kimchi.poseidon_rejections_index,
+    `Snarky.Kimchi.pad_example_built,
+    `Snarky.Kimchi.pad_example_scoped,
+    `Snarky.Kimchi.pad_example_indexOf,
+    `Snarky.Kimchi.pad_example_satisfies,
+    `Snarky.Kimchi.pad_example_holds,
+    `Snarky.Kimchi.pad_example_layout,
+    `Snarky.Kimchi.pad_rejections,
     -- The union-find's class view.
     `Snarky.Kimchi.UnionFind.empty_inv,
     `Snarky.Kimchi.UnionFind.find_inv,

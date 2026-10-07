@@ -42,16 +42,16 @@ The two `none` conventions differ on purpose.
   outcome names holds, a merge or cache hit by class, a pin or row by its emitted equation.
 - `basic_names`: the names of a `Basic` constraint's recorded reduction are its terms or its
   allocations.
-- `Placed`, `addComplete_placed`, `endoScalar_placed`, `varBaseMul_placed`,
-  `endoMul_placed`, `poseidon_placed`: a gate's recorded reduction placed, its names terms of
+- `Placed`, `addComplete_placed`, `endoScalar_placed`, `varBaseMul_placed`, `endoMul_placed`,
+  `poseidon_placed`, `pad_placed`: a gate's recorded reduction placed, its names terms of
   placed operands that are not that bare variable, its rows matching
   `KimchiConstraint.rowOperands` cell by cell (`CellOf`); `endoScalar_cell_some`,
   `varBaseMul_cell_some_fst`, `varBaseMul_cell_some_snd`, `endoMul_cell_some_round`,
   `endoMul_cell_some_next`, `poseidon_cell_some_window`, `poseidon_cell_some_next`: every
   operand cell of an emitted row is labelled.
 - `basic_absentZero`, `addComplete_absentZero`, `endoScalar_absentZero`,
-  `varBaseMul_absentZero`, `endoMul_absentZero`, `poseidon_absentZero`: every equation a
-  constraint's recorded reduction queues carries no coefficient on an absent cell.
+  `varBaseMul_absentZero`, `endoMul_absentZero`, `poseidon_absentZero`, `pad_absentZero`:
+  every equation a constraint's recorded reduction queues has no coefficient on an absent cell.
 - `basic_of_reductionFacts`: when the recorded events hold, any `Basic` constraint holds.
 
 ## Implementation notes
@@ -1821,7 +1821,7 @@ def KimchiConstraint.rowOperandsList : KimchiConstraint F → List (Vector (Opti
       none :: [r.p.x, r.p.y, r.nAcc, r.r.x, r.r.y, r.s1, r.s3, r.bit0, r.bit1, r.bit2,
         r.bit3].map some)) ++
     [cellsOf (none :: none :: none :: none :: [c.s.x, c.s.y, c.nAcc].map some)]
-  | .pad vs => [cellsOf (vs.toList.map some)]
+  | .pad vs => [cellsOf (padCells vs)]
 
 /-- The rows a constraint's gate emits. -/
 def KimchiConstraint.rowCount (c : KimchiConstraint F) : Nat :=
@@ -3391,6 +3391,62 @@ theorem poseidon_placed (nv : Variable) (aux : AuxState F) (c : PoseidonConstrai
       exacts [a0, b0, c0, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial,
         trivial, trivial, trivial, trivial]
 
+/-- The walk of a padding row: every name is an allocation or a term of an operand that is not
+that bare variable, and the row's cells are its operands' variables cell by cell. -/
+private theorem records_reducePad_names (vs : Vector (FVar F) 7) :
+    Records (reducePad vs : RecordingBuilder F (Rows F)) fun row es =>
+      (∀ e ∈ es, ∀ w ∈ e.names, w ∈ allocs es ∨
+        ∃ x, some x ∈ padCells vs ∧ w ∈ x.termVars ∧ x ≠ .var w) ∧
+      ∀ j : Fin wCols, CellOf (allocs es) row.row.vars[j] (cellsOf (padCells vs))[j] := by
+  unfold reducePad
+  refine records_bind (records_reduceToVariable_names _) fun v0 es0 h0 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun v1 es1 h1 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun v2 es2 h2 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun v3 es3 h3 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun v4 es4 h4 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun v5 es5 h5 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun v6 es6 h6 => ?_
+  refine records_pure _ ?_
+  set A := allocs (es0 ++ (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ []))))))) with hA
+  have h0' := operandNames_of h0 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h1' := operandNames_of h1 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h2' := operandNames_of h2 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h3' := operandNames_of h3 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h4' := operandNames_of h4 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h5' := operandNames_of h5 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h6' := operandNames_of h6 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have hc : padCells vs = [some vs[0], some vs[1], some vs[2], some vs[3], some vs[4],
+      some vs[5], some vs[6]] := rfl
+  refine ⟨fun e he w hw => ?_, fun j => ?_⟩
+  · simp only [List.append_nil, List.mem_append] at he
+    rw [hc]
+    rcases he with he | he | he | he | he | he | he
+    · exact (h0'.1 e he w hw).imp_right fun h => ⟨vs[0], by simp, h⟩
+    · exact (h1'.1 e he w hw).imp_right fun h => ⟨vs[1], by simp, h⟩
+    · exact (h2'.1 e he w hw).imp_right fun h => ⟨vs[2], by simp, h⟩
+    · exact (h3'.1 e he w hw).imp_right fun h => ⟨vs[3], by simp, h⟩
+    · exact (h4'.1 e he w hw).imp_right fun h => ⟨vs[4], by simp, h⟩
+    · exact (h5'.1 e he w hw).imp_right fun h => ⟨vs[5], by simp, h⟩
+    · exact (h6'.1 e he w hw).imp_right fun h => ⟨vs[6], by simp, h⟩
+  · rw [hc]
+    fin_cases j
+    exacts [⟨h0'.2.1, h0'.2.2⟩, ⟨h1'.2.1, h1'.2.2⟩, ⟨h2'.2.1, h2'.2.2⟩, ⟨h3'.2.1, h3'.2.2⟩,
+      ⟨h4'.2.1, h4'.2.2⟩, ⟨h5'.2.1, h5'.2.2⟩, ⟨h6'.2.1, h6'.2.2⟩, trivial, trivial, trivial,
+      trivial, trivial, trivial, trivial, trivial]
+
+/-- A padding row's recorded reduction is placed: its names are allocations or terms of its
+operands that are not that bare variable, and its one row's cells are its operands' variables
+cell by cell, all seven in wired columns. -/
+theorem pad_placed (nv : Variable) (aux : AuxState F) (vs : Vector (FVar F) 7) :
+    Placed nv aux (.pad vs) := by
+  obtain ⟨hn, hc⟩ := recordReduction_of_records (records_reducePad_names vs) nv aux
+  refine ⟨fun e he w hw => (hn e he w hw).imp_right ?_, rfl, fun i j => ?_⟩
+  · rintro ⟨x, hx, h⟩
+    exact ⟨x, mem_placedOperands (List.mem_singleton_self _)
+      (mem_cellsOf (by simp [padCells]) hx), h⟩
+  · fin_cases i
+    exact hc j
+
 /-! ## Absent cells carry no coefficient -/
 
 /-- Every equation a log queues carries no coefficient on an absent cell. -/
@@ -3619,6 +3675,12 @@ private theorem records_poseidon_absent (c : PoseidonConstraint F) :
   records [records_reduceStates_absent c.state]
   absent_leaf
 
+private theorem records_reducePad_absent (vs : Vector (FVar F) 7) :
+    Records (reducePad vs : RecordingBuilder F (Rows F)) fun _ es => AbsentAll es := by
+  unfold reducePad
+  records [records_reduceToVariable_absent _]
+  absent_leaf
+
 private theorem records_basic_absent (b : Basic F) :
     Records (reduce b : RecordingBuilder F Unit) fun _ es => AbsentAll es := by
   cases b <;> simp only [reduce] <;> records [records_reduceAffineExpression_absent _]
@@ -3664,6 +3726,13 @@ absent cell. -/
 theorem poseidon_absentZero (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F) :
     ∀ e ∈ (recordReduction nv aux c.reduce).events, ∀ g, e.queued? = some g → g.AbsentZero :=
   recordReduction_of_records (records_poseidon_absent c) nv aux
+
+/-- Every equation a padding row's recorded reduction queues carries no coefficient on an
+absent cell. -/
+theorem pad_absentZero (nv : Variable) (aux : AuxState F) (vs : Vector (FVar F) 7) :
+    ∀ e ∈ (recordReduction nv aux (reducePad vs)).events, ∀ g, e.queued? = some g →
+      g.AbsentZero :=
+  recordReduction_of_records (records_reducePad_absent vs) nv aux
 
 end NameWalks
 

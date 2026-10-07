@@ -5,62 +5,62 @@ import Mathlib.Tactic.NormNum.Prime
 /-!
 # Wired-fragment checks
 
-One lowering of the fragment decided end to end over a field of 113 elements: a public
-variable pinned to a constant, two public-side variables merged, a complete addition whose
-first abscissa is a sum and whose second ordinate is a scaled variable, a second variable
-hitting the constant's cache, and a Boolean on the merged variable. The pin's row packs with
-the sum's intermediate, the scaled operand's row with the Boolean. The index is built from
-the lowering's rows and the class-based wiring by `Index.build?`, its table satisfies it, and
-the closed theorem is invoked on them. Then the boundaries, one for each premise: a source
-with a constant in an unwired slot, with an unwired operand named again by a merge that
-writes no row, or by a term of the sum, or naming a variable at the counter, is out of scope;
-a table splitting the merged class, or reading the intermediate away from its pinning cell,
-while every gate holds, does not satisfy the index; an index with the packed row's
-coefficients altered, or with the pinned variable's copy wire rerouted, is not the lowering's.
+One lowering of the fragment decided end to end over a field of 113 elements: a public variable
+pinned to a constant, two variables merged, a complete addition with a sum and a scaled
+variable among its wired operands, a second variable hitting the constant's cache, a Boolean on
+the merged variable. The index is built from the lowering's rows and the class-based wiring by
+`Index.build?`, its table satisfies it, and the closed theorem is invoked on them. Then the
+boundaries, one for each premise: a constant in an unwired slot, an unwired operand named again
+by a rowless merge or by a term of the sum, a variable at the counter, each out of scope; a
+table splitting the merged class or drifting the intermediate from its pinning cell, every gate
+holding, fails the index; an index with the packed row's coefficients altered or the pinned
+variable's copy wire rerouted is not the lowering's.
 
-Then a challenge decomposition, in two lowerings. One round from the initial accumulators,
-its crumbs fresh and its output `n` public: its two `2`s pin one allocation through the cache
-and its `0` another, the pins packed in one row before the gate row. Two rounds, the second's
+Then a challenge decomposition, in two lowerings. One round from the initial accumulators, its
+crumbs fresh and its output `n` public: its two `2`s pin one allocation through the cache and
+its `0` another, the pins packed in one row before the gate row. Two rounds, the second's
 accumulators the first's outputs: the block's second row one past its first, each threaded
 accumulator one class across both. Their boundaries: a crumb reused by a Boolean keeps every
 constraint wired and breaks the scope; a crumb written as a sum is not wired.
 
-Then a scalar multiplication, whose rounds emit row pairs the index reads through the
-successor row, in two lowerings: one round from a base and an accumulator of distinct
-abscissae, its register pinned to `0` in the row flushed last and its output accumulator
-public; two rounds threading the output accumulator and register into the next round's
-inputs, the second pair at block offset two. Its boundaries: a slope reused by a Boolean keeps
-every constraint wired and breaks the scope; an accumulator written as a sum is not wired;
-and a table with the second row's output abscissa altered fails the gate at the first row,
-the successor read being real.
+Then a scalar multiplication, whose row pairs the index reads through the successor row: one
+round from a base and an accumulator of distinct abscissae, its register pinned in the row
+flushed last, its output public; two rounds threading the output accumulator and register, the
+second pair at block offset two. Its boundaries: a slope reused by a Boolean keeps every
+constraint wired and breaks the scope; a summed accumulator is not wired; the second row's
+output abscissa altered fails the gate at the first row.
 
-Then an endomorphism multiplication of two rounds at a nonzero coefficient, both selecting
-the endomorphism, the first's register pinned to `0`, the second's inputs the first's outputs
-by the successor read alone, their wired cells singleton classes, the finals public in the
-terminal row. Its boundaries: a slope reused by a Boolean keeps every constraint wired and
-breaks the scope; a midpoint written as a sum is not wired; the terminal row's output
-abscissa altered fails the gate at the last round's row; an index built at another
-coefficient disagrees with the source's parameter.
+Then an endomorphism multiplication of two rounds at a nonzero coefficient, both selecting the
+endomorphism, the second's inputs the first's outputs by the successor read alone, their wired
+cells singleton classes, the finals public in the terminal row. Its boundaries: a slope reused
+by a Boolean breaks the scope; a summed midpoint is not wired; the terminal row's output
+abscissa altered fails the gate at the last round's row; an index at another coefficient
+disagrees with the source's parameter.
 
-Then a Poseidon block of two windows, eleven states from the round function at a small
-matrix and ten distinct nonzero constants, one input element pinned to `0`, the output state
-public in the terminal row. Its boundaries: an unwired state element reused by a Boolean
-keeps every constraint wired and breaks the scope; one written as a sum is not wired; five or
-seven states are not wired, off the shape; the terminal row's first cell altered fails the
-gate at the last window's row; indices at another matrix or with a consumed constant altered
-fail the parameters or the coefficients.
+Then a Poseidon block of two windows, eleven states from the round function at a small matrix
+and ten distinct nonzero constants, one input element pinned, the output state public in the
+terminal row. Its boundaries: an unwired state element reused by a Boolean breaks the scope; a
+summed one is not wired; five or seven states are off the shape, not wired; the terminal row's
+first cell altered fails the gate at the last window's row; indices at another matrix or with a
+consumed constant altered fail the parameters or the coefficients.
+
+Then a padding row among `Basic` constraints, its seven cells all wired: bare variables, a sum
+and a scaled variable through their intermediates, and a constant hitting the pinned variable's
+cache. It asserts nothing and only wires. Its boundaries: a padding row naming another gate's
+unwired operand keeps every constraint wired and breaks the scope; a table altering one of its
+cells, every gate holding, breaks the copy constraint.
 
 ## Main results
 
 - `wired_example_holds`, `endo_example_holds`, `chain_example_holds`, `scale_example_holds`,
-  `scaleChain_example_holds`, `endoMul_example_holds`, `poseidon_example_holds`: the closed
-  theorem on the decided instances.
+  `scaleChain_example_holds`, `endoMul_example_holds`, `poseidon_example_holds`,
+  `pad_example_holds`: the closed theorem on the decided instances.
 - `wired_rejections_scope`, `wired_rejections_table`, `wired_rejections_index`,
   `endo_rejections`, `scale_rejections`, `endoMul_rejections`, `endoMul_rejections_index`,
-  `poseidon_rejections`, `poseidon_rejections_index`: the boundaries, by premise.
+  `poseidon_rejections`, `poseidon_rejections_index`, `pad_rejections`: boundaries by premise.
 - `endo_example_layout`, `chain_example_layout`, `scale_example_layout`,
-  `scaleChain_example_layout`, `endoMul_example_layout`, `poseidon_example_layout`: the
-  lowerings' logs, rows and classes.
+  `scaleChain_example_layout`, `endoMul_example_layout`, `poseidon_example_layout`,
+  `pad_example_layout`: the lowerings' logs, rows and classes.
 -/
 
 open Kimchi
@@ -847,5 +847,88 @@ theorem poseidon_rejections_index :
   have hc := h.coeffs ⟨3, by decide⟩ (by rw [length_directGates]; decide +kernel) ⟨4, by decide⟩
   rw [getElem_directGates poseidonSource poseidonPublic 32 3 (by decide +kernel)] at hc
   exact absurd hc (by decide +kernel)
+
+/-! ## A padding row -/
+
+/-- A pin, then a padding row over the pinned variable, a bare variable, a sum, the pinned
+constant, a bare variable, its double and a bare variable, then a Boolean on the row's second
+operand. -/
+private def padSource : List (KimchiConstraint K) :=
+  [.basic (.equal (.var 0) (.const 5)),
+    .pad #v[.var 0, .var 1, .add (.var 1) (.var 2), .const 5, .var 3, .scale 2 (.var 3), .var 4],
+    .basic (.boolean (.var 1))]
+
+private def padPublic : List Variable := [0]
+
+/-- The pinned `5`, the Boolean `1`, and the padding row's intermediates: the sum `1 + 10` at
+the allocation `5`, the constant at `6`, the double `2 · 7` at `7`. -/
+private def padV : Valuation K := fun v => [5, 1, 10, 7, 9, 11, 5, 14].getD v 0
+
+private def padRows : List (KimchiRow K) := directRows padSource padPublic 5
+
+private def padRoots : Array Variable := directRoots padSource 5
+
+private def padIndex? : Option (Index K 16) :=
+  Index.build? (gatesOf padRoots padRows) padPublic.length 3 40 0 mds shifts
+
+theorem pad_example_built : padIndex?.isSome := by
+  decide +kernel
+
+private def padIdx : Index K 16 := padIndex?.get pad_example_built
+
+private def padPub : Fin padIdx.publicCount → K := fun i => padV (padPublic.getD i.val 0)
+
+theorem pad_example_scoped : KimchiConstraint.Wired.Scoped 5 padSource padPublic := by
+  decide +kernel
+
+theorem pad_example_indexOf : IndexOf padSource padPublic 5 padIdx :=
+  indexOf_of_classTarget padSource padPublic 5 padIdx (by decide +kernel) (by decide +kernel)
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+
+theorem pad_example_satisfies : padIdx.Satisfies padPub (tableOf padV padRows) := by
+  decide +kernel
+
+/-- The closed theorem on the padded instance. -/
+theorem pad_example_holds :
+    ∃ W : Valuation K, (∀ c ∈ padSource, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin padPublic.length, W padPublic[i] = padPub (pad_example_indexOf.publicIndex i) :=
+  KimchiConstraint.Wired.holds_of_satisfies pad_example_scoped pad_example_indexOf padPub
+    (tableOf padV padRows) pad_example_satisfies
+
+/-- The layout: the padding row is the third, a generic row without coefficients; its sum,
+constant and double allocate `5`, `6`, `7`; the constant hits the pin's cache, so one class
+holds the public cell, the pin's and the row's first and fourth cells; the sum's intermediate
+ties its defining row to its padding cell, the Boolean's variable its padding cell to the
+Boolean's row. -/
+theorem pad_example_layout :
+    (recordGates padSource 5 initialAuxState).steps.map (fun s => allocs s.events) =
+        [[], [5, 6, 7], []] ∧
+      (recordGates padSource 5 initialAuxState).steps.map (fun s => fusions s.events) =
+        [[], [(6, 0)], []] ∧
+      padRows.length = 4 ∧ gateRowOf padSource padPublic 5 1 (by decide) = 2 ∧
+      padRows[2]?.map (fun r => (r.kind, r.coeffs)) = some (.generic, []) ∧
+      classCells padRoots padRows 6 = [(0, 0), (1, 3), (2, 0), (2, 3)] ∧
+      classCells padRoots padRows 5 = [(1, 2), (2, 2)] ∧
+      classCells padRoots padRows 1 = [(1, 0), (2, 1), (3, 0), (3, 1)] := by
+  decide +kernel
+
+/-! ## Its boundaries -/
+
+/-- The first lowering's source with a padding row naming the addition's unwired `sameX`. -/
+private def padReuse : List (KimchiConstraint K) :=
+  source ++ [.pad #v[.var 9, .var 0, .var 0, .var 0, .var 0, .var 0, .var 0]]
+
+/-- The table with the padding row's second cell, the Boolean's variable, set to `0`. -/
+private def padSplitTable : Fin 16 → Fin wCols → K := fun i j =>
+  if i.val = 2 ∧ j.val = 1 then 0 else tableOf padV padRows i j
+
+/-- A padding row naming another gate's unwired operand keeps every constraint wired and
+breaks the scope; a table altering one of its cells, every gate still holding, breaks the copy
+constraint. -/
+theorem pad_rejections :
+    ((∀ c ∈ padReuse, c.Wired) ∧ ¬ KimchiConstraint.Wired.Scoped 20 padReuse publicVars) ∧
+    ((∀ i, Index.rowSatisfies padIdx padPub padSplitTable i) ∧
+      ¬ padIdx.Satisfies padPub padSplitTable) := by
+  decide +kernel
 
 end Snarky.Kimchi
