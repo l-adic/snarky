@@ -709,9 +709,9 @@ theorem unwired_cell_unique {source : List (KimchiConstraint F)} {publicVars : L
 
 /-! ## The valuation -/
 
-/-- The value at the variable's own unwired cell, else at a cell of its class, else `0`. An
-unwired operand is outside every class and reads its one cell; any other variable reads its
-root's class, so fused variables read alike. -/
+/-- The value at the variable's own unwired cell, else at a cell of its class, else `0`. The
+unwired cell takes precedence, so an unwired operand reads its one cell whatever its class
+holds; any other variable reads its root's class, so fused variables read alike. -/
 private noncomputable def recoverClass (roots : Array Variable) (rows : List (KimchiRow F))
     (val : Nat × Nat → F) (v : Variable) : F :=
   if h : ∃ c : Fin rows.length × Fin wCols, 7 ≤ c.2.val ∧ rows[c.1].vars[c.2] = some v then

@@ -728,7 +728,7 @@ private theorem unwiredVars_of_label {c : AddComplete F}
 /-! ## Counting occurrences -/
 
 omit [Field F] [DecidableEq F] in
-theorem two_le_count_of_ne {l : List Variable} {v : Variable} {j j' : Nat}
+private theorem two_le_count_of_ne {l : List Variable} {v : Variable} {j j' : Nat}
     (hj : j < l.length) (hj' : j' < l.length) (hne : j ≠ j') (h1 : l[j] = v) (h2 : l[j'] = v) :
     2 ≤ l.count v := by
   induction l generalizing j j' with
