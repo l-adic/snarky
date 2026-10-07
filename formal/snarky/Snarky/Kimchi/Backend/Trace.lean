@@ -32,8 +32,12 @@ history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` re
   recorded reduction ends in the replay of its own events, whose allocations log the counter
   and whose equalities log their outcomes.
 - `replayEvent_equal`: a faithful equality event replays as its outcome's effect.
-- `cache_replay`, `cached_mem`: a faithful log's replay extends the cache by exactly its pins,
-  so a cache hit names a pin of the log or of the starting cache.
+- `cache_replay`, `cached_mem`, `mem_pinsOf`: a faithful log's replay extends the cache by
+  exactly its pins, so a cache hit names a pin of the log or of the starting cache, and a pin
+  of the log is one of its pinning events.
+- `inv_replay`, `same_replay_mono`, `same_replay`: a faithful log replayed from an invariant
+  union-find keeps the invariant, never splits a class, and ends with every fusion it logs in
+  one class.
 
 ## Implementation notes
 
@@ -327,6 +331,146 @@ theorem cached_mem {s : BuilderReductionState F} {es : List (ReductionEvent F)}
             rcases List.mem_cons.mp h with h | h
             · exact Or.inl (h ▸ List.mem_append_right _ (List.mem_singleton_self _))
             · exact Or.inr h
+
+omit [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] in
+/-- A pin of a log is one of its pinning events. -/
+theorem mem_pinsOf {es : List (ReductionEvent F)} {k : F} {v : Variable}
+    (h : (k, v) ∈ pinsOf es) : ∃ c g, ReductionEvent.equal c (.pinned v k g) ∈ es := by
+  induction es with
+  | nil => exact (List.not_mem_nil h).elim
+  | cons e es ih =>
+    have step : (k, v) ∈ pinsOf es →
+        ∃ c g, ReductionEvent.equal c (.pinned v k g) ∈ e :: es := fun h' =>
+      let ⟨c, g, hm⟩ := ih h'
+      ⟨c, g, List.mem_cons_of_mem _ hm⟩
+    cases e with
+    | alloc _ _ => exact step h
+    | generic _ => exact step h
+    | equal c o =>
+      cases o with
+      | merge _ _ => exact step h
+      | cached _ _ _ => exact step h
+      | row _ => exact step h
+      | trivial => exact step h
+      | pinned v' k' g =>
+        simp only [pinsOf] at h
+        rcases List.mem_append.mp h with h | h
+        · exact step h
+        · obtain ⟨rfl, rfl⟩ := Prod.mk.inj (List.mem_singleton.mp h)
+          exact ⟨c, g, List.mem_cons_self ..⟩
+
+/-! ## The classes a log fuses -/
+
+/-- The pairs a log fuses: a merge's two variables, and a cache hit's variable with the cached
+one. -/
+def fusions : List (ReductionEvent F) → List (Variable × Variable)
+  | [] => []
+  | .equal _ (.merge l r) :: es => (l, r) :: fusions es
+  | .equal _ (.cached l v _) :: es => (l, v) :: fusions es
+  | _ :: es => fusions es
+
+omit [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] in
+private theorem fusions_cons (e : ReductionEvent F) (es : List (ReductionEvent F)) :
+    fusions (e :: es) = fusions [e] ++ fusions es := by
+  cases e with
+  | alloc _ _ => rfl
+  | generic _ => rfl
+  | equal c o => cases o <;> rfl
+
+/-- One faithful event from an invariant union-find: the invariant holds after it, no class
+splits, and the fusion it logs, if any, is one class after it. -/
+private theorem classes_replayEvent (s : BuilderReductionState F) (e : ReductionEvent F)
+    (hf : OutcomesFaithful s [e]) (hinv : UnionFind.Inv s.aux.wireState.unionFind) :
+    UnionFind.Inv (replayEvent s e).aux.wireState.unionFind ∧
+      (∀ v w, s.aux.wireState.unionFind.Same v w →
+        (replayEvent s e).aux.wireState.unionFind.Same v w) ∧
+      ∀ p ∈ fusions [e], (replayEvent s e).aux.wireState.unionFind.Same p.1 p.2 := by
+  cases e with
+  | alloc v ex =>
+    have h : (replayEvent s (.alloc v ex)).aux.wireState.unionFind =
+        (s.aux.wireState.unionFind.find s.nextVariable).2 := by
+      show ((createInternalVariable ex : PlonkBuilder F Variable) s).2.aux.wireState.unionFind = _
+      rw [createInternalVariable_apply]
+    rw [h]
+    exact ⟨UnionFind.find_inv hinv _, fun _ _ hvw => UnionFind.same_find_mono hinv hvw _,
+      fun _ hp => (List.not_mem_nil hp).elim⟩
+  | generic g =>
+    have h : (replayEvent s (.generic g)).aux.wireState.unionFind =
+        s.aux.wireState.unionFind := by
+      show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.wireState.unionFind = _
+      rw [addGenericPlonkConstraint_apply]
+      cases s.aux.queuedGenericGate <;> rfl
+    rw [h]
+    exact ⟨hinv, fun _ _ hvw => hvw, fun _ hp => (List.not_mem_nil hp).elim⟩
+  | equal c o =>
+    have ho : o = outcomeOf c s.aux.wireState.cachedConstants := hf.1
+    rw [replayEvent_equal s c ho]
+    cases o with
+    | merge l r =>
+      exact ⟨UnionFind.union_inv hinv l r, fun _ _ hvw => UnionFind.same_union_mono hinv hvw l r,
+        fun p hp => by
+          rw [List.mem_singleton.mp hp]
+          exact UnionFind.same_union_self hinv l r⟩
+    | cached l v k =>
+      exact ⟨UnionFind.union_inv hinv l v, fun _ _ hvw => UnionFind.same_union_mono hinv hvw l v,
+        fun p hp => by
+          rw [List.mem_singleton.mp hp]
+          exact UnionFind.same_union_self hinv l v⟩
+    | trivial => exact ⟨hinv, fun _ _ hvw => hvw, fun _ hp => (List.not_mem_nil hp).elim⟩
+    | row g =>
+      have h : (applyOutcome (.row g) s).aux.wireState.unionFind = s.aux.wireState.unionFind := by
+        show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.wireState.unionFind = _
+        rw [addGenericPlonkConstraint_apply]
+        cases s.aux.queuedGenericGate <;> rfl
+      rw [h]
+      exact ⟨hinv, fun _ _ hvw => hvw, fun _ hp => (List.not_mem_nil hp).elim⟩
+    | pinned v k g =>
+      have h : (applyOutcome (.pinned v k g) s).aux.wireState.unionFind =
+          s.aux.wireState.unionFind := by
+        show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.aux.wireState.unionFind = _
+        rw [addGenericPlonkConstraint_apply]
+        cases s.aux.queuedGenericGate <;> rfl
+      rw [h]
+      exact ⟨hinv, fun _ _ hvw => hvw, fun _ hp => (List.not_mem_nil hp).elim⟩
+
+/-- A faithful log from an invariant union-find: the invariant holds at the end, no class splits,
+and every fusion the log records is one class at the end. -/
+private theorem classes_replay {s : BuilderReductionState F} {es : List (ReductionEvent F)}
+    (hinv : UnionFind.Inv s.aux.wireState.unionFind) (hf : OutcomesFaithful s es) :
+    UnionFind.Inv (replay s es).aux.wireState.unionFind ∧
+      (∀ v w, s.aux.wireState.unionFind.Same v w →
+        (replay s es).aux.wireState.unionFind.Same v w) ∧
+      ∀ p ∈ fusions es, (replay s es).aux.wireState.unionFind.Same p.1 p.2 := by
+  induction es generalizing s with
+  | nil => exact ⟨hinv, fun _ _ h => h, fun _ h => (List.not_mem_nil h).elim⟩
+  | cons e es ih =>
+    obtain ⟨hf1, hf2⟩ := outcomesFaithful_cons hf
+    obtain ⟨hinv', hmono', hfus'⟩ := classes_replayEvent s e hf1 hinv
+    obtain ⟨ih1, ih2, ih3⟩ := ih hinv' hf2
+    refine ⟨ih1, fun v w h => ih2 v w (hmono' v w h), fun p hp => ?_⟩
+    rw [fusions_cons] at hp
+    rcases List.mem_append.mp hp with h | h
+    · exact ih2 p.1 p.2 (hfus' p h)
+    · exact ih3 p h
+
+/-- A faithful log replayed from an invariant union-find keeps the invariant. -/
+theorem inv_replay {s : BuilderReductionState F} {es : List (ReductionEvent F)}
+    (hinv : UnionFind.Inv s.aux.wireState.unionFind) (hf : OutcomesFaithful s es) :
+    UnionFind.Inv (replay s es).aux.wireState.unionFind :=
+  (classes_replay hinv hf).1
+
+/-- A faithful log never splits a class. -/
+theorem same_replay_mono {s : BuilderReductionState F} {es : List (ReductionEvent F)}
+    (hinv : UnionFind.Inv s.aux.wireState.unionFind) (hf : OutcomesFaithful s es) {v w : Variable}
+    (h : s.aux.wireState.unionFind.Same v w) : (replay s es).aux.wireState.unionFind.Same v w :=
+  (classes_replay hinv hf).2.1 v w h
+
+/-- Every fusion a faithful log records is one class once the log is replayed. -/
+theorem same_replay {s : BuilderReductionState F} {es : List (ReductionEvent F)}
+    (hinv : UnionFind.Inv s.aux.wireState.unionFind) (hf : OutcomesFaithful s es)
+    {p : Variable × Variable} (hp : p ∈ fusions es) :
+    (replay s es).aux.wireState.unionFind.Same p.1 p.2 :=
+  (classes_replay hinv hf).2.2 p hp
 
 /-! ## Erasure -/
 

@@ -32,6 +32,7 @@ import Snarky.Kimchi.Backend.Receipts
 import Snarky.Kimchi.Backend.Direct
 import Snarky.Kimchi.Backend.Wiring
 import Snarky.Kimchi.Backend.DirectChecks
+import Snarky.Kimchi.Backend.Wired
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -148,6 +149,14 @@ def roots : List Name :=
     `Snarky.Kimchi.equalsHolds_of_pinned,
     `Snarky.Kimchi.equalsHolds_of_row,
     `Snarky.Kimchi.equalsHolds_of_trivial,
+    `Snarky.Kimchi.mem_pinsOf,
+    `Snarky.Kimchi.inv_replay,
+    `Snarky.Kimchi.same_replay_mono,
+    `Snarky.Kimchi.same_replay,
+    `Snarky.Kimchi.directRoots_eq,
+    `Snarky.Kimchi.KimchiConstraint.Wired.Scoped,
+    `Snarky.Kimchi.fusion_root_eq,
+    `Snarky.Kimchi.pinned_of_cached,
     `Snarky.Kimchi.receipts_located,
     `Snarky.Kimchi.receipts_complete,
     `Snarky.Kimchi.genericValue_of_located,

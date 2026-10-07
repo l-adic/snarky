@@ -21,6 +21,8 @@ and the public rows.
 - `KimchiConstraint.Direct.Scoped`: the scoping condition on a source list and its public
   variables: every constraint direct, and every operand of an unwired column occurring once.
 - `IndexOf`: an index whose gate table is the fragment's actual lowering and assembly.
+- `lowering`, `directRows`, `directRoots`, `recover`: the recorded lowering, its rows and
+  roots, and the valuation read off labelled cells; the wired fragment reuses them.
 
 ## Main results
 
@@ -86,7 +88,7 @@ private def KimchiConstraint.directVars : KimchiConstraint F → List Variable
 
 /-- The operands of a direct complete addition in the unwired columns `7` to `10`: `sameX`,
 `s`, `infZ`, `x21Inv`. Empty for any other constraint. -/
-private def KimchiConstraint.unwiredVars : KimchiConstraint F → List Variable
+def KimchiConstraint.unwiredVars : KimchiConstraint F → List Variable
   | .addComplete c => (c.operands.toList.drop permCols).filterMap CVar.var?
   | _ => []
 
@@ -228,7 +230,7 @@ theorem steps_generic_of_direct {source : List (KimchiConstraint F)}
 /-! ## The lowering's rows -/
 
 /-- The fragment's recorded lowering from the initial auxiliary state. -/
-private abbrev lowering (source : List (KimchiConstraint F)) (nv : Variable) :
+abbrev lowering (source : List (KimchiConstraint F)) (nv : Variable) :
     RecordedGates F :=
   recordGates source nv initialAuxState
 
@@ -250,6 +252,12 @@ private theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars 
   rw [recordBuilt_erase] at h
   simp only [directGates, directBuilt, gateDataOf, makeGateData, directRows, directRoots, h]
   rfl
+
+/-- The roots the assembly wires through are the recorded lowering's union-find roots. -/
+theorem directRoots_eq (source : List (KimchiConstraint F)) (nv : Variable) :
+    directRoots source nv = UnionFind.rootOf (lowering source nv).aux.wireState.unionFind := by
+  have h := recordBuilt_erase (⟨(), nv, source⟩ : Built (KimchiConstraint F) Unit)
+  simp only [directRoots, directBuilt, ← h, recordBuilt]
 
 /-- The fragment's gate table has one row per row of the lowering. -/
 theorem length_directGates (source : List (KimchiConstraint F))
@@ -895,7 +903,7 @@ private def cellVal {n : ℕ} (wTab : Fin n → Fin wCols → F) (c : Nat × Nat
   if h : c.1 < n ∧ c.2 < wCols then wTab ⟨c.1, h.1⟩ ⟨c.2, h.2⟩ else 0
 
 /-- The value at a cell labelled by the variable, zero when none is. -/
-private noncomputable def recover (rows : List (KimchiRow F)) (val : Nat × Nat → F)
+noncomputable def recover (rows : List (KimchiRow F)) (val : Nat × Nat → F)
     (v : Variable) : F :=
   if h : ∃ c : Fin rows.length × Fin wCols, rows[c.1].vars[c.2] = some v then
     val ((Classical.choose h).1, (Classical.choose h).2)
