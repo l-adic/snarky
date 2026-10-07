@@ -1,4 +1,5 @@
 import Snarky.Kimchi.Backend.Wired
+import Snarky.Kimchi.Backend.WiredFixtures
 import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic.NormNum.Prime
 
@@ -71,23 +72,7 @@ open Snarky
 
 instance : Fact (Nat.Prime 113) := ⟨by norm_num⟩
 
-/-- The field: `16 ∣ 112`, with seven cosets of the sixteenth roots of unity. -/
-private abbrev K := ZMod 113
-
-/-- A complete addition with an affine first abscissa and a scaled second ordinate, its
-`inf` flag the merged variable. -/
-private def addition : AddComplete K :=
-  { p1 := ⟨.add (.var 3) (.var 13), .var 4⟩, p2 := ⟨.var 5, .scale 2 (.var 6)⟩,
-    p3 := ⟨.var 7, .var 8⟩, inf := .var 2, sameX := .var 9, s := .var 10, infZ := .var 11,
-    x21Inv := .var 12 }
-
-/-- A pin, a merge, the addition, a cache hit on the pin's constant, a Boolean on the merged
-variable. -/
-private def source : List (KimchiConstraint K) :=
-  [.basic (.equal (.var 0) (.const 5)), .basic (.equal (.var 1) (.var 2)),
-    .addComplete addition, .basic (.equal (.var 14) (.const 5)), .basic (.boolean (.var 2))]
-
-private def publicVars : List Variable := [0, 1]
+open WiredFixture
 
 /-- The prover's values: the pinned constant, the merged pair at `0`, the addition
 `(1, 1) + (2, 3) = (1, -1)` with slope `2`, the sum `1 + 0` at its intermediate `20`, the
@@ -162,27 +147,6 @@ theorem wired_example_holds :
     table wired_example_satisfies
 
 /-! ## Boundaries -/
-
-/-- The addition with a constant in an unwired slot. -/
-private def constSource : List (KimchiConstraint K) :=
-  [.basic (.equal (.var 0) (.const 5)), .basic (.equal (.var 1) (.var 2)),
-    .addComplete { addition with sameX := .const 1 }, .basic (.equal (.var 14) (.const 5)),
-    .basic (.boolean (.var 2))]
-
-/-- An unwired operand named again by an equality of two variables: a merge, which writes
-no cell. -/
-private def equalSource : List (KimchiConstraint K) :=
-  source ++ [.basic (.equal (.var 9) (.var 16))]
-
-/-- An unwired operand named again as a term of the sum. -/
-private def termSource : List (KimchiConstraint K) :=
-  [.basic (.equal (.var 0) (.const 5)), .basic (.equal (.var 1) (.var 2)),
-    .addComplete { addition with p1 := ⟨.add (.var 9) (.var 13), .var 4⟩ },
-    .basic (.equal (.var 14) (.const 5)), .basic (.boolean (.var 2))]
-
-/-- A source naming the counter's own variable. -/
-private def highSource : List (KimchiConstraint K) :=
-  source ++ [.basic (.boolean (.var 20))]
 
 /-- Out of scope: a constant in an unwired slot, an unwired operand named twice, in an
 equality that writes no cell or in a term of the sum, and a variable at the counter. The
@@ -265,17 +229,6 @@ theorem wired_rejections_index :
 
 /-! ## A challenge decomposition -/
 
-/-- A round from the initial accumulators, its eight crumbs fresh, its outputs the variables
-`8`, `9`, `10`. -/
-private def round1 : EndoScalarRound K :=
-  { n0 := .const 0, n8 := .var 8, a0 := .const 2, a8 := .var 9, b0 := .const 2, b8 := .var 10,
-    xs := #v[.var 0, .var 1, .var 2, .var 3, .var 4, .var 5, .var 6, .var 7] }
-
-/-- One round, its output `n` accumulator public. -/
-private def endoSource : List (KimchiConstraint K) := [.endoScalar [round1]]
-
-private def endoPublic : List Variable := [8]
-
 /-- The crumbs `1 2 3 0 1 2 3 1`, the accumulators they fold to from `0`, `2`, `2`, and the
 pinned registers at the allocations `11`, `12`, `13`. -/
 private def endoV : Valuation K := fun v =>
@@ -326,17 +279,6 @@ theorem endo_example_layout :
       endoRows.length = 3 ∧ gateRowOf endoSource endoPublic 11 0 (by decide) = 2 ∧
       classCells endoRoots endoRows 12 = [(1, 3), (2, 2), (2, 3)] := by
   decide +kernel
-
-/-- A second round threading the first's outputs into its accumulators, its crumbs fresh, its
-outputs `19`, `20`, `21`. -/
-private def round2 : EndoScalarRound K :=
-  { n0 := .var 8, n8 := .var 19, a0 := .var 9, a8 := .var 20, b0 := .var 10, b8 := .var 21,
-    xs := #v[.var 11, .var 12, .var 13, .var 14, .var 15, .var 16, .var 17, .var 18] }
-
-/-- Two rounds, the final `n` accumulator public. -/
-private def chainSource : List (KimchiConstraint K) := [.endoScalar [round1, round2]]
-
-private def chainPublic : List Variable := [19]
 
 /-- The first round as before, the second's crumbs `2 0 1 3 2 0 1 3` folding its outputs on,
 and the pinned registers at the allocations `22`, `23`, `24`. -/
@@ -392,16 +334,6 @@ theorem chain_example_layout :
 
 /-! ## Its boundaries -/
 
-/-- The chain with a crumb of the second round reused by a Boolean. -/
-private def reusedSource : List (KimchiConstraint K) :=
-  chainSource ++ [.basic (.boolean (.var 12))]
-
-/-- The second round with a crumb written as a sum. -/
-private def summedRound : EndoScalarRound K :=
-  { round2 with
-    xs := #v[.var 11, .var 12, .var 13, .add (.var 14) (.var 15), .var 15, .var 16, .var 17,
-      .var 18] }
-
 /-- A reused bare crumb keeps every constraint wired and breaks the scope; a summed crumb is
 not wired. -/
 theorem endo_rejections :
@@ -411,21 +343,6 @@ theorem endo_rejections :
   decide +kernel
 
 /-! ## A scalar multiplication -/
-
-/-- A scale round from the base `(0, 1)` and the accumulator `(2, 3)`, its register pinned
-to `0`, its middle accumulators `4` to `11`, its output register `12` and accumulator
-`(13, 14)`, its bits `15` to `19` and slopes `20` to `24`. -/
-private def scale1 : ScaleRound K :=
-  { acc0 := ⟨.var 2, .var 3⟩, acc1 := ⟨.var 4, .var 5⟩, acc2 := ⟨.var 6, .var 7⟩,
-    acc3 := ⟨.var 8, .var 9⟩, acc4 := ⟨.var 10, .var 11⟩, acc5 := ⟨.var 13, .var 14⟩,
-    bit0 := .var 15, bit1 := .var 16, bit2 := .var 17, bit3 := .var 18, bit4 := .var 19,
-    slope0 := .var 20, slope1 := .var 21, slope2 := .var 22, slope3 := .var 23,
-    slope4 := .var 24, nPrev := .const 0, nNext := .var 12, base := ⟨.var 0, .var 1⟩ }
-
-/-- One round, its output accumulator public. -/
-private def scaleSource : List (KimchiConstraint K) := [.varBaseMul [scale1]]
-
-private def scalePublic : List Variable := [13, 14]
 
 /-- The base `(3, 5)`, the accumulator `(7, 11)`, the bits `1 0 1 1 0`, and the accumulators,
 register and slopes the gate's builder derives, the pinned register at the allocation `25`. -/
@@ -478,21 +395,6 @@ theorem scale_example_layout :
       classCells scaleRoots scaleRows 25 = [(2, 4), (4, 0)] ∧
       classCells scaleRoots scaleRows 13 = [(0, 0), (3, 0)] := by
   decide +kernel
-
-/-- A second round threading the first's output accumulator and register into its inputs, its
-middle accumulators `25` to `32`, its output register `33` and accumulator `(34, 35)`, its
-bits `36` to `40` and slopes `41` to `45`. -/
-private def scale2 : ScaleRound K :=
-  { acc0 := ⟨.var 13, .var 14⟩, acc1 := ⟨.var 25, .var 26⟩, acc2 := ⟨.var 27, .var 28⟩,
-    acc3 := ⟨.var 29, .var 30⟩, acc4 := ⟨.var 31, .var 32⟩, acc5 := ⟨.var 34, .var 35⟩,
-    bit0 := .var 36, bit1 := .var 37, bit2 := .var 38, bit3 := .var 39, bit4 := .var 40,
-    slope0 := .var 41, slope1 := .var 42, slope2 := .var 43, slope3 := .var 44,
-    slope4 := .var 45, nPrev := .var 12, nNext := .var 33, base := ⟨.var 0, .var 1⟩ }
-
-/-- Two rounds, the final accumulator public. -/
-private def scaleChainSource : List (KimchiConstraint K) := [.varBaseMul [scale1, scale2]]
-
-private def scaleChainPublic : List Variable := [34, 35]
 
 /-- The first round as before, the second's bits `0 1 1 0 1` folding its outputs on, and the
 pinned register at the allocation `46`. -/
@@ -554,13 +456,6 @@ theorem scaleChain_example_layout :
 
 /-! ## Its boundaries -/
 
-/-- The one round with a slope reused by a Boolean. -/
-private def reusedScale : List (KimchiConstraint K) :=
-  scaleSource ++ [.basic (.boolean (.var 20))]
-
-/-- The one round with a middle accumulator's abscissa written as a sum. -/
-private def summedScale : ScaleRound K := { scale1 with acc1 := ⟨.add (.var 4) (.var 5), .var 5⟩ }
-
 /-- The one-round table with the second row's output abscissa raised by one. -/
 private def shiftedTable : Fin 16 → Fin wCols → K := fun i j =>
   if i.val = 3 ∧ j.val = 0 then tableOf scaleV scaleRows i j + 1 else tableOf scaleV scaleRows i j
@@ -575,31 +470,6 @@ theorem scale_rejections :
   decide +kernel
 
 /-! ## An endomorphism multiplication -/
-
-/-- A first round from the target `(0, 1)` and the accumulator `(2, 3)`, its register pinned
-to `0`, its inverse `4`, midpoint `(5, 6)`, slopes `7`, `8` and bits `9` to `12`; its unplaced
-output fields name the second round's inputs. -/
-private def emRound1 : EndoMulRound K :=
-  { t := ⟨.var 0, .var 1⟩, p := ⟨.var 2, .var 3⟩, r := ⟨.var 5, .var 6⟩, s := ⟨.var 13, .var 14⟩,
-    s1 := .var 7, s3 := .var 8, nAcc := .const 0, nAccNext := .var 15, bit0 := .var 9,
-    bit1 := .var 10, bit2 := .var 11, bit3 := .var 12, inv := .var 4 }
-
-/-- A second round from the same target, its accumulator `(13, 14)` and register `15` read as
-the first's outputs, its inverse `16`, midpoint `(17, 18)`, slopes `19`, `20` and bits `21` to
-`24`. -/
-private def emRound2 : EndoMulRound K :=
-  { t := ⟨.var 0, .var 1⟩, p := ⟨.var 13, .var 14⟩, r := ⟨.var 17, .var 18⟩,
-    s := ⟨.var 25, .var 26⟩, s1 := .var 19, s3 := .var 20, nAcc := .var 15, nAccNext := .var 27,
-    bit0 := .var 21, bit1 := .var 22, bit2 := .var 23, bit3 := .var 24, inv := .var 16 }
-
-/-- The two rounds at the coefficient `2`, the finals `(25, 26)` and `27`. -/
-private def emul : EndoMul K :=
-  { state := [emRound1, emRound2], s := ⟨.var 25, .var 26⟩, nAcc := .var 27, endo := 2 }
-
-/-- One multiplication, its finals public. -/
-private def endoMulSource : List (KimchiConstraint K) := [.endoMul emul]
-
-private def endoMulPublic : List Variable := [25, 26, 27]
 
 /-- The target `(3, 5)`, the accumulator `(7, 11)`, the bits `1 0 1 1` then `0 1 1 0`, and the
 inverses, midpoints, slopes, outputs and registers solving the gate at the coefficient `2`,
@@ -663,14 +533,6 @@ theorem endoMul_example_layout :
 
 /-! ## Its boundaries -/
 
-/-- The multiplication with a slope reused by a Boolean. -/
-private def reusedEndoMul : List (KimchiConstraint K) :=
-  endoMulSource ++ [.basic (.boolean (.var 7))]
-
-/-- The first round with its midpoint's abscissa written as a sum. -/
-private def summedEndoMul : EndoMul K :=
-  { emul with state := [{ emRound1 with r := ⟨.add (.var 5) (.var 6), .var 6⟩ }, emRound2] }
-
 /-- The table with the terminal row's output abscissa raised by one. -/
 private def shiftedEndoMulTable : Fin 16 → Fin wCols → K := fun i j =>
   if i.val = 5 ∧ j.val = 4 then tableOf endoMulV endoMulRows i j + 1
@@ -705,25 +567,6 @@ theorem endoMul_rejections_index :
 /-- A small matrix: the rows `1 2 3`, `4 5 6`, `7 8 10`. -/
 private def poseidonMds : Gate.Poseidon.Mds K :=
   { m00 := 1, m01 := 2, m02 := 3, m10 := 4, m11 := 5, m12 := 6, m20 := 7, m21 := 8, m22 := 10 }
-
-/-- Ten rounds' constants, distinct and nonzero across both windows. -/
-private def poseidonRc : List (K × K × K) :=
-  [(1, 2, 3), (4, 5, 6), (7, 8, 9), (10, 11, 12), (13, 14, 15), (16, 17, 18), (19, 20, 21),
-    (22, 23, 24), (25, 26, 27), (28, 29, 30)]
-
-/-- Eleven states, the input `(0, 1, const 0)` then the variables `2` to `31` three per state;
-the unwired positions of the first window are `3` to `10`, of the second `18` to `25`. -/
-private def pblock : PoseidonConstraint K :=
-  { mds := ((1, 2, 3), (4, 5, 6), (7, 8, 10)), rc := poseidonRc,
-    state := [(.var 0, .var 1, .const 0), (.var 2, .var 3, .var 4), (.var 5, .var 6, .var 7),
-      (.var 8, .var 9, .var 10), (.var 11, .var 12, .var 13), (.var 14, .var 15, .var 16),
-      (.var 17, .var 18, .var 19), (.var 20, .var 21, .var 22), (.var 23, .var 24, .var 25),
-      (.var 26, .var 27, .var 28), (.var 29, .var 30, .var 31)] }
-
-/-- One block, its output state public. -/
-private def poseidonSource : List (KimchiConstraint K) := [.poseidon pblock]
-
-private def poseidonPublic : List Variable := [29, 30, 31]
 
 /-- The input `(3, 5, 0)` and the ten states the round function derives at the matrix and
 constants, the pinned element at the allocation `32`. -/
@@ -785,15 +628,6 @@ theorem poseidon_example_layout :
 
 /-! ## Its boundaries -/
 
-/-- The block with an unwired state element reused by a Boolean. -/
-private def reusedPoseidon : List (KimchiConstraint K) :=
-  poseidonSource ++ [.basic (.boolean (.var 5))]
-
-/-- The block with the third state's first element written as a sum. -/
-private def summedPoseidon : PoseidonConstraint K :=
-  { pblock with state := pblock.state.take 2 ++ (.add (.var 5) (.var 6), .var 6, .var 7) ::
-      pblock.state.drop 3 }
-
 /-- The table with the terminal row's first cell raised by one. -/
 private def shiftedPoseidonTable : Fin 16 → Fin wCols → K := fun i j =>
   if i.val = 5 ∧ j.val = 0 then tableOf poseidonV poseidonRows i j + 1
@@ -850,16 +684,6 @@ theorem poseidon_rejections_index :
 
 /-! ## A padding row -/
 
-/-- A pin, then a padding row over the pinned variable, a bare variable, a sum, the pinned
-constant, a bare variable, its double and a bare variable, then a Boolean on the row's second
-operand. -/
-private def padSource : List (KimchiConstraint K) :=
-  [.basic (.equal (.var 0) (.const 5)),
-    .pad #v[.var 0, .var 1, .add (.var 1) (.var 2), .const 5, .var 3, .scale 2 (.var 3), .var 4],
-    .basic (.boolean (.var 1))]
-
-private def padPublic : List Variable := [0]
-
 /-- The pinned `5`, the Boolean `1`, and the padding row's intermediates: the sum `1 + 10` at
 the allocation `5`, the constant at `6`, the double `2 · 7` at `7`. -/
 private def padV : Valuation K := fun v => [5, 1, 10, 7, 9, 11, 5, 14].getD v 0
@@ -913,10 +737,6 @@ theorem pad_example_layout :
   decide +kernel
 
 /-! ## Its boundaries -/
-
-/-- The first lowering's source with a padding row naming the addition's unwired `sameX`. -/
-private def padReuse : List (KimchiConstraint K) :=
-  source ++ [.pad #v[.var 9, .var 0, .var 0, .var 0, .var 0, .var 0, .var 0]]
 
 /-- The table with the padding row's second cell, the Boolean's variable, set to `0`. -/
 private def padSplitTable : Fin 16 → Fin wCols → K := fun i j =>
