@@ -174,6 +174,8 @@ def roots : List Name :=
     `Snarky.Kimchi.direct_rejections_index,
     -- The union-find's class view.
     `Snarky.Kimchi.UnionFind.empty_inv,
+    `Snarky.Kimchi.UnionFind.find_inv,
+    `Snarky.Kimchi.UnionFind.same_find_mono,
     `Snarky.Kimchi.UnionFind.union_inv,
     `Snarky.Kimchi.UnionFind.same_union_self,
     `Snarky.Kimchi.UnionFind.same_union_mono,

@@ -19,9 +19,9 @@ check (`formal/scripts/check_cs.lean`).
 The class view, under which nothing outside this module reads `parent` or `rank`:
 
 - `Inv`: parents in range, rank strictly increasing along a non-root's parent pointer;
-  `empty_inv`, `union_inv`.
-- `Same`: two elements share a class; `same_union_self`, `same_union_mono`: a union joins
-  its arguments and never splits a class.
+  `empty_inv`, `find_inv`, `union_inv`.
+- `Same`: two elements share a class; `same_union_self`, `same_union_mono`, `same_find_mono`:
+  a union joins its arguments, and neither a union nor a `find` splits a class.
 - `rootOf_getD_eq`: the dense view agrees with `find`.
 -/
 
@@ -361,6 +361,20 @@ private theorem find_fst {uf : UnionFind} (h : Inv uf) (x : Nat) :
 /-- The empty structure keeps the invariant. -/
 theorem empty_inv : Inv empty :=
   ⟨rfl, fun _ h => absurd h (Nat.not_lt_zero _)⟩
+
+/-- A `find` keeps the invariant: it only grows the structure by singletons. -/
+theorem find_inv {uf : UnionFind} (h : Inv uf) (x : Nat) : Inv (uf.find x).2 :=
+  ensure_inv h x
+
+/-- A `find` never splits a class. -/
+theorem same_find_mono {uf : UnionFind} (h : Inv uf) {v w : Nat} (hvw : uf.Same v w) (x : Nat) :
+    (uf.find x).2.Same v w := by
+  unfold Same at hvw ⊢
+  rw [find_fst h, find_fst h] at hvw
+  rw [find_fst (find_inv h x), find_fst (find_inv h x)]
+  show rootLoop (uf.ensure x).parent.size v (uf.ensure x).parent =
+    rootLoop (uf.ensure x).parent.size w (uf.ensure x).parent
+  rw [rootLoop_ensure h x v, rootLoop_ensure h x w, hvw]
 
 private theorem size_set! (xs : Array Nat) (i a : Nat) : (xs.set! i a).size = xs.size := by
   simp [Array.set!]
