@@ -26,22 +26,26 @@ The two `none` conventions differ on purpose.
 - `reduceToVariable_reads`: when the recorded events hold, the pinned variable reads as the
   operand.
 - `boolean_of_reductionFacts`: when the recorded events hold, the Boolean holds.
-- `addComplete_read_eq`, `endoScalar_read_eq`: when the recorded events hold, each emitted
-  row read cell by cell is the gate's witness at the operands' values;
-  `addComplete_holds_of_reductionFacts`, `endoScalar_holds_of_reductionFacts` transport the
+- `addComplete_read_eq`, `endoScalar_read_eq`, `varBaseMul_read_eq`: when the recorded
+  events hold, each emitted row, or row pair, read cell by cell is the gate's witness at the
+  operands' values; `addComplete_holds_of_reductionFacts`,
+  `endoScalar_holds_of_reductionFacts`, `varBaseMul_holds_of_reductionFacts` transport the
   gate's predicate across it to the source constraint. `endoScalar_result_length`,
-  `endoScalar_kind`: a decomposition emits one `endoScalar` row per round.
+  `endoScalar_kind`, `varBaseMul_result_length`, `varBaseMul_kind`, `varBaseMul_rows_fst`,
+  `varBaseMul_rows_snd`: the rows a decomposition or a multiplication emits, per round.
 - `equalsHolds_of_merge`, `equalsHolds_of_cached`, `equalsHolds_of_pinned`,
   `equalsHolds_of_row`, `equalsHolds_of_trivial`: an equality holds once the fact its logged
   outcome names holds, a merge or cache hit by class, a pin or row by its emitted equation.
 - `basic_names`: the names of a `Basic` constraint's recorded reduction are its terms or its
   allocations.
-- `Placed`, `addComplete_placed`, `endoScalar_placed`: a gate's recorded reduction placed, its
-  names terms of placed operands that are not that bare variable, its rows matching
-  `KimchiConstraint.rowOperands` cell by cell (`CellOf`); the addition and the decomposition
-  are; `endoScalar_cell_some`: every operand cell of a decomposition row is labelled.
-- `basic_absentZero`, `addComplete_absentZero`, `endoScalar_absentZero`: every equation a
-  constraint's recorded reduction queues carries no coefficient on an absent cell.
+- `Placed`, `addComplete_placed`, `endoScalar_placed`, `varBaseMul_placed`: a gate's recorded
+  reduction placed, its names terms of placed operands that are not that bare variable, its
+  rows matching `KimchiConstraint.rowOperands` cell by cell (`CellOf`); `endoScalar_cell_some`,
+  `varBaseMul_cell_some_fst`, `varBaseMul_cell_some_snd`: every operand cell of an emitted
+  row is labelled.
+- `basic_absentZero`, `addComplete_absentZero`, `endoScalar_absentZero`,
+  `varBaseMul_absentZero`: every equation a constraint's recorded reduction queues carries no
+  coefficient on an absent cell.
 - `basic_of_reductionFacts`: when the recorded events hold, any `Basic` constraint holds.
 
 ## Implementation notes
@@ -735,6 +739,274 @@ theorem endoScalar_holds_of_reductionFacts (nv : Variable) (aux : AuxState F)
   rw [← endoScalar_read_eq nv aux rounds V h ⟨i, hi⟩]
   exact hg ⟨i, hi⟩
 
+omit [Field F] [DecidableEq F] in
+/-- A list flattened pairwise has twice the length. -/
+private theorem length_flatMap_pair {α β : Type} (f g : α → β) :
+    (l : List α) → (l.flatMap fun x => [f x, g x]).length = 2 * l.length
+  | [] => rfl
+  | x :: xs => by
+    rw [List.flatMap_cons, List.length_append, length_flatMap_pair f g xs]
+    simp only [List.length_cons, List.length_nil]
+    omega
+
+omit [Field F] [DecidableEq F] in
+/-- The even positions of a pairwise flattening are the first components. -/
+private theorem getElem_flatMap_pair_fst {α β : Type} (f g : α → β) :
+    (l : List α) → (k : Nat) → (hk : k < l.length) →
+      (l.flatMap fun x => [f x, g x])[2 * k]'(by rw [length_flatMap_pair]; omega) = f l[k]
+  | _ :: _, 0, _ => rfl
+  | x :: xs, k + 1, hk => by
+    show (f x :: g x :: xs.flatMap fun x => [f x, g x])[2 * k + 2]'(by
+      rw [List.length_cons, List.length_cons, length_flatMap_pair]
+      simp only [List.length_cons] at hk
+      omega) = f (xs[k]'(Nat.lt_of_succ_lt_succ hk))
+    simp only [List.getElem_cons_succ]
+    exact getElem_flatMap_pair_fst f g xs k (Nat.lt_of_succ_lt_succ hk)
+
+omit [Field F] [DecidableEq F] in
+/-- The odd positions of a pairwise flattening are the second components. -/
+private theorem getElem_flatMap_pair_snd {α β : Type} (f g : α → β) :
+    (l : List α) → (k : Nat) → (hk : k < l.length) →
+      (l.flatMap fun x => [f x, g x])[2 * k + 1]'(by rw [length_flatMap_pair]; omega) = g l[k]
+  | _ :: _, 0, _ => rfl
+  | x :: xs, k + 1, hk => by
+    show (f x :: g x :: xs.flatMap fun x => [f x, g x])[2 * k + 1 + 2]'(by
+      rw [List.length_cons, List.length_cons, length_flatMap_pair]
+      simp only [List.length_cons] at hk
+      omega) = g (xs[k]'(Nat.lt_of_succ_lt_succ hk))
+    simp only [List.getElem_cons_succ]
+    exact getElem_flatMap_pair_snd f g xs k (Nat.lt_of_succ_lt_succ hk)
+
+/-- The reading of one scale round: the emitted row pair read cell by cell is the gate's
+witness at the operands' values. -/
+private theorem records_scaleRound (r : ScaleRound F) :
+    Records (r.reduce : RecordingBuilder F (KimchiRow F × KimchiRow F)) fun pair es =>
+      ∀ V : Valuation F, ReductionFacts V es →
+        Kimchi.Lift.Gate.VarBaseMul.cellMap (rowValues V pair.1) (rowValues V pair.2) =
+          ScaleRound.read V r := by
+  unfold ScaleRound.reduce
+  refine records_bind (records_reduceToVariable _) fun a0x es0 h0 => ?_
+  refine records_bind (records_reduceToVariable _) fun a0y es1 h1 => ?_
+  refine records_bind (records_reduceToVariable _) fun a1x es2 h2 => ?_
+  refine records_bind (records_reduceToVariable _) fun a1y es3 h3 => ?_
+  refine records_bind (records_reduceToVariable _) fun a2x es4 h4 => ?_
+  refine records_bind (records_reduceToVariable _) fun a2y es5 h5 => ?_
+  refine records_bind (records_reduceToVariable _) fun a3x es6 h6 => ?_
+  refine records_bind (records_reduceToVariable _) fun a3y es7 h7 => ?_
+  refine records_bind (records_reduceToVariable _) fun a4x es8 h8 => ?_
+  refine records_bind (records_reduceToVariable _) fun a4y es9 h9 => ?_
+  refine records_bind (records_reduceToVariable _) fun a5x es10 h10 => ?_
+  refine records_bind (records_reduceToVariable _) fun a5y es11 h11 => ?_
+  refine records_bind (records_reduceToVariable _) fun b0 es12 h12 => ?_
+  refine records_bind (records_reduceToVariable _) fun b1 es13 h13 => ?_
+  refine records_bind (records_reduceToVariable _) fun b2 es14 h14 => ?_
+  refine records_bind (records_reduceToVariable _) fun b3 es15 h15 => ?_
+  refine records_bind (records_reduceToVariable _) fun b4 es16 h16 => ?_
+  refine records_bind (records_reduceToVariable _) fun s0 es17 h17 => ?_
+  refine records_bind (records_reduceToVariable _) fun s1 es18 h18 => ?_
+  refine records_bind (records_reduceToVariable _) fun s2 es19 h19 => ?_
+  refine records_bind (records_reduceToVariable _) fun s3 es20 h20 => ?_
+  refine records_bind (records_reduceToVariable _) fun s4 es21 h21 => ?_
+  refine records_bind (records_reduceToVariable _) fun np es22 h22 => ?_
+  refine records_bind (records_reduceToVariable _) fun nn es23 h23 => ?_
+  refine records_bind (records_reduceToVariable _) fun bx es24 h24 => ?_
+  refine records_bind (records_reduceToVariable _) fun by_ es25 h25 => ?_
+  refine records_pure _ ?_
+  intro V hV
+  obtain ⟨f0, hV⟩ := facts_append hV
+  obtain ⟨f1, hV⟩ := facts_append hV
+  obtain ⟨f2, hV⟩ := facts_append hV
+  obtain ⟨f3, hV⟩ := facts_append hV
+  obtain ⟨f4, hV⟩ := facts_append hV
+  obtain ⟨f5, hV⟩ := facts_append hV
+  obtain ⟨f6, hV⟩ := facts_append hV
+  obtain ⟨f7, hV⟩ := facts_append hV
+  obtain ⟨f8, hV⟩ := facts_append hV
+  obtain ⟨f9, hV⟩ := facts_append hV
+  obtain ⟨f10, hV⟩ := facts_append hV
+  obtain ⟨f11, hV⟩ := facts_append hV
+  obtain ⟨f12, hV⟩ := facts_append hV
+  obtain ⟨f13, hV⟩ := facts_append hV
+  obtain ⟨f14, hV⟩ := facts_append hV
+  obtain ⟨f15, hV⟩ := facts_append hV
+  obtain ⟨f16, hV⟩ := facts_append hV
+  obtain ⟨f17, hV⟩ := facts_append hV
+  obtain ⟨f18, hV⟩ := facts_append hV
+  obtain ⟨f19, hV⟩ := facts_append hV
+  obtain ⟨f20, hV⟩ := facts_append hV
+  obtain ⟨f21, hV⟩ := facts_append hV
+  obtain ⟨f22, hV⟩ := facts_append hV
+  obtain ⟨f23, hV⟩ := facts_append hV
+  obtain ⟨f24, hV⟩ := facts_append hV
+  obtain ⟨f25, -⟩ := facts_append hV
+  have e0 := h0 V f0
+  have e1 := h1 V f1
+  have e2 := h2 V f2
+  have e3 := h3 V f3
+  have e4 := h4 V f4
+  have e5 := h5 V f5
+  have e6 := h6 V f6
+  have e7 := h7 V f7
+  have e8 := h8 V f8
+  have e9 := h9 V f9
+  have e10 := h10 V f10
+  have e11 := h11 V f11
+  have e12 := h12 V f12
+  have e13 := h13 V f13
+  have e14 := h14 V f14
+  have e15 := h15 V f15
+  have e16 := h16 V f16
+  have e17 := h17 V f17
+  have e18 := h18 V f18
+  have e19 := h19 V f19
+  have e20 := h20 V f20
+  have e21 := h21 V f21
+  have e22 := h22 V f22
+  have e23 := h23 V f23
+  have e24 := h24 V f24
+  have e25 := h25 V f25
+  simp [Kimchi.Lift.Gate.VarBaseMul.cellMap, rowValues, ScaleRound.read, e0, e1, e2, e3, e4, e5,
+    e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21, e22, e23, e24,
+    e25]
+
+/-- One scale round emits a `varBaseMul` row first. -/
+private theorem records_scaleRound_kind (r : ScaleRound F) :
+    Records (r.reduce : RecordingBuilder F (KimchiRow F × KimchiRow F)) fun pair _ =>
+      pair.1.kind = .varBaseMul := by
+  unfold ScaleRound.reduce
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable _) fun _ _ _ => ?_
+  exact records_pure _ rfl
+
+/-- A multiplication emits one row pair per round, each led by a `varBaseMul` row. -/
+private theorem records_varBaseMul_shape :
+    (rounds : VarBaseMul F) →
+      Records (VarBaseMul.reduce rounds : RecordingBuilder F (List (KimchiRow F × KimchiRow F)))
+        fun pairs _ => pairs.length = rounds.length ∧
+          ∀ (i : Nat) (hi : i < pairs.length), pairs[i].1.kind = .varBaseMul
+  | [] => records_pure _ ⟨rfl, fun _ hi => absurd hi (Nat.not_lt_zero _)⟩
+  | r :: rs => by
+    unfold VarBaseMul.reduce
+    refine records_bind (records_scaleRound_kind r) fun pair es1 h1 => ?_
+    refine records_bind (records_varBaseMul_shape rs) fun rest es2 h2 => ?_
+    refine records_pure _ ⟨by simp [h2.1], fun i hi => ?_⟩
+    cases i with
+    | zero => exact h1
+    | succ k => exact h2.2 k (by simpa using hi)
+
+/-- The reading of a multiplication: round by round. -/
+private theorem records_varBaseMul :
+    (rounds : VarBaseMul F) →
+      Records (VarBaseMul.reduce rounds : RecordingBuilder F (List (KimchiRow F × KimchiRow F)))
+        fun pairs es => ∀ V : Valuation F, ReductionFacts V es →
+          ∀ (i : Nat) (hi : i < rounds.length) (hi' : i < pairs.length),
+            Kimchi.Lift.Gate.VarBaseMul.cellMap (rowValues V pairs[i].1)
+              (rowValues V pairs[i].2) = ScaleRound.read V rounds[i]
+  | [] => records_pure _ fun _ _ _ hi => absurd hi (Nat.not_lt_zero _)
+  | r :: rs => by
+    unfold VarBaseMul.reduce
+    refine records_bind (records_scaleRound r) fun pair es1 h1 => ?_
+    refine records_bind (records_varBaseMul rs) fun rest es2 h2 => ?_
+    refine records_pure _ fun V hV i hi hi' => ?_
+    obtain ⟨f1, hV⟩ := facts_append hV
+    obtain ⟨f2, -⟩ := facts_append hV
+    cases i with
+    | zero => exact h1 V f1
+    | succ k => exact h2 V f2 k (by simpa using hi) (by simpa using hi')
+
+/-- A multiplication's recorded reduction emits one row pair per round. -/
+theorem varBaseMul_result_length (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F) :
+    (recordReduction nv aux (VarBaseMul.reduce rounds)).result.length = rounds.length :=
+  (recordReduction_of_records (records_varBaseMul_shape rounds) nv aux).1
+
+/-- Every row pair a multiplication's recorded reduction emits is led by a `varBaseMul` row. -/
+theorem varBaseMul_kind (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
+    (i : Fin rounds.length) :
+    ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+      rw [varBaseMul_result_length]; exact i.isLt)).1.kind = .varBaseMul :=
+  (recordReduction_of_records (records_varBaseMul_shape rounds) nv aux).2 i.val _
+
+/-- A multiplication's emitted rows, the pairs flattened, number twice its rounds. -/
+theorem varBaseMul_rows_length (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F) :
+    ((recordReduction nv aux (VarBaseMul.reduce rounds)).result.flatMap
+      fun p => [p.1, p.2]).length = 2 * rounds.length := by
+  rw [length_flatMap_pair, varBaseMul_result_length]
+
+/-- A round's first row sits at the even position of the flattened rows. -/
+theorem varBaseMul_rows_fst (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
+    (i : Fin rounds.length) :
+    ((recordReduction nv aux (VarBaseMul.reduce rounds)).result.flatMap
+        fun p => [p.1, p.2])[2 * i.val]'(by rw [varBaseMul_rows_length]; omega) =
+      ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+        rw [varBaseMul_result_length]; exact i.isLt)).1 :=
+  getElem_flatMap_pair_fst _ _ _ i.val _
+
+/-- A round's second row sits at the odd position of the flattened rows. -/
+theorem varBaseMul_rows_snd (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
+    (i : Fin rounds.length) :
+    ((recordReduction nv aux (VarBaseMul.reduce rounds)).result.flatMap
+        fun p => [p.1, p.2])[2 * i.val + 1]'(by rw [varBaseMul_rows_length]; omega) =
+      ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+        rw [varBaseMul_result_length]; exact i.isLt)).2 :=
+  getElem_flatMap_pair_snd _ _ _ i.val _
+
+/-- When the recorded events hold at a valuation, each emitted row pair read cell by cell is
+the gate's witness at its round's operands' values. -/
+theorem varBaseMul_read_eq (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
+    (V : Valuation F)
+    (h : ReductionFacts V (recordReduction nv aux (VarBaseMul.reduce rounds)).events)
+    (i : Fin rounds.length) :
+    Kimchi.Lift.Gate.VarBaseMul.cellMap
+        (rowValues V ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+          rw [varBaseMul_result_length]; exact i.isLt)).1)
+        (rowValues V ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+          rw [varBaseMul_result_length]; exact i.isLt)).2) =
+      ScaleRound.read V rounds[i] :=
+  recordReduction_of_records (records_varBaseMul rounds) nv aux V h i.val i.isLt _
+
+/-- The gate's predicate on every emitted row pair, read at a valuation where the recorded
+events hold, is the source constraint's. -/
+theorem varBaseMul_holds_of_reductionFacts (nv : Variable) (aux : AuxState F)
+    (rounds : VarBaseMul F) (V : Valuation F)
+    (h : ReductionFacts V (recordReduction nv aux (VarBaseMul.reduce rounds)).events)
+    (hg : ∀ i : Fin rounds.length, Kimchi.Gate.VarBaseMul.Holds
+      (Kimchi.Lift.Gate.VarBaseMul.cellMap
+        (rowValues V ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+          rw [varBaseMul_result_length]; exact i.isLt)).1)
+        (rowValues V ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+          rw [varBaseMul_result_length]; exact i.isLt)).2))) :
+    KimchiConstraint.Holds V (.varBaseMul rounds) := by
+  show ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read V r)
+  intro r hr
+  obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hr
+  change Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read V rounds[(⟨i, hi⟩ : Fin rounds.length)])
+  rw [← varBaseMul_read_eq nv aux rounds V h ⟨i, hi⟩]
+  exact hg ⟨i, hi⟩
+
 end Reducers
 
 /-! ## Discharging an equality by its outcome -/
@@ -958,12 +1230,7 @@ def KimchiConstraint.rowOperandsList : KimchiConstraint F → List (Vector (Opti
   | .basic _ => []
   | .addComplete c => [cellsOf (c.operands.toList.map some)]
   | .poseidon c => Poseidon.rowOperandsList c.state
-  | .varBaseMul rounds => rounds.flatMap fun r =>
-    [cellsOf ([r.base.x, r.base.y, r.acc0.x, r.acc0.y, r.nPrev, r.nNext].map some ++
-        none :: [r.acc1.x, r.acc1.y, r.acc2.x, r.acc2.y, r.acc3.x, r.acc3.y, r.acc4.x,
-          r.acc4.y].map some),
-      cellsOf ([r.acc5.x, r.acc5.y, r.bit0, r.bit1, r.bit2, r.bit3, r.bit4, r.slope0,
-        r.slope1, r.slope2, r.slope3, r.slope4].map some)]
+  | .varBaseMul rounds => rounds.flatMap fun r => [cellsOf r.cellsA, cellsOf r.cellsB]
   | .endoScalar rounds => rounds.map fun r => cellsOf (r.operands.toList.map some)
   | .endoMul c =>
     (c.state.map fun r => cellsOf ([r.t.x, r.t.y, r.inv].map some ++
@@ -1833,6 +2100,267 @@ theorem endoScalar_cell_some (nv : Variable) (aux : AuxState F) (rounds : EndoSc
     exact h.elim
   | some w => exact ⟨w, rfl⟩
 
+/-- The walk of one scale round: every name is an allocation or a term of an operand that is
+not that bare variable, and the two rows' cells are the round's operands' variables cell by
+cell. -/
+private theorem records_scaleRound_names (r : ScaleRound F) :
+    Records (r.reduce : RecordingBuilder F (KimchiRow F × KimchiRow F)) fun pair es =>
+      (∀ e ∈ es, ∀ w ∈ e.names, w ∈ allocs es ∨
+        ∃ x, (some x ∈ r.cellsA ∨ some x ∈ r.cellsB) ∧ w ∈ x.termVars ∧ x ≠ .var w) ∧
+      (∀ j : Fin wCols, CellOf (allocs es) pair.1.vars[j] (cellsOf r.cellsA)[j]) ∧
+      ∀ j : Fin wCols, CellOf (allocs es) pair.2.vars[j] (cellsOf r.cellsB)[j] := by
+  unfold ScaleRound.reduce
+  refine records_bind (records_reduceToVariable_names _) fun a0x es0 h0 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a0y es1 h1 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a1x es2 h2 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a1y es3 h3 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a2x es4 h4 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a2y es5 h5 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a3x es6 h6 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a3y es7 h7 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a4x es8 h8 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a4y es9 h9 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a5x es10 h10 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun a5y es11 h11 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun b0 es12 h12 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun b1 es13 h13 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun b2 es14 h14 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun b3 es15 h15 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun b4 es16 h16 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun s0 es17 h17 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun s1 es18 h18 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun s2 es19 h19 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun s3 es20 h20 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun s4 es21 h21 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun np es22 h22 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun nn es23 h23 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun bx es24 h24 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun by_ es25 h25 => ?_
+  refine records_pure _ ?_
+  set A := allocs (es0 ++ (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ (es9 ++
+    (es10 ++ (es11 ++ (es12 ++ (es13 ++ (es14 ++ (es15 ++ (es16 ++ (es17 ++ (es18 ++ (es19 ++
+    (es20 ++ (es21 ++ (es22 ++ (es23 ++ (es24 ++ (es25 ++ [])))))))))))))))))))))))))) with hA
+  have h0' := operandNames_of h0 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h1' := operandNames_of h1 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h2' := operandNames_of h2 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h3' := operandNames_of h3 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h4' := operandNames_of h4 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h5' := operandNames_of h5 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h6' := operandNames_of h6 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h7' := operandNames_of h7 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h8' := operandNames_of h8 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h9' := operandNames_of h9 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h10' := operandNames_of h10 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h11' := operandNames_of h11 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h12' := operandNames_of h12 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h13' := operandNames_of h13 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h14' := operandNames_of h14 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h15' := operandNames_of h15 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h16' := operandNames_of h16 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h17' := operandNames_of h17 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h18' := operandNames_of h18 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h19' := operandNames_of h19 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h20' := operandNames_of h20 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h21' := operandNames_of h21 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h22' := operandNames_of h22 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h23' := operandNames_of h23 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h24' := operandNames_of h24 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h25' := operandNames_of h25 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have hcA : r.cellsA = [some r.base.x, some r.base.y, some r.acc0.x, some r.acc0.y, some r.nPrev,
+      some r.nNext, none, some r.acc1.x, some r.acc1.y, some r.acc2.x, some r.acc2.y,
+      some r.acc3.x, some r.acc3.y, some r.acc4.x, some r.acc4.y] := rfl
+  have hcB : r.cellsB = [some r.acc5.x, some r.acc5.y, some r.bit0, some r.bit1, some r.bit2,
+      some r.bit3, some r.bit4, some r.slope0, some r.slope1, some r.slope2, some r.slope3,
+      some r.slope4] := rfl
+  refine ⟨fun e he w hw => ?_, fun j => ?_, fun j => ?_⟩
+  · simp only [List.append_nil, List.mem_append] at he
+    rw [hcA, hcB]
+    rcases he with he | he | he | he | he | he | he | he | he | he | he | he | he | he | he | he |
+      he | he | he | he | he | he | he | he | he | he
+    · exact (h0'.1 e he w hw).imp_right fun h => ⟨r.acc0.x, Or.inl (by simp), h⟩
+    · exact (h1'.1 e he w hw).imp_right fun h => ⟨r.acc0.y, Or.inl (by simp), h⟩
+    · exact (h2'.1 e he w hw).imp_right fun h => ⟨r.acc1.x, Or.inl (by simp), h⟩
+    · exact (h3'.1 e he w hw).imp_right fun h => ⟨r.acc1.y, Or.inl (by simp), h⟩
+    · exact (h4'.1 e he w hw).imp_right fun h => ⟨r.acc2.x, Or.inl (by simp), h⟩
+    · exact (h5'.1 e he w hw).imp_right fun h => ⟨r.acc2.y, Or.inl (by simp), h⟩
+    · exact (h6'.1 e he w hw).imp_right fun h => ⟨r.acc3.x, Or.inl (by simp), h⟩
+    · exact (h7'.1 e he w hw).imp_right fun h => ⟨r.acc3.y, Or.inl (by simp), h⟩
+    · exact (h8'.1 e he w hw).imp_right fun h => ⟨r.acc4.x, Or.inl (by simp), h⟩
+    · exact (h9'.1 e he w hw).imp_right fun h => ⟨r.acc4.y, Or.inl (by simp), h⟩
+    · exact (h10'.1 e he w hw).imp_right fun h => ⟨r.acc5.x, Or.inr (by simp), h⟩
+    · exact (h11'.1 e he w hw).imp_right fun h => ⟨r.acc5.y, Or.inr (by simp), h⟩
+    · exact (h12'.1 e he w hw).imp_right fun h => ⟨r.bit0, Or.inr (by simp), h⟩
+    · exact (h13'.1 e he w hw).imp_right fun h => ⟨r.bit1, Or.inr (by simp), h⟩
+    · exact (h14'.1 e he w hw).imp_right fun h => ⟨r.bit2, Or.inr (by simp), h⟩
+    · exact (h15'.1 e he w hw).imp_right fun h => ⟨r.bit3, Or.inr (by simp), h⟩
+    · exact (h16'.1 e he w hw).imp_right fun h => ⟨r.bit4, Or.inr (by simp), h⟩
+    · exact (h17'.1 e he w hw).imp_right fun h => ⟨r.slope0, Or.inr (by simp), h⟩
+    · exact (h18'.1 e he w hw).imp_right fun h => ⟨r.slope1, Or.inr (by simp), h⟩
+    · exact (h19'.1 e he w hw).imp_right fun h => ⟨r.slope2, Or.inr (by simp), h⟩
+    · exact (h20'.1 e he w hw).imp_right fun h => ⟨r.slope3, Or.inr (by simp), h⟩
+    · exact (h21'.1 e he w hw).imp_right fun h => ⟨r.slope4, Or.inr (by simp), h⟩
+    · exact (h22'.1 e he w hw).imp_right fun h => ⟨r.nPrev, Or.inl (by simp), h⟩
+    · exact (h23'.1 e he w hw).imp_right fun h => ⟨r.nNext, Or.inl (by simp), h⟩
+    · exact (h24'.1 e he w hw).imp_right fun h => ⟨r.base.x, Or.inl (by simp), h⟩
+    · exact (h25'.1 e he w hw).imp_right fun h => ⟨r.base.y, Or.inl (by simp), h⟩
+  · rw [hcA]
+    fin_cases j
+    exacts [⟨h24'.2.1, h24'.2.2⟩, ⟨h25'.2.1, h25'.2.2⟩, ⟨h0'.2.1, h0'.2.2⟩, ⟨h1'.2.1, h1'.2.2⟩,
+      ⟨h22'.2.1, h22'.2.2⟩, ⟨h23'.2.1, h23'.2.2⟩, trivial, ⟨h2'.2.1, h2'.2.2⟩,
+      ⟨h3'.2.1, h3'.2.2⟩, ⟨h4'.2.1, h4'.2.2⟩, ⟨h5'.2.1, h5'.2.2⟩, ⟨h6'.2.1, h6'.2.2⟩,
+      ⟨h7'.2.1, h7'.2.2⟩, ⟨h8'.2.1, h8'.2.2⟩, ⟨h9'.2.1, h9'.2.2⟩]
+  · rw [hcB]
+    fin_cases j
+    exacts [⟨h10'.2.1, h10'.2.2⟩, ⟨h11'.2.1, h11'.2.2⟩, ⟨h12'.2.1, h12'.2.2⟩,
+      ⟨h13'.2.1, h13'.2.2⟩, ⟨h14'.2.1, h14'.2.2⟩, ⟨h15'.2.1, h15'.2.2⟩, ⟨h16'.2.1, h16'.2.2⟩,
+      ⟨h17'.2.1, h17'.2.2⟩, ⟨h18'.2.1, h18'.2.2⟩, ⟨h19'.2.1, h19'.2.2⟩, ⟨h20'.2.1, h20'.2.2⟩,
+      ⟨h21'.2.1, h21'.2.2⟩, trivial, trivial, trivial]
+
+/-- The walk of a multiplication: round by round, each row pair against its round's two
+rows. -/
+private theorem records_varBaseMul_names :
+    (rounds : VarBaseMul F) →
+      Records (VarBaseMul.reduce rounds : RecordingBuilder F (List (KimchiRow F × KimchiRow F)))
+        fun pairs es =>
+          (∀ e ∈ es, ∀ w ∈ e.names, w ∈ allocs es ∨ ∃ r ∈ rounds, ∃ x,
+            (some x ∈ r.cellsA ∨ some x ∈ r.cellsB) ∧ w ∈ x.termVars ∧ x ≠ .var w) ∧
+          ∀ (i : Nat) (hi : i < rounds.length) (hi' : i < pairs.length) (j : Fin wCols),
+            CellOf (allocs es) pairs[i].1.vars[j] (cellsOf rounds[i].cellsA)[j] ∧
+              CellOf (allocs es) pairs[i].2.vars[j] (cellsOf rounds[i].cellsB)[j]
+  | [] => records_pure _ ⟨fun _ h => (List.not_mem_nil h).elim,
+      fun _ hi => absurd hi (Nat.not_lt_zero _)⟩
+  | r :: rs => by
+    unfold VarBaseMul.reduce
+    refine records_bind (records_scaleRound_names r) fun pair es1 h1 => ?_
+    refine records_bind (records_varBaseMul_names rs) fun rest es2 h2 => ?_
+    refine records_pure _ ⟨fun e he w hw => ?_, fun i hi hi' j => ?_⟩
+    · simp only [List.append_nil, List.mem_append] at he
+      rcases he with he | he
+      · exact (h1.1 e he w hw).imp allocs_mono_left fun ⟨x, hx, h⟩ =>
+          ⟨r, List.mem_cons_self .., x, hx, h⟩
+      · exact (h2.1 e he w hw).imp (fun h => allocs_mono_right (allocs_mono_left h))
+          fun ⟨r', hr', x, hx, h⟩ => ⟨r', List.mem_cons_of_mem _ hr', x, hx, h⟩
+    · cases i with
+      | zero =>
+        exact ⟨cellOf_mono (fun u hu => allocs_mono_left hu) (h1.2.1 j),
+          cellOf_mono (fun u hu => allocs_mono_left hu) (h1.2.2 j)⟩
+      | succ k =>
+        obtain ⟨c1, c2⟩ := h2.2 k (by simpa using hi) (by simpa using hi') j
+        exact ⟨cellOf_mono (fun u hu => allocs_mono_right (allocs_mono_left hu)) c1,
+          cellOf_mono (fun u hu => allocs_mono_right (allocs_mono_left hu)) c2⟩
+
+/-- Each emitted scale row pair's cells are its round's two rows' operands' variables cell by
+cell. -/
+private theorem varBaseMul_cells (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
+    (i : Fin rounds.length) (j : Fin wCols) :
+    CellOf (allocs (recordReduction nv aux (VarBaseMul.reduce rounds)).events)
+        ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+          rw [varBaseMul_result_length]; exact i.isLt)).1.vars[j]
+        (cellsOf rounds[i].cellsA)[j] ∧
+      CellOf (allocs (recordReduction nv aux (VarBaseMul.reduce rounds)).events)
+        ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+          rw [varBaseMul_result_length]; exact i.isLt)).2.vars[j]
+        (cellsOf rounds[i].cellsB)[j] :=
+  (recordReduction_of_records (records_varBaseMul_names rounds) nv aux).2 i.val i.isLt _ j
+
+/-- Each emitted scale round's first row carries a variable in every cell but the seventh. -/
+theorem varBaseMul_cell_some_fst (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
+    (i : Fin rounds.length) (k : Fin wCols) (hk : k.val ≠ 6) :
+    ∃ w, ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+      rw [varBaseMul_result_length]; exact i.isLt)).1.vars[k] = some w := by
+  have h := (varBaseMul_cells nv aux rounds i k).1
+  have hsome : ∃ x, (cellsOf rounds[i].cellsA)[k] = some x := by
+    fin_cases k
+    all_goals first | exact ⟨_, rfl⟩ | exact absurd rfl hk
+  obtain ⟨x, hx⟩ := hsome
+  rw [hx] at h
+  cases hlab : ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+      rw [varBaseMul_result_length]; exact i.isLt)).1.vars[k] with
+  | none =>
+    rw [hlab] at h
+    exact h.elim
+  | some w => exact ⟨w, rfl⟩
+
+/-- Each emitted scale round's second row carries a variable in each of its twelve operand
+cells. -/
+theorem varBaseMul_cell_some_snd (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
+    (i : Fin rounds.length) (k : Fin wCols) (hk : k.val < 12) :
+    ∃ w, ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+      rw [varBaseMul_result_length]; exact i.isLt)).2.vars[k] = some w := by
+  have h := (varBaseMul_cells nv aux rounds i k).2
+  have hsome : ∃ x, (cellsOf rounds[i].cellsB)[k] = some x := by
+    fin_cases k
+    all_goals first | exact ⟨_, rfl⟩ | exact absurd hk (by decide)
+  obtain ⟨x, hx⟩ := hsome
+  rw [hx] at h
+  cases hlab : ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[i.val]'(by
+      rw [varBaseMul_result_length]; exact i.isLt)).2.vars[k] with
+  | none =>
+    rw [hlab] at h
+    exact h.elim
+  | some w => exact ⟨w, rfl⟩
+
+/-- A multiplication's recorded reduction is placed: its names are allocations or terms of
+its rounds' operands that are not that bare variable, and its rows' cells are the rounds'
+operands' variables cell by cell. -/
+theorem varBaseMul_placed (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F) :
+    Placed nv aux (.varBaseMul rounds) := by
+  obtain ⟨hn, hc⟩ := recordReduction_of_records (records_varBaseMul_names rounds) nv aux
+  refine ⟨fun e he w hw => (hn e he w hw).imp_right ?_, ?_, fun i j => ?_⟩
+  · rintro ⟨r, hr, x, hx, h⟩
+    refine ⟨x, ?_, h⟩
+    rcases hx with hx | hx
+    · exact mem_placedOperands (List.mem_flatMap.mpr ⟨r, hr, by simp⟩)
+        (mem_cellsOf (by simp [ScaleRound.cellsA]) hx)
+    · exact mem_placedOperands (List.mem_flatMap.mpr ⟨r, hr, by simp⟩)
+        (mem_cellsOf (by simp [ScaleRound.cellsB]) hx)
+  · show ((recordReduction nv aux (VarBaseMul.reduce rounds)).result.flatMap
+      fun p => [p.1, p.2]).length =
+        (rounds.flatMap fun r => [cellsOf r.cellsA, cellsOf r.cellsB]).length
+    rw [varBaseMul_rows_length, length_flatMap_pair]
+  · have hi : i.val < 2 * rounds.length := by
+      have h := i.isLt
+      simp only [KimchiConstraint.rowCount, KimchiConstraint.rowOperandsList,
+        length_flatMap_pair] at h
+      exact h
+    rcases Nat.even_or_odd' i.val with ⟨k, hk | hk⟩
+    · have hk' : k < rounds.length := by omega
+      have hrow : (KimchiConstraint.varBaseMul rounds).rowOperands[i] =
+          cellsOf rounds[k].cellsA := by
+        show (rounds.flatMap fun r => [cellsOf r.cellsA, cellsOf r.cellsB])[i.val] = _
+        rw [getElem_congr_idx hk]
+        exact getElem_flatMap_pair_fst _ _ rounds k hk'
+      rw [hrow]
+      have e : ((recordReduction nv aux (VarBaseMul.reduce rounds)).result.flatMap
+          fun p => [p.1, p.2])[i.val]'(by rw [varBaseMul_rows_length]; omega) =
+          ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[k]'(by
+            rw [varBaseMul_result_length]; exact hk')).1 := by
+        rw [getElem_congr_idx hk]
+        exact varBaseMul_rows_fst nv aux rounds ⟨k, hk'⟩
+      show CellOf _ (((recordReduction nv aux (VarBaseMul.reduce rounds)).result.flatMap
+        fun p : KimchiRow F × KimchiRow F => [p.1, p.2])[i.val]'(by
+          rw [varBaseMul_rows_length]; omega)).vars[j] _
+      rw [e]
+      exact (hc k hk' _ j).1
+    · have hk' : k < rounds.length := by omega
+      have hrow : (KimchiConstraint.varBaseMul rounds).rowOperands[i] =
+          cellsOf rounds[k].cellsB := by
+        show (rounds.flatMap fun r => [cellsOf r.cellsA, cellsOf r.cellsB])[i.val] = _
+        rw [getElem_congr_idx hk]
+        exact getElem_flatMap_pair_snd _ _ rounds k hk'
+      rw [hrow]
+      have e : ((recordReduction nv aux (VarBaseMul.reduce rounds)).result.flatMap
+          fun p => [p.1, p.2])[i.val]'(by rw [varBaseMul_rows_length]; omega) =
+          ((recordReduction nv aux (VarBaseMul.reduce rounds)).result[k]'(by
+            rw [varBaseMul_result_length]; exact hk')).2 := by
+        rw [getElem_congr_idx hk]
+        exact varBaseMul_rows_snd nv aux rounds ⟨k, hk'⟩
+      show CellOf _ (((recordReduction nv aux (VarBaseMul.reduce rounds)).result.flatMap
+        fun p : KimchiRow F × KimchiRow F => [p.1, p.2])[i.val]'(by
+          rw [varBaseMul_rows_length]; omega)).vars[j] _
+      rw [e]
+      exact (hc k hk' _ j).2
+
 /-! ## Absent cells carry no coefficient -/
 
 /-- Every equation a log queues carries no coefficient on an absent cell. -/
@@ -1958,6 +2486,49 @@ private theorem records_endoScalar_absent :
     records [records_endoScalarRound_absent r, records_endoScalar_absent rs]
     absent_leaf
 
+private theorem records_scaleRound_absent (r : ScaleRound F) :
+    Records (r.reduce : RecordingBuilder F (KimchiRow F × KimchiRow F)) fun _ es =>
+      AbsentAll es := by
+  unfold ScaleRound.reduce
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_bind (records_reduceToVariable_absent _) fun _ _ _ => ?_
+  refine records_pure _ ?_
+  absent_leaf
+
+private theorem records_varBaseMul_absent :
+    (rounds : VarBaseMul F) →
+      Records (VarBaseMul.reduce rounds : RecordingBuilder F (List (KimchiRow F × KimchiRow F)))
+        fun _ es => AbsentAll es
+  | [] => records_pure _ absentAll_nil
+  | r :: rs => by
+    unfold VarBaseMul.reduce
+    records [records_scaleRound_absent r, records_varBaseMul_absent rs]
+    absent_leaf
+
 private theorem records_basic_absent (b : Basic F) :
     Records (reduce b : RecordingBuilder F Unit) fun _ es => AbsentAll es := by
   cases b <;> simp only [reduce] <;> records [records_reduceAffineExpression_absent _]
@@ -1983,6 +2554,13 @@ theorem endoScalar_absentZero (nv : Variable) (aux : AuxState F) (rounds : EndoS
     ∀ e ∈ (recordReduction nv aux (EndoScalar.reduce rounds)).events, ∀ g, e.queued? = some g →
       g.AbsentZero :=
   recordReduction_of_records (records_endoScalar_absent rounds) nv aux
+
+/-- Every equation a multiplication's recorded reduction queues carries no coefficient on an
+absent cell. -/
+theorem varBaseMul_absentZero (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F) :
+    ∀ e ∈ (recordReduction nv aux (VarBaseMul.reduce rounds)).events, ∀ g, e.queued? = some g →
+      g.AbsentZero :=
+  recordReduction_of_records (records_varBaseMul_absent rounds) nv aux
 
 end NameWalks
 

@@ -26,13 +26,23 @@ first, and each threaded accumulator labels a wired cell in each, one class. The
 boundaries: a crumb reused by a Boolean keeps every constraint wired and breaks the scope; a
 crumb written as a sum is not wired.
 
+Then a scalar multiplication, whose rounds emit row pairs the index reads through the
+successor row, in two lowerings: one round from a base and an accumulator of distinct
+abscissae, its register pinned to `0` in the row flushed last and its output accumulator
+public; two rounds threading the output accumulator and register into the next round's
+inputs, the second pair at block offset two. Its boundaries: a slope reused by a Boolean keeps
+every constraint wired and breaks the scope; an accumulator written as a sum is not wired;
+and a table with the second row's output abscissa altered fails the gate at the first row,
+the successor read being real.
+
 ## Main results
 
-- `wired_example_holds`, `endo_example_holds`, `chain_example_holds`: the closed theorem on
-  the decided instances.
+- `wired_example_holds`, `endo_example_holds`, `chain_example_holds`, `scale_example_holds`,
+  `scaleChain_example_holds`: the closed theorem on the decided instances.
 - `wired_rejections_scope`, `wired_rejections_table`, `wired_rejections_index`,
-  `endo_rejections`: the boundaries, by premise.
-- `endo_example_layout`, `chain_example_layout`: the lowerings' logs, rows and classes.
+  `endo_rejections`, `scale_rejections`: the boundaries, by premise.
+- `endo_example_layout`, `chain_example_layout`, `scale_example_layout`,
+  `scaleChain_example_layout`: the lowerings' logs, rows and classes.
 -/
 
 open Kimchi
@@ -380,6 +390,170 @@ theorem endo_rejections :
     ((∀ c ∈ reusedSource, c.Wired) ∧
       ¬ KimchiConstraint.Wired.Scoped 22 reusedSource chainPublic) ∧
     ¬ (KimchiConstraint.endoScalar [round1, summedRound]).Wired := by
+  decide +kernel
+
+/-! ## A scalar multiplication -/
+
+/-- A scale round from the base `(0, 1)` and the accumulator `(2, 3)`, its register pinned
+to `0`, its middle accumulators `4` to `11`, its output register `12` and accumulator
+`(13, 14)`, its bits `15` to `19` and slopes `20` to `24`. -/
+private def scale1 : ScaleRound K :=
+  { acc0 := ⟨.var 2, .var 3⟩, acc1 := ⟨.var 4, .var 5⟩, acc2 := ⟨.var 6, .var 7⟩,
+    acc3 := ⟨.var 8, .var 9⟩, acc4 := ⟨.var 10, .var 11⟩, acc5 := ⟨.var 13, .var 14⟩,
+    bit0 := .var 15, bit1 := .var 16, bit2 := .var 17, bit3 := .var 18, bit4 := .var 19,
+    slope0 := .var 20, slope1 := .var 21, slope2 := .var 22, slope3 := .var 23,
+    slope4 := .var 24, nPrev := .const 0, nNext := .var 12, base := ⟨.var 0, .var 1⟩ }
+
+/-- One round, its output accumulator public. -/
+private def scaleSource : List (KimchiConstraint K) := [.varBaseMul [scale1]]
+
+private def scalePublic : List Variable := [13, 14]
+
+/-- The base `(3, 5)`, the accumulator `(7, 11)`, the bits `1 0 1 1 0`, and the accumulators,
+register and slopes the gate's builder derives, the pinned register at the allocation `25`. -/
+private def scaleV : Valuation K := fun v =>
+  [3, 5, 7, 11, 20, 82, 34, 104, 76, 94, 22, 30, 22, 24, 24, 1, 0, 1, 1, 0, 58, 45, 36, 91, 97,
+    0].getD v 0
+
+private def scaleRows : List (KimchiRow K) := directRows scaleSource scalePublic 25
+
+private def scaleRoots : Array Variable := directRoots scaleSource 25
+
+private def scaleIndex? : Option (Index K 16) :=
+  Index.build? (gatesOf scaleRoots scaleRows) scalePublic.length 3 40 0 mds shifts
+
+theorem scale_example_built : scaleIndex?.isSome := by
+  decide +kernel
+
+private def scaleIdx : Index K 16 := scaleIndex?.get scale_example_built
+
+private def scalePub : Fin scaleIdx.publicCount → K := fun i =>
+  scaleV (scalePublic.getD i.val 0)
+
+theorem scale_example_scoped : KimchiConstraint.Wired.Scoped 25 scaleSource scalePublic := by
+  decide +kernel
+
+theorem scale_example_indexOf : IndexOf scaleSource scalePublic 25 scaleIdx :=
+  indexOf_of_classTarget scaleSource scalePublic 25 scaleIdx (by decide +kernel)
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel)
+
+theorem scale_example_satisfies : scaleIdx.Satisfies scalePub (tableOf scaleV scaleRows) := by
+  decide +kernel
+
+/-- The closed theorem on the one-round instance. -/
+theorem scale_example_holds :
+    ∃ W : Valuation K, (∀ c ∈ scaleSource, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin scalePublic.length,
+        W scalePublic[i] = scalePub (scale_example_indexOf.publicIndex i) :=
+  KimchiConstraint.Wired.holds_of_satisfies scale_example_scoped scale_example_indexOf scalePub
+    (tableOf scaleV scaleRows) scale_example_satisfies
+
+/-- The one-round layout: the register's allocation is pinned in the row flushed after the
+pair, its two cells one class; the pair follows the two public rows, whose cells join the
+output accumulator's. -/
+theorem scale_example_layout :
+    (recordGates scaleSource 25 initialAuxState).steps.map (fun s => allocs s.events) = [[25]] ∧
+      (recordGates scaleSource 25 initialAuxState).steps.map (fun s => pinsOf s.events) =
+        [[(0, 25)]] ∧
+      scaleRows.length = 5 ∧ gateRowOf scaleSource scalePublic 25 0 (by decide) = 2 ∧
+      classCells scaleRoots scaleRows 25 = [(2, 4), (4, 0)] ∧
+      classCells scaleRoots scaleRows 13 = [(0, 0), (3, 0)] := by
+  decide +kernel
+
+/-- A second round threading the first's output accumulator and register into its inputs, its
+middle accumulators `25` to `32`, its output register `33` and accumulator `(34, 35)`, its
+bits `36` to `40` and slopes `41` to `45`. -/
+private def scale2 : ScaleRound K :=
+  { acc0 := ⟨.var 13, .var 14⟩, acc1 := ⟨.var 25, .var 26⟩, acc2 := ⟨.var 27, .var 28⟩,
+    acc3 := ⟨.var 29, .var 30⟩, acc4 := ⟨.var 31, .var 32⟩, acc5 := ⟨.var 34, .var 35⟩,
+    bit0 := .var 36, bit1 := .var 37, bit2 := .var 38, bit3 := .var 39, bit4 := .var 40,
+    slope0 := .var 41, slope1 := .var 42, slope2 := .var 43, slope3 := .var 44,
+    slope4 := .var 45, nPrev := .var 12, nNext := .var 33, base := ⟨.var 0, .var 1⟩ }
+
+/-- Two rounds, the final accumulator public. -/
+private def scaleChainSource : List (KimchiConstraint K) := [.varBaseMul [scale1, scale2]]
+
+private def scaleChainPublic : List Variable := [34, 35]
+
+/-- The first round as before, the second's bits `0 1 1 0 1` folding its outputs on, and the
+pinned register at the allocation `46`. -/
+private def scaleChainV : Valuation K := fun v =>
+  [3, 5, 7, 11, 20, 82, 34, 104, 76, 94, 22, 30, 22, 24, 24, 1, 0, 1, 1, 0, 58, 45, 36, 91, 97,
+    70, 55, 94, 15, 58, 18, 68, 52, 39, 6, 7, 0, 1, 1, 0, 1, 109, 107, 92, 60, 72, 0].getD v 0
+
+private def scaleChainRows : List (KimchiRow K) :=
+  directRows scaleChainSource scaleChainPublic 46
+
+private def scaleChainRoots : Array Variable := directRoots scaleChainSource 46
+
+private def scaleChainIndex? : Option (Index K 16) :=
+  Index.build? (gatesOf scaleChainRoots scaleChainRows) scaleChainPublic.length 3 40 0 mds
+    shifts
+
+theorem scaleChain_example_built : scaleChainIndex?.isSome := by
+  decide +kernel
+
+private def scaleChainIdx : Index K 16 := scaleChainIndex?.get scaleChain_example_built
+
+private def scaleChainPub : Fin scaleChainIdx.publicCount → K := fun i =>
+  scaleChainV (scaleChainPublic.getD i.val 0)
+
+theorem scaleChain_example_scoped :
+    KimchiConstraint.Wired.Scoped 46 scaleChainSource scaleChainPublic := by
+  decide +kernel
+
+theorem scaleChain_example_indexOf :
+    IndexOf scaleChainSource scaleChainPublic 46 scaleChainIdx :=
+  indexOf_of_classTarget scaleChainSource scaleChainPublic 46 scaleChainIdx (by decide +kernel)
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel)
+
+theorem scaleChain_example_satisfies :
+    scaleChainIdx.Satisfies scaleChainPub (tableOf scaleChainV scaleChainRows) := by
+  decide +kernel
+
+/-- The closed theorem on the two-round instance. -/
+theorem scaleChain_example_holds :
+    ∃ W : Valuation K, (∀ c ∈ scaleChainSource, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin scaleChainPublic.length,
+        W scaleChainPublic[i] = scaleChainPub (scaleChain_example_indexOf.publicIndex i) :=
+  KimchiConstraint.Wired.holds_of_satisfies scaleChain_example_scoped
+    scaleChain_example_indexOf scaleChainPub (tableOf scaleChainV scaleChainRows)
+    scaleChain_example_satisfies
+
+/-- The two-round layout: the second pair at the fifth and sixth rows, the base one class
+across both first rows, the threaded accumulator and register each one class across the pair
+boundary, the final accumulator's cells joining the public rows. -/
+theorem scaleChain_example_layout :
+    scaleChainRows.length = 7 ∧ gateRowOf scaleChainSource scaleChainPublic 46 0 (by decide) = 2 ∧
+      classCells scaleChainRoots scaleChainRows 0 = [(2, 0), (4, 0)] ∧
+      classCells scaleChainRoots scaleChainRows 12 = [(2, 5), (4, 4)] ∧
+      classCells scaleChainRoots scaleChainRows 13 = [(3, 0), (4, 2)] ∧
+      classCells scaleChainRoots scaleChainRows 14 = [(3, 1), (4, 3)] ∧
+      classCells scaleChainRoots scaleChainRows 34 = [(0, 0), (5, 0)] := by
+  decide +kernel
+
+/-! ## Its boundaries -/
+
+/-- The one round with a slope reused by a Boolean. -/
+private def reusedScale : List (KimchiConstraint K) :=
+  scaleSource ++ [.basic (.boolean (.var 20))]
+
+/-- The one round with a middle accumulator's abscissa written as a sum. -/
+private def summedScale : ScaleRound K := { scale1 with acc1 := ⟨.add (.var 4) (.var 5), .var 5⟩ }
+
+/-- The one-round table with the second row's output abscissa raised by one. -/
+private def shiftedTable : Fin 16 → Fin wCols → K := fun i j =>
+  if i.val = 3 ∧ j.val = 0 then tableOf scaleV scaleRows i j + 1 else tableOf scaleV scaleRows i j
+
+/-- A reused bare slope keeps every constraint wired and breaks the scope; a summed
+accumulator is not wired; the altered successor row fails the gate at the first row. -/
+theorem scale_rejections :
+    ((∀ c ∈ reusedScale, c.Wired) ∧
+      ¬ KimchiConstraint.Wired.Scoped 25 reusedScale scalePublic) ∧
+    ¬ (KimchiConstraint.varBaseMul [summedScale]).Wired ∧
+    ¬ Index.rowSatisfies scaleIdx scalePub shiftedTable ⟨2, by decide⟩ := by
   decide +kernel
 
 end Snarky.Kimchi

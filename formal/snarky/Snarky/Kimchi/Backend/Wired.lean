@@ -5,10 +5,11 @@ import Snarky.Kimchi.Backend.Direct
 
 The source constraints whose lowering wires: any `Basic` constraint over affine operands, and
 an admitted gate whose operands in the unwired columns are bare variables; the admitted gates
-are the complete addition and the challenge decomposition. Their reduction allocates
-intermediates, pins constants through the cache and fuses classes, so the union-find, the
-constant cache and the generic queue all move; the direct fragment is the special case in
-which none of them does.
+are the complete addition, the challenge decomposition and the scalar multiplication, whose
+row pairs the index reads through the successor row. Their reduction allocates intermediates,
+pins constants through the cache and fuses classes, so the union-find, the constant cache and
+the generic queue all move; the direct fragment is the special case in which none of them
+does.
 
 A satisfying table determines a valuation by class: a variable reads the value in any cell of
 its root's class, the permutation forcing those cells to agree. A fusion the log records, a
@@ -68,6 +69,7 @@ private def KimchiConstraint.Admitted : KimchiConstraint F → Prop
   | .basic _ => True
   | .addComplete _ => True
   | .endoScalar _ => True
+  | .varBaseMul _ => True
   | _ => False
 
 private instance KimchiConstraint.decidableAdmitted (c : KimchiConstraint F) :
@@ -481,7 +483,7 @@ private theorem placed_of_wired {c : KimchiConstraint F} (hw : c.Wired) (nv : Va
   | basic b => exact Or.inl ⟨b, rfl⟩
   | addComplete c => exact Or.inr (addComplete_placed nv aux c)
   | poseidon _ => exact hw.1.elim
-  | varBaseMul _ => exact hw.1.elim
+  | varBaseMul rounds => exact Or.inr (varBaseMul_placed nv aux rounds)
   | endoScalar rounds => exact Or.inr (endoScalar_placed nv aux rounds)
   | endoMul _ => exact hw.1.elim
   | pad _ => exact hw.1.elim
@@ -904,7 +906,7 @@ private theorem step_absentZero {source : List (KimchiConstraint F)} {nv : Varia
   | basic b => exact basic_absentZero nv' aux' b
   | addComplete c => exact addComplete_absentZero nv' aux' c
   | poseidon _ => exact hwd.1.elim
-  | varBaseMul _ => exact hwd.1.elim
+  | varBaseMul rounds => exact varBaseMul_absentZero nv' aux' rounds
   | endoScalar rounds => exact endoScalar_absentZero nv' aux' rounds
   | endoMul _ => exact hwd.1.elim
   | pad _ => exact hwd.1.elim
@@ -1029,6 +1031,249 @@ private theorem queued_holds {n : ℕ} [NeZero n] {source : List (KimchiConstrai
   rw [hrcg] at hz
   exact hz
 
+/-- The row after a row that is not the last: `Fin` succession is plain succession. -/
+private theorem fin_add_one_val {n : ℕ} [NeZero n] (r : ℕ) (h : r + 1 < n) :
+    ((⟨r, by omega⟩ : Fin n) + 1).val = r + 1 := by
+  rw [Fin.val_add, Fin.val_one', Nat.mod_eq_of_lt (by omega : 1 < n), Nat.mod_eq_of_lt h]
+
+/-- The addition's row satisfies the source constraint: its row located in the lowering, its
+cells read through the valuation. -/
+private theorem addComplete_branch {n : ℕ} [NeZero n] {source : List (KimchiConstraint F)}
+    {publicVars : List Variable} {nv : Variable} {idx : Index F n}
+    (hindex : IndexOf source publicVars nv idx) {pub : Fin idx.publicCount → F}
+    {wTab : Fin n → Fin wCols → F} (hsat : idx.Satisfies pub wTab)
+    (hrows_le : (directRows source publicVars nv).length ≤ n) {V : Valuation F}
+    (hval : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
+      (v : Variable), (directRows source publicVars nv)[r].vars[j] = some v →
+      wTab ⟨r, lt_of_lt_of_le hr hrows_le⟩ ⟨j, hj⟩ = V v)
+    {p : Nat} (hp : p < source.length) {nv' : Variable} {aux' : AuxState F}
+    (hstep : (lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸ hp) =
+      ⟨(recordReduction nv' aux' source[p].reduce).rows,
+        (recordReduction nv' aux' source[p].reduce).result,
+        (recordReduction nv' aux' source[p].reduce).events⟩)
+    {c : AddComplete F} (hsp : source[p] = .addComplete c)
+    (hf : ReductionFacts V (recordReduction nv' aux' c.reduce).events) :
+    KimchiConstraint.Holds V (.addComplete c) := by
+  have hi : p < (lowering source nv).steps.length :=
+    (length_steps source nv initialAuxState).symm ▸ hp
+  have hgr : (lowering source nv).steps[p].gateRows =
+      [(recordReduction nv' aux' c.reduce).result.row] := by
+    rw [hstep, hsp]
+    rfl
+  obtain ⟨hi', hrowi⟩ := List.getElem?_eq_some_iff.mp
+    (directRows_gateRow source publicVars nv p hp 0 (by simp [hgr]))
+  simp only [hgr, List.getElem_cons_zero] at hrowi
+  have hadd := hsat.1 ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩
+  have htyp' : (idx.gates ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩).typ =
+      .completeAdd := by
+    rw [hindex.typ_eq _ hi', hrowi]
+    rfl
+  unfold Index.rowSatisfies at hadd
+  rw [htyp'] at hadd
+  simp only at hadd
+  have hcells : ∀ k : Fin wCols, k.val < 11 →
+      wTab ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩ k =
+      rowValues V (recordReduction nv' aux' c.reduce).result.row k := by
+    intro k hk
+    obtain ⟨-, hlen, hcell⟩ := addComplete_placed nv' aux' c
+    have h := hcell ⟨0, Nat.one_pos⟩ k
+    have hop : ((KimchiConstraint.addComplete c).rowOperands[(⟨0, Nat.one_pos⟩ :
+        Fin (KimchiConstraint.addComplete c).rowCount)])[k] =
+        some (c.operands.toList[k.val]'(by simp [AddComplete.operands]; omega)) := by
+      show (cellsOf (c.operands.toList.map some))[k.val] = _
+      rw [cellsOf_getElem_lt _ _ (by simp [AddComplete.operands]; omega) k.isLt,
+        List.getElem_map]
+    rw [hop] at h
+    change CellOf _ (recordReduction nv' aux' c.reduce).result.row.vars[k] _ at h
+    cases hlab : (recordReduction nv' aux' c.reduce).result.row.vars[k] with
+    | none =>
+      rw [hlab] at h
+      exact h.elim
+    | some w =>
+      rw [hval _ k.val hi' k.isLt _ (by rw [hrowi]; exact hlab)]
+      simp only [rowValues, hlab, Option.map_some, Option.getD_some]
+  have hmap : Lift.Gate.AddComplete.cellMap
+      (wTab ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩) =
+      Lift.Gate.AddComplete.cellMap
+        (rowValues V (recordReduction nv' aux' c.reduce).result.row) := by
+    simp only [Lift.Gate.AddComplete.cellMap]
+    congr 1 <;> exact hcells _ (by decide)
+  refine addComplete_holds_of_reductionFacts nv' aux' c V hf ?_
+  rw [← hmap]
+  exact hadd
+
+/-- The decomposition's rows satisfy the source constraint: each round's row located in the
+lowering, its cells read through the valuation. -/
+private theorem endoScalar_branch {n : ℕ} [NeZero n] {source : List (KimchiConstraint F)}
+    {publicVars : List Variable} {nv : Variable} {idx : Index F n}
+    (hindex : IndexOf source publicVars nv idx) {pub : Fin idx.publicCount → F}
+    {wTab : Fin n → Fin wCols → F} (hsat : idx.Satisfies pub wTab)
+    (hrows_le : (directRows source publicVars nv).length ≤ n) {V : Valuation F}
+    (hval : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
+      (v : Variable), (directRows source publicVars nv)[r].vars[j] = some v →
+      wTab ⟨r, lt_of_lt_of_le hr hrows_le⟩ ⟨j, hj⟩ = V v)
+    {p : Nat} (hp : p < source.length) {nv' : Variable} {aux' : AuxState F}
+    (hstep : (lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸ hp) =
+      ⟨(recordReduction nv' aux' source[p].reduce).rows,
+        (recordReduction nv' aux' source[p].reduce).result,
+        (recordReduction nv' aux' source[p].reduce).events⟩)
+    {rounds : EndoScalar F} (hsp : source[p] = .endoScalar rounds)
+    (hf : ReductionFacts V (recordReduction nv' aux' (EndoScalar.reduce rounds)).events) :
+    KimchiConstraint.Holds V (.endoScalar rounds) := by
+  have hi : p < (lowering source nv).steps.length :=
+    (length_steps source nv initialAuxState).symm ▸ hp
+  have hgr : (lowering source nv).steps[p].gateRows =
+      (recordReduction nv' aux' (EndoScalar.reduce rounds)).result := by
+    rw [hstep, hsp]
+    rfl
+  have hlen := endoScalar_result_length nv' aux' rounds
+  refine endoScalar_holds_of_reductionFacts nv' aux' rounds V hf fun i => ?_
+  have hi0 : i.val < (recordReduction nv' aux' (EndoScalar.reduce rounds)).result.length := by
+    rw [hlen]
+    exact i.isLt
+  have hk : i.val < (lowering source nv).steps[p].gateRows.length := by
+    rw [hgr]
+    exact hi0
+  obtain ⟨hi', hrowi⟩ := List.getElem?_eq_some_iff.mp
+    (directRows_gateRow source publicVars nv p hp i.val hk)
+  have hrow : (directRows source publicVars nv)[gateRowOf source publicVars nv p hp + i.val] =
+      (recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0 := by
+    rw [hrowi]
+    exact List.getElem_of_eq hgr _
+  have hsat' := hsat.1 ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩
+  have htyp' : (idx.gates ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩).typ =
+      .endoScalar := by
+    rw [hindex.typ_eq _ hi', hrow]
+    exact endoScalar_kind nv' aux' rounds i
+  unfold Index.rowSatisfies at hsat'
+  rw [htyp'] at hsat'
+  simp only at hsat'
+  have hcells : ∀ k : Fin wCols, k.val < 14 →
+      wTab ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩ k =
+      rowValues V ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0)
+        k := by
+    intro k hk
+    obtain ⟨w, hlab⟩ := endoScalar_cell_some nv' aux' rounds i k hk
+    have hlab' :
+        ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0).vars[k] =
+          some w := hlab
+    rw [hval _ k.val hi' k.isLt _ (by rw [hrow]; exact hlab')]
+    simp only [rowValues, hlab', Option.map_some, Option.getD_some]
+  have hmap : Lift.Gate.EndoScalar.rowWitness wTab
+      ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩ =
+      Lift.Gate.EndoScalar.cellMap (rowValues V
+        ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0)) := by
+    simp only [Lift.Gate.EndoScalar.rowWitness, Lift.Gate.EndoScalar.cellMap]
+    rw [hcells 0 (by decide), hcells 1 (by decide), hcells 2 (by decide), hcells 3 (by decide),
+      hcells 4 (by decide), hcells 5 (by decide), hcells 6 (by decide), hcells 7 (by decide),
+      hcells 8 (by decide), hcells 9 (by decide), hcells 10 (by decide),
+      hcells 11 (by decide), hcells 12 (by decide), hcells 13 (by decide)]
+  rw [← hmap]
+  exact hsat'
+
+/-- The multiplication's row pairs satisfy the source constraint: each round's pair located in
+the lowering, the second row read as the first's successor. -/
+private theorem varBaseMul_branch {n : ℕ} [NeZero n] {source : List (KimchiConstraint F)}
+    {publicVars : List Variable} {nv : Variable} {idx : Index F n}
+    (hindex : IndexOf source publicVars nv idx) {pub : Fin idx.publicCount → F}
+    {wTab : Fin n → Fin wCols → F} (hsat : idx.Satisfies pub wTab)
+    (hrows_le : (directRows source publicVars nv).length ≤ n) {V : Valuation F}
+    (hval : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
+      (v : Variable), (directRows source publicVars nv)[r].vars[j] = some v →
+      wTab ⟨r, lt_of_lt_of_le hr hrows_le⟩ ⟨j, hj⟩ = V v)
+    {p : Nat} (hp : p < source.length) {nv' : Variable} {aux' : AuxState F}
+    (hstep : (lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸ hp) =
+      ⟨(recordReduction nv' aux' source[p].reduce).rows,
+        (recordReduction nv' aux' source[p].reduce).result,
+        (recordReduction nv' aux' source[p].reduce).events⟩)
+    {rounds : VarBaseMul F} (hsp : source[p] = .varBaseMul rounds)
+    (hf : ReductionFacts V (recordReduction nv' aux' (VarBaseMul.reduce rounds)).events) :
+    KimchiConstraint.Holds V (.varBaseMul rounds) := by
+  have hi : p < (lowering source nv).steps.length :=
+    (length_steps source nv initialAuxState).symm ▸ hp
+  have hgr : (lowering source nv).steps[p].gateRows =
+      (recordReduction nv' aux' (VarBaseMul.reduce rounds)).result.flatMap
+        fun pr => [pr.1, pr.2] := by
+    rw [hstep, hsp]
+    rfl
+  have hlen := varBaseMul_result_length nv' aux' rounds
+  refine varBaseMul_holds_of_reductionFacts nv' aux' rounds V hf fun i => ?_
+  have hi0 : i.val < (recordReduction nv' aux' (VarBaseMul.reduce rounds)).result.length := by
+    rw [hlen]
+    exact i.isLt
+  have hkA : 2 * i.val < (lowering source nv).steps[p].gateRows.length := by
+    rw [hgr, varBaseMul_rows_length]
+    omega
+  have hkB : 2 * i.val + 1 < (lowering source nv).steps[p].gateRows.length := by
+    rw [hgr, varBaseMul_rows_length]
+    omega
+  obtain ⟨hiA, hrowA⟩ := List.getElem?_eq_some_iff.mp
+    (directRows_gateRow source publicVars nv p hp (2 * i.val) hkA)
+  obtain ⟨hiB, hrowB⟩ := List.getElem?_eq_some_iff.mp
+    (directRows_gateRow source publicVars nv p hp (2 * i.val + 1) hkB)
+  have hrowA' : (directRows source publicVars nv)[gateRowOf source publicVars nv p hp +
+      2 * i.val] =
+      ((recordReduction nv' aux' (VarBaseMul.reduce rounds)).result[i.val]'hi0).1 := by
+    rw [hrowA, List.getElem_of_eq hgr _]
+    exact varBaseMul_rows_fst nv' aux' rounds i
+  have hrowB' : (directRows source publicVars nv)[gateRowOf source publicVars nv p hp +
+      (2 * i.val + 1)] =
+      ((recordReduction nv' aux' (VarBaseMul.reduce rounds)).result[i.val]'hi0).2 := by
+    rw [hrowB, List.getElem_of_eq hgr _]
+    exact varBaseMul_rows_snd nv' aux' rounds i
+  have hsat' := hsat.1 ⟨gateRowOf source publicVars nv p hp + 2 * i.val, by omega⟩
+  have htyp' : (idx.gates ⟨gateRowOf source publicVars nv p hp + 2 * i.val, by omega⟩).typ =
+      .varBaseMul := by
+    rw [hindex.typ_eq _ hiA, hrowA']
+    exact varBaseMul_kind nv' aux' rounds i
+  unfold Index.rowSatisfies at hsat'
+  rw [htyp'] at hsat'
+  simp only at hsat'
+  have hsucc : (⟨gateRowOf source publicVars nv p hp + 2 * i.val, by omega⟩ : Fin n) + 1 =
+      ⟨gateRowOf source publicVars nv p hp + (2 * i.val + 1), by omega⟩ :=
+    Fin.ext (fin_add_one_val _ (by omega))
+  have hcellsA : ∀ k : Fin wCols, k.val ≠ 6 →
+      wTab ⟨gateRowOf source publicVars nv p hp + 2 * i.val, by omega⟩ k =
+      rowValues V ((recordReduction nv' aux' (VarBaseMul.reduce rounds)).result[i.val]'hi0).1
+        k := by
+    intro k hk
+    obtain ⟨w, hlab⟩ := varBaseMul_cell_some_fst nv' aux' rounds i k hk
+    have hlab' :
+        ((recordReduction nv' aux' (VarBaseMul.reduce rounds)).result[i.val]'hi0).1.vars[k] =
+          some w := hlab
+    rw [hval _ k.val hiA k.isLt _ (by rw [hrowA']; exact hlab')]
+    simp only [rowValues, hlab', Option.map_some, Option.getD_some]
+  have hcellsB : ∀ k : Fin wCols, k.val < 12 →
+      wTab ⟨gateRowOf source publicVars nv p hp + (2 * i.val + 1), by omega⟩ k =
+      rowValues V ((recordReduction nv' aux' (VarBaseMul.reduce rounds)).result[i.val]'hi0).2
+        k := by
+    intro k hk
+    obtain ⟨w, hlab⟩ := varBaseMul_cell_some_snd nv' aux' rounds i k hk
+    have hlab' :
+        ((recordReduction nv' aux' (VarBaseMul.reduce rounds)).result[i.val]'hi0).2.vars[k] =
+          some w := hlab
+    rw [hval _ k.val hiB k.isLt _ (by rw [hrowB']; exact hlab')]
+    simp only [rowValues, hlab', Option.map_some, Option.getD_some]
+  have hmap : Lift.Gate.VarBaseMul.rowWitness wTab
+      ⟨gateRowOf source publicVars nv p hp + 2 * i.val, by omega⟩ =
+      Lift.Gate.VarBaseMul.cellMap
+        (rowValues V
+          ((recordReduction nv' aux' (VarBaseMul.reduce rounds)).result[i.val]'hi0).1)
+        (rowValues V
+          ((recordReduction nv' aux' (VarBaseMul.reduce rounds)).result[i.val]'hi0).2) := by
+    simp only [Lift.Gate.VarBaseMul.rowWitness, Lift.Gate.VarBaseMul.cellMap]
+    rw [hsucc, hcellsA 0 (by decide), hcellsA 1 (by decide), hcellsA 2 (by decide),
+      hcellsA 3 (by decide), hcellsA 4 (by decide), hcellsA 5 (by decide),
+      hcellsA 7 (by decide), hcellsA 8 (by decide), hcellsA 9 (by decide),
+      hcellsA 10 (by decide), hcellsA 11 (by decide), hcellsA 12 (by decide),
+      hcellsA 13 (by decide), hcellsA 14 (by decide), hcellsB 0 (by decide),
+      hcellsB 1 (by decide), hcellsB 2 (by decide), hcellsB 3 (by decide),
+      hcellsB 4 (by decide), hcellsB 5 (by decide), hcellsB 6 (by decide),
+      hcellsB 7 (by decide), hcellsB 8 (by decide), hcellsB 9 (by decide),
+      hcellsB 10 (by decide), hcellsB 11 (by decide)]
+  rw [← hmap]
+  exact hsat'
+
 /-- **The wired fragment's closed theorem.** Any table satisfying an index of the fragment's
 lowering yields a valuation satisfying every source constraint and reading the public
 variables as the public input. -/
@@ -1140,103 +1385,10 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
     rw [hsp] at hf hwd ⊢
     cases cp with
     | basic b => exact basic_of_reductionFacts nv' aux' b V hf
-    | addComplete c =>
-      have hgr : (lowering source nv).steps[p].gateRows =
-          [(recordReduction nv' aux' c.reduce).result.row] := by
-        rw [hstep, hsp]
-        rfl
-      obtain ⟨hi', hrowi⟩ := List.getElem?_eq_some_iff.mp
-        (directRows_gateRow source publicVars nv p hp 0 (by simp [hgr]))
-      simp only [hgr, List.getElem_cons_zero] at hrowi
-      have hadd := hsat.1 ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩
-      have htyp' : (idx.gates ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩).typ =
-          .completeAdd := by
-        rw [hindex.typ_eq _ hi', hrowi]
-        rfl
-      unfold Index.rowSatisfies at hadd
-      rw [htyp'] at hadd
-      simp only at hadd
-      have hcells : ∀ k : Fin wCols, k.val < 11 →
-          wTab ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩ k =
-          rowValues V (recordReduction nv' aux' c.reduce).result.row k := by
-        intro k hk
-        obtain ⟨-, hlen, hcell⟩ := addComplete_placed nv' aux' c
-        have h := hcell ⟨0, Nat.one_pos⟩ k
-        have hop : ((KimchiConstraint.addComplete c).rowOperands[(⟨0, Nat.one_pos⟩ :
-            Fin (KimchiConstraint.addComplete c).rowCount)])[k] =
-            some (c.operands.toList[k.val]'(by simp [AddComplete.operands]; omega)) := by
-          show (cellsOf (c.operands.toList.map some))[k.val] = _
-          rw [cellsOf_getElem_lt _ _ (by simp [AddComplete.operands]; omega) k.isLt,
-            List.getElem_map]
-        rw [hop] at h
-        change CellOf _ (recordReduction nv' aux' c.reduce).result.row.vars[k] _ at h
-        cases hlab : (recordReduction nv' aux' c.reduce).result.row.vars[k] with
-        | none =>
-          rw [hlab] at h
-          exact h.elim
-        | some w =>
-          rw [hval _ k.val hi' k.isLt _ (by rw [hrowi]; exact hlab)]
-          simp only [rowValues, hlab, Option.map_some, Option.getD_some]
-      have hmap : Lift.Gate.AddComplete.cellMap
-          (wTab ⟨gateRowOf source publicVars nv p hp + 0, by omega⟩) =
-          Lift.Gate.AddComplete.cellMap
-            (rowValues V (recordReduction nv' aux' c.reduce).result.row) := by
-        simp only [Lift.Gate.AddComplete.cellMap]
-        congr 1 <;> exact hcells _ (by decide)
-      refine addComplete_holds_of_reductionFacts nv' aux' c V hf ?_
-      rw [← hmap]
-      exact hadd
+    | addComplete c => exact addComplete_branch hindex hsat hrows_le hval hp hstep' hsp hf
     | poseidon _ => exact hwd.1.elim
-    | varBaseMul _ => exact hwd.1.elim
-    | endoScalar rounds =>
-      have hgr : (lowering source nv).steps[p].gateRows =
-          (recordReduction nv' aux' (EndoScalar.reduce rounds)).result := by
-        rw [hstep, hsp]
-        rfl
-      have hlen := endoScalar_result_length nv' aux' rounds
-      refine endoScalar_holds_of_reductionFacts nv' aux' rounds V hf fun i => ?_
-      have hi0 : i.val < (recordReduction nv' aux' (EndoScalar.reduce rounds)).result.length := by
-        rw [hlen]
-        exact i.isLt
-      have hk : i.val < (lowering source nv).steps[p].gateRows.length := by
-        rw [hgr]
-        exact hi0
-      obtain ⟨hi', hrowi⟩ := List.getElem?_eq_some_iff.mp
-        (directRows_gateRow source publicVars nv p hp i.val hk)
-      have hrow : (directRows source publicVars nv)[gateRowOf source publicVars nv p hp + i.val] =
-          (recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0 := by
-        rw [hrowi]
-        exact List.getElem_of_eq hgr _
-      have hsat' := hsat.1 ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩
-      have htyp' : (idx.gates ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩).typ =
-          .endoScalar := by
-        rw [hindex.typ_eq _ hi', hrow]
-        exact endoScalar_kind nv' aux' rounds i
-      unfold Index.rowSatisfies at hsat'
-      rw [htyp'] at hsat'
-      simp only at hsat'
-      have hcells : ∀ k : Fin wCols, k.val < 14 →
-          wTab ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩ k =
-          rowValues V ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0)
-            k := by
-        intro k hk
-        obtain ⟨w, hlab⟩ := endoScalar_cell_some nv' aux' rounds i k hk
-        have hlab' :
-            ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0).vars[k] =
-              some w := hlab
-        rw [hval _ k.val hi' k.isLt _ (by rw [hrow]; exact hlab')]
-        simp only [rowValues, hlab', Option.map_some, Option.getD_some]
-      have hmap : Lift.Gate.EndoScalar.rowWitness wTab
-          ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩ =
-          Lift.Gate.EndoScalar.cellMap (rowValues V
-            ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0)) := by
-        simp only [Lift.Gate.EndoScalar.rowWitness, Lift.Gate.EndoScalar.cellMap]
-        rw [hcells 0 (by decide), hcells 1 (by decide), hcells 2 (by decide), hcells 3 (by decide),
-          hcells 4 (by decide), hcells 5 (by decide), hcells 6 (by decide), hcells 7 (by decide),
-          hcells 8 (by decide), hcells 9 (by decide), hcells 10 (by decide),
-          hcells 11 (by decide), hcells 12 (by decide), hcells 13 (by decide)]
-      rw [← hmap]
-      exact hsat'
+    | varBaseMul rounds => exact varBaseMul_branch hindex hsat hrows_le hval hp hstep' hsp hf
+    | endoScalar rounds => exact endoScalar_branch hindex hsat hrows_le hval hp hstep' hsp hf
     | endoMul _ => exact hwd.1.elim
     | pad _ => exact hwd.1.elim
   · intro i

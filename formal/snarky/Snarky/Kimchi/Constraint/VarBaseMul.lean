@@ -76,6 +76,19 @@ instance : ToKimchiRows F (List (KimchiRow F × KimchiRow F)) where
 
 variable {F : Type} {m : Type → Type}
 
+/-- A round's first row in gate-column order: base, input accumulator, the two registers, an
+empty cell, then the four middle accumulators. -/
+def ScaleRound.cellsA (c : ScaleRound F) : List (Option (FVar F)) :=
+  [some c.base.x, some c.base.y, some c.acc0.x, some c.acc0.y, some c.nPrev, some c.nNext, none,
+    some c.acc1.x, some c.acc1.y, some c.acc2.x, some c.acc2.y, some c.acc3.x, some c.acc3.y,
+    some c.acc4.x, some c.acc4.y]
+
+/-- A round's second row in gate-column order: the output accumulator, the five bits, the five
+slopes. -/
+def ScaleRound.cellsB (c : ScaleRound F) : List (Option (FVar F)) :=
+  [some c.acc5.x, some c.acc5.y, some c.bit0, some c.bit1, some c.bit2, some c.bit3, some c.bit4,
+    some c.slope0, some c.slope1, some c.slope2, some c.slope3, some c.slope4]
+
 /-- Reduce one round to its `varBaseMul`/`zero` row pair: accumulators x-first, then bits,
 slopes, registers, base. -/
 def ScaleRound.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
