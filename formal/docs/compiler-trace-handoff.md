@@ -566,8 +566,9 @@ The general compiler theorem still needs:
 - EndoScalar and the multirow gates;
 - Poseidon MDS and EndoMul endomorphism-parameter agreement with the index;
 - whole-source-list and full index-construction correctness;
-- integration with `compileWith` and its public input/output layout, with `Wired.Scoped`
-  decided per application;
+- integration with `compileWith` and its public input/output layout, with an admissibility
+  predicate extending `Wired.Scoped`, which still excludes the remaining custom gates, decided
+  per application;
 - certified cross-language constraint-system correspondence and application imports.
 
 The trace solves provenance and organizes these proofs. It cannot supply equality

@@ -12,11 +12,11 @@ hitting the constant's cache, and a Boolean on the merged variable. The pin's ro
 the sum's intermediate, the scaled operand's row with the Boolean. The index is built from
 the lowering's rows and the class-based wiring by `Index.build?`, its table satisfies it, and
 the closed theorem is invoked on them. Then the boundaries, one for each premise: a source
-with a constant in an unwired slot, with an unwired operand named again by an equality or by
-a term of the sum, or naming a variable at the counter, is out of scope; a table splitting the
-merged class, or reading the intermediate away from its pinning cell, while every gate holds,
-does not satisfy the index; an index with the packed row's coefficients altered, or with the
-pinned variable's copy wire rerouted, is not the lowering's.
+with a constant in an unwired slot, with an unwired operand named again by a merge that
+writes no row, or by a term of the sum, or naming a variable at the counter, is out of scope;
+a table splitting the merged class, or reading the intermediate away from its pinning cell,
+while every gate holds, does not satisfy the index; an index with the packed row's
+coefficients altered, or with the pinned variable's copy wire rerouted, is not the lowering's.
 
 ## Main results
 
@@ -125,9 +125,10 @@ private def constSource : List (KimchiConstraint K) :=
     .addComplete { addition with sameX := .const 1 }, .basic (.equal (.var 14) (.const 5)),
     .basic (.boolean (.var 2))]
 
-/-- An unwired operand named again by an equality, which writes no cell. -/
+/-- An unwired operand named again by an equality of two variables: a merge, which writes
+no cell. -/
 private def equalSource : List (KimchiConstraint K) :=
-  source ++ [.basic (.equal (.var 9) (.const 0))]
+  source ++ [.basic (.equal (.var 9) (.var 16))]
 
 /-- An unwired operand named again as a term of the sum. -/
 private def termSource : List (KimchiConstraint K) :=
@@ -140,12 +141,25 @@ private def highSource : List (KimchiConstraint K) :=
   source ++ [.basic (.boolean (.var 20))]
 
 /-- Out of scope: a constant in an unwired slot, an unwired operand named twice, in an
-equality that writes no cell or in a term of the sum, and a variable at the counter. -/
+equality that writes no cell or in a term of the sum, and a variable at the counter. The
+equality is recorded as a merge and adds no row: the lowering's steps log, in order, the pin,
+the merge of the public-side pair, the addition's two allocations with the row it flushes,
+the cache hit, the Boolean with the row it flushes, and the merge of the unwired operand, over
+the same three body rows. -/
 theorem wired_rejections_scope :
     ¬ KimchiConstraint.Wired.Scoped 20 constSource publicVars ∧
     ¬ KimchiConstraint.Wired.Scoped 20 equalSource publicVars ∧
     ¬ KimchiConstraint.Wired.Scoped 20 termSource publicVars ∧
-    ¬ KimchiConstraint.Wired.Scoped 20 highSource publicVars := by
+    ¬ KimchiConstraint.Wired.Scoped 20 highSource publicVars ∧
+    ((recordGates equalSource 20 initialAuxState).steps.map (fun s => allocs s.events) =
+        [[], [], [20, 21], [], [], []] ∧
+      (recordGates equalSource 20 initialAuxState).steps.map (fun s => fusions s.events) =
+        [[], [(1, 2)], [], [(14, 0)], [], [(9, 16)]] ∧
+      (recordGates equalSource 20 initialAuxState).steps.map (fun s => pinsOf s.events) =
+        [[(5, 0)], [], [], [], [], []] ∧
+      (recordGates equalSource 20 initialAuxState).steps.map (fun s => s.rows.length) =
+        [0, 0, 1, 0, 1, 0] ∧
+      (recordGates equalSource 20 initialAuxState).allRows.length = 3) := by
   decide +kernel
 
 /-- The table with the Boolean's two cells, the merged variable's, set to `1` while its
