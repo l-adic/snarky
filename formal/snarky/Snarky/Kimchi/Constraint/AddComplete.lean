@@ -50,6 +50,10 @@ structure AddComplete (F : Type u) where
 
 variable {F : Type} {m : Type → Type}
 
+/-- The payload's eleven operands in gate-column order. -/
+def AddComplete.operands (c : AddComplete F) : Vector (FVar F) 11 :=
+  #v[c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y, c.inf, c.sameX, c.s, c.infZ, c.x21Inv]
+
 /-- Pin a point's operands, `y` before `x`; the order is emission order, hence fixture
 bytes. -/
 def reduceAffinePoint [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]

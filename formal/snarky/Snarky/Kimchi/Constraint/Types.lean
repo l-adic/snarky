@@ -50,6 +50,10 @@ structure GenericPlonkConstraint (F : Type u) where
   c : F
   deriving DecidableEq
 
+/-- The variables a generic constraint names: its present left, right and output cells. -/
+def GenericPlonkConstraint.vars {F : Type u} (g : GenericPlonkConstraint F) : List Variable :=
+  g.vl.toList ++ g.vr.toList ++ g.vo.toList
+
 
 /-- One emitted gate row. -/
 structure KimchiRow (F : Type u) where

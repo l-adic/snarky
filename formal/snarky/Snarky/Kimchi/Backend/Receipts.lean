@@ -37,6 +37,8 @@ through the class and the pinning row of the cached variable, which has a receip
 
 - `receipts_located`: every receipt is located in the lowering's rows.
 - `receipts_complete`: every queued equation has a receipt.
+- `replayEvent_queue`, `queued?_vars`: one faithful event's effect on the queue and the rows,
+  and a queued equation's cells among its event's names.
 - `genericValue_of_located`: at a located receipt, a generic row holding at cells agreeing
   with a valuation makes the constraint's equation hold, when its absent cells carry no
   coefficient.
@@ -117,6 +119,29 @@ def ReductionEvent.queued? : ReductionEvent F → Option (GenericPlonkConstraint
   | .equal _ (.row g) => some g
   | _ => none
 
+/-- A queued equation's cells are among its event's names. -/
+theorem queued?_vars {e : ReductionEvent F} {g : GenericPlonkConstraint F}
+    (h : e.queued? = some g) : ∀ w ∈ g.vars, w ∈ e.names := by
+  cases e with
+  | alloc _ _ => cases h
+  | generic g' =>
+    simp only [ReductionEvent.queued?, Option.some.injEq] at h
+    subst h
+    exact fun _ hw => hw
+  | equal c o =>
+    cases o with
+    | pinned v k g' =>
+      simp only [ReductionEvent.queued?, Option.some.injEq] at h
+      subst h
+      exact fun _ hw => List.mem_cons_of_mem _ hw
+    | row g' =>
+      simp only [ReductionEvent.queued?, Option.some.injEq] at h
+      subst h
+      exact fun _ hw => hw
+    | merge _ _ => cases h
+    | cached _ _ _ => cases h
+    | trivial => cases h
+
 /-- The walk's state: the next body row, the queued constraint, and the receipts so far. -/
 private structure Walk (F : Type) where
   row : Nat
@@ -162,17 +187,9 @@ private theorem located_packed (q g : GenericPlonkConstraint F) (body : List (Ki
     rfl
   exact ⟨⟨emitDoubleGateRow q g, hrow, rfl, rfl, rfl⟩, ⟨emitDoubleGateRow q g, hrow, rfl, rfl, rfl⟩⟩
 
-private theorem outcomesFaithful_cons {s : BuilderReductionState F} {e : ReductionEvent F}
-    {es : List (ReductionEvent F)} (h : OutcomesFaithful s (e :: es)) :
-    OutcomesFaithful s [e] ∧ OutcomesFaithful (replayEvent s e) es := by
-  cases e with
-  | alloc v ex => exact ⟨trivial, h⟩
-  | generic g => exact ⟨trivial, h⟩
-  | equal c o => exact ⟨⟨h.1, trivial⟩, h.2⟩
-
 /-- One faithful event's effect on the queue and the rows: an event queuing an equation batches
 it, any other leaves them. -/
-private theorem replayEvent_queue (s : BuilderReductionState F) (e : ReductionEvent F)
+theorem replayEvent_queue (s : BuilderReductionState F) (e : ReductionEvent F)
     (hf : OutcomesFaithful s [e]) :
     (replayEvent s e).aux.queuedGenericGate =
         (match e.queued? with

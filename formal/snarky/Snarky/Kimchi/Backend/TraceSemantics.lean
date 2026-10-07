@@ -16,6 +16,8 @@ The two `none` conventions differ on purpose.
 
 - `genericValue`, `equalsHolds`, `ReductionEvent.Holds`, `ReductionFacts`: the readings.
 - `rowValues`: a named row's cells at a valuation, an absent cell reading `0`.
+- `CVar.termVars`, `Basic.termVars`, `KimchiConstraint.termVars`: the variables an operand's
+  affine form, a `Basic` constraint and a constraint name, with repetition.
 
 ## Main results
 
@@ -28,6 +30,9 @@ The two `none` conventions differ on purpose.
 - `equalsHolds_of_merge`, `equalsHolds_of_cached`, `equalsHolds_of_pinned`,
   `equalsHolds_of_row`, `equalsHolds_of_trivial`: an equality holds once the fact its logged
   outcome names holds, a merge or cache hit by class, a pin or row by its emitted equation.
+- `basic_names`, `addComplete_names`: the names of a constraint's recorded reduction are terms
+  of its operands or its allocations; an addition's row cells are its operands' variables,
+  position by position, a bare operand's being itself.
 
 ## Implementation notes
 
@@ -123,8 +128,9 @@ private theorem records_addGenericPlonkConstraint (g : GenericPlonkConstraint F)
 
 private theorem records_addEqualsConstraint (c : EqualsConstraint F) :
     Records (addEqualsConstraint c : RecordingBuilder F Unit) fun _ es =>
-      ∃ o, es = [.equal c o] :=
-  fun s => ⟨[.equal c (outcomeOf c s.core.aux.wireState.cachedConstants)], rfl, _, rfl⟩
+      ∃ o, es = [.equal c o] ∧ ∀ w ∈ o.names, w ∈ c.vl.toList ++ c.vr.toList :=
+  fun s => ⟨[.equal c (outcomeOf c s.core.aux.wireState.cachedConstants)], rfl, _, rfl,
+    outcomeOf_names c _⟩
 
 end Operations
 
@@ -236,7 +242,7 @@ private theorem records_reduceToVariable (x : CVar F) :
       ∀ V : Valuation F, ReductionFacts V es → V v = x.val V := by
   unfold reduceToVariable
   records [records_reduceAffineExpression _]
-  · obtain ⟨o, rfl⟩ := ‹∃ o, _ = [ReductionEvent.equal _ o]›
+  · obtain ⟨o, rfl, -⟩ := ‹∃ o, _ = [ReductionEvent.equal _ o] ∧ _›
     subst_vars
     have hr := ‹∀ V : Valuation F, ReductionFacts V _ → reducedValue V _ = _›
     have hnone := ‹_ = none›
@@ -540,5 +546,632 @@ theorem equalsHolds_of_trivial {c : EqualsConstraint F} {cache : List (F × Vari
       · cases h
 
 end Outcomes
+
+/-! ## The names -/
+
+section Names
+
+variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+
+/-- The variables an operand's affine form names, in term order. -/
+def _root_.Snarky.CVar.termVars (x : CVar F) : List Variable :=
+  x.reduceToAffineExpression.terms.map Prod.fst
+
+/-- The variables a `Basic` constraint's operands name, with repetition. -/
+def _root_.Snarky.Basic.termVars : Basic F → List Variable
+  | .r1cs a b c => a.termVars ++ b.termVars ++ c.termVars
+  | .equal a b => a.termVars ++ b.termVars
+  | .square a b => a.termVars ++ b.termVars
+  | .boolean x => x.termVars
+
+/-- The variables a constraint's operands name, with repetition: every term of every affine
+operand. -/
+def KimchiConstraint.termVars : KimchiConstraint F → List Variable
+  | .basic b => b.termVars
+  | .addComplete c => c.operands.toList.flatMap CVar.termVars
+  | _ => []
+
+end Names
+
+section NameWalks
+
+variable [Field F] [DecidableEq F]
+
+/-- Every name of the log, and the result's variable if any, is one of the terms or an
+allocation of the log. -/
+private def NamesFrom (terms : List Variable) (r : Option Variable)
+    (es : List (ReductionEvent F)) : Prop :=
+  (∀ e ∈ es, ∀ w ∈ e.names, w ∈ terms ∨ w ∈ allocs es) ∧
+    ∀ v, r = some v → v ∈ terms ∨ v ∈ allocs es
+
+omit [Field F] [DecidableEq F] in
+private theorem namesFrom_nil {terms : List Variable} {r : Option Variable}
+    (hr : ∀ v, r = some v → v ∈ terms) : NamesFrom terms r ([] : List (ReductionEvent F)) :=
+  ⟨fun _ h => (List.not_mem_nil h).elim, fun v hv => Or.inl (hr v hv)⟩
+
+omit [Field F] [DecidableEq F] in
+private theorem namesFrom_mono {terms terms' : List Variable} {r : Option Variable}
+    {es : List (ReductionEvent F)} (h : NamesFrom terms r es) (ht : terms ⊆ terms') :
+    NamesFrom terms' r es :=
+  ⟨fun e he w hw => (h.1 e he w hw).imp_left (ht ·), fun v hv => (h.2 v hv).imp_left (ht ·)⟩
+
+omit [Field F] [DecidableEq F] in
+/-- A log followed by a tail whose names draw on the whole log's allocations. -/
+private theorem namesFrom_append {terms : List Variable} {r₁ r : Option Variable}
+    {es₁ es₂ : List (ReductionEvent F)} (h₁ : NamesFrom terms r₁ es₁)
+    (h₂ : ∀ e ∈ es₂, ∀ w ∈ e.names, w ∈ terms ∨ w ∈ allocs (es₁ ++ es₂))
+    (hr : ∀ v, r = some v → v ∈ terms ∨ v ∈ allocs (es₁ ++ es₂)) :
+    NamesFrom terms r (es₁ ++ es₂) := by
+  refine ⟨fun e he w hw => ?_, hr⟩
+  rcases List.mem_append.mp he with he | he
+  · rcases h₁.1 e he w hw with h | h
+    · exact Or.inl h
+    · exact Or.inr (by rw [allocs_append]; exact List.mem_append_left _ h)
+  · exact h₂ e he w hw
+
+omit [Field F] [DecidableEq F] in
+private theorem mem_allocs_cons {v : Variable} {ex : AffineExpression F}
+    {es : List (ReductionEvent F)} : v ∈ allocs (.alloc v ex :: es) := by
+  simp [allocs]
+
+omit [Field F] [DecidableEq F] in
+private theorem allocs_mono_left {es₁ es₂ : List (ReductionEvent F)} {v : Variable}
+    (h : v ∈ allocs es₁) : v ∈ allocs (es₁ ++ es₂) := by
+  rw [allocs_append]
+  exact List.mem_append_left _ h
+
+omit [Field F] [DecidableEq F] in
+private theorem allocs_mono_right {es₁ es₂ : List (ReductionEvent F)} {v : Variable}
+    (h : v ∈ allocs es₂) : v ∈ allocs (es₁ ++ es₂) := by
+  rw [allocs_append]
+  exact List.mem_append_right _ h
+
+private theorem records_completelyReduce_names (single : Variable × F) :
+    (l : List (Variable × F)) →
+      Records (completelyReduce single l : RecordingBuilder F (Variable × F)) fun r es =>
+        NamesFrom ((single :: l).map Prod.fst) (some r.1) es
+  | [] => records_pure _ (namesFrom_nil fun v hv => by simp_all)
+  | next :: rest => by
+    unfold completelyReduce
+    records [records_completelyReduce_names next rest]
+    subst_vars
+    have hr := ‹NamesFrom ((next :: rest).map Prod.fst) (some _) _›
+    refine namesFrom_append (namesFrom_mono hr (by simp)) ?_ ?_
+    · intro e he w hw
+      simp only [List.append_nil, List.mem_append, List.mem_singleton] at he
+      rcases he with rfl | rfl
+      · simp only [ReductionEvent.names, List.mem_singleton] at hw
+        subst hw
+        exact Or.inr (allocs_mono_right mem_allocs_cons)
+      · simp only [ReductionEvent.names, GenericPlonkConstraint.vars, Option.toList_some,
+          List.mem_append, List.mem_singleton] at hw
+        rcases hw with (rfl | rfl) | rfl
+        · exact Or.inl (by simp)
+        · rcases hr.2 _ rfl with h | h
+          · exact Or.inl (List.mem_cons_of_mem _ h)
+          · exact Or.inr (allocs_mono_left h)
+        · exact Or.inr (allocs_mono_right mem_allocs_cons)
+    · intro v hv
+      simp only [Option.some.injEq] at hv
+      subst hv
+      exact Or.inr (allocs_mono_right mem_allocs_cons)
+
+/-- The walk of an affine form: its names are its terms or its allocations, and a single unit
+term with no constant is handed back as is, with no event. -/
+private theorem records_reduceAffineExpression_names (ae : AffineExpression F) :
+    Records (reduceAffineExpression ae : RecordingBuilder F (Option Variable × F)) fun r es =>
+      NamesFrom (ae.terms.map Prod.fst) r.1 es ∧
+        ∀ w, ae.terms = [(w, 1)] → ae.constant = none → es = [] ∧ r = (some w, 1) := by
+  unfold reduceAffineExpression
+  records [records_completelyReduce_names _ _]
+  · refine ⟨namesFrom_nil fun v hv => (by simp at hv), fun w hw _ => (by simp_all)⟩
+  · refine ⟨namesFrom_nil fun v hv => (by simp_all), fun w => ?_⟩
+    have hterms := ‹ae.terms = [_]›
+    intro hw _
+    rw [hterms] at hw
+    simp only [List.cons.injEq, and_true] at hw
+    subst hw
+    exact ⟨rfl, rfl⟩
+  · refine ⟨namesFrom_nil fun v hv => (by simp_all), fun w hw hc => (by simp_all)⟩
+  · subst_vars
+    refine ⟨⟨fun e he w hw => ?_, fun v hv => ?_⟩, fun w hw hc => (by simp_all)⟩
+    · simp only [List.append_nil, List.mem_append, List.mem_singleton] at he
+      rcases he with rfl | rfl
+      · simp only [ReductionEvent.names, List.mem_singleton] at hw
+        subst hw
+        exact Or.inr mem_allocs_cons
+      · simp only [ReductionEvent.names, GenericPlonkConstraint.vars, Option.toList_some,
+          Option.toList_none, List.append_nil, List.mem_append,
+          List.mem_singleton] at hw
+        rcases hw with rfl | rfl
+        · exact Or.inl (by simp_all)
+        · exact Or.inr mem_allocs_cons
+    · simp only [Option.some.injEq] at hv
+      subst hv
+      exact Or.inr mem_allocs_cons
+  · subst_vars
+    have hr := ‹NamesFrom ((_ :: _).map Prod.fst) (some _) _›
+    refine ⟨?_, fun w hw hc => (by simp_all)⟩
+    refine namesFrom_append (namesFrom_mono hr (by simp_all)) ?_ ?_
+    · intro e he w hw
+      simp only [List.append_nil, List.mem_append, List.mem_singleton] at he
+      rcases he with rfl | rfl
+      · simp only [ReductionEvent.names, List.mem_singleton] at hw
+        subst hw
+        exact Or.inr (allocs_mono_right mem_allocs_cons)
+      · simp only [ReductionEvent.names, GenericPlonkConstraint.vars, Option.toList_some,
+          List.mem_append, List.mem_singleton] at hw
+        rcases hw with (rfl | rfl) | rfl
+        · exact Or.inl (by simp_all)
+        · rcases hr.2 _ rfl with h | h
+          · exact Or.inl (by simp_all)
+          · exact Or.inr (allocs_mono_left h)
+        · exact Or.inr (allocs_mono_right mem_allocs_cons)
+    · intro v hv
+      simp only [Option.some.injEq] at hv
+      subst hv
+      exact Or.inr (allocs_mono_right mem_allocs_cons)
+
+/-- The walk of an operand: its names and its variable are its terms or its allocations, and a
+bare variable is handed back as is, with no event. -/
+private theorem records_reduceToVariable_names (x : CVar F) :
+    Records (reduceToVariable x : RecordingBuilder F Variable) fun v es =>
+      NamesFrom x.termVars (some v) es ∧ ∀ w, x = .var w → es = [] ∧ v = w := by
+  unfold reduceToVariable
+  records [records_reduceAffineExpression_names _]
+  · obtain ⟨o, rfl, ho⟩ := ‹∃ o, _ = [ReductionEvent.equal _ o] ∧ _›
+    subst_vars
+    obtain ⟨hr, hbare⟩ := ‹NamesFrom _ _ _ ∧ _›
+    refine ⟨?_, fun w hw => ?_⟩
+    · refine namesFrom_append hr ?_ ?_
+      · intro e he w hw
+        simp only [List.append_nil, List.mem_append, List.mem_singleton] at he
+        rcases he with rfl | rfl
+        · simp only [ReductionEvent.names, List.mem_singleton] at hw
+          subst hw
+          exact Or.inr (allocs_mono_right mem_allocs_cons)
+        · simp only [ReductionEvent.names] at hw
+          have := ho w hw
+          simp only [Option.toList_some, Option.toList_none, List.append_nil,
+            List.mem_singleton] at this
+          subst this
+          exact Or.inr (allocs_mono_right mem_allocs_cons)
+      · intro v hv
+        simp only [Option.some.injEq] at hv
+        subst hv
+        exact Or.inr (allocs_mono_right mem_allocs_cons)
+    · subst hw
+      obtain ⟨-, h⟩ := hbare w rfl rfl
+      simp_all
+  · obtain ⟨hr, hbare⟩ := ‹NamesFrom _ _ _ ∧ _›
+    refine ⟨?_, fun w hw => ?_⟩
+    · rw [List.append_nil]
+      exact ⟨hr.1, fun v hv => by
+        simp only [Option.some.injEq] at hv
+        subst hv
+        exact hr.2 _ ‹_ = some _›⟩
+    · subst hw
+      obtain ⟨h1, h2⟩ := hbare w rfl rfl
+      simp_all
+  · obtain ⟨hr, hbare⟩ := ‹NamesFrom _ _ _ ∧ _›
+    subst_vars
+    refine ⟨?_, fun w hw => ?_⟩
+    · refine namesFrom_append hr ?_ ?_
+      · intro e he w hw
+        simp only [List.append_nil, List.mem_append, List.mem_singleton] at he
+        rcases he with rfl | rfl
+        · simp only [ReductionEvent.names, List.mem_singleton] at hw
+          subst hw
+          exact Or.inr (allocs_mono_right mem_allocs_cons)
+        · simp only [ReductionEvent.names, GenericPlonkConstraint.vars, Option.toList_some,
+            Option.toList_none, List.append_nil, List.mem_append, List.mem_singleton] at hw
+          rcases hw with rfl | rfl
+          · rcases hr.2 _ ‹_ = some _› with h | h
+            · exact Or.inl h
+            · exact Or.inr (allocs_mono_left h)
+          · exact Or.inr (allocs_mono_right mem_allocs_cons)
+      · intro v hv
+        simp only [Option.some.injEq] at hv
+        subst hv
+        exact Or.inr (allocs_mono_right mem_allocs_cons)
+    · subst hw
+      obtain ⟨h1, h2⟩ := hbare w rfl rfl
+      simp_all
+
+
+omit [Field F] [DecidableEq F] in
+/-- Three walked logs, then a tail naming only what they allocated or the ambient terms. -/
+private theorem names_seq3 {T : List Variable} {r₁ r₂ r₃ : Option Variable}
+    {es₁ es₂ es₃ es₄ : List (ReductionEvent F)} (h₁ : NamesFrom T r₁ es₁)
+    (h₂ : NamesFrom T r₂ es₂) (h₃ : NamesFrom T r₃ es₃)
+    (h₄ : ∀ e ∈ es₄, ∀ w ∈ e.names, w ∈ T ∨ w ∈ allocs (es₁ ++ (es₂ ++ es₃))) :
+    ∀ e ∈ es₁ ++ (es₂ ++ (es₃ ++ es₄)), ∀ w ∈ e.names,
+      w ∈ T ∨ w ∈ allocs (es₁ ++ (es₂ ++ (es₃ ++ es₄))) := by
+  intro e he w hw
+  simp only [List.mem_append] at he
+  simp only [allocs_append, List.mem_append]
+  rcases he with he | he | he | he
+  · have := h₁.1 e he w hw
+    tauto
+  · have := h₂.1 e he w hw
+    tauto
+  · have := h₃.1 e he w hw
+    tauto
+  · have := h₄ e he w hw
+    simp only [allocs_append, List.mem_append] at this
+    tauto
+
+omit [Field F] [DecidableEq F] in
+/-- Two walked logs, then a tail naming only what they allocated or the ambient terms. -/
+private theorem names_seq2 {T : List Variable} {r₁ r₂ : Option Variable}
+    {es₁ es₂ es₃ : List (ReductionEvent F)} (h₁ : NamesFrom T r₁ es₁) (h₂ : NamesFrom T r₂ es₂)
+    (h₃ : ∀ e ∈ es₃, ∀ w ∈ e.names, w ∈ T ∨ w ∈ allocs (es₁ ++ es₂)) :
+    ∀ e ∈ es₁ ++ (es₂ ++ es₃), ∀ w ∈ e.names, w ∈ T ∨ w ∈ allocs (es₁ ++ (es₂ ++ es₃)) := by
+  intro e he w hw
+  simp only [List.mem_append] at he
+  simp only [allocs_append, List.mem_append]
+  rcases he with he | he | he
+  · have := h₁.1 e he w hw
+    tauto
+  · have := h₂.1 e he w hw
+    tauto
+  · have := h₃ e he w hw
+    simp only [allocs_append, List.mem_append] at this
+    tauto
+
+omit [Field F] [DecidableEq F] in
+/-- One walked log, then a tail naming only what it allocated or the ambient terms. -/
+private theorem names_seq1 {T : List Variable} {r₁ : Option Variable}
+    {es₁ es₂ : List (ReductionEvent F)} (h₁ : NamesFrom T r₁ es₁)
+    (h₂ : ∀ e ∈ es₂, ∀ w ∈ e.names, w ∈ T ∨ w ∈ allocs es₁) :
+    ∀ e ∈ es₁ ++ es₂, ∀ w ∈ e.names, w ∈ T ∨ w ∈ allocs (es₁ ++ es₂) := by
+  intro e he w hw
+  simp only [List.mem_append] at he
+  simp only [allocs_append, List.mem_append]
+  rcases he with he | he
+  · have := h₁.1 e he w hw
+    tauto
+  · have := h₂ e he w hw
+    tauto
+
+omit [Field F] [DecidableEq F] in
+private theorem names_generic_of {T A : List Variable} {g : GenericPlonkConstraint F}
+    (hg : ∀ w ∈ g.vars, w ∈ T ∨ w ∈ A) :
+    ∀ e ∈ [ReductionEvent.generic g], ∀ w ∈ e.names, w ∈ T ∨ w ∈ A := by
+  intro e he w hw
+  rw [List.mem_singleton] at he
+  subst he
+  exact hg w hw
+
+omit [Field F] [DecidableEq F] in
+private theorem names_nil {T A : List Variable} :
+    ∀ e ∈ ([] : List (ReductionEvent F)), ∀ w ∈ e.names, w ∈ T ∨ w ∈ A :=
+  fun _ h => (List.not_mem_nil h).elim
+
+/-- The walk of a `Basic` constraint: its names are its terms or its allocations. -/
+private theorem records_basic_names (b : Basic F) :
+    Records (reduce b : RecordingBuilder F Unit) fun _ es =>
+      ∀ e ∈ es, ∀ w ∈ e.names, w ∈ b.termVars ∨ w ∈ allocs es := by
+  cases b with
+  | r1cs a b c =>
+    simp only [reduce]
+    refine records_bind (records_reduceAffineExpression_names _) fun l esl hl => ?_
+    refine records_bind (records_reduceAffineExpression_names _) fun r esr hr => ?_
+    refine records_bind (records_reduceAffineExpression_names _) fun o eso ho => ?_
+    have sa : a.termVars ⊆ (Basic.r1cs a b c).termVars :=
+      (List.subset_append_left _ _).trans (List.subset_append_left _ _)
+    have sb : b.termVars ⊆ (Basic.r1cs a b c).termVars :=
+      (List.subset_append_right _ _).trans (List.subset_append_left _ _)
+    have sc : c.termVars ⊆ (Basic.r1cs a b c).termVars := List.subset_append_right _ _
+    have ha := namesFrom_mono hl.1 sa
+    have hb := namesFrom_mono hr.1 sb
+    have hc := namesFrom_mono ho.1 sc
+    have la : ∀ v, l.1 = some v → v ∈ (Basic.r1cs a b c).termVars ∨
+        v ∈ allocs (esl ++ (esr ++ eso)) :=
+      fun v hv => (hl.1.2 v hv).imp (sa ·) allocs_mono_left
+    have lb : ∀ v, r.1 = some v → v ∈ (Basic.r1cs a b c).termVars ∨
+        v ∈ allocs (esl ++ (esr ++ eso)) :=
+      fun v hv => (hr.1.2 v hv).imp (sb ·) fun h => allocs_mono_right (allocs_mono_left h)
+    have lc : ∀ v, o.1 = some v → v ∈ (Basic.r1cs a b c).termVars ∨
+        v ∈ allocs (esl ++ (esr ++ eso)) :=
+      fun v hv => (ho.1.2 v hv).imp (sc ·) fun h => allocs_mono_right (allocs_mono_right h)
+    split
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+      subst h
+      refine names_seq3 ha hb hc (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, List.mem_append,
+        List.mem_singleton] at hw
+      rcases hw with (rfl | rfl) | rfl
+      · exact la _ ‹_›
+      · exact lb _ ‹_›
+      · exact lc _ ‹_›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+      subst h
+      refine names_seq3 ha hb hc (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.append_nil, List.mem_append, List.mem_singleton] at hw
+      rcases hw with rfl | rfl
+      · exact la _ ‹_›
+      · exact lb _ ‹_›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+      subst h
+      refine names_seq3 ha hb hc (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.append_nil, List.mem_append, List.mem_singleton] at hw
+      rcases hw with rfl | rfl
+      · exact la _ ‹_›
+      · exact lc _ ‹_›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+      subst h
+      refine names_seq3 ha hb hc (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.nil_append, List.mem_append, List.mem_singleton] at hw
+      rcases hw with rfl | rfl
+      · exact lb _ ‹_›
+      · exact lc _ ‹_›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+      subst h
+      refine names_seq3 ha hb hc (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.append_nil, List.mem_singleton] at hw
+      subst hw
+      exact la _ ‹_›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+      subst h
+      refine names_seq3 ha hb hc (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.append_nil, List.nil_append, List.mem_singleton] at hw
+      subst hw
+      exact lb _ ‹_›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+      subst h
+      refine names_seq3 ha hb hc (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.append_nil, List.nil_append, List.mem_singleton] at hw
+      subst hw
+      exact lc _ ‹_›
+    · split
+      · exact records_pure _ (names_seq3 ha hb hc names_nil)
+      · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+        subst h
+        exact names_seq3 ha hb hc (names_generic_of fun w hw => by
+          simp [GenericPlonkConstraint.vars] at hw)
+  | equal a b =>
+    simp only [reduce]
+    refine records_bind (records_reduceAffineExpression_names _) fun l esl hl => ?_
+    refine records_bind (records_reduceAffineExpression_names _) fun r esr hr => ?_
+    have sa : a.termVars ⊆ (Basic.equal a b).termVars := List.subset_append_left _ _
+    have sb : b.termVars ⊆ (Basic.equal a b).termVars := List.subset_append_right _ _
+    refine records_mono (records_addEqualsConstraint _) fun _ es₃ h => ?_
+    obtain ⟨o, rfl, ho⟩ := h
+    refine names_seq2 (namesFrom_mono hl.1 sa) (namesFrom_mono hr.1 sb) fun e he w hw => ?_
+    rw [List.mem_singleton] at he
+    subst he
+    have hm := ho w hw
+    simp only [List.mem_append, Option.mem_toList] at hm
+    rcases hm with hm | hm
+    · exact (hl.1.2 w hm).imp (sa ·) allocs_mono_left
+    · exact (hr.1.2 w hm).imp (sb ·) allocs_mono_right
+  | square a b =>
+    simp only [reduce]
+    refine records_bind (records_reduceAffineExpression_names _) fun x esx hx => ?_
+    refine records_bind (records_reduceAffineExpression_names _) fun y esy hy => ?_
+    have sa : a.termVars ⊆ (Basic.square a b).termVars := List.subset_append_left _ _
+    have sb : b.termVars ⊆ (Basic.square a b).termVars := List.subset_append_right _ _
+    have ha := namesFrom_mono hx.1 sa
+    have hb := namesFrom_mono hy.1 sb
+    have la : ∀ v, x.1 = some v → v ∈ (Basic.square a b).termVars ∨ v ∈ allocs (esx ++ esy) :=
+      fun v hv => (hx.1.2 v hv).imp (sa ·) allocs_mono_left
+    have lb : ∀ v, y.1 = some v → v ∈ (Basic.square a b).termVars ∨ v ∈ allocs (esx ++ esy) :=
+      fun v hv => (hy.1.2 v hv).imp (sb ·) allocs_mono_right
+    split
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₃ h => ?_
+      subst h
+      refine names_seq2 ha hb (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, List.mem_append,
+        List.mem_singleton, or_self] at hw
+      rcases hw with rfl | rfl
+      · exact la _ ‹_›
+      · exact lb _ ‹_›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₃ h => ?_
+      subst h
+      refine names_seq2 ha hb (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.append_nil, List.mem_append, List.mem_singleton, or_self] at hw
+      subst hw
+      exact la _ ‹_›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₃ h => ?_
+      subst h
+      refine names_seq2 ha hb (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.append_nil, List.nil_append, List.mem_singleton] at hw
+      subst hw
+      exact lb _ ‹_›
+    · split
+      · exact records_pure _ (names_seq2 ha hb names_nil)
+      · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₃ h => ?_
+        subst h
+        exact names_seq2 ha hb (names_generic_of fun w hw => by
+          simp [GenericPlonkConstraint.vars] at hw)
+  | boolean x =>
+    simp only [reduce]
+    refine records_bind (records_reduceAffineExpression_names _) fun r esr hr => ?_
+    have ha : NamesFrom (Basic.boolean x).termVars r.1 esr := hr.1
+    split
+    · split
+      · exact records_pure _ (names_seq1 ha names_nil)
+      · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₂ h => ?_
+        subst h
+        exact names_seq1 ha (names_generic_of fun w hw => by
+          simp [GenericPlonkConstraint.vars] at hw)
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₂ h => ?_
+      subst h
+      refine names_seq1 ha (names_generic_of fun w hw => ?_)
+      simp only [GenericPlonkConstraint.vars, Option.toList_some, Option.toList_none,
+        List.append_nil, List.mem_append, List.mem_singleton, or_self] at hw
+      subst hw
+      exact ha.2 _ ‹_›
+
+/-- The names of a `Basic` constraint's recorded reduction are its terms or its allocations. -/
+theorem basic_names (nv : Variable) (aux : AuxState F) (b : Basic F) :
+    ∀ e ∈ (recordReduction nv aux (reduce b)).events, ∀ w ∈ e.names,
+      w ∈ b.termVars ∨ w ∈ allocs (recordReduction nv aux (reduce b)).events :=
+  recordReduction_of_records (records_basic_names b) nv aux
+
+
+/-- An operand's walk read within a longer log whose allocations are `A`: every event names an
+allocation or a term of the operand, which is then not that bare variable; the result is a term
+or an allocation; a bare operand returns its variable. -/
+private def OperandNames (x : CVar F) (v : Variable) (A : List Variable)
+    (es : List (ReductionEvent F)) : Prop :=
+  (∀ e ∈ es, ∀ w ∈ e.names, w ∈ A ∨ (w ∈ x.termVars ∧ x ≠ .var w)) ∧
+    (v ∈ x.termVars ∨ v ∈ A) ∧ ∀ w, x = .var w → v = w
+
+private theorem operandNames_of {x : CVar F} {v : Variable} {es : List (ReductionEvent F)}
+    (h : NamesFrom x.termVars (some v) es ∧ ∀ w, x = .var w → es = [] ∧ v = w)
+    {A : List Variable} (hA : ∀ u ∈ allocs es, u ∈ A) : OperandNames x v A es := by
+  refine ⟨fun e he w hw => ?_, (h.1.2 v rfl).imp_right (hA v), fun w hw => (h.2 w hw).2⟩
+  rcases h.1.1 e he w hw with hw' | hw'
+  · refine Or.inr ⟨hw', fun hx => ?_⟩
+    obtain ⟨hes, -⟩ := h.2 w hx
+    subst hes
+    exact List.not_mem_nil he
+  · exact Or.inl (hA w hw')
+
+/-- A point's two operands, read within a longer log whose allocations are `A`. -/
+private def PointNames (p : AffinePoint (FVar F)) (q : AffinePoint Variable) (A : List Variable)
+    (es : List (ReductionEvent F)) : Prop :=
+  (∀ e ∈ es, ∀ w ∈ e.names, w ∈ A ∨ (w ∈ p.x.termVars ∧ p.x ≠ .var w) ∨
+    (w ∈ p.y.termVars ∧ p.y ≠ .var w)) ∧
+    (q.x ∈ p.x.termVars ∨ q.x ∈ A) ∧ (q.y ∈ p.y.termVars ∨ q.y ∈ A) ∧
+    (∀ w, p.x = .var w → q.x = w) ∧ ∀ w, p.y = .var w → q.y = w
+
+private theorem pointNames_mono {p : AffinePoint (FVar F)} {q : AffinePoint Variable}
+    {A A' : List Variable} {es : List (ReductionEvent F)} (h : PointNames p q A es)
+    (hA : ∀ u ∈ A, u ∈ A') : PointNames p q A' es :=
+  ⟨fun e he w hw => (h.1 e he w hw).imp_left (hA w), h.2.1.imp_right (hA _),
+    h.2.2.1.imp_right (hA _), h.2.2.2.1, h.2.2.2.2⟩
+
+private theorem records_reduceAffinePoint_names (p : AffinePoint (FVar F)) :
+    Records (reduceAffinePoint p : RecordingBuilder F (AffinePoint Variable)) fun q es =>
+      PointNames p q (allocs es) es := by
+  unfold reduceAffinePoint
+  refine records_bind (records_reduceToVariable_names _) fun y esy hy => ?_
+  refine records_bind (records_reduceToVariable_names _) fun x esx hx => ?_
+  refine records_pure _ ?_
+  have hy' := operandNames_of hy (A := allocs (esy ++ (esx ++ []))) fun u hu => allocs_mono_left hu
+  have hx' := operandNames_of hx (A := allocs (esy ++ (esx ++ []))) fun u hu =>
+    allocs_mono_right (allocs_mono_left hu)
+  refine ⟨fun e he w hw => ?_, hx'.2.1, hy'.2.1, hx'.2.2, hy'.2.2⟩
+  simp only [List.append_nil, List.mem_append] at he
+  rcases he with he | he
+  · exact (hy'.1 e he w hw).imp_right Or.inr
+  · exact (hx'.1 e he w hw).imp_right Or.inl
+
+/-- The walk of a complete addition: every name is an allocation or a term of an operand that
+is not that bare variable, and the row's eleven cells are the operands' variables, each a term
+of its operand or an allocation, a bare operand's being itself. -/
+private theorem records_addComplete_names (c : AddComplete F) :
+    Records (c.reduce : RecordingBuilder F (Rows F)) fun row es =>
+      (∀ e ∈ es, ∀ w ∈ e.names, w ∈ allocs es ∨
+        ∃ x ∈ c.operands.toList, w ∈ x.termVars ∧ x ≠ .var w) ∧
+      ∃ vs : List Variable, row.row.vars.toList = vs.map some ++ List.replicate 4 none ∧
+        List.Forall₂ (fun v x => (v ∈ x.termVars ∨ v ∈ allocs es) ∧ ∀ w, x = .var w → v = w)
+          vs c.operands.toList := by
+  unfold AddComplete.reduce
+  refine records_bind (records_reduceAffinePoint_names _) fun p1 es1 h1 => ?_
+  refine records_bind (records_reduceAffinePoint_names _) fun p2 es2 h2 => ?_
+  refine records_bind (records_reduceAffinePoint_names _) fun p3 es3 h3 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun x21Inv es4 h4 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun infZ es5 h5 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun s es6 h6 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun sameX es7 h7 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun inf es8 h8 => ?_
+  refine records_pure _ ?_
+  have h1' := pointNames_mono h1
+    (A' := allocs (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ [])))))))))
+    fun u hu => allocs_mono_left hu
+  have h2' := pointNames_mono h2
+    (A' := allocs (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ [])))))))))
+    fun u hu => allocs_mono_right (allocs_mono_left hu)
+  have h3' := pointNames_mono h3
+    (A' := allocs (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ [])))))))))
+    fun u hu => allocs_mono_right (allocs_mono_right (allocs_mono_left hu))
+  have h4' := operandNames_of h4
+    (A := allocs (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ [])))))))))
+    fun u hu => allocs_mono_right (allocs_mono_right (allocs_mono_right (allocs_mono_left hu)))
+  have h5' := operandNames_of h5
+    (A := allocs (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ [])))))))))
+    fun u hu => allocs_mono_right (allocs_mono_right (allocs_mono_right (allocs_mono_right
+      (allocs_mono_left hu))))
+  have h6' := operandNames_of h6
+    (A := allocs (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ [])))))))))
+    fun u hu => allocs_mono_right (allocs_mono_right (allocs_mono_right (allocs_mono_right
+      (allocs_mono_right (allocs_mono_left hu)))))
+  have h7' := operandNames_of h7
+    (A := allocs (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ [])))))))))
+    fun u hu => allocs_mono_right (allocs_mono_right (allocs_mono_right (allocs_mono_right
+      (allocs_mono_right (allocs_mono_right (allocs_mono_left hu))))))
+  have h8' := operandNames_of h8
+    (A := allocs (es1 ++ (es2 ++ (es3 ++ (es4 ++ (es5 ++ (es6 ++ (es7 ++ (es8 ++ [])))))))))
+    fun u hu => allocs_mono_right (allocs_mono_right (allocs_mono_right (allocs_mono_right
+      (allocs_mono_right (allocs_mono_right (allocs_mono_right (allocs_mono_left hu)))))))
+  have hops : c.operands.toList = [c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y, c.inf,
+      c.sameX, c.s, c.infZ, c.x21Inv] := rfl
+  refine ⟨fun e he w hw => ?_,
+    [p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, inf, sameX, s, infZ, x21Inv], rfl, ?_⟩
+  · simp only [List.append_nil, List.mem_append] at he
+    rw [hops]
+    rcases he with he | he | he | he | he | he | he | he
+    · rcases h1'.1 e he w hw with h | h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨c.p1.x, by simp, h⟩
+      · exact Or.inr ⟨c.p1.y, by simp, h⟩
+    · rcases h2'.1 e he w hw with h | h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨c.p2.x, by simp, h⟩
+      · exact Or.inr ⟨c.p2.y, by simp, h⟩
+    · rcases h3'.1 e he w hw with h | h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨c.p3.x, by simp, h⟩
+      · exact Or.inr ⟨c.p3.y, by simp, h⟩
+    · rcases h4'.1 e he w hw with h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨c.x21Inv, by simp, h⟩
+    · rcases h5'.1 e he w hw with h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨c.infZ, by simp, h⟩
+    · rcases h6'.1 e he w hw with h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨c.s, by simp, h⟩
+    · rcases h7'.1 e he w hw with h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨c.sameX, by simp, h⟩
+    · rcases h8'.1 e he w hw with h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨c.inf, by simp, h⟩
+  · rw [hops]
+    exact .cons ⟨h1'.2.1, h1'.2.2.2.1⟩ (.cons ⟨h1'.2.2.1, h1'.2.2.2.2⟩
+      (.cons ⟨h2'.2.1, h2'.2.2.2.1⟩ (.cons ⟨h2'.2.2.1, h2'.2.2.2.2⟩
+      (.cons ⟨h3'.2.1, h3'.2.2.2.1⟩ (.cons ⟨h3'.2.2.1, h3'.2.2.2.2⟩
+      (.cons ⟨h8'.2.1, h8'.2.2⟩ (.cons ⟨h7'.2.1, h7'.2.2⟩ (.cons ⟨h6'.2.1, h6'.2.2⟩
+      (.cons ⟨h5'.2.1, h5'.2.2⟩ (.cons ⟨h4'.2.1, h4'.2.2⟩ .nil))))))))))
+
+/-- The names of a complete addition's recorded reduction are allocations or terms of operands
+that are not that bare variable, and its row's cells are its operands' variables, each a term
+of its operand or an allocation, a bare operand's being itself. -/
+theorem addComplete_names (nv : Variable) (aux : AuxState F) (c : AddComplete F) :
+    (∀ e ∈ (recordReduction nv aux c.reduce).events, ∀ w ∈ e.names,
+      w ∈ allocs (recordReduction nv aux c.reduce).events ∨
+        ∃ x ∈ c.operands.toList, w ∈ x.termVars ∧ x ≠ .var w) ∧
+    ∃ vs : List Variable,
+      (recordReduction nv aux c.reduce).result.row.vars.toList =
+        vs.map some ++ List.replicate 4 none ∧
+      List.Forall₂ (fun v x => (v ∈ x.termVars ∨
+        v ∈ allocs (recordReduction nv aux c.reduce).events) ∧ ∀ w, x = .var w → v = w)
+        vs c.operands.toList :=
+  recordReduction_of_records (records_addComplete_names c) nv aux
+
+end NameWalks
 
 end Snarky.Kimchi

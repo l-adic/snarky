@@ -144,6 +144,9 @@ Snarky.Kimchi.directRoots_eq
 Snarky.Kimchi.KimchiConstraint.Wired.Scoped
 Snarky.Kimchi.fusion_root_eq
 Snarky.Kimchi.pinned_of_cached
+Snarky.Kimchi.unwired_not_named
+Snarky.Kimchi.unwired_of_cell
+Snarky.Kimchi.unwired_cell_unique
 Snarky.Kimchi.receipts_located
 Snarky.Kimchi.receipts_complete
 Snarky.Kimchi.genericValue_of_located

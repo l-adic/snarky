@@ -57,16 +57,13 @@ def CVar.var? : CVar F → Option Variable
   | .var v => some v
   | _ => none
 
-private theorem CVar.var?_isSome {x : CVar F} (h : x.var?.isSome) : ∃ v, x = .var v := by
+/-- An operand with a bare-variable form is that variable. -/
+theorem CVar.var?_isSome {x : CVar F} (h : x.var?.isSome) : ∃ v, x = .var v := by
   cases x with
   | var v => exact ⟨v, rfl⟩
   | _ => exact absurd h (by simp [CVar.var?])
 
 namespace Kimchi
-
-/-- The payload's eleven operands in gate-column order. -/
-def AddComplete.operands (c : AddComplete F) : Vector (FVar F) 11 :=
-  #v[c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y, c.inf, c.sameX, c.s, c.infZ, c.x21Inv]
 
 /-- A constraint the lowering places directly: a Boolean on a bare variable, or a complete
 addition whose eleven operands are bare variables. Its reduction allocates no variable and
@@ -331,7 +328,7 @@ private def booleanGate (v : Variable) : GenericPlonkConstraint F :=
   { cl := -1, vl := some v, cr := 0, vr := some v, co := 0, vo := none, m := 1, c := 0 }
 
 /-- The queued constraint, if any, has the property. -/
-private def QueueFrom (P : GenericPlonkConstraint F → Prop) (aux : AuxState F) : Prop :=
+def QueueFrom (P : GenericPlonkConstraint F → Prop) (aux : AuxState F) : Prop :=
   ∀ g, aux.queuedGenericGate = some g → P g
 
 private theorem replayEvent_generic (s : BuilderReductionState F) (g : GenericPlonkConstraint F) :
@@ -401,7 +398,7 @@ private theorem record_direct_rows (P : GenericPlonkConstraint F → Prop) {c : 
   · exact (List.not_mem_nil h).elim
   · exact h
 
-private theorem length_steps (source : List (KimchiConstraint F)) (nv : Variable)
+theorem length_steps (source : List (KimchiConstraint F)) (nv : Variable)
     (aux : AuxState F) : (recordGates source nv aux).steps.length = source.length := by
   induction source generalizing nv aux with
   | nil => rfl
@@ -461,14 +458,14 @@ private def addRow (c : AddComplete F) : KimchiRow F :=
     coeffs := [] }
 
 /-- The final flush's row for a queued constraint. -/
-private def flushRow (g : GenericPlonkConstraint F) : KimchiRow F :=
+def flushRow (g : GenericPlonkConstraint F) : KimchiRow F :=
   { kind := .generic,
     vars := ⟨⟨[g.vl, g.vr, g.vo] ++ List.replicate 12 none⟩, by simp⟩,
     coeffs := constraintToCoeffs g }
 
 /-- The row of a step's gate among the lowering's rows: after the public rows, at the step's
 gate span. -/
-private def gateRowOf (source : List (KimchiConstraint F)) (publicVars : List Variable)
+def gateRowOf (source : List (KimchiConstraint F)) (publicVars : List Variable)
     (nv : Variable) (p : Nat) (hp : p < source.length) : Nat :=
   publicVars.length + ((lowering source nv).placements[p]'(by
     rw [RecordedGates.length_placements, length_steps]; exact hp)).customRows.first
@@ -598,7 +595,7 @@ private theorem directRows_cases {source : List (KimchiConstraint F)} {publicVar
 /-! ## Labels -/
 
 /-- A label among a labelled prefix padded with absent cells is in the prefix. -/
-private theorem label_of_append_replicate {l : List (Option Variable)} {m j : Nat} {w : Variable}
+theorem label_of_append_replicate {l : List (Option Variable)} {m j : Nat} {w : Variable}
     (hj : j < (l ++ List.replicate m none).length)
     (h : (l ++ List.replicate m none)[j] = some w) : ∃ hj' : j < l.length, l[j] = some w := by
   by_cases hl : j < l.length
@@ -607,7 +604,8 @@ private theorem label_of_append_replicate {l : List (Option Variable)} {m j : Na
     exact absurd h (by simp)
 
 omit [DecidableEq F] in
-private theorem label_public (l : List Variable) (i : Nat) (hi : i < l.length) (j : Nat)
+/-- A public row's label is in its first seven cells and is a public variable. -/
+theorem label_public (l : List Variable) (i : Nat) (hi : i < l.length) (j : Nat)
     (hj : j < wCols) (w : Variable)
     (h : ((makePublicInputRows (F := F) l)[i]'(by simpa [makePublicInputRows] using hi)).vars[j] =
       some w) : j < 7 ∧ w ∈ l := by
@@ -730,7 +728,7 @@ private theorem unwiredVars_of_label {c : AddComplete F}
 /-! ## Counting occurrences -/
 
 omit [Field F] [DecidableEq F] in
-private theorem two_le_count_of_ne {l : List Variable} {v : Variable} {j j' : Nat}
+theorem two_le_count_of_ne {l : List Variable} {v : Variable} {j j' : Nat}
     (hj : j < l.length) (hj' : j' < l.length) (hne : j ≠ j') (h1 : l[j] = v) (h2 : l[j'] = v) :
     2 ≤ l.count v := by
   induction l generalizing j j' with
@@ -766,8 +764,8 @@ private theorem two_le_count_of_ne {l : List Variable} {v : Variable} {j j' : Na
         omega
 
 omit [Field F] [DecidableEq F] in
-private theorem two_le_count_flatMap (f : KimchiConstraint F → List Variable) {v : Variable}
-    {source : List (KimchiConstraint F)} {p p' : Nat} (hp : p < source.length)
+theorem two_le_count_flatMap {α : Type} (f : α → List Variable) {v : Variable}
+    {source : List α} {p p' : Nat} (hp : p < source.length)
     (hp' : p' < source.length) (hne : p ≠ p') (h1 : v ∈ f source[p]) (h2 : v ∈ f source[p']) :
     2 ≤ (source.flatMap f).count v := by
   induction source generalizing p p' with
@@ -801,8 +799,8 @@ private theorem two_le_count_flatMap (f : KimchiConstraint F → List Variable) 
         omega
 
 omit [Field F] [DecidableEq F] in
-private theorem two_le_count_flatMap_same (f : KimchiConstraint F → List Variable) {v : Variable}
-    {source : List (KimchiConstraint F)} {p : Nat} (hp : p < source.length)
+theorem two_le_count_flatMap_same {α : Type} (f : α → List Variable) {v : Variable}
+    {source : List α} {p : Nat} (hp : p < source.length)
     (h : 2 ≤ (f source[p]).count v) : 2 ≤ (source.flatMap f).count v := by
   induction source generalizing p with
   | nil => exact absurd hp (Nat.not_lt_zero _)

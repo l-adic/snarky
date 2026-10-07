@@ -440,6 +440,24 @@ theorem outcomeOf_cached_mem [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
         · cases h
     · split at h <;> cases h
 
+/-- The variables an outcome fuses or writes: a merge's pair, a cache hit's variable, a pin's
+variable with its row's cells, a row's cells. The cached variable of a hit is not among them. -/
+def EqualOutcome.names : EqualOutcome F → List Variable
+  | .merge l r => [l, r]
+  | .cached l _ _ => [l]
+  | .pinned v _ g => v :: g.vars
+  | .row g => g.vars
+  | .trivial => []
+
+/-- The equality op's decision names only the constraint's own variables. -/
+theorem outcomeOf_names [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] (c : EqualsConstraint F)
+    (cache : List (F × Variable)) :
+    ∀ w ∈ (outcomeOf c cache).names, w ∈ c.vl.toList ++ c.vr.toList := by
+  intro w hw
+  unfold outcomeOf at hw
+  repeat' split at hw
+  all_goals simp_all [EqualOutcome.names, GenericPlonkConstraint.vars]
+
 /-- Run a reduction in the builder from a borrowed counter and auxiliary state: the
 result, the emitted rows in emission order, and the counter and auxiliary state to hand
 back. -/

@@ -4,11 +4,10 @@ import Snarky.Kimchi.Constraint
 # The lowering trace
 
 The builder's reduction with its provenance kept: which reduction operations a constraint's
-reducer invoked, in execution order.
-The data is compiler-internal, naming no index and no gate semantics. The recording
-interpreter runs the existing polymorphic reducers unchanged: each operation delegates to the
-builder's and logs its payload, so a recorded reduction is the existing lowering beside its
-history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` returns.
+reducer invoked, in execution order. The data is compiler-internal, naming no index and no
+gate semantics. The recording interpreter runs the existing polymorphic reducers unchanged:
+each operation delegates to the builder's and logs its payload, so a recorded reduction is the
+existing lowering beside its history, and `RecordedReduction.erase` returns `reduceAsBuilder`'s.
 
 ## Main definitions
 
@@ -22,6 +21,8 @@ history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` re
 - `AllocationsFresh`: every allocation's logged variable is the counter at its point.
 - `OutcomesFaithful`: every equality's logged outcome is the equality op's decision at its
   point.
+- `ReductionEvent.names`, `allocs`, `fusions`, `pinsOf`: the variables an event writes or
+  fuses, and a log's allocations, fusions and pins.
 
 ## Main results
 
@@ -36,8 +37,8 @@ history, and `RecordedReduction.erase` returns exactly what `reduceAsBuilder` re
   exactly its pins, so a cache hit names a pin of the log or of the starting cache, and a pin
   of the log is one of its pinning events.
 - `inv_replay`, `same_replay_mono`, `same_replay`: a faithful log replayed from an invariant
-  union-find keeps the invariant, never splits a class, and ends with every fusion it logs in
-  one class.
+  union-find keeps it, never splits a class, and ends with every fusion it logs in one class.
+- `allocs_ge`: a log with fresh allocations allocates at or above its starting counter.
 
 ## Implementation notes
 
@@ -229,7 +230,8 @@ def pinsOf : List (ReductionEvent F) → List (F × Variable)
   | .equal _ (.pinned v k _) :: es => pinsOf es ++ [(k, v)]
   | _ :: es => pinsOf es
 
-private theorem outcomesFaithful_cons {s : BuilderReductionState F} {e : ReductionEvent F}
+/-- Faithfulness of a log splits at its head. -/
+theorem outcomesFaithful_cons {s : BuilderReductionState F} {e : ReductionEvent F}
     {es : List (ReductionEvent F)} (h : OutcomesFaithful s (e :: es)) :
     OutcomesFaithful s [e] ∧ OutcomesFaithful (replayEvent s e) es := by
   cases e with
@@ -368,6 +370,82 @@ def fusions : List (ReductionEvent F) → List (Variable × Variable)
   | .equal _ (.merge l r) :: es => (l, r) :: fusions es
   | .equal _ (.cached l v _) :: es => (l, v) :: fusions es
   | _ :: es => fusions es
+
+/-- The variables an event names: an allocation's variable, a generic constraint's cells, an
+equality's outcome names. -/
+def ReductionEvent.names : ReductionEvent F → List Variable
+  | .alloc v _ => [v]
+  | .generic g => g.vars
+  | .equal _ o => o.names
+
+/-- The variables a log allocates, in order. -/
+def allocs (es : List (ReductionEvent F)) : List Variable :=
+  es.filterMap fun
+    | .alloc v _ => some v
+    | _ => none
+
+omit [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] in
+theorem allocs_append (es₁ es₂ : List (ReductionEvent F)) :
+    allocs (es₁ ++ es₂) = allocs es₁ ++ allocs es₂ :=
+  List.filterMap_append
+
+/-- One event's effect on the counter: an allocation advances it, any other event leaves it. -/
+private theorem nextVariable_replayEvent (s : BuilderReductionState F) (e : ReductionEvent F) :
+    (replayEvent s e).nextVariable =
+      match e with
+      | .alloc _ _ => s.nextVariable + 1
+      | _ => s.nextVariable := by
+  cases e with
+  | alloc v ex =>
+    show ((createInternalVariable ex : PlonkBuilder F Variable) s).2.nextVariable = _
+    rw [createInternalVariable_apply]
+  | generic g =>
+    show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.nextVariable = _
+    rw [addGenericPlonkConstraint_apply]
+    cases s.aux.queuedGenericGate <;> rfl
+  | equal c o =>
+    show ((addEqualsConstraint c : PlonkBuilder F Unit) s).2.nextVariable = _
+    rw [addEqualsConstraint_apply]
+    cases outcomeOf c s.aux.wireState.cachedConstants with
+    | merge l r => rfl
+    | cached l v k => rfl
+    | trivial => rfl
+    | row g =>
+      show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.nextVariable = _
+      rw [addGenericPlonkConstraint_apply]
+      cases s.aux.queuedGenericGate <;> rfl
+    | pinned v k g =>
+      show ((addGenericPlonkConstraint g : PlonkBuilder F Unit) s).2.nextVariable = _
+      rw [addGenericPlonkConstraint_apply]
+      cases s.aux.queuedGenericGate <;> rfl
+
+/-- A log with fresh allocations allocates at or above its starting counter and ends there or
+above. -/
+theorem allocs_ge {s : BuilderReductionState F} {es : List (ReductionEvent F)}
+    (hfresh : AllocationsFresh s es) :
+    (∀ v ∈ allocs es, s.nextVariable ≤ v) ∧ s.nextVariable ≤ (replay s es).nextVariable := by
+  induction es generalizing s with
+  | nil => exact ⟨fun _ h => (List.not_mem_nil h).elim, Nat.le_refl _⟩
+  | cons e es ih =>
+    have hstep : replay s (e :: es) = replay (replayEvent s e) es := rfl
+    rw [hstep]
+    cases e with
+    | alloc v ex =>
+      obtain ⟨rfl, hfresh'⟩ := hfresh
+      obtain ⟨ih1, ih2⟩ := ih hfresh'
+      simp only [nextVariable_replayEvent] at ih1 ih2
+      refine ⟨fun w hw => ?_, Nat.le_of_succ_le ih2⟩
+      rcases List.mem_cons.mp hw with rfl | hw
+      · exact Nat.le_refl _
+      · exact Nat.le_of_succ_le (ih1 w hw)
+    | generic g =>
+      obtain ⟨ih1, ih2⟩ := ih hfresh
+      simp only [nextVariable_replayEvent] at ih1 ih2
+      exact ⟨ih1, ih2⟩
+    | equal c o =>
+      obtain ⟨ih1, ih2⟩ := ih hfresh
+      simp only [nextVariable_replayEvent] at ih1 ih2
+      exact ⟨ih1, ih2⟩
 
 omit [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] in
 private theorem fusions_cons (e : ReductionEvent F) (es : List (ReductionEvent F)) :
