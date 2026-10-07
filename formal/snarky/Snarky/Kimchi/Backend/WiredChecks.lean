@@ -37,8 +37,9 @@ the successor read being real.
 
 Then an endomorphism multiplication of two rounds at a nonzero coefficient, both rounds
 selecting the endomorphism, the first's register pinned to `0`, the second's input
-accumulator and register the first's outputs by the successor read alone, with no cell of
-theirs in the permutation, and the finals public in the terminal row. Its boundaries: a slope
+accumulator and register the first's outputs by the successor read alone, their wired cells
+singleton classes that no copy constraint connects to another cell, and the finals public in
+the terminal row. Its boundaries: a slope
 reused by a Boolean keeps every constraint wired and breaks the scope; a midpoint written as a
 sum is not wired; the terminal row's output abscissa altered fails the gate at the last round's
 row; and an index built at another coefficient disagrees with the source's parameter.
@@ -639,8 +640,9 @@ theorem endoMul_example_holds :
 
 /-- The layout: the register's allocation pinned in the row flushed after the block; the two
 round rows at the fourth and fifth, the terminal row at the sixth; the target one class across
-both round rows; the second round's input accumulator in one cell only, its link to the first
-round being the successor read; the finals' cells joining the public rows. -/
+both round rows; the second round's input accumulator a singleton class, no copy constraint
+linking it to the first round, whose outputs reach it by the successor read; the finals'
+cells joining the public rows. -/
 theorem endoMul_example_layout :
     (recordGates endoMulSource 28 initialAuxState).steps.map (fun s => allocs s.events) =
         [[28]] ∧
