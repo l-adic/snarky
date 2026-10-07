@@ -222,6 +222,14 @@ Snarky.Kimchi.endoMul_example_holds
 Snarky.Kimchi.endoMul_example_layout
 Snarky.Kimchi.endoMul_rejections
 Snarky.Kimchi.endoMul_rejections_index
+Snarky.Kimchi.poseidon_example_built
+Snarky.Kimchi.poseidon_example_scoped
+Snarky.Kimchi.poseidon_example_indexOf
+Snarky.Kimchi.poseidon_example_satisfies
+Snarky.Kimchi.poseidon_example_holds
+Snarky.Kimchi.poseidon_example_layout
+Snarky.Kimchi.poseidon_rejections
+Snarky.Kimchi.poseidon_rejections_index
 Snarky.Kimchi.UnionFind.empty_inv
 Snarky.Kimchi.UnionFind.find_inv
 Snarky.Kimchi.UnionFind.same_find_mono

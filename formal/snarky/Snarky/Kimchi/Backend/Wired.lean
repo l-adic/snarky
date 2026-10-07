@@ -5,11 +5,11 @@ import Snarky.Kimchi.Backend.Direct
 
 The source constraints whose lowering wires: any `Basic` constraint over affine operands, and
 an admitted gate whose operands in the unwired columns are bare variables; the admitted gates
-are the complete addition, the challenge decomposition, the scalar multiplication and the
-endomorphism multiplication, the last two read by the index through the successor row. Their
-reduction allocates intermediates, pins constants through the cache and fuses classes, so the
-union-find, the constant cache and the generic queue all move; the direct fragment is the
-special case in which none of them does.
+are the complete addition, the challenge decomposition, the scalar multiplication, the
+endomorphism multiplication and the Poseidon block of the shape `5w + 1`, the last three read
+by the index through the successor row. Their reduction allocates intermediates, pins
+constants through the cache and fuses classes, so the union-find, the constant cache and the
+generic queue all move; the direct fragment is the special case in which none of them does.
 
 A satisfying table determines a valuation by class: a variable reads the value in any cell of
 its root's class, the permutation forcing those cells to agree. A fusion the log records, a
@@ -64,13 +64,15 @@ section Fragment
 
 variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
-/-- The constructors the fragment admits so far. -/
+/-- The constructors the fragment admits: every gate, a Poseidon block under the shape `5w + 1`
+that places every state and keeps every window's successor inside the block. -/
 private def KimchiConstraint.Admitted : KimchiConstraint F → Prop
   | .basic _ => True
   | .addComplete _ => True
   | .endoScalar _ => True
   | .varBaseMul _ => True
   | .endoMul _ => True
+  | .poseidon c => c.state.length % 5 = 1
   | _ => False
 
 private instance KimchiConstraint.decidableAdmitted (c : KimchiConstraint F) :
@@ -483,7 +485,7 @@ private theorem placed_of_wired {c : KimchiConstraint F} (hw : c.Wired) (nv : Va
   cases c with
   | basic b => exact Or.inl ⟨b, rfl⟩
   | addComplete c => exact Or.inr (addComplete_placed nv aux c)
-  | poseidon _ => exact hw.1.elim
+  | poseidon c => exact Or.inr (poseidon_placed nv aux c hw.1)
   | varBaseMul rounds => exact Or.inr (varBaseMul_placed nv aux rounds)
   | endoScalar rounds => exact Or.inr (endoScalar_placed nv aux rounds)
   | endoMul c => exact Or.inr (endoMul_placed nv aux c)
@@ -906,7 +908,7 @@ private theorem step_absentZero {source : List (KimchiConstraint F)} {nv : Varia
   cases cp with
   | basic b => exact basic_absentZero nv' aux' b
   | addComplete c => exact addComplete_absentZero nv' aux' c
-  | poseidon _ => exact hwd.1.elim
+  | poseidon c => exact poseidon_absentZero nv' aux' c
   | varBaseMul rounds => exact varBaseMul_absentZero nv' aux' rounds
   | endoScalar rounds => exact endoScalar_absentZero nv' aux' rounds
   | endoMul c => exact endoMul_absentZero nv' aux' c
@@ -1374,6 +1376,109 @@ private theorem endoMul_branch {n : ℕ} [NeZero n] {source : List (KimchiConstr
   rw [← hmap, hendo]
   exact hsat'
 
+/-- The Poseidon block's rows satisfy the source constraint: each window's row located in the
+lowering with its successor, the next window's row or the terminal row, the gate at the
+index's matrix, which the source's is, and at the row's coefficients, which are the window's
+constants. -/
+private theorem poseidon_branch {n : ℕ} [NeZero n] {source : List (KimchiConstraint F)}
+    {publicVars : List Variable} {nv : Variable} {idx : Index F n}
+    (hindex : IndexOf source publicVars nv idx) {pub : Fin idx.publicCount → F}
+    {wTab : Fin n → Fin wCols → F} (hsat : idx.Satisfies pub wTab)
+    (hrows_le : (directRows source publicVars nv).length ≤ n) {V : Valuation F}
+    (hval : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
+      (v : Variable), (directRows source publicVars nv)[r].vars[j] = some v →
+      wTab ⟨r, lt_of_lt_of_le hr hrows_le⟩ ⟨j, hj⟩ = V v)
+    {p : Nat} (hp : p < source.length) {nv' : Variable} {aux' : AuxState F}
+    (hstep : (lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸ hp) =
+      ⟨(recordReduction nv' aux' source[p].reduce).rows,
+        (recordReduction nv' aux' source[p].reduce).result,
+        (recordReduction nv' aux' source[p].reduce).events⟩)
+    {c : PoseidonConstraint F} (hsp : source[p] = .poseidon c) (hshape : c.state.length % 5 = 1)
+    (hf : ReductionFacts V (recordReduction nv' aux' c.reduce).events) :
+    KimchiConstraint.Holds V (.poseidon c) := by
+  have hi : p < (lowering source nv).steps.length :=
+    (length_steps source nv initialAuxState).symm ▸ hp
+  have hgr : (lowering source nv).steps[p].gateRows =
+      (recordReduction nv' aux' c.reduce).result := by
+    rw [hstep, hsp]
+    rfl
+  have hlen := poseidon_result_length nv' aux' c hshape
+  have hmds : Poseidon.mdsOf c.mds = idx.mds := by
+    have h := hindex.params _ (List.getElem_mem hp)
+    rw [hsp] at h
+    exact h
+  refine poseidon_holds_of_reductionFacts nv' aux' c V hshape hf fun k => ?_
+  have hk0 : k.val < (recordReduction nv' aux' c.reduce).result.length := by
+    rw [hlen]
+    omega
+  have hk1 : k.val + 1 < (recordReduction nv' aux' c.reduce).result.length := by
+    rw [hlen]
+    omega
+  have hkA : k.val < (lowering source nv).steps[p].gateRows.length := by
+    rw [hgr]
+    exact hk0
+  have hkB : k.val + 1 < (lowering source nv).steps[p].gateRows.length := by
+    rw [hgr]
+    exact hk1
+  obtain ⟨hiA, hrowA⟩ := List.getElem?_eq_some_iff.mp
+    (directRows_gateRow source publicVars nv p hp k.val hkA)
+  obtain ⟨hiB, hrowB⟩ := List.getElem?_eq_some_iff.mp
+    (directRows_gateRow source publicVars nv p hp (k.val + 1) hkB)
+  have hrowA' : (directRows source publicVars nv)[gateRowOf source publicVars nv p hp + k.val] =
+      (recordReduction nv' aux' c.reduce).result[k.val]'hk0 := by
+    rw [hrowA]
+    exact List.getElem_of_eq hgr _
+  have hrowB' : (directRows source publicVars nv)[gateRowOf source publicVars nv p hp +
+      (k.val + 1)] = (recordReduction nv' aux' c.reduce).result[k.val + 1]'hk1 := by
+    rw [hrowB]
+    exact List.getElem_of_eq hgr _
+  have hsat' := hsat.1 ⟨gateRowOf source publicVars nv p hp + k.val, by omega⟩
+  have htyp' : (idx.gates ⟨gateRowOf source publicVars nv p hp + k.val, by omega⟩).typ =
+      .poseidon := by
+    rw [hindex.typ_eq _ hiA, hrowA']
+    exact poseidon_kind nv' aux' c hshape k
+  unfold Index.rowSatisfies at hsat'
+  rw [htyp'] at hsat'
+  simp only at hsat'
+  have hcoef : Lift.Gate.Poseidon.rcMap
+      (idx.coeffTable ⟨gateRowOf source publicVars nv p hp + k.val, by omega⟩) =
+      Poseidon.rcRow c.rc k.val := by
+    funext j
+    show ((idx.gates _).coeffs _, (idx.gates _).coeffs _, (idx.gates _).coeffs _) = _
+    rw [hindex.coeffs_eq _ hiA, hindex.coeffs_eq _ hiA, hindex.coeffs_eq _ hiA, hrowA']
+    exact poseidon_coeffs nv' aux' c hshape k j
+  have hsucc : (⟨gateRowOf source publicVars nv p hp + k.val, by omega⟩ : Fin n) + 1 =
+      ⟨gateRowOf source publicVars nv p hp + (k.val + 1), by omega⟩ :=
+    Fin.ext (fin_add_one_val _ (by omega))
+  have hcellsA : ∀ j : Fin wCols,
+      wTab ⟨gateRowOf source publicVars nv p hp + k.val, by omega⟩ j =
+      rowValues V ((recordReduction nv' aux' c.reduce).result[k.val]'hk0) j := by
+    intro j
+    obtain ⟨w, hlab⟩ := poseidon_cell_some_window nv' aux' c hshape k j
+    have hlab' : ((recordReduction nv' aux' c.reduce).result[k.val]'hk0).vars[j] = some w := hlab
+    rw [hval _ j.val hiA j.isLt _ (by rw [hrowA']; exact hlab')]
+    simp only [rowValues, hlab', Option.map_some, Option.getD_some]
+  have hcellsB : ∀ j : Fin wCols, j.val < 3 →
+      wTab ⟨gateRowOf source publicVars nv p hp + (k.val + 1), by omega⟩ j =
+      rowValues V ((recordReduction nv' aux' c.reduce).result[k.val + 1]'hk1) j := by
+    intro j hj
+    obtain ⟨w, hlab⟩ := poseidon_cell_some_next nv' aux' c hshape k j hj
+    have hlab' : ((recordReduction nv' aux' c.reduce).result[k.val + 1]'hk1).vars[j] = some w :=
+      hlab
+    rw [hval _ j.val hiB j.isLt _ (by rw [hrowB']; exact hlab')]
+    simp only [rowValues, hlab', Option.map_some, Option.getD_some]
+  have hmap : Lift.Gate.Poseidon.rowWitness wTab
+      ⟨gateRowOf source publicVars nv p hp + k.val, by omega⟩ =
+      Lift.Gate.Poseidon.cellMap
+        (rowValues V ((recordReduction nv' aux' c.reduce).result[k.val]'hk0))
+        (rowValues V ((recordReduction nv' aux' c.reduce).result[k.val + 1]'hk1)) := by
+    simp only [Lift.Gate.Poseidon.rowWitness, Lift.Gate.Poseidon.cellMap]
+    rw [hsucc, hcellsA 0, hcellsA 1, hcellsA 2, hcellsA 3, hcellsA 4, hcellsA 5, hcellsA 6,
+      hcellsA 7, hcellsA 8, hcellsA 9, hcellsA 10, hcellsA 11, hcellsA 12, hcellsA 13,
+      hcellsA 14, hcellsB 0 (by decide), hcellsB 1 (by decide), hcellsB 2 (by decide)]
+  rw [← hmap, hmds, ← hcoef]
+  exact hsat'
+
 /-- **The wired fragment's closed theorem.** Any table satisfying an index of the fragment's
 lowering yields a valuation satisfying every source constraint and reading the public
 variables as the public input. -/
@@ -1486,7 +1591,7 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
     cases cp with
     | basic b => exact basic_of_reductionFacts nv' aux' b V hf
     | addComplete c => exact addComplete_branch hindex hsat hrows_le hval hp hstep' hsp hf
-    | poseidon _ => exact hwd.1.elim
+    | poseidon c => exact poseidon_branch hindex hsat hrows_le hval hp hstep' hsp hwd.1 hf
     | varBaseMul rounds => exact varBaseMul_branch hindex hsat hrows_le hval hp hstep' hsp hf
     | endoScalar rounds => exact endoScalar_branch hindex hsat hrows_le hval hp hstep' hsp hf
     | endoMul c => exact endoMul_branch hindex hsat hrows_le hval hp hstep' hsp hf

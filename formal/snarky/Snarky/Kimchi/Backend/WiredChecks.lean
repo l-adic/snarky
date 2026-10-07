@@ -20,11 +20,10 @@ coefficients altered, or with the pinned variable's copy wire rerouted, is not t
 
 Then a challenge decomposition, in two lowerings. One round from the initial accumulators,
 its crumbs fresh and its output `n` public: its two `2`s pin one allocation through the cache
-and its `0` pins another, the two pins packed in one row before the gate row. Two rounds, the
-second's accumulators the first's outputs: the gate block's second row sits one past its
-first, and each threaded accumulator labels a wired cell in each, one class. Their
-boundaries: a crumb reused by a Boolean keeps every constraint wired and breaks the scope; a
-crumb written as a sum is not wired.
+and its `0` another, the pins packed in one row before the gate row. Two rounds, the second's
+accumulators the first's outputs: the block's second row one past its first, each threaded
+accumulator one class across both. Their boundaries: a crumb reused by a Boolean keeps every
+constraint wired and breaks the scope; a crumb written as a sum is not wired.
 
 Then a scalar multiplication, whose rounds emit row pairs the index reads through the
 successor row, in two lowerings: one round from a base and an accumulator of distinct
@@ -35,26 +34,33 @@ every constraint wired and breaks the scope; an accumulator written as a sum is 
 and a table with the second row's output abscissa altered fails the gate at the first row,
 the successor read being real.
 
-Then an endomorphism multiplication of two rounds at a nonzero coefficient, both rounds
-selecting the endomorphism, the first's register pinned to `0`, the second's input
-accumulator and register the first's outputs by the successor read alone, their wired cells
-singleton classes that no copy constraint connects to another cell, and the finals public in
-the terminal row. Its boundaries: a slope
-reused by a Boolean keeps every constraint wired and breaks the scope; a midpoint written as a
-sum is not wired; the terminal row's output abscissa altered fails the gate at the last round's
-row; and an index built at another coefficient disagrees with the source's parameter.
+Then an endomorphism multiplication of two rounds at a nonzero coefficient, both selecting
+the endomorphism, the first's register pinned to `0`, the second's inputs the first's outputs
+by the successor read alone, their wired cells singleton classes, the finals public in the
+terminal row. Its boundaries: a slope reused by a Boolean keeps every constraint wired and
+breaks the scope; a midpoint written as a sum is not wired; the terminal row's output
+abscissa altered fails the gate at the last round's row; an index built at another
+coefficient disagrees with the source's parameter.
+
+Then a Poseidon block of two windows, eleven states from the round function at a small
+matrix and ten distinct nonzero constants, one input element pinned to `0`, the output state
+public in the terminal row. Its boundaries: an unwired state element reused by a Boolean
+keeps every constraint wired and breaks the scope; one written as a sum is not wired; five or
+seven states are not wired, off the shape; the terminal row's first cell altered fails the
+gate at the last window's row; indices at another matrix or with a consumed constant altered
+fail the parameters or the coefficients.
 
 ## Main results
 
 - `wired_example_holds`, `endo_example_holds`, `chain_example_holds`, `scale_example_holds`,
-  `scaleChain_example_holds`, `endoMul_example_holds`: the closed theorem on the decided
-  instances.
+  `scaleChain_example_holds`, `endoMul_example_holds`, `poseidon_example_holds`: the closed
+  theorem on the decided instances.
 - `wired_rejections_scope`, `wired_rejections_table`, `wired_rejections_index`,
-  `endo_rejections`, `scale_rejections`, `endoMul_rejections`, `endoMul_rejections_index`:
-  the boundaries, by premise.
+  `endo_rejections`, `scale_rejections`, `endoMul_rejections`, `endoMul_rejections_index`,
+  `poseidon_rejections`, `poseidon_rejections_index`: the boundaries, by premise.
 - `endo_example_layout`, `chain_example_layout`, `scale_example_layout`,
-  `scaleChain_example_layout`, `endoMul_example_layout`: the lowerings' logs, rows and
-  classes.
+  `scaleChain_example_layout`, `endoMul_example_layout`, `poseidon_example_layout`: the
+  lowerings' logs, rows and classes.
 -/
 
 open Kimchi
@@ -693,5 +699,153 @@ theorem endoMul_rejections_index :
         (endoMulIndex3?.get built_endoMul3).endoBase ∧
       ¬ IndexOf endoMulSource endoMulPublic 28 (endoMulIndex3?.get built_endoMul3) :=
   ⟨by decide +kernel, fun h => absurd (h.params _ (List.mem_singleton_self _)) (by decide +kernel)⟩
+
+/-! ## A Poseidon block -/
+
+/-- A small matrix: the rows `1 2 3`, `4 5 6`, `7 8 10`. -/
+private def poseidonMds : Gate.Poseidon.Mds K :=
+  { m00 := 1, m01 := 2, m02 := 3, m10 := 4, m11 := 5, m12 := 6, m20 := 7, m21 := 8, m22 := 10 }
+
+/-- Ten rounds' constants, distinct and nonzero across both windows. -/
+private def poseidonRc : List (K × K × K) :=
+  [(1, 2, 3), (4, 5, 6), (7, 8, 9), (10, 11, 12), (13, 14, 15), (16, 17, 18), (19, 20, 21),
+    (22, 23, 24), (25, 26, 27), (28, 29, 30)]
+
+/-- Eleven states, the input `(0, 1, const 0)` then the variables `2` to `31` three per state;
+the unwired positions of the first window are `3` to `10`, of the second `18` to `25`. -/
+private def pblock : PoseidonConstraint K :=
+  { mds := ((1, 2, 3), (4, 5, 6), (7, 8, 10)), rc := poseidonRc,
+    state := [(.var 0, .var 1, .const 0), (.var 2, .var 3, .var 4), (.var 5, .var 6, .var 7),
+      (.var 8, .var 9, .var 10), (.var 11, .var 12, .var 13), (.var 14, .var 15, .var 16),
+      (.var 17, .var 18, .var 19), (.var 20, .var 21, .var 22), (.var 23, .var 24, .var 25),
+      (.var 26, .var 27, .var 28), (.var 29, .var 30, .var 31)] }
+
+/-- One block, its output state public. -/
+private def poseidonSource : List (KimchiConstraint K) := [.poseidon pblock]
+
+private def poseidonPublic : List Variable := [29, 30, 31]
+
+/-- The input `(3, 5, 0)` and the ten states the round function derives at the matrix and
+constants, the pinned element at the allocation `32`. -/
+private def poseidonV : Valuation K := fun v =>
+  [3, 5, 12, 33, 54, 75, 25, 40, 111, 42, 21, 31, 101, 18, 17, 98, 110, 4, 51, 58, 51, 38, 103,
+    26, 8, 38, 95, 74, 5, 14, 91, 97, 0].getD v 0
+
+private def poseidonRows : List (KimchiRow K) := directRows poseidonSource poseidonPublic 32
+
+private def poseidonRoots : Array Variable := directRoots poseidonSource 32
+
+private def poseidonIndex? : Option (Index K 16) :=
+  Index.build? (gatesOf poseidonRoots poseidonRows) poseidonPublic.length 3 40 0 poseidonMds
+    shifts
+
+theorem poseidon_example_built : poseidonIndex?.isSome := by
+  decide +kernel
+
+private def poseidonIdx : Index K 16 := poseidonIndex?.get poseidon_example_built
+
+private def poseidonPub : Fin poseidonIdx.publicCount → K := fun i =>
+  poseidonV (poseidonPublic.getD i.val 0)
+
+theorem poseidon_example_scoped :
+    KimchiConstraint.Wired.Scoped 32 poseidonSource poseidonPublic := by
+  decide +kernel
+
+theorem poseidon_example_indexOf : IndexOf poseidonSource poseidonPublic 32 poseidonIdx :=
+  indexOf_of_classTarget poseidonSource poseidonPublic 32 poseidonIdx (by decide +kernel)
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel)
+
+theorem poseidon_example_satisfies :
+    poseidonIdx.Satisfies poseidonPub (tableOf poseidonV poseidonRows) := by
+  decide +kernel
+
+/-- The closed theorem on the two-window instance. -/
+theorem poseidon_example_holds :
+    ∃ W : Valuation K, (∀ c ∈ poseidonSource, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin poseidonPublic.length,
+        W poseidonPublic[i] = poseidonPub (poseidon_example_indexOf.publicIndex i) :=
+  KimchiConstraint.Wired.holds_of_satisfies poseidon_example_scoped poseidon_example_indexOf
+    poseidonPub (tableOf poseidonV poseidonRows) poseidon_example_satisfies
+
+/-- The layout: the pinned element's allocation in the row flushed after the block; the two
+window rows at the fourth and fifth, the terminal row at the sixth; the second window's first
+state a singleton class in the first wired cells of its row, reached from the first window by
+the successor read; the output state's cells joining the public rows. -/
+theorem poseidon_example_layout :
+    (recordGates poseidonSource 32 initialAuxState).steps.map (fun s => allocs s.events) =
+        [[32]] ∧
+      (recordGates poseidonSource 32 initialAuxState).steps.map (fun s => pinsOf s.events) =
+        [[(0, 32)]] ∧
+      poseidonRows.length = 7 ∧ gateRowOf poseidonSource poseidonPublic 32 0 (by decide) = 3 ∧
+      classCells poseidonRoots poseidonRows 32 = [(3, 2), (6, 0)] ∧
+      classCells poseidonRoots poseidonRows 14 = [(4, 0)] ∧
+      classCells poseidonRoots poseidonRows 29 = [(0, 0), (5, 0)] := by
+  decide +kernel
+
+/-! ## Its boundaries -/
+
+/-- The block with an unwired state element reused by a Boolean. -/
+private def reusedPoseidon : List (KimchiConstraint K) :=
+  poseidonSource ++ [.basic (.boolean (.var 5))]
+
+/-- The block with the third state's first element written as a sum. -/
+private def summedPoseidon : PoseidonConstraint K :=
+  { pblock with state := pblock.state.take 2 ++ (.add (.var 5) (.var 6), .var 6, .var 7) ::
+      pblock.state.drop 3 }
+
+/-- The table with the terminal row's first cell raised by one. -/
+private def shiftedPoseidonTable : Fin 16 → Fin wCols → K := fun i j =>
+  if i.val = 5 ∧ j.val = 0 then tableOf poseidonV poseidonRows i j + 1
+  else tableOf poseidonV poseidonRows i j
+
+/-- A reused bare state element keeps every constraint wired and breaks the scope; a summed
+one is not wired; five or seven states are not wired; the altered terminal row fails the gate
+at the last window's row. -/
+theorem poseidon_rejections :
+    ((∀ c ∈ reusedPoseidon, c.Wired) ∧
+      ¬ KimchiConstraint.Wired.Scoped 32 reusedPoseidon poseidonPublic) ∧
+    ¬ (KimchiConstraint.poseidon summedPoseidon).Wired ∧
+    ¬ (KimchiConstraint.poseidon { pblock with state := pblock.state.take 5 }).Wired ∧
+    ¬ (KimchiConstraint.poseidon { pblock with state := pblock.state.take 7 }).Wired ∧
+    ¬ Index.rowSatisfies poseidonIdx poseidonPub shiftedPoseidonTable ⟨4, by decide⟩ := by
+  decide +kernel
+
+/-- The same gate table built at another matrix. -/
+private def poseidonIndexMds? : Option (Index K 16) :=
+  Index.build? (gatesOf poseidonRoots poseidonRows) poseidonPublic.length 3 40 0
+    { poseidonMds with m00 := 2 } shifts
+
+private theorem built_poseidonMds : poseidonIndexMds?.isSome := by
+  decide +kernel
+
+/-- The gate table with the first window row's fifth coefficient, round one's second
+constant, raised by one. -/
+private def gatesPoseidonRc : Fin 16 → Index.GateRow K 16 := fun i =>
+  if i.val = 3 then
+    { gatesOf poseidonRoots poseidonRows i with coeffs := fun c =>
+        if c.val = 4 then (gatesOf poseidonRoots poseidonRows i).coeffs c + 1
+        else (gatesOf poseidonRoots poseidonRows i).coeffs c }
+  else gatesOf poseidonRoots poseidonRows i
+
+private def poseidonIndexRc? : Option (Index K 16) :=
+  Index.build? gatesPoseidonRc poseidonPublic.length 3 40 0 poseidonMds shifts
+
+private theorem built_poseidonRc : poseidonIndexRc?.isSome := by
+  decide +kernel
+
+/-- Both indices build from the same rows and wiring, and neither is the lowering's: the one
+at another matrix disagrees with the source's parameter, the one with an altered constant
+with the window row's coefficients. -/
+theorem poseidon_rejections_index :
+    (¬ (KimchiConstraint.poseidon pblock).ParamsAgree (poseidonIndexMds?.get built_poseidonMds).mds
+        (poseidonIndexMds?.get built_poseidonMds).endoBase ∧
+      ¬ IndexOf poseidonSource poseidonPublic 32 (poseidonIndexMds?.get built_poseidonMds)) ∧
+    ¬ IndexOf poseidonSource poseidonPublic 32 (poseidonIndexRc?.get built_poseidonRc) := by
+  refine ⟨⟨by decide +kernel, fun h => absurd (h.params _ (List.mem_singleton_self _))
+    (by decide +kernel)⟩, fun h => ?_⟩
+  have hc := h.coeffs ⟨3, by decide⟩ (by rw [length_directGates]; decide +kernel) ⟨4, by decide⟩
+  rw [getElem_directGates poseidonSource poseidonPublic 32 3 (by decide +kernel)] at hc
+  exact absurd hc (by decide +kernel)
 
 end Snarky.Kimchi

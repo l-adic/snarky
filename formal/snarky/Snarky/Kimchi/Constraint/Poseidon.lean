@@ -45,6 +45,17 @@ structure PoseidonConstraint (F : Type u) where
 
 variable {F : Type} {m : Type → Type}
 
+/-- A window's row in gate-column order: its five states in the register order `s0 s4 s1 s2
+s3`. -/
+def PoseidonConstraint.windowCells (q0 q1 q2 q3 q4 : FVar F × FVar F × FVar F) :
+    List (Option (FVar F)) :=
+  [q0.1, q0.2.1, q0.2.2, q4.1, q4.2.1, q4.2.2, q1.1, q1.2.1, q1.2.2, q2.1, q2.2.1, q2.2.2, q3.1,
+    q3.2.1, q3.2.2].map some
+
+/-- The terminal row's cells: the output state in cells `0`, `1`, `2`. -/
+def PoseidonConstraint.finalCells (s : FVar F × FVar F × FVar F) : List (Option (FVar F)) :=
+  [s.1, s.2.1, s.2.2].map some
+
 /-- Pin one state triple, left to right. -/
 def reduceState [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
     [PlonkReductionM F m] (t : FVar F × FVar F × FVar F) :
@@ -66,7 +77,7 @@ def reduceStates [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad
 
 /-- One `poseidon` row: the chunk's five states in the permuted register order
 `s0 s4 s1 s2 s3`, and rounds `5k … 5k+4`'s constants as the coefficient row. -/
-private def addRoundState (rc : ℕ → F × F × F) (k : ℕ)
+def addRoundState (rc : ℕ → F × F × F) (k : ℕ)
     (q0 q1 q2 q3 q4 : Variable × Variable × Variable) : KimchiRow F :=
   { kind := .poseidon,
     vars := ⟨⟨[some q0.1, some q0.2.1, some q0.2.2,
@@ -82,7 +93,7 @@ private def addRoundState (rc : ℕ → F × F × F) (k : ℕ)
 
 /-- The trailing `zero` row: the output state in cells `0 … 2`, which the last
 `poseidon` row reads as its next-row `s5`. -/
-private def PoseidonConstraint.finalRow (s : Variable × Variable × Variable) : KimchiRow F :=
+def PoseidonConstraint.finalRow (s : Variable × Variable × Variable) : KimchiRow F :=
   { kind := .zero,
     vars := ⟨⟨[some s.1, some s.2.1, some s.2.2, none, none, none, none, none,
                none, none, none, none, none, none, none]⟩, by simp⟩,
@@ -92,7 +103,7 @@ private def PoseidonConstraint.finalRow (s : Variable × Variable × Variable) :
 rows for the constant offsets); a single trailing state becomes the `zero` row.
 A 2–4-state tail (unreachable from the deployed `11 × 5 + 1` emitter) emits nothing
 after the full chunks. -/
-private def rowsFromStates (rc : ℕ → F × F × F) :
+def rowsFromStates (rc : ℕ → F × F × F) :
     ℕ → List (Variable × Variable × Variable) → List (KimchiRow F)
   | _, [] => []
   | _, [s] => [PoseidonConstraint.finalRow s]

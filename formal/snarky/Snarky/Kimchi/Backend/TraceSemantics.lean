@@ -30,25 +30,28 @@ The two `none` conventions differ on purpose.
   events hold, each emitted row, or row pair, read cell by cell is the gate's witness at the
   operands' values; `addComplete_holds_of_reductionFacts`,
   `endoScalar_holds_of_reductionFacts`, `varBaseMul_holds_of_reductionFacts` transport the
-  gate's predicate across it to the source constraint; `endoMul_holds_of_reductionFacts`
-  reads each round's row with its successor and closes the chain. `endoScalar_result_length`,
+  gate's predicate across it to the source constraint; `endoMul_holds_of_reductionFacts` and
+  `poseidon_holds_of_reductionFacts` read each round's or window's row with its successor and
+  close the chain, the latter under the block shape `5w + 1`. `endoScalar_result_length`,
   `endoScalar_kind`, `varBaseMul_result_length`, `varBaseMul_kind`, `varBaseMul_rows_fst`,
-  `varBaseMul_rows_snd`, `endoMul_result_length`, `endoMul_kind`: the rows the multi-row gates
-  emit, per round.
+  `varBaseMul_rows_snd`, `endoMul_result_length`, `endoMul_kind`, `poseidon_result_length`,
+  `poseidon_kind`, `poseidon_coeffs`: the rows the multi-row gates emit, per round, and a
+  window's constants in its coefficients.
 - `equalsHolds_of_merge`, `equalsHolds_of_cached`, `equalsHolds_of_pinned`,
   `equalsHolds_of_row`, `equalsHolds_of_trivial`: an equality holds once the fact its logged
   outcome names holds, a merge or cache hit by class, a pin or row by its emitted equation.
 - `basic_names`: the names of a `Basic` constraint's recorded reduction are its terms or its
   allocations.
 - `Placed`, `addComplete_placed`, `endoScalar_placed`, `varBaseMul_placed`,
-  `endoMul_placed`: a gate's recorded reduction placed, its names terms of placed operands
-  that are not that bare variable, its rows matching `KimchiConstraint.rowOperands` cell by
-  cell (`CellOf`); `endoScalar_cell_some`, `varBaseMul_cell_some_fst`,
-  `varBaseMul_cell_some_snd`, `endoMul_cell_some_round`, `endoMul_cell_some_next`: every
+  `endoMul_placed`, `poseidon_placed`: a gate's recorded reduction placed, its names terms of
+  placed operands that are not that bare variable, its rows matching
+  `KimchiConstraint.rowOperands` cell by cell (`CellOf`); `endoScalar_cell_some`,
+  `varBaseMul_cell_some_fst`, `varBaseMul_cell_some_snd`, `endoMul_cell_some_round`,
+  `endoMul_cell_some_next`, `poseidon_cell_some_window`, `poseidon_cell_some_next`: every
   operand cell of an emitted row is labelled.
 - `basic_absentZero`, `addComplete_absentZero`, `endoScalar_absentZero`,
-  `varBaseMul_absentZero`, `endoMul_absentZero`: every equation a constraint's recorded
-  reduction queues carries no coefficient on an absent cell.
+  `varBaseMul_absentZero`, `endoMul_absentZero`, `poseidon_absentZero`: every equation a
+  constraint's recorded reduction queues carries no coefficient on an absent cell.
 - `basic_of_reductionFacts`: when the recorded events hold, any `Basic` constraint holds.
 
 ## Implementation notes
@@ -1249,6 +1252,281 @@ theorem endoMul_holds_of_reductionFacts (nv : Variable) (aux : AuxState F) (c : 
   exact chainHolds_of_rows V c.endo _ c.state _ (endoMul_result_length nv aux c)
     (fun k hk => hg ⟨k, hk⟩) (fun k hk nxt => hr k _ hk nxt) (hfin _)
 
+omit [Field F] [DecidableEq F] in
+/-- The chunking of `5w + 1` pinned states: `w` window rows then the terminal row. -/
+private theorem rowsFromStates_length (rc : ℕ → F × F × F) :
+    (k w : ℕ) → (vs : List (Variable × Variable × Variable)) → vs.length = 5 * w + 1 →
+      (rowsFromStates rc k vs).length = w + 1
+  | _, 0, [_], _ => rfl
+  | k, w + 1, _ :: _ :: _ :: _ :: _ :: rest, hw => by
+    show (rowsFromStates rc (k + 1) rest).length + 1 = w + 1 + 1
+    rw [rowsFromStates_length rc (k + 1) w rest (by simp only [List.length_cons] at hw; omega)]
+  | _, 0, [], hw => absurd hw (show ¬ (0 = 5 * 0 + 1) by omega)
+  | _, 0, _ :: _ :: rest, hw => absurd hw (show ¬ (rest.length + 1 + 1 = 5 * 0 + 1) by omega)
+  | _, w + 1, [], hw => absurd hw (show ¬ (0 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_], hw => absurd hw (show ¬ (1 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _], hw => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _], hw => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _, _], hw => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
+
+omit [Field F] [DecidableEq F] in
+/-- Row `j` of the chunking from window `k` is the window at `k + j`, over the pinned states
+`5j` to `5j + 4`. -/
+private theorem rowsFromStates_window (rc : ℕ → F × F × F) :
+    (k w : ℕ) → (vs : List (Variable × Variable × Variable)) → (hw : vs.length = 5 * w + 1) →
+      (j : ℕ) → (hj : j < w) →
+      (rowsFromStates rc k vs)[j]'(by rw [rowsFromStates_length rc k w vs hw]; omega) =
+        addRoundState rc (k + j) (vs[5 * j]'(by omega)) (vs[5 * j + 1]'(by omega))
+          (vs[5 * j + 2]'(by omega)) (vs[5 * j + 3]'(by omega)) (vs[5 * j + 4]'(by omega))
+  | _, _ + 1, _ :: _ :: _ :: _ :: _ :: _, _, 0, _ => rfl
+  | k, w + 1, q0 :: q1 :: q2 :: q3 :: q4 :: rest, hw, j + 1, hj => by
+    have hw' : rest.length = 5 * w + 1 := by simp only [List.length_cons] at hw; omega
+    have hb : j < (rowsFromStates rc (k + 1) rest).length := by
+      rw [rowsFromStates_length rc (k + 1) w rest hw']
+      omega
+    show (rowsFromStates rc (k + 1) rest)[j]'hb =
+      addRoundState rc (k + (j + 1)) (rest[5 * j]'(by omega)) (rest[5 * j + 1]'(by omega))
+        (rest[5 * j + 2]'(by omega)) (rest[5 * j + 3]'(by omega)) (rest[5 * j + 4]'(by omega))
+    rw [rowsFromStates_window rc (k + 1) w rest hw' j (by omega)]
+    congr 1
+    omega
+  | _, 0, _, _, _, hj => absurd hj (Nat.not_lt_zero _)
+  | _, w + 1, [], hw, _, _ => absurd hw (show ¬ (0 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_], hw, _, _ => absurd hw (show ¬ (1 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _], hw, _, _ => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _], hw, _, _ => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _, _], hw, _, _ => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
+
+omit [Field F] [DecidableEq F] in
+/-- Row `w` of the chunking is the terminal row over the last pinned state. -/
+private theorem rowsFromStates_final (rc : ℕ → F × F × F) :
+    (k w : ℕ) → (vs : List (Variable × Variable × Variable)) → (hw : vs.length = 5 * w + 1) →
+      (rowsFromStates rc k vs)[w]'(by rw [rowsFromStates_length rc k w vs hw]; omega) =
+        PoseidonConstraint.finalRow (vs[5 * w]'(by omega))
+  | _, 0, [_], _ => rfl
+  | k, w + 1, _ :: _ :: _ :: _ :: _ :: rest, hw => by
+    have hw' : rest.length = 5 * w + 1 := by simp only [List.length_cons] at hw; omega
+    have hb : w < (rowsFromStates rc (k + 1) rest).length := by
+      rw [rowsFromStates_length rc (k + 1) w rest hw']
+      omega
+    show (rowsFromStates rc (k + 1) rest)[w]'hb =
+      PoseidonConstraint.finalRow (rest[5 * w]'(by omega))
+    exact rowsFromStates_final rc (k + 1) w rest hw'
+  | _, 0, [], hw => absurd hw (show ¬ (0 = 5 * 0 + 1) by omega)
+  | _, 0, _ :: _ :: rest, hw => absurd hw (show ¬ (rest.length + 1 + 1 = 5 * 0 + 1) by omega)
+  | _, w + 1, [], hw => absurd hw (show ¬ (0 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_], hw => absurd hw (show ¬ (1 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _], hw => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _], hw => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _, _], hw => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
+
+/-- The reading of one state: its three variables read as its operands. -/
+private theorem records_reduceState (t : FVar F × FVar F × FVar F) :
+    Records (reduceState t : RecordingBuilder F (Variable × Variable × Variable)) fun v es =>
+      ∀ V : Valuation F, ReductionFacts V es →
+        V v.1 = t.1.val V ∧ V v.2.1 = t.2.1.val V ∧ V v.2.2 = t.2.2.val V := by
+  unfold reduceState
+  refine records_bind (records_reduceToVariable _) fun a es0 h0 => ?_
+  refine records_bind (records_reduceToVariable _) fun b es1 h1 => ?_
+  refine records_bind (records_reduceToVariable _) fun c es2 h2 => ?_
+  refine records_pure _ fun V hV => ?_
+  obtain ⟨f0, hV⟩ := facts_append hV
+  obtain ⟨f1, hV⟩ := facts_append hV
+  obtain ⟨f2, -⟩ := facts_append hV
+  exact ⟨h0 V f0, h1 V f1, h2 V f2⟩
+
+/-- The reading of the states: index by index. -/
+private theorem records_reduceStates :
+    (ts : List (FVar F × FVar F × FVar F)) →
+      Records (reduceStates ts : RecordingBuilder F (List (Variable × Variable × Variable)))
+        fun vs es => vs.length = ts.length ∧ ∀ V : Valuation F, ReductionFacts V es →
+          ∀ (i : Nat) (hi : i < ts.length) (hi' : i < vs.length),
+            V vs[i].1 = ts[i].1.val V ∧ V vs[i].2.1 = ts[i].2.1.val V ∧
+              V vs[i].2.2 = ts[i].2.2.val V
+  | [] => records_pure _ ⟨rfl, fun _ _ _ hi => absurd hi (Nat.not_lt_zero _)⟩
+  | t :: ts => by
+    unfold reduceStates
+    refine records_bind (records_reduceState t) fun v es1 h1 => ?_
+    refine records_bind (records_reduceStates ts) fun vs es2 h2 => ?_
+    refine records_pure _ ⟨by simp [h2.1], fun V hV i hi hi' => ?_⟩
+    obtain ⟨f1, hV⟩ := facts_append hV
+    obtain ⟨f2, -⟩ := facts_append hV
+    cases i with
+    | zero => exact h1 V f1
+    | succ k => exact h2.2 V f2 k (by simpa using hi) (by simpa using hi')
+
+/-- A Poseidon block's recorded reduction: its rows are the chunking of its pinned states,
+which read as the states. -/
+private theorem records_poseidon (c : PoseidonConstraint F) :
+    Records (c.reduce : RecordingBuilder F (List (KimchiRow F))) fun rows es =>
+      ∃ vs : List (Variable × Variable × Variable), vs.length = c.state.length ∧
+        rows = rowsFromStates (fun i => c.rc.getD i (0, 0, 0)) 0 vs ∧
+        ∀ V : Valuation F, ReductionFacts V es →
+          ∀ (i : Nat) (hi : i < c.state.length) (hi' : i < vs.length),
+            V vs[i].1 = c.state[i].1.val V ∧ V vs[i].2.1 = c.state[i].2.1.val V ∧
+              V vs[i].2.2 = c.state[i].2.2.val V := by
+  unfold PoseidonConstraint.reduce
+  refine records_bind (records_reduceStates c.state) fun vs es h => ?_
+  refine records_pure _ ⟨vs, h.1, rfl, fun V hV => h.2 V (facts_append hV).1⟩
+
+private theorem poseidon_rows (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F) :
+    ∃ vs : List (Variable × Variable × Variable), vs.length = c.state.length ∧
+      (recordReduction nv aux c.reduce).result =
+        rowsFromStates (fun i => c.rc.getD i (0, 0, 0)) 0 vs ∧
+      ∀ V : Valuation F, ReductionFacts V (recordReduction nv aux c.reduce).events →
+        ∀ (i : Nat) (hi : i < c.state.length) (hi' : i < vs.length),
+          V vs[i].1 = c.state[i].1.val V ∧ V vs[i].2.1 = c.state[i].2.1.val V ∧
+            V vs[i].2.2 = c.state[i].2.2.val V :=
+  recordReduction_of_records (records_poseidon c) nv aux
+
+/-- A Poseidon block's recorded reduction emits one row per window and a terminal row. -/
+theorem poseidon_result_length (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F)
+    (h : c.state.length % 5 = 1) :
+    (recordReduction nv aux c.reduce).result.length = c.state.length / 5 + 1 := by
+  obtain ⟨vs, hvs, hrows, -⟩ := poseidon_rows nv aux c
+  rw [hrows, rowsFromStates_length _ 0 (c.state.length / 5) vs (by omega)]
+
+/-- Every window's row a Poseidon block's recorded reduction emits is a `poseidon` row. -/
+theorem poseidon_kind (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F)
+    (h : c.state.length % 5 = 1) (k : Fin (c.state.length / 5)) :
+    ((recordReduction nv aux c.reduce).result[k.val]'(by
+      rw [poseidon_result_length nv aux c h]; omega)).kind = .poseidon := by
+  obtain ⟨vs, hvs, hrows, -⟩ := poseidon_rows nv aux c
+  rw [List.getElem_of_eq hrows, rowsFromStates_window _ 0 (c.state.length / 5) vs (by omega)
+    k.val k.isLt]
+  rfl
+
+/-- A window's row carries its five rounds' constants as its coefficients, in the gate's
+reading. -/
+theorem poseidon_coeffs (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F)
+    (h : c.state.length % 5 = 1) (k : Fin (c.state.length / 5)) (j : Fin 5) :
+    (((recordReduction nv aux c.reduce).result[k.val]'(by
+        rw [poseidon_result_length nv aux c h]; omega)).coeffs.getD (3 * j.val) 0,
+      ((recordReduction nv aux c.reduce).result[k.val]'(by
+        rw [poseidon_result_length nv aux c h]; omega)).coeffs.getD (3 * j.val + 1) 0,
+      ((recordReduction nv aux c.reduce).result[k.val]'(by
+        rw [poseidon_result_length nv aux c h]; omega)).coeffs.getD (3 * j.val + 2) 0) =
+      Poseidon.rcRow c.rc k.val j := by
+  obtain ⟨vs, hvs, hrows, -⟩ := poseidon_rows nv aux c
+  rw [List.getElem_of_eq hrows, rowsFromStates_window _ 0 (c.state.length / 5) vs (by omega)
+    k.val k.isLt, Nat.zero_add]
+  fin_cases j <;> rfl
+
+/-- Each window's row carries a variable in every cell. -/
+theorem poseidon_cell_some_window (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F)
+    (h : c.state.length % 5 = 1) (k : Fin (c.state.length / 5)) (j : Fin wCols) :
+    ∃ v, ((recordReduction nv aux c.reduce).result[k.val]'(by
+      rw [poseidon_result_length nv aux c h]; omega)).vars[j] = some v := by
+  obtain ⟨vs, hvs, hrows, -⟩ := poseidon_rows nv aux c
+  rw [List.getElem_of_eq hrows, rowsFromStates_window _ 0 (c.state.length / 5) vs (by omega)
+    k.val k.isLt]
+  fin_cases j <;> exact ⟨_, rfl⟩
+
+/-- The row after each window's, the next window's or the terminal row, carries a variable in
+its three output cells. -/
+theorem poseidon_cell_some_next (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F)
+    (h : c.state.length % 5 = 1) (k : Fin (c.state.length / 5)) (j : Fin wCols)
+    (hj : j.val < 3) :
+    ∃ v, ((recordReduction nv aux c.reduce).result[k.val + 1]'(by
+      rw [poseidon_result_length nv aux c h]; omega)).vars[j] = some v := by
+  obtain ⟨vs, hvs, hrows, -⟩ := poseidon_rows nv aux c
+  rw [List.getElem_of_eq hrows]
+  rcases Nat.lt_or_ge (k.val + 1) (c.state.length / 5) with hlt | hge
+  · rw [rowsFromStates_window _ 0 (c.state.length / 5) vs (by omega) (k.val + 1) hlt]
+    fin_cases j <;> exact ⟨_, rfl⟩
+  · rw [getElem_congr_idx (show k.val + 1 = c.state.length / 5 by have := k.isLt; omega),
+      rowsFromStates_final _ 0 (c.state.length / 5) vs (by omega)]
+    fin_cases j
+    all_goals first | exact ⟨_, rfl⟩ | exact absurd hj (by decide)
+
+omit [DecidableEq F] in
+/-- The chain from the rows: the gate holds at each window's row with its successor at the
+window's constants, every window reads as its six states, and the state list has the shape. -/
+private theorem poseidonChain_of_rows (M : Kimchi.Gate.Poseidon.Mds F) (rc : List (F × F × F))
+    (V : Valuation F) :
+    (k w : ℕ) → (states : List (F × F × F)) → (rows : List (KimchiRow F)) →
+      (hw : states.length = 5 * w + 1) → (hlen : rows.length = w + 1) →
+      (∀ (j : ℕ) (hj : j < w), Kimchi.Gate.Poseidon.Holds M (Poseidon.rcRow rc (k + j))
+        (Kimchi.Lift.Gate.Poseidon.cellMap (rowValues V (rows[j]'(by omega)))
+          (rowValues V (rows[j + 1]'(by omega))))) →
+      (∀ (j : ℕ) (hj : j < w),
+        Kimchi.Lift.Gate.Poseidon.cellMap (rowValues V (rows[j]'(by omega)))
+          (rowValues V (rows[j + 1]'(by omega))) =
+        ⟨states[5 * j]'(by omega), states[5 * j + 1]'(by omega), states[5 * j + 2]'(by omega),
+          states[5 * j + 3]'(by omega), states[5 * j + 4]'(by omega),
+          states[5 * (j + 1)]'(by omega)⟩) →
+      Poseidon.chainHolds M rc k states
+  | _, 0, [_], _, _, _, _, _ => trivial
+  | k, w + 1, s0 :: s1 :: s2 :: s3 :: s4 :: s5 :: rest, rows, hw, hlen, hg, hread => by
+    have hw' : (s5 :: rest).length = 5 * w + 1 := by
+      simp only [List.length_cons] at hw ⊢
+      omega
+    show Kimchi.Gate.Poseidon.Holds M (Poseidon.rcRow rc k) ⟨s0, s1, s2, s3, s4, s5⟩ ∧
+      Poseidon.chainHolds M rc (k + 1) (s5 :: rest)
+    refine ⟨?_, ?_⟩
+    · have h := hg 0 (by omega)
+      rw [hread 0 (by omega)] at h
+      exact h
+    · cases rows with
+      | nil => simp at hlen
+      | cons row0 rows' =>
+        refine poseidonChain_of_rows M rc V (k + 1) w (s5 :: rest) rows' hw'
+          (by simpa using hlen) (fun j hj => ?_) (fun j hj => ?_)
+        · have e : k + 1 + j = k + (j + 1) := by omega
+          rw [e]
+          exact hg (j + 1) (by omega)
+        · exact hread (j + 1) (by omega)
+  | _, 0, [], _, hw, _, _, _ => absurd hw (show ¬ (0 = 5 * 0 + 1) by omega)
+  | _, 0, _ :: _ :: rest, _, hw, _, _, _ =>
+    absurd hw (show ¬ (rest.length + 1 + 1 = 5 * 0 + 1) by omega)
+  | _, w + 1, [], _, hw, _, _, _ => absurd hw (show ¬ (0 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_], _, hw, _, _, _ => absurd hw (show ¬ (1 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _], _, hw, _, _, _ => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _], _, hw, _, _, _ => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _, _], _, hw, _, _, _ => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
+  | _, w + 1, [_, _, _, _, _], _, hw, _, _, _ =>
+    absurd hw (show ¬ (5 = 5 * (w + 1) + 1) by omega)
+
+/-- The gate's predicate at every window's row with its successor and constants, read at a
+valuation where the recorded events hold, is the source constraint's chain. -/
+theorem poseidon_holds_of_reductionFacts (nv : Variable) (aux : AuxState F)
+    (c : PoseidonConstraint F) (V : Valuation F) (h : c.state.length % 5 = 1)
+    (hf : ReductionFacts V (recordReduction nv aux c.reduce).events)
+    (hg : ∀ k : Fin (c.state.length / 5), Kimchi.Gate.Poseidon.Holds (Poseidon.mdsOf c.mds)
+      (Poseidon.rcRow c.rc k.val) (Kimchi.Lift.Gate.Poseidon.cellMap
+        (rowValues V ((recordReduction nv aux c.reduce).result[k.val]'(by
+          rw [poseidon_result_length nv aux c h]; omega)))
+        (rowValues V ((recordReduction nv aux c.reduce).result[k.val + 1]'(by
+          rw [poseidon_result_length nv aux c h]; omega))))) :
+    KimchiConstraint.Holds V (.poseidon c) := by
+  show Poseidon.chainHolds (Poseidon.mdsOf c.mds) c.rc 0 (Poseidon.read V c)
+  obtain ⟨vs, hvs, hrows, hV⟩ := poseidon_rows nv aux c
+  have hV' := hV V hf
+  have hw : c.state.length = 5 * (c.state.length / 5) + 1 := by omega
+  refine poseidonChain_of_rows (Poseidon.mdsOf c.mds) c.rc V 0 (c.state.length / 5)
+    (Poseidon.read V c) (recordReduction nv aux c.reduce).result
+    (by simp only [Poseidon.read, List.length_map]; exact hw) (poseidon_result_length nv aux c h)
+    (fun j hj => by rw [Nat.zero_add]; exact hg ⟨j, hj⟩) (fun j hj => ?_)
+  obtain ⟨a0, b0, c0⟩ := hV' (5 * j) (by omega) (by omega)
+  obtain ⟨a1, b1, c1⟩ := hV' (5 * j + 1) (by omega) (by omega)
+  obtain ⟨a2, b2, c2⟩ := hV' (5 * j + 2) (by omega) (by omega)
+  obtain ⟨a3, b3, c3⟩ := hV' (5 * j + 3) (by omega) (by omega)
+  obtain ⟨a4, b4, c4⟩ := hV' (5 * j + 4) (by omega) (by omega)
+  obtain ⟨a5, b5, c5⟩ := hV' (5 * (j + 1)) (by omega) (by omega)
+  rw [List.getElem_of_eq hrows, List.getElem_of_eq hrows,
+    rowsFromStates_window _ 0 (c.state.length / 5) vs (by omega) j hj]
+  rcases Nat.lt_or_ge (j + 1) (c.state.length / 5) with hlt | hge
+  · rw [rowsFromStates_window _ 0 (c.state.length / 5) vs (by omega) (j + 1) hlt]
+    simp [Kimchi.Lift.Gate.Poseidon.cellMap, rowValues, addRoundState, Poseidon.read, a0, b0, c0,
+      a1, b1, c1, a2, b2, c2, a3, b3, c3, a4, b4, c4, a5, b5, c5]
+  · have e : j + 1 = c.state.length / 5 := by omega
+    rw [getElem_congr_idx e, rowsFromStates_final _ 0 (c.state.length / 5) vs (by omega)]
+    have e5 : 5 * (c.state.length / 5) = 5 * (j + 1) := by omega
+    simp only [getElem_congr_idx e5]
+    simp [Kimchi.Lift.Gate.Poseidon.cellMap, rowValues, addRoundState,
+      PoseidonConstraint.finalRow, Poseidon.read, a0, b0, c0, a1, b1, c1, a2, b2, c2, a3, b3, c3,
+      a4, b4, c4, a5, b5, c5]
+
 end Reducers
 
 /-! ## Discharging an equality by its outcome -/
@@ -1459,11 +1737,75 @@ nothing for a shorter tail, as the reducer chunks them. -/
 def Poseidon.rowOperandsList :
     List (FVar F × FVar F × FVar F) → List (Vector (Option (FVar F)) wCols)
   | [] => []
-  | [s] => [cellsOf ([s.1, s.2.1, s.2.2].map some)]
+  | [s] => [cellsOf (PoseidonConstraint.finalCells s)]
   | q0 :: q1 :: q2 :: q3 :: q4 :: rest =>
-    cellsOf ([q0.1, q0.2.1, q0.2.2, q4.1, q4.2.1, q4.2.2, q1.1, q1.2.1, q1.2.2, q2.1, q2.2.1,
-      q2.2.2, q3.1, q3.2.1, q3.2.2].map some) :: rowOperandsList rest
+    cellsOf (PoseidonConstraint.windowCells q0 q1 q2 q3 q4) :: rowOperandsList rest
   | _ => []
+
+omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
+/-- The layout of `5w + 1` states: `w` window rows then the terminal row. -/
+private theorem rowOperandsList_length :
+    (w : ℕ) → (ts : List (FVar F × FVar F × FVar F)) → ts.length = 5 * w + 1 →
+      (Poseidon.rowOperandsList ts).length = w + 1
+  | 0, [_], _ => rfl
+  | w + 1, _ :: _ :: _ :: _ :: _ :: rest, hw => by
+    show (Poseidon.rowOperandsList rest).length + 1 = w + 1 + 1
+    rw [rowOperandsList_length w rest (by simp only [List.length_cons] at hw; omega)]
+  | 0, [], hw => absurd hw (show ¬ (0 = 5 * 0 + 1) by omega)
+  | 0, _ :: _ :: rest, hw => absurd hw (show ¬ (rest.length + 1 + 1 = 5 * 0 + 1) by omega)
+  | w + 1, [], hw => absurd hw (show ¬ (0 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_], hw => absurd hw (show ¬ (1 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _], hw => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _, _], hw => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _, _, _], hw => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
+
+omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
+/-- Row `j` of the layout is the window over states `5j` to `5j + 4`. -/
+private theorem rowOperandsList_window :
+    (w : ℕ) → (ts : List (FVar F × FVar F × FVar F)) → (hw : ts.length = 5 * w + 1) →
+      (j : ℕ) → (hj : j < w) →
+      (Poseidon.rowOperandsList ts)[j]'(by rw [rowOperandsList_length w ts hw]; omega) =
+        cellsOf (PoseidonConstraint.windowCells (ts[5 * j]'(by omega)) (ts[5 * j + 1]'(by omega))
+          (ts[5 * j + 2]'(by omega)) (ts[5 * j + 3]'(by omega)) (ts[5 * j + 4]'(by omega)))
+  | _ + 1, _ :: _ :: _ :: _ :: _ :: _, _, 0, _ => rfl
+  | w + 1, q0 :: q1 :: q2 :: q3 :: q4 :: rest, hw, j + 1, hj => by
+    have hw' : rest.length = 5 * w + 1 := by simp only [List.length_cons] at hw; omega
+    have hb : j < (Poseidon.rowOperandsList rest).length := by
+      rw [rowOperandsList_length w rest hw']
+      omega
+    show (Poseidon.rowOperandsList rest)[j]'hb =
+      cellsOf (PoseidonConstraint.windowCells (rest[5 * j]'(by omega)) (rest[5 * j + 1]'(by omega))
+        (rest[5 * j + 2]'(by omega)) (rest[5 * j + 3]'(by omega)) (rest[5 * j + 4]'(by omega)))
+    exact rowOperandsList_window w rest hw' j (by omega)
+  | 0, _, _, _, hj => absurd hj (Nat.not_lt_zero _)
+  | w + 1, [], hw, _, _ => absurd hw (show ¬ (0 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_], hw, _, _ => absurd hw (show ¬ (1 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _], hw, _, _ => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _, _], hw, _, _ => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _, _, _], hw, _, _ => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
+
+omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
+/-- Row `w` of the layout is the terminal row over the last state. -/
+private theorem rowOperandsList_final :
+    (w : ℕ) → (ts : List (FVar F × FVar F × FVar F)) → (hw : ts.length = 5 * w + 1) →
+      (Poseidon.rowOperandsList ts)[w]'(by rw [rowOperandsList_length w ts hw]; omega) =
+        cellsOf (PoseidonConstraint.finalCells (ts[5 * w]'(by omega)))
+  | 0, [_], _ => rfl
+  | w + 1, _ :: _ :: _ :: _ :: _ :: rest, hw => by
+    have hw' : rest.length = 5 * w + 1 := by simp only [List.length_cons] at hw; omega
+    have hb : w < (Poseidon.rowOperandsList rest).length := by
+      rw [rowOperandsList_length w rest hw']
+      omega
+    show (Poseidon.rowOperandsList rest)[w]'hb =
+      cellsOf (PoseidonConstraint.finalCells (rest[5 * w]'(by omega)))
+    exact rowOperandsList_final w rest hw'
+  | 0, [], hw => absurd hw (show ¬ (0 = 5 * 0 + 1) by omega)
+  | 0, _ :: _ :: rest, hw => absurd hw (show ¬ (rest.length + 1 + 1 = 5 * 0 + 1) by omega)
+  | w + 1, [], hw => absurd hw (show ¬ (0 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_], hw => absurd hw (show ¬ (1 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _], hw => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _, _], hw => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _, _, _], hw => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
 
 /-- The operands a constraint's gate rows place, row by row and cell by cell, `none` for an
 empty cell: what each reducer writes, before reduction. A `Basic` constraint places no gate
@@ -1519,6 +1861,59 @@ theorem mem_placedOperands {c : KimchiConstraint F} {row : Vector (Option (FVar 
     (hrow : row ∈ c.rowOperands.toList) {x : FVar F} (hx : some x ∈ row.toList) :
     x ∈ c.placedOperands :=
   List.mem_flatMap.mpr ⟨row, hrow, List.mem_filterMap.mpr ⟨some x, hx, rfl⟩⟩
+
+omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
+/-- Every state of a `5w + 1` list has its three operands in some row of the layout. -/
+private theorem mem_rowOperandsList :
+    (w : ℕ) → (ts : List (FVar F × FVar F × FVar F)) → ts.length = 5 * w + 1 →
+      ∀ t ∈ ts, ∃ row ∈ Poseidon.rowOperandsList ts,
+        some t.1 ∈ row.toList ∧ some t.2.1 ∈ row.toList ∧ some t.2.2 ∈ row.toList
+  | 0, [s], _, t, ht => by
+    rw [List.mem_singleton] at ht
+    subst ht
+    exact ⟨_, List.mem_singleton_self _, mem_cellsOf (by simp [PoseidonConstraint.finalCells])
+      (by simp [PoseidonConstraint.finalCells]), mem_cellsOf (by simp
+      [PoseidonConstraint.finalCells]) (by simp [PoseidonConstraint.finalCells]),
+      mem_cellsOf (by simp [PoseidonConstraint.finalCells])
+      (by simp [PoseidonConstraint.finalCells])⟩
+  | w + 1, q0 :: q1 :: q2 :: q3 :: q4 :: rest, hw, t, ht => by
+    have hw' : rest.length = 5 * w + 1 := by simp only [List.length_cons] at hw; omega
+    simp only [List.mem_cons] at ht
+    rcases ht with rfl | rfl | rfl | rfl | rfl | ht
+    · exact ⟨_, List.mem_cons_self .., mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells]), mem_cellsOf
+        (by simp [PoseidonConstraint.windowCells]) (by simp [PoseidonConstraint.windowCells]),
+        mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells])⟩
+    · exact ⟨_, List.mem_cons_self .., mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells]), mem_cellsOf
+        (by simp [PoseidonConstraint.windowCells]) (by simp [PoseidonConstraint.windowCells]),
+        mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells])⟩
+    · exact ⟨_, List.mem_cons_self .., mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells]), mem_cellsOf
+        (by simp [PoseidonConstraint.windowCells]) (by simp [PoseidonConstraint.windowCells]),
+        mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells])⟩
+    · exact ⟨_, List.mem_cons_self .., mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells]), mem_cellsOf
+        (by simp [PoseidonConstraint.windowCells]) (by simp [PoseidonConstraint.windowCells]),
+        mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells])⟩
+    · exact ⟨_, List.mem_cons_self .., mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells]), mem_cellsOf
+        (by simp [PoseidonConstraint.windowCells]) (by simp [PoseidonConstraint.windowCells]),
+        mem_cellsOf (by simp [PoseidonConstraint.windowCells])
+        (by simp [PoseidonConstraint.windowCells])⟩
+    · exact (mem_rowOperandsList w rest hw' t ht).imp fun row ⟨hrow, h⟩ =>
+        ⟨List.mem_cons_of_mem _ hrow, h⟩
+  | 0, [], hw, _, _ => absurd hw (show ¬ (0 = 5 * 0 + 1) by omega)
+  | 0, _ :: _ :: rest, hw, _, _ => absurd hw (show ¬ (rest.length + 1 + 1 = 5 * 0 + 1) by omega)
+  | w + 1, [], hw, _, _ => absurd hw (show ¬ (0 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_], hw, _, _ => absurd hw (show ¬ (1 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _], hw, _, _ => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _, _], hw, _, _ => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
+  | w + 1, [_, _, _, _], hw, _, _ => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
 
 /-- The bare operands a constraint places in the unwired columns `7` to `14`. -/
 def KimchiConstraint.unwiredVars (c : KimchiConstraint F) : List Variable :=
@@ -2855,6 +3250,147 @@ theorem endoMul_placed (nv : Variable) (aux : AuxState F) (c : EndoMul F) :
       rw [getElem_congr_idx heq]
       exact h
 
+/-- One state's cells within allocations `A`: its three variables against its three
+operands. -/
+private def TripleCells (A : List Variable) (v : Variable × Variable × Variable)
+    (t : FVar F × FVar F × FVar F) : Prop :=
+  CellOf A (some v.1) (some t.1) ∧ CellOf A (some v.2.1) (some t.2.1) ∧
+    CellOf A (some v.2.2) (some t.2.2)
+
+private theorem tripleCells_mono {A A' : List Variable} (hA : ∀ u ∈ A, u ∈ A')
+    {v : Variable × Variable × Variable} {t : FVar F × FVar F × FVar F}
+    (h : TripleCells A v t) : TripleCells A' v t :=
+  ⟨cellOf_mono hA h.1, cellOf_mono hA h.2.1, cellOf_mono hA h.2.2⟩
+
+/-- The walk of one state: every name is an allocation or a term of one of its operands that
+is not that bare variable, and its variables are its operands' cell by cell. -/
+private theorem records_reduceState_names (t : FVar F × FVar F × FVar F) :
+    Records (reduceState t : RecordingBuilder F (Variable × Variable × Variable)) fun v es =>
+      (∀ e ∈ es, ∀ w ∈ e.names, w ∈ allocs es ∨
+        ∃ x, (x = t.1 ∨ x = t.2.1 ∨ x = t.2.2) ∧ w ∈ x.termVars ∧ x ≠ .var w) ∧
+      TripleCells (allocs es) v t := by
+  unfold reduceState
+  refine records_bind (records_reduceToVariable_names _) fun a es0 h0 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun b es1 h1 => ?_
+  refine records_bind (records_reduceToVariable_names _) fun c es2 h2 => ?_
+  refine records_pure _ ?_
+  set A := allocs (es0 ++ (es1 ++ (es2 ++ []))) with hA
+  have h0' := operandNames_of h0 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h1' := operandNames_of h1 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  have h2' := operandNames_of h2 (A := A) fun u hu => by rw [hA]; simp [allocs_append, hu]
+  refine ⟨fun e he w hw => ?_, ⟨h0'.2.1, h0'.2.2⟩, ⟨h1'.2.1, h1'.2.2⟩, ⟨h2'.2.1, h2'.2.2⟩⟩
+  simp only [List.append_nil, List.mem_append] at he
+  rcases he with he | he | he
+  · exact (h0'.1 e he w hw).imp_right fun h => ⟨t.1, Or.inl rfl, h⟩
+  · exact (h1'.1 e he w hw).imp_right fun h => ⟨t.2.1, Or.inr (Or.inl rfl), h⟩
+  · exact (h2'.1 e he w hw).imp_right fun h => ⟨t.2.2, Or.inr (Or.inr rfl), h⟩
+
+/-- The walk of the states: index by index. -/
+private theorem records_reduceStates_names :
+    (ts : List (FVar F × FVar F × FVar F)) →
+      Records (reduceStates ts : RecordingBuilder F (List (Variable × Variable × Variable)))
+        fun vs es =>
+          (∀ e ∈ es, ∀ w ∈ e.names, w ∈ allocs es ∨ ∃ t ∈ ts, ∃ x,
+            (x = t.1 ∨ x = t.2.1 ∨ x = t.2.2) ∧ w ∈ x.termVars ∧ x ≠ .var w) ∧
+          vs.length = ts.length ∧
+          ∀ (i : Nat) (hi : i < ts.length) (hi' : i < vs.length),
+            TripleCells (allocs es) vs[i] ts[i]
+  | [] => records_pure _ ⟨fun _ h => (List.not_mem_nil h).elim, rfl,
+      fun _ hi => absurd hi (Nat.not_lt_zero _)⟩
+  | t :: ts => by
+    unfold reduceStates
+    refine records_bind (records_reduceState_names t) fun v es1 h1 => ?_
+    refine records_bind (records_reduceStates_names ts) fun vs es2 h2 => ?_
+    refine records_pure _ ⟨fun e he w hw => ?_, by simp [h2.2.1], fun i hi hi' => ?_⟩
+    · simp only [List.append_nil, List.mem_append] at he
+      rcases he with he | he
+      · exact (h1.1 e he w hw).imp allocs_mono_left fun ⟨x, hx, h⟩ =>
+          ⟨t, List.mem_cons_self .., x, hx, h⟩
+      · exact (h2.1 e he w hw).imp (fun h => allocs_mono_right (allocs_mono_left h))
+          fun ⟨t', ht', x, hx, h⟩ => ⟨t', List.mem_cons_of_mem _ ht', x, hx, h⟩
+    · cases i with
+      | zero => exact tripleCells_mono (fun u hu => allocs_mono_left hu) h1.2
+      | succ k =>
+        exact tripleCells_mono (fun u hu => allocs_mono_right (allocs_mono_left hu))
+          (h2.2.2 k (by simpa using hi) (by simpa using hi'))
+
+/-- The walk of a Poseidon block: its rows are the chunking of its pinned states, every name
+an allocation or a term of a state's operand that is not that bare variable, and the pinned
+states the states' operands cell by cell. -/
+private theorem records_poseidon_names (c : PoseidonConstraint F) :
+    Records (c.reduce : RecordingBuilder F (List (KimchiRow F))) fun rows es =>
+      ∃ vs : List (Variable × Variable × Variable), vs.length = c.state.length ∧
+        rows = rowsFromStates (fun i => c.rc.getD i (0, 0, 0)) 0 vs ∧
+        (∀ e ∈ es, ∀ w ∈ e.names, w ∈ allocs es ∨ ∃ t ∈ c.state, ∃ x,
+          (x = t.1 ∨ x = t.2.1 ∨ x = t.2.2) ∧ w ∈ x.termVars ∧ x ≠ .var w) ∧
+        ∀ (i : Nat) (hi : i < c.state.length) (hi' : i < vs.length),
+          TripleCells (allocs es) vs[i] c.state[i] := by
+  unfold PoseidonConstraint.reduce
+  refine records_bind (records_reduceStates_names c.state) fun vs es h => ?_
+  refine records_pure _ ⟨vs, h.2.1, rfl, fun e he w hw => ?_, fun i hi hi' => ?_⟩
+  · rw [List.append_nil] at he ⊢
+    exact h.1 e he w hw
+  · rw [List.append_nil]
+    exact h.2.2 i hi hi'
+
+/-- A Poseidon block of the shape `5w + 1` is placed: its names are allocations or terms of
+its states' operands that are not that bare variable, and its rows' cells are the states'
+operands' variables cell by cell. -/
+theorem poseidon_placed (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F)
+    (h : c.state.length % 5 = 1) : Placed nv aux (.poseidon c) := by
+  obtain ⟨vs, hvs, hrows, hn, hc⟩ := recordReduction_of_records (records_poseidon_names c) nv aux
+  have hw : c.state.length = 5 * (c.state.length / 5) + 1 := by omega
+  refine ⟨fun e he w hw' => (hn e he w hw').imp_right ?_, ?_, fun i j => ?_⟩
+  · rintro ⟨t, ht, x, hx, hterm⟩
+    obtain ⟨row, hrow, h1, h2, h3⟩ := mem_rowOperandsList _ c.state hw t ht
+    refine ⟨x, mem_placedOperands hrow ?_, hterm⟩
+    rcases hx with rfl | rfl | rfl
+    · exact h1
+    · exact h2
+    · exact h3
+  · show (recordReduction nv aux c.reduce).result.length =
+      (Poseidon.rowOperandsList c.state).length
+    rw [hrows, rowsFromStates_length _ 0 (c.state.length / 5) vs (by omega),
+      rowOperandsList_length (c.state.length / 5) c.state hw]
+  · have hi : i.val < c.state.length / 5 + 1 := by
+      have h' := i.isLt
+      simp only [KimchiConstraint.rowCount, KimchiConstraint.rowOperandsList] at h'
+      exact Nat.lt_of_lt_of_eq h' (rowOperandsList_length (c.state.length / 5) c.state hw)
+    rcases Nat.lt_or_ge i.val (c.state.length / 5) with hlt | hge
+    · have hrow : (KimchiConstraint.poseidon c).rowOperands[i] =
+          cellsOf (PoseidonConstraint.windowCells (c.state[5 * i.val]'(by omega))
+            (c.state[5 * i.val + 1]'(by omega)) (c.state[5 * i.val + 2]'(by omega))
+            (c.state[5 * i.val + 3]'(by omega)) (c.state[5 * i.val + 4]'(by omega))) := by
+        show (Poseidon.rowOperandsList c.state)[i.val] = _
+        exact rowOperandsList_window _ c.state hw i.val hlt
+      rw [hrow]
+      show CellOf _ ((recordReduction nv aux c.reduce).result[i.val]'(by
+        rw [poseidon_result_length nv aux c h]; omega)).vars[j] _
+      rw [List.getElem_of_eq hrows, rowsFromStates_window _ 0 _ vs (by omega) i.val hlt]
+      obtain ⟨a0, b0, c0⟩ := hc (5 * i.val) (by omega) (by omega)
+      obtain ⟨a1, b1, c1⟩ := hc (5 * i.val + 1) (by omega) (by omega)
+      obtain ⟨a2, b2, c2⟩ := hc (5 * i.val + 2) (by omega) (by omega)
+      obtain ⟨a3, b3, c3⟩ := hc (5 * i.val + 3) (by omega) (by omega)
+      obtain ⟨a4, b4, c4⟩ := hc (5 * i.val + 4) (by omega) (by omega)
+      fin_cases j
+      exacts [a0, b0, c0, a4, b4, c4, a1, b1, c1, a2, b2, c2, a3, b3, c3]
+    · have e : i.val = c.state.length / 5 := by omega
+      have hrow : (KimchiConstraint.poseidon c).rowOperands[i] =
+          cellsOf (PoseidonConstraint.finalCells (c.state[5 * (c.state.length / 5)]'(by
+            omega))) := by
+        show (Poseidon.rowOperandsList c.state)[i.val] = _
+        rw [getElem_congr_idx e]
+        exact rowOperandsList_final _ c.state hw
+      rw [hrow]
+      show CellOf _ ((recordReduction nv aux c.reduce).result[i.val]'(by
+        rw [poseidon_result_length nv aux c h]; omega)).vars[j] _
+      rw [List.getElem_of_eq hrows, getElem_congr_idx e,
+        rowsFromStates_final _ 0 _ vs (by omega)]
+      obtain ⟨a0, b0, c0⟩ := hc (5 * (c.state.length / 5)) (by omega) (by omega)
+      fin_cases j
+      exacts [a0, b0, c0, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial,
+        trivial, trivial, trivial, trivial]
+
 /-! ## Absent cells carry no coefficient -/
 
 /-- Every equation a log queues carries no coefficient on an absent cell. -/
@@ -3060,6 +3596,29 @@ private theorem records_endoMul_absent (c : EndoMul F) :
   records [records_reduceToVariable_absent _, records_endoMulRounds_absent c.state]
   absent_leaf
 
+private theorem records_reduceState_absent (t : FVar F × FVar F × FVar F) :
+    Records (reduceState t : RecordingBuilder F (Variable × Variable × Variable)) fun _ es =>
+      AbsentAll es := by
+  unfold reduceState
+  records [records_reduceToVariable_absent _]
+  absent_leaf
+
+private theorem records_reduceStates_absent :
+    (ts : List (FVar F × FVar F × FVar F)) →
+      Records (reduceStates ts : RecordingBuilder F (List (Variable × Variable × Variable)))
+        fun _ es => AbsentAll es
+  | [] => records_pure _ absentAll_nil
+  | t :: ts => by
+    unfold reduceStates
+    records [records_reduceState_absent t, records_reduceStates_absent ts]
+    absent_leaf
+
+private theorem records_poseidon_absent (c : PoseidonConstraint F) :
+    Records (c.reduce : RecordingBuilder F (List (KimchiRow F))) fun _ es => AbsentAll es := by
+  unfold PoseidonConstraint.reduce
+  records [records_reduceStates_absent c.state]
+  absent_leaf
+
 private theorem records_basic_absent (b : Basic F) :
     Records (reduce b : RecordingBuilder F Unit) fun _ es => AbsentAll es := by
   cases b <;> simp only [reduce] <;> records [records_reduceAffineExpression_absent _]
@@ -3099,6 +3658,12 @@ theorem endoMul_absentZero (nv : Variable) (aux : AuxState F) (c : EndoMul F) :
     ∀ e ∈ (recordReduction nv aux (EndoMul.reduce c)).events, ∀ g, e.queued? = some g →
       g.AbsentZero :=
   recordReduction_of_records (records_endoMul_absent c) nv aux
+
+/-- Every equation a Poseidon block's recorded reduction queues carries no coefficient on an
+absent cell. -/
+theorem poseidon_absentZero (nv : Variable) (aux : AuxState F) (c : PoseidonConstraint F) :
+    ∀ e ∈ (recordReduction nv aux c.reduce).events, ∀ g, e.queued? = some g → g.AbsentZero :=
+  recordReduction_of_records (records_poseidon_absent c) nv aux
 
 end NameWalks
 
