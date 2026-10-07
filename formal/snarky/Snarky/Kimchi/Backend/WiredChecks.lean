@@ -18,11 +18,21 @@ a table splitting the merged class, or reading the intermediate away from its pi
 while every gate holds, does not satisfy the index; an index with the packed row's
 coefficients altered, or with the pinned variable's copy wire rerouted, is not the lowering's.
 
+Then a challenge decomposition, in two lowerings. One round from the initial accumulators,
+its crumbs fresh and its output `n` public: its two `2`s pin one allocation through the cache
+and its `0` pins another, the two pins packed in one row before the gate row. Two rounds, the
+second's accumulators the first's outputs: the gate block's second row sits one past its
+first, and each threaded accumulator labels a wired cell in each, one class. Their
+boundaries: a crumb reused by a Boolean keeps every constraint wired and breaks the scope; a
+crumb written as a sum is not wired.
+
 ## Main results
 
-- `wired_example_holds`: the closed theorem on the decided instance.
-- `wired_rejections_scope`, `wired_rejections_table`, `wired_rejections_index`: the
-  boundaries, by premise.
+- `wired_example_holds`, `endo_example_holds`, `chain_example_holds`: the closed theorem on
+  the decided instances.
+- `wired_rejections_scope`, `wired_rejections_table`, `wired_rejections_index`,
+  `endo_rejections`: the boundaries, by premise.
+- `endo_example_layout`, `chain_example_layout`: the lowerings' logs, rows and classes.
 -/
 
 open Kimchi
@@ -62,15 +72,17 @@ private def rows : List (KimchiRow K) := directRows source publicVars 20
 
 private def roots : Array Variable := directRoots source 20
 
-/-- The table: each row's cells under `V`, zero beyond the lowering. -/
-private def table : Fin 16 → Fin wCols → K := fun i j =>
-  match rows[i.val]? with
-  | some r => rowValues V r j
-  | none => 0
+/-- A table: each row's cells under a valuation, zero beyond the lowering. -/
+private def tableOf (V : Valuation K) (rows : List (KimchiRow K)) : Fin 16 → Fin wCols → K :=
+  fun i j =>
+    match rows[i.val]? with
+    | some r => rowValues V r j
+    | none => 0
 
-/-- The gate table: the lowering's rows with the class-based wiring, zero rows identity-wired
+/-- A gate table: the lowering's rows with the class-based wiring, zero rows identity-wired
 beyond them. -/
-private def gates : Fin 16 → Index.GateRow K 16 := fun i =>
+private def gatesOf (roots : Array Variable) (rows : List (KimchiRow K)) :
+    Fin 16 → Index.GateRow K 16 := fun i =>
   match rows[i.val]? with
   | some r =>
     { typ := r.kind
@@ -79,6 +91,10 @@ private def gates : Fin 16 → Index.GateRow K 16 := fun i =>
         (⟨(classTarget roots rows i.val c.val).col % 7, Nat.mod_lt _ (by decide)⟩,
           ⟨(classTarget roots rows i.val c.val).row % 16, Nat.mod_lt _ (by decide)⟩) }
   | none => { typ := .zero, coeffs := fun _ => 0, wires := fun c => (c, i) }
+
+private def table : Fin 16 → Fin wCols → K := tableOf V rows
+
+private def gates : Fin 16 → Index.GateRow K 16 := gatesOf roots rows
 
 private def mds : Gate.Poseidon.Mds K :=
   { m00 := 0, m01 := 0, m02 := 0, m10 := 0, m11 := 0, m12 := 0, m20 := 0, m21 := 0, m22 := 0 }
@@ -218,5 +234,152 @@ theorem wired_rejections_index :
     rw [getElem_directGates source publicVars 20 2 (by decide +kernel)] at hw
     simp only [wireTarget_eq] at hw
     exact absurd hw (by decide +kernel)
+
+/-! ## A challenge decomposition -/
+
+/-- A round from the initial accumulators, its eight crumbs fresh, its outputs the variables
+`8`, `9`, `10`. -/
+private def round1 : EndoScalarRound K :=
+  { n0 := .const 0, n8 := .var 8, a0 := .const 2, a8 := .var 9, b0 := .const 2, b8 := .var 10,
+    xs := #v[.var 0, .var 1, .var 2, .var 3, .var 4, .var 5, .var 6, .var 7] }
+
+/-- One round, its output `n` accumulator public. -/
+private def endoSource : List (KimchiConstraint K) := [.endoScalar [round1]]
+
+private def endoPublic : List Variable := [8]
+
+/-- The crumbs `1 2 3 0 1 2 3 1`, the accumulators they fold to from `0`, `2`, `2`, and the
+pinned registers at the allocations `11`, `12`, `13`. -/
+private def endoV : Valuation K := fun v =>
+  [1, 2, 3, 0, 1, 2, 3, 1, 72, 26, 68, 2, 2, 0].getD v 0
+
+private def endoRows : List (KimchiRow K) := directRows endoSource endoPublic 11
+
+private def endoRoots : Array Variable := directRoots endoSource 11
+
+private def endoIndex? : Option (Index K 16) :=
+  Index.build? (gatesOf endoRoots endoRows) endoPublic.length 3 40 0 mds shifts
+
+theorem endo_example_built : endoIndex?.isSome := by
+  decide +kernel
+
+private def endoIdx : Index K 16 := endoIndex?.get endo_example_built
+
+private def endoPub : Fin endoIdx.publicCount → K := fun i => endoV (endoPublic.getD i.val 0)
+
+theorem endo_example_scoped : KimchiConstraint.Wired.Scoped 11 endoSource endoPublic := by
+  decide +kernel
+
+theorem endo_example_indexOf : IndexOf endoSource endoPublic 11 endoIdx :=
+  indexOf_of_classTarget endoSource endoPublic 11 endoIdx (by decide +kernel) (by decide +kernel)
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+
+theorem endo_example_satisfies : endoIdx.Satisfies endoPub (tableOf endoV endoRows) := by
+  decide +kernel
+
+/-- The closed theorem on the one-round instance. -/
+theorem endo_example_holds :
+    ∃ W : Valuation K, (∀ c ∈ endoSource, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin endoPublic.length,
+        W endoPublic[i] = endoPub (endo_example_indexOf.publicIndex i) :=
+  KimchiConstraint.Wired.holds_of_satisfies endo_example_scoped endo_example_indexOf endoPub
+    (tableOf endoV endoRows) endo_example_satisfies
+
+/-- The one-round log: the registers allocate `11`, `12`, `13` in reduction order `b0`, `a0`,
+`n0`; the second `2` hits the first's cache and fuses with it; the two pins pack into the row
+before the gate row; the cache hit's class holds the pinned cell and both register cells. -/
+theorem endo_example_layout :
+    (recordGates endoSource 11 initialAuxState).steps.map (fun s => allocs s.events) =
+        [[11, 12, 13]] ∧
+      (recordGates endoSource 11 initialAuxState).steps.map (fun s => fusions s.events) =
+        [[(12, 11)]] ∧
+      (recordGates endoSource 11 initialAuxState).steps.map (fun s => pinsOf s.events) =
+        [[(0, 13), (2, 11)]] ∧
+      endoRows.length = 3 ∧ gateRowOf endoSource endoPublic 11 0 (by decide) = 2 ∧
+      classCells endoRoots endoRows 12 = [(1, 3), (2, 2), (2, 3)] := by
+  decide +kernel
+
+/-- A second round threading the first's outputs into its accumulators, its crumbs fresh, its
+outputs `19`, `20`, `21`. -/
+private def round2 : EndoScalarRound K :=
+  { n0 := .var 8, n8 := .var 19, a0 := .var 9, a8 := .var 20, b0 := .var 10, b8 := .var 21,
+    xs := #v[.var 11, .var 12, .var 13, .var 14, .var 15, .var 16, .var 17, .var 18] }
+
+/-- Two rounds, the final `n` accumulator public. -/
+private def chainSource : List (KimchiConstraint K) := [.endoScalar [round1, round2]]
+
+private def chainPublic : List Variable := [19]
+
+/-- The first round as before, the second's crumbs `2 0 1 3 2 0 1 3` folding its outputs on,
+and the pinned registers at the allocations `22`, `23`, `24`. -/
+private def chainV : Valuation K := fun v =>
+  [1, 2, 3, 0, 1, 2, 3, 1, 72, 26, 68, 2, 0, 1, 3, 2, 0, 1, 3, 55, 96, 85, 2, 2, 0].getD v 0
+
+private def chainRows : List (KimchiRow K) := directRows chainSource chainPublic 22
+
+private def chainRoots : Array Variable := directRoots chainSource 22
+
+private def chainIndex? : Option (Index K 16) :=
+  Index.build? (gatesOf chainRoots chainRows) chainPublic.length 3 40 0 mds shifts
+
+theorem chain_example_built : chainIndex?.isSome := by
+  decide +kernel
+
+private def chainIdx : Index K 16 := chainIndex?.get chain_example_built
+
+private def chainPub : Fin chainIdx.publicCount → K := fun i =>
+  chainV (chainPublic.getD i.val 0)
+
+theorem chain_example_scoped : KimchiConstraint.Wired.Scoped 22 chainSource chainPublic := by
+  decide +kernel
+
+theorem chain_example_indexOf : IndexOf chainSource chainPublic 22 chainIdx :=
+  indexOf_of_classTarget chainSource chainPublic 22 chainIdx (by decide +kernel)
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel)
+
+theorem chain_example_satisfies : chainIdx.Satisfies chainPub (tableOf chainV chainRows) := by
+  decide +kernel
+
+/-- The closed theorem on the two-round instance. -/
+theorem chain_example_holds :
+    ∃ W : Valuation K, (∀ c ∈ chainSource, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin chainPublic.length,
+        W chainPublic[i] = chainPub (chain_example_indexOf.publicIndex i) :=
+  KimchiConstraint.Wired.holds_of_satisfies chain_example_scoped chain_example_indexOf chainPub
+    (tableOf chainV chainRows) chain_example_satisfies
+
+/-- The two-round layout: the second round logs nothing, the block's rows are the third and
+fourth, and each threaded accumulator's class holds the first row's output cell and the
+second row's input cell, the public one also its public cell. -/
+theorem chain_example_layout :
+    (recordGates chainSource 22 initialAuxState).steps.map (fun s => allocs s.events) =
+        [[22, 23, 24]] ∧
+      chainRows.length = 4 ∧ gateRowOf chainSource chainPublic 22 0 (by decide) = 2 ∧
+      classCells chainRoots chainRows 8 = [(2, 1), (3, 0)] ∧
+      classCells chainRoots chainRows 9 = [(2, 4), (3, 2)] ∧
+      classCells chainRoots chainRows 10 = [(2, 5), (3, 3)] ∧
+      classCells chainRoots chainRows 19 = [(0, 0), (3, 1)] := by
+  decide +kernel
+
+/-! ## Its boundaries -/
+
+/-- The chain with a crumb of the second round reused by a Boolean. -/
+private def reusedSource : List (KimchiConstraint K) :=
+  chainSource ++ [.basic (.boolean (.var 12))]
+
+/-- The second round with a crumb written as a sum. -/
+private def summedRound : EndoScalarRound K :=
+  { round2 with
+    xs := #v[.var 11, .var 12, .var 13, .add (.var 14) (.var 15), .var 15, .var 16, .var 17,
+      .var 18] }
+
+/-- A reused bare crumb keeps every constraint wired and breaks the scope; a summed crumb is
+not wired. -/
+theorem endo_rejections :
+    ((∀ c ∈ reusedSource, c.Wired) ∧
+      ¬ KimchiConstraint.Wired.Scoped 22 reusedSource chainPublic) ∧
+    ¬ (KimchiConstraint.endoScalar [round1, summedRound]).Wired := by
+  decide +kernel
 
 end Snarky.Kimchi

@@ -5,9 +5,10 @@ import Snarky.Kimchi.Backend.Direct
 
 The source constraints whose lowering wires: any `Basic` constraint over affine operands, and
 an admitted gate whose operands in the unwired columns are bare variables; the admitted gates
-are the complete addition so far. Their reduction allocates intermediates, pins constants
-through the cache and fuses classes, so the union-find, the constant cache and the generic
-queue all move; the direct fragment is the special case in which none of them does.
+are the complete addition and the challenge decomposition. Their reduction allocates
+intermediates, pins constants through the cache and fuses classes, so the union-find, the
+constant cache and the generic queue all move; the direct fragment is the special case in
+which none of them does.
 
 A satisfying table determines a valuation by class: a variable reads the value in any cell of
 its root's class, the permutation forcing those cells to agree. A fusion the log records, a
@@ -66,6 +67,7 @@ variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 private def KimchiConstraint.Admitted : KimchiConstraint F → Prop
   | .basic _ => True
   | .addComplete _ => True
+  | .endoScalar _ => True
   | _ => False
 
 private instance KimchiConstraint.decidableAdmitted (c : KimchiConstraint F) :
@@ -480,7 +482,7 @@ private theorem placed_of_wired {c : KimchiConstraint F} (hw : c.Wired) (nv : Va
   | addComplete c => exact Or.inr (addComplete_placed nv aux c)
   | poseidon _ => exact hw.1.elim
   | varBaseMul _ => exact hw.1.elim
-  | endoScalar _ => exact hw.1.elim
+  | endoScalar rounds => exact Or.inr (endoScalar_placed nv aux rounds)
   | endoMul _ => exact hw.1.elim
   | pad _ => exact hw.1.elim
 
@@ -903,7 +905,7 @@ private theorem step_absentZero {source : List (KimchiConstraint F)} {nv : Varia
   | addComplete c => exact addComplete_absentZero nv' aux' c
   | poseidon _ => exact hwd.1.elim
   | varBaseMul _ => exact hwd.1.elim
-  | endoScalar _ => exact hwd.1.elim
+  | endoScalar rounds => exact endoScalar_absentZero nv' aux' rounds
   | endoMul _ => exact hwd.1.elim
   | pad _ => exact hwd.1.elim
 
@@ -1186,7 +1188,55 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
       exact hadd
     | poseidon _ => exact hwd.1.elim
     | varBaseMul _ => exact hwd.1.elim
-    | endoScalar _ => exact hwd.1.elim
+    | endoScalar rounds =>
+      have hgr : (lowering source nv).steps[p].gateRows =
+          (recordReduction nv' aux' (EndoScalar.reduce rounds)).result := by
+        rw [hstep, hsp]
+        rfl
+      have hlen := endoScalar_result_length nv' aux' rounds
+      refine endoScalar_holds_of_reductionFacts nv' aux' rounds V hf fun i => ?_
+      have hi0 : i.val < (recordReduction nv' aux' (EndoScalar.reduce rounds)).result.length := by
+        rw [hlen]
+        exact i.isLt
+      have hk : i.val < (lowering source nv).steps[p].gateRows.length := by
+        rw [hgr]
+        exact hi0
+      obtain ⟨hi', hrowi⟩ := List.getElem?_eq_some_iff.mp
+        (directRows_gateRow source publicVars nv p hp i.val hk)
+      have hrow : (directRows source publicVars nv)[gateRowOf source publicVars nv p hp + i.val] =
+          (recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0 := by
+        rw [hrowi]
+        exact List.getElem_of_eq hgr _
+      have hsat' := hsat.1 ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩
+      have htyp' : (idx.gates ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩).typ =
+          .endoScalar := by
+        rw [hindex.typ_eq _ hi', hrow]
+        exact endoScalar_kind nv' aux' rounds i
+      unfold Index.rowSatisfies at hsat'
+      rw [htyp'] at hsat'
+      simp only at hsat'
+      have hcells : ∀ k : Fin wCols, k.val < 14 →
+          wTab ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩ k =
+          rowValues V ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0)
+            k := by
+        intro k hk
+        obtain ⟨w, hlab⟩ := endoScalar_cell_some nv' aux' rounds i k hk
+        have hlab' :
+            ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0).vars[k] =
+              some w := hlab
+        rw [hval _ k.val hi' k.isLt _ (by rw [hrow]; exact hlab')]
+        simp only [rowValues, hlab', Option.map_some, Option.getD_some]
+      have hmap : Lift.Gate.EndoScalar.rowWitness wTab
+          ⟨gateRowOf source publicVars nv p hp + i.val, by omega⟩ =
+          Lift.Gate.EndoScalar.cellMap (rowValues V
+            ((recordReduction nv' aux' (EndoScalar.reduce rounds)).result[i.val]'hi0)) := by
+        simp only [Lift.Gate.EndoScalar.rowWitness, Lift.Gate.EndoScalar.cellMap]
+        rw [hcells 0 (by decide), hcells 1 (by decide), hcells 2 (by decide), hcells 3 (by decide),
+          hcells 4 (by decide), hcells 5 (by decide), hcells 6 (by decide), hcells 7 (by decide),
+          hcells 8 (by decide), hcells 9 (by decide), hcells 10 (by decide),
+          hcells 11 (by decide), hcells 12 (by decide), hcells 13 (by decide)]
+      rw [← hmap]
+      exact hsat'
     | endoMul _ => exact hwd.1.elim
     | pad _ => exact hwd.1.elim
   · intro i
