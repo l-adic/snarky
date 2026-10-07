@@ -6,23 +6,31 @@ import Kimchi.Columns
 /-!
 # Generic receipts
 
-Where each generic event's equation landed. A Boolean's equation is not among its own step's
-rows: it enters the batching queue and leaves it packed behind the next generic equation,
-wherever that is, or alone at the final flush. The walk here replays the queue over the
-recorded events, step by step with each step's gate rows between, and issues every generic
-event a receipt: the body row holding its equation and the half of that row. The first half
-is the row's cells `0` to `2` with coefficients `0` to `4`, the second its cells `3` to `5`
-with coefficients `5` to `9`; a packed row holds the incoming equation first.
+Where each queued equation landed. A Boolean's equation is not among its own step's rows: it
+enters the batching queue and leaves it packed behind the next queued equation, wherever that
+is, or alone at the final flush. The same holds for the pinning rows and the unequal-coefficient
+rows the equality op queues. The walk here replays the queue over the recorded events, step by
+step with each step's gate rows between, and issues every queued equation a receipt: the body
+row holding it and the half of that row. The first half is the row's cells `0` to `2` with
+coefficients `0` to `4`, the second its cells `3` to `5` with coefficients `5` to `9`; a packed
+row holds the incoming equation first.
 
-The walk tracks the builder's actual queue by equality, so its receipts are proved located
-for the recorded lowering of any constraint list whose events are all generic: the cells
-and coefficients at a receipt are exactly its constraint's. It rejects an allocation or
-equality event rather than skipping its obligation; their receipts are later work.
+An event queues an equation or does not (`ReductionEvent.queued?`): a generic constraint and
+the two row-queuing outcomes of an equality do, an allocation and the merging, cache-hit and
+trivial outcomes do not and are passed over, since they leave the queue alone. So the walk is
+total, and because it tracks the builder's actual queue by equality, its receipts are proved
+located for the recorded lowering of any constraint list: the cells and coefficients at a
+receipt are exactly its equation's.
+
+Receipts locate equations only. An equality discharged by a merge or a cache hit queues
+nothing, and its obligation is met elsewhere: a merge through the wiring's classes, a cache hit
+through the class and the pinning row of the cached variable, which has a receipt of its own.
 
 ## Main definitions
 
+- `ReductionEvent.queued?`: the generic equation an event queued, if any.
 - `GenericReceipt`, `GenericReceipt.Located`: a receipt and what it claims of the body rows.
-- `receipts`: every generic event's receipt, or `none` on an unsupported event.
+- `receipts`: every queued equation's receipt.
 - `RecordedGates.allRows`: the body rows with the final flush's row.
 
 ## Main results
