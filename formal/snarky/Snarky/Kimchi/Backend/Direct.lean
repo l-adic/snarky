@@ -36,6 +36,9 @@ and the public rows.
   public variables as the public input.
 - `indexOf_of_classTarget`: an index matching the lowering's rows and the class-based wiring
   agrees with the assembly, so `IndexOf` is decided on concrete data.
+- `IndexOf.rows_le`, `IndexOf.typ_eq`, `IndexOf.coeffs_eq`, `IndexOf.classCells_eq`: what an
+  index of the lowering says row by row, and that a satisfying table reads alike on every
+  cell of a wiring class; the wired fragment reuses them.
 
 ## Implementation notes
 
@@ -320,6 +323,88 @@ theorem indexOf_of_classTarget {n : ℕ} (source : List (KimchiConstraint F))
     rw [getElem_directGates source publicVars nv i.val hi']
     obtain ⟨h1, h2⟩ := hwires i hi' c
     fin_cases c <;> simp only [wireTarget_eq] <;> exact ⟨h1, h2⟩
+
+/-! ## The index at the lowering -/
+
+/-- A cell's value in a table: zero outside it. -/
+def cellVal {n : ℕ} (wTab : Fin n → Fin wCols → F) (c : Nat × Nat) : F :=
+  if h : c.1 < n ∧ c.2 < wCols then wTab ⟨c.1, h.1⟩ ⟨c.2, h.2⟩ else 0
+
+/-- The lowering's rows fit before the index's masked rows. -/
+theorem IndexOf.rows_le {n : ℕ} {source : List (KimchiConstraint F)} {publicVars : List Variable}
+    {nv : Variable} {idx : Index F n} (h : IndexOf source publicVars nv idx) :
+    (directRows source publicVars nv).length ≤ n := by
+  have h1 := h.fits
+  have h2 := idx.zk_le
+  rw [length_directGates] at h1
+  omega
+
+/-- At a row of the lowering, the index's gate type is the row's. -/
+theorem IndexOf.typ_eq {n : ℕ} {source : List (KimchiConstraint F)} {publicVars : List Variable}
+    {nv : Variable} {idx : Index F n} (h : IndexOf source publicVars nv idx) (r : Nat)
+    (hr : r < (directRows source publicVars nv).length) :
+    (idx.gates ⟨r, lt_of_lt_of_le hr h.rows_le⟩).typ = (directRows source publicVars nv)[r].kind :=
+  (h.typ ⟨r, lt_of_lt_of_le hr h.rows_le⟩
+    ((length_directGates source publicVars nv).symm ▸ hr)).trans
+    (congrArg AssembledGate.kind (getElem_directGates source publicVars nv r hr))
+
+/-- At a row of the lowering, the index's coefficients are the row's, zero-extended. -/
+theorem IndexOf.coeffs_eq {n : ℕ} {source : List (KimchiConstraint F)}
+    {publicVars : List Variable} {nv : Variable} {idx : Index F n}
+    (h : IndexOf source publicVars nv idx) (r : Nat)
+    (hr : r < (directRows source publicVars nv).length) (c : Fin coeffCols) :
+    (idx.gates ⟨r, lt_of_lt_of_le hr h.rows_le⟩).coeffs c =
+      (directRows source publicVars nv)[r].coeffs.getD c.val 0 :=
+  (h.coeffs ⟨r, lt_of_lt_of_le hr h.rows_le⟩
+    ((length_directGates source publicVars nv).symm ▸ hr) c).trans
+    (congrArg (fun g : AssembledGate F => g.coeffs.getD c.val 0)
+      (getElem_directGates source publicVars nv r hr))
+
+/-- Under a satisfying table, the cells of one class of the lowering's wiring read alike: the
+index's wires link them in one cycle, and the table carries one value around it. -/
+theorem IndexOf.classCells_eq {n : ℕ} [NeZero n] {source : List (KimchiConstraint F)}
+    {publicVars : List Variable} {nv : Variable} {idx : Index F n}
+    (h : IndexOf source publicVars nv idx) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin wCols → F) (hsat : idx.Satisfies pub wTab) (k : Variable)
+    {c c' : Nat × Nat}
+    (hc : c ∈ classCells (directRoots source nv) (directRows source publicVars nv) k)
+    (hc' : c' ∈ classCells (directRoots source nv) (directRows source publicVars nv) k) :
+    cellVal wTab c = cellVal wTab c' := by
+  have hrows_le := h.rows_le
+  have hlenG := length_directGates source publicVars nv
+  have hgate := getElem_directGates source publicVars nv
+  have hwire : ∀ (r : Nat) (hr : r < (directRows source publicVars nv).length) (c : Fin permCols),
+      (((idx.gates ⟨r, by omega⟩).wires c).1 : ℕ) =
+          (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r c).col ∧
+        (((idx.gates ⟨r, by omega⟩).wires c).2 : ℕ) =
+          (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r c).row
+      := by
+    intro r hr c
+    have hw := h.wires ⟨r, by omega⟩ (hlenG ▸ hr) c
+    simp only [hgate r hr] at hw
+    fin_cases c <;> exact hw
+  refine classCells_values_eq (directRoots source nv) (directRows source publicVars nv) k
+    (cellVal wTab) ?_ hc hc'
+  intro c hc
+  obtain ⟨hr, hj⟩ := classCells_bounds hc
+  obtain ⟨h1, h2⟩ := hwire c.1 hr ⟨c.2, hj⟩
+  have hs2 := hsat.2.1 (⟨c.2, hj⟩, ⟨c.1, by omega⟩)
+  have hwm : idx.wiringMap (⟨c.2, hj⟩, ⟨c.1, by omega⟩) =
+      (idx.gates ⟨c.1, by omega⟩).wires ⟨c.2, hj⟩ := rfl
+  rw [hwm] at hs2
+  simp only [Index.cellValue] at hs2
+  have hb1 : (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) c.1
+      c.2).row < n := h2 ▸ ((idx.gates ⟨c.1, by omega⟩).wires ⟨c.2, hj⟩).2.isLt
+  have hb2 : (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) c.1
+      c.2).col < wCols := by
+    rw [← h1]
+    exact lt_trans ((idx.gates ⟨c.1, by omega⟩).wires ⟨c.2, hj⟩).1.isLt (by decide)
+  simp only [cellVal, dif_pos (And.intro hb1 hb2), dif_pos (And.intro (lt_of_lt_of_le hr hrows_le)
+    (lt_trans hj (by decide : 7 < wCols)))]
+  refine Eq.trans ?_ hs2
+  congr 1
+  · exact Fin.ext h2.symm
+  · exact Fin.ext h1.symm
 
 /-! ## Provenance of the rows -/
 
@@ -896,10 +981,6 @@ private theorem unwired_unique {source : List (KimchiConstraint F)} {publicVars 
 
 /-! ## The valuation -/
 
-/-- A cell's value in a table: zero outside it. -/
-private def cellVal {n : ℕ} (wTab : Fin n → Fin wCols → F) (c : Nat × Nat) : F :=
-  if h : c.1 < n ∧ c.2 < wCols then wTab ⟨c.1, h.1⟩ ⟨c.2, h.2⟩ else 0
-
 /-- The value at a cell labelled by the variable, zero when none is. -/
 noncomputable def recover (rows : List (KimchiRow F)) (val : Nat × Nat → F)
     (v : Variable) : F :=
@@ -936,7 +1017,8 @@ private theorem recover_spec (rows : List (KimchiRow F)) (val : Nat × Nat → F
     rfl
 
 omit [DecidableEq F] in
-private theorem withPublic_zero (g : Kimchi.Gate.Generic F) : g.withPublic 0 = g := by
+/-- Folding a zero public input into a generic gate changes nothing. -/
+theorem withPublic_zero (g : Kimchi.Gate.Generic F) : g.withPublic 0 = g := by
   simp [Kimchi.Gate.Generic.withPublic]
 
 /-- **The direct fragment's closed theorem.** Any table satisfying an index of the fragment's
@@ -950,61 +1032,14 @@ theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
     ∃ V : Valuation F, (∀ c ∈ source, KimchiConstraint.Holds V c) ∧
       ∀ i : Fin publicVars.length, V publicVars[i] = pub (hindex.publicIndex i) := by
   have hs := hscope.direct
-  have hlenG := length_directGates source publicVars nv
-  have hrows_le : (directRows source publicVars nv).length ≤ n := by
-    have := hindex.fits
-    have := idx.zk_le
-    omega
+  have hrows_le := hindex.rows_le
   have hlenPub : (makePublicInputRows (F := F) publicVars).length = publicVars.length := by
     simp [makePublicInputRows]
   have hpub_le : publicVars.length ≤ (directRows source publicVars nv).length := by
     simp [directRows, hlenPub]
-  have hgate := getElem_directGates source publicVars nv
-  have htyp : ∀ (r : Nat) (hr : r < (directRows source publicVars nv).length),
-      (idx.gates ⟨r, by omega⟩).typ = (directRows source publicVars nv)[r].kind := fun r hr =>
-    (hindex.typ ⟨r, by omega⟩ (hlenG ▸ hr)).trans (congrArg AssembledGate.kind (hgate r hr))
-  have hcoeff : ∀ (r : Nat) (hr : r < (directRows source publicVars nv).length) (c : Fin coeffCols),
-      (idx.gates ⟨r, by omega⟩).coeffs c =
-        (directRows source publicVars nv)[r].coeffs.getD c.val 0 := fun r hr c =>
-    (hindex.coeffs ⟨r, by omega⟩ (hlenG ▸ hr) c).trans
-      (congrArg (fun g : AssembledGate F => g.coeffs.getD c.val 0) (hgate r hr))
-  have hwire : ∀ (r : Nat) (hr : r < (directRows source publicVars nv).length) (c : Fin permCols),
-      (((idx.gates ⟨r, by omega⟩).wires c).1 : ℕ) =
-          (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r c).col ∧
-        (((idx.gates ⟨r, by omega⟩).wires c).2 : ℕ) =
-          (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) r c).row
-      := by
-    intro r hr c
-    have hw := hindex.wires ⟨r, by omega⟩ (hlenG ▸ hr) c
-    simp only [hgate r hr] at hw
-    fin_cases c <;> exact hw
-  have hcopy : ∀ k, ∀ c ∈ classCells (directRoots source nv) (directRows source publicVars nv) k,
-      cellVal wTab
-          ((wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) c.1
-            c.2).row,
-          (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) c.1
-            c.2).col) =
-        cellVal wTab c := by
-    intro k c hc
-    obtain ⟨hr, hj⟩ := classCells_bounds hc
-    obtain ⟨h1, h2⟩ := hwire c.1 hr ⟨c.2, hj⟩
-    have hs2 := hsat.2.1 (⟨c.2, hj⟩, ⟨c.1, by omega⟩)
-    have hwm : idx.wiringMap (⟨c.2, hj⟩, ⟨c.1, by omega⟩) =
-        (idx.gates ⟨c.1, by omega⟩).wires ⟨c.2, hj⟩ := rfl
-    rw [hwm] at hs2
-    simp only [Index.cellValue] at hs2
-    have hb1 : (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) c.1
-        c.2).row < n := h2 ▸ ((idx.gates ⟨c.1, by omega⟩).wires ⟨c.2, hj⟩).2.isLt
-    have hb2 : (wireTarget (wireMap (directRoots source nv) (directRows source publicVars nv)) c.1
-        c.2).col < wCols := by
-      rw [← h1]
-      exact lt_trans ((idx.gates ⟨c.1, by omega⟩).wires ⟨c.2, hj⟩).1.isLt (by decide)
-    simp only [cellVal, dif_pos (And.intro hb1 hb2), dif_pos (And.intro (lt_of_lt_of_le hr hrows_le)
-      (lt_trans hj (by decide : 7 < wCols)))]
-    refine Eq.trans ?_ hs2
-    congr 1
-    · exact Fin.ext h2.symm
-    · exact Fin.ext h1.symm
+  have htyp := hindex.typ_eq
+  have hcoeff := hindex.coeffs_eq
+  have hcopy := hindex.classCells_eq pub wTab hsat
   -- the valuation
   let V : Valuation F := recover (directRows source publicVars nv) (cellVal wTab)
   have hreal : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
@@ -1013,9 +1048,7 @@ theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
     intro r j hr hj v hv
     refine recover_spec _ _ ?_ ?_ r j hr hj v hv
     · intro r j r' j' hr hj hr' hj' v hv hv'
-      exact classCells_values_eq (directRoots source nv) (directRows source publicVars nv) _
-        (cellVal wTab) (hcopy _) (mem_classCells_of_label hr hj hv)
-        (mem_classCells_of_label hr' hj' hv')
+      exact hcopy _ (mem_classCells_of_label hr hj hv) (mem_classCells_of_label hr' hj' hv')
     · intro r j r' j' hr hj hr' hj' v h7 hv hv'
       exact unwired_unique hscope r j r' j' hr hj hr' hj' v h7 hv hv'
   have hval : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)

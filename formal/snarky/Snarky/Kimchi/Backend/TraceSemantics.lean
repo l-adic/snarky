@@ -33,6 +33,9 @@ The two `none` conventions differ on purpose.
 - `basic_names`, `addComplete_names`: the names of a constraint's recorded reduction are terms
   of its operands or its allocations; an addition's row cells are its operands' variables,
   position by position, a bare operand's being itself.
+- `basic_absentZero`, `addComplete_absentZero`: every equation a constraint's recorded
+  reduction queues carries no coefficient on an absent cell.
+- `basic_of_reductionFacts`: when the recorded events hold, any `Basic` constraint holds.
 
 ## Implementation notes
 
@@ -128,9 +131,8 @@ private theorem records_addGenericPlonkConstraint (g : GenericPlonkConstraint F)
 
 private theorem records_addEqualsConstraint (c : EqualsConstraint F) :
     Records (addEqualsConstraint c : RecordingBuilder F Unit) fun _ es =>
-      ∃ o, es = [.equal c o] ∧ ∀ w ∈ o.names, w ∈ c.vl.toList ++ c.vr.toList :=
-  fun s => ⟨[.equal c (outcomeOf c s.core.aux.wireState.cachedConstants)], rfl, _, rfl,
-    outcomeOf_names c _⟩
+      ∃ o cache, es = [.equal c o] ∧ outcomeOf c cache = o :=
+  fun s => ⟨[.equal c (outcomeOf c s.core.aux.wireState.cachedConstants)], rfl, _, _, rfl, rfl⟩
 
 end Operations
 
@@ -242,7 +244,7 @@ private theorem records_reduceToVariable (x : CVar F) :
       ∀ V : Valuation F, ReductionFacts V es → V v = x.val V := by
   unfold reduceToVariable
   records [records_reduceAffineExpression _]
-  · obtain ⟨o, rfl, -⟩ := ‹∃ o, _ = [ReductionEvent.equal _ o] ∧ _›
+  · obtain ⟨o, -, rfl, -⟩ := ‹∃ o cache, _ = [ReductionEvent.equal _ o] ∧ _›
     subst_vars
     have hr := ‹∀ V : Valuation F, ReductionFacts V _ → reducedValue V _ = _›
     have hnone := ‹_ = none›
@@ -330,6 +332,195 @@ theorem boolean_of_reductionFacts (nv : Variable) (aux : AuxState F) (x : CVar F
     (V : Valuation F) (h : ReductionFacts V (recordReduction nv aux (reduce (.boolean x))).events) :
     Basic.Holds V (.boolean x) :=
   recordReduction_of_records (records_boolean x) nv aux V h
+
+omit [DecidableEq F] in
+private theorem reducedValue_eq_of_equalsHolds {V : Valuation F} {l r : Option Variable × F}
+    (he : equalsHolds V { cl := l.2, vl := l.1, cr := r.2, vr := r.1 }) :
+    reducedValue V l = reducedValue V r := by
+  obtain ⟨lv, lk⟩ := l
+  obtain ⟨rv, rk⟩ := r
+  simp only [equalsHolds] at he
+  cases lv <;> cases rv <;> simpa [reducedValue] using he
+
+private theorem records_equal (a b : CVar F) :
+    Records (reduce (.equal a b) : RecordingBuilder F Unit) fun _ es =>
+      ∀ V : Valuation F, ReductionFacts V es → Basic.Holds V (.equal a b) := by
+  simp only [reduce]
+  refine records_bind (records_reduceAffineExpression _) fun l esl hl => ?_
+  refine records_bind (records_reduceAffineExpression _) fun r esr hr => ?_
+  refine records_mono (records_addEqualsConstraint _) fun _ es₃ h => ?_
+  obtain ⟨o, -, rfl, -⟩ := h
+  intro V hV
+  obtain ⟨h1, h2⟩ := facts_append hV
+  obtain ⟨h2, h3⟩ := facts_append h2
+  have he := facts_equal h3
+  show a.val V = b.val V
+  rw [← CVar.reduce_val, ← CVar.reduce_val, ← hl V h1, ← hr V h2]
+  exact reducedValue_eq_of_equalsHolds he
+
+private theorem records_square (a b : CVar F) :
+    Records (reduce (.square a b) : RecordingBuilder F Unit) fun _ es =>
+      ∀ V : Valuation F, ReductionFacts V es → Basic.Holds V (.square a b) := by
+  simp only [reduce]
+  refine records_bind (records_reduceAffineExpression _) fun x esx hx => ?_
+  refine records_bind (records_reduceAffineExpression _) fun y esy hy => ?_
+  split
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₃ h => ?_
+    subst h
+    intro V hV
+    obtain ⟨h1, h2⟩ := facts_append hV
+    obtain ⟨h2, h3⟩ := facts_append h2
+    have hg := facts_generic h3
+    simp only [genericValue, Option.map_some, Option.getD_some] at hg
+    show a.val V * a.val V = b.val V
+    rw [← CVar.reduce_val, ← CVar.reduce_val, ← hx V h1, ← hy V h2]
+    simp only [reducedValue, ‹x.1 = some _›, ‹y.1 = some _›]
+    linear_combination hg
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₃ h => ?_
+    subst h
+    intro V hV
+    obtain ⟨h1, h2⟩ := facts_append hV
+    obtain ⟨h2, h3⟩ := facts_append h2
+    have hg := facts_generic h3
+    simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+      Option.getD_none] at hg
+    show a.val V * a.val V = b.val V
+    rw [← CVar.reduce_val, ← CVar.reduce_val, ← hx V h1, ← hy V h2]
+    simp only [reducedValue, ‹x.1 = some _›, ‹y.1 = none›]
+    linear_combination hg
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₃ h => ?_
+    subst h
+    intro V hV
+    obtain ⟨h1, h2⟩ := facts_append hV
+    obtain ⟨h2, h3⟩ := facts_append h2
+    have hg := facts_generic h3
+    simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+      Option.getD_none] at hg
+    show a.val V * a.val V = b.val V
+    rw [← CVar.reduce_val, ← CVar.reduce_val, ← hx V h1, ← hy V h2]
+    simp only [reducedValue, ‹x.1 = none›, ‹y.1 = some _›]
+    linear_combination -hg
+  · split
+    · refine records_pure _ fun V hV => ?_
+      obtain ⟨h1, h2⟩ := facts_append hV
+      obtain ⟨h2, -⟩ := facts_append h2
+      show a.val V * a.val V = b.val V
+      rw [← CVar.reduce_val, ← CVar.reduce_val, ← hx V h1, ← hy V h2]
+      simp only [reducedValue, ‹x.1 = none›, ‹y.1 = none›]
+      exact ‹_ = _›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₃ h => ?_
+      subst h
+      intro V hV
+      obtain ⟨h1, h2⟩ := facts_append hV
+      obtain ⟨h2, h3⟩ := facts_append h2
+      have hg := facts_generic h3
+      simp only [genericValue, Option.map_none, Option.getD_none] at hg
+      show a.val V * a.val V = b.val V
+      rw [← CVar.reduce_val, ← CVar.reduce_val, ← hx V h1, ← hy V h2]
+      simp only [reducedValue, ‹x.1 = none›, ‹y.1 = none›]
+      linear_combination hg
+
+/-- Close an `r1cs` leaf: read the three operands through their walks and the trailing
+equation, if any. -/
+local macro "r1cs_leaf" hl:ident hr:ident ho:ident V:ident h4:ident : tactic => `(tactic| (
+  intro $V hV
+  obtain ⟨h1, h2⟩ := facts_append hV
+  obtain ⟨h2, h3⟩ := facts_append h2
+  obtain ⟨h3, $h4⟩ := facts_append h3
+  show _ * _ = _
+  rw [← CVar.reduce_val, ← CVar.reduce_val, ← CVar.reduce_val, ← $hl $V h1, ← $hr $V h2,
+    ← $ho $V h3]))
+
+private theorem records_r1cs (a b c : CVar F) :
+    Records (reduce (.r1cs a b c) : RecordingBuilder F Unit) fun _ es =>
+      ∀ V : Valuation F, ReductionFacts V es → Basic.Holds V (.r1cs a b c) := by
+  simp only [reduce]
+  refine records_bind (records_reduceAffineExpression _) fun l esl hl => ?_
+  refine records_bind (records_reduceAffineExpression _) fun r esr hr => ?_
+  refine records_bind (records_reduceAffineExpression _) fun o eso ho => ?_
+  split
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+    subst h
+    r1cs_leaf hl hr ho V h4
+    have hg := facts_generic h4
+    simp only [genericValue, Option.map_some, Option.getD_some] at hg
+    simp only [reducedValue, ‹l.1 = some _›, ‹r.1 = some _›, ‹o.1 = some _›]
+    linear_combination -hg
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+    subst h
+    r1cs_leaf hl hr ho V h4
+    have hg := facts_generic h4
+    simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+      Option.getD_none] at hg
+    simp only [reducedValue, ‹l.1 = some _›, ‹r.1 = some _›, ‹o.1 = none›]
+    linear_combination hg
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+    subst h
+    r1cs_leaf hl hr ho V h4
+    have hg := facts_generic h4
+    simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+      Option.getD_none] at hg
+    simp only [reducedValue, ‹l.1 = some _›, ‹r.1 = none›, ‹o.1 = some _›]
+    linear_combination hg
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+    subst h
+    r1cs_leaf hl hr ho V h4
+    have hg := facts_generic h4
+    simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+      Option.getD_none] at hg
+    simp only [reducedValue, ‹l.1 = none›, ‹r.1 = some _›, ‹o.1 = some _›]
+    linear_combination hg
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+    subst h
+    r1cs_leaf hl hr ho V h4
+    have hg := facts_generic h4
+    simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+      Option.getD_none] at hg
+    simp only [reducedValue, ‹l.1 = some _›, ‹r.1 = none›, ‹o.1 = none›]
+    linear_combination hg
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+    subst h
+    r1cs_leaf hl hr ho V h4
+    have hg := facts_generic h4
+    simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+      Option.getD_none] at hg
+    simp only [reducedValue, ‹l.1 = none›, ‹r.1 = some _›, ‹o.1 = none›]
+    linear_combination hg
+  · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+    subst h
+    r1cs_leaf hl hr ho V h4
+    have hg := facts_generic h4
+    simp only [genericValue, Option.map_some, Option.getD_some, Option.map_none,
+      Option.getD_none] at hg
+    simp only [reducedValue, ‹l.1 = none›, ‹r.1 = none›, ‹o.1 = some _›]
+    linear_combination -hg
+  · split
+    · refine records_pure _ fun V hV => ?_
+      obtain ⟨h1, h2⟩ := facts_append hV
+      obtain ⟨h2, h3⟩ := facts_append h2
+      obtain ⟨h3, -⟩ := facts_append h3
+      show _ * _ = _
+      rw [← CVar.reduce_val, ← CVar.reduce_val, ← CVar.reduce_val, ← hl V h1, ← hr V h2,
+        ← ho V h3]
+      simp only [reducedValue, ‹l.1 = none›, ‹r.1 = none›, ‹o.1 = none›]
+      exact ‹_ = _›
+    · refine records_mono (records_addGenericPlonkConstraint _) fun _ es₄ h => ?_
+      subst h
+      r1cs_leaf hl hr ho V h4
+      have hg := facts_generic h4
+      simp only [genericValue, Option.map_none, Option.getD_none] at hg
+      simp only [reducedValue, ‹l.1 = none›, ‹r.1 = none›, ‹o.1 = none›]
+      linear_combination hg
+
+/-- When the recorded events hold at a valuation, a `Basic` constraint holds there. -/
+theorem basic_of_reductionFacts (nv : Variable) (aux : AuxState F) (b : Basic F)
+    (V : Valuation F) (h : ReductionFacts V (recordReduction nv aux (reduce b)).events) :
+    Basic.Holds V b := by
+  cases b with
+  | r1cs a b c => exact recordReduction_of_records (records_r1cs a b c) nv aux V h
+  | equal a b => exact recordReduction_of_records (records_equal a b) nv aux V h
+  | square a b => exact recordReduction_of_records (records_square a b) nv aux V h
+  | boolean x => exact boolean_of_reductionFacts nv aux x V h
 
 private theorem records_reduceAffinePoint (p : AffinePoint (FVar F)) :
     Records (reduceAffinePoint p : RecordingBuilder F (AffinePoint Variable)) fun q es =>
@@ -719,7 +910,8 @@ private theorem records_reduceToVariable_names (x : CVar F) :
       NamesFrom x.termVars (some v) es ∧ ∀ w, x = .var w → es = [] ∧ v = w := by
   unfold reduceToVariable
   records [records_reduceAffineExpression_names _]
-  · obtain ⟨o, rfl, ho⟩ := ‹∃ o, _ = [ReductionEvent.equal _ o] ∧ _›
+  · obtain ⟨o, cache, rfl, hoc⟩ := ‹∃ o cache, _ = [ReductionEvent.equal _ o] ∧ _›
+    subst hoc
     subst_vars
     obtain ⟨hr, hbare⟩ := ‹NamesFrom _ _ _ ∧ _›
     refine ⟨?_, fun w hw => ?_⟩
@@ -731,7 +923,7 @@ private theorem records_reduceToVariable_names (x : CVar F) :
           subst hw
           exact Or.inr (allocs_mono_right mem_allocs_cons)
         · simp only [ReductionEvent.names] at hw
-          have := ho w hw
+          have := outcomeOf_names _ _ w hw
           simp only [Option.toList_some, Option.toList_none, List.append_nil,
             List.mem_singleton] at this
           subst this
@@ -943,11 +1135,13 @@ private theorem records_basic_names (b : Basic F) :
     have sa : a.termVars ⊆ (Basic.equal a b).termVars := List.subset_append_left _ _
     have sb : b.termVars ⊆ (Basic.equal a b).termVars := List.subset_append_right _ _
     refine records_mono (records_addEqualsConstraint _) fun _ es₃ h => ?_
-    obtain ⟨o, rfl, ho⟩ := h
+    obtain ⟨o, cache, rfl, hoc⟩ := h
+    subst hoc
     refine names_seq2 (namesFrom_mono hl.1 sa) (namesFrom_mono hr.1 sb) fun e he w hw => ?_
     rw [List.mem_singleton] at he
     subst he
-    have hm := ho w hw
+    simp only [ReductionEvent.names] at hw
+    have hm := outcomeOf_names _ _ w hw
     simp only [List.mem_append, Option.mem_toList] at hm
     rcases hm with hm | hm
     · exact (hl.1.2 w hm).imp (sa ·) allocs_mono_left
@@ -1171,6 +1365,135 @@ theorem addComplete_names (nv : Variable) (aux : AuxState F) (c : AddComplete F)
         v ∈ allocs (recordReduction nv aux c.reduce).events) ∧ ∀ w, x = .var w → v = w)
         vs c.operands.toList :=
   recordReduction_of_records (records_addComplete_names c) nv aux
+
+
+/-! ## Absent cells carry no coefficient -/
+
+/-- Every equation a log queues carries no coefficient on an absent cell. -/
+private def AbsentAll (es : List (ReductionEvent F)) : Prop :=
+  ∀ e ∈ es, ∀ g, e.queued? = some g → g.AbsentZero
+
+omit [DecidableEq F] in
+private theorem absentAll_nil : AbsentAll ([] : List (ReductionEvent F)) :=
+  fun _ h => (List.not_mem_nil h).elim
+
+omit [DecidableEq F] in
+private theorem absentAll_append_iff {es₁ es₂ : List (ReductionEvent F)} :
+    AbsentAll (es₁ ++ es₂) ↔ AbsentAll es₁ ∧ AbsentAll es₂ :=
+  ⟨fun h => ⟨fun e he => h e (List.mem_append_left _ he),
+    fun e he => h e (List.mem_append_right _ he)⟩,
+    fun ⟨h₁, h₂⟩ e he => (List.mem_append.mp he).elim (h₁ e) (h₂ e)⟩
+
+omit [DecidableEq F] in
+private theorem absentAll_cons_iff {e : ReductionEvent F} {es : List (ReductionEvent F)} :
+    AbsentAll (e :: es) ↔ (∀ g, e.queued? = some g → g.AbsentZero) ∧ AbsentAll es :=
+  ⟨fun h => ⟨h e (List.mem_cons_self ..), fun e' he' => h e' (List.mem_cons_of_mem _ he')⟩,
+    fun ⟨h₁, h₂⟩ e' he' => (List.mem_cons.mp he').elim (fun h => h ▸ h₁) (h₂ e')⟩
+
+/-- The equation a decision queues, if any, carries no coefficient on an absent cell. -/
+private theorem queued_outcome_absent (c : EqualsConstraint F) (cache : List (F × Variable)) :
+    ∀ g, (ReductionEvent.equal c (outcomeOf c cache)).queued? = some g → g.AbsentZero := by
+  intro g hg
+  cases ho : outcomeOf c cache with
+  | pinned v k g' =>
+    rw [ho] at hg
+    simp only [ReductionEvent.queued?, Option.some.injEq] at hg
+    subst hg
+    exact outcomeOf_pinned_absentZero ho
+  | row g' =>
+    rw [ho] at hg
+    simp only [ReductionEvent.queued?, Option.some.injEq] at hg
+    subst hg
+    exact outcomeOf_row_absentZero ho
+  | merge _ _ =>
+    rw [ho] at hg
+    simp [ReductionEvent.queued?] at hg
+  | cached _ _ _ =>
+    rw [ho] at hg
+    simp [ReductionEvent.queued?] at hg
+  | trivial =>
+    rw [ho] at hg
+    simp [ReductionEvent.queued?] at hg
+
+omit [Field F] [DecidableEq F] in
+private theorem queued?_alloc (v : Variable) (ex : AffineExpression F) :
+    (ReductionEvent.alloc v ex).queued? = none := by
+  simp [ReductionEvent.queued?]
+
+omit [Field F] [DecidableEq F] in
+private theorem queued?_generic (g : GenericPlonkConstraint F) :
+    (ReductionEvent.generic g).queued? = some g := by
+  simp [ReductionEvent.queued?]
+
+/-- Close a leaf of an absent-cell walk: split the log event by event and discharge each by
+its shape, a queued equation by its literal cells. -/
+local macro "absent_leaf" : tactic => `(tactic| (
+  simp_all [absentAll_cons_iff, absentAll_nil, absentAll_append_iff, queued?_alloc,
+    queued?_generic]
+  all_goals first
+    | exact queued_outcome_absent _ _
+    | simp [GenericPlonkConstraint.AbsentZero]))
+
+private theorem records_completelyReduce_absent (single : Variable × F) :
+    (l : List (Variable × F)) →
+      Records (completelyReduce single l : RecordingBuilder F (Variable × F)) fun _ es =>
+        AbsentAll es
+  | [] => records_pure _ absentAll_nil
+  | next :: rest => by
+    unfold completelyReduce
+    records [records_completelyReduce_absent next rest]
+    subst_vars
+    absent_leaf
+
+private theorem records_reduceAffineExpression_absent (ae : AffineExpression F) :
+    Records (reduceAffineExpression ae : RecordingBuilder F (Option Variable × F)) fun _ es =>
+      AbsentAll es := by
+  unfold reduceAffineExpression
+  records [records_completelyReduce_absent _ _]
+  all_goals (subst_vars; absent_leaf)
+
+private theorem records_reduceToVariable_absent (x : CVar F) :
+    Records (reduceToVariable x : RecordingBuilder F Variable) fun _ es => AbsentAll es := by
+  unfold reduceToVariable
+  records [records_reduceAffineExpression_absent _]
+  · obtain ⟨o, cache, rfl, hoc⟩ := ‹∃ o cache, _ = [ReductionEvent.equal _ o] ∧ _›
+    subst_vars
+    absent_leaf
+  · absent_leaf
+  · subst_vars
+    absent_leaf
+
+private theorem records_reduceAffinePoint_absent (p : AffinePoint (FVar F)) :
+    Records (reduceAffinePoint p : RecordingBuilder F (AffinePoint Variable)) fun _ es =>
+      AbsentAll es := by
+  unfold reduceAffinePoint
+  records [records_reduceToVariable_absent _]
+  absent_leaf
+
+private theorem records_addComplete_absent (c : AddComplete F) :
+    Records (c.reduce : RecordingBuilder F (Rows F)) fun _ es => AbsentAll es := by
+  unfold AddComplete.reduce
+  records [records_reduceAffinePoint_absent _, records_reduceToVariable_absent _]
+  absent_leaf
+
+private theorem records_basic_absent (b : Basic F) :
+    Records (reduce b : RecordingBuilder F Unit) fun _ es => AbsentAll es := by
+  cases b <;> simp only [reduce] <;> records [records_reduceAffineExpression_absent _]
+  all_goals
+    try obtain ⟨o, cache, rfl, hoc⟩ := ‹∃ o cache, _ = [ReductionEvent.equal _ o] ∧ _›
+  all_goals (subst_vars; absent_leaf)
+
+/-- Every equation a `Basic` constraint's recorded reduction queues carries no coefficient on
+an absent cell. -/
+theorem basic_absentZero (nv : Variable) (aux : AuxState F) (b : Basic F) :
+    ∀ e ∈ (recordReduction nv aux (reduce b)).events, ∀ g, e.queued? = some g → g.AbsentZero :=
+  recordReduction_of_records (records_basic_absent b) nv aux
+
+/-- Every equation a complete addition's recorded reduction queues carries no coefficient on
+an absent cell. -/
+theorem addComplete_absentZero (nv : Variable) (aux : AuxState F) (c : AddComplete F) :
+    ∀ e ∈ (recordReduction nv aux c.reduce).events, ∀ g, e.queued? = some g → g.AbsentZero :=
+  recordReduction_of_records (records_addComplete_absent c) nv aux
 
 end NameWalks
 

@@ -160,6 +160,7 @@ def roots : List Name :=
     `Snarky.Kimchi.unwired_not_named,
     `Snarky.Kimchi.unwired_of_cell,
     `Snarky.Kimchi.unwired_cell_unique,
+    `Snarky.Kimchi.KimchiConstraint.Wired.holds_of_satisfies,
     `Snarky.Kimchi.receipts_located,
     `Snarky.Kimchi.receipts_complete,
     `Snarky.Kimchi.genericValue_of_located,

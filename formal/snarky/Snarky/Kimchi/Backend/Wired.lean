@@ -32,6 +32,9 @@ and no other cell carries it.
 - `unwired_not_named`, `unwired_of_cell`, `unwired_cell_unique`: an operand of an unwired
   column is named by no event, every cell of an unwired column carries such an operand, and
   such an operand labels one cell only.
+- `KimchiConstraint.Wired.holds_of_satisfies`: any table satisfying an index of the
+  fragment's lowering yields a valuation satisfying every source constraint and reading the
+  public variables as the public input.
 
 ## Implementation notes
 
@@ -768,5 +771,365 @@ private theorem recoverClass_eq_of_root_eq (roots : Array Variable) (rows : List
     rintro ⟨c, h7, hc⟩
     exact absurd (hw c.1 c.2 c.1.isLt c.2.isLt hc) (Nat.not_lt.mpr h7)
   simp only [recoverClass, dif_neg hnv, dif_neg hnw, hroot]
+
+
+/-! ## The theorem -/
+
+/-- Every step of the lowering is some constraint's recording from a counter at or above the
+start. -/
+private theorem step_shape {source : List (KimchiConstraint F)} {nv : Variable}
+    {s : RecordedStep F} (hs : s ∈ (lowering source nv).steps) :
+    ∃ (p : Nat) (hp : p < source.length) (nv' : Variable) (aux' : AuxState F), nv ≤ nv' ∧
+      s = ⟨(recordReduction nv' aux' source[p].reduce).rows,
+        (recordReduction nv' aux' source[p].reduce).result,
+        (recordReduction nv' aux' source[p].reduce).events⟩ := by
+  obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hs
+  have hp' : p < source.length := (length_steps source nv initialAuxState) ▸ hp
+  obtain ⟨nv', aux', hnv', -, hstep⟩ := (recordGates_queued (fun _ => True) source nv
+    (fun _ _ _ _ _ _ _ _ _ => trivial) nv initialAuxState (Nat.le_refl _)
+    (fun _ _ => trivial)).1 p hp'
+  exact ⟨p, hp', nv', aux', hnv', hstep⟩
+
+/-- Every equation any step of the lowering queues carries no coefficient on an absent cell. -/
+private theorem step_absentZero {source : List (KimchiConstraint F)} {nv : Variable}
+    (hw : ∀ c ∈ source, c.Wired) {s : RecordedStep F} (hs : s ∈ (lowering source nv).steps) :
+    ∀ e ∈ s.events, ∀ g, e.queued? = some g → g.AbsentZero := by
+  obtain ⟨p, hp, nv', aux', -, rfl⟩ := step_shape hs
+  have hwd := hw _ (List.getElem_mem hp)
+  obtain ⟨cp, hsp⟩ : ∃ cp, source[p] = cp := ⟨_, rfl⟩
+  rw [hsp] at hwd
+  show ∀ e ∈ (recordReduction nv' aux' source[p].reduce).events, _
+  rw [hsp]
+  cases cp with
+  | basic b => exact basic_absentZero nv' aux' b
+  | addComplete c => exact addComplete_absentZero nv' aux' c
+  | poseidon _ => exact hwd.elim
+  | varBaseMul _ => exact hwd.elim
+  | endoScalar _ => exact hwd.elim
+  | endoMul _ => exact hwd.elim
+  | pad _ => exact hwd.elim
+
+omit [Field F] [DecidableEq F] in
+private theorem fusions_of_merge {es : List (ReductionEvent F)} {c : EqualsConstraint F}
+    {l r : Variable} (h : ReductionEvent.equal c (.merge l r) ∈ es) : (l, r) ∈ fusions es := by
+  induction es with
+  | nil => exact (List.not_mem_nil h).elim
+  | cons e es ih =>
+    rcases List.mem_cons.mp h with rfl | h
+    · exact List.mem_cons_self ..
+    · have h' := ih h
+      cases e with
+      | alloc _ _ => exact h'
+      | generic _ => exact h'
+      | equal _ o => cases o <;> first | exact h' | exact List.mem_cons_of_mem _ h'
+
+omit [Field F] [DecidableEq F] in
+private theorem fusions_of_cached {es : List (ReductionEvent F)} {c : EqualsConstraint F}
+    {l v : Variable} {k : F} (h : ReductionEvent.equal c (.cached l v k) ∈ es) :
+    (l, v) ∈ fusions es := by
+  induction es with
+  | nil => exact (List.not_mem_nil h).elim
+  | cons e es ih =>
+    rcases List.mem_cons.mp h with rfl | h
+    · exact List.mem_cons_self ..
+    · have h' := ih h
+      cases e with
+      | alloc _ _ => exact h'
+      | generic _ => exact h'
+      | equal _ o => cases o <;> first | exact h' | exact List.mem_cons_of_mem _ h'
+
+omit [Field F] [DecidableEq F] in
+/-- A fusion's endpoints are names of its event, except a cache hit's cached variable. -/
+private theorem mem_fusions_names {es : List (ReductionEvent F)} {p : Variable × Variable}
+    (hp : p ∈ fusions es) :
+    ∃ e ∈ es, p.1 ∈ e.names ∧
+      (p.2 ∈ e.names ∨ ∃ c k, e = ReductionEvent.equal c (.cached p.1 p.2 k)) := by
+  induction es with
+  | nil => exact (List.not_mem_nil hp).elim
+  | cons e es ih =>
+    have step : p ∈ fusions es → ∃ e' ∈ e :: es, p.1 ∈ e'.names ∧
+        (p.2 ∈ e'.names ∨ ∃ c k, e' = ReductionEvent.equal c (.cached p.1 p.2 k)) := fun h =>
+      let ⟨e', he', h'⟩ := ih h
+      ⟨e', List.mem_cons_of_mem _ he', h'⟩
+    cases e with
+    | alloc _ _ => exact step hp
+    | generic _ => exact step hp
+    | equal c o =>
+      cases o with
+      | merge l r =>
+        rcases List.mem_cons.mp hp with rfl | hp
+        · exact ⟨_, List.mem_cons_self .., by simp [ReductionEvent.names, EqualOutcome.names],
+            Or.inl (by simp [ReductionEvent.names, EqualOutcome.names])⟩
+        · exact step hp
+      | cached l v k =>
+        rcases List.mem_cons.mp hp with rfl | hp
+        · exact ⟨_, List.mem_cons_self .., by simp [ReductionEvent.names, EqualOutcome.names],
+            Or.inr ⟨c, k, rfl⟩⟩
+        · exact step hp
+      | pinned _ _ _ => exact step hp
+      | row _ => exact step hp
+      | trivial => exact step hp
+
+/-- A queued equation of the lowering holds at a valuation that reads every labelled cell: its
+receipt locates it in a generic row the table satisfies. -/
+private theorem queued_holds {n : ℕ} [NeZero n] {source : List (KimchiConstraint F)}
+    {publicVars : List Variable} {nv : Variable} {idx : Index F n}
+    (hindex : IndexOf source publicVars nv idx) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin wCols → F) (hsat : idx.Satisfies pub wTab) (V : Valuation F)
+    (hval : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
+      (v : Variable), (directRows source publicVars nv)[r].vars[j] = some v →
+        wTab ⟨r, lt_of_lt_of_le hr hindex.rows_le⟩ ⟨j, hj⟩ = V v)
+    {s : RecordedStep F} (hs : s ∈ (lowering source nv).steps) {e : ReductionEvent F}
+    (he : e ∈ s.events) {g : GenericPlonkConstraint F} (hg : e.queued? = some g)
+    (habsent : g.AbsentZero) : genericValue V g = 0 := by
+  have hrows_le := hindex.rows_le
+  have hlenPub : (makePublicInputRows (F := F) publicVars).length = publicVars.length := by
+    simp [makePublicInputRows]
+  have hq0 : (initialAuxState : AuxState F).queuedGenericGate = none := rfl
+  obtain ⟨rc, hrc, hrcg⟩ := receipts_complete source nv initialAuxState hq0 s hs g ⟨e, he, hg⟩
+  have hloc := receipts_located source nv initialAuxState hq0 rc hrc
+  obtain ⟨row, hrow, hkind, -, -⟩ := id hloc
+  obtain ⟨hrowlt, hrow'⟩ := List.getElem?_eq_some_iff.mp hrow
+  have hrowlt' : rc.row < (lowering source nv).allRows.length := hrowlt
+  have hi' : publicVars.length + rc.row < (directRows source publicVars nv).length := by
+    simp only [directRows, List.length_append, hlenPub]
+    omega
+  have hrowi : (directRows source publicVars nv)[publicVars.length + rc.row] = row := by
+    simp only [directRows]
+    rw [List.getElem_append_right (by omega)]
+    simp only [hlenPub, Nat.add_sub_cancel_left]
+    exact hrow'
+  have hgen := hsat.1 ⟨publicVars.length + rc.row, by omega⟩
+  have htyp' : (idx.gates ⟨publicVars.length + rc.row, by omega⟩).typ = .generic := by
+    rw [hindex.typ_eq _ hi', hrowi, hkind]
+  unfold Index.rowSatisfies at hgen
+  rw [htyp'] at hgen
+  simp only at hgen
+  have hpub0 : Index.pubAt idx pub ⟨publicVars.length + rc.row, by omega⟩ = 0 := by
+    unfold Index.pubAt
+    rw [dif_neg (by
+      rw [hindex.publicCount]
+      show ¬ publicVars.length + rc.row < publicVars.length
+      omega)]
+  rw [hpub0, withPublic_zero] at hgen
+  have hq : (⟨idx.coeffTable ⟨publicVars.length + rc.row, by omega⟩,
+      wTab ⟨publicVars.length + rc.row, by omega⟩⟩ : Kimchi.Gate.Generic F) =
+      genericAt row (wTab ⟨publicVars.length + rc.row, by omega⟩) := by
+    simp only [genericAt]
+    congr 1
+    funext k
+    rw [Index.coeffTable, hindex.coeffs_eq _ hi' k, hrowi]
+  rw [hq] at hgen
+  have hw : ∀ (k : Fin wCols) (w : Variable), row.vars[k] = some w →
+      wTab ⟨publicVars.length + rc.row, by omega⟩ k = V w := by
+    intro k w hk
+    have := hval _ k.val hi' k.isLt w (by rw [hrowi]; exact hk)
+    simpa using this
+  have hz := genericValue_of_located hloc hrow _ V hw (by rw [hrcg]; exact habsent) hgen
+  rw [hrcg] at hz
+  exact hz
+
+/-- A complete addition's row carries a variable in each of its eleven operand cells. -/
+private theorem addComplete_cell_some (nv' : Variable) (aux' : AuxState F) (c : AddComplete F)
+    (k : Fin wCols) (hk : k.val < 11) :
+    ∃ w, (recordReduction nv' aux' c.reduce).result.row.vars[k] = some w := by
+  obtain ⟨-, vs, hvs, hall⟩ := addComplete_names nv' aux' c
+  have hvl : vs.length = 11 := by
+    rw [(List.forall₂_iff_get.mp hall).1]
+    simp [AddComplete.operands]
+  have hidx : k.val < (recordReduction nv' aux' c.reduce).result.row.vars.toList.length := by
+    rw [Vector.length_toList]
+    exact k.isLt
+  refine ⟨vs[k.val]'(by omega), ?_⟩
+  have h := List.getElem_of_eq hvs hidx
+  rw [List.getElem_append_left (by simp only [List.length_map]; omega), List.getElem_map] at h
+  rw [Vector.getElem_toList] at h
+  exact h
+
+/-- **The wired fragment's closed theorem.** Any table satisfying an index of the fragment's
+lowering yields a valuation satisfying every source constraint and reading the public
+variables as the public input. -/
+theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
+    {source : List (KimchiConstraint F)} {publicVars : List Variable} {nv : Variable}
+    {idx : Index F n} (hscope : KimchiConstraint.Wired.Scoped nv source publicVars)
+    (hindex : IndexOf source publicVars nv idx) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin wCols → F) (hsat : idx.Satisfies pub wTab) :
+    ∃ V : Valuation F, (∀ c ∈ source, KimchiConstraint.Holds V c) ∧
+      ∀ i : Fin publicVars.length, V publicVars[i] = pub (hindex.publicIndex i) := by
+  have hrows_le := hindex.rows_le
+  have hlenPub : (makePublicInputRows (F := F) publicVars).length = publicVars.length := by
+    simp [makePublicInputRows]
+  have hpub_le : publicVars.length ≤ (directRows source publicVars nv).length := by
+    simp [directRows, hlenPub]
+  -- the valuation
+  let V : Valuation F :=
+    recoverClass (directRoots source nv) (directRows source publicVars nv) (cellVal wTab)
+  have hclass := hindex.classCells_eq pub wTab hsat
+  have huniq : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
+      (v : Variable), 7 ≤ j → (directRows source publicVars nv)[r].vars[j] = some v →
+      ∀ (r' j' : Nat) (hr' : r' < (directRows source publicVars nv).length) (hj' : j' < wCols),
+        (directRows source publicVars nv)[r'].vars[j'] = some v → r' = r ∧ j' = j := by
+    intro r j hr hj v h7 hv r' j' hr' hj' hv'
+    obtain ⟨c, hc, hvc⟩ := unwired_of_cell hscope hr hj h7 hv
+    exact unwired_cell_unique hscope hc hvc r' j' hr' hj' r j hr hj hv' hv
+  have hreal : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
+      (v : Variable), (directRows source publicVars nv)[r].vars[j] = some v →
+      cellVal wTab (r, j) = V v :=
+    fun r j hr hj v hv =>
+      recoverClass_spec _ _ _ (fun k c hc c' hc' => hclass k hc hc') huniq r j hr hj v hv
+  have hval : ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols)
+      (v : Variable), (directRows source publicVars nv)[r].vars[j] = some v →
+      wTab ⟨r, lt_of_lt_of_le hr hrows_le⟩ ⟨j, hj⟩ = V v := by
+    intro r j hr hj v hv
+    rw [← hreal r j hr hj v hv]
+    simp only [cellVal, dif_pos (And.intro (lt_of_lt_of_le hr hrows_le) hj)]
+  -- no name of any event labels an unwired cell
+  have hwiredOnly : ∀ s ∈ (lowering source nv).steps, ∀ e ∈ s.events, ∀ w ∈ e.names,
+      ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols),
+        (directRows source publicVars nv)[r].vars[j] = some w → j < 7 := by
+    intro s hs e he w hw r j hr hj hrow
+    by_contra h7
+    obtain ⟨c, hc, hwc⟩ := unwired_of_cell hscope hr hj (Nat.le_of_not_lt h7) hrow
+    exact unwired_not_named hscope hc hwc s hs e he hw
+  -- every queued equation holds
+  have hqueued : ∀ s ∈ (lowering source nv).steps, ∀ e ∈ s.events, ∀ g, e.queued? = some g →
+      genericValue V g = 0 :=
+    fun s hs e he g hg =>
+      queued_holds hindex pub wTab hsat V hval hs he hg (step_absentZero hscope.wired hs e he g hg)
+  -- fused variables read alike
+  have hfused : ∀ s ∈ (lowering source nv).steps, ∀ p ∈ fusions s.events, V p.1 = V p.2 := by
+    intro s hs p hp
+    obtain ⟨e, he, h1, h2⟩ := mem_fusions_names hp
+    refine recoverClass_eq_of_root_eq _ _ _ (fusion_root_eq source nv hs hp)
+      (hwiredOnly s hs e he p.1 h1) ?_
+    rcases h2 with h2 | ⟨c, k, rfl⟩
+    · exact hwiredOnly s hs e he p.2 h2
+    · obtain ⟨s', hs', c', g, hg⟩ := pinned_of_cached source nv hs he
+      exact hwiredOnly s' hs' _ hg p.2 (List.mem_cons_self ..)
+  -- a cache hit's constant is pinned
+  have hpin : ∀ s ∈ (lowering source nv).steps, ∀ (c : EqualsConstraint F) (l v : Variable)
+      (k : F), ReductionEvent.equal c (.cached l v k) ∈ s.events → V v = k := by
+    intro s hs c l v k he
+    obtain ⟨s', hs', c', g, hg⟩ := pinned_of_cached source nv hs he
+    obtain ⟨p, hp, nv', aux', -, hshape⟩ := step_shape hs'
+    have hdec : OutcomesFaithful ⟨[], nv', aux'⟩ s'.events := by
+      rw [hshape]
+      exact record_constraint_decides nv' aux' source[p]
+    obtain ⟨cache, hcache⟩ := outcomeOf_of_mem hdec hg
+    exact (equalsHolds_of_pinned hcache V (hqueued _ hs' _ hg g rfl)).2
+  -- every event holds
+  have hfacts : ∀ s ∈ (lowering source nv).steps, ReductionFacts V s.events := by
+    intro s hs e he
+    obtain ⟨p, hp, nv', aux', -, hshape⟩ := step_shape hs
+    cases e with
+    | alloc _ _ => trivial
+    | generic g => exact hqueued s hs _ he g rfl
+    | equal c o =>
+      have hdec : OutcomesFaithful ⟨[], nv', aux'⟩ s.events := by
+        rw [hshape]
+        exact record_constraint_decides nv' aux' source[p]
+      obtain ⟨cache, hcache⟩ := outcomeOf_of_mem hdec he
+      show equalsHolds V c
+      cases o with
+      | merge l r => exact equalsHolds_of_merge hcache V (hfused s hs (l, r) (fusions_of_merge he))
+      | cached l v k =>
+        exact equalsHolds_of_cached hcache V (hfused s hs (l, v) (fusions_of_cached he))
+          (hpin s hs c l v k he)
+      | pinned v k g => exact (equalsHolds_of_pinned hcache V (hqueued s hs _ he g rfl)).1
+      | row g => exact equalsHolds_of_row hcache V (hqueued s hs _ he g rfl)
+      | trivial => exact equalsHolds_of_trivial hcache V
+  refine ⟨V, ?_, ?_⟩
+  · intro c hc
+    obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hc
+    have hi : p < (lowering source nv).steps.length :=
+      (length_steps source nv initialAuxState).symm ▸ hp
+    obtain ⟨nv', aux', -, -, hstep⟩ := (recordGates_queued (fun _ => True) source nv
+      (fun _ _ _ _ _ _ _ _ _ => trivial) nv initialAuxState (Nat.le_refl _)
+      (fun _ _ => trivial)).1 p hp
+    have hstep' : (lowering source nv).steps[p] =
+        ⟨(recordReduction nv' aux' source[p].reduce).rows,
+          (recordReduction nv' aux' source[p].reduce).result,
+          (recordReduction nv' aux' source[p].reduce).events⟩ := hstep
+    have hf := hfacts _ (List.getElem_mem hi)
+    rw [hstep'] at hf
+    have hwd := hscope.wired _ (List.getElem_mem hp)
+    obtain ⟨cp, hsp⟩ : ∃ cp, source[p] = cp := ⟨_, rfl⟩
+    rw [hsp] at hf hwd ⊢
+    cases cp with
+    | basic b => exact basic_of_reductionFacts nv' aux' b V hf
+    | addComplete c =>
+      have hgr : (lowering source nv).steps[p].gateRows =
+          [(recordReduction nv' aux' c.reduce).result.row] := by
+        rw [hstep, hsp]
+        rfl
+      have hip : p < (lowering source nv).placements.length := by
+        rw [RecordedGates.length_placements]
+        exact hi
+      have hle := placements_customRows_le (lowering source nv) p hi
+      rw [placements_customRows_count _ _ hi, hgr, List.length_singleton] at hle
+      have hle' : ((lowering source nv).placements[p]'hip).customRows.first + 1 ≤
+        (lowering source nv).bodyRows.length := hle
+      have hi' : publicVars.length + ((lowering source nv).placements[p]'hip).customRows.first <
+          (directRows source publicVars nv).length := by
+        simp only [directRows, List.length_append, hlenPub, RecordedGates.allRows]
+        omega
+      have hrow := getElem_bodyRows_gate (lowering source nv) p hi 0 (by simp [hgr])
+        (show ((lowering source nv).placements[p]'hip).customRows.first + 0 <
+          (lowering source nv).bodyRows.length by omega)
+      have hrowi : (directRows source publicVars nv)[publicVars.length +
+          ((lowering source nv).placements[p]'hip).customRows.first] =
+          (recordReduction nv' aux' c.reduce).result.row := by
+        simp only [directRows]
+        rw [List.getElem_append_right (by omega)]
+        simp only [hlenPub, Nat.add_sub_cancel_left, RecordedGates.allRows]
+        rw [List.getElem_append_left (by omega)]
+        refine ((getElem_congr_idx (Nat.add_zero _)).symm.trans hrow).trans ?_
+        simp only [hgr, List.getElem_cons_zero]
+      have hadd := hsat.1 ⟨publicVars.length +
+        ((lowering source nv).placements[p]'hip).customRows.first, by omega⟩
+      have htyp' : (idx.gates ⟨publicVars.length +
+          ((lowering source nv).placements[p]'hip).customRows.first, by omega⟩).typ =
+          .completeAdd := by
+        rw [hindex.typ_eq _ hi', hrowi]
+        rfl
+      unfold Index.rowSatisfies at hadd
+      rw [htyp'] at hadd
+      simp only at hadd
+      have hcells : ∀ k : Fin wCols, k.val < 11 → wTab ⟨publicVars.length +
+          ((lowering source nv).placements[p]'hip).customRows.first, by omega⟩ k =
+          rowValues V (recordReduction nv' aux' c.reduce).result.row k := by
+        intro k hk
+        obtain ⟨w, hlab⟩ := addComplete_cell_some nv' aux' c k hk
+        rw [hval _ k.val hi' k.isLt _ (by rw [hrowi]; exact hlab)]
+        simp only [rowValues, hlab, Option.map_some, Option.getD_some]
+      have hmap : Lift.Gate.AddComplete.cellMap (wTab ⟨publicVars.length +
+          ((lowering source nv).placements[p]'hip).customRows.first, by omega⟩) =
+          Lift.Gate.AddComplete.cellMap
+            (rowValues V (recordReduction nv' aux' c.reduce).result.row) := by
+        simp only [Lift.Gate.AddComplete.cellMap]
+        congr 1 <;> exact hcells _ (by decide)
+      refine addComplete_holds_of_reductionFacts nv' aux' c V hf ?_
+      rw [← hmap]
+      exact hadd
+    | poseidon _ => exact hwd.elim
+    | varBaseMul _ => exact hwd.elim
+    | endoScalar _ => exact hwd.elim
+    | endoMul _ => exact hwd.elim
+    | pad _ => exact hwd.elim
+  · intro i
+    have hi : i.val < (directRows source publicVars nv).length := by
+      have := i.isLt
+      omega
+    have hrowi : (directRows source publicVars nv)[i.val] =
+        (makePublicInputRows publicVars)[i.val]'(by simp [hlenPub]) :=
+      List.getElem_append_left (by simp [hlenPub])
+    have hlab : (directRows source publicVars nv)[i.val].vars[0] = some publicVars[i] := by
+      rw [hrowi]
+      simp only [makePublicInputRows, List.getElem_map]
+      rfl
+    have h1 := hval i.val 0 hi (by decide) _ hlab
+    have h2 := hsat.2.2 (hindex.publicIndex i)
+    rw [← h1]
+    exact h2.symm ▸ rfl
 
 end Snarky.Kimchi

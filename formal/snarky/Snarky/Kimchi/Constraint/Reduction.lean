@@ -458,6 +458,22 @@ theorem outcomeOf_names [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] (c : Eq
   repeat' split at hw
   all_goals simp_all [EqualOutcome.names, GenericPlonkConstraint.vars]
 
+/-- The row a decision pins with carries no coefficient on an absent cell. -/
+theorem outcomeOf_pinned_absentZero [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+    {c : EqualsConstraint F} {cache : List (F × Variable)} {v : Variable} {k : F}
+    {g : GenericPlonkConstraint F} (h : outcomeOf c cache = .pinned v k g) : g.AbsentZero := by
+  unfold outcomeOf at h
+  repeat' split at h
+  all_goals (cases h; try simp [GenericPlonkConstraint.AbsentZero])
+
+/-- The row a decision queues carries no coefficient on an absent cell. -/
+theorem outcomeOf_row_absentZero [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+    {c : EqualsConstraint F} {cache : List (F × Variable)} {g : GenericPlonkConstraint F}
+    (h : outcomeOf c cache = .row g) : g.AbsentZero := by
+  unfold outcomeOf at h
+  repeat' split at h
+  all_goals (cases h; try simp [GenericPlonkConstraint.AbsentZero])
+
 /-- Run a reduction in the builder from a borrowed counter and auxiliary state: the
 result, the emitted rows in emission order, and the counter and auxiliary state to hand
 back. -/

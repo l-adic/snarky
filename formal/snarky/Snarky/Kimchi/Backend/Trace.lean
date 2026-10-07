@@ -4,10 +4,10 @@ import Snarky.Kimchi.Constraint
 # The lowering trace
 
 The builder's reduction with its provenance kept: which reduction operations a constraint's
-reducer invoked, in execution order. The data is compiler-internal, naming no index and no
-gate semantics. The recording interpreter runs the existing polymorphic reducers unchanged:
-each operation delegates to the builder's and logs its payload, so a recorded reduction is the
-existing lowering beside its history, and `RecordedReduction.erase` returns `reduceAsBuilder`'s.
+reducer invoked, in execution order. The recording interpreter runs the existing polymorphic
+reducers unchanged: each operation delegates to the builder's and logs its payload, so a
+recorded reduction is the existing lowering beside its history, and `RecordedReduction.erase`
+returns `reduceAsBuilder`'s.
 
 ## Main definitions
 
@@ -21,18 +21,19 @@ existing lowering beside its history, and `RecordedReduction.erase` returns `red
 - `AllocationsFresh`: every allocation's logged variable is the counter at its point.
 - `OutcomesFaithful`: every equality's logged outcome is the equality op's decision at its
   point.
-- `ReductionEvent.names`, `allocs`, `fusions`, `pinsOf`: the variables an event writes or
-  fuses, and a log's allocations, fusions and pins.
+- `ReductionEvent.names`, `ReductionEvent.queued?`, `allocs`, `fusions`, `pinsOf`: the
+  variables an event writes or fuses, the equation it queued, and a log's allocations, fusions
+  and pins.
 
 ## Main results
 
-- `record_reduceToVariable_erases`, `record_basic_erases`, `record_addComplete_erases`: the
-  reducers the direct fragment and its operands run, recorded, erase to their ordinary
-  reductions; `record_constraint_erases` is the same for the dispatch over every constraint.
+- `record_reduceToVariable_erases`, `record_basic_erases`, `record_addComplete_erases`,
+  `record_constraint_erases`: the reducers, recorded, erase to their ordinary reductions.
 - `record_constraint_replays`, `record_constraint_allocates`, `record_constraint_decides`: a
   recorded reduction ends in the replay of its own events, whose allocations log the counter
   and whose equalities log their outcomes.
-- `replayEvent_equal`: a faithful equality event replays as its outcome's effect.
+- `replayEvent_equal`, `outcomeOf_of_mem`: a faithful equality event replays as its outcome's
+  effect, and its outcome is the op's decision at some cache.
 - `cache_replay`, `cached_mem`, `mem_pinsOf`: a faithful log's replay extends the cache by
   exactly its pins, so a cache hit names a pin of the log or of the starting cache, and a pin
   of the log is one of its pinning events.
@@ -334,6 +335,18 @@ theorem cached_mem {s : BuilderReductionState F} {es : List (ReductionEvent F)}
             · exact Or.inl (h ▸ List.mem_append_right _ (List.mem_singleton_self _))
             · exact Or.inr h
 
+/-- A faithful log's equality event logs the equality op's decision at some cache. -/
+theorem outcomeOf_of_mem {s : BuilderReductionState F} {es : List (ReductionEvent F)}
+    (hf : OutcomesFaithful s es) {c : EqualsConstraint F} {o : EqualOutcome F}
+    (he : ReductionEvent.equal c o ∈ es) : ∃ cache, outcomeOf c cache = o := by
+  induction es generalizing s with
+  | nil => exact (List.not_mem_nil he).elim
+  | cons e es ih =>
+    obtain ⟨hf1, hf2⟩ := outcomesFaithful_cons hf
+    rcases List.mem_cons.mp he with rfl | he
+    · exact ⟨_, hf1.1.symm⟩
+    · exact ih hf2 he
+
 omit [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] in
 /-- A pin of a log is one of its pinning events. -/
 theorem mem_pinsOf {es : List (ReductionEvent F)} {k : F} {v : Variable}
@@ -377,6 +390,14 @@ def ReductionEvent.names : ReductionEvent F → List Variable
   | .alloc v _ => [v]
   | .generic g => g.vars
   | .equal _ o => o.names
+
+/-- The generic equation an event queued, if any: a generic constraint, or the row an
+equality's outcome queued. -/
+def ReductionEvent.queued? : ReductionEvent F → Option (GenericPlonkConstraint F)
+  | .generic g => some g
+  | .equal _ (.pinned _ _ g) => some g
+  | .equal _ (.row g) => some g
+  | _ => none
 
 /-- The variables a log allocates, in order. -/
 def allocs (es : List (ReductionEvent F)) : List Variable :=

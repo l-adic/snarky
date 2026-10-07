@@ -28,7 +28,6 @@ through the class and the pinning row of the cached variable, which has a receip
 
 ## Main definitions
 
-- `ReductionEvent.queued?`: the generic equation an event queued, if any.
 - `GenericReceipt`, `GenericReceipt.Located`: a receipt and what it claims of the body rows.
 - `receipts`: every queued equation's receipt.
 - `RecordedGates.allRows`: the body rows with the final flush's row.
@@ -110,14 +109,6 @@ def RecordedGates.allRows [Zero F] (r : RecordedGates F) : List (KimchiRow F) :=
   r.bodyRows ++ ((finalizeGateQueue r.aux.queuedGenericGate).map (·.row)).toList
 
 /-! ## The walk -/
-
-/-- The generic equation an event queued, if any: a generic constraint, or the row an
-equality's outcome queued. -/
-def ReductionEvent.queued? : ReductionEvent F → Option (GenericPlonkConstraint F)
-  | .generic g => some g
-  | .equal _ (.pinned _ _ g) => some g
-  | .equal _ (.row g) => some g
-  | _ => none
 
 /-- A queued equation's cells are among its event's names. -/
 theorem queued?_vars {e : ReductionEvent F} {g : GenericPlonkConstraint F}
@@ -436,12 +427,6 @@ theorem receipts_complete (source : List (KimchiConstraint F)) (nv : Variable)
 end Walk
 
 /-! ## Packing -/
-
-/-- A generic constraint's absent cells carry no coefficient: an arbitrary table's value in
-such a cell is irrelevant to the equation. -/
-def GenericPlonkConstraint.AbsentZero (g : GenericPlonkConstraint F) [Zero F] : Prop :=
-  (g.vl = none → g.cl = 0 ∧ g.m = 0) ∧ (g.vr = none → g.cr = 0 ∧ g.m = 0) ∧
-    (g.vo = none → g.co = 0)
 
 section Packing
 
