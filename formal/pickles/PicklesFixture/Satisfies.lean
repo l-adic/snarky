@@ -87,7 +87,7 @@ def runMainBuilt {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType
     IO.lazyPure fun _ =>
       inferInstanceAs (Decidable (∀ con ∈ built.constraints, KimchiConstraint.Holds V con))
   let t3 ← IO.monoMsNow
-  let pubVars := (allocRange 0 A.size).toList ++ bundleVars (F := ZMod p) (b := b) built.result.2
+  let pubVars := compiledPublicVars (F := ZMod p) (a := a) (b := b) built
   let (rows, gates, _) := gateDataOf (reduceBuilt built) pubVars
   let nrows := rows.length
   let t4 ← IO.monoMsNow
