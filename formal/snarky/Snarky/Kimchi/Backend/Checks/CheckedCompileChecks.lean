@@ -18,7 +18,13 @@ The public-interface consumer's circuit is compiled with `compile`, and with `co
 keeping its first product as a cell; the kept cell is the result's, and the public variables are
 the same. Each compilation's checked index comes from `checkBuilt?`, the table the prover's values
 fill is decided to satisfy it, and the consumer's `compile_lifts` and `compileWith_lifts` lift
-it, with no scope or correspondence argument.
+it, with no scope or correspondence argument; `compile_reads_lifts` and `compileWith_reads_lifts`
+read the lifted valuation as the inputs `3`, `5` and the output `45`.
+
+`compile_reads` is also decided on three circuits of its own, its premise that the compiled
+rows hold decided directly: one whose output is the expression `x + 1`, read through the row
+binding it to its fresh public copy, one with no input and a constant output, and one with no
+output.
 
 ## Main results
 
@@ -26,6 +32,9 @@ it, with no scope or correspondence argument.
 - `check_rejects_scope`, `check_rejects_index`: the two failures.
 - `compileWith_example_layout`: the kept cell and the public variables.
 - `compile_example_holds`, `compileWith_example_holds`: the lifted valuations.
+- `compile_example_reads`, `compileWith_example_reads`: their typed readings.
+- `affine_example_reads`, `constant_example_reads`, `unit_output_example_reads`: the typed
+  reading of an expression output, of an empty input bundle and of an empty output bundle.
 -/
 
 open Kimchi
@@ -174,5 +183,84 @@ theorem compileWith_example_holds :
       decide +kernel)
     (by decide +kernel) (by decide +kernel)
   exact compileWith_lifts c (fun i => V (publicVarsOf (builtWith K))[i]) _ hsat
+
+/-- **Typed lifting of a compiled circuit.** The valuation `compile_reads_lifts` gives reads
+the inputs `3`, `5` and the output `45`. -/
+theorem compile_example_reads :
+    ∃ W : Valuation K, (∀ c ∈ (built K).constraints, KimchiConstraint.Holds W c) ∧
+      CircuitType.Reads W (inputVar (F := K) (a := K × K)) ((3, 5) : K × K) ∧
+      CircuitType.Reads W (built K).result.1 (45 : K) := by
+  obtain ⟨c, hsat⟩ := checked_of_class (built K)
+    (by
+      simp only [checkBuilt?, CheckedIndex.check?_isOk_iff, compiledIndex?,
+        directGates_eq_classGates]
+      decide +kernel)
+    (by decide +kernel) (by decide +kernel)
+  obtain ⟨W, hW, hin, hout⟩ := compile_reads_lifts c (fun i => V (publicVarsOf (built K))[i]) _
+    hsat #v[3, 5] #v[45] (by decide +kernel)
+  exact ⟨W, hW, (hin _).mpr (by decide +kernel), (hout _).mpr (by decide +kernel)⟩
+
+/-- The same typed reading for the circuit compiled with its kept cell. -/
+theorem compileWith_example_reads :
+    ∃ W : Valuation K, (∀ c ∈ (builtWith K).constraints, KimchiConstraint.Holds W c) ∧
+      CircuitType.Reads W (inputVar (F := K) (a := K × K)) ((3, 5) : K × K) ∧
+      CircuitType.Reads W (builtWith K).result.1.1 (45 : K) := by
+  obtain ⟨c, hsat⟩ := checked_of_class (builtWith K)
+    (by
+      simp only [checkBuilt?, CheckedIndex.check?_isOk_iff, compiledIndex?,
+        directGates_eq_classGates]
+      decide +kernel)
+    (by decide +kernel) (by decide +kernel)
+  obtain ⟨W, hW, hin, hout⟩ := compileWith_reads_lifts c
+    (fun i => V (publicVarsOf (builtWith K))[i]) _ hsat #v[3, 5] #v[45] (by decide +kernel)
+  exact ⟨W, hW, (hin _).mpr (by decide +kernel), (hout _).mpr (by decide +kernel)⟩
+
+/-! ## Typed readings of other outputs -/
+
+/-- A circuit whose output is the expression `x + 1`, not a variable. -/
+private def offset (x : FVar K) : CircuitM K (KimchiConstraint K) (FVar K) :=
+  pure (CVar.add_ x (.const 1))
+
+/-- The input `4` and its public copy of the output, `5`. -/
+private def offsetV : Valuation K := fun v => [4, 5].getD v 0
+
+/-- The body's output `x + 1` reads as `5` through the row binding it to the public copy. -/
+theorem affine_example_reads :
+    CircuitType.Reads offsetV (inputVar (F := K) (a := K)) (4 : K) ∧
+      CircuitType.Reads offsetV (compile (a := K) (b := K) offset).result.1 (5 : K) := by
+  have hsat : ∀ c ∈ (compile (a := K) (b := K) offset).constraints,
+      KimchiConstraint.Holds offsetV c := by
+    decide +kernel
+  obtain ⟨hin, hout⟩ := compile_reads hsat #v[4] #v[5] (by decide +kernel)
+  exact ⟨(hin _).mpr rfl, (hout _).mpr rfl⟩
+
+/-- A circuit with no input and the constant output `7`. -/
+private def seven (_ : Unit) : CircuitM K (KimchiConstraint K) (FVar K) :=
+  pure (.const 7)
+
+/-- The empty input bundle reads as `()`, and the constant output as `7`. -/
+theorem constant_example_reads :
+    CircuitType.Reads (fun _ => (7 : K)) (inputVar (F := K) (a := Unit)) () ∧
+      CircuitType.Reads (fun _ => (7 : K)) (compile (a := Unit) (b := K) seven).result.1
+        (7 : K) := by
+  have hsat : ∀ c ∈ (compile (a := Unit) (b := K) seven).constraints,
+      KimchiConstraint.Holds (fun _ => (7 : K)) c := by
+    decide +kernel
+  obtain ⟨hin, hout⟩ := compile_reads hsat #v[] #v[7] (by decide +kernel)
+  exact ⟨(hin _).mpr rfl, (hout _).mpr rfl⟩
+
+/-- A circuit with no output. -/
+private def discard (_ : FVar K) : CircuitM K (KimchiConstraint K) Unit :=
+  pure ()
+
+/-- The input reads as `4`, and the empty output bundle as `()`. -/
+theorem unit_output_example_reads :
+    CircuitType.Reads (fun _ => (4 : K)) (inputVar (F := K) (a := K)) (4 : K) ∧
+      CircuitType.Reads (fun _ => (4 : K)) (compile (a := K) (b := Unit) discard).result.1 () := by
+  have hsat : ∀ c ∈ (compile (a := K) (b := Unit) discard).constraints,
+      KimchiConstraint.Holds (fun _ => (4 : K)) c := by
+    decide +kernel
+  obtain ⟨hin, hout⟩ := compile_reads hsat #v[4] #v[] (by decide +kernel)
+  exact ⟨(hin _).mpr rfl, (hout _).mpr rfl⟩
 
 end Snarky.Kimchi

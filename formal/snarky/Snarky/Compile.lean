@@ -16,7 +16,9 @@ be such a hole.
 
 `solve_complete` is the payoff: a circuit whose body is complete solves, and the table it
 produces satisfies every compiled row and reads the input and the output at the public
-bundles.
+bundles. `compile_reads` and `compileWith_reads` are the reading side: wherever the compiled
+rows hold, a public input given in the order of `compiledPublicVars` reads as the typed input
+and the body's typed output.
 -/
 
 namespace Snarky
@@ -256,7 +258,14 @@ theorem mem_compileWith_of_mem_body {α : Type} [Field F] [DecidableEq F] [Basic
   rw [compileWith, compileWithBody, build_bind, List.mem_append]
   exact Or.inr (by rw [build_bind, List.mem_append]; exact Or.inl h)
 
-/-! ## The public layout -/
+/-! ## The public layout and its readings
+
+`compiledPublicVars` lays out a compiled circuit's public variables: the input slots, then the
+variables of the output's public copy. Both blocks are fresh variables, so the layout follows
+from the build alone. `compile_reads` and `compileWith_reads` read a public input given in that
+order: the input bundle reads as a value exactly when the value encodes the input fields, and
+the body's output exactly when it encodes the output fields. The input reading is the layout;
+the output reading also needs the rows binding the body's output to its public copy. -/
 
 /-- The variables backing a bundle of plain variables — the witnessed public output
 slots, whose ids the assembly needs but whose numbering it does not care about. -/
@@ -272,6 +281,139 @@ output bundle the compiled program witnessed. -/
 def compiledPublicVars [Add F] [Mul F] [Zero F] [A : CircuitType F a avar]
     [CircuitType F b bvar] {β : Type} (built : Built c (β × bvar)) : List Variable :=
   (allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2
+
+/-- The fields of a bundle of fresh variables are those variables. -/
+private theorem bundleVars_fresh [Add F] [Mul F] [Zero F] [B : CircuitType F b bvar] (k : Nat) :
+    bundleVars (F := F) (b := b) (B.fieldsToVar (mapVec CVar.var (allocRange k B.size))) =
+      (allocRange k B.size).toList := by
+  simp [bundleVars, B.var_roundTrip, List.filterMap_map]
+
+/-- The public variables of a built circuit whose public copy is fresh at `k`. -/
+private theorem compiledPublicVars_fresh [Add F] [Mul F] [Zero F] [A : CircuitType F a avar]
+    [B : CircuitType F b bvar] {β : Type} (built : Built c (β × bvar)) (k : Nat)
+    (h : built.result.2 = B.fieldsToVar (mapVec CVar.var (allocRange k B.size))) :
+    compiledPublicVars (F := F) (a := a) (b := b) built =
+      (allocRange 0 A.size).toList ++ (allocRange k B.size).toList := by
+  rw [compiledPublicVars, h, bundleVars_fresh]
+
+variable [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+  [A : CircuitType F a avar] [CheckedType F c a avar] [B : CircuitType F b bvar]
+
+/-- `compile`'s public copy of the output: the fresh slots past the body. -/
+private theorem compile_result_public (main : avar → CircuitM F c bvar) :
+    (compile (a := a) (b := b) main).result.2 =
+      B.fieldsToVar (mapVec CVar.var (allocRange (build (main (inputVar (F := F) (a := a)))
+        (bodyStart (F := F) (c := c) (a := a) (avar := avar))).nextVar B.size)) := by
+  simp only [compile, compileBody, bodyStart, build_bind]
+  rfl
+
+/-- `compileWith`'s public copy of the output: the fresh slots past the body. -/
+private theorem compileWith_result_public {α : Type} (main : avar → CircuitM F c (bvar × α)) :
+    (compileWith (a := a) (b := b) main).result.2 =
+      B.fieldsToVar (mapVec CVar.var (allocRange (build (main (inputVar (F := F) (a := a)))
+        (bodyStart (F := F) (c := c) (a := a) (avar := avar))).nextVar B.size)) := by
+  simp only [compileWith, compileWithBody, bodyStart, build_bind]
+  rfl
+
+/-- A compiled circuit has one public variable per input field and one per output field. -/
+theorem length_compiledPublicVars_compile (main : avar → CircuitM F c bvar) :
+    (compiledPublicVars (F := F) (a := a) (b := b) (compile (a := a) (b := b) main)).length =
+      A.size + B.size := by
+  rw [compiledPublicVars_fresh _ _ (compile_result_public main)]
+  simp
+
+/-- `length_compiledPublicVars_compile` for a circuit that keeps cells. -/
+theorem length_compiledPublicVars_compileWith {α : Type}
+    (main : avar → CircuitM F c (bvar × α)) :
+    (compiledPublicVars (F := F) (a := a) (b := b) (compileWith (a := a) (b := b) main)).length =
+      A.size + B.size := by
+  rw [compiledPublicVars_fresh _ _ (compileWith_result_public main)]
+  simp
+
+/-- Where `compile`'s rows hold, the body's output and its public copy have equal fields. -/
+private theorem compile_binds [LawfulBasicSystem F c] (main : avar → CircuitM F c bvar)
+    (V : Valuation F)
+    (hsat : ∀ con ∈ (compile (a := a) (b := b) main).constraints, ConstraintHolds.Holds V con) :
+    mapVec (·.val V)
+        (CircuitType.varToFields (val := b) (compile (a := a) (b := b) main).result.1) =
+      mapVec (·.val V)
+        (CircuitType.varToFields (val := b) (compile (a := a) (b := b) main).result.2) := by
+  simp only [compile, compileBody, build_bind, List.mem_append] at hsat ⊢
+  exact (builder_spec_iff (V := V) _ _).mp
+    (assertEq_fields_spec (V := V) (c := c) (val := b) _ _) _
+    (fun con hc => hsat con (Or.inr (Or.inr (Or.inr (Or.inl hc)))))
+
+/-- Where `compileWith`'s rows hold, the body's output and its public copy have equal fields. -/
+private theorem compileWith_binds [LawfulBasicSystem F c] {α : Type}
+    (main : avar → CircuitM F c (bvar × α)) (V : Valuation F)
+    (hsat : ∀ con ∈ (compileWith (a := a) (b := b) main).constraints,
+      ConstraintHolds.Holds V con) :
+    mapVec (·.val V)
+        (CircuitType.varToFields (val := b) (compileWith (a := a) (b := b) main).result.1.1) =
+      mapVec (·.val V)
+        (CircuitType.varToFields (val := b) (compileWith (a := a) (b := b) main).result.2) := by
+  simp only [compileWith, compileWithBody, build_bind, List.mem_append] at hsat ⊢
+  exact (builder_spec_iff (V := V) _ _).mp
+    (assertEq_fields_spec (V := V) (c := c) (val := b) _ _) _
+    (fun con hc => hsat con (Or.inr (Or.inr (Or.inr (Or.inl hc)))))
+
+omit [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [CheckedType F c a avar] in
+/-- The readings from the layout: a public copy fresh at `k`, an output bound to it, and the
+public input in the compiled order. -/
+private theorem reads_of_layout {β : Type} (built : Built c (β × bvar)) (out : bvar) (k : Nat)
+    (V : Valuation F)
+    (hpubv : built.result.2 = B.fieldsToVar (mapVec CVar.var (allocRange k B.size)))
+    (hbind : mapVec (·.val V) (CircuitType.varToFields (val := b) out) =
+      mapVec (·.val V) (CircuitType.varToFields (val := b) built.result.2))
+    (pubIn : Vector F A.size) (pubOut : Vector F B.size)
+    (hpub : (compiledPublicVars (F := F) (a := a) (b := b) built).map V =
+      pubIn.toList ++ pubOut.toList) :
+    (∀ x : a, CircuitType.Reads V (inputVar (F := F) (a := a)) x ↔ A.valueToFields x = pubIn) ∧
+      ∀ y : b, CircuitType.Reads V out y ↔ B.valueToFields y = pubOut := by
+  rw [compiledPublicVars_fresh built k hpubv, List.map_append] at hpub
+  obtain ⟨hin, hout⟩ := List.append_inj hpub (by simp)
+  have hinF : mapVec (·.val V) (CircuitType.varToFields (val := a) (inputVar (F := F) (a := a))) =
+      pubIn := by
+    apply Vector.toList_inj.mp
+    rw [inputVar, A.var_roundTrip, toList_mapVec, toList_mapVec, List.map_map, ← hin]
+    rfl
+  have houtF : mapVec (·.val V) (CircuitType.varToFields (val := b) out) = pubOut := by
+    apply Vector.toList_inj.mp
+    rw [hbind, hpubv, B.var_roundTrip, toList_mapVec, toList_mapVec, List.map_map, ← hout]
+    rfl
+  refine ⟨fun x => ?_, fun y => ?_⟩
+  · rw [CircuitType.Reads, hinF, eq_comm]
+  · rw [CircuitType.Reads, houtF, eq_comm]
+
+/-- **The compiled circuit's typed reading.** Where `compile`'s rows hold at `V` and `V` takes
+the public input `pubIn ++ pubOut` at the public variables, the input bundle reads as `x`
+exactly when `x` encodes to `pubIn`, and the body's output as `y` exactly when `y` encodes to
+`pubOut`. -/
+theorem compile_reads [LawfulBasicSystem F c] {main : avar → CircuitM F c bvar}
+    {V : Valuation F}
+    (hsat : ∀ con ∈ (compile (a := a) (b := b) main).constraints, ConstraintHolds.Holds V con)
+    (pubIn : Vector F A.size) (pubOut : Vector F B.size)
+    (hpub : (compiledPublicVars (F := F) (a := a) (b := b) (compile (a := a) (b := b) main)).map V =
+      pubIn.toList ++ pubOut.toList) :
+    (∀ x : a, CircuitType.Reads V (inputVar (F := F) (a := a)) x ↔ A.valueToFields x = pubIn) ∧
+      ∀ y : b, CircuitType.Reads V (compile (a := a) (b := b) main).result.1 y ↔
+        B.valueToFields y = pubOut :=
+  reads_of_layout _ _ _ V (compile_result_public main) (compile_binds main V hsat) pubIn pubOut hpub
+
+/-- `compile_reads` for a circuit that keeps cells: the body's output is `result.1.1`, and the
+cells stay in `result.1.2` under the same valuation. -/
+theorem compileWith_reads [LawfulBasicSystem F c] {α : Type}
+    {main : avar → CircuitM F c (bvar × α)} {V : Valuation F}
+    (hsat : ∀ con ∈ (compileWith (a := a) (b := b) main).constraints,
+      ConstraintHolds.Holds V con)
+    (pubIn : Vector F A.size) (pubOut : Vector F B.size)
+    (hpub : (compiledPublicVars (F := F) (a := a) (b := b)
+      (compileWith (a := a) (b := b) main)).map V = pubIn.toList ++ pubOut.toList) :
+    (∀ x : a, CircuitType.Reads V (inputVar (F := F) (a := a)) x ↔ A.valueToFields x = pubIn) ∧
+      ∀ y : b, CircuitType.Reads V (compileWith (a := a) (b := b) main).result.1.1 y ↔
+        B.valueToFields y = pubOut :=
+  reads_of_layout _ _ _ V (compileWith_result_public main) (compileWith_binds main V hsat) pubIn
+    pubOut hpub
 
 attribute [irreducible] inputVar compileBody compile solve compileWithBody compileWith
 

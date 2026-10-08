@@ -33,6 +33,13 @@ Snarky.Kimchi.scaleFast2'_complete
 Snarky.Kimchi.vesta_varBaseMul_complete
 Snarky.Tactic.completeStep
 
+-- The whole-circuit layer's reading: the public layout, and a public input in its order read
+-- as the typed input and the body's output.
+Snarky.length_compiledPublicVars_compile
+Snarky.length_compiledPublicVars_compileWith
+Snarky.compile_reads
+Snarky.compileWith_reads
+
 -- The circuit gadgets and their specs: what a gadget emits, read back at a valuation.
 Snarky.Kimchi.scaleFast2'_spec_scalar
 Snarky.assertAll_spec
@@ -134,6 +141,8 @@ Snarky.Kimchi.checkScoped_eq_true_iff
 -- the decided facts it is assembled from are reached through it.
 Snarky.Kimchi.CheckedConsumer.compile_lifts
 Snarky.Kimchi.CheckedConsumer.compileWith_lifts
+Snarky.Kimchi.CheckedConsumer.compile_reads_lifts
+Snarky.Kimchi.CheckedConsumer.compileWith_reads_lifts
 Snarky.Kimchi.direct_example_holds
 Snarky.Kimchi.direct_rejections
 Snarky.Kimchi.direct_rejections_index
@@ -180,6 +189,11 @@ Snarky.Kimchi.check_rejects_index
 Snarky.Kimchi.compileWith_example_layout
 Snarky.Kimchi.compile_example_holds
 Snarky.Kimchi.compileWith_example_holds
+Snarky.Kimchi.compile_example_reads
+Snarky.Kimchi.compileWith_example_reads
+Snarky.Kimchi.affine_example_reads
+Snarky.Kimchi.constant_example_reads
+Snarky.Kimchi.unit_output_example_reads
 Snarky.Kimchi.recorded_batching
 Snarky.Kimchi.recorded_wiring
 Snarky.Kimchi.recorded_constantCache

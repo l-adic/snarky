@@ -125,6 +125,10 @@ def roots : List Name :=
     `Snarky.scoped_inputVar,
     `Snarky.reads_inputVar,
     `Snarky.solve_complete,
+    `Snarky.length_compiledPublicVars_compile,
+    `Snarky.length_compiledPublicVars_compileWith,
+    `Snarky.compile_reads,
+    `Snarky.compileWith_reads,
 
     -- The backends' reading of the `BasicSystem` primitives.
     `Snarky.instLawfulBasicSystemBasic,
@@ -149,6 +153,8 @@ def roots : List Name :=
     -- and recordings, each by its endpoint.
     `Snarky.Kimchi.CheckedConsumer.compile_lifts,
     `Snarky.Kimchi.CheckedConsumer.compileWith_lifts,
+    `Snarky.Kimchi.CheckedConsumer.compile_reads_lifts,
+    `Snarky.Kimchi.CheckedConsumer.compileWith_reads_lifts,
     `Snarky.Kimchi.direct_example_holds,
     `Snarky.Kimchi.direct_rejections,
     `Snarky.Kimchi.direct_rejections_index,
@@ -195,6 +201,11 @@ def roots : List Name :=
     `Snarky.Kimchi.compileWith_example_layout,
     `Snarky.Kimchi.compile_example_holds,
     `Snarky.Kimchi.compileWith_example_holds,
+    `Snarky.Kimchi.compile_example_reads,
+    `Snarky.Kimchi.compileWith_example_reads,
+    `Snarky.Kimchi.affine_example_reads,
+    `Snarky.Kimchi.constant_example_reads,
+    `Snarky.Kimchi.unit_output_example_reads,
     `Snarky.Kimchi.recorded_batching,
     `Snarky.Kimchi.recorded_wiring,
     `Snarky.Kimchi.recorded_constantCache,
