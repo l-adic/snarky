@@ -117,6 +117,10 @@ Pickles.Application.matrices_wrap_handover
 Pickles.Application.matrices_step_handover
 Pickles.Application.WrapHandoverConclusion.appState
 Pickles.Application.compareIndices?_eq_none_iff -- equality of two families of an application's indices, decided
+Pickles.Application.importedApplication_picklesCorrect -- native correctness transports along index equality
+Pickles.Application.certifyIndices? -- imported indices against a checked application: the indices certified or the first disagreement
+Pickles.Application.certifyIndices?_indices -- the certified indices are the given ones
+Pickles.Application.certifyIndices?_isOk_iff -- certification succeeds exactly on the checked indices
 Pickles.Application.CertificationConsumer.stepWrap_accepts -- verifier acceptance from tables alone
 Pickles.Application.CertificationConsumer.wrapHandover_appState -- the state alternative across two applications
 Pickles.Application.CertificationConsumer.stepHandover_messages -- the message grouping across three applications

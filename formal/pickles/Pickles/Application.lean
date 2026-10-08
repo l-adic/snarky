@@ -3,6 +3,7 @@ import Pickles.Application.CheckedCompile
 import Pickles.Application.MatrixRun
 import Pickles.Application.Certification
 import Pickles.Application.Compare
+import Pickles.Application.Imported
 
 /-!
 # Compiled application framework
