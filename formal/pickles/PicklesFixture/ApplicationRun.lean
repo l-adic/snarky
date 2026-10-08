@@ -145,14 +145,23 @@ structure Runner where
   wrap : Nat → Cache.Entry CS → Cache.Entry CW → Array StepPrev →
     IO (CircuitRun PALLAS_SCALAR_CARD)
 
+/-- A branch's dumped step circuit, from the tag. -/
+def stepCircuitDump (D : Shape) (tag : Json) (b : D.Branch) : Except String (Raw Fp) := do
+  let branches ← (tag.getObjVal? "branches") >>= Json.getArr?
+  unless branches.size == D.branches do
+    throw "comparison dump branch count differs from the reconstructed application"
+  let some branch := branches[b.val]? | throw "a declared branch is missing"
+  parseGates (← (← branch.getObjVal? "stepMain").getObjVal? "circuit")
+
+/-- The dumped wrap circuit, from the tag. -/
+def wrapCircuitDump (tag : Json) : Except String (Raw Fq) := do
+  parseGates (← (← tag.getObjVal? "wrapMain").getObjVal? "circuit")
+
 /-- Compare each branch's and the wrap circuit's compilation in hand with the independent
 dump. -/
 def compareCompilations {D : Shape} {L : Layout D} (C : Circuits D L)
     (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
     (name : String) (tag : Json) : IO Unit := do
-  let branches ← IO.ofExcept ((tag.getObjVal? "branches") >>= Json.getArr?)
-  unless branches.size == D.branches do
-    throw (IO.userError "comparison dump branch count differs from the reconstructed application")
   let report (label : String) (checks : List (String × Bool)) : IO Unit := do
     let bad := checks.filter (!·.2)
     unless bad.isEmpty do
@@ -160,12 +169,9 @@ def compareCompilations {D : Shape} {L : Layout D} (C : Circuits D L)
     IO.println s!"✓ {name} {label}: application circuit matches dumped constraint system"
     (← IO.getStdout).flush
   for b in List.finRange D.branches do
-    let some branch := branches[b.val]? | throw (IO.userError "a declared branch is missing")
-    let raw : Raw Fp ← IO.ofExcept do
-      parseGates (← (← branch.getObjVal? "stepMain").getObjVal? "circuit")
+    let raw ← IO.ofExcept (stepCircuitDump D tag b)
     report s!"step {b.val}" (compareBuilt (a := Unit) (b := StepPublic D) (steps b).1 raw)
-  let raw : Raw Fq ← IO.ofExcept do
-    parseGates (← (← tag.getObjVal? "wrapMain").getObjVal? "circuit")
+  let raw ← IO.ofExcept (wrapCircuitDump tag)
   report "wrap" (compareBuilt (a := WrapPublic) (b := Unit) wrap.1 raw)
 
 /-- Compare every reconstructed step branch's and the wrap circuit's canonical compilation with

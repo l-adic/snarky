@@ -13,6 +13,7 @@ import PicklesFixture.Application
 import PicklesFixture.ApplicationVerify
 import PicklesFixture.ApplicationFromShape
 import PicklesFixture.ApplicationIndices
+import PicklesFixture.ImportedIndices
 
 /-!
 # The pickles circuit harnesses the drivers share

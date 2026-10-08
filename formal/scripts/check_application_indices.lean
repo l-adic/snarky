@@ -1,11 +1,14 @@
 import PicklesFixture.ApplicationFromShape
 import PicklesFixture.ApplicationIndices
+import PicklesFixture.ImportedIndices
 import PicklesFixture.Verdicts
 
 /-!
 Reconstruct the applications an explicit selection names and compile each one's circuits
 once: compare them with the independent circuit dumps, check them at their keys' index data
-and require their rejection at data a key could not have supplied; then, from each
+and require their rejection at data a key could not have supplied; import each one's indices
+from the dumps alone at the keys' data and certify them against the checked application,
+requiring changes to the imported side to be rejected where they are; then, from each
 application's cached proofs, construct the tables the lifting theorems take against the checked
 indices. Run from `formal/` with `PICKLES_DUMP_DIR` set and `APPS` naming manifest applications;
 the selection is never `all`. `PICKLES_PROOF_CACHE_DIR` selects the caches.
@@ -29,8 +32,10 @@ def main : IO Unit := do
   let some step := Srs.check σS | throw (IO.userError "invalid step SRS")
   let cacheDir := (← IO.getEnv "PICKLES_PROOF_CACHE_DIR").getD
     "../packages/pickles/test/fixtures/proof-cache"
+  rejectInvalidDumps
   loadApplications dir apps wrap step fun imported => do
     for (name, A) in imported do
       let tag ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / s!"{name}.json")))
       let checked ← checkIndices name A tag
+      certifyImported name A checked tag
       checkTables name A checked cacheDir
