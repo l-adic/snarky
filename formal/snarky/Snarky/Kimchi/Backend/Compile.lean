@@ -58,7 +58,7 @@ def reduceGates [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [Decida
     (step.1 ++ rest.1, rest.2.1, rest.2.2)
 
 /-- Fold the prover's reduction over the same list, filling the internal variables. -/
-def reduceTable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F] :
+private def reduceTable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F] :
     List (KimchiConstraint F) → ProverReductionState F →
       Except EvalError (ProverReductionState F)
   | [], s => .ok s
@@ -86,7 +86,7 @@ def reduceSolved [Field F] [DecidableEq F] {α : Type} (built : Built (KimchiCon
 
 /-- The variables backing a bundle of plain variables — the witnessed public output
 slots, whose ids the assembly needs but whose numbering it does not care about. -/
-def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar) :
+private def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar) :
     List Variable :=
   (CircuitType.varToFields (val := b) v).toList.filterMap fun (cv : CVar F) =>
     match cv with

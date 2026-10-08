@@ -26,17 +26,16 @@ The two `none` conventions differ on purpose.
 - `reduceToVariable_reads`: when the recorded events hold, the pinned variable reads as the
   operand.
 - `boolean_of_reductionFacts`: when the recorded events hold, the Boolean holds.
-- `addComplete_read_eq`, `endoScalar_read_eq`, `varBaseMul_read_eq`: when the recorded
-  events hold, each emitted row, or row pair, read cell by cell is the gate's witness at the
-  operands' values; `addComplete_holds_of_reductionFacts`,
+- `addComplete_read_eq`: when the recorded events hold, the emitted row read cell by cell is
+  the gate's witness at the operands' values; `addComplete_holds_of_reductionFacts`,
   `endoScalar_holds_of_reductionFacts`, `varBaseMul_holds_of_reductionFacts` transport the
-  gate's predicate across it to the source constraint; `endoMul_holds_of_reductionFacts` and
-  `poseidon_holds_of_reductionFacts` read each round's or window's row with its successor and
-  close the chain, the latter under the block shape `5w + 1`. `endoScalar_result_length`,
-  `endoScalar_kind`, `varBaseMul_result_length`, `varBaseMul_kind`, `varBaseMul_rows_fst`,
-  `varBaseMul_rows_snd`, `endoMul_result_length`, `endoMul_kind`, `poseidon_result_length`,
-  `poseidon_kind`, `poseidon_coeffs`: the rows the multi-row gates emit, per round, and a
-  window's constants in its coefficients.
+  gate's predicate across the emitted row, or row pair, to the source constraint;
+  `endoMul_holds_of_reductionFacts` and `poseidon_holds_of_reductionFacts` read each round's
+  or window's row with its successor and close the chain, the latter under the block shape
+  `5w + 1`. `endoScalar_result_length`, `endoScalar_kind`, `varBaseMul_result_length`,
+  `varBaseMul_kind`, `varBaseMul_rows_fst`, `varBaseMul_rows_snd`, `endoMul_result_length`,
+  `endoMul_kind`, `poseidon_result_length`, `poseidon_kind`, `poseidon_coeffs`: the rows the
+  multi-row gates emit, per round, and a window's constants in its coefficients.
 - `equalsHolds_of_merge`, `equalsHolds_of_cached`, `equalsHolds_of_pinned`,
   `equalsHolds_of_row`, `equalsHolds_of_trivial`: an equality holds once the fact its logged
   outcome names holds, a merge or cache hit by class, a pin or row by its emitted equation.
@@ -718,7 +717,7 @@ theorem endoScalar_kind (nv : Variable) (aux : AuxState F) (rounds : EndoScalar 
 
 /-- When the recorded events hold at a valuation, each emitted decomposition row read cell by
 cell is the gate's witness at its round's operands' values. -/
-theorem endoScalar_read_eq (nv : Variable) (aux : AuxState F) (rounds : EndoScalar F)
+private theorem endoScalar_read_eq (nv : Variable) (aux : AuxState F) (rounds : EndoScalar F)
     (V : Valuation F)
     (h : ReductionFacts V (recordReduction nv aux (EndoScalar.reduce rounds)).events)
     (i : Fin rounds.length) :
@@ -982,7 +981,7 @@ theorem varBaseMul_rows_snd (nv : Variable) (aux : AuxState F) (rounds : VarBase
 
 /-- When the recorded events hold at a valuation, each emitted row pair read cell by cell is
 the gate's witness at its round's operands' values. -/
-theorem varBaseMul_read_eq (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
+private theorem varBaseMul_read_eq (nv : Variable) (aux : AuxState F) (rounds : VarBaseMul F)
     (V : Valuation F)
     (h : ReductionFacts V (recordReduction nv aux (VarBaseMul.reduce rounds)).events)
     (i : Fin rounds.length) :
@@ -1778,15 +1777,15 @@ def KimchiConstraint.placedOperands (c : KimchiConstraint F) : List (FVar F) :=
 
 omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
 /-- An operand of a row within the column count is a cell of it. -/
-theorem mem_cellsOf {ops : List (Option (FVar F))} (h : ops.length ≤ wCols) {o : Option (FVar F)}
-    (ho : o ∈ ops) : o ∈ (cellsOf ops).toList := by
+private theorem mem_cellsOf {ops : List (Option (FVar F))} (h : ops.length ≤ wCols)
+    {o : Option (FVar F)} (ho : o ∈ ops) : o ∈ (cellsOf ops).toList := by
   show o ∈ ops.take wCols ++ List.replicate (wCols - (ops.take wCols).length) none
   rw [List.take_of_length_le h]
   exact List.mem_append_left _ ho
 
 omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
 /-- An operand in a cell of some row is a placed operand. -/
-theorem mem_placedOperands {c : KimchiConstraint F} {row : Vector (Option (FVar F)) wCols}
+private theorem mem_placedOperands {c : KimchiConstraint F} {row : Vector (Option (FVar F)) wCols}
     (hrow : row ∈ c.rowOperands.toList) {x : FVar F} (hx : some x ∈ row.toList) :
     x ∈ c.placedOperands :=
   List.mem_flatMap.mpr ⟨row, hrow, List.mem_filterMap.mpr ⟨some x, hx, rfl⟩⟩

@@ -21,8 +21,8 @@ and the public rows.
 - `KimchiConstraint.Direct.Scoped`: the scoping condition on a source list and its public
   variables: every constraint direct, and every operand of an unwired column occurring once.
 - `classGates`: the assembled gate list with the class-based wiring.
-- `lowering`, `directRows`, `directRoots`, `recover`: the recorded lowering, its rows and
-  roots, and the valuation read off labelled cells; the wired fragment reuses them.
+- `lowering`, `directRows`, `directRoots`: the recorded lowering, its rows and roots; the
+  wired fragment reuses them.
 
 ## Main results
 
@@ -34,8 +34,7 @@ and the public rows.
 - `KimchiConstraint.Direct.holds_of_satisfies`: any table satisfying an index of the
   fragment's lowering yields a valuation satisfying every source constraint and reading the
   public variables as the public input.
-- `directGates_eq`, `directGates_eq_classGates`: the assembled gates are the production
-  assembly of the lowering's rows, and the class-based ones.
+- `directGates_eq_classGates`: the assembled gates are the class-based ones.
 - `indexOf_of_classTarget`: an index matching the lowering's rows and the class-based wiring
   agrees with the assembly, so `IndexOf` is decided on concrete data.
 - `IndexOf.rows_le`, `IndexOf.typ_eq`, `IndexOf.coeffs_eq`, `IndexOf.classCells_eq`: what an
@@ -196,7 +195,7 @@ def directRoots (source : List (KimchiConstraint F)) (nv : Variable) : Array Var
 
 /-- The fragment's assembled gates are the production assembly of its rows through its
 roots. -/
-theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars : List Variable)
+private theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars : List Variable)
     (nv : Variable) :
     directGates source publicVars nv =
       assembleGates (directRoots source nv) (directRows source publicVars nv) := by
@@ -989,7 +988,7 @@ private theorem unwired_unique {source : List (KimchiConstraint F)} {publicVars 
 /-! ## The valuation -/
 
 /-- The value at a cell labelled by the variable, zero when none is. -/
-noncomputable def recover (rows : List (KimchiRow F)) (val : Nat × Nat → F)
+private noncomputable def recover (rows : List (KimchiRow F)) (val : Nat × Nat → F)
     (v : Variable) : F :=
   if h : ∃ c : Fin rows.length × Fin wCols, rows[c.1].vars[c.2] = some v then
     val ((Classical.choose h).1, (Classical.choose h).2)

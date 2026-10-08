@@ -23,8 +23,8 @@ rest. `compiledIndex?` applies it to the source's assembled gates.
 
 ## Main results
 
-- `gateTable?_isSome_iff`, `gateTable?_emitted`, `gateTable?_padding`: when the table is
-  built, and what each of its rows is.
+- `gateTable?_isSome_iff`, `gateTable?_padding`: when the table is built, and what its
+  padding rows are.
 - `compiledIndex?_indexOf`: the index a successful construction returns is the source's.
 - `gateDataOf_reduceBuilt`: a built circuit's gates are its source's, whatever its result.
 
@@ -183,7 +183,8 @@ theorem gateTable?_isSome_iff (gates : List (AssembledGate F)) (n : ℕ) :
 
 /-- A built table's emitted rows are the list's: the same gate type, coefficients and wire
 targets. -/
-theorem gateTable?_emitted {gates : List (AssembledGate F)} {n : ℕ} {t : Fin n → GateRow F n}
+private theorem gateTable?_emitted {gates : List (AssembledGate F)} {n : ℕ}
+    {t : Fin n → GateRow F n}
     (h : gateTable? gates n = some t) (i : Fin n) (hi : i.val < gates.length) :
     (t i).typ = gates[i.val].kind ∧
       (∀ c : Fin coeffCols, (t i).coeffs c = gates[i.val].coeffs.getD c.val 0) ∧

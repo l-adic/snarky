@@ -93,7 +93,7 @@ def endoPublic : List Variable := [8]
 
 /-- A second round threading the first's outputs into its accumulators, its crumbs fresh, its
 outputs `19`, `20`, `21`. -/
-def round2 : EndoScalarRound K :=
+private def round2 : EndoScalarRound K :=
   { n0 := .var 8, n8 := .var 19, a0 := .var 9, a8 := .var 20, b0 := .var 10, b8 := .var 21,
     xs := #v[.var 11, .var 12, .var 13, .var 14, .var 15, .var 16, .var 17, .var 18] }
 
@@ -118,7 +118,7 @@ def summedRound : EndoScalarRound K :=
 /-- A scale round from the base `(0, 1)` and the accumulator `(2, 3)`, its register pinned
 to `0`, its middle accumulators `4` to `11`, its output register `12` and accumulator
 `(13, 14)`, its bits `15` to `19` and slopes `20` to `24`. -/
-def scale1 : ScaleRound K :=
+private def scale1 : ScaleRound K :=
   { acc0 := ⟨.var 2, .var 3⟩, acc1 := ⟨.var 4, .var 5⟩, acc2 := ⟨.var 6, .var 7⟩,
     acc3 := ⟨.var 8, .var 9⟩, acc4 := ⟨.var 10, .var 11⟩, acc5 := ⟨.var 13, .var 14⟩,
     bit0 := .var 15, bit1 := .var 16, bit2 := .var 17, bit3 := .var 18, bit4 := .var 19,
@@ -134,7 +134,7 @@ def scalePublic : List Variable := [13, 14]
 /-- A second round threading the first's output accumulator and register into its inputs, its
 middle accumulators `25` to `32`, its output register `33` and accumulator `(34, 35)`, its
 bits `36` to `40` and slopes `41` to `45`. -/
-def scale2 : ScaleRound K :=
+private def scale2 : ScaleRound K :=
   { acc0 := ⟨.var 13, .var 14⟩, acc1 := ⟨.var 25, .var 26⟩, acc2 := ⟨.var 27, .var 28⟩,
     acc3 := ⟨.var 29, .var 30⟩, acc4 := ⟨.var 31, .var 32⟩, acc5 := ⟨.var 34, .var 35⟩,
     bit0 := .var 36, bit1 := .var 37, bit2 := .var 38, bit3 := .var 39, bit4 := .var 40,
@@ -159,7 +159,7 @@ def summedScale : ScaleRound K := { scale1 with acc1 := ⟨.add (.var 4) (.var 5
 /-- A first round from the target `(0, 1)` and the accumulator `(2, 3)`, its register pinned
 to `0`, its inverse `4`, midpoint `(5, 6)`, slopes `7`, `8` and bits `9` to `12`; its unplaced
 output fields name the second round's inputs. -/
-def emRound1 : EndoMulRound K :=
+private def emRound1 : EndoMulRound K :=
   { t := ⟨.var 0, .var 1⟩, p := ⟨.var 2, .var 3⟩, r := ⟨.var 5, .var 6⟩, s := ⟨.var 13, .var 14⟩,
     s1 := .var 7, s3 := .var 8, nAcc := .const 0, nAccNext := .var 15, bit0 := .var 9,
     bit1 := .var 10, bit2 := .var 11, bit3 := .var 12, inv := .var 4 }
@@ -167,7 +167,7 @@ def emRound1 : EndoMulRound K :=
 /-- A second round from the same target, its accumulator `(13, 14)` and register `15` read as
 the first's outputs, its inverse `16`, midpoint `(17, 18)`, slopes `19`, `20` and bits `21` to
 `24`. -/
-def emRound2 : EndoMulRound K :=
+private def emRound2 : EndoMulRound K :=
   { t := ⟨.var 0, .var 1⟩, p := ⟨.var 13, .var 14⟩, r := ⟨.var 17, .var 18⟩,
     s := ⟨.var 25, .var 26⟩, s1 := .var 19, s3 := .var 20, nAcc := .var 15, nAccNext := .var 27,
     bit0 := .var 21, bit1 := .var 22, bit2 := .var 23, bit3 := .var 24, inv := .var 16 }
@@ -193,7 +193,7 @@ def summedEndoMul : EndoMul K :=
 /-! ## A Poseidon block -/
 
 /-- Ten rounds' constants, distinct and nonzero across both windows. -/
-def poseidonRc : List (K × K × K) :=
+private def poseidonRc : List (K × K × K) :=
   [(1, 2, 3), (4, 5, 6), (7, 8, 9), (10, 11, 12), (13, 14, 15), (16, 17, 18), (19, 20, 21),
     (22, 23, 24), (25, 26, 27), (28, 29, 30)]
 
