@@ -1,4 +1,5 @@
 import Snarky.Kimchi.Backend.Wired
+import Snarky.Kimchi.Backend.CompiledIndex
 import Snarky.Kimchi.Backend.WiredFixtures
 import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic.NormNum.Prime
@@ -55,7 +56,7 @@ cells, every gate holding, breaks the copy constraint.
 
 - `wired_example_holds`, `endo_example_holds`, `chain_example_holds`, `scale_example_holds`,
   `scaleChain_example_holds`, `endoMul_example_holds`, `poseidon_example_holds`,
-  `pad_example_holds`: the closed theorem on the decided instances.
+  `pad_example_holds`, and `wired_example_holds_compiled` through `compiledIndex?`'s index.
 - `wired_rejections_scope`, `wired_rejections_table`, `wired_rejections_index`,
   `endo_rejections`, `scale_rejections`, `endoMul_rejections`, `endoMul_rejections_index`,
   `poseidon_rejections`, `poseidon_rejections_index`, `pad_rejections`: boundaries by premise.
@@ -139,6 +140,29 @@ theorem wired_example_holds :
       ∀ i : Fin publicVars.length, W publicVars[i] = pub (wired_example_indexOf.publicIndex i) :=
   KimchiConstraint.Wired.holds_of_satisfies wired_example_scoped wired_example_indexOf pub
     table wired_example_satisfies
+
+/-- The compiler's constructor on the first source: its index, by the class-based gates. -/
+private def compiledIdx : Index K 16 :=
+  (indexOfGates? (classGates roots rows) source publicVars.length 16 3 40 0 mds shifts).get
+    (by decide +kernel)
+
+/-- The constructor returns that index. -/
+private theorem compiled_eq :
+    compiledIndex? source publicVars 20 16 3 40 0 mds shifts = some compiledIdx := by
+  rw [compiledIndex?, directGates_eq_classGates]
+  exact (Option.some_get _).symm
+
+private def compiledPub : Fin compiledIdx.publicCount → K := fun i =>
+  V (publicVars.getD i.val 0)
+
+/-- The closed theorem on the same table through the compiler's own index, its
+correspondence derived by `compiledIndex?_indexOf`. -/
+theorem wired_example_holds_compiled :
+    ∃ W : Valuation K, (∀ c ∈ source, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin publicVars.length,
+        W publicVars[i] = compiledPub ((compiledIndex?_indexOf compiled_eq).publicIndex i) :=
+  KimchiConstraint.Wired.holds_of_satisfies wired_example_scoped
+    (compiledIndex?_indexOf compiled_eq) compiledPub table (by decide +kernel)
 
 /-! ## Boundaries -/
 

@@ -246,7 +246,9 @@ def directRows (source : List (KimchiConstraint F)) (publicVars : List Variable)
 def directRoots (source : List (KimchiConstraint F)) (nv : Variable) : Array Variable :=
   UnionFind.rootOf (directBuilt source nv).aux.wireState.unionFind
 
-private theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars : List Variable)
+/-- The fragment's assembled gates are the production assembly of its rows through its
+roots. -/
+theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars : List Variable)
     (nv : Variable) :
     directGates source publicVars nv =
       assembleGates (directRoots source nv) (directRows source publicVars nv) := by

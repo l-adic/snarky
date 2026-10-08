@@ -243,6 +243,16 @@ Snarky.Kimchi.scopedFailure_range
 Snarky.Kimchi.scopedFailure_notWired
 Snarky.Kimchi.scopedFailure_reused
 Snarky.Kimchi.scopedFailure_precedence
+Snarky.Kimchi.compiledIndex?_indexOf
+Snarky.Kimchi.gateTable?_isSome_iff
+Snarky.Kimchi.gateTable?_padding
+Snarky.Kimchi.gateDataOf_reduceBuilt
+Snarky.Kimchi.compiledIndex_accepts
+Snarky.Kimchi.compiledIndex_accepts'
+Snarky.Kimchi.compiledIndex_rejects
+Snarky.Kimchi.gateTable_rejects
+Snarky.Kimchi.gateTable_padding
+Snarky.Kimchi.wired_example_holds_compiled
 Snarky.Kimchi.UnionFind.empty_inv
 Snarky.Kimchi.UnionFind.find_inv
 Snarky.Kimchi.UnionFind.same_find_mono

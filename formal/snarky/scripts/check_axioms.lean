@@ -35,6 +35,7 @@ import Snarky.Kimchi.Backend.DirectChecks
 import Snarky.Kimchi.Backend.Wired
 import Snarky.Kimchi.Backend.WiredChecks
 import Snarky.Kimchi.Backend.ScopedCheckChecks
+import Snarky.Kimchi.Backend.CompiledIndexChecks
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -258,6 +259,16 @@ def roots : List Name :=
     `Snarky.Kimchi.scopedFailure_notWired,
     `Snarky.Kimchi.scopedFailure_reused,
     `Snarky.Kimchi.scopedFailure_precedence,
+    `Snarky.Kimchi.«compiledIndex?_indexOf»,
+    `Snarky.Kimchi.«gateTable?_isSome_iff»,
+    `Snarky.Kimchi.«gateTable?_padding»,
+    `Snarky.Kimchi.gateDataOf_reduceBuilt,
+    `Snarky.Kimchi.compiledIndex_accepts,
+    `Snarky.Kimchi.«compiledIndex_accepts'»,
+    `Snarky.Kimchi.compiledIndex_rejects,
+    `Snarky.Kimchi.gateTable_rejects,
+    `Snarky.Kimchi.gateTable_padding,
+    `Snarky.Kimchi.wired_example_holds_compiled,
     -- The union-find's class view.
     `Snarky.Kimchi.UnionFind.empty_inv,
     `Snarky.Kimchi.UnionFind.find_inv,
