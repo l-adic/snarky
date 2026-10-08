@@ -13,9 +13,11 @@ checks build their indices and satisfy them; the scope checker's checks run the 
 them. One module holds them so that neither set of checks copies the other's sources.
 -/
 
+open Kimchi
+
 namespace Snarky.Kimchi
 
-open Kimchi Snarky
+open Snarky
 
 namespace WiredFixture
 
