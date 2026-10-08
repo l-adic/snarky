@@ -10,9 +10,9 @@ import Mathlib.Tactic.NormNum.Prime
 The checked compilation decided over a field of 113 elements, in the kernel. The check accepts
 the eight accepted sources of the wired-fragment checks. It reports a source out of scope by
 the scope checker's failure, at parameters where the index would not be built either, and it
-rejects a source in scope whose index is not built. Each case rewrites the assembled gates to
-the class-based ones with `directGates_eq_classGates`, and a lifted circuit's checked index is
-identified with that one through `checkBuilt?_index`.
+reports the index failure for a source in scope whose index is not built. Each case rewrites
+the assembled gates to the class-based ones with `directGates_eq_classGates`, and a lifted
+circuit's checked index is identified with that one through `checkBuilt?_index`.
 
 A small circuit multiplies its two inputs and the product by the first input. It is compiled
 with `compile`, and with `compileWith` keeping the first product as a cell; the kept cell is the
@@ -56,28 +56,46 @@ theorem check_accepts' :
   simp only [CheckedIndex.check?_isOk_iff, compiledIndex?, directGates_eq_classGates]
   decide +kernel
 
-/-- The failure a check reports. -/
-private def failureOf {α : Type} : Except CheckFailure α → Option CheckFailure
-  | .error e => some e
-  | .ok _ => none
-
 /-- A variable at the counter is reported as the scope failure, on a domain of four rows with
 three masked, where the index would not be built either. -/
 theorem check_rejects_scope :
     (compiledIndex? highSource publicVars 20 4 3 1 0 mds shifts).isNone ∧
-    failureOf (CheckedIndex.check? highSource publicVars 20 4 3 1 0 mds shifts) =
-      some (.scope (.outOfRange 5 20)) := by
-  refine ⟨?_, by decide +kernel⟩
-  simp only [compiledIndex?, directGates_eq_classGates]
-  decide +kernel
+    CheckedIndex.check? highSource publicVars 20 4 3 1 0 mds shifts =
+      .error (.scope (.outOfRange 5 20)) := by
+  refine ⟨?_, ?_⟩
+  · simp only [compiledIndex?, directGates_eq_classGates]
+    decide +kernel
+  · have hs : scopedFailure? 20 highSource publicVars = some (.outOfRange 5 20) := by
+      decide +kernel
+    unfold CheckedIndex.check?
+    split
+    · rename_i f hf
+      rw [hs] at hf
+      cases hf
+      rfl
+    · rename_i hf
+      rw [hs] at hf
+      cases hf
 
-/-- A Poseidon block at another matrix is in scope, and the check rejects it. -/
+/-- A Poseidon block at another matrix is in scope, and the check reports the index failure. -/
 theorem check_rejects_index :
-    checkScoped 32 poseidonSource poseidonPublic = true ∧
-    (CheckedIndex.check? poseidonSource poseidonPublic 32 16 3 40 0 mds shifts).isOk = false := by
-  simp only [← Bool.not_eq_true, CheckedIndex.check?_isOk_iff, compiledIndex?,
-    directGates_eq_classGates]
-  decide +kernel
+    CheckedIndex.check? poseidonSource poseidonPublic 32 16 3 40 0 mds shifts = .error .index := by
+  have hs : scopedFailure? 32 poseidonSource poseidonPublic = none := by
+    decide +kernel
+  have hi : compiledIndex? poseidonSource poseidonPublic 32 16 3 40 0 mds shifts = none := by
+    rw [← Option.isNone_iff_eq_none]
+    simp only [compiledIndex?, directGates_eq_classGates]
+    decide +kernel
+  unfold CheckedIndex.check?
+  split
+  · rename_i f hf
+    rw [hs] at hf
+    cases hf
+  · split
+    · rename_i idx hidx
+      rw [hi] at hidx
+      cases hidx
+    · rfl
 
 /-! ## A compiled circuit -/
 

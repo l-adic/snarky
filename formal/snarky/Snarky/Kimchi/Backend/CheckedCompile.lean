@@ -53,7 +53,6 @@ inductive CheckFailure where
   | scope (f : ScopedFailure)
   /-- The source is in scope, but the constructor builds no index. -/
   | index
-  deriving DecidableEq
 
 section Checked
 
