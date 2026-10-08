@@ -33,10 +33,12 @@ rest. `compiledIndex?` applies it to the source's assembled gates.
 ## Implementation notes
 
 The table reads an array built once from the converted rows, since `Index.build?` reads the
-table many times. The parameters, the domain size and the masked-row count are the caller's,
-as a deployment fixes them. The assembly's wiring goes through a hash map the kernel cannot
-evaluate; `classGates` is the same list computed from the classes, so a concrete instance is
-decided by rewriting with `directGates_eq_classGates` and evaluating the rest unchanged.
+table many times; `arrayTable` keeps the array out of the returned function's body, where the
+compiler would rebuild it on every read. The parameters, the domain size and the masked-row
+count are the caller's, as a deployment fixes them. The assembly's wiring goes through a hash
+map the kernel cannot evaluate; `classGates` is the same list computed from the classes, so a
+concrete instance is decided by rewriting with `directGates_eq_classGates` and evaluating the
+rest unchanged.
 -/
 
 open Kimchi Kimchi.Index
@@ -73,13 +75,15 @@ private def gateRow? (n : ℕ) (g : AssembledGate F) : Option (GateRow F n) :=
            wires := fun c => (⟨g.wires[c].col, (h.2 c).1⟩, ⟨g.wires[c].row, (h.2 c).2⟩) }
   else none
 
-/-- The emitted rows as table rows, `none` when one does not fit. -/
-private def gateRows? (n : ℕ) : List (AssembledGate F) → Option (List (GateRow F n))
-  | [] => some []
-  | g :: gs =>
-    match gateRow? n g, gateRows? n gs with
-    | some r, some rs => some (r :: rs)
-    | _, _ => none
+/-- The emitted rows converted and pushed onto `acc`, `none` when one does not fit: a loop, so
+that a table of any size takes no stack. -/
+private def gateRowsInto (n : ℕ) : Array (GateRow F n) → List (AssembledGate F) →
+    Option (Array (GateRow F n))
+  | acc, [] => some acc
+  | acc, g :: gs =>
+    match gateRow? n g with
+    | some r => gateRowsInto n (acc.push r) gs
+    | none => none
 
 private theorem gateRow?_isSome_iff (n : ℕ) (g : AssembledGate F) :
     (gateRow? n g).isSome ↔ RowFits n g := by
@@ -97,42 +101,72 @@ private theorem gateRow?_eq_some {n : ℕ} {g : AssembledGate F} {r : GateRow F 
     exact ⟨rfl, fun _ => rfl, fun _ => ⟨rfl, rfl⟩⟩
   · cases h
 
-private theorem gateRows?_isSome_iff (n : ℕ) :
-    (gs : List (AssembledGate F)) → ((gateRows? n gs).isSome ↔ ∀ g ∈ gs, RowFits n g)
-  | [] => by simp [gateRows?]
-  | g :: gs => by
-    rw [List.forall_mem_cons, ← gateRow?_isSome_iff, ← gateRows?_isSome_iff n gs,
-      gateRows?.eq_2]
-    cases gateRow? n g <;> cases gateRows? n gs <;> simp
+private theorem gateRowsInto_isSome_iff (n : ℕ) :
+    (acc : Array (GateRow F n)) → (gs : List (AssembledGate F)) →
+      ((gateRowsInto n acc gs).isSome ↔ ∀ g ∈ gs, RowFits n g)
+  | acc, [] => by simp [gateRowsInto]
+  | acc, g :: gs => by
+    rw [List.forall_mem_cons, ← gateRow?_isSome_iff, gateRowsInto.eq_2]
+    cases h : gateRow? n g with
+    | none => simp
+    | some r =>
+      simp only [Option.isSome_some, true_and]
+      exact gateRowsInto_isSome_iff n (acc.push r) gs
 
-private theorem gateRows?_eq_some (n : ℕ) :
-    (gs : List (AssembledGate F)) → (rs : List (GateRow F n)) → gateRows? n gs = some rs →
-      ∃ hlen : rs.length = gs.length, ∀ (i : ℕ) (hi : i < gs.length),
-        gateRow? n gs[i] = some (rs[i]'(hlen ▸ hi))
-  | [], rs, h => by
-    simp only [gateRows?, Option.some.injEq] at h
+private theorem gateRowsInto_eq_some (n : ℕ) :
+    (acc : Array (GateRow F n)) → (gs : List (AssembledGate F)) → (arr : Array (GateRow F n)) →
+      gateRowsInto n acc gs = some arr →
+      ∃ hsize : arr.size = acc.size + gs.length,
+        (∀ (i : ℕ) (hi : i < acc.size), arr[i]'(by omega) = acc[i]) ∧
+        ∀ (i : ℕ) (hi : i < gs.length), gateRow? n gs[i] = some (arr[acc.size + i]'(by omega))
+  | acc, [], arr, h => by
+    simp only [gateRowsInto, Option.some.injEq] at h
     subst h
-    exact ⟨rfl, fun _ hi => absurd hi (Nat.not_lt_zero _)⟩
-  | g :: gs, rs, h => by
-    rw [gateRows?.eq_2] at h
+    exact ⟨by simp, fun _ _ => rfl, fun _ hi => absurd hi (Nat.not_lt_zero _)⟩
+  | acc, g :: gs, arr, h => by
+    rw [gateRowsInto.eq_2] at h
     split at h
-    · rename_i r rs' hr hrs
-      cases h
-      obtain ⟨hlen, hrs'⟩ := gateRows?_eq_some n gs rs' hrs
-      refine ⟨by simp [hlen], fun i hi => ?_⟩
-      cases i with
-      | zero => exact hr
-      | succ k => exact hrs' k (by simpa using hi)
+    · rename_i r hr
+      obtain ⟨hsize, hpre, hrest⟩ := gateRowsInto_eq_some n (acc.push r) gs arr h
+      have hsize' : arr.size = acc.size + (g :: gs).length := by
+        simp only [Array.size_push] at hsize
+        simp only [List.length_cons]
+        omega
+      refine ⟨hsize', fun i hi => ?_, fun i hi => ?_⟩
+      · rw [hpre i (by simp; omega), Array.getElem_push_lt]
+      · cases i with
+        | zero =>
+          have h0 := hpre acc.size (by simp)
+          rw [Array.getElem_push_eq] at h0
+          have e : arr[acc.size + 0]'(by simp only [List.length_cons] at hsize'; omega) =
+              arr[acc.size]'(by simp only [List.length_cons] at hsize'; omega) :=
+            getElem_congr_idx (Nat.add_zero _)
+          rw [List.getElem_cons_zero, e, h0]
+          exact hr
+        | succ k =>
+          have hk' : k < gs.length := by simp only [List.length_cons] at hi; omega
+          have hk := hrest k hk'
+          have e : arr[(acc.push r).size + k]'(by simp only [Array.size_push] at hsize ⊢; omega) =
+              arr[acc.size + (k + 1)]'(by simp only [List.length_cons] at hsize'; omega) :=
+            getElem_congr_idx (by simp; omega)
+          rw [List.getElem_cons_succ, hk, e]
     · cases h
+
+/-- The table over an array of converted rows: the array's row where there is one, a padding
+row beyond. Kept apart from `gateTable?` and never inlined, so that the array is a value the
+returned function captures: written inline, the two functions merge and every read rebuilds
+the array. -/
+@[noinline] private def arrayTable {n : ℕ} (arr : Array (GateRow F n)) : Fin n → GateRow F n :=
+  fun i => if h : i.val < arr.size then arr[i.val] else zeroGateRow i
 
 /-- The table of an assembled gate list on `n` rows: each emitted row converted, and zero
 gates wired to themselves beyond them. `none` when the list is longer than the table, or a
 row has more coefficients than the coefficient columns or a wire target outside the table. -/
 def gateTable? (gates : List (AssembledGate F)) (n : ℕ) : Option (Fin n → GateRow F n) :=
   if gates.length ≤ n then
-    (gateRows? n gates).map fun rows =>
-      let arr := rows.toArray
-      fun i => if h : i.val < arr.size then arr[i.val] else zeroGateRow i
+    match gateRowsInto n #[] gates with
+    | some arr => some (arrayTable arr)
+    | none => none
   else none
 
 /-- The table is built exactly when the list fits the table and every row fits it. -/
@@ -143,8 +177,10 @@ theorem gateTable?_isSome_iff (gates : List (AssembledGate F)) (n : ℕ) :
   unfold gateTable?
   split
   · rename_i hlen
-    rw [Option.isSome_map, gateRows?_isSome_iff]
-    simp only [RowFits, hlen, true_and]
+    have h := gateRowsInto_isSome_iff n #[] gates
+    simp only [RowFits] at h
+    rw [← h]
+    cases gateRowsInto n #[] gates <;> simp [hlen]
   · rename_i hlen
     simp [hlen]
 
@@ -158,11 +194,16 @@ theorem gateTable?_emitted {gates : List (AssembledGate F)} {n : ℕ} {t : Fin n
         ((t i).wires c).2.val = gates[i.val].wires[c].row := by
   unfold gateTable? at h
   split at h
-  · obtain ⟨rows, hrows, rfl⟩ := Option.map_eq_some_iff.mp h
-    obtain ⟨hlen, hrow⟩ := gateRows?_eq_some n gates rows hrows
-    have hi' : i.val < rows.toArray.size := by simp [hlen, hi]
-    simp only [dif_pos hi']
-    exact gateRow?_eq_some (by simpa using hrow i.val hi)
+  · split at h
+    · rename_i arr harr
+      cases h
+      obtain ⟨hsize, -, hrow⟩ := gateRowsInto_eq_some n #[] gates arr harr
+      have hi' : i.val < arr.size := by simp at hsize; omega
+      simp only [arrayTable, dif_pos hi']
+      have e : arr[(#[] : Array (GateRow F n)).size + i.val]'(by simp at hsize ⊢; omega) =
+          arr[i.val] := getElem_congr_idx (by simp)
+      exact gateRow?_eq_some ((hrow i.val hi).trans (congrArg some e))
+    · cases h
   · cases h
 
 /-- A built table's rows beyond the list are zero gates with zero coefficients, each cell
@@ -173,11 +214,14 @@ theorem gateTable?_padding {gates : List (AssembledGate F)} {n : ℕ} {t : Fin n
       ∀ c : Fin permCols, (t i).wires c = (c, i) := by
   unfold gateTable? at h
   split at h
-  · obtain ⟨rows, hrows, rfl⟩ := Option.map_eq_some_iff.mp h
-    obtain ⟨hlen, -⟩ := gateRows?_eq_some n gates rows hrows
-    have hi' : ¬ i.val < rows.toArray.size := by simp [hlen]; omega
-    simp only [dif_neg hi']
-    exact ⟨rfl, fun _ => rfl, fun _ => rfl⟩
+  · split at h
+    · rename_i arr harr
+      cases h
+      obtain ⟨hsize, -, -⟩ := gateRowsInto_eq_some n #[] gates arr harr
+      have hi' : ¬ i.val < arr.size := by simp at hsize; omega
+      simp only [arrayTable, dif_neg hi']
+      exact ⟨rfl, fun _ => rfl, fun _ => rfl⟩
+    · cases h
   · cases h
 
 end Table
