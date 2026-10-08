@@ -31,6 +31,22 @@ constraints, its public variables and its counter.
 - `CheckedIndex.publicCount_eq`, `CheckedIndex.publicIndex_val`: one public row per public
   variable, at its position in the list.
 
+## The supported interface
+
+A consumer checks a compilation with `checkBuilt?`, or a source list with
+`CheckedIndex.check?`, reads the result through `CheckedIndex.index`,
+`CheckedIndex.publicIndex` and `CheckedIndex.publicCount_eq`, and lifts with
+`CheckedIndex.lift`; `compiledPublicVars` gives the public variables and `CheckFailure` the
+reason for a rejection. `CheckedConsumer.compile_lifts` and `CheckedConsumer.compileWith_lifts`
+are written against this interface alone.
+
+`checkBuilt?_index` and `CheckedIndex.check?_isOk_iff` serve consumers that compare the index
+with ordinary compilation or decide a check; their statements bring `indexOfGates?` and
+`compiledIndex?` with them. The fields `CheckedIndex.admissible` and
+`CheckedIndex.corresponds` are the certificate `lift` reads: a checked index comes from a
+check, not from its fields. The lowering's proof development, under Backend/Internal, is not
+part of this interface.
+
 ## Implementation notes
 
 The scope checker runs first and once. Its failure is the one reported, the index is built only
