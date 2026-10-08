@@ -1,6 +1,5 @@
-import Snarky.Kimchi.Backend.CheckedCompile
+import Snarky.Kimchi.Backend.Checks.CheckedCompileConsumer
 import Snarky.Kimchi.Backend.WiredFixtures
-import Snarky.DSL.Field
 import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic.NormNum.Prime
 
@@ -14,11 +13,11 @@ reports the index failure for a source in scope whose index is not built. Each c
 the assembled gates to the class-based ones with `directGates_eq_classGates`, and a lifted
 circuit's checked index is identified with that one through `checkBuilt?_index`.
 
-A small circuit multiplies its two inputs and the product by the first input. It is compiled
-with `compile`, and with `compileWith` keeping the first product as a cell; the kept cell is the
-result's, and the public variables are the same. Each compilation is checked by `checkBuilt?`
-and lifted by `CheckedIndex.lift` from the table the prover's values fill, with no scope or
-correspondence argument.
+The public-interface consumer's circuit is compiled with `compile`, and with `compileWith`
+keeping its first product as a cell; the kept cell is the result's, and the public variables are
+the same. Each compilation's checked index comes from `checkBuilt?`, the table the prover's values
+fill is decided to satisfy it, and the consumer's `compile_lifts` and `compileWith_lifts` lift
+it, with no scope or correspondence argument.
 
 ## Main results
 
@@ -97,28 +96,9 @@ theorem check_rejects_index :
       cases hidx
     · rfl
 
-/-! ## A compiled circuit -/
+/-! ## The consumer's circuit -/
 
-/-- The circuit's body: the product of the inputs, kept as a cell, times the first input. -/
-private def circuitWith (p : FVar K × FVar K) :
-    CircuitM K (KimchiConstraint K) (FVar K × FVar K) := do
-  let z ← mul p.1 p.2
-  let w ← mul z p.1
-  pure (w, z)
-
-/-- The circuit without the kept cell. -/
-private def circuit (p : FVar K × FVar K) : CircuitM K (KimchiConstraint K) (FVar K) :=
-  Prod.fst <$> circuitWith p
-
-private def built : Built (KimchiConstraint K) (FVar K × FVar K) :=
-  compile (a := K × K) (b := K) circuit
-
-private def builtWith : Built (KimchiConstraint K) ((FVar K × FVar K) × FVar K) :=
-  compileWith (a := K × K) (b := K) circuitWith
-
-/-- A compiled circuit's public variables. -/
-private abbrev pvOf {β : Type} (b : Built (KimchiConstraint K) (β × FVar K)) : List Variable :=
-  compiledPublicVars (F := K) (a := K × K) (b := K) b
+open CheckedConsumer
 
 /-- The prover's values: the inputs `3` and `5`, the product `15`, the output `45` and its
 public copy. -/
@@ -127,27 +107,28 @@ private def V : Valuation K := fun v => [3, 5, 15, 45, 45].getD v 0
 /-- The kept cell is the first product, and keeping it adds no public variable: the inputs and
 the output's public copy. -/
 theorem compileWith_example_layout :
-    (builtWith.result.1.2 matches .var 2) ∧ pvOf builtWith = pvOf built ∧
-      pvOf built = [0, 1, 4] := by
+    ((builtWith K).result.1.2 matches .var 2) ∧
+      publicVarsOf (builtWith K) = publicVarsOf (built K) ∧
+      publicVarsOf (built K) = [0, 1, 4] := by
   decide +kernel
 
 /-- The constructor's index of a compiled circuit, by the class-based gates. -/
 private def classIndex? {β : Type} (b : Built (KimchiConstraint K) (β × FVar K)) :
     Option (Index K 16) :=
   indexOfGates? (classGates (directRoots b.constraints b.nextVar)
-    (directRows b.constraints (pvOf b) b.nextVar)) b.constraints (pvOf b).length 16 3 40 0 mds
-    shifts
+    (directRows b.constraints (publicVarsOf b) b.nextVar)) b.constraints (publicVarsOf b).length
+    16 3 40 0 mds shifts
 
-/-- A compiled circuit the check accepts lifts from the prover's table on its index: a
-valuation satisfying every compiled constraint and agreeing with the prover's at the public
-variables. -/
-private theorem lifts {β : Type} (b : Built (KimchiConstraint K) (β × FVar K))
+/-- A compiled circuit the check accepts has a checked index, which the prover's table satisfies
+at the prover's public values when it satisfies the class-based index. -/
+private theorem checked_of_class {β : Type} (b : Built (KimchiConstraint K) (β × FVar K))
     (hok : (checkBuilt? (a := K × K) (b := K) b 16 3 40 0 mds shifts).isOk = true)
     (hsome : (classIndex? b).isSome = true)
-    (hsat : ((classIndex? b).get hsome).Satisfies (fun i => V ((pvOf b).getD i.val 0))
-      (tableOf V (directRows b.constraints (pvOf b) b.nextVar))) :
-    ∃ W : Valuation K, (∀ c ∈ b.constraints, KimchiConstraint.Holds W c) ∧
-      ∀ i : Fin (pvOf b).length, W (pvOf b)[i] = V (pvOf b)[i] := by
+    (hsat : ((classIndex? b).get hsome).Satisfies (fun j => V ((publicVarsOf b).getD j.val 0))
+      (tableOf V (directRows b.constraints (publicVarsOf b) b.nextVar))) :
+    ∃ c : CheckedIndex b.constraints (publicVarsOf b) b.nextVar 16,
+      c.index.Satisfies (fun j => V (publicVarsOf b)[Fin.cast c.publicCount_eq j])
+        (tableOf V (directRows b.constraints (publicVarsOf b) b.nextVar)) := by
   obtain ⟨c, hc⟩ : ∃ c, checkBuilt? (a := K × K) (b := K) b 16 3 40 0 mds shifts = .ok c := by
     revert hok
     cases checkBuilt? (a := K × K) (b := K) b 16 3 40 0 mds shifts with
@@ -157,29 +138,40 @@ private theorem lifts {β : Type} (b : Built (KimchiConstraint K) (β × FVar K)
     have h := checkBuilt?_index hc
     rw [gateDataOf_reduceBuilt, directGates_eq_classGates] at h
     exact Option.some_injective _ (h.symm.trans (Option.some_get hsome).symm)
-  obtain ⟨W, hW, hpub⟩ :=
-    c.lift (fun i => V ((pvOf b).getD i.val 0)) (tableOf V (directRows b.constraints (pvOf b)
-      b.nextVar)) (by rw [hidx]; exact hsat)
-  refine ⟨W, hW, fun i => ?_⟩
-  rw [hpub i]
-  exact congrArg V (List.getD_eq_getElem _ _ i.isLt)
+  refine ⟨c, ?_⟩
+  have hpub : (fun j : Fin c.index.publicCount => V (publicVarsOf b)[Fin.cast c.publicCount_eq j]) =
+      fun j => V ((publicVarsOf b).getD j.val 0) :=
+    funext fun j => (congrArg V (List.getD_eq_getElem _ _ (Fin.cast c.publicCount_eq j).isLt)).symm
+  rw [hpub, hidx]
+  exact hsat
 
-/-- **Lifting a compiled circuit.** The circuit compiled by `compile`, checked by
-`checkBuilt?`, lifts from the prover's table to a valuation satisfying every compiled
-constraint and agreeing with the prover's at the public variables. -/
+/-- **Lifting a compiled circuit.** The consumer's circuit compiled by `compile`, checked by
+`checkBuilt?`, lifts through `compile_lifts` from the prover's table to a valuation satisfying
+every compiled constraint and agreeing with the prover's at the public variables. -/
 theorem compile_example_holds :
-    ∃ W : Valuation K, (∀ c ∈ built.constraints, KimchiConstraint.Holds W c) ∧
-      ∀ i : Fin (pvOf built).length, W (pvOf built)[i] = V (pvOf built)[i] := by
-  refine lifts built ?_ (by decide +kernel) (by decide +kernel)
-  simp only [checkBuilt?, CheckedIndex.check?_isOk_iff, compiledIndex?, directGates_eq_classGates]
-  decide +kernel
+    ∃ W : Valuation K, (∀ c ∈ (built K).constraints, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin (publicVarsOf (built K)).length,
+        W (publicVarsOf (built K))[i] = V (publicVarsOf (built K))[i] := by
+  obtain ⟨c, hsat⟩ := checked_of_class (built K)
+    (by
+      simp only [checkBuilt?, CheckedIndex.check?_isOk_iff, compiledIndex?,
+        directGates_eq_classGates]
+      decide +kernel)
+    (by decide +kernel) (by decide +kernel)
+  exact compile_lifts c (fun i => V (publicVarsOf (built K))[i]) _ hsat
 
-/-- The same lifting for the circuit compiled by `compileWith` with its kept cell. -/
+/-- The same lifting for the circuit compiled by `compileWith` with its kept cell, through
+`compileWith_lifts`. -/
 theorem compileWith_example_holds :
-    ∃ W : Valuation K, (∀ c ∈ builtWith.constraints, KimchiConstraint.Holds W c) ∧
-      ∀ i : Fin (pvOf builtWith).length, W (pvOf builtWith)[i] = V (pvOf builtWith)[i] := by
-  refine lifts builtWith ?_ (by decide +kernel) (by decide +kernel)
-  simp only [checkBuilt?, CheckedIndex.check?_isOk_iff, compiledIndex?, directGates_eq_classGates]
-  decide +kernel
+    ∃ W : Valuation K, (∀ c ∈ (builtWith K).constraints, KimchiConstraint.Holds W c) ∧
+      ∀ i : Fin (publicVarsOf (builtWith K)).length,
+        W (publicVarsOf (builtWith K))[i] = V (publicVarsOf (builtWith K))[i] := by
+  obtain ⟨c, hsat⟩ := checked_of_class (builtWith K)
+    (by
+      simp only [checkBuilt?, CheckedIndex.check?_isOk_iff, compiledIndex?,
+        directGates_eq_classGates]
+      decide +kernel)
+    (by decide +kernel) (by decide +kernel)
+  exact compileWith_lifts c (fun i => V (publicVarsOf (builtWith K))[i]) _ hsat
 
 end Snarky.Kimchi

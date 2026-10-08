@@ -17,6 +17,7 @@ constraints, its public variables and its counter.
 - `CheckFailure`: why a check fails: the scope checker's failure, or the index constructor.
 - `CheckedIndex.check?`, `checkBuilt?`: the checked index of a source, and of a compiled
   circuit.
+- `CheckedIndex.publicIndex`: a public variable's row in the checked index.
 
 ## Main results
 
@@ -26,6 +27,8 @@ constraints, its public variables and its counter.
   built from the compiler's own gate table.
 - `CheckedIndex.check?_isOk_iff`: the check succeeds exactly when the source is in scope and
   the constructor builds an index.
+- `CheckedIndex.publicCount_eq`, `CheckedIndex.publicIndex_val`: one public row per public
+  variable, at its position in the list.
 
 ## Implementation notes
 
@@ -58,7 +61,9 @@ section Checked
 
 variable [Field F] [DecidableEq F]
 
-/-- An index with the premises lifting needs: its source is in scope, and it is the source's. -/
+/-- An index with the premises lifting needs: its source is in scope, and it is the source's.
+It is obtained from `CheckedIndex.check?` or `checkBuilt?`; the two proof fields are its internal
+certificate, read by `CheckedIndex.lift`. -/
 structure CheckedIndex (source : List (KimchiConstraint F)) (publicVars : List Variable)
     (nv : Variable) (n : ℕ) where
   /-- The index. -/
@@ -115,13 +120,28 @@ theorem CheckedIndex.check?_isOk_iff :
     · rename_i hi
       simp [hs, hi, Except.isOk, Except.toBool]
 
+/-- A public variable's position among the index's public rows. -/
+def CheckedIndex.publicIndex (c : CheckedIndex source publicVars nv n) :
+    Fin publicVars.length → Fin c.index.publicCount :=
+  c.corresponds.publicIndex
+
+/-- A checked index has one public row per public variable. -/
+theorem CheckedIndex.publicCount_eq (c : CheckedIndex source publicVars nv n) :
+    c.index.publicCount = publicVars.length :=
+  c.corresponds.publicCount
+
+/-- A public variable's row is its position in the list. -/
+@[simp] theorem CheckedIndex.publicIndex_val (c : CheckedIndex source publicVars nv n)
+    (i : Fin publicVars.length) : (c.publicIndex i).val = i.val :=
+  rfl
+
 /-- **Checked lifting.** A table satisfying a checked index yields a valuation satisfying every
 source constraint and reading the public variables as the public input. -/
 theorem CheckedIndex.lift [NeZero n] (c : CheckedIndex source publicVars nv n)
     (pub : Fin c.index.publicCount → F) (wTab : Fin n → Fin wCols → F)
     (hsat : c.index.Satisfies pub wTab) :
     ∃ V : Valuation F, (∀ con ∈ source, KimchiConstraint.Holds V con) ∧
-      ∀ i : Fin publicVars.length, V publicVars[i] = pub (c.corresponds.publicIndex i) :=
+      ∀ i : Fin publicVars.length, V publicVars[i] = pub (c.publicIndex i) :=
   KimchiConstraint.Wired.holds_of_satisfies c.admissible c.corresponds pub wTab hsat
 
 end Checked

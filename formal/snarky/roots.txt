@@ -254,6 +254,10 @@ Snarky.Kimchi.gateTable_rejects
 Snarky.Kimchi.gateTable_padding
 Snarky.Kimchi.wired_example_holds_compiled
 Snarky.Kimchi.CheckedIndex.lift
+Snarky.Kimchi.CheckedIndex.publicCount_eq
+Snarky.Kimchi.CheckedIndex.publicIndex_val
+Snarky.Kimchi.CheckedConsumer.compile_lifts
+Snarky.Kimchi.CheckedConsumer.compileWith_lifts
 Snarky.Kimchi.CheckedIndex.check?_index
 Snarky.Kimchi.CheckedIndex.check?_isOk_iff
 Snarky.Kimchi.checkBuilt?_index
