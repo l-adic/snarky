@@ -44,6 +44,7 @@ import Snarky.Kimchi.Backend.Checks.DirectChecks
 import Snarky.Kimchi.Backend.Internal.Wired
 import Snarky.Kimchi.Backend.Checks.WiredChecks
 import Snarky.Kimchi.Backend.Checks.WiredFixtures
+import Snarky.Kimchi.Backend.Checks.Table
 import Snarky.Kimchi.Backend.Internal.UnionFind
 import Snarky.Kimchi.Backend.Internal.Reduction
 import Snarky.Kimchi.Backend.Admissibility
