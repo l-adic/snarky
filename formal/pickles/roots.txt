@@ -108,6 +108,17 @@ Pickles.Application.CheckedApplication.lift_wrap
 Pickles.Application.StepRun.cells_eq
 Pickles.Application.WrapRun.cells_eq
 Pickles.Application.MatrixRunConsumer.lifts_both -- both lifts applied against the interface alone
+-- Pickles-correctness: a checked application's indices realize executions and the capstones
+-- hold for connections among them; each capstone from accepted tables, and the state projection.
+Pickles.Application.checkedApplication_picklesCorrect
+Pickles.Application.matrices_stepWrap
+Pickles.Application.matrices_wrapStep
+Pickles.Application.matrices_wrap_handover
+Pickles.Application.matrices_step_handover
+Pickles.Application.WrapHandoverConclusion.appState
+Pickles.Application.CertificationConsumer.stepWrap_accepts -- verifier acceptance from tables alone
+Pickles.Application.CertificationConsumer.wrapHandover_appState -- the state alternative across two applications
+Pickles.Application.CertificationConsumer.stepHandover_messages -- the message grouping across three applications
 
 -- Public bridges for consumers relating verifier computations, read cells and accumulators.
 Pickles.OldsRead.of_readPt

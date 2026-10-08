@@ -73,6 +73,7 @@ import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Semantics
 import Pickles
 import Pickles.Application.Checks.MatrixRunConsumer
+import Pickles.Application.Checks.CertificationConsumer
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
 import KimchiFixture.Kimchi

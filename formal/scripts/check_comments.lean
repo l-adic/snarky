@@ -69,6 +69,7 @@ import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Semantics
 import Pickles
 import Pickles.Application.Checks.MatrixRunConsumer
+import Pickles.Application.Checks.CertificationConsumer
 import KimchiFixture.Kimchi
 import KimchiFixture.PS
 import KimchiFixture.Cache

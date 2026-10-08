@@ -1,5 +1,6 @@
 import Pickles
 import Pickles.Application.Checks.MatrixRunConsumer
+import Pickles.Application.Checks.CertificationConsumer
 import Lean.Elab.Command
 
 /-! Gate the pickles package's axiom closure.
@@ -54,6 +55,15 @@ def roots : List Name :=
     `Pickles.Application.StepRun.cells_eq,
     `Pickles.Application.WrapRun.cells_eq,
     `Pickles.Application.MatrixRunConsumer.lifts_both,
+    `Pickles.Application.checkedApplication_picklesCorrect,
+    `Pickles.Application.matrices_stepWrap,
+    `Pickles.Application.matrices_wrapStep,
+    `Pickles.Application.matrices_wrap_handover,
+    `Pickles.Application.matrices_step_handover,
+    `Pickles.Application.WrapHandoverConclusion.appState,
+    `Pickles.Application.CertificationConsumer.stepWrap_accepts,
+    `Pickles.Application.CertificationConsumer.wrapHandover_appState,
+    `Pickles.Application.CertificationConsumer.stepHandover_messages,
     `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,
     `Pickles.Reflect.evaluate_fpTokens,
@@ -149,6 +159,15 @@ def deployedRoots : List Name :=
     `Pickles.Application.StepRun.cells_eq,
     `Pickles.Application.WrapRun.cells_eq,
     `Pickles.Application.MatrixRunConsumer.lifts_both,
+    `Pickles.Application.checkedApplication_picklesCorrect,
+    `Pickles.Application.matrices_stepWrap,
+    `Pickles.Application.matrices_wrapStep,
+    `Pickles.Application.matrices_wrap_handover,
+    `Pickles.Application.matrices_step_handover,
+    `Pickles.Application.WrapHandoverConclusion.appState,
+    `Pickles.Application.CertificationConsumer.stepWrap_accepts,
+    `Pickles.Application.CertificationConsumer.wrapHandover_appState,
+    `Pickles.Application.CertificationConsumer.stepHandover_messages,
     `Pickles.wrapSide,
     `Pickles.stepSide,
     `Pickles.Reflect.circuit_gateLinearization_fp,
