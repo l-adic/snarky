@@ -43,32 +43,55 @@ private def tablesFor (raw : ApplicationDump) (wrap : Srs IpaPallas.curve)
         [(key.cvk.domainLog2, ← memoisedTable IpaVesta.curve "vesta" step.σ raw.stepChunks key.cvk)]
   return ⟨wrapTable, steps⟩
 
-private def assembleEntries (wrap : Srs Bulletproof.IpaPallas.curve)
+/-- Reconstruct the entries in import order, continuing past a failure, and finish with each
+entry's application or why it has none. A reconstruction that fails is reported at its entry,
+an entry importing a failed producer is blocked by that failure, and an entry importing one
+that has no application is blocked by it. -/
+private def assembleAll (wrap : Srs Bulletproof.IpaPallas.curve)
     (step : Srs Bulletproof.IpaVesta.curve)
-    (finish : List (String × ImportedApplication) → IO Unit) :
-    Nat → List (String × ApplicationDump) →
-    List (String × ImportedApplication) → IO Unit
-  | 0, [], known => finish known
-  | 0, _, _ => throw (IO.userError "unresolved application imports or cyclic dependencies")
-  | fuel + 1, pending, known => do
-    if pending.isEmpty then return ← finish known
+    (finish : List (String × Except String ImportedApplication) → IO Unit) :
+    Nat → List (String × ApplicationDump) → List (String × ImportedApplication) →
+    List (String × ApplicationDump) → List (String × Except String ImportedApplication) →
+    IO Unit
+  | 0, pending, _, _, done =>
+    finish (done ++ pending.map fun (name, _) =>
+      (name, .error "unresolved application imports or cyclic dependencies"))
+  | fuel + 1, pending, known, failed, done => do
+    if pending.isEmpty then return ← finish done
     let ready := pending.find? fun (_, dump) =>
       dump.imports.all fun imp => known.any fun (_, p) =>
         sameKey p.assembled.wiring.backend.wrapKey imp.wrapKey
-    let some (name, dump) := ready
-      | throw (IO.userError s!"unresolved imports in {pending.map (·.1)}")
-    IO.println s!"{name}: reconstructing from sidecar, SRS and Lagrange memo"
-    (← IO.getStdout).flush
-    let tables ← tablesFor dump wrap step
-    match dump.assemble wrap step tables (known.map (·.2)).toArray with
-    | .error e => throw (IO.userError s!"{name}: {e}")
-    | .ok A =>
-      assembleEntries wrap step finish fuel (pending.filter (·.1 != name)) (known ++ [(name, A)])
+    match ready with
+    | some (name, dump) =>
+      IO.println s!"{name}: reconstructing from sidecar, SRS and Lagrange memo"
+      (← IO.getStdout).flush
+      let tables ← tablesFor dump wrap step
+      let rest := pending.filter (·.1 != name)
+      match dump.assemble wrap step tables (known.map (·.2)).toArray with
+      | .error e =>
+        assembleAll wrap step finish fuel rest known (failed ++ [(name, dump)])
+          (done ++ [(name, .error e)])
+      | .ok A =>
+        assembleAll wrap step finish fuel rest (known ++ [(name, A)]) failed
+          (done ++ [(name, .ok A)])
+    | none =>
+      let blocked := pending.map fun (name, dump) =>
+        let imports (d : ApplicationDump) : Bool :=
+          dump.imports.any fun imp => sameKey d.wrapKey imp.wrapKey
+        match failed.find? fun (_, f) => imports f with
+        | some (producer, _) => (name, .error s!"blocked by the failure of {producer}")
+        | none =>
+          match (pending.filter (·.1 != name)).find? fun (_, d) => imports d with
+          | some (producer, _) =>
+            (name, .error s!"blocked by {producer}, which has no application")
+          | none => (name, .error "unresolved application imports or cyclic dependencies")
+      finish (done ++ blocked)
 
-/-- Load each selected manifest entry's required sidecars, then assemble in import order. -/
-def loadApplications (dir : System.FilePath) (apps : List Manifest.Application)
+/-- Load each selected manifest entry's required sidecars, reconstruct every entry in import
+order, continuing past failures, and finish with each entry's application or its failure. -/
+def reconstructApplications (dir : System.FilePath) (apps : List Manifest.Application)
     (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
-    (finish : List (String × ImportedApplication) → IO Unit) : IO Unit := do
+    (finish : List (String × Except String ImportedApplication) → IO Unit) : IO Unit := do
   unless !apps.isEmpty do throw (IO.userError "no applications selected")
   let mut entries := []
   for app in apps do
@@ -76,7 +99,20 @@ def loadApplications (dir : System.FilePath) (apps : List Manifest.Application)
       let path := dir / app.name / "shapes" / s!"{tag.name}.json"
       let dump ← IO.ofExcept (ApplicationDump.ofJson (← readJson path))
       entries := entries ++ [(s!"{app.name}/{tag.name}", dump)]
-  assembleEntries wrap step finish entries.length entries []
+  assembleAll wrap step finish entries.length entries [] [] []
+
+/-- Load and reconstruct every selected entry, failing at the first that has no application,
+then continue with all of them. -/
+def loadApplications (dir : System.FilePath) (apps : List Manifest.Application)
+    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
+    (finish : List (String × ImportedApplication) → IO Unit) : IO Unit :=
+  reconstructApplications dir apps wrap step fun results => do
+    for (name, r) in results do
+      if let .error e := r then throw (IO.userError s!"{name}: {e}")
+    finish (results.filterMap fun (name, r) =>
+      match r with
+      | .ok A => some (name, A)
+      | .error _ => none)
 
 /-- Compare every step and wrap circuit after reconstruction has finished. -/
 def compareApplications (dir : System.FilePath) (apps : List (String × ImportedApplication)) :

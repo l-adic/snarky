@@ -55,6 +55,8 @@ Pickles.Application.Circuits.stepBuilt_advice_irrel -- audited builder erasure f
 Pickles.Application.Circuits.wrapBuilt_advice_irrel -- audited builder erasure for wrap advice
 Pickles.Application.Circuits.stepBuilt_rules_congr -- audited transport for replayed rule witnesses
 PicklesFixture.Application.checkSelectedFromShape -- reconstruct selected circuits from sidecar shapes
+PicklesFixture.Application.reconstructApplications -- certify-application reconstructs every selected application, continuing past failures
+PicklesFixture.Application.certifyApplication -- certify-application and check-application-indices: the certification path
 PicklesFixture.Application.checkIndices -- check-application-indices certifies selected applications' circuits
 PicklesFixture.Application.checkTables -- check-application-indices builds the lifting theorems' tables from cached proofs
 PicklesFixture.Application.rejectInvalidDumps -- check-application-indices: the dump adapter on small dumps

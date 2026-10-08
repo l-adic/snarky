@@ -30,19 +30,6 @@ open Lean Snarky Snarky.Kimchi Pickles Pickles.Application PicklesFixture
 open Bulletproof CompElliptic.Fields.Pasta Kimchi.Fixture Kimchi.Fixture.PS
 open scoped Kimchi
 
-/-- A circuit's failure, for the report. -/
-private def describe : CheckFailure → String
-  | .scope (.outOfRange i v) => s!"scope: variable {v} at or above the counter, in constraint {i}"
-  | .scope (.publicOutOfRange v) => s!"scope: public variable {v} at or above the counter"
-  | .scope (.notWired i) => s!"scope: constraint {i} is not wired"
-  | .scope (.reused i v) => s!"scope: unwired operand {v} of constraint {i} occurs again"
-  | .index => "index: the constructor built no index"
-
-/-- An application's failure, for the report. -/
-private def located {D : Shape} : ApplicationFailure D → String
-  | .step b f => s!"step {b.val}: {describe f}"
-  | .wrap f => s!"wrap: {describe f}"
-
 /-- Domain data a key could not have supplied, each one change from the given data. -/
 private def domainCorruptions {F : Type} [Zero F] [One F] (d : IndexData F) :
     List (String × IndexData F) :=
@@ -65,46 +52,27 @@ private def requireRejected {D : Shape} {α : Type} (name what : String)
     else throw (IO.userError s!"{name}: {what} rejected elsewhere: {located f}")
   | .ok _ => throw (IO.userError s!"{name}: {what} was accepted")
 
-/-- Compile an application's circuits once and check them at their keys' index data,
-reporting the checked indices; send the dumps down their path, certification before the
-datum comparison; require a corrupted dump to fail at its datum and each change to the
-imported side to be rejected where it is; then require each corruption of the key data to be
-rejected at its circuit. -/
+/-- Send an application down the certification path, then require the compilations to match
+the dumps datum by datum, a corrupted dump to fail at its datum, each change to the imported
+side to be rejected where it is, and each corruption of the key data to be rejected at its
+circuit. One compilation per circuit and one parse per dump. -/
 def checkIndices (name : String) (A : ImportedApplication) (tag : Json) :
     IO (CheckedApplication (A.assembled.circuits A.setup (fun _ => none))) := do
   let C := A.assembled.circuits A.setup (fun _ => none)
-  let t0 ← IO.monoMsNow
-  let steps ← finSequence fun b => IO.lazyPure fun _ => canonicalStep C b
-  let wrap ← IO.lazyPure fun _ => canonicalWrap C
-  let t1 ← IO.monoMsNow
-  let (stepDump, wrapDump) ← match circuitDumps A.shape tag with
-    | .error e => throw (IO.userError s!"{name}: dump: {e}")
-    | .ok dumps => pure dumps
-  let checked ← match ← IO.lazyPure fun _ =>
-      checkApplicationAt C steps wrap (stepIndexData C) (wrapIndexData C) with
-    | .error f => throw (IO.userError s!"{name}: {located f}")
-    | .ok checked => pure checked
-  let t2 ← IO.monoMsNow
-  let I := checked.indices
-  for b in List.finRange A.shape.branches do
-    IO.println s!"✓ {name} step {b.val}: checked index on a domain of {I.stepSize b}, \
-      {(I.step b).zkRows} masked rows, {(I.step b).publicCount} public rows"
-  IO.println s!"✓ {name} wrap: checked index on a domain of {I.wrapSize}, {I.wrap.zkRows} \
-    masked rows, {I.wrap.publicCount} public rows (compile {t1 - t0} ms, check {t2 - t1} ms)"
-  (← IO.getStdout).flush
-  let _ ← certifyAndCompare name C steps wrap checked stepDump wrapDump
-  rejectCorruptedDump name C steps wrap checked stepDump wrapDump
-  rejectImportedChanges name C checked stepDump wrapDump
+  let r ← certifyApplication name A tag
+  compareCompilations C r.steps r.wrap name r.stepDump r.wrapDump
+  rejectCorruptedDump name C r.steps r.wrap r.checked r.stepDump r.wrapDump
+  rejectImportedChanges name C r.checked r.stepDump r.wrapDump
   let first : A.shape.Branch := ⟨0, A.shape.branches_pos⟩
   for (what, bad) in domainCorruptions (stepIndexData C first) do
     requireRejected name s!"step 0 at {what}" (fun | .step b .index => b.val = 0 | _ => false)
-      (← IO.lazyPure fun _ => checkApplicationAt C steps wrap
+      (← IO.lazyPure fun _ => checkApplicationAt C r.steps r.wrap
         (fun b => if b.val = 0 then bad else stepIndexData C b) (wrapIndexData C))
   for (what, bad) in gateCorruptions (wrapIndexData C) do
     requireRejected name s!"the wrap circuit at {what}" (fun | .wrap .index => true | _ => false)
-      (← IO.lazyPure fun _ => checkApplicationAt C steps wrap (stepIndexData C) bad)
+      (← IO.lazyPure fun _ => checkApplicationAt C r.steps r.wrap (stepIndexData C) bad)
   (← IO.getStdout).flush
-  return checked
+  return r.checked
 
 /-! ## Tables from cached executions -/
 

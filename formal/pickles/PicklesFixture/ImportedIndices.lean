@@ -13,11 +13,13 @@ before the masked ones, and in each row at most the coefficient columns (a short
 beyond its entries, the reading kimchi gives it), seven wire targets inside the table and a
 known gate type. Every failure is located at its circuit.
 
-`PicklesFixture.Application.certifyAndCompare` is the path a reconstructed application's dumps
-take: the imported indices certified against the checked application, a disagreement located
-at its datum, and only then the compilations required to match the dumps datum by datum, the
-evidence that also sees variable ids. The certificate's `CertifiedIndices.correct` is the
-imported indices' Pickles-correctness. `PicklesFixture.Application.rejectCorruptedDump` sends
+`PicklesFixture.Application.certifyApplication` is the certification path a reconstructed
+application takes: its circuits compiled once, its dumps parsed once, the compilations checked
+at the keys' index data, and the imported indices certified against the checked application,
+a failure located at its stage and circuit; the certificate's `CertifiedIndices.correct` is the
+imported indices' Pickles-correctness. `PicklesFixture.Application.certifyAndCompare` follows
+certification with the compilations required to match the dumps datum by datum, the evidence
+that also sees variable ids. `PicklesFixture.Application.rejectCorruptedDump` sends
 a dump with one coefficient changed down that path and requires exactly the located failure.
 `PicklesFixture.Application.rejectImportedChanges` requires three changes to the imported side
 alone to be rejected where they are, the checked application the same throughout: a
@@ -178,6 +180,64 @@ def certifyImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L
     (import {t1 - t0} ms, compare {t2 - t1} ms)"
   (← IO.getStdout).flush
   return cert
+
+/-- A circuit's check failure, for the report. -/
+def describeCheck : CheckFailure → String
+  | .scope (.outOfRange i v) => s!"scope: variable {v} at or above the counter, in constraint {i}"
+  | .scope (.publicOutOfRange v) => s!"scope: public variable {v} at or above the counter"
+  | .scope (.notWired i) => s!"scope: constraint {i} is not wired"
+  | .scope (.reused i v) => s!"scope: unwired operand {v} of constraint {i} occurs again"
+  | .index => "index: the constructor built no index"
+
+/-- An application's check failure, located at its circuit. -/
+def located {D : Shape} : ApplicationFailure D → String
+  | .step b f => s!"step {b.val}: {describeCheck f}"
+  | .wrap f => s!"wrap: {describeCheck f}"
+
+/-- One application through the certification path: its compilations in hand, the checked
+application, its dumps parsed once, and the certificate. -/
+structure Certification (A : ImportedApplication) where
+  /-- Each branch's compilation. -/
+  steps : (b : A.shape.Branch) → StepCompilation (A.assembled.circuits A.setup (fun _ => none)) b
+  /-- The wrap circuit's compilation. -/
+  wrap : WrapCompilation (A.assembled.circuits A.setup (fun _ => none))
+  /-- The compilations checked at the keys' index data. -/
+  checked : CheckedApplication (A.assembled.circuits A.setup (fun _ => none))
+  /-- Each branch's dump. -/
+  stepDump : A.shape.Branch → Raw Fp
+  /-- The wrap circuit's dump. -/
+  wrapDump : Raw Fq
+  /-- The imported indices certified against the checked application. -/
+  cert : CertifiedIndices (A.assembled.circuits A.setup (fun _ => none))
+
+/-- The certification path: compile a reconstructed application's circuits once, parse its
+dumps once, check the compilations at the keys' index data and report the checked indices,
+then import the dumps' indices and certify them. A failure is located at its stage and
+circuit. -/
+def certifyApplication (name : String) (A : ImportedApplication) (tag : Json) :
+    IO (Certification A) := do
+  let C := A.assembled.circuits A.setup (fun _ => none)
+  let t0 ← IO.monoMsNow
+  let steps ← finSequence fun b => IO.lazyPure fun _ => canonicalStep C b
+  let wrap ← IO.lazyPure fun _ => canonicalWrap C
+  let t1 ← IO.monoMsNow
+  let (stepDump, wrapDump) ← match circuitDumps A.shape tag with
+    | .error e => throw (IO.userError s!"{name}: dump: {e}")
+    | .ok dumps => pure dumps
+  let checked ← match ← IO.lazyPure fun _ =>
+      checkApplicationAt C steps wrap (stepIndexData C) (wrapIndexData C) with
+    | .error f => throw (IO.userError s!"{name}: {located f}")
+    | .ok checked => pure checked
+  let t2 ← IO.monoMsNow
+  let I := checked.indices
+  for b in List.finRange A.shape.branches do
+    IO.println s!"✓ {name} step {b.val}: checked index on a domain of {I.stepSize b}, \
+      {(I.step b).zkRows} masked rows, {(I.step b).publicCount} public rows"
+  IO.println s!"✓ {name} wrap: checked index on a domain of {I.wrapSize}, {I.wrap.zkRows} \
+    masked rows, {I.wrap.publicCount} public rows (compile {t1 - t0} ms, check {t2 - t1} ms)"
+  (← IO.getStdout).flush
+  let cert ← certifyImported name C checked stepDump wrapDump
+  return { steps, wrap, checked, stepDump, wrapDump, cert }
 
 /-- The dumps' path: the imported indices certified against the checked application first,
 then the compilations in hand required to match the dumps datum by datum. -/
