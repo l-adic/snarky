@@ -1,5 +1,4 @@
-import Pickles.StepMain
-import Pickles.WrapMain
+import Pickles.Application.Circuit
 import PicklesFixture.Constants
 import PicklesFixture.Proofs
 
@@ -28,18 +27,7 @@ namespace PicklesFixture
 
 open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Fixture Bulletproof CompElliptic.Fields.Pasta
 open scoped Kimchi
-
-/-- The step circuit's advice, inert: a compile reads none of it. -/
-def inertStepAdvice {n w : ℕ} {ws : Fin n → ℕ} {ncw k ks : ℕ} {ncs : Fin n → ℕ} {inVal : Type} :
-    Pickles.StepMainAdvice n w ws ncw ncs k ks inVal :=
-  ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-    AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
-
-/-- The wrap circuit's advice, inert: a compile reads none of it. -/
-def inertWrapAdvice {mpv nc k ks wsum : ℕ} : Pickles.WrapMainAdvice mpv nc k ks wsum :=
-  ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-    AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
-    AsProver.throw "advice", AsProver.throw "advice"⟩
+open Pickles.Application (finSequence)
 
 /-- A point as a checked cell value. -/
 def checkedPt {F : Type} {a b : F} (C : Ipa.KimchiCurve) (P : C.Point) :
@@ -137,16 +125,6 @@ def slotValOf (w ncs : ℕ) (W : Cache.Entry CW) (S : Cache.Entry CS)
            branch := ⟨dv.branchData.proofsVerifiedMask, dv.branchData.domainLog2⟩
            evals := allocEvalsOf (← chunkedEvalsOf CS cpS)
            prevChallenges := chals, prevSgs := sgs }
-
-/-- A function every value of which is an action, as one action running them in index order:
-a function, or the first failure. -/
-def finSequence {m : Type → Type} [Monad m] : {n : ℕ} → {β : Fin n → Type} →
-    ((i : Fin n) → m (β i)) → m ((i : Fin n) → β i)
-  | 0, _, _ => pure fun i => i.elim0
-  | _ + 1, _, f => do
-    let h ← f 0
-    let t ← finSequence fun i => f i.succ
-    return Fin.cons h t
 
 /-- Cached step advice at the supplied slot widths, chunk counts and input encoding. -/
 def stepAdviceOf {n : ℕ} (w : ℕ) (ws ncs : Fin n → ℕ)

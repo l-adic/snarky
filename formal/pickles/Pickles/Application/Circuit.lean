@@ -86,6 +86,18 @@ abbrev Circuits.WrapCells (C : Circuits D L) :=
     WrapIPARounds L.wrapWidths ×
   WrapMainVerifyOut D.width C.wiring.backend.stepChunks WrapIPARounds StepIPARounds
 
+/-- The step circuit's advice, inert: a compile reads none of it. -/
+def inertStepAdvice {n w : ℕ} {ws : Fin n → ℕ} {ncw k ks : ℕ} {ncs : Fin n → ℕ} {inVal : Type} :
+    Pickles.StepMainAdvice n w ws ncw ncs k ks inVal :=
+  ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+    AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice"⟩
+
+/-- The wrap circuit's advice, inert: a compile reads none of it. -/
+def inertWrapAdvice {mpv nc k ks wsum : ℕ} : Pickles.WrapMainAdvice mpv nc k ks wsum :=
+  ⟨AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+    AsProver.throw "advice", AsProver.throw "advice", AsProver.throw "advice",
+    AsProver.throw "advice", AsProver.throw "advice"⟩
+
 /-- Every resolved source fits the protocol's accumulator bound. -/
 theorem Circuits.source_bound (C : Circuits D L) (b : D.Branch) (i : D.Slot b) :
     SlotSource.widths D.width (C.wiring.sources b) i ≤ MaxProofsVerified := by
