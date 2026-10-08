@@ -57,7 +57,7 @@ def compareWith {p : ℕ} [Fact p.Prime]
   let (rows, gates, pubVars) := kimchiGateData (a := a) (b := b) main
   [ ("publicInputSize", pubVars.length == raw.publicInputSize),
     ("gate count", gates.length == raw.typs.size),
-    ("gate types", (gates.map (kindType ·.kind)).toArray == raw.typs),
+    ("gate types", (gates.map (·.kind)).toArray == raw.typs),
     ("coefficients", (gates.map (·.coeffs.toArray)).toArray == raw.coeffs),
     ("wires",
       (gates.map fun g =>

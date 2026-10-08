@@ -93,7 +93,7 @@ instance : BasicSystem F (KimchiConstraint F) where
 variable {F : Type} {m : Type → Type}
 
 /-- Pin the padding row's seven operands to variables and wire them into one row. -/
-private def reducePad [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
+def reducePad [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] (vs : Vector (FVar F) 7) : m (Rows F) := do
   let v0 ← reduceToVariable vs[0]
   let v1 ← reduceToVariable vs[1]

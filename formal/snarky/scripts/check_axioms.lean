@@ -24,6 +24,16 @@ import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Kimchi.Backend.Trace
+import Snarky.Kimchi.Backend.TraceChecks
+import Snarky.Kimchi.Backend.TraceSemantics
+import Snarky.Kimchi.Backend.RowCorrespondence
+import Snarky.Kimchi.Backend.Receipts
+import Snarky.Kimchi.Backend.Direct
+import Snarky.Kimchi.Backend.Wiring
+import Snarky.Kimchi.Backend.DirectChecks
+import Snarky.Kimchi.Backend.Wired
+import Snarky.Kimchi.Backend.WiredChecks
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -117,6 +127,98 @@ def roots : List Name :=
     `Snarky.instLawfulBasicSystemBasic,
     `Snarky.instLawfulBasicSystemBuilder,
     `Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem,
+
+    -- The lowering trace: a recorded reduction erases to the existing reduction.
+    `Snarky.Kimchi.record_reduceToVariable_erases,
+    `Snarky.Kimchi.record_basic_erases,
+    `Snarky.Kimchi.record_addComplete_erases,
+    `Snarky.Kimchi.record_constraint_erases,
+    `Snarky.Kimchi.recordGates_erase,
+    `Snarky.Kimchi.recordBuilt_erase,
+    `Snarky.Kimchi.recordBuilt_bodyRows,
+    `Snarky.Kimchi.getElem_bodyRows_generic,
+    `Snarky.Kimchi.getElem_bodyRows_gate,
+    `Snarky.Kimchi.record_constraint_replays,
+    `Snarky.Kimchi.record_constraint_allocates,
+    `Snarky.Kimchi.record_constraint_decides,
+    `Snarky.Kimchi.replayEvent_equal,
+    `Snarky.Kimchi.outcomeOf_cached_mem,
+    `Snarky.Kimchi.cache_replay,
+    `Snarky.Kimchi.cached_mem,
+    `Snarky.Kimchi.equalsHolds_of_merge,
+    `Snarky.Kimchi.equalsHolds_of_cached,
+    `Snarky.Kimchi.equalsHolds_of_pinned,
+    `Snarky.Kimchi.equalsHolds_of_row,
+    `Snarky.Kimchi.equalsHolds_of_trivial,
+    `Snarky.Kimchi.mem_pinsOf,
+    `Snarky.Kimchi.inv_replay,
+    `Snarky.Kimchi.same_replay_mono,
+    `Snarky.Kimchi.same_replay,
+    `Snarky.Kimchi.directRoots_eq,
+    `Snarky.Kimchi.KimchiConstraint.Wired.Scoped,
+    `Snarky.Kimchi.fusion_root_eq,
+    `Snarky.Kimchi.pinned_of_cached,
+    `Snarky.Kimchi.unwired_not_named,
+    `Snarky.Kimchi.unwired_of_cell,
+    `Snarky.Kimchi.unwired_cell_unique,
+    `Snarky.Kimchi.KimchiConstraint.Wired.holds_of_satisfies,
+    `Snarky.Kimchi.receipts_located,
+    `Snarky.Kimchi.receipts_complete,
+    `Snarky.Kimchi.genericValue_of_located,
+    `Snarky.Kimchi.record_boolean_var,
+    `Snarky.Kimchi.record_addComplete_direct,
+    `Snarky.Kimchi.KimchiConstraint.Direct.events_generic,
+    `Snarky.Kimchi.steps_generic_of_direct,
+    `Snarky.Kimchi.wireMap_getElem?,
+    `Snarky.Kimchi.getElem_assembleGates,
+    `Snarky.Kimchi.classCells_values_eq,
+    `Snarky.Kimchi.length_assembleGates,
+    `Snarky.Kimchi.classCells_bounds,
+    `Snarky.Kimchi.mem_classCells_of_label,
+    `Snarky.Kimchi.RecordedGates.length_placements,
+    `Snarky.Kimchi.bodyRows_placed,
+    `Snarky.Kimchi.placements_genericRows_count,
+    `Snarky.Kimchi.placements_customRows_count,
+    `Snarky.Kimchi.placements_customRows_le,
+    `Snarky.Kimchi.KimchiConstraint.Direct.holds_of_satisfies,
+    `Snarky.Kimchi.label_of_mem_classCells,
+    `Snarky.Kimchi.wireMap_getElem?_eq_none,
+    `Snarky.Kimchi.wireTarget_eq,
+    `Snarky.Kimchi.length_directGates,
+    `Snarky.Kimchi.getElem_directGates,
+    `Snarky.Kimchi.indexOf_of_classTarget,
+    `Snarky.Kimchi.direct_example_built,
+    `Snarky.Kimchi.direct_example_scoped,
+    `Snarky.Kimchi.direct_example_indexOf,
+    `Snarky.Kimchi.direct_example_satisfies,
+    `Snarky.Kimchi.direct_example_holds,
+    `Snarky.Kimchi.direct_rejections,
+    `Snarky.Kimchi.direct_rejections_index,
+    `Snarky.Kimchi.wired_example_built,
+    `Snarky.Kimchi.wired_example_scoped,
+    `Snarky.Kimchi.wired_example_indexOf,
+    `Snarky.Kimchi.wired_example_satisfies,
+    `Snarky.Kimchi.wired_example_holds,
+    `Snarky.Kimchi.wired_rejections_scope,
+    `Snarky.Kimchi.wired_rejections_table,
+    `Snarky.Kimchi.wired_rejections_index,
+    -- The union-find's class view.
+    `Snarky.Kimchi.UnionFind.empty_inv,
+    `Snarky.Kimchi.UnionFind.find_inv,
+    `Snarky.Kimchi.UnionFind.same_find_mono,
+    `Snarky.Kimchi.UnionFind.union_inv,
+    `Snarky.Kimchi.UnionFind.same_union_self,
+    `Snarky.Kimchi.UnionFind.same_union_mono,
+    `Snarky.Kimchi.UnionFind.rootOf_getD_eq,
+    `Snarky.Kimchi.recorded_batching,
+    `Snarky.Kimchi.recorded_wiring,
+    `Snarky.Kimchi.recorded_constantCache,
+    `Snarky.Kimchi.recorded_allocation,
+    `Snarky.Kimchi.recorded_equalities,
+    `Snarky.Kimchi.reduceToVariable_reads,
+    `Snarky.Kimchi.boolean_of_reductionFacts,
+    `Snarky.Kimchi.addComplete_read_eq,
+    `Snarky.Kimchi.addComplete_holds_of_reductionFacts,
 
     -- The Kimchi gadgets.
     `Snarky.Kimchi.sealPoint_spec, `Snarky.Kimchi.sealPoint_complete,

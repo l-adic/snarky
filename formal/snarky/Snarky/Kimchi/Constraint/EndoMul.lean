@@ -102,7 +102,7 @@ private def EndoMul.finalZeroRow (xs ys nAcc : Variable) : KimchiRow F :=
     coeffs := [] }
 
 /-- Reduce the rounds in row order. -/
-private def EndoMul.reduceRounds [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
+def EndoMul.reduceRounds [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] : List (EndoMulRound F) → m (List (KimchiRow F))
   | [] => pure []
   | c :: cs => do

@@ -38,6 +38,16 @@ import Kimchi
 import Poseidon
 import Snarky
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Kimchi.Backend.Direct
+import Snarky.Kimchi.Backend.Wiring
+import Snarky.Kimchi.Backend.DirectChecks
+import Snarky.Kimchi.Backend.Wired
+import Snarky.Kimchi.Backend.WiredChecks
+import Snarky.Kimchi.Backend.Trace
+import Snarky.Kimchi.Backend.TraceChecks
+import Snarky.Kimchi.Backend.TraceSemantics
+import Snarky.Kimchi.Backend.RowCorrespondence
+import Snarky.Kimchi.Backend.Receipts
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck
@@ -111,7 +121,8 @@ def isAuxiliary (env : Environment) (n : Name) : Bool :=
       -- per-constructor auxiliaries (`Foo.someCtor.elim` and friends)
       else if (env.find? n.getPrefix).any (fun p => p matches .ctorInfo _) then true
       else
-        let comps := u.components.map (·.toString)
+        -- unescaped: a component with a bracket would otherwise print as `«_aux…»`
+        let comps := u.components.map (·.toString (escape := false))
         -- any component that only generated code carries, anywhere in the name
         comps.any (fun c => generatedComponents.contains c || c.startsWith "_"
           || c.startsWith "match_" || c.startsWith "proof_")

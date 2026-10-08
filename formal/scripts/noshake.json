@@ -35,6 +35,9 @@
     "Kimchi.Columns": [
       "Init"
     ],
+    "Kimchi.Index.GateType": [
+      "Init"
+    ],
     "Pickles.Linearization.Circuit": [
       "Pickles.Linearization.Map"
     ],
@@ -52,6 +55,10 @@
     ],
     "Pickles.Application.Verify": [
       "Pickles.Application.Proof"
+    ],
+    "Snarky.Kimchi.UnionFind": [
+      "Mathlib.Data.Fintype.Card",
+      "Mathlib.Data.Nat.Find"
     ]
   }
 }

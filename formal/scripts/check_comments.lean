@@ -34,6 +34,16 @@ import Kimchi
 import Poseidon
 import Snarky
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Kimchi.Backend.TraceChecks
+import Snarky.Kimchi.Backend.TraceSemantics
+import Snarky.Kimchi.Backend.RowCorrespondence
+import Snarky.Kimchi.Backend.Receipts
+import Snarky.Kimchi.Backend.Direct
+import Snarky.Kimchi.Backend.Wiring
+import Snarky.Kimchi.Backend.DirectChecks
+import Snarky.Kimchi.Backend.Wired
+import Snarky.Kimchi.Backend.WiredChecks
+import Snarky.Kimchi.Backend.Trace
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck

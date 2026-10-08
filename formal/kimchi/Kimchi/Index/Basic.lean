@@ -1,3 +1,4 @@
+import Kimchi.Index.GateType
 import Kimchi.Permutation.Wiring
 import Kimchi.Gate.Poseidon
 
@@ -33,16 +34,7 @@ namespace Kimchi.Index
 
 open Polynomial Kimchi.Permutation
 
-/-- The modeled gate types: the six formalized gates and the constraint-free `zero`. -/
-inductive GateType where
-  | zero
-  | generic
-  | poseidon
-  | completeAdd
-  | varBaseMul
-  | endoMul
-  | endoScalar
-  deriving DecidableEq, Inhabited, Fintype
+deriving instance Fintype for GateType
 
 /-- The gate types whose constraints also read the next row (`ArgumentEnv.witnessNext`). -/
 private def GateType.twoRow : GateType → Bool
