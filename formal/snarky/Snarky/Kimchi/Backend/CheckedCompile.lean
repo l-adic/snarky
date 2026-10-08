@@ -42,21 +42,25 @@ are written against this interface alone.
 
 `checkBuilt?_index` and `CheckedIndex.check?_isOk_iff` serve consumers that compare the index
 with ordinary compilation or decide a check; their statements bring `indexOfGates?` and
-`compiledIndex?` with them. The fields `CheckedIndex.admissible` and
-`CheckedIndex.corresponds` are the certificate `lift` reads: a checked index comes from a
-check, not from its fields. The lowering's proof development, under Backend/Internal, is not
-part of this interface.
+`compiledIndex?` with them. For the same consumers, `gateTable?_isSome_iff` says exactly when
+the gate list converts to a table, by length, coefficient count and wire bounds, and
+`gateTable?_padding` that the added rows are zero gates with zero coefficients wired to
+themselves. Conversion is one stage of index construction, which also checks parameter
+agreement, that the rows fit before the masked rows, and the index laws of `Index.build?`.
+
+The fields `CheckedIndex.admissible` and `CheckedIndex.corresponds` are the certificate `lift`
+reads: a checked index comes from a check, not from its fields. The lowering's proof
+development, under Backend/Internal, is not part of this interface.
 
 ## Implementation notes
 
 The scope checker runs first and once. Its failure is the one reported, the index is built only
 for a source in scope, and the scope proof is `checkScoped_eq_true_iff` at its verdict. A
 certificate is indexed by its source, public variables and counter, so it names the compilation
-it checks.
-`checkBuilt?` takes a built circuit rather than a program, covering `compile` and `compileWith`
-alike; the cells `compileWith` keeps stay in the result and are not public. The public
-variables are the assembly's (`compiledPublicVars`); the public input is read at them, not
-through the input and output encodings.
+it checks. `checkBuilt?` takes a built circuit rather than a program, covering `compile` and
+`compileWith` alike; the cells `compileWith` keeps stay in the result and are not public. The
+public variables are the assembly's (`compiledPublicVars`); the public input is read at them,
+not through the input and output encodings.
 -/
 
 open Kimchi Kimchi.Index

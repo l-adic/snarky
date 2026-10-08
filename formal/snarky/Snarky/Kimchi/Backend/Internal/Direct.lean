@@ -29,8 +29,8 @@ and the public rows.
 - `record_boolean_var`, `record_addComplete_direct`: the recorded reduction of each fragment
   constraint in closed form: a Boolean's one generic event, a complete addition's empty log
   and its row over the operands.
-- `KimchiConstraint.Direct.events_generic`, `steps_generic_of_direct`: a direct constraint's
-  events are generic with no coefficient on an absent cell.
+- `KimchiConstraint.Direct.events_generic`: a direct constraint's events are generic with no
+  coefficient on an absent cell.
 - `KimchiConstraint.Direct.holds_of_satisfies`: any table satisfying an index of the
   fragment's lowering yields a valuation satisfying every source constraint and reading the
   public variables as the public input.
@@ -160,21 +160,6 @@ theorem KimchiConstraint.Direct.events_generic {c : KimchiConstraint F} (hc : c.
   · rw [(record_addComplete_direct nv aux hc).1]
     simp
   · exact hc.elim
-
-/-- Every event of a direct list's recorded lowering is generic, with no coefficient on an
-absent cell. -/
-theorem steps_generic_of_direct {source : List (KimchiConstraint F)}
-    (hs : ∀ c ∈ source, c.Direct) (nv : Variable) (aux : AuxState F) :
-    ∀ s ∈ (recordGates source nv aux).steps, ∀ e ∈ s.events,
-      ∃ g, e = .generic g ∧ g.AbsentZero := by
-  induction source generalizing nv aux with
-  | nil => simp [recordGates]
-  | cons con cons ih =>
-    intro s hs' e he
-    simp only [recordGates, List.mem_cons] at hs'
-    rcases hs' with rfl | hs'
-    · exact (hs con (List.mem_cons_self ..)).events_generic nv aux e he
-    · exact ih (fun c hc => hs c (List.mem_cons_of_mem _ hc)) _ _ s hs' e he
 
 /-! ## The lowering's rows -/
 

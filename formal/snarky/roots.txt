@@ -103,164 +103,76 @@ Snarky.Tactic.lawProgramHead
 Snarky.Tactic.stepName
 Snarky.Tactic.walk
 
--- The direct fragment: the statement vocabulary of its correspondence theorem.
-Snarky.Kimchi.KimchiConstraint.Direct
-Snarky.Kimchi.KimchiConstraint.decidableDirect -- synthesis: found by class resolution, never by name
-Snarky.Kimchi.KimchiConstraint.Direct.Scoped
-Snarky.Kimchi.instDecidableScoped -- synthesis: found by class resolution, never by name
-Snarky.Kimchi.IndexOf
-Snarky.Kimchi.IndexOf.publicIndex
-Snarky.Kimchi.directGates -- the fragment's assembled gate table, which `IndexOf` states per row
+-- Checked compilation, the supported interface: checking a compilation or a source list, the
+-- checked index and its public-input accessors, lifting, the public layout and the reasons
+-- for a rejection.
+Snarky.Kimchi.CheckedIndex
+Snarky.Kimchi.CheckedIndex.index
+Snarky.Kimchi.CheckedIndex.publicIndex
+Snarky.Kimchi.CheckedIndex.publicCount_eq
+Snarky.Kimchi.CheckedIndex.publicIndex_val
+Snarky.Kimchi.CheckedIndex.check?
+Snarky.Kimchi.checkBuilt?
+Snarky.Kimchi.CheckedIndex.lift
+Snarky.Kimchi.CheckFailure
+Snarky.Kimchi.compiledPublicVars
+-- For consumers that compare the checked index with ordinary compilation or decide a check.
+Snarky.Kimchi.checkBuilt?_index
+Snarky.Kimchi.CheckedIndex.check?_index
+Snarky.Kimchi.CheckedIndex.check?_isOk_iff
+Snarky.Kimchi.gateTable?_isSome_iff
+Snarky.Kimchi.gateTable?_padding
+-- The scope checker, a runtime diagnostic in its own right.
+Snarky.Kimchi.ScopedFailure
+Snarky.Kimchi.scopedFailure?
+Snarky.Kimchi.checkScoped
+Snarky.Kimchi.checkScoped_eq_true_iff
 
--- The lowering trace: a recorded reduction erases to the existing reduction, and the
--- recorder's output on batching, wiring, the constant cache and allocation, decided by the
--- kernel.
-Snarky.Kimchi.record_reduceToVariable_erases
-Snarky.Kimchi.record_basic_erases
-Snarky.Kimchi.record_addComplete_erases
-Snarky.Kimchi.record_constraint_erases
-Snarky.Kimchi.recordGates_erase
-Snarky.Kimchi.recordBuilt_erase
-Snarky.Kimchi.recordBuilt_bodyRows
-Snarky.Kimchi.getElem_bodyRows_generic
-Snarky.Kimchi.getElem_bodyRows_gate
-Snarky.Kimchi.record_constraint_replays
-Snarky.Kimchi.record_constraint_allocates
-Snarky.Kimchi.record_constraint_decides
-Snarky.Kimchi.replayEvent_equal
-Snarky.Kimchi.outcomeOf_cached_mem
-Snarky.Kimchi.cache_replay
-Snarky.Kimchi.cached_mem
-Snarky.Kimchi.equalsHolds_of_merge
-Snarky.Kimchi.equalsHolds_of_cached
-Snarky.Kimchi.equalsHolds_of_pinned
-Snarky.Kimchi.equalsHolds_of_row
-Snarky.Kimchi.equalsHolds_of_trivial
-Snarky.Kimchi.mem_pinsOf
-Snarky.Kimchi.inv_replay
-Snarky.Kimchi.same_replay_mono
-Snarky.Kimchi.same_replay
-Snarky.Kimchi.directRoots_eq
-Snarky.Kimchi.KimchiConstraint.Wired.Scoped
-Snarky.Kimchi.fusion_root_eq
-Snarky.Kimchi.pinned_of_cached
-Snarky.Kimchi.unwired_not_named
-Snarky.Kimchi.unwired_of_cell
-Snarky.Kimchi.unwired_cell_unique
-Snarky.Kimchi.KimchiConstraint.Wired.holds_of_satisfies
-Snarky.Kimchi.receipts_located
-Snarky.Kimchi.receipts_complete
-Snarky.Kimchi.genericValue_of_located
-Snarky.Kimchi.record_boolean_var
-Snarky.Kimchi.record_addComplete_direct
-Snarky.Kimchi.KimchiConstraint.Direct.events_generic
-Snarky.Kimchi.steps_generic_of_direct
-Snarky.Kimchi.wireMap_getElem?
-Snarky.Kimchi.getElem_assembleGates
-Snarky.Kimchi.classCells_values_eq
-Snarky.Kimchi.length_assembleGates
-Snarky.Kimchi.classCells_bounds
-Snarky.Kimchi.mem_classCells_of_label
-Snarky.Kimchi.RecordedGates.length_placements
-Snarky.Kimchi.bodyRows_placed
-Snarky.Kimchi.placements_genericRows_count
-Snarky.Kimchi.placements_customRows_count
-Snarky.Kimchi.placements_customRows_le
-Snarky.Kimchi.KimchiConstraint.Direct.holds_of_satisfies
-Snarky.Kimchi.label_of_mem_classCells
-Snarky.Kimchi.wireMap_getElem?_eq_none
-Snarky.Kimchi.wireTarget_eq
-Snarky.Kimchi.length_directGates
-Snarky.Kimchi.getElem_directGates
-Snarky.Kimchi.indexOf_of_classTarget
-Snarky.Kimchi.direct_example_built
-Snarky.Kimchi.direct_example_scoped
-Snarky.Kimchi.direct_example_indexOf
-Snarky.Kimchi.direct_example_satisfies
+-- Regression checks: the facade-only consumer, then the decided acceptances and rejections of
+-- the wired and direct fragments, the scope checker, the index constructor and checked
+-- compilation, and the lowering trace's decided recordings. Each example lists its endpoint;
+-- the decided facts it is assembled from are reached through it.
+Snarky.Kimchi.CheckedConsumer.compile_lifts
+Snarky.Kimchi.CheckedConsumer.compileWith_lifts
 Snarky.Kimchi.direct_example_holds
 Snarky.Kimchi.direct_rejections
 Snarky.Kimchi.direct_rejections_index
-Snarky.Kimchi.wired_example_built
-Snarky.Kimchi.wired_example_scoped
-Snarky.Kimchi.wired_example_indexOf
-Snarky.Kimchi.wired_example_satisfies
 Snarky.Kimchi.wired_example_holds
 Snarky.Kimchi.wired_rejections_scope
 Snarky.Kimchi.wired_rejections_table
 Snarky.Kimchi.wired_rejections_index
-Snarky.Kimchi.endo_example_built
-Snarky.Kimchi.endo_example_scoped
-Snarky.Kimchi.endo_example_indexOf
-Snarky.Kimchi.endo_example_satisfies
 Snarky.Kimchi.endo_example_holds
 Snarky.Kimchi.endo_example_layout
-Snarky.Kimchi.chain_example_built
-Snarky.Kimchi.chain_example_scoped
-Snarky.Kimchi.chain_example_indexOf
-Snarky.Kimchi.chain_example_satisfies
 Snarky.Kimchi.chain_example_holds
 Snarky.Kimchi.chain_example_layout
 Snarky.Kimchi.endo_rejections
-Snarky.Kimchi.scale_example_built
-Snarky.Kimchi.scale_example_scoped
-Snarky.Kimchi.scale_example_indexOf
-Snarky.Kimchi.scale_example_satisfies
 Snarky.Kimchi.scale_example_holds
 Snarky.Kimchi.scale_example_layout
-Snarky.Kimchi.scaleChain_example_built
-Snarky.Kimchi.scaleChain_example_scoped
-Snarky.Kimchi.scaleChain_example_indexOf
-Snarky.Kimchi.scaleChain_example_satisfies
 Snarky.Kimchi.scaleChain_example_holds
 Snarky.Kimchi.scaleChain_example_layout
 Snarky.Kimchi.scale_rejections
-Snarky.Kimchi.endoMul_example_built
-Snarky.Kimchi.endoMul_example_scoped
-Snarky.Kimchi.endoMul_example_indexOf
-Snarky.Kimchi.endoMul_example_satisfies
 Snarky.Kimchi.endoMul_example_holds
 Snarky.Kimchi.endoMul_example_layout
 Snarky.Kimchi.endoMul_rejections
 Snarky.Kimchi.endoMul_rejections_index
-Snarky.Kimchi.poseidon_example_built
-Snarky.Kimchi.poseidon_example_scoped
-Snarky.Kimchi.poseidon_example_indexOf
-Snarky.Kimchi.poseidon_example_satisfies
 Snarky.Kimchi.poseidon_example_holds
 Snarky.Kimchi.poseidon_example_layout
 Snarky.Kimchi.poseidon_rejections
 Snarky.Kimchi.poseidon_rejections_index
-Snarky.Kimchi.pad_example_built
-Snarky.Kimchi.pad_example_scoped
-Snarky.Kimchi.pad_example_indexOf
-Snarky.Kimchi.pad_example_satisfies
 Snarky.Kimchi.pad_example_holds
 Snarky.Kimchi.pad_example_layout
 Snarky.Kimchi.pad_rejections
-Snarky.Kimchi.checkScoped_eq_true_iff
 Snarky.Kimchi.checkScoped_accepts
 Snarky.Kimchi.scopedFailure_range
 Snarky.Kimchi.scopedFailure_notWired
 Snarky.Kimchi.scopedFailure_reused
 Snarky.Kimchi.scopedFailure_precedence
-Snarky.Kimchi.compiledIndex?_indexOf
-Snarky.Kimchi.gateTable?_isSome_iff
-Snarky.Kimchi.gateTable?_padding
-Snarky.Kimchi.gateDataOf_reduceBuilt
 Snarky.Kimchi.compiledIndex_accepts
 Snarky.Kimchi.compiledIndex_accepts'
 Snarky.Kimchi.compiledIndex_rejects
 Snarky.Kimchi.gateTable_rejects
 Snarky.Kimchi.gateTable_padding
 Snarky.Kimchi.wired_example_holds_compiled
-Snarky.Kimchi.CheckedIndex.lift
-Snarky.Kimchi.CheckedIndex.publicCount_eq
-Snarky.Kimchi.CheckedIndex.publicIndex_val
-Snarky.Kimchi.CheckedConsumer.compile_lifts
-Snarky.Kimchi.CheckedConsumer.compileWith_lifts
-Snarky.Kimchi.CheckedIndex.check?_index
-Snarky.Kimchi.CheckedIndex.check?_isOk_iff
-Snarky.Kimchi.checkBuilt?_index
 Snarky.Kimchi.check_accepts
 Snarky.Kimchi.check_accepts'
 Snarky.Kimchi.check_rejects_scope
@@ -268,25 +180,11 @@ Snarky.Kimchi.check_rejects_index
 Snarky.Kimchi.compileWith_example_layout
 Snarky.Kimchi.compile_example_holds
 Snarky.Kimchi.compileWith_example_holds
-Snarky.Kimchi.UnionFind.empty_inv
-Snarky.Kimchi.UnionFind.find_inv
-Snarky.Kimchi.UnionFind.same_find_mono
-Snarky.Kimchi.UnionFind.union_inv
-Snarky.Kimchi.UnionFind.same_union_self
-Snarky.Kimchi.UnionFind.same_union_mono
-Snarky.Kimchi.UnionFind.rootOf_getD_eq
 Snarky.Kimchi.recorded_batching
 Snarky.Kimchi.recorded_wiring
 Snarky.Kimchi.recorded_constantCache
 Snarky.Kimchi.recorded_allocation
 Snarky.Kimchi.recorded_equalities
-
--- The events' reading: when a reducer's recorded events hold at a valuation, its source
--- constraint holds there.
-Snarky.Kimchi.reduceToVariable_reads
-Snarky.Kimchi.boolean_of_reductionFacts
-Snarky.Kimchi.addComplete_read_eq
-Snarky.Kimchi.addComplete_holds_of_reductionFacts
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin

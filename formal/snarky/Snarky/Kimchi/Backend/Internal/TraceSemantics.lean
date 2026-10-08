@@ -23,8 +23,6 @@ The two `none` conventions differ on purpose.
 
 ## Main results
 
-- `reduceToVariable_reads`: when the recorded events hold, the pinned variable reads as the
-  operand.
 - `boolean_of_reductionFacts`: when the recorded events hold, the Boolean holds.
 - `addComplete_read_eq`: when the recorded events hold, the emitted row read cell by cell is
   the gate's witness at the operands' values; `addComplete_holds_of_reductionFacts`,
@@ -288,13 +286,6 @@ private theorem records_reduceToVariable (x : CVar F) :
     rw [← CVar.reduce_val, ← hr V h1]
     simp only [reducedValue, hsome]
     linear_combination -hg
-
-/-- When the recorded events hold at a valuation, the variable `reduceToVariable` returns
-reads as the operand. -/
-theorem reduceToVariable_reads (nv : Variable) (aux : AuxState F) (x : CVar F)
-    (V : Valuation F) (h : ReductionFacts V (recordReduction nv aux (reduceToVariable x)).events) :
-    V (recordReduction nv aux (reduceToVariable x)).result = x.val V :=
-  recordReduction_of_records (records_reduceToVariable x) nv aux V h
 
 omit [DecidableEq F] in
 private theorem eq_zero_or_one_of_mul_self (y : F) (h : y * y = y) : y = 0 ∨ y = 1 := by

@@ -29,8 +29,8 @@ returns `reduceAsBuilder`'s.
 
 ## Main results
 
-- `record_reduceToVariable_erases`, `record_basic_erases`, `record_addComplete_erases`,
-  `record_constraint_erases`: the reducers, recorded, erase to their ordinary reductions.
+- `record_constraint_erases`: every constraint's reduction, recorded, erases to its ordinary
+  reduction.
 - `record_constraint_replays`, `record_constraint_allocates`, `record_constraint_decides`: a
   recorded reduction ends in the replay of its own events, whose allocations log the counter
   and whose equalities log their outcomes.
@@ -741,23 +741,6 @@ private theorem simulates_addComplete_reduce (c : AddComplete F) :
     Simulates (c.reduce : PlonkBuilder F (Rows F)) c.reduce := by
   unfold AddComplete.reduce
   simulates [simulates_reduceAffinePoint _, simulates_reduceToVariable _]
-
-/-- Recording `reduceToVariable` erases to its ordinary reduction. -/
-theorem record_reduceToVariable_erases (nv : Variable) (aux : AuxState F) (x : CVar F) :
-    (recordReduction nv aux (reduceToVariable x)).erase =
-      reduceAsBuilder nv aux (reduceToVariable x) :=
-  erase_recordReduction (simulates_reduceToVariable x) nv aux
-
-/-- Recording a `Basic` constraint's reduction, Booleanity included, erases to its ordinary
-reduction. -/
-theorem record_basic_erases (nv : Variable) (aux : AuxState F) (c : Basic F) :
-    (recordReduction nv aux (reduce c)).erase = reduceAsBuilder nv aux (reduce c) :=
-  erase_recordReduction (simulates_reduce c) nv aux
-
-/-- Recording a complete addition's reduction erases to its ordinary reduction. -/
-theorem record_addComplete_erases (nv : Variable) (aux : AuxState F) (c : AddComplete F) :
-    (recordReduction nv aux c.reduce).erase = reduceAsBuilder nv aux c.reduce :=
-  erase_recordReduction (simulates_addComplete_reduce c) nv aux
 
 private theorem simulates_scaleRound_reduce (c : ScaleRound F) :
     Simulates (c.reduce : PlonkBuilder F (KimchiRow F × KimchiRow F)) c.reduce := by
