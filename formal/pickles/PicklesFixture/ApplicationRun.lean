@@ -1,6 +1,7 @@
 import PicklesFixture.ApplicationImport
 import PicklesFixture.Compare
 import Pickles.Application.Verify
+import Pickles.Application.CheckedCompile
 
 /-!
 # Runs of imported applications
@@ -143,10 +144,11 @@ structure Runner where
   wrap : Nat → Cache.Entry CS → Cache.Entry CW → Array StepPrev →
     IO (CircuitRun PALLAS_SCALAR_CARD)
 
-/-- Compare every reconstructed step branch and the wrap circuit with the independent dump. -/
-def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
+/-- Compare each branch's and the wrap circuit's compilation in hand with the independent
+dump. -/
+def compareCompilations {D : Shape} {L : Layout D} (C : Circuits D L)
+    (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
     (name : String) (tag : Json) : IO Unit := do
-  let C := A.circuits S (fun _ => none)
   let branches ← IO.ofExcept ((tag.getObjVal? "branches") >>= Json.getArr?)
   unless branches.size == D.branches do
     throw (IO.userError "comparison dump branch count differs from the reconstructed application")
@@ -160,13 +162,17 @@ def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
     let some branch := branches[b.val]? | throw (IO.userError "a declared branch is missing")
     let raw : Raw Fp ← IO.ofExcept do
       parseGates (← (← branch.getObjVal? "stepMain").getObjVal? "circuit")
-    report s!"step {b.val}" (compareWith (a := Unit)
-      (b := StepStatement (UnfVal WrapIPARounds) Fp D.width)
-      (fun u => Prod.fst <$> C.stepCircuit (fun _ => 0) b inertStepAdvice u) raw)
+    report s!"step {b.val}" (compareBuilt (a := Unit) (b := StepPublic D) (steps b).1 raw)
   let raw : Raw Fq ← IO.ofExcept do
     parseGates (← (← tag.getObjVal? "wrapMain").getObjVal? "circuit")
-  report "wrap" (compareWith (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
-    (fun s => Prod.fst <$> C.wrapCircuit (fun _ => 0) inertWrapAdvice s) raw)
+  report "wrap" (compareBuilt (a := WrapPublic) (b := Unit) wrap.1 raw)
+
+/-- Compare every reconstructed step branch's and the wrap circuit's canonical compilation with
+the independent dump. -/
+def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
+    (name : String) (tag : Json) : IO Unit :=
+  let C := A.circuits S (fun _ => none)
+  compareCompilations C (canonicalStep C) (canonicalWrap C) name tag
 
 private def runStep {D : Shape} (A : Assembled D) (S : Setup) (branch : Nat)
     (proof : Cache.Entry CS) (previous : Array StepPrev)

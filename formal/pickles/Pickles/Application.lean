@@ -1,4 +1,5 @@
 import Pickles.Application.Handover
+import Pickles.Application.CheckedCompile
 
 /-!
 # Compiled application framework
@@ -8,7 +9,9 @@ its layout and wire its backend keys to the existing circuit parameters. Importe
 interfaces supply source keys, candidate domains and Lagrange tables. Shared wrap slots
 use the maximum source width across branches, as in OCaml, and source chunk counts remain
 per slot. Construct the branch step circuits and the shared wrap circuit from this wiring,
-retaining their internal cells for the circuit capstones.
+retaining their internal cells for the circuit capstones. Checked compilation certifies
+each circuit's canonical compilation with its own kimchi index, in scope and corresponding,
+for the lifting of satisfying tables.
 
 Satisfying application executions instantiate both verification capstones. Connected executions
 preserve complete messages and propagate acceptance backward, with explicit message-collision
