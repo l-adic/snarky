@@ -1,24 +1,40 @@
 import Snarky.Kimchi.Constraint
+import Kimchi.Gate.Poseidon
+import Kimchi.Columns
 import Mathlib.Data.ZMod.Defs
 
 /-!
 # Sources for the wired-fragment checks
 
 The source lists decided over a field of 113 elements: for each gate an accepted source with
-its public variables, and the variants out of scope. They are data only. The wired-fragment
+its public variables, and the variants out of scope; and the index parameters the checks build
+their indices at. They are data only. The wired-fragment
 checks build their indices and satisfy them; the scope checker's checks run the checker on
 them. One module holds them so that neither set of checks copies the other's sources.
 -/
 
 namespace Snarky.Kimchi
 
-open Snarky
+open Kimchi Snarky
 
 namespace WiredFixture
 
 /-- The carrier: the integers modulo `113`, a field with `16 ∣ 112` and seven cosets of the
 sixteenth roots of unity; the sources use only its ring structure. -/
 abbrev K := ZMod 113
+
+/-! ## The index parameters -/
+
+/-- The matrix the indices carry where no Poseidon block reads it. -/
+def mds : Kimchi.Gate.Poseidon.Mds K :=
+  { m00 := 0, m01 := 0, m02 := 0, m10 := 0, m11 := 0, m12 := 0, m20 := 0, m21 := 0, m22 := 0 }
+
+/-- Powers of the generator `3`: one representative per coset of the sixteenth roots. -/
+def shifts : Fin permCols → K := fun c => [1, 3, 9, 27, 81, 17, 51].getD c.val 0
+
+/-- A small matrix for the Poseidon block: the rows `1 2 3`, `4 5 6`, `7 8 10`. -/
+def poseidonMds : Kimchi.Gate.Poseidon.Mds K :=
+  { m00 := 1, m01 := 2, m02 := 3, m10 := 4, m11 := 5, m12 := 6, m20 := 7, m21 := 8, m22 := 10 }
 
 /-! ## A complete addition among `Basic` constraints -/
 

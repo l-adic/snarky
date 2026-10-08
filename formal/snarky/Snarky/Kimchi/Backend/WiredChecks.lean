@@ -109,12 +109,6 @@ private def table : Fin 16 → Fin wCols → K := tableOf V rows
 
 private def gates : Fin 16 → Index.GateRow K 16 := gatesOf roots rows
 
-private def mds : Gate.Poseidon.Mds K :=
-  { m00 := 0, m01 := 0, m02 := 0, m10 := 0, m11 := 0, m12 := 0, m20 := 0, m21 := 0, m22 := 0 }
-
-/-- Powers of the generator `3`: one representative per coset of the sixteenth roots. -/
-private def shifts : Fin permCols → K := fun c => [1, 3, 9, 27, 81, 17, 51].getD c.val 0
-
 private def index? : Option (Index K 16) :=
   Index.build? gates publicVars.length 3 40 0 mds shifts
 
@@ -563,10 +557,6 @@ theorem endoMul_rejections_index :
   ⟨by decide +kernel, fun h => absurd (h.params _ (List.mem_singleton_self _)) (by decide +kernel)⟩
 
 /-! ## A Poseidon block -/
-
-/-- A small matrix: the rows `1 2 3`, `4 5 6`, `7 8 10`. -/
-private def poseidonMds : Gate.Poseidon.Mds K :=
-  { m00 := 1, m01 := 2, m02 := 3, m10 := 4, m11 := 5, m12 := 6, m20 := 7, m21 := 8, m22 := 10 }
 
 /-- The input `(3, 5, 0)` and the ten states the round function derives at the matrix and
 constants, the pinned element at the allocation `32`. -/
