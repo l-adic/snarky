@@ -96,7 +96,7 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         lake build check-cs check-tags check-slot-chunks check-application-shapes \
-          check-rule-replay check-application-inputs
+          check-rule-replay check-application-inputs check-application-indices
 
     # Save even when the build (or a source gate rerun) failed: a red PR iteration
     # then restarts from the partial build instead of the last green one. On an exact

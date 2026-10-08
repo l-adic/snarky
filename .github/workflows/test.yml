@@ -469,6 +469,14 @@ jobs:
         lake exe check-rule-replay
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-inputs
 
+    # One application's canonical compilations certified with their own kimchi indices, and
+    # rejected at index data its keys could not have supplied; an explicit selection, never all.
+    - name: Check one application's indices
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps APPS=NoRecursionReturn lake exe check-application-indices
+
     # Reconstructed applications invoke the verification and handover capstones directly:
     # Self recursion, base branches and a two-chunk imported source.
     - name: Check two apps' links

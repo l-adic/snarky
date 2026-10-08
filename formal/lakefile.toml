@@ -107,3 +107,7 @@ root = "scripts.check_rule_replay"
 [[lean_exe]]
 name = "check-application-inputs"
 root = "scripts.check_application_inputs"
+
+[[lean_exe]]
+name = "check-application-indices"
+root = "scripts.check_application_indices"
