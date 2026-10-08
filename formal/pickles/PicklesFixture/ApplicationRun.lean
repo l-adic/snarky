@@ -61,6 +61,8 @@ structure CircuitRun (p : Nat) [Fact p.Prime] where
   satisfies : Bool
   /-- The public values read from the witness. -/
   pub : List (ZMod p)
+  /-- The table's rows as rendered from the witness: the public rows, then the body's. -/
+  rows : Array (Vector (ZMod p) 15)
 
 private def fromRun {p : Nat} [Fact p.Prime] {a av b bv α : Type}
     [A : CircuitType (ZMod p) a av]
@@ -73,7 +75,7 @@ private def fromRun {p : Nat} [Fact p.Prime] {a av b bv α : Type}
   match built with
   | ⟨built, h⟩ =>
     { V := r.V, constraints := built.constraints, holds := h ▸ r.holds
-      satisfies := r.satisfies, pub := r.pub }
+      satisfies := r.satisfies, pub := r.pub, rows := r.rows }
 
 /-- A canonical satisfying step run and its cache routing information. -/
 structure StepEntry {D : Shape} {L : Layout D} (C : Circuits D L) where

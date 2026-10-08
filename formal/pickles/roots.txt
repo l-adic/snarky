@@ -56,6 +56,7 @@ Pickles.Application.Circuits.wrapBuilt_advice_irrel -- audited builder erasure f
 Pickles.Application.Circuits.stepBuilt_rules_congr -- audited transport for replayed rule witnesses
 PicklesFixture.Application.checkSelectedFromShape -- reconstruct selected circuits from sidecar shapes
 PicklesFixture.Application.checkIndices -- check-application-indices certifies selected applications' circuits
+PicklesFixture.Application.checkTables -- check-application-indices builds the lifting theorems' tables from cached proofs
 PicklesFixture.compareWith -- check-cs compares each gadget circuit's system with its dump
 Pickles.Application.Wiring.assemble -- the fixture assembles typed wiring and tests rejected backends
 Pickles.Application.Layout.check -- the layout driver assembles each layout through the executable checker

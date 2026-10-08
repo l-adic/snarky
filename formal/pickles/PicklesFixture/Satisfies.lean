@@ -56,6 +56,9 @@ structure MainRun {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [CircuitType (Z
   satisfies : Bool
   /-- The table's public input: the input's cells, then the output's. -/
   pub : List (ZMod p)
+  /-- The table's rows as rendered from the prover's values: the public rows, then the
+  body's. -/
+  rows : Array (Vector (ZMod p) 15)
   /-- The run's output and cells, and its public output. -/
   result : (bv × α) × bv
   /-- They are the compiled circuit's. -/
@@ -109,7 +112,8 @@ def runMainBuilt {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType
   IO.println s!"    phases: prove {t1 - t0} ms · build {t2 - t1} ms ({ncons} constraints, \
     {built.nextVar} vars) · holds {t3 - t2} ms · rows {t4 - t3} ms ({nrows} rows) · witness \
     {t5 - t4} ms ({nwit} rows) · index build {t6 - t5} ms (n = {n}) · decide {t7 - t6} ms"
-  return ⟨{ V, holds, satisfies, pub, result := built.result, result_eq := rfl }, built, rfl⟩
+  return ⟨{ V, holds, satisfies, pub, rows := wit.toArray, result := built.result,
+            result_eq := rfl }, built, rfl⟩
 
 /-- `runMainBuilt`'s run alone. -/
 def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [CircuitType (ZMod p) a av]
