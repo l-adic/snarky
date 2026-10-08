@@ -2,6 +2,7 @@ import Pickles.Application.Handover
 import Pickles.Application.CheckedCompile
 import Pickles.Application.MatrixRun
 import Pickles.Application.Certification
+import Pickles.Application.Compare
 
 /-!
 # Compiled application framework
