@@ -86,13 +86,6 @@ private def rows : List (KimchiRow K) := directRows source publicVars 20
 
 private def roots : Array Variable := directRoots source 20
 
-/-- A table: each row's cells under a valuation, zero beyond the lowering. -/
-private def tableOf (V : Valuation K) (rows : List (KimchiRow K)) : Fin 16 → Fin wCols → K :=
-  fun i j =>
-    match rows[i.val]? with
-    | some r => rowValues V r j
-    | none => 0
-
 /-- A gate table: the lowering's rows with the class-based wiring, zero rows identity-wired
 beyond them. -/
 private def gatesOf (roots : Array Variable) (rows : List (KimchiRow K)) :

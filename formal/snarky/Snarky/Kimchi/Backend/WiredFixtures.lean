@@ -1,4 +1,5 @@
 import Snarky.Kimchi.Constraint
+import Snarky.Kimchi.Backend.TraceSemantics
 import Kimchi.Gate.Poseidon
 import Kimchi.Columns
 import Mathlib.Data.ZMod.Defs
@@ -8,7 +9,7 @@ import Mathlib.Data.ZMod.Defs
 
 The source lists decided over a field of 113 elements: for each gate an accepted source with
 its public variables, and the variants out of scope; and the index parameters the checks build
-their indices at. They are data only. The wired-fragment
+their indices at, and the table a valuation fills over a lowering's rows. The wired-fragment
 checks build their indices and satisfy them; the scope checker's checks run the checker on
 them. One module holds them so that neither set of checks copies the other's sources.
 -/
@@ -37,6 +38,15 @@ def shifts : Fin permCols → K := fun c => [1, 3, 9, 27, 81, 17, 51].getD c.val
 /-- A small matrix for the Poseidon block: the rows `1 2 3`, `4 5 6`, `7 8 10`. -/
 def poseidonMds : Kimchi.Gate.Poseidon.Mds K :=
   { m00 := 1, m01 := 2, m02 := 3, m10 := 4, m11 := 5, m12 := 6, m20 := 7, m21 := 8, m22 := 10 }
+
+/-! ## The table -/
+
+/-- A table: each row's cells under a valuation, zero beyond the lowering. -/
+def tableOf (V : Valuation K) (rows : List (KimchiRow K)) : Fin 16 → Fin wCols → K :=
+  fun i j =>
+    match rows[i.val]? with
+    | some r => rowValues V r j
+    | none => 0
 
 /-! ## A complete addition among `Basic` constraints -/
 
