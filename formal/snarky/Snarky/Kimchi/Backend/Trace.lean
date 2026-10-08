@@ -1,5 +1,6 @@
 import Snarky.Kimchi.Constraint
 import Snarky.Kimchi.Backend.Internal.UnionFind
+import Snarky.Kimchi.Backend.Internal.Reduction
 
 /-!
 # The lowering trace

@@ -50,18 +50,6 @@ structure GenericPlonkConstraint (F : Type u) where
   c : F
   deriving DecidableEq
 
-/-- The variables a generic constraint names: its present left, right and output cells. -/
-def GenericPlonkConstraint.vars {F : Type u} (g : GenericPlonkConstraint F) : List Variable :=
-  g.vl.toList ++ g.vr.toList ++ g.vo.toList
-
-/-- A generic constraint's absent cells carry no coefficient: an arbitrary table's value in
-such a cell is irrelevant to the equation. -/
-def GenericPlonkConstraint.AbsentZero {F : Type u} [Zero F] (g : GenericPlonkConstraint F) :
-    Prop :=
-  (g.vl = none → g.cl = 0 ∧ g.m = 0) ∧ (g.vr = none → g.cr = 0 ∧ g.m = 0) ∧
-    (g.vo = none → g.co = 0)
-
-
 /-- One emitted gate row. -/
 structure KimchiRow (F : Type u) where
   /-- The gate tag. -/
