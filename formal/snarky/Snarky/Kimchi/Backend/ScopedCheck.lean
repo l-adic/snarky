@@ -1,4 +1,4 @@
-import Snarky.Kimchi.Backend.Wired
+import Snarky.Kimchi.Backend.Admissibility
 
 /-!
 # The scope checker

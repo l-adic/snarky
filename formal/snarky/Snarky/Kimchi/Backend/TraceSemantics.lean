@@ -1,4 +1,5 @@
 import Snarky.Kimchi.Backend.Trace
+import Snarky.Kimchi.Backend.Admissibility
 import Snarky.Kimchi.Semantics
 import Kimchi.Lift
 import Kimchi.Columns
@@ -16,10 +17,9 @@ The two `none` conventions differ on purpose.
 
 - `genericValue`, `equalsHolds`, `ReductionEvent.Holds`, `ReductionFacts`: the readings.
 - `rowValues`: a named row's cells at a valuation, an absent cell reading `0`.
-- `KimchiConstraint.rowCount`, `KimchiConstraint.rowOperands`, `KimchiConstraint.termVars`,
-  `KimchiConstraint.unwiredVars`: the rows a gate emits and the operands they place, cell by
-  cell, and from them the variables a constraint names with repetition and its bare operands
-  in the unwired columns.
+- `KimchiConstraint.placedOperands`, `CellOf`: the operands a constraint places, and a row cell
+  against its placed operand. The layouts they read, `KimchiConstraint.rowOperands` and the
+  variables it names, are the scope checker's.
 
 ## Main results
 
@@ -1692,36 +1692,12 @@ section Names
 
 variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
-/-- The variables an operand's affine form names, in term order. -/
-def _root_.Snarky.CVar.termVars (x : CVar F) : List Variable :=
-  x.reduceToAffineExpression.terms.map Prod.fst
-
-/-- The variables a `Basic` constraint's operands name, with repetition. -/
-def _root_.Snarky.Basic.termVars : Basic F → List Variable
-  | .r1cs a b c => a.termVars ++ b.termVars ++ c.termVars
-  | .equal a b => a.termVars ++ b.termVars
-  | .square a b => a.termVars ++ b.termVars
-  | .boolean x => x.termVars
-
-/-- The variable a bare-variable operand names; `none` for any other form. -/
-def _root_.Snarky.CVar.var? (x : CVar F) : Option Variable :=
-  match x with
-  | .var v => some v
-  | _ => none
-
 omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
 /-- An operand with a bare-variable form is that variable. -/
 theorem _root_.Snarky.CVar.var?_isSome {x : CVar F} (h : x.var?.isSome) : ∃ v, x = .var v := by
   cases x with
   | var v => exact ⟨v, rfl⟩
   | _ => exact absurd h (by simp [CVar.var?])
-
-/-- A row's fifteen cells from a prefix of placed operands, the rest empty. -/
-def cellsOf (ops : List (Option (FVar F))) : Vector (Option (FVar F)) wCols :=
-  ⟨⟨ops.take wCols ++ List.replicate (wCols - (ops.take wCols).length) none⟩, by
-    show (ops.take wCols ++ List.replicate (wCols - (ops.take wCols).length) none).length = wCols
-    simp only [List.length_append, List.length_replicate, List.length_take]
-    omega⟩
 
 omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
 /-- A placed cell of a row is its operand. -/
@@ -1730,17 +1706,6 @@ theorem cellsOf_getElem_lt (ops : List (Option (FVar F))) (k : Nat) (hk : k < op
   show (ops.take wCols ++ List.replicate (wCols - (ops.take wCols).length) none)[k]'(by
     simp only [List.length_append, List.length_replicate, List.length_take]; omega) = ops[k]
   rw [List.getElem_append_left (by simp only [List.length_take]; omega), List.getElem_take]
-
-/-- The operands a Poseidon block's rows place: five states per row in the permuted register
-order `s0 s4 s1 s2 s3`, a trailing single state in the terminal row's first three cells, and
-nothing for a shorter tail, as the reducer chunks them. -/
-def Poseidon.rowOperandsList :
-    List (FVar F × FVar F × FVar F) → List (Vector (Option (FVar F)) wCols)
-  | [] => []
-  | [s] => [cellsOf (PoseidonConstraint.finalCells s)]
-  | q0 :: q1 :: q2 :: q3 :: q4 :: rest =>
-    cellsOf (PoseidonConstraint.windowCells q0 q1 q2 q3 q4) :: rowOperandsList rest
-  | _ => []
 
 omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
 /-- The layout of `5w + 1` states: `w` window rows then the terminal row. -/
@@ -1806,42 +1771,6 @@ private theorem rowOperandsList_final :
   | w + 1, [_, _], hw => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
   | w + 1, [_, _, _], hw => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
   | w + 1, [_, _, _, _], hw => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
-
-/-- The operands a constraint's gate rows place, row by row and cell by cell, `none` for an
-empty cell: what each reducer writes, before reduction. A `Basic` constraint places no gate
-row. -/
-def KimchiConstraint.rowOperandsList : KimchiConstraint F → List (Vector (Option (FVar F)) wCols)
-  | .basic _ => []
-  | .addComplete c => [cellsOf (c.operands.toList.map some)]
-  | .poseidon c => Poseidon.rowOperandsList c.state
-  | .varBaseMul rounds => rounds.flatMap fun r => [cellsOf r.cellsA, cellsOf r.cellsB]
-  | .endoScalar rounds => rounds.map fun r => cellsOf (r.operands.toList.map some)
-  | .endoMul c =>
-    (c.state.map fun r => cellsOf ([r.t.x, r.t.y, r.inv].map some ++
-      none :: [r.p.x, r.p.y, r.nAcc, r.r.x, r.r.y, r.s1, r.s3, r.bit0, r.bit1, r.bit2,
-        r.bit3].map some)) ++
-    [cellsOf (none :: none :: none :: none :: [c.s.x, c.s.y, c.nAcc].map some)]
-  | .pad vs => [cellsOf (padCells vs)]
-
-/-- The rows a constraint's gate emits. -/
-def KimchiConstraint.rowCount (c : KimchiConstraint F) : Nat :=
-  c.rowOperandsList.length
-
-/-- The placed operands as a vector of rows: position `(i, j)` is row `i`'s cell `j`. -/
-def KimchiConstraint.rowOperands (c : KimchiConstraint F) :
-    Vector (Vector (Option (FVar F)) wCols) c.rowCount :=
-  ⟨⟨c.rowOperandsList⟩, rfl⟩
-
-/-- The variables a cell's operand names; none for an empty cell. -/
-def cellTerms : Option (FVar F) → List Variable
-  | some x => x.termVars
-  | none => []
-
-/-- The variables a constraint's operands name, with repetition: a `Basic` constraint's
-operands, or every term of every operand a gate's rows place. -/
-def KimchiConstraint.termVars : KimchiConstraint F → List Variable
-  | .basic b => b.termVars
-  | c => c.rowOperands.toList.flatMap fun row => row.toList.flatMap cellTerms
 
 /-- The operands a constraint places, in row and cell order. -/
 def KimchiConstraint.placedOperands (c : KimchiConstraint F) : List (FVar F) :=
@@ -1914,11 +1843,6 @@ private theorem mem_rowOperandsList :
   | w + 1, [_, _], hw, _, _ => absurd hw (show ¬ (2 = 5 * (w + 1) + 1) by omega)
   | w + 1, [_, _, _], hw, _, _ => absurd hw (show ¬ (3 = 5 * (w + 1) + 1) by omega)
   | w + 1, [_, _, _, _], hw, _, _ => absurd hw (show ¬ (4 = 5 * (w + 1) + 1) by omega)
-
-/-- The bare operands a constraint places in the unwired columns `7` to `14`. -/
-def KimchiConstraint.unwiredVars (c : KimchiConstraint F) : List Variable :=
-  c.rowOperands.toList.flatMap fun row =>
-    (row.toList.drop permCols).filterMap fun o => o.bind CVar.var?
 
 omit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] in
 /-- A complete addition's unwired operands are the bare ones among `sameX`, `s`, `infZ`,

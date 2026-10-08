@@ -20,13 +20,9 @@ operand of an unwired column is outside the permutation, so it reads its one cel
 only occurrence in the source is that bare operand, which logs nothing, so no event names it
 and no other cell carries it.
 
-## Main definitions
-
-- `KimchiConstraint.Wired`, `KimchiConstraint.Wired.Scoped`: membership in the fragment, a
-  Poseidon block of the shape and cells in the unwired columns of `rowOperands` bare or empty,
-  and the scoping condition on a source list, its public variables and the counter: every
-  constraint wired, every named variable below the counter, and every operand of an unwired
-  column occurring once.
+Membership, `KimchiConstraint.Wired`, and the scoping condition,
+`KimchiConstraint.Wired.Scoped`, are stated with the operand layouts the scope checker reads;
+this module proves the lifting theorem under them.
 
 ## Main results
 
@@ -60,69 +56,6 @@ namespace Snarky.Kimchi
 open Snarky
 
 variable {F : Type}
-
-section Fragment
-
-variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-
-/-- The fragment's condition on a constructor. Every constructor is admitted; a Poseidon block
-under the shape `5w + 1`, which places every state and keeps every window's successor inside
-the block. -/
-private def KimchiConstraint.Admitted : KimchiConstraint F → Prop
-  | .poseidon c => c.state.length % 5 = 1
-  | _ => True
-
-private instance KimchiConstraint.decidableAdmitted (c : KimchiConstraint F) :
-    Decidable c.Admitted := by
-  unfold KimchiConstraint.Admitted
-  split <;> infer_instance
-
-/-- A cell's operand is bare, or the cell is empty. -/
-private def bareCell : Option (FVar F) → Prop
-  | some x => x.var?.isSome = true
-  | none => True
-
-private instance decidableBareCell (o : Option (FVar F)) : Decidable (bareCell o) := by
-  unfold bareCell
-  split <;> infer_instance
-
-/-- A constraint the lowering wires: a Poseidon block of the shape `5w + 1`, and any
-constructor's operands in the unwired columns `7` to `14` bare variables. -/
-def KimchiConstraint.Wired (c : KimchiConstraint F) : Prop :=
-  c.Admitted ∧ ∀ row ∈ c.rowOperands.toList, ∀ j : Fin wCols, permCols ≤ j.val → bareCell row[j]
-
-instance KimchiConstraint.decidableWired (c : KimchiConstraint F) : Decidable c.Wired := by
-  unfold KimchiConstraint.Wired
-  infer_instance
-
-/-- Every variable the source and the public variables name, with repetition: each
-constraint's term variables in order, then the public variables. -/
-def occurrences (source : List (KimchiConstraint F)) (publicVars : List Variable) :
-    List Variable :=
-  source.flatMap KimchiConstraint.termVars ++ publicVars
-
-/-- The scoping condition under which any table satisfying the fragment's index determines
-a valuation: every constraint is wired, every named variable is below the counter, and every
-operand of an unwired column occurs exactly once among the term occurrences and the public
-variables. -/
-structure KimchiConstraint.Wired.Scoped (nv : Variable) (source : List (KimchiConstraint F))
-    (publicVars : List Variable) : Prop where
-  /-- Every constraint is in the fragment. -/
-  wired : ∀ c ∈ source, c.Wired
-  /-- Every variable the source or the public input names is below the counter. -/
-  below : ∀ v ∈ occurrences source publicVars, v < nv
-  /-- Every operand of an unwired column occurs exactly once among the term occurrences and
-  the public variables. -/
-  unwiredOnce : ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (occurrences source publicVars).count v = 1
-
-instance (nv : Variable) (source : List (KimchiConstraint F)) (publicVars : List Variable) :
-    Decidable (KimchiConstraint.Wired.Scoped nv source publicVars) :=
-  decidable_of_iff
-    ((∀ c ∈ source, c.Wired) ∧ (∀ v ∈ occurrences source publicVars, v < nv) ∧
-      ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (occurrences source publicVars).count v = 1)
-    ⟨fun ⟨a, b, c⟩ => ⟨a, b, c⟩, fun ⟨a, b, c⟩ => ⟨a, b, c⟩⟩
-
-end Fragment
 
 variable [Field F] [DecidableEq F]
 

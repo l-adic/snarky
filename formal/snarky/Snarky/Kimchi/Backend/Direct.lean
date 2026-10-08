@@ -78,7 +78,7 @@ private def KimchiConstraint.directVars : KimchiConstraint F → List Variable
   | _ => []
 
 /-- Every variable the source and the public variables name, with repetition. -/
-private def occurrences (source : List (KimchiConstraint F)) (publicVars : List Variable) :
+private def directOccurrences (source : List (KimchiConstraint F)) (publicVars : List Variable) :
     List Variable :=
   source.flatMap KimchiConstraint.directVars ++ publicVars
 
@@ -91,13 +91,13 @@ structure KimchiConstraint.Direct.Scoped (source : List (KimchiConstraint F))
   direct : ∀ c ∈ source, c.Direct
   /-- Every operand of an unwired column occurs exactly once among the operand occurrences
   and the public variables. -/
-  unwiredOnce : ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (occurrences source publicVars).count v = 1
+  unwiredOnce : ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (directOccurrences source publicVars).count v = 1
 
 instance (source : List (KimchiConstraint F)) (publicVars : List Variable) :
     Decidable (KimchiConstraint.Direct.Scoped source publicVars) :=
   decidable_of_iff
     ((∀ c ∈ source, c.Direct) ∧
-      ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (occurrences source publicVars).count v = 1)
+      ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (directOccurrences source publicVars).count v = 1)
     ⟨fun ⟨a, b⟩ => ⟨a, b⟩, fun ⟨a, b⟩ => ⟨a, b⟩⟩
 
 variable [Field F] [DecidableEq F]
@@ -963,7 +963,7 @@ private theorem unwired_unique {source : List (KimchiConstraint F)} {publicVars 
   obtain ⟨hj11, hvj⟩ := label_add hd j hj v hv
   have hunw := unwiredVars_of_label hd hj11 h7 hvj
   have hcount := hscope.unwiredOnce _ (hsrc ▸ List.getElem_mem hp) v hunw
-  simp only [occurrences, List.count_append] at hcount
+  simp only [directOccurrences, List.count_append] at hcount
   have hmem : v ∈ source[p].directVars := by
     rw [hsrc]
     exact hvj ▸ List.getElem_mem _
