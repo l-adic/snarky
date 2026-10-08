@@ -256,6 +256,23 @@ theorem mem_compileWith_of_mem_body {α : Type} [Field F] [DecidableEq F] [Basic
   rw [compileWith, compileWithBody, build_bind, List.mem_append]
   exact Or.inr (by rw [build_bind, List.mem_append]; exact Or.inl h)
 
+/-! ## The public layout -/
+
+/-- The variables backing a bundle of plain variables — the witnessed public output
+slots, whose ids the assembly needs but whose numbering it does not care about. -/
+private def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar) :
+    List Variable :=
+  (CircuitType.varToFields (val := b) v).toList.filterMap fun (cv : CVar F) =>
+    match cv with
+    | CVar.var w => some w
+    | _ => none
+
+/-- The public variables of a compiled circuit: the input slots, then the variables of the
+output bundle the compiled program witnessed. -/
+def compiledPublicVars [Add F] [Mul F] [Zero F] [A : CircuitType F a avar]
+    [CircuitType F b bvar] {β : Type} (built : Built c (β × bvar)) : List Variable :=
+  (allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2
+
 attribute [irreducible] inputVar compileBody compile solve compileWithBody compileWith
 
 end Snarky

@@ -84,21 +84,6 @@ def reduceSolved [Field F] [DecidableEq F] {α : Type} (built : Built (KimchiCon
   | .error e => .error e
   | .ok s => .ok s.assignments
 
-/-- The variables backing a bundle of plain variables — the witnessed public output
-slots, whose ids the assembly needs but whose numbering it does not care about. -/
-private def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar) :
-    List Variable :=
-  (CircuitType.varToFields (val := b) v).toList.filterMap fun (cv : CVar F) =>
-    match cv with
-    | CVar.var w => some w
-    | _ => none
-
-/-- The public variables of a compiled circuit: the input slots, then the variables of the
-output bundle the compiled program witnessed. -/
-def compiledPublicVars [Add F] [Mul F] [Zero F] [A : CircuitType F a avar]
-    [CircuitType F b bvar] {c β : Type} (built : Built c (β × bvar)) : List Variable :=
-  (allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2
-
 /-- The rows and the assembled gate table of a reduced circuit at given public variables:
 the gates dispatched to rows, the wiring assembled over the reduction's union-find. -/
 def gateDataOf [Field F] [DecidableEq F] {α : Type} (kb : KimchiBuilt F α)

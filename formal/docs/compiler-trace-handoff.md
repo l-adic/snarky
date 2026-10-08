@@ -1152,7 +1152,7 @@ Paths are relative to `snarky/Snarky/Kimchi/`.
 
 | Modules | Contents | Reaches no |
 | --- | --- | --- |
-| `Constraint/*`, `UnionFind`, `Backend/Assemble`, `Backend/Compile` | Constraint data, reducers, union-find operations, assembly, compilation, `compiledPublicVars` | internal or check module |
+| `Constraint/*`, `UnionFind`, `Backend/Assemble`, `Backend/Compile` | Constraint data, reducers, union-find operations, assembly, kimchi compilation (the public layout `compiledPublicVars` is in the generic `Snarky/Compile`) | internal or check module |
 | `Backend/Admissibility` | Operand layouts, `occurrences`, `KimchiConstraint.Wired`, `Wired.Scoped` | internal or check module |
 | `Backend/IndexSpec` | `directBuilt`, `directGates`, `ParamsAgree`, `IndexOf` | internal or check module |
 | `Backend/ScopedCheck`, `Backend/CompiledIndex` | The scope checker and the index constructor with their reflection theorems | internal or check module |

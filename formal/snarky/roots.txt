@@ -115,7 +115,7 @@ Snarky.Kimchi.CheckedIndex.check?
 Snarky.Kimchi.checkBuilt?
 Snarky.Kimchi.CheckedIndex.lift
 Snarky.Kimchi.CheckFailure
-Snarky.Kimchi.compiledPublicVars
+Snarky.compiledPublicVars
 -- For consumers that compare the checked index with ordinary compilation or decide a check.
 Snarky.Kimchi.checkBuilt?_index
 Snarky.Kimchi.CheckedIndex.check?_index
