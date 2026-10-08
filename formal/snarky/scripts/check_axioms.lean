@@ -36,6 +36,7 @@ import Snarky.Kimchi.Backend.Wired
 import Snarky.Kimchi.Backend.WiredChecks
 import Snarky.Kimchi.Backend.ScopedCheckChecks
 import Snarky.Kimchi.Backend.CompiledIndexChecks
+import Snarky.Kimchi.Backend.CheckedCompileChecks
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -269,6 +270,17 @@ def roots : List Name :=
     `Snarky.Kimchi.gateTable_rejects,
     `Snarky.Kimchi.gateTable_padding,
     `Snarky.Kimchi.wired_example_holds_compiled,
+    `Snarky.Kimchi.CheckedIndex.lift,
+    `Snarky.Kimchi.CheckedIndex.«check?_index»,
+    `Snarky.Kimchi.CheckedIndex.«check?_isOk_iff»,
+    `Snarky.Kimchi.«checkBuilt?_index»,
+    `Snarky.Kimchi.check_accepts,
+    `Snarky.Kimchi.«check_accepts'»,
+    `Snarky.Kimchi.check_rejects_scope,
+    `Snarky.Kimchi.check_rejects_index,
+    `Snarky.Kimchi.compileWith_example_layout,
+    `Snarky.Kimchi.compile_example_holds,
+    `Snarky.Kimchi.compileWith_example_holds,
     -- The union-find's class view.
     `Snarky.Kimchi.UnionFind.empty_inv,
     `Snarky.Kimchi.UnionFind.find_inv,

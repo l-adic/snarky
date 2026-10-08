@@ -48,6 +48,8 @@ import Snarky.Kimchi.Backend.ScopedCheck
 import Snarky.Kimchi.Backend.ScopedCheckChecks
 import Snarky.Kimchi.Backend.CompiledIndex
 import Snarky.Kimchi.Backend.CompiledIndexChecks
+import Snarky.Kimchi.Backend.CheckedCompile
+import Snarky.Kimchi.Backend.CheckedCompileChecks
 import Snarky.Kimchi.Backend.Trace
 import Snarky.Kimchi.Backend.TraceChecks
 import Snarky.Kimchi.Backend.TraceSemantics
