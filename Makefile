@@ -167,7 +167,7 @@ lean-deadcode: ## Gate: fail on any authored Lean declaration unreachable from r
 lean-spec-locality: ## Gate: a pickles gadget's spec is stated only in the gadget's module
 	bash formal/scripts/check-spec-locality.sh
 
-lean-import-boundaries: ## Gate: the compiler and checkers import no proof or check module
+lean-import-boundaries: ## Gate: the compiler and checkers import no proof or check module; no library root reaches a check module
 	bash formal/scripts/check-import-boundaries.sh
 
 lean-kernel-check: ## Kernel-replay every Lean module through lean4checker
