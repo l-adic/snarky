@@ -150,10 +150,9 @@ Scope and index correspondence remain supplied by checked compilation, not by th
    Reuse the build for checking, index construction and subsequent comparison.
 2. Reuse `stepBuilt_advice_irrel` and `wrapBuilt_advice_irrel`. For replayed rules, reuse
    `Assembled.stepBuilt_ruleAdvice_irrel` when relating cached executions to the canonical rule.
-3. Resolve the `Builder V` parameter: the checked artifact must not depend on which valuation
-   lifting later produces. Prove the needed specialization for these application constructors,
-   including their constraints and retained cells. Do not assume this for an arbitrary
-   user-supplied function from valuations to circuit programs.
+3. Keep application constructors and compilation independent of valuations. Use ordinary
+   constraint types; introduce `Builder V` only in soundness proofs. The checked artifact's
+   constraints and retained cells are fixed before lifting supplies a valuation.
 4. Obtain actual domain sizes, generators, shifts and masked-row counts from the branch and
    wrap keys. Obtain the gate endomorphism coefficient and MDS from the appropriate shared
    field environment. Keep their origins explicit.

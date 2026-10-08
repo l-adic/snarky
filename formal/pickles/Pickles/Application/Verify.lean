@@ -53,7 +53,7 @@ structure WrapStepAssumptions
 private theorem WrapRun.pins {C : Circuits D L} (r : WrapRun C) (j : Fin D.width) :
     r.cells.1.slots[j].pins = C.wiring.pins[j] := by
   dsimp only [WrapRun.cells, Circuits.wrapBuilt, Circuits.wrapCircuit]
-  rw [compileWith_wrapMainCircuit_cells]
+  erw [compileWith_wrapMainCircuit_cells (V := r.V)]
   exact ((builder_spec_iff _ _).mp (wrapMain_pins
     (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens) r.V
     D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)

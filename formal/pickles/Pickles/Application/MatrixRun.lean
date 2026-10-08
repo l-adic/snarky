@@ -61,12 +61,12 @@ structure WrapTable (I : ApplicationIndices D) where
 /-- Every step execution's retained cells are the canonical compilation's. -/
 theorem StepRun.cells_eq {C : Circuits D L} {b : D.Branch} (r : StepRun C b) :
     r.cells = (stepCompilation C b).result.1.2 :=
-  congrArg (fun x => x.result.1.2) (C.stepBuilt_eq r.V b r.advice)
+  congrArg (fun x => x.result.1.2) (C.stepBuilt_eq b r.advice)
 
 /-- Every wrap execution's retained cells are the canonical compilation's. -/
 theorem WrapRun.cells_eq {C : Circuits D L} (r : WrapRun C) :
     r.cells = (wrapCompilation C).result.1.2 :=
-  congrArg (fun x => x.result.1.2) (C.wrapBuilt_eq r.V r.advice)
+  congrArg (fun x => x.result.1.2) (C.wrapBuilt_eq r.advice)
 
 /-- The step circuit's body returns its statement beside the cells that retain it. -/
 private theorem stepCompilation_out (C : Circuits D L) (b : D.Branch) :
@@ -105,16 +105,13 @@ theorem CheckedApplication.lift_step {C : Circuits D L} (checked : CheckedApplic
       (#v[] : Vector Fp 0).toList ++ (CircuitType.valueToFields (F := Fp) t.statement).toList :=
     map_eq_of_pointwise (checked.step b) _ (checked.indices.stepPublicCount b) V hpub
   obtain ⟨-, hout⟩ := compileWith_reads (a := Unit) (b := StepPublic D)
-    (main := C.stepCircuit (fun _ => 0) b inertStepAdvice) hV #v[] _ hlist
+    (main := C.stepCircuit b inertStepAdvice) hV #v[] _ hlist
   have hread : CircuitType.Reads V (stepCompilation C b).result.1.1 t.statement :=
     (hout t.statement).mpr rfl
-  refine ⟨⟨V, inertStepAdvice, ?_⟩, ?_⟩
-  · rw [show (C.stepBuilt V b inertStepAdvice).constraints = (stepCompilation C b).constraints
-      from congrArg Built.constraints (C.stepBuilt_eq V b inertStepAdvice)]
-    exact hV
-  · show CircuitType.Reads V (StepRun.cells ⟨V, inertStepAdvice, _⟩).out t.statement
-    rw [StepRun.cells_eq, ← stepCompilation_out]
-    exact hread
+  refine ⟨⟨V, inertStepAdvice, hV⟩, ?_⟩
+  show CircuitType.Reads V (StepRun.cells ⟨V, inertStepAdvice, _⟩).out t.statement
+  rw [StepRun.cells_eq, ← stepCompilation_out]
+  exact hread
 
 /-- **An accepted wrap table has a wrap execution at its statement.** -/
 theorem CheckedApplication.lift_wrap {C : Circuits D L} (checked : CheckedApplication C)
@@ -129,10 +126,7 @@ theorem CheckedApplication.lift_wrap {C : Circuits D L} (checked : CheckedApplic
     rw [List.append_nil]
     exact map_eq_of_pointwise checked.wrap _ checked.indices.wrapPublicCount V hpub
   obtain ⟨hin, -⟩ := compileWith_reads (a := WrapPublic) (b := Unit)
-    (main := C.wrapCircuit (fun _ => 0) inertWrapAdvice) hV _ #v[] hlist
-  refine ⟨⟨V, inertWrapAdvice, ?_⟩, (hin t.statement).mpr rfl⟩
-  rw [show (C.wrapBuilt V inertWrapAdvice).constraints = (wrapCompilation C).constraints
-    from congrArg Built.constraints (C.wrapBuilt_eq V inertWrapAdvice)]
-  exact hV
+    (main := C.wrapCircuit inertWrapAdvice) hV _ #v[] hlist
+  exact ⟨⟨V, inertWrapAdvice, hV⟩, (hin t.statement).mpr rfl⟩
 
 end Pickles.Application

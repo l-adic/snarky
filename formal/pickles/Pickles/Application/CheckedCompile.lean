@@ -6,7 +6,7 @@ import Kimchi.Columns
 # Checked compilation of an application
 
 Each circuit of an application has a canonical compilation: a branch's step circuit, or the
-shared wrap circuit, at the zero valuation and inert advice. Neither choice reaches the build:
+shared wrap circuit, with inert advice. Advice changes no part of the build:
 every execution's compiled circuit is the canonical one, constraints, allocation and retained
 cells included (`Circuits.stepBuilt_eq`, `Circuits.wrapBuilt_eq`).
 
@@ -69,24 +69,24 @@ abbrev StepBuilt (C : Circuits D L) (b : D.Branch) :=
 /-- The type of the compiled wrap circuit: its retained cells and no public output. -/
 abbrev WrapBuilt (C : Circuits D L) := Built (KimchiConstraint Fq) ((Unit × C.WrapCells) × Unit)
 
-/-- A branch's step circuit compiled at the zero valuation and inert advice. -/
+/-- A branch's step circuit compiled with inert advice. -/
 def stepCompilation (C : Circuits D L) (b : D.Branch) : StepBuilt C b :=
-  C.stepBuilt (fun _ => 0) b inertStepAdvice
+  C.stepBuilt b inertStepAdvice
 
-/-- The shared wrap circuit compiled at the zero valuation and inert advice. -/
+/-- The shared wrap circuit compiled with inert advice. -/
 def wrapCompilation (C : Circuits D L) : WrapBuilt C :=
-  C.wrapBuilt (fun _ => 0) inertWrapAdvice
+  C.wrapBuilt inertWrapAdvice
 
-/-- **Every step execution compiles to the canonical compilation.** The valuation is a tag the
-build never reads, and the advice changes no constraint, allocation or retained cell. -/
-theorem Circuits.stepBuilt_eq (C : Circuits D L) (V : Valuation Fp) (b : D.Branch)
-    (a : C.StepAdvice b) : C.stepBuilt V b a = stepCompilation C b :=
-  C.stepBuilt_advice_irrel V b a inertStepAdvice
+/-- **Every step execution compiles to the canonical compilation.** Advice changes no
+constraint, allocation or retained cell. -/
+theorem Circuits.stepBuilt_eq (C : Circuits D L) (b : D.Branch)
+    (a : C.StepAdvice b) : C.stepBuilt b a = stepCompilation C b :=
+  C.stepBuilt_advice_irrel b a inertStepAdvice
 
 /-- **Every wrap execution compiles to the canonical compilation.** -/
-theorem Circuits.wrapBuilt_eq (C : Circuits D L) (V : Valuation Fq) (a : C.WrapAdvice) :
-    C.wrapBuilt V a = wrapCompilation C :=
-  C.wrapBuilt_advice_irrel V a inertWrapAdvice
+theorem Circuits.wrapBuilt_eq (C : Circuits D L) (a : C.WrapAdvice) :
+    C.wrapBuilt a = wrapCompilation C :=
+  C.wrapBuilt_advice_irrel a inertWrapAdvice
 
 /-- A branch's compilation in hand, pinned to the canonical one. -/
 abbrev StepCompilation (C : Circuits D L) (b : D.Branch) :=
@@ -267,10 +267,10 @@ def CheckedAt.indices {C : Circuits D L} {stepData : D.Branch → IndexData Fp}
   stepPublicCount b := (checked.step b).publicCount_eq.trans (by
     simpa only [show CircuitType.size Fp Unit = 0 from rfl, Nat.zero_add] using
       length_compiledPublicVars_compileWith (a := Unit) (b := StepPublic D)
-        (C.stepCircuit (fun _ => 0) b inertStepAdvice))
+        (C.stepCircuit b inertStepAdvice))
   wrapPublicCount := checked.wrap.publicCount_eq.trans (by
     simpa only [show CircuitType.size Fq Unit = 0 from rfl, Nat.add_zero] using
       length_compiledPublicVars_compileWith (a := WrapPublic) (b := Unit)
-        (C.wrapCircuit (fun _ => 0) inertWrapAdvice))
+        (C.wrapCircuit inertWrapAdvice))
 
 end Pickles.Application

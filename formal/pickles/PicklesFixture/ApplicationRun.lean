@@ -66,12 +66,11 @@ structure CircuitRun (p : Nat) [Fact p.Prime] where
 
 private def fromRun {p : Nat} [Fact p.Prime] {a av b bv α : Type}
     [A : CircuitType (ZMod p) a av]
-    [∀ V : Valuation (ZMod p), CheckedType (ZMod p) (Builder V (KimchiConstraint (ZMod p))) a av]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a av]
     [CircuitType (ZMod p) b bv]
-    {body : (V : Valuation (ZMod p)) → av →
-      CircuitM (ZMod p) (Builder V (KimchiConstraint (ZMod p))) (bv × α)}
+    {body : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (bv × α)}
     (r : MainRun (a := a) (b := b) body)
-    (built : {built // built = compileWith (a := a) (b := b) (body r.V)}) : CircuitRun p :=
+    (built : {built // built = compileWith (a := a) (b := b) body}) : CircuitRun p :=
   match built with
   | ⟨built, h⟩ =>
     { V := r.V, constraints := built.constraints, holds := h ▸ r.holds
@@ -193,12 +192,12 @@ private def runStep {D : Shape} (A : Assembled D) (S : Setup) (branch : Nat)
   let advice ← IO.ofExcept (stepAdviceOf D.width (SlotSource.widths D.width (C.wiring.sources b))
     (C.wiring.sourceChunks b) C.wiring.backend.wrapKey.cvk proof prevs C.setup.dummySg)
   let ⟨r, built⟩ ← runMainBuilt fpSide (a := Unit)
-    (b := StepStatement (UnfVal WrapIPARounds) Fp D.width) (fun V => C.stepCircuit V b advice) ()
+    (b := StepStatement (UnfVal WrapIPARounds) Fp D.width) (C.stepCircuit b advice) ()
   -- The executed rule's values and all main advice erase from the canonical build.
-  have fixed := (A.stepBuilt_ruleAdvice_irrel S vals (fun _ => none) r.V b advice).trans
-    ((A.circuits S (fun _ => none)).stepBuilt_advice_irrel r.V b advice inertStepAdvice)
+  have fixed := (A.stepBuilt_ruleAdvice_irrel S vals (fun _ => none) b advice).trans
+    ((A.circuits S (fun _ => none)).stepBuilt_advice_irrel b advice inertStepAdvice)
   let holds : Decidable (∀ con ∈
-      ((A.circuits S (fun _ => none)).stepBuilt r.V b inertStepAdvice).constraints,
+      ((A.circuits S (fun _ => none)).stepBuilt b inertStepAdvice).constraints,
       ConstraintHolds.Holds r.V con) := congrArg Built.constraints fixed ▸ r.holds
   match holds with
   | .isFalse _ => throw (IO.userError "application step constraints do not hold")
@@ -223,9 +222,9 @@ private def runWrap {D : Shape} (A : Assembled D) (S : Setup) (pad : WrapPadding
     A.layout.wrapWidths pad S.dummy proof prevs)
   let inp ← IO.ofExcept (wrapInputOf wrapped)
   let ⟨r, built⟩ ← runMainBuilt fqSide (a := StatementPacked StepIPARounds (Type1 Fq) Fq)
-    (b := Unit) (fun V => C.wrapCircuit V advice) inp
-  have fixed := C.wrapBuilt_advice_irrel r.V advice inertWrapAdvice
-  let holds : Decidable (∀ con ∈ (C.wrapBuilt r.V inertWrapAdvice).constraints,
+    (b := Unit) (C.wrapCircuit advice) inp
+  have fixed := C.wrapBuilt_advice_irrel advice inertWrapAdvice
+  let holds : Decidable (∀ con ∈ (C.wrapBuilt inertWrapAdvice).constraints,
       ConstraintHolds.Holds r.V con) := congrArg Built.constraints fixed ▸ r.holds
   match holds with
   | .isFalse _ => throw (IO.userError "application wrap constraints do not hold")
@@ -246,7 +245,7 @@ private def checkMixed {D : Shape} (A : Assembled D) (S : Setup) : IO Unit := do
   let b : D.Branch ← if h : 1 < D.branches then pure ⟨1, h⟩
     else throw (IO.userError "the mixed-chunk example requires the recursive branch")
   let built : Built (KimchiConstraint Fp) ((_ × mixed.StepCells b) × _) :=
-    mixed.stepBuilt (fun _ => 0) b inertStepAdvice
+    mixed.stepBuilt b inertStepAdvice
   -- each slot's allocated chunk count beside the one its source declares
   let counts := (List.finRange (D.slots b)).map fun i =>
     ((built.result.1.2.slots i).evals.pub.zeta.toArray.size, mixed.wiring.sourceChunks b i)
@@ -256,7 +255,7 @@ private def checkMixed {D : Shape} (A : Assembled D) (S : Setup) : IO Unit := do
   unless (counts.map (·.2)).eraseDups.length > 1 do
     throw (IO.userError s!"the synthetic import left one chunk count on every source \
       (allocated, declared): {counts}")
-  unless built.constraints.length > (C.stepBuilt (fun _ => 0) b inertStepAdvice).constraints.length
+  unless built.constraints.length > (C.stepBuilt b inertStepAdvice).constraints.length
       do throw (IO.userError "the larger source did not enlarge the assembled step circuit")
   IO.println s!"✓ synthetic application: mixed source chunk counts {counts.map (·.2)} reach \
     the allocated step cells"

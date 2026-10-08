@@ -39,10 +39,10 @@ private def wrapAdvice (C : Circuits D L) : C.WrapAdvice :=
     AsProver.throw "advice", AsProver.throw "advice"⟩
 
 private def stepCompilation (C : Circuits D L) (b : D.Branch) :=
-  C.stepBuilt (fun _ ↦ 0) b (stepAdvice C b)
+  C.stepBuilt b (stepAdvice C b)
 
 private def wrapCompilation (C : Circuits D L) :=
-  C.wrapBuilt (fun _ ↦ 0) (wrapAdvice C)
+  C.wrapBuilt (wrapAdvice C)
 
 /-- Proposed certificate type; the checking function is phase 1, not implemented here. -/
 structure CheckedApplication (C : Circuits D L) where
@@ -65,11 +65,11 @@ def CheckedApplication.indices {C : Circuits D L} (checked : CheckedApplication 
   stepPublicCount b := (checked.step b).publicCount_eq.trans (by
     simpa only [show CircuitType.size Fp Unit = 0 from rfl, Nat.zero_add] using
       length_compiledPublicVars_compileWith (a := Unit) (b := StepPublic D)
-        (C.stepCircuit (fun _ ↦ 0) b (stepAdvice C b)))
+        (C.stepCircuit b (stepAdvice C b)))
   wrapPublicCount := checked.wrap.publicCount_eq.trans (by
     simpa only [show CircuitType.size Fq Unit = 0 from rfl, Nat.add_zero] using
       length_compiledPublicVars_compileWith (a := WrapPublic) (b := Unit)
-        (C.wrapCircuit (fun _ ↦ 0) (wrapAdvice C)))
+        (C.wrapCircuit (wrapAdvice C)))
 
 private def satisfies {F : Type} [Field F] [DecidableEq F] {n : Nat}
     (idx : Kimchi.Index F n) (pub : Fin idx.publicCount → F)
