@@ -21,6 +21,11 @@ from exported rules and shape, once their emitted constraint systems are certifi
 equivalent to the original application's. The trace is internal Lean compiler data.
 It does not require a new PureScript export, fixture schema, or proof format.
 
+The agreed whole-compiler interface is **checked compilation** (section 11): validate
+admissibility on the reconstructed application's source constraint list and retain its
+proof with the compilation result. The public lifting theorem then has no separate unwired
+hypothesis. This does not claim that every unrestricted `CircuitM` program passes validation.
+
 This phase deliberately stops before the entire compiler theorem. It must deliver:
 
 1. A recorded lowering with a proved erasure relationship to the existing lowering.
@@ -559,17 +564,22 @@ add `Realizes` or source satisfaction to its assumptions.
 
 ## 9. What remains
 
-The general compiler theorem still needs:
+After phase 5's gate coverage, the whole-compiler work is:
 
-- a suitable treatment of repeated operands outside permutation columns, which both fragments
-  exclude by `unwiredOnce`;
-- EndoScalar and the multirow gates;
-- Poseidon MDS and EndoMul endomorphism-parameter agreement with the index;
-- whole-source-list and full index-construction correctness;
-- integration with `compileWith` and its public input/output layout, with an admissibility
-  predicate extending `Wired.Scoped`, which still excludes the remaining custom gates, decided
-  per application;
-- certified cross-language constraint-system correspondence and application imports.
+- a proved admissibility checker over the completed source constraints and public variables;
+  retain `unwiredOnce`, rejecting repeated unwired operands rather than changing the index;
+- full index-construction correspondence, including source/index parameter agreement;
+- integration with `compile`/`compileWith` and their public input/output layout, returning a
+  checked compilation whose certificate discharges the general lifting theorem's premises;
+- certified cross-language constraint-system correspondence and its application to imports.
+
+Section 11 specifies this boundary and the imported-application argument. Universal
+admissibility proofs for gadget composition are not a prerequisite for this plan.
+
+After the checked-compilation wrapper, the order is: the proof-module separation of section 12,
+then the typed public-input bridge, then certified imported-index correspondence and the
+reconstructed-application theorem. New consumers are built against the isolated interface,
+not against internals that section 12 hides.
 
 The trace solves provenance and organizes these proofs. It cannot supply equality
 that the emitted constraints do not enforce. In particular, the fragment's locality
@@ -614,3 +624,551 @@ through its class view.
   for every equation a reducer queues; a cache hit's constant is recovered from its pin's
   receipt before any event is discharged; each constraint then holds by
   `basic_of_reductionFacts` or by the addition's row read cell by cell.
+
+Phase 5 completed the gate coverage under the same theorem statement. Every constructor is
+now in `Wired`: the challenge decomposition, the scalar multiplication, the endomorphism
+multiplication, the Poseidon block and the padding row joined the addition. The remaining
+admissibility conditions are bare-or-empty cells in the unwired columns, `unwiredOnce`, and
+the Poseidon block shape `state.length % 5 = 1`. Each gate supplies a `Placed` proof against
+`KimchiConstraint.rowOperands`, an absent-coefficient proof and a reading of its rows. The
+scalar multiplication, the endomorphism multiplication and the Poseidon block read their
+successor row inside the block; `IndexOf.params` supplies the endomorphism coefficient and
+the MDS matrix, `IndexOf.coeffs_eq` the round constants. `WiredChecks.lean` decides lowerings
+of each gate with their rejections.
+
+## 11. Phase 6: checked compilation and imported applications
+
+### The boundary to validate
+
+There are two compilation stages:
+
+```text
+CircuitM program reconstructed from shape + rules + environment/backend artifacts
+  → compile / compileWith
+  → source constraint list + allocation counter + public variable layout
+  → affine reduction, equality processing, generic packing, gate expansion, wiring
+  → Kimchi rows / index
+```
+
+The final backend artifact is the rows/index. The source list is the intermediate
+`List (KimchiConstraint F)`, containing structured constraints such as `.basic`,
+`.addComplete`, and `.endoMul`, still with affine operands. Validate this completed list,
+including input checks and the constraints binding the public outputs, not just the circuit
+body or the imported rules. Derive the public variable list from the existing compilation
+layout, in its actual order.
+
+Successful validation proves `KimchiConstraint.Wired.Scoped nv source publicVars` (with the
+gate coverage completed in phase 5). Keep that predicate and the general
+`Wired.holds_of_satisfies` theorem as the semantic foundation. Do not weaken uniqueness,
+add copy wires, change gate layouts, or alter the public interface to obtain acceptance.
+
+The checker should use two passes:
+
+1. Count occurrences using exactly the source `termVars` and public-variable occurrences
+   that `Wired.Scoped` uses. Include wired operands, affine terms, repeated appearances
+   within a constraint, and public variables. Check the allocation bound as well.
+2. Check that each constructor is admitted and each operand placed in an unwired column is
+   a bare `.var v` (empty cells are allowed). Require the total occurrence count of each
+   such `v` to be one. This detects reuse both before and after the unwired occurrence.
+
+An efficient count map may replace repeated list scans, but its result must be proved
+equivalent to the existing predicate. Preserve that predicate's affine-normalization and
+operand-occurrence conventions; an independently chosen syntactic count is not the contract.
+Report the offending constraint/operand/variable on rejection where practical.
+
+Proposed signatures, with names provisional and proofs omitted:
+
+```lean
+def checkScoped (nv : Variable) (source : List (KimchiConstraint F))
+    (publicVars : List Variable) : Bool
+
+theorem checkScoped_eq_true_iff :
+    checkScoped nv source publicVars = true ↔
+      KimchiConstraint.Wired.Scoped nv source publicVars
+```
+
+A successful external executable run alone is not a formal certificate. For a concrete
+import, the success fact must be established in Lean and fed through the checker theorem.
+Use the project's kernel-checked decision/certificate path; do not introduce a new trusted
+`native_decide` or an axiom equating an external check with a proof.
+
+### Package the evidence; keep the general theorem
+
+The following proposed backend certificate makes the intended contract explicit. It is
+indexed by the source list, public variables and counter so it cannot silently certify a
+different compilation. Assume the existing field instances, `open Kimchi`, and `[NeZero n]`:
+
+```lean
+structure CheckedIndex (source : List (KimchiConstraint F))
+    (publicVars : List Variable) (nv n : Nat) where
+  index : Kimchi.Index F n
+  admissible : KimchiConstraint.Wired.Scoped nv source publicVars
+  corresponds : IndexOf source publicVars nv index
+
+theorem CheckedIndex.lift
+    (c : CheckedIndex source publicVars nv n)
+    (pub : Fin c.index.publicCount → F)
+    (table : Fin n → Fin wCols → F)
+    (hsat : c.index.Satisfies pub table) :
+    ∃ V : Valuation F,
+      (∀ con ∈ source, KimchiConstraint.Holds V con) ∧
+      ∀ i : Fin publicVars.length,
+        V publicVars[i] = pub (c.corresponds.publicIndex i)
+```
+
+The wrapper follows from the existing general lifting theorem. The substantive work is
+constructing this certificate from ordinary compilation: derive `IndexOf` from the actual
+index builder, including bounds, wiring, public count and parameter agreement; obtain
+`admissible` from validation. Preserve the existing compiler's output exactly on success.
+The checked entry point may reject a compilation but must not repair its constraints.
+
+The whole-circuit wrapper ties `source`, `nv` and `publicVars` to `compile` or `compileWith`
+of the supplied circuit. Interpreting the public equalities through their encodings is the
+typed public-input bridge, which follows the isolation of section 12. Keep
+`compileWith`'s returned internal cells available for the Pickles capstones. Callers should
+not supply either `Wired.Scoped` or `IndexOf` manually. Public-input length is enforced by
+the index-typed input, with any external list-to-vector conversion checked at the boundary.
+
+This proves lifting for every **successfully checked compilation**, not that all programs
+pass the checker. Proving private allocation/non-escape contracts for sealed gadgets and
+composing them into universal admissibility is optional later work. It is not part of
+phase 6 and requires no change to existing gadget APIs or their irreducibility discipline.
+
+### Transfer to the source-language application
+
+Use the same reconstruction and Lean compilation that generate the comparison artifact:
+
+```text
+exported shape + rule replay + shared environment/resolved backend artifacts
+  → reconstructed Lean application
+  → checked Lean compilation: admissibility proof + corresponding Lean index
+
+source-language CS dump ↔ certified comparison ↔ Lean index
+
+source-language index satisfies pub, table
+  → Lean index satisfies the same pub, table
+  → Lean source valuation satisfying the compiled constraints and public inputs
+  → applicable Pickles capstones
+```
+
+There is no separate unwired-property check on the source-language CS dump. Admissibility
+is certified on the intermediate constraints of the Lean reconstruction. The independent
+source-language dump is compared to the output derived from that same Lean compilation.
+
+Certify the comparison's connection to satisfaction: matching results imply equal
+satisfaction predicates for the same public input and witness table. Check gate types,
+coefficients, copy wiring, public-input layout, domain dimensions and every other parameter
+read by `Index.Satisfies`, including MDS and `endoBase`. Actual equality of the relevant
+index data suffices by rewriting; otherwise prove the comparison sound for these predicates.
+An executable comparator reporting success without this theorem is still only a fixture
+check. Existing variable-occupancy checks may remain as additional fidelity checks.
+
+Source variable IDs may differ under consistent renaming. Those IDs are not table
+coordinates: with the same row/column positions and copy wiring, no witness transformation
+is needed. Row/column permutations and the machinery for transporting witnesses across
+them are outside this plan. Any serialization normalization must preserve the compared
+index data and the public input order.
+
+This transfer retains the Pickles theorems' other hypotheses and collision/failure
+alternatives. It establishes the recursive framework's guarantees for the imported circuit,
+not the application's business semantics, correctness of its `mustVerify` choices, or
+cryptographic soundness of Kimchi/IPA. It is relative to the exported artifacts and their
+connection to the source implementation.
+
+### Implementation order and acceptance checks
+
+1. Implement and prove the checker. Reuse the existing positive and rejection examples;
+   explicitly cover unwired reuse earlier and later in the list, reuse in public inputs,
+   affine/non-bare unwired operands, and out-of-range variables.
+2. Validate representative reconstructed applications early, before the full compiler
+   wrapper is complete, to test the admissibility boundary.
+   A rejection identifies a real unsupported layout or an overly restrictive predicate to
+   investigate; do not assume acceptance merely because the gadgets allocate fresh witnesses.
+3. Prove actual index-builder correspondence and assemble the checked compilation wrapper.
+   A consumer example must invoke lifting with no explicit admissibility or `IndexOf`
+   argument; its index must be the unchanged ordinary compilation output.
+4. Isolate the backend proof machinery and stabilize the public checked-compilation
+   interface (section 12).
+5. Add the typed public-input bridge: read the ordered public variables through the input
+   and output encodings of `compile`/`compileWith`, in the generic compilation layer.
+6. Certify CS comparison and apply the wrapper to a reconstructed fixture. Transfer matrix
+   satisfaction with the same table/public inputs and invoke the applicable capstones
+   directly. Rejected comparisons must not produce a correspondence certificate.
+
+The comparison/application integration follows the isolated interface and the typed bridge;
+it need not be bundled into the same commit. Keep checks targeted to selected applications,
+never `LINKS=all`.
+
+## 12. Isolate the compiler proof machinery
+
+This was the implementation strategy; section 12.8 records the tree it produced. Start after
+phase 6's checked-compilation wrapper and its `compile`/`compileWith` consumer checks are
+complete. It precedes the typed public-input readings and the imported-application theorems:
+those are consumers of the backend interface, built against its isolated form.
+
+After the gate coverage and whole-compiler theorem stabilize, separate their bespoke proof
+support from the executable compiler. Consumers should use the final theorem and its stated
+premises without depending on how its proof was constructed. This phase changes module
+organization and visibility, not the emitted index or the theorem's semantic contract.
+
+The dependency direction is:
+
+```text
+compiler implementation ← internal proof support ← public soundness interface ← consumers
+                         (arrows mean imports)
+```
+
+The executable compiler must not import the proof-support tree. Keep executable constraint
+types, reducers, assembly and union-find operations in their implementation modules. Move
+proof-only additions there into the proof tree: union-find invariants and lemmas, operand
+layouts, absent-cell predicates and equality-outcome lemmas, where they have no implementation
+consumer. Keep any executable helper genuinely shared with production in the implementation.
+
+Place the recording interpreter, event readings, receipts, placement/provenance arguments,
+valuation recovery and per-gate correspondence in internal proof modules. Recording remains
+a sidecar that runs the existing reducers and is connected to them by erasure theorems;
+ordinary compilation need not generate a trace or carry proof certificates. The checked
+wrapper of section 11 imports the implementation and the proof layer and retains its
+certificate; the underlying compiler has no reverse dependency on that wrapper. Layout
+helpers used by the executable admissibility checker must be shared without introducing
+a dependency from executable code to the proof tree.
+
+Use maximal privacy: a binding stays private until another proof module needs it. Definitions
+shared across proof modules belong to an internal namespace, not the supported consumer API.
+Keep decided examples and rejection checks in separate check modules. A small public module
+exposes the final matrix-to-valuation theorem, the definitions needed to understand its
+premises and conclusion, and the interfaces needed to discharge those premises. Substantive
+admissibility restrictions remain explicit in the checked-compilation contract and rejection
+conditions, rather than a separate premise callers must prove. The general lifting lemma
+retains its explicit premises. Internal receipts, traces and recovery choices must not
+become caller obligations.
+
+Proof irrelevance permits consumers to use the theorem without inspecting its proof. The
+trace and layouts are data, so their isolation comes from module organization and API
+discipline rather than proof irrelevance. Lean imports are transitive: an internal namespace
+is not a claim that shared support declarations are inaccessible to a determined consumer.
+
+Completion checks:
+
+- Compiler implementation modules build without importing the proof-support tree.
+- A consumer imports only the public soundness module and applies the final theorem without
+  naming internal proof machinery.
+- Executable lowering and its index are unchanged; retain the erasure/correspondence proofs.
+- The theorem's semantic assumptions and public-input conclusion are unchanged.
+- Update imports, audit roots and checks after the moves; builds, axiom audits and the
+  existing decided examples and rejection checks pass.
+
+### 12.1. Freeze the result before moving its proof
+
+The semantic contract to preserve is lifting for a successfully checked compilation, with
+the same public inputs. It is not unconditional success of compilation, cryptographic
+soundness, or application-rule correctness. Preserve the source counter, source constraints,
+ordered public-variable list, rejection conditions, and the exact constructed index.
+
+The checked wrapper is complete: `CheckedIndex`, `CheckedIndex.check?`, `checkBuilt?`,
+`checkBuilt?_index` and `CheckedIndex.lift` in `Backend/CheckedCompile`, with decided
+acceptances, exact rejections and the `compile`/`compileWith` lifts in
+`Backend/CheckedCompileChecks`. The import inventory below matches the tree with the wrapper
+in place.
+
+The public-interface consumer, `Backend/Checks/CheckedCompileConsumer`, imports
+`Snarky.Kimchi.Backend.CheckedCompile` and the DSL gadgets only. It:
+
+1. Compiles a small DSL circuit once with `compile` and states its lifting, through `lift`,
+   from a checked index of that compilation and a table satisfying it.
+2. Does the same with `compileWith`, retaining one internal cell without publishing it.
+3. States the public-input conclusion without naming `IndexOf`, `Wired.Scoped`, a trace,
+   an event, a receipt, a recovered-valuation definition, or a union-find invariant. The
+   public input is read in the order of the public variables, through
+   `CheckedIndex.publicCount_eq` and `CheckedIndex.publicIndex`.
+
+The consumer does not establish that its circuit passes the check or that a table satisfies
+the index. Deciding either in the kernel uses internal support: the class-based wiring, since
+the assembly's hash map does not reduce, and the lowering's rows to fill a table. The concrete
+checks supply both. They obtain each checked index from `checkBuilt?`, decide the prover's
+table against it, and apply the consumer's theorems; the `compileWith` check also fixes the
+retained cell and the public layout. The consumer tests that the public interface suffices,
+and the checks certify a concrete instance of it.
+
+This consumer is the acceptance test for the public API. Keep the existing mathematical
+theorems internally; callers should not have to learn their intermediate representations.
+
+### 12.2. Proposed supported interface
+
+Retain the names established by the wrapper unless a demonstrated consumer problem requires
+a change. The intended surface is the following; ambient instances and detailed parameter
+binders are omitted in these signatures:
+
+```lean
+-- Existing compilation layout, shared with ordinary compilation and fixture consumers.
+def compiledPublicVars (built : Built c (β × bvar)) : List Variable
+
+-- A checked result, indexed by the exact source, public variables, counter and domain.
+-- Its internal certificate need not be a supported construction API.
+CheckedIndex source publicVars nv n
+
+-- The ordinary index and the public-position map are the consumer's accessors.
+CheckedIndex.index : CheckedIndex source publicVars nv n → Index F n
+
+def CheckedIndex.publicIndex (c : CheckedIndex source publicVars nv n) :
+    Fin publicVars.length → Fin c.index.publicCount
+
+theorem CheckedIndex.publicCount_eq (c : CheckedIndex source publicVars nv n) :
+    c.index.publicCount = publicVars.length
+
+-- Keep the wrapper's diagnostic type and checked entry points.
+CheckFailure
+CheckedIndex.check?
+checkBuilt?
+
+theorem CheckedIndex.lift [NeZero n]
+    (c : CheckedIndex source publicVars nv n)
+    (pub : Fin c.index.publicCount → F)
+    (table : Fin n → Fin wCols → F)
+    (hsat : c.index.Satisfies pub table) :
+    ∃ V : Valuation F,
+      (∀ con ∈ source, KimchiConstraint.Holds V con) ∧
+      ∀ i : Fin publicVars.length, V publicVars[i] = pub (c.publicIndex i)
+```
+
+The current proposed statement uses `c.corresponds.publicIndex`. Replace that spelling by
+the definitionally equal `c.publicIndex` accessor: otherwise the public theorem itself
+exposes `IndexOf`. This is an interface change with the same semantic conclusion, not a new
+public-input theorem. Keep a natural-number projection lemma for `publicIndex` if the
+consumer needs to eliminate the transport. Do not add a family of unused accessors.
+
+Keep `checkBuilt?_index` and the wrapper's successful-check characterization available where
+the ordinary-compilation or certificate consumers use them. If their signatures expose
+`compiledIndex?` or `indexOfGates?`, those functions are supporting API for those consumers;
+do not claim to hide them while referring to them in a public theorem. They may remain in
+their own opt-in adapter module rather than being advertised as everyday entry points.
+
+Keep `ScopedFailure` available through `CheckFailure.scope`, including existing printable
+diagnostics. The runtime checker is an intentional feature, not disposable proof scaffolding.
+Conversely, users should not construct `CheckedIndex` by manually supplying its admissibility
+and correspondence fields. Document those as internal certificate fields initially.
+
+Do not introduce an opaque wrapper, existential certificate, new typeclass, or second copy
+of the certificate merely to hide field names. Module organization and the accessor above
+are sufficient for this phase. Lean's transitive imports still expose declarations used by
+the implementation; a small supported API is not a claim of strict access control.
+
+### 12.3. Separate definitions before moving large proofs
+
+The current imports show the main obstacles:
+
+```text
+ScopedCheck   imports Wired
+CompiledIndex imports Direct
+Direct        imports Receipts and Wiring
+Receipts      imports TraceSemantics and RowCorrespondence
+Constraint.Types imports UnionFind, including its proof development
+```
+
+Moving `Wired.lean` into a directory called `Internal` alone does not solve these dependencies.
+Extract the small definitions the checkers need before relocating the large proof modules.
+The proposed file allocation is below; paths are relative to `Snarky/Kimchi/` and may be
+adjusted to the completed wrapper without changing the dependency rules.
+
+| Destination | Contents | Must not depend on |
+| --- | --- | --- |
+| Existing `Constraint/*`, `Backend/Assemble`, `Backend/Compile` | Production constraint data, reducers, interpreters, assembly, compilation and public-variable layout | The trace or lifting proof tree, checked wrapper, fixture modules |
+| `Backend/Admissibility` | Checker-used operand layouts, occurrence definitions, `Wired`/`Scoped`, parameter agreement where appropriate, and their decidability support | Recording, receipts, valuation recovery, gate-reading proofs |
+| `Backend/IndexSpec` | `directGates`, `IndexOf`, public-count transport; ordinary compilation dependencies only | Direct-fragment provenance, receipts, wiring proofs |
+| `Backend/ScopedCheck` | The executable checker, diagnostics, and its reflection theorem | The general lifting theorem or traces |
+| `Backend/CompiledIndex` | Gate conversion, array lookup, index construction and `compiledIndex?_indexOf` | Trace, receipts or direct-fragment soundness |
+| `Backend/Internal/*` | Recording, erasure, event semantics, receipts, wiring proofs, provenance and valuation recovery; the general lifting theorem | Public `CheckedCompile` facade or fixture consumers |
+| `Backend/CheckedCompile` | Checked-result packaging, checking entry points, public accessors and `lift` | Any checks/examples module |
+| `Backend/Checks/*` | Decided examples, negative controls, shared fixture data and public-interface consumer | No production module may import this tree |
+
+`Admissibility` and `IndexSpec` are shared definitions, not new supported application APIs.
+Preserve existing declaration names initially to keep file moves mechanically reviewable.
+The historical name `directGates` can remain during this refactor; renaming it is not needed
+to establish the dependency boundary.
+
+The desired imports, expressed as permitted dependency directions, are:
+
+```text
+implementation                     → existing DSL/constraint semantics and Kimchi types
+admissibility + index specification → implementation
+checker + index adapter            → shared definitions and implementation
+internal lifting proofs            → shared definitions and implementation
+CheckedCompile                     → checker, index adapter, internal lifting theorem
+Pickles/application consumers       → CheckedCompile and ordinary application dependencies
+checks                             → whichever public or internal module they exercise
+```
+
+The facade necessarily imports the proof of `lift`. Its consumers will therefore load that
+proof's transitive dependencies. The goal is to keep the ordinary compiler independent of
+them and to keep consumer statements independent of proof construction, not to promise a
+small import closure for the theorem itself.
+
+### 12.4. Declaration-by-declaration guidance
+
+- **Operand layouts and occurrences.** `rowOperands`, `placedOperands`, `termVars`, and
+  `unwiredVars` are executable data used by admissibility, despite having originated in a
+  proof. Move their checker-required closure out of `TraceSemantics`; leave `Placed`,
+  `CellOf`, placement lemmas, and reducer reading proofs in the proof tree. Check actual
+  references before moving helpers from `Semantics` or individual constraint modules.
+  Preserve all occurrence conventions, including Poseidon chunking and the omitted
+  EndoMul fields. Do not rewrite those definitions during a file move.
+- **The direct fragment.** Split `Direct.lean` so that `IndexOf` and gate definitions can
+  be imported without the original restricted lifting proof. Keep its examples and theorem
+  as regression coverage, but internalize them; do not delete a proof merely because the
+  larger wired theorem subsumes its statement.
+- **Union-find.** Keep the executable structure and `empty`, `find`, `union`, `rootOf` on
+  the implementation side. Move `Inv`, `Same`, and their proof-only closure into an internal
+  proof module. The current proofs unfold file-private `ensure` and `rootLoop`: private
+  declarations cannot simply be referenced from the new file. Move these executable helpers
+  into an implementation-detail namespace with the minimal cross-file visibility needed, or
+  retain a minimal local implementation equation. Do not duplicate their algorithms or expose
+  every helper as supported API. Move proof-only Mathlib imports with the proofs.
+- **Equality reduction.** Classify the completed step-4 code, not an earlier revision:
+  `EqualOutcome` and `outcomeOf` may be shared executable machinery if the builder uses them.
+  Keep that shared machinery below the proof layer. Move outcome correctness lemmas and
+  event interpretations upward. Never introduce a second runtime equality reducer to make
+  the module split convenient.
+- **Rows and gates.** `AbsentZero` and cell-list helpers belong with their real consumers.
+  A layout helper consumed by the checker belongs in shared executable support; one used
+  only to read a gate in the lifting proof belongs internally. Small pure definitions need
+  not be moved out of an implementation file if production already uses them.
+- **Wiring and class-based evaluation.** Keep `wireMap`/`wireTarget` in assembly. Move the
+  class characterization, cycle proofs and `classGates` evaluation alternative to internal
+  support. The `directGates_eq_classGates` theorem should be imported by kernel checks,
+  not by the production index constructor. Retain a single gate-table/index implementation.
+- **Semantic contracts.** Do not move `KimchiConstraint.Holds`, existing gate semantics,
+  or the DSL's established correctness interfaces into a bespoke compiler-proof namespace.
+  They are the meaning of the public conclusion and have independent consumers.
+- **Compiler-facing helpers.** Some reducers were exposed for the recording proofs.
+  Cross-file proof consumers still need access. Use internal naming/documentation for those
+  definitions rather than marking them private and then recreating them in the proof tree.
+  Maintain the existing gadget irreducibility discipline.
+
+### 12.5. Commit sequence and stop conditions
+
+**A. Baseline and public consumer.** Finish step 4 first. Inventory imports and references
+with `rg`, record the public theorem statement and its axiom closure, and add the facade-only
+consumer described above. Add `CheckedIndex.publicIndex` if needed. No large file moves yet.
+Acceptance: the consumer compiles without intermediate-proof names in its source.
+
+**B. Extract shared definitions.** Move the minimal admissibility definitions and structural
+index specification out of `Wired`, `TraceSemantics`, and `Direct`. Retain names and bodies.
+Rewire `ScopedCheck` and `CompiledIndex` to import them. Move the class-based testing adapter
+out of the executable constructor module. Acceptance: neither checker nor index adapter
+imports the general lifting proof, traces, or receipts, directly or transitively.
+
+**C. Separate implementation-local proofs.** Split union-find and other proof-only additions
+to implementation modules, using the minimal visibility adjustments described above. This
+is the delicate step because private names, unfolding equations, and imports change.
+Acceptance: ordinary constraint reduction and compilation build without the new proof tree;
+all moved lemmas retain their statements. Review any change beyond visibility/imports
+separately, rather than disguising it as a move.
+
+**D. Relocate the sidecar proof tree.** Move Trace, RowCorrespondence, TraceSemantics, Receipts,
+Wiring, Direct and Wired into `Backend/Internal/`, after the shared-definition extraction.
+Keep existing declaration names in this commit. Move examples and fixture data into the
+checks tree, updating their imports. Do not combine this with splitting every large proof
+file into per-gate files or golfing proofs. Acceptance: the facade and both consumer examples
+still compile, as do all existing internal decided checks.
+
+**E. Tighten visibility.** Find consumers of each non-private helper outside its defining
+file, and make file-local helpers private. Shared proof declarations keep their names: no
+namespace migration. The `Backend/Internal` tree, the facade's documented interface and the
+import-boundary gate already mark the boundary, and renaming the roughly 190 shared and
+audit-rooted declarations would add little protection. A helper occurring in a public
+proposition's body stays public where consumers need to name it while using that proposition;
+it need not be made private for maximal privacy alone. Retain public names only for the
+supported interface, existing semantic APIs, or documented implementation dependencies.
+
+**F. Validate and document.** Run the focused and final gates below, record the final public
+surface and module map, and link the facade consumer as the usage example. Old import-path
+shim modules are temporary migration aids only: remove them once in-repo consumers migrate,
+unless an identified external consumer requires a compatibility period. Do not import shims
+from ordinary compiler modules.
+
+Stop and report if a split would require weakening a theorem, adding a semantic assumption,
+changing scope acceptance, changing index data, duplicating an algorithm, or increasing the
+heartbeat/memory limits to keep a move compiling. Resolve an import cycle by extracting the
+shared definition lower in the graph, not by making implementation import the proof facade.
+
+### 12.6. Validation and performance safeguards
+
+For each commit, build explicit changed-module targets from `formal/`, then the affected
+consumers. Do not use bare workspace `lake build` as evidence of coverage. Run the full
+`Snarky` target and affected Pickles/fixture targets at the final checkpoint. Inspect the
+current Lake configuration and gate commands rather than assuming paths survived the moves.
+
+Update `snarky/roots.txt`, `snarky/scripts/check_axioms.lean`, the comment and dead-code driver
+imports, and `scripts/noshake.json` entries where affected. Keep the capstone and public
+consumer rooted. Existing internal regression theorems remain check/audit roots; a declaration
+being an audit root does not make it supported API. Do not root every unused helper to silence
+dead-code reports, or shrink the audit to conceal an altered dependency.
+
+The final validation has five parts:
+
+1. **Semantics:** the same lifting conclusion, checker equivalence, index correspondence,
+   emitted-row and padding properties, and all positive/negative kernel checks pass. The
+   public consumer applies `lift` with no manually supplied `Scoped` or `IndexOf` proof.
+2. **Dependencies:** check transitive imports, not just source import lines. Starting at
+   ordinary `Backend.Compile`, no new internal lifting-proof or checks module is reachable.
+   Starting at the checker/index adapter, no trace or general lifting theorem is reachable.
+   The facade imports proofs; this is expected. `scripts/check-import-boundaries.sh`
+   (`make lean-import-boundaries`, run in CI) asserts these from the import lines.
+3. **Trust and hygiene:** axiom audit, style, comments, dead-code and import checks pass.
+   Preserve existing standard-axiom closures; introduce no `sorry`, trusted evaluation,
+   assumption standing in for a move, or new blanket linter exclusions.
+4. **Runtime:** preserve `arrayTable`'s `@[noinline]` boundary and finished-array capture,
+   tail-recursive array accumulation, and the scope check's bounds-before-bitset behavior.
+   Preserve scope-before-index rejection order and compile the source once. Use a bounded
+   native adapter probe above the old stack-overflow size, with repeated table reads, to
+   detect loss of those runtime properties. Runtime erasure alone is not a performance proof.
+5. **Fixtures:** do not repeat all 40 application reconstructions for a proof-only file move.
+   If an executable definition or compilation path changes, use a targeted existing CS
+   comparison and a representative constructor smoke test. Keep broader runs justified by
+   an actual unresolved risk; no `LINKS=all`. Record the existing 40/40 scope and index runs
+   as prior executable evidence, not as kernel certificates newly supplied by this refactor.
+
+Kernel checks have substantial import memory overhead. Run expensive checks one process at
+a time under the agreed limits, and keep small decisions separate when needed. Do not turn
+this refactor into another application-scale kernel-evaluation experiment.
+
+### 12.7. What this phase deliberately leaves to consumers
+
+The backend ends at a source-satisfying valuation and equality at the ordered public variables.
+Typed input/output readings belong with the generic Snarky compilation/encoding layer.
+Reconstructing Pickles applications, applying application capstones, and certifying equality
+of imported step/wrap indices belong to the Pickles application/import layer. Do not import
+those layers back into `CheckedCompile` to make its result look application-specific.
+
+Proof irrelevance does not make trace data disappear from the Lean environment, and private
+names do not eliminate transitive imports. The deliverable is a stable, small consumer
+contract and an implementation independent of bespoke lifting proofs. The proofs remain
+kernel-checked in their own modules, available for maintenance without becoming caller
+obligations.
+
+### 12.8. The isolated tree
+
+Paths are relative to `snarky/Snarky/Kimchi/`.
+
+| Modules | Contents | Reaches no |
+| --- | --- | --- |
+| `Constraint/*`, `UnionFind`, `Backend/Assemble`, `Backend/Compile` | Constraint data, reducers, union-find operations, assembly, kimchi compilation (the public layout `compiledPublicVars` is in the generic `Snarky/Compile`) | internal or check module |
+| `Backend/Admissibility` | Operand layouts, `occurrences`, `KimchiConstraint.Wired`, `Wired.Scoped` | internal or check module |
+| `Backend/IndexSpec` | `directBuilt`, `directGates`, `ParamsAgree`, `IndexOf` | internal or check module |
+| `Backend/ScopedCheck`, `Backend/CompiledIndex` | The scope checker and the index constructor with their reflection theorems | internal or check module |
+| `Backend/Internal/*` | The union-find's class view, the builder's transitions and equality decision, recording, readings, receipts, wiring proofs, the direct and wired lifting theorems | check module |
+| `Backend/CheckedCompile` | The facade | check module |
+| `Backend/Checks/*` | Decided checks and rejections, fixture data, the witness table, the facade-only consumer | — |
+
+The supported interface is the section of that name in the facade's module docstring;
+`CheckedConsumer.compile_lifts` and `CheckedConsumer.compileWith_lifts` are the usage
+example. Executable helpers made visible for proofs in other modules, each documented at its
+definition: `UnionFind.ensure`, `UnionFind.rootLoop`, `handleGateBatching`, `addGenericB`,
+`addEqualsB`, `bareCell` and `directBuilt`. No import-path shims were introduced.
+
+At completion the build, axiom audit, comments, dead code, shake, lint, import boundaries and
+every decided check and rejection pass, and the CS comparison matches all 97 circuits. A
+native probe of the gate-table adapter, interpreted, builds and reads every row twice at
+`2^14` to `2^17` rows in time linear in the rows and without stack overflow. The 40/40
+application scope and index runs remain the executable evidence for the applications; this
+refactor supplies no new kernel certificate for them.

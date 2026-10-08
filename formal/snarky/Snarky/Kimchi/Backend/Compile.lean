@@ -8,7 +8,7 @@ import Snarky.Kimchi.Semantics
 The base `compileBody` program is backend-generic (it speaks `BasicSystem`), so the
 kimchi entry points run the reduction as a POST-PASS over what the base `compile`
 and `solve` produce, rather than through a per-constraint hook inside the
-interpreters: `kimchiCompile` folds the builder's reduction over the compiled
+interpreters: `reduceBuilt` folds the builder's reduction over the compiled
 constraint list, `reduceSolved` folds the prover's reduction over the same list from
 the table a base solve returned, and `kimchiGateData` carries a compiled circuit
 through row dispatch and the CS assembly — the full pure pipeline the CS-equality
@@ -58,7 +58,7 @@ def reduceGates [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [Decida
     (step.1 ++ rest.1, rest.2.1, rest.2.2)
 
 /-- Fold the prover's reduction over the same list, filling the internal variables. -/
-def reduceTable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F] :
+private def reduceTable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F] :
     List (KimchiConstraint F) → ProverReductionState F →
       Except EvalError (ProverReductionState F)
   | [], s => .ok s
@@ -76,12 +76,6 @@ def reduceBuilt [Field F] [DecidableEq F] {α : Type} (built : Built (KimchiCons
   let flush := (finalizeGateQueue red.2.2.queuedGenericGate).map KimchiGate.plonk
   ⟨built.result, red.1 ++ flush.toList, red.2.1, { red.2.2 with queuedGenericGate := none }⟩
 
-/-- Compile a circuit at the kimchi backend: the base compilation, reduced. -/
-def kimchiCompile [Field F] [DecidableEq F] [CircuitType F a avar]
-    [CheckedType F (KimchiConstraint F) a avar] [CircuitType F b bvar]
-    (main : avar → CircuitM F (KimchiConstraint F) bvar) : KimchiBuilt F (bvar × bvar) :=
-  reduceBuilt (compile (a := a) (b := b) main)
-
 /-- A built circuit's table completed by the prover's reduction: the internal variables
 the gates introduced, from the build's counter. -/
 def reduceSolved [Field F] [DecidableEq F] {α : Type} (built : Built (KimchiConstraint F) α)
@@ -89,15 +83,6 @@ def reduceSolved [Field F] [DecidableEq F] {α : Type} (built : Built (KimchiCon
   match reduceTable built.constraints ⟨built.nextVar, env⟩ with
   | .error e => .error e
   | .ok s => .ok s.assignments
-
-/-- The variables backing a bundle of plain variables — the witnessed public output
-slots, whose ids the assembly needs but whose numbering it does not care about. -/
-def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar) :
-    List Variable :=
-  (CircuitType.varToFields (val := b) v).toList.filterMap fun (cv : CVar F) =>
-    match cv with
-    | CVar.var w => some w
-    | _ => none
 
 /-- The rows and the assembled gate table of a reduced circuit at given public variables:
 the gates dispatched to rows, the wiring assembled over the reduction's union-find. -/
@@ -119,7 +104,7 @@ def kimchiGateData [Field F] [DecidableEq F] [A : CircuitType F a avar]
     [CheckedType F (KimchiConstraint F) a avar] [B : CircuitType F b bvar]
     (main : avar → CircuitM F (KimchiConstraint F) bvar) :
     List (KimchiRow F) × List (AssembledGate F) × List Variable :=
-  let built := kimchiCompile (a := a) (b := b) main
-  gateDataOf built ((allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2)
+  let built := compile (a := a) (b := b) main
+  gateDataOf (reduceBuilt built) (compiledPublicVars (F := F) (a := a) (b := b) built)
 
 end Snarky.Kimchi

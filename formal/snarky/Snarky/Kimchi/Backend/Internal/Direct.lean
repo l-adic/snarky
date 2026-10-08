@@ -1,6 +1,6 @@
-import Snarky.Kimchi.Backend.Compile
-import Snarky.Kimchi.Backend.Receipts
-import Snarky.Kimchi.Backend.Wiring
+import Snarky.Kimchi.Backend.IndexSpec
+import Snarky.Kimchi.Backend.Internal.Receipts
+import Snarky.Kimchi.Backend.Internal.Wiring
 import Kimchi.Index.Basic
 import Kimchi.Index.Satisfies
 import Kimchi.Columns
@@ -20,25 +20,27 @@ and the public rows.
 - `KimchiConstraint.Direct`: membership in the fragment.
 - `KimchiConstraint.Direct.Scoped`: the scoping condition on a source list and its public
   variables: every constraint direct, and every operand of an unwired column occurring once.
-- `IndexOf`: an index whose gate table is the fragment's actual lowering and assembly.
-- `lowering`, `directRows`, `directRoots`, `recover`: the recorded lowering, its rows and
-  roots, and the valuation read off labelled cells; the wired fragment reuses them.
+- `classGates`: the assembled gate list with the class-based wiring.
+- `lowering`, `directRows`, `directRoots`: the recorded lowering, its rows and roots; the
+  wired fragment reuses them.
 
 ## Main results
 
 - `record_boolean_var`, `record_addComplete_direct`: the recorded reduction of each fragment
   constraint in closed form: a Boolean's one generic event, a complete addition's empty log
   and its row over the operands.
-- `KimchiConstraint.Direct.events_generic`, `steps_generic_of_direct`: a direct constraint's
-  events are generic with no coefficient on an absent cell.
+- `KimchiConstraint.Direct.events_generic`: a direct constraint's events are generic with no
+  coefficient on an absent cell.
 - `KimchiConstraint.Direct.holds_of_satisfies`: any table satisfying an index of the
   fragment's lowering yields a valuation satisfying every source constraint and reading the
   public variables as the public input.
+- `directGates_eq_classGates`: the assembled gates are the class-based ones.
 - `indexOf_of_classTarget`: an index matching the lowering's rows and the class-based wiring
   agrees with the assembly, so `IndexOf` is decided on concrete data.
 - `IndexOf.rows_le`, `IndexOf.typ_eq`, `IndexOf.coeffs_eq`, `IndexOf.classCells_eq`: what an
   index of the lowering says row by row, and that a satisfying table reads alike on every
   cell of a wiring class; the wired fragment reuses them.
+- `directRows_gateRow`: a row of a step's gate block, located among the lowering's rows.
 
 ## Implementation notes
 
@@ -47,6 +49,10 @@ index: an operand in a wired column is forced equal across its occurrences by th
 constraints, and an operand in an unwired column occurs once, so its one cell names its
 value. It is a sufficient restriction for this fragment, not a condition the production
 circuits meet.
+
+The assembly's wiring goes through a hash map the kernel cannot evaluate; `classGates` is the
+same list computed from the classes, so a concrete instance is decided by rewriting with
+`directGates_eq_classGates` and evaluating the rest unchanged.
 -/
 
 open Kimchi
@@ -54,17 +60,6 @@ open Kimchi
 namespace Snarky
 
 variable {F : Type}
-
-/-- The variable a bare-variable operand names; `none` for any other form. -/
-def CVar.var? : CVar F → Option Variable
-  | .var v => some v
-  | _ => none
-
-/-- An operand with a bare-variable form is that variable. -/
-theorem CVar.var?_isSome {x : CVar F} (h : x.var?.isSome) : ∃ v, x = .var v := by
-  cases x with
-  | var v => exact ⟨v, rfl⟩
-  | _ => exact absurd h (by simp [CVar.var?])
 
 namespace Kimchi
 
@@ -86,14 +81,8 @@ private def KimchiConstraint.directVars : KimchiConstraint F → List Variable
   | .addComplete c => c.operands.toList.filterMap CVar.var?
   | _ => []
 
-/-- The operands of a direct complete addition in the unwired columns `7` to `10`: `sameX`,
-`s`, `infZ`, `x21Inv`. Empty for any other constraint. -/
-def KimchiConstraint.unwiredVars : KimchiConstraint F → List Variable
-  | .addComplete c => (c.operands.toList.drop permCols).filterMap CVar.var?
-  | _ => []
-
 /-- Every variable the source and the public variables name, with repetition. -/
-private def occurrences (source : List (KimchiConstraint F)) (publicVars : List Variable) :
+private def directOccurrences (source : List (KimchiConstraint F)) (publicVars : List Variable) :
     List Variable :=
   source.flatMap KimchiConstraint.directVars ++ publicVars
 
@@ -106,56 +95,16 @@ structure KimchiConstraint.Direct.Scoped (source : List (KimchiConstraint F))
   direct : ∀ c ∈ source, c.Direct
   /-- Every operand of an unwired column occurs exactly once among the operand occurrences
   and the public variables. -/
-  unwiredOnce : ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (occurrences source publicVars).count v = 1
+  unwiredOnce : ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (directOccurrences source publicVars).count v = 1
 
 instance (source : List (KimchiConstraint F)) (publicVars : List Variable) :
     Decidable (KimchiConstraint.Direct.Scoped source publicVars) :=
   decidable_of_iff
     ((∀ c ∈ source, c.Direct) ∧
-      ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (occurrences source publicVars).count v = 1)
+      ∀ c ∈ source, ∀ v ∈ c.unwiredVars, (directOccurrences source publicVars).count v = 1)
     ⟨fun ⟨a, b⟩ => ⟨a, b⟩, fun ⟨a, b⟩ => ⟨a, b⟩⟩
 
 variable [Field F] [DecidableEq F]
-
-/-- The fragment's lowering: the builder's reduction folded over `source` from the counter
-`nv`, the queue flushed. -/
-private def directBuilt (source : List (KimchiConstraint F)) (nv : Variable) : KimchiBuilt F Unit :=
-  reduceBuilt ⟨(), nv, source⟩
-
-/-- The assembled gate table of the fragment's lowering at the given public variables: the
-public rows, then the body rows, wired through the reduction's union-find. -/
-def directGates (source : List (KimchiConstraint F)) (publicVars : List Variable)
-    (nv : Variable) : List (AssembledGate F) :=
-  (gateDataOf (directBuilt source nv) publicVars).2.1
-
-/-- An index whose gate table is the fragment's lowering and assembly: the public count is
-the public variables', the assembled rows fit before the masked rows, and at each assembled
-row the gate type, the zero-extended coefficients and the seven wire targets are the
-assembly's. The remaining rows are left to the index's own laws. -/
-structure IndexOf {n : ℕ} (source : List (KimchiConstraint F)) (publicVars : List Variable)
-    (nv : Variable) (idx : Index F n) : Prop where
-  /-- The public rows are the public variables'. -/
-  publicCount : idx.publicCount = publicVars.length
-  /-- The assembled rows fit before the masked rows. -/
-  fits : (directGates source publicVars nv).length ≤ n - idx.zkRows
-  /-- Each assembled row's gate type. -/
-  typ : ∀ (i : Fin n) (hi : i.val < (directGates source publicVars nv).length),
-    (idx.gates i).typ = (directGates source publicVars nv)[i.val].kind
-  /-- Each assembled row's coefficients, zero beyond the emitted list. -/
-  coeffs : ∀ (i : Fin n) (hi : i.val < (directGates source publicVars nv).length)
-    (c : Fin coeffCols),
-    (idx.gates i).coeffs c = (directGates source publicVars nv)[i.val].coeffs.getD c.val 0
-  /-- Each assembled row's wire targets, column then row. -/
-  wires : ∀ (i : Fin n) (hi : i.val < (directGates source publicVars nv).length)
-    (c : Fin permCols),
-    (((idx.gates i).wires c).1 : ℕ) = ((directGates source publicVars nv)[i.val].wires[c]).col ∧
-    (((idx.gates i).wires c).2 : ℕ) = ((directGates source publicVars nv)[i.val].wires[c]).row
-
-/-- A public variable's position as a public row of the index. -/
-def IndexOf.publicIndex {n : ℕ} {source : List (KimchiConstraint F)} {publicVars : List Variable}
-    {nv : Variable} {idx : Index F n} (h : IndexOf source publicVars nv idx)
-    (i : Fin publicVars.length) : Fin idx.publicCount :=
-  ⟨i, by have := h.publicCount; omega⟩
 
 /-! ## The fragment's recorded lowering -/
 
@@ -212,21 +161,6 @@ theorem KimchiConstraint.Direct.events_generic {c : KimchiConstraint F} (hc : c.
     simp
   · exact hc.elim
 
-/-- Every event of a direct list's recorded lowering is generic, with no coefficient on an
-absent cell. -/
-theorem steps_generic_of_direct {source : List (KimchiConstraint F)}
-    (hs : ∀ c ∈ source, c.Direct) (nv : Variable) (aux : AuxState F) :
-    ∀ s ∈ (recordGates source nv aux).steps, ∀ e ∈ s.events,
-      ∃ g, e = .generic g ∧ g.AbsentZero := by
-  induction source generalizing nv aux with
-  | nil => simp [recordGates]
-  | cons con cons ih =>
-    intro s hs' e he
-    simp only [recordGates, List.mem_cons] at hs'
-    rcases hs' with rfl | hs'
-    · exact (hs con (List.mem_cons_self ..)).events_generic nv aux e he
-    · exact ih (fun c hc => hs c (List.mem_cons_of_mem _ hc)) _ _ s hs' e he
-
 /-! ## The lowering's rows -/
 
 /-- The fragment's recorded lowering from the initial auxiliary state. -/
@@ -244,6 +178,8 @@ def directRows (source : List (KimchiConstraint F)) (publicVars : List Variable)
 def directRoots (source : List (KimchiConstraint F)) (nv : Variable) : Array Variable :=
   UnionFind.rootOf (directBuilt source nv).aux.wireState.unionFind
 
+/-- The fragment's assembled gates are the production assembly of its rows through its
+roots. -/
 private theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars : List Variable)
     (nv : Variable) :
     directGates source publicVars nv =
@@ -252,6 +188,26 @@ private theorem directGates_eq (source : List (KimchiConstraint F)) (publicVars 
   rw [recordBuilt_erase] at h
   simp only [directGates, directBuilt, gateDataOf, makeGateData, directRows, directRoots, h]
   rfl
+
+/-- The gate list with the class-based wiring: the production assembly, each wire target read
+from the classes rather than the hash map. -/
+def classGates (roots : Array Variable) (rows : List (KimchiRow F)) : List (AssembledGate F) :=
+  rows.zipIdx.map fun (row, i) =>
+    { kind := row.kind,
+      wires := ⟨⟨[classTarget roots rows i 0, classTarget roots rows i 1,
+                  classTarget roots rows i 2, classTarget roots rows i 3,
+                  classTarget roots rows i 4, classTarget roots rows i 5,
+                  classTarget roots rows i 6]⟩, by simp⟩,
+      coeffs := row.coeffs }
+
+/-- The assembled gates are the class-based ones. -/
+theorem directGates_eq_classGates (source : List (KimchiConstraint F))
+    (publicVars : List Variable) (nv : Variable) :
+    directGates source publicVars nv =
+      classGates (directRoots source nv) (directRows source publicVars nv) := by
+  rw [directGates_eq]
+  unfold assembleGates classGates
+  simp only [wireTarget_eq]
 
 /-- The roots the assembly wires through are the recorded lowering's union-find roots. -/
 theorem directRoots_eq (source : List (KimchiConstraint F)) (nv : Variable) :
@@ -290,13 +246,14 @@ does not. -/
 theorem indexOf_of_classTarget {n : ℕ} (source : List (KimchiConstraint F))
     (publicVars : List Variable) (nv : Variable) (idx : Index F n)
     (hpub : idx.publicCount = publicVars.length)
+    (hparams : ∀ c ∈ source, c.ParamsAgree idx.mds idx.endoBase)
     (hfits : (directRows source publicVars nv).length ≤ n - idx.zkRows)
     (htyp : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length),
       (idx.gates i).typ = (directRows source publicVars nv)[i.val].kind)
     (hcoeffs : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length)
       (c : Fin coeffCols),
       (idx.gates i).coeffs c = (directRows source publicVars nv)[i.val].coeffs.getD c.val 0)
-    (hwires : ∀ (i : Fin n) (hi : i.val < (directRows source publicVars nv).length)
+    (hwires : ∀ (i : Fin n) (_hi : i.val < (directRows source publicVars nv).length)
       (c : Fin permCols),
       (((idx.gates i).wires c).1 : ℕ) =
           (classTarget (directRoots source nv) (directRows source publicVars nv) i.val c.val).col ∧
@@ -304,6 +261,7 @@ theorem indexOf_of_classTarget {n : ℕ} (source : List (KimchiConstraint F))
           (classTarget (directRoots source nv) (directRows source publicVars nv) i.val c.val).row) :
     IndexOf source publicVars nv idx where
   publicCount := hpub
+  params := hparams
   fits := by
     rw [length_directGates]
     exact hfits
@@ -555,6 +513,38 @@ def gateRowOf (source : List (KimchiConstraint F)) (publicVars : List Variable)
   publicVars.length + ((lowering source nv).placements[p]'(by
     rw [RecordedGates.length_placements, length_steps]; exact hp)).customRows.first
 
+/-- A row of a step's gate block, read among the lowering's rows after the public prefix. -/
+theorem directRows_gateRow (source : List (KimchiConstraint F)) (publicVars : List Variable)
+    (nv : Variable) (p : Nat) (hp : p < source.length) (k : Nat)
+    (hk : k < ((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+      hp)).gateRows.length) :
+    (directRows source publicVars nv)[gateRowOf source publicVars nv p hp + k]? =
+      some (((lowering source nv).steps[p]'((length_steps source nv initialAuxState).symm ▸
+        hp)).gateRows[k]) := by
+  have hi : p < (lowering source nv).steps.length :=
+    (length_steps source nv initialAuxState).symm ▸ hp
+  have hip : p < (lowering source nv).placements.length := by
+    rw [RecordedGates.length_placements]
+    exact hi
+  have hlenPub : (makePublicInputRows (F := F) publicVars).length = publicVars.length := by
+    simp [makePublicInputRows]
+  have hle := placements_customRows_le (lowering source nv) p hi
+  rw [placements_customRows_count _ _ hi] at hle
+  have hle' : ((lowering source nv).placements[p]'hip).customRows.first +
+      (lowering source nv).steps[p].gateRows.length ≤ (lowering source nv).bodyRows.length := hle
+  have hb : ((lowering source nv).placements[p]'hip).customRows.first + k <
+      (lowering source nv).bodyRows.length := by omega
+  have hrow := getElem_bodyRows_gate (lowering source nv) p hi k hk hb
+  show (makePublicInputRows publicVars ++ ((lowering source nv).bodyRows ++
+    ((finalizeGateQueue (lowering source nv).aux.queuedGenericGate).map (·.row)).toList))[
+      publicVars.length + ((lowering source nv).placements[p]'hip).customRows.first + k]? = _
+  rw [List.getElem?_append_right (by omega), List.getElem?_append_left (by omega)]
+  have hidx : publicVars.length + ((lowering source nv).placements[p]'hip).customRows.first + k -
+      (makePublicInputRows (F := F) publicVars).length =
+      ((lowering source nv).placements[p]'hip).customRows.first + k := by omega
+  rw [hidx, List.getElem?_eq_getElem hb]
+  exact congrArg some hrow
+
 /-- Where each row of the fragment's lowering comes from: a public row, a packed pair of
 Booleanity equations, the flushed Booleanity equation, or a direct complete addition's row at
 its step's gate span. -/
@@ -799,6 +789,7 @@ private theorem unwiredVars_of_label {c : AddComplete F}
       rw [List.map_drop, List.map_drop]
       exact congrArg (List.drop 7) (map_var?_eq c.operands.toList hc)
     exact filterMap_eq_of_map _ _ hm
+  rw [addComplete_unwiredVars]
   show v ∈ (c.operands.toList.drop 7).filterMap CVar.var?
   rw [hdrop]
   have hl := directVars_length hc
@@ -924,7 +915,7 @@ private theorem unwired_unique {source : List (KimchiConstraint F)} {publicVars 
   obtain ⟨hj11, hvj⟩ := label_add hd j hj v hv
   have hunw := unwiredVars_of_label hd hj11 h7 hvj
   have hcount := hscope.unwiredOnce _ (hsrc ▸ List.getElem_mem hp) v hunw
-  simp only [occurrences, List.count_append] at hcount
+  simp only [directOccurrences, List.count_append] at hcount
   have hmem : v ∈ source[p].directVars := by
     rw [hsrc]
     exact hvj ▸ List.getElem_mem _
@@ -982,7 +973,7 @@ private theorem unwired_unique {source : List (KimchiConstraint F)} {publicVars 
 /-! ## The valuation -/
 
 /-- The value at a cell labelled by the variable, zero when none is. -/
-noncomputable def recover (rows : List (KimchiRow F)) (val : Nat × Nat → F)
+private noncomputable def recover (rows : List (KimchiRow F)) (val : Nat × Nat → F)
     (v : Variable) : F :=
   if h : ∃ c : Fin rows.length × Fin wCols, rows[c.1].vars[c.2] = some v then
     val ((Classical.choose h).1, (Classical.choose h).2)

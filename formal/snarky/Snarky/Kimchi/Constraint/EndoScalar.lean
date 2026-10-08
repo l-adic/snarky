@@ -46,6 +46,11 @@ abbrev EndoScalar (F : Type u) := List (EndoScalarRound F)
 
 variable {F : Type} {m : Type → Type}
 
+/-- A round's fourteen operands in gate-column order. -/
+def EndoScalarRound.operands (c : EndoScalarRound F) : Vector (FVar F) 14 :=
+  #v[c.n0, c.n8, c.a0, c.b0, c.a8, c.b8, c.xs[0], c.xs[1], c.xs[2], c.xs[3], c.xs[4], c.xs[5],
+    c.xs[6], c.xs[7]]
+
 /-- Reduce one round to its `endoScalar` row, in the module docstring's order. -/
 def EndoScalarRound.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] (c : EndoScalarRound F) : m (KimchiRow F) := do

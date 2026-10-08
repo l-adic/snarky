@@ -56,7 +56,7 @@
     "Pickles.Application.Verify": [
       "Pickles.Application.Proof"
     ],
-    "Snarky.Kimchi.UnionFind": [
+    "Snarky.Kimchi.Backend.Internal.UnionFind": [
       "Mathlib.Data.Fintype.Card",
       "Mathlib.Data.Nat.Find"
     ]

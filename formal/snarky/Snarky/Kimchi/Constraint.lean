@@ -92,6 +92,10 @@ instance : BasicSystem F (KimchiConstraint F) where
 
 variable {F : Type} {m : Type → Type}
 
+/-- The padding row's cells: its seven operands, in the wired columns. -/
+def padCells (vs : Vector (FVar F) 7) : List (Option (FVar F)) :=
+  [some vs[0], some vs[1], some vs[2], some vs[3], some vs[4], some vs[5], some vs[6]]
+
 /-- Pin the padding row's seven operands to variables and wire them into one row. -/
 def reducePad [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] (vs : Vector (FVar F) 7) : m (Rows F) := do

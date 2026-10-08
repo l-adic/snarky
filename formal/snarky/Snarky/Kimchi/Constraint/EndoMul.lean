@@ -69,6 +69,16 @@ structure EndoMul (F : Type u) where
 
 variable {F : Type} {m : Type → Type}
 
+/-- A round's row in gate-column order: the target, the inverse, an empty cell, the input
+accumulator and register, then the midpoint, the two slopes and the four bits. -/
+def EndoMulRound.cells (c : EndoMulRound F) : List (Option (FVar F)) :=
+  [some c.t.x, some c.t.y, some c.inv, none, some c.p.x, some c.p.y, some c.nAcc, some c.r.x,
+    some c.r.y, some c.s1, some c.s3, some c.bit0, some c.bit1, some c.bit2, some c.bit3]
+
+/-- The terminal row's cells: the final accumulator and register in cells `4`, `5`, `6`. -/
+def EndoMul.finalCells (c : EndoMul F) : List (Option (FVar F)) :=
+  [none, none, none, none, some c.s.x, some c.s.y, some c.nAcc]
+
 /-- Reduce one round to its `endoMul` row, with cells
 `[xT yT inv _ xP yP n xR yR s1 s3 b₁ b₂ b₃ b₄]`. -/
 def EndoMulRound.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
