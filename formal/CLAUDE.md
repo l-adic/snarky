@@ -82,8 +82,10 @@ CI drives it. The workspace-level scripts are `scripts/check-style.sh` (the form
 contract), `scripts/deadcode.{lean,sh}` (cross-package reachability over the union of
 the packages' manifests), `scripts/module-deps.sh` (the dependency-graph artifact —
 `make lean-dep-graph`), `scripts/prune-stale-oleans.sh` (garbage-collect build artifacts
-of deleted/renamed modules — run it after branch switches), and
-`scripts/kernel-replay.sh` (the lean4checker kernel-replay gate).
+of deleted/renamed modules — run it after branch switches),
+`scripts/check-import-boundaries.sh` (the ordinary compiler, the scope checker and the index
+constructor import no `Snarky.Kimchi.Backend.Internal` or `.Checks` module — `make
+lean-import-boundaries`), and `scripts/kernel-replay.sh` (the lean4checker kernel-replay gate).
 
 **The comment gate** (`scripts/check-comments.sh`, `make lean-comments`) fixes the objective
 half of the comment convention; the judgement half is the `proof-comment-style` skill. A
