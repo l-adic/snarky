@@ -477,6 +477,14 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps APPS=NoRecursionReturn lake exe check-application-indices
 
+    # The certification executable on the same artifacts: reconstruct, compile once, check at
+    # the keys' data, import the dumps' indices and certify them; no proof cache is read.
+    - name: Certify one application
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps APPS=NoRecursionReturn lake exe certify-application
+
     # Reconstructed applications invoke the verification and handover capstones directly:
     # Self recursion, base branches and a two-chunk imported source.
     - name: Check two apps' links
