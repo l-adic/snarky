@@ -458,34 +458,6 @@ def assertEq [DecidableEq F] [BasicSystem F c] {val var : Type}
   pure PUnit.unit
 
 open Std.Do in
-/-- `assertEq`'s rows force the two readings equal. -/
-@[spec] theorem assertEq_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var]
-    (t e : var) {tv ev : val} (ht : CircuitType.Reads V t tv)
-    (he : CircuitType.Reads V e ev) :
-    ⦃⌜True⌝⦄
-    assertEq (F := F) (c := Builder V c) (val := val) t e
-    ⦃⇓ _ _ => ⌜tv = ev⌝⦄ := by
-  have hzip := (builder_spec_iff _ _).mp (zipWithVecM_spec (V := V)
-    (assertEqual (c := Builder V c)) (CircuitType.varToFields (val := val) t)
-    (CircuitType.varToFields (val := val) e)
-    (fun i _ => ((CircuitType.varToFields (val := val) t)[i.val]).val V
-      = ((CircuitType.varToFields (val := val) e)[i.val]).val V)
-    (fun i => assertEqual_spec (c := c) (V := V) _ _))
-  refine (builder_spec_iff _ _).mpr fun nv hsat => ?_
-  replace hsat : ∀ con ∈ (build (zipWithVecM (assertEqual (c := c))
-      (CircuitType.varToFields (val := val) t) (CircuitType.varToFields (val := val) e) >>=
-      fun _ => (pure PUnit.unit : CircuitM F c PUnit)) nv).constraints,
-      ConstraintHolds.Holds V con := hsat
-  simp only [build_bind, build, List.append_nil] at hsat
-  have hfields : CircuitType.valueToFields (F := F) tv = CircuitType.valueToFields (F := F) ev := by
-    rw [← ht, ← he]
-    ext i hi
-    simpa using hzip nv hsat ⟨i, hi⟩
-  rw [← CircuitType.value_roundTrip (F := F) (var := var) tv, hfields,
-    CircuitType.value_roundTrip]
-
-open Std.Do in
 /-- `assertEq`'s rows force the two bundles' fields equal, field by field, whether or not
 either reads as a value. -/
 theorem assertEq_fields_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
@@ -509,6 +481,23 @@ theorem assertEq_fields_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicS
   simp only [build_bind, build, List.append_nil] at hsat
   ext i hi
   simpa using hzip nv hsat ⟨i, hi⟩
+
+open Std.Do in
+/-- `assertEq`'s rows force the two readings equal: the fields are equal
+(`assertEq_fields_spec`), and an encoding determines its value. -/
+@[spec] theorem assertEq_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var]
+    (t e : var) {tv ev : val} (ht : CircuitType.Reads V t tv)
+    (he : CircuitType.Reads V e ev) :
+    ⦃⌜True⌝⦄
+    assertEq (F := F) (c := Builder V c) (val := val) t e
+    ⦃⇓ _ _ => ⌜tv = ev⌝⦄ := by
+  refine (builder_spec_iff _ _).mpr fun nv hsat => ?_
+  have hfields : CircuitType.valueToFields (F := F) tv = CircuitType.valueToFields (F := F) ev := by
+    rw [← ht, ← he]
+    exact (builder_spec_iff _ _).mp (assertEq_fields_spec (c := c) (val := val) t e) nv hsat
+  rw [← CircuitType.value_roundTrip (F := F) (var := var) tv, hfields,
+    CircuitType.value_roundTrip]
 
 /-- `assertEq`'s completeness law: where the operands read the same value the run
 succeeds and its rows are satisfied at every extension of the final table. -/
