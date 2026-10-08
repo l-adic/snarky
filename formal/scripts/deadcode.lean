@@ -47,6 +47,7 @@ import Snarky.Kimchi.Backend.WiredFixtures
 import Snarky.Kimchi.Backend.Admissibility
 import Snarky.Kimchi.Backend.ScopedCheck
 import Snarky.Kimchi.Backend.ScopedCheckChecks
+import Snarky.Kimchi.Backend.IndexSpec
 import Snarky.Kimchi.Backend.CompiledIndex
 import Snarky.Kimchi.Backend.CompiledIndexChecks
 import Snarky.Kimchi.Backend.CheckedCompile

@@ -1,4 +1,4 @@
-import Snarky.Kimchi.Backend.Direct
+import Snarky.Kimchi.Backend.IndexSpec
 
 /-!
 # The index of a compiled circuit
@@ -20,7 +20,6 @@ rest. `compiledIndex?` applies it to the source's assembled gates.
 
 - `gateTable?`: an assembled gate list as a table on the domain.
 - `indexOfGates?`, `compiledIndex?`: the index of a gate list, and of a compiled source.
-- `classGates`: the gate list with the class-based wiring.
 
 ## Main results
 
@@ -28,7 +27,6 @@ rest. `compiledIndex?` applies it to the source's assembled gates.
   built, and what each of its rows is.
 - `compiledIndex?_indexOf`: the index a successful construction returns is the source's.
 - `gateDataOf_reduceBuilt`: a built circuit's gates are its source's, whatever its result.
-- `directGates_eq_classGates`: the assembled gates are the class-based ones.
 
 ## Implementation notes
 
@@ -36,9 +34,8 @@ The table reads an array built once from the converted rows, since `Index.build?
 table many times; `arrayTable` keeps the array out of the returned function's body, where the
 compiler would rebuild it on every read. The parameters, the domain size and the masked-row
 count are the caller's, as a deployment fixes them. The assembly's wiring goes through a hash
-map the kernel cannot evaluate; `classGates` is the same list computed from the classes, so a
-concrete instance is decided by rewriting with `directGates_eq_classGates` and evaluating the
-rest unchanged.
+map the kernel cannot evaluate; the checks decide concrete instances through the class-based
+gates, `directGates_eq_classGates`, which this module does not import.
 -/
 
 open Kimchi Kimchi.Index
@@ -288,26 +285,6 @@ theorem gateDataOf_reduceBuilt {α : Type} (b : Built (KimchiConstraint F) α)
     (publicVars : List Variable) :
     (gateDataOf (reduceBuilt b) publicVars).2.1 = directGates b.constraints publicVars b.nextVar :=
   rfl
-
-/-- The gate list with the class-based wiring: the production assembly, each wire target read
-from the classes rather than the hash map. -/
-def classGates (roots : Array Variable) (rows : List (KimchiRow F)) : List (AssembledGate F) :=
-  rows.zipIdx.map fun (row, i) =>
-    { kind := row.kind,
-      wires := ⟨⟨[classTarget roots rows i 0, classTarget roots rows i 1,
-                  classTarget roots rows i 2, classTarget roots rows i 3,
-                  classTarget roots rows i 4, classTarget roots rows i 5,
-                  classTarget roots rows i 6]⟩, by simp⟩,
-      coeffs := row.coeffs }
-
-/-- The assembled gates are the class-based ones. -/
-theorem directGates_eq_classGates (source : List (KimchiConstraint F))
-    (publicVars : List Variable) (nv : Variable) :
-    directGates source publicVars nv =
-      classGates (directRoots source nv) (directRows source publicVars nv) := by
-  rw [directGates_eq]
-  unfold assembleGates classGates
-  simp only [wireTarget_eq]
 
 end Compiled
 
