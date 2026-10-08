@@ -1,4 +1,4 @@
-import Snarky.Kimchi.Backend.Direct
+import Snarky.Kimchi.Backend.Internal.Direct
 import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic.NormNum.Prime
 

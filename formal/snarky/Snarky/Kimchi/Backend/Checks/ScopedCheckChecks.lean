@@ -1,5 +1,5 @@
 import Snarky.Kimchi.Backend.ScopedCheck
-import Snarky.Kimchi.Backend.WiredFixtures
+import Snarky.Kimchi.Backend.Checks.WiredFixtures
 
 /-!
 # Scope-checker checks

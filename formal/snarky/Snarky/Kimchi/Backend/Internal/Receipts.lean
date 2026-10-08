@@ -1,5 +1,5 @@
-import Snarky.Kimchi.Backend.RowCorrespondence
-import Snarky.Kimchi.Backend.TraceSemantics
+import Snarky.Kimchi.Backend.Internal.RowCorrespondence
+import Snarky.Kimchi.Backend.Internal.TraceSemantics
 import Kimchi.Gate.Generic
 import Kimchi.Columns
 

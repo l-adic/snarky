@@ -1,6 +1,6 @@
 import Snarky.Kimchi.Backend.CompiledIndex
 import Snarky.Kimchi.Backend.ScopedCheck
-import Snarky.Kimchi.Backend.Wired
+import Snarky.Kimchi.Backend.Internal.Wired
 
 /-!
 # Checked compilation

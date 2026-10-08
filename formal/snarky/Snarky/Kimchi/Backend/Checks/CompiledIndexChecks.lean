@@ -1,6 +1,6 @@
 import Snarky.Kimchi.Backend.CompiledIndex
-import Snarky.Kimchi.Backend.Direct
-import Snarky.Kimchi.Backend.WiredFixtures
+import Snarky.Kimchi.Backend.Internal.Direct
+import Snarky.Kimchi.Backend.Checks.WiredFixtures
 import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic.NormNum.Prime
 

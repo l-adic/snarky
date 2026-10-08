@@ -1,4 +1,4 @@
-import Snarky.Kimchi.Backend.Trace
+import Snarky.Kimchi.Backend.Internal.Trace
 import Snarky.Kimchi.Backend.Admissibility
 import Snarky.Kimchi.Semantics
 import Kimchi.Lift

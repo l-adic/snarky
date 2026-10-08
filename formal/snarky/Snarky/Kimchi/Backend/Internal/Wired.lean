@@ -1,4 +1,4 @@
-import Snarky.Kimchi.Backend.Direct
+import Snarky.Kimchi.Backend.Internal.Direct
 
 /-!
 # The wired fragment

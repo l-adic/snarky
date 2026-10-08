@@ -1,5 +1,5 @@
 import Snarky.Kimchi.Constraint
-import Snarky.Kimchi.Backend.TraceSemantics
+import Snarky.Kimchi.Backend.Internal.TraceSemantics
 import Kimchi.Gate.Poseidon
 import Kimchi.Columns
 import Mathlib.Data.ZMod.Defs

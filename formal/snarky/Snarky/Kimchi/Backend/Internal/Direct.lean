@@ -1,6 +1,6 @@
 import Snarky.Kimchi.Backend.IndexSpec
-import Snarky.Kimchi.Backend.Receipts
-import Snarky.Kimchi.Backend.Wiring
+import Snarky.Kimchi.Backend.Internal.Receipts
+import Snarky.Kimchi.Backend.Internal.Wiring
 import Kimchi.Index.Basic
 import Kimchi.Index.Satisfies
 import Kimchi.Columns

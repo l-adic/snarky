@@ -24,19 +24,19 @@ import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Backend.Compile
-import Snarky.Kimchi.Backend.Trace
-import Snarky.Kimchi.Backend.TraceChecks
-import Snarky.Kimchi.Backend.TraceSemantics
-import Snarky.Kimchi.Backend.RowCorrespondence
-import Snarky.Kimchi.Backend.Receipts
-import Snarky.Kimchi.Backend.Direct
-import Snarky.Kimchi.Backend.Wiring
-import Snarky.Kimchi.Backend.DirectChecks
-import Snarky.Kimchi.Backend.Wired
-import Snarky.Kimchi.Backend.WiredChecks
-import Snarky.Kimchi.Backend.ScopedCheckChecks
-import Snarky.Kimchi.Backend.CompiledIndexChecks
-import Snarky.Kimchi.Backend.CheckedCompileChecks
+import Snarky.Kimchi.Backend.Internal.Trace
+import Snarky.Kimchi.Backend.Checks.TraceChecks
+import Snarky.Kimchi.Backend.Internal.TraceSemantics
+import Snarky.Kimchi.Backend.Internal.RowCorrespondence
+import Snarky.Kimchi.Backend.Internal.Receipts
+import Snarky.Kimchi.Backend.Internal.Direct
+import Snarky.Kimchi.Backend.Internal.Wiring
+import Snarky.Kimchi.Backend.Checks.DirectChecks
+import Snarky.Kimchi.Backend.Internal.Wired
+import Snarky.Kimchi.Backend.Checks.WiredChecks
+import Snarky.Kimchi.Backend.Checks.ScopedCheckChecks
+import Snarky.Kimchi.Backend.Checks.CompiledIndexChecks
+import Snarky.Kimchi.Backend.Checks.CheckedCompileChecks
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
