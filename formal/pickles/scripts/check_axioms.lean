@@ -1,4 +1,5 @@
 import Pickles
+import Pickles.Application.Checks.MatrixRunConsumer
 import Lean.Elab.Command
 
 /-! Gate the pickles package's axiom closure.
@@ -48,6 +49,11 @@ def roots : List Name :=
     `Pickles.Application.CheckedAt.indices,
     `Pickles.Application.Circuits.stepBuilt_eq,
     `Pickles.Application.Circuits.wrapBuilt_eq,
+    `Pickles.Application.CheckedApplication.lift_step,
+    `Pickles.Application.CheckedApplication.lift_wrap,
+    `Pickles.Application.StepRun.cells_eq,
+    `Pickles.Application.WrapRun.cells_eq,
+    `Pickles.Application.MatrixRunConsumer.lifts_both,
     `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,
     `Pickles.Reflect.evaluate_fpTokens,
@@ -138,6 +144,11 @@ def deployedRoots : List Name :=
     `Pickles.Application.CheckedAt.indices,
     `Pickles.Application.Circuits.stepBuilt_eq,
     `Pickles.Application.Circuits.wrapBuilt_eq,
+    `Pickles.Application.CheckedApplication.lift_step,
+    `Pickles.Application.CheckedApplication.lift_wrap,
+    `Pickles.Application.StepRun.cells_eq,
+    `Pickles.Application.WrapRun.cells_eq,
+    `Pickles.Application.MatrixRunConsumer.lifts_both,
     `Pickles.wrapSide,
     `Pickles.stepSide,
     `Pickles.Reflect.circuit_gateLinearization_fp,

@@ -100,6 +100,13 @@ Pickles.Application.checkApplication
 Pickles.Application.CheckedAt.indices
 Pickles.Application.Circuits.stepBuilt_eq
 Pickles.Application.Circuits.wrapBuilt_eq
+-- Lifting: every table a checked index accepts at a typed statement has an execution reading
+-- it, and every execution's retained cells are the canonical compilation's.
+Pickles.Application.CheckedApplication.lift_step
+Pickles.Application.CheckedApplication.lift_wrap
+Pickles.Application.StepRun.cells_eq
+Pickles.Application.WrapRun.cells_eq
+Pickles.Application.MatrixRunConsumer.lifts_both -- both lifts applied against the interface alone
 
 -- Public bridges for consumers relating verifier computations, read cells and accumulators.
 Pickles.OldsRead.of_readPt

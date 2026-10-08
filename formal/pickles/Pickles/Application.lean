@@ -1,5 +1,6 @@
 import Pickles.Application.Handover
 import Pickles.Application.CheckedCompile
+import Pickles.Application.MatrixRun
 
 /-!
 # Compiled application framework
@@ -11,7 +12,8 @@ use the maximum source width across branches, as in OCaml, and source chunk coun
 per slot. Construct the branch step circuits and the shared wrap circuit from this wiring,
 retaining their internal cells for the circuit capstones. Checked compilation certifies
 each circuit's canonical compilation with its own kimchi index, in scope and corresponding,
-for the lifting of satisfying tables.
+for the lifting of satisfying tables, and any table satisfying a checked index at a typed
+statement lifts to an execution at that statement.
 
 Satisfying application executions instantiate both verification capstones. Connected executions
 preserve complete messages and propagate acceptance backward, with explicit message-collision
