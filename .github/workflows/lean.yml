@@ -217,6 +217,12 @@ jobs:
     - name: Check spec locality
       run: bash scripts/check-spec-locality.sh
 
+    # GATE: the ordinary compiler, the checker and the index constructor import no module of
+    # the lowering's proof development or of the checks, directly or transitively; the
+    # checked-compilation facade imports no check module (read from the import lines).
+    - name: Check import boundaries
+      run: bash scripts/check-import-boundaries.sh
+
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
     # layer's recombination (fixtures/ipa_{opening,batch,chunked2,chunked3}_*.json,

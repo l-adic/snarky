@@ -801,7 +801,7 @@ never `LINKS=all`.
 
 ## 12. Isolate the compiler proof machinery
 
-This is an implementation strategy, not a claim that isolation has landed. Start after
+This was the implementation strategy; section 12.8 records the tree it produced. Start after
 phase 6's checked-compilation wrapper and its `compile`/`compileWith` consumer checks are
 complete. It precedes the typed public-input readings and the imported-application theorems:
 those are consumers of the backend interface, built against its isolated form.
@@ -1072,11 +1072,13 @@ file into per-gate files or golfing proofs. Acceptance: the facade and both cons
 still compile, as do all existing internal decided checks.
 
 **E. Tighten visibility.** Find consumers of each non-private helper outside its defining
-file. Make file-local helpers private; group genuinely shared proof helpers under an internal
-namespace where this can be done without destabilizing executable definitions. Retain public
-names only for the supported interface, existing semantic APIs, or documented implementation
-dependencies. Update audit roots explicitly for renamed declarations. Namespace migration is
-separate from D so elaboration regressions can be attributed to a small change.
+file, and make file-local helpers private. Shared proof declarations keep their names: no
+namespace migration. The `Backend/Internal` tree, the facade's documented interface and the
+import-boundary gate already mark the boundary, and renaming the roughly 190 shared and
+audit-rooted declarations would add little protection. A helper occurring in a public
+proposition's body stays public where consumers need to name it while using that proposition;
+it need not be made private for maximal privacy alone. Retain public names only for the
+supported interface, existing semantic APIs, or documented implementation dependencies.
 
 **F. Validate and document.** Run the focused and final gates below, record the final public
 surface and module map, and link the facade consumer as the usage example. Old import-path
@@ -1110,8 +1112,8 @@ The final validation has five parts:
 2. **Dependencies:** check transitive imports, not just source import lines. Starting at
    ordinary `Backend.Compile`, no new internal lifting-proof or checks module is reachable.
    Starting at the checker/index adapter, no trace or general lifting theorem is reachable.
-   The facade imports proofs; this is expected. Add a small architectural import check if
-   the repository's existing dependency tooling can express these assertions simply.
+   The facade imports proofs; this is expected. `scripts/check-import-boundaries.sh`
+   (`make lean-import-boundaries`, run in CI) asserts these from the import lines.
 3. **Trust and hygiene:** axiom audit, style, comments, dead-code and import checks pass.
    Preserve existing standard-axiom closures; introduce no `sorry`, trusted evaluation,
    assumption standing in for a move, or new blanket linter exclusions.
@@ -1143,3 +1145,30 @@ names do not eliminate transitive imports. The deliverable is a stable, small co
 contract and an implementation independent of bespoke lifting proofs. The proofs remain
 kernel-checked in their own modules, available for maintenance without becoming caller
 obligations.
+
+### 12.8. The isolated tree
+
+Paths are relative to `snarky/Snarky/Kimchi/`.
+
+| Modules | Contents | Reaches no |
+| --- | --- | --- |
+| `Constraint/*`, `UnionFind`, `Backend/Assemble`, `Backend/Compile` | Constraint data, reducers, union-find operations, assembly, compilation, `compiledPublicVars` | internal or check module |
+| `Backend/Admissibility` | Operand layouts, `occurrences`, `KimchiConstraint.Wired`, `Wired.Scoped` | internal or check module |
+| `Backend/IndexSpec` | `directBuilt`, `directGates`, `ParamsAgree`, `IndexOf` | internal or check module |
+| `Backend/ScopedCheck`, `Backend/CompiledIndex` | The scope checker and the index constructor with their reflection theorems | internal or check module |
+| `Backend/Internal/*` | The union-find's class view, the builder's transitions and equality decision, recording, readings, receipts, wiring proofs, the direct and wired lifting theorems | check module |
+| `Backend/CheckedCompile` | The facade | check module |
+| `Backend/Checks/*` | Decided checks and rejections, fixture data, the witness table, the facade-only consumer | — |
+
+The supported interface is the section of that name in the facade's module docstring;
+`CheckedConsumer.compile_lifts` and `CheckedConsumer.compileWith_lifts` are the usage
+example. Executable helpers made visible for proofs in other modules, each documented at its
+definition: `UnionFind.ensure`, `UnionFind.rootLoop`, `handleGateBatching`, `addGenericB`,
+`addEqualsB`, `bareCell` and `directBuilt`. No import-path shims were introduced.
+
+At completion the build, axiom audit, comments, dead code, shake, lint, import boundaries and
+every decided check and rejection pass, and the CS comparison matches all 97 circuits. A
+native probe of the gate-table adapter, interpreted, builds and reads every row twice at
+`2^14` to `2^17` rows in time linear in the rows and without stack overflow. The 40/40
+application scope and index runs remain the executable evidence for the applications; this
+refactor supplies no new kernel certificate for them.
