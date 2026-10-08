@@ -65,15 +65,19 @@ private def assembleAll (wrap : Srs Bulletproof.IpaPallas.curve)
     | some (name, dump) =>
       IO.println s!"{name}: reconstructing from sidecar, SRS and Lagrange memo"
       (← IO.getStdout).flush
-      let tables ← tablesFor dump wrap step
       let rest := pending.filter (·.1 != name)
-      match dump.assemble wrap step tables (known.map (·.2)).toArray with
+      match ← (tablesFor dump wrap step).toBaseIO with
       | .error e =>
         assembleAll wrap step finish fuel rest known (failed ++ [(name, dump)])
-          (done ++ [(name, .error e)])
-      | .ok A =>
-        assembleAll wrap step finish fuel rest (known ++ [(name, A)]) failed
-          (done ++ [(name, .ok A)])
+          (done ++ [(name, .error s!"Lagrange memo: {e}")])
+      | .ok tables =>
+        match dump.assemble wrap step tables (known.map (·.2)).toArray with
+        | .error e =>
+          assembleAll wrap step finish fuel rest known (failed ++ [(name, dump)])
+            (done ++ [(name, .error e)])
+        | .ok A =>
+          assembleAll wrap step finish fuel rest (known ++ [(name, A)]) failed
+            (done ++ [(name, .ok A)])
     | none =>
       let blocked := pending.map fun (name, dump) =>
         let imports (d : ApplicationDump) : Bool :=
@@ -84,22 +88,34 @@ private def assembleAll (wrap : Srs Bulletproof.IpaPallas.curve)
           match (pending.filter (·.1 != name)).find? fun (_, d) => imports d with
           | some (producer, _) =>
             (name, .error s!"blocked by {producer}, which has no application")
-          | none => (name, .error "unresolved application imports or cyclic dependencies")
+          | none => (name, .error "blocked: an import matches no application in the selection")
       finish (done ++ blocked)
 
-/-- Load each selected manifest entry's required sidecars, reconstruct every entry in import
-order, continuing past failures, and finish with each entry's application or its failure. -/
+/-- Load each selected manifest entry's sidecar, reconstruct every entry in import order,
+continuing past failures, and finish with each entry's application or its failure. An entry
+whose files are missing or whose sidecar does not parse fails at that stage; the shared SRSs
+are the caller's. -/
 def reconstructApplications (dir : System.FilePath) (apps : List Manifest.Application)
     (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
     (finish : List (String × Except String ImportedApplication) → IO Unit) : IO Unit := do
   unless !apps.isEmpty do throw (IO.userError "no applications selected")
-  let mut entries := []
+  let mut entries : List (String × ApplicationDump) := []
+  let mut failures : List (String × String) := []
   for app in apps do
     for tag in app.tags do
-      let path := dir / app.name / "shapes" / s!"{tag.name}.json"
-      let dump ← IO.ofExcept (ApplicationDump.ofJson (← readJson path))
-      entries := entries ++ [(s!"{app.name}/{tag.name}", dump)]
-  assembleAll wrap step finish entries.length entries [] [] []
+      let name := s!"{app.name}/{tag.name}"
+      let dumpPath := dir / app.name / s!"{tag.name}.json"
+      let sidecar := dir / app.name / "shapes" / s!"{tag.name}.json"
+      if !(← dumpPath.pathExists) then
+        failures := failures ++ [(name, s!"missing required fixture: {dumpPath}")]
+      else if !(← sidecar.pathExists) then
+        failures := failures ++ [(name, s!"missing required fixture: {sidecar}")]
+      else
+        match ← (do IO.ofExcept (ApplicationDump.ofJson (← readJson sidecar))).toBaseIO with
+        | .error e => failures := failures ++ [(name, s!"sidecar: {e}")]
+        | .ok dump => entries := entries ++ [(name, dump)]
+  assembleAll wrap step finish entries.length entries [] []
+    (failures.map fun (name, e) => (name, Except.error e))
 
 /-- Load and reconstruct every selected entry, failing at the first that has no application,
 then continue with all of them. -/

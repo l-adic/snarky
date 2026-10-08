@@ -8,8 +8,9 @@ SRSs and the Lagrange memo, compile its circuits once, check them at their keys'
 import its indices from the independent circuit dumps and certify them against the checked
 application. Every application is reported, a failure located at its stage and circuit, and an
 application importing a failed producer is blocked by that failure; the exit status is nonzero
-if any failed. Run from `formal/` with `PICKLES_DUMP_DIR` set and `APPS` naming manifest
-applications; the selection is never `all`. No proof cache is read.
+if any failed. An application's missing or malformed files fail that application alone; the
+selection and the shared SRSs are fatal. Run from `formal/` with `PICKLES_DUMP_DIR` set and
+`APPS` naming manifest applications; the selection is never `all`. No proof cache is read.
 -/
 
 open Lean Snarky Pickles Pickles.Application PicklesFixture PicklesFixture.Application
@@ -23,7 +24,6 @@ def main : IO Unit := do
   if selection = "all" then
     throw (IO.userError "APPS names applications explicitly; `all` is not a selection")
   let apps ← IO.ofExcept (Manifest.select (some selection))
-  Manifest.checkFiles dir apps
   let σW ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) WrapIPARounds
   let σS ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) StepIPARounds
   let some wrap := Srs.check σW | throw (IO.userError "invalid wrap SRS")
@@ -36,8 +36,14 @@ def main : IO Unit := do
         IO.println s!"✗ {name}: {e}"
         failed := failed ++ [name]
       | .ok A =>
-        let tag ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / s!"{name}.json")))
-        match ← (certifyApplication name A tag).toBaseIO with
+        let certify : IO (Certification A) := do
+          let text ← try IO.FS.readFile (dir / s!"{name}.json")
+            catch e => throw (IO.userError s!"{name}: dump: {e}")
+          let tag ← match Json.parse text with
+            | .error e => throw (IO.userError s!"{name}: dump: {e}")
+            | .ok tag => pure tag
+          certifyApplication name A tag
+        match ← certify.toBaseIO with
         | .ok _ => IO.println s!"✓ {name}: certified"
         | .error e =>
           IO.println s!"✗ {e}"

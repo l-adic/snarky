@@ -484,6 +484,7 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps APPS=NoRecursionReturn lake exe certify-application
+        PICKLES_DUMP_DIR=../pickles-dumps bash scripts/check_certify_failures.sh
 
     # Reconstructed applications invoke the verification and handover capstones directly:
     # Self recursion, base branches and a two-chunk imported source.

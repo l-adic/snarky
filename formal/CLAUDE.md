@@ -336,6 +336,8 @@ scripts/check_tags.lean                      # every tag the pickles prove tests
 scripts/certify_application.lean             # certify-application: selected applications reconstructed, compiled
                                              # once, their dumps' indices certified against the checked
                                              # compilation (PICKLES_DUMP_DIR, APPS; CI runs it from test.yml)
+scripts/check_certify_failures.sh            # its failure regressions: damaged files fail their application
+                                             # alone, located, beside an intact one (CI runs it from test.yml)
 ```
 
 (Every package-local check reads its data through an env var whose **default is relative
