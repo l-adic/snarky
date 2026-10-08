@@ -35,6 +35,7 @@ above it.
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
 import Kimchi
+import Kimchi.Index.CompareChecks
 import Poseidon
 import Snarky
 import Snarky.Kimchi.Backend.Compile

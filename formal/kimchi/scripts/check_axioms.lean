@@ -18,6 +18,7 @@ Run from `formal/kimchi/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:         lake env lean kimchi/scripts/check_axioms.lean)
 -/
 import Kimchi
+import Kimchi.Index.CompareChecks
 
 open Lean Lean.Elab.Command
 

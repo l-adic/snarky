@@ -31,6 +31,7 @@ It also REPORTS (never fails) the comment-heaviest modules, as the queue for a j
 Run from `formal/`:  scripts/check-comments.sh
 -/
 import Kimchi
+import Kimchi.Index.CompareChecks
 import Poseidon
 import Snarky
 import Snarky.Kimchi.Backend.Compile

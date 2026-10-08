@@ -31,7 +31,7 @@ namespace Kimchi.Index
 /-- The carrier: a field with `16 ∣ 112` and seven cosets of the sixteenth roots of unity. -/
 private abbrev K := ZMod 113
 
-instance : Fact (Nat.Prime 113) := ⟨by norm_num⟩
+private instance : Fact (Nat.Prime 113) := ⟨by norm_num⟩
 
 /-- A zero gate, each cell wired to itself. -/
 private def zeroRow {n : ℕ} (i : Fin n) : GateRow K n :=
