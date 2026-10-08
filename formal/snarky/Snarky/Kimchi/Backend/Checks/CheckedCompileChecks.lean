@@ -33,6 +33,8 @@ output.
 - `compileWith_example_layout`: the kept cell and the public variables.
 - `compile_example_holds`, `compileWith_example_holds`: the lifted valuations.
 - `compile_example_reads`, `compileWith_example_reads`: their typed readings.
+- `compile_example_rejects_altered`: the output altered in the statement, the table unchanged,
+  is not accepted.
 - `affine_example_reads`, `constant_example_reads`, `unit_output_example_reads`: the typed
   reading of an expression output, of an empty input bundle and of an empty output bundle.
 -/
@@ -214,6 +216,24 @@ theorem compileWith_example_reads :
   obtain ⟨W, hW, hin, hout⟩ := compileWith_reads_lifts c
     (fun i => V (publicVarsOf (builtWith K))[i]) _ hsat #v[3, 5] #v[45] (by decide +kernel)
   exact ⟨W, hW, (hin _).mpr (by decide +kernel), (hout _).mpr (by decide +kernel)⟩
+
+/-- The constructor's index of the circuit compiled by `compile` is built. -/
+private theorem classIndex_built : (classIndex? (built K)).isSome = true := by
+  decide +kernel
+
+/-- The index's public rows are the three public fields. -/
+private theorem classIndex_publicCount :
+    ((classIndex? (built K)).get classIndex_built).publicCount = 3 := by
+  decide +kernel
+
+/-- The statement with its output altered to `46` is rejected against the unchanged table,
+which the statement with the output `45` satisfies. -/
+theorem compile_example_rejects_altered :
+    ¬ ((classIndex? (built K)).get classIndex_built).SatisfiesVec #v[3, 5, 46]
+        classIndex_publicCount
+        (tableOf V (directRows (built K).constraints (publicVarsOf (built K))
+          (built K).nextVar)) := by
+  decide +kernel
 
 /-! ## Typed readings of other outputs -/
 

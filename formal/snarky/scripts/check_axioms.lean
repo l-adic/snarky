@@ -203,6 +203,7 @@ def roots : List Name :=
     `Snarky.Kimchi.compileWith_example_holds,
     `Snarky.Kimchi.compile_example_reads,
     `Snarky.Kimchi.compileWith_example_reads,
+    `Snarky.Kimchi.compile_example_rejects_altered,
     `Snarky.Kimchi.affine_example_reads,
     `Snarky.Kimchi.constant_example_reads,
     `Snarky.Kimchi.unit_output_example_reads,
