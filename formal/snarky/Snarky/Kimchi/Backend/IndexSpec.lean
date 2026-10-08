@@ -39,8 +39,6 @@ def directGates (source : List (KimchiConstraint F)) (publicVars : List Variable
     (nv : Variable) : List (AssembledGate F) :=
   (gateDataOf (directBuilt source nv) publicVars).2.1
 
-deriving instance DecidableEq for Kimchi.Gate.Poseidon.Mds
-
 /-- A constraint's index parameters, when it reads any: a Poseidon block's matrix, an
 endomorphism multiplication's coefficient. -/
 def KimchiConstraint.ParamsAgree (mds : Gate.Poseidon.Mds F) (endoBase : F) :

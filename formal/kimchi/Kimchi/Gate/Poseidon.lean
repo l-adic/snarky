@@ -43,6 +43,8 @@ structure Mds (F : Type*) where
   /-- The MDS matrix entry at row 2, column 2. -/
   m22 : F
 
+deriving instance DecidableEq for Mds
+
 /-- Map `f` over every matrix entry. -/
 def Mds.map {R S : Type*} (f : R → S) (M : Mds R) : Mds S where
   m00 := f M.m00
