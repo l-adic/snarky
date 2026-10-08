@@ -1,17 +1,20 @@
-import PicklesFixture.ApplicationRun
+import PicklesFixture.ImportedIndices
 import Pickles.Application.MatrixRun
 
 /-!
 # Checked indices of reconstructed applications
 
-Compile each reconstructed application's circuits once, compare them with the independent
-dump, check them at their keys' index data (`checkApplication`'s check on the compilations in
-hand), reporting every branch's and the wrap circuit's domain, masked rows and public rows,
-then reject the same compilations at index data a key could not have supplied: a domain of
-eight rows, two masked rows, the generator `1`, equal shifts, a zero endomorphism coefficient
-and a zero Poseidon matrix. Every rejection must be the index stage, located at the circuit
-whose data changed: the first branch takes the domain data, and the wrap circuit, whose gates
-read both parameters, the gate data.
+Compile each reconstructed application's circuits once and check them at their keys' index
+data (`checkApplication`'s check on the compilations in hand), reporting every branch's and
+the wrap circuit's domain, masked rows and public rows. Then the dumps' path: the indices
+imported from the independent dump certified against the checked application, a disagreement
+located at its datum, before the compilations are required to match the dump datum by datum.
+A dump corrupted before that path must fail at its datum, and each change to the imported
+side alone must be rejected where it is. Then reject the same compilations at index data a
+key could not have supplied: a domain of eight rows, two masked rows, the generator `1`,
+equal shifts, a zero endomorphism coefficient and a zero Poseidon matrix. Every rejection
+must be the index stage, located at the circuit whose data changed: the first branch takes
+the domain data, and the wrap circuit, whose gates read both parameters, the gate data.
 
 Then, from the application's cached proofs, construct the tables the lifting theorems take
 (`PicklesFixture.Application.checkTables`): each cached execution's rendered witness rows laid
@@ -62,8 +65,10 @@ private def requireRejected {D : Shape} {α : Type} (name what : String)
     else throw (IO.userError s!"{name}: {what} rejected elsewhere: {located f}")
   | .ok _ => throw (IO.userError s!"{name}: {what} was accepted")
 
-/-- Compile an application's circuits once; compare them with the dump, check them at their
-keys' index data, report the checked indices, then require each corruption of the data to be
+/-- Compile an application's circuits once and check them at their keys' index data,
+reporting the checked indices; send the dumps down their path, certification before the
+datum comparison; require a corrupted dump to fail at its datum and each change to the
+imported side to be rejected where it is; then require each corruption of the key data to be
 rejected at its circuit. -/
 def checkIndices (name : String) (A : ImportedApplication) (tag : Json) :
     IO (CheckedApplication (A.assembled.circuits A.setup (fun _ => none))) := do
@@ -72,21 +77,24 @@ def checkIndices (name : String) (A : ImportedApplication) (tag : Json) :
   let steps ← finSequence fun b => IO.lazyPure fun _ => canonicalStep C b
   let wrap ← IO.lazyPure fun _ => canonicalWrap C
   let t1 ← IO.monoMsNow
-  compareCompilations C steps wrap name tag
-  let t2 ← IO.monoMsNow
+  let (stepDump, wrapDump) ← match circuitDumps A.shape tag with
+    | .error e => throw (IO.userError s!"{name}: dump: {e}")
+    | .ok dumps => pure dumps
   let checked ← match ← IO.lazyPure fun _ =>
       checkApplicationAt C steps wrap (stepIndexData C) (wrapIndexData C) with
     | .error f => throw (IO.userError s!"{name}: {located f}")
     | .ok checked => pure checked
-  let t3 ← IO.monoMsNow
+  let t2 ← IO.monoMsNow
   let I := checked.indices
   for b in List.finRange A.shape.branches do
     IO.println s!"✓ {name} step {b.val}: checked index on a domain of {I.stepSize b}, \
       {(I.step b).zkRows} masked rows, {(I.step b).publicCount} public rows"
   IO.println s!"✓ {name} wrap: checked index on a domain of {I.wrapSize}, {I.wrap.zkRows} \
-    masked rows, {I.wrap.publicCount} public rows (compile {t1 - t0} ms, compare {t2 - t1} ms, \
-    check {t3 - t2} ms)"
+    masked rows, {I.wrap.publicCount} public rows (compile {t1 - t0} ms, check {t2 - t1} ms)"
   (← IO.getStdout).flush
+  let _ ← certifyAndCompare name C steps wrap checked stepDump wrapDump
+  rejectCorruptedDump name C steps wrap checked stepDump wrapDump
+  rejectImportedChanges name C checked stepDump wrapDump
   let first : A.shape.Branch := ⟨0, A.shape.branches_pos⟩
   for (what, bad) in domainCorruptions (stepIndexData C first) do
     requireRejected name s!"step 0 at {what}" (fun | .step b .index => b.val = 0 | _ => false)

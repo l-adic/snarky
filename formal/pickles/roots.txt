@@ -57,7 +57,6 @@ Pickles.Application.Circuits.stepBuilt_rules_congr -- audited transport for repl
 PicklesFixture.Application.checkSelectedFromShape -- reconstruct selected circuits from sidecar shapes
 PicklesFixture.Application.checkIndices -- check-application-indices certifies selected applications' circuits
 PicklesFixture.Application.checkTables -- check-application-indices builds the lifting theorems' tables from cached proofs
-PicklesFixture.Application.certifyImported -- check-application-indices certifies the imported indices against the checked application
 PicklesFixture.Application.rejectInvalidDumps -- check-application-indices: the dump adapter on small dumps
 PicklesFixture.compareWith -- check-cs compares each gadget circuit's system with its dump
 Pickles.Application.Wiring.assemble -- the fixture assembles typed wiring and tests rejected backends

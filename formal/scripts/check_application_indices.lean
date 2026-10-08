@@ -5,13 +5,13 @@ import PicklesFixture.Verdicts
 
 /-!
 Reconstruct the applications an explicit selection names and compile each one's circuits
-once: compare them with the independent circuit dumps, check them at their keys' index data
-and require their rejection at data a key could not have supplied; import each one's indices
-from the dumps alone at the keys' data and certify them against the checked application,
-requiring changes to the imported side to be rejected where they are; then, from each
-application's cached proofs, construct the tables the lifting theorems take against the checked
-indices. Run from `formal/` with `PICKLES_DUMP_DIR` set and `APPS` naming manifest applications;
-the selection is never `all`. `PICKLES_PROOF_CACHE_DIR` selects the caches.
+once: check them at their keys' index data, certify the indices imported from the independent
+dumps against them before comparing the compilations with the dumps datum by datum, and
+require a corrupted dump, changes to the imported side and data a key could not have supplied
+to be rejected where they are; then, from each application's cached proofs, construct the
+tables the lifting theorems take against the checked indices. Run from `formal/` with
+`PICKLES_DUMP_DIR` set and `APPS` naming manifest applications; the selection is never `all`.
+`PICKLES_PROOF_CACHE_DIR` selects the caches.
 -/
 
 open Lean Snarky Pickles Pickles.Application PicklesFixture PicklesFixture.Application
@@ -37,5 +37,4 @@ def main : IO Unit := do
     for (name, A) in imported do
       let tag ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / s!"{name}.json")))
       let checked ← checkIndices name A tag
-      certifyImported name A checked tag
       checkTables name A checked cacheDir

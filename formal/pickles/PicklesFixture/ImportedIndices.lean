@@ -1,4 +1,4 @@
-import PicklesFixture.ApplicationIndices
+import PicklesFixture.ApplicationRun
 import Pickles.Application.Imported
 
 /-!
@@ -11,13 +11,19 @@ generator, shifts and endomorphism coefficient and the environment's matrix. The
 validated before padding: equal gate array lengths, the public rows among the rows, the rows
 before the masked ones, and in each row at most the coefficient columns (a shorter row is zero
 beyond its entries, the reading kimchi gives it), seven wire targets inside the table and a
-known gate type. Then the imported indices are certified against the checked application
-(`PicklesFixture.Application.certifyImported`): the comparator finds no disagreement, and the
-certificate's `CertifiedIndices.correct` is their Pickles-correctness. Three changes to the
-imported side alone must then be rejected where they are, the checked application the same
-throughout: a coefficient of the first branch's first row after the public rows, the first
-wire targets of that row and the next exchanged, another permutation the constructor accepts,
-and the wrap circuit's endomorphism coefficient.
+known gate type. Every failure is located at its circuit.
+
+`PicklesFixture.Application.certifyAndCompare` is the path a reconstructed application's dumps
+take: the imported indices certified against the checked application, a disagreement located
+at its datum, and only then the compilations required to match the dumps datum by datum, the
+evidence that also sees variable ids. The certificate's `CertifiedIndices.correct` is the
+imported indices' Pickles-correctness. `PicklesFixture.Application.rejectCorruptedDump` sends
+a dump with one coefficient changed down that path and requires exactly the located failure.
+`PicklesFixture.Application.rejectImportedChanges` requires three changes to the imported side
+alone to be rejected where they are, the checked application the same throughout: a
+coefficient of the first branch's first row after the public rows, the first wire targets of
+that row and the next exchanged, another permutation the constructor accepts, and the wrap
+circuit's endomorphism coefficient.
 
 `PicklesFixture.Application.rejectInvalidDumps` is the adapter's own behaviour on small dumps,
 before any application: a wellformed dump builds, a wire target outside the table is refused,
@@ -78,28 +84,32 @@ def importIndex {p : ℕ} [Fact p.Prime] (raw : Raw (ZMod p)) (d : IndexData (ZM
   | some idx => return idx
 
 /-- Every branch's and the wrap circuit's index from the dumps at the data, each branch's
-public rows required to be its statement's fields, as the wrap circuit's. -/
-def importIndicesWith {D : Shape} (stepDump : D.Branch → Except String (Raw Fp))
-    (wrapDump : Except String (Raw Fq)) (stepData : D.Branch → IndexData Fp)
-    (wrapData : IndexData Fq) : Except String (ApplicationIndices D) := do
-  let step ← finSequence (β := fun b => Kimchi.Index Fp (stepData b).n) fun b => do
-    (importIndex (← stepDump b) (stepData b)).mapError (s!"step {b.val}: " ++ ·)
-  let wrap ← (importIndex (← wrapDump) wrapData).mapError ("wrap: " ++ ·)
-  if hs : ∀ b, (step b).publicCount = CircuitType.size Fp (StepPublic D) then
-    if hw : wrap.publicCount = CircuitType.size Fq WrapPublic then
+public rows required to be its statement's fields, as the wrap circuit's; a failure is
+located at its circuit. -/
+def importIndicesWith {D : Shape} (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq)
+    (stepData : D.Branch → IndexData Fp) (wrapData : IndexData Fq) :
+    Except String (ApplicationIndices D) := do
+  let step ← finSequence (β := fun b => Kimchi.Index Fp (stepData b).n) fun b =>
+    (importIndex (stepDump b) (stepData b)).mapError (s!"step {b.val}: " ++ ·)
+  let wrap ← (importIndex wrapDump wrapData).mapError ("wrap: " ++ ·)
+  let stepFields := CircuitType.size Fp (StepPublic D)
+  let wrapFields := CircuitType.size Fq WrapPublic
+  if hs : ∀ b, (step b).publicCount = stepFields then
+    if hw : wrap.publicCount = wrapFields then
       return { stepSize := fun b => (stepData b).n, step := step, wrapSize := wrapData.n,
                wrap := wrap, stepPublicCount := hs, wrapPublicCount := hw }
-    else throw s!"wrap: {wrap.publicCount} public rows, \
-      {CircuitType.size Fq WrapPublic} statement fields"
-  else throw "a branch's public rows are not its statement's fields"
+    else throw s!"wrap: {wrap.publicCount} public rows, {wrapFields} statement fields"
+  else
+    match (List.finRange D.branches).find? fun b => (step b).publicCount != stepFields with
+    | some b =>
+      throw s!"step {b.val}: {(step b).publicCount} public rows, {stepFields} statement fields"
+    | none => throw "a branch's public rows are not its statement's fields"
 
-/-- A reconstructed application's imported indices: every branch's and the wrap circuit's
-dumped circuit at its key's data. -/
-def importIndices (A : ImportedApplication) (tag : Json) :
-    Except String (ApplicationIndices A.shape) :=
-  let C := A.assembled.circuits A.setup (fun _ => none)
-  importIndicesWith (stepCircuitDump A.shape tag) (wrapCircuitDump tag) (stepIndexData C)
-    (wrapIndexData C)
+/-- An application's imported indices: every branch's and the wrap circuit's dump at its
+key's data. -/
+def importIndices {D : Shape} {L : Layout D} (C : Circuits D L) (stepDump : D.Branch → Raw Fp)
+    (wrapDump : Raw Fq) : Except String (ApplicationIndices D) :=
+  importIndicesWith stepDump wrapDump (stepIndexData C) (wrapIndexData C)
 
 /-! ## Certification and its rejections -/
 
@@ -148,17 +158,14 @@ private def wiresExchanged (raw : Raw Fp) (r : ℕ) : Raw Fp :=
   let wires := raw.wires.modify r (·.modify 0 fun _ => b)
   { raw with wires := wires.modify (r + 1) (·.modify 0 fun _ => a) }
 
-/-- Import an application's indices from its dumps at the keys' data, certify them against
-the checked application and report; then require each change to the imported side alone to
-be rejected where it is: a coefficient of the first branch's first row after the public rows,
-the first wire targets of that row and the next exchanged, and the wrap circuit's
-endomorphism coefficient. -/
-def certifyImported (name : String) (A : ImportedApplication)
-    (checked : CheckedApplication (A.assembled.circuits A.setup (fun _ => none)))
-    (tag : Json) : IO Unit := do
-  let C := A.assembled.circuits A.setup (fun _ => none)
+/-- Import an application's indices from its dumps at the keys' data and certify them against
+the checked application, a disagreement located at its datum; the certificate's correctness
+is read as the theorem states it. -/
+def certifyImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+    (checked : CheckedApplication C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    IO (CertifiedIndices C) := do
   let t0 ← IO.monoMsNow
-  let imported ← match ← IO.lazyPure fun _ => importIndices A tag with
+  let imported ← match ← IO.lazyPure fun _ => importIndices C stepDump wrapDump with
     | .error e => throw (IO.userError s!"{name}: import: {e}")
     | .ok i => pure i
   let t1 ← IO.monoMsNow
@@ -170,23 +177,64 @@ def certifyImported (name : String) (A : ImportedApplication)
   IO.println s!"✓ {name}: imported indices certified against the checked application \
     (import {t1 - t0} ms, compare {t2 - t1} ms)"
   (← IO.getStdout).flush
-  let first : A.shape.Branch := ⟨0, A.shape.branches_pos⟩
-  let raw ← IO.ofExcept (stepCircuitDump A.shape tag first)
+  return cert
+
+/-- The dumps' path: the imported indices certified against the checked application first,
+then the compilations in hand required to match the dumps datum by datum. -/
+def certifyAndCompare {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+    (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
+    (checked : CheckedApplication C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    IO (CertifiedIndices C) := do
+  let cert ← certifyImported name C checked stepDump wrapDump
+  compareCompilations C steps wrap name stepDump wrapDump
+  return cert
+
+/-- The first branch's dump, and its first row after the public rows, which must exist with
+the next. -/
+private def firstDump {D : Shape} (name : String) (stepDump : D.Branch → Raw Fp) :
+    IO (Raw Fp × ℕ) := do
+  let raw := stepDump ⟨0, D.branches_pos⟩
   let r := raw.publicInputSize
   unless r + 1 < raw.typs.size do
     throw (IO.userError s!"{name}: too few rows after the public rows for the rejections")
-  let stepDump (bad : Raw Fp) (b : A.shape.Branch) : Except String (Raw Fp) :=
-    if b.val = 0 then pure bad else stepCircuitDump A.shape tag b
+  return (raw, r)
+
+/-- A dump with one coefficient changed, sent down the dumps' path: the failure is exactly
+the located one. -/
+def rejectCorruptedDump {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+    (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
+    (checked : CheckedApplication C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    IO Unit := do
+  let (raw, r) ← firstDump name stepDump
+  let corrupted (b : D.Branch) : Raw Fp :=
+    if b.val = 0 then coefficientChanged raw r else stepDump b
+  let expected := s!"{name}: the imported indices differ at step 0: row {r}, coefficient 0"
+  match ← (certifyAndCompare name C steps wrap checked corrupted wrapDump).toBaseIO with
+  | .ok _ => throw (IO.userError s!"{name}: a corrupted dump passed the dumps' path")
+  | .error e =>
+    if toString e = expected then
+      IO.println s!"✓ {name}: a corrupted dump fails the dumps' path at step 0 row {r}, \
+        coefficient 0"
+    else throw (IO.userError s!"{name}: a corrupted dump failed the dumps' path elsewhere: {e}")
+
+/-- Require each change to the imported side alone to be rejected where it is: a coefficient
+of the first branch's first row after the public rows, the first wire targets of that row and
+the next exchanged, and the wrap circuit's endomorphism coefficient. -/
+def rejectImportedChanges {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+    (checked : CheckedApplication C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    IO Unit := do
+  let (raw, r) ← firstDump name stepDump
+  let stepDumpWith (bad : Raw Fp) (b : D.Branch) : Raw Fp := if b.val = 0 then bad else stepDump b
   requireDiff name s!"a coefficient of step 0 row {r}" checked
-    (importIndicesWith (stepDump (coefficientChanged raw r)) (wrapCircuitDump tag)
-      (stepIndexData C) (wrapIndexData C))
+    (importIndicesWith (stepDumpWith (coefficientChanged raw r)) wrapDump (stepIndexData C)
+      (wrapIndexData C))
     (fun | .step (.member b (.coeff i c)) => b.val == 0 && i == r && c.val == 0 | _ => false)
   requireDiff name s!"the first wire targets of step 0 rows {r} and {r + 1} exchanged" checked
-    (importIndicesWith (stepDump (wiresExchanged raw r)) (wrapCircuitDump tag)
-      (stepIndexData C) (wrapIndexData C))
+    (importIndicesWith (stepDumpWith (wiresExchanged raw r)) wrapDump (stepIndexData C)
+      (wrapIndexData C))
     (fun | .step (.member b (.wire i c)) => b.val == 0 && i == r && c.val == 0 | _ => false)
   requireDiff name "the wrap circuit's endomorphism coefficient" checked
-    (importIndicesWith (stepCircuitDump A.shape tag) (wrapCircuitDump tag) (stepIndexData C)
+    (importIndicesWith stepDump wrapDump (stepIndexData C)
       { wrapIndexData C with endoBase := (wrapIndexData C).endoBase + 1 })
     (fun | .wrap .endoBase => true | _ => false)
   (← IO.getStdout).flush

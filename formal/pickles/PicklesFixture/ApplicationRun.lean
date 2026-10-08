@@ -157,11 +157,19 @@ def stepCircuitDump (D : Shape) (tag : Json) (b : D.Branch) : Except String (Raw
 def wrapCircuitDump (tag : Json) : Except String (Raw Fq) := do
   parseGates (← (← tag.getObjVal? "wrapMain").getObjVal? "circuit")
 
-/-- Compare each branch's and the wrap circuit's compilation in hand with the independent
-dump. -/
+/-- Every branch's and the wrap circuit's dump, from the tag, a failure located at its
+circuit. -/
+def circuitDumps (D : Shape) (tag : Json) : Except String ((D.Branch → Raw Fp) × Raw Fq) := do
+  let steps ← finSequence (β := fun _ => Raw Fp) fun b =>
+    (stepCircuitDump D tag b).mapError (s!"step {b.val}: " ++ ·)
+  let wrap ← (wrapCircuitDump tag).mapError ("wrap: " ++ ·)
+  return (steps, wrap)
+
+/-- Compare each branch's and the wrap circuit's compilation in hand with its dump, datum by
+datum. -/
 def compareCompilations {D : Shape} {L : Layout D} (C : Circuits D L)
     (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
-    (name : String) (tag : Json) : IO Unit := do
+    (name : String) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) : IO Unit := do
   let report (label : String) (checks : List (String × Bool)) : IO Unit := do
     let bad := checks.filter (!·.2)
     unless bad.isEmpty do
@@ -169,17 +177,17 @@ def compareCompilations {D : Shape} {L : Layout D} (C : Circuits D L)
     IO.println s!"✓ {name} {label}: application circuit matches dumped constraint system"
     (← IO.getStdout).flush
   for b in List.finRange D.branches do
-    let raw ← IO.ofExcept (stepCircuitDump D tag b)
-    report s!"step {b.val}" (compareBuilt (a := Unit) (b := StepPublic D) (steps b).1 raw)
-  let raw ← IO.ofExcept (wrapCircuitDump tag)
-  report "wrap" (compareBuilt (a := WrapPublic) (b := Unit) wrap.1 raw)
+    report s!"step {b.val}"
+      (compareBuilt (a := Unit) (b := StepPublic D) (steps b).1 (stepDump b))
+  report "wrap" (compareBuilt (a := WrapPublic) (b := Unit) wrap.1 wrapDump)
 
 /-- Compare every reconstructed step branch's and the wrap circuit's canonical compilation with
 the independent dump. -/
 def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
-    (name : String) (tag : Json) : IO Unit :=
+    (name : String) (tag : Json) : IO Unit := do
   let C := A.circuits S (fun _ => none)
-  compareCompilations C (canonicalStep C) (canonicalWrap C) name tag
+  let (stepDump, wrapDump) ← IO.ofExcept (circuitDumps D tag)
+  compareCompilations C (canonicalStep C) (canonicalWrap C) name stepDump wrapDump
 
 private def runStep {D : Shape} (A : Assembled D) (S : Setup) (branch : Nat)
     (proof : Cache.Entry CS) (previous : Array StepPrev)
