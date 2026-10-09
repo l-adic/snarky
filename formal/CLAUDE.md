@@ -346,8 +346,8 @@ scripts/check_application_keys.lean          # check-application-keys: derive ke
 scripts/certify_application.lean             # certify-application: selected applications reconstructed, compiled
                                              # once, their dumps' indices certified against the checked
                                              # compilation (PICKLES_DUMP_DIR, APPS; CI runs it from test.yml)
-scripts/check_certify_failures.sh            # its failure regressions: damaged files fail their application
-                                             # alone, located, beside an intact one (CI runs it from test.yml)
+scripts/check_certify_failures.sh            # its one-run regression: three damaged applications fail located
+                                             # and block their dependents beside an intact certified one (CI)
 ```
 
 (Every package-local check reads its data through an env var whose **default is relative

@@ -44,14 +44,15 @@ private def tablesFor (raw : ApplicationDump) (wrap : Srs IpaPallas.curve)
   return ⟨wrapTable, steps⟩
 
 /-- Reconstruct the entries in import order, continuing past a failure, and finish with each
-entry's application or why it has none. A reconstruction that fails is reported at its entry,
-an entry importing a failed producer is blocked by that failure, and an entry importing one
-that has no application is blocked by it. -/
+entry's application or why it has none. A reconstruction that fails is reported at its entry;
+an entry importing a failed producer, by wrap key, is blocked by that failure; an entry
+importing one that has no application is blocked by it; and an entry whose import matches
+nothing names the entries that failed to load, whose keys are unknown. -/
 private def assembleAll (wrap : Srs Bulletproof.IpaPallas.curve)
     (step : Srs Bulletproof.IpaVesta.curve)
     (finish : List (String × Except String ImportedApplication) → IO Unit) :
     Nat → List (String × ApplicationDump) → List (String × ImportedApplication) →
-    List (String × ApplicationDump) → List (String × Except String ImportedApplication) →
+    List (String × Key IpaPallas.curve 1) → List (String × Except String ImportedApplication) →
     IO Unit
   | 0, pending, _, _, done =>
     finish (done ++ pending.map fun (name, _) =>
@@ -68,53 +69,63 @@ private def assembleAll (wrap : Srs Bulletproof.IpaPallas.curve)
       let rest := pending.filter (·.1 != name)
       match ← (tablesFor dump wrap step).toBaseIO with
       | .error e =>
-        assembleAll wrap step finish fuel rest known (failed ++ [(name, dump)])
+        assembleAll wrap step finish fuel rest known (failed ++ [(name, dump.wrapKey)])
           (done ++ [(name, .error s!"Lagrange memo: {e}")])
       | .ok tables =>
         match dump.assemble wrap step tables (known.map (·.2)).toArray with
         | .error e =>
-          assembleAll wrap step finish fuel rest known (failed ++ [(name, dump)])
+          assembleAll wrap step finish fuel rest known (failed ++ [(name, dump.wrapKey)])
             (done ++ [(name, .error e)])
         | .ok A =>
           assembleAll wrap step finish fuel rest (known ++ [(name, A)]) failed
             (done ++ [(name, .ok A)])
     | none =>
+      let unloaded := done.filterMap fun (n, r) =>
+        match r with
+        | .error _ => if failed.any (·.1 == n) then none else some n
+        | .ok _ => none
+      let unmatched := if unloaded.isEmpty then
+          "blocked: an import matches no application in the selection"
+        else s!"blocked: an import matches no application in the selection; failed to load: \
+          {", ".intercalate unloaded}"
       let blocked := pending.map fun (name, dump) =>
-        let imports (d : ApplicationDump) : Bool :=
-          dump.imports.any fun imp => sameKey d.wrapKey imp.wrapKey
-        match failed.find? fun (_, f) => imports f with
-        | some (producer, _) => (name, .error s!"blocked by the failure of {producer}")
+        match blockedBy dump.importsKey failed with
+        | some producer => (name, .error s!"blocked by the failure of {producer}")
         | none =>
-          match (pending.filter (·.1 != name)).find? fun (_, d) => imports d with
-          | some (producer, _) =>
-            (name, .error s!"blocked by {producer}, which has no application")
-          | none => (name, .error "blocked: an import matches no application in the selection")
+          let others := (pending.filter (·.1 != name)).map fun (n, d) => (n, d.wrapKey)
+          match blockedBy dump.importsKey others with
+          | some producer => (name, .error s!"blocked by {producer}, which has no application")
+          | none => (name, .error unmatched)
       finish (done ++ blocked)
 
 /-- Load each selected manifest entry's sidecar, reconstruct every entry in import order,
 continuing past failures, and finish with each entry's application or its failure. An entry
-whose files are missing or whose sidecar does not parse fails at that stage; the shared SRSs
-are the caller's. -/
+whose sidecar is missing or does not parse fails at that stage, its key unknown; one whose
+circuit dump is missing fails with its key known, so its dependents are blocked by it. The
+shared SRSs are the caller's. -/
 def reconstructApplications (dir : System.FilePath) (apps : List Manifest.Application)
     (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
     (finish : List (String × Except String ImportedApplication) → IO Unit) : IO Unit := do
   unless !apps.isEmpty do throw (IO.userError "no applications selected")
   let mut entries : List (String × ApplicationDump) := []
   let mut failures : List (String × String) := []
+  let mut failedKeys : List (String × Key IpaPallas.curve 1) := []
   for app in apps do
     for tag in app.tags do
       let name := s!"{app.name}/{tag.name}"
       let dumpPath := dir / app.name / s!"{tag.name}.json"
       let sidecar := dir / app.name / "shapes" / s!"{tag.name}.json"
-      if !(← dumpPath.pathExists) then
-        failures := failures ++ [(name, s!"missing required fixture: {dumpPath}")]
-      else if !(← sidecar.pathExists) then
+      if !(← sidecar.pathExists) then
         failures := failures ++ [(name, s!"missing required fixture: {sidecar}")]
       else
         match ← (do IO.ofExcept (ApplicationDump.ofJson (← readJson sidecar))).toBaseIO with
         | .error e => failures := failures ++ [(name, s!"sidecar: {e}")]
-        | .ok dump => entries := entries ++ [(name, dump)]
-  assembleAll wrap step finish entries.length entries [] []
+        | .ok dump =>
+          if ← dumpPath.pathExists then entries := entries ++ [(name, dump)]
+          else
+            failures := failures ++ [(name, s!"missing required fixture: {dumpPath}")]
+            failedKeys := failedKeys ++ [(name, dump.wrapKey)]
+  assembleAll wrap step finish entries.length entries [] failedKeys
     (failures.map fun (name, e) => (name, Except.error e))
 
 /-- Load and reconstruct every selected entry, failing at the first that has no application,

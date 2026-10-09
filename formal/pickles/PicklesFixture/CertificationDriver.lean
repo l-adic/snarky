@@ -35,15 +35,12 @@ def PicklesFixture.Application.runCertification (requireExplicit : Bool)
         IO.println s!"✗ {name}: {e}"
         failed := failed ++ [name]
       | .ok A =>
-        let blocked := results.findSome? fun (producer, result) =>
-          if producer ∈ failed then
-            match result with
-            | .error _ => none
-            | .ok P =>
-              if (List.finRange A.shape.imports.size).any (fun t =>
-                  sameKey P.assembled.wiring.backend.wrapKey (A.assembled.wiring.imports t).wrapKey)
-              then some producer else none
-          else none
+        let failedKeys := results.filterMap fun (producer, result) =>
+          match result with
+          | .ok P => if producer ∈ failed then some (producer, P.assembled.wiring.backend.wrapKey)
+            else none
+          | .error _ => none
+        let blocked := blockedBy A.importsKey failedKeys
         let certify : IO (Certification A) := do
           if let some producer := blocked then
             throw (IO.userError s!"{name}: blocked by certification failure of {producer}")
