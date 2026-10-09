@@ -1,5 +1,6 @@
 import PicklesFixture.ApplicationRun
 import Pickles.Application.Imported
+import Pickles.Application.KeyCertification
 
 /-!
 # Imported indices of reconstructed applications
@@ -209,11 +210,13 @@ structure Certification (A : ImportedApplication) where
   wrapDump : Raw Fq
   /-- The imported indices certified against the checked application. -/
   cert : CertifiedIndices (A.assembled.circuits A.setup (fun _ => none))
+  /-- The supplied keys' correspondence to these certified indices under the shared SRSs. -/
+  keys : ApplicationKeys (A.assembled.circuits A.setup (fun _ => none)) cert.indices
 
 /-- The certification path: compile a reconstructed application's circuits once, parse its
 dumps once, check the compilations at the keys' index data and report the checked indices,
-then import the dumps' indices and certify them. A failure is located at its stage and
-circuit. -/
+then import the dumps' indices, certify them, and derive every supplied key against those
+indices and the shared SRSs. A failure is located at its stage and circuit. -/
 def certifyApplication (name : String) (A : ImportedApplication) (tag : Json) :
     IO (Certification A) := do
   let C := A.assembled.circuits A.setup (fun _ => none)
@@ -237,7 +240,15 @@ def certifyApplication (name : String) (A : ImportedApplication) (tag : Json) :
     masked rows, {I.wrap.publicCount} public rows (compile {t1 - t0} ms, check {t2 - t1} ms)"
   (← IO.getStdout).flush
   let cert ← certifyImported name C checked stepDump wrapDump
-  return { steps, wrap, checked, stepDump, wrapDump, cert }
+  let tk ← IO.monoMsNow
+  let keyed ← match ← IO.lazyPure fun _ => certifyKeys? cert with
+    | .error (.step b f) => throw (IO.userError s!"{name}: key: step {b.val}: {f.describe}")
+    | .error (.wrap f) => throw (IO.userError s!"{name}: key: wrap: {f.describe}")
+    | .ok keyed => pure keyed
+  let tk' ← IO.monoMsNow
+  IO.println s!"✓ {name}: all step and wrap keys derived from the certified indices and SRSs \
+    ({tk' - tk} ms)"
+  return { steps, wrap, checked, stepDump, wrapDump, cert := keyed.certified, keys := keyed.keys }
 
 /-- The dumps' path: the imported indices certified against the checked application first,
 then the compilations in hand required to match the dumps datum by datum. -/

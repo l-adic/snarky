@@ -333,6 +333,8 @@ scripts/check_cs.lean                        # compiled constraint systems vs th
                                              # needs the circuit-diffs exports, so CI runs it from test.yml)
 scripts/check_tags.lean                      # every tag the pickles prove tests compiled, rebuilt from their
                                              # tag dumps (PICKLES_DUMP_DIR; CI runs it from test.yml)
+scripts/check_application_keys.lean          # check-application-keys: derive keys for self, external and chunked fixtures
+                                             # (PICKLES_DUMP_DIR; optional APPS; no proof cache)
 scripts/certify_application.lean             # certify-application: selected applications reconstructed, compiled
                                              # once, their dumps' indices certified against the checked
                                              # compilation (PICKLES_DUMP_DIR, APPS; CI runs it from test.yml)

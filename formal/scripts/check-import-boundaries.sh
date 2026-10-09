@@ -77,7 +77,7 @@ forbid() { # $1 = module, $2 = regex of forbidden modules, $3 = what they are
 }
 
 B=Snarky.Kimchi.Backend
-CHECKS='(^Kimchi\.Index\.CompareChecks$|\.Checks\.)'
+CHECKS='(^Kimchi\.Index\.(CompareChecks|InterpolationChecks)$|\.Checks\.)'
 
 for m in Compile Admissibility IndexSpec ScopedCheck CompiledIndex; do
   forbid "$B.$m" "^$B\.(Internal|Checks)\." "proof or check module"

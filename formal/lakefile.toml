@@ -115,3 +115,7 @@ root = "scripts.check_application_indices"
 [[lean_exe]]
 name = "certify-application"
 root = "scripts.certify_application"
+
+[[lean_exe]]
+name = "check-application-keys"
+root = "scripts.check_application_keys"

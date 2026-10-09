@@ -1,4 +1,5 @@
 import PicklesFixture.ImportedIndices
+import PicklesFixture.KeyChecks
 import Pickles.Application.MatrixRun
 
 /-!
@@ -60,6 +61,7 @@ def checkIndices (name : String) (A : ImportedApplication) (tag : Json) :
     IO (CheckedApplication (A.assembled.circuits A.setup (fun _ => none))) := do
   let C := A.assembled.circuits A.setup (fun _ => none)
   let r ← certifyApplication name A tag
+  if name == "NoRecursionReturn/nrr" then rejectWrongKeys name A r
   compareCompilations C r.steps r.wrap name r.stepDump r.wrapDump
   rejectCorruptedDump name C r.steps r.wrap r.checked r.stepDump r.wrapDump
   rejectImportedChanges name C r.checked r.stepDump r.wrapDump

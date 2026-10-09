@@ -20,6 +20,7 @@ import Kimchi.Index.Satisfies
 import Kimchi.Index.CopySoundness
 import Kimchi.Index.Aggregate
 import Kimchi.Index.Compare
+import Kimchi.Index.Interpolation
 import Kimchi.Permutation.Wiring
 import Kimchi.Permutation.Permutation
 import Bulletproof.Wire

@@ -86,3 +86,10 @@ Kimchi.Fixture.PS.fpSide
 Kimchi.Fixture.PS.fqSide
 Kimchi.Fixture.PS.parseComparisonCs?
 -- script-surface:end
+
+-- Verifier keys from index polynomials and the shared SRS, with regression endpoints.
+Kimchi.Index.columnCoefficients_getD
+Kimchi.Index.commitColumn_eq
+Kimchi.Index.InterpolationChecks.recovers_coefficients
+Kimchi.Index.InterpolationChecks.rejects_altered_value
+Kimchi.Index.InterpolationChecks.zero_extends_empty

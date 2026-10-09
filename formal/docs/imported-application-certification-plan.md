@@ -56,11 +56,12 @@ or prove a whole application's inductive derivation relation.
 These phases start from matrix satisfaction. They do not add a cryptographic theorem deriving
 a satisfying matrix from `kimchiVerify = true`. A later proof-level contract must identify the
 intended index and verifier key. Index equality alone does not prove that a key's polynomial
-commitments commit to that index. Existing key-layout checks and dynamic `KeyBound` facts
-must not be described as that missing commitment correspondence.
+commitments commit to that index. The certification path now also derives every step and wrap
+key from the certified index and shared SRS, retaining this correspondence as `ApplicationKeys`.
+Existing key-layout checks and dynamic `KeyBound` facts remain distinct from this check.
 
 Certification is relative to the decoded exported artifacts and their connection to the
-source-language implementation. Optional gates, lookups, sideloading and native key generation
+source-language implementation. Optional gates, lookups, sideloading and full prover-key generation
 remain separate work. The current constructor and application vocabulary is the scope here.
 
 ## Existing components to reuse
@@ -383,6 +384,27 @@ was discharged on the Lean reconstruction, whose index now matches the imported 
 Imports continue to be resolved through reconstructed producers and `SourceFor`. When a
 claim spans producer/consumer applications, use each application's corresponding certificate.
 Equality of one application's indices does not certify an unrelated producer's indices.
+
+### Verifier-key correspondence
+
+`pickles/Pickles/KeyDerivation.lean` interpolates each index column by the proved inverse NTT
+and commits its coefficients using the accelerated MSM. Each chunk restarts at the first SRS
+generator. The seven permutation and fifteen coefficient columns are unmasked; the six
+selector columns add the SRS blinding base once per chunk. `deriveKey` assembles the metadata
+and computes the digest from the derived commitments, independently of the supplied key.
+
+`checkKey?` checks metadata, the SRS chunk count and the shape's predecessor count, then compares
+every commitment. Its success carries `KeyCorresponds`, stated against polynomial commitments.
+The supplied `Key` already proves its digest equation. `certifyKeys?` checks every branch and
+the wrap; `Certification` retains `ApplicationKeys` alongside the imported-index certificate.
+The manifest driver certifies external producers too and blocks their dependents on failure.
+
+`check-application-keys` defaults to three explicit manifest entries: `SimpleChainN2` for
+nonchunked self recursion, `HeterogeneousPrevs` for nonchunked self plus external recursion
+(including its producer), and `SelfRecursiveChunks` for chunked self recursion. `APPS` can
+override that selection. Kernel checks cover inverse interpolation and located commitment
+comparison. The small application driver also changes step and wrap commitments, recomputes
+their digests, and requires the otherwise wellformed keys to fail against the unchanged index.
 
 ### Tests and exit condition
 

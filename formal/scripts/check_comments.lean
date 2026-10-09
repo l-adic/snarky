@@ -32,6 +32,7 @@ Run from `formal/`:  scripts/check-comments.sh
 -/
 import Kimchi
 import Kimchi.Index.CompareChecks
+import Kimchi.Index.InterpolationChecks
 import Poseidon
 import Snarky
 import Snarky.Kimchi.Backend.Compile
@@ -71,6 +72,7 @@ import Snarky.Kimchi.Semantics
 import Pickles
 import Pickles.Application.Checks.MatrixRunConsumer
 import Pickles.Application.Checks.CertificationConsumer
+import Pickles.Application.Checks.KeyDerivationChecks
 import KimchiFixture.Kimchi
 import KimchiFixture.PS
 import KimchiFixture.Cache
