@@ -113,8 +113,6 @@ Pickles.Application.MatrixRunConsumer.lifts_both -- both lifts applied against t
 -- Pickles-correctness preserves matrix readings. Connections supplied on the matrices
 -- lift to the native capstones, with conclusions on the same matrices and the state projection.
 Pickles.Application.checkedApplication_picklesCorrect
-Pickles.Application.PicklesCorrect.stepRun_reads
-Pickles.Application.PicklesCorrect.wrapRun_reads
 Pickles.Application.CertifiedIndices.wrap_handover
 Pickles.Application.CertifiedIndices.step_handover
 Pickles.Application.matrices_stepWrap

@@ -46,7 +46,7 @@ theorem checkedApplication_picklesCorrect (C : Circuits D L) (checked : CheckedA
   ⟨checked.lift_step, checked.lift_wrap⟩
 
 /-- The source step execution with exactly the supplied matrix’s fixed reading. -/
-noncomputable def PicklesCorrect.stepRun {C : Circuits D L} (checked : PicklesCorrect C I)
+private noncomputable def PicklesCorrect.stepRun {C : Circuits D L} (checked : PicklesCorrect C I)
     (b : D.Branch) (t : StepTable I b) : StepRun C b :=
   { V := stepValuation C I b t
     advice := inertStepAdvice
@@ -57,7 +57,7 @@ noncomputable def PicklesCorrect.stepRun {C : Circuits D L} (checked : PicklesCo
       exact h }
 
 /-- The source wrap execution with exactly the supplied matrix’s fixed reading. -/
-noncomputable def PicklesCorrect.wrapRun {C : Circuits D L} (checked : PicklesCorrect C I)
+private noncomputable def PicklesCorrect.wrapRun {C : Circuits D L} (checked : PicklesCorrect C I)
     (t : WrapTable I) : WrapRun C :=
   { V := wrapValuation C I t
     advice := inertWrapAdvice
@@ -66,18 +66,6 @@ noncomputable def PicklesCorrect.wrapRun {C : Circuits D L} (checked : PicklesCo
       have h := r.holds
       rw [C.wrapBuilt_eq r.advice, (checked.wrap t).choose_spec.2] at h
       exact h }
-
-/-- The lifted step uses the fixed matrix valuation. -/
-private theorem stepRunOf_V {C : Circuits D L} (checked : PicklesCorrect C I)
-    (b : D.Branch) (t : StepTable I b) :
-    (PicklesCorrect.stepRun checked b t).V = stepValuation C I b t :=
-  rfl
-
-/-- The lifted wrap uses the fixed matrix valuation. -/
-private theorem wrapRunOf_V {C : Circuits D L} (checked : PicklesCorrect C I)
-    (t : WrapTable I) :
-    (PicklesCorrect.wrapRun checked t).V = wrapValuation C I t :=
-  rfl
 
 /-- The lifted step reads the matrix’s public statement. -/
 private theorem stepRunOf_public {C : Circuits D L} (checked : PicklesCorrect C I)
@@ -96,31 +84,15 @@ private theorem wrapRunOf_public {C : Circuits D L} (checked : PicklesCorrect C 
   rw [(checked.wrap t).choose_spec.2] at h
   exact h
 
-/-- Every observation of retained step cells agrees with its fixed matrix reading. -/
-theorem PicklesCorrect.stepRun_reads {C : Circuits D L} (checked : PicklesCorrect C I)
-    (b : D.Branch) (t : StepTable I b) {α : Sort _}
-    (read : Valuation Fp → C.StepCells b → α) :
-    read (PicklesCorrect.stepRun checked b t).V (PicklesCorrect.stepRun checked b t).cells =
-      read (stepValuation C I b t) (stepCompilation C b).result.1.2 := by
-  rw [stepRunOf_V, StepRun.cells_eq]
-
-/-- Every observation of retained wrap cells agrees with its fixed matrix reading. -/
-theorem PicklesCorrect.wrapRun_reads {C : Circuits D L} (checked : PicklesCorrect C I)
-    (t : WrapTable I) {α : Sort _}
-    (read : Valuation Fq → C.WrapCells → α) :
-    read (PicklesCorrect.wrapRun checked t).V (PicklesCorrect.wrapRun checked t).cells =
-      read (wrapValuation C I t) (wrapCompilation C).result.1.2 := by
-  rw [wrapRunOf_V, WrapRun.cells_eq]
-
 /-- Connected matrices give a connected step/wrap execution pair. -/
 private noncomputable def stepWrapOf {C : Circuits D L} (checked : PicklesCorrect C I)
     (b : D.Branch) (s : StepTable I b) (w : WrapTable I)
     (h : MatrixStepWrap C I b s w) : StepWrapLink C b where
   step := PicklesCorrect.stepRun checked b s
   wrap := PicklesCorrect.wrapRun checked w
-  branch := by simpa only [wrapRunOf_V, WrapRun.cells_eq] using h.1
+  branch := by simpa only [WrapRun.cells_eq] using h.1
   publicInput := by
-    simpa only [wrapRunOf_V, WrapRun.cells_eq, h.2] using stepRunOf_public checked b s
+    simpa only [PicklesCorrect.wrapRun, WrapRun.cells_eq, h.2] using stepRunOf_public checked b s
 
 /-- Connected matrices give a connected wrap/step execution pair. -/
 private noncomputable def wrapStepOf {P : Circuits PD PL} {C : Circuits CD CL}
@@ -132,15 +104,15 @@ private noncomputable def wrapStepOf {P : Circuits PD PL} {C : Circuits CD CL}
   sourceFor := h.sourceFor
   wrap := PicklesCorrect.wrapRun pc w
   step := PicklesCorrect.stepRun cc cb s
-  branch := by simpa only [wrapRunOf_V, WrapRun.cells_eq] using h.branch
-  mustVerify := by simpa only [stepRunOf_V, StepRun.cells_eq] using h.mustVerify
+  branch := by simpa only [WrapRun.cells_eq] using h.branch
+  mustVerify := by simpa only [StepRun.cells_eq] using h.mustVerify
   mask := h.mask
   maskReads := by
-    simpa only [StepRun.inp, StepRun.cells_eq, stepRunOf_V, matrixInp] using h.maskReads
+    simpa only [StepRun.inp, StepRun.cells_eq, matrixInp] using h.maskReads
   publicInput := by
     have hp := wrapRunOf_public pc w
     rw [h.publicInput] at hp
-    simpa only [StepRun.inp, StepRun.cells_eq, stepRunOf_V, matrixInp] using hp
+    simpa only [StepRun.inp, StepRun.cells_eq, matrixInp] using hp
 
 /-- Matrix connections give the native wrap-proof handover record. -/
 private noncomputable def wrapHandoverOf {P : Circuits PD PL} {C : Circuits CD CL}
@@ -154,17 +126,17 @@ private noncomputable def wrapHandoverOf {P : Circuits PD PL} {C : Circuits CD C
   consumer := stepWrapOf cc cb cs cw h.consumerPair
   sourceFor := h.sourceFor
   mustVerifyProducer := by
-    simpa only [stepWrapOf, stepRunOf_V, StepRun.cells_eq] using h.mustVerifyProducer
+    simpa only [stepWrapOf, StepRun.cells_eq] using h.mustVerifyProducer
   keyProducer := by
-    simpa only [StepRun.KeyBound, stepWrapOf, stepRunOf_V, StepRun.cells_eq] using h.keyProducer
+    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using h.keyProducer
   mustVerifyConsumer := by
-    simpa only [stepWrapOf, stepRunOf_V, StepRun.cells_eq] using h.mustVerifyConsumer
+    simpa only [stepWrapOf, StepRun.cells_eq] using h.mustVerifyConsumer
   keyConsumer := by
-    simpa only [StepRun.KeyBound, stepWrapOf, stepRunOf_V, StepRun.cells_eq] using h.keyConsumer
+    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using h.keyConsumer
   middlePublicInput := by
     have hp := wrapRunOf_public pc pw
     rw [h.middlePublicInput] at hp
-    simpa only [stepWrapOf, StepWrapLink.mask, StepRun.inp, StepRun.cells_eq, stepRunOf_V,
+    simpa only [stepWrapOf, StepWrapLink.mask, StepRun.inp, StepRun.cells_eq,
       matrixInp, matrixMask] using hp
 
 /-- Matrix connections give the native step-proof handover record. -/
@@ -179,7 +151,7 @@ private noncomputable def stepHandoverOf {P : Circuits PD PL} {M : Circuits MD M
   producer := wrapStepOf pc mc pb mb mi pw ms h.producerPair
   consumer := wrapStepOf mc cc mb cb ci mw cs h.consumerPair
   middlePublicInput := by
-    simpa only [wrapStepOf, wrapRunOf_V, WrapRun.cells_eq, h.middlePublicInput]
+    simpa only [wrapStepOf, PicklesCorrect.wrapRun, WrapRun.cells_eq, h.middlePublicInput]
       using stepRunOf_public mc mb ms
 
 /-- Connected accepted matrices satisfy the original handover capstone’s implication. -/
@@ -217,9 +189,9 @@ theorem matrices_stepWrap {C : Circuits D L} (correct : PicklesCorrect C I)
       (C.wiring.source b i).wrapKey.cvk) : StepWrapConclusion C I b s w i := by
   have hm' : CircuitType.Reads (stepWrapOf correct b s w h).step.V
       ((stepWrapOf correct b s w h).step.cells.prevs i).mustVerify true := by
-    simpa only [stepWrapOf, stepRunOf_V, StepRun.cells_eq] using hm
+    simpa only [stepWrapOf, StepRun.cells_eq] using hm
   have hk' : (stepWrapOf correct b s w h).step.KeyBound i := by
-    simpa only [StepRun.KeyBound, stepWrapOf, stepRunOf_V, StepRun.cells_eq] using hk
+    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using hk
   exact (stepWrapOf correct b s w h).verifies_proof i ha hm' hk'
 
 /-- Connected wrap/step matrices satisfy the verification, mask and accumulator capstone. -/
