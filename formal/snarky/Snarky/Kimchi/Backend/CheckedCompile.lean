@@ -22,8 +22,8 @@ constraints, its public variables and its counter.
 
 ## Main results
 
-- `CheckedIndex.lift`: a table satisfying a checked index yields a valuation satisfying the
-  source, at the public input.
+- `CheckedIndex.lift`, `CheckedIndex.lift_reading`: source satisfaction and public readings;
+  the latter also preserves the fixed `matrixValuation` reading of every expression.
 - `CheckedIndex.check?_index`, `checkBuilt?_index`: the checked index is the constructor's,
   built from the compiler's own gate table.
 - `CheckedIndex.check?_isOk_iff`: the check succeeds exactly when the source is in scope and
@@ -36,10 +36,10 @@ constraints, its public variables and its counter.
 A consumer checks a compilation with `checkBuilt?`, or a source list with
 `CheckedIndex.check?`, reads the result through `CheckedIndex.index`,
 `CheckedIndex.publicIndex` and `CheckedIndex.publicCount_eq`, and lifts with
-`CheckedIndex.lift`; `compiledPublicVars` gives the public variables and `CheckFailure` the
+`CheckedIndex.lift` or `CheckedIndex.lift_reading`; `matrixValuation` reads retained cells.
+`compiledPublicVars` gives the public variables and `CheckFailure` the
 reason for a rejection. `CheckedConsumer.compile_lifts` and `CheckedConsumer.compileWith_lifts`
 are written against this interface alone.
-
 `checkBuilt?_index` and `CheckedIndex.check?_isOk_iff` serve consumers that compare the index
 with ordinary compilation or decide a check; their statements bring `indexOfGates?` and
 `compiledIndex?` with them. For the same consumers, `gateTable?_isSome_iff` says exactly when
@@ -164,6 +164,23 @@ theorem CheckedIndex.lift [NeZero n] (c : CheckedIndex source publicVars nv n)
     ∃ V : Valuation F, (∀ con ∈ source, KimchiConstraint.Holds V con) ∧
       ∀ i : Fin publicVars.length, V publicVars[i] = pub (c.publicIndex i) :=
   KimchiConstraint.Wired.holds_of_satisfies c.admissible c.corresponds pub wTab hsat
+
+/-- A table's fixed source-variable reading, following labelled cells and equality aliases.
+It depends on the compiled source and table, without a satisfaction or connection proof.
+Variables with no represented class read as zero. -/
+noncomputable def matrixValuation (source : List (KimchiConstraint F))
+    (publicVars : List Variable) (nv : Variable) {n : ℕ} (table : Fin n → Fin wCols → F) :
+    Valuation F :=
+  recoveredValuation source publicVars nv table
+
+/-- Checked lifting preserves the fixed matrix reading, including every retained expression. -/
+theorem CheckedIndex.lift_reading [NeZero n] (c : CheckedIndex source publicVars nv n)
+    (pub : Fin c.index.publicCount → F) (wTab : Fin n → Fin wCols → F)
+    (hsat : c.index.Satisfies pub wTab) :
+    ∃ V : Valuation F, (∀ con ∈ source, KimchiConstraint.Holds V con) ∧
+      (∀ i : Fin publicVars.length, V publicVars[i] = pub (c.publicIndex i)) ∧
+      V = matrixValuation source publicVars nv wTab :=
+  KimchiConstraint.Wired.holds_of_satisfies_reading c.admissible c.corresponds pub wTab hsat
 
 end Checked
 

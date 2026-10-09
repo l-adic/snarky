@@ -283,4 +283,29 @@ theorem unit_output_example_reads :
   obtain ⟨hin, hout⟩ := compile_reads hsat #v[4] #v[] (by decide +kernel)
   exact ⟨(hin _).mpr rfl, (hout _).mpr rfl⟩
 
+/-! ## Retained advice boundary -/
+
+/-- A field retained without a source constraint or public occurrence. -/
+private def unusedRetained (_ : Unit) : CircuitM ℚ (KimchiConstraint ℚ) (Unit × FVar ℚ) := do
+  let x ← witness (val := ℚ) (pure 7)
+  pure ((), x)
+
+/-- The unused field’s compiled handle is still retained. -/
+private def unusedRetainedBuilt := compileWith (a := Unit) (b := Unit) unusedRetained
+
+/-- Retention alone does not determine advice: two source-satisfying valuations can disagree
+on the retained field, even with the same empty public input. Matrix lifting fixes its own
+interpretation rather than claiming to recover every prover valuation. -/
+theorem retained_advice_not_unique :
+    compiledPublicVars (F := ℚ) (a := Unit) (b := Unit) unusedRetainedBuilt = [] ∧
+    (∀ c ∈ unusedRetainedBuilt.constraints, KimchiConstraint.Holds (fun _ => (0 : ℚ)) c) ∧
+    (∀ c ∈ unusedRetainedBuilt.constraints, KimchiConstraint.Holds (fun _ => (1 : ℚ)) c) ∧
+    unusedRetainedBuilt.result.1.2.val (fun _ => 0) ≠
+      unusedRetainedBuilt.result.1.2.val (fun _ => 1) := by
+  have hkept : unusedRetainedBuilt.result.1.2 = CVar.var 0 := by with_unfolding_all rfl
+  have hsource : unusedRetainedBuilt.constraints = [] := by with_unfolding_all rfl
+  refine ⟨by decide +kernel, ?_⟩
+  rw [hsource, hkept]
+  simp [CVar.val]
+
 end Snarky.Kimchi

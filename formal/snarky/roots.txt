@@ -121,6 +121,8 @@ Snarky.Kimchi.CheckedIndex.publicIndex_val
 Snarky.Kimchi.CheckedIndex.check?
 Snarky.Kimchi.checkBuilt?
 Snarky.Kimchi.CheckedIndex.lift
+Snarky.Kimchi.matrixValuation
+Snarky.Kimchi.CheckedIndex.lift_reading
 Snarky.Kimchi.CheckFailure
 Snarky.compiledPublicVars
 -- For consumers that compare the checked index with ordinary compilation or decide a check.
@@ -192,6 +194,7 @@ Snarky.Kimchi.compileWith_example_holds
 Snarky.Kimchi.compile_example_reads
 Snarky.Kimchi.compileWith_example_reads
 Snarky.Kimchi.compile_example_rejects_altered
+Snarky.Kimchi.retained_advice_not_unique
 Snarky.Kimchi.affine_example_reads
 Snarky.Kimchi.constant_example_reads
 Snarky.Kimchi.unit_output_example_reads
