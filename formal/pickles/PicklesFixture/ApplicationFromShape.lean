@@ -27,7 +27,7 @@ private def memoisedTable (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Poin
   let memoDir := (← IO.getEnv "LAGRANGE_CACHE_DIR").getD "lagrange-cache"
   let path : System.FilePath := s!"{memoDir}/{name}-k{σ.k}-2^{cvk.domainLog2}-{nc}c.json"
   unless ← path.pathExists do
-    IO.println s!"  no Lagrange memo at {path}: computing it"
+    IO.println s!"  no Lagrange memo at {path}"
     (← IO.getStdout).flush
   let pts ← Fixture.lagrangeBasisCached C path σ nc (2 ^ cvk.domainLog2) cvk.omega cvk.publicCount
   return pts.map (·.toArray)

@@ -311,6 +311,14 @@ the tree now needs either.
 
 ## Fixtures and compatibility checks
 
+The Lean Lagrange bases under `lagrange-cache/` are committed and pinned, together with the
+shared SRS input hashes, by `lagrange-cache/manifest.json`. From the repository root,
+`make check-lagrange-cache` checks their inventory and hashes; `make regenerate-lagrange-cache`
+recomputes every listed prefix directly from the SRS and updates the manifest. Review and commit
+the tables and manifest together. The application CI job sets `LAGRANGE_CACHE_REQUIRED=1`, so a
+missing, malformed or insufficient committed table fails instead of silently regenerating.
+These provenance checks do not discharge the capstones' mathematical Lagrange correspondence.
+
 Everything executable is validated against proof-systems itself. The fixtures and vectors
 under `fixtures/` are recorded from the production Rust code by `tools/fixture-dump`
 (see its README for the binaries, output map, and regeneration workflow — regenerate on a

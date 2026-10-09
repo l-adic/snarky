@@ -405,6 +405,9 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     needs: [test-libs, test-example]
     runs-on: ubuntu-latest
+    env:
+      LAGRANGE_CACHE_DIR: ${{ github.workspace }}/formal/lagrange-cache
+      LAGRANGE_CACHE_REQUIRED: '1'
     steps:
     - uses: actions/checkout@v4
       with:
@@ -454,6 +457,9 @@ jobs:
 
     - name: Populate SRS cache
       run: make fetch-srs
+
+    - name: Check committed Lean Lagrange bases and their SRS inputs
+      run: python3 formal/scripts/lagrange_cache.py check --srs-dir srs-cache
 
     - name: Check the tag dumps
       run: |
@@ -516,6 +522,11 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps PICKLES_PROOF_CACHE_DIR=../example-proof-cache \
           LINKS=ExampleTransaction lake exe check-tags
+
+    - name: Check Lean Lagrange fixtures stayed unchanged
+      run: |
+        python3 formal/scripts/lagrange_cache.py check --srs-dir srs-cache
+        git diff --exit-code -- formal/lagrange-cache
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

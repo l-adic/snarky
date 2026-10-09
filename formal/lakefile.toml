@@ -119,3 +119,8 @@ root = "scripts.certify_application"
 [[lean_exe]]
 name = "check-application-keys"
 root = "scripts.check_application_keys"
+
+# Explicit regeneration of the committed Lean Lagrange tables, never a normal CI run.
+[[lean_exe]]
+name = "regenerate-lagrange-cache"
+root = "scripts.regenerate_lagrange_cache"

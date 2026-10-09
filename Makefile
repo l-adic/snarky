@@ -208,6 +208,14 @@ pickles-inventory: ## Generate analysis/pickles-inventory.md (Phase 1 of module 
 fetch-srs: ## Download the srs-cache from github
 	sh ./scripts/fetch-srs.sh
 
+.PHONY: check-lagrange-cache
+check-lagrange-cache: ## Check the committed Lean Lagrange table inventory and hashes
+	python3 formal/scripts/lagrange_cache.py check
+
+.PHONY: regenerate-lagrange-cache
+regenerate-lagrange-cache: fetch-srs ## Recompute and re-pin all committed Lean Lagrange bases
+	python3 formal/scripts/lagrange_cache.py regenerate
+
 .PHONY: fixtures-unpack
 fixtures-unpack: ## Decompress committed chunk fixtures (idempotent; prereq of circuit-diff tests)
 	bash ./scripts/fixtures.sh unpack
