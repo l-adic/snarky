@@ -1,6 +1,7 @@
 import PicklesFixture.ApplicationRun
 import Pickles.Application.Imported
 import Pickles.Application.KeyCertification
+import Kimchi.Columns
 
 /-!
 # Imported indices of reconstructed applications
@@ -43,7 +44,7 @@ open scoped Kimchi
 
 /-- A dump's wire target as a cell of the table. -/
 private def targetOf (n i : ℕ) (w : ℕ × ℕ) : Except String (Fin permCols × Fin n) :=
-  if h : w.1 < 7 ∧ w.2 < n then pure (⟨w.1, h.1⟩, ⟨w.2, h.2⟩)
+  if h : w.1 < permCols ∧ w.2 < n then pure (⟨w.1, h.1⟩, ⟨w.2, h.2⟩)
   else throw s!"row {i}: wire target ({w.1}, {w.2}) outside the table"
 
 /-- A dump row as a gate row: its type, its coefficients zero beyond the dumped ones and at
@@ -53,12 +54,13 @@ private def rowOf {F : Type} [Zero F] (n : ℕ) (raw : Raw F) (i : ℕ) :
   let some typ := raw.typs[i]? | throw s!"row {i}: no gate type"
   let some coeffs := raw.coeffs[i]? | throw s!"row {i}: no coefficients"
   let some wires := raw.wires[i]? | throw s!"row {i}: no wires"
-  unless coeffs.size ≤ 15 do throw s!"row {i}: {coeffs.size} coefficients, 15 columns"
+  unless coeffs.size ≤ coeffCols do
+    throw s!"row {i}: {coeffs.size} coefficients, {coeffCols} columns"
   let ws ← wires.mapM (targetOf n i)
-  if h : ws.size = 7 then
+  if h : ws.size = permCols then
     return { typ := typ, coeffs := fun c => coeffs.getD (c : ℕ) 0,
              wires := fun c => ws[(c : ℕ)]'(by omega) }
-  else throw s!"row {i}: {ws.size} wire targets, 7 expected"
+  else throw s!"row {i}: {ws.size} wire targets, {permCols} expected"
 
 /-- The table over the converted rows: the array's row where there is one, a zero gate wired
 to itself beyond. Never inlined, so that the array is a value the function captures and not

@@ -1,5 +1,6 @@
 import Pickles.Application.CheckedCompile
 import Pickles.Application.Run
+import Kimchi.Columns
 
 /-!
 # Satisfying tables give typed application executions

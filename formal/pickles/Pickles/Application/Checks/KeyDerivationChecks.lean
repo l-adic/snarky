@@ -1,4 +1,5 @@
 import Pickles.KeyDerivation
+import Kimchi.Columns
 
 /-!
 # Commitment comparator checks

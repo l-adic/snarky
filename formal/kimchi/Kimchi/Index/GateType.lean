@@ -18,4 +18,14 @@ inductive GateType where
   | endoScalar
   deriving DecidableEq, Inhabited
 
+/-- A gate type's name, as its constructor is spelled. -/
+def GateType.name : GateType → String
+  | .zero => "zero"
+  | .generic => "generic"
+  | .poseidon => "poseidon"
+  | .completeAdd => "completeAdd"
+  | .varBaseMul => "varBaseMul"
+  | .endoMul => "endoMul"
+  | .endoScalar => "endoScalar"
+
 end Kimchi.Index

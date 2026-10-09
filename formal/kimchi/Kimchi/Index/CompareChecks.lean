@@ -1,5 +1,6 @@
 import Kimchi.Index.Compare
 import Mathlib.Tactic.NormNum.Prime
+import Kimchi.Columns
 
 /-!
 # Index comparison checks

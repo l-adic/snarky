@@ -291,11 +291,10 @@ def KeyFailure.describe : KeyFailure → String
   | .mds => "Poseidon matrix"
   | .prevChallenges => "shape accumulator count"
   | .commitment d =>
-    let c := d.column.val
-    let column := if c < permCols then s!"sigma {c}"
-      else if c < permCols + coeffCols then s!"coefficient {c - permCols}"
-      else ["generic", "poseidon", "completeAdd", "varBaseMul", "endoMul", "endoScalar"].getD
-        (c - (permCols + coeffCols)) "selector"
+    let column := if h : d.column.val < permCols then s!"sigma {d.column.val}"
+      else if h' : d.column.val < permCols + coeffCols then
+        s!"coefficient {d.column.val - permCols}"
+      else s!"{(selectorGate ⟨d.column.val - (permCols + coeffCols), by omega⟩).name} selector"
     s!"{column}, chunk {d.chunk}"
 
 end Pickles

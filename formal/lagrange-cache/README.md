@@ -22,7 +22,9 @@ review the changes, and commit the tables and manifest together.
 The Lean CI application job requires cache hits, checks the manifest against the SRS
 files it actually loaded, and verifies afterward that the fixtures stayed unchanged.
 Outside that job, missing or insufficient tables retain the usual compute-on-miss behavior;
-`LAGRANGE_CACHE_DIR` selects a local cache. `LAGRANGE_CACHE_REQUIRED=1` refuses a miss.
+`LAGRANGE_CACHE_DIR` selects a local cache. `LAGRANGE_CACHE_REQUIRED=1` refuses a miss. A
+table computed for a domain outside the manifest fails `make check-lagrange-cache` as unlisted
+until the manifest is regenerated to list it or the table is removed.
 
 These hashes pin fixture provenance and detect changes. They do not discharge the
 capstones' mathematical correspondence between a consumed table and the SRS-derived basis.

@@ -23,8 +23,10 @@
 # memos `basisFor` names (`<curve>-k<rounds>-2^<domain>-<chunks>c.json`) are committed, like the
 # proof cache they serve. The manifest pins the SRS inputs and table hashes; regenerate with
 # `make regenerate-lagrange-cache` after changes to the SRS or basis computation. File hashes
-# establish provenance, not the capstones' mathematical Lagrange correspondence. Other names
-# stay local.
+# establish provenance, not the capstones' mathematical Lagrange correspondence. Every table
+# `basisFor` names matches the pattern, so one computed for a domain outside the manifest is
+# untracked and fails `make check-lagrange-cache` as unlisted until it is listed by
+# regenerating or removed; only names from older layouts stay local.
 /lagrange-cache/*
 !/lagrange-cache/*-k*-2^*-*c.json
 !/lagrange-cache/manifest.json
