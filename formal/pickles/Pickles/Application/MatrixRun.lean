@@ -14,8 +14,9 @@ statement, and the execution is that valuation at inert advice, every execution 
 the canonical compilation. The execution's retained cells are the canonical compilation's
 (`StepRun.cells_eq`, `WrapRun.cells_eq`), the body's statement among them.
 
-The valuation is existential: nothing here recovers it, and nothing identifies it with any
-prover's. A table relates to its execution only through the public statement.
+The execution uses the fixed matrix reading (`stepValuation`, `wrapValuation`). The lift
+preserves this identity as well as the public statement, so every retained expression has
+the same reading. No claim identifies it with an arbitrary prover's advice.
 
 ## Main definitions
 
@@ -55,6 +56,21 @@ structure WrapTable (I : ApplicationIndices D) where
   table : Fin I.wrapSize → Fin wCols → Fq
   /-- The index accepts the table at the statement. -/
   holds : I.wrap.SatisfiesVec (CircuitType.valueToFields statement) I.wrapPublicCount table
+
+/-- The fixed reading of a step matrix through its canonical compilation. -/
+noncomputable def stepValuation (C : Circuits D L) (I : ApplicationIndices D) (b : D.Branch)
+    (t : StepTable I b) : Valuation Fp :=
+  matrixValuation (stepCompilation C b).constraints (stepPublicVars C b)
+    (stepCompilation C b).nextVar t.table
+
+/-- The fixed reading of a wrap matrix through its canonical compilation. -/
+noncomputable def wrapValuation (C : Circuits D L) (I : ApplicationIndices D)
+    (t : WrapTable I) : Valuation Fq :=
+  matrixValuation (wrapCompilation C).constraints (wrapPublicVars C)
+    (wrapCompilation C).nextVar t.table
+
+-- Keeping compilation opaque prevents routine record reductions from expanding whole circuits.
+attribute [irreducible] stepValuation wrapValuation
 
 /-! ## Executions and the canonical compilation -/
 
@@ -97,10 +113,11 @@ private theorem map_eq_of_pointwise {F : Type} [Field F] [DecidableEq F]
 /-- **An accepted step table has a step execution at its statement.** -/
 theorem CheckedApplication.lift_step {C : Circuits D L} (checked : CheckedApplication C)
     (b : D.Branch) (t : StepTable checked.indices b) :
-    ∃ r : StepRun C b, CircuitType.Reads r.V r.cells.out t.statement := by
+    ∃ r : StepRun C b, CircuitType.Reads r.V r.cells.out t.statement ∧
+      r.V = stepValuation C checked.indices b t := by
   haveI : NeZero (stepIndexData C b).n :=
     ⟨by have := (checked.step b).index.zk_three; have := (checked.step b).index.zk_le; omega⟩
-  obtain ⟨V, hV, hpub⟩ := (checked.step b).lift _ t.table t.holds
+  obtain ⟨V, hV, hpub, hdet⟩ := (checked.step b).lift_reading _ t.table t.holds
   have hlist : (stepPublicVars C b).map V =
       (#v[] : Vector Fp 0).toList ++ (CircuitType.valueToFields (F := Fp) t.statement).toList :=
     map_eq_of_pointwise (checked.step b) _ (checked.indices.stepPublicCount b) V hpub
@@ -108,7 +125,7 @@ theorem CheckedApplication.lift_step {C : Circuits D L} (checked : CheckedApplic
     (main := C.stepCircuit b inertStepAdvice) hV #v[] _ hlist
   have hread : CircuitType.Reads V (stepCompilation C b).result.1.1 t.statement :=
     (hout t.statement).mpr rfl
-  refine ⟨⟨V, inertStepAdvice, hV⟩, ?_⟩
+  refine ⟨⟨V, inertStepAdvice, hV⟩, ?_, by simpa only [stepValuation] using hdet⟩
   show CircuitType.Reads V (StepRun.cells ⟨V, inertStepAdvice, _⟩).out t.statement
   rw [StepRun.cells_eq, ← stepCompilation_out]
   exact hread
@@ -116,10 +133,11 @@ theorem CheckedApplication.lift_step {C : Circuits D L} (checked : CheckedApplic
 /-- **An accepted wrap table has a wrap execution at its statement.** -/
 theorem CheckedApplication.lift_wrap {C : Circuits D L} (checked : CheckedApplication C)
     (t : WrapTable checked.indices) :
-    ∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement t.statement := by
+    ∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement t.statement ∧
+      r.V = wrapValuation C checked.indices t := by
   haveI : NeZero (wrapIndexData C).n :=
     ⟨by have := checked.wrap.index.zk_three; have := checked.wrap.index.zk_le; omega⟩
-  obtain ⟨V, hV, hpub⟩ := checked.wrap.lift _ t.table t.holds
+  obtain ⟨V, hV, hpub, hdet⟩ := checked.wrap.lift_reading _ t.table t.holds
   have hlist : (wrapPublicVars C).map V =
       (CircuitType.valueToFields (F := Fq) t.statement).toList ++ (#v[] : Vector Fq 0).toList := by
     show _ = _ ++ ([] : List Fq)
@@ -127,6 +145,7 @@ theorem CheckedApplication.lift_wrap {C : Circuits D L} (checked : CheckedApplic
     exact map_eq_of_pointwise checked.wrap _ checked.indices.wrapPublicCount V hpub
   obtain ⟨hin, -⟩ := compileWith_reads (a := WrapPublic) (b := Unit)
     (main := C.wrapCircuit inertWrapAdvice) hV _ #v[] hlist
-  exact ⟨⟨V, inertWrapAdvice, hV⟩, (hin t.statement).mpr rfl⟩
+  exact ⟨⟨V, inertWrapAdvice, hV⟩, (hin t.statement).mpr rfl,
+    by simpa only [wrapValuation] using hdet⟩
 
 end Pickles.Application

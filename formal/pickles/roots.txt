@@ -111,9 +111,13 @@ Pickles.Application.CheckedApplication.lift_wrap
 Pickles.Application.StepRun.cells_eq
 Pickles.Application.WrapRun.cells_eq
 Pickles.Application.MatrixRunConsumer.lifts_both -- both lifts applied against the interface alone
--- Pickles-correctness: a checked application's indices realize executions and the capstones
--- hold for connections among them; each capstone from accepted tables, and the state projection.
+-- Pickles-correctness preserves matrix readings. Connections supplied on the matrices
+-- lift to the native capstones, with conclusions on the same matrices and the state projection.
 Pickles.Application.checkedApplication_picklesCorrect
+Pickles.Application.PicklesCorrect.stepRun_reads
+Pickles.Application.PicklesCorrect.wrapRun_reads
+Pickles.Application.CertifiedIndices.wrap_handover
+Pickles.Application.CertifiedIndices.step_handover
 Pickles.Application.matrices_stepWrap
 Pickles.Application.matrices_wrapStep
 Pickles.Application.matrices_wrap_handover

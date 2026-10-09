@@ -82,46 +82,53 @@ Paths below are relative to `formal/`.
 | `pickles/PicklesFixture/Manifest.lean` | Explicit applications, tags and required link/handover coverage |
 | `kimchi/KimchiFixture/PS.lean` | Gate-dump parsing and the existing synthetic-domain witness adapter |
 
-All names introduced below are proposed. Lean snippets specify the target interfaces; they
-are not yet elaborated declarations. Supply the existing Pasta instances, column notation and
+The phases below record the implementation decomposition. The current contract above and
+the executable consumer document identify the public endpoints. Supply the existing Pasta instances, column notation and
 the implicit context `{D : Shape} {L : Layout D} {C : Circuits D L}` as appropriate. Before
 proof work in each phase, elaborate the complete types and statements. Do not add new library
 axioms or leave `sorry` declarations as an implementation of the plan.
 
-## Statement review before phase 1
+## Implemented matrix contract
 
-[application-certification-draft.lean](application-certification-draft.lean) is an elaborated
-proposal outside the library build. Review its mathematical claim before implementing phase 1.
-The definitions and composition proofs type-check against the existing capstones; the native
-lifting target is only stated, and the application checker is not implemented in the draft.
+[application-certification-draft.lean](application-certification-draft.lean) now elaborates
+consumers of the production interface, rather than defining a second version of it.
 
-The proposal separates `Realizes C indices`, which says every accepted table has a satisfying
-application run at the same public statement, from `FrameworkCorrect C`, which states the four
-existing capstones for connected runs. `PicklesCorrect` is their conjunction. The draft proves
-the framework part directly from the current capstones and proves transport across index
-equality with native correctness as an explicit premise.
+`PicklesCorrect C I` has two lifting fields. Each accepted step/wrap matrix gives a satisfying
+native run at its public statement **and the fixed matrix valuation**. That valuation follows
+the compiled layout's labelled cells and equality classes. It is defined before any
+connection is supplied; no arbitrary source execution or prover advice chooses it.
+`PicklesCorrect.stepRun_reads` and `wrapRun_reads` preserve every observation of retained cells,
+including affine expressions, proof parts, keys, masks and messages.
 
-`CheckedApplicationLiftingGoal` and `CheckedApplicationCorrectGoal` are definitions of the
-complete remaining target propositions, not proofs of them. The first is the phase-1/2
-obligation; the draft proves that it implies the second. Checked certificates name the exact
-canonical compilations, and their index family is derived without storing indices twice.
+The universal endpoints take their arguments in this order:
 
-The four matrix consumers fix the quantifier order: arbitrary accepted tables, then recovered
-runs with the same public statements, then any connection satisfying the remaining hypotheses.
-The connection records are indexed by those runs. No hypothesis decided on an unrelated prover
-valuation can be substituted. Public statements alone do not establish these connections.
-`Realizes` currently preserves public readings; it does not assert a cell-by-cell relation
-between the matrix and the recovered valuation. Such a relation would be a stronger lifting
-contract if a later consumer requires it.
+1. Certificates for the participating applications' indices.
+2. Arbitrary accepted matrices at typed public statements.
+3. Connections expressed on those matrices through the fixed readers.
+4. The original capstone assumptions.
 
-This is a statement-design proposal, not a settled public API. In particular, the four
-conclusion predicates spell out the capstones for review; their final placement should avoid
-maintaining independently drifting copies of the capstone conclusions. The draft also derives
-application-state threading from the whole-message conclusion rather than storing it again.
+They conclude verification or handover for proofs and messages read from those matrices.
+The connection records do not assume the complete-message equality that handover proves.
+No caller supplies a connection about an existential execution chosen later.
+
+`CertifiedIndices.wrap_handover` handles Step → Wrap → Step → Wrap across two applications;
+`CertifiedIndices.step_handover` handles Wrap → Step → Wrap → Step across three. The pair
+endpoints retain production/consumption of accumulators, conditional verification, and the
+wrap/step mask fact. Whole-message equality, accumulator failure and hash collisions retain
+the original grouping. The application-state result is a projection of message equality.
+
+A retained but unused variable need not occur in any matrix cell. The interpretation reads
+unrepresented variables as zero; it does not recover an arbitrary original prover valuation.
+The backend proves this fixed interpretation satisfies the source. This boundary is covered
+by a regression showing two source-satisfying valuations can disagree on unused retained advice.
+
+Imported-index equality transfers this entire contract. `certifyIndices?` uses the same
+comparison and returns the same indices or located errors; its proof field now retains the
+stronger lifting guarantee. Certification never requires a concrete witness chain.
 
 ## Phase 1. Checked compilation of one application
 
-Proposed module: `pickles/Pickles/Application/CheckedCompile.lean`.
+Module: `pickles/Pickles/Application/CheckedCompile.lean`.
 
 ### Interface
 
@@ -172,7 +179,7 @@ verification theorem is invoked by this phase.
 
 ## Phase 2. Satisfying tables give typed application runs
 
-Proposed module: `pickles/Pickles/Application/MatrixRun.lean`.
+Module: `pickles/Pickles/Application/MatrixRun.lean`.
 
 ### Interface
 
@@ -186,18 +193,20 @@ theorem CheckedApplication.lift_step
     (checked : CheckedApplication C) (b : D.Branch)
     (t : StepTable checked.indices b) :
     ∃ r : StepRun C b,
-      CircuitType.Reads r.V r.cells.out t.statement
+      CircuitType.Reads r.V r.cells.out t.statement ∧
+      r.V = stepValuation C checked.indices b t
 
 theorem CheckedApplication.lift_wrap
     (checked : CheckedApplication C)
     (t : WrapTable checked.indices) :
     ∃ r : WrapRun C,
-      CircuitType.Reads r.V wrapStatement t.statement
+      CircuitType.Reads r.V wrapStatement t.statement ∧
+      r.V = wrapValuation C checked.indices t
 ```
 
 ### Work
 
-Compose `CheckedIndex.lift` with `compileWith_reads`. On the step side the public input type
+Compose `CheckedIndex.lift_reading` with `compileWith_reads`. On the step side the public input type
 is `Unit` and the public output is the `StepStatement`; on the wrap side the public input is
 the packed wrap statement and the public output is `Unit`.
 
@@ -205,9 +214,9 @@ Prove the constructor identities connecting the body's output to `StepRun.cells.
 retained cells to each run. Use phase 1's build invariance to establish the exact `holds` field
 required by `StepRun` or `WrapRun`. Every reading concerns the same recovered valuation.
 
-`lift` gives an existential valuation. It is not an executable witness-recovery API, and the
-new proof must not assume that valuation equals the fixture prover's valuation. Keep this
-distinction when designing the test consumer and the following phase.
+`lift_reading` retains equality to `matrixValuation`. The application valuations are opaque
+to routine simplification so proofs do not unfold entire compilations. This is a mathematical
+reading, not an executable witness-recovery API or equality to arbitrary prover advice.
 
 ### Tests and exit condition
 
@@ -224,14 +233,15 @@ statements. Their inter-run connections are still separate obligations.
 
 ## Phase 3. Apply the application capstones to lifted runs
 
-Proposed module: `pickles/Pickles/Application/Certification.lean`.
+Module: `pickles/Pickles/Application/Certification.lean`.
 
 ### Define the claim before proving it
 
-Review the full definition of the proposed `PicklesCorrect C indices` before phase 1.
-It must quantify over arbitrary satisfying tables, obtain their typed runs via phase 2,
-and state the existing verification/handover implications for connections between those runs.
-Do not use an unexplained predicate as a substitute for agreeing on these quantifiers.
+`PicklesCorrect C indices` quantifies over arbitrary satisfying tables and obtains their
+typed runs and fixed readings via phase 2.
+Its matrix consumers take connections stated on the fixed matrix readings, construct the
+corresponding native links, and apply the existing verification/handover implications. Do not use an unexplained predicate as a substitute for
+agreeing on these quantifiers.
 
 Its remaining hypotheses include exactly those needed at the respective connection:
 
@@ -261,7 +271,7 @@ earlier proof verifies or the later proof exhibits `AccumulatorFailure`; message
 alternatives remain outside that conjunction. Preserve the application-state projection and
 its verified-slot restriction.
 
-The proposed endpoint is:
+The endpoint is:
 
 ```lean
 theorem checkedApplication_picklesCorrect
@@ -269,8 +279,8 @@ theorem checkedApplication_picklesCorrect
     PicklesCorrect C checked.indices
 ```
 
-This theorem is unconditional only in the sense that `PicklesCorrect` itself explicitly
-quantifies the remaining hypotheses above. It must not assert their universal validity.
+This theorem establishes the two lifting guarantees. The matrix consumer theorems retain the
+remaining hypotheses above; neither the certificate nor `PicklesCorrect` asserts their validity.
 State connections across producer applications using their own certificates and existing
 interfaces; do not require a uniform domain or a global application registry.
 
@@ -278,13 +288,13 @@ interfaces; do not require a uniform domain or a global application registry.
 
 - An application-level proof consumer starts at phase 2 and applies the capstones themselves.
   Hand-written Boolean lists duplicating their hypotheses are not an acceptance test.
-- Use selected `TwoPhaseChain` executions for both handover directions, then
-  `HeterogeneousPrevs` for an external producer, retaining the manifest's coverage checks.
+- Existing `TwoPhaseChain` and `HeterogeneousPrevs` cached executions remain optional concrete
+  evidence. They are not an obligation for the universal matrix theorem.
 - Every supplied key, mask and internal-statement fact must concern the lifted run it is used
   with. Facts decided on a different prover valuation are not automatically transferable.
-- If the existential lift prevents executing a proposed concrete consumer, keep the universal
-  theorem consumer and concrete premise checks distinct and report that test limitation.
-  Do not silently assume equality with the prover valuation or introduce trusted extraction.
+- Public consumers take only returned certificates, matrices and matrix connections; no native
+  run, source-satisfaction fact or native-run connection may be an additional input.
+- Audit each endpoint against its original capstone: no new axioms or erased alternatives.
 
 Exit: the native reconstructed application's matrix-level Pickles guarantee is proved, with
 all residual assumptions visible. No witness matrix needs to be exported to certify the
@@ -292,7 +302,7 @@ static application.
 
 ## Phase 4. Certified equality of indices
 
-Proposed module: `kimchi/Kimchi/Index/Compare.lean`, with separate check modules.
+Module: `kimchi/Kimchi/Index/Compare.lean`, with separate check modules.
 
 ### Interface
 
@@ -332,7 +342,7 @@ does not depend on the Pickles proof machinery and can be reviewed separately.
 
 ## Phase 5. Import actual indices and transport application correctness
 
-Proposed modules: an adapter under `pickles/PicklesFixture/` and
+Modules: an adapter under `pickles/PicklesFixture/` and
 `pickles/Pickles/Application/Imported.lean`.
 
 ### Independent import
@@ -392,7 +402,13 @@ Exit: the universal imported-application theorem and its checked adapter are imp
 targeted fixture runs exercise the success and rejection paths. Distinguish this from the
 closed certificate for a named application in phase 6.
 
-## Phase 6. Kernel-certify a named imported application
+## Deferred experiment: kernel-certify a named imported application
+
+This investigation was stopped in favor of the compiled `certify-application` executable.
+The executable reconstructs, checks and compares selected artifacts, returning the certified
+indices or located errors. Its universal theorem is kernel-checked; it does not emit a
+standalone kernel proof of a named file’s parsing/checking success. The experiment below is
+future work, not an obligation for matrix handover or the executable.
 
 A universal theorem about successful checking and a successful native fixture run are
 different deliverables. A closed theorem about a named imported application also needs

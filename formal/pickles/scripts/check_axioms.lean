@@ -56,6 +56,10 @@ def roots : List Name :=
     `Pickles.Application.WrapRun.cells_eq,
     `Pickles.Application.MatrixRunConsumer.lifts_both,
     `Pickles.Application.checkedApplication_picklesCorrect,
+    `Pickles.Application.PicklesCorrect.stepRun_reads,
+    `Pickles.Application.PicklesCorrect.wrapRun_reads,
+    `Pickles.Application.CertifiedIndices.wrap_handover,
+    `Pickles.Application.CertifiedIndices.step_handover,
     `Pickles.Application.matrices_stepWrap,
     `Pickles.Application.matrices_wrapStep,
     `Pickles.Application.matrices_wrap_handover,
@@ -165,6 +169,10 @@ def deployedRoots : List Name :=
     `Pickles.Application.WrapRun.cells_eq,
     `Pickles.Application.MatrixRunConsumer.lifts_both,
     `Pickles.Application.checkedApplication_picklesCorrect,
+    `Pickles.Application.PicklesCorrect.stepRun_reads,
+    `Pickles.Application.PicklesCorrect.wrapRun_reads,
+    `Pickles.Application.CertifiedIndices.wrap_handover,
+    `Pickles.Application.CertifiedIndices.step_handover,
     `Pickles.Application.matrices_stepWrap,
     `Pickles.Application.matrices_wrapStep,
     `Pickles.Application.matrices_wrap_handover,
@@ -230,3 +238,20 @@ run_cmd do
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
     throwError "disallowed axioms found ({bad.size})"
+
+-- Matrix endpoints may use only the axioms already used by their original capstones.
+run_cmd do
+  let pairs := [
+    (`Pickles.Application.matrices_stepWrap, `Pickles.Application.StepWrapLink.verifies_proof),
+    (`Pickles.Application.matrices_wrapStep, `Pickles.Application.WrapStepLink.verifies_proof),
+    (`Pickles.Application.CertifiedIndices.wrap_handover,
+      `Pickles.Application.WrapProofHandover.handover_or_collision),
+    (`Pickles.Application.CertifiedIndices.step_handover,
+      `Pickles.Application.StepProofHandover.handover_or_collision)]
+  for (endpoint, capstone) in pairs do
+    let actual ← liftCoreM <| Lean.collectAxioms endpoint
+    let original ← liftCoreM <| Lean.collectAxioms capstone
+    let extra := actual.filter fun ax => !(original.contains ax)
+    unless extra.isEmpty do
+      throwError "{endpoint}: axioms beyond {capstone}: {extra}"
+  IO.println "✓ matrix endpoints introduce no axioms beyond their original capstones"

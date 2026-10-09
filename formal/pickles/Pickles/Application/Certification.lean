@@ -1,47 +1,24 @@
-import Pickles.Application.MatrixRun
+import Pickles.Application.MatrixRead
 import Pickles.Application.Handover
 
 /-!
-# A checked application is Pickles-correct
+# Matrix connections lift to the Pickles capstones
 
-`PicklesCorrect C I` is the claim the checked compilation of an application establishes for
-its family of indices `I`: every table an index accepts at a typed statement has an execution
-of the circuit at that statement (`Realizes`), and the framework's four capstones hold for
-every connection among executions (`FrameworkCorrect`). `checkedApplication_picklesCorrect`
-proves it for a checked application's own indices, from the lifts of accepted tables.
+`PicklesCorrect` preserves the fixed matrix valuation as well as the public statement.
+Its executions therefore preserve every observation of the canonical compilation’s
+retained cells. Matrix connections are supplied before any execution is constructed;
+the link constructors carry those same connections into the original capstones.
 
-The quantifier order is fixed. A consumer supplies accepted tables and recovers executions
-with their public readings; connections are then quantified over those particular executions
-(`StepWrapConnection`, `WrapStepConnection`, `WrapHandoverConnection`,
-`StepHandoverConnection`), and the capstones' implications hold whenever they do. Nothing
-here says that accepted tables are connected, and nothing identifies a recovered execution
-with any prover's: a connection's hypotheses concern the recovered executions alone. The
-records carrying data, a mask, are types; the others are propositions.
+`matrices_stepWrap` and `matrices_wrapStep` expose the verification capstones.
+`matrices_wrap_handover` and `matrices_step_handover` expose the four-execution handovers,
+including whole-message equality, accumulator failure and collision alternatives.
+All proof and message readings in their conclusions belong to the supplied matrices.
+The original setup, source, key, mask and verification assumptions remain explicit.
+Nothing requires a cached prover execution or a witness-generation argument.
 
-The four conclusion predicates spell out the capstones' conclusions, retaining their
-whole-message grouping, the accumulator-failure alternative and the collision alternatives
-outside it. `frameworkCorrect` proves each field by the capstone itself, so a capstone whose
-conclusion changes fails here rather than drifting from its restatement. The application-state
-projection is derived from the whole-message conclusion (`WrapHandoverConclusion.appState`),
-not restated.
-
-The fixture lanes that execute reconstructed applications decide the same connection
-hypotheses on their own executions and apply the same capstones; they are evidence about those
-executions. The theorems here are about every accepted table.
-
-## Main definitions
-
-- `Realizes`, `FrameworkCorrect`, `PicklesCorrect`: the claim.
-- `StepWrapConclusion`, `WrapStepConclusion`, `StepHandoverConclusion`,
-  `WrapHandoverConclusion`: the capstones' conclusions.
-- The connection records and their links.
-
-## Main results
-
-- `checkedApplication_picklesCorrect`: a checked application's indices are Pickles-correct.
-- `matrices_stepWrap`, `matrices_wrapStep`, `matrices_wrap_handover`, `matrices_step_handover`:
-  each capstone from accepted tables, the executions recovered first.
-- `WrapHandoverConclusion.appState`: the application-state projection.
+The fixed interpretation need not recover arbitrary unused advice. It follows the
+compiler’s labelled cells and equality classes; unrepresented variables read as zero.
+The backend proves that this interpretation satisfies the source constraints.
 -/
 
 namespace Pickles.Application
@@ -50,355 +27,227 @@ open Snarky Snarky.Kimchi Bulletproof CompElliptic.Fields.Pasta Kimchi.Verifier
 open scoped Kimchi
 
 variable {D : Shape} {L : Layout D}
+variable {PD MD CD : Shape} {PL : Layout PD} {ML : Layout MD} {CL : Layout CD}
+variable {I : ApplicationIndices D} {PI : ApplicationIndices PD}
+  {MI : ApplicationIndices MD} {CI : ApplicationIndices CD}
 
-/-- Every accepted table has an execution at exactly the same public statement. -/
-structure Realizes (C : Circuits D L) (I : ApplicationIndices D) : Prop where
-  /-- Every accepted step table has a step execution at its statement. -/
+/-- Every accepted matrix has a source execution at its statement and fixed matrix reading. -/
+structure PicklesCorrect (C : Circuits D L) (I : ApplicationIndices D) : Prop where
+  /-- Every step table lifts with its public and retained readings. -/
   step : ∀ (b : D.Branch) (t : StepTable I b),
-    ∃ r : StepRun C b, CircuitType.Reads r.V r.cells.out t.statement
-  /-- Every accepted wrap table has a wrap execution at its statement. -/
-  wrap : ∀ t : WrapTable I,
-    ∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement t.statement
+    ∃ r : StepRun C b, CircuitType.Reads r.V r.cells.out t.statement ∧ r.V = stepValuation C I b t
+  /-- Every wrap table lifts with its public and retained readings. -/
+  wrap : ∀ (t : WrapTable I),
+    ∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement t.statement ∧ r.V = wrapValuation C I t
 
-/-- The complete conclusion of the existing step-wrap verification capstone. -/
-def StepWrapConclusion {C : Circuits D L} {b : D.Branch}
-    (e : StepWrapLink C b) (i : D.Slot b) : Prop :=
-  let σ := C.setup.wrapSrs.σ
-  let vk := (C.wiring.source b i).wrapKey.cvk
-  let r := e.run i (e.mask i)
-  r.Produces C.setup.dummy
-    ⟨(e.proof i).opening.sg, wireChallenges σ vk (e.proof i) (e.proofPublicInput i)⟩ ∧
-  r.Consumes C.setup.dummy (e.proof i).olds.toList ∧
-  (SgOk σ vk (e.proof i) (e.proofPublicInput i) →
-    kimchiVerify IpaPallas.curve σ vk (e.proof i) (e.proofPublicInput i) = true)
-
-variable {producerD middleD consumerD : Shape}
-  {producerL : Layout producerD} {middleL : Layout middleD} {consumerL : Layout consumerD}
-
-/-- The complete conclusion of the existing wrap-step verification capstone. -/
-def WrapStepConclusion
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {cb : consumerD.Branch} {i : consumerD.Slot cb}
-    (e : WrapStepLink producer consumer pb cb i) : Prop :=
-  let σ := producer.setup.stepSrs.σ
-  let vk := producer.wiring.backend.stepKeys[pb].cvk
-  e.run.Produces producer.wiring.backend.wrapKey.cvk producer.setup.dummy
-    ⟨e.proof.opening.sg, wireChallenges σ vk e.proof e.proofPublicInput⟩ ∧
-  e.run.Consumes producer.wiring.backend.wrapKey.cvk producer.setup.dummy e.proof.olds.toList ∧
-  (∀ (j : Nat)
-      (hj : j < SlotSource.widths consumerD.width (consumer.wiring.sources cb) i),
-    e.mask[j] = decide (producerD.width - producerD.slots pb ≤ j)) ∧
-  (SgOk σ vk e.proof e.proofPublicInput →
-    kimchiVerify IpaVesta.curve σ vk e.proof e.proofPublicInput = true)
-
-/-- Whole messages and recursive verification, in the step-proof direction. -/
-def StepHandoverConclusion
-    {producer : Circuits producerD producerL} {middle : Circuits middleD middleL}
-    {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {mb : middleD.Branch} {cb : consumerD.Branch}
-    {mi : middleD.Slot mb} {ci : consumerD.Slot cb}
-    (e : StepProofHandover producer middle consumer pb mb cb mi ci) : Prop :=
-  let σ := producer.setup.stepSrs.σ
-  let vk := producer.wiring.backend.stepKeys[pb].cvk
-  let nextVk := middle.wiring.backend.stepKeys[mb].cvk
-  kimchiVerify IpaVesta.curve σ nextVk e.consumer.proof e.consumer.proofPublicInput = true →
-  (e.sentStep = e.receivedStep ∧
-   e.sentWrap = e.receivedWrap ∧
-   (kimchiVerify IpaVesta.curve σ vk e.producer.proof e.producer.proofPublicInput = true ∨
-    AccumulatorFailure σ nextVk e.consumer.proof e.consumer.proofPublicInput)) ∨
-  e.producer.run.WrapCollision e.consumer.run producer.setup.dummy ∨
-  e.producer.run.StepCollision e.consumer.run middle.wiring.backend.wrapKey.cvk
-
-/-- Whole messages and recursive verification, in the wrap-proof direction. -/
-def WrapHandoverConclusion
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {cb : consumerD.Branch}
-    {pi : producerD.Slot pb} {ci : consumerD.Slot cb}
-    (e : WrapProofHandover producer consumer pb cb pi ci) : Prop :=
-  let σ := producer.setup.wrapSrs.σ
-  let vk := (producer.wiring.source pb pi).wrapKey.cvk
-  let nextVk := (consumer.wiring.source cb ci).wrapKey.cvk
-  let r := e.producer.run pi (e.producer.mask pi)
-  let r' := e.consumer.run ci (e.consumer.mask ci)
-  kimchiVerify IpaPallas.curve σ nextVk
-    (e.consumer.proof ci) (e.consumer.proofPublicInput ci) = true →
-  (e.sentStep = e.receivedStep ∧
-   e.sentWrap = e.receivedWrap ∧
-   (kimchiVerify IpaPallas.curve σ vk
-      (e.producer.proof pi) (e.producer.proofPublicInput pi) = true ∨
-    AccumulatorFailure σ nextVk
-      (e.consumer.proof ci) (e.consumer.proofPublicInput ci))) ∨
-  r.WrapCollision r' producer.setup.dummy ∨ r.StepCollision r' nextVk
-
-/-- The four capstones, over every connection ending in `C`. -/
-structure FrameworkCorrect (C : Circuits D L) : Prop where
-  /-- The step-wrap capstone. -/
-  stepWrap : ∀ (b : D.Branch) (e : StepWrapLink C b) (i : D.Slot b),
-    StepWrapAssumptions C b i →
-    CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true →
-    e.step.KeyBound i → StepWrapConclusion e i
-  /-- The wrap-step capstone. -/
-  wrapStep : ∀ {producerD : Shape} {producerL : Layout producerD}
-    (producer : Circuits producerD producerL)
-    (pb : producerD.Branch) (cb : D.Branch) (i : D.Slot cb)
-    (e : WrapStepLink producer C pb cb i),
-    WrapStepAssumptions producer pb → WrapStepConclusion e
-  /-- The step-proof handover. -/
-  stepHandover : ∀ {producerD middleD : Shape}
-    {producerL : Layout producerD} {middleL : Layout middleD}
-    (producer : Circuits producerD producerL) (middle : Circuits middleD middleL)
-    (pb : producerD.Branch) (mb : middleD.Branch) (cb : D.Branch)
-    (mi : middleD.Slot mb) (ci : D.Slot cb)
-    (e : StepProofHandover producer middle C pb mb cb mi ci),
-    WrapStepAssumptions producer pb → WrapStepAssumptions middle mb →
-    StepHandoverConclusion e
-  /-- The wrap-proof handover. -/
-  wrapHandover : ∀ {producerD : Shape} {producerL : Layout producerD}
-    (producer : Circuits producerD producerL) (pb : producerD.Branch) (cb : D.Branch)
-    (pi : producerD.Slot pb) (ci : D.Slot cb)
-    (e : WrapProofHandover producer C pb cb pi ci),
-    StepWrapAssumptions producer pb pi → StepWrapAssumptions C cb ci →
-    WrapHandoverConclusion e
-
-theorem frameworkCorrect (C : Circuits D L) : FrameworkCorrect C where
-  stepWrap _ e i h hm hk := e.verifies_proof i h hm hk
-  wrapStep _ _ _ _ e h := e.verifies_proof h
-  stepHandover _ _ _ _ _ _ _ e hp hc := e.handover_or_collision hp hc
-  wrapHandover _ _ _ _ _ e hp hc := e.handover_or_collision hp hc
-
-/-- Tables realized as executions, together with the framework's capstone guarantees. -/
-def PicklesCorrect (C : Circuits D L) (I : ApplicationIndices D) : Prop :=
-  Realizes C I ∧ FrameworkCorrect C
-
-/-- A checked application realizes its indices: the two lifts. -/
-theorem CheckedApplication.realizes {C : Circuits D L} (checked : CheckedApplication C) :
-    Realizes C checked.indices :=
-  ⟨checked.lift_step, checked.lift_wrap⟩
-
-/-- **A checked application's indices are Pickles-correct.** Every table they accept at a typed
-statement has an execution at that statement, and the framework's four capstones hold for every
-connection among executions. -/
+/-- A checked application’s indices preserve matrix readings when lifted to executions. -/
 theorem checkedApplication_picklesCorrect (C : Circuits D L) (checked : CheckedApplication C) :
     PicklesCorrect C checked.indices :=
-  ⟨checked.realizes, frameworkCorrect C⟩
+  ⟨checked.lift_step, checked.lift_wrap⟩
 
-/-- A connection between a fixed step execution and a fixed wrap execution. -/
-structure StepWrapConnection {C : Circuits D L} {b : D.Branch}
-    (step : StepRun C b) (wrap : WrapRun C) : Prop where
-  /-- The wrap execution selects the branch. -/
-  branch : wrap.cells.1.whichBranch.val wrap.V = (b : Fq)
-  /-- The step statement reads as the one the wrap verifier holds. -/
-  publicInput : CircuitType.Reads step.V step.cells.out
-    (StepStatement.ofWrap wrap.V wrap.cells.2.statement)
+/-- The source step execution with exactly the supplied matrix’s fixed reading. -/
+noncomputable def PicklesCorrect.stepRun {C : Circuits D L} (checked : PicklesCorrect C I)
+    (b : D.Branch) (t : StepTable I b) : StepRun C b :=
+  { V := stepValuation C I b t
+    advice := inertStepAdvice
+    holds := by
+      let r := (checked.step b t).choose
+      have h := r.holds
+      rw [C.stepBuilt_eq b r.advice, (checked.step b t).choose_spec.2] at h
+      exact h }
 
-/-- The connection as the capstone's link. -/
-def StepWrapConnection.link {C : Circuits D L} {b : D.Branch}
-    {step : StepRun C b} {wrap : WrapRun C} (h : StepWrapConnection step wrap) :
-    StepWrapLink C b :=
-  ⟨step, wrap, h.branch, h.publicInput⟩
+/-- The source wrap execution with exactly the supplied matrix’s fixed reading. -/
+noncomputable def PicklesCorrect.wrapRun {C : Circuits D L} (checked : PicklesCorrect C I)
+    (t : WrapTable I) : WrapRun C :=
+  { V := wrapValuation C I t
+    advice := inertWrapAdvice
+    holds := by
+      let r := (checked.wrap t).choose
+      have h := r.holds
+      rw [C.wrapBuilt_eq r.advice, (checked.wrap t).choose_spec.2] at h
+      exact h }
 
-/-- A connection between a fixed producer wrap execution and a fixed consumer step execution,
-with the mask it reads. -/
-structure WrapStepConnection
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {cb : consumerD.Branch}
-    (wrap : WrapRun producer) (step : StepRun consumer cb) (i : consumerD.Slot cb) where
-  /-- The consumer slot resolves to the producer's exported interface. -/
-  sourceFor : SourceFor producer consumer cb i
-  /-- The wrap execution selects the producer's branch. -/
-  branch : wrap.cells.1.whichBranch.val wrap.V = (pb : Fq)
-  /-- The consumer's slot must verify. -/
-  mustVerify : CircuitType.Reads step.V (step.cells.prevs i).mustVerify true
-  /-- The source proof's old-accumulator mask. -/
-  mask : Vector Bool (SlotSource.widths consumerD.width (consumer.wiring.sources cb) i)
-  /-- The consumer's mask cells read the mask. -/
-  maskReads : CircuitType.Reads step.V (step.inp i).proofMask mask
-  /-- The consumer reconstructs the producer's wrap public input. -/
-  publicInput : CircuitType.Reads wrap.V wrapStatement
-    ((step.inp i).packedAt producer.wiring.backend.wrapKey.cvk step.V mask)
+/-- The lifted step uses the fixed matrix valuation. -/
+private theorem stepRunOf_V {C : Circuits D L} (checked : PicklesCorrect C I)
+    (b : D.Branch) (t : StepTable I b) :
+    (PicklesCorrect.stepRun checked b t).V = stepValuation C I b t :=
+  rfl
 
-/-- The connection as the capstone's link. -/
-def WrapStepConnection.link
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {cb : consumerD.Branch}
-    {wrap : WrapRun producer} {step : StepRun consumer cb} {i : consumerD.Slot cb}
-    (h : WrapStepConnection (pb := pb) wrap step i) : WrapStepLink producer consumer pb cb i :=
-  ⟨h.sourceFor, wrap, step, h.branch, h.mustVerify, h.mask, h.maskReads, h.publicInput⟩
+/-- The lifted wrap uses the fixed matrix valuation. -/
+private theorem wrapRunOf_V {C : Circuits D L} (checked : PicklesCorrect C I)
+    (t : WrapTable I) :
+    (PicklesCorrect.wrapRun checked t).V = wrapValuation C I t :=
+  rfl
 
-/-- The wrap-proof handover's hypotheses, over four fixed executions. -/
-structure WrapHandoverConnection
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {cb : consumerD.Branch}
-    (ps : StepRun producer pb) (pw : WrapRun producer)
-    (cs : StepRun consumer cb) (cw : WrapRun consumer)
-    (pi : producerD.Slot pb) (ci : consumerD.Slot cb) : Prop where
-  /-- The producer's step and wrap executions are connected. -/
-  producerPair : StepWrapConnection ps pw
-  /-- The consumer's step and wrap executions are connected. -/
-  consumerPair : StepWrapConnection cs cw
-  /-- The consumer slot resolves to the producer's exported interface. -/
-  sourceFor : SourceFor producer consumer cb ci
-  /-- The producer's slot must verify. -/
-  mustVerifyProducer : CircuitType.Reads ps.V (ps.cells.prevs pi).mustVerify true
-  /-- The producer's slot key cells read the source key. -/
-  keyProducer : ps.KeyBound pi
-  /-- The consumer's slot must verify. -/
-  mustVerifyConsumer : CircuitType.Reads cs.V (cs.cells.prevs ci).mustVerify true
-  /-- The consumer's slot key cells read the source key. -/
-  keyConsumer : cs.KeyBound ci
-  /-- The producer's wrap statement is the one the consumer reconstructs at its slot. -/
-  middlePublicInput : CircuitType.Reads pw.V wrapStatement
-    ((cs.inp ci).packedAt producer.wiring.backend.wrapKey.cvk
-      cs.V (consumerPair.link.mask ci))
+/-- The lifted step reads the matrix’s public statement. -/
+private theorem stepRunOf_public {C : Circuits D L} (checked : PicklesCorrect C I)
+    (b : D.Branch) (t : StepTable I b) :
+    CircuitType.Reads (PicklesCorrect.stepRun checked b t).V
+      (PicklesCorrect.stepRun checked b t).cells.out t.statement := by
+  have h := (checked.step b t).choose_spec.1
+  rw [(checked.step b t).choose_spec.2, StepRun.cells_eq] at h
+  exact h
 
-/-- The connection as the capstone's handover record. -/
-def WrapHandoverConnection.handover
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {cb : consumerD.Branch}
-    {ps : StepRun producer pb} {pw : WrapRun producer}
-    {cs : StepRun consumer cb} {cw : WrapRun consumer}
-    {pi : producerD.Slot pb} {ci : consumerD.Slot cb}
-    (h : WrapHandoverConnection ps pw cs cw pi ci) :
-    WrapProofHandover producer consumer pb cb pi ci :=
-  ⟨h.producerPair.link, h.consumerPair.link, h.sourceFor,
-    h.mustVerifyProducer, h.keyProducer, h.mustVerifyConsumer, h.keyConsumer,
-    h.middlePublicInput⟩
+/-- The lifted wrap reads the matrix’s public statement. -/
+private theorem wrapRunOf_public {C : Circuits D L} (checked : PicklesCorrect C I)
+    (t : WrapTable I) :
+    CircuitType.Reads (PicklesCorrect.wrapRun checked t).V wrapStatement t.statement := by
+  have h := (checked.wrap t).choose_spec.1
+  rw [(checked.wrap t).choose_spec.2] at h
+  exact h
 
-/-- The step-proof handover's hypotheses, over four fixed executions. -/
-structure StepHandoverConnection
-    {producer : Circuits producerD producerL} {middle : Circuits middleD middleL}
-    {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {mb : middleD.Branch} {cb : consumerD.Branch}
-    (pw : WrapRun producer) (ms : StepRun middle mb)
-    (mw : WrapRun middle) (cs : StepRun consumer cb)
-    (mi : middleD.Slot mb) (ci : consumerD.Slot cb) where
-  /-- The producer's wrap execution and the middle step execution are connected. -/
-  producerPair : WrapStepConnection (pb := pb) pw ms mi
-  /-- The middle wrap execution and the consumer's step execution are connected. -/
-  consumerPair : WrapStepConnection (pb := mb) mw cs ci
-  /-- The middle step statement is the one its wrap verifier holds. -/
-  middlePublicInput : CircuitType.Reads ms.V ms.cells.out
-    (StepStatement.ofWrap mw.V mw.cells.2.statement)
+/-- Every observation of retained step cells agrees with its fixed matrix reading. -/
+theorem PicklesCorrect.stepRun_reads {C : Circuits D L} (checked : PicklesCorrect C I)
+    (b : D.Branch) (t : StepTable I b) {α : Sort _}
+    (read : Valuation Fp → C.StepCells b → α) :
+    read (PicklesCorrect.stepRun checked b t).V (PicklesCorrect.stepRun checked b t).cells =
+      read (stepValuation C I b t) (stepCompilation C b).result.1.2 := by
+  rw [stepRunOf_V, StepRun.cells_eq]
 
-/-- The connection as the capstone's handover record. -/
-def StepHandoverConnection.handover
-    {producer : Circuits producerD producerL} {middle : Circuits middleD middleL}
-    {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {mb : middleD.Branch} {cb : consumerD.Branch}
-    {pw : WrapRun producer} {ms : StepRun middle mb}
-    {mw : WrapRun middle} {cs : StepRun consumer cb}
-    {mi : middleD.Slot mb} {ci : consumerD.Slot cb}
-    (h : StepHandoverConnection (pb := pb) pw ms mw cs mi ci) :
-    StepProofHandover producer middle consumer pb mb cb mi ci :=
-  ⟨h.producerPair.link, h.consumerPair.link, h.middlePublicInput⟩
+/-- Every observation of retained wrap cells agrees with its fixed matrix reading. -/
+theorem PicklesCorrect.wrapRun_reads {C : Circuits D L} (checked : PicklesCorrect C I)
+    (t : WrapTable I) {α : Sort _}
+    (read : Valuation Fq → C.WrapCells → α) :
+    read (PicklesCorrect.wrapRun checked t).V (PicklesCorrect.wrapRun checked t).cells =
+      read (wrapValuation C I t) (wrapCompilation C).result.1.2 := by
+  rw [wrapRunOf_V, WrapRun.cells_eq]
 
-/-- The step-wrap capstone, after recovering the two executions. -/
-theorem matrices_stepWrap
-    {C : Circuits D L} {I : ApplicationIndices D} (hC : PicklesCorrect C I)
-    (b : D.Branch) (step : StepTable I b) (wrap : WrapTable I) :
-    ∃ (s : StepRun C b) (w : WrapRun C),
-      CircuitType.Reads s.V s.cells.out step.statement ∧
-      CircuitType.Reads w.V wrapStatement wrap.statement ∧
-      ∀ (h : StepWrapConnection s w) (i : D.Slot b),
-        StepWrapAssumptions C b i →
-        CircuitType.Reads s.V (s.cells.prevs i).mustVerify true →
-        s.KeyBound i → StepWrapConclusion h.link i := by
-  obtain ⟨s, hs⟩ := hC.1.step b step
-  obtain ⟨w, hw⟩ := hC.1.wrap wrap
-  exact ⟨s, w, hs, hw, fun h i ha hm hk ↦ hC.2.stepWrap b h.link i ha hm hk⟩
+/-- Connected matrices give a connected step/wrap execution pair. -/
+private noncomputable def stepWrapOf {C : Circuits D L} (checked : PicklesCorrect C I)
+    (b : D.Branch) (s : StepTable I b) (w : WrapTable I)
+    (h : MatrixStepWrap C I b s w) : StepWrapLink C b where
+  step := PicklesCorrect.stepRun checked b s
+  wrap := PicklesCorrect.wrapRun checked w
+  branch := by simpa only [wrapRunOf_V, WrapRun.cells_eq] using h.1
+  publicInput := by
+    simpa only [wrapRunOf_V, WrapRun.cells_eq, h.2] using stepRunOf_public checked b s
 
-/-- The wrap-step capstone, after recovering the two executions. -/
-theorem matrices_wrapStep
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {producerIndices : ApplicationIndices producerD}
-    {consumerIndices : ApplicationIndices consumerD}
-    (hp : PicklesCorrect producer producerIndices)
-    (hc : PicklesCorrect consumer consumerIndices)
-    (pb : producerD.Branch) (cb : consumerD.Branch) (i : consumerD.Slot cb)
-    (wrap : WrapTable producerIndices) (step : StepTable consumerIndices cb) :
-    ∃ (w : WrapRun producer) (s : StepRun consumer cb),
-      CircuitType.Reads w.V wrapStatement wrap.statement ∧
-      CircuitType.Reads s.V s.cells.out step.statement ∧
-      ∀ h : WrapStepConnection (pb := pb) w s i,
-        WrapStepAssumptions producer pb → WrapStepConclusion h.link := by
-  obtain ⟨w, hw⟩ := hp.1.wrap wrap
-  obtain ⟨s, hs⟩ := hc.1.step cb step
-  exact ⟨w, s, hw, hs, fun h ha ↦ hc.2.wrapStep producer pb cb i h.link ha⟩
+/-- Connected matrices give a connected wrap/step execution pair. -/
+private noncomputable def wrapStepOf {P : Circuits PD PL} {C : Circuits CD CL}
+    (pc : PicklesCorrect P PI) (cc : PicklesCorrect C CI)
+    (pb : PD.Branch) (cb : CD.Branch) (i : CD.Slot cb)
+    (w : WrapTable PI) (s : StepTable CI cb)
+    (h : MatrixWrapStep P C PI CI pb cb i w s) :
+    WrapStepLink P C pb cb i where
+  sourceFor := h.sourceFor
+  wrap := PicklesCorrect.wrapRun pc w
+  step := PicklesCorrect.stepRun cc cb s
+  branch := by simpa only [wrapRunOf_V, WrapRun.cells_eq] using h.branch
+  mustVerify := by simpa only [stepRunOf_V, StepRun.cells_eq] using h.mustVerify
+  mask := h.mask
+  maskReads := by
+    simpa only [StepRun.inp, StepRun.cells_eq, stepRunOf_V, matrixInp] using h.maskReads
+  publicInput := by
+    have hp := wrapRunOf_public pc w
+    rw [h.publicInput] at hp
+    simpa only [StepRun.inp, StepRun.cells_eq, stepRunOf_V, matrixInp] using hp
 
-/-- The wrap-proof handover, after recovering the four executions: connections concern those
-executions. -/
-theorem matrices_wrap_handover
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {producerIndices : ApplicationIndices producerD}
-    {consumerIndices : ApplicationIndices consumerD}
-    (hp : PicklesCorrect producer producerIndices)
-    (hc : PicklesCorrect consumer consumerIndices)
-    (pb : producerD.Branch) (cb : consumerD.Branch)
-    (pi : producerD.Slot pb) (ci : consumerD.Slot cb)
-    (producerStep : StepTable producerIndices pb) (producerWrap : WrapTable producerIndices)
-    (consumerStep : StepTable consumerIndices cb) (consumerWrap : WrapTable consumerIndices) :
-    ∃ (ps : StepRun producer pb) (pw : WrapRun producer)
-      (cs : StepRun consumer cb) (cw : WrapRun consumer),
-      CircuitType.Reads ps.V ps.cells.out producerStep.statement ∧
-      CircuitType.Reads pw.V wrapStatement producerWrap.statement ∧
-      CircuitType.Reads cs.V cs.cells.out consumerStep.statement ∧
-      CircuitType.Reads cw.V wrapStatement consumerWrap.statement ∧
-      ∀ h : WrapHandoverConnection ps pw cs cw pi ci,
-        StepWrapAssumptions producer pb pi → StepWrapAssumptions consumer cb ci →
-        WrapHandoverConclusion h.handover := by
-  obtain ⟨ps, hps⟩ := hp.1.step pb producerStep
-  obtain ⟨pw, hpw⟩ := hp.1.wrap producerWrap
-  obtain ⟨cs, hcs⟩ := hc.1.step cb consumerStep
-  obtain ⟨cw, hcw⟩ := hc.1.wrap consumerWrap
-  exact ⟨ps, pw, cs, cw, hps, hpw, hcs, hcw, fun h ha hb ↦
-    hc.2.wrapHandover producer pb cb pi ci h.handover ha hb⟩
+/-- Matrix connections give the native wrap-proof handover record. -/
+private noncomputable def wrapHandoverOf {P : Circuits PD PL} {C : Circuits CD CL}
+    (pc : PicklesCorrect P PI) (cc : PicklesCorrect C CI)
+    (pb : PD.Branch) (cb : CD.Branch) (pi : PD.Slot pb) (ci : CD.Slot cb)
+    (ps : StepTable PI pb) (pw : WrapTable PI)
+    (cs : StepTable CI cb) (cw : WrapTable CI)
+    (h : MatrixWrapHandover P C PI CI pb cb pi ci ps pw cs cw) :
+    WrapProofHandover P C pb cb pi ci where
+  producer := stepWrapOf pc pb ps pw h.producerPair
+  consumer := stepWrapOf cc cb cs cw h.consumerPair
+  sourceFor := h.sourceFor
+  mustVerifyProducer := by
+    simpa only [stepWrapOf, stepRunOf_V, StepRun.cells_eq] using h.mustVerifyProducer
+  keyProducer := by
+    simpa only [StepRun.KeyBound, stepWrapOf, stepRunOf_V, StepRun.cells_eq] using h.keyProducer
+  mustVerifyConsumer := by
+    simpa only [stepWrapOf, stepRunOf_V, StepRun.cells_eq] using h.mustVerifyConsumer
+  keyConsumer := by
+    simpa only [StepRun.KeyBound, stepWrapOf, stepRunOf_V, StepRun.cells_eq] using h.keyConsumer
+  middlePublicInput := by
+    have hp := wrapRunOf_public pc pw
+    rw [h.middlePublicInput] at hp
+    simpa only [stepWrapOf, StepWrapLink.mask, StepRun.inp, StepRun.cells_eq, stepRunOf_V,
+      matrixInp, matrixMask] using hp
 
-/-- The step-proof handover, after recovering the four executions across three applications. -/
-theorem matrices_step_handover
-    {producer : Circuits producerD producerL} {middle : Circuits middleD middleL}
-    {consumer : Circuits consumerD consumerL}
-    {producerIndices : ApplicationIndices producerD}
-    {middleIndices : ApplicationIndices middleD}
-    {consumerIndices : ApplicationIndices consumerD}
-    (hp : PicklesCorrect producer producerIndices)
-    (hm : PicklesCorrect middle middleIndices)
-    (hc : PicklesCorrect consumer consumerIndices)
-    (pb : producerD.Branch) (mb : middleD.Branch) (cb : consumerD.Branch)
-    (mi : middleD.Slot mb) (ci : consumerD.Slot cb)
-    (producerWrap : WrapTable producerIndices) (middleStep : StepTable middleIndices mb)
-    (middleWrap : WrapTable middleIndices) (consumerStep : StepTable consumerIndices cb) :
-    ∃ (pw : WrapRun producer) (ms : StepRun middle mb)
-      (mw : WrapRun middle) (cs : StepRun consumer cb),
-      CircuitType.Reads pw.V wrapStatement producerWrap.statement ∧
-      CircuitType.Reads ms.V ms.cells.out middleStep.statement ∧
-      CircuitType.Reads mw.V wrapStatement middleWrap.statement ∧
-      CircuitType.Reads cs.V cs.cells.out consumerStep.statement ∧
-      ∀ h : StepHandoverConnection (pb := pb) pw ms mw cs mi ci,
-        WrapStepAssumptions producer pb → WrapStepAssumptions middle mb →
-        StepHandoverConclusion h.handover := by
-  obtain ⟨pw, hpw⟩ := hp.1.wrap producerWrap
-  obtain ⟨ms, hms⟩ := hm.1.step mb middleStep
-  obtain ⟨mw, hmw⟩ := hm.1.wrap middleWrap
-  obtain ⟨cs, hcs⟩ := hc.1.step cb consumerStep
-  exact ⟨pw, ms, mw, cs, hpw, hms, hmw, hcs, fun h ha hb ↦
-    hc.2.stepHandover producer middle pb mb cb mi ci h.handover ha hb⟩
+/-- Matrix connections give the native step-proof handover record. -/
+private noncomputable def stepHandoverOf {P : Circuits PD PL} {M : Circuits MD ML}
+    {C : Circuits CD CL}
+    (pc : PicklesCorrect P PI) (mc : PicklesCorrect M MI) (cc : PicklesCorrect C CI)
+    (pb : PD.Branch) (mb : MD.Branch) (cb : CD.Branch) (mi : MD.Slot mb) (ci : CD.Slot cb)
+    (pw : WrapTable PI) (ms : StepTable MI mb)
+    (mw : WrapTable MI) (cs : StepTable CI cb)
+    (h : MatrixStepHandover P M C PI MI CI pb mb cb mi ci pw ms mw cs) :
+    StepProofHandover P M C pb mb cb mi ci where
+  producer := wrapStepOf pc mc pb mb mi pw ms h.producerPair
+  consumer := wrapStepOf mc cc mb cb ci mw cs h.consumerPair
+  middlePublicInput := by
+    simpa only [wrapStepOf, wrapRunOf_V, WrapRun.cells_eq, h.middlePublicInput]
+      using stepRunOf_public mc mb ms
 
-/-- Application-state threading is a projection of the whole-message conclusion. -/
+/-- Connected accepted matrices satisfy the original handover capstone’s implication. -/
+theorem matrices_wrap_handover {P : Circuits PD PL} {C : Circuits CD CL}
+    (pc : PicklesCorrect P PI) (cc : PicklesCorrect C CI)
+    (pb : PD.Branch) (cb : CD.Branch) (pi : PD.Slot pb) (ci : CD.Slot cb)
+    (ps : StepTable PI pb) (pw : WrapTable PI)
+    (cs : StepTable CI cb) (cw : WrapTable CI)
+    (h : MatrixWrapHandover P C PI CI pb cb pi ci ps pw cs cw)
+    (hp : StepWrapAssumptions P pb pi) (hc : StepWrapAssumptions C cb ci) :
+    WrapHandoverConclusion P C PI CI pb cb pi ci ps pw cs cw := by
+  exact (wrapHandoverOf pc cc pb cb pi ci ps pw cs cw h).handover_or_collision hp hc
+
+/-- Connected accepted matrices satisfy the original handover capstone’s implication. -/
+theorem matrices_step_handover {P : Circuits PD PL} {M : Circuits MD ML} {C : Circuits CD CL}
+    (pc : PicklesCorrect P PI) (mc : PicklesCorrect M MI) (cc : PicklesCorrect C CI)
+    (pb : PD.Branch) (mb : MD.Branch) (cb : CD.Branch) (mi : MD.Slot mb) (ci : CD.Slot cb)
+    (pw : WrapTable PI) (ms : StepTable MI mb)
+    (mw : WrapTable MI) (cs : StepTable CI cb)
+    (h : MatrixStepHandover P M C PI MI CI pb mb cb mi ci pw ms mw cs)
+    (hp : WrapStepAssumptions P pb) (hc : WrapStepAssumptions M mb) :
+    StepHandoverConclusion P M C PI MI CI pb mb cb mi ci pw ms mw cs h := by
+  exact (stepHandoverOf pc mc cc pb mb cb mi ci pw ms mw cs h).handover_or_collision hp hc
+
+
+/-- Connected step/wrap matrices satisfy the verification and accumulator capstone. -/
+theorem matrices_stepWrap {C : Circuits D L} (correct : PicklesCorrect C I)
+    (b : D.Branch) (s : StepTable I b) (w : WrapTable I)
+    (h : MatrixStepWrap C I b s w) (i : D.Slot b)
+    (ha : StepWrapAssumptions C b i)
+    (hm : CircuitType.Reads (stepValuation C I b s)
+      ((stepCompilation C b).result.1.2.prevs i).mustVerify true)
+    (hk : KeyReads IpaPallas.curve (stepValuation C I b s)
+      ((C.wiring.sources b i).keyCells (stepCompilation C b).result.1.2.vk.points)
+      (C.wiring.source b i).wrapKey.cvk) : StepWrapConclusion C I b s w i := by
+  have hm' : CircuitType.Reads (stepWrapOf correct b s w h).step.V
+      ((stepWrapOf correct b s w h).step.cells.prevs i).mustVerify true := by
+    simpa only [stepWrapOf, stepRunOf_V, StepRun.cells_eq] using hm
+  have hk' : (stepWrapOf correct b s w h).step.KeyBound i := by
+    simpa only [StepRun.KeyBound, stepWrapOf, stepRunOf_V, StepRun.cells_eq] using hk
+  exact (stepWrapOf correct b s w h).verifies_proof i ha hm' hk'
+
+/-- Connected wrap/step matrices satisfy the verification, mask and accumulator capstone. -/
+theorem matrices_wrapStep {P : Circuits PD PL} {C : Circuits CD CL}
+    (pc : PicklesCorrect P PI) (cc : PicklesCorrect C CI)
+    (pb : PD.Branch) (cb : CD.Branch) (i : CD.Slot cb)
+    (w : WrapTable PI) (s : StepTable CI cb)
+    (h : MatrixWrapStep P C PI CI pb cb i w s) (ha : WrapStepAssumptions P pb) :
+    WrapStepConclusion P C PI CI pb cb i w s h :=
+  (wrapStepOf pc cc pb cb i w s h).verifies_proof ha
+
+/-- Application-state threading follows by projecting whole-message equality. -/
 theorem WrapHandoverConclusion.appState
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
-    {pb : producerD.Branch} {cb : consumerD.Branch}
-    {pi : producerD.Slot pb} {ci : consumerD.Slot cb}
-    {e : WrapProofHandover producer consumer pb cb pi ci} (h : WrapHandoverConclusion e) :
-    let nextVk := (consumer.wiring.source cb ci).wrapKey.cvk
-    let r := e.producer.run pi (e.producer.mask pi)
-    let r' := e.consumer.run ci (e.consumer.mask ci)
-    kimchiVerify IpaPallas.curve producer.setup.wrapSrs.σ nextVk
-      (e.consumer.proof ci) (e.consumer.proofPublicInput ci) = true →
-    (e.producer.step.cells.messagesForNextStepProof.appState.map
-        (·.val e.producer.step.V) =
-      ((e.consumer.step.cells.prevs ci).appState.map
-        (·.val e.consumer.step.V)).cast e.sourceFor.prevSize) ∨
-    r.WrapCollision r' producer.setup.dummy ∨ r.StepCollision r' nextVk := by
+    {P : Circuits PD PL} {C : Circuits CD CL}
+    {pb : PD.Branch} {cb : CD.Branch} {pi : PD.Slot pb} {ci : CD.Slot cb}
+    {ps : StepTable PI pb} {pw : WrapTable PI} {cs : StepTable CI cb} {cw : WrapTable CI}
+    (conn : MatrixWrapHandover P C PI CI pb cb pi ci ps pw cs cw)
+    (h : WrapHandoverConclusion P C PI CI pb cb pi ci ps pw cs cw) :
+    let nextVk := (C.wiring.source cb ci).wrapKey.cvk
+    let r := matrixStepWrapRun P PI pb ps pw pi (matrixMask P PI pb ps pi)
+    let r' := matrixStepWrapRun C CI cb cs cw ci (matrixMask C CI cb cs ci)
+    kimchiVerify IpaPallas.curve P.setup.wrapSrs.σ nextVk
+      (matrixWrapProof C CI cb cs cw ci) (matrixWrapPub C CI cb cs ci) = true →
+    ((stepCompilation P pb).result.1.2.messagesForNextStepProof.appState.map
+        (·.val (stepValuation P PI pb ps)) =
+      (((stepCompilation C cb).result.1.2.prevs ci).appState.map
+        (·.val (stepValuation C CI cb cs))).cast conn.sourceFor.prevSize) ∨
+    r.WrapCollision r' P.setup.dummy ∨ r.StepCollision r' nextVk := by
   intro nextVk r r' hAccept
   rcases h hAccept with hm | hf
   · left

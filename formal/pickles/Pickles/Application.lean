@@ -16,9 +16,9 @@ per slot. Construct the branch step circuits and the shared wrap circuit from th
 retaining their internal cells for the circuit capstones. Checked compilation certifies
 each circuit's canonical compilation with its own kimchi index, in scope and corresponding,
 for the lifting of satisfying tables, and any table satisfying a checked index at a typed
-statement lifts to an execution at that statement, so a checked application's indices are
-Pickles-correct: the capstones' implications hold from accepted tables, for connections among
-the recovered executions.
+statement lifts to an execution preserving its fixed matrix reading. A checked application’s
+indices are Pickles-correct: connections stated on arbitrary accepted matrices lift to native
+connections, and the capstones’ conclusions concern those matrices’ proof and message readings.
 
 Satisfying application executions instantiate both verification capstones. Connected executions
 preserve complete messages and propagate acceptance backward, with explicit message-collision

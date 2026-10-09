@@ -9,7 +9,8 @@ are Pickles-correct (`importedApplication_picklesCorrect`). `certifyIndices?` ap
 indices built from an independent source: against a checked application, the first
 disagreement with the application's checked indices, or the indices certified, their
 Pickles-correctness from the comparator's success turned into the equality the transport
-takes. A consumer reads `CertifiedIndices.correct`; the comparator's verdict stays inside.
+takes. `CertifiedIndices.wrap_handover` and `CertifiedIndices.step_handover` apply the
+original capstones to arbitrary connected imported matrices; the comparator stays inside.
 
 ## Main definitions
 
@@ -74,5 +75,30 @@ theorem certifyIndices?_isOk_iff {C : Circuits D L} {checked : CheckedApplicatio
     cases h
   · rename_i h
     exact iff_of_true (by simp [Except.isOk, Except.toBool]) (compareIndices?_eq_none_iff.mp h)
+
+variable {PD MD CD : Shape} {PL : Layout PD} {ML : Layout MD} {CL : Layout CD}
+
+/-- The wrap-proof capstone for arbitrary connected matrices of certified imported indices. -/
+theorem CertifiedIndices.wrap_handover {P : Circuits PD PL} {C : Circuits CD CL}
+    (pc : CertifiedIndices P) (cc : CertifiedIndices C)
+    (pb : PD.Branch) (cb : CD.Branch) (pi : PD.Slot pb) (ci : CD.Slot cb)
+    (ps : StepTable pc.indices pb) (pw : WrapTable pc.indices)
+    (cs : StepTable cc.indices cb) (cw : WrapTable cc.indices)
+    (h : MatrixWrapHandover P C pc.indices cc.indices pb cb pi ci ps pw cs cw)
+    (hp : StepWrapAssumptions P pb pi) (hc : StepWrapAssumptions C cb ci) :
+    WrapHandoverConclusion P C pc.indices cc.indices pb cb pi ci ps pw cs cw :=
+  matrices_wrap_handover pc.correct cc.correct pb cb pi ci ps pw cs cw h hp hc
+
+/-- The step-proof capstone for arbitrary connected matrices of certified imported indices. -/
+theorem CertifiedIndices.step_handover {P : Circuits PD PL} {M : Circuits MD ML}
+    {C : Circuits CD CL}
+    (pc : CertifiedIndices P) (mc : CertifiedIndices M) (cc : CertifiedIndices C)
+    (pb : PD.Branch) (mb : MD.Branch) (cb : CD.Branch) (mi : MD.Slot mb) (ci : CD.Slot cb)
+    (pw : WrapTable pc.indices) (ms : StepTable mc.indices mb)
+    (mw : WrapTable mc.indices) (cs : StepTable cc.indices cb)
+    (h : MatrixStepHandover P M C pc.indices mc.indices cc.indices pb mb cb mi ci pw ms mw cs)
+    (hp : WrapStepAssumptions P pb) (hc : WrapStepAssumptions M mb) :
+    StepHandoverConclusion P M C pc.indices mc.indices cc.indices pb mb cb mi ci pw ms mw cs h :=
+  matrices_step_handover pc.correct mc.correct cc.correct pb mb cb mi ci pw ms mw cs h hp hc
 
 end Pickles.Application
