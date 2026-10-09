@@ -64,6 +64,10 @@ Certification is relative to the decoded exported artifacts and their connection
 source-language implementation. Optional gates, lookups, sideloading and full prover-key generation
 remain separate work. The current constructor and application vocabulary is the scope here.
 
+The follow-up for sideloading is
+[sideloaded-application-certification-plan.md](sideloaded-application-certification-plan.md).
+It requires new circuit readings and adapters while preserving the original capstones.
+
 ## Existing components to reuse
 
 Paths below are relative to `formal/`.
@@ -98,7 +102,7 @@ consumers of the production interface, rather than defining a second version of 
 native run at its public statement **and the fixed matrix valuation**. That valuation follows
 the compiled layout's labelled cells and equality classes. It is defined before any
 connection is supplied; no arbitrary source execution or prover advice chooses it.
-`PicklesCorrect.stepRun_reads` and `wrapRun_reads` preserve every observation of retained cells,
+The lifting fields and canonical retained-cell layout preserve every observation of those cells,
 including affine expressions, proof parts, keys, masks and messages.
 
 The universal endpoints take their arguments in this order:
