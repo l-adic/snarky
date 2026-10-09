@@ -19,7 +19,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Exception (try)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), StatementIO(..), StepField, StepRule, WrapVkChunks, bindVk, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), StepField, StepRule, WrapVkChunks, bindVk, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (digestVk, mkBundle, projectVk) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -40,13 +40,13 @@ sideLoadedBoundRule
        Unit
 sideLoadedBoundRule getPrevStates self = do
   prev <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) ->
-    let StatementIO { input } = slot.statement in input
+    let ApplicationStatement { input } = slot.statement in input
   vk <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) -> slot.verificationKey
   boundVk <- bindVk self vk
   pure
     { prevs: toPrevs $
         SideLoadedPrevStatement
-          { publicInput: StatementIO { input: prev, output: unit }
+          { publicInput: ApplicationStatement { input: prev, output: unit }
           , proofMustVerify: true_
           , verificationKey: boundVk
           }
@@ -74,13 +74,13 @@ spec = describe "Pickles.Prove.SideLoadedBound" do
     let BranchProver childProver = fst child.provers
     eChildCp <- withSpan "[SideLoadedBound] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F zero, prevs: unit }
-    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) <- case eChildCp of
+    childCp0 :: CompiledProof 0 (ApplicationStatement (F StepField) Unit) <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
     -- The width is phantom on both, as in `SideLoadedMain`.
     let
-      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit)
+      childCp2 :: CompiledProof 2 (ApplicationStatement (F StepField) Unit)
       childCp2 = coerce childCp0
 
       childTag2 = coerce child.tag

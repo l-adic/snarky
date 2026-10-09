@@ -5,7 +5,7 @@
 -- | descriptors ending in `Unit`, and the slots need not agree on a
 -- | statement type:
 -- |
--- |   Slot 1 (StatementIO Stmt Unit) /\ Slot 2 Stmt' /\ Unit
+-- |   Slot 1 (ApplicationStatement Stmt Unit) /\ Slot 2 Stmt' /\ Unit
 -- |
 -- | What does not depend on a slot's statement type is a `Vector` over
 -- | the slots: each slot's width, read from the spec by `SlotWidths`,

@@ -28,7 +28,7 @@ import Data.Tuple (Tuple(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Fmt (fmt)
-import Pickles (CompiledProof(..), StatementIO(..), toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), toVerifiable, verifyBatch)
 import Snarky.Example.Block (processBlock)
 import Snarky.Example.Env (Env)
 import Snarky.Example.Ledger (Ledger)
@@ -85,7 +85,7 @@ spec =
       -- The root proof's statement must span the whole block: L0 → L4.
       let
         CompiledProof cp = rootProof
-        StatementIO io = cp.statement
+        ApplicationStatement io = cp.statement
         Statement rootStmt = io.input
       rootStmt.source `shouldEqual` root l0.tree
       rootStmt.target `shouldEqual` root lFinal.tree

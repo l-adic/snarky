@@ -190,7 +190,7 @@ dummyWrapTockPublicInput
   -- `packBranchDataWrap` below.
   => { stepDomainLog2 :: Int
      , wrapVK :: VerifierIndex PallasG WrapField
-     -- | The prev's full `StatementIO inputVal outputVal` value,
+     -- | The prev's full `ApplicationStatement inputVal outputVal` value,
      -- | serialized by `valueToFields` for the
      -- | `messages_for_next_step_proof` app-state hash: input fields
      -- | then output fields, a `Unit` field contributing zero, so
@@ -313,7 +313,7 @@ dummyWrapTockPublicInput input =
 -- | `inputVal` when the rule verifies a differently-shaped prev.
 type BuildSlotAdviceInput inputVal stmt =
   { publicInput :: inputVal
-  -- | The prev's full `StatementIO inputVal outputVal` value. This
+  -- | The prev's full `ApplicationStatement inputVal outputVal` value. This
   -- | builder makes a single-slot `StepAdvice`, so the resulting
   -- | `prevAppStates` is the singleton carrier `Tuple stmt unit`.
   , prevStatement :: stmt

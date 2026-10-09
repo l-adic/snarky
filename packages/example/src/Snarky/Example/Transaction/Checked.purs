@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry, prevValues, toPrevs)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), Verifier, compileMulti, mkRuleEntry, prevValues, toPrevs)
 import Pickles.Step.Main (RuleOutput)
 import Pickles.Step.Slots (PrevValues)
 import Simple.JSON (class ReadForeign, class WriteForeign)
@@ -148,8 +148,8 @@ mergeRule
 mergeRule getPrevStates (Statement { source, target }) = do
   -- The two sub-statements are the verified prev proofs' public inputs;
   -- witness them from the deferred prev-states getter.
-  s1@(Statement { source: source1, target: target1 }) <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
-  s2@(Statement { source: source2, target: target2 }) <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
+  s1@(Statement { source: source1, target: target1 }) <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement p1 /\ _) -> p1.input
+  s2@(Statement { source: source2, target: target2 }) <- exists $ getPrevStates <#> prevValues <#> \(_ /\ ApplicationStatement p2 /\ _) -> p2.input
   -- Merge relation (Mina `Merge.main`): the outer statement's source is
   -- s1's source, its target is s2's target, and s1's target connects to
   -- s2's source.
@@ -158,8 +158,8 @@ mergeRule getPrevStates (Statement { source, target }) = do
   assertEq target1 source2
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: s1, output: NoOutput }, proofMustVerify: true_ }
-          /\ PrevStatement { publicInput: StatementIO { input: s2, output: NoOutput }, proofMustVerify: true_ }
+        PrevStatement { publicInput: ApplicationStatement { input: s1, output: NoOutput }, proofMustVerify: true_ }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: s2, output: NoOutput }, proofMustVerify: true_ }
           /\ unit
     , publicOutput: NoOutput
     }
@@ -240,7 +240,7 @@ applyTxChecked chainId root (SignedTransaction { signature, transaction }) = do
 
   pure root''
 
-type TxnStmt = StatementIO (Statement Vesta.ScalarField) NoOutput
+type TxnStmt = ApplicationStatement (Statement Vesta.ScalarField) NoOutput
 
 -- | The merge rule's two `Self` slots, each width 2 (a proof of THIS
 -- | mpv=2 program).

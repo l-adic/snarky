@@ -25,7 +25,7 @@ import Data.Foldable (for_)
 import Data.Int.Bits as Bits
 import Data.Tuple.Nested (Tuple2, (/\))
 import Effect (Effect)
-import Pickles (PrevStatement(..), Slot, StatementIO(..), StepField, StepRule, prevValues, toPrevs)
+import Pickles (ApplicationStatement(..), PrevStatement(..), Slot, StepField, StepRule, prevValues, toPrevs)
 import Snarky.Backend.Kimchi.Impl.Pallas as P
 import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -78,8 +78,8 @@ benchIterations = 3
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot 0 (StatementIO Unit (F StepField)))
-    (Slot 2 (StatementIO Unit (F StepField)))
+    (Slot 0 (ApplicationStatement Unit (F StepField)))
+    (Slot 2 (ApplicationStatement Unit (F StepField)))
 
 -- | Verbatim `Tree_proof_return` N=2 rule + the tunable filler loop
 -- | (stack-safe `tailRecM`; `StepRule` carries `MonadRec`).
@@ -93,8 +93,8 @@ benchTreeRule getPrevStates _ = do
   -- The two prev statements arrive via the deferred getter (slot 0 = NRR
   -- base, slot 1 = the recursive `Self` prev); their public OUTPUT is the
   -- field this rule threads. Read each slot's `.output` through `exists`.
-  nrrInput <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { output } /\ _) -> output
-  prevInput <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output } /\ _) -> output
+  nrrInput <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement { output } /\ _) -> output
+  prevInput <- exists $ getPrevStates <#> prevValues <#> \(_ /\ ApplicationStatement { output } /\ _) -> output
   isBaseCase <- exists $ readCVar prevInput <#> (_ == F (negate one))
   let proofMustVerifySlot1 = not_ isBaseCase
   selfVal <- if_ isBaseCase (const_ zero) (CVar.add_ (const_ one) prevInput)
@@ -113,8 +113,8 @@ benchTreeRule getPrevStates _ = do
     0
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: unit, output: nrrInput }, proofMustVerify: true_ }
-          /\ PrevStatement { publicInput: StatementIO { input: unit, output: prevInput }, proofMustVerify: proofMustVerifySlot1 }
+        PrevStatement { publicInput: ApplicationStatement { input: unit, output: nrrInput }, proofMustVerify: true_ }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: unit, output: prevInput }, proofMustVerify: proofMustVerifySlot1 }
           /\ unit
     , publicOutput: selfVal
     }

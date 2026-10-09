@@ -26,7 +26,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -36,7 +36,7 @@ import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-type Stmt = StatementIO (F StepField) Unit
+type Stmt = ApplicationStatement (F StepField) Unit
 
 -- | Asserts `self = 1 + prev1 + prev2`, bypassed when `self = 0`. Both
 -- | slots are self prevs and share one `proofMustVerify`.
@@ -47,23 +47,23 @@ simpleChainN2Rule
        Unit
        Unit
 simpleChainN2Rule getPrevStates self = do
-  prev1 <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
-  prev2 <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
+  prev1 <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement p1 /\ _) -> p1.input
+  prev2 <- exists $ getPrevStates <#> prevValues <#> \(_ /\ ApplicationStatement p2 /\ _) -> p2.input
   isBaseCase <- equals_ (const_ zero) self
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (CVar.add_ (const_ one) prev1) prev2) self
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: prev1, output: unit }, proofMustVerify }
-          /\ PrevStatement { publicInput: StatementIO { input: prev2, output: unit }, proofMustVerify }
+        PrevStatement { publicInput: ApplicationStatement { input: prev1, output: unit }, proofMustVerify }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: prev2, output: unit }, proofMustVerify }
           /\ unit
     , publicOutput: unit
     }
 
 -- | The rule's two self prev slots, each at width 2.
 type SimpleChainN2PrevsSpec =
-  Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit))
+  Tuple2 (Slot 2 (ApplicationStatement (F StepField) Unit)) (Slot 2 (ApplicationStatement (F StepField) Unit))
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SimpleChainN2" do
@@ -117,7 +117,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
       -- The base case bypasses the sum, so the dummy statement's input
       -- is arbitrary.
       baseDummy = BasePrev
-        { dummyStatement: StatementIO { input: F zero :: F StepField, output: unit }
+        { dummyStatement: ApplicationStatement { input: F zero :: F StepField, output: unit }
         }
 
     logInfo "[SimpleChainN2] proving b0 (self=0, base case)"

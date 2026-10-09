@@ -27,7 +27,7 @@ import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthInt, slotWidthsOf, toPrevs)
-import Pickles.Types (StatementIO(..))
+import Pickles.Types (ApplicationStatement(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -47,7 +47,7 @@ type StepMainSimpleChainN2Params =
 
 -- | The rule's two self prev slots, each at width 2.
 type SimpleChainN2PrevsSpec =
-  Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit))
+  Tuple2 (Slot 2 (ApplicationStatement (F StepField) Unit)) (Slot 2 (ApplicationStatement (F StepField) Unit))
 
 -- | Simple_Chain N2 rule: self_correct = (1 + prev1 + prev2 == self)
 -- | Both proofs have the same proof_must_verify = not is_base_case.
@@ -62,16 +62,16 @@ simpleChainN2Rule
   -> FVar StepField
   -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput SimpleChainN2PrevsSpec Unit)
 simpleChainN2Rule getPrevStates appState = do
-  prev1 <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
-  prev2 <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
+  prev1 <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement p1 /\ _) -> p1.input
+  prev2 <- exists $ getPrevStates <#> prevValues <#> \(_ /\ ApplicationStatement p2 /\ _) -> p2.input
   isBaseCase <- equals_ (const_ zero) appState
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (CVar.add_ (const_ one) prev1) prev2) appState
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: prev1, output: unit }, proofMustVerify }
-          /\ PrevStatement { publicInput: StatementIO { input: prev2, output: unit }, proofMustVerify }
+        PrevStatement { publicInput: ApplicationStatement { input: prev1, output: unit }, proofMustVerify }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: prev2, output: unit }, proofMustVerify }
           /\ unit
     , publicOutput: unit
     }
@@ -136,7 +136,7 @@ compileStepMainSimpleChainN2WithConstants pallasSrs params = do
           @SimpleChainN2PrevsSpec
           @(F StepField)
           @Unit
-          @( Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
+          @( Tuple2 (ApplicationStatement (F StepField) Unit) (ApplicationStatement (F StepField) Unit)
           )
           @Mpv
           simpleChainN2Rule

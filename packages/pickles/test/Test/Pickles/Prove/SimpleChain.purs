@@ -26,7 +26,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -50,21 +50,21 @@ simpleChainRule
        NoOutput
        NoOutput
 simpleChainRule getPrevStates self = do
-  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input } /\ _) -> input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement { input } /\ _) -> input
   isBaseCase <- equals_ (const_ zero) self
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: prev, output: NoOutput }, proofMustVerify }
+        PrevStatement { publicInput: ApplicationStatement { input: prev, output: NoOutput }, proofMustVerify }
           /\ unit
     , publicOutput: NoOutput
     }
 
 -- | The rule's one self-recursive prev slot, at width 1.
 type SimpleChainPrevsSpec =
-  Tuple1 (Slot 1 (StatementIO (F StepField) NoOutput))
+  Tuple1 (Slot 1 (ApplicationStatement (F StepField) NoOutput))
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
@@ -96,9 +96,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     let
       runStep
-        :: PrevSlot (F StepField) 1 (StatementIO (F StepField) NoOutput)
+        :: PrevSlot (F StepField) 1 (ApplicationStatement (F StepField) NoOutput)
         -> F StepField
-        -> Aff (CompiledProof 1 (StatementIO (F StepField) NoOutput))
+        -> Aff (CompiledProof 1 (ApplicationStatement (F StepField) NoOutput))
       runStep prevSlot appInput = do
         eRes <- liftEffect $ chainProver noAdvice
           { appInput, prevs: tuple1 prevSlot }
@@ -107,7 +107,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           Right p -> pure p
 
       basePrev = BasePrev
-        { dummyStatement: StatementIO { input: F (negate one), output: NoOutput } }
+        { dummyStatement: ApplicationStatement { input: F (negate one), output: NoOutput } }
 
     logInfo "[SimpleChain] proving [step0, wrap0]"
     b0 <- withSpan "[SimpleChain] prove b0" $ liftAff $ runStep basePrev (F zero)
@@ -144,6 +144,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- was given, which the rule pins to 0..4 along the chain.
     let
       stmtInputOf (CompiledProof p) =
-        let StatementIO s = p.statement in s.input
+        let ApplicationStatement s = p.statement in s.input
     map stmtInputOf [ b0, b1, b2, b3, b4 ] `shouldEqual`
       [ F zero, F one, F (fromInt 2), F (fromInt 3), F (fromInt 4) ]

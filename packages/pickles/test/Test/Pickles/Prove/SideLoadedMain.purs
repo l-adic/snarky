@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Safe.Coerce (coerce)
@@ -82,7 +82,7 @@ noRecursionInputRule _ self = do
 
 -- | The parent rule's one side-loaded prev slot, at width 2.
 type SideLoadedMainPrevsSpec =
-  Tuple1 (SideLoadedSlot 2 (StatementIO (F StepField) Unit))
+  Tuple1 (SideLoadedSlot 2 (ApplicationStatement (F StepField) Unit))
 
 -- | The parent rule: asserts `1 + prev == self`, or the base case
 -- | `self == 0`.
@@ -100,7 +100,7 @@ sideLoadedMainRule
        Unit
 sideLoadedMainRule getPrevStates self = do
   prev <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) ->
-    let StatementIO { input } = slot.statement in input
+    let ApplicationStatement { input } = slot.statement in input
   vk <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) -> slot.verificationKey
   isBaseCase <- equals_ (const_ zero) self
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self
@@ -108,7 +108,7 @@ sideLoadedMainRule getPrevStates self = do
   pure
     { prevs: toPrevs $
         SideLoadedPrevStatement
-          { publicInput: StatementIO { input: prev, output: unit }
+          { publicInput: ApplicationStatement { input: prev, output: unit }
           , proofMustVerify: true_
           -- This rule's statement carries no key digest to bind the
           -- key against, so the slot certifies only that some child
@@ -150,7 +150,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       { appInput: F zero
       , prevs: unit
       }
-    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) <- case eChildCp of
+    childCp0 :: CompiledProof 0 (ApplicationStatement (F StepField) Unit) <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
@@ -158,7 +158,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- is phantom on both, so `coerce` lifts the bound. Sound only
     -- because the child's actual width, 0, is at most 2.
     let
-      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit)
+      childCp2 :: CompiledProof 2 (ApplicationStatement (F StepField) Unit)
       childCp2 = coerce childCp0
 
       childTag2 = coerce child.tag

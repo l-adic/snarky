@@ -20,6 +20,7 @@ previous proof's statement and whether it must verify, with its own public outpu
 
 * `SlotSource`: where a slot's wrap key comes from, and what follows from it: the slot's width,
   Lagrange points, candidate step domains and key cells;
+* `ApplicationStatement`: the application's input and output fields, in encoding order;
 * `PrevStatement`: what the rule returns for one slot;
 * `StepMainAdvice`: the prover's values for every allocation;
 * `slotInput`: one slot's `verifyOneBy` input, assembled from its allocated cells;
@@ -100,11 +101,14 @@ def Fits (σ : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPallas.curve ncw)
 
 end SlotSource
 
+/-- An application's statement as its input fields followed by its output fields. -/
+abbrev ApplicationStatement (f : Type) (n : ℕ) := Vector f n
+
 /-- What the rule returns for one slot: the previous proof's statement, as its `s` field cells,
 and whether it must verify. -/
 structure PrevStatement (s : ℕ) where
   /-- The previous proof's statement. -/
-  appState : Vector (FVar Fp) s
+  appState : ApplicationStatement (FVar Fp) s
   /-- Whether the slot must verify. -/
   mustVerify : BoolVar Fp
 
@@ -167,7 +171,8 @@ structure StepMainOut (n w : ℕ) (ws ss : Fin n → ℕ) (sa ncw : ℕ) (ncs : 
   msgs : Vector (FVar Fp) n
   /-- The message the statement's step-message digest hashes. -/
   messagesForNextStepProof : MessagesForNextStepProof (VkComms ncw (AffinePoint (FVar Fp)))
-    (Vector (FVar Fp) sa) (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n)
+    (ApplicationStatement (FVar Fp) sa) (Vector (AffinePoint (FVar Fp)) n)
+    (Vector (Vector (FVar Fp) ks) n)
 
 /-- The step circuit's message hashing: its outgoing message hashes to its statement's step
 digest, and each slot's wrap digest passes through to the statement, after the padding. -/
@@ -221,7 +226,7 @@ def stepMain [ConstraintHolds Fp c] [LawfulBasicSystem Fp c] {n w ncw k ks : ℕ
   let appFields := CircuitType.varToFields (F := Fp) (val := inVal) publicInput ++
     CircuitType.varToFields (F := Fp) (val := outVal) publicOutput
   let msgNext : MessagesForNextStepProof (VkComms ncw (AffinePoint (FVar Fp)))
-      (Vector (FVar Fp) (CircuitType.size Fp inVal + CircuitType.size Fp outVal))
+      (ApplicationStatement (FVar Fp) (CircuitType.size Fp inVal + CircuitType.size Fp outVal))
       (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n) :=
     ⟨appFields, vk.points, Vector.ofFn fun i => (slots i).sg.pt,
       results.map (·.1.expandedChallenges)⟩

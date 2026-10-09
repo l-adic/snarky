@@ -16,7 +16,7 @@ module Pickles.Types
   , WrapStatement
   , MessagesForNextStepProof(..)
   , MessagesForNextWrapProof(..)
-  , StatementIO(..)
+  , ApplicationStatement(..)
   , WrapProofMessages(..)
   , WrapProofOpening(..)
   , Evals
@@ -138,7 +138,7 @@ newtype MessagesForNextWrapProof g bc = MessagesForNextWrapProof
   , oldBulletproofChallenges :: bc
   }
 
--- The allocation carriers below — `StatementIO`, `WrapProofMessages`,
+-- The allocation carriers below — `ApplicationStatement`, `WrapProofMessages`,
 -- `WrapProofOpening`, `AllocEvals`, `PerProofUnfinalized` — are
 -- newtypes rather than bare records for one reason: a record picks up
 -- `RCircuitType`, which orders fields alphabetically, and that is not
@@ -151,9 +151,9 @@ newtype MessagesForNextWrapProof g bc = MessagesForNextWrapProof
 -- | main function's `input` paired with its returned `output`. The
 -- | three public-input modes collapse into this one shape:
 -- |
--- |   input only     → StatementIO input Unit
--- |   output only    → StatementIO Unit output
--- |   input + output → StatementIO input output
+-- |   input only     → ApplicationStatement input Unit
+-- |   output only    → ApplicationStatement Unit output
+-- |   input + output → ApplicationStatement input output
 -- |
 -- | `CircuitType Unit Unit` serializes to zero fields, so an unused
 -- | side contributes nothing to the public-input array and no mode
@@ -163,46 +163,46 @@ newtype MessagesForNextWrapProof g bc = MessagesForNextWrapProof
 -- | alphabetize to the same order, but the instance routes through an
 -- | explicit `Tuple2` so the contract does not rest on that
 -- | coincidence.
-newtype StatementIO input output = StatementIO
+newtype ApplicationStatement input output = ApplicationStatement
   { input :: input
   , output :: output
   }
 
-derive newtype instance (WriteForeign input, WriteForeign output) => WriteForeign (StatementIO input output)
-derive newtype instance (ReadForeign input, ReadForeign output) => ReadForeign (StatementIO input output)
+derive newtype instance (WriteForeign input, WriteForeign output) => WriteForeign (ApplicationStatement input output)
+derive newtype instance (ReadForeign input, ReadForeign output) => ReadForeign (ApplicationStatement input output)
 
 instance
   ( CircuitType f inputVal inputVar
   , CircuitType f outputVal outputVar
   ) =>
   CircuitType f
-    (StatementIO inputVal outputVal)
-    (StatementIO inputVar outputVar) where
+    (ApplicationStatement inputVal outputVal)
+    (ApplicationStatement inputVar outputVar) where
   sizeInFields pf _ =
     genericSizeInFields pf (Proxy @(Tuple2 inputVal outputVal))
-  valueToFields (StatementIO r) =
+  valueToFields (ApplicationStatement r) =
     genericValueToFields (tuple2 r.input r.output)
   fieldsToValue fs =
     let
       tup :: Tuple2 inputVal outputVal
       tup = genericFieldsToValue fs
     in
-      uncurry2 (\input output -> StatementIO { input, output }) tup
-  varToFields (StatementIO r) =
+      uncurry2 (\input output -> ApplicationStatement { input, output }) tup
+  varToFields (ApplicationStatement r) =
     genericVarToFields @(Tuple2 inputVal outputVal) (tuple2 r.input r.output)
   fieldsToVar fs =
     let
       tup :: Tuple2 inputVar outputVar
       tup = genericFieldsToVar @(Tuple2 inputVal outputVal) fs
     in
-      uncurry2 (\input output -> StatementIO { input, output }) tup
+      uncurry2 (\input output -> ApplicationStatement { input, output }) tup
 
 instance
   ( CheckedType f c inputVar
   , CheckedType f c outputVar
   ) =>
-  CheckedType f c (StatementIO inputVar outputVar) where
-  check (StatementIO r) = check (tuple2 r.input r.output)
+  CheckedType f c (ApplicationStatement inputVar outputVar) where
+  check (ApplicationStatement r) = check (tuple2 r.input r.output)
 
 -- A kimchi polynomial commitment splits into `ceil(domain_size /
 -- SRS_max_poly_size)` curve-point chunks. Three distinct such counts

@@ -40,7 +40,7 @@ import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
 import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthInt, slotWidthsOf, toPrevs)
-import Pickles.Types (StatementIO(..))
+import Pickles.Types (ApplicationStatement(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
@@ -68,7 +68,7 @@ type StepMainImportTwoPhaseChainParams =
 -- | Slot 0: a `two_phase_chain` proof, whose input is its value (width 1);
 -- | slot 1: self (width 2), whose output is the state.
 type ChainPrevsSpec =
-  Tuple2 (Slot 1 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO Unit (F StepField)))
+  Tuple2 (Slot 1 (ApplicationStatement (F StepField) Unit)) (Slot 2 (ApplicationStatement Unit (F StepField)))
 
 -- | The chain rule:
 -- |   `self = if is_base_case then tx else prev + tx`
@@ -83,8 +83,8 @@ chainRule
   -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput ChainPrevsSpec (FVar StepField))
 chainRule getPrevStates _ = do
-  tx <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
-  prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.output
+  tx <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement p1 /\ _) -> p1.input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ ApplicationStatement p2 /\ _) -> p2.output
   is_base_case <- exists $ readCVar prev <#> (_ == F (negate one))
   let proofMustVerify = not_ is_base_case
   self <- if_ is_base_case tx (CVar.add_ prev tx)
@@ -93,10 +93,10 @@ chainRule getPrevStates _ = do
     -- prev[1] verifies iff not base case.
     { prevs: toPrevs $
         PrevStatement
-          { publicInput: StatementIO { input: tx, output: unit }
+          { publicInput: ApplicationStatement { input: tx, output: unit }
           , proofMustVerify: (coerce (const_ one :: FVar StepField) :: BoolVar StepField)
           }
-          /\ PrevStatement { publicInput: StatementIO { input: unit, output: prev }, proofMustVerify }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: unit, output: prev }, proofMustVerify }
           /\ unit
     , publicOutput: self
     }
@@ -169,7 +169,7 @@ compileStepMainImportTwoPhaseChainWithConstants pallasSrs params = do
           @ChainPrevsSpec
           @Unit
           @(F StepField)
-          @(Tuple2 (StatementIO (F StepField) Unit) (StatementIO Unit (F StepField)))
+          @(Tuple2 (ApplicationStatement (F StepField) Unit) (ApplicationStatement Unit (F StepField)))
           @Mpv
           chainRule
           srs

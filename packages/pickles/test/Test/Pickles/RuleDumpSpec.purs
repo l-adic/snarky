@@ -17,7 +17,7 @@ import Pickles.Prove.RuleDump (RuleDumpJson(..), recordRule)
 import Pickles.RuleWitness (RuleWitness, captureAllocations, ruleWitness)
 import Pickles.Step.Main (RuleOutput, runRuleWithInput)
 import Pickles.Step.Slots (PrevValues, mkPrevValues)
-import Pickles.Types (StatementIO(..))
+import Pickles.Types (ApplicationStatement(..))
 import Simple.JSON (writeJSON)
 import Snarky.Backend.Advice (AdviceHandler, noAdvice)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver')
@@ -135,7 +135,7 @@ spec = describe "Pickles.Prove.RuleDump" do
   it "witnesses incrementRule at self = 5 over prev = 4" \_ -> liftEffect do
     let
       prev = mkPrevValues @IncrementPrevsSpec
-        (Tuple (StatementIO { input: F (fromInt 4 :: StepField), output: unit }) unit)
+        (Tuple (ApplicationStatement { input: F (fromInt 4 :: StepField), output: unit }) unit)
     w <- solveRule @(F StepField) noAdvice (pure prev) (F (fromInt 5)) incrementRule
     w `shouldEqual` Right { input: [ fromInt 5 ], values: [ fromInt 4 ] }
 

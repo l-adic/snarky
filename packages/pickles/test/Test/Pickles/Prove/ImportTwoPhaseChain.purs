@@ -29,7 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, exists, if_, not_, readCVar, true_)
@@ -44,8 +44,8 @@ import Test.Spec.Assertions (shouldEqual, shouldNotEqual)
 -- | this chain's previous proof, whose output is its state.
 type ChainPrevsSpec =
   Tuple2
-    (Slot 1 (StatementIO (F StepField) Unit))
-    (Slot 2 (StatementIO Unit (F StepField)))
+    (Slot 1 (ApplicationStatement (F StepField) Unit))
+    (Slot 2 (ApplicationStatement Unit (F StepField)))
 
 -- | The state is the transaction's value in the base case, the previous
 -- | state plus it otherwise. The transaction always verifies; the
@@ -58,14 +58,14 @@ chainRule
        (F StepField)
        (FVar StepField)
 chainRule getPrevStates _ = do
-  tx <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input: txIn } /\ _) -> txIn
-  prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut
+  tx <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement { input: txIn } /\ _) -> txIn
+  prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ ApplicationStatement { output: prevOut } /\ _) -> prevOut
   isBaseCase <- exists $ readCVar prev <#> (_ == F (negate one))
   selfVal <- if_ isBaseCase tx (CVar.add_ prev tx)
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: tx, output: unit }, proofMustVerify: true_ }
-          /\ PrevStatement { publicInput: StatementIO { input: unit, output: prev }, proofMustVerify: not_ isBaseCase }
+        PrevStatement { publicInput: ApplicationStatement { input: tx, output: unit }, proofMustVerify: true_ }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: unit, output: prev }, proofMustVerify: not_ isBaseCase }
           /\ unit
     , publicOutput: selfVal
     }
@@ -133,9 +133,9 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       BranchProver chainProver = fst chain.provers
 
       runStep
-        :: CompiledProof 1 (StatementIO (F StepField) Unit)
-        -> PrevSlot Unit 2 (StatementIO Unit (F StepField))
-        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)))
+        :: CompiledProof 1 (ApplicationStatement (F StepField) Unit)
+        -> PrevSlot Unit 2 (ApplicationStatement Unit (F StepField))
+        -> Aff (CompiledProof 2 (ApplicationStatement Unit (F StepField)))
       runStep tx selfPrev = do
         eRes <- liftEffect $ chainProver noAdvice
           { appInput: unit
@@ -146,7 +146,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
           Right p -> pure p
 
       basePrevSelf = BasePrev
-        { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
+        { dummyStatement: ApplicationStatement { input: unit, output: F (negate one) :: F StepField }
         }
 
     logInfo "[ImportTwoPhaseChain] proving c0 over make_zero"
@@ -163,5 +163,5 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
     verifyBatch chain.verifier (map toVerifiable [ c0, c1, c2 ]) `shouldEqual` true
 
     -- The state adds each transaction's value: 0, then 0 + 1, then 1 + 0.
-    let outputOf (CompiledProof p) = let StatementIO s = p.statement in s.output
+    let outputOf (CompiledProof p) = let ApplicationStatement s = p.statement in s.output
     map outputOf [ c0, c1, c2 ] `shouldEqual` [ F zero, F one, F one ]

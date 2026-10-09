@@ -1,8 +1,8 @@
 -- | Slots and branches whose previous statements have different types.
 -- |
 -- | A separately compiled input-mode `childRule` has statement
--- | `StatementIO (F StepField) Unit`, one field. The application under
--- | test has statement `StatementIO Unit (Tuple (F StepField) (F StepField))`,
+-- | `ApplicationStatement (F StepField) Unit`, one field. The application under
+-- | test has statement `ApplicationStatement Unit (Tuple (F StepField) (F StepField))`,
 -- | two fields, and two branches with different prev shapes: `baseRule`
 -- | has no slots, and `absorbRule` has an `External` slot at the child's
 -- | statement and a `Self` slot at its own.
@@ -28,7 +28,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, true_)
@@ -68,8 +68,8 @@ baseRule _ _ = pure
 -- | then this application's two-field output statement at width 2.
 type AbsorbPrevsSpec =
   Tuple2
-    (Slot 0 (StatementIO (F StepField) Unit))
-    (Slot 2 (StatementIO Unit Counts))
+    (Slot 0 (ApplicationStatement (F StepField) Unit))
+    (Slot 2 (ApplicationStatement Unit Counts))
 
 -- | Branch 1: output the self prev's count plus one, and its sum plus
 -- | the child's input. Both prevs always verify; the chain's base case
@@ -77,13 +77,13 @@ type AbsorbPrevsSpec =
 absorbRule
   :: StepRule AbsorbPrevsSpec Unit Unit Counts (Tuple (FVar StepField) (FVar StepField))
 absorbRule getPrevStates _ = do
-  childInput <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input } /\ _) -> input
+  childInput <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement { input } /\ _) -> input
   Tuple prevCount prevSum <- exists $ getPrevStates <#> prevValues <#>
-    \(_ /\ StatementIO { output } /\ _) -> output
+    \(_ /\ ApplicationStatement { output } /\ _) -> output
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: childInput, output: unit }, proofMustVerify: true_ }
-          /\ PrevStatement { publicInput: StatementIO { input: unit, output: Tuple prevCount prevSum }, proofMustVerify: true_ }
+        PrevStatement { publicInput: ApplicationStatement { input: childInput, output: unit }, proofMustVerify: true_ }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: unit, output: Tuple prevCount prevSum }, proofMustVerify: true_ }
           /\ unit
     , publicOutput: Tuple (CVar.add_ (const_ one) prevCount) (CVar.add_ prevSum childInput)
     }
@@ -145,8 +145,8 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       BranchProver absorbProver = fst (snd app.provers)
 
       runAbsorb
-        :: PrevSlot Unit 2 (StatementIO Unit Counts)
-        -> Aff (CompiledProof 2 (StatementIO Unit Counts))
+        :: PrevSlot Unit 2 (ApplicationStatement Unit Counts)
+        -> Aff (CompiledProof 2 (ApplicationStatement Unit Counts))
       runAbsorb selfPrev = do
         eRes <- liftEffect $ absorbProver noAdvice
           { appInput: unit
@@ -173,7 +173,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
 
     verifyBatch app.verifier (map toVerifiable [ b0, b1, b2 ]) `shouldEqual` true
 
-    let outputOf (CompiledProof p) = let StatementIO s = p.statement in s.output
+    let outputOf (CompiledProof p) = let ApplicationStatement s = p.statement in s.output
     map outputOf [ b0, b1, b2 ] `shouldEqual`
       [ Tuple (F zero) (F zero)
       , Tuple (F one) (F (fromInt 7))

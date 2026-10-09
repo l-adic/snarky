@@ -27,7 +27,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, readCVar, true_)
@@ -40,8 +40,8 @@ import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot 0 (StatementIO Unit (F StepField)))
-    (Slot 2 (StatementIO Unit (F StepField)))
+    (Slot 0 (ApplicationStatement Unit (F StepField)))
+    (Slot 2 (ApplicationStatement Unit (F StepField)))
 
 treeProofReturnRule
   :: StepRule TreeProofReturnPrevsSpec
@@ -50,15 +50,15 @@ treeProofReturnRule
        (F StepField)
        (FVar StepField)
 treeProofReturnRule getPrevStates _ = do
-  nrrInput <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { output: nrrOut } /\ _) -> nrrOut
-  prevInput <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut
+  nrrInput <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement { output: nrrOut } /\ _) -> nrrOut
+  prevInput <- exists $ getPrevStates <#> prevValues <#> \(_ /\ ApplicationStatement { output: prevOut } /\ _) -> prevOut
   isBaseCase <- exists $ readCVar prevInput <#> (_ == F (negate one))
   let proofMustVerifySlot1 = not_ isBaseCase
   selfVal <- if_ isBaseCase (const_ zero) (CVar.add_ (const_ one) prevInput)
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: unit, output: nrrInput }, proofMustVerify: true_ }
-          /\ PrevStatement { publicInput: StatementIO { input: unit, output: prevInput }, proofMustVerify: proofMustVerifySlot1 }
+        PrevStatement { publicInput: ApplicationStatement { input: unit, output: nrrInput }, proofMustVerify: true_ }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: unit, output: prevInput }, proofMustVerify: proofMustVerifySlot1 }
           /\ unit
     , publicOutput: selfVal
     }
@@ -130,8 +130,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     let
       runStep
-        :: PrevSlot Unit 2 (StatementIO Unit (F StepField))
-        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)))
+        :: PrevSlot Unit 2 (ApplicationStatement Unit (F StepField))
+        -> Aff (CompiledProof 2 (ApplicationStatement Unit (F StepField)))
       runStep selfPrev = do
         eRes <- liftEffect $ treeProver noAdvice
           { appInput: unit
@@ -143,7 +143,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           Right p -> pure p
 
       basePrevSelf = BasePrev
-        { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
+        { dummyStatement: ApplicationStatement { input: unit, output: F (negate one) :: F StepField }
         }
 
     logInfo "[TreeProofReturn] proving [step0, wrap0]"
@@ -167,6 +167,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     -- b0's dummy self-prev carries output -1, which trips the base case
     -- to 0; each later round increments its prev's output.
-    let outputOf (CompiledProof p) = let StatementIO s = p.statement in s.output
+    let outputOf (CompiledProof p) = let ApplicationStatement s = p.statement in s.output
     map outputOf [ b0, b1, b2, b3, b4 ] `shouldEqual`
       [ F zero, F one, F (fromInt 2), F (fromInt 3), F (fromInt 4) ]

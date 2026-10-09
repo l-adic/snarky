@@ -39,7 +39,7 @@ import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
 import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthInt, slotWidthsOf, toPrevs)
-import Pickles.Types (StatementIO(..))
+import Pickles.Types (ApplicationStatement(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -58,7 +58,7 @@ type StepMainTwoPhaseChainIncrementParams =
   }
 
 -- | The rule's one self prev slot, at width 1.
-type IncrementPrevsSpec = Tuple1 (Slot 1 (StatementIO (F StepField) Unit))
+type IncrementPrevsSpec = Tuple1 (Slot 1 (ApplicationStatement (F StepField) Unit))
 
 -- | `increment` rule: asserts `self_v = prev + 1`. No base case branch
 -- | (unlike SimpleChain), so `proofMustVerify` is a constant `true_`.
@@ -70,11 +70,11 @@ incrementRule
   -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput IncrementPrevsSpec Unit)
 incrementRule getPrevStates appState = do
-  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement p1 /\ _) -> p1.input
   assertEqual_ (CVar.add_ (const_ one) prev) appState
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+        PrevStatement { publicInput: ApplicationStatement { input: prev, output: unit }, proofMustVerify: true_ }
           /\ unit
     , publicOutput: unit
     }
@@ -148,7 +148,7 @@ compileStepMainTwoPhaseChainIncrementWithConstants pallasSrs makeZeroArt params 
           @IncrementPrevsSpec
           @(F StepField)
           @Unit
-          @(Tuple1 (StatementIO (F StepField) Unit))
+          @(Tuple1 (ApplicationStatement (F StepField) Unit))
           @Mpv
           incrementRule
           srsData'

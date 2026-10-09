@@ -34,7 +34,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Ref as Ref
-import Pickles (BranchProver(..), PrevSlot(..), SlotWrapKey(..), StatementIO(..), StepField, compileMulti, mkRuleEntry)
+import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), SlotWrapKey(..), StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
@@ -67,7 +67,7 @@ prepareProve srs = do
 
   let
     basePrevSelf = BasePrev
-      { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F StepField } }
+      { dummyStatement: ApplicationStatement { input: unit, output: F (negate one) :: F StepField } }
 
   b0 <-
     treeProver noAdvice

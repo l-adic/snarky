@@ -31,7 +31,7 @@ import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Pickles.Slots (SideLoadedSlot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Slots (PrevValues, SideLoadedPrevStatement(..), SideLoadedPrevValue, prevValues, toPrevs)
-import Pickles.Types (StatementIO(..))
+import Pickles.Types (ApplicationStatement(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -72,7 +72,7 @@ sideLoadedMainRule getPrevStates appState = do
   -- One allocation for both: the prev's statement field, then the key
   -- the OCaml rule hands to `Side_loaded.in_circuit` without binding.
   Tuple prev vk <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) ->
-    let StatementIO p1 = slot.statement in Tuple p1.input slot.verificationKey
+    let ApplicationStatement p1 = slot.statement in Tuple p1.input slot.verificationKey
   isBaseCase <- equals_ (const_ zero) appState
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]
@@ -83,7 +83,7 @@ sideLoadedMainRule getPrevStates appState = do
   pure
     { prevs: toPrevs $
         SideLoadedPrevStatement
-          { publicInput: StatementIO { input: prev, output: unit }
+          { publicInput: ApplicationStatement { input: prev, output: unit }
           , proofMustVerify: true_
           -- The OCaml rule binds nothing, and this harness reproduces
           -- its constraint system.
@@ -95,7 +95,7 @@ sideLoadedMainRule getPrevStates appState = do
 
 -- | The rule's one side-loaded prev slot, at the tag's compile-time
 -- | upper bound `N2`.
-type SideLoadedMainPrevsSpec = Tuple1 (SideLoadedSlot 2 (StatementIO (F StepField) Unit))
+type SideLoadedMainPrevsSpec = Tuple1 (SideLoadedSlot 2 (ApplicationStatement (F StepField) Unit))
 
 compileStepMainSideLoadedMain
   :: StepMainSideLoadedMainParams -> Effect StepArtifact
@@ -113,7 +113,7 @@ compileStepMainSideLoadedMain params = do
           @SideLoadedMainPrevsSpec
           @(F StepField)
           @Unit
-          @(Tuple1 (SideLoadedPrevValue (StatementIO (F StepField) Unit)))
+          @(Tuple1 (SideLoadedPrevValue (ApplicationStatement (F StepField) Unit)))
           @1
           sideLoadedMainRule
           -- Built inline rather than by
