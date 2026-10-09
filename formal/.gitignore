@@ -21,8 +21,13 @@
 
 # The Lagrange-basis memo the fixture drivers compute from the SRS (lagrangeBasisCached). The
 # memos `basisFor` names (`<curve>-k<rounds>-2^<domain>-<chunks>c.json`) are committed, like the
-# proof cache they serve: each is determined by the SRS and its key's domain, chunk count and
-# public-input count. Regenerate them (delete and rerun the drivers) on a proof-systems or SRS
-# bump; a stale memo makes the verifier reject, never pass. Other names stay local.
+# proof cache they serve. The manifest pins the SRS inputs and table hashes; regenerate with
+# `make regenerate-lagrange-cache` after changes to the SRS or basis computation. File hashes
+# establish provenance, not the capstones' mathematical Lagrange correspondence. Every table
+# `basisFor` names matches the pattern, so one computed for a domain outside the manifest is
+# untracked and fails `make check-lagrange-cache` as unlisted until it is listed by
+# regenerating or removed; only names from older layouts stay local.
 /lagrange-cache/*
 !/lagrange-cache/*-k*-2^*-*c.json
+!/lagrange-cache/manifest.json
+!/lagrange-cache/README.md

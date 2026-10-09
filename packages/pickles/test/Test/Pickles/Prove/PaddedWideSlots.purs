@@ -37,7 +37,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
@@ -48,16 +48,16 @@ import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-type Stmt = StatementIO (F StepField) Unit
+type Stmt = ApplicationStatement (F StepField) Unit
 
 -- | Increment a single predecessor from this width-two application.
 incrementRule :: StepRule (Tuple1 (Slot 2 Stmt)) (F StepField) (FVar StepField) Unit Unit
 incrementRule getPrevStates self = do
-  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input } /\ _) -> input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement { input } /\ _) -> input
   assertEqual_ self (CVar.add_ (const_ one) prev)
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+        PrevStatement { publicInput: ApplicationStatement { input: prev, output: unit }, proofMustVerify: true_ }
           /\ unit
     , publicOutput: unit
     }

@@ -167,7 +167,7 @@ lean-deadcode: ## Gate: fail on any authored Lean declaration unreachable from r
 lean-spec-locality: ## Gate: a pickles gadget's spec is stated only in the gadget's module
 	bash formal/scripts/check-spec-locality.sh
 
-lean-import-boundaries: ## Gate: the compiler and checkers import no proof or check module
+lean-import-boundaries: ## Gate: the compiler and checkers import no proof or check module; no library root reaches a check module
 	bash formal/scripts/check-import-boundaries.sh
 
 lean-kernel-check: ## Kernel-replay every Lean module through lean4checker
@@ -207,6 +207,14 @@ pickles-inventory: ## Generate analysis/pickles-inventory.md (Phase 1 of module 
 .PHONY: fetch-srs
 fetch-srs: ## Download the srs-cache from github
 	sh ./scripts/fetch-srs.sh
+
+.PHONY: check-lagrange-cache
+check-lagrange-cache: ## Check the committed Lean Lagrange table inventory and hashes
+	python3 formal/scripts/lagrange_cache.py check
+
+.PHONY: regenerate-lagrange-cache
+regenerate-lagrange-cache: fetch-srs ## Recompute and re-pin all committed Lean Lagrange bases
+	python3 formal/scripts/lagrange_cache.py regenerate
 
 .PHONY: fixtures-unpack
 fixtures-unpack: ## Decompress committed chunk fixtures (idempotent; prereq of circuit-diff tests)

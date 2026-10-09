@@ -1,0 +1,87 @@
+{
+  "formatVersion": 1,
+  "srs": {
+    "pallas": {
+      "file": "pallas.srs",
+      "sha256": "c2e2ec94b00252643077d1a5361612891ec5296871f7d8a2d3addf61d065dc23"
+    },
+    "vesta": {
+      "file": "vesta.srs",
+      "sha256": "243e3e33605281f5e8abcbd924066f55cdfda15b952b4ab373ecadcb4f002db5"
+    }
+  },
+  "tables": [
+    {
+      "file": "pallas-k15-2^13-1c.json",
+      "curve": "pallas",
+      "srsRounds": 15,
+      "domainLog2": 13,
+      "chunks": 1,
+      "count": 40,
+      "sha256": "e4a9df8b0194db8a17fdc9cc2808cf38fef9287828f23ba489758bd8e4e5ddac"
+    },
+    {
+      "file": "pallas-k15-2^14-1c.json",
+      "curve": "pallas",
+      "srsRounds": 15,
+      "domainLog2": 14,
+      "chunks": 1,
+      "count": 40,
+      "sha256": "ebaf034374f5842fa2c12b90ab9446ecea4bd410b623d7fccd0a37c7262a6ae5"
+    },
+    {
+      "file": "vesta-k16-2^10-1c.json",
+      "curve": "vesta",
+      "srsRounds": 16,
+      "domainLog2": 10,
+      "chunks": 1,
+      "count": 67,
+      "sha256": "efb9c47b999061acef7fa5e19b2d7b0f5a5e6a4d2284bc84cec3392c592bb1fb"
+    },
+    {
+      "file": "vesta-k16-2^13-1c.json",
+      "curve": "vesta",
+      "srsRounds": 16,
+      "domainLog2": 13,
+      "chunks": 1,
+      "count": 67,
+      "sha256": "e9a403baf7003b703e849f4a7ed307fb51dfbd9667338127e42b66b8dc9111d7"
+    },
+    {
+      "file": "vesta-k16-2^14-1c.json",
+      "curve": "vesta",
+      "srsRounds": 16,
+      "domainLog2": 14,
+      "chunks": 1,
+      "count": 67,
+      "sha256": "2571373df18a0d9c49a37de8084512f07e047302309ac5f47e7cddbb8043fdb4"
+    },
+    {
+      "file": "vesta-k16-2^15-1c.json",
+      "curve": "vesta",
+      "srsRounds": 16,
+      "domainLog2": 15,
+      "chunks": 1,
+      "count": 67,
+      "sha256": "417f2bef80535c6ec13ec6494a6d49109b3563aa2452c691d84a2ca516e8a8b5"
+    },
+    {
+      "file": "vesta-k16-2^17-2c.json",
+      "curve": "vesta",
+      "srsRounds": 16,
+      "domainLog2": 17,
+      "chunks": 2,
+      "count": 34,
+      "sha256": "dca87a3f692254504ef6e087f180dadb3e03886775eb4aae86d4567044a6935a"
+    },
+    {
+      "file": "vesta-k16-2^9-1c.json",
+      "curve": "vesta",
+      "srsRounds": 16,
+      "domainLog2": 9,
+      "chunks": 1,
+      "count": 34,
+      "sha256": "c6cca007f7fa032b26654ccb375182064e4ce4ed3dfc7a06ad12776bec73e7b3"
+    }
+  ]
+}

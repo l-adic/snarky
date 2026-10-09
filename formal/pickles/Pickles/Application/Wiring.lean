@@ -100,6 +100,16 @@ def requireProof {m : Type → Type} {ε : Type} [Monad m] [MonadExcept ε m]
     (p : Prop) [Decidable p] (error : ε) : m (PLift p) :=
   if h : p then pure ⟨h⟩ else throw error
 
+/-- A function every value of which is an action, as one action running them in index order:
+a function, or the first failure. -/
+def finSequence {m : Type → Type} [Monad m] : {n : ℕ} → {β : Fin n → Type} →
+    ((i : Fin n) → m (β i)) → m ((i : Fin n) → β i)
+  | 0, _, _ => pure fun i => i.elim0
+  | _ + 1, _, f => do
+    let h ← f 0
+    let t ← finSequence fun i => f i.succ
+    return Fin.cons h t
+
 /-- Validate backend metadata before assembling the configuration; no uniform source-chunk
 condition is imposed. Lagrange correspondence remains a later SRS-dependent premise. -/
 def Wiring.assemble {D : Shape} (L : Layout D) (A : BackendArtifacts D)

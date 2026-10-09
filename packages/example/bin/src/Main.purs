@@ -26,7 +26,7 @@ import Node.WorkerBees (Worker, unsafeWorkerFromPath)
 import Node.WorkerBees.Aff.Pool as Pool
 import Pickles (toVerifiable, verifyBatch)
 import Pickles.Prove.SerializeProof (decodeCompiledProof)
-import Pickles.Types (StatementIO(..))
+import Pickles.Types (ApplicationStatement(..))
 import Pickles.Verify (CompiledProof(..))
 import Random.LCG (mkSeed)
 import Simple.JSON as JSON
@@ -51,8 +51,8 @@ worker = unsafeWorkerFromPath "./packages/example/bin/worker-entry.mjs"
 merge :: Proof -> Proof -> Effect (WorkItem Depth)
 merge proof1@(CompiledProof left) proof2@(CompiledProof right) = do
   let
-    StatementIO { input: Statement l } = left.statement
-    StatementIO { input: Statement r } = right.statement
+    ApplicationStatement { input: Statement l } = left.statement
+    ApplicationStatement { input: Statement r } = right.statement
   unless (l.target == r.source) (throw "fixture transitions do not connect")
   pure $ Merge
     { proof1, proof2, statement: Statement { source: l.source, target: r.target } }

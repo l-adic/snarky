@@ -1409,16 +1409,22 @@ private theorem poseidon_branch {n : ℕ} [NeZero n] {source : List (KimchiConst
   rw [← hmap, hmds, ← hcoef]
   exact hsat'
 
-/-- **The wired fragment's closed theorem.** Any table satisfying an index of the fragment's
-lowering yields a valuation satisfying every source constraint and reading the public
-variables as the public input. -/
-theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
+/-- The fixed reading of a table through the lowering's labelled cells and equality classes.
+Unrepresented classes read as zero. This definition requires no satisfaction proof. -/
+noncomputable def recoveredValuation {n : ℕ} (source : List (KimchiConstraint F))
+    (publicVars : List Variable) (nv : Variable) (table : Fin n → Fin wCols → F) :
+    Valuation F :=
+  recoverClass (directRoots source nv) (directRows source publicVars nv) (cellVal table)
+
+/-- An accepted table's fixed recovery satisfies the source and reads its public input. -/
+theorem KimchiConstraint.Wired.holds_of_satisfies_reading {n : ℕ} [NeZero n]
     {source : List (KimchiConstraint F)} {publicVars : List Variable} {nv : Variable}
     {idx : Index F n} (hscope : KimchiConstraint.Wired.Scoped nv source publicVars)
     (hindex : IndexOf source publicVars nv idx) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F) (hsat : idx.Satisfies pub wTab) :
     ∃ V : Valuation F, (∀ c ∈ source, KimchiConstraint.Holds V c) ∧
-      ∀ i : Fin publicVars.length, V publicVars[i] = pub (hindex.publicIndex i) := by
+      (∀ i : Fin publicVars.length, V publicVars[i] = pub (hindex.publicIndex i)) ∧
+      V = recoveredValuation source publicVars nv wTab := by
   have hrows_le := hindex.rows_le
   have hlenPub : (makePublicInputRows (F := F) publicVars).length = publicVars.length := by
     simp [makePublicInputRows]
@@ -1501,7 +1507,7 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
       | pinned v k g => exact (equalsHolds_of_pinned hcache V (hqueued s hs _ he g rfl)).1
       | row g => exact equalsHolds_of_row hcache V (hqueued s hs _ he g rfl)
       | trivial => exact equalsHolds_of_trivial hcache V
-  refine ⟨V, ?_, ?_⟩
+  refine ⟨V, ?_, ?_, rfl⟩
   · intro c hc
     obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hc
     have hi : p < (lowering source nv).steps.length :=
@@ -1541,5 +1547,16 @@ theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
     have h2 := hsat.2.2 (hindex.publicIndex i)
     rw [← h1]
     exact h2.symm ▸ rfl
+
+/-- Any table satisfying the lowering has a source valuation at the same public input. -/
+theorem KimchiConstraint.Wired.holds_of_satisfies {n : ℕ} [NeZero n]
+    {source : List (KimchiConstraint F)} {publicVars : List Variable} {nv : Variable}
+    {idx : Index F n} (hscope : KimchiConstraint.Wired.Scoped nv source publicVars)
+    (hindex : IndexOf source publicVars nv idx) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin wCols → F) (hsat : idx.Satisfies pub wTab) :
+    ∃ V : Valuation F, (∀ c ∈ source, KimchiConstraint.Holds V c) ∧
+      ∀ i : Fin publicVars.length, V publicVars[i] = pub (hindex.publicIndex i) := by
+  obtain ⟨V, hV, hpub, -⟩ := holds_of_satisfies_reading hscope hindex pub wTab hsat
+  exact ⟨V, hV, hpub⟩
 
 end Snarky.Kimchi

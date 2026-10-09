@@ -84,8 +84,10 @@ the packages' manifests), `scripts/module-deps.sh` (the dependency-graph artifac
 `make lean-dep-graph`), `scripts/prune-stale-oleans.sh` (garbage-collect build artifacts
 of deleted/renamed modules — run it after branch switches),
 `scripts/check-import-boundaries.sh` (the ordinary compiler, the scope checker and the index
-constructor import no `Snarky.Kimchi.Backend.Internal` or `.Checks` module — `make
-lean-import-boundaries`), and `scripts/kernel-replay.sh` (the lean4checker kernel-replay gate).
+constructor import no `Snarky.Kimchi.Backend.Internal` or `.Checks` module, and no library root
+reaches a check module: the decided checks are built by the libraries' globs and imported by the
+audit drivers alone — `make lean-import-boundaries`), and `scripts/kernel-replay.sh` (the
+lean4checker kernel-replay gate).
 
 **The comment gate** (`scripts/check-comments.sh`, `make lean-comments`) fixes the objective
 half of the comment convention; the judgement half is the `proof-comment-style` skill. A
@@ -309,6 +311,14 @@ the tree now needs either.
 
 ## Fixtures and compatibility checks
 
+The Lean Lagrange bases under `lagrange-cache/` are committed and pinned, together with the
+shared SRS input hashes, by `lagrange-cache/manifest.json`. From the repository root,
+`make check-lagrange-cache` checks their inventory and hashes; `make regenerate-lagrange-cache`
+recomputes every listed prefix directly from the SRS and updates the manifest. Review and commit
+the tables and manifest together. The application CI job sets `LAGRANGE_CACHE_REQUIRED=1`, so a
+missing, malformed or insufficient committed table fails instead of silently regenerating.
+These provenance checks do not discharge the capstones' mathematical Lagrange correspondence.
+
 Everything executable is validated against proof-systems itself. The fixtures and vectors
 under `fixtures/` are recorded from the production Rust code by `tools/fixture-dump`
 (see its README for the binaries, output map, and regeneration workflow — regenerate on a
@@ -331,6 +341,13 @@ scripts/check_cs.lean                        # compiled constraint systems vs th
                                              # needs the circuit-diffs exports, so CI runs it from test.yml)
 scripts/check_tags.lean                      # every tag the pickles prove tests compiled, rebuilt from their
                                              # tag dumps (PICKLES_DUMP_DIR; CI runs it from test.yml)
+scripts/check_application_keys.lean          # check-application-keys: derive keys for self, external and chunked fixtures
+                                             # (PICKLES_DUMP_DIR; optional APPS; no proof cache)
+scripts/certify_application.lean             # certify-application: selected applications reconstructed, compiled
+                                             # once, their dumps' indices certified against the checked
+                                             # compilation (PICKLES_DUMP_DIR, APPS; CI runs it from test.yml)
+scripts/check_certify_failures.sh            # its one-run regression: three damaged applications fail located
+                                             # and block their dependents beside an intact certified one (CI)
 ```
 
 (Every package-local check reads its data through an env var whose **default is relative

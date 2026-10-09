@@ -79,10 +79,10 @@ def Assembled.circuits {D : Shape} (A : Assembled D) (S : Setup)
 
 /-- The replayed application rule stays fixed when its cached witness values change. -/
 theorem Assembled.stepBuilt_ruleAdvice_irrel {D : Shape} (A : Assembled D) (S : Setup)
-    (vals vals' : D.Branch → Option (Array Fp)) (V : Valuation Fp) (b : D.Branch)
+    (vals vals' : D.Branch → Option (Array Fp)) (b : D.Branch)
     (adv : (A.circuits S vals).StepAdvice b) :
-    (A.circuits S vals).stepBuilt V b adv = (A.circuits S vals').stepBuilt V b adv := by
-  exact Circuits.stepBuilt_rules_congr (A.circuits S vals) V
+    (A.circuits S vals).stepBuilt b adv = (A.circuits S vals').stepBuilt b adv := by
+  exact Circuits.stepBuilt_rules_congr (A.circuits S vals)
     (fun b => (A.rules b).main (vals' b)) b adv
     (fun x nv => (A.rules b).build_main_irrel _ _ x nv)
 

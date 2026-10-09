@@ -227,7 +227,7 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
 newtype CompiledProof :: Int -> Type -> Type
 newtype CompiledProof mpv stmtVal = CompiledProof
   { -- The rule's application input and output. The production prover
-    -- uses `StatementIO inputVal outputVal`, whose output a consumer
+    -- uses `ApplicationStatement inputVal outputVal`, whose output a consumer
     -- reaches as `(unwrap cp.statement).output`. It is the proof's only
     -- copy of its statement: `toVerifiable` encodes it as
     -- `VerifiableProof.appState`, so what a consumer reads is what

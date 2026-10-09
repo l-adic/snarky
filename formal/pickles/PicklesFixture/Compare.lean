@@ -47,14 +47,12 @@ def varsAgreeUpToRenaming {F : Type} (rows : List (KimchiRow F))
       | _, _ => return false
   return true
 
-/-- Compare one circuit's assembled system against its dump: types, coefficients, wires,
-public size and the variable ids up to renaming. -/
-def compareWith {p : ℕ} [Fact p.Prime]
-    {a b avar bvar : Type} [CircuitType (ZMod p) a avar]
-    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a avar] [CircuitType (ZMod p) b bvar]
-    (main : avar → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) bvar) (raw : Raw (ZMod p)) :
-    List (String × Bool) :=
-  let (rows, gates, pubVars) := kimchiGateData (a := a) (b := b) main
+/-- Compare assembled gate data against a dump: types, coefficients, wires, public size and
+the variable ids up to renaming. -/
+private def compareData {p : ℕ} [Fact p.Prime]
+    (data : List (KimchiRow (ZMod p)) × List (AssembledGate (ZMod p)) × List Variable)
+    (raw : Raw (ZMod p)) : List (String × Bool) :=
+  let (rows, gates, pubVars) := data
   [ ("publicInputSize", pubVars.length == raw.publicInputSize),
     ("gate count", gates.length == raw.typs.size),
     ("gate types", (gates.map (·.kind)).toArray == raw.typs),
@@ -65,5 +63,21 @@ def compareWith {p : ℕ} [Fact p.Prime]
         == raw.wires),
     ("gate count matches wires", gates.length == raw.wires.size),
     ("variables (up to renaming)", varsAgreeUpToRenaming rows raw.vars) ]
+
+/-- Compare one circuit's assembled system against its dump. -/
+def compareWith {p : ℕ} [Fact p.Prime]
+    {a b avar bvar : Type} [CircuitType (ZMod p) a avar]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a avar] [CircuitType (ZMod p) b bvar]
+    (main : avar → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) bvar) (raw : Raw (ZMod p)) :
+    List (String × Bool) :=
+  compareData (kimchiGateData (a := a) (b := b) main) raw
+
+/-- Compare a compiled circuit's assembled system against its dump: `compareWith` on a build
+in hand, at the compiled public layout. -/
+def compareBuilt {p : ℕ} [Fact p.Prime] {a b avar bvar β : Type} [CircuitType (ZMod p) a avar]
+    [CircuitType (ZMod p) b bvar] (built : Built (KimchiConstraint (ZMod p)) (β × bvar))
+    (raw : Raw (ZMod p)) : List (String × Bool) :=
+  compareData (gateDataOf (reduceBuilt built)
+    (compiledPublicVars (F := ZMod p) (a := a) (b := b) built)) raw
 
 end PicklesFixture

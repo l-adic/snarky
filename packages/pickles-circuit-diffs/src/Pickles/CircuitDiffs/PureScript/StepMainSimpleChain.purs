@@ -23,7 +23,7 @@ import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
-import Pickles.Types (StatementIO(..))
+import Pickles.Types (ApplicationStatement(..))
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -40,7 +40,7 @@ type StepMainSimpleChainParams =
   }
 
 -- | The rule's one self prev slot, at width 1.
-type SimpleChainPrevsSpec = Tuple1 (Slot 1 (StatementIO (F StepField) Unit))
+type SimpleChainPrevsSpec = Tuple1 (Slot 1 (ApplicationStatement (F StepField) Unit))
 
 -- | Simple_Chain N1 rule: self_correct = (1 + prev == self)
 -- | Reference: dump_circuit_impl.ml:4390-4413
@@ -51,14 +51,14 @@ simpleChainRule
   -> FVar StepField
   -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput SimpleChainPrevsSpec Unit)
 simpleChainRule getPrevStates appState = do
-  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement p1 /\ _) -> p1.input
   isBaseCase <- equals_ (const_ zero) appState
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify }
+        PrevStatement { publicInput: ApplicationStatement { input: prev, output: unit }, proofMustVerify }
           /\ unit
     , publicOutput: unit
     }
@@ -84,7 +84,7 @@ compileStepMainSimpleChain params = do
           @SimpleChainPrevsSpec
           @(F StepField)
           @Unit
-          @(Tuple1 (StatementIO (F StepField) Unit))
+          @(Tuple1 (ApplicationStatement (F StepField) Unit))
           @1
           simpleChainRule
           { blindingH: params.blindingH

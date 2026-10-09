@@ -799,6 +799,10 @@ The comparison/application integration follows the isolated interface and the ty
 it need not be bundled into the same commit. Keep checks targeted to selected applications,
 never `LINKS=all`.
 
+The follow-up work is scoped in
+[Imported Pickles application certification: phased plan](imported-application-certification-plan.md),
+which separates application lifting, capstone composition, index equality and concrete certification.
+
 ## 12. Isolate the compiler proof machinery
 
 This was the implementation strategy; section 12.8 records the tree it produced. Start after

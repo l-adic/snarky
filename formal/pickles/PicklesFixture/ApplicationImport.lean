@@ -54,6 +54,22 @@ def sameKey (a b : Key IpaPallas.curve 1) : Bool :=
   decide (a.cvk.comms = b.cvk.comms) && a.cvk.domainLog2 == b.cvk.domainLog2 &&
     a.cvk.publicCount == b.cvk.publicCount && a.cvk.prevChallenges == b.cvk.prevChallenges
 
+/-- Whether an application imports the producer with the wrap key. -/
+def ImportedApplication.importsKey (A : ImportedApplication) (key : Key IpaPallas.curve 1) :
+    Bool :=
+  (List.finRange A.shape.imports.size).any fun t =>
+    sameKey (A.assembled.wiring.imports t).wrapKey key
+
+/-- Whether a dump imports the producer with the wrap key. -/
+def ApplicationDump.importsKey (dump : ApplicationDump) (key : Key IpaPallas.curve 1) : Bool :=
+  dump.imports.any fun imp => sameKey imp.wrapKey key
+
+/-- The failed producer, named with its wrap key, that an entry imports, if any: the one
+attribution of a blocked entry, at reconstruction and at certification alike. -/
+def blockedBy (imports : Key IpaPallas.curve 1 → Bool)
+    (failed : List (String × Key IpaPallas.curve 1)) : Option String :=
+  (failed.find? fun (_, key) => imports key).map (·.1)
+
 /-- Match source chunks and candidate domains, ignoring repeated domains and their order. -/
 def ImportDump.domainsMatch (imp : ImportDump) (chunks : Nat) (domains : List Nat) : Bool :=
   imp.stepChunks == chunks &&

@@ -27,7 +27,7 @@ import Data.Time.Duration (Milliseconds(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Pickles (CompiledProof(..), StatementIO(..), toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), toVerifiable, verifyBatch)
 import Pickles.Prove.SerializeProof (decodeCompiledProof, encodeCompiledProof)
 import Snarky.Example.Block (processBlock)
 import Snarky.Example.Env (Env)
@@ -101,7 +101,7 @@ spec =
       -- The root proof's statement must span the whole block: L0 → L4, and verify.
       let
         CompiledProof cp = rootProof
-        StatementIO io = cp.statement
+        ApplicationStatement io = cp.statement
         Statement rootStmt = io.input
       rootStmt.source `shouldEqual` root l0.tree
       rootStmt.target `shouldEqual` root lFinal.tree

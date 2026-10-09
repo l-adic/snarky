@@ -132,7 +132,7 @@ import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, SideLoadedPrevValue, SlotWidth, slotWidthInt, slotWidthsOf, withSlotWidth)
 import Pickles.Step.Types as Step
 import Pickles.Step.VkSource (SlotVkBlueprint(..))
-import Pickles.Types (AllocEvals(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.Types (AllocEvals(..), ApplicationStatement(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..), verifierIndexDigest, vestaVerifierIndexCommitments)
 import Pickles.Verify
   ( CompiledProof(..)
@@ -421,9 +421,9 @@ instance
   , CircuitType StepField output outputVar
   ) =>
   SplitPrevs
-    (SlotOf Compiled n (StatementIO input output) /\ rest)
-    (PrevSlot input n (StatementIO input output) /\ restPrevs)
-    (StatementIO input output /\ restValues)
+    (SlotOf Compiled n (ApplicationStatement input output) /\ rest)
+    (PrevSlot input n (ApplicationStatement input output) /\ restPrevs)
+    (ApplicationStatement input output /\ restValues)
     len
   where
   splitPrevs _ (prev /\ rest) =
@@ -443,9 +443,9 @@ instance
   , CircuitType StepField output outputVar
   ) =>
   SplitPrevs
-    (SlotOf SideLoaded n (StatementIO input output) /\ rest)
-    (SideLoadedPrev input n (StatementIO input output) /\ restPrevs)
-    (SideLoadedPrevValue (StatementIO input output) /\ restValues)
+    (SlotOf SideLoaded n (ApplicationStatement input output) /\ rest)
+    (SideLoadedPrev input n (ApplicationStatement input output) /\ restPrevs)
+    (SideLoadedPrevValue (ApplicationStatement input output) /\ restValues)
     len
   where
   splitPrevs _ (SideLoadedPrev key prev /\ rest) =
@@ -1472,7 +1472,7 @@ instance
   , Add restLen 1 len
   ) =>
   SlotStatementLayouts
-    (SlotOf kind n (StatementIO input output) /\ rest)
+    (SlotOf kind n (ApplicationStatement input output) /\ rest)
     len where
   slotStatementLayoutsOf _ = Vector.cons
     { inputFields: sizeInFields (Proxy @StepField) (Proxy @input)
@@ -1566,7 +1566,7 @@ newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal r =
   BranchProver
     ( AdviceHandler r
       -> StepInputs prevsSpec inputVal prevsCarrier
-      -> Effect (Either ProveError (CompiledProof mpv (StatementIO inputVal outputVal)))
+      -> Effect (Either ProveError (CompiledProof mpv (ApplicationStatement inputVal outputVal)))
     )
 
 -- | A multi-branch compile's verification keys: one `wrap` VK, under
@@ -1592,7 +1592,7 @@ type MultiOutput
   -> Type
 type MultiOutput proversCarrier branches mpvMax inputVal outputVal =
   { provers :: proversCarrier
-  , tag :: Tag (StatementIO inputVal outputVal) mpvMax
+  , tag :: Tag (ApplicationStatement inputVal outputVal) mpvMax
   , verifier :: Verifier
   , vks :: MultiVKs branches
   -- | What an `External` slot of a later compile imports from this
@@ -2267,7 +2267,7 @@ runMultiProverBody
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
   -> RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r
   -> StepInputs prevsSpec inputVal prevsCarrier
-  -> Effect (Either ProveError (CompiledProof mpvMax (StatementIO inputVal outputVal)))
+  -> Effect (Either ProveError (CompiledProof mpvMax (ApplicationStatement inputVal outputVal)))
 runMultiProverBody
   handler
   ncProxy
@@ -2509,7 +2509,7 @@ runMultiProverBody
               }
 
           let
-            statement = StatementIO { input: appInput, output: publicOutput }
+            statement = ApplicationStatement { input: appInput, output: publicOutput }
 
           pure $ Right $ CompiledProof
             { statement

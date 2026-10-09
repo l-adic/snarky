@@ -37,7 +37,7 @@ private def circuitSize (k : StepMainConsts 2) : IO Nat := do
       (constPt dummyWrapSgPt) dummyUnfN0
       (fun _ => pure ((fun _ =>
         { appState := #v[.const 0], mustVerify := CircuitType.constVar (F := Fp) false }), ()))
-      inertStepAdvice)
+      Pickles.Application.inertStepAdvice)
   let count := built.constraints.length
   require (count > 0) "the step circuit emitted no constraints"
   for i in List.finRange 2 do

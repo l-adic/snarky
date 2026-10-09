@@ -21,7 +21,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StatementIO(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (true_)
 import Test.Pickles.Outputs (appOutputs)
@@ -31,13 +31,13 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 type RecursePrevsSpec =
-  Tuple1 (Slot 0 (StatementIO Unit Unit))
+  Tuple1 (Slot 0 (ApplicationStatement Unit Unit))
 
 -- | One prev, a `Chunks2` proof, which must verify.
 recurseRule :: StepRule RecursePrevsSpec Unit Unit Unit Unit
 recurseRule _ _ = pure
   { prevs: toPrevs $
-      PrevStatement { publicInput: StatementIO { input: unit, output: unit }, proofMustVerify: true_ }
+      PrevStatement { publicInput: ApplicationStatement { input: unit, output: unit }, proofMustVerify: true_ }
         /\ unit
   , publicOutput: unit
   }

@@ -62,11 +62,15 @@ scoped notation "sigmaRows" => (6 : Nat)
 /-- The single-column batch rows: `z` and the six basic-gate selectors. -/
 scoped notation "litRowCount" => (7 : Nat)
 
+/-- The six selector columns committed by the supported gate set. -/
+scoped notation "selectorCols" => (6 : Nat)
+
 /-- The batch rows after the public and ft rows. -/
 scoped notation "tailRowCount" => (43 : Nat)
 
 /-! Each derived constant against its derivation. -/
 example : sigmaRows = permCols - 1 := rfl
+example : selectorCols = litRowCount - 1 := rfl
 example : tailRowCount = litRowCount + wCols + coeffCols + sigmaRows := rfl
 
 end Kimchi

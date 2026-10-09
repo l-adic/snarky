@@ -107,3 +107,20 @@ root = "scripts.check_rule_replay"
 [[lean_exe]]
 name = "check-application-inputs"
 root = "scripts.check_application_inputs"
+
+[[lean_exe]]
+name = "check-application-indices"
+root = "scripts.check_application_indices"
+
+[[lean_exe]]
+name = "certify-application"
+root = "scripts.certify_application"
+
+[[lean_exe]]
+name = "check-application-keys"
+root = "scripts.check_application_keys"
+
+# Explicit regeneration of the committed Lean Lagrange tables, never a normal CI run.
+[[lean_exe]]
+name = "regenerate-lagrange-cache"
+root = "scripts.regenerate_lagrange_cache"

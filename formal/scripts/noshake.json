@@ -38,6 +38,9 @@
     "Kimchi.Index.GateType": [
       "Init"
     ],
+    "Kimchi.Index.Interpolation": [
+      "CompPoly.Univariate.NTT.Interpolation"
+    ],
     "Pickles.Linearization.Circuit": [
       "Pickles.Linearization.Map"
     ],

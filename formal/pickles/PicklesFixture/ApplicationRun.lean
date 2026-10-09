@@ -1,6 +1,7 @@
 import PicklesFixture.ApplicationImport
 import PicklesFixture.Compare
 import Pickles.Application.Verify
+import Pickles.Application.CheckedCompile
 
 /-!
 # Runs of imported applications
@@ -60,19 +61,20 @@ structure CircuitRun (p : Nat) [Fact p.Prime] where
   satisfies : Bool
   /-- The public values read from the witness. -/
   pub : List (ZMod p)
+  /-- The table's rows as rendered from the witness: the public rows, then the body's. -/
+  rows : Array (Vector (ZMod p) 15)
 
 private def fromRun {p : Nat} [Fact p.Prime] {a av b bv α : Type}
     [A : CircuitType (ZMod p) a av]
-    [∀ V : Valuation (ZMod p), CheckedType (ZMod p) (Builder V (KimchiConstraint (ZMod p))) a av]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a av]
     [CircuitType (ZMod p) b bv]
-    {body : (V : Valuation (ZMod p)) → av →
-      CircuitM (ZMod p) (Builder V (KimchiConstraint (ZMod p))) (bv × α)}
+    {body : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (bv × α)}
     (r : MainRun (a := a) (b := b) body)
-    (built : {built // built = compileWith (a := a) (b := b) (body r.V)}) : CircuitRun p :=
+    (built : {built // built = compileWith (a := a) (b := b) body}) : CircuitRun p :=
   match built with
   | ⟨built, h⟩ =>
     { V := r.V, constraints := built.constraints, holds := h ▸ r.holds
-      satisfies := r.satisfies, pub := r.pub }
+      satisfies := r.satisfies, pub := r.pub, rows := r.rows }
 
 /-- A canonical satisfying step run and its cache routing information. -/
 structure StepEntry {D : Shape} {L : Layout D} (C : Circuits D L) where
@@ -143,13 +145,31 @@ structure Runner where
   wrap : Nat → Cache.Entry CS → Cache.Entry CW → Array StepPrev →
     IO (CircuitRun PALLAS_SCALAR_CARD)
 
-/-- Compare every reconstructed step branch and the wrap circuit with the independent dump. -/
-def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
-    (name : String) (tag : Json) : IO Unit := do
-  let C := A.circuits S (fun _ => none)
-  let branches ← IO.ofExcept ((tag.getObjVal? "branches") >>= Json.getArr?)
+/-- A branch's dumped step circuit, from the tag. -/
+def stepCircuitDump (D : Shape) (tag : Json) (b : D.Branch) : Except String (Raw Fp) := do
+  let branches ← (tag.getObjVal? "branches") >>= Json.getArr?
   unless branches.size == D.branches do
-    throw (IO.userError "comparison dump branch count differs from the reconstructed application")
+    throw "comparison dump branch count differs from the reconstructed application"
+  let some branch := branches[b.val]? | throw "a declared branch is missing"
+  parseGates (← (← branch.getObjVal? "stepMain").getObjVal? "circuit")
+
+/-- The dumped wrap circuit, from the tag. -/
+def wrapCircuitDump (tag : Json) : Except String (Raw Fq) := do
+  parseGates (← (← tag.getObjVal? "wrapMain").getObjVal? "circuit")
+
+/-- Every branch's and the wrap circuit's dump, from the tag, a failure located at its
+circuit. -/
+def circuitDumps (D : Shape) (tag : Json) : Except String ((D.Branch → Raw Fp) × Raw Fq) := do
+  let steps ← finSequence (β := fun _ => Raw Fp) fun b =>
+    (stepCircuitDump D tag b).mapError (s!"step {b.val}: " ++ ·)
+  let wrap ← (wrapCircuitDump tag).mapError ("wrap: " ++ ·)
+  return (steps, wrap)
+
+/-- Compare each branch's and the wrap circuit's compilation in hand with its dump, datum by
+datum. -/
+def compareCompilations {D : Shape} {L : Layout D} (C : Circuits D L)
+    (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
+    (name : String) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) : IO Unit := do
   let report (label : String) (checks : List (String × Bool)) : IO Unit := do
     let bad := checks.filter (!·.2)
     unless bad.isEmpty do
@@ -157,16 +177,17 @@ def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
     IO.println s!"✓ {name} {label}: application circuit matches dumped constraint system"
     (← IO.getStdout).flush
   for b in List.finRange D.branches do
-    let some branch := branches[b.val]? | throw (IO.userError "a declared branch is missing")
-    let raw : Raw Fp ← IO.ofExcept do
-      parseGates (← (← branch.getObjVal? "stepMain").getObjVal? "circuit")
-    report s!"step {b.val}" (compareWith (a := Unit)
-      (b := StepStatement (UnfVal WrapIPARounds) Fp D.width)
-      (fun u => Prod.fst <$> C.stepCircuit (fun _ => 0) b inertStepAdvice u) raw)
-  let raw : Raw Fq ← IO.ofExcept do
-    parseGates (← (← tag.getObjVal? "wrapMain").getObjVal? "circuit")
-  report "wrap" (compareWith (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
-    (fun s => Prod.fst <$> C.wrapCircuit (fun _ => 0) inertWrapAdvice s) raw)
+    report s!"step {b.val}"
+      (compareBuilt (a := Unit) (b := StepPublic D) (steps b).1 (stepDump b))
+  report "wrap" (compareBuilt (a := WrapPublic) (b := Unit) wrap.1 wrapDump)
+
+/-- Compare every reconstructed step branch's and the wrap circuit's canonical compilation with
+the independent dump. -/
+def checkCompiled {D : Shape} (A : Assembled D) (S : Setup)
+    (name : String) (tag : Json) : IO Unit := do
+  let C := A.circuits S (fun _ => none)
+  let (stepDump, wrapDump) ← IO.ofExcept (circuitDumps D tag)
+  compareCompilations C (canonicalStep C) (canonicalWrap C) name stepDump wrapDump
 
 private def runStep {D : Shape} (A : Assembled D) (S : Setup) (branch : Nat)
     (proof : Cache.Entry CS) (previous : Array StepPrev)
@@ -185,12 +206,12 @@ private def runStep {D : Shape} (A : Assembled D) (S : Setup) (branch : Nat)
   let advice ← IO.ofExcept (stepAdviceOf D.width (SlotSource.widths D.width (C.wiring.sources b))
     (C.wiring.sourceChunks b) C.wiring.backend.wrapKey.cvk proof prevs C.setup.dummySg)
   let ⟨r, built⟩ ← runMainBuilt fpSide (a := Unit)
-    (b := StepStatement (UnfVal WrapIPARounds) Fp D.width) (fun V => C.stepCircuit V b advice) ()
+    (b := StepStatement (UnfVal WrapIPARounds) Fp D.width) (C.stepCircuit b advice) ()
   -- The executed rule's values and all main advice erase from the canonical build.
-  have fixed := (A.stepBuilt_ruleAdvice_irrel S vals (fun _ => none) r.V b advice).trans
-    ((A.circuits S (fun _ => none)).stepBuilt_advice_irrel r.V b advice inertStepAdvice)
+  have fixed := (A.stepBuilt_ruleAdvice_irrel S vals (fun _ => none) b advice).trans
+    ((A.circuits S (fun _ => none)).stepBuilt_advice_irrel b advice inertStepAdvice)
   let holds : Decidable (∀ con ∈
-      ((A.circuits S (fun _ => none)).stepBuilt r.V b inertStepAdvice).constraints,
+      ((A.circuits S (fun _ => none)).stepBuilt b inertStepAdvice).constraints,
       ConstraintHolds.Holds r.V con) := congrArg Built.constraints fixed ▸ r.holds
   match holds with
   | .isFalse _ => throw (IO.userError "application step constraints do not hold")
@@ -215,9 +236,9 @@ private def runWrap {D : Shape} (A : Assembled D) (S : Setup) (pad : WrapPadding
     A.layout.wrapWidths pad S.dummy proof prevs)
   let inp ← IO.ofExcept (wrapInputOf wrapped)
   let ⟨r, built⟩ ← runMainBuilt fqSide (a := StatementPacked StepIPARounds (Type1 Fq) Fq)
-    (b := Unit) (fun V => C.wrapCircuit V advice) inp
-  have fixed := C.wrapBuilt_advice_irrel r.V advice inertWrapAdvice
-  let holds : Decidable (∀ con ∈ (C.wrapBuilt r.V inertWrapAdvice).constraints,
+    (b := Unit) (C.wrapCircuit advice) inp
+  have fixed := C.wrapBuilt_advice_irrel advice inertWrapAdvice
+  let holds : Decidable (∀ con ∈ (C.wrapBuilt inertWrapAdvice).constraints,
       ConstraintHolds.Holds r.V con) := congrArg Built.constraints fixed ▸ r.holds
   match holds with
   | .isFalse _ => throw (IO.userError "application wrap constraints do not hold")
@@ -238,7 +259,7 @@ private def checkMixed {D : Shape} (A : Assembled D) (S : Setup) : IO Unit := do
   let b : D.Branch ← if h : 1 < D.branches then pure ⟨1, h⟩
     else throw (IO.userError "the mixed-chunk example requires the recursive branch")
   let built : Built (KimchiConstraint Fp) ((_ × mixed.StepCells b) × _) :=
-    mixed.stepBuilt (fun _ => 0) b inertStepAdvice
+    mixed.stepBuilt b inertStepAdvice
   -- each slot's allocated chunk count beside the one its source declares
   let counts := (List.finRange (D.slots b)).map fun i =>
     ((built.result.1.2.slots i).evals.pub.zeta.toArray.size, mixed.wiring.sourceChunks b i)
@@ -248,7 +269,7 @@ private def checkMixed {D : Shape} (A : Assembled D) (S : Setup) : IO Unit := do
   unless (counts.map (·.2)).eraseDups.length > 1 do
     throw (IO.userError s!"the synthetic import left one chunk count on every source \
       (allocated, declared): {counts}")
-  unless built.constraints.length > (C.stepBuilt (fun _ => 0) b inertStepAdvice).constraints.length
+  unless built.constraints.length > (C.stepBuilt b inertStepAdvice).constraints.length
       do throw (IO.userError "the larger source did not enlarge the assembled step circuit")
   IO.println s!"✓ synthetic application: mixed source chunk counts {counts.map (·.2)} reach \
     the allocated step cells"

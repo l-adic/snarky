@@ -26,6 +26,7 @@ rest. `compiledIndex?` applies it to the source's assembled gates.
 - `gateTable?_isSome_iff`, `gateTable?_padding`: when the table is built, and what its
   padding rows are.
 - `compiledIndex?_indexOf`: the index a successful construction returns is the source's.
+- `indexOfGates?_eq_some`: the index is built at the given data.
 - `gateDataOf_reduceBuilt`: a built circuit's gates are its source's, whatever its result.
 
 ## Implementation notes
@@ -243,6 +244,21 @@ def indexOfGates? (gates : List (AssembledGate F)) (source : List (KimchiConstra
     (gateTable? gates n).bind fun t => Index.build? t publicCount zkRows omega endoBase mds shifts
   else none
 
+/-- The index `indexOfGates?` returns is built at the given data: its public count, masked-row
+count, generator, shifts and gate parameters are the arguments'. -/
+theorem indexOfGates?_eq_some {gates : List (AssembledGate F)} {source : List (KimchiConstraint F)}
+    {publicCount n zkRows : ℕ} {omega endoBase : F} {mds : Gate.Poseidon.Mds F}
+    {shifts : Fin permCols → F} {idx : Index F n}
+    (h : indexOfGates? gates source publicCount n zkRows omega endoBase mds shifts = some idx) :
+    idx.publicCount = publicCount ∧ idx.zkRows = zkRows ∧ idx.omega = omega ∧
+      idx.shifts = shifts ∧ idx.endoBase = endoBase ∧ idx.mds = mds := by
+  unfold indexOfGates? at h
+  split at h
+  · obtain ⟨t, -, hb⟩ := Option.bind_eq_some_iff.mp h
+    obtain ⟨-, hpc, hzk, he, hm, ho, hs⟩ := Index.build?_eq_some hb
+    exact ⟨hpc, hzk, ho, hs, he, hm⟩
+  · cases h
+
 /-- The index of a compiled source: `indexOfGates?` on its assembled gates at its public
 variables. -/
 def compiledIndex? (source : List (KimchiConstraint F)) (publicVars : List Variable)
@@ -262,7 +278,7 @@ theorem compiledIndex?_indexOf {source : List (KimchiConstraint F)} {publicVars 
   split at h
   · rename_i hcond
     obtain ⟨t, ht, hb⟩ := Option.bind_eq_some_iff.mp h
-    obtain ⟨hg, hpc, hzk, he, hm⟩ := Index.build?_eq_some hb
+    obtain ⟨hg, hpc, hzk, he, hm, -, -⟩ := Index.build?_eq_some hb
     exact
       { publicCount := hpc
         params := fun c hc => by rw [hm, he]; exact hcond.1 c hc

@@ -79,4 +79,18 @@ instance (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → F
   unfold Satisfies
   infer_instance
 
+omit [NeZero n] in
+/-- Satisfaction at a public vector of known length, the index's public count cast to it; the
+domain is nonempty by the index's own laws. -/
+def SatisfiesVec (idx : Index F n) {m : ℕ} (pub : Vector F m) (h : idx.publicCount = m)
+    (wTab : Fin n → Fin wCols → F) : Prop :=
+  haveI : NeZero n := ⟨by have := idx.zk_three; have := idx.zk_le; omega⟩
+  idx.Satisfies (fun j => pub[Fin.cast h j]) wTab
+
+omit [NeZero n] in
+instance (idx : Index F n) {m : ℕ} (pub : Vector F m) (h : idx.publicCount = m)
+    (wTab : Fin n → Fin wCols → F) : Decidable (idx.SatisfiesVec pub h wTab) :=
+  haveI : NeZero n := ⟨by have := idx.zk_three; have := idx.zk_le; omega⟩
+  inferInstanceAs (Decidable (idx.Satisfies (fun j => pub[Fin.cast h j]) wTab))
+
 end Kimchi.Index

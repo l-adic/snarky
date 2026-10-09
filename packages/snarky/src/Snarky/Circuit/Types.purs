@@ -248,7 +248,7 @@ instance CircuitType f NoInput NoInput where
   fieldsToVar _ = NoInput
 
 -- Empty wire form (`{}`); the read ignores it — these carry no data. Lets
--- `StatementIO`-based statements serialize for the proof-transport codec.
+-- `ApplicationStatement`-based statements serialize for the proof-transport codec.
 instance WriteForeign NoInput where
   writeImpl _ = writeImpl {}
 

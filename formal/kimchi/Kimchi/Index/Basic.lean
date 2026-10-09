@@ -240,13 +240,13 @@ theorem build?_eq_some [DecidableEq F] {gates : Fin n → GateRow F n} {publicCo
     {omega endoBase : F} {mds : Gate.Poseidon.Mds F} {shifts : Fin permCols → F} {idx : Index F n}
     (h : build? gates publicCount zkRows omega endoBase mds shifts = some idx) :
     idx.gates = gates ∧ idx.publicCount = publicCount ∧ idx.zkRows = zkRows ∧
-      idx.endoBase = endoBase ∧ idx.mds = mds := by
+      idx.endoBase = endoBase ∧ idx.mds = mds ∧ idx.omega = omega ∧ idx.shifts = shifts := by
   unfold build? at h
   dsimp only at h
   split at h
   · split at h
     cases h
-    exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+    exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · cases h
 
 end Kimchi.Index

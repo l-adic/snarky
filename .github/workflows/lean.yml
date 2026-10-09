@@ -75,6 +75,9 @@ jobs:
     - name: Check the fixture manifest
       run: bash scripts/check_fixtures_manifest.sh
 
+    - name: Check committed Lean Lagrange bases
+      run: python3 scripts/lagrange_cache.py check
+
     # elan + Mathlib olean cache + the Kimchi build-directory cache + `lake build` of
     # the library list. The two heavy fixture drivers run INTERPRETED in their own
     # parallel lane below: their `lean_exe` targets exist (kimchi/lakefile.toml) and are
@@ -96,7 +99,8 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         lake build check-cs check-tags check-slot-chunks check-application-shapes \
-          check-rule-replay check-application-inputs
+          check-rule-replay check-application-inputs check-application-indices \
+          certify-application check-application-keys regenerate-lagrange-cache
 
     # Save even when the build (or a source gate rerun) failed: a red PR iteration
     # then restarts from the partial build instead of the last green one. On an exact

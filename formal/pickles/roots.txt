@@ -49,12 +49,17 @@ Pickles.FopSide.unshiftV_read
 
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
+PicklesFixture.Application.runCertification -- shared manifest driver for certification and key checks
 PicklesFixture.srsAt -- shared SRS loader used by the application drivers
 PicklesFixture.stepMainOf -- synthetic mixed-chunk reader regression
 Pickles.Application.Circuits.stepBuilt_advice_irrel -- audited builder erasure for branch advice
 Pickles.Application.Circuits.wrapBuilt_advice_irrel -- audited builder erasure for wrap advice
 Pickles.Application.Circuits.stepBuilt_rules_congr -- audited transport for replayed rule witnesses
 PicklesFixture.Application.checkSelectedFromShape -- reconstruct selected circuits from sidecar shapes
+PicklesFixture.Application.checkIndices -- check-application-indices certifies selected applications' circuits
+PicklesFixture.Application.checkTables -- check-application-indices builds the lifting theorems' tables from cached proofs
+PicklesFixture.Application.rejectInvalidDumps -- check-application-indices: the dump adapter on small dumps
+PicklesFixture.compareWith -- check-cs compares each gadget circuit's system with its dump
 Pickles.Application.Wiring.assemble -- the fixture assembles typed wiring and tests rejected backends
 Pickles.Application.Layout.check -- the layout driver assembles each layout through the executable checker
 Pickles.Application.Layout.export -- the next application imports the checked layout interface
@@ -91,9 +96,54 @@ Pickles.Application.WrapProofHandover.appState_eq_or_collision -- the consumer r
 PicklesFixture.Application.validate -- selected runs apply application capstones and both handovers
 PicklesFixture.Application.runner -- imported applications retain satisfying typed runs
 
+-- Checked compilation: an application's circuits certified with their own kimchi indices, the
+-- family of indices read from the certificate, and every execution compiling to the certified
+-- compilation.
+Pickles.Application.checkApplication
+Pickles.Application.CheckedAt.indices
+Pickles.Application.Circuits.stepBuilt_eq
+Pickles.Application.Circuits.wrapBuilt_eq
+-- Lifting: every table a checked index accepts at a typed statement has an execution reading
+-- it, and every execution's retained cells are the canonical compilation's.
+Pickles.Application.CheckedApplication.lift_step
+Pickles.Application.CheckedApplication.lift_wrap
+Pickles.Application.StepRun.cells_eq
+Pickles.Application.WrapRun.cells_eq
+Pickles.Application.MatrixRunConsumer.lifts_both -- both lifts applied against the interface alone
+-- Pickles-correctness preserves matrix readings. Connections supplied on the matrices
+-- lift to the native capstones, with conclusions on the same matrices and the state projection.
+Pickles.Application.checkedApplication_picklesCorrect
+Pickles.Application.CertifiedIndices.wrap_handover
+Pickles.Application.CertifiedIndices.step_handover
+Pickles.Application.matrices_stepWrap
+Pickles.Application.matrices_wrapStep
+Pickles.Application.matrices_wrap_handover
+Pickles.Application.matrices_step_handover
+Pickles.Application.WrapHandoverConclusion.appState
+Pickles.Application.compareIndices?_eq_none_iff -- equality of two families of an application's indices, decided
+Pickles.Application.importedApplication_picklesCorrect -- native correctness transports along index equality
+Pickles.Application.certifyIndices? -- imported indices against a checked application: the indices certified or the first disagreement
+Pickles.Application.certifyIndices?_indices -- the certified indices are the given ones
+Pickles.Application.certifyIndices?_isOk_iff -- certification succeeds exactly on the checked indices
+Pickles.Application.CertificationConsumer.stepWrap_accepts -- verifier acceptance from tables alone
+Pickles.Application.CertificationConsumer.wrapHandover_appState -- the state alternative across two applications
+Pickles.Application.CertificationConsumer.stepHandover_messages -- the message grouping across three applications
+
 -- Public bridges for consumers relating verifier computations, read cells and accumulators.
 Pickles.OldsRead.of_readPt
 Pickles.carryWith_lagrangePoints
 Pickles.pubEvalsWith_lagrangePoints
 Pickles.sgOkWith_of_kimchiVerifyWith
 Pickles.accOk_of_carryWith
+
+-- Verifier keys from index polynomials and the shared SRS, with regression endpoints.
+Pickles.deriveKey_columns
+Pickles.deriveKey_digest
+Pickles.deriveColumns_eq
+Pickles.compareColumns?_eq_none_iff
+Pickles.checkKey?
+Pickles.Application.certifyKeys?
+Pickles.Application.certifyKeys?_certified
+Pickles.Application.KeyDerivationChecks.accepts
+Pickles.Application.KeyDerivationChecks.rejects
+Pickles.Application.KeyDerivationChecks.columns_equal

@@ -1762,7 +1762,8 @@ def replayedStepMain (w : ℕ) (hw : w ≤ Pickles.MaxProofsVerified)
       (ks := Pickles.StepIPARounds) (inVal := Vector Fp rule.inputSize)
       (outVal := Vector Fp rule.publicOutput.size) (fun i => k.slots[i].source)
       (fun i => k.slots[i].width_le hw) k.h (fun i => fopStepParams (k.chunks i)) k.ownDomains
-      (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule none) inertStepAdvice u) j
+      (Pickles.constPt dummyWrapSgPt) dummyUnfN0 (replayRule rule none)
+      Pickles.Application.inertStepAdvice u) j
 
 /-! ## The wrap side's `incrementally_verify_proof`
 
@@ -2140,7 +2141,7 @@ def main : IO Unit := do
       wrapTarget (a := Pickles.StatementPacked 16 (Type1 Fq) Fq) (b := Unit)
         (fun stmt => Prod.fst <$> Pickles.wrapMainCircuit (k := 15) (ks := 16) fopWrapParams
           sh.widths (Pickles.stepDomainLog2s sh.keys) (Pickles.stepKeyCells sh.keys) sh.pins
-          sh.lagrange k.h k.dummy sh.slotWidths inertWrapAdvice stmt) j)
+          sh.lagrange k.h k.dummy sh.slotWidths Pickles.Application.inertWrapAdvice stmt) j)
   let stepMains : List (String × Comparison) :=
     [ ("step_main_simple_chain_n2_circuit", replayedStepMain 2 (by decide)),
       ("step_main_two_phase_chain_make_zero_circuit", replayedStepMain 1 (by decide)),

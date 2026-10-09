@@ -39,48 +39,48 @@ def assembledRaw {F : Type} [Zero F] (rows : List (KimchiRow F))
       (wit.map fun row => row.toList.getD j 0).toArray).toArray
     pub := pubs.toArray }
 
-/-- One run of a main circuit as its capstone compiles it: `body` at the soundness tag of the
-prover's valuation `V` (`Snarky.compileWith`), proved on its input. The run's facts are stated of
-that compiled circuit, in the capstone's own terms. -/
+/-- One run of a main circuit, with the prover's valuation interpreting the constraints and
+retained cells of `Snarky.compileWith`. -/
 structure MainRun {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [CircuitType (ZMod p) a av]
-    [∀ V : Valuation (ZMod p), CheckedType (ZMod p) (Builder V (KimchiConstraint (ZMod p))) a av]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a av]
     [CircuitType (ZMod p) b bv]
-    (body : (V : Valuation (ZMod p)) → av →
-      CircuitM (ZMod p) (Builder V (KimchiConstraint (ZMod p))) (bv × α)) where
+    (body : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (bv × α)) where
   /-- The prover's valuation. -/
   V : Valuation (ZMod p)
   /-- Whether `V` satisfies every compiled constraint: the capstone's hypothesis, decided. -/
-  holds : Decidable (∀ con ∈ (compileWith (a := a) (b := b) (body V)).constraints,
+  holds : Decidable (∀ con ∈ (compileWith (a := a) (b := b) body).constraints,
     ConstraintHolds.Holds V con)
   /-- Whether the run's table satisfies the assembled system. -/
   satisfies : Bool
   /-- The table's public input: the input's cells, then the output's. -/
   pub : List (ZMod p)
+  /-- The table's rows as rendered from the prover's values: the public rows, then the
+  body's. -/
+  rows : Array (Vector (ZMod p) 15)
   /-- The run's output and cells, and its public output. -/
   result : (bv × α) × bv
   /-- They are the compiled circuit's. -/
-  result_eq : result = (compileWith (a := a) (b := b) (body V)).result
+  result_eq : result = (compileWith (a := a) (b := b) body).result
 
-/-- A main circuit `body` proved on `inp`, then compiled with its cells (`Snarky.compileWith`) at
-the prover's valuation: whether that valuation satisfies every compiled constraint, and whether
-the table, its public rows the input's then the output's cells, satisfies the assembled system.
-The prover never reads the tag's valuation, so it runs at a placeholder. The compiled circuit is
-returned beside the run, for a caller that reads its constraints or allocation count. -/
+/-- A main circuit `body` proved on `inp` and compiled with its cells (`Snarky.compileWith`):
+whether the prover's valuation satisfies every compiled constraint, and whether the table,
+its public rows the input's then the output's cells, satisfies the assembled system.
+The compiled circuit is returned beside the run for callers reading its constraints or
+allocation count. -/
 def runMainBuilt {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType (ZMod p) a av]
-    [∀ V : Valuation (ZMod p), CheckedType (ZMod p) (Builder V (KimchiConstraint (ZMod p))) a av]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a av]
     [CircuitType (ZMod p) b bv]
     (side : Kimchi.Fixture.PS.Side p)
-    (body : (V : Valuation (ZMod p)) → av →
-      CircuitM (ZMod p) (Builder V (KimchiConstraint (ZMod p))) (bv × α)) (inp : a) :
-    IO ((r : MainRun (a := a) (b := b) body) ×
-      {built // built = compileWith (a := a) (b := b) (body r.V)}) := do
+    (body : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (bv × α)) (inp : a) :
+    IO (MainRun (a := a) (b := b) body ×
+      {built // built = compileWith (a := a) (b := b) body}) := do
   let t0 ← IO.monoMsNow
   let st := seed (F := ZMod p) (avar := av) inp
-  let pr ← match prove (compileWithBody (a := a) (b := b) (body fun _ => 0)) st.nv st.env with
+  let pr ← match prove (compileWithBody (a := a) (b := b) body) st.nv st.env with
     | .error e => throw (IO.userError s!"prove failed: {repr e}") | .ok pr => pure pr
   let t1 ← IO.monoMsNow
   let V := pr.assignments.get
-  let built := compileWith (a := a) (b := b) (body V)
+  let built := compileWith (a := a) (b := b) body
   let ncons ← IO.lazyPure fun _ => built.constraints.length
   let t2 ← IO.monoMsNow
   let holds : Decidable (∀ con ∈ built.constraints, ConstraintHolds.Holds V con) ←
@@ -109,15 +109,15 @@ def runMainBuilt {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType
   IO.println s!"    phases: prove {t1 - t0} ms · build {t2 - t1} ms ({ncons} constraints, \
     {built.nextVar} vars) · holds {t3 - t2} ms · rows {t4 - t3} ms ({nrows} rows) · witness \
     {t5 - t4} ms ({nwit} rows) · index build {t6 - t5} ms (n = {n}) · decide {t7 - t6} ms"
-  return ⟨{ V, holds, satisfies, pub, result := built.result, result_eq := rfl }, built, rfl⟩
+  return ⟨{ V, holds, satisfies, pub, rows := wit.toArray, result := built.result,
+            result_eq := rfl }, built, rfl⟩
 
 /-- `runMainBuilt`'s run alone. -/
 def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [CircuitType (ZMod p) a av]
-    [∀ V : Valuation (ZMod p), CheckedType (ZMod p) (Builder V (KimchiConstraint (ZMod p))) a av]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a av]
     [CircuitType (ZMod p) b bv]
     (side : Kimchi.Fixture.PS.Side p)
-    (body : (V : Valuation (ZMod p)) → av →
-      CircuitM (ZMod p) (Builder V (KimchiConstraint (ZMod p))) (bv × α)) (inp : a) :
+    (body : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (bv × α)) (inp : a) :
     IO (MainRun (a := a) (b := b) body) :=
   (·.1) <$> runMainBuilt side body inp
 

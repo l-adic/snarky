@@ -54,6 +54,19 @@ Kimchi.Permutation.sigmaSide_eval_row
 Kimchi.card_badAlphas_le
 Kimchi.card_badZetas_le
 
+-- Equality of indices, decided: success is equality, equal indices accept the same tables, a
+-- family's success is equality of sizes and members; the comparator's decided checks.
+Kimchi.Index.compareIndex?_eq_none_iff
+Kimchi.Index.checkIndexEq_eq_true_iff
+Kimchi.Index.SatisfiesVec_of_eq
+Kimchi.Index.compareFamily?_eq_none_iff
+Kimchi.Index.compare_accepts
+Kimchi.Index.compare_rejects
+Kimchi.Index.build_rejects_wiring
+Kimchi.Index.family_accepts
+Kimchi.Index.family_rejects
+Kimchi.Index.satisfiesVec_twin
+
 -- The verifier body: its batch opens each old accumulator first, which is what an
 -- accumulator's membership in a proof's olds
 -- (`Pickles.WrapStepRun.handover_or_collision`) means to it.
@@ -73,3 +86,10 @@ Kimchi.Fixture.PS.fpSide
 Kimchi.Fixture.PS.fqSide
 Kimchi.Fixture.PS.parseComparisonCs?
 -- script-surface:end
+
+-- Verifier keys from index polynomials and the shared SRS, with regression endpoints.
+Kimchi.Index.columnCoefficients_getD
+Kimchi.Index.commitColumn_eq
+Kimchi.Index.InterpolationChecks.recovers_coefficients
+Kimchi.Index.InterpolationChecks.rejects_altered_value
+Kimchi.Index.InterpolationChecks.zero_extends_empty

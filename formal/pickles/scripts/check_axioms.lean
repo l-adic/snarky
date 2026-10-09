@@ -1,4 +1,7 @@
 import Pickles
+import Pickles.Application.Checks.MatrixRunConsumer
+import Pickles.Application.Checks.CertificationConsumer
+import Pickles.Application.Checks.KeyDerivationChecks
 import Lean.Elab.Command
 
 /-! Gate the pickles package's axiom closure.
@@ -34,7 +37,17 @@ namespace Pickles.CheckAxioms
 
 /-- Every result this package stands behind. -/
 def roots : List Name :=
-  [ `Pickles.Application.Shape.slotAt_paddedSlot,
+  [ `Pickles.deriveKey_columns,
+    `Pickles.deriveKey_digest,
+    `Pickles.deriveColumns_eq,
+    `Pickles.compareColumns?_eq_none_iff,
+    `Pickles.checkKey?,
+    `Pickles.Application.certifyKeys?,
+    `Pickles.Application.certifyKeys?_certified,
+    `Pickles.Application.KeyDerivationChecks.accepts,
+    `Pickles.Application.KeyDerivationChecks.rejects,
+    `Pickles.Application.KeyDerivationChecks.columns_equal,
+    `Pickles.Application.Shape.slotAt_paddedSlot,
     `Pickles.Application.Layout.slotWidth_le_wrapWidths,
     `Pickles.Application.Wiring.source_width,
     `Pickles.Application.Wiring.source_domains,
@@ -44,6 +57,31 @@ def roots : List Name :=
     `Pickles.Application.Circuits.stepBuilt_advice_irrel,
     `Pickles.Application.Circuits.wrapBuilt_advice_irrel,
     `Pickles.Application.Circuits.stepBuilt_rules_congr,
+    `Pickles.Application.checkApplication,
+    `Pickles.Application.CheckedAt.indices,
+    `Pickles.Application.Circuits.stepBuilt_eq,
+    `Pickles.Application.Circuits.wrapBuilt_eq,
+    `Pickles.Application.CheckedApplication.lift_step,
+    `Pickles.Application.CheckedApplication.lift_wrap,
+    `Pickles.Application.StepRun.cells_eq,
+    `Pickles.Application.WrapRun.cells_eq,
+    `Pickles.Application.MatrixRunConsumer.lifts_both,
+    `Pickles.Application.checkedApplication_picklesCorrect,
+    `Pickles.Application.CertifiedIndices.wrap_handover,
+    `Pickles.Application.CertifiedIndices.step_handover,
+    `Pickles.Application.matrices_stepWrap,
+    `Pickles.Application.matrices_wrapStep,
+    `Pickles.Application.matrices_wrap_handover,
+    `Pickles.Application.matrices_step_handover,
+    `Pickles.Application.WrapHandoverConclusion.appState,
+    `Pickles.Application.«compareIndices?_eq_none_iff»,
+    `Pickles.Application.importedApplication_picklesCorrect,
+    `Pickles.Application.«certifyIndices?»,
+    `Pickles.Application.«certifyIndices?_indices»,
+    `Pickles.Application.«certifyIndices?_isOk_iff»,
+    `Pickles.Application.CertificationConsumer.stepWrap_accepts,
+    `Pickles.Application.CertificationConsumer.wrapHandover_appState,
+    `Pickles.Application.CertificationConsumer.stepHandover_messages,
     `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,
     `Pickles.Reflect.evaluate_fpTokens,
@@ -122,7 +160,9 @@ def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
 streams, each resting on `Certificate.lean`'s decisions, and those at the deployed curves,
 resting on CompElliptic's order and primality certificates. -/
 def deployedRoots : List Name :=
-  [ `Pickles.Application.Wiring.source_width,
+  [ `Pickles.Application.certifyKeys?,
+    `Pickles.Application.certifyKeys?_certified,
+    `Pickles.Application.Wiring.source_width,
     `Pickles.Application.Wiring.source_domains,
     `Pickles.Application.Wiring.pins_at_slot,
     `Pickles.Application.Wiring.pin_domain,
@@ -130,6 +170,31 @@ def deployedRoots : List Name :=
     `Pickles.Application.Circuits.stepBuilt_advice_irrel,
     `Pickles.Application.Circuits.wrapBuilt_advice_irrel,
     `Pickles.Application.Circuits.stepBuilt_rules_congr,
+    `Pickles.Application.checkApplication,
+    `Pickles.Application.CheckedAt.indices,
+    `Pickles.Application.Circuits.stepBuilt_eq,
+    `Pickles.Application.Circuits.wrapBuilt_eq,
+    `Pickles.Application.CheckedApplication.lift_step,
+    `Pickles.Application.CheckedApplication.lift_wrap,
+    `Pickles.Application.StepRun.cells_eq,
+    `Pickles.Application.WrapRun.cells_eq,
+    `Pickles.Application.MatrixRunConsumer.lifts_both,
+    `Pickles.Application.checkedApplication_picklesCorrect,
+    `Pickles.Application.CertifiedIndices.wrap_handover,
+    `Pickles.Application.CertifiedIndices.step_handover,
+    `Pickles.Application.matrices_stepWrap,
+    `Pickles.Application.matrices_wrapStep,
+    `Pickles.Application.matrices_wrap_handover,
+    `Pickles.Application.matrices_step_handover,
+    `Pickles.Application.WrapHandoverConclusion.appState,
+    `Pickles.Application.«compareIndices?_eq_none_iff»,
+    `Pickles.Application.importedApplication_picklesCorrect,
+    `Pickles.Application.«certifyIndices?»,
+    `Pickles.Application.«certifyIndices?_indices»,
+    `Pickles.Application.«certifyIndices?_isOk_iff»,
+    `Pickles.Application.CertificationConsumer.stepWrap_accepts,
+    `Pickles.Application.CertificationConsumer.wrapHandover_appState,
+    `Pickles.Application.CertificationConsumer.stepHandover_messages,
     `Pickles.wrapSide,
     `Pickles.stepSide,
     `Pickles.Reflect.circuit_gateLinearization_fp,
@@ -182,3 +247,20 @@ run_cmd do
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
     throwError "disallowed axioms found ({bad.size})"
+
+-- Matrix endpoints may use only the axioms already used by their original capstones.
+run_cmd do
+  let pairs := [
+    (`Pickles.Application.matrices_stepWrap, `Pickles.Application.StepWrapLink.verifies_proof),
+    (`Pickles.Application.matrices_wrapStep, `Pickles.Application.WrapStepLink.verifies_proof),
+    (`Pickles.Application.CertifiedIndices.wrap_handover,
+      `Pickles.Application.WrapProofHandover.handover_or_collision),
+    (`Pickles.Application.CertifiedIndices.step_handover,
+      `Pickles.Application.StepProofHandover.handover_or_collision)]
+  for (endpoint, capstone) in pairs do
+    let actual ← liftCoreM <| Lean.collectAxioms endpoint
+    let original ← liftCoreM <| Lean.collectAxioms capstone
+    let extra := actual.filter fun ax => !(original.contains ax)
+    unless extra.isEmpty do
+      throwError "{endpoint}: axioms beyond {capstone}: {extra}"
+  IO.println "✓ matrix endpoints introduce no axioms beyond their original capstones"

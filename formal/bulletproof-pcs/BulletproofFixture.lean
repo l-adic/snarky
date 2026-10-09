@@ -226,6 +226,9 @@ def lagrangeBasisCached (C : Ipa.KimchiCurve) (path : System.FilePath) (σ : SRS
   if ← path.pathExists then
     if let .ok pts := Json.parse (← IO.FS.readFile path) >>= parseArrOf (parseChunks C nc) then
       if count ≤ pts.size then return pts.extract 0 count
+  if (← IO.getEnv "LAGRANGE_CACHE_REQUIRED") == some "1" then
+    throw (IO.userError s!"{path}: missing, invalid or insufficient committed Lagrange table; \
+      run make regenerate-lagrange-cache")
   let pts := Ipa.lagrangeBasis C σ nc n ω count
   if let some dir := path.parent then IO.FS.createDirAll dir
   let tmp : System.FilePath := s!"{path}.{← IO.monoNanosNow}.tmp"

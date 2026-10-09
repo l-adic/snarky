@@ -36,7 +36,7 @@ structure StepRun (C : Circuits D L) (b : D.Branch) where
   /-- The execution's witness advice. -/
   advice : C.StepAdvice b
   /-- Every compiled constraint holds at the valuation. -/
-  holds : ∀ con ∈ (C.stepBuilt V b advice).constraints, ConstraintHolds.Holds V con
+  holds : ∀ con ∈ (C.stepBuilt b advice).constraints, ConstraintHolds.Holds V con
 
 /-- A satisfying execution of an application's shared wrap circuit. -/
 structure WrapRun (C : Circuits D L) where
@@ -45,15 +45,15 @@ structure WrapRun (C : Circuits D L) where
   /-- The execution's witness advice. -/
   advice : C.WrapAdvice
   /-- Every compiled constraint holds at the valuation. -/
-  holds : ∀ con ∈ (C.wrapBuilt V advice).constraints, ConstraintHolds.Holds V con
+  holds : ∀ con ∈ (C.wrapBuilt advice).constraints, ConstraintHolds.Holds V con
 
 /-- The selected step circuit's retained cells. -/
 def StepRun.cells {C : Circuits D L} {b : D.Branch} (r : StepRun C b) : C.StepCells b :=
-  (C.stepBuilt r.V b r.advice).result.1.2
+  (C.stepBuilt b r.advice).result.1.2
 
 /-- The shared wrap circuit's retained cells. -/
 def WrapRun.cells {C : Circuits D L} (r : WrapRun C) : C.WrapCells :=
-  (C.wrapBuilt r.V r.advice).result.1.2
+  (C.wrapBuilt r.advice).result.1.2
 
 /-- The wrap circuit's public input cells. -/
 def wrapStatement :=

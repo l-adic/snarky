@@ -18,6 +18,8 @@ Run from `formal/kimchi/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:         lake env lean kimchi/scripts/check_axioms.lean)
 -/
 import Kimchi
+import Kimchi.Index.CompareChecks
+import Kimchi.Index.InterpolationChecks
 
 open Lean Lean.Elab.Command
 
@@ -28,7 +30,12 @@ namespace Kimchi.CheckAxioms
     (a `native_decide` outside the trusted certificates, say) hides in the
     executable path. -/
 def roots : List Name :=
-  [ `Kimchi.Gate.AddComplete.sound_noninf, `Kimchi.Gate.AddComplete.complete_build,
+  [ `Kimchi.Index.columnCoefficients_getD,
+    `Kimchi.Index.commitColumn_eq,
+    `Kimchi.Index.InterpolationChecks.recovers_coefficients,
+    `Kimchi.Index.InterpolationChecks.rejects_altered_value,
+    `Kimchi.Index.InterpolationChecks.zero_extends_empty,
+    `Kimchi.Gate.AddComplete.sound_noninf, `Kimchi.Gate.AddComplete.complete_build,
     `Kimchi.Gate.AddComplete.sound_point_noninf, `Kimchi.Gate.AddComplete.sound_point_inf,
     `Kimchi.Gate.AddComplete.inf_boolean,
     `Kimchi.Gate.AddComplete.complete,
@@ -95,6 +102,16 @@ def roots : List Name :=
     `Kimchi.Lift.Argument.bridge,
     `Kimchi.Index.Satisfies,
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
+    `Kimchi.Index.«compareIndex?_eq_none_iff»,
+    `Kimchi.Index.checkIndexEq_eq_true_iff,
+    `Kimchi.Index.SatisfiesVec_of_eq,
+    `Kimchi.Index.«compareFamily?_eq_none_iff»,
+    `Kimchi.Index.compare_accepts,
+    `Kimchi.Index.compare_rejects,
+    `Kimchi.Index.build_rejects_wiring,
+    `Kimchi.Index.family_accepts,
+    `Kimchi.Index.family_rejects,
+    `Kimchi.Index.satisfiesVec_twin,
     `Kimchi.Index.copy_soundness_of_dvd,
     `Kimchi.Verifier.kimchiVerify,
     `Kimchi.Verifier.runStreamP_olds,

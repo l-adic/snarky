@@ -405,6 +405,9 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     needs: [test-libs, test-example]
     runs-on: ubuntu-latest
+    env:
+      LAGRANGE_CACHE_DIR: ${{ github.workspace }}/formal/lagrange-cache
+      LAGRANGE_CACHE_REQUIRED: '1'
     steps:
     - uses: actions/checkout@v4
       with:
@@ -455,6 +458,9 @@ jobs:
     - name: Populate SRS cache
       run: make fetch-srs
 
+    - name: Check committed Lean Lagrange bases and their SRS inputs
+      run: python3 formal/scripts/lagrange_cache.py check --srs-dir srs-cache
+
     - name: Check the tag dumps
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
@@ -468,6 +474,29 @@ jobs:
         lake env lean --run scripts/check_application_manifest.lean
         lake exe check-rule-replay
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-inputs
+
+    # One application's canonical compilations certified with their own kimchi indices, and
+    # rejected at index data its keys could not have supplied; an explicit selection, never all.
+    - name: Check one application's indices
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps APPS=NoRecursionReturn lake exe check-application-indices
+
+    - name: Derive keys for self, external and chunked application fixtures
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-keys
+
+    # The certification executable on the same artifacts, one run: NoRecursionReturn intact
+    # and certified beside three applications damaged at the load or certification stage,
+    # each failure located and each dependent blocked; no proof cache is read.
+    - name: Certify an application beside damaged ones
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps bash scripts/check_certify_failures.sh
 
     # Reconstructed applications invoke the verification and handover capstones directly:
     # Self recursion, base branches and a two-chunk imported source.
@@ -493,6 +522,11 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps PICKLES_PROOF_CACHE_DIR=../example-proof-cache \
           LINKS=ExampleTransaction lake exe check-tags
+
+    - name: Check Lean Lagrange fixtures stayed unchanged
+      run: |
+        python3 formal/scripts/lagrange_cache.py check --srs-dir srs-cache
+        git diff --exit-code -- formal/lagrange-cache
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

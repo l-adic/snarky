@@ -9,7 +9,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 -- | **N = 2**, **Output mode**, **heterogeneous prevs**: the first prev's
 -- | rule has `max_proofs_verified = N0` (No_recursion_return) and the
 -- | second is `self` with `max_proofs_verified = N2`. Both slots happen
--- | to carry the same statement type, `StatementIO Unit (F StepField)`.
+-- | to carry the same statement type, `ApplicationStatement Unit (F StepField)`.
 -- |
 -- | Rule body computes `self = if is_base_case then 0 else 1 + prev`
 -- | and exposes it as `publicOutput`.
@@ -39,7 +39,7 @@ import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), StepMainSrsData, stepMain)
 import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, slotWidthInt, slotWidthsOf, toPrevs)
-import Pickles.Types (StatementIO(..))
+import Pickles.Types (ApplicationStatement(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
@@ -86,8 +86,8 @@ treeProofReturnRule
   -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput TreeProofReturnPrevsSpec (FVar StepField))
 treeProofReturnRule getPrevStates _ = do
-  no_recursive_input <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.output
-  prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.output
+  no_recursive_input <- exists $ getPrevStates <#> prevValues <#> \(ApplicationStatement p1 /\ _) -> p1.output
+  prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ ApplicationStatement p2 /\ _) -> p2.output
   is_base_case <- exists $ readCVar prev <#> (_ == F (negate one))
   let proofMustVerify = not_ is_base_case
   self <- if_ is_base_case (const_ zero) (CVar.add_ (const_ one) prev)
@@ -96,10 +96,10 @@ treeProofReturnRule getPrevStates _ = do
     -- prev[1] verifies iff not base case.
     { prevs: toPrevs $
         PrevStatement
-          { publicInput: StatementIO { input: unit, output: no_recursive_input }
+          { publicInput: ApplicationStatement { input: unit, output: no_recursive_input }
           , proofMustVerify: (coerce (const_ one :: FVar StepField) :: BoolVar StepField)
           }
-          /\ PrevStatement { publicInput: StatementIO { input: unit, output: prev }, proofMustVerify }
+          /\ PrevStatement { publicInput: ApplicationStatement { input: unit, output: prev }, proofMustVerify }
           /\ unit
     , publicOutput: self
     }
@@ -107,7 +107,7 @@ treeProofReturnRule getPrevStates _ = do
 -- | Slot 0: the separately compiled No_recursion_return (width 0);
 -- | slot 1: self (width 2).
 type TreeProofReturnPrevsSpec =
-  Tuple2 (Slot 0 (StatementIO Unit (F StepField))) (Slot 2 (StatementIO Unit (F StepField)))
+  Tuple2 (Slot 0 (ApplicationStatement Unit (F StepField))) (Slot 2 (ApplicationStatement Unit (F StepField)))
 
 -- | The tag's width: `self` verifies two proofs, so `mpvMax = len = 2`.
 type Mpv = 2
@@ -173,7 +173,7 @@ compileStepMainTreeProofReturnWithConstants pallasSrs params = do
           @TreeProofReturnPrevsSpec
           @Unit
           @(F StepField)
-          @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+          @(Tuple2 (ApplicationStatement Unit (F StepField)) (ApplicationStatement Unit (F StepField)))
           @Mpv
           treeProofReturnRule
           srs
