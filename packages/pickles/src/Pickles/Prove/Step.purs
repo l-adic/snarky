@@ -919,15 +919,13 @@ type StepProveInput prevsSpec inputVal len valCarrier =
   , prepare ::
       Vector len SlotProofRequest
       -> Effect
-           ( Either EvaluationError
-               { advice ::
-                   StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
-                     inputVal
-                     len
-                     valCarrier
-               , cachePrevs :: Array (Prev StepField)
-               }
-           )
+           { advice ::
+               StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
+                 inputVal
+                 len
+                 valCarrier
+           , cachePrevs :: Array (Prev StepField)
+           }
   }
 
 -- | Artifacts produced by `stepSolveAndProve`.
@@ -1317,10 +1315,8 @@ stepSolveAndProve handler ctx rule compileResult input = do
           case current of
             Just _ -> throwEvalError (FailedAssertion "stepProve: proof advice prepared twice")
             Nothing -> do
-              result <- input.prepare requests
-              case result of
-                Left e -> throwEvalError e
-                Right prepared -> Ref.write (Just prepared) preparedRef
+              prepared <- input.prepare requests
+              Ref.write (Just prepared) preparedRef
       , getAdvice: liftEffect (getPrepared <#> _.advice)
       }
 

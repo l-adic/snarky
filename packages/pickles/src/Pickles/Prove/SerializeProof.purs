@@ -1,7 +1,7 @@
 -- | Full-proof (de)serialization for the recursion/worker-transport
 -- | path: `SerializableCompiledProof` carries everything a
 -- | `CompiledProof` holds, so a worker can rebuild a mergeable
--- | `InductivePrev` from one value, where the verify-only codecs in
+-- | `provedPrev` from one value, where the verify-only codecs in
 -- | `Pickles.Prove.Codecs` carry only what verification needs.
 module Pickles.Prove.SerializeProof
   ( SerializableCompiledProof

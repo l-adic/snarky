@@ -12,7 +12,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId(..))
-import Pickles (BranchProver(..), PrevSlot(..), SlotWrapKey(..), compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), SlotWrapKey(..), compileMulti, mkRuleEntry, provedPrev)
 import Snarky.Backend.Kimchi.Impl.Pallas as Pallas
 import Snarky.Backend.Kimchi.Impl.Vesta as Vesta
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
@@ -64,7 +64,7 @@ compileFixture dump cache = do
             mask <- Ref.new (emptyMask :: Mask Depth)
             proveMerge (runTransferMaskM { currentTransaction: Nothing, mask })
               { appInput: statement
-              , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
+              , prevs: tuple2 (provedPrev proof1 out.tag) (provedPrev proof2 out.tag)
               } >>= either (throw <<< show) pure
         , verifier: out.verifier
         }

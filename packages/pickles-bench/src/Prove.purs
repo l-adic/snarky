@@ -11,7 +11,7 @@
 -- |
 -- | The prover-call shape mirrors the passing `Test.Pickles.Prove.
 -- | TreeProofReturn` (record `{ appInput, prevs }` with
--- | `PrevSlot` constructors) — the live `BranchProver` API.
+-- | `PrevSlot` providers) — the live `BranchProver` API.
 module Bench.Pickles.Prove
   ( prepareProve
   , group
@@ -34,7 +34,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Ref as Ref
-import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), SlotWrapKey(..), StepField, compileMulti, mkRuleEntry)
+import Pickles (ApplicationStatement(..), BranchProver(..), SlotWrapKey(..), StepField, compileMulti, mkRuleEntry, provedPrev, unprovedPrev)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
@@ -66,13 +66,12 @@ prepareProve srs = do
     Right r -> pure r
 
   let
-    basePrevSelf = BasePrev
-      { dummyStatement: ApplicationStatement { input: unit, output: F (negate one) :: F StepField } }
+    basePrevSelf = unprovedPrev $ ApplicationStatement { input: unit, output: F (negate one) :: F StepField }
 
   b0 <-
     treeProver noAdvice
       { appInput: unit
-      , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
+      , prevs: tuple2 (provedPrev nrrCp nrr.tag) basePrevSelf
       } >>= case _ of
       Left e -> Exc.throw (show e)
       Right r -> pure r
@@ -82,7 +81,7 @@ prepareProve srs = do
       liftEffect
         ( treeProver noAdvice
             { appInput: unit
-            , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)
+            , prevs: tuple2 (provedPrev nrrCp nrr.tag) (provedPrev b0 tree.tag)
             }
         ) >>= case _ of
         Left e -> liftEffect $ Exc.throw (show e)

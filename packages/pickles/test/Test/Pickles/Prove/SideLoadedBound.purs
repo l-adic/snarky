@@ -19,7 +19,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Exception (try)
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), StepField, StepRule, WrapVkChunks, bindVk, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), StepField, StepRule, WrapVkChunks, bindVk, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (digestVk, mkBundle, projectVk) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -93,7 +93,7 @@ spec = describe "Pickles.Prove.SideLoadedBound" do
 
       digest = Sideload.digestVk (Sideload.projectVk childVK)
 
-      prevs = tuple1 (SideLoadedPrev childVK (InductivePrev childCp2 childTag2))
+      prevs = tuple1 (SideLoadedPrev childVK (provedPrev childCp2 childTag2))
 
     parentEntry <- liftEffect $ mkRuleEntry @Unit sideLoadedBoundRule Vector.nil
     parent <- withSpan "[SideLoadedBound] compile parent" $ liftEffect $ compileMulti @Unit @1 compileCfg

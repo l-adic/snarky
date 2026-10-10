@@ -25,7 +25,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
@@ -131,7 +131,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     logInfo "[TwoPhaseChain] proving [step1, wrap1]"
     eB1 <- withSpan "[TwoPhaseChain] prove b1" $ liftEffect $ incrementProver noAdvice
       { appInput: F one
-      , prevs: tuple1 (InductivePrev b0' output.tag)
+      , prevs: tuple1 (provedPrev b0' output.tag)
       }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
@@ -140,7 +140,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     logInfo "[TwoPhaseChain] proving [step2, wrap2]"
     eB2 <- withSpan "[TwoPhaseChain] prove b2" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 2 :: StepField)
-      , prevs: tuple1 (InductivePrev b1' output.tag)
+      , prevs: tuple1 (provedPrev b1' output.tag)
       }
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
@@ -149,7 +149,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     logInfo "[TwoPhaseChain] proving [step3, wrap3]"
     eB3 <- withSpan "[TwoPhaseChain] prove b3" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 3 :: StepField)
-      , prevs: tuple1 (InductivePrev b2' output.tag)
+      , prevs: tuple1 (provedPrev b2' output.tag)
       }
     b3 <- case eB3 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)

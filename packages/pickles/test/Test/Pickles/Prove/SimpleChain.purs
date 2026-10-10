@@ -2,7 +2,7 @@
 -- | width 1, proved through five iterations b0..b4. A single
 -- | `compileMulti` call yields the `BranchProver` every iteration uses,
 -- | and each proof is round-tripped through JSON before being threaded
--- | into the next as `InductivePrev`.
+-- | into the next through `provedPrev`.
 -- |
 -- | The chain must verify in one batch and carry the inputs 0..4, and
 -- | three tampered variants of b1 must be rejected. It therefore fails
@@ -26,7 +26,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, unprovedPrev, verify, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -41,8 +41,8 @@ import Test.Spec.Assertions (shouldEqual)
 
 -- | Asserts `self == prev + 1`, or `self == 0` for the base case. The
 -- | prev's app state is read through `getPrevStates`, so one compiled
--- | rule serves every iteration: b0 passes a `BasePrev` dummy
--- | statement, b_{k+1} passes `InductivePrev` on b_k.
+-- | rule serves every iteration: b0 supplies an unproved statement;
+-- | b_{k+1} supplies b_k through `provedPrev`.
 simpleChainRule
   :: StepRule SimpleChainPrevsSpec
        (F StepField)
@@ -106,23 +106,22 @@ spec = describe "Pickles.Prove.SimpleChain" do
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
           Right p -> pure p
 
-      basePrev = BasePrev
-        { dummyStatement: ApplicationStatement { input: F (negate one), output: NoOutput } }
+      basePrev = unprovedPrev $ ApplicationStatement { input: F (negate one), output: NoOutput }
 
     logInfo "[SimpleChain] proving [step0, wrap0]"
     b0 <- withSpan "[SimpleChain] prove b0" $ liftAff $ runStep basePrev (F zero)
     b0' <- roundTripJSONAndVerify srs output.verifier b0
     logInfo "[SimpleChain] proving [step1, wrap1]"
-    b1 <- withSpan "[SimpleChain] prove b1" $ liftAff $ runStep (InductivePrev b0' output.tag) (F one)
+    b1 <- withSpan "[SimpleChain] prove b1" $ liftAff $ runStep (provedPrev b0' output.tag) (F one)
     b1' <- roundTripJSONAndVerify srs output.verifier b1
     logInfo "[SimpleChain] proving [step2, wrap2]"
-    b2 <- withSpan "[SimpleChain] prove b2" $ liftAff $ runStep (InductivePrev b1' output.tag) (F (fromInt 2 :: StepField))
+    b2 <- withSpan "[SimpleChain] prove b2" $ liftAff $ runStep (provedPrev b1' output.tag) (F (fromInt 2 :: StepField))
     b2' <- roundTripJSONAndVerify srs output.verifier b2
     logInfo "[SimpleChain] proving [step3, wrap3]"
-    b3 <- withSpan "[SimpleChain] prove b3" $ liftAff $ runStep (InductivePrev b2' output.tag) (F (fromInt 3 :: StepField))
+    b3 <- withSpan "[SimpleChain] prove b3" $ liftAff $ runStep (provedPrev b2' output.tag) (F (fromInt 3 :: StepField))
     b3' <- roundTripJSONAndVerify srs output.verifier b3
     logInfo "[SimpleChain] proving [step4, wrap4]"
-    b4 <- withSpan "[SimpleChain] prove b4" $ liftAff $ runStep (InductivePrev b3' output.tag) (F (fromInt 4 :: StepField))
+    b4 <- withSpan "[SimpleChain] prove b4" $ liftAff $ runStep (provedPrev b3' output.tag) (F (fromInt 4 :: StepField))
 
     logInfo "[SimpleChain] verifying 5-proof chain…"
     verifyBatch output.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true

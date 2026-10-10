@@ -21,7 +21,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), PrevStatement(..), Slot, SlotWrapKey(..), StepRule, compileMulti, mkRuleEntry, provedPrev, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (true_)
 import Test.Pickles.Outputs (appOutputs)
@@ -92,7 +92,7 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
     logInfo "[RecurseOverChunks] proving recurse"
     eRecurseCp <- withSpan "[RecurseOverChunks] prove recurse" $ liftEffect $ recurseProver noAdvice
       { appInput: unit
-      , prevs: tuple1 (InductivePrev chunks2Cp chunks2.tag)
+      , prevs: tuple1 (provedPrev chunks2Cp chunks2.tag)
       }
     case eRecurseCp of
       Left e -> liftEffect $ Exc.throw ("recurseProver: " <> show e)

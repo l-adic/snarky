@@ -26,7 +26,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, unprovedPrev, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -116,18 +116,16 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
 
       -- The base case bypasses the sum, so the dummy statement's input
       -- is arbitrary.
-      baseDummy = BasePrev
-        { dummyStatement: ApplicationStatement { input: F zero :: F StepField, output: unit }
-        }
+      baseDummy = unprovedPrev $ ApplicationStatement { input: F zero :: F StepField, output: unit }
 
     logInfo "[SimpleChainN2] proving b0 (self=0, base case)"
     b0 <- withSpan "[SimpleChainN2] prove b0" $ liftAff $ runStep (F zero) baseDummy baseDummy
     b0' <- roundTripAndVerify dummies out.verifier b0
     logInfo "[SimpleChainN2] proving b1 (self=1, verifies [b0, b0])"
-    b1 <- withSpan "[SimpleChainN2] prove b1" $ liftAff $ runStep (F one) (InductivePrev b0' out.tag) (InductivePrev b0' out.tag)
+    b1 <- withSpan "[SimpleChainN2] prove b1" $ liftAff $ runStep (F one) (provedPrev b0' out.tag) (provedPrev b0' out.tag)
     b1' <- roundTripAndVerify dummies out.verifier b1
     logInfo "[SimpleChainN2] proving b2 (self=2, verifies [b1, b0])"
-    b2 <- withSpan "[SimpleChainN2] prove b2" $ liftAff $ runStep (F (one + one)) (InductivePrev b1' out.tag) (InductivePrev b0' out.tag)
+    b2 <- withSpan "[SimpleChainN2] prove b2" $ liftAff $ runStep (F (one + one)) (provedPrev b1' out.tag) (provedPrev b0' out.tag)
 
     logInfo "[SimpleChainN2] verifying 3-proof chain…"
     verifyBatch out.verifier (map toVerifiable [ b0, b1, b2 ]) `shouldEqual` true

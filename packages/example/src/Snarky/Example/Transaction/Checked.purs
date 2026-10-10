@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), Verifier, compileMulti, mkRuleEntry, prevValues, toPrevs)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevStatement(..), Slot, SlotWrapKey(..), Verifier, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs)
 import Pickles.Step.Main (RuleOutput)
 import Pickles.Step.Slots (PrevValues)
 import Simple.JSON (class ReadForeign, class WriteForeign)
@@ -319,7 +319,7 @@ compileTxCircuit chainId lagrangeCache srs = do
         mask <- Ref.new emptyMask
         mergeProver (runTransferMaskM { currentTransaction: Nothing, mask })
           { appInput: statement
-          , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
+          , prevs: tuple2 (provedPrev proof1 out.tag) (provedPrev proof2 out.tag)
           } >>= case _ of
           Left err -> throw $ show err
           Right res -> pure res

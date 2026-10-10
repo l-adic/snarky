@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Safe.Coerce (coerce)
@@ -121,7 +121,7 @@ sideLoadedMainRule getPrevStates self = do
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SideLoadedMain" do
-  it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
+  it "parent prove with provedPrev (PS-compiled child, width-lifted to N2)" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     outputs <- liftEffect $ appOutputs "SideLoadedMain"
 
     -- The child's kimchi wrap verification key becomes the runtime
@@ -202,7 +202,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- `1 + prev == self` branch is the one that holds.
     eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ chainProver noAdvice
       { appInput: F one
-      , prevs: tuple1 (SideLoadedPrev childVK (InductivePrev childCp2' childTag2))
+      , prevs: tuple1 (SideLoadedPrev childVK (provedPrev childCp2' childTag2))
       }
     parentCp <- case eParentCp of
       Left e -> liftEffect $ Exc.throw ("sideloaded chainProver: " <> show e)

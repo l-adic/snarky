@@ -10,6 +10,8 @@
 -- | one branch's prover.
 module Pickles.Prove.Compile
   ( PrevSlot(..)
+  , provedPrev
+  , unprovedPrev
   , SuppliedProof
   , SideLoadedPrev(..)
   , class SplitPrevs
@@ -50,6 +52,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Either (Either(..), either, note)
 import Data.Enum (fromEnum)
+import Data.Exists (runExists)
 import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
@@ -345,24 +348,29 @@ type SuppliedProof n stmt =
   , tag :: Tag stmt n
   }
 
--- | A claimed statement and a source of proof data. The rule, rather than
--- | this constructor, decides whether the statement must be proved.
--- | BasePrev has no proof available; InductivePrev has an existing one;
--- | DeferredPrev obtains one only after the rule returns a true flag.
--- | Even an unverified statement may affect the application's constraints.
-data PrevSlot :: Type -> Int -> Type -> Type
-data PrevSlot inputVal n stmt
-  = BasePrev { dummyStatement :: stmt }
-  | InductivePrev
-      (CompiledProof n stmt)
-      (Tag stmt n)
-  -- | The initial statement is rule advice. The provider receives the actual
-  -- | returned statement, once per required slot, after rule evaluation and
-  -- | before completing the same step witness. It may reenter this prover.
-  | DeferredPrev
-      { statement :: stmt
-      , obtainProof :: stmt -> Effect (Either ProveError (SuppliedProof n stmt))
-      }
+-- | The initial statement is rule advice, even when it needs no proof.
+-- | The provider receives the rule's returned statement only if the rule
+-- | requires proof, before completing the same step witness. It may
+-- | reenter this prover. The constructor does not decide proof debt.
+newtype PrevSlot :: Type -> Int -> Type -> Type
+newtype PrevSlot inputVal n stmt = DeferredPrev
+  { statement :: stmt
+  , obtainProof :: stmt -> Effect (Either ProveError (SuppliedProof n stmt))
+  }
+
+-- | Supply an existing proof if the rule requires it.
+provedPrev :: forall inputVal n stmt. CompiledProof n stmt -> Tag stmt n -> PrevSlot inputVal n stmt
+provedPrev proof@(CompiledProof p) tag = DeferredPrev
+  { statement: p.statement
+  , obtainProof: \_ -> pure $ Right { proof, tag }
+  }
+
+-- | Supply a statement without a proof. Requiring it is an evaluation error.
+unprovedPrev :: forall inputVal n stmt. stmt -> PrevSlot inputVal n stmt
+unprovedPrev statement = DeferredPrev
+  { statement
+  , obtainProof: \_ -> pure $ Left (FailedAssertion "required proof is missing")
+  }
 
 -- | Only resolution of a circuit-computed obligation constructs these.
 data ResolvedPrevSlot :: Type -> Int -> Type -> Type
@@ -494,10 +502,7 @@ instance
 
 -- | The prev's statement, whichever way its slot is filled.
 statementOf :: forall inputVal n stmt. PrevSlot inputVal n stmt -> stmt
-statementOf = case _ of
-  BasePrev { dummyStatement } -> dummyStatement
-  InductivePrev (CompiledProof p) _ -> p.statement
-  DeferredPrev p -> p.statement
+statementOf (DeferredPrev p) = p.statement
 
 type CompileConfig :: Int -> Type
 type CompileConfig mpv =
@@ -759,9 +764,9 @@ slotStepAdvice _ dummySgs appInput slotParams headSlot = do
         Tag { verifier: prevVerifier } = prevTag
 
         -- The previous proof as the recursive prover needs it:
-        -- width-erased, with the constants it is judged against. See
+        -- width-erased, with its padded accumulator views. See
         -- `Pickles.Verify.PrevProofData`.
-        prevData = prevProofDataOf prevVerifier prevCp
+        prevData = prevProofDataOf prevCp
 
         prevStepBpChalsExpanded =
           map
@@ -994,7 +999,7 @@ slotProveData dummySgs slotParams stepSide headSlot =
 
         -- Only the padded accumulators are needed here, so unlike in
         -- `mkStepAdvice` there is no unpadded vector to reify.
-        prevData = prevProofDataOf prevVerifier prevCp
+        prevData = prevProofDataOf prevCp
 
         prevStepBpChalsExpanded =
           map
@@ -1315,17 +1320,14 @@ resolvePrevSlot
   -> SlotProofRequest
   -> PrevSlot inputVal n stmt
   -> Effect (Either ProveError (ResolvedPrevSlot inputVal n stmt))
-resolvePrevSlot source request prev =
+resolvePrevSlot source request (DeferredPrev prev) =
   if Array.length request.statement /= sizeInFields (Proxy @StepField) (Proxy @stmt) then
     pure $ failure "returned statement field count does not match the slot"
   else do
     let statement = fieldsToValue @StepField @stmt request.statement
     if not request.mustVerify then pure $ Right (SkippedPrev statement)
     else do
-      supplied <- case prev of
-        BasePrev _ -> pure $ failure "required proof is missing"
-        InductivePrev proof tag -> pure $ Right { proof, tag }
-        DeferredPrev p -> p.obtainProof statement
+      supplied <- prev.obtainProof statement
       pure do
         { proof: proof@(CompiledProof raw), tag: Tag tag } <- supplied
         when (valueToFields @StepField raw.statement /= request.statement)
@@ -1343,8 +1345,10 @@ resolvePrevSlot source request prev =
             , vestaSrs: source.vestaSrs
             , stepNumChunks: source.stepNumChunks
             }
-          data_ = prevProofDataOf verifier proof
-        when (Array.length data_.proof.oldBulletproofChallenges > source.width)
+          width = runExists
+            (\(CompiledProofWidthData wd) -> Array.length (Array.fromFoldable wd.oldBulletproofChallenges))
+            raw.widthData
+        when (width > source.width)
           $ failure "proof branch width exceeds the slot's source width"
         pure $ RequiredPrev proof (Tag (tag { verifier = verifier }))
   where
@@ -1415,9 +1419,8 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
           -- A side-loaded VK does not carry the prev's step domain;
           -- the step circuit dispatches over `[0..16]` in
           -- `Pickles.Step.FinalizeOtherProof`'s `SideLoadedMode`.
-          -- This stand-in reaches only the `BasePrev` site, where
-          -- `proofMustVerify` is `false`; `InductivePrev` reads the
-          -- prev's own `stepDomainLog2`.
+          -- Only a skipped slot uses this stand-in. A required slot
+          -- reads the prev proof's own `stepDomainLog2`.
           Dummy.wrapDomainLog2ForProofsVerified width
       -- A side-loaded proof is always single-chunk: the side-loaded
       -- domain dispatch varies the domain log2, not the chunk count.
@@ -2406,28 +2409,25 @@ runMultiProverBody
             }
             (requests !! i)
             prev
-          pure $ case result of
-            Left e -> Left (WithContext ("branch " <> show branchIdx <> " slot " <> show (getFinite i)) e)
-            Right p -> Right
+          case result of
+            Left e -> throwEvalError (WithContext ("branch " <> show branchIdx <> " slot " <> show (getFinite i)) e)
+            Right p -> pure
               { prev: SomeResolvedPrevSlot \k -> k p
               , sideLoadedKey: slot.sideLoadedKey
               }
-      case sequence resolved of
-        Left e -> pure (Left e)
-        Right slots -> do
-          prepared <- mkStepAdvice perRuleCfg stepCR wrapResult appInput widths split.values slots
-          let
-            StepAdvice sa = prepared.stepAdvice
-            proveData = shapeProveData perRuleCfg wrapResult
-              { challengePolynomialCommitments: prepared.challengePolynomialCommitments
-              , unfinalizedSlots: sa.publicUnfinalizedProofs
-              , baseCaseWrapPublicInputs: prepared.baseCaseWrapPublicInputs
-              }
-              (Vector.drop @mpvPad branchPins)
-              widths
-              slots
-          Ref.write (Just { proveData, cachePrevs: prepared.cachePrevs }) preparedRef
-          pure $ Right { advice: prepared.stepAdvice, cachePrevs: prepared.cachePrevs }
+      prepared <- mkStepAdvice perRuleCfg stepCR wrapResult appInput widths split.values resolved
+      let
+        StepAdvice sa = prepared.stepAdvice
+        proveData = shapeProveData perRuleCfg wrapResult
+          { challengePolynomialCommitments: prepared.challengePolynomialCommitments
+          , unfinalizedSlots: sa.publicUnfinalizedProofs
+          , baseCaseWrapPublicInputs: prepared.baseCaseWrapPublicInputs
+          }
+          (Vector.drop @mpvPad branchPins)
+          widths
+          resolved
+      Ref.write (Just { proveData, cachePrevs: prepared.cachePrevs }) preparedRef
+      pure { advice: prepared.stepAdvice, cachePrevs: prepared.cachePrevs }
 
   eStepResult <- r.stepProveFn handler stepProveCtx stepCR
     { publicInput: appInput, prevAppStates: split.values, prepare }
