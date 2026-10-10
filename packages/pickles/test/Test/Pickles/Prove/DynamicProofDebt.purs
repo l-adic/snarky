@@ -22,7 +22,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), ProveError, Slot, SlotWrapKey(..), StepField, StepRule, Tag(..), Verifier, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, unprovedPrev, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), ProveError, Slot, SlotWrapKey(..), StepField, StepRule, Verifier, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, unprovedPrev, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (EvaluationError(..), add_)
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists)
@@ -39,7 +39,6 @@ type TestM = LoggerT Message Aff
 
 type Fixture =
   { prove :: PrevSlot Unit 1 Statement -> Effect (Either ProveError Proof)
-  , tag :: Tag Statement 1
   , verifier :: Verifier
   , seed :: Proof
   , mustVerify :: Ref Boolean
@@ -84,7 +83,7 @@ buildFixture { pallasSrs, vestaSrs, lagrangeCache } = do
     BranchProver prover = fst app.provers
     prove prev = prover noAdvice { appInput: unit, prevs: tuple1 prev }
   seed <- liftEffect $ prove (unprovedPrev (statement 0)) >>= expectRight
-  pure { prove, tag: app.tag, verifier: app.verifier, seed, mustVerify, events }
+  pure { prove, verifier: app.verifier, seed, mustVerify, events }
 
 -- | This spec version's beforeAll does not accept an inherited input. The
 -- | outer hook supplies the existing SharedSrs to its one-time setup action.
@@ -120,7 +119,7 @@ spec = withFixture $ describe "Pickles.Prove.DynamicProofDebt" do
                   Ref.modify_ (flip Array.snoc "provider") fixture.events
                   case previous of
                     Nothing -> throw "proof requested before the first increment"
-                    Just proof -> pure $ Right { proof, tag: fixture.tag }
+                    Just proof -> pure $ Right proof
               }
           proof <- liftEffect $ fixture.prove prev >>= expectRight
           checkProof fixture iteration proof
@@ -156,7 +155,7 @@ spec = withFixture $ describe "Pickles.Prove.DynamicProofDebt" do
             , obtainProof: \_ -> pure $ Left (FailedAssertion "provider refused")
             }
         ) >>= expectFailure "provider refused"
-    proof <- liftEffect $ fixture.prove (provedPrev fixture.seed fixture.tag) >>= expectRight
+    proof <- liftEffect $ fixture.prove (provedPrev fixture.seed) >>= expectRight
     checkProof fixture 2 proof
 
   it "retains the consuming rule's witness when its provider invokes the same prover" \fixture -> do
@@ -168,8 +167,7 @@ spec = withFixture $ describe "Pickles.Prove.DynamicProofDebt" do
             assertStatement 1 actual
             Ref.modify_ (flip Array.snoc "provider") fixture.events
             Ref.write false fixture.mustVerify
-            child <- fixture.prove (unprovedPrev (statement 0))
-            pure $ child <#> \proof -> { proof, tag: fixture.tag }
+            fixture.prove (unprovedPrev (statement 0))
         }
     proof <- liftEffect $ fixture.prove prev >>= expectRight
     checkProof fixture 2 proof
@@ -180,23 +178,19 @@ spec = withFixture $ describe "Pickles.Prove.DynamicProofDebt" do
     checkProof fixture 3 skipped
     liftEffect (Ref.read fixture.events) >>= (_ `shouldEqual` [ "rule" ])
 
-  it "rejects proofs with a different statement or incompatible source metadata" \fixture -> do
+  it "rejects proofs with a different statement or invalid step domain" \fixture -> do
     liftEffect $ Ref.write true fixture.mustVerify
     liftEffect $
       fixture.prove
         ( DeferredPrev
             { statement: statement 2
-            , obtainProof: \_ -> pure $ Right { proof: fixture.seed, tag: fixture.tag }
+            , obtainProof: \_ -> pure $ Right fixture.seed
             }
         ) >>= expectFailure "proof statement does not match"
     let
-      badChunks = case fixture.tag of
-        Tag tag -> Tag (tag { verifier = tag.verifier { stepZkRows = tag.verifier.stepZkRows + 1 } })
       CompiledProof raw = fixture.seed
       badDomain = CompiledProof (raw { stepDomainLog2 = 30 })
-    liftEffect $ fixture.prove (provedPrev fixture.seed badChunks)
-      >>= expectFailure "proof step chunk count does not match"
-    liftEffect $ fixture.prove (provedPrev badDomain fixture.tag)
+    liftEffect $ fixture.prove (provedPrev badDomain)
       >>= expectFailure "proof step domain is not a branch"
 
   it "rejects forged statement metadata even when it matches the requested counter" \fixture -> do
@@ -204,7 +198,7 @@ spec = withFixture $ describe "Pickles.Prove.DynamicProofDebt" do
     let
       CompiledProof raw = fixture.seed
       forged = CompiledProof (raw { statement = statement 2 })
-    liftEffect $ fixture.prove (provedPrev forged fixture.tag)
+    liftEffect $ fixture.prove (provedPrev forged)
       >>= expectFailure "FailedAssertion"
 
 checkProof :: Fixture -> Int -> Proof -> TestM Unit

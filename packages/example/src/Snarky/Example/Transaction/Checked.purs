@@ -319,7 +319,7 @@ compileTxCircuit chainId lagrangeCache srs = do
         mask <- Ref.new emptyMask
         mergeProver (runTransferMaskM { currentTransaction: Nothing, mask })
           { appInput: statement
-          , prevs: tuple2 (provedPrev proof1 out.tag) (provedPrev proof2 out.tag)
+          , prevs: tuple2 (provedPrev proof1) (provedPrev proof2)
           } >>= case _ of
           Left err -> throw $ show err
           Right res -> pure res

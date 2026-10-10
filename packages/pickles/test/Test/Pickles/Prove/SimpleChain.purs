@@ -112,16 +112,16 @@ spec = describe "Pickles.Prove.SimpleChain" do
     b0 <- withSpan "[SimpleChain] prove b0" $ liftAff $ runStep basePrev (F zero)
     b0' <- roundTripJSONAndVerify srs output.verifier b0
     logInfo "[SimpleChain] proving [step1, wrap1]"
-    b1 <- withSpan "[SimpleChain] prove b1" $ liftAff $ runStep (provedPrev b0' output.tag) (F one)
+    b1 <- withSpan "[SimpleChain] prove b1" $ liftAff $ runStep (provedPrev b0') (F one)
     b1' <- roundTripJSONAndVerify srs output.verifier b1
     logInfo "[SimpleChain] proving [step2, wrap2]"
-    b2 <- withSpan "[SimpleChain] prove b2" $ liftAff $ runStep (provedPrev b1' output.tag) (F (fromInt 2 :: StepField))
+    b2 <- withSpan "[SimpleChain] prove b2" $ liftAff $ runStep (provedPrev b1') (F (fromInt 2 :: StepField))
     b2' <- roundTripJSONAndVerify srs output.verifier b2
     logInfo "[SimpleChain] proving [step3, wrap3]"
-    b3 <- withSpan "[SimpleChain] prove b3" $ liftAff $ runStep (provedPrev b2' output.tag) (F (fromInt 3 :: StepField))
+    b3 <- withSpan "[SimpleChain] prove b3" $ liftAff $ runStep (provedPrev b2') (F (fromInt 3 :: StepField))
     b3' <- roundTripJSONAndVerify srs output.verifier b3
     logInfo "[SimpleChain] proving [step4, wrap4]"
-    b4 <- withSpan "[SimpleChain] prove b4" $ liftAff $ runStep (provedPrev b3' output.tag) (F (fromInt 4 :: StepField))
+    b4 <- withSpan "[SimpleChain] prove b4" $ liftAff $ runStep (provedPrev b3') (F (fromInt 4 :: StepField))
 
     logInfo "[SimpleChain] verifying 5-proof chain…"
     verifyBatch output.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true

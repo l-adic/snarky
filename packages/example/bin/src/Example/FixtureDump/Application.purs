@@ -64,7 +64,7 @@ compileFixture dump cache = do
             mask <- Ref.new (emptyMask :: Mask Depth)
             proveMerge (runTransferMaskM { currentTransaction: Nothing, mask })
               { appInput: statement
-              , prevs: tuple2 (provedPrev proof1 out.tag) (provedPrev proof2 out.tag)
+              , prevs: tuple2 (provedPrev proof1) (provedPrev proof2)
               } >>= either (throw <<< show) pure
         , verifier: out.verifier
         }

@@ -104,7 +104,7 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
 
     let BranchProver incrementProver = fst (snd (snd output.provers))
     eB1 <- withSpan "[PaddedWideSlots] prove branch 2" $ liftEffect $ incrementProver noAdvice
-      { appInput: F one, prevs: tuple1 (provedPrev b0 output.tag) }
+      { appInput: F one, prevs: tuple1 (provedPrev b0) }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("PaddedWideSlots increment prover: " <> show e)
       Right p -> pure p

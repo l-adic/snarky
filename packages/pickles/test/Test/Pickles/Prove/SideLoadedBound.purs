@@ -78,12 +78,10 @@ spec = describe "Pickles.Prove.SideLoadedBound" do
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
-    -- The width is phantom on both, as in `SideLoadedMain`.
+    -- The proof's width is phantom, as in `SideLoadedMain`.
     let
       childCp2 :: CompiledProof 2 (ApplicationStatement (F StepField) Unit)
       childCp2 = coerce childCp0
-
-      childTag2 = coerce child.tag
 
       childVK = Sideload.mkBundle @WrapVkChunks
         { verifierIndex: child.vks.wrap.verifierIndex
@@ -93,7 +91,7 @@ spec = describe "Pickles.Prove.SideLoadedBound" do
 
       digest = Sideload.digestVk (Sideload.projectVk childVK)
 
-      prevs = tuple1 (SideLoadedPrev childVK (provedPrev childCp2 childTag2))
+      prevs = tuple1 (SideLoadedPrev childVK (provedPrev childCp2))
 
     parentEntry <- liftEffect $ mkRuleEntry @Unit sideLoadedBoundRule Vector.nil
     parent <- withSpan "[SideLoadedBound] compile parent" $ liftEffect $ compileMulti @Unit @1 compileCfg

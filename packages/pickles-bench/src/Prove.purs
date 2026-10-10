@@ -71,7 +71,7 @@ prepareProve srs = do
   b0 <-
     treeProver noAdvice
       { appInput: unit
-      , prevs: tuple2 (provedPrev nrrCp nrr.tag) basePrevSelf
+      , prevs: tuple2 (provedPrev nrrCp) basePrevSelf
       } >>= case _ of
       Left e -> Exc.throw (show e)
       Right r -> pure r
@@ -81,7 +81,7 @@ prepareProve srs = do
       liftEffect
         ( treeProver noAdvice
             { appInput: unit
-            , prevs: tuple2 (provedPrev nrrCp nrr.tag) (provedPrev b0 tree.tag)
+            , prevs: tuple2 (provedPrev nrrCp) (provedPrev b0)
             }
         ) >>= case _ of
         Left e -> liftEffect $ Exc.throw (show e)

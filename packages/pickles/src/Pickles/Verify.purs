@@ -221,8 +221,7 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
 -- | What a prover hands over: everything needed to verify one proof
 -- | except the per-tag constants, which live in `Verifier`.
 -- |
--- | `mpv` is the proof system's outer `max_proofs_verified`, which pins
--- | the proof's `Tag _ mpv` and so its system identity. The fields
+-- | `mpv` is the proof system's outer `max_proofs_verified`. The fields
 -- | sized by the rule's own prev count are hidden in `widthData`.
 newtype CompiledProof :: Int -> Type -> Type
 newtype CompiledProof mpv stmtVal = CompiledProof

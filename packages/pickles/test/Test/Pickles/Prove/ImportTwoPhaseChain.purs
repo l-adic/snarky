@@ -108,7 +108,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       Right p -> roundTripAndVerify dummies txs.verifier p
     logInfo "[ImportTwoPhaseChain] proving increment"
     eTx1 <- withSpan "[ImportTwoPhaseChain] prove increment" $ liftEffect $ incrementProver noAdvice
-      { appInput: F one, prevs: tuple1 (provedPrev tx0 txs.tag) }
+      { appInput: F one, prevs: tuple1 (provedPrev tx0) }
     tx1 <- case eTx1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
       Right p -> roundTripAndVerify dummies txs.verifier p
@@ -139,7 +139,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       runStep tx selfPrev = do
         eRes <- liftEffect $ chainProver noAdvice
           { appInput: unit
-          , prevs: tuple2 (provedPrev tx txs.tag) selfPrev
+          , prevs: tuple2 (provedPrev tx) selfPrev
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
@@ -151,10 +151,10 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
     c0 <- withSpan "[ImportTwoPhaseChain] prove c0" $ liftAff $ runStep tx0 basePrevSelf
     c0' <- roundTripAndVerify dummies chain.verifier c0
     logInfo "[ImportTwoPhaseChain] proving c1 over increment"
-    c1 <- withSpan "[ImportTwoPhaseChain] prove c1" $ liftAff $ runStep tx1 (provedPrev c0' chain.tag)
+    c1 <- withSpan "[ImportTwoPhaseChain] prove c1" $ liftAff $ runStep tx1 (provedPrev c0')
     c1' <- roundTripAndVerify dummies chain.verifier c1
     logInfo "[ImportTwoPhaseChain] proving c2 over make_zero"
-    c2 <- withSpan "[ImportTwoPhaseChain] prove c2" $ liftAff $ runStep tx0 (provedPrev c1' chain.tag)
+    c2 <- withSpan "[ImportTwoPhaseChain] prove c2" $ liftAff $ runStep tx0 (provedPrev c1')
 
     logInfo "[ImportTwoPhaseChain] verifying…"
     verifyBatch txs.verifier (map toVerifiable [ tx0, tx1 ]) `shouldEqual` true

@@ -122,10 +122,10 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
     b0 <- withSpan "[SimpleChainN2] prove b0" $ liftAff $ runStep (F zero) baseDummy baseDummy
     b0' <- roundTripAndVerify dummies out.verifier b0
     logInfo "[SimpleChainN2] proving b1 (self=1, verifies [b0, b0])"
-    b1 <- withSpan "[SimpleChainN2] prove b1" $ liftAff $ runStep (F one) (provedPrev b0' out.tag) (provedPrev b0' out.tag)
+    b1 <- withSpan "[SimpleChainN2] prove b1" $ liftAff $ runStep (F one) (provedPrev b0') (provedPrev b0')
     b1' <- roundTripAndVerify dummies out.verifier b1
     logInfo "[SimpleChainN2] proving b2 (self=2, verifies [b1, b0])"
-    b2 <- withSpan "[SimpleChainN2] prove b2" $ liftAff $ runStep (F (one + one)) (provedPrev b1' out.tag) (provedPrev b0' out.tag)
+    b2 <- withSpan "[SimpleChainN2] prove b2" $ liftAff $ runStep (F (one + one)) (provedPrev b1') (provedPrev b0')
 
     logInfo "[SimpleChainN2] verifying 3-proof chain…"
     verifyBatch out.verifier (map toVerifiable [ b0, b1, b2 ]) `shouldEqual` true

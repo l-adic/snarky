@@ -118,7 +118,7 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
     logInfo "[SelfRecursiveChunks] proving [step0, wrap0]"
     b0 <- withSpan "[SelfRecursiveChunks] prove b0" $ liftAff $ runStep basePrev (F zero)
     logInfo "[SelfRecursiveChunks] proving [step1, wrap1]"
-    b1 <- withSpan "[SelfRecursiveChunks] prove b1" $ liftAff $ runStep (provedPrev b0 output.tag) (F one)
+    b1 <- withSpan "[SelfRecursiveChunks] prove b1" $ liftAff $ runStep (provedPrev b0) (F one)
 
     verifyBatch output.verifier (map toVerifiable [ b0, b1 ]) `shouldEqual` true
     let

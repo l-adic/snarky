@@ -136,7 +136,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         eRes <- liftEffect $ treeProver noAdvice
           { appInput: unit
           , prevs:
-              tuple2 (provedPrev nrrCp' nrr.tag) selfPrev
+              tuple2 (provedPrev nrrCp') selfPrev
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("treeProver: " <> show e)
@@ -148,16 +148,16 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     b0 <- withSpan "[TreeProofReturn] prove b0" $ liftAff $ runStep basePrevSelf
     b0' <- roundTripAndVerify dummies tree.verifier b0
     logInfo "[TreeProofReturn] proving [step1, wrap1]"
-    b1 <- withSpan "[TreeProofReturn] prove b1" $ liftAff $ runStep (provedPrev b0' tree.tag)
+    b1 <- withSpan "[TreeProofReturn] prove b1" $ liftAff $ runStep (provedPrev b0')
     b1' <- roundTripAndVerify dummies tree.verifier b1
     logInfo "[TreeProofReturn] proving [step2, wrap2]"
-    b2 <- withSpan "[TreeProofReturn] prove b2" $ liftAff $ runStep (provedPrev b1' tree.tag)
+    b2 <- withSpan "[TreeProofReturn] prove b2" $ liftAff $ runStep (provedPrev b1')
     b2' <- roundTripAndVerify dummies tree.verifier b2
     logInfo "[TreeProofReturn] proving [step3, wrap3]"
-    b3 <- withSpan "[TreeProofReturn] prove b3" $ liftAff $ runStep (provedPrev b2' tree.tag)
+    b3 <- withSpan "[TreeProofReturn] prove b3" $ liftAff $ runStep (provedPrev b2')
     b3' <- roundTripAndVerify dummies tree.verifier b3
     logInfo "[TreeProofReturn] proving [step4, wrap4]"
-    b4 <- withSpan "[TreeProofReturn] prove b4" $ liftAff $ runStep (provedPrev b3' tree.tag)
+    b4 <- withSpan "[TreeProofReturn] prove b4" $ liftAff $ runStep (provedPrev b3')
 
     logInfo "[TreeProofReturn] verifying 5-proof chain…"
     verifyBatch tree.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true

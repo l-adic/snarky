@@ -150,7 +150,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       runAbsorb selfPrev = do
         eRes <- liftEffect $ absorbProver noAdvice
           { appInput: unit
-          , prevs: tuple2 (provedPrev childCp' child.tag) selfPrev
+          , prevs: tuple2 (provedPrev childCp') selfPrev
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("absorbProver: " <> show e)
@@ -165,11 +165,11 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
     b0' <- roundTripAndVerify dummies app.verifier b0
 
     logInfo "[HeterogeneousPrevs] proving b1 (absorb over b0)"
-    b1 <- withSpan "[HeterogeneousPrevs] prove b1" $ liftAff $ runAbsorb (provedPrev b0' app.tag)
+    b1 <- withSpan "[HeterogeneousPrevs] prove b1" $ liftAff $ runAbsorb (provedPrev b0')
     b1' <- roundTripAndVerify dummies app.verifier b1
 
     logInfo "[HeterogeneousPrevs] proving b2 (absorb over b1)"
-    b2 <- withSpan "[HeterogeneousPrevs] prove b2" $ liftAff $ runAbsorb (provedPrev b1' app.tag)
+    b2 <- withSpan "[HeterogeneousPrevs] prove b2" $ liftAff $ runAbsorb (provedPrev b1')
 
     verifyBatch app.verifier (map toVerifiable [ b0, b1, b2 ]) `shouldEqual` true
 

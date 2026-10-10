@@ -131,7 +131,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     logInfo "[TwoPhaseChain] proving [step1, wrap1]"
     eB1 <- withSpan "[TwoPhaseChain] prove b1" $ liftEffect $ incrementProver noAdvice
       { appInput: F one
-      , prevs: tuple1 (provedPrev b0' output.tag)
+      , prevs: tuple1 (provedPrev b0')
       }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
@@ -140,7 +140,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     logInfo "[TwoPhaseChain] proving [step2, wrap2]"
     eB2 <- withSpan "[TwoPhaseChain] prove b2" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 2 :: StepField)
-      , prevs: tuple1 (provedPrev b1' output.tag)
+      , prevs: tuple1 (provedPrev b1')
       }
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
@@ -149,7 +149,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     logInfo "[TwoPhaseChain] proving [step3, wrap3]"
     eB3 <- withSpan "[TwoPhaseChain] prove b3" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 3 :: StepField)
-      , prevs: tuple1 (provedPrev b2' output.tag)
+      , prevs: tuple1 (provedPrev b2')
       }
     b3 <- case eB3 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)

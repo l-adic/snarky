@@ -92,7 +92,7 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
     logInfo "[RecurseOverChunks] proving recurse"
     eRecurseCp <- withSpan "[RecurseOverChunks] prove recurse" $ liftEffect $ recurseProver noAdvice
       { appInput: unit
-      , prevs: tuple1 (provedPrev chunks2Cp chunks2.tag)
+      , prevs: tuple1 (provedPrev chunks2Cp)
       }
     case eRecurseCp of
       Left e -> liftEffect $ Exc.throw ("recurseProver: " <> show e)

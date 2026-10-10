@@ -12,7 +12,6 @@ module Pickles.Prove.Compile
   ( PrevSlot(..)
   , provedPrev
   , unprovedPrev
-  , SuppliedProof
   , SideLoadedPrev(..)
   , class SplitPrevs
   , splitPrevs
@@ -342,12 +341,6 @@ type StepInputs prevsSpec inputVal prevsCarrier =
   , prevs :: prevsCarrier
   }
 
--- | A proof and the application under whose verification key it was made.
-type SuppliedProof n stmt =
-  { proof :: CompiledProof n stmt
-  , tag :: Tag stmt n
-  }
-
 -- | The initial statement is rule advice, even when it needs no proof.
 -- | The provider receives the rule's returned statement only if the rule
 -- | requires proof, before completing the same step witness. It may
@@ -355,14 +348,14 @@ type SuppliedProof n stmt =
 newtype PrevSlot :: Type -> Int -> Type -> Type
 newtype PrevSlot inputVal n stmt = DeferredPrev
   { statement :: stmt
-  , obtainProof :: stmt -> Effect (Either ProveError (SuppliedProof n stmt))
+  , obtainProof :: stmt -> Effect (Either ProveError (CompiledProof n stmt))
   }
 
 -- | Supply an existing proof if the rule requires it.
-provedPrev :: forall inputVal n stmt. CompiledProof n stmt -> Tag stmt n -> PrevSlot inputVal n stmt
-provedPrev proof@(CompiledProof p) tag = DeferredPrev
+provedPrev :: forall inputVal n stmt. CompiledProof n stmt -> PrevSlot inputVal n stmt
+provedPrev proof@(CompiledProof p) = DeferredPrev
   { statement: p.statement
-  , obtainProof: \_ -> pure $ Right { proof, tag }
+  , obtainProof: \_ -> pure $ Right proof
   }
 
 -- | Supply a statement without a proof. Requiring it is an evaluation error.
@@ -376,7 +369,7 @@ unprovedPrev statement = DeferredPrev
 data ResolvedPrevSlot :: Type -> Int -> Type -> Type
 data ResolvedPrevSlot inputVal n stmt
   = SkippedPrev stmt
-  | RequiredPrev (CompiledProof n stmt) (Tag stmt n)
+  | RequiredPrev (CompiledProof n stmt) Verifier
 
 newtype SomeResolvedPrevSlot = SomeResolvedPrevSlot
   ( forall r
@@ -758,10 +751,9 @@ slotStepAdvice _ dummySgs appInput slotParams headSlot = do
         , prevChallengesForStepHash:
             Vector.replicate dummyIpaChallenges.stepExpanded
         }
-    RequiredPrev prevCp prevTag ->
+    RequiredPrev prevCp prevVerifier ->
       let
         CompiledProof prevRaw = prevCp
-        Tag { verifier: prevVerifier } = prevTag
 
         -- The previous proof as the recursive prover needs it:
         -- width-erased, with its padded accumulator views. See
@@ -993,10 +985,8 @@ slotProveData dummySgs slotParams stepSide headSlot =
             Array.replicate slotParams.slotWidth
               (map F dummyIpaChallenges.wrapExpanded)
         }
-    RequiredPrev prevCp prevTag ->
+    RequiredPrev prevCp prevVerifier ->
       let
-        Tag { verifier: prevVerifier } = prevTag
-
         -- Only the padded accumulators are needed here, so unlike in
         -- `mkStepAdvice` there is no unpadded vector to reify.
         prevData = prevProofDataOf prevCp
@@ -1305,8 +1295,8 @@ wrapPadDummies predecessors dummySgs =
 
 --------------------------------------------------------------------------------
 -- | Resolve the proof requirement against the exact fields returned by the
--- | rule. The verifier used for expansion is derived from the declared source;
--- | the supplied tag only establishes that its proof belongs to that source.
+-- | rule. Advice uses a verifier derived from the declared source; embedded
+-- | verification checks the proof against that source's key.
 resolvePrevSlot
   :: forall inputVal n stmt stmtVar
    . CircuitType StepField stmt stmtVar
@@ -1329,13 +1319,9 @@ resolvePrevSlot source request (DeferredPrev prev) =
     else do
       supplied <- prev.obtainProof statement
       pure do
-        { proof: proof@(CompiledProof raw), tag: Tag tag } <- supplied
+        proof@(CompiledProof raw) <- supplied
         when (valueToFields @StepField raw.statement /= request.statement)
           $ failure "proof statement does not match the rule's returned statement"
-        when (vestaVerifierIndexJsonKey tag.verifier.wrapVK /= vestaVerifierIndexJsonKey source.wrapVK)
-          $ failure "proof verification key does not match the slot's source application"
-        when (tag.verifier.stepZkRows /= zkRowsForNumChunks source.stepNumChunks)
-          $ failure "proof step chunk count does not match the slot's source"
         when (not (Array.elem raw.stepDomainLog2 (NonEmptyArray.toArray source.stepDomains)))
           $ failure "proof step domain is not a branch of the slot's source"
         let
@@ -1350,7 +1336,7 @@ resolvePrevSlot source request (DeferredPrev prev) =
             raw.widthData
         when (width > source.width)
           $ failure "proof branch width exceeds the slot's source width"
-        pure $ RequiredPrev proof (Tag (tag { verifier = verifier }))
+        pure $ RequiredPrev proof verifier
   where
   failure :: forall a. String -> Either ProveError a
   failure message = Left (FailedAssertion message)
