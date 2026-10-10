@@ -19,6 +19,7 @@ module Pickles.Prove.Step
   , StepRuleAt
   , StepCompileResult
   , StepProveResult
+  , StepProveInput
   , module Pickles.Step.Advice
   , StepProveContext
   , SlotAdviceContrib
@@ -49,6 +50,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
@@ -68,8 +70,8 @@ import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.RuleWitness (ruleWitness)
-import Pickles.Step.Advice (StepAdvice(..))
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.Advice (SlotProofRequest, StepAdvice(..))
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain, stepMainWithAdvice)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
 import Pickles.Step.Types as Step
@@ -94,6 +96,7 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (AsProver, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
+import Snarky.Circuit.EvalError (throwEvalError)
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Circuit.Types (class CircuitType, sizeInFields, valueToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -908,6 +911,25 @@ type StepCompileResult =
   , constraints :: Array (KimchiRow StepField)
   }
 
+-- | Claimed statements precede proof resolution. The preparation callback
+-- | receives the rule's actual statements and flags during the step solve.
+type StepProveInput prevsSpec inputVal len valCarrier =
+  { publicInput :: inputVal
+  , prevAppStates :: valCarrier
+  , prepare ::
+      Vector len SlotProofRequest
+      -> Effect
+           ( Either EvaluationError
+               { advice ::
+                   StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
+                     inputVal
+                     len
+                     valCarrier
+               , cachePrevs :: Array (Prev StepField)
+               }
+           )
+  }
+
 -- | Artifacts produced by `stepSolveAndProve`.
 type StepProveResult =
   { proverIndex :: ProverIndex VestaG StepField
@@ -1272,21 +1294,35 @@ stepSolveAndProve
   -> StepProveContext len
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
-  -- Per slot, the cache key of the wrap proof this proof verifies there,
-  -- or on a base-case slot the cells allocated for it, recorded on its
-  -- cache entry so a chain is walkable from the cache alone.
-  -> Array (Prev StepField)
+  -> StepProveInput prevsSpec inputVal len valCarrier
   -> Effect (Either EvaluationError StepProveResult)
-stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
+stepSolveAndProve handler ctx rule compileResult input = do
   -- The rule's output cells are internal to the step statement. Read
   -- them after solving; capture source allocations only for fixtures.
   captureRef <- Ref.new Nothing
   ruleCapture <- case ctx.proofCache of
     Nothing -> pure Nothing
     Just _ -> Just <$> Ref.new Nil
+  preparedRef <- Ref.new Nothing
   let
-    StepAdvice adv = advice
+    getPrepared = Ref.read preparedRef >>= case _ of
+      Nothing -> throwEvalError (FailedAssertion "stepProve: proof advice was not prepared")
+      Just prepared -> pure prepared
+
+    source =
+      { publicInput: pure input.publicInput
+      , prevAppStates: pure input.prevAppStates
+      , prepare: \requests -> liftEffect do
+          current <- Ref.read preparedRef
+          case current of
+            Just _ -> throwEvalError (FailedAssertion "stepProve: proof advice prepared twice")
+            Nothing -> do
+              result <- input.prepare requests
+              case result of
+                Left e -> throwEvalError e
+                Right prepared -> Ref.write (Just prepared) preparedRef
+      , getAdvice: liftEffect (getPrepared <#> _.advice)
+      }
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
@@ -1296,7 +1332,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
     rawSolver =
       makeSolver' { debug: ctx.debug } compileResult.builtState
         ( \_ ->
-            stepMain
+            stepMainWithAdvice
               @prevsSpec
               @inputVal
               @outputVal
@@ -1305,7 +1341,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
               rule
               ctx.srsData
               ctx.dummySg
-              advice
+              source
               captureRef
               ruleCapture
         )
@@ -1315,7 +1351,9 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
   case eRes of
     Left e -> pure (Left (WithContext "stepProve solver" e))
     Right (Tuple publicOutputs assignments) -> do
+      prepared <- getPrepared
       let
+        StepAdvice adv = prepared.advice
         { witness, publicInputs } = makeWitness
           { assignments
           , constraints: map _.variables compileResult.constraints
@@ -1389,7 +1427,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
                   Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
                     publicInputs
                     proof
-                    prevProofs
+                    prepared.cachePrevs
                     w
                 pure proof
           pure $ Right
