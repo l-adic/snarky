@@ -27,7 +27,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, unprovedPrev, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, proveBranch, provedPrev, toPrevs, toVerifiable, unprovedPrev, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, readCVar, true_)
@@ -91,7 +91,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       }
       nrrRules
 
-    let BranchProver nrrProver = fst nrr.provers
+    let nrrProver = proveBranch (fst nrr.provers)
     logInfo "[TreeProofReturn] proving nrr"
     eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit }
@@ -118,7 +118,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       }
       treeRules
 
-    let BranchProver treeProver = fst tree.provers
+    let treeProver = proveBranch (fst tree.provers)
 
     -- Every prev is round-tripped through serialization before it is
     -- consumed, so the chain closes only if that is faithful.

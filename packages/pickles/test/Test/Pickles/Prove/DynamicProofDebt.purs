@@ -1,6 +1,5 @@
--- | One incrementer, compiled once, takes its proof-debt flag directly from
--- | Boolean advice. The Int test driver requires the previous proof on even
--- | iterations; the circuit does not define parity over field elements.
+-- | One compiled incrementer evaluates an alternating sequence before any
+-- | proof is requested. Proof debt is discharged from retained witnesses.
 module Test.Pickles.Prove.DynamicProofDebt (spec) where
 
 import Prelude
@@ -22,37 +21,28 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), ProveError, Slot, SlotWrapKey(..), StepField, StepRule, Verifier, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, unprovedPrev, verify)
+import Pickles (ApplicationStatement(..), CompiledProof(..), PrevStatement(..), ProveError, Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, deferredPrev, deferredStatement, evaluateBranch, mkRuleEntry, prevValues, proveDeferred, provedPrev, toPrevs, toVerifiable, unprovedPrev, verify)
 import Snarky.Backend.Advice (noAdvice)
-import Snarky.Circuit.CVar (EvaluationError(..), add_)
+import Snarky.Backend.Kimchi.Proof (vestaProofToSerdeJson)
+import Snarky.Circuit.CVar (add_)
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists)
 import Snarky.Curves.Class (fromInt)
 import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SharedSrs (SharedSrs)
-import Test.Spec (SpecT, aroundWith, beforeAll, beforeWith, describe, it, sequential)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 type Statement = ApplicationStatement Unit (F StepField)
-type Proof = CompiledProof 1 Statement
 type Prevs = Tuple1 (Slot 1 Statement)
-type TestM = LoggerT Message Aff
-
-type Fixture =
-  { prove :: PrevSlot Unit 1 Statement -> Effect (Either ProveError Proof)
-  , verifier :: Verifier
-  , seed :: Proof
-  , mustVerify :: Ref Boolean
-  , events :: Ref (Array String)
-  }
 
 incrementRule
   :: Ref Boolean
-  -> Ref (Array String)
+  -> Ref Int
   -> StepRule Prevs Unit Unit (F StepField) (FVar StepField)
-incrementRule advice events getPrevs _ = do
+incrementRule advice ruleEvaluations getPrevs _ = do
   previous <- exists $ getPrevs <#> prevValues <#> \(s /\ _) -> s
   mustVerify <- exists $ liftEffect $ Ref.read advice
-  _ :: Unit <- exists $ liftEffect $ Ref.modify_ (flip Array.snoc "rule") events
+  _ :: Unit <- exists $ liftEffect $ Ref.modify_ (_ + 1) ruleEvaluations
   let ApplicationStatement { output: counter } = previous
   pure
     { prevs: toPrevs $ PrevStatement { publicInput: previous, proofMustVerify: mustVerify } /\ unit
@@ -62,149 +52,87 @@ incrementRule advice events getPrevs _ = do
 statement :: Int -> Statement
 statement counter = ApplicationStatement { input: unit, output: F (fromInt counter) }
 
-buildFixture :: SharedSrs -> TestM Fixture
-buildFixture { pallasSrs, vestaSrs, lagrangeCache } = do
-  outputs <- liftEffect $ appOutputs "DynamicProofDebt"
-  mustVerify <- liftEffect $ Ref.new false
-  events <- liftEffect $ Ref.new []
-  entry <- liftEffect $ mkRuleEntry @(F StepField) (incrementRule mustVerify events) (Self :< Vector.nil)
-  logInfo "[DynamicProofDebt] compiling incrementer once…"
-  app <- liftEffect $ compileMulti @(F StepField) @1
-    { srs: { vestaSrs, pallasSrs }
-    , debug: true
-    , wrapDomainOverride: Nothing
-    , proofCache: outputs.proofCache
-    , lagrangeCache: Just lagrangeCache
-    , dump: outputs.dumpAt "incrementer"
-    }
-    (tuple1 entry)
-  liftEffect (Ref.read events) >>= (_ `shouldEqual` [])
-  let
-    BranchProver prover = fst app.provers
-    prove prev = prover noAdvice { appInput: unit, prevs: tuple1 prev }
-  seed <- liftEffect $ prove (unprovedPrev (statement 0)) >>= expectRight
-  pure { prove, verifier: app.verifier, seed, mustVerify, events }
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
+spec = describe "Pickles.Prove.DynamicProofDebt" do
+  it "evaluates once and resolves deferred proofs only when the rule requires them" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
+    outputs <- liftEffect $ appOutputs "DynamicProofDebt"
+    mustVerify <- liftEffect $ Ref.new false
+    ruleEvaluations <- liftEffect $ Ref.new 0
+    entry <- liftEffect $ mkRuleEntry @(F StepField) (incrementRule mustVerify ruleEvaluations) (Self :< Vector.nil)
+    logInfo "[DynamicProofDebt] compiling incrementer once…"
+    app <- liftEffect $ compileMulti @(F StepField) @1
+      { srs: { vestaSrs, pallasSrs }
+      , debug: true
+      , wrapDomainOverride: Nothing
+      , proofCache: outputs.proofCache
+      , lagrangeCache: Just lagrangeCache
+      , dump: outputs.dumpAt "incrementer"
+      }
+      (tuple1 entry)
+    liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 0)
+    let
+      branch = fst app.provers
+      evaluate required prev = do
+        Ref.write required mustVerify
+        evaluateBranch branch noAdvice { appInput: unit, prevs: tuple1 prev } >>= expectRight
+      checkProof counter proof@(CompiledProof raw) = do
+        liftEffect $ assertStatement counter raw.statement
+        verify app.verifier (toVerifiable proof) `shouldEqual` true
 
--- | This spec version's beforeAll does not accept an inherited input. The
--- | outer hook supplies the existing SharedSrs to its one-time setup action.
-withFixture :: SpecT TestM Fixture Aff Unit -> SpecT TestM SharedSrs Aff Unit
-withFixture tests = do
-  setup <- liftEffect $ Ref.new (liftEffect $ throw "incrementer setup needs SharedSrs")
-  aroundWith (\run srs -> liftEffect (Ref.write (buildFixture srs) setup) *> run unit)
-    $ beforeAll (join $ liftEffect $ Ref.read setup)
-    $
-      beforeWith
-        ( \fixture -> do
-            liftEffect do
-              Ref.write false fixture.mustVerify
-              Ref.write [] fixture.events
-            pure fixture
-        )
-        (sequential tests)
-
-spec :: SpecT TestM SharedSrs Aff Unit
-spec = withFixture $ describe "Pickles.Prove.DynamicProofDebt" do
-  it "increments from zero and requires the previous proof only on even iterations" \fixture -> do
-    _ <- foldM
+    -- Evaluation obtains all four statements without resolving any debt.
+    invocations <- foldM
       ( \previous iteration -> do
-          let required = iteration `mod` 2 == 0
-          liftEffect do
-            Ref.write required fixture.mustVerify
-            Ref.write [] fixture.events
           let
-            prev = DeferredPrev
-              { statement: statement (iteration - 1)
-              , obtainProof: \actual -> do
-                  assertStatement (iteration - 1) actual
-                  Ref.modify_ (flip Array.snoc "provider") fixture.events
-                  case previous of
-                    Nothing -> throw "proof requested before the first increment"
-                    Just proof -> pure $ Right proof
-              }
-          proof <- liftEffect $ fixture.prove prev >>= expectRight
-          checkProof fixture iteration proof
-          liftEffect (Ref.read fixture.events) >>=
-            (_ `shouldEqual` ([ "rule" ] <> if required then [ "provider" ] else []))
-          pure (Just proof)
+            prev = case Array.last previous of
+              Nothing -> unprovedPrev (statement 0)
+              Just pending -> deferredPrev pending
+          pending <- liftEffect $ evaluate (iteration `mod` 2 == 0) prev
+          liftEffect $ assertStatement iteration (deferredStatement pending)
+          pure (Array.snoc previous pending)
       )
-      Nothing
+      []
       [ 1, 2, 3, 4 ]
-    pure unit
+    liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 4)
+    case invocations of
+      [ _, second, _, fourth ] -> do
+        -- Later advice changes cannot change the already evaluated flag.
+        liftEffect $ Ref.write false mustVerify
+        finalProof <- liftEffect $ proveDeferred fourth >>= expectRight
+        checkProof 4 finalProof
+        secondProof <- liftEffect $ proveDeferred second >>= expectRight
+        checkProof 2 secondProof
+        repeated <- liftEffect $ proveDeferred fourth >>= expectRight
+        let
+          CompiledProof original = finalProof
+          CompiledProof cached = repeated
+        vestaProofToSerdeJson cached.wrapProof `shouldEqual` vestaProofToSerdeJson original.wrapProof
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 4)
 
-  it "uses an unproved counter while never calling its skipped provider" \fixture -> do
-    proof <- liftEffect $
-      fixture.prove
-        ( DeferredPrev
-            { statement: statement 2
-            , obtainProof: \_ -> throw "a skipped proof provider was called"
-            }
-        ) >>= expectRight
-    checkProof fixture 3 proof
-    liftEffect (Ref.read fixture.events) >>= (_ `shouldEqual` [ "rule" ])
+        -- A deferred invocation with missing debt still yields its statement.
+        missing <- liftEffect $ evaluate true (unprovedPrev (statement 4))
+        liftEffect $ assertStatement 5 (deferredStatement missing)
+        skipped <- liftEffect $ evaluate false (deferredPrev missing)
+        skippedProof <- liftEffect $ proveDeferred skipped >>= expectRight
+        checkProof 6 skippedProof
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 6)
+        liftEffect $ proveDeferred missing >>= expectFailure "required proof is missing"
+        liftEffect $ proveDeferred missing >>= expectFailure "branch 0 slot 0"
 
-  it "reports unavailable proofs and provider failures, then allows the next call to succeed" \fixture -> do
-    liftEffect $ Ref.write true fixture.mustVerify
-    missing <- liftEffect $ fixture.prove (unprovedPrev (statement 1))
-    liftEffect do
-      expectFailure "required proof is missing" missing
-      expectFailure "branch 0 slot 0" missing
-    liftEffect $
-      fixture.prove
-        ( DeferredPrev
-            { statement: statement 1
-            , obtainProof: \_ -> pure $ Left (FailedAssertion "provider refused")
-            }
-        ) >>= expectFailure "provider refused"
-    proof <- liftEffect $ fixture.prove (provedPrev fixture.seed) >>= expectRight
-    checkProof fixture 2 proof
+        -- The same missing debt is required by a subsequent true flag.
+        required <- liftEffect $ evaluate true (deferredPrev missing)
+        liftEffect $ proveDeferred required >>= expectFailure "required proof is missing"
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 7)
 
-  it "retains the consuming rule's witness when its provider invokes the same prover" \fixture -> do
-    liftEffect $ Ref.write true fixture.mustVerify
-    let
-      prev = DeferredPrev
-        { statement: statement 1
-        , obtainProof: \actual -> do
-            assertStatement 1 actual
-            Ref.modify_ (flip Array.snoc "provider") fixture.events
-            Ref.write false fixture.mustVerify
-            fixture.prove (unprovedPrev (statement 0))
-        }
-    proof <- liftEffect $ fixture.prove prev >>= expectRight
-    checkProof fixture 2 proof
-    liftEffect (Ref.read fixture.events) >>= (_ `shouldEqual` [ "rule", "provider", "rule" ])
-    liftEffect (Ref.read fixture.mustVerify) >>= (_ `shouldEqual` false)
-    liftEffect $ Ref.write [] fixture.events
-    skipped <- liftEffect $ fixture.prove (unprovedPrev (statement 2)) >>= expectRight
-    checkProof fixture 3 skipped
-    liftEffect (Ref.read fixture.events) >>= (_ `shouldEqual` [ "rule" ])
-
-  it "rejects proofs with a different statement or invalid step domain" \fixture -> do
-    liftEffect $ Ref.write true fixture.mustVerify
-    liftEffect $
-      fixture.prove
-        ( DeferredPrev
-            { statement: statement 2
-            , obtainProof: \_ -> pure $ Right fixture.seed
-            }
-        ) >>= expectFailure "proof statement does not match"
-    let
-      CompiledProof raw = fixture.seed
-      badDomain = CompiledProof (raw { stepDomainLog2 = 30 })
-    liftEffect $ fixture.prove (provedPrev badDomain)
-      >>= expectFailure "proof step domain is not a branch"
-
-  it "rejects forged statement metadata even when it matches the requested counter" \fixture -> do
-    liftEffect $ Ref.write true fixture.mustVerify
-    let
-      CompiledProof raw = fixture.seed
-      forged = CompiledProof (raw { statement = statement 2 })
-    liftEffect $ fixture.prove (provedPrev forged)
-      >>= expectFailure "FailedAssertion"
-
-checkProof :: Fixture -> Int -> Proof -> TestM Unit
-checkProof fixture counter proof@(CompiledProof raw) = do
-  liftEffect $ assertStatement counter raw.statement
-  verify fixture.verifier (toVerifiable proof) `shouldEqual` true
+        let
+          CompiledProof raw = secondProof
+          badDomain = CompiledProof (raw { stepDomainLog2 = 30 })
+          forged = CompiledProof (raw { statement = statement 9 })
+        incompatible <- liftEffect $ evaluate true (provedPrev badDomain)
+        liftEffect $ proveDeferred incompatible >>= expectFailure "proof step domain is not a branch"
+        forgedStatement <- liftEffect $ evaluate true (provedPrev forged)
+        liftEffect $ proveDeferred forgedStatement >>= expectFailure "FailedAssertion"
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 9)
+      _ -> liftEffect $ throw "expected four incrementer evaluations"
 
 assertStatement :: Int -> Statement -> Effect Unit
 assertStatement counter (ApplicationStatement actual) =

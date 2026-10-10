@@ -6,12 +6,18 @@
 -- | into the statements the rule reads and one `SomePrevSlot` per
 -- | slot, which the prover walks as a `Vector`;
 -- | `CompilableRules` is indexed by the tuple of rules and walks
--- | the branches. `RuleEntry` is one branch; `runMultiProverBody` is
+-- | the branches. `RuleEntry` is one branch; `evaluateMultiBranch` is
 -- | one branch's prover.
 module Pickles.Prove.Compile
-  ( PrevSlot(..)
+  ( PrevSlot
   , provedPrev
   , unprovedPrev
+  , DeferredProof
+  , deferredPrev
+  , deferredStatement
+  , proveDeferred
+  , evaluateBranch
+  , proveBranch
   , SideLoadedPrev(..)
   , class SplitPrevs
   , splitPrevs
@@ -22,7 +28,7 @@ module Pickles.Prove.Compile
   -- be reachable; nothing outside builds or inspects one.
   , Unique
   , Tag(..)
-  , BranchProver(..)
+  , BranchProver
   , RuleEntry
   , mkRuleEntry
   , compileMulti
@@ -104,13 +110,13 @@ import Pickles.Prove.Step
   )
 import Pickles.Prove.Step
   ( StepCompileResult
+  , StepEvaluation
   , StepProveContext
   , StepProveInput
-  , StepProveResult
   , StepRuleAt
   , preComputeStepDomainLog2
   , stepCompile
-  , stepSolveAndProve
+  , stepEvaluate
   ) as PProveStep
 import Pickles.Prove.Wrap
   ( WrapBranchData
@@ -341,28 +347,62 @@ type StepInputs prevsSpec inputVal prevsCarrier =
   , prevs :: prevsCarrier
   }
 
--- | The initial statement is rule advice, even when it needs no proof.
--- | The provider receives the rule's returned statement only if the rule
--- | requires proof, before completing the same step witness. It may
--- | reenter this prover. The constructor does not decide proof debt.
+-- | A slot's statement and its library-owned proof computation. Only the
+-- | consuming rule's proof debt causes that computation to be resolved.
 newtype PrevSlot :: Type -> Int -> Type -> Type
-newtype PrevSlot inputVal n stmt = DeferredPrev
+newtype PrevSlot inputVal n stmt = PrevSlot
   { statement :: stmt
-  , obtainProof :: stmt -> Effect (Either ProveError (CompiledProof n stmt))
+  , obtainProof :: Effect (Either ProveError (CompiledProof n stmt))
   }
+
+-- | An evaluated rule with a retained witness and a memoized proof.
+-- | Only application evaluation can create this handle.
+newtype DeferredProof :: Int -> Type -> Type
+newtype DeferredProof n stmt = DeferredProof
+  { statement :: stmt
+  , prove :: Effect (Either ProveError (CompiledProof n stmt))
+  }
+
+deferredStatement :: forall n stmt. DeferredProof n stmt -> stmt
+deferredStatement (DeferredProof p) = p.statement
+
+-- | Finish a retained evaluation, reusing its completed proof on later calls.
+proveDeferred :: forall n stmt. DeferredProof n stmt -> Effect (Either ProveError (CompiledProof n stmt))
+proveDeferred (DeferredProof p) = p.prove
+
+-- | Witness an evaluated statement and let the library resolve its proof debt.
+deferredPrev :: forall inputVal n stmt. DeferredProof n stmt -> PrevSlot inputVal n stmt
+deferredPrev (DeferredProof p) = PrevSlot { statement: p.statement, obtainProof: p.prove }
+
+makeDeferredProof
+  :: forall n stmt
+   . stmt
+  -> Effect (Either ProveError (CompiledProof n stmt))
+  -> Effect (DeferredProof n stmt)
+makeDeferredProof statement prove = do
+  result <- Ref.new (Left prove)
+  pure $ DeferredProof
+    { statement
+    , prove: Ref.read result >>= case _ of
+        Right completed -> either Exc.throwException pure completed
+        Left complete -> do
+          completed <- Exc.try complete
+          Ref.write (Right completed) result
+          either Exc.throwException pure completed
+    }
 
 -- | Supply an existing proof if the rule requires it.
 provedPrev :: forall inputVal n stmt. CompiledProof n stmt -> PrevSlot inputVal n stmt
-provedPrev proof@(CompiledProof p) = DeferredPrev
+provedPrev proof@(CompiledProof p) = PrevSlot
   { statement: p.statement
-  , obtainProof: \_ -> pure $ Right proof
+  , obtainProof: pure $ Right proof
   }
 
 -- | Supply a statement without a proof. Requiring it is an evaluation error.
 unprovedPrev :: forall inputVal n stmt. stmt -> PrevSlot inputVal n stmt
-unprovedPrev statement = DeferredPrev
+unprovedPrev statement = PrevSlot
   { statement
-  , obtainProof: \_ -> pure $ Left (FailedAssertion "required proof is missing")
+  , obtainProof: pure $ Left (FailedAssertion "required proof is missing")
   }
 
 -- | Only resolution of a circuit-computed obligation constructs these.
@@ -495,7 +535,7 @@ instance
 
 -- | The prev's statement, whichever way its slot is filled.
 statementOf :: forall inputVal n stmt. PrevSlot inputVal n stmt -> stmt
-statementOf (DeferredPrev p) = p.statement
+statementOf (PrevSlot p) = p.statement
 
 type CompileConfig :: Int -> Type
 type CompileConfig mpv =
@@ -1310,14 +1350,16 @@ resolvePrevSlot
   -> SlotProofRequest
   -> PrevSlot inputVal n stmt
   -> Effect (Either ProveError (ResolvedPrevSlot inputVal n stmt))
-resolvePrevSlot source request (DeferredPrev prev) =
+resolvePrevSlot source request (PrevSlot prev) =
   if Array.length request.statement /= sizeInFields (Proxy @StepField) (Proxy @stmt) then
     pure $ failure "returned statement field count does not match the slot"
   else do
     let statement = fieldsToValue @StepField @stmt request.statement
     if not request.mustVerify then pure $ Right (SkippedPrev statement)
+    else if valueToFields @StepField prev.statement /= request.statement then
+      pure $ failure "proof statement does not match the rule's returned statement"
     else do
-      supplied <- prev.obtainProof statement
+      supplied <- prev.obtainProof
       pure do
         proof@(CompiledProof raw) <- supplied
         when (valueToFields @StepField raw.statement /= request.statement)
@@ -1639,8 +1681,29 @@ newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal r =
   BranchProver
     ( AdviceHandler r
       -> StepInputs prevsSpec inputVal prevsCarrier
-      -> Effect (Either ProveError (CompiledProof mpv (ApplicationStatement inputVal outputVal)))
+      -> Effect (Either ProveError (DeferredProof mpv (ApplicationStatement inputVal outputVal)))
     )
+
+-- | Evaluate application logic once, retaining its witness without producing
+-- | proofs or resolving the proof debt it creates.
+evaluateBranch
+  :: forall prevsSpec mpv prevsCarrier inputVal outputVal r
+   . BranchProver prevsSpec mpv prevsCarrier inputVal outputVal r
+  -> AdviceHandler r
+  -> StepInputs prevsSpec inputVal prevsCarrier
+  -> Effect (Either ProveError (DeferredProof mpv (ApplicationStatement inputVal outputVal)))
+evaluateBranch (BranchProver evaluate) = evaluate
+
+-- | Evaluate and immediately prove one invocation.
+proveBranch
+  :: forall prevsSpec mpv prevsCarrier inputVal outputVal r
+   . BranchProver prevsSpec mpv prevsCarrier inputVal outputVal r
+  -> AdviceHandler r
+  -> StepInputs prevsSpec inputVal prevsCarrier
+  -> Effect (Either ProveError (CompiledProof mpv (ApplicationStatement inputVal outputVal)))
+proveBranch prover handler inputs = evaluateBranch prover handler inputs >>= case _ of
+  Left e -> pure (Left e)
+  Right pending -> proveDeferred pending
 
 -- | A multi-branch compile's verification keys: one `wrap` VK, under
 -- | which every branch's wrap proof verifies — the wrap statement's
@@ -1707,9 +1770,9 @@ class
   -- | Each rule's compile-time operations, in branch order.
   ruleCompileFns :: rulesCarrier -> Vector branches (RuleCompileFns mpvMax)
 
-  -- | One `BranchProver` per branch: a closure that runs that
-  -- | branch's step solve and prove, then the shared wrap solve and
-  -- | prove with `whichBranch` set to its own index. The index
+  -- | One `BranchProver` per branch: a closure that evaluates the rule
+  -- | and retains its witness. Proof construction later completes the step
+  -- | and shared wrap circuits with `whichBranch` set to this index. The index
   -- | argument is the head entry's; top-level callers pass `0`.
   buildBranchProvers
     :: forall stepChunks numChunksPred vecLen vecLenPred tCommLen tCommLenPred nonSgBases totalBasesMax totalBasesMaxPred
@@ -1761,7 +1824,7 @@ instance
   , SplitPrevs prevsSpec prevsCarrier valCarrier ruleMpv
   , SlotWidths prevsSpec ruleMpv
   , SlotStatementsCarrier prevsSpec valCarrier
-  -- Per-rule step+wrap constraints needed by runMultiProverBody.
+  -- Per-rule step+wrap constraints needed by evaluateMultiBranch.
   , CircuitGateConstructor StepField VestaG
   , CircuitGateConstructor WrapField PallasG
   , Reflectable ruleMpv Int
@@ -1829,7 +1892,7 @@ instance
       { head: headLog2, tail: restLog2s } = Vector.uncons stepDomainLog2s
       { head: headStepCR, tail: restStepResults } = Vector.uncons stepResults
       headProver = BranchProver \handler stepInputs ->
-        runMultiProverBody
+        evaluateMultiBranch
           @prevsSpec
           @ruleMpv
           @valCarrier
@@ -1975,12 +2038,12 @@ data RuleEntry
   -> Type
 data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
   { compileFns :: RuleCompileFns mpvMax
-  , stepProveFn ::
+  , stepEvaluateFn ::
       AdviceHandler r
       -> PProveStep.StepProveContext mpv
       -> PProveStep.StepCompileResult
       -> PProveStep.StepProveInput prevsSpec inputVal mpv valCarrier
-      -> Effect (Either EvaluationError PProveStep.StepProveResult)
+      -> Effect (Either EvaluationError PProveStep.StepEvaluation)
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
   , slotVKs :: Vector mpv (Maybe SlotWrapKey)
@@ -1988,7 +2051,7 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
 
 -- | A `RuleEntry` whose closures capture the given rule and invoke it
 -- | through `preComputeStepDomainLog2`, `stepCompile` and
--- | `stepSolveAndProve`.
+-- | `stepEvaluate`.
 mkRuleEntry
   :: forall @outputVal @r
        mpvMax prevsSpec mpv mpvPad outputSize valCarrier
@@ -2123,8 +2186,8 @@ mkRuleEntry rule compiledKeys = do
               , rule: RuleDumpJson ruleDump
               }
         }
-    , stepProveFn: \handler ctx compileResult input ->
-        PProveStep.stepSolveAndProve
+    , stepEvaluateFn: \handler ctx compileResult input ->
+        PProveStep.stepEvaluate
           @prevsSpec
           @outputSize
           @valCarrier
@@ -2262,11 +2325,11 @@ requireSharedStepShifts ctx =
             <> ", do not share their permutation shifts"
 
 --------------------------------------------------------------------------------
--- runMultiProverBody — per-branch prover body.
+-- evaluateMultiBranch — evaluation and retained proof construction.
 --
--- Step advice, then wrap-stage data, then the step proof, then the
--- deferred values the wrap circuit checks, then the wrap proof, then
--- the `CompiledProof` the two are packaged into.
+-- Evaluate application logic before resolving proof debt. The returned
+-- handle retains that witness; completing it resolves the required slots
+-- and constructs the step and wrap proofs.
 --
 -- A top-level function rather than a class method, so its per-rule
 -- type variables and constraints stay here instead of landing on the
@@ -2274,7 +2337,7 @@ requireSharedStepShifts ctx =
 -- branch's closure with that branch's index and step result.
 --------------------------------------------------------------------------------
 
-runMultiProverBody
+evaluateMultiBranch
   :: forall @prevsSpec prevsCarrier @mpv @valCarrier
        @inputVal @inputVar @outputVal @outputVar
        @mpvMax @mpvPad @stepChunks numChunksPred
@@ -2333,8 +2396,8 @@ runMultiProverBody
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
   -> RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r
   -> StepInputs prevsSpec inputVal prevsCarrier
-  -> Effect (Either ProveError (CompiledProof mpvMax (ApplicationStatement inputVal outputVal)))
-runMultiProverBody
+  -> Effect (Either ProveError (DeferredProof mpvMax (ApplicationStatement inputVal outputVal)))
+evaluateMultiBranch
   handler
   ncProxy
   branchIdx
@@ -2415,211 +2478,211 @@ runMultiProverBody
       Ref.write (Just { proveData, cachePrevs: prepared.cachePrevs }) preparedRef
       pure { advice: prepared.stepAdvice, cachePrevs: prepared.cachePrevs }
 
-  eStepResult <- r.stepProveFn handler stepProveCtx stepCR
+  eStepResult <- r.stepEvaluateFn handler stepProveCtx stepCR
     { publicInput: appInput, prevAppStates: split.values, prepare }
   case eStepResult of
     Left e -> pure (Left e)
-    Right stepResult -> do
-      prepared <- Ref.read preparedRef >>= case _ of
-        Nothing -> throwEvalError (FailedAssertion "branch prover: proof advice was not prepared")
-        Just p -> pure p
+    Right evaluated -> do
       let
-        proveData = prepared.proveData
-        cachePrevs = prepared.cachePrevs
-        dummyWrapSgInStepField = dummySgs.wrap
-        branchPadding = padDummies
-          { dummyPrevUnfinalizedProof =
-              (wrapPadDummies (reflectType (Proxy @mpv)) dummySgs).dummyPrevUnfinalizedProof
+        statement = ApplicationStatement
+          { input: appInput
+          , output: fieldsToValue @StepField evaluated.userPublicOutputFields
           }
-        proveDataMax = padShapeProveData branchPadding wrapResult.slotWidths proveData
-
-      let
-        stepOraclesPrevChals = Vector.toUnfoldable $
-          Vector.zipWith
-            ( \(AffinePoint sg) chals ->
-                { sgX: sg.x
-                , sgY: sg.y
-                , challenges: Vector.toUnfoldable chals
+      pending <- makeDeferredProof statement do
+        completed <- evaluated.prove
+        case completed of
+          Left e -> pure (Left e)
+          Right stepResult -> do
+            prepared <- Ref.read preparedRef >>= case _ of
+              Nothing -> throwEvalError (FailedAssertion "branch prover: proof advice was not prepared")
+              Just p -> pure p
+            let
+              proveData = prepared.proveData
+              cachePrevs = prepared.cachePrevs
+              dummyWrapSgInStepField = dummySgs.wrap
+              branchPadding = padDummies
+                { dummyPrevUnfinalizedProof =
+                    (wrapPadDummies (reflectType (Proxy @mpv)) dummySgs).dummyPrevUnfinalizedProof
                 }
-            )
-            proveData.prevSgs
-            proveData.prevStepChallenges
+              proveDataMax = padShapeProveData branchPadding wrapResult.slotWidths proveData
 
-        stepOracles = proofOraclesRec stepCR.verifierIndex
-          { proof: stepResult.proof
-          , publicInput: stepResult.publicInputs
-          , prevChallenges: stepOraclesPrevChals
-          }
+            let
+              stepOraclesPrevChals = Vector.toUnfoldable $
+                Vector.zipWith
+                  ( \(AffinePoint sg) chals ->
+                      { sgX: sg.x
+                      , sgY: sg.y
+                      , challenges: Vector.toUnfoldable chals
+                      }
+                  )
+                  proveData.prevSgs
+                  proveData.prevStepChallenges
 
-        -- The step proof's evaluations, one `PointEval` per
-        -- polynomial per chunk, which the wrap prover consumes as-is.
-        stepProofData = pallasProofData @StepIPARounds stepResult.proof
-        chunkedEvals =
-          { ftEval1: stepOracles.ftEval1
-          -- The public evaluation comes from the proof, which carries
-          -- all `nc` chunks, and not from `stepOracles.publicEvals`,
-          -- which the oracle binding has already collapsed to chunk
-          -- zero: the chunked fold below needs every chunk.
-          , publicEvals: stepProofData.evals.public
-          , zEvals: stepProofData.evals.z
-          , witnessEvals: stepProofData.evals.w
-          , coeffEvals: stepProofData.evals.coefficients
-          , sigmaEvals: stepProofData.evals.s
-          , indexEvals: stepProofData.evals.indexEvals
-          }
-
-        -- The Horner-combined view of `chunkedEvals`, carried on the
-        -- `CompiledProof` for the recursive-step consumers that take
-        -- a single-eval `AllEvals`: `Pickles.Prove.Step`'s
-        -- `wrapPrevEvals` and `stepAdvicePrevEvals`.
-        stepGenSelf = domainGenerator selfStepDomainLog2
-        allEvals = collapseChunkedEvals
-          { rounds: reflectType (Proxy :: Proxy StepIPARounds)
-          , zeta: stepOracles.zeta
-          , zetaOmega: stepOracles.zeta * stepGenSelf
-          }
-          chunkedEvals
-
-        outerMpv = reflectType (Proxy @mpv)
-
-        proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
-
-        selfZkRows = zkRowsForNumChunks (reflectType (Proxy :: Proxy stepChunks))
-
-        wrapDvInput =
-          { proof: stepResult.proof
-          , verifierIndex: stepCR.verifierIndex
-          , publicInput: stepResult.publicInputs
-          , chunkedEvals
-          , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
-          , domainLog2: selfStepDomainLog2
-          , zkRows: selfZkRows
-          , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
-          , generator: (domainGenerator selfStepDomainLog2)
-          , shifts: (domainShifts selfStepDomainLog2)
-          , omegaForLagrange: \_ -> one
-          , endo:
-              let EndoScalar e = endoScalar :: EndoScalar StepField in e
-          , linearizationPoly: Linearization.pallas
-          , prevSgs: proveData.prevSgs
-          , prevChallenges: proveData.prevStepChallenges
-          , proofsVerifiedMask
-          }
-
-        F msgStep = stepResult.messagesForNextStepProofDigest
-
-        stepProofSg = (pallasProofData @StepIPARounds stepResult.proof).opening.sg
-
-        dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
-
-        kimchiPrevPadded
-          :: Vector PaddedLength
-               { sgX :: StepField
-               , sgY :: StepField
-               , challenges :: Vector WrapIPARounds WrapField
-               }
-        kimchiPrevPadded =
-          Vector.append (Vector.replicate @padMax padDummies.dummyKimchiPrevEntry)
-            proveDataMax.kimchiPrevEntries
-
-        msgWrap = hashMessagesForNextWrapProofPure dummyWrapExpanded
-          ( MessagesForNextWrapProof
-              { challengePolynomialCommitment: stepProofSg
-              , oldBulletproofChallenges: proveDataMax.msgWrapChallenges
-              }
-          )
-
-        wrapDv = wrapComputeDeferredValues wrapDvInput
-
-        -- The wrap solver's context: statement, advice, and this
-        -- branch's index as `whichBranch`.
-        wrapCtx =
-          { wrapMainConfig:
-              buildWrapMainConfigMulti @branches @mpvMax cfg.srs.vestaSrs
-                { perBranch: perBranchVec
+              stepOracles = proofOraclesRec stepCR.verifierIndex
+                { proof: stepResult.proof
+                , publicInput: stepResult.publicInputs
+                , prevChallenges: stepOraclesPrevChals
                 }
-          , crs: cfg.srs.pallasSrs
-          , publicInput: assembleWrapMainInput
-              { deferredValues: wrapDv
-              , messagesForNextStepProofDigest: msgStep
-              , messagesForNextWrapProofDigest: msgWrap
-              }
-          , advice: buildWrapAdvice @stepChunks
-              { stepProof: stepResult.proof
-              , whichBranch: F (fromBigInt (BigInt.fromInt branchIdx) :: WrapField)
-              , prevUnfinalizedProofs: proveDataMax.prevUnfinalizedProofs
-              , prevMessagesForNextStepProofHash:
-                  F (fromBigInt (toBigInt msgStep) :: WrapField)
-              , prevStepAccs: proveDataMax.prevStepAccs
-              , prevOldBpChals: proveDataMax.slotsValue
-              , prevEvals: proveDataMax.prevEvals
-              , prevWrapDomainIndices:
-                  map (\pv -> F (Curves.fromInt (fromEnum pv) :: WrapField))
-                    proveDataMax.prevWrapDomainIndices
-              }
-          , debug: cfg.debug
-          , proofCache: cfg.proofCache
-          , step:
-              { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest stepCR.verifierIndex))
-              , publicInput: piKey stepResult.publicInputs
-              }
-          , baseCases: Array.zipWith
-              ( \prev evals -> case prev of
-                  Verified _ -> Nothing
-                  BaseCase _ -> Just (valueToFields @WrapField evals)
-              )
-              cachePrevs
-              (Vector.toUnfoldable proveData.prevEvals)
-          , kimchiPrevChallenges: kimchiPrevPadded
-          }
 
-      eWrapProveResult <- wrapSolveAndProve @branches @mpvMax @stepChunks wrapCtx wrapResult
-      case eWrapProveResult of
-        Left e -> pure (Left e)
-        Right wrapProveResult -> do
+              -- The step proof's evaluations, one `PointEval` per
+              -- polynomial per chunk, which the wrap prover consumes as-is.
+              stepProofData = pallasProofData @StepIPARounds stepResult.proof
+              chunkedEvals =
+                { ftEval1: stepOracles.ftEval1
+                -- The public evaluation comes from the proof, which carries
+                -- all `nc` chunks, and not from `stepOracles.publicEvals`,
+                -- which the oracle binding has already collapsed to chunk
+                -- zero: the chunked fold below needs every chunk.
+                , publicEvals: stepProofData.evals.public
+                , zEvals: stepProofData.evals.z
+                , witnessEvals: stepProofData.evals.w
+                , coeffEvals: stepProofData.evals.coefficients
+                , sigmaEvals: stepProofData.evals.s
+                , indexEvals: stepProofData.evals.indexEvals
+                }
 
-          let
-            -- The rule's own public output, which is
-            -- `userPublicOutputFields` — not `publicOutputs`, the
-            -- kimchi public-output vector of digest, unfinalized
-            -- proofs and wrap messages.
-            publicOutput =
-              fieldsToValue @StepField stepResult.userPublicOutputFields
+              -- The Horner-combined view of `chunkedEvals`, carried on the
+              -- `CompiledProof` for the recursive-step consumers that take
+              -- a single-eval `AllEvals`: `Pickles.Prove.Step`'s
+              -- `wrapPrevEvals` and `stepAdvicePrevEvals`.
+              stepGenSelf = domainGenerator selfStepDomainLog2
+              allEvals = collapseChunkedEvals
+                { rounds: reflectType (Proxy :: Proxy StepIPARounds)
+                , zeta: stepOracles.zeta
+                , zetaOmega: stepOracles.zeta * stepGenSelf
+                }
+                chunkedEvals
 
-          let
-            widthData = mkSomeCompiledProofWidthData @mpv @pad
-              { oldBulletproofChallenges: proveData.prevStepChallenges
-              , msgWrapChallenges: proveData.msgWrapChallenges
-              , outerStepChalPolyComms:
-                  map (\e -> AffinePoint { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
-              -- The padded views `mkSomeCompiledProofWidthData`
-              -- precomputes must agree with what `mkStepAdvice` and
-              -- `shapeProveData` put in the pad slots, so the same
-              -- three dummies are handed over here.
-              , dummyOldBp: dummyIpaChallenges.stepExpanded
-              , dummyMsgWrap: dummyIpaChallenges.wrapExpanded
-              , dummyChalPolyComm: dummyWrapSgInStepField
-              }
+              outerMpv = reflectType (Proxy @mpv)
 
-          let
-            statement = ApplicationStatement { input: appInput, output: publicOutput }
+              proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
 
-          pure $ Right $ CompiledProof
-            { statement
-            , wrapProof: wrapProveResult.proof
-            , rawPlonk: toPlonkMinimal wrapDv.plonk
-            , rawBulletproofChallenges: wrapDv.bulletproofPrechallenges
-            , branchData: wrapDv.branchData
-            , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
-            , prevEvals: allEvals
-            , prevEvalsChunked: chunkedEvals
-            -- All `nc` chunks, as in `chunkedEvals` above; a
-            -- recursive consumer reads them back here.
-            , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
-            , challengePolynomialCommitment: stepProofSg
-            , widthData
-            , stepDomainLog2: selfStepDomainLog2
-            }
+              selfZkRows = zkRowsForNumChunks (reflectType (Proxy :: Proxy stepChunks))
+
+              wrapDvInput =
+                { proof: stepResult.proof
+                , verifierIndex: stepCR.verifierIndex
+                , publicInput: stepResult.publicInputs
+                , chunkedEvals
+                , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
+                , domainLog2: selfStepDomainLog2
+                , zkRows: selfZkRows
+                , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
+                , generator: (domainGenerator selfStepDomainLog2)
+                , shifts: (domainShifts selfStepDomainLog2)
+                , omegaForLagrange: \_ -> one
+                , endo:
+                    let EndoScalar e = endoScalar :: EndoScalar StepField in e
+                , linearizationPoly: Linearization.pallas
+                , prevSgs: proveData.prevSgs
+                , prevChallenges: proveData.prevStepChallenges
+                , proofsVerifiedMask
+                }
+
+              F msgStep = stepResult.messagesForNextStepProofDigest
+
+              stepProofSg = (pallasProofData @StepIPARounds stepResult.proof).opening.sg
+
+              dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
+
+              kimchiPrevPadded
+                :: Vector PaddedLength
+                     { sgX :: StepField
+                     , sgY :: StepField
+                     , challenges :: Vector WrapIPARounds WrapField
+                     }
+              kimchiPrevPadded =
+                Vector.append (Vector.replicate @padMax padDummies.dummyKimchiPrevEntry)
+                  proveDataMax.kimchiPrevEntries
+
+              msgWrap = hashMessagesForNextWrapProofPure dummyWrapExpanded
+                ( MessagesForNextWrapProof
+                    { challengePolynomialCommitment: stepProofSg
+                    , oldBulletproofChallenges: proveDataMax.msgWrapChallenges
+                    }
+                )
+
+              wrapDv = wrapComputeDeferredValues wrapDvInput
+
+              -- The wrap solver's context: statement, advice, and this
+              -- branch's index as `whichBranch`.
+              wrapCtx =
+                { wrapMainConfig:
+                    buildWrapMainConfigMulti @branches @mpvMax cfg.srs.vestaSrs
+                      { perBranch: perBranchVec
+                      }
+                , crs: cfg.srs.pallasSrs
+                , publicInput: assembleWrapMainInput
+                    { deferredValues: wrapDv
+                    , messagesForNextStepProofDigest: msgStep
+                    , messagesForNextWrapProofDigest: msgWrap
+                    }
+                , advice: buildWrapAdvice @stepChunks
+                    { stepProof: stepResult.proof
+                    , whichBranch: F (fromBigInt (BigInt.fromInt branchIdx) :: WrapField)
+                    , prevUnfinalizedProofs: proveDataMax.prevUnfinalizedProofs
+                    , prevMessagesForNextStepProofHash:
+                        F (fromBigInt (toBigInt msgStep) :: WrapField)
+                    , prevStepAccs: proveDataMax.prevStepAccs
+                    , prevOldBpChals: proveDataMax.slotsValue
+                    , prevEvals: proveDataMax.prevEvals
+                    , prevWrapDomainIndices:
+                        map (\pv -> F (Curves.fromInt (fromEnum pv) :: WrapField))
+                          proveDataMax.prevWrapDomainIndices
+                    }
+                , debug: cfg.debug
+                , proofCache: cfg.proofCache
+                , step:
+                    { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest stepCR.verifierIndex))
+                    , publicInput: piKey stepResult.publicInputs
+                    }
+                , baseCases: Array.zipWith
+                    ( \prev evals -> case prev of
+                        Verified _ -> Nothing
+                        BaseCase _ -> Just (valueToFields @WrapField evals)
+                    )
+                    cachePrevs
+                    (Vector.toUnfoldable proveData.prevEvals)
+                , kimchiPrevChallenges: kimchiPrevPadded
+                }
+
+            eWrapProveResult <- wrapSolveAndProve @branches @mpvMax @stepChunks wrapCtx wrapResult
+            case eWrapProveResult of
+              Left e -> pure (Left e)
+              Right wrapProveResult -> do
+
+                let
+                  widthData = mkSomeCompiledProofWidthData @mpv @pad
+                    { oldBulletproofChallenges: proveData.prevStepChallenges
+                    , msgWrapChallenges: proveData.msgWrapChallenges
+                    , outerStepChalPolyComms:
+                        map (\e -> AffinePoint { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
+                    -- The padded views `mkSomeCompiledProofWidthData`
+                    -- precomputes must agree with what `mkStepAdvice` and
+                    -- `shapeProveData` put in the pad slots, so the same
+                    -- three dummies are handed over here.
+                    , dummyOldBp: dummyIpaChallenges.stepExpanded
+                    , dummyMsgWrap: dummyIpaChallenges.wrapExpanded
+                    , dummyChalPolyComm: dummyWrapSgInStepField
+                    }
+
+                pure $ Right $ CompiledProof
+                  { statement
+                  , wrapProof: wrapProveResult.proof
+                  , rawPlonk: toPlonkMinimal wrapDv.plonk
+                  , rawBulletproofChallenges: wrapDv.bulletproofPrechallenges
+                  , branchData: wrapDv.branchData
+                  , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
+                  , prevEvals: allEvals
+                  , prevEvalsChunked: chunkedEvals
+                  -- All `nc` chunks, as in `chunkedEvals` above; a
+                  -- recursive consumer reads them back here.
+                  , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
+                  , challengePolynomialCommitment: stepProofSg
+                  , widthData
+                  , stepDomainLog2: selfStepDomainLog2
+                  }
+      pure (Right pending)
 
 compileMulti
   :: forall @outputVal @stepChunks numChunksPred

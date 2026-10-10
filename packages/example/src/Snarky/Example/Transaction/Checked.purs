@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevStatement(..), Slot, SlotWrapKey(..), Verifier, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs)
+import Pickles (ApplicationStatement(..), CompiledProof, PrevStatement(..), Slot, SlotWrapKey(..), Verifier, compileMulti, mkRuleEntry, prevValues, proveBranch, provedPrev, toPrevs)
 import Pickles.Step.Main (RuleOutput)
 import Pickles.Step.Slots (PrevValues)
 import Simple.JSON (class ReadForeign, class WriteForeign)
@@ -304,8 +304,8 @@ compileTxCircuit chainId lagrangeCache srs = do
       cfg
       rules
   let
-    BranchProver baseProver = fst out.provers
-    BranchProver mergeProver = fst (snd out.provers)
+    baseProver = proveBranch (fst out.provers)
+    mergeProver = proveBranch (fst (snd out.provers))
   pure
     { baseProver: \{ env, statement } -> do
         mask <- Ref.new env.mask

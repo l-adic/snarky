@@ -11,7 +11,7 @@
 -- |
 -- | The prover-call shape mirrors the passing `Test.Pickles.Prove.
 -- | TreeProofReturn` (record `{ appInput, prevs }` with
--- | `PrevSlot` providers) — the live `BranchProver` API.
+-- | `PrevSlot` inputs) — the live `BranchProver` API.
 module Bench.Pickles.Prove
   ( prepareProve
   , group
@@ -34,7 +34,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Ref as Ref
-import Pickles (ApplicationStatement(..), BranchProver(..), SlotWrapKey(..), StepField, compileMulti, mkRuleEntry, provedPrev, unprovedPrev)
+import Pickles (ApplicationStatement(..), SlotWrapKey(..), StepField, compileMulti, mkRuleEntry, proveBranch, provedPrev, unprovedPrev)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
@@ -58,8 +58,8 @@ prepareProve srs = do
     (tuple1 treeEntry)
 
   let
-    BranchProver nrrProver = fst nrr.provers
-    BranchProver treeProver = fst tree.provers
+    nrrProver = proveBranch (fst nrr.provers)
+    treeProver = proveBranch (fst tree.provers)
 
   nrrCp <- nrrProver noAdvice { appInput: unit, prevs: unit } >>= case _ of
     Left e -> Exc.throw (show e)

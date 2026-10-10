@@ -28,7 +28,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, proveBranch, provedPrev, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, true_)
@@ -113,7 +113,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       }
       (tuple1 childEntry)
 
-    let BranchProver childProver = fst child.provers
+    let childProver = proveBranch (fst child.provers)
     eChild <- withSpan "[HeterogeneousPrevs] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F (fromInt 7), prevs: unit }
     childCp <- case eChild of
@@ -141,8 +141,8 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       (tuple2 baseEntry absorbEntry)
 
     let
-      BranchProver baseProver = fst app.provers
-      BranchProver absorbProver = fst (snd app.provers)
+      baseProver = proveBranch (fst app.provers)
+      absorbProver = proveBranch (fst (snd app.provers))
 
       runAbsorb
         :: PrevSlot Unit 2 (ApplicationStatement Unit Counts)

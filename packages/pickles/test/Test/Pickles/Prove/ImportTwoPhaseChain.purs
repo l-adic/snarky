@@ -29,7 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, unprovedPrev, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, proveBranch, provedPrev, toPrevs, toVerifiable, unprovedPrev, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, exists, if_, not_, readCVar, true_)
@@ -98,8 +98,8 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       cfg { dump = outputs.dumpAt "two_phase_chain" }
       (tuple2 makeZeroEntry incrementEntry)
     let
-      BranchProver makeZeroProver = fst txs.provers
-      BranchProver incrementProver = fst (snd txs.provers)
+      makeZeroProver = proveBranch (fst txs.provers)
+      incrementProver = proveBranch (fst (snd txs.provers))
     logInfo "[ImportTwoPhaseChain] proving make_zero"
     eTx0 <- withSpan "[ImportTwoPhaseChain] prove make_zero" $ liftEffect $ makeZeroProver noAdvice
       { appInput: F zero, prevs: unit }
@@ -130,7 +130,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       cfg { wrapDomainOverride = Just 14, dump = outputs.dumpAt "chain" }
       (tuple1 chainEntry)
     let
-      BranchProver chainProver = fst chain.provers
+      chainProver = proveBranch (fst chain.provers)
 
       runStep
         :: CompiledProof 1 (ApplicationStatement (F StepField) Unit)

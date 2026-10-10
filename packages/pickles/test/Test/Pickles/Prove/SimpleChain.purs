@@ -26,7 +26,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, unprovedPrev, verify, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, proveBranch, provedPrev, toPrevs, toVerifiable, unprovedPrev, verify, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -88,7 +88,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
       rules
 
-    let BranchProver chainProver = fst output.provers
+    let chainProver = proveBranch (fst output.provers)
 
     -- Every prev is round-tripped through serialization before it is
     -- consumed, so the assertions below also witness that round trip.

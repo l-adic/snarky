@@ -25,7 +25,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, proveBranch, provedPrev, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
@@ -113,8 +113,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       rules
 
     let
-      BranchProver makeZeroProver = fst output.provers
-      BranchProver incrementProver = fst (snd output.provers)
+      makeZeroProver = proveBranch (fst output.provers)
+      incrementProver = proveBranch (fst (snd output.provers))
       -- Every prev is round-tripped through serialization before it is
       -- consumed, so the chain closes only if that is faithful.
       dummies = mkWidthDummies pallasSrs

@@ -27,6 +27,8 @@ module Pickles.Prove.Step
   , stepCompile
   , preComputeStepDomainLog2
   , stepSolveAndProve
+  , stepEvaluate
+  , StepEvaluation
   , mkDummyMsgWrapHash
   ) where
 
@@ -69,11 +71,11 @@ import Pickles.PlonkChecks (collapsePointEval, mapChunkedEvals)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.RuleWitness (ruleWitness)
+import Pickles.RuleWitness (captureAllocations, ruleWitness)
 import Pickles.Step.Advice (SlotProofRequest, StepAdvice(..))
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain, stepMainWithAdvice)
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, runRuleWithInput, stepMain, stepMainAfterRule)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, mkPrevValues)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -85,20 +87,20 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
-import Snarky.Backend.Compile (SolverT, compile, makeSolver')
+import Snarky.Backend.Compile (DeferredSolve, compile, makeDeferredSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
 import Snarky.Backend.Kimchi.ProofCache (Prev, ProofCache, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
-import Snarky.Circuit.CVar (EvaluationError(..), Variable)
+import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (AsProver, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.EvalError (throwEvalError)
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Circuit.Types (class CircuitType, sizeInFields, valueToFields)
+import Snarky.Circuit.Types (class CircuitType, sizeInFields, valueToFields, varToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, toBigInt)
@@ -1295,6 +1297,60 @@ stepSolveAndProve
   -> StepProveInput prevsSpec inputVal len valCarrier
   -> Effect (Either EvaluationError StepProveResult)
 stepSolveAndProve handler ctx rule compileResult input = do
+  evaluated <- stepEvaluate
+    @prevsSpec
+    @outputSize
+    @valCarrier
+    @inputVal
+    @input
+    @outputVal
+    @output
+    @mpvMax
+    @mpvPad
+    handler
+    ctx
+    rule
+    compileResult
+    input
+  case evaluated of
+    Left e -> pure (Left e)
+    Right pending -> pending.prove
+
+-- | Application evaluation retains its witness before resolving proof debt.
+-- | The completion action runs embedded verification and constructs the proof.
+type StepEvaluation =
+  { userPublicOutputFields :: Array StepField
+  , prove :: Effect (Either EvaluationError StepProveResult)
+  }
+
+stepEvaluate
+  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
+       @mpvMax @mpvPad
+       len
+       pad unfsTotal digestPlusUnfs r
+   . CircuitGateConstructor StepField VestaG
+  => SlotWidths prevsSpec len
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
+  => Reflectable outputSize Int
+  => Add pad len PaddedLength
+  => Add mpvPad len mpvMax
+  => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs mpvMax outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => SlotStatementsCarrier prevsSpec valCarrier
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => AdviceHandler r
+  -> StepProveContext len
+  -> StepRuleAt r prevsSpec inputVal input outputVal output
+  -> StepCompileResult
+  -> StepProveInput prevsSpec inputVal len valCarrier
+  -> Effect (Either EvaluationError StepEvaluation)
+stepEvaluate handler ctx rule compileResult input = do
   -- The rule's output cells are internal to the step statement. Read
   -- them after solving; capture source allocations only for fixtures.
   captureRef <- Ref.new Nothing
@@ -1317,120 +1373,115 @@ stepSolveAndProve handler ctx rule compileResult input = do
       }
 
     rawSolver
-      :: SolverT StepField (KimchiConstraint StepField)
-           r
-           Unit
-           (Vector outputSize (F StepField))
+      :: AdviceHandler r
+      -> Unit
+      -> Effect
+           ( Either EvaluationError
+               ( DeferredSolve StepField
+                   { input :: input, output :: RuleOutput prevsSpec output }
+                   (Vector outputSize (F StepField))
+               )
+           )
     rawSolver =
-      makeSolver' { debug: ctx.debug } compileResult.builtState
-        ( \_ ->
-            stepMainWithAdvice
-              @prevsSpec
-              @inputVal
-              @outputVal
-              @valCarrier
-              @mpvMax
-              rule
-              ctx.srsData
-              ctx.dummySg
-              source
-              captureRef
-              ruleCapture
+      makeDeferredSolver' { debug: ctx.debug } compileResult.builtState
+        ( \_ -> captureAllocations ruleCapture $ runRuleWithInput @inputVal rule
+            source.publicInput
+            (source.prevAppStates <#> mkPrevValues @prevsSpec)
+        )
+        ( stepMainAfterRule @prevsSpec @inputVal @outputVal @valCarrier @mpvMax
+            ctx.srsData
+            ctx.dummySg
+            source
+            captureRef
         )
 
-  eRes <- rawSolver handler unit
-
-  case eRes of
-    Left e -> pure (Left (WithContext "stepProve solver" e))
-    Right (Tuple publicOutputs assignments) -> do
-      prepared <- getPrepared
+  evaluated <- rawSolver handler unit
+  case evaluated of
+    Left e -> pure (Left (WithContext "stepEvaluate rule" e))
+    Right pending -> do
       let
-        StepAdvice adv = prepared.advice
-        { witness, publicInputs } = makeWitness
-          { assignments
-          , constraints: map _.variables compileResult.constraints
-          , publicInputs: compileResult.builtState.publicInputs
-          }
-      when ctx.debug do
-        let
-          _ = unsafePerformEffect $
-            dumpRowLabels
-              (Array.length compileResult.builtState.publicInputs)
-              (constraintsToArray compileResult.builtState.constraints)
-        pure unit
-      -- Evaluate the user `publicOutput` FVars `stepMain` wrote to
-      -- `captureRef` against the post-solve assignments. An empty Ref
-      -- means the rule body never ran, which surfaces as a
-      -- `FailedAssertion` rather than a silent array of zeros.
-      captured <- Ref.read captureRef
-      let
-        eUserPublicOutputFields = case captured of
-          Nothing ->
-            Left (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (captureRef was Nothing post-solve)")
-          Just fieldVars ->
-            let
-              evalLookup :: Variable -> Either EvaluationError StepField
-              evalLookup v =
-                maybe (Left (MissingVariable v)) Right (Assignments.lookupFrozen v assignments)
-            in
-              traverse (CVar.eval evalLookup) fieldVars
-      case eUserPublicOutputFields of
+        outputFields = varToFields @StepField @outputVal pending.result.output.publicOutput
+        evalLookup v = maybe (Left (MissingVariable v)) Right
+          (Assignments.lookupFrozen v pending.assignments)
+      case traverse (CVar.eval evalLookup) outputFields of
         Left e -> pure (Left e)
-        Right userPublicOutputFields -> do
-          let
-            p = Lazy.defer \_ -> pallasCreateProofWithPrev
-              { proverIndex: compileResult.proverIndex
-              , witness
-              , prevChallenges:
-                  map
-                    ( \r ->
-                        { sgX: r.sgX
-                        , sgY: r.sgY
-                        , challenges: Vector.toUnfoldable r.challenges
-                        }
-                    )
-                    ( Vector.toUnfoldable adv.kimchiPrevChallenges
-                        :: Array
-                             { sgX :: WrapField
-                             , sgY :: WrapField
-                             , challenges :: Vector StepIPARounds StepField
-                             }
-                    )
-              }
-          proof <-
-            case ctx.proofCache of
-              Nothing -> pure $ Lazy.force p
-              Just cache -> do
-                let vkDigest = BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex))
-                mp <- getPallasProof cache vkDigest publicInputs
-                proof <- case mp of
-                  Just proof -> pure proof
-                  Nothing -> pure $ Lazy.force p
-                capturedRule <- case ruleCapture of
-                  Nothing -> throw "stepProve: missing rule allocation capture"
-                  Just ref -> Ref.read ref
-                let
-                  witness = ruleWitness
-                    (sizeInFields (Proxy @StepField) (Proxy @inputVal))
-                    capturedRule
-                    assignments
-                case witness of
-                  Left e -> throw ("stepProve: the rule's witness: " <> show e)
-                  Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
-                    publicInputs
-                    proof
-                    prepared.cachePrevs
-                    w
-                pure proof
-          pure $ Right
-            { proverIndex: compileResult.proverIndex
-            , verifierIndex: compileResult.verifierIndex
-            , witness
-            , publicInputs
-            , messagesForNextStepProofDigest:
-                Vector.index publicOutputs
-                  (unsafeFinite @outputSize (reflectType (Proxy @mpvMax) * 32))
-            , proof
-            , assignments
-            , userPublicOutputFields
-            }
+        Right userPublicOutputFields -> pure $ Right
+          { userPublicOutputFields
+          , prove: do
+              eRes <- pending.finish
+              case eRes of
+                Left e -> pure (Left (WithContext "stepProve solver" e))
+                Right (Tuple publicOutputs assignments) -> do
+                  prepared <- getPrepared
+                  let
+                    StepAdvice adv = prepared.advice
+                    { witness, publicInputs } = makeWitness
+                      { assignments
+                      , constraints: map _.variables compileResult.constraints
+                      , publicInputs: compileResult.builtState.publicInputs
+                      }
+                  when ctx.debug do
+                    let
+                      _ = unsafePerformEffect $
+                        dumpRowLabels
+                          (Array.length compileResult.builtState.publicInputs)
+                          (constraintsToArray compileResult.builtState.constraints)
+                    pure unit
+                  let
+                    p = Lazy.defer \_ -> pallasCreateProofWithPrev
+                      { proverIndex: compileResult.proverIndex
+                      , witness
+                      , prevChallenges:
+                          map
+                            ( \r ->
+                                { sgX: r.sgX
+                                , sgY: r.sgY
+                                , challenges: Vector.toUnfoldable r.challenges
+                                }
+                            )
+                            ( Vector.toUnfoldable adv.kimchiPrevChallenges
+                                :: Array
+                                     { sgX :: WrapField
+                                     , sgY :: WrapField
+                                     , challenges :: Vector StepIPARounds StepField
+                                     }
+                            )
+                      }
+                  proof <-
+                    case ctx.proofCache of
+                      Nothing -> pure $ Lazy.force p
+                      Just cache -> do
+                        let vkDigest = BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex))
+                        mp <- getPallasProof cache vkDigest publicInputs
+                        proof <- case mp of
+                          Just proof -> pure proof
+                          Nothing -> pure $ Lazy.force p
+                        capturedRule <- case ruleCapture of
+                          Nothing -> throw "stepProve: missing rule allocation capture"
+                          Just ref -> Ref.read ref
+                        let
+                          witness = ruleWitness
+                            (sizeInFields (Proxy @StepField) (Proxy @inputVal))
+                            capturedRule
+                            assignments
+                        case witness of
+                          Left e -> throw ("stepProve: the rule's witness: " <> show e)
+                          Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
+                            publicInputs
+                            proof
+                            prepared.cachePrevs
+                            w
+                        pure proof
+                  pure $ Right
+                    { proverIndex: compileResult.proverIndex
+                    , verifierIndex: compileResult.verifierIndex
+                    , witness
+                    , publicInputs
+                    , messagesForNextStepProofDigest:
+                        Vector.index publicOutputs
+                          (unsafeFinite @outputSize (reflectType (Proxy @mpvMax) * 32))
+                    , proof
+                    , assignments
+                    , userPublicOutputFields
+                    }
+          }

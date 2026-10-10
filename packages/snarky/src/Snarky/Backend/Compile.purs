@@ -18,6 +18,8 @@ module Snarky.Backend.Compile
   , compile'
   , makeSolver
   , makeSolver'
+  , makeDeferredSolver'
+  , DeferredSolve
   , runSolver
   ) where
 
@@ -141,6 +143,72 @@ makeSolver' { debug } compiled circuit = \handler inputs -> do
     Right outVar -> runAsProver handler s.assignments (read outVar) >>= case _ of
       Left e -> pure (Left e)
       Right output -> Assignments.freeze s.assignments <#> (Right <<< Tuple output)
+  where
+  internals = Map.toUnfoldable (internalVariables compiled)
+
+-- | Run a circuit prefix once and retain its live assignments. Completing
+-- | the solve continues from that state and binds the full circuit's outputs.
+-- | The owner must complete a retained solve at most once.
+type DeferredSolve f prefix b =
+  { result :: prefix
+  , assignments :: Assignments.Frozen f
+  , finish :: Effect (Either EvaluationError (Tuple b (Assignments.Frozen f)))
+  }
+
+makeDeferredSolver'
+  :: forall f a b c c' aux r avar bvar prefix
+   . CompileCircuit f c c' aux
+  => SolveCircuit f c'
+  => CheckedType f c' avar
+  => CircuitType f a avar
+  => CircuitType f b bvar
+  => { debug :: Boolean }
+  -> CircuitBuilderState c aux
+  -> (avar -> Snarky f c' r prefix)
+  -> (prefix -> Snarky f c' r bvar)
+  -> AdviceHandler r
+  -> a
+  -> Effect (Either EvaluationError (DeferredSolve f prefix b))
+makeDeferredSolver' { debug } compiled prefix suffix handler inputs = do
+  let
+    n = sizeInFields (Proxy @f) (Proxy @a)
+    m = sizeInFields (Proxy @f) (Proxy @b)
+  -- The mutable store is owned by THIS invocation (the solver closure is
+  -- reused across e.g. QuickCheck trials, so it must not be captured).
+  store <- Assignments.fresh
+  Tuple vars st1 <- allocAssignments (n + m) (valueToFields inputs)
+    { nextVar: v0, assignments: store, debug, labelStack: [], internals, internalsPassed: 0 }
+  let
+    { before: avars, after: bvars } = Array.splitAt n vars
+    avar = fieldsToVar @f @a (map Var avars)
+
+    complete result = do
+      out <- suffix result
+      -- Bind the circuit's output to the preallocated public-output
+      -- variables, then constrain them equal, as the compile did.
+      assignVars bvars (map valueToFields (read @b out))
+      for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
+        assertEqual_ v1 v2
+      pure out
+  Tuple ePrefix prefixState <- runCircuitProver handler st1 (check avar *> prefix avar)
+  case ePrefix of
+    Left e -> pure (Left e)
+    Right result -> do
+      assignments <- Assignments.freeze prefixState.assignments
+      pure $ Right
+        { result
+        , assignments
+        , finish: do
+            Tuple eOut s <- runCircuitProver handler prefixState (complete result)
+            case eOut of
+              Left e -> pure (Left e)
+              Right _
+                | s.internalsPassed /= Array.length internals || s.nextVar /= compiled.nextVar ->
+                    pure $ Left $ FailedAssertion "the prover's run does not match its compiled circuit"
+              Right outVar -> runAsProver handler s.assignments (read outVar) >>= case _ of
+                Left e -> pure (Left e)
+                Right output -> Assignments.freeze s.assignments <#> (Right <<< Tuple output)
+        }
   where
   internals = Map.toUnfoldable (internalVariables compiled)
 

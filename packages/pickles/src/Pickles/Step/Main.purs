@@ -15,6 +15,7 @@ module Pickles.Step.Main
   , runRuleWithInput
   , stepMain
   , stepMainWithAdvice
+  , stepMainAfterRule
   , mpvFrontPad
   , mpvFrontPadVec
   ) where
@@ -627,8 +628,47 @@ stepMainWithAdvice
   -> Ref (Maybe (Array (FVar StepField)))
   -> Maybe RuleCapture
   -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
-stepMainWithAdvice
-  rule
+stepMainWithAdvice rule srsData dummySg source captureRef ruleCapture = do
+  evaluated <- captureAllocations ruleCapture $ runRuleWithInput @inputVal rule
+    source.publicInput
+    (source.prevAppStates <#> mkPrevValues @prevsSpec)
+  stepMainAfterRule @prevsSpec @inputVal @outputVal @valCarrier @mpvMax
+    srsData
+    dummySg
+    source
+    captureRef
+    evaluated
+
+-- | Complete embedded verification using the rule's retained variables.
+stepMainAfterRule
+  :: forall @prevsSpec pad outputSize @inputVal input @outputVal output
+       @valCarrier @mpvMax mpvPad
+       len
+       unfsTotal digestPlusUnfs
+       r
+   . PrimeField StepField
+  => SlotWidths prevsSpec len
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => SlotStatementsCarrier prevsSpec valCarrier
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
+  => Add pad len PaddedLength
+  -- mpvMax-padding; at `mpvPad = 0` it emits nothing.
+  => Add mpvPad len mpvMax
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs mpvMax outputSize
+  => StepMainSrsData len
+  -> AffinePoint StepField
+  -> StepAdviceSource prevsSpec inputVal len valCarrier r
+  -> Ref (Maybe (Array (FVar StepField)))
+  -> { input :: input, output :: RuleOutput prevsSpec output }
+  -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
+stepMainAfterRule
   { blindingH
   , perSlotFopDomainLog2s
   , perSlotNumChunks
@@ -637,12 +677,7 @@ stepMainWithAdvice
   dummySg
   source
   captureRef
-  ruleCapture = do
-  -- Both advice projections are deferred to solve time: compilation
-  -- discards `exists` bodies, so dummy advice is never projected.
-  { input: publicInput, output: ruleOutput } <- captureAllocations ruleCapture $ runRuleWithInput @inputVal rule
-    source.publicInput
-    (source.prevAppStates <#> mkPrevValues @prevsSpec)
+  { input: publicInput, output: ruleOutput } = do
 
   let
     prevs = prevsVector @len ruleOutput.prevs

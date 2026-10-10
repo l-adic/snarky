@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StepField, StepRule, compileMulti, mkRuleEntry, prevValues, provedPrev, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), CompiledProof, ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StepField, StepRule, compileMulti, mkRuleEntry, prevValues, proveBranch, provedPrev, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Safe.Coerce (coerce)
@@ -142,7 +142,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       }
       (tuple1 childEntry)
 
-    let BranchProver childProver = fst child.provers
+    let childProver = proveBranch (fst child.provers)
 
     -- `appInput = F zero` is what the child's `self == 0` assertion
     -- needs.
@@ -188,7 +188,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       }
       (tuple1 sideLoadedEntry)
 
-    let BranchProver chainProver = fst parent.provers
+    let chainProver = proveBranch (fst parent.provers)
 
     let dummies = mkWidthDummies pallasSrs
 

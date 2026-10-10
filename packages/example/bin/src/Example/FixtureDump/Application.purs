@@ -12,7 +12,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId(..))
-import Pickles (BranchProver(..), SlotWrapKey(..), compileMulti, mkRuleEntry, provedPrev)
+import Pickles (SlotWrapKey(..), compileMulti, mkRuleEntry, proveBranch, provedPrev)
 import Snarky.Backend.Kimchi.Impl.Pallas as Pallas
 import Snarky.Backend.Kimchi.Impl.Vesta as Vesta
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
@@ -51,8 +51,8 @@ compileFixture dump cache = do
     }
     (tuple2 baseEntry mergeEntry)
   let
-    BranchProver proveBase = fst out.provers
-    BranchProver proveMerge = fst (snd out.provers)
+    proveBase = proveBranch (fst out.provers)
+    proveMerge = proveBranch (fst (snd out.provers))
   pure
     { srs
     , compiled:
