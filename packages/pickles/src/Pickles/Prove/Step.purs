@@ -1311,12 +1311,8 @@ stepSolveAndProve handler ctx rule compileResult input = do
       { publicInput: pure input.publicInput
       , prevAppStates: pure input.prevAppStates
       , prepare: \requests -> liftEffect do
-          current <- Ref.read preparedRef
-          case current of
-            Just _ -> throwEvalError (FailedAssertion "stepProve: proof advice prepared twice")
-            Nothing -> do
-              prepared <- input.prepare requests
-              Ref.write (Just prepared) preparedRef
+          prepared <- input.prepare requests
+          Ref.write (Just prepared) preparedRef
       , getAdvice: liftEffect (getPrepared <#> _.advice)
       }
 
