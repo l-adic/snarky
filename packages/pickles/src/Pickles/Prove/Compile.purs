@@ -14,13 +14,11 @@ module Pickles.Prove.Compile
   , class SplitPrevs
   , splitPrevs
   , SomePrevSlot
-  , ProveError
-  , StepInputs
+  , module Pickles.Prove.Types
   -- `Tag` carries a `Unique` as its routing key, so the name has to
   -- be reachable; nothing outside builds or inspects one.
   , Unique
   , Tag(..)
-  , BranchProver(..)
   , RuleEntry
   , mkRuleEntry
   , compileMulti
@@ -109,6 +107,7 @@ import Pickles.Prove.Step
   , stepCompile
   , stepSolveAndProve
   ) as PProveStep
+import Pickles.Prove.Types (BranchProver(..), ProveError, StepInputs)
 import Pickles.Prove.Wrap
   ( WrapBranchData
   , WrapCompileResult
@@ -184,12 +183,6 @@ import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Lagrange.Cache (LagrangeCache, pallasOps, vestaOps, warmer)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
-
---------------------------------------------------------------------------------
--- Public types
---------------------------------------------------------------------------------
-
-type ProveError = EvaluationError
 
 --------------------------------------------------------------------------------
 -- Per-slot compile data
@@ -331,14 +324,6 @@ newtype Tag stmt mpv = Tag
   }
 
 derive instance Newtype (Tag stmt mpv) _
-
-type StepInputs :: Type -> Type -> Type -> Type
-type StepInputs prevsSpec inputVal prevsCarrier =
-  { appInput :: inputVal
-  -- | One entry per slot, in slot order: a `PrevSlot` for a compiled
-  -- | slot, a `SideLoadedPrev` for a side-loaded one.
-  , prevs :: prevsCarrier
-  }
 
 -- | What the caller supplies for one prev slot at prove time.
 -- |
@@ -1557,17 +1542,6 @@ type CompileMultiConfig =
   -- | `Nothing` = no dump.
   , dump :: Maybe String
   }
-
--- | The prover for one branch: one `RuleEntry` of the rules yields
--- | one of these, at that branch's shape.
-newtype BranchProver
-  :: Type -> Int -> Type -> Type -> Type -> Row (Type -> Type) -> Type
-newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal r =
-  BranchProver
-    ( AdviceHandler r
-      -> StepInputs prevsSpec inputVal prevsCarrier
-      -> Effect (Either ProveError (CompiledProof mpv (ApplicationStatement inputVal outputVal)))
-    )
 
 -- | A multi-branch compile's verification keys: one `wrap` VK, under
 -- | which every branch's wrap proof verifies — the wrap statement's
