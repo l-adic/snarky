@@ -355,7 +355,7 @@ newtype PrevSlot inputVal n stmt = PrevSlot
   , obtainProof :: Effect (Either ProveError (CompiledProof n stmt))
   }
 
--- | An evaluated rule with a retained witness and a memoized proof.
+-- | An evaluated rule with recorded advice and a memoized proof.
 -- | Only application evaluation can create this handle.
 newtype DeferredProof :: Int -> Type -> Type
 newtype DeferredProof n stmt = DeferredProof
@@ -366,7 +366,7 @@ newtype DeferredProof n stmt = DeferredProof
 deferredStatement :: forall n stmt. DeferredProof n stmt -> stmt
 deferredStatement (DeferredProof p) = p.statement
 
--- | Finish a retained evaluation, reusing its completed proof on later calls.
+-- | Prove an evaluated invocation, reusing its completed proof on later calls.
 proveDeferred :: forall n stmt. DeferredProof n stmt -> Effect (Either ProveError (CompiledProof n stmt))
 proveDeferred (DeferredProof p) = p.prove
 

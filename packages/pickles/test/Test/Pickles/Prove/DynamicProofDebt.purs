@@ -1,5 +1,5 @@
 -- | One compiled incrementer evaluates an alternating sequence before any
--- | proof is requested. Proof debt is discharged from retained witnesses.
+-- | proof is requested. Proving reruns its rule with the recorded advice.
 module Test.Pickles.Prove.DynamicProofDebt (spec) where
 
 import Prelude
@@ -25,7 +25,7 @@ import Pickles (ApplicationStatement(..), CompiledProof(..), PrevStatement(..), 
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.Proof (vestaProofToSerdeJson)
 import Snarky.Circuit.CVar (add_)
-import Snarky.Circuit.DSL (F(..), FVar, const_, exists)
+import Snarky.Circuit.DSL (F(..), FVar, const_, exists, liftEffectSnarky)
 import Snarky.Curves.Class (fromInt)
 import Test.Pickles.Outputs (appOutputs)
 import Test.Pickles.SharedSrs (SharedSrs)
@@ -40,9 +40,9 @@ incrementRule
   -> Ref Int
   -> StepRule Prevs Unit Unit (F StepField) (FVar StepField)
 incrementRule advice ruleEvaluations getPrevs _ = do
+  liftEffectSnarky $ Ref.modify_ (_ + 1) ruleEvaluations
   previous <- exists $ getPrevs <#> prevValues <#> \(s /\ _) -> s
   mustVerify <- exists $ liftEffect $ Ref.read advice
-  _ :: Unit <- exists $ liftEffect $ Ref.modify_ (_ + 1) ruleEvaluations
   let ApplicationStatement { output: counter } = previous
   pure
     { prevs: toPrevs $ PrevStatement { publicInput: previous, proofMustVerify: mustVerify } /\ unit
@@ -54,7 +54,7 @@ statement counter = ApplicationStatement { input: unit, output: F (fromInt count
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.DynamicProofDebt" do
-  it "evaluates once and resolves deferred proofs only when the rule requires them" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
+  it "evaluates on credit and reruns the rule only when its proof is requested" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     outputs <- liftEffect $ appOutputs "DynamicProofDebt"
     mustVerify <- liftEffect $ Ref.new false
     ruleEvaluations <- liftEffect $ Ref.new 0
@@ -69,7 +69,8 @@ spec = describe "Pickles.Prove.DynamicProofDebt" do
       , dump: outputs.dumpAt "incrementer"
       }
       (tuple1 entry)
-    liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 0)
+    -- Count runtime rule executions after compilation has finished.
+    liftEffect $ Ref.write 0 ruleEvaluations
     let
       branch = fst app.provers
       evaluate required prev = do
@@ -99,6 +100,7 @@ spec = describe "Pickles.Prove.DynamicProofDebt" do
         liftEffect $ Ref.write false mustVerify
         finalProof <- liftEffect $ proveDeferred fourth >>= expectRight
         checkProof 4 finalProof
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 6)
         secondProof <- liftEffect $ proveDeferred second >>= expectRight
         checkProof 2 secondProof
         repeated <- liftEffect $ proveDeferred fourth >>= expectRight
@@ -106,7 +108,7 @@ spec = describe "Pickles.Prove.DynamicProofDebt" do
           CompiledProof original = finalProof
           CompiledProof cached = repeated
         vestaProofToSerdeJson cached.wrapProof `shouldEqual` vestaProofToSerdeJson original.wrapProof
-        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 4)
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 8)
 
         -- A deferred invocation with missing debt still yields its statement.
         missing <- liftEffect $ evaluate true (unprovedPrev (statement 4))
@@ -114,14 +116,15 @@ spec = describe "Pickles.Prove.DynamicProofDebt" do
         skipped <- liftEffect $ evaluate false (deferredPrev missing)
         skippedProof <- liftEffect $ proveDeferred skipped >>= expectRight
         checkProof 6 skippedProof
-        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 6)
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 11)
         liftEffect $ proveDeferred missing >>= expectFailure "required proof is missing"
         liftEffect $ proveDeferred missing >>= expectFailure "branch 0 slot 0"
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 12)
 
         -- The same missing debt is required by a subsequent true flag.
         required <- liftEffect $ evaluate true (deferredPrev missing)
         liftEffect $ proveDeferred required >>= expectFailure "required proof is missing"
-        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 7)
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 14)
 
         let
           CompiledProof raw = secondProof
@@ -131,7 +134,7 @@ spec = describe "Pickles.Prove.DynamicProofDebt" do
         liftEffect $ proveDeferred incompatible >>= expectFailure "proof step domain is not a branch"
         forgedStatement <- liftEffect $ evaluate true (provedPrev forged)
         liftEffect $ proveDeferred forgedStatement >>= expectFailure "FailedAssertion"
-        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 9)
+        liftEffect (Ref.read ruleEvaluations) >>= (_ `shouldEqual` 18)
       _ -> liftEffect $ throw "expected four incrementer evaluations"
 
 assertStatement :: Int -> Statement -> Effect Unit
