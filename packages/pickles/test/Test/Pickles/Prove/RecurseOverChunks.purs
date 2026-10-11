@@ -21,7 +21,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), PrevStatement(..), Slot, SlotWrapKey(..), StepRule, compileMulti, evaluateBranch, mkRuleEntry, proveBranch, proveStatement, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (true_)
 import Test.Pickles.Outputs (appOutputs)
@@ -62,12 +62,15 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       }
       (tuple1 chunks2Entry)
 
-    let BranchProver chunks2Prover = fst chunks2.provers
+    let chunks2Prover = evaluateBranch (fst chunks2.provers)
     logInfo "[RecurseOverChunks] proving chunks2"
     eChunks2Cp <- withSpan "[RecurseOverChunks] prove chunks2" $ liftEffect $ chunks2Prover noAdvice
       { appInput: unit, prevs: unit }
-    chunks2Cp <- case eChunks2Cp of
+    chunks2Statement <- case eChunks2Cp of
       Left e -> liftEffect $ Exc.throw ("chunks2Prover: " <> show e)
+      Right p -> pure p
+    chunks2Cp <- liftEffect $ proveStatement chunks2Statement >>= case _ of
+      Left e -> Exc.throw (show e)
       Right p -> pure p
     verify chunks2.verifier (toVerifiable chunks2Cp) `shouldEqual` true
 
@@ -88,11 +91,11 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       }
       (tuple1 recurseEntry)
 
-    let BranchProver recurseProver = fst recurse.provers
+    let recurseProver = proveBranch (fst recurse.provers)
     logInfo "[RecurseOverChunks] proving recurse"
     eRecurseCp <- withSpan "[RecurseOverChunks] prove recurse" $ liftEffect $ recurseProver noAdvice
       { appInput: unit
-      , prevs: tuple1 (InductivePrev chunks2Cp chunks2.tag)
+      , prevs: tuple1 chunks2Statement
       }
     case eRecurseCp of
       Left e -> liftEffect $ Exc.throw ("recurseProver: " <> show e)

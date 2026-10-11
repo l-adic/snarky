@@ -24,7 +24,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (StepField, StepRule, compileMulti, mkRuleEntry, proveBranch, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F, FVar, const_)
 import Test.Pickles.Outputs (appOutputs)
@@ -61,7 +61,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       }
       rules
 
-    let BranchProver nrrProver = fst output.provers
+    let nrrProver = proveBranch (fst output.provers)
     logInfo "[NoRecursionReturn] proving"
     eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit }

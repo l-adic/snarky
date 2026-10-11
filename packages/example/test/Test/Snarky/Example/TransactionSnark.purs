@@ -27,7 +27,7 @@ import Data.MerkleTree.Sparse.Mask (fromSubset)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Pickles (CompiledProof, toVerifiable, verifyBatch)
+import Pickles (CompiledProof, importProof, proveStatement, toVerifiable, verifyBatch)
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Env (Env)
@@ -69,8 +69,12 @@ spec =
           job' <- case decodeBaseJob (encodeBaseJob job) of
             Left e -> liftEffect $ throw ("decodeBaseJob: " <> show e)
             Right j -> pure j
-          liftEffect $ baseProver
-            { env: { mask: job'.mask, tx: job'.tx }, statement: job'.statement }
+          liftEffect do
+            invocation <- baseProver
+              { env: { mask: job'.mask, tx: job'.tx }, statement: job'.statement }
+            proveStatement invocation >>= case _ of
+              Left e -> throw (show e)
+              Right p -> pure p
 
       Log.logInfo env.logger "[TxnSnark] proving base0…"
 
@@ -104,6 +108,14 @@ spec =
       mergeJob <- case decodeMergeJob env (encodeMergeJob { proof1: b0, proof2: b1, statement: mergedStmt }) of
         Left e -> liftEffect $ throw ("decodeMergeJob: " <> show e)
         Right j -> pure j
-      merge <- liftEffect $ mergeProver mergeJob
+      merge <- liftEffect do
+        invocation <- mergeProver
+          { proof1: importProof mergeJob.proof1
+          , proof2: importProof mergeJob.proof2
+          , statement: mergeJob.statement
+          }
+        proveStatement invocation >>= case _ of
+          Left e -> throw (show e)
+          Right p -> pure p
       Log.logInfo env.logger "[TxnSnark] merge proved (from round-tripped job); batch-verifying full chain…"
       verifyBatch verifier (map toVerifiable [ b0, b1, merge ]) `shouldEqual` true

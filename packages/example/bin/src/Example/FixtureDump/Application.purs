@@ -12,7 +12,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId(..))
-import Pickles (BranchProver(..), PrevSlot(..), SlotWrapKey(..), compileMulti, mkRuleEntry)
+import Pickles (SlotWrapKey(..), compileMulti, evaluateBranch, mkRuleEntry)
 import Snarky.Backend.Kimchi.Impl.Pallas as Pallas
 import Snarky.Backend.Kimchi.Impl.Vesta as Vesta
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
@@ -51,20 +51,20 @@ compileFixture dump cache = do
     }
     (tuple2 baseEntry mergeEntry)
   let
-    BranchProver proveBase = fst out.provers
-    BranchProver proveMerge = fst (snd out.provers)
+    evaluateBase = evaluateBranch (fst out.provers)
+    evaluateMerge = evaluateBranch (fst (snd out.provers))
   pure
     { srs
     , compiled:
         { baseProver: \{ env, statement } -> do
             mask <- Ref.new env.mask
-            proveBase (runTransferMaskM { currentTransaction: Just env.tx, mask })
+            evaluateBase (runTransferMaskM { currentTransaction: Just env.tx, mask })
               { appInput: statement, prevs: unit } >>= either (throw <<< show) pure
         , mergeProver: \{ statement, proof1, proof2 } -> do
             mask <- Ref.new (emptyMask :: Mask Depth)
-            proveMerge (runTransferMaskM { currentTransaction: Nothing, mask })
+            evaluateMerge (runTransferMaskM { currentTransaction: Nothing, mask })
               { appInput: statement
-              , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
+              , prevs: tuple2 proof1 proof2
               } >>= either (throw <<< show) pure
         , verifier: out.verifier
         }

@@ -11,7 +11,7 @@
 -- |
 -- | The prover-call shape mirrors the passing `Test.Pickles.Prove.
 -- | TreeProofReturn` (record `{ appInput, prevs }` with
--- | `PrevSlot` constructors) — the live `BranchProver` API.
+-- | `ProofRef` inputs) — the live `BranchProver` API.
 module Bench.Pickles.Prove
   ( prepareProve
   , group
@@ -34,7 +34,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Ref as Ref
-import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), SlotWrapKey(..), StepField, compileMulti, mkRuleEntry)
+import Pickles (ApplicationStatement(..), SlotWrapKey(..), StepField, compileMulti, evaluateBranch, initialStatement, mkRuleEntry, proveBranch, proveStatement)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
@@ -58,31 +58,37 @@ prepareProve srs = do
     (tuple1 treeEntry)
 
   let
-    BranchProver nrrProver = fst nrr.provers
-    BranchProver treeProver = fst tree.provers
+    nrrEvaluate = evaluateBranch (fst nrr.provers)
+    treeEvaluate = evaluateBranch (fst tree.provers)
+    treeProver = proveBranch (fst tree.provers)
 
-  nrrCp <- nrrProver noAdvice { appInput: unit, prevs: unit } >>= case _ of
+  nrrStatement <- nrrEvaluate noAdvice { appInput: unit, prevs: unit } >>= case _ of
+    Left e -> Exc.throw (show e)
+    Right r -> pure r
+  _ <- proveStatement nrrStatement >>= case _ of
     Left e -> Exc.throw (show e)
     Right r -> pure r
 
   let
-    basePrevSelf = BasePrev
-      { dummyStatement: ApplicationStatement { input: unit, output: F (negate one) :: F StepField } }
+    basePrevSelf = initialStatement $ ApplicationStatement { input: unit, output: F (negate one) :: F StepField }
 
   b0 <-
-    treeProver noAdvice
+    treeEvaluate noAdvice
       { appInput: unit
-      , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
+      , prevs: tuple2 nrrStatement basePrevSelf
       } >>= case _ of
       Left e -> Exc.throw (show e)
       Right r -> pure r
+  _ <- proveStatement b0 >>= case _ of
+    Left e -> Exc.throw (show e)
+    Right r -> pure r
 
   pure $ do
     _ <-
       liftEffect
         ( treeProver noAdvice
             { appInput: unit
-            , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)
+            , prevs: tuple2 nrrStatement b0
             }
         ) >>= case _ of
         Left e -> liftEffect $ Exc.throw (show e)

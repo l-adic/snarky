@@ -37,7 +37,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, evaluateBranch, mkRuleEntry, prevValues, proveBranch, proveStatement, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
@@ -94,17 +94,20 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
 
     -- Branch 0 has no prevs of its own, so both of the wrap circuit's
     -- slots are padding.
-    let BranchProver baseProver = fst output.provers
+    let baseProver = evaluateBranch (fst output.provers)
     logInfo "[PaddedWideSlots] proving the padded branch…"
     eRes <- withSpan "[PaddedWideSlots] prove branch 0" $ liftEffect $ baseProver noAdvice
       { appInput: F zero, prevs: unit }
-    b0 <- case eRes of
+    baseStatement <- case eRes of
       Left e -> liftEffect $ Exc.throw ("PaddedWideSlots base prover: " <> show e)
       Right p -> pure p
+    b0 <- liftEffect $ proveStatement baseStatement >>= case _ of
+      Left e -> Exc.throw (show e)
+      Right p -> pure p
 
-    let BranchProver incrementProver = fst (snd (snd output.provers))
+    let incrementProver = proveBranch (fst (snd (snd output.provers)))
     eB1 <- withSpan "[PaddedWideSlots] prove branch 2" $ liftEffect $ incrementProver noAdvice
-      { appInput: F one, prevs: tuple1 (InductivePrev b0 output.tag) }
+      { appInput: F one, prevs: tuple1 baseStatement }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("PaddedWideSlots increment prover: " <> show e)
       Right p -> pure p

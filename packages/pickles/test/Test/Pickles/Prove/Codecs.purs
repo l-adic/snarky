@@ -20,7 +20,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), StepField, compileMulti, mkRuleEntry, toVerifiable, verify)
+import Pickles (StepField, compileMulti, mkRuleEntry, proveBranch, toVerifiable, verify)
 import Pickles.Prove.Codecs (decodeVerifiableProof, decodeVerifier, encodeVerifiableProof, encodeVerifier)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F)
@@ -52,7 +52,7 @@ spec = describe "Pickles.Prove.Codecs" do
         }
         rules
 
-      let BranchProver nrrProver = fst output.provers
+      let nrrProver = proveBranch (fst output.provers)
       logInfo "[Codecs] proving"
       eResult <- withSpan "[Codecs] prove" $ liftEffect $ nrrProver noAdvice
         { appInput: unit, prevs: unit }

@@ -25,7 +25,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (BranchProver(..), StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
+import Pickles (StepField, StepRule, compileMulti, mkRuleEntry, proveBranch, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -87,7 +87,7 @@ spec = describe "Pickles.Prove.Chunks4" do
       }
       rules
 
-    let BranchProver chunks4Prover = fst output.provers
+    let chunks4Prover = proveBranch (fst output.provers)
     logInfo "[Chunks4] proving"
     eResult <- withSpan "[Chunks4] prove" $ liftEffect $ chunks4Prover noAdvice
       { appInput: unit, prevs: unit }

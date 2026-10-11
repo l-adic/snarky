@@ -499,12 +499,12 @@ jobs:
         PICKLES_DUMP_DIR=../pickles-dumps bash scripts/check_certify_failures.sh
 
     # Reconstructed applications invoke the verification and handover capstones directly:
-    # Self recursion, base branches and a two-chunk imported source.
-    - name: Check two apps' links
+    # Self recursion, base branches, a two-chunk source and private proof-debt decisions.
+    - name: Check recursive applications' links
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
-        PICKLES_DUMP_DIR=../pickles-dumps LINKS=TwoPhaseChain,RecurseOverChunks lake exe check-tags
+        PICKLES_DUMP_DIR=../pickles-dumps LINKS=TwoPhaseChain,RecurseOverChunks,DynamicProofDebt lake exe check-tags
 
     # On main only: heterogeneous sources, partial padding and dynamic mustVerify.
     - name: Check additional applications' links

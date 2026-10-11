@@ -21,6 +21,7 @@ import Data.Either (either)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Field (StepField)
+import Pickles.Prove.Compile (ProofRef, importProof)
 import Pickles.Prove.SerializeProof (WidthDummies, decodeCompiledProof, encodeCompiledProof, mkWidthDummies, reconstructCompiledProof, toSerializableCompiledProof)
 import Pickles.Verify (CompiledProof, Verifier, toVerifiable, verifyBatch)
 import Simple.JSON (class ReadForeign, class WriteForeign)
@@ -57,7 +58,7 @@ roundTripJSON srs =
   either (unsafeCrashWith <<< show) identity <<< decodeCompiledProof srs <<< encodeCompiledProof
 
 -- | Round-trip a proof, assert the reconstruction verifies on its own,
--- | and return it for use as a recursive prev, which is the stricter
+-- | and import its statement for use in a recursive slot, which is the stricter
 -- | check.
 roundTripAndVerify
   :: forall mpv stmt stmtVar m
@@ -66,11 +67,11 @@ roundTripAndVerify
   => WidthDummies
   -> Verifier
   -> CompiledProof mpv stmt
-  -> m (CompiledProof mpv stmt)
+  -> m (ProofRef mpv stmt)
 roundTripAndVerify dummies verifier cp = do
   let cp' = roundTrip dummies cp
   liftAff (verifyBatch verifier [ toVerifiable cp' ] `shouldEqual` true)
-  pure cp'
+  pure (importProof cp')
 
 -- | As `roundTripAndVerify`, but through the JSON codec.
 roundTripJSONAndVerify
@@ -82,8 +83,8 @@ roundTripJSONAndVerify
   => Srs r
   -> Verifier
   -> CompiledProof mpv stmt
-  -> m (CompiledProof mpv stmt)
+  -> m (ProofRef mpv stmt)
 roundTripJSONAndVerify srs verifier cp = do
   let cp' = roundTripJSON srs cp
   liftAff (verifyBatch verifier [ toVerifiable cp' ] `shouldEqual` true)
-  pure cp'
+  pure (importProof cp')

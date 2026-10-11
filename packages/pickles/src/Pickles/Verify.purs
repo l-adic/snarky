@@ -221,8 +221,7 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
 -- | What a prover hands over: everything needed to verify one proof
 -- | except the per-tag constants, which live in `Verifier`.
 -- |
--- | `mpv` is the proof system's outer `max_proofs_verified`, which pins
--- | the proof's `Tag _ mpv` and so its system identity. The fields
+-- | `mpv` is the proof system's outer `max_proofs_verified`. The fields
 -- | sized by the rule's own prev count are hidden in `widthData`.
 newtype CompiledProof :: Int -> Type -> Type
 newtype CompiledProof mpv stmtVal = CompiledProof
@@ -335,14 +334,8 @@ toVerifiable (CompiledProof p) =
     p.widthData
 
 -- | A previous proof as the recursive prover needs it: the erased
--- | proof, the constants it is judged against, and the two views
--- | `toVerifiable` drops.
--- |
--- | The step circuit finishes the previous step proof's deferred
--- | arithmetic, so building its advice means replaying the verifier's
--- | computation natively to get the witness. Both `verifier` and
--- | `proof` are here because `expandDeferredForVerify` and
--- | `wrapPublicInputVP` each read from both.
+-- | proof and the two views `toVerifiable` drops. Verification constants
+-- | are supplied separately by the slot's configured source.
 -- |
 -- | `prevEvals` is the chunk-collapsed form, which `VerifiableProof`
 -- | does not keep and the recursive plumbing in `Pickles.Prove.Step`
@@ -350,7 +343,6 @@ toVerifiable (CompiledProof p) =
 -- | since it folds over unpadded accumulators.
 type PrevProofData =
   { proof :: VerifiableProof
-  , verifier :: Verifier
   , prevEvals :: Evals StepField
   , padded :: PaddedAccumulators
   }
@@ -372,12 +364,10 @@ type PaddedAccumulators =
 prevProofDataOf
   :: forall mpv stmtVal stmtVar
    . CircuitType StepField stmtVal stmtVar
-  => Verifier
-  -> CompiledProof mpv stmtVal
+  => CompiledProof mpv stmtVal
   -> PrevProofData
-prevProofDataOf verifier cp@(CompiledProof p) =
+prevProofDataOf cp@(CompiledProof p) =
   { proof: toVerifiable cp
-  , verifier
   , prevEvals: p.prevEvals
   , padded:
       runExists

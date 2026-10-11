@@ -8,7 +8,12 @@ module Snarky.Example.Snark.Worker
   , localSnarkBackend
   ) where
 
+import Prelude
+
+import Data.Either (either)
 import Effect (Effect)
+import Effect.Exception (throw)
+import Pickles (importProof, proveStatement)
 import Snarky.Example.Env (Env)
 import Snarky.Example.Snark.Pool (WorkerBackend, localBackend)
 import Snarky.Example.Snark.Work (Proof, WorkItem(..))
@@ -17,9 +22,12 @@ import Snarky.Example.Transaction (CompiledTx)
 -- | Prove one work item against the compiled program: a `Base` over its witness
 -- | mask, a `Merge` over the two child proofs.
 proveItem :: forall d. CompiledTx d -> WorkItem d -> Effect Proof
-proveItem compiled = case _ of
-  Base { tx, mask, statement } -> compiled.baseProver { env: { tx, mask }, statement }
-  Merge { proof1, proof2, statement } -> compiled.mergeProver { proof1, proof2, statement }
+proveItem compiled item = do
+  invocation <- case item of
+    Base { tx, mask, statement } -> compiled.baseProver { env: { tx, mask }, statement }
+    Merge { proof1, proof2, statement } -> compiled.mergeProver
+      { proof1: importProof proof1, proof2: importProof proof2, statement }
+  proveStatement invocation >>= either (throw <<< show) pure
 
 -- | How the manager obtains a worker backend for snark work: given the host's
 -- | `Env` (its compiled program plus the SRSes), produce a `WorkerBackend`. The

@@ -29,7 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), PrevStatement(..), ProofRef, Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, initialStatement, mkRuleEntry, prevValues, proveBranch, proveStatement, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, exists, if_, not_, readCVar, true_)
@@ -98,8 +98,8 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       cfg { dump = outputs.dumpAt "two_phase_chain" }
       (tuple2 makeZeroEntry incrementEntry)
     let
-      BranchProver makeZeroProver = fst txs.provers
-      BranchProver incrementProver = fst (snd txs.provers)
+      makeZeroProver = proveBranch (fst txs.provers)
+      incrementProver = proveBranch (fst (snd txs.provers))
     logInfo "[ImportTwoPhaseChain] proving make_zero"
     eTx0 <- withSpan "[ImportTwoPhaseChain] prove make_zero" $ liftEffect $ makeZeroProver noAdvice
       { appInput: F zero, prevs: unit }
@@ -108,15 +108,21 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       Right p -> roundTripAndVerify dummies txs.verifier p
     logInfo "[ImportTwoPhaseChain] proving increment"
     eTx1 <- withSpan "[ImportTwoPhaseChain] prove increment" $ liftEffect $ incrementProver noAdvice
-      { appInput: F one, prevs: tuple1 (InductivePrev tx0 txs.tag) }
+      { appInput: F one, prevs: tuple1 tx0 }
     tx1 <- case eTx1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
       Right p -> roundTripAndVerify dummies txs.verifier p
 
     -- The two transactions are at different step domains, so slot 0's
     -- finalize runs at both.
+    tx0Proof <- liftEffect $ proveStatement tx0 >>= case _ of
+      Left e -> Exc.throw (show e)
+      Right p -> pure p
+    tx1Proof <- liftEffect $ proveStatement tx1 >>= case _ of
+      Left e -> Exc.throw (show e)
+      Right p -> pure p
     let domainOf (CompiledProof p) = p.branchData.domainLog2
-    domainOf tx0 `shouldNotEqual` domainOf tx1
+    domainOf tx0Proof `shouldNotEqual` domainOf tx1Proof
 
     chainEntry <- liftEffect $ mkRuleEntry @(F StepField)
       chainRule
@@ -130,36 +136,34 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       cfg { wrapDomainOverride = Just 14, dump = outputs.dumpAt "chain" }
       (tuple1 chainEntry)
     let
-      BranchProver chainProver = fst chain.provers
+      chainProver = proveBranch (fst chain.provers)
 
       runStep
-        :: CompiledProof 1 (ApplicationStatement (F StepField) Unit)
-        -> PrevSlot Unit 2 (ApplicationStatement Unit (F StepField))
+        :: ProofRef 1 (ApplicationStatement (F StepField) Unit)
+        -> ProofRef 2 (ApplicationStatement Unit (F StepField))
         -> Aff (CompiledProof 2 (ApplicationStatement Unit (F StepField)))
       runStep tx selfPrev = do
         eRes <- liftEffect $ chainProver noAdvice
           { appInput: unit
-          , prevs: tuple2 (InductivePrev tx txs.tag) selfPrev
+          , prevs: tuple2 tx selfPrev
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
           Right p -> pure p
 
-      basePrevSelf = BasePrev
-        { dummyStatement: ApplicationStatement { input: unit, output: F (negate one) :: F StepField }
-        }
+      basePrevSelf = initialStatement $ ApplicationStatement { input: unit, output: F (negate one) :: F StepField }
 
     logInfo "[ImportTwoPhaseChain] proving c0 over make_zero"
     c0 <- withSpan "[ImportTwoPhaseChain] prove c0" $ liftAff $ runStep tx0 basePrevSelf
     c0' <- roundTripAndVerify dummies chain.verifier c0
     logInfo "[ImportTwoPhaseChain] proving c1 over increment"
-    c1 <- withSpan "[ImportTwoPhaseChain] prove c1" $ liftAff $ runStep tx1 (InductivePrev c0' chain.tag)
+    c1 <- withSpan "[ImportTwoPhaseChain] prove c1" $ liftAff $ runStep tx1 c0'
     c1' <- roundTripAndVerify dummies chain.verifier c1
     logInfo "[ImportTwoPhaseChain] proving c2 over make_zero"
-    c2 <- withSpan "[ImportTwoPhaseChain] prove c2" $ liftAff $ runStep tx0 (InductivePrev c1' chain.tag)
+    c2 <- withSpan "[ImportTwoPhaseChain] prove c2" $ liftAff $ runStep tx0 c1'
 
     logInfo "[ImportTwoPhaseChain] verifying…"
-    verifyBatch txs.verifier (map toVerifiable [ tx0, tx1 ]) `shouldEqual` true
+    verifyBatch txs.verifier (map toVerifiable [ tx0Proof, tx1Proof ]) `shouldEqual` true
     verifyBatch chain.verifier (map toVerifiable [ c0, c1, c2 ]) `shouldEqual` true
 
     -- The state adds each transaction's value: 0, then 0 + 1, then 1 + 0.

@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), Verifier, compileMulti, mkRuleEntry, prevValues, toPrevs)
+import Pickles (ApplicationStatement(..), PrevStatement(..), ProofRef, Slot, SlotWrapKey(..), Verifier, compileMulti, evaluateBranch, mkRuleEntry, prevValues, toPrevs)
 import Pickles.Step.Main (RuleOutput)
 import Pickles.Step.Slots (PrevValues)
 import Simple.JSON (class ReadForeign, class WriteForeign)
@@ -252,14 +252,14 @@ type BaseProverInput d =
   }
 
 type MergeProverInput =
-  { proof1 :: CompiledProof 2 TxnStmt
-  , proof2 :: CompiledProof 2 TxnStmt
+  { proof1 :: ProofRef 2 TxnStmt
+  , proof2 :: ProofRef 2 TxnStmt
   , statement :: Statement Vesta.ScalarField
   }
 
 type CompiledTx d =
-  { baseProver :: BaseProverInput d -> Effect (CompiledProof 2 TxnStmt)
-  , mergeProver :: MergeProverInput -> Effect (CompiledProof 2 TxnStmt)
+  { baseProver :: BaseProverInput d -> Effect (ProofRef 2 TxnStmt)
+  , mergeProver :: MergeProverInput -> Effect (ProofRef 2 TxnStmt)
   , verifier :: Verifier
   }
 
@@ -304,8 +304,8 @@ compileTxCircuit chainId lagrangeCache srs = do
       cfg
       rules
   let
-    BranchProver baseProver = fst out.provers
-    BranchProver mergeProver = fst (snd out.provers)
+    baseProver = evaluateBranch (fst out.provers)
+    mergeProver = evaluateBranch (fst (snd out.provers))
   pure
     { baseProver: \{ env, statement } -> do
         mask <- Ref.new env.mask
@@ -319,7 +319,7 @@ compileTxCircuit chainId lagrangeCache srs = do
         mask <- Ref.new emptyMask
         mergeProver (runTransferMaskM { currentTransaction: Nothing, mask })
           { appInput: statement
-          , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
+          , prevs: tuple2 proof1 proof2
           } >>= case _ of
           Left err -> throw $ show err
           Right res -> pure res

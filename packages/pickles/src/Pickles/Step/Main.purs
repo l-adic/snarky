@@ -14,6 +14,7 @@ module Pickles.Step.Main
   , liftDummyPerProofUnfinalized
   , runRuleWithInput
   , stepMain
+  , stepMainWithAdvice
   , mpvFrontPad
   , mpvFrontPadVec
   ) where
@@ -49,7 +50,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..), mkSideloadedLagrangeLookup
 import Pickles.RuleWitness (RuleCapture, captureAllocations)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (StepAdvice(..))
+import Pickles.Step.Advice (StepAdvice(..), StepAdviceSource)
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, EncodedPrev, PrevValues, Prevs, mkPrevValues, prevsVector, slotWidthsOf, stepSlotsTyp, withSlotWidth)
 import Pickles.Step.Types (AllocBranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
@@ -61,7 +62,7 @@ import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
-import Snarky.Circuit.DSL.Monad (class CheckedType)
+import Snarky.Circuit.DSL.Monad (class CheckedType, read, readCVar)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
@@ -582,7 +583,51 @@ stepMain
   -> Ref (Maybe (Array (FVar StepField)))
   -> Maybe RuleCapture
   -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
-stepMain
+stepMain rule srsData dummySg advice captureRef ruleCapture =
+  stepMainWithAdvice @prevsSpec @inputVal @outputVal @valCarrier @mpvMax rule srsData dummySg
+    { publicInput: pure advice <#> \(StepAdvice a) -> a.publicInput
+    , prevAppStates: pure advice <#> \(StepAdvice a) -> a.prevAppStates
+    , prepare: \_ -> pure unit
+    , getAdvice: pure advice
+    }
+    captureRef
+    ruleCapture
+
+-- | Run the rule with initial advice, then resolve its proof obligations
+-- | within the same witness computation before allocating verifier data.
+stepMainWithAdvice
+  :: forall @prevsSpec pad outputSize @inputVal input @outputVal output
+       @valCarrier @mpvMax mpvPad
+       len
+       unfsTotal digestPlusUnfs
+       r
+   . PrimeField StepField
+  => SlotWidths prevsSpec len
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => SlotStatementsCarrier prevsSpec valCarrier
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
+  => Add pad len PaddedLength
+  -- mpvMax-padding; at `mpvPad = 0` it emits nothing.
+  => Add mpvPad len mpvMax
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs mpvMax outputSize
+  => ( AsProver StepField r (PrevValues prevsSpec)
+       -> input
+       -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput prevsSpec output)
+     )
+  -> StepMainSrsData len
+  -> AffinePoint StepField
+  -> StepAdviceSource prevsSpec inputVal len valCarrier r
+  -> Ref (Maybe (Array (FVar StepField)))
+  -> Maybe RuleCapture
+  -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
+stepMainWithAdvice
   rule
   { blindingH
   , perSlotFopDomainLog2s
@@ -590,14 +635,14 @@ stepMain
   , perSlotVkBlueprints
   }
   dummySg
-  advice
+  source
   captureRef
   ruleCapture = do
   -- Both advice projections are deferred to solve time: compilation
   -- discards `exists` bodies, so dummy advice is never projected.
   { input: publicInput, output: ruleOutput } <- captureAllocations ruleCapture $ runRuleWithInput @inputVal rule
-    (pure advice <#> \(StepAdvice r) -> r.publicInput)
-    (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
+    source.publicInput
+    (source.prevAppStates <#> mkPrevValues @prevsSpec)
 
   let
     prevs = prevsVector @len ruleOutput.prevs
@@ -615,8 +660,13 @@ stepMain
   -- it never fires at compile time; `stepSolveAndProve` reads the Ref
   -- once the solver completes. The `exists` is at `Unit`
   -- (`sizeInFields = 0`), so it adds no constraints.
-  _ :: Unit <- exists $ liftEffect do
-    Ref.write (Just publicOutputFields) captureRef
+  _ :: Unit <- exists do
+    liftEffect $ Ref.write (Just publicOutputFields) captureRef
+    requests <- forWithIndex prevs \_ prev -> do
+      statement <- traverse (map unwrap <<< readCVar) prev.fields
+      mustVerify <- read prev.proofMustVerify
+      pure { statement, mustVerify }
+    source.prepare requests
 
   -- This compile's own wrap VK, allocated once and reused by every
   -- `BlueprintSelf` slot; `BlueprintExternal` slots ignore it and
@@ -624,7 +674,7 @@ stepMain
   -- these same commitments once, not per slot.
   (VerificationKey sharedVkRec :: VerificationKey WrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField))) <-
     label "exists_wrap_index"
-      $ exists (pure advice <#> \(StepAdvice r) -> r.wrapVerifierIndex)
+      $ exists (source.getAdvice <#> \(StepAdvice r) -> r.wrapVerifierIndex)
   let
     vk =
       { sigma: Vector.take @6 sharedVkRec.sigma
@@ -636,12 +686,12 @@ stepMain
   -- One per-proof witness per slot, each at its slot's own width.
   slotsCarrier <- label "exists_prevs"
     $ existsTyp (stepSlotsTyp slotWidths perSlotNumChunks)
-        (pure advice <#> \(StepAdvice r) -> r.perProofSlotsCarrier)
+        (source.getAdvice <#> \(StepAdvice r) -> r.perProofSlotsCarrier)
 
   -- Uniform across slots, so one `Vector len` rather than a per-slot
   -- carrier.
   rawUnfinalizedProofs <- label "exists_unfinalized"
-    $ exists (pure advice <#> \(StepAdvice r) -> r.publicUnfinalizedProofs)
+    $ exists (source.getAdvice <#> \(StepAdvice r) -> r.publicUnfinalizedProofs)
   unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
 
   -- `messages_for_next_wrap_proof` is allocated in two `exists` — the
@@ -650,9 +700,9 @@ stepMain
   -- output-to-public-input `assertEqual_` on a padded slot ties by
   -- permutation instead of emitting a Generic gate. Either way the
   -- var count is `len + mpvPad = mpvMax`.
-  msgsWrapReal <- exists (pure advice <#> \(StepAdvice r) -> r.messagesForNextWrapProof)
+  msgsWrapReal <- exists (source.getAdvice <#> \(StepAdvice r) -> r.messagesForNextWrapProof)
   msgsWrapPadding <- exists
-    (pure advice <#> \(StepAdvice r) -> Vector.replicate @mpvPad r.messagesForNextWrapProofDummyHash)
+    (source.getAdvice <#> \(StepAdvice r) -> Vector.replicate @mpvPad r.messagesForNextWrapProofDummyHash)
   let
     msgsWrap :: Vector mpvMax (FVar StepField)
     msgsWrap = mpvFrontPadVec msgsWrapPadding msgsWrapReal

@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), PrevStatement(..), ProofRef, Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, evaluateBranch, initialStatement, mkRuleEntry, prevValues, proveStatement, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, addConstraint, assertAny_, const_, equals_, exists, mul_, not_)
@@ -100,26 +100,30 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
       (tuple1 entry)
 
     let
-      BranchProver prover = fst output.provers
+      evaluate = evaluateBranch (fst output.provers)
 
       runStep
-        :: PrevSlot (F StepField) 1 (ApplicationStatement (F StepField) NoOutput)
+        :: ProofRef 1 (ApplicationStatement (F StepField) NoOutput)
         -> F StepField
-        -> Aff (CompiledProof 1 (ApplicationStatement (F StepField) NoOutput))
+        -> Aff (ProofRef 1 (ApplicationStatement (F StepField) NoOutput))
       runStep prevSlot appInput = do
-        eRes <- liftEffect $ prover noAdvice
+        eRes <- liftEffect $ evaluate noAdvice
           { appInput, prevs: tuple1 prevSlot }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("prover: " <> show e)
           Right p -> pure p
 
-      basePrev = BasePrev
-        { dummyStatement: ApplicationStatement { input: F (negate one), output: NoOutput } }
+      basePrev = initialStatement $ ApplicationStatement { input: F (negate one), output: NoOutput }
+      prove ref = liftEffect $ proveStatement ref >>= case _ of
+        Left e -> Exc.throw (show e)
+        Right p -> pure p
 
     logInfo "[SelfRecursiveChunks] proving [step0, wrap0]"
-    b0 <- withSpan "[SelfRecursiveChunks] prove b0" $ liftAff $ runStep basePrev (F zero)
+    statement0 <- liftAff $ runStep basePrev (F zero)
+    b0 <- withSpan "[SelfRecursiveChunks] prove b0" $ prove statement0
     logInfo "[SelfRecursiveChunks] proving [step1, wrap1]"
-    b1 <- withSpan "[SelfRecursiveChunks] prove b1" $ liftAff $ runStep (InductivePrev b0 output.tag) (F one)
+    statement1 <- liftAff $ runStep statement0 (F one)
+    b1 <- withSpan "[SelfRecursiveChunks] prove b1" $ prove statement1
 
     verifyBatch output.verifier (map toVerifiable [ b0, b1 ]) `shouldEqual` true
     let
