@@ -19,7 +19,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Exception (try)
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), StepField, StepRule, WrapVkChunks, bindVk, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), StepField, StepRule, WrapVkChunks, bindVk, compileMulti, importProof, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (digestVk, mkBundle, projectVk) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -78,12 +78,10 @@ spec = describe "Pickles.Prove.SideLoadedBound" do
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
-    -- The width is phantom on both, as in `SideLoadedMain`.
+    -- Lift the completed proof's outer width, as in `SideLoadedMain`.
     let
       childCp2 :: CompiledProof 2 (ApplicationStatement (F StepField) Unit)
       childCp2 = coerce childCp0
-
-      childTag2 = coerce child.tag
 
       childVK = Sideload.mkBundle @WrapVkChunks
         { verifierIndex: child.vks.wrap.verifierIndex
@@ -93,7 +91,7 @@ spec = describe "Pickles.Prove.SideLoadedBound" do
 
       digest = Sideload.digestVk (Sideload.projectVk childVK)
 
-      prevs = tuple1 (SideLoadedPrev childVK (InductivePrev childCp2 childTag2))
+      prevs = tuple1 (SideLoadedPrev childVK (importProof childCp2))
 
     parentEntry <- liftEffect $ mkRuleEntry @Unit sideLoadedBoundRule Vector.nil
     parent <- withSpan "[SideLoadedBound] compile parent" $ liftEffect $ compileMulti @Unit @1 compileCfg

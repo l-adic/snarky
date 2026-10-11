@@ -19,7 +19,7 @@ module Pickles
 
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, SideLoadedPrev(..), Tag(..), compileMulti, mkRuleEntry)
+import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), RuleEntry, SideLoadedPrev(..), Tag(..), compileMulti, mkRuleEntry)
 import Pickles.Prove.ProofRef (ProofRef, importProof, initialStatement, proofRef, proofStatement)
 import Pickles.Prove.Slot (SlotWrapKey(..))
 import Pickles.Prove.Step (StepRule)

@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof, ProofsVerified(..), SideLoadedPrev(..), SideLoadedPrevStatement(..), SideLoadedSlot, StepField, StepRule, compileMulti, importProof, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Safe.Coerce (coerce)
@@ -121,7 +121,7 @@ sideLoadedMainRule getPrevStates self = do
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SideLoadedMain" do
-  it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
+  it "parent prove with a PS-compiled child, width-lifted to N2" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     outputs <- liftEffect $ appOutputs "SideLoadedMain"
 
     -- The child's kimchi wrap verification key becomes the runtime
@@ -154,14 +154,12 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
-    -- The slot expects `CompiledProof 2` and `Tag _ 2`, and the width
-    -- is phantom on both, so `coerce` lifts the bound. Sound only
+    -- The slot expects `CompiledProof 2`, whose outer width is
+    -- phantom, so `coerce` lifts the bound. Sound only
     -- because the child's actual width, 0, is at most 2.
     let
       childCp2 :: CompiledProof 2 (ApplicationStatement (F StepField) Unit)
       childCp2 = coerce childCp0
-
-      childTag2 = coerce child.tag
 
     -- The child's wrap circuit sits at domain log2 13, giving
     -- `actualWrapDomainSize = N0`; its width 0 gives
@@ -202,7 +200,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- `1 + prev == self` branch is the one that holds.
     eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ chainProver noAdvice
       { appInput: F one
-      , prevs: tuple1 (SideLoadedPrev childVK (InductivePrev childCp2' childTag2))
+      , prevs: tuple1 (SideLoadedPrev childVK (importProof childCp2'))
       }
     parentCp <- case eParentCp of
       Left e -> liftEffect $ Exc.throw ("sideloaded chainProver: " <> show e)

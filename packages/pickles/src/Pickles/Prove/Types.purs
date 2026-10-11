@@ -17,7 +17,7 @@ type ProveError = EvaluationError
 type StepInputs :: Type -> Type -> Type -> Type
 type StepInputs prevsSpec inputVal prevsCarrier =
   { appInput :: inputVal
-  -- | One entry per slot, in slot order: a `PrevSlot` for a compiled
+  -- | One entry per slot, in slot order: a `ProofRef` for a compiled
   -- | slot, a `SideLoadedPrev` for a side-loaded one.
   , prevs :: prevsCarrier
   }

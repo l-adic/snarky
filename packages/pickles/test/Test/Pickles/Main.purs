@@ -11,6 +11,7 @@ import Test.Pickles.Prove.Chunks2 as Chunks2
 import Test.Pickles.Prove.Chunks4 as Chunks4
 import Test.Pickles.Prove.Codecs as Codecs
 import Test.Pickles.Prove.CompileValidation as CompileValidation
+import Test.Pickles.Prove.DynamicProofDebt as DynamicProofDebt
 import Test.Pickles.Prove.HeterogeneousPrevs as HeterogeneousPrevs
 import Test.Pickles.Prove.ImportTwoPhaseChain as ImportTwoPhaseChain
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
@@ -56,6 +57,7 @@ spec = beforeAll buildSharedSrs do
   ShapeDump.spec
   EnvironmentDump.spec
   CompileValidation.spec
+  DynamicProofDebt.spec
   NoRecursionReturn.spec
   Codecs.spec
   SimpleChain.spec

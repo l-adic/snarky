@@ -29,7 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevStatement(..), ProofRef, Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, importProof, initialStatement, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, exists, if_, not_, readCVar, true_)
@@ -108,7 +108,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       Right p -> roundTripAndVerify dummies txs.verifier p
     logInfo "[ImportTwoPhaseChain] proving increment"
     eTx1 <- withSpan "[ImportTwoPhaseChain] prove increment" $ liftEffect $ incrementProver noAdvice
-      { appInput: F one, prevs: tuple1 (InductivePrev tx0 txs.tag) }
+      { appInput: F one, prevs: tuple1 (importProof tx0) }
     tx1 <- case eTx1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
       Right p -> roundTripAndVerify dummies txs.verifier p
@@ -134,29 +134,27 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
 
       runStep
         :: CompiledProof 1 (ApplicationStatement (F StepField) Unit)
-        -> PrevSlot Unit 2 (ApplicationStatement Unit (F StepField))
+        -> ProofRef 2 (ApplicationStatement Unit (F StepField))
         -> Aff (CompiledProof 2 (ApplicationStatement Unit (F StepField)))
       runStep tx selfPrev = do
         eRes <- liftEffect $ chainProver noAdvice
           { appInput: unit
-          , prevs: tuple2 (InductivePrev tx txs.tag) selfPrev
+          , prevs: tuple2 (importProof tx) selfPrev
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
           Right p -> pure p
 
-      basePrevSelf = BasePrev
-        { dummyStatement: ApplicationStatement { input: unit, output: F (negate one) :: F StepField }
-        }
+      basePrevSelf = initialStatement (ApplicationStatement { input: unit, output: F (negate one) :: F StepField })
 
     logInfo "[ImportTwoPhaseChain] proving c0 over make_zero"
     c0 <- withSpan "[ImportTwoPhaseChain] prove c0" $ liftAff $ runStep tx0 basePrevSelf
     c0' <- roundTripAndVerify dummies chain.verifier c0
     logInfo "[ImportTwoPhaseChain] proving c1 over increment"
-    c1 <- withSpan "[ImportTwoPhaseChain] prove c1" $ liftAff $ runStep tx1 (InductivePrev c0' chain.tag)
+    c1 <- withSpan "[ImportTwoPhaseChain] prove c1" $ liftAff $ runStep tx1 (importProof c0')
     c1' <- roundTripAndVerify dummies chain.verifier c1
     logInfo "[ImportTwoPhaseChain] proving c2 over make_zero"
-    c2 <- withSpan "[ImportTwoPhaseChain] prove c2" $ liftAff $ runStep tx0 (InductivePrev c1' chain.tag)
+    c2 <- withSpan "[ImportTwoPhaseChain] prove c2" $ liftAff $ runStep tx0 (importProof c1')
 
     logInfo "[ImportTwoPhaseChain] verifying…"
     verifyBatch txs.verifier (map toVerifiable [ tx0, tx1 ]) `shouldEqual` true

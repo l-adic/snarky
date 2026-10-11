@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevStatement(..), ProofRef, Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, importProof, initialStatement, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, addConstraint, assertAny_, const_, equals_, exists, mul_, not_)
@@ -103,7 +103,7 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
       BranchProver prover = fst output.provers
 
       runStep
-        :: PrevSlot (F StepField) 1 (ApplicationStatement (F StepField) NoOutput)
+        :: ProofRef 1 (ApplicationStatement (F StepField) NoOutput)
         -> F StepField
         -> Aff (CompiledProof 1 (ApplicationStatement (F StepField) NoOutput))
       runStep prevSlot appInput = do
@@ -113,13 +113,12 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
           Left e -> liftEffect $ Exc.throw ("prover: " <> show e)
           Right p -> pure p
 
-      basePrev = BasePrev
-        { dummyStatement: ApplicationStatement { input: F (negate one), output: NoOutput } }
+      basePrev = initialStatement (ApplicationStatement { input: F (negate one), output: NoOutput })
 
     logInfo "[SelfRecursiveChunks] proving [step0, wrap0]"
     b0 <- withSpan "[SelfRecursiveChunks] prove b0" $ liftAff $ runStep basePrev (F zero)
     logInfo "[SelfRecursiveChunks] proving [step1, wrap1]"
-    b1 <- withSpan "[SelfRecursiveChunks] prove b1" $ liftAff $ runStep (InductivePrev b0 output.tag) (F one)
+    b1 <- withSpan "[SelfRecursiveChunks] prove b1" $ liftAff $ runStep (importProof b0) (F one)
 
     verifyBatch output.verifier (map toVerifiable [ b0, b1 ]) `shouldEqual` true
     let

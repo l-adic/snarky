@@ -18,6 +18,7 @@ module Pickles.Prove.Step
   , StepRule
   , StepRuleAt
   , StepCompileResult
+  , StepProveInput
   , StepProveResult
   , module Pickles.Step.Advice
   , StepProveContext
@@ -49,6 +50,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
@@ -68,8 +70,8 @@ import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.RuleWitness (ruleWitness)
-import Pickles.Step.Advice (StepAdvice(..))
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.Advice (SlotProofRequest, StepAdvice(..))
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain, stepMainWithAdvice)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
 import Pickles.Step.Types as Step
@@ -908,6 +910,20 @@ type StepCompileResult =
   , constraints :: Array (KimchiRow StepField)
   }
 
+-- | The rule reads claimed statements first. Preparation resolves its
+-- | actual debt and stores proof advice for the remaining witness actions.
+type StepProveInput prevsSpec inputVal len valCarrier =
+  { publicInput :: inputVal
+  , prevAppStates :: valCarrier
+  , prepare :: Vector len SlotProofRequest -> Effect Unit
+  , getPrepared ::
+      Effect
+        { advice ::
+            StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
+        , cachePrevs :: Array (Prev StepField)
+        }
+  }
+
 -- | Artifacts produced by `stepSolveAndProve`.
 type StepProveResult =
   { proverIndex :: ProverIndex VestaG StepField
@@ -1272,13 +1288,9 @@ stepSolveAndProve
   -> StepProveContext len
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
-  -- Per slot, the cache key of the wrap proof this proof verifies there,
-  -- or on a base-case slot the cells allocated for it, recorded on its
-  -- cache entry so a chain is walkable from the cache alone.
-  -> Array (Prev StepField)
+  -> StepProveInput prevsSpec inputVal len valCarrier
   -> Effect (Either EvaluationError StepProveResult)
-stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
+stepSolveAndProve handler ctx rule compileResult input = do
   -- The rule's output cells are internal to the step statement. Read
   -- them after solving; capture source allocations only for fixtures.
   captureRef <- Ref.new Nothing
@@ -1286,7 +1298,12 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
     Nothing -> pure Nothing
     Just _ -> Just <$> Ref.new Nil
   let
-    StepAdvice adv = advice
+    source =
+      { publicInput: pure input.publicInput
+      , prevAppStates: pure input.prevAppStates
+      , prepare: liftEffect <<< input.prepare
+      , getAdvice: liftEffect (input.getPrepared <#> _.advice)
+      }
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
@@ -1296,7 +1313,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
     rawSolver =
       makeSolver' { debug: ctx.debug } compileResult.builtState
         ( \_ ->
-            stepMain
+            stepMainWithAdvice
               @prevsSpec
               @inputVal
               @outputVal
@@ -1305,7 +1322,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
               rule
               ctx.srsData
               ctx.dummySg
-              advice
+              source
               captureRef
               ruleCapture
         )
@@ -1315,7 +1332,9 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
   case eRes of
     Left e -> pure (Left (WithContext "stepProve solver" e))
     Right (Tuple publicOutputs assignments) -> do
+      prepared <- input.getPrepared
       let
+        StepAdvice adv = prepared.advice
         { witness, publicInputs } = makeWitness
           { assignments
           , constraints: map _.variables compileResult.constraints
@@ -1389,7 +1408,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
                   Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
                     publicInputs
                     proof
-                    prevProofs
+                    prepared.cachePrevs
                     w
                 pure proof
           pure $ Right
