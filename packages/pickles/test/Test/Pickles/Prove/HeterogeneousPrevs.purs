@@ -28,7 +28,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
+import Pickles (ApplicationStatement(..), CompiledProof(..), PrevSlot, PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, proveBranch, provedPrev, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, true_)
@@ -113,7 +113,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       }
       (tuple1 childEntry)
 
-    let BranchProver childProver = fst child.provers
+    let childProver = proveBranch (fst child.provers)
     eChild <- withSpan "[HeterogeneousPrevs] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F (fromInt 7), prevs: unit }
     childCp <- case eChild of
@@ -141,8 +141,8 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       (tuple2 baseEntry absorbEntry)
 
     let
-      BranchProver baseProver = fst app.provers
-      BranchProver absorbProver = fst (snd app.provers)
+      baseProver = proveBranch (fst app.provers)
+      absorbProver = proveBranch (fst (snd app.provers))
 
       runAbsorb
         :: PrevSlot Unit 2 (ApplicationStatement Unit Counts)
@@ -150,7 +150,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       runAbsorb selfPrev = do
         eRes <- liftEffect $ absorbProver noAdvice
           { appInput: unit
-          , prevs: tuple2 (InductivePrev childCp' child.tag) selfPrev
+          , prevs: tuple2 (provedPrev childCp') selfPrev
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("absorbProver: " <> show e)
@@ -165,11 +165,11 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
     b0' <- roundTripAndVerify dummies app.verifier b0
 
     logInfo "[HeterogeneousPrevs] proving b1 (absorb over b0)"
-    b1 <- withSpan "[HeterogeneousPrevs] prove b1" $ liftAff $ runAbsorb (InductivePrev b0' app.tag)
+    b1 <- withSpan "[HeterogeneousPrevs] prove b1" $ liftAff $ runAbsorb (provedPrev b0')
     b1' <- roundTripAndVerify dummies app.verifier b1
 
     logInfo "[HeterogeneousPrevs] proving b2 (absorb over b1)"
-    b2 <- withSpan "[HeterogeneousPrevs] prove b2" $ liftAff $ runAbsorb (InductivePrev b1' app.tag)
+    b2 <- withSpan "[HeterogeneousPrevs] prove b2" $ liftAff $ runAbsorb (provedPrev b1')
 
     verifyBatch app.verifier (map toVerifiable [ b0, b1, b2 ]) `shouldEqual` true
 
