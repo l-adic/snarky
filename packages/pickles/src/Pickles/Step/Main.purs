@@ -50,7 +50,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..), mkSideloadedLagrangeLookup
 import Pickles.RuleWitness (RuleCapture, captureAllocations)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (StepAdvice(..), StepAdviceSource)
+import Pickles.Step.Advice (StepAdvice(..), StepAdviceSource, slotProofRequests)
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, EncodedPrev, PrevValues, Prevs, mkPrevValues, prevsVector, slotWidthsOf, stepSlotsTyp, withSlotWidth)
 import Pickles.Step.Types (AllocBranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
@@ -61,7 +61,7 @@ import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, PaddedLength, PerProo
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, read, readCVar, true_)
+import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
@@ -667,10 +667,7 @@ stepMainWithAdvice
   -- (`sizeInFields = 0`), so it adds no constraints.
   _ :: Unit <- exists do
     liftEffect $ Ref.write (Just publicOutputFields) captureRef
-    requests <- forWithIndex prevs \_ prev -> do
-      statement <- traverse (map unwrap <<< readCVar) prev.fields
-      mustVerify <- read prev.proofMustVerify
-      pure { statement, mustVerify }
+    requests <- slotProofRequests prevs
     source.prepare requests
 
   -- This compile's own wrap VK, allocated once and reused by every
