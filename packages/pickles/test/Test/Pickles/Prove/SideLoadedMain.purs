@@ -142,7 +142,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       }
       (tuple1 childEntry)
 
-    let BranchProver childProver = fst child.provers
+    let BranchProver { prove: childProver } = fst child.provers
 
     -- `appInput = F zero` is what the child's `self == 0` assertion
     -- needs.
@@ -188,7 +188,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       }
       (tuple1 sideLoadedEntry)
 
-    let BranchProver chainProver = fst parent.provers
+    let BranchProver { prove: chainProver } = fst parent.provers
 
     let dummies = mkWidthDummies pallasSrs
 

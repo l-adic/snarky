@@ -61,7 +61,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       }
       rules
 
-    let BranchProver nrrProver = fst output.provers
+    let BranchProver { prove: nrrProver } = fst output.provers
     logInfo "[NoRecursionReturn] proving"
     eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit }

@@ -71,7 +71,7 @@ spec = describe "Pickles.Prove.SideLoadedBound" do
     childEntry <- liftEffect $ mkRuleEntry @Unit noRecursionInputRule Vector.nil
     child <- withSpan "[SideLoadedBound] compile child" $ liftEffect $ compileMulti @Unit @1 compileCfg
       (tuple1 childEntry)
-    let BranchProver childProver = fst child.provers
+    let BranchProver { prove: childProver } = fst child.provers
     eChildCp <- withSpan "[SideLoadedBound] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F zero, prevs: unit }
     childCp0 :: CompiledProof 0 (ApplicationStatement (F StepField) Unit) <- case eChildCp of
@@ -96,7 +96,7 @@ spec = describe "Pickles.Prove.SideLoadedBound" do
     parentEntry <- liftEffect $ mkRuleEntry @Unit sideLoadedBoundRule Vector.nil
     parent <- withSpan "[SideLoadedBound] compile parent" $ liftEffect $ compileMulti @Unit @1 compileCfg
       (tuple1 parentEntry)
-    let BranchProver parentProver = fst parent.provers
+    let BranchProver { prove: parentProver } = fst parent.provers
 
     eBound <- withSpan "[SideLoadedBound] prove at the key's digest" $ liftEffect $ parentProver noAdvice
       { appInput: F digest, prevs }

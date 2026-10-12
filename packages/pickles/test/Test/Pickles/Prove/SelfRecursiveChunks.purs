@@ -100,7 +100,7 @@ spec = describe "Pickles.Prove.SelfRecursiveChunks" do
       (tuple1 entry)
 
     let
-      BranchProver prover = fst output.provers
+      BranchProver { prove: prover } = fst output.provers
 
       runStep
         :: ProofRef 1 (ApplicationStatement (F StepField) NoOutput)

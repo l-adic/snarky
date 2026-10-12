@@ -304,8 +304,8 @@ compileTxCircuit chainId lagrangeCache srs = do
       cfg
       rules
   let
-    BranchProver baseProver = fst out.provers
-    BranchProver mergeProver = fst (snd out.provers)
+    BranchProver { prove: baseProver } = fst out.provers
+    BranchProver { prove: mergeProver } = fst (snd out.provers)
   pure
     { baseProver: \{ env, statement } -> do
         mask <- Ref.new env.mask

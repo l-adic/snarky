@@ -98,8 +98,8 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       cfg { dump = outputs.dumpAt "two_phase_chain" }
       (tuple2 makeZeroEntry incrementEntry)
     let
-      BranchProver makeZeroProver = fst txs.provers
-      BranchProver incrementProver = fst (snd txs.provers)
+      BranchProver { prove: makeZeroProver } = fst txs.provers
+      BranchProver { prove: incrementProver } = fst (snd txs.provers)
     logInfo "[ImportTwoPhaseChain] proving make_zero"
     eTx0 <- withSpan "[ImportTwoPhaseChain] prove make_zero" $ liftEffect $ makeZeroProver noAdvice
       { appInput: F zero, prevs: unit }
@@ -130,7 +130,7 @@ spec = describe "Pickles.Prove.ImportTwoPhaseChain" do
       cfg { wrapDomainOverride = Just 14, dump = outputs.dumpAt "chain" }
       (tuple1 chainEntry)
     let
-      BranchProver chainProver = fst chain.provers
+      BranchProver { prove: chainProver } = fst chain.provers
 
       runStep
         :: CompiledProof 1 (ApplicationStatement (F StepField) Unit)

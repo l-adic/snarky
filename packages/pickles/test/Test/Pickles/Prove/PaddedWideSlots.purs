@@ -94,7 +94,7 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
 
     -- Branch 0 has no prevs of its own, so both of the wrap circuit's
     -- slots are padding.
-    let BranchProver baseProver = fst output.provers
+    let BranchProver { prove: baseProver } = fst output.provers
     logInfo "[PaddedWideSlots] proving the padded branch…"
     eRes <- withSpan "[PaddedWideSlots] prove branch 0" $ liftEffect $ baseProver noAdvice
       { appInput: F zero, prevs: unit }
@@ -102,7 +102,7 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
       Left e -> liftEffect $ Exc.throw ("PaddedWideSlots base prover: " <> show e)
       Right p -> pure p
 
-    let BranchProver incrementProver = fst (snd (snd output.provers))
+    let BranchProver { prove: incrementProver } = fst (snd (snd output.provers))
     eB1 <- withSpan "[PaddedWideSlots] prove branch 2" $ liftEffect $ incrementProver noAdvice
       { appInput: F one, prevs: tuple1 (importProof b0) }
     b1 <- case eB1 of

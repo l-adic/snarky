@@ -105,10 +105,11 @@ import Pickles.Prove.Step
   , StepProveResult
   , StepRuleAt
   , preComputeStepDomainLog2
+  , ruleDemands
   , stepCompile
   , stepSolveAndProve
   ) as PProveStep
-import Pickles.Prove.Types (BranchProver(..), ProveError, StepInputs)
+import Pickles.Prove.Types (BranchProver(..), ProveError, SlotProofDemand, StepInputs)
 import Pickles.Prove.Wrap
   ( WrapBranchData
   , WrapCompileResult
@@ -1279,6 +1280,37 @@ resolvePrevSlot source request ref = do
   failure :: forall a. String -> Effect a
   failure = throwEvalError <<< FailedAssertion
 
+-- | A branch's pre-flight: the slot requests the rule returns for these
+-- | inputs, each with the wrap key its proof must be of, resolved as
+-- | `prepare` resolves it: the caller's bundle for a side-loaded slot,
+-- | the source's key otherwise. Runs the rule body and nothing else.
+branchDemands
+  :: forall @prevsSpec mpv mpvMax prevsCarrier valCarrier inputVal r
+   . SplitPrevs prevsSpec prevsCarrier valCarrier mpv
+  => SlotWidths prevsSpec mpv
+  => Reflectable mpv Int
+  => CompileMultiConfig
+  -> WrapCompileResult
+  -> RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r
+  -> AdviceHandler r
+  -> StepInputs prevsSpec inputVal prevsCarrier
+  -> Effect (Either EvaluationError (Array SlotProofDemand))
+branchDemands cfg wrapResult (RuleEntry r) handler { appInput, prevs } = do
+  let
+    widths = slotWidthsOf (Proxy :: Proxy prevsSpec)
+    split = splitPrevs (Proxy :: Proxy prevsSpec) prevs
+    wrapVKAt i slot = case slot.sideLoadedKey of
+      Just bundle -> SideloadBundle.verifierIndex bundle
+      Nothing -> RuntimeSlot.slotWrapVerifierIndex wrapResult.verifierIndex
+        { localMpv: slotWidthInt (widths !! i), source: r.slotVKs !! i }
+  requests <- r.ruleDemandsFn handler { debug: cfg.debug }
+    { publicInput: appInput, prevAppStates: split.values }
+  pure $ requests <#> \reqs -> Vector.toUnfoldable $ split.slots # mapWithIndex \i slot ->
+    let
+      req = reqs !! i
+    in
+      { wrapVK: wrapVKAt i slot, statement: req.statement, mustVerify: req.mustVerify }
+
 --------------------------------------------------------------------------------
 -- The prove call's per-slot data
 --------------------------------------------------------------------------------
@@ -1765,30 +1797,33 @@ instance
       { head: headPins, tail: restPins } = Vector.uncons pins
       { head: headLog2, tail: restLog2s } = Vector.uncons stepDomainLog2s
       { head: headStepCR, tail: restStepResults } = Vector.uncons stepResults
-      headProver = BranchProver \handler stepInputs ->
-        runMultiProverBody
-          @prevsSpec
-          @ruleMpv
-          @valCarrier
-          @inputVal
-          @inputVar
-          @outputVal
-          @outputVar
-          @mpvMax
-          @mpvPad
-          handler
-          ncProxy
-          branchIdx
-          cfg
-          padDummies
-          wrapResult
-          perBranchVec
-          headPins
-          allStepDomainLog2s
-          headStepCR
-          headLog2
-          headEntry
-          stepInputs
+      headProver = BranchProver
+        { prove: \handler stepInputs ->
+            runMultiProverBody
+              @prevsSpec
+              @ruleMpv
+              @valCarrier
+              @inputVal
+              @inputVar
+              @outputVal
+              @outputVar
+              @mpvMax
+              @mpvPad
+              handler
+              ncProxy
+              branchIdx
+              cfg
+              padDummies
+              wrapResult
+              perBranchVec
+              headPins
+              allStepDomainLog2s
+              headStepCR
+              headLog2
+              headEntry
+              stepInputs
+        , demands: branchDemands @prevsSpec cfg wrapResult headEntry
+        }
     restProvers <- buildBranchProvers
       @restCarrier
       @inputVal
@@ -1918,6 +1953,14 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
       -> PProveStep.StepCompileResult
       -> PProveStep.StepProveInput prevsSpec inputVal mpv valCarrier
       -> Effect (Either EvaluationError PProveStep.StepProveResult)
+  -- | The slot requests the rule returns for given inputs, from the
+  -- | rule body alone; `branchDemands` resolves each slot's key around
+  -- | them.
+  , ruleDemandsFn ::
+      AdviceHandler r
+      -> { debug :: Boolean }
+      -> { publicInput :: inputVal, prevAppStates :: valCarrier }
+      -> Effect (Either EvaluationError (Vector mpv SlotProofRequest))
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
   , slotVKs :: Vector mpv (Maybe SlotWrapKey)
@@ -2075,6 +2118,17 @@ mkRuleEntry rule compiledKeys = do
           ctx
           rule
           compileResult
+          input
+    , ruleDemandsFn: \handler debug input ->
+        PProveStep.ruleDemands
+          @prevsSpec
+          @inputVal
+          @inputVar
+          @outputVal
+          @outputVar
+          handler
+          debug
+          rule
           input
     , slotVKs
     }

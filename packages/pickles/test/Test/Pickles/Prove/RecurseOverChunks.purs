@@ -62,7 +62,7 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       }
       (tuple1 chunks2Entry)
 
-    let BranchProver chunks2Prover = fst chunks2.provers
+    let BranchProver { prove: chunks2Prover } = fst chunks2.provers
     logInfo "[RecurseOverChunks] proving chunks2"
     eChunks2Cp <- withSpan "[RecurseOverChunks] prove chunks2" $ liftEffect $ chunks2Prover noAdvice
       { appInput: unit, prevs: unit }
@@ -88,7 +88,7 @@ spec = describe "Pickles.Prove.RecurseOverChunks" do
       }
       (tuple1 recurseEntry)
 
-    let BranchProver recurseProver = fst recurse.provers
+    let BranchProver { prove: recurseProver } = fst recurse.provers
     logInfo "[RecurseOverChunks] proving recurse"
     eRecurseCp <- withSpan "[RecurseOverChunks] prove recurse" $ liftEffect $ recurseProver noAdvice
       { appInput: unit

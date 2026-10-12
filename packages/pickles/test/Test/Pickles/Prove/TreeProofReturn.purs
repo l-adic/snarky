@@ -91,7 +91,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       }
       nrrRules
 
-    let BranchProver nrrProver = fst nrr.provers
+    let BranchProver { prove: nrrProver } = fst nrr.provers
     logInfo "[TreeProofReturn] proving nrr"
     eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit }
@@ -118,7 +118,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       }
       treeRules
 
-    let BranchProver treeProver = fst tree.provers
+    let BranchProver { prove: treeProver } = fst tree.provers
 
     -- Every prev is round-tripped through serialization before it is
     -- consumed, so the chain closes only if that is faithful.

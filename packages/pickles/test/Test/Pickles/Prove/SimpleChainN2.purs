@@ -93,7 +93,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
       cfg
       rules
 
-    let BranchProver prover = fst out.provers
+    let BranchProver { prove: prover } = fst out.provers
 
     -- Every prev is round-tripped through serialization before it is
     -- consumed, so the chain closes only if that is faithful.

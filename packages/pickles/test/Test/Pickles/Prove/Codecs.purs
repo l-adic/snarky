@@ -52,7 +52,7 @@ spec = describe "Pickles.Prove.Codecs" do
         }
         rules
 
-      let BranchProver nrrProver = fst output.provers
+      let BranchProver { prove: nrrProver } = fst output.provers
       logInfo "[Codecs] proving"
       eResult <- withSpan "[Codecs] prove" $ liftEffect $ nrrProver noAdvice
         { appInput: unit, prevs: unit }

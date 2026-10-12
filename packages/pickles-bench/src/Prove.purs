@@ -58,8 +58,8 @@ prepareProve srs = do
     (tuple1 treeEntry)
 
   let
-    BranchProver nrrProver = fst nrr.provers
-    BranchProver treeProver = fst tree.provers
+    BranchProver { prove: nrrProver } = fst nrr.provers
+    BranchProver { prove: treeProver } = fst tree.provers
 
   nrrCp <- nrrProver noAdvice { appInput: unit, prevs: unit } >>= case _ of
     Left e -> Exc.throw (show e)

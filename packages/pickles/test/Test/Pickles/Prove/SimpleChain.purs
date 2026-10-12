@@ -88,7 +88,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
       rules
 
-    let BranchProver chainProver = fst output.provers
+    let BranchProver { prove: chainProver } = fst output.provers
 
     -- Every prev is round-tripped through serialization before it is
     -- consumed, so the assertions below also witness that round trip.

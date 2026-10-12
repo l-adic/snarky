@@ -3,6 +3,7 @@ module Test.Pickles.Prove.DynamicProofDebt (spec) where
 import Prelude
 
 import Colog (LoggerT, Message)
+import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
@@ -16,6 +17,7 @@ import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, initialStatement, mkRuleEntry, prevValues, proofRef, proofStatement, toPrevs, toVerifiable, verify)
 import Pickles.Prove.Step (ruleDemands)
+import Pickles.VerificationKey (verifierIndexDigest)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, const_, exists, valueToFields)
@@ -89,10 +91,13 @@ spec = describe "Pickles.Prove.DynamicProofDebt" do
         }
         (tuple1 entry)
       let
-        prover@(BranchProver prove) = fst compiled.provers
-        childProver = BranchProver \handler input -> do
-          Ref.modify_ (_ + 1) childInvocations
-          prove handler input
+        prover@(BranchProver { prove, demands }) = fst compiled.provers
+        childProver = BranchProver
+          { prove: \handler input -> do
+              Ref.modify_ (_ + 1) childInvocations
+              prove handler input
+          , demands
+          }
 
         proveParent required previous expected = do
           result <- liftEffect $ prove noAdvice { appInput: required, prevs: tuple1 previous }
@@ -116,19 +121,35 @@ spec = describe "Pickles.Prove.DynamicProofDebt" do
       claim.output `shouldEqual` F (fromInt 2 :: StepField)
       liftEffect (Ref.read executions) >>= (_ `shouldEqual` 0)
 
+      -- The pre-flight names the proof the solve will demand, with the
+      -- key it must be of, from a statement alone: the rule body runs
+      -- once, no child is invoked.
+      preflight <- liftEffect $ demands noAdvice
+        { appInput: true, prevs: tuple1 (initialStatement (statement false 1)) }
+      case preflight of
+        Right [ demanded ] -> do
+          demanded.statement `shouldEqual` valueToFields @StepField (statement false 1)
+          demanded.mustVerify `shouldEqual` true
+          verifierIndexDigest demanded.wrapVK `shouldEqual`
+            verifierIndexDigest compiled.vks.wrap.verifierIndex
+        Right other -> liftEffect $ throw ("one slot expected, got " <> show (Array.length other))
+        Left e -> liftEffect $ throw (show e)
+      liftEffect (Ref.read childInvocations) >>= (_ `shouldEqual` 0)
+      liftEffect (Ref.read executions) >>= (_ `shouldEqual` 1)
+
       -- Iteration 3 reads the claimed output of iteration 2. Neither
       -- pending child invocation is requested when its debt is false.
       proveParent false second 3
       liftEffect (Ref.read childInvocations) >>= (_ `shouldEqual` 0)
-      liftEffect (Ref.read executions) >>= (_ `shouldEqual` 1)
+      liftEffect (Ref.read executions) >>= (_ `shouldEqual` 2)
 
       -- Iteration 2 requires iteration 1. The parent runs once and the
       -- requested child runs once, with its own assignments.
       proveParent true first 2
       liftEffect (Ref.read childInvocations) >>= (_ `shouldEqual` 1)
-      liftEffect (Ref.read executions) >>= (_ `shouldEqual` 3)
+      liftEffect (Ref.read executions) >>= (_ `shouldEqual` 4)
 
       -- Another parent shares the same reference and reuses its proof.
       proveParent true first 2
       liftEffect (Ref.read childInvocations) >>= (_ `shouldEqual` 1)
-      liftEffect (Ref.read executions) >>= (_ `shouldEqual` 4)
+      liftEffect (Ref.read executions) >>= (_ `shouldEqual` 5)

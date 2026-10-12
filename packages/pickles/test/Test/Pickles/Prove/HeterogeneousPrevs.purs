@@ -113,7 +113,7 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       }
       (tuple1 childEntry)
 
-    let BranchProver childProver = fst child.provers
+    let BranchProver { prove: childProver } = fst child.provers
     eChild <- withSpan "[HeterogeneousPrevs] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F (fromInt 7), prevs: unit }
     childCp <- case eChild of
@@ -141,8 +141,8 @@ spec = describe "Pickles.Prove.HeterogeneousPrevs" do
       (tuple2 baseEntry absorbEntry)
 
     let
-      BranchProver baseProver = fst app.provers
-      BranchProver absorbProver = fst (snd app.provers)
+      BranchProver { prove: baseProver } = fst app.provers
+      BranchProver { prove: absorbProver } = fst (snd app.provers)
 
       runAbsorb
         :: ProofRef 2 (ApplicationStatement Unit Counts)

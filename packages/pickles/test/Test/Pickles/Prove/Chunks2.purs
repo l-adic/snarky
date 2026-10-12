@@ -93,7 +93,7 @@ spec = describe "Pickles.Prove.Chunks2" do
       }
       rules
 
-    let BranchProver chunks2Prover = fst output.provers
+    let BranchProver { prove: chunks2Prover } = fst output.provers
     logInfo "[Chunks2] proving"
     eResult <- withSpan "[Chunks2] prove" $ liftEffect $ chunks2Prover noAdvice
       { appInput: unit, prevs: unit }

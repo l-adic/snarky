@@ -113,8 +113,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       rules
 
     let
-      BranchProver makeZeroProver = fst output.provers
-      BranchProver incrementProver = fst (snd output.provers)
+      BranchProver { prove: makeZeroProver } = fst output.provers
+      BranchProver { prove: incrementProver } = fst (snd output.provers)
       -- Every prev is round-tripped through serialization before it is
       -- consumed, so the chain closes only if that is faithful.
       dummies = mkWidthDummies pallasSrs

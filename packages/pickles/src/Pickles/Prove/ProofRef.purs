@@ -54,7 +54,7 @@ proofRef
      , prevs :: prevsCarrier
      }
   -> Effect (ProofRef n (ApplicationStatement inputVal outputVal))
-proofRef (BranchProver prove) handler { statement, prevs } = do
+proofRef (BranchProver { prove }) handler { statement, prevs } = do
   state <- Ref.new $ Pending do
     let ApplicationStatement claimed = statement
     proof@(CompiledProof completed) <-

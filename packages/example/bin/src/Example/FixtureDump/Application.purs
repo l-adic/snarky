@@ -51,8 +51,8 @@ compileFixture dump cache = do
     }
     (tuple2 baseEntry mergeEntry)
   let
-    BranchProver proveBase = fst out.provers
-    BranchProver proveMerge = fst (snd out.provers)
+    BranchProver { prove: proveBase } = fst out.provers
+    BranchProver { prove: proveMerge } = fst (snd out.provers)
   pure
     { srs
     , compiled:
