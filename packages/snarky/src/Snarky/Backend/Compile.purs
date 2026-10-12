@@ -33,8 +33,8 @@ import Effect (Effect)
 import Snarky.Backend.Advice (AdviceHandler, noAdvice)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, allocVars, finalize, initialBuilderState, internalVariables, runCircuitBuilder)
-import Snarky.Backend.Prover (class SolveCircuit, allocAssignments, runCircuitProver)
-import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, v0)
+import Snarky.Backend.Prover (class SolveCircuit, allocAssignments, initialProverState, runCircuitProver)
+import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CheckedType, Snarky, assignVars, check, read, runAsProver)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
@@ -113,9 +113,8 @@ makeSolver' { debug } compiled circuit = \handler inputs -> do
     m = sizeInFields (Proxy @f) (Proxy @b)
   -- The mutable store is owned by THIS invocation (the solver closure is
   -- reused across e.g. QuickCheck trials, so it must not be captured).
-  store <- Assignments.fresh
-  Tuple vars st1 <- allocAssignments (n + m) (valueToFields inputs)
-    { nextVar: v0, assignments: store, debug, labelStack: [], internals, internalsPassed: 0 }
+  st0 <- initialProverState { debug } internals
+  Tuple vars st1 <- allocAssignments (n + m) (valueToFields inputs) st0
   let
     { before: avars, after: bvars } = Array.splitAt n vars
     avar = fieldsToVar @f @a (map Var avars)
