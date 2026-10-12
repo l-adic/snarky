@@ -26,6 +26,7 @@ module Pickles.Prove.Step
   , buildSlotAdvice
   , stepCompile
   , preComputeStepDomainLog2
+  , ruleDemands
   , stepSolveAndProve
   , mkDummyMsgWrapHash
   ) where
@@ -70,10 +71,10 @@ import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.RuleWitness (ruleWitness)
-import Pickles.Step.Advice (SlotProofRequest, StepAdvice(..))
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain, stepMainWithAdvice)
+import Pickles.Step.Advice (SlotProofRequest, StepAdvice(..), slotProofRequests)
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, runRuleWithInput, stepMain, stepMainWithAdvice)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, mkPrevValues, prevsVector)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -91,9 +92,10 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIn
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
 import Snarky.Backend.Kimchi.ProofCache (Prev, ProofCache, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
+import Snarky.Backend.Prover (evalCircuit)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (AsProver, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (AsProver, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits, runAsProver)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
@@ -1257,6 +1259,34 @@ preComputeStepDomainLog2 handler ctx rule = do
   ceilLog2 n = go 0 1
     where
     go acc p = if p >= n then acc else go (acc + 1) (p * 2)
+
+-- | The proof debt a rule returns for given inputs, learned without the
+-- | step circuit: the rule body runs alone under the prover, with the
+-- | advice handler and inputs the full solve gets, and its returned
+-- | prevs are read back as slot requests. The full solve recomputes the
+-- | same requests at its `prepare` point, so a caller can resolve the
+-- | debt before it holds the proofs.
+ruleDemands
+  :: forall @prevsSpec @inputVal @input @outputVal @output len valCarrier r
+   . SlotWidths prevsSpec len
+  => Reflectable len Int
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => SlotStatementsCarrier prevsSpec valCarrier
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => AdviceHandler r
+  -> { debug :: Boolean }
+  -> StepRuleAt r prevsSpec inputVal input outputVal output
+  -> { publicInput :: inputVal, prevAppStates :: valCarrier }
+  -> Effect (Either EvaluationError (Vector len SlotProofRequest))
+ruleDemands handler debug rule input = do
+  ran <- evalCircuit debug handler $ runRuleWithInput @inputVal rule
+    (pure input.publicInput)
+    (pure (mkPrevValues @prevsSpec input.prevAppStates))
+  case ran of
+    Left e -> pure (Left e)
+    Right { result, assignments } ->
+      runAsProver handler assignments (slotProofRequests (prevsVector @len result.output.prevs))
 
 -- | Solve phase of the step prover: runs the solver on a compiled
 -- | circuit and the real advice, and creates the kimchi proof. Its

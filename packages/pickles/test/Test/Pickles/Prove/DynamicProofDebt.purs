@@ -15,9 +15,10 @@ import Effect.Exception (throw)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Pickles (ApplicationStatement(..), BranchProver(..), CompiledProof(..), PrevStatement(..), Slot, SlotWrapKey(..), StepField, StepRule, compileMulti, initialStatement, mkRuleEntry, prevValues, proofRef, proofStatement, toPrevs, toVerifiable, verify)
+import Pickles.Prove.Step (ruleDemands)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.CVar (add_)
-import Snarky.Circuit.DSL (BoolVar, F(..), FVar, const_, exists)
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar, const_, exists, valueToFields)
 import Snarky.Curves.Class (fromInt)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -49,6 +50,28 @@ statement required output = ApplicationStatement { input: required, output: F (f
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.DynamicProofDebt" do
+  -- The rule body alone yields the requests the full solve prepares
+  -- from, without a compiled circuit or any child proof.
+  it "reads the rule's proof debt without proving"
+    \_ -> do
+      executions <- liftEffect $ Ref.new 0
+      let
+        demands required previous = do
+          result <- liftEffect $
+            ruleDemands @IncrementPrevs @Boolean @(BoolVar StepField) @(F StepField) @(FVar StepField)
+              noAdvice
+              { debug: true }
+              (incrementRule executions)
+              { publicInput: required, prevAppStates: tuple1 previous }
+          case result of
+            Left e -> liftEffect $ throw (show e)
+            Right requests -> pure (Vector.toUnfoldable requests :: Array _)
+      demands true (statement false 1) >>= shouldEqual
+        [ { statement: valueToFields @StepField (statement false 1), mustVerify: true } ]
+      demands false (statement true 2) >>= shouldEqual
+        [ { statement: valueToFields @StepField (statement true 2), mustVerify: false } ]
+      liftEffect (Ref.read executions) >>= (_ `shouldEqual` 2)
+
   -- One scenario compiles the application once and shares it across all
   -- demand and cache checks. SRS setup remains the suite's beforeAll hook.
   it "skips debt on an odd iteration and reuses a child proof on even iterations"
