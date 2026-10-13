@@ -9,18 +9,15 @@
 -- | the branches. `RuleEntry` is one branch; `runMultiProverBody` is
 -- | one branch's prover.
 module Pickles.Prove.Compile
-  ( PrevSlot(..)
-  , SideLoadedPrev(..)
+  ( SideLoadedPrev(..)
   , class SplitPrevs
   , splitPrevs
   , SomePrevSlot
-  , ProveError
-  , StepInputs
+  , module Pickles.Prove.Types
   -- `Tag` carries a `Unique` as its routing key, so the name has to
   -- be reachable; nothing outside builds or inspects one.
   , Unique
   , Tag(..)
-  , BranchProver(..)
   , RuleEntry
   , mkRuleEntry
   , compileMulti
@@ -49,6 +46,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Either (Either(..), either, note)
 import Data.Enum (fromEnum)
+import Data.Exists (runExists)
 import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
@@ -83,6 +81,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval, padChunkedEvals, singleChunkEvals)
 import Pickles.ProofsVerified (ProofsVerified(..), allPossibleDomainLog2s, boolVecToProofsVerified)
+import Pickles.Prove.ProofRef (ProofRef, localProofProvider, proofStatement)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
@@ -100,15 +99,17 @@ import Pickles.Prove.Step
   , mkDummyMsgWrapHash
   )
 import Pickles.Prove.Step
-  ( StepAdvice(..)
-  , StepCompileResult
+  ( StepCompileResult
   , StepProveContext
+  , StepProveInput
   , StepProveResult
   , StepRuleAt
   , preComputeStepDomainLog2
+  , ruleDemands
   , stepCompile
   , stepSolveAndProve
   ) as PProveStep
+import Pickles.Prove.Types (BranchProver(..), ProveError, SlotProofDemand, StepInputs)
 import Pickles.Prove.Wrap
   ( WrapBranchData
   , WrapCompileResult
@@ -121,6 +122,7 @@ import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Sideload.Bundle (Bundle, projectVk, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (Compiled, SideLoaded, SlotOf)
+import Pickles.Step.Advice (SlotProofRequest)
 import Pickles.Step.Dummy
   ( baseCaseDummies
   , dummyWrapProof
@@ -168,11 +170,12 @@ import Snarky.Backend.Kimchi.Proof
   ) as ProofFFI
 import Snarky.Backend.Kimchi.ProofCache (Prev(..), ProofCache, piKey, vestaVerifierIndexJsonKey)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
-import Snarky.Circuit.CVar (EvaluationError)
+import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.DSL (F(..), UnChecked(..), coerceViaBits, valueToFields)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
+import Snarky.Circuit.EvalError (catchEvalError, throwEvalError)
 import Snarky.Circuit.Kimchi (fromShifted, toShifted) as Kimchi
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Types (class CircuitType, fieldsToValue, sizeInFields)
@@ -184,12 +187,6 @@ import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Lagrange.Cache (LagrangeCache, pallasOps, vestaOps, warmer)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
-
---------------------------------------------------------------------------------
--- Public types
---------------------------------------------------------------------------------
-
-type ProveError = EvaluationError
 
 --------------------------------------------------------------------------------
 -- Per-slot compile data
@@ -316,14 +313,11 @@ uniqueCounter = unsafePerformEffect (Ref.new 0)
 newUnique :: Effect Unique
 newUnique = Unique <$> Ref.modify (_ + 1) uniqueCounter
 
--- | The identity of one compiled rule: a `unique` routing key, fresh
--- | on every compile, and the rule's `verifier`. Produced by
--- | `compileMulti`, and supplied back alongside a proof by
--- | `InductivePrev`.
+-- | The identity and verifier of a compiled application, produced by
+-- | `compileMulti`.
 -- |
--- | The phantom `(stmt, mpv)` keep tags of different-shape rules from
--- | being substituted for each other; two same-shape rules are told
--- | apart only at runtime, by `unique`.
+-- | The phantom `(stmt, mpv)` record the statement type and outer width.
+-- | `unique` distinguishes separate compilations with the same shape.
 newtype Tag :: Type -> Int -> Type
 newtype Tag stmt mpv = Tag
   { unique :: Unique
@@ -332,50 +326,49 @@ newtype Tag stmt mpv = Tag
 
 derive instance Newtype (Tag stmt mpv) _
 
-type StepInputs :: Type -> Type -> Type -> Type
-type StepInputs prevsSpec inputVal prevsCarrier =
-  { appInput :: inputVal
-  -- | One entry per slot, in slot order: a `PrevSlot` for a compiled
-  -- | slot, a `SideLoadedPrev` for a side-loaded one.
-  , prevs :: prevsCarrier
-  }
+-- | Internal advice selection, created only after reading the rule's debt.
+data ResolvedPrevSlot :: Int -> Type -> Type
+data ResolvedPrevSlot n stmt
+  = SkippedPrev stmt
+  | RequiredPrev (CompiledProof n stmt)
 
--- | What the caller supplies for one prev slot at prove time.
--- |
--- | * `BasePrev` — no previous proof for this slot. Its
--- |   `dummyStatement` is circuit-irrelevant, since the slot's
--- |   `proofMustVerify` is `false`, but it still fills that slot's
--- |   entry of `prevAppStates` in advice, so it has to typecheck as
--- |   the prev rule's full statement.
--- | * `InductivePrev` — a real previous proof, together with the
--- |   `Tag` of the rule that produced it.
--- |
--- | The slot's `n` is the outer `max_proofs_verified`, not the prev
--- | rule's own width: `CompiledProof` hides that width inside
--- | `widthData`, so `n` is the same across every branch's proofs.
-data PrevSlot :: Type -> Int -> Type -> Type
-data PrevSlot inputVal n stmt
-  = BasePrev { dummyStatement :: stmt }
-  | InductivePrev
-      (CompiledProof n stmt)
-      (Tag stmt n)
+newtype SomeResolvedPrevSlot = SomeResolvedPrevSlot
+  ( forall r
+     . ( forall n stmt stmtVar
+          . CircuitType StepField stmt stmtVar
+         => ResolvedPrevSlot n stmt
+         -> r
+       )
+    -> r
+  )
+
+withResolvedPrevSlot
+  :: forall r
+   . SomeResolvedPrevSlot
+  -> ( forall n stmt stmtVar
+        . CircuitType StepField stmt stmtVar
+       => ResolvedPrevSlot n stmt
+       -> r
+     )
+  -> r
+withResolvedPrevSlot (SomeResolvedPrevSlot run) k = run k
 
 -- | What the caller supplies for a side-loaded prev slot: the
 -- | verification key the slot verifies against, with the slot's prev.
 -- | Only a side-loaded slot takes one, so the type of `prevs` rules out
 -- | both a missing key and a stray one.
-data SideLoadedPrev :: Type -> Int -> Type -> Type
-data SideLoadedPrev inputVal n stmt =
-  SideLoadedPrev (SideloadBundle.Bundle WrapVkChunks) (PrevSlot inputVal n stmt)
+data SideLoadedPrev :: Int -> Type -> Type
+data SideLoadedPrev n stmt =
+  SideLoadedPrev (SideloadBundle.Bundle WrapVkChunks) (ProofRef n stmt)
 
--- | One `PrevSlot` with its type parameters hidden and its statement's
+-- | One `ProofRef` with its type parameters hidden and its statement's
 -- | `CircuitType` kept, so that the slots of a rule share one `Vector`
 -- | whatever their statement types.
 newtype SomePrevSlot = SomePrevSlot
   ( forall r
-     . ( forall inputVal n stmt stmtVar
+     . ( forall n stmt stmtVar
           . CircuitType StepField stmt stmtVar
-         => PrevSlot inputVal n stmt
+         => ProofRef n stmt
          -> r
        )
     -> r
@@ -385,9 +378,9 @@ newtype SomePrevSlot = SomePrevSlot
 withPrevSlot
   :: forall r
    . SomePrevSlot
-  -> ( forall inputVal n stmt stmtVar
+  -> ( forall n stmt stmtVar
         . CircuitType StepField stmt stmtVar
-       => PrevSlot inputVal n stmt
+       => ProofRef n stmt
        -> r
      )
   -> r
@@ -422,7 +415,7 @@ instance
   ) =>
   SplitPrevs
     (SlotOf Compiled n (ApplicationStatement input output) /\ rest)
-    (PrevSlot input n (ApplicationStatement input output) /\ restPrevs)
+    (ProofRef n (ApplicationStatement input output) /\ restPrevs)
     (ApplicationStatement input output /\ restValues)
     len
   where
@@ -430,7 +423,7 @@ instance
     let
       r = splitPrevs (Proxy :: Proxy rest) rest
     in
-      { values: statementOf prev /\ r.values
+      { values: proofStatement prev /\ r.values
       , slots: Vector.cons
           { prev: SomePrevSlot \k -> k prev, sideLoadedKey: Nothing }
           r.slots
@@ -444,7 +437,7 @@ instance
   ) =>
   SplitPrevs
     (SlotOf SideLoaded n (ApplicationStatement input output) /\ rest)
-    (SideLoadedPrev input n (ApplicationStatement input output) /\ restPrevs)
+    (SideLoadedPrev n (ApplicationStatement input output) /\ restPrevs)
     (SideLoadedPrevValue (ApplicationStatement input output) /\ restValues)
     len
   where
@@ -453,19 +446,13 @@ instance
       r = splitPrevs (Proxy :: Proxy rest) rest
     in
       { values:
-          { statement: statementOf prev
+          { statement: proofStatement prev
           , verificationKey: SideloadBundle.projectVk key
           } /\ r.values
       , slots: Vector.cons
           { prev: SomePrevSlot \k -> k prev, sideLoadedKey: Just key }
           r.slots
       }
-
--- | The prev's statement, whichever way its slot is filled.
-statementOf :: forall inputVal n stmt. PrevSlot inputVal n stmt -> stmt
-statementOf = case _ of
-  BasePrev { dummyStatement } -> dummyStatement
-  InductivePrev (CompiledProof p) _ -> p.statement
 
 type CompileConfig :: Int -> Type
 type CompileConfig mpv =
@@ -581,7 +568,7 @@ stepProveContextOf cfg slotWidths selfStepDomainLog2s =
 -- | oracle-enriched witness, its wrap public input, and the cache key
 -- | of the wrap proof it verifies, if it verifies one.
 slotStepAdvice
-  :: forall w wPad inputVal input prevHeadInput n prevHeadStmt prevHeadStmtVar
+  :: forall w wPad inputVal input n prevHeadStmt prevHeadStmtVar
    . Reflectable w Int
   => Compare w 3 LT
   => Reflectable wPad Int
@@ -598,13 +585,14 @@ slotStepAdvice
      , slotWrapZkRows :: Int
      , slotStepNumChunks :: Int
      }
-  -> PrevSlot prevHeadInput n prevHeadStmt
+  -> Verifier
+  -> ResolvedPrevSlot n prevHeadStmt
   -> Effect
        { contrib :: SlotAdviceContrib
        , wrapPublicInput :: Array WrapField
        , prev :: Prev StepField
        }
-slotStepAdvice _ dummySgs appInput slotParams headSlot = do
+slotStepAdvice _ dummySgs appInput slotParams prevVerifier headSlot = do
   contrib <- buildSlotAdvice @w
     { publicInput: appInput
     , prevStatement: slotData.prevStatement
@@ -660,7 +648,7 @@ slotStepAdvice _ dummySgs appInput slotParams headSlot = do
     let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
   slotData = case headSlot of
-    BasePrev { dummyStatement } ->
+    SkippedPrev statement ->
       let
         baseCaseDummyChalPoly =
           { sg: dummyWrapSg, challenges: dummyIpaChallenges.wrapExpanded }
@@ -683,14 +671,14 @@ slotStepAdvice _ dummySgs appInput slotParams headSlot = do
         baseCaseWrapPI = dummyWrapTockPublicInput @w
           { stepDomainLog2: slotParams.slotStepDomainLog2
           , wrapVK: slotParams.slotWrapVK
-          , prevStatement: dummyStatement
+          , prevStatement: statement
           , wrapSg: dummyWrapSg
           , stepSg: dummyStepSg
           , msgWrapDigest
           , fopProofState
           }
       in
-        { prevStatement: dummyStatement
+        { prevStatement: statement
         , stepOpeningSg: dummyStepSg
         , kimchiPrevSg: dummyStepSg
         , wrapProof: dummyWrapProof bcd
@@ -721,15 +709,13 @@ slotStepAdvice _ dummySgs appInput slotParams headSlot = do
         , prevChallengesForStepHash:
             Vector.replicate dummyIpaChallenges.stepExpanded
         }
-    InductivePrev prevCp prevTag ->
+    RequiredPrev prevCp ->
       let
         CompiledProof prevRaw = prevCp
-        Tag { verifier: prevVerifier } = prevTag
 
-        -- The previous proof as the recursive prover needs it:
-        -- width-erased, with the constants it is judged against. See
-        -- `Pickles.Verify.PrevProofData`.
-        prevData = prevProofDataOf prevVerifier prevCp
+        -- The width-erased proof and padded accumulators the recursive
+        -- prover needs. See `Pickles.Verify.PrevProofData`.
+        prevData = prevProofDataOf prevCp
 
         prevStepBpChalsExpanded =
           map
@@ -826,7 +812,7 @@ slotStepAdvice _ dummySgs appInput slotParams headSlot = do
 -- | runtime key. `stepSide` is this slot's entry of what
 -- | `mkStepAdvice` returned.
 slotProveData
-  :: forall prevHeadInput n stmt stmtVar
+  :: forall n stmt stmtVar
    . CircuitType StepField stmt stmtVar
   => Verify.DummySgs
   -> { slotWrapVK :: VerifierIndex PallasG WrapField
@@ -840,9 +826,9 @@ slotProveData
            (Type2 (SplitField (F StepField) Boolean))
            (F StepField)
            Boolean
-     , baseCaseWrapPublicInput :: Array WrapField
+     , wrapPublicInput :: Array WrapField
      }
-  -> PrevSlot prevHeadInput n stmt
+  -> ResolvedPrevSlot n stmt
   -> SlotProveData
 slotProveData dummySgs slotParams stepSide headSlot =
   { prevSg: slotData.prevSg
@@ -868,7 +854,7 @@ slotProveData dummySgs slotParams stepSide headSlot =
 
   PerProofUnfinalized headUnfRaw = stepSide.unfinalized
   headChalPolyComm = stepSide.challengePolynomialCommitment
-  headBaseCaseWrapPI = stepSide.baseCaseWrapPublicInput
+  headWrapPI = stepSide.wrapPublicInput
 
   -- Type1 to Type2 cross-field coerce of the raw step-advice
   -- unfinalized entry into the wrap-advice shape, field by field.
@@ -909,7 +895,7 @@ slotProveData dummySgs slotParams stepSide headSlot =
     let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
   slotData = case headSlot of
-    BasePrev _ ->
+    SkippedPrev _ ->
       let
         -- The dummy wrap proof carries no public evaluation of its
         -- own, so the public eval is the oracle's recomputed x_hat:
@@ -919,7 +905,7 @@ slotProveData dummySgs slotParams stepSide headSlot =
         dummyWrapXhat =
           ( ProofFFI.proofOraclesRec slotParams.slotWrapVK
               { proof: dummyWrapProof bcd
-              , publicInput: headBaseCaseWrapPI
+              , publicInput: headWrapPI
               , prevChallenges:
                   Vector.toUnfoldable
                     ( Vector.replicate @PaddedLength
@@ -956,13 +942,11 @@ slotProveData dummySgs slotParams stepSide headSlot =
             Array.replicate slotParams.slotWidth
               (map F dummyIpaChallenges.wrapExpanded)
         }
-    InductivePrev prevCp prevTag ->
+    RequiredPrev prevCp ->
       let
-        Tag { verifier: prevVerifier } = prevTag
-
         -- Only the padded accumulators are needed here, so unlike in
         -- `mkStepAdvice` there is no unpadded vector to reify.
-        prevData = prevProofDataOf prevVerifier prevCp
+        prevData = prevProofDataOf prevCp
 
         prevStepBpChalsExpanded =
           map
@@ -971,8 +955,6 @@ slotProveData dummySgs slotParams stepSide headSlot =
                   stepEndoScalarF
             )
             prevData.proof.rawBulletproofChallenges
-
-        prevWrapPI = wrapPublicInputVP prevVerifier prevData.proof
 
         -- Kimchi's `prev_challenges` argument is a flat array of
         -- `PaddedLength` entries, so the padded `Vector`s are zipped
@@ -999,7 +981,7 @@ slotProveData dummySgs slotParams stepSide headSlot =
         prevWrapOracles =
           ProofFFI.proofOraclesRec slotParams.slotWrapVK
             { proof: prevData.proof.wrapProof
-            , publicInput: prevWrapPI
+            , publicInput: headWrapPI
             , prevChallenges: prevWrapKimchiPrevChals
             }
 
@@ -1058,11 +1040,10 @@ slotProveData dummySgs slotParams stepSide headSlot =
 -- |   opening sgs, which feed each slot's kimchi-prev entry.
 -- | * `unfinalizedSlots` — the step-field unfinalized proofs, which
 -- |   `shapeProveData` coerces into `prevUnfinalizedProofs`.
--- | * `baseCaseWrapPublicInputs` — the serialized
--- |   `dummyWrapTockPublicInput` a base-case slot feeds to
--- |   `proofOraclesRec`, so its recomputed evals are the ones the
--- |   step circuit saw. Per-slot, because slots of one rule can have
--- |   differently shaped prev-rule wrap statements.
+-- | * `wrapPublicInputs` — the serialized real or dummy wrap public
+-- |   inputs used by the step circuit, reused by the wrap stage's
+-- |   oracle computation. Per-slot, because slots of one rule can
+-- |   have differently shaped prev-rule wrap statements.
 type ShapeProveSideInfo :: Int -> Type
 type ShapeProveSideInfo mpv =
   { challengePolynomialCommitments :: Vector mpv (AffinePoint StepField)
@@ -1073,7 +1054,7 @@ type ShapeProveSideInfo mpv =
             (F StepField)
             Boolean
         )
-  , baseCaseWrapPublicInputs :: Vector mpv (Array WrapField)
+  , wrapPublicInputs :: Vector mpv (Array WrapField)
   }
 
 -- | The per-slot data the wrap stage is built from, one entry per
@@ -1266,6 +1247,70 @@ wrapPadDummies predecessors dummySgs =
     , indexEvals: map pe de.indexEvals
     }
 
+-- | Resolve only the debt returned by the rule, checking the proof
+-- | against the slot's declared source domains and width.
+resolvePrevSlot
+  :: forall n stmt stmtVar
+   . CircuitType StepField stmt stmtVar
+  => { stepDomains :: NonEmptyArray Int
+     , width :: Int
+     }
+  -> SlotProofRequest
+  -> ProofRef n stmt
+  -> Effect (ResolvedPrevSlot n stmt)
+resolvePrevSlot source request ref = do
+  unless (Array.length request.statement == sizeInFields (Proxy @StepField) (Proxy @stmt)) $
+    failure "returned statement field count does not match the slot"
+  if not request.mustVerify then
+    pure $ SkippedPrev (fieldsToValue @StepField @stmt request.statement)
+  else do
+    unless (valueToFields @StepField (proofStatement ref) == request.statement) $
+      failure "proof reference does not match the rule's returned statement"
+    proof@(CompiledProof raw) <- localProofProvider.fulfill ref
+    unless (Array.elem raw.stepDomainLog2 (NonEmptyArray.toArray source.stepDomains)) $
+      failure "proof step domain is not a branch of the slot's source"
+    let
+      width = runExists
+        (\(CompiledProofWidthData wd) -> Array.length (Array.fromFoldable wd.oldBulletproofChallenges))
+        raw.widthData
+    when (width > source.width) $
+      failure "proof branch width exceeds the slot's source width"
+    pure $ RequiredPrev proof
+  where
+  failure :: forall a. String -> Effect a
+  failure = throwEvalError <<< FailedAssertion
+
+-- | A branch's pre-flight: the slot requests the rule returns for these
+-- | inputs, each with the wrap key its proof must be of, resolved as
+-- | `prepare` resolves it: the caller's bundle for a side-loaded slot,
+-- | the source's key otherwise. Runs the rule body and nothing else.
+branchDemands
+  :: forall @prevsSpec mpv mpvMax prevsCarrier valCarrier inputVal r
+   . SplitPrevs prevsSpec prevsCarrier valCarrier mpv
+  => SlotWidths prevsSpec mpv
+  => Reflectable mpv Int
+  => CompileMultiConfig
+  -> WrapCompileResult
+  -> RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r
+  -> AdviceHandler r
+  -> StepInputs prevsSpec inputVal prevsCarrier
+  -> Effect (Either EvaluationError (Array SlotProofDemand))
+branchDemands cfg wrapResult (RuleEntry r) handler { appInput, prevs } = do
+  let
+    widths = slotWidthsOf (Proxy :: Proxy prevsSpec)
+    split = splitPrevs (Proxy :: Proxy prevsSpec) prevs
+    wrapVKAt i slot = case slot.sideLoadedKey of
+      Just bundle -> SideloadBundle.verifierIndex bundle
+      Nothing -> RuntimeSlot.slotWrapVerifierIndex wrapResult.verifierIndex
+        { localMpv: slotWidthInt (widths !! i), source: r.slotVKs !! i }
+  requests <- r.ruleDemandsFn handler { debug: cfg.debug }
+    { publicInput: appInput, prevAppStates: split.values }
+  pure $ requests <#> \reqs -> Vector.toUnfoldable $ split.slots # mapWithIndex \i slot ->
+    let
+      req = reqs !! i
+    in
+      { wrapVK: wrapVKAt i slot, statement: req.statement, mustVerify: req.mustVerify }
+
 --------------------------------------------------------------------------------
 -- The prove call's per-slot data
 --------------------------------------------------------------------------------
@@ -1284,7 +1329,7 @@ mkStepAdvice
   -> Vector mpv SlotWidth
   -> valCarrier
   -> Vector mpv
-       { prev :: SomePrevSlot
+       { prev :: SomeResolvedPrevSlot
        , sideLoadedKey :: Maybe (SideloadBundle.Bundle WrapVkChunks)
        }
   -> Effect
@@ -1292,14 +1337,22 @@ mkStepAdvice
            StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal mpv
              valCarrier
        , challengePolynomialCommitments :: Vector mpv (AffinePoint StepField)
-       , baseCaseWrapPublicInputs :: Vector mpv (Array WrapField)
+       , wrapPublicInputs :: Vector mpv (Array WrapField)
        , cachePrevs :: Array (Prev StepField)
        }
 mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
   perSlot <- forWithIndex slots \i slot ->
     withSlotWidth (widths !! i) \width ->
-      withPrevSlot slot.prev \prev ->
-        slotStepAdvice width cfg.dummySgs appInput (slotParams i slot) prev
+      withResolvedPrevSlot slot.prev \prev -> do
+        let
+          params = slotParams i slot
+          prevVerifier = mkVerifier
+            { wrapVK: params.slotWrapVK
+            , dummyWrapSg: cfg.dummySgs.wrap
+            , vestaSrs: cfg.srs.vestaSrs
+            , stepNumChunks: params.slotStepNumChunks
+            }
+        slotStepAdvice width cfg.dummySgs appInput params prevVerifier prev
   pure
     { stepAdvice: StepAdvice
         { perProofSlotsCarrier: map _.contrib.slotSppw perSlot
@@ -1313,7 +1366,7 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
         , prevAppStates: values
         }
     , challengePolynomialCommitments: map _.contrib.challengePolynomialCommitment perSlot
-    , baseCaseWrapPublicInputs: map _.wrapPublicInput perSlot
+    , wrapPublicInputs: map _.wrapPublicInput perSlot
     , cachePrevs: Array.fromFoldable (map _.prev perSlot)
     }
   where
@@ -1331,8 +1384,8 @@ mkStepAdvice cfg stepCR wrapCR appInput widths values slots = do
           -- A side-loaded VK does not carry the prev's step domain;
           -- the step circuit dispatches over `[0..16]` in
           -- `Pickles.Step.FinalizeOtherProof`'s `SideLoadedMode`.
-          -- This stand-in reaches only the `BasePrev` site, where
-          -- `proofMustVerify` is `false`; `InductivePrev` reads the
+          -- This stand-in reaches only the `SkippedPrev` site, where
+          -- `proofMustVerify` is `false`; `RequiredPrev` reads the
           -- prev's own `stepDomainLog2`.
           Dummy.wrapDomainLog2ForProofsVerified width
       -- A side-loaded proof is always single-chunk: the side-loaded
@@ -1373,7 +1426,7 @@ shapeProveData
   -> Vector mpv (Maybe ProofsVerified)
   -> Vector mpv SlotWidth
   -> Vector mpv
-       { prev :: SomePrevSlot
+       { prev :: SomeResolvedPrevSlot
        , sideLoadedKey :: Maybe (SideloadBundle.Bundle WrapVkChunks)
        }
   -> ShapeProveData mpv
@@ -1390,11 +1443,11 @@ shapeProveData cfg wrapCR sideInfo pins widths slots =
   }
   where
   perSlot = mapWithIndex
-    ( \i slot -> withPrevSlot slot.prev \prev ->
+    ( \i slot -> withResolvedPrevSlot slot.prev \prev ->
         slotProveData cfg.dummySgs (slotParams i slot)
           { challengePolynomialCommitment: sideInfo.challengePolynomialCommitments !! i
           , unfinalized: sideInfo.unfinalizedSlots !! i
-          , baseCaseWrapPublicInput: sideInfo.baseCaseWrapPublicInputs !! i
+          , wrapPublicInput: sideInfo.wrapPublicInputs !! i
           }
           prev
     )
@@ -1557,17 +1610,6 @@ type CompileMultiConfig =
   -- | `Nothing` = no dump.
   , dump :: Maybe String
   }
-
--- | The prover for one branch: one `RuleEntry` of the rules yields
--- | one of these, at that branch's shape.
-newtype BranchProver
-  :: Type -> Int -> Type -> Type -> Type -> Row (Type -> Type) -> Type
-newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal r =
-  BranchProver
-    ( AdviceHandler r
-      -> StepInputs prevsSpec inputVal prevsCarrier
-      -> Effect (Either ProveError (CompiledProof mpv (ApplicationStatement inputVal outputVal)))
-    )
 
 -- | A multi-branch compile's verification keys: one `wrap` VK, under
 -- | which every branch's wrap proof verifies — the wrap statement's
@@ -1755,30 +1797,33 @@ instance
       { head: headPins, tail: restPins } = Vector.uncons pins
       { head: headLog2, tail: restLog2s } = Vector.uncons stepDomainLog2s
       { head: headStepCR, tail: restStepResults } = Vector.uncons stepResults
-      headProver = BranchProver \handler stepInputs ->
-        runMultiProverBody
-          @prevsSpec
-          @ruleMpv
-          @valCarrier
-          @inputVal
-          @inputVar
-          @outputVal
-          @outputVar
-          @mpvMax
-          @mpvPad
-          handler
-          ncProxy
-          branchIdx
-          cfg
-          padDummies
-          wrapResult
-          perBranchVec
-          headPins
-          allStepDomainLog2s
-          headStepCR
-          headLog2
-          headEntry
-          stepInputs
+      headProver = BranchProver
+        { prove: \handler stepInputs ->
+            runMultiProverBody
+              @prevsSpec
+              @ruleMpv
+              @valCarrier
+              @inputVal
+              @inputVar
+              @outputVal
+              @outputVar
+              @mpvMax
+              @mpvPad
+              handler
+              ncProxy
+              branchIdx
+              cfg
+              padDummies
+              wrapResult
+              perBranchVec
+              headPins
+              allStepDomainLog2s
+              headStepCR
+              headLog2
+              headEntry
+              stepInputs
+        , demands: branchDemands @prevsSpec cfg wrapResult headEntry
+        }
     restProvers <- buildBranchProvers
       @restCarrier
       @inputVal
@@ -1906,14 +1951,16 @@ data RuleEntry prevsSpec mpv mpvMax valCarrier inputVal r = RuleEntry
       AdviceHandler r
       -> PProveStep.StepProveContext mpv
       -> PProveStep.StepCompileResult
-      -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
-           inputVal
-           mpv
-           valCarrier
-      -- Per slot, the cache key of the wrap proof verified there, or a
-      -- base case's cells.
-      -> Array (Prev StepField)
+      -> PProveStep.StepProveInput prevsSpec inputVal mpv valCarrier
       -> Effect (Either EvaluationError PProveStep.StepProveResult)
+  -- | The slot requests the rule returns for given inputs, from the
+  -- | rule body alone; `branchDemands` resolves each slot's key around
+  -- | them.
+  , ruleDemandsFn ::
+      AdviceHandler r
+      -> { debug :: Boolean }
+      -> { publicInput :: inputVal, prevAppStates :: valCarrier }
+      -> Effect (Either EvaluationError (Vector mpv SlotProofRequest))
   -- | Where each slot's wrap VK comes from, in slot order: a compiled
   -- | slot's key, or `Nothing` for a side-loaded slot.
   , slotVKs :: Vector mpv (Maybe SlotWrapKey)
@@ -2056,7 +2103,7 @@ mkRuleEntry rule compiledKeys = do
               , rule: RuleDumpJson ruleDump
               }
         }
-    , stepProveFn: \handler ctx compileResult advice prevProofs ->
+    , stepProveFn: \handler ctx compileResult input ->
         PProveStep.stepSolveAndProve
           @prevsSpec
           @outputSize
@@ -2071,8 +2118,18 @@ mkRuleEntry rule compiledKeys = do
           ctx
           rule
           compileResult
-          advice
-          prevProofs
+          input
+    , ruleDemandsFn: \handler debug input ->
+        PProveStep.ruleDemands
+          @prevsSpec
+          @inputVal
+          @inputVar
+          @outputVal
+          @outputVar
+          handler
+          debug
+          rule
+          input
     , slotVKs
     }
 
@@ -2309,38 +2366,67 @@ runMultiProverBody
     stepProveCtx = stepProveContextOf perRuleCfg (map slotWidthInt widths)
       allStepDomainLog2s
 
-  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, cachePrevs } <-
-    mkStepAdvice perRuleCfg stepCR wrapResult appInput widths split.values
-      split.slots
-
+  preparedRef <- Ref.new Nothing
   let
-    PProveStep.StepAdvice sa = stepAdvice
+    getPrepared = Ref.read preparedRef >>= case _ of
+      Nothing -> throwEvalError (FailedAssertion "branch prover: proof advice was not prepared")
+      Just prepared -> pure prepared
 
-    proveDataSideInfo =
-      { challengePolynomialCommitments
-      , unfinalizedSlots: sa.publicUnfinalizedProofs
-      , baseCaseWrapPublicInputs
-      }
-    proveData = shapeProveData perRuleCfg wrapResult proveDataSideInfo
-      (Vector.drop @mpvPad branchPins)
-      widths
-      split.slots
+    prepare requests = do
+      resolved <- forWithIndex split.slots \i slot ->
+        withPrevSlot slot.prev \prev -> do
+          let
+            runtimeSlot = { localMpv: slotWidthInt (widths !! i), source: r.slotVKs !! i }
+          resolution <- catchEvalError $ resolvePrevSlot
+            { stepDomains: slotSourceDomainLog2s allStepDomainLog2s runtimeSlot
+            , width: runtimeSlot.localMpv
+            }
+            (requests !! i)
+            prev
+          p <- either
+            (throwEvalError <<< WithContext ("branch " <> show branchIdx <> " slot " <> show (getFinite i)))
+            pure
+            resolution
+          pure
+            { prev: SomeResolvedPrevSlot \k -> k p
+            , sideLoadedKey: slot.sideLoadedKey
+            }
+      prepared <- mkStepAdvice perRuleCfg stepCR wrapResult appInput widths split.values resolved
+      let
+        StepAdvice sa = prepared.stepAdvice
+        proveData = shapeProveData perRuleCfg wrapResult
+          { challengePolynomialCommitments: prepared.challengePolynomialCommitments
+          , unfinalizedSlots: sa.publicUnfinalizedProofs
+          , wrapPublicInputs: prepared.wrapPublicInputs
+          }
+          (Vector.drop @mpvPad branchPins)
+          widths
+          resolved
+      Ref.write
+        (Just { advice: prepared.stepAdvice, cachePrevs: prepared.cachePrevs, proveData })
+        preparedRef
 
-    -- The Vesta dummy sg, which the kimchi entries below also pad with.
-    dummyWrapSgInStepField = dummySgs.wrap
-
-    branchPadding = padDummies
-      { dummyPrevUnfinalizedProof =
-          (wrapPadDummies (reflectType (Proxy @mpv)) dummySgs).dummyPrevUnfinalizedProof
-      }
-    proveDataMax = padShapeProveData branchPadding wrapResult.slotWidths proveData
-
-  eStepResult <- r.stepProveFn handler stepProveCtx stepCR stepAdvice cachePrevs
+  eStepResult <- r.stepProveFn handler stepProveCtx stepCR
+    { publicInput: appInput
+    , prevAppStates: split.values
+    , prepare
+    , getPrepared: getPrepared <#> \p -> { advice: p.advice, cachePrevs: p.cachePrevs }
+    }
   case eStepResult of
     Left e -> pure (Left e)
     Right stepResult -> do
-
+      prepared <- getPrepared
       let
+        proveData = prepared.proveData
+        cachePrevs = prepared.cachePrevs
+        -- The Vesta dummy sg, which the kimchi entries below also pad with.
+        dummyWrapSgInStepField = dummySgs.wrap
+        branchPadding = padDummies
+          { dummyPrevUnfinalizedProof =
+              (wrapPadDummies (reflectType (Proxy @mpv)) dummySgs).dummyPrevUnfinalizedProof
+          }
+        proveDataMax = padShapeProveData branchPadding wrapResult.slotWidths proveData
+
         stepOraclesPrevChals = Vector.toUnfoldable $
           Vector.zipWith
             ( \(AffinePoint sg) chals ->

@@ -10,6 +10,7 @@ module Pickles
   , module Pickles.Types
   , module Pickles.Prove.Step
   , module Pickles.Prove.Compile
+  , module Pickles.Prove.ProofRef
   , module Pickles.Prove.Slot
   , module Pickles.Sideload.BoundVk
   , module Pickles.Step.Slots
@@ -18,7 +19,8 @@ module Pickles
 
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, SideLoadedPrev(..), Tag(..), compileMulti, mkRuleEntry)
+import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), RuleEntry, SideLoadedPrev(..), Tag(..), compileMulti, mkRuleEntry)
+import Pickles.Prove.ProofRef (ProofRef, importProof, initialStatement, proofRef, proofStatement)
 import Pickles.Prove.Slot (SlotWrapKey(..))
 import Pickles.Prove.Step (StepRule)
 import Pickles.Sideload.BoundVk (BoundVk, bindVk)

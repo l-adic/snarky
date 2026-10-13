@@ -6,7 +6,9 @@
 -- | `debug` is set (they're assumed validated during compilation).
 module Snarky.Backend.Prover
   ( runCircuitProver
+  , evalCircuit
   , ProverState
+  , initialProverState
   , class SolveCircuit
   , checkConstraint
   , allocAssignments
@@ -26,7 +28,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (AffineExpression, EvaluationError(..), Variable(..), evalAffineExpression, incrementVariable)
+import Snarky.Circuit.CVar (AffineExpression, EvaluationError(..), Variable(..), evalAffineExpression, incrementVariable, v0)
 import Snarky.Circuit.DSL.Monad (AsProver(..), AsProverCtx(..), CircuitOps(..), Snarky(..))
 import Snarky.Circuit.EvalError (catchEvalError, throwEvalError)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
@@ -120,6 +122,35 @@ runCircuitProver advice s0 (Snarky g) = do
     pure a
   s <- Ref.read ref
   pure (Tuple ea s)
+
+-- | The prover's starting state over a fresh store: nothing allocated
+-- | yet, the compiled circuit's internal variables (if any) all ahead.
+-- | The store is this state's own, so a solver closure reused across
+-- | runs never shares one.
+initialProverState
+  :: forall f
+   . { debug :: Boolean }
+  -> Array (Tuple Variable (AffineExpression f))
+  -> Effect (ProverState f)
+initialProverState { debug } internals = do
+  assignments <- Assignments.fresh
+  pure { nextVar: v0, assignments, debug, labelStack: [], internals, internalsPassed: 0 }
+
+-- | Run a circuit's witness computations from scratch, with no compiled
+-- | circuit behind it: every variable the program allocates, it assigns
+-- | itself. For reading what a program's witnesses compute; a compiled
+-- | circuit's witness comes from `Snarky.Backend.Compile.makeSolver`.
+evalCircuit
+  :: forall f c r a
+   . SolveCircuit f c
+  => { debug :: Boolean }
+  -> AdviceHandler r
+  -> Snarky f c r a
+  -> Effect (Either EvaluationError { result :: a, assignments :: Assignments f })
+evalCircuit opts advice prog = do
+  s0 <- initialProverState opts []
+  Tuple eOut s <- runCircuitProver advice s0 prog
+  pure (eOut <#> \result -> { result, assignments: s.assignments })
 
 -- | The prover's operations over a mutable state cell.
 proverOps

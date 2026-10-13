@@ -18,6 +18,7 @@ module Pickles.Prove.Step
   , StepRule
   , StepRuleAt
   , StepCompileResult
+  , StepProveInput
   , StepProveResult
   , module Pickles.Step.Advice
   , StepProveContext
@@ -25,6 +26,7 @@ module Pickles.Prove.Step
   , buildSlotAdvice
   , stepCompile
   , preComputeStepDomainLog2
+  , ruleDemands
   , stepSolveAndProve
   , mkDummyMsgWrapHash
   ) where
@@ -49,6 +51,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
@@ -68,10 +71,10 @@ import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.RuleWitness (ruleWitness)
-import Pickles.Step.Advice (StepAdvice(..))
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.Advice (SlotProofRequest, StepAdvice(..), slotProofRequests)
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, runRuleWithInput, stepMain, stepMainWithAdvice)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class SlotWidths, PrevValues, mkPrevValues, prevsVector)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, MessagesForNextStepProof(..), MessagesForNextWrapProof(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -89,9 +92,10 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIn
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
 import Snarky.Backend.Kimchi.ProofCache (Prev, ProofCache, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
+import Snarky.Backend.Prover (evalCircuit)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (AsProver, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (AsProver, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits, runAsProver)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
@@ -908,6 +912,20 @@ type StepCompileResult =
   , constraints :: Array (KimchiRow StepField)
   }
 
+-- | The rule reads claimed statements first. Preparation resolves its
+-- | actual debt and stores proof advice for the remaining witness actions.
+type StepProveInput prevsSpec inputVal len valCarrier =
+  { publicInput :: inputVal
+  , prevAppStates :: valCarrier
+  , prepare :: Vector len SlotProofRequest -> Effect Unit
+  , getPrepared ::
+      Effect
+        { advice ::
+            StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
+        , cachePrevs :: Array (Prev StepField)
+        }
+  }
+
 -- | Artifacts produced by `stepSolveAndProve`.
 type StepProveResult =
   { proverIndex :: ProverIndex VestaG StepField
@@ -1242,6 +1260,34 @@ preComputeStepDomainLog2 handler ctx rule = do
     where
     go acc p = if p >= n then acc else go (acc + 1) (p * 2)
 
+-- | The proof debt a rule returns for given inputs, learned without the
+-- | step circuit: the rule body runs alone under the prover, with the
+-- | advice handler and inputs the full solve gets, and its returned
+-- | prevs are read back as slot requests. The full solve recomputes the
+-- | same requests at its `prepare` point, so a caller can resolve the
+-- | debt before it holds the proofs.
+ruleDemands
+  :: forall @prevsSpec @inputVal @input @outputVal @output len valCarrier r
+   . SlotWidths prevsSpec len
+  => Reflectable len Int
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => SlotStatementsCarrier prevsSpec valCarrier
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => AdviceHandler r
+  -> { debug :: Boolean }
+  -> StepRuleAt r prevsSpec inputVal input outputVal output
+  -> { publicInput :: inputVal, prevAppStates :: valCarrier }
+  -> Effect (Either EvaluationError (Vector len SlotProofRequest))
+ruleDemands handler debug rule input = do
+  ran <- evalCircuit debug handler $ runRuleWithInput @inputVal rule
+    (pure input.publicInput)
+    (pure (mkPrevValues @prevsSpec input.prevAppStates))
+  case ran of
+    Left e -> pure (Left e)
+    Right { result, assignments } ->
+      runAsProver handler assignments (slotProofRequests (prevsVector @len result.output.prevs))
+
 -- | Solve phase of the step prover: runs the solver on a compiled
 -- | circuit and the real advice, and creates the kimchi proof. Its
 -- | `prevChallenges` come from the advice's `kimchiPrevChallenges`.
@@ -1272,13 +1318,9 @@ stepSolveAndProve
   -> StepProveContext len
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len valCarrier
-  -- Per slot, the cache key of the wrap proof this proof verifies there,
-  -- or on a base-case slot the cells allocated for it, recorded on its
-  -- cache entry so a chain is walkable from the cache alone.
-  -> Array (Prev StepField)
+  -> StepProveInput prevsSpec inputVal len valCarrier
   -> Effect (Either EvaluationError StepProveResult)
-stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
+stepSolveAndProve handler ctx rule compileResult input = do
   -- The rule's output cells are internal to the step statement. Read
   -- them after solving; capture source allocations only for fixtures.
   captureRef <- Ref.new Nothing
@@ -1286,7 +1328,12 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
     Nothing -> pure Nothing
     Just _ -> Just <$> Ref.new Nil
   let
-    StepAdvice adv = advice
+    source =
+      { publicInput: pure input.publicInput
+      , prevAppStates: pure input.prevAppStates
+      , prepare: liftEffect <<< input.prepare
+      , getAdvice: liftEffect (input.getPrepared <#> _.advice)
+      }
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
@@ -1296,7 +1343,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
     rawSolver =
       makeSolver' { debug: ctx.debug } compileResult.builtState
         ( \_ ->
-            stepMain
+            stepMainWithAdvice
               @prevsSpec
               @inputVal
               @outputVal
@@ -1305,7 +1352,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
               rule
               ctx.srsData
               ctx.dummySg
-              advice
+              source
               captureRef
               ruleCapture
         )
@@ -1315,7 +1362,9 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
   case eRes of
     Left e -> pure (Left (WithContext "stepProve solver" e))
     Right (Tuple publicOutputs assignments) -> do
+      prepared <- input.getPrepared
       let
+        StepAdvice adv = prepared.advice
         { witness, publicInputs } = makeWitness
           { assignments
           , constraints: map _.variables compileResult.constraints
@@ -1389,7 +1438,7 @@ stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
                   Right w -> setPallasProof cache vkDigest compileResult.verifierIndex
                     publicInputs
                     proof
-                    prevProofs
+                    prepared.cachePrevs
                     w
                 pure proof
           pure $ Right
