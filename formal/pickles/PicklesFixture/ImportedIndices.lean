@@ -14,19 +14,12 @@ before the masked ones, and in each row at most the coefficient columns (a short
 beyond its entries, the reading kimchi gives it), seven wire targets inside the table and a
 known gate type. Every failure is located at its circuit.
 
-`PicklesFixture.Application.certifyApplication` is the certification path a reconstructed
-application takes: its circuits compiled once, its dumps parsed once, the compilations checked
-at the keys' index data, and the imported indices certified against the checked application,
-a failure located at its stage and circuit; the certificate's `CertifiedIndices.correct` is the
-imported indices' Pickles-correctness. `PicklesFixture.Application.certifyAndCompare` follows
-certification with the compilations required to match the dumps datum by datum, the evidence
-that also sees variable ids. `PicklesFixture.Application.rejectCorruptedDump` sends
-a dump with one coefficient changed down that path and requires exactly the located failure.
-`PicklesFixture.Application.rejectImportedChanges` requires three changes to the imported side
-alone to be rejected where they are, the checked application the same throughout: a
-coefficient of the first branch's first row after the public rows, the first wire targets of
-that row and the next exchanged, another permutation the constructor accepts, and the wrap
-circuit's endomorphism coefficient.
+`PicklesFixture.Application.compareImported` compares these foreign indices with an
+application's certified Lean indices. Success transfers `PicklesCorrect` by the comparison
+theorem; no additional certificate is constructed. This operation is separate from normal
+application certification. `PicklesFixture.Application.rejectCorruptedDump` changes a
+coefficient and requires exactly the located failure. `rejectImportedChanges` also tests
+exchanged wire targets and a changed endomorphism coefficient against the same Lean indices.
 
 `PicklesFixture.Application.rejectInvalidDumps` is the adapter's own behaviour on small dumps,
 before any application: a wellformed dump builds, a wire target outside the table is refused,
@@ -115,7 +108,7 @@ def importIndices {D : Shape} {L : Layout D} (C : Circuits D L) (stepDump : D.Br
     (wrapDump : Raw Fq) : Except String (ApplicationIndices D) :=
   importIndicesWith stepDump wrapDump (stepIndexData C) (wrapIndexData C)
 
-/-! ## Certification and its rejections -/
+/-! ## Comparison and its rejections -/
 
 /-- A datum of an index, for the report. -/
 private def describeIndex : Kimchi.Index.IndexDiff → String
@@ -136,18 +129,18 @@ private def describe {D : Shape} : IndicesDiff D → String
   | .wrapSize => "wrap: the domain size"
   | .wrap d => s!"wrap: {describeIndex d}"
 
-/-- Require certification of imported indices to fail where expected. -/
+/-- Require comparison of imported indices to fail where expected. -/
 private def requireDiff {D : Shape} {L : Layout D} {C : Circuits D L} (name what : String)
     (checked : ApplicationCertified C) (imported : Except String (ApplicationIndices D))
     (expected : IndicesDiff D → Bool) : IO Unit := do
   let imported ← match imported with
     | .error e => throw (IO.userError s!"{name}: {what} was refused by the import: {e}")
     | .ok i => pure i
-  match certifyIndices? checked imported with
-  | .error d =>
+  match compareIndices? imported checked.indices with
+  | some d =>
     if expected d then IO.println s!"✓ {name}: {what} rejected at {describe d}"
     else throw (IO.userError s!"{name}: {what} rejected elsewhere: {describe d}")
-  | .ok _ => throw (IO.userError s!"{name}: {what} was certified")
+  | none => throw (IO.userError s!"{name}: {what} matched the Lean indices")
 
 /-- The dump with the first coefficient of row `r` changed. -/
 private def coefficientChanged (raw : Raw Fp) (r : ℕ) : Raw Fp :=
@@ -162,96 +155,32 @@ private def wiresExchanged (raw : Raw Fp) (r : ℕ) : Raw Fp :=
   let wires := raw.wires.modify r (·.modify 0 fun _ => b)
   { raw with wires := wires.modify (r + 1) (·.modify 0 fun _ => a) }
 
-/-- Import an application's indices from its dumps at the keys' data and certify them against
-the checked application, a disagreement located at its datum; the certificate's correctness
-is read as the theorem states it. -/
-def certifyImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
-    (checked : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
-    IO (CertifiedIndices C) := do
+/-- Compare independent foreign indices with the certified Lean indices, reporting a
+located disagreement. Success supplies `PicklesCorrect` through index equality. -/
+def compareImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+    (cert : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    IO Unit := do
   let t0 ← IO.monoMsNow
   let imported ← match ← IO.lazyPure fun _ => importIndices C stepDump wrapDump with
     | .error e => throw (IO.userError s!"{name}: import: {e}")
     | .ok i => pure i
   let t1 ← IO.monoMsNow
-  let cert ← match ← IO.lazyPure fun _ => certifyIndices? checked imported with
-    | .error d => throw (IO.userError s!"{name}: the imported indices differ at {describe d}")
-    | .ok cert => pure cert
-  let t2 ← IO.monoMsNow
-  let _correct : PicklesCorrect C cert.indices := cert.correct
-  IO.println s!"✓ {name}: imported indices certified against the checked application \
-    (import {t1 - t0} ms, compare {t2 - t1} ms)"
-  (← IO.getStdout).flush
-  return cert
+  match h : compareIndices? imported cert.indices with
+  | some d => throw (IO.userError s!"{name}: the imported indices differ at {describe d}")
+  | none =>
+    let _correct : PicklesCorrect C imported := cert.picklesCorrect_of_compare imported h
+    let t2 ← IO.monoMsNow
+    IO.println s!"✓ {name}: imported indices match the certified Lean indices \
+      (import {t1 - t0} ms, compare {t2 - t1} ms)"
+    (← IO.getStdout).flush
 
-/-- A circuit's check failure, for the report. -/
-def describeCheck : CheckFailure → String
-  | .scope (.outOfRange i v) => s!"scope: variable {v} at or above the counter, in constraint {i}"
-  | .scope (.publicOutOfRange v) => s!"scope: public variable {v} at or above the counter"
-  | .scope (.notWired i) => s!"scope: constraint {i} is not wired"
-  | .scope (.reused i v) => s!"scope: unwired operand {v} of constraint {i} occurs again"
-  | .index => "index: the constructor built no index"
-
-/-- An application's check failure, located at its circuit. -/
-def located {D : Shape} : ApplicationFailure D → String
-  | .step b f => s!"step {b.val}: {describeCheck f}"
-  | .wrap f => s!"wrap: {describeCheck f}"
-  | .stepKey b f => s!"key: step {b.val}: {f.describe}"
-  | .wrapKey f => s!"key: wrap: {f.describe}"
-
-/-- One application through the certification path: its compilations in hand, the checked
-application, its dumps parsed once, and the certificate. -/
-structure Certification (A : ImportedApplication) where
-  /-- Each branch's compilation. -/
-  steps : (b : A.shape.Branch) → StepCompilation (A.assembled.circuits A.setup (fun _ => none)) b
-  /-- The wrap circuit's compilation. -/
-  wrap : WrapCompilation (A.assembled.circuits A.setup (fun _ => none))
-  /-- The Lean compilations checked together with their supplied keys. -/
-  checked : ApplicationCertified (A.assembled.circuits A.setup (fun _ => none))
-  /-- Each branch's dump. -/
-  stepDump : A.shape.Branch → Raw Fp
-  /-- The wrap circuit's dump. -/
-  wrapDump : Raw Fq
-  /-- The imported indices certified against the checked application. -/
-  cert : CertifiedIndices (A.assembled.circuits A.setup (fun _ => none))
-
-/-- The certification path: compile a reconstructed application's circuits once, parse its
-dumps once, certify the Lean compilations and supplied keys, then compare the imported indices.
-A failure is located at its stage and circuit. -/
-def certifyApplication (name : String) (A : ImportedApplication) (tag : Json) :
-    IO (Certification A) := do
-  let C := A.assembled.circuits A.setup (fun _ => none)
-  let t0 ← IO.monoMsNow
-  let steps ← finSequence fun b => IO.lazyPure fun _ => canonicalStep C b
-  let wrap ← IO.lazyPure fun _ => canonicalWrap C
-  let t1 ← IO.monoMsNow
-  let (stepDump, wrapDump) ← match circuitDumps A.shape tag with
-    | .error e => throw (IO.userError s!"{name}: dump: {e}")
-    | .ok dumps => pure dumps
-  let checked ← match ← IO.lazyPure fun _ =>
-      checkApplicationWith C steps wrap with
-    | .error f => throw (IO.userError s!"{name}: {located f}")
-    | .ok checked => pure checked
-  let t2 ← IO.monoMsNow
-  let I := checked.indices
-  for b in List.finRange A.shape.branches do
-    IO.println s!"✓ {name} step {b.val}: checked index on a domain of {I.stepSize b}, \
-      {(I.step b).zkRows} masked rows, {(I.step b).publicCount} public rows"
-  IO.println s!"✓ {name} wrap: checked index on a domain of {I.wrapSize}, {I.wrap.zkRows} \
-    masked rows, {I.wrap.publicCount} public rows (compile {t1 - t0} ms, check {t2 - t1} ms)"
-  IO.println s!"✓ {name}: all step and wrap keys derived from the Lean indices and SRSs"
-  (← IO.getStdout).flush
-  let cert ← certifyImported name C checked stepDump wrapDump
-  return { steps, wrap, checked, stepDump, wrapDump, cert }
-
-/-- The dumps' path: the imported indices certified against the checked application first,
-then the compilations in hand required to match the dumps datum by datum. -/
-def certifyAndCompare {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+/-- Compare the independent indices and then the variable-labelled gate dumps. -/
+private def compareAll {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
     (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
-    (checked : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
-    IO (CertifiedIndices C) := do
-  let cert ← certifyImported name C checked stepDump wrapDump
+    (cert : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    IO Unit := do
+  compareImported name C cert stepDump wrapDump
   compareCompilations C steps wrap name stepDump wrapDump
-  return cert
 
 /-- The first branch's dump, and its first row after the public rows, which must exist with
 the next. -/
@@ -273,7 +202,7 @@ def rejectCorruptedDump {D : Shape} {L : Layout D} (name : String) (C : Circuits
   let corrupted (b : D.Branch) : Raw Fp :=
     if b.val = 0 then coefficientChanged raw r else stepDump b
   let expected := s!"{name}: the imported indices differ at step 0: row {r}, coefficient 0"
-  match ← (certifyAndCompare name C steps wrap checked corrupted wrapDump).toBaseIO with
+  match ← (compareAll name C steps wrap checked corrupted wrapDump).toBaseIO with
   | .ok _ => throw (IO.userError s!"{name}: a corrupted dump passed the dumps' path")
   | .error e =>
     if toString e = expected then

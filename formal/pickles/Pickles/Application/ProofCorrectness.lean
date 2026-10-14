@@ -42,6 +42,13 @@ private theorem satisfiesVec_or_failure {C : Ipa.KimchiCurve} {n nc m previous :
 
 namespace Application
 
+/-- Some accepted proof fails Kimchi soundness at this fixed SRS. Application-level composition
+can hide which index, key, proof and public input failed; the general results retain them. -/
+def SomeKimchiFailure {curve : Ipa.KimchiCurve} (σ : SRS curve.Point) : Prop :=
+  ∃ (n nc : Nat) (idx : Kimchi.Index curve.ScalarField n) (key : Key curve nc)
+    (p : KimchiProof curve nc σ.k) (pub : Vector curve.ScalarField idx.publicCount),
+    KimchiFailure σ idx key p pub
+
 variable {D : Shape} {L : Layout D}
 
 /-- Acceptance under a certified Step key supplies a valuation satisfying the branch's

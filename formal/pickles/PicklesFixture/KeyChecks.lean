@@ -1,4 +1,4 @@
-import PicklesFixture.ImportedIndices
+import PicklesFixture.Certification
 
 /-!
 # Self-consistent wrong-key regressions
@@ -32,14 +32,15 @@ private def requireColumn {α : Type} (name : String) : Except KeyFailure α →
   | .ok _ => throw (IO.userError s!"{name}: self-consistent wrong key was accepted")
 
 /-- Ordinary key validity does not allow another circuit's commitments to certify. -/
-def rejectWrongKeys (name : String) (A : ImportedApplication) (r : Certification A) : IO Unit := do
+def rejectWrongKeys (name : String) (A : ImportedApplication)
+    (cert : ApplicationCertified (A.assembled.circuits A.setup (fun _ => none))) : IO Unit := do
   let C := A.assembled.circuits A.setup (fun _ => none)
   let b : A.shape.Branch := ⟨0, A.shape.branches_pos⟩
   let step ← IO.ofExcept (alteredKey C.setup.stepSrs.σ C.wiring.backend.stepKeys[b])
   requireColumn s!"{name} step 0" (← IO.lazyPure fun _ =>
-    checkKey? pastaShapeVesta C.setup.stepSrs.σ (r.checked.indices.step b) step (A.shape.slots b))
+    checkKey? pastaShapeVesta C.setup.stepSrs.σ (cert.indices.step b) step (A.shape.slots b))
   let wrap ← IO.ofExcept (alteredKey C.setup.wrapSrs.σ C.wiring.backend.wrapKey)
   requireColumn s!"{name} wrap" (← IO.lazyPure fun _ =>
-    checkKey? pastaShapePallas C.setup.wrapSrs.σ r.checked.indices.wrap wrap MaxProofsVerified)
+    checkKey? pastaShapePallas C.setup.wrapSrs.σ cert.indices.wrap wrap MaxProofsVerified)
 
 end PicklesFixture.Application

@@ -5,8 +5,8 @@ import PicklesFixture.Verdicts
 
 /-!
 Reconstruct the applications an explicit selection names and compile each one's circuits
-once: check them at their keys' index data, certify the indices imported from the independent
-dumps against them before comparing the compilations with the dumps datum by datum, and
+once: certify their supplied keys, compare the independent foreign indices with the Lean
+indices before comparing the compilations with the dumps datum by datum, and
 require a corrupted dump, changes to the imported side and data a key could not have supplied
 to be rejected where they are; then, from each application's cached proofs, construct the
 tables the lifting theorems take against the checked indices. Run from `formal/` with

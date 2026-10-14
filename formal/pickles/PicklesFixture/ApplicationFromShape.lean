@@ -8,8 +8,8 @@ import PicklesFixture.Manifest
 
 Applications are selected from the fixture manifest and assembled in dependency order,
 using full wrap keys to resolve imports. Each one's Lagrange tables come from the memo under
-`lagrange-cache/`, as `PicklesFixture.basisFor` keys them. Independent circuit dumps are opened
-only afterward.
+`lagrange-cache/`, as `PicklesFixture.basisFor` keys them. Reconstruction requires no independent
+circuit dumps; only the separate comparison operation opens them.
 -/
 
 namespace PicklesFixture.Application
@@ -100,32 +100,25 @@ private def assembleAll (wrap : Srs Bulletproof.IpaPallas.curve)
 
 /-- Load each selected manifest entry's sidecar, reconstruct every entry in import order,
 continuing past failures, and finish with each entry's application or its failure. An entry
-whose sidecar is missing or does not parse fails at that stage, its key unknown; one whose
-circuit dump is missing fails with its key known, so its dependents are blocked by it. The
-shared SRSs are the caller's. -/
+whose sidecar is missing or does not parse fails at that stage, its key unknown. Reconstruction
+failures retain the parsed key so dependents can be blocked. The shared SRSs are the caller's. -/
 def reconstructApplications (dir : System.FilePath) (apps : List Manifest.Application)
     (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
     (finish : List (String × Except String ImportedApplication) → IO Unit) : IO Unit := do
   unless !apps.isEmpty do throw (IO.userError "no applications selected")
   let mut entries : List (String × ApplicationDump) := []
   let mut failures : List (String × String) := []
-  let mut failedKeys : List (String × Key IpaPallas.curve 1) := []
   for app in apps do
     for tag in app.tags do
       let name := s!"{app.name}/{tag.name}"
-      let dumpPath := dir / app.name / s!"{tag.name}.json"
       let sidecar := dir / app.name / "shapes" / s!"{tag.name}.json"
       if !(← sidecar.pathExists) then
         failures := failures ++ [(name, s!"missing required fixture: {sidecar}")]
       else
         match ← (do IO.ofExcept (ApplicationDump.ofJson (← readJson sidecar))).toBaseIO with
         | .error e => failures := failures ++ [(name, s!"sidecar: {e}")]
-        | .ok dump =>
-          if ← dumpPath.pathExists then entries := entries ++ [(name, dump)]
-          else
-            failures := failures ++ [(name, s!"missing required fixture: {dumpPath}")]
-            failedKeys := failedKeys ++ [(name, dump.wrapKey)]
-  assembleAll wrap step finish entries.length entries [] failedKeys
+        | .ok dump => entries := entries ++ [(name, dump)]
+  assembleAll wrap step finish entries.length entries [] []
     (failures.map fun (name, e) => (name, Except.error e))
 
 /-- Load and reconstruct every selected entry, failing at the first that has no application,

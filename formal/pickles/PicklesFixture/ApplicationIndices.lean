@@ -6,11 +6,10 @@ import Kimchi.Columns
 /-!
 # Checked indices of reconstructed applications
 
-Compile each reconstructed application's circuits once and check them at their keys' index
-data (`checkApplication`'s check on the compilations in hand), reporting every branch's and
-the wrap circuit's domain, masked rows and public rows. Then the dumps' path: the indices
-imported from the independent dump certified against the checked application, a disagreement
-located at its datum, before the compilations are required to match the dump datum by datum.
+Compile each reconstructed application's circuits once and certify their supplied keys
+against the Lean indices (`checkApplicationWith`). Then compare the indices imported from
+the independent dump with those Lean indices, locating disagreements at their datum,
+before requiring the compilations to match the dump datum by datum.
 A dump corrupted before that path must fail at its datum, and each change to the imported
 side alone must be rejected where it is. Then reject the same compilations at index data a
 key could not have supplied: a domain of eight rows, two masked rows, the generator `1`,
@@ -61,22 +60,28 @@ circuit. One compilation per circuit and one parse per dump. -/
 def checkIndices (name : String) (A : ImportedApplication) (tag : Json) :
     IO (ApplicationCertified (A.assembled.circuits A.setup (fun _ => none))) := do
   let C := A.assembled.circuits A.setup (fun _ => none)
-  let r ← certifyApplication name A tag
-  rejectWrongKeys name A r
-  compareCompilations C r.steps r.wrap name r.stepDump r.wrapDump
-  rejectCorruptedDump name C r.steps r.wrap r.checked r.stepDump r.wrapDump
-  rejectImportedChanges name C r.checked r.stepDump r.wrapDump
+  let steps ← finSequence fun b => IO.lazyPure fun _ => canonicalStep C b
+  let wrap ← IO.lazyPure fun _ => canonicalWrap C
+  let checked ← match ← IO.lazyPure fun _ => checkApplicationWith C steps wrap with
+    | .error f => throw (IO.userError s!"{name}: {located f}")
+    | .ok cert => pure cert
+  let (stepDump, wrapDump) ← IO.ofExcept (circuitDumps A.shape tag)
+  rejectWrongKeys name A checked
+  compareImported name C checked stepDump wrapDump
+  compareCompilations C steps wrap name stepDump wrapDump
+  rejectCorruptedDump name C steps wrap checked stepDump wrapDump
+  rejectImportedChanges name C checked stepDump wrapDump
   let first : A.shape.Branch := ⟨0, A.shape.branches_pos⟩
   for (what, bad) in domainCorruptions (stepIndexData C first) do
     requireRejected name s!"step 0 at {what}" (fun | .step b .index => b.val = 0 | _ => false)
       (← IO.lazyPure fun _ =>
-        (checkStepAt C first (r.steps first) bad).mapError (.step first))
+        (checkStepAt C first (steps first) bad).mapError (.step first))
   for (what, bad) in gateCorruptions (wrapIndexData C) do
     requireRejected (D := A.shape) name s!"the wrap circuit at {what}"
       (fun | .wrap .index => true | _ => false)
-      (← IO.lazyPure fun _ => (checkWrapAt C r.wrap bad).mapError .wrap)
+      (← IO.lazyPure fun _ => (checkWrapAt C wrap bad).mapError .wrap)
   (← IO.getStdout).flush
-  return r.checked
+  return checked
 
 /-! ## Tables from cached executions -/
 
