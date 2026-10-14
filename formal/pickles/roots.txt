@@ -115,6 +115,7 @@ Pickles.Application.MatrixRunConsumer.lifts_both -- both lifts applied against t
 Pickles.Application.ApplicationCertified.step_valuation_or_failure
 Pickles.Application.ApplicationCertified.wrap_valuation_or_failure
 Pickles.Application.terminal_kimchiVerify
+Pickles.Application.terminal_stepWrap -- terminal acceptance supplies a connected Step/Wrap pair or failure
 -- Pickles-correctness preserves matrix readings. Connections supplied on the matrices
 -- lift to the native capstones, with conclusions on the same matrices and the state projection.
 Pickles.Application.ApplicationCertified.picklesCorrect

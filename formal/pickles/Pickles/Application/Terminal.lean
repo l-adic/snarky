@@ -504,4 +504,49 @@ theorem terminal_kimchiVerify {C : Circuits D L} (cert : ApplicationCertified C)
     exact Or.inl ⟨r, hreads, r.terminal_verifies d hreads hsetup checks⟩
   · exact Or.inr failure
 
+/-- The inner Step public input encodes the statement decoded from the Wrap execution. -/
+private theorem WrapRun.terminal_publicInput {C : Circuits D L} (r : WrapRun C)
+    (b : D.Branch) :
+    (CircuitType.valueToFields (F := Fp)
+      (StepStatement.ofWrap r.V r.cells.2.statement)).toArray =
+      wrapPublicInput C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk r.V
+        r.cells.2.statement := by
+  apply Array.toList_inj.mp
+  apply StepStatement.ofWrap_toFields
+  have h := ((builder_spec_iff _ _).mp
+    (wrapMain_statement
+      (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
+      r.V D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
+      C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
+      wrapStatement C.wiring.backend.stepKeys[b].cvk.nc_pos)
+      _ r.terminal_body_holds).2.2.1
+  dsimp only [WrapRun.cells, Circuits.wrapBuilt, Circuits.wrapCircuit]
+  erw [compileWith_wrapMainCircuit_cells (V := r.V)]
+  simpa only [Vector.mem_toList_iff] using h
+
+/-- Terminal acceptance supplies a satisfying Step/Wrap pair connected at its public
+statement, or a carried-message collision or Kimchi failure at one of the two fixed SRSs. -/
+theorem terminal_stepWrap {C : Circuits D L} (cert : ApplicationCertified C)
+    (hsetup : ∀ b : D.Branch, WrapStepAssumptions C b)
+    (p : KimchiProof IpaPallas.curve 1 WrapIPARounds) (d : TerminalData C)
+    (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs.σ C.wiring.backend.wrapKey.cvk
+      p (CircuitType.valueToFields d.statement).toArray = true)
+    (checks : d.Checks) :
+    (∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement d.statement ∧
+      ((∃ (b : D.Branch) (e : StepWrapLink C b), e.wrap = r) ∨ d.Collision r)) ∨
+      SomeKimchiFailure C.setup.wrapSrs.σ ∨ SomeKimchiFailure C.setup.stepSrs.σ := by
+  obtain ⟨r, hreads, b, hb, hstep⟩ | failure :=
+    terminal_kimchiVerify cert hsetup p d haccept checks
+  · obtain hstep | collision := hstep
+    · rw [← r.terminal_publicInput b] at hstep
+      obtain ⟨V, holds, hpublic⟩ | failure := cert.step_valuation_or_failure b (d.proof r b)
+        (StepStatement.ofWrap r.V r.cells.2.statement) hstep
+      · let step : StepRun C b := ⟨V, inertStepAdvice, holds⟩
+        let e : StepWrapLink C b :=
+          { step, wrap := r, branch := hb, publicInput := hpublic }
+        exact Or.inl ⟨r, hreads, Or.inl ⟨b, e, rfl⟩⟩
+      · exact Or.inr <| Or.inr ⟨_, _, _, _, _, _, failure⟩
+    · exact Or.inl ⟨r, hreads, Or.inr collision⟩
+  · exact Or.inr <| Or.inl ⟨_, _, _, _, _, _, failure⟩
+
 end Pickles.Application
