@@ -5,6 +5,7 @@ import Pickles.Application.Certification
 import Pickles.Application.Compare
 import Pickles.Application.Imported
 import Pickles.Application.ProofCorrectness
+import Pickles.Application.Terminal
 
 /-!
 # Compiled application framework
@@ -26,6 +27,10 @@ preserve complete messages and propagate acceptance backward, with explicit mess
 and accumulator-validity failure alternatives.
 
 Acceptance of a proof under a certified key yields a satisfying valuation or `KimchiFailure`.
+At termination, a satisfying final Wrap execution supplies the group check. Recomputing the
+carried scalar data and checking the Step commitment closes the inner Step proof, without a
+later Step execution, unless the carried outgoing message collides with the witness's message.
+The Kimchi failure alternative remains outside the existence of that execution.
 
 Implementation helpers are private to their defining file. Shared declarations are
 exposed only as needed by other library modules or fixture drivers.

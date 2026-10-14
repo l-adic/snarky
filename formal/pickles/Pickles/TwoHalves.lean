@@ -836,6 +836,304 @@ theorem twoHalves_kimchiVerify
   simp only [SgOk, wireChallenges, verifyFrom, transcriptFrom, verifyWith_eq]
   exact ⟨fun ⟨⟨hc, hs⟩, hsg⟩ => ⟨⟨hs, hsg⟩, hc⟩, fun ⟨⟨hs, hsg⟩, hc⟩ => ⟨⟨hc, hs⟩, hsg⟩⟩
 
+/-! ### Closing the terminal scalar obligations directly -/
+
+/-- The scalar values recomputed by terminal verification from the carried proof data. -/
+private structure TerminalScalarValues (F : Type) (k : Nat) where
+  /-- The scalar sponge's `ξ` prechallenge. -/
+  xi : Nat
+  /-- The combined inner product of the batch's evaluation rows. -/
+  cip : F
+  /-- The challenge polynomial at both evaluation points, combined by `r`. -/
+  b : F
+  /-- The permutation scalar in the linearized commitment. -/
+  perm : F
+  /-- The SRS-length power of `ζ`. -/
+  zetaM : F
+  /-- The domain-size power of `ζ`. -/
+  zetaN : F
+  /-- The carried opening prechallenges after endomorphism expansion. -/
+  expandedChallenges : Vector F k
+
+/-- Recompute the scalar transcript and deferred arithmetic from the terminal record's
+values. No scalar-half valuation or later finalization circuit is required. -/
+private def terminalScalarValues (C : KimchiCurve) {nc k : Nat}
+    (vk : KimchiVK C nc) (dv : DeferredValues k Prechallenge C.ScalarField)
+    (spongeDigest : C.ScalarField) (evals : ChunkedEvals nc C.ScalarField)
+    (oldChallenges : Array (Vector C.ScalarField k)) : TerminalScalarValues C.ScalarField k :=
+  let α := endoExpand C.lam dv.plonk.alpha.val.val
+  let β : C.ScalarField := dv.plonk.beta.val.val
+  let γ : C.ScalarField := dv.plonk.gamma.val.val
+  let ζ := endoExpand C.lam dv.plonk.zeta.val.val
+  let ζω := ζ * vk.omega
+  let zetaM := ζ ^ 2 ^ k
+  let zetaOmegaM := ζω ^ 2 ^ k
+  let zetaN := ζ ^ vk.n
+  let ev := combineEvals zetaM zetaOmegaM evals.evals
+  let pre := frPrechallenges C.frSponge.params
+    (frTranscript spongeDigest (recDigest C oldChallenges) evals.ftEval1 evals.pub evals.evals)
+  let ξ := endoExpand C.lam pre.1
+  let r := endoExpand C.lam pre.2
+  let cs := dv.bulletproofChallenges.map fun c => endoExpand C.lam c.val.val
+  let ft₀ := ftEval0 vk.n vk.zkRows vk.omega (fun i => vk.shifts[i]) vk.endo
+    (mdsOfParams C.frSponge.params) α β γ ζ
+    (combineAt zetaM evals.pub.zeta.toArray) (linEvals ev)
+  let oldRows := oldChallenges.toList.map fun u =>
+    (⟨bPoly u.get ζ, bPoly u.get ζω⟩ : PointEvaluations C.ScalarField)
+  let rows := oldRows ++ chunkRows evals.pub ++
+    ⟨ft₀, evals.ftEval1⟩ :: (evalRows evals.evals).flatMap chunkRows
+  { xi := pre.1
+    cip := Bulletproof.combinedInnerProduct ξ r
+      (fun (i : Fin rows.length) (j : Fin evalPts) => ((rows.get i).toVector)[j])
+    b := combinedB cs.get r ![ζ, ζω]
+    perm := permScalar β γ α (zkpmEval vk.n vk.zkRows vk.omega ζ) (linEvals ev)
+    zetaM := zetaM
+    zetaN := zetaN
+    expandedChallenges := cs }
+
+/-- Every scalar claim in the terminal record equals its recomputed value. The opening
+prechallenges are tied to the group transcript by `terminal_group_challenges`. -/
+def terminalScalarChecks (C : KimchiCurve) {nc k : Nat}
+    (vk : KimchiVK C nc) (dv : DeferredValues k Prechallenge C.ScalarField)
+    (spongeDigest : C.ScalarField) (evals : ChunkedEvals nc C.ScalarField)
+    (oldChallenges : Array (Vector C.ScalarField k)) : Prop :=
+  let actual := terminalScalarValues C vk dv spongeDigest evals oldChallenges
+  dv.xi.val.val = actual.xi ∧
+    dv.combinedInnerProduct = actual.cip ∧
+    dv.b = actual.b ∧
+    dv.plonk.perm = actual.perm ∧
+    dv.plonk.zetaToSrsLength = actual.zetaM ∧
+    dv.plonk.zetaToDomainSize = actual.zetaN
+
+/-- Once the terminal `ft` scalars and inner product match the run, the group half identifies
+the carried opening prechallenges with the wire transcript's expanded challenges. -/
+private theorem terminal_group_challenges
+    {nc : ℕ} (σ : SRS C.Point) (vk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (G : GroupHalf C sf σ.k) (success : BoolVar C.BaseField)
+    (hg : G.Reads σ vk cp pub success)
+    (hbase : 2 ^ 128 < C.base)
+    (dv : DeferredValues σ.k Prechallenge C.ScalarField)
+    (hdv : DvReads G.V G.side.decode G.claims.deferredValues dv)
+    (hperm : G.side.decode G.claims.deferredValues.plonk.perm = runPScalar C σ vk cp pub)
+    (hzm : G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength = runZetaM C σ vk cp pub)
+    (hzn : G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize = runZetaN C σ vk cp pub)
+    (hcip : G.side.decode G.claims.deferredValues.combinedInnerProduct =
+      cipOf (runInput C σ vk cp pub)) :
+    dv.bulletproofChallenges.map (fun c => endoExpand C.lam c.val.val) =
+      wireChallenges σ vk cp pub := by
+  obtain ⟨o, hx, -, -, hbpc, -⟩ := hg
+  simp only [IvpReads, DeferredValues.toIvpClaims] at hx
+  obtain ⟨-, -, -, -, -, hfinish⟩ := hx
+  obtain ⟨U, ns, c₀, chals, -, hns, hnsEq, -, -, -⟩ :=
+    hfinish hperm hzm hzn dv.xi.val hdv.xi
+  have heq : dv.bulletproofChallenges.map SizedF.val = ns := by
+    apply Vector.ext
+    intro i hi
+    have hraw := hns ⟨i, hi⟩
+    have he := hbpc rfl ⟨i, hi⟩
+    unfold Reads128 at hraw
+    rw [← he] at hraw
+    simpa only [Vector.getElem_map, Fin.getElem_fin] using
+      Reads128.unique (castInj128_of_lt _ hbase) (hdv.chals ⟨i, hi⟩) hraw
+  rw [hcip] at hnsEq
+  have hwarm : (runOracles C σ vk cp pub).warm =
+      (fqRun C vk cp (runPublicComm C σ vk pub)).warm := rfl
+  have hproof : (runInput C σ vk cp pub).proof = cp.opening := rfl
+  simp only [wireChallenges, transcriptFrom, ipaRun, hwarm, hproof]
+  rw [← hnsEq, ← heq, Vector.map_map]
+  simp only [Function.comp_def]
+
+/-- A successful group half with honest deferred scalar claims and the direct `sg` equation
+satisfies the wire verifier. -/
+private theorem terminal_group_verifies
+    {nc : ℕ} (σ : SRS C.Point) (vk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (G : GroupHalf C sf σ.k) (success : BoolVar C.BaseField)
+    (hg : G.Reads σ vk cp pub success)
+    (hsuccess : (↑success : CVar C.BaseField).val G.V = 1)
+    (hguard : Guards C vk cp pub)
+    (hperm : G.side.decode G.claims.deferredValues.plonk.perm = runPScalar C σ vk cp pub)
+    (hzm : G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength = runZetaM C σ vk cp pub)
+    (hzn : G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize = runZetaN C σ vk cp pub)
+    (hcip : G.side.decode G.claims.deferredValues.combinedInnerProduct =
+      cipOf (runInput C σ vk cp pub))
+    (hb : G.side.decode G.claims.deferredValues.b = combinedB
+      (fun i => (wireChallenges σ vk cp pub)[i])
+      (runInput C σ vk cp pub).evalscale (runInput C σ vk cp pub).pointFn)
+    (ξ : Prechallenge) (hξ : Reads128 G.V G.claims.deferredValues.xi ξ)
+    (hξrun : endoExpand C.lam ξ.val = (runInput C σ vk cp pub).polyscale)
+    (hsg : SgOk σ vk cp pub) :
+    kimchiVerify C σ vk cp pub = true := by
+  obtain ⟨o, hx, hsucc, -, -, -⟩ := hg
+  simp only [IvpReads, DeferredValues.toIvpClaims] at hx
+  obtain ⟨-, -, -, -, -, hfinish⟩ := hx
+  obtain ⟨U, ns, c₀, chals, rfl, -, rfl, rfl, rfl, hiff⟩ :=
+    hfinish hperm hzm hzn ξ hξ
+  rw [hsucc, hcip, hξrun] at hiff
+  have hs := hiff.mp hsuccess
+  rw [hb] at hs
+  rw [kimchiVerify_reflects]
+  refine ⟨hguard, ?_⟩
+  simp only [verifyFrom, transcriptFrom, verifyWith_eq]
+  have hwarm : (runOracles C σ vk cp pub).warm =
+      (fqRun C vk cp (runPublicComm C σ vk pub)).warm := rfl
+  have hproof : (runInput C σ vk cp pub).proof = cp.opening := rfl
+  simp only [wireChallenges, transcriptFrom, ipaRun, hwarm, hproof] at hs hsg ⊢
+  exact ⟨hs, hsg⟩
+
+private theorem terminal_keep_all {α : Type} (l : List α) :
+    (List.zipWith (fun m cv => if m then [cv] else [])
+      (List.replicate l.length true) l).flatten = l := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+    rw [List.length_cons, List.replicate_succ, List.zipWith_cons_cons, List.flatten_cons,
+      if_pos rfl, List.singleton_append, ih]
+
+/-- The pure terminal checks identify every deferred scalar and expanded opening challenge
+with the verifier run, using only the carried data and the group half's reading. -/
+private theorem terminalScalarChecks_run
+    {nc : ℕ} (σ : SRS C.Point) (vk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (G : GroupHalf C sf σ.k) (success : BoolVar C.BaseField)
+    (hg : G.Reads σ vk cp pub success) (hbase : 2 ^ 128 < C.base)
+    (dv : DeferredValues σ.k Prechallenge C.ScalarField)
+    (hdv : DvReads G.V G.side.decode G.claims.deferredValues dv)
+    (spongeDigest : C.ScalarField)
+    (hdigest : spongeDigest = castDigest C (G.claims.spongeDigestBeforeEvaluations.val G.V))
+    (evals : ChunkedEvals nc C.ScalarField)
+    (hevals : cp.evals = evals.evals) (hft : cp.ftEval1 = evals.ftEval1)
+    (hpub : cp.pubEvals = .carried evals.pub)
+    (oldChallenges : Array (Vector C.ScalarField σ.k))
+    (holds : cp.olds.map (·.u) = oldChallenges)
+    (hchecks : terminalScalarChecks C vk dv spongeDigest evals oldChallenges) :
+    G.side.decode G.claims.deferredValues.plonk.perm = runPScalar C σ vk cp pub ∧
+    G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength = runZetaM C σ vk cp pub ∧
+    G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize = runZetaN C σ vk cp pub ∧
+    G.side.decode G.claims.deferredValues.combinedInnerProduct = cipOf (runInput C σ vk cp pub) ∧
+    G.side.decode G.claims.deferredValues.b = combinedB
+      (fun i => (wireChallenges σ vk cp pub)[i])
+      (runInput C σ vk cp pub).evalscale (runInput C σ vk cp pub).pointFn ∧
+    endoExpand C.lam dv.xi.val.val = (runInput C σ vk cp pub).polyscale ∧
+    dv.bulletproofChallenges.map (fun c => endoExpand C.lam c.val.val) =
+      wireChallenges σ vk cp pub := by
+  have hgRead := hg
+  obtain ⟨o, hx, -, hdig, -, -⟩ := hg
+  simp only [IvpReads, DeferredValues.toIvpClaims] at hx
+  obtain ⟨hdE, hβG, hγG, hαG, hζG, -⟩ := hx
+  have hα : endoExpand C.lam dv.plonk.alpha.val.val =
+      (runOracles C σ vk cp pub).alpha := by
+    simp only [runOracles, fqOracles, FqRun.expand]
+    rw [hαG _ hdv.alpha]
+  have hζ : endoExpand C.lam dv.plonk.zeta.val.val =
+      (runOracles C σ vk cp pub).zeta := by
+    simp only [runOracles, fqOracles, FqRun.expand]
+    rw [hζG _ hdv.zeta]
+  have hβ : (dv.plonk.beta.val.val : C.ScalarField) =
+      (runOracles C σ vk cp pub).beta := by
+    simp only [runOracles, fqOracles, FqRun.expand]
+    rw [Reads128.unique (castInj128_of_lt _ hbase) hdv.beta hβG]
+  have hγ : (dv.plonk.gamma.val.val : C.ScalarField) =
+      (runOracles C σ vk cp pub).gamma := by
+    simp only [runOracles, fqOracles, FqRun.expand]
+    rw [Reads128.unique (castInj128_of_lt _ hbase) hdv.gamma hγG]
+  have hd : spongeDigest = (runOracles C σ vk cp pub).digest := by
+    rw [hdigest, hdig, ← hdE]
+    rfl
+  have hp : evals.pub = runPubEvals C σ vk cp pub := by
+    simp only [runPubEvals, publicEvalChunks, hpub]
+  rcases hchecks with ⟨hxi, hcip, hb, hperm, hzm, hzn⟩
+  have hpRun : G.side.decode G.claims.deferredValues.plonk.perm =
+      runPScalar C σ vk cp pub := by
+    rw [hdv.perm, hperm]
+    simp only [terminalScalarValues, hα, hβ, hγ, hζ, ← hevals, runPScalar, runLinEvals,
+      linEvals_combine, runZetaM, runZetaOmegaM, runZetaOmega, powPow2_eq]
+  have hmRun : G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength =
+      runZetaM C σ vk cp pub := by
+    rw [hdv.zetaM, hzm]
+    simp only [terminalScalarValues, hζ, runZetaM, powPow2_eq]
+  have hnRun : G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize =
+      runZetaN C σ vk cp pub := by
+    rw [hdv.zetaN, hzn]
+    simp only [terminalScalarValues, hζ, runZetaN, powPow2_eq, KimchiVK.n]
+  let pre := frPrechallenges C.frSponge.params
+    (frTranscript spongeDigest (recDigest C oldChallenges) evals.ftEval1 evals.pub evals.evals)
+  have hξ : endoExpand C.lam pre.1 = (runInput C σ vk cp pub).polyscale := by
+    show _ = (frOracles C cp _ _).xi
+    rw [frOracles_eq_frPrechallenges]
+    simp only [pre, hd, ← holds, ← hft, hp, ← hevals]
+  have hr : endoExpand C.lam pre.2 = (runInput C σ vk cp pub).evalscale := by
+    show _ = (frOracles C cp _ _).r
+    rw [frOracles_eq_frPrechallenges]
+    simp only [pre, hd, ← holds, ← hft, hp, ← hevals]
+  have hξRun : endoExpand C.lam dv.xi.val.val =
+      (runInput C σ vk cp pub).polyscale := by
+    rw [hxi]
+    exact hξ
+  let cvs : Vector (Vector C.ScalarField σ.k) oldChallenges.size := ⟨oldChallenges, rfl⟩
+  let ms := Vector.replicate oldChallenges.size true
+  have hkept : (Vector.zipWith (fun m cv => if m then [cv] else []) ms cvs).toList.flatten =
+      (cp.olds.map (·.u)).toList := by
+    simp only [ms, cvs, Vector.toList_zipWith, Vector.toList_replicate, Vector.toList_mk, holds]
+    simpa only [Array.length_toList] using terminal_keep_all oldChallenges.toList
+  have hrows := rows_eq σ vk cp pub ms cvs hkept evals.evals evals.pub evals.ftEval1
+    ((runOracles C σ vk cp pub).zeta ^ 2 ^ σ.k)
+    (((runOracles C σ vk cp pub).zeta * vk.omega) ^ 2 ^ σ.k)
+    hevals.symm hp hft.symm rfl rfl vk.zkRows vk.endo (fun i => vk.shifts[i]) rfl rfl rfl
+  dsimp only at hrows
+  rw [sgRows_kept, hkept, holds] at hrows
+  have hcRun : G.side.decode G.claims.deferredValues.combinedInnerProduct =
+      cipOf (runInput C σ vk cp pub) := by
+    rw [hdv.cip, hcip]
+    simp only [terminalScalarValues]
+    change Bulletproof.combinedInnerProduct (endoExpand C.lam pre.1)
+      (endoExpand C.lam pre.2) _ = _
+    rw [hα, hβ, hγ, hζ, hξ, hr, cip_congr _ _ _ _ hrows]
+    rfl
+  have hchals := terminal_group_challenges σ vk cp pub G success hgRead hbase dv hdv
+    hpRun hmRun hnRun hcRun
+  have hbRun : G.side.decode G.claims.deferredValues.b = combinedB
+      (fun i => (wireChallenges σ vk cp pub)[i])
+      (runInput C σ vk cp pub).evalscale (runInput C σ vk cp pub).pointFn := by
+    rw [hdv.b, hb]
+    change combinedB _ (endoExpand C.lam pre.2)
+      ![endoExpand C.lam dv.plonk.zeta.val.val,
+        endoExpand C.lam dv.plonk.zeta.val.val * vk.omega] = _
+    rw [hchals, hr, hζ, pointFn_eq]
+    rfl
+  exact ⟨hpRun, hmRun, hnRun, hcRun, hbRun, hξRun, hchals⟩
+
+/-- Terminal verification closes the scalar checks and the deferred `sg` equation directly
+from carried values, without a subsequent scalar-half circuit. -/
+theorem terminal_kimchiVerify
+    {nc : ℕ} (σ : SRS C.Point) (vk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (G : GroupHalf C sf σ.k) (success : BoolVar C.BaseField)
+    (hg : G.Reads σ vk cp pub success)
+    (hsuccess : (↑success : CVar C.BaseField).val G.V = 1)
+    (hbase : 2 ^ 128 < C.base) (hguard : Guards C vk cp pub)
+    (dv : DeferredValues σ.k Prechallenge C.ScalarField)
+    (hdv : DvReads G.V G.side.decode G.claims.deferredValues dv)
+    (spongeDigest : C.ScalarField)
+    (hdigest : spongeDigest = castDigest C (G.claims.spongeDigestBeforeEvaluations.val G.V))
+    (evals : ChunkedEvals nc C.ScalarField)
+    (hevals : cp.evals = evals.evals) (hft : cp.ftEval1 = evals.ftEval1)
+    (hpub : cp.pubEvals = .carried evals.pub)
+    (oldChallenges : Array (Vector C.ScalarField σ.k))
+    (holds : cp.olds.map (·.u) = oldChallenges)
+    (hchecks : terminalScalarChecks C vk dv spongeDigest evals oldChallenges)
+    (hsg : cp.opening.sg = msm C σ.g
+      (bPolyCoefficients fun i => endoExpand C.lam dv.bulletproofChallenges[i].val.val)) :
+    kimchiVerify C σ vk cp pub = true := by
+  obtain ⟨hp, hm, hn, hc, hb, hξ, hchals⟩ := terminalScalarChecks_run σ vk cp pub G success
+    hg hbase dv hdv spongeDigest hdigest evals hevals hft hpub oldChallenges holds hchecks
+  apply terminal_group_verifies σ vk cp pub G success hg hsuccess hguard hp hm hn hc hb
+    dv.xi.val hdv.xi hξ
+  show cp.opening.sg = msm C σ.g (bPolyCoefficients fun i => (wireChallenges σ vk cp pub)[i])
+  rw [← hchals]
+  simpa only [Fin.getElem_fin, Vector.getElem_map] using hsg
+
 end Ties
 
 /-! ## Across the cycle
