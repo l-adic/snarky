@@ -79,7 +79,7 @@ theorem castInj128_of_lt (p : ℕ) (hp : 2 ^ 128 < p) : CastInj128 (ZMod p) := b
 
 omit [Field F] [DecidableEq F] in
 /-- The prechallenge cast is injective where naturals below `2¹²⁸` cast injectively. -/
-theorem CastInj128.prechallenge_injective [NatCast F] (hinj : CastInj128 F) :
+private theorem CastInj128.prechallenge_injective [NatCast F] (hinj : CastInj128 F) :
     Function.Injective (fun m : Prechallenge => (m.val : F)) :=
   fun m m' h => Subtype.ext (hinj _ _ m.2 m'.2 h)
 

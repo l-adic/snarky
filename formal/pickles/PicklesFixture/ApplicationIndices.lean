@@ -115,7 +115,7 @@ def checkTables (name : String) (A : ImportedApplication)
   let I := checked.indices
   let mut built := 0
   for b in List.finRange A.shape.branches do
-    let vk := A.assembled.wiring.backend.stepKeys[b].cvk
+    let vk := A.assembled.wiring.backend.stepKeys[b]
     for p in steps.filter (·.vkDigest == toString vk.digest.val) do
       let prevs ← IO.ofExcept (stepPrevsOf (A.shape.slots b) wraps steps p)
       let r ← run.step b.val p prevs.toArray

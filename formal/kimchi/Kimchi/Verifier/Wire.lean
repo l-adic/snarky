@@ -148,6 +148,9 @@ The key check also bounds the public-input count by the domain size. Upstream ne
 either, but at a larger count its public commitment has fewer Lagrange points than inputs and
 its MSM asserts, so no public input verifies against such a key.
 
+The key check also validates the curve constants, domain exponent, zero-knowledge row count,
+and commitment digest. Every checked Kimchi key carries these properties.
+
 The quotient commitment is not pinned non-empty: upstream bounds its chunk count from above
 only, so the empty quotient parses.
 -/
@@ -177,23 +180,44 @@ def KimchiProof.check {C : Ipa.KimchiCurve} (nc k : ℕ) (p : KimchiProof C) :
              ftEval1 := p.ftEval1, opening := opening, olds }
   else none
 
-/-- **The key check**: at least one chunk, every committed column validated to `nc` chunks,
-and the public-input count at most the domain size. -/
+/-- **The key check**: validate dimensions, curve constants, domain, zero-knowledge rows,
+and the digest of the supplied commitments. No metadata or digest is repaired. -/
 def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
     Option (Kimchi.Verifier.KimchiVK C nc) := do
   if h : 0 < nc ∧ vk.publicCount ≤ 2 ^ vk.domainLog2 then
-    return { nc_pos := h.1, domainLog2 := vk.domainLog2, omega := vk.omega
-             sigmaComm := ← vk.sigmaComm.mapM (checkChunks nc)
-             coefficientsComm := ← vk.coefficientsComm.mapM (checkChunks nc)
-             genericComm := ← checkChunks nc vk.genericComm
-             poseidonComm := ← checkChunks nc vk.poseidonComm
-             completeAddComm := ← checkChunks nc vk.completeAddComm
-             mulComm := ← checkChunks nc vk.mulComm
-             emulComm := ← checkChunks nc vk.emulComm
-             endomulScalarComm := ← checkChunks nc vk.endomulScalarComm
-             shifts := vk.shifts, zkRows := vk.zkRows
-             publicCount := vk.publicCount, publicCount_le := h.2
-             prevChallenges := vk.prevChallenges, endo := vk.endo, digest := vk.digest }
+    if he : vk.endo = C.endoScalar then
+      if hz : vk.zkRows = zkRowsOf nc then
+        if hzn : vk.zkRows ≤ 2 ^ vk.domainLog2 then
+          if hd : vk.domainLog2 ≤ C.twoAdicity then
+            if ho : vk.omega = domainGenerator C vk.domainLog2 then
+              if hs : vk.shifts = C.shifts then
+                let sigmaComm ← vk.sigmaComm.mapM (checkChunks nc)
+                let coefficientsComm ← vk.coefficientsComm.mapM (checkChunks nc)
+                let genericComm ← checkChunks nc vk.genericComm
+                let poseidonComm ← checkChunks nc vk.poseidonComm
+                let completeAddComm ← checkChunks nc vk.completeAddComm
+                let mulComm ← checkChunks nc vk.mulComm
+                let emulComm ← checkChunks nc vk.emulComm
+                let endomulScalarComm ← checkChunks nc vk.endomulScalarComm
+                if hh : vk.digest = indexDigestOfPoints C
+                    ((sigmaComm.toList ++ coefficientsComm.toList ++
+                      [genericComm, poseidonComm, completeAddComm, mulComm, emulComm,
+                        endomulScalarComm]).flatMap Vector.toList) then
+                  return { nc_pos := h.1, domainLog2 := vk.domainLog2, omega := vk.omega
+                           sigmaComm, coefficientsComm, genericComm, poseidonComm
+                           completeAddComm, mulComm, emulComm, endomulScalarComm
+                           shifts := vk.shifts, zkRows := vk.zkRows
+                           publicCount := vk.publicCount, publicCount_le := h.2
+                           prevChallenges := vk.prevChallenges, endo := vk.endo, digest := vk.digest
+                           endo_eq := he, zkRows_eq := hz, zkRows_le := hzn, domainLog2_le := hd
+                           digest_eq := hh, omega_eq := ho, shifts_eq := hs }
+                else none
+              else none
+            else none
+          else none
+        else none
+      else none
+    else none
   else none
 
 /-- The run's chunk count, the upstream verifier's formula: one chunk when the domain is no

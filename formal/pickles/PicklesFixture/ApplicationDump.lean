@@ -12,7 +12,7 @@ and shared protocol inputs. This module reads no independently compiled circuit 
 namespace PicklesFixture.Application
 
 open Lean Snarky Snarky.Kimchi Pickles Pickles.Application Bulletproof
-open CompElliptic.Fields.Pasta
+open CompElliptic.Fields.Pasta Kimchi.Verifier
 
 /-- The SRS reference checked against a supplied shared SRS. -/
 structure SrsReference (C : Ipa.KimchiCurve) where
@@ -48,7 +48,7 @@ structure EnvironmentDump where
 /-- Backend metadata identifying one compiled import. -/
 structure ImportDump where
   /-- The complete checked wrap key. -/
-  wrapKey : Key IpaPallas.curve 1
+  wrapKey : KimchiVK IpaPallas.curve 1
   /-- The source's step-proof chunk count. -/
   stepChunks : Nat
   /-- The source's step domains in branch order. -/
@@ -61,11 +61,11 @@ structure ApplicationDump where
   /-- Input checks, rule operations and returned expressions in branch order. -/
   rules : Array RuleDump
   /-- The application's checked wrap key. -/
-  wrapKey : Key IpaPallas.curve 1
+  wrapKey : KimchiVK IpaPallas.curve 1
   /-- The common chunk count of its step keys. -/
   stepChunks : Nat
   /-- The checked step key of each branch. -/
-  stepKeys : Array (Key IpaVesta.curve stepChunks)
+  stepKeys : Array (KimchiVK IpaVesta.curve stepChunks)
   /-- Resolved sources in the shape's import-index order. -/
   imports : Array ImportDump
   /-- Shared SRS references and protocol padding. -/
@@ -75,12 +75,6 @@ private def vectorOf {α : Type} (n : Nat) (read : Json → Except String α) (j
     Except String (Vector α n) := do
   let xs ← FixtureKit.parseArrOf read j
   if h : xs.size = n then return ⟨xs, h⟩ else throw s!"expected {n} entries, got {xs.size}"
-
-private def keyOf (C : Ipa.KimchiCurve) (k nc : Nat) (j : Json) :
-    Except String (Key C nc) := do
-  let cvk ← checkedKey C k nc j
-  let some key := Key.check cvk | throw "the backend key failed its invariant check"
-  return key
 
 private def srsReferenceOf (C : Ipa.KimchiCurve) (name : String) (k : Nat) (j : Json) :
     Except String (SrsReference C) := do
@@ -139,20 +133,20 @@ def ApplicationDump.ofJson (j : Json) : Except String ApplicationDump := do
   let r ← j.getObjVal? "resolved"
   let stepChunks ← (← r.getObjVal? "stepChunks").getNat?
   unless stepChunks > 0 do throw "the application step chunk count must be positive"
-  let stepKeys ← FixtureKit.parseArrOf (keyOf IpaVesta.curve StepIPARounds stepChunks)
+  let stepKeys ← FixtureKit.parseArrOf (checkedKey IpaVesta.curve StepIPARounds stepChunks)
     (← r.getObjVal? "stepKeys")
   let imports ← FixtureKit.parseArrOf (fun i => do
     let stepChunks ← (← i.getObjVal? "stepChunks").getNat?
     unless stepChunks > 0 do throw "an import step chunk count must be positive"
     let stepDomains ← FixtureKit.parseArrOf Json.getNat? (← i.getObjVal? "stepDomains")
-    return (⟨← keyOf IpaPallas.curve WrapIPARounds 1 (← i.getObjVal? "wrapKey"),
+    return (⟨← checkedKey IpaPallas.curve WrapIPARounds 1 (← i.getObjVal? "wrapKey"),
       stepChunks, stepDomains⟩ : ImportDump))
     (← r.getObjVal? "imports")
   unless rules.size == shape.branches.size && stepKeys.size == shape.branches.size do
     throw "rule or step-key count differs from the shape"
   unless imports.size == shape.imports.size do throw "import count differs from the shape"
   return { shape, rules, stepChunks, stepKeys, imports
-           wrapKey := ← keyOf IpaPallas.curve WrapIPARounds 1 (← r.getObjVal? "wrapKey")
+           wrapKey := ← checkedKey IpaPallas.curve WrapIPARounds 1 (← r.getObjVal? "wrapKey")
            environment := ← environmentOf (← j.getObjVal? "environment") }
 
 end PicklesFixture.Application

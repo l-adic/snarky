@@ -18,7 +18,7 @@ open Snarky Snarky.Kimchi Kimchi CompElliptic.Fields.Pasta
 /-- What `wrapStep_kimchiVerify` assumes of a wrap main's constants beyond its keys and the
 tables' shape, decided with no MSM: `h` is the step SRS's blinding base (`hh`), every step
 key's index points are finite (`hnz`), and every base is (`havoidS`, by
-`Key.avoids_lagrangeRelations_iff`). The bases are upstream's commitments, which the dump's
+`KimchiVK.avoids_lagrangeRelations_iff`). The bases are upstream's commitments, which the dump's
 harness checks against the keys. -/
 def wrapMainHyps {nc bp m : ℕ} (k : WrapMainConsts nc)
     (tables : Vector (Vector (Vector XhatWrapCurve.Point nc) m) (bp + 1))

@@ -154,7 +154,7 @@ theorem wrapVerify_reads {nc kw nw np : ℕ} (S : IvpSide C V ops) (σ : SRS C.P
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (h : IvpHyps S σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
-    wrapVerify (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e C.sponge.params
+    wrapVerify (c := Builder V (KimchiConstraint C.BaseField)) ops S.shape.ipaEndo C.sponge.params
       endo (.ofSpec C.groupMap) sqrtF blindingH spongeAfterIndex computeXHat msgSponge
       newBpChallenges claimedMsgDigest u cells
     ⦃⇓ _ _ => ⌜∃ v : BoolVar C.BaseField,
@@ -315,12 +315,12 @@ theorem StepStatement.leafHasScalar_packed {ks n nc : ℕ}
 
 open scoped Kimchi in
 /-- A step key has at most `2^32` chunks: its domain exponent is at most `Fp`'s two-adicity,
-`32` (`Key.domainLog2_le`), and the chunk count is at most the domain size. -/
-private theorem nc_le_vesta {nc : ℕ} (σ : SRS IpaVesta.curve.Point) (K : Key IpaVesta.curve nc)
-    (hnc : nc = chunkCount σ.k K.cvk.domainLog2) : nc ≤ 2 ^ 32 := by
-  have hd : K.cvk.domainLog2 ≤ 32 := K.domainLog2_le
-  calc nc ≤ K.cvk.n := (Key.nc_le_n hnc)
-    _ = 2 ^ K.cvk.domainLog2 := rfl
+`32` (`KimchiVK.domainLog2_le`), and the chunk count is at most the domain size. -/
+private theorem nc_le_vesta {nc : ℕ} (σ : SRS IpaVesta.curve.Point) (K : KimchiVK IpaVesta.curve nc)
+    (hnc : nc = chunkCount σ.k K.domainLog2) : nc ≤ 2 ^ 32 := by
+  have hd : K.domainLog2 ≤ 32 := K.domainLog2_le
+  calc nc ≤ K.n := (KimchiVK.nc_le_n hnc)
+    _ = 2 ^ K.domainLog2 := rfl
     _ ≤ 2 ^ 32 := Nat.pow_le_pow_right two_pos hd
 
 /-- The wrap side's base field's characteristic exceeds the group half's absorb count. -/
@@ -334,33 +334,33 @@ open scoped Kimchi in
 cells reading as `cp`'s, the `sg` cells as its old accumulators' under their bits, and the key
 cells and the sponge after the key as `VkReads`, with the shifted claims' `IvpSide.ClaimOk`
 (`wrapSide_claimOk`) and the shape guards proved. -/
-theorem ivpHyps_of_reads_wrap {nc np : ℕ} {V : Valuation Fq} {S : Srs IpaVesta.curve}
-    {K : Key IpaVesta.curve nc} (hnc : nc = chunkCount S.σ.k K.cvk.domainLog2)
-    {cp : KimchiProof IpaVesta.curve nc S.σ.k} {pub : Array Fp}
+theorem ivpHyps_of_reads_wrap {nc np : ℕ} {V : Valuation Fq} {S : SRS IpaVesta.curve.Point}
+    {K : KimchiVK IpaVesta.curve nc} (hnc : nc = chunkCount S.k K.domainLog2)
+    {cp : KimchiProof IpaVesta.curve nc S.k} {pub : Array Fp}
     {keyCells : VkComms nc (AffinePoint (FVar Fq))} {spongeAfterIndex : SpongeVar Fq}
-    (dv : DeferredValues S.σ.k (FVar Fq) (Type1 (FVar Fq)))
+    (dv : DeferredValues S.k (FVar Fq) (Type1 (FVar Fq)))
     (sgOld : Vector (Option (BoolVar Fq) × AffinePoint (FVar Fq)) np)
-    (proof : IvpProof S.σ.k nc (FVar Fq) (Type1 (FVar Fq)))
-    (u : UnfinalizedProof S.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (proof : IvpProof S.k nc (FVar Fq) (Type1 (FVar Fq)))
+    (u : UnfinalizedProof S.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (oldsW : Vector (IpaVesta.curve.Point × Bool) np)
     (hmask : ∀ m ∈ sgOld, m.1.isSome = true) (hnp : np ≤ MaxProofsVerified)
     (hproof : ProofReads (wrapSide V) proof.wComm proof.zComm proof.tComm proof.opening cp)
     (holds : OldsRead V sgOld cp oldsW)
-    (hvk : VkReads K.cvk V spongeAfterIndex keyCells) :
-    IvpHyps (wrapSide V) S.σ K.cvk cp pub true spongeAfterIndex
+    (hvk : VkReads K V spongeAfterIndex keyCells) :
+    IvpHyps (wrapSide V) S K cp pub true spongeAfterIndex
       ((ivpInputOf dv sgOld keyCells proof).withClaims u) oldsW := by
   refine
     { idx := hvk.idx, mask := hmask
       ties :=
         { olds := holds, proof := hproof, key := hvk.key
           claimOk := fun x _ => wrapSide_claimOk V x }
-      nc_pos := K.cvk.nc_pos, k_pos := S.rounds_pos, char := ?char }
+      char := ?char }
   case char =>
     intro m hm h0
     refine char_guard_fq m (le_trans hm ?_) h0
     have h1 := hnp
     simp only [MaxProofsVerified] at h1
-    have h5 := nc_le_vesta S.σ K hnc
+    have h5 := nc_le_vesta S K hnc
     omega
 
 end WrapRead

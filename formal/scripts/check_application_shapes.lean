@@ -16,10 +16,6 @@ def main : IO Unit := do
     | throw (IO.userError "PICKLES_DUMP_DIR is not set")
   let apps ← IO.ofExcept (Manifest.select (← IO.getEnv "APPLICATION_SHAPES"))
   Manifest.checkFiles dir apps
-  let σW ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) 15
-  let σS ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) 16
-  let some wrap := Pickles.Srs.check σW
-    | throw (IO.userError "the wrap SRS failed its invariant check")
-  let some step := Pickles.Srs.check σS
-    | throw (IO.userError "the step SRS failed its invariant check")
+  let wrap ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) 15
+  let step ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) 16
   PicklesFixture.Application.checkSelectedFromShape dir apps wrap step

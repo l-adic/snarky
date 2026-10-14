@@ -61,12 +61,9 @@ PicklesFixture.Application.checkTables -- check-application-indices builds the l
 PicklesFixture.Application.rejectInvalidDumps -- check-application-indices: the dump adapter on small dumps
 PicklesFixture.compareWith -- check-cs compares each gadget circuit's system with its dump
 Pickles.Application.Wiring.assemble -- the fixture assembles typed wiring and tests rejected backends
-Pickles.Application.Layout.check -- the layout driver assembles each layout through the executable checker
-Pickles.Application.Layout.export -- the next application imports the checked layout interface
+Pickles.Application.Shape.export -- the next application imports the checked layout interface
 Pickles.buildEvalList
-Pickles.Key.check
 Pickles.instDecidableKeyLayout -- synthesis: the fixture loaders check each key's circuit layout
-Pickles.Srs.check
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
 Pickles.accOk
@@ -132,10 +129,3 @@ Pickles.carryWith_lagrangePoints
 Pickles.pubEvalsWith_lagrangePoints
 Pickles.sgOkWith_of_kimchiVerifyWith
 Pickles.accOk_of_carryWith
-
--- Verifier keys from index polynomials and the shared SRS.
-Pickles.deriveKey_columns
-Pickles.deriveKey_digest
-Pickles.deriveColumns_eq
-Pickles.compareColumns?_eq_none_iff
-Pickles.checkKey?

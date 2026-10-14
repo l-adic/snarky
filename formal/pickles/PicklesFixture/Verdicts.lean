@@ -2,7 +2,6 @@ import Std.Data.HashMap
 import BulletproofFixture
 import BulletproofFixture.SRSLoader
 import KimchiFixture.Cache
-import Pickles.Env
 import Pickles.TwoHalves
 
 /-!
@@ -74,9 +73,9 @@ def memoized (ref : IO.Ref (Std.HashMap String Bool)) (key : String) (compute : 
   return b
 
 /-- An entry's SRS and key, both checked, at the key's chunk count. -/
-abbrev Checked (C : Ipa.KimchiCurve) := (nc : ℕ) × Pickles.Srs C × Pickles.Key C nc
+abbrev Checked (C : Ipa.KimchiCurve) := (nc : ℕ) × SRS C.Point × Kimchi.Verifier.KimchiVK C nc
 
-/-- An entry's checked SRS and key (`Srs.check`, `Key.check`), built once per key and handed
+/-- An entry's loaded SRS and checked key (`KimchiVK.check`), built once per key and handed
 back for every later entry under the same key. -/
 def keyFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (keys : IO.Ref (List (String × Checked C)))
@@ -84,17 +83,9 @@ def keyFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
   let key := s!"{e.vkDigest}/{e.proof.opening.lr.size}/{e.publicInput.size}"
   if let some E := (← keys.get).lookup key then return E
   let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
-  let ⟨nc, cvk, _⟩ ← IO.ofExcept (e.checked σ.k)
-  let some S := Pickles.Srs.check σ
-    | throw (IO.userError "the SRS breaks an SRS invariant: there is no round or too many for \
-        the absorb bound, or the blinding base is the identity")
-  let some K := Pickles.Key.check cvk
-    | throw (IO.userError "the key breaks a key invariant: its endo or shifts are not the \
-        curve's, zk_rows is not the chunk count's or is above the domain, the generator is not \
-        primitive on the domain, or its digest is not its commitments' (a commitment outside \
-        the model, such as a lookup or optional gate, was absorbed)")
-  keys.modify ((key, ⟨nc, S, K⟩) :: ·)
-  return ⟨nc, S, K⟩
+  let ⟨nc, K, _⟩ ← IO.ofExcept (e.checked σ.k)
+  keys.modify ((key, ⟨nc, σ, K⟩) :: ·)
+  return ⟨nc, σ, K⟩
 
 /-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `accOk` on its
 own, decided once per accumulator: the dummies unlinked accumulators carry repeat across proofs. -/
@@ -117,13 +108,13 @@ def carries (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (keys : IO.Ref (List (String × Checked C)))
     (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
   let ⟨nc, S, K⟩ ← keyFor C name sqrt loaded keys pred
-  unless succ.proof.opening.lr.size = S.σ.k do
-    throw (IO.userError s!"round counts differ: {S.σ.k} and {succ.proof.opening.lr.size}")
-  let (_, cp) ← IO.ofExcept (pred.checkedAt S.σ.k nc)
-  let ⟨_, _, cp'⟩ ← IO.ofExcept (succ.checked S.σ.k)
+  unless succ.proof.opening.lr.size = S.k do
+    throw (IO.userError s!"round counts differ: {S.k} and {succ.proof.opening.lr.size}")
+  let (_, cp) ← IO.ofExcept (pred.checkedAt S.k nc)
+  let ⟨_, _, cp'⟩ ← IO.ofExcept (succ.checked S.k)
   if h : slot < cp'.olds.size then
-    let L ← basisFor C name S.σ nc pred
-    return Pickles.carryWith S.σ K.cvk L cp pred.publicInput cp' ⟨slot, h⟩
+    let L ← basisFor C name S nc pred
+    return Pickles.carryWith S K L cp pred.publicInput cp' ⟨slot, h⟩
   else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
 
 end PicklesFixture

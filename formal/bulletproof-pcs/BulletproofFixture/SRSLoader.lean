@@ -25,11 +25,16 @@ private def srsOfBytes (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.Ba
     unless byte off = 0xc4 ∧ byte (off + 1) = 0x21 do throw "expected a 33-byte point"
     let x := (List.range 32).foldr (fun i acc => acc * 256 + byte (off + 2 + i)) 0
     pointOfCompressed C sqrt x (byte (off + 34))
+  let hPoint ← point (6 + 35 * count)
   let g ← (Array.range (2 ^ k)).mapM fun i => point (6 + 35 * i)
-  if h : g.size = 2 ^ k then
-    return { k, g := fun i => g[i.val]'(by have := i.isLt; omega)
-             h := ← point (6 + 35 * count), U := 0 }
-  else throw "generator count"
+  if hk : 0 < k then
+    if hh : hPoint ≠ 0 then
+      if h : g.size = 2 ^ k then
+        return { k, g := fun i => g[i.val]'(by have := i.isLt; omega)
+                 h := hPoint, U := 0, rounds_pos := hk, h_ne := hh }
+      else throw "generator count"
+    else throw "the blinding base is the identity"
+  else throw "expected at least one IPA round"
 
 /-- The SRS at `path`, cut to its first `2^k` generators — the SRS a `k`-round proof of
 the curve was made against, as the generators are fixed by index. `sqrt` is the base

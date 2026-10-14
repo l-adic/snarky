@@ -21,7 +21,7 @@ open Snarky Snarky.Kimchi Bulletproof Bulletproof.Ipa Kimchi.Verifier CompEllipt
 open Poseidon.FqSponge
 open scoped Kimchi
 
-variable {D : Shape} {L : Layout D}
+variable {D : Shape}
 
 /-- Value-level terminal Wrap public input. -/
 private def terminalPacked {k : ℕ} (dv : DeferredValues k Prechallenge Fp)
@@ -128,11 +128,11 @@ private theorem wrapMsgDigest_sg_eq_or_collision {w k : ℕ}
 private instance (D : Shape) : NeZero D.branches := ⟨Nat.ne_of_gt D.branches_pos⟩
 
 /-- Every constraint of the Wrap body is present in the satisfying compiled execution. -/
-private theorem WrapRun.terminal_body_holds {C : Circuits D L} (r : WrapRun C) :
+private theorem WrapRun.terminal_body_holds {C : Circuits D} (r : WrapRun C) :
     ∀ con ∈ (build (wrapMain (c := Builder r.V (KimchiConstraint Fq))
       (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
       D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
+      C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
       wrapStatement)
       (bodyStart (F := Fq) (c := Builder r.V (KimchiConstraint Fq))
         (a := StatementPacked StepIPARounds (Type1 Fq) Fq))).constraints,
@@ -141,7 +141,7 @@ private theorem WrapRun.terminal_body_holds {C : Circuits D L} (r : WrapRun C) :
 
 set_option cleanup.letToHave false in
 /-- A satisfying Wrap execution supplies the successful group half of its inner Step proof. -/
-private theorem WrapRun.terminal_group {C : Circuits D L} (r : WrapRun C) (b : D.Branch)
+private theorem WrapRun.terminal_group {C : Circuits D} (r : WrapRun C) (b : D.Branch)
     (hAssumptions : WrapStepAssumptions C b)
     (hb : r.cells.1.whichBranch.val r.V = (b : Fq))
     (cp : KimchiProof IpaVesta.curve C.wiring.backend.stepChunks StepIPARounds)
@@ -150,22 +150,22 @@ private theorem WrapRun.terminal_group {C : Circuits D L} (r : WrapRun C) (b : D
       r.cells.2.cells.tComm r.cells.2.cells.opening cp)
     (holds : OldsRead r.V r.cells.2.cells.sgOld cp oldsW) :
     ∃ success : BoolVar Fq,
-      GroupHalf.Reads C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk cp
-        (wrapPublicInput C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk r.V
+      GroupHalf.Reads C.setup.stepSrs C.wiring.backend.stepKeys[b] cp
+        (wrapPublicInput C.setup.stepSrs C.wiring.backend.stepKeys[b] r.V
           r.cells.2.statement)
         (GroupHalf.wrap r.V wrapStatement.claims) success ∧
       (↑success : CVar Fq).val r.V = 1 := by
   have hg := (builder_spec_iff _ _).mp
-    (wrapMain_verifyReads C.setup.wrapSrs.σ C.setup.stepSrs
+    (wrapMain_verifyReads C.setup.wrapSrs C.setup.stepSrs
       C.wiring.backend.stepKeys[b] (C.wiring.valid.stepChunks b) r.V D.widths
       (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
-      wrapStatement L.width_le C.wiring.valid.branches_le rfl
+      C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
+      wrapStatement D.width_le C.wiring.valid.branches_le rfl
       hAssumptions.points_ne hAssumptions.avoids) _ r.terminal_body_holds
   have hc : r.cells = _ := compileWith_wrapMainCircuit_cells
     (V := r.V) (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
     D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-    C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
+    C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
   rw [hc] at hb hproof holds ⊢
   exact (hg b hb
     (by simp [stepKeyCells, Wiring.stepKeys])
@@ -173,7 +173,7 @@ private theorem WrapRun.terminal_group {C : Circuits D L} (r : WrapRun C) (b : D
       cp oldsW hproof holds
 
 /-- The inner Step proof's commitments and opening cells retained by Wrap. -/
-private def WrapRun.proofCells {C : Circuits D L} (r : WrapRun C) :
+private def WrapRun.proofCells {C : Circuits D} (r : WrapRun C) :
     IvpProof StepIPARounds C.wiring.backend.stepChunks (FVar Fq) (Type1 (FVar Fq)) :=
   ⟨r.cells.2.cells.wComm, r.cells.2.cells.zComm, r.cells.2.cells.tComm,
     r.cells.2.cells.opening⟩
@@ -181,7 +181,7 @@ private def WrapRun.proofCells {C : Circuits D L} (r : WrapRun C) :
 open CompElliptic.CurveForms.ShortWeierstrass in
 set_option cleanup.letToHave false in
 /-- The retained proof and old-accumulator cells are the allocated, checked curve points. -/
-private theorem WrapRun.terminal_cells {C : Circuits D L} (r : WrapRun C) :
+private theorem WrapRun.terminal_cells {C : Circuits D} (r : WrapRun C) :
     (∀ j : Fin D.width, OnCurve IpaVesta.curve.E.A IpaVesta.curve.E.B
       (r.cells.1.stepAccs[j].pt.x.val r.V, r.cells.1.stepAccs[j].pt.y.val r.V)) ∧
     r.cells.2.cells = ivpInputOf wrapStatement.claims.deferredValues
@@ -192,12 +192,12 @@ private theorem WrapRun.terminal_cells {C : Circuits D L} (r : WrapRun C) :
     (wrapMain_cells
       (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
       r.V D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
+      C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
       wrapStatement) _ r.terminal_body_holds
   have hc : r.cells = _ := compileWith_wrapMainCircuit_cells
     (V := r.V) (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
     D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-    C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
+    C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
   erw [← hc] at h
   obtain ⟨hacc, pr, hcells, hon⟩ := h
   have hp : r.proofCells = pr := by
@@ -205,13 +205,13 @@ private theorem WrapRun.terminal_cells {C : Circuits D L} (r : WrapRun C) :
   exact ⟨hacc, hp ▸ hcells, hp ▸ hon⟩
 
 /-- The old commitment points and the keep bits selected by the Step branch. -/
-private def WrapRun.terminalOldsW {C : Circuits D L} (r : WrapRun C) (b : D.Branch) :
+private def WrapRun.terminalOldsW {C : Circuits D} (r : WrapRun C) (b : D.Branch) :
     Vector (IpaVesta.curve.Point × Bool) D.width :=
   Vector.ofFn fun j ↦ (readPt (C := IpaVesta.curve) r.V r.cells.1.stepAccs[j].pt,
     decide (D.width - D.slots b ≤ j.val))
 
 /-- The Step proof's old accumulators, pairing kept Wrap cells with carried Step challenges. -/
-private def WrapRun.terminalOlds {C : Circuits D L} (r : WrapRun C) (b : D.Branch)
+private def WrapRun.terminalOlds {C : Circuits D} (r : WrapRun C) (b : D.Branch)
     (challenges : Vector (Vector Fp StepIPARounds) D.width) :
     Array (Accumulator IpaVesta.curve StepIPARounds) :=
   (((List.finRange D.width).filter fun j ↦ decide (D.width - D.slots b ≤ j.val)).map
@@ -219,7 +219,7 @@ private def WrapRun.terminalOlds {C : Circuits D L} (r : WrapRun C) (b : D.Branc
       Accumulator IpaVesta.curve StepIPARounds)).toArray
 
 /-- The inner Step proof reconstructed from Wrap cells and its carried scalar data. -/
-private def WrapRun.terminalProof {C : Circuits D L} (r : WrapRun C) (b : D.Branch)
+private def WrapRun.terminalProof {C : Circuits D} (r : WrapRun C) (b : D.Branch)
     (evals : ProofEvaluations (Vector Fp C.wiring.backend.stepChunks))
     (pubEvals : PubEvalSrc IpaVesta.curve C.wiring.backend.stepChunks) (ftEval1 : Fp)
     (challenges : Vector (Vector Fp StepIPARounds) D.width) :
@@ -228,7 +228,7 @@ private def WrapRun.terminalProof {C : Circuits D L} (r : WrapRun C) (b : D.Bran
 
 set_option cleanup.letToHave false in
 /-- The reconstructed Step proof agrees with the retained proof and old-accumulator cells. -/
-private theorem WrapRun.terminal_proofReads {C : Circuits D L} (r : WrapRun C) (b : D.Branch)
+private theorem WrapRun.terminal_proofReads {C : Circuits D} (r : WrapRun C) (b : D.Branch)
     (hmask : CircuitType.Reads r.V r.cells.1.mask
       (Vector.ofFn fun i : Fin D.width ↦ decide (i.val < D.slots b)))
     (evals : ProofEvaluations (Vector Fp C.wiring.backend.stepChunks))
@@ -266,15 +266,15 @@ private theorem WrapRun.terminal_proofReads {C : Circuits D L} (r : WrapRun C) (
         Vector.toList_ofFn, List.ofFn_eq_map, List.filter_map, Function.comp_def]
 
 /-- The reconstructed Step proof has the accumulator count and input size of its branch key. -/
-private theorem WrapRun.terminal_guards {C : Circuits D L} (r : WrapRun C) (b : D.Branch)
+private theorem WrapRun.terminal_guards {C : Circuits D} (r : WrapRun C) (b : D.Branch)
     (evals : ProofEvaluations (Vector Fp C.wiring.backend.stepChunks))
     (pubEvals : PubEvalSrc IpaVesta.curve C.wiring.backend.stepChunks) (ftEval1 : Fp)
     (challenges : Vector (Vector Fp StepIPARounds) D.width) :
-    Guards IpaVesta.curve C.wiring.backend.stepKeys[b].cvk
+    Guards IpaVesta.curve C.wiring.backend.stepKeys[b]
       (r.terminalProof b evals pubEvals ftEval1 challenges)
-      (wrapPublicInput C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk r.V
+      (wrapPublicInput C.setup.stepSrs C.wiring.backend.stepKeys[b] r.V
         r.cells.2.statement) := by
-  have hlayout : StepKeyLayout C.wiring.backend.stepKeys[b].cvk D.width (D.slots b) := by
+  have hlayout : StepKeyLayout C.wiring.backend.stepKeys[b] D.width (D.slots b) := by
     simpa [Wiring.stepKeys, Shape.widths] using C.wiring.step_key_layout b
   constructor
   · rw [hlayout.prevChallenges_eq]
@@ -288,20 +288,20 @@ private theorem WrapRun.terminal_guards {C : Circuits D L} (r : WrapRun C) (b : 
 
 set_option cleanup.letToHave false in
 /-- A satisfying Wrap execution selects a branch whose width and domain match the public data. -/
-private theorem WrapRun.terminal_branchData {C : Circuits D L} (r : WrapRun C) :
+private theorem WrapRun.terminal_branchData {C : Circuits D} (r : WrapRun C) :
     ∃ b : D.Branch,
       r.cells.1.whichBranch.val r.V = (b : Fq) ∧
       CircuitType.Reads r.V r.cells.1.mask
         (Vector.ofFn fun i : Fin D.width ↦ decide (i.val < D.slots b)) ∧
       wrapStatement.branchData.val r.V =
-        4 * (C.wiring.backend.stepKeys[b].cvk.domainLog2 : Fq) +
+        4 * (C.wiring.backend.stepKeys[b].domainLog2 : Fq) +
           ((List.range D.width).map fun i ↦
             ((2 ^ (1 - i) : ℕ) : Fq) * bit (decide (i < D.slots b))).sum := by
   obtain ⟨b, hb, hbranch, _, hmask, _, hbd, _⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_reads C.setup.wrapSrs.σ r.V D.widths
+    (wrapMain_reads C.setup.wrapSrs r.V D.widths
       (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
-      wrapStatement L.width_le C.wiring.valid.branches_le) _ r.terminal_body_holds
+      C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
+      wrapStatement D.width_le C.wiring.valid.branches_le) _ r.terminal_body_holds
   refine ⟨⟨b, hb⟩, ?_, ?_, ?_⟩
   · dsimp only [WrapRun.cells, Circuits.wrapBuilt, Circuits.wrapCircuit]
     erw [compileWith_wrapMainCircuit_cells (V := r.V)]
@@ -313,21 +313,21 @@ private theorem WrapRun.terminal_branchData {C : Circuits D L} (r : WrapRun C) :
 
 set_option cleanup.letToHave false in
 /-- A satisfying Wrap execution binds its outgoing and reconstructed incoming messages. -/
-private theorem WrapRun.terminal_hashes {C : Circuits D L} (r : WrapRun C) :
+private theorem WrapRun.terminal_hashes {C : Circuits D} (r : WrapRun C) :
     r.cells.2.HashesMessages r.V C.setup.dummy wrapStatement r.cells.1 := by
   have h := ((builder_spec_iff _ _).mp
     (wrapMain_statement
       (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
       r.V D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
-      wrapStatement C.wiring.backend.stepKeys[(⟨0, D.branches_pos⟩ : D.Branch)].cvk.nc_pos)
+      C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
+      wrapStatement C.wiring.backend.stepKeys[(⟨0, D.branches_pos⟩ : D.Branch)].nc_pos)
       _ r.terminal_body_holds).2.2.2.2
   dsimp only [WrapRun.cells, Circuits.wrapBuilt, Circuits.wrapCircuit]
   erw [compileWith_wrapMainCircuit_cells (V := r.V)]
   exact h
 
 /-- The outgoing Wrap digest binds the inner Step commitment and the finalized Wrap challenges. -/
-private theorem WrapRun.terminal_messageHash {C : Circuits D L} (r : WrapRun C) :
+private theorem WrapRun.terminal_messageHash {C : Circuits D} (r : WrapRun C) :
     wrapStatement.digests[1].val r.V =
       wrapMsgDigest IpaVesta.curve.sponge.params C.setup.dummy
         ⟨readPoint r.V r.cells.2.cells.opening.sg,
@@ -355,7 +355,7 @@ private theorem terminalSg_of_readPoint {V : Valuation Fq} (cells : AffinePoint 
   simp only [readPt, terminalSg, CVar.val, hx, hy]
 
 /-- Data carried alongside the final Wrap proof, independent of any circuit witness. -/
-structure TerminalData (C : Circuits D L) where
+structure TerminalData (C : Circuits D) where
   /-- The Step scalar claims packed into the Wrap public input. -/
   deferred : DeferredValues StepIPARounds Prechallenge Fp
   /-- The Step group transcript's digest, before absorbing evaluations. -/
@@ -377,78 +377,78 @@ structure TerminalData (C : Circuits D L) where
   branchData : Fq
 
 /-- The complete Step message, with the application's key and the active challenge suffix. -/
-def TerminalData.stepMessage {C : Circuits D L} (d : TerminalData C) :
+def TerminalData.stepMessage {C : Circuits D} (d : TerminalData C) :
     MessagesForNextStepProof (VkComms 1 (AffinePoint Fp)) (Vector Fp D.schema.size)
       (Vector (AffinePoint Fp) d.width.val) (Vector (Vector Fp StepIPARounds) d.width.val) where
   appState := d.appState
-  dlogPlonkIndex := C.wiring.backend.wrapKey.cvk.comms.map fun p ↦ ⟨p.x, p.y⟩
+  dlogPlonkIndex := C.wiring.backend.wrapKey.comms.map fun p ↦ ⟨p.x, p.y⟩
   challengePolynomialCommitments := d.prevSgs
   oldBulletproofChallenges := (d.oldChallenges.drop (D.width - d.width.val)).cast
     (Nat.sub_sub_self (Nat.le_of_lt_succ d.width.isLt))
 
 /-- Recompute the Step digest from the carried message and the application's own Wrap key. -/
-def TerminalData.stepDigest {C : Circuits D L} (d : TerminalData C) : Fp :=
+def TerminalData.stepDigest {C : Circuits D} (d : TerminalData C) : Fp :=
   stepMsgDigest IpaPallas.curve.sponge.params d.stepMessage
 
 /-- The final Wrap proof's old accumulators, reconstructed from the carried messages.
 Step supplies their points and Wrap their challenges; both are front-padded to protocol width. -/
-def TerminalData.wrapAccumulators {C : Circuits D L} (d : TerminalData C) :
+def TerminalData.wrapAccumulators {C : Circuits D} (d : TerminalData C) :
     Vector (Accumulator IpaPallas.curve WrapIPARounds) MaxProofsVerified :=
   let sgs : Vector IpaPallas.curve.Point MaxProofsVerified :=
     (Vector.replicate (MaxProofsVerified - d.width.val) C.setup.dummySg ++
       d.prevSgs.map (fun sg ↦
         readPt (C := IpaPallas.curve) (fun _ ↦ 0) ⟨.const sg.x, .const sg.y⟩)).cast
-      (Nat.sub_add_cancel ((Nat.le_of_lt_succ d.width.isLt).trans L.width_le))
+      (Nat.sub_add_cancel ((Nat.le_of_lt_succ d.width.isLt).trans D.width_le))
   let challenges : Vector (Vector Fq WrapIPARounds) MaxProofsVerified :=
     (Vector.replicate (MaxProofsVerified - D.width) C.setup.dummy ++
-      d.message.oldBulletproofChallenges).cast (Nat.sub_add_cancel L.width_le)
+      d.message.oldBulletproofChallenges).cast (Nat.sub_add_cancel D.width_le)
   sgs.zipWith (fun sg u ↦ ⟨sg, u⟩) challenges
 
 /-- The final Wrap public statement determined by the carried data. -/
-def TerminalData.statement {C : Circuits D L} (d : TerminalData C) : WrapPublic :=
+def TerminalData.statement {C : Circuits D} (d : TerminalData C) : WrapPublic :=
   terminalPacked d.deferred d.spongeDigest
     (wrapMsgDigest IpaVesta.curve.sponge.params C.setup.dummy d.message)
     d.stepDigest d.branchData
 
 /-- The domain and mask that Wrap publicly binds for a selected branch. -/
-def terminalBranchData (C : Circuits D L) (b : D.Branch) : Fq :=
-  4 * (C.wiring.backend.stepKeys[b].cvk.domainLog2 : Fq) +
+def terminalBranchData (C : Circuits D) (b : D.Branch) : Fq :=
+  4 * (C.wiring.backend.stepKeys[b].domainLog2 : Fq) +
     ((List.range D.width).map fun i ↦
       ((2 ^ (1 - i) : ℕ) : Fq) * bit (decide (i < D.slots b))).sum
 
 /-- The scalar half uses only the active suffix of old Step accumulators. -/
-def TerminalData.activeChallenges {C : Circuits D L} (d : TerminalData C)
+def TerminalData.activeChallenges {C : Circuits D} (d : TerminalData C)
     (b : D.Branch) : Array (Vector Fp StepIPARounds) :=
   (((List.finRange D.width).filter fun j ↦ decide (D.width - D.slots b ≤ j.val)).map
     fun j ↦ d.oldChallenges[j]).toArray
 
 /-- The Step proof read from a certified Wrap witness and the carried scalar data. -/
-def TerminalData.proof {C : Circuits D L} (d : TerminalData C)
+def TerminalData.proof {C : Circuits D} (d : TerminalData C)
     (r : WrapRun C) (b : D.Branch) :=
   r.terminalProof b d.evals.evals (.carried d.evals.pub) d.evals.ftEval1 d.oldChallenges
 
 /-- A collision between the Wrap witness's outgoing message and the supplied message. -/
-def TerminalData.Collision {C : Circuits D L} (d : TerminalData C) (r : WrapRun C) : Prop :=
+def TerminalData.Collision {C : Circuits D} (d : TerminalData C) (r : WrapRun C) : Prop :=
   Pickles.Collision IpaVesta.curve.sponge.params
     (wrapMsgInput C.setup.dummy
       ⟨readPoint r.V r.cells.2.cells.opening.sg,
         (r.cells.1.outs.map (·.expandedChallenges)).map (·.map (·.val r.V))⟩)
     (wrapMsgInput C.setup.dummy d.message)
 
-private theorem TerminalData.branchData_reads {C : Circuits D L} (d : TerminalData C)
+private theorem TerminalData.branchData_reads {C : Circuits D} (d : TerminalData C)
     (r : WrapRun C) (h : CircuitType.Reads r.V wrapStatement d.statement) :
     wrapStatement.branchData.val r.V = d.branchData := by
   simp only [CircuitType.reads_ofEquiv, StatementPacked.equivProd, Equiv.coe_fn_mk,
     CircuitType.reads_prod, CircuitType.reads_vector] at h
   exact CircuitType.reads_fvar.mp h.2.2.2.2.2.1
 
-private theorem TerminalData.proof_oldChallenges {C : Circuits D L} (d : TerminalData C)
+private theorem TerminalData.proof_oldChallenges {C : Circuits D} (d : TerminalData C)
     (r : WrapRun C) (b : D.Branch) :
     (d.proof r b).olds.map (·.u) = d.activeChallenges b := by
   simp [proof, WrapRun.terminalProof, IvpProof.read, WrapRun.terminalOlds,
     activeChallenges, List.map_map, Function.comp_def]
 
-private theorem TerminalData.commitment_eq_or_collision {C : Circuits D L}
+private theorem TerminalData.commitment_eq_or_collision {C : Circuits D}
     (d : TerminalData C) (r : WrapRun C)
     (h : CircuitType.Reads r.V wrapStatement d.statement) (b : D.Branch) :
     (d.proof r b).opening.sg = terminalSg d.message.challengePolynomialCommitment ∨
@@ -466,27 +466,27 @@ private theorem TerminalData.commitment_eq_or_collision {C : Circuits D L}
 /-- The terminal checks are equalities on carried values. The public input fixes a domain
 and mask, not a branch identity, so the scalar check is stated for each compatible key.
 There is no assumed group check, inner proof acceptance, or subsequent circuit execution. -/
-structure TerminalData.Checks {C : Circuits D L} (d : TerminalData C) : Prop where
+structure TerminalData.Checks {C : Circuits D} (d : TerminalData C) : Prop where
   /-- Recompute the deferred scalars for the Step domain and active old accumulators. -/
   scalars : ∀ b : D.Branch, d.branchData = terminalBranchData C b →
-    terminalScalarChecks IpaVesta.curve C.wiring.backend.stepKeys[b].cvk
+    terminalScalarChecks IpaVesta.curve C.wiring.backend.stepKeys[b]
       d.deferred d.spongeDigest d.evals (d.activeChallenges b)
   /-- Check the remaining Step opening commitment directly. -/
   sg : terminalSg d.message.challengePolynomialCommitment =
-    msm IpaVesta.curve C.setup.stepSrs.σ.g
+    msm IpaVesta.curve C.setup.stepSrs.g
       (bPolyCoefficients fun i ↦
         endoExpand IpaVesta.curve.lam d.deferred.bulletproofChallenges[i].val.val)
 
 /-- Wrap satisfaction supplies the inner Step group check. Scalar recomputation and the
 terminal commitment check finish that proof, unless the carried message's digest collides
 with the message read from the Wrap witness. No further Step circuit is needed. -/
-private theorem WrapRun.terminal_verifies {C : Circuits D L} (r : WrapRun C)
+private theorem WrapRun.terminal_verifies {C : Circuits D} (r : WrapRun C)
     (d : TerminalData C) (hreads : CircuitType.Reads r.V wrapStatement d.statement)
     (hsetup : ∀ b : D.Branch, WrapStepAssumptions C b) (hchecks : d.Checks) :
     ∃ b : D.Branch, r.cells.1.whichBranch.val r.V = (b : Fq) ∧
-      (kimchiVerify IpaVesta.curve C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk
+      (kimchiVerify IpaVesta.curve C.setup.stepSrs C.wiring.backend.stepKeys[b]
         (d.proof r b)
-        (wrapPublicInput C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk r.V
+        (wrapPublicInput C.setup.stepSrs C.wiring.backend.stepKeys[b] r.V
           r.cells.2.statement) = true ∨ d.Collision r) := by
   obtain ⟨b, hb, hmask, hbranch⟩ := r.terminal_branchData
   refine ⟨b, hb, ?_⟩
@@ -502,7 +502,7 @@ private theorem WrapRun.terminal_verifies {C : Circuits D L} (r : WrapRun C)
     have hdigest := terminalPacked_digest wrapStatement d.deferred d.spongeDigest
       (wrapMsgDigest IpaVesta.curve.sponge.params C.setup.dummy d.message)
       d.stepDigest d.branchData hreads
-    apply terminal_kimchiVerify C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk
+    apply terminal_kimchiVerify C.setup.stepSrs C.wiring.backend.stepKeys[b]
       (d.proof r b) _ (GroupHalf.wrap r.V wrapStatement.claims) success hg hs
       (by change 2 ^ 128 < PALLAS_SCALAR_CARD; norm_num [PALLAS_SCALAR_CARD])
       (r.terminal_guards b d.evals.evals (.carried d.evals.pub)
@@ -517,19 +517,19 @@ private theorem WrapRun.terminal_verifies {C : Circuits D L} (r : WrapRun C)
 failure at the final Wrap proof. In the satisfying-execution case, certified compilation
 supplies the group check, while `checks` supplies scalar recomputation and the directly checked
 commitment. A mismatched carried commitment exhibits a collision. -/
-theorem terminal_kimchiVerify {C : Circuits D L} (cert : ApplicationCertified C)
+theorem terminal_kimchiVerify {C : Circuits D} (cert : ApplicationCertified C)
     (p : KimchiProof IpaPallas.curve 1 WrapIPARounds) (d : TerminalData C)
-    (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs.σ C.wiring.backend.wrapKey.cvk
+    (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs C.wiring.backend.wrapKey
       { p with olds := d.wrapAccumulators.toArray }
       (CircuitType.valueToFields d.statement).toArray = true)
     (checks : d.Checks) :
     (∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement d.statement ∧
       ∃ b : D.Branch, r.cells.1.whichBranch.val r.V = (b : Fq) ∧
-        (kimchiVerify IpaVesta.curve C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk
+        (kimchiVerify IpaVesta.curve C.setup.stepSrs C.wiring.backend.stepKeys[b]
           (d.proof r b)
-          (wrapPublicInput C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk r.V
+          (wrapPublicInput C.setup.stepSrs C.wiring.backend.stepKeys[b] r.V
             r.cells.2.statement) = true ∨ d.Collision r)) ∨
-      KimchiFailure C.setup.wrapSrs.σ cert.wrap.index C.wiring.backend.wrapKey
+      KimchiFailure C.setup.wrapSrs cert.wrap.index C.wiring.backend.wrapKey
         { p with olds := d.wrapAccumulators.toArray }
         ((CircuitType.valueToFields d.statement).cast cert.indices.wrapPublicCount.symm) := by
   obtain ⟨V, holds, hreads⟩ | failure := cert.wrap_valuation_or_failure
@@ -539,11 +539,11 @@ theorem terminal_kimchiVerify {C : Circuits D L} (cert : ApplicationCertified C)
   · exact Or.inr failure
 
 /-- The inner Step public input encodes the statement decoded from the Wrap execution. -/
-private theorem WrapRun.terminal_publicInput {C : Circuits D L} (r : WrapRun C)
+private theorem WrapRun.terminal_publicInput {C : Circuits D} (r : WrapRun C)
     (b : D.Branch) :
     (CircuitType.valueToFields (F := Fp)
       (StepStatement.ofWrap r.V r.cells.2.statement)).toArray =
-      wrapPublicInput C.setup.stepSrs.σ C.wiring.backend.stepKeys[b].cvk r.V
+      wrapPublicInput C.setup.stepSrs C.wiring.backend.stepKeys[b] r.V
         r.cells.2.statement := by
   apply Array.toList_inj.mp
   apply StepStatement.ofWrap_toFields
@@ -551,8 +551,8 @@ private theorem WrapRun.terminal_publicInput {C : Circuits D L} (r : WrapRun C)
     (wrapMain_statement
       (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
       r.V D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
-      wrapStatement C.wiring.backend.stepKeys[b].cvk.nc_pos)
+      C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
+      wrapStatement C.wiring.backend.stepKeys[b].nc_pos)
       _ r.terminal_body_holds).2.2.1
   dsimp only [WrapRun.cells, Circuits.wrapBuilt, Circuits.wrapCircuit]
   erw [compileWith_wrapMainCircuit_cells (V := r.V)]
@@ -560,15 +560,15 @@ private theorem WrapRun.terminal_publicInput {C : Circuits D L} (r : WrapRun C)
 
 /-- Terminal acceptance supplies a satisfying Step/Wrap pair connected at its public
 statement, or a carried-message collision or Kimchi failure at one of the two fixed SRSs. -/
-theorem terminal_stepWrap {C : Circuits D L} (cert : ApplicationCertified C)
+theorem terminal_stepWrap {C : Circuits D} (cert : ApplicationCertified C)
     (p : KimchiProof IpaPallas.curve 1 WrapIPARounds) (d : TerminalData C)
-    (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs.σ C.wiring.backend.wrapKey.cvk
+    (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs C.wiring.backend.wrapKey
       { p with olds := d.wrapAccumulators.toArray }
       (CircuitType.valueToFields d.statement).toArray = true)
     (checks : d.Checks) :
     (∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement d.statement ∧
       ((∃ (b : D.Branch) (e : StepWrapLink C b), e.wrap = r) ∨ d.Collision r)) ∨
-      SomeKimchiFailure C.setup.wrapSrs.σ ∨ SomeKimchiFailure C.setup.stepSrs.σ := by
+      SomeKimchiFailure C.setup.wrapSrs ∨ SomeKimchiFailure C.setup.stepSrs := by
   obtain ⟨r, hreads, b, hb, hstep⟩ | failure :=
     terminal_kimchiVerify cert p d haccept checks
   · obtain hstep | collision := hstep
@@ -647,9 +647,8 @@ private theorem stepInput_points {n n' sa : Nat}
   · simpa [chunk, MessagesForNextStepProof.proofs] using hx
   · simpa [chunk, MessagesForNextStepProof.proofs] using hy
 
-
 /-- The Step message read from a satisfying execution, retaining its static dimensions. -/
-private def StepRun.terminalMessage {C : Circuits D L} {b : D.Branch} (s : StepRun C b) :
+private def StepRun.terminalMessage {C : Circuits D} {b : D.Branch} (s : StepRun C b) :
     MessagesForNextStepProof (VkComms 1 (AffinePoint Fp)) (Vector Fp D.schema.size)
       (Vector (AffinePoint Fp) (D.slots b))
       (Vector (Vector Fp StepIPARounds) (D.slots b)) :=
@@ -660,13 +659,13 @@ private def StepRun.terminalMessage {C : Circuits D L} {b : D.Branch} (s : StepR
     oldBulletproofChallenges := m.oldBulletproofChallenges.map (·.map (·.val s.V)) }
 
 /-- A collision between the Step execution's outgoing message and the carried Step message. -/
-def TerminalData.StepCollision {C : Circuits D L} (d : TerminalData C)
+def TerminalData.StepCollision {C : Circuits D} (d : TerminalData C)
     {b : D.Branch} (s : StepRun C b) : Prop :=
   Pickles.Collision IpaPallas.curve.sponge.params
     (stepMsgInput s.terminalMessage) (stepMsgInput d.stepMessage)
 
 set_option cleanup.letToHave false in
-private theorem StepWrapLink.terminal_stepDigest {C : Circuits D L} {b : D.Branch}
+private theorem StepWrapLink.terminal_stepDigest {C : Circuits D} {b : D.Branch}
     (e : StepWrapLink C b) (d : TerminalData C)
     (hreads : CircuitType.Reads e.wrap.V wrapStatement d.statement)
     (hashes : e.step.cells.HashesMessages e.step.V) :
@@ -717,7 +716,7 @@ private theorem StepWrapLink.terminal_stepDigest {C : Circuits D L} {b : D.Branc
   rw [← e.wrap.terminal_hashes.2.2.1, hd, val_redFq, ZMod.natCast_zmod_val] at hp
   exact hhash.symm.trans hp
 
-private theorem TerminalData.wrapChallenges_eq_or_collision {C : Circuits D L}
+private theorem TerminalData.wrapChallenges_eq_or_collision {C : Circuits D}
     (d : TerminalData C) (r : WrapRun C)
     (hreads : CircuitType.Reads r.V wrapStatement d.statement) :
     (r.cells.1.outs.map (·.expandedChallenges)).map (·.map (·.val r.V)) =
@@ -740,7 +739,7 @@ private theorem TerminalData.wrapChallenges_eq_or_collision {C : Circuits D L}
     exact Collision.of_length_eq (by simp [wrapMsgInput]) he
       (by simpa only [Poseidon.RandomOracle.hash_eq_squeeze] using hh)
 
-private theorem TerminalData.accumulator_mem_or_collision {C : Circuits D L}
+private theorem TerminalData.accumulator_mem_or_collision {C : Circuits D}
     (d : TerminalData C) {b : D.Branch} (e : StepWrapLink C b) (i : D.Slot b)
     (hreads : CircuitType.Reads e.wrap.V wrapStatement d.statement)
     (A : Accumulator IpaPallas.curve WrapIPARounds)
@@ -757,7 +756,7 @@ private theorem TerminalData.accumulator_mem_or_collision {C : Circuits D L}
   have hsg := stepInput_points e.step.terminalMessage d.stepMessage hn hs i
   have hn' : D.slots b = d.width.val := hn
   have hwidth := D.slots_le_width b
-  have hmax := L.width_le
+  have hmax := D.width_le
   left
   rw [← he.2]
   refine List.mem_iff_getElem.mpr ⟨MaxProofsVerified - D.slots b + i.val,
@@ -787,9 +786,9 @@ The certificate supplies the static verifier setup. The final proof is checked w
 accumulators reconstructed from the carried messages; disagreement with the recovered executions
 exhibits a hash collision.
 Kimchi witness failures and accumulator-validity failures remain explicit alternatives. -/
-theorem terminal_requiredProofs {C : Circuits D L} (cert : ApplicationCertified C)
+theorem terminal_requiredProofs {C : Circuits D} (cert : ApplicationCertified C)
     (p : KimchiProof IpaPallas.curve 1 WrapIPARounds) (d : TerminalData C)
-    (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs.σ C.wiring.backend.wrapKey.cvk
+    (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs C.wiring.backend.wrapKey
       { p with olds := d.wrapAccumulators.toArray }
       (CircuitType.valueToFields d.statement).toArray = true)
     (checks : d.Checks) :
@@ -798,12 +797,12 @@ theorem terminal_requiredProofs {C : Circuits D L} (cert : ApplicationCertified 
       ∀ i : D.Slot b,
         CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true →
         e.step.KeyBound i →
-        kimchiVerify IpaPallas.curve C.setup.wrapSrs.σ (C.wiring.source b i).wrapKey.cvk
+        kimchiVerify IpaPallas.curve C.setup.wrapSrs (C.wiring.source b i).wrapKey
           (e.proof i) (e.proofPublicInput i) = true) ∨
       (∃ r : WrapRun C, d.Collision r) ∨
       (∃ (b : D.Branch) (s : StepRun C b), d.StepCollision s) ∨
-      SomeKimchiFailure C.setup.wrapSrs.σ ∨ SomeKimchiFailure C.setup.stepSrs.σ ∨
-      AccumulatorFailure C.setup.wrapSrs.σ C.wiring.backend.wrapKey.cvk
+      SomeKimchiFailure C.setup.wrapSrs ∨ SomeKimchiFailure C.setup.stepSrs ∨
+      AccumulatorFailure C.setup.wrapSrs C.wiring.backend.wrapKey
         { p with olds := d.wrapAccumulators.toArray }
         (CircuitType.valueToFields d.statement).toArray := by
   classical
@@ -814,7 +813,7 @@ theorem terminal_requiredProofs {C : Circuits D L} (cert : ApplicationCertified 
     · exact Or.inr (Or.inl ⟨e.wrap, hw⟩)
     by_cases hs : d.StepCollision e.step
     · exact Or.inr (Or.inr (Or.inl ⟨b, e.step, hs⟩))
-    by_cases ha : AccumulatorFailure C.setup.wrapSrs.σ C.wiring.backend.wrapKey.cvk
+    by_cases ha : AccumulatorFailure C.setup.wrapSrs C.wiring.backend.wrapKey
         { p with olds := d.wrapAccumulators.toArray }
         (CircuitType.valueToFields d.statement).toArray
     · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ha))))
@@ -822,9 +821,9 @@ theorem terminal_requiredProofs {C : Circuits D L} (cert : ApplicationCertified 
     intro i hm hk
     obtain ⟨he, _, hv⟩ := e.verifies_proof i (cert.stepWrapSetup b i) hm hk
     obtain hmem | collision := d.accumulator_mem_or_collision e i hreads _ he
-    · have h := accepts_or_accumulatorFailure C.setup.wrapSrs.σ
-        (C.wiring.source b i).wrapKey.cvk (e.proof i) (e.proofPublicInput i)
-        C.wiring.backend.wrapKey.cvk { p with olds := d.wrapAccumulators.toArray }
+    · have h := accepts_or_accumulatorFailure C.setup.wrapSrs
+        (C.wiring.source b i).wrapKey (e.proof i) (e.proofPublicInput i)
+        C.wiring.backend.wrapKey { p with olds := d.wrapAccumulators.toArray }
         (CircuitType.valueToFields d.statement).toArray
         (by simpa only [Vector.toList_toArray] using hmem) haccept hv
       exact h.resolve_right ha

@@ -33,14 +33,14 @@ private def memoisedTable (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Poin
   return pts.map (·.toArray)
 
 /-- An application's Lagrange tables: its wrap key's and one per step domain exponent. -/
-private def tablesFor (raw : ApplicationDump) (wrap : Srs IpaPallas.curve)
-    (step : Srs IpaVesta.curve) : IO LagrangeTables := do
-  let wrapTable ← memoisedTable IpaPallas.curve "pallas" wrap.σ 1 raw.wrapKey.cvk
+private def tablesFor (raw : ApplicationDump) (wrap : SRS IpaPallas.curve.Point)
+    (step : SRS IpaVesta.curve.Point) : IO LagrangeTables := do
+  let wrapTable ← memoisedTable IpaPallas.curve "pallas" wrap 1 raw.wrapKey
   let mut steps : List (Nat × Array (Array IpaVesta.curve.Point)) := []
   for key in raw.stepKeys do
-    unless (steps.lookup key.cvk.domainLog2).isSome do
+    unless (steps.lookup key.domainLog2).isSome do
       steps := steps ++
-        [(key.cvk.domainLog2, ← memoisedTable IpaVesta.curve "vesta" step.σ raw.stepChunks key.cvk)]
+        [(key.domainLog2, ← memoisedTable IpaVesta.curve "vesta" step raw.stepChunks key)]
   return ⟨wrapTable, steps⟩
 
 /-- Reconstruct the entries in import order, continuing past a failure, and finish with each
@@ -48,11 +48,11 @@ entry's application or why it has none. A reconstruction that fails is reported 
 an entry importing a failed producer, by wrap key, is blocked by that failure; an entry
 importing one that has no application is blocked by it; and an entry whose import matches
 nothing names the entries that failed to load, whose keys are unknown. -/
-private def assembleAll (wrap : Srs Bulletproof.IpaPallas.curve)
-    (step : Srs Bulletproof.IpaVesta.curve)
+private def assembleAll (wrap : SRS Bulletproof.IpaPallas.curve.Point)
+    (step : SRS Bulletproof.IpaVesta.curve.Point)
     (finish : List (String × Except String ImportedApplication) → IO Unit) :
     Nat → List (String × ApplicationDump) → List (String × ImportedApplication) →
-    List (String × Key IpaPallas.curve 1) → List (String × Except String ImportedApplication) →
+    List (String × KimchiVK IpaPallas.curve 1) → List (String × Except String ImportedApplication) →
     IO Unit
   | 0, pending, _, _, done =>
     finish (done ++ pending.map fun (name, _) =>
@@ -103,7 +103,7 @@ continuing past failures, and finish with each entry's application or its failur
 whose sidecar is missing or does not parse fails at that stage, its key unknown. Reconstruction
 failures retain the parsed key so dependents can be blocked. The shared SRSs are the caller's. -/
 def reconstructApplications (dir : System.FilePath) (apps : List Manifest.Application)
-    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
+    (wrap : SRS Bulletproof.IpaPallas.curve.Point) (step : SRS Bulletproof.IpaVesta.curve.Point)
     (finish : List (String × Except String ImportedApplication) → IO Unit) : IO Unit := do
   unless !apps.isEmpty do throw (IO.userError "no applications selected")
   let mut entries : List (String × ApplicationDump) := []
@@ -124,7 +124,7 @@ def reconstructApplications (dir : System.FilePath) (apps : List Manifest.Applic
 /-- Load and reconstruct every selected entry, failing at the first that has no application,
 then continue with all of them. -/
 def loadApplications (dir : System.FilePath) (apps : List Manifest.Application)
-    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve)
+    (wrap : SRS Bulletproof.IpaPallas.curve.Point) (step : SRS Bulletproof.IpaVesta.curve.Point)
     (finish : List (String × ImportedApplication) → IO Unit) : IO Unit :=
   reconstructApplications dir apps wrap step fun results => do
     for (name, r) in results do
@@ -142,7 +142,8 @@ def compareApplications (dir : System.FilePath) (apps : List (String × Imported
 
 /-- Reconstruct selected applications before reading their independent circuit dumps. -/
 def checkSelectedFromShape (dir : System.FilePath) (apps : List Manifest.Application)
-    (wrap : Srs Bulletproof.IpaPallas.curve) (step : Srs Bulletproof.IpaVesta.curve) : IO Unit := do
+    (wrap : SRS Bulletproof.IpaPallas.curve.Point) (step : SRS Bulletproof.IpaVesta.curve.Point) :
+    IO Unit := do
   loadApplications dir apps wrap step (compareApplications dir)
 
 end PicklesFixture.Application

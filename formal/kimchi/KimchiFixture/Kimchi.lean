@@ -27,6 +27,26 @@ open FixtureKit
 
 open Lean Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Wire
 
+/-- Forget a checked key's validity proofs to construct malformed wire-key fixtures. -/
+def keyToWire {C : Ipa.KimchiCurve} {nc : ℕ} (vk : Kimchi.Verifier.KimchiVK C nc) :
+    Wire.KimchiVK C where
+  domainLog2 := vk.domainLog2
+  omega := vk.omega
+  sigmaComm := vk.sigmaComm.map Vector.toArray
+  coefficientsComm := vk.coefficientsComm.map Vector.toArray
+  genericComm := vk.genericComm.toArray
+  poseidonComm := vk.poseidonComm.toArray
+  completeAddComm := vk.completeAddComm.toArray
+  mulComm := vk.mulComm.toArray
+  emulComm := vk.emulComm.toArray
+  endomulScalarComm := vk.endomulScalarComm.toArray
+  shifts := vk.shifts
+  zkRows := vk.zkRows
+  prevChallenges := vk.prevChallenges
+  endo := vk.endo
+  digest := vk.digest
+  publicCount := vk.publicCount
+
 /-- A commitment: a bare `[x, y]` point (one-chunk format) as a singleton, else an array of
 points. -/
 def parseComm (C : Ipa.KimchiCurve) (j : Json) : Except String (Array C.Point) := do

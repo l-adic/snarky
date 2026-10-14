@@ -37,6 +37,7 @@ def twoPhaseChain : Shape where
   branches := 2
   branches_pos := by decide
   slots b := if b.val = 0 then 0 else 1
+  slots_le := by decide
   source _ _ := .self
 
 /-- The field-input child application of `HeterogeneousPrevs`, compiled first. -/
@@ -46,6 +47,7 @@ def heterogeneousChild : Shape where
   branches := 1
   branches_pos := by decide
   slots _ := 0
+  slots_le := by decide
   source _ i := Fin.elim0 i
 
 /-- The pair-output parent of `HeterogeneousPrevs`, given only the child's exported
@@ -56,6 +58,7 @@ def heterogeneousPrevs (child : LayoutInterface) : Shape where
   branches := 2
   branches_pos := by decide
   slots b := if b.val = 0 then 0 else 2
+  slots_le := by decide
   source _ i := if i.val = 0 then .external ⟨0, by simp⟩ else .self
 
 end PicklesFixture.Application

@@ -30,6 +30,7 @@ import Kimchi.Protocol.Linearization
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Reflect
 import Kimchi.Verifier.Wire
+import Kimchi.KeyDerivation
 
 /-!
 # Kimchi — the kimchi proof system over the Pasta curves

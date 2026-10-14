@@ -49,25 +49,25 @@ private def tableOf (C : Ipa.KimchiCurve) (nc count : Nat) (pts : Array (Array C
   if h : rows.size = count then return ⟨rows, h⟩
   else throw s!"a Lagrange table of {rows.size} commitments, expected {count}"
 
-/-- Compare wrap keys by commitments and metadata; their remaining fields are pinned by `Key`. -/
-def sameKey (a b : Key IpaPallas.curve 1) : Bool :=
-  decide (a.cvk.comms = b.cvk.comms) && a.cvk.domainLog2 == b.cvk.domainLog2 &&
-    a.cvk.publicCount == b.cvk.publicCount && a.cvk.prevChallenges == b.cvk.prevChallenges
+/-- Compare wrap keys by commitments and metadata; `KimchiVK` pins their remaining fields. -/
+def sameKey (a b : KimchiVK IpaPallas.curve 1) : Bool :=
+  decide (a.comms = b.comms) && a.domainLog2 == b.domainLog2 &&
+    a.publicCount == b.publicCount && a.prevChallenges == b.prevChallenges
 
 /-- Whether an application imports the producer with the wrap key. -/
-def ImportedApplication.importsKey (A : ImportedApplication) (key : Key IpaPallas.curve 1) :
+def ImportedApplication.importsKey (A : ImportedApplication) (key : KimchiVK IpaPallas.curve 1) :
     Bool :=
   (List.finRange A.shape.imports.size).any fun t =>
     sameKey (A.assembled.wiring.imports t).wrapKey key
 
 /-- Whether a dump imports the producer with the wrap key. -/
-def ApplicationDump.importsKey (dump : ApplicationDump) (key : Key IpaPallas.curve 1) : Bool :=
+def ApplicationDump.importsKey (dump : ApplicationDump) (key : KimchiVK IpaPallas.curve 1) : Bool :=
   dump.imports.any fun imp => sameKey imp.wrapKey key
 
 /-- The failed producer, named with its wrap key, that an entry imports, if any: the one
 attribution of a blocked entry, at reconstruction and at certification alike. -/
-def blockedBy (imports : Key IpaPallas.curve 1 → Bool)
-    (failed : List (String × Key IpaPallas.curve 1)) : Option String :=
+def blockedBy (imports : KimchiVK IpaPallas.curve 1 → Bool)
+    (failed : List (String × KimchiVK IpaPallas.curve 1)) : Option String :=
   (failed.find? fun (_, key) => imports key).map (·.1)
 
 /-- Match source chunks and candidate domains, ignoring repeated domains and their order. -/
@@ -83,17 +83,17 @@ private def resolve (raw : ApplicationDump) (known : Array ImportedApplication) 
     | some p =>
       let source := p.assembled.wiring.export
       if imp.domainsMatch source.stepChunks source.stepDomains.log2s then
-        .ok ⟨imp.wrapKey, p.assembled.layout.export, source, p.schemas.own, p.schemas.own_eq⟩
+        .ok ⟨imp.wrapKey, p.shape.export, source, p.schemas.own, p.schemas.own_eq⟩
       else .error "an import's domains or chunks disagree with its producer"
 
 private def setupOf (E : EnvironmentDump)
-    (wrap : Srs IpaPallas.curve) (step : Srs IpaVesta.curve) : Except String Setup := do
-  unless E.wrapSrs.h == wrap.σ.h && E.stepSrs.h == step.σ.h do
+    (wrap : SRS IpaPallas.curve.Point) (step : SRS IpaVesta.curve.Point) : Except String Setup := do
+  unless E.wrapSrs.h == wrap.h && E.stepSrs.h == step.h do
     throw "the shared SRS blinding bases differ from the sidecar"
-  if hw : wrap.σ.k = WrapIPARounds then
-    if hs : step.σ.k = StepIPARounds then
+  if hw : wrap.k = WrapIPARounds then
+    if hs : step.k = StepIPARounds then
       let u := E.wrapChallenges.expanded.cast hw.symm
-      let dummySg := Ipa.msm IpaPallas.curve wrap.σ.g (bPolyCoefficients fun i => u[i])
+      let dummySg := Ipa.msm IpaPallas.curve wrap.g (bPolyCoefficients fun i => u[i])
       return { wrap, step, wrapRounds := hw, stepRounds := hs, dummySg
                dummyUnf := E.unfinalized
                dummy := E.wrapChallenges.expanded }
@@ -101,7 +101,7 @@ private def setupOf (E : EnvironmentDump)
   else throw "the shared wrap SRS has the wrong round count"
 
 private def assembleFor (raw : ApplicationDump) (loaded : LoadedShape)
-    (wrap : Srs IpaPallas.curve) (step : Srs IpaVesta.curve) (tables : LagrangeTables) :
+    (wrap : SRS IpaPallas.curve.Point) (step : SRS IpaVesta.curve.Point) (tables : LagrangeTables) :
     Except String (Assembled loaded.shape × Setup) := do
   let D := loaded.shape
   let S ← setupOf raw.environment wrap step
@@ -112,7 +112,7 @@ private def assembleFor (raw : ApplicationDump) (loaded : LoadedShape)
     (CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp)) tables.wrap
   let backend : BackendArtifacts D :=
     { wrapKey := raw.wrapKey, stepChunks := raw.stepChunks, stepKeys, wrapLagrange }
-  let wiring ← Wiring.assemble loaded.layout backend loaded.imports
+  let wiring ← Wiring.assemble backend loaded.imports
   let rules ← finSequence fun b : D.Branch => do
     let some rule := raw.rules[b.val]? | throw "a branch rule is missing"
     CheckedRule.check D b rule
@@ -123,12 +123,12 @@ private def assembleFor (raw : ApplicationDump) (loaded : LoadedShape)
     return (d, table)
   let stepLagrange := fun d =>
     (stepTables.lookup d).getD (Vector.replicate m (Vector.replicate _ 0))
-  return (⟨loaded.layout, wiring, rules, stepLagrange⟩, S)
+  return (⟨wiring, rules, stepLagrange⟩, S)
 
 /-- Reconstruct checked application circuits from the sidecar, the shared SRSs, the memoised
 Lagrange tables and the imports. -/
 def ApplicationDump.assemble (raw : ApplicationDump)
-    (wrap : Srs IpaPallas.curve) (step : Srs IpaVesta.curve) (tables : LagrangeTables)
+    (wrap : SRS IpaPallas.curve.Point) (step : SRS IpaVesta.curve.Point) (tables : LagrangeTables)
     (known : Array ImportedApplication) : Except String ImportedApplication :=
   if (List.finRange raw.imports.size).any (fun i =>
       (List.finRange i.val).any fun j =>
@@ -142,7 +142,7 @@ def ApplicationDump.assemble (raw : ApplicationDump)
       | .error e => .error e
       | .ok (A, S) =>
         let u := raw.environment.stepChallenges.expanded.cast S.stepRounds.symm
-        let sg := Ipa.msm IpaVesta.curve S.step.σ.g (bPolyCoefficients fun i => u[i])
+        let sg := Ipa.msm IpaVesta.curve S.step.g (bPolyCoefficients fun i => u[i])
         let pad : WrapPadding :=
           ⟨⟨⟨sg.x, sg.y⟩⟩, raw.environment.wrapEvals, raw.environment.wrapDomain.val⟩
         .ok ⟨loaded.shape, A, loaded.schemas, pad, S⟩

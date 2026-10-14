@@ -13,76 +13,75 @@ namespace Pickles.Application
 
 open Snarky Snarky.Kimchi Bulletproof CompElliptic.Fields.Pasta Kimchi.Verifier
 
-variable {D : Shape} {L : Layout D}
+variable {D : Shape}
 variable {producerD consumerD : Shape}
-  {producerL : Layout producerD} {consumerL : Layout consumerD}
 
 private instance (D : Shape) : NeZero D.branches := ⟨Nat.ne_of_gt D.branches_pos⟩
 
 /-- The SRS-dependent premises for a branch slot's wrap-proof verification. -/
-structure StepWrapAssumptions (C : Circuits D L) (b : D.Branch) (i : D.Slot b) : Prop where
+structure StepWrapAssumptions (C : Circuits D) (b : D.Branch) (i : D.Slot b) : Prop where
   /-- The padding commitment is finite. -/
   dummy_ne : C.setup.dummySg ≠ 0
   /-- The source's table contains its key's SRS Lagrange commitments. -/
   lagrange : (C.wiring.sources b i).lagrange =
-    (C.wiring.source b i).wrapKey.cvk.lagrangePoints C.setup.wrapSrs.σ
+    (C.wiring.source b i).wrapKey.lagrangePoints C.setup.wrapSrs
       (CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp))
   /-- The SRS avoids the relations named by every slot statement. -/
   avoids : ∀ (inp : VerifyOneInput (D.prevSize b i) StepIPARounds WrapIPARounds
       1 (C.wiring.sourceChunks b i) (SlotSource.widths D.width (C.wiring.sources b) i))
-      msg, C.setup.wrapSrs.σ.Avoids
-        (stepRelationsAt C.setup.wrapSrs.σ (C.wiring.source b i).wrapKey.cvk
+      msg, C.setup.wrapSrs.Avoids
+        (stepRelationsAt C.setup.wrapSrs (C.wiring.source b i).wrapKey
           (inp.statement msg))
 
 /-- The SRS-dependent premises for a selected branch's step-proof verification. -/
 structure WrapStepAssumptions
-    (producer : Circuits producerD producerL)
+    (producer : Circuits producerD)
     (producerBranch : producerD.Branch) : Prop where
   /-- The branch's table contains its key's SRS Lagrange commitments. -/
-  lagrange : producer.stepLagrange producer.wiring.backend.stepKeys[producerBranch].cvk.domainLog2 =
-    producer.wiring.backend.stepKeys[producerBranch].cvk.lagrangePoints producer.setup.stepSrs.σ
+  lagrange : producer.stepLagrange producer.wiring.backend.stepKeys[producerBranch].domainLog2 =
+    producer.wiring.backend.stepKeys[producerBranch].lagrangePoints producer.setup.stepSrs
       (CircuitType.size Fp (StepStatement (UnfVal WrapIPARounds) Fp producerD.width))
   /-- The selected key's commitments are finite. -/
-  points_ne : ∀ P ∈ producer.wiring.backend.stepKeys[producerBranch].cvk.comms.indexPoints, P ≠ 0
+  points_ne : ∀ P ∈ producer.wiring.backend.stepKeys[producerBranch].comms.indexPoints, P ≠ 0
   /-- The SRS avoids the selected key's Lagrange relations. -/
-  avoids : producer.setup.stepSrs.σ.Avoids
-    (producer.wiring.backend.stepKeys[producerBranch].cvk.lagrangeRelations StepIPARounds
+  avoids : producer.setup.stepSrs.Avoids
+    (producer.wiring.backend.stepKeys[producerBranch].lagrangeRelations StepIPARounds
       (CircuitType.size Fp (StepStatement (UnfVal WrapIPARounds) Fp producerD.width)))
 
 /-- The retained slot pins agree with the application's assembled pins. -/
-private theorem WrapRun.pins {C : Circuits D L} (r : WrapRun C) (j : Fin D.width) :
+private theorem WrapRun.pins {C : Circuits D} (r : WrapRun C) (j : Fin D.width) :
     r.cells.1.slots[j].pins = C.wiring.pins[j] := by
   dsimp only [WrapRun.cells, Circuits.wrapBuilt, Circuits.wrapCircuit]
   erw [compileWith_wrapMainCircuit_cells (V := r.V)]
   exact ((builder_spec_iff _ _).mp (wrapMain_pins
     (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens) r.V
     D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-    C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths r.advice
+    C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
     wrapStatement) _ (fun con hc => r.holds con
       (mem_compileWith_wrapMainCircuit _ _ _ _ _ _ _ _ _ _ hc))) j
 
 /-- The source's public-input table fits its checked wrap domain. -/
-private theorem source_size (C : Circuits D L) (b : D.Branch) (i : D.Slot b) :
+private theorem source_size (C : Circuits D) (b : D.Branch) (i : D.Slot b) :
     CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp) ≤
-      (C.wiring.source b i).wrapKey.cvk.n := by
+      (C.wiring.source b i).wrapKey.n := by
   calc
     _ ≤ CircuitType.size Fq (StatementPacked StepIPARounds (Type1 Fq) Fq) := by decide
-    _ = (C.wiring.source b i).wrapKey.cvk.publicCount :=
+    _ = (C.wiring.source b i).wrapKey.publicCount :=
       (C.wiring.source b i).wrapLayout.publicCount_eq.symm
-    _ ≤ _ := (C.wiring.source b i).wrapKey.cvk.publicCount_le
+    _ ≤ _ := (C.wiring.source b i).wrapKey.publicCount_le
 
 -- Preserve the shared compiled circuit terms in the capstone's conclusion.
 set_option cleanup.letToHave false in
 /-- Connected application executions verify the slot's wrap proof up to its deferred equation. -/
-private theorem StepWrapLink.verifies {C : Circuits D L} {b : D.Branch} (e : StepWrapLink C b)
+private theorem StepWrapLink.verifies {C : Circuits D} {b : D.Branch} (e : StepWrapLink C b)
     (i : D.Slot b) (hAssumptions : StepWrapAssumptions C b i)
     (hmv : CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true)
     (hkey : e.step.KeyBound i) :
     ∃ (cp : KimchiProof IpaPallas.curve 1 WrapIPARounds)
       (ms : Vector Bool (SlotSource.widths D.width (C.wiring.sources b) i)),
       let r := e.run i ms
-      let σ := C.setup.wrapSrs.σ
-      let vk := (C.wiring.source b i).wrapKey.cvk
+      let σ := C.setup.wrapSrs
+      let vk := (C.wiring.source b i).wrapKey
       let pub := r.inp.publicInputAt vk e.step.V ms
       let sl := e.wrap.cells.1.slots[r.jf]
       r.inp.WireReads vk e.step.V
@@ -103,13 +102,13 @@ private theorem StepWrapLink.verifies {C : Circuits D L} {b : D.Branch} (e : Ste
     C.setup.wrapSrs rfl
     (fun i => FopParams.of IpaVesta.curve (C.wiring.sourceChunks b i)
       StepIPARounds Linearization.fpTokens)
-    C.wiring.backend.stepDomains.list (D.slots_le_width b) L.width_le
+    C.wiring.backend.stepDomains.list (D.slots_le_width b) D.width_le
     C.setup.dummySg hAssumptions.dummy_ne
-    (C.setup.dummyUnf[D.slots b]'(Nat.lt_succ_of_le ((D.slots_le_width b).trans L.width_le)))
+    (C.setup.dummyUnf[D.slots b]'(Nat.lt_succ_of_le ((D.slots_le_width b).trans D.width_le)))
     (C.wiring.sources b)
     (C.source_bound b) e.step.V (C.rules b) e.step.advice e.wrap.V D.widths
-    C.setup.step.σ C.stepLagrange C.wiring.stepKeys C.wiring.pins C.setup.dummy
-    L.wrapWidths e.wrap.advice C.wiring.valid.branches_le b
+    C.setup.step C.stepLagrange C.wiring.stepKeys C.wiring.pins C.setup.dummy
+    D.wrapWidths e.wrap.advice C.wiring.valid.branches_le b
     e.step.holds e.wrap.holds e.branch e.publicInput i hmv
     (C.wiring.source b i).wrapKey (C.wiring.source b i).wrapChunks
     (C.wiring.source b i).wrapLayout ⟨source_size C b i, hAssumptions.lagrange⟩ hkey
@@ -129,7 +128,7 @@ private theorem StepWrapLink.verifies {C : Circuits D L} {b : D.Branch} (e : Ste
 set_option cleanup.letToHave false in
 /-- Connected application executions verify the selected step proof up to its deferred equation. -/
 private theorem WrapStepLink.verifies
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
+    {producer : Circuits producerD} {consumer : Circuits consumerD}
     {producerBranch : producerD.Branch} {consumerBranch : consumerD.Branch}
     {slot : consumerD.Slot consumerBranch}
     (e : WrapStepLink producer consumer producerBranch consumerBranch slot)
@@ -137,8 +136,8 @@ private theorem WrapStepLink.verifies
     ∃ (cp : KimchiProof IpaVesta.curve producer.wiring.backend.stepChunks StepIPARounds)
       (oldsW : Vector (IpaVesta.curve.Point × Bool) producerD.width),
       let r := e.run
-      let σ := producer.setup.stepSrs.σ
-      let vk := producer.wiring.backend.stepKeys[producerBranch].cvk
+      let σ := producer.setup.stepSrs
+      let vk := producer.wiring.backend.stepKeys[producerBranch]
       let pub := wrapPublicInput σ vk e.wrap.V e.wrap.cells.2.statement
       ProofReads (wrapSide e.wrap.V) e.wrap.cells.2.cells.wComm e.wrap.cells.2.cells.zComm
         e.wrap.cells.2.cells.tComm e.wrap.cells.2.cells.opening cp ∧
@@ -149,9 +148,9 @@ private theorem WrapStepLink.verifies
               StepIPARounds WrapIPARounds 1 producer.wiring.backend.stepChunks
               (SlotSource.widths consumerD.width
                 (consumer.wiring.sources consumerBranch) slot)).finalizedHalf e.step.V) ∧
-      r.Produces producer.wiring.backend.wrapKey.cvk producer.setup.dummy
+      r.Produces producer.wiring.backend.wrapKey producer.setup.dummy
         ⟨cp.opening.sg, wireChallenges σ vk cp pub⟩ ∧
-      r.Consumes producer.wiring.backend.wrapKey.cvk producer.setup.dummy cp.olds.toList ∧
+      r.Consumes producer.wiring.backend.wrapKey producer.setup.dummy cp.olds.toList ∧
       (∀ (j : Nat)
           (hj : j <
             SlotSource.widths consumerD.width (consumer.wiring.sources consumerBranch) slot),
@@ -165,21 +164,21 @@ private theorem WrapStepLink.verifies
   rw [← hsetup] at hstep
   have cap := Pickles.wrapStep_kimchiVerify
     (inVal := consumerD.schema.Input) (outVal := consumerD.schema.Output)
-    producer.setup.wrapSrs.σ producer.wiring.backend.wrapKey.cvk rfl producer.setup.stepSrs rfl
+    producer.setup.wrapSrs producer.wiring.backend.wrapKey rfl producer.setup.stepSrs rfl
     producer.wiring.stepKeys producerBranch producer.wiring.backend.stepKeys[producerBranch]
     (by simp [Wiring.stepKeys]) (producer.wiring.valid.stepChunks producerBranch)
     producer.stepLagrange hAssumptions.lagrange e.wrap.V producerD.widths
     (by simpa [Wiring.stepKeys] using producer.wiring.step_key_layout producerBranch)
-    producer.wiring.pins producer.setup.dummy producerL.wrapWidths e.wrap.advice
+    producer.wiring.pins producer.setup.dummy producerD.wrapWidths e.wrap.advice
     producer.wiring.valid.branches_le
     (by simpa [Wiring.stepKeys] using hAssumptions.points_ne)
     (by simpa [Wiring.stepKeys] using hAssumptions.avoids)
     consumer.wiring.backend.stepDomains.list producer.wiring.backend.stepDomains
-    ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le) producerL.width_le
+    ((consumerD.slots_le_width consumerBranch).trans consumerD.width_le) producerD.width_le
     (consumer.wiring.sources consumerBranch) (consumer.source_bound consumerBranch)
     (constPt producer.setup.dummySg)
     (producer.setup.dummyUnf[consumerD.slots consumerBranch]'(Nat.lt_succ_of_le
-      ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le))) e.step.V
+      ((consumerD.slots_le_width consumerBranch).trans consumerD.width_le))) e.step.V
     (consumer.rules consumerBranch) e.step.advice
     e.wrap.holds hstep e.branch slot e.sourceFor.chunks
     (by simpa only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup]
@@ -190,7 +189,7 @@ private theorem WrapStepLink.verifies
     (by simpa only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
       hsetup, wrapStatement] using e.publicInput)
   obtain ⟨cp, oldsW, hpr, hol, hf, he, hc, hk, hhW, hhS, hv⟩ := cap
-  simp only [Wiring.stepKeys, Fin.getElem_fin, Vector.getElem_map] at hf he hv
+  simp only [Wiring.stepKeys, Fin.getElem_fin] at hf he hv
   have htie := e.publicInput
   dsimp only [WrapStepRun.Produces, WrapStepRun.Consumes, WrapStepRun.Hashes,
     WrapStepLink.run, WrapStepRun.inp, StepRun.inp, StepRun.cells, WrapRun.cells,
@@ -205,16 +204,16 @@ private theorem WrapStepLink.verifies
 set_option cleanup.letToHave false in
 /-- The reconstructed step proof inherits the capstone's accumulator and verification facts. -/
 theorem WrapStepLink.verifies_proof
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
+    {producer : Circuits producerD} {consumer : Circuits consumerD}
     {producerBranch : producerD.Branch} {consumerBranch : consumerD.Branch}
     {slot : consumerD.Slot consumerBranch}
     (e : WrapStepLink producer consumer producerBranch consumerBranch slot)
     (hAssumptions : WrapStepAssumptions producer producerBranch) :
-    let σ := producer.setup.stepSrs.σ
-    let vk := producer.wiring.backend.stepKeys[producerBranch].cvk
-    e.run.Produces producer.wiring.backend.wrapKey.cvk producer.setup.dummy
+    let σ := producer.setup.stepSrs
+    let vk := producer.wiring.backend.stepKeys[producerBranch]
+    e.run.Produces producer.wiring.backend.wrapKey producer.setup.dummy
       ⟨e.proof.opening.sg, wireChallenges σ vk e.proof e.proofPublicInput⟩ ∧
-    e.run.Consumes producer.wiring.backend.wrapKey.cvk producer.setup.dummy e.proof.olds.toList ∧
+    e.run.Consumes producer.wiring.backend.wrapKey producer.setup.dummy e.proof.olds.toList ∧
     (∀ (j : Nat)
         (hj : j < SlotSource.widths consumerD.width (consumer.wiring.sources consumerBranch) slot),
       e.mask[j] = decide (producerD.width - producerD.slots producerBranch ≤ j)) ∧
@@ -226,7 +225,7 @@ theorem WrapStepLink.verifies_proof
       (FVar Fq) (Type1 (FVar Fq)) :=
     ⟨cells.wComm, cells.zComm, cells.tComm, cells.opening⟩
   have hr := readProof_verification (wrapSide e.wrap.V)
-    producer.setup.stepSrs.σ producer.wiring.backend.stepKeys[producerBranch].cvk
+    producer.setup.stepSrs producer.wiring.backend.stepKeys[producerBranch]
     pr cp e.proofPublicInput
     _ _ _ _ hp hf.evals hf.pubEvals hf.ftEval1
     (show (WrapStep.consumedAccumulators e.wrap.V e.step.V e.wrap.cells.1
@@ -242,7 +241,7 @@ theorem WrapStepLink.verifies_proof
 /-- The consumer slot's mask keeps exactly the producer branch's slots: a reading of cells across
 the public-input tie, with no Lagrange-table premise. -/
 theorem WrapStepLink.mask_keeps
-    {producer : Circuits producerD producerL} {consumer : Circuits consumerD consumerL}
+    {producer : Circuits producerD} {consumer : Circuits consumerD}
     {producerBranch : producerD.Branch} {consumerBranch : consumerD.Branch}
     {slot : consumerD.Slot consumerBranch}
     (e : WrapStepLink producer consumer producerBranch consumerBranch slot) :
@@ -257,18 +256,18 @@ theorem WrapStepLink.mask_keeps
   rw [← hsetup] at hstep
   have hk := Pickles.wrapStep_mask
     (inVal := consumerD.schema.Input) (outVal := consumerD.schema.Output)
-    producer.setup.wrapSrs.σ producer.wiring.backend.wrapKey.cvk rfl producer.setup.stepSrs rfl
+    producer.setup.wrapSrs producer.wiring.backend.wrapKey rfl producer.setup.stepSrs rfl
     producer.wiring.stepKeys producerBranch
     (by simpa [Wiring.stepKeys] using
       producer.wiring.backend.stepKeys[producerBranch].domainLog2_le.trans_lt (by decide))
     producer.stepLagrange e.wrap.V producerD.widths producer.wiring.pins producer.setup.dummy
-    producerL.wrapWidths e.wrap.advice producer.wiring.valid.branches_le
+    producerD.wrapWidths e.wrap.advice producer.wiring.valid.branches_le
     consumer.wiring.backend.stepDomains.list
-    ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le) producerL.width_le
+    ((consumerD.slots_le_width consumerBranch).trans consumerD.width_le) producerD.width_le
     (consumer.wiring.sources consumerBranch) (consumer.source_bound consumerBranch)
     (constPt producer.setup.dummySg)
     (producer.setup.dummyUnf[consumerD.slots consumerBranch]'(Nat.lt_succ_of_le
-      ((consumerD.slots_le_width consumerBranch).trans consumerL.width_le))) e.step.V
+      ((consumerD.slots_le_width consumerBranch).trans consumerD.width_le))) e.step.V
     (consumer.rules consumerBranch) e.step.advice
     e.wrap.holds hstep e.branch slot
     (by simpa only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup]
@@ -282,12 +281,12 @@ theorem WrapStepLink.mask_keeps
 
 set_option cleanup.letToHave false in
 /-- The reconstructed wrap proof inherits the capstone's accumulator and verification facts. -/
-theorem StepWrapLink.verifies_proof {C : Circuits D L} {b : D.Branch} (e : StepWrapLink C b)
+theorem StepWrapLink.verifies_proof {C : Circuits D} {b : D.Branch} (e : StepWrapLink C b)
     (i : D.Slot b) (hAssumptions : StepWrapAssumptions C b i)
     (hmv : CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true)
     (hkey : e.step.KeyBound i) :
-    let σ := C.setup.wrapSrs.σ
-    let vk := (C.wiring.source b i).wrapKey.cvk
+    let σ := C.setup.wrapSrs
+    let vk := (C.wiring.source b i).wrapKey
     let r := e.run i (e.mask i)
     r.Produces C.setup.dummy
       ⟨(e.proof i).opening.sg, wireChallenges σ vk (e.proof i) (e.proofPublicInput i)⟩ ∧
@@ -298,7 +297,7 @@ theorem StepWrapLink.verifies_proof {C : Circuits D L} {b : D.Branch} (e : StepW
   have hm : ms = e.mask i := (CircuitType.reads_iff.mp hp.1).2.symm
   subst ms
   have hr := readProof_verification (stepSide e.step.V)
-    C.setup.wrapSrs.σ (C.wiring.source b i).wrapKey.cvk
+    C.setup.wrapSrs (C.wiring.source b i).wrapKey
     (e.step.inp i).proof cp (e.proofPublicInput i) _ _ _ _ hp.2.2.1
     hf.evals hf.pubEvals hf.ftEval1
     (show (StepWrap.consumedAccumulators e.step.V e.wrap.V (e.step.inp i)

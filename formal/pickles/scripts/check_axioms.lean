@@ -35,13 +35,8 @@ namespace Pickles.CheckAxioms
 
 /-- Every result this package stands behind. -/
 def roots : List Name :=
-  [ `Pickles.deriveKey_columns,
-    `Pickles.deriveKey_digest,
-    `Pickles.deriveColumns_eq,
-    `Pickles.compareColumns?_eq_none_iff,
-    `Pickles.checkKey?,
-    `Pickles.Application.Shape.slotAt_paddedSlot,
-    `Pickles.Application.Layout.slotWidth_le_wrapWidths,
+  [ `Pickles.Application.Shape.slotAt_paddedSlot,
+    `Pickles.Application.Shape.slotWidth_le_wrapWidths,
     `Pickles.Application.Wiring.source_width,
     `Pickles.Application.Wiring.source_domains,
     `Pickles.Application.Wiring.pins_at_slot,

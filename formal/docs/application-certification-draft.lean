@@ -16,11 +16,11 @@ namespace Pickles.Application.CertificationExamples
 open Snarky Bulletproof CompElliptic.Fields.Pasta Kimchi.Verifier
 open PicklesFixture.Application (compareIndices? compareIndices?_eq_none_iff)
 
-variable {D : Shape} {L : Layout D}
-variable {PD MD CD : Shape} {PL : Layout PD} {ML : Layout MD} {CL : Layout CD}
+variable {D : Shape}
+variable {PD MD CD : Shape}
 
 /-- The wrap proof read from connected matrices verifies under the accumulator check. -/
-theorem stepWrap_accepts {C : Circuits D L} (cert : ApplicationCertified C)
+theorem stepWrap_accepts {C : Circuits D} (cert : ApplicationCertified C)
     (I : ApplicationIndices D) (hI : compareIndices? I cert.indices = none)
     (b : D.Branch) (s : StepTable I b) (w : WrapTable I)
     (h : MatrixStepWrap C I b s w) (i : D.Slot b)
@@ -28,10 +28,10 @@ theorem stepWrap_accepts {C : Circuits D L} (cert : ApplicationCertified C)
       ((stepCompilation C b).result.1.2.prevs i).mustVerify true)
     (hk : KeyReads IpaPallas.curve (stepValuation C I b s)
       ((C.wiring.sources b i).keyCells (stepCompilation C b).result.1.2.vk.points)
-      (C.wiring.source b i).wrapKey.cvk)
-    (hsg : SgOk C.setup.wrapSrs.σ (C.wiring.source b i).wrapKey.cvk
+      (C.wiring.source b i).wrapKey)
+    (hsg : SgOk C.setup.wrapSrs (C.wiring.source b i).wrapKey
       (matrixWrapProof C I b s w i) (matrixWrapPub C I b s i)) :
-    kimchiVerify IpaPallas.curve C.setup.wrapSrs.σ (C.wiring.source b i).wrapKey.cvk
+    kimchiVerify IpaPallas.curve C.setup.wrapSrs (C.wiring.source b i).wrapKey
       (matrixWrapProof C I b s w i) (matrixWrapPub C I b s i) = true := by
   have heq := compareIndices?_eq_none_iff.mp hI
   subst I
@@ -39,7 +39,7 @@ theorem stepWrap_accepts {C : Circuits D L} (cert : ApplicationCertified C)
 
 /-- Compared matrices thread application state unless a message collides. -/
 theorem wrapHandover_appState
-    {P : Circuits PD PL} {C : Circuits CD CL}
+    {P : Circuits PD} {C : Circuits CD}
     (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (PI : ApplicationIndices PD) (CI : ApplicationIndices CD)
     (hPI : compareIndices? PI pc.indices = none) (hCI : compareIndices? CI cc.indices = none)
@@ -47,10 +47,10 @@ theorem wrapHandover_appState
     {ps : StepTable PI pb} {pw : WrapTable PI}
     {cs : StepTable CI cb} {cw : WrapTable CI}
     (conn : MatrixWrapHandover P C PI CI pb cb pi ci ps pw cs cw) :
-    let nextVk := (C.wiring.source cb ci).wrapKey.cvk
+    let nextVk := (C.wiring.source cb ci).wrapKey
     let r := matrixStepWrapRun P PI pb ps pw pi (matrixMask P PI pb ps pi)
     let r' := matrixStepWrapRun C CI cb cs cw ci (matrixMask C CI cb cs ci)
-    kimchiVerify IpaPallas.curve P.setup.wrapSrs.σ nextVk
+    kimchiVerify IpaPallas.curve P.setup.wrapSrs nextVk
       (matrixWrapProof C CI cb cs cw ci) (matrixWrapPub C CI cb cs ci) = true →
     ((stepCompilation P pb).result.1.2.messagesForNextStepProof.appState.map
         (·.val (stepValuation P PI pb ps)) =
@@ -63,8 +63,8 @@ theorem wrapHandover_appState
   exact (matrices_wrap_handover pc cc pb cb pi ci ps pw cs cw conn).appState conn
 
 /-- Compared matrices retain the whole-message, accumulator and collision alternatives. -/
-theorem stepHandover_messages {P : Circuits PD PL} {M : Circuits MD ML}
-    {C : Circuits CD CL} (pc : ApplicationCertified P) (mc : ApplicationCertified M)
+theorem stepHandover_messages {P : Circuits PD} {M : Circuits MD}
+    {C : Circuits CD} (pc : ApplicationCertified P) (mc : ApplicationCertified M)
     (cc : ApplicationCertified C) (PI : ApplicationIndices PD) (MI : ApplicationIndices MD)
     (CI : ApplicationIndices CD) (hPI : compareIndices? PI pc.indices = none)
     (hMI : compareIndices? MI mc.indices = none) (hCI : compareIndices? CI cc.indices = none)
@@ -72,9 +72,9 @@ theorem stepHandover_messages {P : Circuits PD PL} {M : Circuits MD ML}
     (pw : WrapTable PI) (ms : StepTable MI mb)
     (mw : WrapTable MI) (cs : StepTable CI cb)
     (h : MatrixStepHandover P M C PI MI CI pb mb cb mi ci pw ms mw cs) :
-  let σ := P.setup.stepSrs.σ
-  let vk := P.wiring.backend.stepKeys[pb].cvk
-  let nextVk := M.wiring.backend.stepKeys[mb].cvk
+  let σ := P.setup.stepSrs
+  let vk := P.wiring.backend.stepKeys[pb]
+  let nextVk := M.wiring.backend.stepKeys[mb]
   let r := matrixWrapStepRun P M PI MI mb mi pw ms
     h.producerPair.sourceFor h.producerPair.mask
   let r' := matrixWrapStepRun M C MI CI cb ci mw cs
@@ -86,7 +86,7 @@ theorem stepHandover_messages {P : Circuits PD PL} {M : Circuits MD ML}
   kimchiVerify IpaVesta.curve σ nextVk later (matrixStepPub M MI mb mw) = true →
   (readStepMessage (stepValuation M MI mb ms)
       (stepCompilation M mb).result.1.2.messagesForNextStepProof =
-    rebuildStepMessage (stepValuation C CI cb cs) M.wiring.backend.wrapKey.cvk
+    rebuildStepMessage (stepValuation C CI cb cs) M.wiring.backend.wrapKey
       (matrixInp C cb ci) h.consumerPair.mask ∧
    readWrapMessage (wrapValuation P PI pw) P.setup.dummy
       ((wrapCompilation P).result.1.2.2.messagesForNextWrapProof
@@ -95,7 +95,7 @@ theorem stepHandover_messages {P : Circuits PD PL} {M : Circuits MD ML}
       ((wrapCompilation M).result.1.2.1.messagesForNextWrapProof r.slotIndex) ∧
    (kimchiVerify IpaVesta.curve σ vk earlier (matrixStepPub P PI pb pw) = true ∨
     AccumulatorFailure σ nextVk later (matrixStepPub M MI mb mw))) ∨
-  r.WrapCollision r' P.setup.dummy ∨ r.StepCollision r' M.wiring.backend.wrapKey.cvk := by
+  r.WrapCollision r' P.setup.dummy ∨ r.StepCollision r' M.wiring.backend.wrapKey := by
   have hp := compareIndices?_eq_none_iff.mp hPI
   have hm := compareIndices?_eq_none_iff.mp hMI
   have hc := compareIndices?_eq_none_iff.mp hCI

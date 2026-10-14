@@ -23,10 +23,8 @@ def PicklesFixture.Application.runCertification (requireExplicit : Bool)
   if requireExplicit && (selection.isNone || selection == some "all") then
     throw (IO.userError "APPS names the manifest applications explicitly; all is not a selection")
   let apps ← IO.ofExcept (Manifest.select selection)
-  let σW ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) WrapIPARounds
-  let σS ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) StepIPARounds
-  let some wrap := Srs.check σW | throw (IO.userError "invalid wrap SRS")
-  let some step := Srs.check σS | throw (IO.userError "invalid step SRS")
+  let wrap ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) WrapIPARounds
+  let step ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) StepIPARounds
   reconstructApplications dir apps wrap step fun results => do
     let mut failed : List String := []
     for (name, r) in results do

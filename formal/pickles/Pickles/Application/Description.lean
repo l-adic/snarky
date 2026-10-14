@@ -63,6 +63,8 @@ structure Shape where
   branches_pos : 0 < branches
   /-- Each branch's predecessor count. -/
   slots : Fin branches → Nat
+  /-- Every branch fits the protocol's predecessor bound. -/
+  slots_le : ∀ b, slots b ≤ MaxProofsVerified
   /-- Each predecessor's source, in the rule's slot order. -/
   source : (b : Fin branches) → Fin (slots b) → SlotRef imports.size
 
@@ -75,6 +77,15 @@ abbrev Shape.Slot (D : Shape) (b : D.Branch) := Fin (D.slots b)
 /-- The maximum predecessor count across an application's branches. -/
 def Shape.width (D : Shape) : Nat :=
   ((List.finRange D.branches).map D.slots).foldl max 0
+
+/-- This application's maximum width fits the protocol. -/
+theorem Shape.width_le (D : Shape) : D.width ≤ MaxProofsVerified := by
+  apply (List.max_le_iff (List.cons_ne_nil 0 _)).mpr
+  intro x hx
+  rcases List.mem_cons.mp hx with rfl | hx
+  · exact Nat.zero_le _
+  obtain ⟨b, _, rfl⟩ := List.mem_map.mp hx
+  exact D.slots_le b
 
 /-- A branch slot's source application width, which can be smaller than the capacity
 of the shared wrap position it occupies. -/
@@ -135,23 +146,16 @@ private theorem Shape.slotWidth_le_wrapWidth (D : Shape) (b : D.Branch) (i : D.S
   apply List.le_max_of_mem (List.mem_cons_of_mem 0 ?_)
   exact List.mem_map.mpr ⟨b, List.mem_finRange b, by simp [slotAt_paddedSlot]⟩
 
-/-- A checked layout: this application's width fits the protocol.
-Imported widths are bounded by their interfaces; shared capacities are derived maxima. -/
-structure Layout (D : Shape) : Prop where
-  private mk ::
-  /-- This application's maximum width fits the protocol. -/
-  width_le : D.width ≤ MaxProofsVerified
-
 /-- Self uses this application's checked width; External uses its imported bound. -/
-private theorem Layout.slotWidth_le {D : Shape} (L : Layout D) (b : D.Branch) (i : D.Slot b) :
+private theorem Shape.slotWidth_le (D : Shape) (b : D.Branch) (i : D.Slot b) :
     D.slotWidth b i ≤ MaxProofsVerified := by
   unfold Shape.slotWidth
   cases D.source b i with
-  | self => exact L.width_le
+  | self => exact D.width_le
   | external tag => exact Nat.le_of_lt_succ D.imports[tag].width.isLt
 
 /-- Each computed shared width fits the protocol when all target widths do. -/
-private theorem Layout.wrapWidth_le {D : Shape} (L : Layout D)
+private theorem Shape.wrapWidth_le (D : Shape)
     (j : Fin D.width) : D.wrapWidth j ≤ MaxProofsVerified := by
   apply (List.max_le_iff (List.cons_ne_nil 0 _)).mpr
   intro x hx
@@ -160,30 +164,23 @@ private theorem Layout.wrapWidth_le {D : Shape} (L : Layout D)
   obtain ⟨b, _, rfl⟩ := List.mem_map.mp hx
   cases h : D.slotAt b j with
   | none => simp
-  | some i => exact L.slotWidth_le b i
+  | some i => exact D.slotWidth_le b i
 
 /-- Shared slot capacities, at the shape the wrap circuit takes. -/
-def Layout.wrapWidths {D : Shape} (L : Layout D) :
+def Shape.wrapWidths (D : Shape) :
     Vector (Fin (MaxProofsVerified + 1)) D.width :=
-  Vector.ofFn fun j => ⟨D.wrapWidth j, Nat.lt_succ_of_le (L.wrapWidth_le j)⟩
+  Vector.ofFn fun j => ⟨D.wrapWidth j, Nat.lt_succ_of_le (D.wrapWidth_le j)⟩
 
 /-- Every branch slot's source width fits the wrap circuit's allocated capacity. -/
-theorem Layout.slotWidth_le_wrapWidths {D : Shape} (L : Layout D)
+theorem Shape.slotWidth_le_wrapWidths (D : Shape)
     (b : D.Branch) (i : D.Slot b) :
-    D.slotWidth b i ≤ (L.wrapWidths[D.paddedSlot b i] : Nat) := by
+    D.slotWidth b i ≤ (D.wrapWidths[D.paddedSlot b i] : Nat) := by
   simpa only [wrapWidths, Fin.getElem_fin, Vector.getElem_ofFn] using
     D.slotWidth_le_wrapWidth b i
 
 /-- Export only the schema and checked width needed by another application's layout. -/
-def Layout.export {D : Shape} (L : Layout D) : LayoutInterface where
+def Shape.export (D : Shape) : LayoutInterface where
   schema := D.schema
-  width := ⟨D.width, Nat.lt_succ_of_le L.width_le⟩
-
-/-- Assemble the layout, rejecting application widths above the protocol bound.
-`PLift` carries the checked proposition through the executable `Except` result. -/
-def Layout.check (D : Shape) : Except String (PLift (Layout D)) :=
-  if hw : D.width ≤ MaxProofsVerified then
-    .ok ⟨⟨hw⟩⟩
-  else .error "the application's predecessor count exceeds MaxProofsVerified"
+  width := ⟨D.width, Nat.lt_succ_of_le D.width_le⟩
 
 end Pickles.Application

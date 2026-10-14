@@ -1,5 +1,6 @@
 import Kimchi.Gate.Semantics.VarBaseMul
 import Pasta.Endo
+import Bulletproof.Wire
 
 /-!
 # The curve dictionaries the circuit laws close over
@@ -27,6 +28,7 @@ their structures rather than scattered across `VarBaseMul`, `Point` and `EndoMul
 namespace Snarky.Kimchi
 
 open WeierstrassCurve.Affine
+open CompElliptic.CurveForms.ShortWeierstrass Bulletproof.Ipa
 
 variable {F : Type}
 
@@ -43,6 +45,27 @@ structure HasCurve (F : Type) [Field F] [DecidableEq F] where
   odd : W.order ≠ 2
   /-- The field does not have characteristic `2`. -/
   two_ne : (2 : F) ≠ 0
+
+/-- The gadget layer's curve dictionary of a commitment curve: the affine form of `C.E`, short
+by `C.a_zero`, of prime order by `C.card`, and off characteristic `2` and 2-torsion by the
+bounds `hbase` and `hscalar`.
+
+Reducible, and a structure literal: consumers state premises over `HasCurve.W`, and instance
+search runs at reducible transparency, so that projection must reduce to `C.E.toAffine`
+there, by iota on the literal, without forcing the proof fields. -/
+@[reducible] def HasCurve.ofCommitmentCurve
+    (C : CommitmentCurve) (hbase : 2 < C.base) (hscalar : 2 < C.scalar) :
+    HasCurve C.BaseField where
+  W := C.E.toAffine
+  short := ⟨rfl, rfl, rfl, C.a_zero⟩
+  prime := C.order_eq ▸ Fact.out
+  odd := by rw [C.order_eq]; omega
+  two_ne := by
+    haveI : NeZero C.base := ⟨by omega⟩
+    intro h
+    have h2 : ((2 : ℕ) : ZMod C.base) = 0 := by exact_mod_cast h
+    rw [ZMod.natCast_eq_zero_iff] at h2
+    exact absurd (Nat.le_of_dvd (by norm_num) h2) (by omega)
 
 /-- The regime in which a ladder over `L` bits computes its scalar, for the scalar's Type1
 decode `z`: the whole ladder fits below the order (subwrap), or the top is below `4q - 4` over
@@ -110,6 +133,31 @@ structure HasEndo (F : Type) [Field F] [DecidableEq F] extends HasCurve F where
   so bounded fold values with equal `F`-images are equal integers. -/
   char_big : ∀ z : ℤ, |z| < 2 ^ 127 → (z : F) = 0 → z = 0
 
+/-- The gadget endomorphism dictionary of a Kimchi curve: its own curve and `EndoSpec`, with
+the field and order bounds needed by the GLV laws. -/
+@[reducible] def HasEndo.ofKimchiCurve (C : KimchiCurve)
+    (hbase : 2 ^ 127 < C.base) (hscalar : 3 < C.scalar) : HasEndo C.BaseField where
+  toHasCurve := HasCurve.ofCommitmentCurve C.toCommitmentCurve
+    (lt_trans (by norm_num) hbase) (lt_trans (by norm_num) hscalar)
+  spec := C.endo
+  delta_ne := by
+    show WeierstrassCurve.Δ (toW C.E.A C.E.B) ≠ 0
+    rw [toW_Δ]
+    exact C.E.IsElliptic.ne_zero
+  three_ne := by
+    haveI : Fact (Nat.Prime C.base) := C.primeBase
+    intro h
+    have h3 : ((3 : ℕ) : ZMod C.base) = 0 := by exact_mod_cast h
+    rw [ZMod.natCast_eq_zero_iff] at h3
+    have := Nat.le_of_dvd (by norm_num) h3
+    have : 3 < C.base := lt_trans (by norm_num) hbase
+    omega
+  order_ne_three := by rw [C.order_eq]; omega
+  char_big := fun z hz h0 => by
+    have hdvd : ((C.base : ℕ) : ℤ) ∣ z := (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
+    refine Int.eq_zero_of_abs_lt_dvd hdvd (lt_of_lt_of_le hz ?_)
+    exact_mod_cast hbase.le
+
 variable [Field F] [DecidableEq F]
 
 /-- The endomorphism coefficient `β`: `φ(x, y) = (β·x, y)`. -/
@@ -144,21 +192,13 @@ theorem HasEndo.lam_succ_smul (d : HasEndo F) (T : d.W.Point) (hne : T ≠ 0) :
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The curve dictionary at deployed Vesta — the curve the Schnorr statement's points live
 on and the ladder's base group. -/
-@[reducible] def HasCurve.vesta : HasCurve Fq where
-  W := Vesta.curve.toAffine
-  short := ⟨rfl, rfl, rfl, rfl⟩
-  prime := Fact.out
-  odd := by rw [vesta_card]; decide
-  two_ne := by decide
+@[reducible] def HasCurve.vesta : HasCurve Fq :=
+  HasCurve.ofCommitmentCurve Bulletproof.IpaVesta.curve.toCommitmentCurve (by decide) (by decide)
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The curve dictionary at deployed Pallas, the step side's base group. -/
-@[reducible] def HasCurve.pallas : HasCurve Fp where
-  W := Pallas.curve.toAffine
-  short := ⟨rfl, rfl, rfl, rfl⟩
-  prime := Fact.out
-  odd := by rw [pallas_card]; decide
-  two_ne := by decide
+@[reducible] def HasCurve.pallas : HasCurve Fp :=
+  HasCurve.ofCommitmentCurve Bulletproof.IpaPallas.curve.toCommitmentCurve (by decide) (by decide)
 
 open CompElliptic.Fields.Pasta in
 /-- At Vesta, every 255-bit ladder below `4·|Vesta| - 4` computes its scalar. -/
@@ -187,28 +227,12 @@ theorem HasCurve.vesta_ladderCompleteRegime (z : ℤ) (hz : z < 4 * PALLAS_BASE_
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The endomorphism dictionary at deployed Pallas: `Pasta.pallasEndoSpec` over
 `HasCurve.pallas`, and the field and order facts on top of it. -/
-def HasEndo.pallas : HasEndo Fp where
-  toHasCurve := HasCurve.pallas
-  spec := pallasEndoSpec
-  delta_ne := by decide
-  three_ne := by decide
-  order_ne_three := by rw [pallas_card]; decide
-  char_big := fun z hz h0 => by
-    have hdvd : ((PALLAS_BASE_CARD : ℕ) : ℤ) ∣ z :=
-      (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
-    exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
+def HasEndo.pallas : HasEndo Fp :=
+  HasEndo.ofKimchiCurve Bulletproof.IpaPallas.curve (by decide) (by decide)
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The endomorphism dictionary at deployed Vesta — the other half of the 2-cycle. -/
-@[reducible] def HasEndo.vesta : HasEndo Fq where
-  toHasCurve := HasCurve.vesta
-  spec := vestaEndoSpec
-  delta_ne := by decide
-  three_ne := by decide
-  order_ne_three := by rw [vesta_card]; decide
-  char_big := fun z hz h0 => by
-    have hdvd : ((PALLAS_SCALAR_CARD : ℕ) : ℤ) ∣ z :=
-      (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
-    exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
+@[reducible] def HasEndo.vesta : HasEndo Fq :=
+  HasEndo.ofKimchiCurve Bulletproof.IpaVesta.curve (by decide) (by decide)
 
 end Snarky.Kimchi

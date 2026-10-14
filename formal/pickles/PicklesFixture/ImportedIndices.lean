@@ -104,7 +104,7 @@ def importIndicesWith {D : Shape} (stepDump : D.Branch → Raw Fp) (wrapDump : R
 
 /-- An application's imported indices: every branch's and the wrap circuit's dump at its
 key's data. -/
-def importIndices {D : Shape} {L : Layout D} (C : Circuits D L) (stepDump : D.Branch → Raw Fp)
+def importIndices {D : Shape} (C : Circuits D) (stepDump : D.Branch → Raw Fp)
     (wrapDump : Raw Fq) : Except String (ApplicationIndices D) :=
   importIndicesWith stepDump wrapDump (stepIndexData C) (wrapIndexData C)
 
@@ -180,7 +180,7 @@ private def describe {D : Shape} : IndicesDiff D → String
   | .wrap d => s!"wrap: {describeIndex d}"
 
 /-- Require comparison of imported indices to fail where expected. -/
-private def requireDiff {D : Shape} {L : Layout D} {C : Circuits D L} (name what : String)
+private def requireDiff {D : Shape} {C : Circuits D} (name what : String)
     (checked : ApplicationCertified C) (imported : Except String (ApplicationIndices D))
     (expected : IndicesDiff D → Bool) : IO Unit := do
   let imported ← match imported with
@@ -207,7 +207,7 @@ private def wiresExchanged (raw : Raw Fp) (r : ℕ) : Raw Fp :=
 
 /-- Compare independent foreign indices with the certified Lean indices, reporting a
 located disagreement. -/
-def compareImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+def compareImported {D : Shape} (name : String) (C : Circuits D)
     (cert : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO Unit := do
   let t0 ← IO.monoMsNow
@@ -224,7 +224,7 @@ def compareImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L
     (← IO.getStdout).flush
 
 /-- Compare the independent indices and then the variable-labelled gate dumps. -/
-private def compareAll {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+private def compareAll {D : Shape} (name : String) (C : Circuits D)
     (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
     (cert : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO Unit := do
@@ -243,7 +243,7 @@ private def firstDump {D : Shape} (name : String) (stepDump : D.Branch → Raw F
 
 /-- A dump with one coefficient changed, sent down the dumps' path: the failure is exactly
 the located one. -/
-def rejectCorruptedDump {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+def rejectCorruptedDump {D : Shape} (name : String) (C : Circuits D)
     (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
     (checked : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO Unit := do
@@ -262,7 +262,7 @@ def rejectCorruptedDump {D : Shape} {L : Layout D} (name : String) (C : Circuits
 /-- Require each change to the imported side alone to be rejected where it is: a coefficient
 of the first branch's first row after the public rows, the first wire targets of that row and
 the next exchanged, and the wrap circuit's endomorphism coefficient. -/
-def rejectImportedChanges {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
+def rejectImportedChanges {D : Shape} (name : String) (C : Circuits D)
     (checked : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO Unit := do
   let (raw, r) ← firstDump name stepDump

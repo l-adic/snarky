@@ -27,11 +27,11 @@ namespace Pickles.Application
 open Snarky Snarky.Kimchi Bulletproof CompElliptic.Fields.Pasta Kimchi.Verifier
 open scoped Kimchi
 
-variable {D : Shape} {L : Layout D}
-variable {PD MD CD : Shape} {PL : Layout PD} {ML : Layout MD} {CL : Layout CD}
+variable {D : Shape}
+variable {PD MD CD : Shape}
 
 /-- The source step execution with exactly the supplied matrix’s fixed reading. -/
-private noncomputable def stepRunOf {C : Circuits D L} (cert : ApplicationCertified C)
+private noncomputable def stepRunOf {C : Circuits D} (cert : ApplicationCertified C)
     (b : D.Branch) (t : StepTable cert.indices b) : StepRun C b :=
   { V := stepValuation C cert.indices b t
     advice := inertStepAdvice
@@ -42,7 +42,7 @@ private noncomputable def stepRunOf {C : Circuits D L} (cert : ApplicationCertif
       exact h }
 
 /-- The source wrap execution with exactly the supplied matrix’s fixed reading. -/
-private noncomputable def wrapRunOf {C : Circuits D L} (cert : ApplicationCertified C)
+private noncomputable def wrapRunOf {C : Circuits D} (cert : ApplicationCertified C)
     (t : WrapTable cert.indices) : WrapRun C :=
   { V := wrapValuation C cert.indices t
     advice := inertWrapAdvice
@@ -53,7 +53,7 @@ private noncomputable def wrapRunOf {C : Circuits D L} (cert : ApplicationCertif
       exact h }
 
 /-- The lifted step reads the matrix’s public statement. -/
-private theorem stepRunOf_public {C : Circuits D L} (cert : ApplicationCertified C)
+private theorem stepRunOf_public {C : Circuits D} (cert : ApplicationCertified C)
     (b : D.Branch) (t : StepTable cert.indices b) :
     CircuitType.Reads (stepRunOf cert b t).V (stepRunOf cert b t).cells.out t.statement := by
   obtain ⟨r, h, hV⟩ := cert.lift_step b t
@@ -61,7 +61,7 @@ private theorem stepRunOf_public {C : Circuits D L} (cert : ApplicationCertified
   exact h
 
 /-- The lifted wrap reads the matrix’s public statement. -/
-private theorem wrapRunOf_public {C : Circuits D L} (cert : ApplicationCertified C)
+private theorem wrapRunOf_public {C : Circuits D} (cert : ApplicationCertified C)
     (t : WrapTable cert.indices) :
     CircuitType.Reads (wrapRunOf cert t).V wrapStatement t.statement := by
   obtain ⟨r, h, hV⟩ := cert.lift_wrap t
@@ -69,7 +69,7 @@ private theorem wrapRunOf_public {C : Circuits D L} (cert : ApplicationCertified
   exact h
 
 /-- Connected matrices give a connected step/wrap execution pair. -/
-private noncomputable def stepWrapOf {C : Circuits D L} (cert : ApplicationCertified C)
+private noncomputable def stepWrapOf {C : Circuits D} (cert : ApplicationCertified C)
     (b : D.Branch) (s : StepTable cert.indices b) (w : WrapTable cert.indices)
     (h : MatrixStepWrap C cert.indices b s w) : StepWrapLink C b where
   step := stepRunOf cert b s
@@ -79,7 +79,7 @@ private noncomputable def stepWrapOf {C : Circuits D L} (cert : ApplicationCerti
     simpa only [wrapRunOf, WrapRun.cells_eq, h.2] using stepRunOf_public cert b s
 
 /-- Connected matrices give a connected wrap/step execution pair. -/
-private noncomputable def wrapStepOf {P : Circuits PD PL} {C : Circuits CD CL}
+private noncomputable def wrapStepOf {P : Circuits PD} {C : Circuits CD}
     (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (pb : PD.Branch) (cb : CD.Branch) (i : CD.Slot cb)
     (w : WrapTable pc.indices) (s : StepTable cc.indices cb)
@@ -99,7 +99,7 @@ private noncomputable def wrapStepOf {P : Circuits PD PL} {C : Circuits CD CL}
     simpa only [StepRun.inp, StepRun.cells_eq, matrixInp] using hp
 
 /-- Matrix connections give the native wrap-proof handover record. -/
-private noncomputable def wrapHandoverOf {P : Circuits PD PL} {C : Circuits CD CL}
+private noncomputable def wrapHandoverOf {P : Circuits PD} {C : Circuits CD}
     (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (pb : PD.Branch) (cb : CD.Branch) (pi : PD.Slot pb) (ci : CD.Slot cb)
     (ps : StepTable pc.indices pb) (pw : WrapTable pc.indices)
@@ -124,8 +124,8 @@ private noncomputable def wrapHandoverOf {P : Circuits PD PL} {C : Circuits CD C
       matrixInp, matrixMask] using hp
 
 /-- Matrix connections give the native step-proof handover record. -/
-private noncomputable def stepHandoverOf {P : Circuits PD PL} {M : Circuits MD ML}
-    {C : Circuits CD CL}
+private noncomputable def stepHandoverOf {P : Circuits PD} {M : Circuits MD}
+    {C : Circuits CD}
     (pc : ApplicationCertified P) (mc : ApplicationCertified M) (cc : ApplicationCertified C)
     (pb : PD.Branch) (mb : MD.Branch) (cb : CD.Branch) (mi : MD.Slot mb) (ci : CD.Slot cb)
     (pw : WrapTable pc.indices) (ms : StepTable mc.indices mb)
@@ -139,7 +139,7 @@ private noncomputable def stepHandoverOf {P : Circuits PD PL} {M : Circuits MD M
       using stepRunOf_public mc mb ms
 
 /-- Connected accepted matrices satisfy the original handover capstone’s implication. -/
-theorem matrices_wrap_handover {P : Circuits PD PL} {C : Circuits CD CL}
+theorem matrices_wrap_handover {P : Circuits PD} {C : Circuits CD}
     (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (pb : PD.Branch) (cb : CD.Branch) (pi : PD.Slot pb) (ci : CD.Slot cb)
     (ps : StepTable pc.indices pb) (pw : WrapTable pc.indices)
@@ -150,7 +150,7 @@ theorem matrices_wrap_handover {P : Circuits PD PL} {C : Circuits CD CL}
     (pc.stepWrapSetup pb pi) (cc.stepWrapSetup cb ci)
 
 /-- Connected accepted matrices satisfy the original handover capstone’s implication. -/
-theorem matrices_step_handover {P : Circuits PD PL} {M : Circuits MD ML} {C : Circuits CD CL}
+theorem matrices_step_handover {P : Circuits PD} {M : Circuits MD} {C : Circuits CD}
     (pc : ApplicationCertified P) (mc : ApplicationCertified M) (cc : ApplicationCertified C)
     (pb : PD.Branch) (mb : MD.Branch) (cb : CD.Branch) (mi : MD.Slot mb) (ci : CD.Slot cb)
     (pw : WrapTable pc.indices) (ms : StepTable mc.indices mb)
@@ -161,14 +161,14 @@ theorem matrices_step_handover {P : Circuits PD PL} {M : Circuits MD ML} {C : Ci
     (pc.wrapStepSetup pb) (mc.wrapStepSetup mb)
 
 /-- Connected step/wrap matrices satisfy the verification and accumulator capstone. -/
-theorem matrices_stepWrap {C : Circuits D L} (cert : ApplicationCertified C)
+theorem matrices_stepWrap {C : Circuits D} (cert : ApplicationCertified C)
     (b : D.Branch) (s : StepTable cert.indices b) (w : WrapTable cert.indices)
     (h : MatrixStepWrap C cert.indices b s w) (i : D.Slot b)
     (hm : CircuitType.Reads (stepValuation C cert.indices b s)
       ((stepCompilation C b).result.1.2.prevs i).mustVerify true)
     (hk : KeyReads IpaPallas.curve (stepValuation C cert.indices b s)
       ((C.wiring.sources b i).keyCells (stepCompilation C b).result.1.2.vk.points)
-      (C.wiring.source b i).wrapKey.cvk) : StepWrapConclusion C cert.indices b s w i := by
+      (C.wiring.source b i).wrapKey) : StepWrapConclusion C cert.indices b s w i := by
   have hm' : CircuitType.Reads (stepWrapOf cert b s w h).step.V
       ((stepWrapOf cert b s w h).step.cells.prevs i).mustVerify true := by
     simpa only [stepWrapOf, StepRun.cells_eq] using hm
@@ -177,7 +177,7 @@ theorem matrices_stepWrap {C : Circuits D L} (cert : ApplicationCertified C)
   exact (stepWrapOf cert b s w h).verifies_proof i (cert.stepWrapSetup b i) hm' hk'
 
 /-- Connected wrap/step matrices satisfy the verification, mask and accumulator capstone. -/
-theorem matrices_wrapStep {P : Circuits PD PL} {C : Circuits CD CL}
+theorem matrices_wrapStep {P : Circuits PD} {C : Circuits CD}
     (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (pb : PD.Branch) (cb : CD.Branch) (i : CD.Slot cb)
     (w : WrapTable pc.indices) (s : StepTable cc.indices cb)
@@ -189,15 +189,15 @@ variable {PI : ApplicationIndices PD} {CI : ApplicationIndices CD}
 
 /-- Application-state threading follows by projecting whole-message equality. -/
 theorem WrapHandoverConclusion.appState
-    {P : Circuits PD PL} {C : Circuits CD CL}
+    {P : Circuits PD} {C : Circuits CD}
     {pb : PD.Branch} {cb : CD.Branch} {pi : PD.Slot pb} {ci : CD.Slot cb}
     {ps : StepTable PI pb} {pw : WrapTable PI} {cs : StepTable CI cb} {cw : WrapTable CI}
     (conn : MatrixWrapHandover P C PI CI pb cb pi ci ps pw cs cw)
     (h : WrapHandoverConclusion P C PI CI pb cb pi ci ps pw cs cw) :
-    let nextVk := (C.wiring.source cb ci).wrapKey.cvk
+    let nextVk := (C.wiring.source cb ci).wrapKey
     let r := matrixStepWrapRun P PI pb ps pw pi (matrixMask P PI pb ps pi)
     let r' := matrixStepWrapRun C CI cb cs cw ci (matrixMask C CI cb cs ci)
-    kimchiVerify IpaPallas.curve P.setup.wrapSrs.σ nextVk
+    kimchiVerify IpaPallas.curve P.setup.wrapSrs nextVk
       (matrixWrapProof C CI cb cs cw ci) (matrixWrapPub C CI cb cs ci) = true →
     ((stepCompilation P pb).result.1.2.messagesForNextStepProof.appState.map
         (·.val (stepValuation P PI pb ps)) =

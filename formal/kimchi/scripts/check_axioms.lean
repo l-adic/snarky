@@ -30,7 +30,10 @@ namespace Kimchi.CheckAxioms
     (a `native_decide` outside the trusted certificates, say) hides in the
     executable path. -/
 def roots : List Name :=
-  [ `Kimchi.Index.columnCoefficients_getD,
+  [ `Kimchi.Verifier.compareColumns?_eq_none_iff,
+    `Kimchi.Verifier.checkKey?,
+    `Kimchi.Verifier.satisfiesVec_or_failure,
+    `Kimchi.Index.columnCoefficients_getD,
     `Kimchi.Index.commitColumn_eq,
     `Kimchi.Index.InterpolationChecks.recovers_coefficients,
     `Kimchi.Index.InterpolationChecks.rejects_altered_value,

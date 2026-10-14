@@ -249,7 +249,7 @@ private theorem coords_of_forall₂ {ps : List (AffinePoint (FVar F))} {qs : Lis
     simp only [List.flatMap_cons, hx, hy, ih]
 
 omit [DecidableEq F] in
-/-- Key cells reading as the key `v` have its coordinates, in absorb order. -/
+/-- KimchiVK cells reading as the key `v` have its coordinates, in absorb order. -/
 theorem VkComms.indexCoords_of_reads {nc : ℕ} {key : VkComms nc (AffinePoint (FVar F))}
     {v : VkComms nc (AffinePoint F)} (h : CircuitType.Reads V key v) :
     key.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V])

@@ -59,10 +59,8 @@ private theorem CheckedRule.build_main_irrel {D : Shape} {b : D.Branch}
 
 /-- An application assembled from backend artifacts and checked rule dumps. -/
 structure Assembled (D : Shape) where
-  /-- The checked application layout. -/
-  layout : Layout D
   /-- The application and imported backend interfaces. -/
-  wiring : Wiring D layout
+  wiring : Wiring D
   /-- Each rule checked against the declared schema and sources. -/
   rules : (b : D.Branch) → CheckedRule D b
   /-- The backend's step-domain public-input bases. -/
@@ -71,7 +69,7 @@ structure Assembled (D : Shape) where
 
 /-- Construct the application's circuits, with optional cached advice for each fixed rule. -/
 def Assembled.circuits {D : Shape} (A : Assembled D) (S : Setup)
-    (vals : D.Branch → Option (Array Fp)) : Circuits D A.layout where
+    (vals : D.Branch → Option (Array Fp)) : Circuits D where
   setup := S
   wiring := A.wiring
   rules b := (A.rules b).main (vals b)

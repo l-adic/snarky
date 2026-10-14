@@ -2,6 +2,7 @@ import Snarky.Encoding
 import Snarky.Prover
 import Snarky.Witness
 import Kimchi.Columns
+import Kimchi.Verifier.Kimchi
 
 /-!
 # A verifier key's commitments as a record
@@ -40,6 +41,12 @@ structure VkComms (nc : ℕ) (f : Type) where
   /-- The endo-mul-scalar selector's commitment. -/
   endomulScalarComm : Vector f nc
 deriving DecidableEq
+
+/-- A key's commitments as the record the circuit reads them in. -/
+def _root_.Kimchi.Verifier.KimchiVK.comms {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ}
+    (cvk : Kimchi.Verifier.KimchiVK C nc) : VkComms nc C.Point :=
+  ⟨cvk.sigmaComm, cvk.coefficientsComm, cvk.genericComm, cvk.poseidonComm, cvk.completeAddComm,
+    cvk.mulComm, cvk.emulComm, cvk.endomulScalarComm⟩
 
 namespace VkComms
 
