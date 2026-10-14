@@ -111,45 +111,12 @@ private def pairs {S : Setup} {D : Shape} (A : Context S D) :
   return result
 
 private def wrapAssumptions {D : Shape} {L : Layout D} (C : Circuits D L) (b : D.Branch) :
-    IO (PLift (wrapTable C b → WrapStepAssumptions C b)) := do
-  let K := C.wiring.backend.stepKeys[b]
-  let ⟨hn⟩ ← requireProof (K.cvk.comms.indexPoints.all (fun P => decide (P ≠ 0)) = true)
-    (IO.userError "step key has an infinite commitment")
-  let ⟨hL⟩ ← requireProof ((C.stepLagrange K.cvk.domainLog2).toList.all fun Ps =>
-    (List.finRange C.wiring.backend.stepChunks).all fun c => decide (Ps[c] ≠ 0))
-    (IO.userError "step table has an infinite commitment")
-  return ⟨fun ht => ⟨ht,
-    fun P hP => of_decide_eq_true (List.all_eq_true.mp hn P hP), by
-      apply (Key.avoids_lagrangeRelations_iff pastaShapeVesta C.setup.stepSrs.σ
-        (C.wiring.valid.stepChunks b) _).mpr
-      rw [← ht]
-      exact fun Ps hPs c => of_decide_eq_true (List.all_eq_true.mp
-        (List.all_eq_true.mp hL Ps hPs) c (List.mem_finRange c))⟩⟩
+    IO (PLift (wrapTable C b → WrapStepAssumptions C b)) :=
+  IO.ofExcept (checkWrapStepConstants C b)
 
 private def stepAssumptions {D : Shape} {L : Layout D} (C : Circuits D L)
-    (b : D.Branch) (i : D.Slot b) :
-    IO (PLift (stepTable C b i → StepWrapAssumptions C b i)) := do
-  let source := C.wiring.source b i
-  let K := source.wrapKey
-  let m := CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp)
-  let ⟨hd⟩ ← requireProof (C.setup.dummySg ≠ 0)
-    (IO.userError "padding commitment is infinite")
-  let ⟨hs⟩ ← requireProof (m ≤ 2 ^ WrapIPARounds ∧ m ≤ K.cvk.n)
-    (IO.userError "wrap statement size")
-  let ⟨hL⟩ ← requireProof ((C.wiring.sources b i).lagrange.toList.all
-    fun Ps => decide (Ps[0] ≠ 0)) (IO.userError "wrap table has an infinite commitment")
-  let ⟨hc⟩ ← requireProof (∀ c : Fin 1, corrSumPt (C := CW) zeroWrapStatement.packed.toList
-    (C.wiring.sources b i).lagrange.toList c ≠ 0) (IO.userError "wrap correction sum is infinite")
-  return ⟨fun ht => ⟨hd, ht, fun inp msg =>
-    (avoids_stepRelationsAt_iff C.setup.wrapSrs.σ K source.wrapChunks
-      (inp.statement msg) hs.1 hs.2).mpr ⟨fun c => by
-        rw [corrSumPt_packed_congr _ zeroWrapStatement, ← ht]
-        exact hc c,
-      by
-        rw [← ht]
-        intro Ps hPs c
-        rw [Fin.fin_one_eq_zero c]
-        exact of_decide_eq_true (List.all_eq_true.mp hL Ps hPs)⟩⟩⟩
+    (b : D.Branch) (i : D.Slot b) : IO (PLift (stepTable C b i → StepWrapAssumptions C b i)) :=
+  IO.ofExcept (checkStepWrapConstants C b i)
 
 private def Context.stepParametersAt {S : Setup} {D : Shape}
     (A : Context S D) (b : D.Branch) (i : D.Slot b) :

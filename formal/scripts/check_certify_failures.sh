@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Certify using reconstruction sidecars alone, with no foreign constraint-system dumps.
+# Reject finite but incorrect Step and Wrap Lagrange tables against the shared SRSs.
 # Then require located failures and dependency blocking beside an intact application:
 #   TwoPhaseChain: malformed sidecar, rejected while loading;
 #   RecurseOverChunks: chunks2's rule input disagrees with its shape, rejected during assembly;
@@ -35,6 +36,38 @@ expect() { # $1 = an expected message
 }
 expect "✓ 1 application(s) certified"
 echo "✓ certification succeeds without foreign constraint-system dumps"
+
+# Keep the points finite and the table dimensions unchanged: ordinary point and shape
+# checks cannot detect this substitution. Certification must recompute the basis.
+for curve in vesta pallas; do
+  cache="$work/lagrange-$curve"
+  cp -R "${LAGRANGE_CACHE_DIR:-lagrange-cache}" "$cache"
+  python3 - "$cache" "$curve" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+cache, curve = Path(sys.argv[1]), sys.argv[2]
+for path in cache.glob(f'{curve}-k*-2^*-*c.json'):
+    data = json.loads(path.read_text())
+    assert len(data) > 1 and data[0] != data[1]
+    data[0] = data[1]
+    path.write_text(json.dumps(data))
+PY
+  log="$work/$curve-table.log"
+  if PICKLES_DUMP_DIR="$work" LAGRANGE_CACHE_DIR="$cache" APPS=HeterogeneousPrevs \
+      lake exe certify-application > "$log" 2>&1; then
+    echo "✗ certification accepted a corrupted $curve Lagrange table"
+    tail -12 "$log"
+    exit 1
+  fi
+  if [ "$curve" = vesta ]; then
+    expect "setup: wrap verifying step"
+  else
+    expect "setup: step"
+  fi
+  expect "Lagrange table differs from the SRS-derived basis"
+done
 
 python3 - "$work" <<'PY'
 import json

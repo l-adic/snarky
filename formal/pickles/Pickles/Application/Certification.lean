@@ -4,17 +4,18 @@ import Pickles.Application.Handover
 /-!
 # Matrix connections lift to the Pickles capstones
 
-`PicklesCorrect` preserves the fixed matrix valuation as well as the public statement.
-Its executions therefore preserve every observation of the canonical compilation’s
-retained cells. Matrix connections are supplied before any execution is constructed;
-the link constructors carry those same connections into the original capstones.
+`ApplicationCertified.lift_step` and `lift_wrap` preserve the fixed matrix valuation as well
+as the public statement. The lifted executions therefore preserve every observation of the
+canonical compilation’s retained cells. Matrix connections are supplied before any execution
+is constructed; the private link constructors carry them into the original capstones.
 
 `matrices_stepWrap` and `matrices_wrapStep` expose the verification capstones.
 `matrices_wrap_handover` and `matrices_step_handover` expose the four-execution handovers,
 including whole-message equality, accumulator failure and collision alternatives.
 All proof and message readings in their conclusions belong to the supplied matrices.
-The original setup, source, key, mask and verification assumptions remain explicit.
-Nothing requires a cached prover execution or a witness-generation argument.
+The certificates supply the static setup assumptions; source, key, mask and verification
+conditions remain explicit. Nothing requires a cached prover execution or a witness-generation
+argument.
 
 The fixed interpretation need not recover arbitrary unused advice. It follows the
 compiler’s labelled cells and equality classes; unrepresented variables read as zero.
@@ -28,82 +29,65 @@ open scoped Kimchi
 
 variable {D : Shape} {L : Layout D}
 variable {PD MD CD : Shape} {PL : Layout PD} {ML : Layout MD} {CL : Layout CD}
-variable {I : ApplicationIndices D} {PI : ApplicationIndices PD}
-  {MI : ApplicationIndices MD} {CI : ApplicationIndices CD}
-
-/-- Every accepted matrix has a source execution at its statement and fixed matrix reading. -/
-structure PicklesCorrect (C : Circuits D L) (I : ApplicationIndices D) : Prop where
-  /-- Every step table lifts with its public and retained readings. -/
-  step : ∀ (b : D.Branch) (t : StepTable I b),
-    ∃ r : StepRun C b, CircuitType.Reads r.V r.cells.out t.statement ∧ r.V = stepValuation C I b t
-  /-- Every wrap table lifts with its public and retained readings. -/
-  wrap : ∀ (t : WrapTable I),
-    ∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement t.statement ∧ r.V = wrapValuation C I t
-
-/-- A checked application’s indices preserve matrix readings when lifted to executions. -/
-theorem ApplicationCertified.picklesCorrect (C : Circuits D L) (checked : ApplicationCertified C) :
-    PicklesCorrect C checked.indices :=
-  ⟨checked.lift_step, checked.lift_wrap⟩
 
 /-- The source step execution with exactly the supplied matrix’s fixed reading. -/
-private noncomputable def PicklesCorrect.stepRun {C : Circuits D L} (checked : PicklesCorrect C I)
-    (b : D.Branch) (t : StepTable I b) : StepRun C b :=
-  { V := stepValuation C I b t
+private noncomputable def stepRunOf {C : Circuits D L} (cert : ApplicationCertified C)
+    (b : D.Branch) (t : StepTable cert.indices b) : StepRun C b :=
+  { V := stepValuation C cert.indices b t
     advice := inertStepAdvice
     holds := by
-      let r := (checked.step b t).choose
+      obtain ⟨r, _, hV⟩ := cert.lift_step b t
       have h := r.holds
-      rw [C.stepBuilt_eq b r.advice, (checked.step b t).choose_spec.2] at h
+      rw [C.stepBuilt_eq b r.advice, hV] at h
       exact h }
 
 /-- The source wrap execution with exactly the supplied matrix’s fixed reading. -/
-private noncomputable def PicklesCorrect.wrapRun {C : Circuits D L} (checked : PicklesCorrect C I)
-    (t : WrapTable I) : WrapRun C :=
-  { V := wrapValuation C I t
+private noncomputable def wrapRunOf {C : Circuits D L} (cert : ApplicationCertified C)
+    (t : WrapTable cert.indices) : WrapRun C :=
+  { V := wrapValuation C cert.indices t
     advice := inertWrapAdvice
     holds := by
-      let r := (checked.wrap t).choose
+      obtain ⟨r, _, hV⟩ := cert.lift_wrap t
       have h := r.holds
-      rw [C.wrapBuilt_eq r.advice, (checked.wrap t).choose_spec.2] at h
+      rw [C.wrapBuilt_eq r.advice, hV] at h
       exact h }
 
 /-- The lifted step reads the matrix’s public statement. -/
-private theorem stepRunOf_public {C : Circuits D L} (checked : PicklesCorrect C I)
-    (b : D.Branch) (t : StepTable I b) :
-    CircuitType.Reads (PicklesCorrect.stepRun checked b t).V
-      (PicklesCorrect.stepRun checked b t).cells.out t.statement := by
-  have h := (checked.step b t).choose_spec.1
-  rw [(checked.step b t).choose_spec.2, StepRun.cells_eq] at h
+private theorem stepRunOf_public {C : Circuits D L} (cert : ApplicationCertified C)
+    (b : D.Branch) (t : StepTable cert.indices b) :
+    CircuitType.Reads (stepRunOf cert b t).V (stepRunOf cert b t).cells.out t.statement := by
+  obtain ⟨r, h, hV⟩ := cert.lift_step b t
+  rw [hV, StepRun.cells_eq] at h
   exact h
 
 /-- The lifted wrap reads the matrix’s public statement. -/
-private theorem wrapRunOf_public {C : Circuits D L} (checked : PicklesCorrect C I)
-    (t : WrapTable I) :
-    CircuitType.Reads (PicklesCorrect.wrapRun checked t).V wrapStatement t.statement := by
-  have h := (checked.wrap t).choose_spec.1
-  rw [(checked.wrap t).choose_spec.2] at h
+private theorem wrapRunOf_public {C : Circuits D L} (cert : ApplicationCertified C)
+    (t : WrapTable cert.indices) :
+    CircuitType.Reads (wrapRunOf cert t).V wrapStatement t.statement := by
+  obtain ⟨r, h, hV⟩ := cert.lift_wrap t
+  rw [hV] at h
   exact h
 
 /-- Connected matrices give a connected step/wrap execution pair. -/
-private noncomputable def stepWrapOf {C : Circuits D L} (checked : PicklesCorrect C I)
-    (b : D.Branch) (s : StepTable I b) (w : WrapTable I)
-    (h : MatrixStepWrap C I b s w) : StepWrapLink C b where
-  step := PicklesCorrect.stepRun checked b s
-  wrap := PicklesCorrect.wrapRun checked w
+private noncomputable def stepWrapOf {C : Circuits D L} (cert : ApplicationCertified C)
+    (b : D.Branch) (s : StepTable cert.indices b) (w : WrapTable cert.indices)
+    (h : MatrixStepWrap C cert.indices b s w) : StepWrapLink C b where
+  step := stepRunOf cert b s
+  wrap := wrapRunOf cert w
   branch := by simpa only [WrapRun.cells_eq] using h.1
   publicInput := by
-    simpa only [PicklesCorrect.wrapRun, WrapRun.cells_eq, h.2] using stepRunOf_public checked b s
+    simpa only [wrapRunOf, WrapRun.cells_eq, h.2] using stepRunOf_public cert b s
 
 /-- Connected matrices give a connected wrap/step execution pair. -/
 private noncomputable def wrapStepOf {P : Circuits PD PL} {C : Circuits CD CL}
-    (pc : PicklesCorrect P PI) (cc : PicklesCorrect C CI)
+    (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (pb : PD.Branch) (cb : CD.Branch) (i : CD.Slot cb)
-    (w : WrapTable PI) (s : StepTable CI cb)
-    (h : MatrixWrapStep P C PI CI pb cb i w s) :
+    (w : WrapTable pc.indices) (s : StepTable cc.indices cb)
+    (h : MatrixWrapStep P C pc.indices cc.indices pb cb i w s) :
     WrapStepLink P C pb cb i where
   sourceFor := h.sourceFor
-  wrap := PicklesCorrect.wrapRun pc w
-  step := PicklesCorrect.stepRun cc cb s
+  wrap := wrapRunOf pc w
+  step := stepRunOf cc cb s
   branch := by simpa only [WrapRun.cells_eq] using h.branch
   mustVerify := by simpa only [StepRun.cells_eq] using h.mustVerify
   mask := h.mask
@@ -116,11 +100,11 @@ private noncomputable def wrapStepOf {P : Circuits PD PL} {C : Circuits CD CL}
 
 /-- Matrix connections give the native wrap-proof handover record. -/
 private noncomputable def wrapHandoverOf {P : Circuits PD PL} {C : Circuits CD CL}
-    (pc : PicklesCorrect P PI) (cc : PicklesCorrect C CI)
+    (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (pb : PD.Branch) (cb : CD.Branch) (pi : PD.Slot pb) (ci : CD.Slot cb)
-    (ps : StepTable PI pb) (pw : WrapTable PI)
-    (cs : StepTable CI cb) (cw : WrapTable CI)
-    (h : MatrixWrapHandover P C PI CI pb cb pi ci ps pw cs cw) :
+    (ps : StepTable pc.indices pb) (pw : WrapTable pc.indices)
+    (cs : StepTable cc.indices cb) (cw : WrapTable cc.indices)
+    (h : MatrixWrapHandover P C pc.indices cc.indices pb cb pi ci ps pw cs cw) :
     WrapProofHandover P C pb cb pi ci where
   producer := stepWrapOf pc pb ps pw h.producerPair
   consumer := stepWrapOf cc cb cs cw h.consumerPair
@@ -142,66 +126,66 @@ private noncomputable def wrapHandoverOf {P : Circuits PD PL} {C : Circuits CD C
 /-- Matrix connections give the native step-proof handover record. -/
 private noncomputable def stepHandoverOf {P : Circuits PD PL} {M : Circuits MD ML}
     {C : Circuits CD CL}
-    (pc : PicklesCorrect P PI) (mc : PicklesCorrect M MI) (cc : PicklesCorrect C CI)
+    (pc : ApplicationCertified P) (mc : ApplicationCertified M) (cc : ApplicationCertified C)
     (pb : PD.Branch) (mb : MD.Branch) (cb : CD.Branch) (mi : MD.Slot mb) (ci : CD.Slot cb)
-    (pw : WrapTable PI) (ms : StepTable MI mb)
-    (mw : WrapTable MI) (cs : StepTable CI cb)
-    (h : MatrixStepHandover P M C PI MI CI pb mb cb mi ci pw ms mw cs) :
+    (pw : WrapTable pc.indices) (ms : StepTable mc.indices mb)
+    (mw : WrapTable mc.indices) (cs : StepTable cc.indices cb)
+    (h : MatrixStepHandover P M C pc.indices mc.indices cc.indices pb mb cb mi ci pw ms mw cs) :
     StepProofHandover P M C pb mb cb mi ci where
   producer := wrapStepOf pc mc pb mb mi pw ms h.producerPair
   consumer := wrapStepOf mc cc mb cb ci mw cs h.consumerPair
   middlePublicInput := by
-    simpa only [wrapStepOf, PicklesCorrect.wrapRun, WrapRun.cells_eq, h.middlePublicInput]
+    simpa only [wrapStepOf, wrapRunOf, WrapRun.cells_eq, h.middlePublicInput]
       using stepRunOf_public mc mb ms
 
 /-- Connected accepted matrices satisfy the original handover capstone’s implication. -/
 theorem matrices_wrap_handover {P : Circuits PD PL} {C : Circuits CD CL}
-    (pc : PicklesCorrect P PI) (cc : PicklesCorrect C CI)
+    (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (pb : PD.Branch) (cb : CD.Branch) (pi : PD.Slot pb) (ci : CD.Slot cb)
-    (ps : StepTable PI pb) (pw : WrapTable PI)
-    (cs : StepTable CI cb) (cw : WrapTable CI)
-    (h : MatrixWrapHandover P C PI CI pb cb pi ci ps pw cs cw)
-    (hp : StepWrapAssumptions P pb pi) (hc : StepWrapAssumptions C cb ci) :
-    WrapHandoverConclusion P C PI CI pb cb pi ci ps pw cs cw := by
-  exact (wrapHandoverOf pc cc pb cb pi ci ps pw cs cw h).handover_or_collision hp hc
+    (ps : StepTable pc.indices pb) (pw : WrapTable pc.indices)
+    (cs : StepTable cc.indices cb) (cw : WrapTable cc.indices)
+    (h : MatrixWrapHandover P C pc.indices cc.indices pb cb pi ci ps pw cs cw) :
+    WrapHandoverConclusion P C pc.indices cc.indices pb cb pi ci ps pw cs cw := by
+  exact (wrapHandoverOf pc cc pb cb pi ci ps pw cs cw h).handover_or_collision
+    (pc.stepWrapSetup pb pi) (cc.stepWrapSetup cb ci)
 
 /-- Connected accepted matrices satisfy the original handover capstone’s implication. -/
 theorem matrices_step_handover {P : Circuits PD PL} {M : Circuits MD ML} {C : Circuits CD CL}
-    (pc : PicklesCorrect P PI) (mc : PicklesCorrect M MI) (cc : PicklesCorrect C CI)
+    (pc : ApplicationCertified P) (mc : ApplicationCertified M) (cc : ApplicationCertified C)
     (pb : PD.Branch) (mb : MD.Branch) (cb : CD.Branch) (mi : MD.Slot mb) (ci : CD.Slot cb)
-    (pw : WrapTable PI) (ms : StepTable MI mb)
-    (mw : WrapTable MI) (cs : StepTable CI cb)
-    (h : MatrixStepHandover P M C PI MI CI pb mb cb mi ci pw ms mw cs)
-    (hp : WrapStepAssumptions P pb) (hc : WrapStepAssumptions M mb) :
-    StepHandoverConclusion P M C PI MI CI pb mb cb mi ci pw ms mw cs h := by
-  exact (stepHandoverOf pc mc cc pb mb cb mi ci pw ms mw cs h).handover_or_collision hp hc
-
+    (pw : WrapTable pc.indices) (ms : StepTable mc.indices mb)
+    (mw : WrapTable mc.indices) (cs : StepTable cc.indices cb)
+    (h : MatrixStepHandover P M C pc.indices mc.indices cc.indices pb mb cb mi ci pw ms mw cs) :
+    StepHandoverConclusion P M C pc.indices mc.indices cc.indices pb mb cb mi ci pw ms mw cs h := by
+  exact (stepHandoverOf pc mc cc pb mb cb mi ci pw ms mw cs h).handover_or_collision
+    (pc.wrapStepSetup pb) (mc.wrapStepSetup mb)
 
 /-- Connected step/wrap matrices satisfy the verification and accumulator capstone. -/
-theorem matrices_stepWrap {C : Circuits D L} (correct : PicklesCorrect C I)
-    (b : D.Branch) (s : StepTable I b) (w : WrapTable I)
-    (h : MatrixStepWrap C I b s w) (i : D.Slot b)
-    (ha : StepWrapAssumptions C b i)
-    (hm : CircuitType.Reads (stepValuation C I b s)
+theorem matrices_stepWrap {C : Circuits D L} (cert : ApplicationCertified C)
+    (b : D.Branch) (s : StepTable cert.indices b) (w : WrapTable cert.indices)
+    (h : MatrixStepWrap C cert.indices b s w) (i : D.Slot b)
+    (hm : CircuitType.Reads (stepValuation C cert.indices b s)
       ((stepCompilation C b).result.1.2.prevs i).mustVerify true)
-    (hk : KeyReads IpaPallas.curve (stepValuation C I b s)
+    (hk : KeyReads IpaPallas.curve (stepValuation C cert.indices b s)
       ((C.wiring.sources b i).keyCells (stepCompilation C b).result.1.2.vk.points)
-      (C.wiring.source b i).wrapKey.cvk) : StepWrapConclusion C I b s w i := by
-  have hm' : CircuitType.Reads (stepWrapOf correct b s w h).step.V
-      ((stepWrapOf correct b s w h).step.cells.prevs i).mustVerify true := by
+      (C.wiring.source b i).wrapKey.cvk) : StepWrapConclusion C cert.indices b s w i := by
+  have hm' : CircuitType.Reads (stepWrapOf cert b s w h).step.V
+      ((stepWrapOf cert b s w h).step.cells.prevs i).mustVerify true := by
     simpa only [stepWrapOf, StepRun.cells_eq] using hm
-  have hk' : (stepWrapOf correct b s w h).step.KeyBound i := by
+  have hk' : (stepWrapOf cert b s w h).step.KeyBound i := by
     simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using hk
-  exact (stepWrapOf correct b s w h).verifies_proof i ha hm' hk'
+  exact (stepWrapOf cert b s w h).verifies_proof i (cert.stepWrapSetup b i) hm' hk'
 
 /-- Connected wrap/step matrices satisfy the verification, mask and accumulator capstone. -/
 theorem matrices_wrapStep {P : Circuits PD PL} {C : Circuits CD CL}
-    (pc : PicklesCorrect P PI) (cc : PicklesCorrect C CI)
+    (pc : ApplicationCertified P) (cc : ApplicationCertified C)
     (pb : PD.Branch) (cb : CD.Branch) (i : CD.Slot cb)
-    (w : WrapTable PI) (s : StepTable CI cb)
-    (h : MatrixWrapStep P C PI CI pb cb i w s) (ha : WrapStepAssumptions P pb) :
-    WrapStepConclusion P C PI CI pb cb i w s h :=
-  (wrapStepOf pc cc pb cb i w s h).verifies_proof ha
+    (w : WrapTable pc.indices) (s : StepTable cc.indices cb)
+    (h : MatrixWrapStep P C pc.indices cc.indices pb cb i w s) :
+    WrapStepConclusion P C pc.indices cc.indices pb cb i w s h :=
+  (wrapStepOf pc cc pb cb i w s h).verifies_proof (pc.wrapStepSetup pb)
+
+variable {PI : ApplicationIndices PD} {CI : ApplicationIndices CD}
 
 /-- Application-state threading follows by projecting whole-message equality. -/
 theorem WrapHandoverConclusion.appState

@@ -1,4 +1,4 @@
-import Pickles.Application.Compile
+import Pickles.Application.Description
 
 /-!
 # Application layout fixtures

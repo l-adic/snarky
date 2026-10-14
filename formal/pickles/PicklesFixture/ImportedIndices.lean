@@ -1,5 +1,5 @@
 import PicklesFixture.ApplicationRun
-import Pickles.Application.Imported
+import Kimchi.Index.Compare
 import Kimchi.Columns
 
 /-!
@@ -15,8 +15,8 @@ beyond its entries, the reading kimchi gives it), seven wire targets inside the 
 known gate type. Every failure is located at its circuit.
 
 `PicklesFixture.Application.compareImported` compares these foreign indices with an
-application's certified Lean indices. Success transfers `PicklesCorrect` by the comparison
-theorem; no additional certificate is constructed. This operation is separate from normal
+application's certified Lean indices. The comparison theorem establishes equality, so results
+about the certified indices apply to the foreign indices. This operation is separate from normal
 application certification. `PicklesFixture.Application.rejectCorruptedDump` changes a
 coefficient and requires exactly the located failure. `rejectImportedChanges` also tests
 exchanged wire targets and a changed endomorphism coefficient against the same Lean indices.
@@ -110,6 +110,56 @@ def importIndices {D : Shape} {L : Layout D} (C : Circuits D L) (stepDump : D.Br
 
 /-! ## Comparison and its rejections -/
 
+open Kimchi.Index
+
+/-- The first disagreement between two families of an application's indices. -/
+inductive IndicesDiff (D : Shape) where
+  /-- The branch families differ. -/
+  | step (d : FamilyDiff D.Branch)
+  /-- The wrap domains differ. -/
+  | wrapSize
+  /-- The wrap indices differ, at the datum. -/
+  | wrap (d : IndexDiff)
+
+/-- Two families' first disagreement: the branches, then the wrap circuit. -/
+def compareIndices? {D : Shape} (a b : ApplicationIndices D) : Option (IndicesDiff D) :=
+  match compareFamily? a.stepSize b.stepSize a.step b.step with
+  | some d => some (.step d)
+  | none =>
+    if h : a.wrapSize = b.wrapSize then (compareIndex? a.wrap (h ▸ b.wrap)).map .wrap
+    else some .wrapSize
+
+/-- The comparison succeeds exactly on equal families. -/
+theorem compareIndices?_eq_none_iff {D : Shape} {a b : ApplicationIndices D} :
+    compareIndices? a b = none ↔ a = b := by
+  constructor
+  · intro h
+    obtain ⟨as, ast, aw, awr, ap, aq⟩ := a
+    obtain ⟨bs, bst, bw, bwr, bp, bq⟩ := b
+    unfold compareIndices? at h
+    simp only at h
+    split at h
+    · cases h
+    rename_i hsteps
+    obtain ⟨hsize, hstep⟩ := compareFamily?_eq_none_iff.mp hsteps
+    subst hsize
+    have hst : ast = bst := funext fun i => eq_of_heq (hstep i)
+    subst hst
+    split at h
+    · rename_i hw
+      subst hw
+      rw [Option.map_eq_none_iff] at h
+      have hwr : awr = bwr := compareIndex?_eq_none_iff.mp h
+      subst hwr
+      rfl
+    · cases h
+  · rintro rfl
+    have hfam : compareFamily? a.stepSize a.stepSize a.step a.step = none :=
+      compareFamily?_eq_none_iff.mpr ⟨rfl, fun _ => HEq.rfl⟩
+    unfold compareIndices?
+    rw [hfam]
+    simp [compareIndex?_eq_none_iff]
+
 /-- A datum of an index, for the report. -/
 private def describeIndex : Kimchi.Index.IndexDiff → String
   | .publicCount => "the public count"
@@ -156,7 +206,7 @@ private def wiresExchanged (raw : Raw Fp) (r : ℕ) : Raw Fp :=
   { raw with wires := wires.modify (r + 1) (·.modify 0 fun _ => a) }
 
 /-- Compare independent foreign indices with the certified Lean indices, reporting a
-located disagreement. Success supplies `PicklesCorrect` through index equality. -/
+located disagreement. -/
 def compareImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
     (cert : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO Unit := do
@@ -165,10 +215,9 @@ def compareImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L
     | .error e => throw (IO.userError s!"{name}: import: {e}")
     | .ok i => pure i
   let t1 ← IO.monoMsNow
-  match h : compareIndices? imported cert.indices with
+  match compareIndices? imported cert.indices with
   | some d => throw (IO.userError s!"{name}: the imported indices differ at {describe d}")
   | none =>
-    let _correct : PicklesCorrect C imported := cert.picklesCorrect_of_compare imported h
     let t2 ← IO.monoMsNow
     IO.println s!"✓ {name}: imported indices match the certified Lean indices \
       (import {t1 - t0} ms, compare {t2 - t1} ms)"

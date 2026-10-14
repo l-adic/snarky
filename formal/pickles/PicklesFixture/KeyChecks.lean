@@ -11,6 +11,18 @@ Both step and wrap paths exercise the actual derivation checker, independently o
 namespace PicklesFixture.Application
 
 open Pickles Pickles.Application Bulletproof Kimchi.Verifier
+open scoped Kimchi
+
+-- Every changed commitment column and chunk is reported at its exact location.
+example :
+    let columns : Vector (Vector Nat 2) (permCols + coeffCols + selectorCols) :=
+      Vector.ofFn fun col => #v[2 * col.val, 2 * col.val + 1]
+    (List.finRange (permCols + coeffCols + selectorCols)).all (fun col =>
+      (List.finRange 2).all fun chunk =>
+        compareColumns? columns
+          (columns.set col.val ((columns[col]).set chunk.val (columns[col][chunk] + 1))) ==
+            some ⟨col, chunk.val⟩) = true := by
+  decide +kernel
 
 /-- Another wellformed key, with its first permutation commitment changed and digest updated. -/
 private def alteredKey {C : Ipa.KimchiCurve} {nc : Nat} (σ : SRS C.Point) (K : Key C nc) :

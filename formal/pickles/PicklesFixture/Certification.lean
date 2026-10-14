@@ -5,7 +5,8 @@ import Pickles.Application.CheckedCompile
 # Certification of reconstructed applications
 
 Compile each reconstructed application's circuits once and certify the supplied keys against
-those Lean indices and the shared SRSs. The result is `ApplicationCertified`; independent
+those Lean indices and the shared SRSs. Recompute the verifier tables from the SRSs and check
+their nondegeneracy premises. The result is `ApplicationCertified`; independent
 constraint-system dumps and proof caches are not inputs to this operation.
 -/
 
@@ -27,6 +28,8 @@ def located {D : Shape} : ApplicationFailure D → String
   | .wrap f => s!"wrap: {describeCheck f}"
   | .stepKey b f => s!"key: step {b.val}: {f.describe}"
   | .wrapKey f => s!"key: wrap: {f.describe}"
+  | .stepSetup b reason => s!"setup: wrap verifying step {b.val}: {reason}"
+  | .slotSetup b i reason => s!"setup: step {b.val}, slot {i.val}: {reason}"
 
 /-- Certify the reconstructed circuits and their supplied keys, without foreign circuit dumps.
 Each circuit is compiled once; a failure is located at its stage and circuit. -/
@@ -37,7 +40,7 @@ def certifyApplication (name : String) (A : ImportedApplication) :
   let steps ← finSequence fun b => IO.lazyPure fun _ => canonicalStep C b
   let wrap ← IO.lazyPure fun _ => canonicalWrap C
   let t1 ← IO.monoMsNow
-  let cert ← match ← IO.lazyPure fun _ => checkApplicationWith C steps wrap with
+  let cert ← match ← IO.lazyPure fun _ => checkApplication C steps wrap with
     | .error f => throw (IO.userError s!"{name}: {located f}")
     | .ok cert => pure cert
   let t2 ← IO.monoMsNow
@@ -48,6 +51,7 @@ def certifyApplication (name : String) (A : ImportedApplication) :
   IO.println s!"✓ {name} wrap: checked index on a domain of {I.wrapSize}, {I.wrap.zkRows} \
     masked rows, {I.wrap.publicCount} public rows (compile {t1 - t0} ms, check {t2 - t1} ms)"
   IO.println s!"✓ {name}: all step and wrap keys derived from the Lean indices and SRSs"
+  IO.println s!"✓ {name}: verifier tables derived from the SRSs and setup premises checked"
   (← IO.getStdout).flush
   return cert
 

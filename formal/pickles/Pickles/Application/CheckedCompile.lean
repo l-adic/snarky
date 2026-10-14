@@ -1,4 +1,4 @@
-import Pickles.Application.Circuit
+import Pickles.Application.Verify
 import Pickles.KeyDerivation
 import Snarky.Kimchi.Backend.CheckedCompile
 import Kimchi.Columns
@@ -13,9 +13,11 @@ cells included (`Circuits.stepBuilt_eq`, `Circuits.wrapBuilt_eq`).
 
 `checkApplication` checks every canonical compilation through the backend's `checkBuilt?` at
 its key's index data, then checks the supplied keys against those indices and the shared SRSs.
-It returns one `ApplicationCertified` containing the checked Lean indices and their key
-correspondence, or the first failure located at its circuit and stage. No imported constraint
-system or index comparison is required. A consumer reads the family of indices through
+It also derives each required Lagrange table once per domain and checks the embedded verifiers'
+nondegeneracy premises. It returns one `ApplicationCertified` containing the checked Lean
+indices, their key correspondence and the verifier setup, or the first failure located at its
+circuit and stage. No imported constraint system or index comparison is required.
+A consumer reads the family of indices through
 `ApplicationCertified.indices`.
 
 The index data a circuit is checked at has two origins, kept apart. The domain size, its
@@ -24,20 +26,19 @@ parameters are the field's: the endomorphism coefficient is the key's, which `Ke
 makes the curve's, and the Poseidon matrix is the one the verifier reads for the curve's
 proofs, `Kimchi.Verifier.mdsOfParams` of its sponge parameters.
 
-The checks take each compilation in hand, pinned to the canonical one (`StepCompilation`,
-`WrapCompilation`), so a driver compiles each circuit once for comparison, checking and
-rejection alike; `checkApplicationWith` takes them in hand and `checkApplication` compiles them
-itself.
+`checkApplication` takes each compilation in hand, pinned to the canonical one
+(`StepCompilation`, `WrapCompilation`), so a driver compiles each circuit once for comparison,
+checking and rejection alike.
 
 ## Main definitions
 
 - `stepCompilation`, `wrapCompilation`: the canonical compilations; `canonicalStep`,
   `canonicalWrap`: the same in hand.
-- `IndexData`, `IndexData.ofKey`: the data an index is built at and the data supplied by a key.
-- `ApplicationCertified`: checked Lean indices and correspondence of the supplied keys.
-- `checkApplicationWith`, `checkApplication`: the checks.
+- `IndexData`: the data an index is built at.
+- `ApplicationCertified`: checked Lean indices, supplied keys and embedded-verifier setup.
+- `checkApplication`: certify the application from its compilations.
 - `ApplicationIndices`, `ApplicationCertified.indices`: the family of certified indices.
-- `ApplicationFailure`: a compilation or key rejection located at its circuit.
+- `ApplicationFailure`: a compilation, key or setup rejection located at its circuit or slot.
 
 ## Main results
 
@@ -134,7 +135,8 @@ structure IndexData (F : Type) where
 /-- A key's index data. The domain, generator, masked rows, shifts and endomorphism coefficient
 are the key's, the coefficient being the curve's by `Key.endo_eq`; the matrix is the one the
 verifier reads for the curve's proofs, `mdsOfParams` of its sponge parameters. -/
-def IndexData.ofKey {C : Ipa.KimchiCurve} {nc : ℕ} (K : Key C nc) : IndexData C.ScalarField where
+private def IndexData.ofKey {C : Ipa.KimchiCurve} {nc : ℕ} (K : Key C nc) :
+    IndexData C.ScalarField where
   n := K.cvk.n
   zkRows := K.cvk.zkRows
   omega := K.cvk.omega
@@ -178,7 +180,7 @@ def checkWrapAt (C : Circuits D L) (built : WrapCompilation C) (d : IndexData Fq
       (wrapCompilation C).nextVar d.n) :=
   cast (by rw [built.2]) (checkAt (a := WrapPublic) (b := Unit) built.1 d)
 
-/-- A compilation or key rejection, located at its branch or at the wrap circuit. -/
+/-- A compilation, key or setup rejection, located at its branch, slot or wrap circuit. -/
 inductive ApplicationFailure (D : Shape) where
   /-- The branch's step circuit was rejected. -/
   | step (b : D.Branch) (failure : CheckFailure)
@@ -188,10 +190,16 @@ inductive ApplicationFailure (D : Shape) where
   | stepKey (b : D.Branch) (failure : KeyFailure)
   /-- The supplied wrap key does not correspond to its compiled index. -/
   | wrapKey (failure : KeyFailure)
+  /-- Wrap's verification parameters for a step branch were rejected. -/
+  | stepSetup (b : D.Branch) (reason : String)
+  /-- A step slot's verification parameters were rejected. -/
+  | slotSetup (b : D.Branch) (i : D.Slot b) (reason : String)
 
-/-- Checked Lean compilations and correspondence of the supplied keys to those same indices.
-This certificate makes no claim about an imported constraint system. -/
+/-- Checked Lean compilations, correspondence of their supplied keys, and the static setup
+required by the embedded verifiers. This certificate makes no claim about an imported
+constraint system. -/
 structure ApplicationCertified (C : Circuits D L) where
+  private mk ::
   /-- Each branch's checked index. -/
   step : (b : D.Branch) → CheckedIndex (stepCompilation C b).constraints (stepPublicVars C b)
     (stepCompilation C b).nextVar (stepIndexData C b).n
@@ -204,11 +212,120 @@ structure ApplicationCertified (C : Circuits D L) where
   /-- The supplied Wrap key commits to its checked index under the shared Wrap SRS. -/
   wrapKey : KeyCorresponds C.setup.wrapSrs.σ wrap.index
     C.wiring.backend.wrapKey MaxProofsVerified
+  /-- Every slot's embedded Wrap verifier has the required SRS-dependent setup. -/
+  stepWrapSetup : ∀ b i, StepWrapAssumptions C b i
+  /-- Wrap's embedded Step verifier has the required setup for every branch. -/
+  wrapStepSetup : ∀ b, WrapStepAssumptions C b
+  /-- Slot source keys have finite commitments, representable by affine cells. -/
+  sourceKeyPoints : ∀ b i,
+    ∀ P ∈ (C.wiring.source b i).wrapKey.cvk.comms.indexPoints, P ≠ 0
 
-/-- Check the compilations in hand and their supplied keys. Every failure is located at its
-circuit and at either compilation checking or key correspondence. -/
-def checkApplicationWith (C : Circuits D L) (steps : (b : D.Branch) → StepCompilation C b)
+/-- Check Wrap's constant nondegeneracy premises. The returned implication is shared with
+fixture consumers that keep Lagrange correspondence as an explicit premise. Certification
+discharges that premise by recomputing the table from the SRS. -/
+def checkWrapStepConstants (C : Circuits D L) (b : D.Branch) :
+    Except String (PLift
+      (C.stepLagrange C.wiring.backend.stepKeys[b].cvk.domainLog2 =
+        C.wiring.backend.stepKeys[b].cvk.lagrangePoints C.setup.stepSrs.σ
+          (CircuitType.size Fp (StepPublic D)) → WrapStepAssumptions C b)) := do
+  let K := C.wiring.backend.stepKeys[b]
+  let ⟨hn⟩ ← requireProof (K.cvk.comms.indexPoints.all (fun P => decide (P ≠ 0)) = true)
+    "step key has an infinite commitment"
+  let ⟨hL⟩ ← requireProof ((C.stepLagrange K.cvk.domainLog2).toList.all fun Ps =>
+    (List.finRange C.wiring.backend.stepChunks).all fun c => decide (Ps[c] ≠ 0))
+    "step table has an infinite commitment"
+  return ⟨fun ht => ⟨ht,
+    fun P hP => of_decide_eq_true (List.all_eq_true.mp hn P hP), by
+      apply (Key.avoids_lagrangeRelations_iff pastaShapeVesta C.setup.stepSrs.σ
+        (C.wiring.valid.stepChunks b) _).mpr
+      rw [← ht]
+      exact fun Ps hPs c => of_decide_eq_true (List.all_eq_true.mp
+        (List.all_eq_true.mp hL Ps hPs) c (List.mem_finRange c))⟩⟩
+
+/-- Check a slot's constant nondegeneracy premises, leaving only Lagrange correspondence.
+The universal statement premise reduces to one correction sum because its packing is fixed. -/
+def checkStepWrapConstants (C : Circuits D L) (b : D.Branch) (i : D.Slot b) :
+    Except String (PLift
+      ((C.wiring.sources b i).lagrange = (C.wiring.source b i).wrapKey.cvk.lagrangePoints
+        C.setup.wrapSrs.σ
+          (CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp)) →
+        StepWrapAssumptions C b i)) := do
+  let source := C.wiring.source b i
+  let K := source.wrapKey
+  let m := CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp)
+  let statement := CircuitType.fieldsToVar (F := Fp)
+    (val := WrapStatement StepIPARounds Fp Bool (Type1 Fp))
+    (Vector.replicate _ (.const 0))
+  let ⟨hd⟩ ← requireProof (C.setup.dummySg ≠ 0) "padding commitment is infinite"
+  let ⟨hs⟩ ← requireProof (m ≤ 2 ^ WrapIPARounds ∧ m ≤ K.cvk.n) "wrap statement size"
+  let ⟨hL⟩ ← requireProof ((C.wiring.sources b i).lagrange.toList.all
+    fun Ps => decide (Ps[0] ≠ 0)) "wrap table has an infinite commitment"
+  let ⟨hc⟩ ← requireProof (∀ c : Fin 1, corrSumPt (C := IpaPallas.curve)
+    statement.packed.toList (C.wiring.sources b i).lagrange.toList c ≠ 0)
+    "wrap correction sum is infinite"
+  return ⟨fun ht => ⟨hd, ht, fun inp msg =>
+    (avoids_stepRelationsAt_iff C.setup.wrapSrs.σ K source.wrapChunks
+      (inp.statement msg) hs.1 hs.2).mpr ⟨fun c => by
+        rw [corrSumPt_packed_congr _ statement, ← ht]
+        exact hc c,
+      by
+        rw [← ht]
+        intro Ps hPs c
+        rw [Fin.fin_one_eq_zero c]
+        exact of_decide_eq_true (List.all_eq_true.mp hL Ps hPs)⟩⟩⟩
+
+private def domainLagrange {curve : Ipa.KimchiCurve} (σ : SRS curve.Point)
+    (nc count logN : Nat) : Vector (Vector curve.Point nc) count :=
+  ⟨Ipa.lagrangeBasis curve σ nc (2 ^ logN) (domainGenerator curve logN) count,
+    by simp [Ipa.lagrangeBasis]⟩
+
+private abbrev LagrangeMemo {curve : Ipa.KimchiCurve} (σ : SRS curve.Point) (nc count : Nat) :=
+  List ((logN : Nat) × { table : Vector (Vector curve.Point nc) count //
+    table = domainLagrange σ nc count logN })
+
+/-- A private, proof-carrying memo: each domain is computed once at this fixed SRS and size. -/
+private def lagrangeAt {curve : Ipa.KimchiCurve} {m : Type → Type} [Monad m]
+    (σ : SRS curve.Point) {nc : Nat} (K : Key curve nc) (count : Nat) :
+    StateT (LagrangeMemo σ nc count) m
+      { table : Vector (Vector curve.Point nc) count // table = K.cvk.lagrangePoints σ count } := do
+  have hs : domainLagrange σ nc count K.cvk.domainLog2 = K.cvk.lagrangePoints σ count := by
+    simp only [domainLagrange, KimchiVK.lagrangePoints, KimchiVK.n, K.omega_eq]
+  for entry in ← get do
+    if h : entry.1 = K.cvk.domainLog2 then
+      return ⟨entry.2.val, entry.2.property.trans (h ▸ hs)⟩
+  let table := domainLagrange σ nc count K.cvk.domainLog2
+  modify (⟨K.cvk.domainLog2, table, rfl⟩ :: ·)
+  return ⟨table, hs⟩
+
+/-- Check the verifier setup, compilations in hand and their supplied keys. Lagrange tables
+are recomputed once per domain at each fixed SRS, chunk count and statement size. -/
+def checkApplication (C : Circuits D L) (steps : (b : D.Branch) → StepCompilation C b)
     (wrap : WrapCompilation C) : Except (ApplicationFailure D) (ApplicationCertified C) := do
+  let wrapSetup : (b : D.Branch) → PLift (WrapStepAssumptions C b) ←
+    (finSequence (m := StateT (LagrangeMemo C.setup.stepSrs.σ C.wiring.backend.stepChunks
+        (CircuitType.size Fp (StepPublic D))) (Except (ApplicationFailure D))) fun b => do
+      let constants ← liftM
+        ((checkWrapStepConstants C b).mapError (ApplicationFailure.stepSetup b))
+      let table ← lagrangeAt C.setup.stepSrs.σ C.wiring.backend.stepKeys[b] _
+      let ⟨ht⟩ ← requireProof
+        (C.stepLagrange C.wiring.backend.stepKeys[b].cvk.domainLog2 = table.val)
+        (.stepSetup b "Lagrange table differs from the SRS-derived basis")
+      return PLift.up (constants.down (ht.trans table.property))).run' []
+  let slotSetup : (b : D.Branch) → (i : D.Slot b) → PLift (StepWrapAssumptions C b i ∧
+      ∀ P ∈ (C.wiring.source b i).wrapKey.cvk.comms.indexPoints, P ≠ 0) ←
+    (finSequence (m := StateT (LagrangeMemo C.setup.wrapSrs.σ 1
+        (CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp)))
+        (Except (ApplicationFailure D))) fun b => finSequence fun i => do
+      let constants ← liftM
+        ((checkStepWrapConstants C b i).mapError (ApplicationFailure.slotSetup b i))
+      let ⟨hn⟩ ← requireProof
+        ((C.wiring.source b i).wrapKey.cvk.comms.indexPoints.all (fun P => decide (P ≠ 0)))
+        (.slotSetup b i "source wrap key has an infinite commitment")
+      let table ← lagrangeAt C.setup.wrapSrs.σ (C.wiring.source b i).wrapKey _
+      let ⟨ht⟩ ← requireProof ((C.wiring.sources b i).lagrange = table.val)
+        (.slotSetup b i "Lagrange table differs from the SRS-derived basis")
+      return PLift.up (And.intro (constants.down (ht.trans table.property))
+        (fun P hP => of_decide_eq_true (List.all_eq_true.mp hn P hP)))).run' []
   let step ← finSequence fun b =>
     (checkStepAt C b (steps b) (stepIndexData C b)).mapError (.step b)
   let wrap ← (checkWrapAt C wrap (wrapIndexData C)).mapError .wrap
@@ -217,12 +334,9 @@ def checkApplicationWith (C : Circuits D L) (steps : (b : D.Branch) → StepComp
       C.wiring.backend.stepKeys[b] (D.slots b)).mapError (.stepKey b)
   let wrapKey ← (checkKey? pastaShapePallas C.setup.wrapSrs.σ wrap.index
     C.wiring.backend.wrapKey MaxProofsVerified).mapError .wrapKey
-  return ⟨step, wrap, fun b => (stepKeys b).down, wrapKey.down⟩
-
-/-- Compile the application's circuits and certify their supplied keys against those indices. -/
-def checkApplication (C : Circuits D L) :
-    Except (ApplicationFailure D) (ApplicationCertified C) :=
-  checkApplicationWith C (canonicalStep C) (canonicalWrap C)
+  return ⟨step, wrap, fun b => (stepKeys b).down, wrapKey.down,
+    fun b i => (slotSetup b i).down.1, fun b => (wrapSetup b).down,
+    fun b i => (slotSetup b i).down.2⟩
 
 /-! ## The indices -/
 

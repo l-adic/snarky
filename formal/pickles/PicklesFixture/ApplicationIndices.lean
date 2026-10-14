@@ -7,7 +7,7 @@ import Kimchi.Columns
 # Checked indices of reconstructed applications
 
 Compile each reconstructed application's circuits once and certify their supplied keys
-against the Lean indices (`checkApplicationWith`). Then compare the indices imported from
+against the Lean indices (`checkApplication`). Then compare the indices imported from
 the independent dump with those Lean indices, locating disagreements at their datum,
 before requiring the compilations to match the dump datum by datum.
 A dump corrupted before that path must fail at its datum, and each change to the imported
@@ -62,7 +62,7 @@ def checkIndices (name : String) (A : ImportedApplication) (tag : Json) :
   let C := A.assembled.circuits A.setup (fun _ => none)
   let steps ← finSequence fun b => IO.lazyPure fun _ => canonicalStep C b
   let wrap ← IO.lazyPure fun _ => canonicalWrap C
-  let checked ← match ← IO.lazyPure fun _ => checkApplicationWith C steps wrap with
+  let checked ← match ← IO.lazyPure fun _ => checkApplication C steps wrap with
     | .error f => throw (IO.userError s!"{name}: {located f}")
     | .ok cert => pure cert
   let (stepDump, wrapDump) ← IO.ofExcept (circuitDumps A.shape tag)

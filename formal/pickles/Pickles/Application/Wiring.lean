@@ -1,4 +1,4 @@
-import Pickles.Application.Compile
+import Pickles.Application.Description
 import Pickles.KeyLayout
 import Pickles.StepMain
 import Pickles.WrapFinalize
