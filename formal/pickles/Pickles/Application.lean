@@ -4,6 +4,7 @@ import Pickles.Application.MatrixRun
 import Pickles.Application.Certification
 import Pickles.Application.Compare
 import Pickles.Application.Imported
+import Pickles.Application.ProofCorrectness
 
 /-!
 # Compiled application framework
@@ -23,6 +24,8 @@ connections, and the capstones’ conclusions concern those matrices’ proof an
 Satisfying application executions instantiate both verification capstones. Connected executions
 preserve complete messages and propagate acceptance backward, with explicit message-collision
 and accumulator-validity failure alternatives.
+
+Acceptance of a proof under a certified key yields a satisfying valuation or `KimchiFailure`.
 
 Implementation helpers are private to their defining file. Shared declarations are
 exposed only as needed by other library modules or fixture drivers.
