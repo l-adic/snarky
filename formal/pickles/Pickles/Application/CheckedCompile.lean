@@ -1,9 +1,10 @@
 import Pickles.Application.Circuit
+import Pickles.KeyDerivation
 import Snarky.Kimchi.Backend.CheckedCompile
 import Kimchi.Columns
 
 /-!
-# Checked compilation of an application
+# Compilation and key certification of an application
 
 Each circuit of an application has a canonical compilation: a branch's step circuit, or the
 shared wrap circuit, with inert advice. Advice changes no part of the build:
@@ -11,11 +12,11 @@ every execution's compiled circuit is the canonical one, constraints, allocation
 cells included (`Circuits.stepBuilt_eq`, `Circuits.wrapBuilt_eq`).
 
 `checkApplication` checks every canonical compilation through the backend's `checkBuilt?` at
-its key's index data, and returns the checked indices as one certificate, or the first failure
-located at its branch or at the wrap circuit. The certificate also records that each index was
-built at its data: its masked rows, generator, shifts and gate parameters are the data's
-(`IndexData.Describes`). A consumer reads the family of indices through `CheckedAt.indices`;
-the scope, correspondence and data proofs come from the checks, never from the caller.
+its key's index data, then checks the supplied keys against those indices and the shared SRSs.
+It returns one `ApplicationCertified` containing the checked Lean indices and their key
+correspondence, or the first failure located at its circuit and stage. No imported constraint
+system or index comparison is required. A consumer reads the family of indices through
+`ApplicationCertified.indices`.
 
 The index data a circuit is checked at has two origins, kept apart. The domain size, its
 generator, the masked-row count and the permutation shifts are the circuit's key's. The gate
@@ -25,18 +26,18 @@ proofs, `Kimchi.Verifier.mdsOfParams` of its sponge parameters.
 
 The checks take each compilation in hand, pinned to the canonical one (`StepCompilation`,
 `WrapCompilation`), so a driver compiles each circuit once for comparison, checking and
-rejection alike; `checkApplication` compiles them itself.
+rejection alike; `checkApplicationWith` takes them in hand and `checkApplication` compiles them
+itself.
 
 ## Main definitions
 
 - `stepCompilation`, `wrapCompilation`: the canonical compilations; `canonicalStep`,
   `canonicalWrap`: the same in hand.
-- `IndexData`, `IndexData.ofKey`, `IndexData.Describes`: the data an index is built at, a
-  key's, and an index built at it.
-- `CheckedAt`, `CheckedApplication`: the certificate at given index data, and at the keys'.
-- `checkApplicationAt`, `checkApplication`: the checks.
-- `ApplicationIndices`, `CheckedAt.indices`: the family of indices a certificate holds.
-- `ApplicationFailure`: a rejection located at a branch or at the wrap circuit.
+- `IndexData`, `IndexData.ofKey`: the data an index is built at and the data supplied by a key.
+- `ApplicationCertified`: checked Lean indices and correspondence of the supplied keys.
+- `checkApplicationWith`, `checkApplication`: the checks.
+- `ApplicationIndices`, `ApplicationCertified.indices`: the family of certified indices.
+- `ApplicationFailure`: a compilation or key rejection located at its circuit.
 
 ## Main results
 
@@ -141,13 +142,6 @@ def IndexData.ofKey {C : Ipa.KimchiCurve} {nc : ℕ} (K : Key C nc) : IndexData 
   endoBase := K.cvk.endo
   mds := mdsOfParams C.frSponge.params
 
-/-- An index built at the data: its masked-row count, generator, shifts and gate parameters
-are the data's. -/
-def IndexData.Describes {F : Type} [Field F] (d : IndexData F) (idx : Kimchi.Index F d.n) :
-    Prop :=
-  idx.zkRows = d.zkRows ∧ idx.omega = d.omega ∧ idx.shifts = d.shifts ∧
-    idx.endoBase = d.endoBase ∧ idx.mds = d.mds
-
 /-- A branch's index data: its step key's. -/
 def stepIndexData (C : Circuits D L) (b : D.Branch) : IndexData Fp :=
   .ofKey C.wiring.backend.stepKeys[b]
@@ -163,80 +157,72 @@ section Check
 variable {F : Type} [Field F] [DecidableEq F] {a avar b bvar β : Type} [CircuitType F a avar]
   [CircuitType F b bvar]
 
-/-- A checked index is built at the data it was checked at. -/
-private theorem describes_of_checkBuilt {built : Built (KimchiConstraint F) (β × bvar)}
-    {d : IndexData F} {c : CheckedIndex built.constraints
-      (compiledPublicVars (F := F) (a := a) (b := b) built) built.nextVar d.n}
-    (h : checkBuilt? (a := a) (b := b) built d.n d.zkRows d.omega d.endoBase d.mds d.shifts =
-      .ok c) : d.Describes c.index := by
-  obtain ⟨-, hzk, ho, hs, he, hm⟩ := indexOfGates?_eq_some (checkBuilt?_index h)
-  exact ⟨hzk, ho, hs, he, hm⟩
-
-/-- A compilation in hand checked at the data: its checked index, built at the data. -/
+/-- Check a compilation in hand at the supplied index data. -/
 private def checkAt (built : Built (KimchiConstraint F) (β × bvar)) (d : IndexData F) :
-    Except CheckFailure { c : CheckedIndex built.constraints
-      (compiledPublicVars (F := F) (a := a) (b := b) built) built.nextVar d.n //
-      d.Describes c.index } :=
-  match h : checkBuilt? (a := a) (b := b) built d.n d.zkRows d.omega d.endoBase d.mds d.shifts
-    with
-  | .ok c => .ok ⟨c, describes_of_checkBuilt h⟩
-  | .error e => .error e
+    Except CheckFailure (CheckedIndex built.constraints
+      (compiledPublicVars (F := F) (a := a) (b := b) built) built.nextVar d.n) :=
+  checkBuilt? (a := a) (b := b) built d.n d.zkRows d.omega d.endoBase d.mds d.shifts
 
 end Check
 
 /-- A branch's checked index at given index data, from its compilation in hand. -/
 def checkStepAt (C : Circuits D L) (b : D.Branch) (built : StepCompilation C b)
     (d : IndexData Fp) :
-    Except CheckFailure { c : CheckedIndex (stepCompilation C b).constraints (stepPublicVars C b)
-      (stepCompilation C b).nextVar d.n // d.Describes c.index } :=
+    Except CheckFailure (CheckedIndex (stepCompilation C b).constraints (stepPublicVars C b)
+      (stepCompilation C b).nextVar d.n) :=
   cast (by rw [built.2]) (checkAt (a := Unit) (b := StepPublic D) built.1 d)
 
 /-- The wrap circuit's checked index at given index data, from its compilation in hand. -/
 def checkWrapAt (C : Circuits D L) (built : WrapCompilation C) (d : IndexData Fq) :
-    Except CheckFailure { c : CheckedIndex (wrapCompilation C).constraints (wrapPublicVars C)
-      (wrapCompilation C).nextVar d.n // d.Describes c.index } :=
+    Except CheckFailure (CheckedIndex (wrapCompilation C).constraints (wrapPublicVars C)
+      (wrapCompilation C).nextVar d.n) :=
   cast (by rw [built.2]) (checkAt (a := WrapPublic) (b := Unit) built.1 d)
 
-/-- Why checking an application fails: at a branch or at the wrap circuit, with the circuit's
-own failure. -/
+/-- A compilation or key rejection, located at its branch or at the wrap circuit. -/
 inductive ApplicationFailure (D : Shape) where
   /-- The branch's step circuit was rejected. -/
   | step (b : D.Branch) (failure : CheckFailure)
   /-- The wrap circuit was rejected. -/
   | wrap (failure : CheckFailure)
+  /-- A branch's supplied key does not correspond to its compiled index. -/
+  | stepKey (b : D.Branch) (failure : KeyFailure)
+  /-- The supplied wrap key does not correspond to its compiled index. -/
+  | wrapKey (failure : KeyFailure)
 
-/-- The checked indices of an application's circuits at given index data, each for the
-circuit's canonical compilation and built at its data. -/
-structure CheckedAt (C : Circuits D L) (stepData : D.Branch → IndexData Fp)
-    (wrapData : IndexData Fq) where
+/-- Checked Lean compilations and correspondence of the supplied keys to those same indices.
+This certificate makes no claim about an imported constraint system. -/
+structure ApplicationCertified (C : Circuits D L) where
   /-- Each branch's checked index. -/
   step : (b : D.Branch) → CheckedIndex (stepCompilation C b).constraints (stepPublicVars C b)
-    (stepCompilation C b).nextVar (stepData b).n
+    (stepCompilation C b).nextVar (stepIndexData C b).n
   /-- The wrap circuit's checked index. -/
   wrap : CheckedIndex (wrapCompilation C).constraints (wrapPublicVars C)
-    (wrapCompilation C).nextVar wrapData.n
-  /-- Each branch's index is built at its data. -/
-  stepDescribes : ∀ b, (stepData b).Describes (step b).index
-  /-- The wrap circuit's index is built at its data. -/
-  wrapDescribes : wrapData.Describes wrap.index
+    (wrapCompilation C).nextVar (wrapIndexData C).n
+  /-- Each branch's supplied key commits to its checked index under the shared Step SRS. -/
+  stepKey : ∀ b, KeyCorresponds C.setup.stepSrs.σ (step b).index
+    C.wiring.backend.stepKeys[b] (D.slots b)
+  /-- The supplied Wrap key commits to its checked index under the shared Wrap SRS. -/
+  wrapKey : KeyCorresponds C.setup.wrapSrs.σ wrap.index
+    C.wiring.backend.wrapKey MaxProofsVerified
 
-/-- An application's certificate: its circuits checked at their keys' index data. -/
-abbrev CheckedApplication (C : Circuits D L) :=
-  CheckedAt C (stepIndexData C) (wrapIndexData C)
+/-- Check the compilations in hand and their supplied keys. Every failure is located at its
+circuit and at either compilation checking or key correspondence. -/
+def checkApplicationWith (C : Circuits D L) (steps : (b : D.Branch) → StepCompilation C b)
+    (wrap : WrapCompilation C) : Except (ApplicationFailure D) (ApplicationCertified C) := do
+  let step ← finSequence fun b =>
+    (checkStepAt C b (steps b) (stepIndexData C b)).mapError (.step b)
+  let wrap ← (checkWrapAt C wrap (wrapIndexData C)).mapError .wrap
+  let stepKeys ← finSequence fun b =>
+    (checkKey? pastaShapeVesta C.setup.stepSrs.σ (step b).index
+      C.wiring.backend.stepKeys[b] (D.slots b)).mapError (.stepKey b)
+  let wrapKey ← (checkKey? pastaShapePallas C.setup.wrapSrs.σ wrap.index
+    C.wiring.backend.wrapKey MaxProofsVerified).mapError .wrapKey
+  return ⟨step, wrap, fun b => (stepKeys b).down, wrapKey.down⟩
 
-/-- Check every branch in order, then the wrap circuit, from compilations in hand, at given
-index data; the first failure is reported at its circuit. -/
-def checkApplicationAt (C : Circuits D L) (steps : (b : D.Branch) → StepCompilation C b)
-    (wrap : WrapCompilation C) (stepData : D.Branch → IndexData Fp) (wrapData : IndexData Fq) :
-    Except (ApplicationFailure D) (CheckedAt C stepData wrapData) := do
-  let step ← finSequence fun b => (checkStepAt C b (steps b) (stepData b)).mapError (.step b)
-  let wrap ← (checkWrapAt C wrap wrapData).mapError .wrap
-  return ⟨fun b => (step b).1, wrap.1, fun b => (step b).2, wrap.2⟩
-
-/-- Check an application at its keys' index data, compiling each circuit once. -/
+/-- Compile the application's circuits and certify their supplied keys against those indices. -/
 def checkApplication (C : Circuits D L) :
-    Except (ApplicationFailure D) (CheckedApplication C) :=
-  checkApplicationAt C (canonicalStep C) (canonicalWrap C) (stepIndexData C) (wrapIndexData C)
+    Except (ApplicationFailure D) (ApplicationCertified C) :=
+  checkApplicationWith C (canonicalStep C) (canonicalWrap C)
 
 /-! ## The indices -/
 
@@ -257,12 +243,11 @@ structure ApplicationIndices (D : Shape) where
   wrapPublicCount : wrap.publicCount = CircuitType.size Fq WrapPublic
 
 /-- The indices a certificate holds, their public counts from the compiled layout. -/
-def CheckedAt.indices {C : Circuits D L} {stepData : D.Branch → IndexData Fp}
-    {wrapData : IndexData Fq} (checked : CheckedAt C stepData wrapData) :
+def ApplicationCertified.indices {C : Circuits D L} (checked : ApplicationCertified C) :
     ApplicationIndices D where
-  stepSize b := (stepData b).n
+  stepSize b := (stepIndexData C b).n
   step b := (checked.step b).index
-  wrapSize := wrapData.n
+  wrapSize := (wrapIndexData C).n
   wrap := checked.wrap.index
   stepPublicCount b := (checked.step b).publicCount_eq.trans (by
     simpa only [show CircuitType.size Fp Unit = 0 from rfl, Nat.zero_add] using

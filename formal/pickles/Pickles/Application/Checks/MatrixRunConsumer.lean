@@ -16,7 +16,7 @@ variable {D : Shape} {L : Layout D}
 
 /-- A step table and a wrap table accepted by a checked application's indices have executions
 at their statements, preserving the fixed matrix readings. -/
-theorem lifts_both {C : Circuits D L} (checked : CheckedApplication C) (b : D.Branch)
+theorem lifts_both {C : Circuits D L} (checked : ApplicationCertified C) (b : D.Branch)
     (ts : StepTable checked.indices b) (tw : WrapTable checked.indices) :
     ∃ (s : StepRun C b) (w : WrapRun C),
       CircuitType.Reads s.V s.cells.out ts.statement ∧

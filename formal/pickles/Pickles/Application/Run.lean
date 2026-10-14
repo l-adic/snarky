@@ -15,20 +15,6 @@ open Snarky Snarky.Kimchi Bulletproof CompElliptic.Fields.Pasta
 
 variable {D : Shape} {L : Layout D}
 
-/-- The wrap SRS with the protocol round count explicit. -/
-def Setup.wrapSrs (S : Setup) : Srs IpaPallas.curve where
-  σ := ⟨WrapIPARounds, S.wrapRounds ▸ S.wrap.σ.g, S.wrap.σ.h, S.wrap.σ.U⟩
-  rounds_small := by change MaxProofsVerified * WrapIPARounds < 2 ^ 128; decide
-  rounds_pos := by change 0 < WrapIPARounds; decide
-  h_ne := S.wrap.h_ne
-
-/-- The step SRS with the protocol round count explicit. -/
-def Setup.stepSrs (S : Setup) : Srs IpaVesta.curve where
-  σ := ⟨StepIPARounds, S.stepRounds ▸ S.step.σ.g, S.step.σ.h, S.step.σ.U⟩
-  rounds_small := by change MaxProofsVerified * StepIPARounds < 2 ^ 128; decide
-  rounds_pos := by change 0 < StepIPARounds; decide
-  h_ne := S.step.h_ne
-
 /-- A satisfying execution of a selected branch's step circuit. -/
 structure StepRun (C : Circuits D L) (b : D.Branch) where
   /-- The circuit's valuation. -/

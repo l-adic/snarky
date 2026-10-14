@@ -41,6 +41,20 @@ structure Setup where
   /-- The padding challenges for wrap messages. -/
   dummy : Vector Fq WrapIPARounds
 
+/-- The wrap SRS with the protocol round count explicit. -/
+def Setup.wrapSrs (S : Setup) : Srs IpaPallas.curve where
+  σ := ⟨WrapIPARounds, S.wrapRounds ▸ S.wrap.σ.g, S.wrap.σ.h, S.wrap.σ.U⟩
+  rounds_small := by change MaxProofsVerified * WrapIPARounds < 2 ^ 128; decide
+  rounds_pos := by change 0 < WrapIPARounds; decide
+  h_ne := S.wrap.h_ne
+
+/-- The step SRS with the protocol round count explicit. -/
+def Setup.stepSrs (S : Setup) : Srs IpaVesta.curve where
+  σ := ⟨StepIPARounds, S.stepRounds ▸ S.step.σ.g, S.step.σ.h, S.step.σ.U⟩
+  rounds_small := by change MaxProofsVerified * StepIPARounds < 2 ^ 128; decide
+  rounds_pos := by change 0 < StepIPARounds; decide
+  h_ne := S.step.h_ne
+
 /-- One application's circuit data, with a fixed rule for each branch. -/
 structure Circuits (D : Shape) (L : Layout D) where
   /-- The SRSs and padding constants. -/

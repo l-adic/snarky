@@ -1,6 +1,5 @@
 import PicklesFixture.ApplicationRun
 import Pickles.Application.Imported
-import Pickles.Application.KeyCertification
 import Kimchi.Columns
 
 /-!
@@ -139,7 +138,7 @@ private def describe {D : Shape} : IndicesDiff D → String
 
 /-- Require certification of imported indices to fail where expected. -/
 private def requireDiff {D : Shape} {L : Layout D} {C : Circuits D L} (name what : String)
-    (checked : CheckedApplication C) (imported : Except String (ApplicationIndices D))
+    (checked : ApplicationCertified C) (imported : Except String (ApplicationIndices D))
     (expected : IndicesDiff D → Bool) : IO Unit := do
   let imported ← match imported with
     | .error e => throw (IO.userError s!"{name}: {what} was refused by the import: {e}")
@@ -167,7 +166,7 @@ private def wiresExchanged (raw : Raw Fp) (r : ℕ) : Raw Fp :=
 the checked application, a disagreement located at its datum; the certificate's correctness
 is read as the theorem states it. -/
 def certifyImported {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
-    (checked : CheckedApplication C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    (checked : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO (CertifiedIndices C) := do
   let t0 ← IO.monoMsNow
   let imported ← match ← IO.lazyPure fun _ => importIndices C stepDump wrapDump with
@@ -196,6 +195,8 @@ def describeCheck : CheckFailure → String
 def located {D : Shape} : ApplicationFailure D → String
   | .step b f => s!"step {b.val}: {describeCheck f}"
   | .wrap f => s!"wrap: {describeCheck f}"
+  | .stepKey b f => s!"key: step {b.val}: {f.describe}"
+  | .wrapKey f => s!"key: wrap: {f.describe}"
 
 /-- One application through the certification path: its compilations in hand, the checked
 application, its dumps parsed once, and the certificate. -/
@@ -204,21 +205,18 @@ structure Certification (A : ImportedApplication) where
   steps : (b : A.shape.Branch) → StepCompilation (A.assembled.circuits A.setup (fun _ => none)) b
   /-- The wrap circuit's compilation. -/
   wrap : WrapCompilation (A.assembled.circuits A.setup (fun _ => none))
-  /-- The compilations checked at the keys' index data. -/
-  checked : CheckedApplication (A.assembled.circuits A.setup (fun _ => none))
+  /-- The Lean compilations checked together with their supplied keys. -/
+  checked : ApplicationCertified (A.assembled.circuits A.setup (fun _ => none))
   /-- Each branch's dump. -/
   stepDump : A.shape.Branch → Raw Fp
   /-- The wrap circuit's dump. -/
   wrapDump : Raw Fq
   /-- The imported indices certified against the checked application. -/
   cert : CertifiedIndices (A.assembled.circuits A.setup (fun _ => none))
-  /-- The supplied keys' correspondence to these certified indices under the shared SRSs. -/
-  keys : ApplicationKeys (A.assembled.circuits A.setup (fun _ => none)) cert.indices
 
 /-- The certification path: compile a reconstructed application's circuits once, parse its
-dumps once, check the compilations at the keys' index data and report the checked indices,
-then import the dumps' indices, certify them, and derive every supplied key against those
-indices and the shared SRSs. A failure is located at its stage and circuit. -/
+dumps once, certify the Lean compilations and supplied keys, then compare the imported indices.
+A failure is located at its stage and circuit. -/
 def certifyApplication (name : String) (A : ImportedApplication) (tag : Json) :
     IO (Certification A) := do
   let C := A.assembled.circuits A.setup (fun _ => none)
@@ -230,7 +228,7 @@ def certifyApplication (name : String) (A : ImportedApplication) (tag : Json) :
     | .error e => throw (IO.userError s!"{name}: dump: {e}")
     | .ok dumps => pure dumps
   let checked ← match ← IO.lazyPure fun _ =>
-      checkApplicationAt C steps wrap (stepIndexData C) (wrapIndexData C) with
+      checkApplicationWith C steps wrap with
     | .error f => throw (IO.userError s!"{name}: {located f}")
     | .ok checked => pure checked
   let t2 ← IO.monoMsNow
@@ -240,23 +238,16 @@ def certifyApplication (name : String) (A : ImportedApplication) (tag : Json) :
       {(I.step b).zkRows} masked rows, {(I.step b).publicCount} public rows"
   IO.println s!"✓ {name} wrap: checked index on a domain of {I.wrapSize}, {I.wrap.zkRows} \
     masked rows, {I.wrap.publicCount} public rows (compile {t1 - t0} ms, check {t2 - t1} ms)"
+  IO.println s!"✓ {name}: all step and wrap keys derived from the Lean indices and SRSs"
   (← IO.getStdout).flush
   let cert ← certifyImported name C checked stepDump wrapDump
-  let tk ← IO.monoMsNow
-  let keyed ← match ← IO.lazyPure fun _ => certifyKeys? cert with
-    | .error (.step b f) => throw (IO.userError s!"{name}: key: step {b.val}: {f.describe}")
-    | .error (.wrap f) => throw (IO.userError s!"{name}: key: wrap: {f.describe}")
-    | .ok keyed => pure keyed
-  let tk' ← IO.monoMsNow
-  IO.println s!"✓ {name}: all step and wrap keys derived from the certified indices and SRSs \
-    ({tk' - tk} ms)"
-  return { steps, wrap, checked, stepDump, wrapDump, cert := keyed.certified, keys := keyed.keys }
+  return { steps, wrap, checked, stepDump, wrapDump, cert }
 
 /-- The dumps' path: the imported indices certified against the checked application first,
 then the compilations in hand required to match the dumps datum by datum. -/
 def certifyAndCompare {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
     (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
-    (checked : CheckedApplication C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    (checked : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO (CertifiedIndices C) := do
   let cert ← certifyImported name C checked stepDump wrapDump
   compareCompilations C steps wrap name stepDump wrapDump
@@ -276,7 +267,7 @@ private def firstDump {D : Shape} (name : String) (stepDump : D.Branch → Raw F
 the located one. -/
 def rejectCorruptedDump {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
     (steps : (b : D.Branch) → StepCompilation C b) (wrap : WrapCompilation C)
-    (checked : CheckedApplication C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    (checked : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO Unit := do
   let (raw, r) ← firstDump name stepDump
   let corrupted (b : D.Branch) : Raw Fp :=
@@ -294,7 +285,7 @@ def rejectCorruptedDump {D : Shape} {L : Layout D} (name : String) (C : Circuits
 of the first branch's first row after the public rows, the first wire targets of that row and
 the next exchanged, and the wrap circuit's endomorphism coefficient. -/
 def rejectImportedChanges {D : Shape} {L : Layout D} (name : String) (C : Circuits D L)
-    (checked : CheckedApplication C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
+    (checked : ApplicationCertified C) (stepDump : D.Branch → Raw Fp) (wrapDump : Raw Fq) :
     IO Unit := do
   let (raw, r) ← firstDump name stepDump
   let stepDumpWith (bad : Raw Fp) (b : D.Branch) : Raw Fp := if b.val = 0 then bad else stepDump b

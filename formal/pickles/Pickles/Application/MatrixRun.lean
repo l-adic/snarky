@@ -8,8 +8,8 @@ import Kimchi.Columns
 A `StepTable` is a witness table accepted by a branch's index at a typed step statement, the
 statement's encoding its public input; a `WrapTable` the same for the wrap circuit. Neither
 carries a valuation or source satisfaction. For a checked application, every such table has
-an execution of the circuit reading its statement (`CheckedApplication.lift_step`,
-`CheckedApplication.lift_wrap`): the backend lifts the table to a valuation satisfying the
+an execution of the circuit reading its statement (`ApplicationCertified.lift_step`,
+`ApplicationCertified.lift_wrap`): the backend lifts the table to a valuation satisfying the
 canonical compilation at the public input, the compiled layout reads that input as the typed
 statement, and the execution is that valuation at inert advice, every execution compiling to
 the canonical compilation. The execution's retained cells are the canonical compilation's
@@ -25,7 +25,7 @@ the same reading. No claim identifies it with an arbitrary prover's advice.
 
 ## Main results
 
-- `CheckedApplication.lift_step`, `CheckedApplication.lift_wrap`: every accepted table has an
+- `ApplicationCertified.lift_step`, `ApplicationCertified.lift_wrap`: every accepted table has an
   execution at its statement.
 - `StepRun.cells_eq`, `WrapRun.cells_eq`: every execution's retained cells are the canonical
   compilation's.
@@ -112,7 +112,7 @@ private theorem map_eq_of_pointwise {F : Type} [Field F] [DecidableEq F]
 /-! ## Lifting -/
 
 /-- **An accepted step table has a step execution at its statement.** -/
-theorem CheckedApplication.lift_step {C : Circuits D L} (checked : CheckedApplication C)
+theorem ApplicationCertified.lift_step {C : Circuits D L} (checked : ApplicationCertified C)
     (b : D.Branch) (t : StepTable checked.indices b) :
     ∃ r : StepRun C b, CircuitType.Reads r.V r.cells.out t.statement ∧
       r.V = stepValuation C checked.indices b t := by
@@ -132,7 +132,7 @@ theorem CheckedApplication.lift_step {C : Circuits D L} (checked : CheckedApplic
   exact hread
 
 /-- **An accepted wrap table has a wrap execution at its statement.** -/
-theorem CheckedApplication.lift_wrap {C : Circuits D L} (checked : CheckedApplication C)
+theorem ApplicationCertified.lift_wrap {C : Circuits D L} (checked : ApplicationCertified C)
     (t : WrapTable checked.indices) :
     ∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement t.statement ∧
       r.V = wrapValuation C checked.indices t := by

@@ -59,7 +59,7 @@ the dumps datum by datum, a corrupted dump to fail at its datum, each change to 
 side to be rejected where it is, and each corruption of the key data to be rejected at its
 circuit. One compilation per circuit and one parse per dump. -/
 def checkIndices (name : String) (A : ImportedApplication) (tag : Json) :
-    IO (CheckedApplication (A.assembled.circuits A.setup (fun _ => none))) := do
+    IO (ApplicationCertified (A.assembled.circuits A.setup (fun _ => none))) := do
   let C := A.assembled.circuits A.setup (fun _ => none)
   let r ← certifyApplication name A tag
   rejectWrongKeys name A r
@@ -69,11 +69,12 @@ def checkIndices (name : String) (A : ImportedApplication) (tag : Json) :
   let first : A.shape.Branch := ⟨0, A.shape.branches_pos⟩
   for (what, bad) in domainCorruptions (stepIndexData C first) do
     requireRejected name s!"step 0 at {what}" (fun | .step b .index => b.val = 0 | _ => false)
-      (← IO.lazyPure fun _ => checkApplicationAt C r.steps r.wrap
-        (fun b => if b.val = 0 then bad else stepIndexData C b) (wrapIndexData C))
+      (← IO.lazyPure fun _ =>
+        (checkStepAt C first (r.steps first) bad).mapError (.step first))
   for (what, bad) in gateCorruptions (wrapIndexData C) do
-    requireRejected name s!"the wrap circuit at {what}" (fun | .wrap .index => true | _ => false)
-      (← IO.lazyPure fun _ => checkApplicationAt C r.steps r.wrap (stepIndexData C) bad)
+    requireRejected (D := A.shape) name s!"the wrap circuit at {what}"
+      (fun | .wrap .index => true | _ => false)
+      (← IO.lazyPure fun _ => (checkWrapAt C r.wrap bad).mapError .wrap)
   (← IO.getStdout).flush
   return r.checked
 
@@ -99,7 +100,7 @@ private def cacheKey {C : Ipa.KimchiCurve} (e : Cache.Entry C) :=
 checked indices for every cached step execution and the wrap execution wrapping it: the rows
 on the checked domain, the public values as the typed statement, acceptance decided. -/
 def checkTables (name : String) (A : ImportedApplication)
-    (checked : CheckedApplication (A.assembled.circuits A.setup (fun _ => none)))
+    (checked : ApplicationCertified (A.assembled.circuits A.setup (fun _ => none)))
     (cacheDir : System.FilePath) : IO Unit := do
   let app := (name.splitOn "/").head!
   let raw ← IO.FS.readFile (cacheDir / s!"{app}.json")

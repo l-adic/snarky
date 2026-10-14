@@ -100,19 +100,20 @@ PicklesFixture.Application.runner -- imported applications retain satisfying typ
 -- family of indices read from the certificate, and every execution compiling to the certified
 -- compilation.
 Pickles.Application.checkApplication
-Pickles.Application.CheckedAt.indices
+Pickles.Application.checkApplicationWith
+Pickles.Application.ApplicationCertified.indices
 Pickles.Application.Circuits.stepBuilt_eq
 Pickles.Application.Circuits.wrapBuilt_eq
 -- Lifting: every table a checked index accepts at a typed statement has an execution reading
 -- it, and every execution's retained cells are the canonical compilation's.
-Pickles.Application.CheckedApplication.lift_step
-Pickles.Application.CheckedApplication.lift_wrap
+Pickles.Application.ApplicationCertified.lift_step
+Pickles.Application.ApplicationCertified.lift_wrap
 Pickles.Application.StepRun.cells_eq
 Pickles.Application.WrapRun.cells_eq
 Pickles.Application.MatrixRunConsumer.lifts_both -- both lifts applied against the interface alone
 -- Pickles-correctness preserves matrix readings. Connections supplied on the matrices
 -- lift to the native capstones, with conclusions on the same matrices and the state projection.
-Pickles.Application.checkedApplication_picklesCorrect
+Pickles.Application.ApplicationCertified.picklesCorrect
 Pickles.Application.CertifiedIndices.wrap_handover
 Pickles.Application.CertifiedIndices.step_handover
 Pickles.Application.matrices_stepWrap
@@ -142,8 +143,6 @@ Pickles.deriveKey_digest
 Pickles.deriveColumns_eq
 Pickles.compareColumns?_eq_none_iff
 Pickles.checkKey?
-Pickles.Application.certifyKeys?
-Pickles.Application.certifyKeys?_certified
 Pickles.Application.KeyDerivationChecks.accepts
 Pickles.Application.KeyDerivationChecks.rejects
 Pickles.Application.KeyDerivationChecks.columns_equal

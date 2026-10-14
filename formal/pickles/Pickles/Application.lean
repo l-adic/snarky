@@ -4,7 +4,6 @@ import Pickles.Application.MatrixRun
 import Pickles.Application.Certification
 import Pickles.Application.Compare
 import Pickles.Application.Imported
-import Pickles.Application.KeyCertification
 
 /-!
 # Compiled application framework

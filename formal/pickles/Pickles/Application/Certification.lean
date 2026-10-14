@@ -41,7 +41,7 @@ structure PicklesCorrect (C : Circuits D L) (I : ApplicationIndices D) : Prop wh
     ∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement t.statement ∧ r.V = wrapValuation C I t
 
 /-- A checked application’s indices preserve matrix readings when lifted to executions. -/
-theorem checkedApplication_picklesCorrect (C : Circuits D L) (checked : CheckedApplication C) :
+theorem ApplicationCertified.picklesCorrect (C : Circuits D L) (checked : ApplicationCertified C) :
     PicklesCorrect C checked.indices :=
   ⟨checked.lift_step, checked.lift_wrap⟩
 

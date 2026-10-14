@@ -46,15 +46,15 @@ structure CertifiedIndices (C : Circuits D L) where
 
 /-- Indices against a checked application: the first disagreement with its checked indices,
 or the indices certified, the comparator's success as the equality the transport takes. -/
-def certifyIndices? {C : Circuits D L} (checked : CheckedApplication C)
+def certifyIndices? {C : Circuits D L} (checked : ApplicationCertified C)
     (imported : ApplicationIndices D) : Except (IndicesDiff D) (CertifiedIndices C) :=
   match h : compareIndices? imported checked.indices with
   | some d => .error d
   | none => .ok ⟨imported, importedApplication_picklesCorrect C _ imported
-      (checkedApplication_picklesCorrect C checked) (compareIndices?_eq_none_iff.mp h)⟩
+      (ApplicationCertified.picklesCorrect C checked) (compareIndices?_eq_none_iff.mp h)⟩
 
 /-- The certified indices are the given ones. -/
-theorem certifyIndices?_indices {C : Circuits D L} {checked : CheckedApplication C}
+theorem certifyIndices?_indices {C : Circuits D L} {checked : ApplicationCertified C}
     {imported : ApplicationIndices D} {cert : CertifiedIndices C}
     (h : certifyIndices? checked imported = .ok cert) : cert.indices = imported := by
   unfold certifyIndices? at h
@@ -64,7 +64,7 @@ theorem certifyIndices?_indices {C : Circuits D L} {checked : CheckedApplication
     rfl
 
 /-- Certification succeeds exactly on the checked indices. -/
-theorem certifyIndices?_isOk_iff {C : Circuits D L} {checked : CheckedApplication C}
+theorem certifyIndices?_isOk_iff {C : Circuits D L} {checked : ApplicationCertified C}
     {imported : ApplicationIndices D} :
     (certifyIndices? checked imported).isOk = true ↔ imported = checked.indices := by
   unfold certifyIndices?
