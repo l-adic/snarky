@@ -305,7 +305,7 @@ theorem verifyOne_reads (S : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPallas.
     rw [h1, mul_one] at hver
     refine ⟨hr.1, succ, ?_, hVp hmv hH.1, hver, h1⟩
     rw [hH.2, hkey.indexCoords, VerifyOneInput.stepMsgDigest, KimchiVK.indexState,
-      List.append_assoc]
+      indexStateOfCommitments, List.append_assoc]
     simp only [Poseidon.absorb, List.foldl_append]
     rfl
 

@@ -543,8 +543,7 @@ commitment. A mismatched carried commitment exhibits a collision. -/
 theorem terminal_kimchiVerify {C : Circuits D} (cert : ApplicationCertified C)
     (p : KimchiProof IpaPallas.curve 1 WrapIPARounds) (d : TerminalData C)
     (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs C.wiring.backend.wrapKey
-      { p with olds := d.wrapAccumulators.toArray }
-      (CircuitType.valueToFields d.statement).toArray = true)
+      p (CircuitType.valueToFields d.statement).toArray = true)
     (checks : d.Checks) :
     (∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement d.statement ∧
       ∃ b : D.Branch, r.cells.1.whichBranch.val r.V = (b : Fq) ∧
@@ -552,11 +551,10 @@ theorem terminal_kimchiVerify {C : Circuits D} (cert : ApplicationCertified C)
           (d.proof r b)
           (wrapPublicInput C.setup.stepSrs C.wiring.backend.stepKeys[b] r.V
             r.cells.2.statement) = true ∨ d.Collision r)) ∨
-      KimchiFailure C.setup.wrapSrs cert.wrap.index C.wiring.backend.wrapKey
-        { p with olds := d.wrapAccumulators.toArray }
+      KimchiFailure C.setup.wrapSrs cert.wrap.index C.wiring.backend.wrapKey p
         ((CircuitType.valueToFields d.statement).cast cert.indices.wrapPublicCount.symm) := by
   obtain ⟨V, holds, hreads⟩ | failure := cert.wrap_valuation_or_failure
-    { p with olds := d.wrapAccumulators.toArray } d.statement haccept
+    p d.statement haccept
   · let r : WrapRun C := ⟨V, inertWrapAdvice, holds⟩
     exact Or.inl ⟨r, hreads, r.terminal_verifies d hreads cert.wrapStepSetup checks⟩
   · exact Or.inr failure
@@ -586,8 +584,7 @@ statement, or a carried-message collision or Kimchi failure at one of the two fi
 theorem terminal_stepWrap {C : Circuits D} (cert : ApplicationCertified C)
     (p : KimchiProof IpaPallas.curve 1 WrapIPARounds) (d : TerminalData C)
     (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs C.wiring.backend.wrapKey
-      { p with olds := d.wrapAccumulators.toArray }
-      (CircuitType.valueToFields d.statement).toArray = true)
+      p (CircuitType.valueToFields d.statement).toArray = true)
     (checks : d.Checks) :
     (∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement d.statement ∧
       ((∃ (b : D.Branch) (e : StepWrapLink C b), e.wrap = r) ∨ d.Collision r)) ∨
@@ -914,16 +911,15 @@ private theorem TerminalData.accumulator_mem_or_collision {C : Circuits D}
 
 /-- Terminal acceptance closes every required slot proof.
 The certificate supplies the static verifier setup and finite source keys; the carried Step
-message binds the witnessed self key. The final proof is checked with the
-accumulators reconstructed from the carried messages; disagreement with the recovered executions
-exhibits a hash collision.
+message binds the witnessed self key. The supplied proof's old accumulators must equal those
+reconstructed from the carried messages; disagreement with the recovered executions exhibits
+a hash collision.
 Kimchi witness failures and accumulator-validity failures remain explicit alternatives. -/
 theorem terminal_requiredProofs {C : Circuits D} (cert : ApplicationCertified C)
     (p : KimchiProof IpaPallas.curve 1 WrapIPARounds) (d : TerminalData C)
     (haccept : kimchiVerify IpaPallas.curve C.setup.wrapSrs C.wiring.backend.wrapKey
-      { p with olds := d.wrapAccumulators.toArray }
-      (CircuitType.valueToFields d.statement).toArray = true)
-    (checks : d.Checks) :
+      p (CircuitType.valueToFields d.statement).toArray = true)
+    (checks : d.Checks) (haccumulators : p.olds = d.wrapAccumulators.toArray) :
     (∃ (b : D.Branch) (e : StepWrapLink C b),
       CircuitType.Reads e.wrap.V wrapStatement d.statement ∧
       ∀ i : D.Slot b,
@@ -933,8 +929,7 @@ theorem terminal_requiredProofs {C : Circuits D} (cert : ApplicationCertified C)
       (∃ r : WrapRun C, d.Collision r) ∨
       (∃ (b : D.Branch) (s : StepRun C b), d.StepCollision s) ∨
       SomeKimchiFailure C.setup.wrapSrs ∨ SomeKimchiFailure C.setup.stepSrs ∨
-      AccumulatorFailure C.setup.wrapSrs C.wiring.backend.wrapKey
-        { p with olds := d.wrapAccumulators.toArray }
+      AccumulatorFailure C.setup.wrapSrs C.wiring.backend.wrapKey p
         (CircuitType.valueToFields d.statement).toArray := by
   classical
   obtain ⟨r, hreads, linked | collision⟩ | failure :=
@@ -944,8 +939,7 @@ theorem terminal_requiredProofs {C : Circuits D} (cert : ApplicationCertified C)
     · exact Or.inr (Or.inl ⟨e.wrap, hw⟩)
     by_cases hs : d.StepCollision e.step
     · exact Or.inr (Or.inr (Or.inl ⟨b, e.step, hs⟩))
-    by_cases ha : AccumulatorFailure C.setup.wrapSrs C.wiring.backend.wrapKey
-        { p with olds := d.wrapAccumulators.toArray }
+    by_cases ha : AccumulatorFailure C.setup.wrapSrs C.wiring.backend.wrapKey p
         (CircuitType.valueToFields d.statement).toArray
     · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ha))))
     have hd := e.terminal_stepDigest d hreads e.step.terminal_hashes
@@ -962,9 +956,9 @@ theorem terminal_requiredProofs {C : Circuits D} (cert : ApplicationCertified C)
     obtain hmem | collision := d.accumulator_mem_or_collision e i hreads _ he
     · have h := accepts_or_accumulatorFailure C.setup.wrapSrs
         (C.wiring.source b i).wrapKey (e.proof i) (e.proofPublicInput i)
-        C.wiring.backend.wrapKey { p with olds := d.wrapAccumulators.toArray }
+        C.wiring.backend.wrapKey p
         (CircuitType.valueToFields d.statement).toArray
-        (by simpa only [Vector.toList_toArray] using hmem) haccept hv
+        (by simpa only [haccumulators, Vector.toList_toArray] using hmem) haccept hv
       exact h.resolve_right ha
     · exact False.elim (collision.elim hs hw)
   · exact Or.inr (Or.inl ⟨r, collision⟩)

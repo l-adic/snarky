@@ -32,10 +32,10 @@ private def alteredKey {C : Ipa.KimchiCurve} {nc : Nat} (σ : SRS C.Point) (K : 
   let changed := old.set 0 (old[0]'K.nc_pos + σ.h) K.nc_pos
   let vk := { Kimchi.Fixture.keyToWire K with
     sigmaComm := (K.sigmaComm.set 0 changed).map Vector.toArray }
-  let digest := indexDigestOfPoints C
-    ((vk.sigmaComm.toList ++ vk.coefficientsComm.toList ++
-      [vk.genericComm, vk.poseidonComm, vk.completeAddComm, vk.mulComm, vk.emulComm,
-        vk.endomulScalarComm]).flatMap Array.toList)
+  let digest := (Poseidon.squeeze C.sponge.params
+    (indexStateOfCommitments C (K.sigmaComm.set 0 changed) K.coefficientsComm
+      K.genericComm K.poseidonComm K.completeAddComm K.mulComm K.emulComm
+      K.endomulScalarComm)).1
   match ({ vk with digest }).check nc with
   | none => .error "the changed key with recomputed digest failed its ordinary key checks"
   | some key => .ok key

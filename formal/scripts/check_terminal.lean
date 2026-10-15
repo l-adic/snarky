@@ -5,7 +5,7 @@ import PicklesFixture.Verdicts
 
 /-!
 Check terminal verification on cached real Step/Wrap proofs. Reconstruct and certify the selected
-applications from their sidecars, rebuild the carried terminal data, and check both premises of
+applications from their sidecars, rebuild the carried terminal data, and check the premises of
 `terminal_requiredProofs` without running either circuit or supplying witness matrices.
 `APPS` defaults to HeterogeneousPrevs; `PICKLES_DUMP_DIR` and `PICKLES_PROOF_CACHE_DIR` select
 the existing sidecars and caches. Mutated scalar data, commitments and messages must be rejected.
@@ -14,6 +14,12 @@ the existing sidecars and caches. Mutated scalar data, commitments and messages 
 open Lean Snarky Snarky.Kimchi Pickles Pickles.Application PicklesFixture
 open PicklesFixture.Application Bulletproof CompElliptic.Fields.Pasta
 open Kimchi.Fixture Kimchi.Fixture.PS Kimchi.Verifier
+
+private instance : DecidableEq (Accumulator CW WrapIPARounds) := fun a b ↦
+  decidable_of_iff (a.sg = b.sg ∧ a.u = b.u) (by
+    cases a
+    cases b
+    simp only [Accumulator.mk.injEq])
 
 private def rejectChecks {D : Shape} {C : Circuits D} (name : String) (d : TerminalData C) :
     IO Unit := do
@@ -35,20 +41,22 @@ private def checkMutations {D : Shape} {C : Circuits D}
       oldBulletproofChallenges := d.message.oldBulletproofChallenges.set 0
         (old.set 0 (old[0] + 1)) } }
     let _ ← IO.ofExcept altered.check?
+    unless p.olds != altered.wrapAccumulators.toArray do
+      throw (IO.userError "altered Wrap accumulator challenges preserved the accumulator binding")
     unless !kimchiVerify CW C.setup.wrapSrs C.wiring.backend.wrapKey
-        { p with olds := altered.wrapAccumulators.toArray }
-        (CircuitType.valueToFields altered.statement).toArray do
+        p (CircuitType.valueToFields altered.statement).toArray do
       throw (IO.userError "altered Wrap accumulator challenges passed terminal verification")
 
 private def checkProof {D : Shape} {C : Circuits D} (cert : ApplicationCertified C)
     (p : KimchiProof CW 1 WrapIPARounds) (d : TerminalData C) := show IO _ from do
   let ⟨checks⟩ ← IO.ofExcept d.check?
+  let ⟨haccumulators⟩ ← requireProof (p.olds = d.wrapAccumulators.toArray)
+    (IO.userError "reconstructed terminal accumulators differ from cached olds")
   let ⟨haccept⟩ ← requireProof
     (kimchiVerify CW C.setup.wrapSrs C.wiring.backend.wrapKey
-      { p with olds := d.wrapAccumulators.toArray }
-      (CircuitType.valueToFields d.statement).toArray = true)
-    (IO.userError "final Wrap proof rejected with reconstructed terminal accumulators")
-  return PLift.up (terminal_requiredProofs cert p d haccept checks)
+      p (CircuitType.valueToFields d.statement).toArray = true)
+    (IO.userError "final Wrap proof rejected at the reconstructed terminal statement")
+  return PLift.up (terminal_requiredProofs cert p d haccept checks haccumulators)
 
 private def checkApplicationProofs (name : String) (A : ImportedApplication)
     (wraps : Array (Cache.Entry CW)) (steps : Array (Cache.Entry CS)) : IO Unit := do
@@ -66,9 +74,6 @@ private def checkApplicationProofs (name : String) (A : ImportedApplication)
     let d ← IO.ofExcept (terminalDataOf A b s w)
     unless (CircuitType.valueToFields d.statement).toArray == w.publicInput do
       throw (IO.userError s!"{name}: reconstructed terminal statement differs from cached input")
-    unless d.wrapAccumulators.toArray.map (fun a => (a.sg, a.u)) ==
-        p.olds.map (fun a => (a.sg, a.u)) do
-      throw (IO.userError s!"{name}: reconstructed terminal accumulators differ from cached olds")
     let _ ← checkProof cert p d
     checkMutations p d
     count := count + 1

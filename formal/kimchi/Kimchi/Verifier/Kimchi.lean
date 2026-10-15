@@ -185,10 +185,17 @@ theorem three_le_zkRowsOf {nc : ℕ} (h : 0 < nc) : 3 ≤ zkRowsOf nc := by
   rw [zkRowsOf]
   omega
 
-/-- The verifier-index digest of commitment points in protocol absorb order. -/
-def indexDigestOfPoints (C : Ipa.KimchiCurve) (points : List C.Point) : C.BaseField :=
-  (Poseidon.squeeze C.sponge.params (Poseidon.absorb C.sponge.params Poseidon.init
-    (points.flatMap fun P ↦ [P.x, P.y]))).1
+/-- The fq-sponge after the commitment coordinates in verifier-index absorb order:
+permutation columns, coefficient columns, then the six selectors. -/
+def indexStateOfCommitments (C : Ipa.KimchiCurve) {nc : ℕ}
+    (sigmaComm : Vector (Vector C.Point nc) permCols)
+    (coefficientsComm : Vector (Vector C.Point nc) coeffCols)
+    (genericComm poseidonComm completeAddComm mulComm emulComm endomulScalarComm :
+      Vector C.Point nc) : Poseidon.State C.BaseField :=
+  Poseidon.absorb C.sponge.params Poseidon.init
+    (((sigmaComm.toList ++ coefficientsComm.toList ++
+      [genericComm, poseidonComm, completeAddComm, mulComm, emulComm, endomulScalarComm]).flatMap
+      Vector.toList).flatMap fun P ↦ [P.x, P.y])
 
 /-! ## The checked records -/
 
@@ -278,10 +285,9 @@ structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
   /-- The domain exponent is within the scalar field's two-adicity. -/
   domainLog2_le : domainLog2 ≤ C.twoAdicity
   /-- The digest is computed from the key's commitments in protocol absorb order. -/
-  digest_eq : digest = indexDigestOfPoints C
-    ((sigmaComm.toList ++ coefficientsComm.toList ++
-      [genericComm, poseidonComm, completeAddComm, mulComm, emulComm, endomulScalarComm]).flatMap
-      Vector.toList)
+  digest_eq : digest = (Poseidon.squeeze C.sponge.params
+    (indexStateOfCommitments C sigmaComm coefficientsComm genericComm poseidonComm completeAddComm
+      mulComm emulComm endomulScalarComm)).1
   /-- The domain generator is the scalar field's canonical generator at this exponent. -/
   omega_eq : omega = domainGenerator C domainLog2
   /-- The permutation shifts are the curve's. -/
@@ -294,10 +300,8 @@ def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
 /-- The fq-sponge after the key's commitment coordinates in protocol absorb order. -/
 def KimchiVK.indexState {C : Ipa.KimchiCurve} {nc : ℕ} (vk : KimchiVK C nc) :
     Poseidon.State C.BaseField :=
-  Poseidon.absorb C.sponge.params Poseidon.init
-    (((vk.sigmaComm.toList ++ vk.coefficientsComm.toList ++
-      [vk.genericComm, vk.poseidonComm, vk.completeAddComm, vk.mulComm, vk.emulComm,
-        vk.endomulScalarComm]).flatMap Vector.toList).flatMap fun P ↦ [P.x, P.y])
+  indexStateOfCommitments C vk.sigmaComm vk.coefficientsComm vk.genericComm vk.poseidonComm
+    vk.completeAddComm vk.mulComm vk.emulComm vk.endomulScalarComm
 
 /-- The upstream verifier's chunk count at an SRS of `2 ^ k` points and a domain of
 `2 ^ domainLog2`: one chunk when the domain is no larger than the SRS, else the domain size over
@@ -387,7 +391,7 @@ theorem nc_le_n : nc ≤ K.n := by
   · exact Nat.pow_le_pow_right two_pos (Nat.sub_le _ _)
 
 /-- Every chunk meets the domain: chunk `c` starts below `n`. -/
-theorem chunk_lt (c : Fin nc) : c.val * 2 ^ k < K.n := by
+private theorem chunk_lt (c : Fin nc) : c.val * 2 ^ k < K.n := by
   have hc : c.val < chunkCount k K.domainLog2 := hnc ▸ c.isLt
   rw [chunkCount] at hc
   rw [KimchiVK.n]

@@ -199,10 +199,9 @@ def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
                 let mulComm ← checkChunks nc vk.mulComm
                 let emulComm ← checkChunks nc vk.emulComm
                 let endomulScalarComm ← checkChunks nc vk.endomulScalarComm
-                if hh : vk.digest = indexDigestOfPoints C
-                    ((sigmaComm.toList ++ coefficientsComm.toList ++
-                      [genericComm, poseidonComm, completeAddComm, mulComm, emulComm,
-                        endomulScalarComm]).flatMap Vector.toList) then
+                if hh : vk.digest = (Poseidon.squeeze C.sponge.params
+                    (indexStateOfCommitments C sigmaComm coefficientsComm genericComm poseidonComm
+                      completeAddComm mulComm emulComm endomulScalarComm)).1 then
                   return { nc_pos := h.1, domainLog2 := vk.domainLog2, omega := vk.omega
                            sigmaComm, coefficientsComm, genericComm, poseidonComm
                            completeAddComm, mulComm, emulComm, endomulScalarComm

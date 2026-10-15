@@ -577,7 +577,8 @@ private theorem hash_stepInput_eq {n w : ℕ} {ws ss ncs : Fin n → ℕ} {sa kw
   rw [h4, ← ZMod.cast_eq_val, ZMod.cast_cast_zmod_of_le Pasta.fp_lt_fq.le] at hpubD
   rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
   have e := (hS.1 vk sgs chals hvk hsgs hch).symm.trans hpubD
-  simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState] at e
+  simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState,
+    indexStateOfCommitments] at e
   simp only [Poseidon.absorb, List.foldl_append] at e ⊢
   exact e
 
