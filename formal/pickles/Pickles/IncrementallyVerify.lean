@@ -1,6 +1,5 @@
 import Pickles.FtComm
 import Pickles.VkComms
-import Pickles.Env
 import Pickles.FqSpongeTranscript
 import Kimchi.Columns
 import Pickles.ListLemmas
@@ -349,9 +348,8 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
 
 /-- What the group half's read assumes of its cells and constants, on the side `S`: the
 sponge after the index digest squeezes to the key's digest, the old-accumulator cells are
-masked as the side's sponge expects, the cells read as the wire's key and proof (`IvpTies`), and the
-shape guards a key and proof satisfy: a chunk, a quotient chunk, a round, and a base field
-wider than the absorb count. -/
+masked as the side's sponge expects, the cells read as the wire's key and proof (`IvpTies`), and
+the base field's characteristic exceeds the absorb count. -/
 structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (optSponge : Bool)
     (spongeAfterIndex : SpongeVar C.BaseField)
@@ -364,10 +362,6 @@ structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   mask : ∀ m ∈ inp.sgOld, m.1.isSome = optSponge
   /-- The cells read as the wire's key and proof. -/
   ties : IvpTies S σ cvk cp inp oldsW
-  /-- At least one chunk. -/
-  nc_pos : 0 < nc
-  /-- At least one round. -/
-  k_pos : 0 < σ.k
   /-- The base field's characteristic exceeds the absorb count. -/
   char : ∀ j : ℕ, j ≤ 1 + 2 * (np + nc + wCols * nc + nc + quotChunks * nc) →
     (j : C.BaseField) = 0 → j = 0
@@ -458,7 +452,7 @@ private theorem tailRows_comms {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiPr
   have hmap : ∀ {m : ℕ} (v : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) m),
       (v.flatten.map (·.1)).toList = ((v.map (·.map (·.1))).toList.map Vector.toList).flatten := by
     intro m v
-    simp only [Vector.toList_map, toList_flatten', List.map_flatten, List.map_map,
+    simp only [Vector.toList_map, Snarky.toList_flatten, List.map_flatten, List.map_map,
       Function.comp_def]
   rw [hmap]
   -- `tailRowsOf` is typed at `tailRowCount`, its body at the sum of the four region lengths;
@@ -874,16 +868,16 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (h : IvpHyps S σ cvk cp pub optSponge spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
-    incrementallyVerifyProof ops S.curve.e C.sponge.params endo (.ofSpec C.groupMap) sqrtF
+    incrementallyVerifyProof ops S.shape.ipaEndo C.sponge.params endo (.ofSpec C.groupMap) sqrtF
       optSponge
       blindingH
       spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
-  obtain ⟨hIdx, hmask, hties, hnc, hk, hchar⟩ := h
+  obtain ⟨hIdx, hmask, hties, hchar⟩ := h
   have hasrt := fun (tr : FqTranscriptOutput C.BaseField nc) =>
     assertPlonkChallenges_spec (V := V) tr inp.plonk.chals
   have hft := ftComm_reads S σ cvk cp pub inp.plonk.perm inp.plonk.zetaToSrsLength
-    inp.plonk.zetaToDomainSize inp.key.sigmaLast inp.tComm hnc
+    inp.plonk.zetaToDomainSize inp.key.sigmaLast inp.tComm cvk.nc_pos
   have hcb := fun (sv : SpongeVar C.BaseField)
     (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField))) =>
     S.opening_reads σ endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
@@ -892,10 +886,10 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | true =>
     simp only [incrementallyVerifyProof, if_true]
     have htr := fun (d : FVar C.BaseField) (xHat : Vector (AffinePoint (FVar C.BaseField)) nc) =>
-      fqSpongeTranscriptOpt_reads (V := V) S.curve.two_ne S.curve.three_ne S.curve.splitWidth _
+      fqSpongeTranscriptOpt_reads (V := V) S.shape.d.two_ne S.shape.e.three_ne S.shape.splitWidth _
         C.sponge.hsize
-        S.curve.small_inj endo d
-        (inp.sgOld.map fun m => (m.1.getD true_, m.2)) hnc xHat inp.wComm inp.zComm inp.tComm
+        S.shape.small_inj endo d
+        (inp.sgOld.map fun m => (m.1.getD true_, m.2)) cvk.nc_pos xHat inp.wComm inp.zComm inp.tComm
         hchar
     mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
     case vc1.hsize => exact C.sponge.hsize
@@ -913,12 +907,12 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rw [← hties.olds.kept, List.filter_map, List.map_map, List.map_map]
       rfl
     rw [hkept] at hFq
-    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hk tr
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh σ.rounds_pos tr
       (htr'.1 ▸ hx) hFq hasrt' ftc hft' o hcb'
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
     have htr := fun (d : FVar C.BaseField) =>
-      fqSpongeTranscript_reads (V := V) S.curve.two_ne S.curve.three_ne S.curve.splitWidth _
+      fqSpongeTranscript_reads (V := V) S.shape.d.two_ne S.shape.e.three_ne S.shape.splitWidth _
         C.sponge.hsize endo d
         (inp.sgOld.map (·.2))
         computeXHat (fun pts => CommReads C V pts.toList (runPublicComm C σ cvk pub).toList) _
@@ -937,7 +931,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rfl
     have hFq := htr'.2 _ _ _ _ hsgv hties.proof.w.reads hties.proof.z.reads hties.proof.t.reads
     rw [hd, hkept] at hFq
-    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hk tr htr'.1
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh σ.rounds_pos tr htr'.1
       hFq hasrt' ftc hft' o hcb'
 
 end Assembly

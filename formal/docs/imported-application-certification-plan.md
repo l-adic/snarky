@@ -1,137 +1,109 @@
-# Imported Pickles application certification: phased plan
+# Imported Pickles application certification: plan and current status
 
-## Goal and starting point
+## Current contract
 
-Reconstruct an application from exported shape, rule replay, resolved backend artifacts and a
-shared environment. Prove that its checked Lean compilation has the Pickles framework's
-verification and handover guarantees. Certify equality with the independently imported
-application indices, then transfer those guarantees to the imported indices.
-
-This plan follows [PR #448](https://github.com/l-adic/snarky/pull/448), stacked on
-[PR #444](https://github.com/l-adic/snarky/pull/444). Its starting point is `3a0efd78` on
-`formal/multirow-gates`: checked matrix-to-valuation lifting, proof-module isolation and the
-typed public-input bridge are implemented. Their design history is in
+This document records the phased work following [PR #448](https://github.com/l-adic/snarky/pull/448)
+and [PR #444](https://github.com/l-adic/snarky/pull/444), originally based at `3a0efd78` on
+`formal/multirow-gates`. The phases below are retained as **historical design**, not the current
+API or a remaining implementation checklist. Application certification was subsequently
+consolidated around supplied-key correspondence; foreign-index comparison is a separate fixture
+operation. The earlier compiler design history is in
 [compiler-trace-handoff.md](compiler-trace-handoff.md).
 
-The shared application representation remains `Pickles.Application.Circuits D L`. The
-fixture importer already produces it through `Assembled.circuits`; a future native Lean
-application builder can produce the same representation. Do not introduce a second
-application language or a registry describing all applications at once. Each application has
-its own branches, one shared wrap circuit and interfaces to already constructed producers.
+Reconstruction produces `Pickles.Application.Circuits D` from exported shape, rule replay,
+backend artifacts and shared setup. The canonical constructor is:
 
-The intended argument is:
-
-```text
-shape + rule replay + backend artifacts + shared environment
-  -> reconstructed Circuits D L
-  -> checked compilation of each step branch and the wrap circuit
-  -> arbitrary satisfying tables lift to typed application runs
-  -> existing Pickles capstones apply, with their remaining assumptions
-
-independent source-language gate dumps + actual backend metadata
-  -> imported application indices
-  -> certified equality with the checked Lean indices
-  -> the same application guarantees for the imported indices
+```lean
+def checkApplication (C : Circuits D)
+    (steps : (b : D.Branch) → StepCompilation C b)
+    (wrap : WrapCompilation C) :
+    Except (ApplicationFailure D) (ApplicationCertified C)
 ```
 
-### What is imported, and what is quantified
+The caller supplies the canonical compilations in hand so each circuit is compiled once.
+`ApplicationCertified` bundles the checked Step/Wrap indices, correspondence of the supplied
+keys to those indices under the shared SRSs, the embedded verifiers' static setup assumptions,
+and finiteness of the slot-source key commitments. Checking recomputes the Lagrange bases from
+the SRSs and compares them with the supplied tables. Its constructor is private.
 
-The application certificate concerns static circuits. It does **not** require importing a
-particular witness matrix. The application theorems quantify over arbitrary tables satisfying
-the relevant indices at the supplied public statements. They must not assume those tables came
-from the honest prover, `makeWitness`, or cached advice.
+```text
+shape + rule replay + backend artifacts + shared setup
+  -> reconstructed Circuits D
+  -> canonical Step/Wrap compilations
+  -> checkApplication: checked indices + supplied-key correspondence + static verifier setup
+  -> ApplicationCertified C
+```
 
-For tests, existing cached witness advice can generate concrete tables using the fixture
-machinery. These demonstrate satisfying instances and exercise consumers of the theorems.
-They are not an additional application export. The compiler's lowering trace is another
-object entirely: it remains internal proof machinery and is not imported from PureScript.
+`certify-application` runs this path for explicitly selected manifest entries. It requires
+neither independent foreign circuit dumps nor a proof cache. A returned certificate concerns
+the reconstructed circuits and their supplied keys; it does not assert literal equality with
+an independently exported foreign constraint system.
 
-### Semantic boundary
+### Lifting and theorem consumers
 
-The result preserves the existing capstones' hypotheses, whole-message equalities, application
-state projection, collision alternatives and `AccumulatorFailure` alternative. It does not
-establish the business semantics of a rule, justify a rule's choice of `mustVerify = false`,
-or prove a whole application's inductive derivation relation.
+`ApplicationCertified.lift_step` and `.lift_wrap` lift arbitrary satisfying tables at
+`cert.indices` to satisfying circuit runs at the same public statement and the fixed
+`stepValuation`/`wrapValuation`. No honest-prover or cached-advice premise is required.
+Connections between supplied matrices are stated on those fixed readings before lifting.
+The interpretation reads unrepresented variables as zero; it need not recover an arbitrary
+original prover valuation on unused advice cells.
 
-These phases start from matrix satisfaction. They do not add a cryptographic theorem deriving
-a satisfying matrix from `kimchiVerify = true`. A later proof-level contract must identify the
-intended index and verifier key. Index equality alone does not prove that a key's polynomial
-commitments commit to that index. The certification path now also derives every step and wrap
-key from the certified index and shared SRS, retaining this correspondence as `ApplicationKeys`.
-Existing key-layout checks and dynamic `KeyBound` facts remain distinct from this check.
+`matrices_stepWrap`, `matrices_wrapStep`, `matrices_wrap_handover` and
+`matrices_step_handover` consume the participating applications' certificates directly.
+The certificates discharge static verifier setup. Dynamic statement connections, source
+relations, required-proof flags and applicable key/mask readings remain in the matrix
+interfaces. The capstones retain their collision and accumulator-failure alternatives.
 
-Certification is relative to the decoded exported artifacts and their connection to the
-source-language implementation. Optional gates, lookups, sideloading and full prover-key generation
-remain separate work. The current constructor and application vocabulary is the scope here.
+At the proof level, `ApplicationCertified.step_valuation_or_failure` and
+`.wrap_valuation_or_failure` derive a satisfying Lean valuation with the accepted public
+statement, or an explicit `KimchiFailure`, from acceptance under a certified key. Kimchi
+soundness is not proved, and no probability bound is asserted by this failure predicate.
+`SomeKimchiFailure` hides the particular failed index/proof at the application level.
 
-The follow-up for sideloading is
-[sideloaded-application-certification-plan.md](sideloaded-application-certification-plan.md).
-It requires new circuit readings and adapters while preserving the original capstones.
+### Key checking and optional foreign-index comparison
 
-## Existing components to reuse
+`kimchi/Kimchi/KeyDerivation.lean` derives commitment columns from an index and SRS using the
+proved inverse NTT and accelerated MSM. `checkKey?` checks metadata and every commitment,
+returning `KeyCorresponds`; `checkApplication` applies it to every Step key and the Wrap key.
+`KimchiVK` itself carries the checked curve constants, domain, zero-knowledge row count and
+digest equation. There is no separate Pickles key wrapper or whole-key `deriveKey` construction.
 
-Paths below are relative to `formal/`.
+Independent gate dumps can still be compared in `PicklesFixture.ImportedIndices` using
+`compareIndices?`; `compareIndices?_eq_none_iff` supplies actual index equality. The consumers
+in [application-certification-draft.lean](application-certification-draft.lean) use that equality
+to apply the certificate's matrix theorems to independently imported indices. This comparison
+is optional and is not part of `ApplicationCertified` construction.
 
-| Module | Existing interface |
+The old names appearing in the historical phases below have these replacements:
+
+| Historical interface | Current interface |
 | --- | --- |
-| `snarky/Snarky/Kimchi/Backend/CheckedCompile.lean` | `CheckedIndex`, `checkBuilt?`, `lift`, public-input accessors, ordinary-output correspondence |
-| `snarky/Snarky/Compile.lean` | `compiledPublicVars`, public-layout lengths, `compile_reads`, `compileWith_reads` |
-| `pickles/Pickles/Application/Circuit.lean` | `Circuits`, `stepBuilt`, `wrapBuilt`, advice irrelevance |
-| `pickles/Pickles/Application/Run.lean` | `StepRun`, `WrapRun`, `SourceFor`, `StepWrapLink`, `WrapStepLink` |
-| `pickles/Pickles/Application/Verify.lean` | Assumption records and both `verifies_proof` capstones |
-| `pickles/Pickles/Application/Handover.lean` | Both handover capstones and the application-state projection |
-| `pickles/PicklesFixture/ApplicationImport.lean` | Assembly from reconstruction data independently of the circuit dump |
-| `pickles/PicklesFixture/ApplicationCircuit.lean` | Checked replay rules and rule-advice irrelevance |
-| `pickles/PicklesFixture/ApplicationRun.lean` | Reconstruction comparison and cached executions |
-| `pickles/PicklesFixture/ApplicationVerify.lean` | Direct capstone application to connected fixture runs |
-| `pickles/PicklesFixture/Manifest.lean` | Explicit applications, tags and required link/handover coverage |
-| `kimchi/KimchiFixture/PS.lean` | Gate-dump parsing and the existing synthetic-domain witness adapter |
+| `CheckedApplication`, `PicklesCorrect`, `ApplicationKeys` | `ApplicationCertified`, its checked indices/key fields, and its lifting theorems |
+| `certifyKeys?` | Key checking inside `checkApplication` |
+| `CertifiedIndices`, `certifyIndices?` | Separate fixture-level `compareIndices?` and equality transport when foreign dumps are needed |
+| `deriveKey`, `Pickles.KeyDerivation` | `deriveColumns` and `checkKey?` in `Kimchi.KeyDerivation` |
+| `Circuits D L` | `Circuits D` |
 
-The phases below record the implementation decomposition. The current contract above and
-the executable consumer document identify the public endpoints. Supply the existing Pasta instances, column notation and
-the implicit context `{D : Shape} {L : Layout D} {C : Circuits D L}` as appropriate. Before
-proof work in each phase, elaborate the complete types and statements. Do not add new library
-axioms or leave `sorry` declarations as an implementation of the plan.
+### Scope and validation
 
-## Implemented matrix contract
+The certificate does not establish application-rule business semantics, justify a rule's
+choice of `mustVerify = false`, or prove an entire application's inductive derivation relation.
+Reconstruction remains relative to the decoded exported artifacts. Optional gates, lookups,
+sideloading and full prover-key generation remain separate work. The sideloading follow-up is
+[sideloaded-application-certification-plan.md](sideloaded-application-certification-plan.md).
 
-[application-certification-draft.lean](application-certification-draft.lean) now elaborates
-consumers of the production interface, rather than defining a second version of it.
+Universal kernel-checked theorems, native checker runs, and a closed kernel proof of successful
+checking for a named serialized application remain distinct deliverables. The compiled
+`certify-application` executable provides the second using the first; it does not emit the third.
 
-`PicklesCorrect C I` has two lifting fields. Each accepted step/wrap matrix gives a satisfying
-native run at its public statement **and the fixed matrix valuation**. That valuation follows
-the compiled layout's labelled cells and equality classes. It is defined before any
-connection is supplied; no arbitrary source execution or prover advice chooses it.
-The lifting fields and canonical retained-cell layout preserve every observation of those cells,
-including affine expressions, proof parts, keys, masks and messages.
+## Historical phases
 
-The universal endpoints take their arguments in this order:
+The remaining sections preserve the original matrix/index-comparison plan and its review
+boundaries. Their old signatures and module names document that design; use the current
+contract above and the production declarations for new work. In particular, do not restore
+the removed certificate wrappers or make foreign circuit dumps a certification prerequisite.
 
-1. Certificates for the participating applications' indices.
-2. Arbitrary accepted matrices at typed public statements.
-3. Connections expressed on those matrices through the fixed readers.
-4. The original capstone assumptions.
-
-They conclude verification or handover for proofs and messages read from those matrices.
-The connection records do not assume the complete-message equality that handover proves.
-No caller supplies a connection about an existential execution chosen later.
-
-`CertifiedIndices.wrap_handover` handles Step → Wrap → Step → Wrap across two applications;
-`CertifiedIndices.step_handover` handles Wrap → Step → Wrap → Step across three. The pair
-endpoints retain production/consumption of accumulators, conditional verification, and the
-wrap/step mask fact. Whole-message equality, accumulator failure and hash collisions retain
-the original grouping. The application-state result is a projection of message equality.
-
-A retained but unused variable need not occur in any matrix cell. The interpretation reads
-unrepresented variables as zero; it does not recover an arbitrary original prover valuation.
-The backend proves this fixed interpretation satisfies the source. This boundary is covered
-by a regression showing two source-satisfying valuations can disagree on unused retained advice.
-
-Imported-index equality transfers this entire contract. `certifyIndices?` uses the same
-comparison and returns the same indices or located errors; its proof field now retains the
-stronger lifting guarantee. Certification never requires a concrete witness chain.
-
-## Phase 1. Checked compilation of one application
+## Phase 1. Checked compilation of one application (historical)
 
 Module: `pickles/Pickles/Application/CheckedCompile.lean`.
 
@@ -182,7 +154,7 @@ Scope and index correspondence remain supplied by checked compilation, not by th
 Exit: one reconstructed application has a checked family of its own indices. No Pickles
 verification theorem is invoked by this phase.
 
-## Phase 2. Satisfying tables give typed application runs
+## Phase 2. Satisfying tables give typed application runs (historical)
 
 Module: `pickles/Pickles/Application/MatrixRun.lean`.
 
@@ -236,7 +208,7 @@ reading, not an executable witness-recovery API or equality to arbitrary prover 
 Exit: arbitrary satisfying tables supply application runs with the intended typed public
 statements. Their inter-run connections are still separate obligations.
 
-## Phase 3. Apply the application capstones to lifted runs
+## Phase 3. Apply the application capstones to lifted runs (historical)
 
 Module: `pickles/Pickles/Application/Certification.lean`.
 
@@ -305,7 +277,7 @@ Exit: the native reconstructed application's matrix-level Pickles guarantee is p
 all residual assumptions visible. No witness matrix needs to be exported to certify the
 static application.
 
-## Phase 4. Certified equality of indices
+## Phase 4. Certified equality of indices (historical)
 
 Module: `kimchi/Kimchi/Index/Compare.lean`, with separate check modules.
 
@@ -345,7 +317,7 @@ witness remapping are outside the plan.
 Exit: successful comparison is connected by a theorem to actual index equality. This phase
 does not depend on the Pickles proof machinery and can be reviewed separately.
 
-## Phase 5. Import actual indices and transport application correctness
+## Phase 5. Import actual indices and transport application correctness (historical)
 
 Modules: an adapter under `pickles/PicklesFixture/` and
 `pickles/Pickles/Application/Imported.lean`.
@@ -428,12 +400,13 @@ Exit: the universal imported-application theorem and its checked adapter are imp
 targeted fixture runs exercise the success and rejection paths. Distinguish this from the
 closed certificate for a named application in phase 6.
 
-## Deferred experiment: kernel-certify a named imported application
+## Deferred experiment: kernel-certify a named imported application (historical)
 
 This investigation was stopped in favor of the compiled `certify-application` executable.
-The executable reconstructs, checks and compares selected artifacts, returning the certified
-indices or located errors. Its universal theorem is kernel-checked; it does not emit a
-standalone kernel proof of a named file’s parsing/checking success. The experiment below is
+The current executable reconstructs the selected applications and checks their Lean compilations,
+supplied keys and static setup, returning `ApplicationCertified` or located errors. Its universal
+theorems are kernel-checked; it does not emit a standalone kernel proof of a named file’s
+parsing/checking success. The experiment below is
 future work, not an obligation for matrix handover or the executable.
 
 A universal theorem about successful checking and a successful native fixture run are
@@ -463,7 +436,7 @@ Exit: a named imported application's theorem invokes the universal transfer theo
 its concrete success facts proved. Scaling this to the full transaction fixture is an
 explicit task, not an automatic consequence of the earlier phases.
 
-## Delivery and validation discipline
+## Original delivery and validation discipline (historical)
 
 Implement and review one phase at a time. The first implementation target is phase 1 only.
 Within a phase, begin with types and complete theorem signatures and work backward from them.

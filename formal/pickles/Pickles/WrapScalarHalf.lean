@@ -28,22 +28,22 @@ def SplitClaimsCast {k : ℕ} (Vg : Valuation Fp)
   let g := claimsG.deferredValues
   let w := claimsS.deferredValues
   let join (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) : Fq :=
-    2 * redFq (x.val.sDiv2.val Vg) + redFq ((↑x.val.sOdd : CVar Fp).val Vg)
+    2 * ZMod.cast (x.val.sDiv2.val Vg) + ZMod.cast ((↑x.val.sOdd : CVar Fp).val Vg)
   [w.plonk.alpha.val, w.plonk.beta.val, w.plonk.gamma.val, w.plonk.zeta.val, w.xi.val,
     claimsS.spongeDigestBeforeEvaluations].map (·.val Vs)
     = [g.plonk.alpha.val, g.plonk.beta.val, g.plonk.gamma.val, g.plonk.zeta.val, g.xi.val,
-      claimsG.spongeDigestBeforeEvaluations].map (fun x => redFq (x.val Vg)) ∧
+      claimsG.spongeDigestBeforeEvaluations].map (fun x => ZMod.cast (x.val Vg)) ∧
   [w.plonk.perm, w.plonk.zetaToSrsLength, w.plonk.zetaToDomainSize, w.combinedInnerProduct,
     w.b].map (·.val.val Vs)
     = [g.plonk.perm, g.plonk.zetaToSrsLength, g.plonk.zetaToDomainSize, g.combinedInnerProduct,
       g.b].map join ∧
   ∀ i : Fin k,
-    w.bulletproofChallenges[i].val.val Vs = redFq (g.bulletproofChallenges[i].val.val Vg)
+    w.bulletproofChallenges[i].val.val Vs = ZMod.cast (g.bulletproofChallenges[i].val.val Vg)
 
 /-- The step digest crosses into the wrap field through `castDigest` as its representative. -/
-private theorem castDigest_pallas (x : Fp) : castDigest IpaPallas.curve x = redFq x := by
-  have h : x.val < IpaPallas.curve.scalar := (ZMod.val_lt x).trans fp_lt_fq
-  simp only [castDigest, if_pos h]
+private theorem castDigest_pallas (x : Fp) : castDigest IpaPallas.curve x = ZMod.cast x := by
+  have h : x.val < IpaPallas.curve.scalar := (ZMod.val_lt x).trans Pasta.fp_lt_fq
+  simp only [castDigest, if_pos h, ZMod.cast_eq_val]
 
 /-- **The claims cast across make the two halves hold one set of claims.** With the wrap
 circuit's claim cells the step circuit's lifted (`SplitClaimsCast`), `β`, `γ` reading as
@@ -85,15 +85,16 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
       b := dec s.b }
   -- a split claim decodes, on the step side, as its joined cell on the wrap side
   have hdec : ∀ (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) (y : Type2 (FVar Fq)),
-      y.val.val Vs = 2 * redFq (x.val.sDiv2.val Vg) + redFq ((↑x.val.sOdd : CVar Fp).val Vg) →
+      y.val.val Vs =
+        2 * ZMod.cast (x.val.sDiv2.val Vg) + ZMod.cast ((↑x.val.sOdd : CVar Fp).val Vg) →
       (stepSide Vg).decode x = dec y := by
     intro x y hxy
     simp only [dec, FopSide.decode, fopWrap, wrapShiftOps.reading, Type2.fromShifted, hxy,
-      stepSide, stepDecode, Pasta.Shifted.unshiftType2]
-  refine ⟨⟨dv, ⟨reads128_of_redFq cα ha, hb, hg, reads128_of_redFq cζ hz, hdec _ _ cperm,
-      hdec _ _ czm, hdec _ _ czn, hdec _ _ ccip, reads128_of_redFq cξ hxi,
-      fun i => by simpa [dv] using reads128_of_redFq (hbp i) (hms i), hdec _ _ cb⟩,
-    ⟨ha, reads128_redFq cβ hb, reads128_redFq cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
+      stepSide, stepDecode, Pasta.Shifted.unshiftType2, ZMod.cast_eq_val]
+  refine ⟨⟨dv, ⟨reads128_of_cast cα ha, hb, hg, reads128_of_cast cζ hz, hdec _ _ cperm,
+      hdec _ _ czm, hdec _ _ czn, hdec _ _ ccip, reads128_of_cast cξ hxi,
+      fun i => by simpa [dv] using reads128_of_cast (hbp i) (hms i), hdec _ _ cb⟩,
+    ⟨ha, reads128_cast cβ hb, reads128_cast cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
       fun i => by simpa [dv] using hms i, rfl⟩⟩, ?_⟩
   show claimsS.spongeDigestBeforeEvaluations.val Vs
     = castDigest IpaPallas.curve (claimsG.spongeDigestBeforeEvaluations.val Vg)

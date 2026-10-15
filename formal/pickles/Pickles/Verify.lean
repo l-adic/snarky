@@ -565,7 +565,8 @@ theorem verifyProof_reads
     (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
-    verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e C.sponge.params endo
+    verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.shape.ipaEndo
+      C.sponge.params endo
       (.ofSpec C.groupMap)
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) u base v⌝⦄ := by
@@ -594,11 +595,12 @@ theorem verifyProof_reads
       fun pts hp => forall₂_toList_iff.mpr fun i => by simpa using hp i
   -- the blinding cell's read is the tables' own: every chunk's binding carries it
   have hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h) :=
-    (hxhat ⟨0, hivp.nc_pos⟩).1.blinding
+    (hxhat ⟨0, cvk.nc_pos⟩).1.blinding
   have hivp := builder_spec_and _ _ _
     (incrementallyVerifyProof_reads S σ cvk cp _ endo sqrtF false blindingH
       spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hh hivp)
-    (incrementallyVerifyProof_success_bit ops S.curve.e C.sponge.params endo (.ofSpec C.groupMap)
+    (incrementallyVerifyProof_success_bit ops S.shape.ipaEndo C.sponge.params endo
+      (.ofSpec C.groupMap)
       sqrtF false blindingH spongeAfterIndex _ (cells.withClaims u))
   have hb := CircuitType.reads_boolVar.mp hbase
   simp only [verifyProof]

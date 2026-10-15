@@ -118,6 +118,10 @@ theorem vesta_card : Vesta.curve.toAffine.order = PALLAS_BASE_CARD := by
     below it is the register bound of `varBaseMul_scaleFast2`. -/
 abbrev pastaFieldBits : ℕ := 255
 
+/-- The Pallas base-field modulus is below its scalar-field modulus. -/
+theorem fp_lt_fq : PALLAS_BASE_CARD < PALLAS_SCALAR_CARD := by
+  norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
+
 /-- The register bound of `varBaseMul_scaleFast2` is below the Pallas base-field size. -/
 lemma two_pow_le_pallas_base : 2 ^ (pastaFieldBits - 1) ≤ PALLAS_BASE_CARD := by
   norm_num [PALLAS_BASE_CARD]

@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Regression for `certify-application`, one run: an application's own failures are located at
-# the application and its stage, its dependents are blocked by it, an intact independent
-# application beside them is certified, and the exit status is nonzero. The selection damages
-# three applications at the load or certification stage and leaves NoRecursionReturn intact,
-# so the run reconstructs HeterogeneousPrevs and NoRecursionReturn and nothing else:
-#   TwoPhaseChain: a malformed sidecar, the key unknown, so an import of it matches nothing;
-#   RecurseOverChunks: chunks2's circuit dump missing, the key known from its sidecar, so
-#     recurse is blocked by it before any reconstruction;
-#   HeterogeneousPrevs: child's circuit dump malformed, failing at certification after
-#     reconstruction, so application is blocked by that certification failure.
+# Certify using reconstruction sidecars alone, with no foreign constraint-system dumps.
+# Reject finite but incorrect Step and Wrap Lagrange tables against the shared SRSs.
+# Then require located failures and dependency blocking beside an intact application:
+#   TwoPhaseChain: malformed sidecar, rejected while loading;
+#   RecurseOverChunks: chunks2's rule input disagrees with its shape, rejected during assembly;
+#   HeterogeneousPrevs: child's rule gains a constraint but keeps its keys, rejected by key checking.
+# NoRecursionReturn still certifies with a malformed comparison dump, which must not be read.
 #
 # Usage: PICKLES_DUMP_DIR=<dumps> scripts/check_certify_failures.sh   (from formal/, after
 # `lake build certify-application`)
@@ -18,26 +15,95 @@ dumps="${PICKLES_DUMP_DIR:?PICKLES_DUMP_DIR is not set}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 for app in NoRecursionReturn TwoPhaseChain RecurseOverChunks HeterogeneousPrevs; do
-  cp -R "$dumps/$app" "$work/"
+  mkdir -p "$work/$app"
+  cp -R "$dumps/$app/shapes" "$work/$app/"
 done
-printf '{' > "$work/TwoPhaseChain/shapes/two_phase_chain.json"
-rm "$work/RecurseOverChunks/chunks2.json"
-printf '{"branches": [' > "$work/HeterogeneousPrevs/child.json"
 
-if out="$(PICKLES_DUMP_DIR="$work" \
-    APPS=NoRecursionReturn,TwoPhaseChain,RecurseOverChunks,HeterogeneousPrevs \
-    lake exe certify-application 2>&1)"; then
-  echo "✗ exit status 0 with three damaged applications"; echo "$out" | tail -8; exit 1
+log="$work/success.log"
+if ! PICKLES_DUMP_DIR="$work" APPS=NoRecursionReturn \
+    lake exe certify-application > "$log" 2>&1; then
+  echo "✗ certification requires more than reconstruction inputs"
+  tail -12 "$log"
+  exit 1
 fi
-expect() { # $1 = the expected line's prefix
-  grep -q "^$1" <<<"$out" || { echo "✗ no line starting with '$1'"; echo "$out" | tail -12; exit 1; }
-  echo "✓ $1"
+expect() { # $1 = an expected message
+  grep -Fq -- "$1" "$log" || {
+    echo "✗ no line containing '$1'"
+    tail -12 "$log"
+    exit 1
+  }
+  echo "✓ observed: $1"
 }
+expect "✓ 1 application(s) certified"
+echo "✓ certification succeeds without foreign constraint-system dumps"
+
+# Keep the points finite and the table dimensions unchanged: ordinary point and shape
+# checks cannot detect this substitution. Certification must recompute the basis.
+for curve in vesta pallas; do
+  cache="$work/lagrange-$curve"
+  cp -R "${LAGRANGE_CACHE_DIR:-lagrange-cache}" "$cache"
+  python3 - "$cache" "$curve" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+cache, curve = Path(sys.argv[1]), sys.argv[2]
+for path in cache.glob(f'{curve}-k*-2^*-*c.json'):
+    data = json.loads(path.read_text())
+    assert len(data) > 1 and data[0] != data[1]
+    data[0] = data[1]
+    path.write_text(json.dumps(data))
+PY
+  log="$work/$curve-table.log"
+  if PICKLES_DUMP_DIR="$work" LAGRANGE_CACHE_DIR="$cache" APPS=HeterogeneousPrevs \
+      lake exe certify-application > "$log" 2>&1; then
+    echo "✗ certification accepted a corrupted $curve Lagrange table"
+    tail -12 "$log"
+    exit 1
+  fi
+  if [ "$curve" = vesta ]; then
+    expect "setup: wrap verifying step"
+  else
+    expect "setup: step"
+  fi
+  expect "Lagrange table differs from the SRS-derived basis"
+done
+
+python3 - "$work" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+work = Path(sys.argv[1])
+(work / 'TwoPhaseChain/shapes/two_phase_chain.json').write_text('{')
+(work / 'NoRecursionReturn/nrr.json').write_text('{')
+
+path = work / 'RecurseOverChunks/shapes/chunks2.json'
+data = json.loads(path.read_text())
+data['rules'][0]['inputSize'] += 1
+path.write_text(json.dumps(data))
+
+path = work / 'HeterogeneousPrevs/shapes/child.json'
+data = json.loads(path.read_text())
+rule = data['rules'][0]
+assert rule['inputSize'] > 0, 'the child fixture must have an input to constrain'
+rule['ops'].append({'constraint': {'basic': {'square': [{'var': 0}, {'var': 0}]}}})
+path.write_text(json.dumps(data))
+PY
+
+log="$work/failures.log"
+if PICKLES_DUMP_DIR="$work" \
+    APPS=NoRecursionReturn,TwoPhaseChain,RecurseOverChunks,HeterogeneousPrevs \
+    lake exe certify-application > "$log" 2>&1; then
+  echo "✗ exit status 0 with three damaged applications"
+  tail -12 "$log"
+  exit 1
+fi
 expect "✗ TwoPhaseChain/two_phase_chain: sidecar:"
-expect "✗ RecurseOverChunks/chunks2: missing required fixture:"
+expect "✗ RecurseOverChunks/chunks2: the rule's input differs from the application schema"
 expect "✗ RecurseOverChunks/recurse: blocked by the failure of RecurseOverChunks/chunks2"
-expect "✗ HeterogeneousPrevs/child: dump:"
+expect "✗ HeterogeneousPrevs/child: key: step 0:"
 expect "✗ HeterogeneousPrevs/application: blocked by certification failure of HeterogeneousPrevs/child"
 expect "✓ NoRecursionReturn/nrr: certified"
 expect "✗ 5 of 6 application(s) failed:"
-echo "── certify-application failure regressions OK ──"
+echo "── certify-application regressions OK ──"

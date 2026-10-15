@@ -344,8 +344,9 @@ scripts/check_tags.lean                      # every tag the pickles prove tests
 scripts/check_application_keys.lean          # check-application-keys: derive keys for self, external and chunked fixtures
                                              # (PICKLES_DUMP_DIR; optional APPS; no proof cache)
 scripts/certify_application.lean             # certify-application: selected applications reconstructed, compiled
-                                             # once, their dumps' indices certified against the checked
-                                             # compilation (PICKLES_DUMP_DIR, APPS; CI runs it from test.yml)
+                                             # once, supplied keys certified against the Lean indices and SRSs,
+                                             # and verifier setup checked; no foreign circuit dump or proof cache
+                                             # (PICKLES_DUMP_DIR, APPS; CI runs it from test.yml)
 scripts/check_certify_failures.sh            # its one-run regression: three damaged applications fail located
                                              # and block their dependents beside an intact certified one (CI)
 ```

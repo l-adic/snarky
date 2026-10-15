@@ -63,6 +63,8 @@ structure Shape where
   branches_pos : 0 < branches
   /-- Each branch's predecessor count. -/
   slots : Fin branches → Nat
+  /-- Every branch fits the protocol's predecessor bound. -/
+  slots_le : ∀ b, slots b ≤ MaxProofsVerified
   /-- Each predecessor's source, in the rule's slot order. -/
   source : (b : Fin branches) → Fin (slots b) → SlotRef imports.size
 
@@ -76,6 +78,15 @@ abbrev Shape.Slot (D : Shape) (b : D.Branch) := Fin (D.slots b)
 def Shape.width (D : Shape) : Nat :=
   ((List.finRange D.branches).map D.slots).foldl max 0
 
+/-- This application's maximum width fits the protocol. -/
+theorem Shape.width_le (D : Shape) : D.width ≤ MaxProofsVerified := by
+  apply (List.max_le_iff (List.cons_ne_nil 0 _)).mpr
+  intro x hx
+  rcases List.mem_cons.mp hx with rfl | hx
+  · exact Nat.zero_le _
+  obtain ⟨b, _, rfl⟩ := List.mem_map.mp hx
+  exact D.slots_le b
+
 /-- A branch slot's source application width, which can be smaller than the capacity
 of the shared wrap position it occupies. -/
 def Shape.slotWidth (D : Shape) (b : D.Branch) (i : D.Slot b) : Nat :=
@@ -88,5 +99,88 @@ def Shape.prevSize (D : Shape) (b : D.Branch) (i : D.Slot b) : Nat :=
   match D.source b i with
   | .self => D.schema.size
   | .external tag => D.imports[tag].schema.size
+
+/-- Every branch fits the maximum width computed from all branches. -/
+theorem Shape.slots_le_width (D : Shape) (b : D.Branch) :
+    D.slots b ≤ D.width := by
+  exact List.le_max_of_mem (List.mem_cons_of_mem 0
+    (List.mem_map.mpr ⟨b, List.mem_finRange b, rfl⟩))
+
+/-- A branch slot's position after front padding to the application's width. -/
+def Shape.paddedSlot (D : Shape) (b : D.Branch) (i : D.Slot b) : Fin D.width :=
+  ⟨D.width - D.slots b + i.val, by
+    have := D.slots_le_width b
+    have := i.isLt
+    omega⟩
+
+/-- Look up position `j` in branch `b`'s slot list, front-padded to `D.width`.
+Return `none` if `j` lies in the leading padding, or `some i` for the branch-local
+predecessor slot occupying that position. -/
+def Shape.slotAt (D : Shape) (b : D.Branch) (j : Fin D.width) : Option (D.Slot b) :=
+  if h : D.width - D.slots b ≤ j.val then
+    some ⟨j.val - (D.width - D.slots b), by
+      have := D.slots_le_width b
+      have := j.isLt
+      omega⟩
+  else none
+
+/-- Front-padding a live slot and looking it up returns that same slot. -/
+theorem Shape.slotAt_paddedSlot (D : Shape) (b : D.Branch)
+    (i : D.Slot b) : D.slotAt b (D.paddedSlot b i) = some i := by
+  simp [slotAt, paddedSlot]
+
+/-- Branch predecessor counts, at the shape the shared wrap circuit takes. -/
+def Shape.widths (D : Shape) : Vector (Fin (D.width + 1)) D.branches :=
+  Vector.ofFn fun b => ⟨D.slots b, Nat.lt_succ_of_le (D.slots_le_width b)⟩
+
+/-- Shared capacity: the maximum source width at this wrap position across branches.
+An unused position contributes zero; a live width-zero slot remains present in `slotAt`. -/
+private def Shape.wrapWidth (D : Shape) (j : Fin D.width) : Nat :=
+  ((List.finRange D.branches).map fun b =>
+    ((D.slotAt b j).map (D.slotWidth b)).getD 0).foldl max 0
+
+/-- Every live slot's source width fits its shared wrap position's computed capacity. -/
+private theorem Shape.slotWidth_le_wrapWidth (D : Shape) (b : D.Branch) (i : D.Slot b) :
+    D.slotWidth b i ≤ D.wrapWidth (D.paddedSlot b i) := by
+  unfold wrapWidth
+  apply List.le_max_of_mem (List.mem_cons_of_mem 0 ?_)
+  exact List.mem_map.mpr ⟨b, List.mem_finRange b, by simp [slotAt_paddedSlot]⟩
+
+/-- Self uses this application's checked width; External uses its imported bound. -/
+private theorem Shape.slotWidth_le (D : Shape) (b : D.Branch) (i : D.Slot b) :
+    D.slotWidth b i ≤ MaxProofsVerified := by
+  unfold Shape.slotWidth
+  cases D.source b i with
+  | self => exact D.width_le
+  | external tag => exact Nat.le_of_lt_succ D.imports[tag].width.isLt
+
+/-- Each computed shared width fits the protocol when all target widths do. -/
+private theorem Shape.wrapWidth_le (D : Shape)
+    (j : Fin D.width) : D.wrapWidth j ≤ MaxProofsVerified := by
+  apply (List.max_le_iff (List.cons_ne_nil 0 _)).mpr
+  intro x hx
+  rcases List.mem_cons.mp hx with rfl | hx
+  · exact Nat.zero_le _
+  obtain ⟨b, _, rfl⟩ := List.mem_map.mp hx
+  cases h : D.slotAt b j with
+  | none => simp
+  | some i => exact D.slotWidth_le b i
+
+/-- Shared slot capacities, at the shape the wrap circuit takes. -/
+def Shape.wrapWidths (D : Shape) :
+    Vector (Fin (MaxProofsVerified + 1)) D.width :=
+  Vector.ofFn fun j => ⟨D.wrapWidth j, Nat.lt_succ_of_le (D.wrapWidth_le j)⟩
+
+/-- Every branch slot's source width fits the wrap circuit's allocated capacity. -/
+theorem Shape.slotWidth_le_wrapWidths (D : Shape)
+    (b : D.Branch) (i : D.Slot b) :
+    D.slotWidth b i ≤ (D.wrapWidths[D.paddedSlot b i] : Nat) := by
+  simpa only [wrapWidths, Fin.getElem_fin, Vector.getElem_ofFn] using
+    D.slotWidth_le_wrapWidth b i
+
+/-- Export only the schema and checked width needed by another application's layout. -/
+def Shape.export (D : Shape) : LayoutInterface where
+  schema := D.schema
+  width := ⟨D.width, Nat.lt_succ_of_le D.width_le⟩
 
 end Pickles.Application

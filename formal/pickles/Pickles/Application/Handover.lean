@@ -15,13 +15,12 @@ namespace Pickles.Application
 open Snarky Snarky.Kimchi Bulletproof CompElliptic.Fields.Pasta Kimchi.Verifier
 
 variable {producerD middleD consumerD : Shape}
-  {producerL : Layout producerD} {middleL : Layout middleD} {consumerL : Layout consumerD}
 
 /-- Four executions along a producer wrap, an intermediate step and wrap, and a consumer step. -/
 structure StepProofHandover
-    (producerApp : Circuits producerD producerL)
-    (middleApp : Circuits middleD middleL)
-    (consumerApp : Circuits consumerD consumerL)
+    (producerApp : Circuits producerD)
+    (middleApp : Circuits middleD)
+    (consumerApp : Circuits consumerD)
     (producerBranch : producerD.Branch) (middleBranch : middleD.Branch)
     (consumerBranch : consumerD.Branch) (middleSlot : middleD.Slot middleBranch)
     (consumerSlot : consumerD.Slot consumerBranch) where
@@ -35,9 +34,9 @@ structure StepProofHandover
 
 namespace StepProofHandover
 
-variable {producerApp : Circuits producerD producerL}
-  {middleApp : Circuits middleD middleL}
-  {consumerApp : Circuits consumerD consumerL}
+variable {producerApp : Circuits producerD}
+  {middleApp : Circuits middleD}
+  {consumerApp : Circuits consumerD}
   {producerBranch : producerD.Branch} {middleBranch : middleD.Branch}
   {consumerBranch : consumerD.Branch} {middleSlot : middleD.Slot middleBranch}
   {consumerSlot : consumerD.Slot consumerBranch}
@@ -48,7 +47,7 @@ variable {producerApp : Circuits producerD producerL}
 def sentStep := readStepMessage e.producer.step.V e.producer.step.cells.messagesForNextStepProof
 
 /-- The complete step message reconstructed by the consumer slot. -/
-def receivedStep := rebuildStepMessage e.consumer.step.V middleApp.wiring.backend.wrapKey.cvk
+def receivedStep := rebuildStepMessage e.consumer.step.V middleApp.wiring.backend.wrapKey
   (e.consumer.step.inp consumerSlot) e.consumer.mask
 
 /-- The complete wrap message emitted by the producer wrap execution. -/
@@ -68,22 +67,22 @@ carries an invalid accumulator, unless one of the message hashes collides. -/
 theorem handover_or_collision
     (hProducer : WrapStepAssumptions producerApp producerBranch)
     (hConsumer : WrapStepAssumptions middleApp middleBranch) :
-    let σ := producerApp.setup.stepSrs.σ
-    let vk := producerApp.wiring.backend.stepKeys[producerBranch].cvk
-    let nextVk := middleApp.wiring.backend.stepKeys[middleBranch].cvk
+    let σ := producerApp.setup.stepSrs
+    let vk := producerApp.wiring.backend.stepKeys[producerBranch]
+    let nextVk := middleApp.wiring.backend.stepKeys[middleBranch]
     kimchiVerify IpaVesta.curve σ nextVk e.consumer.proof e.consumer.proofPublicInput = true →
     (e.sentStep = e.receivedStep ∧
      e.sentWrap = e.receivedWrap ∧
      (kimchiVerify IpaVesta.curve σ vk e.producer.proof e.producer.proofPublicInput = true ∨
       AccumulatorFailure σ nextVk e.consumer.proof e.consumer.proofPublicInput)) ∨
     e.producer.run.WrapCollision e.consumer.run producerApp.setup.dummy ∨
-    e.producer.run.StepCollision e.consumer.run middleApp.wiring.backend.wrapKey.cvk := by
+    e.producer.run.StepCollision e.consumer.run middleApp.wiring.backend.wrapKey := by
   intro σ vk nextVk hAccept
   obtain ⟨he, _, _, hv⟩ := e.producer.verifies_proof hProducer
   obtain ⟨_, hc, _, _⟩ := e.consumer.verifies_proof hConsumer
   have hd := congrArg Setup.dummy e.producer.sourceFor.setup
   exact WrapStepRun.handover_or_collision σ e.producer.run e.consumer.run
-    producerApp.wiring.backend.wrapKey.cvk middleApp.wiring.backend.wrapKey.cvk
+    producerApp.wiring.backend.wrapKey middleApp.wiring.backend.wrapKey
     producerApp.setup.dummy
     vk e.producer.proof e.producer.proofPublicInput
     nextVk e.consumer.proof e.consumer.proofPublicInput
@@ -93,7 +92,7 @@ end StepProofHandover
 
 /-- Two step-wrap pairs connected by a consumer slot receiving the producer's wrap proof. -/
 structure WrapProofHandover
-    (producerApp : Circuits producerD producerL) (consumerApp : Circuits consumerD consumerL)
+    (producerApp : Circuits producerD) (consumerApp : Circuits consumerD)
     (producerBranch : producerD.Branch) (consumerBranch : consumerD.Branch)
     (producerSlot : producerD.Slot producerBranch)
     (consumerSlot : consumerD.Slot consumerBranch) where
@@ -115,13 +114,13 @@ structure WrapProofHandover
   keyConsumer : consumer.step.KeyBound consumerSlot
   /-- The consumer reconstructs the producer wrap's public statement. -/
   middlePublicInput : CircuitType.Reads producer.wrap.V wrapStatement
-    ((consumer.step.inp consumerSlot).packedAt producerApp.wiring.backend.wrapKey.cvk
+    ((consumer.step.inp consumerSlot).packedAt producerApp.wiring.backend.wrapKey
       consumer.step.V (consumer.mask consumerSlot))
 
 namespace WrapProofHandover
 
-variable {producerApp : Circuits producerD producerL}
-  {consumerApp : Circuits consumerD consumerL}
+variable {producerApp : Circuits producerD}
+  {consumerApp : Circuits consumerD}
   {producerBranch : producerD.Branch} {consumerBranch : consumerD.Branch}
   {producerSlot : producerD.Slot producerBranch} {consumerSlot : consumerD.Slot consumerBranch}
   (e : WrapProofHandover producerApp consumerApp
@@ -132,7 +131,7 @@ def sentStep := readStepMessage e.producer.step.V e.producer.step.cells.messages
 
 /-- The complete step message reconstructed by the consumer slot. -/
 def receivedStep := rebuildStepMessage e.consumer.step.V
-  (consumerApp.wiring.source consumerBranch consumerSlot).wrapKey.cvk
+  (consumerApp.wiring.source consumerBranch consumerSlot).wrapKey
   (e.consumer.step.inp consumerSlot) (e.consumer.mask consumerSlot)
 
 /-- The complete wrap message emitted by the producer wrap execution. -/
@@ -149,9 +148,9 @@ carries an invalid accumulator, unless one of the message hashes collides. -/
 theorem handover_or_collision
     (hProducer : StepWrapAssumptions producerApp producerBranch producerSlot)
     (hConsumer : StepWrapAssumptions consumerApp consumerBranch consumerSlot) :
-    let σ := producerApp.setup.wrapSrs.σ
-    let vk := (producerApp.wiring.source producerBranch producerSlot).wrapKey.cvk
-    let nextVk := (consumerApp.wiring.source consumerBranch consumerSlot).wrapKey.cvk
+    let σ := producerApp.setup.wrapSrs
+    let vk := (producerApp.wiring.source producerBranch producerSlot).wrapKey
+    let nextVk := (consumerApp.wiring.source consumerBranch consumerSlot).wrapKey
     let r := e.producer.run producerSlot (e.producer.mask producerSlot)
     let r' := e.consumer.run consumerSlot (e.consumer.mask consumerSlot)
     kimchiVerify IpaPallas.curve σ nextVk
@@ -195,10 +194,10 @@ statement, with its length identified by the source interface, unless a message 
 theorem appState_eq_or_collision
     (hProducer : StepWrapAssumptions producerApp producerBranch producerSlot)
     (hConsumer : StepWrapAssumptions consumerApp consumerBranch consumerSlot) :
-    let nextVk := (consumerApp.wiring.source consumerBranch consumerSlot).wrapKey.cvk
+    let nextVk := (consumerApp.wiring.source consumerBranch consumerSlot).wrapKey
     let r := e.producer.run producerSlot (e.producer.mask producerSlot)
     let r' := e.consumer.run consumerSlot (e.consumer.mask consumerSlot)
-    kimchiVerify IpaPallas.curve producerApp.setup.wrapSrs.σ nextVk
+    kimchiVerify IpaPallas.curve producerApp.setup.wrapSrs nextVk
       (e.consumer.proof consumerSlot) (e.consumer.proofPublicInput consumerSlot) = true →
     (e.producer.step.cells.messagesForNextStepProof.appState.map
         (·.val e.producer.step.V) =

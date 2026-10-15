@@ -1,13 +1,13 @@
 import PicklesFixture.ApplicationFromShape
-import PicklesFixture.ImportedIndices
+import PicklesFixture.Certification
 import PicklesFixture.Verdicts
 
 /-!
 # Manifest certification driver
 
-Reconstruct the selected applications and certify their independent indices and every supplied
-step and wrap key against their reconstructed circuits and shared SRSs. Each entry is reported;
-a dependent of a producer whose certification failed is blocked. No proof cache is read.
+Reconstruct the selected applications and certify every supplied step and wrap key against
+their Lean indices and shared SRSs. Each entry is reported; a dependent of a producer whose
+certification failed is blocked. No independent circuit dump or proof cache is read.
 The selection and shared SRSs are fatal; an entry's own failures remain located at that entry.
 -/
 
@@ -23,10 +23,8 @@ def PicklesFixture.Application.runCertification (requireExplicit : Bool)
   if requireExplicit && (selection.isNone || selection == some "all") then
     throw (IO.userError "APPS names the manifest applications explicitly; all is not a selection")
   let apps ← IO.ofExcept (Manifest.select selection)
-  let σW ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) WrapIPARounds
-  let σS ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) StepIPARounds
-  let some wrap := Srs.check σW | throw (IO.userError "invalid wrap SRS")
-  let some step := Srs.check σS | throw (IO.userError "invalid step SRS")
+  let wrap ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) WrapIPARounds
+  let step ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) StepIPARounds
   reconstructApplications dir apps wrap step fun results => do
     let mut failed : List String := []
     for (name, r) in results do
@@ -41,15 +39,10 @@ def PicklesFixture.Application.runCertification (requireExplicit : Bool)
             else none
           | .error _ => none
         let blocked := blockedBy A.importsKey failedKeys
-        let certify : IO (Certification A) := do
+        let certify := do
           if let some producer := blocked then
             throw (IO.userError s!"{name}: blocked by certification failure of {producer}")
-          let text ← try IO.FS.readFile (dir / s!"{name}.json")
-            catch e => throw (IO.userError s!"{name}: dump: {e}")
-          let tag ← match Json.parse text with
-            | .error e => throw (IO.userError s!"{name}: dump: {e}")
-            | .ok tag => pure tag
-          certifyApplication name A tag
+          certifyApplication name A
         match ← certify.toBaseIO with
         | .ok _ => IO.println s!"✓ {name}: certified"
         | .error e =>

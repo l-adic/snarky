@@ -23,7 +23,7 @@ structure Tag where
 structure Application where
   /-- The test's output directory and proof-cache basename. -/
   name : String
-  /-- Every tag whose circuit dump and reconstruction sidecar must exist. -/
+  /-- Every required tag: certification needs its sidecar, comparison also its circuit dump. -/
   tags : List Tag
   deriving BEq
 

@@ -25,7 +25,6 @@ deriving instance DecidableEq for Kimchi.Verifier.KimchiVK
 deriving instance DecidableEq for Kimchi.Verifier.Accumulator
 deriving instance DecidableEq for MessagesForNextStepProof
 deriving instance DecidableEq for MessagesForNextWrapProof
-deriving instance DecidableEq for Key
 deriving instance DecidableEq for KnownDomains
 deriving instance DecidableEq for CircuitInterface
 
@@ -38,8 +37,6 @@ attribute [nolint defsWithUnderscore] instDecidableEqMessagesForNextStepProof_pi
   instDecidableEqMessagesForNextStepProof_picklesFixture.decEq
 attribute [nolint defsWithUnderscore] instDecidableEqMessagesForNextWrapProof_picklesFixture
   instDecidableEqMessagesForNextWrapProof_picklesFixture.decEq
-attribute [nolint defsWithUnderscore] instDecidableEqKey_picklesFixture
-  instDecidableEqKey_picklesFixture.decEq
 attribute [nolint defsWithUnderscore] instDecidableEqKnownDomains_picklesFixture
   instDecidableEqKnownDomains_picklesFixture.decEq
 attribute [nolint defsWithUnderscore] instDecidableEqCircuitInterface_picklesFixture
@@ -51,11 +48,11 @@ private def FieldSchemas.source {D : Shape} (F : FieldSchemas D)
   | .self => F.own
   | .external t => F.imports t
 
-private theorem FieldSchemas.source_eq {D : Shape} (F : FieldSchemas D) (L : Layout D)
+private theorem FieldSchemas.source_eq {D : Shape} (F : FieldSchemas D)
     (b : D.Branch) (i : D.Slot b) :
-    (D.sourceLayout L b i).schema = fieldSchema (F.source b i) := by
+    (D.sourceLayout b i).schema = fieldSchema (F.source b i) := by
   cases h : D.source b i with
-  | self => simpa [Shape.sourceLayout, FieldSchemas.source, h, Layout.export] using F.own_eq
+  | self => simpa [Shape.sourceLayout, FieldSchemas.source, h, Shape.export] using F.own_eq
   | external t => simpa [Shape.sourceLayout, FieldSchemas.source, h] using F.imports_eq t
 
 private theorem interface_eq {I J : LayoutInterface}
@@ -73,12 +70,12 @@ private def sourceFor {S : Setup} {D E : Shape} (consumer : Context S E)
   let ⟨hs⟩ ← requireProof (consumer.schemas.source branch slot = producer.schemas.own)
     (IO.userError "slot statement encoding differs from its producer")
   let ⟨hw⟩ ← requireProof
-    ((E.sourceLayout consumer.assembled.layout branch slot).width =
-      producer.assembled.layout.export.width)
+    ((E.sourceLayout branch slot).width =
+      D.export.width)
     (IO.userError "slot width differs from its producer")
-  have hl : E.sourceLayout consumer.assembled.layout branch slot =
-      producer.assembled.layout.export := by
-    have he := (consumer.schemas.source_eq consumer.assembled.layout branch slot).trans
+  have hl : E.sourceLayout branch slot =
+      D.export := by
+    have he := (consumer.schemas.source_eq branch slot).trans
       ((congrArg fieldSchema hs).trans producer.schemas.own_eq.symm)
     exact interface_eq he hw
   let ⟨hi⟩ ← requireProof
@@ -87,7 +84,7 @@ private def sourceFor {S : Setup} {D E : Shape} (consumer : Context S E)
   return ⟨⟨rfl, by
     exact (Sigma.mk.inj_iff.mpr ⟨hl, (eqRec_heq hl _).symm.trans (heq_of_eq hi)⟩)⟩⟩
 
-private structure Pair {D : Shape} {L : Layout D} (C : Circuits D L) where
+private structure Pair {D : Shape} (C : Circuits D) where
   branch : D.Branch
   link : StepWrapLink C branch
   step : Cache.Entry CS
@@ -110,46 +107,13 @@ private def pairs {S : Setup} {D : Shape} (A : Context S D) :
     result := result ++ [⟨s.branch, ⟨s.run, w.run, hbranch, hpub⟩, s.proof, w.proof, s.previous⟩]
   return result
 
-private def wrapAssumptions {D : Shape} {L : Layout D} (C : Circuits D L) (b : D.Branch) :
-    IO (PLift (wrapTable C b → WrapStepAssumptions C b)) := do
-  let K := C.wiring.backend.stepKeys[b]
-  let ⟨hn⟩ ← requireProof (K.cvk.comms.indexPoints.all (fun P => decide (P ≠ 0)) = true)
-    (IO.userError "step key has an infinite commitment")
-  let ⟨hL⟩ ← requireProof ((C.stepLagrange K.cvk.domainLog2).toList.all fun Ps =>
-    (List.finRange C.wiring.backend.stepChunks).all fun c => decide (Ps[c] ≠ 0))
-    (IO.userError "step table has an infinite commitment")
-  return ⟨fun ht => ⟨ht,
-    fun P hP => of_decide_eq_true (List.all_eq_true.mp hn P hP), by
-      apply (Key.avoids_lagrangeRelations_iff pastaShapeVesta C.setup.stepSrs.σ
-        (C.wiring.valid.stepChunks b) _).mpr
-      rw [← ht]
-      exact fun Ps hPs c => of_decide_eq_true (List.all_eq_true.mp
-        (List.all_eq_true.mp hL Ps hPs) c (List.mem_finRange c))⟩⟩
+private def wrapAssumptions {D : Shape} (C : Circuits D) (b : D.Branch) :
+    IO (PLift (wrapTable C b → WrapStepAssumptions C b)) :=
+  IO.ofExcept (checkWrapStepConstants C b)
 
-private def stepAssumptions {D : Shape} {L : Layout D} (C : Circuits D L)
-    (b : D.Branch) (i : D.Slot b) :
-    IO (PLift (stepTable C b i → StepWrapAssumptions C b i)) := do
-  let source := C.wiring.source b i
-  let K := source.wrapKey
-  let m := CircuitType.size Fp (PackedWrapStatement StepIPARounds (Type1 Fp) Fp)
-  let ⟨hd⟩ ← requireProof (C.setup.dummySg ≠ 0)
-    (IO.userError "padding commitment is infinite")
-  let ⟨hs⟩ ← requireProof (m ≤ 2 ^ WrapIPARounds ∧ m ≤ K.cvk.n)
-    (IO.userError "wrap statement size")
-  let ⟨hL⟩ ← requireProof ((C.wiring.sources b i).lagrange.toList.all
-    fun Ps => decide (Ps[0] ≠ 0)) (IO.userError "wrap table has an infinite commitment")
-  let ⟨hc⟩ ← requireProof (∀ c : Fin 1, corrSumPt (C := CW) zeroWrapStatement.packed.toList
-    (C.wiring.sources b i).lagrange.toList c ≠ 0) (IO.userError "wrap correction sum is infinite")
-  return ⟨fun ht => ⟨hd, ht, fun inp msg =>
-    (avoids_stepRelationsAt_iff C.setup.wrapSrs.σ K source.wrapChunks
-      (inp.statement msg) hs.1 hs.2).mpr ⟨fun c => by
-        rw [corrSumPt_packed_congr _ zeroWrapStatement, ← ht]
-        exact hc c,
-      by
-        rw [← ht]
-        intro Ps hPs c
-        rw [Fin.fin_one_eq_zero c]
-        exact of_decide_eq_true (List.all_eq_true.mp hL Ps hPs)⟩⟩⟩
+private def stepAssumptions {D : Shape} (C : Circuits D)
+    (b : D.Branch) (i : D.Slot b) : IO (PLift (stepTable C b i → StepWrapAssumptions C b i)) :=
+  IO.ofExcept (checkStepWrapConstants C b i)
 
 private def Context.stepParametersAt {S : Setup} {D : Shape}
     (A : Context S D) (b : D.Branch) (i : D.Slot b) :
@@ -194,26 +158,26 @@ private def compareProof {C : Ipa.KimchiCurve} {nc : Nat} (name : String)
   let _ ← requireProof (pe = pubEvalsWith σ vk L p pub)
     (IO.userError "application public evaluations differ")
 
-private def keyBound {D : Shape} {L : Layout D} {C : Circuits D L} {b : D.Branch}
+private def keyBound {D : Shape} {C : Circuits D} {b : D.Branch}
     (r : Pickles.Application.StepRun C b) (i : D.Slot b) : IO (PLift (r.KeyBound i)) := do
   let pts := (C.wiring.sources b i).keyCells r.cells.vk.points
   let ⟨hon⟩ ← requireProof (∀ p ∈ pts.indexPoints,
     CompElliptic.CurveForms.ShortWeierstrass.OnCurve CW.E.A CW.E.B
       (p.x.val r.V, p.y.val r.V)) (IO.userError "key cells are off curve")
-  let ⟨hread⟩ ← requireProof (pts.map (readPt r.V) = (C.wiring.source b i).wrapKey.cvk.comms)
+  let ⟨hread⟩ ← requireProof (pts.map (readPt r.V) = (C.wiring.source b i).wrapKey.comms)
     (IO.userError "key cells differ from the application interface")
   return ⟨KeyReads.of_readPt hon hread⟩
 
-private structure StepFacts {D : Shape} {L : Layout D} {C : Circuits D L} {b : D.Branch}
+private structure StepFacts {D : Shape} {C : Circuits D} {b : D.Branch}
     (e : StepWrapLink C b) (i : D.Slot b) : Prop where
   mustVerify : CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true
   keyBound : e.step.KeyBound i
   assumptions : stepTable C b i → StepWrapAssumptions C b i
-  accepts : stepTable C b i → kimchiVerify CW C.setup.wrapSrs.σ
-    (C.wiring.source b i).wrapKey.cvk (e.proof i) (e.proofPublicInput i) = true
+  accepts : stepTable C b i → kimchiVerify CW C.setup.wrapSrs
+    (C.wiring.source b i).wrapKey (e.proof i) (e.proofPublicInput i) = true
 
 set_option cleanup.letToHave false in
-private def checkStep {D : Shape} {L : Layout D} {C : Circuits D L} {b : D.Branch}
+private def checkStep {D : Shape} {C : Circuits D} {b : D.Branch}
     (e : StepWrapLink C b) (i : D.Slot b) (hp : stepTable C b i → StepWrapAssumptions C b i)
     (cached : Cache.Entry CW) :
     IO (PLift (StepFacts e i)) := do
@@ -221,35 +185,35 @@ private def checkStep {D : Shape} {L : Layout D} {C : Circuits D L} {b : D.Branc
     (IO.userError "verified application slot is not mustVerify")
   let ⟨hkey⟩ ← keyBound e.step i
   let r := e.run i (e.mask i)
-  let ⟨ha⟩ ← requireProof (accOk C.setup.wrapSrs.σ (StepWrap.emittedAccumulator r.Vg r.Vs
+  let ⟨ha⟩ ← requireProof (accOk C.setup.wrapSrs (StepWrap.emittedAccumulator r.Vg r.Vs
     r.i r.jf r.stepOut r.wrapVerifyOut r.wrapFinalizeOut) = true)
     (IO.userError "application wrap-proof accumulator is invalid")
-  compareProof "pallas" C.setup.wrapSrs.σ (C.wiring.source b i).wrapKey.cvk
+  compareProof "pallas" C.setup.wrapSrs (C.wiring.source b i).wrapKey
     (e.proof i) (e.proofPublicInput i) cached
   return ⟨⟨hmv, hkey, hp, fun ht => by
     obtain ⟨he, _, hv⟩ := e.verifies_proof i (hp ht) hmv hkey
     apply hv
-    have hz := (congrArg (accOk C.setup.wrapSrs.σ) he.2).symm.trans ha
+    have hz := (congrArg (accOk C.setup.wrapSrs) he.2).symm.trans ha
     simp only [accOk, decide_eq_true_eq] at hz
     exact hz⟩⟩
 
-private structure Connection {D E : Shape} {L : Layout D} {M : Layout E}
-    {A : Circuits D L} {B : Circuits E M} (a : Pair A) (b : Pair B)
+private structure Connection {D E : Shape}
+    {A : Circuits D} {B : Circuits E} (a : Pair A) (b : Pair B)
     (i : E.Slot b.branch) : Prop where
   mustVerify : CircuitType.Reads b.link.step.V (b.link.step.cells.prevs i).mustVerify true
   maskReads : CircuitType.Reads b.link.step.V (b.link.step.inp i).proofMask (b.link.mask i)
   publicInput : CircuitType.Reads a.link.wrap.V wrapStatement
-    ((b.link.step.inp i).packedAt A.wiring.backend.wrapKey.cvk b.link.step.V (b.link.mask i))
+    ((b.link.step.inp i).packedAt A.wiring.backend.wrapKey b.link.step.V (b.link.mask i))
 
-private def Connection.link {D E : Shape} {L : Layout D} {M : Layout E}
-    {A : Circuits D L} {B : Circuits E M} {a : Pair A} {b : Pair B} {i : E.Slot b.branch}
+private def Connection.link {D E : Shape}
+    {A : Circuits D} {B : Circuits E} {a : Pair A} {b : Pair B} {i : E.Slot b.branch}
     (c : Connection a b i) (h : SourceFor A B b.branch i) :
     WrapStepLink A B a.branch b.branch i :=
   ⟨h, a.link.wrap, b.link.step, a.link.branch, c.mustVerify, b.link.mask i,
     c.maskReads, c.publicInput⟩
 
-private def connect {D E : Shape} {L : Layout D} {M : Layout E}
-    {A : Circuits D L} {B : Circuits E M} (a : Pair A) (b : Pair B) (i : E.Slot b.branch)
+private def connect {D E : Shape}
+    {A : Circuits D} {B : Circuits E} (a : Pair A) (b : Pair B) (i : E.Slot b.branch)
     : IO (PLift (Connection a b i)) := do
   let ⟨hmv⟩ ← requireProof (CircuitType.Reads b.link.step.V
     (b.link.step.cells.prevs i).mustVerify true) (IO.userError "consumer slot is not mustVerify")
@@ -257,69 +221,69 @@ private def connect {D E : Shape} {L : Layout D} {M : Layout E}
   let ⟨hm⟩ ← requireProof (CircuitType.Reads b.link.step.V (b.link.step.inp i).proofMask mask)
     (IO.userError "application proof mask does not read")
   let ⟨ht⟩ ← requireProof (CircuitType.Reads a.link.wrap.V wrapStatement
-    ((b.link.step.inp i).packedAt A.wiring.backend.wrapKey.cvk b.link.step.V mask))
+    ((b.link.step.inp i).packedAt A.wiring.backend.wrapKey b.link.step.V mask))
     (IO.userError "application wrap/step public inputs differ")
   return ⟨⟨hmv, hm, ht⟩⟩
 
-private structure WrapFacts {D E : Shape} {L : Layout D} {M : Layout E}
-    {A : Circuits D L} {B : Circuits E M} {a : D.Branch} {b : E.Branch} {i : E.Slot b}
+private structure WrapFacts {D E : Shape}
+    {A : Circuits D} {B : Circuits E} {a : D.Branch} {b : E.Branch} {i : E.Slot b}
     (e : WrapStepLink A B a b i) : Prop where
   assumptions : wrapTable A a → WrapStepAssumptions A a
-  accepts : wrapTable A a → kimchiVerify CS A.setup.stepSrs.σ
-    A.wiring.backend.stepKeys[a].cvk e.proof e.proofPublicInput = true
+  accepts : wrapTable A a → kimchiVerify CS A.setup.stepSrs
+    A.wiring.backend.stepKeys[a] e.proof e.proofPublicInput = true
 
 set_option cleanup.letToHave false in
-private def checkWrap {D E : Shape} {L : Layout D} {M : Layout E}
-    {A : Circuits D L} {B : Circuits E M} {a : D.Branch} {b : E.Branch} {i : E.Slot b}
+private def checkWrap {D E : Shape}
+    {A : Circuits D} {B : Circuits E} {a : D.Branch} {b : E.Branch} {i : E.Slot b}
     (e : WrapStepLink A B a b i) (hp : wrapTable A a → WrapStepAssumptions A a)
     (cached : Cache.Entry CS) : IO (PLift (WrapFacts e)) := do
   let r := e.run
-  let ⟨ha⟩ ← requireProof (accOk A.setup.stepSrs.σ (WrapStep.emittedAccumulator r.Vw r.Vs
+  let ⟨ha⟩ ← requireProof (accOk A.setup.stepSrs (WrapStep.emittedAccumulator r.Vw r.Vs
     r.i r.wrapVerifyOut r.wrapFinalizeOut r.stepOut) = true)
     (IO.userError "application step-proof accumulator is invalid")
-  compareProof "vesta" A.setup.stepSrs.σ A.wiring.backend.stepKeys[a].cvk
+  compareProof "vesta" A.setup.stepSrs A.wiring.backend.stepKeys[a]
     e.proof e.proofPublicInput cached
   return ⟨⟨hp, fun ht => by
     obtain ⟨he, _, _, hv⟩ := e.verifies_proof (hp ht)
     apply hv
-    have hz := (congrArg (accOk A.setup.stepSrs.σ) he.2).symm.trans ha
+    have hz := (congrArg (accOk A.setup.stepSrs) he.2).symm.trans ha
     simp only [accOk, decide_eq_true_eq] at hz
     exact hz⟩⟩
 
 set_option cleanup.letToHave false in
-private def checkStepHandover {D E G : Shape} {L : Layout D} {M : Layout E} {N : Layout G}
-    {A : Circuits D L} {B : Circuits E M} {C : Circuits G N}
+private def checkStepHandover {D E G : Shape}
+    {A : Circuits D} {B : Circuits E} {C : Circuits G}
     {a : D.Branch} {b : E.Branch} {c : G.Branch} {i : E.Slot b} {j : G.Slot c}
     (e : StepProofHandover A B C a b c i j)
     (f : WrapFacts e.producer) (g : WrapFacts e.consumer) : IO Unit := do
   have _ : wrapTable A a → wrapTable B b →
       (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap ∧
-        (kimchiVerify CS A.setup.stepSrs.σ A.wiring.backend.stepKeys[a].cvk
+        (kimchiVerify CS A.setup.stepSrs A.wiring.backend.stepKeys[a]
           e.producer.proof e.producer.proofPublicInput = true ∨
-         AccumulatorFailure A.setup.stepSrs.σ B.wiring.backend.stepKeys[b].cvk
+         AccumulatorFailure A.setup.stepSrs B.wiring.backend.stepKeys[b]
           e.consumer.proof e.consumer.proofPublicInput)) ∨
       e.producer.run.WrapCollision e.consumer.run A.setup.dummy ∨
-      e.producer.run.StepCollision e.consumer.run B.wiring.backend.wrapKey.cvk := fun hA hB =>
+      e.producer.run.StepCollision e.consumer.run B.wiring.backend.wrapKey := fun hA hB =>
     e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
       (by rw [e.producer.sourceFor.setup]; exact g.accepts hB)
   let _ ← requireProof (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap)
     (IO.userError "application step-proof handover messages differ")
 
 set_option cleanup.letToHave false in
-private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
-    {A : Circuits D L} {B : Circuits E M} {a : D.Branch} {b : E.Branch}
+private def checkWrapHandover {D E : Shape}
+    {A : Circuits D} {B : Circuits E} {a : D.Branch} {b : E.Branch}
     {i : D.Slot a} {j : E.Slot b} (e : WrapProofHandover A B a b i j)
     (f : StepFacts e.producer i) (g : StepFacts e.consumer j) : IO Unit := do
   have _ : stepTable A a i → stepTable B b j →
       (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap ∧
-        (kimchiVerify CW A.setup.wrapSrs.σ (A.wiring.source a i).wrapKey.cvk
+        (kimchiVerify CW A.setup.wrapSrs (A.wiring.source a i).wrapKey
           (e.producer.proof i) (e.producer.proofPublicInput i) = true ∨
-         AccumulatorFailure A.setup.wrapSrs.σ (B.wiring.source b j).wrapKey.cvk
+         AccumulatorFailure A.setup.wrapSrs (B.wiring.source b j).wrapKey
           (e.consumer.proof j) (e.consumer.proofPublicInput j))) ∨
       (e.producer.run i (e.producer.mask i)).WrapCollision
         (e.consumer.run j (e.consumer.mask j)) A.setup.dummy ∨
       (e.producer.run i (e.producer.mask i)).StepCollision
-        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk :=
+        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey :=
     fun hA hB => e.handover_or_collision (f.assumptions hA) (g.assumptions hB)
       (by rw [e.sourceFor.setup]; exact g.accepts hB)
   have _ : stepTable A a i → stepTable B b j →
@@ -330,13 +294,13 @@ private def checkWrapHandover {D E : Shape} {L : Layout D} {M : Layout E}
       (e.producer.run i (e.producer.mask i)).WrapCollision
         (e.consumer.run j (e.consumer.mask j)) A.setup.dummy ∨
       (e.producer.run i (e.producer.mask i)).StepCollision
-        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey.cvk :=
+        (e.consumer.run j (e.consumer.mask j)) (B.wiring.source b j).wrapKey :=
     fun hA hB => e.appState_eq_or_collision (f.assumptions hA) (g.assumptions hB)
       (by rw [e.sourceFor.setup]; exact g.accepts hB)
   let _ ← requireProof (e.sentStep = e.receivedStep ∧ e.sentWrap = e.receivedWrap)
     (IO.userError "application wrap-proof handover messages differ")
 
-private def findPair {D : Shape} {L : Layout D} {C : Circuits D L} (ps : List (Pair C))
+private def findPair {D : Shape} {C : Circuits D} (ps : List (Pair C))
     (cached : Cache.Entry CW) : IO (Pair C) :=
   match ps.find? (fun p => key p.wrap == key cached) with
   | some p => pure p
@@ -379,7 +343,7 @@ private def findProducer {S : Setup} (contexts : List ((D : Shape) × Context S 
     (fixture : String) (cached : Cache.Entry CW) : Option (Fin contexts.length) :=
   (List.finRange contexts.length).find? fun k =>
     contexts[k].2.fixture == fixture &&
-      toString contexts[k].2.assembled.wiring.backend.wrapKey.cvk.digest.val == cached.vkDigest
+      toString contexts[k].2.assembled.wiring.backend.wrapKey.digest.val == cached.vkDigest
 
 /-- The run whose wrap proof is `cached`, each of its verified slots checked once: both
 verification capstones against the cache, and both handovers against each verified slot of the

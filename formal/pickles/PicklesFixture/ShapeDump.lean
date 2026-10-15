@@ -94,7 +94,7 @@ structure FieldSchemas (D : Shape) where
 /-- An application already assembled in compilation order, identified by its exported key. -/
 structure KnownTag where
   /-- The producer's checked wrap key. -/
-  key : Pickles.Key Bulletproof.IpaPallas.curve 1
+  key : Kimchi.Verifier.KimchiVK Bulletproof.IpaPallas.curve 1
   /-- The producer's exported statement schema and width. -/
   interface : LayoutInterface
   /-- Backend parameters attached to the exported layout. -/
@@ -108,8 +108,6 @@ structure KnownTag where
 structure LoadedShape where
   /-- The decoded application shape with resolved predecessor sources. -/
   shape : Shape
-  /-- Checked slot capacities and padding positions. -/
-  layout : Layout shape
   /-- Canonical statement encodings for the application and its imports. -/
   schemas : FieldSchemas shape
   /-- Backend parameters of each resolved producer. -/
@@ -157,17 +155,16 @@ def ShapeDump.load (raw : ShapeDump) (resolved : Array KnownTag) : Except String
     | .error e => .error e
     | .ok rows =>
       if h : 0 < rows.size then
-        let interfaces := resolved.map (·.interface)
-        let D : Shape :=
-          { schema := fieldSchema raw.statement
-            imports := interfaces
-            branches := rows.size
-            branches_pos := h
-            slots b := rows[b].size
-            source b i := by simpa [interfaces] using rows[b][i] }
-        match Layout.check D with
-        | .error e => .error e
-        | .ok ⟨L⟩ =>
+        if hs : ∀ b : Fin rows.size, rows[b].size ≤ Pickles.MaxProofsVerified then
+          let interfaces := resolved.map (·.interface)
+          let D : Shape :=
+            { schema := fieldSchema raw.statement
+              imports := interfaces
+              branches := rows.size
+              branches_pos := h
+              slots b := rows[b].size
+              slots_le := hs
+              source b i := by simpa [interfaces] using rows[b][i] }
           let importFn : (i : Fin D.imports.size) → CircuitInterface D.imports[i] := fun i => by
             have hi : i.val < resolved.size := by simpa [D, interfaces] using i.isLt
             simpa [D, interfaces] using (resolved[i.val]'hi).circuit
@@ -178,7 +175,8 @@ def ShapeDump.load (raw : ShapeDump) (resolved : Array KnownTag) : Except String
               imports_eq := fun i => by
                 have hi : i.val < resolved.size := by simpa [D, interfaces] using i.isLt
                 simpa [D, interfaces] using (resolved[i.val]'hi).schema_eq }
-          .ok ⟨D, L, schemas, importFn⟩
+          .ok ⟨D, schemas, importFn⟩
+        else .error "the application's predecessor count exceeds MaxProofsVerified"
       else .error "an application shape must have at least one branch"
 
 end PicklesFixture.Application

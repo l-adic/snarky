@@ -39,7 +39,7 @@ The modeled fragment, and every deviation from the upstream file:
   (`KimchiCurve.uBase`), as the pinned proof-systems derives it at both of its IPA sites.
   Upstream proof-systems takes the field's square root as returned, a sign a circuit cannot
   check without that pin;
-* the verifier-index digest is an input (`KimchiVK.digest`), not computed from the key;
+* the verifier-index digest is supplied on the wire and checked against the key’s commitments;
 * upstream's sub-SRS regime, a domain smaller than the SRS with one chunk per column (lines
   145–152), is in scope: `Wire.runNc` is upstream's chunk-count formula, and every deployed
   pickles proof but the two-proof wrap lives there (wrap domains `2^13`, `2^14` against the
@@ -60,7 +60,7 @@ The modeled fragment, and every deviation from the upstream file:
 namespace Kimchi.Verifier
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Poseidon Poseidon.FqSponge Bulletproof
+open Poseidon Poseidon.FqSponge Bulletproof Bulletproof.Ipa
 
 variable (C : Ipa.KimchiCurve)
 
@@ -148,6 +148,55 @@ def frSqueezes {F : Type*} [Field F] (p : Poseidon.Params F) (transcript : List 
   let sq := Poseidon.squeeze p (Poseidon.absorb p Poseidon.init transcript)
   (sq.1, (Poseidon.squeeze p sq.2).1)
 
+/-- `x ^ (2 ^ k)` by `k` squarings. The domain-size exponents `ζⁿ` (`n = 2 ^ domainLog2`)
+would otherwise run through the linear `npowRec`, making `#eval` of the verifier
+impractical at production domain sizes. -/
+def powPow2 {F : Type*} [Field F] (x : F) (k : ℕ) : F :=
+  (List.range k).foldl (fun a _ => a * a) x
+
+/-- `powPow2` is the power it computes. -/
+theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) : powPow2 x k = x ^ 2 ^ k := by
+  induction k with
+  | zero => simp [powPow2]
+  | succ k ih =>
+      rw [powPow2, List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+      show powPow2 x k * powPow2 x k = _
+      rw [ih, ← pow_add, ← two_mul, ← pow_succ']
+
+/-- The generator of the evaluation domain of size `2 ^ log2`: the scalar field's root of unity
+squared `twoAdicity − log2` times. -/
+def domainGenerator (C : Ipa.KimchiCurve) (log2 : ℕ) : C.ScalarField :=
+  powPow2 C.rootOfUnity (C.twoAdicity - log2)
+
+/-- A domain generator's order divides its domain's size: `ω ^ 2 ^ log2 = 1`. -/
+theorem domainGenerator_pow (C : Ipa.KimchiCurve) (log2 : ℕ) :
+    domainGenerator C log2 ^ 2 ^ log2 = 1 := by
+  rw [domainGenerator, powPow2_eq, ← pow_mul, ← pow_add]
+  refine orderOf_dvd_iff_pow_eq_one.mp ?_
+  rw [C.rootOfUnity_order]
+  exact Nat.pow_dvd_pow 2 (by omega)
+
+/-- The zero-knowledge row count at `nc` chunks: the least count strictly above the
+zero-knowledge bound, three at one chunk. -/
+def zkRowsOf (nc : ℕ) : ℕ := (2 * (permCols + 1) * nc - 2) / permCols + 1
+
+/-- At least three zero-knowledge rows, at any positive chunk count. -/
+theorem three_le_zkRowsOf {nc : ℕ} (h : 0 < nc) : 3 ≤ zkRowsOf nc := by
+  rw [zkRowsOf]
+  omega
+
+/-- The fq-sponge after the commitment coordinates in verifier-index absorb order:
+permutation columns, coefficient columns, then the six selectors. -/
+def indexStateOfCommitments (C : Ipa.KimchiCurve) {nc : ℕ}
+    (sigmaComm : Vector (Vector C.Point nc) permCols)
+    (coefficientsComm : Vector (Vector C.Point nc) coeffCols)
+    (genericComm poseidonComm completeAddComm mulComm emulComm endomulScalarComm :
+      Vector C.Point nc) : Poseidon.State C.BaseField :=
+  Poseidon.absorb C.sponge.params Poseidon.init
+    (((sigmaComm.toList ++ coefficientsComm.toList ++
+      [genericComm, poseidonComm, completeAddComm, mulComm, emulComm, endomulScalarComm]).flatMap
+      Vector.toList).flatMap fun P ↦ [P.x, P.y])
+
 /-! ## The checked records -/
 
 /-- The public-evaluation source: carried evaluations, accepted at any `nc` and required at
@@ -187,7 +236,8 @@ structure KimchiProof (C : Ipa.KimchiCurve) (nc k : ℕ) where
   /-- The old accumulators, each at the SRS's round count `k`. -/
   olds : Array (Accumulator C k)
 
-/-- A chunk-validated verifier key: what `Wire.KimchiVK.check` returns. -/
+/-- A verifier key with checked dimensions, curve constants, domain, zero-knowledge rows,
+and commitment digest: what `Wire.KimchiVK.check` returns. -/
 structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
   /-- Every commitment has a chunk. -/
   nc_pos : 0 < nc
@@ -224,12 +274,34 @@ structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
   prevChallenges : ℕ
   /-- The endomorphism coefficient `ftEval0` reads. -/
   endo : C.ScalarField
-  /-- The verifier-index digest, an input rather than computed from the key. -/
+  /-- The verifier-index digest, checked against the commitment points. -/
   digest : C.BaseField
+  /-- The endomorphism coefficient is the curve's. -/
+  endo_eq : endo = C.endoScalar
+  /-- The zero-knowledge rows are the chunk count's. -/
+  zkRows_eq : zkRows = zkRowsOf nc
+  /-- The domain holds its zero-knowledge rows. -/
+  zkRows_le : zkRows ≤ 2 ^ domainLog2
+  /-- The domain exponent is within the scalar field's two-adicity. -/
+  domainLog2_le : domainLog2 ≤ C.twoAdicity
+  /-- The digest is computed from the key's commitments in protocol absorb order. -/
+  digest_eq : digest = (Poseidon.squeeze C.sponge.params
+    (indexStateOfCommitments C sigmaComm coefficientsComm genericComm poseidonComm completeAddComm
+      mulComm emulComm endomulScalarComm)).1
+  /-- The domain generator is the scalar field's canonical generator at this exponent. -/
+  omega_eq : omega = domainGenerator C domainLog2
+  /-- The permutation shifts are the curve's. -/
+  shifts_eq : shifts = C.shifts
 
 /-- The domain size of a checked key. -/
 def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
     (cvk : KimchiVK C nc) : ℕ := 2 ^ cvk.domainLog2
+
+/-- The fq-sponge after the key's commitment coordinates in protocol absorb order. -/
+def KimchiVK.indexState {C : Ipa.KimchiCurve} {nc : ℕ} (vk : KimchiVK C nc) :
+    Poseidon.State C.BaseField :=
+  indexStateOfCommitments C vk.sigmaComm vk.coefficientsComm vk.genericComm vk.poseidonComm
+    vk.completeAddComm vk.mulComm vk.emulComm vk.endomulScalarComm
 
 /-- The upstream verifier's chunk count at an SRS of `2 ^ k` points and a domain of
 `2 ^ domainLog2`: one chunk when the domain is no larger than the SRS, else the domain size over
@@ -243,6 +315,144 @@ the key fixes only the domain. -/
 def KimchiVK.lagrangePoints {C : Ipa.KimchiCurve} {nc : ℕ} (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (m : ℕ) : Vector (Vector C.Point nc) m :=
   ⟨Ipa.lagrangeBasis C σ nc cvk.n cvk.omega m, by simp [Ipa.lagrangeBasis]⟩
+
+/-- A domain generator within the field's two-adicity is a primitive root of its domain's size:
+the root of unity, of order `2 ^ twoAdicity`, squared `twoAdicity − log2` times. -/
+private theorem isPrimitiveRoot_domainGenerator (C : KimchiCurve) {log2 : ℕ}
+    (hl : log2 ≤ C.twoAdicity) : IsPrimitiveRoot (domainGenerator C log2) (2 ^ log2) := by
+  have hr : IsPrimitiveRoot C.rootOfUnity (2 ^ C.twoAdicity) := by
+    rw [← C.rootOfUnity_order]
+    exact IsPrimitiveRoot.orderOf _
+  have h := hr.pow_of_dvd (p := 2 ^ (C.twoAdicity - log2)) (by positivity)
+    (Nat.pow_dvd_pow 2 (Nat.sub_le _ _))
+  rw [Nat.pow_div (Nat.sub_le _ _) two_pos, Nat.sub_sub_self hl, ← powPow2_eq] at h
+  exact h
+
+/-! ## The key's Lagrange relations -/
+
+section Relations
+
+variable {C : KimchiCurve} {nc : ℕ}
+
+/-- The Lagrange relations of a key at `m` points over an SRS of `2 ^ k` points: the coefficient
+vectors of every chunk of its first `m` Lagrange polynomials, which its Lagrange points are the
+commitments to. -/
+def KimchiVK.lagrangeRelations (cvk : KimchiVK C nc) (k m : ℕ) :
+    List (Fin (2 ^ k) → C.ScalarField) :=
+  (List.range m).flatMap fun i =>
+    (List.finRange nc).map fun c : Fin nc => lagrangeCoeffs k cvk.n cvk.omega i c.val
+
+/-- A key's Lagrange points are the commitments to its Lagrange relations, chunk by chunk. -/
+theorem KimchiVK.lagrangePoints_toList (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (m : ℕ) :
+    (cvk.lagrangePoints σ m).toList = (List.range m).map fun i =>
+      Vector.ofFn fun c : Fin nc => msm C σ.g (lagrangeCoeffs σ.k cvk.n cvk.omega i c) := by
+  apply List.ext_getElem (by simp)
+  intro i h₁ _
+  have hs : i < (Ipa.lagrangeBasis C σ nc cvk.n cvk.omega m).size := by
+    simpa [Ipa.lagrangeBasis] using h₁
+  rw [Array.getElem_toList, List.getElem_map, List.getElem_range]
+  ext c hc
+  rw [Vector.getElem_ofFn]
+  exact getElem_lagrangeBasis C σ nc cvk.n cvk.omega _ i hs ⟨c, hc⟩
+
+end Relations
+
+namespace KimchiVK
+
+variable {C : KimchiCurve} {nc : ℕ} (K : KimchiVK C nc)
+
+/-- The key's generator generates its domain: it is its domain's generator within the field's
+two-adicity (`isPrimitiveRoot_domainGenerator`). -/
+theorem omega_prim : IsPrimitiveRoot K.omega K.n :=
+  K.omega_eq ▸ isPrimitiveRoot_domainGenerator C K.domainLog2_le
+
+/-- The checked domain size is nonzero in the scalar field. -/
+theorem natCast_n_ne_zero : ((K.n : ℕ) : C.ScalarField) ≠ 0 := by
+  haveI : NeZero K.n := ⟨by unfold KimchiVK.n; positivity⟩
+  exact K.omega_prim.neZero'.out
+
+/-! ### The key's chunks over an SRS
+
+The chunk count is the run's at an SRS of `2 ^ k` points (`chunkCount`): one chunk for a domain
+within the SRS, `n / 2^k` above it. It is the one fact joining the key to the SRS. -/
+
+section Chunks
+
+variable {K} {k : ℕ} (hnc : nc = chunkCount k K.domainLog2)
+include hnc
+
+/-- The chunk count is at most the domain size. -/
+theorem nc_le_n : nc ≤ K.n := by
+  refine hnc.trans_le ?_
+  rw [chunkCount, KimchiVK.n]
+  split_ifs
+  · exact Nat.one_le_two_pow
+  · exact Nat.pow_le_pow_right two_pos (Nat.sub_le _ _)
+
+/-- Every chunk meets the domain: chunk `c` starts below `n`. -/
+private theorem chunk_lt (c : Fin nc) : c.val * 2 ^ k < K.n := by
+  have hc : c.val < chunkCount k K.domainLog2 := hnc ▸ c.isLt
+  rw [chunkCount] at hc
+  rw [KimchiVK.n]
+  split_ifs at hc with h
+  · rw [Nat.lt_one_iff.1 hc, zero_mul]
+    positivity
+  · calc c.val * 2 ^ k < 2 ^ (K.domainLog2 - k) * 2 ^ k :=
+          Nat.mul_lt_mul_of_pos_right hc (by positivity)
+      _ = 2 ^ K.domainLog2 := by rw [← pow_add, Nat.sub_add_cancel (not_lt.1 h)]
+
+/-- Every chunk holds `min (2^k) n` domain points: the domain's points from chunk `c`'s start
+on number at least the SRS size, or the whole domain at one chunk. -/
+theorem chunk_add_le (c : Fin nc) : c.val * 2 ^ k + min (2 ^ k) K.n ≤ K.n := by
+  have hc : c.val < chunkCount k K.domainLog2 := hnc ▸ c.isLt
+  rw [chunkCount] at hc
+  rw [KimchiVK.n]
+  split_ifs at hc with h
+  · rw [Nat.lt_one_iff.1 hc, zero_mul, Nat.zero_add]
+    exact Nat.min_le_right _ _
+  · calc c.val * 2 ^ k + min (2 ^ k) (2 ^ K.domainLog2)
+        ≤ (c.val + 1) * 2 ^ k := by rw [Nat.succ_mul]; omega
+      _ ≤ 2 ^ (K.domainLog2 - k) * 2 ^ k :=
+          Nat.mul_le_mul_right _ hc
+      _ = 2 ^ K.domainLog2 := by rw [← pow_add, Nat.sub_add_cancel (not_lt.1 h)]
+
+end Chunks
+
+/-! ### The relations the SRS avoids -/
+
+variable {K}
+
+/-- Every chunk of the key's first `m` Lagrange points is a finite point, where the SRS avoids
+their relations. -/
+theorem lagrange_ne (σ : SRS C.Point)
+    (hnc : nc = chunkCount σ.k K.domainLog2) {m : ℕ}
+    (h : σ.Avoids (K.lagrangeRelations σ.k m)) :
+    ∀ Ps ∈ (K.lagrangePoints σ m).toList, ∀ c : Fin nc, Ps[c] ≠ 0 := by
+  rw [K.lagrangePoints_toList]
+  intro Ps hPs c
+  obtain ⟨i, hi, rfl⟩ := List.mem_map.1 hPs
+  have ha : lagrangeCoeffs σ.k K.n K.omega i c ∈ K.lagrangeRelations σ.k m :=
+    List.mem_flatMap.2 ⟨i, hi, List.mem_map.2 ⟨c, List.mem_finRange c, rfl⟩⟩
+  simpa using h _ ha (lagrangeCoeffs_ne_zero _ _ _ _ _ (chunk_lt hnc c)
+    (K.omega_prim.ne_zero (by rw [KimchiVK.n]; positivity)) (K.natCast_n_ne_zero))
+
+/-- Whether the SRS avoids the Lagrange relations, read off the Lagrange points: their
+commitments are the points' chunks, so none is the identity iff no chunk is. A driver decides the
+right side on points it computed once. -/
+theorem avoids_lagrangeRelations_iff (σ : SRS C.Point)
+    (hnc : nc = chunkCount σ.k K.domainLog2) (m : ℕ) :
+    σ.Avoids (K.lagrangeRelations σ.k m)
+      ↔ ∀ Ps ∈ (K.lagrangePoints σ m).toList, ∀ c : Fin nc, Ps[c] ≠ 0 := by
+  refine ⟨lagrange_ne σ hnc, fun h a ha _ => ?_⟩
+  obtain ⟨i, hi, hai⟩ := List.mem_flatMap.1 ha
+  obtain ⟨c, -, rfl⟩ := List.mem_map.1 hai
+  have := h (Vector.ofFn fun c : Fin nc =>
+      msm C σ.g (lagrangeCoeffs σ.k K.n K.omega i c))
+    (by rw [K.lagrangePoints_toList]; exact List.mem_map.2 ⟨i, hi, rfl⟩) c
+  simpa using this
+
+end KimchiVK
 
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record, the form
 `kimchiVerify` hands `ftEval0`. `Gate.Poseidon.mdsOfParams` is the same repackaging behind
@@ -296,34 +506,6 @@ structure FrOracles (C : Ipa.KimchiCurve) where
   xi : C.ScalarField
   /-- The evalscale `r`. -/
   r : C.ScalarField
-
-/-- `x ^ (2 ^ k)` by `k` squarings. The domain-size exponents `ζⁿ` (`n = 2 ^ domainLog2`)
-would otherwise run through the linear `npowRec`, making `#eval` of the verifier
-impractical at production domain sizes. -/
-def powPow2 {F : Type*} [Field F] (x : F) (k : ℕ) : F :=
-  (List.range k).foldl (fun a _ => a * a) x
-
-/-- `powPow2` is the power it computes. -/
-theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) : powPow2 x k = x ^ 2 ^ k := by
-  induction k with
-  | zero => simp [powPow2]
-  | succ k ih =>
-      rw [powPow2, List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
-      show powPow2 x k * powPow2 x k = _
-      rw [ih, ← pow_add, ← two_mul, ← pow_succ']
-
-/-- The generator of the evaluation domain of size `2 ^ log2`: the scalar field's root of unity
-squared `twoAdicity − log2` times. -/
-def domainGenerator (C : Ipa.KimchiCurve) (log2 : ℕ) : C.ScalarField :=
-  powPow2 C.rootOfUnity (C.twoAdicity - log2)
-
-/-- A domain generator's order divides its domain's size: `ω ^ 2 ^ log2 = 1`. -/
-theorem domainGenerator_pow (C : Ipa.KimchiCurve) (log2 : ℕ) :
-    domainGenerator C log2 ^ 2 ^ log2 = 1 := by
-  rw [domainGenerator, powPow2_eq, ← pow_mul, ← pow_add]
-  refine orderOf_dvd_iff_pow_eq_one.mp ?_
-  rw [C.rootOfUnity_order]
-  exact Nat.pow_dvd_pow 2 (by omega)
 
 /-- The shared sum of the two public evaluations, `∑ᵢ −(pt − ωⁱ)⁻¹ · pubᵢ · ωⁱ`, by a
 running-`ω`-power fold. Each term is inverted on its own, the same value a batched

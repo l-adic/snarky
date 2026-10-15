@@ -42,11 +42,18 @@ theorem forall₂_zipWith {α β γ δ : Type} (R : γ → δ → Prop) (f : α 
 
 /-! ## Flattening -/
 
-/-- A flattened vector of vectors, as a list, is the flattened list of their lists. -/
-theorem toList_flatten' {α : Type} {m n : ℕ} (v : Vector (Vector α n) m) :
-    v.flatten.toList = (v.toList.map Vector.toList).flatten := by
-  simp [Vector.flatten, Vector.toList, Function.comp_def]
-  rfl
+/-- Lists of chunks of one length with equal flattenings are equal. -/
+theorem flatten_inj {α : Type} {m : ℕ} :
+    ∀ {L1 L2 : List (List α)}, (∀ c ∈ L1, c.length = m) → (∀ c ∈ L2, c.length = m) →
+      L1.length = L2.length → L1.flatten = L2.flatten → L1 = L2
+  | [], [], _, _, _, _ => rfl
+  | c1 :: L1, c2 :: L2, h1, h2, hl, hf => by
+    simp only [List.flatten_cons] at hf
+    obtain ⟨hc, ht⟩ := List.append_inj hf (by rw [h1 c1 (by simp), h2 c2 (by simp)])
+    rw [hc, flatten_inj (fun c hc => h1 c (by simp [hc])) (fun c hc => h2 c (by simp [hc]))
+      (by simpa using hl) ht]
+  | [], _ :: _, _, _, hl, _ => by simp at hl
+  | _ :: _, [], _, _, hl, _ => by simp at hl
 
 /-- Keeping the entries a mask sets: the flattened singletons are the kept entries, in order. -/
 theorem flatten_zipWith_keep {α : Type} :
@@ -61,6 +68,20 @@ theorem flatten_zipWith_keep {α : Type} :
     by_cases h : m 0 <;> simp [h, Function.comp_def, List.map_map]
 
 /-! ## Vectors -/
+
+/-- A suffix mask emits empty lists for the prefix and maps the retained suffix. -/
+theorem zipWith_suffix {α β : Type} {m n : ℕ} (ms : Vector Bool m) (xs : Vector α m)
+    (f : α → List β) (hms : ∀ (j : ℕ) (hj : j < m), ms[j] = decide (m - n ≤ j)) :
+    (Vector.zipWith (fun b x => if b then f x else []) ms xs).toList =
+      List.replicate (m - n) [] ++ (xs.toList.drop (m - n)).map f := by
+  apply List.ext_getElem (by simp)
+  intro j h1 h2
+  simp only [Vector.getElem_toList, Vector.getElem_zipWith, hms j (by simpa using h1)]
+  by_cases hj : j < m - n
+  · rw [List.getElem_append_left (by simpa using hj)]
+    simp [show ¬(m - n ≤ j) by omega]
+  · rw [List.getElem_append_right (by simpa using hj)]
+    simp [show m - n ≤ j by omega, show m - n + (j - (m - n)) = j by omega]
 
 /-- An entry of a mapped vector, at a `Fin` index. -/
 theorem getElem_map_fin {α β : Type} {n : ℕ} (f : α → β) (Ps : Vector α n) (ci : Fin n) :

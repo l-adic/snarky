@@ -78,6 +78,20 @@ structure FopParams (F : Type) where
   /-- The number of zero-knowledge rows. -/
   zkRows : ℕ
 
+/-- The scalar half's parameters at `nc` chunks and an SRS of `2 ^ k` points: the curve's sponge,
+endomorphism coefficient and shifts, the chunk count's zero-knowledge rows, and the side's
+tokens. -/
+def FopParams.of (C : Bulletproof.Ipa.KimchiCurve) (nc k : ℕ)
+    (toks : Array Linearization.PolishToken) : FopParams C.ScalarField :=
+  { sponge := C.frSponge.params
+    endoLam := C.lam
+    endo := C.endoScalar
+    mds := mdsOfParams C.frSponge.params
+    toks := toks
+    shifts := fun i => C.shifts[i]
+    srsLengthLog2 := k
+    zkRows := zkRowsOf nc }
+
 /-- The side's shifted-value conventions: the decode of a claim, and the comparison of a
 claim with a computed scalar. -/
 structure FopShiftOps (F c sf : Type) where

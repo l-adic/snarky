@@ -489,10 +489,15 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-keys
 
-    # The certification executable on the same artifacts, one run: NoRecursionReturn intact
-    # and certified beside three applications damaged at the load or certification stage,
-    # each failure located and each dependent blocked; no proof cache is read.
-    - name: Certify an application beside damaged ones
+    - name: Check real terminal proofs and reject altered carried data
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-terminal
+
+    # Certification needs only reconstruction sidecars: foreign dumps may be absent or
+    # malformed. Damaged sidecars/rules fail at their stage and block their dependents.
+    - name: Certify without foreign dumps and reject damaged applications
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal

@@ -110,6 +110,11 @@ abbrev CommitmentCurve.ScalarField (C : CommitmentCurve) := ZMod C.scalar
 /-- The point type — the proof-carrying `SWPoint C.E`, with its group structure. -/
 abbrev CommitmentCurve.Point (C : CommitmentCurve) := SWPoint C.E
 
+/-- The affine group's order is the wire's scalar cardinality. -/
+theorem CommitmentCurve.order_eq (C : CommitmentCurve) :
+    C.E.toAffine.order = C.scalar :=
+  (SWPoint.card_eq_point C.E).symm.trans C.card
+
 /-- The scalar order kills the point group (Lagrange): the integer → scalar reduction of a
 scalar action is exact. -/
 theorem CommitmentCurve.card_nsmul (C : CommitmentCurve) (X : C.Point) : C.scalar • X = 0 := by

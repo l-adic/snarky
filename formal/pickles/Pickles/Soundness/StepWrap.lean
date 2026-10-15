@@ -53,14 +53,14 @@ open scoped Kimchi
 
 /-- A bounded cell is the lift of its own public-input entry: reducing into the step field and
 lifting back is the identity below `2^254 < p`. -/
-private theorem cell_eq_redFq {Vs : Valuation Fq} {k : PackedScalar Fq} (hb : k.Bound Vs) :
-    k.cell.val Vs = redFq (PackedScalar.reduced IpaVesta.curve Vs k) := by
+private theorem cell_eq_cast {Vs : Valuation Fq} {k : PackedScalar Fq} (hb : k.Bound Vs) :
+    k.cell.val Vs = ZMod.cast (PackedScalar.reduced IpaVesta.curve Vs k) := by
   have hN := PackedScalar.val_lt_of_bound hb
-  have hp : (2 : ℕ) ^ 254 < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
   have hr : PackedScalar.reduced IpaVesta.curve Vs k
       = ((ZMod.val (k.cell.val Vs) : ℕ) : Fp) := by
     cases k <;> rfl
-  rw [hr, redFq, ZMod.val_natCast_of_lt (hN.trans hp), ZMod.natCast_zmod_val]
+  rw [hr, ZMod.cast_eq_val,
+    ZMod.val_natCast_of_lt (hN.trans_le Pasta.two_pow_le_pallas_base), ZMod.natCast_zmod_val]
 
 /-- An unfinalized entry the wrap circuit's cells hold, as the step circuit's values: each cell
 the scalar its x_hat ladder applies (`PackedScalar.reduced`), a bit `true` when it reads `1`. -/
@@ -157,8 +157,8 @@ theorem StepStatement.ofWrap_toFields {ks n nc : ℕ} (σ : SRS IpaVesta.curve.P
         (var := UnfVar ks) (UnfVal.ofWrap Vs u)).flatten.toList
       = (st.proofState.unfinalizedProofs.toList.flatMap fun u => u.packed.toList).map
         (PackedScalar.reduced IpaVesta.curve Vs) := by
-    simp only [toList_flatten', Vector.toList_map, List.map_map, Function.comp_def, List.flatMap,
-      List.map_flatten]
+    simp only [Snarky.toList_flatten, Vector.toList_map, List.map_map, Function.comp_def,
+      List.flatMap, List.map_flatten]
     refine congrArg List.flatten (List.map_congr_left fun u hu =>
       UnfVal.ofWrap_toFields u fun x hx => hbnd x ?_)
     simp only [StepStatement.packed, Vector.mem_mk, List.mem_toArray, List.mem_append,
@@ -181,8 +181,8 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
       ∃ bb : Bool, CircuitType.Reads Vg u.toUnfinalized.shouldFinalize bb ∧
         CircuitType.Reads Vs a.toUnfinalized.shouldFinalize bb := by
   -- each wrap entry is the lift of the step cell it is read against
-  have hB : ∀ x ∈ sp.packed, x.cell.val Vs = redFq (PackedScalar.reduced IpaVesta.curve Vs x) :=
-    fun x hx => cell_eq_redFq (hbnd x hx)
+  have hB : ∀ x ∈ sp.packed, x.cell.val Vs = ZMod.cast (PackedScalar.reduced IpaVesta.curve Vs x) :=
+    fun x hx => cell_eq_cast (hbnd x hx)
   -- the entry's cells, field by field
   simp only [UnfVal.ofWrap, CircuitType.reads_ofEquiv, AllocUnfinalized.equivProd,
     Type2.equivVal, SplitField.equivProd, Equiv.coe_fn_mk, CircuitType.reads_prod,
@@ -195,36 +195,37 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
   obtain ⟨ha, hbe, hg, hz, hxi, hbps, hsfe, hdig, hscip, hsb, hsperm, hszm, hszn⟩ := hsr
   -- an entry of the slot, read against the step cell `v`, is `v` lifted
   have e : ∀ {x : PackedScalar Fq} {v : Fp}, x ∈ UnfinalizedProof.packed sp →
-      v = PackedScalar.reduced IpaVesta.curve Vs x → x.cell.val Vs = redFq v :=
+      v = PackedScalar.reduced IpaVesta.curve Vs x → x.cell.val Vs = ZMod.cast v :=
     fun hx hv => (hB _ hx).trans (by rw [hv])
   have mem : ∀ {x : PackedScalar Fq}, x ∈ UnfinalizedProof.packed sp ↔ x ∈ sp.packed :=
     Iff.rfl
   -- the scalar claims and the digest
-  have fa : a.alpha.val Vs = redFq (u.alpha.val Vg) := by
+  have fa : a.alpha.val Vs = ZMod.cast (u.alpha.val Vg) := by
     have := e (x := .b128 sp.deferredValues.plonk.alpha.val) (by simp [UnfinalizedProof.packed]) c14
     simpa [PackedScalar.cell, ha, AllocUnfinalized.toUnfinalized] using this
-  have fb : a.beta.val Vs = redFq (u.beta.val Vg) := by
+  have fb : a.beta.val Vs = ZMod.cast (u.beta.val Vg) := by
     have := e (x := .b128 sp.deferredValues.plonk.beta.val) (by simp [UnfinalizedProof.packed]) c12
     simpa [PackedScalar.cell, hbe, AllocUnfinalized.toUnfinalized] using this
-  have fg : a.gamma.val Vs = redFq (u.gamma.val Vg) := by
+  have fg : a.gamma.val Vs = ZMod.cast (u.gamma.val Vg) := by
     have := e (x := .b128 sp.deferredValues.plonk.gamma.val) (by simp [UnfinalizedProof.packed])
       c13
     simpa [PackedScalar.cell, hg, AllocUnfinalized.toUnfinalized] using this
-  have fz : a.zeta.val Vs = redFq (u.zeta.val Vg) := by
+  have fz : a.zeta.val Vs = ZMod.cast (u.zeta.val Vg) := by
     have := e (x := .b128 sp.deferredValues.plonk.zeta.val) (by simp [UnfinalizedProof.packed]) c15
     simpa [PackedScalar.cell, hz, AllocUnfinalized.toUnfinalized] using this
-  have fxi : a.xi.val Vs = redFq (u.xi.val Vg) := by
+  have fxi : a.xi.val Vs = ZMod.cast (u.xi.val Vg) := by
     have := e (x := .b128 sp.deferredValues.xi.val) (by simp [UnfinalizedProof.packed]) c16
     simpa [PackedScalar.cell, hxi, AllocUnfinalized.toUnfinalized] using this
-  have fd : a.spongeDigest.val Vs = redFq (u.spongeDigest.val Vg) := by
+  have fd : a.spongeDigest.val Vs = ZMod.cast (u.spongeDigest.val Vg) := by
     have := e (x := .full sp.spongeDigestBeforeEvaluations) (by simp [UnfinalizedProof.packed]) c11
     simpa [PackedScalar.cell, hdig, AllocUnfinalized.toUnfinalized] using this
   -- a split claim joins its lifted half and parity
   have join : ∀ (w : Type2 (FVar Fq)) (s : Type2 (SplitField (FVar Fq) (BoolVar Fq)))
       (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))), SplitReads Vs w s →
-      (PackedScalar.full s.val.sDiv2).cell.val Vs = redFq (x.val.sDiv2.val Vg) →
-      (PackedScalar.bit s.val.sOdd).cell.val Vs = redFq ((↑x.val.sOdd : CVar Fp).val Vg) →
-      w.val.val Vs = 2 * redFq (x.val.sDiv2.val Vg) + redFq ((↑x.val.sOdd : CVar Fp).val Vg) := by
+      (PackedScalar.full s.val.sDiv2).cell.val Vs = ZMod.cast (x.val.sDiv2.val Vg) →
+      (PackedScalar.bit s.val.sOdd).cell.val Vs = ZMod.cast ((↑x.val.sOdd : CVar Fp).val Vg) →
+      w.val.val Vs =
+        2 * ZMod.cast (x.val.sDiv2.val Vg) + ZMod.cast ((↑x.val.sOdd : CVar Fp).val Vg) := by
     intro w s x ⟨bb, hbb, hw⟩ hh ho
     simp only [PackedScalar.cell] at hh ho
     rw [hw, hh, ← hbb, ho]
@@ -241,7 +242,7 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
     (e (by simp [UnfinalizedProof.packed]) c10)
   -- the round challenges, entrywise
   have fbp : ∀ i : Fin k, a.bulletproofChallenges[i].val Vs
-      = redFq (u.bulletproofChallenges[i].val Vg) := by
+      = ZMod.cast (u.bulletproofChallenges[i].val Vg) := by
     intro i
     have hl := CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp hbpR i i.isLt)
     have hs := hB (.b128 sp.deferredValues.bulletproofChallenges[i].val) (by
@@ -415,9 +416,9 @@ theorem stepWrap_kimchiVerify
     -- each slot's previous statement's cell count
     {ss : Fin n → ℕ}
     -- the wrap SRS the slots share
-    (S : Srs IpaPallas.curve)
+    (S : SRS IpaPallas.curve.Point)
     -- the wrap SRS has the deployed size, `2 ^ WrapIPARounds` points
-    (hE : S.σ.k = WrapIPARounds)
+    (hE : S.k = WrapIPARounds)
     -- the step circuit's finalize constants
     (P : Fin n → FopParams Fp)
     -- the step domains the step circuit's finalize dispatches over
@@ -431,7 +432,7 @@ theorem stepWrap_kimchiVerify
     -- off the identity, so its constant cells lie on the curve
     (hdummySg : dummySg ≠ 0)
     -- the unfinalized entry padding the step statement to the tag's `w` slots
-    (dummyUnf : UnfVal S.σ.k)
+    (dummyUnf : UnfVal S.k)
     -- each slot's source: a proof of this system, or of another compiled one
     (srcs : Fin n → SlotSource 1 StepIPARounds)
     -- each slot verifies at most `MaxProofsVerified` accumulators
@@ -445,7 +446,7 @@ theorem stepWrap_kimchiVerify
         CircuitM Fp (Builder Vg (KimchiConstraint Fp)) (((i : Fin n) → PrevStatement (ss i)) ×
           outVar))
     -- the step circuit's advice
-    (adv : StepMainAdvice n w (SlotSource.widths w srcs) 1 ncPrevStep S.σ.k StepIPARounds inVal)
+    (adv : StepMainAdvice n w (SlotSource.widths w srcs) 1 ncPrevStep S.k StepIPARounds inVal)
     -- the next wrap circuit's valuation
     (Vs : Valuation Fq)
     -- the tag's branches' slot counts
@@ -454,28 +455,28 @@ theorem stepWrap_kimchiVerify
     (σStep : SRS IpaVesta.curve.Point)
     -- the Lagrange tables the wrap circuit bakes in, per step domain
     (lagrange : ℕ → Vector (Vector IpaVesta.curve.Point ncStep)
-      (CircuitType.size Fp (StepStatement (UnfVal S.σ.k) Fp w)))
+      (CircuitType.size Fp (StepStatement (UnfVal S.k) Fp w)))
     -- the tag's step keys, one per branch
     (stepKeys : Vector (KimchiVK IpaVesta.curve ncStep) branches)
     -- each slot's compile-time wrap domain index per branch: the tag's `w` slots, front-padded
     (pins : Vector (Vector (Option ℕ) branches) w)
     -- the padding challenges
-    (dummy : Vector Fq S.σ.k)
+    (dummy : Vector Fq S.k)
     -- each wrap slot's challenge-stack height
     (slotWidths : Vector (Fin (MaxProofsVerified + 1)) w)
     -- the wrap circuit's advice
-    (advW : WrapMainAdvice w ncStep S.σ.k StepIPARounds (slotWidths.map Fin.val).sum)
+    (advW : WrapMainAdvice w ncStep S.k StepIPARounds (slotWidths.map Fin.val).sum)
     -- fewer branches than the field's characteristic
     (hbr : branches ≤ PALLAS_SCALAR_CARD)
     -- the active branch
     (b : Fin branches) :
     -- the compiled step circuit: its rows, and the cells of the run that emitted them
     let step :=
-      compileWith (a := Unit) (b := StepStatement (UnfVal S.σ.k) Fp w)
+      compileWith (a := Unit) (b := StepStatement (UnfVal S.k) Fp w)
         (stepMainCircuit (c := Builder Vg (KimchiConstraint Fp)) (outVal := outVal)
           srcs
           hws
-          S.σ.h
+          S.h
           P
           domains
           (constPt dummySg)
@@ -487,7 +488,7 @@ theorem stepWrap_kimchiVerify
     let wrap :=
       compileWith (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
         (wrapMainCircuit (c := Builder Vs (KimchiConstraint Fq))
-          (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens)
+          (FopParams.of IpaPallas.curve 1 S.k Linearization.fqTokens)
           widths
           (stepDomainLog2s stepKeys)
           (stepKeyCells stepKeys)
@@ -523,35 +524,35 @@ theorem stepWrap_kimchiVerify
       let sl := wrapFinalizeOut.slots[jf]
       -- the slot's wrap key `K`, one chunk over the wrap SRS: its source fits `K`, its key
       -- cells read as `K`
-      ∀ K : Key IpaPallas.curve 1, 1 = chunkCount S.σ.k K.cvk.domainLog2 →
-      WrapKeyLayout K.cvk →
-      (srcs i).Fits S.σ K.cvk →
-      KeyReads IpaPallas.curve Vg ((srcs i).keyCells stepOut.vk.points) K.cvk →
+      ∀ K : KimchiVK IpaPallas.curve 1, 1 = chunkCount S.k K.domainLog2 →
+      WrapKeyLayout K →
+      (srcs i).Fits S K →
+      KeyReads IpaPallas.curve Vg ((srcs i).keyCells stepOut.vk.points) K →
       -- no relation the slot statements' public-input commitment names commits the SRS to the
       -- identity
-      (∀ (inp' : VerifyOneInput (ss i) StepIPARounds S.σ.k 1 (ncPrevStep i)
+      (∀ (inp' : VerifyOneInput (ss i) StepIPARounds S.k 1 (ncPrevStep i)
           (SlotSource.widths w srcs i))
-        msg, S.σ.Avoids (stepRelationsAt S.σ K.cvk (inp'.statement msg))) →
+        msg, S.Avoids (stepRelationsAt S K (inp'.statement msg))) →
       -- the active branch compiled its wrap slot for `K`'s domain
-      ∀ j : ℕ, sl.pins[b] = some j → wrapDomainLog2s[j]? = some K.cvk.domainLog2 →
-      ∃ (cp : KimchiProof IpaPallas.curve 1 S.σ.k) (ms : Vector Bool (SlotSource.widths w srcs i)),
+      ∀ j : ℕ, sl.pins[b] = some j → wrapDomainLog2s[j]? = some K.domainLog2 →
+      ∃ (cp : KimchiProof IpaPallas.curve 1 S.k) (ms : Vector Bool (SlotSource.widths w srcs i)),
         -- the slot's public input: its statement, carrying the step-message digest
-        let pub := inp.publicInputAt K.cvk Vg ms
+        let pub := inp.publicInputAt K Vg ms
         -- its cells hold `cp`, with masks `ms`
-        inp.WireReads K.cvk Vg ((srcs i).keyCells stepOut.vk.points) cp ms ∧
+        inp.WireReads K Vg ((srcs i).keyCells stepOut.vk.points) cp ms ∧
         -- the next wrap circuit's finalize cells hold `cp`'s evaluations and old challenges
-        FopTies S.σ K.cvk cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) ∧
+        FopTies S K cp pub (ScalarHalf.wrap Vs sl.unfinalized sl.evals sl.prevChallenges) ∧
         -- the link emits `cp`'s deferred obligation, as its outgoing messages carry it
         StepWrap.emittedAccumulator Vg Vs i jf stepOut wrapVerifyOut wrapFinalizeOut
-          = ⟨cp.opening.sg, wireChallenges S.σ K.cvk cp pub⟩ ∧
+          = ⟨cp.opening.sg, wireChallenges S K cp pub⟩ ∧
         -- the link consumes `cp`'s old accumulators, as its incoming messages were rebuilt
         StepWrap.consumedAccumulators Vg Vs inp dummy wrapFinalizeOut jf = cp.olds.toList ∧
         -- the step circuit and the next wrap circuit hash their messages
         stepOut.HashesMessages Vg ∧
         wrapVerifyOut.HashesMessages Vs dummy wrapStmt wrapFinalizeOut ∧
         -- of `cp` itself: only the deferred `sg` equation remains
-        (SgOk S.σ K.cvk cp pub →
-          kimchiVerify IpaPallas.curve S.σ K.cvk cp pub = true) := by
+        (SgOk S K cp pub →
+          kimchiVerify IpaPallas.curve S K cp pub = true) := by
   intro step wrap hstep hwrap
   rw [show step.result.1.2 = _ from compileWith_stepMainCircuit_cells srcs hws _ _ _ _ _ _ _,
     show wrap.result.1.2 = _ from compileWith_wrapMainCircuit_cells _ _ _ _ _ _ _ _ _ _]
@@ -559,7 +560,7 @@ theorem stepWrap_kimchiVerify
       hkey havoid j hpin hdom
   -- the step side: `shouldFinalize` set, and the group half accepts `cp`
   obtain ⟨hsfG, hslot, -, hpts, ⟨ms, hms⟩, -⟩ := (builder_spec_iff _ _).mp
-    (stepMain_reads (outVal := outVal) S.σ P domains
+    (stepMain_reads (outVal := outVal) S P domains
       (by norm_num [MaxProofsVerified, StepIPARounds]) srcs
       (fun _ _ _ => True)
       (fun _ _ _ => builder_spec_imp _ _ _ (builder_spec_true _) fun _ _ _ _ _ => trivial)
@@ -570,20 +571,20 @@ theorem stepWrap_kimchiVerify
   obtain ⟨hon, holds⟩ := slotInput_onCurve (hws i) hdummySg (stepOut.prevs i) stepOut.unfs[i]
       stepOut.msgs[i] hpts
   let cp := slotProof Vg Vs inp sl.evals sl.prevChallenges
-  have hguards : Guards IpaPallas.curve K.cvk cp (inp.publicInputAt K.cvk Vg ms) := by
+  have hguards : Guards IpaPallas.curve K cp (inp.publicInputAt K Vg ms) := by
     constructor
     · rw [hlayout.prevChallenges_eq]
       exact Vector.size_toArray _
     · rw [hlayout.publicCount_eq]
       exact stepPublicInput_size _ _
-  have hwire : inp.WireReads K.cvk Vg ((srcs i).keyCells stepOut.vk.points) cp ms :=
+  have hwire : inp.WireReads K Vg ((srcs i).keyCells stepOut.vk.points) cp ms :=
     ⟨hms, hkey, IvpProof.read_proofReads _ _ _ _ _ _ hon, slotProof_olds holds⟩
-  have hf := slotProof_fopTies (Vg := Vg) (Vs := Vs) S.σ K.cvk (inp := inp) sl.unfinalized
-    sl.evals sl.prevChallenges (inp.publicInputAt K.cvk Vg ms)
-  obtain ⟨v, hv, hv1⟩ := hslot S rfl K hK hfit havoid cp ms hwire
+  have hf := slotProof_fopTies (Vg := Vg) (Vs := Vs) S K (inp := inp) sl.unfinalized
+    sl.evals sl.prevChallenges (inp.publicInputAt K Vg ms)
+  obtain ⟨v, hv, hv1⟩ := hslot K hK hfit havoid cp ms hwire
   -- the wrap side: the body's constraints hold, so its finalize read does
   have hbody : ∀ con ∈ (build (wrapMain (c := Builder Vs (KimchiConstraint Fq))
-      (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens) widths
+      (FopParams.of IpaPallas.curve 1 S.k Linearization.fqTokens) widths
       (stepDomainLog2s stepKeys)
           (stepKeyCells stepKeys) pins
           lagrange σStep.h dummy
@@ -594,7 +595,7 @@ theorem stepWrap_kimchiVerify
       ).constraints, ConstraintHolds.Holds Vs con := fun con hc =>
     hwrap con (mem_compileWith_wrapMainCircuit _ _ _ _ _ _ _ _ _ _ hc)
   -- the finalize reads the slot at `K`
-  have hreads := wrapMain_reads S.σ Vs widths (stepDomainLog2s stepKeys)
+  have hreads := wrapMain_reads S Vs widths (stepDomainLog2s stepKeys)
     (stepKeyCells stepKeys) pins
     lagrange σStep.h dummy
     slotWidths advW
@@ -602,7 +603,7 @@ theorem stepWrap_kimchiVerify
   obtain ⟨b', hb', hwb, -, -, -, -, hfin⟩ := (builder_spec_iff _ _).mp hreads _ hbody
   -- the tie, slot by slot: the wrap claims hold the step claims lifted (`slot_cast`)
   obtain ⟨hsplitsEq, hsr, hbnd, hslots, hhash⟩ := (builder_spec_iff _ _).mp
-    (wrapMain_statement (FopParams.of IpaPallas.curve 1 S.σ.k Linearization.fqTokens) Vs widths
+    (wrapMain_statement (FopParams.of IpaPallas.curve 1 S.k Linearization.fqTokens) Vs widths
       (stepDomainLog2s stepKeys) (stepKeyCells stepKeys) pins
       lagrange σStep.h dummy
       slotWidths advW
@@ -610,7 +611,7 @@ theorem stepWrap_kimchiVerify
       (stepKeys[0]'(Nat.pos_of_neZero branches)).nc_pos) _
       hbody
   have hout := (builder_spec_iff _ _).mp
-    (stepMain_out (outVal := outVal) srcs hws S.σ.h P domains (constPt dummySg) dummyUnf rule adv) 0
+    (stepMain_out (outVal := outVal) srcs hws S.h P domains (constPt dummySg) dummyUnf rule adv) 0
     (fun con hc => hstep con (mem_compileWith_stepMainCircuit srcs hws _ _ _ _ _ _ _ hc))
   -- slot `i` is entry `(w − n) + i` on both sides of the tie
   have hjv : jf.val = w - n + i := rfl

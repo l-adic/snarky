@@ -100,7 +100,7 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake build check-cs check-tags check-slot-chunks check-application-shapes \
           check-rule-replay check-application-inputs check-application-indices \
-          certify-application check-application-keys regenerate-lagrange-cache
+          certify-application check-application-keys check-terminal regenerate-lagrange-cache
 
     # Save even when the build (or a source gate rerun) failed: a red PR iteration
     # then restarts from the partial build instead of the last green one. On an exact
@@ -315,6 +315,11 @@ jobs:
     # MSM uses CompElliptic's fast projective Pippenger). Interpreted via `lean --run`
     # (the script has no `#eval`); the whole matrix is fast, and compiled would fit the
     # runner (< 1 GB) but save little.
+    - name: Check wire-key validity and reject malformed metadata
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake env lean --run kimchi/scripts/check_key_validity.lean
+
     - name: Check the executable kimchi verifier against a production proof
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

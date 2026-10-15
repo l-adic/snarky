@@ -1,5 +1,5 @@
-import Pickles.StepWrap
-import Pickles.WrapStep
+import Pickles.Soundness.StepWrap
+import Pickles.Soundness.WrapStep
 
 /-!
 # The accumulator handover along a chain of proofs
@@ -53,11 +53,6 @@ section Links
 open Snarky Snarky.Kimchi
 open CompElliptic.Fields.Pasta
 
-/-- Read the affine coordinates of a message commitment. -/
-def readPoint {F : Type} [Field F]
-    (V : Valuation F) (p : AffinePoint (FVar F)) : AffinePoint F :=
-  ⟨p.x.val V, p.y.val V⟩
-
 /-- The message entries selected by a slot mask, in their original order. -/
 def keep {α : Type} {n : Nat} (mask : Vector Bool n) (xs : Vector α n) : List α :=
   ((List.finRange n).filter fun i => mask[i]).map fun i => xs[i]
@@ -79,9 +74,9 @@ def readStepMessage {sa n ks : Nat} (V : Valuation Fp)
       (Vector (AffinePoint (FVar Fp)) n) (Vector (Vector (FVar Fp) ks) n)) :
     StepMessageValue ks where
   appState := m.appState.toList.map (·.val V)
-  dlogPlonkIndex := m.dlogPlonkIndex.map (readPoint V)
+  dlogPlonkIndex := m.dlogPlonkIndex.map (CircuitType.readVal V)
   challengePolynomialCommitments :=
-    m.challengePolynomialCommitments.toList.map (readPoint V)
+    m.challengePolynomialCommitments.toList.map (CircuitType.readVal V)
   oldBulletproofChallenges := m.oldBulletproofChallenges.toList.map (·.map (·.val V))
 
 /-- Rebuild the complete step message received by a verifier slot. -/
@@ -91,7 +86,7 @@ def rebuildStepMessage {s ks kw ncs w : Nat} (V : Valuation Fp)
     StepMessageValue ks where
   appState := inp.appState.toList.map (·.val V)
   dlogPlonkIndex := vk.comms.map fun p => ⟨p.x, p.y⟩
-  challengePolynomialCommitments := (keep mask inp.prevSgs).map (readPoint V)
+  challengePolynomialCommitments := (keep mask inp.prevSgs).map (CircuitType.readVal V)
   oldBulletproofChallenges := (keep mask inp.prevChallenges).map (·.map (·.val V))
 
 /-- Read a wrap message, including its dummy challenge padding. -/
@@ -99,34 +94,9 @@ def readWrapMessage {w kw : Nat} (V : Valuation Fq) (dummy : Vector Fq kw)
     (m : MessagesForNextWrapProof
       (AffinePoint (FVar Fq)) (Vector (Vector (FVar Fq) kw) w)) :
     WrapMessageValue kw where
-  challengePolynomialCommitment := readPoint V m.challengePolynomialCommitment
+  challengePolynomialCommitment := CircuitType.readVal V m.challengePolynomialCommitment
   oldBulletproofChallenges := List.replicate (MaxProofsVerified - w) dummy ++
     m.oldBulletproofChallenges.toList.map (·.map (·.val V))
-
-/-- An accepted proof carries an old accumulator whose deferred equation is false. -/
-def AccumulatorFailure {C : KimchiCurve} {nc : Nat}
-    (σ : SRS C.Point) (vk : KimchiVK C nc)
-    (q : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Prop :=
-  kimchiVerify C σ vk q pub = true ∧
-    ∃ a ∈ q.olds.toList, accOk σ a = false
-
-
-/-- Once handover gives membership, acceptance closes the earlier proof or witnesses failure. -/
-theorem accepts_or_accumulatorFailure {C : KimchiCurve} {nc nc' : Nat}
-    (σ : SRS C.Point) (vk : KimchiVK C nc) (p : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField)
-    (nextVk : KimchiVK C nc') (q : KimchiProof C nc' σ.k) (nextPub : Array C.ScalarField)
-    (hmem : (⟨p.opening.sg, wireChallenges σ vk p pub⟩ : Accumulator C σ.k) ∈ q.olds.toList)
-    (hAccept : kimchiVerify C σ nextVk q nextPub = true)
-    (hCapstone : SgOk σ vk p pub → kimchiVerify C σ vk p pub = true) :
-    kimchiVerify C σ vk p pub = true ∨ AccumulatorFailure σ nextVk q nextPub := by
-  by_cases hAcc : accOk σ ⟨p.opening.sg, wireChallenges σ vk p pub⟩ = true
-  · have hSg : SgOk σ vk p pub := by
-      simp only [accOk, decide_eq_true_eq] at hAcc
-      exact hAcc
-    exact Or.inl (hCapstone hSg)
-  · exact Or.inr ⟨hAccept, _, hmem, Bool.eq_false_iff.mpr hAcc⟩
-
 
 /-! ## Collisions between two links -/
 
@@ -300,74 +270,17 @@ private theorem reads_key {nc : ℕ} (V : Valuation F) (key : VkComms nc (Affine
   exact ⟨hcols _, hcols _, reads_pts V _, reads_pts V _, reads_pts V _, reads_pts V _,
     reads_pts V _, reads_pts V _⟩
 
-/-- Lists of chunks of one length with equal flattenings are equal. -/
-private theorem flatten_inj {α : Type} {m : ℕ} :
-    ∀ {L1 L2 : List (List α)}, (∀ c ∈ L1, c.length = m) → (∀ c ∈ L2, c.length = m) →
-      L1.length = L2.length → L1.flatten = L2.flatten → L1 = L2
-  | [], [], _, _, _, _ => rfl
-  | c1 :: L1, c2 :: L2, h1, h2, hl, hf => by
-    simp only [List.flatten_cons] at hf
-    obtain ⟨hc, ht⟩ := List.append_inj hf (by rw [h1 c1 (by simp), h2 c2 (by simp)])
-    rw [hc, flatten_inj (fun c hc => h1 c (by simp [hc])) (fun c hc => h2 c (by simp [hc]))
-      (by simpa using hl) ht]
-  | [], _ :: _, _, _, hl, _ => by simp at hl
-  | _ :: _, [], _, _, hl, _ => by simp at hl
-
 /-- A suffix mask selects the corresponding suffix of a vector. -/
 private theorem keep_front {α : Type} {m n : ℕ} (ms : Vector Bool m) (xs : Vector α m)
     (hms : ∀ (j : ℕ) (hj : j < m), ms[j] = decide (m - n ≤ j)) :
     keep ms xs = xs.toList.drop (m - n) := by
-  have hL : (Vector.zipWith (fun b x => if b then [x] else []) ms xs).toList =
-      List.replicate (m - n) [] ++ (xs.toList.drop (m - n)).map (fun x => [x]) := by
-    apply List.ext_getElem (by simp)
-    intro j h1 h2
-    simp only [Vector.getElem_toList, Vector.getElem_zipWith, hms j (by simpa using h1)]
-    by_cases hj : j < m - n
-    · rw [List.getElem_append_left (by simpa using hj)]
-      simp [show ¬(m - n ≤ j) by omega]
-    · rw [List.getElem_append_right (by simpa using hj)]
-      simp [show m - n ≤ j by omega, show m - n + (j - (m - n)) = j by omega]
-  have hf := congrArg List.flatten hL
+  have hf := congrArg List.flatten (zipWith_suffix ms xs (fun x => [x]) hms)
   have hv {β : Type} (v : Vector β m) : v.toList = List.ofFn (fun i : Fin m => v[i]) := by
-    apply List.ext_getElem <;> simp
+    simp only [← Vector.toList_ofFn, Fin.getElem_fin, Vector.ofFn_getElem]
   rw [Vector.toList_zipWith, hv ms, hv xs, flatten_zipWith_keep] at hf
   rw [show xs.toList = List.ofFn (fun i : Fin m => xs[i]) from hv xs]
   simpa only [keep, ← List.map_drop, List.flatten_append, List.flatten_replicate_nil,
     List.nil_append, ← List.flatMap_def, List.flatMap_singleton'] using hf
-
-private theorem indexPoints_injective {α : Type} {nc : ℕ} :
-    Function.Injective (VkComms.indexPoints (nc := nc) (f := α)) := by
-  intro a b h
-  have hchunks := flatten_inj (m := nc)
-    (by simp only [List.mem_map]; rintro _ ⟨v, -, rfl⟩; simp)
-    (by simp only [List.mem_map]; rintro _ ⟨v, -, rfl⟩; simp)
-    (by simp) (show _ = _ from h)
-  have hv : a.sigmaComm.toList ++ a.coefficientsComm.toList ++ a.selectors.toList =
-      b.sigmaComm.toList ++ b.coefficientsComm.toList ++ b.selectors.toList :=
-    (List.map_inj_right (fun _ _ h => Vector.toList_inj.mp h)).mp hchunks
-  obtain ⟨hp, hs⟩ := List.append_inj hv (by simp)
-  obtain ⟨hσ, hc⟩ := List.append_inj hp (by simp)
-  have hσ := Vector.toList_inj.mp hσ
-  have hc := Vector.toList_inj.mp hc
-  simp only [VkComms.selectors, Vector.toList_mk, List.cons.injEq, and_true] at hs
-  cases a; cases b
-  simp_all
-
-private theorem keyCoords_injective {α : Type} {nc : ℕ}
-    (a b : VkComms nc (AffinePoint α))
-    (h : a.indexPoints.flatMap (fun p => [p.x, p.y]) =
-      b.indexPoints.flatMap (fun p => [p.x, p.y])) : a = b := by
-  apply indexPoints_injective
-  have hc := flatten_inj (m := 2)
-    (by simp only [List.mem_map]; rintro _ ⟨p, -, rfl⟩; rfl)
-    (by simp only [List.mem_map]; rintro _ ⟨p, -, rfl⟩; rfl)
-    (by simp [VkComms.indexPoints, List.length_flatMap, VkComms.selectors]) h
-  exact (List.map_inj_right (by intro p q h; cases p; cases q; simpa using h)).mp hc
-
-private theorem indexPoints_map {α β : Type} {nc : ℕ} (f : α → β) (k : VkComms nc α) :
-    (k.map f).indexPoints = k.indexPoints.map f := by
-  simp [VkComms.indexPoints, VkComms.map, VkComms.selectors, Vector.toList_map, List.flatMap_map,
-    List.map_flatMap]
 
 /-- With the first `m − n` entries masked out, the kept values are the last `n` entries'. -/
 private theorem keptValues_front {m n k : ℕ} (V : Valuation F) (ms : Vector Bool m)
@@ -376,32 +289,11 @@ private theorem keptValues_front {m n k : ℕ} (V : Valuation F) (ms : Vector Bo
     keptValues V ms proofs
       = List.flatten ((proofs.toList.drop (m - n)).map fun q =>
           (q.1.x :: q.1.y :: q.2.toList).map (·.val V)) := by
-  have hL : (Vector.zipWith (fun b (q : AffinePoint (FVar F) × Vector (FVar F) k) =>
-      if b then (q.1.x :: q.1.y :: q.2.toList).map (·.val V) else []) ms proofs).toList
-      = List.replicate (m - n) [] ++ (proofs.toList.drop (m - n)).map fun q =>
-          (q.1.x :: q.1.y :: q.2.toList).map (·.val V) := by
-    apply List.ext_getElem (by simp)
-    intro j h1 h2
-    simp only [Vector.getElem_toList, Vector.getElem_zipWith, hms j (by simpa using h1)]
-    by_cases hj : j < m - n
-    · rw [List.getElem_append_left (by simpa using hj)]
-      simp [show ¬(m - n ≤ j) by omega]
-    · rw [List.getElem_append_right (by simpa using hj)]
-      simp [show m - n ≤ j by omega, show m - n + (j - (m - n)) = j by omega]
   unfold keptValues
-  rw [hL, List.flatten_append]
+  rw [zipWith_suffix ms proofs _ hms, List.flatten_append]
   simp
 
 end Helpers
-
-private theorem natCast_val_redFq (x : Fp) : ((ZMod.val (redFq x) : ℕ) : Fp) = x := by
-  rw [val_redFq, ZMod.natCast_zmod_val]
-
-/-- A wrap-field value below `2^254 < p` survives reduction into the step field and back. -/
-private theorem redFq_natCast_val_of_lt (x : Fq) (h : ZMod.val x < 2 ^ 254) :
-    redFq ((ZMod.val x : ℕ) : Fp) = x := by
-  have hp : (2 : ℕ) ^ 254 < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
-  rw [redFq, ZMod.val_natCast_of_lt (h.trans hp), ZMod.natCast_zmod_val]
 
 private theorem readPt_congr {C : KimchiCurve} {V V' : Valuation C.BaseField}
     {p q : AffinePoint (FVar C.BaseField)}
@@ -450,8 +342,8 @@ private theorem stepMessage_eq_of_input_eq {n sa s ks kw ncs m : ℕ}
     (cvk : KimchiVK IpaPallas.curve 1) (inp : VerifyOneInput s ks kw 1 ncs m)
     (ms : Vector Bool m) (hs : s = sa) (hn : n ≤ m)
     (hmask : ∀ (j : ℕ) (hj : j < m), ms[j] = decide (m - n ≤ j))
-    (h : stepMsgInput ⟨msg.appState.map (·.val V), msg.dlogPlonkIndex.map (readPoint V),
-        msg.challengePolynomialCommitments.map (readPoint V),
+    (h : stepMsgInput ⟨msg.appState.map (·.val V), msg.dlogPlonkIndex.map (CircuitType.readVal V),
+        msg.challengePolynomialCommitments.map (CircuitType.readVal V),
         msg.oldBulletproofChallenges.map (·.map (·.val V))⟩ =
       cvk.comms.indexPoints.flatMap (fun p => [p.x, p.y]) ++
         inp.appState.toList.map (·.val V') ++
@@ -461,10 +353,10 @@ private theorem stepMessage_eq_of_input_eq {n sa s ks kw ncs m : ℕ}
     simp [VkComms.indexPoints, VkComms.selectors, List.length_flatMap, hs])).1
   obtain ⟨hkey, happ⟩ := List.append_inj hpre (by
     simp [VkComms.indexPoints, VkComms.selectors, List.length_flatMap])
-  have hkey' : msg.dlogPlonkIndex.map (readPoint V) =
+  have hkey' : msg.dlogPlonkIndex.map (CircuitType.readVal V) =
       cvk.comms.map (fun p => (⟨p.x, p.y⟩ : AffinePoint Fp)) := by
-    apply keyCoords_injective
-    simpa [indexPoints_map, List.flatMap_map] using hkey
+    apply VkComms.keyCoords_injective
+    simpa [VkComms.indexPoints_map, List.flatMap_map] using hkey
   have hi := kept_of_stepInput_eq cvk hmask hn h
   simp only [readStepMessage, rebuildStepMessage, MessagesForNextStepProof.mk.injEq,
     keep_front ms _ hmask]
@@ -473,8 +365,9 @@ private theorem stepMessage_eq_of_input_eq {n sa s ks kw ncs m : ℕ}
     intro j hj hj'
     have he := hi ⟨j, by simpa using hj⟩
     simp only [List.getElem_map, List.getElem_drop, Vector.getElem_toList]
-    simp only [Fin.getElem_fin, Vector.getElem_map, readPoint] at he
-    simp only [readPoint, AffinePoint.mk.injEq]
+    simp only [Fin.getElem_fin, Vector.getElem_map] at he
+    change (⟨_, _⟩ : AffinePoint Fp) = ⟨_, _⟩
+    rw [AffinePoint.mk.injEq]
     exact ⟨he.1.symm, he.2.1.symm⟩
   · apply List.ext_getElem (by simp; omega)
     intro j hj hj'
@@ -489,9 +382,9 @@ private theorem wrapMessage_eq_of_input_eq {w w' kw : ℕ}
     (msg' : MessagesForNextWrapProof (AffinePoint (FVar Fq))
       (Vector (Vector (FVar Fq) kw) w'))
     (hw : w ≤ MaxProofsVerified) (hw' : w' ≤ MaxProofsVerified)
-    (h : wrapMsgInput dummy ⟨readPoint V msg.challengePolynomialCommitment,
+    (h : wrapMsgInput dummy ⟨CircuitType.readVal V msg.challengePolynomialCommitment,
         msg.oldBulletproofChallenges.map (·.map (·.val V))⟩ =
-      wrapMsgInput dummy ⟨readPoint V' msg'.challengePolynomialCommitment,
+      wrapMsgInput dummy ⟨CircuitType.readVal V' msg'.challengePolynomialCommitment,
         msg'.oldBulletproofChallenges.map (·.map (·.val V'))⟩) :
     readWrapMessage V dummy msg = readWrapMessage V' dummy msg' := by
   obtain ⟨hpre, hsg⟩ := List.append_inj' h rfl
@@ -503,11 +396,13 @@ private theorem wrapMessage_eq_of_input_eq {w w' kw : ℕ}
     · simp only [readWrapMessage, List.length_map, List.length_append, List.length_replicate,
         Vector.length_toList]
       omega
-    · simpa [readWrapMessage, List.map_append, List.flatten_append, toList_flatten',
+    · simpa [readWrapMessage, List.map_append, List.flatten_append, Snarky.toList_flatten,
         Vector.toList_map, List.map_map, Function.comp_def] using hpre
   have hc' := (List.map_inj_right (fun _ _ h => Vector.toList_inj.mp h)).mp hc
   simp only [readWrapMessage, MessagesForNextWrapProof.mk.injEq]
-  exact ⟨by simpa [readPoint, AffinePoint.mk.injEq] using hsg, hc'⟩
+  refine ⟨?_, hc'⟩
+  change (⟨_, _⟩ : AffinePoint Fq) = ⟨_, _⟩
+  simpa only [AffinePoint.mk.injEq, List.cons.injEq, and_true] using hsg
 
 /-- A step message carrying `n` proofs and a slot's rebuild of it keeping a suffix of `k`, over a
 statement of the message's size: their lengths differ by the `ks + 2` cells of each proof one
@@ -577,8 +472,8 @@ private theorem digests_of_tie {s ks k ncw ncs w : ℕ} {Vw : Valuation Fq} {Vs 
     {stmt : StatementPacked ks (Type1 (FVar Fq)) (FVar Fq)} {inp : VerifyOneInput s ks k ncw ncs w}
     {cvk : KimchiVK IpaPallas.curve ncw} {ms : Vector Bool w}
     (h : CircuitType.Reads Vw stmt (inp.packedAt cvk Vs ms)) :
-    stmt.digests[1].val Vw = redFq (inp.messagesForNextWrapProof.val Vs) ∧
-    stmt.digests[2].val Vw = redFq (inp.stepMsgDigest cvk Vs ms) := by
+    stmt.digests[1].val Vw = ZMod.cast (inp.messagesForNextWrapProof.val Vs) ∧
+    stmt.digests[2].val Vw = ZMod.cast (inp.stepMsgDigest cvk Vs ms) := by
   simp only [CircuitType.reads_ofEquiv, StatementPacked.equivProd, Equiv.coe_fn_mk,
     CircuitType.reads_prod] at h
   have hd := h.2.2.2.1
@@ -647,7 +542,9 @@ private theorem wrapMsgDigest_eq
   have h6 : ZMod.val ((out'.statement.messagesForNextWrapProof[w - n + i]).val Vw') < 2 ^ 254 :=
     hW'.2.2.2 ⟨w - n + i, hjw⟩
   rw [← hW.1 sg chals hsg hch, (digests_of_tie htie).1, hmsg, ← hS.2 hn i,
-    (digests_of_ofWrap hpub).2 (w - n + i) (by omega), redFq_natCast_val_of_lt _ h6, h5]
+    (digests_of_ofWrap hpub).2 (w - n + i) (by omega), ZMod.cast_eq_val,
+    ZMod.val_natCast_of_lt (h6.trans_le Pasta.two_pow_le_pallas_base),
+    ZMod.natCast_zmod_val, h5]
 
 /-- A step message and a slot's rebuild of it hash alike, when a wrap circuit carries the
 message's digest from the step circuit's statement to the public input the slot verifies. -/
@@ -677,10 +574,11 @@ private theorem hash_stepInput_eq {n w : ℕ} {ws ss ncs : Fin n → ℕ} {sa kw
   have h4 := (digests_of_tie htie).2
   rw [hW.2.2.1] at h4
   have hpubD := (digests_of_ofWrap hpub).1
-  rw [h4, natCast_val_redFq] at hpubD
+  rw [h4, ← ZMod.cast_eq_val, ZMod.cast_cast_zmod_of_le Pasta.fp_lt_fq.le] at hpubD
   rw [Poseidon.RandomOracle.hash_eq_squeeze, Poseidon.RandomOracle.hash_eq_squeeze]
   have e := (hS.1 vk sgs chals hvk hsgs hch).symm.trans hpubD
-  simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState] at e
+  simp only [stepMsgDigest, VerifyOneInput.stepMsgDigest, KimchiVK.indexState,
+    indexStateOfCommitments] at e
   simp only [Poseidon.absorb, List.foldl_append] at e ⊢
   exact e
 
@@ -1040,7 +938,7 @@ private theorem StepWrapRun.messages_mem_or_collision
   obtain ⟨hsx, hsy, -⟩ := kept_of_stepInput_eq cvk hmask hmn hX rk.i
   -- the challenges: both wrap inputs pad to the same stacks
   obtain ⟨hpre, -⟩ := List.append_inj' hW rfl
-  simp only [toList_flatten'] at hpre
+  simp only [Snarky.toList_flatten] at hpre
   rw [← List.flatten_append, ← List.flatten_append] at hpre
   have hw := rk.hw
   have hsw := (slotWidths'[rk1.jf]).isLt

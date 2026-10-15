@@ -27,13 +27,13 @@ abbrev Rules (D : Shape) :=
 /-- The protocol parameters and padding values shared by an application's circuits. -/
 structure Setup where
   /-- The SRS for wrap-proof verification. -/
-  wrap : Srs IpaPallas.curve
+  wrap : SRS IpaPallas.curve.Point
   /-- The SRS for step-proof verification. -/
-  step : Srs IpaVesta.curve
+  step : SRS IpaVesta.curve.Point
   /-- The wrap SRS has the protocol's wrap round count. -/
-  wrapRounds : wrap.σ.k = WrapIPARounds
+  wrapRounds : wrap.k = WrapIPARounds
   /-- The step SRS has the protocol's step round count. -/
-  stepRounds : step.σ.k = StepIPARounds
+  stepRounds : step.k = StepIPARounds
   /-- The padding commitment for a slot's old accumulators. -/
   dummySg : IpaPallas.curve.Point
   /-- Step-statement padding indexed by the active branch's predecessor count. -/
@@ -41,12 +41,30 @@ structure Setup where
   /-- The padding challenges for wrap messages. -/
   dummy : Vector Fq WrapIPARounds
 
+/-- The wrap SRS with the protocol round count explicit. -/
+def Setup.wrapSrs (S : Setup) : SRS IpaPallas.curve.Point where
+  k := WrapIPARounds
+  g := S.wrapRounds ▸ S.wrap.g
+  h := S.wrap.h
+  U := S.wrap.U
+  rounds_pos := by decide
+  h_ne := S.wrap.h_ne
+
+/-- The step SRS with the protocol round count explicit. -/
+def Setup.stepSrs (S : Setup) : SRS IpaVesta.curve.Point where
+  k := StepIPARounds
+  g := S.stepRounds ▸ S.step.g
+  h := S.step.h
+  U := S.step.U
+  rounds_pos := by decide
+  h_ne := S.step.h_ne
+
 /-- One application's circuit data, with a fixed rule for each branch. -/
-structure Circuits (D : Shape) (L : Layout D) where
+structure Circuits (D : Shape) where
   /-- The SRSs and padding constants. -/
   setup : Setup
   /-- The checked keys, domains and source interfaces. -/
-  wiring : Wiring D L
+  wiring : Wiring D
   /-- Each branch's rule, at the application's common input and output schema. -/
   rules : Rules D
   /-- The backend's public-input bases for each step domain. -/
@@ -54,7 +72,7 @@ structure Circuits (D : Shape) (L : Layout D) where
     Vector (Vector IpaVesta.curve.Point wiring.backend.stepChunks)
       (CircuitType.size Fp (StepStatement (UnfVal WrapIPARounds) Fp D.width))
 
-variable {D : Shape} {L : Layout D}
+variable {D : Shape}
 
 private instance (D : Shape) : NeZero D.branches := ⟨Nat.ne_of_gt D.branches_pos⟩
 
@@ -66,24 +84,24 @@ private theorem build_bind_congr {F c α β : Type}
   simp only [build_bind, hm, hk]
 
 /-- A branch's advice, with widths and chunk counts resolved from its slot sources. -/
-abbrev Circuits.StepAdvice (C : Circuits D L) (b : D.Branch) :=
+abbrev Circuits.StepAdvice (C : Circuits D) (b : D.Branch) :=
   StepMainAdvice (D.slots b) D.width (SlotSource.widths D.width (C.wiring.sources b))
     1 (C.wiring.sourceChunks b) WrapIPARounds StepIPARounds D.schema.Input
 
 /-- The statement and internal cells retained by a branch's step circuit. -/
-abbrev Circuits.StepCells (C : Circuits D L) (b : D.Branch) :=
+abbrev Circuits.StepCells (C : Circuits D) (b : D.Branch) :=
   StepMainOut (D.slots b) D.width (SlotSource.widths D.width (C.wiring.sources b))
     (D.prevSize b) D.schema.size 1 (C.wiring.sourceChunks b) WrapIPARounds StepIPARounds
 
 /-- The shared wrap circuit's advice, including its witnessed branch selection. -/
-abbrev Circuits.WrapAdvice (C : Circuits D L) :=
+abbrev Circuits.WrapAdvice (C : Circuits D) :=
   WrapMainAdvice D.width C.wiring.backend.stepChunks WrapIPARounds StepIPARounds
-    (L.wrapWidths.map Fin.val).sum
+    (D.wrapWidths.map Fin.val).sum
 
 /-- The shared wrap circuit's finalization and verification cells. -/
-abbrev Circuits.WrapCells (C : Circuits D L) :=
+abbrev Circuits.WrapCells (C : Circuits D) :=
   WrapMainFinalizeOut D.branches D.width C.wiring.backend.stepChunks
-    WrapIPARounds L.wrapWidths ×
+    WrapIPARounds D.wrapWidths ×
   WrapMainVerifyOut D.width C.wiring.backend.stepChunks WrapIPARounds StepIPARounds
 
 /-- The step circuit's advice, inert: a compile reads none of it. -/
@@ -99,46 +117,46 @@ def inertWrapAdvice {mpv nc k ks wsum : ℕ} : Pickles.WrapMainAdvice mpv nc k k
     AsProver.throw "advice", AsProver.throw "advice"⟩
 
 /-- Every resolved source fits the protocol's accumulator bound. -/
-theorem Circuits.source_bound (C : Circuits D L) (b : D.Branch) (i : D.Slot b) :
+theorem Circuits.source_bound (C : Circuits D) (b : D.Branch) (i : D.Slot b) :
     SlotSource.widths D.width (C.wiring.sources b) i ≤ MaxProofsVerified := by
   rw [SlotSource.widths, C.wiring.source_width]
-  exact (L.slotWidth_le_wrapWidths b i).trans
-    (Nat.le_of_lt_succ (L.wrapWidths[D.paddedSlot b i]).isLt)
+  exact (D.slotWidth_le_wrapWidths b i).trans
+    (Nat.le_of_lt_succ (D.wrapWidths[D.paddedSlot b i]).isLt)
 
 /-- A branch's step circuit, with its public statement and internal cells retained. -/
-def Circuits.stepCircuit (C : Circuits D L) (b : D.Branch) (advice : C.StepAdvice b) :
+def Circuits.stepCircuit (C : Circuits D) (b : D.Branch) (advice : C.StepAdvice b) :
     Unit → CircuitM Fp (KimchiConstraint Fp)
       (StepStatement (UnfVar WrapIPARounds) (FVar Fp) D.width × C.StepCells b) :=
   haveI : CheckedType Fp (KimchiConstraint Fp) D.schema.Input D.schema.InputVar :=
     D.schema.inputCheck
   stepMainCircuit (outVal := D.schema.Output)
-    (C.wiring.sources b) (C.source_bound b) C.setup.wrap.σ.h
+    (C.wiring.sources b) (C.source_bound b) C.setup.wrap.h
     (fun i => FopParams.of IpaVesta.curve (C.wiring.sourceChunks b i)
       StepIPARounds Linearization.fpTokens)
     C.wiring.backend.stepDomains.list (constPt C.setup.dummySg)
-    (C.setup.dummyUnf[D.slots b]'(Nat.lt_succ_of_le ((D.slots_le_width b).trans L.width_le)))
+    (C.setup.dummyUnf[D.slots b]'(Nat.lt_succ_of_le (D.slots_le b)))
     (C.rules b) advice
 
 /-- The shared wrap circuit, with no public output and both blocks' cells retained. -/
-def Circuits.wrapCircuit (C : Circuits D L) (advice : C.WrapAdvice) :
+def Circuits.wrapCircuit (C : Circuits D) (advice : C.WrapAdvice) :
     StatementPacked StepIPARounds (Type1 (FVar Fq)) (FVar Fq) →
       CircuitM Fq (KimchiConstraint Fq) (Unit × C.WrapCells) :=
   wrapMainCircuit (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
     D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-    C.wiring.pins C.stepLagrange C.setup.step.σ.h C.setup.dummy L.wrapWidths advice
+    C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths advice
 
 /-- Compile a branch's step circuit, keeping its statement and internal cells. -/
-def Circuits.stepBuilt (C : Circuits D L) (b : D.Branch) (advice : C.StepAdvice b) :=
+def Circuits.stepBuilt (C : Circuits D) (b : D.Branch) (advice : C.StepAdvice b) :=
   compileWith (a := Unit) (b := StepStatement (UnfVal WrapIPARounds) Fp D.width)
     (C.stepCircuit b advice)
 
 /-- Compile the shared wrap circuit, keeping its internal cells. -/
-def Circuits.wrapBuilt (C : Circuits D L) (advice : C.WrapAdvice) :=
+def Circuits.wrapBuilt (C : Circuits D) (advice : C.WrapAdvice) :=
   compileWith (a := StatementPacked StepIPARounds (Type1 Fq) Fq) (b := Unit)
     (C.wrapCircuit advice)
 
 /-- Changing step advice preserves the compiled constraints, allocation and retained cells. -/
-theorem Circuits.stepBuilt_advice_irrel (C : Circuits D L)
+theorem Circuits.stepBuilt_advice_irrel (C : Circuits D)
     (b : D.Branch) (a a' : C.StepAdvice b) :
     C.stepBuilt b a = C.stepBuilt b a' := by
   unfold stepBuilt compileWith compileWithBody stepCircuit stepMainCircuit stepMain
@@ -146,7 +164,7 @@ theorem Circuits.stepBuilt_advice_irrel (C : Circuits D L)
   repeat' first | rfl | apply build_bind_congr | intro
 
 /-- Replacing a rule by one with the same built body preserves the compiled step circuit. -/
-theorem Circuits.stepBuilt_rules_congr (C : Circuits D L)
+theorem Circuits.stepBuilt_rules_congr (C : Circuits D)
     (rules : Rules D) (b : D.Branch) (advice : C.StepAdvice b)
     (h : ∀ x nv, build (C.rules b x) nv = build (rules b x) nv) :
     C.stepBuilt b advice = { C with rules }.stepBuilt b advice := by
@@ -154,39 +172,39 @@ theorem Circuits.stepBuilt_rules_congr (C : Circuits D L)
   simp only [map_eq_pure_bind]
   repeat' first | exact h _ _ | rfl | apply build_bind_congr | intro
 
-private theorem build_wrapMainFinalize_advice_irrel (C : Circuits D L)
+private theorem build_wrapMainFinalize_advice_irrel (C : Circuits D)
     (a a' : C.WrapAdvice) (branchData : FVar Fq) (nv : Nat) :
     build (wrapMainFinalize (c := KimchiConstraint Fq)
       (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
       D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.setup.dummy L.wrapWidths a branchData) nv =
+      C.wiring.pins C.setup.dummy D.wrapWidths a branchData) nv =
     build (wrapMainFinalize (c := KimchiConstraint Fq)
       (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
       D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.setup.dummy L.wrapWidths a' branchData) nv := by
+      C.wiring.pins C.setup.dummy D.wrapWidths a' branchData) nv := by
   unfold wrapMainFinalize
   repeat' first
     | (apply build_bind_congr (fun _ => rfl); intro _ _)
     | rfl
 
-private theorem build_wrapMainVerify_advice_irrel (C : Circuits D L)
+private theorem build_wrapMainVerify_advice_irrel (C : Circuits D)
     (a a' : C.WrapAdvice)
     (stmt : StatementPacked StepIPARounds (Type1 (FVar Fq)) (FVar Fq))
     (hd : WrapMainFinalizeOut D.branches D.width C.wiring.backend.stepChunks
-      WrapIPARounds L.wrapWidths) (nv : Nat) :
+      WrapIPARounds D.wrapWidths) (nv : Nat) :
     build (wrapMainVerify (c := KimchiConstraint Fq)
-      (stepDomainLog2s C.wiring.stepKeys) C.stepLagrange C.setup.step.σ.h
-      C.setup.dummy L.wrapWidths a stmt hd) nv =
+      (stepDomainLog2s C.wiring.stepKeys) C.stepLagrange C.setup.step.h
+      C.setup.dummy D.wrapWidths a stmt hd) nv =
     build (wrapMainVerify (c := KimchiConstraint Fq)
-      (stepDomainLog2s C.wiring.stepKeys) C.stepLagrange C.setup.step.σ.h
-      C.setup.dummy L.wrapWidths a' stmt hd) nv := by
+      (stepDomainLog2s C.wiring.stepKeys) C.stepLagrange C.setup.step.h
+      C.setup.dummy D.wrapWidths a' stmt hd) nv := by
   unfold wrapMainVerify
   repeat' first
     | (apply build_bind_congr (fun _ => rfl); intro _ _)
     | rfl
 
 /-- Changing wrap advice preserves the compiled constraints, allocation and retained cells. -/
-theorem Circuits.wrapBuilt_advice_irrel (C : Circuits D L)
+theorem Circuits.wrapBuilt_advice_irrel (C : Circuits D)
     (a a' : C.WrapAdvice) :
     C.wrapBuilt a = C.wrapBuilt a' := by
   unfold wrapBuilt compileWith compileWithBody wrapCircuit wrapMainCircuit wrapMain

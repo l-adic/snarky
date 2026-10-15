@@ -8,10 +8,10 @@
 # reaches the internal tree, but no check module.
 #
 # The check-module boundary: no library root reaches a check module (`Kimchi.Index.CompareChecks`,
-# `Snarky.Kimchi.Backend.Checks.*`, `Pickles.Application.Checks.*`), and no library module outside
-# those trees imports one. The decided checks are built by the libraries' globs and imported by
-# the audit drivers under scripts/, never exposed through `import <Library>`. A violation is
-# reported with its import chain from the root.
+# `Snarky.Kimchi.Backend.Checks.*`), and no library module outside those trees imports one. The
+# decided checks are built by the libraries' globs and imported by the audit drivers under
+# scripts/, never exposed through `import <Library>`. A violation is reported with its import
+# chain from the root.
 #
 # The closure is computed over every package's library sources (scripts/ drivers and .lake/
 # excluded); imports of Mathlib and the git dependencies end the walk, since none of them

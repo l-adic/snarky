@@ -8,8 +8,8 @@ import Kimchi.Columns
 A `StepTable` is a witness table accepted by a branch's index at a typed step statement, the
 statement's encoding its public input; a `WrapTable` the same for the wrap circuit. Neither
 carries a valuation or source satisfaction. For a checked application, every such table has
-an execution of the circuit reading its statement (`CheckedApplication.lift_step`,
-`CheckedApplication.lift_wrap`): the backend lifts the table to a valuation satisfying the
+an execution of the circuit reading its statement (`ApplicationCertified.lift_step`,
+`ApplicationCertified.lift_wrap`): the backend lifts the table to a valuation satisfying the
 canonical compilation at the public input, the compiled layout reads that input as the typed
 statement, and the execution is that valuation at inert advice, every execution compiling to
 the canonical compilation. The execution's retained cells are the canonical compilation's
@@ -25,7 +25,7 @@ the same reading. No claim identifies it with an arbitrary prover's advice.
 
 ## Main results
 
-- `CheckedApplication.lift_step`, `CheckedApplication.lift_wrap`: every accepted table has an
+- `ApplicationCertified.lift_step`, `ApplicationCertified.lift_wrap`: every accepted table has an
   execution at its statement.
 - `StepRun.cells_eq`, `WrapRun.cells_eq`: every execution's retained cells are the canonical
   compilation's.
@@ -36,7 +36,7 @@ namespace Pickles.Application
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 open scoped Kimchi
 
-variable {D : Shape} {L : Layout D}
+variable {D : Shape}
 
 /-- A table accepted at a typed step statement: the branch's index is satisfied at the
 statement's encoding, the index's public rows cast to the encoding's fields. -/
@@ -59,13 +59,13 @@ structure WrapTable (I : ApplicationIndices D) where
   holds : I.wrap.SatisfiesVec (CircuitType.valueToFields statement) I.wrapPublicCount table
 
 /-- The fixed reading of a step matrix through its canonical compilation. -/
-noncomputable def stepValuation (C : Circuits D L) (I : ApplicationIndices D) (b : D.Branch)
+noncomputable def stepValuation (C : Circuits D) (I : ApplicationIndices D) (b : D.Branch)
     (t : StepTable I b) : Valuation Fp :=
   matrixValuation (stepCompilation C b).constraints (stepPublicVars C b)
     (stepCompilation C b).nextVar t.table
 
 /-- The fixed reading of a wrap matrix through its canonical compilation. -/
-noncomputable def wrapValuation (C : Circuits D L) (I : ApplicationIndices D)
+noncomputable def wrapValuation (C : Circuits D) (I : ApplicationIndices D)
     (t : WrapTable I) : Valuation Fq :=
   matrixValuation (wrapCompilation C).constraints (wrapPublicVars C)
     (wrapCompilation C).nextVar t.table
@@ -76,17 +76,17 @@ attribute [irreducible] stepValuation wrapValuation
 /-! ## Executions and the canonical compilation -/
 
 /-- Every step execution's retained cells are the canonical compilation's. -/
-theorem StepRun.cells_eq {C : Circuits D L} {b : D.Branch} (r : StepRun C b) :
+theorem StepRun.cells_eq {C : Circuits D} {b : D.Branch} (r : StepRun C b) :
     r.cells = (stepCompilation C b).result.1.2 :=
   congrArg (fun x => x.result.1.2) (C.stepBuilt_eq b r.advice)
 
 /-- Every wrap execution's retained cells are the canonical compilation's. -/
-theorem WrapRun.cells_eq {C : Circuits D L} (r : WrapRun C) :
+theorem WrapRun.cells_eq {C : Circuits D} (r : WrapRun C) :
     r.cells = (wrapCompilation C).result.1.2 :=
   congrArg (fun x => x.result.1.2) (C.wrapBuilt_eq r.advice)
 
 /-- The step circuit's body returns its statement beside the cells that retain it. -/
-private theorem stepCompilation_out (C : Circuits D L) (b : D.Branch) :
+private theorem stepCompilation_out (C : Circuits D) (b : D.Branch) :
     (stepCompilation C b).result.1.1 = (stepCompilation C b).result.1.2.out := by
   rw [stepCompilation, Circuits.stepBuilt, compileWith_result]
   unfold Circuits.stepCircuit stepMainCircuit
@@ -112,7 +112,7 @@ private theorem map_eq_of_pointwise {F : Type} [Field F] [DecidableEq F]
 /-! ## Lifting -/
 
 /-- **An accepted step table has a step execution at its statement.** -/
-theorem CheckedApplication.lift_step {C : Circuits D L} (checked : CheckedApplication C)
+theorem ApplicationCertified.lift_step {C : Circuits D} (checked : ApplicationCertified C)
     (b : D.Branch) (t : StepTable checked.indices b) :
     ∃ r : StepRun C b, CircuitType.Reads r.V r.cells.out t.statement ∧
       r.V = stepValuation C checked.indices b t := by
@@ -132,7 +132,7 @@ theorem CheckedApplication.lift_step {C : Circuits D L} (checked : CheckedApplic
   exact hread
 
 /-- **An accepted wrap table has a wrap execution at its statement.** -/
-theorem CheckedApplication.lift_wrap {C : Circuits D L} (checked : CheckedApplication C)
+theorem ApplicationCertified.lift_wrap {C : Circuits D} (checked : ApplicationCertified C)
     (t : WrapTable checked.indices) :
     ∃ r : WrapRun C, CircuitType.Reads r.V wrapStatement t.statement ∧
       r.V = wrapValuation C checked.indices t := by

@@ -1,8 +1,8 @@
+import Pickles.VkComms
 import Lean.Data.Json
 import KimchiFixture.Cache
 import BulletproofFixture
 import FixtureKit.Parse
-import Pickles.Env
 import Pickles.KeyLayout
 import Pickles.StepMain
 import Pickles.WrapMain
@@ -60,23 +60,19 @@ def chunksOf (C : Bulletproof.Ipa.KimchiCurve) (nc : ℕ) (j : Json) :
   let pts ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt C) j
   if h : pts.size = nc then pure ⟨pts, h⟩ else throw s!"{pts.size} chunks, expected {nc}"
 
-/-- A key a dump exports whole (`{vk, digest}`), at `nc` chunks: it
-passes the wire check (`Wire.KimchiVK.check`) and the pickles key's (`Pickles.Key.check`), and
-`nc` is the chunk count an SRS of `2 ^ k` points gives its domain (`chunkCount`). -/
+/-- A key a dump exports whole (`{vk, digest}`), checked at `nc` chunks. The wire check
+validates its metadata and commitment digest; the SRS fixes its chunk count. -/
 def checkedKey (C : Bulletproof.Ipa.KimchiCurve) (k nc : ℕ) (j : Json) :
     Except String (Kimchi.Verifier.KimchiVK C nc) := do
   let d ← (← j.getObjVal? "digest").getStr?
   let some digest := d.toNat? | throw s!"key digest is not a numeral: {d.take 40}"
   let vk ← Kimchi.Fixture.Cache.parseVK C C.endoScalar (digest : C.BaseField)
     (← j.getObjVal? "vk")
-  let some cvk := vk.check nc | throw "the key fails the wire check"
-  let some K := Pickles.Key.check cvk
-    | throw "the key breaks a key invariant: its shifts or generator are not the curve's, its \
-        zero-knowledge rows are not the chunk count's or overflow its domain, or its digest is \
-        not its commitments'"
-  unless nc = Kimchi.Verifier.chunkCount k cvk.domainLog2 do
-    throw s!"the key runs at {Kimchi.Verifier.chunkCount k cvk.domainLog2} chunks, not {nc}"
-  return K.cvk
+  let some key := vk.check nc
+    | throw "the key fails the wire check: invalid dimensions, metadata or commitment digest"
+  unless nc = Kimchi.Verifier.chunkCount k key.domainLog2 do
+    throw s!"the key runs at {Kimchi.Verifier.chunkCount k key.domainLog2} chunks, not {nc}"
+  return key
 
 /-- The constants a `wrap_main_*` circuit bakes in, at `nc` step chunks. -/
 structure WrapMainConsts (nc : ℕ) where

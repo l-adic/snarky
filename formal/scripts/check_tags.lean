@@ -38,7 +38,7 @@ private def verifyCached (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point
   unless Kimchi.Verifier.kimchiVerifyWith C σ vk L p e.publicInput do return false
   for a in p.olds do
     let ok ← memoized memo.acc s!"{name}/{σ.k}/{a.sg.x.val}/{a.sg.y.val}/{a.u.toList.map (·.val)}"
-      (fun _ => accOk σ a)
+      (fun _ => Kimchi.Verifier.accOk σ a)
     unless ok do throw (IO.userError "cached proof carries an invalid old accumulator")
   return true
 
@@ -61,25 +61,25 @@ private def runApplications (S : Setup) (caches : List ProofCache) (workers : Na
     let (run, context) ← runner S A app name
     let mut jobs : Array (IO Bool) := #[]
     for b in List.finRange A.shape.branches do
-      let vk := A.assembled.wiring.backend.stepKeys[b].cvk
+      let vk := A.assembled.wiring.backend.stepKeys[b]
       for p in cache.steps.filter (·.vkDigest == toString vk.digest.val) do
         let prevs ← IO.ofExcept (stepPrevsOf (A.shape.slots b) cache.wraps cache.steps p)
         let wrappers := cache.wraps.filter (·.step == some (cacheKey p))
         unless wrappers.size == 1 do
           throw (IO.userError s!"{name}/{b.val}: expected exactly one cached wrap for the step")
         let some q := wrappers[0]? | throw (IO.userError "missing wrap")
-        unless q.vkDigest == toString A.assembled.wiring.backend.wrapKey.cvk.digest.val do
+        unless q.vkDigest == toString A.assembled.wiring.backend.wrapKey.digest.val do
           throw (IO.userError "the cached wrap uses another application's key")
         covered.modify ((app, cacheKey p) :: (app, cacheKey q) :: ·)
         jobs := jobs.push do
           let ok ← verdict s!"{name}/{b.val} step" (← run.step b.val p prevs.toArray) p.publicInput
-          let accepted ← verifyCached CS "vesta" S.stepSrs.σ memo p
+          let accepted ← verifyCached CS "vesta" S.stepSrs memo p
           IO.println s!"  cached step verifier: {accepted}"
           return ok && accepted
         jobs := jobs.push do
           let ok ← verdict s!"{name}/{b.val} wrap"
             (← run.wrap b.val p q prevs.toArray) q.publicInput
-          let accepted ← verifyCached CW "pallas" S.wrapSrs.σ memo q
+          let accepted ← verifyCached CW "pallas" S.wrapSrs memo q
           IO.println s!"  cached wrap verifier: {accepted}"
           return ok && accepted
     unless !jobs.isEmpty do throw (IO.userError s!"{name}: no cached executions")
@@ -94,10 +94,8 @@ def main : IO Unit := do
   let links ← IO.getEnv "LINKS"
   let apps ← IO.ofExcept (Manifest.select links)
   Manifest.checkFiles dir apps
-  let σW ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) WrapIPARounds
-  let σS ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) StepIPARounds
-  let some wrap := Srs.check σW | throw (IO.userError "invalid wrap SRS")
-  let some step := Srs.check σS | throw (IO.userError "invalid step SRS")
+  let wrap ← srsAt CW "pallas" pallasBase.sqrt? (← IO.mkRef []) WrapIPARounds
+  let step ← srsAt CS "vesta" vestaBase.sqrt? (← IO.mkRef []) StepIPARounds
   loadApplications dir apps wrap step fun imported => do
     compareApplications dir imported
     if links.isNone then return

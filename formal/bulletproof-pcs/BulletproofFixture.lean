@@ -51,13 +51,20 @@ there are `2 ^ k` generators. The verifier derives `U` from the transcript and n
 this one, so it is `0`. -/
 def parseSRSAt (C : Ipa.KimchiCurve) (k : ℕ) (j : Json) :
     Except String (SRS C.Point) := do
-  let g ← parseArrOf (parsePt C) (← j.getObjVal? "srs_g")
-  if h : g.size = 2 ^ k then
-    return { k := k
-             g := fun i => g[i.val]'(by have := i.isLt; omega)
-             h := ← parsePt C (← j.getObjVal? "srs_h")
-             U := 0 }
-  else throw s!"srs_g size {g.size} ≠ 2 ^ {k}"
+  if hk : 0 < k then
+    let hPoint ← parsePt C (← j.getObjVal? "srs_h")
+    if hh : hPoint ≠ 0 then
+      let g ← parseArrOf (parsePt C) (← j.getObjVal? "srs_g")
+      if h : g.size = 2 ^ k then
+        return { k := k
+                 g := fun i => g[i.val]'(by have := i.isLt; omega)
+                 h := hPoint
+                 U := 0
+                 rounds_pos := hk
+                 h_ne := hh }
+      else throw s!"srs_g size {g.size} ≠ 2 ^ {k}"
+    else throw "SRS: the blinding base is the identity"
+  else throw "SRS: expected at least one IPA round"
 
 /-- `parseSRSAt` at the fixture's own `k` field. -/
 def parseSRS (C : Ipa.KimchiCurve) (j : Json) : Except String (SRS C.Point) := do

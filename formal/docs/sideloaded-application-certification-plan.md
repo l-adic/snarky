@@ -11,6 +11,11 @@ This plan builds on [PR #449](https://github.com/l-adic/snarky/pull/449) and
 [imported-application-certification-plan.md](imported-application-certification-plan.md).
 The starting implementation is `bbeb4b2d` on `formal/checked-application`.
 
+That is the historical baseline. The plan below uses the current consolidated
+`ApplicationCertified` interface: `checkApplication` checks the reconstructed Lean indices,
+their supplied keys and static verifier setup. Foreign-index comparison is separate fixture
+validation, not a prerequisite for certification. Sideloading remains unimplemented here.
+
 **Keep the original capstones unchanged.** Existing capstone statements, proofs, assumptions
 and collision/accumulator-failure alternatives are fixed contracts. Add readings and adapters
 that establish their premises for the side-loaded path. Do not broaden a capstone or add an
@@ -27,11 +32,14 @@ The intended argument remains:
 ```text
 shape + recorded rule operations + shared artifacts
   -> reconstructed application, including runtime VK output handles
-  -> checked compilation and exact equality with independent dumped indices
-  -> universal lifting of arbitrary accepted imported matrices
+  -> checked compilation, supplied-key correspondence and static verifier setup
+  -> ApplicationCertified and lifting of arbitrary satisfying matrices at its indices
   -> readings of runtime keys, domains, masks, statements and accumulators
   -> existing verification and handover capstones
 ```
+
+When independent foreign gate dumps are supplied, fixture-level index equality additionally
+transports these matrix results to the foreign indices. It is not required by the certificate.
 
 There are two distinct endpoints:
 
@@ -42,7 +50,7 @@ There are two distinct endpoints:
    independently checked key. The parent's certificate alone does not certify arbitrary
    children or enumerate a set of authorized applications.
 
-Keep the existing `PicklesCorrect` vocabulary and fixed matrix valuation. Connections are
+Use `ApplicationCertified` and the existing fixed matrix valuation. Connections are
 expressed on the supplied matrices before lifting. Whole-message equality remains a conclusion.
 No honest-prover, cached-advice or particular witness-chain premise belongs in certification.
 
@@ -64,7 +72,8 @@ Paths in this section are relative to the repository root.
 | `formal/pickles/Pickles/PublicInputCommit.lean` | Already contains masked bases/corrections and their group readings; reuse where emission agrees. |
 | `formal/pickles/Pickles/WrapFinalize.lean` | Already accepts `none` pins. `pinWrapDomainIndex_spec` establishes a domain only for a `some` pin. |
 | `formal/pickles/Pickles/Application/Run.lean` | `SourceFor` identifies a static producer and proves exact source-width equality. |
-| `formal/pickles/Pickles/Application/KeyCertification.lean` | Certifies each application's own fixed step/wrap keys against its indices and SRSs. |
+| `formal/pickles/Pickles/Application/CheckedCompile.lean` | `checkApplication` certifies checked Lean indices, supplied Step/Wrap keys and static verifier setup in `ApplicationCertified`. |
+| `formal/kimchi/Kimchi/KeyDerivation.lean` | Derives commitment columns and checks supplied keys with `checkKey?`, returning `KeyCorresponds`. |
 
 The source implementation has two different dynamic domain operations:
 
@@ -86,9 +95,11 @@ boundary explicit even when the parent application's own step proofs use multipl
 - Optional gates, lookups and feature flags are separate work. This plan covers the existing
   gate/protocol fragment with the side-loaded path added.
 - No Rust backend integration, proving-key generation or new verifier soundness assumption.
-- The original SRS, Lagrange, accumulator-check and connection assumptions remain visible.
-  The committed Lagrange cache supplies operational data; it does not prove mathematical
-  correspondence. Extend its inventory if needed without changing that boundary.
+- Preserve the original SRS, Lagrange, accumulator-check and connection requirements.
+  The current certificate discharges static verifier setup by recomputing Lagrange bases from
+  the SRSs and checking the supplied tables. Cache provenance alone does not establish that
+  correspondence. Runtime-selected sources need the precise setup/connection facts identified
+  in phase 1; the parent's static certificate must not silently assume them.
 - Rule authorization is distinct from framework faithfulness. `bindVk` records constraints
   tying a side-loaded digest to a rule-supplied expression. A JSON label or the source-language
   `BoundVk` type is not proof that a particular digest authorizes an intended child.
@@ -250,8 +261,9 @@ parallel circuit-specific wrappers where the existing known-domain wrappers cann
 Expose the runtime descriptor, selected domain and relevant retained handles through the
 existing public matrix-reading boundary. Preserve the fixed valuation selected by matrix
 lifting; do not introduce a later existential valuation that can change the connection.
-Reuse `PicklesCorrect` and the existing index-equality transport. Connections must not take
-whole-message equality or the desired verifier acceptance as premises.
+Use the existing certificate-based matrix consumers. Optional foreign-index comparison stays
+in the fixture layer. Connections must not take whole-message equality or the desired verifier
+acceptance as premises.
 
 **Tests:**
 
@@ -268,7 +280,8 @@ whole-message equality or the desired verifier acceptance as premises.
 
 Wire the new source mode into reconstruction and checked compilation. Side-loaded positions
 carry the appropriate `none` branch pins and the candidate Lagrange tables. Preserve one
-compilation per branch/wrap and one parse of each independent dump.
+compilation per branch/wrap. Parse an independent dump once when running the separate
+comparison check; certification does not require that dump.
 
 Continue checking the parent's own step/wrap keys against its certified indices and shared
 SRSs. A producer used in a chain has its own key correspondence and certificate. Parent
@@ -277,15 +290,18 @@ loading a particular child witness or its proof cache.
 
 Extend the committed Lagrange cache manifest/regeneration inputs for any newly consumed
 prefixes. Share identical domain tables through the existing mechanism. Report cache failures
-at reconstruction as before; mathematical correspondence remains a theorem hypothesis.
+at reconstruction as before. For fixed keys, `checkApplication` establishes mathematical
+correspondence by comparison with the SRS-derived bases; the runtime-key case follows the
+reviewed setup obligations from phase 1.
 
-Preserve exact index comparison, strict import validation, located failures and blocked
-compiled-dependency reporting. Do not add imaginary static dependencies for arbitrary runtime
+Preserve the separate exact index-comparison check, strict import validation, located failures
+and blocked compiled-dependency reporting. Do not add imaginary static dependencies for arbitrary runtime
 children. The tests may select child and parent artifacts together to exercise a concrete chain.
 
-**Tests:** parent checked compilation and imported-index equality; independent parent/child
-key corruption; altered dumped coefficients/wires; missing tables; mixed branch kinds sharing
-one wrap circuit; new sources accepted by the existing proved scope checker.
+**Tests:** parent certification without foreign dumps; separate imported-index equality;
+independent parent/child key corruption; altered dumped coefficients/wires; missing tables;
+mixed branch kinds sharing one wrap circuit; new sources accepted by the existing proved
+scope checker.
 
 **Exit:** the certification executable can return the parent's certificate with runtime VK
 handles covered by the universal lifting result and its own key correspondence retained.
@@ -311,7 +327,8 @@ the original capstones. Universal theorems remain independent of these execution
 Negative controls distinguish the stage expected to reject:
 
 - Malformed shape, wrong descriptor dimensions or unallocated local ids: import/reconstruction.
-- Altered framework equations in an independent dump: located index disagreement.
+- Altered framework equations in an independent dump: located disagreement in the separate
+  index-comparison check.
 - Supplied parent/child key commitments changed with a recomputed digest: key correspondence.
 - Wrong runtime descriptor for a chosen producer: the runtime-source connection cannot hold.
 - Wrong binding digest for the same key: the rule's binding constraints reject that witness.

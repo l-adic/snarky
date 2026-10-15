@@ -18,7 +18,7 @@ variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 /-- IPA structured reference string: a round count `k`, a vector of committing
 generators `g : Fin (2 ^ k) → G`, a blinding base `h : G`, and the IPA
 randomisation base `U : G`. -/
-structure SRS (G : Type*) where
+structure SRS (G : Type*) [Zero G] where
   /-- Number of IPA rounds; the committing set has `2 ^ k` entries. -/
   k : ℕ
   /-- The vector of committing generators. -/
@@ -27,6 +27,10 @@ structure SRS (G : Type*) where
   h : G
   /-- The IPA randomisation base `U`. -/
   U : G
+  /-- At least one IPA folding round. -/
+  rounds_pos : 0 < k
+  /-- The blinding base is not the identity. -/
+  h_ne : h ≠ 0
 
 /-- Generator commitment `⟨a, g⟩ = ∑ i, a i • g i` — the multi-scalar
 multiplication of a witness `a` against generators `g`. Size-generic, so it serves

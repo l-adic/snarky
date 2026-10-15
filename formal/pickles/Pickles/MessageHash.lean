@@ -215,7 +215,7 @@ theorem hashMessagesForNextWrapProof_padded {w k : ℕ} (p : Poseidon.Params F)
       simpa [CircuitType.reads_fvar] using this
   have hcv' := CircuitType.reads_vector_iff_forall₂.mp hcv
   simp only [wrapMsgDigest, wrapMsgInput, wrapPaddingState, Poseidon.absorb, List.foldl_append,
-    toList_flatten', hvals hcv', hx, hy]
+    Snarky.toList_flatten, hvals hcv', hx, hy]
 
 /-- Under any valuation satisfying the emitted constraints, the sponge after the key reads as
 the fresh value sponge after absorbing the key's coordinates in order. -/
