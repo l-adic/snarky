@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Certify using reconstruction sidecars alone, with no foreign constraint-system dumps.
+# Certify reconstruction sidecars against their independent foreign constraint-system dumps.
+# Reject missing, malformed and mismatching dumps before reporting certification success.
 # Reject finite but incorrect Step and Wrap Lagrange tables against the shared SRSs.
 # Then require located failures and dependency blocking beside an intact application:
 #   TwoPhaseChain: malformed sidecar, rejected while loading;
 #   RecurseOverChunks: chunks2's rule input disagrees with its shape, rejected during assembly;
 #   HeterogeneousPrevs: child's rule gains a constraint but keeps its keys, rejected by key checking.
-# NoRecursionReturn still certifies with a malformed comparison dump, which must not be read.
+# NoRecursionReturn still certifies beside the damaged applications.
 #
 # Usage: PICKLES_DUMP_DIR=<dumps> scripts/check_certify_failures.sh   (from formal/, after
 # `lake build certify-application`)
@@ -15,14 +16,13 @@ dumps="${PICKLES_DUMP_DIR:?PICKLES_DUMP_DIR is not set}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 for app in NoRecursionReturn TwoPhaseChain RecurseOverChunks HeterogeneousPrevs; do
-  mkdir -p "$work/$app"
-  cp -R "$dumps/$app/shapes" "$work/$app/"
+  cp -R "$dumps/$app" "$work/"
 done
 
 log="$work/success.log"
 if ! PICKLES_DUMP_DIR="$work" APPS=NoRecursionReturn \
     lake exe certify-application > "$log" 2>&1; then
-  echo "✗ certification requires more than reconstruction inputs"
+  echo "✗ certification failed for intact reconstruction inputs and circuit dumps"
   tail -12 "$log"
   exit 1
 fi
@@ -35,7 +35,45 @@ expect() { # $1 = an expected message
   echo "✓ observed: $1"
 }
 expect "✓ 1 application(s) certified"
-echo "✓ certification succeeds without foreign constraint-system dumps"
+expect "✓ NoRecursionReturn/nrr: imported indices match the certified Lean indices"
+
+for damage in missing malformed step wrap; do
+  python3 - "$work/NoRecursionReturn/nrr.json" "$damage" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+path, damage = Path(sys.argv[1]), sys.argv[2]
+if damage == 'missing':
+    path.unlink()
+elif damage == 'malformed':
+    path.write_text('{')
+else:
+    data = json.loads(path.read_text())
+    circuit = (data['branches'][0]['stepMain'] if damage == 'step' else data['wrapMain'])['circuit']
+    # Mutate a non-public row; the sidecar, keys and other circuit stay intact.
+    coeffs = circuit['gates'][circuit['publicInputSize']]['coeffs']
+    if coeffs:
+        coeffs[0] = str(int(coeffs[0]) + 1)
+    else:
+        coeffs.append('1')
+    path.write_text(json.dumps(data))
+PY
+  log="$work/$damage-dump.log"
+  if PICKLES_DUMP_DIR="$work" APPS=NoRecursionReturn \
+      lake exe certify-application > "$log" 2>&1; then
+    echo "✗ certification accepted a $damage circuit dump"
+    tail -12 "$log"
+    exit 1
+  fi
+  case "$damage" in
+    missing|malformed) expect "✗ NoRecursionReturn/nrr: comparison dump:" ;;
+    step) expect "✗ NoRecursionReturn/nrr: the imported indices differ at step 0: row 1, coefficient 0" ;;
+    wrap) expect "✗ NoRecursionReturn/nrr: the imported indices differ at wrap: row 40, coefficient 0" ;;
+  esac
+  expect "✗ 1 of 1 application(s) failed:"
+  cp "$dumps/NoRecursionReturn/nrr.json" "$work/NoRecursionReturn/nrr.json"
+done
 
 # Keep the points finite and the table dimensions unchanged: ordinary point and shape
 # checks cannot detect this substitution. Certification must recompute the basis.
@@ -76,7 +114,6 @@ import sys
 
 work = Path(sys.argv[1])
 (work / 'TwoPhaseChain/shapes/two_phase_chain.json').write_text('{')
-(work / 'NoRecursionReturn/nrr.json').write_text('{')
 
 path = work / 'RecurseOverChunks/shapes/chunks2.json'
 data = json.loads(path.read_text())

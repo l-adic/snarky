@@ -6,8 +6,8 @@ This document records the phased work following [PR #448](https://github.com/l-a
 and [PR #444](https://github.com/l-adic/snarky/pull/444), originally based at `3a0efd78` on
 `formal/multirow-gates`. The phases below are retained as **historical design**, not the current
 API or a remaining implementation checklist. Application certification was subsequently
-consolidated around supplied-key correspondence; foreign-index comparison is a separate fixture
-operation. The earlier compiler design history is in
+consolidated around supplied-key correspondence; the certification executable also compares
+independent foreign indices with the certified Lean indices. The earlier compiler design history is in
 [compiler-trace-handoff.md](compiler-trace-handoff.md).
 
 Reconstruction produces `Pickles.Application.Circuits D` from exported shape, rule replay,
@@ -34,10 +34,11 @@ shape + rule replay + backend artifacts + shared setup
   -> ApplicationCertified C
 ```
 
-`certify-application` runs this path for explicitly selected manifest entries. It requires
-neither independent foreign circuit dumps nor a proof cache. A returned certificate concerns
-the reconstructed circuits and their supplied keys; it does not assert literal equality with
-an independently exported foreign constraint system.
+`certify-application` runs this path for explicitly selected manifest entries, then requires
+the independent foreign circuit dumps to match the certified Lean indices using `compareImported`.
+Missing, malformed or mismatching dumps fail the entry and block its dependents. No proof cache
+is needed. The `ApplicationCertified` value still concerns the reconstructed circuits and their
+supplied keys; equality with the foreign constraint systems is checked separately by the driver.
 
 ### Lifting and theorem consumers
 
@@ -60,7 +61,7 @@ statement, or an explicit `KimchiFailure`, from acceptance under a certified key
 soundness is not proved, and no probability bound is asserted by this failure predicate.
 `SomeKimchiFailure` hides the particular failed index/proof at the application level.
 
-### Key checking and optional foreign-index comparison
+### Key checking and foreign-index comparison
 
 `kimchi/Kimchi/KeyDerivation.lean` derives commitment columns from an index and SRS using the
 proved inverse NTT and accelerated MSM. `checkKey?` checks metadata and every commitment,
@@ -68,11 +69,11 @@ returning `KeyCorresponds`; `checkApplication` applies it to every Step key and 
 `KimchiVK` itself carries the checked curve constants, domain, zero-knowledge row count and
 digest equation. There is no separate Pickles key wrapper or whole-key `deriveKey` construction.
 
-Independent gate dumps can still be compared in `PicklesFixture.ImportedIndices` using
+Independent gate dumps are compared in `PicklesFixture.ImportedIndices` using
 `compareIndices?`; `compareIndices?_eq_none_iff` supplies actual index equality. The consumers
 in [application-certification-draft.lean](application-certification-draft.lean) use that equality
 to apply the certificate's matrix theorems to independently imported indices. This comparison
-is optional and is not part of `ApplicationCertified` construction.
+is required by `certify-application` but is not part of `ApplicationCertified` construction.
 
 The old names appearing in the historical phases below have these replacements:
 
@@ -100,8 +101,8 @@ checking for a named serialized application remain distinct deliverables. The co
 
 The remaining sections preserve the original matrix/index-comparison plan and its review
 boundaries. Their old signatures and module names document that design; use the current
-contract above and the production declarations for new work. In particular, do not restore
-the removed certificate wrappers or make foreign circuit dumps a certification prerequisite.
+contract above and the production declarations for new work. The removed certificate wrappers
+are not needed: the executable checks foreign dumps against the existing certificate's indices.
 
 ## Phase 1. Checked compilation of one application (historical)
 
