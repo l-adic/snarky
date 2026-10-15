@@ -489,6 +489,12 @@ jobs:
         cd formal
         PICKLES_DUMP_DIR=../pickles-dumps lake exe check-application-keys
 
+    - name: Check real terminal proofs and reject altered carried data
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        PICKLES_DUMP_DIR=../pickles-dumps lake exe check-terminal
+
     # Certification needs only reconstruction sidecars: foreign dumps may be absent or
     # malformed. Damaged sidecars/rules fail at their stage and block their dependents.
     - name: Certify without foreign dumps and reject damaged applications

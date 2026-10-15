@@ -479,6 +479,27 @@ structure TerminalData.Checks {C : Circuits D} (d : TerminalData C) : Prop where
       (bPolyCoefficients fun i ↦
         endoExpand IpaVesta.curve.lam d.deferred.bulletproofChallenges[i].val.val)
 
+/-- Recompute the terminal scalars for every compatible branch and check the deferred
+opening commitment. Success supplies the `Checks` premise of the terminal soundness theorems. -/
+def TerminalData.check? {C : Circuits D} (d : TerminalData C) :
+    Except String (PLift d.Checks) :=
+  letI : ∀ b : D.Branch, Decidable
+      (terminalScalarChecks IpaVesta.curve C.wiring.backend.stepKeys[b]
+        d.deferred d.spongeDigest d.evals (d.activeChallenges b)) := fun b ↦ by
+    unfold terminalScalarChecks
+    infer_instance
+  do
+    let ⟨hs⟩ ← requireProof (∀ b : D.Branch, d.branchData = terminalBranchData C b →
+      terminalScalarChecks IpaVesta.curve C.wiring.backend.stepKeys[b]
+        d.deferred d.spongeDigest d.evals (d.activeChallenges b))
+      "terminal scalar checks failed"
+    let ⟨hg⟩ ← requireProof (terminalSg d.message.challengePolynomialCommitment =
+      msm IpaVesta.curve C.setup.stepSrs.g
+        (bPolyCoefficients fun i ↦
+          endoExpand IpaVesta.curve.lam d.deferred.bulletproofChallenges[i].val.val))
+      "terminal opening commitment check failed"
+    return ⟨⟨hs, hg⟩⟩
+
 /-- Wrap satisfaction supplies the inner Step group check. Scalar recomputation and the
 terminal commitment check finish that proof, unless the carried message's digest collides
 with the message read from the Wrap witness. No further Step circuit is needed. -/

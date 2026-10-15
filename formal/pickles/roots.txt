@@ -45,6 +45,7 @@ Pickles.Reflect.circuit_gateLinearization_fq
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 PicklesFixture.Application.runCertification -- shared manifest driver for certification and key checks
+PicklesFixture.Application.terminalDataOf -- check-terminal reads carried data from cached proofs
 PicklesFixture.srsAt -- shared SRS loader used by the application drivers
 PicklesFixture.stepMainOf -- synthetic mixed-chunk reader regression
 Pickles.Application.Circuits.stepBuilt_advice_irrel -- audited builder erasure for branch advice
@@ -105,6 +106,7 @@ Pickles.Application.ApplicationCertified.wrap_valuation_or_failure
 Pickles.Application.terminal_kimchiVerify
 Pickles.Application.terminal_stepWrap -- terminal acceptance supplies a connected Step/Wrap pair or failure
 Pickles.Application.terminal_requiredProofs -- terminal acceptance closes required slot proofs or failure
+Pickles.Application.TerminalData.check? -- executable terminal scalar and commitment checks
 -- Certified compilation preserves matrix readings. Connections supplied on the matrices
 -- lift to the native capstones, with conclusions on the same matrices and the state projection.
 Pickles.Application.matrices_stepWrap
