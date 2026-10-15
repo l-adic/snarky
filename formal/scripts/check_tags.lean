@@ -38,7 +38,7 @@ private def verifyCached (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point
   unless Kimchi.Verifier.kimchiVerifyWith C σ vk L p e.publicInput do return false
   for a in p.olds do
     let ok ← memoized memo.acc s!"{name}/{σ.k}/{a.sg.x.val}/{a.sg.y.val}/{a.u.toList.map (·.val)}"
-      (fun _ => accOk σ a)
+      (fun _ => Kimchi.Verifier.accOk σ a)
     unless ok do throw (IO.userError "cached proof carries an invalid old accumulator")
   return true
 
