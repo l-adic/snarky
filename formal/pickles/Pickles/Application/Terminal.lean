@@ -649,6 +649,106 @@ private theorem stepInput_points {n n' sa : Nat}
   · simpa [chunk, MessagesForNextStepProof.proofs] using hx
   · simpa [chunk, MessagesForNextStepProof.proofs] using hy
 
+private theorem stepInput_key {n n' sa : Nat}
+    (m : MessagesForNextStepProof (VkComms 1 (AffinePoint Fp)) (Vector Fp sa)
+      (Vector (AffinePoint Fp) n) (Vector (Vector Fp StepIPARounds) n))
+    (m' : MessagesForNextStepProof (VkComms 1 (AffinePoint Fp)) (Vector Fp sa)
+      (Vector (AffinePoint Fp) n') (Vector (Vector Fp StepIPARounds) n'))
+    (he : stepMsgInput m = stepMsgInput m') : m.dlogPlonkIndex = m'.dlogPlonkIndex := by
+  have hpre := (List.append_inj he (by
+    simp [VkComms.indexPoints, VkComms.selectors, List.length_flatMap])).1
+  have hkey := (List.append_inj hpre (by
+    simp [VkComms.indexPoints, VkComms.selectors, List.length_flatMap])).1
+  exact VkComms.keyCoords_injective _ _ hkey
+
+private theorem StepRun.terminal_hashes {C : Circuits D} {b : D.Branch}
+    (s : StepRun C b) : s.cells.HashesMessages s.V := by
+  letI : CheckedType Fp (Builder s.V (KimchiConstraint Fp))
+      D.schema.Input D.schema.InputVar := D.schema.inputCheck
+  dsimp only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit]
+  erw [compileWith_stepMainCircuit_cells (V := s.V)]
+  exact ((builder_spec_iff _ _).mp
+    (stepMain_out (outVal := D.schema.Output) (C.wiring.sources b) (C.source_bound b)
+      C.setup.wrap.h
+      (fun i => FopParams.of IpaVesta.curve (C.wiring.sourceChunks b i)
+        StepIPARounds Linearization.fpTokens)
+      C.wiring.backend.stepDomains.list (constPt C.setup.dummySg)
+      (C.setup.dummyUnf[D.slots b]'(Nat.lt_succ_of_le (D.slots_le b)))
+      (C.rules b) s.advice) 0
+    (fun con hc => s.holds con (mem_compileWith_stepMainCircuit _ _ _ _ _ _ _ _ _ hc))).2.2
+
+private theorem build_bind_property {F c α β : Type} {P : β → Prop}
+    (m : CircuitM F c α) (f : α → CircuitM F c β) (nv : Nat)
+    (h : ∀ a nv', P (build (f a) nv').result) :
+    P (build (m >>= f) nv).result := by
+  erw [build_bind]
+  exact h _ _
+
+private theorem StepRun.terminal_keyCells {C : Circuits D} {b : D.Branch}
+    (s : StepRun C b) :
+    s.cells.messagesForNextStepProof.dlogPlonkIndex = s.cells.vk.points := by
+  letI : CheckedType Fp (Builder s.V (KimchiConstraint Fp))
+      D.schema.Input D.schema.InputVar := D.schema.inputCheck
+  dsimp only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit]
+  erw [compileWith_stepMainCircuit_cells (V := s.V)]
+  unfold stepMain
+  repeat' first
+    | rfl
+    | apply build_bind_property (P := fun out : C.StepCells b =>
+        out.messagesForNextStepProof.dlogPlonkIndex = out.vk.points)
+    | intro
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+private theorem keyReads_coords {V : Valuation Fp}
+    {key : VkComms 1 (AffinePoint (FVar Fp))} {vk : KimchiVK IpaPallas.curve 1}
+    (he : key.map (CircuitType.readVal V) = vk.comms.map (fun P ↦ (⟨P.x, P.y⟩ : AffinePoint Fp)))
+    (hne : ∀ P ∈ vk.comms.indexPoints, P ≠ 0) : KeyReads IpaPallas.curve V key vk := by
+  have hlist := congrArg VkComms.indexPoints he
+  simp only [VkComms.indexPoints_map] at hlist
+  have hon : ∀ p ∈ key.indexPoints,
+      OnCurve IpaPallas.curve.E.A IpaPallas.curve.E.B (p.x.val V, p.y.val V) := by
+    intro p hp
+    have hm : CircuitType.readVal V p ∈ vk.comms.indexPoints.map
+        (fun P ↦ (⟨P.x, P.y⟩ : AffinePoint Fp)) := by
+      rw [← hlist]
+      exact List.mem_map_of_mem hp
+    obtain ⟨P, hP, he⟩ := List.mem_map.mp hm
+    have hx := congrArg AffinePoint.x he
+    have hy := congrArg AffinePoint.y he
+    change P.x = p.x.val V at hx
+    change P.y = p.y.val V at hy
+    rw [← hx, ← hy]
+    exact SWPoint.onCurve_of_ne_zero (hne P hP)
+  apply KeyReads.of_readPt hon
+  let decode (p : AffinePoint Fp) := readPt (C := IpaPallas.curve) (fun _ ↦ 0)
+    (⟨.const p.x, .const p.y⟩ : AffinePoint (FVar Fp))
+  have hdecode : ∀ P : IpaPallas.curve.Point, decode ⟨P.x, P.y⟩ = P := by
+    intro P
+    dsimp [decode, readPt, CVar.val]
+    split
+    · rfl
+    · apply SWPoint.ext_pair
+      exact (P.onCurve.resolve_left ‹_›).symm
+  have hm := congrArg (VkComms.map decode) he
+  have hd : ∀ p, decode (CircuitType.readVal V p) = readPt V p := fun p ↦ rfl
+  cases hc : vk.comms
+  simpa [VkComms.map, Vector.map_map, Function.comp_def, hdecode, hd, hc] using hm
+
+private theorem StepRun.keyBound_coords {C : Circuits D}
+    (cert : ApplicationCertified C) {b : D.Branch} (s : StepRun C b)
+    (he : s.cells.vk.points.map (CircuitType.readVal s.V) =
+      C.wiring.backend.wrapKey.comms.map (fun P ↦ (⟨P.x, P.y⟩ : AffinePoint Fp)))
+    (i : D.Slot b) : s.KeyBound i := by
+  apply keyReads_coords (hne := cert.sourceKeyPoints b i)
+  unfold Wiring.sources Wiring.source Shape.sourceLayout
+  generalize hs : D.source b i = src
+  cases src with
+  | self => exact he
+  | external t =>
+    have hc : ∀ P : IpaPallas.curve.Point,
+        CircuitType.readVal s.V (constPt P) = (⟨P.x, P.y⟩ : AffinePoint Fp) := fun _ ↦ rfl
+    simp [SlotSource.keyCells, VkComms.map, Vector.map_map, Function.comp_def, hc]
+
 /-- The Step message read from a satisfying execution, retaining its static dimensions. -/
 private def StepRun.terminalMessage {C : Circuits D} {b : D.Branch} (s : StepRun C b) :
     MessagesForNextStepProof (VkComms 1 (AffinePoint Fp)) (Vector Fp D.schema.size)
@@ -791,8 +891,9 @@ private theorem TerminalData.accumulator_mem_or_collision {C : Circuits D}
     rw [← hw]
     simp [StepWrapRun.jf]
 
-/-- Terminal acceptance closes every required slot proof whose key is bound to its source.
-The certificate supplies the static verifier setup. The final proof is checked with the
+/-- Terminal acceptance closes every required slot proof.
+The certificate supplies the static verifier setup and finite source keys; the carried Step
+message binds the witnessed self key. The final proof is checked with the
 accumulators reconstructed from the carried messages; disagreement with the recovered executions
 exhibits a hash collision.
 Kimchi witness failures and accumulator-validity failures remain explicit alternatives. -/
@@ -806,7 +907,6 @@ theorem terminal_requiredProofs {C : Circuits D} (cert : ApplicationCertified C)
       CircuitType.Reads e.wrap.V wrapStatement d.statement ∧
       ∀ i : D.Slot b,
         CircuitType.Reads e.step.V (e.step.cells.prevs i).mustVerify true →
-        e.step.KeyBound i →
         kimchiVerify IpaPallas.curve C.setup.wrapSrs (C.wiring.source b i).wrapKey
           (e.proof i) (e.proofPublicInput i) = true) ∨
       (∃ r : WrapRun C, d.Collision r) ∨
@@ -827,8 +927,16 @@ theorem terminal_requiredProofs {C : Circuits D} (cert : ApplicationCertified C)
         { p with olds := d.wrapAccumulators.toArray }
         (CircuitType.valueToFields d.statement).toArray
     · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ha))))
+    have hd := e.terminal_stepDigest d hreads e.step.terminal_hashes
+    have hinput :=
+      (stepInput_eq_or_collision e.step.terminalMessage d.stepMessage hd).resolve_right hs
+    have hkey := stepInput_key _ _ hinput.2
+    change e.step.cells.messagesForNextStepProof.dlogPlonkIndex.map
+      (CircuitType.readVal e.step.V) = _ at hkey
+    rw [e.step.terminal_keyCells] at hkey
     refine Or.inl ⟨b, e, hreads, ?_⟩
-    intro i hm hk
+    intro i hm
+    have hk := e.step.keyBound_coords cert hkey i
     obtain ⟨he, _, hv⟩ := e.verifies_proof i (cert.stepWrapSetup b i) hm hk
     obtain hmem | collision := d.accumulator_mem_or_collision e i hreads _ he
     · have h := accepts_or_accumulatorFailure C.setup.wrapSrs
