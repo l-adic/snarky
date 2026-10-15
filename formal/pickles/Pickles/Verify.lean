@@ -292,7 +292,7 @@ theorem commReads_readPt {C : KimchiCurve} {V : Valuation C.BaseField}
     CommReads C V cells (cells.map (readPt V)) :=
   List.forall₂_map_right_iff.mpr (List.forall₂_same.mpr fun p hp => onCurveAt_readPt (h p hp))
 
-/-- KimchiVK cells on the curve, whose points are the key's commitments, read as the key. -/
+/-- Key cells on the curve, whose points are the key's commitments, read as the key. -/
 theorem KeyReads.of_readPt {C : KimchiCurve} {V : Valuation C.BaseField} {nc : ℕ}
     {key : VkComms nc (AffinePoint (FVar C.BaseField))} {cvk : KimchiVK C nc}
     (hon : ∀ p ∈ key.indexPoints, OnCurve C.E.A C.E.B (p.x.val V, p.y.val V))

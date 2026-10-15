@@ -573,7 +573,7 @@ private theorem ColumnsRead.coords {nc m : ℕ}
   | nil => rfl
   | cons hc _ ih => simp only [List.flatMap_cons, ih, CommReads.coords hc]
 
-/-- KimchiVK cells reading as the key have its coordinates, in absorb order. -/
+/-- Key cells reading as the key have its coordinates, in absorb order. -/
 theorem KeyReads.indexCoords {nc : ℕ} {key : VkComms nc (AffinePoint (FVar C.BaseField))}
     {cvk : KimchiVK C nc} (h : KeyReads C V key cvk) :
     key.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V])

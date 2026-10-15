@@ -922,7 +922,7 @@ private theorem keyValsOf_at (cvk : KimchiVK C nc) (p : VkPos nc) :
     (keyValsOf cvk).at p = ⟨(cvk.comms.at p).x, (cvk.comms.at p).y⟩ := by
   cases p <;> simp [keyValsOf, VkComms.map, VkComms.at, KimchiVK.comms]
 
-/-- **A key read as a verifier key's commitments.** KimchiVK cells reading as the constant cells of
+/-- **A key read as a verifier key's commitments.** Key cells reading as the constant cells of
 `cvk` (`keyCellsOf constPt`) read as its commitments (`KeyReads`), once they are finite points,
 and a sponge reading as the fresh sponge after their coordinates squeezes to its digest. -/
 theorem vkReads_of_reads (K : KimchiVK C nc) (k : VkComms nc (AffinePoint (FVar C.BaseField)))
