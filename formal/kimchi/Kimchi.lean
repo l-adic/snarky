@@ -29,6 +29,7 @@ import Kimchi.Protocol.Linearization
 -- The executable verifier, its run functions, and the serde wire boundary
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Reflect
+import Kimchi.Verifier.Accumulator
 import Kimchi.Verifier.Wire
 import Kimchi.KeyDerivation
 

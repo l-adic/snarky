@@ -53,14 +53,14 @@ open scoped Kimchi
 
 /-- A bounded cell is the lift of its own public-input entry: reducing into the step field and
 lifting back is the identity below `2^254 < p`. -/
-private theorem cell_eq_redFq {Vs : Valuation Fq} {k : PackedScalar Fq} (hb : k.Bound Vs) :
-    k.cell.val Vs = redFq (PackedScalar.reduced IpaVesta.curve Vs k) := by
+private theorem cell_eq_cast {Vs : Valuation Fq} {k : PackedScalar Fq} (hb : k.Bound Vs) :
+    k.cell.val Vs = ZMod.cast (PackedScalar.reduced IpaVesta.curve Vs k) := by
   have hN := PackedScalar.val_lt_of_bound hb
-  have hp : (2 : ℕ) ^ 254 < PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
   have hr : PackedScalar.reduced IpaVesta.curve Vs k
       = ((ZMod.val (k.cell.val Vs) : ℕ) : Fp) := by
     cases k <;> rfl
-  rw [hr, redFq, ZMod.val_natCast_of_lt (hN.trans hp), ZMod.natCast_zmod_val]
+  rw [hr, ZMod.cast_eq_val,
+    ZMod.val_natCast_of_lt (hN.trans_le Pasta.two_pow_le_pallas_base), ZMod.natCast_zmod_val]
 
 /-- An unfinalized entry the wrap circuit's cells hold, as the step circuit's values: each cell
 the scalar its x_hat ladder applies (`PackedScalar.reduced`), a bit `true` when it reads `1`. -/
@@ -157,8 +157,8 @@ theorem StepStatement.ofWrap_toFields {ks n nc : ℕ} (σ : SRS IpaVesta.curve.P
         (var := UnfVar ks) (UnfVal.ofWrap Vs u)).flatten.toList
       = (st.proofState.unfinalizedProofs.toList.flatMap fun u => u.packed.toList).map
         (PackedScalar.reduced IpaVesta.curve Vs) := by
-    simp only [toList_flatten', Vector.toList_map, List.map_map, Function.comp_def, List.flatMap,
-      List.map_flatten]
+    simp only [Snarky.toList_flatten, Vector.toList_map, List.map_map, Function.comp_def,
+      List.flatMap, List.map_flatten]
     refine congrArg List.flatten (List.map_congr_left fun u hu =>
       UnfVal.ofWrap_toFields u fun x hx => hbnd x ?_)
     simp only [StepStatement.packed, Vector.mem_mk, List.mem_toArray, List.mem_append,
@@ -181,8 +181,8 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
       ∃ bb : Bool, CircuitType.Reads Vg u.toUnfinalized.shouldFinalize bb ∧
         CircuitType.Reads Vs a.toUnfinalized.shouldFinalize bb := by
   -- each wrap entry is the lift of the step cell it is read against
-  have hB : ∀ x ∈ sp.packed, x.cell.val Vs = redFq (PackedScalar.reduced IpaVesta.curve Vs x) :=
-    fun x hx => cell_eq_redFq (hbnd x hx)
+  have hB : ∀ x ∈ sp.packed, x.cell.val Vs = ZMod.cast (PackedScalar.reduced IpaVesta.curve Vs x) :=
+    fun x hx => cell_eq_cast (hbnd x hx)
   -- the entry's cells, field by field
   simp only [UnfVal.ofWrap, CircuitType.reads_ofEquiv, AllocUnfinalized.equivProd,
     Type2.equivVal, SplitField.equivProd, Equiv.coe_fn_mk, CircuitType.reads_prod,
@@ -195,36 +195,37 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
   obtain ⟨ha, hbe, hg, hz, hxi, hbps, hsfe, hdig, hscip, hsb, hsperm, hszm, hszn⟩ := hsr
   -- an entry of the slot, read against the step cell `v`, is `v` lifted
   have e : ∀ {x : PackedScalar Fq} {v : Fp}, x ∈ UnfinalizedProof.packed sp →
-      v = PackedScalar.reduced IpaVesta.curve Vs x → x.cell.val Vs = redFq v :=
+      v = PackedScalar.reduced IpaVesta.curve Vs x → x.cell.val Vs = ZMod.cast v :=
     fun hx hv => (hB _ hx).trans (by rw [hv])
   have mem : ∀ {x : PackedScalar Fq}, x ∈ UnfinalizedProof.packed sp ↔ x ∈ sp.packed :=
     Iff.rfl
   -- the scalar claims and the digest
-  have fa : a.alpha.val Vs = redFq (u.alpha.val Vg) := by
+  have fa : a.alpha.val Vs = ZMod.cast (u.alpha.val Vg) := by
     have := e (x := .b128 sp.deferredValues.plonk.alpha.val) (by simp [UnfinalizedProof.packed]) c14
     simpa [PackedScalar.cell, ha, AllocUnfinalized.toUnfinalized] using this
-  have fb : a.beta.val Vs = redFq (u.beta.val Vg) := by
+  have fb : a.beta.val Vs = ZMod.cast (u.beta.val Vg) := by
     have := e (x := .b128 sp.deferredValues.plonk.beta.val) (by simp [UnfinalizedProof.packed]) c12
     simpa [PackedScalar.cell, hbe, AllocUnfinalized.toUnfinalized] using this
-  have fg : a.gamma.val Vs = redFq (u.gamma.val Vg) := by
+  have fg : a.gamma.val Vs = ZMod.cast (u.gamma.val Vg) := by
     have := e (x := .b128 sp.deferredValues.plonk.gamma.val) (by simp [UnfinalizedProof.packed])
       c13
     simpa [PackedScalar.cell, hg, AllocUnfinalized.toUnfinalized] using this
-  have fz : a.zeta.val Vs = redFq (u.zeta.val Vg) := by
+  have fz : a.zeta.val Vs = ZMod.cast (u.zeta.val Vg) := by
     have := e (x := .b128 sp.deferredValues.plonk.zeta.val) (by simp [UnfinalizedProof.packed]) c15
     simpa [PackedScalar.cell, hz, AllocUnfinalized.toUnfinalized] using this
-  have fxi : a.xi.val Vs = redFq (u.xi.val Vg) := by
+  have fxi : a.xi.val Vs = ZMod.cast (u.xi.val Vg) := by
     have := e (x := .b128 sp.deferredValues.xi.val) (by simp [UnfinalizedProof.packed]) c16
     simpa [PackedScalar.cell, hxi, AllocUnfinalized.toUnfinalized] using this
-  have fd : a.spongeDigest.val Vs = redFq (u.spongeDigest.val Vg) := by
+  have fd : a.spongeDigest.val Vs = ZMod.cast (u.spongeDigest.val Vg) := by
     have := e (x := .full sp.spongeDigestBeforeEvaluations) (by simp [UnfinalizedProof.packed]) c11
     simpa [PackedScalar.cell, hdig, AllocUnfinalized.toUnfinalized] using this
   -- a split claim joins its lifted half and parity
   have join : ∀ (w : Type2 (FVar Fq)) (s : Type2 (SplitField (FVar Fq) (BoolVar Fq)))
       (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))), SplitReads Vs w s →
-      (PackedScalar.full s.val.sDiv2).cell.val Vs = redFq (x.val.sDiv2.val Vg) →
-      (PackedScalar.bit s.val.sOdd).cell.val Vs = redFq ((↑x.val.sOdd : CVar Fp).val Vg) →
-      w.val.val Vs = 2 * redFq (x.val.sDiv2.val Vg) + redFq ((↑x.val.sOdd : CVar Fp).val Vg) := by
+      (PackedScalar.full s.val.sDiv2).cell.val Vs = ZMod.cast (x.val.sDiv2.val Vg) →
+      (PackedScalar.bit s.val.sOdd).cell.val Vs = ZMod.cast ((↑x.val.sOdd : CVar Fp).val Vg) →
+      w.val.val Vs =
+        2 * ZMod.cast (x.val.sDiv2.val Vg) + ZMod.cast ((↑x.val.sOdd : CVar Fp).val Vg) := by
     intro w s x ⟨bb, hbb, hw⟩ hh ho
     simp only [PackedScalar.cell] at hh ho
     rw [hw, hh, ← hbb, ho]
@@ -241,7 +242,7 @@ private theorem slot_cast {k : ℕ} {Vg : Valuation Fp} {Vs : Valuation Fq} (u :
     (e (by simp [UnfinalizedProof.packed]) c10)
   -- the round challenges, entrywise
   have fbp : ∀ i : Fin k, a.bulletproofChallenges[i].val Vs
-      = redFq (u.bulletproofChallenges[i].val Vg) := by
+      = ZMod.cast (u.bulletproofChallenges[i].val Vg) := by
     intro i
     have hl := CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp hbpR i i.isLt)
     have hs := hB (.b128 sp.deferredValues.bulletproofChallenges[i].val) (by

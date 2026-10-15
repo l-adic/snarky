@@ -42,11 +42,6 @@ Kimchi.Protocol.Linearization.Evals.toEnv_vanishes
 Pickles.Reflect.circuit_gateLinearization_fp
 Pickles.Reflect.circuit_gateLinearization_fq
 
--- Invisible to the reachability walk, so rooted by hand: `rfl` simp lemmas (used from the
--- simp set, they leave no constant in a proof term), coercion instances the elaborator
--- applies, and the tactic implementations the completeness proofs call.
-Pickles.FopSide.unshiftV_read
-
 -- Consumed by the CI check scripts rather than by the library.
 -- script-surface:begin
 PicklesFixture.Application.runCertification -- shared manifest driver for certification and key checks
@@ -66,8 +61,6 @@ Pickles.buildEvalList
 Pickles.instDecidableKeyLayout -- synthesis: the fixture loaders check each key's circuit layout
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
-Pickles.accOk
-Pickles.sgOkWith_lagrangePoints -- the drivers decide sgOk at memoized points
 Pickles.pow2PowMul -- check-cs pins the gadget's constraint system
 Pickles.pow2PowMul_spec -- check-axioms audits the gadget's read
 Pickles.wrapVerifyWith -- check-cs pins the verify block at its dumps' points
@@ -125,7 +118,3 @@ PicklesFixture.Application.compareIndices?_eq_none_iff
 
 -- Public bridges for consumers relating verifier computations, read cells and accumulators.
 Pickles.OldsRead.of_readPt
-Pickles.carryWith_lagrangePoints
-Pickles.pubEvalsWith_lagrangePoints
-Pickles.sgOkWith_of_kimchiVerifyWith
-Pickles.accOk_of_carryWith

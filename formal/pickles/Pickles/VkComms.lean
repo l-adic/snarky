@@ -1,4 +1,6 @@
 import Snarky.Encoding
+import Snarky.Kimchi.Constraint.AddComplete
+import Pickles.ListLemmas
 import Snarky.Prover
 import Snarky.Witness
 import Kimchi.Columns
@@ -75,6 +77,42 @@ def map {f' : Type} (g : f → f') (k : VkComms nc f) : VkComms nc f' :=
   ⟨k.sigmaComm.map (·.map g), k.coefficientsComm.map (·.map g), k.genericComm.map g,
     k.poseidonComm.map g, k.completeAddComm.map g, k.mulComm.map g, k.emulComm.map g,
     k.endomulScalarComm.map g⟩
+
+private theorem indexPoints_injective {α : Type} {nc : ℕ} :
+    Function.Injective (VkComms.indexPoints (nc := nc) (f := α)) := by
+  intro a b h
+  have hchunks := flatten_inj (m := nc)
+    (by simp only [List.mem_map]; rintro _ ⟨v, -, rfl⟩; simp)
+    (by simp only [List.mem_map]; rintro _ ⟨v, -, rfl⟩; simp)
+    (by simp) (show _ = _ from h)
+  have hv : a.sigmaComm.toList ++ a.coefficientsComm.toList ++ a.selectors.toList =
+      b.sigmaComm.toList ++ b.coefficientsComm.toList ++ b.selectors.toList :=
+    (List.map_inj_right (fun _ _ h => Vector.toList_inj.mp h)).mp hchunks
+  obtain ⟨hp, hs⟩ := List.append_inj hv (by simp)
+  obtain ⟨hσ, hc⟩ := List.append_inj hp (by simp)
+  have hσ := Vector.toList_inj.mp hσ
+  have hc := Vector.toList_inj.mp hc
+  simp only [VkComms.selectors, Vector.toList_mk, List.cons.injEq, and_true] at hs
+  cases a; cases b
+  simp_all
+
+/-- The absorbed affine coordinates determine the complete commitment record. -/
+theorem keyCoords_injective {α : Type} {nc : ℕ}
+    (a b : VkComms nc (Snarky.Kimchi.AffinePoint α))
+    (h : a.indexPoints.flatMap (fun p => [p.x, p.y]) =
+      b.indexPoints.flatMap (fun p => [p.x, p.y])) : a = b := by
+  apply indexPoints_injective
+  have hc := flatten_inj (m := 2)
+    (by simp only [List.mem_map]; rintro _ ⟨p, -, rfl⟩; rfl)
+    (by simp only [List.mem_map]; rintro _ ⟨p, -, rfl⟩; rfl)
+    (by simp [VkComms.indexPoints, List.length_flatMap, VkComms.selectors]) h
+  exact (List.map_inj_right (by intro p q h; cases p; cases q; simpa using h)).mp hc
+
+/-- Mapping the commitment record maps its points in absorb order. -/
+theorem indexPoints_map {α β : Type} {nc : ℕ} (f : α → β) (k : VkComms nc α) :
+    (k.map f).indexPoints = k.indexPoints.map f := by
+  simp [VkComms.indexPoints, VkComms.map, VkComms.selectors, Vector.toList_map, List.flatMap_map,
+    List.map_flatMap]
 
 end VkComms
 

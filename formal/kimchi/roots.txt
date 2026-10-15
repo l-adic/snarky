@@ -98,3 +98,12 @@ Kimchi.Index.InterpolationChecks.zero_extends_empty
 Kimchi.Verifier.compareColumns?_eq_none_iff
 Kimchi.Verifier.checkKey?
 Kimchi.Verifier.satisfiesVec_or_failure
+
+-- Deferred accumulator checks and their proof-level handover.
+Kimchi.Verifier.accOk
+Kimchi.Verifier.sgOkWith_lagrangePoints
+Kimchi.Verifier.carryWith_lagrangePoints
+Kimchi.Verifier.pubEvalsWith_lagrangePoints
+Kimchi.Verifier.sgOkWith_of_kimchiVerifyWith
+Kimchi.Verifier.accOk_of_carryWith
+Kimchi.Verifier.accepts_or_accumulatorFailure

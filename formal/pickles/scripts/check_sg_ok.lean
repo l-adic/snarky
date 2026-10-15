@@ -1,4 +1,4 @@
-import Pickles.TwoHalves
+import Kimchi.Verifier.Accumulator
 import KimchiFixture.Kimchi
 import Kimchi.Verifier.Wire
 import Lean.Data.Json
@@ -6,11 +6,11 @@ import Lean.Data.Json
 /-!
 # The deferred `sg` obligation against a deployed wrap proof
 
-`Pickles.SgOk` is the one conjunct of `verifyWith` that the per-proof checkpoint
+`Kimchi.Verifier.SgOk` is the one conjunct of `verifyWith` that the per-proof checkpoint
 (`Pickles.twoHalves_kimchiVerify`) carries as a hypothesis rather than discharging: no circuit
 computes it, because pickles defers it. A chain only ever terminates after a wrap, so it is the
 out-of-circuit verifier of the final wrap proof that checks it, and this driver runs that check
-in the form the verifier would — `Pickles.sgOk`, the decidable form of `SgOk`, at the key's
+in the form the verifier would — `Kimchi.Verifier.sgOk`, the decidable form of `SgOk`, at the key's
 Lagrange points (`sgOkWith_lagrangePoints`).
 
 The fixture is `kimchi_proof_pallas_pickles.json`, a deployed pickles wrap proof (OCaml through
@@ -33,7 +33,7 @@ from `formal/`, or bare from this package. The opening MSM over `2^14` points do
 runtime.
 -/
 
-open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier Pickles
+open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
 
 /-- The commitment curve of a wrap proof. -/
 abbrev CP := IpaPallas.curve

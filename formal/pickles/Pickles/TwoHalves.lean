@@ -3,6 +3,7 @@ import Pickles.IncrementallyVerify
 import Pickles.FinalizeOtherProof
 import Pickles.Verify
 import Kimchi.Columns
+import Kimchi.Verifier.Accumulator
 import Pickles.ListLemmas
 
 /-!
@@ -103,11 +104,6 @@ structure FopSide (C : KimchiCurve) (V : Valuation C.ScalarField) (sf : Type) wh
 def FopSide.decode {C : KimchiCurve} {V : Valuation C.ScalarField} {sf : Type}
     (S : FopSide C V sf) (x : sf) : C.ScalarField := S.unshiftV (S.read x)
 
-/-- Unshifting a claim's reading is the half's decode of it: `FopVerifyReads`' split form, put
-back together. -/
-theorem FopSide.unshiftV_read {C : KimchiCurve} {V : Valuation C.ScalarField} {sf : Type}
-    (S : FopSide C V sf) (x : sf) : S.unshiftV (S.read x) = S.decode x := rfl
-
 /-- The scalar half of a proof's verification, as the next circuit runs it (for a step proof,
 the following step circuit): its valuation, its side, and its cells — the deferred claims with
 the fq digest, the evaluations, and per slot of the finalized proof's `w` the predecessor mask
@@ -141,20 +137,6 @@ def ScalarHalf.prevVals {C : KimchiCurve} {sf : Type} {k nc w : ℕ}
     (Sc : ScalarHalf C sf k nc w) :
     Vector (Vector C.ScalarField k) w :=
   Sc.prevChallenges.map fun cs => cs.map fun x => x.val Sc.V
-
-/-- The scalar half's parameters at `nc` chunks and an SRS of `2 ^ k` points: the curve's sponge,
-endomorphism coefficient and shifts, the chunk count's zero-knowledge rows, and the side's
-tokens. -/
-def FopParams.of (C : KimchiCurve) (nc k : ℕ) (toks : Array Linearization.PolishToken) :
-    FopParams C.ScalarField :=
-  { sponge := C.frSponge.params
-    endoLam := C.lam
-    endo := C.endoScalar
-    mds := mdsOfParams C.frSponge.params
-    toks := toks
-    shifts := fun i => C.shifts[i]
-    srsLengthLog2 := k
-    zkRows := zkRowsOf nc }
 
 /-! ## The two halves' reads at their own cells -/
 
@@ -305,129 +287,11 @@ def ScalarHalf.ClaimsHonest {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.plonk.zetaToSrsLength)
     (Sc.side.decode dv.plonk.zetaToDomainSize) Sc.V dv.xi
 
-/-- The wire's round challenges of `cp`: the IPA transcript's prechallenges, endo-expanded, from
-the run's warm sponge on its own input. -/
-def wireChallenges {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField) : Vector C.ScalarField σ.k :=
-  (transcriptFrom C (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub)).2.1
-
-/-- The deferred `sg`-correctness equation of the proof's opening at the wire's round
-challenges (`verifyWith`'s second conjunct), which pickles checks one proof later. -/
-def SgOk {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField) : Prop :=
-  (runInput C σ cvk cp pub).proof.sg
-    = msm C σ.g (bPolyCoefficients fun i => (wireChallenges σ cvk cp pub)[i])
-
-/-- `sgOk` at the Lagrange points `L`: the deferred check on the verifier's run (`runAt`) at the
-public commitment to `L`, computed once. -/
-def sgOkWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
-  let r := runAt C σ cvk cp pub (publicCommitment C σ L pub)
-  let tr := transcriptFrom C r.1 r.2
-  decide (r.2.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i]))
-
-/-- The decidable mirror of `SgOk`: the deferred check as run out of circuit on a wire
-proof, at the key's Lagrange points, one per public-input cell. -/
-def sgOk {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField) : Bool :=
-  sgOkWith σ cvk (cvk.lagrangePoints σ pub.size).toArray cp pub
-
-/-! ## The deferred obligation, carried
-
-Pickles never checks `SgOk` on the proof itself. The proof's `(sg, round challenges)` becomes
-an old accumulator of the next proof on the same curve, whose batch opens it; the circuit in
-between, on the other curve, computes the challenges and passes them through its statement.
-`carry` decides that handover on two proofs, and `accOk` the deferred equation on the
-accumulator alone. -/
-
-/-- Whether an old accumulator's commitment is the challenge polynomial of its round challenges
-over the SRS: `SgOk` with the proof's opening and transcript replaced by what the next proof
-carries. -/
-def accOk (σ : SRS C.Point) (a : Accumulator C σ.k) : Bool :=
-  decide (a.sg = msm C σ.g (bPolyCoefficients fun i => a.u[i]))
-
 /-- An accumulator read from cells: its commitment from a base-field circuit at `Vb`, its
 challenges from a scalar-field circuit at `Vs`. -/
 def Accumulator.ofCells {k : ℕ} (Vb : Valuation C.BaseField) (Vs : Valuation C.ScalarField)
     (sg : AffinePoint (FVar C.BaseField)) (u : Vector (FVar C.ScalarField) k) : Accumulator C k :=
   ⟨readPt Vb sg, u.map (·.val Vs)⟩
-
-/-- `carry` at the Lagrange points `L`: the handover on the verifier's run (`runAt`) at the
-public commitment to `L`, computed once. -/
-def carryWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) : Bool :=
-  let r := runAt C σ cvk cp pub (publicCommitment C σ L pub)
-  let tr := transcriptFrom C r.1 r.2
-  decide (cp'.olds[i].sg = r.2.proof.sg ∧ cp'.olds[i].u = tr.2.1)
-
-/-- Whether `cp'` carries `cp`'s deferred obligation as its old accumulator `i`: the
-accumulator's commitment is `cp`'s opening's `sg`, its challenges the wire's round challenges
-of `cp`, at the key's Lagrange points, one per public-input cell. -/
-def carry {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField)
-    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) : Bool :=
-  carryWith σ cvk (cvk.lagrangePoints σ pub.size).toArray cp pub cp' i
-
-/-! ### At more Lagrange points
-
-A driver computes a key's Lagrange points once, as many as the key's public-input count, and
-decides `sgOk` and `carry` at them: the public commitment reads only as many as the input has
-cells (`publicCommitment_lagrangePoints_of_le`), so these are the same verdicts. -/
-
-/-- `sgOkWith` at the key's Lagrange points, at least one per public-input cell, is `sgOk`. -/
-theorem sgOkWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m) :
-    sgOkWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub = sgOk σ cvk cp pub := by
-  simp only [sgOkWith, sgOk, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
-
-/-- `carryWith` at the key's Lagrange points, at least one per public-input cell, is
-`carry`. -/
-theorem carryWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m)
-    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size) :
-    carryWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub cp' i = carry σ cvk cp pub cp' i := by
-  simp only [carryWith, carry, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
-
-/-- The run's public evaluations at the Lagrange points `L`: `runPubEvals` at the public
-commitment to `L`, computed once. -/
-def pubEvalsWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (L : Array (Vector C.Point nc))
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
-    PointEvaluations (Vector C.ScalarField nc) :=
-  let zeta := (fqOracles C cvk cp (publicCommitment C σ L pub)).zeta
-  let zetaOmega := zeta * cvk.omega
-  publicEvalChunks cp cvk.n cvk.omega zeta zetaOmega (powPow2 zeta cvk.domainLog2)
-    (powPow2 zetaOmega cvk.domainLog2) pub
-
-/-- `pubEvalsWith` at the key's Lagrange points, at least one per public-input cell, is
-`runPubEvals`. -/
-theorem pubEvalsWith_lagrangePoints {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) {m : ℕ} (h : pub.size ≤ m) :
-    pubEvalsWith σ cvk (cvk.lagrangePoints σ m).toArray cp pub = runPubEvals C σ cvk cp pub := by
-  simp only [pubEvalsWith, runPubEvals, runOracles, runZetaOmega, runZetaN, runZetaOmegaN,
-    runPublicComm, publicCommitment_lagrangePoints_of_le C σ cvk pub h]
-
-/-- `kimchiVerifyWith` accepting gives `sgOkWith` at the same Lagrange points: the opening check
-ends with the deferred `sg` equation. -/
-theorem sgOkWith_of_kimchiVerifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (L : Array (Vector C.Point nc)) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (h : kimchiVerifyWith C σ cvk L cp pub = true) : sgOkWith σ cvk L cp pub = true := by
-  unfold kimchiVerifyWith at h
-  split at h
-  · exact absurd h Bool.false_ne_true
-  · simp only [sgOkWith, Ipa.verifyFrom, Ipa.verifyWith, Bool.and_eq_true] at h ⊢
-    exact h.2
-
-/-- An accumulator `cp` carries into `cp'` passes `accOk` when `cp` passes `sgOkWith` at the
-carry's Lagrange points: the carry makes it `cp`'s `sg` and round challenges. -/
-theorem accOk_of_carryWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (L : Array (Vector C.Point nc)) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    {nc' : ℕ} (cp' : KimchiProof C nc' σ.k) (i : Fin cp'.olds.size)
-    (hc : carryWith σ cvk L cp pub cp' i = true) (hs : sgOkWith σ cvk L cp pub = true) :
-    accOk σ cp'.olds[i] = true := by
-  simp only [carryWith, sgOkWith, accOk, decide_eq_true_eq] at hc hs ⊢
-  rw [hc.1, hc.2]
-  exact hs
 
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
@@ -466,19 +330,6 @@ private theorem zipSeg_rows {C : KimchiCurve} {nc : ℕ} (comm : Vector C.Point 
   apply List.ext_getElem (by simp [zipSeg, chunkRows])
   intro i h₁ h₂
   simp [zipSeg, chunkRows, PointEvaluations.toVector, Vector.toList_zipWith]
-
-/-- The tail rows as a list: the four regions' lists (the vector append is typed at the
-literal `tailRowCount`, which `Vector.toList_append` does not see through). -/
-private theorem tailRows_toList {C : KimchiCurve} {nc k : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc k) :
-    (tailRowsOf C cvk cp).toList
-      = (litRowsOf C cvk cp).toList
-        ++ ((cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)).toList
-        ++ ((cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)).toList
-        ++ (((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-              (fun x => zipSeg C x.1 x.2)).toList := by
-  unfold tailRowsOf
-  erw [Vector.toList_append, Vector.toList_append, Vector.toList_append]
 
 /-- The scalar half's rows are the run's stream: the rows it combines — the kept
 challenge-polynomial rows, the public chunks, the `ft` row, the chunks of the `tailRowCount`
@@ -531,7 +382,9 @@ private theorem rows_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp 
     simp [PointEvaluations.toVector, runFtEval0P, runLinEvals, runZetaM, runZetaOmegaM,
       runZetaOmega, powPow2_eq, linEvals_combine]
   · -- the tail: every column's chunks
-    rw [toList_flatten', tailRows_toList]
+    rw [Snarky.toList_flatten]
+    unfold tailRowsOf
+    erw [Vector.toList_append, Vector.toList_append, Vector.toList_append]
     simp only [List.flatMap_def, List.map_flatten, List.map_map,
       Function.comp_def, zipSeg_rows, List.map_append, litRowsOf, evalRows, List.map_cons,
       List.cons_append, List.nil_append, Vector.toList_map, Vector.toList_zip]
@@ -543,16 +396,6 @@ private theorem rows_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp 
     rfl
 
 /-! ### Reading the cells through the ties -/
-
-/-- The run's evaluation points, as the scalar half lists them. -/
-private theorem pointFn_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k)
-    (pub : Array C.ScalarField) :
-    (runInput C σ cvk cp pub).pointFn
-      = ![(runOracles C σ cvk cp pub).zeta,
-          (runOracles C σ cvk cp pub).zeta * cvk.omega] := by
-  funext j
-  fin_cases j <;> rfl
 
 /-- **The two bits read `1` exactly when the claims are honest and the wire's Schnorr equation
 holds, and then the scalar half's expanded challenges are the wire's round challenges.** The
@@ -630,7 +473,7 @@ theorem twoHalves_schnorr
   obtain ⟨a₀', z₀', hαS, hζS, hs⟩ := hs
   obtain rfl := Reads128.unique hinjS hαSa hαS
   obtain rfl := Reads128.unique hinjS hζSz hζS
-  simp only [FopReadsWire, FopChecks, FopParams.of, FopSide.unshiftV_read] at hs
+  simp only [FopReadsWire, FopChecks, FopParams.of, ← FopSide.decode.eq_def] at hs
   -- the zero-knowledge rows are the chunk count's, which the key's are
   simp only [← K.zkRows_eq] at hs
   obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiF, -, hĉ, hcipC, hbC, hpermC, hfin, hexp⟩ := hs
@@ -751,7 +594,10 @@ theorem twoHalves_schnorr
               (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
                 (fun m => endoExpand C.lam m.val))[i]) run.evalscale run.pointFn := by
     simp only [hbC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
-    rw [hr, hĉeq, pointFn_eq]
+    rw [hr, hĉeq, show run.pointFn =
+      ![(runOracles C σ K cp pub).zeta, (runOracles C σ K cp pub).zeta * K.omega] by
+        funext j
+        fin_cases j <;> rfl]
     rfl
   -- assemble, the wire's transcript projected (no unfolding of the sponge runs)
   have hproof : (runInput C σ K cp pub).proof = cp.opening := rfl
@@ -841,7 +687,7 @@ theorem twoHalves_kimchiVerify
 /-! ### Closing the terminal scalar obligations directly -/
 
 /-- The scalar values recomputed by terminal verification from the carried proof data. -/
-private structure TerminalScalarValues (F : Type) (k : Nat) where
+private structure TerminalScalarValues (F : Type) where
   /-- The scalar sponge's `ξ` prechallenge. -/
   xi : Nat
   /-- The combined inner product of the batch's evaluation rows. -/
@@ -854,15 +700,13 @@ private structure TerminalScalarValues (F : Type) (k : Nat) where
   zetaM : F
   /-- The domain-size power of `ζ`. -/
   zetaN : F
-  /-- The carried opening prechallenges after endomorphism expansion. -/
-  expandedChallenges : Vector F k
 
 /-- Recompute the scalar transcript and deferred arithmetic from the terminal record's
 values. No scalar-half valuation or later finalization circuit is required. -/
 private def terminalScalarValues (C : KimchiCurve) {nc k : Nat}
     (vk : KimchiVK C nc) (dv : DeferredValues k Prechallenge C.ScalarField)
     (spongeDigest : C.ScalarField) (evals : ChunkedEvals nc C.ScalarField)
-    (oldChallenges : Array (Vector C.ScalarField k)) : TerminalScalarValues C.ScalarField k :=
+    (oldChallenges : Array (Vector C.ScalarField k)) : TerminalScalarValues C.ScalarField :=
   let α := endoExpand C.lam dv.plonk.alpha.val.val
   let β : C.ScalarField := dv.plonk.beta.val.val
   let γ : C.ScalarField := dv.plonk.gamma.val.val
@@ -890,8 +734,7 @@ private def terminalScalarValues (C : KimchiCurve) {nc k : Nat}
     b := combinedB cs.get r ![ζ, ζω]
     perm := permScalar β γ α (zkpmEval vk.n vk.zkRows vk.omega ζ) (linEvals ev)
     zetaM := zetaM
-    zetaN := zetaN
-    expandedChallenges := cs }
+    zetaN := zetaN }
 
 /-- Every scalar claim in the terminal record equals its recomputed value. The opening
 prechallenges are tied to the group transcript by `terminal_group_challenges`. -/
@@ -984,14 +827,12 @@ private theorem terminal_group_verifies
   simp only [wireChallenges, transcriptFrom, ipaRun, hwarm, hproof] at hs hsg ⊢
   exact ⟨hs, hsg⟩
 
-private theorem terminal_keep_all {α : Type} (l : List α) :
+private theorem flatten_zipWith_true {α : Type} (l : List α) :
     (List.zipWith (fun m cv => if m then [cv] else [])
       (List.replicate l.length true) l).flatten = l := by
-  induction l with
-  | nil => rfl
-  | cons x xs ih =>
-    rw [List.length_cons, List.replicate_succ, List.zipWith_cons_cons, List.flatten_cons,
-      if_pos rfl, List.singleton_append, ih]
+  rw [← List.map_const, List.zipWith_map_left, List.zipWith_self]
+  change (l.map (fun a => [a])).flatten = l
+  rw [← List.flatMap_def, List.flatMap_singleton']
 
 /-- The pure terminal checks identify every deferred scalar and expanded opening challenge
 with the verifier run, using only the carried data and the group half's reading. -/
@@ -1080,7 +921,7 @@ private theorem terminalScalarChecks_run
   have hkept : (Vector.zipWith (fun m cv => if m then [cv] else []) ms cvs).toList.flatten =
       (cp.olds.map (·.u)).toList := by
     simp only [ms, cvs, Vector.toList_zipWith, Vector.toList_replicate, Vector.toList_mk, holds]
-    simpa only [Array.length_toList] using terminal_keep_all oldChallenges.toList
+    simpa only [Array.length_toList] using flatten_zipWith_true oldChallenges.toList
   have hrows := rows_eq σ vk cp pub ms cvs hkept evals.evals evals.pub evals.ftEval1
     ((runOracles C σ vk cp pub).zeta ^ 2 ^ σ.k)
     (((runOracles C σ vk cp pub).zeta * vk.omega) ^ 2 ^ σ.k)
@@ -1104,8 +945,10 @@ private theorem terminalScalarChecks_run
     change combinedB _ (endoExpand C.lam pre.2)
       ![endoExpand C.lam dv.plonk.zeta.val.val,
         endoExpand C.lam dv.plonk.zeta.val.val * vk.omega] = _
-    rw [hchals, hr, hζ, pointFn_eq]
-    rfl
+    rw [hchals, hr, hζ]
+    congr 1
+    funext j
+    fin_cases j <;> rfl
   exact ⟨hpRun, hmRun, hnRun, hcRun, hbRun, hξRun, hchals⟩
 
 /-- Terminal verification closes the scalar checks and the deferred `sg` equation directly
@@ -1139,45 +982,6 @@ theorem terminal_kimchiVerify
   simpa only [Fin.getElem_fin, Vector.getElem_map] using hsg
 
 end Ties
-
-/-! ## Across the cycle
-
-The claims cross between the two circuits of a proof's verification. A step-field value sits in
-a wrap-field cell as its representative (`redFq`), and since the step field is the smaller one
-the reduction is injective: a 128-bit prechallenge read on either side is read on the other. -/
-
-section Across
-
-open CompElliptic.Fields.Pasta
-
-/-- A step-field value reduced into the wrap field: what a wrap circuit's cell holds of it. -/
-abbrev redFq (x : Fp) : Fq := ((ZMod.val x : ℕ) : Fq)
-
-/-- The step field is below the wrap field. -/
-theorem fp_lt_fq : PALLAS_BASE_CARD < PALLAS_SCALAR_CARD := by
-  norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
-
-/-- Reducing into the wrap field keeps a step-field value's representative. -/
-theorem val_redFq (x : Fp) : ZMod.val (redFq x) = ZMod.val x :=
-  ZMod.val_natCast_of_lt ((ZMod.val_lt x).trans fp_lt_fq)
-
-/-- A step cell reading as a prechallenge reduces to a wrap cell reading as it. -/
-theorem reads128_redFq {Vg : Valuation Fq} {Vs : Valuation Fp} {c : SizedF 128 (FVar Fq)}
-    {x : SizedF 128 (FVar Fp)} {m : Prechallenge} (hc : c.val.val Vg = redFq (x.val.val Vs))
-    (hx : Reads128 Vs x m) : Reads128 Vg c m := by
-  unfold Reads128 at hx ⊢
-  rw [hc, hx, redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_BASE_CARD]))]
-
-/-- A wrap cell reading as a prechallenge is the reduction of a step cell reading as it. -/
-theorem reads128_of_redFq {Vg : Valuation Fq} {Vs : Valuation Fp}
-    {c : SizedF 128 (FVar Fq)} {x : SizedF 128 (FVar Fp)} {m : Prechallenge}
-    (hc : c.val.val Vg = redFq (x.val.val Vs)) (hm : Reads128 Vg c m) : Reads128 Vs x m := by
-  unfold Reads128 at hm ⊢
-  have h := congrArg ZMod.val (hc.symm.trans hm)
-  rw [val_redFq, ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_SCALAR_CARD]))] at h
-  rw [← ZMod.natCast_zmod_val (x.val.val Vs), h]
-
-end Across
 
 /-! ## At a step proof: Vesta commitments
 
@@ -1270,18 +1074,10 @@ theorem ScalarHalf.wrap_olds {k nc : ℕ} (V : Valuation Fq)
         (ScalarHalf.wrap V claims evals prevChallenges).maskVals
         (ScalarHalf.wrap V claims evals prevChallenges).prevVals).toList.flatten = olds)
       ↔ (ScalarHalf.wrap V claims evals prevChallenges).prevVals.toList = olds := by
-  have hkeep : ∀ (n : ℕ) (l : List (Vector Fq k)), l.length = n →
-      (List.zipWith (fun m cv => if m then [cv] else []) (List.replicate n true) l).flatten
-        = l := by
-    intro n l hn
-    subst hn
-    induction l with
-    | nil => rfl
-    | cons x xs ih =>
-      rw [List.length_cons, List.replicate_succ, List.zipWith_cons_cons, List.flatten_cons,
-        if_pos rfl, List.singleton_append, ih]
-  rw [ScalarHalf.wrap_maskVals, Vector.toList_zipWith, Vector.toList_replicate,
-    hkeep _ _ (by simp)]
+  have hkeep := flatten_zipWith_true
+    (ScalarHalf.wrap V claims evals prevChallenges).prevVals.toList
+  simp only [Vector.length_toList] at hkeep
+  rw [ScalarHalf.wrap_maskVals, Vector.toList_zipWith, Vector.toList_replicate, hkeep]
 
 end WrapProof
 

@@ -216,7 +216,7 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : KimchiVK Ipa
           have h1 : sl.prevChallenges.flatten.toList.map (·.val Vs)
               = ((ScalarHalf.wrap Vs sl.unfinalized sl.evals
                   sl.prevChallenges).prevVals.toList.map Vector.toList).flatten := by
-            simp [toList_flatten', ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten,
+            simp [Snarky.toList_flatten, ScalarHalf.prevVals, ScalarHalf.wrap, List.map_flatten,
               List.map_map, Function.comp_def, Vector.toList_map]
           rw [h1, holds]
         rw [habs]

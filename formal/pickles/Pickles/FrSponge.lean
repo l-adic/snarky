@@ -132,7 +132,7 @@ private theorem maskedEntries_forall₂ {n k : ℕ} {mask : Vector (BoolVar F) n
     (hm : CircuitType.Reads V mask ms) (prev : Vector (Vector (FVar F) k) n) :
     List.Forall₂ (CircuitType.Reads V) (maskedEntries mask prev).toList
       (maskedEntries ms (prev.map (·.map (·.val V)))).toList := by
-  simp only [maskedEntries, toList_flatten']
+  simp only [maskedEntries, Snarky.toList_flatten]
   refine List.rel_flatten ?_
   rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
   refine forall₂_toList_iff.mpr fun i => forall₂_toList_iff.mpr fun j => ?_
@@ -146,7 +146,8 @@ private theorem kept_maskedEntries {α : Type} {n k : ℕ} (f : α → F) (ms : 
     (vs : Vector (Vector α k) n) :
     ((maskedEntries ms (vs.map (·.map f))).toList.filter (·.1)).map (·.2)
       = (Vector.zipWith (fun m cs => if m then cs.toList.map f else []) ms vs).toList.flatten := by
-  simp only [maskedEntries, toList_flatten', List.filter_flatten, List.map_flatten, List.map_map]
+  simp only [maskedEntries, Snarky.toList_flatten, List.filter_flatten, List.map_flatten,
+    List.map_map]
   congr 1
   refine List.ext_getElem (by simp) fun i hi _ => ?_
   have hi' : i < n := by simpa using hi

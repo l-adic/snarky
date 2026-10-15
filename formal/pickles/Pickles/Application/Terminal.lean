@@ -27,13 +27,13 @@ variable {D : Shape}
 private def terminalPacked {k : ℕ} (dv : DeferredValues k Prechallenge Fp)
     (digest : Fp) (wrapDigest : Fq) (stepDigest : Fp) (branchData : Fq) :
     StatementPacked k (Type1 Fq) Fq :=
-  let shift (x : Fp) : Type1 Fq := ⟨redFq (Pasta.Shifted.shiftType1 255 x)⟩
+  let shift (x : Fp) : Type1 Fq := ⟨ZMod.cast (Pasta.Shifted.shiftType1 255 x)⟩
   let pre (x : SizedF 128 Prechallenge) : Fq := (x.val.val : Fq)
   { fpFields := #v[shift dv.combinedInnerProduct, shift dv.b, shift dv.plonk.zetaToSrsLength,
       shift dv.plonk.zetaToDomainSize, shift dv.plonk.perm]
     challenges := #v[pre dv.plonk.beta, pre dv.plonk.gamma]
     scalarChallenges := #v[pre dv.plonk.alpha, pre dv.plonk.zeta, pre dv.xi]
-    digests := #v[redFq digest, wrapDigest, redFq stepDigest]
+    digests := #v[ZMod.cast digest, wrapDigest, ZMod.cast stepDigest]
     bulletproofChallenges := dv.bulletproofChallenges.map pre
     branchData := branchData
     featureFlags := Vector.replicate 8 0
@@ -41,9 +41,10 @@ private def terminalPacked {k : ℕ} (dv : DeferredValues k Prechallenge Fp)
     lookupOptScalarChallenge := 0 }
 
 private theorem wrapDecode_shift {V : Valuation Fq} {c : Type1 (FVar Fq)} {x : Fp}
-    (h : c.val.val V = redFq (Pasta.Shifted.shiftType1 255 x)) :
+    (h : c.val.val V = ZMod.cast (Pasta.Shifted.shiftType1 255 x)) :
     (wrapSide V).decode c = x := by
-  simp only [wrapSide, wrapDecode, h, val_redFq, ZMod.natCast_zmod_val]
+  simp only [wrapSide, wrapDecode, h, ← ZMod.cast_eq_val,
+    ZMod.cast_cast_zmod_of_le Pasta.fp_lt_fq.le]
   exact Pasta.Shifted.unshiftType1_shiftType1 (by decide : (2 : Fp) ≠ 0) 255 x
 
 /-- Packed public-input agreement fixes every deferred scalar claim. -/
@@ -87,10 +88,11 @@ private theorem terminalPacked_digest {k : ℕ} {V : Valuation Fq}
     CircuitType.reads_prod, CircuitType.reads_vector] at h
   have hd := h.2.2.2.1 0 (by decide)
   simp only [CircuitType.reads_fvar, terminalPacked] at hd
-  change stmt.digests[0].val V = redFq digest at hd
+  change stmt.digests[0].val V = ZMod.cast digest at hd
   change castDigest IpaVesta.curve (stmt.digests[0].val V) = digest
   rw [hd]
-  simp only [castDigest, val_redFq, if_pos (ZMod.val_lt digest), ZMod.natCast_zmod_val]
+  simp only [castDigest, ZMod.val_cast_eq_val_of_lt (digest.val_lt.trans Pasta.fp_lt_fq),
+    if_pos (ZMod.val_lt digest), ZMod.natCast_zmod_val]
 
 /-- Packed public-input agreement fixes the outgoing Wrap-message digest. -/
 private theorem terminalPacked_wrapDigest {k : ℕ} {V : Valuation Fq}
@@ -330,7 +332,7 @@ private theorem WrapRun.terminal_hashes {C : Circuits D} (r : WrapRun C) :
 private theorem WrapRun.terminal_messageHash {C : Circuits D} (r : WrapRun C) :
     wrapStatement.digests[1].val r.V =
       wrapMsgDigest IpaVesta.curve.sponge.params C.setup.dummy
-        ⟨readPoint r.V r.cells.2.cells.opening.sg,
+        ⟨CircuitType.readVal r.V r.cells.2.cells.opening.sg,
           (r.cells.1.outs.map (·.expandedChallenges)).map (·.map (·.val r.V))⟩ := by
   apply r.terminal_hashes.1
   · exact reads_affinePoint.mpr ⟨rfl, rfl⟩
@@ -347,8 +349,8 @@ def terminalSg (sg : AffinePoint Fq) : IpaVesta.curve.Point :=
   readPt (fun _ ↦ 0) ⟨.const sg.x, .const sg.y⟩
 
 /-- Binding the message's affine coordinates also binds the group's interpreted point. -/
-private theorem terminalSg_of_readPoint {V : Valuation Fq} (cells : AffinePoint (FVar Fq))
-    (sg : AffinePoint Fq) (h : readPoint V cells = sg) :
+private theorem terminalSg_of_readVal {V : Valuation Fq} (cells : AffinePoint (FVar Fq))
+    (sg : AffinePoint Fq) (h : CircuitType.readVal V cells = sg) :
     readPt (C := IpaVesta.curve) V cells = terminalSg sg := by
   have hx : cells.x.val V = sg.x := congrArg AffinePoint.x h
   have hy : cells.y.val V = sg.y := congrArg AffinePoint.y h
@@ -431,7 +433,7 @@ def TerminalData.proof {C : Circuits D} (d : TerminalData C)
 def TerminalData.Collision {C : Circuits D} (d : TerminalData C) (r : WrapRun C) : Prop :=
   Pickles.Collision IpaVesta.curve.sponge.params
     (wrapMsgInput C.setup.dummy
-      ⟨readPoint r.V r.cells.2.cells.opening.sg,
+      ⟨CircuitType.readVal r.V r.cells.2.cells.opening.sg,
         (r.cells.1.outs.map (·.expandedChallenges)).map (·.map (·.val r.V))⟩)
     (wrapMsgInput C.setup.dummy d.message)
 
@@ -460,7 +462,7 @@ private theorem TerminalData.commitment_eq_or_collision {C : Circuits D}
   obtain hs | hc := wrapMsgDigest_sg_eq_or_collision
     IpaVesta.curve.sponge.params C.setup.dummy _ d.message he
   · left
-    exact terminalSg_of_readPoint r.cells.2.cells.opening.sg _ hs
+    exact terminalSg_of_readVal r.cells.2.cells.opening.sg _ hs
   · exact Or.inr hc
 
 /-- The terminal checks are equalities on carried values. The public input fixes a domain
@@ -654,8 +656,8 @@ private def StepRun.terminalMessage {C : Circuits D} {b : D.Branch} (s : StepRun
       (Vector (Vector Fp StepIPARounds) (D.slots b)) :=
   let m := s.cells.messagesForNextStepProof
   { appState := m.appState.map (·.val s.V)
-    dlogPlonkIndex := m.dlogPlonkIndex.map (readPoint s.V)
-    challengePolynomialCommitments := m.challengePolynomialCommitments.map (readPoint s.V)
+    dlogPlonkIndex := m.dlogPlonkIndex.map (CircuitType.readVal s.V)
+    challengePolynomialCommitments := m.challengePolynomialCommitments.map (CircuitType.readVal s.V)
     oldBulletproofChallenges := m.oldBulletproofChallenges.map (·.map (·.val s.V)) }
 
 /-- A collision between the Step execution's outgoing message and the carried Step message. -/
@@ -674,20 +676,23 @@ private theorem StepWrapLink.terminal_stepDigest {C : Circuits D} {b : D.Branch}
     e.step.terminalMessage.challengePolynomialCommitments
     e.step.terminalMessage.oldBulletproofChallenges
   have hpts : ∀ {n : Nat} (ps : Vector (AffinePoint (FVar Fp)) n),
-      CircuitType.Reads e.step.V ps (ps.map (readPoint e.step.V)) := by
+      CircuitType.Reads e.step.V ps
+        (ps.map (CircuitType.readVal (val := AffinePoint Fp) e.step.V)) := by
     intro n ps
     apply CircuitType.reads_vector.mpr
     intro i hi
     simp only [Vector.getElem_map]
     exact reads_affinePoint.mpr ⟨rfl, rfl⟩
   have hk : ∀ (key : VkComms 1 (AffinePoint (FVar Fp))),
-      CircuitType.Reads e.step.V key (key.map (readPoint e.step.V)) := by
+      CircuitType.Reads e.step.V key
+        (key.map (CircuitType.readVal (val := AffinePoint Fp) e.step.V)) := by
     intro key
     rw [CircuitType.reads_ofEquiv]
     simp only [VkComms.equivProd, VkComms.map, Equiv.coe_fn_mk,
       CircuitType.reads_prod]
     have hcols : ∀ {n : Nat} (ps : Vector (Vector (AffinePoint (FVar Fp)) 1) n),
-        CircuitType.Reads e.step.V ps (ps.map (·.map (readPoint e.step.V))) := by
+        CircuitType.Reads e.step.V ps
+          (ps.map (·.map (CircuitType.readVal (val := AffinePoint Fp) e.step.V))) := by
       intro n ps
       exact CircuitType.reads_vector.mpr fun i hi ↦ by
         rw [Vector.getElem_map]; exact hpts _
@@ -708,12 +713,13 @@ private theorem StepWrapLink.terminal_stepDigest {C : Circuits D} {b : D.Branch}
   change e.step.cells.out.proofState.messagesForNextStepProof.val e.step.V =
     (ZMod.val (e.wrap.cells.2.statement.proofState.messagesForNextStepProof.val e.wrap.V) : Fp)
       at hp
-  have hd : wrapStatement.digests[2].val e.wrap.V = redFq d.stepDigest := by
+  have hd : wrapStatement.digests[2].val e.wrap.V = ZMod.cast d.stepDigest := by
     rw [CircuitType.reads_ofEquiv] at hreads
     simp only [StatementPacked.equivProd, Equiv.coe_fn_mk,
       CircuitType.reads_prod, CircuitType.reads_vector] at hreads
     exact CircuitType.reads_fvar.mp (hreads.2.2.2.1 2 (by decide))
-  rw [← e.wrap.terminal_hashes.2.2.1, hd, val_redFq, ZMod.natCast_zmod_val] at hp
+  rw [← e.wrap.terminal_hashes.2.2.1, hd, ← ZMod.cast_eq_val,
+    ZMod.cast_cast_zmod_of_le Pasta.fp_lt_fq.le] at hp
   exact hhash.symm.trans hp
 
 private theorem TerminalData.wrapChallenges_eq_or_collision {C : Circuits D}
@@ -725,7 +731,7 @@ private theorem TerminalData.wrapChallenges_eq_or_collision {C : Circuits D}
     (wrapMsgDigest IpaVesta.curve.sponge.params C.setup.dummy d.message)
     d.stepDigest d.branchData hreads
   have hh := r.terminal_messageHash.symm.trans hd
-  let m := (⟨readPoint r.V r.cells.2.cells.opening.sg,
+  let m := (⟨CircuitType.readVal r.V r.cells.2.cells.opening.sg,
     (r.cells.1.outs.map (·.expandedChallenges)).map (·.map (·.val r.V))⟩ :
     MessagesForNextWrapProof (AffinePoint Fq) (Vector (Vector Fq WrapIPARounds) D.width))
   by_cases he : wrapMsgInput C.setup.dummy m = wrapMsgInput C.setup.dummy d.message
@@ -734,7 +740,7 @@ private theorem TerminalData.wrapChallenges_eq_or_collision {C : Circuits D}
     have hc := List.append_cancel_left hc
     apply Vector.toList_inj.mp
     apply chunks_injective (by simp)
-    simpa only [toList_flatten', List.flatMap_def] using hc
+    simpa only [Snarky.toList_flatten, List.flatMap_def] using hc
   · right
     exact Collision.of_length_eq (by simp [wrapMsgInput]) he
       (by simpa only [Poseidon.RandomOracle.hash_eq_squeeze] using hh)
@@ -772,7 +778,11 @@ private theorem TerminalData.accumulator_mem_or_collision {C : Circuits D}
     have hx := congrArg AffinePoint.x hsg
     have hy := congrArg AffinePoint.y hsg
     simp only [StepRun.terminalMessage, TerminalData.stepMessage, Vector.getElem_map,
-      Fin.getElem_fin, readPoint] at hx hy
+      Fin.getElem_fin] at hx hy
+    change e.step.cells.messagesForNextStepProof.challengePolynomialCommitments[i.val].x.val
+      e.step.V = d.prevSgs[i.val].x at hx
+    change e.step.cells.messagesForNextStepProof.challengePolynomialCommitments[i.val].y.val
+      e.step.V = d.prevSgs[i.val].y at hy
     simp only [readPt, CVar.val, Fin.getElem_fin, hx, hy]
   · rw [Vector.getElem_append_right (by omega) (by omega)]
     have hidx : MaxProofsVerified - D.slots b + i.val - (MaxProofsVerified - D.width) =

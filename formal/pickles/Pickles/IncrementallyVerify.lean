@@ -452,7 +452,7 @@ private theorem tailRows_comms {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiPr
   have hmap : ∀ {m : ℕ} (v : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) m),
       (v.flatten.map (·.1)).toList = ((v.map (·.map (·.1))).toList.map Vector.toList).flatten := by
     intro m v
-    simp only [Vector.toList_map, toList_flatten', List.map_flatten, List.map_map,
+    simp only [Vector.toList_map, Snarky.toList_flatten, List.map_flatten, List.map_map,
       Function.comp_def]
   rw [hmap]
   -- `tailRowsOf` is typed at `tailRowCount`, its body at the sum of the four region lengths;

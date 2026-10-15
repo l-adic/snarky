@@ -134,21 +134,22 @@ def ClaimsCast {k : ℕ} (Vg : Valuation Fq)
     g.xi.val, g.b.val, claimsG.spongeDigestBeforeEvaluations].map (·.val Vg)
     = [s.plonk.alpha.val, s.plonk.beta.val, s.plonk.gamma.val, s.plonk.zeta.val, s.plonk.perm.val,
       s.plonk.zetaToSrsLength.val, s.plonk.zetaToDomainSize.val, s.combinedInnerProduct.val,
-      s.xi.val, s.b.val, claimsS.spongeDigestBeforeEvaluations].map (fun x => redFq (x.val Vs)) ∧
+      s.xi.val, s.b.val, claimsS.spongeDigestBeforeEvaluations].map
+        (fun x ↦ ZMod.cast (x.val Vs)) ∧
   ∀ i : Fin k,
-    g.bulletproofChallenges[i].val.val Vg = redFq (s.bulletproofChallenges[i].val.val Vs)
+    g.bulletproofChallenges[i].val.val Vg = ZMod.cast (s.bulletproofChallenges[i].val.val Vs)
 
 /-- The two sides decode a shifted claim alike across the reduction. -/
-private theorem wrapDecode_redFq {Vg : Valuation Fq} {Vs : Valuation Fp} {c : Type1 (FVar Fq)}
-    {x : Type1 (FVar Fp)} (hc : c.val.val Vg = redFq (x.val.val Vs)) :
+private theorem wrapDecode_cast {Vg : Valuation Fq} {Vs : Valuation Fp} {c : Type1 (FVar Fq)}
+    {x : Type1 (FVar Fp)} (hc : c.val.val Vg = ZMod.cast (x.val.val Vs)) :
     wrapDecode Vg c = (fopStep Vs).decode x := by
   simp only [wrapDecode, FopSide.decode, fopStep, stepShiftOps.reading, Type1.fromShifted, hc,
-    val_redFq, ZMod.natCast_zmod_val]
+    ← ZMod.cast_eq_val, ZMod.cast_cast_zmod_of_le Pasta.fp_lt_fq.le]
 
 /-- The digest crosses back through `castDigest`. -/
-private theorem castDigest_redFq (x : Fp) : castDigest IpaVesta.curve (redFq x) = x := by
-  simp only [castDigest, val_redFq, if_pos (ZMod.val_lt x)]
-  exact ZMod.natCast_zmod_val x
+private theorem castDigest_cast (x : Fp) : castDigest IpaVesta.curve (ZMod.cast x) = x := by
+  simp only [castDigest, ZMod.val_cast_eq_val_of_lt (x.val_lt.trans Pasta.fp_lt_fq),
+    if_pos (ZMod.val_lt x), ZMod.natCast_zmod_val]
 
 /-- **The claims cast across make the two halves hold one set of claims.** With the wrap
 circuit's claim cells the step circuit's reduced (`ClaimsCast`), `β`, `γ` reading as
@@ -187,14 +188,14 @@ theorem halvesTies_of_cast {k nc w : ℕ} (Vg : Valuation Fq)
       combinedInnerProduct := dec s.combinedInnerProduct, xi := ⟨ξ⟩
       bulletproofChallenges := ms.map SizedF.mk
       b := dec s.b }
-  refine ⟨⟨dv, ⟨reads128_redFq cα ha, hb, hg, reads128_redFq cζ hz, wrapDecode_redFq cperm,
-      wrapDecode_redFq czm, wrapDecode_redFq czn, wrapDecode_redFq ccip, reads128_redFq cξ hxi,
-      fun i => by simpa [dv] using reads128_redFq (hbp i) (hms i), wrapDecode_redFq cb⟩,
-    ⟨ha, reads128_of_redFq cβ hb, reads128_of_redFq cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
+  refine ⟨⟨dv, ⟨reads128_cast cα ha, hb, hg, reads128_cast cζ hz, wrapDecode_cast cperm,
+      wrapDecode_cast czm, wrapDecode_cast czn, wrapDecode_cast ccip, reads128_cast cξ hxi,
+      fun i => by simpa [dv] using reads128_cast (hbp i) (hms i), wrapDecode_cast cb⟩,
+    ⟨ha, reads128_of_cast cβ hb, reads128_of_cast cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
       fun i => by simpa [dv] using hms i, rfl⟩⟩, ?_⟩
   show claimsS.spongeDigestBeforeEvaluations.val Vs
     = castDigest IpaVesta.curve (claimsG.spongeDigestBeforeEvaluations.val Vg)
-  rw [cdig, castDigest_redFq]
+  rw [cdig, castDigest_cast]
 
 /-- **The step circuit's scalar half decides `kimchiVerify`.** `twoHalves_kimchiVerify` as a
 triple about the scalar circuit, with the wrap circuit's group half assumed

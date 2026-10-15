@@ -18,8 +18,9 @@ known gate type. Every failure is located at its circuit.
 application's certified Lean indices. The comparison theorem establishes equality, so results
 about the certified indices apply to the foreign indices. This operation is separate from normal
 application certification. `PicklesFixture.Application.rejectCorruptedDump` changes a
-coefficient and requires exactly the located failure. `rejectImportedChanges` also tests
-exchanged wire targets and a changed endomorphism coefficient against the same Lean indices.
+coefficient and requires exactly the located failure.
+`PicklesFixture.Application.rejectImportedChanges` also tests exchanged wire targets and a
+changed endomorphism coefficient against the same Lean indices.
 
 `PicklesFixture.Application.rejectInvalidDumps` is the adapter's own behaviour on small dumps,
 before any application: a wellformed dump builds, a wire target outside the table is refused,

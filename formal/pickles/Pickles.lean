@@ -31,9 +31,9 @@ import Pickles.StepMain
 import Pickles.WrapScalarHalf
 import Pickles.WrapVerify
 import Pickles.WrapFinalize
-import Pickles.StepWrap
-import Pickles.WrapStep
-import Pickles.Handover
+import Pickles.Soundness.StepWrap
+import Pickles.Soundness.WrapStep
+import Pickles.Soundness.Handover
 import Pickles.WrapMain
 import Pickles.Application
 

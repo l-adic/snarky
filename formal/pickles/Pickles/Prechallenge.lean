@@ -1,6 +1,7 @@
 import Snarky.DSL.SizedF
 import Snarky.Kimchi.Circuit.RangeCheck
 import Kimchi.Verifier.Kimchi
+import Pasta.Basic
 
 /-!
 # Reading prechallenges at the circuit boundary
@@ -118,5 +119,28 @@ theorem Low128.exact {p : ℕ} [Fact p.Prime] {V : Valuation (ZMod p)}
     (hlow : Low128 V x u) (hm : Reads128 V u m) : x.val % 2 ^ 128 = m.val := by
   obtain ⟨hi, -, hx, hlt⟩ := hlow m.val m.2 hm
   exact low128_of_split x m.2 hx (fieldModulus_zmod p ▸ hlt)
+
+section Across
+
+open CompElliptic.Fields.Pasta
+
+/-- A step cell reading as a prechallenge reduces to a wrap cell reading as it. -/
+theorem reads128_cast {Vg : Valuation Fq} {Vs : Valuation Fp} {c : SizedF 128 (FVar Fq)}
+    {x : SizedF 128 (FVar Fp)} {m : Prechallenge}
+    (hc : c.val.val Vg = ZMod.cast (x.val.val Vs)) (hx : Reads128 Vs x m) : Reads128 Vg c m := by
+  unfold Reads128 at hx ⊢
+  rw [hc, hx, ZMod.cast_eq_val,
+    ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_BASE_CARD]))]
+
+/-- A wrap cell reading as a prechallenge is the reduction of a step cell reading as it. -/
+theorem reads128_of_cast {Vg : Valuation Fq} {Vs : Valuation Fp}
+    {c : SizedF 128 (FVar Fq)} {x : SizedF 128 (FVar Fp)} {m : Prechallenge}
+    (hc : c.val.val Vg = ZMod.cast (x.val.val Vs)) (hm : Reads128 Vg c m) : Reads128 Vs x m := by
+  apply ZMod.cast_injective_of_le Pasta.fp_lt_fq.le
+  rw [← hc, ZMod.cast_eq_val,
+    ZMod.val_natCast_of_lt (m.2.trans (by norm_num [PALLAS_BASE_CARD]))]
+  exact hm
+
+end Across
 
 end Pickles

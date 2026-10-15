@@ -2,7 +2,7 @@ import Std.Data.HashMap
 import BulletproofFixture
 import BulletproofFixture.SRSLoader
 import KimchiFixture.Cache
-import Pickles.TwoHalves
+import Kimchi.Verifier.Accumulator
 
 /-!
 # Verdicts on cached proofs
@@ -97,13 +97,13 @@ def padOkMemo (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Opti
   if h : slot < cp.olds.size then
     let a := cp.olds[slot]
     memoized memo.acc s!"{name}/{σ.k}/{a.sg.x.val}/{a.sg.y.val}/{a.u.toList.map (·.val)}"
-      fun _ => Pickles.accOk σ a
+      fun _ => Kimchi.Verifier.accOk σ a
   else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
 
 /-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on `C`:
 `carry` alone, at the memoised Lagrange points. With `pred`'s `sgOkWith` there, which
-`kimchiVerifyWith` accepting gives (`Pickles.sgOkWith_of_kimchiVerifyWith`), the accumulator
-passes `accOk` (`Pickles.accOk_of_carryWith`), so no second `sg` MSM is run for it. -/
+`kimchiVerifyWith` accepting gives (`Kimchi.Verifier.sgOkWith_of_kimchiVerifyWith`), the accumulator
+passes `accOk` (`Kimchi.Verifier.accOk_of_carryWith`), so no second `sg` MSM is run for it. -/
 def carries (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
     (loaded : IO.Ref (List (ℕ × SRS C.Point))) (keys : IO.Ref (List (String × Checked C)))
     (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
@@ -114,7 +114,7 @@ def carries (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option
   let ⟨_, _, cp'⟩ ← IO.ofExcept (succ.checked S.k)
   if h : slot < cp'.olds.size then
     let L ← basisFor C name S nc pred
-    return Pickles.carryWith S K L cp pred.publicInput cp' ⟨slot, h⟩
+    return Kimchi.Verifier.carryWith S K L cp pred.publicInput cp' ⟨slot, h⟩
   else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
 
 end PicklesFixture
