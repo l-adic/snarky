@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1460" height="640" viewBox="0 0 1460 640" role="img" aria-labelledby="title desc">
+<title id="title">Reconstructing Step and Wrap</title>
+<desc id="desc">Blue marks the Step circuit's field Fp; orange marks the Wrap circuit's field Fq. Purple marks exported rule constraints; green marks reconstructed Pickles verification machinery. StepMainAdvice branches outside the Step boundary: publicInput of shape.inputType goes up and then right into the rule, while the remaining advice continues horizontally to the verification machinery. StepStatement includes a digest of the rule's input and output. Wrap takes advice and a packed WrapStatement as inputs and has no public output. Shape-indexed types follow the paper's schematic appendix.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L10 5 L0 10 Z" fill="#38434E"/></marker>
+<style>
+text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; fill: #202830; }
+.panel { font-family: Georgia, "Times New Roman", serif; font-size: 28px; }
+.label { font-size: 22px; }
+.small { font-size: 18px; fill: #53606C; }
+.mono { font-family: "DejaVu Sans Mono", Menlo, monospace; font-size: 19px; }
+.name { font-family: "DejaVu Sans Mono", Menlo, monospace; font-size: 27px; }
+.exported { fill: #F2EAF8; stroke: #764596; stroke-width: 1.8; }
+.constructed { fill: #CEE8D3; stroke: #438155; stroke-width: 1.8; }
+.label, .machinery-text { fill: #234A30; }
+.step { fill: #FAFCFF; stroke: #2164A6; stroke-width: 2.4; }
+.wrap { fill: #FFFCF8; stroke: #BD650B; stroke-width: 2.4; }
+.wire { fill: none; stroke: #38434E; stroke-width: 2.3; stroke-linejoin: round; }
+.bundle { fill: none; stroke: #38434E; stroke-width: 3.6; stroke-linejoin: round; }
+.port { fill: #FFFFFF; stroke: #38434E; stroke-width: 1.6; }
+a { cursor: pointer; }
+</style>
+</defs>
+<rect width="1460" height="640" fill="#FFFFFF"/>
+<!-- (a) One Step circuit for the selected rule. -->
+<text x="30" y="42" class="panel">(a)</text>
+<a xlink:href="https://github.com/l-adic/snarky/blob/main/formal/pickles/Pickles/Application/Circuit.lean#L127"><text x="80" y="42" class="name">Step<tspan baseline-shift="sub" font-size="19">r</tspan></text></a>
+<text x="190" y="42" class="panel" style="fill:#2164A6">F<tspan baseline-shift="sub" font-size="19">p</tspan></text>
+<rect x="255" y="75" width="900" height="265" rx="8" class="step"/>
+<rect x="310" y="170" width="250" height="95" rx="5" class="exported"/>
+<text x="435" y="210" class="name" text-anchor="middle">Rule<tspan baseline-shift="sub" font-size="19">r</tspan></text>
+<a xlink:href="https://github.com/l-adic/snarky/blob/main/formal/pickles/PicklesFixture/Rule.lean#L36"><text x="435" y="244" class="mono" text-anchor="middle">RuleDump shape r</text></a>
+<rect x="685" y="160" width="420" height="110" rx="5" class="constructed"/>
+<line x1="895" y1="175" x2="895" y2="255" stroke="#7BA787" stroke-width="1.5"/>
+<text x="790" y="195" class="label" text-anchor="middle">Wrap group</text>
+<text x="790" y="222" class="label" text-anchor="middle">verification</text>
+<text x="790" y="249" class="small machinery-text" text-anchor="middle">slot Wrap proofs</text>
+<text x="1000" y="195" class="label" text-anchor="middle">Step scalar</text>
+<text x="1000" y="222" class="label" text-anchor="middle">finalization</text>
+<text x="1000" y="249" class="small machinery-text" text-anchor="middle">upstream Step data</text>
+<path d="M435 170 V130 H895 V158" class="wire" marker-end="url(#arrow)"/>
+<a xlink:href="https://github.com/l-adic/snarky/blob/main/formal/pickles/Pickles/StepMain.lean#L109"><text x="665" y="112" class="mono" text-anchor="middle">{ statementᵢ, mustVerifyᵢ }ᵢ</text></a>
+<a xlink:href="https://github.com/l-adic/snarky/blob/main/formal/pickles/Pickles/StepMain.lean#L117"><text x="30" y="301" class="mono">StepMainAdvice</text></a>
+<path d="M30 318 H1000" class="bundle"/>
+<path d="M225 318 V225 H308" class="wire" marker-end="url(#arrow)"/>
+<text x="30" y="190" class="mono" style="font-size:17px">publicInput :</text>
+<text x="30" y="212" class="mono" style="font-size:17px">shape.inputType</text>
+<path d="M790 318 V272" class="wire" marker-end="url(#arrow)"/>
+<path d="M1000 318 V272" class="wire" marker-end="url(#arrow)"/>
+<rect x="250" y="313" width="10" height="10" class="port"/>
+<rect x="250" y="220" width="10" height="10" class="port"/>
+<circle cx="225" cy="318" r="4" fill="#38434E"/>
+<circle cx="790" cy="318" r="4" fill="#38434E"/>
+<path d="M1155 225 H1430" class="bundle" marker-end="url(#arrow)"/>
+<rect x="1150" y="220" width="10" height="10" class="port"/>
+<a xlink:href="https://github.com/l-adic/snarky/blob/main/formal/pickles/Pickles/Statement.lean#L115"><text x="1180" y="208" class="mono">StepStatement shape</text></a>
+<!-- (b) The shared Wrap circuit; its public statement is an input. -->
+<text x="30" y="390" class="panel">(b)</text>
+<a xlink:href="https://github.com/l-adic/snarky/blob/main/formal/pickles/Pickles/Application/Circuit.lean#L141"><text x="80" y="390" class="name">Wrap</text></a>
+<text x="190" y="390" class="panel" style="fill:#BD650B">F<tspan baseline-shift="sub" font-size="19">q</tspan></text>
+<rect x="255" y="423" width="900" height="190" rx="8" class="wrap"/>
+<rect x="360" y="453" width="300" height="110" rx="5" class="constructed"/>
+<text x="510" y="488" class="label" text-anchor="middle">Step group verification</text>
+<text x="510" y="523" class="small machinery-text" text-anchor="middle">current Step<tspan baseline-shift="sub" font-size="13">r</tspan> proof</text>
+<rect x="755" y="453" width="350" height="110" rx="5" class="constructed"/>
+<text x="930" y="488" class="label" text-anchor="middle">Wrap scalar finalization</text>
+<text x="930" y="523" class="small machinery-text" text-anchor="middle">slot Wrap proofs</text>
+<a xlink:href="https://github.com/l-adic/snarky/blob/main/formal/pickles/Pickles/WrapMain.lean#L193"><text x="30" y="491" class="mono">WrapMainAdvice</text></a>
+<path d="M30 508 H358 M295 508 V590 H930 V565" class="bundle"/>
+<path d="M320 508 H358" class="wire" marker-end="url(#arrow)"/>
+<path d="M930 590 V565" class="wire" marker-end="url(#arrow)"/>
+<circle cx="295" cy="508" r="4" fill="#38434E"/>
+<rect x="250" y="503" width="10" height="10" class="port"/>
+<a xlink:href="https://github.com/l-adic/snarky/blob/main/formal/pickles/Pickles/Statement.lean#L99"><text x="30" y="573" class="mono">WrapStatement shape</text></a>
+<path d="M30 590 H295" class="bundle"/>
+<rect x="250" y="585" width="10" height="10" class="port"/>
+<circle cx="295" cy="590" r="4" fill="#38434E"/>
+<path d="M1155 508 H1430" class="bundle" marker-end="url(#arrow)"/>
+<rect x="1150" y="503" width="10" height="10" class="port"/>
+<text x="1180" y="491" class="mono">Unit</text>
+</svg>
