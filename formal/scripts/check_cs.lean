@@ -1330,8 +1330,7 @@ def xhatBranchesCircuit (shared : Bool) (pts0 pts1 : Array XhatWrapCurve.Point)
 `wrapMain` constants (`wrapMainOf`): the branches' slot counts, step domains and step keys, the
 Lagrange bases per public-input scalar and branch, the blinding `h`, the wrap domain pins (none
 for a side-loaded slot), the slot widths and the padding challenges. Each target compiles
-`Pickles.wrapMainCircuit`'s output alone, the capstones' system
-(`Snarky.compileWith_constraints`). -/
+`Pickles.wrapMainCircuit`'s output alone, the capstones' system. -/
 
 /-- An `x_hat` circuit's constants (`xhat`): its Lagrange bases at `nc` chunks, as points of
 `C` — `IpaVesta` on the wrap side, `IpaPallas` on the step side — and its blinding `h`. The

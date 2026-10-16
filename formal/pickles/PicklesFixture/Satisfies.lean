@@ -6,7 +6,7 @@ import KimchiFixture.PS
 /-!
 # A main circuit's run, decided
 
-A main circuit runs as its capstone compiles it (`PicklesFixture.runMain`, over
+A main circuit runs as its capstone compiles it (`PicklesFixture.runMainBuilt`, over
 `Snarky.compileWith`), and its run decides the capstone's own hypothesis: the prover's
 valuation satisfies every compiled constraint (`Snarky.Kimchi.KimchiConstraint.Holds`). The
 capstones state that system at the soundness tag `Builder V`, which is the same system.
@@ -111,15 +111,6 @@ def runMainBuilt {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [A : CircuitType
     {t5 - t4} ms ({nwit} rows) · index build {t6 - t5} ms (n = {n}) · decide {t7 - t6} ms"
   return ⟨{ V, holds, satisfies, pub, rows := wit.toArray, result := built.result,
             result_eq := rfl }, built, rfl⟩
-
-/-- `runMainBuilt`'s run alone. -/
-def runMain {p : ℕ} [Fact p.Prime] {a av b bv α : Type} [CircuitType (ZMod p) a av]
-    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a av]
-    [CircuitType (ZMod p) b bv]
-    (side : Kimchi.Fixture.PS.Side p)
-    (body : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (bv × α)) (inp : a) :
-    IO (MainRun (a := a) (b := b) body) :=
-  (·.1) <$> runMainBuilt side body inp
 
 /-- `jobs` on `n` workers, each job's output captured on its worker thread (stdout is per
 thread) and printed, flushed, in job order as soon as the jobs before it are done; the verdicts,

@@ -32,7 +32,7 @@ structure ImportedLayoutDump where
   statement : FieldLayoutDump
   /-- Maximum predecessor count of the imported application. -/
   width : Nat
-  deriving DecidableEq, Inhabited
+  deriving Inhabited
 
 private def ImportedLayoutDump.ofJson (j : Json) : Except String ImportedLayoutDump := do
   let statement ← FieldLayoutDump.ofJson (← j.getObjVal? "statement")
@@ -44,7 +44,6 @@ inductive SlotSourceDump where
   | self
   | external (importIndex : Nat)
   | sideLoaded (layout : ImportedLayoutDump)
-  deriving DecidableEq, Inhabited
 
 private def SlotSourceDump.ofJson (j : Json) : Except String SlotSourceDump := do
   match ← (← j.getObjVal? "kind").getStr? with

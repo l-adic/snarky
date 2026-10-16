@@ -97,22 +97,6 @@ def extendFresh (a : Assignments F) (v : Variable) (x : F) :
   | some _ => .error (.custom "extendFresh: variable already assigned")
   | none => .ok (a.extend v x)
 
-/-- A guarded write only extends the table. -/
-theorem le_extendFresh {a a' : Assignments F} {v : Variable} {x : F}
-    (h : a.extendFresh v x = .ok a') : a.Le a' := by
-  unfold extendFresh at h
-  split at h
-  · cases h
-  next hv =>
-    cases h
-    intro w y hw
-    by_cases hwv : w = v
-    · subst hwv
-      rw [hv] at hw
-      exact absurd hw (by simp)
-    · rw [extend_ne _ _ hwv]
-      exact hw
-
 private theorem extendList_below {a : Assignments F} :
     ∀ {xs : List F} {nv v : Nat}, v < nv → a.extendList nv xs v = a v
   | [], _, _, _ => rfl

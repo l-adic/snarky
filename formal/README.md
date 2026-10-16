@@ -42,7 +42,8 @@ pure aggregator that owns no library.
 - `docs/` — the negative controls and standing invariants, the completeness guide, and
   why soundness is out of scope
 - `scripts/` — workspace-wide gates (style, dead code, kernel replay, sorry census); each
-  package additionally owns its own `scripts/` (axiom gate, fixture checks, `roots.txt`)
+  package additionally owns its own `scripts/` (axiom gate, fixture checks, and a `roots.txt`
+  where the package keeps one)
 - `references/` — PDFs, papers, and informal notes backing the formalization
 - `archon-protected.yaml` — declarations agents must not modify
 - `.archon/` — agent state (not committed)
@@ -75,7 +76,7 @@ The gates, all CI-enforced:
 ```bash
 scripts/check-style.sh                  # the formatter contract (≤100 cols, no tabs, …)
 scripts/check_sorry_census.sh           # no sorries anywhere
-scripts/deadcode.sh                     # reachability from the packages' roots.txt
+scripts/deadcode.sh                     # reachability from the CI drivers, axiom lists and roots.txt
 scripts/kernel-replay.sh                # lean4checker replays every .olean
 make lean-lint                          # Batteries' env_linter suite, one process per module
 make lean-shake                         # no redundant imports
@@ -135,7 +136,7 @@ PICKLES_DUMP_DIR=/path/to/pickles-dumps lake env lean --run scripts/check_applic
 
 ### Reconstruction from application sidecars
 
-`check-tags` and `check-application-shapes` reconstruct each application from its single
+`check-tags` reconstructs each application from its single
 `shapes/<tag>.json` sidecar and the shared SRS files. The sidecar carries the shape,
 input checks and rule operations, resolved keys and protocol padding. Imports resolve
 against previously reconstructed producers. Lagrange tables and the padding accumulator
@@ -155,9 +156,9 @@ backend satisfaction and public inputs, and directly applies the application ver
 and handover capstones. Every selected cache entry must be covered.
 
 `pickles/PicklesFixture/Manifest.lean` is the required corpus: an explicit list of fixture
-test names and all tags each must emit. Neither driver discovers applications or tags
-from directories. Both default to the complete manifest. `APPLICATION_SHAPES=<app>,…`
-selects a subset for reconstruction; `LINKS=<app>,…` selects a subset with cached runs.
+test names and all tags each must emit. The driver discovers no applications or tags from
+directories and defaults to the complete manifest. `LINKS=<app>,…` selects a subset with
+cached runs.
 Unknown, empty or duplicate selections fail. Every listed circuit and sidecar must exist,
 checked before loading SRSs. Adding a fixture requires adding its application/tag entry
 to the manifest. Other files do not add tests to the corpus.
@@ -182,13 +183,10 @@ SRS references check curves, round counts and blinding bases; the caller supplie
 actual shared generator files.
 
 ```bash
-lake build check-rule-replay check-application-inputs check-application-shapes
+lake build check-rule-replay check-application-inputs
 lake env lean --run scripts/check_application_manifest.lean
 lake exe check-rule-replay
 PICKLES_DUMP_DIR=/path/to/pickles-dumps lake exe check-application-inputs
-PICKLES_DUMP_DIR=/path/to/pickles-dumps \
-  APPLICATION_SHAPES=TwoPhaseChain,HeterogeneousPrevs,RecurseOverChunks,PaddedWideSlots \
-  lake exe check-application-shapes
 ```
 
 ### Follow-up: backport shared slot capacities to PureScript

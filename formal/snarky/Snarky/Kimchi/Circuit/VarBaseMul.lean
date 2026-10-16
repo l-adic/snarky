@@ -1794,10 +1794,6 @@ def splitField [Field F] [ToNat F] (s : F) : F × Bool :=
   let odd := (ToNat.toNat s) % 2 = 1
   ((if odd then s - 1 else s) / 2, odd)
 
-/-- The joined value of a parity split. -/
-def joinField [Field F] (sDiv2 : F) (sOdd : Bool) : F :=
-  2 * sDiv2 + (if sOdd then 1 else 0)
-
 private def splitFieldWit [Field F] [ToNat F] (s : FVar F) : AsProver F (F × Bool) := do
   let v ← AsProver.readCVar s
   pure (splitField v)

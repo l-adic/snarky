@@ -76,11 +76,11 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 
 No package is privileged: `formal/` itself is a pure aggregator workspace (its lakefile
 owns no libraries, only requires). Each package builds standalone from its own directory
-and owns its scripts (axiom gate, fixture checks, `roots.txt` API manifest); building or
+and owns its scripts (axiom gate, fixture checks, where kept a `roots.txt` manifest); building or
 running gates from `formal/` puts everything in one shared workspace (one Mathlib) — how
 CI drives it. The workspace-level scripts are `scripts/check-style.sh` (the formatter
-contract), `scripts/deadcode.{lean,sh}` (cross-package reachability over the union of
-the packages' manifests), `scripts/module-deps.sh` (the dependency-graph artifact —
+contract), `scripts/deadcode.{lean,sh}` (cross-package reachability from the CI drivers'
+oleans, the axiom gates' lists and the remaining manifests), `scripts/module-deps.sh` (the dependency-graph artifact —
 `make lean-dep-graph`), `scripts/prune-stale-oleans.sh` (garbage-collect build artifacts
 of deleted/renamed modules — run it after branch switches),
 `scripts/check-import-boundaries.sh` (the ordinary compiler, the scope checker and the index
