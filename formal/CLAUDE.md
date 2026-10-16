@@ -345,10 +345,11 @@ scripts/check_application_keys.lean          # check-application-keys: derive ke
                                              # (PICKLES_DUMP_DIR; optional APPS; no proof cache)
 scripts/certify_application.lean             # certify-application: selected applications reconstructed, compiled
                                              # once, supplied keys certified against the Lean indices and SRSs,
-                                             # and verifier setup checked; no foreign circuit dump or proof cache
+                                             # verifier setup checked, and foreign circuit dumps compared;
+                                             # no proof cache
                                              # (PICKLES_DUMP_DIR, APPS; CI runs it from test.yml)
-scripts/check_certify_failures.sh            # its one-run regression: three damaged applications fail located
-                                             # and block their dependents beside an intact certified one (CI)
+scripts/check_certify_failures.sh            # missing, malformed and mismatching dumps fail; damaged
+                                             # applications block dependents beside an intact one (CI)
 ```
 
 (Every package-local check reads its data through an env var whose **default is relative

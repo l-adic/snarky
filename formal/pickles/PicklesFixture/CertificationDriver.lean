@@ -1,13 +1,15 @@
 import PicklesFixture.ApplicationFromShape
 import PicklesFixture.Certification
+import PicklesFixture.ImportedIndices
 import PicklesFixture.Verdicts
 
 /-!
 # Manifest certification driver
 
 Reconstruct the selected applications and certify every supplied step and wrap key against
-their Lean indices and shared SRSs. Each entry is reported; a dependent of a producer whose
-certification failed is blocked. No independent circuit dump or proof cache is read.
+their Lean indices and shared SRSs. When requested, compare the independent circuit dumps with
+the certified indices. Each entry is reported; a dependent of a producer whose certification or
+comparison failed is blocked. No proof cache is read.
 The selection and shared SRSs are fatal; an entry's own failures remain located at that entry.
 -/
 
@@ -16,7 +18,7 @@ open Bulletproof CompElliptic.Fields.Pasta Kimchi.Fixture Kimchi.Fixture.PS
 
 /-- Certify a manifest selection, including every producer before its dependents. -/
 def PicklesFixture.Application.runCertification (requireExplicit : Bool)
-    (defaultSelection : Option String) : IO Unit := do
+    (defaultSelection : Option String) (compareDumps : Bool := false) : IO Unit := do
   let some dir ← IO.getEnv "PICKLES_DUMP_DIR"
     | throw (IO.userError "PICKLES_DUMP_DIR is not set")
   let selection := (← IO.getEnv "APPS").or defaultSelection
@@ -42,7 +44,17 @@ def PicklesFixture.Application.runCertification (requireExplicit : Bool)
         let certify := do
           if let some producer := blocked then
             throw (IO.userError s!"{name}: blocked by certification failure of {producer}")
-          certifyApplication name A
+          let dumps ← if compareDumps then do
+            try
+              let tag ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / s!"{name}.json")))
+              pure (some (← IO.ofExcept (circuitDumps A.shape tag)))
+            catch e => throw (IO.userError s!"{name}: comparison dump: {e}")
+            else pure none
+          let cert ← certifyApplication name A
+          if let some (stepDump, wrapDump) := dumps then
+            compareImported name (A.assembled.circuits A.setup (fun _ => none)) cert
+              stepDump wrapDump
+          return cert
         match ← certify.toBaseIO with
         | .ok _ => IO.println s!"✓ {name}: certified"
         | .error e =>

@@ -1,0 +1,18 @@
+# Generated documents, previews, and TeX intermediates.
+/build/
+/.cache/
+*.pdf
+*.png
+*.aux
+*.toc
+*.out
+*.log
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# Local planning notes and superseded drafts.
+/*.txt
+/review.tex
+/reconstruction-draft.tex
+/step-wrap-slots.*
