@@ -32,14 +32,6 @@ instance instSizedFCircuitType {F v w : Type} {n : ℕ} [CircuitType F v w] :
     CircuitType F (SizedF n v) (SizedF n w) :=
   CircuitType.ofEquiv (SizedF.equivVal n v) (SizedF.equivVal n w)
 
-/-- A `Type1` is its cell. -/
-def _root_.Snarky.Type1.equivVal (α : Type) : Type1 α ≃ α :=
-  ⟨Type1.val, Type1.mk, fun _ => rfl, fun _ => rfl⟩
-
-instance instType1CircuitType {F v w : Type} [CircuitType F v w] :
-    CircuitType F (Type1 v) (Type1 w) :=
-  CircuitType.ofEquiv (Type1.equivVal v) (Type1.equivVal w)
-
 /-- A `Type2` is its cell. -/
 def _root_.Snarky.Type2.equivVal (α : Type) : Type2 α ≃ α :=
   ⟨Type2.val, Type2.mk, fun _ => rfl, fun _ => rfl⟩
@@ -87,34 +79,6 @@ instance instPointEvaluationsCheckedType {F c v w : Type} [Field F] [BasicSystem
     CheckedType F c (PointEvaluations v) (PointEvaluations w) :=
   CheckedType.ofEquiv (PointEvaluations.equivProd v) (PointEvaluations.equivProd w)
 
-/-- The evaluation record is its ten families, in field order. -/
-def _root_.Kimchi.Verifier.ProofEvaluations.equivProd (α : Type) :
-    ProofEvaluations α ≃
-      Vector (PointEvaluations α) wCols × PointEvaluations α ×
-        Vector (PointEvaluations α) sigmaRows × Vector (PointEvaluations α) coeffCols ×
-        PointEvaluations α × PointEvaluations α × PointEvaluations α × PointEvaluations α ×
-        PointEvaluations α × PointEvaluations α where
-  toFun e := (e.w, e.z, e.s, e.coefficients, e.genericSelector, e.poseidonSelector,
-    e.completeAddSelector, e.mulSelector, e.emulSelector, e.endomulScalarSelector)
-  invFun p := ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1,
-    p.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.2.2⟩
-  left_inv _ := rfl
-  right_inv _ := rfl
-
-instance instProofEvaluationsCircuitType {F v w : Type} [CircuitType F v w] :
-    CircuitType F (ProofEvaluations v) (ProofEvaluations w) :=
-  CircuitType.ofEquiv (ProofEvaluations.equivProd v) (ProofEvaluations.equivProd w)
-
-/-- The chunked evaluations: `ft(ζω)`, the public chunks, the record's chunks. -/
-def ChunkedEvals.equivProd (nc : ℕ) (f : Type) :
-    ChunkedEvals nc f ≃ f × PointEvaluations (Vector f nc) × ProofEvaluations (Vector f nc) :=
-  ⟨fun e => (e.ftEval1, e.pub, e.evals), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
-   fun _ => rfl⟩
-
-instance instChunkedEvalsCircuitType {F v w : Type} {nc : ℕ} [CircuitType F v w] :
-    CircuitType F (ChunkedEvals nc v) (ChunkedEvals nc w) :=
-  CircuitType.ofEquiv (ChunkedEvals.equivProd nc v) (ChunkedEvals.equivProd nc w)
-
 /-! ## The deferred values -/
 
 /-- The plonk claims are the four prechallenges and the three shifted scalars, in field
@@ -144,17 +108,6 @@ def DeferredValues.equivProd (k : ℕ) (f sf : Type) :
 instance instDeferredValuesCircuitType {F f w sv sf : Type} {k : ℕ} [CircuitType F f w]
     [CircuitType F sv sf] : CircuitType F (DeferredValues k f sv) (DeferredValues k w sf) :=
   CircuitType.ofEquiv (DeferredValues.equivProd k f sv) (DeferredValues.equivProd k w sf)
-
-/-- An unfinalized proof is its deferred values, its finalize bit and its digest. -/
-def UnfinalizedProof.equivProd (k : ℕ) (f bc sf : Type) :
-    UnfinalizedProof k f bc sf ≃ DeferredValues k f sf × bc × f :=
-  ⟨fun u => (u.deferredValues, u.shouldFinalize, u.spongeDigestBeforeEvaluations),
-   fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl, fun _ => rfl⟩
-
-instance instUnfinalizedProofCircuitType {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] [CircuitType F sv sf] :
-    CircuitType F (UnfinalizedProof k f b sv) (UnfinalizedProof k w vb sf) :=
-  CircuitType.ofEquiv (UnfinalizedProof.equivProd k f b sv) (UnfinalizedProof.equivProd k w vb sf)
 
 /-! ## The wrap statement -/
 
