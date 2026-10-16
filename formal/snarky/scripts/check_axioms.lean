@@ -2,10 +2,11 @@
 Axiom-closure gate for the Snarky DSL library: the interpreter laws, the leaf witness
 interface, and every gadget's soundness and completeness law must be proved from the
 standard logical axioms alone — the deep embedding is pure core Lean, so nothing else
-(no `sorryAx`, no `native_decide`, no curve axioms) may appear in their closures. The sole
-exception is the deployed endo dictionaries (`deployedRoots`): their fields may carry the
-certified `native_decide` witnesses of the Pasta trust base, so every law theorem stays
-pure core Lean and the deployed trust is localized in exactly those values.
+(no `sorryAx`, no `native_decide`, no curve axioms) may appear in their closures. The
+exceptions are the deployed endo dictionaries and the laws stated at the deployed curves
+(`deployedRoots`): their closures may carry the certified `native_decide` witnesses of the
+Pasta trust base, so every field-generic law stays pure core Lean and the deployed trust is
+localized in exactly those values.
 
 The root list is a deletion guard as well as an axiom guard: a name absent from the environment
 fails with `axiom-check root not in environment`, so removing a listed declaration — even
@@ -105,6 +106,10 @@ def roots : List Name :=
     `Snarky.all_spec, `Snarky.all_complete,
     `Snarky.selectField_spec, `Snarky.selectField_complete,
     `Snarky.LawfulIfThenElse.select_complete,
+    -- The lawful selects: the completeness law in instance form, at each shape.
+    `Snarky.instLawfulIfThenElseFVar, `Snarky.instLawfulIfThenElseBoolVar,
+    `Snarky.instLawfulIfThenElseUnit, `Snarky.instLawfulIfThenElseProd,
+    `Snarky.instLawfulIfThenElseVector,
 
     -- The DSL: assertions.
     `Snarky.assert_spec, `Snarky.assert_complete,
@@ -243,6 +248,11 @@ def roots : List Name :=
     `Snarky.Kimchi.groupMapCircuit_toGroup_complete,
     `Snarky.Kimchi.groupMapPure_toGroup,
 
+    -- The Kimchi gadgets at the deployed Vesta curve: the laws whose closures carry the Pasta
+    -- certificates (`deployedRoots`).
+    `Snarky.Kimchi.vesta_varBaseMul_complete, `Snarky.Kimchi.vesta_varBaseMul_read,
+    `Snarky.Kimchi.EndoMul.vesta_endoMul_complete, `Snarky.Kimchi.EndoMul.vesta_endoMul_read,
+
     -- The deployed dictionaries.
     `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta ]
@@ -250,15 +260,17 @@ def roots : List Name :=
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
 
-/-- The deployed dictionaries — the only roots whose closures may additionally
-    contain the certified `native_decide` witnesses (`isTrustedNativeDecide`): their
-    fields discharge the curve facts at the concrete Pasta curves, whose trust base
-    (the certified orders and eigenvalue anchors) carries those certificates. Every
-    LAW stays pure core Lean — the whole native_decide trust of this package is
-    localized in these two values. -/
+/-- The deployed dictionaries and the laws at the deployed Vesta curve — the only roots whose
+    closures may additionally contain the certified `native_decide` witnesses
+    (`isTrustedNativeDecide`): the dictionaries' fields discharge the curve facts at the
+    concrete Pasta curves, whose trust base (the certified orders and eigenvalue anchors)
+    carries those certificates, and the Vesta laws instantiate the field-generic ones through
+    them. Every field-generic law stays pure core Lean. -/
 def deployedRoots : List Name :=
   [ `Snarky.Kimchi.HasEndo.pallas,
-    `Snarky.Kimchi.HasEndo.vesta ]
+    `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.vesta_varBaseMul_complete, `Snarky.Kimchi.vesta_varBaseMul_read,
+    `Snarky.Kimchi.EndoMul.vesta_endoMul_complete, `Snarky.Kimchi.EndoMul.vesta_endoMul_read ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
     by name prefix (the kimchi gate's convention: the name is forgeable from inside a

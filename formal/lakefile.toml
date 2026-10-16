@@ -93,11 +93,15 @@ root = "scripts.check_tags"
 name = "check-slot-chunks"
 root = "scripts.check_slot_chunks"
 
-# Reconstruct selected applications from PureScript shape sidecars, then compare their
-# assembled step and wrap circuits with the independently dumped systems.
+# The two application drivers CI runs interpreted (`lake env lean --run`), compiled as well so
+# that the dead-code gate reads their frontier from their oleans (scripts/deadcode.lean).
 [[lean_exe]]
-name = "check-application-shapes"
-root = "scripts.check_application_shapes"
+name = "check-application-layouts"
+root = "scripts.check_application_layouts"
+
+[[lean_exe]]
+name = "check-application-manifest"
+root = "scripts.check_application_manifest"
 
 # Focused replay and sidecar-reader checks, independent of proof generation.
 [[lean_exe]]

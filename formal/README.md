@@ -42,7 +42,8 @@ pure aggregator that owns no library.
 - `docs/` — the negative controls and standing invariants, the completeness guide, and
   why soundness is out of scope
 - `scripts/` — workspace-wide gates (style, dead code, kernel replay, sorry census); each
-  package additionally owns its own `scripts/` (axiom gate, fixture checks, `roots.txt`)
+  package additionally owns its own `scripts/` (axiom gate, fixture checks, and a `roots.txt`
+  where the package keeps one)
 - `references/` — PDFs, papers, and informal notes backing the formalization
 - `archon-protected.yaml` — declarations agents must not modify
 - `.archon/` — agent state (not committed)
@@ -75,7 +76,7 @@ The gates, all CI-enforced:
 ```bash
 scripts/check-style.sh                  # the formatter contract (≤100 cols, no tabs, …)
 scripts/check_sorry_census.sh           # no sorries anywhere
-scripts/deadcode.sh                     # reachability from the packages' roots.txt
+scripts/deadcode.sh                     # reachability from the CI drivers, axiom lists and roots.txt
 scripts/kernel-replay.sh                # lean4checker replays every .olean
 make lean-lint                          # Batteries' env_linter suite, one process per module
 make lean-shake                         # no redundant imports
