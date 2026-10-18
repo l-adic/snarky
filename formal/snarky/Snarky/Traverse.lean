@@ -1,4 +1,5 @@
 import Snarky.Prover
+import Snarky.Prover.WP
 import Mathlib.Data.List.Chain
 
 /-!
@@ -251,6 +252,95 @@ theorem forM_complete [Zero F] [ConstraintHolds F c] {α : Type}
   | x :: l, hP =>
     Complete.bind (hstep x l (hP x (by simp)))
       fun _ => forM_complete f P inv hstep l fun y hy => hP y (by simp [hy])
+
+/-! ## The prover reading
+
+The state-relative completeness laws of the loops, generic in the per-element conditions as the
+`Vector.mapM` law is: `P` at an element's entry state, `Q` of its entry, result and exit, the
+transports as hypotheses, and every element's condition at the loop's entry and every result's
+fact there, per index. -/
+
+section ProverReading
+
+open Std.Do
+
+variable [Zero F] [ConstraintHolds F c] {α β γ : Type}
+
+/-- `zipGo`'s law, by induction on the length. -/
+private theorem Prover.zipGo_spec (f : α → β → CircuitM F (Prover c) γ)
+    (P : ProverState F → α → β → Prop)
+    (Q : ProverState F → α → β → γ → ProverState F → Prop)
+    (hP : ∀ st st' x y, st ≤ st' → P st x y → P st' x y)
+    (hQ : ∀ st st' x y r s', st ≤ st' → P st x y → Q st' x y r s' → Q st x y r s')
+    (hQ' : ∀ st x y r s' s'', s' ≤ s'' → Q st x y r s' → Q st x y r s'')
+    (hle : ∀ st x y r s', Q st x y r s' → st ≤ s')
+    (hf : ∀ st x y, ⦃fun s => ⌜s = st ∧ P st x y⌝⦄ f x y ⦃⇓ r s' => ⌜Q st x y r s'⌝⦄) :
+    ∀ (n : Nat) (xs : Fin n → α) (ys : Fin n → β) (st₀ : ProverState F),
+      ⦃fun s => ⌜s = st₀ ∧ ∀ i, P st₀ (xs i) (ys i)⌝⦄
+      zipGo f n xs ys
+      ⦃⇓ rs s' => ⌜(∀ i, Q st₀ (xs i) (ys i) rs[i] s') ∧ st₀ ≤ s'⌝⦄
+  | 0, _, _, st₀ => by
+    simp only [zipGo]
+    mvcgen
+    rename_i s h
+    exact ⟨fun i => i.elim0, le_of_eq h.1.symm⟩
+  | n + 1, xs, ys, st₀ => by
+    have hinit := Prover.zipGo_spec f P Q hP hQ hQ' hle hf n (fun i => xs i.castSucc)
+      (fun i => ys i.castSucc)
+    simp only [zipGo]
+    mvcgen [hinit, hf]
+    case pre =>
+      rename_i s h
+      obtain ⟨rfl, hall⟩ := h
+      exact ⟨trivial, fun i => hall i.castSucc⟩
+    case post.success.pre =>
+      rename_i s h init s₁ hinit'
+      obtain ⟨rfl, hall⟩ := h
+      exact ⟨trivial, hP _ _ _ _ hinit'.2 (hall (Fin.last n))⟩
+    case post.success.post.success =>
+      rename_i s h init s₁ hinit' last s₂ hlast'
+      obtain ⟨rfl, hall⟩ := h
+      refine ⟨fun i => ?_, hinit'.2.trans (hle _ _ _ _ _ hlast')⟩
+      refine Fin.lastCases ?_ (fun j => ?_) i
+      · simpa using hQ _ _ _ _ _ _ hinit'.2 (hall (Fin.last n)) hlast'
+      · simpa using hQ' _ _ _ _ _ _ (hle _ _ _ _ _ hlast') (hinit'.1 j)
+
+/-- `zipWithVecM`'s state-relative completeness: every entry's condition at the loop's entry,
+every result's fact there. -/
+theorem Prover.zipWithVecM_spec {n : Nat} (f : α → β → CircuitM F (Prover c) γ)
+    (P : ProverState F → α → β → Prop)
+    (Q : ProverState F → α → β → γ → ProverState F → Prop)
+    (hP : ∀ st st' x y, st ≤ st' → P st x y → P st' x y)
+    (hQ : ∀ st st' x y r s', st ≤ st' → P st x y → Q st' x y r s' → Q st x y r s')
+    (hQ' : ∀ st x y r s' s'', s' ≤ s'' → Q st x y r s' → Q st x y r s'')
+    (hle : ∀ st x y r s', Q st x y r s' → st ≤ s')
+    (hf : ∀ st x y, ⦃fun s => ⌜s = st ∧ P st x y⌝⦄ f x y ⦃⇓ r s' => ⌜Q st x y r s'⌝⦄)
+    (xs : Vector α n) (ys : Vector β n) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ ∀ i : Fin n, P st₀ xs[i] ys[i]⌝⦄
+    zipWithVecM f xs ys
+    ⦃⇓ rs s' => ⌜(∀ i : Fin n, Q st₀ xs[i] ys[i] rs[i] s') ∧ st₀ ≤ s'⌝⦄ :=
+  Prover.zipGo_spec f P Q hP hQ hQ' hle hf n _ _ st₀
+
+/-- `List.forM`'s state-relative completeness: a unit result, so every entry's condition at the
+loop's entry is the whole content; the induction hypothesis is passed registered. -/
+theorem Prover.forM_spec (f : α → CircuitM F (Prover c) PUnit) (P : ProverState F → α → Prop)
+    (hP : ∀ st st' x, st ≤ st' → P st x → P st' x)
+    (hf : ∀ st x, ⦃fun s => ⌜s = st ∧ P st x⌝⦄ f x ⦃⇓ _ s' => ⌜st ≤ s'⌝⦄) :
+    ∀ (l : List α) (st₀ : ProverState F),
+      ⦃fun s => ⌜s = st₀ ∧ ∀ x ∈ l, P st₀ x⌝⦄ l.forM f ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄
+  | [], st₀ => by
+    rw [show ([] : List α).forM f = pure PUnit.unit from rfl]
+    mvcgen
+    rename_i s h
+    exact le_of_eq h.1.symm
+  | x :: l, st₀ => by
+    have hf' := Prover.register (fun st => hf st x)
+    have hrest := Prover.register (Prover.forM_spec f P hP hf l)
+    rw [show (x :: l).forM f = (do f x; l.forM f) from rfl]
+    mvcgen [hf', hrest]
+    all_goals grind [Prover.Reg.iff, List.mem_cons_self, List.mem_cons_of_mem]
+
+end ProverReading
 
 attribute [irreducible] zipWithVecM
 

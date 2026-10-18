@@ -1,7 +1,6 @@
 import Std.Tactic.Do
 import Snarky.Prover
 import Snarky.Witness
-import Snarky.DSL.Field
 
 /-!
 # The weakest-precondition interpretation of `prove`
@@ -15,6 +14,8 @@ obligation at the state where it is emitted. The tag `Prover c` selects this rea
 namespace Snarky
 
 open Std.Do
+
+set_option mvcgen.warning false
 
 variable {F c : Type}
 
@@ -70,7 +71,7 @@ theorem proverWP_and [Zero F] [ConstraintHolds F c] {α : Type} (x : CircuitM F 
     · exact Iff.rfl
     · exact ih _ _
 
-/-- A sequence's transformer is the head's at the tail's, the shape `WPMonad` needs. -/
+/-- A sequence's transformer is the head's at the tail's, the shape `Std.Do.WPMonad` needs. -/
 theorem proverWP_bind [Zero F] [ConstraintHolds F c] {α β : Type} (x : CircuitM F c α)
     (f : α → CircuitM F c β) (Q : β → ProverState F → ULift Prop)
     (E : EvalError → ProverState F → ULift Prop) (st : ProverState F) :
@@ -133,6 +134,40 @@ theorem ProverState.read_of_le [Add F] [Mul F] [Zero F] {st st' : ProverState F}
     (hle : st ≤ st') {x : CVar F} (hx : x.Scoped st) : st'.read x = st.read x :=
   CVar.val_of_le hle hx
 
+/-! ## Registration
+
+A law is cited by hand; what `mvcgen` is given is its registered reading, a definition suffixed
+`reg` that exists for the spec table and nowhere else. The reading wraps the postcondition:
+`mvcgen` applies a spec by first unifying its postcondition with the goal's and only then
+discharging the precondition, and a law's entry ghost is a plain metavariable there, so whenever
+the last action's postcondition has the goal's shape the ghost is assigned the goal's entry and
+the precondition's state equation is false. Wrapped, the two never unify, the post entailment is
+always a condition, and the ghost is solved by the precondition. The primitive specs register
+directly: their postconditions, a state equation and a witness clause, are shapes no law states. -/
+
+/-- The wrapper on a registered postcondition, working around Lean's mvcgen (function mSpec in
+module Lean.Elab.Tactic.Do.Spec, toolchain v4.30.0): the unification of a spec's postcondition
+against the goal's, under full approximation, precedes the precondition's discharge and assigns
+the entry ghost. The pattern-test sidecar outside the tree holds a negative control that fails
+exactly while this is needed; when it passes on a toolchain, delete this, `Prover.register`, the
+registered definitions, and `Prover.Reg.iff` from the grind calls. -/
+@[irreducible] def Prover.Reg (p : Prop) : Prop := p
+
+/-- The wrapper is transparent to a proof. -/
+theorem Prover.Reg.iff {p : Prop} : Prover.Reg p ↔ p := by
+  unfold Prover.Reg
+  exact Iff.rfl
+
+/-- The registered reading of a law. -/
+theorem Prover.register [Zero F] [ConstraintHolds F c] {α : Type} {g : CircuitM F (Prover c) α}
+    {pre : ProverState F → Prop} {post : ProverState F → α → ProverState F → Prop}
+    (h : ∀ st₀, ⦃fun s => ⌜s = st₀ ∧ pre st₀⌝⦄ g ⦃⇓ r s' => ⌜post st₀ r s'⌝⦄)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ pre st₀⌝⦄ g ⦃⇓ r s' => ⌜Prover.Reg (post st₀ r s')⌝⦄ := by
+  intro s hs
+  exact (wp g).mono _ _ ⟨fun r s' hp => Prover.Reg.iff.mpr hp, ExceptConds.entails_false⟩ s
+    (h st₀ s hs)
+
 /-! ## Primitive specs -/
 
 /-- Emitting a row obliges it at the entry table; the state is unchanged. -/
@@ -186,205 +221,32 @@ entry. The value is the computation's, not a free variable, so the spec has one 
   cases Except.ok.inj hv
   exact ⟨CircuitType.scoped_fvar.mp hscope, CircuitType.reads_fvar.mp hreads⟩
 
-/-! ## The pilot: `inv`, `mul`, `div` by composition, and `isZero` -/
-
-/-- `inv`'s completeness: where the operand is in scope and reads nonzero, the run succeeds
-and the result reads the inverse of the operand's entry reading. -/
-@[spec] theorem Prover.inv_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ st₀.read x ≠ 0⌝⦄
-    inv (c := Prover c) x
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = (st₀.read x)⁻¹ ∧ st₀ ≤ st'⌝⦄ := by
-  unfold inv
-  mvcgen
-  -- the constant-zero branch is unreachable: its reading is the operand's nonzero reading
-  case h_1.isTrue.pre =>
-    rename_i a hxa ha s h
-    exact absurd ha h.2.2
-  case h_1.isTrue.post.success.pre =>
-    rename_i a hxa ha s₁ h₁ r s h
-    exact absurd ha h₁.2.2
-  case h_1.isTrue.post.success.post.success =>
-    rename_i a hxa ha s₁ h₁ r s h u s' h'
-    exact absurd ha h₁.2.2
-  case h_1.isFalse =>
-    rename_i a hxa ha s h
-    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
-  case h_2.pre =>
-    rename_i x' hnc hxx s h
-    subst hxx
-    obtain ⟨rfl, hxs, hne⟩ := h
-    exact ⟨trivial, (s.read x)⁻¹, by
-      simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr hxs), CircuitType.readVal_fvar,
-        hne]⟩
-  case h_2.post.success.pre =>
-    rename_i x' hnc hxx s₁ h₁ r s h
-    subst hxx
-    obtain ⟨rfl, hxs, hne⟩ := h₁
-    have hrun : (inv.advice x).run s₁.env = .ok (s₁.read x)⁻¹ := by
-      simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr hxs), CircuitType.readVal_fvar,
-        hne]
-    obtain ⟨hr, hrv⟩ := h.1 _ hrun
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
-    rw [CVar.val_of_le h.2 hxs]
-    show s₁.read x * s.read r = 1
-    rw [hrv]
-    exact mul_inv_cancel₀ hne
-  case h_2.post.success.post.success =>
-    rename_i x' hnc hxx s₁ h₁ r s h u s' h'
-    subst hxx h'
-    obtain ⟨rfl, hxs, hne⟩ := h₁
-    have hrun : (inv.advice x).run s₁.env = .ok (s₁.read x)⁻¹ := by
-      simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr hxs), CircuitType.readVal_fvar,
-        hne]
-    obtain ⟨hr, hrv⟩ := h.1 _ hrun
-    exact ⟨hr, hrv, h.2⟩
-
-/-- `mul`'s completeness: the result reads the product of the operands' entry readings. -/
-@[spec] theorem Prover.mul_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀⌝⦄
-    mul (c := Prover c) x y
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = st₀.read x * st₀.read y ∧ st₀ ≤ st'⌝⦄ := by
-  unfold mul
-  mvcgen
-  case h_1 =>
-    rename_i a b hy hx s h
-    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
-  case h_2 =>
-    rename_i a y' hnc hy hx s h
-    obtain ⟨rfl, hxs, hys⟩ := h
-    exact ⟨CVar.Scoped.scale_ hys, by show (CVar.scale_ a y').val _ = _; rw [CVar.val_scale_]; rfl,
-      le_refl _⟩
-  case h_3 =>
-    rename_i x' b hnc hy hx s h
-    obtain ⟨rfl, hxs, hys⟩ := h
-    exact ⟨CVar.Scoped.scale_ hxs, by
-      show (CVar.scale_ b x').val _ = _; rw [CVar.val_scale_]; exact mul_comm _ _, le_refl _⟩
-  case h_4.pre =>
-    rename_i x' y' hnc hncx hncy hy hx s h
-    obtain ⟨rfl, hxs, hys⟩ := h
-    exact ⟨trivial, s.read x' * s.read y', by
-      simp [mul.advice, AsProver.readCVar_run hxs, AsProver.readCVar_run hys]⟩
-  case h_4.post.success.pre =>
-    rename_i x' y' hnc hncx hncy hy hx s₁ h₁ r s h
-    obtain ⟨rfl, hxs, hys⟩ := h₁
-    have hrun : (mul.advice x' y').run s₁.env = .ok (s₁.read x' * s₁.read y') := by
-      simp [mul.advice, AsProver.readCVar_run hxs, AsProver.readCVar_run hys]
-    obtain ⟨hr, hrv⟩ := h.1 _ hrun
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
-    rw [CVar.val_of_le h.2 hxs, CVar.val_of_le h.2 hys]
-    exact hrv.symm
-  case h_4.post.success.post.success =>
-    rename_i x' y' hnc hncx hncy hy hx s₁ h₁ r s h u s' h'
-    subst h'
-    obtain ⟨rfl, hxs, hys⟩ := h₁
-    have hrun : (mul.advice x' y').run s₁.env = .ok (s₁.read x' * s₁.read y') := by
-      simp [mul.advice, AsProver.readCVar_run hxs, AsProver.readCVar_run hys]
-    obtain ⟨hr, hrv⟩ := h.1 _ hrun
-    exact ⟨hr, hrv, h.2⟩
-
-/-- `div`'s completeness, by composition of the registered `inv` and `mul` specs; the
-conditions are transport, which `grind` does from the two carrying lemmas. -/
-theorem Prover.div_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀ ∧ st₀.read y ≠ 0⌝⦄
-    div (c := Prover c) x y
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = st₀.read x / st₀.read y ∧ st₀ ≤ st'⌝⦄ := by
-  simp only [div]
-  mvcgen
-  all_goals grind [ProverState.read_of_le, CVar.Scoped.of_le, div_eq_mul_inv]
-
-/-- `isZero`'s completeness: the bit reads `1` exactly where the operand reads `0`. -/
-@[spec] theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀⌝⦄
-    isZero (c := Prover c) x
-    ⦃⇓ r st' => ⌜(↑r : CVar F).Scoped st' ∧
-      st'.read r = (if st₀.read x = 0 then 1 else 0) ∧ st₀ ≤ st'⌝⦄ := by
-  unfold isZero
-  mvcgen
-  case h_1 =>
-    rename_i a hxa s h
-    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
-  case h_2.pre =>
-    rename_i x' hnc hxx s h
-    subst hxx
-    obtain ⟨rfl, hxs⟩ := h
-    exact ⟨trivial, if s.read x = 0 then 1 else 0, by
-      simp [isZero.bitAdvice, AsProver.readCVar_run hxs]⟩
-  case h_2.post.success.pre =>
-    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁
-    subst hxx
-    obtain ⟨rfl, hxs⟩ := h₀
-    exact ⟨trivial, if s₁.read x = 0 then 0 else (s₁.read x)⁻¹, by
-      simp [isZero.invAdvice, AsProver.readCVar_run (CVar.Scoped.of_le h₁.2 hxs)]⟩
-  case h_2.post.success.post.success.pre =>
-    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂
-    subst hxx
-    obtain ⟨rfl, hxs⟩ := h₀
-    have hrun₁ : (isZero.bitAdvice x).run s₀.env = .ok (if s₀.read x = 0 then 1 else 0) := by
-      simp [isZero.bitAdvice, AsProver.readCVar_run hxs]
-    obtain ⟨hr₁, hr₁v⟩ := h₁.1 _ hrun₁
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
-    rw [CVar.val_of_le h₂.2 hr₁, CVar.val_of_le (h₁.2.trans h₂.2) hxs]
-    show s₁.read r₁ * s₀.read x = 0
-    rw [hr₁v]
-    split <;> simp [*]
-  case h_2.post.success.post.success.post.success.pre =>
-    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂ u₁ s₃ h₃
-    subst hxx h₃
-    obtain ⟨rfl, hxs⟩ := h₀
-    have hrun₁ : (isZero.bitAdvice x).run s₀.env = .ok (if s₀.read x = 0 then 1 else 0) := by
-      simp [isZero.bitAdvice, AsProver.readCVar_run hxs]
-    have hrun₂ : (isZero.invAdvice x).run s₁.env =
-        .ok (if s₁.read x = 0 then 0 else (s₁.read x)⁻¹) := by
-      simp [isZero.invAdvice, AsProver.readCVar_run (CVar.Scoped.of_le h₁.2 hxs)]
-    obtain ⟨hr₁, hr₁v⟩ := h₁.1 _ hrun₁
-    obtain ⟨hr₂, hr₂v⟩ := h₂.1 _ hrun₂
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
-    rw [CVar.val_sub_, CVar.val_of_le (h₁.2.trans h₂.2) hxs, CVar.val_of_le h₂.2 hr₁]
-    show s₃.read r₂ * s₀.read x = 1 - s₁.read r₁
-    rw [hr₂v, hr₁v, ProverState.read_of_le h₁.2 hxs]
-    split
-    · simp [*]
-    · simp [inv_mul_cancel₀ ‹_›]
-  case h_2.post.success.post.success.post.success.post.success =>
-    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂ u₁ s₃ h₃ u₂ s₄ h₄
-    subst hxx h₃ h₄
-    obtain ⟨rfl, hxs⟩ := h₀
-    have hrun₁ : (isZero.bitAdvice x).run s₀.env = .ok (if s₀.read x = 0 then 1 else 0) := by
-      simp [isZero.bitAdvice, AsProver.readCVar_run hxs]
-    obtain ⟨hr₁, hr₁v⟩ := h₁.1 _ hrun₁
-    exact ⟨CVar.Scoped.of_le h₂.2 hr₁, by
-      show s₄.read r₁ = _
-      rw [ProverState.read_of_le h₂.2 hr₁, hr₁v], h₁.2.trans h₂.2⟩
-
 /-! ## Traversal: the `Vector.mapM` law
 
-A higher-order spec, proved once: an element spec quantified over its entry state, with the
-precondition "in scope at the entry and a condition on its reading there" and the postcondition
-"the result reads a function of that reading", gives the traversal's spec with every element's
-precondition at the traversal's entry and every result's reading in terms of it, per index. The
-per-index shape is the one `grind` carries through later runs; a `List.Forall₂` conclusion is
-not, since a lemma whose conclusion holds a lambda has no E-matching pattern, so the list law
-behind the vector one is internal. The vector law is not `@[spec]`: the reading condition and
-function are not determined by the program. A gadget that is traversed derives its law once,
-which the program does determine and `@[spec]` registers; a composite that traverses is then
-the same two lines as a chain. -/
+A higher-order spec, proved once and generic in the per-element conditions: `P` at an element's
+entry state, `Q` of its entry, result and exit, with the transports as hypotheses — the condition
+carried forward to later entries, the fact re-read at the traversal's entry, the fact carried
+through later entries, and the element advancing the state — each a grind line at a gadget's
+instance. The law gives every element's condition at the traversal's entry and every result's
+fact there, per index: the shape `grind` carries through later runs, where a `List.Forall₂`
+conclusion is not, a lemma whose conclusion holds a lambda having no E-matching pattern, so the
+list law behind the vector one is internal. The law is not registered, since its conditions
+are not determined by the program; a gadget that is traversed derives its instance once, which
+the program does determine, and registers that. -/
 
 /-- The `List.mapM` law, the induction behind the vector law. -/
-private theorem Prover.mapM_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    (f : FVar F → CircuitM F (Prover c) (FVar F)) (p : F → Prop) (g : F → F)
-    (hf : ∀ (st : ProverState F) (x : FVar F),
-      ⦃fun s => ⌜s = st ∧ x.Scoped st ∧ p (st.read x)⌝⦄
-      f x
-      ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = g (st.read x) ∧ st ≤ s'⌝⦄) :
-    ∀ (xs : List (FVar F)) (st₀ : ProverState F),
-      ⦃fun s => ⌜s = st₀ ∧ ∀ x ∈ xs, x.Scoped st₀ ∧ p (st₀.read x)⌝⦄
+private theorem Prover.mapM_spec [Zero F] [ConstraintHolds F c] {α β : Type}
+    (f : α → CircuitM F (Prover c) β)
+    (P : ProverState F → α → Prop) (Q : ProverState F → α → β → ProverState F → Prop)
+    (hP : ∀ st st' x, st ≤ st' → P st x → P st' x)
+    (hQ : ∀ st st' x r s', st ≤ st' → P st x → Q st' x r s' → Q st x r s')
+    (hQ' : ∀ st x r s' s'', s' ≤ s'' → Q st x r s' → Q st x r s'')
+    (hle : ∀ st x r s', Q st x r s' → st ≤ s')
+    (hf : ∀ st x, ⦃fun s => ⌜s = st ∧ P st x⌝⦄ f x ⦃⇓ r s' => ⌜Q st x r s'⌝⦄) :
+    ∀ (xs : List α) (st₀ : ProverState F),
+      ⦃fun s => ⌜s = st₀ ∧ ∀ x ∈ xs, P st₀ x⌝⦄
       xs.mapM f
-      ⦃⇓ rs s' => ⌜List.Forall₂ (fun x r => r.Scoped s' ∧ s'.read r = g (st₀.read x)) xs rs ∧
-        st₀ ≤ s'⌝⦄
+      ⦃⇓ rs s' => ⌜List.Forall₂ (fun x r => Q st₀ x r s') xs rs ∧ st₀ ≤ s'⌝⦄
   | [], st₀ => by
     rw [List.mapM_nil]
     mvcgen
@@ -392,18 +254,23 @@ private theorem Prover.mapM_spec [Field F] [DecidableEq F] [BasicSystem F c] [Co
     exact ⟨.nil, le_of_eq h.1.symm⟩
   | x :: xs, st₀ => by
     rw [List.mapM_cons]
-    have ih := Prover.mapM_spec f p g hf xs
+    have ih := Prover.mapM_spec f P Q hP hQ hQ' hle hf xs
     mvcgen [hf, ih]
-    case pre => grind
-    case post.success.pre => grind [ProverState.read_of_le, CVar.Scoped.of_le]
+    case pre =>
+      rename_i s h
+      obtain ⟨rfl, hmem⟩ := h
+      exact ⟨trivial, hmem x (List.mem_cons_self ..)⟩
+    case post.success.pre =>
+      rename_i s h r s₁ hr
+      obtain ⟨rfl, hmem⟩ := h
+      exact ⟨trivial, fun y hy => hP _ _ y (hle _ _ _ _ hr) (hmem y (List.mem_cons_of_mem _ hy))⟩
     case post.success.post.success =>
       rename_i s h r s₁ hr rs s₂ hrs
       obtain ⟨rfl, hmem⟩ := h
-      refine ⟨.cons ⟨hr.1.of_le hrs.2, by rw [ProverState.read_of_le hrs.2 hr.1, hr.2.1]⟩ ?_,
-        hr.2.2.trans hrs.2⟩
+      refine ⟨.cons (hQ' _ _ _ _ _ hrs.2 hr) ?_, (hle _ _ _ _ hr).trans hrs.2⟩
       exact ((List.forall₂_and_left xs rs).mpr
-        ⟨fun y hy => (hmem y (List.mem_cons_of_mem _ hy)).1, hrs.1⟩).imp
-          fun y r' ⟨hy, hs, hv⟩ => ⟨hs, by rw [hv, ProverState.read_of_le hr.2.2 hy]⟩
+        ⟨fun y hy => hmem y (List.mem_cons_of_mem _ hy), hrs.1⟩).imp
+          fun y r' ⟨hy, hq⟩ => hQ _ _ _ _ _ (hle _ _ _ _ hr) hy hq
 
 /-- A specification of `f <$> m` is one of `m` read through `f`. -/
 private theorem Prover.spec_of_map [Zero F] [ConstraintHolds F c] {α β : Type}
@@ -418,19 +285,20 @@ private theorem Prover.spec_of_map [Zero F] [ConstraintHolds F c] {α β : Type}
   exact hb
 
 /-- The `Vector.mapM` law: the list law's postcondition read per index. -/
-theorem Prover.vector_mapM_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    {n : ℕ} (f : FVar F → CircuitM F (Prover c) (FVar F)) (p : F → Prop) (g : F → F)
-    (hf : ∀ (st : ProverState F) (x : FVar F),
-      ⦃fun s => ⌜s = st ∧ x.Scoped st ∧ p (st.read x)⌝⦄
-      f x
-      ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = g (st.read x) ∧ st ≤ s'⌝⦄)
-    (xs : Vector (FVar F) n) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ ∀ i : Fin n, xs[i].Scoped st₀ ∧ p (st₀.read xs[i])⌝⦄
+theorem Prover.vector_mapM_spec [Zero F] [ConstraintHolds F c] {α β : Type} {n : ℕ}
+    (f : α → CircuitM F (Prover c) β)
+    (P : ProverState F → α → Prop) (Q : ProverState F → α → β → ProverState F → Prop)
+    (hP : ∀ st st' x, st ≤ st' → P st x → P st' x)
+    (hQ : ∀ st st' x r s', st ≤ st' → P st x → Q st' x r s' → Q st x r s')
+    (hQ' : ∀ st x r s' s'', s' ≤ s'' → Q st x r s' → Q st x r s'')
+    (hle : ∀ st x r s', Q st x r s' → st ≤ s')
+    (hf : ∀ st x, ⦃fun s => ⌜s = st ∧ P st x⌝⦄ f x ⦃⇓ r s' => ⌜Q st x r s'⌝⦄)
+    (xs : Vector α n) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ ∀ i : Fin n, P st₀ xs[i]⌝⦄
     xs.mapM f
-    ⦃⇓ rs s' => ⌜(∀ i : Fin n, rs[i].Scoped s' ∧ s'.read rs[i] = g (st₀.read xs[i])) ∧
-      st₀ ≤ s'⌝⦄ := by
-  have hl := Prover.mapM_spec f p g hf xs.toList st₀
-  have heq : (fun rs : Vector (FVar F) n => rs.toList) <$> xs.mapM f = xs.toList.mapM f := by
+    ⦃⇓ rs s' => ⌜(∀ i : Fin n, Q st₀ xs[i] rs[i] s') ∧ st₀ ≤ s'⌝⦄ := by
+  have hl := Prover.mapM_spec f P Q hP hQ hQ' hle hf xs.toList st₀
+  have heq : (fun rs : Vector β n => rs.toList) <$> xs.mapM f = xs.toList.mapM f := by
     rw [← Vector.toList_toArray, ← Array.toList_mapM, ← Vector.toArray_mapM, ← comp_map]
     rfl
   rw [← heq] at hl
@@ -439,7 +307,7 @@ theorem Prover.vector_mapM_spec [Field F] [DecidableEq F] [BasicSystem F c] [Con
     refine ⟨rfl, fun x hx => ?_⟩
     obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
     simpa using hpre ⟨i, by simpa using hi⟩
-  · refine ⟨fun rs s' ⟨h, hle⟩ => ⟨fun i => ?_, hle⟩, .rfl⟩
+  · refine ⟨fun rs s' ⟨h, hle'⟩ => ⟨fun i => ?_, hle'⟩, .rfl⟩
     have hg := (List.forall₂_iff_get.mp h).2 i (by simp) (by simp)
     simpa using hg
 

@@ -60,6 +60,23 @@ theorem assertEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
     · exact Complete.imp (fun _ h => h) (fun _ _ _ => trivial) (Complete.addConstraint hrow)
   · exact Complete.imp (fun _ h => h) (fun _ _ _ => trivial) (Complete.addConstraint hrow)
 
+open Std.Do in
+/-- `assertEqual`'s state-relative completeness: where the operands are in scope and read equal,
+the run succeeds and the state only grows. -/
+theorem Prover.assertEqual_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀ ∧ st₀.read x = st₀.read y⌝⦄
+    assertEqual (c := Prover c) x y
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  simp only [assertEqual]
+  mvcgen
+  all_goals grind [LawfulBasicSystem.holds_equal]
+
+/-- Registered. -/
+@[spec] def Prover.assertEqual_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :=
+  Prover.register (Prover.assertEqual_spec (c := c) x y)
+
 attribute [irreducible] assertEqual
 
 /-! ## Non-zeroness -/
