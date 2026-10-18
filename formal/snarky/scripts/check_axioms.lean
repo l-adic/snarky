@@ -256,6 +256,7 @@ def roots : List Name :=
     -- The state-relative completeness pilot, pure core Lean.
     `Snarky.Prover.inv_spec, `Snarky.Prover.mul_spec, `Snarky.Prover.div_spec,
     `Snarky.Prover.isZero_spec, `Snarky.Prover.chain6_spec, `Snarky.Prover.chain12_spec,
+    `Snarky.Prover.invAllThenSquare_spec,
 
     -- The deployed dictionaries.
     `Snarky.Kimchi.HasEndo.pallas,

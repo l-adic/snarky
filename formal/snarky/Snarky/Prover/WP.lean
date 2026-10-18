@@ -416,4 +416,106 @@ theorem Prover.chain12_spec [Field F] [DecidableEq F] [BasicSystem F c]
       show s₄.read r₁ = _
       rw [ProverState.read_of_le h₂.2 hr₁, hr₁v], h₁.2.trans h₂.2⟩
 
+/-! ## Traversal: the `List.mapM` and `Vector.mapM` laws
+
+Higher-order specs, proved once: an element spec quantified over its entry state, with the
+precondition "in scope at the entry and a condition on its reading there" and the postcondition
+"the result reads a function of that reading", gives the traversal's spec with every element's
+precondition at the traversal's entry and every result's reading in terms of it. The list law is
+the induction against `List.mapM_nil` and `List.mapM_cons`; the vector law reads it per index,
+the shape `grind` carries through later runs. Neither is `@[spec]`: the reading condition and
+function are not determined by the program, so a use site passes the law instantiated, as the
+soundness side passes `builder_spec_mapM`. -/
+
+/-- The `List.mapM` law. -/
+theorem Prover.mapM_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    (f : FVar F → CircuitM F (Prover c) (FVar F)) (p : F → Prop) (g : F → F)
+    (hf : ∀ (st : ProverState F) (x : FVar F),
+      ⦃fun s => ⌜s = st ∧ x.Scoped st ∧ p (st.read x)⌝⦄
+      f x
+      ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = g (st.read x) ∧ st ≤ s'⌝⦄) :
+    ∀ (xs : List (FVar F)) (st₀ : ProverState F),
+      ⦃fun s => ⌜s = st₀ ∧ ∀ x ∈ xs, x.Scoped st₀ ∧ p (st₀.read x)⌝⦄
+      xs.mapM f
+      ⦃⇓ rs s' => ⌜List.Forall₂ (fun x r => r.Scoped s' ∧ s'.read r = g (st₀.read x)) xs rs ∧
+        st₀ ≤ s'⌝⦄
+  | [], st₀ => by
+    rw [List.mapM_nil]
+    mvcgen
+    rename_i s h
+    exact ⟨.nil, le_of_eq h.1.symm⟩
+  | x :: xs, st₀ => by
+    rw [List.mapM_cons]
+    have ih := Prover.mapM_spec f p g hf xs
+    mvcgen [hf, ih]
+    case pre => grind
+    case post.success.pre => grind [ProverState.read_of_le, CVar.Scoped.of_le]
+    case post.success.post.success =>
+      rename_i s h r s₁ hr rs s₂ hrs
+      obtain ⟨rfl, hmem⟩ := h
+      refine ⟨.cons ⟨hr.1.of_le hrs.2, by rw [ProverState.read_of_le hrs.2 hr.1, hr.2.1]⟩ ?_,
+        hr.2.2.trans hrs.2⟩
+      exact ((List.forall₂_and_left xs rs).mpr
+        ⟨fun y hy => (hmem y (List.mem_cons_of_mem _ hy)).1, hrs.1⟩).imp
+          fun y r' ⟨hy, hs, hv⟩ => ⟨hs, by rw [hv, ProverState.read_of_le hr.2.2 hy]⟩
+
+/-- A specification of `f <$> m` is one of `m` read through `f`. -/
+theorem Prover.spec_of_map [Zero F] [ConstraintHolds F c] {α β : Type}
+    (m : CircuitM F (Prover c) α) (f : α → β) {P : Assertion (ProverShape F)}
+    {Q : PostCond β (ProverShape F)} (h : Triple (f <$> m) P Q) :
+    Triple m P (fun a => Q.1 (f a), Q.2) := by
+  intro s hs
+  have hb := h s hs
+  rw [CircuitM.map_eq] at hb
+  change (proverWP (c := Prover c) (m >>= fun a => pure (f a)) Q.1 Q.2.1 s).down at hb
+  rw [proverWP_bind] at hb
+  exact hb
+
+/-- The `Vector.mapM` law: the list law's postcondition read per index. -/
+theorem Prover.vector_mapM_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    {n : ℕ} (f : FVar F → CircuitM F (Prover c) (FVar F)) (p : F → Prop) (g : F → F)
+    (hf : ∀ (st : ProverState F) (x : FVar F),
+      ⦃fun s => ⌜s = st ∧ x.Scoped st ∧ p (st.read x)⌝⦄
+      f x
+      ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = g (st.read x) ∧ st ≤ s'⌝⦄)
+    (xs : Vector (FVar F) n) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ ∀ i : Fin n, xs[i].Scoped st₀ ∧ p (st₀.read xs[i])⌝⦄
+    xs.mapM f
+    ⦃⇓ rs s' => ⌜(∀ i : Fin n, rs[i].Scoped s' ∧ s'.read rs[i] = g (st₀.read xs[i])) ∧
+      st₀ ≤ s'⌝⦄ := by
+  have hl := Prover.mapM_spec f p g hf xs.toList st₀
+  have heq : (fun rs : Vector (FVar F) n => rs.toList) <$> xs.mapM f = xs.toList.mapM f := by
+    rw [← Vector.toList_toArray, ← Array.toList_mapM, ← Vector.toArray_mapM, ← comp_map]
+    rfl
+  rw [← heq] at hl
+  refine Triple.of_entails_wp (Triple.entails_wp_of_pre_post (Prover.spec_of_map _ _ hl) ?_ ?_)
+  · rintro s ⟨rfl, hpre⟩
+    refine ⟨rfl, fun x hx => ?_⟩
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+    simpa using hpre ⟨i, by simpa using hi⟩
+  · refine ⟨fun rs s' ⟨h, hle⟩ => ⟨fun i => ?_, hle⟩, .rfl⟩
+    have hg := (List.forall₂_iff_get.mp h).2 i (by simp) (by simp)
+    simpa using hg
+
+/-- Invert every entry, then one more gadget: the vector law at a use site, its readings carried
+through a later run. -/
+def invAllThenSquare [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] {n : ℕ}
+    (xs : Vector (FVar F) n) (y : FVar F) : CircuitM F c (Vector (FVar F) n × FVar F) := do
+  let rs ← xs.mapM (inv (c := c))
+  let z ← mul y y
+  pure (rs, z)
+
+theorem Prover.invAllThenSquare_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {n : ℕ} (xs : Vector (FVar F) n) (y : FVar F)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ y.Scoped st₀ ∧ ∀ i : Fin n, xs[i].Scoped st₀ ∧ st₀.read xs[i] ≠ 0⌝⦄
+    invAllThenSquare (c := Prover c) xs y
+    ⦃⇓ r s' => ⌜(∀ i : Fin n, r.1[i].Scoped s' ∧ s'.read r.1[i] = (st₀.read xs[i])⁻¹) ∧
+      r.2.Scoped s' ∧ s'.read r.2 = st₀.read y * st₀.read y ∧ st₀ ≤ s'⌝⦄ := by
+  have hmap := Prover.vector_mapM_spec (c := c) (n := n) (inv (c := Prover c)) (fun v : F => v ≠ 0)
+    (fun v => v⁻¹) fun st x => Prover.inv_spec x st
+  simp only [invAllThenSquare]
+  mvcgen [hmap]
+  all_goals grind [ProverState.read_of_le, CVar.Scoped.of_le]
+
 end Snarky
