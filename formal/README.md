@@ -1,8 +1,5 @@
 # Formal
 
-<!-- archon:readme -->
-<!-- Claude fills in the prose sections below. Keep the section headers. -->
-
 ## Project
 
 A Lean 4 + Mathlib formalization of the kimchi proof system over the Pasta curves: the basic
@@ -39,14 +36,11 @@ pure aggregator that owns no library.
 - `kimchi/` (libs `Kimchi`, `KimchiFixture`) — the kimchi protocol: gates, index,
   arithmetization, and the executable verifier with its body in closed form
 - `snarky/` (lib `Snarky`) — the deep-embedded circuit DSL and its kimchi bridge
-- `docs/` — the negative controls and standing invariants, the completeness guide, and
-  why soundness is out of scope
+- `docs/` — the completeness guide and why soundness is out of scope
 - `scripts/` — workspace-wide gates (style, dead code, kernel replay, sorry census); each
   package additionally owns its own `scripts/` (axiom gate, fixture checks, and a `roots.txt`
   where the package keeps one)
 - `references/` — PDFs, papers, and informal notes backing the formalization
-- `archon-protected.yaml` — declarations agents must not modify
-- `.archon/` — agent state (not committed)
 
 There is no `blueprint/` source directory: the in-file docstring preambles are this project's
 informal layer. The root-level `blueprint.{md,html,pdf}` are stale generated artifacts from
@@ -215,11 +209,3 @@ the common supported subset; the mixed-width cases currently validate Lean layou
 assembly only. Circuit/witness construction and its padding correspondence remain work
 for the application framework and the PureScript backport. This layout change does not
 alter the existing StepWrap, WrapStep, or Handover capstones.
-
-## How to run the formalization loop
-
-```bash
-archon loop .
-```
-
-This launches the plan → prove → review loop and opens a dashboard.

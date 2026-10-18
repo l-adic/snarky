@@ -16,7 +16,7 @@ description: Writing, tightening, and auditing Lean doc comments in this formali
 > - `Zcash/**` → the package trees under `formal/` (`bulletproof-pcs/Bulletproof/**`,
 >   `kimchi/Kimchi/**`, `pasta/**`, `poseidon/**`, `snarky/**`).
 > - `lake build Zcash` (the parse gate) → `lake build Bulletproof` for this package, or
->   `formal/scripts/checkpoint.sh --fast` for the whole tree.
+>   `make lean-build` from the repository root for the whole tree.
 > - `typos <files>` → `formal/scripts/check-style.sh`, which is this repo's formatter contract
 >   (≤100 columns, no trailing whitespace, no tabs, one final newline). The ~100-char wrap in
 >   the last bullet of "Learnings" is therefore mechanically enforced here.
