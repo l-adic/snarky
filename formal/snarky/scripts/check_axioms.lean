@@ -25,6 +25,7 @@ import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Prover.WP
 import Snarky.Kimchi.Backend.Internal.Trace
 import Snarky.Kimchi.Backend.Checks.TraceChecks
 import Snarky.Kimchi.Backend.Internal.TraceSemantics
@@ -252,6 +253,8 @@ def roots : List Name :=
     -- certificates (`deployedRoots`).
     `Snarky.Kimchi.vesta_varBaseMul_complete, `Snarky.Kimchi.vesta_varBaseMul_read,
     `Snarky.Kimchi.EndoMul.vesta_endoMul_complete, `Snarky.Kimchi.EndoMul.vesta_endoMul_read,
+    -- The state-relative completeness pilot, pure core Lean.
+    `Snarky.Prover.inv_spec, `Snarky.Prover.mul_spec, `Snarky.Prover.div_spec,
 
     -- The deployed dictionaries.
     `Snarky.Kimchi.HasEndo.pallas,
