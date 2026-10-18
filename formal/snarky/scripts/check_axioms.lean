@@ -257,6 +257,7 @@ def roots : List Name :=
     `Snarky.Prover.inv_spec, `Snarky.Prover.mul_spec, `Snarky.Prover.div_spec,
     `Snarky.Prover.isZero_spec, `Snarky.Prover.assertEqual_spec,
     `Snarky.Prover.vector_mapM_spec, `Snarky.Prover.zipWithVecM_spec, `Snarky.Prover.forM_spec,
+    `Snarky.Prover.mapAccumM_spec, `Snarky.Prover.mapAccumM_scan_spec,
     `Snarky.Prover.inv_reg, `Snarky.Prover.mul_reg, `Snarky.Prover.div_reg,
     `Snarky.Prover.isZero_reg, `Snarky.Prover.assertEqual_reg,
 
