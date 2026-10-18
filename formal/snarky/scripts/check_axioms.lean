@@ -255,6 +255,7 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoMul.vesta_endoMul_complete, `Snarky.Kimchi.EndoMul.vesta_endoMul_read,
     -- The state-relative completeness pilot, pure core Lean.
     `Snarky.Prover.inv_spec, `Snarky.Prover.mul_spec, `Snarky.Prover.div_spec,
+    `Snarky.Prover.isZero_spec, `Snarky.Prover.chain6_spec, `Snarky.Prover.chain12_spec,
 
     -- The deployed dictionaries.
     `Snarky.Kimchi.HasEndo.pallas,
