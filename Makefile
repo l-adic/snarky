@@ -161,7 +161,7 @@ lean-shake: ## Check Lean imports for redundancy (mathlib shake; config formal/s
 lean-comments: ## Gate: comment ratchet (stale names, upstream citations, phrases, size)
 	bash formal/scripts/check-comments.sh
 
-lean-deadcode: ## Gate: fail on any authored Lean declaration unreachable from roots.txt
+lean-deadcode: ## Gate: fail on any authored Lean declaration unreachable from the CI drivers, the axiom lists and roots.txt
 	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/deadcode.sh
 
 lean-spec-locality: ## Gate: a pickles gadget's spec is stated only in the gadget's module

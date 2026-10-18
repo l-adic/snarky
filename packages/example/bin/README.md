@@ -28,8 +28,6 @@ It writes:
 Lean uses the explicit `ExampleTransaction` manifest entry. From `formal/`:
 
 ```sh
-PICKLES_DUMP_DIR=/tmp/example-fixtures/dumps APPLICATION_SHAPES=ExampleTransaction \
-  lake exe check-application-shapes
 PICKLES_DUMP_DIR=/tmp/example-fixtures/dumps \
 PICKLES_PROOF_CACHE_DIR=../packages/example/bin/fixtures/proof-cache \
 LINKS=ExampleTransaction lake exe check-tags

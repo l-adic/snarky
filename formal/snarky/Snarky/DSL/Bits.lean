@@ -114,55 +114,7 @@ theorem pack_val [CommSemiring F] [DecidableEq F] {n : Nat} {bits : Vector (Bool
     exact h i (by simpa using h1)) rfl]
   ring
 
-/-- `pack` is in scope when its bits are. -/
-theorem CVar.Scoped.pack [Semiring F] [DecidableEq F] {st : ProverState F} {n : Nat}
-    {bits : Vector (BoolVar F) n} (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).Scoped st) :
-    (Snarky.pack bits).Scoped st := by
-  unfold Snarky.pack
-  suffices hf : ∀ (l : List (BoolVar F)) (i : Nat) (acc : FVar F), acc.Scoped st →
-      (∀ b ∈ l, (↑b : CVar F).Scoped st) → (packAux l i acc).Scoped st from
-    hf bits.toList 0 _ trivial (by
-      intro b hb
-      obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hb
-      rw [Vector.getElem_toList]
-      exact h i (by simpa using hi))
-  intro l
-  induction l with
-  | nil => exact fun _ _ hacc _ => hacc
-  | cons b t ih =>
-    intro i acc hacc hl
-    exact ih (i + 1) _ (hacc.add_ (CVar.ScopedBy.scale_ (hl b (List.mem_cons_self ..))))
-      fun x hx => hl x (List.mem_cons_of_mem _ hx)
-
 attribute [irreducible] pack
-
-/-- Pack the low `k` bits of an `n`-bit vector, LSB first — pure, no rows. Irreducible:
-consumers read it through `packLow_val`, never by opening the fold. -/
-@[irreducible] def packLow [Semiring F] [DecidableEq F] {n : Nat} (k : Nat) (hk : k ≤ n)
-    (bits : Vector (BoolVar F) n) : FVar F :=
-  pack (takeVec k hk bits)
-
-/-- `packLow` reads as the value-level packing of the low bits. -/
-theorem packLow_val [CommSemiring F] [DecidableEq F] {n k : Nat} (hk : k ≤ n)
-    {bits : Vector (BoolVar F) n} {bs : Vector Bool n} {V : Valuation F}
-    (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).val V = bit bs[i]) :
-    (packLow k hk bits).val V
-      = ((Kimchi.natLsbVal (takeVec k hk bs).toList : Nat) : F) := by
-  unfold packLow
-  refine pack_val fun i hi => ?_
-  rw [getElem_takeVec, getElem_takeVec]
-  exact h i (Nat.lt_of_lt_of_le hi hk)
-
-/-- `packLow` is in scope when its bits are — the completeness counterpart of
-`packLow_val`. -/
-theorem CVar.Scoped.packLow [Semiring F] [DecidableEq F] {st : ProverState F} {n k : Nat}
-    {hk : k ≤ n} {bits : Vector (BoolVar F) n}
-    (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).Scoped st) :
-    (Snarky.packLow k hk bits).Scoped st := by
-  unfold Snarky.packLow
-  exact CVar.Scoped.pack fun i hi => by
-    rw [getElem_takeVec]
-    exact h i (Nat.lt_of_lt_of_le hi hk)
 
 /-! ## Unpacking -/
 

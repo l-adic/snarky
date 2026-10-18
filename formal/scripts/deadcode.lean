@@ -1,36 +1,35 @@
 /-
 Dead-code gate for the workspace.
 
-Lean has no export-list mechanism, so the packages' `roots.txt` manifests *define* the public
-API surface. This script treats their union as the root set: it imports the libraries, walks
-the constant-dependency graph (each declaration's type + value), and FAILS (nonzero exit) if
-any authored declaration — kimchi, pasta, poseidon, bulletproof-pcs, snarky,
-pickles, and the fixture libs — is not reachable from the roots. Auto-generated decls
-(recursors, constructors, projections, derive/`match_` auxiliaries, syntax parser
-descriptors) are excluded: they are noise, not authored code.
+Lean has no export-list mechanism, so the roots say what the tree is for. They come from three
+sources:
 
-Script surface: a root inside a `-- script-surface:begin` / `-- script-surface:end` block in
-a manifest declares a declaration consumed by the `scripts/` drivers rather than the library.
-The gate additionally checks each such name textually appears in some scripts/ file as a whole
-name, never inside a longer one, so the blocks cannot rot into general exemption dumps. A
-trailing `-- synthesis: ...` comment exempts a line from the textual check (instances are found
-by class resolution, not by name).
+* the CI drivers: every executable and `--run` script `.github/workflows/{lean,test}.yml`
+  invokes (`ciDrivers`), read as module data from their compiled oleans rather than imported
+  (each declares `main`). Whatever a driver references is alive. The drivers must be built
+  first; lean.yml's compile step and scripts/deadcode.sh do that;
+* the axiom gates' root lists, `snarky/scripts/check_axioms.lean` and
+  `pickles/scripts/check_axioms.lean`: the results those packages stand behind although nothing
+  executable consumes them (the completeness laws, the capstones, the decided regression
+  endpoints), read as the files' unclosed backquoted name literals. The audited list is those
+  packages' one manifest;
+* the `roots.txt` manifests of kimchi, pasta, poseidon and bulletproof-pcs, as before. A root
+  inside a `-- script-surface:begin` / `-- script-surface:end` block there declares a declaration
+  consumed by the `scripts/` drivers, and must appear textually in some scripts/ file as a whole
+  name; a trailing `-- synthesis: ...` comment exempts a line from that check.
 
-Every package is audited. A root is in a manifest for one of four reasons, and the manifests'
-sections say which:
+Three rules root what a constant walk cannot see: `rfl` theorems (`simp` and `dsimp` rewrite with
+them definitionally, from the simp set or a `simp only` list, and leave no constant in the proof
+term), `Coe`-class instances (unfolded at elaboration) and registered elaborators and macros
+(invoked by the elaborator, referenced by nothing). The walk itself follows a `partial def`'s
+compiled body (`._unsafe_rec`) and an `implemented_by` target, which the kernel-facing value
+omits.
 
-* the four pickles capstones (`stepWrap_kimchiVerify`, `wrapStep_kimchiVerify` and the two
-  `handover_or_collision` handovers), from which the whole in-circuit verifier must stay
-  reachable;
-* a gadget's soundness or completeness result — kept even where nothing consumes it yet, so
-  that a gadget and its proofs stand or fall together;
-* a name one of the CI check scripts consumes (the `script-surface` blocks);
-* a declaration the walk cannot see: an `rfl` simp lemma (used from the simp set, it leaves
-  no constant in a proof term), a coercion instance the elaborator applies, or tactic code.
-  These are rooted by hand, in a block that says so.
-
-`pasta/roots.txt` has no roots of its own: the trust base is reached through the packages
-above it.
+Audited: kimchi, pasta, poseidon, bulletproof-pcs, snarky, pickles and the PicklesFixture
+library. Auto-generated declarations (recursors, constructors, projections, derive/`match_`
+auxiliaries, syntax parser descriptors) are excluded: they are noise, not authored code. The gate
+FAILS (nonzero exit) on any unreachable authored declaration, a root missing from the
+environment, an unbuilt driver, or an unanchored script-surface root.
 
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
@@ -101,13 +100,21 @@ def declValue? : ConstantInfo → Option Expr
   | _             => none
 
 /-- Constants directly referenced by `n`: those appearing in its type and, if any, its body. -/
-def directDeps (env : Environment) (n : Name) : Array Name :=
+def usedBy (env : Environment) (n : Name) : Array Name :=
   match env.find? n with
   | none => #[]
   | some ci =>
     match declValue? ci with
     | some v => ci.type.getUsedConstants ++ v.getUsedConstants
     | none   => ci.type.getUsedConstants
+
+/-- `usedBy`, plus the compiled body of a `partial def` (`n._unsafe_rec`) and an `implemented_by`
+    target, both of which the kernel-facing value omits. -/
+def directDeps (env : Environment) (n : Name) : Array Name :=
+  let implBy := match Compiler.implementedByAttr.getParam? env n with
+    | some t => #[t]
+    | none => #[]
+  usedBy env n ++ usedBy env (n ++ `_unsafe_rec) ++ implBy
 
 /-- Name components that only compiler-generated auxiliaries carry. -/
 def generatedComponents : List String :=
@@ -157,23 +164,20 @@ def isOurs (n : Name) : Bool :=
   let n := (privateToUserName? n).getD n
   (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
     || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n || (`Snarky).isPrefixOf n
-    || (`Pickles).isPrefixOf n
+    || (`Pickles).isPrefixOf n || (`PicklesFixture).isPrefixOf n
 
-/-- Is `n` under the dead-zero contract? Everything traversable — all five packages
-    declare their surface. -/
+/-- Is `n` under the dead-zero contract? Everything traversable — every package and the
+    PicklesFixture library declare their surface. -/
 def isAudited (n : Name) : Bool :=
   isOurs n
 
 /-- Transitive closure of the dependency graph from `roots`, restricted to our packages'
-    edges and the fixture harnesses called by script roots. Mathlib/CompElliptic never reference
-    our code, so their edges need not be followed. -/
+    edges. Mathlib/CompElliptic never reference our code, so their edges need not be followed. -/
 partial def reachable (env : Environment) (roots : Array Name) : NameSet :=
   let rec go (seen : NameSet) : List Name → NameSet
     | [] => seen
     | n :: rest =>
-      let fresh := (directDeps env n).filter fun d =>
-        (isOurs d || (`PicklesFixture).isPrefixOf ((privateToUserName? d).getD d)) &&
-          !seen.contains d
+      let fresh := (directDeps env n).filter fun d => isOurs d && !seen.contains d
       go (fresh.foldl (·.insert ·) seen) (fresh.toList ++ rest)
   go (roots.foldl (·.insert ·) ∅) roots.toList
 
@@ -185,18 +189,68 @@ def mentions (s id : String) : Bool :=
   (parts.zip parts.tail).any fun (a, b) =>
     (a.isEmpty || !idChar a.back) && (b.isEmpty || !idChar b.front)
 
+/-- The CI drivers, by olean basename under `scripts/` on the search path: every executable and
+`--run` script `.github/workflows/{lean,test}.yml` invokes. -/
+def ciDrivers : List String :=
+  [ "check_cs", "check_tags", "check_slot_chunks", "check_rule_replay",
+    "check_application_inputs", "check_application_indices", "certify_application",
+    "check_application_keys", "check_terminal", "check_application_layouts",
+    "check_application_manifest", "check_sg_ok" ]
+
+/-- The library declarations a driver references, from every constant its olean defines. -/
+def frontier (sp : SearchPath) (driver : String) : IO (Array Name) := do
+  let rel : System.FilePath := "scripts" / (driver ++ ".olean")
+  let some root ← sp.findM? (fun r => (r / rel).pathExists)
+    | throw (IO.userError s!"scripts/{driver}.olean is not built: build the CI drivers first \
+(scripts/deadcode.sh does)")
+  let (data, _) ← readModuleData (root / rel)
+  let mut out : NameSet := {}
+  for ci in data.constants do
+    let deps := ci.type.getUsedConstants ++ ((declValue? ci).map (·.getUsedConstants)).getD #[]
+    for d in deps do
+      if isOurs d then out := out.insert d
+  return out.toArray
+
+/-- The backquoted name literals of a Lean source, `` `Foo.bar `` as in a `List Name`: unclosed,
+and preceded (whitespace and line comments aside) by a list or expression delimiter. A
+docstring's closed `` `Foo.bar` `` or prose like `` a `namespace Foo` block `` is not one.
+Guillemets are dropped. -/
+def nameLiterals (src : String) : Array String := Id.run do
+  -- line comments carry no literals and would hide the delimiter before the next entry
+  let src := String.intercalate "\n" (src.splitOn "\n" |>.map fun l =>
+    match l.splitOn "--" with | first :: _ => first | [] => l)
+  let cs := src.toList.toArray
+  let idChar (c : Char) : Bool :=
+    c.isAlphanum || c == '.' || c == '_' || c == '?' || c == '!' || c == '\'' || c == '«'
+      || c == '»'
+  let mut out := #[]
+  let mut i := 0
+  while i < cs.size do
+    if cs[i]! == '`' && (i == 0 || cs[i-1]! != '`') then
+      let mut k := i
+      while k > 0 && (cs[k-1]! == ' ' || cs[k-1]! == '\n') do k := k - 1
+      let inContext := k == 0 || "[,(=".contains cs[k-1]!
+      let mut j := i + 1
+      while j < cs.size && idChar cs[j]! do j := j + 1
+      if inContext && j > i + 1 && (j >= cs.size || cs[j]! != '`') then
+        let s := String.mk (cs.extract (i + 1) j).toList
+        out := out.push ((s.replace "«" "").replace "»" "")
+      i := j
+    else i := i + 1
+  return out
+
 end Kimchi.DeadCode
 
 run_cmd do
   let env ← getEnv
-  let manifests := ["kimchi/roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
-    "bulletproof-pcs/roots.txt", "snarky/roots.txt",
-    "pickles/roots.txt"]
-  -- parse the manifests: one fully-qualified name per line, optional trailing `-- comment`;
-  -- `--` lines and blanks are ignored; `script-surface` markers delimit the script surface
   let mut roots : Array Name := #[]
-  let mut missing : Array Name := #[]
+  let mut missing : Array String := #[]
+  -- the manifests: one fully-qualified name per line, optional trailing `-- comment`; `--` lines
+  -- and blanks are ignored; `script-surface` markers delimit the script surface
+  let manifests := ["kimchi/roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
+    "bulletproof-pcs/roots.txt"]
   let mut surface : Array (Name × Bool) := #[]   -- (name, exempt-from-textual-check)
+  let mut manifestCount := 0
   for m in manifests do
     let mut inSurface := false
     for line in (← IO.FS.readFile m).splitOn "\n" do
@@ -209,8 +263,52 @@ run_cmd do
           | n :: rest => (n.trim, String.intercalate " -- " rest)
           | [] => (t, "")
         let n := nameStr.toName
-        if env.contains n then roots := roots.push n else missing := missing.push n
+        if env.contains n then
+          roots := roots.push n
+          manifestCount := manifestCount + 1
+        else missing := missing.push nameStr
         if inSurface then surface := surface.push (n, note.startsWith "synthesis")
+  -- the axiom gates' lists: a literal naming a module or a namespace is not a root
+  let mut auditCount := 0
+  for f in ["snarky/scripts/check_axioms.lean", "pickles/scripts/check_axioms.lean"] do
+    for s in Kimchi.DeadCode.nameLiterals (← IO.FS.readFile f) do
+      let n := s.toName
+      if env.contains n then
+        roots := roots.push n
+        auditCount := auditCount + 1
+      else if env.header.moduleNames.contains n || env.isNamespace n then continue
+      else missing := missing.push s!"{s} ({f})"
+  -- the CI drivers' frontiers
+  let sp ← searchPathRef.get
+  let mut driverCount := 0
+  for d in Kimchi.DeadCode.ciDrivers do
+    let f ← Kimchi.DeadCode.frontier sp d
+    roots := roots ++ f
+    driverCount := driverCount + f.size
+  -- the rules
+  let audited : Array Name := env.constants.fold (init := #[]) fun acc n _ =>
+    if Kimchi.DeadCode.isAudited n then acc.push n else acc
+  let authored :=
+    (audited.filter (!Kimchi.DeadCode.isAuxiliary env ·)).qsort (·.toString < ·.toString)
+  let mut rflRoots : Array Name := #[]
+  for n in audited do
+    if ← Elab.Command.liftCoreM (Meta.isRflTheorem n) then rflRoots := rflRoots.push n
+  let instances := Meta.instanceExtension.getState env
+  let coeRoots := audited.filter fun n =>
+    match env.find? n with
+    | some ci =>
+      instances.instanceNames.contains n &&
+        (match ci.type.getForallBody.getAppFn.constName? with
+         | some c => c.getRoot.toString.startsWith "Coe"
+         | none => false)
+    | none => false
+  let fromTable {γ} (st : KeyedDeclsAttribute.ExtensionState γ) : Array Name :=
+    st.table.toList.foldl (init := #[]) fun acc (_, es) => acc ++ (es.map (·.declName)).toArray
+  let elabRoots := (fromTable (Elab.Tactic.tacticElabAttribute.ext.getState env)
+    ++ fromTable (Elab.macroAttribute.ext.getState env)
+    ++ fromTable (Elab.Term.termElabAttribute.ext.getState env)
+    ++ fromTable (Elab.Command.commandElabAttribute.ext.getState env)).filter
+      Kimchi.DeadCode.isAudited
   -- the script corpus: every file under the packages' scripts/ dirs (this analyzer excluded)
   let scriptDirs := ["scripts", "pasta/scripts", "poseidon/scripts",
     "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts",
@@ -225,16 +323,16 @@ run_cmd do
   for (n, exempt) in surface do
     if !exempt && !Kimchi.DeadCode.mentions corpus n.getString! then
       unanchored := unanchored.push n
-  let live := Kimchi.DeadCode.reachable env roots
-  -- all authored declarations under the dead-zero contract
-  let authored : Array Name :=
-    (env.constants.fold (init := #[]) fun acc n _ =>
-      if Kimchi.DeadCode.isAudited n && !Kimchi.DeadCode.isAuxiliary env n then acc.push n
-      else acc)
-    |>.qsort (·.toString < ·.toString)
+  let liveBase := Kimchi.DeadCode.reachable env roots
+  let onlyByRule (r : Array Name) :=
+    (r.filter (!liveBase.contains ·)).filter (authored.contains ·)
+  let live := Kimchi.DeadCode.reachable env (roots ++ rflRoots ++ coeRoots ++ elabRoots)
   let dead := authored.filter (!live.contains ·)
-  IO.println s!"roots: {roots.size} resolved, {missing.size} missing"
-  for n in missing do IO.println s!"  ⚠ root not in env: {n}"
+  IO.println s!"roots: {manifestCount} from manifests, {auditCount} from the axiom gates, \
+{driverCount} from {Kimchi.DeadCode.ciDrivers.length} CI drivers, {missing.size} missing"
+  IO.println s!"rules: {rflRoots.size} rfl theorems ({(onlyByRule rflRoots).size} authored kept \
+alive by the rule alone), {coeRoots.size} coercion instances, {elabRoots.size} elaborators"
+  for s in missing do IO.println s!"  ⚠ root not in env: {s}"
   for n in unanchored do
     IO.println s!"  ⚠ script-surface root not found in any scripts/ file: {n}"
   IO.println s!"authored decls (audited packages): {authored.size}   \

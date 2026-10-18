@@ -140,10 +140,4 @@ def compareApplications (dir : System.FilePath) (apps : List (String × Imported
   for (name, A) in apps do
     checkCompiled A.assembled A.setup name (← readJson (dir / s!"{name}.json"))
 
-/-- Reconstruct selected applications before reading their independent circuit dumps. -/
-def checkSelectedFromShape (dir : System.FilePath) (apps : List Manifest.Application)
-    (wrap : SRS Bulletproof.IpaPallas.curve.Point) (step : SRS Bulletproof.IpaVesta.curve.Point) :
-    IO Unit := do
-  loadApplications dir apps wrap step (compareApplications dir)
-
 end PicklesFixture.Application

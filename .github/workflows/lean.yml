@@ -94,13 +94,15 @@ jobs:
     # seconds, so `check-cs` (test.yml) restores this cache and runs `lake exe
     # check-cs` rather than `lean --run`. Building the exe needs no fixtures — it reads the
     # dumps at run time — so it fits the library build job. The compile fee is paid once
-    # per `formal/**/*.lean` change (the cache key), not once per consumer run.
+    # per `formal/**/*.lean` change (the cache key), not once per consumer run. The dead-code
+    # gate roots at every driver CI invokes, read from these oleans, so each is built here.
     - name: Compile the CS-equality and tag-dump checkers (cached for their consumers)
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        lake build check-cs check-tags check-slot-chunks check-application-shapes \
-          check-rule-replay check-application-inputs check-application-indices \
-          certify-application check-application-keys check-terminal regenerate-lagrange-cache
+        lake build check-cs check-tags check-slot-chunks check-application-layouts \
+          check-application-manifest check-rule-replay check-application-inputs \
+          check-application-indices certify-application check-application-keys check-terminal \
+          regenerate-lagrange-cache @pickles/check-sg-ok
 
     # Save even when the build (or a source gate rerun) failed: a red PR iteration
     # then restarts from the partial build instead of the last green one. On an exact
@@ -198,9 +200,10 @@ jobs:
           Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
           Bulletproof BulletproofFixture Pickles PicklesFixture
 
-    # GATE: every authored declaration must be reachable from the union of the packages'
-    # roots.txt API manifests, and every script-surface root must appear in a scripts/
-    # file (scripts/deadcode.lean exits nonzero otherwise).
+    # GATE: every authored declaration must be reachable from the CI drivers' oleans, the
+    # snarky and pickles axiom gates' lists and the remaining packages' roots.txt manifests,
+    # and every script-surface root must appear in a scripts/ file (scripts/deadcode.lean
+    # exits nonzero otherwise).
     - name: Check for dead code
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

@@ -76,11 +76,6 @@ def Reads [Add F] [Mul F] [Zero F] (st : ProverState F) (sv : SpongeVar F)
     {s : Poseidon.State F} : Monotone fun st : ProverState F => Reads st sv s :=
   fun _ _ hle h => ⟨CircuitType.monotone_readsAs hle h.1, h.2⟩
 
-/-- A table reading is a valuation reading at that table. -/
-theorem Reads.readsAt [Add F] [Mul F] [Zero F] {st : ProverState F} {sv : SpongeVar F}
-    {s : Poseidon.State F} (h : Reads st sv s) : ReadsAt st.env.get sv s :=
-  ⟨(CircuitType.reads_iff.mp h.1.2).2, h.2⟩
-
 /-! ## The rate slot -/
 
 /-- Seal `x` into rate slot `n`: `Poseidon.addSlot` over circuit variables, with `x` as

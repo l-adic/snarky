@@ -217,12 +217,6 @@ def CVar.Scoped (st : ProverState F) (x : CVar F) : Prop := x.ScopedBy (· ∈ s
 @[simp] theorem CVar.scoped_const (st : ProverState F) (k : F) :
     (CVar.const k).Scoped st := trivial
 
-@[simp] theorem CVar.scoped_add (st : ProverState F) (a b : CVar F) :
-    (CVar.add a b).Scoped st ↔ a.Scoped st ∧ b.Scoped st := Iff.rfl
-
-@[simp] theorem CVar.scoped_scale (st : ProverState F) (k : F) (y : CVar F) :
-    (CVar.scale k y).Scoped st ↔ y.Scoped st := Iff.rfl
-
 /-! The constant-folding constructors preserve scope. -/
 
 @[simp] theorem CVar.Scoped.add_ {st : ProverState F} [Add F] {a b : CVar F} (ha : a.Scoped st)
