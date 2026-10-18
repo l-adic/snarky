@@ -186,7 +186,7 @@ entry. The value is the computation's, not a free variable, so the spec has one 
   cases Except.ok.inj hv
   exact ⟨CircuitType.scoped_fvar.mp hscope, CircuitType.reads_fvar.mp hreads⟩
 
-/-! ## The pilot: `inv`, `mul`, `div` by composition, and a chain with reuse -/
+/-! ## The pilot: `inv`, `mul`, `div` by composition, and `isZero` -/
 
 /-- `inv`'s completeness: where the operand is in scope and reads nonzero, the run succeeds
 and the result reads the inverse of the operand's entry reading. -/
@@ -295,62 +295,6 @@ theorem Prover.div_spec [Field F] [DecidableEq F] [BasicSystem F c]
   mvcgen
   all_goals grind [ProverState.read_of_le, CVar.Scoped.of_le, div_eq_mul_inv]
 
-/-- A six-step chain reusing early results late: `a` at step 5, `c` at step 6, so the
-conditions carry readings across up to four runs. -/
-def chain6 [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    (x y : FVar F) : CircuitM F c (FVar F) := do
-  let a ← mul x y
-  let b ← mul a x
-  let cc ← inv b
-  let d ← mul cc y
-  let e ← mul d a
-  let f ← mul e cc
-  pure f
-
-/-- The chain's completeness, with no transport written by hand. -/
-theorem Prover.chain6_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀ ∧ st₀.read x * st₀.read y * st₀.read x ≠ 0⌝⦄
-    chain6 (c := Prover c) x y
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧
-      st'.read r = (st₀.read x * st₀.read y * st₀.read x)⁻¹ * st₀.read y *
-        (st₀.read x * st₀.read y) * (st₀.read x * st₀.read y * st₀.read x)⁻¹ ∧
-      st₀ ≤ st'⌝⦄ := by
-  simp only [chain6]
-  mvcgen
-  all_goals grind [ProverState.read_of_le, CVar.Scoped.of_le]
-
-/-- A twelve-step chain, every result reused later, for the cost of the conditions at length. -/
-def chain12 [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    (x y : FVar F) : CircuitM F c (FVar F) := do
-  let a ← mul x y
-  let b ← mul a x
-  let cc ← inv b
-  let d ← mul cc y
-  let e ← mul d a
-  let f ← mul e cc
-  let g ← mul f b
-  let h ← inv g
-  let i ← mul h d
-  let j ← mul i e
-  let k ← mul j f
-  let l ← mul k h
-  pure l
-
-/-- The twelve-step chain's completeness, the same two lines. -/
-theorem Prover.chain12_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F)
-    (hb : st₀.read x * st₀.read y * st₀.read x ≠ 0)
-    (hg : (st₀.read x * st₀.read y * st₀.read x)⁻¹ * st₀.read y * (st₀.read x * st₀.read y) *
-      (st₀.read x * st₀.read y * st₀.read x)⁻¹ * (st₀.read x * st₀.read y * st₀.read x) ≠ 0) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀⌝⦄
-    chain12 (c := Prover c) x y
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st₀ ≤ st'⌝⦄ := by
-  simp only [chain12]
-  mvcgen
-  all_goals grind (ematch := 20) (gen := 20) (instances := 5000)
-    [ProverState.read_of_le, CVar.Scoped.of_le]
-
 /-- `isZero`'s completeness: the bit reads `1` exactly where the operand reads `0`. -/
 @[spec] theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
@@ -425,9 +369,9 @@ precondition at the traversal's entry and every result's reading in terms of it,
 per-index shape is the one `grind` carries through later runs; a `List.Forall₂` conclusion is
 not, since a lemma whose conclusion holds a lambda has no E-matching pattern, so the list law
 behind the vector one is internal. The vector law is not `@[spec]`: the reading condition and
-function are not determined by the program. A gadget that is traversed derives its law once
-(inversion's follows), which the program does determine and `@[spec]` registers; a composite
-that traverses is then the same two lines as a chain. -/
+function are not determined by the program. A gadget that is traversed derives its law once,
+which the program does determine and `@[spec]` registers; a composite that traverses is then
+the same two lines as a chain. -/
 
 /-- The `List.mapM` law, the induction behind the vector law. -/
 private theorem Prover.mapM_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
@@ -498,35 +442,5 @@ theorem Prover.vector_mapM_spec [Field F] [DecidableEq F] [BasicSystem F c] [Con
   · refine ⟨fun rs s' ⟨h, hle⟩ => ⟨fun i => ?_, hle⟩, .rfl⟩
     have hg := (List.forall₂_iff_get.mp h).2 i (by simp) (by simp)
     simpa using hg
-
-/-- Inversion traversed: the vector law at `inv`, registered. -/
-@[spec] theorem Prover.vector_mapM_inv_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] {n : ℕ} (xs : Vector (FVar F) n)
-    (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ ∀ i : Fin n, xs[i].Scoped st₀ ∧ st₀.read xs[i] ≠ 0⌝⦄
-    xs.mapM (inv (c := Prover c))
-    ⦃⇓ rs s' => ⌜(∀ i : Fin n, rs[i].Scoped s' ∧ s'.read rs[i] = (st₀.read xs[i])⁻¹) ∧
-      st₀ ≤ s'⌝⦄ :=
-  Prover.vector_mapM_spec _ (fun v => v ≠ 0) (fun v => v⁻¹) (fun st x => Prover.inv_spec x st)
-    xs st₀
-
-/-- Invert every entry, then one more gadget: a traversal composed like a chain, its readings
-carried through the later run. -/
-def invAllThenSquare [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] {n : ℕ}
-    (xs : Vector (FVar F) n) (y : FVar F) : CircuitM F c (Vector (FVar F) n × FVar F) := do
-  let rs ← xs.mapM (inv (c := c))
-  let z ← mul y y
-  pure (rs, z)
-
-theorem Prover.invAllThenSquare_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] {n : ℕ} (xs : Vector (FVar F) n) (y : FVar F)
-    (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ y.Scoped st₀ ∧ ∀ i : Fin n, xs[i].Scoped st₀ ∧ st₀.read xs[i] ≠ 0⌝⦄
-    invAllThenSquare (c := Prover c) xs y
-    ⦃⇓ r s' => ⌜(∀ i : Fin n, r.1[i].Scoped s' ∧ s'.read r.1[i] = (st₀.read xs[i])⁻¹) ∧
-      r.2.Scoped s' ∧ s'.read r.2 = st₀.read y * st₀.read y ∧ st₀ ≤ s'⌝⦄ := by
-  simp only [invAllThenSquare]
-  mvcgen
-  all_goals grind [ProverState.read_of_le, CVar.Scoped.of_le]
 
 end Snarky
