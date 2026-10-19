@@ -856,6 +856,68 @@ theorem Prover.endoScalar_spec [Field F] [DecidableEq F] [ToNat F] (rows : ℕ) 
     obtain ⟨-, hA, hB, hN⟩ := exit_facts h1.1 h2 le_rfl
     exact ⟨h2.1.1, h2.1.2.1, h2.1.2.2, hA, hB, hN, h1.2.trans h2.2.2.2.2⟩
 
+/-- Registered. -/
+@[spec] private def Prover.endoScalar_reg [Field F] [DecidableEq F] [ToNat F] (rows : ℕ)
+    (scalar : FVar F) :=
+  Prover.register (Prover.endoScalar_spec (F := F) rows scalar)
+
+/-! ### The wrapper at the prover's reading -/
+
+/-- The crumbs of a scalar whose representative fits their width reconstruct it. -/
+private theorem nReconstruct_crumbsOf_of_lt [Field F] [ToNat F] [LawfulToNat F] {rows : ℕ}
+    {v : F} (hlt : ToNat.toNat v < 2 ^ (16 * rows)) :
+    Kimchi.Gate.EndoScalar.nReconstruct
+      (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows) (ToNat.toNat v)) = v := by
+  have h4 : (4 : ℕ) ^ (8 * rows) = 2 ^ (16 * rows) := by
+    rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]; ring_nf
+  rw [Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt (h4 ▸ hlt),
+    LawfulToNat.cast_toNat]
+
+/-- **`toField`'s state-relative completeness**, at `rows` rows. From a scalar in scope whose
+representative fits `16 · rows` bits and an endomorphism coefficient in scope, the run succeeds
+and the result reads as the gate's effective scalar of the scalar's crumbs. -/
+theorem Prover.toField_spec_rows [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (rows : ℕ) (scalar endo : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ scalar.Scoped st₀ ∧ endo.Scoped st₀ ∧
+      ToNat.toNat (st₀.read scalar) < 2 ^ (16 * rows)⌝⦄
+    toField (c := Prover (KimchiConstraint F)) rows scalar endo
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧
+      s'.read r = Kimchi.Gate.EndoScalar.toField
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat (st₀.read scalar)))
+        (st₀.read endo) ∧
+      st₀ ≤ s'⌝⦄ := by
+  have hnv := fun (v : F) (h : ToNat.toNat v < 2 ^ (16 * rows)) =>
+    nReconstruct_crumbsOf_of_lt (rows := rows) h
+  unfold toField
+  mvcgen
+  all_goals grind [Prover.Reg.iff, Kimchi.Gate.EndoScalar.toField, CVar.val_add_,
+    CVar.val_scale_, CVar.val, CVar.Scoped.add_, CVar.Scoped.scale_, CVar.scoped_const,
+    ProverState.read_of_le, CVar.Scoped.of_le]
+
+/-- Registered. -/
+@[spec] private def Prover.toField_rows_reg [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (rows : ℕ) (scalar endo : FVar F) :=
+  Prover.register (Prover.toField_spec_rows (F := F) rows scalar endo)
+
+/-- **`toField`'s state-relative completeness**, at the deployed eight rows: on a scalar whose
+representative is below `2 ^ 128`, the result reads as `Poseidon.FqSponge.endoExpand` of it. -/
+theorem Prover.toField_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ scalar.Scoped st₀ ∧ endo.Scoped st₀ ∧
+      ToNat.toNat (st₀.read scalar) < 2 ^ 128⌝⦄
+    toField (c := Prover (KimchiConstraint F)) 8 scalar endo
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧
+      s'.read r = Poseidon.FqSponge.endoExpand (st₀.read endo) (ToNat.toNat (st₀.read scalar)) ∧
+      st₀ ≤ s'⌝⦄ := by
+  have hexp := fun (e : F) (n : ℕ) => Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3 e n
+  mvcgen
+  all_goals grind [Prover.Reg.iff]
+
+/-- Registered. -/
+@[spec] def Prover.toField_reg [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) :=
+  Prover.register (Prover.toField_spec (F := F) h2 h3 scalar endo)
+
 end ProverReading
 
 attribute [irreducible] EndoScalar.toFieldChecked' EndoScalar.toFieldChecked'.row

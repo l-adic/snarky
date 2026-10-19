@@ -101,7 +101,7 @@ theorem CheckedPoint.check_complete [Field F] [DecidableEq F] [BasicSystem F c]
 
 /-- The check's law at the prover's reading: from a point reading as an on-curve value, the
 run succeeds and the state only grows. -/
-private theorem CheckedPoint.check_prover_spec [Field F] [DecidableEq F] [BasicSystem F c]
+theorem CheckedPoint.check_prover_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : F) (p : AffinePoint (FVar F))
     (pv : AffinePoint F) (hcurve : pv.y * pv.y = pv.x ^ 3 + a * pv.x + b)
     (st₀ : ProverState F) :

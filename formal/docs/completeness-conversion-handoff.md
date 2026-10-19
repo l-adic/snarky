@@ -6,9 +6,8 @@ how the `complete_walk` tactic mechanizes the straight-line case.
 `Runs` and `Sat`, the prover interpreter's internals, are `private` in
 `Snarky/Prover.lean`; no other file can name them. Every law is built from the rules
 below. Inside a proof, goals still display the private names after `intro st h` on a
-`Complete`; only writing them is forbidden. Two public accessors serve proofs that
-destructure a `Complete` directly: `run_le` (the run component's two order facts) and
-`runs_post` (a soundness spec read at the run's own table, used by `Complete.post`).
+`Complete`; only writing them is forbidden. A public accessor serves proofs that destructure a
+`Complete` directly: `run_le`, the run component's two order facts.
 `solve_complete` (`Snarky/Compile.lean`) shows the seam pattern: state a combinator law for
 `compileBody`, then apply it at the seed and destructure the existential.
 `snarky/scripts/check_axioms.lean` lists the rules.
@@ -66,9 +65,8 @@ cannot index the recursion; `of_false` discharges the branches the precondition 
 out. See `foldBlocks_complete` (`Snarky/Kimchi/Circuit/RandomOracle.lean`).
 
 **A precondition carrying only scope or well-formedness.** Use `instantiate` to name the
-value the law is indexed by. See `VarBaseMul.scaleRound_complete`
-(`Snarky/Kimchi/Circuit/VarBaseMul.lean`), which names its ten cell readings at the entry
-table.
+value the law is indexed by. See `EndoScalar.row_complete`
+(`Snarky/Kimchi/Circuit/EndoScalar.lean`), which names its accumulators' entry readings.
 
 **A loop whose invariants pin a state.** `EndoScalar`'s loop invariant and `CrumbRow` are
 indexed by the crumb witness's landing table `st₁`. `instantiate` handles states as well

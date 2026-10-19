@@ -709,32 +709,6 @@ variable {F c : Type} {α : Type}
 /-- A program, read at the soundness tag. -/
 abbrev atBuilder (V : Valuation F) (g : CircuitM F c α) : CircuitM F (Builder V c) α := g
 
-/-- A soundness law at every valuation, read at the final table of a run whose rows
-hold, is a fact about the run's result. -/
-theorem runs_post [Zero F] [ConstraintHolds F c]
-    {g : CircuitM F c α} {post : Valuation F → α → Prop}
-    (hspec : ∀ V : Valuation F, ⦃⌜True⌝⦄ atBuilder V g ⦃⇓ r _ => ⌜post V r⌝⦄)
-    {st st' : ProverState F} {a : α} (h : Runs g st a st') (hsat : Sat g st st') :
-    post st'.env.get a := by
-  have hb := (builder_spec_iff (atBuilder st'.env.get g) (post st'.env.get)).mp (hspec _) st.nv
-  have hres : (build (atBuilder st'.env.get g) st.nv).result = a :=
-    (prove_build_agrees h).1.symm
-  rw [hres] at hb
-  exact hb fun con hcon => hsat con hcon
-
-/-- A completeness law's post, strengthened by the gadget's soundness law read at the
-final table. -/
-theorem Complete.post [Zero F] [ConstraintHolds F c]
-    {pre : ProverState F → Prop} {g : CircuitM F c α} {Q : α → ProverState F → Prop}
-    {post : Valuation F → α → Prop}
-    (hspec : ∀ V : Valuation F, ⦃⌜True⌝⦄ atBuilder V g ⦃⇓ r _ => ⌜post V r⌝⦄)
-    (hc : Complete pre g Q) :
-    Complete pre g fun a st' => Q a st' ∧ post st'.env.get a :=
-  fun st hpre =>
-    let ⟨a, st', h, hsat, hq⟩ := hc st hpre
-    ⟨a, st', h, hsat, hq,
-      runs_post hspec h (hsat le_rfl)⟩
-
 end Simulation
 
 end Snarky

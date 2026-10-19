@@ -239,20 +239,6 @@ theorem forM_spec {V : Valuation F} {α : Type} [ConstraintHolds F c]
     · exact hR
     · exact hrest' y hy'
 
-/-- `List.forM`'s completeness: an entry's law and an invariant indexed by what is left
-to visit compose into the whole loop's. A loop that only asserts carries a
-position-free invariant and ignores the argument. -/
-theorem forM_complete [Zero F] [ConstraintHolds F c] {α : Type}
-    (f : α → CircuitM F c PUnit) (P : α → Prop) (inv : List α → ProverState F → Prop)
-    (hstep : ∀ (x : α) (xs : List α), P x →
-      Complete (inv (x :: xs)) (f x) (fun _ st' => inv xs st')) :
-    ∀ l : List α, (∀ x ∈ l, P x) →
-      Complete (inv l) (l.forM f) (fun _ st' => inv [] st')
-  | [], _ => Complete.pure_of fun _ h => h
-  | x :: l, hP =>
-    Complete.bind (hstep x l (hP x (by simp)))
-      fun _ => forM_complete f P inv hstep l fun y hy => hP y (by simp [hy])
-
 /-! ## The prover reading
 
 The state-relative completeness laws of the loops, generic in the per-element conditions as the
