@@ -58,8 +58,9 @@ instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     Prover.CheckFree F c (AffinePoint F) (AffinePoint (FVar F)) :=
   ⟨fun _ => rfl⟩
 
-/-- A point's coordinates carry no admissibility condition. -/
-@[simp] theorem valid_affinePoint [Field F] [BasicSystem F c] [ConstraintHolds F c]
+/-- A point's coordinates carry no admissibility condition: what a witness of a point owes
+`CheckedType.Valid`, discharged by `simp`. -/
+@[simp] private theorem valid_affinePoint [Field F] [BasicSystem F c] [ConstraintHolds F c]
     {p : AffinePoint F} :
     CheckedType.Valid (F := F) (c := c) (var := AffinePoint (FVar F)) p := fun _ _ _ => trivial
 
@@ -98,7 +99,7 @@ inductive Finiteness where
 
 /-- The gate's three auxiliary scalar columns, witnessed together: one advice computation
 from the same four operand readings. -/
-structure AddAux (a : Type) where
+private structure AddAux (a : Type) where
   /-- The value pinning the infinity flag. -/
   infZ : a
   /-- The inverse pinning `sameX`. -/
@@ -107,33 +108,33 @@ structure AddAux (a : Type) where
   s : a
 
 /-- The auxiliary columns as a triple, in allocation order (not the gate's column order). -/
-def AddAux.equiv (a : Type) : AddAux a ≃ a × a × a where
+private def AddAux.equiv (a : Type) : AddAux a ≃ a × a × a where
   toFun c := (c.infZ, c.x21Inv, c.s)
   invFun c := ⟨c.1, c.2.1, c.2.2⟩
   left_inv _ := rfl
   right_inv _ := rfl
 
-instance instCircuitTypeAddAux : CircuitType F (AddAux F) (AddAux (FVar F)) :=
+private instance instCircuitTypeAddAux : CircuitType F (AddAux F) (AddAux (FVar F)) :=
   CircuitType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
 
-instance instCheckedTypeAddAux [Field F] [BasicSystem F c] [ConstraintHolds F c] :
+private instance instCheckedTypeAddAux [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     CheckedType F c (AddAux F) (AddAux (FVar F)) :=
   CheckedType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
 
-instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
+private instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     Prover.CheckFree F c (AddAux F) (AddAux (FVar F)) :=
   ⟨fun v => Prover.CheckFree.check_eq (F := F) (c := c) (val := F × F × F)
     (AddAux.equiv (FVar F) v)⟩
 
 /-- An auxiliary bundle is in scope when its three columns are. -/
-@[simp] theorem scoped_addAux {st : ProverState F} {a : AddAux (FVar F)} :
+@[simp] private theorem scoped_addAux {st : ProverState F} {a : AddAux (FVar F)} :
     CircuitType.Scoped (val := AddAux F) st a ↔
       a.infZ.Scoped st ∧ a.x21Inv.Scoped st ∧ a.s.Scoped st := by
   show (∀ cv ∈ [a.infZ, a.x21Inv, a.s], cv.Scoped st) ↔ _
   simp
 
 /-- An auxiliary bundle reads columnwise. -/
-@[simp] theorem reads_addAux [Add F] [Mul F] [Zero F] {V : Valuation F}
+@[simp] private theorem reads_addAux [Add F] [Mul F] [Zero F] {V : Valuation F}
     {a : AddAux (FVar F)} {v : AddAux F} :
     CircuitType.Reads V a v ↔
       a.infZ.val V = v.infZ ∧ a.x21Inv.val V = v.x21Inv ∧ a.s.val V = v.s := by
@@ -292,7 +293,7 @@ open WeierstrassCurve.Affine in
 /-- On a short curve a point with `y = 0` is 2-torsion. The gate's slope divides by `2y₁`;
 the laws below take that side condition as `P + P ≠ 0`, so no caller handles a
 coordinate. -/
-theorem two_torsion_of_y_eq_zero [Field F] [DecidableEq F]
+private theorem two_torsion_of_y_eq_zero [Field F] [DecidableEq F]
     {W : WeierstrassCurve.Affine F} (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     {V : Valuation F} {p : AffinePoint (FVar F)} {P : W.Point}
     (h : OnCurveAt W V p P) (hy : p.y.val V = 0) : P + P = 0 := by
@@ -305,7 +306,7 @@ theorem two_torsion_of_y_eq_zero [Field F] [DecidableEq F]
 open Std.Do in
 /-- Under `checkFinite` the infinity column reads `0`, which rules out the infinite branch;
 a witnessed flag is pinned only by the gate's row. -/
-@[spec] theorem infColumn_spec {V : Valuation F} [Field F] [DecidableEq F]
+@[spec] private theorem infColumn_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
     (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) :
     ⦃⌜True⌝⦄
@@ -350,7 +351,7 @@ operands' readings. -/
 
 /-- Sealing a point: the run succeeds, its rows hold at every extension of the final
 table, and the sealed point is scoped and reads as the operand. -/
-@[complete_law] theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] private theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F))
     (P : AffinePoint F) :
     Complete (F := F) (c := c)
@@ -378,7 +379,7 @@ table, and the sealed point is scoped and reads as the operand. -/
 /-- The infinity column's completeness law: the result reads `false` under `checkFinite`
 (nothing emitted) and the honest flag otherwise, so the row obligation downstream treats
 both modes as one reading. -/
-@[complete_law] theorem infColumn_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] private theorem infColumn_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
     (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) (b : Bool) (y1 y2 : F) :
     Complete (F := F) (c := c)
@@ -599,7 +600,8 @@ section ProverReading
 open Std.Do WeierstrassCurve.Affine
 
 /-- Sealing a point: the result reads the operand's entry readings. -/
-theorem Prover.sealPoint_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+private theorem Prover.sealPoint_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c]
     [LawfulBasicSystem F c] (p : AffinePoint (FVar F)) (st₀ : ProverState F) :
     ⦃fun s => ⌜s = st₀ ∧ p.x.Scoped st₀ ∧ p.y.Scoped st₀⌝⦄
     sealPoint (c := Prover c) p
@@ -611,29 +613,29 @@ theorem Prover.sealPoint_spec [Field F] [DecidableEq F] [BasicSystem F c] [Const
     ProverState.read_of_le, CVar.Scoped.of_le]
 
 /-- Registered. -/
-@[spec] def Prover.sealPoint_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.sealPoint_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F)) :=
   Prover.register (Prover.sealPoint_spec (c := c) p)
 
 /-- The same-x flag from the operands' x-coordinates. -/
-def addFast.sameXVal [DecidableEq F] (x1 x2 : F) : UnChecked Bool := ⟨decide (x1 = x2)⟩
+private def addFast.sameXVal [DecidableEq F] (x1 x2 : F) : UnChecked Bool := ⟨decide (x1 = x2)⟩
 
 /-- The infinity flag from the same-x flag and the y-coordinates. -/
-def addFast.infVal [DecidableEq F] (sx : Bool) (y1 y2 : F) : UnChecked Bool :=
+private def addFast.infVal [DecidableEq F] (sx : Bool) (y1 y2 : F) : UnChecked Bool :=
   ⟨sx && !decide (y1 = y2)⟩
 
 /-- The infinity column's reading under a mode. -/
-def addFast.infFlag [DecidableEq F] (fin : Finiteness) (sx : Bool) (y1 y2 : F) : Bool :=
+private def addFast.infFlag [DecidableEq F] (fin : Finiteness) (sx : Bool) (y1 y2 : F) : Bool :=
   if fin = .checkFinite then false else sx && !decide (y1 = y2)
 
 /-- The three auxiliary columns from the same-x flag and the operands. -/
-def addFast.auxVal [Field F] [DecidableEq F] (sx : Bool) (x1 y1 x2 y2 : F) : AddAux F :=
+private def addFast.auxVal [Field F] [DecidableEq F] (sx : Bool) (x1 y1 x2 y2 : F) : AddAux F :=
   ⟨if y1 = y2 then 0 else if sx then (y2 - y1)⁻¹ else 0,
     if sx then 0 else (x2 - x1)⁻¹,
     if sx then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1)⟩
 
 /-- The sum from the slope. -/
-def addFast.sumVal [Field F] (sv x1 x2 y1 : F) : AffinePoint F :=
+private def addFast.sumVal [Field F] (sv x1 x2 y1 : F) : AffinePoint F :=
   ⟨sv * sv - (x1 + x2), sv * (x1 - (sv * sv - (x1 + x2))) - y1⟩
 
 private theorem addFast.sameXAdvice_run [Field F] [DecidableEq F] {s : ProverState F}
@@ -671,7 +673,7 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
     AsProver.readCVar_run h2x, AsProver.readCVar_run h1y]
 
 /-- `addFast.sameXAdvice` returns the same-x flag. -/
-@[spec] def Prover.addFast_sameXAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.addFast_sameXAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (q1 q2 : AffinePoint (FVar F)) :=
   Prover.register (Prover.witness_of_run (c := c) (addFast.sameXAdvice q1 q2)
     (fun st => q1.x.Scoped st ∧ q2.x.Scoped st)
@@ -679,7 +681,7 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
     fun _ h => addFast.sameXAdvice_run h.1 h.2)
 
 /-- `addFast.infAdvice` returns the infinity flag. -/
-@[spec] def Prover.addFast_infAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.addFast_infAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (addFast.infAdvice q1 q2 sameX)
     (fun st => (↑sameX : CVar F).Scoped st ∧ q1.y.Scoped st ∧ q2.y.Scoped st)
@@ -688,7 +690,7 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
     fun _ h => addFast.infAdvice_run h.1 h.2.1 h.2.2)
 
 /-- `addFast.auxAdvice` returns the auxiliary columns. -/
-@[spec] def Prover.addFast_auxAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.addFast_auxAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (addFast.auxAdvice q1 q2 sameX)
     (fun st => (↑sameX : CVar F).Scoped st ∧ q1.x.Scoped st ∧ q1.y.Scoped st ∧
@@ -698,7 +700,7 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
     fun _ h => addFast.auxAdvice_run h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2)
 
 /-- `addFast.sumAdvice` returns the sum. -/
-@[spec] def Prover.addFast_sumAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.addFast_sumAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (q1 q2 : AffinePoint (FVar F)) (sl : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (addFast.sumAdvice q1 q2 sl)
     (fun st => sl.Scoped st ∧ q1.x.Scoped st ∧ q2.x.Scoped st ∧ q1.y.Scoped st)
@@ -707,7 +709,8 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
 
 /-- The infinity column: under `checkFinite` the constant `false`, otherwise the witnessed flag;
 the reading named by `addFast.infFlag`. -/
-theorem Prover.infColumn_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+private theorem Prover.infColumn_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c]
     [LawfulBasicSystem F c] (fin : Finiteness) (q1 q2 : AffinePoint (FVar F))
     (sameX : BoolVar F) (st₀ : ProverState F) :
     ⦃fun s => ⌜s = st₀ ∧ (↑sameX : CVar F).Scoped st₀ ∧ q1.y.Scoped st₀ ∧ q2.y.Scoped st₀⌝⦄
@@ -729,7 +732,7 @@ theorem Prover.infColumn_spec [Field F] [DecidableEq F] [BasicSystem F c] [Const
       CircuitType.reads_unchecked', addFast.infVal, addFast.infFlag, CVar.Scoped.of_le]
 
 /-- Registered. -/
-@[spec] def Prover.infColumn_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.infColumn_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
     (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) :=
   Prover.register (Prover.infColumn_spec (c := c) fin q1 q2 sameX)

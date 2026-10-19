@@ -624,28 +624,28 @@ open Std.Do
 function of the entry readings. -/
 
 /-- `inv.advice` at a nonzero reading returns the inverse. -/
-@[spec] def Prover.inv_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.inv_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (x : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (inv.advice x)
     (fun st => x.Scoped st ∧ st.read x ≠ 0) (fun st => (st.read x)⁻¹)
     fun _ h => by simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr h.1), h.2])
 
 /-- `mul.advice` returns the product. -/
-@[spec] def Prover.mul_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.mul_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (x y : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (mul.advice x y)
     (fun st => x.Scoped st ∧ y.Scoped st) (fun st => st.read x * st.read y)
     fun _ h => by simp [mul.advice, AsProver.readCVar_run h.1, AsProver.readCVar_run h.2])
 
 /-- `isZero.bitAdvice` returns the zero bit. -/
-@[spec] def Prover.isZero_bitAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.isZero_bitAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (x : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (isZero.bitAdvice x) (fun st => x.Scoped st)
     (fun st => if st.read x = 0 then 1 else 0)
     fun _ h => by simp [isZero.bitAdvice, AsProver.readCVar_run h])
 
 /-- `isZero.invAdvice` returns the inverse, or `0` at a zero reading. -/
-@[spec] def Prover.isZero_invAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.isZero_invAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (x : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (isZero.invAdvice x) (fun st => x.Scoped st)
     (fun st => if st.read x = 0 then 0 else (st.read x)⁻¹)
@@ -699,7 +699,7 @@ theorem Prover.inv_spec [Field F] [DecidableEq F] [BasicSystem F c]
     exact ⟨h.1.1, h.1.2, h.2⟩
 
 /-- Registered. -/
-@[spec] def Prover.inv_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+@[spec] private def Prover.inv_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] (x : FVar F) :=
   Prover.register (Prover.inv_spec (c := c) x)
 
@@ -745,7 +745,7 @@ theorem Prover.mul_spec [Field F] [DecidableEq F] [BasicSystem F c]
     exact ⟨h.1.1, h.1.2, h.2⟩
 
 /-- Registered. -/
-@[spec] def Prover.mul_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+@[spec] private def Prover.mul_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] (x y : FVar F) :=
   Prover.register (Prover.mul_spec (c := c) x y)
 

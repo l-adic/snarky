@@ -73,7 +73,7 @@ theorem Prover.assertEqual_spec [Field F] [DecidableEq F] [BasicSystem F c]
   all_goals grind [LawfulBasicSystem.holds_equal]
 
 /-- Registered. -/
-@[spec] def Prover.assertEqual_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.assertEqual_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :=
   Prover.register (Prover.assertEqual_spec (c := c) x y)
 

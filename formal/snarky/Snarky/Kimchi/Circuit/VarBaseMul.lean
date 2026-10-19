@@ -448,18 +448,19 @@ rows at the per-round prefix folds. -/
 namespace VarBaseMul
 
 /-- The register advice's value. -/
-def nAccVal [Field F] (a b0 b1 b2 b3 b4 : F) : F :=
+private def nAccVal [Field F] (a b0 b1 b2 b3 b4 : F) : F :=
   b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * a))))
 
 /-- One bit step's five advice values from the readings. -/
-def bitVal [Field F] (xb yb xi yi bv : F) : F × F × F × F × F :=
+private def bitVal [Field F] (xb yb xi yi bv : F) : F × F × F × F × F :=
   let (s1, xo, yo) := Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi
   (s1, s1 * s1, 2 * yi / (2 * xi + xb - s1 * s1) - s1, xo, yo)
 
 /-- The round's canonical row from the per-bit values: what `Kimchi.Gate.VarBaseMul.build`
 computes, in the witnesses' own vocabulary, so a round's reading is this record by unfolding
 alone. -/
-def roundVal [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F) : Kimchi.Gate.VarBaseMul.Witness F :=
+private def roundVal [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F) :
+    Kimchi.Gate.VarBaseMul.Witness F :=
   let v0 := bitVal xb yb x0 y0 b0
   let v1 := bitVal xb yb v0.2.2.2.1 v0.2.2.2.2 b1
   let v2 := bitVal xb yb v1.2.2.2.1 v1.2.2.2.2 b2
@@ -473,12 +474,12 @@ def roundVal [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F) : Kimchi.Gate.VarBaseM
     s0 := v0.1, s1 := v1.1, s2 := v2.1, s3 := v3.1, s4 := v4.1 }
 
 /-- The per-bit chain is the gate's canonical row. -/
-theorem roundVal_eq_build [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F) :
+private theorem roundVal_eq_build [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F) :
     roundVal xb yb x0 y0 n b0 b1 b2 b3 b4 =
       Kimchi.Gate.VarBaseMul.build xb yb x0 y0 n b0 b1 b2 b3 b4 := rfl
 
 /-- A row's five bits in scope. -/
-def bitsScoped (st : ProverState F) (b : Vector (FVar F) 5) : Prop :=
+private def bitsScoped (st : ProverState F) (b : Vector (FVar F) 5) : Prop :=
   ∀ (i : ℕ) (hi : i < 5), (b[i]'hi).Scoped st
 
 private theorem nAccWit_run [Field F] {s : ProverState F} {nPrev : FVar F}
@@ -498,30 +499,30 @@ private theorem bitWit_run [Field F] [DecidableEq F] {s : ProverState F}
     AsProver.readCVar_run hax, AsProver.readCVar_run hay, AsProver.readCVar_run hb]
 
 /-- The threaded pair's condition: the base and the accumulator in scope. -/
-def accScoped (base : AffinePoint (FVar F)) (st : ProverState F)
+private def accScoped (base : AffinePoint (FVar F)) (st : ProverState F)
     (a : AffinePoint (FVar F) × FVar F) : Prop :=
   base.x.Scoped st ∧ base.y.Scoped st ∧ a.1.x.Scoped st ∧ a.1.y.Scoped st ∧ a.2.Scoped st
 
 /-- A round's cells in scope. -/
-def rowScoped [Field F] (st : ProverState F) (r : ScaleRound F) : Prop :=
+private def rowScoped [Field F] (st : ProverState F) (r : ScaleRound F) : Prop :=
   ∀ cv ∈ cells r, cv.Scoped st
 
 /-- The threaded pair's reading: the base's, the accumulator's, the register's. -/
-def accRead [Field F] (base : AffinePoint (FVar F)) (st : ProverState F)
+private def accRead [Field F] (base : AffinePoint (FVar F)) (st : ProverState F)
     (a : AffinePoint (FVar F) × FVar F) : (F × F) × (F × F) × F :=
   ((st.read base.x, st.read base.y), (st.read a.1.x, st.read a.1.y), st.read a.2)
 
 /-- A row's bits' readings. -/
-def bitsRead [Field F] (st : ProverState F) (b : Vector (FVar F) 5) : F × F × F × F × F :=
+private def bitsRead [Field F] (st : ProverState F) (b : Vector (FVar F) 5) : F × F × F × F × F :=
   (st.read b[0], st.read b[1], st.read b[2], st.read b[3], st.read b[4])
 
 /-- The row a round produces, from the pair's and the bits' readings. -/
-def rowStep [Field F] (a : (F × F) × (F × F) × F) (x : F × F × F × F × F) :
+private def rowStep [Field F] (a : (F × F) × (F × F) × F) (x : F × F × F × F × F) :
     Kimchi.Gate.VarBaseMul.Witness F :=
   roundVal a.1.1 a.1.2 a.2.1.1 a.2.1.2 a.2.2 x.1 x.2.1 x.2.2.1 x.2.2.2.1 x.2.2.2.2
 
 /-- The pair's reading after a round: the base unchanged, the row's outputs. -/
-def accStep [Field F] (a : (F × F) × (F × F) × F) (x : F × F × F × F × F) :
+private def accStep [Field F] (a : (F × F) × (F × F) × F) (x : F × F × F × F × F) :
     (F × F) × (F × F) × F :=
   (a.1, ((rowStep a x).x5, (rowStep a x).y5), (rowStep a x).nPrime)
 
@@ -535,8 +536,8 @@ end VarBaseMul
 
 open VarBaseMul in
 /-- `nAccWit` returns the register's value. -/
-@[spec] def Prover.nAccWit_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    (nPrev : FVar F) (bs : Vector (FVar F) 5) :=
+@[spec] private def Prover.nAccWit_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (nPrev : FVar F) (bs : Vector (FVar F) 5) :=
   Prover.register (Prover.witness_of_run (c := c) (nAccWit nPrev bs)
     (fun st => nPrev.Scoped st ∧ bitsScoped st bs)
     (fun st => nAccVal (st.read nPrev) (st.read bs[0]) (st.read bs[1]) (st.read bs[2])
@@ -545,8 +546,8 @@ open VarBaseMul in
 
 open VarBaseMul in
 /-- `bitWit` returns the bit step's values. -/
-@[spec] def Prover.bitWit_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    (t : AffinePoint (FVar F)) (b : FVar F) (acc : AffinePoint (FVar F)) :=
+@[spec] private def Prover.bitWit_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (t : AffinePoint (FVar F)) (b : FVar F) (acc : AffinePoint (FVar F)) :=
   Prover.register (Prover.witness_of_run (c := c) (bitWit t b acc)
     (fun st => t.x.Scoped st ∧ t.y.Scoped st ∧ acc.x.Scoped st ∧ acc.y.Scoped st ∧ b.Scoped st)
     (fun st => bitVal (st.read t.x) (st.read t.y) (st.read acc.x) (st.read acc.y) (st.read b))
@@ -556,9 +557,9 @@ open VarBaseMul in
 /-- The round's step fact: its cells in scope, the next accumulator in scope, the round reading
 as the gate's canonical row at the entry readings, and the accumulator reading as that row's
 outputs. -/
-theorem Prover.scaleRound_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    (base : AffinePoint (FVar F)) (st : ProverState F) (acc : AffinePoint (FVar F) × FVar F)
-    (bs : Vector (FVar F) 5) :
+private theorem Prover.scaleRound_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (base : AffinePoint (FVar F)) (st : ProverState F)
+    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) :
     ⦃fun s => ⌜s = st ∧ accScoped base st acc ∧ bitsScoped st bs ∧ True⌝⦄
     scaleRound (c := Prover c) base acc bs
     ⦃⇓ p s' => ⌜Prover.ScanStep (accScoped base) rowScoped (accRead base) bitsRead
@@ -619,7 +620,7 @@ theorem Prover.scaleRound_spec [Field F] [DecidableEq F] [BasicSystem F c] [Cons
 
 open VarBaseMul in
 /-- The ladder's loop, registered: the scan corollary at the round, its transports discharged. -/
-@[spec] def Prover.scaleLoop_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.scaleLoop_reg [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] (base : AffinePoint (FVar F)) (init : AffinePoint (FVar F) × FVar F)
     (xs : List (Vector (FVar F) 5)) :=
   Prover.register (Prover.mapAccumM_scan_spec (accScoped base) bitsScoped rowScoped (accRead base)
@@ -1494,7 +1495,7 @@ namespace VarBaseMul
 open Kimchi.Gate.VarBaseMul (chainBuild accX accY accN)
 
 /-- The scalar's `n` bits LSB-first as field values: `lsbBitsWit`'s value. -/
-def lsbBitsVal [Field F] [ToNat F] (n : ℕ) (v : F) : Vector F n :=
+private def lsbBitsVal [Field F] [ToNat F] (n : ℕ) (v : F) : Vector F n :=
   Vector.ofFn fun i => if (ToNat.toNat v).testBit i.1 then 1 else 0
 
 private theorem lsbBitsWit_run [Field F] [ToNat F] {s : ProverState F} {n : ℕ} {scalar : FVar F}
@@ -1523,11 +1524,11 @@ private theorem reads_bits [Field F] [DecidableEq F] [ToNat F] {n : ℕ} {st : P
 
 /-- The rounds' bit stream, MSB-first off the scalar's bits: entry `k` is bit
 `5 · chunks − 1 − k`. -/
-def bsOf [Field F] [ToNat F] (v : F) (chunks k : ℕ) : F :=
+private def bsOf [Field F] [ToNat F] (v : F) (chunks k : ℕ) : F :=
   if (ToNat.toNat v).testBit (5 * chunks - 1 - k) then 1 else 0
 
 /-- A window of five entries off a stream, as a round's bits reading. -/
-def bitsAt (bs : ℕ → F) (i : ℕ) : F × F × F × F × F :=
+private def bitsAt (bs : ℕ → F) (i : ℕ) : F × F × F × F × F :=
   (bs (5 * i), bs (5 * i + 1), bs (5 * i + 2), bs (5 * i + 3), bs (5 * i + 4))
 
 /-- The reversed prefix's entries are the bits, reflected. -/
@@ -1802,7 +1803,7 @@ end VarBaseMul
 
 open VarBaseMul in
 /-- `lsbBitsWit` returns the scalar's bits. -/
-@[spec] def Prover.lsbBitsWit_reg [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+@[spec] private def Prover.lsbBitsWit_reg [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [ConstraintHolds F c] (n : ℕ) (scalar : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (lsbBitsWit n scalar)
     (fun st => scalar.Scoped st) (fun st => lsbBitsVal n (st.read scalar))
