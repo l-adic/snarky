@@ -155,9 +155,10 @@ directly: their postconditions, a state equation and a witness clause, are shape
 /-- The wrapper on a registered postcondition, working around Lean's mvcgen (function mSpec in
 module Lean.Elab.Tactic.Do.Spec, toolchain v4.30.0): the unification of a spec's postcondition
 against the goal's, under full approximation, precedes the precondition's discharge and assigns
-the entry ghost. The pattern-test sidecar outside the tree holds a negative control that fails
-exactly while this is needed; when it passes on a toolchain, delete this, `Prover.register`, the
-registered definitions, and `Prover.Reg.iff` from the grind calls. -/
+the entry ghost. A CI script in the package's scripts directory, the wrapper's expiry signal,
+holds a negative control that fails exactly while this is needed; when it passes on a
+toolchain, delete this, `Prover.register`, the registered definitions, `Prover.Reg.iff` from the
+grind calls, and the script. -/
 @[irreducible] def Prover.Reg (p : Prop) : Prop := p
 
 /-- The wrapper is transparent to a proof. -/

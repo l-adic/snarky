@@ -166,6 +166,13 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake env lean snarky/scripts/check_axioms.lean
 
+    # The prover-reading registration wrapper's expiry signal: a composite whose law is
+    # registered unwrapped must still fail under mvcgen; when it passes, the wrapper is dead.
+    - name: Check the registration wrapper is still needed
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake env lean snarky/scripts/check_reg_needed.lean
+
     # The pickles linearization results. The two reflection endpoints are the only
     # declarations in the tree permitted a native_decide certificate outside CompElliptic
     # and Pasta/Endo.lean; the transport lemmas must stay pure.

@@ -75,6 +75,7 @@ scripts/kernel-replay.sh                # lean4checker replays every .olean
 make lean-lint                          # Batteries' env_linter suite, one process per module
 make lean-shake                         # no redundant imports
 */scripts/check_axioms.sh               # per-package axiom closures (all six packages)
+lake env lean snarky/scripts/check_reg_needed.lean   # mvcgen still captures an unwrapped ghost
 ```
 
 The fixture drivers (`*/scripts/check_*fixture*.sh`, `check_fq_sponge.sh`,
