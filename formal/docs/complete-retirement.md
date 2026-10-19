@@ -4,7 +4,8 @@ The snarky package states completeness in two forms: the `Complete` relation wit
 combinators (`Snarky/Prover.lean`), and the prover's weakest-precondition reading, whose laws are
 `Std.Do` triples at the `Prover c` tag (`Snarky/Prover/WP.lean`). Every gadget under
 `Snarky/DSL/` has its triple. This note lists what outside `Snarky/DSL/` depends on the
-`Complete` form, and so which of the DSL's `Complete` laws something still needs.
+`Complete` form: the DSL laws nothing outside the DSL reaches are retired, and the rest stay
+until the kimchi gadgets that cite them migrate.
 
 ## The `Complete` form
 
@@ -19,8 +20,8 @@ combinators (`Snarky/Prover.lean`), and the prover's weakest-precondition readin
 - The walker, in `Snarky/Tactic.lean` and `Snarky/Tactic/Attr.lean`: the `complete_walk`,
   `complete_mono_tac`, `complete_ctx` and `complete_apply_law` tactics, and the `complete_law`
   and `complete_mono` attributes that drive them.
-- The DSL laws: the 29 declarations named `*_complete` under `Snarky/DSL/`, and the
-  `LawfulIfThenElse.select_complete` field with its five instances' proofs.
+- The DSL laws: the 15 declarations named `*_complete` under `Snarky/DSL/` that a kimchi
+  gadget law or the `solve_complete` seam reaches, listed below.
 
 ## Method
 
@@ -91,61 +92,60 @@ combinators. Each row also cites the relation itself.
 | `solve_complete` | `Snarky/Compile.lean` | `CheckedType.check_complete`, `Complete.witness`, `assertEq_complete` | bind, frame, imp, instantiate, pure_of, Runs/Sat (unfolded) | `solve_complete` seam |
 | `Pickles.instAllocBranchDataCheckedType` | `Pickles/StepSlot.lean` | proves `check_complete`; cites `CheckedType.check_complete` and the kimchi law `EndoScalar.toField_complete_rows` | bind, frame, imp, pure | pickles checked-type instance |
 
-## The DSL laws' consumers
+## Retained DSL laws
 
-Each DSL law, with the consumers outside the DSL that cite it, directly or through another DSL
-law.
+Each DSL law something outside the DSL still reaches, with its citers there, the DSL laws it is
+reached through, and the kimchi circuits whose migration releases it.
 
-| DSL law | File | Consumers outside the DSL | Through |
-|---|---|---|---|
-| `assertAll_complete` | `Snarky/DSL/Assert.lean` | — | — |
-| `assertAny_complete` | `Snarky/DSL/Assert.lean` | — | — |
-| `assertEq_complete` | `Snarky/DSL/Assert.lean` | `solve_complete` | — |
-| `assertEqual_complete` | `Snarky/DSL/Assert.lean` | `EndoMul.endoInv_complete`, `EndoMul.endoMul_complete`, `EndoScalar.toField_complete_rows`, `lowest128Bits'_complete`, `scaleFast1_complete`, `scaleFast2_complete`, `splitFieldVar_complete`, `varBaseMul_complete` | — |
-| `assertExactlyOne_complete` | `Snarky/DSL/Assert.lean` | — | — |
-| `assertNonZero_complete` | `Snarky/DSL/Assert.lean` | `groupMapCircuit_complete` | — |
-| `assertNotEqual_complete` | `Snarky/DSL/Assert.lean` | — | — |
-| `assertSquare_complete` | `Snarky/DSL/Assert.lean` | `CheckedPoint.check_complete`, `sqrtFlagged_complete` | — |
-| `assert_complete` | `Snarky/DSL/Assert.lean` | — | — |
-| `unpack_complete` | `Snarky/DSL/Bits.lean` | — | — |
-| `LawfulIfThenElse.select_complete` | `Snarky/DSL/Boolean.lean` | — | — |
-| `all_complete` | `Snarky/DSL/Boolean.lean` | — | — |
-| `and_complete` | `Snarky/DSL/Boolean.lean` | `groupMapCircuit_complete` | — |
-| `any_complete` | `Snarky/DSL/Boolean.lean` | — | — |
-| `or_complete` | `Snarky/DSL/Boolean.lean` | — | — |
-| `selectField.core_complete` | `Snarky/DSL/Boolean.lean` | none directly | `selectField_complete` |
-| `selectField_complete` | `Snarky/DSL/Boolean.lean` | `assertSplitBelow_complete`, `scaleFast2_complete`, `sqrtFlagged_complete` | — |
-| `xor.core_complete` | `Snarky/DSL/Boolean.lean` | — | — |
-| `xor_complete` | `Snarky/DSL/Boolean.lean` | — | — |
-| `div_complete` | `Snarky/DSL/Field.lean` | `groupMapCircuit_complete` | — |
-| `equals_complete` | `Snarky/DSL/Field.lean` | `assertSplitBelow_complete` | — |
-| `inv_complete` | `Snarky/DSL/Field.lean` | none directly | `assertNonZero_complete`, `div_complete` |
-| `isZero_complete` | `Snarky/DSL/Field.lean` | none directly | `equals_complete` |
-| `mul_complete` | `Snarky/DSL/Field.lean` | `CheckedPoint.check_complete`, `EndoScalar.toField_complete_rows`, `groupMapCircuit_complete`, `ySquared_complete` | — |
-| `neq_complete` | `Snarky/DSL/Field.lean` | — | — |
-| `powGo_complete` | `Snarky/DSL/Field.lean` | — | — |
-| `pow_complete` | `Snarky/DSL/Field.lean` | — | — |
-| `square_complete` | `Snarky/DSL/Field.lean` | `CheckedPoint.check_complete` | — |
-| `sealVar.core_complete` | `Snarky/DSL/Utils.lean` | none directly | `sealVar_complete` |
-| `sealVar_complete` | `Snarky/DSL/Utils.lean` | `EndoMul.endoMul_complete`, `SpongeVar.addSlotVar_complete`, `sealPoint_complete` | — |
+| DSL law | File | Cited by, outside the DSL | Through | Retained until these migrate |
+|---|---|---|---|---|
+| `assertEq_complete` | `Snarky/DSL/Assert.lean` | `solve_complete` | — | the `solve` seam |
+| `assertEqual_complete` | `Snarky/DSL/Assert.lean` | `EndoMul.endoInv_complete`, `EndoMul.endoMul_complete`, `EndoScalar.toField_complete_rows`, `lowest128Bits'_complete`, `scaleFast1_complete`, `scaleFast2_complete`, `splitFieldVar_complete`, `varBaseMul_complete` | `assertEq_complete`, `sealVar.core_complete` | AddComplete, EndoMul, EndoScalar, RangeCheck, Sponge, VarBaseMul, the `solve` seam |
+| `assertNonZero_complete` | `Snarky/DSL/Assert.lean` | `groupMapCircuit_complete` | — | GroupMap |
+| `assertSquare_complete` | `Snarky/DSL/Assert.lean` | `CheckedPoint.check_complete`, `sqrtFlagged_complete` | — | CheckedPoint, GroupMap |
+| `and_complete` | `Snarky/DSL/Boolean.lean` | `groupMapCircuit_complete` | — | GroupMap |
+| `selectField.core_complete` | `Snarky/DSL/Boolean.lean` | — | `selectField_complete` | GroupMap, RangeCheck, VarBaseMul |
+| `selectField_complete` | `Snarky/DSL/Boolean.lean` | `assertSplitBelow_complete`, `scaleFast2_complete`, `sqrtFlagged_complete` | — | GroupMap, RangeCheck, VarBaseMul |
+| `div_complete` | `Snarky/DSL/Field.lean` | `groupMapCircuit_complete` | — | GroupMap |
+| `equals_complete` | `Snarky/DSL/Field.lean` | `assertSplitBelow_complete` | — | RangeCheck |
+| `inv_complete` | `Snarky/DSL/Field.lean` | — | `assertNonZero_complete`, `div_complete` | GroupMap |
+| `isZero_complete` | `Snarky/DSL/Field.lean` | — | `equals_complete` | RangeCheck |
+| `mul_complete` | `Snarky/DSL/Field.lean` | `CheckedPoint.check_complete`, `EndoScalar.toField_complete_rows`, `groupMapCircuit_complete`, `ySquared_complete` | `and_complete`, `div_complete` | CheckedPoint, EndoScalar, GroupMap |
+| `square_complete` | `Snarky/DSL/Field.lean` | `CheckedPoint.check_complete` | — | CheckedPoint |
+| `sealVar.core_complete` | `Snarky/DSL/Utils.lean` | — | `sealVar_complete` | AddComplete, EndoMul, Sponge |
+| `sealVar_complete` | `Snarky/DSL/Utils.lean` | `EndoMul.endoMul_complete`, `SpongeVar.addSlotVar_complete`, `sealPoint_complete` | — | AddComplete, EndoMul, Sponge |
+
+## Retired
+
+- The DSL laws nothing outside the DSL reaches: `or_complete`, `xor_complete` with the private
+  `xor.core_complete`, `any_complete`, `all_complete`, `neq_complete`, `pow_complete` with the
+  private `powGo_complete`, `unpack_complete`, `assertNotEqual_complete`, `assert_complete`,
+  `assertAny_complete`, `assertExactlyOne_complete` and `assertAll_complete`. Each gadget's law
+  is its triple at the prover's reading.
+- `LawfulIfThenElse.select_complete` and its five instances' proofs. The class keeps
+  `select_sound`, and nothing outside the DSL consumes it.
+- `CircuitType.scoped_unit`, whose only citer was the unit instance's proof of
+  `select_complete`.
+
+The traversal laws, `check_complete`, the relation, its combinators and the walker stay: each
+has a consumer outside the DSL, listed in the findings.
 
 ## Findings
 
 - The DSL's `Complete` laws are consumed by kimchi gadget laws and by `solve_complete`, which
   cites `assertEq_complete`. No pickles theorem, script or fixture check cites a DSL law, and no
   CI driver cites any declaration of the form.
-- Fifteen DSL laws have no consumer outside the DSL: `or`, `xor` (with its private `core`),
-  `any`, `all`, `neq`, `pow` (with the private `powGo`), `unpack`, `assertNotEqual`, `assert`,
-  `assertAny`, `assertExactlyOne`, `assertAll`, and the `select_complete` field.
 - The traversal laws are all consumed: `mapAccumM_complete` by the endoMul, EndoScalar and
   varBaseMul laws, `forM_complete` by `scaleFast1_complete` and `scaleFast2_complete`, and
   `zipWithVecM_complete` by `assertEq_complete`, so by the seam.
 - `check_complete` is consumed by `Complete.witness`, `solve_complete`, the kimchi checked-type
-  instances and the pickles instance below. `WPCheckedType.check_wp` is its replacement.
+  instances and the pickles instance below. `WPCheckedType.check_wp` is its replacement; the
+  field goes when its last consumer does.
 - The relation, its combinators and the walker are consumed by the kimchi gadget laws.
 - One consumer is neither a kimchi gadget law nor the seam:
   `Pickles.instAllocBranchDataCheckedType` in `Pickles/StepSlot.lean`. Its `check_complete`
   proof uses the combinators and the kimchi law `EndoScalar.toField_complete_rows`. The kimchi
   migration does not replace it. The proof goes when `check_complete` does, and branch data's
   check needs a `WPCheckedType` instance, built on the EndoScalar decomposition's law at the
-  prover's reading.
+  prover's reading. Through `toField_complete_rows` it also reaches `mul_complete` and
+  `assertEqual_complete`, so EndoScalar's migration has to carry this instance with it.

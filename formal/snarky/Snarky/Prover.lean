@@ -427,10 +427,6 @@ section Formers
 
 variable {a va b vb : Type}
 
-@[simp] theorem CircuitType.scoped_unit {st : ProverState F} :
-    CircuitType.Scoped (val := Unit) st () := by
-  simp [CircuitType.Scoped]
-
 theorem CircuitType.reads_unit [Add F] [Mul F] {V : Valuation F} :
     CircuitType.Reads V () () := rfl
 

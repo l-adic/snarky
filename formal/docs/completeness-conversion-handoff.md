@@ -8,11 +8,10 @@ how the `complete_walk` tactic mechanizes the straight-line case.
 below. Inside a proof, goals still display the private names after `intro st h` on a
 `Complete`; only writing them is forbidden. Two public accessors serve proofs that
 destructure a `Complete` directly: `run_le` (the run component's two order facts) and
-`runs_post` (a soundness spec read at the run's own table, used by `Complete.post` and by
-`pow_complete`/`any_complete`/`all_complete`). `solve_complete` (`Snarky/Compile.lean`)
-shows the seam pattern: state a combinator law for `compileBody`, then apply it at the
-seed and destructure the existential. `snarky/roots.txt` and
-`snarky/scripts/check_axioms.lean` list the rules.
+`runs_post` (a soundness spec read at the run's own table, used by `Complete.post`).
+`solve_complete` (`Snarky/Compile.lean`) shows the seam pattern: state a combinator law for
+`compileBody`, then apply it at the seed and destructure the existential.
+`snarky/scripts/check_axioms.lean` lists the rules.
 
 ## The rules
 
@@ -67,8 +66,9 @@ cannot index the recursion; `of_false` discharges the branches the precondition 
 out. See `foldBlocks_complete` (`Snarky/Kimchi/Circuit/RandomOracle.lean`).
 
 **A precondition carrying only scope or well-formedness.** Use `instantiate` to name the
-value the law is indexed by. See `powGo_complete` (`Snarky/DSL/Field.lean`) and
-`xor.core_complete` (`Snarky/DSL/Boolean.lean`).
+value the law is indexed by. See `VarBaseMul.scaleRound_complete`
+(`Snarky/Kimchi/Circuit/VarBaseMul.lean`), which names its ten cell readings at the entry
+table.
 
 **A loop whose invariants pin a state.** `EndoScalar`'s loop invariant and `CrumbRow` are
 indexed by the crumb witness's landing table `st₁`. `instantiate` handles states as well

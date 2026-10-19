@@ -153,34 +153,6 @@ needs a characteristic hypothesis and is not stated. -/
   rw [← pack_val (bits := bits) fun i hi => by simpa using hf i hi]
   simpa using (LawfulBasicSystem.holds_r1cs V _ _ _).mp hrow
 
-/-- `unpack`'s completeness law: where the operand's representative fits in `n` bits the
-run succeeds, its rows are satisfied at every extension of the final table, and the bits
-are scoped. -/
-@[complete_law]
-theorem unpack_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (vv : F) (n : Nat)
-    (hlt : ToNat.toNat vv < 2 ^ n) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st v vv)
-      (unpack (c := c) v n)
-      (fun a st' => CircuitType.ReadsAs (val := Vector Bool n) st' a (unpackPure vv n)) := by
-  simp only [unpack]
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame CircuitType.monotone_readsAs
-        (Complete.witness (unpack.advice v n) (unpackPure vv n) (by simp))))
-    (fun r => Complete.bind (Complete.addConstraint ?_)
-      fun _ => Complete.pure_of fun _ h => h.1)
-  · rintro st ⟨hr, hv⟩ stf hle
-    refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-    have hbits := CircuitType.reads_vector.mp (hr.2.of_le hr.1 hle)
-    rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hv.1),
-      pack_val (bs := unpackPure vv n)
-        fun i hi => CircuitType.reads_boolVar.mp (hbits i hi),
-      natLsbVal_unpackPure hlt, LawfulToNat.cast_toNat, CircuitType.reads_fvar.mp hv.2]
-    simp
-  · simp [unpack.advice, readVar_run h.1, CircuitType.readVal_fvar,
-      CircuitType.reads_fvar.mp h.2]
-
 attribute [irreducible] unpack
 
 /-- The rows `unpack` emits, in order: one `boolean` per bit, then the packing row. -/
@@ -194,7 +166,7 @@ example [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   simp only [build_bind, build, witness, Snarky.addConstraint]
   rfl
 
-/-! ## The state-relative completeness law
+/-! ## The completeness law
 
 `unpack`'s law at the prover's reading (`Snarky.Prover.WP`), and its registered reading for
 `mvcgen`. -/

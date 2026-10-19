@@ -430,21 +430,6 @@ open Std.Do in
   simp only [BoolVar.coe_unchecked, CVar.val_sub_, CVar.val, h]
   split <;> simp
 
-/-- `neq`'s completeness law: `equals`'s run, its bit negated. -/
-theorem neq_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (av bv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st a av ∧
-      CircuitType.ReadsAs (val := F) st b bv)
-      (neq (c := c) a b)
-      (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (!decide (av = bv))) := by
-  simp only [neq]
-  refine Complete.bind (equals_complete (c := c) a b av bv)
-    fun r => Complete.pure_of fun st hbb => ?_
-  refine ⟨CircuitType.scoped_boolVar.mpr (CVar.Scoped.sub_ trivial
-      (CircuitType.scoped_boolVar.mp hbb.1)), CircuitType.reads_boolVar.mpr ?_⟩
-  rw [BoolVar.coe_unchecked, CVar.val_sub_, CircuitType.reads_boolVar.mp hbb.2]
-  cases h : decide (av = bv) <;> simp [bit]
-
 attribute [irreducible] neq
 
 /-- `neq` emits exactly `equals`'s rows. -/
@@ -547,67 +532,6 @@ open Std.Do in
     pow (c := Builder V c) x n
     ⦃⇓ r _ => ⌜r.val V = x.val V ^ n⌝⦄ :=
   powGo_spec n x n (Nat.le_succ n)
-
-private theorem powGo_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] :
-    ∀ (fuel : Nat) (x : FVar F) (n : Nat),
-      Complete (fun st => x.Scoped st) (powGo (c := c) fuel x n) (fun a st' => a.Scoped st') := by
-  have hval : ∀ (v : CVar F) (st : ProverState F), v.Scoped st →
-      ∃ a : F, CircuitType.ReadsAs (val := F) st v a :=
-    fun v st h => ⟨v.val st.env.get, CircuitType.scoped_fvar.mpr h, rfl⟩
-  -- `mul`, at whatever the operands happen to read: the law is indexed by values, the
-  -- recursion carries only scope, and `instantiate` is the bridge.
-  have hmul : ∀ x y : FVar F, Complete (F := F) (c := c)
-      (fun st => x.Scoped st ∧ y.Scoped st) (mul (c := c) x y)
-      (fun a st' => a.Scoped st' ∧ x.Scoped st') := by
-    intro x y
-    refine Complete.instantiate
-      (P := fun p : F × F => fun st => (CircuitType.ReadsAs (val := F) st x p.1 ∧
-        CircuitType.ReadsAs (val := F) st y p.2) ∧ x.Scoped st)
-      (fun st h => ⟨⟨_, _⟩, ⟨(hval x st h.1).choose_spec, (hval y st h.2).choose_spec⟩, h.1⟩)
-      fun p => Complete.imp (fun _ h => h) (fun _ _ h => ⟨CircuitType.scoped_fvar.mp h.1.1, h.2⟩)
-        (Complete.frame CVar.monotone_scoped (mul_complete (c := c) x y p.1 p.2))
-  intro fuel
-  induction fuel with
-  | zero =>
-    intro x n
-    match n with
-    | 0 => exact Complete.pure_of fun _ _ => trivial
-    | 1 => exact Complete.pure_of fun _ h => h
-    | _ + 2 => exact Complete.pure_of fun _ h => h
-  | succ fuel ih =>
-    intro x n
-    match n with
-    | 0 => exact Complete.pure_of fun _ _ => trivial
-    | 1 => exact Complete.pure_of fun _ h => h
-    | m + 2 =>
-      simp only [powGo]
-      refine Complete.bind
-        (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => h) (hmul x x))
-        fun sq => Complete.bind
-          (Complete.imp (fun _ h => h) (fun _ _ h => h)
-            (Complete.frame CVar.monotone_scoped (ih sq ((m + 2) / 2))))
-          fun y => ?_
-      by_cases hpar : (m + 2) % 2 = 0
-      · rw [if_pos hpar]
-        exact Complete.pure_of fun _ h => h.1
-      · rw [if_neg hpar]
-        exact Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h.1) (hmul x y)
-
-/-- `pow`'s completeness law: `mul`'s, along the recursion. -/
-theorem pow_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) (n : Nat) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (pow (c := c) x n)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv ^ n)) := by
-  intro st hx
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hx ⊢
-  obtain ⟨hx, hvx⟩ := hx
-  subst hvx
-  obtain ⟨r, st₁, hrun, hsat, hsc⟩ := powGo_complete (c := c) n x n st hx
-  refine ⟨r, st₁, hrun, hsat, hsc, ?_⟩
-  have hval := runs_post (fun V => pow_spec (c := c) (V := V) x n) hrun
-    (hsat le_rfl)
-  rw [hval, CVar.val_of_le (run_le hrun) hx]
 
 attribute [irreducible] pow
 

@@ -92,39 +92,38 @@ def roots : List Name :=
     -- The DSL: field operations.
     `Snarky.equals_spec, `Snarky.equals_complete,
     `Snarky.isZero_spec, `Snarky.isZero_complete,
-    `Snarky.neq_spec, `Snarky.neq_complete,
+    `Snarky.neq_spec,
     `Snarky.mul_spec, `Snarky.mul_complete,
     `Snarky.inv_spec, `Snarky.inv_complete,
     `Snarky.div_spec, `Snarky.div_complete,
     `Snarky.square_spec, `Snarky.square_complete,
-    `Snarky.pow_spec, `Snarky.pow_complete,
+    `Snarky.pow_spec,
 
     -- The DSL: boolean operations.
     `Snarky.and_spec, `Snarky.and_complete,
-    `Snarky.or_spec, `Snarky.or_complete,
-    `Snarky.xor_spec, `Snarky.xor_complete,
-    `Snarky.any_spec, `Snarky.any_complete,
-    `Snarky.all_spec, `Snarky.all_complete,
+    `Snarky.or_spec,
+    `Snarky.xor_spec,
+    `Snarky.any_spec,
+    `Snarky.all_spec,
     `Snarky.selectField_spec, `Snarky.selectField_complete,
-    `Snarky.LawfulIfThenElse.select_complete,
-    -- The lawful selects: the completeness law in instance form, at each shape.
+    -- The lawful selects: the soundness law in instance form, at each shape.
     `Snarky.instLawfulIfThenElseFVar, `Snarky.instLawfulIfThenElseBoolVar,
     `Snarky.instLawfulIfThenElseUnit, `Snarky.instLawfulIfThenElseProd,
     `Snarky.instLawfulIfThenElseVector,
 
     -- The DSL: assertions.
-    `Snarky.assert_spec, `Snarky.assert_complete,
+    `Snarky.assert_spec,
     `Snarky.assertEq_spec, `Snarky.assertEq_complete,
     `Snarky.assertEqual_spec, `Snarky.assertEqual_complete,
     `Snarky.assertNonZero_spec, `Snarky.assertNonZero_complete,
-    `Snarky.assertNotEqual_spec, `Snarky.assertNotEqual_complete,
+    `Snarky.assertNotEqual_spec,
     `Snarky.assertSquare_spec, `Snarky.assertSquare_complete,
-    `Snarky.assertAny_spec, `Snarky.assertAny_complete,
-    `Snarky.assertAll_spec, `Snarky.assertAll_complete,
-    `Snarky.assertExactlyOne_spec, `Snarky.assertExactlyOne_complete,
+    `Snarky.assertAny_spec,
+    `Snarky.assertAll_spec,
+    `Snarky.assertExactlyOne_spec,
 
     -- The DSL: bit decomposition and the seal.
-    `Snarky.unpack_spec, `Snarky.unpack_complete,
+    `Snarky.unpack_spec,
     `Snarky.sealVar_spec, `Snarky.sealVar_complete,
 
     -- The whole-circuit layer: the public interface's reading, and the payoff.
