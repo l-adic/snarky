@@ -277,6 +277,7 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoScalar.Prover.toField_spec, `Snarky.Kimchi.EndoScalar.Prover.toField_reg,
     `Snarky.Kimchi.Prover.groupMapCircuit_spec,
     `Snarky.Kimchi.Prover.groupMapCircuit_toGroup_spec,
+    `Snarky.Kimchi.Poseidon.Prover.poseidon_spec, `Snarky.Kimchi.Poseidon.Prover.poseidon_reg,
     -- The checks' laws at that reading in instance form, for the types nothing witnesses
     -- at it yet.
     `Snarky.Kimchi.instWPCheckedTypeSpongeState,

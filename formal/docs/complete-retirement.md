@@ -139,7 +139,10 @@ The relation, its remaining rules, the walker, `zipWithVecM_complete`, `mapAccum
 - The relation, its rules and the walker are consumed by the kimchi gadget laws of
   CheckedPoint, EndoScalar's wrapper, Poseidon, RandomOracle, RangeCheck and Sponge.
   `toField` has its triples (`Prover.toField_spec_rows`, `Prover.toField_spec`), but its
-  `Complete` laws stay while RangeCheck's laws and the pickles instance cite them.
+  `Complete` laws stay while RangeCheck's laws and the pickles instance cite them. Likewise
+  `poseidon` has its triple (`Poseidon.Prover.poseidon_spec`), and `poseidon_complete` stays while
+  Sponge's `absorb_complete` and `squeeze_complete` and RandomOracle's `updateBlock_complete`
+  cite it.
 - One consumer is neither a kimchi gadget law nor the seam:
   `Pickles.instAllocBranchDataCheckedType` in `Pickles/StepSlot.lean`. Its `check_complete`
   proof uses the combinators and the kimchi law `EndoScalar.toField_complete_rows`. The kimchi
