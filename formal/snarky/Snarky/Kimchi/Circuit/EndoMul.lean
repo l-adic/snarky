@@ -1583,4 +1583,594 @@ theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
 
 end EndoMul
 
+/-! ## The state-relative completeness laws
+
+`endoMul`'s laws at the prover's reading (`Snarky.Prover.WP`), on `varBaseMul`'s template: the
+round's step fact in `Prover.ScanStep` shape at readings named once, the loop's instance of
+`Prover.mapAccumM_scan_spec` registered, and the ladder's law closing with the loop as a
+spec-table hit and a model bridge onto the gate's honest walk. -/
+
+/-! ### The round at the prover's reading
+
+The round witnesses one advice octet, so the round's chain of states is one link. A round is
+read with its own output cells; the payload reads them off the successor instead, and the
+ladder's bridge carries the one to the other at the value level. -/
+
+namespace EndoMul
+
+/-- The round's advice octet from the readings: `Kimchi.Gate.EndoMul.build`'s cells, in the
+witness's allocation order `(inv, nAccNext, r.x, r.y, s.x, s.y, s1, s3)`. -/
+private def rowVal [Field F] (eb xt yt xp yp n b1 b2 b3 b4 : F) :
+    F × F × F × F × F × F × F × F :=
+  let w := Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4
+  (w.inv, w.nPrime, w.xR, w.yR, w.xS, w.yS, w.s1, w.s3)
+
+/-- The round's canonical row from the advice octet: what `Kimchi.Gate.EndoMul.build` computes,
+in the witness's own vocabulary, so a round's reading is this record by unfolding alone. -/
+private def roundVal [Field F] (eb xt yt xp yp n b1 b2 b3 b4 : F) :
+    Kimchi.Gate.EndoMul.Witness F :=
+  let v := rowVal eb xt yt xp yp n b1 b2 b3 b4
+  { xT := xt, yT := yt, xP := xp, yP := yp, n := n, nPrime := v.2.1,
+    b1 := b1, b2 := b2, b3 := b3, b4 := b4,
+    s1 := v.2.2.2.2.2.2.1, xR := v.2.2.1, yR := v.2.2.2.1, s3 := v.2.2.2.2.2.2.2,
+    xS := v.2.2.2.2.1, yS := v.2.2.2.2.2.1, inv := v.1 }
+
+/-- The octet's record is the gate's canonical row. -/
+private theorem roundVal_eq_build [Field F] (eb xt yt xp yp n b1 b2 b3 b4 : F) :
+    roundVal eb xt yt xp yp n b1 b2 b3 b4 =
+      Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4 := rfl
+
+/-- A row's four bits in scope. -/
+private def bitsScoped (st : ProverState F) (b : Vector (FVar F) 4) : Prop :=
+  ∀ (i : ℕ) (hi : i < 4), (b[i]'hi).Scoped st
+
+/-- The threaded pair's condition: the base and the accumulator in scope. -/
+private def accScoped (t : AffinePoint (FVar F)) (st : ProverState F)
+    (a : AffinePoint (FVar F) × FVar F) : Prop :=
+  t.x.Scoped st ∧ t.y.Scoped st ∧ a.1.x.Scoped st ∧ a.1.y.Scoped st ∧ a.2.Scoped st
+
+private theorem rowWit_run [Field F] [DecidableEq F] {s : ProverState F} {eb : F}
+    {t : AffinePoint (FVar F)} {bs : Vector (FVar F) 4} {acc : AffinePoint (FVar F) × FVar F}
+    (hacc : accScoped t s acc) (hbs : bitsScoped s bs) :
+    (rowWit eb t bs acc).run s.env = .ok (rowVal eb (t.x.val s.env.get) (t.y.val s.env.get)
+      (acc.1.x.val s.env.get) (acc.1.y.val s.env.get) (acc.2.val s.env.get)
+      (bs[0].val s.env.get) (bs[1].val s.env.get) (bs[2].val s.env.get)
+      (bs[3].val s.env.get)) := by
+  simp [rowWit, rowVal, AsProver.readCVar_run hacc.1, AsProver.readCVar_run hacc.2.1,
+    AsProver.readCVar_run hacc.2.2.1, AsProver.readCVar_run hacc.2.2.2.1,
+    AsProver.readCVar_run hacc.2.2.2.2, AsProver.readCVar_run (hbs 0 (by omega)),
+    AsProver.readCVar_run (hbs 1 (by omega)), AsProver.readCVar_run (hbs 2 (by omega)),
+    AsProver.readCVar_run (hbs 3 (by omega))]
+
+/-- A round's cells in scope. -/
+private def rowScoped (st : ProverState F) (r : EndoMulRound F) : Prop :=
+  ∀ cv ∈ cells r, cv.Scoped st
+
+/-- The threaded pair's reading: the base's, the accumulator's, the register's. -/
+private def accRead [Field F] (t : AffinePoint (FVar F)) (st : ProverState F)
+    (a : AffinePoint (FVar F) × FVar F) : (F × F) × (F × F) × F :=
+  ((st.read t.x, st.read t.y), (st.read a.1.x, st.read a.1.y), st.read a.2)
+
+/-- A row's bits' readings. -/
+private def bitsRead [Field F] (st : ProverState F) (b : Vector (FVar F) 4) : F × F × F × F :=
+  (st.read b[0], st.read b[1], st.read b[2], st.read b[3])
+
+/-- A round's reading with its own output cells: the gate's row, its outputs where the round
+witnessed them. -/
+private def roundRead [Field F] [DecidableEq F] (st : ProverState F) (r : EndoMulRound F) :
+    Kimchi.Gate.EndoMul.Witness F :=
+  EndoMulRound.readWith st.env.get r (st.read r.s.x) (st.read r.s.y) (st.read r.nAccNext)
+
+/-- The row a round produces, from the pair's and the bits' readings. -/
+private def rowStep [Field F] (eb : F) (a : (F × F) × (F × F) × F) (x : F × F × F × F) :
+    Kimchi.Gate.EndoMul.Witness F :=
+  roundVal eb a.1.1 a.1.2 a.2.1.1 a.2.1.2 a.2.2 x.1 x.2.1 x.2.2.1 x.2.2.2
+
+/-- The pair's reading after a round: the base unchanged, the row's outputs. -/
+private def accStep [Field F] (eb : F) (a : (F × F) × (F × F) × F) (x : F × F × F × F) :
+    (F × F) × (F × F) × F :=
+  (a.1, ((rowStep eb a x).xS, (rowStep eb a x).yS), (rowStep eb a x).nPrime)
+
+/-- The round's chain of states and every entry cell's reading along it, the one place the
+chain is known: the witness's state lies past the entry, and an entry cell in scope reads, at
+every state past the entry, what it read at the entry. -/
+private theorem round_readings [Field F] {t : AffinePoint (FVar F)} {s₁ s : ProverState F}
+    {acc : AffinePoint (FVar F) × FVar F} {bs : Vector (FVar F) 4} (hl : s₁ ≤ s)
+    (hacc : accScoped t s₁ acc) (hbs : bitsScoped s₁ bs) :
+    s₁ ≤ s ∧
+      ∀ u, s₁ ≤ u →
+        t.x.val u.env.get = t.x.val s₁.env.get ∧
+        t.y.val u.env.get = t.y.val s₁.env.get ∧
+        acc.1.x.val u.env.get = acc.1.x.val s₁.env.get ∧
+        acc.1.y.val u.env.get = acc.1.y.val s₁.env.get ∧
+        acc.2.val u.env.get = acc.2.val s₁.env.get ∧
+        ∀ (i : ℕ) (hi : i < 4), (bs[i]'hi).val u.env.get = (bs[i]'hi).val s₁.env.get :=
+  ⟨hl, fun _ hle => ⟨CVar.val_of_le hle hacc.1, CVar.val_of_le hle hacc.2.1,
+    CVar.val_of_le hle hacc.2.2.1, CVar.val_of_le hle hacc.2.2.2.1,
+    CVar.val_of_le hle hacc.2.2.2.2, fun i hi => CVar.val_of_le hle (hbs i hi)⟩⟩
+
+/-- A round's reading survives the state's growth when its cells are in scope. -/
+private theorem roundRead_of_le [Field F] [DecidableEq F] {st st' : ProverState F}
+    (hle : st ≤ st') {r : EndoMulRound F} (h : ∀ cv ∈ cells r, cv.Scoped st) :
+    roundRead st' r = roundRead st r := by
+  simp (disch := (apply h; simp [cells])) only [roundRead, EndoMulRound.readWith,
+    ProverState.read, CVar.val_of_le hle]
+
+end EndoMul
+
+open EndoMul in
+/-- `rowWit` returns the round's advice octet. -/
+@[spec] private def Prover.rowWit_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (eb : F) (t : AffinePoint (FVar F)) (bs : Vector (FVar F) 4)
+    (acc : AffinePoint (FVar F) × FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (rowWit eb t bs acc)
+    (fun st => accScoped t st acc ∧ bitsScoped st bs)
+    (fun st => rowVal eb (st.read t.x) (st.read t.y) (st.read acc.1.x) (st.read acc.1.y)
+      (st.read acc.2) (st.read bs[0]) (st.read bs[1]) (st.read bs[2]) (st.read bs[3]))
+    (fun _ h => rowWit_run h.1 h.2) fun _ _ => by simp)
+
+open EndoMul in
+/-- The round's step fact: its cells in scope, the next accumulator in scope, the round reading
+(with its own output cells) as the gate's canonical row at the entry readings, and the
+accumulator reading as that row's outputs. -/
+private theorem Prover.endoMulRound_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (eb : F) (t : AffinePoint (FVar F)) (st : ProverState F)
+    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) :
+    ⦃fun s => ⌜s = st ∧ accScoped t st acc ∧ bitsScoped st bs ∧ True⌝⦄
+    endoMulRound (c := Prover c) eb t acc bs
+    ⦃⇓ p s' => ⌜Prover.ScanStep (accScoped t) rowScoped (accRead t) bitsRead roundRead
+      (accStep eb) (rowStep eb) st acc bs p.1 p.2 s'⌝⦄ := by
+  unfold endoMulRound
+  mvcgen
+  all_goals (try grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+    CircuitType.scoped_prod', CVar.Scoped.of_le, accScoped, bitsScoped])
+  -- the step fact
+  rename_i s₁ w sPt s h hpre
+  simp only [Prover.Reg.iff] at h
+  simp only [sPt]
+  obtain ⟨rfl, hacc, hbs⟩ := hpre
+  obtain ⟨hw, hl⟩ := h
+  -- the chain and the entry cells' readings along it, from the one lemma that knows it
+  obtain ⟨hl, hrd⟩ := round_readings hl hacc hbs
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_prod', CircuitType.scoped_fvar,
+    CircuitType.reads_prod', CircuitType.reads_fvar] at hw
+  refine ⟨?_, ?_, ?_, ?_, hl⟩
+  · simp only [rowScoped, cells, List.forall_mem_cons]
+    grind [CVar.Scoped.of_le, accScoped, bitsScoped]
+  · exact ⟨hacc.1.of_le hl, hacc.2.1.of_le hl, hw.1.2.2.2.2.1, hw.1.2.2.2.2.2.1, hw.1.2.1⟩
+  -- the two equations: the vocabulary, the octet's readings, and the entry cells' readings,
+  -- the chain's link found in the context
+  · simp (disch := assumption) only [roundRead, EndoMulRound.readWith, ProverState.read,
+      accRead, bitsRead, rowStep, hw.2, hrd]
+    exact rfl
+  · simp (disch := assumption) only [ProverState.read, accRead, bitsRead, accStep, rowStep,
+      hw.2, hrd]
+    exact rfl
+
+open EndoMul in
+/-- The ladder's loop, registered: the scan corollary at the round, its transports discharged. -/
+@[spec] private def Prover.endoLoop_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (eb : F) (t : AffinePoint (FVar F))
+    (init : AffinePoint (FVar F) × FVar F) (xs : List (Vector (FVar F) 4)) :=
+  Prover.register (Prover.mapAccumM_scan_spec (accScoped t) bitsScoped rowScoped (accRead t)
+    bitsRead roundRead (accStep eb) (rowStep eb) (endoMulRound (c := Prover c) eb t)
+    (fun _ => True)
+    (fun _ _ _ hle h i hi => (h i hi).of_le hle)
+    (fun _ _ _ hle h cv hcv => (h cv hcv).of_le hle)
+    (fun _ _ x hle h => by
+      simp only [bitsRead, ProverState.read, CVar.val_of_le hle (h 0 (by omega)),
+        CVar.val_of_le hle (h 1 (by omega)), CVar.val_of_le hle (h 2 (by omega)),
+        CVar.val_of_le hle (h 3 (by omega))])
+    (fun _ _ _ hle h => roundRead_of_le hle h)
+    (fun st acc x => Prover.endoMulRound_spec eb t st acc x) init xs)
+
+/-! ### The ladder at the prover's reading
+
+`endoMul`'s law. The loop is the registered scan instance, whose rows are `rowStep` along the
+prefix folds from the doubled seed; `scan_rows` and `scan_fold` read those folds as the model's
+honest walk (`Kimchi.Gate.EndoMul.chainBuild`), `chainHolds_of_reads` reads the payload's
+successor chain off the rounds' own readings, `walk_facts` is the model's side (the rows hold by
+`chain_complete`, the final register is the scalar by `chain_nAcc`, the final accumulator names
+the decoded multiple by `endoMul_off`), and `exit_facts` states the exit in the law's
+vocabulary, so each of the law's conditions is one projection of it. The seed's two additions
+are cited by hand at their points: the same law at two instantiations, which `mvcgen` tells
+apart by their operands. -/
+
+namespace EndoMul
+
+open Kimchi.Gate.EndoMul (chainBuild accX accY accN)
+
+/-- The scalar's bits MSB-first as field values, four per row: `bitsWit`'s value. -/
+private def bitsVal [Field F] [ToNat F] (rounds : ℕ) (v : F) : Vector (Vector F 4) rounds :=
+  Vector.ofFn fun r => Vector.ofFn fun j =>
+    if (ToNat.toNat v).testBit (4 * rounds - 1 - (4 * r.1 + j.1)) then 1 else 0
+
+private theorem bitsWit_run [Field F] [ToNat F] {s : ProverState F} {rounds : ℕ}
+    {scalar : FVar F} (h : scalar.Scoped s) :
+    (bitsWit rounds scalar).run s.env = .ok (bitsVal rounds (scalar.val s.env.get)) := by
+  simp [bitsWit, bitsVal, AsProver.readCVar_run h]
+
+/-- Every row of the bits bundle is in scope and reads the scalar's bits, off the bundle's
+reading. -/
+private theorem bits_facts [Field F] [ToNat F] {rounds : ℕ} {st : ProverState F}
+    {bits : Vector (Vector (FVar F) 4) rounds} {v : F}
+    (h : CircuitType.ReadsAs (val := Vector (Vector F 4) rounds) st bits (bitsVal rounds v))
+    (i : ℕ) (hi : i < rounds) :
+    bitsScoped st (bits[i]'hi) ∧ bitsRead st (bits[i]'hi) = bitsOf rounds (ToNat.toNat v) i := by
+  have hrd : ∀ (j : ℕ) (hj : j < 4), ((bits[i]'hi)[j]'hj).val st.env.get =
+      if (ToNat.toNat v).testBit (4 * rounds - 1 - (4 * i + j)) then 1 else 0 := fun j hj => by
+    have := CircuitType.reads_fvar.mp
+      (CircuitType.reads_vector.mp (CircuitType.reads_vector.mp h.2 i hi) j hj)
+    simpa only [bitsVal, Vector.getElem_ofFn] using this
+  refine ⟨fun j hj => CircuitType.scoped_fvar.mp
+    (CircuitType.scoped_vector.mp (CircuitType.scoped_vector.mp h.1 i hi) j hj), ?_⟩
+  simp only [bitsRead, bitsOf, ProverState.read]
+  rw [hrd 0 (by omega), hrd 1 (by omega), hrd 2 (by omega), hrd 3 (by omega), Nat.add_zero]
+
+/-- Along rows reading a stream, each `rowStep` at the prefix fold is the walk's row. -/
+private theorem scan_rows [Field F] (eb xT yT : F) :
+    ∀ (ws : List (F × F × F × F)) (x0 y0 n0 : F) (bs : ℕ → F × F × F × F)
+      (d : (F × F) × (F × F) × F),
+      (∀ (i : ℕ) (hi : i < ws.length), ws[i] = bs i) →
+      ∀ (i : ℕ) (hi : i < ws.length),
+        rowStep eb ((ws.scanl (accStep eb) ((xT, yT), (x0, y0), n0)).getD i d) ws[i]
+          = chainBuild eb xT yT x0 y0 n0 bs i
+  | [], _, _, _, _, _, _, _, hi => absurd hi (Nat.not_lt_zero _)
+  | w :: ws, x0, y0, n0, bs, d, hws, i, hi => by
+    have hw : w = bs 0 := hws 0 (by simp)
+    have hstep : accStep eb ((xT, yT), (x0, y0), n0) w
+        = ((xT, yT), ((chainBuild eb xT yT x0 y0 n0 bs 0).xS,
+            (chainBuild eb xT yT x0 y0 n0 bs 0).yS),
+          (chainBuild eb xT yT x0 y0 n0 bs 0).nPrime) := by
+      rw [hw]
+      simp only [accStep, rowStep]
+      rw [roundVal_eq_build]
+      rfl
+    have hws' : ∀ (k : ℕ) (hk : k < ws.length), ws[k] = bs (k + 1) := fun k hk => by
+      simpa using hws (k + 1) (by simpa using hk)
+    cases i with
+    | zero =>
+      simp only [List.scanl_cons, List.getD_cons_zero, List.getElem_cons_zero]
+      rw [hw]
+      simp only [rowStep]
+      rw [roundVal_eq_build]
+      rfl
+    | succ j =>
+      have hj : j < ws.length := by simpa using hi
+      simp only [List.scanl_cons, List.getD_cons_succ, List.getElem_cons_succ]
+      rw [hstep, scan_rows eb xT yT ws _ _ _ (fun m => bs (m + 1)) d hws' j hj,
+        Kimchi.Gate.EndoMul.chainBuild_shift]
+
+/-- The walk from row `0`'s outputs, `m` rows on, closes where the walk closes `m + 1` rows
+on. -/
+private theorem acc_shift [Field F] (eb xT yT x0 y0 n0 : F) (bs : ℕ → F × F × F × F) (m : ℕ) :
+    ((accX (chainBuild eb xT yT (chainBuild eb xT yT x0 y0 n0 bs 0).xS
+          (chainBuild eb xT yT x0 y0 n0 bs 0).yS (chainBuild eb xT yT x0 y0 n0 bs 0).nPrime
+          (fun k => bs (k + 1))) m,
+        accY (chainBuild eb xT yT (chainBuild eb xT yT x0 y0 n0 bs 0).xS
+          (chainBuild eb xT yT x0 y0 n0 bs 0).yS (chainBuild eb xT yT x0 y0 n0 bs 0).nPrime
+          (fun k => bs (k + 1))) m),
+      accN (chainBuild eb xT yT (chainBuild eb xT yT x0 y0 n0 bs 0).xS
+          (chainBuild eb xT yT x0 y0 n0 bs 0).yS (chainBuild eb xT yT x0 y0 n0 bs 0).nPrime
+          (fun k => bs (k + 1))) m)
+      = ((accX (chainBuild eb xT yT x0 y0 n0 bs) (m + 1),
+          accY (chainBuild eb xT yT x0 y0 n0 bs) (m + 1)),
+          accN (chainBuild eb xT yT x0 y0 n0 bs) (m + 1)) := by
+  cases m with
+  | zero => rfl
+  | succ k =>
+    simp only [accX, accY, accN]
+    rw [Kimchi.Gate.EndoMul.chainBuild_shift eb xT yT x0 y0 n0 bs k]
+
+/-- Along rows reading a stream, the fold from the seed is the walk's final accumulator. -/
+private theorem scan_fold [Field F] (eb xT yT : F) :
+    ∀ (ws : List (F × F × F × F)) (x0 y0 n0 : F) (bs : ℕ → F × F × F × F),
+      (∀ (i : ℕ) (hi : i < ws.length), ws[i] = bs i) →
+      ws.foldl (accStep eb) ((xT, yT), (x0, y0), n0)
+        = ((xT, yT), (accX (chainBuild eb xT yT x0 y0 n0 bs) ws.length,
+            accY (chainBuild eb xT yT x0 y0 n0 bs) ws.length),
+          accN (chainBuild eb xT yT x0 y0 n0 bs) ws.length)
+  | [], _, _, _, _, _ => rfl
+  | w :: ws, x0, y0, n0, bs, hws => by
+    have hw : w = bs 0 := hws 0 (by simp)
+    have hstep : accStep eb ((xT, yT), (x0, y0), n0) w
+        = ((xT, yT), ((chainBuild eb xT yT x0 y0 n0 bs 0).xS,
+            (chainBuild eb xT yT x0 y0 n0 bs 0).yS),
+          (chainBuild eb xT yT x0 y0 n0 bs 0).nPrime) := by
+      rw [hw]
+      simp only [accStep, rowStep]
+      rw [roundVal_eq_build]
+      rfl
+    have hws' : ∀ (k : ℕ) (hk : k < ws.length), ws[k] = bs (k + 1) := fun k hk => by
+      simpa using hws (k + 1) (by simpa using hk)
+    rw [List.foldl_cons, hstep, scan_fold eb xT yT ws _ _ _ (fun m => bs (m + 1)) hws',
+      List.length_cons, acc_shift]
+
+/-- The payload holds, off the rounds' own readings: when every round reads, with its own
+output cells, as a row of a walk whose rows hold and link, and the finals read as the walk's
+closing accumulator, the successor-chain reading holds, since a successor's input cells and
+its predecessor's output cells both read as the walk's link. -/
+private theorem chainHolds_of_reads [Field F] [DecidableEq F] (eb : F) (V : Valuation F) :
+    ∀ (W : ℕ → Kimchi.Gate.EndoMul.Witness F) (rounds : List (EndoMulRound F))
+      (fin : F × F × F),
+      (∀ (i : ℕ) (hi : i < rounds.length), EndoMulRound.readWith V (rounds[i]'hi)
+          ((rounds[i]'hi).s.x.val V) ((rounds[i]'hi).s.y.val V)
+          ((rounds[i]'hi).nAccNext.val V) = W i) →
+      (∀ i, i < rounds.length → Kimchi.Gate.EndoMul.Holds eb (W i)) →
+      (∀ i, (W (i + 1)).xP = (W i).xS ∧ (W (i + 1)).yP = (W i).yS ∧
+        (W (i + 1)).n = (W i).nPrime) →
+      fin = (accX W rounds.length, accY W rounds.length, accN W rounds.length) →
+      EndoMul.chainHolds V eb fin rounds
+  | _, [], _, _, _, _, _ => trivial
+  | W, [r], _, hread, hholds, _, rfl => by
+    have h0 := hread 0 (by simp)
+    simp only [List.getElem_cons_zero] at h0
+    show Kimchi.Gate.EndoMul.Holds eb (EndoMulRound.readWith V r (W 0).xS (W 0).yS (W 0).nPrime)
+    rw [show (W 0).xS = r.s.x.val V by rw [← h0]; rfl, show (W 0).yS = r.s.y.val V by
+      rw [← h0]; rfl, show (W 0).nPrime = r.nAccNext.val V by rw [← h0]; rfl, h0]
+    exact hholds 0 (by simp)
+  | W, r :: r' :: rest, fin, hread, hholds, hlink, hfin => by
+    have h0 := hread 0 (by simp)
+    have h1 := hread 1 (by simp)
+    simp only [List.getElem_cons_zero, List.getElem_cons_succ] at h0 h1
+    have hx : r'.p.x.val V = r.s.x.val V := by
+      rw [show r'.p.x.val V = (W 1).xP by rw [← h1]; rfl, (hlink 0).1, ← h0]; rfl
+    have hy : r'.p.y.val V = r.s.y.val V := by
+      rw [show r'.p.y.val V = (W 1).yP by rw [← h1]; rfl, (hlink 0).2.1, ← h0]; rfl
+    have hn : r'.nAcc.val V = r.nAccNext.val V := by
+      rw [show r'.nAcc.val V = (W 1).n by rw [← h1]; rfl, (hlink 0).2.2, ← h0]; rfl
+    refine ⟨?_, chainHolds_of_reads eb V (fun i => W (i + 1)) (r' :: rest) fin
+      (fun i hi => hread (i + 1) (by simpa using hi))
+      (fun i hi => hholds (i + 1) (by simpa using hi)) (fun i => hlink (i + 1))
+      (by rw [hfin]; rfl)⟩
+    show Kimchi.Gate.EndoMul.Holds eb (EndoMulRound.readWith V r _ _ _)
+    rw [hx, hy, hn, h0]
+    exact hholds 0 (by simp)
+
+/-- The model's side of the ladder: from the base's and the doubled seed's readings, the walk's
+rows hold, its final register is the scalar, and its final accumulator names the scalar's
+decoded multiple of the base. -/
+private theorem walk_facts [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] (d : HasEndo F)
+    {xT yT x0 y0 : F} {T : d.W.Point} (hT : Kimchi.Gate.AddComplete.IsPoint d.W xT yT T)
+    (hP0 : Kimchi.Gate.AddComplete.IsPoint d.W x0 y0 ((T + d.lam • T) + (T + d.lam • T)))
+    (v : F) (hfits : ToNat.toNat v < 2 ^ 128) :
+    (∀ i, i < 32 → Kimchi.Gate.EndoMul.Holds d.endo
+        (chainBuild d.endo xT yT x0 y0 0 (bitsOf 32 (ToNat.toNat v)) i)) ∧
+      accN (chainBuild d.endo xT yT x0 y0 0 (bitsOf 32 (ToNat.toNat v))) 32 = v ∧
+      ∃ hfin : d.W.Nonsingular
+          (accX (chainBuild d.endo xT yT x0 y0 0 (bitsOf 32 (ToNat.toNat v))) 32)
+          (accY (chainBuild d.endo xT yT x0 y0 0 (bitsOf 32 (ToNat.toNat v))) 32),
+        Point.some _ _ hfin = Kimchi.Gate.EndoScalar.endoExpandZ d.lam (ToNat.toNat v) • T := by
+  have hbits : 4 * 32 ≤ 244 := by norm_num
+  have hfits' : ToNat.toNat v < 4 ^ (2 * 32) := by norm_num; omega
+  have h4 : (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 := by norm_num
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  obtain ⟨hTns, rfl⟩ := hT
+  have hφT := d.endo_nonsingular hTns
+  have heig := d.eigen hTns hφT
+  obtain ⟨hP0ns, hP0eq'⟩ := hP0
+  have hP0eq : Point.some _ _ hP0ns
+      = (2 : ℤ) • Point.some _ _ hTns + (2 : ℤ) • Point.some _ _ hφT := by
+    rw [← hP0eq', heig]
+    module
+  set W := chainBuild d.endo xT yT x0 y0 0 (bitsOf (F := F) 32 (ToNat.toNat v)) with hWdef
+  have hbsval : ∀ i, ((bitsOf (F := F) 32 (ToNat.toNat v) i).1 = 0 ∨
+        (bitsOf (F := F) 32 (ToNat.toNat v) i).1 = 1) ∧
+      ((bitsOf (F := F) 32 (ToNat.toNat v) i).2.1 = 0 ∨
+        (bitsOf (F := F) 32 (ToNat.toNat v) i).2.1 = 1) ∧
+      ((bitsOf (F := F) 32 (ToNat.toNat v) i).2.2.1 = 0 ∨
+        (bitsOf (F := F) 32 (ToNat.toNat v) i).2.2.1 = 1) ∧
+      ((bitsOf (F := F) 32 (ToNat.toNat v) i).2.2.2 = 0 ∨
+        (bitsOf (F := F) 32 (ToNat.toNat v) i).2.2.2 = 1) := by
+    intro i
+    refine ⟨?_, ?_, ?_, ?_⟩ <;> simp only [bitsOf] <;> split <;> simp
+  have hholds : ∀ i, i < 32 → Kimchi.Gate.EndoMul.Holds d.endo (W i) :=
+    Kimchi.Gate.EndoMul.chain_complete d.W (Point.some _ _ hTns) (Point.some _ _ hφT)
+      (fun a b ha hb hba hbb => d.off_targets ha hb hba hbb (Point.some_ne_zero hTns) heig)
+      32 hbits hTns hφT rfl rfl (bitsOf (F := F) 32 (ToNat.toNat v)) hbsval 0 hP0ns hP0eq
+  have hcl : Kimchi.Gate.EndoMul.crumbList W 32
+      = Kimchi.Gate.EndoScalar.crumbsOf (2 * 32) (ToNat.toNat v) := by
+    rw [Kimchi.Gate.EndoMul.crumbList_ofBits 32 (ToNat.toNat v) W ?_]
+    intro r _
+    cases r <;> exact ⟨rfl, rfl, rfl, rfl⟩
+  refine ⟨hholds, ?_, ?_⟩
+  · rw [Kimchi.Gate.EndoMul.chain_nAcc d.endo 32 W hholds (fun _ _ => rfl),
+      show accN W 0 = 0 from rfl, zero_mul, zero_add, hcl,
+      Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hfits',
+      LawfulToNat.cast_toNat]
+  · obtain ⟨hfin, sc, A, B, hseq, hsab, hAle, hBle, hAval, hBval, -⟩ :=
+      Kimchi.Gate.EndoMul.endoMul_off d.W d.two_ne d.three_ne d.odd d.endo
+        (Point.some _ _ hTns) (Point.some _ _ hφT)
+        (fun a b ha hb hba hbb => d.off_targets ha hb hba hbb (Point.some_ne_zero hTns) heig)
+        32 hbits W hholds (fun i _ => by cases i <;> exact ⟨hTns, rfl⟩)
+        (fun i _ => by cases i <;> exact ⟨hφT, rfl⟩) (fun _ _ => ⟨rfl, rfl⟩) hP0ns hP0eq d.lam
+        heig
+    refine ⟨hfin, ?_⟩
+    rw [← decomposition_eq_endoExpandZ d (ToNat.toNat v) hsab (h4 ▸ hAle) (h4 ▸ hBle)
+      (hcl ▸ hAval) (hcl ▸ hBval)]
+    exact hseq
+
+/-- The seed's sums are finite: a point named by cells is not zero, `[1 + λ]` does not kill
+it, and the group has no 2-torsion. -/
+private theorem seed_ne [Field F] [DecidableEq F] (d : HasEndo F) {V : Valuation F}
+    {g : AffinePoint (FVar F)} {T : d.W.Point} (h : OnCurveAt d.W V g T) :
+    T + T ≠ 0 ∧ T + d.lam • T ≠ 0 ∧ (T + d.lam • T) + (T + d.lam • T) ≠ 0 := by
+  obtain ⟨hTns, rfl⟩ := h
+  have hne := Point.some_ne_zero hTns
+  have hTφ : Point.some _ _ hTns + d.lam • Point.some _ _ hTns ≠ 0 := by
+    have := d.lam_succ_smul _ hne
+    rwa [add_smul, one_smul] at this
+  exact ⟨d.two_torsion_free _ hne, hTφ, d.two_torsion_free _ hTφ⟩
+
+/-- The seed's first addition's operands, past the seal: the base reads `T`, and the sealed
+`β·x` beside the base's `y` reads `[λ]·T`. -/
+private theorem seed_operands [Field F] [DecidableEq F] (d : HasEndo F)
+    {s₀ s₁ s : ProverState F} {g : AffinePoint (FVar F)} {phix : FVar F} {T : d.W.Point}
+    (hbase : OnCurveAs d.W s₀ g T) (hle1 : s₀ ≤ s₁)
+    (hphix : phix.Scoped s ∧ s.read phix = s₁.read (CVar.scale_ d.endo g.x) ∧ s₁ ≤ s) :
+    OnCurveAs d.W s g T ∧ OnCurveAs d.W s ⟨phix, g.y⟩ (d.lam • T) := by
+  obtain ⟨hsc, hrd, hle⟩ := hphix
+  have hg := scoped_affinePoint.mp hbase.1
+  have hx : g.x.val s.env.get = g.x.val s₀.env.get := CVar.val_of_le (hle1.trans hle) hg.1
+  have hy : g.y.val s.env.get = g.y.val s₀.env.get := CVar.val_of_le (hle1.trans hle) hg.2
+  obtain ⟨hTns, rfl⟩ := hbase.2
+  have hφ := d.endo_nonsingular hTns
+  refine ⟨⟨scoped_affinePoint.mpr ⟨hg.1.of_le (hle1.trans hle), hg.2.of_le (hle1.trans hle)⟩,
+      OnCurveAt.of_reads hx hy hTns⟩,
+    ⟨scoped_affinePoint.mpr ⟨hsc, hg.2.of_le (hle1.trans hle)⟩, ?_⟩⟩
+  rw [← d.eigen hTns hφ]
+  refine OnCurveAt.of_reads (p := ⟨phix, g.y⟩) ?_ hy hφ
+  show s.read phix = _
+  rw [hrd, ProverState.read, CVar.val_scale_, CVar.val_of_le hle1 hg.1]
+
+/-- The ladder's exit, off what the run leaves at the loop's entry and exit: at any state past
+the loop, the payload holds, the final register reads the scalar, and the final accumulator
+names the scalar's decoded multiple of the base. -/
+private theorem exit_facts [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] (d : HasEndo F)
+    {s₀ s₁ s₄ s₅ u : ProverState F} {g p : AffinePoint (FVar F)} {scalar : FVar F}
+    {bits : Vector (Vector (FVar F) 4) 32} {T : d.W.Point}
+    {loop : List (EndoMulRound F) × AffinePoint (FVar F) × FVar F}
+    (hbase : OnCurveAs d.W s₀ g T) (hfits : ToNat.toNat (s₀.read scalar) < 2 ^ 128)
+    (h1 : CircuitType.ReadsAs (val := Vector (Vector F 4) 32) s₁ bits
+      (bitsVal 32 (s₀.read scalar)) ∧ s₀ ≤ s₁) (hle : s₁ ≤ s₄)
+    (hP : OnCurveAs d.W s₄ p ((T + d.lam • T) + (T + d.lam • T)))
+    (hloop : accScoped g s₅ loop.2 ∧
+      accRead g s₅ loop.2 =
+        (bits.toList.map (bitsRead s₄)).foldl (accStep d.endo) (accRead g s₄ (p, CVar.const 0)) ∧
+      loop.1.length = bits.toList.length ∧
+      (∀ (i : ℕ) (hi : i < bits.toList.length) (hi' : i < loop.1.length),
+        rowScoped s₅ loop.1[i] ∧ roundRead s₅ loop.1[i] =
+          rowStep d.endo (((bits.toList.map (bitsRead s₄)).scanl (accStep d.endo)
+            (accRead g s₄ (p, CVar.const 0))).getD i (accRead g s₄ (p, CVar.const 0)))
+            (bitsRead s₄ bits.toList[i])) ∧
+      s₄ ≤ s₅)
+    (hu : s₅ ≤ u) :
+    EndoMul.chainHolds u.env.get d.endo (u.read loop.2.1.x, u.read loop.2.1.y, u.read loop.2.2)
+        loop.1 ∧
+      u.read loop.2.2 = s₀.read scalar ∧
+      Kimchi.Gate.AddComplete.IsPoint d.W (u.read loop.2.1.x) (u.read loop.2.1.y)
+        (Kimchi.Gate.EndoScalar.endoExpandZ d.lam (ToNat.toNat (s₀.read scalar)) • T) := by
+  obtain ⟨hbits, hle1⟩ := h1
+  obtain ⟨hacc, hfold, hlen, hrows, -⟩ := hloop
+  have hbits₄ := hbits.of_le hle
+  have hg := scoped_affinePoint.mp hbase.1
+  have hT : Kimchi.Gate.AddComplete.IsPoint d.W (s₄.read g.x) (s₄.read g.y) T := by
+    rw [ProverState.read_of_le (hle1.trans hle) hg.1, ProverState.read_of_le (hle1.trans hle) hg.2]
+    exact hbase.2
+  have hws : ∀ (k : ℕ) (hk : k < (bits.toList.map (bitsRead s₄)).length),
+      (bits.toList.map (bitsRead s₄))[k] = bitsOf 32 (ToNat.toNat (s₀.read scalar)) k := by
+    intro k hk
+    have hk' : k < 32 := by simpa using hk
+    simp only [List.getElem_map, Vector.getElem_toList]
+    exact (bits_facts hbits₄ k hk').2
+  have hinit : accRead g s₄ (p, CVar.const 0)
+      = ((s₄.read g.x, s₄.read g.y), (s₄.read p.x, s₄.read p.y), 0) := rfl
+  obtain ⟨hholds, hreg, hfin, hpt⟩ := walk_facts d hT hP.2 (s₀.read scalar) hfits
+  rw [hinit, scan_fold _ _ _ _ _ _ _ _ hws, show (bits.toList.map (bitsRead s₄)).length = 32 by
+    simp] at hfold
+  simp only [accRead, Prod.mk.injEq] at hfold
+  have hux := ProverState.read_of_le hu hacc.2.2.1
+  have huy := ProverState.read_of_le hu hacc.2.2.2.1
+  have hun := ProverState.read_of_le hu hacc.2.2.2.2
+  have hlenR : loop.1.length = 32 := by rw [hlen]; simp
+  refine ⟨chainHolds_of_reads d.endo u.env.get _ loop.1 _ (fun i hi => ?_)
+      (fun i hi => hholds i (by rw [← hlenR]; exact hi)) (fun _ => ⟨rfl, rfl, rfl⟩) ?_,
+    by rw [hun, hfold.2.2]; exact hreg,
+    by rw [hux, huy, hfold.2.1.1, hfold.2.1.2]; exact ⟨hfin, hpt.symm⟩⟩
+  · have hi' : i < bits.toList.length := by rw [← hlen]; exact hi
+    have h := scan_rows d.endo (s₄.read g.x) (s₄.read g.y) _ (s₄.read p.x) (s₄.read p.y) 0
+      (bitsOf 32 (ToNat.toNat (s₀.read scalar)))
+      ((s₄.read g.x, s₄.read g.y), (s₄.read p.x, s₄.read p.y), 0) hws i (by simpa using hi')
+    rw [List.getElem_map] at h
+    show roundRead u loop.1[i] = _
+    rw [roundRead_of_le hu (hrows i hi' hi).1, (hrows i hi' hi).2, hinit, h]
+  · rw [hlenR, hux, huy, hun, hfold.2.1.1, hfold.2.1.2, hfold.2.2]
+
+end EndoMul
+
+open EndoMul in
+/-- `bitsWit` returns the scalar's bits. -/
+@[spec] private def Prover.bitsWit_reg [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [ConstraintHolds F c] (rounds : ℕ) (scalar : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (bitsWit rounds scalar)
+    (fun st => scalar.Scoped st) (fun st => bitsVal rounds (st.read scalar))
+    (fun _ h => bitsWit_run h) fun _ _ => by simp)
+
+open EndoMul Kimchi.Gate.EndoScalar in
+/-- **`endoMul`'s state-relative completeness**, at the deployed thirty-two rounds. From a base
+in scope reading as a curve point and a scalar in scope reading below `2 ^ 128`, the run
+succeeds and the result reads as the base times the scalar's decoded integer. The loop is the
+registered scan instance; `exit_facts` reads its post. -/
+theorem Prover.endoMul_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasEndo F) (g : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
+    (T : d.W.Point) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ OnCurveAs d.W st₀ g T ∧ scalar.val.Scoped st₀ ∧
+      ToNat.toNat (st₀.read scalar.val) < 2 ^ 128⌝⦄
+    endoMul (c := Prover (KimchiConstraint F)) d.endo 32 g scalar
+    ⦃⇓ r s' => ⌜OnCurveAs d.W s' r (endoExpandZ d.lam (ToNat.toNat (st₀.read scalar.val)) • T) ∧
+      st₀ ≤ s'⌝⦄ := by
+  have hadd1 := fun x : FVar F => Prover.register (Prover.addFast_spec .checkFinite d.W d.short
+    d.two_ne g ⟨x, g.y⟩ T (d.lam • T))
+  have hadd2 := fun a : AffinePoint (FVar F) => Prover.register (Prover.addFast_spec
+    .checkFinite d.W d.short d.two_ne a a (T + d.lam • T) (T + d.lam • T))
+  unfold endoMul
+  -- `-trivial`: the trivial pass would whnf `endoExpandZ`'s sixty-four-digit expansion in the
+  -- result's condition
+  mvcgen -trivial [hadd1, hadd2]
+  all_goals (try grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+    scoped_affinePoint, CVar.Scoped.of_le, CVar.Scoped.scale_, OnCurveAs, accScoped,
+    CVar.scoped_const])
+  -- the seed's first addition: the base reads `T`, its image `[λ]·T`
+  · rename_i s₀ h₀ bits s₁ h1 phix s h2
+    simp only [Prover.Reg.iff] at h1 h2
+    obtain ⟨rfl, hbase, -, -⟩ := h₀
+    obtain ⟨hT2, hTφ, -⟩ := seed_ne d hbase.2
+    obtain ⟨hon, honφ⟩ := seed_operands d hbase h1.2 h2
+    exact ⟨trivial, hon, honφ, hT2, hTφ⟩
+  -- the seed's doubling
+  · rename_i s₀ h₀ bits s₁ h1 phix s₂ h2 p1 s h3
+    simp only [Prover.Reg.iff] at h3
+    obtain ⟨rfl, hbase, -, -⟩ := h₀
+    obtain ⟨-, hTφ, h2Tφ⟩ := seed_ne d hbase.2
+    exact ⟨trivial, h3.2.2.1 hTφ, h3.2.2.1 hTφ, h2Tφ, h2Tφ⟩
+  -- the loop's entry: every row of the bits in scope
+  · rename_i s₀ h₀ bits s₁ h1 phix s₂ h2 p1 s₃ h3 p2 s h4
+    simp only [Prover.Reg.iff] at h1 h2 h3 h4
+    obtain ⟨rfl, hbase, -, -⟩ := h₀
+    have hg := scoped_affinePoint.mp hbase.1
+    have hle : s₀ ≤ s := h1.2.trans (h2.2.2.trans (h3.2.2.2.trans h4.2.2.2))
+    have hps := scoped_affinePoint.mp h4.1
+    refine ⟨trivial, ⟨hg.1.of_le hle, hg.2.of_le hle, hps.1, hps.2, CVar.scoped_const _ _⟩,
+      fun x hx => ?_⟩
+    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
+    exact (bits_facts (h1.1.of_le (h2.2.2.trans (h3.2.2.2.trans h4.2.2.2))) i hi).1
+  -- the register pin: the final register reads the scalar
+  · rename_i s₀ h₀ bits s₁ h1 phix s₂ h2 p1 s₃ h3 p2 s₄ h4 loop s h5
+    simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5
+    obtain ⟨rfl, hbase, hsc, hfits⟩ := h₀
+    obtain ⟨-, -, h2Tφ⟩ := seed_ne d hbase.2
+    obtain ⟨-, hreg, -⟩ := exit_facts d hbase hfits h1 (h2.2.2.trans (h3.2.2.2.trans h4.2.2.2))
+      (h4.2.2.1 h2Tφ) h5 le_rfl
+    have hle : s₀ ≤ s := h1.2.trans (h2.2.2.trans (h3.2.2.2.trans (h4.2.2.2.trans h5.2.2.2.2)))
+    exact ⟨trivial, h5.1.2.2.2.2, hsc.of_le hle, by rw [hreg, ProverState.read_of_le hle hsc]⟩
+  -- the one `endoMul` row: the payload's successor chain holds
+  · rename_i s₀ h₀ bits s₁ h1 phix s₂ h2 p1 s₃ h3 p2 s₄ h4 loop s₅ h5 u s h6
+    simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6
+    obtain ⟨rfl, hbase, -, hfits⟩ := h₀
+    obtain ⟨-, -, h2Tφ⟩ := seed_ne d hbase.2
+    exact ⟨trivial, (exit_facts d hbase hfits h1 (h2.2.2.trans (h3.2.2.2.trans h4.2.2.2))
+      (h4.2.2.1 h2Tφ) h5 h6).1⟩
+  -- the result: the final accumulator reads the decoded multiple
+  · rename_i s₀ h₀ bits s₁ h1 phix s₂ h2 p1 s₃ h3 p2 s₄ h4 loop s₅ h5 u₁ s₆ h6 u₂ s h7
+    simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6
+    obtain ⟨rfl, -⟩ := h7
+    obtain ⟨rfl, hbase, -, hfits⟩ := h₀
+    obtain ⟨-, -, h2Tφ⟩ := seed_ne d hbase.2
+    obtain ⟨-, -, hpt⟩ := exit_facts d hbase hfits h1 (h2.2.2.trans (h3.2.2.2.trans h4.2.2.2))
+      (h4.2.2.1 h2Tφ) h5 h6
+    exact ⟨⟨scoped_affinePoint.mpr ⟨h5.1.2.2.1.of_le h6, h5.1.2.2.2.1.of_le h6⟩, hpt⟩,
+      h1.2.trans (h2.2.2.trans (h3.2.2.2.trans (h4.2.2.2.trans (h5.2.2.2.2.trans h6))))⟩
+
 end Snarky.Kimchi

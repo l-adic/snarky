@@ -259,6 +259,7 @@ def roots : List Name :=
     `Snarky.Prover.mapAccumM_spec, `Snarky.Prover.mapAccumM_scan_spec,
     `Snarky.Prover.div_reg, `Snarky.Prover.isZero_reg, `Snarky.Prover.sealVar_spec,
     `Snarky.Kimchi.Prover.addFast_spec, `Snarky.Kimchi.Prover.varBaseMul_spec,
+    `Snarky.Kimchi.Prover.endoMul_spec,
     `Snarky.Prover.square_spec, `Snarky.Prover.assertSquare_spec,
     -- The checks' laws at that reading in instance form, for the types nothing witnesses
     -- at it yet.
