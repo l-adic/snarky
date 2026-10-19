@@ -72,16 +72,14 @@ value the law is indexed by. See `EndoScalar.row_complete`
 indexed by the crumb witness's landing table `st₁`. `instantiate` handles states as well
 as values: index over a `ProverState`-subtype whose property carries the pinned cells'
 scope and readings, with `P i st := i.1 ≤ st`, discharged at the current state with
-`⟨st, facts⟩` and `le_rfl`. `EndoMul` uses it twice — the
-bits' landing table, then the walk's seed coordinates (with the point they name as the
-subtype property).
+`⟨st, facts⟩` and `le_rfl`.
 
 An `addConstraint` row obligation quantifies over extensions `st ≤ stf`;
 `ProverState.nv_le_of_le` recovers the counter from the states' `dom` invariants. A
 loop's per-round fact is round-local (the ladders' `RowOk`), so its monotonicity carries
 it to any extension (`EndoScalar` splits `RowOk.holds_of_le` out for the row case).
 
-Two elaboration rules of thumb from `EndoMul`: keep every `Complete.imp` post-map the
+Two elaboration rules of thumb: keep every `Complete.imp` post-map the
 identity `(fun _ _ h => h)` and extract in the next stage's pre-map (a non-trivial
 post-map leaves the bind's `mid` undetermined and anonymous constructors fail to
 elaborate); and hoist any pre-map component whose type mentions a constructed bundle
@@ -97,8 +95,8 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
   mentions `t✝¹ e✝¹`, and every explicit argument must be read off the goal. Factor the
   witnessing branch into a `where core` and prove its law in its own binders, as
   `xor.core` and `selectField.core` do. Branches on plain data (an enum, a `Bool`, a
-  `Fin`), as in `AddComplete`, `VarBaseMul` and `GroupMap`, need only
-  `cases`/`by_cases`/`match` at the law level.
+  `Fin`), as in `Sponge` and `RangeCheck`, need only `cases`/`by_cases`/`match` at the
+  law level.
 
 - A long straight-line chain needs no state indexing when every value is a function of
   the law's own parameters. Keep contexts small by dropping each reading at its last
@@ -107,7 +105,7 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
 
 - A `Monotone` witness whose predicate is itself a `∀` needs its type pinned. A lambda
   like `fun _ _ hle h x hx => …` is ambiguous while the frame's `R` is a metavariable —
-  hoist it into a `have hM : Monotone fun st => ∀ x ∈ …` first (`VarBaseMul`'s `hpinM`).
+  hoist it into a `have hM : Monotone fun st => ∀ x ∈ …` first.
   So does `by complete_mono_tac` as a frame argument: it runs before `R` is known, so
   pass the explicit term, or name the witness first.
 
@@ -138,12 +136,12 @@ by unification, so laws carry no value arguments. It absorbs `assumption`-shaped
 conditions and defers the rest as end-of-proof VCs. It stops at `pure` or at a bind
 with no registered law, main goal kept first, each step atomic.
 
-`groupMapCircuit_complete` (`Snarky/Kimchi/Circuit/GroupMap.lean`) is the exemplar:
-`simp only [groupMapCircuit]; complete_walk`, then `simp [potentialXs]`-provable
-raw↔spec identities, the value-case blocks, and the VC discharges. The walker pins the
-raw compositional value at every step; when a consumer needs a folded spec form, state
-the identification once as a `have` and rewrite it in, rather than threading it through
-the chain.
+`lowest128Bits'_complete` (`Snarky/Kimchi/Circuit/RangeCheck.lean`) is the exemplar:
+the readings of the pure combinations stated once as `have`s, `complete_walk` up to the
+statement-position `if`, a case split on its flag, and one more walk per arm, closed by
+`Complete.pure_of`. The walker pins the raw compositional value at every step; when a
+consumer needs a folded spec form, state the identification once as a `have` and rewrite
+it in, rather than threading it through the chain.
 
 Walker internals:
 
@@ -155,8 +153,7 @@ Walker internals:
   to `∧` and the search explodes. Depth limits must exceed the context size: the
   defaults (6) silently strand goals once the context outgrows them.
 - Law order is most-specific-first (reverse registration): a composite law's program can
-  share a prefix with a primitive law's (`ySquared_complete` starts with `mul`), and the
-  composite must win.
+  share a prefix with a primitive law's, and the composite must win.
 - Quotation hygiene: attribute names in macro quotations need `mkIdent`; each kernel
   invocation needs `withFreshMacroScope` or its named holes collide; multiline tactic
   sequences do not parse inside quotations — build single tactics and splice.

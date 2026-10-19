@@ -41,49 +41,6 @@ open Std.Do in
     | exact (LawfulBasicSystem.holds_r1cs V _ _ _).mp ‹_›
     | exact mul_inv_cancel₀ ‹_›
 
-/-- `inv`'s completeness law: where the operand reads nonzero the run succeeds — the
-advice's throw is exactly the zero reading — any row it built is satisfied at every
-extension of the final table, and the result reads `xv⁻¹`. -/
-theorem inv_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) (hne : xv ≠ 0) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (inv (c := c) x)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a xv⁻¹) := by
-  -- the witnessed arm: advise the inverse, then pin it by the product row. The operand's
-  -- reading is framed across the allocation — the row needs it, and the witness rule does
-  -- not carry it.
-  have hwit : Complete (F := F) (c := c)
-      (fun st => CircuitType.ReadsAs (val := F) st x xv)
-      (do let r ← witness (val := F) (inv.advice x)
-          addConstraint (BasicSystem.r1cs x r (.const 1))
-          pure r)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a xv⁻¹) := by
-    refine Complete.bind
-      (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs (Complete.witness (inv.advice x) xv⁻¹
-          (by simp))))
-      (fun r => Complete.bind (Complete.addConstraint ?_)
-        fun _ => Complete.pure_of fun _ h => h.1)
-    · rintro st ⟨hr, hxr⟩ stf hle
-      refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hxr.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1),
-        CircuitType.reads_fvar.mp hxr.2, CircuitType.reads_fvar.mp hr.2]
-      simp [hne]
-    · simp [inv.advice, readVar_run h.1, CircuitType.readVal_fvar,
-        CircuitType.reads_fvar.mp h.2, hne]
-  simp only [inv]
-  split
-  · rename_i a
-    split
-    · exact hwit
-    · exact Complete.pure_of fun st h =>
-        ⟨CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
-          CircuitType.reads_fvar.mpr (by
-            rw [show (CVar.const a⁻¹ : CVar F).val st.env.get = a⁻¹ from rfl,
-              ← CircuitType.reads_fvar.mp h.2]
-            rfl)⟩
-  · exact hwit
-
 attribute [irreducible] inv
 
 /-- Multiply two field variables: constants fold — two constants multiply out, a
@@ -242,22 +199,6 @@ divisor, so the field's total division is the honest reading with no side condit
   rename_i _ yInv _ hinv _ _
   intro hmul
   rw [hmul, div_eq_mul_inv, inv_eq_of_mul_eq_one_right hinv]
-
-/-- `div`'s completeness law: where the divisor reads nonzero the run succeeds, the rows
-its calls built are satisfied at every extension of the final table, and the result reads
-`xv / yv` — `inv`'s and `mul`'s laws composed, neither reopened. -/
-@[complete_law] theorem div_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
-    (hne : yv ≠ 0) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
-      CircuitType.ReadsAs (val := F) st y yv)
-      (div (c := c) x y) (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv / yv)) := by
-  simp only [div]
-  exact Complete.bind
-    (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
-      (Complete.frame CircuitType.monotone_readsAs (inv_complete (c := c) y yv hne)))
-    fun r => Complete.imp (fun _ h => ⟨h.2, h.1⟩)
-      (fun _ _ h => by rwa [div_eq_mul_inv]) (mul_complete (c := c) x r xv yv⁻¹)
 
 attribute [irreducible] div
 

@@ -106,22 +106,6 @@ open Std.Do in
     | (intro h; exact absurd ((LawfulBasicSystem.holds_equal V _ _).mp h) (by simp))
     | (rename_i h; exact left_ne_zero_of_mul_eq_one h)
 
-/-- `assertNonZero`'s completeness law: where the operand reads nonzero the run succeeds —
-`inv`'s — and its row is satisfied; the constant-zero arm is unreachable. -/
-@[complete_law] theorem assertNonZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (vv : F) (hvne : vv ≠ 0) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st v vv) (assertNonZero (c := c) v)
-      (fun _ _ => True) := by
-  simp only [assertNonZero]
-  split
-  · split
-    · rename_i hf
-      exact Complete.of_false fun st h =>
-        hvne (by rw [← CircuitType.reads_fvar.mp h.2]; exact hf)
-    · exact Complete.pure_of fun _ _ => trivial
-  · exact Complete.bind (inv_complete (c := c) v vv hvne)
-      fun _ => Complete.pure_of fun _ _ => trivial
-
 attribute [irreducible] assertNonZero
 
 open Std.Do in

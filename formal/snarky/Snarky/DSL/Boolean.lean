@@ -376,24 +376,6 @@ open Std.Do in
   simp only [BoolVar.coe_unchecked, hr, ha, hb]
   cases ab <;> cases bb <;> simp [bit]
 
-/-- `and`'s completeness law: `mul`'s run, its reading recovered from `mul_spec` for the
-result's booleanity. -/
-@[complete_law] theorem and_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) (ab bb : Bool) :
-    Complete (fun st => CircuitType.ReadsAs (val := Bool) st a ab ∧
-      CircuitType.ReadsAs (val := Bool) st b bb)
-      (Snarky.and (c := c) a b)
-      (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (ab && bb)) := by
-  simp only [Snarky.and]
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨asField h.1, asField h.2⟩) (fun _ _ h => h)
-      (mul_complete (c := c) (↑a : CVar F) (↑b : CVar F) (bit ab) (bit bb)))
-    fun r => Complete.pure_of fun _ hr =>
-      ⟨CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp hr.1),
-        CircuitType.reads_boolVar.mpr (by
-          rw [BoolVar.coe_unchecked, CircuitType.reads_fvar.mp hr.2]
-          cases ab <;> cases bb <;> simp [bit])⟩
-
 attribute [irreducible] Snarky.and
 
 /-! ## Disjunction -/

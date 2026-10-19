@@ -91,13 +91,13 @@ def roots : List Name :=
     `Snarky.isZero_spec, `Snarky.isZero_complete,
     `Snarky.neq_spec,
     `Snarky.mul_spec, `Snarky.mul_complete,
-    `Snarky.inv_spec, `Snarky.inv_complete,
-    `Snarky.div_spec, `Snarky.div_complete,
+    `Snarky.inv_spec,
+    `Snarky.div_spec,
     `Snarky.square_spec, `Snarky.square_complete,
     `Snarky.pow_spec,
 
     -- The DSL: boolean operations.
-    `Snarky.and_spec, `Snarky.and_complete,
+    `Snarky.and_spec,
     `Snarky.or_spec,
     `Snarky.xor_spec,
     `Snarky.any_spec,
@@ -112,7 +112,7 @@ def roots : List Name :=
     `Snarky.assert_spec,
     `Snarky.assertEq_spec, `Snarky.assertEq_complete,
     `Snarky.assertEqual_spec, `Snarky.assertEqual_complete,
-    `Snarky.assertNonZero_spec, `Snarky.assertNonZero_complete,
+    `Snarky.assertNonZero_spec,
     `Snarky.assertNotEqual_spec,
     `Snarky.assertSquare_spec, `Snarky.assertSquare_complete,
     `Snarky.assertAny_spec,
@@ -239,9 +239,8 @@ def roots : List Name :=
     `Snarky.Kimchi.splitFieldVar_spec,
     `Snarky.Kimchi.rangeCheck128_spec, `Snarky.Kimchi.rangeCheck128_complete,
     `Snarky.Kimchi.lowest128Bits'_spec, `Snarky.Kimchi.lowest128Bits'_complete,
-    `Snarky.Kimchi.groupMapCircuit_spec, `Snarky.Kimchi.groupMapCircuit_complete,
+    `Snarky.Kimchi.groupMapCircuit_spec,
     `Snarky.Kimchi.groupMapCircuit_onCurve_spec,
-    `Snarky.Kimchi.groupMapCircuit_toGroup_complete,
     `Snarky.Kimchi.groupMapPure_toGroup,
 
     -- The Kimchi gadgets at the deployed Vesta curve: the laws whose closures carry the Pasta
@@ -276,6 +275,8 @@ def roots : List Name :=
     `Snarky.Kimchi.Prover.endoInv_spec,
     `Snarky.Kimchi.EndoScalar.Prover.toField_spec_rows,
     `Snarky.Kimchi.EndoScalar.Prover.toField_spec, `Snarky.Kimchi.EndoScalar.Prover.toField_reg,
+    `Snarky.Kimchi.Prover.groupMapCircuit_spec,
+    `Snarky.Kimchi.Prover.groupMapCircuit_toGroup_spec,
     -- The checks' laws at that reading in instance form, for the types nothing witnesses
     -- at it yet.
     `Snarky.Kimchi.instWPCheckedTypeSpongeState,
