@@ -121,7 +121,7 @@ def roots : List Name :=
 
     -- The DSL: bit decomposition and the seal.
     `Snarky.unpack_spec,
-    `Snarky.sealVar_spec, `Snarky.sealVar_complete,
+    `Snarky.sealVar_spec,
 
     -- The whole-circuit layer: the public interface's reading, and the payoff.
     `Snarky.scoped_inputVar,
@@ -220,12 +220,12 @@ def roots : List Name :=
     -- The Kimchi gadgets.
     `Snarky.Kimchi.sealPoint_spec,
     `Snarky.Kimchi.addFast_spec,
-    `Snarky.Kimchi.Poseidon.poseidon_spec, `Snarky.Kimchi.Poseidon.poseidon_complete,
-    `Snarky.Kimchi.SpongeVar.absorb_spec, `Snarky.Kimchi.SpongeVar.absorb_complete,
-    `Snarky.Kimchi.SpongeVar.squeeze_spec, `Snarky.Kimchi.SpongeVar.squeeze_complete,
-    `Snarky.Kimchi.RandomOracle.update_spec, `Snarky.Kimchi.RandomOracle.update_complete,
-    `Snarky.Kimchi.RandomOracle.hash2_spec, `Snarky.Kimchi.RandomOracle.hash2_complete,
-    `Snarky.Kimchi.RandomOracle.hashVec_spec, `Snarky.Kimchi.RandomOracle.hashVec_complete,
+    `Snarky.Kimchi.Poseidon.poseidon_spec,
+    `Snarky.Kimchi.SpongeVar.absorb_spec,
+    `Snarky.Kimchi.SpongeVar.squeeze_spec,
+    `Snarky.Kimchi.RandomOracle.update_spec,
+    `Snarky.Kimchi.RandomOracle.hash2_spec,
+    `Snarky.Kimchi.RandomOracle.hashVec_spec,
     `Snarky.Kimchi.EndoScalar.toField_spec, `Snarky.Kimchi.EndoScalar.toField_complete,
     `Snarky.Kimchi.EndoMul.endoMul_spec,
     `Snarky.Kimchi.EndoMul.endoInv_spec,
@@ -278,6 +278,9 @@ def roots : List Name :=
     `Snarky.Kimchi.Prover.groupMapCircuit_spec,
     `Snarky.Kimchi.Prover.groupMapCircuit_toGroup_spec,
     `Snarky.Kimchi.Poseidon.Prover.poseidon_spec, `Snarky.Kimchi.Poseidon.Prover.poseidon_reg,
+    `Snarky.Kimchi.SpongeVar.Prover.absorb_spec, `Snarky.Kimchi.SpongeVar.Prover.squeeze_spec,
+    `Snarky.Kimchi.RandomOracle.Prover.update_spec, `Snarky.Kimchi.RandomOracle.Prover.hash2_spec,
+    `Snarky.Kimchi.RandomOracle.Prover.hashVec_spec,
     -- The checks' laws at that reading in instance form, for the types nothing witnesses
     -- at it yet.
     `Snarky.Kimchi.instWPCheckedTypeSpongeState,

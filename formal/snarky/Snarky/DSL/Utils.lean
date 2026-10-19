@@ -62,55 +62,6 @@ the witnessing arm by its `equal` row. -/
     simpa [AffineExpression.val] using hred
   · mvcgen
 
-/-- `sealVar.core`'s completeness law: the witnessed value reads as the operand, so its
-`equal` row is satisfied at every extension of the final table; the result is scoped. -/
-private theorem sealVar.core_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (sealVar.core (c := c) x)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a xv) := by
-  simp only [sealVar.core]
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame CircuitType.monotone_readsAs (Complete.witness (readVar (val := F) x) xv
-        (by simp))))
-    fun r => Complete.bind
-      (Complete.imp (fun _ h => ⟨⟨h.2, h.1⟩, h.1⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs (assertEqual_complete (c := c) x r xv)))
-      fun _ => Complete.pure_of fun _ h => h.2
-  · simp [readVar_run h.1, CircuitType.readVal_fvar, CircuitType.reads_fvar.mp h.2]
-
-/-- `sealVar`'s completeness law: the pass-through arms allocate nothing and stay within
-the operand's variables; the witnessing arm is `sealVar.core`'s. -/
-@[complete_law]
-theorem sealVar_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (sealVar (c := c) x)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a xv) := by
-  simp only [sealVar]
-  split
-  · next v k heq =>
-    split
-    · subst ‹k = 1›
-      refine Complete.pure_of fun st h => ?_
-      have hxs := CircuitType.scoped_fvar.mp h.1
-      have hred := CVar.reduce_val x st.env.get
-      rw [heq] at hred
-      have hv := CVar.ScopedBy.reduce hxs (v, 1) (by rw [heq]; exact List.mem_singleton_self _)
-      exact ⟨CircuitType.scoped_fvar.mpr ((CVar.scoped_var ..).mpr hv),
-        CircuitType.reads_fvar.mpr (by
-          rw [← CircuitType.reads_fvar.mp h.2]
-          simpa [AffineExpression.val] using hred)⟩
-    · exact sealVar.core_complete x _
-  · next k heq =>
-    refine Complete.pure_of fun st h => ?_
-    have hred := CVar.reduce_val x st.env.get
-    rw [heq] at hred
-    exact ⟨CircuitType.scoped_fvar.mpr trivial,
-      CircuitType.reads_fvar.mpr (by
-        rw [← CircuitType.reads_fvar.mp h.2]
-        simpa [AffineExpression.val] using hred)⟩
-  · exact sealVar.core_complete x _
-
 attribute [irreducible] sealVar sealVar.core
 
 /-- The rows the witnessing branch emits: one `equal` against the fresh variable. -/

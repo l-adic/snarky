@@ -106,11 +106,6 @@ instance instWPCheckedTypeSpongeState [Field F] [BasicSystem F c] [ConstraintHol
     WPCheckedType F c (SpongeStateVal F) (SpongeState F) :=
   ⟨fun _ _ _ _ _ => le_rfl⟩
 
-/-- A state triple carries no admissibility condition. -/
-@[simp] theorem valid_spongeState [Field F] [BasicSystem F c] [ConstraintHolds F c]
-    {v : SpongeStateVal F} :
-    CheckedType.Valid (F := F) (c := c) (var := SpongeState F) v := fun _ _ _ => trivial
-
 /-- The Poseidon permutation gadget: one bulk witness of the round outputs, one block
 constraint over the 56 chained states at `p`'s data, the last state returned. -/
 def poseidon [Field F] [BasicSystem F c] [ConstraintHolds F c]
@@ -297,83 +292,6 @@ private theorem chainHolds_rounds [Field F] [DecidableEq F] (p : Poseidon.Params
   rw [hgd]
   rfl
 
-
-/-- **The gadget is complete**: from a scoped input state that reads `sv`, the run
-succeeds — no domain conditions — its constraint holds at every extension of the final
-table, and the output reads back as `Poseidon.blockCipher p sv`.
-
-The advice is the gate's canonical iterate, so the emitted chain is
-`chainHolds_rounds` — the gate's own `complete`, applied window by window. -/
-@[complete_law]
-theorem poseidon_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (s : SpongeState F) (sv : Poseidon.Triple F) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := SpongeStateVal F) st s sv)
-      (poseidon (c := KimchiConstraint F) p s)
-      (fun r st' => CircuitType.ReadsAs (val := SpongeStateVal F) st' r
-        (Poseidon.blockCipher p sv)) := by
-  -- the operand's three cells, in scope and reading
-  have hcell : ∀ {st : ProverState F} {t : SpongeState F} {v : Poseidon.Triple F},
-      CircuitType.ReadsAs (val := SpongeStateVal F) st t v →
-        (t.s0.Scoped st ∧ t.s1.Scoped st ∧ t.s2.Scoped st) ∧
-          t.s0.val st.env.get = v.1 ∧ t.s1.val st.env.get = v.2.1 ∧
-            t.s2.val st.env.get = v.2.2 := by
-    intro st t v h
-    rw [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState] at h
-    exact ⟨⟨h.1.1, h.1.2.1, h.1.2.2⟩, h.2.1, h.2.2.1, h.2.2.2⟩
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame CircuitType.monotone_readsAs
-        (Complete.witness (poseidon.advice p s)
-          (Vector.ofFn fun i : Fin 55 => rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) sv)
-          (by simp))))
-    (fun outs => Complete.bind (Complete.addConstraint ?_)
-      fun _ => Complete.pure_of fun _ h => ?_)
-  -- the advice runs: the operand's cells through the round chain
-  · obtain ⟨⟨hsc0, hsc1, hsc2⟩, hs0, hs1, hs2⟩ := hcell h
-    simp only [poseidon.advice, AsProver.bind_eq, AsProver.run_bind,
-      AsProver.readCVar_run hsc0, AsProver.readCVar_run hsc1,
-      AsProver.readCVar_run hsc2, hs0, hs1, hs2]
-    rfl
-  -- the chain row, at every extension of the table the run lands in
-  · rintro st ⟨hO, hs⟩ stf hle
-    obtain ⟨⟨hsc0, hsc1, hsc2⟩, hs0, hs1, hs2⟩ := hcell hs
-    have hscO := CircuitType.scoped_vector.mp hO.1
-    have hrdO := CircuitType.reads_vector.mp hO.2
-    show chainHolds (mdsOf p.mds) p.roundConstants.toList 0
-      (read stf.env.get ⟨p.mds, p.roundConstants.toList,
-        s.cells :: (outs.map SpongeState.cells).toList⟩)
-    have hlist : read stf.env.get ⟨p.mds, p.roundConstants.toList,
-        s.cells :: (outs.map SpongeState.cells).toList⟩
-        = sv :: (List.ofFn fun i : Fin 55 =>
-            rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) sv) := by
-      simp only [read, List.map_cons, SpongeState.cells]
-      refine congrArg₂ List.cons ?_ ?_
-      · rw [CVar.val_of_le hle hsc0, CVar.val_of_le hle hsc1, CVar.val_of_le hle hsc2,
-          hs0, hs1, hs2]
-      · refine List.ext_getElem (by simp) fun i h1 h2 => ?_
-        simp only [List.getElem_map, Vector.getElem_toList, List.getElem_ofFn]
-        have hi : i < 55 := by simpa using h2
-        have hread := (hrdO i hi).of_le (hscO i hi) hle
-        have h0 : outs[i].s0.val stf.env.get = (rounds (mdsOfParams p) (paramsRc p)
-            (i + 1) sv).1 := by
-          simpa using congrArg (fun w : Vector F 3 => w[0]'(by omega)) hread
-        have h1' : outs[i].s1.val stf.env.get = (rounds (mdsOfParams p) (paramsRc p)
-            (i + 1) sv).2.1 := by
-          simpa using congrArg (fun w : Vector F 3 => w[1]'(by omega)) hread
-        have h2' : outs[i].s2.val stf.env.get = (rounds (mdsOfParams p) (paramsRc p)
-            (i + 1) sv).2.2 := by
-          simpa using congrArg (fun w : Vector F 3 => w[2]'(by omega)) hread
-        simp only [Vector.getElem_map, SpongeState.cells]
-        rw [h0, h1', h2']
-    rw [hlist]
-    exact chainHolds_rounds p sv
-  -- the result: the last round's state
-  · refine ⟨(CircuitType.scoped_vector.mp h.1.1) 54 (by omega), ?_⟩
-    have hread := (CircuitType.reads_vector.mp h.1.2) 54 (by omega)
-    rw [Kimchi.Gate.Poseidon.blockCipher_eq_rounds, hsize]
-    simpa using hread
 
 /-! ### At the prover's reading -/
 

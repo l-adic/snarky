@@ -62,7 +62,7 @@ the row needs them and the witness rule does not carry them:
 
 **A recursion over a `Forall₂` precondition.** The relation is state-dependent, so it
 cannot index the recursion; `of_false` discharges the branches the precondition rules
-out. See `foldBlocks_complete` (`Snarky/Kimchi/Circuit/RandomOracle.lean`).
+out.
 
 **A precondition carrying only scope or well-formedness.** Use `instantiate` to name the
 value the law is indexed by. See `EndoScalar.row_complete`
@@ -95,8 +95,7 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
   mentions `t✝¹ e✝¹`, and every explicit argument must be read off the goal. Factor the
   witnessing branch into a `where core` and prove its law in its own binders, as
   `xor.core` and `selectField.core` do. Branches on plain data (an enum, a `Bool`, a
-  `Fin`), as in `Sponge` and `RangeCheck`, need only `cases`/`by_cases`/`match` at the
-  law level.
+  `Fin`), as in `RangeCheck`, need only `cases`/`by_cases`/`match` at the law level.
 
 - A long straight-line chain needs no state indexing when every value is a function of
   the law's own parameters. Keep contexts small by dropping each reading at its last

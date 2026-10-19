@@ -595,12 +595,6 @@ predicates. -/
 
 attribute [complete_mono] monotone_and monotone_const monotone_le Monotone.ball
 
-/-- A `Forall₂` of readings is monotone, entrywise. -/
-theorem CircuitType.monotone_forall₂ [Add F] [Mul F] [Zero F] {val var : Type}
-    [CircuitType F val var] {xs : List var} {vs : List val} :
-    Monotone fun st : ProverState F => List.Forall₂ (CircuitType.ReadsAs st) xs vs :=
-  fun _ _ hle h => h.imp fun _ _ hr => CircuitType.monotone_readsAs hle hr
-
 /-- Sequencing: the head's post is the tail's pre, stated at the head's final state, so
 no side condition is needed. -/
 theorem Complete.bind [Zero F] [ConstraintHolds F c] {β : Type v}
