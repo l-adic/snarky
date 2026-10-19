@@ -34,11 +34,17 @@ Four methods, each covering what another cannot see.
 - Name level: grep for the form's names and for the walker's tactic syntax. A tactic leaves no
   constant in a proof term, so only the source shows where the walker runs: the kimchi circuits
   `EndoScalar`, `RangeCheck` and `Sponge`.
-- Module level: `lake exe graph --include-deps --from Snarky.Tactic --to Pickles`. The walker's
-  module is imported directly by `Snarky.Kimchi.Circuit.AddComplete`, `.EndoScalar`, `.GroupMap`
-  and `.Sponge` only; the other circuits reach it through those.
+- Module level: `lake exe graph --include-deps --from Snarky.Tactic --to Pickles`, with the
+  import lines read alongside, since the graph drops an import another one already implies. The
+  walker's module is imported directly by `Snarky.Kimchi.Circuit.AddComplete`, `.EndoScalar`,
+  `.GroupMap`, `.RangeCheck` and `.Sponge`; `RangeCheck`'s import is the one the graph drops, as
+  it also reaches the module through `EndoScalar`. `GroupMap` no longer runs the walker, and
+  shake keeps its import. The other circuits reach the module through these.
 - The CI drivers, read from their compiled modules as the dead-code gate reads them: none of the
-  twelve cites a declaration of the form.
+  twelve cites a law, rule or walker declaration of the form. Two use consumer instances as
+  instances: `check_cs` the `AffinePoint`, `SpongeState` and branch-data instances, and
+  `check_slot_chunks` the branch-data instance. Retiring the `check_complete` field edits those
+  instances; the drivers keep them.
 
 The root lists in `snarky/scripts/check_axioms.lean` are not consumers: they keep the form's
 results alive without using them.
@@ -123,7 +129,8 @@ The relation, its remaining rules, the walker, `zipWithVecM_complete`, `mapAccum
 
 - The DSL's `Complete` laws are consumed by the kimchi gadget laws without a triple and by
   `solve_complete`, which cites `assertEq_complete`. No pickles theorem, script or fixture check
-  cites a DSL law, and no CI driver cites any declaration of the form.
+  cites a DSL law, and no CI driver cites a law of the form; two use consumer instances, as the
+  method section records.
 - `mapAccumM_complete` is consumed by EndoScalar's `toFieldChecked'_complete`, which
   `toField_complete_rows` keeps; `zipWithVecM_complete` by `assertEq_complete`, so by the seam.
 - `check_complete` is consumed by `Complete.witness`, `solve_complete`, the kimchi checked-type

@@ -397,10 +397,11 @@ private theorem Prover.sqrtFlagged_spec [Field F] [DecidableEq F] [BasicSystem F
 
 /-! ### The map, by stages
 
-One triple over the whole run, some thirty tables, exceeds the elaboration budget; the law is
-stated per stage instead, over the same program regrouped: the candidate abscissae, one
-candidate's ordinate square and flagged root, and the flag-weighted selection.
-`groupMapCircuit_stages` is the regrouping. -/
+The law is stated per stage, over the same program regrouped, each stage's result in closed
+form of its entry readings: the candidate abscissae, one candidate's ordinate square and
+flagged root, and the flag-weighted selection. `groupMapCircuit_stages` is the regrouping.
+Within a stage the readings are unwound by `simp` with `ProverState.read_of_le` as a
+conditional rewrite, whose order side conditions `le_chain` discharges. -/
 
 /-- The candidate abscissae of `groupMapCircuit`. -/
 private def gmCandidates [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
@@ -472,24 +473,15 @@ private theorem Prover.gmCandidates_spec [Field F] [DecidableEq F] [BasicSystem 
       s'.read r.1 = (potentialXs params (st₀.read t)).1 ∧
       s'.read r.2.1 = (potentialXs params (st₀.read t)).2.1 ∧
       s'.read r.2.2 = (potentialXs params (st₀.read t)).2.2 ∧ st₀ ≤ s'⌝⦄ := by
-  have e1 : ∀ tv : F, params.sqrtNeg3U2MinusUOver2 -
-      tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv))) * params.sqrtNeg3U2
-      = (potentialXs params tv).1 := fun tv => by simp [potentialXs]
-  have e2 : ∀ tv : F, -params.u - (potentialXs params tv).1 = (potentialXs params tv).2.1 :=
-    fun tv => by simp [potentialXs]
-  have e3 : ∀ tv : F, params.u -
-      (tv * tv + params.fu) * (tv * tv + params.fu) *
-        (1 / ((tv * tv + params.fu) * (tv * tv)) * (tv * tv + params.fu)) * params.inv3U2
-      = (potentialXs params tv).2.2 := fun tv => by simp [potentialXs]
   unfold gmCandidates
   dsimp only
   mvcgen
-  -- the abscissae: each cell's reading carried along the run to the exit table
+  -- the abscissae: every reading unwound to the cell's own table by conditional rewriting
   case vc11 =>
     rename_i s₀ h₀ r1 s1 h1 r2 s2 h2 r3 s3 h3 r4 s4 h4 r5 s5 h5 r6 s6 h6 r7 s7 h7 r8 s8 h8
       r9 s9 h9 r10 s10 h10
     simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6 h7 h8 h9 h10
-    obtain ⟨rfl, ht, -⟩ := h₀
+    obtain ⟨rfl, -, -⟩ := h₀
     obtain ⟨c1, v1, l1⟩ := h1
     obtain ⟨c2, v2, l2⟩ := h2
     obtain ⟨c3, v3, l3⟩ := h3
@@ -500,51 +492,14 @@ private theorem Prover.gmCandidates_spec [Field F] [DecidableEq F] [BasicSystem 
     obtain ⟨c8, v8, l8⟩ := h8
     obtain ⟨c9, v9, l9⟩ := h9
     obtain ⟨c10, v10, l10⟩ := h10
-    set tv := s₀.read t
-    have rk : ∀ {u : ProverState F} (k : F), u.read (CVar.const k) = k := fun _ => rfl
-    have q1 : ∀ {u}, s1 ≤ u → u.read r1 = tv * tv := fun h => by
-      rw [ProverState.read_of_le h c1, v1]
-    have qf : ∀ {u}, s1 ≤ u → u.read (CVar.add_ r1 (.const params.fu)) = tv * tv + params.fu :=
-      fun h => by rw [ProverState.read, CVar.val_add_, ← ProverState.read, q1 h]; rfl
-    have q2 : ∀ {u}, s2 ≤ u → u.read r2 = (tv * tv + params.fu) * (tv * tv) := fun h => by
-      rw [ProverState.read_of_le h c2, v2, qf le_rfl, q1 le_rfl]
-    have q3 : ∀ {u}, s3 ≤ u →
-        u.read r3 = 1 / ((tv * tv + params.fu) * (tv * tv)) := fun h => by
-      rw [ProverState.read_of_le h c3, v3, rk, q2 le_rfl]
-    have q4 : ∀ {u}, s4 ≤ u → u.read r4 = tv * tv * (tv * tv) := fun h => by
-      rw [ProverState.read_of_le h c4, v4, q1 (l2.trans l3)]
-    have q5 : ∀ {u}, s5 ≤ u →
-        u.read r5 = tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv))) :=
-      fun h => by rw [ProverState.read_of_le h c5, v5, q4 le_rfl, q3 l4]
-    have q6 : ∀ {u}, s6 ≤ u → u.read r6 = tv * tv * (tv * tv) *
-        (1 / ((tv * tv + params.fu) * (tv * tv))) * params.sqrtNeg3U2 := fun h => by
-      rw [ProverState.read_of_le h c6, v6, q5 le_rfl, rk]
-    have q7 : ∀ {u}, s7 ≤ u → u.read r7 =
-        1 / ((tv * tv + params.fu) * (tv * tv)) * (tv * tv + params.fu) := fun h => by
-      rw [ProverState.read_of_le h c7, v7, q3 (l4.trans (l5.trans l6)),
-        qf (l2.trans (l3.trans (l4.trans (l5.trans l6))))]
-    have q8 : ∀ {u}, s8 ≤ u → u.read r8 = (tv * tv + params.fu) * (tv * tv + params.fu) :=
-      fun h => by
-        rw [ProverState.read_of_le h c8, v8,
-          qf (l2.trans (l3.trans (l4.trans (l5.trans (l6.trans l7)))))]
-    have q9 : ∀ {u}, s9 ≤ u → u.read r9 = (tv * tv + params.fu) * (tv * tv + params.fu) *
-        (1 / ((tv * tv + params.fu) * (tv * tv)) * (tv * tv + params.fu)) := fun h => by
-      rw [ProverState.read_of_le h c9, v9, q8 le_rfl, q7 l8]
-    have q10 : ∀ {u}, s10 ≤ u → u.read r10 = (tv * tv + params.fu) * (tv * tv + params.fu) *
-        (1 / ((tv * tv + params.fu) * (tv * tv)) * (tv * tv + params.fu)) * params.inv3U2 :=
-      fun h => by rw [ProverState.read_of_le h c10, v10, q9 le_rfl, rk]
-    have L6 : s6 ≤ s10 := l7.trans (l8.trans (l9.trans l10))
-    have hx1 : s10.read ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ r6)
-        = (potentialXs params tv).1 := by
-      rw [ProverState.read, CVar.val_sub_, ← ProverState.read, ← ProverState.read, rk, q6 L6,
-        e1]
-    refine ⟨CVar.Scoped.sub_ trivial (c6.of_le L6),
-      CVar.Scoped.sub_ trivial (CVar.Scoped.sub_ trivial (c6.of_le L6)),
-      CVar.Scoped.sub_ trivial c10, hx1, ?_, ?_,
-      l1.trans (l2.trans (l3.trans (l4.trans (l5.trans (l6.trans L6)))))⟩
-    · rw [ProverState.read, CVar.val_sub_, ← ProverState.read, ← ProverState.read, rk, hx1, e2]
-    · rw [ProverState.read, CVar.val_sub_, ← ProverState.read, ← ProverState.read, rk,
-        q10 le_rfl, e3]
+    refine ⟨CVar.Scoped.sub_ trivial (c6.of_le (by le_chain)),
+      CVar.Scoped.sub_ trivial (CVar.Scoped.sub_ trivial (c6.of_le (by le_chain))),
+      CVar.Scoped.sub_ trivial c10, ?_, ?_, ?_, by le_chain⟩
+    all_goals
+      simp (disch := le_chain) only [ProverState.read_of_le _ c1, ProverState.read_of_le _ c3,
+        ProverState.read_of_le _ c6, ProverState.read_of_le _ c7, ProverState.read_of_le _ c10,
+        v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, CVar.val_add_, CVar.val_sub_, CVar.val]
+      simp [potentialXs]
   all_goals (try simp only [Prover.Reg.iff] at *)
   all_goals (try grind (ematch := 40) (gen := 40) only [CVar.Scoped.of_le, CVar.Scoped.add_,
     CVar.Scoped.sub_, CVar.scoped_const])
@@ -607,7 +562,7 @@ private theorem Prover.gmSelect_spec [Field F] [DecidableEq F] [BasicSystem F c]
   unfold gmSelect
   dsimp only
   mvcgen
-  -- the sums: each product carried to the exit table, then the flags case by case
+  -- the sums: every reading unwound by conditional rewriting, then the flags case by case
   case vc11 =>
     rename_i s₀ h₀ _ s9 k9 n1 s8 k8 n2 s7 k7 n3 s6 k6 p5 s5 k5 p4 s4 k4 p3 s3 k3 p2 s2 k2
       p1 s1 k1 p0 s k0
@@ -622,48 +577,21 @@ private theorem Prover.gmSelect_spec [Field F] [DecidableEq F] [BasicSystem F c]
     obtain ⟨c2, v2, l2⟩ := k2
     obtain ⟨c1, v1, l1⟩ := k1
     obtain ⟨c0, v0, l0⟩ := k0
-    have ra : ∀ (u : ProverState F) (a b : CVar F),
-        u.read (CVar.add_ a b) = u.read a + u.read b := fun _ _ _ => CVar.val_add_ ..
-    have rn : ∀ (u : ProverState F) (b : BoolVar F), u.read (Snarky.not b) = 1 - u.read b :=
-      fun _ _ => by
-        simp only [ProverState.read, Snarky.not, BoolVar.coe_unchecked, CVar.val_sub_, CVar.val]
-    have L8 : s₀ ≤ s8 := k9.trans l8
-    have L6 : s₀ ≤ s6 := L8.trans (l7.trans l6)
-    have L4 : s₀ ≤ s4 := L6.trans (l5.trans l4)
-    have L1 : s₀ ≤ s1 := L4.trans (l3.trans (l2.trans l1))
-    have q8 : ∀ {u}, s8 ≤ u →
-        u.read n1 = if 1 - s₀.read b1 = 1 ∧ s₀.read b2 = 1 then 1 else 0 := fun h => by
-      rw [ProverState.read_of_le h c8, v8, rn, ProverState.read_of_le k9 hb1,
-        ProverState.read_of_le k9 hb2]
-    have q6 : ∀ {u}, s6 ≤ u → u.read n3 = if 1 - s₀.read b1 = 1 ∧
-        (if 1 - s₀.read b2 = 1 ∧ s₀.read b3 = 1 then (1 : F) else 0) = 1 then 1 else 0 :=
-      fun h => by
-        rw [ProverState.read_of_le h c6, v6, rn, ProverState.read_of_le (L8.trans l7) hb1,
-          ProverState.read_of_le le_rfl c7, v7, rn, ProverState.read_of_le L8 hb2,
-          ProverState.read_of_le L8 hb3]
-    have sel : ∀ X1 X2 X3 : F, s₀.read b1 * X1 +
-        (if 1 - s₀.read b1 = 1 ∧ s₀.read b2 = 1 then 1 else 0) * X2 +
-        (if 1 - s₀.read b1 = 1 ∧
-          (if 1 - s₀.read b2 = 1 ∧ s₀.read b3 = 1 then (1 : F) else 0) = 1 then 1 else 0) * X3
-        = if s₀.read b1 = 1 then X1 else if s₀.read b2 = 1 then X2 else X3 := by
-      intro X1 X2 X3
+    refine ⟨CVar.Scoped.add_ (CVar.Scoped.add_ c0 (c1.of_le (by le_chain)))
+        (c2.of_le (by le_chain)),
+      CVar.Scoped.add_ (CVar.Scoped.add_ (c3.of_le (by le_chain)) (c4.of_le (by le_chain)))
+        (c5.of_le (by le_chain)), ?_, ?_, by le_chain⟩
+    all_goals
+      simp (disch := le_chain) only [ProverState.read_of_le _ hx1, ProverState.read_of_le _ hx2,
+        ProverState.read_of_le _ hx3, ProverState.read_of_le _ hy1, ProverState.read_of_le _ hy2,
+        ProverState.read_of_le _ hy3, ProverState.read_of_le _ hb1, ProverState.read_of_le _ hb2,
+        ProverState.read_of_le _ hb3, ProverState.read_of_le _ c8, ProverState.read_of_le _ c6,
+        ProverState.read_of_le _ c5, ProverState.read_of_le _ c4, ProverState.read_of_le _ c3,
+        ProverState.read_of_le _ c2, ProverState.read_of_le _ c1, ProverState.read_of_le _ c0,
+        v8, v7, v6, v5, v4, v3, v2, v1, v0, CVar.val_add_, CVar.val_sub_, CVar.val, Snarky.not,
+        BoolVar.coe_unchecked]
       rcases bb1 with e1 | e1 <;> rcases bb2 with e2 | e2 <;> rcases bb3 with e3 | e3 <;>
         simp [e1, e2, e3] at hone ⊢
-    refine ⟨CVar.Scoped.add_ (CVar.Scoped.add_ c0 (c1.of_le l0)) (c2.of_le (l1.trans l0)),
-      CVar.Scoped.add_ (CVar.Scoped.add_ (c3.of_le (l2.trans (l1.trans l0)))
-        (c4.of_le (l3.trans (l2.trans (l1.trans l0)))))
-        (c5.of_le (l4.trans (l3.trans (l2.trans (l1.trans l0))))), ?_, ?_, L1.trans l0⟩
-    · rw [ra, ra, v0, ProverState.read_of_le l0 c1, v1, ProverState.read_of_le (l1.trans l0) c2,
-        v2, ProverState.read_of_le L1 hb1, ProverState.read_of_le L1 hx1,
-        q8 (l7.trans (l6.trans (l5.trans (l4.trans (l3.trans l2))))),
-        ProverState.read_of_le (L4.trans (l3.trans l2)) hx2, q6 (l5.trans (l4.trans l3)),
-        ProverState.read_of_le (L4.trans l3) hx3, sel]
-    · rw [ra, ra, ProverState.read_of_le (l2.trans (l1.trans l0)) c3, v3,
-        ProverState.read_of_le (l3.trans (l2.trans (l1.trans l0))) c4, v4,
-        ProverState.read_of_le (l4.trans (l3.trans (l2.trans (l1.trans l0)))) c5, v5,
-        ProverState.read_of_le L4 hb1, ProverState.read_of_le L4 hy1,
-        q8 (l7.trans (l6.trans l5)), ProverState.read_of_le (L6.trans l5) hy2, q6 le_rfl,
-        ProverState.read_of_le L6 hy3, sel]
   all_goals (try simp only [Prover.Reg.iff] at *)
   all_goals (try grind (ematch := 40) (gen := 40) only [CVar.Scoped.of_le, CVar.Scoped.add_,
     CVar.Scoped.sub_, CVar.scoped_const, Snarky.not_scoped])
@@ -698,7 +626,7 @@ theorem Prover.groupMapCircuit_spec [Field F] [DecidableEq F] [BasicSystem F c]
   rw [groupMapCircuit_stages]
   mvcgen [hc, hr, hs]
   -- the selection's condition and the map's post: the candidates' and the roots' readings,
-  -- carried to the selection's entry table
+  -- unwound by conditional rewriting
   case' vc6 => rename_i rs ss; intro ks
   case' vc5 | vc6 =>
     rename_i s₀ h₀ rc sc kc r1 s1 k1 r2 s2 k2 r3 s3 k3
@@ -707,31 +635,25 @@ theorem Prover.groupMapCircuit_spec [Field F] [DecidableEq F] [BasicSystem F c]
     obtain ⟨cy1, cb1, vb1, vy1, l1⟩ := Prover.Reg.iff.mp k1
     obtain ⟨cy2, cb2, vb2, vy2, l2⟩ := Prover.Reg.iff.mp k2
     obtain ⟨cy3, cb3, vb3, vy3, l3⟩ := Prover.Reg.iff.mp k3
-    have L : sc ≤ s3 := l1.trans (l2.trans l3)
-    rw [vx1] at vb1 vy1
-    rw [ProverState.read_of_le l1 cx2, vx2] at vb2 vy2
-    rw [ProverState.read_of_le (l1.trans l2) cx3, vx3] at vb3 vy3
-    rw [← ProverState.read_of_le (l2.trans l3) cb1] at vb1
-    rw [← ProverState.read_of_le (l2.trans l3) cy1] at vy1
-    rw [← ProverState.read_of_le l3 cb2] at vb2
-    rw [← ProverState.read_of_le l3 cy2] at vy2
-    rw [← ProverState.read_of_le L cx1] at vx1
-    rw [← ProverState.read_of_le L cx2] at vx2
-    rw [← ProverState.read_of_le L cx3] at vx3
   case vc5 =>
-    refine ⟨trivial, cx1.of_le L, cx2.of_le L, cx3.of_le L, cy1.of_le (l2.trans l3),
-      cy2.of_le l3, cy3, cb1.of_le (l2.trans l3), cb2.of_le l3, cb3, ?_, ?_, ?_, ?_⟩
-    · rw [vb1]; split <;> simp
-    · rw [vb2]; split <;> simp
-    · rw [vb3]; split <;> simp
-    · rw [vb1, vb2, vb3]
-      rcases hsome with h | h | h <;> simp [h]
+    refine ⟨trivial, cx1.of_le (by le_chain), cx2.of_le (by le_chain), cx3.of_le (by le_chain),
+      cy1.of_le (by le_chain), cy2.of_le (by le_chain), cy3, cb1.of_le (by le_chain),
+      cb2.of_le (by le_chain), cb3, ?_, ?_, ?_, ?_⟩
+    all_goals simp (disch := le_chain) only [ProverState.read_of_le _ cx2,
+      ProverState.read_of_le _ cx3, ProverState.read_of_le _ cb1, ProverState.read_of_le _ cb2,
+      vx1, vx2, vx3, vb1, vb2, vb3]
+    · split <;> simp
+    · split <;> simp
+    · split <;> simp
+    · rcases hsome with h | h | h <;> simp [h]
   case vc6 =>
     obtain ⟨csx, csy, vsx, vsy, ls⟩ := Prover.Reg.iff.mp ks
-    rw [vb1, vb2, vx1, vx2, vx3] at vsx
-    rw [vb1, vb2, vy1, vy2, vy3] at vsy
-    refine ⟨csx, csy, vsx.trans ?_, vsy.trans ?_, lc.trans (L.trans ls)⟩
+    refine ⟨csx, csy, ?_, ?_, by le_chain⟩
     all_goals
+      simp (disch := le_chain) only [ProverState.read_of_le _ cx1, ProverState.read_of_le _ cx2,
+        ProverState.read_of_le _ cx3, ProverState.read_of_le _ cy1, ProverState.read_of_le _ cy2,
+        ProverState.read_of_le _ cb1, ProverState.read_of_le _ cb2, vsx, vsy, vx1, vx2, vx3,
+        vb1, vb2, vy1, vy2, vy3]
       rcases e1 : sqrtF (ySquared params (potentialXs params (s₀.read t)).1) with _ | v1
       · rcases e2 : sqrtF (ySquared params (potentialXs params (s₀.read t)).2.1) with _ | v2
         · rcases e3 : sqrtF (ySquared params (potentialXs params (s₀.read t)).2.2) with _ | v3

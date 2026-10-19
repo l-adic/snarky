@@ -134,7 +134,8 @@ instance Prover.instWPMonad [Zero F] [ConstraintHolds F c] :
 
 A cell's reading at a state is the total function `read`; a spec's values are all readings at
 its one ghost, the entry state, so nothing is left for a caller to guess. Two lemmas carry a
-cell's scope and reading across a run; they are what `grind` needs at a chain's conditions. -/
+cell's scope and reading across a run, and `le_chain` proves the order fact they need from the
+run's step facts. -/
 
 /-- A cell's reading at a state. -/
 abbrev ProverState.read [Add F] [Mul F] [Zero F] (st : ProverState F) (x : CVar F) : F :=
@@ -149,6 +150,22 @@ theorem CVar.Scoped.of_le {st st' : ProverState F} (hle : st ≤ st') {x : CVar 
 theorem ProverState.read_of_le [Add F] [Mul F] [Zero F] {st st' : ProverState F}
     (hle : st ≤ st') {x : CVar F} (hx : x.Scoped st) : st'.read x = st.read x :=
   CVar.val_of_le hle hx
+
+/-- Close `a ≤ b` from the step facts `x ≤ y` in context, walking back from `b` one hypothesis
+at a time. It is the discharger of `ProverState.read_of_le` read as a conditional rewrite:
+`simp (disch := le_chain) only [ProverState.read_of_le _ h, …]` takes every later reading of
+the cell `h` scopes back to `h`'s state. Each state of a run has one incoming step fact, so the
+walk takes the latest match and never backtracks. Mathlib's `order` proves the same goals but
+rebuilds its graph from the whole context at every attempt, and simp attempts once per
+occurrence. -/
+syntax (name := le_chain) "le_chain" : tactic
+
+macro_rules
+  | `(tactic| le_chain) =>
+    `(tactic| first
+      | exact le_rfl
+      | assumption
+      | (refine le_trans ?_ (by assumption); le_chain))
 
 /-- A bundle's reading survives the state's growth: `CircuitType.monotone_readsAs` as the
 plain lemma a chain's conditions cite. -/
