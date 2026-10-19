@@ -130,8 +130,11 @@ instance instCheckedTypeBool [Field F] [DecidableEq F] [NeZero (1 : F)] [BasicSy
 instance instWPCheckedTypeBool [Field F] [DecidableEq F] [NeZero (1 : F)] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] : WPCheckedType F c Bool (BoolVar F) :=
   ⟨fun b a st hr _ => by
-    show ConstraintHolds.Holds st.env.get (BasicSystem.boolean b.toCVar) ∧ st ≤ st
-    refine ⟨(LawfulBasicSystem.holds_boolean _ _).mpr ?_, le_rfl⟩
+    show ConstraintHolds.Holds st.env.get (BasicSystem.boolean (c := c) b.toCVar) ∧
+      (∀ x ∈ ConstraintHolds.cells (F := F) (BasicSystem.boolean (c := c) b.toCVar),
+        x.Scoped st) ∧ st ≤ st
+    refine ⟨(LawfulBasicSystem.holds_boolean _ _).mpr ?_,
+      LawfulBasicSystem.scoped_boolean.mpr (CircuitType.scoped_boolVar.mp hr.1), le_rfl⟩
     rw [CircuitType.reads_boolVar.mp hr.2]
     cases a <;> simp [bit]⟩
 

@@ -34,15 +34,17 @@ instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [ConstraintHolds F c
 abbrev ProverShape (F : Type) : PostShape := .except EvalError (.arg (ProverState F) .pure)
 
 /-- The prover's predicate transformer, by recursion on the program: `pure` lands the result at
-the current state; an emitted row is an obligation at the current table; a witness computation
-that fails hands its error and the current state to the failure condition, and one that succeeds
+the current state; an emitted row is an obligation at the current table, with its cells in scope
+there (so it holds at every later table, `ProverState.holds_of_le`); a witness computation that
+fails hands its error and the current state to the failure condition, and one that succeeds
 continues at the state allocating its values, as `prove` does. -/
 def proverWP [Zero F] [ConstraintHolds F c] {α : Type} :
     CircuitM F c α → (α → ProverState F → ULift Prop) →
       (EvalError → ProverState F → ULift Prop) → ProverState F → ULift Prop
   | .pure a, Q, _, st => Q a st
   | .addConstraintOp con k, Q, E, st =>
-      .up (ConstraintHolds.Holds st.env.get con ∧ (proverWP k Q E st).down)
+      .up (ConstraintHolds.Holds st.env.get con ∧
+        (∀ x ∈ ConstraintHolds.cells (F := F) con, x.Scoped st) ∧ (proverWP k Q E st).down)
   | .existsOp n wit k, Q, E, st =>
       match wit.run st.env with
       | .error e => E e st
@@ -61,9 +63,9 @@ theorem proverWP_and [Zero F] [ConstraintHolds F c] {α : Type} (x : CircuitM F 
     simp only [proverWP]
     constructor
     · intro h
-      exact ⟨⟨h.1, ((ih st).mp h.2).1⟩, h.1, ((ih st).mp h.2).2⟩
+      exact ⟨⟨h.1, h.2.1, ((ih st).mp h.2.2).1⟩, h.1, h.2.1, ((ih st).mp h.2.2).2⟩
     · intro h
-      exact ⟨h.1.1, (ih st).mpr ⟨h.1.2, h.2.2⟩⟩
+      exact ⟨h.1.1, h.1.2.1, (ih st).mpr ⟨h.1.2.2, h.2.2.2⟩⟩
   | existsOp n wit k ih =>
     simp only [proverWP]
     rcases h : wit.run st.env with e | xs
@@ -80,7 +82,7 @@ theorem proverWP_mono [Zero F] [ConstraintHolds F c] {α : Type} {x : CircuitM F
   | pure a => exact h a st hx
   | addConstraintOp con k ih =>
     simp only [proverWP] at hx ⊢
-    exact ⟨hx.1, ih hx.2⟩
+    exact ⟨hx.1, hx.2.1, ih hx.2.2⟩
   | existsOp n wit k ih =>
     simp only [proverWP] at hx ⊢
     rcases hr : wit.run st.env with e | xs <;> rw [hr] at hx
@@ -167,6 +169,42 @@ macro_rules
       | assumption
       | (refine le_trans ?_ (by assumption); le_chain))
 
+/-- A row whose cells are in scope at a table holds at every later one once it holds there:
+the frame fact for rows, `LawfulBasicSystem.holds_congr` at the scoped cells' stable readings. -/
+theorem ProverState.holds_of_le [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {con : c} {st st' : ProverState F}
+    (hs : ∀ x ∈ ConstraintHolds.cells (F := F) con, x.Scoped st) (hle : st ≤ st')
+    (h : ConstraintHolds.Holds st.env.get con) : ConstraintHolds.Holds st'.env.get con :=
+  (LawfulBasicSystem.holds_congr con _ _ fun x hx => (CVar.val_of_le hle (hs x hx)).symm).mp h
+
+/-- An `equal` row's cells are in scope when its sides are. -/
+theorem LawfulBasicSystem.scoped_equal [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {st : ProverState F} {a b : CVar F} :
+    (∀ x ∈ ConstraintHolds.cells (F := F) (BasicSystem.equal (c := c) a b), x.Scoped st) ↔
+      a.Scoped st ∧ b.Scoped st := by
+  simp [LawfulBasicSystem.cells_equal]
+
+/-- An `r1cs` row's cells are in scope when its operands are. -/
+theorem LawfulBasicSystem.scoped_r1cs [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {st : ProverState F} {l r o : CVar F} :
+    (∀ x ∈ ConstraintHolds.cells (F := F) (BasicSystem.r1cs (c := c) l r o), x.Scoped st) ↔
+      l.Scoped st ∧ r.Scoped st ∧ o.Scoped st := by
+  simp [LawfulBasicSystem.cells_r1cs]
+
+/-- A `square` row's cells are in scope when its operand and square are. -/
+theorem LawfulBasicSystem.scoped_square [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {st : ProverState F} {a sq : CVar F} :
+    (∀ x ∈ ConstraintHolds.cells (F := F) (BasicSystem.square (c := c) a sq), x.Scoped st) ↔
+      a.Scoped st ∧ sq.Scoped st := by
+  simp [LawfulBasicSystem.cells_square]
+
+/-- A `boolean` row's cell is in scope when its operand is. -/
+theorem LawfulBasicSystem.scoped_boolean [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {st : ProverState F} {x : CVar F} :
+    (∀ y ∈ ConstraintHolds.cells (F := F) (BasicSystem.boolean (c := c) x), y.Scoped st) ↔
+      x.Scoped st := by
+  simp [LawfulBasicSystem.cells_boolean]
+
 /-- A bundle's reading survives the state's growth: `CircuitType.monotone_readsAs` as the
 plain lemma a chain's conditions cite. -/
 theorem CircuitType.ReadsAs.of_le [Add F] [Mul F] [Zero F] {val var : Type}
@@ -211,20 +249,23 @@ theorem Prover.register [Zero F] [ConstraintHolds F c] {α : Type} {g : CircuitM
 
 /-! ## The row's spec
 
-Emitting a row obliges it at the entry table and leaves the state alone; registered directly,
+Emitting a row obliges it at the entry table, its cells in scope there, and leaves the state
+alone; registered directly,
 since a state equation is a shape no gadget law states, so its ghost is never captured. The
 witness law lives beside `witness`, in `Snarky.Witness`, on the checked type's own law. -/
 
-/-- Emitting a row obliges it at the entry table, and the row's holding there is a fact of the
-exit: the state is unchanged. -/
+/-- Emitting a row obliges it at the entry table, its cells in scope there, and the row's
+holding there is a fact of the exit: the state is unchanged. -/
 @[spec] theorem Prover.addConstraint_spec [Zero F] [ConstraintHolds F c] (con : Prover c)
     (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ ConstraintHolds.Holds st₀.env.get con⌝⦄
+    ⦃fun st => ⌜st = st₀ ∧ ConstraintHolds.Holds st₀.env.get con ∧
+      ∀ x ∈ ConstraintHolds.cells (F := F) con, x.Scoped st₀⌝⦄
     addConstraint (F := F) (c := Prover c) con
     ⦃⇓ _ st' => ⌜st' = st₀ ∧ ConstraintHolds.Holds st₀.env.get con⌝⦄ := by
-  rintro st ⟨rfl, h⟩
-  show ConstraintHolds.Holds st.env.get con ∧ st = st ∧ ConstraintHolds.Holds st.env.get con
-  exact ⟨h, rfl, h⟩
+  rintro st ⟨rfl, h, hs⟩
+  show ConstraintHolds.Holds st.env.get con ∧ (∀ x ∈ ConstraintHolds.cells (F := F) con,
+    x.Scoped st) ∧ st = st ∧ ConstraintHolds.Holds st.env.get con
+  exact ⟨h, hs, rfl, h⟩
 
 /-! ## Traversal: the `Vector.mapM` law
 

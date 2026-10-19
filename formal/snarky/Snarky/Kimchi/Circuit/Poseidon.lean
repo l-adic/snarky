@@ -330,7 +330,26 @@ theorem Prover.poseidon_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
     obtain ⟨hO, hle⟩ := Prover.Reg.iff.mp h₁
     obtain ⟨hsc0, hsc1, hsc2⟩ := scoped_spongeState.mp hs
     have hrdO := CircuitType.reads_vector.mp hO.2
-    refine ⟨trivial, ?_⟩
+    refine ⟨trivial, ?_, ?_⟩
+    -- the row's cells: the input's, in scope at the entry, and the trace's, after the witness
+    on_goal 2 =>
+      intro y hy
+      change y ∈ (s.cells :: (outs.map SpongeState.cells).toList).flatMap
+        (fun t => [t.1, t.2.1, t.2.2]) at hy
+      rw [List.flatMap_cons, List.mem_append] at hy
+      rcases hy with hy | hy
+      · simp only [SpongeState.cells, List.mem_cons, List.mem_nil_iff, or_false] at hy
+        rcases hy with rfl | rfl | rfl
+        · exact hsc0.of_le hle
+        · exact hsc1.of_le hle
+        · exact hsc2.of_le hle
+      · obtain ⟨t, ht, hy⟩ := List.mem_flatMap.mp hy
+        rw [Vector.toList_map, List.mem_map] at ht
+        obtain ⟨o, ho, rfl⟩ := ht
+        obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp ho)
+        obtain ⟨c0, c1, c2⟩ := scoped_spongeState.mp ((CircuitType.scoped_vector.mp hO.1) i hi)
+        simp only [SpongeState.cells, List.mem_cons, List.mem_nil_iff, or_false] at hy
+        rcases hy with rfl | rfl | rfl <;> assumption
     show chainHolds (mdsOf p.mds) p.roundConstants.toList 0
       (read s₁.env.get ⟨p.mds, p.roundConstants.toList,
         s.cells :: (outs.map SpongeState.cells).toList⟩)

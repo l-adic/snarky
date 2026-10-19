@@ -616,6 +616,7 @@ theorem Prover.selectField_spec [Field F] [DecidableEq F] [BasicSystem F c]
       s'.read r = (if st₀.read b = 1 then st₀.read t else st₀.read e) ∧ st₀ ≤ s'⌝⦄ := by
   unfold selectField selectField.core
   mvcgen
+  all_goals (try simp only [LawfulBasicSystem.scoped_r1cs])
   all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
     CircuitType.reads_fvar, ProverState.read_of_le, CVar.Scoped.of_le,
     LawfulBasicSystem.holds_r1cs, CVar.val_add_, CVar.val_scale_, CVar.val_sub_, CVar.val,
@@ -683,6 +684,7 @@ theorem Prover.xor_spec [Field F] [DecidableEq F] [BasicSystem F c]
       s'.read r = (if st₀.read a ≠ st₀.read b then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
   unfold Snarky.xor Snarky.xor.core
   mvcgen
+  all_goals (try simp only [LawfulBasicSystem.scoped_r1cs])
   all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
     CircuitType.reads_fvar, ProverState.read_of_le, CVar.Scoped.of_le,
     LawfulBasicSystem.holds_r1cs, Snarky.not, BoolVar.coe_unchecked, CVar.val_add_,

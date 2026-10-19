@@ -825,10 +825,17 @@ theorem Prover.endoScalar_spec [Field F] [DecidableEq F] [ToNat F] (rows : ℕ) 
     simp only [Prover.Reg.iff] at h1
     exact ⟨trivial, ⟨CVar.scoped_const _ _, CVar.scoped_const _ _, CVar.scoped_const _ _⟩,
       (crumb_facts h1.1).1⟩
-  -- the one `endoScalar` row: every round holds
+  -- the one `endoScalar` row: every round holds, its cells in scope after the loop
   · rename_i s₀ h₀ crumbs s₁ h1 loop s h2
     simp only [Prover.Reg.iff] at h1 h2
-    exact ⟨trivial, (exit_facts h1.1 h2 le_rfl).1⟩
+    refine ⟨trivial, (exit_facts h1.1 h2 le_rfl).1, fun y hy => ?_⟩
+    change y ∈ loop.1.flatMap
+      (fun r => [r.n0, r.n8, r.a0, r.b0, r.a8, r.b8] ++ r.xs.toList) at hy
+    obtain ⟨r, hr, hy⟩ := List.mem_flatMap.mp hy
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hr
+    refine (h2.2.2.2.1 i (h2.2.2.1 ▸ hi) hi).1 y ?_
+    simp only [List.mem_append, List.mem_cons] at hy ⊢
+    tauto
   -- the result: the registers read as the decomposition
   · rename_i s₀ h₀ crumbs s₁ h1 loop s₂ h2 u s h3
     simp only [Prover.Reg.iff] at h1 h2

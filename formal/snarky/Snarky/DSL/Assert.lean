@@ -70,6 +70,7 @@ theorem Prover.assertEqual_spec [Field F] [DecidableEq F] [BasicSystem F c]
     ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
   simp only [assertEqual]
   mvcgen
+  all_goals (try simp only [LawfulBasicSystem.scoped_equal])
   all_goals grind [LawfulBasicSystem.holds_equal]
 
 /-- Registered. -/
@@ -208,6 +209,7 @@ theorem Prover.assertSquare_spec [Field F] [DecidableEq F] [BasicSystem F c]
     ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
   unfold assertSquare
   mvcgen
+  all_goals (try simp only [LawfulBasicSystem.scoped_square])
   all_goals grind [LawfulBasicSystem.holds_square]
 
 /-- Registered. -/

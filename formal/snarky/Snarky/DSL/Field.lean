@@ -484,7 +484,8 @@ theorem Prover.inv_spec [Field F] [DecidableEq F] [BasicSystem F c]
     obtain ⟨rfl, hxs, hne⟩ := h₁
     simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
       CircuitType.reads_fvar] at h
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr ⟨hxs.of_le h.2, h.1.1, CVar.scoped_const _ _⟩⟩
     rw [CVar.val_of_le h.2 hxs]
     show s₁.read x * r.val s.env.get = 1
     rw [h.1.2]
@@ -533,7 +534,8 @@ theorem Prover.mul_spec [Field F] [DecidableEq F] [BasicSystem F c]
     obtain ⟨rfl, hxs, hys⟩ := h₁
     simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
       CircuitType.reads_fvar] at h
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr ⟨hxs.of_le h.2, hys.of_le h.2, h.1.1⟩⟩
     rw [CVar.val_of_le h.2 hxs, CVar.val_of_le h.2 hys]
     exact h.1.2.symm
   case h_4.post.success.post.success =>
@@ -576,7 +578,8 @@ theorem Prover.square_spec [Field F] [DecidableEq F] [BasicSystem F c]
     obtain ⟨rfl, hxs⟩ := h₁
     simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
       CircuitType.reads_fvar] at h
-    refine ⟨trivial, (LawfulBasicSystem.holds_square ..).mpr ?_⟩
+    refine ⟨trivial, (LawfulBasicSystem.holds_square ..).mpr ?_,
+      LawfulBasicSystem.scoped_square.mpr ⟨hxs.of_le h.2, h.1.1⟩⟩
     rw [CVar.val_of_le h.2 hxs]
     exact h.1.2.symm
   case h_2.post.success.post.success =>
@@ -637,7 +640,9 @@ theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
     obtain ⟨rfl, hxs⟩ := h₀
     simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
       CircuitType.reads_fvar] at h₁ h₂
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr
+        ⟨h₁.1.1.of_le h₂.2, hxs.of_le (h₁.2.trans h₂.2), CVar.scoped_const _ _⟩⟩
     rw [CVar.val_of_le h₂.2 h₁.1.1, CVar.val_of_le (h₁.2.trans h₂.2) hxs]
     show r₁.val s₁.env.get * s₀.read x = 0
     rw [h₁.1.2]
@@ -649,7 +654,9 @@ theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
     obtain ⟨rfl, hxs⟩ := h₀
     simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
       CircuitType.reads_fvar] at h₁ h₂
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr ⟨h₂.1.1, hxs.of_le (h₁.2.trans h₂.2),
+        CVar.Scoped.sub_ (CVar.scoped_const _ _) (h₁.1.1.of_le h₂.2)⟩⟩
     rw [CVar.val_sub_, CVar.val_of_le (h₁.2.trans h₂.2) hxs, CVar.val_of_le h₂.2 h₁.1.1]
     show r₂.val s₃.env.get * s₀.read x = 1 - r₁.val s₁.env.get
     rw [h₂.1.2, h₁.1.2, ProverState.read_of_le h₁.2 hxs]

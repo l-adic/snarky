@@ -25,6 +25,9 @@ abbrev Valuation (F : Type) := Variable → F
 class ConstraintHolds (F c : Type) where
   /-- The constraint value is satisfied under the valuation. -/
   Holds : Valuation F → c → Prop
+  /-- The cells the constraint reads: what its holding depends on, as
+  `LawfulBasicSystem.holds_congr` says. -/
+  cells : c → List (CVar F)
 
 /-- The soundness tag: `c` indexed by the valuation. A program enters the soundness reading as
 `g (c := Builder V c)`, and every sub-call elaborates at the same `V`. Instance search does not
@@ -195,6 +198,20 @@ class LawfulBasicSystem (F c : Type) [Add F] [Mul F] [Zero F] [One F]
   holds_boolean : ∀ (V : Valuation F) (x : CVar F),
     ConstraintHolds.Holds V (BasicSystem.boolean (c := c) x) ↔
       x.val V = 0 ∨ x.val V = 1
+  /-- A constraint reads only its cells: two valuations agreeing on them agree on it. -/
+  holds_congr : ∀ (con : c) (V V' : Valuation F),
+    (∀ x ∈ ConstraintHolds.cells (F := F) con, x.val V = x.val V') →
+      (ConstraintHolds.Holds V con ↔ ConstraintHolds.Holds V' con)
+  /-- `equal`'s cells are its sides. -/
+  cells_equal : ∀ a b : CVar F, ConstraintHolds.cells (BasicSystem.equal (c := c) a b) = [a, b]
+  /-- `r1cs`'s cells are its three operands. -/
+  cells_r1cs : ∀ l r o : CVar F,
+    ConstraintHolds.cells (BasicSystem.r1cs (c := c) l r o) = [l, r, o]
+  /-- `square`'s cells are its operand and its square. -/
+  cells_square : ∀ a sq : CVar F,
+    ConstraintHolds.cells (BasicSystem.square (c := c) a sq) = [a, sq]
+  /-- `boolean`'s cell is its operand. -/
+  cells_boolean : ∀ x : CVar F, ConstraintHolds.cells (BasicSystem.boolean (c := c) x) = [x]
 
 instance [inst : BasicSystem F c] : BasicSystem F (Builder V c) := inst
 

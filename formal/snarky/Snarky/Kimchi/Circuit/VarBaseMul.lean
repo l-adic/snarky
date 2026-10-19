@@ -1202,12 +1202,20 @@ theorem Prover.varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat 
     refine ⟨trivial, ⟨hbs.1, hbs.2, hps.1, hps.2, CVar.scoped_const _ _⟩, fun x hx => ?_⟩
     obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hx
     exact (window_facts hn (h2.1.of_le h3.2.2.2) i (List.mem_range.mp hi)).1
-  -- the one `varBaseMul` row: every round holds
+  -- the one `varBaseMul` row: every round holds, its cells in scope after the loop
   · rename_i s₀ h₀ base s₃ h1 bits s₂ h2 p s₁ h3 loop s h4
     simp only [Prover.Reg.iff] at h1 h2 h3 h4
     obtain ⟨rfl, ⟨-, hbase⟩, hsc, hfits, hregime⟩ := h₀
-    exact ⟨trivial, (exit_facts d hn hbase hsc hfits hregime h1 h2 h3.2.2.1 h3.2.2.2 rfl h4.2.1
-      h4.2.2.1 h4.2.2.2.1 h4.2.2.2.2).1⟩
+    refine ⟨trivial, (exit_facts d hn hbase hsc hfits hregime h1 h2 h3.2.2.1 h3.2.2.2 rfl h4.2.1
+      h4.2.2.1 h4.2.2.2.1 h4.2.2.2.2).1, fun y hy => ?_⟩
+    change y ∈ loop.1.flatMap (fun r => (r.cellsA ++ r.cellsB).filterMap id) at hy
+    rw [List.mem_flatMap] at hy
+    obtain ⟨r, hr, hy⟩ := hy
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hr
+    have hs := (h4.2.2.2.1 i (h4.2.2.1 ▸ hi) hi).1
+    simp only [rowScoped, cells, List.forall_mem_cons] at hs
+    revert y
+    simp [ScaleRound.cellsA, ScaleRound.cellsB, hs]
   -- the register pin: the final register reads the scalar
   · rename_i s₀ h₀ base s₄ h1 bits s₃ h2 p s₂ h3 loop s₁ h4 u s h5
     simp only [Prover.Reg.iff] at h1 h2 h3 h4

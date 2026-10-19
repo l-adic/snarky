@@ -44,9 +44,16 @@ def Basic.Holds [Add F] [Mul F] [Zero F] [One F] (V : Valuation F) : Basic F →
   | .square a sq => a.val V * a.val V = sq.val V
   | .boolean x => x.val V = 0 ∨ x.val V = 1
 
+/-- A row's cells: its operands. -/
+def Basic.cells : Basic F → List (CVar F)
+  | .r1cs l r o => [l, r, o]
+  | .equal a b => [a, b]
+  | .square a sq => [a, sq]
+  | .boolean x => [x]
+
 instance instConstraintHoldsBasic [Add F] [Mul F] [Zero F] [One F] :
     ConstraintHolds F (Basic F) :=
-  ⟨Basic.Holds⟩
+  ⟨Basic.Holds, Basic.cells⟩
 
 /-- A row's reading is decidable when equality of field elements is. -/
 instance Basic.decidableHolds [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
@@ -63,5 +70,13 @@ instance instLawfulBasicSystemBasic [Add F] [Mul F] [Zero F] [One F] :
   holds_r1cs _ _ _ _ := Iff.rfl
   holds_square _ _ _ := Iff.rfl
   holds_boolean _ _ := Iff.rfl
+  holds_congr con V V' h := by
+    show Basic.Holds V con ↔ Basic.Holds V' con
+    cases con <;> simp only [ConstraintHolds.cells, Basic.cells, List.forall_mem_cons,
+      List.forall_mem_nil, and_true] at h <;> simp only [Basic.Holds, h]
+  cells_equal _ _ := rfl
+  cells_r1cs _ _ _ := rfl
+  cells_square _ _ := rfl
+  cells_boolean _ := rfl
 
 end Snarky

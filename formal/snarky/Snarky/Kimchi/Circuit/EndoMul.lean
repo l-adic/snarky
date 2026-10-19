@@ -1347,13 +1347,29 @@ theorem Prover.endoMul_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (h4.2.2.1 h2Tφ) h5 le_rfl
     have hle : s₀ ≤ s := h1.2.trans (h2.2.2.trans (h3.2.2.2.trans (h4.2.2.2.trans h5.2.2.2.2)))
     exact ⟨trivial, h5.1.2.2.2.2, hsc.of_le hle, by rw [hreg, ProverState.read_of_le hle hsc]⟩
-  -- the one `endoMul` row: the payload's successor chain holds
+  -- the one `endoMul` row: the payload's successor chain holds, its cells in scope
   · rename_i s₀ h₀ bits s₁ h1 phix s₂ h2 p1 s₃ h3 p2 s₄ h4 loop s₅ h5 u s h6
     simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6
     obtain ⟨rfl, hbase, -, hfits⟩ := h₀
     obtain ⟨-, -, h2Tφ⟩ := seed_ne d hbase.2
-    exact ⟨trivial, (exit_facts d hbase hfits h1 (h2.2.2.trans (h3.2.2.2.trans h4.2.2.2))
-      (h4.2.2.1 h2Tφ) h5 h6).1⟩
+    refine ⟨trivial, (exit_facts d hbase hfits h1 (h2.2.2.trans (h3.2.2.2.trans h4.2.2.2))
+      (h4.2.2.1 h2Tφ) h5 h6).1, fun y hy => ?_⟩
+    change y ∈ loop.1.flatMap (fun r => r.cells.filterMap id) ++
+      [loop.2.1.x, loop.2.1.y, loop.2.2] at hy
+    rw [List.mem_append, List.mem_flatMap] at hy
+    rcases hy with ⟨r, hr, hy⟩ | hy
+    · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hr
+      have hs := (h5.2.2.2.1 i (h5.2.2.1 ▸ hi) hi).1
+      simp only [rowScoped, cells, List.forall_mem_cons] at hs
+      refine CVar.Scoped.of_le h6 ?_
+      revert y
+      simp [EndoMulRound.cells, hs]
+    · obtain ⟨-, -, hx, hy', hn⟩ := h5.1
+      simp only [List.mem_cons, List.mem_nil_iff, or_false] at hy
+      rcases hy with rfl | rfl | rfl
+      · exact hx.of_le h6
+      · exact hy'.of_le h6
+      · exact hn.of_le h6
   -- the result: the final accumulator reads the decoded multiple
   · rename_i s₀ h₀ bits s₁ h1 phix s₂ h2 p1 s₃ h3 p2 s₄ h4 loop s₅ h5 u₁ s₆ h6 u₂ s h7
     simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6

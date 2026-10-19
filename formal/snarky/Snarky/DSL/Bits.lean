@@ -114,6 +114,23 @@ theorem pack_val [CommSemiring F] [DecidableEq F] {n : Nat} {bits : Vector (Bool
     exact h i (by simpa using h1)) rfl]
   ring
 
+private theorem packAux_scoped [Semiring F] [DecidableEq F] {st : ProverState F} :
+    ∀ (l : List (BoolVar F)) (i : Nat) (acc : FVar F), (∀ b ∈ l, (↑b : CVar F).Scoped st) →
+      acc.Scoped st → (packAux l i acc).Scoped st
+  | [], _, _, _, hacc => hacc
+  | b :: l, i, acc, hl, hacc =>
+    packAux_scoped l (i + 1) _ (fun b' hb' => hl b' (List.mem_cons_of_mem _ hb'))
+      (CVar.Scoped.add_ hacc (CVar.Scoped.scale_ (hl b (List.mem_cons_self ..))))
+
+/-- `pack` is in scope when its bits are. -/
+private theorem pack_scoped [Semiring F] [DecidableEq F] {n : Nat}
+    {bits : Vector (BoolVar F) n} {st : ProverState F}
+    (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).Scoped st) : (pack bits).Scoped st := by
+  unfold pack
+  refine packAux_scoped _ 0 _ (fun b hb => ?_) (CVar.scoped_const _ _)
+  obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hb)
+  exact h i hi
+
 attribute [irreducible] pack
 
 /-! ## Unpacking -/
@@ -200,8 +217,11 @@ theorem Prover.unpack_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   case vc2.post.success.pre =>
     rename_i s₀ h₀ r s₁ h₁
     obtain ⟨rfl, hv, hlt⟩ := h₀
-    obtain ⟨⟨-, hr⟩, hle⟩ := Prover.Reg.iff.mp h₁
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
+    obtain ⟨⟨hsc, hr⟩, hle⟩ := Prover.Reg.iff.mp h₁
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr ⟨pack_scoped fun i hi =>
+        CircuitType.scoped_boolVar.mp (CircuitType.scoped_vector.mp hsc i hi),
+        CVar.scoped_const _ _, hv.of_le hle⟩⟩
     rw [pack_val (bs := unpackPure (s₀.read v) n) fun i hi =>
         CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hr i hi),
       natLsbVal_unpackPure hlt, LawfulToNat.cast_toNat, CVar.val_of_le hle hv]

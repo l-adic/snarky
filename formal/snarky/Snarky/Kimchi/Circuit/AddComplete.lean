@@ -576,7 +576,37 @@ theorem Prover.addFast_spec [Field F] [DecidableEq F] (fin : Finiteness)
   · rename_i s₆ h₀ q1 s₅ h1 q2 s₄ h2 sxU sameX s₃ h3 inf s₂ h4 aux s₁ h5 p3 s h6
     simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6
     obtain ⟨rfl, ⟨hsc1, hP⟩, ⟨hsc2, hQ⟩, hPP, hfinP⟩ := h₀
-    refine ⟨trivial, ?_⟩
+    refine ⟨trivial, ?_, ?_⟩
+    -- the row's cells: the sealed points', the flags', the auxiliaries' and the sum's
+    on_goal 2 =>
+      obtain ⟨hq1, l1⟩ := h1
+      obtain ⟨hq2, l2⟩ := h2
+      obtain ⟨hsx, l3⟩ := h3
+      obtain ⟨hinf, l4⟩ := h4
+      obtain ⟨haux, l5⟩ := h5
+      obtain ⟨hp3, l6⟩ := h6
+      obtain ⟨q1x, q1y⟩ := scoped_affinePoint.mp hq1.1
+      obtain ⟨q2x, q2y⟩ := scoped_affinePoint.mp hq2.1
+      obtain ⟨p3x, p3y⟩ := scoped_affinePoint.mp hp3.1
+      obtain ⟨ai, ax, as⟩ := scoped_addAux.mp haux.1
+      have hinf' := CircuitType.scoped_boolVar.mp hinf.1
+      have hsx' := CircuitType.scoped_boolVar.mp (CircuitType.scoped_unchecked'.mp hsx.1)
+      intro y hy
+      change y ∈ (AddComplete.operands _).toList at hy
+      simp only [AddComplete.operands, Vector.toList_mk, List.mem_cons, List.mem_nil_iff,
+        or_false] at hy
+      rcases hy with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      · exact q1x.of_le (by le_chain)
+      · exact q1y.of_le (by le_chain)
+      · exact q2x.of_le (by le_chain)
+      · exact q2y.of_le (by le_chain)
+      · exact p3x
+      · exact p3y
+      · exact hinf'.of_le (by le_chain)
+      · exact hsx'.of_le (by le_chain)
+      · exact as.of_le (by le_chain)
+      · exact ai.of_le (by le_chain)
+      · exact ax.of_le (by le_chain)
     show Kimchi.Gate.AddComplete.Holds (AddComplete.read s.env.get _)
     rw [addFast_row_read fin h1.1 h2.1 hsc2 h1.2 h2.2 h3.1 h3.2 h4.1 h4.2 h5.1 h5.2 h6.1 h6.2]
     have hy1ne : p1'.y.val s₆.env.get ≠ 0 := fun hy => hPP (two_torsion_of_y_eq_zero ha hP hy)
