@@ -614,7 +614,8 @@ attribute [irreducible] pow
 /-! ## The state-relative completeness laws
 
 Each gadget's law at the prover's reading (`Snarky.Prover.WP`), and its registered reading for
-`mvcgen`; `div`'s is proved by composition through the registered `inv` and `mul`. -/
+`mvcgen`; `div`, `equals`, `neq` and `pow` are proved by composition through the registered
+laws of the gadgets they call. -/
 
 section ProverReading
 
@@ -872,9 +873,100 @@ theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
       exact h₁.1.2, h₁.2.trans h₂.2⟩
 
 /-- Registered. -/
-@[spec] def Prover.isZero_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (x : FVar F) :=
+@[spec] private def Prover.isZero_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :=
   Prover.register (Prover.isZero_spec (c := c) x)
+
+/-- `equals`'s completeness: the bit reads `1` exactly where the operands read equal. -/
+theorem Prover.equals_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ a.Scoped st₀ ∧ b.Scoped st₀⌝⦄
+    equals (c := Prover c) a b
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if st₀.read a = st₀.read b then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  simp only [equals]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, CVar.val_sub_, CVar.Scoped.sub_, sub_eq_zero]
+
+/-- Registered. -/
+@[spec] private def Prover.equals_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) :=
+  Prover.register (Prover.equals_spec (c := c) a b)
+
+/-- `neq`'s completeness: the bit reads `1` exactly where the operands read unequal. -/
+theorem Prover.neq_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ a.Scoped st₀ ∧ b.Scoped st₀⌝⦄
+    neq (c := Prover c) a b
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if st₀.read a ≠ st₀.read b then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  simp only [neq]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, BoolVar.coe_unchecked, CVar.val_sub_, CVar.val,
+    CVar.Scoped.sub_, CVar.scoped_const]
+
+/-- Registered. -/
+@[spec] private def Prover.neq_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) :=
+  Prover.register (Prover.neq_spec (c := c) a b)
+
+/-- `powGo`'s completeness, along the recursion: within its fuel the result reads the
+operand's entry reading to the `n`-th power. -/
+private theorem Prover.powGo_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] :
+    ∀ (fuel : Nat) (x : FVar F) (n : Nat) (st₀ : ProverState F),
+      ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀ ∧ n ≤ fuel + 1⌝⦄
+      powGo (c := Prover c) fuel x n
+      ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = st₀.read x ^ n ∧ st₀ ≤ s'⌝⦄ := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro x n st₀
+    unfold powGo
+    mvcgen
+    all_goals grind [CVar.val, CVar.scoped_const, pow_zero, pow_one]
+  | succ fuel ih =>
+    intro x n st₀
+    have ih' := fun x n => Prover.register (ih x n)
+    match n with
+    | 0 =>
+      unfold powGo
+      mvcgen
+      all_goals grind [CVar.val, CVar.scoped_const, pow_zero]
+    | 1 =>
+      unfold powGo
+      mvcgen
+      all_goals grind [pow_one]
+    | m + 2 =>
+      -- the halving step's exponent arithmetic, out of `grind`'s reach
+      have heven : ∀ v : F, (m + 2) % 2 = 0 → (v * v) ^ ((m + 2) / 2) = v ^ (m + 2) :=
+        fun v h => by rw [← pow_two, ← pow_mul]; congr 1; omega
+      have hodd : ∀ v : F, ¬(m + 2) % 2 = 0 → v * (v * v) ^ ((m + 2) / 2) = v ^ (m + 2) :=
+        fun v h => by rw [← pow_two, ← pow_mul, ← pow_succ']; congr 1; omega
+      simp only [powGo]
+      mvcgen [ih']
+      all_goals grind [Prover.Reg.iff, ProverState.read_of_le, CVar.Scoped.of_le]
+
+/-- Registered. -/
+@[spec] private def Prover.powGo_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (fuel : Nat) (x : FVar F) (n : Nat) :=
+  Prover.register (Prover.powGo_spec (c := c) fuel x n)
+
+/-- `pow`'s completeness: the result reads the operand's entry reading to the `n`-th
+power. -/
+theorem Prover.pow_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (n : Nat) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀⌝⦄
+    pow (c := Prover c) x n
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = st₀.read x ^ n ∧ st₀ ≤ s'⌝⦄ := by
+  unfold pow
+  mvcgen
+  all_goals grind [Prover.Reg.iff]
+
+/-- Registered. -/
+@[spec] def Prover.pow_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x : FVar F) (n : Nat) :=
+  Prover.register (Prover.pow_spec (c := c) x n)
 
 end ProverReading
 

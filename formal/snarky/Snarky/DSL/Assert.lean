@@ -124,6 +124,23 @@ open Std.Do in
 
 attribute [irreducible] assertNonZero
 
+open Std.Do in
+/-- `assertNonZero`'s state-relative completeness: where the operand is in scope and reads
+nonzero, the run succeeds and the state only grows. -/
+theorem Prover.assertNonZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ v.Scoped st₀ ∧ st₀.read v ≠ 0⌝⦄
+    assertNonZero (c := Prover c) v
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  unfold assertNonZero
+  mvcgen
+  all_goals grind [Prover.Reg.iff, CVar.val]
+
+/-- Registered. -/
+@[spec] private def Prover.assertNonZero_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) :=
+  Prover.register (Prover.assertNonZero_spec (c := c) v)
+
 /-! ## Inequality -/
 
 /-- Assert inequality: the difference is nonzero — `assertNonZero`'s rows. -/
@@ -161,6 +178,23 @@ theorem assertNotEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
   exact ⟨CVar.Scoped.sub_ hx hy, by rw [CVar.val_sub_, hvx, hvy]⟩
 
 attribute [irreducible] assertNotEqual
+
+open Std.Do in
+/-- `assertNotEqual`'s state-relative completeness: where the operands are in scope and read
+unequal, the run succeeds and the state only grows. -/
+theorem Prover.assertNotEqual_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀ ∧ st₀.read x ≠ st₀.read y⌝⦄
+    assertNotEqual (c := Prover c) x y
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  simp only [assertNotEqual]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, CVar.val_sub_, CVar.Scoped.sub_, sub_eq_zero]
+
+/-- Registered. -/
+@[spec] def Prover.assertNotEqual_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :=
+  Prover.register (Prover.assertNotEqual_spec (c := c) x y)
 
 /-! ## Squares -/
 
@@ -244,6 +278,23 @@ theorem assert_complete [Field F] [DecidableEq F] [BasicSystem F c]
 
 attribute [irreducible] assert
 
+open Std.Do in
+/-- `assert`'s state-relative completeness: where the bit is in scope and reads `1`, the run
+succeeds and the state only grows. -/
+theorem Prover.assert_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : BoolVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (↑v : CVar F).Scoped st₀ ∧ st₀.read v = 1⌝⦄
+    assert (c := Prover c) v
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  simp only [assert]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, CVar.val, CVar.scoped_const]
+
+/-- Registered. -/
+@[spec] def Prover.assert_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : BoolVar F) :=
+  Prover.register (Prover.assert_spec (c := c) v)
+
 /-! ## Bit sums -/
 
 /-- Assert at least one bit is set: the bit-sum is nonzero — `assertNonZero`'s rows. -/
@@ -326,6 +377,31 @@ theorem assertAny_complete [Field F] [DecidableEq F] [BasicSystem F c]
 
 attribute [irreducible] assertAny
 
+open Std.Do in
+/-- `assertAny`'s state-relative completeness: where the bits are in scope and some reads `1`,
+below the characteristic, the run succeeds and the state only grows. -/
+theorem Prover.assertAny_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F))
+    (hchar : ∀ k : Nat, k ≤ bs.length → (k : F) = 0 → k = 0) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (∀ b ∈ bs, (↑b : CVar F).Scoped st₀) ∧
+      (∀ b ∈ bs, st₀.read b = 0 ∨ st₀.read b = 1) ∧ ∃ b ∈ bs, st₀.read b = 1⌝⦄
+    assertAny (c := Prover c) bs
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  simp only [assertAny]
+  mvcgen
+  -- the bit-sum is in scope, and reads nonzero below the characteristic
+  case vc1.pre =>
+    rename_i s h
+    obtain ⟨rfl, hsc, hbits, hone⟩ := h
+    exact ⟨trivial, scoped_sum_of_bits hsc, (read_sum_ne_zero_iff hbits hchar).mpr hone⟩
+  all_goals grind [Prover.Reg.iff]
+
+/-- Registered. -/
+@[spec] def Prover.assertAny_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F))
+    (hchar : ∀ k : Nat, k ≤ bs.length → (k : F) = 0 → k = 0) :=
+  Prover.register (Prover.assertAny_spec (c := c) bs hchar)
+
 /-- Assert exactly one bit is set: the bit-sum equals `1` — `assertEqual`'s rows. -/
 def assertExactlyOne [Field F] [DecidableEq F] [BasicSystem F c] (bs : List (BoolVar F)) :
     CircuitM F c PUnit :=
@@ -399,6 +475,32 @@ theorem assertExactlyOne_complete [Field F] [DecidableEq F] [BasicSystem F c]
       ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩⟩
 
 attribute [irreducible] assertExactlyOne
+
+open Std.Do in
+/-- `assertExactlyOne`'s state-relative completeness: where the bits are in scope and exactly
+one reads `1`, the run succeeds and the state only grows. -/
+theorem Prover.assertExactlyOne_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F)) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (∀ b ∈ bs, (↑b : CVar F).Scoped st₀) ∧
+      (∀ b ∈ bs, st₀.read b = 0 ∨ st₀.read b = 1) ∧
+      (bs.map fun b : BoolVar F => st₀.read b).count 1 = 1⌝⦄
+    assertExactlyOne (c := Prover c) bs
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  simp only [assertExactlyOne]
+  mvcgen
+  -- the bit-sum is in scope, and reads its count of ones
+  case vc1.pre =>
+    rename_i s h
+    obtain ⟨rfl, hsc, hbits, hone⟩ := h
+    refine ⟨trivial, scoped_sum_of_bits hsc, trivial, ?_⟩
+    rw [read_sum_of_bits hbits, hone]
+    simp [CVar.val]
+  all_goals grind [Prover.Reg.iff]
+
+/-- Registered. -/
+@[spec] def Prover.assertExactlyOne_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F)) :=
+  Prover.register (Prover.assertExactlyOne_spec (c := c) bs)
 
 /-- Assert every bit is set: the bit-sum equals the length — `assertEqual`'s rows. -/
 def assertAll [Field F] [DecidableEq F] [BasicSystem F c] (bs : List (BoolVar F)) :
@@ -477,6 +579,32 @@ theorem assertAll_complete [Field F] [DecidableEq F] [BasicSystem F c]
       ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩⟩
 
 attribute [irreducible] assertAll
+
+open Std.Do in
+/-- `assertAll`'s state-relative completeness: where the bits are in scope and every one reads
+`1`, the run succeeds and the state only grows. -/
+theorem Prover.assertAll_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F)) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (∀ b ∈ bs, (↑b : CVar F).Scoped st₀) ∧ ∀ b ∈ bs, st₀.read b = 1⌝⦄
+    assertAll (c := Prover c) bs
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  simp only [assertAll]
+  mvcgen
+  -- the bit-sum is in scope, and reads the number of operands
+  case vc1.pre =>
+    rename_i s h
+    obtain ⟨rfl, hsc, hall⟩ := h
+    refine ⟨trivial, scoped_sum_of_bits hsc, trivial, ?_⟩
+    rw [read_sum_of_bits fun b hb => Or.inr (hall b hb), List.count_eq_length.mpr fun v hv => by
+      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hv
+      exact (hall b hb).symm]
+    simp [CVar.val]
+  all_goals grind [Prover.Reg.iff]
+
+/-- Registered. -/
+@[spec] def Prover.assertAll_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F)) :=
+  Prover.register (Prover.assertAll_spec (c := c) bs)
 
 /-! ## Equality at a bundle
 
@@ -562,5 +690,43 @@ theorem assertEq_complete [Field F] [DecidableEq F] [BasicSystem F c] [Constrain
             ⟨CircuitType.scoped_fvar.mpr (h.2.1 _ (by simp)),
               CircuitType.reads_fvar.mpr h₂⟩⟩))
     fun _ => Complete.pure_of fun _ _ => trivial
+
+open Std.Do in
+/-- The fields' loop of `assertEq`, registered: `zipWithVecM`'s law at `assertEqual`, each field
+pair in scope and reading equal. -/
+@[spec] private def Prover.assertEq_loop_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {n : Nat} (xs ys : Vector (FVar F) n) :=
+  Prover.register (Prover.zipWithVecM_spec (c := c) assertEqual
+    (fun st x y => x.Scoped st ∧ y.Scoped st ∧ st.read x = st.read y)
+    (fun st _ _ _ s' => st ≤ s')
+    (by grind [ProverState.read_of_le, CVar.Scoped.of_le]) (by grind) (by grind) (by grind)
+    (fun st x y => Prover.assertEqual_spec (c := c) x y st) xs ys)
+
+open Std.Do in
+/-- `assertEq`'s state-relative completeness: where both bundles are in scope and their fields
+read equal, the run succeeds and the state only grows. -/
+theorem Prover.assertEq_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var] (t e : var)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ CircuitType.Scoped (val := val) st₀ t ∧
+      CircuitType.Scoped (val := val) st₀ e ∧
+      mapVec (·.val st₀.env.get) (CircuitType.varToFields (val := val) t) =
+        mapVec (·.val st₀.env.get) (CircuitType.varToFields (val := val) e)⌝⦄
+    assertEq (F := F) (c := Prover c) (val := val) t e
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  simp only [assertEq]
+  mvcgen
+  -- the loop's entry: the bundles' scope and readings, field by field
+  case vc1.pre =>
+    rename_i s h
+    obtain ⟨rfl, ht, he, hfields⟩ := h
+    exact ⟨trivial, fun i => ⟨ht _ (by simp), he _ (by simp),
+      by simpa [getElem_mapVec] using congrArg (·[i]) hfields⟩⟩
+  all_goals grind [Prover.Reg.iff]
+
+/-- Registered. -/
+@[spec] def Prover.assertEq_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var] (t e : var) :=
+  Prover.register (Prover.assertEq_spec (F := F) (c := c) (val := val) t e)
 
 end Snarky

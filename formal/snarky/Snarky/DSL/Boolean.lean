@@ -1029,4 +1029,254 @@ theorem all_complete [Field F] [DecidableEq F] [BasicSystem F c]
 
 attribute [irreducible] Snarky.all
 
+/-! ## The state-relative completeness laws
+
+Each gadget's law at the prover's reading (`Snarky.Prover.WP`), and its registered reading for
+`mvcgen`. A bit operand is a scoped cell reading `0` or `1`; a bit result reads its answer as
+the field's `1` or `0`. -/
+
+section ProverReading
+
+open Std.Do
+
+/-- `selectField.advice` returns the branch the selector's reading picks. -/
+@[spec] private def Prover.selectField_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (b : CVar F) (t e : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (selectField.advice b t e)
+    (fun st => b.Scoped st ∧ t.Scoped st ∧ e.Scoped st)
+    (fun st => if st.read b = 1 then st.read t else st.read e)
+    (fun _ h => by
+      simp only [ProverState.read]
+      split <;> simp [selectField.advice, AsProver.readCVar_run h.1, AsProver.readCVar_run h.2.1,
+        AsProver.readCVar_run h.2.2, *])
+    fun _ _ => by simp)
+
+/-- `selectField`'s completeness: where the operands are in scope and the selector reads a
+bit, the result reads the branch it picks. -/
+theorem Prover.selectField_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F) (t e : FVar F)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (↑b : CVar F).Scoped st₀ ∧ t.Scoped st₀ ∧ e.Scoped st₀ ∧
+      (st₀.read b = 0 ∨ st₀.read b = 1)⌝⦄
+    selectField (c := Prover c) b t e
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧
+      s'.read r = (if st₀.read b = 1 then st₀.read t else st₀.read e) ∧ st₀ ≤ s'⌝⦄ := by
+  unfold selectField selectField.core
+  mvcgen
+  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+    CircuitType.reads_fvar, ProverState.read_of_le, CVar.Scoped.of_le,
+    LawfulBasicSystem.holds_r1cs, CVar.val_add_, CVar.val_scale_, CVar.val_sub_, CVar.val,
+    CVar.Scoped.add_, CVar.Scoped.scale_, CVar.Scoped.sub_, CVar.Scoped, CVar.ScopedBy]
+
+/-- Registered. -/
+@[spec] def Prover.selectField_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F) (t e : FVar F) :=
+  Prover.register (Prover.selectField_spec (c := c) b t e)
+
+/-- `and`'s completeness: on bit operands the result reads `1` exactly where both read `1`. -/
+theorem Prover.and_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (↑a : CVar F).Scoped st₀ ∧ (↑b : CVar F).Scoped st₀ ∧
+      (st₀.read a = 0 ∨ st₀.read a = 1) ∧ (st₀.read b = 0 ∨ st₀.read b = 1)⌝⦄
+    Snarky.and (c := Prover c) a b
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if st₀.read a = 1 ∧ st₀.read b = 1 then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  simp only [Snarky.and]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, BoolVar.coe_unchecked]
+
+/-- Registered. -/
+@[spec] private def Prover.and_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) :=
+  Prover.register (Prover.and_spec (c := c) a b)
+
+/-- `or`'s completeness: on bit operands the result reads `1` exactly where either reads
+`1`. -/
+theorem Prover.or_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (↑a : CVar F).Scoped st₀ ∧ (↑b : CVar F).Scoped st₀ ∧
+      (st₀.read a = 0 ∨ st₀.read a = 1) ∧ (st₀.read b = 0 ∨ st₀.read b = 1)⌝⦄
+    Snarky.or (c := Prover c) a b
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if st₀.read a = 1 ∨ st₀.read b = 1 then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  simp only [Snarky.or]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, Snarky.not, BoolVar.coe_unchecked, CVar.val_sub_,
+    CVar.val, CVar.Scoped.sub_, CVar.scoped_const, ProverState.read_of_le, CVar.Scoped.of_le]
+
+/-- Registered. -/
+@[spec] private def Prover.or_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) :=
+  Prover.register (Prover.or_spec (c := c) a b)
+
+/-- `xor.advice` returns the inequality bit. -/
+@[spec] private def Prover.xor_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (a b : BoolVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (Snarky.xor.advice a b)
+    (fun st => (↑a : CVar F).Scoped st ∧ (↑b : CVar F).Scoped st)
+    (fun st => if st.read a = st.read b then 0 else 1)
+    (fun _ h => by
+      simp [Snarky.xor.advice, AsProver.readCVar_run h.1, AsProver.readCVar_run h.2])
+    fun _ _ => by simp)
+
+/-- `xor`'s completeness: on bit operands the result reads `1` exactly where they read
+unequal. -/
+theorem Prover.xor_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (↑a : CVar F).Scoped st₀ ∧ (↑b : CVar F).Scoped st₀ ∧
+      (st₀.read a = 0 ∨ st₀.read a = 1) ∧ (st₀.read b = 0 ∨ st₀.read b = 1)⌝⦄
+    Snarky.xor (c := Prover c) a b
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if st₀.read a ≠ st₀.read b then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  unfold Snarky.xor Snarky.xor.core
+  mvcgen
+  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+    CircuitType.reads_fvar, ProverState.read_of_le, CVar.Scoped.of_le,
+    LawfulBasicSystem.holds_r1cs, Snarky.not, BoolVar.coe_unchecked, CVar.val_add_,
+    CVar.val_sub_, CVar.val, CVar.Scoped.add_, CVar.Scoped.sub_, CVar.scoped_const]
+
+/-- Registered. -/
+@[spec] def Prover.xor_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) :=
+  Prover.register (Prover.xor_spec (c := c) a b)
+
+/-! Bit sums at the prover's reading: the arithmetic of the sum-based gadgets here and of the
+assertions over bit sums. -/
+
+/-- Bit operands' sum is in scope where they are. -/
+theorem scoped_sum_of_bits [Field F] [DecidableEq F] {st : ProverState F}
+    {xs : List (BoolVar F)} (h : ∀ x ∈ xs, (↑x : CVar F).Scoped st) :
+    (sum (xs.map BoolVar.toCVar)).Scoped st :=
+  CVar.Scoped.sum fun _ hx => by
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
+    exact h b hb
+
+/-- Bit operands' sum reads their count of ones. -/
+theorem read_sum_of_bits [Field F] [DecidableEq F] {st : ProverState F} {xs : List (BoolVar F)}
+    (hbits : ∀ x ∈ xs, st.read x = 0 ∨ st.read x = 1) :
+    st.read (sum (xs.map BoolVar.toCVar)) =
+      ((xs.map fun x : BoolVar F => st.read x).count 1 : F) := by
+  rw [ProverState.read, sum_eval, List.map_map]
+  exact sum_of_bits _ (by simpa using hbits)
+
+/-- Below the characteristic, bit operands' sum reads nonzero exactly where one of them
+reads `1`. -/
+theorem read_sum_ne_zero_iff [Field F] [DecidableEq F] {st : ProverState F}
+    {xs : List (BoolVar F)} (hbits : ∀ x ∈ xs, st.read x = 0 ∨ st.read x = 1)
+    (hchar : ∀ k : Nat, k ≤ xs.length → (k : F) = 0 → k = 0) :
+    st.read (sum (xs.map BoolVar.toCVar)) ≠ 0 ↔ ∃ x ∈ xs, st.read x = 1 := by
+  have hle : (xs.map fun x : BoolVar F => st.read x).count 1 ≤ xs.length := by
+    simpa using List.count_le_length (a := (1 : F)) (l := xs.map fun x : BoolVar F => st.read x)
+  rw [read_sum_of_bits hbits]
+  constructor
+  · intro h
+    obtain ⟨x, hx, hx1⟩ := List.mem_map.mp (List.count_pos_iff.mp
+      (Nat.pos_of_ne_zero fun h0 => h (by rw [h0]; simp)))
+    exact ⟨x, hx, hx1⟩
+  · rintro ⟨x, hx, hx1⟩ hc
+    exact absurd (hchar _ hle hc)
+      (Nat.pos_iff_ne_zero.mp (List.count_pos_iff.mpr (List.mem_map.mpr ⟨x, hx, hx1⟩)))
+
+/-- Below the characteristic, bit operands' sum reads their number exactly where every one
+of them reads `1`. -/
+private theorem read_sum_eq_length_iff [Field F] [DecidableEq F] {st : ProverState F}
+    {xs : List (BoolVar F)} (hbits : ∀ x ∈ xs, st.read x = 0 ∨ st.read x = 1)
+    (hchar : ∀ j k : Nat, j ≤ xs.length → k ≤ xs.length → (j : F) = k → j = k) :
+    st.read (sum (xs.map BoolVar.toCVar)) = xs.length ↔ ∀ x ∈ xs, st.read x = 1 := by
+  have hle : (xs.map fun x : BoolVar F => st.read x).count 1 ≤ xs.length := by
+    simpa using List.count_le_length (a := (1 : F)) (l := xs.map fun x : BoolVar F => st.read x)
+  rw [read_sum_of_bits hbits]
+  constructor
+  · intro h x hx
+    have hcount := hchar _ _ hle le_rfl h
+    exact (List.count_eq_length.mp (by simpa using hcount) _ (List.mem_map.mpr ⟨x, hx, rfl⟩)).symm
+  · intro h
+    rw [List.count_eq_length.mpr fun v hv => by
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+      exact (h x hx).symm]
+    simp
+
+/-- `any`'s completeness: on bit operands, below the characteristic, the result reads `1`
+exactly where some operand reads `1`. -/
+theorem Prover.any_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
+    (hchar : ∀ k : Nat, k ≤ xs.length → (k : F) = 0 → k = 0) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (∀ x ∈ xs, (↑x : CVar F).Scoped st₀) ∧
+      (∀ x ∈ xs, st₀.read x = 0 ∨ st₀.read x = 1)⌝⦄
+    Snarky.any (c := Prover c) xs
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if ∃ x ∈ xs, st₀.read x = 1 then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  unfold Snarky.any
+  mvcgen
+  -- one or two operands: `grind` cannot supply the bounded existential's witness
+  case vc2.h_2 =>
+    rename_i a hxs s h
+    subst hxs
+    obtain ⟨rfl, hsc, hbits⟩ := h
+    refine ⟨hsc a (List.mem_singleton_self a), ?_, le_rfl⟩
+    rcases hbits a (List.mem_singleton_self a) with h0 | h1 <;> simp [*]
+  case vc4.h_3.post.success =>
+    rename_i a b hxs s₀ h₀ r s₁
+    subst hxs
+    obtain ⟨rfl, -, -⟩ := h₀
+    intro h
+    obtain ⟨hr, hv, hle⟩ := Prover.Reg.iff.mp h
+    exact ⟨hr, by simp [hv], hle⟩
+  -- three or more operands: the bit-sum is in scope, and reads nonzero exactly where some
+  -- operand reads `1`
+  case vc5.h_4.pre =>
+    rename_i l _ _ _ hxs s h
+    subst hxs
+    obtain ⟨rfl, hsc, -⟩ := h
+    exact ⟨trivial, scoped_sum_of_bits hsc, trivial⟩
+  case vc6.h_4.post.success =>
+    rename_i l _ _ _ hxs s₀ h₀ r s₁
+    subst hxs
+    obtain ⟨rfl, -, hbits⟩ := h₀
+    have key := read_sum_ne_zero_iff hbits hchar
+    grind [Prover.Reg.iff, CVar.val]
+  all_goals grind [Prover.Reg.iff, false_val, false_scoped]
+
+/-- Registered. -/
+@[spec] def Prover.any_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
+    (hchar : ∀ k : Nat, k ≤ xs.length → (k : F) = 0 → k = 0) :=
+  Prover.register (Prover.any_spec (c := c) xs hchar)
+
+/-- `all`'s completeness: on bit operands, below the characteristic, the result reads `1`
+exactly where every operand reads `1`. -/
+theorem Prover.all_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ xs.length → k ≤ xs.length → (j : F) = k → j = k)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ (∀ x ∈ xs, (↑x : CVar F).Scoped st₀) ∧
+      (∀ x ∈ xs, st₀.read x = 0 ∨ st₀.read x = 1)⌝⦄
+    Snarky.all (c := Prover c) xs
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if ∀ x ∈ xs, st₀.read x = 1 then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  unfold Snarky.all
+  mvcgen
+  -- three or more operands: the bit-sum is in scope, and reads the length exactly where every
+  -- operand reads `1`
+  case vc5.h_4.pre =>
+    rename_i l _ _ _ hxs s h
+    subst hxs
+    obtain ⟨rfl, hsc, -⟩ := h
+    exact ⟨trivial, trivial, scoped_sum_of_bits hsc⟩
+  case vc6.h_4.post.success =>
+    rename_i l _ _ _ hxs s₀ h₀ r s₁
+    subst hxs
+    obtain ⟨rfl, -, hbits⟩ := h₀
+    have key := read_sum_eq_length_iff hbits hchar
+    grind [Prover.Reg.iff, CVar.val]
+  all_goals grind [Prover.Reg.iff, true_val, true_scoped]
+
+/-- Registered. -/
+@[spec] def Prover.all_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ xs.length → k ≤ xs.length → (j : F) = k → j = k) :=
+  Prover.register (Prover.all_spec (c := c) xs hchar)
+
+end ProverReading
+
 end Snarky

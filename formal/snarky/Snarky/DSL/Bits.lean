@@ -194,4 +194,55 @@ example [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   simp only [build_bind, build, witness, Snarky.addConstraint]
   rfl
 
+/-! ## The state-relative completeness law
+
+`unpack`'s law at the prover's reading (`Snarky.Prover.WP`), and its registered reading for
+`mvcgen`. -/
+
+section ProverReading
+
+open Std.Do
+
+/-- `unpack.advice` returns the operand's low digits. -/
+@[spec] private def Prover.unpack_advice_reg [Field F] [DecidableEq F] [ToNat F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat) :=
+  Prover.register (Prover.witness_of_run (c := c) (unpack.advice v n) (fun st => v.Scoped st)
+    (fun st => unpackPure (st.read v) n)
+    (fun _ h => by simp [unpack.advice, readVar_run (CircuitType.scoped_fvar.mpr h)])
+    fun _ _ => by simp)
+
+/-- `unpack`'s completeness: where the operand's representative fits in `n` bits, each bit is
+in scope and reads the representative's binary digit at its index. -/
+theorem Prover.unpack_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ v.Scoped st₀ ∧ ToNat.toNat (st₀.read v) < 2 ^ n⌝⦄
+    unpack (c := Prover c) v n
+    ⦃⇓ r s' => ⌜(∀ i (hi : i < n), (↑r[i] : CVar F).Scoped s') ∧
+      (∀ i (hi : i < n),
+        s'.read r[i] = if (ToNat.toNat (st₀.read v)).testBit i then 1 else 0) ∧
+      st₀ ≤ s'⌝⦄ := by
+  unfold unpack
+  mvcgen
+  -- the packing row: the bits read the operand's digits, whose weighted sum is its reading
+  case vc2.post.success.pre =>
+    rename_i s₀ h₀ r s₁ h₁
+    obtain ⟨rfl, hv, hlt⟩ := h₀
+    obtain ⟨⟨-, hr⟩, hle⟩ := Prover.Reg.iff.mp h₁
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
+    rw [pack_val (bs := unpackPure (s₀.read v) n) fun i hi =>
+        CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hr i hi),
+      natLsbVal_unpackPure hlt, LawfulToNat.cast_toNat, CVar.val_of_le hle hv]
+    simp
+  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_vector,
+    CircuitType.reads_vector, CircuitType.scoped_boolVar, CircuitType.reads_boolVar,
+    ProverState.read_of_le, CVar.Scoped.of_le, getElem_unpackPure, bit]
+
+/-- Registered. -/
+@[spec] def Prover.unpack_reg [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat) :=
+  Prover.register (Prover.unpack_spec (c := c) v n)
+
+end ProverReading
+
 end Snarky
