@@ -526,6 +526,35 @@ private def accStep [Field F] (a : (F × F) × (F × F) × F) (x : F × F × F �
     (F × F) × (F × F) × F :=
   (a.1, ((rowStep a x).x5, (rowStep a x).y5), (rowStep a x).nPrime)
 
+/-- The round's chain of states and every entry cell's reading along it, the one place the
+chain is known: from the run's links, the entry lies below every state and each witness state
+below the exit, and an entry cell in scope reads, at every state past the entry, what it read
+at the entry. A step spec rewrites with the readings alone; the template a ladder's step spec
+copies, with its own cells. -/
+private theorem round_readings [Field F] {base : AffinePoint (FVar F)}
+    {s₆ s₅ s₄ s₃ s₂ s₁ s : ProverState F} {acc : AffinePoint (FVar F) × FVar F}
+    {bs : Vector (FVar F) 5} (hl5 : s₆ ≤ s₅) (hl0 : s₅ ≤ s₄) (hl1 : s₄ ≤ s₃) (hl2 : s₃ ≤ s₂)
+    (hl3 : s₂ ≤ s₁) (hl4 : s₁ ≤ s) (hacc : accScoped base s₆ acc) (hbs : bitsScoped s₆ bs) :
+    (s₆ ≤ s₅ ∧ s₆ ≤ s₄ ∧ s₆ ≤ s₃ ∧ s₆ ≤ s₂ ∧ s₆ ≤ s₁ ∧ s₆ ≤ s) ∧
+      (s₅ ≤ s ∧ s₄ ≤ s ∧ s₃ ≤ s ∧ s₂ ≤ s) ∧
+      ∀ t, s₆ ≤ t →
+        base.x.val t.env.get = base.x.val s₆.env.get ∧
+        base.y.val t.env.get = base.y.val s₆.env.get ∧
+        acc.1.x.val t.env.get = acc.1.x.val s₆.env.get ∧
+        acc.1.y.val t.env.get = acc.1.y.val s₆.env.get ∧
+        acc.2.val t.env.get = acc.2.val s₆.env.get ∧
+        ∀ (i : ℕ) (hi : i < 5), (bs[i]'hi).val t.env.get = (bs[i]'hi).val s₆.env.get := by
+  have e4 : s₆ ≤ s₄ := hl5.trans hl0
+  have e3 : s₆ ≤ s₃ := e4.trans hl1
+  have e2 : s₆ ≤ s₂ := e3.trans hl2
+  have e1 : s₆ ≤ s₁ := e2.trans hl3
+  refine ⟨⟨hl5, e4, e3, e2, e1, e1.trans hl4⟩,
+    ⟨hl0.trans (hl1.trans (hl2.trans (hl3.trans hl4))), hl1.trans (hl2.trans (hl3.trans hl4)),
+      hl2.trans (hl3.trans hl4), hl3.trans hl4⟩, fun t hle => ?_⟩
+  exact ⟨CVar.val_of_le hle hacc.1, CVar.val_of_le hle hacc.2.1, CVar.val_of_le hle hacc.2.2.1,
+    CVar.val_of_le hle hacc.2.2.2.1, CVar.val_of_le hle hacc.2.2.2.2,
+    fun i hi => CVar.val_of_le hle (hbs i hi)⟩
+
 /-- A round's reading survives the state's growth when its cells are in scope. -/
 private theorem scaleRound_read_of_le [Field F] [DecidableEq F] {st st' : ProverState F}
     (hle : st ≤ st') {r : ScaleRound F} (h : ∀ cv ∈ cells r, cv.Scoped st) :
@@ -572,23 +601,16 @@ private theorem Prover.scaleRound_spec [Field F] [DecidableEq F] [BasicSystem F 
   rename_i s₆ nAcc s₅ hn w0 a1 s₄ h0 w1 a2 s₃ h1 w2 a3 s₂ h2 w3 a4 s₁ h3 w4 a5 s h4 hpre
   simp only [Prover.Reg.iff, a1, a2, a3, a4] at hn h0 h1 h2 h3 h4
   simp only [a1, a2, a3, a4, a5]
-  obtain ⟨rfl, ⟨hbx, hby, hax, hay, hn₀⟩, hbs⟩ := hpre
+  obtain ⟨rfl, hacc, hbs⟩ := hpre
   obtain ⟨hnb, hl5⟩ := hn
   obtain ⟨hb0, hl0⟩ := h0
   obtain ⟨hb1, hl1⟩ := h1
   obtain ⟨hb2, hl2⟩ := h2
   obtain ⟨hb3, hl3⟩ := h3
   obtain ⟨hb4, hl4⟩ := h4
-  have l5 : s₅ ≤ s := hl0.trans (hl1.trans (hl2.trans (hl3.trans hl4)))
-  have l4 : s₄ ≤ s := hl1.trans (hl2.trans (hl3.trans hl4))
-  have l3 : s₃ ≤ s := hl2.trans (hl3.trans hl4)
-  have l2 : s₂ ≤ s := hl3.trans hl4
-  -- the entry, below every state a witness read at
-  have e4 : s₆ ≤ s₄ := hl5.trans hl0
-  have e3 : s₆ ≤ s₃ := e4.trans hl1
-  have e2 : s₆ ≤ s₂ := e3.trans hl2
-  have e1 : s₆ ≤ s₁ := e2.trans hl3
-  have e0 : s₆ ≤ s := e1.trans hl4
+  -- the chain and the entry cells' readings along it, from the one lemma that knows it
+  obtain ⟨⟨e5, e4, e3, e2, e1, e0⟩, ⟨l5, l4, l3, l2⟩, hrd⟩ :=
+    round_readings hl5 hl0 hl1 hl2 hl3 hl4 hacc hbs
   -- the bundles at the final state
   have b0 := hb0.of_le l4
   have b1 := hb1.of_le l3
@@ -598,24 +620,18 @@ private theorem Prover.scaleRound_spec [Field F] [DecidableEq F] [BasicSystem F 
   simp only [CircuitType.ReadsAs, CircuitType.scoped_prod', CircuitType.scoped_fvar,
     CircuitType.reads_prod', CircuitType.reads_fvar] at hnb b0 b1 b2 b3 b4 hb0 hb1 hb2 hb3
   obtain ⟨hnsc, hnrd⟩ := hnb
-  have hbs0 := hbs 0 (by omega)
-  have hbs1 := hbs 1 (by omega)
-  have hbs2 := hbs 2 (by omega)
-  have hbs3 := hbs 3 (by omega)
-  have hbs4 := hbs 4 (by omega)
   refine ⟨?_, ?_, ?_, ?_, e0⟩
   · simp only [rowScoped, cells, List.forall_mem_cons]
-    grind [CVar.Scoped.of_le, bitsScoped]
-  · exact ⟨hbx.of_le e0, hby.of_le e0, b4.1.2.2.2.1, b4.1.2.2.2.2, hnsc.of_le l5⟩
-  -- the two equations: the witnesses' readings at the exit and where each later witness read
-  -- them, then every entry cell's reading at every later state carried to the entry by the one
-  -- rule `CVar.val_of_le`, its state fixed at the entry and its conditions found in the context
+    grind [CVar.Scoped.of_le, accScoped, bitsScoped]
+  · exact ⟨hacc.1.of_le e0, hacc.2.1.of_le e0, b4.1.2.2.2.1, b4.1.2.2.2.2, hnsc.of_le l5⟩
+  -- the two equations: the vocabulary, the witnesses' readings at the exit and where each later
+  -- witness read them, and the entry cells' readings, the chain's links found in the context
   · simp (disch := assumption) only [ScaleRound.read, ProverState.read, accRead, bitsRead,
       rowStep, b0.2, b1.2, b2.2, b3.2, b4.2, CVar.val_of_le l5 hnsc, hnrd, hb0.2, hb1.2, hb2.2,
-      hb3.2, CVar.val_of_le (st := s₆)]
+      hb3.2, hrd]
     exact rfl
   · simp (disch := assumption) only [ProverState.read, accRead, bitsRead, accStep, rowStep, b4.2,
-      CVar.val_of_le l5 hnsc, hnrd, hb0.2, hb1.2, hb2.2, hb3.2, CVar.val_of_le (st := s₆)]
+      CVar.val_of_le l5 hnsc, hnrd, hb0.2, hb1.2, hb2.2, hb3.2, hrd]
     exact rfl
 
 open VarBaseMul in
