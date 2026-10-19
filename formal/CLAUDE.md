@@ -37,12 +37,16 @@ PureScript circuit-building DSL (`packages/snarky`). It models how constraint sy
 are *constructed*, complementing `Kimchi`'s constraint-systems-as-data view: a reified op
 tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interpreters
 mirroring `Snarky.Backend.Builder`/`Prover`, whole-circuit `compile`/`solve` with the
-seam law `solve_complete` (a successful solve satisfies every compiled constraint and
-decodes the public slots as declared), and the Lean-only laws beside their
-subjects: interpreter laws in `Snarky/{Builder,Prover}` (witness-independence,
-builder/prover allocation agreement, completeness — a successful prover run satisfies
-every built constraint, plus the bind-composition laws) and per-gadget
-soundness/completeness beside each gadget in `Snarky/DSL/{Field,Boolean,Assert,Bits}`.
+seam law `solve_spec` (a successful solve satisfies every compiled constraint and
+decodes the public slots as declared; `solve_complete` names the same theorem), and the
+Lean-only laws beside their subjects: interpreter laws in `Snarky/{Builder,Prover}`
+(the bind-composition laws, builder/prover allocation agreement);
+a circuit's two readings as `Std.Do` weakest preconditions, soundness at the `Builder V c`
+tag (`Snarky/WP.lean`) and completeness at the `Prover c` tag (`Snarky/Prover/WP.lean`),
+where an emitted row is an obligation at its table with its cells in scope and the adequacy
+theorem `proverWP_prove` makes a triple a fact about `prove`; and per-gadget
+soundness/completeness triples beside each gadget in `Snarky/DSL/{Field,Boolean,Assert,Bits}`
+and `Snarky/Kimchi/Circuit/`, composed by `mvcgen`.
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
 `Mathlib.Algebra.Ring.Defs` in `Snarky/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete

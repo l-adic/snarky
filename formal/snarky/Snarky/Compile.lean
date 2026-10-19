@@ -14,9 +14,9 @@ holes — it is defined exactly below its counter, which is what makes a scoped 
 stable under later allocation. A slot allocated before the body and filled after it would
 be such a hole.
 
-`solve_complete` is the payoff: a circuit whose body is complete solves, and the table it
-produces satisfies every compiled row and reads the input and the output at the public
-bundles. `solve_spec` concludes the same from the body's law at the prover's reading.
+`solve_spec` is the payoff: a circuit whose body has its law at the prover's reading solves,
+and the table it produces satisfies every compiled row and reads the input and the output at
+the public bundles; `solve_complete` is the same theorem under the seam's completeness name.
 `compile_reads` and `compileWith_reads` are the reading side: wherever the compiled
 rows hold, a public input given in the order of `compiledPublicVars` reads as the typed input
 and the body's typed output.
@@ -98,101 +98,6 @@ theorem reads_inputVar [Add F] [Mul F] [Zero F] [A : CircuitType F a avar] (inpu
   simp
 
 /-! ## The seam -/
-
-open CircuitType in
-/-- A circuit whose body is complete solves at an admissible public input: the run
-succeeds, the table it produces satisfies every compiled row, and the compiled system's
-two bundles — the body's output and the public one — both read as the value the solve
-returned, with the input bundle still reading the value the solve was given.
-Admissibility (`CheckedType.Valid`) is the input type's own rows read at the value, so the
-statement covers exactly the inputs the compiled system accepts and assumes nothing else
-about the prover. The input reading is what lets a soundness statement about satisfying
-valuations be applied to the table this produces. -/
-theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] [A : CircuitType F a avar] [CheckedType F c a avar]
-    [B : CircuitType F b bvar] {main : avar → CircuitM F c bvar} (input : a)
-    (hinput : CheckedType.Valid (F := F) (c := c) (var := avar) input)
-    (hmain : Complete (F := F) (c := c)
-      (fun st => Scoped (val := a) st (inputVar (F := F) (a := a)) ∧
-        Reads st.env.get (inputVar (F := F) (a := a)) input)
-      (main (inputVar (F := F) (a := a)))
-      (fun out st' => Scoped (val := b) st' out ∧ WellFormed (val := b) st'.env.get out)) :
-    ∃ (outVal : b) (env : Assignments F),
-      solve (a := a) (b := b) main input = .ok (outVal, env) ∧
-      (∀ con ∈ (compile (a := a) (b := b) main).constraints,
-        ConstraintHolds.Holds env.get con) ∧
-      Reads env.get (inputVar (F := F) (a := a)) input ∧
-      Reads env.get (compile (a := a) (b := b) main).result.1 outVal ∧
-      Reads env.get (compile (a := a) (b := b) main).result.2 outVal := by
-  have hav := scoped_inputVar (F := F) (avar := avar) input
-  have hrv := reads_inputVar (F := F) (avar := avar) input
-  -- the whole-circuit program's law, on the completeness primitives: the input's check,
-  -- the body, the public bundle's witness, and the binding rows, each framed across the
-  -- next
-  have hbody : Complete (F := F) (c := c)
-      (fun st => Scoped (val := a) st (inputVar (F := F) (a := a)) ∧
-        Reads st.env.get (inputVar (F := F) (a := a)) input)
-      (compileBody (a := a) (b := b) main)
-      (fun r st' => ∃ v : b, Scoped (val := b) st' r.1 ∧ Reads st'.env.get r.1 v ∧
-        Scoped (val := b) st' r.2 ∧ Reads st'.env.get r.2 v ∧
-        Reads st'.env.get (inputVar (F := F) (a := a)) input) := by
-    simp only [compileBody]
-    refine Complete.bind
-      (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs
-          (CheckedType.check_complete (c := c) (val := a)
-            (inputVar (F := F) (a := a)) input hinput)))
-      fun _ => ?_
-    refine Complete.bind
-      (Complete.imp (fun _ h => ⟨h.2, h.2⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs hmain))
-      fun out => ?_
-    -- the body's output value, named off its well-formedness
-    refine Complete.instantiate (ι := b)
-      (P := fun v st => CircuitType.ReadsAs (val := b) st out v ∧
-        CircuitType.ReadsAs (val := a) st (inputVar (F := F) (a := a)) input)
-      (fun st h => ⟨h.1.2.choose, ⟨h.1.1, h.1.2.choose_spec⟩, h.2⟩)
-      fun v => ?_
-    refine Complete.bind
-      (Complete.imp (fun st h => ⟨?wrun, h⟩) (fun _ _ h => h)
-        (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
-          (Complete.witness
-            (do let x ← readVar (val := b) out; pure (UnChecked.mk x))
-            (UnChecked.mk v) (by simp))))
-      fun pub => ?_
-    case wrun =>
-      simp only [AsProver.bind_eq, AsProver.run_bind, readVar_run h.1.1,
-        (reads_iff.mp h.1.2).2, Except.bind]
-      rfl
-    refine Complete.bind
-      (Complete.imp
-        (fun st h => ⟨⟨h.2.1.1, CircuitType.scoped_unchecked.mp h.1.1,
-          h.2.1.2, CircuitType.reads_unchecked.mp h.1.2⟩, h⟩)
-        (fun _ _ h => h)
-        (Complete.frame
-          (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
-            CircuitType.monotone_readsAs))
-          (assertEq_complete (c := c) (val := b) out pub.val v)))
-      fun _ => Complete.pure_of fun st h =>
-        ⟨v, h.2.2.1.1, h.2.2.1.2, CircuitType.scoped_unchecked.mp h.2.1.1,
-          CircuitType.reads_unchecked.mp h.2.1.2, h.2.2.2.2⟩
-  obtain ⟨r, st', hrun, hsat, v, hsc1, hrd1, hsc2, hrd2, hrin⟩ :=
-    hbody (seed (F := F) (avar := avar) input) ⟨hav, hrv⟩
-  have hres : r = (compile (a := a) (b := b) main).result := (prove_build_agrees hrun).1
-  refine ⟨v, st'.env, ?_, ?_, hrin, ?_, ?_⟩
-  · unfold solve
-    rw [show prove (compileBody (a := a) (b := b) main)
-        (seed (F := F) (avar := avar) input).nv (seed (F := F) (avar := avar) input).env
-        = .ok (st'.out r) from hrun]
-    show (match (readVar (val := b) r.1).run st'.env with
-      | Except.error e => Except.error e
-      | Except.ok outVal => Except.ok (outVal, st'.env)) = Except.ok (v, st'.env)
-    rw [readVar_run hsc1, (reads_iff.mp hrd1).2]
-  · exact hsat le_rfl
-  · rw [← hres]
-    exact hrd1
-  · rw [← hres]
-    exact hrd2
 
 open CircuitType Std.Do in
 /-- A circuit whose body has its law at the prover's reading solves at an admissible public
@@ -289,6 +194,29 @@ theorem solve_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds 
     exact hrd1.2
   · rw [← hres]
     exact hrd2.2
+
+open CircuitType Std.Do in
+/-- The solver's completeness under the seam's completeness name: `solve_spec`'s statement,
+proved by `solve_spec`, which is the result. The axiom gate roots this name, so a search for
+the solver's completeness law lands on a checked theorem. -/
+theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] [A : CircuitType F a avar] [CheckedType F (Prover c) a avar]
+    [WPCheckedType F (Prover c) a avar] [B : CircuitType F b bvar]
+    {main : avar → CircuitM F (Prover c) bvar} (input : a)
+    (hinput : CheckedType.Valid (F := F) (c := Prover c) (var := avar) input)
+    (hmain : ∀ st₀ : ProverState F,
+      ⦃fun s => ⌜s = st₀ ∧ ReadsAs (val := a) st₀ (inputVar (F := F) (a := a)) input⌝⦄
+      main (inputVar (F := F) (a := a))
+      ⦃⇓ out s' => ⌜Scoped (val := b) s' out ∧ WellFormed (val := b) s'.env.get out ∧
+        st₀ ≤ s'⌝⦄) :
+    ∃ (outVal : b) (env : Assignments F),
+      solve (c := Prover c) (a := a) (b := b) main input = .ok (outVal, env) ∧
+      (∀ con ∈ (compile (c := Prover c) (a := a) (b := b) main).constraints,
+        ConstraintHolds.Holds env.get con) ∧
+      Reads env.get (inputVar (F := F) (a := a)) input ∧
+      Reads env.get (compile (c := Prover c) (a := a) (b := b) main).result.1 outVal ∧
+      Reads env.get (compile (c := Prover c) (a := a) (b := b) main).result.2 outVal :=
+  solve_spec input hinput hmain
 
 /-- The counter the body starts from: past the input slots, and past whatever the input
 bundle's own check allocated. -/

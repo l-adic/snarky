@@ -58,18 +58,7 @@ def roots : List Name :=
     `Snarky.builder_spec_iff,
     `Snarky.addConstraint_spec,
 
-    -- The completeness vocabulary: a run's reach, the rows it leaves satisfied, and the
-    -- reading that survives a later run.
-    `Snarky.Complete.bind,
-    `Snarky.Complete.frame,
-    `Snarky.Complete.imp,
-    `Snarky.Complete.seq,
-    `Snarky.Complete.pure,
-    `Snarky.Complete.pure_of,
-    `Snarky.Complete.addConstraint,
-    `Snarky.Complete.of_false,
-    `Snarky.Complete.instantiate,
-    `Snarky.run_le,
+    -- The reading that survives a later run.
     `Snarky.CVar.val_of_le,
     `Snarky.CircuitType.Reads.of_le,
     `Snarky.CircuitType.Scoped.mono,
@@ -77,23 +66,20 @@ def roots : List Name :=
 
     -- The leaf interface every gadget builds on.
     `Snarky.witness_spec,
-    `Snarky.Complete.witness,
 
     -- The traversal combinators, whose laws the ladders' transports go through.
     `Snarky.forM_spec,
     `Snarky.mapAccumM_spec,
-    `Snarky.mapAccumM_complete,
     `Snarky.zipWithVecM_spec,
-    `Snarky.zipWithVecM_complete,
 
     -- The DSL: field operations.
     `Snarky.equals_spec,
     `Snarky.isZero_spec,
     `Snarky.neq_spec,
-    `Snarky.mul_spec, `Snarky.mul_complete,
+    `Snarky.mul_spec,
     `Snarky.inv_spec,
     `Snarky.div_spec,
-    `Snarky.square_spec, `Snarky.square_complete,
+    `Snarky.square_spec,
     `Snarky.pow_spec,
 
     -- The DSL: boolean operations.
@@ -110,11 +96,11 @@ def roots : List Name :=
 
     -- The DSL: assertions.
     `Snarky.assert_spec,
-    `Snarky.assertEq_spec, `Snarky.assertEq_complete,
-    `Snarky.assertEqual_spec, `Snarky.assertEqual_complete,
+    `Snarky.assertEq_spec,
+    `Snarky.assertEqual_spec,
     `Snarky.assertNonZero_spec,
     `Snarky.assertNotEqual_spec,
-    `Snarky.assertSquare_spec, `Snarky.assertSquare_complete,
+    `Snarky.assertSquare_spec,
     `Snarky.assertAny_spec,
     `Snarky.assertAll_spec,
     `Snarky.assertExactlyOne_spec,
@@ -247,7 +233,7 @@ def roots : List Name :=
     -- The Kimchi gadgets at the deployed Vesta curve: the laws whose closures carry the Pasta
     -- certificates (`deployedRoots`).
     `Snarky.Kimchi.vesta_varBaseMul_read, `Snarky.Kimchi.EndoMul.vesta_endoMul_read,
-    -- The state-relative completeness pilot, pure core Lean.
+    -- The completeness laws at the prover's reading, pure core Lean.
     `Snarky.Prover.inv_spec, `Snarky.Prover.mul_spec, `Snarky.Prover.div_spec,
     `Snarky.Prover.isZero_spec, `Snarky.Prover.assertEqual_spec,
     `Snarky.Prover.vector_mapM_spec, `Snarky.Prover.zipWithVecM_spec, `Snarky.Prover.forM_spec,

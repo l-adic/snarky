@@ -1,5 +1,4 @@
 import Snarky.DSL.Field
-import Snarky.Tactic
 import Snarky.DSL.Assert
 import Snarky.DSL.Boolean
 import Snarky.Kimchi.Semantics

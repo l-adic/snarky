@@ -100,7 +100,6 @@ instance instCheckedTypeSpongeState [Field F] [BasicSystem F c] [ConstraintHolds
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_complete _ _ _ := Complete.pure
 
 instance instWPCheckedTypeSpongeState [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     WPCheckedType F c (SpongeStateVal F) (SpongeState F) :=
@@ -291,7 +290,6 @@ private theorem chainHolds_rounds [Field F] [DecidableEq F] (p : Poseidon.Params
       Array.getD_eq_getD_getElem?]
   rw [hgd]
   rfl
-
 
 /-! ### At the prover's reading -/
 

@@ -61,44 +61,6 @@ theorem CheckedPoint.check_spec [Field F] [DecidableEq F] [BasicSystem F c] [Con
   simp [CVar.val]
   ring
 
-/-- The check's completeness law: from a point reading as an on-curve value, the run
-succeeds and its rows hold at every extension of the final table. -/
-theorem CheckedPoint.check_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : F) (p : AffinePoint (FVar F))
-    (pv : AffinePoint F) (hcurve : pv.y * pv.y = pv.x ^ 3 + a * pv.x + b) :
-    Complete (fun st => CircuitType.ReadsAs (val := AffinePoint F) st p pv)
-      (CheckedPoint.check (c := c) a b p) (fun _ _ => True) := by
-  have hxpt : ∀ st : ProverState F, CircuitType.ReadsAs (val := AffinePoint F) st p pv →
-      CircuitType.ReadsAs (val := F) st p.x pv.x := fun _ h =>
-    ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp h.1).1,
-      CircuitType.reads_fvar.mpr (reads_affinePoint.mp h.2).1⟩
-  have hypt : ∀ st : ProverState F, CircuitType.ReadsAs (val := AffinePoint F) st p pv →
-      CircuitType.ReadsAs (val := F) st p.y pv.y := fun _ h =>
-    ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp h.1).2,
-      CircuitType.reads_fvar.mpr (reads_affinePoint.mp h.2).2⟩
-  simp only [CheckedPoint.check]
-  refine Complete.bind (mid := fun x2 st => CircuitType.ReadsAs (val := F) st x2
-      (pv.x * pv.x) ∧ CircuitType.ReadsAs (val := AffinePoint F) st p pv)
-    (Complete.imp (fun st h => ⟨hxpt st h, h⟩) (fun _ _ h => h)
-      (Complete.frame CircuitType.monotone_readsAs (square_complete p.x pv.x)))
-    fun x2 => ?_
-  refine Complete.bind (mid := fun x3 st => CircuitType.ReadsAs (val := F) st x3
-      (pv.x * pv.x * pv.x) ∧ CircuitType.ReadsAs (val := AffinePoint F) st p pv)
-    (Complete.imp (fun st h => ⟨⟨h.1, hxpt st h.2⟩, h.2⟩) (fun _ _ h => h)
-      (Complete.frame CircuitType.monotone_readsAs (mul_complete x2 p.x _ _)))
-    fun x3 => ?_
-  refine Complete.imp (fun st h => ⟨hypt st h.2, ?_⟩) (fun _ _ h => h)
-    (assertSquare_complete p.y (CheckedPoint.rhs a b p.x x3) pv.y
-      (pv.x * pv.x * pv.x + a * pv.x + b) (by rw [hcurve]; ring))
-  obtain ⟨⟨h3s, h3r⟩, hp⟩ := h
-  have hx := hxpt st hp
-  refine ⟨CircuitType.scoped_fvar.mpr ?_, CircuitType.reads_fvar.mpr ?_⟩
-  · exact CVar.Scoped.add_ (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp h3s)
-      (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp hx.1))) (CVar.scoped_const _ _)
-  · simp only [CheckedPoint.rhs, CVar.val_add_, CVar.val_scale_, CircuitType.reads_fvar.mp h3r,
-      CircuitType.reads_fvar.mp hx.2]
-    simp [CVar.val]
-
 /-- The check's law at the prover's reading: from a point reading as an on-curve value, the
 run succeeds and the state only grows. -/
 theorem CheckedPoint.check_prover_spec [Field F] [DecidableEq F] [BasicSystem F c]
@@ -120,18 +82,6 @@ instance instCheckedTypeCheckedPoint [Field F] [DecidableEq F] [BasicSystem F c]
   check p := CheckedPoint.check a b p.pt
   post V p := p.pt.y.val V * p.pt.y.val V = p.pt.x.val V ^ 3 + a * p.pt.x.val V + b
   check_sound V p nv hsat := (builder_spec_iff _ _).mp (CheckedPoint.check_spec a b p.pt) nv hsat
-  check_complete := by
-    intro v x hv
-    have hcurve : x.pt.y * x.pt.y = x.pt.x ^ 3 + a * x.pt.x + b := by
-      have h := hv (fun _ => 0) (CircuitType.constVar x) (CircuitType.reads_constVar _ x)
-      simpa [CircuitType.constVar, CircuitType.ofEquiv, CheckedPoint.equivPoint, CVar.val] using h
-    exact Complete.imp (fun _ h =>
-        ⟨(CircuitType.scoped_ofEquiv (CheckedPoint.equivPoint a b F)
-          (CheckedPoint.equivPoint a b (FVar F))).mp h.1,
-          (CircuitType.reads_ofEquiv (CheckedPoint.equivPoint a b F)
-            (CheckedPoint.equivPoint a b (FVar F))).mp h.2⟩)
-      (fun _ _ h => h) (CheckedPoint.check_complete a b v.pt x.pt hcurve)
-
 
 /-- The on-curve check's law, at the prover's reading. -/
 instance instWPCheckedTypeCheckedPoint [Field F] [DecidableEq F] [BasicSystem F c]

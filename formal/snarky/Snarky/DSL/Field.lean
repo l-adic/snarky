@@ -79,45 +79,6 @@ open Std.Do in
       | (rename_i h
          exact ((LawfulBasicSystem.holds_r1cs V _ _ _).mp h).symm)
 
-/-- `mul`'s completeness law: from operands that read `xv` and `yv` the run succeeds,
-any row it built is satisfied at every extension of the final table, and the result reads
-their product — scope and reading together, as `CircuitType.ReadsAs` carries them. -/
-@[complete_law] theorem mul_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
-        CircuitType.ReadsAs (val := F) st y yv)
-      (mul (c := c) x y)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv * yv)) := by
-  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
-      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
-    fun h => CircuitType.reads_fvar.mp h.2
-  simp only [mul]
-  split
-  · exact Complete.pure_of fun st h => ⟨CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
-      CircuitType.reads_fvar.mpr (by rw [← hrd h.1, ← hrd h.2]; rfl)⟩
-  · exact Complete.pure_of fun st h =>
-      ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp h.2.1)),
-        CircuitType.reads_fvar.mpr (by
-          rw [← hrd h.1, ← hrd h.2, CVar.val_scale_]; rfl)⟩
-  · exact Complete.pure_of fun st h =>
-      ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp h.1.1)),
-        CircuitType.reads_fvar.mpr (by
-          rw [← hrd h.1, ← hrd h.2, CVar.val_scale_]
-          simp [CVar.val, mul_comm])⟩
-  · refine Complete.bind
-      (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
-          (Complete.witness (mul.advice x y) (xv * yv) (by simp))))
-      (fun r => Complete.bind (Complete.addConstraint ?_)
-        fun _ => Complete.pure_of fun _ h => h.1)
-    · simp [mul.advice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1.1),
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1), hrd h.1, hrd h.2]
-    · rintro st ⟨hr, hx, hy⟩ stf hle
-      refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hx.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hy.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1), hrd hx, hrd hy, hrd hr]
-
 attribute [irreducible] mul
 
 /-- Square a field variable: a constant folds to its square, otherwise the square is
@@ -150,32 +111,6 @@ open Std.Do in
       | simp
       | (rename_i h
          exact ((LawfulBasicSystem.holds_square V _ _).mp h).symm)
-
-/-- `square`'s completeness law: from an operand that reads `xv` the run succeeds, any row
-it built is satisfied at every extension of the final table, and the result reads
-`xv * xv`. -/
-theorem square_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (square (c := c) x)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv * xv)) := by
-  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
-      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
-    fun h => CircuitType.reads_fvar.mp h.2
-  simp only [square]
-  split
-  · exact Complete.pure_of fun st h => ⟨CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
-      CircuitType.reads_fvar.mpr (by rw [← hrd h]; rfl)⟩
-  · refine Complete.bind
-      (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs (Complete.witness (square.advice x) (xv * xv)
-          (by simp))))
-      (fun r => Complete.bind (Complete.addConstraint ?_)
-        fun _ => Complete.pure_of fun _ h => h.1)
-    · simp [square.advice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1), hrd h]
-    · rintro st ⟨hr, hx⟩ stf hle
-      refine (LawfulBasicSystem.holds_square ..).mpr ?_
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hx.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1), hrd hx, hrd hr]
 
 attribute [irreducible] square
 

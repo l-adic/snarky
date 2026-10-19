@@ -1,5 +1,4 @@
 import Snarky.DSL.Utils
-import Snarky.Tactic
 import Snarky.Kimchi.Semantics
 import Kimchi.Gate.Semantics.AddComplete
 
@@ -51,7 +50,6 @@ instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_complete _ _ _ := Complete.pure
 
 instance instWPCheckedTypeAffinePoint [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     WPCheckedType F c (AffinePoint F) (AffinePoint (FVar F)) :=
@@ -274,7 +272,6 @@ theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     exact ⟨trivial, by rw [CVar.val_negate_]; exact hneg⟩
 
 /-- A curve read survives the table's growth, with the same curve point. -/
-@[complete_mono]
 theorem monotone_onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {p : AffinePoint (FVar F)} {P : W.Point} :
     Monotone fun st : ProverState F => OnCurveAs W st p P := by

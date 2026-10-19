@@ -89,33 +89,6 @@ instance instAllocBranchDataCheckedType :
   post V d := (∀ m ∈ d.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
     ∃ n : ℕ, n < 2 ^ 16 ∧ d.domainLog2.val V = (n : Fp)
   check_sound V d nv h := (builder_spec_iff _ _).mp (AllocBranchData.check_spec d) nv h
-  check_complete := by
-    rintro ⟨m, dl⟩ ⟨a, x⟩ hv
-    -- an admissible `log2` is below `2 ^ 16`
-    have hc := CircuitType.reads_constVar (F := Fp) (var := AllocBranchData (FVar Fp) (BoolVar Fp))
-      (fun _ => 0) (⟨a, x⟩ : AllocBranchData Fp Bool)
-    obtain ⟨_, n, hn, hx⟩ := hv _ _ hc
-    replace hx : x = (n : Fp) :=
-      (CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp hc).2).symm.trans hx
-    have hlt : ToNat.toNat x < 2 ^ (16 * 1) := by
-      rw [hx, LawfulToNat.toNat_natCast n
-        (show n < PALLAS_BASE_CARD from lt_trans hn (by decide))]
-      exact hn
-    refine Complete.bind (Complete.imp (fun st (h : CircuitType.ReadsAs
-        (val := Vector Bool MaxProofsVerified × Fp) st (m, dl) (a, x)) =>
-          ⟨h, (CircuitType.scoped_prod.mp h.1).2, (CircuitType.reads_prod.mp h.2).2⟩)
-        (fun _ _ h => h.2)
-        (Complete.frame CircuitType.monotone_readsAs
-          (CheckedType.check_complete (c := KimchiConstraint Fp)
-            (val := Vector Bool MaxProofsVerified × Fp) (m, dl) (a, x)
-            (show CheckedType.Valid (F := Fp) (c := KimchiConstraint Fp)
-              (var := Vector (BoolVar Fp) MaxProofsVerified × FVar Fp) (a, x) by simp))))
-      fun _ => ?_
-    exact Complete.bind
-      (Complete.imp (fun st h => ⟨h, CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
-          CircuitType.reads_fvar.mpr rfl⟩) (fun _ _ _ => trivial)
-        (EndoScalar.toField_complete_rows (by decide) (by decide) 1 dl _ x _ hlt))
-      fun _ => Complete.pure
 
 /-- The branch data's check, read at a valuation. -/
 instance instAllocBranchDataCheckedTypeBuilder {V : Valuation Fp} :

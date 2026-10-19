@@ -37,29 +37,6 @@ open Std.Do in
     intro h
     exact (LawfulBasicSystem.holds_equal V _ _).mp h
 
-/-- `assertEqual`'s completeness law: where the operands read equal the run succeeds and
-its row is satisfied — the unequal-constant arm is unreachable. -/
-@[complete_law]
-theorem assertEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (v : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x v ∧
-      CircuitType.ReadsAs (val := F) st y v)
-      (assertEqual (c := c) x y) (fun _ _ => True) := by
-  have hrow : ∀ st : ProverState F, (CircuitType.ReadsAs (val := F) st x v ∧
-      CircuitType.ReadsAs (val := F) st y v) → ∀ stf : ProverState F, st ≤ stf →
-      ConstraintHolds.Holds stf.env.get (BasicSystem.equal (c := c) x y) := by
-    rintro st ⟨⟨hx, hvx⟩, ⟨hy, hvy⟩⟩ stf hle
-    rw [CircuitType.scoped_fvar] at hx hy
-    rw [CircuitType.reads_fvar] at hvx hvy
-    exact (LawfulBasicSystem.holds_equal _ _ _).mpr
-      (by rw [CVar.val_of_le hle hx, CVar.val_of_le hle hy, hvx, hvy])
-  simp only [assertEqual]
-  split
-  · split
-    · exact Complete.pure_of fun _ _ => trivial
-    · exact Complete.imp (fun _ h => h) (fun _ _ _ => trivial) (Complete.addConstraint hrow)
-  · exact Complete.imp (fun _ h => h) (fun _ _ _ => trivial) (Complete.addConstraint hrow)
-
 open Std.Do in
 /-- `assertEqual`'s state-relative completeness: where the operands are in scope and read equal,
 the run succeeds and the state only grows. -/
@@ -182,20 +159,6 @@ open Std.Do in
   mvcgen
   intro h
   exact (LawfulBasicSystem.holds_square V _ _).mp h
-
-/-- `assertSquare`'s completeness law: where the identity reads, the row is satisfied. -/
-theorem assertSquare_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
-    (hxy : xv * xv = yv) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
-      CircuitType.ReadsAs (val := F) st y yv)
-      (assertSquare (c := c) x y) (fun _ _ => True) := by
-  refine Complete.imp (fun _ h => h) (fun _ _ _ => trivial) (Complete.addConstraint ?_)
-  rintro st ⟨⟨hx, hvx⟩, ⟨hy, hvy⟩⟩ stf hle
-  rw [CircuitType.scoped_fvar] at hx hy
-  rw [CircuitType.reads_fvar] at hvx hvy
-  exact (LawfulBasicSystem.holds_square _ _ _).mpr
-    (by rw [CVar.val_of_le hle hx, CVar.val_of_le hle hy, hvx, hvy]; exact hxy)
 
 attribute [irreducible] assertSquare
 
@@ -493,36 +456,6 @@ open Std.Do in
     exact (builder_spec_iff _ _).mp (assertEq_fields_spec (c := c) (val := val) t e) nv hsat
   rw [← CircuitType.value_roundTrip (F := F) (var := var) tv, hfields,
     CircuitType.value_roundTrip]
-
-/-- `assertEq`'s completeness law: where the operands read the same value the run
-succeeds and its rows are satisfied at every extension of the final table. -/
-theorem assertEq_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var] (t e : var) (a : val) :
-    Complete (F := F) (c := c) (fun st => CircuitType.Scoped (val := val) st t ∧
-        CircuitType.Scoped (val := val) st e ∧ CircuitType.Reads st.env.get t a ∧
-        CircuitType.Reads st.env.get e a)
-      (assertEq (c := c) (val := val) t e) (fun _ _ => True) := by
-  refine Complete.bind
-    (zipWithVecM_complete (c := c) assertEqual (CircuitType.varToFields (val := val) t)
-      (CircuitType.varToFields (val := val) e)
-      (fun st => CircuitType.Scoped (val := val) st t ∧ CircuitType.Scoped (val := val) st e ∧
-        CircuitType.Reads st.env.get t a ∧ CircuitType.Reads st.env.get e a)
-      (fun _ _ _ => True)
-      (fun _ _ hle h => ⟨CircuitType.Scoped.mono (ProverState.nv_le_of_le hle) h.1,
-        CircuitType.Scoped.mono (ProverState.nv_le_of_le hle) h.2.1, h.2.2.1.of_le h.1 hle,
-        h.2.2.2.of_le h.2.1 hle⟩)
-      (fun _ _ => monotone_const)
-      (fun i st' h => by
-        have h₁ := congrArg (fun v : Vector F (CircuitType.size F val) => v[i.val]) h.2.2.1
-        have h₂ := congrArg (fun v : Vector F (CircuitType.size F val) => v[i.val]) h.2.2.2
-        simp only [getElem_mapVec] at h₁ h₂
-        exact assertEqual_complete (c := c) _ _
-          ((CircuitType.valueToFields (F := F) a)[i.val]) st'
-          ⟨⟨CircuitType.scoped_fvar.mpr (h.1 _ (by simp)),
-              CircuitType.reads_fvar.mpr h₁⟩,
-            ⟨CircuitType.scoped_fvar.mpr (h.2.1 _ (by simp)),
-              CircuitType.reads_fvar.mpr h₂⟩⟩))
-    fun _ => Complete.pure_of fun _ _ => trivial
 
 open Std.Do in
 /-- The fields' loop of `assertEq`, registered: `zipWithVecM`'s law at `assertEqual`, each field
