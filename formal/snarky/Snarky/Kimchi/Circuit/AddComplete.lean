@@ -54,9 +54,9 @@ instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
   check_sound _ _ _ _ := trivial
   check_complete _ _ _ := Complete.pure
 
-instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
-    Prover.CheckFree F c (AffinePoint F) (AffinePoint (FVar F)) :=
-  ⟨fun _ => rfl⟩
+instance instWPCheckedTypeAffinePoint [Field F] [BasicSystem F c] [ConstraintHolds F c] :
+    WPCheckedType F c (AffinePoint F) (AffinePoint (FVar F)) :=
+  ⟨fun _ _ _ _ _ => le_rfl⟩
 
 /-- A point's coordinates carry no admissibility condition: what a witness of a point owes
 `CheckedType.Valid`, discharged by `simp`. -/
@@ -120,11 +120,6 @@ private instance instCircuitTypeAddAux : CircuitType F (AddAux F) (AddAux (FVar 
 private instance instCheckedTypeAddAux [Field F] [BasicSystem F c] [ConstraintHolds F c] :
     CheckedType F c (AddAux F) (AddAux (FVar F)) :=
   CheckedType.ofEquiv (AddAux.equiv F) (AddAux.equiv (FVar F))
-
-private instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
-    Prover.CheckFree F c (AddAux F) (AddAux (FVar F)) :=
-  ⟨fun v => Prover.CheckFree.check_eq (F := F) (c := c) (val := F × F × F)
-    (AddAux.equiv (FVar F) v)⟩
 
 /-- An auxiliary bundle is in scope when its three columns are. -/
 @[simp] private theorem scoped_addAux {st : ProverState F} {a : AddAux (FVar F)} :
@@ -678,7 +673,7 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
   Prover.register (Prover.witness_of_run (c := c) (addFast.sameXAdvice q1 q2)
     (fun st => q1.x.Scoped st ∧ q2.x.Scoped st)
     (fun st => addFast.sameXVal (st.read q1.x) (st.read q2.x))
-    fun _ h => addFast.sameXAdvice_run h.1 h.2)
+    (fun _ h => addFast.sameXAdvice_run h.1 h.2) fun _ _ => by simp)
 
 /-- `addFast.infAdvice` returns the infinity flag. -/
 @[spec] private def Prover.addFast_infAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
@@ -687,7 +682,7 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
     (fun st => (↑sameX : CVar F).Scoped st ∧ q1.y.Scoped st ∧ q2.y.Scoped st)
     (fun st => addFast.infVal (CircuitType.readVal (val := Bool) st.env.get sameX) (st.read q1.y)
       (st.read q2.y))
-    fun _ h => addFast.infAdvice_run h.1 h.2.1 h.2.2)
+    (fun _ h => addFast.infAdvice_run h.1 h.2.1 h.2.2) fun _ _ => by simp)
 
 /-- `addFast.auxAdvice` returns the auxiliary columns. -/
 @[spec] private def Prover.addFast_auxAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
@@ -697,7 +692,8 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
       q2.x.Scoped st ∧ q2.y.Scoped st)
     (fun st => addFast.auxVal (CircuitType.readVal (val := Bool) st.env.get sameX) (st.read q1.x)
       (st.read q1.y) (st.read q2.x) (st.read q2.y))
-    fun _ h => addFast.auxAdvice_run h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2)
+    (fun _ h => addFast.auxAdvice_run h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2)
+    fun _ _ => by simp)
 
 /-- `addFast.sumAdvice` returns the sum. -/
 @[spec] private def Prover.addFast_sumAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
@@ -705,7 +701,7 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
   Prover.register (Prover.witness_of_run (c := c) (addFast.sumAdvice q1 q2 sl)
     (fun st => sl.Scoped st ∧ q1.x.Scoped st ∧ q2.x.Scoped st ∧ q1.y.Scoped st)
     (fun st => addFast.sumVal (st.read sl) (st.read q1.x) (st.read q2.x) (st.read q1.y))
-    fun _ h => addFast.sumAdvice_run h.1 h.2.1 h.2.2.1 h.2.2.2)
+    (fun _ h => addFast.sumAdvice_run h.1 h.2.1 h.2.2.1 h.2.2.2) fun _ _ => by simp)
 
 /-- The infinity column: under `checkFinite` the constant `false`, otherwise the witnessed flag;
 the reading named by `addFast.infFlag`. -/

@@ -542,7 +542,7 @@ open VarBaseMul in
     (fun st => nPrev.Scoped st ∧ bitsScoped st bs)
     (fun st => nAccVal (st.read nPrev) (st.read bs[0]) (st.read bs[1]) (st.read bs[2])
       (st.read bs[3]) (st.read bs[4]))
-    fun _ h => nAccWit_run h.1 h.2)
+    (fun _ h => nAccWit_run h.1 h.2) fun _ _ => by simp)
 
 open VarBaseMul in
 /-- `bitWit` returns the bit step's values. -/
@@ -551,7 +551,7 @@ open VarBaseMul in
   Prover.register (Prover.witness_of_run (c := c) (bitWit t b acc)
     (fun st => t.x.Scoped st ∧ t.y.Scoped st ∧ acc.x.Scoped st ∧ acc.y.Scoped st ∧ b.Scoped st)
     (fun st => bitVal (st.read t.x) (st.read t.y) (st.read acc.x) (st.read acc.y) (st.read b))
-    fun _ h => bitWit_run h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2)
+    (fun _ h => bitWit_run h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2) fun _ _ => by simp)
 
 open VarBaseMul in
 /-- The round's step fact: its cells in scope, the next accumulator in scope, the round reading
@@ -1807,7 +1807,7 @@ open VarBaseMul in
     [ConstraintHolds F c] (n : ℕ) (scalar : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (lsbBitsWit n scalar)
     (fun st => scalar.Scoped st) (fun st => lsbBitsVal n (st.read scalar))
-    fun _ h => lsbBitsWit_run h)
+    (fun _ h => lsbBitsWit_run h) fun _ _ => by simp)
 
 open VarBaseMul in
 /-- **`varBaseMul`'s state-relative completeness.** From a base in scope reading as a curve

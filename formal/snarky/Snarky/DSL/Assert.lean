@@ -196,6 +196,23 @@ theorem assertSquare_complete [Field F] [DecidableEq F] [BasicSystem F c]
 
 attribute [irreducible] assertSquare
 
+open Std.Do in
+/-- `assertSquare`'s state-relative completeness: where the operands are in scope and the
+second reads the square of the first, the run succeeds and the state only grows. -/
+theorem Prover.assertSquare_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀ ∧ st₀.read x * st₀.read x = st₀.read y⌝⦄
+    assertSquare (c := Prover c) x y
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  unfold assertSquare
+  mvcgen
+  all_goals grind [LawfulBasicSystem.holds_square]
+
+/-- Registered. -/
+@[spec] private def Prover.assertSquare_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :=
+  Prover.register (Prover.assertSquare_spec (c := c) x y)
+
 /-! ## Booleans -/
 
 /-- Assert a boolean holds: its bit equals `1` — `assertEqual`'s rows. -/

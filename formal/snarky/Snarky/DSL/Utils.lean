@@ -139,8 +139,9 @@ open Std.Do
     [ConstraintHolds F c]
     (x : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (readVar (val := F) x) (fun st => x.Scoped st)
-    (fun st => st.read x) fun _ h => by
-      rw [readVar_run (CircuitType.scoped_fvar.mpr h), CircuitType.readVal_fvar])
+    (fun st => st.read x)
+    (fun _ h => by rw [readVar_run (CircuitType.scoped_fvar.mpr h), CircuitType.readVal_fvar])
+    fun _ _ => by simp)
 
 /-- `sealVar`'s completeness: the pass-through arms read the operand by the affine reading,
 the witnessing arm through its fresh cell and `equal` row; the result reads the operand's

@@ -102,6 +102,10 @@ instance instCheckedTypeSpongeState [Field F] [BasicSystem F c] [ConstraintHolds
   check_sound _ _ _ _ := trivial
   check_complete _ _ _ := Complete.pure
 
+instance instWPCheckedTypeSpongeState [Field F] [BasicSystem F c] [ConstraintHolds F c] :
+    WPCheckedType F c (SpongeStateVal F) (SpongeState F) :=
+  ⟨fun _ _ _ _ _ => le_rfl⟩
+
 /-- A state triple carries no admissibility condition. -/
 @[simp] theorem valid_spongeState [Field F] [BasicSystem F c] [ConstraintHolds F c]
     {v : SpongeStateVal F} :

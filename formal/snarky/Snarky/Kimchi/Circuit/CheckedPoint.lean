@@ -99,6 +99,21 @@ theorem CheckedPoint.check_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.reads_fvar.mp hx.2]
     simp [CVar.val]
 
+/-- The check's law at the prover's reading: from a point reading as an on-curve value, the
+run succeeds and the state only grows. -/
+private theorem CheckedPoint.check_prover_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : F) (p : AffinePoint (FVar F))
+    (pv : AffinePoint F) (hcurve : pv.y * pv.y = pv.x ^ 3 + a * pv.x + b)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ CircuitType.ReadsAs (val := AffinePoint F) st₀ p pv⌝⦄
+    CheckedPoint.check (c := Prover c) a b p
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  simp only [CheckedPoint.check]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, scoped_affinePoint, reads_affinePoint,
+    CheckedPoint.rhs, CVar.Scoped.add_, CVar.Scoped.scale_, CVar.scoped_const, CVar.val_add_,
+    CVar.val_scale_, CVar.val, CVar.Scoped.of_le, ProverState.read_of_le, pow_succ, pow_zero]
+
 instance instCheckedTypeCheckedPoint [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : F) :
     CheckedType F c (CheckedPoint a b F) (CheckedPoint a b (FVar F)) where
@@ -116,5 +131,21 @@ instance instCheckedTypeCheckedPoint [Field F] [DecidableEq F] [BasicSystem F c]
           (CircuitType.reads_ofEquiv (CheckedPoint.equivPoint a b F)
             (CheckedPoint.equivPoint a b (FVar F))).mp h.2⟩)
       (fun _ _ h => h) (CheckedPoint.check_complete a b v.pt x.pt hcurve)
+
+
+/-- The on-curve check's law, at the prover's reading. -/
+instance instWPCheckedTypeCheckedPoint [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : F) :
+    WPCheckedType F c (CheckedPoint a b F) (CheckedPoint a b (FVar F)) :=
+  ⟨fun v x s hr hv => by
+    have hcurve : x.pt.y * x.pt.y = x.pt.x ^ 3 + a * x.pt.x + b := by
+      have h := hv (fun _ => 0) (CircuitType.constVar x) (CircuitType.reads_constVar _ x)
+      simpa [CircuitType.constVar, CircuitType.ofEquiv, CheckedPoint.equivPoint, CVar.val] using h
+    have hpt : CircuitType.ReadsAs (val := AffinePoint F) s v.pt x.pt :=
+      ⟨(CircuitType.scoped_ofEquiv (CheckedPoint.equivPoint a b F)
+          (CheckedPoint.equivPoint a b (FVar F))).mp hr.1,
+        (CircuitType.reads_ofEquiv (CheckedPoint.equivPoint a b F)
+          (CheckedPoint.equivPoint a b (FVar F))).mp hr.2⟩
+    exact CheckedPoint.check_prover_spec a b v.pt x.pt hcurve s s ⟨rfl, hpt⟩⟩
 
 end Snarky.Kimchi
