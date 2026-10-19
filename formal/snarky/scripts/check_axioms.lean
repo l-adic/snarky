@@ -260,6 +260,17 @@ def roots : List Name :=
     `Snarky.Prover.mapAccumM_spec, `Snarky.Prover.mapAccumM_scan_spec,
     `Snarky.Prover.inv_reg, `Snarky.Prover.mul_reg, `Snarky.Prover.div_reg,
     `Snarky.Prover.isZero_reg, `Snarky.Prover.assertEqual_reg,
+    `Snarky.Prover.sealVar_spec, `Snarky.Kimchi.Prover.sealPoint_spec,
+    `Snarky.Kimchi.Prover.infColumn_spec, `Snarky.Kimchi.Prover.addFast_spec,
+    `Snarky.Kimchi.Prover.scaleRound_spec, `Snarky.Kimchi.Prover.varBaseMul_spec,
+    `Snarky.Prover.inv_advice_reg, `Snarky.Prover.mul_advice_reg,
+    `Snarky.Prover.isZero_bitAdvice_reg, `Snarky.Prover.isZero_invAdvice_reg,
+    `Snarky.Prover.readVar_reg, `Snarky.Prover.sealVar_reg, `Snarky.Kimchi.Prover.sealPoint_reg,
+    `Snarky.Kimchi.Prover.addFast_sameXAdvice_reg, `Snarky.Kimchi.Prover.addFast_infAdvice_reg,
+    `Snarky.Kimchi.Prover.addFast_auxAdvice_reg, `Snarky.Kimchi.Prover.addFast_sumAdvice_reg,
+    `Snarky.Kimchi.Prover.infColumn_reg, `Snarky.Kimchi.Prover.nAccWit_reg,
+    `Snarky.Kimchi.Prover.bitWit_reg, `Snarky.Kimchi.Prover.scaleLoop_reg,
+    `Snarky.Kimchi.Prover.lsbBitsWit_reg,
 
     -- The deployed dictionaries.
     `Snarky.Kimchi.HasEndo.pallas,

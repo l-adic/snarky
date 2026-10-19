@@ -134,6 +134,13 @@ theorem ProverState.read_of_le [Add F] [Mul F] [Zero F] {st st' : ProverState F}
     (hle : st ≤ st') {x : CVar F} (hx : x.Scoped st) : st'.read x = st.read x :=
   CVar.val_of_le hle hx
 
+/-- A bundle's reading survives the state's growth: `CircuitType.monotone_readsAs` as the
+plain lemma a chain's conditions cite. -/
+theorem CircuitType.ReadsAs.of_le [Add F] [Mul F] [Zero F] {val var : Type}
+    [CircuitType F val var] {st st' : ProverState F} (hle : st ≤ st') {r : var} {v : val}
+    (h : CircuitType.ReadsAs (val := val) st r v) : CircuitType.ReadsAs (val := val) st' r v :=
+  CircuitType.monotone_readsAs hle h
+
 /-! ## Registration
 
 A law is cited by hand; what `mvcgen` is given is its registered reading, a definition suffixed
@@ -168,58 +175,127 @@ theorem Prover.register [Zero F] [ConstraintHolds F c] {α : Type} {g : CircuitM
   exact (wp g).mono _ _ ⟨fun r s' hp => Prover.Reg.iff.mpr hp, ExceptConds.entails_false⟩ s
     (h st₀ s hs)
 
-/-! ## Primitive specs -/
+/-! ## Primitive specs
 
-/-- Emitting a row obliges it at the entry table; the state is unchanged. -/
+Emitting a row, and witnessing a check-free bundle. The row law registers directly: its
+postcondition is a state equation, a shape no gadget law states, so its ghost is never
+captured. The witness law is generic in the computation and is not registered. A gadget
+derives, once per advice, the law at that advice's run (`Prover.witness_of_run`), with the
+value a named function of the entry readings, and registers that through `Prover.register`:
+no existential and no run term reaches a gadget's proof, which transports bundle readings
+alone. -/
+
+/-- Emitting a row obliges it at the entry table, and the row's holding there is a fact of the
+exit: the state is unchanged. -/
 @[spec] theorem Prover.addConstraint_spec [Zero F] [ConstraintHolds F c] (con : Prover c)
     (st₀ : ProverState F) :
     ⦃fun st => ⌜st = st₀ ∧ ConstraintHolds.Holds st₀.env.get con⌝⦄
     addConstraint (F := F) (c := Prover c) con
-    ⦃⇓ _ st' => ⌜st' = st₀⌝⦄ := by
+    ⦃⇓ _ st' => ⌜st' = st₀ ∧ ConstraintHolds.Holds st₀.env.get con⌝⦄ := by
   rintro st ⟨rfl, h⟩
-  show ConstraintHolds.Holds st.env.get con ∧ st = st
-  exact ⟨h, rfl⟩
+  show ConstraintHolds.Holds st.env.get con ∧ st = st ∧ ConstraintHolds.Holds st.env.get con
+  exact ⟨h, rfl, h⟩
 
-/-- Witnessing a field element: when the computation succeeds at the entry table, the fresh
-cell is in scope and reads whatever the computation returned there, at a state extending the
-entry. The value is the computation's, not a free variable, so the spec has one ghost. -/
-@[spec] theorem Prover.witnessF_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (compute : AsProver F F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ ∃ v, compute.run st₀.env = .ok v⌝⦄
-    witness (c := Prover c) (val := F) compute
-    ⦃⇓ r st' => ⌜(∀ v, compute.run st₀.env = .ok v → r.Scoped st' ∧ st'.read r = v) ∧
+/-- A checked type whose check emits nothing: its witness is an allocation alone. The field
+cell, an unchecked bundle, and pairs and vectors of check-free bundles are instances; a
+bundle declared through `CheckedType.ofEquiv` gets its own where it is declared. -/
+class Prover.CheckFree (F c val var : Type) [Field F] [BasicSystem F c] [ConstraintHolds F c]
+    [CircuitType F val var] [CheckedType F c val var] : Prop where
+  /-- The check is `pure`. -/
+  check_eq : ∀ v : var, CheckedType.check (F := F) (c := c) (val := val) v = pure PUnit.unit
+
+instance [Field F] [BasicSystem F c] [ConstraintHolds F c] : Prover.CheckFree F c F (FVar F) :=
+  ⟨fun _ => rfl⟩
+
+instance [Field F] [BasicSystem F c] [ConstraintHolds F c] {val var : Type}
+    [CircuitType F val var] : Prover.CheckFree F c (UnChecked val) (UnChecked var) :=
+  ⟨fun _ => rfl⟩
+
+instance [Field F] [BasicSystem F c] [ConstraintHolds F c] {a va b vb : Type}
+    [CircuitType F a va] [CircuitType F b vb] [CheckedType F c a va] [CheckedType F c b vb]
+    [Prover.CheckFree F c a va] [Prover.CheckFree F c b vb] :
+    Prover.CheckFree F c (a × b) (va × vb) :=
+  ⟨fun p => by
+    show (do CheckedType.check (F := F) (c := c) (val := a) p.1
+             CheckedType.check (F := F) (c := c) (val := b) p.2) = pure PUnit.unit
+    rw [Prover.CheckFree.check_eq (F := F) (c := c) (val := a),
+      Prover.CheckFree.check_eq (F := F) (c := c) (val := b), pure_bind]⟩
+
+private theorem checkAll_pure [Field F] [BasicSystem F c] [ConstraintHolds F c] {a va : Type}
+    [CircuitType F a va] [CheckedType F c a va] [Prover.CheckFree F c a va] :
+    ∀ l : List va, checkAll (F := F) (c := c) (a := a) l = pure PUnit.unit
+  | [] => rfl
+  | v :: vs => by
+    show (do CheckedType.check (F := F) (c := c) (val := a) v
+             checkAll (F := F) (c := c) (a := a) vs) = pure PUnit.unit
+    rw [Prover.CheckFree.check_eq (F := F) (c := c) (val := a), checkAll_pure vs, pure_bind]
+
+instance [Field F] [BasicSystem F c] [ConstraintHolds F c] {a va : Type} [CircuitType F a va]
+    [CheckedType F c a va] [Prover.CheckFree F c a va] {n : ℕ} :
+    Prover.CheckFree F c (Vector a n) (Vector va n) :=
+  ⟨fun vs => checkAll_pure vs.toList⟩
+
+/-- Witnessing a check-free bundle: when the computation succeeds at the entry table, the fresh
+bundle is in scope and reads what it returned, at a state extending the entry. The value is
+existential in the postcondition, so that the computation's run is a fact a later condition
+can match; a gadget never sees this form, only its instance at an advice's run below. -/
+theorem Prover.witness_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    {val var : Type} [CircuitType F val var] [CheckedType F (Prover c) val var]
+    [Prover.CheckFree F (Prover c) val var] (compute : AsProver F val) (st₀ : ProverState F) :
+    ⦃fun st => ⌜st = st₀ ∧ ∀ e, compute.run st₀.env ≠ .error e⌝⦄
+    witness (c := Prover c) (val := val) compute
+    ⦃⇓ r st' => ⌜(∃ v, compute.run st₀.env = .ok v ∧ CircuitType.ReadsAs (val := val) st' r v) ∧
       st₀ ≤ st'⌝⦄ := by
-  rintro st ⟨rfl, v₀, h⟩
-  show (proverWP (c := Prover c) (witness (c := Prover c) (val := F) compute) _ _ st).down
+  rintro st ⟨rfl, hok⟩
+  obtain ⟨v₀, h⟩ : ∃ v, compute.run st.env = .ok v := by
+    rcases hrun : compute.run st.env with e | v
+    · exact absurd hrun (hok e)
+    · exact ⟨v, rfl⟩
+  show (proverWP (c := Prover c) (witness (c := Prover c) (val := val) compute) _ _ st).down
   simp only [Snarky.witness, proverWP, AsProver.map_eq, AsProver.run_bind, h, Except.bind,
-    AsProver.run_pure, CheckedType.check]
-  have hscope : CircuitType.Scoped (val := F) (st.alloc (CircuitType.valueToFields (F := F) v₀))
-      (CircuitType.fieldsToVar (F := F) (val := F)
-        (mapVec CVar.var (allocRange st.nv (CircuitType.size F F)))) := by
+    AsProver.run_pure, Prover.CheckFree.check_eq (F := F) (c := Prover c) (val := val),
+    pure_bind]
+  have hscope : CircuitType.Scoped (val := val)
+      (st.alloc (CircuitType.valueToFields (F := F) v₀))
+      (CircuitType.fieldsToVar (F := F) (val := val)
+        (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) := by
     intro cv hcv
     rw [CircuitType.var_roundTrip, toList_mapVec, List.mem_map] at hcv
     obtain ⟨w, hw, rfl⟩ := hcv
-    exact show w < st.nv + CircuitType.size F F from (List.mem_range'_1.mp hw).2
+    exact show w < st.nv + CircuitType.size F val from (List.mem_range'_1.mp hw).2
   have hreads : CircuitType.Reads (st.alloc (CircuitType.valueToFields (F := F) v₀)).env.get
-      (CircuitType.fieldsToVar (F := F) (val := F)
-        (mapVec CVar.var (allocRange st.nv (CircuitType.size F F)))) v₀ := by
+      (CircuitType.fieldsToVar (F := F) (val := val)
+        (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) v₀ := by
     unfold CircuitType.Reads
     rw [CircuitType.var_roundTrip]
     ext i hi
     simp only [getElem_mapVec, getElem_allocRange, CVar.val, ProverState.get_alloc]
     simp [Assignments.get, Assignments.extendList_get
       (show i < (CircuitType.valueToFields (F := F) v₀).toList.length by simpa using hi)]
-  change (∀ v, Except.ok v₀ = Except.ok v →
-      (CircuitType.fieldsToVar (F := F) (val := F)
-        (mapVec CVar.var (allocRange st.nv (CircuitType.size F F)))).Scoped
-          (st.alloc (CircuitType.valueToFields (F := F) v₀)) ∧
-      (st.alloc (CircuitType.valueToFields (F := F) v₀)).read
-        (CircuitType.fieldsToVar (F := F) (val := F)
-          (mapVec CVar.var (allocRange st.nv (CircuitType.size F F)))) = v) ∧
-    st ≤ st.alloc (CircuitType.valueToFields (F := F) v₀)
-  refine ⟨fun v hv => ?_, st.dom.le_extendList _⟩
+  exact ⟨⟨v₀, rfl, hscope, hreads⟩, st.dom.le_extendList _⟩
+
+/-- The witness law at one advice: where the advice's run at the entry table is known to
+return `value` of the entry, the fresh bundle reads that value. What a gadget registers, once
+per advice, with `value` a named function of the entry readings. -/
+theorem Prover.witness_of_run [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    {val var : Type} [CircuitType F val var] [CheckedType F (Prover c) val var]
+    [Prover.CheckFree F (Prover c) val var] (compute : AsProver F val)
+    (pre : ProverState F → Prop) (value : ProverState F → val)
+    (hrun : ∀ st, pre st → compute.run st.env = .ok (value st)) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ pre st₀⌝⦄
+    witness (c := Prover c) (val := val) compute
+    ⦃⇓ r s' => ⌜CircuitType.ReadsAs (val := val) s' r (value st₀) ∧ st₀ ≤ s'⌝⦄ := by
+  intro s hs
+  have hr := hrun st₀ hs.2
+  have hs' : s = st₀ ∧ ∀ e, compute.run st₀.env ≠ .error e :=
+    ⟨hs.1, fun e he => by rw [hr] at he; cases he⟩
+  refine (wp (witness (c := Prover c) (val := val) compute)).mono _ _ ?_ s
+    (Prover.witness_spec (c := c) (val := val) compute st₀ s hs')
+  refine ⟨fun r s' hpost => ?_, .rfl⟩
+  obtain ⟨⟨v, hv, hrd⟩, hle⟩ := hpost
+  rw [hr] at hv
   cases Except.ok.inj hv
-  exact ⟨CircuitType.scoped_fvar.mp hscope, CircuitType.reads_fvar.mp hreads⟩
+  exact ⟨hrd, hle⟩
 
 /-! ## Traversal: the `Vector.mapM` law
 

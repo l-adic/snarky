@@ -1,5 +1,6 @@
 import Snarky.Kimchi.Constraint
 import Snarky.WP
+import Snarky.Prover.WP
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.Poseidon
 import Kimchi.Gate.EndoScalar
@@ -223,11 +224,11 @@ instance KimchiConstraint.instLawfulBasicSystem :
   holds_boolean V x := LawfulBasicSystem.holds_boolean (c := Basic F) V x
 
 /-- The kimchi constraint vocabulary, as a class over the carrier. NOT a backend
-seam: kimchi is the terminal constraint layer, and the two instances below — the sum
-itself and its soundness tag `Builder V c` — are the only two. The class exists
-because a soundness triple elaborates the gadget body at the soundness tag, so the
-gadget definitions are polymorphic between exactly these two carriers. One method
-per landed gadget law. -/
+seam: kimchi is the terminal constraint layer, and the three instances below — the sum
+itself, its soundness tag `Builder V c` and its completeness tag `Prover c` — are the
+only three. The class exists because a triple elaborates the gadget body at a tag, so
+the gadget definitions are polymorphic between exactly these carriers. One method per
+landed gadget law. -/
 class KimchiSystem (F c : Type) where
   /-- Embed a complete-addition payload. -/
   addComplete : AddComplete F → c
@@ -245,5 +246,7 @@ instance : KimchiSystem F (KimchiConstraint F) :=
 
 instance [inst : KimchiSystem F c] {V : Valuation F} :
     KimchiSystem F (Builder V c) := inst
+
+instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
 
 end Snarky.Kimchi

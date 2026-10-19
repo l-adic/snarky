@@ -409,6 +409,18 @@ theorem CircuitType.monotone_readsAs [Add F] [Mul F] [Zero F] [CircuitType F val
     {V : Valuation F} {v : var} {x : val} :
     CircuitType.Reads V (UnChecked.mk v) (UnChecked.mk x) ↔ CircuitType.Reads V v x := Iff.rfl
 
+/-- An unchecked bundle is in scope when its payload is, in projection form: the shape of a
+bundle a run returns, which `scoped_unchecked` states at the constructor. -/
+theorem CircuitType.scoped_unchecked' [CircuitType F val var] {st : ProverState F}
+    {u : UnChecked var} :
+    CircuitType.Scoped (val := UnChecked val) st u ↔ CircuitType.Scoped (val := val) st u.val :=
+  Iff.rfl
+
+/-- An unchecked bundle reads as its payload, in projection form. -/
+theorem CircuitType.reads_unchecked' [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    {V : Valuation F} {u : UnChecked var} {x : UnChecked val} :
+    CircuitType.Reads V u x ↔ CircuitType.Reads V u.val x.val := Iff.rfl
+
 /-! The readings, at the formers. -/
 
 section Formers
@@ -432,6 +444,23 @@ theorem CircuitType.reads_unit [Add F] [Mul F] {V : Valuation F} :
     [CircuitType F b vb] {V : Valuation F} {v : va} {w : vb} {x : a} {y : b} :
     CircuitType.Reads V (v, w) (x, y) ↔ CircuitType.Reads V v x ∧ CircuitType.Reads V w y := by
   simp [CircuitType.Reads, mapVec_append, append_inj_iff]
+
+/-- A pair bundle is in scope when its components are, in projection form: the shape of a
+bundle a run returns, which `scoped_prod` states at the constructor. -/
+theorem CircuitType.scoped_prod' [CircuitType F a va] [CircuitType F b vb]
+    {st : ProverState F} {p : va × vb} :
+    CircuitType.Scoped (val := a × b) st p ↔
+      CircuitType.Scoped (val := a) st p.1 ∧ CircuitType.Scoped (val := b) st p.2 := by
+  obtain ⟨v, w⟩ := p
+  exact CircuitType.scoped_prod
+
+/-- A pair bundle reads componentwise, in projection form. -/
+theorem CircuitType.reads_prod' [Add F] [Mul F] [Zero F] [CircuitType F a va]
+    [CircuitType F b vb] {V : Valuation F} {p : va × vb} {q : a × b} :
+    CircuitType.Reads V p q ↔ CircuitType.Reads V p.1 q.1 ∧ CircuitType.Reads V p.2 q.2 := by
+  obtain ⟨v, w⟩ := p
+  obtain ⟨x, y⟩ := q
+  exact CircuitType.reads_prod
 
 @[simp] theorem CircuitType.readVal_prod [Add F] [Mul F] [Zero F] [CircuitType F a va]
     [CircuitType F b vb] {V : Valuation F} {v : va} {w : vb} :

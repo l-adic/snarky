@@ -620,6 +620,36 @@ section ProverReading
 
 open Std.Do
 
+/-! The advices' witnesses, registered: each the witness law at the advice's run, the value a
+function of the entry readings. -/
+
+/-- `inv.advice` at a nonzero reading returns the inverse. -/
+@[spec] def Prover.inv_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (inv.advice x)
+    (fun st => x.Scoped st ∧ st.read x ≠ 0) (fun st => (st.read x)⁻¹)
+    fun _ h => by simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr h.1), h.2])
+
+/-- `mul.advice` returns the product. -/
+@[spec] def Prover.mul_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x y : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (mul.advice x y)
+    (fun st => x.Scoped st ∧ y.Scoped st) (fun st => st.read x * st.read y)
+    fun _ h => by simp [mul.advice, AsProver.readCVar_run h.1, AsProver.readCVar_run h.2])
+
+/-- `isZero.bitAdvice` returns the zero bit. -/
+@[spec] def Prover.isZero_bitAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (isZero.bitAdvice x) (fun st => x.Scoped st)
+    (fun st => if st.read x = 0 then 1 else 0)
+    fun _ h => by simp [isZero.bitAdvice, AsProver.readCVar_run h])
+
+/-- `isZero.invAdvice` returns the inverse, or `0` at a zero reading. -/
+@[spec] def Prover.isZero_invAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (isZero.invAdvice x) (fun st => x.Scoped st)
+    (fun st => if st.read x = 0 then 0 else (st.read x)⁻¹)
+    fun _ h => by simp [isZero.invAdvice, AsProver.readCVar_run h])
 
 /-- `inv`'s completeness: where the operand is in scope and reads nonzero, the run succeeds
 and the result reads the inverse of the operand's entry reading. -/
@@ -647,31 +677,26 @@ theorem Prover.inv_spec [Field F] [DecidableEq F] [BasicSystem F c]
     rename_i x' hnc hxx s h
     subst hxx
     obtain ⟨rfl, hxs, hne⟩ := h
-    exact ⟨trivial, (s.read x)⁻¹, by
-      simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr hxs), CircuitType.readVal_fvar,
-        hne]⟩
+    exact ⟨trivial, hxs, hne⟩
   case h_2.post.success.pre =>
     rename_i x' hnc hxx s₁ h₁ r s h
     subst hxx
     obtain ⟨rfl, hxs, hne⟩ := h₁
-    have hrun : (inv.advice x).run s₁.env = .ok (s₁.read x)⁻¹ := by
-      simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr hxs), CircuitType.readVal_fvar,
-        hne]
-    obtain ⟨hr, hrv⟩ := h.1 _ hrun
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
     refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
     rw [CVar.val_of_le h.2 hxs]
-    show s₁.read x * s.read r = 1
-    rw [hrv]
+    show s₁.read x * r.val s.env.get = 1
+    rw [h.1.2]
     exact mul_inv_cancel₀ hne
   case h_2.post.success.post.success =>
     rename_i x' hnc hxx s₁ h₁ r s h u s' h'
-    subst hxx h'
+    subst hxx
+    obtain ⟨rfl, -⟩ := h'
     obtain ⟨rfl, hxs, hne⟩ := h₁
-    have hrun : (inv.advice x).run s₁.env = .ok (s₁.read x)⁻¹ := by
-      simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr hxs), CircuitType.readVal_fvar,
-        hne]
-    obtain ⟨hr, hrv⟩ := h.1 _ hrun
-    exact ⟨hr, hrv, h.2⟩
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
+    exact ⟨h.1.1, h.1.2, h.2⟩
 
 /-- Registered. -/
 @[spec] def Prover.inv_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
@@ -702,25 +727,22 @@ theorem Prover.mul_spec [Field F] [DecidableEq F] [BasicSystem F c]
   case h_4.pre =>
     rename_i x' y' hnc hncx hncy hy hx s h
     obtain ⟨rfl, hxs, hys⟩ := h
-    exact ⟨trivial, s.read x' * s.read y', by
-      simp [mul.advice, AsProver.readCVar_run hxs, AsProver.readCVar_run hys]⟩
+    exact ⟨trivial, hxs, hys⟩
   case h_4.post.success.pre =>
     rename_i x' y' hnc hncx hncy hy hx s₁ h₁ r s h
     obtain ⟨rfl, hxs, hys⟩ := h₁
-    have hrun : (mul.advice x' y').run s₁.env = .ok (s₁.read x' * s₁.read y') := by
-      simp [mul.advice, AsProver.readCVar_run hxs, AsProver.readCVar_run hys]
-    obtain ⟨hr, hrv⟩ := h.1 _ hrun
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
     refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
     rw [CVar.val_of_le h.2 hxs, CVar.val_of_le h.2 hys]
-    exact hrv.symm
+    exact h.1.2.symm
   case h_4.post.success.post.success =>
     rename_i x' y' hnc hncx hncy hy hx s₁ h₁ r s h u s' h'
-    subst h'
+    obtain ⟨rfl, -⟩ := h'
     obtain ⟨rfl, hxs, hys⟩ := h₁
-    have hrun : (mul.advice x' y').run s₁.env = .ok (s₁.read x' * s₁.read y') := by
-      simp [mul.advice, AsProver.readCVar_run hxs, AsProver.readCVar_run hys]
-    obtain ⟨hr, hrv⟩ := h.1 _ hrun
-    exact ⟨hr, hrv, h.2⟩
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
+    exact ⟨h.1.1, h.1.2, h.2⟩
 
 /-- Registered. -/
 @[spec] def Prover.mul_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
@@ -759,54 +781,50 @@ theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
     rename_i x' hnc hxx s h
     subst hxx
     obtain ⟨rfl, hxs⟩ := h
-    exact ⟨trivial, if s.read x = 0 then 1 else 0, by
-      simp [isZero.bitAdvice, AsProver.readCVar_run hxs]⟩
+    exact ⟨trivial, hxs⟩
   case h_2.post.success.pre =>
     rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁
     subst hxx
     obtain ⟨rfl, hxs⟩ := h₀
-    exact ⟨trivial, if s₁.read x = 0 then 0 else (s₁.read x)⁻¹, by
-      simp [isZero.invAdvice, AsProver.readCVar_run (CVar.Scoped.of_le h₁.2 hxs)]⟩
+    simp only [Prover.Reg.iff] at h₁
+    exact ⟨trivial, hxs.of_le h₁.2⟩
   case h_2.post.success.post.success.pre =>
     rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂
     subst hxx
     obtain ⟨rfl, hxs⟩ := h₀
-    have hrun₁ : (isZero.bitAdvice x).run s₀.env = .ok (if s₀.read x = 0 then 1 else 0) := by
-      simp [isZero.bitAdvice, AsProver.readCVar_run hxs]
-    obtain ⟨hr₁, hr₁v⟩ := h₁.1 _ hrun₁
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h₁ h₂
     refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
-    rw [CVar.val_of_le h₂.2 hr₁, CVar.val_of_le (h₁.2.trans h₂.2) hxs]
-    show s₁.read r₁ * s₀.read x = 0
-    rw [hr₁v]
+    rw [CVar.val_of_le h₂.2 h₁.1.1, CVar.val_of_le (h₁.2.trans h₂.2) hxs]
+    show r₁.val s₁.env.get * s₀.read x = 0
+    rw [h₁.1.2]
     split <;> simp [*]
   case h_2.post.success.post.success.post.success.pre =>
     rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂ u₁ s₃ h₃
-    subst hxx h₃
+    subst hxx
+    obtain ⟨rfl, -⟩ := h₃
     obtain ⟨rfl, hxs⟩ := h₀
-    have hrun₁ : (isZero.bitAdvice x).run s₀.env = .ok (if s₀.read x = 0 then 1 else 0) := by
-      simp [isZero.bitAdvice, AsProver.readCVar_run hxs]
-    have hrun₂ : (isZero.invAdvice x).run s₁.env =
-        .ok (if s₁.read x = 0 then 0 else (s₁.read x)⁻¹) := by
-      simp [isZero.invAdvice, AsProver.readCVar_run (CVar.Scoped.of_le h₁.2 hxs)]
-    obtain ⟨hr₁, hr₁v⟩ := h₁.1 _ hrun₁
-    obtain ⟨hr₂, hr₂v⟩ := h₂.1 _ hrun₂
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h₁ h₂
     refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_⟩
-    rw [CVar.val_sub_, CVar.val_of_le (h₁.2.trans h₂.2) hxs, CVar.val_of_le h₂.2 hr₁]
-    show s₃.read r₂ * s₀.read x = 1 - s₁.read r₁
-    rw [hr₂v, hr₁v, ProverState.read_of_le h₁.2 hxs]
+    rw [CVar.val_sub_, CVar.val_of_le (h₁.2.trans h₂.2) hxs, CVar.val_of_le h₂.2 h₁.1.1]
+    show r₂.val s₃.env.get * s₀.read x = 1 - r₁.val s₁.env.get
+    rw [h₂.1.2, h₁.1.2, ProverState.read_of_le h₁.2 hxs]
     split
     · simp [*]
     · simp [inv_mul_cancel₀ ‹_›]
   case h_2.post.success.post.success.post.success.post.success =>
     rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂ u₁ s₃ h₃ u₂ s₄ h₄
-    subst hxx h₃ h₄
+    subst hxx
+    obtain ⟨rfl, -⟩ := h₃
+    obtain ⟨rfl, -⟩ := h₄
     obtain ⟨rfl, hxs⟩ := h₀
-    have hrun₁ : (isZero.bitAdvice x).run s₀.env = .ok (if s₀.read x = 0 then 1 else 0) := by
-      simp [isZero.bitAdvice, AsProver.readCVar_run hxs]
-    obtain ⟨hr₁, hr₁v⟩ := h₁.1 _ hrun₁
-    exact ⟨CVar.Scoped.of_le h₂.2 hr₁, by
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h₁ h₂
+    exact ⟨CVar.Scoped.of_le h₂.2 h₁.1.1, by
       show s₄.read r₁ = _
-      rw [ProverState.read_of_le h₂.2 hr₁, hr₁v], h₁.2.trans h₂.2⟩
+      rw [ProverState.read_of_le h₂.2 h₁.1.1]
+      exact h₁.1.2, h₁.2.trans h₂.2⟩
 
 /-- Registered. -/
 @[spec] def Prover.isZero_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
