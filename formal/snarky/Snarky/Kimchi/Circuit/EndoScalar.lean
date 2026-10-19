@@ -543,25 +543,6 @@ theorem toField_complete_rows [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F
       CircuitType.reads_fvar.mp h.1.1.2.2.1.2, Kimchi.Gate.EndoScalar.toField]
     ring
 
-/-- **Completeness of the wrapper**, at the deployed eight rows: on a scalar whose
-`ToNat` reading is below `2 ^ 128`, the honest run succeeds and the result reads as
-`Poseidon.FqSponge.endoExpand` of it. -/
-@[complete_law]
-theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) (sv ev : F)
-    (hlt : ToNat.toNat sv < 2 ^ 128) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st scalar sv ∧
-        CircuitType.ReadsAs (val := F) st endo ev)
-      (toField (c := KimchiConstraint F) 8 scalar endo)
-      (fun r st' => CircuitType.ReadsAs (val := F) st' r
-        (Poseidon.FqSponge.endoExpand ev (ToNat.toNat sv))) := by
-  rw [show Poseidon.FqSponge.endoExpand ev (ToNat.toNat sv)
-      = Kimchi.Gate.EndoScalar.toField
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * 8) (ToNat.toNat sv)) ev from
-    Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3 ev _]
-  exact toField_complete_rows h2 h3 8 scalar endo sv ev (by simpa using hlt)
-
 /-! ## The state-relative completeness laws
 
 `toFieldChecked'`'s law at the prover's reading (`Snarky.Prover.WP`), on the template of the

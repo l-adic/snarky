@@ -1,4 +1,3 @@
-import Snarky.Tactic
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.DSL.SizedF
 
@@ -13,9 +12,10 @@ low one when asked), pins the recombination below a bound, and returns the low h
 `lowest128Bits'` is that split below the field modulus, so the halves are the canonical
 representative's.
 
-Each gadget is followed by its soundness spec and completeness law, then sealed `irreducible`;
-the pure split `lowest128BitsPure` stays transparent, since the statements speak about it. No
-law assumes a field width up front: each carries the width facts it needs.
+Each gadget is followed by its soundness spec and its completeness law at the prover's reading,
+then sealed `irreducible`; the pure split `lowest128BitsPure` stays transparent, since the
+statements speak about it. No law assumes a field width up front: each carries the width facts
+it needs.
 -/
 
 namespace Snarky.Kimchi
@@ -48,19 +48,24 @@ theorem rangeCheck128_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   obtain ⟨n, hlt, hval, -⟩ := hr
   exact ⟨n, hlt, hval⟩
 
-/-- **Completeness** (`rangeCheck128`): the honest run accepts on an operand that reads a
-value inside the tagged width. -/
-theorem rangeCheck128_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F))
-    (vv ev : F) (hfits : ToNat.toNat vv < 2 ^ 128) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st v.val vv ∧
-        CircuitType.ReadsAs (val := F) st endo ev)
-      (rangeCheck128 (c := KimchiConstraint F) endo v)
-      (fun _ _ => True) := by
-  simp only [rangeCheck128]
-  complete_walk
-  exact Complete.pure_of fun _ _ => trivial
+/-- `rangeCheck128`'s state-relative completeness: on an operand whose reading fits the tagged
+width, the honest run accepts. -/
+theorem Prover.rangeCheck128_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (endo : FVar F) (v : SizedF 128 (FVar F)) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ v.val.Scoped st₀ ∧ endo.Scoped st₀ ∧
+      ToNat.toNat (st₀.read v.val) < 2 ^ 128⌝⦄
+    rangeCheck128 (c := Prover (KimchiConstraint F)) endo v
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  unfold rangeCheck128
+  mvcgen
+  case vc1 =>
+    rename_i _ h
+    obtain ⟨rfl, hv, he, hlt⟩ := h
+    exact ⟨trivial, hv, he, by simpa using hlt⟩
+  case vc2 =>
+    rename_i _ h₀ _ _ h₁
+    obtain ⟨rfl, -⟩ := h₀
+    exact (Prover.Reg.iff.mp h₁).2.2
 
 attribute [irreducible] rangeCheck128
 
@@ -198,87 +203,83 @@ theorem fieldModulus_eq_card [Field F] [ToNat F] [LawfulToNat F] :
   rw [Nat.cast_zero] at hz
   omega
 
-/-- **Completeness** (`assertSplitBelow`): the honest run accepts on limbs whose
-recombination lies below the bound, where the bound is below `2^256` and at most the field's
-cardinality. -/
-@[complete_law]
-private theorem assertSplitBelow_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo lo hi : FVar F) (bound lov hiv : ℕ) (ev : F)
+/-- `assertSplitBelow`'s state-relative completeness: on limbs whose canonical recombination
+lies below the bound, where the bound is below `2^256` and at most the field's cardinality, the
+honest run accepts. -/
+private theorem Prover.assertSplitBelow_spec [Field F] [DecidableEq F] [ToNat F]
+    [LawfulToNat F] (endo lo hi : FVar F) (bound : ℕ)
     (hcard : bound ≤ LawfulToNat.card (F := F)) (hnarrow : bound < 2 ^ 256)
-    (hbelow : lov + 2 ^ 128 * hiv < bound) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st lo (lov : F) ∧
-        CircuitType.ReadsAs (val := F) st hi (hiv : F) ∧
-        CircuitType.ReadsAs (val := F) st endo ev)
-      (assertSplitBelow (c := KimchiConstraint F) endo lo hi bound)
-      (fun _ _ => True) := by
-  have hK : (0 : ℕ) < 2 ^ 128 := by positivity
-  have hcast : ∀ n : ℕ, n < bound → ToNat.toNat ((n : ℕ) : F) = n :=
-    fun n hn => LawfulToNat.toNat_natCast n (lt_of_lt_of_le hn hcard)
-  have hdm := Nat.mod_add_div bound (2 ^ 128)
-  have hhile : hiv ≤ bound / 2 ^ 128 := by
-    rw [Nat.le_div_iff_mul_le hK]
-    nlinarith
-  have hbhlt : bound / 2 ^ 128 < 2 ^ 128 := by
-    rw [Nat.div_lt_iff_lt_mul hK]
-    calc bound < 2 ^ 256 := hnarrow
-      _ = 2 ^ 128 * 2 ^ 128 := by norm_num
-  have hbhb : bound / 2 ^ 128 < bound := Nat.div_lt_self (by omega) (by norm_num)
-  -- the operands, read
-  have hconst : ∀ {st : ProverState F} (k : F),
-      CircuitType.ReadsAs (val := F) st (.const k : FVar F) k :=
-    fun _ => ⟨CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
-      CircuitType.reads_fvar.mpr rfl⟩
-  have hsubR : ∀ {st : ProverState F} {a b : FVar F} {av bv : F},
-      CircuitType.ReadsAs (val := F) st a av → CircuitType.ReadsAs (val := F) st b bv →
-      CircuitType.ReadsAs (val := F) st (CVar.sub_ a b) (av - bv) :=
-    fun ha hb => ⟨CircuitType.scoped_fvar.mpr
-        (CVar.Scoped.sub_ (CircuitType.scoped_fvar.mp ha.1) (CircuitType.scoped_fvar.mp hb.1)),
-      CircuitType.reads_fvar.mpr (by
-        rw [CVar.val_sub_, CircuitType.reads_fvar.mp ha.2, CircuitType.reads_fvar.mp hb.2])⟩
-  simp only [assertSplitBelow]
-  -- whether the high limb is the bound's
-  refine Complete.seq (by complete_mono_tac)
-    (Complete.imp (fun st h => ⟨h.2.1, hconst _⟩) (fun _ _ h => h)
-      (equals_complete (c := KimchiConstraint F) hi (.const ((bound / 2 ^ 128 : ℕ) : F))
-        (hiv : F) ((bound / 2 ^ 128 : ℕ) : F)))
-    fun hiIsTop => ?_
-  -- the difference that case selects
-  refine Complete.seq (by complete_mono_tac)
-    (Complete.imp (fun st h => ⟨h.2, hsubR (hconst _) h.1.1, hsubR (hconst _) h.1.2.1⟩)
-      (fun _ _ h => h)
-      (selectField_complete (c := KimchiConstraint F) hiIsTop _ _
-        (decide ((hiv : F) = ((bound / 2 ^ 128 : ℕ) : F)))
-        (((bound % 2 ^ 128 : ℕ) : F) - 1 - (lov : F))
-        (((bound / 2 ^ 128 : ℕ) : F) - 1 - (hiv : F))))
-    fun d => ?_
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨h.2, h.1.1.2.2⟩) (fun _ _ _ => trivial)
-      (EndoScalar.toField_complete h2 h3 d endo
-        (if decide ((hiv : F) = ((bound / 2 ^ 128 : ℕ) : F))
-          then ((bound % 2 ^ 128 : ℕ) : F) - 1 - (lov : F)
-          else ((bound / 2 ^ 128 : ℕ) : F) - 1 - (hiv : F)) ev ?hlt))
-    fun _ => Complete.pure_of fun _ _ => trivial
-  case hlt =>
-    by_cases hc : (hiv : F) = ((bound / 2 ^ 128 : ℕ) : F)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ lo.Scoped st₀ ∧ hi.Scoped st₀ ∧ endo.Scoped st₀ ∧
+      ToNat.toNat (st₀.read lo) + 2 ^ 128 * ToNat.toNat (st₀.read hi) < bound⌝⦄
+    assertSplitBelow (c := Prover (KimchiConstraint F)) endo lo hi bound
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  unfold assertSplitBelow
+  mvcgen
+  case vc1 =>
+    rename_i _ _ _ h
+    obtain ⟨rfl, -, hhi, -, -⟩ := h
+    exact ⟨trivial, hhi, trivial⟩
+  case vc2 =>
+    rename_i _ _ _ h b s₁ h₁
+    obtain ⟨rfl, hlo, hhi, -, -⟩ := h
+    obtain ⟨hb, hbv, hle⟩ := Prover.Reg.iff.mp h₁
+    refine ⟨trivial, hb, CVar.Scoped.sub_ trivial (hlo.of_le hle),
+      CVar.Scoped.sub_ trivial (hhi.of_le hle), ?_⟩
+    rw [hbv]
+    split <;> simp
+  -- the selected difference fits 128 bits: the limb comparison's arithmetic
+  case vc3 =>
+    rename_i bH bL s₀ h₀ b s₁ h₁ d s₂ h₂
+    obtain ⟨rfl, hlo, hhi, he, hbelow⟩ := h₀
+    obtain ⟨-, hbv, hle₁⟩ := Prover.Reg.iff.mp h₁
+    obtain ⟨hd, hdv, hle₂⟩ := Prover.Reg.iff.mp h₂
+    refine ⟨trivial, hd, he.of_le (hle₁.trans hle₂), ?_⟩
+    rw [hdv, hbv]
+    simp only [ProverState.read, CVar.val_sub_, CVar.val, CVar.val_of_le hle₁ hlo,
+      CVar.val_of_le hle₁ hhi, bH, bL]
+    simp only [ProverState.read] at hbelow
+    generalize hL : ToNat.toNat (CVar.val lo s₀.env.get) = L at hbelow
+    generalize hH : ToNat.toNat (CVar.val hi s₀.env.get) = H at hbelow
+    have hlo' : CVar.val lo s₀.env.get = (L : F) := by rw [← hL, LawfulToNat.cast_toNat]
+    have hhi' : CVar.val hi s₀.env.get = (H : F) := by rw [← hH, LawfulToNat.cast_toNat]
+    simp only [hlo', hhi']
+    have hK : (0 : ℕ) < 2 ^ 128 := by positivity
+    have hcast : ∀ n : ℕ, n < bound → ToNat.toNat ((n : ℕ) : F) = n :=
+      fun n hn => LawfulToNat.toNat_natCast n (lt_of_lt_of_le hn hcard)
+    have hdm := Nat.mod_add_div bound (2 ^ 128)
+    have hhile : H ≤ bound / 2 ^ 128 := by
+      rw [Nat.le_div_iff_mul_le hK]
+      nlinarith
+    have hbhlt : bound / 2 ^ 128 < 2 ^ 128 := by
+      rw [Nat.div_lt_iff_lt_mul hK]
+      calc bound < 2 ^ 256 := hnarrow
+        _ = 2 ^ 128 * 2 ^ 128 := by norm_num
+    have hbhb : bound / 2 ^ 128 < bound := Nat.div_lt_self (by omega) (by norm_num)
+    by_cases hc : (H : F) = ((bound / 2 ^ 128 : ℕ) : F)
     · -- equal high limbs: the low limb sits below the bound's
-      have hn : hiv = bound / 2 ^ 128 := by
+      have hn : H = bound / 2 ^ 128 := by
         have h := congrArg ToNat.toNat hc
         rwa [hcast _ (lt_of_le_of_lt hhile hbhb), hcast _ hbhb] at h
-      simp only [hc, decide_true, if_true]
-      have hlolt : lov < bound % 2 ^ 128 := by
+      simp only [hc, ↓reduceIte]
+      have hlolt : L < bound % 2 ^ 128 := by
         subst hn
         omega
       rw [← Nat.cast_one, ← Nat.cast_sub (by omega), ← Nat.cast_sub (by omega),
         hcast _ (by omega)]
       omega
     · -- a smaller high limb: it sits below the bound's
-      have hn : hiv ≠ bound / 2 ^ 128 := fun h => hc (by rw [h])
-      have hlt : hiv < bound / 2 ^ 128 := lt_of_le_of_ne hhile hn
-      simp only [hc, decide_false, Bool.false_eq_true, if_false]
+      have hn : H ≠ bound / 2 ^ 128 := fun h => hc (by rw [h])
+      have hlt : H < bound / 2 ^ 128 := lt_of_le_of_ne hhile hn
+      simp only [hc, ↓reduceIte, zero_ne_one]
       rw [← Nat.cast_one, ← Nat.cast_sub (by omega), ← Nat.cast_sub (by omega),
         hcast _ (by omega)]
       omega
+  case vc4 =>
+    rename_i _ _ _ h₀ _ _ h₁ _ _ h₂ _ _ h₃
+    obtain ⟨rfl, -⟩ := h₀
+    exact (Prover.Reg.iff.mp h₁).2.2.trans
+      ((Prover.Reg.iff.mp h₂).2.2.trans (Prover.Reg.iff.mp h₃).2.2)
 
 attribute [irreducible] assertSplitBelow
 
@@ -365,101 +366,139 @@ theorem lowest128Bits'_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat 
         l + 2 ^ 128 * h < fieldModulus F⌝⦄ :=
   split128Below_below h2 h3 hinj constrainLowBits endo (fieldModulus F) hmod x
 
-/-- **Completeness** (`lowest128Bits'`): the honest run accepts and the result reads the
-pure split's low half. The field is below `2^256`, and both halves' representatives survive
+/-- `lowest128Bits'`'s state-relative completeness: the result reads the pure split's low half.
+The field is below `2^256`, and both halves of the operand's canonical representative survive
 the cast. -/
-theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (constrainLowBits : Bool) (endo x : FVar F)
-    (xv ev : F) (hcard : LawfulToNat.card (F := F) < 2 ^ 256)
-    (hlo' : ToNat.toNat ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) = ToNat.toNat xv % 2 ^ 128)
-    (hhi' : ToNat.toNat ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) = ToNat.toNat xv / 2 ^ 128) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st x xv ∧ CircuitType.ReadsAs (val := F) st endo ev)
-      (lowest128Bits' (c := KimchiConstraint F) constrainLowBits endo x)
-      (fun r st' => CircuitType.ReadsAs (val := F) st' r.val (lowest128BitsPure xv).val) := by
-  have hxlt := LawfulToNat.toNat_lt xv
-  have hhi : ToNat.toNat xv / 2 ^ 128 < 2 ^ 128 := by
-    rw [Nat.div_lt_iff_lt_mul (by positivity)]
-    calc ToNat.toNat xv < 2 ^ 256 := hxlt.trans hcard
-      _ = 2 ^ 128 * 2 ^ 128 := by norm_num
-  -- the limb comparison's side conditions at the field's modulus, which the walk absorbs
+theorem Prover.lowest128Bits'_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (hcard : LawfulToNat.card (F := F) < 2 ^ 256) (constrainLowBits : Bool) (endo x : FVar F)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀ ∧ endo.Scoped st₀ ∧
+      ToNat.toNat (((ToNat.toNat (st₀.read x) % 2 ^ 128 : ℕ) : F)) =
+        ToNat.toNat (st₀.read x) % 2 ^ 128 ∧
+      ToNat.toNat (((ToNat.toNat (st₀.read x) / 2 ^ 128 : ℕ) : F)) =
+        ToNat.toNat (st₀.read x) / 2 ^ 128⌝⦄
+    lowest128Bits' (c := Prover (KimchiConstraint F)) constrainLowBits endo x
+    ⦃⇓ r s' => ⌜r.val.Scoped s' ∧ s'.read r.val = (lowest128BitsPure (st₀.read x)).val ∧
+      st₀ ≤ s'⌝⦄ := by
   have hmodle : fieldModulus F ≤ LawfulToNat.card (F := F) :=
     (fieldModulus_eq_card (F := F)).le
   have hmodnarrow : fieldModulus F < 2 ^ 256 := (fieldModulus_eq_card (F := F)) ▸ hcard
-  have hmodbelow :
-      ToNat.toNat xv % 2 ^ 128 + 2 ^ 128 * (ToNat.toNat xv / 2 ^ 128) < fieldModulus F := by
-    rw [Nat.mod_add_div, fieldModulus_eq_card]
-    exact hxlt
-  have hsplit : xv =
-      ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) + 2 ^ 128 * ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) := by
-    have hmd := Nat.mod_add_div (ToNat.toNat xv) (2 ^ 128)
-    calc xv = ((ToNat.toNat xv : ℕ) : F) := (LawfulToNat.cast_toNat xv).symm
-      _ = ((ToNat.toNat xv % 2 ^ 128 + 2 ^ 128 * (ToNat.toNat xv / 2 ^ 128) : ℕ) : F) := by
-            rw [hmd]
-      _ = _ := by push_cast; ring
-  have hlolt : ToNat.toNat ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) < 2 ^ 128 := by
-    rw [hlo']
-    exact Nat.mod_lt _ (by positivity)
-  have hhilt : ToNat.toNat ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) < 2 ^ 128 := by
-    rw [hhi']
-    exact hhi
-  simp only [lowest128Bits']
-  -- the split, in one witness
-  refine Complete.seq (by complete_mono_tac)
-    (Complete.imp
-      (fun st h => by
-        simp only [lowestWit, AsProver.map_eq, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1.1),
-          CircuitType.reads_fvar.mp h.1.2, Except.bind]
-        rfl)
-      (fun _ _ h => h)
-      (Complete.witness (UnChecked.mk <$> lowestWit x)
-        (⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
-          ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩ : UnChecked (F × F))
-        (by simp)))
-    fun lohi => ?_
-  obtain ⟨⟨lo, hi⟩⟩ := lohi
-  -- the split's halves, componentwise
-  have hw : ∀ {st : ProverState F},
-      CircuitType.ReadsAs (val := UnChecked (F × F)) st ⟨(lo, hi)⟩
-          ⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
-            ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩ →
-        CircuitType.ReadsAs (val := F) st lo ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) ∧
-        CircuitType.ReadsAs (val := F) st hi ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) := by
-    intro st h
-    have hsc := h.1
-    have hrd := h.2
+  have hw := Prover.register (Prover.witness_of_run (c := KimchiConstraint F)
+    (UnChecked.mk <$> lowestWit x) (fun st => x.Scoped st)
+    (fun st => (⟨(((ToNat.toNat (st.read x) % 2 ^ 128 : ℕ) : F),
+      ((ToNat.toNat (st.read x) / 2 ^ 128 : ℕ) : F))⟩ : UnChecked (F × F)))
+    (fun st h => by
+      simp only [lowestWit, AsProver.map_eq, AsProver.bind_eq, AsProver.run_bind,
+        AsProver.readCVar_run h, Except.bind]
+      rfl)
+    (fun _ _ _ _ _ => trivial))
+  have hs := fun lo hi => Prover.register
+    (Prover.assertSplitBelow_spec (F := F) endo lo hi (fieldModulus F) hmodle hmodnarrow)
+  unfold lowest128Bits' split128Below
+  mvcgen [hw, hs]
+  case vc1 =>
+    rename_i _ h
+    obtain ⟨rfl, hx, -⟩ := h
+    exact ⟨trivial, hx⟩
+  -- name each condition's trailing facts, then read the split off the witness once
+  case' vc3 => rename_i t jp hc s₂ ht
+  case' vc4 => rename_i t jp hc s₂ ht u s₃ hu
+  case' vc5 => rename_i t jp hc s₂ ht u s₃ hu e s₄ he
+  case' vc6 => rename_i t jp hc s₂ ht u s₃ hu e s₄ he b s₅ hb
+  case' vc7 => rename_i t jp hc s₂ ht
+  case' vc8 => rename_i t jp hc s₂ ht e s₃ he
+  case' vc9 => rename_i t jp hc s₂ ht e s₃ he b s₄ hb
+  case' vc2 | vc3 | vc4 | vc5 | vc6 | vc7 | vc8 | vc9 =>
+    rename_i s₀ h₀ w s₁ hw
+    obtain ⟨⟨lo, hi⟩⟩ := w
+    obtain ⟨rfl, hx, hendo, hlo', hhi'⟩ := h₀
+    obtain ⟨⟨hsc, hrd⟩, hle₁⟩ := Prover.Reg.iff.mp hw
     simp only [CircuitType.scoped_unchecked, CircuitType.scoped_prod,
       CircuitType.scoped_fvar] at hsc
     simp only [CircuitType.reads_unchecked, CircuitType.reads_prod,
       CircuitType.reads_fvar] at hrd
-    exact ⟨⟨CircuitType.scoped_fvar.mpr hsc.1, CircuitType.reads_fvar.mpr hrd.1⟩,
-      ⟨CircuitType.scoped_fvar.mpr hsc.2, CircuitType.reads_fvar.mpr hrd.2⟩⟩
-  -- the halves and the recombination, as search rules for the walk
-  have hloR := fun {st : ProverState F} h => (hw (st := st) h).1
-  have hhiR := fun {st : ProverState F} h => (hw (st := st) h).2
-  have hxread : ∀ {st : ProverState F},
-      CircuitType.ReadsAs (val := F) st lo ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) →
-      CircuitType.ReadsAs (val := F) st hi ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) →
-      CircuitType.ReadsAs (val := F) st
-        (CVar.add_ lo (CVar.scale_ ((2 : F) ^ 128) hi)) xv :=
-    fun hl hh => ⟨CircuitType.scoped_fvar.mpr
-        (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp hl.1)
-          (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp hh.1))),
-      CircuitType.reads_fvar.mpr (by
-        rw [CVar.val_add_, CVar.val_scale_, CircuitType.reads_fvar.mp hl.2,
-          CircuitType.reads_fvar.mp hh.2]
-        exact hsplit.symm)⟩
-  -- range-check the high half; the walk then stops at the statement-position `if`
-  complete_walk
-  by_cases hc : constrainLowBits = true
-  · simp only [hc, if_true]
-    complete_walk
-    exact Complete.pure_of fun _ h => hloR h.1.1.1.1.1.2
-  · simp only [Bool.not_eq_true] at hc
-    simp only [hc, Bool.false_eq_true, if_false]
-    complete_walk
-    exact Complete.pure_of fun _ h => hloR h.1.1.1.1.2
+    obtain ⟨hlo, hhi⟩ := hsc
+    obtain ⟨vlo, vhi⟩ := hrd
+    have hxlt := LawfulToNat.toNat_lt (s₀.read x)
+    have hlolt : ToNat.toNat (((ToNat.toNat (s₀.read x) % 2 ^ 128 : ℕ) : F)) < 2 ^ 128 := by
+      rw [hlo']
+      exact Nat.mod_lt _ (by positivity)
+    have hhilt : ToNat.toNat (((ToNat.toNat (s₀.read x) / 2 ^ 128 : ℕ) : F)) < 2 ^ 128 := by
+      rw [hhi', Nat.div_lt_iff_lt_mul (by positivity)]
+      calc ToNat.toNat (s₀.read x) < 2 ^ 256 := hxlt.trans hcard
+        _ = 2 ^ 128 * 2 ^ 128 := by norm_num
+    have hsplit : s₀.read x = ((ToNat.toNat (s₀.read x) % 2 ^ 128 : ℕ) : F) +
+        2 ^ 128 * ((ToNat.toNat (s₀.read x) / 2 ^ 128 : ℕ) : F) := by
+      have hmd := Nat.mod_add_div (ToNat.toNat (s₀.read x)) (2 ^ 128)
+      calc s₀.read x = ((ToNat.toNat (s₀.read x) : ℕ) : F) := (LawfulToNat.cast_toNat _).symm
+        _ = ((ToNat.toNat (s₀.read x) % 2 ^ 128 + 2 ^ 128 * (ToNat.toNat (s₀.read x) / 2 ^ 128) :
+              ℕ) : F) := by rw [hmd]
+        _ = _ := by push_cast; ring
+  -- the high half's range check
+  case vc2 =>
+    refine ⟨trivial, hhi, hendo.of_le hle₁, ?_⟩
+    rw [ProverState.read, vhi]
+    simpa using hhilt
+  -- the low half's, under `constrainLowBits`
+  case vc3 =>
+    obtain ⟨-, -, hle₂⟩ := Prover.Reg.iff.mp ht
+    refine ⟨trivial, hlo.of_le hle₂, hendo.of_le (by le_chain), ?_⟩
+    rw [ProverState.read, CVar.val_of_le hle₂ hlo, vlo]
+    simpa using hlolt
+  -- the recombination
+  case vc4 =>
+    obtain ⟨-, -, hle₂⟩ := Prover.Reg.iff.mp ht
+    obtain ⟨-, -, hle₃⟩ := Prover.Reg.iff.mp hu
+    refine ⟨trivial, hx.of_le (by le_chain), CVar.Scoped.add_ (hlo.of_le (by le_chain))
+      (CVar.Scoped.scale_ (hhi.of_le (by le_chain))), ?_⟩
+    simp only [ProverState.read, CVar.val_add_, CVar.val_scale_,
+      CVar.val_of_le (show s₁ ≤ s₃ by le_chain) hlo, CVar.val_of_le (show s₁ ≤ s₃ by le_chain) hhi,
+      CVar.val_of_le (show s₀ ≤ s₃ by le_chain) hx, vlo, vhi]
+    exact hsplit
+  case vc7 =>
+    obtain ⟨-, -, hle₂⟩ := Prover.Reg.iff.mp ht
+    refine ⟨trivial, hx.of_le (by le_chain), CVar.Scoped.add_ (hlo.of_le (by le_chain))
+      (CVar.Scoped.scale_ (hhi.of_le (by le_chain))), ?_⟩
+    simp only [ProverState.read, CVar.val_add_, CVar.val_scale_,
+      CVar.val_of_le (show s₁ ≤ s₂ by le_chain) hlo, CVar.val_of_le (show s₁ ≤ s₂ by le_chain) hhi,
+      CVar.val_of_le (show s₀ ≤ s₂ by le_chain) hx, vlo, vhi]
+    exact hsplit
+  -- the limb comparison below the field's modulus
+  case vc5 =>
+    obtain ⟨-, -, hle₂⟩ := Prover.Reg.iff.mp ht
+    obtain ⟨-, -, hle₃⟩ := Prover.Reg.iff.mp hu
+    have hle₄ := Prover.Reg.iff.mp he
+    refine ⟨trivial, hlo.of_le (by le_chain), hhi.of_le (by le_chain),
+      hendo.of_le (by le_chain), ?_⟩
+    simp only [ProverState.read, CVar.val_of_le (show s₁ ≤ s₄ by le_chain) hlo,
+      CVar.val_of_le (show s₁ ≤ s₄ by le_chain) hhi, vlo, vhi, hlo', hhi', Nat.mod_add_div,
+      fieldModulus_eq_card]
+    exact hxlt
+  case vc8 =>
+    obtain ⟨-, -, hle₂⟩ := Prover.Reg.iff.mp ht
+    have hle₃ := Prover.Reg.iff.mp he
+    refine ⟨trivial, hlo.of_le (by le_chain), hhi.of_le (by le_chain),
+      hendo.of_le (by le_chain), ?_⟩
+    simp only [ProverState.read, CVar.val_of_le (show s₁ ≤ s₃ by le_chain) hlo,
+      CVar.val_of_le (show s₁ ≤ s₃ by le_chain) hhi, vlo, vhi, hlo', hhi', Nat.mod_add_div,
+      fieldModulus_eq_card]
+    exact hxlt
+  -- the result: the low half
+  case vc6 =>
+    obtain ⟨-, -, hle₂⟩ := Prover.Reg.iff.mp ht
+    obtain ⟨-, -, hle₃⟩ := Prover.Reg.iff.mp hu
+    have hle₄ := Prover.Reg.iff.mp he
+    have hle₅ := Prover.Reg.iff.mp hb
+    refine ⟨hlo.of_le (by le_chain), ?_, by le_chain⟩
+    rw [ProverState.read, CVar.val_of_le (show s₁ ≤ s₅ by le_chain) hlo, vlo]
+    rfl
+  case vc9 =>
+    obtain ⟨-, -, hle₂⟩ := Prover.Reg.iff.mp ht
+    have hle₃ := Prover.Reg.iff.mp he
+    have hle₄ := Prover.Reg.iff.mp hb
+    refine ⟨hlo.of_le (by le_chain), ?_, by le_chain⟩
+    rw [ProverState.read, CVar.val_of_le (show s₁ ≤ s₄ by le_chain) hlo, vlo]
+    rfl
 
 attribute [irreducible] lowestWit split128Below lowest128Bits'
 

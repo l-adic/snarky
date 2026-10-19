@@ -20,7 +20,7 @@ cites it; the rest stay until the kimchi gadgets that cite them migrate.
 - The walker, in `Snarky/Tactic.lean` and `Snarky/Tactic/Attr.lean`: the `complete_walk`,
   `complete_mono_tac`, `complete_ctx` and `complete_apply_law` tactics, and the `complete_law`
   and `complete_mono` attributes that drive them.
-- The DSL laws: the 9 declarations named `*_complete` under `Snarky/DSL/` that a kimchi
+- The DSL laws: the 5 declarations named `*_complete` under `Snarky/DSL/` that a kimchi
   gadget law or the `solve_complete` seam reaches, listed below.
 
 ## Method
@@ -32,14 +32,13 @@ Four methods, each covering what another cannot see.
   they belong to. A law the walker selects by attribute appears here as a constant in the proof
   term; a name search misses it.
 - Name level: grep for the form's names and for the walker's tactic syntax. A tactic leaves no
-  constant in a proof term, so only the source shows where the walker runs: the kimchi circuits
-  `EndoScalar` and `RangeCheck`.
+  constant in a proof term, so only the source shows where the walker runs: the kimchi circuit
+  `EndoScalar`.
 - Module level: `lake exe graph --include-deps --from Snarky.Tactic --to Pickles`, with the
   import lines read alongside, since the graph drops an import another one already implies. The
-  walker's module is imported directly by `Snarky.Kimchi.Circuit.AddComplete`, `.EndoScalar`,
-  `.GroupMap` and `.RangeCheck`; `RangeCheck`'s import is the one the graph drops, as it also
-  reaches the module through `EndoScalar`. `GroupMap` no longer runs the walker, and
-  shake keeps its import. The other circuits reach the module through these.
+  walker's module is imported directly by `Snarky.Kimchi.Circuit.AddComplete`, `.EndoScalar`
+  and `.GroupMap`. `GroupMap` no longer runs the walker, and shake keeps its import. The other
+  circuits reach the module through these.
 - The CI drivers, read from their compiled modules as the dead-code gate reads them: none of the
   twelve cites a law, rule or walker declaration of the form. Two use consumer instances as
   instances: `check_cs` the `AffinePoint`, `SpongeState` and branch-data instances, and
@@ -59,11 +58,7 @@ combinators. Each row also cites the relation itself.
 | `CheckedPoint.check_complete` | `Snarky/Kimchi/Circuit/CheckedPoint.lean` | `assertSquare_complete`, `mul_complete`, `square_complete` | bind, frame, imp | kimchi gadget law |
 | `EndoScalar.row_complete` | `Snarky/Kimchi/Circuit/EndoScalar.lean` | `Complete.witness` | bind, frame, imp, instantiate, pure_of | kimchi gadget law |
 | `EndoScalar.toFieldChecked'_complete` | `Snarky/Kimchi/Circuit/EndoScalar.lean` | `Complete.witness`, `mapAccumM_complete` | addConstraint, bind, imp, instantiate, pure_of | kimchi gadget law |
-| `EndoScalar.toField_complete` | `Snarky/Kimchi/Circuit/EndoScalar.lean` | — | — | kimchi gadget law |
 | `EndoScalar.toField_complete_rows` | `Snarky/Kimchi/Circuit/EndoScalar.lean` | `assertEqual_complete`, `mul_complete` | imp, pure_of, seq | kimchi gadget law |
-| `assertSplitBelow_complete` | `Snarky/Kimchi/Circuit/RangeCheck.lean` | `equals_complete`, `selectField_complete` | bind, imp, pure_of, seq | kimchi gadget law |
-| `lowest128Bits'_complete` | `Snarky/Kimchi/Circuit/RangeCheck.lean` | `Complete.witness`, `assertEqual_complete` | imp, pure, pure_of, seq | kimchi gadget law |
-| `rangeCheck128_complete` | `Snarky/Kimchi/Circuit/RangeCheck.lean` | — | imp, pure_of, seq | kimchi gadget law |
 | `instCheckedTypeAffinePointFVar` | `Snarky/Kimchi/Circuit/AddComplete.lean` | proves `check_complete` | pure | kimchi checked-type instance |
 | `instCheckedTypeCheckedPoint` | `Snarky/Kimchi/Circuit/CheckedPoint.lean` | proves `check_complete` | imp | kimchi checked-type instance |
 | `instCheckedTypeSpongeState` | `Snarky/Kimchi/Circuit/Poseidon.lean` | proves `check_complete` | pure | kimchi checked-type instance |
@@ -78,12 +73,8 @@ reached through, and the kimchi circuits whose migration releases it.
 | DSL law | File | Cited by, outside the DSL | Through | Retained until these migrate |
 |---|---|---|---|---|
 | `assertEq_complete` | `Snarky/DSL/Assert.lean` | `solve_complete` | — | the `solve` seam |
-| `assertEqual_complete` | `Snarky/DSL/Assert.lean` | `EndoScalar.toField_complete_rows`, `lowest128Bits'_complete` | `assertEq_complete` | EndoScalar, RangeCheck, the `solve` seam |
+| `assertEqual_complete` | `Snarky/DSL/Assert.lean` | `EndoScalar.toField_complete_rows` | `assertEq_complete` | EndoScalar (with the pickles instance), the `solve` seam |
 | `assertSquare_complete` | `Snarky/DSL/Assert.lean` | `CheckedPoint.check_complete` | — | CheckedPoint (with the `check_complete` field) |
-| `selectField.core_complete` | `Snarky/DSL/Boolean.lean` | — | `selectField_complete` | RangeCheck |
-| `selectField_complete` | `Snarky/DSL/Boolean.lean` | `assertSplitBelow_complete` | — | RangeCheck |
-| `equals_complete` | `Snarky/DSL/Field.lean` | `assertSplitBelow_complete` | — | RangeCheck |
-| `isZero_complete` | `Snarky/DSL/Field.lean` | — | `equals_complete` | RangeCheck |
 | `mul_complete` | `Snarky/DSL/Field.lean` | `CheckedPoint.check_complete`, `EndoScalar.toField_complete_rows` | — | CheckedPoint (with the `check_complete` field), EndoScalar |
 | `square_complete` | `Snarky/DSL/Field.lean` | `CheckedPoint.check_complete` | — | CheckedPoint (with the `check_complete` field) |
 
@@ -102,6 +93,9 @@ reached through, and the kimchi circuits whose migration releases it.
   `scaleFast2_complete`, `scaleFast2'_complete` and `splitFieldVar_complete`.
 - The deployed-curve completeness instances `vesta_varBaseMul_complete` and
   `EndoMul.vesta_endoMul_complete`, without a restatement; their soundness readings stay.
+- What only the laws above used, as the dead-code gate listed it: `forM_complete`,
+  `Complete.post` with `runs_post`, the Complete-form walks in EndoMul and VarBaseMul,
+  `HasCurve.vesta_ladderCompleteRegime`, and `CircuitType.scoped_unit`.
 - GroupMap's laws, now that the map has its triples (`Prover.groupMapCircuit_spec` and the
   wire form `Prover.groupMapCircuit_toGroup_spec`): `groupMapCircuit_complete`,
   `groupMapCircuit_toGroup_complete` and the private `ySquared_complete`,
@@ -116,9 +110,12 @@ reached through, and the kimchi circuits whose migration releases it.
   `sealVar_complete` with the private `sealVar.core_complete`; then what only those used, as the
   dead-code gate listed it: Sponge's `monotone_reads`, `CircuitType.monotone_forall₂` and
   `valid_spongeState`.
-- What only those laws used: `forM_complete`, `Complete.post` with `runs_post`, the
-  Complete-form walks in EndoMul and VarBaseMul, `HasCurve.vesta_ladderCompleteRegime`, and
-  `CircuitType.scoped_unit`.
+- RangeCheck's laws, now that its gadgets have their triples (`Prover.rangeCheck128_spec`,
+  `Prover.lowest128Bits'_spec`): `rangeCheck128_complete`, `lowest128Bits'_complete` and the
+  private `assertSplitBelow_complete`. With them `EndoScalar.toField_complete`, which only they
+  cited, and the DSL laws only they reached: `selectField_complete` with the private
+  `selectField.core_complete`, `equals_complete` and `isZero_complete`; then the private
+  `asField` the dead-code gate listed.
 
 The relation, its remaining rules, the walker, `zipWithVecM_complete`, `mapAccumM_complete` and
 `check_complete` stay: each has a consumer outside the DSL, listed in the findings.
@@ -134,10 +131,10 @@ The relation, its remaining rules, the walker, `zipWithVecM_complete`, `mapAccum
 - `check_complete` is consumed by `Complete.witness`, `solve_complete`, the kimchi checked-type
   instances and the pickles instance below. `WPCheckedType.check_wp` is its replacement; the
   field goes when its last consumer does.
-- The relation, its rules and the walker are consumed by the kimchi gadget laws of
-  CheckedPoint, EndoScalar's wrapper and RangeCheck. `toField` has its triples
-  (`Prover.toField_spec_rows`, `Prover.toField_spec`), but its `Complete` laws stay while
-  RangeCheck's laws and the pickles instance cite them.
+- The relation, its rules and the walker are consumed by CheckedPoint's `check_complete` and
+  EndoScalar's `toField_complete_rows`. `toField` has its triples (`Prover.toField_spec_rows`,
+  `Prover.toField_spec`); `toField_complete_rows`, with `toFieldChecked'_complete` and
+  `row_complete` beneath it, stays while the pickles instance cites it.
 - `Complete.of_false` has no consumer left: `foldBlocks_complete` was its last. It stays among
   the relation's rules, rooted with them.
 - One consumer is neither a kimchi gadget law nor the seam:

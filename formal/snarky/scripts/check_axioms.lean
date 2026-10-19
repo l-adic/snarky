@@ -87,8 +87,8 @@ def roots : List Name :=
     `Snarky.zipWithVecM_complete,
 
     -- The DSL: field operations.
-    `Snarky.equals_spec, `Snarky.equals_complete,
-    `Snarky.isZero_spec, `Snarky.isZero_complete,
+    `Snarky.equals_spec,
+    `Snarky.isZero_spec,
     `Snarky.neq_spec,
     `Snarky.mul_spec, `Snarky.mul_complete,
     `Snarky.inv_spec,
@@ -102,7 +102,7 @@ def roots : List Name :=
     `Snarky.xor_spec,
     `Snarky.any_spec,
     `Snarky.all_spec,
-    `Snarky.selectField_spec, `Snarky.selectField_complete,
+    `Snarky.selectField_spec,
     -- The lawful selects: the soundness law in instance form, at each shape.
     `Snarky.instLawfulIfThenElseFVar, `Snarky.instLawfulIfThenElseBoolVar,
     `Snarky.instLawfulIfThenElseUnit, `Snarky.instLawfulIfThenElseProd,
@@ -226,7 +226,7 @@ def roots : List Name :=
     `Snarky.Kimchi.RandomOracle.update_spec,
     `Snarky.Kimchi.RandomOracle.hash2_spec,
     `Snarky.Kimchi.RandomOracle.hashVec_spec,
-    `Snarky.Kimchi.EndoScalar.toField_spec, `Snarky.Kimchi.EndoScalar.toField_complete,
+    `Snarky.Kimchi.EndoScalar.toField_spec,
     `Snarky.Kimchi.EndoMul.endoMul_spec,
     `Snarky.Kimchi.EndoMul.endoInv_spec,
     `Snarky.Kimchi.varBaseMul_spec,
@@ -237,8 +237,8 @@ def roots : List Name :=
     `Snarky.Kimchi.scaleFast2'_spec,
     `Snarky.Kimchi.scaleFast2'_spec_scalar,
     `Snarky.Kimchi.splitFieldVar_spec,
-    `Snarky.Kimchi.rangeCheck128_spec, `Snarky.Kimchi.rangeCheck128_complete,
-    `Snarky.Kimchi.lowest128Bits'_spec, `Snarky.Kimchi.lowest128Bits'_complete,
+    `Snarky.Kimchi.rangeCheck128_spec,
+    `Snarky.Kimchi.lowest128Bits'_spec,
     `Snarky.Kimchi.groupMapCircuit_spec,
     `Snarky.Kimchi.groupMapCircuit_onCurve_spec,
     `Snarky.Kimchi.groupMapPure_toGroup,
@@ -281,6 +281,7 @@ def roots : List Name :=
     `Snarky.Kimchi.SpongeVar.Prover.absorb_spec, `Snarky.Kimchi.SpongeVar.Prover.squeeze_spec,
     `Snarky.Kimchi.RandomOracle.Prover.update_spec, `Snarky.Kimchi.RandomOracle.Prover.hash2_spec,
     `Snarky.Kimchi.RandomOracle.Prover.hashVec_spec,
+    `Snarky.Kimchi.Prover.rangeCheck128_spec, `Snarky.Kimchi.Prover.lowest128Bits'_spec,
     -- The checks' laws at that reading in instance form, for the types nothing witnesses
     -- at it yet.
     `Snarky.Kimchi.instWPCheckedTypeSpongeState,

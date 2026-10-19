@@ -52,14 +52,6 @@ theorem not_scoped [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F]
     (↑(Snarky.not b) : CVar F).Scoped st :=
   CVar.Scoped.sub_ trivial hb
 
-/-- A boolean bundle's reading, at its cell: the bit it spells. A law over `FVar`
-consumes a boolean operand through this. -/
-private theorem asField [Field F] [DecidableEq F] {st : ProverState F} {v : BoolVar F}
-    {vb : Bool} (h : CircuitType.ReadsAs (val := Bool) st v vb) :
-    CircuitType.ReadsAs (val := F) st (↑v : CVar F) (bit vb) :=
-  ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp h.1),
-    CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp h.2)⟩
-
 attribute [irreducible] Snarky.not
 
 /-! ## Selection -/
@@ -120,90 +112,6 @@ open Std.Do in
       simp [sub_eq_zero.mp h.symm]
     · rw [if_pos trivial, one_mul] at h
       simp [sub_left_inj.mp h]
-
-/-- The witnessing branch's completeness law, in its own binders: advise the selected
-branch, then pin it by the row. The three operand readings are framed across the
-allocation — the row needs them, the witness rule does not carry them. -/
-private theorem selectField.core_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (b : CVar F) (t e : FVar F)
-    (bb : Bool) (tv ev : F) :
-    Complete (F := F) (c := c)
-      (fun st => CircuitType.ReadsAs (val := F) st b (bit bb) ∧
-        CircuitType.ReadsAs (val := F) st t tv ∧ CircuitType.ReadsAs (val := F) st e ev)
-      (selectField.core (c := c) b t e)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (if bb then tv else ev)) := by
-  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
-      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
-    fun h => CircuitType.reads_fvar.mp h.2
-  simp only [selectField.core]
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-      (Complete.frame (monotone_and CircuitType.monotone_readsAs (monotone_and
-        CircuitType.monotone_readsAs CircuitType.monotone_readsAs))
-        (Complete.witness (selectField.advice b t e) (if bb then tv else ev) (by simp))))
-    (fun r => Complete.bind (Complete.addConstraint ?_)
-      fun _ => Complete.pure_of fun _ h => h.1)
-  · rintro st ⟨hr, hb, ht, he⟩ stf hle
-    refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-    simp only [CVar.val_sub_]
-    rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hb.1),
-      CVar.val_of_le hle (CircuitType.scoped_fvar.mp ht.1),
-      CVar.val_of_le hle (CircuitType.scoped_fvar.mp he.1),
-      CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1),
-      hrd hb, hrd ht, hrd he, hrd hr]
-    cases bb <;> simp [bit]
-  · cases bb <;>
-      simp [selectField.advice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1.1),
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1.1),
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.1),
-        hrd h.1, hrd h.2.1, hrd h.2.2, bit, zero_ne_one]
-
-/-- `selectField`'s completeness law: from a state with scoped operands and a well-formed
-selector the run succeeds, the row it built is satisfied at every extension of the
-final table, and the result is scoped. -/
-theorem selectField_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F) (t e : FVar F)
-    (bb : Bool) (tv ev : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧
-      CircuitType.ReadsAs (val := F) st t tv ∧
-        CircuitType.ReadsAs (val := F) st e ev)
-      (selectField (c := c) b t e)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (if bb then tv else ev)) := by
-  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
-      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
-    fun h => CircuitType.reads_fvar.mp h.2
-  -- the witnessing branch, in its own binders
-  have hcore : Complete (F := F) (c := c)
-      (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧
-        CircuitType.ReadsAs (val := F) st t tv ∧ CircuitType.ReadsAs (val := F) st e ev)
-      (selectField.core (c := c) (↑b : CVar F) t e)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (if bb then tv else ev)) :=
-    Complete.imp (fun _ h => ⟨asField h.1, h.2⟩) (fun _ _ h => h)
-      (selectField.core_complete (↑b : CVar F) t e bb tv ev)
-  simp only [selectField]
-  split
-  · -- the selector is a constant: the branch is decided out of circuit
-    rename_i _ _ _ bv hbv
-    refine Complete.pure_of fun st h => ?_
-    have hv : bv = bit bb := by
-      rw [← CircuitType.reads_fvar.mp (asField (st := st) h.1).2, hbv]
-      rfl
-    subst hv
-    cases bb
-    · simpa [bit] using h.2.2
-    · simpa [bit] using h.2.1
-  · -- both branches constant: the select is an affine combination
-    refine Complete.pure_of fun st h => ⟨CircuitType.scoped_fvar.mpr ?_,
-      CircuitType.reads_fvar.mpr ?_⟩
-    · have hbsc : (↑b : CVar F).Scoped st := CircuitType.scoped_boolVar.mp h.1.1
-      exact CVar.Scoped.add_ hbsc (CVar.ScopedBy.scale_ (CVar.Scoped.sub_ trivial hbsc))
-    · have h1 := hrd h.2.1
-      have h2 := hrd h.2.2
-      have hbv := CircuitType.reads_fvar.mp (asField (st := st) h.1).2
-      simp only [CVar.val_add_, CVar.val_scale_, CVar.val_sub_, CVar.val] at h1 h2 ⊢
-      rw [hbv, h1, h2]
-      cases bb <;> simp [bit]
-  · exact hcore
 
 attribute [irreducible] selectField
 

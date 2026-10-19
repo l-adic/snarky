@@ -249,56 +249,6 @@ open Std.Do in
     · exact h0
     · exact absurd h0 h
 
-/-- `isZero`'s completeness law: from an operand that reads `xv` the run succeeds, any
-rows it built are satisfied at every extension of the final table, and the result reads
-the bit `decide (xv = 0)`. -/
-theorem isZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (isZero (c := c) x)
-      (fun a st' => CircuitType.ReadsAs (val := Bool) st' a (decide (xv = 0))) := by
-  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
-      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
-    fun h => CircuitType.reads_fvar.mp h.2
-  simp only [isZero]
-  split
-  · rename_i a
-    refine Complete.pure_of fun st h => ⟨CircuitType.scoped_boolVar.mpr trivial,
-      CircuitType.reads_boolVar.mpr ?_⟩
-    show (CVar.const (if a = 0 then 1 else 0)).val st.env.get = _
-    rw [← hrd h]
-    by_cases hz : a = 0 <;> simp [hz, bit]
-  · refine Complete.bind
-      (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs
-          (Complete.witness (isZero.bitAdvice x) (if xv = 0 then 1 else 0) (by simp))))
-      (fun r => Complete.bind
-        (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-          (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
-            (Complete.witness (isZero.invAdvice x) (if xv = 0 then 0 else xv⁻¹) (by simp))))
-        (fun rInv => Complete.bind (Complete.addConstraint ?_)
-          fun _ => Complete.bind (Complete.addConstraint ?_)
-            fun _ => Complete.pure_of fun _ h => ⟨CircuitType.scoped_boolVar.mpr
-              (CircuitType.scoped_fvar.mp h.2.1.1), CircuitType.reads_boolVar.mpr ?_⟩))
-    · rintro st ⟨hr, hb, hx⟩ stf hle
-      rw [BoolVar.coe_unchecked] at hb
-      refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hb.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hx.1), hrd hb, hrd hx]
-      by_cases hz : xv = 0 <;> simp [hz]
-    · rintro st ⟨hr, hb, hx⟩ stf hle
-      rw [BoolVar.coe_unchecked] at hb
-      refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-      simp only [CVar.val_sub_]
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hx.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hb.1), hrd hr, hrd hx, hrd hb]
-      by_cases hz : xv = 0 <;> simp [hz]
-    · rw [hrd h.2.1]
-      by_cases hz : xv = 0 <;> simp [hz, bit]
-    · simp [isZero.bitAdvice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1), hrd h]
-    · simp [isZero.invAdvice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1),
-        hrd h.2]
-
 attribute [irreducible] isZero
 
 /-- Equality test, returning the answer bit: `isZero` on the difference — a constant
@@ -317,24 +267,6 @@ open Std.Do in
   simp only [equals]
   mvcgen
   simp [sub_eq_zero]
-
-/-- `equals`'s completeness law: `isZero`'s, at the difference. -/
-theorem equals_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (av bv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st a av ∧
-      CircuitType.ReadsAs (val := F) st b bv)
-      (equals (c := c) a b)
-      (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (decide (av = bv))) := by
-  rintro st ⟨ha, hb⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-    at ha hb
-  obtain ⟨ha, hva⟩ := ha
-  obtain ⟨hb, hvb⟩ := hb
-  have h := isZero_complete (c := c) (CVar.sub_ a b) (av - bv) st
-    (by
-      simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-      exact ⟨CVar.Scoped.sub_ ha hb, by rw [CVar.val_sub_, hva, hvb]⟩)
-  simpa [sub_eq_zero] using h
 
 attribute [irreducible] equals
 

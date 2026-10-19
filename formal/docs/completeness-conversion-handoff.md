@@ -95,7 +95,7 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
   mentions `t✝¹ e✝¹`, and every explicit argument must be read off the goal. Factor the
   witnessing branch into a `where core` and prove its law in its own binders, as
   `xor.core` and `selectField.core` do. Branches on plain data (an enum, a `Bool`, a
-  `Fin`), as in `RangeCheck`, need only `cases`/`by_cases`/`match` at the law level.
+  `Fin`) need only `cases`/`by_cases`/`match` at the law level.
 
 - A long straight-line chain needs no state indexing when every value is a function of
   the law's own parameters. Keep contexts small by dropping each reading at its last
@@ -118,8 +118,7 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
   `by_cases hc … <;> simp only [hc, if_true]` the true branch's program is
   `g >>= fun _ => (pure ⟨⟩ >>= fun _ => REST)`, not `(g >>= pure ⟨⟩) >>= REST`. Factor
   `REST`'s law as a `have hrest : Complete …` (with the merged mid as its pre) and finish
-  each branch with `Complete.bind … fun _ => hrest` (`lowest128Bits'_complete`,
-  `Snarky/Kimchi/Circuit/RangeCheck.lean`).
+  each branch with `Complete.bind … fun _ => hrest`.
 
 - `attribute [irreducible] X` occurs more than once in some files; anchor text edits
   precisely.
@@ -135,12 +134,13 @@ by unification, so laws carry no value arguments. It absorbs `assumption`-shaped
 conditions and defers the rest as end-of-proof VCs. It stops at `pure` or at a bind
 with no registered law, main goal kept first, each step atomic.
 
-`lowest128Bits'_complete` (`Snarky/Kimchi/Circuit/RangeCheck.lean`) is the exemplar:
-the readings of the pure combinations stated once as `have`s, `complete_walk` up to the
-statement-position `if`, a case split on its flag, and one more walk per arm, closed by
-`Complete.pure_of`. The walker pins the raw compositional value at every step; when a
-consumer needs a folded spec form, state the identification once as a `have` and rewrite
-it in, rather than threading it through the chain.
+`EndoScalar.toField_complete_rows` (`Snarky/Kimchi/Circuit/EndoScalar.lean`) is the
+exemplar: the decomposition's reconstruction stated once as a `have`, `complete_walk`
+through the rows, the pin cited by hand, a split on the endo's shape, and one more walk in
+the second arm, each arm closed by `Complete.pure_of`. The walker pins the raw
+compositional value at every step; when a consumer needs a folded spec form, state the
+identification once as a `have` and rewrite it in, rather than threading it through the
+chain.
 
 Walker internals:
 
