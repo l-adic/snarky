@@ -123,6 +123,72 @@ instance instAllocBranchDataCheckedTypeBuilder {V : Valuation Fp} :
       (AllocBranchData (FVar Fp) (BoolVar Fp)) :=
   instAllocBranchDataCheckedType
 
+/-- The branch data's check, read by the prover. -/
+instance instAllocBranchDataCheckedTypeProver :
+    CheckedType Fp (Prover (KimchiConstraint Fp)) (AllocBranchData Fp Bool)
+      (AllocBranchData (FVar Fp) (BoolVar Fp)) :=
+  instAllocBranchDataCheckedType
+
+/-- The branch data's check at the prover's reading: from data reading a `log2` below
+`2 ^ 16`, the run succeeds and the state only grows. -/
+private theorem AllocBranchData.check_prover_spec (d : AllocBranchData (FVar Fp) (BoolVar Fp))
+    (a : AllocBranchData Fp Bool) (hlt : ToNat.toNat a.domainLog2 < 2 ^ 16)
+    (st₀ : ProverState Fp) :
+    ⦃fun s => ⌜s = st₀ ∧ CircuitType.ReadsAs (val := AllocBranchData Fp Bool) st₀ d a⌝⦄
+    AllocBranchData.check (c := Prover (KimchiConstraint Fp)) d
+    ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄ := by
+  -- the data's reading, as its mask-and-`log2` pair's
+  have hpair : ∀ {st : ProverState Fp},
+      CircuitType.ReadsAs (val := AllocBranchData Fp Bool) st d a →
+      CircuitType.ReadsAs (val := Vector Bool MaxProofsVerified × Fp) st
+        (AllocBranchData.equivProd (FVar Fp) (BoolVar Fp) d)
+        (AllocBranchData.equivProd Fp Bool a) := fun h =>
+    ⟨(CircuitType.scoped_ofEquiv (AllocBranchData.equivProd Fp Bool)
+        (AllocBranchData.equivProd (FVar Fp) (BoolVar Fp))).mp h.1,
+      (CircuitType.reads_ofEquiv (AllocBranchData.equivProd Fp Bool)
+        (AllocBranchData.equivProd (FVar Fp) (BoolVar Fp))).mp h.2⟩
+  simp only [AllocBranchData.check]
+  mvcgen
+  -- the mask and the `log2`, checked at what they read
+  case vc1.a => exact AllocBranchData.equivProd Fp Bool a
+  case vc2 =>
+    rename_i _ h
+    obtain ⟨rfl, hr⟩ := h
+    exact ⟨trivial, hpair hr, by simp⟩
+  -- the `log2`'s range check through the endo, at one row
+  case vc3 =>
+    rename_i s₀ h₀ _ s₁ h₁
+    obtain ⟨rfl, hr⟩ := h₀
+    have hrp := hpair hr
+    have hsc := CircuitType.scoped_fvar.mp (CircuitType.scoped_prod.mp hrp.1).2
+    have hrd := CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp hrp.2).2
+    refine ⟨trivial, hsc.of_le h₁, trivial, ?_⟩
+    rw [ProverState.read_of_le h₁ hsc, ProverState.read, hrd]
+    simpa using hlt
+  case vc4 =>
+    rename_i s₀ h₀ _ s₁ h₁ _ s₂ h₂
+    obtain ⟨rfl, -⟩ := h₀
+    exact h₁.trans (Prover.Reg.iff.mp h₂).2.2
+
+/-- The branch data's check law at the prover's reading. -/
+instance instAllocBranchDataWPCheckedType :
+    WPCheckedType Fp (Prover (KimchiConstraint Fp)) (AllocBranchData Fp Bool)
+      (AllocBranchData (FVar Fp) (BoolVar Fp)) :=
+  ⟨fun v a s hr hv => by
+    -- an admissible `log2` is below `2 ^ 16`, read at the constant reader
+    obtain ⟨am, ax⟩ := a
+    have hc := CircuitType.reads_constVar (F := Fp)
+      (var := AllocBranchData (FVar Fp) (BoolVar Fp)) (fun _ => 0)
+      (⟨am, ax⟩ : AllocBranchData Fp Bool)
+    obtain ⟨_, n, hn, hx⟩ := hv _ _ hc
+    replace hx : ax = (n : Fp) :=
+      (CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp hc).2).symm.trans hx
+    have hlt : ToNat.toNat ax < 2 ^ 16 := by
+      rw [hx, LawfulToNat.toNat_natCast n
+        (show n < PALLAS_BASE_CARD from lt_trans hn (by decide))]
+      exact hn
+    exact AllocBranchData.check_prover_spec v ⟨am, ax⟩ hlt s s ⟨rfl, hr⟩⟩
+
 /-! ## The evaluations -/
 
 /-- The previous step proof's evaluations as allocated: the public column, the witness, the
