@@ -127,6 +127,7 @@ def roots : List Name :=
     `Snarky.scoped_inputVar,
     `Snarky.reads_inputVar,
     `Snarky.solve_complete,
+    `Snarky.solve_spec,
     `Snarky.length_compiledPublicVars_compile,
     `Snarky.length_compiledPublicVars_compileWith,
     `Snarky.compile_reads,

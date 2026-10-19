@@ -212,6 +212,40 @@ theorem CircuitType.ReadsAs.of_le [Add F] [Mul F] [Zero F] {val var : Type}
     (h : CircuitType.ReadsAs (val := val) st r v) : CircuitType.ReadsAs (val := val) st' r v :=
   CircuitType.monotone_readsAs hle h
 
+/-! ## Adequacy
+
+What the transformer promises of `prove`: from a state where it holds at a success condition,
+with failure excluded, the run succeeds into the condition, and every row the builder emits
+holds at every later table, carried there from where it is emitted by
+`ProverState.holds_of_le` on its cells' scope. -/
+
+/-- A run from a state where the transformer holds, with failure excluded, succeeds: its result
+and final state satisfy the success condition, and every row the builder emits from the state's
+counter holds at every table extending the final one. -/
+theorem proverWP_prove [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] {α : Type} {x : CircuitM F c α} {Q : α → ProverState F → ULift Prop}
+    {st : ProverState F} (h : (proverWP x Q (fun _ _ => .up False) st).down) :
+    ∃ r st', prove x st.nv st.env = .ok (st'.out r) ∧ st ≤ st' ∧ (Q r st').down ∧
+      ∀ stf, st' ≤ stf → ∀ con ∈ (build x st.nv).constraints,
+        ConstraintHolds.Holds stf.env.get con := by
+  induction x generalizing st with
+  | pure r => exact ⟨r, st, rfl, le_rfl, h, fun _ _ _ hcon => by simp [build] at hcon⟩
+  | addConstraintOp con k ih =>
+    obtain ⟨hcon, hs, hk⟩ := h
+    obtain ⟨r, st', hrun, hle, hQ, hrows⟩ := ih hk
+    refine ⟨r, st', hrun, hle, hQ, fun stf hf con' hcon' => ?_⟩
+    rcases List.mem_cons.mp hcon' with rfl | hcon'
+    · exact ProverState.holds_of_le hs (hle.trans hf) hcon
+    · exact hrows stf hf con' hcon'
+  | existsOp n wit k ih =>
+    simp only [proverWP] at h
+    rcases hw : wit.run st.env with e | xs <;> rw [hw] at h
+    · exact (h : False).elim
+    · obtain ⟨r, st', hrun, hle, hQ, hrows⟩ := ih _ h
+      refine ⟨r, st', ?_, (st.dom.le_extendList _).trans hle, hQ, hrows⟩
+      simp only [prove, hw]
+      exact hrun
+
 /-! ## Registration
 
 A law is cited by hand; what `mvcgen` is given is its registered reading, a definition suffixed

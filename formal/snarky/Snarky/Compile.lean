@@ -16,12 +16,15 @@ be such a hole.
 
 `solve_complete` is the payoff: a circuit whose body is complete solves, and the table it
 produces satisfies every compiled row and reads the input and the output at the public
-bundles. `compile_reads` and `compileWith_reads` are the reading side: wherever the compiled
+bundles. `solve_spec` concludes the same from the body's law at the prover's reading.
+`compile_reads` and `compileWith_reads` are the reading side: wherever the compiled
 rows hold, a public input given in the order of `compiledPublicVars` reads as the typed input
 and the body's typed output.
 -/
 
 namespace Snarky
+
+set_option mvcgen.warning false
 
 variable {F c a b avar bvar : Type}
 
@@ -190,6 +193,102 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
     exact hrd1
   · rw [← hres]
     exact hrd2
+
+open CircuitType Std.Do in
+/-- A circuit whose body has its law at the prover's reading solves at an admissible public
+input: the run succeeds, the table it produces satisfies every compiled row, and the compiled
+system's two bundles — the body's output and the public one — both read as the value the solve
+returned, with the input bundle still reading the value the solve was given. The circuit is
+read at the completeness tag, `main (c := Prover c)` for a body generic in its constraint type,
+where the checked types' laws live; the body's law starts from the input bundle reading the
+input. The run is read off the whole-circuit program's law by `proverWP_prove`. -/
+theorem solve_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] [A : CircuitType F a avar] [CheckedType F (Prover c) a avar]
+    [WPCheckedType F (Prover c) a avar] [B : CircuitType F b bvar]
+    {main : avar → CircuitM F (Prover c) bvar} (input : a)
+    (hinput : CheckedType.Valid (F := F) (c := Prover c) (var := avar) input)
+    (hmain : ∀ st₀ : ProverState F,
+      ⦃fun s => ⌜s = st₀ ∧ ReadsAs (val := a) st₀ (inputVar (F := F) (a := a)) input⌝⦄
+      main (inputVar (F := F) (a := a))
+      ⦃⇓ out s' => ⌜Scoped (val := b) s' out ∧ WellFormed (val := b) s'.env.get out ∧
+        st₀ ≤ s'⌝⦄) :
+    ∃ (outVal : b) (env : Assignments F),
+      solve (c := Prover c) (a := a) (b := b) main input = .ok (outVal, env) ∧
+      (∀ con ∈ (compile (c := Prover c) (a := a) (b := b) main).constraints,
+        ConstraintHolds.Holds env.get con) ∧
+      Reads env.get (inputVar (F := F) (a := a)) input ∧
+      Reads env.get (compile (c := Prover c) (a := a) (b := b) main).result.1 outVal ∧
+      Reads env.get (compile (c := Prover c) (a := a) (b := b) main).result.2 outVal := by
+  have hm := Prover.register hmain
+  have hw := fun out : bvar => Prover.register (Prover.witness_of_run (F := F) (c := c)
+    (val := UnChecked b) (do let x ← readVar (val := b) out; pure (UnChecked.mk x))
+    (fun st => Scoped (val := b) st out)
+    (fun st => UnChecked.mk (readVal st.env.get out))
+    (fun st (h : Scoped (val := b) st out) => by
+      simp only [AsProver.bind_eq, AsProver.run_bind, readVar_run h, Except.bind]
+      rfl)
+    (fun _ _ _ _ _ => trivial))
+  have hseed : ReadsAs (val := a) (seed (F := F) (avar := avar) input)
+      (inputVar (F := F) (a := a)) input :=
+    ⟨scoped_inputVar input, reads_inputVar input⟩
+  -- the whole-circuit program's law: the public bundle reads the body's output value
+  have hbody : ⦃fun s => ⌜s = seed (F := F) (avar := avar) input⌝⦄
+      compileBody (c := Prover c) (a := a) (b := b) main
+      ⦃⇓ r s' => ⌜∃ v : b, ReadsAs (val := b) s' r.1 v ∧ ReadsAs (val := b) s' r.2 v ∧
+        ReadsAs (val := a) s' (inputVar (F := F) (a := a)) input⌝⦄ := by
+    unfold compileBody
+    mvcgen [hm, hw]
+    -- the input's check: the seeded bundle reads the input, admissibly
+    case vc2 =>
+      rename_i s h
+      subst h
+      exact ⟨trivial, hseed, hinput⟩
+    -- the body: the input still reads past the check
+    case vc3 =>
+      rename_i s₀ h₀ u s h
+      subst h₀
+      exact ⟨trivial, hseed.of_le h⟩
+    -- the public bundle's witness: the body's output in scope
+    case vc4 =>
+      rename_i h
+      exact ⟨trivial, (Prover.Reg.iff.mp h).1⟩
+    -- the binding rows: the output and the public bundle read the same fields
+    case vc5 =>
+      rename_i out s₂ h₂ pub s h₃
+      simp only [Prover.Reg.iff] at h₂ h₃
+      obtain ⟨v, hv⟩ := h₂.2.1
+      have hR : Reads s.env.get pub.val (readVal s₂.env.get out) := reads_unchecked'.mp h₃.1.2
+      rw [(reads_iff.mp hv).2] at hR
+      exact ⟨trivial, h₂.1.mono (ProverState.nv_le_of_le h₃.2), scoped_unchecked'.mp h₃.1.1,
+        Eq.trans (hv.of_le h₂.1 h₃.2) (Eq.symm hR)⟩
+    -- the result: both bundles read the output's value, the input its own
+    case vc6 =>
+      rename_i s₀ h₀ u₁ s₁ h₁ out s₂ h₂ pub s₃ h₃ u₂ s h₄
+      simp only [Prover.Reg.iff] at h₂ h₃ h₄
+      subst h₀
+      refine ⟨readVal s₂.env.get out, ?_, ?_,
+        hseed.of_le (h₁.trans (h₂.2.2.trans (h₃.2.trans h₄)))⟩
+      · exact (show ReadsAs (val := b) s₂ out (readVal s₂.env.get out) from
+          ⟨h₂.1, reads_iff.mpr ⟨h₂.2.1, rfl⟩⟩).of_le (h₃.2.trans h₄)
+      · exact (show ReadsAs (val := b) s₃ pub.val (readVal s₂.env.get out) from
+          ⟨scoped_unchecked'.mp h₃.1.1, reads_unchecked'.mp h₃.1.2⟩).of_le h₄
+  obtain ⟨r, st', hrun, -, ⟨v, hrd1, hrd2, hrin⟩, hrows⟩ :=
+    proverWP_prove (c := Prover c) (hbody (seed (F := F) (avar := avar) input) rfl)
+  have hres : r = (compile (c := Prover c) (a := a) (b := b) main).result :=
+    (prove_build_agrees hrun).1
+  refine ⟨v, st'.env, ?_, hrows st' le_rfl, hrin.2, ?_, ?_⟩
+  · unfold solve
+    rw [show prove (compileBody (c := Prover c) (a := a) (b := b) main)
+        (seed (F := F) (avar := avar) input).nv (seed (F := F) (avar := avar) input).env
+        = .ok (st'.out r) from hrun]
+    show (match (readVar (val := b) r.1).run st'.env with
+      | Except.error e => Except.error e
+      | Except.ok outVal => Except.ok (outVal, st'.env)) = Except.ok (v, st'.env)
+    rw [readVar_run hrd1.1, (reads_iff.mp hrd1.2).2]
+  · rw [← hres]
+    exact hrd1.2
+  · rw [← hres]
+    exact hrd2.2
 
 /-- The counter the body starts from: past the input slots, and past whatever the input
 bundle's own check allocated. -/
