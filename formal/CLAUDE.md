@@ -91,7 +91,7 @@ of deleted/renamed modules — run it after branch switches),
 constructor import no `Snarky.Kimchi.Backend.Internal` or `.Checks` module, and no library root
 reaches a check module: the decided checks are built by the libraries' globs and imported by the
 audit drivers alone — `make lean-import-boundaries`), and `scripts/kernel-replay.sh` (the
-lean4checker kernel-replay gate).
+leanchecker kernel-replay gate).
 
 **The comment gate** (`scripts/check-comments.sh`, `make lean-comments`) fixes the objective
 half of the comment convention; the judgement half is the `proof-comment-style` skill. A
@@ -125,7 +125,7 @@ Three further quality gates are community tools, all CI-enforced:
   build before trusting it. Any file that uses the `Kimchi.Columns` notations must
   import it DIRECTLY (shake cannot see notation use, so it may drop transitive
   providers).
-- **`scripts/kernel-replay.sh`** (`make lean-kernel-check`) — lean4checker replays every
+- **`scripts/kernel-replay.sh`** (`make lean-kernel-check`) — leanchecker replays every
   `.olean` through the kernel alone, catching environment tampering that the build and
   the axiom gates inherently trust.
 

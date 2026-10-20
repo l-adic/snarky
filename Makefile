@@ -170,7 +170,7 @@ lean-spec-locality: ## Gate: a pickles gadget's spec is stated only in the gadge
 lean-import-boundaries: ## Gate: the compiler and checkers import no proof or check module; no library root reaches a check module
 	bash formal/scripts/check-import-boundaries.sh
 
-lean-kernel-check: ## Kernel-replay every Lean module through lean4checker
+lean-kernel-check: ## Kernel-replay every Lean module through leanchecker
 	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/kernel-replay.sh
 
 lean-prune-stale: ## Prune build artifacts of deleted/renamed Lean modules

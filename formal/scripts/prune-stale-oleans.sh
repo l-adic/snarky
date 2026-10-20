@@ -5,9 +5,9 @@
 # `.olean`/`.ilean` behind in the package build directory. Those stale artifacts stay on
 # `lake env`'s LEAN_PATH, where they (a) shadow the current tree after branch switches
 # (stale-olean import errors) and (b) get picked up by prefix-matching tools — the
-# lean4checker kernel-replay gate resolves its module list from the search path, so a
+# leanchecker kernel-replay gate resolves its module list from the search path, so a
 # stale olean would be replayed as if it were part of the library. CI runs this before
-# the lean4checker step; run it locally after deleting/renaming modules or switching
+# the leanchecker step; run it locally after deleting/renaming modules or switching
 # branches.
 #
 # Usage: scripts/prune-stale-oleans.sh   (from anywhere; operates on this workspace)

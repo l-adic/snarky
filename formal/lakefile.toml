@@ -16,7 +16,7 @@
 # formatter contract), scripts/deadcode.{lean,sh} (cross-package reachability over the
 # union of the packages' roots.txt manifests), scripts/module-deps.sh (the dependency
 # graph artifact), scripts/prune-stale-oleans.sh (build-dir garbage collection), and
-# scripts/kernel-replay.sh (the lean4checker gate); plus the lint/shake policy files
+# scripts/kernel-replay.sh (the leanchecker gate); plus the lint/shake policy files
 # scripts/{nolints,noshake}.json.
 name = "formal"
 
