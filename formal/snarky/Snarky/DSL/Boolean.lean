@@ -108,9 +108,9 @@ open Std.Do in
     simp only [CVar.val_sub_] at h
     rw [hbb] at h
     cases bb <;> simp only [bit] at h
-    · rw [if_neg Bool.false_ne_true, zero_mul] at h
+    · rw [ite_eq_right Bool.false_ne_true, zero_mul] at h
       simp [sub_eq_zero.mp h.symm]
-    · rw [if_pos trivial, one_mul] at h
+    · rw [ite_eq_left trivial, one_mul] at h
       simp [sub_left_inj.mp h]
 
 attribute [irreducible] selectField
@@ -509,12 +509,12 @@ some operand reads `1`. -/
       have hne : ((List.count (1 : F)
           (((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar).map (·.val V)) : ℕ) : F) ≠ 0 :=
         fun hc => absurd (hchar _ hle hc) (by omega)
-      rw [if_pos h]
+      rw [ite_eq_left h]
       simp only [hne, ↓reduceIte]
     · have h0 : ((List.count (1 : F)
           (((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar).map (·.val V)) : ℕ) : F) = 0 := by
         rw [List.count_eq_zero.mpr (hmem.not.mpr h)]; simp
-      rw [if_neg h]
+      rw [ite_eq_right h]
       simp only [h0, ↓reduceIte]
 
 attribute [irreducible] Snarky.any
@@ -586,14 +586,14 @@ every operand reads `1`. -/
     · have he : (xs.length : F)
           = ((List.count (1 : F) ((xs.map BoolVar.toCVar).map (·.val V)) : ℕ) : F) := by
         rw [hall.mpr h, hlenL]
-      rw [if_pos h]
+      rw [ite_eq_left h]
       simp only [CVar.val, he, ↓reduceIte]
     · have hne : (xs.length : F)
           ≠ ((List.count (1 : F) ((xs.map BoolVar.toCVar).map (·.val V)) : ℕ) : F) :=
         fun hc => h (hall.mp (by
           have := hchar _ _ (Nat.le_refl _) hle hc
           omega))
-      rw [if_neg h]
+      rw [ite_eq_right h]
       simp only [CVar.val, hne, ↓reduceIte]
 
 attribute [irreducible] Snarky.all

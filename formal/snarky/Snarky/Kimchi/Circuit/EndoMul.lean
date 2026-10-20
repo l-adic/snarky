@@ -1450,7 +1450,7 @@ theorem Prover.endoInv_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     simp only [endoInvWit, AsProver.bind_eq, AsProver.run_bind,
       AsProver.readCVar_run hgSc.1, AsProver.readCVar_run hgSc.2,
       AsProver.readCVar_run hsc, hrx, hry, Except.bind]
-    rw [dif_pos hG, show scalar.val.val st.env.get = st₀.read scalar.val from hsv,
+    rw [dite_eq_left hG, show scalar.val.val st.env.get = st₀.read scalar.val from hsv,
       toField_crumbsOf_eq_endoExpandZ d, ← hkdef, hpteq]
     rfl
   have hwit := Prover.register (Prover.witness_of_run (c := KimchiConstraint F)

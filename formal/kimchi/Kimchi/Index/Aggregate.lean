@@ -173,7 +173,7 @@ private theorem gateConstraints_vanish_of_dvd (idx : Index F n) (pub : Fin idx.p
   rw [idx.eval_gateMember] at h
   have hpub0 : pubAt idx pub i = 0 := by
     unfold pubAt
-    exact dif_neg fun hlt => hne (idx.public_generic i hlt)
+    exact dite_eq_right fun hlt => hne (idx.public_generic i hlt)
   rw [hpub0, ite_self, sub_zero] at h
   rwa [List.getD_eq_getElem _ _ c.isLt, ← List.get_eq_getElem] at h
 
@@ -202,7 +202,7 @@ private theorem generic_holds_of_dvd (idx : Index F n) (pub : Fin idx.publicCoun
   have h0 := hslot 0 (by norm_num [gateAlphaCount])
   have h1 := hslot 1 (by norm_num [gateAlphaCount])
   simp only [gateConstraints, Generic.argument, Generic.cellMap, Gate.Generic.constraints,
-    List.getD_cons_zero, List.getD_cons_succ, if_pos, one_ne_zero,
+    List.getD_cons_zero, List.getD_cons_succ, ite_eq_left, one_ne_zero,
     ite_false] at h0 h1
   exact ⟨hb1 ▸ h0, hb2 ▸ h1⟩
 
@@ -260,7 +260,7 @@ private theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.
     ∀ i, rowSatisfies idx pub wTab i :=
   idx.rowSatisfies_of_gateMember_dvd pub wTab fun k hk => by
     have h := hdvd ⟨k, by omega⟩
-    rwa [fullFamily, dif_pos hk] at h
+    rwa [fullFamily, dite_eq_left hk] at h
 
 /-! ## Alpha instantiation: the one quotient check
 
@@ -293,7 +293,7 @@ private theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount →
       = Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
           (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
           (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s := by
-  rw [fullFamily, dif_neg (by show ¬gateAlphaCount + (s : ℕ) < gateAlphaCount; omega)]
+  rw [fullFamily, dite_eq_right (by show ¬gateAlphaCount + (s : ℕ) < gateAlphaCount; omega)]
   congr 1
   exact Fin.ext (by simp [Fin.natAdd])
 
@@ -394,22 +394,22 @@ private theorem publicPinned_of_rowSatisfies (idx : Index F n) (pub : Fin idx.pu
   have h1 := ((Gate.Generic.withPublic_holds_iff ⟨idx.coeffTable r, wTab r⟩ _).mp h).1
   have hq0 : idx.coeffTable r 0 = 1 := by
     show (idx.gates r).coeffs 0 = 1
-    rw [idx.public_coeffs r hlt 0]; exact if_pos rfl
+    rw [idx.public_coeffs r hlt 0]; exact ite_eq_left rfl
   have hq1 : idx.coeffTable r 1 = 0 := by
     show (idx.gates r).coeffs 1 = 0
-    rw [idx.public_coeffs r hlt 1]; exact if_neg (by decide)
+    rw [idx.public_coeffs r hlt 1]; exact ite_eq_right (by decide)
   have hq2 : idx.coeffTable r 2 = 0 := by
     show (idx.gates r).coeffs 2 = 0
-    rw [idx.public_coeffs r hlt 2]; exact if_neg (by decide)
+    rw [idx.public_coeffs r hlt 2]; exact ite_eq_right (by decide)
   have hq3 : idx.coeffTable r 3 = 0 := by
     show (idx.gates r).coeffs 3 = 0
-    rw [idx.public_coeffs r hlt 3]; exact if_neg (by decide)
+    rw [idx.public_coeffs r hlt 3]; exact ite_eq_right (by decide)
   have hq4 : idx.coeffTable r 4 = 0 := by
     show (idx.gates r).coeffs 4 = 0
-    rw [idx.public_coeffs r hlt 4]; exact if_neg (by decide)
+    rw [idx.public_coeffs r hlt 4]; exact ite_eq_right (by decide)
   have hpub : pubAt idx pub r = pub i := by
     unfold pubAt
-    rw [dif_pos hlt]
+    rw [dite_eq_left hlt]
   rw [← hpub]
   linear_combination (h1.symm.trans (by simp only [hq0, hq1, hq2, hq3, hq4]; ring)).symm
 
@@ -575,7 +575,7 @@ private theorem eval_gateMember_of_rowSatisfies (idx : Index F n) (pub : Fin idx
   · -- non-generic rows: all slots vanish and the public term is 0
     have hpub0 : pubAt idx pub i = 0 := by
       unfold pubAt
-      exact dif_neg fun hlt => hgen (idx.public_generic i hlt)
+      exact dite_eq_right fun hlt => hgen (idx.public_generic i hlt)
     rw [hpub0, ite_self, sub_zero]
     exact eval_getD_zero_of_vanish
       (idx.gateConstraints_vanish_of_rowSatisfies pub wTab hrow hgen) k
@@ -635,7 +635,7 @@ private theorem fullFamily_gate (idx : Index F n) (pub : Fin idx.publicCount →
     (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (β γ : F)
     (k : Fin (gateAlphaCount + permAlphaCount)) (hk : (k : ℕ) < gateAlphaCount) :
     idx.fullFamily pub wTab z β γ k = idx.gateMember pub wTab k := by
-  rw [fullFamily, dif_pos hk]
+  rw [fullFamily, dite_eq_left hk]
 
 open Kimchi.Permutation in
 omit [DecidableEq F] in

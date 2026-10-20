@@ -154,33 +154,33 @@ theorem addEqualsConstraint_apply [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq 
   show addEqualsB c s = _
   unfold addEqualsB outcomeOf
   by_cases h0 : c.cl = 0 ∧ c.cr = 0
-  · rw [if_pos h0, if_pos h0]
+  · rw [ite_eq_left h0, ite_eq_left h0]
     rfl
-  · rw [if_neg h0, if_neg h0]
+  · rw [ite_eq_right h0, ite_eq_right h0]
     cases hvl : c.vl <;> cases hvr : c.vr <;> dsimp only
     · by_cases h1 : c.cl = c.cr
-      · rw [if_pos h1, if_pos h1]
+      · rw [ite_eq_left h1, ite_eq_left h1]
         rfl
-      · rw [if_neg h1, if_neg h1]
+      · rw [ite_eq_right h1, ite_eq_right h1]
         rfl
     · by_cases h1 : c.cr = 0
-      · rw [if_pos h1, if_pos h1]
+      · rw [ite_eq_left h1, ite_eq_left h1]
         rfl
-      · rw [if_neg h1, if_neg h1]
+      · rw [ite_eq_right h1, ite_eq_right h1]
         simp only [bind, StateT.bind, get, getThe, MonadStateOf.get, StateT.get, pure, modify,
           modifyGet, MonadStateOf.modifyGet]
         cases List.lookup (c.cl / c.cr) s.aux.wireState.cachedConstants <;> rfl
     · by_cases h1 : c.cl = 0
-      · rw [if_pos h1, if_pos h1]
+      · rw [ite_eq_left h1, ite_eq_left h1]
         rfl
-      · rw [if_neg h1, if_neg h1]
+      · rw [ite_eq_right h1, ite_eq_right h1]
         simp only [bind, StateT.bind, get, getThe, MonadStateOf.get, StateT.get, pure, modify,
           modifyGet, MonadStateOf.modifyGet]
         cases List.lookup (c.cr / c.cl) s.aux.wireState.cachedConstants <;> rfl
     · by_cases h1 : c.cl = c.cr
-      · rw [if_pos h1, if_pos h1]
+      · rw [ite_eq_left h1, ite_eq_left h1]
         rfl
-      · rw [if_neg h1, if_neg h1]
+      · rw [ite_eq_right h1, ite_eq_right h1]
         rfl
 
 /-- A cache hit names a pair the cache held. -/

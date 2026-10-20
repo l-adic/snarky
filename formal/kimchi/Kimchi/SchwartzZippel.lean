@@ -63,10 +63,10 @@ the sum contributes exactly one monomial in degree `k`. -/
 private theorem combPoly_coeff {K : ℕ} (c : Fin K → F) (k : Fin K) :
     (combPoly c).coeff (k : ℕ) = c k := by
   rw [combPoly, Polynomial.finsetSum_coeff, Finset.sum_eq_single k]
-  · rw [Polynomial.coeff_C_mul, Polynomial.coeff_X_pow, if_pos rfl, mul_one]
+  · rw [Polynomial.coeff_C_mul, Polynomial.coeff_X_pow, ite_eq_left rfl, mul_one]
   · intro d _ hdk
     rw [Polynomial.coeff_C_mul, Polynomial.coeff_X_pow,
-      if_neg fun heq => hdk (Fin.val_injective heq).symm, mul_zero]
+      ite_eq_right fun heq => hdk (Fin.val_injective heq).symm, mul_zero]
   · exact fun hk => absurd (Finset.mem_univ k) hk
 
 omit [DecidableEq F] in
@@ -125,7 +125,7 @@ theorem eq_zero_of_comb_eq_zero {K : ℕ} (c : Fin K → F) (α : F)
   by_contra hne
   apply hα
   unfold badComb
-  rw [if_neg hne, Multiset.mem_toFinset, Polynomial.mem_roots']
+  rw [ite_eq_right hne, Multiset.mem_toFinset, Polynomial.mem_roots']
   refine ⟨fun h0 => hne ((combPoly_eq_zero_iff c).mp h0), ?_⟩
   show (combPoly c).eval α = 0
   rw [combPoly_eval]
@@ -206,7 +206,7 @@ private theorem zH_dvd_of_eval {n : ℕ} (C t : Polynomial F) (ζ : F)
     by_contra hCT
     apply hζ
     unfold badZetas
-    rw [if_neg hCT, Multiset.mem_toFinset, Polynomial.mem_roots']
+    rw [ite_eq_right hCT, Multiset.mem_toFinset, Polynomial.mem_roots']
     exact ⟨sub_ne_zero.mpr hCT, by rw [IsRoot.def, eval_sub, sub_eq_zero]; exact h⟩
   rw [this]; exact dvd_mul_left _ _
 

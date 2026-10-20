@@ -149,7 +149,7 @@ private theorem wrapDecode_cast {Vg : Valuation Fq} {Vs : Valuation Fp} {c : Typ
 /-- The digest crosses back through `castDigest`. -/
 private theorem castDigest_cast (x : Fp) : castDigest IpaVesta.curve (ZMod.cast x) = x := by
   simp only [castDigest, ZMod.val_cast_eq_val_of_lt (x.val_lt.trans Pasta.fp_lt_fq),
-    if_pos (ZMod.val_lt x), ZMod.natCast_zmod_val]
+    ite_eq_left (ZMod.val_lt x), ZMod.natCast_zmod_val]
 
 /-- **The claims cast across make the two halves hold one set of claims.** With the wrap
 circuit's claim cells the step circuit's reduced (`ClaimsCast`), `β`, `γ` reading as

@@ -44,7 +44,7 @@ private theorem getElem?_padTo (t : Array (Option F)) (v w : Variable) :
   rcases Nat.lt_or_ge w t.size with h | h
   · simp [padTo, Array.getElem?_append, h]
   · rw [Array.getElem?_eq_none h]
-    simp only [padTo, Array.getElem?_append, Nat.not_lt.mpr h, if_false,
+    simp only [padTo, Array.getElem?_append, Nat.not_lt.mpr h, ite_false,
       Array.getElem?_replicate]
     split <;> rfl
 
@@ -80,7 +80,7 @@ protected theorem Le.trans {a b c : Assignments F} (h₁ : a.Le b) (h₂ : b.Le 
 @[simp] private theorem extend_self (a : Assignments F) (v : Variable) (x : F) :
     a.extend v x v = some x := by
   show ((padTo a.tab v).setIfInBounds v (some x))[v]?.join = some x
-  rw [Array.getElem?_setIfInBounds_self, if_pos (lt_size_padTo a.tab v)]
+  rw [Array.getElem?_setIfInBounds_self, ite_eq_left (lt_size_padTo a.tab v)]
   rfl
 
 @[simp] private theorem extend_ne (a : Assignments F) {v w : Variable} (x : F) (h : w ≠ v) :

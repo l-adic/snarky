@@ -92,7 +92,7 @@ private theorem terminalPacked_digest {k : ℕ} {V : Valuation Fq}
   change castDigest IpaVesta.curve (stmt.digests[0].val V) = digest
   rw [hd]
   simp only [castDigest, ZMod.val_cast_eq_val_of_lt (digest.val_lt.trans Pasta.fp_lt_fq),
-    if_pos (ZMod.val_lt digest), ZMod.natCast_zmod_val]
+    ite_eq_left (ZMod.val_lt digest), ZMod.natCast_zmod_val]
 
 /-- Packed public-input agreement fixes the outgoing Wrap-message digest. -/
 private theorem terminalPacked_wrapDigest {k : ℕ} {V : Valuation Fq}

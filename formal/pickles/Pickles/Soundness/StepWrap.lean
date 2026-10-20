@@ -97,7 +97,7 @@ private theorem bit_ofWrap {Vs : Valuation Fq} {b : BoolVar Fq}
   rw [hbb]
   cases bb
   · simp [bit, ToNat.toNat]
-  · simp only [bit, ToNat.toNat, decide_true, if_true]
+  · simp only [bit, ToNat.toNat, decide_true, ite_true]
     rw [ZMod.val_one, Nat.cast_one]
 
 /-- An unfinalized entry's values, flattened, are its packed scalars reduced, when its bit cells

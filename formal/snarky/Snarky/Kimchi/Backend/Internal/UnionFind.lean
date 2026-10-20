@@ -69,14 +69,14 @@ private theorem rootLoop_eq_chain {parent : Array Nat} :
     | succ fuel =>
       have hr' : parent.getD x x = x := hr
       simp only [rootLoop]
-      rw [if_pos hr']
+      rw [ite_eq_left hr']
       rfl
   | 0, k + 1, _, hk, _ => absurd hk (Nat.not_succ_le_zero _)
   | fuel + 1, k + 1, x, hk, hr => by
     simp only [rootLoop]
     by_cases hx : parent.getD x x = x
-    · rw [if_pos hx, chain_of_isRoot hx]
-    · rw [if_neg hx]
+    · rw [ite_eq_left hx, chain_of_isRoot hx]
+    · rw [ite_eq_right hx]
       rw [chain_succ'] at hr ⊢
       exact rootLoop_eq_chain fuel k _ (Nat.le_of_succ_le_succ hk) hr
 
@@ -180,26 +180,26 @@ private theorem root_set {uf : UnionFind} (h : Inv uf) {rx ry : Nat} (hrx : IsRo
         show (uf.parent.set! ry rx).getD (chain (uf.parent.set! ry rx) x j)
           (chain (uf.parent.set! ry rx) x j) = uf.parent.getD (chain uf.parent x j)
             (chain uf.parent x j)
-        rw [ih (Nat.le_of_succ_le hj), hset, if_neg hnry]
+        rw [ih (Nat.le_of_succ_le hj), hset, ite_eq_right hnry]
     rw [hroot]
     by_cases hr : chain uf.parent x (Nat.find hex) = ry
-    · rw [if_pos hr]
+    · rw [ite_eq_left hr]
       have hnext : chain (uf.parent.set! ry rx) x (Nat.find hex + 1) = rx := by
         simp only [chain, hagree _ (Nat.le_refl _), hr, hset, ite_true]
       have hrx' : IsRoot (uf.parent.set! ry rx) rx := by
-        simp only [IsRoot, hset, if_neg hne]
+        simp only [IsRoot, hset, ite_eq_right hne]
         exact hrx
       rw [rootLoop_eq_chain _ (Nat.find hex + 1) x hklt (by rw [hnext]; exact hrx'), hnext]
-    · rw [if_neg hr]
+    · rw [ite_eq_right hr]
       have hr' : IsRoot (uf.parent.set! ry rx) (chain (uf.parent.set! ry rx) x (Nat.find hex)) := by
         rw [hagree _ (Nat.le_refl _)]
         show (uf.parent.set! ry rx).getD _ _ = _
-        rw [hset, if_neg hr]
+        rw [hset, ite_eq_right hr]
         exact hkroot
       rw [rootLoop_eq_chain _ (Nat.find hex) x (Nat.le_of_lt hklt) hr', hagree _ (Nat.le_refl _)]
   · have hx' : uf.parent.size ≤ x := Nat.le_of_not_lt hx
     rw [rootLoop_of_ge hx', rootLoop_of_ge (by rw [hsize]; exact hx')]
-    rw [if_neg (by omega)]
+    rw [ite_eq_right (by omega)]
 
 /-! ### Growing -/
 
@@ -325,7 +325,7 @@ private theorem getElem!_set! (xs : Array Nat) {i : Nat} (hi : i < xs.size) (a k
   · have hk' : ¬ k < (xs.set! i a).size := by
       rw [size_set!]
       exact hk
-    rw [getElem!_neg (xs.set! i a) k hk', getElem!_neg xs k hk, if_neg (by omega)]
+    rw [getElem!_neg (xs.set! i a) k hk', getElem!_neg xs k hk, ite_eq_right (by omega)]
 
 private theorem rank_getD_eq {uf : UnionFind} (h : Inv uf) {r : Nat} (hr : r < uf.parent.size) :
     uf.rank.getD r 0 = uf.rank[r]! := by
@@ -384,12 +384,12 @@ private theorem inv_set_tie {uf : UnionFind} (h : Inv uf) {a b : Nat} (hb : IsRo
         subst e
         rw [hroot] at hp2
         exact lt_irrefl _ hp2
-      rw [if_neg hjb]
+      rw [ite_eq_right hjb]
       by_cases hpb : b = uf.parent[j]
-      · rw [if_pos hpb]
+      · rw [ite_eq_left hpb]
         rw [← hpb] at hp2
         omega
-      · rw [if_neg hpb]
+      · rw [ite_eq_right hpb]
         exact hp2
 
 /-- A union keeps the invariant: by rank, tie included. -/
@@ -429,20 +429,20 @@ private theorem root_union {uf : UnionFind} (h : Inv uf) (x y z : Nat) :
   rw [← hrx] at hrootx hxlt ⊢
   rw [← hry] at hrooty hylt ⊢
   by_cases h1 : rx = ry
-  · rw [if_pos h1, if_pos h1]
-  · rw [if_neg h1, if_neg h1]
+  · rw [ite_eq_left h1, ite_eq_left h1]
+  · rw [ite_eq_right h1, ite_eq_right h1]
     by_cases h2 : uf'.rank.getD rx 0 < uf'.rank.getD ry 0
-    · rw [if_pos h2, if_pos h2]
+    · rw [ite_eq_left h2, ite_eq_left h2]
       dsimp only
       rw [size_set!]
       exact root_set h' hrooty hrootx hxlt (Ne.symm h1) z
-    · rw [if_neg h2, if_neg h2]
+    · rw [ite_eq_right h2, ite_eq_right h2]
       by_cases h3 : uf'.rank.getD ry 0 < uf'.rank.getD rx 0
-      · rw [if_pos h3]
+      · rw [ite_eq_left h3]
         dsimp only
         rw [size_set!]
         exact root_set h' hrootx hrooty hylt h1 z
-      · rw [if_neg h3]
+      · rw [ite_eq_right h3]
         dsimp only
         rw [size_set!]
         exact root_set h' hrootx hrooty hylt h1 z

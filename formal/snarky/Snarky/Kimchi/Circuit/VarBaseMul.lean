@@ -1733,7 +1733,7 @@ private theorem scaleFast2'_join [Field F] {V : Valuation F} {n sDiv2Bits : ℕ}
     apply pow_le_pow_right₀ (by norm_num)
     unfold scaleFast2'Width; split_ifs <;> omega
   refine ⟨h0, lt_of_lt_of_le hlt hw, fun hfull => ?_, ?_⟩
-  · rwa [scaleFast2'Width, if_pos hfull] at hlt
+  · rwa [scaleFast2'Width, ite_eq_left hfull] at hlt
   · push_cast
     rw [hpin, hzval]
     cases bb <;> simp [bit]

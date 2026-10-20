@@ -227,7 +227,7 @@ private theorem evalLoop_map (toks : Array PolishToken) :
             simp
           simp only [Evals.toEnv_ifFeature, bind, pure]
           by_cases hf : feat f
-          · simp only [if_pos hf]
+          · simp only [ite_eq_left hf]
             rw [← key (s.position + 1 + n) (s.position + 1)]
             simpa using ih endPos
               (EvalState.push (topOrZero (e.toEnv endo mds alphaPow β γ jc van ulb lk feat)
@@ -235,7 +235,7 @@ private theorem evalLoop_map (toks : Array PolishToken) :
                   (s.position + 1 + n) { s with position := s.position + 1 }))
                 { s with position := s.position + 1 + n + 1 +
                     falseCount toks (s.position + 1 + n) })
-          · simp only [if_neg hf]
+          · simp only [ite_eq_right hf]
             rw [← key]
             simpa using ih endPos
               (EvalState.push (topOrZero (e.toEnv endo mds alphaPow β γ jc van ulb lk feat)

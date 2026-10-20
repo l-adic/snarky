@@ -142,7 +142,7 @@ private theorem sigmaCell_unmasked {ω : F} {zkRows : ℕ} {shifts : Fin permCol
     {σpFull : Equiv.Perm (Fin permCols × Fin n)} {i : Fin permCols} {j : Fin n}
     (hj : (j : ℕ) < n - zkRows) :
     sigmaCell ω zkRows shifts σpFull i j = addr ω shifts (σpFull (i, j)) := by
-  rw [sigmaCell, if_neg (by omega)]
+  rw [sigmaCell, ite_eq_right (by omega)]
 
 /-! ## Completeness: nondegenerate challenges and the grand-product identity -/
 

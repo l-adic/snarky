@@ -357,7 +357,7 @@ theorem IndexOf.classCells_eq {n : ℕ} [NeZero n] {source : List (KimchiConstra
       c.2).col < wCols := by
     rw [← h1]
     exact lt_trans ((idx.gates ⟨c.1, by omega⟩).wires ⟨c.2, hj⟩).1.isLt (by decide)
-  simp only [cellVal, dif_pos (And.intro hb1 hb2), dif_pos (And.intro (lt_of_lt_of_le hr hrows_le)
+  simp only [cellVal, dite_eq_left (And.intro hb1 hb2), dite_eq_left (And.intro (lt_of_lt_of_le hr hrows_le)
     (lt_trans hj (by decide : 7 < wCols)))]
   refine Eq.trans ?_ hs2
   congr 1
@@ -993,7 +993,7 @@ private theorem recover_spec (rows : List (KimchiRow F)) (val : Nat × Nat → F
     (hv : rows[r].vars[j] = some v) : val (r, j) = recover rows val v := by
   have hex : ∃ c : Fin rows.length × Fin wCols, rows[c.1].vars[c.2] = some v :=
     ⟨(⟨r, hr⟩, ⟨j, hj⟩), hv⟩
-  simp only [recover, dif_pos hex]
+  simp only [recover, dite_eq_left hex]
   have hc := Classical.choose_spec hex
   generalize Classical.choose hex = c at hc ⊢
   by_cases h7 : j < 7
@@ -1047,7 +1047,7 @@ theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
       wTab ⟨r, by omega⟩ ⟨j, hj⟩ = V v := by
     intro r j hr hj v hv
     rw [← hreal r j hr hj v hv]
-    simp only [cellVal, dif_pos (And.intro (lt_of_lt_of_le hr hrows_le) hj)]
+    simp only [cellVal, dite_eq_left (And.intro (lt_of_lt_of_le hr hrows_le) hj)]
   refine ⟨V, ?_, ?_⟩
   · intro c hc
     obtain ⟨p, hp, rfl⟩ := List.mem_iff_getElem.mp hc
@@ -1096,7 +1096,7 @@ theorem KimchiConstraint.Direct.holds_of_satisfies {n : ℕ} [NeZero n]
       simp only at hgen
       have hpub0 : Index.pubAt idx pub ⟨publicVars.length + rc.row, by omega⟩ = 0 := by
         unfold Index.pubAt
-        rw [dif_neg (by
+        rw [dite_eq_right (by
           rw [hindex.publicCount]
           show ¬ publicVars.length + rc.row < publicVars.length
           omega)]

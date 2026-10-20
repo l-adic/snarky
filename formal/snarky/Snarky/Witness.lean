@@ -451,7 +451,7 @@ theorem run_mapM_readCVar [Add F] [Mul F] [Zero F] {st : ProverState F} :
     {v : var} (hs : CircuitType.Scoped (val := val) st v) :
     (readVar (val := val) v).run st.env = .ok (CircuitType.readVal st.env.get v) := by
   simp only [readVar, AsProver.bind_eq, AsProver.run_bind, run_mapM_readCVar hs, Except.bind]
-  rw [dif_pos (by simp)]
+  rw [dite_eq_left (by simp)]
   rfl
 
 end Combinators

@@ -926,7 +926,7 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
   -- the accumulator chain as a point function over the derived per-step nonsingularity
   set P : ℕ → W.Point := fun k => if hk : k ≤ m then Point.some _ _ (key k hk) else 0 with hPdef
   have hPval : ∀ k (hk : k ≤ m), P k = Point.some _ _ (key k hk) := by
-    intro k hk; rw [hPdef]; exact dif_pos hk
+    intro k hk; rw [hPdef]; exact dite_eq_left hk
   -- per-row GLV contribution, from `gate_advance`
   have hrow : ∀ i, i < m → ∃ c1 c2 : ℤ,
       P (i + 1) = (4 : ℤ) • P i + c1 • T + c2 • φT

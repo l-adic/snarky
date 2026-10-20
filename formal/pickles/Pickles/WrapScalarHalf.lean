@@ -43,7 +43,7 @@ def SplitClaimsCast {k : ℕ} (Vg : Valuation Fp)
 /-- The step digest crosses into the wrap field through `castDigest` as its representative. -/
 private theorem castDigest_pallas (x : Fp) : castDigest IpaPallas.curve x = ZMod.cast x := by
   have h : x.val < IpaPallas.curve.scalar := (ZMod.val_lt x).trans Pasta.fp_lt_fq
-  simp only [castDigest, if_pos h, ZMod.cast_eq_val]
+  simp only [castDigest, ite_eq_left h, ZMod.cast_eq_val]
 
 /-- **The claims cast across make the two halves hold one set of claims.** With the wrap
 circuit's claim cells the step circuit's lifted (`SplitClaimsCast`), `β`, `γ` reading as

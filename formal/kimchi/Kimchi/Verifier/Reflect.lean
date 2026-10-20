@@ -323,15 +323,15 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : Kim
       rfl
     · have hg : (decide (cp.olds.size ≠ cvk.prevChallenges) || decide (pub.size ≠ cvk.publicCount))
           = true := by simp [h]
-      simp only [hg, if_true]
+      simp only [hg, ite_true]
   have hcond : (cp.olds.size ≠ cvk.prevChallenges || pub.size ≠ cvk.publicCount) = true
       ↔ ¬ Guards C cvk cp pub := by
     simp only [Guards, Bool.or_eq_true, decide_eq_true_eq, ne_eq, not_and_or]
   rw [hkv]
   by_cases hg : Guards C cvk cp pub
-  · rw [if_neg (hcond.not.mpr (not_not.mpr hg))]
+  · rw [ite_eq_right (hcond.not.mpr (not_not.mpr hg))]
     simp [hg]
-  · rw [if_pos (hcond.mpr hg)]
+  · rw [ite_eq_left (hcond.mpr hg)]
     simp [hg]
 
 end Kimchi.Verifier

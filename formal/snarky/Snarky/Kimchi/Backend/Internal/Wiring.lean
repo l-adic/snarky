@@ -259,8 +259,8 @@ private theorem getElem?_cycleFold_of_notMem_index (cells : Array (Nat × Nat))
     have hne : cells[k]! ≠ cells[q] := by
       rw [getElem!_pos cells k hk]
       intro h
-      have := (List.getElem_inj (xs := cells.toList) (h₀ := by simpa using hk)
-        (h₁ := by simpa using hq) hnd).mp (by simpa using h)
+      have := (List.Nodup.getElem_inj (xs := cells.toList) (hi := by simpa using hk)
+        (hj := by simpa using hq) hnd).mp (by simpa using h)
       exact hqks (this ▸ List.mem_cons_self ..)
     simp [hne]
 
@@ -519,7 +519,7 @@ theorem wireMap_getElem? (roots : Array Variable) (rows : List (KimchiRow F)) (k
     omega
   have hmem : (k, (classCells roots rows k).toArray) ∈
       (classFold ∅ (keyedFrom roots rows 0)).toList := by
-    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, getElem?_classFold, if_neg hne]
+    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, getElem?_classFold, ite_eq_right hne]
     simp [classCells, keyedCells]
   have hnd : ∀ x ∈ (classFold ∅ (keyedFrom roots rows 0)).toList, x.2.toList.Nodup := by
     intro x hx
@@ -592,7 +592,7 @@ theorem wireTarget_eq (roots : Array Variable) (rows : List (KimchiRow F)) (i j 
   unfold wireTarget classTarget
   rw [Std.HashMap.getD_eq_getD_getElem?]
   by_cases hb : i < rows.length ∧ j < 7
-  · rw [dif_pos hb]
+  · rw [dite_eq_left hb]
     rcases hl : rows[i].vars[j]'(by omega) with _ | v
     · rw [wireMap_getElem?_eq_none]
       · rfl
@@ -607,7 +607,7 @@ theorem wireTarget_eq (roots : Array Variable) (rows : List (KimchiRow F)) (i j 
       dsimp only
       rw [← hcq, wireMap_getElem? roots rows _ q hqlt, Option.getD_some,
         getElem!_pos (classCells roots rows (roots.getD v v)) _ (Nat.mod_lt _ (by omega))]
-  · rw [dif_neg hb, wireMap_getElem?_eq_none]
+  · rw [dite_eq_right hb, wireMap_getElem?_eq_none]
     · rfl
     · intro k hk
       exact hb (classCells_bounds hk)

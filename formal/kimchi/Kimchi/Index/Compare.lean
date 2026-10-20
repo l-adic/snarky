@@ -223,7 +223,7 @@ theorem compareFamily?_eq_none_iff {k : ℕ} {sa sb : Fin k → ℕ} {a : (i : F
     simp only
     rw [List.findSome?_eq_none_iff]
     intro i _
-    rw [dif_pos trivial, Option.map_eq_none_iff]
+    rw [dite_eq_left trivial, Option.map_eq_none_iff]
     exact compareIndex?_eq_none_iff.mpr (eq_of_heq (hab i))
 
 end Kimchi.Index

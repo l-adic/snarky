@@ -233,10 +233,10 @@ private theorem evalLoop_spec (h : CircuitCompatible V ce pe) (feat : FeatureFla
           dsimp only
           rw [hdc, hdp]
           by_cases hf : feat f
-          · simp only [if_pos hf]
+          · simp only [ite_eq_left hf]
             mvcgen [key, ih]
             all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
-          · simp only [if_neg hf]
+          · simp only [ite_eq_right hf]
             mvcgen [key, ih]
             all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
 

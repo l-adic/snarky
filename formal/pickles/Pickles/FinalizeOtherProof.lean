@@ -638,7 +638,7 @@ theorem FopReads.wire {p : ℕ} [Fact p.Prime] {sf : Type} {nc np : ℕ}
     obtain ⟨m, hm⟩ := hcon hflag
     obtain ⟨h₁, -, hx, hlt⟩ := hx1 m.val m.2 hm
     have hpre : m.val = _ := (low128_of_split _ m.2 hx (fieldModulus_zmod p ▸ hlt)).symm
-    rw [hxiC, if_pos]
+    rw [hxiC, ite_eq_left]
     rw [hm, hξ]
     exact congrArg Nat.cast hpre
 
@@ -1001,10 +1001,10 @@ private theorem onehot_sum (L : F) (c : KnownDomain F → F) :
         intro x hx
         obtain ⟨d', hd', rfl⟩ := List.mem_map.mp hx
         have : L ≠ d'.log2 := fun h => hnd.1 (List.mem_map.mpr ⟨d', hd', by rw [← h, hL]⟩)
-        rw [if_neg this, zero_mul]
-      rw [List.map_cons, List.sum_cons, if_pos hL, one_mul, hzero, add_zero]
+        rw [ite_eq_right this, zero_mul]
+      rw [List.map_cons, List.sum_cons, ite_eq_left hL, one_mul, hzero, add_zero]
     · have hne : L ≠ d.log2 := fun h => hnd.1 (List.mem_map.mpr ⟨d₀, hd₀', by rw [← hL, h]⟩)
-      rw [List.map_cons, List.sum_cons, if_neg hne, zero_mul, zero_add]
+      rw [List.map_cons, List.sum_cons, ite_eq_right hne, zero_mul, zero_add]
       exact onehot_sum L c ds hnd.2 d₀ hd₀' hL
 
 omit [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
@@ -1015,7 +1015,7 @@ private theorem onehot_sum_none (L : F) (c : KnownDomain F → F) (ds : List (Kn
   rw [List.sum_eq_zero]
   intro x hx
   obtain ⟨d', hd', rfl⟩ := List.mem_map.mp hx
-  rw [if_neg (h d' hd'), zero_mul]
+  rw [ite_eq_right (h d' hd'), zero_mul]
 
 omit [ToNat F] [KimchiSystem F c] in
 /-- The step side's comparison reads as the decoded claim against the scalar. -/
@@ -1029,10 +1029,10 @@ private theorem stepShiftOps_cmp [ConstraintHolds F c] [LawfulBasicSystem F c] {
   intro h
   rw [h, Type1.val_ofFieldCircuit]
   by_cases hab : Type1.fromShifted 255 ⟨a.val.val V⟩ = b.val V
-  · rw [if_pos hab, if_pos]
+  · rw [ite_eq_left hab, ite_eq_left]
     rw [← hab]
     exact (Pasta.Shifted.shiftType1_unshiftType1 h2 255 (a.val.val V)).symm
-  · rw [if_neg hab, if_neg]
+  · rw [ite_eq_right hab, ite_eq_right]
     intro h'
     apply hab
     rw [h']

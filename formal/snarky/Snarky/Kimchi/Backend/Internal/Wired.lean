@@ -787,13 +787,13 @@ private theorem recoverClass_spec (roots : Array Variable) (rows : List (KimchiR
     (r j : Nat) (hr : r < rows.length) (hj : j < wCols) (v : Variable)
     (hv : rows[r].vars[j] = some v) : val (r, j) = recoverClass roots rows val v := by
   by_cases hex : ∃ c : Fin rows.length × Fin wCols, 7 ≤ c.2.val ∧ rows[c.1].vars[c.2] = some v
-  · simp only [recoverClass, dif_pos hex]
+  · simp only [recoverClass, dite_eq_left hex]
     have hc := Classical.choose_spec hex
     generalize Classical.choose hex = c at hc ⊢
     obtain ⟨h7, hc⟩ := hc
     obtain ⟨e1, e2⟩ := huniq c.1 c.2 c.1.isLt c.2.isLt v h7 hc r j hr hj hv
     rw [e1, e2]
-  · simp only [recoverClass, dif_neg hex]
+  · simp only [recoverClass, dite_eq_right hex]
     have h7 : j < 7 := by
       by_contra h
       exact hex ⟨(⟨r, hr⟩, ⟨j, hj⟩), Nat.le_of_not_lt h, hv⟩
@@ -821,7 +821,7 @@ private theorem recoverClass_eq_of_root_eq (roots : Array Variable) (rows : List
   have hnw : ¬ ∃ c : Fin rows.length × Fin wCols, 7 ≤ c.2.val ∧ rows[c.1].vars[c.2] = some w := by
     rintro ⟨c, h7, hc⟩
     exact absurd (hw c.1 c.2 c.1.isLt c.2.isLt hc) (Nat.not_lt.mpr h7)
-  simp only [recoverClass, dif_neg hnv, dif_neg hnw, hroot]
+  simp only [recoverClass, dite_eq_right hnv, dite_eq_right hnw, hroot]
 
 
 /-! ## The theorem -/
@@ -942,7 +942,7 @@ private theorem queued_holds {n : ℕ} [NeZero n] {source : List (KimchiConstrai
   simp only at hgen
   have hpub0 : Index.pubAt idx pub ⟨publicVars.length + rc.row, by omega⟩ = 0 := by
     unfold Index.pubAt
-    rw [dif_neg (by
+    rw [dite_eq_right (by
       rw [hindex.publicCount]
       show ¬ publicVars.length + rc.row < publicVars.length
       omega)]
@@ -1451,7 +1451,7 @@ theorem KimchiConstraint.Wired.holds_of_satisfies_reading {n : ℕ} [NeZero n]
       wTab ⟨r, lt_of_lt_of_le hr hrows_le⟩ ⟨j, hj⟩ = V v := by
     intro r j hr hj v hv
     rw [← hreal r j hr hj v hv]
-    simp only [cellVal, dif_pos (And.intro (lt_of_lt_of_le hr hrows_le) hj)]
+    simp only [cellVal, dite_eq_left (And.intro (lt_of_lt_of_le hr hrows_le) hj)]
   -- no name of any event labels an unwired cell
   have hwiredOnly : ∀ s ∈ (lowering source nv).steps, ∀ e ∈ s.events, ∀ w ∈ e.names,
       ∀ (r j : Nat) (hr : r < (directRows source publicVars nv).length) (hj : j < wCols),

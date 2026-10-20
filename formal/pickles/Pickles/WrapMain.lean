@@ -882,7 +882,7 @@ theorem chooseKey_spec {branches : ℕ} [NeZero branches] (bits : Vector (BoolVa
       apply List.ext_getElem <;> simp
     rw [hof, List.sum_ofFn]
     simp only [hg, hbit, ite_mul, one_mul, zero_mul, Finset.sum_ite_eq', Finset.mem_univ,
-      if_true]
+      ite_true]
   obtain ⟨hfx, hfy⟩ := VkComms.foldl_add_at_val (V := V) p scaled.toList.tail
     (scaled[0]'(Nat.pos_of_neZero branches))
   obtain ⟨hrx, hry⟩ := hr p

@@ -373,9 +373,9 @@ private theorem evalLoop_congr [Monad m] (env₁ env₂ : Env m F) (toks : Array
     intro endPos s hvis
     rw [evalLoop, evalLoop]
     by_cases hge : s.position ≥ endPos
-    · simp only [if_pos hge]
-    · simp only [if_neg hge]
-      simp only [visited, if_neg hge] at hvis
+    · simp only [ite_eq_left hge]
+    · simp only [ite_eq_right hge]
+      simp only [visited, ite_eq_right hge] at hvis
       cases htok : toks[s.position]? with
       | none => rfl
       | some tok =>
@@ -523,13 +523,13 @@ private theorem evalLoop_congr [Monad m] (env₁ env₂ : Env m F) (toks : Array
             fun res => next _ _ rfl
               (fun i hi => hvis i (List.mem_cons_of_mem _ (List.mem_append_right _ hi)))
           by_cases hf : feat f
-          · simp only [if_pos hf] at hvis ⊢
+          · simp only [ite_eq_left hf] at hvis ⊢
             have hbr := ih (s.position + 1 + n) { s with position := s.position + 1 }
               (fun i hi => hvis i (List.mem_cons_of_mem _ (List.mem_append_left _ hi)))
             rw [hbr]
             simp only [htop]
             exact congrArg (bind _) (funext hcont)
-          · simp only [if_neg hf] at hvis ⊢
+          · simp only [ite_eq_right hf] at hvis ⊢
             have hbr := ih (s.position + 1 + n + 1 + falseCount toks (s.position + 1 + n))
               { s with position := s.position + 1 + n + 1 }
               (fun i hi => hvis i (List.mem_cons_of_mem _ (List.mem_append_left _ hi)))

@@ -230,7 +230,7 @@ private theorem firstUnscoped_eq_none_iff (s : Seen) (cs : List (KimchiConstrain
   | cons c cs ih =>
     rw [firstUnscoped, List.forall_mem_cons]
     by_cases hw : c.Wired
-    · rw [if_pos hw]
+    · rw [ite_eq_left hw]
       cases hf : c.unwiredVars.find? fun v => !s.once v with
       | some v =>
         have hv := List.find?_some hf

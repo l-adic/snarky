@@ -1744,7 +1744,7 @@ private theorem wrap_cip_limbs {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ
     le_antisymm (Nat.size_le.mpr (by norm_num [PALLAS_BASE_CARD]))
       (Nat.lt_size.mpr (by norm_num [PALLAS_BASE_CARD]))
   have hlt : IpaVesta.curve.scalar < IpaVesta.curve.base := by decide
-  simp only [scalarLimbs, shiftScalar, if_pos hlt, hsz, wrapDecode,
+  simp only [scalarLimbs, shiftScalar, ite_eq_left hlt, hsz, wrapDecode,
     Pasta.Shifted.shiftType1_unshiftType1 (by decide : (2 : Fp) ≠ 0)]
   have hval : ((x.val.val V).val : ℤ) = z := (wrapLadderPre_eq h).symm
   have hlt' : z < 2 ^ 254 := h.2.1
@@ -1808,7 +1808,7 @@ private theorem step_cip_limbs {V : Valuation Fp} {x : Type2 (SplitField (FVar F
     le_antisymm (Nat.size_le.mpr (by norm_num [PALLAS_SCALAR_CARD]))
       (Nat.lt_size.mpr (by norm_num [PALLAS_SCALAR_CARD]))
   have hlt : ¬ IpaPallas.curve.scalar < IpaPallas.curve.base := by decide
-  simp only [scalarLimbs, shiftScalar, if_neg hlt, hsz, stepDecode, shiftType2_unshiftType2]
+  simp only [scalarLimbs, shiftScalar, ite_eq_right hlt, hsz, stepDecode, shiftType2_unshiftType2]
   have hon : ((↑x.val.sOdd : CVar Fp).val V).val ≤ 1 := by
     rw [hb]
     cases w.2 <;> simp [bit, ZMod.val_one]

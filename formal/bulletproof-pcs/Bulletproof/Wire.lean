@@ -187,11 +187,11 @@ theorem KimchiCurve.lowerHalf_eq_of_lt (C : KimchiCurve) (hodd : 2 < C.base)
   have hval := fun a : ZMod C.base => ZMod.val_lt a
   unfold lowerHalf
   rcases hQ with rfl | rfl
-  · rw [if_neg (by omega)]
+  · rw [ite_eq_right (by omega)]
   · by_cases hz : P.y = 0
     · have hneg : -P = P := SWPoint.ext_pair (by simp [hz])
-      rw [if_neg (by rw [hz, ZMod.val_zero]; omega), hneg]
-    · rw [if_pos]
+      rw [ite_eq_right (by rw [hz, ZMod.val_zero]; omega), hneg]
+    · rw [ite_eq_left]
       haveI : NeZero P.y := ⟨hz⟩
       have hn := ZMod.val_neg_of_ne_zero P.y
       simp only [SWPoint.neg_y] at hy
@@ -330,9 +330,9 @@ theorem getElem_lagrangeBasis (σ : SRS C.Point) (nc n : ℕ) (ω : C.ScalarFiel
   have hj := j.isLt
   by_cases h : c * 2 ^ σ.k + j.val < n
   · have h' : j.val < min (2 ^ σ.k) (n - c * 2 ^ σ.k) := by omega
-    simp only [h, h', if_true, pow_add, mul_assoc]
+    simp only [h, h', ite_true, pow_add, mul_assoc]
   · have h' : ¬ j.val < min (2 ^ σ.k) (n - c * 2 ^ σ.k) := by omega
-    simp only [h, h', if_false]
+    simp only [h, h', ite_false]
 
 /-- A chunk of a Lagrange polynomial that meets the domain is nonzero. -/
 theorem lagrangeCoeffs_ne_zero {F : Type*} [Field F] (k n : ℕ) (ω : F) (i c : ℕ)
@@ -380,7 +380,7 @@ theorem zipWith_lagrangeCoeffs_ne_zero {F : Type*} [Field F] {k n : ℕ} {ω : F
     have hin : c * 2 ^ k + j < n := by omega
     have := congrFun h0 ⟨j, hj⟩
     simp only [Finset.sum_apply, Pi.smul_apply, smul_eq_mul, Pi.zero_apply, lagrangeCoeffs,
-      if_pos hin] at this
+      ite_eq_left hin] at this
     have hsum : (n : F)⁻¹ * P.eval (ω⁻¹ ^ (c * 2 ^ k + j)) = 0 := by
       rw [← this, eval_finsetSum, Finset.mul_sum]
       refine Finset.sum_congr rfl fun i _ => ?_
@@ -401,7 +401,7 @@ theorem zipWith_lagrangeCoeffs_ne_zero {F : Type*} [Field F] {k n : ℕ} {ω : F
   have hP := eq_zero_of_natDegree_lt_card_of_eval_eq_zero P hinj heval hdeg
   have hc0 := congrArg (coeff · 0) hP
   simp only [P, finsetSum_coeff, coeff_C_mul_X_pow, coeff_zero] at hc0
-  rw [Finset.sum_eq_single ⟨0, ht0⟩ (fun b _ hb => if_neg fun h => hb (Fin.ext h.symm))
+  rw [Finset.sum_eq_single ⟨0, ht0⟩ (fun b _ hb => ite_eq_right fun h => hb (Fin.ext h.symm))
     (by simp)] at hc0
   simp [s, hx] at hc0
 

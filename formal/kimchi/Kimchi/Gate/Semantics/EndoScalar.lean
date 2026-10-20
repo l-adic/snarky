@@ -82,17 +82,17 @@ theorem cFunc_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
   have e12 : (1 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination -h)
   have e13 : (1 : F) ≠ 3 := fun h => h2 (by linear_combination -h)
   have e32 : (3 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
-  exact ⟨by rw [cFunc, if_neg e02, if_neg e03], by rw [cFunc, if_neg e12, if_neg e13],
-    by rw [cFunc, if_pos rfl], by rw [cFunc, if_neg e32, if_pos rfl]⟩
+  exact ⟨by rw [cFunc, ite_eq_right e02, ite_eq_right e03], by rw [cFunc, ite_eq_right e12, ite_eq_right e13],
+    by rw [cFunc, ite_eq_left rfl], by rw [cFunc, ite_eq_right e32, ite_eq_left rfl]⟩
 
 /-- The `b`-table's value at each crumb. -/
 theorem dFunc_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
     dFunc (0 : F) = -1 ∧ dFunc (1 : F) = 1 ∧ dFunc (2 : F) = 0 ∧ dFunc (3 : F) = 0 := by
   have e21 : (2 : F) ≠ 1 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
   have e31 : (3 : F) ≠ 1 := fun h => h2 (by linear_combination h)
-  exact ⟨by rw [dFunc, if_pos rfl],
-    by rw [dFunc, if_neg ((one_ne_zero : (1 : F) ≠ 0)), if_pos rfl],
-    by rw [dFunc, if_neg h2, if_neg e21], by rw [dFunc, if_neg h3, if_neg e31]⟩
+  exact ⟨by rw [dFunc, ite_eq_left rfl],
+    by rw [dFunc, ite_eq_right ((one_ne_zero : (1 : F) ≠ 0)), ite_eq_left rfl],
+    by rw [dFunc, ite_eq_right h2, ite_eq_right e21], by rw [dFunc, ite_eq_right h3, ite_eq_right e31]⟩
 
 /-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
 private theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
@@ -608,14 +608,14 @@ private theorem digit_cast (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
   have h1 : (1 : F) ≠ 0 := one_ne_zero
   rcases hx with rfl | rfl | rfl | rfl
   · unfold digit
-    rw [if_neg (fun h => h1 h.symm), if_neg (fun h => h2 h.symm),
-      if_neg (fun h => h3 h.symm), Nat.cast_zero]
-  · unfold digit; rw [if_pos rfl, Nat.cast_one]
+    rw [ite_eq_right (fun h => h1 h.symm), ite_eq_right (fun h => h2 h.symm),
+      ite_eq_right (fun h => h3 h.symm), Nat.cast_zero]
+  · unfold digit; rw [ite_eq_left rfl, Nat.cast_one]
   · unfold digit
-    rw [if_neg (fun h => h1 (by linear_combination h)), if_pos rfl, Nat.cast_ofNat]
+    rw [ite_eq_right (fun h => h1 (by linear_combination h)), ite_eq_left rfl, Nat.cast_ofNat]
   · unfold digit
-    rw [if_neg (fun h => h2 (by linear_combination h)),
-      if_neg (fun h => h1 (by linear_combination h)), if_pos rfl, Nat.cast_ofNat]
+    rw [ite_eq_right (fun h => h2 (by linear_combination h)),
+      ite_eq_right (fun h => h1 (by linear_combination h)), ite_eq_left rfl, Nat.cast_ofNat]
 
 /-- Splitting the base-4 value at a list boundary: the earlier crumbs contribute their value
     shifted up by one place per later crumb. The Horner step `valNat_cons` is its singleton

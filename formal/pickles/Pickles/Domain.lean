@@ -385,7 +385,7 @@ theorem sum_indicator {α : Type} (f : α → F) :
     | zero =>
       simp only [List.map_cons, List.map_map, List.zip_cons_cons, List.sum_cons,
         List.getElem_cons_zero]
-      rw [if_pos trivial, one_mul, add_eq_left]
+      rw [ite_eq_left trivial, one_mul, add_eq_left]
       refine List.sum_eq_zero fun y hy => ?_
       obtain ⟨e, he, rfl⟩ := List.mem_map.mp hy
       obtain ⟨l, -, hl⟩ := List.mem_map.mp (List.of_mem_zip he).1
@@ -394,7 +394,7 @@ theorem sum_indicator {α : Type} (f : α → F) :
     | succ b =>
       simp only [List.map_cons, List.map_map, List.zip_cons_cons, List.sum_cons,
         List.getElem_cons_succ]
-      rw [if_neg (Nat.succ_ne_zero b).symm, zero_mul, zero_add]
+      rw [ite_eq_right (Nat.succ_ne_zero b).symm, zero_mul, zero_add]
       refine sum_indicator f xs _ b ?_ (by simpa using hb)
       simp [Function.comp_def]
 
@@ -412,7 +412,7 @@ theorem oneHot_reads {n : ℕ} {bits : Vector (BoolVar F) n} {index : FVar F} (j
   by_cases hlj : l = j
   · simp [hlj, bit]
   · simp only [bit, Fin.ext_iff, hlj, decide_false]
-    rw [if_neg fun h' => hlj (hinj l hl h').symm]
+    rw [ite_eq_right fun h' => hlj (hinj l hl h').symm]
     simp
 
 omit [DecidableEq F] in

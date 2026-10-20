@@ -598,7 +598,7 @@ private lemma ladder_topbit_no_zero (q L : ℕ) (hL : 1 ≤ L) (hqodd : q % 2 = 
   obtain ⟨h1, h2, h3⟩ := ladder_bounds_topbit0 L k ε hk0 hε0 hε hrec j hj1 hjL
   have hjpos : (0 : ℤ) < 2 ^ j := by positivity
   have htpos : 0 < t := by
-    by_contra h; push_neg at h; nlinarith [hqZ, pow_pos (show (0:ℤ) < 2 by norm_num) (L - 1)]
+    by_contra h; push Not at h; nlinarith [hqZ, pow_pos (show (0:ℤ) < 2 by norm_num) (L - 1)]
   rcases Nat.lt_or_ge j (L - 1) with hlt | hge
   · -- `k j < 2^(j+1) ≤ 2^(L-1) < q`
     have hp : (2 : ℤ) ^ (j + 1) ≤ 2 ^ (L - 1) := pow_le_pow_right₀ (by norm_num) (by omega)
@@ -668,7 +668,7 @@ private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 =
     have hL2 : (2 : ℤ) ^ L = 2 * 2 ^ (L - 1) := by rw [← pow_succ']; congr 1; omega
     obtain ⟨h1, h2, h3⟩ := ladder_bounds_topbit1 L k ε hk0 hε0 hε hrec j hj1 hjL
     have htpos : 0 < t := by
-      by_contra hc; push_neg at hc
+      by_contra hc; push Not at hc
       have : (q : ℤ) * t ≤ 0 := mul_nonpos_of_nonneg_of_nonpos hqpos.le hc
       linarith [pow_pos (show (0 : ℤ) < 2 by norm_num) (j + 1)]
     have htodd : t % 2 = 1 := by
@@ -694,7 +694,7 @@ private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 =
             have : (2 : ℤ) ^ (L - 2) ≤ 2 ^ (L - 1) := pow_le_pow_right₀ (by norm_num) (by omega)
             nlinarith
           have ht3 : t < 3 := by
-            by_contra hc; push_neg at hc
+            by_contra hc; push Not at hc
             have : (q : ℤ) * 3 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
             linarith
           omega
@@ -713,7 +713,7 @@ private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 =
           have hp : (2 : ℤ) ^ (L - 1 + 1) = 2 ^ L := by congr 1; omega
           have ht2 : 1 < t := by nlinarith
           have ht3 : t < 3 := by
-            by_contra hc; push_neg at hc
+            by_contra hc; push Not at hc
             have : (q : ℤ) * 3 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
             linarith
           omega
@@ -722,7 +722,7 @@ private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 =
           subst hj
           have ht1 : 3 < t := by nlinarith
           have ht5 : t < 4 := by
-            by_contra hc; push_neg at hc
+            by_contra hc; push Not at hc
             have : (q : ℤ) * 4 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
             linarith
           omega
@@ -1157,11 +1157,11 @@ theorem ladder_off_base (c : WeierstrassCurve.Affine F)
     have hpL1 : (0 : ℤ) < 2 ^ (L - 1) := by positivity
     have hqpos : (0 : ℤ) < c.order := by linarith
     have htpos : 0 < t := by
-      by_contra hc; push_neg at hc
+      by_contra hc; push Not at hc
       have : (c.order : ℤ) * t ≤ 0 := mul_nonpos_of_nonneg_of_nonpos hqpos.le hc
       linarith
     have ht3 : t < 4 := by
-      by_contra hc; push_neg at hc
+      by_contra hc; push Not at hc
       have : (c.order : ℤ) * 4 ≤ c.order * t := mul_le_mul_of_nonneg_left hc hqpos.le
       linarith
     have htev : t % 2 = 0 := by
@@ -1580,13 +1580,13 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
     exact hTeq.trans (AddComplete.some_congr c hTns (gs i hi).hT
       (hbase i hi).1.symm (hbase i hi).2.symm)
   · intro i hi
-    simp only [dif_pos (le_of_lt hi)]
+    simp only [dite_eq_left (le_of_lt hi)]
     exact AddComplete.some_congr c (kf i (le_of_lt hi)) (gs i hi).a0
       (haccP i hi).1.symm (haccP i hi).2.symm
   · intro i hi
-    simp only [dif_pos (Nat.succ_le_of_lt hi)]
+    simp only [dite_eq_left (Nat.succ_le_of_lt hi)]
     exact AddComplete.some_congr c (kf (i + 1) (Nat.succ_le_of_lt hi)) (gs i hi).a5 rfl rfl
-  · simp only [dif_pos (Nat.zero_le m)]
+  · simp only [dite_eq_left (Nat.zero_le m)]
     rw [(hkf 0 (Nat.zero_le m)).1]; simp only [Nat.mul_zero, gateLadder_zero]
 
 /-- **VarBaseMul correctness and soundness in the sub-wrap regime.** When
@@ -1719,10 +1719,10 @@ theorem bitsVal_eq_natLsbVal :
     rw [h1, ih, List.map_append, List.map_singleton, List.reverse_append,
       List.reverse_singleton, List.singleton_append, natLsbVal]
     by_cases hv : v = 1
-    · simp only [hv, if_true, decide_true, Bool.toNat_true]
+    · simp only [hv, ite_true, decide_true, Bool.toNat_true]
       push_cast
       ring
-    · simp only [hv, if_false, decide_false, Bool.toNat_false]
+    · simp only [hv, ite_false, decide_false, Bool.toNat_false]
       push_cast
       ring
 
@@ -1908,10 +1908,10 @@ theorem bitsVal_testBit (x L : ℕ) (hx : x < 2 ^ L) :
     have hbit0 : x.testBit 0 = decide (x % 2 = 1) := Nat.testBit_zero x
     rcases Nat.mod_two_eq_zero_or_one x with h | h
     · rw [show (if x.testBit 0 then (1 : F) else 0) = 0 from by rw [hbit0, h]; simp,
-        if_neg (zero_ne_one (α := F))]
+        ite_eq_right (zero_ne_one (α := F))]
       omega
     · rw [show (if x.testBit 0 then (1 : F) else 0) = 1 from by rw [hbit0, h]; simp,
-        if_pos rfl]
+        ite_eq_left rfl]
       omega
 
 end RunBits
