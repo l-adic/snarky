@@ -2142,9 +2142,9 @@ private theorem records_basic_names (b : Basic F) :
     refine records_bind (records_reduceAffineExpression_names _) fun r esr hr => ?_
     refine records_bind (records_reduceAffineExpression_names _) fun o eso ho => ?_
     have sa : a.termVars ⊆ (Basic.r1cs a b c).termVars :=
-      (List.subset_append_left _ _).trans (List.subset_append_left _ _)
+      List.Subset.trans (List.subset_append_left _ _) (List.subset_append_left _ _)
     have sb : b.termVars ⊆ (Basic.r1cs a b c).termVars :=
-      (List.subset_append_right _ _).trans (List.subset_append_left _ _)
+      List.Subset.trans (List.subset_append_right _ _) (List.subset_append_left _ _)
     have sc : c.termVars ⊆ (Basic.r1cs a b c).termVars := List.subset_append_right _ _
     have ha := namesFrom_mono hl.1 sa
     have hb := namesFrom_mono hr.1 sb

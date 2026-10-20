@@ -34,7 +34,9 @@ namespace Kimchi.Index
 
 open Polynomial Kimchi.Permutation
 
-deriving instance Fintype for GateType
+instance : Fintype GateType where
+  elems := {.zero, .generic, .poseidon, .completeAdd, .varBaseMul, .endoMul, .endoScalar}
+  complete x := by cases x <;> simp
 
 /-- The gate types whose constraints also read the next row (`ArgumentEnv.witnessNext`). -/
 private def GateType.twoRow : GateType → Bool
@@ -244,8 +246,7 @@ theorem build?_eq_some [DecidableEq F] {gates : Fin n → GateRow F n} {publicCo
   unfold build? at h
   dsimp only at h
   split at h
-  · split at h
-    cases h
+  · cases h
     exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · cases h
 

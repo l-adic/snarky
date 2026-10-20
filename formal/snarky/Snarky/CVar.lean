@@ -279,7 +279,7 @@ theorem CVar.ScopedBy.reduce [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     {P : Variable → Prop} {x : CVar F} (hx : x.ScopedBy P) :
     ∀ t ∈ x.reduceToAffineExpression.terms, P t.1 := by
   induction x with
-  | var v => simpa [reduceToAffineExpression] using hx
+  | var v => simpa [reduceToAffineExpression, CVar.ScopedBy] using hx
   | const k => simp [reduceToAffineExpression]
   | add l r ihl ihr =>
     intro t ht

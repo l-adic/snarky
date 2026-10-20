@@ -132,9 +132,11 @@ private theorem evalLoop_map (toks : Array PolishToken) :
     intro endPos s
     rw [evalLoop, evalLoop]
     simp only [map_position]
-    split
-    · rfl
-    · cases htok : toks[s.position]? with
+    by_cases hpos : s.position ≥ endPos
+    · simp only [hpos, ↓reduceIte]
+      rfl
+    · simp only [hpos, ↓reduceIte]
+      cases htok : toks[s.position]? with
       | none => rfl
       | some tok =>
         cases tok with
@@ -232,23 +234,17 @@ private theorem evalLoop_map (toks : Array PolishToken) :
                 (evalLoop (e.toEnv endo mds alphaPow β γ jc van ulb lk feat) toks fuel
                   (s.position + 1 + n) { s with position := s.position + 1 }))
                 { s with position := s.position + 1 + n + 1 +
-                    match toks[s.position + 1 + n]? with
-                    | some (.skipIf _ c) => c
-                    | _ => 0 })
+                    falseCount toks (s.position + 1 + n) })
           · simp only [if_neg hf]
             rw [← key]
             simpa using ih endPos
               (EvalState.push (topOrZero (e.toEnv endo mds alphaPow β γ jc van ulb lk feat)
                 (evalLoop (e.toEnv endo mds alphaPow β γ jc van ulb lk feat) toks fuel
                   (s.position + 1 + n + 1 +
-                    match toks[s.position + 1 + n]? with
-                    | some (.skipIf _ c) => c
-                    | _ => 0)
+                    falseCount toks (s.position + 1 + n))
                   { s with position := s.position + 1 + n + 1 }))
                 { s with position := s.position + 1 + n + 1 +
-                    match toks[s.position + 1 + n]? with
-                    | some (.skipIf _ c) => c
-                    | _ => 0 })
+                    falseCount toks (s.position + 1 + n) })
 
 /-- Running `toEnv` over `S` at the transported inputs is `φ` of the run over `R`. -/
 theorem evaluate_map (toks : Array PolishToken) :

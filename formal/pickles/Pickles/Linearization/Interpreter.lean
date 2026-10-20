@@ -167,7 +167,7 @@ def topOrZero (env : Env m F) (s : EvalState F) : F :=
 
 /-- The length of a disabled branch: the count carried by the `skipIf` marker at
 `trueEnd`, or zero when there is none. -/
-private def falseCount (toks : Array PolishToken) (trueEnd : Nat) : Nat :=
+def falseCount (toks : Array PolishToken) (trueEnd : Nat) : Nat :=
   match toks[trueEnd]? with
   | some (.skipIf _ c) => c
   | _ => 0

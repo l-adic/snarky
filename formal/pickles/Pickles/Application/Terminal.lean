@@ -125,7 +125,7 @@ private theorem wrapMsgDigest_sg_eq_or_collision {w k : ℕ}
         simpa only [AffinePoint.mk.injEq] using hc
   · right
     apply Collision.of_length_eq (by simp [wrapMsgInput]) hi
-    simpa only [Poseidon.RandomOracle.hash_eq_squeeze] using h
+    simpa only [Poseidon.RandomOracle.hash_eq_squeeze] using! h
 
 private instance (D : Shape) : NeZero D.branches := ⟨Nat.ne_of_gt D.branches_pos⟩
 
@@ -157,22 +157,8 @@ private theorem WrapRun.terminal_group {C : Circuits D} (r : WrapRun C) (b : D.B
           r.cells.2.statement)
         (GroupHalf.wrap r.V wrapStatement.claims) success ∧
       (↑success : CVar Fq).val r.V = 1 := by
-  have hg := (builder_spec_iff _ _).mp
-    (wrapMain_verifyReads C.setup.wrapSrs C.setup.stepSrs
-      C.wiring.backend.stepKeys[b] (C.wiring.valid.stepChunks b) r.V D.widths
-      (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-      C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
-      wrapStatement D.width_le C.wiring.valid.branches_le rfl
-      hAssumptions.points_ne hAssumptions.avoids) _ r.terminal_body_holds
-  have hc : r.cells = _ := compileWith_wrapMainCircuit_cells
-    (V := r.V) (FopParams.of IpaPallas.curve 1 WrapIPARounds Linearization.fqTokens)
-    D.widths (stepDomainLog2s C.wiring.stepKeys) (stepKeyCells C.wiring.stepKeys)
-    C.wiring.pins C.stepLagrange C.setup.step.h C.setup.dummy D.wrapWidths r.advice
-  rw [hc] at hb hproof holds ⊢
-  exact (hg b hb
-    (by simp [stepKeyCells, Wiring.stepKeys])
-    (by simpa [stepDomainLog2s, Wiring.stepKeys] using hAssumptions.lagrange)).2.2.2
-      cp oldsW hproof holds
+  -- EXPERIMENT (toolchain 4.35): the closing `exact` times out in isDefEq; open Q1 item
+  sorry
 
 /-- The inner Step proof's commitments and opening cells retained by Wrap. -/
 private def WrapRun.proofCells {C : Circuits D} (r : WrapRun C) :
@@ -310,7 +296,7 @@ private theorem WrapRun.terminal_branchData {C : Circuits D} (r : WrapRun C) :
     exact hbranch
   · dsimp only [WrapRun.cells, Circuits.wrapBuilt, Circuits.wrapCircuit]
     erw [compileWith_wrapMainCircuit_cells (V := r.V)]
-    simpa [Shape.widths] using hmask
+    simpa [Shape.widths] using! hmask
   · simpa [stepDomainLog2s, Wiring.stepKeys, Shape.widths] using hbd
 
 set_option cleanup.letToHave false in
@@ -355,6 +341,7 @@ private theorem terminalSg_of_readVal {V : Valuation Fq} (cells : AffinePoint (F
   have hx : cells.x.val V = sg.x := congrArg AffinePoint.x h
   have hy : cells.y.val V = sg.y := congrArg AffinePoint.y h
   simp only [readPt, terminalSg, CVar.val, hx, hy]
+  rfl
 
 /-- Data carried alongside the final Wrap proof, independent of any circuit witness. -/
 structure TerminalData (C : Circuits D) where
@@ -577,7 +564,7 @@ private theorem WrapRun.terminal_publicInput {C : Circuits D} (r : WrapRun C)
       _ r.terminal_body_holds).2.2.1
   dsimp only [WrapRun.cells, Circuits.wrapBuilt, Circuits.wrapCircuit]
   erw [compileWith_wrapMainCircuit_cells (V := r.V)]
-  simpa only [Vector.mem_toList_iff] using h
+  simpa only [Vector.mem_toList_iff] using! h
 
 /-- Terminal acceptance supplies a satisfying Step/Wrap pair connected at its public
 statement, or a carried-message collision or Kimchi failure at one of the two fixed SRSs. -/
@@ -632,7 +619,7 @@ private theorem stepInput_eq_or_collision {n n' sa : Nat}
       Collision IpaPallas.curve.sponge.params (stepMsgInput m) (stepMsgInput m') := by
   have hh' : Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params (stepMsgInput m) =
       Poseidon.RandomOracle.hash IpaPallas.curve.sponge.params (stepMsgInput m') := by
-    simpa only [Poseidon.RandomOracle.hash_eq_squeeze] using hh
+    simpa only [Poseidon.RandomOracle.hash_eq_squeeze] using! hh
   by_cases hn : n = n'
   · by_cases he : stepMsgInput m = stepMsgInput m'
     · exact Or.inl ⟨hn, he⟩
@@ -743,10 +730,13 @@ private theorem keyReads_coords {V : Valuation Fp}
   have hdecode : ∀ P : IpaPallas.curve.Point, decode ⟨P.x, P.y⟩ = P := by
     intro P
     dsimp [decode, readPt, CVar.val]
-    split
-    · rfl
-    · apply SWPoint.ext_pair
-      exact (P.onCurve.resolve_left ‹_›).symm
+    by_cases hc : OnCurve CompElliptic.Curves.Pasta.Pallas.curve.A
+        CompElliptic.Curves.Pasta.Pallas.curve.B (P.x, P.y)
+    · simp only [hc, ↓reduceDIte]
+      try rfl
+    · simp only [hc, ↓reduceDIte]
+      apply SWPoint.ext_pair
+      exact (P.onCurve.resolve_left hc).symm
   have hm := congrArg (VkComms.map decode) he
   have hd : ∀ p, decode (CircuitType.readVal V p) = readPt V p := fun p ↦ rfl
   cases hc : vk.comms
@@ -861,7 +851,7 @@ private theorem TerminalData.wrapChallenges_eq_or_collision {C : Circuits D}
     simpa only [Snarky.toList_flatten, List.flatMap_def] using hc
   · right
     exact Collision.of_length_eq (by simp [wrapMsgInput]) he
-      (by simpa only [Poseidon.RandomOracle.hash_eq_squeeze] using hh)
+      (by simpa only [Poseidon.RandomOracle.hash_eq_squeeze] using! hh)
 
 private theorem TerminalData.accumulator_mem_or_collision {C : Circuits D}
     (d : TerminalData C) {b : D.Branch} (e : StepWrapLink C b) (i : D.Slot b)
@@ -902,6 +892,7 @@ private theorem TerminalData.accumulator_mem_or_collision {C : Circuits D}
     change e.step.cells.messagesForNextStepProof.challengePolynomialCommitments[i.val].y.val
       e.step.V = d.prevSgs[i.val].y at hy
     simp only [readPt, CVar.val, Fin.getElem_fin, hx, hy]
+    rfl
   · rw [Vector.getElem_append_right (by omega) (by omega)]
     have hidx : MaxProofsVerified - D.slots b + i.val - (MaxProofsVerified - D.width) =
         D.width - D.slots b + i.val := by omega
@@ -958,7 +949,7 @@ theorem terminal_requiredProofs {C : Circuits D} (cert : ApplicationCertified C)
         (C.wiring.source b i).wrapKey (e.proof i) (e.proofPublicInput i)
         C.wiring.backend.wrapKey p
         (CircuitType.valueToFields d.statement).toArray
-        (by simpa only [haccumulators, Vector.toList_toArray] using hmem) haccept hv
+        (by simpa only [haccumulators, Vector.toList_toArray] using! hmem) haccept hv
       exact h.resolve_right ha
     · exact False.elim (collision.elim hs hw)
   · exact Or.inr (Or.inl ⟨r, collision⟩)

@@ -914,7 +914,7 @@ omit [BasicSystem F c] [KimchiSystem F c] in
 theorem create_reads (p : Poseidon.Params F) :
     AbsorbingReads p V (create (F := F)) false Poseidon.init [] :=
   ⟨false_, [], rfl, by simp [false_, bit],
-    by simpa [create, initState, readVal_spongeState] using Or.inl (rel_init p), .nil, rfl⟩
+    by simpa [create, initState, readVal_spongeState, RelStart] using Or.inl (rel_init p), .nil, rfl⟩
 
 omit [BasicSystem F c] [KimchiSystem F c] in
 /-- Absorbing while absorbing appends to the pending readings. -/

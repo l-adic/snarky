@@ -90,7 +90,7 @@ instance instWPCheckedTypeCheckedPoint [Field F] [DecidableEq F] [BasicSystem F 
   ⟨fun v x s hr hv => by
     have hcurve : x.pt.y * x.pt.y = x.pt.x ^ 3 + a * x.pt.x + b := by
       have h := hv (fun _ => 0) (CircuitType.constVar x) (CircuitType.reads_constVar _ x)
-      simpa [CircuitType.constVar, CircuitType.ofEquiv, CheckedPoint.equivPoint, CVar.val] using h
+      exact h
     have hpt : CircuitType.ReadsAs (val := AffinePoint F) s v.pt x.pt :=
       ⟨(CircuitType.scoped_ofEquiv (CheckedPoint.equivPoint a b F)
           (CheckedPoint.equivPoint a b (FVar F))).mp hr.1,

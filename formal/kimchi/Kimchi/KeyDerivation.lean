@@ -59,7 +59,7 @@ noncomputable def columnCommitment (C : Ipa.KimchiCurve) {n : Nat} (σ : SRS C.P
 /-- The index's NTT domain, with nonzero domain size in the scalar field. -/
 private def indexDomain {F : Type} [Field F] {logN : Nat} (idx : Index F (2 ^ logN))
     (hn : ((2 ^ logN : Nat) : F) ≠ 0) : Domain F :=
-  ⟨logN, idx.omega, idx.omega_prim, hn⟩
+  ⟨logN, idx.omega, idx.omega_prim⟩
 
 /-- Commit all index columns independently of the supplied key's commitments. -/
 @[noinline] private def deriveColumns (C : Ipa.KimchiCurve) {logN : Nat} (σ : SRS C.Point)

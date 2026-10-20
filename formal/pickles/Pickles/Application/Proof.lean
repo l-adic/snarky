@@ -75,7 +75,7 @@ private theorem read_of_proofReads {V : Valuation C.BaseField} {sf : Type}
     intro i hi
     simp only [Vector.getElem_map]
     apply Vector.toList_inj.mp
-    simpa only [Vector.toList_map] using comm_read (h.w ⟨i, hi⟩)
+    simpa only [Vector.toList_map, Fin.getElem_fin] using comm_read (h.w ⟨i, hi⟩)
   · apply Vector.toList_inj.mp
     simpa only [Vector.toList_map] using comm_read h.z
   · apply Array.toList_inj.mp

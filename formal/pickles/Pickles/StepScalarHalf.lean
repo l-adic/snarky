@@ -190,9 +190,10 @@ theorem halvesTies_of_cast {k nc w : ℕ} (Vg : Valuation Fq)
       b := dec s.b }
   refine ⟨⟨dv, ⟨reads128_cast cα ha, hb, hg, reads128_cast cζ hz, wrapDecode_cast cperm,
       wrapDecode_cast czm, wrapDecode_cast czn, wrapDecode_cast ccip, reads128_cast cξ hxi,
-      fun i => by simpa [dv] using reads128_cast (hbp i) (hms i), wrapDecode_cast cb⟩,
+      fun i => by simpa [dv, GroupHalf.wrap, ScalarHalf.step] using
+        reads128_cast (hbp i) (hms i), wrapDecode_cast cb⟩,
     ⟨ha, reads128_of_cast cβ hb, reads128_of_cast cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
-      fun i => by simpa [dv] using hms i, rfl⟩⟩, ?_⟩
+      fun i => by simpa [dv, GroupHalf.wrap, ScalarHalf.step] using hms i, rfl⟩⟩, ?_⟩
   show claimsS.spongeDigestBeforeEvaluations.val Vs
     = castDigest IpaVesta.curve (claimsG.spongeDigestBeforeEvaluations.val Vg)
   rw [cdig, castDigest_cast]

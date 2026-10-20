@@ -506,8 +506,16 @@ some operand reads `1`. -/
         have := List.count_le_length (a := (1 : F))
           (l := ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar).map (·.val V))
         simpa using this
-      rw [if_pos h, if_neg fun hc => absurd (hchar _ hle hc) (by omega)]
-    · rw [if_neg h, if_pos (by rw [List.count_eq_zero.mpr (hmem.not.mpr h)]; simp)]
+      have hne : ((List.count (1 : F)
+          (((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar).map (·.val V)) : ℕ) : F) ≠ 0 :=
+        fun hc => absurd (hchar _ hle hc) (by omega)
+      rw [if_pos h]
+      simp only [hne, ↓reduceIte]
+    · have h0 : ((List.count (1 : F)
+          (((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar).map (·.val V)) : ℕ) : F) = 0 := by
+        rw [List.count_eq_zero.mpr (hmem.not.mpr h)]; simp
+      rw [if_neg h]
+      simp only [h0, ↓reduceIte]
 
 attribute [irreducible] Snarky.any
 
@@ -575,10 +583,18 @@ every operand reads `1`. -/
       simp only [List.map_map, List.mem_map, Function.comp]
       exact ⟨fun h b hb => (h _ ⟨b, hb, rfl⟩).symm, fun h x ⟨b, hb, hx⟩ => hx ▸ (h b hb).symm⟩
     by_cases h : ∀ b ∈ xs, (↑b : CVar F).val V = 1
-    · rw [if_pos h, if_pos (by rw [hall.mpr h, hlenL])]
-    · rw [if_neg h, if_neg fun hc => h (hall.mp (by
-        have := hchar _ _ (Nat.le_refl _) hle hc
-        omega))]
+    · have he : (xs.length : F)
+          = ((List.count (1 : F) ((xs.map BoolVar.toCVar).map (·.val V)) : ℕ) : F) := by
+        rw [hall.mpr h, hlenL]
+      rw [if_pos h]
+      simp only [CVar.val, he, ↓reduceIte]
+    · have hne : (xs.length : F)
+          ≠ ((List.count (1 : F) ((xs.map BoolVar.toCVar).map (·.val V)) : ℕ) : F) :=
+        fun hc => h (hall.mp (by
+          have := hchar _ _ (Nat.le_refl _) hle hc
+          omega))
+      rw [if_neg h]
+      simp only [CVar.val, hne, ↓reduceIte]
 
 attribute [irreducible] Snarky.all
 

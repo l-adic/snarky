@@ -19,8 +19,7 @@ private abbrev K := ZMod 113
 private instance : Fact (Nat.Prime 113) := ⟨by norm_num⟩
 
 private def domain : Domain K :=
-  ⟨4, 40, Permutation.isPrimitiveRoot_of_certificate rfl (by decide +kernel),
-    by decide +kernel⟩
+  ⟨4, 40, Permutation.isPrimitiveRoot_of_certificate rfl (by decide +kernel)⟩
 
 private def coefficients : Array K := #[3, 5, 0, 7, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 13]
 

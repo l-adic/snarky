@@ -58,8 +58,9 @@ instance Builder.instWPMonad {V : Valuation F} [ConstraintHolds F c] :
     WPMonad (CircuitM F (Builder V c)) (.arg Nat .pure) where
   wp_pure a := by
     ext Q s
-    simp [wp, PredTrans.apply, build]
-    rfl
+    show ((∀ con ∈ ([] : List (Builder V c)), ConstraintHolds.Holds V con) →
+      (Q.1 a s).down) ↔ (Q.1 a s).down
+    simp
   wp_bind x f := by
     ext Q s
     simp only [PredTrans.apply_Bind_bind]

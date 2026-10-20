@@ -610,7 +610,7 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
   | [], hthr' =>
     obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hthr'
     intro _
-    simpa [roundBits, bitsVal] using hP0
+    simpa [roundBits, bitsVal, Pasta.Shifted.unshiftType1] using hP0
   | r₀ :: rs, hthr' =>
     subst hround
     set l := (r₀ :: rs).map (ScaleRound.read V) with hl

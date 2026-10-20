@@ -1253,7 +1253,7 @@ private lemma e_eq_bitSign {b : F} (hbit : b = 0 ∨ b = 1) {e : ℤ}
     e = bitSign b := by
   cases hbit <;> simp_all +decide [ bitSign ];
   · cases he <;> simp_all +decide;
-    exact h2 ( by linear_combination' he2 );
+    exact h2 ( by linear_combination he2 );
   · rcases he with ( rfl | rfl ) <;> norm_num at *;
     grind +extAll
 
@@ -1750,23 +1750,28 @@ theorem gateRegister_eq_bitsVal (g : ℕ → Witness F) (m : ℕ) :
     have h0 : ubit g (5 * k) = (if (g k).b0 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k) % 5 = 0 from by omega, show (5 * k) / 5 = k from by omega]
+      rfl
     have h1 : ubit g (5 * k + 1) = (if (g k).b1 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k + 1) % 5 = 1 from by omega,
         show (5 * k + 1) / 5 = k from by omega]
+      rfl
     have h2 : ubit g (5 * k + 1 + 1) = (if (g k).b2 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k + 1 + 1) % 5 = 2 from by omega,
         show (5 * k + 1 + 1) / 5 = k from by omega]
+      rfl
     have h3 : ubit g (5 * k + 1 + 1 + 1) = (if (g k).b3 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k + 1 + 1 + 1) % 5 = 3 from by omega,
         show (5 * k + 1 + 1 + 1) / 5 = k from by omega]
+      rfl
     have h4 : ubit g (5 * k + 1 + 1 + 1 + 1)
         = (if (g k).b4 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k + 1 + 1 + 1 + 1) % 5 = 4 from by omega,
         show (5 * k + 1 + 1 + 1 + 1) / 5 = k from by omega]
+      rfl
     rw [show 5 * (k + 1) = 5 * k + 1 + 1 + 1 + 1 + 1 from by ring]
     rw [gateRegister_succ, gateRegister_succ, gateRegister_succ, gateRegister_succ,
       gateRegister_succ, ih, runBits_succ]
@@ -2311,7 +2316,7 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
     induction i with
     | zero =>
       intro _
-      exact ⟨fun i' hi' => absurd hi' (Nat.not_lt_zero i'), hP0, by simpa using hP0eq⟩
+      exact ⟨fun i' hi' => absurd hi' (Nat.not_lt_zero i'), hP0, by simpa [chainBuild, build] using hP0eq⟩
     | succ i ih =>
       intro hi
       obtain ⟨hrows, hIi, hIeq⟩ := ih (by omega)
