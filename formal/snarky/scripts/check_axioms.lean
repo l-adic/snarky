@@ -25,6 +25,7 @@ import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Prover.WP
 import Snarky.Kimchi.Backend.Internal.Trace
 import Snarky.Kimchi.Backend.Checks.TraceChecks
 import Snarky.Kimchi.Backend.Internal.TraceSemantics
@@ -57,20 +58,7 @@ def roots : List Name :=
     `Snarky.builder_spec_iff,
     `Snarky.addConstraint_spec,
 
-    -- The completeness vocabulary: a run's reach, the rows it leaves satisfied, and the
-    -- reading that survives a later run.
-    `Snarky.Complete.bind,
-    `Snarky.Complete.frame,
-    `Snarky.Complete.imp,
-    `Snarky.Complete.seq,
-    `Snarky.Complete.pure,
-    `Snarky.Complete.pure_of,
-    `Snarky.Complete.addConstraint,
-    `Snarky.Complete.of_false,
-    `Snarky.Complete.instantiate,
-    `Snarky.Complete.post,
-    `Snarky.runs_post,
-    `Snarky.run_le,
+    -- The reading that survives a later run.
     `Snarky.CVar.val_of_le,
     `Snarky.CircuitType.Reads.of_le,
     `Snarky.CircuitType.Scoped.mono,
@@ -78,58 +66,54 @@ def roots : List Name :=
 
     -- The leaf interface every gadget builds on.
     `Snarky.witness_spec,
-    `Snarky.Complete.witness,
 
     -- The traversal combinators, whose laws the ladders' transports go through.
     `Snarky.forM_spec,
-    `Snarky.forM_complete,
     `Snarky.mapAccumM_spec,
-    `Snarky.mapAccumM_complete,
     `Snarky.zipWithVecM_spec,
-    `Snarky.zipWithVecM_complete,
 
     -- The DSL: field operations.
-    `Snarky.equals_spec, `Snarky.equals_complete,
-    `Snarky.isZero_spec, `Snarky.isZero_complete,
-    `Snarky.neq_spec, `Snarky.neq_complete,
-    `Snarky.mul_spec, `Snarky.mul_complete,
-    `Snarky.inv_spec, `Snarky.inv_complete,
-    `Snarky.div_spec, `Snarky.div_complete,
-    `Snarky.square_spec, `Snarky.square_complete,
-    `Snarky.pow_spec, `Snarky.pow_complete,
+    `Snarky.equals_spec,
+    `Snarky.isZero_spec,
+    `Snarky.neq_spec,
+    `Snarky.mul_spec,
+    `Snarky.inv_spec,
+    `Snarky.div_spec,
+    `Snarky.square_spec,
+    `Snarky.pow_spec,
 
     -- The DSL: boolean operations.
-    `Snarky.and_spec, `Snarky.and_complete,
-    `Snarky.or_spec, `Snarky.or_complete,
-    `Snarky.xor_spec, `Snarky.xor_complete,
-    `Snarky.any_spec, `Snarky.any_complete,
-    `Snarky.all_spec, `Snarky.all_complete,
-    `Snarky.selectField_spec, `Snarky.selectField_complete,
-    `Snarky.LawfulIfThenElse.select_complete,
-    -- The lawful selects: the completeness law in instance form, at each shape.
+    `Snarky.and_spec,
+    `Snarky.or_spec,
+    `Snarky.xor_spec,
+    `Snarky.any_spec,
+    `Snarky.all_spec,
+    `Snarky.selectField_spec,
+    -- The lawful selects: the soundness law in instance form, at each shape.
     `Snarky.instLawfulIfThenElseFVar, `Snarky.instLawfulIfThenElseBoolVar,
     `Snarky.instLawfulIfThenElseUnit, `Snarky.instLawfulIfThenElseProd,
     `Snarky.instLawfulIfThenElseVector,
 
     -- The DSL: assertions.
-    `Snarky.assert_spec, `Snarky.assert_complete,
-    `Snarky.assertEq_spec, `Snarky.assertEq_complete,
-    `Snarky.assertEqual_spec, `Snarky.assertEqual_complete,
-    `Snarky.assertNonZero_spec, `Snarky.assertNonZero_complete,
-    `Snarky.assertNotEqual_spec, `Snarky.assertNotEqual_complete,
-    `Snarky.assertSquare_spec, `Snarky.assertSquare_complete,
-    `Snarky.assertAny_spec, `Snarky.assertAny_complete,
-    `Snarky.assertAll_spec, `Snarky.assertAll_complete,
-    `Snarky.assertExactlyOne_spec, `Snarky.assertExactlyOne_complete,
+    `Snarky.assert_spec,
+    `Snarky.assertEq_spec,
+    `Snarky.assertEqual_spec,
+    `Snarky.assertNonZero_spec,
+    `Snarky.assertNotEqual_spec,
+    `Snarky.assertSquare_spec,
+    `Snarky.assertAny_spec,
+    `Snarky.assertAll_spec,
+    `Snarky.assertExactlyOne_spec,
 
     -- The DSL: bit decomposition and the seal.
-    `Snarky.unpack_spec, `Snarky.unpack_complete,
-    `Snarky.sealVar_spec, `Snarky.sealVar_complete,
+    `Snarky.unpack_spec,
+    `Snarky.sealVar_spec,
 
     -- The whole-circuit layer: the public interface's reading, and the payoff.
     `Snarky.scoped_inputVar,
     `Snarky.reads_inputVar,
     `Snarky.solve_complete,
+    `Snarky.solve_spec,
     `Snarky.length_compiledPublicVars_compile,
     `Snarky.length_compiledPublicVars_compileWith,
     `Snarky.compile_reads,
@@ -221,37 +205,74 @@ def roots : List Name :=
     `Snarky.Kimchi.recorded_equalities,
 
     -- The Kimchi gadgets.
-    `Snarky.Kimchi.sealPoint_spec, `Snarky.Kimchi.sealPoint_complete,
-    `Snarky.Kimchi.infColumn_spec,
-    `Snarky.Kimchi.addFast_spec, `Snarky.Kimchi.addFast_complete,
-    `Snarky.Kimchi.Poseidon.poseidon_spec, `Snarky.Kimchi.Poseidon.poseidon_complete,
-    `Snarky.Kimchi.SpongeVar.absorb_spec, `Snarky.Kimchi.SpongeVar.absorb_complete,
-    `Snarky.Kimchi.SpongeVar.squeeze_spec, `Snarky.Kimchi.SpongeVar.squeeze_complete,
-    `Snarky.Kimchi.RandomOracle.update_spec, `Snarky.Kimchi.RandomOracle.update_complete,
-    `Snarky.Kimchi.RandomOracle.hash2_spec, `Snarky.Kimchi.RandomOracle.hash2_complete,
-    `Snarky.Kimchi.RandomOracle.hashVec_spec, `Snarky.Kimchi.RandomOracle.hashVec_complete,
-    `Snarky.Kimchi.EndoScalar.toField_spec, `Snarky.Kimchi.EndoScalar.toField_complete,
-    `Snarky.Kimchi.EndoMul.endoMul_spec, `Snarky.Kimchi.EndoMul.endoMul_complete,
-    `Snarky.Kimchi.EndoMul.endoInv_spec, `Snarky.Kimchi.EndoMul.endoInv_complete,
-    `Snarky.Kimchi.varBaseMul_spec, `Snarky.Kimchi.varBaseMul_complete,
+    `Snarky.Kimchi.sealPoint_spec,
+    `Snarky.Kimchi.addFast_spec,
+    `Snarky.Kimchi.Poseidon.poseidon_spec,
+    `Snarky.Kimchi.SpongeVar.absorb_spec,
+    `Snarky.Kimchi.SpongeVar.squeeze_spec,
+    `Snarky.Kimchi.RandomOracle.update_spec,
+    `Snarky.Kimchi.RandomOracle.hash2_spec,
+    `Snarky.Kimchi.RandomOracle.hashVec_spec,
+    `Snarky.Kimchi.EndoScalar.toField_spec,
+    `Snarky.Kimchi.EndoMul.endoMul_spec,
+    `Snarky.Kimchi.EndoMul.endoInv_spec,
+    `Snarky.Kimchi.varBaseMul_spec,
     `Snarky.Kimchi.varBaseMul_spec_scalar,
-    `Snarky.Kimchi.scaleFast1_spec, `Snarky.Kimchi.scaleFast1_complete,
-    `Snarky.Kimchi.scaleFast2_spec, `Snarky.Kimchi.scaleFast2_complete,
+    `Snarky.Kimchi.scaleFast1_spec,
+    `Snarky.Kimchi.scaleFast2_spec,
     `Snarky.Kimchi.scaleFast2_spec_scalar,
-    `Snarky.Kimchi.scaleFast2'_spec, `Snarky.Kimchi.scaleFast2'_complete,
+    `Snarky.Kimchi.scaleFast2'_spec,
     `Snarky.Kimchi.scaleFast2'_spec_scalar,
-    `Snarky.Kimchi.splitFieldVar_spec, `Snarky.Kimchi.splitFieldVar_complete,
-    `Snarky.Kimchi.rangeCheck128_spec, `Snarky.Kimchi.rangeCheck128_complete,
-    `Snarky.Kimchi.lowest128Bits'_spec, `Snarky.Kimchi.lowest128Bits'_complete,
-    `Snarky.Kimchi.groupMapCircuit_spec, `Snarky.Kimchi.groupMapCircuit_complete,
+    `Snarky.Kimchi.splitFieldVar_spec,
+    `Snarky.Kimchi.rangeCheck128_spec,
+    `Snarky.Kimchi.lowest128Bits'_spec,
+    `Snarky.Kimchi.groupMapCircuit_spec,
     `Snarky.Kimchi.groupMapCircuit_onCurve_spec,
-    `Snarky.Kimchi.groupMapCircuit_toGroup_complete,
     `Snarky.Kimchi.groupMapPure_toGroup,
 
     -- The Kimchi gadgets at the deployed Vesta curve: the laws whose closures carry the Pasta
     -- certificates (`deployedRoots`).
-    `Snarky.Kimchi.vesta_varBaseMul_complete, `Snarky.Kimchi.vesta_varBaseMul_read,
-    `Snarky.Kimchi.EndoMul.vesta_endoMul_complete, `Snarky.Kimchi.EndoMul.vesta_endoMul_read,
+    `Snarky.Kimchi.vesta_varBaseMul_read, `Snarky.Kimchi.EndoMul.vesta_endoMul_read,
+    -- The completeness laws at the prover's reading, pure core Lean.
+    `Snarky.Prover.inv_spec, `Snarky.Prover.mul_spec, `Snarky.Prover.div_spec,
+    `Snarky.Prover.isZero_spec, `Snarky.Prover.assertEqual_spec,
+    `Snarky.Prover.vector_mapM_spec, `Snarky.Prover.zipWithVecM_spec, `Snarky.Prover.forM_spec,
+    `Snarky.Prover.mapAccumM_spec, `Snarky.Prover.mapAccumM_scan_spec,
+    `Snarky.Prover.div_reg, `Snarky.Prover.sealVar_spec,
+    `Snarky.Kimchi.Prover.addFast_spec, `Snarky.Kimchi.Prover.varBaseMul_spec,
+    `Snarky.Kimchi.Prover.endoMul_spec, `Snarky.Kimchi.EndoScalar.Prover.endoScalar_spec,
+    `Snarky.Prover.square_spec, `Snarky.Prover.assertSquare_spec,
+    `Snarky.Prover.unpack_spec, `Snarky.Prover.unpack_reg,
+    `Snarky.Prover.selectField_spec, `Snarky.Prover.selectField_reg,
+    `Snarky.Prover.and_spec, `Snarky.Prover.or_spec,
+    `Snarky.Prover.xor_spec, `Snarky.Prover.xor_reg,
+    `Snarky.Prover.any_spec, `Snarky.Prover.any_reg,
+    `Snarky.Prover.all_spec, `Snarky.Prover.all_reg,
+    `Snarky.Prover.equals_spec, `Snarky.Prover.neq_spec,
+    `Snarky.Prover.pow_spec, `Snarky.Prover.pow_reg,
+    `Snarky.Prover.assertNonZero_spec,
+    `Snarky.Prover.assertNotEqual_spec, `Snarky.Prover.assertNotEqual_reg,
+    `Snarky.Prover.assert_spec, `Snarky.Prover.assert_reg,
+    `Snarky.Prover.assertAny_spec, `Snarky.Prover.assertAny_reg,
+    `Snarky.Prover.assertExactlyOne_spec, `Snarky.Prover.assertExactlyOne_reg,
+    `Snarky.Prover.assertAll_spec, `Snarky.Prover.assertAll_reg,
+    `Snarky.Prover.assertEq_spec, `Snarky.Prover.assertEq_reg,
+    `Snarky.Kimchi.Prover.scaleFast1_spec, `Snarky.Kimchi.Prover.scaleFast2_spec,
+    `Snarky.Kimchi.Prover.scaleFast2'_spec, `Snarky.Kimchi.Prover.splitFieldVar_spec,
+    `Snarky.Kimchi.Prover.endoInv_spec,
+    `Snarky.Kimchi.EndoScalar.Prover.toField_spec_rows,
+    `Snarky.Kimchi.EndoScalar.Prover.toField_spec, `Snarky.Kimchi.EndoScalar.Prover.toField_reg,
+    `Snarky.Kimchi.Prover.groupMapCircuit_spec,
+    `Snarky.Kimchi.Prover.groupMapCircuit_toGroup_spec,
+    `Snarky.Kimchi.Poseidon.Prover.poseidon_spec, `Snarky.Kimchi.Poseidon.Prover.poseidon_reg,
+    `Snarky.Kimchi.SpongeVar.Prover.absorb_spec, `Snarky.Kimchi.SpongeVar.Prover.squeeze_spec,
+    `Snarky.Kimchi.RandomOracle.Prover.update_spec, `Snarky.Kimchi.RandomOracle.Prover.hash2_spec,
+    `Snarky.Kimchi.RandomOracle.Prover.hashVec_spec,
+    `Snarky.Kimchi.Prover.rangeCheck128_spec, `Snarky.Kimchi.Prover.lowest128Bits'_spec,
+    -- The checks' laws at that reading in instance form, for the types nothing witnesses
+    -- at it yet.
+    `Snarky.Kimchi.instWPCheckedTypeSpongeState,
+    `Snarky.Kimchi.instWPCheckedTypeCheckedPoint,
 
     -- The deployed dictionaries.
     `Snarky.Kimchi.HasEndo.pallas,
@@ -269,8 +290,7 @@ def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
 def deployedRoots : List Name :=
   [ `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
-    `Snarky.Kimchi.vesta_varBaseMul_complete, `Snarky.Kimchi.vesta_varBaseMul_read,
-    `Snarky.Kimchi.EndoMul.vesta_endoMul_complete, `Snarky.Kimchi.EndoMul.vesta_endoMul_read ]
+    `Snarky.Kimchi.vesta_varBaseMul_read, `Snarky.Kimchi.EndoMul.vesta_endoMul_read ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
     by name prefix (the kimchi gate's convention: the name is forgeable from inside a

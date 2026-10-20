@@ -1,4 +1,3 @@
-import Snarky.Tactic
 import Snarky.DSL.Field
 import Kimchi.Gate.Semantics.EndoScalar
 import Snarky.DSL.Assert
@@ -277,290 +276,370 @@ of `n`. -/
   refine builder_spec_imp _ _ _ h fun r ⟨n, hn, hs, hr⟩ => ⟨n, by simpa using hn, hs, ?_⟩
   rw [hr, ← Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3]
 
-/-! ## Completeness
+/-! ## The state-relative completeness laws
 
-Each accumulator witness is `Kimchi.Gate.EndoScalar.build`'s outputs, so every row holds by
-`Kimchi.Gate.EndoScalar.complete` on valid crumbs; `mapAccumM_complete` chains the rows. -/
+`toFieldChecked'`'s law at the prover's reading (`Snarky.Prover.WP`), on the template of the
+scalar-multiplication ladders: the round's step fact in `Prover.ScanStep` shape at readings
+named once, the loop's instance of `Prover.mapAccumM_scan_spec` registered, and the law closing
+with the loop as a spec-table hit. The model side needs no walk: a row holds by the gate's
+`complete` on its own valid crumbs, whatever the accumulators it threads, and the loop's fold is
+the decomposition of the concatenated crumbs. -/
 
-/-- The rows the loop is handed: crumb variables in scope, reading as valid 2-bit
-values. -/
-private def CrumbRow [Field F] (st₁ : ProverState F) (xs : Vector (FVar F) 8) : Prop :=
-  ∀ cv ∈ xs.toList, cv.Scoped st₁ ∧
-    (cv.val st₁.env.get = 0 ∨ cv.val st₁.env.get = 1 ∨
-      cv.val st₁.env.get = 2 ∨ cv.val st₁.env.get = 3)
+section ProverReading
 
-/-- A round at a table: its cells are in scope, and its row holds. -/
-private def RowOk [Field F] [DecidableEq F] (r : EndoScalarRound F) (st : ProverState F) :
-    Prop :=
-  (∀ cv ∈ r.a8 :: r.b8 :: r.n8 :: r.a0 :: r.b0 :: r.n0 :: r.xs.toList, cv.Scoped st) ∧
-    Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read st.env.get r)
+open Std.Do
 
-/-- A grant's row still holds at any extension of its table: its cells are in scope, so
-their readings do not move. The emitted constraint's obligation needs exactly this. -/
-private theorem RowOk.holds_of_le [Field F] [DecidableEq F] {r : EndoScalarRound F}
-    {st st' : ProverState F} (hle : st ≤ st') (h : RowOk r st) :
-    Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read st'.env.get r) := by
-  obtain ⟨hsc, hholds⟩ := h
-  have hread : EndoScalarRound.read st'.env.get r = EndoScalarRound.read st.env.get r := by
-    simp (disch := (apply hsc; simp)) only [EndoScalarRound.read, CVar.val_of_le hle]
-    congr 1
-    exact List.map_congr_left fun cv hcv => CVar.val_of_le hle (hsc cv (by simp [hcv]))
-  rw [hread]
-  exact hholds
+/-! ### The round at the prover's reading -/
 
-/-- A round's fact survives the table's growth. -/
-private theorem monotone_rowOk [Field F] [DecidableEq F] (r : EndoScalarRound F) :
-    Monotone (RowOk r) :=
-  fun _ _ hle h =>
-    ⟨fun cv hcv => (h.1 cv hcv).mono (ProverState.nv_le_of_le hle), RowOk.holds_of_le hle h⟩
+/-- The round's advice from the readings: `Kimchi.Gate.EndoScalar.build`'s outputs, in the
+witness's allocation order `(a8, b8, n8)`. -/
+private def rowVal [Field F] (a0 b0 n0 : F) (crumbs : List F) : F × F × F :=
+  let w := Kimchi.Gate.EndoScalar.build a0 b0 n0 crumbs
+  (w.a8, w.b8, w.n8)
 
-/-- The step's completeness: the accumulator witness is the gate's canonical row's
-outputs, so the row it closes holds by the gate's own `complete`. -/
-private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : ProverState F)
-    (acc : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8) (hx : CrumbRow st₁ xs) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => st₁ ≤ st ∧ acc.1.Scoped st ∧ acc.2.1.Scoped st ∧ acc.2.2.Scoped st)
-      (toFieldChecked'.row (c := KimchiConstraint F) acc xs)
-      (fun p st' => (st₁ ≤ st' ∧ p.2.1.Scoped st' ∧ p.2.2.1.Scoped st' ∧ p.2.2.2.Scoped st') ∧
-        Threads acc xs p.1 p.2 ∧ RowOk p.1 st') := by
-  have hvalid : ∀ x ∈ xs.toList.map (·.val st₁.env.get),
-      x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
-    intro x hxm
-    obtain ⟨cv, hcv, rfl⟩ := List.mem_map.mp hxm
-    exact (hx cv hcv).2
-  simp only [toFieldChecked'.row]
-  -- the accumulators' entry readings index the law
-  refine Complete.instantiate (ι := F × F × F)
-    (P := fun v st => st₁ ≤ st ∧
-      CircuitType.ReadsAs (val := F) st acc.1 v.1 ∧
-      CircuitType.ReadsAs (val := F) st acc.2.1 v.2.1 ∧
-      CircuitType.ReadsAs (val := F) st acc.2.2 v.2.2)
-    (fun st h =>
-      ⟨(acc.1.val st.env.get, acc.2.1.val st.env.get, acc.2.2.val st.env.get), h.1,
-        ⟨CircuitType.scoped_fvar.mpr h.2.1, CircuitType.reads_fvar.mpr rfl⟩,
-        ⟨CircuitType.scoped_fvar.mpr h.2.2.1, CircuitType.reads_fvar.mpr rfl⟩,
-        ⟨CircuitType.scoped_fvar.mpr h.2.2.2, CircuitType.reads_fvar.mpr rfl⟩⟩)
-    fun v => ?_
-  obtain ⟨a0, b0, n0⟩ := v
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨?run, h⟩) (fun _ _ h => h)
-      (Complete.frame
-        (monotone_and monotone_le
-          (monotone_and CircuitType.monotone_readsAs (monotone_and CircuitType.monotone_readsAs
-            CircuitType.monotone_readsAs)))
-        (Complete.witness (rowWit xs acc)
-          ((Kimchi.Gate.EndoScalar.build a0 b0 n0
-              (xs.toList.map (·.val st₁.env.get))).a8,
-            (Kimchi.Gate.EndoScalar.build a0 b0 n0
-              (xs.toList.map (·.val st₁.env.get))).b8,
-            (Kimchi.Gate.EndoScalar.build a0 b0 n0
-              (xs.toList.map (·.val st₁.env.get))).n8)
-          (by simp))))
-    fun w => Complete.pure_of fun st h => ?post
-  case run =>
-    have hxsc : ∀ cv ∈ xs.toList, cv.Scoped st := fun cv hcv => ((hx cv hcv).1).mono
-      (ProverState.nv_le_of_le h.1)
-    have hcr : xs.toList.map (·.val st.env.get) = xs.toList.map (·.val st₁.env.get) :=
-      List.map_congr_left fun cv hcv => CVar.val_of_le h.1 (hx cv hcv).1
-    simp only [rowWit, AsProver.bind_eq, AsProver.run_bind,
-      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1.1),
-      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.1.1),
-      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.2.1),
-      CircuitType.reads_fvar.mp h.2.1.2, CircuitType.reads_fvar.mp h.2.2.1.2,
-      CircuitType.reads_fvar.mp h.2.2.2.2, run_mapM_readCVar hxsc, Except.bind, hcr]
-    rfl
-  case post =>
-    obtain ⟨wa, wb, wn⟩ := w
-    obtain ⟨⟨hscW, hrdW⟩, hP⟩ := h
-    simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hscW
-    simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrdW
-    have hcr : xs.toList.map (·.val st.env.get) = xs.toList.map (·.val st₁.env.get) :=
-      List.map_congr_left fun cv hcv => CVar.val_of_le hP.1 (hx cv hcv).1
-    refine ⟨⟨hP.1, hscW.1, hscW.2.1, hscW.2.2⟩,
-      ⟨rfl, rfl, rfl⟩, ?_, ?_⟩
-    · intro cv hcv
-      simp only [List.mem_cons] at hcv
-      rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | hcv
-      · exact hscW.1
-      · exact hscW.2.1
-      · exact hscW.2.2
-      · exact CircuitType.scoped_fvar.mp hP.2.1.1
-      · exact CircuitType.scoped_fvar.mp hP.2.2.1.1
-      · exact CircuitType.scoped_fvar.mp hP.2.2.2.1
-      · exact ((hx cv hcv).1).mono (ProverState.nv_le_of_le hP.1)
-    · have hread : EndoScalarRound.read st.env.get
-          { n0 := acc.2.2, n8 := wn, a0 := acc.1, a8 := wa, b0 := acc.2.1, b8 := wb, xs }
-          = Kimchi.Gate.EndoScalar.build a0 b0 n0
-              (xs.toList.map (·.val st₁.env.get)) := by
-        simp only [EndoScalarRound.read, hrdW.1, hrdW.2.1, hrdW.2.2,
-          CircuitType.reads_fvar.mp hP.2.1.2, CircuitType.reads_fvar.mp hP.2.2.1.2,
-          CircuitType.reads_fvar.mp hP.2.2.2.2, hcr]
-        rfl
-      rw [hread]
-      exact Kimchi.Gate.EndoScalar.complete a0 b0 n0 _ hvalid
+/-- The round's canonical row from its advice: what `Kimchi.Gate.EndoScalar.build` computes, in
+the witness's own vocabulary, so a round's reading is this record by unfolding alone. -/
+private def roundVal [Field F] (a0 b0 n0 : F) (crumbs : List F) :
+    Kimchi.Gate.EndoScalar.Witness F :=
+  let v := rowVal a0 b0 n0 crumbs
+  { a0 := a0, b0 := b0, n0 := n0, a8 := v.1, b8 := v.2.1, n8 := v.2.2, crumbs := crumbs }
 
-/-- **Completeness.** From a readable scalar the honest run succeeds and the three
-accumulators read as the Algorithm-2 decompositions of the scalar's own crumbs. -/
-@[complete_law]
-private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) (sv : F) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st scalar sv)
-      (toFieldChecked' (c := KimchiConstraint F) rows scalar)
-      (fun r st' =>
-        CircuitType.ReadsAs (val := F) st' r.1 (Kimchi.Gate.EndoScalar.decomposeA
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv))) ∧
-        CircuitType.ReadsAs (val := F) st' r.2.1 (Kimchi.Gate.EndoScalar.decomposeB
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv))) ∧
-        CircuitType.ReadsAs (val := F) st' r.2.2 (Kimchi.Gate.EndoScalar.nReconstruct
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)))) := by
-  simp only [toFieldChecked']
-  refine Complete.bind
-    (Complete.imp (fun st h => ?crun) (fun _ _ h => h)
-      (Complete.witness (crumbsWit rows scalar)
-        (crumbsVec (rows * 8) (ToNat.toNat sv)) (by simp)))
-    fun cvars => ?_
-  case crun =>
-    simp only [crumbsWit, AsProver.bind_eq, AsProver.run_bind,
-      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1),
-      CircuitType.reads_fvar.mp h.2, Except.bind]
-    rfl
-  -- the crumbs' landing table indexes the rest of the run: `instantiate` names it, and
-  -- the index carries the crumb cells' scope and canonical readings
-  refine Complete.instantiate
-    (ι := {st₁ : ProverState F // ∀ (i : ℕ) (hi : i < rows * 8),
-      (cvars[i]'hi).Scoped st₁ ∧
-        (cvars[i]'hi).val st₁.env.get
-          = (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (rows * 8)
-              (ToNat.toNat sv)).getD i 0})
-    (P := fun i st => i.1 ≤ st)
-    (fun st h =>
-      ⟨⟨st, fun i hi =>
-        ⟨CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp h.1 i hi),
-          by simpa [crumbsVec] using
-            CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp h.2 i hi)⟩⟩,
-        le_rfl⟩)
-    fun i => ?_
-  obtain ⟨st₁, hentry⟩ := i
-  have hP : ∀ x ∈ (chunkVec cvars).toList, CrumbRow st₁ x := by
-    intro x hx cv hcv
-    obtain ⟨r, hr, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
+/-- The advice's record is the gate's canonical row. -/
+private theorem roundVal_eq_build [Field F] (a0 b0 n0 : F) (crumbs : List F) :
+    roundVal a0 b0 n0 crumbs = Kimchi.Gate.EndoScalar.build a0 b0 n0 crumbs := rfl
+
+/-- The threaded registers' condition: all three in scope. -/
+private def accScoped (st : ProverState F) (a : FVar F × FVar F × FVar F) : Prop :=
+  a.1.Scoped st ∧ a.2.1.Scoped st ∧ a.2.2.Scoped st
+
+/-- A row's crumbs in scope. -/
+private def crumbsScoped (st : ProverState F) (xs : Vector (FVar F) 8) : Prop :=
+  ∀ cv ∈ xs.toList, cv.Scoped st
+
+private theorem rowWit_run [Field F] [DecidableEq F] {s : ProverState F}
+    {xs : Vector (FVar F) 8} {acc : FVar F × FVar F × FVar F} (hacc : accScoped s acc)
+    (hxs : crumbsScoped s xs) :
+    (rowWit xs acc).run s.env = .ok (rowVal (acc.1.val s.env.get) (acc.2.1.val s.env.get)
+      (acc.2.2.val s.env.get) (xs.toList.map (·.val s.env.get))) := by
+  simp only [rowWit, rowVal, AsProver.bind_eq, AsProver.run_bind, AsProver.readCVar_run hacc.1,
+    AsProver.readCVar_run hacc.2.1, AsProver.readCVar_run hacc.2.2, run_mapM_readCVar hxs,
+    Except.bind]
+  rfl
+
+/-- A round's cells in scope: the six registers and the crumbs. -/
+private def rowScoped (st : ProverState F) (r : EndoScalarRound F) : Prop :=
+  ∀ cv ∈ r.a8 :: r.b8 :: r.n8 :: r.a0 :: r.b0 :: r.n0 :: r.xs.toList, cv.Scoped st
+
+/-- The threaded registers' reading, flat. -/
+private def accRead [Field F] (st : ProverState F) (a : FVar F × FVar F × FVar F) : F × F × F :=
+  (st.read a.1, st.read a.2.1, st.read a.2.2)
+
+/-- A row's crumbs' readings. -/
+private def crumbsRead [Field F] (st : ProverState F) (xs : Vector (FVar F) 8) : List F :=
+  xs.toList.map (·.val st.env.get)
+
+/-- A round's reading: the gate's row at its own cells. -/
+private def roundRead [Field F] [DecidableEq F] (st : ProverState F) (r : EndoScalarRound F) :
+    Kimchi.Gate.EndoScalar.Witness F :=
+  EndoScalarRound.read st.env.get r
+
+/-- The row a round produces, from the registers' and the crumbs' readings. -/
+private def rowStep [Field F] (a : F × F × F) (x : List F) : Kimchi.Gate.EndoScalar.Witness F :=
+  roundVal a.1 a.2.1 a.2.2 x
+
+/-- The registers' reading after a round: the row's outputs. -/
+private def accStep [Field F] (a : F × F × F) (x : List F) : F × F × F :=
+  ((rowStep a x).a8, (rowStep a x).b8, (rowStep a x).n8)
+
+/-- The round's chain of states and every entry cell's reading along it, the one place the
+chain is known: the witness's state lies past the entry, and an entry cell in scope reads, at
+every state past the entry, what it read at the entry. -/
+private theorem round_readings [Field F] {s₁ s : ProverState F}
+    {acc : FVar F × FVar F × FVar F} {xs : Vector (FVar F) 8} (hl : s₁ ≤ s)
+    (hacc : accScoped s₁ acc) (hxs : crumbsScoped s₁ xs) :
+    s₁ ≤ s ∧
+      ∀ u, s₁ ≤ u →
+        acc.1.val u.env.get = acc.1.val s₁.env.get ∧
+        acc.2.1.val u.env.get = acc.2.1.val s₁.env.get ∧
+        acc.2.2.val u.env.get = acc.2.2.val s₁.env.get ∧
+        xs.toList.map (·.val u.env.get) = xs.toList.map (·.val s₁.env.get) :=
+  ⟨hl, fun _ hle => ⟨CVar.val_of_le hle hacc.1, CVar.val_of_le hle hacc.2.1,
+    CVar.val_of_le hle hacc.2.2, List.map_congr_left fun cv hcv => CVar.val_of_le hle (hxs cv hcv)⟩⟩
+
+/-- A round's reading survives the state's growth when its cells are in scope. -/
+private theorem roundRead_of_le [Field F] [DecidableEq F] {st st' : ProverState F}
+    (hle : st ≤ st') {r : EndoScalarRound F}
+    (h : ∀ cv ∈ r.a8 :: r.b8 :: r.n8 :: r.a0 :: r.b0 :: r.n0 :: r.xs.toList, cv.Scoped st) :
+    roundRead st' r = roundRead st r := by
+  simp (disch := (apply h; simp)) only [roundRead, EndoScalarRound.read, CVar.val_of_le hle]
+  congr 1
+  exact List.map_congr_left fun cv hcv => CVar.val_of_le hle (h cv (by simp [hcv]))
+
+/-- `rowWit` returns the round's advice. -/
+@[spec] private def Prover.rowWit_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (xs : Vector (FVar F) 8) (acc : FVar F × FVar F × FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (rowWit xs acc)
+    (fun st => accScoped st acc ∧ crumbsScoped st xs)
+    (fun st => rowVal (st.read acc.1) (st.read acc.2.1) (st.read acc.2.2)
+      (xs.toList.map (·.val st.env.get)))
+    (fun _ h => rowWit_run h.1 h.2) fun _ _ => by simp)
+
+/-- The round's step fact: its cells in scope, the next registers in scope, the round reading
+as the gate's canonical row at the entry readings, and the registers reading as that row's
+outputs. -/
+private theorem Prover.endoScalarRound_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (st : ProverState F) (acc : FVar F × FVar F × FVar F)
+    (xs : Vector (FVar F) 8) :
+    ⦃fun s => ⌜s = st ∧ accScoped st acc ∧ crumbsScoped st xs ∧ True⌝⦄
+    toFieldChecked'.row (F := F) (c := Prover c) acc xs
+    ⦃⇓ p s' => ⌜Prover.ScanStep accScoped rowScoped accRead crumbsRead roundRead accStep
+      rowStep st acc xs p.1 p.2 s'⌝⦄ := by
+  unfold toFieldChecked'.row
+  mvcgen
+  all_goals (try grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+    CircuitType.scoped_prod', CVar.Scoped.of_le, accScoped, crumbsScoped])
+  -- the step fact
+  rename_i s₁ w s h hpre
+  simp only [Prover.Reg.iff] at h
+  obtain ⟨rfl, hacc, hxs⟩ := hpre
+  obtain ⟨hw, hl⟩ := h
+  -- the chain and the entry cells' readings along it, from the one lemma that knows it
+  obtain ⟨hl, hrd⟩ := round_readings hl hacc hxs
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_prod', CircuitType.scoped_fvar,
+    CircuitType.reads_prod', CircuitType.reads_fvar] at hw
+  refine ⟨?_, ?_, ?_, ?_, hl⟩
+  · simp only [rowScoped, List.forall_mem_cons]
+    grind [CVar.Scoped.of_le, accScoped, crumbsScoped]
+  · exact ⟨hw.1.1, hw.1.2.1, hw.1.2.2⟩
+  -- the two equations: the vocabulary, the advice's readings, and (for the row) the entry
+  -- cells' readings, the chain's link found in the context
+  · simp (disch := assumption) only [roundRead, EndoScalarRound.read, ProverState.read,
+      accRead, crumbsRead, rowStep, hw.2, hrd]
+    exact rfl
+  · simp only [ProverState.read, accRead, crumbsRead, accStep, rowStep, hw.2]
+    exact rfl
+
+/-- The decomposition's loop, registered: the scan corollary at the round, its transports
+discharged. -/
+@[spec] private def Prover.endoScalarLoop_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (init : FVar F × FVar F × FVar F) (xs : List (Vector (FVar F) 8)) :=
+  Prover.register (Prover.mapAccumM_scan_spec accScoped crumbsScoped rowScoped accRead
+    crumbsRead roundRead accStep rowStep (toFieldChecked'.row (F := F) (c := Prover c))
+    (fun _ => True)
+    (fun _ _ _ hle h cv hcv => (h cv hcv).of_le hle)
+    (fun _ _ _ hle h cv hcv => (h cv hcv).of_le hle)
+    (fun _ _ _ hle h => List.map_congr_left fun cv hcv => CVar.val_of_le hle (h cv hcv))
+    (fun _ _ _ hle h => roundRead_of_le hle h)
+    (fun st acc x => Prover.endoScalarRound_spec st acc x) init xs)
+
+/-! ### The decomposition at the prover's reading
+
+`toFieldChecked'`'s law. The loop is the registered scan instance; `scan_fold` reads its fold
+as the folds over the concatenated crumbs, which `crumb_facts` identifies with the scalar's
+expansion, and every row holds by the gate's `complete` on its own crumbs. `exit_facts` states
+the exit in the law's vocabulary, so each of the law's conditions is one projection of it. -/
+
+private theorem crumbsWit_run [Field F] [ToNat F] {s : ProverState F} {rows : ℕ}
+    {scalar : FVar F} (h : scalar.Scoped s) :
+    (crumbsWit rows scalar).run s.env
+      = .ok (crumbsVec (rows * 8) (ToNat.toNat (scalar.val s.env.get))) := by
+  simp [crumbsWit, AsProver.readCVar_run h]
+
+/-- The crumbs bundle, off its reading: every row in scope, and the rows' readings concatenated
+are the scalar's expansion. -/
+private theorem crumb_facts [Field F] {rows : ℕ} {st : ProverState F}
+    {crumbs : Vector (FVar F) (rows * 8)} {k : ℕ}
+    (h : CircuitType.ReadsAs (val := Vector F (rows * 8)) st crumbs (crumbsVec (rows * 8) k)) :
+    (∀ x ∈ (chunkVec crumbs).toList, crumbsScoped st x) ∧
+      ((chunkVec crumbs).toList.map (crumbsRead st)).flatten
+        = Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) k := by
+  refine ⟨fun x hx cv hcv => ?_, ?_⟩
+  · obtain ⟨r, hr, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
     obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hcv)
     rw [getElem_chunkVec]
-    refine ⟨(hentry _ _).1, ?_⟩
-    rw [(hentry _ _).2,
-      List.getD_eq_getElem _ _ (by rw [Kimchi.Gate.EndoScalar.crumbsOf_length]; omega)]
-    exact Kimchi.Gate.EndoScalar.crumbsOf_valid _ _ _ (List.getElem_mem _)
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨h, trivial, trivial, trivial⟩) (fun _ _ h => h)
-      (mapAccumM_complete (F := F) (c := KimchiConstraint F) toFieldChecked'.row
-        (CrumbRow st₁)
-        (fun _ acc st => st₁ ≤ st ∧ acc.1.Scoped st ∧ acc.2.1.Scoped st ∧ acc.2.2.Scoped st)
-        Threads RowOk
-        (fun _ _ => monotone_and monotone_le (monotone_and CVar.monotone_scoped
-          (monotone_and CVar.monotone_scoped CVar.monotone_scoped)))
-        monotone_rowOk
-        (fun acc x _ hx => row_complete st₁ acc x hx)
-        (.const 2, .const 2, .const 0) (chunkVec cvars).toList hP))
-    fun p => ?_
-  obtain ⟨rounds, fin⟩ := p
-  refine Complete.bind (Complete.addConstraint ?row)
-    fun _ => Complete.pure_of fun st h => ?post
-  case row =>
-    rintro st ⟨-, -, hrows⟩ stf hle
-    exact fun r hr => RowOk.holds_of_le hle (hrows r hr)
-  case post =>
-    obtain ⟨hinv₂, hchain, hrows⟩ := h
-    have hholds := fun r hr => (hrows r hr).2
-    obtain ⟨-, -, hA, hB, hN⟩ := chain_sound h2 h3 st.env.get hchain hholds
-    have hcrumbs : roundCrumbs st.env.get rounds
-        = Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv) := by
-      have hrows := chain_rows hchain
-      have hflat : roundCrumbs st.env.get rounds
-          = cvars.toList.map (·.val st.env.get) := by
-        rw [roundCrumbs, List.flatMap_def,
-          show (fun r : EndoScalarRound F => r.xs.toList.map (·.val st.env.get))
-            = (fun row : Vector (FVar F) 8 => row.toList.map (·.val st.env.get)) ∘ (·.xs)
-            from rfl,
-          ← List.map_map, hrows]
-        exact flatten_map_chunkVec cvars _
-      rw [hflat, Nat.mul_comm 8 rows]
-      refine List.ext_getElem (by simp [Kimchi.Gate.EndoScalar.crumbsOf_length])
-        fun i _ h2 => ?_
-      have hi : i < rows * 8 := by
-        simpa [Kimchi.Gate.EndoScalar.crumbsOf_length] using h2
-      simp only [List.getElem_map, Vector.getElem_toList]
-      rw [CVar.val_of_le hinv₂.1 (hentry i hi).1, (hentry i hi).2]
-      exact List.getD_eq_getElem _ _ h2
-    rw [← hcrumbs]
-    exact ⟨⟨CircuitType.scoped_fvar.mpr hinv₂.2.1, CircuitType.reads_fvar.mpr hA⟩,
-      ⟨CircuitType.scoped_fvar.mpr hinv₂.2.2.1, CircuitType.reads_fvar.mpr hB⟩,
-      ⟨CircuitType.scoped_fvar.mpr hinv₂.2.2.2, CircuitType.reads_fvar.mpr hN⟩⟩
+    exact CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp h.1 _ _)
+  · show ((chunkVec crumbs).toList.map fun row => row.toList.map (·.val st.env.get)).flatten = _
+    rw [flatten_map_chunkVec, Nat.mul_comm 8 rows]
+    refine List.ext_getElem (by simp [Kimchi.Gate.EndoScalar.crumbsOf_length]) fun i _ h2 => ?_
+    have hi : i < rows * 8 := by simpa [Kimchi.Gate.EndoScalar.crumbsOf_length] using h2
+    simp only [List.getElem_map, Vector.getElem_toList]
+    have hr := CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp h.2 i hi)
+    rw [hr]
+    simpa [crumbsVec] using List.getD_eq_getElem _ _ h2
 
-/-- **Completeness of the wrapper** at `rows` rows: on a scalar whose `ToNat` reading is
-below `2 ^ (16 · rows)`, the honest run succeeds and the result reads as
-`Kimchi.Gate.EndoScalar.toField` of its `8 · rows` crumbs. -/
-theorem toField_complete_rows [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F) (sv ev : F)
-    (hlt : ToNat.toNat sv < 2 ^ (16 * rows)) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st scalar sv ∧
-        CircuitType.ReadsAs (val := F) st endo ev)
-      (toField (c := KimchiConstraint F) rows scalar endo)
-      (fun r st' => CircuitType.ReadsAs (val := F) st' r
-        (Kimchi.Gate.EndoScalar.toField
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) ev)) := by
-  replace hlt : ToNat.toNat sv < 4 ^ (8 * rows) := by
-    have h4 : (4 : ℕ) ^ (8 * rows) = 2 ^ (16 * rows) := by
-      rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]; ring_nf
-    rw [h4]; exact hlt
-  have hnv : Kimchi.Gate.EndoScalar.nReconstruct
-      (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows) (ToNat.toNat sv)) = sv := by
-    rw [Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hlt,
-      LawfulToNat.cast_toNat]
-  simp only [toField]
-  complete_walk
-  refine Complete.seq (by complete_mono_tac)
-    (Complete.imp (fun st h => ⟨hnv ▸ h.2.2.2, h.1.1⟩) (fun _ _ h => h)
-      (assertEqual_complete (c := KimchiConstraint F) _ scalar sv))
-    fun _ => ?_
-  split
-  · rename_i e
-    refine Complete.pure_of fun st h => ?_
-    have he : e = ev := CircuitType.reads_fvar.mp h.1.1.2.2
-    refine ⟨CircuitType.scoped_fvar.mpr
-      (CVar.Scoped.add_ (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp h.1.2.1.1))
-        (CircuitType.scoped_fvar.mp h.1.2.2.1.1)), CircuitType.reads_fvar.mpr ?_⟩
-    simp only [CVar.val_add_, CVar.val_scale_, CircuitType.reads_fvar.mp h.1.2.1.2,
-      CircuitType.reads_fvar.mp h.1.2.2.1.2, he, Kimchi.Gate.EndoScalar.toField]
-    ring
-  · complete_walk
-    refine Complete.pure_of fun st h => ?_
-    refine ⟨CircuitType.scoped_fvar.mpr
-      (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp h.1.1.2.2.1.1)
-        (CircuitType.scoped_fvar.mp h.2.1)), CircuitType.reads_fvar.mpr ?_⟩
-    rw [CVar.val_add_, CircuitType.reads_fvar.mp h.2.2,
-      CircuitType.reads_fvar.mp h.1.1.2.2.1.2, Kimchi.Gate.EndoScalar.toField]
-    ring
+/-- The rows' steps fold to the folds over their concatenated crumbs. -/
+private theorem scan_fold [Field F] :
+    ∀ (ws : List (List F)) (a b n : F),
+      ws.foldl accStep (a, b, n) =
+        (ws.flatten.foldl (fun acc x => 2 * acc + Kimchi.Gate.EndoScalar.cPoly x) a,
+          ws.flatten.foldl (fun acc x => 2 * acc + Kimchi.Gate.EndoScalar.dPoly x) b,
+          ws.flatten.foldl (fun acc x => 4 * acc + x) n)
+  | [], _, _, _ => rfl
+  | w :: ws, a, b, n => by
+    rw [List.foldl_cons, List.flatten_cons, List.foldl_append, List.foldl_append,
+      List.foldl_append]
+    exact scan_fold ws _ _ _
 
-/-- **Completeness of the wrapper**, at the deployed eight rows: on a scalar whose
-`ToNat` reading is below `2 ^ 128`, the honest run succeeds and the result reads as
-`Poseidon.FqSponge.endoExpand` of it. -/
-@[complete_law]
-theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) (sv ev : F)
-    (hlt : ToNat.toNat sv < 2 ^ 128) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st scalar sv ∧
-        CircuitType.ReadsAs (val := F) st endo ev)
-      (toField (c := KimchiConstraint F) 8 scalar endo)
-      (fun r st' => CircuitType.ReadsAs (val := F) st' r
-        (Poseidon.FqSponge.endoExpand ev (ToNat.toNat sv))) := by
-  rw [show Poseidon.FqSponge.endoExpand ev (ToNat.toNat sv)
-      = Kimchi.Gate.EndoScalar.toField
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * 8) (ToNat.toNat sv)) ev from
-    Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3 ev _]
-  exact toField_complete_rows h2 h3 8 scalar endo sv ev (by simpa using hlt)
+/-- The decomposition's exit, off what the run leaves at the loop's entry and exit: at any
+state past the loop, every round holds, and the registers read as the scalar's
+decomposition. -/
+private theorem exit_facts [Field F] [DecidableEq F] {rows k : ℕ} {s₁ s₂ u : ProverState F}
+    {crumbs : Vector (FVar F) (rows * 8)}
+    {loop : List (EndoScalarRound F) × FVar F × FVar F × FVar F}
+    (h1 : CircuitType.ReadsAs (val := Vector F (rows * 8)) s₁ crumbs (crumbsVec (rows * 8) k))
+    (hloop : accScoped s₂ loop.2 ∧
+      accRead s₂ loop.2 = ((chunkVec crumbs).toList.map (crumbsRead s₁)).foldl accStep
+        (accRead s₁ (CVar.const 2, CVar.const 2, CVar.const 0)) ∧
+      loop.1.length = (chunkVec crumbs).toList.length ∧
+      (∀ (i : ℕ) (hi : i < (chunkVec crumbs).toList.length) (hi' : i < loop.1.length),
+        rowScoped s₂ loop.1[i] ∧ roundRead s₂ loop.1[i] =
+          rowStep ((((chunkVec crumbs).toList.map (crumbsRead s₁)).scanl accStep
+            (accRead s₁ (CVar.const 2, CVar.const 2, CVar.const 0))).getD i
+            (accRead s₁ (CVar.const 2, CVar.const 2, CVar.const 0)))
+            (crumbsRead s₁ (chunkVec crumbs).toList[i])) ∧
+      s₁ ≤ s₂)
+    (hu : s₂ ≤ u) :
+    (∀ r ∈ loop.1, Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read u.env.get r)) ∧
+      u.read loop.2.1 = Kimchi.Gate.EndoScalar.decomposeA
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) k) ∧
+      u.read loop.2.2.1 = Kimchi.Gate.EndoScalar.decomposeB
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) k) ∧
+      u.read loop.2.2.2 = Kimchi.Gate.EndoScalar.nReconstruct
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) k) := by
+  obtain ⟨hacc, hfold, hlen, hrows, -⟩ := hloop
+  have hflat := (crumb_facts h1).2
+  rw [show accRead s₁ (CVar.const 2, CVar.const 2, CVar.const 0) = (2, 2, 0) from rfl,
+    scan_fold, hflat] at hfold
+  simp only [accRead, Prod.mk.injEq] at hfold
+  refine ⟨fun r hr => ?_, ?_, ?_, ?_⟩
+  · obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hr
+    have hi' : i < (chunkVec crumbs).toList.length := by rw [← hlen]; exact hi
+    show Kimchi.Gate.EndoScalar.Holds (roundRead u loop.1[i])
+    rw [roundRead_of_le hu (hrows i hi' hi).1, (hrows i hi' hi).2, rowStep, roundVal_eq_build]
+    refine Kimchi.Gate.EndoScalar.complete _ _ _ _ fun x hx => ?_
+    refine Kimchi.Gate.EndoScalar.crumbsOf_valid (8 * rows) k x ?_
+    rw [← hflat]
+    exact List.mem_flatten.mpr ⟨_, List.mem_map_of_mem (List.getElem_mem hi'), hx⟩
+  · rw [ProverState.read_of_le hu hacc.1, hfold.1]
+    rfl
+  · rw [ProverState.read_of_le hu hacc.2.1, hfold.2.1]
+    rfl
+  · rw [ProverState.read_of_le hu hacc.2.2, hfold.2.2]
+    rfl
+
+/-- `crumbsWit` returns the scalar's crumbs. -/
+@[spec] private def Prover.crumbsWit_reg [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [ConstraintHolds F c] (rows : ℕ) (scalar : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (crumbsWit rows scalar)
+    (fun st => scalar.Scoped st) (fun st => crumbsVec (rows * 8) (ToNat.toNat (st.read scalar)))
+    (fun _ h => crumbsWit_run h) fun _ _ => by simp)
+
+/-- **`toFieldChecked'`'s state-relative completeness.** From a scalar in scope, the run
+succeeds and the three registers read as the decomposition of the scalar's crumbs. The loop is
+the registered scan instance; `exit_facts` reads its post. -/
+theorem Prover.endoScalar_spec [Field F] [DecidableEq F] [ToNat F] (rows : ℕ) (scalar : FVar F)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ scalar.Scoped st₀⌝⦄
+    toFieldChecked' (c := Prover (KimchiConstraint F)) rows scalar
+    ⦃⇓ r s' => ⌜r.1.Scoped s' ∧ r.2.1.Scoped s' ∧ r.2.2.Scoped s' ∧
+      s'.read r.1 = Kimchi.Gate.EndoScalar.decomposeA
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat (st₀.read scalar))) ∧
+      s'.read r.2.1 = Kimchi.Gate.EndoScalar.decomposeB
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat (st₀.read scalar))) ∧
+      s'.read r.2.2 = Kimchi.Gate.EndoScalar.nReconstruct
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat (st₀.read scalar))) ∧
+      st₀ ≤ s'⌝⦄ := by
+  unfold toFieldChecked'
+  mvcgen
+  all_goals (try grind [Prover.Reg.iff, CircuitType.ReadsAs, CVar.Scoped.of_le, accScoped,
+    CVar.scoped_const])
+  -- the loop's entry: the seeds are constants, and every row of the crumbs is in scope
+  · rename_i s₀ h₀ crumbs s h1
+    simp only [Prover.Reg.iff] at h1
+    exact ⟨trivial, ⟨CVar.scoped_const _ _, CVar.scoped_const _ _, CVar.scoped_const _ _⟩,
+      (crumb_facts h1.1).1⟩
+  -- the one `endoScalar` row: every round holds, its cells in scope after the loop
+  · rename_i s₀ h₀ crumbs s₁ h1 loop s h2
+    simp only [Prover.Reg.iff] at h1 h2
+    refine ⟨trivial, (exit_facts h1.1 h2 le_rfl).1, fun y hy => ?_⟩
+    change y ∈ loop.1.flatMap
+      (fun r => [r.n0, r.n8, r.a0, r.b0, r.a8, r.b8] ++ r.xs.toList) at hy
+    obtain ⟨r, hr, hy⟩ := List.mem_flatMap.mp hy
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hr
+    refine (h2.2.2.2.1 i (h2.2.2.1 ▸ hi) hi).1 y ?_
+    simp only [List.mem_append, List.mem_cons] at hy ⊢
+    tauto
+  -- the result: the registers read as the decomposition
+  · rename_i s₀ h₀ crumbs s₁ h1 loop s₂ h2 u s h3
+    simp only [Prover.Reg.iff] at h1 h2
+    obtain ⟨rfl, -⟩ := h3
+    obtain ⟨rfl, -⟩ := h₀
+    obtain ⟨-, hA, hB, hN⟩ := exit_facts h1.1 h2 le_rfl
+    exact ⟨h2.1.1, h2.1.2.1, h2.1.2.2, hA, hB, hN, h1.2.trans h2.2.2.2.2⟩
+
+/-- Registered. -/
+@[spec] private def Prover.endoScalar_reg [Field F] [DecidableEq F] [ToNat F] (rows : ℕ)
+    (scalar : FVar F) :=
+  Prover.register (Prover.endoScalar_spec (F := F) rows scalar)
+
+/-! ### The wrapper at the prover's reading -/
+
+/-- The crumbs of a scalar whose representative fits their width reconstruct it. -/
+private theorem nReconstruct_crumbsOf_of_lt [Field F] [ToNat F] [LawfulToNat F] {rows : ℕ}
+    {v : F} (hlt : ToNat.toNat v < 2 ^ (16 * rows)) :
+    Kimchi.Gate.EndoScalar.nReconstruct
+      (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows) (ToNat.toNat v)) = v := by
+  have h4 : (4 : ℕ) ^ (8 * rows) = 2 ^ (16 * rows) := by
+    rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]; ring_nf
+  rw [Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt (h4 ▸ hlt),
+    LawfulToNat.cast_toNat]
+
+/-- **`toField`'s state-relative completeness**, at `rows` rows. From a scalar in scope whose
+representative fits `16 · rows` bits and an endomorphism coefficient in scope, the run succeeds
+and the result reads as the gate's effective scalar of the scalar's crumbs. -/
+theorem Prover.toField_spec_rows [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (rows : ℕ) (scalar endo : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ scalar.Scoped st₀ ∧ endo.Scoped st₀ ∧
+      ToNat.toNat (st₀.read scalar) < 2 ^ (16 * rows)⌝⦄
+    toField (c := Prover (KimchiConstraint F)) rows scalar endo
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧
+      s'.read r = Kimchi.Gate.EndoScalar.toField
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat (st₀.read scalar)))
+        (st₀.read endo) ∧
+      st₀ ≤ s'⌝⦄ := by
+  have hnv := fun (v : F) (h : ToNat.toNat v < 2 ^ (16 * rows)) =>
+    nReconstruct_crumbsOf_of_lt (rows := rows) h
+  unfold toField
+  mvcgen
+  all_goals grind [Prover.Reg.iff, Kimchi.Gate.EndoScalar.toField, CVar.val_add_,
+    CVar.val_scale_, CVar.val, CVar.Scoped.add_, CVar.Scoped.scale_, CVar.scoped_const,
+    ProverState.read_of_le, CVar.Scoped.of_le]
+
+/-- Registered. -/
+@[spec] private def Prover.toField_rows_reg [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (rows : ℕ) (scalar endo : FVar F) :=
+  Prover.register (Prover.toField_spec_rows (F := F) rows scalar endo)
+
+/-- **`toField`'s state-relative completeness**, at the deployed eight rows: on a scalar whose
+representative is below `2 ^ 128`, the result reads as `Poseidon.FqSponge.endoExpand` of it. -/
+theorem Prover.toField_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ scalar.Scoped st₀ ∧ endo.Scoped st₀ ∧
+      ToNat.toNat (st₀.read scalar) < 2 ^ 128⌝⦄
+    toField (c := Prover (KimchiConstraint F)) 8 scalar endo
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧
+      s'.read r = Poseidon.FqSponge.endoExpand (st₀.read endo) (ToNat.toNat (st₀.read scalar)) ∧
+      st₀ ≤ s'⌝⦄ := by
+  have hexp := fun (e : F) (n : ℕ) => Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3 e n
+  mvcgen
+  all_goals grind [Prover.Reg.iff]
+
+/-- Registered. -/
+@[spec] def Prover.toField_reg [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) :=
+  Prover.register (Prover.toField_spec (F := F) h2 h3 scalar endo)
+
+end ProverReading
 
 attribute [irreducible] EndoScalar.toFieldChecked' EndoScalar.toFieldChecked'.row
   EndoScalar.toField

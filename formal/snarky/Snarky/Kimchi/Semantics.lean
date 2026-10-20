@@ -1,5 +1,6 @@
 import Snarky.Kimchi.Constraint
 import Snarky.WP
+import Snarky.Prover.WP
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.Poseidon
 import Kimchi.Gate.EndoScalar
@@ -208,10 +209,39 @@ instance KimchiConstraint.decidableHolds (V : Valuation F) (c : KimchiConstraint
   · exact Basic.decidableHolds V _
   all_goals infer_instance
 
+/-- The cells a constraint reads: a `Basic` row's operands, each gate payload's operands (the
+rounds' and the Poseidon states' in list order, an `endoScalar` round's crumbs last, an
+`endoMul` payload's finals last), and the padding row's seven. -/
+def KimchiConstraint.cells : KimchiConstraint F → List (CVar F)
+  | .basic con => Basic.cells con
+  | .addComplete c => c.operands.toList
+  | .poseidon c => c.state.flatMap fun t => [t.1, t.2.1, t.2.2]
+  | .endoScalar rounds =>
+    rounds.flatMap fun r => [r.n0, r.n8, r.a0, r.b0, r.a8, r.b8] ++ r.xs.toList
+  | .varBaseMul rounds => rounds.flatMap fun r => (r.cellsA ++ r.cellsB).filterMap id
+  | .endoMul c => c.state.flatMap (fun r => r.cells.filterMap id) ++ [c.s.x, c.s.y, c.nAcc]
+  | .pad vs => vs.toList
+
 /-- The semantic reading, packaged for the triple machinery. -/
 instance KimchiConstraint.instConstraintHolds :
     ConstraintHolds F (KimchiConstraint F) :=
-  ⟨KimchiConstraint.Holds⟩
+  ⟨KimchiConstraint.Holds, KimchiConstraint.cells⟩
+
+omit [DecidableEq F] in
+/-- The `endoMul` successor chain reads only its rounds' cells and its finals. -/
+private theorem EndoMul.chainHolds_congr {V V' : Valuation F} {endo : F} {fin : F × F × F} :
+    ∀ rs : List (EndoMulRound F),
+      (∀ x ∈ rs.flatMap (fun r => r.cells.filterMap id), x.val V = x.val V') →
+        (EndoMul.chainHolds V endo fin rs ↔ EndoMul.chainHolds V' endo fin rs)
+  | [], _ => Iff.rfl
+  | [r], h => by
+    simp (disch := simp [EndoMulRound.cells]) only [EndoMul.chainHolds,
+      EndoMulRound.readWith, h]
+  | r :: r' :: rest, h => by
+    have ih := EndoMul.chainHolds_congr (endo := endo) (fin := fin) (r' :: rest) fun x hx =>
+      h x (by rw [List.flatMap_cons]; exact List.mem_append_right _ hx)
+    rw [EndoMul.chainHolds, EndoMul.chainHolds, ih]
+    simp (disch := simp [EndoMulRound.cells]) only [EndoMulRound.readWith, h]
 
 /-- The backend is lawful: `.basic` embeds the reference constraints verbatim, so
 each law is `Basic`'s own. -/
@@ -221,13 +251,61 @@ instance KimchiConstraint.instLawfulBasicSystem :
   holds_r1cs V l r o := LawfulBasicSystem.holds_r1cs (c := Basic F) V l r o
   holds_square V a sq := LawfulBasicSystem.holds_square (c := Basic F) V a sq
   holds_boolean V x := LawfulBasicSystem.holds_boolean (c := Basic F) V x
+  holds_congr con V V' h := by
+    show KimchiConstraint.Holds V con ↔ KimchiConstraint.Holds V' con
+    replace h : ∀ x ∈ KimchiConstraint.cells con, x.val V = x.val V' := h
+    cases con with
+    | basic b => exact LawfulBasicSystem.holds_congr (c := Basic F) b V V' h
+    | addComplete c =>
+      simp (disch := simp [KimchiConstraint.cells, AddComplete.operands]) only
+        [KimchiConstraint.Holds, AddComplete.read, h]
+    | poseidon c =>
+      have hr : Poseidon.read V c = Poseidon.read V' c := by
+        unfold Poseidon.read
+        refine List.map_congr_left fun t ht => ?_
+        have hm : ∀ y ∈ [t.1, t.2.1, t.2.2], y.val V = y.val V' := fun y hy =>
+          h y (List.mem_flatMap.mpr ⟨t, ht, hy⟩)
+        simp only [List.forall_mem_cons] at hm
+        rw [hm.1, hm.2.1, hm.2.2.1]
+      simp only [KimchiConstraint.Holds, hr]
+    | endoScalar rounds =>
+      have hr : ∀ r ∈ rounds, EndoScalarRound.read V r = EndoScalarRound.read V' r := by
+        intro r hr
+        have hm : ∀ y ∈ [r.n0, r.n8, r.a0, r.b0, r.a8, r.b8] ++ r.xs.toList,
+            y.val V = y.val V' := fun y hy => h y (List.mem_flatMap.mpr ⟨r, hr, hy⟩)
+        have hxs : r.xs.toList.map (·.val V) = r.xs.toList.map (·.val V') :=
+          List.map_congr_left fun y hy => hm y (List.mem_append_right _ hy)
+        simp (disch := simp) only [EndoScalarRound.read, hxs, hm]
+      simp only [KimchiConstraint.Holds]
+      exact forall₂_congr fun r hr' => by rw [hr r hr']
+    | varBaseMul rounds =>
+      have hr : ∀ r ∈ rounds, ScaleRound.read V r = ScaleRound.read V' r := by
+        intro r hr
+        have hm : ∀ y ∈ (r.cellsA ++ r.cellsB).filterMap id, y.val V = y.val V' := fun y hy =>
+          h y (List.mem_flatMap.mpr ⟨r, hr, hy⟩)
+        simp (disch := simp [ScaleRound.cellsA, ScaleRound.cellsB]) only [ScaleRound.read, hm]
+      simp only [KimchiConstraint.Holds]
+      exact forall₂_congr fun r hr' => by rw [hr r hr']
+    | endoMul c =>
+      have hs : ∀ x ∈ c.state.flatMap (fun r => r.cells.filterMap id), x.val V = x.val V' :=
+        fun x hx => h x (List.mem_append_left _ hx)
+      have hf : ∀ x ∈ [c.s.x, c.s.y, c.nAcc], x.val V = x.val V' := fun x hx =>
+        h x (List.mem_append_right _ hx)
+      simp only [List.forall_mem_cons] at hf
+      simp only [KimchiConstraint.Holds, hf.1, hf.2.1, hf.2.2.1]
+      exact EndoMul.chainHolds_congr c.state hs
+    | pad _ => exact Iff.rfl
+  cells_equal _ _ := rfl
+  cells_r1cs _ _ _ := rfl
+  cells_square _ _ := rfl
+  cells_boolean _ := rfl
 
 /-- The kimchi constraint vocabulary, as a class over the carrier. NOT a backend
-seam: kimchi is the terminal constraint layer, and the two instances below — the sum
-itself and its soundness tag `Builder V c` — are the only two. The class exists
-because a soundness triple elaborates the gadget body at the soundness tag, so the
-gadget definitions are polymorphic between exactly these two carriers. One method
-per landed gadget law. -/
+seam: kimchi is the terminal constraint layer, and the three instances below — the sum
+itself, its soundness tag `Builder V c` and its completeness tag `Prover c` — are the
+only three. The class exists because a triple elaborates the gadget body at a tag, so
+the gadget definitions are polymorphic between exactly these carriers. One method per
+landed gadget law. -/
 class KimchiSystem (F c : Type) where
   /-- Embed a complete-addition payload. -/
   addComplete : AddComplete F → c
@@ -245,5 +323,7 @@ instance : KimchiSystem F (KimchiConstraint F) :=
 
 instance [inst : KimchiSystem F c] {V : Valuation F} :
     KimchiSystem F (Builder V c) := inst
+
+instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
 
 end Snarky.Kimchi

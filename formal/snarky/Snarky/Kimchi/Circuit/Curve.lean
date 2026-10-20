@@ -214,16 +214,6 @@ theorem HasCurve.pallas_ladderRegime (z : ℤ) (hz : z < 4 * PALLAS_SCALAR_CARD 
   have hOv : HasCurve.pallas.W.order = PALLAS_SCALAR_CARD := Pasta.pallas_card
   refine Or.inr ⟨?_, ?_, ?_⟩ <;> rw [hOv] <;> first | decide | exact hz
 
-open CompElliptic.Fields.Pasta in
-/-- At Vesta, the honest 255-bit ladder below `4·|Vesta| - 4` is satisfiable off its three
-`O` tops. -/
-theorem HasCurve.vesta_ladderCompleteRegime (z : ℤ) (hz : z < 4 * PALLAS_BASE_CARD - 4)
-    (h1 : z ≠ 2 * PALLAS_BASE_CARD - 1) (h2 : z ≠ 2 * PALLAS_BASE_CARD + 1)
-    (h3 : z ≠ 3 * PALLAS_BASE_CARD) : HasCurve.vesta.LadderCompleteRegime 255 z := by
-  have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
-  refine Or.inr ⟨by norm_num, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> rw [hOv] <;>
-    first | decide | assumption
-
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The endomorphism dictionary at deployed Pallas: `Pasta.pallasEndoSpec` over
 `HasCurve.pallas`, and the field and order facts on top of it. -/

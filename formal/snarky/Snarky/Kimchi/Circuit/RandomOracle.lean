@@ -147,34 +147,40 @@ open Std.Do in
   mvcgen [pspec] <;>
     simp_all [addBlockVar, Poseidon.RandomOracle.addBlock, CVar.val_add_]
 
-/-- **Completeness** (`updateBlock`): the honest run accepts on a read state and block,
-and the output reads back the value block step. -/
-private theorem updateBlock_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
+open Std.Do in
+/-- `updateBlock`'s state-relative completeness: the output state reads one value block step
+at the entry readings. -/
+private theorem Prover.updateBlock_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : SpongeState F)
-    (b : FVar F × FVar F) (sv : Poseidon.Triple F) (bv : F × F) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun s => CircuitType.ReadsAs (val := SpongeStateVal F) s st sv ∧
-        CircuitType.ReadsAs (val := F × F) s b bv)
-      (updateBlock (c := KimchiConstraint F) p st b)
-      (fun r s' => CircuitType.ReadsAs (val := SpongeStateVal F) s' r
-        (Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock sv bv))) := by
+    (b : FVar F × FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ CircuitType.Scoped (val := SpongeStateVal F) st₀ st ∧
+      CircuitType.Scoped (val := F × F) st₀ b⌝⦄
+    updateBlock (c := Prover (KimchiConstraint F)) p st b
+    ⦃⇓ r s' => ⌜CircuitType.ReadsAs (val := SpongeStateVal F) s' r
+        (Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock
+          (CircuitType.readVal (val := SpongeStateVal F) st₀.env.get st)
+          (CircuitType.readVal (val := F × F) st₀.env.get b))) ∧ st₀ ≤ s'⌝⦄ := by
   obtain ⟨b0, b1⟩ := b
-  obtain ⟨bv0, bv1⟩ := bv
-  refine Complete.imp (fun _ h => ?_) (fun _ _ h => h)
-    (Poseidon.poseidon_complete p hsize (addBlockVar st (b0, b1))
-      (Poseidon.RandomOracle.addBlock sv (bv0, bv1)))
-  obtain ⟨hst, hb⟩ := h
-  simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState,
-    CircuitType.scoped_prod, CircuitType.reads_prod, CircuitType.scoped_fvar,
-    CircuitType.reads_fvar] at hst hb
-  obtain ⟨⟨hs0, hs1, hs2⟩, hv0, hv1, hv2⟩ := hst
-  obtain ⟨⟨hb0, hb1⟩, hbv0, hbv1⟩ := hb
-  refine ⟨?_, ?_⟩
-  · refine scoped_spongeState.mpr ⟨CVar.ScopedBy.add_ hs0 hb0,
-      CVar.ScopedBy.add_ hs1 hb1, hs2⟩
-  · refine reads_spongeState.mpr ⟨?_, ?_, hv2⟩
-    · simp only [addBlockVar, CVar.val_add_, hv0, hbv0]; rfl
-    · simp only [addBlockVar, CVar.val_add_, hv1, hbv1]; rfl
+  unfold updateBlock
+  mvcgen
+  case vc1 =>
+    rename_i _ h
+    obtain ⟨rfl, hs, hb⟩ := h
+    simp only [addBlockVar, scoped_spongeState, CircuitType.scoped_prod,
+      CircuitType.scoped_fvar] at hs hb ⊢
+    exact ⟨trivial, CVar.Scoped.add_ hs.1 hb.1, CVar.Scoped.add_ hs.2.1 hb.2, hs.2.2⟩
+  case vc2 =>
+    rename_i s₀ h₀ r s₁
+    obtain ⟨rfl, -, -⟩ := h₀
+    intro h
+    obtain ⟨hr, hle⟩ := Prover.Reg.iff.mp h
+    have hv : CircuitType.readVal (val := SpongeStateVal F) s₀.env.get (addBlockVar st (b0, b1))
+        = Poseidon.RandomOracle.addBlock
+          (CircuitType.readVal (val := SpongeStateVal F) s₀.env.get st)
+          (CircuitType.readVal (val := F × F) s₀.env.get (b0, b1)) := by
+      simp [addBlockVar, Poseidon.RandomOracle.addBlock, CVar.val_add_]
+    exact ⟨by rwa [hv] at hr, hle⟩
+  case vc3 => exact fun _ _ _ _ => hsize
 
 attribute [irreducible] addBlockVar updateBlock
 
@@ -208,37 +214,6 @@ private theorem foldBlocks_spec {V : Valuation F} [Field F] [DecidableEq F]
           (CircuitType.readVal (val := SpongeStateVal F) V st)⌝
   all_goals simp_all
 
-/-- The block fold is complete, generalized over the block list: the honest run accepts
-on a read state and read blocks, and the output reads back the value fold. -/
-private theorem foldBlocks_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) :
-    ∀ (bs : List (FVar F × FVar F)) (bvs : List (F × F)) (st : SpongeState F)
-      (sv : Poseidon.Triple F),
-      Complete (F := F) (c := KimchiConstraint F)
-        (fun s => CircuitType.ReadsAs (val := SpongeStateVal F) s st sv ∧
-          List.Forall₂ (CircuitType.ReadsAs (val := F × F) s) bs bvs)
-        (bs.foldlM (updateBlock (c := KimchiConstraint F) p) st)
-        (fun r s' => CircuitType.ReadsAs (val := SpongeStateVal F) s' r
-          (bvs.foldl (fun t b => Poseidon.blockCipher p
-            (Poseidon.RandomOracle.addBlock t b)) sv))
-  | [], bvs, st, sv => by
-    simp only [List.foldlM_nil]
-    cases bvs with
-    | nil =>
-      exact Complete.imp (fun _ h => h.1) (fun _ _ h => h) (Complete.pure_of fun _ h => h)
-    | cons _ _ => exact Complete.of_false fun _ h => by simp at h
-  | b :: bs, bvs, st, sv => by
-    simp only [List.foldlM_cons]
-    cases bvs with
-    | nil => exact Complete.of_false fun _ h => by simp at h
-    | cons bv bvs =>
-      simp only [List.foldl_cons]
-      exact Complete.bind
-        (Complete.imp (fun _ h => ⟨⟨h.1, (List.forall₂_cons.mp h.2).1⟩,
-            (List.forall₂_cons.mp h.2).2⟩) (fun _ _ h => h)
-          (Complete.frame CircuitType.monotone_forall₂ (updateBlock_complete p hsize st b sv bv)))
-        fun r => foldBlocks_complete p hsize bs bvs r _
-
 open Std.Do in
 /-- **Soundness** (`update`): the output state reads as `Poseidon.RandomOracle.update`
 of the state and input readings. -/
@@ -255,20 +230,73 @@ of the state and input readings. -/
   rw [toBlocksVar_readVal] at h
   simpa only [update, Poseidon.RandomOracle.update] using h
 
-/-- **Completeness** (`update`): the honest run accepts on a read state and read
-inputs, and the output reads back `Poseidon.RandomOracle.update` of their values. -/
-theorem update_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
+open Std.Do in
+/-- `update`'s state-relative completeness: the output state reads
+`Poseidon.RandomOracle.update` of the entry readings, block by block. -/
+theorem Prover.update_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : SpongeState F)
-    (xs : List (FVar F)) (sv : Poseidon.Triple F) (vs : List F) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun s => CircuitType.ReadsAs (val := SpongeStateVal F) s st sv ∧
-        List.Forall₂ (CircuitType.ReadsAs (val := F) s) xs vs)
-      (update (c := KimchiConstraint F) p st xs)
-      (fun r s' => CircuitType.ReadsAs (val := SpongeStateVal F) s' r
-        (Poseidon.RandomOracle.update p sv vs)) := by
-  simp only [update, Poseidon.RandomOracle.update]
-  exact Complete.imp (fun _ h => ⟨h.1, toBlocksVar_readsAs h.2⟩) (fun _ _ h => h)
-    (foldBlocks_complete p hsize (toBlocksVar xs) _ st sv)
+    (xs : List (FVar F)) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ CircuitType.Scoped (val := SpongeStateVal F) st₀ st ∧
+      ∀ x ∈ xs, x.Scoped st₀⌝⦄
+    update (c := Prover (KimchiConstraint F)) p st xs
+    ⦃⇓ r s' => ⌜CircuitType.ReadsAs (val := SpongeStateVal F) s' r
+        (Poseidon.RandomOracle.update p
+          (CircuitType.readVal (val := SpongeStateVal F) st₀.env.get st) (xs.map st₀.read)) ∧
+      st₀ ≤ s'⌝⦄ := by
+  have hu := fun t b => Prover.register (Prover.updateBlock_spec p hsize t b)
+  -- the blocks are in scope with the inputs: their readings are `toBlocksVar_readsAs`'s
+  have hblocks : (∀ x ∈ xs, x.Scoped st₀) → ∀ b ∈ toBlocksVar xs,
+      CircuitType.Scoped (val := F × F) st₀ b := fun hxs b hb =>
+    ((List.forall₂_and_left _ _).mp (toBlocksVar_readsAs (st := st₀)
+      (List.forall₂_map_right_iff.mpr (List.forall₂_same.mpr fun x hx =>
+        ⟨CircuitType.scoped_fvar.mpr (hxs x hx), CircuitType.reads_fvar.mpr rfl⟩)))).1 b hb
+  unfold update
+  mvcgen [hu]
+  case inv1 =>
+    exact ⇓ q s => ⌜CircuitType.ReadsAs (val := SpongeStateVal F) s q.2
+        ((q.1.prefix.map (CircuitType.readVal (val := F × F) st₀.env.get)).foldl
+          (fun t b => Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock t b))
+          (CircuitType.readVal (val := SpongeStateVal F) st₀.env.get st)) ∧ st₀ ≤ s⌝
+  case vc1 =>
+    rename_i _ h
+    obtain ⟨rfl, hs, -⟩ := h
+    simp only [SPred.down_pure, List.map_nil, List.foldl_nil]
+    exact ⟨⟨hs, reads_spongeState.mpr ⟨rfl, rfl, rfl⟩⟩, le_rfl⟩
+  case vc2 =>
+    rename_i _ _ r s
+    intro h
+    simp only [SPred.down_pure] at h
+    obtain ⟨hr, hle⟩ := h
+    rw [toBlocksVar_readVal] at hr
+    exact ⟨by simpa only [Poseidon.RandomOracle.update] using hr, hle⟩
+  case vc3 => simp
+  case vc4 =>
+    rename_i s₀ h₀ pref cur suff hbs b s hinv
+    obtain ⟨rfl, -, hxs⟩ := h₀
+    simp only [SPred.down_pure] at hinv
+    obtain ⟨hb, hle⟩ := hinv
+    exact ⟨trivial, hb.1, CircuitType.Scoped.mono (ProverState.nv_le_of_le hle)
+      (hblocks hxs cur (by simp [hbs]))⟩
+  -- one block: the fold's next step, at the block's reading carried from the entry table
+  case vc5 =>
+    rename_i s₀ h₀ pref cur suff hbs b s hinv r
+    intro s' hpost
+    simp only [SPred.down_pure] at hinv ⊢
+    obtain ⟨rfl, -, hxs⟩ := h₀
+    obtain ⟨hb, hle⟩ := hinv
+    obtain ⟨hr, hle'⟩ := Prover.Reg.iff.mp hpost
+    have hcur := hblocks hxs cur (by simp [hbs])
+    obtain ⟨c0, c1⟩ := cur
+    obtain ⟨h0, h1⟩ := CircuitType.scoped_prod.mp hcur
+    have hcv : CircuitType.readVal (val := F × F) s.env.get (c0, c1)
+        = CircuitType.readVal (val := F × F) s₀.env.get (c0, c1) := by
+      simp only [CircuitType.readVal_prod, CircuitType.readVal_fvar,
+        CVar.val_of_le hle (CircuitType.scoped_fvar.mp h0),
+        CVar.val_of_le hle (CircuitType.scoped_fvar.mp h1)]
+    rw [(CircuitType.reads_iff.mp hb.2).2, hcv] at hr
+    refine ⟨?_, hle.trans hle'⟩
+    simpa only [List.map_append, List.map_cons, List.map_nil, List.foldl_append,
+      List.foldl_cons, List.foldl_nil] using hr
 
 attribute [irreducible] update
 
@@ -300,28 +328,34 @@ readings. -/
     Poseidon.RandomOracle.digest, Poseidon.RandomOracle.initialState, initState,
     CVar.val] using h1
 
-/-- **Completeness** (`hash2`): the honest run accepts on read operands, and the digest
-reads back the value `hash` of their values. -/
-theorem hash2_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (a b : FVar F) (av bv : F) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun s => CircuitType.ReadsAs (val := F) s a av ∧
-        CircuitType.ReadsAs (val := F) s b bv)
-      (hash2 (c := KimchiConstraint F) p a b)
-      (fun r s' => CircuitType.ReadsAs (val := F) s' r
-        (Poseidon.RandomOracle.hash p [av, bv])) := by
-  refine Complete.bind
-    (Complete.imp (fun s h => ⟨initState_readsAs s,
-        ⟨CircuitType.scoped_prod.mpr ⟨h.1.1, h.2.1⟩,
-          CircuitType.reads_prod.mpr ⟨h.1.2, h.2.2⟩⟩⟩) (fun _ _ h => h)
-      (updateBlock_complete p hsize initState (a, b) Poseidon.RandomOracle.initialState
-        (av, bv)))
-    fun r => Complete.pure_of fun _ hR => ?_
-  simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState] at hR
-  refine ⟨CircuitType.scoped_fvar.mpr hR.1.1, CircuitType.reads_fvar.mpr ?_⟩
-  simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.update,
-    Poseidon.RandomOracle.toBlocks, Poseidon.RandomOracle.chunk,
-    Poseidon.RandomOracle.digest] using hR.2.1
+open Std.Do in
+/-- `hash2`'s state-relative completeness: the digest reads `Poseidon.RandomOracle.hash` of
+the two entry readings. -/
+theorem Prover.hash2_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (a b : FVar F)
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ a.Scoped st₀ ∧ b.Scoped st₀⌝⦄
+    hash2 (c := Prover (KimchiConstraint F)) p a b
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧
+      s'.read r = Poseidon.RandomOracle.hash p [st₀.read a, st₀.read b] ∧ st₀ ≤ s'⌝⦄ := by
+  have hu := fun t c => Prover.register (Prover.updateBlock_spec p hsize t c)
+  unfold hash2
+  mvcgen [hu]
+  case vc1 =>
+    rename_i _ h
+    obtain ⟨rfl, ha, hb⟩ := h
+    exact ⟨trivial, (initState_readsAs _).1,
+      CircuitType.scoped_prod.mpr ⟨CircuitType.scoped_fvar.mpr ha, CircuitType.scoped_fvar.mpr hb⟩⟩
+  case vc2 =>
+    rename_i s₀ h₀ r s₁ h₁
+    obtain ⟨rfl, -, -⟩ := h₀
+    obtain ⟨hr, hle⟩ := Prover.Reg.iff.mp h₁
+    simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState] at hr
+    refine ⟨hr.1.1, ?_, hle⟩
+    rw [ProverState.read, hr.2.1]
+    simp [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.update,
+      Poseidon.RandomOracle.toBlocks, Poseidon.RandomOracle.chunk,
+      Poseidon.RandomOracle.digest, Poseidon.RandomOracle.initialState, initState, CVar.val]
 
 attribute [irreducible] hash2
 
@@ -351,24 +385,35 @@ readings. -/
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest,
     Poseidon.RandomOracle.initialState, initState, CVar.val] using h1
 
-/-- **Completeness** (`hashVec`): the honest run accepts on read inputs, and the digest
-reads back the value `hash` of their values. -/
-@[complete_law]
-theorem hashVec_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
+open Std.Do in
+/-- `hashVec`'s state-relative completeness: the digest reads `Poseidon.RandomOracle.hash` of
+the entry readings. -/
+theorem Prover.hashVec_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (xs : List (FVar F))
-    (vs : List F) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun s => List.Forall₂ (CircuitType.ReadsAs (val := F) s) xs vs)
-      (hashVec (c := KimchiConstraint F) p xs)
-      (fun r s' => CircuitType.ReadsAs (val := F) s' r
-        (Poseidon.RandomOracle.hash p vs)) := by
-  refine Complete.bind
-    (Complete.imp (fun s h => ⟨initState_readsAs s, h⟩) (fun _ _ h => h)
-      (update_complete p hsize initState xs Poseidon.RandomOracle.initialState vs))
-    fun r => Complete.pure_of fun _ hR => ?_
-  simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState] at hR
-  refine ⟨CircuitType.scoped_fvar.mpr hR.1.1, CircuitType.reads_fvar.mpr ?_⟩
-  simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest] using hR.2.1
+    (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ ∀ x ∈ xs, x.Scoped st₀⌝⦄
+    hashVec (c := Prover (KimchiConstraint F)) p xs
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧
+      s'.read r = Poseidon.RandomOracle.hash p (xs.map st₀.read) ∧ st₀ ≤ s'⌝⦄ := by
+  have hu := fun t ys => Prover.register (Prover.update_spec p hsize t ys)
+  unfold hashVec
+  mvcgen [hu]
+  case vc1 =>
+    rename_i _ h
+    obtain ⟨rfl, hxs⟩ := h
+    exact ⟨trivial, (initState_readsAs _).1, hxs⟩
+  case vc2 =>
+    rename_i s₀ h₀ r s₁ h₁
+    obtain ⟨rfl, -⟩ := h₀
+    obtain ⟨hr, hle⟩ := Prover.Reg.iff.mp h₁
+    have hinit : CircuitType.readVal (val := SpongeStateVal F) s₀.env.get (initState (F := F))
+        = Poseidon.RandomOracle.initialState :=
+      (CircuitType.reads_iff.mp (initState_readsAs s₀).2).2
+    rw [hinit] at hr
+    simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState] at hr
+    refine ⟨hr.1.1, ?_, hle⟩
+    rw [ProverState.read, hr.2.1]
+    simp [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest]
 
 attribute [irreducible] hashVec
 

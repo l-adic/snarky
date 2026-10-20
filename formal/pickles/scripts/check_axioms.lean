@@ -134,7 +134,8 @@ def roots : List Name :=
     `Pickles.WrapStepRun.handover_or_collision,
     `Pickles.StepWrapRun.handover_or_collision,
     `Pickles.StepStatement.ofWrap_toFields,
-    `Pickles.stepPublicInput_eq_append ]
+    `Pickles.stepPublicInput_eq_append,
+    `Pickles.instAllocBranchDataWPCheckedType ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]

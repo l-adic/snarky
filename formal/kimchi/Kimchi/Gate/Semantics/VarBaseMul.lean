@@ -387,8 +387,8 @@ The hypotheses are exactly the constraints the circuit emits:
 
 The two circuit entry points appear here as `scalarMul_shifted` (the core `varBaseMul`, computing
 `[2·t + 2^n + 1]·g`) and `scalarMul_type2` (`scaleFast2`, the parity split). This match is by
-inspection. The circuit's own laws `varBaseMul_spec` and `varBaseMul_complete` are proved against
-the gate's `Holds`, through `varBaseMul_off` and `chain_complete` here.
+inspection. The circuit's own laws, `varBaseMul_spec` and its completeness at the prover's
+reading, are proved against the gate's `Holds`, through `varBaseMul_off` and `chain_complete` here.
 
 ### Contents
 

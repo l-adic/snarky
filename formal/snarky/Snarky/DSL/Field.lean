@@ -3,6 +3,7 @@ import Snarky.BasicSystem
 import Snarky.Witness
 import Snarky.WP
 import Snarky.Prover
+import Snarky.Prover.WP
 
 set_option mvcgen.warning false
 
@@ -39,49 +40,6 @@ open Std.Do in
   all_goals first
     | exact (LawfulBasicSystem.holds_r1cs V _ _ _).mp ‹_›
     | exact mul_inv_cancel₀ ‹_›
-
-/-- `inv`'s completeness law: where the operand reads nonzero the run succeeds — the
-advice's throw is exactly the zero reading — any row it built is satisfied at every
-extension of the final table, and the result reads `xv⁻¹`. -/
-theorem inv_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) (hne : xv ≠ 0) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (inv (c := c) x)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a xv⁻¹) := by
-  -- the witnessed arm: advise the inverse, then pin it by the product row. The operand's
-  -- reading is framed across the allocation — the row needs it, and the witness rule does
-  -- not carry it.
-  have hwit : Complete (F := F) (c := c)
-      (fun st => CircuitType.ReadsAs (val := F) st x xv)
-      (do let r ← witness (val := F) (inv.advice x)
-          addConstraint (BasicSystem.r1cs x r (.const 1))
-          pure r)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a xv⁻¹) := by
-    refine Complete.bind
-      (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs (Complete.witness (inv.advice x) xv⁻¹
-          (by simp))))
-      (fun r => Complete.bind (Complete.addConstraint ?_)
-        fun _ => Complete.pure_of fun _ h => h.1)
-    · rintro st ⟨hr, hxr⟩ stf hle
-      refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hxr.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1),
-        CircuitType.reads_fvar.mp hxr.2, CircuitType.reads_fvar.mp hr.2]
-      simp [hne]
-    · simp [inv.advice, readVar_run h.1, CircuitType.readVal_fvar,
-        CircuitType.reads_fvar.mp h.2, hne]
-  simp only [inv]
-  split
-  · rename_i a
-    split
-    · exact hwit
-    · exact Complete.pure_of fun st h =>
-        ⟨CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
-          CircuitType.reads_fvar.mpr (by
-            rw [show (CVar.const a⁻¹ : CVar F).val st.env.get = a⁻¹ from rfl,
-              ← CircuitType.reads_fvar.mp h.2]
-            rfl)⟩
-  · exact hwit
 
 attribute [irreducible] inv
 
@@ -121,45 +79,6 @@ open Std.Do in
       | (rename_i h
          exact ((LawfulBasicSystem.holds_r1cs V _ _ _).mp h).symm)
 
-/-- `mul`'s completeness law: from operands that read `xv` and `yv` the run succeeds,
-any row it built is satisfied at every extension of the final table, and the result reads
-their product — scope and reading together, as `CircuitType.ReadsAs` carries them. -/
-@[complete_law] theorem mul_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
-        CircuitType.ReadsAs (val := F) st y yv)
-      (mul (c := c) x y)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv * yv)) := by
-  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
-      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
-    fun h => CircuitType.reads_fvar.mp h.2
-  simp only [mul]
-  split
-  · exact Complete.pure_of fun st h => ⟨CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
-      CircuitType.reads_fvar.mpr (by rw [← hrd h.1, ← hrd h.2]; rfl)⟩
-  · exact Complete.pure_of fun st h =>
-      ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp h.2.1)),
-        CircuitType.reads_fvar.mpr (by
-          rw [← hrd h.1, ← hrd h.2, CVar.val_scale_]; rfl)⟩
-  · exact Complete.pure_of fun st h =>
-      ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp h.1.1)),
-        CircuitType.reads_fvar.mpr (by
-          rw [← hrd h.1, ← hrd h.2, CVar.val_scale_]
-          simp [CVar.val, mul_comm])⟩
-  · refine Complete.bind
-      (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
-          (Complete.witness (mul.advice x y) (xv * yv) (by simp))))
-      (fun r => Complete.bind (Complete.addConstraint ?_)
-        fun _ => Complete.pure_of fun _ h => h.1)
-    · simp [mul.advice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1.1),
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1), hrd h.1, hrd h.2]
-    · rintro st ⟨hr, hx, hy⟩ stf hle
-      refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hx.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hy.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1), hrd hx, hrd hy, hrd hr]
-
 attribute [irreducible] mul
 
 /-- Square a field variable: a constant folds to its square, otherwise the square is
@@ -193,32 +112,6 @@ open Std.Do in
       | (rename_i h
          exact ((LawfulBasicSystem.holds_square V _ _).mp h).symm)
 
-/-- `square`'s completeness law: from an operand that reads `xv` the run succeeds, any row
-it built is satisfied at every extension of the final table, and the result reads
-`xv * xv`. -/
-theorem square_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (square (c := c) x)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv * xv)) := by
-  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
-      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
-    fun h => CircuitType.reads_fvar.mp h.2
-  simp only [square]
-  split
-  · exact Complete.pure_of fun st h => ⟨CircuitType.scoped_fvar.mpr (CVar.scoped_const _ _),
-      CircuitType.reads_fvar.mpr (by rw [← hrd h]; rfl)⟩
-  · refine Complete.bind
-      (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs (Complete.witness (square.advice x) (xv * xv)
-          (by simp))))
-      (fun r => Complete.bind (Complete.addConstraint ?_)
-        fun _ => Complete.pure_of fun _ h => h.1)
-    · simp [square.advice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1), hrd h]
-    · rintro st ⟨hr, hx⟩ stf hle
-      refine (LawfulBasicSystem.holds_square ..).mpr ?_
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hx.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1), hrd hx, hrd hr]
-
 attribute [irreducible] square
 
 /-- Divide field variables — `x · y⁻¹`: the inverse witnessed and pinned by `inv`, the
@@ -241,22 +134,6 @@ divisor, so the field's total division is the honest reading with no side condit
   rename_i _ yInv _ hinv _ _
   intro hmul
   rw [hmul, div_eq_mul_inv, inv_eq_of_mul_eq_one_right hinv]
-
-/-- `div`'s completeness law: where the divisor reads nonzero the run succeeds, the rows
-its calls built are satisfied at every extension of the final table, and the result reads
-`xv / yv` — `inv`'s and `mul`'s laws composed, neither reopened. -/
-@[complete_law] theorem div_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
-    (hne : yv ≠ 0) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
-      CircuitType.ReadsAs (val := F) st y yv)
-      (div (c := c) x y) (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv / yv)) := by
-  simp only [div]
-  exact Complete.bind
-    (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
-      (Complete.frame CircuitType.monotone_readsAs (inv_complete (c := c) y yv hne)))
-    fun r => Complete.imp (fun _ h => ⟨h.2, h.1⟩)
-      (fun _ _ h => by rwa [div_eq_mul_inv]) (mul_complete (c := c) x r xv yv⁻¹)
 
 attribute [irreducible] div
 
@@ -307,56 +184,6 @@ open Std.Do in
     · exact h0
     · exact absurd h0 h
 
-/-- `isZero`'s completeness law: from an operand that reads `xv` the run succeeds, any
-rows it built are satisfied at every extension of the final table, and the result reads
-the bit `decide (xv = 0)`. -/
-theorem isZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (isZero (c := c) x)
-      (fun a st' => CircuitType.ReadsAs (val := Bool) st' a (decide (xv = 0))) := by
-  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
-      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
-    fun h => CircuitType.reads_fvar.mp h.2
-  simp only [isZero]
-  split
-  · rename_i a
-    refine Complete.pure_of fun st h => ⟨CircuitType.scoped_boolVar.mpr trivial,
-      CircuitType.reads_boolVar.mpr ?_⟩
-    show (CVar.const (if a = 0 then 1 else 0)).val st.env.get = _
-    rw [← hrd h]
-    by_cases hz : a = 0 <;> simp [hz, bit]
-  · refine Complete.bind
-      (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-        (Complete.frame CircuitType.monotone_readsAs
-          (Complete.witness (isZero.bitAdvice x) (if xv = 0 then 1 else 0) (by simp))))
-      (fun r => Complete.bind
-        (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
-          (Complete.frame (monotone_and CircuitType.monotone_readsAs CircuitType.monotone_readsAs)
-            (Complete.witness (isZero.invAdvice x) (if xv = 0 then 0 else xv⁻¹) (by simp))))
-        (fun rInv => Complete.bind (Complete.addConstraint ?_)
-          fun _ => Complete.bind (Complete.addConstraint ?_)
-            fun _ => Complete.pure_of fun _ h => ⟨CircuitType.scoped_boolVar.mpr
-              (CircuitType.scoped_fvar.mp h.2.1.1), CircuitType.reads_boolVar.mpr ?_⟩))
-    · rintro st ⟨hr, hb, hx⟩ stf hle
-      rw [BoolVar.coe_unchecked] at hb
-      refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hb.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hx.1), hrd hb, hrd hx]
-      by_cases hz : xv = 0 <;> simp [hz]
-    · rintro st ⟨hr, hb, hx⟩ stf hle
-      rw [BoolVar.coe_unchecked] at hb
-      refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-      simp only [CVar.val_sub_]
-      rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hx.1),
-        CVar.val_of_le hle (CircuitType.scoped_fvar.mp hb.1), hrd hr, hrd hx, hrd hb]
-      by_cases hz : xv = 0 <;> simp [hz]
-    · rw [hrd h.2.1]
-      by_cases hz : xv = 0 <;> simp [hz, bit]
-    · simp [isZero.bitAdvice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1), hrd h]
-    · simp [isZero.invAdvice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1),
-        hrd h.2]
-
 attribute [irreducible] isZero
 
 /-- Equality test, returning the answer bit: `isZero` on the difference — a constant
@@ -375,24 +202,6 @@ open Std.Do in
   simp only [equals]
   mvcgen
   simp [sub_eq_zero]
-
-/-- `equals`'s completeness law: `isZero`'s, at the difference. -/
-theorem equals_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (av bv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st a av ∧
-      CircuitType.ReadsAs (val := F) st b bv)
-      (equals (c := c) a b)
-      (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (decide (av = bv))) := by
-  rintro st ⟨ha, hb⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-    at ha hb
-  obtain ⟨ha, hva⟩ := ha
-  obtain ⟨hb, hvb⟩ := hb
-  have h := isZero_complete (c := c) (CVar.sub_ a b) (av - bv) st
-    (by
-      simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-      exact ⟨CVar.Scoped.sub_ ha hb, by rw [CVar.val_sub_, hva, hvb]⟩)
-  simpa [sub_eq_zero] using h
 
 attribute [irreducible] equals
 
@@ -428,21 +237,6 @@ open Std.Do in
   rename_i h
   simp only [BoolVar.coe_unchecked, CVar.val_sub_, CVar.val, h]
   split <;> simp
-
-/-- `neq`'s completeness law: `equals`'s run, its bit negated. -/
-theorem neq_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (av bv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st a av ∧
-      CircuitType.ReadsAs (val := F) st b bv)
-      (neq (c := c) a b)
-      (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (!decide (av = bv))) := by
-  simp only [neq]
-  refine Complete.bind (equals_complete (c := c) a b av bv)
-    fun r => Complete.pure_of fun st hbb => ?_
-  refine ⟨CircuitType.scoped_boolVar.mpr (CVar.Scoped.sub_ trivial
-      (CircuitType.scoped_boolVar.mp hbb.1)), CircuitType.reads_boolVar.mpr ?_⟩
-  rw [BoolVar.coe_unchecked, CVar.val_sub_, CircuitType.reads_boolVar.mp hbb.2]
-  cases h : decide (av = bv) <;> simp [bit]
 
 attribute [irreducible] neq
 
@@ -547,68 +341,372 @@ open Std.Do in
     ⦃⇓ r _ => ⌜r.val V = x.val V ^ n⌝⦄ :=
   powGo_spec n x n (Nat.le_succ n)
 
-private theorem powGo_complete [Field F] [DecidableEq F] [BasicSystem F c]
+attribute [irreducible] pow
+
+/-! ## The state-relative completeness laws
+
+Each gadget's law at the prover's reading (`Snarky.Prover.WP`), and its registered reading for
+`mvcgen`; `div`, `equals`, `neq` and `pow` are proved by composition through the registered
+laws of the gadgets they call. -/
+
+section ProverReading
+
+open Std.Do
+
+/-! The advices' witnesses, registered: each the witness law at the advice's run, the value a
+function of the entry readings. -/
+
+/-- `inv.advice` at a nonzero reading returns the inverse. -/
+@[spec] private def Prover.inv_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (inv.advice x)
+    (fun st => x.Scoped st ∧ st.read x ≠ 0) (fun st => (st.read x)⁻¹)
+    (fun _ h => by simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr h.1), h.2])
+    fun _ _ => by simp)
+
+/-- `mul.advice` returns the product. -/
+@[spec] private def Prover.mul_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x y : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (mul.advice x y)
+    (fun st => x.Scoped st ∧ y.Scoped st) (fun st => st.read x * st.read y)
+    (fun _ h => by simp [mul.advice, AsProver.readCVar_run h.1, AsProver.readCVar_run h.2])
+    fun _ _ => by simp)
+
+/-- `isZero.bitAdvice` returns the zero bit. -/
+@[spec] private def Prover.isZero_bitAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (isZero.bitAdvice x) (fun st => x.Scoped st)
+    (fun st => if st.read x = 0 then 1 else 0)
+    (fun _ h => by simp [isZero.bitAdvice, AsProver.readCVar_run h]) fun _ _ => by simp)
+
+/-- `isZero.invAdvice` returns the inverse, or `0` at a zero reading. -/
+@[spec] private def Prover.isZero_invAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (isZero.invAdvice x) (fun st => x.Scoped st)
+    (fun st => if st.read x = 0 then 0 else (st.read x)⁻¹)
+    (fun _ h => by simp [isZero.invAdvice, AsProver.readCVar_run h]) fun _ _ => by simp)
+
+/-- `inv`'s completeness: where the operand is in scope and reads nonzero, the run succeeds
+and the result reads the inverse of the operand's entry reading. -/
+theorem Prover.inv_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
+    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ st₀.read x ≠ 0⌝⦄
+    inv (c := Prover c) x
+    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = (st₀.read x)⁻¹ ∧ st₀ ≤ st'⌝⦄ := by
+  unfold inv
+  mvcgen
+  -- the constant-zero branch is unreachable: its reading is the operand's nonzero reading
+  case h_1.isTrue.pre =>
+    rename_i a hxa ha s h
+    exact absurd ha h.2.2
+  case h_1.isTrue.post.success.pre =>
+    rename_i a hxa ha s₁ h₁ r s h
+    exact absurd ha h₁.2.2
+  case h_1.isTrue.post.success.post.success =>
+    rename_i a hxa ha s₁ h₁ r s h u s' h'
+    exact absurd ha h₁.2.2
+  case h_1.isFalse =>
+    rename_i a hxa ha s h
+    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
+  case h_2.pre =>
+    rename_i x' hnc hxx s h
+    subst hxx
+    obtain ⟨rfl, hxs, hne⟩ := h
+    exact ⟨trivial, hxs, hne⟩
+  case h_2.post.success.pre =>
+    rename_i x' hnc hxx s₁ h₁ r s h
+    subst hxx
+    obtain ⟨rfl, hxs, hne⟩ := h₁
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr ⟨hxs.of_le h.2, h.1.1, CVar.scoped_const _ _⟩⟩
+    rw [CVar.val_of_le h.2 hxs]
+    show s₁.read x * r.val s.env.get = 1
+    rw [h.1.2]
+    exact mul_inv_cancel₀ hne
+  case h_2.post.success.post.success =>
+    rename_i x' hnc hxx s₁ h₁ r s h u s' h'
+    subst hxx
+    obtain ⟨rfl, -⟩ := h'
+    obtain ⟨rfl, hxs, hne⟩ := h₁
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
+    exact ⟨h.1.1, h.1.2, h.2⟩
+
+/-- Registered. -/
+@[spec] private def Prover.inv_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x : FVar F) :=
+  Prover.register (Prover.inv_spec (c := c) x)
+
+/-- `mul`'s completeness: the result reads the product of the operands' entry readings. -/
+theorem Prover.mul_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
+    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀⌝⦄
+    mul (c := Prover c) x y
+    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = st₀.read x * st₀.read y ∧ st₀ ≤ st'⌝⦄ := by
+  unfold mul
+  mvcgen
+  case h_1 =>
+    rename_i a b hy hx s h
+    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
+  case h_2 =>
+    rename_i a y' hnc hy hx s h
+    obtain ⟨rfl, hxs, hys⟩ := h
+    exact ⟨CVar.Scoped.scale_ hys, by show (CVar.scale_ a y').val _ = _; rw [CVar.val_scale_]; rfl,
+      le_refl _⟩
+  case h_3 =>
+    rename_i x' b hnc hy hx s h
+    obtain ⟨rfl, hxs, hys⟩ := h
+    exact ⟨CVar.Scoped.scale_ hxs, by
+      show (CVar.scale_ b x').val _ = _; rw [CVar.val_scale_]; exact mul_comm _ _, le_refl _⟩
+  case h_4.pre =>
+    rename_i x' y' hnc hncx hncy hy hx s h
+    obtain ⟨rfl, hxs, hys⟩ := h
+    exact ⟨trivial, hxs, hys⟩
+  case h_4.post.success.pre =>
+    rename_i x' y' hnc hncx hncy hy hx s₁ h₁ r s h
+    obtain ⟨rfl, hxs, hys⟩ := h₁
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr ⟨hxs.of_le h.2, hys.of_le h.2, h.1.1⟩⟩
+    rw [CVar.val_of_le h.2 hxs, CVar.val_of_le h.2 hys]
+    exact h.1.2.symm
+  case h_4.post.success.post.success =>
+    rename_i x' y' hnc hncx hncy hy hx s₁ h₁ r s h u s' h'
+    obtain ⟨rfl, -⟩ := h'
+    obtain ⟨rfl, hxs, hys⟩ := h₁
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
+    exact ⟨h.1.1, h.1.2, h.2⟩
+
+/-- Registered. -/
+@[spec] private def Prover.mul_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x y : FVar F) :=
+  Prover.register (Prover.mul_spec (c := c) x y)
+
+/-- `square.advice` returns the square. -/
+@[spec] private def Prover.square_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (x : FVar F) :=
+  Prover.register (Prover.witness_of_run (c := c) (square.advice x) (fun st => x.Scoped st)
+    (fun st => st.read x * st.read x)
+    (fun _ h => by simp [square.advice, AsProver.readCVar_run h]) fun _ _ => by simp)
+
+/-- `square`'s completeness: the result reads the square of the operand's entry reading. -/
+theorem Prover.square_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
+    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀⌝⦄
+    square (c := Prover c) x
+    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = st₀.read x * st₀.read x ∧ st₀ ≤ st'⌝⦄ := by
+  unfold square
+  mvcgen
+  case h_1 =>
+    rename_i a hx s h
+    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
+  case h_2.pre =>
+    rename_i x' hnc hx s h
+    obtain ⟨rfl, hxs⟩ := h
+    exact ⟨trivial, hxs⟩
+  case h_2.post.success.pre =>
+    rename_i x' hnc hx s₁ h₁ r s h
+    obtain ⟨rfl, hxs⟩ := h₁
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
+    refine ⟨trivial, (LawfulBasicSystem.holds_square ..).mpr ?_,
+      LawfulBasicSystem.scoped_square.mpr ⟨hxs.of_le h.2, h.1.1⟩⟩
+    rw [CVar.val_of_le h.2 hxs]
+    exact h.1.2.symm
+  case h_2.post.success.post.success =>
+    rename_i x' hnc hx s₁ h₁ r s h u s' h'
+    obtain ⟨rfl, -⟩ := h'
+    obtain ⟨rfl, hxs⟩ := h₁
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h
+    exact ⟨h.1.1, h.1.2, h.2⟩
+
+/-- Registered. -/
+@[spec] private def Prover.square_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :=
+  Prover.register (Prover.square_spec (c := c) x)
+
+/-- `div`'s completeness, by composition of the registered `inv` and `mul` specs; the
+conditions are transport, which `grind` does from the two carrying lemmas. -/
+theorem Prover.div_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
+    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀ ∧ st₀.read y ≠ 0⌝⦄
+    div (c := Prover c) x y
+    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = st₀.read x / st₀.read y ∧ st₀ ≤ st'⌝⦄ := by
+  simp only [div]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, ProverState.read_of_le, CVar.Scoped.of_le, div_eq_mul_inv]
+
+/-- Registered. -/
+@[spec] def Prover.div_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x y : FVar F) :=
+  Prover.register (Prover.div_spec (c := c) x y)
+
+/-- `isZero`'s completeness: the bit reads `1` exactly where the operand reads `0`. -/
+theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
+    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀⌝⦄
+    isZero (c := Prover c) x
+    ⦃⇓ r st' => ⌜(↑r : CVar F).Scoped st' ∧
+      st'.read r = (if st₀.read x = 0 then 1 else 0) ∧ st₀ ≤ st'⌝⦄ := by
+  unfold isZero
+  mvcgen
+  case h_1 =>
+    rename_i a hxa s h
+    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
+  case h_2.pre =>
+    rename_i x' hnc hxx s h
+    subst hxx
+    obtain ⟨rfl, hxs⟩ := h
+    exact ⟨trivial, hxs⟩
+  case h_2.post.success.pre =>
+    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁
+    subst hxx
+    obtain ⟨rfl, hxs⟩ := h₀
+    simp only [Prover.Reg.iff] at h₁
+    exact ⟨trivial, hxs.of_le h₁.2⟩
+  case h_2.post.success.post.success.pre =>
+    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂
+    subst hxx
+    obtain ⟨rfl, hxs⟩ := h₀
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h₁ h₂
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr
+        ⟨h₁.1.1.of_le h₂.2, hxs.of_le (h₁.2.trans h₂.2), CVar.scoped_const _ _⟩⟩
+    rw [CVar.val_of_le h₂.2 h₁.1.1, CVar.val_of_le (h₁.2.trans h₂.2) hxs]
+    show r₁.val s₁.env.get * s₀.read x = 0
+    rw [h₁.1.2]
+    split <;> simp [*]
+  case h_2.post.success.post.success.post.success.pre =>
+    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂ u₁ s₃ h₃
+    subst hxx
+    obtain ⟨rfl, -⟩ := h₃
+    obtain ⟨rfl, hxs⟩ := h₀
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h₁ h₂
+    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
+      LawfulBasicSystem.scoped_r1cs.mpr ⟨h₂.1.1, hxs.of_le (h₁.2.trans h₂.2),
+        CVar.Scoped.sub_ (CVar.scoped_const _ _) (h₁.1.1.of_le h₂.2)⟩⟩
+    rw [CVar.val_sub_, CVar.val_of_le (h₁.2.trans h₂.2) hxs, CVar.val_of_le h₂.2 h₁.1.1]
+    show r₂.val s₃.env.get * s₀.read x = 1 - r₁.val s₁.env.get
+    rw [h₂.1.2, h₁.1.2, ProverState.read_of_le h₁.2 hxs]
+    split
+    · simp [*]
+    · simp [inv_mul_cancel₀ ‹_›]
+  case h_2.post.success.post.success.post.success.post.success =>
+    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂ u₁ s₃ h₃ u₂ s₄ h₄
+    subst hxx
+    obtain ⟨rfl, -⟩ := h₃
+    obtain ⟨rfl, -⟩ := h₄
+    obtain ⟨rfl, hxs⟩ := h₀
+    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
+      CircuitType.reads_fvar] at h₁ h₂
+    exact ⟨CVar.Scoped.of_le h₂.2 h₁.1.1, by
+      show s₄.read r₁ = _
+      rw [ProverState.read_of_le h₂.2 h₁.1.1]
+      exact h₁.1.2, h₁.2.trans h₂.2⟩
+
+/-- Registered. -/
+@[spec] private def Prover.isZero_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :=
+  Prover.register (Prover.isZero_spec (c := c) x)
+
+/-- `equals`'s completeness: the bit reads `1` exactly where the operands read equal. -/
+theorem Prover.equals_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ a.Scoped st₀ ∧ b.Scoped st₀⌝⦄
+    equals (c := Prover c) a b
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if st₀.read a = st₀.read b then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  simp only [equals]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, CVar.val_sub_, CVar.Scoped.sub_, sub_eq_zero]
+
+/-- Registered. -/
+@[spec] private def Prover.equals_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) :=
+  Prover.register (Prover.equals_spec (c := c) a b)
+
+/-- `neq`'s completeness: the bit reads `1` exactly where the operands read unequal. -/
+theorem Prover.neq_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ a.Scoped st₀ ∧ b.Scoped st₀⌝⦄
+    neq (c := Prover c) a b
+    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
+      s'.read r = (if st₀.read a ≠ st₀.read b then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
+  simp only [neq]
+  mvcgen
+  all_goals grind [Prover.Reg.iff, BoolVar.coe_unchecked, CVar.val_sub_, CVar.val,
+    CVar.Scoped.sub_, CVar.scoped_const]
+
+/-- Registered. -/
+@[spec] private def Prover.neq_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) :=
+  Prover.register (Prover.neq_spec (c := c) a b)
+
+/-- `powGo`'s completeness, along the recursion: within its fuel the result reads the
+operand's entry reading to the `n`-th power. -/
+private theorem Prover.powGo_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] :
-    ∀ (fuel : Nat) (x : FVar F) (n : Nat),
-      Complete (fun st => x.Scoped st) (powGo (c := c) fuel x n) (fun a st' => a.Scoped st') := by
-  have hval : ∀ (v : CVar F) (st : ProverState F), v.Scoped st →
-      ∃ a : F, CircuitType.ReadsAs (val := F) st v a :=
-    fun v st h => ⟨v.val st.env.get, CircuitType.scoped_fvar.mpr h, rfl⟩
-  -- `mul`, at whatever the operands happen to read: the law is indexed by values, the
-  -- recursion carries only scope, and `instantiate` is the bridge.
-  have hmul : ∀ x y : FVar F, Complete (F := F) (c := c)
-      (fun st => x.Scoped st ∧ y.Scoped st) (mul (c := c) x y)
-      (fun a st' => a.Scoped st' ∧ x.Scoped st') := by
-    intro x y
-    refine Complete.instantiate
-      (P := fun p : F × F => fun st => (CircuitType.ReadsAs (val := F) st x p.1 ∧
-        CircuitType.ReadsAs (val := F) st y p.2) ∧ x.Scoped st)
-      (fun st h => ⟨⟨_, _⟩, ⟨(hval x st h.1).choose_spec, (hval y st h.2).choose_spec⟩, h.1⟩)
-      fun p => Complete.imp (fun _ h => h) (fun _ _ h => ⟨CircuitType.scoped_fvar.mp h.1.1, h.2⟩)
-        (Complete.frame CVar.monotone_scoped (mul_complete (c := c) x y p.1 p.2))
+    ∀ (fuel : Nat) (x : FVar F) (n : Nat) (st₀ : ProverState F),
+      ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀ ∧ n ≤ fuel + 1⌝⦄
+      powGo (c := Prover c) fuel x n
+      ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = st₀.read x ^ n ∧ st₀ ≤ s'⌝⦄ := by
   intro fuel
   induction fuel with
   | zero =>
-    intro x n
-    match n with
-    | 0 => exact Complete.pure_of fun _ _ => trivial
-    | 1 => exact Complete.pure_of fun _ h => h
-    | _ + 2 => exact Complete.pure_of fun _ h => h
+    intro x n st₀
+    unfold powGo
+    mvcgen
+    all_goals grind [CVar.val, CVar.scoped_const, pow_zero, pow_one]
   | succ fuel ih =>
-    intro x n
+    intro x n st₀
+    have ih' := fun x n => Prover.register (ih x n)
     match n with
-    | 0 => exact Complete.pure_of fun _ _ => trivial
-    | 1 => exact Complete.pure_of fun _ h => h
+    | 0 =>
+      unfold powGo
+      mvcgen
+      all_goals grind [CVar.val, CVar.scoped_const, pow_zero]
+    | 1 =>
+      unfold powGo
+      mvcgen
+      all_goals grind [pow_one]
     | m + 2 =>
+      -- the halving step's exponent arithmetic, out of `grind`'s reach
+      have heven : ∀ v : F, (m + 2) % 2 = 0 → (v * v) ^ ((m + 2) / 2) = v ^ (m + 2) :=
+        fun v h => by rw [← pow_two, ← pow_mul]; congr 1; omega
+      have hodd : ∀ v : F, ¬(m + 2) % 2 = 0 → v * (v * v) ^ ((m + 2) / 2) = v ^ (m + 2) :=
+        fun v h => by rw [← pow_two, ← pow_mul, ← pow_succ']; congr 1; omega
       simp only [powGo]
-      refine Complete.bind
-        (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => h) (hmul x x))
-        fun sq => Complete.bind
-          (Complete.imp (fun _ h => h) (fun _ _ h => h)
-            (Complete.frame CVar.monotone_scoped (ih sq ((m + 2) / 2))))
-          fun y => ?_
-      by_cases hpar : (m + 2) % 2 = 0
-      · rw [if_pos hpar]
-        exact Complete.pure_of fun _ h => h.1
-      · rw [if_neg hpar]
-        exact Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h.1) (hmul x y)
+      mvcgen [ih']
+      all_goals grind [Prover.Reg.iff, ProverState.read_of_le, CVar.Scoped.of_le]
 
-/-- `pow`'s completeness law: `mul`'s, along the recursion. -/
-theorem pow_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) (n : Nat) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (pow (c := c) x n)
-      (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv ^ n)) := by
-  intro st hx
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hx ⊢
-  obtain ⟨hx, hvx⟩ := hx
-  subst hvx
-  obtain ⟨r, st₁, hrun, hsat, hsc⟩ := powGo_complete (c := c) n x n st hx
-  refine ⟨r, st₁, hrun, hsat, hsc, ?_⟩
-  have hval := runs_post (fun V => pow_spec (c := c) (V := V) x n) hrun
-    (hsat le_rfl)
-  rw [hval, CVar.val_of_le (run_le hrun) hx]
+/-- Registered. -/
+@[spec] private def Prover.powGo_reg [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (fuel : Nat) (x : FVar F) (n : Nat) :=
+  Prover.register (Prover.powGo_spec (c := c) fuel x n)
 
-attribute [irreducible] pow
+/-- `pow`'s completeness: the result reads the operand's entry reading to the `n`-th
+power. -/
+theorem Prover.pow_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (n : Nat) (st₀ : ProverState F) :
+    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀⌝⦄
+    pow (c := Prover c) x n
+    ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = st₀.read x ^ n ∧ st₀ ≤ s'⌝⦄ := by
+  unfold pow
+  mvcgen
+  all_goals grind [Prover.Reg.iff]
 
+/-- Registered. -/
+@[spec] def Prover.pow_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x : FVar F) (n : Nat) :=
+  Prover.register (Prover.pow_spec (c := c) x n)
+
+end ProverReading
 
 end Snarky
