@@ -16,7 +16,7 @@ rather than assumed (`verifyProofAt_reads`), the read the step circuit's slot re
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 /-- The public-input commitment table at a key, computed from the key's Lagrange
@@ -299,11 +299,11 @@ theorem verifyProofAt_reads {ks nc np : ℕ} {V : Valuation Fp} (S : SRS IpaPall
     (havoid : S.Avoids (stepRelationsAt S K statement))
     (hivp : IvpHyps (stepSide V) S K cp (stepPublicInput V statement) false
       spongeAfterIndex (cells.withClaims u) oldsW) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     verifyProofAt (c := Builder V (KimchiConstraint Fp)) S K spongeAfterIndex isBaseCase
       statement u cells
-    ⦃⇓ v _ => ⌜VerifyReads (stepSide V) S K cp (stepPublicInput V statement) u false
-      v⌝⦄ := by
+    ⦃fun v _ => VerifyReads (stepSide V) S K cp (stepPublicInput V statement) u false
+      v⦄ := by
   have hleaves : stepLeavesAt S K statement
       = List.zipWith (constLeaf (C := IpaPallas.curve)) statement.packed.toList
         (K.lagrangePoints S
@@ -418,10 +418,10 @@ theorem verifyProofWith_success_bit {ks k nc np : ℕ} {V : Valuation Fp}
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput k nc np (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     verifyProofWith (c := Builder V (KimchiConstraint Fp)) h lagrange spongeAfterIndex
       isBaseCase statement u cells
-    ⦃⇓ v _ => ⌜∃ b : Bool, (↑v : CVar Fp).val V = bit b⌝⦄ :=
+    ⦃fun (v : BoolVar Fp) _ => ∃ b : Bool, (↑v : CVar Fp).val V = bit b⦄ :=
   verifyProof_success_bit _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-! The gadget is sealed after its read: a consumer composes `verifyProofAt_reads`, never the

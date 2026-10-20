@@ -66,7 +66,7 @@ transcript's values, which the group read gives without the opening, and the tie
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open scoped Kimchi
 

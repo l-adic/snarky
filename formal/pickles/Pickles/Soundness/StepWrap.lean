@@ -47,7 +47,7 @@ challenges from the next wrap circuit's finalize cells.
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta
 open scoped Kimchi
 

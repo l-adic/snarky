@@ -43,7 +43,7 @@ selection and vanishing polynomial, the one-hot vector and the wrap side's domai
 
 namespace Pickles
 
-open Std.Do Snarky
+open Std.WP Snarky
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
@@ -156,18 +156,17 @@ variable [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
 /-- The loop multiplies by `ω⁻¹` `k` times. -/
 private theorem omegaLoop_spec (om1 : FVar F) :
     ∀ (k : ℕ) (term : FVar F),
-      ⦃⌜True⌝⦄ omegaLoop (c := Builder V c) om1 k term
-      ⦃⇓ r _ => ⌜r.val V = term.val V * om1.val V ^ k⌝⦄
+      ⦃fun _ => True⦄ omegaLoop (c := Builder V c) om1 k term
+      ⦃fun r _ => r.val V = term.val V * om1.val V ^ k⦄
   | 0, term => by
     simp only [omegaLoop]
-    mvcgen
+    vcgen
     simp
   | k + 1, term => by
     simp only [omegaLoop]
     have ih := fun next => omegaLoop_spec om1 k next
-    mvcgen [ih]
-    rename_i next _ hnext _ _
-    intro h
+    vcgen [ih]
+    rename_i hnext _ _ h
     rw [h, hnext, pow_succ]
     ring
 
@@ -175,14 +174,14 @@ private theorem omegaLoop_spec (om1 : FVar F) :
 `ω` and `3 ≤ zkRows`, the three outputs read as `ω⁻¹`, `(ω⁻¹)^(zkRows−1)` and
 `(ω⁻¹)^zkRows`; the `inv` row forces `ω ≠ 0`. -/
 theorem omegaPowers_spec (generator : FVar F) (zkRows : ℕ) (h3 : 3 ≤ zkRows) :
-    ⦃⌜True⌝⦄ omegaPowers (c := Builder V c) generator zkRows
-    ⦃⇓ o _ => ⌜generator.val V ≠ 0
+    ⦃fun _ => True⦄ omegaPowers (c := Builder V c) generator zkRows
+    ⦃fun o _ => generator.val V ≠ 0
       ∧ o.omegaToMinus1.val V = (generator.val V)⁻¹
       ∧ o.omegaToZkPlus1.val V = (generator.val V)⁻¹ ^ (zkRows - 1)
-      ∧ o.omegaToZk.val V = (generator.val V)⁻¹ ^ zkRows⌝⦄ := by
+      ∧ o.omegaToZk.val V = (generator.val V)⁻¹ ^ zkRows⦄ := by
   simp only [omegaPowers]
-  mvcgen [omegaLoop_spec]
-  rename_i om1 _ hinv om2 _ hom2 omZkP1 _ hloop omZk _ hzk
+  vcgen [omegaLoop_spec]
+  rename_i hinv _ hom2 _ hloop _ hzk
   have hne : generator.val V ≠ 0 := left_ne_zero_of_mul_eq_one hinv
   have hom1 : om1.val V = (generator.val V)⁻¹ := eq_inv_of_mul_eq_one_right hinv
   refine ⟨hne, hom1, ?_, ?_⟩
@@ -196,13 +195,12 @@ theorem omegaPowers_spec (generator : FVar F) (zkRows : ℕ) (h3 : 3 ≤ zkRows)
 /-- Under any valuation the output reads as the product of `ζ` minus each of the three
 powers. -/
 theorem zkPolynomial_spec (zeta : FVar F) (o : OmegaPowers F) :
-    ⦃⌜True⌝⦄ zkPolynomial (c := Builder V c) zeta o
-    ⦃⇓ r _ => ⌜r.val V = (zeta.val V - o.omegaToMinus1.val V)
-      * (zeta.val V - o.omegaToZkPlus1.val V) * (zeta.val V - o.omegaToZk.val V)⌝⦄ := by
+    ⦃fun _ => True⦄ zkPolynomial (c := Builder V c) zeta o
+    ⦃fun r _ => r.val V = (zeta.val V - o.omegaToMinus1.val V)
+      * (zeta.val V - o.omegaToZkPlus1.val V) * (zeta.val V - o.omegaToZk.val V)⦄ := by
   simp only [zkPolynomial]
-  mvcgen
-  rename_i t1 _ ht1 _ _
-  intro h
+  vcgen
+  rename_i ht1 _ _ h
   rw [h, ht1]
   simp only [CVar.val_sub_]
 
@@ -231,18 +229,17 @@ theorem zkPolynomial_eq_zkpmEval (n zkRows : ℕ) (ω ζ : F) (hω : ω ^ n = 1)
 /-- Under any valuation, with the runtime domain log2 reading as `L`, the `i`-th bit reads as
 `[L = log2ᵢ]`. -/
 theorem knownDomainWhiches_spec {n : ℕ} (domainLog2Var : FVar F) (log2s : Vector ℕ n) :
-    ⦃⌜True⌝⦄ knownDomainWhiches (c := Builder V c) domainLog2Var log2s
-    ⦃⇓ r _ => ⌜∀ i : Fin n, (↑r[i] : CVar F).val V
-      = if domainLog2Var.val V = (log2s[i] : F) then 1 else 0⌝⦄ := by
+    ⦃fun _ => True⦄ knownDomainWhiches (c := Builder V c) domainLog2Var log2s
+    ⦃fun (r : Vector (BoolVar F) n) _ => ∀ i : Fin n, (↑r[i] : CVar F).val V
+      = if domainLog2Var.val V = (log2s[i] : F) then 1 else 0⦄ := by
   simp only [knownDomainWhiches]
   have h := builder_spec_vector_mapM_get (V := V) (c := c)
     (fun l : ℕ => equals (c := Builder V c) (.const (l : F)) domainLog2Var)
     (fun l (b : BoolVar F) => (↑b : CVar F).val V = if domainLog2Var.val V = (l : F) then 1 else 0)
     (fun l => builder_spec_imp _ _ _ (equals_spec _ _) fun b hb =>
       hb.trans (if_congr ⟨Eq.symm, Eq.symm⟩ rfl rfl)) log2s.reverse
-  mvcgen [h]
-  rename_i rev _ hrev
-  intro i
+  vcgen [h]
+  rename_i hrev i
   have hi := hrev ⟨n - 1 - i, by omega⟩
   simp only [Fin.getElem_fin, Vector.getElem_reverse] at hi ⊢
   simpa only [show n - 1 - (n - 1 - i) = i.val by omega] using hi
@@ -250,22 +247,21 @@ theorem knownDomainWhiches_spec {n : ℕ} (domainLog2Var : FVar F) (log2s : Vect
 /-- Under any valuation entry `i` of the table reads as `x^(2^i)`. -/
 theorem buildPow2PowsArray_spec (x : FVar F) :
     ∀ maxLog2 : ℕ,
-      ⦃⌜True⌝⦄ buildPow2PowsArray (c := Builder V c) x maxLog2
-      ⦃⇓ r _ => ⌜∀ i : Fin (maxLog2 + 1), r[i].val V = x.val V ^ (2 ^ (i : ℕ))⌝⦄
+      ⦃fun _ => True⦄ buildPow2PowsArray (c := Builder V c) x maxLog2
+      ⦃fun r _ => ∀ i : Fin (maxLog2 + 1), r[i].val V = x.val V ^ (2 ^ (i : ℕ))⦄
   | 0 => by
     simp only [buildPow2PowsArray]
-    mvcgen
-    intro i
+    vcgen
+    rename_i i
     fin_cases i
     simp
   | k + 1 => by
     simp only [buildPow2PowsArray]
     have ih := buildPow2PowsArray_spec x k
-    mvcgen [ih]
-    rename_i arr _ harr sq _ hsq
+    vcgen [ih]
+    rename_i harr _ hsq i
     have hk : arr[k].val V = x.val V ^ 2 ^ k := harr ⟨k, by omega⟩
     simp only [Vector.back, Nat.add_sub_cancel, hk] at hsq
-    intro i
     rw [Fin.getElem_fin, Vector.getElem_push]
     split
     · rename_i hik
@@ -275,67 +271,65 @@ theorem buildPow2PowsArray_spec (x : FVar F) :
 
 /-- Under any valuation the output reads as `x^(2^n)`. -/
 theorem pow2PowMul_spec (x : FVar F) :
-    ∀ n : ℕ, ⦃⌜True⌝⦄ pow2PowMul (c := Builder V c) x n ⦃⇓ r _ => ⌜r.val V = x.val V ^ (2 ^ n)⌝⦄
+    ∀ n : ℕ, ⦃fun _ => True⦄ pow2PowMul (c := Builder V c) x n
+      ⦃fun r _ => r.val V = x.val V ^ (2 ^ n)⦄
   | 0 => by
     simp only [pow2PowMul]
-    mvcgen
+    vcgen
     simp
   | k + 1 => by
     simp only [pow2PowMul]
     have ih := pow2PowMul_spec x k
-    mvcgen [ih]
-    rename_i acc _ hacc _ _
-    intro h
+    vcgen [ih]
+    rename_i hacc _ _ h
     rw [h, hacc, ← pow_add, ← two_mul, pow_succ, mul_comm]
 
 /-- Under any valuation the output reads as `x^(2^n)`. -/
 theorem pow2PowSquare_spec (x : FVar F) :
-    ∀ n : ℕ, ⦃⌜True⌝⦄ pow2PowSquare (c := Builder V c) x n
-      ⦃⇓ r _ => ⌜r.val V = x.val V ^ (2 ^ n)⌝⦄
+    ∀ n : ℕ, ⦃fun _ => True⦄ pow2PowSquare (c := Builder V c) x n
+      ⦃fun r _ => r.val V = x.val V ^ (2 ^ n)⦄
   | 0 => by
     simp only [pow2PowSquare]
-    mvcgen
+    vcgen
     simp
   | k + 1 => by
     simp only [pow2PowSquare]
     have ih := pow2PowSquare_spec x k
-    mvcgen [ih]
-    rename_i acc _ hacc _ _
-    intro h
+    vcgen [ih]
+    rename_i hacc _ _ h
     rw [h, hacc, ← pow_add, ← two_mul, pow_succ, mul_comm]
 
 /-- Under any valuation satisfying the emitted constraints, with the `i`-th which bit reading
 as `bᵢ` and every `log2ᵢ ≤ maxLog2`, the output reads as `∑ᵢ bᵢ · ζ^(2^log2ᵢ) − 1`. -/
 theorem knownDomainVanishingPolynomial_spec (whiches : List (BoolVar F)) (log2s : List ℕ)
     (maxLog2 : ℕ) (zeta : FVar F) (hlog : ∀ l ∈ log2s, l ≤ maxLog2) :
-    ⦃⌜True⌝⦄ knownDomainVanishingPolynomial (c := Builder V c) whiches log2s maxLog2 zeta
-    ⦃⇓ r _ => ⌜r.val V = ((whiches.zip log2s).map fun e =>
-        (↑e.1 : CVar F).val V * zeta.val V ^ (2 ^ e.2)).sum - 1⌝⦄ := by
+    ⦃fun _ => True⦄ knownDomainVanishingPolynomial (c := Builder V c) whiches log2s maxLog2 zeta
+    ⦃fun r _ => r.val V = ((whiches.zip log2s).map fun e =>
+        (↑e.1 : CVar F).val V * zeta.val V ^ (2 ^ e.2)).sum - 1⦄ := by
   simp only [knownDomainVanishingPolynomial]
   have hp := buildPow2PowsArray_spec (c := c) (V := V) zeta maxLog2
   have hm := fun xs => Pseudo.mask_spec (c := c) (V := V) whiches xs
-  mvcgen [hp, hm]
-  rename_i _ pows _ hpows masked _ hmasked r _
-  intro hr
+  vcgen [hp, hm]
+  rename_i hpows _ hmasked _ _ hr
   rw [hr, CVar.val_sub_, hmasked, List.zip_map_right, List.map_map]
   congr 2
   refine List.map_congr_left fun e he => ?_
   have hl := hlog e.2 (List.of_mem_zip he).2
-  have hpe : pows[e.2].val V = zeta.val V ^ 2 ^ e.2 := hpows ⟨e.2, by omega⟩
+  have hpe : pow2Pows[e.2].val V = zeta.val V ^ 2 ^ e.2 := hpows ⟨e.2, by omega⟩
   simp only [Function.comp_def, Prod.map_fst, Prod.map_snd, id_eq,
     Vector.getElem?_eq_getElem (show e.2 < maxLog2 + 1 by omega), Option.getD_some, hpe]
 
 /-- Under any valuation satisfying the emitted constraints, bit `l` reads as `[index = l]`
 for `l < n`, and `index` reads as one of `0, …, n − 1`. -/
 theorem oneHotVector_spec (n : ℕ) (index : FVar F) :
-    ⦃⌜True⌝⦄ oneHotVector (c := Builder V c) n index
-    ⦃⇓ r _ => ⌜(∀ l : Fin n, (↑r[l] : CVar F).val V
+    ⦃fun _ => True⦄ oneHotVector (c := Builder V c) n index
+    ⦃fun (r : Vector (BoolVar F) n) _ => (∀ l : Fin n, (↑r[l] : CVar F).val V
         = if index.val V = ((l : ℕ) : F) then 1 else 0) ∧
-      ∃ j < n, index.val V = (j : F)⌝⦄ := by
+      ∃ j < n, index.val V = (j : F)⦄ := by
   simp only [oneHotVector]
   have hw := knownDomainWhiches_spec (c := c) (V := V) index (Vector.range n)
-  mvcgen [hw, assertAny_spec]
-  rename_i bits _ hbits _ _ hany
+  vcgen [hw, assertAny_spec]
+  rename_i hbits _ _ hany
   simp only [Fin.getElem_fin, Vector.getElem_range] at hbits
   refine ⟨fun l => hbits l, ?_⟩
   have hread : ∀ b ∈ bits.toList, ∃ l < n,
@@ -358,15 +352,15 @@ theorem oneHotVector_spec (n : ℕ) (index : FVar F) :
 reads as `∑ᵢ bᵢ · gen log2ᵢ`, and its vanishing polynomial at any `ζ` as
 `∑ᵢ bᵢ · ζ^(2^log2ᵢ) − 1`. -/
 theorem toDomain_spec (gen : ℕ → F) (which : List (BoolVar F)) (log2s : List ℕ) :
-    ⦃⌜True⌝⦄ toDomain (c := Builder V c) gen which log2s
-    ⦃⇓ d _ => ⌜d.generator.val V
+    ⦃fun _ => True⦄ toDomain (c := Builder V c) gen which log2s
+    ⦃fun d _ => d.generator.val V
         = ((which.zip log2s).map fun e => (↑e.1 : CVar F).val V * gen e.2).sum ∧
-      ∀ zeta : FVar F, ⦃⌜True⌝⦄ d.vanishingPolynomial zeta
-        ⦃⇓ r _ => ⌜r.val V = ((which.zip log2s).map fun e =>
-          (↑e.1 : CVar F).val V * zeta.val V ^ (2 ^ e.2)).sum - 1⌝⦄⌝⦄ := by
+      ∀ zeta : FVar F, ⦃fun _ => True⦄ d.vanishingPolynomial zeta
+        ⦃fun r _ => r.val V = ((which.zip log2s).map fun e =>
+          (↑e.1 : CVar F).val V * zeta.val V ^ (2 ^ e.2)).sum - 1⦄⦄ := by
   simp only [toDomain]
   have h := Pseudo.choose_spec (c := c) (V := V) which log2s fun d => (.const (gen d) : FVar F)
-  mvcgen [h]
+  vcgen [h]
   rename_i _ hgen
   exact ⟨hgen, fun zeta => knownDomainVanishingPolynomial_spec which log2s _ zeta
     fun _ hl => List.le_max_of_le' 0 hl le_rfl⟩
@@ -452,18 +446,18 @@ domain's generator reads as `gen log2s[j]` and its vanishing polynomial as `ζ^(
 theorem selectDomain_spec (gen : ℕ → F) (log2s : List ℕ) (index : FVar F) (j : ℕ)
     (hj : j < log2s.length) (hidx : index.val V = (j : F))
     (hinj : ∀ l < log2s.length, (j : F) = l → j = l) :
-    ⦃⌜True⌝⦄ selectDomain (c := Builder V c) gen log2s index
-    ⦃⇓ d _ => ⌜d.generator.val V = gen log2s[j] ∧ ∀ zeta : FVar F,
-      ⦃⌜True⌝⦄ d.vanishingPolynomial zeta
-      ⦃⇓ r _ => ⌜r.val V = zeta.val V ^ 2 ^ log2s[j] - 1⌝⦄⌝⦄ := by
+    ⦃fun _ => True⦄ selectDomain (c := Builder V c) gen log2s index
+    ⦃fun d _ => d.generator.val V = gen log2s[j] ∧ ∀ zeta : FVar F,
+      ⦃fun _ => True⦄ d.vanishingPolynomial zeta
+      ⦃fun r _ => r.val V = zeta.val V ^ 2 ^ log2s[j] - 1⦄⦄ := by
   simp only [selectDomain]
   have hw := oneHotVector_spec (c := c) (V := V) log2s.length index
   have hd := fun which => toDomain_spec (c := c) (V := V) gen which log2s
-  mvcgen [hw, hd]
-  rename_i bits _ hbits d _
-  intro hg hv
+  vcgen [hw, hd]
+  rename_i hbits _ _ h
+  obtain ⟨hg, hv⟩ := h
   have hpick := fun f : ℕ → F =>
-    sum_oneHot f bits log2s rfl ⟨j, hj⟩ (oneHot_reads ⟨j, hj⟩ hbits.1 hidx hinj)
+    sum_oneHot f which log2s rfl ⟨j, hj⟩ (oneHot_reads ⟨j, hj⟩ hbits.1 hidx hinj)
   refine ⟨hg.trans (hpick gen), fun zeta => builder_spec_imp _ _ _ (hv zeta) ?_⟩
   intro r hr
   rw [hr, hpick fun l => zeta.val V ^ 2 ^ l]

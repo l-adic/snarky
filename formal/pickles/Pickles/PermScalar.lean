@@ -23,7 +23,7 @@ the deferred claim.
 
 namespace Pickles
 
-open Std.Do Snarky Kimchi.Protocol.Linearization
+open Std.WP Snarky Kimchi.Protocol.Linearization
 open scoped Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
@@ -59,10 +59,10 @@ theorem permScalarCircuit_spec [ConstraintHolds F c] [LawfulBasicSystem F c] {V 
     (hw : ∀ i, (w i).val V = e.w (Kimchi.sigmaCol i)) (hs : ∀ i, (s i).val V = e.s i)
     (hz : zOmega.val V = e.zOmega) (hzk : zkPoly.val V = zkp)
     (ha : alphaPow21.val V = α ^ 21) :
-    ⦃⌜True⌝⦄ permScalarCircuit (c := Builder V c) w s zOmega beta gamma zkPoly alphaPow21
-    ⦃⇓ a _ => ⌜a.val V = permScalar (beta.val V) (gamma.val V) α zkp e⌝⦄ := by
+    ⦃fun _ => True⦄ permScalarCircuit (c := Builder V c) w s zOmega beta gamma zkPoly alphaPow21
+    ⦃fun a _ => a.val V = permScalar (beta.val V) (gamma.val V) α zkp e⦄ := by
   simp only [permScalarCircuit]
-  mvcgen
+  vcgen
   simp only [CVar.val_negate_, CVar.val_add_, permScalar, Fin.prod_univ_six, *]
   congr 1
   ac_rfl

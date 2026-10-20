@@ -33,7 +33,7 @@ bulletproof challenges, and the check `b = b(c, ζ) + r · b(c, ζω)`.
 
 namespace Pickles
 
-open Std.Do Snarky
+open Std.WP Snarky
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
@@ -96,13 +96,13 @@ variable [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
 
 /-- The squares read as the successive powers `x^(2^(j+1))`. -/
 private theorem squaresGo_spec (x : FVar F) :
-    ∀ n : ℕ, ⦃⌜True⌝⦄ squaresGo (c := Builder V c) x n
-      ⦃⇓ l _ => ⌜l.map (·.val V) = (List.range n).map fun j => x.val V ^ 2 ^ (j + 1)⌝⦄
-  | 0 => by simp only [squaresGo]; mvcgen
+    ∀ n : ℕ, ⦃fun _ => True⦄ squaresGo (c := Builder V c) x n
+      ⦃fun l _ => l.map (·.val V) = (List.range n).map fun j => x.val V ^ 2 ^ (j + 1)⦄
+  | 0 => by simp only [squaresGo]; vcgen; simp
   | n + 1 => by
     simp only [squaresGo]
     have ih := fun sq => squaresGo_spec sq n
-    mvcgen [ih]
+    vcgen [ih]
     clear ih
     simp only [List.map_cons, List.range_succ_eq_map, List.map_map, *]
     congr 1
@@ -113,16 +113,15 @@ private theorem squaresGo_spec (x : FVar F) :
 
 /-- The fold reads as the accumulator times the product of the pairs' factors. -/
 private theorem bPolyGo_spec (acc : FVar F) :
-    ∀ ps : List (FVar F × FVar F), ⦃⌜True⌝⦄ bPolyGo (c := Builder V c) acc ps
-      ⦃⇓ a _ => ⌜a.val V = acc.val V
-        * (ps.map fun p => 1 + p.1.val V * p.2.val V).prod⌝⦄
-  | [] => by simp only [bPolyGo]; mvcgen; all_goals simp
+    ∀ ps : List (FVar F × FVar F), ⦃fun _ => True⦄ bPolyGo (c := Builder V c) acc ps
+      ⦃fun a _ => a.val V = acc.val V
+        * (ps.map fun p => 1 + p.1.val V * p.2.val V).prod⦄
+  | [] => by simp only [bPolyGo]; vcgen; all_goals simp
   | (ch, pw) :: rest => by
     simp only [bPolyGo]
     have ih := fun a => bPolyGo_spec a rest
-    mvcgen [ih]
+    vcgen [ih]
     clear ih
-    intro hres
     simp only [List.map_cons, List.prod_cons, CVar.val_add_, CVar.val, *]
     ring
 
@@ -154,15 +153,14 @@ as `c₀, …, c_{k−1}` and the point as `p`, the output reads as
 `b(c, p) = ∏_{i<k} (1 + cᵢ · p^{2^{k−1−i}})`, which is `Bulletproof.bPoly c p`. -/
 private theorem bPolyCircuit_spec (chals : List (FVar F)) (pt : FVar F) (cs : List F)
     (hc : List.Forall₂ (CircuitType.Reads V) chals cs) :
-    ⦃⌜True⌝⦄ bPolyCircuit (c := Builder V c) chals pt
-    ⦃⇓ a _ => ⌜a.val V = Bulletproof.bPoly (fun i : Fin cs.length => cs.get i)
-      (pt.val V)⌝⦄ := by
+    ⦃fun _ => True⦄ bPolyCircuit (c := Builder V c) chals pt
+    ⦃fun a _ => a.val V = Bulletproof.bPoly (fun i : Fin cs.length => cs.get i)
+      (pt.val V)⦄ := by
   simp only [bPolyCircuit]
   have hsq := squaresGo_spec (c := c) (V := V) pt (chals.length - 1)
   have hgo := fun ps => bPolyGo_spec (c := c) (V := V) (.const 1) ps
-  mvcgen [hsq, hgo]
-  rename_i squares _ hpows _ _
-  intro hres
+  vcgen [hsq, hgo]
+  rename_i hpows _ _ hres
   obtain rfl := map_val_of_forall₂ hc
   rw [hres, ← prod_zip_pows_eq_bPoly (chals.map (·.val V)) (pt.val V)]
   simp only [CVar.val, one_mul, List.length_map]
@@ -193,8 +191,8 @@ challenge vectors reading as `(c_{j,0}, …, c_{j,k−1})` and the point as `p`,
 reads as `∏_{i<k} (1 + c_{j,i} · p^{2^{k−1−i}})`. -/
 theorem challengePolyEvals_spec {n k : ℕ} (pt : FVar F) (prev : Vector (Vector (FVar F) k) n)
     (cvs : Vector (Vector F k) n) (h : CircuitType.Reads V prev cvs) :
-    ⦃⌜True⌝⦄ challengePolyEvals (c := Builder V c) pt prev
-    ⦃⇓ l _ => ⌜CircuitType.Reads V l (cvs.map fun cv => Bulletproof.bPoly cv.get (pt.val V))⌝⦄ := by
+    ⦃fun _ => True⦄ challengePolyEvals (c := Builder V c) pt prev
+    ⦃fun l _ => CircuitType.Reads V l (cvs.map fun cv => Bulletproof.bPoly cv.get (pt.val V))⦄ := by
   have hb := builder_spec_vector_mapM_get (V := V)
     (fun chals : Vector (FVar F) k => bPolyCircuit (c := Builder V c) chals.toList pt)
     (fun chals a => ∀ cv : Vector F k, CircuitType.Reads V chals cv →
@@ -204,8 +202,8 @@ theorem challengePolyEvals_spec {n k : ℕ} (pt : FVar F) (prev : Vector (Vector
         (CircuitType.reads_vector_iff_forall₂.mp hcv)) fun a ha => by rw [ha, bPoly_toList])
     prev.reverse
   simp only [challengePolyEvals]
-  mvcgen [hb]
-  rename_i _ _ hl
+  vcgen [hb]
+  rename_i hl
   refine CircuitType.reads_vector.mpr fun i hi => CircuitType.reads_fvar.mpr ?_
   have hj := hl ⟨n - 1 - i, by omega⟩
   simp only [Fin.getElem_fin, Vector.getElem_reverse, Vector.getElem_map] at hj ⊢
@@ -217,10 +215,10 @@ theorem challengePolyEvals_spec {n k : ℕ} (pt : FVar F) (prev : Vector (Vector
 Mina's `a·λ + b` from the GLV recoding of `nⱼ`. -/
 theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (endo : FVar F) {k : ℕ} (chals : Vector (SizedF 128 (FVar F)) k) :
-    ⦃⌜True⌝⦄ computeChallenges (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) endo chals
-    ⦃⇓ l _ => ⌜∃ ns : Vector Prechallenge k, (∀ i : Fin k, Reads128 V chals[i] ns[i]) ∧
+    ⦃fun _ => True⦄ computeChallenges (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) endo chals
+    ⦃fun l _ => ∃ ns : Vector Prechallenge k, (∀ i : Fin k, Reads128 V chals[i] ns[i]) ∧
       CircuitType.Reads V l
-        (ns.map fun n => Poseidon.FqSponge.endoExpand (endo.val V) n.val)⌝⦄ := by
+        (ns.map fun n => Poseidon.FqSponge.endoExpand (endo.val V) n.val)⦄ := by
   have hx := builder_spec_vector_mapM_get (V := V)
     (fun ch : SizedF 128 (FVar F) =>
       Snarky.Kimchi.EndoScalar.toField (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) 8
@@ -232,10 +230,10 @@ theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 
       fun _ ⟨n, hn, hch, hr⟩ => ⟨⟨n, hn⟩, hch, hr⟩)
     chals.reverse
   simp only [computeChallenges]
-  mvcgen [hx]
-  rename_i r _ hl
+  vcgen [hx]
+  rename_i hl
   have hat : ∀ i : Fin k, ∃ n : Prechallenge, Reads128 V chals[i] n ∧
-      r.reverse[i].val V = Poseidon.FqSponge.endoExpand (endo.val V) n.val := by
+      later.reverse[i].val V = Poseidon.FqSponge.endoExpand (endo.val V) n.val := by
     intro i
     have h := hl ⟨k - 1 - i, by omega⟩
     simp only [Fin.getElem_fin, Vector.getElem_reverse] at h ⊢
@@ -251,15 +249,15 @@ theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 
 `b(c, ζ) + r · b(c, ζω)`, which is `Bulletproof.combinedB c r ![ζ, ζω]`. -/
 private theorem computeBCircuit_spec {k : ℕ} (chals : Vector (FVar F) k)
     (zeta zetaOmega evalscale : FVar F) (cs : Vector F k) (hc : CircuitType.Reads V chals cs) :
-    ⦃⌜True⌝⦄ computeBCircuit (c := Builder V c) chals zeta zetaOmega evalscale
-    ⦃⇓ a _ => ⌜a.val V = Bulletproof.combinedB cs.get
-      (evalscale.val V) ![zeta.val V, zetaOmega.val V]⌝⦄ := by
+    ⦃fun _ => True⦄ computeBCircuit (c := Builder V c) chals zeta zetaOmega evalscale
+    ⦃fun a _ => a.val V = Bulletproof.combinedB cs.get
+      (evalscale.val V) ![zeta.val V, zetaOmega.val V]⦄ := by
   simp only [computeBCircuit]
   have hc' := CircuitType.reads_vector_iff_forall₂.mp hc
   have hw := bPolyCircuit_spec (c := c) (V := V) chals.toList zetaOmega cs.toList hc'
   have hz := bPolyCircuit_spec (c := c) (V := V) chals.toList zeta cs.toList hc'
   rw [bPoly_toList] at hw hz
-  mvcgen [hw, hz]
+  vcgen [hw, hz]
   simp only [CVar.val_add_, Bulletproof.combinedB, Fin.sum_univ_two, Fin.val_zero, Fin.val_one,
     pow_zero, pow_one, one_mul, Matrix.cons_val_zero, Matrix.cons_val_one, *]
 
@@ -269,14 +267,14 @@ private theorem computeBCircuit_spec {k : ℕ} (chals : Vector (FVar F) k)
 theorem bCorrectCircuit_spec {k : ℕ} (chals : Vector (FVar F) k)
     (zeta zetaOmega evalscale expectedB : FVar F) (cs : Vector F k)
     (hc : CircuitType.Reads V chals cs) :
-    ⦃⌜True⌝⦄ bCorrectCircuit (c := Builder V c) chals zeta zetaOmega evalscale expectedB
-    ⦃⇓ b _ => ⌜(↑b : CVar F).val V = if expectedB.val V
+    ⦃fun _ => True⦄ bCorrectCircuit (c := Builder V c) chals zeta zetaOmega evalscale expectedB
+    ⦃fun (b : BoolVar F) _ => (↑b : CVar F).val V = if expectedB.val V
       = Bulletproof.combinedB cs.get (evalscale.val V)
-          ![zeta.val V, zetaOmega.val V] then 1 else 0⌝⦄ := by
+          ![zeta.val V, zetaOmega.val V] then 1 else 0⦄ := by
   simp only [bCorrectCircuit]
   have h := computeBCircuit_spec (c := c) (V := V) chals zeta zetaOmega evalscale cs hc
-  mvcgen [h]
-  intro hb
+  vcgen [h]
+  rename_i hb
   simp only [*]
 
 /-! The gadgets are sealed after their specs: a consumer composes `challengePolyEvals_spec`,

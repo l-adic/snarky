@@ -134,26 +134,28 @@ def verifyOneBy [ConstraintHolds Fp c]
 
 section Reads
 
-open Std.Do
+open Std.WP
 
 variable {V : Valuation Fp}
 
 /-- `and` reads as the product of its operands. -/
 private theorem and_val (a b : BoolVar Fp) :
-    ⦃⌜True⌝⦄ Snarky.and (c := Builder V (KimchiConstraint Fp)) a b
-    ⦃⇓ r _ => ⌜(↑r : CVar Fp).val V = (↑a : CVar Fp).val V * (↑b : CVar Fp).val V⌝⦄ := by
+    ⦃fun _ => True⦄ Snarky.and (c := Builder V (KimchiConstraint Fp)) a b
+    ⦃fun (r : BoolVar Fp) _ =>
+      (↑r : CVar Fp).val V = (↑a : CVar Fp).val V * (↑b : CVar Fp).val V⦄ := by
   simp only [Snarky.and]
-  mvcgen
+  vcgen
+  assumption
 
 /-- `or` reads as `1 − (1 − a)(1 − b)`. -/
 private theorem or_val (a b : BoolVar Fp) :
-    ⦃⌜True⌝⦄ Snarky.or (c := Builder V (KimchiConstraint Fp)) a b
-    ⦃⇓ r _ => ⌜(↑r : CVar Fp).val V
-      = 1 - (1 - (↑a : CVar Fp).val V) * (1 - (↑b : CVar Fp).val V)⌝⦄ := by
+    ⦃fun _ => True⦄ Snarky.or (c := Builder V (KimchiConstraint Fp)) a b
+    ⦃fun (r : BoolVar Fp) _ => (↑r : CVar Fp).val V
+      = 1 - (1 - (↑a : CVar Fp).val V) * (1 - (↑b : CVar Fp).val V)⦄ := by
   simp only [Snarky.or]
   have h := and_val (V := V) (Snarky.not a) (Snarky.not b)
-  mvcgen [h, -Snarky.and_spec]
-  rename_i r _ hr
+  vcgen [h, -Snarky.and_spec]
+  rename_i hr
   simp only [Snarky.not, BoolVar.coe_unchecked, CVar.val_sub_] at hr ⊢
   rw [hr]
   simp
@@ -169,22 +171,22 @@ theorem verifyOneBy_verdict_bit
       IvpInput k ncw MaxProofsVerified (FVar Fp) (BoolVar Fp)
         (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
-    (hverify : ∀ sv b st u cells, ⦃⌜True⌝⦄ verify sv b st u cells
-      ⦃⇓ v _ => ⌜∃ bb : Bool, (↑v : CVar Fp).val V = bit bb⌝⦄)
+    (hverify : ∀ sv b st u cells, ⦃fun _ => True⦄ verify sv b st u cells
+      ⦃fun (v : BoolVar Fp) _ => ∃ bb : Bool, (↑v : CVar Fp).val V = bit bb⦄)
     (P : FopParams Fp) (domains : List (KnownDomain Fp))
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput s ks k ncw ncs w) :
-    ⦃⌜True⌝⦄ verifyOneBy verify P domains vk inp
-    ⦃⇓ o _ => ⌜(∃ bb : Bool, (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = bit bb) →
-      ∃ bb : Bool, (↑o.2 : CVar Fp).val V = bit bb⌝⦄ := by
+    ⦃fun _ => True⦄ verifyOneBy verify P domains vk inp
+    ⦃fun o _ => (∃ bb : Bool, (↑inp.unfinalized.shouldFinalize : CVar Fp).val V = bit bb) →
+      ∃ bb : Bool, (↑o.2 : CVar Fp).val V = bit bb⦄ := by
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d =>
     finalizeOtherProofStep_finalized_bit (V := V) (k := ks) (np := w) P domains u e m pr d
   have hh := fun p mask m => builder_spec_true
     (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) (n := w)
       (k := ks) (s := s) p mask m)
   simp only [verifyOneBy]
-  mvcgen [hfop, hh, hverify]
-  rename_i _ _ hpin _ _ hfin _ _ _ _ hsucc _ _ hand _ _ hor
-  rintro ⟨bm, hbm⟩
+  vcgen [hfop, hh, hverify]
+  rename_i hpin _ hfin _ _ _ _ hsucc _ hand _ hor hm
+  obtain ⟨bm, hbm⟩ := hm
   obtain ⟨bf, hbf⟩ := hfin
   obtain ⟨bs, hbs⟩ := hsucc
   exact ⟨_, hor _ _ (hand _ _ hbs hbf) (not_val (hpin ▸ hbm))⟩
@@ -200,9 +202,9 @@ theorem verifyOneBy_shouldFinalize
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
     (P : FopParams Fp) (domains : List (KnownDomain Fp))
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput s ks k ncw ncs w) :
-    ⦃⌜True⌝⦄ verifyOneBy verify P domains vk inp
-    ⦃⇓ _ _ => ⌜(↑inp.unfinalized.shouldFinalize : CVar Fp).val V
-      = (↑inp.mustVerify : CVar Fp).val V⌝⦄ := by
+    ⦃fun _ => True⦄ verifyOneBy verify P domains vk inp
+    ⦃fun _ _ => (↑inp.unfinalized.shouldFinalize : CVar Fp).val V
+      = (↑inp.mustVerify : CVar Fp).val V⦄ := by
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d => builder_spec_true
     (finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) (k := ks) (np := w) P domains u
       e m pr d)
@@ -211,7 +213,8 @@ theorem verifyOneBy_shouldFinalize
       (k := ks) (s := s) p mask m)
   have hv := fun sv b st u cells => builder_spec_true (verify sv b st u cells)
   simp only [verifyOneBy]
-  mvcgen [hfop, hh, hv]
+  vcgen [hfop, hh, hv]
+  assumption
 
 /-- **One slot reads as its wrap proof's group half.** Under a valuation satisfying the emitted
 constraints, with the slot's proof cells reading as `cp`'s, its `sg` cells as `cp`'s old
@@ -240,14 +243,14 @@ theorem verifyOne_reads (S : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPallas.
     (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.k)
     (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.n)
     (havoid : ∀ msg, S.Avoids (stepRelationsAt S K (inp.statement msg))) :
-    ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt S K)
+    ⦃fun _ => True⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt S K)
       P domains vk inp
-    ⦃⇓ o _ => ⌜CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
+    ⦃fun o _ => CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
       ∃ (msg : FVar Fp) (v : BoolVar Fp),
         msg.val V = inp.stepMsgDigest K V ms ∧
         VerifyReads (stepSide V) S K cp (stepPublicInput V (inp.statement msg))
           inp.unfinalized false v ∧
-        (↑v : CVar Fp).val V = 1 ∧ (↑o.1.finalized : CVar Fp).val V = 1⌝⦄ := by
+        (↑v : CVar Fp).val V = 1 ∧ (↑o.1.finalized : CVar Fp).val V = 1⦄ := by
   have hinj := castInj128_of_lt PALLAS_BASE_CARD (by decide)
   have hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fp) = k → j = k := fun j k hj hk h =>
     hinj j k (by omega) (by omega) h
@@ -262,19 +265,18 @@ theorem verifyOne_reads (S : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPallas.
   have hfop := fun u (e : ChunkedEvals ncs (FVar Fp)) m pr d =>
     finalizeOtherProofStep_finalized_bit (V := V) (k := ks) (np := w)
       P domains u e m pr d
-  have hh := hashMessagesForNextStepProofOpt_spec (V := V) IpaPallas.curve.sponge.params
-    IpaPallas.curve.sponge.hsize hall inp.proofMask (inp.messagesForNextStepProof vk) ms hm
-    hchar
+  have hh := hashMessagesForNextStepProofOpt_spec (F := Fp) (V := V) IpaPallas.curve.sponge.params
+    IpaPallas.curve.sponge.hsize hall inp.proofMask (inp.messagesForNextStepProof vk) ms hm hchar
   have hvp : ∀ (sv : SpongeVar Fp) (msg : FVar Fp),
-      ⦃⌜True⌝⦄ verifyProofAt (c := Builder V (KimchiConstraint Fp)) S K sv
+      ⦃fun _ => True⦄ verifyProofAt (c := Builder V (KimchiConstraint Fp)) S K sv
         (Snarky.not inp.mustVerify) (inp.statement msg) inp.unfinalized
         (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.map (none, ·)) vk
           inp.proof)
-      ⦃⇓ v _ => ⌜CircuitType.Reads V inp.mustVerify true →
+      ⦃fun (v : BoolVar Fp) _ => CircuitType.Reads V inp.mustVerify true →
         SpongeVar.ReadsAt V sv (Poseidon.absorb IpaPallas.curve.sponge.params Poseidon.init
           (vk.indexPoints.flatMap fun P => [P.x.val V, P.y.val V])) →
         VerifyReads (stepSide V) S K cp (stepPublicInput V (inp.statement msg))
-          inp.unfinalized false v⌝⦄ := by
+          inp.unfinalized false v⦄ := by
     intro sv msg
     rw [builder_spec_iff]
     intro nv hsat hmv hsv
@@ -286,16 +288,15 @@ theorem verifyOne_reads (S : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPallas.
       ⟨⟨_, hsv, K.digest_eq.symm⟩, hkey⟩ hclaimOk
     exact (builder_spec_iff _ _).mp (verifyProofAt_reads S K hnc cp sv _ (inp.statement msg)
       inp.unfinalized _ oldsW hbase hsmall hn (havoid msg) hivp) nv hsat
-  simp only [verifyOneBy]
-  mvcgen [hfop, hh, hvp, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
-  rename_i _ _ _ _ fop _ hF hr _ hH succ _ hVp ver _ hVer res _ hRes
+  unfold verifyOneBy
+  vcgen [hfop, hh, hvp, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
+  rename_i hF _ hH _ hVp _ hVer _ hRes hmv hres
   simp only [VerifyOneInput.messagesForNextStepProof, MessagesForNextStepProof.proofs] at hH
-  intro hmv hres
   have hnot : (↑(Snarky.not inp.mustVerify) : CVar Fp).val V = 0 := by
     rw [not_val (CircuitType.reads_boolVar.mp hmv)]
     simp [bit]
   rw [hres, hnot] at hRes
-  have hver : (↑ver : CVar Fp).val V = 1 := by linear_combination -hRes
+  have hver : (↑verified : CVar Fp).val V = 1 := by linear_combination -hRes
   rw [hVer] at hver
   obtain ⟨bf, hbf⟩ := hF
   cases bf
@@ -303,7 +304,7 @@ theorem verifyOne_reads (S : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPallas.
     exact absurd hver zero_ne_one
   · have h1 : (↑fop.finalized : CVar Fp).val V = 1 := by simpa [bit] using hbf
     rw [h1, mul_one] at hver
-    refine ⟨hr.1, succ, ?_, hVp hmv hH.1, hver, h1⟩
+    refine ⟨msgStep, success, ?_, hVp hmv hH.1, hver, h1⟩
     rw [hH.2, hkey.indexCoords, VerifyOneInput.stepMsgDigest, KimchiVK.indexState,
       indexStateOfCommitments, List.append_assoc]
     simp only [Poseidon.absorb, List.foldl_append]
@@ -344,12 +345,12 @@ theorem verifyOne_slotReads (S : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPal
     (hsmall : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ 2 ^ S.k)
     (hn : CircuitType.size Fp (PackedWrapStatement ks (Type1 Fp) Fp) ≤ K.n)
     (havoid : ∀ msg, S.Avoids (stepRelationsAt S K (inp.statement msg))) :
-    ⦃⌜True⌝⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt S K)
+    ⦃fun _ => True⦄ verifyOneBy (c := Builder V (KimchiConstraint Fp)) (verifyProofAt S K)
       P domains vk inp
-    ⦃⇓ o _ => ⌜CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
+    ⦃fun o _ => CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
       (∀ x ∈ (ivpInputOf inp.unfinalized.deferredValues (inp.sgOld.map (none, ·)) vk
         inp.proof).shifted, (stepSide V).ClaimOk x) →
-      inp.SlotReads S K V vk⌝⦄ := by
+      inp.SlotReads S K V vk⦄ := by
   rw [builder_spec_iff]
   intro nv hsat hmv h1 hclaimOk cp ms ⟨hm, hkey, hproof, holds⟩
   obtain ⟨msg, v, hmsg, hvr, hv1, -⟩ := (builder_spec_iff _ _).mp
@@ -392,15 +393,15 @@ theorem verifyOne_scalarReads (S : SRS IpaVesta.curve.Point) (K : KimchiVK IpaVe
         (Type2 (SplitField (FVar Fp) (BoolVar Fp))) →
       CircuitM Fp (Builder V (KimchiConstraint Fp)) (BoolVar Fp))
     (vk : VkComms ncw (AffinePoint (FVar Fp))) (inp : VerifyOneInput s S.k k ncw ncs w) :
-    ⦃⌜True⌝⦄ verifyOneBy verify (FopParams.of IpaVesta.curve ncs S.k Linearization.fpTokens)
+    ⦃fun _ => True⦄ verifyOneBy verify (FopParams.of IpaVesta.curve ncs S.k Linearization.fpTokens)
       D.list vk inp
-    ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads V inp.proofMask ms) →
+    ⦃fun o _ => (∃ ms : Vector Bool w, CircuitType.Reads V inp.proofMask ms) →
       CircuitType.Reads V inp.mustVerify true → (↑o.2 : CVar Fp).val V = 1 →
-      inp.ScalarReads S K V o.1.expandedChallenges⌝⦄ := by
+      inp.ScalarReads S K V o.1.expandedChallenges⦄ := by
   have hfin := finalizeOtherProofStepAt_finalizeReads S K hks V D
     ⟨inp.deferred, true_, inp.spongeDigest⟩
     inp.evals inp.proofMask inp.prevChallenges inp.branchData.domainLog2 hw
-  simp only [finalizeOtherProofStepAt] at hfin
+  unfold finalizeOtherProofStepAt at hfin
   have hfop := builder_spec_and _ _ _ hfin
     (finalizeOtherProofStep_finalized_bit (V := V) (k := S.k)
       (FopParams.of IpaVesta.curve ncs S.k Linearization.fpTokens) D.list
@@ -410,16 +411,15 @@ theorem verifyOne_scalarReads (S : SRS IpaVesta.curve.Point) (K : KimchiVK IpaVe
     (hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint Fp)) (nc := ncw) (n := w)
       (k := S.k) (s := s) p mask m)
   have hv := fun sv b st u cells => builder_spec_true (verify sv b st u cells)
-  simp only [verifyOneBy]
-  mvcgen [hfop, hh, hv, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
-  rename_i _ _ _ _ _ hF _ _ _ _ ver _ hVer _ _ hRes
-  intro hmask hmv hres
+  unfold verifyOneBy
+  vcgen [hfop, hh, hv, and_val, or_val, -Snarky.and_spec, -Snarky.or_spec]
+  rename_i hF _ _ _ hVer _ hRes hmask hmv hres
   obtain ⟨hreads, bf, hbf⟩ := hF
   have hnot : (↑(Snarky.not inp.mustVerify) : CVar Fp).val V = 0 := by
     rw [not_val (CircuitType.reads_boolVar.mp hmv)]
     simp [bit]
   rw [hres, hnot] at hRes
-  have hver : (↑ver : CVar Fp).val V = 1 := by linear_combination -hRes
+  have hver : (↑verified : CVar Fp).val V = 1 := by linear_combination -hRes
   rw [hVer] at hver
   cases bf
   · rw [hbf, bit, ite_eq_right (by decide), mul_zero] at hver

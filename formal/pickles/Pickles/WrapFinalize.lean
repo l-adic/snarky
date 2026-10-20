@@ -29,7 +29,7 @@ unconstrained.
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Pickles.Linearization
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier Pickles.Linearization
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
 
@@ -80,8 +80,8 @@ theorem pinWrapDomainIndex_spec {n : ℕ} (whichBranch : Vector (BoolVar F) n)
     (atSlot : Vector (Option ℕ) n) (index : FVar F) (b : Fin n) (j : ℕ)
     (hbits : CircuitType.Reads V whichBranch (Vector.ofFn fun l => decide (l = b)))
     (hj : atSlot[b] = some j) :
-    ⦃⌜True⌝⦄ pinWrapDomainIndex (c := Builder V c) whichBranch atSlot index
-    ⦃⇓ _ _ => ⌜index.val V = (j : F)⌝⦄ := by
+    ⦃fun _ => True⦄ pinWrapDomainIndex (c := Builder V c) whichBranch atSlot index
+    ⦃fun _ _ => index.val V = (j : F)⦄ := by
   have hj' : atSlot[(b : ℕ)] = some j := by rwa [Fin.getElem_fin] at hj
   have hind := fun (f : Option ℕ → F) => sum_oneHot f whichBranch atSlot.toList (by simp) b hbits
   have hsel := hind fun k => (CVar.const (k.elim 0 fun i => (i : F)) : CVar F).val V
@@ -92,13 +92,11 @@ theorem pinWrapDomainIndex_spec {n : ℕ} (whichBranch : Vector (BoolVar F) n)
   have hk := Pseudo.choose_spec (c := c) (V := V) whichBranch.toList atSlot.toList
     fun k => .const (k.elim 0 fun _ => (1 : F))
   simp only [pinWrapDomainIndex]
-  mvcgen [hc, hk]
-  · rename_i chosen _ _ hchosen _ _
-    intro hidx
+  vcgen [hc, hk]
+  · rename_i hchosen _ _ _ hidx
     rw [hidx, hchosen, hsel]
     rfl
-  · rename_i chosen _ _ hchosen known _ hknown pinned _ hpinned _ _
-    intro hassert
+  · rename_i hchosen _ _ hknown _ hpinned _ _ hassert
     rw [hpinned, hchosen, hknown, hsel, hone] at hassert
     simpa using hassert
 
@@ -154,28 +152,28 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : KimchiVK Ipa
     (Vs : Valuation Fq)
     (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) {branches : ℕ}
     (sl : WrapFinalizeSlot branches σ.k nc Fq) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄ (m := CircuitM Fq (Builder Vs (KimchiConstraint Fq)))
     (do
-      let o ← finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
+      let o ← finalizeOtherProofWrap (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) d.generator
           d.vanishingPolynomial
         sl.unfinalized sl.evals sl.prevChallenges
       assertAny [o.finalized, Snarky.not sl.unfinalized.shouldFinalize]
       pure o)
-    ⦃⇓ o _ => ⌜d.generator.val Vs = K.omega →
-      (∀ z, ⦃⌜True⌝⦄ d.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.n - 1⌝⦄) →
+    ⦃fun o _ => d.generator.val Vs = K.omega →
+      (∀ z, ⦃fun _ => True⦄ d.vanishingPolynomial z ⦃fun v _ => v.val Vs = z.val Vs ^ K.n - 1⦄) →
       (↑sl.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
-      sl.ScalarReads σ K Vs o.expandedChallenges⌝⦄ := by
+      sl.ScalarReads σ K Vs o.expandedChallenges⦄ := by
   by_cases h : d.generator.val Vs = K.omega ∧
-      ∀ z, ⦃⌜True⌝⦄ d.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.n - 1⌝⦄
+      ∀ z, ⦃fun _ => True⦄ d.vanishingPolynomial z ⦃fun v _ => v.val Vs = z.val Vs ^ K.n - 1⦄
   · obtain ⟨hgen, hvan⟩ := h
-    have hsr : ⦃⌜True⌝⦄
-        finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
+    have hsr : ⦃fun _ => True⦄
+        finalizeOtherProofWrap (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) d.generator
             d.vanishingPolynomial
           sl.unfinalized sl.evals sl.prevChallenges
-        ⦃⇓ o _ => ⌜(↑o.finalized : CVar Fq).val Vs = 1 →
-          sl.ScalarReads σ K Vs o.expandedChallenges⌝⦄ := by
+        ⦃fun o _ => (↑o.finalized : CVar Fq).val Vs = 1 →
+          sl.ScalarReads σ K Vs o.expandedChallenges⦄ := by
       have hP :
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).endo = Pasta.vestaEndo ∧
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens).mds = Reflect.symMdsQ ∧
@@ -237,9 +235,8 @@ theorem wrapFinalizeBody_spec (σ : SRS IpaPallas.curve.Point) (K : KimchiVK Ipa
         (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens)
         d.generator d.vanishingPolynomial sl.unfinalized sl.evals
         sl.prevChallenges)
-    mvcgen [hf]
-    rename_i o _ ho _ _ hany
-    intro _ _ hsf
+    vcgen [hf]
+    rename_i ho _ _ hany _ _ hsf
     obtain ⟨hread, bb, hbb⟩ := ho
     have hnot := not_val (b := sl.unfinalized.shouldFinalize) (bb := true)
       (by simpa [bit] using hsf)
@@ -270,12 +267,12 @@ theorem wrapFinalizePrevProofs_reads
     (b : Fin branches) (j : ℕ)
     (hbits : CircuitType.Reads Vs whichBranch (Vector.ofFn fun l => decide (l = b)))
     (hdom : wrapDomainLog2s[j]? = some K.domainLog2) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     wrapFinalizePrevProofs (c := Builder Vs (KimchiConstraint Fq))
       (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) whichBranch slots
-    ⦃⇓ outs _ => ⌜∀ i : Fin mpv, slots[i].pins[b] = some j →
+    ⦃fun outs _ => ∀ i : Fin mpv, slots[i].pins[b] = some j →
       (↑slots[i].unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
-      slots[i].ScalarReads σ K Vs outs[i].expandedChallenges⌝⦄ := by
+      slots[i].ScalarReads σ K Vs outs[i].expandedChallenges⦄ := by
   -- the key's domain is candidate `j` of the table
   obtain ⟨hj, hjv⟩ := List.getElem?_eq_some_iff.mp hdom
   have hn : 2 ^ wrapDomainLog2s[j] = K.n := by rw [hjv]; rfl
@@ -288,7 +285,7 @@ theorem wrapFinalizePrevProofs_reads
     have := congrArg ZMod.val h
     rwa [ZMod.val_natCast_of_lt (by norm_num [PALLAS_SCALAR_CARD]; omega),
       ZMod.val_natCast_of_lt (by norm_num [PALLAS_SCALAR_CARD]; omega)] at this
-  simp only [wrapFinalizePrevProofs]
+  unfold wrapFinalizePrevProofs
   -- each slot's pin: on a slot branch `b` compiled for `j`, the index reads as `j`
   have hpin := forM_spec (V := Vs) (c := KimchiConstraint Fq)
     (fun sl : WrapFinalizeSlot branches σ.k nc Fq =>
@@ -309,8 +306,8 @@ theorem wrapFinalizePrevProofs_reads
     (fun (index : FVar Fq) (d : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq))) =>
       index.val Vs = (j : Fq) →
         d.generator.val Vs = domainGenerator IpaPallas.curve wrapDomainLog2s[j] ∧
-          ∀ zeta : FVar Fq, ⦃⌜True⌝⦄ d.vanishingPolynomial zeta
-            ⦃⇓ r _ => ⌜r.val Vs = zeta.val Vs ^ 2 ^ wrapDomainLog2s[j] - 1⌝⦄)
+          ∀ zeta : FVar Fq, ⦃fun _ => True⦄ d.vanishingPolynomial zeta
+            ⦃fun r _ => r.val Vs = zeta.val Vs ^ 2 ^ wrapDomainLog2s[j] - 1⦄)
     (fun index => by
       by_cases h : index.val Vs = (j : Fq)
       · refine builder_spec_imp _ _ _
@@ -325,20 +322,24 @@ theorem wrapFinalizePrevProofs_reads
     (fun (p : PlonkDomain Fq (Builder Vs (KimchiConstraint Fq)) ×
         WrapFinalizeSlot branches σ.k nc Fq) =>
       do
-        let o ← finalizeOtherProofWrap (c := Builder Vs (KimchiConstraint Fq))
+        let o ← finalizeOtherProofWrap (F := Fq) (c := Builder Vs (KimchiConstraint Fq))
           (FopParams.of IpaPallas.curve nc σ.k Linearization.fqTokens) p.1.generator
           p.1.vanishingPolynomial p.2.unfinalized p.2.evals
           p.2.prevChallenges
         assertAny [o.finalized, Snarky.not p.2.unfinalized.shouldFinalize]
         pure o)
     (fun p o => p.1.generator.val Vs = K.omega →
-      (∀ z, ⦃⌜True⌝⦄ p.1.vanishingPolynomial z ⦃⇓ v _ => ⌜v.val Vs = z.val Vs ^ K.n - 1⌝⦄) →
+      (∀ z, ⦃fun _ => True⦄ p.1.vanishingPolynomial z ⦃fun v _ => v.val Vs = z.val Vs ^ K.n - 1⦄) →
       (↑p.2.unfinalized.shouldFinalize : CVar Fq).val Vs = 1 →
       p.2.ScalarReads σ K Vs o.expandedChallenges)
     (fun p => wrapFinalizeBody_spec σ K Vs p.1 p.2)
-  mvcgen [hpin, hdom, hbody]
-  rename_i hpinP rev _ hrev _ _
-  intro hos i hpb hsf
+  -- the bodies' `mapM` is left to `hbody`: its program matches on the pair, so `vcgen`'s
+  -- structural match misses it, and `le_wp` unifies up to defeq
+  vcgen (errorOnMissingSpec := false) [hpin, hdom]
+  rename_i hpinP _ hrev
+  refine (builder_spec_imp _ _ _ (hbody (rev.reverse.zip slots))
+    fun outs hos => ?_).le_wp _ trivial
+  intro i hpb hsf
   have hsl : slots[i] ∈ slots.toList := by simp
   have hidx := hpinP _ hsl (by simpa using hpb)
   -- slot `i`'s domain is the `(mpv − 1 − i)`-th of the right-to-left run

@@ -37,7 +37,7 @@ squeeze the two prechallenges `ξ` and `r` as 128-bit values.
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
 
@@ -95,20 +95,19 @@ variable {V : Valuation F}
 theorem absorbList_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) :
     ∀ (sv : SpongeVar F) (xs : List (FVar F)),
-      ⦃⌜True⌝⦄ absorbList (c := Builder V (KimchiConstraint F)) p sv xs
-      ⦃⇓ r _ => ⌜∀ s, SpongeVar.ReadsAt V sv s →
-        SpongeVar.ReadsAt V r (Poseidon.absorb p s (xs.map (·.val V)))⌝⦄
+      ⦃fun _ => True⦄ absorbList (c := Builder V (KimchiConstraint F)) p sv xs
+      ⦃fun r _ => ∀ s, SpongeVar.ReadsAt V sv s →
+        SpongeVar.ReadsAt V r (Poseidon.absorb p s (xs.map (·.val V)))⦄
   | sv, [] => by
     simp only [absorbList]
-    mvcgen
-    simp [Poseidon.absorb]
+    vcgen
+    simp_all [Poseidon.absorb]
   | sv, x :: xs => by
     simp only [absorbList]
     have hx := SpongeVar.absorb_spec (V := V) p hsize sv x
     have ih := fun sv' => absorbList_spec p hsize sv' xs
-    mvcgen [hx, ih]
-    rename_i _ _ _ hstep _ _
-    intro hrest s hs
+    vcgen [hx, ih]
+    rename_i hstep _ _ hrest s hs
     exact hrest _ (hstep s hs)
 
 /-- Under any valuation satisfying the emitted constraints, with the challenges reading as
@@ -117,14 +116,14 @@ order: `(squeeze p (absorb p init [c_{0,0}, …, c_{n−1,k−1}])).1`, which is
 digest `frDigest` of the absorbed challenges. -/
 theorem challengeDigest_spec {n k : ℕ} (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (prev : Vector (Vector (FVar F) k) n) :
-    ⦃⌜True⌝⦄ challengeDigest (c := Builder V (KimchiConstraint F)) p prev
-    ⦃⇓ d _ => ⌜d.val V = (Poseidon.squeeze p
-      (Poseidon.absorb p Poseidon.init (prev.flatten.toList.map (·.val V)))).1⌝⦄ := by
+    ⦃fun _ => True⦄ challengeDigest (c := Builder V (KimchiConstraint F)) p prev
+    ⦃fun d _ => d.val V = (Poseidon.squeeze p
+      (Poseidon.absorb p Poseidon.init (prev.flatten.toList.map (·.val V)))).1⦄ := by
   simp only [challengeDigest]
   have ha := absorbList_spec (V := V) p hsize SpongeVar.init prev.flatten.toList
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
-  mvcgen [ha, hsq]
-  rename_i _ _ _ habs _ _ hsqz
+  vcgen [ha, hsq]
+  rename_i habs _ _ _ hsqz
   exact (hsqz _ (habs _ SpongeVar.ReadsAt.init)).1
 
 /-- The guarded entries read entrywise once the mask does. -/
@@ -166,10 +165,10 @@ theorem maskedChallengeDigest_spec {n k : ℕ} (p : Poseidon.Params F)
     (mask : Vector (BoolVar F) n) (prev : Vector (Vector (FVar F) k) n) (ms : Vector Bool n)
     (hm : CircuitType.Reads V mask ms)
     (hchar : ∀ j : ℕ, j ≤ n * k → (j : F) = 0 → j = 0) :
-    ⦃⌜True⌝⦄ maskedChallengeDigest (c := Builder V (KimchiConstraint F)) p mask prev
-    ⦃⇓ d _ => ⌜d.val V = (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
+    ⦃fun _ => True⦄ maskedChallengeDigest (c := Builder V (KimchiConstraint F)) p mask prev
+    ⦃fun d _ => d.val V = (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
       (Vector.zipWith (fun m cs => if m then cs.toList.map (·.val V) else []) ms
-        prev).toList.flatten)).1⌝⦄ := by
+        prev).toList.flatten)).1⦄ := by
   simp only [maskedChallengeDigest]
   have h := OptSponge.squeeze_spec (V := V) p hsize hall _ _ (maskedEntries_forall₂ hm prev)
     (fun j hj => hchar j (by simpa using hj))
@@ -196,13 +195,13 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (digestBefore : FVar F) (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
-    (dv : F) (hd : ⦃⌜True⌝⦄ digest ⦃⇓ d _ => ⌜d.val V = dv⌝⦄)
+    (dv : F) (hd : ⦃fun _ => True⦄ digest ⦃fun d _ => d.val V = dv⦄)
     {nc : ℕ} (ftEval1 : FVar F) (pub : PointEvaluations (Vector (FVar F) nc))
     (evals : ProofEvaluations (Vector (FVar F) nc)) (endo : FVar F) (xiConstrainLowBits : Bool) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     squeezeXiR (c := Builder V (KimchiConstraint F)) p digestBefore digest ftEval1 pub evals
       endo xiConstrainLowBits
-    ⦃⇓ out _ => ⌜
+    ⦃fun out _ =>
       let sq := frSqueezes p
         (frTranscript (digestBefore.val V) dv (ftEval1.val V)
           (pub.map fun v => v.map (·.val V)) (evals.map fun v => v.map (·.val V)))
@@ -210,7 +209,7 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
       let x₂ := sq.2
       Low128 V x₁ out.1 ∧ Low128 V x₂ out.2 ∧
         (xiConstrainLowBits = true → ∃ m : Prechallenge, Reads128 V out.1 m) ∧
-        (∃ m : Prechallenge, Reads128 V out.2 m)⌝⦄ := by
+        (∃ m : Prechallenge, Reads128 V out.2 m)⦄ := by
   simp only [squeezeXiR]
   have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init digestBefore
   have ha := fun sv d => absorbList_spec (V := V) p hsize sv
@@ -218,9 +217,9 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   have hlo := fun b x => builder_spec_and _ _ _ (lowest128Bits'_spec (V := V) h2 h3 b endo x)
     (lowest128Bits'_below (V := V) h2 h3 hsw.inj hsw.modulus_lt b endo x)
-  mvcgen [h0, hd, ha, hsq, hlo]
-  rename_i _ _ _ hA d _ hdv svB _ hB _ _ hsq1 _ _ hlo1 _ _ hsq2 _ _ hlo2
-  have hS : SpongeVar.ReadsAt V svB (Poseidon.absorb p Poseidon.init
+  vcgen [h0, hd, ha, hsq, hlo]
+  rename_i hA _ hdv _ hB _ _ _ hsq1 _ hlo1 _ _ _ hsq2 _ hlo2
+  have hS : SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
       (frTranscript (digestBefore.val V) dv (ftEval1.val V)
         (pub.map fun v => v.map (·.val V)) (evals.map fun v => v.map (·.val V)))) := by
     have h := hB _ (hA _ SpongeVar.ReadsAt.init)
@@ -235,7 +234,7 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   obtain ⟨⟨-, -, -, hr₂⟩, hc₂⟩ := hlo2
   simp only [frSqueezes]
   exact ⟨fun lo hl hr => hx1 ▸ hc₁ lo hl hr, fun lo hl hr => hx2 ▸ hc₂ lo hl hr,
-    fun h => reads128_of_nat (hb₁ h), reads128_of_nat hr₂⟩
+    fun h => reads128_of_nat (hb₁ h), reads128_of_nat (hr₂ rfl)⟩
 
 /-! The gadgets are sealed after their specs: a consumer composes `challengeDigest_spec`,
 `maskedChallengeDigest_spec` and `squeezeXiR_spec`, never the bodies. -/

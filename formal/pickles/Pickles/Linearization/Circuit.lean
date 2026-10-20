@@ -43,7 +43,7 @@ the gadget happens at the top, from what the concrete stream reads
 
 namespace Pickles.Linearization
 
-open Std.Do Snarky
+open Std.WP Snarky
 open scoped Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
@@ -58,9 +58,9 @@ structure CircuitCompatible (V : Valuation F)
   /-- Subtraction agrees. -/
   sub : ∀ x y, (ce.sub x y).val V = pe.sub (x.val V) (y.val V)
   /-- Multiplication is pinned by the constraints it emits. -/
-  mul : ∀ x y, ⦃⌜True⌝⦄ ce.mul x y ⦃⇓ a _ => ⌜a.val V = pe.mul (x.val V) (y.val V)⌝⦄
+  mul : ∀ x y, ⦃fun _ => True⦄ ce.mul x y ⦃fun a _ => a.val V = pe.mul (x.val V) (y.val V)⦄
   /-- Exponentiation is pinned by the constraints it emits. -/
-  pow : ∀ x n, ⦃⌜True⌝⦄ ce.pow x n ⦃⇓ a _ => ⌜a.val V = pe.pow (x.val V) n⌝⦄
+  pow : ∀ x n, ⦃fun _ => True⦄ ce.pow x n ⦃fun a _ => a.val V = pe.pow (x.val V) n⦄
   /-- Cell readings agree. -/
   var : ∀ col row, (ce.var col row).val V = pe.var col row
   /-- Cell post-processing agrees. -/
@@ -77,8 +77,8 @@ structure CircuitCompatible (V : Valuation F)
   vanishes : ce.vanishesOnZeroKnowledgeAndPreviousRows.val V
     = pe.vanishesOnZeroKnowledgeAndPreviousRows
   /-- The Lagrange bases agree, up to the constraints emitted. -/
-  ulb : ∀ zk off, ⦃⌜True⌝⦄ ce.unnormalizedLagrangeBasis zk off
-    ⦃⇓ a _ => ⌜a.val V = pe.unnormalizedLagrangeBasis zk off⌝⦄
+  ulb : ∀ zk off, ⦃fun _ => True⦄ ce.unnormalizedLagrangeBasis zk off
+    ⦃fun a _ => a.val V = pe.unnormalizedLagrangeBasis zk off⦄
   /-- The joint combiners agree. -/
   jointCombiner : ce.jointCombiner.val V = pe.jointCombiner
   /-- The `β` challenges agree. -/
@@ -122,22 +122,23 @@ private theorem evalLoop_spec (h : CircuitCompatible V ce pe) (feat : FeatureFla
     (hdp : ∀ f (t n : Unit → Id F), pe.ifFeature f t n = if feat f then t () else n ())
     (toks : Array PolishToken) :
     ∀ (fuel endPos : Nat) (cs : EvalState (FVar F)),
-      ⦃⌜True⌝⦄
+      ⦃fun _ => True⦄
       evalLoop ce toks fuel endPos cs
-      ⦃⇓ s _ => ⌜rd (V := V) s = evalLoop pe toks fuel endPos (rd (V := V) cs)⌝⦄ := by
+      ⦃fun s _ => rd (V := V) s = evalLoop pe toks fuel endPos (rd (V := V) cs)⦄ := by
   intro fuel
   induction fuel with
-  | zero => intro endPos cs; simp only [evalLoop]; mvcgen
+  | zero => intro endPos cs; simp only [evalLoop]; vcgen; rfl
   | succ fuel ih =>
     intro endPos cs
     rw [evalLoop, evalLoop]
     simp only [map_position]
     by_cases hpos : cs.position ≥ endPos
     · simp only [hpos, ↓reduceIte]
-      mvcgen
+      vcgen
+      rfl
     · simp only [hpos, ↓reduceIte]
       cases htok : toks[cs.position]? with
-      | none => mvcgen
+      | none => vcgen; rfl
       | some tok =>
         cases tok with
         | constant t =>
@@ -203,48 +204,47 @@ private theorem evalLoop_spec (h : CircuitCompatible V ce pe) (feat : FeatureFla
           | some p =>
             simp only [map_pop2, hp, Option.map_some]
             have hmul := h.mul
-            mvcgen [hmul, ih]
-            all_goals (intro hh; simp_all; try rfl)
+            vcgen [hmul, ih]
+            all_goals (simp_all; try rfl)
         | pow n =>
           cases hp : cs.pop with
           | none => simpa [map_pop, hp] using ih endPos cs.advance
           | some p =>
             simp only [map_pop, hp, Option.map_some]
             have hpow := h.pow
-            mvcgen [hpow, ih]
-            all_goals (intro hh; simp_all; try rfl)
+            vcgen [hpow, ih]
+            all_goals (simp_all; try rfl)
         | unnormalizedLagrangeBasis zk off =>
           have hulb := h.ulb
-          mvcgen [hulb, ih]
-          all_goals (intro hh; simp_all; try rfl)
+          vcgen [hulb, ih]
+          all_goals (simp_all; try rfl)
         | skipIfNot f n =>
           -- both conditionals are decided by `feat`, so the same branch is entered on
           -- either side; `key` serves whichever it is
           have key : ∀ (bound pos : Nat),
-              ⦃⌜True⌝⦄
+              ⦃fun _ => True⦄ (m := CircuitM F (Builder V c))
               (do let s₁ ← evalLoop ce toks fuel bound { cs with position := pos }
                   pure (topOrZero ce s₁))
-              ⦃⇓ a _ => ⌜a.val V
+              ⦃fun a _ => a.val V
                 = topOrZero pe (evalLoop pe toks fuel bound
-                    { rd (V := V) cs with position := pos })⌝⦄ := by
+                    { rd (V := V) cs with position := pos })⦄ := by
             intro bound pos
-            mvcgen [ih]
+            vcgen [ih]
             rename_i hh
             rw [circ_topOrZero h]
-            simp only [rd] at hh
             rw [hh]
             simp [rd, EvalState.map]
           dsimp only
           rw [hdc, hdp]
           by_cases hf : feat f
           · simp only [ite_eq_left hf]
-            mvcgen [key, ih]
-            all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
+            vcgen [key, ih]
+            all_goals (simp_all [circ_topOrZero h]; try rfl)
           · simp only [ite_eq_right hf]
-            mvcgen [key, ih]
-            all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
+            vcgen [key, ih]
+            all_goals (simp_all [circ_topOrZero h]; try rfl)
 
-open Std.Do in
+open Std.WP in
 omit [DecidableEq F] [Snarky.BasicSystem F c] [Snarky.LawfulBasicSystem F c] in
 /-- Any satisfying valuation reads the circuit's answer as the pure interpreter's. -/
 @[spec] theorem evaluate_spec (h : CircuitCompatible V ce pe) (feat : FeatureFlag → Bool)
@@ -252,15 +252,14 @@ omit [DecidableEq F] [Snarky.BasicSystem F c] [Snarky.LawfulBasicSystem F c] in
       ce.ifFeature f t n = if feat f then t () else n ())
     (hdp : ∀ f (t n : Unit → Id F), pe.ifFeature f t n = if feat f then t () else n ())
     (toks : Array PolishToken) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     evaluate ce toks
-    ⦃⇓ a _ => ⌜a.val V = evaluate pe toks⌝⦄ := by
+    ⦃fun a _ => a.val V = evaluate pe toks⦄ := by
   simp only [evaluate]
   have hloop := evalLoop_spec h feat hdc hdp toks
-  mvcgen [hloop]
+  vcgen [hloop]
   rename_i hh
   rw [circ_topOrZero h]
-  simp only [rd] at hh
   rw [hh]
   simp only [evaluate, EvalState.init, EvalState.map, Array.map_empty]
   rfl
@@ -357,7 +356,7 @@ theorem inputs_circuitCompatible {V : Valuation F} (endo : F)
     (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))
     (feat : FeatureFlag → Bool) (ulb : Bool → Int → CircuitM F (Builder V c) (FVar F))
     (ulbP : Bool → Int → F)
-    (hulb : ∀ zk off, ⦃⌜True⌝⦄ ulb zk off ⦃⇓ a _ => ⌜a.val V = ulbP zk off⌝⦄)
+    (hulb : ∀ zk off, ⦃fun _ => True⦄ ulb zk off ⦃fun a _ => a.val V = ulbP zk off⦄)
     (inp : Inputs F) :
     CircuitCompatible V (c := c) (inp.toEnv endo mds lk feat ulb)
       ((inp.evals.map (·.val V)).toEnv endo mds (fun n => (inp.alphaPows n).val V)
@@ -433,21 +432,20 @@ def precomputeAlphaPowers (alpha : FVar F) : CircuitM F c (Array (FVar F)) :=
 /-- The loop invariant: a table of the first `m` powers grows to the first `m + n`. -/
 private theorem alphaGo_spec (alpha : FVar F) :
     ∀ (n : ℕ) (prev : FVar F) (acc : Array (FVar F)),
-      ⦃⌜True⌝⦄ alphaGo (c := Builder V c) alpha n prev acc
-      ⦃⇓ r _ => ⌜∀ m, acc.size = m → 1 ≤ m → prev.val V = alpha.val V ^ (m - 1) →
+      ⦃fun _ => True⦄ alphaGo (c := Builder V c) alpha n prev acc
+      ⦃fun r _ => ∀ m, acc.size = m → 1 ≤ m → prev.val V = alpha.val V ^ (m - 1) →
         (∀ k < m, (acc[k]?.getD (.const 0)).val V = alpha.val V ^ k) →
-        r.size = m + n ∧ ∀ k < m + n, (r[k]?.getD (.const 0)).val V = alpha.val V ^ k⌝⦄
+        r.size = m + n ∧ ∀ k < m + n, (r[k]?.getD (.const 0)).val V = alpha.val V ^ k⦄
   | 0, prev, acc => by
     simp only [alphaGo]
-    mvcgen
-    intro m hm _ _ hk
+    vcgen
+    rename_i m hm _ _ hk
     exact ⟨by simpa using hm, by simpa using hk⟩
   | n + 1, prev, acc => by
     simp only [alphaGo]
     have ih := fun next => alphaGo_spec alpha n next (acc.push next)
-    mvcgen [ih]
-    rename_i next _ hnext _ _
-    intro hI m hm h1 hprev hk
+    vcgen [ih]
+    rename_i hnext _ _ hI m hm h1 hprev hk
     have hm1 : m - 1 + 1 = m := by omega
     obtain ⟨hsize, hent⟩ := hI (m + 1) (by simp [hm]) (by omega)
       (by rw [hnext, hprev, Nat.add_sub_cancel, ← pow_succ', hm1])
@@ -463,13 +461,13 @@ private theorem alphaGo_spec (alpha : FVar F) :
 
 /-- Under any valuation the table has 71 entries and entry `k` reads as `α^k`. -/
 theorem precomputeAlphaPowers_spec (alpha : FVar F) :
-    ⦃⌜True⌝⦄ precomputeAlphaPowers (c := Builder V c) alpha
-    ⦃⇓ pows _ => ⌜pows.size = 71 ∧
-      ∀ k ≤ 70, (pows[k]?.getD (.const 0)).val V = alpha.val V ^ k⌝⦄ := by
+    ⦃fun _ => True⦄ precomputeAlphaPowers (c := Builder V c) alpha
+    ⦃fun pows _ => pows.size = 71 ∧
+      ∀ k ≤ 70, (pows[k]?.getD (.const 0)).val V = alpha.val V ^ k⦄ := by
   simp only [precomputeAlphaPowers]
   have h := alphaGo_spec (c := c) (V := V) alpha 69 alpha #[.const 1, alpha]
-  mvcgen [h]
-  intro hI
+  vcgen [h]
+  rename_i hI
   obtain ⟨hsize, hent⟩ := hI 2 rfl (by omega) (by simp)
     (by intro k hk; interval_cases k <;> simp)
   exact ⟨hsize, fun k hk => hent k (by omega)⟩

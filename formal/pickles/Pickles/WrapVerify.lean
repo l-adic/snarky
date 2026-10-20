@@ -64,7 +64,7 @@ section Frame
 
 variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F}
 
-open Std.Do in
+open Std.WP in
 /-- Whatever the public-input commitment's rows force of the valuation, the verify block's rows
 force too (`incrementallyVerifyProof_frame`). -/
 theorem wrapVerify_frame {sf : Type} {k kw nw np : ℕ}
@@ -75,21 +75,21 @@ theorem wrapVerify_frame {sf : Type} {k kw nw np : ℕ}
     (msgSponge : SpongeVar F) (newBpChallenges : Vector (Vector (FVar F) kw) nw)
     (claimedMsgDigest : FVar F) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
     (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) (P : Prop)
-    (hX : ⦃⌜True⌝⦄ computeXHat ⦃⇓ _ _ => ⌜P⌝⦄) :
-    ⦃⌜True⌝⦄
+    (hX : ⦃fun _ => True⦄ computeXHat ⦃fun _ _ => P⦄) :
+    ⦃fun _ => True⦄
     wrapVerify ops e p endo gm sqrtF blindingH spongeAfterIndex computeXHat msgSponge
       newBpChallenges claimedMsgDigest u cells
-    ⦃⇓ _ _ => ⌜P⌝⦄ := by
+    ⦃fun _ _ => P⦄ := by
   have hivp := incrementallyVerifyProof_frame ops e p endo gm sqrtF blindingH spongeAfterIndex
     computeXHat (cells.withClaims u) P hX
   have hh := fun m => builder_spec_true
     (hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) (w := nw) (k := kw) p
       msgSponge m)
   simp only [wrapVerify]
-  mvcgen [hivp, hh] invariants
-    · ⇓⟨_, _⟩ => ⌜P⌝
-
-open Std.Do in
+  vcgen [hivp, hh] invariants
+    · fun _ _ _ _ => P
+  all_goals assumption
+open Std.WP in
 /-- The verify block asserts its message's digest: at the padding sponge, `claimedMsgDigest` reads
 as the wrap-message digest of the opening `sg` and the new challenges the cells read as. -/
 theorem wrapVerify_msgDigest {sf : Type} {k kw nw np : ℕ}
@@ -101,25 +101,31 @@ theorem wrapVerify_msgDigest {sf : Type} {k kw nw np : ℕ}
     (dummy : Vector F kw) (newBpChallenges : Vector (Vector (FVar F) kw) nw)
     (claimedMsgDigest : FVar F) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
     (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     wrapVerify ops e p endo gm sqrtF blindingH spongeAfterIndex computeXHat
       (wrapPaddingSponge p dummy (MaxProofsVerified - nw)) newBpChallenges claimedMsgDigest u cells
-    ⦃⇓ _ _ => ⌜∀ (sgv : AffinePoint F) (cv : Vector (Vector F kw) nw),
+    ⦃fun _ _ => ∀ (sgv : AffinePoint F) (cv : Vector (Vector F kw) nw),
       CircuitType.Reads V cells.opening.sg sgv → CircuitType.Reads V newBpChallenges cv →
-      claimedMsgDigest.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩⌝⦄ := by
+      claimedMsgDigest.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩⦄ := by
   have hivp := builder_spec_true (incrementallyVerifyProof ops e p endo gm sqrtF true blindingH
     spongeAfterIndex computeXHat (cells.withClaims u))
   have hh := hashMessagesForNextWrapProof_padded (V := V) p hsize dummy newBpChallenges
     cells.opening.sg
   simp only [wrapVerify]
-  mvcgen [hivp, hh] invariants
-    · ⇓⟨_, _⟩ => ⌜∀ (sgv : AffinePoint F) (cv : Vector (Vector F kw) nw),
+  vcgen [hivp, hh] invariants
+    · fun _ _ _ _ => ∀ (sgv : AffinePoint F) (cv : Vector (Vector F kw) nw),
       CircuitType.Reads V cells.opening.sg sgv → CircuitType.Reads V newBpChallenges cv →
-      claimedMsgDigest.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩⌝
-  rename_i hd _ _ heq _ _ _
-  intro sgv cv hs hc
-  rw [heq]
-  exact hd sgv cv hs hc
+      claimedMsgDigest.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩
+  · -- the loop entry: the hash's read
+    rename_i hd _ _ heq _ _ _ sgv cv hs hc
+    rw [heq]
+    exact hd sgv cv hs hc
+  · -- the exit: the invariant
+    rename_i h sgv cv hs hc
+    exact h sgv cv hs hc
+  · -- the loop step: the invariant carries over
+    rename_i h _ _ _
+    exact h
 
 end Frame
 
@@ -127,7 +133,7 @@ end Frame
 
 section Read
 
-open Std.Do Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open Std.WP Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.CurveForms.ShortWeierstrass
 
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
@@ -149,38 +155,38 @@ theorem wrapVerify_reads {nc kw nw np : ℕ} (S : IvpSide C V ops) (σ : SRS C.P
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (cells : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : Vector (C.Point × Bool) np)
-    (hXhat : ⦃⌜True⌝⦄ computeXHat
-      ⦃⇓ pts _ => ⌜CommReads C V pts.toList (runPublicComm C σ cvk pub).toList⌝⦄)
+    (hXhat : ⦃fun _ => True⦄ computeXHat
+      ⦃fun pts _ => CommReads C V pts.toList (runPublicComm C σ cvk pub).toList⦄)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (h : IvpHyps S σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     wrapVerify (c := Builder V (KimchiConstraint C.BaseField)) ops S.shape.ipaEndo C.sponge.params
       endo (.ofSpec C.groupMap) sqrtF blindingH spongeAfterIndex computeXHat msgSponge
       newBpChallenges claimedMsgDigest u cells
-    ⦃⇓ _ _ => ⌜∃ v : BoolVar C.BaseField,
-      VerifyReads S σ cvk cp pub u false v ∧ (↑v : CVar C.BaseField).val V = 1⌝⦄ := by
+    ⦃fun _ _ => ∃ v : BoolVar C.BaseField,
+      VerifyReads S σ cvk cp pub u false v ∧ (↑v : CVar C.BaseField).val V = 1⦄ := by
   have hivp := incrementallyVerifyProof_reads S σ cvk cp pub endo sqrtF true blindingH
     spongeAfterIndex computeXHat (cells.withClaims u) oldsW hXhat hh h
   have hmsg := builder_spec_true (V := V) (c := KimchiConstraint C.BaseField)
     (hashMessagesForNextWrapProof C.sponge.params msgSponge ⟨cells.opening.sg, newBpChallenges⟩)
   simp only [wrapVerify]
-  mvcgen [hivp, hmsg] invariants
-    · ⇓⟨xs, _⟩ => ⌜∀ p ∈ xs.prefix, p.1.val.val V = p.2.val.val V⌝
+  vcgen [hivp, hmsg] invariants
+    · fun xs _ _ _ => ∀ p ∈ xs, p.1.val.val V = p.2.val.val V
+  · -- the loop entry: nothing compared yet
+    rename_i p hp
+    exact absurd hp List.not_mem_nil
+  · -- the exit: the group half's read at the asserted bit
+    rename_i hivp' _ _ hsucc _ _ _ _ _ _ hdig _ _ hall
+    refine ⟨o.success, ⟨o, hivp', rfl, hdig, fun _ i => ?_, true, by simp [bit, hsucc]⟩, hsucc⟩
+    simpa using hall _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem
+      (xs := u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges) i.isLt))
   · -- the loop step: the compared pair reads equal, the earlier ones by the invariant
-    rename_i pref cur suff _ _ _ hinv _ _ hcur
+    rename_i hinv _ _ hcur
     intro p hp
     rw [List.mem_append, List.mem_singleton] at hp
     rcases hp with hp | rfl
     · exact hinv p hp
     · exact hcur
-  · -- the loop entry: nothing compared yet
-    intro p hp
-    exact absurd hp List.not_mem_nil
-  · -- the exit: the group half's read at the asserted bit
-    rename_i o _ hivp' _ _ hsucc _ _ _ _ _ _ _ hdig _ _ hall
-    refine ⟨o.success, ⟨o, hivp', rfl, hdig, fun _ i => ?_, true, by simp [bit, hsucc]⟩, hsucc⟩
-    simpa using hall _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem
-      (xs := u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges) i.isLt))
 
 end Read
 
@@ -188,7 +194,7 @@ end Read
 
 section WrapRead
 
-open Std.Do Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open Std.WP Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 open CompElliptic.CurveForms.ShortWeierstrass
 
@@ -206,17 +212,17 @@ theorem wrapVerify_wrap_reads {nc kw nw np : ℕ} {V : Valuation Fq}
     (u : UnfinalizedProof σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput σ.k nc np (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (oldsW : Vector (IpaVesta.curve.Point × Bool) np)
-    (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
-      ⌜CommReads IpaVesta.curve V pts.toList (runPublicComm IpaVesta.curve σ cvk pub).toList⌝⦄)
+    (hXhat : ⦃fun _ => True⦄ computeXHat ⦃fun pts _ =>
+      CommReads IpaVesta.curve V pts.toList (runPublicComm IpaVesta.curve σ cvk pub).toList⦄)
     (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH
       (SWPoint.equivPoint IpaVesta.curve.E σ.h))
     (h : IvpHyps (wrapSide V) σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     wrapVerify (c := Builder V (KimchiConstraint Fq)) IpaScalarOps.wrap IpaEndo.vesta
       IpaVesta.curve.sponge.params endo groupMapParamsVesta sqrtF blindingH spongeAfterIndex
       computeXHat msgSponge newBpChallenges claimedMsgDigest u cells
-    ⦃⇓ _ _ => ⌜∃ v : BoolVar Fq,
-      VerifyReads (wrapSide V) σ cvk cp pub u false v ∧ (↑v : CVar Fq).val V = 1⌝⦄ :=
+    ⦃fun _ _ => ∃ v : BoolVar Fq,
+      VerifyReads (wrapSide V) σ cvk cp pub u false v ∧ (↑v : CVar Fq).val V = 1⦄ :=
   wrapVerify_reads (wrapSide V) σ cvk cp pub endo sqrtF blindingH spongeAfterIndex computeXHat
     msgSponge newBpChallenges claimedMsgDigest u cells oldsW hXhat hh h
 

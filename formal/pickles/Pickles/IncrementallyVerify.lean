@@ -48,7 +48,7 @@ limb to 253 bits (`IvpSide.absorb_limbs`).
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 open CompElliptic.CurveForms.ShortWeierstrass
 open scoped Kimchi
@@ -167,7 +167,7 @@ section Frame
 
 variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {V : Valuation F} {k np : ℕ}
 
-open Std.Do in
+open Std.WP in
 /-- Whatever the public-input commitment's rows force of the valuation, the group half's rows
 force too, under the conditional sponge, where the commitment runs at one bind. -/
 theorem incrementallyVerifyProof_frame {sf : Type}
@@ -177,10 +177,10 @@ theorem incrementallyVerifyProof_frame {sf : Type}
     {nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (inp : IvpInput k nc np (FVar F) (BoolVar F) sf) (P : Prop)
-    (hX : ⦃⌜True⌝⦄ computeXHat ⦃⇓ _ _ => ⌜P⌝⦄) :
-    ⦃⌜True⌝⦄
+    (hX : ⦃fun _ => True⦄ computeXHat ⦃fun _ _ => P⦄) :
+    ⦃fun _ => True⦄
     incrementallyVerifyProof ops e p endo gm sqrtF true blindingH spongeAfterIndex computeXHat inp
-    ⦃⇓ _ _ => ⌜P⌝⦄ := by
+    ⦃fun _ _ => P⦄ := by
   have hsq := builder_spec_true
     (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p spongeAfterIndex)
   have htr := fun d xHat => builder_spec_true
@@ -195,7 +195,7 @@ theorem incrementallyVerifyProof_frame {sf : Type}
     (checkBulletproof (c := Builder V (KimchiConstraint F)) ops e p endo gm sqrtF sp bases
       ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩)
   simp only [incrementallyVerifyProof, ite_true]
-  mvcgen [hsq, hX, htr, hpc, hft, hcb, -Snarky.Kimchi.SpongeVar.squeeze_spec]
+  vcgen [hsq, hX, htr, hpc, hft, hcb, -Snarky.Kimchi.SpongeVar.squeeze_spec]
 
 end Frame
 
@@ -825,9 +825,10 @@ theorem incrementallyVerifyProof_success_bit {F : Type} [Field F] [DecidableEq F
     (spongeAfterIndex : SpongeVar F) {k nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     {np : ℕ} (inp : IvpInput k nc np (FVar F) (BoolVar F) sf) :
-    ⦃⌜True⌝⦄ incrementallyVerifyProof ops e p endo gm sqrtF optSponge blindingH spongeAfterIndex
+    ⦃fun _ => True⦄
+    incrementallyVerifyProof ops e p endo gm sqrtF optSponge blindingH spongeAfterIndex
       computeXHat inp
-    ⦃⇓ o _ => ⌜∃ b : Bool, (↑o.success : CVar F).val V = bit b⌝⦄ := by
+    ⦃fun o _ => ∃ b : Bool, (↑o.success : CVar F).val V = bit b⦄ := by
   simp only [incrementallyVerifyProof]
   have hsq := fun sv => builder_spec_true
     (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
@@ -846,7 +847,7 @@ theorem incrementallyVerifyProof_success_bit {F : Type} [Field F] [DecidableEq F
   have hcb := fun sv bases (ci : CheckBulletproofInput k (FVar F) sf) =>
     checkBulletproof_success_bit (V := V) ops e p endo gm sqrtF sv bases ci
   split <;>
-    mvcgen -trivial [hsq, hx, htrO, htr, hapc, hft, hcb, -Snarky.Kimchi.SpongeVar.squeeze_spec] <;>
+    vcgen [hsq, hx, htrO, htr, hapc, hft, hcb, -Snarky.Kimchi.SpongeVar.squeeze_spec] <;>
     assumption
 
 /-! ## The read theorem -/
@@ -863,16 +864,16 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       (Vector (AffinePoint (FVar C.BaseField)) nc))
     {np : ℕ} (inp : IvpInput σ.k nc np (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : Vector (C.Point × Bool) np)
-    (hXhat : ⦃⌜True⌝⦄ computeXHat
-      ⦃⇓ pts _ => ⌜CommReads C V pts.toList (runPublicComm C σ cvk pub).toList⌝⦄)
+    (hXhat : ⦃fun _ => True⦄ computeXHat
+      ⦃fun pts _ => CommReads C V pts.toList (runPublicComm C σ cvk pub).toList⦄)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
     (h : IvpHyps S σ cvk cp pub optSponge spongeAfterIndex inp oldsW) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     incrementallyVerifyProof ops S.shape.ipaEndo C.sponge.params endo (.ofSpec C.groupMap) sqrtF
       optSponge
       blindingH
       spongeAfterIndex computeXHat inp
-    ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
+    ⦃fun o _ => IvpReads S σ cvk cp pub inp.toIvpClaims o⦄ := by
   obtain ⟨hIdx, hmask, hties, hchar⟩ := h
   have hasrt := fun (tr : FqTranscriptOutput C.BaseField nc) =>
     assertPlonkChallenges_spec (V := V) tr inp.plonk.chals
@@ -891,10 +892,10 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
         S.shape.small_inj endo d
         (inp.sgOld.map fun m => (m.1.getD true_, m.2)) cvk.nc_pos xHat inp.wComm inp.zComm inp.tComm
         hchar
-    mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
-    case vc1.hsize => exact C.sponge.hsize
-    rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
-    have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
+    vcgen [hXhat, htr, hasrt, hft, hcb]
+    case vc2 => exact C.sponge.hsize
+    rename_i rIdx1 _ _ hIdx' _ hx _ htr' _ _ hasrt' _ hft' _ hcb'
+    have hd : rIdx1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- the transcript, at the wire readings of every absorbed cell
     have hsgv := olds_reads (fun m hm => hmask m (Vector.mem_toList_iff.mp hm)) hties.olds.cells
     rw [← Vector.toList_map] at hsgv
@@ -917,10 +918,10 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
         (inp.sgOld.map (·.2))
         computeXHat (fun pts => CommReads C V pts.toList (runPublicComm C σ cvk pub).toList) _
         (builder_spec_imp _ _ _ hXhat fun _ h => ⟨h, h.reads⟩) inp.wComm inp.zComm inp.tComm
-    mvcgen -trivial [htr, hasrt, hft, hcb]
-    case vc1.hsize => exact C.sponge.hsize
-    rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
-    have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
+    vcgen [htr, hasrt, hft, hcb]
+    case vc2 => exact C.sponge.hsize
+    rename_i rIdx1 _ _ hIdx' _ htr' _ _ hasrt' _ hft' _ hcb'
+    have hd : rIdx1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- every old is kept: the plain sponge absorbs them all
     obtain ⟨hsgv, hall⟩ :=
       olds_reads_plain (fun m hm => hmask m (Vector.mem_toList_iff.mp hm)) hties.olds.cells

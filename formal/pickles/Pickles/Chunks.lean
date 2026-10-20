@@ -31,7 +31,7 @@ that recombination as a circuit, with its reading; it transcribes the chunk help
 
 namespace Pickles
 
-open Std.Do Snarky Kimchi.Verifier
+open Std.WP Snarky Kimchi.Verifier
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
@@ -159,23 +159,24 @@ theorem combineAt_single (x a : F) : combineAt x #[a] = a := by
 /-- `hornerChunks` reads as the chunks' `combineAt` at the point's reading. -/
 private theorem hornerChunks_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
     (pt : FVar F) :
-    ∀ chunks : List (FVar F), ⦃⌜True⌝⦄ hornerChunks (c := Builder V c) pt chunks
-      ⦃⇓ r _ => ⌜r.val V = combineAt (pt.val V) (chunks.map (·.val V)).toArray⌝⦄ := by
+    ∀ chunks : List (FVar F), ⦃fun _ => True⦄ hornerChunks (c := Builder V c) pt chunks
+      ⦃fun r _ => r.val V = combineAt (pt.val V) (chunks.map (·.val V)).toArray⦄ := by
   intro chunks
   induction chunks with
   | nil =>
     simp only [hornerChunks]
-    mvcgen
+    vcgen
+    rfl
   | cons x rest ih =>
     cases rest with
     | nil =>
       simp only [hornerChunks]
-      mvcgen
+      vcgen
       all_goals simp [combineAt_single]
     | cons y rest =>
       simp only [hornerChunks]
-      mvcgen [ih]
-      rename_i acc _ hacc t _ ht
+      vcgen [ih]
+      rename_i hacc _ ht
       rw [combineAt_eq_foldr] at hacc
       rw [combineAt_eq_foldr, List.map_cons, List.foldr_cons, ← hacc, ← ht]
       simp
@@ -183,22 +184,22 @@ private theorem hornerChunks_spec {V : Valuation F} [ConstraintHolds F c] [Lawfu
 /-- A column's recombination reads as `combineColumn` of its chunks' readings. -/
 theorem collapseColumn_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
     {nc : ℕ} (zetaPow zetaOmegaPow : FVar F) (e : PointEvaluations (Vector (FVar F) nc)) :
-    ⦃⌜True⌝⦄ collapseColumn (c := Builder V c) zetaPow zetaOmegaPow e
-    ⦃⇓ r _ => ⌜r.map (·.val V) = combineColumn (zetaPow.val V) (zetaOmegaPow.val V)
-      (e.map fun v => v.map (·.val V))⌝⦄ := by
+    ⦃fun _ => True⦄ collapseColumn (c := Builder V c) zetaPow zetaOmegaPow e
+    ⦃fun r _ => r.map (·.val V) = combineColumn (zetaPow.val V) (zetaOmegaPow.val V)
+      (e.map fun v => v.map (·.val V))⦄ := by
   simp only [collapseColumn]
   have hz := hornerChunks_spec (V := V) (c := c) zetaPow e.zeta.toList
   have hzo := hornerChunks_spec (V := V) (c := c) zetaOmegaPow e.zetaOmega.toList
-  mvcgen [hz, hzo]
-  rename_i a _ ha b _ hb
+  vcgen [hz, hzo]
+  rename_i ha _ hb
   simp [combineColumn, PointEvaluations.map, ha, hb, Vector.toList, ← Array.toList_map]
 
 omit [Field F] [DecidableEq F] [BasicSystem F c] in
 /-- `Vector.mapM` of specified steps: the results read, entrywise, as the targets. -/
 private theorem builder_spec_vector_mapM {V : Valuation F} [ConstraintHolds F c]
     {α β γ : Type} {m : ℕ} (f : α → CircuitM F (Builder V c) β) (g : β → γ) (Q : α → γ)
-    (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜g r = Q a⌝⦄) (v : Vector α m) :
-    ⦃⌜True⌝⦄ v.mapM f ⦃⇓ rs _ => ⌜rs.map g = v.map Q⌝⦄ := by
+    (hf : ∀ a, ⦃fun _ => True⦄ f a ⦃fun r _ => g r = Q a⦄) (v : Vector α m) :
+    ⦃fun _ => True⦄ v.mapM f ⦃fun rs _ => rs.map g = v.map Q⦄ := by
   have hl := builder_spec_mapM f (fun r q => g r = q) Q hf v.toList
   have heq : (fun rs : Vector β m => rs.toList) <$> v.mapM f = v.toList.mapM f := by
     rw [← Vector.toList_toArray, ← Array.toList_mapM, ← Vector.toArray_mapM, ← comp_map]
@@ -217,33 +218,33 @@ private theorem builder_spec_vector_mapM {V : Valuation F} [ConstraintHolds F c]
 private theorem collapseColumnsRev_spec {V : Valuation F} [ConstraintHolds F c]
     [LawfulBasicSystem F c] {nc m : ℕ} (zetaPow zetaOmegaPow : FVar F)
     (v : Vector (PointEvaluations (Vector (FVar F) nc)) m) :
-    ⦃⌜True⌝⦄ collapseColumnsRev (c := Builder V c) zetaPow zetaOmegaPow v
-    ⦃⇓ r _ => ⌜r.map (PointEvaluations.map (·.val V))
+    ⦃fun _ => True⦄ collapseColumnsRev (c := Builder V c) zetaPow zetaOmegaPow v
+    ⦃fun r _ => r.map (PointEvaluations.map (·.val V))
       = v.map fun e => combineColumn (zetaPow.val V) (zetaOmegaPow.val V)
-          (e.map fun v => v.map (·.val V))⌝⦄ := by
+          (e.map fun v => v.map (·.val V))⦄ := by
   simp only [collapseColumnsRev]
   have hm := builder_spec_vector_mapM (collapseColumn (c := Builder V c) zetaPow zetaOmegaPow)
     (PointEvaluations.map (·.val V))
     (fun e => combineColumn (zetaPow.val V) (zetaOmegaPow.val V)
       (e.map fun v => v.map (·.val V)))
     (fun e => collapseColumn_spec zetaPow zetaOmegaPow e) v.reverse
-  mvcgen [hm]
-  rename_i r _ hr
+  vcgen [hm]
+  rename_i hr
   rw [Vector.map_reverse, hr, Vector.map_reverse, Vector.reverse_reverse]
 
 /-- A chunked batch's recombination reads as `combineEvals` of its chunks' readings. -/
 theorem collapseEvals_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
     {nc : ℕ} (zetaPow zetaOmegaPow : FVar F) (e : ProofEvaluations (Vector (FVar F) nc)) :
-    ⦃⌜True⌝⦄ collapseEvals (c := Builder V c) zetaPow zetaOmegaPow e
-    ⦃⇓ r _ => ⌜r.map (·.val V) = combineEvals (zetaPow.val V) (zetaOmegaPow.val V)
-      (e.map fun v => v.map (·.val V))⌝⦄ := by
+    ⦃fun _ => True⦄ collapseEvals (c := Builder V c) zetaPow zetaOmegaPow e
+    ⦃fun r _ => r.map (·.val V) = combineEvals (zetaPow.val V) (zetaOmegaPow.val V)
+      (e.map fun v => v.map (·.val V))⦄ := by
   simp only [collapseEvals]
   have hc := fun (col : PointEvaluations (Vector (FVar F) nc)) =>
     collapseColumn_spec (V := V) (c := c) zetaPow zetaOmegaPow col
   have hv := fun {m : ℕ} (v : Vector (PointEvaluations (Vector (FVar F) nc)) m) =>
     collapseColumnsRev_spec (V := V) (c := c) zetaPow zetaOmegaPow v
-  mvcgen [hc, hv]
-  rename_i es _ hes em _ hem mu _ hmu ca _ hca po _ hpo ge _ hge s _ hs z _ hz co _ hco w _ hw
+  vcgen [hc, hv]
+  rename_i hes _ hem _ hmu _ hca _ hpo _ hge _ hs _ hz _ hco _ hw
   simp only [ProofEvaluations.map, combineEvals] at *
   rw [hw, hz, hs, hco, hge, hpo, hca, hmu, hem, hes]
   simp [Vector.map_map, Function.comp_def]
@@ -252,19 +253,19 @@ theorem collapseEvals_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicS
 returns, if any, reads as `ζ^(2^srs)`. -/
 theorem publicFold_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
     {nc : ℕ} (srsLengthLog2 : ℕ) (zeta : FVar F) (chunks : Vector (FVar F) nc) :
-    ⦃⌜True⌝⦄ publicFold (c := Builder V c) srsLengthLog2 zeta chunks
-    ⦃⇓ r _ => ⌜r.1.val V = combineAt (zeta.val V ^ 2 ^ srsLengthLog2)
+    ⦃fun _ => True⦄ publicFold (c := Builder V c) srsLengthLog2 zeta chunks
+    ⦃fun r _ => r.1.val V = combineAt (zeta.val V ^ 2 ^ srsLengthLog2)
         (chunks.map (·.val V)).toArray ∧
-      ∀ z ∈ r.2, z.val V = zeta.val V ^ 2 ^ srsLengthLog2⌝⦄ := by
+      ∀ z ∈ r.2, z.val V = zeta.val V ^ 2 ^ srsLengthLog2⦄ := by
   unfold publicFold
   split
   · subst nc
-    mvcgen
+    vcgen
     obtain ⟨⟨_ | ⟨x, _ | _⟩⟩, h⟩ := chunks <;> simp at h
     simp [combineAt_single]
   · have hh := hornerChunks_spec (V := V) (c := c)
-    mvcgen [hh]
-    rename_i t _ ht a _ ha
+    vcgen [hh]
+    rename_i ht _ ha
     refine ⟨by rw [ha, ht]; simp [Vector.toList, ← Array.toList_map], fun z hz => ?_⟩
     simp at hz
     rw [← hz, ht]
@@ -273,16 +274,16 @@ theorem publicFold_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSyst
 theorem zetaToSrsOr_spec {V : Valuation F} [ConstraintHolds F c] [LawfulBasicSystem F c]
     (srsLengthLog2 : ℕ) (zeta : FVar F) (o : Option (FVar F))
     (ho : ∀ z ∈ o, z.val V = zeta.val V ^ 2 ^ srsLengthLog2) :
-    ⦃⌜True⌝⦄ zetaToSrsOr (c := Builder V c) srsLengthLog2 zeta o
-    ⦃⇓ r _ => ⌜r.val V = zeta.val V ^ 2 ^ srsLengthLog2⌝⦄ := by
+    ⦃fun _ => True⦄ zetaToSrsOr (c := Builder V c) srsLengthLog2 zeta o
+    ⦃fun r _ => r.val V = zeta.val V ^ 2 ^ srsLengthLog2⦄ := by
   match o with
   | some z =>
     simp only [zetaToSrsOr]
-    mvcgen
+    vcgen
     exact ho z rfl
   | none =>
     simp only [zetaToSrsOr]
-    mvcgen
+    vcgen
 
 omit [DecidableEq F] [BasicSystem F c] in
 /-- At one chunk the recombination is each column's single chunk, whatever the points. -/

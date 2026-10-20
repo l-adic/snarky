@@ -26,7 +26,7 @@ crosses to the wire's `runFtComm`, given the claims decode to the wire's scalars
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier
 open scoped Kimchi
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Bulletproof Bulletproof.Ipa
 open CompElliptic.CurveForms.ShortWeierstrass
@@ -150,16 +150,16 @@ private theorem sub_one_val_smul (ζ : C.ScalarField)
 `Ps`. Needs a chunk (the empty collapse is the unused origin). -/
 private theorem hornerReduce_reads (S : IvpSide C V ops) (zM : sf) :
     ∀ chunks : List (AffinePoint (FVar C.BaseField)), chunks ≠ [] →
-      ⦃⌜True⌝⦄ hornerReduce ops zM chunks
-      ⦃⇓ r _ => ⌜∀ ξ : C.ScalarField, S.decode zM = ξ → S.ClaimOk zM →
+      ⦃fun _ => True⦄ hornerReduce ops zM chunks
+      ⦃fun r _ => ∀ ξ : C.ScalarField, S.decode zM = ξ → S.ClaimOk zM →
         ∀ Ps : List C.E.toAffine.Point,
           List.Forall₂ (OnCurveAt C.E.toAffine V) chunks Ps →
-          OnCurveAt C.E.toAffine V r (hornerVal C ξ Ps)⌝⦄
+          OnCurveAt C.E.toAffine V r (hornerVal C ξ Ps)⦄
   | [], hne => absurd rfl hne
   | [c], _ => by
       simp only [hornerReduce]
-      mvcgen
-      intro ξ _ _ Ps hf
+      vcgen
+      rename_i ξ _ _ Ps hf
       cases hf with
       | cons hc hnil =>
         cases hnil
@@ -171,10 +171,9 @@ private theorem hornerReduce_reads (S : IvpSide C V ops) (zM : sf) :
       have hadd := fun (s : AffinePoint (FVar C.BaseField)) =>
         addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.shape.d.two_ne
           S.shape.d.two_torsion_free c s
-      mvcgen -trivial [-Snarky.Kimchi.addFast_spec, ih, hsc, hadd]
+      vcgen [-Snarky.Kimchi.addFast_spec, ih, hsc, hadd]
       clear ih
-      rename_i _ _ _ hih _ _ hsc' _ _
-      intro haddpost ξ hdec hok Ps hf
+      rename_i hih _ hsc' _ _ haddpost ξ hdec hok Ps hf
       cases hf with
       | cons hc hrest =>
         have hr := hih ξ hdec hok _ hrest
@@ -206,9 +205,9 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (permCell zetaMCell zetaNCell : sf)
     (sigma6Cells : Vector (AffinePoint (FVar C.BaseField)) nc)
     (tCommCells : Vector (AffinePoint (FVar C.BaseField)) (quotChunks * nc)) (hnc : 0 < nc) :
-    ⦃⌜True⌝⦄ ftComm ops sigma6Cells tCommCells permCell zetaMCell zetaNCell
-    ⦃⇓ r _ => ⌜FtCommReads S σ cvk cp pub r permCell zetaMCell zetaNCell sigma6Cells
-      tCommCells⌝⦄ := by
+    ⦃fun _ => True⦄ ftComm ops sigma6Cells tCommCells permCell zetaMCell zetaNCell
+    ⦃fun r _ => FtCommReads S σ cvk cp pub r permCell zetaMCell zetaNCell sigma6Cells
+      tCommCells⦄ := by
   have hσne : sigma6Cells.toList ≠ [] := by
     intro h
     have := congrArg List.length h
@@ -227,10 +226,9 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   have hadd := fun (a b : AffinePoint (FVar C.BaseField)) =>
     addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.shape.d.two_ne
       S.shape.d.two_torsion_free a b
-  mvcgen -trivial [-Snarky.Kimchi.addFast_spec, hhσ, hscP, hht, hscN, hadd]
+  vcgen [-Snarky.Kimchi.addFast_spec, hhσ, hscP, hht, hscN, hadd]
   clear hhσ hht
-  rename_i _ _ _ hhσ' _ _ hscP' _ _ hht' _ _ hscN' _ _ hadd1 _ _
-  intro hadd2
+  rename_i hhσ' _ hscP' _ hht' _ hscN' _ hadd1 _ _ hadd2
   unfold FtCommReads
   intro hperm hzM hzN hokP hokM hokN hσ ht
   -- make the wire's closed forms opaque before any algebra: `runZetaM`/`runZetaN`/`runPScalar`
