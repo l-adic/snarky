@@ -31,7 +31,8 @@ only=("$@")
 # gen_tokens.lean), one token per line with 255-bit field literals that run to the column
 # limit. They are committed rather than gitignored — formal/'s CI checks out without the
 # mina submodule and so cannot regenerate them — but they are not hand-written source and
-# the formatter contract does not apply.
+# the formatter contract does not apply. scripts/shake.lean is Batteries' shake, vendored
+# verbatim, so its style is upstream's.
 files=()
 if [ "${#only[@]}" -gt 0 ]; then
   for f in "${only[@]}"; do files+=("./${f#./}"); done
@@ -39,7 +40,8 @@ else
 while IFS= read -r f; do files+=("$f"); done \
   < <(find . -name '*.lean' \
         -not -path '*/.lake/*' -not -path './vendor/*' \
-        -not -path './pickles/Pickles/Linearization/F[pq].lean' | sort)
+        -not -path './pickles/Pickles/Linearization/F[pq].lean' \
+        -not -path './scripts/shake.lean' | sort)
 fi
 
 if [ "${#files[@]}" -eq 0 ]; then

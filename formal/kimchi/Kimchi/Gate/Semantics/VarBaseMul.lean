@@ -2319,7 +2319,8 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
     induction i with
     | zero =>
       intro _
-      exact ⟨fun i' hi' => absurd hi' (Nat.not_lt_zero i'), hP0, by simpa [chainBuild, build] using hP0eq⟩
+      exact ⟨fun i' hi' => absurd hi' (Nat.not_lt_zero i'), hP0,
+        by simpa [chainBuild, build] using hP0eq⟩
     | succ i ih =>
       intro hi
       obtain ⟨hrows, hIi, hIeq⟩ := ih (by omega)

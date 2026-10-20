@@ -63,7 +63,8 @@ private def indexDomain {F : Type} [Field F] {logN : Nat} (idx : Index F (2 ^ lo
 
 /-- Commit all index columns independently of the supplied key's commitments. -/
 @[noinline] private def deriveColumns (C : Ipa.KimchiCurve) {logN : Nat} (σ : SRS C.Point)
-    (idx : Index C.ScalarField (2 ^ logN)) (nc : Nat) : Vector (Vector C.Point nc) (permCols + coeffCols + selectorCols) :=
+    (idx : Index C.ScalarField (2 ^ logN)) (nc : Nat) :
+    Vector (Vector C.Point nc) (permCols + coeffCols + selectorCols) :=
   Vector.ofFn fun col =>
     let points := commitColumn C σ (indexDomain idx) nc (keyColumnRow idx col)
     if permCols + coeffCols ≤ col.val then points.map (· + σ.h) else points

@@ -82,7 +82,8 @@ theorem cFunc_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
   have e12 : (1 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination -h)
   have e13 : (1 : F) ≠ 3 := fun h => h2 (by linear_combination -h)
   have e32 : (3 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
-  exact ⟨by rw [cFunc, ite_eq_right e02, ite_eq_right e03], by rw [cFunc, ite_eq_right e12, ite_eq_right e13],
+  exact ⟨by rw [cFunc, ite_eq_right e02, ite_eq_right e03],
+    by rw [cFunc, ite_eq_right e12, ite_eq_right e13],
     by rw [cFunc, ite_eq_left rfl], by rw [cFunc, ite_eq_right e32, ite_eq_left rfl]⟩
 
 /-- The `b`-table's value at each crumb. -/
@@ -92,7 +93,8 @@ theorem dFunc_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
   have e31 : (3 : F) ≠ 1 := fun h => h2 (by linear_combination h)
   exact ⟨by rw [dFunc, ite_eq_left rfl],
     by rw [dFunc, ite_eq_right ((one_ne_zero : (1 : F) ≠ 0)), ite_eq_left rfl],
-    by rw [dFunc, ite_eq_right h2, ite_eq_right e21], by rw [dFunc, ite_eq_right h3, ite_eq_right e31]⟩
+    by rw [dFunc, ite_eq_right h2, ite_eq_right e21],
+    by rw [dFunc, ite_eq_right h3, ite_eq_right e31]⟩
 
 /-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
 private theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}

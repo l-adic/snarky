@@ -357,8 +357,8 @@ theorem IndexOf.classCells_eq {n : ℕ} [NeZero n] {source : List (KimchiConstra
       c.2).col < wCols := by
     rw [← h1]
     exact lt_trans ((idx.gates ⟨c.1, by omega⟩).wires ⟨c.2, hj⟩).1.isLt (by decide)
-  simp only [cellVal, dite_eq_left (And.intro hb1 hb2), dite_eq_left (And.intro (lt_of_lt_of_le hr hrows_le)
-    (lt_trans hj (by decide : 7 < wCols)))]
+  simp only [cellVal, dite_eq_left (And.intro hb1 hb2),
+    dite_eq_left (And.intro (lt_of_lt_of_le hr hrows_le) (lt_trans hj (by decide : 7 < wCols)))]
   refine Eq.trans ?_ hs2
   congr 1
   · exact Fin.ext h2.symm

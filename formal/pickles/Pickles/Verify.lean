@@ -345,9 +345,10 @@ theorem IvpProof.read_proofReads {C : KimchiCurve} {V : Valuation C.BaseField} {
   refine ⟨?_, ?_, ?_, ?_, onCurveAt_readPt (hon _ (by simp [IvpProof.points])),
     onCurveAt_readPt (hon _ (by simp [IvpProof.points])), rfl, rfl⟩
   · intro i
-    simpa [IvpProof.read, Vector.toList_map, Vector.toList_toArray] using commReads_readPt fun p hp =>
-      hon p (by simp only [IvpProof.points, List.mem_append, List.mem_flatMap]
-                exact Or.inl (Or.inl (Or.inl (Or.inl ⟨pr.wComm[i], by simp, hp⟩))))
+    simpa [IvpProof.read, Vector.toList_map, Vector.toList_toArray] using
+      commReads_readPt fun p hp =>
+        hon p (by simp only [IvpProof.points, List.mem_append, List.mem_flatMap]
+                  exact Or.inl (Or.inl (Or.inl (Or.inl ⟨pr.wComm[i], by simp, hp⟩))))
   · simpa [IvpProof.read, Vector.toList_map, Vector.toList_toArray] using
       commReads_readPt fun p hp => hon p (by simp [IvpProof.points, hp])
   · simpa [IvpProof.read, Vector.toList_map, Vector.toList_toArray] using
