@@ -1,0 +1,5 @@
+[Elab.Tactic.Do.vcgen] Applying spec SpecProof.global Std.WP.Spec.bind for do
+[Elab.Tactic.Do.vcgen] Applying spec SpecProof.global Snarky.Prover.mulU_spec for mulU x y. Excess args: [s✝]
+[Elab.Tactic.Do.vcgen] 🎯 Target: ⊤ ⊑ (s✝ = ?m.76 ∧ CVar.Scoped ?m.76 x ∧ CVar.Scoped ?m.76 y)
+[Elab.Tactic.Do.vcgen] Applying spec SpecProof.global Snarky.Prover.mulU_spec for mulU y y. Excess args: [s✝]
+[Elab.Tactic.Do.vcgen] 🎯 Target: ⊤ ⊑ (s✝ = ?m.92 ∧ CVar.Scoped ?m.92 y ∧ CVar.Scoped ?m.92 y)

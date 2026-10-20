@@ -1,0 +1,20 @@
+cells frame: CellsAt s✝ [t]
+`@[frameproc]` framed mulQ t t
+cells frame: CellsAt s✝ [t2, t]
+`@[frameproc]` framed mulQ t2PlusFu t2
+cells frame: CellsAt s✝ [alphaInv, t2, t]
+`@[frameproc]` framed divQ (CVar.const 1) alphaInv
+cells frame: CellsAt s✝ [alpha, alphaInv, t2, t]
+`@[frameproc]` framed mulQ t2 t2
+cells frame: CellsAt s✝ [t4, alpha, alphaInv, t2, t]
+`@[frameproc]` framed mulQ t4 alpha
+cells frame: CellsAt s✝ [t4Alpha, t4, alpha, alphaInv, t2, t]
+`@[frameproc]` framed mulQ t4Alpha (CVar.const params.sqrtNeg3U2)
+cells frame: CellsAt s✝ [temp1, t4Alpha, t4, alpha, alphaInv, t2, t]
+`@[frameproc]` framed mulQ alpha t2PlusFu
+cells frame: CellsAt s✝ [t2Inv, temp1, t4Alpha, t4, alpha, alphaInv, t2, t]
+`@[frameproc]` framed mulQ t2PlusFu t2PlusFu
+cells frame: CellsAt s✝ [t2PlusFuSq, t2Inv, temp1, t4Alpha, t4, alpha, alphaInv, t2, t]
+`@[frameproc]` framed mulQ t2PlusFuSq t2Inv
+cells frame: CellsAt s✝ [temp2a, t2PlusFuSq, t2Inv, temp1, t4Alpha, t4, alpha, alphaInv, t2, t]
+`@[frameproc]` framed mulQ temp2a (CVar.const params.inv3U2)
