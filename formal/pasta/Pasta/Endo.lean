@@ -380,8 +380,7 @@ private lemma abs_offset_lt {x : ℤ} (hx : |x| < 2 ^ 126) :
 for the accumulator's offset coefficients, the two-base combination `[a]·T + [b]·φT` is none of
 `±T`, `±φT`. -/
 private theorem combo_off_targets {F : Type*} [Field F] [DecidableEq F]
-    (W : WeierstrassCurve.Affine F)
-    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     {T φT : W.Point} (hTne : T ≠ 0) {lam : ℤ} (heig : φT = lam • T) {a b : ℤ}
     (h1 : ¬ (W.order : ℤ) ∣ (a - 1 + b * lam))
     (h2 : ¬ (W.order : ℤ) ∣ (a + 1 + b * lam))

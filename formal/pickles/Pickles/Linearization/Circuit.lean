@@ -91,16 +91,19 @@ structure CircuitCompatible (V : Valuation F)
 variable [LawfulBasicSystem F c] {V : Valuation F}
   {ce : Env (CircuitM F (Builder V c)) (FVar F)} {pe : Env Id F}
 
+omit [DecidableEq F] [Snarky.BasicSystem F c] [Snarky.LawfulBasicSystem F c] in
 /-- Constants read the same on both sides. -/
 private theorem circ_evalConstant (h : CircuitCompatible V ce pe) (t : ConstantTerm) :
     (evalConstant ce t).val V = evalConstant pe t := by
   cases t <;> simp [evalConstant, h.endoCoefficient, h.mds, h.literal]
 
+omit [DecidableEq F] [Snarky.BasicSystem F c] [Snarky.LawfulBasicSystem F c] in
 /-- Challenges read the same on both sides. -/
 private theorem circ_evalChallenge (h : CircuitCompatible V ce pe) (t : ChallengeTerm) :
     (evalChallenge ce t).val V = evalChallenge pe t := by
   cases t <;> simp [evalChallenge, h.alphaPow, h.beta, h.gamma, h.jointCombiner]
 
+omit [DecidableEq F] [Snarky.BasicSystem F c] [Snarky.LawfulBasicSystem F c] in
 /-- The answer read off a finished state agrees on both sides. -/
 private theorem circ_topOrZero (h : CircuitCompatible V ce pe) (s : EvalState (FVar F)) :
     (topOrZero ce s).val V = topOrZero pe (s.map (·.val V)) := by
@@ -110,6 +113,7 @@ private theorem circ_topOrZero (h : CircuitCompatible V ce pe) (s : EvalState (F
 /-- Reading a state cell by cell under the valuation. -/
 private abbrev rd (s : EvalState (FVar F)) : EvalState F := s.map (·.val V)
 
+omit [DecidableEq F] [Snarky.BasicSystem F c] [Snarky.LawfulBasicSystem F c] in
 /-- Any satisfying valuation reads the circuit run's final state as the pure run's from
 the read of the same start. -/
 private theorem evalLoop_spec (h : CircuitCompatible V ce pe) (feat : FeatureFlag → Bool)
@@ -241,6 +245,7 @@ private theorem evalLoop_spec (h : CircuitCompatible V ce pe) (feat : FeatureFla
             all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
 
 open Std.Do in
+omit [DecidableEq F] [Snarky.BasicSystem F c] [Snarky.LawfulBasicSystem F c] in
 /-- Any satisfying valuation reads the circuit's answer as the pure interpreter's. -/
 @[spec] theorem evaluate_spec (h : CircuitCompatible V ce pe) (feat : FeatureFlag → Bool)
     (hdc : ∀ f (t n : Unit → CircuitM F (Builder V c) (FVar F)),
@@ -275,8 +280,9 @@ def lookupZero [Zero F] : Kimchi.Protocol.Linearization.LookupEvals (FVar F) whe
   runtimeSelector _ := .const 0
   kindIndex _ := .const 0
 
+omit [DecidableEq F] in
 /-- `lookupZero` reads as `LookupEvals.zero` under any valuation. -/
-@[simp] theorem lookupZero_map [Field F] {V : Valuation F} :
+@[simp] theorem lookupZero_map {V : Valuation F} :
     (lookupZero (F := F)).map (·.val V)
       = Kimchi.Protocol.Linearization.LookupEvals.zero := by
   simp [lookupZero, Kimchi.Protocol.Linearization.LookupEvals.map,
@@ -346,7 +352,7 @@ open Kimchi.Protocol.Linearization in
 /-- `Inputs.toEnv` is compatible with the pure environment built from the readings of its
 own variables: the evaluations, challenges and α-table read under `V`, and the Lagrange
 basis `ulbP` that the gadget `ulb` computes (`hulb`). -/
-theorem inputs_circuitCompatible [LawfulBasicSystem F c] {V : Valuation F} (endo : F)
+theorem inputs_circuitCompatible {V : Valuation F} (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F)
     (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))
     (feat : FeatureFlag → Bool) (ulb : Bool → Int → CircuitM F (Builder V c) (FVar F))
@@ -384,6 +390,7 @@ theorem inputs_circuitCompatible [LawfulBasicSystem F c] {V : Valuation F} (endo
   beta := rfl
   gamma := rfl
 
+omit [Snarky.LawfulBasicSystem F c] in
 /-- Two `Inputs.toEnv` environments differing only in the Lagrange-basis gadget read
 position `i` alike when the position does not read the Lagrange basis. -/
 theorem Inputs.toEnv_agreeAt (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)

@@ -455,6 +455,7 @@ private theorem corrSum_eq {V : Valuation F} {ci : Fin nc} :
       rw [hhead]
 
 omit [ToNat F] in
+omit [DecidableEq F] in
 /-- `chunkwise f` reads at chunk `ci` as `f ci` alone does; the other chunks say nothing. -/
 private theorem chunkwise_at {V : Valuation F} {β : Type}
     (f : Fin nc → CircuitM F (Builder V (KimchiConstraint F)) β) (ci : Fin nc) (Q : β → Prop)

@@ -1189,7 +1189,7 @@ open WeierstrassCurve.Affine Bulletproof Bulletproof.Ipa
 
 /-- Transporting a point along an equality of curves leaves its coordinates alone. What
 `KimchiCurve.toGroup`'s `▸` amounts to at the coordinate level. -/
-private theorem swpoint_cast {F : Type} [Field F] [DecidableEq F] {E₁ E₂ : SWCurve F}
+private theorem swpoint_cast {F : Type} [Field F] {E₁ E₂ : SWCurve F}
     (h : E₁ = E₂) (P : SWPoint E₁) : (h ▸ P).x = P.x ∧ (h ▸ P).y = P.y := by
   subst h; exact ⟨rfl, rfl⟩
 
@@ -1286,7 +1286,7 @@ variable {G : Type} [AddCommGroup G]
 
 omit [Field F] [DecidableEq F] [ToNat F] in
 /-- In a group killed by `n`, the representative of a product acts as the composite. -/
-private theorem val_mul_nsmul (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0) (a b : ZMod n) (X : G) :
+private theorem val_mul_nsmul (n : ℕ) (hn : ∀ x : G, n • x = 0) (a b : ZMod n) (X : G) :
     (a * b).val • X = a.val • b.val • X := by
   rw [ZMod.val_mul, ← mul_nsmul']
   conv_rhs => rw [← Nat.mod_add_div (a.val * b.val) n, add_nsmul, mul_nsmul', hn, _root_.add_zero]

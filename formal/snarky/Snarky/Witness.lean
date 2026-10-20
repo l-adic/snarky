@@ -479,7 +479,7 @@ variable {val var : Type}
 value, the fresh bundle is in scope and reads what the computation returned, at a state
 extending the entry. The value is existential in the postcondition, so that the computation's
 run is a fact a later condition can match. -/
-theorem Prover.witness_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+theorem Prover.witness_spec [Field F] [BasicSystem F c] [ConstraintHolds F c]
     [inst : CircuitType F val var] [CheckedType F (Prover c) val var]
     [WPCheckedType F (Prover c) val var] (compute : AsProver F val) (st₀ : ProverState F) :
     ⦃fun st => ⌜st = st₀ ∧ (∀ e, compute.run st₀.env ≠ .error e) ∧
@@ -541,7 +541,7 @@ theorem Prover.witness_spec [Field F] [DecidableEq F] [BasicSystem F c] [Constra
 /-- The witness law at one advice: where the advice's run at the entry table is known to
 return `value` of the entry, admissible, the fresh bundle reads that value. What a gadget
 registers, once per advice, with `value` a named function of the entry readings. -/
-theorem Prover.witness_of_run [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+theorem Prover.witness_of_run [Field F] [BasicSystem F c] [ConstraintHolds F c]
     [CircuitType F val var] [CheckedType F (Prover c) val var]
     [WPCheckedType F (Prover c) val var] (compute : AsProver F val)
     (pre : ProverState F → Prop) (value : ProverState F → val)

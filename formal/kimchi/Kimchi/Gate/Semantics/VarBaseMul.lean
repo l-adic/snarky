@@ -1001,8 +1001,7 @@ omit [DecidableEq F] in
 /-- **x-coordinate bridge.** On a short-Weierstrass curve, a point that is neither `T`
     nor `−T` has a different `x`-coordinate. -/
 lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)] {x y xT yT : F}
+    {x y xT yT : F}
     (h : c.Nonsingular x y) (hT : c.Nonsingular xT yT)
     (hne : Point.some _ _ h ≠ Point.some _ _ hT) (hneg : Point.some _ _ h ≠ -Point.some _ _ hT) :
     x ≠ xT := by
@@ -1130,7 +1129,7 @@ roots conclude correctness — `varBaseMul_subwrap_correct` below the order,
 one-wrap regime the only even multiple of the order in range is `2·order`. What the parity
 fold's finite subtraction asks. -/
 theorem ladder_off_base (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    [Fact (Nat.Prime c.order)]
     {T : c.Point} (hT : T ≠ 0) (L : ℕ) (z : ℤ) (h0 : 0 ≤ z) (hlt : z < 2 ^ L)
     (hregime : 3 * 2 ^ L ≤ c.order ∨
       (0 < L ∧ 2 ^ (L - 1) < c.order ∧ c.order < 2 ^ L ∧ 2 * z + 2 ^ L + 1 < 4 * c.order - 4 ∧
@@ -1726,6 +1725,7 @@ theorem bitsVal_eq_natLsbVal :
       push_cast
       ring
 
+omit [Field F] [DecidableEq F] in
 theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
     runBits g (m + 1) = runBits g m
       ++ [(g m).b0, (g m).b1, (g m).b2, (g m).b3, (g m).b4] := by
@@ -1733,6 +1733,7 @@ theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
   rw [List.range_succ, List.flatMap_append]
   simp
 
+omit [Field F] [DecidableEq F] in
 theorem runBits_length (g : ℕ → Witness F) (m : ℕ) : (runBits g m).length = 5 * m := by
   induction m with
   | zero => rfl
@@ -1784,6 +1785,7 @@ def accN (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).n
   | i + 1 => (g i).nPrime
 
+omit [DecidableEq F] in
 /-- **The register chain.** Threading the register through `m` held gates reads the
 final register as the seed shifted up `5m` bits plus the base-2 fold of the run's
 bits — the gadget's scalar pin, at the zero seed. -/
@@ -1833,6 +1835,7 @@ theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
     rw [hcast]
     exact ih (fun x hx => hb x (List.mem_cons_of_mem _ hx)) _
 
+omit [DecidableEq F] in
 /-- Every bit of a held run is boolean: each bit block's first constraint is
 `b·b − b = 0`. -/
 theorem runBits_bool (m : ℕ) (g : ℕ → Witness F)
@@ -1924,7 +1927,7 @@ end RunBits
 
 /-- A list of rows, padded by `dflt`, as an indexed run: every row holds, every row and `dflt`
     read the base, and adjacent rows link accumulator and register. -/
-theorem isChain_getD {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
+theorem isChain_getD {F : Type*} [Field F] (c : WeierstrassCurve.Affine F)
     (T : c.Point) (l : List (Witness F)) (dflt : Witness F)
     (hholds : ∀ w ∈ l, Holds w)
     (hbase : ∀ w ∈ dflt :: l, Kimchi.Gate.AddComplete.IsPoint c w.xT w.yT T)
@@ -1952,7 +1955,7 @@ theorem isChain_getD {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve
     exact (hthread.getElem i hi).2
 
 /-- The bit stream of a run given as a list: its rows' five bits, concatenated. -/
-theorem runBits_getD {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F))
+theorem runBits_getD {F : Type*} (l : List (Witness F))
     (dflt : Witness F) :
     runBits (fun i => l.getD i dflt) l.length
       = l.flatMap fun w => [w.b0, w.b1, w.b2, w.b3, w.b4] := by
@@ -1963,7 +1966,7 @@ theorem runBits_getD {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F)
   rw [List.getD_eq_getElem _ _ (by simpa using h2)]
 
 /-- A run given as a list closes at its last row's outputs. -/
-theorem acc_getD_length {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F))
+theorem acc_getD_length {F : Type*} (l : List (Witness F))
     (hne : l ≠ []) (dflt : Witness F) :
     accX (fun i => l.getD i dflt) l.length = (l.getLast hne).x5
       ∧ accY (fun i => l.getD i dflt) l.length = (l.getLast hne).y5

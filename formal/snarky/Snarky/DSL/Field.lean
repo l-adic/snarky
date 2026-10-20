@@ -98,7 +98,7 @@ where
 
 open Std.Do in
 /-- `square x` reads as the square. -/
-@[spec] theorem square_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem square_spec {V : Valuation F} [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :
     ⦃⌜True⌝⦄
     square (c := Builder V c) x
@@ -365,7 +365,7 @@ function of the entry readings. -/
     fun _ _ => by simp)
 
 /-- `mul.advice` returns the product. -/
-@[spec] private def Prover.mul_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.mul_advice_reg [Field F] [BasicSystem F c]
     [ConstraintHolds F c] (x y : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (mul.advice x y)
     (fun st => x.Scoped st ∧ y.Scoped st) (fun st => st.read x * st.read y)
@@ -487,14 +487,14 @@ theorem Prover.mul_spec [Field F] [DecidableEq F] [BasicSystem F c]
   Prover.register (Prover.mul_spec (c := c) x y)
 
 /-- `square.advice` returns the square. -/
-@[spec] private def Prover.square_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.square_advice_reg [Field F] [BasicSystem F c]
     [ConstraintHolds F c] (x : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (square.advice x) (fun st => x.Scoped st)
     (fun st => st.read x * st.read x)
     (fun _ h => by simp [square.advice, AsProver.readCVar_run h]) fun _ _ => by simp)
 
 /-- `square`'s completeness: the result reads the square of the operand's entry reading. -/
-theorem Prover.square_spec [Field F] [DecidableEq F] [BasicSystem F c]
+theorem Prover.square_spec [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
     ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀⌝⦄
     square (c := Prover c) x
@@ -526,7 +526,7 @@ theorem Prover.square_spec [Field F] [DecidableEq F] [BasicSystem F c]
     exact ⟨h.1.1, h.1.2, h.2⟩
 
 /-- Registered. -/
-@[spec] private def Prover.square_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.square_reg [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :=
   Prover.register (Prover.square_spec (c := c) x)
 

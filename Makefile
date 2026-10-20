@@ -152,7 +152,7 @@ lean-lint: ## Run Batteries' env linters over every Lean library root
 	  lake exe runLinter $$m || exit 1; \
 	done
 
-lean-shake: ## Check Lean imports for redundancy (mathlib shake; config formal/scripts/noshake.json)
+lean-shake: ## Check Lean imports for redundancy (Batteries' shake, vendored; config formal/scripts/noshake.json)
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake exe shake \
 	  --cfg "$$PWD/scripts/noshake.json" \
 	  Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \

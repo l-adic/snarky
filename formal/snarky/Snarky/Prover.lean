@@ -316,7 +316,7 @@ def CircuitType.WellFormed [Add F] [Mul F] [CircuitType F val var]
 
 /-- The operand contract, split: a bundle reads as `a` iff it is well formed and
 decodes to `a`. -/
-theorem CircuitType.reads_iff [Add F] [Mul F] [Zero F] [inst : CircuitType F val var]
+theorem CircuitType.reads_iff [Add F] [Mul F] [inst : CircuitType F val var]
     {V : Valuation F} {v : var} {a : val} :
     CircuitType.Reads V v a ↔
       CircuitType.WellFormed (val := val) V v ∧ CircuitType.readVal V v = a := by
@@ -344,12 +344,12 @@ theorem CircuitType.monotone_readsAs [Add F] [Mul F] [Zero F] [CircuitType F val
   show (∀ cv ∈ [x], cv.Scoped st) ↔ x.Scoped st
   simp
 
-@[simp] theorem CircuitType.readVal_fvar [Add F] [Mul F] [Zero F] (V : Valuation F)
+@[simp] theorem CircuitType.readVal_fvar [Add F] [Mul F] (V : Valuation F)
     (x : FVar F) : CircuitType.readVal (val := F) V x = x.val V := rfl
 
 
 /-- A field bundle reads as its expression's reading. -/
-@[simp] theorem CircuitType.reads_fvar [Add F] [Mul F] [Zero F] {V : Valuation F}
+@[simp] theorem CircuitType.reads_fvar [Add F] [Mul F] {V : Valuation F}
     {x : FVar F} {a : F} : CircuitType.Reads V x a ↔ x.val V = a := by
   constructor
   · intro h
@@ -360,7 +360,7 @@ theorem CircuitType.monotone_readsAs [Add F] [Mul F] [Zero F] [CircuitType F val
     rw [h]
 
 /-- A boolean bundle is in scope when its variable is. -/
-@[simp] theorem CircuitType.scoped_boolVar [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+@[simp] theorem CircuitType.scoped_boolVar [Zero F] [One F] [DecidableEq F]
     [NeZero (1 : F)] {st : ProverState F} {b : BoolVar F} :
     CircuitType.Scoped (val := Bool) st b ↔ (↑b : CVar F).Scoped st := by
   show (∀ cv ∈ [(↑b : CVar F)], cv.Scoped st) ↔ _
@@ -385,7 +385,7 @@ theorem CircuitType.monotone_readsAs [Add F] [Mul F] [Zero F] [CircuitType F val
       CircuitType.Scoped (val := val) st v := Iff.rfl
 
 /-- `UnChecked` is invisible to the reading. -/
-@[simp] theorem CircuitType.reads_unchecked [Add F] [Mul F] [Zero F] [CircuitType F val var]
+@[simp] theorem CircuitType.reads_unchecked [Add F] [Mul F] [CircuitType F val var]
     {V : Valuation F} {v : var} {x : val} :
     CircuitType.Reads V (UnChecked.mk v) (UnChecked.mk x) ↔ CircuitType.Reads V v x := Iff.rfl
 
@@ -397,7 +397,7 @@ theorem CircuitType.scoped_unchecked' [CircuitType F val var] {st : ProverState 
   Iff.rfl
 
 /-- An unchecked bundle reads as its payload, in projection form. -/
-theorem CircuitType.reads_unchecked' [Add F] [Mul F] [Zero F] [CircuitType F val var]
+theorem CircuitType.reads_unchecked' [Add F] [Mul F] [CircuitType F val var]
     {V : Valuation F} {u : UnChecked var} {x : UnChecked val} :
     CircuitType.Reads V u x ↔ CircuitType.Reads V u.val x.val := Iff.rfl
 
@@ -416,7 +416,7 @@ theorem CircuitType.reads_unit [Add F] [Mul F] {V : Valuation F} :
       CircuitType.Scoped (val := a) st v ∧ CircuitType.Scoped (val := b) st w := by
   simp [CircuitType.Scoped, or_imp, forall_and]
 
-@[simp] theorem CircuitType.reads_prod [Add F] [Mul F] [Zero F] [CircuitType F a va]
+@[simp] theorem CircuitType.reads_prod [Add F] [Mul F] [CircuitType F a va]
     [CircuitType F b vb] {V : Valuation F} {v : va} {w : vb} {x : a} {y : b} :
     CircuitType.Reads V (v, w) (x, y) ↔ CircuitType.Reads V v x ∧ CircuitType.Reads V w y := by
   simp [CircuitType.Reads, mapVec_append, append_inj_iff]
@@ -431,14 +431,14 @@ theorem CircuitType.scoped_prod' [CircuitType F a va] [CircuitType F b vb]
   exact CircuitType.scoped_prod
 
 /-- A pair bundle reads componentwise, in projection form. -/
-theorem CircuitType.reads_prod' [Add F] [Mul F] [Zero F] [CircuitType F a va]
+theorem CircuitType.reads_prod' [Add F] [Mul F] [CircuitType F a va]
     [CircuitType F b vb] {V : Valuation F} {p : va × vb} {q : a × b} :
     CircuitType.Reads V p q ↔ CircuitType.Reads V p.1 q.1 ∧ CircuitType.Reads V p.2 q.2 := by
   obtain ⟨v, w⟩ := p
   obtain ⟨x, y⟩ := q
   exact CircuitType.reads_prod
 
-@[simp] theorem CircuitType.readVal_prod [Add F] [Mul F] [Zero F] [CircuitType F a va]
+@[simp] theorem CircuitType.readVal_prod [Add F] [Mul F] [CircuitType F a va]
     [CircuitType F b vb] {V : Valuation F} {v : va} {w : vb} :
     CircuitType.readVal (val := a × b) V (v, w)
       = (CircuitType.readVal (val := a) V v, CircuitType.readVal (val := b) V w) := by
@@ -462,7 +462,7 @@ theorem CircuitType.scoped_vector [CircuitType F a va] {n : Nat} {st : ProverSta
     obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp hv
     exact h i hi cv (Vector.mem_toList_iff.mpr hcv)
 
-theorem CircuitType.reads_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {n : Nat}
+theorem CircuitType.reads_vector [Add F] [Mul F] [CircuitType F a va] {n : Nat}
     {V : Valuation F} {vs : Vector va n} {xs : Vector a n} :
     CircuitType.Reads V vs xs ↔
       ∀ (i : Nat) (hi : i < n), CircuitType.Reads V vs[i] xs[i] := by
@@ -472,14 +472,14 @@ theorem CircuitType.reads_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {
   simp only [Vector.ext_iff, Vector.getElem_map]
 
 /-- A vector of bundles reads as a vector of values iff their lists read entrywise. -/
-theorem CircuitType.reads_vector_iff_forall₂ [Add F] [Mul F] [Zero F] [CircuitType F a va]
+theorem CircuitType.reads_vector_iff_forall₂ [Add F] [Mul F] [CircuitType F a va]
     {n : Nat} {V : Valuation F} {vs : Vector va n} {xs : Vector a n} :
     CircuitType.Reads V vs xs ↔ List.Forall₂ (CircuitType.Reads V) vs.toList xs.toList := by
   rw [reads_vector, List.forall₂_iff_get]
   simp
 
 /-- A vector of bundles reads as some vector of values when each entry reads as some value. -/
-theorem CircuitType.exists_reads_vector [Add F] [Mul F] [Zero F] [CircuitType F a va] {n : Nat}
+theorem CircuitType.exists_reads_vector [Add F] [Mul F] [CircuitType F a va] {n : Nat}
     {V : Valuation F} {vs : Vector va n}
     (h : ∀ (i : Nat) (hi : i < n), ∃ x : a, CircuitType.Reads V vs[i] x) :
     ∃ xs : Vector a n, CircuitType.Reads V vs xs :=
@@ -491,7 +491,7 @@ theorem CircuitType.scoped_ofEquiv [inst : CircuitType F a va] (ev : b ≃ a) (e
     @CircuitType.Scoped F b vb (CircuitType.ofEquiv ev ew) st v ↔
       CircuitType.Scoped (val := a) st (ew v) := Iff.rfl
 
-theorem CircuitType.reads_ofEquiv [Add F] [Mul F] [Zero F] [inst : CircuitType F a va]
+theorem CircuitType.reads_ofEquiv [Add F] [Mul F] [inst : CircuitType F a va]
     (ev : b ≃ a) (ew : vb ≃ va) {V : Valuation F} {v : vb} {x : b} :
     @CircuitType.Reads F b vb _ _ (CircuitType.ofEquiv ev ew) V v x ↔
       CircuitType.Reads V (ew v) (ev x) := Iff.rfl

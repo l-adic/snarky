@@ -155,7 +155,7 @@ challenge `α` outside `badAlphas C ω n`, then `zH` divides each individual con
 polynomial. Argue pointwise on the domain: at each node
 `ω^i` the aggregate's value is the α-combination of the row vector `k ↦ (C k)(ω^i)`, and a
 good `α` annihilating the combination annihilates every entry. -/
-theorem dvd_separation {K n : ℕ} [NeZero n] {ω : F}
+theorem dvd_separation {K n : ℕ} {ω : F}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (C : Fin K → Polynomial F) (α : F) (hα : α ∉ badAlphas C ω n)
     (hdvd : zH F n ∣ aggregate α C) : ∀ k, zH F n ∣ C k := by

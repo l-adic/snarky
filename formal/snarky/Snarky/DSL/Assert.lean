@@ -150,7 +150,7 @@ def assertSquare [BasicSystem F c] (x y : FVar F) : CircuitM F c PUnit :=
 
 open Std.Do in
 /-- `assertSquare x y` forces `y` to read as the square of `x`. -/
-@[spec] theorem assertSquare_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem assertSquare_spec {V : Valuation F} [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
     ⦃⌜True⌝⦄
     assertSquare (c := Builder V c) x y
@@ -165,7 +165,7 @@ attribute [irreducible] assertSquare
 open Std.Do in
 /-- `assertSquare`'s state-relative completeness: where the operands are in scope and the
 second reads the square of the first, the run succeeds and the state only grows. -/
-theorem Prover.assertSquare_spec [Field F] [DecidableEq F] [BasicSystem F c]
+theorem Prover.assertSquare_spec [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
     ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀ ∧ st₀.read x * st₀.read x = st₀.read y⌝⦄
     assertSquare (c := Prover c) x y
@@ -176,7 +176,7 @@ theorem Prover.assertSquare_spec [Field F] [DecidableEq F] [BasicSystem F c]
   all_goals grind [LawfulBasicSystem.holds_square]
 
 /-- Registered. -/
-@[spec] private def Prover.assertSquare_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.assertSquare_reg [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :=
   Prover.register (Prover.assertSquare_spec (c := c) x y)
 

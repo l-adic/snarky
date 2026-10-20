@@ -32,7 +32,7 @@ open Bulletproof CompElliptic.Fields.Pasta Kimchi.Fixture Kimchi.Fixture.PS
 open scoped Kimchi
 
 /-- Domain data a key could not have supplied, each one change from the given data. -/
-private def domainCorruptions {F : Type} [Zero F] [One F] (d : IndexData F) :
+private def domainCorruptions {F : Type} [One F] (d : IndexData F) :
     List (String × IndexData F) :=
   [ ("a domain of eight rows", { d with n := 8 }),
     ("two masked rows", { d with zkRows := 2 }),
@@ -91,7 +91,7 @@ private def tableOn {p : ℕ} (n : ℕ) (rows : Array (Vector (ZMod p) 15)) :
   fun i j => ((rows[i.val]?).map (·[j])).getD 0
 
 /-- A cached execution's public values as the typed statement they encode. -/
-private def statementOf {p : ℕ} [Fact p.Prime] (val var : Type) [CircuitType (ZMod p) val var]
+private def statementOf {p : ℕ} (val var : Type) [CircuitType (ZMod p) val var]
     (name : String) (pub : List (ZMod p)) : IO val := do
   if h : pub.length = CircuitType.size (ZMod p) val then
     return CircuitType.fieldsToValue (F := ZMod p) ⟨⟨pub⟩, h⟩

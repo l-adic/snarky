@@ -150,7 +150,7 @@ def fpSide : Side PALLAS_BASE_CARD :=
 def fqSide : Side PALLAS_SCALAR_CARD :=
   ⟨5, Pasta.vestaEndo, Kimchi.Verifier.mdsOfParams Bulletproof.IpaPallas.curve.frSponge.params⟩
 
-/-- Fast modular exponentiation (`Monoid.npow` on `ZMod` is linear in the exponent —
+/-- Fast modular exponentiation (`NPow.npow` on `ZMod` is linear in the exponent —
 unusable at 255-bit exponents). -/
 private def powMod (b : ℕ) : ℕ → ℕ → ℕ
   | 0, _ => 1

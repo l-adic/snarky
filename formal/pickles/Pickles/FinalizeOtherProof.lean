@@ -384,6 +384,7 @@ private theorem forall₂_zip {V : Valuation F} :
     .cons (CircuitType.reads_prod.mpr ⟨ha, hb⟩) (forall₂_zip hrest hrest')
 
 omit [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
+omit [DecidableEq F] in
 /-- Four values reading as indicators are bits. -/
 private theorem four_bits {α : Type} (v : α → F) (b₁ b₂ b₃ b₄ : α) (p₁ p₂ p₃ p₄ : Prop)
     [Decidable p₁] [Decidable p₂] [Decidable p₃] [Decidable p₄]
@@ -401,6 +402,7 @@ section FinalizedBit
 variable {V : Valuation F}
 
 open Std.Do in
+omit [Snarky.ToNat F] in
 /-- `all` of four bits reads as a bit: it is one equality test on their sum. -/
 private theorem all4_bit (a b d e : BoolVar F) :
     ⦃⌜True⌝⦄ Snarky.all (c := Builder V (KimchiConstraint F)) [a, b, d, e]
@@ -676,6 +678,7 @@ structure FopShiftOps.Reading {V : Valuation F} {sf : Type}
     ⦃⇓ r _ => ⌜(↑r : CVar F).val V = if unshiftV (read a) = b.val V then 1 else 0⌝⦄
 
 open Classical in
+omit [Snarky.ToNat F] in
 /-- `plonkScalarsEqual` reads `1` exactly when each claim's decode is the scalar beside it. -/
 theorem plonkScalarsEqual_spec {V : Valuation F} (hinj : CastInj128 F) {sf : Type}
     (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) (R : ops.Reading)

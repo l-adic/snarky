@@ -49,7 +49,7 @@ def varsAgreeUpToRenaming {F : Type} (rows : List (KimchiRow F))
 
 /-- Compare assembled gate data against a dump: types, coefficients, wires, public size and
 the variable ids up to renaming. -/
-private def compareData {p : ℕ} [Fact p.Prime]
+private def compareData {p : ℕ}
     (data : List (KimchiRow (ZMod p)) × List (AssembledGate (ZMod p)) × List Variable)
     (raw : Raw (ZMod p)) : List (String × Bool) :=
   let (rows, gates, pubVars) := data

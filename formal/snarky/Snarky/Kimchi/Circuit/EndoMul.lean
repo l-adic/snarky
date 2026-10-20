@@ -1483,5 +1483,4 @@ theorem Prover.endoInv_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     OnCurveAt, scoped_affinePoint, reads_affinePoint, CVar.Scoped.of_le, ProverState.read_of_le,
     OnCurveAt.of_reads]
 
-
 end Snarky.Kimchi

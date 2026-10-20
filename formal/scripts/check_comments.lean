@@ -226,7 +226,7 @@ run_cmd do
   let allowSrc ← IO.FS.readFile "scripts/comment-allow.txt"
   let mut allow : Std.HashSet String := {}
   for l in allowSrc.splitOn "\n" do
-    let t := l.trim
+    let t := l.trimAscii.toString
     unless t.isEmpty || t.startsWith "--" do allow := allow.insert t
   let mut stale : Array String := #[]
   let mut provenance : Array String := #[]
@@ -284,7 +284,7 @@ run_cmd do
     let bolds := ((doc.splitOn "**").length - 1) / 2
     if bolds > 1 then
       emph := emph.push s!"{modOf n}\t{userName n}: {bolds} bolded runs"
-    else if bolds == 1 && !doc.trimLeft.startsWith "**" then
+    else if bolds == 1 && !doc.trimAsciiStart.toString.startsWith "**" then
       emph := emph.push s!"{modOf n}\t{userName n}: a bolded run that does not open the docstring"
   -- module and section docstrings: read from the sources, since they attach to no declaration
   let pkgs := ["pasta", "poseidon", "bulletproof-pcs", "kimchi", "snarky", "pickles"]
@@ -306,7 +306,7 @@ run_cmd do
       let mut firstBlock := true
       while i < lines.length do
         let l := lines[i]!
-        if l.trim.startsWith "/-!" then
+        if l.trimAscii.toString.startsWith "/-!" then
           let isModuleDoc := firstBlock
           firstBlock := false
           let mut blk := #[l]
@@ -359,7 +359,7 @@ run_cmd do
   let baseSrc ← IO.FS.readFile "scripts/comment-baseline.txt"
   let mut base : Std.HashMap String Nat := {}
   for l in baseSrc.splitOn "\n" do
-    let t := l.trim
+    let t := l.trimAscii.toString
     unless t.isEmpty || t.startsWith "--" do
       match t.splitOn " " with
       | [k, v] => base := base.insert k v.toNat!

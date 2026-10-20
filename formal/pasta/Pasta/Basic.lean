@@ -47,7 +47,7 @@ open WeierstrassCurve.Affine
 
 /-- The coordinates of any Mathlib point of `toW a b` are `Valid` (on the curve, or the `𝒪`
 sentinel). -/
-theorem valid_ofPt {F : Type*} [Field F] {a b : F} [(toW a b).IsElliptic]
+theorem valid_ofPt {F : Type*} [Field F] {a b : F}
     (Q : Point (toW a b)) : Valid a b (ofPt Q) := by
   cases Q with
   | zero => exact Or.inr rfl
@@ -174,7 +174,6 @@ must know its accumulator has not collapsed onto the base or onto zero. -/
 /-- **Core non-degeneracy.** With prime `order`, a nonzero point times a scalar strictly
 between `0` and `order` is nonzero. -/
 lemma smul_ne_zero_of_lt {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0)
     {k : ℤ} (h0 : 0 < k) (hlt : k < (c.order : ℤ)) : k • T ≠ 0 := by
   intro h_contra
@@ -200,7 +199,6 @@ lemma smul_ne_zero_of_lt {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassC
 `addOrderOf T` divides the prime `order` and is not `1`, so it is `order`. -/
 lemma zsmul_eq_zero_iff_order_dvd {F : Type*} [Field F] [DecidableEq F]
     (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0) (m : ℤ) :
     m • T = 0 ↔ (c.order : ℤ) ∣ m := by
   have hdvd : (addOrderOf T : ℤ) ∣ (c.order : ℤ) :=

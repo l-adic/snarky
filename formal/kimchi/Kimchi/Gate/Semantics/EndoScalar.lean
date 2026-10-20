@@ -423,6 +423,7 @@ theorem isChain_getD (l : List (Witness F)) (hne : l ≠ [])
   · rw [hget (i + 1) (by omega), hget i (by omega)]
     exact hlink.getElem i (by omega)
 
+omit [Field F] in
 /-- The crumb stream of a run given as a list: its rows' crumbs, concatenated. -/
 theorem chainCrumbs_getD (l : List (Witness F)) (d : Witness F) :
     chainCrumbs (fun i => l.getD i d) l.length = l.flatMap (·.crumbs) := by
@@ -433,6 +434,7 @@ theorem chainCrumbs_getD (l : List (Witness F)) (d : Witness F) :
   simp only [List.getElem_map, List.getElem_range]
   rw [List.getD_eq_getElem _ _ (by simpa using h2)]
 
+omit [Field F] in
 /-- The closing row of a run given as a list. -/
 theorem getD_length_sub_one (l : List (Witness F)) (hne : l ≠ []) (d : Witness F) :
     l.getD (l.length - 1) d = l.getLast hne := by

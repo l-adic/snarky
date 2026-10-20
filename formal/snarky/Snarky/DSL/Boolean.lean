@@ -715,7 +715,7 @@ theorem Prover.xor_spec [Field F] [DecidableEq F] [BasicSystem F c]
 assertions over bit sums. -/
 
 /-- Bit operands' sum is in scope where they are. -/
-theorem scoped_sum_of_bits [Field F] [DecidableEq F] {st : ProverState F}
+theorem scoped_sum_of_bits [Field F] {st : ProverState F}
     {xs : List (BoolVar F)} (h : ∀ x ∈ xs, (↑x : CVar F).Scoped st) :
     (sum (xs.map BoolVar.toCVar)).Scoped st :=
   CVar.Scoped.sum fun _ hx => by

@@ -194,12 +194,11 @@ jobs:
           lake exe runLinter "$m" || exit 1
         done
 
-    # No redundant or removable imports (mathlib's shake). The policy exceptions live in
+    # No redundant or removable imports (Batteries' shake, vendored at scripts/shake.lean:
+    # Lake's own `lake shake` checks only `module`s). The policy exceptions live in
     # scripts/noshake.json: wholesale `import Mathlib` in the proof-heavy trees, and the
     # notation-only Kimchi.Columns (notations contribute no constants, so shake cannot
     # see their use).
-    # The --cfg path must be absolute: `lake exe` runs the tool from its owning
-    # package's directory (mathlib's), so the relative default resolves wrongly.
     - name: Check import hygiene (shake)
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

@@ -133,3 +133,11 @@ root = "scripts.check_terminal"
 [[lean_exe]]
 name = "regenerate-lagrange-cache"
 root = "scripts.regenerate_lagrange_cache"
+
+# Batteries' import checker (scripts/shake.lean, vendored): `lake exe shake` in CI and
+# `make lean-shake`. Batteries dropped the executable when shake moved into Lake, and
+# `lake shake` checks only files in the module system, which this tree does not use.
+[[lean_exe]]
+name = "shake"
+root = "scripts.shake"
+supportInterpreter = true
