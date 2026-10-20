@@ -15,8 +15,6 @@ weakest-precondition reading (`Snarky.Prover.WP`), on the checked type's own law
 
 namespace Snarky
 
-open Std.Do
-
 set_option mvcgen.warning false
 
 /-- Variable bundles whose well-formedness is enforced by constraints: `check` is
@@ -58,6 +56,7 @@ class WPCheckedType (F c val var : Type) [Field F] [BasicSystem F c] [Constraint
     (proverWP.{0} (CheckedType.check (c := c) (val := val) v)
       (fun _ s' => ULift.up.{0} (st ≤ s')) (fun _ _ => ULift.up.{0} False) st).down
 
+open Std.Do in
 /-- The check's law at the completeness tag, registered: the step `mvcgen` takes inside
 `witness`, after the allocation. The value is a ghost beside the entry state, so an instance's
 law is applied at whatever the bundle reads. -/
@@ -421,14 +420,15 @@ def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver 
   else
     AsProver.throw "readVar: size mismatch"
 
-open Std.Do in
+open Std.WP in
 /-- A witnessed bundle satisfies its type's `CheckedType.post` wherever the rows hold. -/
 @[spec] theorem witness_spec {V : Valuation F} [Field F]
     [BasicSystem F c] [ConstraintHolds F c] [CircuitType F val var]
     [S : CheckedType F (Builder V c) val var] (compute : AsProver F val) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     (witness (val := val) compute : CircuitM F (Builder V c) var)
-    ⦃⇓ r _ => ⌜S.post V r⌝⦄ := by
+    ⦃fun r _ => S.post V r⦄ := by
+  constructor
   intro nv _ hsat
   simp only [witness, build, build_bind, build_pure, List.append_nil] at hsat ⊢
   exact S.check_sound V _ _ hsat
@@ -472,6 +472,8 @@ the checked type's registered `Prover.check_spec`, so every bundle whose type ha
 witnessed. -/
 
 section ProverReading
+
+open Std.Do
 
 variable {val var : Type}
 

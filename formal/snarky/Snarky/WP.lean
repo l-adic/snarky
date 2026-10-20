@@ -1,4 +1,5 @@
 import Std.Tactic.Do
+import Std.WP
 import Mathlib.Data.List.Forall2
 import Snarky.Builder
 import Snarky.BasicSystem
@@ -6,15 +7,15 @@ import Snarky.BasicSystem
 /-!
 # The weakest-precondition interpretation of `build`
 
-The soundness reading of a circuit as a `Std.Do.WP` instance: each emitted constraint is an
+The soundness reading of a circuit as a `Std.WP` interpretation: each emitted constraint is an
 assumption on an ambient valuation `V`, and the allocation counter is the only state. The tag
-`Builder V c` selects this reading. The `Std.Do.WPMonad` instance lets the framework's triples
-and `mvcgen` apply to `CircuitM`; the `builder_spec_*` lemmas are combinators it lacks.
+`Builder V c` selects this reading. The `Std.WP.WPMonad` instance lets the framework's triples
+and `vcgen` apply to `CircuitM`; the `builder_spec_*` lemmas are combinators it lacks.
 -/
 
 namespace Snarky
 
-open Std.Do
+open Std.WP
 
 variable {F c : Type}
 
@@ -39,57 +40,39 @@ instance [inst : ConstraintHolds F c] : ConstraintHolds F (Builder V c) := inst
 
 /-- The soundness reading of `build` at `V`: emitted constraints become assumptions on
 the valuation; the state is the allocation counter. -/
-instance Builder.instWP {V : Valuation F} [ConstraintHolds F c] :
-    WP (CircuitM F (Builder V c)) (.arg Nat .pure) where
-  wp x := {
-    trans := fun Q nv =>
-      .up ((∀ con ∈ (build x nv).constraints, ConstraintHolds.Holds V con) →
-        (Q.1 (build x nv).result (build x nv).nextVar).down)
-    conjunctiveRaw := by
-      intro Q₁ Q₂
-      apply SPred.bientails.of_eq
-      ext s
-      simp [SPred.and, imp_and]
-  }
+instance Builder.instWP {V : Valuation F} [ConstraintHolds F c] {α : Type} :
+    WP (CircuitM F (Builder V c) α) α (Nat → Prop) EStack⟨⟩ where
+  wpTrans x := ⟨fun post _ nv =>
+    (∀ con ∈ (build x nv).constraints, ConstraintHolds.Holds V con) →
+      post (build x nv).result (build x nv).nextVar⟩
+  wp_trans_monotone _ := fun _ _ _ _ _ hpost _ h hsat => hpost _ _ (h hsat)
 
-/-- `wp` is a monad morphism: `pure` emits nothing, and a sequence's constraints concatenate
-(`build_bind`), so the satisfaction hypothesis curries across the split. -/
+/-- The reading is sound for the monad: `pure` emits nothing, and a sequence's constraints
+concatenate (`build_bind`), so the satisfaction hypothesis splits across the two parts. -/
 instance Builder.instWPMonad {V : Valuation F} [ConstraintHolds F c] :
-    WPMonad (CircuitM F (Builder V c)) (.arg Nat .pure) where
-  wp_pure a := by
-    ext Q s
-    show ((∀ con ∈ ([] : List (Builder V c)), ConstraintHolds.Holds V con) →
-      (Q.1 a s).down) ↔ (Q.1 a s).down
-    simp
-  wp_bind x f := by
-    ext Q s
-    simp only [PredTrans.apply_Bind_bind]
-    simp [wp, PredTrans.apply, build_bind]
-    constructor
-    · intro h hA hB
-      exact h fun con hc => hc.elim (hA con) (hB con)
-    · intro h hAB
-      exact h (fun con hc => hAB con (Or.inl hc)) fun con hc => hAB con (Or.inr hc)
+    WPMonad (CircuitM F (Builder V c)) (Nat → Prop) EStack⟨⟩ where
+  toWP _ := inferInstance
+  pure_le_wp_pure _ _ _ := fun _ h _ => h
+  bind_le_wp_bind x f _ _ := fun nv h hsat => by
+    rw [build_bind] at hsat ⊢
+    exact h (fun con hc => hsat con (List.mem_append_left _ hc))
+      fun con hc => hsat con (List.mem_append_right _ hc)
 
 /-- The soundness triple at the tag is the plain interpreter law: every satisfying
 valuation pins the built result. -/
 theorem builder_spec_iff {V : Valuation F} [ConstraintHolds F c] {α : Type}
     (g : CircuitM F (Builder V c) α) (post : α → Prop) :
-    (⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜post r⌝⦄) ↔
+    (⦃fun _ => True⦄ g ⦃fun r _ => post r⦄) ↔
       ∀ nv : Nat, (∀ con ∈ (build g nv).constraints, ConstraintHolds.Holds V con) →
-        post (build g nv).result := by
-  constructor
-  · intro h nv hsat
-    exact h nv trivial hsat
-  · intro h nv _ hsat
-    exact h nv hsat
+        post (build g nv).result :=
+  ⟨fun h nv hsat => h.le_wp nv trivial hsat, fun h => ⟨fun nv _ hsat => h nv hsat⟩⟩
 
 /-- A family of triples indexed by hypotheses on values fixed before the run is one triple
 whose postcondition quantifies over them. -/
 theorem builder_spec_forall {V : Valuation F} [ConstraintHolds F c] {α ι : Type}
     (g : CircuitM F (Builder V c) α) (P : ι → Prop) (post : ι → α → Prop)
-    (h : ∀ x, P x → ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜post x r⌝⦄) :
-    ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜∀ x, P x → post x r⌝⦄ := by
+    (h : ∀ x, P x → ⦃fun _ => True⦄ g ⦃fun r _ => post x r⦄) :
+    ⦃fun _ => True⦄ g ⦃fun r _ => ∀ x, P x → post x r⦄ := by
   rw [builder_spec_iff]
   intro nv hsat x hx
   exact (builder_spec_iff g (post x)).mp (h x hx) nv hsat
@@ -97,7 +80,7 @@ theorem builder_spec_forall {V : Valuation F} [ConstraintHolds F c] {α ι : Typ
 /-- Every program satisfies the trivial specification; used for a sub-circuit whose outputs a
 statement does not mention. -/
 theorem builder_spec_true {V : Valuation F} [ConstraintHolds F c] {α : Type}
-    (g : CircuitM F (Builder V c) α) : ⦃⌜True⌝⦄ g ⦃⇓ _ _ => ⌜True⌝⦄ := by
+    (g : CircuitM F (Builder V c) α) : ⦃fun _ => True⦄ g ⦃fun _ _ => True⦄ := by
   rw [builder_spec_iff]
   intro _ _
   trivial
@@ -106,9 +89,9 @@ theorem builder_spec_true {V : Valuation F} [ConstraintHolds F c] {α : Type}
 meets the tail's specification. -/
 theorem builder_spec_bind_of {V : Valuation F} [ConstraintHolds F c] {α β : Type}
     (x : CircuitM F (Builder V c) α) (f : α → CircuitM F (Builder V c) β) (Q : Prop)
-    (post : β → Prop) (hx : ⦃⌜True⌝⦄ x ⦃⇓ _ _ => ⌜Q⌝⦄)
-    (hf : Q → ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜post r⌝⦄) :
-    ⦃⌜True⌝⦄ (x >>= f) ⦃⇓ r _ => ⌜post r⌝⦄ := by
+    (post : β → Prop) (hx : ⦃fun _ => True⦄ x ⦃fun _ _ => Q⦄)
+    (hf : Q → ∀ a, ⦃fun _ => True⦄ f a ⦃fun r _ => post r⦄) :
+    ⦃fun _ => True⦄ (x >>= f) ⦃fun r _ => post r⦄ := by
   rw [builder_spec_iff]
   intro nv hsat
   have hQ : Q := (builder_spec_iff x fun _ => Q).mp hx nv fun con hc =>
@@ -120,41 +103,42 @@ theorem builder_spec_bind_of {V : Valuation F} [ConstraintHolds F c] {α β : Ty
 
 /-- Two specifications of one program conjoin. -/
 theorem builder_spec_and {V : Valuation F} [ConstraintHolds F c] {α : Type}
-    (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (hp : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r⌝⦄)
-    (hq : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜Q r⌝⦄) : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r ∧ Q r⌝⦄ := by
+    (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (hp : ⦃fun _ => True⦄ g ⦃fun r _ => P r⦄)
+    (hq : ⦃fun _ => True⦄ g ⦃fun r _ => Q r⦄) : ⦃fun _ => True⦄ g ⦃fun r _ => P r ∧ Q r⦄ := by
   rw [builder_spec_iff]
   intro nv hsat
   exact ⟨(builder_spec_iff g P).mp hp nv hsat, (builder_spec_iff g Q).mp hq nv hsat⟩
 
 /-- Weakening a specification's conclusion. -/
 theorem builder_spec_imp {V : Valuation F} [ConstraintHolds F c] {α : Type}
-    (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (h : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r⌝⦄)
-    (hpq : ∀ r, P r → Q r) : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜Q r⌝⦄ := by
+    (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (h : ⦃fun _ => True⦄ g ⦃fun r _ => P r⦄)
+    (hpq : ∀ r, P r → Q r) : ⦃fun _ => True⦄ g ⦃fun r _ => Q r⦄ := by
   rw [builder_spec_iff]
   intro nv hsat
   exact hpq _ ((builder_spec_iff g P).mp h nv hsat)
 
 /-- A `List.mapM` of specifications: the results relate pointwise (`R`) to the mapped targets.
-`mvcgen` has no `List.mapM` spec. -/
+`vcgen` has no `List.mapM` spec. -/
 theorem builder_spec_mapM {V : Valuation F} [ConstraintHolds F c] {α β γ : Type}
     (f : α → CircuitM F (Builder V c) β) (R : β → γ → Prop) (Q : α → γ)
-    (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜R r (Q a)⌝⦄) :
-    ∀ l : List α, ⦃⌜True⌝⦄ l.mapM f ⦃⇓ rs _ => ⌜List.Forall₂ R rs (l.map Q)⌝⦄
+    (hf : ∀ a, ⦃fun _ => True⦄ f a ⦃fun r _ => R r (Q a)⦄) :
+    ∀ l : List α, ⦃fun _ => True⦄ l.mapM f ⦃fun rs _ => List.Forall₂ R rs (l.map Q)⦄
   | [] => by
     rw [List.mapM_nil, List.map_nil]
-    mvcgen
+    vcgen
     exact .nil
   | a :: l => by
     rw [List.mapM_cons, List.map_cons]
     have ih := builder_spec_mapM f R Q hf l
-    mvcgen [hf, ih]
+    vcgen [hf, ih]
     rename_i r _ hr rs _ hrs
     exact .cons hr hrs
 
 /-- A specification of `f <$> m` is one of `m` read through `f`. -/
 theorem builder_spec_of_map {V : Valuation F} [ConstraintHolds F c] {α β : Type}
     (m : CircuitM F (Builder V c) α) (f : α → β) (post : β → Prop)
-    (h : ⦃⌜True⌝⦄ (f <$> m) ⦃⇓ r _ => ⌜post r⌝⦄) : ⦃⌜True⌝⦄ m ⦃⇓ r _ => ⌜post (f r)⌝⦄ := by
+    (h : ⦃fun _ => True⦄ (f <$> m) ⦃fun r _ => post r⦄) :
+    ⦃fun _ => True⦄ m ⦃fun r _ => post (f r)⦄ := by
   rw [builder_spec_iff] at h ⊢
   intro nv hsat
   have hb := h nv (by
@@ -167,8 +151,8 @@ theorem builder_spec_of_map {V : Valuation F} [ConstraintHolds F c] {α β : Typ
 specification. -/
 theorem builder_spec_vector_mapM_get {V : Valuation F} [ConstraintHolds F c] {α β : Type}
     {m : ℕ} (f : α → CircuitM F (Builder V c) β) (Q : α → β → Prop)
-    (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜Q a r⌝⦄) (v : Vector α m) :
-    ⦃⌜True⌝⦄ v.mapM f ⦃⇓ rs _ => ⌜∀ i : Fin m, Q v[i] rs[i]⌝⦄ := by
+    (hf : ∀ a, ⦃fun _ => True⦄ f a ⦃fun r _ => Q a r⦄) (v : Vector α m) :
+    ⦃fun _ => True⦄ v.mapM f ⦃fun rs _ => ∀ i : Fin m, Q v[i] rs[i]⦄ := by
   have hl := builder_spec_mapM f (fun r a => Q a r) id hf v.toList
   have heq : (fun rs : Vector β m => rs.toList) <$> v.mapM f = v.toList.mapM f := by
     rw [← Vector.toList_toArray, ← Array.toList_mapM, ← Vector.toArray_mapM, ← comp_map]
@@ -223,11 +207,10 @@ instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [ConstraintHolds F c
 
 /-- Emitting a constraint assumes it. -/
 @[spec] theorem addConstraint_spec {V : Valuation F} [ConstraintHolds F c]
-    (con : Builder V c) :
-    ⦃⌜True⌝⦄
+    (con : Builder V c) (Q : Unit → Nat → Prop) :
+    ⦃fun nv => ConstraintHolds.Holds V con → Q () nv⦄
     addConstraint (F := F) (c := Builder V c) con
-    ⦃⇓ _ _ => ⌜ConstraintHolds.Holds V con⌝⦄ := by
-  intro nv _ hsat
-  exact hsat con (List.mem_cons_self ..)
+    ⦃Q⦄ :=
+  ⟨fun _ h hsat => h (hsat con (List.mem_cons_self ..))⟩
 
 end Snarky
