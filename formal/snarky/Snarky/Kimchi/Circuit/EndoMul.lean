@@ -190,7 +190,7 @@ the constraint after the loop, where `Kimchi.Gate.EndoMul.endoMul_off` and
 the row threading definitional: a round's output cells and its successor's input
 cells are the same variables. -/
 
-open Std.Do WeierstrassCurve.Affine
+open WeierstrassCurve.Affine
 
 namespace EndoMul
 
@@ -348,17 +348,20 @@ private theorem threads_length {t : AffinePoint (FVar F)}
     rounds.length = pref.length :=
   (threads_facts h).1.length_eq.symm
 
-open Std.Do in
+open Std.WP in
 /-- The step's spec: the round it emits is wired to the base, the accumulators either
 side, and the row's bits. -/
 @[spec] private theorem endoMulRound_spec {V : Valuation F} [Field F] [DecidableEq F]
     (eb : F) (t : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 4) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     endoMulRound (c := Builder V (KimchiConstraint F)) eb t st bs
-    ⦃⇓ p _ => ⌜Threads t st bs p.1 p.2⌝⦄ := by
+    ⦃fun p _ => Threads t st bs p.1 p.2⦄ := by
   simp only [endoMulRound, Threads]
-  mvcgen
+  vcgen
+  refine ⟨rfl, rfl, ?_⟩
+  unfold RowIn
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- A satisfied trace from the doubled seed computes the gate tower's chain: the reading
 is a run (`isChain_getD`), so `endoMul_off` gives the final accumulator as a multiple of
@@ -558,7 +561,7 @@ private theorem decomposition_eq_endoExpandZ [Field F] [DecidableEq F]
   rw [hsab, hAeq, hBeq, endoExpandZ, toIntZ]
   ring
 
-open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
+open Std.WP WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 /-- **Soundness**, at the deployed thirty-two rounds — the sixty-four crumbs of a 128-bit
 challenge, the width the `SizedF 128` operand fixes. Any satisfying valuation reads the
 scalar as a prechallenge below that width, and the result as the base multiplied by that
@@ -569,28 +572,28 @@ value, and the accumulator bounds identify the decomposition with its ℤ shadow
 `d.char_big`, so a consumer casts the one integer into whichever scalar field acts. -/
 theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasEndo F) (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     Snarky.Kimchi.endoMul (c := Builder V (KimchiConstraint F)) d.endo 32 t scalar
-    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V t T →
+    ⦃fun r _ => ∀ T : d.W.Point, OnCurveAt d.W V t T →
       ∃ n : ℕ, n < 2 ^ 128 ∧ scalar.val.val V = ((n : ℕ) : F) ∧
-        OnCurveAt d.W V r (endoExpandZ d.lam n • T)⌝⦄ := by
+        OnCurveAt d.W V r (endoExpandZ d.lam n • T)⦄ := by
   have hbits : 4 * 32 ≤ 244 := by norm_num
   have hloop := mapAccumM_spec (V := V) (c := KimchiConstraint F)
     (Snarky.Kimchi.endoMulRound d.endo t) (Threads t)
     (fun st bs => endoMulRound_spec d.endo t st bs)
   unfold Snarky.Kimchi.endoMul
-  mvcgen [hloop]
-  case vc1.W => exact d.W
-  case vc2.ha => exact ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩
-  case vc3.htwo => exact d.two_ne
-  case vc4.W => exact d.W
-  case vc5.ha => exact ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩
-  case vc6.htwo => exact d.two_ne
-  rename_i _ bits _ _ phix _ hphix p1 _ hp1 p2 _ loop _ hchainT _ _ heqScalar _ _ hpay hp2
+  vcgen [hloop]
+  case vc4 => exact d.W
+  case vc7 => exact d.W
+  case vc2 => exact ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩
+  case vc5 => exact ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩
+  case vc3 => exact d.two_ne
+  case vc6 => exact d.two_ne
+  rename_i hphix _ hp1 _ hp2 _ _ _ _ hchainT _ _ heqScalar hpay T hTT
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  rintro T ⟨hT, rfl⟩
+  obtain ⟨hT, rfl⟩ := hTT
   have hφT := d.endo_nonsingular hT
   have hφTp : d.W.Nonsingular (phix.val V) (t.y.val V) := by
     rw [hphix, CVar.val_scale_]
@@ -605,7 +608,7 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
       Point.some _ _ hP1 + Point.some _ _ hP1 = Point.some _ _ h3 := by
     rcases hp2.2 (Point.some _ _ hP1) (Point.some _ _ hP1) ⟨hP1, rfl⟩ ⟨hP1, rfl⟩
       (d.two_torsion_free _ (Point.some_ne_zero hP1)) with ⟨hinf, -⟩ | ⟨-, h3⟩
-    · exact absurd (hp2.1.symm.trans hinf) (by norm_num)
+    · exact absurd ((hp2.1 rfl).symm.trans hinf) (by norm_num)
     · exact h3
   have hφeq : Point.some _ _ hφTp = Point.some _ _ hφT :=
     Kimchi.Gate.AddComplete.some_congr d.W hφTp hφT (by rw [hphix, CVar.val_scale_]) rfl
@@ -668,7 +671,7 @@ theorem endoExpandZ_ne_zero [Field F] [DecidableEq F] (d : HasEndo F)
     (by norm_num at hBhi ⊢; linarith)
     (hexp ▸ hkill)
 
-open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
+open Std.WP WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 open Kimchi.Gate.VarBaseMul (eq_inv_smul_of_smul_eq) in
 /-- **Soundness.** Under any satisfying valuation, an input reading as a curve point is
 the result scaled by the challenge's decoded integer — so the result is that integer's
@@ -681,15 +684,15 @@ nonsingularity, and the two pins carry the product to the input. The advice para
 theorem endoInv_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasEndo F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
     (g : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     Snarky.Kimchi.endoInv (c := Builder V (KimchiConstraint F))
       d.endo d.W q hq lam' g scalar
-    ⦃⇓ r _ => ⌜∀ G : d.W.Point, OnCurveAt d.W V g G →
+    ⦃fun r _ => ∀ G : d.W.Point, OnCurveAt d.W V g G →
       ∃ n : ℕ, n < 2 ^ 128 ∧ scalar.val.val V = ((n : ℕ) : F) ∧
         ∃ R : d.W.Point, OnCurveAt d.W V r R ∧
           ((endoExpandZ d.lam n : ℤ) : ZMod d.W.order) ≠ 0 ∧
           endoExpandZ d.lam n • R = G ∧
-          R = ((((endoExpandZ d.lam n : ℤ) : ZMod d.W.order)⁻¹).val : ℕ) • G⌝⦄ := by
+          R = ((((endoExpandZ d.lam n : ℤ) : ZMod d.W.order)⁻¹).val : ℕ) • G⦄ := by
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
@@ -698,17 +701,16 @@ theorem endoInv_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     endoMul_spec (V := V) d rp scalar
   have hcheck := fun (rp : AffinePoint (FVar F)) =>
     CheckedPoint.check_spec (V := V) (c := KimchiConstraint F) d.W.a₄ d.W.a₆ rp
-  mvcgen [hendo, hcheck]
-  rename_i result _ _ _ _ hsq _ _ hcomp _ _ heqx _ _ heqy
-  intro G hG
+  vcgen [hendo, hcheck]
+  rename_i rx ry _ _ _ _ hsq _ hcomp _ _ heqx _ _ heqy G hG
   -- the on-curve rows read as the curve equation at the witnessed point
-  have hEq : d.W.Equation (result.1.val V) (result.2.val V) := by
+  have hEq : d.W.Equation (rx.val V) (ry.val V) := by
     rw [d.W.equation_iff, d.short.1, d.short.2.1, d.short.2.2.1]
     linear_combination hsq
-  have hres : d.W.Nonsingular (result.1.val V) (result.2.val V) :=
+  have hres : d.W.Nonsingular (rx.val V) (ry.val V) :=
     (d.W.equation_iff_nonsingular_of_Δ_ne_zero d.delta_ne).mp hEq
   set R : d.W.Point := Point.some _ _ hres with hRdef
-  have hRat : OnCurveAt d.W V (⟨result.1, result.2⟩ : AffinePoint (FVar F)) R := ⟨hres, rfl⟩
+  have hRat : OnCurveAt d.W V (⟨rx, ry⟩ : AffinePoint (FVar F)) R := ⟨hres, rfl⟩
   -- `endoMul`'s promise at the witnessed point
   obtain ⟨n, hnlt, hscal, hcompAt⟩ := hcomp R hRat
   -- the pins carry the product to the input
@@ -901,6 +903,7 @@ open EndoMul in
       (st.read acc.2) (st.read bs[0]) (st.read bs[1]) (st.read bs[2]) (st.read bs[3]))
     (fun _ h => rowWit_run h.1 h.2) fun _ _ => by simp)
 
+open Std.Do in
 open EndoMul in
 /-- The round's step fact: its cells in scope, the next accumulator in scope, the round reading
 (with its own output cells) as the gate's canonical row at the entry readings, and the
@@ -1290,6 +1293,7 @@ open EndoMul in
     (fun st => scalar.Scoped st) (fun st => bitsVal rounds (st.read scalar))
     (fun _ h => bitsWit_run h) fun _ _ => by simp)
 
+open Std.Do in
 open EndoMul Kimchi.Gate.EndoScalar in
 /-- **`endoMul`'s state-relative completeness**, at the deployed thirty-two rounds. From a base
 in scope reading as a curve point and a scalar in scope reading below `2 ^ 128`, the run
@@ -1381,6 +1385,7 @@ theorem Prover.endoMul_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     exact ⟨⟨scoped_affinePoint.mpr ⟨h5.1.2.2.1.of_le h6, h5.1.2.2.2.1.of_le h6⟩, hpt⟩,
       h1.2.trans (h2.2.2.trans (h3.2.2.2.trans (h4.2.2.2.trans (h5.2.2.2.2.trans h6))))⟩
 
+open Std.Do in
 open EndoMul Kimchi.Gate.EndoScalar in
 /-- **`endoInv`'s state-relative completeness**, at the honest advice. From an input reading as a
 curve point and a challenge in scope within the deployed width, the run succeeds and the result

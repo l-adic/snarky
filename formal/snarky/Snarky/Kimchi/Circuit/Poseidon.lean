@@ -176,7 +176,7 @@ private theorem chainHolds_window [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
     simp only [List.length_cons, List.length_nil] at hlen
     omega
 
-open Std.Do in
+open Std.WP in
 /-- **The gadget is sound**: under any satisfying valuation, at a full-size constant
 table, the returned state reads as `Poseidon.blockCipher` of the input state's
 reading — the fixture-validated production permutation. The constraint carries the
@@ -185,21 +185,21 @@ whole chain, so the proof assembles its five-apart windows into the gate tower's
 @[spec] theorem poseidon_spec {V : Valuation F} [Field F] [DecidableEq F]
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (s : SpongeState F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     poseidon (c := Builder V (KimchiConstraint F)) p s
-    ⦃⇓ r _ => ⌜CircuitType.readVal (val := SpongeStateVal F) V r
-        = Poseidon.blockCipher p (CircuitType.readVal (val := SpongeStateVal F) V s)⌝⦄ := by
+    ⦃fun (r : SpongeState F) _ => CircuitType.readVal (val := SpongeStateVal F) V r
+        = Poseidon.blockCipher p (CircuitType.readVal (val := SpongeStateVal F) V s)⦄ := by
   simp only [poseidon]
-  mvcgen
-  rename_i outs _ _ _ _ hpay
-  show (outs[54].s0.val V, outs[54].s1.val V, outs[54].s2.val V)
+  vcgen
+  rename_i _ hpay
+  show (roundOutputs[54].s0.val V, roundOutputs[54].s1.val V, roundOutputs[54].s2.val V)
     = Poseidon.blockCipher p (s.s0.val V, s.s1.val V, s.s2.val V)
   have hchain : chainHolds (mdsOf p.mds) p.roundConstants.toList 0
       (read V ⟨p.mds, p.roundConstants.toList,
-        s.cells :: (outs.map SpongeState.cells).toList⟩) := hpay
+        s.cells :: (roundOutputs.map SpongeState.cells).toList⟩) := hpay
   let vs : List (F × F × F) :=
     read V ⟨p.mds, p.roundConstants.toList,
-      s.cells :: (outs.map SpongeState.cells).toList⟩
+      s.cells :: (roundOutputs.map SpongeState.cells).toList⟩
   have hlen : vs.length = 56 := by simp [vs, read]
   let w : ℕ → Kimchi.Gate.Poseidon.Witness F := fun k =>
     ⟨vs.getD (5 * k) (0, 0, 0), vs.getD (5 * k + 1) (0, 0, 0),
@@ -221,7 +221,7 @@ whole chain, so the proof assembles its five-apart windows into the gate tower's
     hsize hrc
   have h0 : (w 0).s0 = (s.s0.val V, s.s1.val V, s.s2.val V) := rfl
   have h55 : (w 10).s5
-      = (outs[54].s0.val V, outs[54].s1.val V, outs[54].s2.val V) := by
+      = (roundOutputs[54].s0.val V, roundOutputs[54].s1.val V, roundOutputs[54].s2.val V) := by
     show vs.getD 55 (0, 0, 0) = _
     rw [List.getD_eq_getElem vs (0, 0, 0) (by omega)]
     simp [vs, read, Vector.getElem_toList, SpongeState.cells]

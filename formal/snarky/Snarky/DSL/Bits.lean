@@ -149,25 +149,25 @@ where
     let x ← readVar (val := F) v
     pure (unpackPure x n)
 
-open Std.Do in
+open Std.WP in
 /-- `unpack`'s rows force the results to be bits whose weighted sum is the operand's
 reading. That they are the operand's binary digits — their canonicity — additionally
 needs a characteristic hypothesis and is not stated. -/
 @[spec] theorem unpack_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     unpack (c := Builder V c) v n
-    ⦃⇓ r _ => ⌜∃ bs : Vector Bool n,
+    ⦃fun (r : Vector (BoolVar F) n) _ => ∃ bs : Vector Bool n,
         (∀ i (hi : i < n), (↑r[i] : CVar F).val V = bit bs[i]) ∧
-        ((Kimchi.natLsbVal bs.toList : Nat) : F) = v.val V⌝⦄ := by
+        ((Kimchi.natLsbVal bs.toList : Nat) : F) = v.val V⦄ := by
   simp only [unpack]
-  mvcgen
-  rename_i _ bits _ hpost _ _ hrow
+  vcgen
+  rename_i hpost hrow
   have hbit : ∀ i (hi : i < n), ∃ bb : Bool, (↑bits[i] : CVar F).val V = bit bb := fun i hi =>
     hpost bits[i] (Vector.mem_toList_iff.mpr (Vector.mem_iff_getElem.mpr ⟨i, hi, rfl⟩))
   choose f hf using hbit
   refine ⟨Vector.ofFn fun i : Fin n => f i.val i.isLt, fun i hi => by simpa using hf i hi, ?_⟩
-  rw [← pack_val (bits := bits) fun i hi => by simpa using hf i hi]
+  refine (pack_val (bits := bits) fun i hi => by simpa using hf i hi).symm.trans ?_
   simpa using (LawfulBasicSystem.holds_r1cs V _ _ _).mp hrow
 
 attribute [irreducible] unpack

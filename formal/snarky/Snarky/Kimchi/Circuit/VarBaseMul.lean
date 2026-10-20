@@ -52,7 +52,7 @@ open Snarky
 
 variable {F c : Type}
 
-open Std.Do WeierstrassCurve.Affine
+open WeierstrassCurve.Affine
 
 /-! ## The round
 
@@ -134,16 +134,19 @@ private def Threads (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × 
     (st' : AffinePoint (FVar F) × FVar F) : Prop :=
   (r.acc0, r.nPrev) = st ∧ (r.acc5, r.nNext) = st' ∧ RowIn base bs r
 
-open Std.Do in
+open Std.WP in
 /-- The round a call returns is wired to its inputs and outputs (`Threads`). -/
 @[spec] private theorem scaleRound_spec {V : Valuation F} [Field F] [DecidableEq F]
     (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 5) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     scaleRound (c := Builder V (KimchiConstraint F)) base st bs
-    ⦃⇓ p _ => ⌜Threads base st bs p.1 p.2⌝⦄ := by
+    ⦃fun p _ => Threads base st bs p.1 p.2⦄ := by
   simp only [scaleRound, Threads]
-  mvcgen
+  vcgen
+  refine ⟨rfl, rfl, ?_⟩
+  unfold RowIn
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- A round's cells. -/
 private def cells [Field F] (r : ScaleRound F) : List (CVar F) :=
@@ -298,6 +301,7 @@ open VarBaseMul in
     (fun st => bitVal (st.read t.x) (st.read t.y) (st.read acc.x) (st.read acc.y) (st.read b))
     (fun _ h => bitWit_run h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2) fun _ _ => by simp)
 
+open Std.Do in
 open VarBaseMul in
 /-- The round's step fact: its cells in scope, the next accumulator in scope, the round reading
 as the gate's canonical row at the entry readings, and the accumulator reading as that row's
@@ -751,16 +755,16 @@ private theorem lsbBits_of_run [Field F] [DecidableEq F] (V : Valuation F) {n ch
 
 end VarBaseMul
 
-open Std.Do WeierstrassCurve.Affine in
+open Std.WP WeierstrassCurve.Affine in
 /-- **Soundness.** Under any satisfying valuation the first `5 * chunks` returned bits read
 as bits whose LSB-first value the scalar reads as, and, under the ladder's regime, the result
 is the base times that value's Type1 decode. -/
 theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     varBaseMul (c := Builder V (KimchiConstraint F)) n chunks base scalar
-    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
+    ⦃fun r _ => ∀ T : d.W.Point, OnCurveAt d.W V base T →
       ∃ bs : Vector Bool (5 * chunks),
         (∀ i (hi : i < 5 * chunks),
           (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i]) ∧
@@ -769,20 +773,19 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
             (Pasta.Shifted.unshiftType1 (5 * chunks) (Kimchi.natLsbVal bs.toList : ℤ)),
           OnCurveAt d.W V r.g
             ((Pasta.Shifted.unshiftType1 (5 * chunks)
-              (Kimchi.natLsbVal bs.toList : ℤ)) • T)⌝⦄ := by
+              (Kimchi.natLsbVal bs.toList : ℤ)) • T)⦄ := by
   have hloop := fun (b : AffinePoint (FVar F)) =>
     mapAccumM_spec (V := V) (c := KimchiConstraint F) (scaleRound b) (VarBaseMul.Threads b)
       (fun st bs => VarBaseMul.scaleRound_spec b st bs)
   unfold varBaseMul
-  mvcgen [hloop]
-  case vc1.W => exact d.W
-  case vc2.ha => exact d.short
-  case vc3.htwo => exact d.two_ne
-  rename_i _ sealed _ hseal bits _ _ p _ loop _ hchain _ _ hpay _ _ hpin hadd
-  intro T hT
+  vcgen [hloop]
+  case vc4 => exact d.W
+  case vc2 => exact d.short
+  case vc3 => exact d.two_ne
+  rename_i hseal _ _ _ hadd _ _ _ _ hchain hpay _ _ hpin T hT
   obtain ⟨hTns, hTeq⟩ := hT
-  have hTs : OnCurveAt d.W V sealed T := by
-    show ∃ h : d.W.Nonsingular (sealed.x.val V) (sealed.y.val V), _
+  have hTs : OnCurveAt d.W V base T := by
+    show ∃ h : d.W.Nonsingular (base.x.val V) (base.y.val V), _
     rw [hseal.1, hseal.2]
     exact ⟨hTns, hTeq⟩
   have h2T : T + T ≠ 0 :=
@@ -790,40 +793,40 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   have hP0 : OnCurveAt d.W V p.p ((2 : ℤ) • T) := by
     rw [two_zsmul]
     rcases hadd.2 T T hTs hTs h2T with ⟨hinf, -⟩ | ⟨-, h3⟩
-    · exact absurd (hadd.1.symm.trans hinf) (by norm_num)
+    · exact absurd ((hadd.1 rfl).symm.trans hinf) (by norm_num)
     · exact h3
   obtain ⟨hbool, -, hreg⟩ := VarBaseMul.run_sound_scalar V hchain hpay
   have hpoint := VarBaseMul.run_sound d V T hchain hpay hTs hP0
   obtain ⟨bs, hread, hbn, hval⟩ := VarBaseMul.lsbBits_of_run V hn hchain hbool hreg
   have hpreflen : ((List.range chunks).map fun i =>
       (Vector.ofFn fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
+        ((lsbBits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
           (CVar.const 0))).length = chunks := by simp
   refine ⟨bs, hread, by rw [← hpin]; exact hval, ?_⟩
   rw [hpreflen, hbn] at hpoint
   exact hpoint
 
-open Std.Do in
+open Std.WP in
 /-- **Soundness, the scalar side.** For any base, under any satisfying valuation the first
 `5 * chunks` returned bits read as bits whose LSB-first value the scalar reads as: the
 decomposition and booleanity rows never read the base. -/
 theorem varBaseMul_spec_scalar {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (n chunks : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
     (scalar : Type1 (FVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     varBaseMul (c := Builder V (KimchiConstraint F)) n chunks base scalar
-    ⦃⇓ r _ => ⌜∃ bs : Vector Bool (5 * chunks),
+    ⦃fun r _ => ∃ bs : Vector Bool (5 * chunks),
         (∀ i (hi : i < 5 * chunks),
           (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i]) ∧
-        scalar.val.val V = ((Kimchi.natLsbVal bs.toList : ℕ) : F)⌝⦄ := by
+        scalar.val.val V = ((Kimchi.natLsbVal bs.toList : ℕ) : F)⦄ := by
   have hloop := fun (b : AffinePoint (FVar F)) =>
     mapAccumM_spec (V := V) (c := KimchiConstraint F) (scaleRound b) (VarBaseMul.Threads b)
       (fun st bs => VarBaseMul.scaleRound_spec b st bs)
   have hadd := fun (a b : AffinePoint (FVar F)) =>
     builder_spec_true (addFast (c := Builder V (KimchiConstraint F)) .checkFinite a b)
   unfold varBaseMul
-  mvcgen [hloop, hadd, -Snarky.Kimchi.addFast_spec]
-  rename_i _ _ _ _ bits _ _ _ _ loop _ hchain _ _ hpay _ _ hpin
+  vcgen [hloop, hadd, -Snarky.Kimchi.addFast_spec]
+  rename_i hchain hpay _ _ hpin
   obtain ⟨hbool, -, hreg⟩ := VarBaseMul.run_sound_scalar V hchain hpay
   obtain ⟨bs, hread, -, hval⟩ := VarBaseMul.lsbBits_of_run V hn hchain hbool hreg
   exact ⟨bs, hread, by rw [← hpin]; exact hval⟩
@@ -1156,6 +1159,7 @@ open VarBaseMul in
     (fun st => scalar.Scoped st) (fun st => lsbBitsVal n (st.read scalar))
     (fun _ h => lsbBitsWit_run h) fun _ _ => by simp)
 
+open Std.Do in
 open VarBaseMul in
 /-- **`varBaseMul`'s state-relative completeness.** From a base in scope reading as a curve
 point and a scalar in scope reading within the ladder's width, under the regime, the run
@@ -1256,30 +1260,29 @@ def scaleFast1 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Constraint
     (r.lsbBits.toList.drop (5 * chunks - 1)).forM fun bit => assertEqual bit (.const 0)
   pure r.g
 
-open Std.Do WeierstrassCurve.Affine in
+open Std.WP WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast1`). The result is the base times the Type1 decode of an
 integer in the ladder's range that the scalar reads as, one bit narrower at the full width.
 The bits that pin the integer are dropped, so the law speaks of the integer alone. -/
 theorem scaleFast1_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     scaleFast1 (c := Builder V (KimchiConstraint F)) n chunks base scalar
-    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
+    ⦃fun r _ => ∀ T : d.W.Point, OnCurveAt d.W V base T →
       ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ (5 * chunks) ∧ (n ≤ 5 * chunks → z < 2 ^ (5 * chunks - 1)) ∧
         (z : F) = scalar.val.val V ∧
         ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
-          OnCurveAt d.W V r ((Pasta.Shifted.unshiftType1 (5 * chunks) z) • T)⌝⦄ := by
+          OnCurveAt d.W V r ((Pasta.Shifted.unshiftType1 (5 * chunks) z) • T)⦄ := by
   have hvbm := fun (V : Valuation F) => varBaseMul_spec (V := V) d n chunks hn base scalar
   have hpin := forM_spec (V := V) (c := KimchiConstraint F)
     (fun b : FVar F => assertEqual (c := Builder V (KimchiConstraint F)) b (CVar.const 0))
     (fun b : FVar F => b.val V = (CVar.const 0 : FVar F).val V)
     (fun b => assertEqual_spec (V := V) b (CVar.const 0))
   unfold scaleFast1
-  mvcgen [hvbm, hpin]
+  vcgen [hvbm, hpin]
   · -- the full width: the pinned top bit halves the ladder's range
-    rename_i r _ _ _ hr _ _ hpin0
-    intro T hT
+    rename_i hr _ _ _ _ hpin0 T hT
     obtain ⟨bs, hread, hreg, hpoint⟩ := hr T hT
     have hzeros : ∀ b ∈ bs.toList.drop (5 * chunks - 1), b = false := by
       intro b hb
@@ -1313,8 +1316,7 @@ theorem scaleFast1_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
       push_cast
       ring
   · -- below the full width: no pin, the bound is vacuous
-    rename_i r _ hnle _ hr
-    intro T hT
+    rename_i hr _ hnle T hT
     obtain ⟨bs, -, hreg, hpoint⟩ := hr T hT
     refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, ?_, fun h => absurd h hnle,
       ?_, hpoint⟩
@@ -1361,6 +1363,7 @@ private theorem pins_read_zero [Field F] [DecidableEq F] [ToNat F] {st : ProverS
   rw [BoolVar.coe_unchecked, getElem_unpackPure, hbit] at hv
   simpa [ProverState.read, bit, CVar.val] using hv
 
+open Std.Do in
 /-- **`scaleFast1`'s state-relative completeness.** `varBaseMul`'s, with the bits dropped: at
 the full width the scalar's representative is one bit narrower, so the pinned top bit reads
 `0`. -/
@@ -1439,19 +1442,19 @@ private theorem natLsbVal_lt_of_pinned [Field F] {V : Valuation F} {n chunks sDi
     | true => rw [hbb] at hb0; simp [bit] at hb0
   exact_mod_cast Kimchi.natLsbVal_lt_of_drop_false hzeros
 
-open Std.Do WeierstrassCurve.Affine in
+open Std.WP WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2`). -/
 theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     scaleFast2 (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base sDiv2 sOdd
-    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T → ∀ bb : Bool,
+    ⦃fun r _ => ∀ T : d.W.Point, OnCurveAt d.W V base T → ∀ bb : Bool,
       (↑sOdd : CVar F).val V = bit bb →
       ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧ (z : F) = sDiv2.val V ∧
         ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
           OnCurveAt d.W V r
-            ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⌝⦄ := by
+            ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⦄ := by
   have hvbm := fun (V : Valuation F) =>
     varBaseMul_spec (V := V) d n chunks hn base ⟨sDiv2⟩
   have hpin := forM_spec (V := V) (c := KimchiConstraint F)
@@ -1461,14 +1464,13 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   have hsel := fun (t e : FVar F) =>
     selectField_spec (V := V) (c := KimchiConstraint F) sOdd t e
   simp only [scaleFast2, select_fvar]
-  mvcgen [hvbm, hpin, hsel]
-  case vc1.W => exact d.W
-  case vc2.ha => exact d.short
-  case vc3.htwo => exact d.two_ne
-  rename_i _ rvb _ hvb _ _ hpin0 q _ yr _ hyr xr _ hxr hadd
-  intro T hT bb hbb
+  vcgen [hvbm, hpin, hsel]
+  case vc4 => exact d.W
+  case vc2 => exact d.short
+  case vc3 => exact d.two_ne
+  rename_i hvb _ _ hpin0 _ hadd _ hyr _ hxr T hT bb hbb
   obtain ⟨bs, hread, hreg, hpoint⟩ := hvb T hT
-  have hltSplit := natLsbVal_lt_of_pinned hn rvb.lsbBits bs hread hpin0
+  have hltSplit := natLsbVal_lt_of_pinned hn r.lsbBits bs hread hpin0
   refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, hltSplit, ?_, ?_⟩
   · rw [hreg]
     push_cast
@@ -1484,10 +1486,10 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
       OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ hT
     rcases hadd.2 _ _ ⟨hGns, hGeq⟩ hnegT (d.two_torsion_free _ hPne) with
       ⟨hinf, -⟩ | ⟨-, hq⟩
-    · exact absurd (hadd.1.symm.trans hinf) (by norm_num)
+    · exact absurd ((hadd.1 rfl).symm.trans hinf) (by norm_num)
     · cases bb with
       | false =>
-        show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val V) (yr.val V)
+        show Kimchi.Gate.AddComplete.IsPoint d.W (x.val V) (y.val V)
           ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 0 + 2 ^ (5 * chunks)) • T)
         rw [hxr false hbb, hyr false hbb,
           show ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 0 + 2 ^ (5 * chunks)) • T)
@@ -1496,7 +1498,7 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
             from by rw [Pasta.Shifted.unshiftType1]; module]
         exact hq
       | true =>
-        show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val V) (yr.val V)
+        show Kimchi.Gate.AddComplete.IsPoint d.W (x.val V) (y.val V)
           ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 1 + 2 ^ (5 * chunks)) • T)
         rw [hxr true hbb, hyr true hbb,
           show ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 1 + 2 ^ (5 * chunks)) • T)
@@ -1504,15 +1506,15 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
             from by rw [Pasta.Shifted.unshiftType1]; module]
         exact ⟨hGns, hGeq⟩
 
-open Std.Do in
+open Std.WP in
 /-- **Soundness, the scalar side** (`scaleFast2`). For any base, the half is an integer below
 `2 ^ sDiv2Bits`: the ladder's bits and the pinned high bits never read the base. -/
 theorem scaleFast2_spec_scalar {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
     (sDiv2 : FVar F) (sOdd : BoolVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     scaleFast2 (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base sDiv2 sOdd
-    ⦃⇓ _ _ => ⌜∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧ (z : F) = sDiv2.val V⌝⦄ := by
+    ⦃fun _ _ => ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧ (z : F) = sDiv2.val V⦄ := by
   have hvbm := varBaseMul_spec_scalar (V := V) n chunks hn base ⟨sDiv2⟩
   have hpin := forM_spec (V := V) (c := KimchiConstraint F)
     (fun b : FVar F => assertEqual (c := Builder V (KimchiConstraint F)) b (CVar.const 0))
@@ -1523,11 +1525,11 @@ theorem scaleFast2_spec_scalar {V : Valuation F} [Field F] [DecidableEq F] [ToNa
   have hsel := fun (t e : FVar F) =>
     builder_spec_true (Snarky.selectField (c := Builder V (KimchiConstraint F)) sOdd t e)
   simp only [scaleFast2, select_fvar]
-  mvcgen [hvbm, hpin, hadd, hsel, -Snarky.Kimchi.addFast_spec]
-  rename_i _ rvb _ hvb _ _ hpin0 _ _ _ _ _ _ _ _
+  vcgen [hvbm, hpin, hadd, hsel, -Snarky.Kimchi.addFast_spec]
+  rename_i hvb _ _ hpin0 _ _ _
   obtain ⟨bs, hread, hreg⟩ := hvb
   exact ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _,
-    natLsbVal_lt_of_pinned hn rvb.lsbBits bs hread hpin0, by rw [hreg]; push_cast; ring⟩
+    natLsbVal_lt_of_pinned hn r.lsbBits bs hread hpin0, by rw [hreg]; push_cast; ring⟩
 
 attribute [irreducible] scaleFast2
 
@@ -1560,6 +1562,7 @@ private theorem unshiftType2_smul [Field F] [DecidableEq F] (d : HasCurve F) (k 
       (Pasta.Shifted.unshiftType2 k z 0) • T = (Pasta.Shifted.unshiftType1 k z) • T + -T := by
   constructor <;> rw [Pasta.Shifted.unshiftType2, Pasta.Shifted.unshiftType1] <;> module
 
+open Std.Do in
 /-- **`scaleFast2`'s state-relative completeness.** The ladder on the half, whose high bits
 vanish because it fits `sDiv2Bits`, then the parity fold: the regime keeps the subtraction of the
 base finite, and the select picks the ladder's point or the difference by the parity bit. -/
@@ -1648,18 +1651,18 @@ def splitFieldVar [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Constra
   assertEqual s (CVar.add_ (CVar.scale_ 2 r.1) ↑r.2)
   pure r
 
-open Std.Do in
+open Std.WP in
 /-- **Soundness** (`splitFieldVar`). The witnessed pair is a bit and a half that join to
 the scalar. -/
 theorem splitFieldVar_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (s : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     splitFieldVar (c := Builder V c) s
-    ⦃⇓ r _ => ⌜∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
-      s.val V = 2 * r.1.val V + bit bb⌝⦄ := by
+    ⦃fun r _ => ∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
+      s.val V = 2 * r.1.val V + bit bb⦄ := by
   unfold splitFieldVar
-  mvcgen
-  rename_i r _ hpost _ _ hrow
+  vcgen
+  rename_i hpost _ _ hrow
   obtain ⟨-, bb, hbb⟩ := hpost
   refine ⟨bb, hbb, ?_⟩
   rw [hrow, CVar.val_add_, CVar.val_scale_, hbb]
@@ -1679,6 +1682,7 @@ private theorem splitField_join [Field F] [ToNat F] (h2 : (2 : F) ≠ 0) (v : F)
     (fun st => splitField (st.read s))
     (fun _ h => by simp [splitFieldWit, AsProver.readCVar_run h]) fun _ _ => by simp)
 
+open Std.Do in
 /-- `splitFieldVar`'s state-relative completeness: the half and the parity bit read the split
 of the operand's entry reading. -/
 theorem Prover.splitFieldVar_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
@@ -1738,52 +1742,50 @@ private theorem scaleFast2'_join [Field F] {V : Valuation F} {n sDiv2Bits : ℕ}
     rw [hpin, hzval]
     cases bb <;> simp [bit]
 
-open Std.Do WeierstrassCurve.Affine in
+open Std.WP WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2'`). A half and a parity bit that join to the scalar, the
 half one bit narrower at the full width, and the result is the multiple they name. -/
 theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
     (s : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     scaleFast2' (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base s
-    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
+    ⦃fun r _ => ∀ T : d.W.Point, OnCurveAt d.W V base T →
       ∃ (z : ℤ) (bb : Bool), 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧
         (n ≤ sDiv2Bits + 1 → z < 2 ^ (sDiv2Bits - 1)) ∧
         ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V ∧
         ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
           OnCurveAt d.W V r
-            ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⌝⦄ := by
+            ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⦄ := by
   have hsplitV := fun (V : Valuation F) =>
     splitFieldVar_spec (c := KimchiConstraint F) (V := V) s
   have hsf2 := fun (V : Valuation F) (sDiv2 : FVar F) (sOdd : BoolVar F) =>
     scaleFast2_spec (V := V) d n chunks (scaleFast2'Width n sDiv2Bits) hn base sDiv2 sOdd
   simp only [scaleFast2']
-  mvcgen [hsplitV, hsf2]
-  rename_i hsp _ _
-  intro hq T hT
+  vcgen [hsplitV, hsf2]
+  rename_i hsp _ _ hq T hT
   obtain ⟨bb, hbit, hpin⟩ := hsp
   obtain ⟨z, h0, hlt, hzval, hpoint⟩ := hq T hT bb hbit
   obtain ⟨h0', hlt', hfull, hjoin⟩ := scaleFast2'_join hpin h0 hlt hzval
   exact ⟨z, bb, h0', hlt', hfull, hjoin, hpoint⟩
 
-open Std.Do in
+open Std.WP in
 /-- **Soundness, the scalar side** (`scaleFast2'`). For any base, a half and a parity bit join
 to the scalar, the half below `2 ^ sDiv2Bits` and one bit narrower at the full width. -/
 theorem scaleFast2'_spec_scalar {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (base : AffinePoint (FVar F))
     (s : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     scaleFast2' (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base s
-    ⦃⇓ _ _ => ⌜∃ (z : ℤ) (bb : Bool), 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧
+    ⦃fun _ _ => ∃ (z : ℤ) (bb : Bool), 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧
         (n ≤ sDiv2Bits + 1 → z < 2 ^ (sDiv2Bits - 1)) ∧
-        ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V⌝⦄ := by
+        ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V⦄ := by
   have hsplitV := splitFieldVar_spec (c := KimchiConstraint F) (V := V) s
   have hsf2 := fun (sDiv2 : FVar F) (sOdd : BoolVar F) =>
     scaleFast2_spec_scalar (V := V) n chunks (scaleFast2'Width n sDiv2Bits) hn base sDiv2 sOdd
   simp only [scaleFast2']
-  mvcgen [hsplitV, hsf2]
-  rename_i hsp _ _
-  intro hq
+  vcgen [hsplitV, hsf2]
+  rename_i hsp _ _ hq
   obtain ⟨bb, -, hpin⟩ := hsp
   obtain ⟨z, h0, hlt, hzval⟩ := hq
   exact ⟨z, bb, scaleFast2'_join hpin h0 hlt hzval⟩
@@ -1791,6 +1793,7 @@ theorem scaleFast2'_spec_scalar {V : Valuation F} [Field F] [DecidableEq F] [ToN
 
 attribute [irreducible] scaleFast2'
 
+open Std.Do in
 /-- **`scaleFast2'`'s state-relative completeness.** The honest split of the scalar, then
 `scaleFast2`'s run on the half and the parity bit. -/
 theorem Prover.scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]

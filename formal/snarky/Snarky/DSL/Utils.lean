@@ -28,24 +28,24 @@ where
     assertEqual x y
     pure y
 
-open Std.Do in
+open Std.WP in
 @[spec] private theorem sealVar.core_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     sealVar.core (c := Builder V c) x
-    ⦃⇓ r _ => ⌜r.val V = x.val V⌝⦄ := by
+    ⦃fun r _ => r.val V = x.val V⦄ := by
   simp only [sealVar.core]
-  mvcgen
+  vcgen
   exact ‹_ = _›.symm
 
-open Std.Do in
+open Std.WP in
 /-- Sealing pins the result to the operand: the pass-through arms by the affine reading,
 the witnessing arm by its `equal` row. -/
 @[spec] theorem sealVar_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     sealVar (c := Builder V c) x
-    ⦃⇓ r _ => ⌜r.val V = x.val V⌝⦄ := by
+    ⦃fun r _ => r.val V = x.val V⦄ := by
   have hred := CVar.reduce_val x V
   simp only [sealVar]
   split
@@ -53,14 +53,14 @@ the witnessing arm by its `equal` row. -/
     rw [heq] at hred
     split
     · subst ‹k = 1›
-      mvcgen
+      vcgen
       simpa [AffineExpression.val] using hred
-    · mvcgen
+    · vcgen
   · next k heq =>
     rw [heq] at hred
-    mvcgen
+    vcgen
     simpa [AffineExpression.val] using hred
-  · mvcgen
+  · vcgen
 
 attribute [irreducible] sealVar sealVar.core
 

@@ -36,34 +36,31 @@ def zipWithVecM {α β γ : Type} {n : Nat} (f : α → β → CircuitM F c γ) 
     (ys : Vector β n) : CircuitM F c (Vector γ n) :=
   zipGo f n (fun i => xs[i]) (fun i => ys[i])
 
-open Std.Do in
+open Std.WP in
 private theorem zipGo_spec {V : Valuation F} {α β γ : Type} [ConstraintHolds F c]
     (f : α → β → CircuitM F (Builder V c) γ) :
     ∀ (n : Nat) (xs : Fin n → α) (ys : Fin n → β) (post : Fin n → γ → Prop),
-      (∀ i : Fin n, ⦃⌜True⌝⦄ f (xs i) (ys i) ⦃⇓ r _ => ⌜post i r⌝⦄) →
-      ⦃⌜True⌝⦄ zipGo f n xs ys ⦃⇓ rs _ => ⌜∀ i : Fin n, post i rs[i]⌝⦄
-  | 0, _, _, _, _ => by
-    intro _ _ _ i
-    exact i.elim0
+      (∀ i : Fin n, ⦃fun _ => True⦄ f (xs i) (ys i) ⦃fun r _ => post i r⦄) →
+      ⦃fun _ => True⦄ zipGo f n xs ys ⦃fun rs _ => ∀ i : Fin n, post i rs[i]⦄
+  | 0, _, _, _, _ => ⟨fun _ _ _ i => i.elim0⟩
   | n + 1, xs, ys, post, hf => by
     have hlast := hf (Fin.last n)
     have hinit := zipGo_spec f n (fun i => xs i.castSucc) (fun i => ys i.castSucc)
       (fun i => post i.castSucc) (fun i => hf i.castSucc)
     simp only [zipGo]
-    mvcgen [hinit, hlast]
-    rename_i init _ hinit' last _ hlast'
-    intro i
+    vcgen [hinit, hlast]
+    rename_i hinit' _ hlast' i
     refine Fin.lastCases ?_ (fun j => ?_) i
     · simpa using hlast'
     · simpa using hinit' j
 
-open Std.Do in
+open Std.WP in
 /-- Every entry's postcondition holds of the collected result. -/
 theorem zipWithVecM_spec {V : Valuation F} {α β γ : Type} [ConstraintHolds F c] {n : Nat}
     (f : α → β → CircuitM F (Builder V c) γ) (xs : Vector α n) (ys : Vector β n)
     (post : Fin n → γ → Prop)
-    (hf : ∀ i : Fin n, ⦃⌜True⌝⦄ f xs[i] ys[i] ⦃⇓ r _ => ⌜post i r⌝⦄) :
-    ⦃⌜True⌝⦄ zipWithVecM f xs ys ⦃⇓ rs _ => ⌜∀ i : Fin n, post i rs[i]⌝⦄ :=
+    (hf : ∀ i : Fin n, ⦃fun _ => True⦄ f xs[i] ys[i] ⦃fun r _ => post i r⦄) :
+    ⦃fun _ => True⦄ zipWithVecM f xs ys ⦃fun rs _ => ∀ i : Fin n, post i rs[i]⦄ :=
   zipGo_spec f n _ _ post hf
 
 /-! ## Accumulating -/
@@ -129,43 +126,38 @@ theorem chain_iff {s α β : Type} {R : s → α → β → s → Prop} (inp out
         | nil => simpa using hL
         | cons z zs => simpa [List.getLast?_cons] using hL
 
-open Std.Do in
+open Std.WP in
 /-- `mapAccumM`'s soundness: a per-step relation, established by the step's own spec,
 holds along the whole trace. The caller supplies `R` and gets the chain — no bespoke
 loop invariant per gadget. -/
 theorem mapAccumM_spec {V : Valuation F} {s α β : Type} [ConstraintHolds F c]
     (f : s → α → CircuitM F (Builder V c) (β × s)) (R : s → α → β → s → Prop)
-    (hstep : ∀ (st : s) (x : α), ⦃⌜True⌝⦄ f st x ⦃⇓ p _ => ⌜R st x p.1 p.2⌝⦄) :
+    (hstep : ∀ (st : s) (x : α), ⦃fun _ => True⦄ f st x ⦃fun p _ => R st x p.1 p.2⦄) :
     ∀ (init : s) (xs : List α),
-      ⦃⌜True⌝⦄ mapAccumM f init xs ⦃⇓ p _ => ⌜Chain R init xs p.1 p.2⌝⦄
-  | init, [] => by
-    intro nv _ _
-    exact ⟨rfl, rfl⟩
+      ⦃fun _ => True⦄ mapAccumM f init xs ⦃fun p _ => Chain R init xs p.1 p.2⦄
+  | init, [] => ⟨fun _ _ _ => ⟨rfl, rfl⟩⟩
   | init, x :: xs => by
     have hx := hstep init x
     have hrest := fun (acc : s) => mapAccumM_spec f R hstep acc xs
     simp only [mapAccumM]
-    mvcgen [hx, hrest]
-    rename_i p _ hp q _ hq
-    exact ⟨p.1, q.1, p.2, rfl, hp, hq⟩
+    vcgen [hx, hrest]
+    rename_i b s₁ _ hp bs _ _ hq
+    exact ⟨b, bs, s₁, rfl, hp, hq⟩
 
-open Std.Do in
+open Std.WP in
 /-- `List.forM`'s soundness: a per-entry postcondition, established by the entry's own
 spec, holds of every entry the loop visited. -/
 theorem forM_spec {V : Valuation F} {α : Type} [ConstraintHolds F c]
     (f : α → CircuitM F (Builder V c) PUnit) (R : α → Prop)
-    (hstep : ∀ x : α, ⦃⌜True⌝⦄ f x ⦃⇓ _ _ => ⌜R x⌝⦄) :
-    ∀ l : List α, ⦃⌜True⌝⦄ l.forM f ⦃⇓ _ _ => ⌜∀ x ∈ l, R x⌝⦄
-  | [] => by
-    intro nv _ _ x hx
-    simp at hx
+    (hstep : ∀ x : α, ⦃fun _ => True⦄ f x ⦃fun _ _ => R x⦄) :
+    ∀ l : List α, ⦃fun _ => True⦄ l.forM f ⦃fun _ _ => ∀ x ∈ l, R x⦄
+  | [] => ⟨fun _ _ _ x hx => by simp at hx⟩
   | x :: l => by
     have hx := hstep x
     have hrest := forM_spec f R hstep l
     rw [show (x :: l).forM f = (do f x; l.forM f) from rfl]
-    mvcgen [hx, hrest]
-    rename_i _ _ _ hR _ _
-    intro hrest' y hy
+    vcgen [hx, hrest]
+    rename_i hR _ _ hrest' y hy
     rcases List.mem_cons.mp hy with rfl | hy'
     · exact hR
     · exact hrest' y hy'

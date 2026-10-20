@@ -17,7 +17,7 @@ the order and expression shape the deployed allocation emits.
 
 namespace Snarky.Kimchi
 
-open Std.Do Snarky
+open Snarky
 
 /-- A point tagged with the curve `y² = x³ + a·x + b` its allocation checks it lies on. -/
 structure CheckedPoint {F : Type} (a b : F) (α : Type) where
@@ -46,21 +46,22 @@ def CheckedPoint.check [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
   let x3 ← mul x2 p.x
   assertSquare p.y (CheckedPoint.rhs a b p.x x3)
 
+open Std.WP in
 /-- Under any valuation satisfying the emitted constraints, the point reads on the curve
 `y² = x³ + a·x + b`. -/
 theorem CheckedPoint.check_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] {V : Valuation F} (a b : F) (p : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄ CheckedPoint.check (c := Builder V c) a b p
-    ⦃⇓ _ _ => ⌜p.y.val V * p.y.val V = p.x.val V ^ 3 + a * p.x.val V + b⌝⦄ := by
+    ⦃fun _ => True⦄ CheckedPoint.check (c := Builder V c) a b p
+    ⦃fun _ _ => p.y.val V * p.y.val V = p.x.val V ^ 3 + a * p.x.val V + b⦄ := by
   simp only [CheckedPoint.check]
-  mvcgen
-  rename_i _ _ h2 _ _ h3 _ _
-  intro hsq
+  vcgen
+  rename_i h2 _ h3 _ _ hsq
   rw [hsq]
   simp only [CheckedPoint.rhs, CVar.val_add_, CVar.val_scale_, h3, h2]
   simp [CVar.val]
   ring
 
+open Std.Do in
 /-- The check's law at the prover's reading: from a point reading as an on-curve value, the
 run succeeds and the state only grows. -/
 theorem CheckedPoint.check_prover_spec [Field F] [DecidableEq F] [BasicSystem F c]

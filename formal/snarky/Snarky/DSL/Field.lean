@@ -29,14 +29,15 @@ where
     let xv ← readVar (val := F) x
     if xv = 0 then AsProver.throw "inv: division by zero" else pure xv⁻¹
 
-open Std.Do in
+open Std.WP in
 @[spec] theorem inv_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     inv (c := Builder V c) x
-    ⦃⇓ r _ => ⌜x.val V * r.val V = 1⌝⦄ := by
+    ⦃fun r _ => x.val V * r.val V = 1⦄ := by
   simp only [inv]
-  mvcgen
+  vcgen
+  all_goals try subst_vars
   all_goals first
     | exact (LawfulBasicSystem.holds_r1cs V _ _ _).mp ‹_›
     | exact mul_inv_cancel₀ ‹_›
@@ -63,15 +64,15 @@ where
     let yv ← AsProver.readCVar y
     pure (xv * yv)
 
-open Std.Do in
+open Std.WP in
 /-- `mul x y` reads as the product. -/
 @[spec] theorem mul_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     mul (c := Builder V c) x y
-    ⦃⇓ a _ => ⌜a.val V = x.val V * y.val V⌝⦄ := by
+    ⦃fun a _ => a.val V = x.val V * y.val V⦄ := by
   simp only [mul]
-  mvcgen
+  vcgen
   all_goals try subst_vars
   all_goals
     first
@@ -96,15 +97,15 @@ where
     let xv ← AsProver.readCVar x
     pure (xv * xv)
 
-open Std.Do in
+open Std.WP in
 /-- `square x` reads as the square. -/
 @[spec] theorem square_spec {V : Valuation F} [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     square (c := Builder V c) x
-    ⦃⇓ a _ => ⌜a.val V = x.val V * x.val V⌝⦄ := by
+    ⦃fun a _ => a.val V = x.val V * x.val V⦄ := by
   simp only [square]
-  mvcgen
+  vcgen
   all_goals try subst_vars
   all_goals
     first
@@ -121,18 +122,17 @@ def div [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (x y :
   let yInv ← inv y
   mul x yInv
 
-open Std.Do in
+open Std.WP in
 /-- `div`'s soundness: the result reads as the quotient. `inv`'s row forces a nonzero
 divisor, so the field's total division is the honest reading with no side condition. -/
 @[spec] theorem div_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     div (c := Builder V c) x y
-    ⦃⇓ r _ => ⌜r.val V = x.val V / y.val V⌝⦄ := by
+    ⦃fun r _ => r.val V = x.val V / y.val V⦄ := by
   simp only [div]
-  mvcgen
-  rename_i _ yInv _ hinv _ _
-  intro hmul
+  vcgen
+  rename_i yInv _ hinv _ _ hmul
   rw [hmul, div_eq_mul_inv, inv_eq_of_mul_eq_one_right hinv]
 
 attribute [irreducible] div
@@ -162,16 +162,19 @@ where
     let xv ← AsProver.readCVar x
     pure (if xv = 0 then 0 else xv⁻¹)
 
-open Std.Do in
+open Std.WP in
 /-- `isZero x` reads `1` where `x` reads `0`, and `0` elsewhere. -/
 @[spec] theorem isZero_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     isZero (c := Builder V c) x
-    ⦃⇓ r _ => ⌜(↑r : CVar F).val V = if x.val V = 0 then 1 else 0⌝⦄ := by
+    ⦃fun (r : BoolVar F) _ => (↑r : CVar F).val V = if x.val V = 0 then 1 else 0⦄ := by
   simp only [isZero]
-  mvcgen
-  rename_i h1 _ _ h2
+  vcgen
+  · subst_vars
+    rfl
+  rename_i h1 h2
+  subst_vars
   have hr1 := (LawfulBasicSystem.holds_r1cs V _ _ _).mp h1
   have hr2 := (LawfulBasicSystem.holds_r1cs V _ _ _).mp h2
   simp only [CVar.val_sub_, CVar.val, BoolVar.coe_unchecked] at hr1 hr2 ⊢
@@ -192,16 +195,17 @@ def equals [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a 
     CircuitM F c (BoolVar F) :=
   isZero (CVar.sub_ a b)
 
-open Std.Do in
+open Std.WP in
 /-- `equals a b` reads `1` where `a` and `b` read equal, and `0` elsewhere. -/
 @[spec] theorem equals_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     equals (c := Builder V c) a b
-    ⦃⇓ r _ => ⌜(↑r : CVar F).val V = if a.val V = b.val V then 1 else 0⌝⦄ := by
+    ⦃fun (r : BoolVar F) _ => (↑r : CVar F).val V = if a.val V = b.val V then 1 else 0⦄ := by
   simp only [equals]
-  mvcgen
-  simp [sub_eq_zero]
+  vcgen
+  rename_i h
+  simpa [sub_eq_zero] using h
 
 attribute [irreducible] equals
 
@@ -225,15 +229,15 @@ def neq [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b :
   let r ← equals a b
   pure (.unchecked (CVar.sub_ (.const 1) ↑r))
 
-open Std.Do in
+open Std.WP in
 /-- `neq a b` reads `0` where `a` and `b` read equal, and `1` elsewhere. -/
 @[spec] theorem neq_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     neq (c := Builder V c) a b
-    ⦃⇓ r _ => ⌜(↑r : CVar F).val V = if a.val V = b.val V then 0 else 1⌝⦄ := by
+    ⦃fun (r : BoolVar F) _ => (↑r : CVar F).val V = if a.val V = b.val V then 0 else 1⦄ := by
   simp only [neq]
-  mvcgen
+  vcgen
   rename_i h
   simp only [BoolVar.coe_unchecked, CVar.val_sub_, CVar.val, h]
   split <;> simp
@@ -299,46 +303,45 @@ def pow [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (x : F
     CircuitM F c (FVar F) :=
   powGo n x n
 
-open Std.Do in
+open Std.WP in
 private theorem powGo_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] :
     ∀ (fuel : Nat) (x : FVar F) (n : Nat), n ≤ fuel + 1 →
-      ⦃⌜True⌝⦄
+      ⦃fun _ => True⦄
       powGo (c := Builder V c) fuel x n
-      ⦃⇓ r _ => ⌜r.val V = x.val V ^ n⌝⦄ := by
+      ⦃fun r _ => r.val V = x.val V ^ n⦄ := by
   intro fuel
   induction fuel with
   | zero =>
     intro x n hfuel
     match n, hfuel with
-    | 0, _ => exact fun nv _ _ => by simp [powGo, build]
-    | 1, _ => exact fun nv _ _ => by simp [powGo, build]
+    | 0, _ => exact ⟨fun nv _ _ => by simp [powGo, build]⟩
+    | 1, _ => exact ⟨fun nv _ _ => by simp [powGo, build]⟩
   | succ fuel ih =>
     intro x n hfuel
     match n with
-    | 0 => exact fun nv _ _ => by simp [powGo, build]
-    | 1 => exact fun nv _ _ => by simp [powGo, build]
+    | 0 => exact ⟨fun nv _ _ => by simp [powGo, build]⟩
+    | 1 => exact ⟨fun nv _ _ => by simp [powGo, build]⟩
     | m + 2 =>
       simp only [powGo]
-      mvcgen [ih]
-      · omega
-      · rename_i sq _ hsq y hpar _ hy
+      vcgen [ih]
+      · rename_i hsq _ hy _
         rw [hy, hsq, ← pow_two, ← pow_mul]
         congr 1
         omega
-      · rename_i sq _ hsq y hpar _ hy r _
-        intro hr
+      · rename_i hsq _ hy _ r _ hr
         rw [hr, hy, hsq, ← pow_two, ← pow_mul, mul_comm, ← pow_succ]
         congr 1
         omega
+      · omega
 
-open Std.Do in
+open Std.WP in
 /-- `pow x n` reads as the operand's `n`-th power. -/
 @[spec] theorem pow_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (n : Nat) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     pow (c := Builder V c) x n
-    ⦃⇓ r _ => ⌜r.val V = x.val V ^ n⌝⦄ :=
+    ⦃fun r _ => r.val V = x.val V ^ n⦄ :=
   powGo_spec n x n (Nat.le_succ n)
 
 attribute [irreducible] pow
