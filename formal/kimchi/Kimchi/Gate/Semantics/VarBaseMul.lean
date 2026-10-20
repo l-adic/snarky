@@ -598,7 +598,7 @@ private lemma ladder_topbit_no_zero (q L : ℕ) (hL : 1 ≤ L) (hqodd : q % 2 = 
   obtain ⟨h1, h2, h3⟩ := ladder_bounds_topbit0 L k ε hk0 hε0 hε hrec j hj1 hjL
   have hjpos : (0 : ℤ) < 2 ^ j := by positivity
   have htpos : 0 < t := by
-    by_contra h; push_neg at h; nlinarith [hqZ, pow_pos (show (0:ℤ) < 2 by norm_num) (L - 1)]
+    by_contra h; push Not at h; nlinarith [hqZ, pow_pos (show (0:ℤ) < 2 by norm_num) (L - 1)]
   rcases Nat.lt_or_ge j (L - 1) with hlt | hge
   · -- `k j < 2^(j+1) ≤ 2^(L-1) < q`
     have hp : (2 : ℤ) ^ (j + 1) ≤ 2 ^ (L - 1) := pow_le_pow_right₀ (by norm_num) (by omega)
@@ -668,7 +668,7 @@ private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 =
     have hL2 : (2 : ℤ) ^ L = 2 * 2 ^ (L - 1) := by rw [← pow_succ']; congr 1; omega
     obtain ⟨h1, h2, h3⟩ := ladder_bounds_topbit1 L k ε hk0 hε0 hε hrec j hj1 hjL
     have htpos : 0 < t := by
-      by_contra hc; push_neg at hc
+      by_contra hc; push Not at hc
       have : (q : ℤ) * t ≤ 0 := mul_nonpos_of_nonneg_of_nonpos hqpos.le hc
       linarith [pow_pos (show (0 : ℤ) < 2 by norm_num) (j + 1)]
     have htodd : t % 2 = 1 := by
@@ -694,7 +694,7 @@ private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 =
             have : (2 : ℤ) ^ (L - 2) ≤ 2 ^ (L - 1) := pow_le_pow_right₀ (by norm_num) (by omega)
             nlinarith
           have ht3 : t < 3 := by
-            by_contra hc; push_neg at hc
+            by_contra hc; push Not at hc
             have : (q : ℤ) * 3 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
             linarith
           omega
@@ -713,7 +713,7 @@ private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 =
           have hp : (2 : ℤ) ^ (L - 1 + 1) = 2 ^ L := by congr 1; omega
           have ht2 : 1 < t := by nlinarith
           have ht3 : t < 3 := by
-            by_contra hc; push_neg at hc
+            by_contra hc; push Not at hc
             have : (q : ℤ) * 3 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
             linarith
           omega
@@ -722,7 +722,7 @@ private lemma ladder_bounded_no_zero (q L : ℕ) (hL : 3 ≤ L) (hqodd : q % 2 =
           subst hj
           have ht1 : 3 < t := by nlinarith
           have ht5 : t < 4 := by
-            by_contra hc; push_neg at hc
+            by_contra hc; push Not at hc
             have : (q : ℤ) * 4 ≤ q * t := mul_le_mul_of_nonneg_left hc hqpos.le
             linarith
           omega
@@ -1001,8 +1001,7 @@ omit [DecidableEq F] in
 /-- **x-coordinate bridge.** On a short-Weierstrass curve, a point that is neither `T`
     nor `−T` has a different `x`-coordinate. -/
 lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)] {x y xT yT : F}
+    {x y xT yT : F}
     (h : c.Nonsingular x y) (hT : c.Nonsingular xT yT)
     (hne : Point.some _ _ h ≠ Point.some _ _ hT) (hneg : Point.some _ _ h ≠ -Point.some _ _ hT) :
     x ≠ xT := by
@@ -1130,7 +1129,7 @@ roots conclude correctness — `varBaseMul_subwrap_correct` below the order,
 one-wrap regime the only even multiple of the order in range is `2·order`. What the parity
 fold's finite subtraction asks. -/
 theorem ladder_off_base (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    [Fact (Nat.Prime c.order)]
     {T : c.Point} (hT : T ≠ 0) (L : ℕ) (z : ℤ) (h0 : 0 ≤ z) (hlt : z < 2 ^ L)
     (hregime : 3 * 2 ^ L ≤ c.order ∨
       (0 < L ∧ 2 ^ (L - 1) < c.order ∧ c.order < 2 ^ L ∧ 2 * z + 2 ^ L + 1 < 4 * c.order - 4 ∧
@@ -1157,11 +1156,11 @@ theorem ladder_off_base (c : WeierstrassCurve.Affine F)
     have hpL1 : (0 : ℤ) < 2 ^ (L - 1) := by positivity
     have hqpos : (0 : ℤ) < c.order := by linarith
     have htpos : 0 < t := by
-      by_contra hc; push_neg at hc
+      by_contra hc; push Not at hc
       have : (c.order : ℤ) * t ≤ 0 := mul_nonpos_of_nonneg_of_nonpos hqpos.le hc
       linarith
     have ht3 : t < 4 := by
-      by_contra hc; push_neg at hc
+      by_contra hc; push Not at hc
       have : (c.order : ℤ) * 4 ≤ c.order * t := mul_le_mul_of_nonneg_left hc hqpos.le
       linarith
     have htev : t % 2 = 0 := by
@@ -1253,7 +1252,7 @@ private lemma e_eq_bitSign {b : F} (hbit : b = 0 ∨ b = 1) {e : ℤ}
     e = bitSign b := by
   cases hbit <;> simp_all +decide [ bitSign ];
   · cases he <;> simp_all +decide;
-    exact h2 ( by linear_combination' he2 );
+    exact h2 ( by linear_combination he2 );
   · rcases he with ( rfl | rfl ) <;> norm_num at *;
     grind +extAll
 
@@ -1580,13 +1579,13 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
     exact hTeq.trans (AddComplete.some_congr c hTns (gs i hi).hT
       (hbase i hi).1.symm (hbase i hi).2.symm)
   · intro i hi
-    simp only [dif_pos (le_of_lt hi)]
+    simp only [dite_eq_left (le_of_lt hi)]
     exact AddComplete.some_congr c (kf i (le_of_lt hi)) (gs i hi).a0
       (haccP i hi).1.symm (haccP i hi).2.symm
   · intro i hi
-    simp only [dif_pos (Nat.succ_le_of_lt hi)]
+    simp only [dite_eq_left (Nat.succ_le_of_lt hi)]
     exact AddComplete.some_congr c (kf (i + 1) (Nat.succ_le_of_lt hi)) (gs i hi).a5 rfl rfl
-  · simp only [dif_pos (Nat.zero_le m)]
+  · simp only [dite_eq_left (Nat.zero_le m)]
     rw [(hkf 0 (Nat.zero_le m)).1]; simp only [Nat.mul_zero, gateLadder_zero]
 
 /-- **VarBaseMul correctness and soundness in the sub-wrap regime.** When
@@ -1719,13 +1718,14 @@ theorem bitsVal_eq_natLsbVal :
     rw [h1, ih, List.map_append, List.map_singleton, List.reverse_append,
       List.reverse_singleton, List.singleton_append, natLsbVal]
     by_cases hv : v = 1
-    · simp only [hv, if_true, decide_true, Bool.toNat_true]
+    · simp only [hv, ite_true, decide_true, Bool.toNat_true]
       push_cast
       ring
-    · simp only [hv, if_false, decide_false, Bool.toNat_false]
+    · simp only [hv, ite_false, decide_false, Bool.toNat_false]
       push_cast
       ring
 
+omit [Field F] [DecidableEq F] in
 theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
     runBits g (m + 1) = runBits g m
       ++ [(g m).b0, (g m).b1, (g m).b2, (g m).b3, (g m).b4] := by
@@ -1733,6 +1733,7 @@ theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
   rw [List.range_succ, List.flatMap_append]
   simp
 
+omit [Field F] [DecidableEq F] in
 theorem runBits_length (g : ℕ → Witness F) (m : ℕ) : (runBits g m).length = 5 * m := by
   induction m with
   | zero => rfl
@@ -1750,23 +1751,28 @@ theorem gateRegister_eq_bitsVal (g : ℕ → Witness F) (m : ℕ) :
     have h0 : ubit g (5 * k) = (if (g k).b0 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k) % 5 = 0 from by omega, show (5 * k) / 5 = k from by omega]
+      rfl
     have h1 : ubit g (5 * k + 1) = (if (g k).b1 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k + 1) % 5 = 1 from by omega,
         show (5 * k + 1) / 5 = k from by omega]
+      rfl
     have h2 : ubit g (5 * k + 1 + 1) = (if (g k).b2 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k + 1 + 1) % 5 = 2 from by omega,
         show (5 * k + 1 + 1) / 5 = k from by omega]
+      rfl
     have h3 : ubit g (5 * k + 1 + 1 + 1) = (if (g k).b3 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k + 1 + 1 + 1) % 5 = 3 from by omega,
         show (5 * k + 1 + 1 + 1) / 5 = k from by omega]
+      rfl
     have h4 : ubit g (5 * k + 1 + 1 + 1 + 1)
         = (if (g k).b4 = 1 then (1 : ℤ) else 0) := by
       unfold ubit gateBit
       rw [show (5 * k + 1 + 1 + 1 + 1) % 5 = 4 from by omega,
         show (5 * k + 1 + 1 + 1 + 1) / 5 = k from by omega]
+      rfl
     rw [show 5 * (k + 1) = 5 * k + 1 + 1 + 1 + 1 + 1 from by ring]
     rw [gateRegister_succ, gateRegister_succ, gateRegister_succ, gateRegister_succ,
       gateRegister_succ, ih, runBits_succ]
@@ -1779,6 +1785,7 @@ def accN (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).n
   | i + 1 => (g i).nPrime
 
+omit [DecidableEq F] in
 /-- **The register chain.** Threading the register through `m` held gates reads the
 final register as the seed shifted up `5m` bits plus the base-2 fold of the run's
 bits — the gadget's scalar pin, at the zero seed. -/
@@ -1828,6 +1835,7 @@ theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
     rw [hcast]
     exact ih (fun x hx => hb x (List.mem_cons_of_mem _ hx)) _
 
+omit [DecidableEq F] in
 /-- Every bit of a held run is boolean: each bit block's first constraint is
 `b·b − b = 0`. -/
 theorem runBits_bool (m : ℕ) (g : ℕ → Witness F)
@@ -1903,10 +1911,10 @@ theorem bitsVal_testBit (x L : ℕ) (hx : x < 2 ^ L) :
     have hbit0 : x.testBit 0 = decide (x % 2 = 1) := Nat.testBit_zero x
     rcases Nat.mod_two_eq_zero_or_one x with h | h
     · rw [show (if x.testBit 0 then (1 : F) else 0) = 0 from by rw [hbit0, h]; simp,
-        if_neg (zero_ne_one (α := F))]
+        ite_eq_right (zero_ne_one (α := F))]
       omega
     · rw [show (if x.testBit 0 then (1 : F) else 0) = 1 from by rw [hbit0, h]; simp,
-        if_pos rfl]
+        ite_eq_left rfl]
       omega
 
 end RunBits
@@ -1919,7 +1927,7 @@ end RunBits
 
 /-- A list of rows, padded by `dflt`, as an indexed run: every row holds, every row and `dflt`
     read the base, and adjacent rows link accumulator and register. -/
-theorem isChain_getD {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
+theorem isChain_getD {F : Type*} [Field F] (c : WeierstrassCurve.Affine F)
     (T : c.Point) (l : List (Witness F)) (dflt : Witness F)
     (hholds : ∀ w ∈ l, Holds w)
     (hbase : ∀ w ∈ dflt :: l, Kimchi.Gate.AddComplete.IsPoint c w.xT w.yT T)
@@ -1947,7 +1955,7 @@ theorem isChain_getD {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve
     exact (hthread.getElem i hi).2
 
 /-- The bit stream of a run given as a list: its rows' five bits, concatenated. -/
-theorem runBits_getD {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F))
+theorem runBits_getD {F : Type*} (l : List (Witness F))
     (dflt : Witness F) :
     runBits (fun i => l.getD i dflt) l.length
       = l.flatMap fun w => [w.b0, w.b1, w.b2, w.b3, w.b4] := by
@@ -1958,7 +1966,7 @@ theorem runBits_getD {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F)
   rw [List.getD_eq_getElem _ _ (by simpa using h2)]
 
 /-- A run given as a list closes at its last row's outputs. -/
-theorem acc_getD_length {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F))
+theorem acc_getD_length {F : Type*} (l : List (Witness F))
     (hne : l ≠ []) (dflt : Witness F) :
     accX (fun i => l.getD i dflt) l.length = (l.getLast hne).x5
       ∧ accY (fun i => l.getD i dflt) l.length = (l.getLast hne).y5
@@ -2311,7 +2319,8 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
     induction i with
     | zero =>
       intro _
-      exact ⟨fun i' hi' => absurd hi' (Nat.not_lt_zero i'), hP0, by simpa using hP0eq⟩
+      exact ⟨fun i' hi' => absurd hi' (Nat.not_lt_zero i'), hP0,
+        by simpa [chainBuild, build] using hP0eq⟩
     | succ i ih =>
       intro hi
       obtain ⟨hrows, hIi, hIeq⟩ := ih (by omega)

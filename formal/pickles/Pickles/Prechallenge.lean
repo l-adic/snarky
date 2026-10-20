@@ -104,7 +104,7 @@ theorem SplitWidth.zmod {p : ℕ} [Fact p.Prime] (hlo : 2 ^ 130 < p) (hhi : p < 
 
 /-- A split `x = lo + 2¹²⁸·hi` below the modulus is the canonical one: `lo` is the low
 128 bits of `x`'s representative. -/
-theorem low128_of_split {p : ℕ} [NeZero p] (x : ZMod p) {lo hi : ℕ} (hlo : lo < 2 ^ 128)
+theorem low128_of_split {p : ℕ} (x : ZMod p) {lo hi : ℕ} (hlo : lo < 2 ^ 128)
     (hx : x = (lo : ZMod p) + 2 ^ 128 * (hi : ZMod p)) (hlt : lo + 2 ^ 128 * hi < p) :
     x.val % 2 ^ 128 = lo := by
   have hcast : (lo : ZMod p) + 2 ^ 128 * (hi : ZMod p) = ((lo + 2 ^ 128 * hi : ℕ) : ZMod p) := by

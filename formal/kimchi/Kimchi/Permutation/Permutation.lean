@@ -74,11 +74,11 @@ theorem columnPoly_eq_sum_indicator {F : Type*} [Field F] {n : ℕ} {ω : F}
   rw [show ((ω : F) ^ i) = ω ^ ((⟨i, hi⟩ : Fin n) : ℕ) from rfl, eval_columnPoly hω,
     eval_finsetSum]
   rw [Finset.sum_eq_single (⟨i, hi⟩ : Fin n)]
-  · rw [eval_smul, eval_columnPoly hω, rowIndicator, if_pos rfl,
+  · rw [eval_smul, eval_columnPoly hω, rowIndicator, ite_eq_left rfl,
       smul_eq_mul, mul_one]
   · intro j _ hj
     rw [eval_smul, eval_columnPoly hω, rowIndicator,
-      if_neg (fun hEq => hj hEq.symm), smul_eq_mul, mul_zero]
+      ite_eq_right (fun hEq => hj hEq.symm), smul_eq_mul, mul_zero]
   · intro h
     exact absurd (Finset.mem_univ _) h
 
@@ -137,7 +137,7 @@ private theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoo
   have hωr : (ω ^ (r : ℕ)) ≠ 0 := pow_ne_zero _ (hω.ne_zero hn.ne')
   have hrow := (zH_dvd_iff hω hn _).mp h r r.isLt
   rw [lagNumer, eval_mul, eval_mul, eval_C, eval_columnPoly hω _ r, rowIndicator,
-    if_pos rfl, mul_one, eval_sub, eval_one] at hrow
+    ite_eq_left rfl, mul_one, eval_sub, eval_one] at hrow
   rcases mul_eq_zero.mp hrow with hz | hc
   · exact sub_eq_zero.mp hz
   · exact absurd hc (mul_ne_zero hnF (inv_ne_zero hωr))
@@ -240,20 +240,20 @@ theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
       · -- head: the accumulator step
         have e1 : zrow i = zc i := by
           simp only [hzrow]
-          rw [if_pos (by omega : i ≤ n - zkRows)]
+          rw [ite_eq_left (by omega : i ≤ n - zkRows)]
         have e2 : zrow (i + 1) = zc (i + 1) := by
           simp only [hzrow]
-          rw [if_pos (by omega : i + 1 ≤ n - zkRows)]
+          rw [ite_eq_left (by omega : i + 1 ≤ n - zkRows)]
         rw [e1, e2]
         exact (hstep i hlt).symm
       · -- tail: the restarted ratio (`n − zkRows + 2 ≤ i ≤ n − 2`)
         have hge2 : n - zkRows + 2 ≤ i := by omega
         have e1 : zrow i = tail (i - (n - zkRows + 2)) := by
           simp only [hzrow]
-          rw [if_neg (by omega), if_neg (by omega)]
+          rw [ite_eq_right (by omega), ite_eq_right (by omega)]
         have e2 : zrow (i + 1) = tail (i - (n - zkRows + 2) + 1) := by
           simp only [hzrow]
-          rw [if_neg (by omega), if_neg (by omega),
+          rw [ite_eq_right (by omega), ite_eq_right (by omega),
             show i + 1 - (n - zkRows + 2) = i - (n - zkRows + 2) + 1 from by omega]
         have := htailStep (i - (n - zkRows + 2)) (by omega)
         rw [show n - zkRows + 2 + (i - (n - zkRows + 2)) = i from by omega] at this
@@ -267,12 +267,12 @@ theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
       rw [eval_sub, eval_one, hzeval 0 hn]
       have : zrow 0 = 1 := by
         simp only [hzrow]
-        rw [if_pos (Nat.zero_le _)]
+        rw [ite_eq_left (Nat.zero_le _)]
         exact hz0
       rw [this]
       simp
     · rw [eval_mul, show (ω ^ i : F) = ω ^ (((⟨i, hi⟩ : Fin n)) : ℕ) from rfl,
-        eval_columnPoly hω, rowIndicator, if_neg (by simp [Fin.ext_iff, h0]), mul_zero,
+        eval_columnPoly hω, rowIndicator, ite_eq_right (by simp [Fin.ext_iff, h0]), mul_zero,
         mul_zero]
   | 2 =>
     show ((_ - 1) * lagNumer ω (⟨n - zkRows, by omega⟩ : Fin n)).eval _
@@ -283,12 +283,12 @@ theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
       rw [eval_sub, eval_one, hzeval (n - zkRows) (by omega)]
       have : zrow (n - zkRows) = 1 := by
         simp only [hzrow]
-        rw [if_pos le_rfl]
+        rw [ite_eq_left le_rfl]
         exact hzm
       rw [this]
       simp
     · rw [eval_mul, show (ω ^ i : F) = ω ^ (((⟨i, hi⟩ : Fin n)) : ℕ) from rfl,
-        eval_columnPoly hω, rowIndicator, if_neg (by simp [Fin.ext_iff, hb]), mul_zero,
+        eval_columnPoly hω, rowIndicator, ite_eq_right (by simp [Fin.ext_iff, hb]), mul_zero,
         mul_zero]
 
 end Kimchi.Permutation

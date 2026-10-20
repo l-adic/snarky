@@ -926,7 +926,7 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
   -- the accumulator chain as a point function over the derived per-step nonsingularity
   set P : ℕ → W.Point := fun k => if hk : k ≤ m then Point.some _ _ (key k hk) else 0 with hPdef
   have hPval : ∀ k (hk : k ≤ m), P k = Point.some _ _ (key k hk) := by
-    intro k hk; rw [hPdef]; exact dif_pos hk
+    intro k hk; rw [hPdef]; exact dite_eq_left hk
   -- per-row GLV contribution, from `gate_advance`
   have hrow : ∀ i, i < m → ∃ c1 c2 : ℤ,
       P (i + 1) = (4 : ℤ) • P i + c1 • T + c2 • φT
@@ -1048,7 +1048,7 @@ theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     and the window's constraints, `off` gives the first-addition condition, and the output is
     on the curve as `[a']·T + [b']·φT` with `a'`, `b'` within `1` of `2·a`, `2·b`. -/
 private theorem one_window_produce (W : WeierstrassCurve.Affine F)
-    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)]
     (T φT : W.Point)
     (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
@@ -1288,7 +1288,7 @@ theorem combo_ne_zero {W : WeierstrassCurve.Affine F} {T φT : W.Point}
     computes `O = (I + Q) + I`. With `M = I + Q`, the cases `M = −I` and `O = −I` are ruled
     out by `h2ne` and `h3ne`; `M = I` and `O = I` would make `Q` or `M` zero. -/
 private theorem window_produce_core (W : WeierstrassCurve.Affine F)
-    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)]
     {T φT : W.Point} {xq yq xI yI : F}
     (hQ : W.Nonsingular xq yq) (hI : W.Nonsingular xI yI)
     {a b c d : ℤ}
@@ -1388,7 +1388,7 @@ private theorem window_produce_core (W : WeierstrassCurve.Affine F)
     from the input's, and its output is on the curve as `[a']·T + [b']·φT` with `a'`, `b'`
     within `1` of `2·a`, `2·b`. The honest counterpart of `one_window_produce`. -/
 private theorem window_produce (W : WeierstrassCurve.Affine F)
-    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)]
     (T φT : W.Point)
     (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
@@ -1471,7 +1471,7 @@ private theorem window_produce (W : WeierstrassCurve.Affine F)
     with `a'`, `b'` within `3` of `4·a`, `4·b`. `window_produce` twice supplies `complete`'s
     side conditions. -/
 private theorem row_produce (W : WeierstrassCurve.Affine F)
-    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)]
     (T φT : W.Point)
     (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
@@ -1545,7 +1545,7 @@ theorem chainBuild_eta (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × 
     `accumulator_chain`'s bounded two-base invariant on the generated rows, with
     `row_produce` certifying each row. -/
 theorem chain_complete (W : WeierstrassCurve.Affine F)
-    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)]
     (T φT : W.Point)
     (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T

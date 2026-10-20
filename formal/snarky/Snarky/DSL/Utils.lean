@@ -86,7 +86,7 @@ section ProverReading
 open Std.Do
 
 /-- `readVar`'s witness at a field cell: the fresh cell reads the operand's entry reading. -/
-@[spec] private def Prover.readVar_reg [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] private def Prover.readVar_reg [Field F] [BasicSystem F c]
     [ConstraintHolds F c]
     (x : FVar F) :=
   Prover.register (Prover.witness_of_run (c := c) (readVar (val := F) x) (fun st => x.Scoped st)

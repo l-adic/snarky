@@ -237,12 +237,65 @@ theorem runPScalar_append_zero :
   simp only [runPScalar, runLinEvals, runZetaM, runZetaOmegaM, runZetaOmega,
     runOracles_append_zero C σ cvk cp pub zs hz]
 
+theorem runFrOracles_append_zero :
+    runFrOracles C σ cvk cp (pub ++ zs) = runFrOracles C σ cvk cp pub := by
+  simp only [runFrOracles, runOracles_append_zero C σ cvk cp pub zs hz,
+    runPubEvals_append_zero C σ cvk cp pub zs hz]
+
+theorem runZetaOmega_append_zero :
+    runZetaOmega C σ cvk cp (pub ++ zs) = runZetaOmega C σ cvk cp pub := by
+  simp only [runZetaOmega, runOracles_append_zero C σ cvk cp pub zs hz]
+
+theorem runFtComm_append_zero : runFtComm C σ cvk cp (pub ++ zs) = runFtComm C σ cvk cp pub := by
+  simp only [runFtComm, runFComm, runPScalar, runLinEvals, runZetaM, runZetaN, runZetaOmegaM,
+    runZetaOmega, runOracles_append_zero C σ cvk cp pub zs hz]
+
+theorem runFtEval0P_append_zero (pe0 : C.ScalarField) :
+    runFtEval0P C σ cvk cp (pub ++ zs) pe0 = runFtEval0P C σ cvk cp pub pe0 := by
+  simp only [runFtEval0P, runLinEvals, runZetaM, runZetaOmegaM, runZetaOmega,
+    runOracles_append_zero C σ cvk cp pub zs hz]
+
+/-- The stream's first block, at any size proofs: equal arrays, so equal vectors. -/
+theorem runStreamOlds_append_zero (h₁ h₂) :
+    (⟨cp.olds.map (fun a => (a.sg, bPoly a.u.get (runOracles C σ cvk cp (pub ++ zs)).zeta,
+        bPoly a.u.get (runZetaOmega C σ cvk cp (pub ++ zs)))), h₁⟩
+      : Vector (C.Point × C.ScalarField × C.ScalarField) cp.olds.size)
+    = ⟨cp.olds.map (fun a => (a.sg, bPoly a.u.get (runOracles C σ cvk cp pub).zeta,
+        bPoly a.u.get (runZetaOmega C σ cvk cp pub))), h₂⟩ := by
+  rw [Vector.mk.injEq, runOracles_append_zero C σ cvk cp pub zs hz,
+    runZetaOmega_append_zero C σ cvk cp pub zs hz]
+
+/-- The stream's ft row, at any size proofs. -/
+theorem runStreamFt_append_zero (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc))
+    (h₁ h₂) :
+    (⟨#[(runFtComm C σ cvk cp (pub ++ zs),
+        runFtEval0P C σ cvk cp (pub ++ zs) (combineAt (runZetaM C σ cvk cp (pub ++ zs))
+          pe.zeta.toArray), cp.ftEval1)], h₁⟩ : Vector (C.Point × C.ScalarField × C.ScalarField) 1)
+    = ⟨#[(runFtComm C σ cvk cp pub,
+        runFtEval0P C σ cvk cp pub (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray),
+        cp.ftEval1)], h₂⟩ := by
+  rw [Vector.mk.injEq, runFtComm_append_zero C σ cvk cp pub zs hz,
+    runFtEval0P_append_zero C σ cvk cp pub zs hz, runZetaM_append_zero C σ cvk cp pub zs hz]
+
+/-- By rewriting, not `simp`: the stream's vector blocks carry size proofs fixed to their
+entries, so each block is rewritten whole. -/
+theorem runStreamP_append_zero (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
+    runStreamP C σ cvk cp (pub ++ zs) pe = runStreamP C σ cvk cp pub pe := by
+  unfold runStreamP
+  rw [runStreamOlds_append_zero C σ cvk cp pub zs hz _ (by simp),
+    runStreamFt_append_zero C σ cvk cp pub zs hz pe _ rfl,
+    runPublicComm_append_zero C σ cvk pub zs hz]
+
+theorem runInputP_append_zero (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc))
+    (v u : C.ScalarField) :
+    runInputP C σ cvk cp (pub ++ zs) pe v u = runInputP C σ cvk cp pub pe v u := by
+  simp only [runInputP, runZetaOmega, runStreamP_append_zero C σ cvk cp pub zs hz,
+    runOracles_append_zero C σ cvk cp pub zs hz]
+
 theorem runInput_append_zero :
     runInput C σ cvk cp (pub ++ zs) = runInput C σ cvk cp pub := by
-  simp only [runInput, runInputP, runStreamP, runFrOracles, runFtComm, runFComm, runFtEval0P,
-    runPScalar, runLinEvals, runZetaOmega, runZetaN, runZetaM, runZetaOmegaM,
-    runOracles_append_zero C σ cvk cp pub zs hz, runPubEvals_append_zero C σ cvk cp pub zs hz,
-    runPublicComm_append_zero C σ cvk pub zs hz]
+  simp only [runInput, runPubEvals_append_zero C σ cvk cp pub zs hz,
+    runFrOracles_append_zero C σ cvk cp pub zs hz, runInputP_append_zero C σ cvk cp pub zs hz]
 
 end AppendZero
 
@@ -270,15 +323,15 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : Kim
       rfl
     · have hg : (decide (cp.olds.size ≠ cvk.prevChallenges) || decide (pub.size ≠ cvk.publicCount))
           = true := by simp [h]
-      simp only [hg, if_true]
+      simp only [hg, ite_true]
   have hcond : (cp.olds.size ≠ cvk.prevChallenges || pub.size ≠ cvk.publicCount) = true
       ↔ ¬ Guards C cvk cp pub := by
     simp only [Guards, Bool.or_eq_true, decide_eq_true_eq, ne_eq, not_and_or]
   rw [hkv]
   by_cases hg : Guards C cvk cp pub
-  · rw [if_neg (hcond.not.mpr (not_not.mpr hg))]
+  · rw [ite_eq_right (hcond.not.mpr (not_not.mpr hg))]
     simp [hg]
-  · rw [if_pos (hcond.mpr hg)]
+  · rw [ite_eq_left (hcond.mpr hg)]
     simp [hg]
 
 end Kimchi.Verifier

@@ -197,7 +197,7 @@ private theorem gateTable?_emitted {gates : List (AssembledGate F)} {n : ℕ}
       cases h
       obtain ⟨hsize, -, hrow⟩ := gateRowsInto_eq_some n #[] gates arr harr
       have hi' : i.val < arr.size := by simp at hsize; omega
-      simp only [arrayTable, dif_pos hi']
+      simp only [arrayTable, dite_eq_left hi']
       have e : arr[(#[] : Array (GateRow F n)).size + i.val]'(by simp at hsize ⊢; omega) =
           arr[i.val] := getElem_congr_idx (by simp)
       exact gateRow?_eq_some ((hrow i.val hi).trans (congrArg some e))
@@ -217,7 +217,7 @@ theorem gateTable?_padding {gates : List (AssembledGate F)} {n : ℕ} {t : Fin n
       cases h
       obtain ⟨hsize, -, -⟩ := gateRowsInto_eq_some n #[] gates arr harr
       have hi' : ¬ i.val < arr.size := by simp at hsize; omega
-      simp only [arrayTable, dif_neg hi']
+      simp only [arrayTable, dite_eq_right hi']
       exact ⟨rfl, fun _ => rfl, fun _ => rfl⟩
     · cases h
   · cases h

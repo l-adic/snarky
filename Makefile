@@ -152,7 +152,7 @@ lean-lint: ## Run Batteries' env linters over every Lean library root
 	  lake exe runLinter $$m || exit 1; \
 	done
 
-lean-shake: ## Check Lean imports for redundancy (mathlib shake; config formal/scripts/noshake.json)
+lean-shake: ## Check Lean imports for redundancy (Batteries' shake, vendored; config formal/scripts/noshake.json)
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake exe shake \
 	  --cfg "$$PWD/scripts/noshake.json" \
 	  Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
@@ -170,7 +170,7 @@ lean-spec-locality: ## Gate: a pickles gadget's spec is stated only in the gadge
 lean-import-boundaries: ## Gate: the compiler and checkers import no proof or check module; no library root reaches a check module
 	bash formal/scripts/check-import-boundaries.sh
 
-lean-kernel-check: ## Kernel-replay every Lean module through lean4checker
+lean-kernel-check: ## Kernel-replay every Lean module through leanchecker
 	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/kernel-replay.sh
 
 lean-prune-stale: ## Prune build artifacts of deleted/renamed Lean modules

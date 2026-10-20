@@ -56,30 +56,29 @@ noncomputable def columnCommitment (C : Ipa.KimchiCurve) {n : Nat} (σ : SRS C.P
   commitPolyChunk C σ (keyColumnPoly idx col) chunk +
     if permCols + coeffCols ≤ col.val then σ.h else 0
 
-/-- The index's NTT domain, with nonzero domain size in the scalar field. -/
-private def indexDomain {F : Type} [Field F] {logN : Nat} (idx : Index F (2 ^ logN))
-    (hn : ((2 ^ logN : Nat) : F) ≠ 0) : Domain F :=
-  ⟨logN, idx.omega, idx.omega_prim, hn⟩
+/-- The index's NTT domain. -/
+private def indexDomain {F : Type} [Field F] {logN : Nat} (idx : Index F (2 ^ logN)) :
+    Domain F :=
+  ⟨logN, idx.omega, idx.omega_prim⟩
 
 /-- Commit all index columns independently of the supplied key's commitments. -/
 @[noinline] private def deriveColumns (C : Ipa.KimchiCurve) {logN : Nat} (σ : SRS C.Point)
-    (idx : Index C.ScalarField (2 ^ logN)) (hn : ((2 ^ logN : Nat) : C.ScalarField) ≠ 0)
-    (nc : Nat) : Vector (Vector C.Point nc) (permCols + coeffCols + selectorCols) :=
+    (idx : Index C.ScalarField (2 ^ logN)) (nc : Nat) :
+    Vector (Vector C.Point nc) (permCols + coeffCols + selectorCols) :=
   Vector.ofFn fun col =>
-    let points := commitColumn C σ (indexDomain idx hn) nc (keyColumnRow idx col)
+    let points := commitColumn C σ (indexDomain idx) nc (keyColumnRow idx col)
     if permCols + coeffCols ≤ col.val then points.map (· + σ.h) else points
 
 /-- Each derived column chunk is the corresponding polynomial commitment. -/
 private theorem deriveColumns_eq (C : Ipa.KimchiCurve) {logN : Nat} (σ : SRS C.Point)
-    (idx : Index C.ScalarField (2 ^ logN)) (hn : ((2 ^ logN : Nat) : C.ScalarField) ≠ 0)
-    (nc : Nat) (col : KeyColumn) (chunk : Fin nc) :
-    (deriveColumns C σ idx hn nc)[col][chunk] = columnCommitment C σ idx col chunk.val := by
+    (idx : Index C.ScalarField (2 ^ logN)) (nc : Nat) (col : KeyColumn) (chunk : Fin nc) :
+    (deriveColumns C σ idx nc)[col][chunk] = columnCommitment C σ idx col chunk.val := by
   simp only [deriveColumns, Fin.getElem_fin, Vector.getElem_ofFn]
   split
   · simp [Vector.getElem_map, columnCommitment, keyColumnPoly, indexDomain, *]
-    exact commitColumn_eq C σ (indexDomain idx hn) nc (keyColumnRow idx col) chunk
+    exact commitColumn_eq C σ (indexDomain idx) nc (keyColumnRow idx col) chunk
   · simp [columnCommitment, keyColumnPoly, indexDomain, *]
-    exact commitColumn_eq C σ (indexDomain idx hn) nc (keyColumnRow idx col) chunk
+    exact commitColumn_eq C σ (indexDomain idx) nc (keyColumnRow idx col) chunk
 
 /-- A commitment disagreement, located at its column and chunk. -/
 structure KeyColumnDiff where
@@ -167,7 +166,7 @@ inductive KeyFailure where
 private def deriveAt (C : Ipa.KimchiCurve) {n nc : Nat}
     (σ : SRS C.Point) (idx : Index C.ScalarField n) (K : KimchiVK C nc)
     (hd : n = K.n) :=
-  deriveColumns C σ (cast (congrArg (Index C.ScalarField) hd) idx) K.natCast_n_ne_zero nc
+  deriveColumns C σ (cast (congrArg (Index C.ScalarField) hd) idx) nc
 
 private theorem deriveAt_eq (C : Ipa.KimchiCurve) {n nc : Nat}
     (σ : SRS C.Point) (idx : Index C.ScalarField n) (K : KimchiVK C nc)
@@ -175,7 +174,7 @@ private theorem deriveAt_eq (C : Ipa.KimchiCurve) {n nc : Nat}
     (deriveAt C σ idx K hd)[col][chunk] = columnCommitment C σ idx col chunk.val := by
   cases hd
   unfold deriveAt
-  exact deriveColumns_eq C σ idx K.natCast_n_ne_zero nc col chunk
+  exact deriveColumns_eq C σ idx nc col chunk
 
 /-- Check metadata first, then derive commitments from the index and SRS and retain their
 polynomial correspondence. No supplied commitment participates in derivation. -/

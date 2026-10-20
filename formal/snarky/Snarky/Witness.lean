@@ -430,7 +430,7 @@ open Std.Do in
     (witness (val := val) compute : CircuitM F (Builder V c) var)
     ⦃⇓ r _ => ⌜S.post V r⌝⦄ := by
   intro nv _ hsat
-  simp only [witness, build, build_bind, List.append_nil] at hsat ⊢
+  simp only [witness, build, build_bind, build_pure, List.append_nil] at hsat ⊢
   exact S.check_sound V _ _ hsat
 
 /-! ## The leaves -/
@@ -451,7 +451,7 @@ theorem run_mapM_readCVar [Add F] [Mul F] [Zero F] {st : ProverState F} :
     {v : var} (hs : CircuitType.Scoped (val := val) st v) :
     (readVar (val := val) v).run st.env = .ok (CircuitType.readVal st.env.get v) := by
   simp only [readVar, AsProver.bind_eq, AsProver.run_bind, run_mapM_readCVar hs, Except.bind]
-  rw [dif_pos (by simp)]
+  rw [dite_eq_left (by simp)]
   rfl
 
 end Combinators
@@ -460,7 +460,7 @@ end Combinators
 example {val var : Type} [Field F] [BasicSystem F c] [ConstraintHolds F c]
     [CircuitType F val var] (compute : AsProver F (UnChecked val)) (nv : Nat) :
     (build (witness (c := c) (val := UnChecked val) compute) nv).constraints = [] := by
-  simp [witness, build, build_bind]
+  rfl
 
 /-! ## The witness law at the prover's reading
 
@@ -479,7 +479,7 @@ variable {val var : Type}
 value, the fresh bundle is in scope and reads what the computation returned, at a state
 extending the entry. The value is existential in the postcondition, so that the computation's
 run is a fact a later condition can match. -/
-theorem Prover.witness_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+theorem Prover.witness_spec [Field F] [BasicSystem F c] [ConstraintHolds F c]
     [inst : CircuitType F val var] [CheckedType F (Prover c) val var]
     [WPCheckedType F (Prover c) val var] (compute : AsProver F val) (st₀ : ProverState F) :
     ⦃fun st => ⌜st = st₀ ∧ (∀ e, compute.run st₀.env ≠ .error e) ∧
@@ -541,7 +541,7 @@ theorem Prover.witness_spec [Field F] [DecidableEq F] [BasicSystem F c] [Constra
 /-- The witness law at one advice: where the advice's run at the entry table is known to
 return `value` of the entry, admissible, the fresh bundle reads that value. What a gadget
 registers, once per advice, with `value` a named function of the entry readings. -/
-theorem Prover.witness_of_run [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+theorem Prover.witness_of_run [Field F] [BasicSystem F c] [ConstraintHolds F c]
     [CircuitType F val var] [CheckedType F (Prover c) val var]
     [WPCheckedType F (Prover c) val var] (compute : AsProver F val)
     (pre : ProverState F → Prop) (value : ProverState F → val)

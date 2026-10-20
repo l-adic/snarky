@@ -800,7 +800,7 @@ theorem publicCommitment_eq_sum {nc : ℕ} (σ : SRS C.Point) (L : Array (Vector
         (((L.extract 0 pub.size).zip pub).toList.map
             (fun Pp => (-Pp.2).val • Pp.1[c])).sum + σ.h) := by
   unfold publicCommitment
-  rw [if_neg hne]
+  rw [ite_eq_right hne]
   refine congrArg Vector.ofFn (funext fun c => ?_)
   rw [← Array.foldl_toList, ← List.foldl_map, foldl_add_eq, _root_.zero_add]
 
@@ -837,7 +837,7 @@ theorem publicCommitment_append_zero {nc : ℕ} (σ : SRS C.Point) (L : Array (V
     rw [Array.eq_empty_of_size_eq_zero hp] at hs ⊢
     unfold publicCommitment
     ext c hc
-    simp only [Array.size_empty, if_true, Vector.getElem_ofFn, Vector.getElem_replicate]
+    simp only [Array.size_empty, ite_true, Vector.getElem_ofFn, Vector.getElem_replicate]
     rw [hs ⟨c, hc⟩]
     simp
   · rw [publicCommitment_eq_sum C σ L pub hp]

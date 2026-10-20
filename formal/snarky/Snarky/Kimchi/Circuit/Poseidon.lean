@@ -49,7 +49,7 @@ def SpongeState.cells (st : SpongeState F) : FVar F × FVar F × FVar F :=
 `Poseidon.Triple` under its own name. A `def`, not an `abbrev`, so instance resolution does not
 see through it: the sponge state's `CircuitType` instance matches this type only, never another
 triple of cells, whose variables are three plain cells. -/
-def SpongeStateVal (F : Type) : Type := Poseidon.Triple F
+@[implicit_reducible] def SpongeStateVal (F : Type) : Type := Poseidon.Triple F
 
 /-- A width-3 value state encodes as its three slots, read back as a `SpongeState`. -/
 instance instCircuitTypeSpongeState :
@@ -72,6 +72,14 @@ instance instCircuitTypeSpongeState :
     (s : SpongeState F) :
     CircuitType.readVal (val := SpongeStateVal F) V s
       = (s.s0.val V, s.s1.val V, s.s2.val V) := rfl
+
+/-- The instance's variable encoding. -/
+@[simp] theorem varToFields_spongeState (s : SpongeState F) :
+    CircuitType.varToFields (val := SpongeStateVal F) s = #v[s.s0, s.s1, s.s2] := rfl
+
+/-- The instance's value encoding. -/
+@[simp] theorem valueToFields_spongeState (v : SpongeStateVal F) :
+    CircuitType.valueToFields (F := F) (var := SpongeState F) v = #v[v.1, v.2.1, v.2.2] := rfl
 
 /-- The state is in scope when its three cells are. -/
 @[simp] theorem scoped_spongeState [Add F] [Mul F] [Zero F] {st : ProverState F}
@@ -150,7 +158,7 @@ private theorem chainHolds_window [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
       (by simp at hlen ⊢; omega)
     rw [show k0 + 1 + i = k0 + (i + 1) by omega] at ih
     simpa [show ∀ j, 5 * (i + 1) + j = (5 * i + j) + 5 from fun j => by omega,
-      List.getD] using ih
+      show 5 * (i + 1) = 5 * i + 5 from by omega, List.getD] using ih
   | _, _, [], h, hlen => by simp at hlen
   | _, _, [_], h, hlen => by
     simp only [List.length_cons, List.length_nil] at hlen

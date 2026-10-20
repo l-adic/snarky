@@ -23,7 +23,7 @@ open Snarky
 
 /-- The number of predecessor slots of a step proof; a rule with fewer predecessors pads with
 dummies. -/
-def MaxProofsVerified : ℕ := 2
+@[implicit_reducible] def MaxProofsVerified : ℕ := 2
 
 /-- The step SRS's round count: a step proof's opening has this many rounds, and so does each
 of its old accumulators. -/

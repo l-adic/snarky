@@ -401,8 +401,11 @@ private theorem wrapMessage_eq_of_input_eq {w w' kw : ℕ}
   have hc' := (List.map_inj_right (fun _ _ h => Vector.toList_inj.mp h)).mp hc
   simp only [readWrapMessage, MessagesForNextWrapProof.mk.injEq]
   refine ⟨?_, hc'⟩
-  change (⟨_, _⟩ : AffinePoint Fq) = ⟨_, _⟩
-  simpa only [AffinePoint.mk.injEq, List.cons.injEq, and_true] using hsg
+  have hext : ∀ p q : AffinePoint Fq, p.x = q.x → p.y = q.y → p = q := by
+    rintro ⟨_, _⟩ ⟨_, _⟩ h1 h2
+    simp_all
+  simp only [List.cons.injEq, and_true] at hsg
+  exact hext _ _ hsg.1 hsg.2
 
 /-- A step message carrying `n` proofs and a slot's rebuild of it keeping a suffix of `k`, over a
 statement of the message's size: their lengths differ by the `ks + 2` cells of each proof one

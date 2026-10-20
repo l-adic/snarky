@@ -18,6 +18,9 @@ open Std.Do
 
 set_option mvcgen.warning false
 
+-- the control runs `mvcgen` itself, whose deprecation warning is not what the guard tests
+set_option linter.deprecated.syntax false
+
 variable {F c : Type}
 
 /-- `mul` under a name of its own, so that its law can be registered unwrapped without touching

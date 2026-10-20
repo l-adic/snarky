@@ -33,9 +33,10 @@ nothing per token.
 
 This module is the only place in the tree that uses `native_decide` outside the upstream
 CompElliptic certificates and `Pasta/Endo.lean`, and it is named in the pickles axiom gate
-for that reason. It trusts the compiler through `Lean.trustCompiler`; kernel `decide` is
-not viable on a 486-monomial comparison over a 255-bit field. The reachability fact about
-each stream is decided here too, so the gate has one module to trust.
+for that reason. It trusts the compiler: each decision is an auxiliary axiom asserting what
+the compiled check returned; kernel `decide` is not viable on a 486-monomial comparison over a
+255-bit field. The reachability fact about each stream is decided here too, so the gate has
+one module to trust.
 
 `endo` and `mds` are the deployed constants rather than variables: they parameterise the
 gates' `Argument`s, which are defined over the field. The certificate is therefore
@@ -60,7 +61,7 @@ sides; giving them variables lets the transported evaluations be literally `e`. 
 private abbrev NV : ℕ := 64
 
 /-- The polynomial algebra the identity is decided in. -/
-private abbrev MPoly (K : Type) [Field K] [BEq K] [LawfulBEq K] := CMvPolynomial NV K
+private abbrev MPoly (K : Type) [Field K] := CMvPolynomial NV K
 
 /-- Variable `i`, or zero past the end. -/
 private def xv (i : ℕ) : MPoly K := if h : i < NV then CMvPolynomial.X ⟨i, h⟩ else 0

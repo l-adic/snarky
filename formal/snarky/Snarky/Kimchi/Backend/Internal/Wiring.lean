@@ -52,7 +52,7 @@ private theorem pushCell_eq (c : Nat × Nat) (o : Option (Array (Nat × Nat))) :
 
 /-- The first pass's inner body: one cell of row `i` into its class, the column advanced. -/
 private def classInner (roots : Array Variable) (i : Nat) (mv : Option Variable)
-    (r : MProd Classes Nat) : Id (ForInStep (MProd Classes Nat)) := do
+    (r : Classes × Nat) : Id (ForInStep (Classes × Nat)) := do
   let mut classes := r.fst
   let mut j := r.snd
   if let some v := mv then
@@ -64,9 +64,9 @@ private def classInner (roots : Array Variable) (i : Nat) (mv : Option Variable)
 
 /-- The first pass's outer body: one row's wired cells into their classes, the row
 advanced. -/
-private def classOuter (roots : Array Variable) (row : KimchiRow F) (r : MProd Classes Nat) :
-    Id (ForInStep (MProd Classes Nat)) := do
-  let r' ← forIn (row.vars.toList.take 7) (⟨r.fst, 0⟩ : MProd Classes Nat)
+private def classOuter (roots : Array Variable) (row : KimchiRow F) (r : Classes × Nat) :
+    Id (ForInStep (Classes × Nat)) := do
+  let r' ← forIn (row.vars.toList.take 7) (⟨r.fst, 0⟩ : Classes × Nat)
     (classInner roots r.snd)
   pure (ForInStep.yield ⟨r'.fst, r.snd + 1⟩)
 
@@ -83,7 +83,7 @@ private def cycleOuter (x : Variable × Array (Nat × Nat)) (m : Std.HashMap (Na
 /-- The wire map as its two passes over named bodies. -/
 private theorem wireMap_eq (roots : Array Variable) (rows : List (KimchiRow F)) :
     wireMap roots rows = Id.run (do
-      let r ← forIn rows (⟨∅, 0⟩ : MProd Classes Nat) (classOuter roots)
+      let r ← forIn rows (⟨∅, 0⟩ : Classes × Nat) (classOuter roots)
       forIn r.fst (∅ : Std.HashMap (Nat × Nat) Wire) cycleOuter) := by
   rfl
 
@@ -121,7 +121,7 @@ private theorem classFold_append (init : Classes) (a b : List (Variable × (Nat 
 
 private theorem forIn_classInner (roots : Array Variable) (i : Nat)
     (cells : List (Option Variable)) (classes : Classes) (j : Nat) :
-    forIn (m := Id) cells (⟨classes, j⟩ : MProd Classes Nat) (classInner roots i) =
+    forIn (m := Id) cells (⟨classes, j⟩ : Classes × Nat) (classInner roots i) =
       ⟨classFold classes (rowKeyed roots i cells j), j + cells.length⟩ := by
   induction cells generalizing classes j with
   | nil => rfl
@@ -129,27 +129,27 @@ private theorem forIn_classInner (roots : Array Variable) (i : Nat)
     cases mv with
     | none =>
       simp only [List.forIn_cons]
-      show forIn rest (⟨classes, j + 1⟩ : MProd Classes Nat) (classInner roots i) = _
+      show forIn rest (⟨classes, j + 1⟩ : Classes × Nat) (classInner roots i) = _
       rw [ih]
       simp [rowKeyed, List.zipIdx_cons, classFold, Nat.add_assoc, Nat.add_comm 1]
     | some v =>
       simp only [List.forIn_cons]
       show forIn rest (⟨classes.alter (roots.getD v v) (pushCell (i, j)), j + 1⟩ :
-        MProd Classes Nat) (classInner roots i) = _
+        Classes × Nat) (classInner roots i) = _
       rw [ih]
       simp [rowKeyed, List.zipIdx_cons, classFold, Nat.add_assoc, Nat.add_comm 1]
 
 private theorem forIn_classOuter (roots : Array Variable) (rows : List (KimchiRow F))
     (classes : Classes) (i : Nat) :
-    forIn (m := Id) rows (⟨classes, i⟩ : MProd Classes Nat) (classOuter roots) =
+    forIn (m := Id) rows (⟨classes, i⟩ : Classes × Nat) (classOuter roots) =
       ⟨classFold classes (keyedFrom roots rows i), i + rows.length⟩ := by
   induction rows generalizing classes i with
   | nil => rfl
   | cons row rest ih =>
     simp only [List.forIn_cons]
     show forIn rest (⟨(forIn (m := Id) (row.vars.toList.take 7)
-      (⟨classes, 0⟩ : MProd Classes Nat) (classInner roots i)).fst, i + 1⟩ :
-        MProd Classes Nat) (classOuter roots) = _
+      (⟨classes, 0⟩ : Classes × Nat) (classInner roots i)).fst, i + 1⟩ :
+        Classes × Nat) (classOuter roots) = _
     rw [forIn_classInner, ih]
     simp [keyedFrom, List.zipIdx_cons, classFold_append, Nat.add_assoc, Nat.add_comm 1]
 
@@ -259,8 +259,8 @@ private theorem getElem?_cycleFold_of_notMem_index (cells : Array (Nat × Nat))
     have hne : cells[k]! ≠ cells[q] := by
       rw [getElem!_pos cells k hk]
       intro h
-      have := (List.getElem_inj (xs := cells.toList) (h₀ := by simpa using hk)
-        (h₁ := by simpa using hq) hnd).mp (by simpa using h)
+      have := (List.Nodup.getElem_inj (xs := cells.toList) (hi := by simpa using hk)
+        (hj := by simpa using hq) hnd).mp (by simpa using h)
       exact hqks (this ▸ List.mem_cons_self ..)
     simp [hne]
 
@@ -506,7 +506,7 @@ theorem wireMap_getElem? (roots : Array Variable) (rows : List (KimchiRow F)) (k
         ((classCells roots rows k)[(q + 1) % (classCells roots rows k).length]'
           (Nat.mod_lt _ (by omega))).2⟩ := by
   rw [wireMap_eq]
-  show (Id.run (forIn (m := Id) (forIn (m := Id) rows (⟨∅, 0⟩ : MProd Classes Nat)
+  show (Id.run (forIn (m := Id) (forIn (m := Id) rows (⟨∅, 0⟩ : Classes × Nat)
     (classOuter roots)).fst ∅ cycleOuter))[_]? = _
   rw [forIn_classOuter, Std.HashMap.forIn_eq_forIn_toList, forIn_cycleOuter]
   show (cyclesFold (classFold ∅ (keyedFrom roots rows 0)).toList ∅)[_]? = _
@@ -519,7 +519,7 @@ theorem wireMap_getElem? (roots : Array Variable) (rows : List (KimchiRow F)) (k
     omega
   have hmem : (k, (classCells roots rows k).toArray) ∈
       (classFold ∅ (keyedFrom roots rows 0)).toList := by
-    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, getElem?_classFold, if_neg hne]
+    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, getElem?_classFold, ite_eq_right hne]
     simp [classCells, keyedCells]
   have hnd : ∀ x ∈ (classFold ∅ (keyedFrom roots rows 0)).toList, x.2.toList.Nodup := by
     intro x hx
@@ -561,7 +561,7 @@ theorem getElem_assembleGates (roots : Array Variable) (rows : List (KimchiRow F
 theorem wireMap_getElem?_eq_none (roots : Array Variable) (rows : List (KimchiRow F))
     (c : Nat × Nat) (h : ∀ k, c ∉ classCells roots rows k) : (wireMap roots rows)[c]? = none := by
   rw [wireMap_eq]
-  show (Id.run (forIn (m := Id) (forIn (m := Id) rows (⟨∅, 0⟩ : MProd Classes Nat)
+  show (Id.run (forIn (m := Id) (forIn (m := Id) rows (⟨∅, 0⟩ : Classes × Nat)
     (classOuter roots)).fst ∅ cycleOuter))[c]? = none
   rw [forIn_classOuter, Std.HashMap.forIn_eq_forIn_toList, forIn_cycleOuter]
   show (cyclesFold (classFold ∅ (keyedFrom roots rows 0)).toList ∅)[c]? = none
@@ -592,7 +592,7 @@ theorem wireTarget_eq (roots : Array Variable) (rows : List (KimchiRow F)) (i j 
   unfold wireTarget classTarget
   rw [Std.HashMap.getD_eq_getD_getElem?]
   by_cases hb : i < rows.length ∧ j < 7
-  · rw [dif_pos hb]
+  · rw [dite_eq_left hb]
     rcases hl : rows[i].vars[j]'(by omega) with _ | v
     · rw [wireMap_getElem?_eq_none]
       · rfl
@@ -607,7 +607,7 @@ theorem wireTarget_eq (roots : Array Variable) (rows : List (KimchiRow F)) (i j 
       dsimp only
       rw [← hcq, wireMap_getElem? roots rows _ q hqlt, Option.getD_some,
         getElem!_pos (classCells roots rows (roots.getD v v)) _ (Nat.mod_lt _ (by omega))]
-  · rw [dif_neg hb, wireMap_getElem?_eq_none]
+  · rw [dite_eq_right hb, wireMap_getElem?_eq_none]
     · rfl
     · intro k hk
       exact hb (classCells_bounds hk)

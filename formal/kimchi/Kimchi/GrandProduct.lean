@@ -225,7 +225,7 @@ private theorem multiset_eq_of_prod_eval (m₁ m₂ : Multiset (F × F)) (β γ 
   -- Good β ⇒ the outer-leading coefficient does not vanish at β.
   have hL : (gpDiff m₁ m₂).leadingCoeff ≠ 0 := Polynomial.leadingCoeff_ne_zero.mpr hΔ
   unfold badBetas at hβ
-  rw [if_neg hne, Multiset.mem_toFinset] at hβ
+  rw [ite_eq_right hne, Multiset.mem_toFinset] at hβ
   have hLeval : (gpDiff m₁ m₂).leadingCoeff.eval β ≠ 0 := fun he =>
     hβ (Polynomial.mem_roots'.mpr ⟨hL, he⟩)
   -- Hence the γ-specialisation is a nonzero polynomial (its top coefficient survives).
@@ -237,7 +237,7 @@ private theorem multiset_eq_of_prod_eval (m₁ m₂ : Multiset (F × F)) (β γ 
     exact hc
   -- Good γ ⇒ it is not a root of that nonzero polynomial.
   unfold badGammas at hγ
-  rw [if_neg hne, Multiset.mem_toFinset] at hγ
+  rw [ite_eq_right hne, Multiset.mem_toFinset] at hγ
   have hMeval : ((gpDiff m₁ m₂).map (Polynomial.evalRingHom β)).eval γ ≠ 0 := fun he =>
     hγ (Polynomial.mem_roots'.mpr ⟨hMne, he⟩)
   -- But the product equality forces exactly that specialised evaluation to vanish.

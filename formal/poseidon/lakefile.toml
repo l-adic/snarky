@@ -17,7 +17,7 @@ weak.linter.style.longLine = true
 [[require]]
 name = "CompElliptic"
 git = "https://github.com/l-adic/CompElliptic"
-rev = "4ca6b7149f7fa0b94efd350703f4e58915c27423"
+rev = "e38361e6a3447847da9aee058894ff7a44eab224"
 
 # The Pasta trust base: the GLV constants (`Pasta.vestaLam` seeds the Fr-sponge
 # challenge-expansion spec).
@@ -29,7 +29,7 @@ path = "../pasta"
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
-rev = "v4.30.0"
+rev = "v4.35.0"
 
 [[lean_lib]]
 name = "Poseidon"

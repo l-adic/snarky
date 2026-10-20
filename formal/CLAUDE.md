@@ -62,9 +62,9 @@ target list yourself — **bare `lake build` here is not a build gate**: the roo
 pure aggregator that owns no library and declares no `defaultTargets`, so it reports
 `Build completed successfully (0 jobs)` while stale modules sit on disk. Per package,
 `cd formal/<pkg> && lake build` does work — all six declare `defaultTargets`. The toolchain
-is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
-(Mathlib + `CompElliptic`, a git require pinned to daira upstream, which transitively pulls
-`CompPoly`).
+is pinned in `lean-toolchain` (Lean `v4.35.0`, the official tag); deps in `lakefile.toml`
+(Mathlib + `CompElliptic`, a git require pinned to the l-adic fork's main, which transitively
+pulls `CompPoly`).
 `import Mathlib` is used wholesale in the proof-heavy trees.
 
 **Package layout.** `formal/` is a lake workspace of standalone path-required packages:
@@ -91,7 +91,7 @@ of deleted/renamed modules — run it after branch switches),
 constructor import no `Snarky.Kimchi.Backend.Internal` or `.Checks` module, and no library root
 reaches a check module: the decided checks are built by the libraries' globs and imported by the
 audit drivers alone — `make lean-import-boundaries`), and `scripts/kernel-replay.sh` (the
-lean4checker kernel-replay gate).
+leanchecker kernel-replay gate).
 
 **The comment gate** (`scripts/check-comments.sh`, `make lean-comments`) fixes the objective
 half of the comment convention; the judgement half is the `proof-comment-style` skill. A
@@ -116,16 +116,16 @@ Three further quality gates are community tools, all CI-enforced:
   (`scripts/nolints.json`, per-package copies where needed) holds ONLY derive-generated
   instances and by-design findings — fix real findings, never grow the baseline.
   Structure fields need docstrings (docBlame): document every field.
-- **`lake exe shake <roots>`** (`make lean-shake`) — no redundant/removable imports;
-  policy exceptions in `scripts/noshake.json` (wholesale `import Mathlib` in proof-heavy
-  trees; the notation-only `Kimchi.Columns`, invisible to shake). Always pass
-  `--cfg` with an ABSOLUTE path (`lake exe` runs the tool from mathlib's directory, so
-  the relative default silently reads mathlib's own config). Treat `--fix` with
+- **`lake exe shake <roots>`** (`make lean-shake`) — no redundant/removable imports, by
+  Batteries' shake kept in `scripts/shake.lean` (Lake's `lake shake` checks only
+  `module`s); policy exceptions in `scripts/noshake.json` (wholesale `import Mathlib` in
+  proof-heavy trees; the notation-only `Kimchi.Columns`, invisible to shake). Pass
+  `--cfg` with an absolute path, as CI does. Treat `--fix` with
   suspicion: it cascades removals beyond the reported suggestions — review the diff and
   build before trusting it. Any file that uses the `Kimchi.Columns` notations must
   import it DIRECTLY (shake cannot see notation use, so it may drop transitive
   providers).
-- **`scripts/kernel-replay.sh`** (`make lean-kernel-check`) — lean4checker replays every
+- **`scripts/kernel-replay.sh`** (`make lean-kernel-check`) — leanchecker replays every
   `.olean` through the kernel alone, catching environment tampering that the build and
   the axiom gates inherently trust.
 

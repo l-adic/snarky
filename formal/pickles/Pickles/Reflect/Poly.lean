@@ -27,10 +27,10 @@ variable {n : ℕ} {R : Type*} [CommRing R] [BEq R] [LawfulBEq R]
 /-- `C` as a ring homomorphism, computably. -/
 private def CRingHomComp : R →+* CMvPolynomial n R where
   toFun := C
-  map_one' := CRingHom.map_one'
-  map_mul' := CRingHom.map_mul'
-  map_zero' := CRingHom.map_zero'
-  map_add' := CRingHom.map_add'
+  map_one' := CHom.map_one'
+  map_mul' := CHom.map_mul'
+  map_zero' := CHom.map_zero'
+  map_add' := CHom.map_add'
 
 /-- The polynomial algebra over its coefficient ring, computably. -/
 instance (priority := high) instAlgebraComp : Algebra R (CMvPolynomial n R) :=
@@ -46,7 +46,7 @@ field. -/
 noncomputable def aevalAlgHom {n : ℕ} {σ : Type*} [CommRing σ] [Algebra R σ]
     (f : Fin n → σ) : CMvPolynomial n R →ₐ[R] σ :=
   { eval₂Hom (algebraMap R σ) f with
-    commutes' := fun c => by simpa using aeval_C (n := n) f c }
+    commutes' := fun c => aeval_C (n := n) f c }
 
 @[simp] theorem aevalAlgHom_X {n : ℕ} {σ : Type*} [CommRing σ] [Algebra R σ]
     (f : Fin n → σ) (i : Fin n) : aevalAlgHom (R := R) f (CMvPolynomial.X i) = f i :=

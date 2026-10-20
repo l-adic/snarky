@@ -19,7 +19,7 @@ theorem zip_map_snd {α β γ : Type} (g : β → γ) :
     ∀ (l₁ : List α) (l₂ : List β), l₁.length = l₂.length →
       (l₁.zip l₂).map (fun x => g x.2) = l₂.map g := fun l₁ l₂ h => by
   rw [show (fun x : α × β => g x.2) = g ∘ Prod.snd from rfl, ← List.map_map,
-    List.map_snd_zip h.ge]
+    List.map_snd_zip (Nat.le_of_eq h.symm)]
 
 /-- Mapping a function of the first components over a zip of two vectors maps the first. -/
 theorem toList_map_fst_zip {α β γ : Type} {n : ℕ} (as : Vector α n) (bs : Vector β n)

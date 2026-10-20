@@ -194,12 +194,11 @@ jobs:
           lake exe runLinter "$m" || exit 1
         done
 
-    # No redundant or removable imports (mathlib's shake). The policy exceptions live in
+    # No redundant or removable imports (Batteries' shake, vendored at scripts/shake.lean:
+    # Lake's own `lake shake` checks only `module`s). The policy exceptions live in
     # scripts/noshake.json: wholesale `import Mathlib` in the proof-heavy trees, and the
     # notation-only Kimchi.Columns (notations contribute no constants, so shake cannot
     # see their use).
-    # The --cfg path must be absolute: `lake exe` runs the tool from its owning
-    # package's directory (mathlib's), so the relative default resolves wrongly.
     - name: Check import hygiene (shake)
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
@@ -355,7 +354,7 @@ jobs:
           lake env lean --run kimchi/scripts/check_vk_correspond.lean
 
   kernel-replay:
-    name: Kernel replay (lean4checker)
+    name: Kernel replay (leanchecker)
     needs: build
     runs-on: ubuntu-latest-large
     defaults:
@@ -369,24 +368,18 @@ jobs:
     - name: Setup Lean (restore the build)
       uses: ./.github/actions/setup-lean
 
-    # Kernel replay (lean4checker): re-read every library .olean and replay each
+    # Kernel replay (leanchecker): re-read every library .olean and replay each
     # declaration through the kernel alone, detecting environment tampering that
     # elaboration-time checks — the build and the axiom gates — inherently trust.
     # The script prunes stale oleans first (deleted/renamed modules linger in the
     # cached build dirs and would otherwise be replayed too).
     #
     # Runs on PRs as well as pushes, so a tampered olean cannot land before a replay.
-    # The sweep costs ~15 runner-minutes per run; the cache below keeps the checker
-    # build warm. lean4checker replays declarations through the kernel — it does not
+    # The sweep costs ~15 runner-minutes per run; the checker ships with the toolchain,
+    # so nothing is built. leanchecker replays declarations through the kernel — it does not
     # recompute the per-module axiom tables `collectAxioms` reads; the axiom gates
     # trust those tables, and this workflow builds the tree's own oleans from source.
-    - name: Cache the lean4checker build
-      uses: actions/cache@v4
-      with:
-        path: formal/.lake/lean4checker
-        key: lean4checker-${{ runner.os }}-${{ hashFiles('formal/scripts/kernel-replay.sh', 'formal/lean-toolchain') }}
-
-    - name: Kernel-replay all modules (lean4checker)
+    - name: Kernel-replay all modules (leanchecker)
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         bash scripts/kernel-replay.sh

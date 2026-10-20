@@ -393,7 +393,6 @@ private theorem rows_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp 
       zip_map_snd (fun e => (chunkRows e).map PointEvaluations.toVector) l₁ l₂ h
     rw [hz _ _ (by simp), hz _ _ (by simp), hz _ _ (by simp)]
     simp [zipSeg_rows]
-    rfl
 
 /-! ### Reading the cells through the ties -/
 

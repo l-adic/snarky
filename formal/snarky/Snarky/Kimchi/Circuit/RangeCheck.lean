@@ -158,7 +158,7 @@ private theorem assertSplitBelow_below {V : Valuation F} [Field F] [DecidableEq 
       rw [htop]
       simp [CVar.val, hhi, hheq, bit]
     have hd := hsel true htop1
-    simp only [if_true, CVar.val_sub_, CVar.val, hlo] at hd
+    simp only [ite_true, CVar.val_sub_, CVar.val, hlo] at hd
     rw [hd] at hv
     have he : bound % 2 ^ 128 = l + n + 1 :=
       hinj _ _ (by omega) (by omega) (by push_cast; linear_combination hv)
@@ -171,7 +171,7 @@ private theorem assertSplitBelow_below {V : Valuation F} [Field F] [DecidableEq 
       rw [htop]
       simpa [CVar.val, hhi, bit] using hne
     have hd := hsel false htop0
-    simp only [Bool.false_eq_true, if_false, CVar.val_sub_, CVar.val, hhi] at hd
+    simp only [Bool.false_eq_true, ite_false, CVar.val_sub_, CVar.val, hhi] at hd
     rw [hd] at hv
     have he : bound / 2 ^ 128 = h + n + 1 :=
       hinj _ _ (by omega) (by omega) (by push_cast; linear_combination hv)

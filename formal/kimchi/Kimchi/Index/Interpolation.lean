@@ -45,7 +45,7 @@ theorem columnCoefficients_toPoly (D : Domain F) (v : Fin D.n → F) :
     have he := Inverse.inverseImpl_eval_node_eq D (Array.ofFn v) ⟨i, hi⟩
     simp only [Domain.node, columnCoefficients] at *
     rw [he]
-    simp only [Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, dif_pos hi,
+    simp only [Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, dite_eq_left hi,
       Option.getD_some]
     exact (eval_columnPoly D.primitive v ⟨i, hi⟩).symm
 

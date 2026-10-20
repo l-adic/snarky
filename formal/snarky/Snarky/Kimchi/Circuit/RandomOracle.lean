@@ -268,7 +268,8 @@ theorem Prover.update_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
     simp only [SPred.down_pure] at h
     obtain ⟨hr, hle⟩ := h
     rw [toBlocksVar_readVal] at hr
-    exact ⟨by simpa only [Poseidon.RandomOracle.update] using hr, hle⟩
+    simp only [Poseidon.RandomOracle.update] at hr ⊢
+    exact ⟨hr, hle⟩
   case vc3 => simp
   case vc4 =>
     rename_i s₀ h₀ pref cur suff hbs b s hinv

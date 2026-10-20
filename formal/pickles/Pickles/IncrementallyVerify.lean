@@ -194,7 +194,7 @@ theorem incrementallyVerifyProof_frame {sf : Type}
   have hcb := fun sp bases => builder_spec_true
     (checkBulletproof (c := Builder V (KimchiConstraint F)) ops e p endo gm sqrtF sp bases
       ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩)
-  simp only [incrementallyVerifyProof, if_true]
+  simp only [incrementallyVerifyProof, ite_true]
   mvcgen [hsq, hX, htr, hpc, hft, hcb, -Snarky.Kimchi.SpongeVar.squeeze_spec]
 
 end Frame
@@ -884,7 +884,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   obtain ⟨sIdx, hsIdx, hdig⟩ := hIdx
   cases optSponge with
   | true =>
-    simp only [incrementallyVerifyProof, if_true]
+    simp only [incrementallyVerifyProof, ite_true]
     have htr := fun (d : FVar C.BaseField) (xHat : Vector (AffinePoint (FVar C.BaseField)) nc) =>
       fqSpongeTranscriptOpt_reads (V := V) S.shape.d.two_ne S.shape.e.three_ne S.shape.splitWidth _
         C.sponge.hsize
@@ -910,7 +910,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh σ.rounds_pos tr
       (htr'.1 ▸ hx) hFq hasrt' ftc hft' o hcb'
   | false =>
-    simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
+    simp only [incrementallyVerifyProof, Bool.false_eq_true, ite_false]
     have htr := fun (d : FVar C.BaseField) =>
       fqSpongeTranscript_reads (V := V) S.shape.d.two_ne S.shape.e.three_ne S.shape.splitWidth _
         C.sponge.hsize endo d

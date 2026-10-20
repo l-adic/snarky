@@ -124,11 +124,12 @@ private theorem endoPair_add {β : F} (hβ : β ^ 3 = 1) (p q : F × F) :
       have e1 : add (0 : F) (x₁, y₁) (x₂, y₂) = ((0 : F), (0 : F)) := by
         unfold ShortWeierstrass.add
         dsimp only
-        rw [if_neg hp0, if_neg hq0, if_pos hx, if_pos hy]
+        rw [ite_eq_right hp0, ite_eq_right hq0, ite_eq_left hx, ite_eq_left hy]
       have e2 : add (0 : F) (β * x₁, y₁) (β * x₂, y₂) = ((0 : F), (0 : F)) := by
         unfold ShortWeierstrass.add
         dsimp only
-        rw [if_neg hp0', if_neg hq0', if_pos (show β * x₁ = β * x₂ by rw [hx]), if_pos hy]
+        rw [ite_eq_right hp0', ite_eq_right hq0',
+          ite_eq_left (show β * x₁ = β * x₂ by rw [hx]), ite_eq_left hy]
       rw [e1, e2]
       simp [endoPair]
     · -- doubling: the tangent slope scales by `β²` (shared denominator `2y₁`)
@@ -139,8 +140,9 @@ private theorem endoPair_add {β : F} (hβ : β ^ 3 = 1) (p q : F × F) :
         ring
       unfold ShortWeierstrass.add
       dsimp only
-      rw [if_neg hp0, if_neg hq0, if_pos hx, if_neg hy, if_neg hp0', if_neg hq0',
-        if_pos (show β * x₁ = β * x₂ by rw [hx]), if_neg hy, hlam]
+      rw [ite_eq_right hp0, ite_eq_right hq0, ite_eq_left hx, ite_eq_right hy,
+        ite_eq_right hp0', ite_eq_right hq0', ite_eq_left (show β * x₁ = β * x₂ by rw [hx]),
+        ite_eq_right hy, hlam]
       exact endoPair_branch hβ
   · -- secant: the chord slope scales by `β²` (`1/β = β²` clears into the denominator)
     have hx' : ¬ β * x₁ = β * x₂ := fun hc => hx (mul_left_cancel₀ hβ0 hc)
@@ -151,7 +153,8 @@ private theorem endoPair_add {β : F} (hβ : β ^ 3 = 1) (p q : F × F) :
       ring
     unfold ShortWeierstrass.add
     dsimp only
-    rw [if_neg hp0, if_neg hq0, if_neg hx, if_neg hp0', if_neg hq0', if_neg hx', hlam]
+    rw [ite_eq_right hp0, ite_eq_right hq0, ite_eq_right hx,
+      ite_eq_right hp0', ite_eq_right hq0', ite_eq_right hx', hlam]
     exact endoPair_branch hβ
 
 /-! ## `φ` as a group endomorphism of `SWPoint E` -/
@@ -380,8 +383,7 @@ private lemma abs_offset_lt {x : ℤ} (hx : |x| < 2 ^ 126) :
 for the accumulator's offset coefficients, the two-base combination `[a]·T + [b]·φT` is none of
 `±T`, `±φT`. -/
 private theorem combo_off_targets {F : Type*} [Field F] [DecidableEq F]
-    (W : WeierstrassCurve.Affine F)
-    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     {T φT : W.Point} (hTne : T ≠ 0) {lam : ℤ} (heig : φT = lam • T) {a b : ℤ}
     (h1 : ¬ (W.order : ℤ) ∣ (a - 1 + b * lam))
     (h2 : ¬ (W.order : ℤ) ∣ (a + 1 + b * lam))

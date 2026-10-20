@@ -77,7 +77,7 @@ def solve [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [Cir
 /-! ## The public input, at the seeded state -/
 
 /-- The input bundle is in scope from the start: its slots are the first `A.size`. -/
-theorem scoped_inputVar [Add F] [Mul F] [Zero F] [A : CircuitType F a avar] (input : a) :
+theorem scoped_inputVar [A : CircuitType F a avar] (input : a) :
     CircuitType.Scoped (val := a) (seed (F := F) (avar := avar) input)
       (inputVar (F := F) (a := a)) := by
   intro cv hcv
@@ -285,7 +285,7 @@ the output reading also needs the rows binding the body's output to its public c
 
 /-- The variables backing a bundle of plain variables — the witnessed public output
 slots, whose ids the assembly needs but whose numbering it does not care about. -/
-private def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar) :
+private def bundleVars [CircuitType F b bvar] (v : bvar) :
     List Variable :=
   (CircuitType.varToFields (val := b) v).toList.filterMap fun (cv : CVar F) =>
     match cv with
@@ -294,18 +294,18 @@ private def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar
 
 /-- The public variables of a compiled circuit: the input slots, then the variables of the
 output bundle the compiled program witnessed. -/
-def compiledPublicVars [Add F] [Mul F] [Zero F] [A : CircuitType F a avar]
+def compiledPublicVars [A : CircuitType F a avar]
     [CircuitType F b bvar] {β : Type} (built : Built c (β × bvar)) : List Variable :=
   (allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2
 
 /-- The fields of a bundle of fresh variables are those variables. -/
-private theorem bundleVars_fresh [Add F] [Mul F] [Zero F] [B : CircuitType F b bvar] (k : Nat) :
+private theorem bundleVars_fresh [B : CircuitType F b bvar] (k : Nat) :
     bundleVars (F := F) (b := b) (B.fieldsToVar (mapVec CVar.var (allocRange k B.size))) =
       (allocRange k B.size).toList := by
   simp [bundleVars, B.var_roundTrip, List.filterMap_map]
 
 /-- The public variables of a built circuit whose public copy is fresh at `k`. -/
-private theorem compiledPublicVars_fresh [Add F] [Mul F] [Zero F] [A : CircuitType F a avar]
+private theorem compiledPublicVars_fresh [A : CircuitType F a avar]
     [B : CircuitType F b bvar] {β : Type} (built : Built c (β × bvar)) (k : Nat)
     (h : built.result.2 = B.fieldsToVar (mapVec CVar.var (allocRange k B.size))) :
     compiledPublicVars (F := F) (a := a) (b := b) built =

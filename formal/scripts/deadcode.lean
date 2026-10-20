@@ -255,13 +255,13 @@ run_cmd do
   for m in manifests do
     let mut inSurface := false
     for line in (← IO.FS.readFile m).splitOn "\n" do
-      let t := line.trim
+      let t := line.trimAscii.toString
       if t = "-- script-surface:begin" then inSurface := true
       else if t = "-- script-surface:end" then inSurface := false
       else if t.isEmpty || t.startsWith "--" then continue
       else
         let (nameStr, note) := match t.splitOn " -- " with
-          | n :: rest => (n.trim, String.intercalate " -- " rest)
+          | n :: rest => (n.trimAscii.toString, String.intercalate " -- " rest)
           | [] => (t, "")
         let n := nameStr.toName
         if env.contains n then

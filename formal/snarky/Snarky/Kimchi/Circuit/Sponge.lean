@@ -150,7 +150,7 @@ open Std.Do in
   cases mode with
   | absorbed n =>
     by_cases hn : n.val = 2
-    · simp only [absorb, if_pos hn]
+    · simp only [absorb, ite_eq_left hn]
       mvcgen [pspec]
       rename_i _ _ hpos _ _ hslot
       rintro ⟨sst, smode⟩ ⟨hst, hm⟩
@@ -158,16 +158,16 @@ open Std.Do in
       subst hm
       rw [hst] at hpos
       rw [hpos] at hslot
-      simp only [Poseidon.absorb1, if_pos hn]
+      simp only [Poseidon.absorb1, ite_eq_left hn]
       exact ⟨hslot, rfl⟩
-    · simp only [absorb, if_neg hn]
+    · simp only [absorb, ite_eq_right hn]
       mvcgen
       rename_i _ _ hslot
       rintro ⟨sst, smode⟩ ⟨hst, hm⟩
       simp only at hm
       subst hm
       rw [hst] at hslot
-      simp only [Poseidon.absorb1, if_neg hn]
+      simp only [Poseidon.absorb1, ite_eq_right hn]
       exact ⟨hslot, rfl⟩
   | squeezed n =>
     simp only [absorb]
@@ -244,21 +244,21 @@ and the output sponge as its state, at whatever sponge the input reads as. -/
   cases mode with
   | squeezed n =>
     by_cases hn : n.val = 2
-    · simp only [squeeze, if_pos hn]
+    · simp only [squeeze, ite_eq_left hn]
       mvcgen [pspec]
       rename_i r₁ _ hpos
       rintro ⟨sst, smode⟩ ⟨hst, hm⟩
       simp only at hm
       subst hm
       rw [hst] at hpos
-      simp only [Poseidon.squeeze, if_pos hn]
+      simp only [Poseidon.squeeze, ite_eq_left hn]
       exact ⟨slotVar_val hpos 0, hpos, rfl⟩
-    · simp only [squeeze, if_neg hn]
+    · simp only [squeeze, ite_eq_right hn]
       mvcgen
       rintro ⟨sst, smode⟩ ⟨hst, hm⟩
       simp only at hm
       subst hm
-      simp only [Poseidon.squeeze, if_neg hn]
+      simp only [Poseidon.squeeze, ite_eq_right hn]
       exact ⟨slotVar_val hst n, hst, rfl⟩
   | absorbed n =>
     simp only [squeeze]
@@ -328,7 +328,7 @@ theorem Prover.absorb_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
   cases mode with
   | absorbed n =>
     by_cases hn : n.val = 2
-    · simp only [absorb, if_pos hn]
+    · simp only [absorb, ite_eq_left hn]
       mvcgen [hp, ha]
       case vc2 =>
         rename_i _ h
@@ -346,9 +346,9 @@ theorem Prover.absorb_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
         obtain ⟨hr', hle₂⟩ := Prover.Reg.iff.mp h₂
         rw [(CircuitType.reads_iff.mp hr.2).2, ProverState.read_of_le hle₁ hx] at hr'
         refine ⟨⟨?_, ?_⟩, hle₁.trans hle₂⟩
-        · simpa only [Poseidon.absorb1, if_pos hn] using hr'
-        · simp only [Poseidon.absorb1, if_pos hn]
-    · simp only [absorb, if_neg hn]
+        · simpa only [Poseidon.absorb1, ite_eq_left hn] using hr'
+        · simp only [Poseidon.absorb1, ite_eq_left hn]
+    · simp only [absorb, ite_eq_right hn]
       mvcgen [hp, ha]
       case vc1 =>
         rename_i _ h
@@ -359,8 +359,8 @@ theorem Prover.absorb_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
         obtain ⟨rfl, -, -⟩ := h₀
         obtain ⟨hr, hle⟩ := Prover.Reg.iff.mp h₁
         refine ⟨⟨?_, ?_⟩, hle⟩
-        · simpa only [Poseidon.absorb1, if_neg hn] using hr
-        · simp only [Poseidon.absorb1, if_neg hn]
+        · simpa only [Poseidon.absorb1, ite_eq_right hn] using hr
+        · simp only [Poseidon.absorb1, ite_eq_right hn]
   | squeezed n =>
     simp only [absorb]
     mvcgen [hp, ha]
@@ -394,7 +394,7 @@ theorem Prover.squeeze_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
   cases mode with
   | squeezed n =>
     by_cases hn : n.val = 2
-    · simp only [squeeze, if_pos hn]
+    · simp only [squeeze, ite_eq_left hn]
       mvcgen [hp]
       case vc2 =>
         rename_i _ h
@@ -405,21 +405,21 @@ theorem Prover.squeeze_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
         obtain ⟨rfl, -⟩ := h₀
         obtain ⟨hr, hle⟩ := Prover.Reg.iff.mp h₁
         refine ⟨slotVar_scoped hr.1 0, ?_, ⟨?_, ?_⟩, hle⟩
-        · simp only [Poseidon.squeeze, if_pos hn]
+        · simp only [Poseidon.squeeze, ite_eq_left hn]
           exact slotVar_val (CircuitType.reads_iff.mp hr.2).2 0
-        · simpa only [Poseidon.squeeze, if_pos hn] using hr
-        · simp only [Poseidon.squeeze, if_pos hn]
-    · simp only [squeeze, if_neg hn]
+        · simpa only [Poseidon.squeeze, ite_eq_left hn] using hr
+        · simp only [Poseidon.squeeze, ite_eq_left hn]
+    · simp only [squeeze, ite_eq_right hn]
       mvcgen
       case vc1 =>
         rename_i _ h
         obtain ⟨rfl, hs⟩ := h
         refine ⟨slotVar_scoped hs n, ?_, ⟨?_, ?_⟩, le_rfl⟩
-        · simp only [Poseidon.squeeze, if_neg hn]
+        · simp only [Poseidon.squeeze, ite_eq_right hn]
           exact slotVar_val rfl n
-        · simp only [Poseidon.squeeze, if_neg hn]
+        · simp only [Poseidon.squeeze, ite_eq_right hn]
           exact ⟨hs, reads_spongeState.mpr ⟨rfl, rfl, rfl⟩⟩
-        · simp only [Poseidon.squeeze, if_neg hn]
+        · simp only [Poseidon.squeeze, ite_eq_right hn]
   | absorbed n =>
     simp only [squeeze]
     mvcgen [hp]

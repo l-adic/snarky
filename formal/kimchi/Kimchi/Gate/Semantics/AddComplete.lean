@@ -140,8 +140,8 @@ theorem complete_build
       linear_combination hon1 - hon2
     by_cases hy : y1 = y2
     · -- Doubling: `inf = 0` in both modes, `infZ = 0`.
-      simp only [build, if_pos hx, if_pos hy, decide_eq_true hx, decide_eq_true hy,
-        Bool.not_true, Bool.and_false, Bool.false_eq_true, if_false, if_true, ite_self]
+      simp only [build, ite_eq_left hx, ite_eq_left hy, decide_eq_true hx, decide_eq_true hy,
+        Bool.not_true, Bool.and_false, Bool.false_eq_true, ite_false, ite_true, ite_self]
       refine ⟨by ring, by linear_combination -hx, ?_, by ring, by ring, ?_, by ring⟩
       · linear_combination (3 * x1 * x1) * hcancel
       · linear_combination -hy
@@ -161,15 +161,15 @@ theorem complete_build
         exact absurd ⟨hx, by rw [WeierstrassCurve.Affine.negY, ha1, ha3, hy2]; ring⟩
           (hfin rfl)
       | false =>
-        simp only [build, if_pos hx, if_neg hy, decide_eq_true hx, decide_eq_false hy,
-          Bool.not_false, Bool.and_true, Bool.false_eq_true, if_false, if_true]
+        simp only [build, ite_eq_left hx, ite_eq_right hy, decide_eq_true hx, decide_eq_false hy,
+          Bool.not_false, Bool.and_true, Bool.false_eq_true, ite_false, ite_true]
         refine ⟨by ring, by linear_combination -hx, ?_, by ring, by ring, by ring, ?_⟩
         · linear_combination (3 * x1 * x1) * hcancel
         · linear_combination mul_inv_cancel₀ hne
   · -- Distinct x-coordinates: the secant row; `inf = 0` in both modes.
     have hne : x2 - x1 ≠ 0 := fun h => hx (by linear_combination -h)
-    simp only [build, if_neg hx, decide_eq_false hx, Bool.false_and,
-      Bool.false_eq_true, if_false, ite_self]
+    simp only [build, ite_eq_right hx, decide_eq_false hx, Bool.false_and,
+      Bool.false_eq_true, ite_false, ite_self]
     refine ⟨?_, by ring, ?_, by ring, by ring, by ring, by ring⟩
     · linear_combination mul_inv_cancel₀ hne
     · linear_combination (y2 - y1) * mul_inv_cancel₀ hne

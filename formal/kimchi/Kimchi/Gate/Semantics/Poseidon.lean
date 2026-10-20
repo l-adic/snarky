@@ -174,10 +174,12 @@ private theorem foldl_fullRound_eq_rounds (p : Poseidon.Params F) :
   | nil => intro rc s _; rfl
   | cons a t ih =>
     intro rc s h
-    have ha : a = rc 0 := by simpa using h 0 (by simp)
+    have ha : a = rc 0 := h 0 (by simp)
     have ht : ∀ i (hi : i < t.length), t[i] = (fun k => rc (1 + k)) i := by
       intro i hi
-      simpa [Nat.add_comm] using h (i + 1) (by simpa using hi)
+      show t[i] = rc (1 + i)
+      rw [Nat.add_comm]
+      exact h (i + 1) (by simpa using hi)
     have hlen : (a :: t).length = 1 + t.length := by simp [Nat.add_comm]
     rw [List.foldl_cons, ih _ _ ht, hlen, rounds_add]
     congr 1

@@ -43,7 +43,7 @@ def SplitClaimsCast {k : ℕ} (Vg : Valuation Fp)
 /-- The step digest crosses into the wrap field through `castDigest` as its representative. -/
 private theorem castDigest_pallas (x : Fp) : castDigest IpaPallas.curve x = ZMod.cast x := by
   have h : x.val < IpaPallas.curve.scalar := (ZMod.val_lt x).trans Pasta.fp_lt_fq
-  simp only [castDigest, if_pos h, ZMod.cast_eq_val]
+  simp only [castDigest, ite_eq_left h, ZMod.cast_eq_val]
 
 /-- **The claims cast across make the two halves hold one set of claims.** With the wrap
 circuit's claim cells the step circuit's lifted (`SplitClaimsCast`), `β`, `γ` reading as
@@ -93,9 +93,10 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
       stepSide, stepDecode, Pasta.Shifted.unshiftType2, ZMod.cast_eq_val]
   refine ⟨⟨dv, ⟨reads128_of_cast cα ha, hb, hg, reads128_of_cast cζ hz, hdec _ _ cperm,
       hdec _ _ czm, hdec _ _ czn, hdec _ _ ccip, reads128_of_cast cξ hxi,
-      fun i => by simpa [dv] using reads128_of_cast (hbp i) (hms i), hdec _ _ cb⟩,
+      fun i => by simpa [dv, GroupHalf.step, ScalarHalf.wrap] using
+        reads128_of_cast (hbp i) (hms i), hdec _ _ cb⟩,
     ⟨ha, reads128_cast cβ hb, reads128_cast cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
-      fun i => by simpa [dv] using hms i, rfl⟩⟩, ?_⟩
+      fun i => by simpa [dv, GroupHalf.step, ScalarHalf.wrap] using hms i, rfl⟩⟩, ?_⟩
   show claimsS.spongeDigestBeforeEvaluations.val Vs
     = castDigest IpaPallas.curve (claimsG.spongeDigestBeforeEvaluations.val Vg)
   rw [cdig, castDigest_pallas]

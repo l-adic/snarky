@@ -74,7 +74,7 @@ private noncomputable def stepWrapOf {C : Circuits D} (cert : ApplicationCertifi
     (h : MatrixStepWrap C cert.indices b s w) : StepWrapLink C b where
   step := stepRunOf cert b s
   wrap := wrapRunOf cert w
-  branch := by simpa only [WrapRun.cells_eq] using h.1
+  branch := by simpa only [WrapRun.cells_eq] using! h.1
   publicInput := by
     simpa only [wrapRunOf, WrapRun.cells_eq, h.2] using stepRunOf_public cert b s
 
@@ -88,15 +88,15 @@ private noncomputable def wrapStepOf {P : Circuits PD} {C : Circuits CD}
   sourceFor := h.sourceFor
   wrap := wrapRunOf pc w
   step := stepRunOf cc cb s
-  branch := by simpa only [WrapRun.cells_eq] using h.branch
-  mustVerify := by simpa only [StepRun.cells_eq] using h.mustVerify
+  branch := by simpa only [WrapRun.cells_eq] using! h.branch
+  mustVerify := by simpa only [StepRun.cells_eq] using! h.mustVerify
   mask := h.mask
   maskReads := by
-    simpa only [StepRun.inp, StepRun.cells_eq, matrixInp] using h.maskReads
+    simpa only [StepRun.inp, StepRun.cells_eq, matrixInp] using! h.maskReads
   publicInput := by
     have hp := wrapRunOf_public pc w
     rw [h.publicInput] at hp
-    simpa only [StepRun.inp, StepRun.cells_eq, matrixInp] using hp
+    simpa only [StepRun.inp, StepRun.cells_eq, matrixInp] using! hp
 
 /-- Matrix connections give the native wrap-proof handover record. -/
 private noncomputable def wrapHandoverOf {P : Circuits PD} {C : Circuits CD}
@@ -110,18 +110,18 @@ private noncomputable def wrapHandoverOf {P : Circuits PD} {C : Circuits CD}
   consumer := stepWrapOf cc cb cs cw h.consumerPair
   sourceFor := h.sourceFor
   mustVerifyProducer := by
-    simpa only [stepWrapOf, StepRun.cells_eq] using h.mustVerifyProducer
+    simpa only [stepWrapOf, StepRun.cells_eq] using! h.mustVerifyProducer
   keyProducer := by
-    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using h.keyProducer
+    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using! h.keyProducer
   mustVerifyConsumer := by
-    simpa only [stepWrapOf, StepRun.cells_eq] using h.mustVerifyConsumer
+    simpa only [stepWrapOf, StepRun.cells_eq] using! h.mustVerifyConsumer
   keyConsumer := by
-    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using h.keyConsumer
+    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using! h.keyConsumer
   middlePublicInput := by
     have hp := wrapRunOf_public pc pw
     rw [h.middlePublicInput] at hp
     simpa only [stepWrapOf, StepWrapLink.mask, StepRun.inp, StepRun.cells_eq,
-      matrixInp, matrixMask] using hp
+      matrixInp, matrixMask] using! hp
 
 /-- Matrix connections give the native step-proof handover record. -/
 private noncomputable def stepHandoverOf {P : Circuits PD} {M : Circuits MD}
@@ -171,9 +171,9 @@ theorem matrices_stepWrap {C : Circuits D} (cert : ApplicationCertified C)
       (C.wiring.source b i).wrapKey) : StepWrapConclusion C cert.indices b s w i := by
   have hm' : CircuitType.Reads (stepWrapOf cert b s w h).step.V
       ((stepWrapOf cert b s w h).step.cells.prevs i).mustVerify true := by
-    simpa only [stepWrapOf, StepRun.cells_eq] using hm
+    simpa only [stepWrapOf, StepRun.cells_eq] using! hm
   have hk' : (stepWrapOf cert b s w h).step.KeyBound i := by
-    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using hk
+    simpa only [StepRun.KeyBound, stepWrapOf, StepRun.cells_eq] using! hk
   exact (stepWrapOf cert b s w h).verifies_proof i (cert.stepWrapSetup b i) hm' hk'
 
 /-- Connected wrap/step matrices satisfy the verification, mask and accumulator capstone. -/
@@ -208,7 +208,7 @@ theorem WrapHandoverConclusion.appState
   rcases h hAccept with hm | hf
   · left
     apply Vector.toList_inj.mp
-    simpa only [Vector.toList_map, Vector.toList_cast] using
+    simpa only [Vector.toList_map, Vector.toList_cast] using!
       congrArg (fun m ↦ m.appState) hm.1
   · exact Or.inr hf
 

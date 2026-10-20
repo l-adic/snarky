@@ -446,7 +446,7 @@ private theorem finalBit_spec (nf : Bool) (e pos : BoolVar F) :
     mvcgen
     intro eb pb _ hp
     simpa using hp
-  · simp only [finalBit, if_true]
+  · simp only [finalBit, ite_true]
     have ho := Snarky.or_spec (V := V) (c := KimchiConstraint F) e pos
     mvcgen [ho]
     intro h eb pb he hp
@@ -480,7 +480,7 @@ private theorem finalBitLeftover_spec (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3
     simp only [List.mem_cons, List.not_mem_nil, or_false, exists_eq_or_imp, exists_eq_left,
       hp, hb]
     cases pb <;> cases bb <;> simp [bit]
-  · simp only [finalBitLeftover, if_true]
+  · simp only [finalBitLeftover, ite_true]
     have ha := Snarky.any_spec (V := V) (c := KimchiConstraint F) [pos, b, e]
       (hchar _ (by simp))
     mvcgen [ha]
@@ -806,8 +806,8 @@ theorem consume_spec (p : Poseidon.Params F)
     intro anyK hAny
     rw [hAny hbool]
     by_cases h : ∃ v ∈ xs, v.1 = true
-    · rw [if_pos (hex.mpr h)]; simp [bit, List.any_eq_true, h]
-    · rw [if_neg (fun h' => h (hex.mp h'))]; simp [bit, List.any_eq_true, h]
+    · rw [ite_eq_left (hex.mpr h)]; simp [bit, List.any_eq_true, h]
+    · rw [ite_eq_right (fun h' => h (hex.mp h'))]; simp [bit, List.any_eq_true, h]
   simp only [consume, hpu]
   cases leftover with
   | none =>
@@ -914,7 +914,8 @@ omit [BasicSystem F c] [KimchiSystem F c] in
 theorem create_reads (p : Poseidon.Params F) :
     AbsorbingReads p V (create (F := F)) false Poseidon.init [] :=
   ⟨false_, [], rfl, by simp [false_, bit],
-    by simpa [create, initState, readVal_spongeState] using Or.inl (rel_init p), .nil, rfl⟩
+    by simpa [create, initState, readVal_spongeState, RelStart] using Or.inl (rel_init p),
+    .nil, rfl⟩
 
 omit [BasicSystem F c] [KimchiSystem F c] in
 /-- Absorbing while absorbing appends to the pending readings. -/
@@ -982,7 +983,7 @@ private theorem optSqueeze_spec_squeezed (p : Poseidon.Params F)
   subst hst hm
   simp only [optSqueeze]
   by_cases hn : n.val = 2
-  · rw [if_pos hn]
+  · rw [ite_eq_left hn]
     have hp := Poseidon.poseidon_spec (V := V) p hsize st
     mvcgen [hp]
     rename_i st' _ hst'
@@ -992,7 +993,7 @@ private theorem optSqueeze_spec_squeezed (p : Poseidon.Params F)
       simpa [Poseidon.squeeze, hn, Poseidon.slot, readVal_spongeState] using h0
     · simp [Poseidon.squeeze, hn, hst']
     · simp [Poseidon.squeeze, hn]
-  · rw [if_neg hn]
+  · rw [ite_eq_right hn]
     mvcgen
     refine ⟨?_, n + 1, rfl, ?_, ?_, rfl⟩
     · simp [Poseidon.squeeze, hn, slotVar_val]

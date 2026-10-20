@@ -16,7 +16,7 @@
 # formatter contract), scripts/deadcode.{lean,sh} (cross-package reachability over the
 # union of the packages' roots.txt manifests), scripts/module-deps.sh (the dependency
 # graph artifact), scripts/prune-stale-oleans.sh (build-dir garbage collection), and
-# scripts/kernel-replay.sh (the lean4checker gate); plus the lint/shake policy files
+# scripts/kernel-replay.sh (the leanchecker gate); plus the lint/shake policy files
 # scripts/{nolints,noshake}.json.
 name = "formal"
 
@@ -33,13 +33,14 @@ lintDriverArgs = [
   "Bulletproof", "BulletproofFixture", "Pickles", "PicklesFixture"
 ]
 
-# CompElliptic pinned at the workspace level (git, l-adic fork @ 4955f1bf: upstream 2c04440 + the fintypePoints thunk) so this direct
+# CompElliptic pinned at the workspace level (git, l-adic fork main @ e38361e: upstream 2c04440,
+# the fintypePoints thunk, the projective MSM, and the v4.35.0 toolchain) so this direct
 # require is authoritative over transitive resolution — the same discipline as mathlib.
 # Bump this rev in lockstep with the packages' requires (all identical).
 [[require]]
 name = "CompElliptic"
 git = "https://github.com/l-adic/CompElliptic"
-rev = "4ca6b7149f7fa0b94efd350703f4e58915c27423"
+rev = "e38361e6a3447847da9aee058894ff7a44eab224"
 
 [[require]]
 name = "pasta"
@@ -66,7 +67,7 @@ path = "snarky"
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
-rev = "v4.30.0"
+rev = "v4.35.0"
 
 [[require]]
 name = "pickles"
@@ -132,3 +133,11 @@ root = "scripts.check_terminal"
 [[lean_exe]]
 name = "regenerate-lagrange-cache"
 root = "scripts.regenerate_lagrange_cache"
+
+# Batteries' import checker (scripts/shake.lean, vendored): `lake exe shake` in CI and
+# `make lean-shake`. Batteries dropped the executable when shake moved into Lake, and
+# `lake shake` checks only files in the module system, which this tree does not use.
+[[lean_exe]]
+name = "shake"
+root = "scripts.shake"
+supportInterpreter = true

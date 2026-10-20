@@ -258,7 +258,7 @@ always a condition, and the ghost is solved by the precondition. The primitive s
 directly: their postconditions, a state equation and a witness clause, are shapes no law states. -/
 
 /-- The wrapper on a registered postcondition, working around Lean's mvcgen (function mSpec in
-module Lean.Elab.Tactic.Do.Spec, toolchain v4.30.0): the unification of a spec's postcondition
+module Lean.Elab.Tactic.Do.Spec, toolchain v4.35.0): the unification of a spec's postcondition
 against the goal's, under full approximation, precedes the precondition's discharge and assigns
 the entry ghost. A CI script in the package's scripts directory, the wrapper's expiry signal,
 holds a negative control that fails exactly while this is needed; when it passes on a

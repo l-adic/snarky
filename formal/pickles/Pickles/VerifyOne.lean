@@ -299,7 +299,7 @@ theorem verifyOne_reads (S : SRS IpaPallas.curve.Point) (K : KimchiVK IpaPallas.
   rw [hVer] at hver
   obtain ⟨bf, hbf⟩ := hF
   cases bf
-  · rw [hbf, bit, if_neg (by decide), mul_zero] at hver
+  · rw [hbf, bit, ite_eq_right (by decide), mul_zero] at hver
     exact absurd hver zero_ne_one
   · have h1 : (↑fop.finalized : CVar Fp).val V = 1 := by simpa [bit] using hbf
     rw [h1, mul_one] at hver
@@ -422,7 +422,7 @@ theorem verifyOne_scalarReads (S : SRS IpaVesta.curve.Point) (K : KimchiVK IpaVe
   have hver : (↑ver : CVar Fp).val V = 1 := by linear_combination -hRes
   rw [hVer] at hver
   cases bf
-  · rw [hbf, bit, if_neg (by decide), mul_zero] at hver
+  · rw [hbf, bit, ite_eq_right (by decide), mul_zero] at hver
     exact absurd hver zero_ne_one
   · exact hreads hmask (by simpa [bit] using hbf)
 

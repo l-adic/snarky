@@ -71,7 +71,7 @@ The gates, all CI-enforced:
 scripts/check-style.sh                  # the formatter contract (≤100 cols, no tabs, …)
 scripts/check_sorry_census.sh           # no sorries anywhere
 scripts/deadcode.sh                     # reachability from the CI drivers, axiom lists and roots.txt
-scripts/kernel-replay.sh                # lean4checker replays every .olean
+scripts/kernel-replay.sh                # leanchecker replays every .olean
 make lean-lint                          # Batteries' env_linter suite, one process per module
 make lean-shake                         # no redundant imports
 */scripts/check_axioms.sh               # per-package axiom closures (all six packages)

@@ -455,6 +455,7 @@ private theorem corrSum_eq {V : Valuation F} {ci : Fin nc} :
       rw [hhead]
 
 omit [ToNat F] in
+omit [DecidableEq F] in
 /-- `chunkwise f` reads at chunk `ci` as `f ci` alone does; the other chunks say nothing. -/
 private theorem chunkwise_at {V : Valuation F} {β : Type}
     (f : Fin nc → CircuitM F (Builder V (KimchiConstraint F)) β) (ci : Fin nc) (Q : β → Prop)
@@ -1190,8 +1191,8 @@ private theorem foldKnown_spec {V : Valuation F} :
         have key : accv + ((if bb then T else 0) + (List.map LeafInfo.delta is).sum)
             = (if bb then T + accv else accv) + (List.map LeafInfo.delta is).sum := by
           cases bb
-          · rw [if_neg (by decide), if_neg (by decide), zero_add]
-          · rw [if_pos rfl, if_pos rfl, add_comm T accv, add_assoc]
+          · rw [ite_eq_right (by decide), ite_eq_right (by decide), zero_add]
+          · rw [ite_eq_left rfl, ite_eq_left rfl, add_comm T accv, add_assoc]
         rw [key]
         exact hfinal
 
@@ -2075,7 +2076,7 @@ def readPt (V : Valuation C.BaseField) (p : AffinePoint (FVar C.BaseField)) : C.
 theorem onCurveAt_readPt {p : AffinePoint (FVar C.BaseField)}
     (h : OnCurve C.E.A C.E.B (p.x.val V, p.y.val V)) :
     OnCurveAt C.E.toAffine V p (SWPoint.equivPoint C.E (readPt V p)) := by
-  rw [readPt, dif_pos h]
+  rw [readPt, dite_eq_left h]
   exact ⟨nonsingular_toW h, SWPoint.equivPoint_eq_some _ h⟩
 
 /-- The shift correction `-(2^L)·P`, computed through the curve's verified fast
@@ -2497,7 +2498,7 @@ private theorem maskLeaf_bound (shared : Bool) {n : ℕ} (bits : Vector (BoolVar
     ⦃⇓ r _ => ⌜r.Bound V ∧ r.bitBoolean V → k.Bound V⌝⦄ := by
   have hm := fun (ps : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) n) => builder_spec_true
     (maskCells (S := Builder V (KimchiConstraint C.BaseField)) bits ps)
-  cases k <;> cases shared <;> simp only [maskLeaf, Bool.false_eq_true, if_false, if_true] <;>
+  cases k <;> cases shared <;> simp only [maskLeaf, Bool.false_eq_true, ite_false, ite_true] <;>
     mvcgen [hm] <;> simp_all [Leaf.Bound, Leaf.bitBoolean, PackedScalar.Bound, constLeaf]
 
 open Std.Do in
@@ -2529,7 +2530,7 @@ theorem publicInputCommitMasked_bound (hnc : 0 < nc) (shared : Bool) {n m : ℕ}
     simp only [Vector.length_toList] at hi
     simpa using hrs ⟨i, hi⟩ (hb _ (by simp))
   unfold publicInputCommitMasked maskLeaves
-  cases shared <;> simp only [Bool.false_eq_true, if_false, if_true] <;> mvcgen [hml, hF, hS] <;>
+  cases shared <;> simp only [Bool.false_eq_true, ite_false, ite_true] <;> mvcgen [hml, hF, hS] <;>
     rename_i _ rs _ _ _ hrs <;> exact hall rs fun i => by simpa using hrs i
 
 /-- Under the branch bits reading as the indicator of `b`, the masked point reads as the
