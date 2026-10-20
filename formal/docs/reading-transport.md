@@ -27,8 +27,8 @@ stage (10 steps), the selection stage (10 steps over 9 input cells), and the map
 - **By conditional rewriting with `le_chain`.** The same `simp` line, discharged by `le_chain`
   (`Snarky/Prover/WP.lean`), which walks back from the later table along the step facts.
 
-Whole-proof cost in thousands of `maxHeartbeats` units, where the default budget of 200 000 is
-200:
+Whole-proof cost on v4.30, in thousands of `maxHeartbeats` units, where the default budget of
+200 000 is 200:
 
 | Law | by hand | `order` | `le_rfl`, `assumption`, then `order` | `le_chain` |
 |---|---|---|---|---|
@@ -47,19 +47,21 @@ and 44. The 31 named facts become 4 and the 75 `.trans` steps go.
 
 ## Measuring
 
-At v4.30, `#count_heartbeats in` alone does not see a tactic proof, which elaborates
-asynchronously; measure with `set_option Elab.async false in` beneath it. The command also sets
+`#count_heartbeats in` alone does not see a tactic proof, which elaborates asynchronously;
+measure with `set_option Elab.async false in` beneath it. The command also sets
 `maxHeartbeats 0`, so an over-budget proof still compiles under it: read its "greater than the
 current maximum" line.
 
 ## The toolchain case
 
-Lean v4.33's `vcgen` frontend selects, per monad, a frame inference procedure registered with
-`@[frameproc]` (`Lean.Elab.Tactic.Do.Internal.VCGen.FrameProc`): at each spec application it may
-peel a frame off the goal's precondition and carry it across the call. A procedure for
-`CircuitM` at the `Prover` tag whose frame is the cells in scope with their readings would carry
-each reading past the later steps itself, which is the `simp` line's whole job. GroupMap is the
-concrete gadget where the move removes that line; this tree is on v4.30, so it is not measured.
+Lean's `vcgen` selects, per monad, a frame inference procedure registered with `@[frameproc]`
+(`Lean.Elab.Tactic.VCGen.FrameProc`): at each spec application it may peel a frame off the
+goal's precondition and carry it across the call. A procedure for `CircuitM` at the `Prover` tag
+whose frame is the cells in scope with their readings carries each reading past the later steps
+itself, which is the `simp` line's whole job: on the candidates stage it closes the law with no
+`le_chain` and no carrying lemma, at 19 against 35 for the `le_chain` proof on v4.35
+([toolchain-4.35.md](toolchain-4.35.md), §3). It needs `vcgen`, which reads only `Std.WP`
+laws.
 
 The stages stay either way: each states its result in closed form of its entry readings, a
 better specification than one triple over the map's thirty tables.
