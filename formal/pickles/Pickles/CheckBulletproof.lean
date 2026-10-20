@@ -908,7 +908,7 @@ the map's point or its negation, its ordinate below `(p + 1)/2`, and the combine
 `hornerCombine`. -/
 theorem checkBulletproof_spec_success {sf : Type}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo : FVar F)
+    (p : Poseidon.Params F) (endo : FVar F)
     (gm : GroupMapParams F) (sqrtF : F → Option F)
     (hchar : CastInj128 F) (hsw : SplitWidth F)
     (R : ops.Reading e.d.W) (umap : F → e.d.W.Point)
@@ -970,7 +970,7 @@ the endomorphism bundle's curve equals — the form a side generic in its wire c
 theorem checkBulletproof_spec_success_at {sf : Type}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
     {W : WeierstrassCurve.Affine F} (hW : e.d.W = W)
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo : FVar F)
+    (p : Poseidon.Params F) (endo : FVar F)
     (gm : GroupMapParams F) (sqrtF : F → Option F)
     (hchar : CastInj128 F) (hsw : SplitWidth F)
     (R : ops.Reading W) (umap : F → W.Point)
@@ -1002,7 +1002,7 @@ theorem checkBulletproof_spec_success_at {sf : Type}
           (lrSum (Vector.zipWith (lrTerm e.d.lam) lrv (ns.map Subtype.val)).toList) δv sgv hv
           (R.dec wcip) (R.dec wb) (R.dec w₁) (R.dec w₂))⦄ := by
   subst hW
-  exact checkBulletproof_spec_success ops e p hsize endo gm sqrtF hchar hsw R umap hgm sv bases bv
+  exact checkBulletproof_spec_success ops e p endo gm sqrtF hchar hsw R umap hgm sv bases bv
     hb
     hbne inp hwf hreg n hxi δv sgv hv lrv hlr hk hδ hsg hh
 
@@ -1589,7 +1589,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
   have hcast : CastInj128 C.BaseField :=
     castInj128_of_lt C.base (lt_trans (by norm_num) S.shape.base_big)
   refine builder_spec_imp _ _ _
-    (checkBulletproof_spec_success_at ops S.shape.ipaEndo (W := C.E.toAffine) rfl _ C.sponge.hsize
+    (checkBulletproof_spec_success_at ops S.shape.ipaEndo (W := C.E.toAffine) rfl _
       endo (.ofSpec C.groupMap)
       sqrtF hcast S.shape.splitWidth S.R (fun t => SWPoint.equivPoint C.E (C.toGroup t))
       (groupMap_reads S.shape sqrtF) sv bases _ hb hbne inp

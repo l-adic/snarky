@@ -5,8 +5,6 @@ import Pickles.ListLemmas
 import Pickles.OptSponge
 import Pickles.Prechallenge
 
-set_option mvcgen.warning false
-
 /-!
 # The fr-sponge in circuit
 

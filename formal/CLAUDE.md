@@ -41,12 +41,13 @@ seam law `solve_spec` (a successful solve satisfies every compiled constraint an
 decodes the public slots as declared; `solve_complete` names the same theorem), and the
 Lean-only laws beside their subjects: interpreter laws in `Snarky/{Builder,Prover}`
 (the bind-composition laws, builder/prover allocation agreement);
-a circuit's two readings as `Std.Do` weakest preconditions, soundness at the `Builder V c`
-tag (`Snarky/WP.lean`) and completeness at the `Prover c` tag (`Snarky/Prover/WP.lean`),
-where an emitted row is an obligation at its table with its cells in scope and the adequacy
-theorem `proverWP_prove` makes a triple a fact about `prove`; and per-gadget
-soundness/completeness triples beside each gadget in `Snarky/DSL/{Field,Boolean,Assert,Bits}`
-and `Snarky/Kimchi/Circuit/`, composed by `mvcgen`.
+a circuit's two readings as weakest preconditions, soundness at the `Builder V c` tag
+(`Std.WP`, `Snarky/WP.lean`) and completeness at the `Prover c` tag (`Std.Do`,
+`Snarky/Prover/WP.lean`), where an emitted row is an obligation at its table with its cells in
+scope and the adequacy theorem `proverWP_prove` makes a triple a fact about `prove`; and
+per-gadget soundness/completeness triples beside each gadget in
+`Snarky/DSL/{Field,Boolean,Assert,Bits}` and `Snarky/Kimchi/Circuit/`, composed by `vcgen`
+at the soundness reading and by `mvcgen` at the completeness reading.
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
 `Mathlib.Algebra.Ring.Defs` in `Snarky/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete

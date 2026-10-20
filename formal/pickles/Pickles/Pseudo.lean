@@ -1,7 +1,5 @@
 import Snarky.DSL.Field
 
-set_option mvcgen.warning false
-
 /-!
 # Pseudo-domain selection
 

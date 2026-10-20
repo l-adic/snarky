@@ -2,8 +2,6 @@ import Pickles.Linearization.Map
 import Snarky.DSL.Field
 import Pickles.Linearization.Spec
 
-set_option mvcgen.warning false
-
 /-!
 # The interpreter in circuit
 

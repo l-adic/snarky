@@ -2,8 +2,6 @@ import Snarky.DSL.Field
 import Snarky.WP
 import Kimchi.Verifier.Kimchi
 
-set_option mvcgen.warning false
-
 /-!
 # Evaluations at several chunks
 

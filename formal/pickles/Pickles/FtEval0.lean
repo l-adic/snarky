@@ -1,8 +1,6 @@
 import Pickles.Reflect.Soundness
 import Kimchi.Columns
 
-set_option mvcgen.warning false
-
 /-!
 # The circuit computes `ftEval0`
 

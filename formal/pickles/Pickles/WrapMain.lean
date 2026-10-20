@@ -4,8 +4,6 @@ import Pickles.WrapVerify
 import Pickles.StepSlot
 import Pickles.VkComms
 
-set_option mvcgen.warning false
-
 /-!
 # The wrap circuit
 

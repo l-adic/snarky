@@ -2,8 +2,6 @@ import Snarky.DSL.Field
 import Kimchi.Protocol.Linearization
 import Kimchi.Columns
 
-set_option mvcgen.warning false
-
 /-!
 # The permutation scalar in circuit
 

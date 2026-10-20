@@ -2,8 +2,6 @@ import Snarky.DSL.Boolean
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.Sponge
 
-set_option mvcgen.warning false
-
 /-!
 # The conditional sponge
 

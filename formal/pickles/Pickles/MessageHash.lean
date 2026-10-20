@@ -6,8 +6,6 @@ import Pickles.Statement
 import Pickles.VkComms
 import Poseidon.RandomOracle
 
-set_option mvcgen.warning false
-
 /-!
 # The accumulator digests
 

@@ -4,8 +4,6 @@ import Kimchi.Protocol.Linearization
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Protocol
 
-set_option mvcgen.warning false
-
 /-!
 # The combined inner product in circuit
 

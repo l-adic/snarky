@@ -4,18 +4,18 @@
 # The mirror image of sealing (`attribute [irreducible]`, which stops a consumer unfolding a
 # gadget's BODY): this gate stops a consumer restating a gadget's SPEC. An assembly that
 # needs a sub-gadget's reading in a different shape — its readings quantified in the
-# postcondition so `mvcgen` can take the triple before the readings are in hand, two
+# postcondition so `vcgen` can take the triple before the readings are in hand, two
 # readings conjoined — writes a wrapper theorem whose statement copies the library spec's
 # conclusion with the hypotheses moved. Every such copy is a place for the assembly and the
 # library to drift apart, and the wrapper is repeated by the next assembly.
 #
-# The rule: no `theorem` whose CONCLUSION is a triple `⦃⌜True⌝⦄ g …` about a gadget `g`
+# The rule: no `theorem` whose CONCLUSION is a triple `⦃fun _ => True⦄ g …` about a gadget `g`
 # defined in another module of the pickles package. The defining module exports every
-# shape a consumer needs (the family form for its own `mvcgen` runs, the `∀`-form for
+# shape a consumer needs (the family form for its own `vcgen` runs, the `∀`-form for
 # assemblies — `builder_spec_forall`, `builder_spec_and`, `builder_spec_imp` in
 # `Snarky/WP.lean` are the combinators), and a consumer names it in a `have`.
 #
-# Hypotheses are free: `(hx : ⦃⌜True⌝⦄ computeXHat …)` speaks about a parameter, and a
+# Hypotheses are free: `(hx : ⦃fun _ => True⦄ computeXHat …)` speaks about a parameter, and a
 # `def … : Prop` packaging a foreign triple as a premise (`FtEval0Hyp`) is not a claim. A
 # conclusion's triple is the one at bracket depth 0 of the statement; every hypothesis sits
 # inside its binder's parentheses. Gadgets of other packages (`groupMapCircuit` in Snarky)
@@ -28,8 +28,9 @@
 # (attributed or not, e.g. `@[spec] theorem`); its statement ends at the first depth-0 `:=`
 # that is not a `let` binder, so `(c := Builder …)` and `let` do not hide the conclusion.
 #
-# The gate fails closed: a scanner error, an unreadable conclusion head, or zero checked
-# conclusions is a failure, never a pass.
+# The gate fails closed: a scanner error, an unreadable conclusion head, or fewer than `floor`
+# checked conclusions is a failure, never a pass. The floor sits just under the package's count,
+# so a marker that stops matching part of the tree fails rather than passing on what is left.
 #
 # Usage:
 #   check-spec-locality.sh   # check only; non-zero exit on any violation
@@ -38,6 +39,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 2   # -> formal/
 
 pkg="pickles/Pickles"
+floor=200
 
 files=()
 while IFS= read -r f; do files+=("$f"); done < <(find "$pkg" -name '*.lean' | sort)
@@ -52,7 +54,7 @@ trap 'rm -f "$out"' EXIT
 # One awk program, two passes: the package's gadgets, then the package's theorems.
 # Plain POSIX awk (mawk on CI, BSD awk on macOS): byte-indexed `index`/`substr` throughout.
 if ! awk '
-  BEGIN { M = "⦃⌜True⌝⦄" }
+  BEGIN { M = "⦃fun _ => True⦄" }
 
   # bracket depth of a prefix: opens minus closes
   function depth_of(s,   t, o, c) {
@@ -195,8 +197,9 @@ fi
 
 grep -Ev '^(CHECKED|ERRORS) ' "$out" || true
 
-if [ "$checked" -eq 0 ]; then
-  echo "spec-locality gate ERROR: 0 conclusions checked (scanner or layout broken)" >&2
+if [ "$checked" -lt "$floor" ]; then
+  echo "spec-locality gate ERROR: $checked conclusions checked, under the floor of $floor" \
+    "(marker, scanner or layout broken)" >&2
   exit 2
 fi
 

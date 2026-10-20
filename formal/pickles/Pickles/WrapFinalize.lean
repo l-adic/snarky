@@ -2,8 +2,6 @@ import Pickles.FinalizeOtherProof
 import Pickles.Domain
 import Pickles.WrapScalarHalf
 
-set_option mvcgen.warning false
-
 /-!
 # The wrap circuit's finalize block
 

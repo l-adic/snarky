@@ -7,7 +7,7 @@ import Snarky.BasicSystem
 /-!
 # The weakest-precondition interpretation of `build`
 
-The soundness reading of a circuit as a `Std.WP` interpretation: each emitted constraint is an
+The soundness reading of a circuit as a `Std.WP.WP` instance: each emitted constraint is an
 assumption on an ambient valuation `V`, and the allocation counter is the only state. The tag
 `Builder V c` selects this reading. The `Std.WP.WPMonad` instance lets the framework's triples
 and `vcgen` apply to `CircuitM`; the `builder_spec_*` lemmas are combinators it lacks.

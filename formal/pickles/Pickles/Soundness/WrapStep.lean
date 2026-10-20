@@ -2,8 +2,6 @@ import Pickles.StepMain
 import Pickles.WrapMain
 import Pickles.KeyLayout
 
-set_option mvcgen.warning false
-
 /-!
 # The wrap circuit's step proof verifies
 

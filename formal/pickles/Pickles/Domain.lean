@@ -4,8 +4,6 @@ import Snarky.DSL.Utils
 import Kimchi.Protocol.Linearization
 import Pickles.Pseudo
 
-set_option mvcgen.warning false
-
 /-!
 # Domain scalars
 

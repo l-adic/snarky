@@ -9,8 +9,6 @@ import Pickles.Statement
 import Pickles.Prechallenge
 import Pickles.Chunks
 
-set_option mvcgen.warning false
-
 /-!
 # Finalizing the other proof
 

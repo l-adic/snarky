@@ -3,8 +3,6 @@ import Snarky.Kimchi.Circuit.EndoScalar
 import Bulletproof.Protocol
 import Pickles.Prechallenge
 
-set_option mvcgen.warning false
-
 /-!
 # The challenge polynomial in circuit
 

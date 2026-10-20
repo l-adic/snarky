@@ -6,8 +6,6 @@ import Kimchi.Verifier.Kimchi
 import Pickles.OptSponge
 import Pickles.Prechallenge
 
-set_option mvcgen.warning false
-
 /-!
 # The fq-sponge transcript in circuit
 
@@ -754,8 +752,7 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
   exact ⟨eβ, eγ, eα, eζ, hbetaLo rfl, hgammaLo rfl, hx, hdv, s11⟩
 
 /-- The conditional transcript returns the `xHat` it was given. -/
-theorem fqSpongeTranscriptOpt_xHat [ToNat F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar F)
+theorem fqSpongeTranscriptOpt_xHat [ToNat F] (p : Poseidon.Params F) (endo indexDigest : FVar F)
     {np : ℕ} (sgOld : Vector (BoolVar F × AffinePoint (FVar F)) np) {nc : ℕ}
     (xHat : Vector (AffinePoint (FVar F)) nc)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols)
@@ -837,7 +834,7 @@ theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
       List.Forall₂ (CircuitType.Reads V) tComm.toList tv →
       FqTranscriptReads p (indexDigest.val V) ((sgv.filter (·.1)).map (·.2)) xv wv zv tv V o⦄ := by
   refine builder_spec_and _ _ _
-    (fqSpongeTranscriptOpt_xHat p hsize endo indexDigest sgOld xHat wComm zComm tComm) ?_
+    (fqSpongeTranscriptOpt_xHat p endo indexDigest sgOld xHat wComm zComm tComm) ?_
   rw [builder_spec_iff]
   intro nv hsat sgv xv wv zv tv hsg hx hw hz ht
   exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec h2 h3 hsw p hsize hall endo
