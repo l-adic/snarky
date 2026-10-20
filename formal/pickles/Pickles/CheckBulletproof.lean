@@ -28,6 +28,7 @@ decided into the success bit.
   limbs absorbed by `absorbList`, the point select the generic `select` at `AffinePoint`).
 -/
 
+
 namespace Pickles
 
 open Std.Do Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
@@ -1601,7 +1602,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
   have hcast : CastInj128 C.BaseField :=
     castInj128_of_lt C.base (lt_trans (by norm_num) S.shape.base_big)
   refine builder_spec_imp _ _ _
-    (checkBulletproof_spec_success_at ops S.shape.ipaEndo rfl _ C.sponge.hsize endo
+    (checkBulletproof_spec_success_at ops S.shape.ipaEndo (W := C.E.toAffine) rfl _ C.sponge.hsize endo
       (.ofSpec C.groupMap)
       sqrtF hcast S.shape.splitWidth S.R (fun t => SWPoint.equivPoint C.E (C.toGroup t))
       (groupMap_reads S.shape sqrtF) sv bases _ hb hbne inp

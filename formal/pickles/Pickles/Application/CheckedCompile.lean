@@ -289,7 +289,9 @@ private def lagrangeAt {curve : Ipa.KimchiCurve} {m : Type → Type} [Monad m]
     StateT (LagrangeMemo σ nc count) m
       { table : Vector (Vector curve.Point nc) count // table = K.lagrangePoints σ count } := do
   have hs : domainLagrange σ nc count K.domainLog2 = K.lagrangePoints σ count := by
-    simp only [domainLagrange, KimchiVK.lagrangePoints, KimchiVK.n, K.omega_eq]
+    unfold domainLagrange KimchiVK.lagrangePoints
+    rw [Vector.mk.injEq]
+    simp only [KimchiVK.n, K.omega_eq]
   for entry in ← get do
     if h : entry.1 = K.domainLog2 then
       return ⟨entry.2.val, entry.2.property.trans (h ▸ hs)⟩
@@ -364,12 +366,14 @@ def ApplicationCertified.indices {C : Circuits D} (checked : ApplicationCertifie
   wrapSize := (wrapIndexData C).n
   wrap := checked.wrap.index
   stepPublicCount b := (checked.step b).publicCount_eq.trans (by
-    simpa only [show CircuitType.size Fp Unit = 0 from rfl, Nat.zero_add] using
-      length_compiledPublicVars_compileWith (a := Unit) (b := StepPublic D)
-        (C.stepCircuit b inertStepAdvice))
+    have h := length_compiledPublicVars_compileWith (a := Unit) (b := StepPublic D)
+      (C.stepCircuit b inertStepAdvice)
+    simp only [show CircuitType.size Fp Unit = 0 from rfl, Nat.zero_add] at h
+    exact h)
   wrapPublicCount := checked.wrap.publicCount_eq.trans (by
-    simpa only [show CircuitType.size Fq Unit = 0 from rfl, Nat.add_zero] using
-      length_compiledPublicVars_compileWith (a := WrapPublic) (b := Unit)
-        (C.wrapCircuit inertWrapAdvice))
+    have h := length_compiledPublicVars_compileWith (a := WrapPublic) (b := Unit)
+      (C.wrapCircuit inertWrapAdvice)
+    simp only [show CircuitType.size Fq Unit = 0 from rfl, Nat.add_zero] at h
+    exact h)
 
 end Pickles.Application

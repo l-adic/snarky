@@ -621,7 +621,7 @@ private theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → 
       show (idx.omega ^ ((c.2 : ℕ)) : F)
         = idx.omega ^ (((embCell idx.zkRows c).2 : Fin n) : ℕ) from rfl,
       idx.eval_permWitnessPoly]
-    simpa using hcopy (embCell idx.zkRows c)
+    exact hcopy (embCell idx.zkRows c)
   exact constraints_dvd_of_prods idx.omega_prim (Nat.pos_of_neZero n)
     (by have := idx.zk_three; omega : 2 ≤ idx.zkRows)
     idx.zk_le _ _ idx.shifts β γ

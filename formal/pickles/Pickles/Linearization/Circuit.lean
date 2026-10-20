@@ -128,9 +128,11 @@ private theorem evalLoop_spec (h : CircuitCompatible V ce pe) (feat : FeatureFla
     intro endPos cs
     rw [evalLoop, evalLoop]
     simp only [map_position]
-    split
-    · mvcgen
-    · cases htok : toks[cs.position]? with
+    by_cases hpos : cs.position ≥ endPos
+    · simp only [hpos, ↓reduceIte]
+      mvcgen
+    · simp only [hpos, ↓reduceIte]
+      cases htok : toks[cs.position]? with
       | none => mvcgen
       | some tok =>
         cases tok with

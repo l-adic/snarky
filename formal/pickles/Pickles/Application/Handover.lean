@@ -208,8 +208,8 @@ theorem appState_eq_or_collision
   rcases e.handover_or_collision hProducer hConsumer hAccept with h | h
   · left
     apply Vector.toList_inj.mp
-    simpa only [Vector.toList_map, Vector.toList_cast] using
-      congrArg (fun m => m.appState) h.1
+    have h' := congrArg (fun m => m.appState) h.1
+    (try simp only [Vector.toList_map, Vector.toList_cast] at h' ⊢) <;> exact h'
   · exact Or.inr h
 
 end WrapProofHandover

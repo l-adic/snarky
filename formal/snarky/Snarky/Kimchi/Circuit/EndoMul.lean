@@ -1018,8 +1018,8 @@ private theorem scan_rows [Field F] (eb xT yT : F) :
       simp only [accStep, rowStep]
       rw [roundVal_eq_build]
       rfl
-    have hws' : ∀ (k : ℕ) (hk : k < ws.length), ws[k] = bs (k + 1) := fun k hk => by
-      simpa using hws (k + 1) (by simpa using hk)
+    have hws' : ∀ (k : ℕ) (hk : k < ws.length), ws[k] = bs (k + 1) := fun k hk =>
+      hws (k + 1) (by simpa using hk)
     cases i with
     | zero =>
       simp only [List.scanl_cons, List.getD_cons_zero, List.getElem_cons_zero]
@@ -1073,8 +1073,8 @@ private theorem scan_fold [Field F] (eb xT yT : F) :
       simp only [accStep, rowStep]
       rw [roundVal_eq_build]
       rfl
-    have hws' : ∀ (k : ℕ) (hk : k < ws.length), ws[k] = bs (k + 1) := fun k hk => by
-      simpa using hws (k + 1) (by simpa using hk)
+    have hws' : ∀ (k : ℕ) (hk : k < ws.length), ws[k] = bs (k + 1) := fun k hk =>
+      hws (k + 1) (by simpa using hk)
     rw [List.foldl_cons, hstep, scan_fold eb xT yT ws _ _ _ (fun m => bs (m + 1)) hws',
       List.length_cons, acc_shift]
 
@@ -1473,9 +1473,15 @@ theorem Prover.endoInv_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- `-trivial`: the trivial pass would whnf `endoExpandZ`'s sixty-four-digit expansion in the
   -- conditions, as in `endoMul`'s law
   mvcgen -trivial [hwit, hchk, hem]
-  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_prod,
-    CircuitType.reads_prod, CircuitType.scoped_fvar, CircuitType.reads_fvar, OnCurveAs,
+  -- the witnessed pair stays a variable: its bundle facts are flattened in projection form
+  all_goals (try simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_prod',
+    CircuitType.reads_prod', CircuitType.scoped_fvar, CircuitType.reads_fvar] at *)
+  all_goals (try simp (config := { zetaDelta := true }) only [CircuitType.ReadsAs,
+    scoped_affinePoint, reads_affinePoint] at ⊢)
+  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_prod',
+    CircuitType.reads_prod', CircuitType.scoped_fvar, CircuitType.reads_fvar, OnCurveAs,
     OnCurveAt, scoped_affinePoint, reads_affinePoint, CVar.Scoped.of_le, ProverState.read_of_le,
     OnCurveAt.of_reads]
+
 
 end Snarky.Kimchi

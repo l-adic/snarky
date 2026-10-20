@@ -257,8 +257,12 @@ instance KimchiConstraint.instLawfulBasicSystem :
     cases con with
     | basic b => exact LawfulBasicSystem.holds_congr (c := Basic F) b V V' h
     | addComplete c =>
-      simp (disch := simp [KimchiConstraint.cells, AddComplete.operands]) only
-        [KimchiConstraint.Holds, AddComplete.read, h]
+      have hm : ∀ x ∈ [c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y, c.inf, c.sameX, c.s,
+          c.infZ, c.x21Inv], x.val V = x.val V' := h
+      simp only [List.forall_mem_cons] at hm
+      obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, -⟩ := hm
+      simp only [KimchiConstraint.Holds, AddComplete.read, h1, h2, h3, h4, h5, h6, h7, h8, h9,
+        h10, h11]
     | poseidon c =>
       have hr : Poseidon.read V c = Poseidon.read V' c := by
         unfold Poseidon.read

@@ -754,7 +754,7 @@ private theorem label_add {c : AddComplete F} (hc : (KimchiConstraint.addComplet
     omega) = some w := by
     have h0 : (c.operands.toList.map CVar.var? ++ List.replicate 4 none)[j]'(by simpa using hj) =
       some w := h
-    simpa only [map_var?_eq c.operands.toList hc] using h0
+    simpa only [map_var?_eq c.operands.toList hc, KimchiConstraint.directVars] using h0
   obtain ⟨hj', h''⟩ := label_of_append_replicate _ h'
   simp only [List.length_map, directVars_length hc] at hj'
   refine ⟨hj', ?_⟩

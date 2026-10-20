@@ -50,7 +50,7 @@ def wrapVerify [ConstraintHolds F c] [LawfulBasicSystem F c] {sf : Type} {k kw n
     (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) : CircuitM F c PUnit := do
   let o ← incrementallyVerifyProof ops e p endo gm sqrtF true blindingH spongeAfterIndex
     computeXHat (cells.withClaims u)
-  assert o.success
+  Snarky.assert o.success
   let d ← hashMessagesForNextWrapProof p msgSponge ⟨cells.opening.sg, newBpChallenges⟩
   assertEqual claimedMsgDigest d
   assertEqual u.spongeDigestBeforeEvaluations o.spongeDigest

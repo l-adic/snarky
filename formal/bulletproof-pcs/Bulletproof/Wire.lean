@@ -270,7 +270,7 @@ theorem msm_eq {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) :
 
 private theorem geom_foldl {F : Type*} [Field F] (r : F) :
     ∀ (l : List ℕ) (acc : Array F) (c : F),
-      (l.foldl (fun (b : MProd (Array F) F) _ => ⟨b.1.push b.2, b.2 * r⟩) ⟨acc, c⟩).1
+      (l.foldl (fun (b : Array F × F) _ => (b.1.push b.2, b.2 * r)) (acc, c)).1
         = acc ++ ((List.range l.length).map fun j => c * r ^ j).toArray
   | [], acc, c => by simp
   | _ :: l, acc, c => by

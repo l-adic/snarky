@@ -93,9 +93,10 @@ theorem halvesTies_of_splitCast {k nc : ℕ} (Vg : Valuation Fp)
       stepSide, stepDecode, Pasta.Shifted.unshiftType2, ZMod.cast_eq_val]
   refine ⟨⟨dv, ⟨reads128_of_cast cα ha, hb, hg, reads128_of_cast cζ hz, hdec _ _ cperm,
       hdec _ _ czm, hdec _ _ czn, hdec _ _ ccip, reads128_of_cast cξ hxi,
-      fun i => by simpa [dv] using reads128_of_cast (hbp i) (hms i), hdec _ _ cb⟩,
+      fun i => by simpa [dv, GroupHalf.step, ScalarHalf.wrap] using
+        reads128_of_cast (hbp i) (hms i), hdec _ _ cb⟩,
     ⟨ha, reads128_cast cβ hb, reads128_cast cγ hg, hz, rfl, rfl, rfl, rfl, hxi,
-      fun i => by simpa [dv] using hms i, rfl⟩⟩, ?_⟩
+      fun i => by simpa [dv, GroupHalf.step, ScalarHalf.wrap] using hms i, rfl⟩⟩, ?_⟩
   show claimsS.spongeDigestBeforeEvaluations.val Vs
     = castDigest IpaPallas.curve (claimsG.spongeDigestBeforeEvaluations.val Vg)
   rw [cdig, castDigest_pallas]

@@ -436,7 +436,7 @@ theorem assertEq_fields_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicS
       (CircuitType.varToFields (val := val) t) (CircuitType.varToFields (val := val) e) >>=
       fun _ => (pure PUnit.unit : CircuitM F c PUnit)) nv).constraints,
       ConstraintHolds.Holds V con := hsat
-  simp only [build_bind, build, List.append_nil] at hsat
+  simp only [build_bind, build, build_pure, List.append_nil] at hsat
   ext i hi
   simpa using hzip nv hsat ⟨i, hi⟩
 

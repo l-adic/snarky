@@ -430,7 +430,7 @@ open Std.Do in
     (witness (val := val) compute : CircuitM F (Builder V c) var)
     ⦃⇓ r _ => ⌜S.post V r⌝⦄ := by
   intro nv _ hsat
-  simp only [witness, build, build_bind, List.append_nil] at hsat ⊢
+  simp only [witness, build, build_bind, build_pure, List.append_nil] at hsat ⊢
   exact S.check_sound V _ _ hsat
 
 /-! ## The leaves -/
@@ -460,7 +460,7 @@ end Combinators
 example {val var : Type} [Field F] [BasicSystem F c] [ConstraintHolds F c]
     [CircuitType F val var] (compute : AsProver F (UnChecked val)) (nv : Nat) :
     (build (witness (c := c) (val := UnChecked val) compute) nv).constraints = [] := by
-  simp [witness, build, build_bind]
+  rfl
 
 /-! ## The witness law at the prover's reading
 

@@ -126,7 +126,7 @@ theorem ApplicationCertified.lift_step {C : Circuits D} (checked : ApplicationCe
     (main := C.stepCircuit b inertStepAdvice) hV #v[] _ hlist
   have hread : CircuitType.Reads V (stepCompilation C b).result.1.1 t.statement :=
     (hout t.statement).mpr rfl
-  refine ⟨⟨V, inertStepAdvice, hV⟩, ?_, by simpa only [stepValuation] using hdet⟩
+  refine ⟨⟨V, inertStepAdvice, hV⟩, ?_, by (try simp only [stepValuation]) <;> exact hdet⟩
   show CircuitType.Reads V (StepRun.cells ⟨V, inertStepAdvice, _⟩).out t.statement
   rw [StepRun.cells_eq, ← stepCompilation_out]
   exact hread
@@ -147,6 +147,6 @@ theorem ApplicationCertified.lift_wrap {C : Circuits D} (checked : ApplicationCe
   obtain ⟨hin, -⟩ := compileWith_reads (a := WrapPublic) (b := Unit)
     (main := C.wrapCircuit inertWrapAdvice) hV _ #v[] hlist
   exact ⟨⟨V, inertWrapAdvice, hV⟩, (hin t.statement).mpr rfl,
-    by simpa only [wrapValuation] using hdet⟩
+    by (try simp only [wrapValuation]) <;> exact hdet⟩
 
 end Pickles.Application

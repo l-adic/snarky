@@ -113,7 +113,7 @@ private theorem StepWrapLink.verifies {C : Circuits D} {b : D.Branch} (e : StepW
     (C.wiring.source b i).wrapKey (C.wiring.source b i).wrapChunks
     (C.wiring.source b i).wrapLayout ⟨source_size C b i, hAssumptions.lagrange⟩ hkey
     hAssumptions.avoids (C.wiring.source b i).wrapIndex
-    (by convert hpin using 1)
+    (by convert hpin using 1 <;> rfl)
     (C.wiring.pin_domain b i _ (C.wiring.pins_at_slot b i))
   obtain ⟨cp, ms, hwire, hf, he, hc, hhS, hhW, hv⟩ := cap
   have htie := e.publicInput
@@ -168,11 +168,12 @@ private theorem WrapStepLink.verifies
     producer.wiring.stepKeys producerBranch producer.wiring.backend.stepKeys[producerBranch]
     (by simp [Wiring.stepKeys]) (producer.wiring.valid.stepChunks producerBranch)
     producer.stepLagrange hAssumptions.lagrange e.wrap.V producerD.widths
-    (by simpa [Wiring.stepKeys] using producer.wiring.step_key_layout producerBranch)
+    (by have h := producer.wiring.step_key_layout producerBranch
+        simp [Wiring.stepKeys] at h ⊢; exact h)
     producer.wiring.pins producer.setup.dummy producerD.wrapWidths e.wrap.advice
     producer.wiring.valid.branches_le
-    (by simpa [Wiring.stepKeys] using hAssumptions.points_ne)
-    (by simpa [Wiring.stepKeys] using hAssumptions.avoids)
+    (by have h := hAssumptions.points_ne; (try simp [Wiring.stepKeys] at h ⊢) <;> exact h)
+    (by have h := hAssumptions.avoids; (try simp [Wiring.stepKeys] at h ⊢) <;> exact h)
     consumer.wiring.backend.stepDomains.list producer.wiring.backend.stepDomains
     ((consumerD.slots_le_width consumerBranch).trans consumerD.width_le) producerD.width_le
     (consumer.wiring.sources consumerBranch) (consumer.source_bound consumerBranch)
@@ -181,13 +182,16 @@ private theorem WrapStepLink.verifies
       ((consumerD.slots_le_width consumerBranch).trans consumerD.width_le))) e.step.V
     (consumer.rules consumerBranch) e.step.advice
     e.wrap.holds hstep e.branch slot e.sourceFor.chunks
-    (by simpa only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup]
-      using e.mustVerify)
+    (by have h := e.mustVerify
+        (try simp only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup] at h ⊢)
+          <;> exact h)
     e.sourceFor.domains e.sourceFor.width e.mask
-    (by simpa only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
-      hsetup] using e.maskReads)
-    (by simpa only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
-      hsetup, wrapStatement] using e.publicInput)
+    (by have h := e.maskReads
+        (try simp only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
+          hsetup] at h ⊢) <;> exact h)
+    (by have h := e.publicInput
+        (try simp only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
+          hsetup, wrapStatement] at h ⊢) <;> exact h)
   obtain ⟨cp, oldsW, hpr, hol, hf, he, hc, hk, hhW, hhS, hv⟩ := cap
   simp only [Wiring.stepKeys, Fin.getElem_fin] at hf he hv
   have htie := e.publicInput
@@ -199,7 +203,7 @@ private theorem WrapStepLink.verifies
   refine ⟨cp, oldsW, hpr, hol, hf, ⟨⟨htie, hhW, hhS⟩, he⟩,
     ⟨⟨htie, hhW, hhS⟩, hc, producerD.slots producerBranch,
       producerD.slots_le_width producerBranch, ?_⟩, ?_, hv⟩
-  all_goals simpa [Shape.widths] using hk
+  all_goals (have h := hk; (try simp [Shape.widths] at h ⊢) <;> exact h)
 
 set_option cleanup.letToHave false in
 /-- The reconstructed step proof inherits the capstone's accumulator and verification facts. -/
@@ -258,8 +262,8 @@ theorem WrapStepLink.mask_keeps
     (inVal := consumerD.schema.Input) (outVal := consumerD.schema.Output)
     producer.setup.wrapSrs producer.wiring.backend.wrapKey rfl producer.setup.stepSrs rfl
     producer.wiring.stepKeys producerBranch
-    (by simpa [Wiring.stepKeys] using
-      producer.wiring.backend.stepKeys[producerBranch].domainLog2_le.trans_lt (by decide))
+    (by simp only [Wiring.stepKeys]
+        exact producer.wiring.backend.stepKeys[producerBranch].domainLog2_le.trans_lt (by decide))
     producer.stepLagrange e.wrap.V producerD.widths producer.wiring.pins producer.setup.dummy
     producerD.wrapWidths e.wrap.advice producer.wiring.valid.branches_le
     consumer.wiring.backend.stepDomains.list
@@ -270,14 +274,18 @@ theorem WrapStepLink.mask_keeps
       ((consumerD.slots_le_width consumerBranch).trans consumerD.width_le))) e.step.V
     (consumer.rules consumerBranch) e.step.advice
     e.wrap.holds hstep e.branch slot
-    (by simpa only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup]
-      using e.mustVerify)
+    (by have h := e.mustVerify
+        (try simp only [StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit, hsetup] at h ⊢)
+          <;> exact h)
     e.sourceFor.width e.mask
-    (by simpa only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
-      hsetup] using e.maskReads)
-    (by simpa only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
-      hsetup, wrapStatement] using e.publicInput)
-  simpa [Shape.widths] using hk
+    (by have h := e.maskReads
+        (try simp only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
+          hsetup] at h ⊢) <;> exact h)
+    (by have h := e.publicInput
+        (try simp only [StepRun.inp, StepRun.cells, Circuits.stepBuilt, Circuits.stepCircuit,
+          hsetup, wrapStatement] at h ⊢) <;> exact h)
+  have h := hk
+  (try simp [Shape.widths] at h ⊢) <;> exact h
 
 set_option cleanup.letToHave false in
 /-- The reconstructed wrap proof inherits the capstone's accumulator and verification facts. -/
@@ -302,8 +310,9 @@ theorem StepWrapLink.verifies_proof {C : Circuits D} {b : D.Branch} (e : StepWra
     hf.evals hf.pubEvals hf.ftEval1
     (show (StepWrap.consumedAccumulators e.step.V e.wrap.V (e.step.inp i)
       C.setup.dummy e.wrap.cells.1 (D.paddedSlot b i)).toArray = cp.olds by
-        simpa only [StepWrapLink.run, StepWrapRun.inp, StepRun.inp, StepWrapRun.jf,
-          Shape.paddedSlot, Array.toArray_toList] using congrArg List.toArray hc.2.1)
+        (have h := congrArg List.toArray hc.2.1
+         (try simp only [StepWrapLink.run, StepWrapRun.inp, StepRun.inp, StepWrapRun.jf,
+            Shape.paddedSlot, Array.toArray_toList] at h ⊢) <;> exact h))
   dsimp only [StepWrapLink.proof, ScalarHalf.wrap, StepWrapLink.run, StepWrapRun.inp,
     StepRun.inp, StepWrapRun.jf, Shape.paddedSlot] at hr ⊢
   obtain ⟨hsg, ho, hch, hSg, hkv⟩ := hr

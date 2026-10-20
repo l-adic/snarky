@@ -41,6 +41,10 @@ def build : CircuitM F c α → Nat → Built c α
     ⟨r.result, r.nextVar, con :: r.constraints⟩
   | .existsOp m _ k, n => build (k (allocRange n m)) (n + m)
 
+/-- Building `pure` emits nothing. -/
+@[simp] theorem build_pure (a : α) (nv : Nat) :
+    build (pure a : CircuitM F c α) nv = ⟨a, nv, []⟩ := rfl
+
 /-- Building a sequence splits: the tail builds from the head's result and final
 counter, and the constraints concatenate in emission order. -/
 theorem build_bind (m : CircuitM F c α) (f : α → CircuitM F c β) (nv : Nat) :
