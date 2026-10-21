@@ -51,6 +51,12 @@ a triple a fact about `prove`; the prover automation, witness and checked-type c
 generic traversal contracts are in `Snarky/Prover/VCGen.lean`; and per-gadget
 soundness/completeness triples beside each gadget in `Snarky/DSL/{Field,Boolean,Assert,Bits}`
 and `Snarky/Kimchi/Circuit/`.
+`vcgen` picks a callee's contract by the call's program pattern, trying the contracts listed in
+`vcgen [...]` before those in the context, so a contract quantified over a program intermediate
+can capture an earlier call that unifies with it. Instantiate every argument the statement
+names; list only contracts with distinct patterns and leave a colliding quantified one in the
+context as a fallback; where two calls share a pattern with different values, split the program
+with `Triple.bind` between them (`gmCandidates_stages` in `Snarky/Kimchi/Circuit/GroupMap.lean`).
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
 `Mathlib.Algebra.Ring.Defs` in `Snarky/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete

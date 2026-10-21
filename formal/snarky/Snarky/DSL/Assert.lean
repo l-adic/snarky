@@ -412,23 +412,41 @@ private theorem Prover.assertEqual_common [Field F] [DecidableEq F] [BasicSystem
   exact (triple_iff _ _ _ _).mp (Prover.assertEqual_spec (c := c) x y w) s hw
 
 open Snarky.Prover Std.WP in
-/-- `assertEq`'s completeness: where both bundles read one value, the run succeeds. -/
-theorem Prover.assertEq_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var] (t e : var) (a : val) :
-    ⦃Reads t a ⊓ Reads e a⦄ assertEq (F := F) (c := Prover c) (val := val) t e ⦃fun _ ↦ ⊤⦄ := by
+/-- `assertEq`'s completeness, cell by cell: where each pair of cells reads a common value, the
+run succeeds, whether or not either bundle reads as a value. -/
+theorem Prover.assertEq_fields_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var]
+    (t e : var) :
+    ⦃⨅ i : Fin (CircuitType.size F val), ⨆ w : F,
+      Reads (CircuitType.varToFields (val := val) t)[i] w ⊓
+        Reads (CircuitType.varToFields (val := val) e)[i] w⦄
+    assertEq (F := F) (c := Prover c) (val := val) t e ⦃fun _ ↦ ⊤⦄ := by
   have hz := Spec.zipWithVecM (c := c) assertEqual (fun x y ↦ ⨆ w : F, Reads x w ⊓ Reads y w)
     (fun _ _ _ ↦ ⊤) (fun x y ↦ Prover.assertEqual_common (c := c) x y)
     (CircuitType.varToFields (val := val) t) (CircuitType.varToFields (val := val) e)
   unfold assertEq
   vcgen [hz]
-  all_goals prover_assert with
-    intro s ht he i
-    change CircuitType.ReadsAs s t a at ht
-    change CircuitType.ReadsAs s e a at he
-    refine ⟨(CircuitType.valueToFields (F := F) a)[i], ?_, ?_⟩
-    · rw [Reads.fvar_apply]
-      exact ⟨ht.1 _ (by simp), by simpa [getElem_mapVec] using congrArg (·[i]) ht.2⟩
-    · rw [Reads.fvar_apply]
-      exact ⟨he.1 _ (by simp), by simpa [getElem_mapVec] using congrArg (·[i]) he.2⟩
+  all_goals prover_assert
+
+open Snarky.Prover Std.WP in
+/-- `assertEq`'s completeness: where both bundles read one value, the run succeeds. -/
+theorem Prover.assertEq_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var] (t e : var) (a : val) :
+    ⦃Reads t a ⊓ Reads e a⦄ assertEq (F := F) (c := Prover c) (val := val) t e ⦃fun _ ↦ ⊤⦄ := by
+  refine ⟨Triple.entails_wp_of_pre (Prover.assertEq_fields_spec (c := c) (val := val) t e) ?_⟩
+  show (Reads t a ⊓ Reads e a : Pred F) ≤ _
+  rw [Pred.le_iff]
+  intro s hs
+  rw [Pred.inf_apply] at hs
+  obtain ⟨ht, he⟩ := hs
+  change CircuitType.ReadsAs s t a at ht
+  change CircuitType.ReadsAs s e a at he
+  rw [Pred.iInf_apply]
+  intro i
+  rw [Pred.iSup_apply]
+  refine ⟨(CircuitType.valueToFields (F := F) a)[i], ?_⟩
+  rw [Pred.inf_apply, Reads.fvar_apply, Reads.fvar_apply]
+  exact ⟨⟨ht.1 _ (by simp), by simpa [getElem_mapVec] using congrArg (·[i]) ht.2⟩,
+    ⟨he.1 _ (by simp), by simpa [getElem_mapVec] using congrArg (·[i]) he.2⟩⟩
 
 end Snarky

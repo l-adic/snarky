@@ -596,6 +596,61 @@ theorem Prover.addFast_spec [Field F] [DecidableEq F] (fin : Finiteness)
       | exact Prover.addFast_row_checked fin ha htwo hP hQ hy1 (fun _ ↦ hPQ0) ‹_› ‹_› ‹_› ‹_›
           ‹_› ‹_›)
 
+/-- **`addFast`'s completeness at infinity.** Under `dontCheckFinite`, for operands reading
+on-curve values `pv`, `qv` that name `P`, `Q` with `P + P ≠ 0` and `P + Q = 0`, the infinity
+flag reads `true` and the output point reads some value. -/
+theorem Prover.addFast_inf_spec [Field F] [DecidableEq F]
+    (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
+    (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (pv qv : AffinePoint F)
+    (P Q : W.Point) (hP : Kimchi.Gate.AddComplete.IsPoint W pv.x pv.y P)
+    (hQ : Kimchi.Gate.AddComplete.IsPoint W qv.x qv.y Q) (hPP : P + P ≠ 0) (hPQ : P + Q = 0) :
+    ⦃Reads p1' pv ⊓ Reads p2' qv⦄
+    addFast (c := Prover (KimchiConstraint F)) .dontCheckFinite p1' p2'
+    ⦃fun r ↦ Reads r.isInfinity true ⊓ ⨆ w : AffinePoint F, Reads r.p w⦄ := by
+  have hy1 : pv.y ≠ 0 := fun hy ↦
+    hPP (two_torsion_of_y_eq_zero ha (V := fun _ ↦ 0) (p := ⟨.const pv.x, .const pv.y⟩) hP hy)
+  -- `Q = -P`: the same abscissa, the opposite ordinate
+  have hcoords : qv.x = pv.x ∧ qv.y = -pv.y := by
+    obtain ⟨n1, hn1⟩ := hP
+    have hQ' : Kimchi.Gate.AddComplete.IsPoint W pv.x (W.negY pv.x pv.y) Q :=
+      ⟨(W.nonsingular_neg pv.x pv.y).mpr n1,
+        by rw [eq_neg_of_add_eq_zero_right hPQ, hn1, Point.neg_some]⟩
+    obtain ⟨hx, hy⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq hQ hQ'
+    refine ⟨hx, ?_⟩
+    rw [hy, WeierstrassCurve.Affine.negY, ha.1, ha.2.2.1]
+    ring
+  have hflag : addFast.infFlag .dontCheckFinite (decide (pv.x = qv.x)) pv.y qv.y = true := by
+    have hne : pv.y ≠ -pv.y := fun h ↦ hy1 <|
+      (mul_eq_zero.mp (by rw [two_mul]; exact eq_neg_iff_add_eq_zero.mp h)).resolve_left htwo
+    simp [addFast.infFlag, hcoords.1, hcoords.2, hne]
+  have h1 := Prover.sealPoint_spec (c := KimchiConstraint F) p1' pv
+  have h2 := Prover.sealPoint_spec (c := KimchiConstraint F) p2' qv
+  have hsx := fun q1 q2 : AffinePoint (FVar F) ↦ Spec.witness (c := KimchiConstraint F)
+    (addFast.sameXAdvice q1 q2) (addFast.sameXVal pv.x qv.x) valid_unchecked
+  have hinf := fun (q1 q2 : AffinePoint (FVar F)) (b : BoolVar F) ↦
+    Prover.infColumn_spec (c := KimchiConstraint F) .dontCheckFinite q1 q2 b
+      (decide (pv.x = qv.x)) pv.y qv.y
+  have haux := fun (q1 q2 : AffinePoint (FVar F)) (b : BoolVar F) ↦
+    Spec.witness (c := KimchiConstraint F) (addFast.auxAdvice q1 q2 b)
+      (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y) (by simp)
+  have hsum := fun (q1 q2 : AffinePoint (FVar F)) (sl : FVar F) ↦
+    Spec.witness (c := KimchiConstraint F) (addFast.sumAdvice q1 q2 sl)
+      (addFast.sumVal (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y).s pv.x qv.x
+        pv.y) valid_affinePoint
+  unfold addFast
+  vcgen [h1, h2, hsx, hinf, haux, hsum]
+  -- the value facts are spent; `simp_all` would rewrite with them
+  all_goals clear hPQ hPP hcoords
+  all_goals prover_assert with
+    (intros; first
+      | (refine ⟨?_, _, ‹_›⟩; simp only [hflag] at *; assumption)
+      | (simp_all +zetaDelta [Prover.reads_affinePoint_apply, Prover.reads_addAux_apply,
+          Prover.reads_unchecked_apply, Reads.fvar_apply, Reads.boolVar_apply,
+          Prover.readVal_boolVar, addFast.sameXAdvice_run, addFast.auxAdvice_run,
+          addFast.sumAdvice_run, addFast.sameXVal, bit]; done)
+      | exact Prover.addFast_row_checked .dontCheckFinite ha htwo hP hQ hy1 (fun h ↦ nomatch h)
+          ‹_› ‹_› ‹_› ‹_› ‹_› ‹_›)
+
 end ProverReading
 
 attribute [irreducible] sealPoint addFast addFast.infColumn

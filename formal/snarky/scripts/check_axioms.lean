@@ -233,7 +233,8 @@ def roots : List Name :=
     -- The completeness laws at the prover's reading, pure core Lean.
     `Snarky.Prover.inv_spec, `Snarky.Prover.mul_spec, `Snarky.Prover.div_spec,
     `Snarky.Prover.isZero_spec, `Snarky.Prover.assertEqual_spec, `Snarky.Prover.sealVar_spec,
-    `Snarky.Kimchi.Prover.addFast_spec, `Snarky.Kimchi.Prover.varBaseMul_spec,
+    `Snarky.Kimchi.Prover.addFast_spec, `Snarky.Kimchi.Prover.addFast_inf_spec,
+    `Snarky.Kimchi.Prover.varBaseMul_spec,
     `Snarky.Kimchi.Prover.endoMul_spec, `Snarky.Kimchi.EndoScalar.Prover.endoScalar_spec,
     `Snarky.Prover.square_spec, `Snarky.Prover.assertSquare_spec,
     `Snarky.Prover.unpack_spec,
@@ -250,7 +251,7 @@ def roots : List Name :=
     `Snarky.Prover.assertAny_spec,
     `Snarky.Prover.assertExactlyOne_spec,
     `Snarky.Prover.assertAll_spec,
-    `Snarky.Prover.assertEq_spec,
+    `Snarky.Prover.assertEq_spec, `Snarky.Prover.assertEq_fields_spec,
     `Snarky.Kimchi.Prover.scaleFast1_spec, `Snarky.Kimchi.Prover.scaleFast2_spec,
     `Snarky.Kimchi.Prover.scaleFast2'_spec, `Snarky.Kimchi.Prover.splitFieldVar_spec,
     `Snarky.Kimchi.Prover.endoInv_spec,
