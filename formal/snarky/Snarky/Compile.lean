@@ -1,4 +1,5 @@
 import Snarky.DSL.Assert
+import Snarky.Prover.VCGen
 
 /-!
 # Compiling and solving whole circuits
@@ -23,8 +24,6 @@ and the body's typed output.
 -/
 
 namespace Snarky
-
-set_option mvcgen.warning false
 
 variable {F c a b avar bvar : Type}
 
@@ -99,124 +98,101 @@ theorem reads_inputVar [Add F] [Mul F] [Zero F] [A : CircuitType F a avar] (inpu
 
 /-! ## The seam -/
 
-open CircuitType Std.Do in
+/-- An unchecked bundle reads an unchecked value exactly when its bundle reads the value. -/
+private theorem reads_unchecked_apply [Add F] [Mul F] [Zero F] [CircuitType F b bvar]
+    (u : UnChecked bvar) (x : UnChecked b) (s : ProverState F) :
+    Prover.Reads u x s ↔ Prover.Reads u.val x.val s := Iff.rfl
+
+open CircuitType Std.WP in
 /-- A circuit whose body has its law at the prover's reading solves at an admissible public
 input: the run succeeds, the table it produces satisfies every compiled row, and the compiled
-system's two bundles — the body's output and the public one — both read as the value the solve
-returned, with the input bundle still reading the value the solve was given. The circuit is
-read at the completeness tag, `main (c := Prover c)` for a body generic in its constraint type,
-where the checked types' laws live; the body's law starts from the input bundle reading the
-input. The run is read off the whole-circuit program's law by `proverWP_prove`. -/
+system's two bundles, the body's output and the public one, both read the value the body's law
+names, with the input bundle still reading the input. The circuit is read at the completeness
+tag, `main (c := Prover c)` for a body generic in its constraint type, where the checked types'
+laws live; the body's law starts from the input bundle reading the input. The run is read off
+the whole-circuit program's law by `Prover.adequate`. -/
 theorem solve_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] [A : CircuitType F a avar] [CheckedType F (Prover c) a avar]
-    [WPCheckedType F (Prover c) a avar] [B : CircuitType F b bvar]
+    [Prover.CheckSpec F c a avar] [B : CircuitType F b bvar]
     {main : avar → CircuitM F (Prover c) bvar} (input : a)
-    (hinput : CheckedType.Valid (F := F) (c := Prover c) (var := avar) input)
-    (hmain : ∀ st₀ : ProverState F,
-      ⦃fun s => ⌜s = st₀ ∧ ReadsAs (val := a) st₀ (inputVar (F := F) (a := a)) input⌝⦄
-      main (inputVar (F := F) (a := a))
-      ⦃⇓ out s' => ⌜Scoped (val := b) s' out ∧ WellFormed (val := b) s'.env.get out ∧
-        st₀ ≤ s'⌝⦄) :
-    ∃ (outVal : b) (env : Assignments F),
+    (hinput : CheckedType.Valid (F := F) (c := Prover c) (var := avar) input) (outVal : b)
+    (hmain : ⦃Prover.Reads (inputVar (F := F) (a := a)) input⦄ main (inputVar (F := F) (a := a))
+      ⦃fun out ↦ Prover.Reads out outVal⦄) :
+    ∃ env : Assignments F,
       solve (c := Prover c) (a := a) (b := b) main input = .ok (outVal, env) ∧
       (∀ con ∈ (compile (c := Prover c) (a := a) (b := b) main).constraints,
         ConstraintHolds.Holds env.get con) ∧
       Reads env.get (inputVar (F := F) (a := a)) input ∧
       Reads env.get (compile (c := Prover c) (a := a) (b := b) main).result.1 outVal ∧
       Reads env.get (compile (c := Prover c) (a := a) (b := b) main).result.2 outVal := by
-  have hm := Prover.register hmain
-  have hw := fun out : bvar => Prover.register (Prover.witness_of_run (F := F) (c := c)
-    (val := UnChecked b) (do let x ← readVar (val := b) out; pure (UnChecked.mk x))
-    (fun st => Scoped (val := b) st out)
-    (fun st => UnChecked.mk (readVal st.env.get out))
-    (fun st (h : Scoped (val := b) st out) => by
-      simp only [AsProver.bind_eq, AsProver.run_bind, readVar_run h, Except.bind]
-      rfl)
-    (fun _ _ _ _ _ => trivial))
-  have hseed : ReadsAs (val := a) (seed (F := F) (avar := avar) input)
-      (inputVar (F := F) (a := a)) input :=
-    ⟨scoped_inputVar input, reads_inputVar input⟩
-  -- the whole-circuit program's law: the public bundle reads the body's output value
-  have hbody : ⦃fun s => ⌜s = seed (F := F) (avar := avar) input⌝⦄
+  have hck := Prover.Spec.check (c := c) (inputVar (F := F) (a := a)) input hinput
+  have hw := fun out : bvar ↦ Prover.Spec.witness (c := c) (val := UnChecked b)
+    ((do let x ← readVar (val := b) out; pure (UnChecked.mk x)) : AsProver F (UnChecked b))
+    (UnChecked.mk outVal) valid_unchecked
+  have hadv : ∀ out : bvar, Prover.Reads out outVal ≤ Prover.Advice
+      ((do let x ← readVar (val := b) out; pure (UnChecked.mk x)) : AsProver F (UnChecked b))
+      (UnChecked.mk outVal) := by
+    intro out
+    rw [Prover.Pred.le_iff]
+    intro s hs
+    change ReadsAs (val := b) s out outVal at hs
+    show (_ : AsProver F (UnChecked b)).run s.env = .ok _
+    simp only [AsProver.bind_eq, AsProver.pure_eq, AsProver.run_bind, readVar_run hs.1,
+      Except.bind, AsProver.run_pure, (reads_iff.mp hs.2).2]
+  have heq := fun (out : bvar) (pub : UnChecked bvar) ↦
+    Prover.assertEq_spec (F := F) (c := c) (val := b) out pub.val outVal
+  -- the whole-circuit program's law: both bundles read the body's value, the input its own
+  have hbody : ⦃Prover.Reads (inputVar (F := F) (a := a)) input⦄
       compileBody (c := Prover c) (a := a) (b := b) main
-      ⦃⇓ r s' => ⌜∃ v : b, ReadsAs (val := b) s' r.1 v ∧ ReadsAs (val := b) s' r.2 v ∧
-        ReadsAs (val := a) s' (inputVar (F := F) (a := a)) input⌝⦄ := by
-    unfold compileBody
-    mvcgen [hm, hw]
-    -- the input's check: the seeded bundle reads the input, admissibly
-    case vc2 =>
-      rename_i s h
-      subst h
-      exact ⟨trivial, hseed, hinput⟩
-    -- the body: the input still reads past the check
-    case vc3 =>
-      rename_i s₀ h₀ u s h
-      subst h₀
-      exact ⟨trivial, hseed.of_le h⟩
-    -- the public bundle's witness: the body's output in scope
-    case vc4 =>
-      rename_i h
-      exact ⟨trivial, (Prover.Reg.iff.mp h).1⟩
-    -- the binding rows: the output and the public bundle read the same fields
-    case vc5 =>
-      rename_i out s₂ h₂ pub s h₃
-      simp only [Prover.Reg.iff] at h₂ h₃
-      obtain ⟨v, hv⟩ := h₂.2.1
-      have hR : Reads s.env.get pub.val (readVal s₂.env.get out) := reads_unchecked'.mp h₃.1.2
-      rw [(reads_iff.mp hv).2] at hR
-      exact ⟨trivial, h₂.1.mono (ProverState.nv_le_of_le h₃.2), scoped_unchecked'.mp h₃.1.1,
-        Eq.trans (hv.of_le h₂.1 h₃.2) (Eq.symm hR)⟩
-    -- the result: both bundles read the output's value, the input its own
-    case vc6 =>
-      rename_i s₀ h₀ u₁ s₁ h₁ out s₂ h₂ pub s₃ h₃ u₂ s h₄
-      simp only [Prover.Reg.iff] at h₂ h₃ h₄
-      subst h₀
-      refine ⟨readVal s₂.env.get out, ?_, ?_,
-        hseed.of_le (h₁.trans (h₂.2.2.trans (h₃.2.trans h₄)))⟩
-      · exact (show ReadsAs (val := b) s₂ out (readVal s₂.env.get out) from
-          ⟨h₂.1, reads_iff.mpr ⟨h₂.2.1, rfl⟩⟩).of_le (h₃.2.trans h₄)
-      · exact (show ReadsAs (val := b) s₃ pub.val (readVal s₂.env.get out) from
-          ⟨scoped_unchecked'.mp h₃.1.1, reads_unchecked'.mp h₃.1.2⟩).of_le h₄
-  obtain ⟨r, st', hrun, -, ⟨v, hrd1, hrd2, hrin⟩, hrows⟩ :=
-    proverWP_prove (c := Prover c) (hbody (seed (F := F) (avar := avar) input) rfl)
+      ⦃fun r ↦ Prover.Reads r.1 outVal ⊓ Prover.Reads r.2 outVal ⊓
+        Prover.Reads (inputVar (F := F) (a := a)) input⦄ := by
+    simp only [compileBody]
+    vcgen [hck, hmain, hw, heq]
+    all_goals prover_assert with
+      (intros; first | exact hadv _ _ ‹_› | simp_all [reads_unchecked_apply])
+  obtain ⟨r, st', hrun, -, hQ, hrows⟩ := Prover.adequate hbody
+    (show ReadsAs (val := a) (seed (F := F) (avar := avar) input) (inputVar (F := F) (a := a))
+      input from ⟨scoped_inputVar input, reads_inputVar input⟩)
+  rw [Prover.Pred.inf_apply, Prover.Pred.inf_apply] at hQ
+  obtain ⟨⟨h1, h2⟩, hin⟩ := hQ
+  change ReadsAs (val := b) st' r.1 outVal at h1
+  change ReadsAs (val := b) st' r.2 outVal at h2
+  change ReadsAs (val := a) st' (inputVar (F := F) (a := a)) input at hin
   have hres : r = (compile (c := Prover c) (a := a) (b := b) main).result :=
     (prove_build_agrees hrun).1
-  refine ⟨v, st'.env, ?_, hrows st' le_rfl, hrin.2, ?_, ?_⟩
+  refine ⟨st'.env, ?_, hrows st' le_rfl, hin.2, ?_, ?_⟩
   · unfold solve
     rw [show prove (compileBody (c := Prover c) (a := a) (b := b) main)
         (seed (F := F) (avar := avar) input).nv (seed (F := F) (avar := avar) input).env
         = .ok (st'.out r) from hrun]
     show (match (readVar (val := b) r.1).run st'.env with
       | Except.error e => Except.error e
-      | Except.ok outVal => Except.ok (outVal, st'.env)) = Except.ok (v, st'.env)
-    rw [readVar_run hrd1.1, (reads_iff.mp hrd1.2).2]
+      | Except.ok outVal => Except.ok (outVal, st'.env)) = Except.ok (outVal, st'.env)
+    rw [readVar_run h1.1, (reads_iff.mp h1.2).2]
   · rw [← hres]
-    exact hrd1.2
+    exact h1.2
   · rw [← hres]
-    exact hrd2.2
+    exact h2.2
 
-open CircuitType Std.Do in
+open CircuitType Std.WP in
 /-- The solver's completeness under the seam's completeness name: `solve_spec`'s statement,
 proved by `solve_spec`, which is the result. The axiom gate roots this name, so a search for
 the solver's completeness law lands on a checked theorem. -/
 theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] [A : CircuitType F a avar] [CheckedType F (Prover c) a avar]
-    [WPCheckedType F (Prover c) a avar] [B : CircuitType F b bvar]
+    [Prover.CheckSpec F c a avar] [B : CircuitType F b bvar]
     {main : avar → CircuitM F (Prover c) bvar} (input : a)
-    (hinput : CheckedType.Valid (F := F) (c := Prover c) (var := avar) input)
-    (hmain : ∀ st₀ : ProverState F,
-      ⦃fun s => ⌜s = st₀ ∧ ReadsAs (val := a) st₀ (inputVar (F := F) (a := a)) input⌝⦄
-      main (inputVar (F := F) (a := a))
-      ⦃⇓ out s' => ⌜Scoped (val := b) s' out ∧ WellFormed (val := b) s'.env.get out ∧
-        st₀ ≤ s'⌝⦄) :
-    ∃ (outVal : b) (env : Assignments F),
+    (hinput : CheckedType.Valid (F := F) (c := Prover c) (var := avar) input) (outVal : b)
+    (hmain : ⦃Prover.Reads (inputVar (F := F) (a := a)) input⦄ main (inputVar (F := F) (a := a))
+      ⦃fun out ↦ Prover.Reads out outVal⦄) :
+    ∃ env : Assignments F,
       solve (c := Prover c) (a := a) (b := b) main input = .ok (outVal, env) ∧
       (∀ con ∈ (compile (c := Prover c) (a := a) (b := b) main).constraints,
         ConstraintHolds.Holds env.get con) ∧
       Reads env.get (inputVar (F := F) (a := a)) input ∧
       Reads env.get (compile (c := Prover c) (a := a) (b := b) main).result.1 outVal ∧
       Reads env.get (compile (c := Prover c) (a := a) (b := b) main).result.2 outVal :=
-  solve_spec input hinput hmain
+  solve_spec input hinput outVal hmain
 
 /-- The counter the body starts from: past the input slots, and past whatever the input
 bundle's own check allocated. -/

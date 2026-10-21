@@ -3,9 +3,7 @@ import Snarky.BasicSystem
 import Snarky.Witness
 import Snarky.WP
 import Snarky.Prover
-import Snarky.Prover.WP
-
-set_option mvcgen.warning false
+import Snarky.Prover.VCGen
 
 namespace Snarky
 
@@ -346,369 +344,184 @@ open Std.WP in
 
 attribute [irreducible] pow
 
-/-! ## The state-relative completeness laws
+/-! ## The completeness laws
 
-Each gadget's law at the prover's reading (`Snarky.Prover.WP`), and its registered reading for
-`mvcgen`; `div`, `equals`, `neq` and `pow` are proved by composition through the registered
-laws of the gadgets they call. -/
+Each gadget's law at the prover's reading (`Snarky.Prover.VCGen`): the operands' readings in, the
+result's reading out, the values as parameters. `div`, `equals`, `neq` and `pow` are proved by
+composition through the laws of the gadgets they call. -/
 
 section ProverReading
 
-open Std.Do
+open Snarky.Prover Std.WP
 
-/-! The advices' witnesses, registered: each the witness law at the advice's run, the value a
-function of the entry readings. -/
+/-! The advices' runs: each returns its value wherever its operands are in scope. -/
 
 /-- `inv.advice` at a nonzero reading returns the inverse. -/
-@[spec] private def Prover.inv_advice_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (x : FVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (inv.advice x)
-    (fun st => x.Scoped st ∧ st.read x ≠ 0) (fun st => (st.read x)⁻¹)
-    (fun _ h => by simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr h.1), h.2])
-    fun _ _ => by simp)
+private theorem Prover.inv_advice_run [Field F] [DecidableEq F] {x : FVar F} {s : ProverState F}
+    (hx : x.Scoped s) (hne : x.val s.env.get ≠ 0) :
+    (inv.advice x).run s.env = .ok (x.val s.env.get)⁻¹ := by
+  simp [inv.advice, readVar_run (CircuitType.scoped_fvar.mpr hx), hne]
 
 /-- `mul.advice` returns the product. -/
-@[spec] private def Prover.mul_advice_reg [Field F] [BasicSystem F c]
-    [ConstraintHolds F c] (x y : FVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (mul.advice x y)
-    (fun st => x.Scoped st ∧ y.Scoped st) (fun st => st.read x * st.read y)
-    (fun _ h => by simp [mul.advice, AsProver.readCVar_run h.1, AsProver.readCVar_run h.2])
-    fun _ _ => by simp)
-
-/-- `isZero.bitAdvice` returns the zero bit. -/
-@[spec] private def Prover.isZero_bitAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (x : FVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (isZero.bitAdvice x) (fun st => x.Scoped st)
-    (fun st => if st.read x = 0 then 1 else 0)
-    (fun _ h => by simp [isZero.bitAdvice, AsProver.readCVar_run h]) fun _ _ => by simp)
-
-/-- `isZero.invAdvice` returns the inverse, or `0` at a zero reading. -/
-@[spec] private def Prover.isZero_invAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (x : FVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (isZero.invAdvice x) (fun st => x.Scoped st)
-    (fun st => if st.read x = 0 then 0 else (st.read x)⁻¹)
-    (fun _ h => by simp [isZero.invAdvice, AsProver.readCVar_run h]) fun _ _ => by simp)
-
-/-- `inv`'s completeness: where the operand is in scope and reads nonzero, the run succeeds
-and the result reads the inverse of the operand's entry reading. -/
-theorem Prover.inv_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ st₀.read x ≠ 0⌝⦄
-    inv (c := Prover c) x
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = (st₀.read x)⁻¹ ∧ st₀ ≤ st'⌝⦄ := by
-  unfold inv
-  mvcgen
-  -- the constant-zero branch is unreachable: its reading is the operand's nonzero reading
-  case h_1.isTrue.pre =>
-    rename_i a hxa ha s h
-    exact absurd ha h.2.2
-  case h_1.isTrue.post.success.pre =>
-    rename_i a hxa ha s₁ h₁ r s h
-    exact absurd ha h₁.2.2
-  case h_1.isTrue.post.success.post.success =>
-    rename_i a hxa ha s₁ h₁ r s h u s' h'
-    exact absurd ha h₁.2.2
-  case h_1.isFalse =>
-    rename_i a hxa ha s h
-    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
-  case h_2.pre =>
-    rename_i x' hnc hxx s h
-    subst hxx
-    obtain ⟨rfl, hxs, hne⟩ := h
-    exact ⟨trivial, hxs, hne⟩
-  case h_2.post.success.pre =>
-    rename_i x' hnc hxx s₁ h₁ r s h
-    subst hxx
-    obtain ⟨rfl, hxs, hne⟩ := h₁
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
-      LawfulBasicSystem.scoped_r1cs.mpr ⟨hxs.of_le h.2, h.1.1, CVar.scoped_const _ _⟩⟩
-    rw [CVar.val_of_le h.2 hxs]
-    show s₁.read x * r.val s.env.get = 1
-    rw [h.1.2]
-    exact mul_inv_cancel₀ hne
-  case h_2.post.success.post.success =>
-    rename_i x' hnc hxx s₁ h₁ r s h u s' h'
-    subst hxx
-    obtain ⟨rfl, -⟩ := h'
-    obtain ⟨rfl, hxs, hne⟩ := h₁
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h
-    exact ⟨h.1.1, h.1.2, h.2⟩
-
-/-- Registered. -/
-@[spec] private def Prover.inv_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (x : FVar F) :=
-  Prover.register (Prover.inv_spec (c := c) x)
-
-/-- `mul`'s completeness: the result reads the product of the operands' entry readings. -/
-theorem Prover.mul_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀⌝⦄
-    mul (c := Prover c) x y
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = st₀.read x * st₀.read y ∧ st₀ ≤ st'⌝⦄ := by
-  unfold mul
-  mvcgen
-  case h_1 =>
-    rename_i a b hy hx s h
-    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
-  case h_2 =>
-    rename_i a y' hnc hy hx s h
-    obtain ⟨rfl, hxs, hys⟩ := h
-    exact ⟨CVar.Scoped.scale_ hys, by show (CVar.scale_ a y').val _ = _; rw [CVar.val_scale_]; rfl,
-      le_refl _⟩
-  case h_3 =>
-    rename_i x' b hnc hy hx s h
-    obtain ⟨rfl, hxs, hys⟩ := h
-    exact ⟨CVar.Scoped.scale_ hxs, by
-      show (CVar.scale_ b x').val _ = _; rw [CVar.val_scale_]; exact mul_comm _ _, le_refl _⟩
-  case h_4.pre =>
-    rename_i x' y' hnc hncx hncy hy hx s h
-    obtain ⟨rfl, hxs, hys⟩ := h
-    exact ⟨trivial, hxs, hys⟩
-  case h_4.post.success.pre =>
-    rename_i x' y' hnc hncx hncy hy hx s₁ h₁ r s h
-    obtain ⟨rfl, hxs, hys⟩ := h₁
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
-      LawfulBasicSystem.scoped_r1cs.mpr ⟨hxs.of_le h.2, hys.of_le h.2, h.1.1⟩⟩
-    rw [CVar.val_of_le h.2 hxs, CVar.val_of_le h.2 hys]
-    exact h.1.2.symm
-  case h_4.post.success.post.success =>
-    rename_i x' y' hnc hncx hncy hy hx s₁ h₁ r s h u s' h'
-    obtain ⟨rfl, -⟩ := h'
-    obtain ⟨rfl, hxs, hys⟩ := h₁
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h
-    exact ⟨h.1.1, h.1.2, h.2⟩
-
-/-- Registered. -/
-@[spec] private def Prover.mul_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (x y : FVar F) :=
-  Prover.register (Prover.mul_spec (c := c) x y)
+private theorem Prover.mul_advice_run [Field F] {x y : FVar F} {s : ProverState F}
+    (hx : x.Scoped s) (hy : y.Scoped s) :
+    (mul.advice x y).run s.env = .ok (x.val s.env.get * y.val s.env.get) := by
+  simp [mul.advice, AsProver.readCVar_run hx, AsProver.readCVar_run hy]
 
 /-- `square.advice` returns the square. -/
-@[spec] private def Prover.square_advice_reg [Field F] [BasicSystem F c]
-    [ConstraintHolds F c] (x : FVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (square.advice x) (fun st => x.Scoped st)
-    (fun st => st.read x * st.read x)
-    (fun _ h => by simp [square.advice, AsProver.readCVar_run h]) fun _ _ => by simp)
+private theorem Prover.square_advice_run [Field F] {x : FVar F} {s : ProverState F}
+    (hx : x.Scoped s) :
+    (square.advice x).run s.env = .ok (x.val s.env.get * x.val s.env.get) := by
+  simp [square.advice, AsProver.readCVar_run hx]
 
-/-- `square`'s completeness: the result reads the square of the operand's entry reading. -/
-theorem Prover.square_spec [Field F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀⌝⦄
-    square (c := Prover c) x
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = st₀.read x * st₀.read x ∧ st₀ ≤ st'⌝⦄ := by
+/-- `isZero.bitAdvice` returns the zero bit. -/
+private theorem Prover.isZero_bitAdvice_run [Field F] [DecidableEq F] {x : FVar F}
+    {s : ProverState F} (hx : x.Scoped s) :
+    (isZero.bitAdvice x).run s.env = .ok (if x.val s.env.get = 0 then 1 else 0) := by
+  simp [isZero.bitAdvice, AsProver.readCVar_run hx]
+
+/-- `isZero.invAdvice` returns the inverse, or `0` at a zero reading. -/
+private theorem Prover.isZero_invAdvice_run [Field F] [DecidableEq F] {x : FVar F}
+    {s : ProverState F} (hx : x.Scoped s) :
+    (isZero.invAdvice x).run s.env =
+      .ok (if x.val s.env.get = 0 then 0 else (x.val s.env.get)⁻¹) := by
+  simp [isZero.invAdvice, AsProver.readCVar_run hx]
+
+/-- `inv`'s completeness: at a nonzero reading, the result reads the inverse. -/
+theorem Prover.inv_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x : FVar F) (a : F) (ha : a ≠ 0) :
+    ⦃Reads x a⦄ inv (c := Prover c) x ⦃fun r ↦ Reads r a⁻¹⦄ := by
+  have hw := fun x' : FVar F ↦ Spec.witness (c := c) (inv.advice x') a⁻¹ valid_fvar
+  unfold inv
+  vcgen [hw]
+  all_goals prover_assert with
+    (intros; simp_all [Reads.fvar_apply, Prover.inv_advice_run, Checked.apply,
+      LawfulBasicSystem.holds_r1cs, LawfulBasicSystem.cells_r1cs, CVar.val])
+
+/-- `mul`'s completeness: the result reads the product of the operands' readings. -/
+theorem Prover.mul_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x y : FVar F) (a b : F) :
+    ⦃Reads x a ⊓ Reads y b⦄ mul (c := Prover c) x y ⦃fun r ↦ Reads r (a * b)⦄ := by
+  have hw := fun x' y' : FVar F ↦ Spec.witness (c := c) (mul.advice x' y') (a * b) valid_fvar
+  unfold mul
+  vcgen [hw]
+  all_goals prover_assert with
+    (intros; simp_all [Reads.fvar_apply, Prover.mul_advice_run, Checked.apply,
+      LawfulBasicSystem.holds_r1cs, LawfulBasicSystem.cells_r1cs, CVar.val, CVar.val_scale_,
+      CVar.Scoped.scale_, mul_comm])
+
+/-- `square`'s completeness: the result reads the square of the operand's reading. -/
+theorem Prover.square_spec [Field F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x : FVar F) (a : F) :
+    ⦃Reads x a⦄ square (c := Prover c) x ⦃fun r ↦ Reads r (a * a)⦄ := by
+  have hw := fun x' : FVar F ↦ Spec.witness (c := c) (square.advice x') (a * a) valid_fvar
   unfold square
-  mvcgen
-  case h_1 =>
-    rename_i a hx s h
-    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
-  case h_2.pre =>
-    rename_i x' hnc hx s h
-    obtain ⟨rfl, hxs⟩ := h
-    exact ⟨trivial, hxs⟩
-  case h_2.post.success.pre =>
-    rename_i x' hnc hx s₁ h₁ r s h
-    obtain ⟨rfl, hxs⟩ := h₁
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h
-    refine ⟨trivial, (LawfulBasicSystem.holds_square ..).mpr ?_,
-      LawfulBasicSystem.scoped_square.mpr ⟨hxs.of_le h.2, h.1.1⟩⟩
-    rw [CVar.val_of_le h.2 hxs]
-    exact h.1.2.symm
-  case h_2.post.success.post.success =>
-    rename_i x' hnc hx s₁ h₁ r s h u s' h'
-    obtain ⟨rfl, -⟩ := h'
-    obtain ⟨rfl, hxs⟩ := h₁
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h
-    exact ⟨h.1.1, h.1.2, h.2⟩
+  vcgen [hw]
+  all_goals prover_assert with
+    (intros; simp_all [Reads.fvar_apply, Prover.square_advice_run, Checked.apply,
+      LawfulBasicSystem.holds_square, LawfulBasicSystem.cells_square, CVar.val])
 
-/-- Registered. -/
-@[spec] private def Prover.square_reg [Field F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :=
-  Prover.register (Prover.square_spec (c := c) x)
+/-- `div`'s completeness, by composition of `inv` and `mul`: at a nonzero divisor, the result
+reads the quotient. -/
+theorem Prover.div_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x y : FVar F) (a b : F) (hb : b ≠ 0) :
+    ⦃Reads x a ⊓ Reads y b⦄ div (c := Prover c) x y ⦃fun r ↦ Reads r (a / b)⦄ := by
+  have hi := Prover.inv_spec (c := c) y b hb
+  have hm := fun yInv : FVar F ↦ Prover.mul_spec (c := c) x yInv a b⁻¹
+  unfold div
+  vcgen [hi, hm]
+  all_goals prover_assert with
+    (intros; simp_all [Reads.fvar_apply, div_eq_mul_inv])
 
-/-- `div`'s completeness, by composition of the registered `inv` and `mul` specs; the
-conditions are transport, which `grind` does from the two carrying lemmas. -/
-theorem Prover.div_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀ ∧ y.Scoped st₀ ∧ st₀.read y ≠ 0⌝⦄
-    div (c := Prover c) x y
-    ⦃⇓ r st' => ⌜r.Scoped st' ∧ st'.read r = st₀.read x / st₀.read y ∧ st₀ ≤ st'⌝⦄ := by
-  simp only [div]
-  mvcgen
-  all_goals grind [Prover.Reg.iff, ProverState.read_of_le, CVar.Scoped.of_le, div_eq_mul_inv]
-
-/-- Registered. -/
-@[spec] def Prover.div_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (x y : FVar F) :=
-  Prover.register (Prover.div_spec (c := c) x y)
-
-/-- `isZero`'s completeness: the bit reads `1` exactly where the operand reads `0`. -/
-theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (st₀ : ProverState F) :
-    ⦃fun st => ⌜st = st₀ ∧ x.Scoped st₀⌝⦄
-    isZero (c := Prover c) x
-    ⦃⇓ r st' => ⌜(↑r : CVar F).Scoped st' ∧
-      st'.read r = (if st₀.read x = 0 then 1 else 0) ∧ st₀ ≤ st'⌝⦄ := by
+/-- `isZero`'s completeness: the bit reads whether the operand reads `0`. -/
+theorem Prover.isZero_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x : FVar F) (a : F) :
+    ⦃Reads x a⦄ isZero (c := Prover c) x ⦃fun r ↦ Reads r (decide (a = 0))⦄ := by
+  have hb := fun x' : FVar F ↦
+    Spec.witness (c := c) (isZero.bitAdvice x') (if a = 0 then (1 : F) else 0) valid_fvar
+  have hi := fun x' : FVar F ↦
+    Spec.witness (c := c) (isZero.invAdvice x') (if a = 0 then (0 : F) else a⁻¹) valid_fvar
   unfold isZero
-  mvcgen
-  case h_1 =>
-    rename_i a hxa s h
-    exact ⟨CVar.scoped_const _ _, rfl, le_of_eq h.1.symm⟩
-  case h_2.pre =>
-    rename_i x' hnc hxx s h
-    subst hxx
-    obtain ⟨rfl, hxs⟩ := h
-    exact ⟨trivial, hxs⟩
-  case h_2.post.success.pre =>
-    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁
-    subst hxx
-    obtain ⟨rfl, hxs⟩ := h₀
-    simp only [Prover.Reg.iff] at h₁
-    exact ⟨trivial, hxs.of_le h₁.2⟩
-  case h_2.post.success.post.success.pre =>
-    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂
-    subst hxx
-    obtain ⟨rfl, hxs⟩ := h₀
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h₁ h₂
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
-      LawfulBasicSystem.scoped_r1cs.mpr
-        ⟨h₁.1.1.of_le h₂.2, hxs.of_le (h₁.2.trans h₂.2), CVar.scoped_const _ _⟩⟩
-    rw [CVar.val_of_le h₂.2 h₁.1.1, CVar.val_of_le (h₁.2.trans h₂.2) hxs]
-    show r₁.val s₁.env.get * s₀.read x = 0
-    rw [h₁.1.2]
-    split <;> simp [*]
-  case h_2.post.success.post.success.post.success.pre =>
-    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂ u₁ s₃ h₃
-    subst hxx
-    obtain ⟨rfl, -⟩ := h₃
-    obtain ⟨rfl, hxs⟩ := h₀
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h₁ h₂
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
-      LawfulBasicSystem.scoped_r1cs.mpr ⟨h₂.1.1, hxs.of_le (h₁.2.trans h₂.2),
-        CVar.Scoped.sub_ (CVar.scoped_const _ _) (h₁.1.1.of_le h₂.2)⟩⟩
-    rw [CVar.val_sub_, CVar.val_of_le (h₁.2.trans h₂.2) hxs, CVar.val_of_le h₂.2 h₁.1.1]
-    show r₂.val s₃.env.get * s₀.read x = 1 - r₁.val s₁.env.get
-    rw [h₂.1.2, h₁.1.2, ProverState.read_of_le h₁.2 hxs]
-    split
-    · simp [*]
-    · simp [inv_mul_cancel₀ ‹_›]
-  case h_2.post.success.post.success.post.success.post.success =>
-    rename_i x' hnc hxx s₀ h₀ r₁ s₁ h₁ r₂ s₂ h₂ u₁ s₃ h₃ u₂ s₄ h₄
-    subst hxx
-    obtain ⟨rfl, -⟩ := h₃
-    obtain ⟨rfl, -⟩ := h₄
-    obtain ⟨rfl, hxs⟩ := h₀
-    simp only [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-      CircuitType.reads_fvar] at h₁ h₂
-    exact ⟨CVar.Scoped.of_le h₂.2 h₁.1.1, by
-      show s₄.read r₁ = _
-      rw [ProverState.read_of_le h₂.2 h₁.1.1]
-      exact h₁.1.2, h₁.2.trans h₂.2⟩
+  vcgen [hb, hi]
+  all_goals prover_assert with
+    (intros; (try simp_all [Reads.fvar_apply, Reads.boolVar_apply, Prover.isZero_bitAdvice_run,
+      Prover.isZero_invAdvice_run, Checked.apply, LawfulBasicSystem.holds_r1cs,
+      LawfulBasicSystem.cells_r1cs, CVar.val, CVar.val_sub_, CVar.Scoped.sub_, bit]);
+      (try (split_ifs <;> simp_all)))
 
-/-- Registered. -/
-@[spec] private def Prover.isZero_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :=
-  Prover.register (Prover.isZero_spec (c := c) x)
+/-- `equals`'s completeness: the bit reads whether the operands read equal. -/
+theorem Prover.equals_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x y : FVar F) (a b : F) :
+    ⦃Reads x a ⊓ Reads y b⦄ equals (c := Prover c) x y ⦃fun r ↦ Reads r (decide (a = b))⦄ := by
+  have hz := Prover.isZero_spec (c := c) (CVar.sub_ x y) (a - b)
+  unfold equals
+  vcgen [hz]
+  all_goals prover_assert with
+    (intros; simp_all [Reads.fvar_apply, Reads.boolVar_apply, CVar.val_sub_, CVar.Scoped.sub_,
+      sub_eq_zero])
 
-/-- `equals`'s completeness: the bit reads `1` exactly where the operands read equal. -/
-theorem Prover.equals_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ a.Scoped st₀ ∧ b.Scoped st₀⌝⦄
-    equals (c := Prover c) a b
-    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
-      s'.read r = (if st₀.read a = st₀.read b then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
-  simp only [equals]
-  mvcgen
-  all_goals grind [Prover.Reg.iff, CVar.val_sub_, CVar.Scoped.sub_, sub_eq_zero]
+/-- `neq`'s completeness: the bit reads whether the operands read unequal. -/
+theorem Prover.neq_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x y : FVar F) (a b : F) :
+    ⦃Reads x a ⊓ Reads y b⦄ neq (c := Prover c) x y ⦃fun r ↦ Reads r (!decide (a = b))⦄ := by
+  have he := Prover.equals_spec (c := c) x y a b
+  unfold neq
+  vcgen [he]
+  all_goals prover_assert with
+    (intros; (try simp_all [Reads.boolVar_apply, CVar.val_sub_, CVar.val, CVar.Scoped.sub_,
+      bit]); (try (split_ifs <;> simp_all)))
 
-/-- Registered. -/
-@[spec] private def Prover.equals_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) :=
-  Prover.register (Prover.equals_spec (c := c) a b)
-
-/-- `neq`'s completeness: the bit reads `1` exactly where the operands read unequal. -/
-theorem Prover.neq_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ a.Scoped st₀ ∧ b.Scoped st₀⌝⦄
-    neq (c := Prover c) a b
-    ⦃⇓ r s' => ⌜(↑r : CVar F).Scoped s' ∧
-      s'.read r = (if st₀.read a ≠ st₀.read b then 1 else 0) ∧ st₀ ≤ s'⌝⦄ := by
-  simp only [neq]
-  mvcgen
-  all_goals grind [Prover.Reg.iff, BoolVar.coe_unchecked, CVar.val_sub_, CVar.val,
-    CVar.Scoped.sub_, CVar.scoped_const]
-
-/-- Registered. -/
-@[spec] private def Prover.neq_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) :=
-  Prover.register (Prover.neq_spec (c := c) a b)
-
-/-- `powGo`'s completeness, along the recursion: within its fuel the result reads the
-operand's entry reading to the `n`-th power. -/
+/-- `powGo`'s completeness, along the recursion: within its fuel the result reads the operand's
+reading to the `n`-th power. -/
 private theorem Prover.powGo_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] :
-    ∀ (fuel : Nat) (x : FVar F) (n : Nat) (st₀ : ProverState F),
-      ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀ ∧ n ≤ fuel + 1⌝⦄
-      powGo (c := Prover c) fuel x n
-      ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = st₀.read x ^ n ∧ st₀ ≤ s'⌝⦄ := by
+    ∀ (fuel : Nat) (x : FVar F) (n : Nat) (a : F), n ≤ fuel + 1 →
+      ⦃Reads x a⦄ powGo (c := Prover c) fuel x n ⦃fun r ↦ Reads r (a ^ n)⦄ := by
   intro fuel
   induction fuel with
   | zero =>
-    intro x n st₀
-    unfold powGo
-    mvcgen
-    all_goals grind [CVar.val, CVar.scoped_const, pow_zero, pow_one]
+    intro x n a hn
+    match n, hn with
+    | 0, _ =>
+      simp only [powGo]
+      vcgen
+      all_goals prover_assert with (intros; simp_all [Reads.fvar_apply, CVar.val])
+    | 1, _ =>
+      simp only [powGo]
+      vcgen
+      simp
   | succ fuel ih =>
-    intro x n st₀
-    have ih' := fun x n => Prover.register (ih x n)
+    intro x n a hn
     match n with
     | 0 =>
-      unfold powGo
-      mvcgen
-      all_goals grind [CVar.val, CVar.scoped_const, pow_zero]
-    | 1 =>
-      unfold powGo
-      mvcgen
-      all_goals grind [pow_one]
-    | m + 2 =>
-      -- the halving step's exponent arithmetic, out of `grind`'s reach
-      have heven : ∀ v : F, (m + 2) % 2 = 0 → (v * v) ^ ((m + 2) / 2) = v ^ (m + 2) :=
-        fun v h => by rw [← pow_two, ← pow_mul]; congr 1; omega
-      have hodd : ∀ v : F, ¬(m + 2) % 2 = 0 → v * (v * v) ^ ((m + 2) / 2) = v ^ (m + 2) :=
-        fun v h => by rw [← pow_two, ← pow_mul, ← pow_succ']; congr 1; omega
       simp only [powGo]
-      mvcgen [ih']
-      all_goals grind [Prover.Reg.iff, ProverState.read_of_le, CVar.Scoped.of_le]
+      vcgen
+      all_goals prover_assert with (intros; simp_all [Reads.fvar_apply, CVar.val])
+    | 1 =>
+      simp only [powGo]
+      vcgen
+      simp
+    | m + 2 =>
+      -- the halving step's exponent arithmetic
+      have heven : (m + 2) % 2 = 0 → (a * a) ^ ((m + 2) / 2) = a ^ (m + 2) :=
+        fun h => by rw [← pow_two, ← pow_mul]; congr 1; omega
+      have hodd : ¬(m + 2) % 2 = 0 → a * (a * a) ^ ((m + 2) / 2) = a ^ (m + 2) :=
+        fun h => by rw [← pow_two, ← pow_mul, ← pow_succ']; congr 1; omega
+      have hsq := Prover.mul_spec (c := c) x x a a
+      have hy := fun sq : FVar F ↦ ih sq ((m + 2) / 2) (a * a) (by omega)
+      -- the final product's law is left in the context: listed, it would also be taken for the
+      -- square
+      have hm := fun y : FVar F ↦ Prover.mul_spec (c := c) x y a ((a * a) ^ ((m + 2) / 2))
+      simp only [powGo]
+      vcgen [hsq, hy]
+      all_goals prover_assert with (intros; simp_all [Reads.fvar_apply])
 
-/-- Registered. -/
-@[spec] private def Prover.powGo_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (fuel : Nat) (x : FVar F) (n : Nat) :=
-  Prover.register (Prover.powGo_spec (c := c) fuel x n)
-
-/-- `pow`'s completeness: the result reads the operand's entry reading to the `n`-th
-power. -/
-theorem Prover.pow_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (n : Nat) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀⌝⦄
-    pow (c := Prover c) x n
-    ⦃⇓ r s' => ⌜r.Scoped s' ∧ s'.read r = st₀.read x ^ n ∧ st₀ ≤ s'⌝⦄ := by
+/-- `pow`'s completeness: the result reads the operand's reading to the `n`-th power. -/
+theorem Prover.pow_spec [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
+    [LawfulBasicSystem F c] (x : FVar F) (n : Nat) (a : F) :
+    ⦃Reads x a⦄ pow (c := Prover c) x n ⦃fun r ↦ Reads r (a ^ n)⦄ := by
   unfold pow
-  mvcgen
-  all_goals grind [Prover.Reg.iff]
-
-/-- Registered. -/
-@[spec] def Prover.pow_reg [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (x : FVar F) (n : Nat) :=
-  Prover.register (Prover.pow_spec (c := c) x n)
+  exact Prover.powGo_spec n x n a (Nat.le_succ n)
 
 end ProverReading
 

@@ -4,8 +4,6 @@ import Snarky.DSL.SizedF
 
 namespace Snarky
 
-set_option mvcgen.warning false
-
 variable {F c : Type}
 
 /-! # Bit packing and unpacking
@@ -185,55 +183,49 @@ example [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
 
 /-! ## The completeness law
 
-`unpack`'s law at the prover's reading (`Snarky.Prover.WP`), and its registered reading for
-`mvcgen`. -/
+`unpack`'s law at the prover's reading (`Snarky.Prover.VCGen`): the operand's reading in, the
+bits reading its representative's binary digits out. -/
 
 section ProverReading
 
-open Std.Do
+open Snarky.Prover Std.WP
 
 /-- `unpack.advice` returns the operand's low digits. -/
-@[spec] private def Prover.unpack_advice_reg [Field F] [DecidableEq F] [ToNat F]
-    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat) :=
-  Prover.register (Prover.witness_of_run (c := c) (unpack.advice v n) (fun st => v.Scoped st)
-    (fun st => unpackPure (st.read v) n)
-    (fun _ h => by simp [unpack.advice, readVar_run (CircuitType.scoped_fvar.mpr h)])
-    fun _ _ => by simp)
+private theorem Prover.unpack_advice_run [Field F] [ToNat F] {v : FVar F} {s : ProverState F}
+    (hv : v.Scoped s) (n : Nat) :
+    (unpack.advice v n).run s.env = .ok (unpackPure (v.val s.env.get) n) := by
+  simp [unpack.advice, readVar_run (CircuitType.scoped_fvar.mpr hv)]
 
-/-- `unpack`'s completeness: where the operand's representative fits in `n` bits, each bit is
-in scope and reads the representative's binary digit at its index. -/
+/-- A reading of the unpacking is, at each index, a reading of the representative's binary digit
+there. -/
+theorem Prover.Reads.unpackPure_eq [Field F] [DecidableEq F] [ToNat F] {n : Nat}
+    (r : Vector (BoolVar F) n) (a : F) :
+    Reads (F := F) r (unpackPure a n) = ⨅ i : Fin n, Reads r[i] ((ToNat.toNat a).testBit i) := by
+  simp [Reads.vector_eq]
+
+/-- `unpack`'s completeness: where the operand's representative fits in `n` bits, the bits read
+its binary digits. -/
 theorem Prover.unpack_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat)
-    (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ v.Scoped st₀ ∧ ToNat.toNat (st₀.read v) < 2 ^ n⌝⦄
-    unpack (c := Prover c) v n
-    ⦃⇓ r s' => ⌜(∀ i (hi : i < n), (↑r[i] : CVar F).Scoped s') ∧
-      (∀ i (hi : i < n),
-        s'.read r[i] = if (ToNat.toNat (st₀.read v)).testBit i then 1 else 0) ∧
-      st₀ ≤ s'⌝⦄ := by
+    (a : F) (hlt : ToNat.toNat a < 2 ^ n) :
+    ⦃Reads v a⦄ unpack (c := Prover c) v n ⦃fun r ↦ Reads r (unpackPure a n)⦄ := by
+  have hw := fun v' : FVar F ↦ Spec.witness (c := c) (unpack.advice v' n) (unpackPure a n)
+    (valid_vector.mpr fun _ _ ↦ valid_bool)
   unfold unpack
-  mvcgen
-  -- the packing row: the bits read the operand's digits, whose weighted sum is its reading
-  case vc2.post.success.pre =>
-    rename_i s₀ h₀ r s₁ h₁
-    obtain ⟨rfl, hv, hlt⟩ := h₀
-    obtain ⟨⟨hsc, hr⟩, hle⟩ := Prover.Reg.iff.mp h₁
-    refine ⟨trivial, (LawfulBasicSystem.holds_r1cs ..).mpr ?_,
-      LawfulBasicSystem.scoped_r1cs.mpr ⟨pack_scoped fun i hi =>
-        CircuitType.scoped_boolVar.mp (CircuitType.scoped_vector.mp hsc i hi),
-        CVar.scoped_const _ _, hv.of_le hle⟩⟩
-    rw [pack_val (bs := unpackPure (s₀.read v) n) fun i hi =>
-        CircuitType.reads_boolVar.mp (CircuitType.reads_vector.mp hr i hi),
-      natLsbVal_unpackPure hlt, LawfulToNat.cast_toNat, CVar.val_of_le hle hv]
-    simp
-  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_vector,
-    CircuitType.reads_vector, CircuitType.scoped_boolVar, CircuitType.reads_boolVar,
-    ProverState.read_of_le, CVar.Scoped.of_le, getElem_unpackPure, bit]
-
-/-- Registered. -/
-@[spec] def Prover.unpack_reg [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat) :=
-  Prover.register (Prover.unpack_spec (c := c) v n)
+  vcgen [hw]
+  case vc4 =>
+    prover_assert with
+      intro s _ hb
+      rw [Reads.unpackPure_eq, Pred.iInf_apply] at hb
+      simp only [Reads.boolVar_apply] at hb
+      have hp := pack_val (bs := unpackPure a n) (V := s.env.get) fun i hi ↦ by
+        simpa using (hb ⟨i, hi⟩).2
+      rw [natLsbVal_unpackPure hlt, LawfulToNat.cast_toNat] at hp
+      have hps := pack_scoped fun i hi ↦ (hb ⟨i, hi⟩).1
+      simp_all [Reads.fvar_apply, Checked.apply, LawfulBasicSystem.holds_r1cs,
+        LawfulBasicSystem.cells_r1cs, CVar.val]
+  all_goals prover_assert with
+    (intros; simp_all [Reads.fvar_apply, Prover.unpack_advice_run])
 
 end ProverReading
 
