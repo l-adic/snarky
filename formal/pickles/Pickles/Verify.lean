@@ -47,7 +47,7 @@ different proofs in one circuit; that composition is not ported.
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 open CompElliptic.CurveForms.ShortWeierstrass
 open scoped Kimchi
@@ -485,16 +485,17 @@ theorem verifyProof_success_bit {F : Type} [Field F] [DecidableEq F] [ToNat F] {
     (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
     (cells : IvpInput k nc np (FVar F) (BoolVar F) sf) :
-    ⦃⌜True⌝⦄ verifyProof ops e p endo gm sqrtF blindingH tab spongeAfterIndex isBaseCase
+    ⦃fun _ => True⦄ verifyProof ops e p endo gm sqrtF blindingH tab spongeAfterIndex isBaseCase
       statement u cells
-    ⦃⇓ v _ => ⌜∃ b : Bool, (↑v : CVar F).val V = bit b⌝⦄ := by
+    ⦃fun (v : BoolVar F) _ => ∃ b : Bool, (↑v : CVar F).val V = bit b⦄ := by
   have hivp := fun cx => incrementallyVerifyProof_success_bit (V := V) ops e p endo gm sqrtF
     false blindingH spongeAfterIndex cx (cells.withClaims u)
   have hsel := fun b x y => builder_spec_true
     (selectField (c := Builder V (KimchiConstraint F)) b x y)
   simp only [verifyProof]
-  mvcgen [hivp, hsel] invariants
-    · ⇓⟨_, _⟩ => ⌜True⌝
+  vcgen [hivp, hsel] invariants
+    · fun _ _ _ _ => True
+  assumption
 
 /-- `verifyProof`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
 input `pub`, whose success bit is the returned bit, whose digest cell reads as the claimed
@@ -565,12 +566,12 @@ theorem verifyProof_reads
       blindingH (packLeaves statement tab))
     (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false
       spongeAfterIndex (cells.withClaims u) oldsW) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.shape.ipaEndo
       C.sponge.params endo
       (.ofSpec C.groupMap)
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
-    ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) u base v⌝⦄ := by
+    ⦃fun v _ => VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) u base v⦄ := by
   obtain ⟨Ts, cps, hxhat⟩ := htab
   -- the leaves are headed by a scalar leaf: the first packed scalar is `cip`
   have hhead : leafHeadScalar (packLeaves statement tab) := by
@@ -581,12 +582,12 @@ theorem verifyProof_reads
     simp [packLeaves, packLeavesOf, Vector.toList_zipWith, WrapStatement.packed, Vector.toList_mk,
       hbc, leafHeadScalar]
   -- the public-input commitment, chunk by chunk, reads as the wire's, crossed to `C.E`
-  have hXhat : ⦃⌜True⌝⦄
+  have hXhat : ⦃fun _ => True⦄
       (Vector.finRange nc).mapM (fun ci => publicInputCommitKnown
         (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH tab.corrHead[ci]
         tab.corrSum[ci] (packLeaves statement tab))
-      ⦃⇓ pts _ => ⌜CommReads C V pts.toList
-        (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList⌝⦄ :=
+      ⦃fun pts _ => CommReads C V pts.toList
+        (runPublicComm C σ cvk (pubOf C V (packLeaves statement tab))).toList⦄ :=
     builder_spec_imp _ _ _
       (builder_spec_vector_mapM_get _ (fun ci r => OnCurveAt X.d.W V r
           (SWPoint.equivPoint C.E
@@ -605,24 +606,24 @@ theorem verifyProof_reads
       sqrtF false blindingH spongeAfterIndex _ (cells.withClaims u))
   have hb := CircuitType.reads_boolVar.mp hbase
   simp only [verifyProof]
-  mvcgen [hivp] invariants
-    · ⇓⟨xs, _⟩ => ⌜base = false → ∀ p ∈ xs.prefix, p.1.val.val V = p.2.val.val V⌝
+  vcgen [hivp] invariants
+    · fun xs _ _ _ => base = false → ∀ p ∈ xs, p.1.val.val V = p.2.val.val V
+  · -- the loop entry: nothing compared yet
+    rename_i p hp
+    exact absurd hp List.not_mem_nil
+  · -- the exit: the read
+    rename_i hivp' _ _ hdig _ _ hall
+    refine ⟨o, hivp'.1, rfl, hdig, fun hbf i => ?_, hivp'.2⟩
+    simpa using hall hbf _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem
+      (xs := u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges) i.isLt))
   · -- the loop step: the selected cell reads as the returned prechallenge off the base case
-    rename_i pref cur suff _ _ _ hinv r _ hsel _ _ heq
+    rename_i hinv _ hsel _ _ heq
     intro hbf p hp
     rw [List.mem_append, List.mem_singleton] at hp
     rcases hp with hp | rfl
     · exact hinv hbf p hp
     · rw [heq, hsel base hb, hbf]
       simp
-  · -- the loop entry: nothing compared yet
-    intro _ p hp
-    exact absurd hp List.not_mem_nil
-  · -- the exit: the read
-    rename_i o _ hivp' _ _ hdig _ _ hall
-    refine ⟨o, hivp'.1, rfl, hdig, fun hbf i => ?_, hivp'.2⟩
-    simpa using hall hbf _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem
-      (xs := u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges) i.isLt))
 
 end Read
 
@@ -647,12 +648,12 @@ theorem verifyProof_step_reads {nc np : ℕ} {V : Valuation Fp}
       (packLeaves statement tab))
     (hivp : IvpHyps (stepSide V) σ cvk cp (pubOf IpaPallas.curve V (packLeaves statement tab))
       false spongeAfterIndex (cells.withClaims u) oldsW) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     verifyProof (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step IpaEndo.pallas
       IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF blindingH tab
       spongeAfterIndex isBaseCase statement u cells
-    ⦃⇓ v _ => ⌜VerifyReads (stepSide V) σ cvk cp
-      (pubOf IpaPallas.curve V (packLeaves statement tab)) u base v⌝⦄ :=
+    ⦃fun v _ => VerifyReads (stepSide V) σ cvk cp
+      (pubOf IpaPallas.curve V (packLeaves statement tab)) u base v⦄ :=
   verifyProof_reads (stepSide V) pastaShapePallas σ cvk cp endo sqrtF blindingH tab
     spongeAfterIndex
     isBaseCase statement u cells base oldsW hbase htab hivp

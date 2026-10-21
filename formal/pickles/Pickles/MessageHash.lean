@@ -6,8 +6,6 @@ import Pickles.Statement
 import Pickles.VkComms
 import Poseidon.RandomOracle
 
-set_option mvcgen.warning false
-
 /-!
 # The accumulator digests
 
@@ -158,7 +156,7 @@ def hashMessagesForNextStepProofOpt [ConstraintHolds F c] {nc s n k : ℕ}
 
 section Reads
 
-open Std.Do
+open Std.WP
 
 variable {V : Valuation F}
 
@@ -168,19 +166,18 @@ commitment's. -/
 theorem hashMessagesForNextWrapProof_spec {w k : ℕ} (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
     (m : MessagesForNextWrapProof (AffinePoint (FVar F)) (Vector (Vector (FVar F) k) w)) :
-    ⦃⌜True⌝⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p sv m
-    ⦃⇓ d _ => ⌜∀ s, SpongeVar.ReadsAt V sv s → d.val V = (Poseidon.squeeze p (Poseidon.absorb p s
+    ⦃fun _ => True⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p sv m
+    ⦃fun d _ => ∀ s, SpongeVar.ReadsAt V sv s → d.val V = (Poseidon.squeeze p (Poseidon.absorb p s
       (m.oldBulletproofChallenges.flatten.toList.map (·.val V) ++
         [m.challengePolynomialCommitment.x.val V,
-          m.challengePolynomialCommitment.y.val V]))).1⌝⦄ := by
+          m.challengePolynomialCommitment.y.val V]))).1⦄ := by
   have hl := fun sv => absorbList_spec (V := V) p hsize sv
     m.oldBulletproofChallenges.flatten.toList
   have hx := fun sv x => SpongeVar.absorb_spec (V := V) p hsize sv x
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   simp only [hashMessagesForNextWrapProof]
-  mvcgen [hl, hx, hsq]
-  rename_i _ _ hl' _ _ hx1 _ _ hy1 _ _ hsq'
-  intro s hs
+  vcgen [hl, hx, hsq]
+  rename_i hl' _ _ hx1 _ hy1 _ _ _ hsq' s hs
   rw [(hsq' _ (hy1 _ (hx1 _ (hl' s hs)))).1]
   simp [Poseidon.absorb, List.foldl_append]
 
@@ -190,10 +187,10 @@ messages-for-next-wrap-proof digest of the message they read as (`wrapMsgDigest`
 theorem hashMessagesForNextWrapProof_padded {w k : ℕ} (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (dummy : Vector F k)
     (chals : Vector (Vector (FVar F) k) w) (sg : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p
+    ⦃fun _ => True⦄ hashMessagesForNextWrapProof (c := Builder V (KimchiConstraint F)) p
       (wrapPaddingSponge p dummy (MaxProofsVerified - w)) ⟨sg, chals⟩
-    ⦃⇓ d _ => ⌜∀ (sgv : AffinePoint F) (cv : Vector (Vector F k) w), CircuitType.Reads V sg sgv →
-      CircuitType.Reads V chals cv → d.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩⌝⦄ := by
+    ⦃fun d _ => ∀ (sgv : AffinePoint F) (cv : Vector (Vector F k) w), CircuitType.Reads V sg sgv →
+      CircuitType.Reads V chals cv → d.val V = wrapMsgDigest p dummy ⟨sgv, cv⟩⦄ := by
   refine builder_spec_imp _ _ _
     (hashMessagesForNextWrapProof_spec p hsize _ ⟨sg, chals⟩) fun d hd => ?_
   intro sgv cv hsg hcv
@@ -222,20 +219,17 @@ the fresh value sponge after absorbing the key's coordinates in order. -/
 theorem spongeAfterIndex_spec {nc : ℕ} (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (vk : VkComms nc (AffinePoint (FVar F))) :
-    ⦃⌜True⌝⦄ spongeAfterIndex (c := Builder V (KimchiConstraint F)) p vk
-    ⦃⇓ r _ => ⌜SpongeVar.ReadsAt V r (Poseidon.absorb p Poseidon.init
-      (vk.indexPoints.flatMap fun P => [P.x.val V, P.y.val V]))⌝⦄ := by
+    ⦃fun _ => True⦄ spongeAfterIndex (c := Builder V (KimchiConstraint F)) p vk
+    ⦃fun r _ => SpongeVar.ReadsAt V r (Poseidon.absorb p Poseidon.init
+      (vk.indexPoints.flatMap fun P => [P.x.val V, P.y.val V]))⦄ := by
   simp only [spongeAfterIndex]
   have hx := fun sv x => SpongeVar.absorb_spec (V := V) p hsize sv x
-  mvcgen [hx] invariants
-    · ⇓⟨xs, sv⟩ => ⌜SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
-        (xs.prefix.flatMap fun P => [P.x.val V, P.y.val V]))⌝
-  · exact fun h => h
-  · rename_i _ _ _ _ _ _ _ hinv _ _ h1 _
-    intro _ h2
+  vcgen [hx] invariants
+    · fun xs _ sv _ => SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
+        (xs.flatMap fun P => [P.x.val V, P.y.val V]))
+  · exact SpongeVar.ReadsAt.init
+  · rename_i hinv _ h1 _ _ h2
     simpa [List.flatMap_append, Poseidon.absorb, List.foldl_append] using h2 _ (h1 _ hinv)
-  · intro _ _
-    exact hsize
 
 omit [DecidableEq F] in
 /-- Point cells reading entrywise as points have their coordinates. -/
@@ -281,36 +275,33 @@ theorem hashMessagesForNextStepProof_spec {nc s n k : ℕ} (p : Poseidon.Params 
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (m : MessagesForNextStepProof (VkComms nc (AffinePoint (FVar F))) (Vector (FVar F) s)
       (Vector (AffinePoint (FVar F)) n) (Vector (Vector (FVar F) k) n)) :
-    ⦃⌜True⌝⦄ hashMessagesForNextStepProof (c := Builder V (KimchiConstraint F)) p m
-    ⦃⇓ d _ => ⌜∀ (vk : VkComms nc (AffinePoint F)) (sgs : Vector (AffinePoint F) n)
+    ⦃fun _ => True⦄ hashMessagesForNextStepProof (c := Builder V (KimchiConstraint F)) p m
+    ⦃fun d _ => ∀ (vk : VkComms nc (AffinePoint F)) (sgs : Vector (AffinePoint F) n)
         (chals : Vector (Vector F k) n),
       CircuitType.Reads V m.dlogPlonkIndex vk →
       CircuitType.Reads V m.challengePolynomialCommitments sgs →
       CircuitType.Reads V m.oldBulletproofChallenges chals →
-      d.val V = stepMsgDigest p ⟨m.appState.map (·.val V), vk, sgs, chals⟩⌝⦄ := by
+      d.val V = stepMsgDigest p ⟨m.appState.map (·.val V), vk, sgs, chals⟩⦄ := by
   have hidx := spongeAfterIndex_spec (V := V) p hsize m.dlogPlonkIndex
   have hx := fun sv x => SpongeVar.absorb_spec (V := V) p hsize sv x
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   simp only [hashMessagesForNextStepProof]
-  mvcgen [hidx, hx, hsq] invariants
-    · ⇓⟨xs, sv⟩ => ⌜SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
+  vcgen [hidx, hx, hsq] invariants
+    · fun xs _ sv _ => SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
         (m.dlogPlonkIndex.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V]) ++
-          xs.prefix.map (·.val V)))⌝
-    · ⇓⟨xs, sv⟩ => ⌜SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
+          xs.map (·.val V)))
+    · fun xs _ sv _ => SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
         (m.dlogPlonkIndex.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V]) ++
-          m.appState.toList.map (·.val V) ++ xs.prefix.map (·.val V)))⌝
+          m.appState.toList.map (·.val V) ++ xs.map (·.val V)))
   -- the absorb loops and their starts
   all_goals first
-    | (rename_i hinv _
-       intro _ h
+    | (rename_i hinv _ _ h
        simpa [Poseidon.absorb, List.foldl_append] using h _ hinv)
     | (rename_i h
        simpa using h)
-    | exact fun _ _ => hsize
     | skip
   -- the squeeze, at the message's readings
-  rename_i hafter _ _ hsq'
-  intro vk sgs chals hk hs hc
+  rename_i hafter _ _ _ hsq' vk sgs chals hk hs hc
   have hsgs : sgs = m.challengePolynomialCommitments.map fun P => ⟨P.x.val V, P.y.val V⟩ := by
     refine Vector.ext fun i hi => ?_
     obtain ⟨hx, hy⟩ := reads_affinePoint.mp (CircuitType.reads_vector.mp hs i hi)
@@ -427,12 +418,12 @@ theorem hashMessagesForNextStepProofOpt_spec {nc s n k : ℕ} (p : Poseidon.Para
       (Vector (AffinePoint (FVar F)) n) (Vector (Vector (FVar F) k) n)) (ms : Vector Bool n)
     (hms : CircuitType.Reads V mask ms)
     (hchar : ∀ j : ℕ, j ≤ n * (k + 2) → (j : F) = 0 → j = 0) :
-    ⦃⌜True⌝⦄ hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint F)) p mask m
-    ⦃⇓ r _ => ⌜SpongeVar.ReadsAt V r.2 (Poseidon.absorb p Poseidon.init
+    ⦃fun _ => True⦄ hashMessagesForNextStepProofOpt (c := Builder V (KimchiConstraint F)) p mask m
+    ⦃fun r _ => SpongeVar.ReadsAt V r.2 (Poseidon.absorb p Poseidon.init
         (m.dlogPlonkIndex.indexPoints.flatMap fun P => [P.x.val V, P.y.val V])) ∧
       r.1.val V = (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
         (m.dlogPlonkIndex.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V]) ++
-          m.appState.toList.map (·.val V) ++ keptValues V ms m.proofs))).1⌝⦄ := by
+          m.appState.toList.map (·.val V) ++ keptValues V ms m.proofs))).1⦄ := by
   obtain ⟨appState, vk, cpcs, obc⟩ := m
   dsimp only [MessagesForNextStepProof.proofs]
   -- the kept values, the mask readings and the absorb count, over the zipped proofs
@@ -453,13 +444,13 @@ theorem hashMessagesForNextStepProofOpt_spec {nc s n k : ℕ} (p : Poseidon.Para
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   have hof := fun sv => OptSponge.ofSponge_spec (V := V) p hsize sv
   have hosq : ∀ ov : OptSponge.OptSpongeVar F,
-      ⦃⌜True⌝⦄ OptSponge.optSqueeze (c := Builder V (KimchiConstraint F)) p ov
-      ⦃⇓ r _ => ⌜∀ ib ps₀ pend nf, OptSponge.AbsorbingReads p V ov ib ps₀ pend nf →
+      ⦃fun _ => True⦄ OptSponge.optSqueeze (c := Builder V (KimchiConstraint F)) p ov
+      ⦃fun r _ => ∀ ib ps₀ pend nf, OptSponge.AbsorbingReads p V ov ib ps₀ pend nf →
         ((∃ v ∈ pend, v.1 = true) ∨ ((∀ n, ps₀.mode ≠ .squeezed n) ∧
           (ib = false → (nf = true ↔ ps₀.mode = .absorbed 0)))) →
         (∀ k : ℕ, k ≤ pend.length → (k : F) = 0 → k = 0) →
         r.1.val V
-          = (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).1⌝⦄ :=
+          = (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).1⦄ :=
     fun ov => by
       rw [builder_spec_iff]
       intro nv hsat ib ps₀ pend nf h hne hc
@@ -470,35 +461,26 @@ theorem hashMessagesForNextStepProofOpt_spec {nc s n k : ℕ} (p : Poseidon.Para
   cases proofs with
   | nil =>
     simp only
-    mvcgen [hidx, hx, hsq] invariants
-      · ⇓⟨xs, sv⟩ => ⌜SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
+    vcgen [hidx, hx, hsq] invariants
+      · fun xs _ sv _ => SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
           (vk.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V]) ++
-            xs.prefix.map (·.val V)))⌝
-    · rename_i hinv _
-      intro _ h
-      simpa [Poseidon.absorb, List.foldl_append] using h _ hinv
-    · intro _ _
-      exact hsize
+            xs.map (·.val V)))
     · rename_i h
       simpa using h
-    · rename_i hA _ _ hApp _ _ hS
-      refine ⟨hA, ?_⟩
-      rw [(hS _ hApp).1]
+    · rename_i hA _ hApp _ _ _ hS
+      refine ⟨hA, (hS _ hApp).1.trans ?_⟩
       simp [guardedVals]
+    · rename_i hinv _ _ h
+      simpa [Poseidon.absorb, List.foldl_append] using h _ hinv
   | cons q qs =>
     simp only
-    mvcgen [hidx, hx, hof, hosq] invariants
-      · ⇓⟨xs, sv⟩ => ⌜SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
+    vcgen [hidx, hx, hof, hosq] invariants
+      · fun xs _ sv _ => SpongeVar.ReadsAt V sv (Poseidon.absorb p Poseidon.init
           (vk.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V]) ++
-            xs.prefix.map (·.val V)))⌝
-    · rename_i hinv _
-      intro _ h
-      simpa [Poseidon.absorb, List.foldl_append] using h _ hinv
-    · intro _ _
-      exact hsize
+            xs.map (·.val V)))
     · rename_i h
       simpa using h
-    · rename_i hA _ _ hApp _ _ hOf _ _ hS
+    · rename_i hA _ hApp _ hOf _ _ _ hS
       refine ⟨hA, ?_⟩
       have hsq : ∀ n, (Poseidon.absorb p Poseidon.init
           (vk.indexPoints.flatMap (fun P => [P.x.val V, P.y.val V]) ++
@@ -511,9 +493,12 @@ theorem hashMessagesForNextStepProofOpt_spec {nc s n k : ℕ} (p : Poseidon.Para
       have hab' := foldl_optAbsorb_reads _ _ (guarded_reads _ ms.toList hms') _ _ hab
       rw [← foldl_guarded] at hab'
       have hlen := (guarded_reads _ ms.toList hms').length_eq
-      rw [hS _ _ _ _ hab' (Or.inr ⟨hsq, hnf⟩) (fun j hj => hchar' j (hj.trans_eq hlen.symm)),
-        List.nil_append]
+      refine (hS _ _ _ _ hab' (Or.inr ⟨hsq, hnf⟩)
+        (fun j hj => hchar' j (hj.trans_eq hlen.symm))).trans ?_
+      rw [List.nil_append]
       simp [Poseidon.absorb, List.foldl_append]
+    · rename_i hinv _ _ h
+      simpa [Poseidon.absorb, List.foldl_append] using h _ hinv
 
 end Reads
 

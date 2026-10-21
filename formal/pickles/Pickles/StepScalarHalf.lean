@@ -14,7 +14,7 @@ circuit's slot read composes (`verifyOne_scalarReads`).
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
@@ -230,15 +230,15 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta {nc w : ℕ}
     -- across the two
     (hc : ClaimsCast Vg claimsG Vs claimsS)
     (hf : FopTies S K cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp)) domains claimsS evals
       mask prevChallenges domainLog2Var
-    ⦃⇓ o _ => ⌜(Guards IpaVesta.curve K cp pub →
+    ⦃fun o _ => (Guards IpaVesta.curve K cp pub →
         (SgOk S K cp pub ∧ (↑o.finalized : CVar Fp).val Vs = 1
           ↔ kimchiVerify IpaVesta.curve S K cp pub = true ∧
             (ScalarHalf.step Vs claimsS evals mask prevChallenges).ClaimsHonest S K cp pub)) ∧
       ((↑o.finalized : CVar Fp).val Vs = 1 →
-        o.expandedChallenges.map (·.val Vs) = wireChallenges S K cp pub)⌝⦄ := by
+        o.expandedChallenges.map (·.val Vs) = wireChallenges S K cp pub)⦄ := by
   have hP : (FopParams.of IpaVesta.curve nc S.k Linearization.fpTokens).endo = Pasta.pallasEndo ∧
       (FopParams.of IpaVesta.curve nc S.k Linearization.fpTokens).mds = Reflect.symMds ∧
       (FopParams.of IpaVesta.curve nc S.k Linearization.fpTokens).toks = Linearization.fpTokens :=
@@ -333,13 +333,13 @@ theorem finalizeOtherProofStepAt_finalizeReads {nc w : ℕ} (S : SRS IpaVesta.cu
     (evals : ChunkedEvals nc (FVar Fp))
     (mask : Vector (BoolVar Fp) w) (prevChallenges : Vector (Vector (FVar Fp) S.k) w)
     (domainLog2Var : FVar Fp) (hw : w ≤ MaxProofsVerified) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp)) domains claimsS evals
       mask prevChallenges domainLog2Var
-    ⦃⇓ o _ => ⌜(∃ ms : Vector Bool w, CircuitType.Reads Vs mask ms) →
+    ⦃fun o _ => (∃ ms : Vector Bool w, CircuitType.Reads Vs mask ms) →
       (↑o.finalized : CVar Fp).val Vs = 1 →
       StepFinalizeReads S K Vs claimsS evals mask prevChallenges domainLog2Var
-        o.expandedChallenges⌝⦄ := by
+        o.expandedChallenges⦄ := by
   rw [builder_spec_iff]
   intro nv hsat hmask h1 hdom cp pub Vg claimsG successG hg hgbit hc hf
   have h := (builder_spec_iff _ _).mp

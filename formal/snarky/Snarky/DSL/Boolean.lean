@@ -80,30 +80,28 @@ where
     addConstraint (BasicSystem.r1cs b (CVar.sub_ t e) (CVar.sub_ r e))
     pure r
 
-open Std.Do in
+open Std.WP in
 /-- `selectField b t e` reads as the branch the selector's bit picks. -/
 @[spec] theorem selectField_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F) (t e : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     selectField (c := Builder V c) b t e
-    ⦃⇓ r _ => ⌜∀ bb : Bool, (↑b : CVar F).val V = bit bb →
-        r.val V = if bb then t.val V else e.val V⌝⦄ := by
+    ⦃fun r _ => ∀ bb : Bool, (↑b : CVar F).val V = bit bb →
+        r.val V = if bb then t.val V else e.val V⦄ := by
   simp only [selectField, selectField.core]
-  mvcgen
-  · subst_vars
-    rename_i hbc _
-    intro bb hbb
+  vcgen
+  · rename_i hbc bb hbb
+    subst_vars
     rw [hbc] at hbb
     simp only [CVar.val] at hbb
     subst hbb
     cases bb <;> simp [bit, zero_ne_one]
-  · subst_vars
-    intro bb hbb
+  · rename_i bb hbb
+    subst_vars
     simp only [CVar.val_add_, CVar.val_scale_, CVar.val_sub_, CVar.val, hbb]
     cases bb <;> simp [bit]
-  · subst_vars
-    rename_i hrow
-    intro bb hbb
+  · rename_i hrow bb hbb
+    subst_vars
     have h := (LawfulBasicSystem.holds_r1cs V _ _ _).mp hrow
     simp only [CVar.val_sub_] at h
     rw [hbb] at h
@@ -171,7 +169,7 @@ The law is per shape, like the definition. A bundle carries it through `LawfulIf
 the leaves and the formers instantiate it, and a shape reaches it through its own
 isomorphism. -/
 
-open Std.Do in
+open Std.WP in
 /-- Selection's contract at a bundle, at the backend's reading of its constraints: the result
 reads as the operand the selector's bit picks. -/
 class LawfulIfThenElse (F c val var : Type) [Field F] [DecidableEq F] [BasicSystem F c]
@@ -179,38 +177,37 @@ class LawfulIfThenElse (F c val var : Type) [Field F] [DecidableEq F] [BasicSyst
   /-- The result reads as the operand the selector's bit picks. -/
   select_sound : ∀ (V : Valuation F) (b : BoolVar F) (t e : var) (tv ev : val) (bb : Bool),
     CircuitType.Reads V t tv → CircuitType.Reads V e ev → (↑b : CVar F).val V = bit bb →
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     atBuilder V (select (c := c) b t e)
-    ⦃⇓ r _ => ⌜CircuitType.Reads V r (if bb then tv else ev)⌝⦄
+    ⦃fun r _ => CircuitType.Reads V r (if bb then tv else ev)⦄
 
 section Lawful
 
-open Std.Do
+open Std.WP
 
 variable [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
 
 instance instLawfulIfThenElseFVar : LawfulIfThenElse F c F (FVar F) where
   select_sound V b t e tv ev bb ht he hb := by
+    constructor
     intro nv _ hsat
     show CircuitType.Reads V _ _
     rw [CircuitType.reads_fvar, ← CircuitType.reads_fvar.mp ht, ← CircuitType.reads_fvar.mp he]
-    exact selectField_spec (c := c) (V := V) b t e nv trivial hsat bb hb
+    exact (selectField_spec (c := c) (V := V) b t e).le_wp nv trivial hsat bb hb
 
 instance instLawfulIfThenElseBoolVar : LawfulIfThenElse F c Bool (BoolVar F) where
   select_sound V b t e tv ev bb ht he hb := by
     have h := selectField_spec (c := c) (V := V) b ↑t ↑e
-    show ⦃⌜True⌝⦄ (selectField (c := Builder V c) b ↑t ↑e >>= fun r =>
+    show ⦃fun _ => True⦄ (selectField (c := Builder V c) b ↑t ↑e >>= fun r =>
       pure (BoolVar.unchecked r)) ⦃_⦄
-    mvcgen [h]
-    rename_i r _ hr
+    vcgen [h]
+    rename_i hr
     rw [CircuitType.reads_boolVar, BoolVar.coe_unchecked, hr bb hb,
       CircuitType.reads_boolVar.mp ht, CircuitType.reads_boolVar.mp he]
     cases bb <;> simp
 
 instance instLawfulIfThenElseUnit : LawfulIfThenElse F c Unit Unit where
-  select_sound V b t e tv ev bb _ _ _ := by
-    intro _ _ _
-    exact CircuitType.reads_unit
+  select_sound _ _ _ _ _ _ _ _ _ _ := ⟨fun _ _ _ => CircuitType.reads_unit⟩
 
 variable {a va b vb : Type}
 
@@ -268,19 +265,18 @@ def and [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b :
   let r ← mul ↑a ↑b
   pure (.unchecked r)
 
-open Std.Do in
+open Std.WP in
 /-- `and`: on bit operands the result reads as the conjunction bit. -/
 @[spec] theorem and_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     Snarky.and (c := Builder V c) a b
-    ⦃⇓ r _ => ⌜∀ ab bb : Bool,
+    ⦃fun (r : BoolVar F) _ => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          (↑r : CVar F).val V = bit (ab && bb)⌝⦄ := by
+          (↑r : CVar F).val V = bit (ab && bb)⦄ := by
   simp only [Snarky.and]
-  mvcgen
-  rename_i r _ hr
-  intro ab bb ha hb
+  vcgen
+  rename_i hr ab bb ha hb
   simp only [BoolVar.coe_unchecked, hr, ha, hb]
   cases ab <;> cases bb <;> simp [bit]
 
@@ -295,19 +291,18 @@ def or [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (a b : 
   let r ← Snarky.and (Snarky.not a) (Snarky.not b)
   pure (Snarky.not r)
 
-open Std.Do in
+open Std.WP in
 /-- `or`: on bit operands the result reads as the disjunction bit. -/
 @[spec] theorem or_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     Snarky.or (c := Builder V c) a b
-    ⦃⇓ r _ => ⌜∀ ab bb : Bool,
+    ⦃fun (r : BoolVar F) _ => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          (↑r : CVar F).val V = bit (ab || bb)⌝⦄ := by
+          (↑r : CVar F).val V = bit (ab || bb)⦄ := by
   simp only [Snarky.or]
-  mvcgen
-  rename_i r _ hr
-  intro ab bb ha hb
+  vcgen
+  rename_i hr ab bb ha hb
   rw [not_val (hr (!ab) (!bb) (not_val ha) (not_val hb))]
   cases ab <;> cases bb <;> simp
 
@@ -349,37 +344,36 @@ private theorem xor_pin [Field F] {ab bb : Bool} {rv : F}
   rw [h']
   cases ab <;> cases bb <;> simp [bit]
 
-open Std.Do in
+open Std.WP in
 /-- The witnessing branch reads as the xor bit on bit operands. -/
 @[spec] private theorem xor.core_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     Snarky.xor.core (c := Builder V c) a b
-    ⦃⇓ r _ => ⌜∀ ab bb : Bool,
+    ⦃fun (r : BoolVar F) _ => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          (↑r : CVar F).val V = bit (ab ^^ bb)⌝⦄ := by
+          (↑r : CVar F).val V = bit (ab ^^ bb)⦄ := by
   simp only [Snarky.xor.core]
-  mvcgen
-  rename_i r _ hrow
-  intro ab bb ha hb
+  vcgen
+  rename_i hrow ab bb ha hb
   have h := (LawfulBasicSystem.holds_r1cs V _ _ _).mp hrow
   simp only [CVar.val_add_, CVar.val_sub_, BoolVar.coe_unchecked] at h ⊢
   rw [ha, hb] at h
   exact xor_pin h
 
-open Std.Do in
+open Std.WP in
 /-- `xor`: on bit operands the result reads as the xor bit. -/
 @[spec] theorem xor_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     Snarky.xor (c := Builder V c) a b
-    ⦃⇓ r _ => ⌜∀ ab bb : Bool,
+    ⦃fun (r : BoolVar F) _ => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          (↑r : CVar F).val V = bit (ab ^^ bb)⌝⦄ := by
+          (↑r : CVar F).val V = bit (ab ^^ bb)⦄ := by
   simp only [Snarky.xor]
-  mvcgen
+  vcgen
   all_goals first
-    | (intro ab bb ha hb
+    | (rename_i ab bb ha hb
        have hA : a.toCVar = CVar.const _ := ‹_›
        have hB : b.toCVar = CVar.const _ := ‹_›
        rw [hA] at ha
@@ -388,7 +382,7 @@ open Std.Do in
        subst ha
        subst hb
        cases ab <;> cases bb <;> simp [bit])
-    | (intro ab bb ha hb
+    | (rename_i ab bb ha hb
        have hA : a.toCVar = CVar.const _ := ‹_›
        have h0 : _ = (0 : F) := ‹_›
        rw [hA] at ha
@@ -397,7 +391,7 @@ open Std.Do in
        cases ab
        · simpa using hb
        · exact absurd ha (by simp [bit]))
-    | (intro ab bb ha hb
+    | (rename_i ab bb ha hb
        have hA : a.toCVar = CVar.const _ := ‹_›
        have h1 : _ = (1 : F) := ‹_›
        rw [hA] at ha
@@ -407,7 +401,7 @@ open Std.Do in
        · exact absurd ha (by simp [bit])
        · rw [not_val hb]
          simp)
-    | (intro ab bb ha hb
+    | (rename_i ab bb ha hb
        have hB : b.toCVar = CVar.const _ := ‹_›
        have h0 : _ = (0 : F) := ‹_›
        rw [hB] at hb
@@ -416,7 +410,7 @@ open Std.Do in
        cases bb
        · simpa using ha
        · exact absurd hb (by simp [bit]))
-    | (intro ab bb ha hb
+    | (rename_i ab bb ha hb
        have hB : b.toCVar = CVar.const _ := ‹_›
        have h1 : _ = (1 : F) := ‹_›
        rw [hB] at hb
@@ -455,29 +449,31 @@ def any [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (xs : 
   | [a, b] => Snarky.or a b
   | _ => neq (sum (xs.map BoolVar.toCVar)) (.const 0)
 
-open Std.Do in
+open Std.WP in
 /-- `any`: on bit operands, below the characteristic, the result reads `1` exactly when
 some operand reads `1`. -/
 @[spec] theorem any_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
     (hchar : ∀ k : Nat, k ≤ xs.length → (k : F) = 0 → k = 0) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     Snarky.any (c := Builder V c) xs
-    ⦃⇓ r _ => ⌜(∀ b ∈ xs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
-        (↑r : CVar F).val V = if ∃ b ∈ xs, (↑b : CVar F).val V = 1 then 1 else 0⌝⦄ := by
+    ⦃fun (r : BoolVar F) _ => (∀ b ∈ xs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
+        (↑r : CVar F).val V = if ∃ b ∈ xs, (↑b : CVar F).val V = 1 then 1 else 0⦄ := by
   match xs, hchar with
   | [], _ =>
     simp only [Snarky.any]
+    constructor
     intro nv _ _ _
     simp [build]
   | [a], _ =>
     simp only [Snarky.any]
+    constructor
     intro nv _ _ hbits
     rcases hbits a (by simp) with h | h <;> simp [build, h]
   | [a, b], _ =>
     simp only [Snarky.any]
-    mvcgen
-    intro hr hbits
+    vcgen
+    rename_i hr hbits
     rcases hbits a (by simp) with ha | ha <;> rcases hbits b (by simp) with hb | hb <;>
       first
       | (rw [hr false false ha hb]; simp [ha, hb, bit])
@@ -486,8 +482,8 @@ some operand reads `1`. -/
       | (rw [hr true true ha hb]; simp [ha, hb, bit])
   | x₁ :: x₂ :: x₃ :: t, hchar =>
     simp only [Snarky.any]
-    mvcgen
-    intro hr hbits
+    vcgen
+    rename_i hr hbits
     have hbits' : ∀ x ∈ ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar).map (·.val V),
         x = 0 ∨ x = 1 := by
       intro x hx
@@ -531,29 +527,31 @@ def all [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] (xs : 
   | [a, b] => Snarky.and a b
   | _ => equals (.const (xs.length : F)) (sum (xs.map BoolVar.toCVar))
 
-open Std.Do in
+open Std.WP in
 /-- `all`: on bit operands, below the characteristic, the result reads `1` exactly when
 every operand reads `1`. -/
 @[spec] theorem all_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ xs.length → k ≤ xs.length → (j : F) = k → j = k) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     Snarky.all (c := Builder V c) xs
-    ⦃⇓ r _ => ⌜(∀ b ∈ xs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
-        (↑r : CVar F).val V = if ∀ b ∈ xs, (↑b : CVar F).val V = 1 then 1 else 0⌝⦄ := by
+    ⦃fun (r : BoolVar F) _ => (∀ b ∈ xs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
+        (↑r : CVar F).val V = if ∀ b ∈ xs, (↑b : CVar F).val V = 1 then 1 else 0⦄ := by
   match xs, hchar with
   | [], _ =>
     simp only [Snarky.all]
+    constructor
     intro nv _ _ _
     simp [build]
   | [a], _ =>
     simp only [Snarky.all]
+    constructor
     intro nv _ _ hbits
     rcases hbits a (by simp) with h | h <;> simp [build, h]
   | [a, b], _ =>
     simp only [Snarky.all]
-    mvcgen
-    intro hr hbits
+    vcgen
+    rename_i hr hbits
     rcases hbits a (by simp) with ha | ha <;> rcases hbits b (by simp) with hb | hb <;>
       first
       | (rw [hr false false ha hb]; simp [ha, hb, bit])
@@ -562,8 +560,8 @@ every operand reads `1`. -/
       | (rw [hr true true ha hb]; simp [ha, hb, bit])
   | x₁ :: x₂ :: x₃ :: t, hchar =>
     simp only [Snarky.all]
-    mvcgen
-    intro hr hbits
+    vcgen
+    rename_i hr hbits
     generalize hxs : x₁ :: x₂ :: x₃ :: t = xs at hr hbits hchar ⊢
     have hbits' : ∀ x ∈ (xs.map BoolVar.toCVar).map (·.val V), x = 0 ∨ x = 1 := by
       intro x hx

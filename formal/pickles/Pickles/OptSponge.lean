@@ -2,8 +2,6 @@ import Snarky.DSL.Boolean
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.Sponge
 
-set_option mvcgen.warning false
-
 /-!
 # The conditional sponge
 
@@ -37,7 +35,7 @@ permutation of the value sponge's full block.
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi
+open Std.WP Snarky Snarky.Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
 
@@ -392,15 +390,14 @@ variable {V : Valuation F}
 
 /-- `addIn` reads as `addSlot` at the slot the position bit selects. -/
 private theorem addIn_spec (st : SpongeState F) (pos : BoolVar F) (x : FVar F) :
-    ⦃⌜True⌝⦄ addIn (c := Builder V (KimchiConstraint F)) st pos x
-    ⦃⇓ r _ => ⌜∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
+    ⦃fun _ => True⦄ addIn (c := Builder V (KimchiConstraint F)) st pos x
+    ⦃fun r _ => ∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
       CircuitType.readVal (val := SpongeStateVal F) V r
       = Poseidon.addSlot (CircuitType.readVal (val := SpongeStateVal F) V st)
-          (if pb then 1 else 0) (x.val V)⌝⦄ := by
+          (if pb then 1 else 0) (x.val V)⦄ := by
   simp only [addIn]
-  mvcgen
-  intro pb hp
-  rename_i _ s0' _ _ _ _ h0 s1' _ _ _ _ h1
+  vcgen
+  rename_i h0 _ _ h1 pb hp
   rw [LawfulBasicSystem.holds_r1cs] at h0 h1
   rw [CVar.val_sub_, not_val hp] at h0
   rw [CVar.val_sub_, hp] at h1
@@ -422,55 +419,55 @@ private theorem addIn_spec (st : SpongeState F) (pos : BoolVar F) (x : FVar F) :
 private theorem condPermute_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (permute : BoolVar F)
     (st : SpongeState F) :
-    ⦃⌜True⌝⦄ condPermute (c := Builder V (KimchiConstraint F)) p permute st
-    ⦃⇓ r _ => ⌜∀ pb : Bool, (↑permute : CVar F).val V = bit pb →
+    ⦃fun _ => True⦄ condPermute (c := Builder V (KimchiConstraint F)) p permute st
+    ⦃fun r _ => ∀ pb : Bool, (↑permute : CVar F).val V = bit pb →
       CircuitType.readVal (val := SpongeStateVal F) V r
       = if pb then Poseidon.blockCipher p (CircuitType.readVal (val := SpongeStateVal F) V st)
-        else CircuitType.readVal (val := SpongeStateVal F) V st⌝⦄ := by
+        else CircuitType.readVal (val := SpongeStateVal F) V st⦄ := by
   simp only [condPermute]
   have hpose := Poseidon.poseidon_spec (V := V) p hsize st
-  mvcgen [hpose]
-  intro pb hp
-  rename_i _ permuted _ hP s0 _ h0 s1 _ h1 s2 _ h2
+  vcgen [hpose]
+  rename_i hP _ h0 _ h1 _ h2 pb hp
   simp only [readVal_spongeState] at hP ⊢
   rw [h0 pb hp, h1 pb hp, h2 pb hp]
   cases pb <;> simp [hP]
 
 /-- `finalBit` reads as the position, or an empty input under the flag. -/
 private theorem finalBit_spec (nf : Bool) (e pos : BoolVar F) :
-    ⦃⌜True⌝⦄ finalBit (c := Builder V (KimchiConstraint F)) nf e pos
-    ⦃⇓ r _ => ⌜∀ eb pb : Bool, (↑e : CVar F).val V = bit eb → (↑pos : CVar F).val V = bit pb →
-      (↑r : CVar F).val V = bit ((eb && nf) || pb)⌝⦄ := by
+    ⦃fun _ => True⦄ finalBit (c := Builder V (KimchiConstraint F)) nf e pos
+    ⦃fun (r : BoolVar F) _ => ∀ eb pb : Bool, (↑e : CVar F).val V = bit eb →
+      (↑pos : CVar F).val V = bit pb →
+      (↑r : CVar F).val V = bit ((eb && nf) || pb)⦄ := by
   cases nf
-  · simp only [finalBit]
-    mvcgen
-    intro eb pb _ hp
+  · simp only [finalBit, Bool.false_eq_true, ite_false]
+    vcgen
+    rename_i eb pb _ hp
     simpa using hp
   · simp only [finalBit, ite_true]
     have ho := Snarky.or_spec (V := V) (c := KimchiConstraint F) e pos
-    mvcgen [ho]
-    intro h eb pb he hp
+    vcgen [ho]
+    rename_i h eb pb he hp
     simpa using h eb pb he hp
 
 /-- `finalBitLeftover` reads as the position or the entry's bit, or an empty input under the
 flag. -/
 private theorem finalBitLeftover_spec (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
     (nf : Bool) (e pos b : BoolVar F) :
-    ⦃⌜True⌝⦄ finalBitLeftover (c := Builder V (KimchiConstraint F)) nf e pos b
-    ⦃⇓ r _ => ⌜∀ eb pb bb : Bool, (↑e : CVar F).val V = bit eb →
+    ⦃fun _ => True⦄ finalBitLeftover (c := Builder V (KimchiConstraint F)) nf e pos b
+    ⦃fun (r : BoolVar F) _ => ∀ eb pb bb : Bool, (↑e : CVar F).val V = bit eb →
       (↑pos : CVar F).val V = bit pb → (↑b : CVar F).val V = bit bb →
-      (↑r : CVar F).val V = bit (pb || bb || (eb && nf))⌝⦄ := by
+      (↑r : CVar F).val V = bit (pb || bb || (eb && nf))⦄ := by
   have hchar : ∀ l : List (BoolVar F), l.length ≤ 3 → ∀ k ≤ l.length, (k : F) = 0 → k = 0 :=
     fun l hl k hk h0 => hall k 0 (le_trans hk hl) (by omega) (by simpa using h0)
   have bit01 : ∀ bb : Bool, (bit bb : F) = 0 ∨ (bit bb : F) = 1 := fun bb => by
     cases bb <;> simp [bit]
   cases nf
-  · simp only [finalBitLeftover]
+  · simp only [finalBitLeftover, Bool.false_eq_true, ite_false]
     have ha := Snarky.any_spec (V := V) (c := KimchiConstraint F) [pos, b]
       (hchar _ (by simp))
-    mvcgen [ha]
+    vcgen [ha]
     all_goals first | (intro _; exact hchar _ (by simp)) | skip
-    intro h eb pb bb _ hp hb
+    rename_i h eb pb bb _ hp hb
     rw [h (by
       intro q hq
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
@@ -483,9 +480,9 @@ private theorem finalBitLeftover_spec (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3
   · simp only [finalBitLeftover, ite_true]
     have ha := Snarky.any_spec (V := V) (c := KimchiConstraint F) [pos, b, e]
       (hchar _ (by simp))
-    mvcgen [ha]
+    vcgen [ha]
     all_goals first | (intro _; exact hchar _ (by simp)) | skip
-    intro h eb pb bb he hp hb
+    rename_i h eb pb bb he hp hb
     rw [h (by
       intro q hq
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
@@ -509,13 +506,13 @@ private theorem consumePair_spec (p : Poseidon.Params F)
     (st : SpongeState F) (pos : BoolVar F) (e₁ e₂ : BoolVar F × FVar F)
     (v₁ v₂ : Bool × F) (h1 : CircuitType.Reads V e₁ v₁)
     (h2 : CircuitType.Reads V e₂ v₂) :
-    ⦃⌜True⌝⦄ consumePair (c := Builder V (KimchiConstraint F)) p st pos e₁ e₂
-    ⦃⇓ r _ => ⌜∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
+    ⦃fun _ => True⦄ consumePair (c := Builder V (KimchiConstraint F)) p st pos e₁ e₂
+    ⦃fun r _ => ∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
       CircuitType.readVal (val := SpongeStateVal F) V r.1
         = (optAbsorb2 p (CircuitType.readVal (val := SpongeStateVal F) V st, pb) (v₁, v₂)).1
       ∧ (↑r.2 : CVar F).val V
         = bit (optAbsorb2 p (CircuitType.readVal (val := SpongeStateVal F) V st, pb)
-            (v₁, v₂)).2⌝⦄ := by
+            (v₁, v₂)).2⦄ := by
   obtain ⟨b, x⟩ := e₁
   obtain ⟨b', y⟩ := e₂
   obtain ⟨b₁, xv⟩ := v₁
@@ -528,10 +525,9 @@ private theorem consumePair_spec (p : Poseidon.Params F)
   have hallS := Snarky.all_spec (V := V) (c := KimchiConstraint F) [b, b', pos]
     (by simpa using hall)
   have hcp := condPermute_spec (V := V) p hsize
-  mvcgen [hallS, addIn_spec, hcp]
-  rename_i _ p' _ hp' posAfter _ hpa yM _ hyM aYA _ haYA xb _ hxb st1 _ hst1 yB _ hyB st2 _ hst2
-    bob _ hbob pbob _ hpbob bab _ hbab perm _ hperm st3 _ hst3 yA _ hyA st4 _ hst4
-  intro pb hp
+  vcgen [hallS, addIn_spec, hcp]
+  rename_i hp' _ hpa _ hyM _ haYA _ hxb _ hst1 _ hyB _ hst2 _ hbob _ hpbob _ hbab _ hperm _ hst3 _
+    hyA _ hst4 pb hp
   have bit01 : ∀ bb : Bool, (bit bb : F) = 0 ∨ (bit bb : F) = 1 := fun bb => by
     cases bb <;> simp [bit]
   have hbool : ∀ q ∈ [b, b', pos], (↑q : CVar F).val V = 0 ∨ (↑q : CVar F).val V = 1 := by
@@ -541,7 +537,7 @@ private theorem consumePair_spec (p : Poseidon.Params F)
     · rw [hb]; exact bit01 _
     · rw [hb']; exact bit01 _
     · rw [hp]; exact bit01 _
-  have HaYA : (↑aYA : CVar F).val V = bit (b₁ && b₂ && pb) := by
+  have HaYA : (↑addInYAfter : CVar F).val V = bit (b₁ && b₂ && pb) := by
     rw [haYA hbool]
     cases pb <;> cases b₁ <;> cases b₂ <;> simp [bit, hb, hb', hp]
   have Hp' := hp' pb b₁ hp hb
@@ -572,17 +568,17 @@ private theorem consumePairs_spec (p : Poseidon.Params F)
     ∀ (pairs : List ((BoolVar F × FVar F) × (BoolVar F × FVar F)))
       (vs : List ((Bool × F) × (Bool × F))) (st : SpongeState F) (pos : BoolVar F),
       List.Forall₂ (CircuitType.Reads V) pairs vs →
-      ⦃⌜True⌝⦄ consumePairs (c := Builder V (KimchiConstraint F)) p st pos pairs
-      ⦃⇓ r _ => ⌜∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
+      ⦃fun _ => True⦄ consumePairs (c := Builder V (KimchiConstraint F)) p st pos pairs
+      ⦃fun r _ => ∀ pb : Bool, (↑pos : CVar F).val V = bit pb →
         CircuitType.readVal (val := SpongeStateVal F) V r.1
           = (vs.foldl (optAbsorb2 p) (CircuitType.readVal (val := SpongeStateVal F) V st, pb)).1
         ∧ (↑r.2 : CVar F).val V
           = bit (vs.foldl (optAbsorb2 p)
-              (CircuitType.readVal (val := SpongeStateVal F) V st, pb)).2⌝⦄
+              (CircuitType.readVal (val := SpongeStateVal F) V st, pb)).2⦄
   | [], [], st, pos, _ => by
     simp only [consumePairs]
-    mvcgen
-    intro pb hp
+    vcgen
+    rename_i pb hp
     exact ⟨rfl, hp⟩
   | [], _ :: _, _, _, h => nomatch h
   | _ :: _, [], _, _, h => nomatch h
@@ -593,9 +589,8 @@ private theorem consumePairs_spec (p : Poseidon.Params F)
     simp only [consumePairs]
     have hstep := consumePair_spec (V := V) p hsize hall st pos e₁ e₂ v₁ v₂ h1 h2
     have hih := fun st' pos' => consumePairs_spec p hsize hall rest vs st' pos' hrest
-    mvcgen [hstep, hih]
-    rename_i _ r₁ _ hS r₂ _
-    intro hI pb hp
+    vcgen [hstep, hih]
+    rename_i hS _ _ _ hI pb hp
     obtain ⟨hs, hpos⟩ := hS pb hp
     obtain ⟨h1', h2'⟩ := hI _ hpos
     rw [h1', h2', hs, List.foldl_cons]
@@ -735,13 +730,13 @@ theorem consume_spec (p : Poseidon.Params F)
     (st : SpongeState F) (pos : BoolVar F) (nf : Bool) (input : List (BoolVar F × FVar F))
     (xs : List (Bool × F)) (hx : List.Forall₂ (CircuitType.Reads V) input xs)
     (hchar : ∀ k : ℕ, k ≤ input.length → (k : F) = 0 → k = 0) :
-    ⦃⌜True⌝⦄ consume (c := Builder V (KimchiConstraint F)) p st pos nf input
-    ⦃⇓ r _ => ⌜∀ (pb : Bool) (ps : Poseidon.State F), (↑pos : CVar F).val V = bit pb →
+    ⦃fun _ => True⦄ consume (c := Builder V (KimchiConstraint F)) p st pos nf input
+    ⦃fun r _ => ∀ (pb : Bool) (ps : Poseidon.State F), (↑pos : CVar F).val V = bit pb →
       RelStart p (CircuitType.readVal (val := SpongeStateVal F) V st, pb) ps →
       ((∃ v ∈ xs, v.1 = true) ∨ ((∀ n, ps.mode ≠ .squeezed n) ∧
         (pb = false → (nf = true ↔ ps.mode = .absorbed 0)))) →
       CircuitType.readVal (val := SpongeStateVal F) V r
-        = (Poseidon.squeeze p (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2)))).2.state⌝⦄ := by
+        = (Poseidon.squeeze p (Poseidon.absorb p ps ((xs.filter (·.1)).map (·.2)))).2.state⦄ := by
   have hbool := guard_bit input xs hx
   have hex := exists_guard_iff input xs hx
   have hany := Snarky.any_spec (V := V) (c := KimchiConstraint F) (input.map (·.1))
@@ -815,12 +810,11 @@ theorem consume_spec (p : Poseidon.Params F)
     have hfold := foldl_pairUp p xs
     rw [hpx] at hfold
     simp only at hfold
-    mvcgen [hP, hany, hcp, hfb]
-    rename_i _ acc _ hAcc anyK _ hAny sp _ hOr fin _
-    intro hFin pb ps hp hstart hne
+    vcgen [hP, hany, hcp, hfb]
+    rename_i hAcc _ hAny _ hOr _ _ hFin pb ps hp hstart hne
     obtain ⟨hst, hpos⟩ := hAcc pb hp
     obtain ⟨hrel, hempty⟩ := hend pb ps hstart hne
-    have hE := not_val (hAnyV anyK hAny)
+    have hE := not_val (hAnyV anyKept hAny)
     have hSp := hOr _ _ hE hpos
     have hF := hFin _ hSp
     rw [hF, hst]
@@ -843,12 +837,11 @@ theorem consume_spec (p : Poseidon.Params F)
     have hbe : bb = true → ((!xs.any (·.1)) && nf) = false := fun h => by
       have : xs.any (·.1) = true := List.any_eq_true.mpr ⟨(bb, xv), hmem _ rfl, h⟩
       simp [this]
-    mvcgen [hP, hany, hcp, addIn_spec, hfbl]
-    rename_i _ acc _ hAcc anyK _ hAny _ _ _ xb _ hxb st' _ hSt sp _ hAny3 fin _
-    intro hFin pb ps hp hstart hne
+    vcgen [hP, hany, hcp, addIn_spec, hfbl]
+    rename_i hAcc _ hAny _ _ _ _ hxb _ hSt _ hAny3 _ _ hFin pb ps hp hstart hne
     obtain ⟨hst, hpos⟩ := hAcc pb hp
     obtain ⟨hrel, hempty⟩ := hend pb ps hstart hne
-    have hE := not_val (hAnyV anyK hAny)
+    have hE := not_val (hAnyV anyKept hAny)
     rw [hb, hxv] at hxb
     have hS := hSt _ hpos
     rw [hst, hxb] at hS
@@ -871,19 +864,19 @@ theorem squeeze_spec (p : Poseidon.Params F)
     (input : List (BoolVar F × FVar F)) (xs : List (Bool × F))
     (hx : List.Forall₂ (CircuitType.Reads V) input xs)
     (hchar : ∀ k : ℕ, k ≤ input.length → (k : F) = 0 → k = 0) :
-    ⦃⌜True⌝⦄ squeeze (c := Builder V (KimchiConstraint F)) p input
-    ⦃⇓ d _ => ⌜d.val V = (Poseidon.squeeze p
-      (Poseidon.absorb p Poseidon.init ((xs.filter (·.1)).map (·.2)))).1⌝⦄ := by
+    ⦃fun _ => True⦄ squeeze (c := Builder V (KimchiConstraint F)) p input
+    ⦃fun d _ => d.val V = (Poseidon.squeeze p
+      (Poseidon.absorb p Poseidon.init ((xs.filter (·.1)).map (·.2)))).1⦄ := by
   have hc := consume_spec (V := V) p hsize hall initState false_ true input xs hx hchar
   simp only [squeeze]
-  mvcgen [hc]
-  rename_i _ fin _ hfin
+  vcgen [hc]
+  rename_i hfin
   have hf : (↑(false_ : BoolVar F) : CVar F).val V = bit false := by simp [false_, bit]
   have hinit : CircuitType.readVal (val := SpongeStateVal F) V initState = (0, 0, 0) := by
     simp [initState, readVal_spongeState]
   have hF := hfin false Poseidon.init hf (by rw [hinit]; exact Or.inl (rel_init p))
-    (Or.inr ⟨fun n h => (nomatch h), fun _ => iff_of_true trivial rfl⟩)
-  have hs0 : fin.s0.val V = (CircuitType.readVal (val := SpongeStateVal F) V fin).1 := by
+    (Or.inr ⟨fun n h => (nomatch h), fun _ => iff_of_true rfl rfl⟩)
+  have hs0 : final.s0.val V = (CircuitType.readVal (val := SpongeStateVal F) V final).1 := by
     simp [readVal_spongeState]
   rw [hs0, hF]
   exact (squeeze_fst_of_absorbed p _ (absorb_mode_absorbed p _ _ ⟨0, rfl⟩)).symm
@@ -971,9 +964,9 @@ private theorem squeeze_mode_of_absorbed (p : Poseidon.Params F) (sp : Poseidon.
 private theorem optSqueeze_spec_squeezed (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (ov : OptSpongeVar F)
     (ps : Poseidon.State F) (h : SqueezedReads V ov ps) :
-    ⦃⌜True⌝⦄ optSqueeze (c := Builder V (KimchiConstraint F)) p ov
-    ⦃⇓ r _ => ⌜r.1.val V = (Poseidon.squeeze p ps).1 ∧
-      SqueezedReads V r.2 (Poseidon.squeeze p ps).2⌝⦄ := by
+    ⦃fun _ => True⦄ optSqueeze (c := Builder V (KimchiConstraint F)) p ov
+    ⦃fun r _ => r.1.val V = (Poseidon.squeeze p ps).1 ∧
+      SqueezedReads V r.2 (Poseidon.squeeze p ps).2⦄ := by
   obtain ⟨n, hph, hst, hm, hnf⟩ := h
   obtain ⟨st, phase, nf⟩ := ov
   simp only at hph hst hnf
@@ -985,8 +978,8 @@ private theorem optSqueeze_spec_squeezed (p : Poseidon.Params F)
   by_cases hn : n.val = 2
   · rw [ite_eq_left hn]
     have hp := Poseidon.poseidon_spec (V := V) p hsize st
-    mvcgen [hp]
-    rename_i st' _ hst'
+    vcgen [hp]
+    rename_i hst'
     refine ⟨?_, 1, rfl, ?_, ?_, rfl⟩
     · have h0 := congrArg Prod.fst hst'
       simp only [readVal_spongeState] at h0
@@ -994,7 +987,7 @@ private theorem optSqueeze_spec_squeezed (p : Poseidon.Params F)
     · simp [Poseidon.squeeze, hn, hst']
     · simp [Poseidon.squeeze, hn]
   · rw [ite_eq_right hn]
-    mvcgen
+    vcgen
     refine ⟨?_, n + 1, rfl, ?_, ?_, rfl⟩
     · simp [Poseidon.squeeze, hn, slotVar_val]
     · simp [Poseidon.squeeze, hn]
@@ -1012,11 +1005,11 @@ theorem optSqueeze_absorbing_spec (p : Poseidon.Params F)
     (hne : (∃ v ∈ pend, v.1 = true) ∨ ((∀ n, ps₀.mode ≠ .squeezed n) ∧
       (ib = false → (nf = true ↔ ps₀.mode = .absorbed 0))))
     (hchar : ∀ k : ℕ, k ≤ pend.length → (k : F) = 0 → k = 0) :
-    ⦃⌜True⌝⦄ optSqueeze (c := Builder V (KimchiConstraint F)) p ov
-    ⦃⇓ r _ => ⌜r.1.val V
+    ⦃fun _ => True⦄ optSqueeze (c := Builder V (KimchiConstraint F)) p ov
+    ⦃fun r _ => r.1.val V
         = (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).1 ∧
       SqueezedReads V r.2
-        (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2⌝⦄ := by
+        (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2⦄ := by
   obtain ⟨i, xs, hph, hi, hrel, hxs, hnf⟩ := h
   obtain ⟨st, phase, nf⟩ := ov
   simp only at hph hrel hnf
@@ -1034,8 +1027,8 @@ theorem optSqueeze_absorbing_spec (p : Poseidon.Params F)
       | absorbed m => exact ⟨m, rfl⟩
       | squeezed n => exact absurd hm (hsq n)
   simp only [optSqueeze]
-  mvcgen [hc]
-  rename_i st' _ hst'
+  vcgen [hc]
+  rename_i hst'
   have hS := hst' ib ps₀ hi hrel hne
   refine ⟨?_, 1, rfl, hS, squeeze_mode_of_absorbed p _ habs, rfl⟩
   rw [squeeze_fst_of_absorbed p _ habs, ← hS]
@@ -1050,8 +1043,8 @@ the pending count. -/
 theorem optSqueeze_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k) (ov : OptSpongeVar F) :
-    ⦃⌜True⌝⦄ optSqueeze (c := Builder V (KimchiConstraint F)) p ov
-    ⦃⇓ r _ => ⌜(∀ ps : Poseidon.State F, SqueezedReads V ov ps →
+    ⦃fun _ => True⦄ optSqueeze (c := Builder V (KimchiConstraint F)) p ov
+    ⦃fun r _ => (∀ ps : Poseidon.State F, SqueezedReads V ov ps →
         r.1.val V = (Poseidon.squeeze p ps).1 ∧ SqueezedReads V r.2 (Poseidon.squeeze p ps).2) ∧
       (∀ (ib : Bool) (ps₀ : Poseidon.State F) (pend : List (Bool × F)),
         AbsorbingReads p V ov ib ps₀ pend →
@@ -1060,7 +1053,7 @@ theorem optSqueeze_spec (p : Poseidon.Params F)
         r.1.val V
           = (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).1 ∧
         SqueezedReads V r.2
-          (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2)⌝⦄ := by
+          (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2)⦄ := by
   rw [builder_spec_iff]
   intro nv hsat
   exact ⟨fun ps h => (builder_spec_iff _ _).mp (optSqueeze_spec_squeezed p hsize ov ps h) nv hsat,
@@ -1082,31 +1075,31 @@ builds from an absorbing plain sponge reads as absorbing from the same value spo
 nothing pending, its empty-input permute on at an empty block. -/
 theorem ofSponge_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F) :
-    ⦃⌜True⌝⦄ ofSponge (c := Builder V (KimchiConstraint F)) p sv
-    ⦃⇓ ov _ => ⌜∀ s : Poseidon.State F, SpongeVar.ReadsAt V sv s →
+    ⦃fun _ => True⦄ ofSponge (c := Builder V (KimchiConstraint F)) p sv
+    ⦃fun ov _ => ∀ s : Poseidon.State F, SpongeVar.ReadsAt V sv s →
       (∀ n, s.mode ≠ .squeezed n) → ∃ ib nf, AbsorbingReads p V ov ib s [] nf ∧
-        (ib = false → (nf = true ↔ s.mode = .absorbed 0))⌝⦄ := by
+        (ib = false → (nf = true ↔ s.mode = .absorbed 0))⦄ := by
   obtain ⟨st, mode⟩ := sv
   cases mode with
   | squeezed n =>
     simp only [ofSponge]
-    mvcgen
-    intro s hs hsq
+    vcgen
+    rename_i s hs hsq
     exact absurd hs.2.symm (hsq n)
   | absorbed m =>
     match m with
     | ⟨0, _⟩ =>
       simp only [ofSponge]
-      mvcgen
-      intro s hs _
+      vcgen
+      rename_i s hs _
       obtain ⟨hst, hm⟩ := hs
       refine ⟨false, true, ⟨false_, [], rfl, by simp [false_, bit], ?_, .nil, rfl⟩,
         fun _ => iff_of_true rfl hm.symm⟩
       exact Or.inl (by simp [Rel, ← hm, hst])
     | ⟨1, _⟩ =>
       simp only [ofSponge]
-      mvcgen
-      intro s hs _
+      vcgen
+      rename_i s hs _
       obtain ⟨hst, hm⟩ := hs
       refine ⟨true, true, ⟨true_, [], rfl, by simp [true_, bit], ?_, .nil, rfl⟩,
         fun h => absurd h (by simp)⟩
@@ -1114,9 +1107,8 @@ theorem ofSponge_spec (p : Poseidon.Params F)
     | ⟨2, _⟩ =>
       simp only [ofSponge]
       have hp := Poseidon.poseidon_spec (V := V) p hsize st
-      mvcgen [hp]
-      rename_i st' _ hst'
-      intro s hs _
+      vcgen [hp]
+      rename_i hst' s hs _
       obtain ⟨hst, hm⟩ := hs
       refine ⟨false, false, ⟨false_, [], rfl, by simp [false_, bit], ?_, .nil, rfl⟩,
         fun _ => ⟨fun h => absurd h (by simp), fun h => absurd (hm.trans h) (by simp)⟩⟩

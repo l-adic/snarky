@@ -13,7 +13,7 @@ one-wrap regime at both Pasta curves.
 
 namespace Snarky.Kimchi
 
-open Snarky Std.Do WeierstrassCurve.Affine
+open Snarky WeierstrassCurve.Affine
 
 variable {F c : Type}
 
@@ -33,18 +33,18 @@ instance instIfThenElseAffinePoint [Field F] [DecidableEq F] [BasicSystem F c]
     let x ← selectField b t.x e.x
     pure ⟨x, y⟩
 
+open Std.WP in
 /-- Under any valuation satisfying the emitted constraints, the selected point reads as the
 selected reading. -/
 theorem select_affinePoint_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F) (t e : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄ select (c := Builder V c) b t e
-    ⦃⇓ r _ => ⌜∀ bb : Bool, (↑b : CVar F).val V = bit bb →
+    ⦃fun _ => True⦄ select (c := Builder V c) b t e
+    ⦃fun r _ => ∀ bb : Bool, (↑b : CVar F).val V = bit bb →
       ∀ {W : WeierstrassCurve.Affine F} (T E : W.Point), OnCurveAt W V t T → OnCurveAt W V e E →
-        OnCurveAt W V r (if bb then T else E)⌝⦄ := by
+        OnCurveAt W V r (if bb then T else E)⦄ := by
   simp only [select]
-  mvcgen
-  rename_i _ y _ hy x _ hx
-  intro bb hb W T E hT hE
+  vcgen
+  rename_i hy _ hx bb hb W T E hT hE
   have hx' := hx bb hb
   have hy' := hy bb hb
   cases bb
@@ -57,6 +57,7 @@ theorem select_affinePoint_spec {V : Valuation F} [Field F] [DecidableEq F] [Bas
     exact ⟨by rw [hx', hy']; exact hns,
       Kimchi.Gate.AddComplete.some_congr W hns _ hx'.symm hy'.symm⟩
 
+open Std.WP in
 /-- `addFast` at `checkFinite`: the infinity flag is pinned, so under any valuation
 satisfying the emitted row the result reads as the group sum — given the group has no
 2-torsion (`hnt`), which the row's doubling case asks of the first summand. -/
@@ -64,9 +65,9 @@ theorem addFast_checkFinite_spec {V : Valuation F} [Field F] [DecidableEq F]
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (htwo : (2 : F) ≠ 0) (hnt : ∀ P : W.Point, P ≠ 0 → P + P ≠ 0)
     (p1 p2 : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄ addFast (c := Builder V (KimchiConstraint F)) .checkFinite p1 p2
-    ⦃⇓ r _ => ⌜∀ P Q : W.Point, OnCurveAt W V p1 P → OnCurveAt W V p2 Q →
-      OnCurveAt W V r.p (P + Q)⌝⦄ := by
+    ⦃fun _ => True⦄ addFast (c := Builder V (KimchiConstraint F)) .checkFinite p1 p2
+    ⦃fun r _ => ∀ P Q : W.Point, OnCurveAt W V p1 P → OnCurveAt W V p2 Q →
+      OnCurveAt W V r.p (P + Q)⦄ := by
   refine builder_spec_imp _ _ _ (addFast_spec .checkFinite W ha htwo p1 p2)
     fun r ⟨hflag, hsum⟩ P Q hP hQ => ?_
   rcases hsum P Q hP hQ (hnt P (OnCurveAt.ne_zero hP)) with ⟨h1, -⟩ | ⟨-, hs⟩

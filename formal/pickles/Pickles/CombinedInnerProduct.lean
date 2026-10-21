@@ -4,8 +4,6 @@ import Kimchi.Protocol.Linearization
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Protocol
 
-set_option mvcgen.warning false
-
 /-!
 # The combined inner product in circuit
 
@@ -31,7 +29,7 @@ bit is clear leaves the batch, so the powers of `ξ` count the kept entries.
 
 namespace Pickles
 
-open Std.Do Snarky Kimchi.Protocol.Linearization
+open Std.WP Snarky Kimchi.Protocol.Linearization
 open scoped Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
@@ -82,14 +80,14 @@ variable [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
 /-- A Horner step reads as `fx + ξ·acc` where the entry is kept and as `acc` otherwise. -/
 private theorem hornerStep_spec (ξ acc : FVar F) (e : BoolVar F × FVar F) (x : Bool × F)
     (he : CircuitType.Reads V e x) :
-    ⦃⌜True⌝⦄ hornerStep (c := Builder V c) ξ acc e
-    ⦃⇓ a _ => ⌜a.val V = if x.1 then x.2 + ξ.val V * acc.val V else acc.val V⌝⦄ := by
+    ⦃fun _ => True⦄ hornerStep (c := Builder V c) ξ acc e
+    ⦃fun a _ => a.val V = if x.1 then x.2 + ξ.val V * acc.val V else acc.val V⦄ := by
   obtain ⟨hb, hx⟩ := CircuitType.reads_prod.mp he
   rw [CircuitType.reads_boolVar] at hb
   rw [CircuitType.reads_fvar] at hx
   simp only [hornerStep]
-  mvcgen
-  intro hsel
+  vcgen
+  rename_i hsel
   rw [hsel x.1 hb]
   cases x.1 <;> simp [*]
 
@@ -97,11 +95,11 @@ private theorem hornerStep_spec (ξ acc : FVar F) (e : BoolVar F × FVar F) (x :
 private theorem hornerGo_spec (ξ : FVar F) :
     ∀ (acc : FVar F) (l : List (BoolVar F × FVar F)) (xs : List (Bool × F)),
       List.Forall₂ (CircuitType.Reads V) l xs →
-      ⦃⌜True⌝⦄ hornerGo (c := Builder V c) ξ acc l
-      ⦃⇓ a _ => ⌜a.val V = alphaCombo (ξ.val V) (keptEvals xs.reverse ++ [acc.val V])⌝⦄
+      ⦃fun _ => True⦄ hornerGo (c := Builder V c) ξ acc l
+      ⦃fun a _ => a.val V = alphaCombo (ξ.val V) (keptEvals xs.reverse ++ [acc.val V])⦄
   | acc, [], [], _ => by
     simp only [hornerGo]
-    mvcgen
+    vcgen
     simp [alphaCombo, keptEvals]
   | _, [], _ :: _, h => nomatch h
   | _, _ :: _, [], h => nomatch h
@@ -110,8 +108,8 @@ private theorem hornerGo_spec (ξ : FVar F) :
     simp only [hornerGo]
     have hstep := hornerStep_spec (c := c) (V := V) ξ acc e x hx
     have ih := fun acc' => hornerGo_spec ξ acc' rest xs hrest
-    mvcgen [hstep, ih]
-    intro hres
+    vcgen [hstep, ih]
+    rename_i hres
     rw [hres]
     simp only [keptEvals, List.reverse_cons, List.filter_append, List.filter_cons,
       List.filter_nil, List.map_append, List.append_assoc, *]
@@ -121,13 +119,13 @@ private theorem hornerGo_spec (ξ : FVar F) :
 private theorem hornerCombine_spec (ξ : FVar F) (evals : List (BoolVar F × FVar F))
     (xs : List (Bool × F)) (hx : List.Forall₂ (CircuitType.Reads V) evals xs)
     (hlast : ∀ x ∈ xs.getLast?, x.1 = true) :
-    ⦃⌜True⌝⦄ hornerCombine (c := Builder V c) ξ evals
-    ⦃⇓ a _ => ⌜a.val V = alphaCombo (ξ.val V) (keptEvals xs)⌝⦄ := by
+    ⦃fun _ => True⦄ hornerCombine (c := Builder V c) ξ evals
+    ⦃fun a _ => a.val V = alphaCombo (ξ.val V) (keptEvals xs)⦄ := by
   have hrev := List.forall₂_reverse_iff.mpr hx
   rw [← List.reverse_reverse xs]
   simp only [hornerCombine]
   match hr : evals.reverse, hxr : xs.reverse, hrev with
-  | [], [], _ => mvcgen
+  | [], [], _ => vcgen; rfl
   | last :: revFront, xl :: xrev, h =>
     obtain ⟨hl, hfront⟩ := List.forall₂_cons.mp h
     have hxl : xl.1 = true := by
@@ -136,8 +134,8 @@ private theorem hornerCombine_spec (ξ : FVar F) (evals : List (BoolVar F × FVa
       simp
     have hval : last.2.val V = xl.2 := CircuitType.reads_fvar.mp (CircuitType.reads_prod.mp hl).2
     have hgo := hornerGo_spec (c := c) (V := V) ξ last.2 revFront xrev hfront
-    mvcgen [hgo]
-    intro hgoal
+    vcgen [hgo]
+    rename_i hgoal
     rw [hgoal]
     congr 1
     simp [keptEvals, List.filter_append, hxl, hval]
@@ -152,13 +150,13 @@ private theorem combinedInnerProduct_spec (ξ r : FVar F)
     (hz : List.Forall₂ (CircuitType.Reads V) evalsZeta xz)
     (hw : List.Forall₂ (CircuitType.Reads V) evalsZetaw xw)
     (hlz : ∀ x ∈ xz.getLast?, x.1 = true) (hlw : ∀ x ∈ xw.getLast?, x.1 = true) :
-    ⦃⌜True⌝⦄ combinedInnerProduct (c := Builder V c) ξ r evalsZeta evalsZetaw
-    ⦃⇓ a _ => ⌜a.val V = alphaCombo (ξ.val V) (keptEvals xz)
-      + r.val V * alphaCombo (ξ.val V) (keptEvals xw)⌝⦄ := by
+    ⦃fun _ => True⦄ combinedInnerProduct (c := Builder V c) ξ r evalsZeta evalsZetaw
+    ⦃fun a _ => a.val V = alphaCombo (ξ.val V) (keptEvals xz)
+      + r.val V * alphaCombo (ξ.val V) (keptEvals xw)⦄ := by
   simp only [combinedInnerProduct]
   have hcz := hornerCombine_spec (c := c) (V := V) ξ evalsZeta xz hz hlz
   have hcw := hornerCombine_spec (c := c) (V := V) ξ evalsZetaw xw hw hlw
-  mvcgen [hcz, hcw]
+  vcgen [hcz, hcw]
   simp only [CVar.val_add_, *]
 
 omit [DecidableEq F] [BasicSystem F c] in
@@ -188,9 +186,9 @@ theorem combinedInnerProduct_spec_cip (ξ r : FVar F)
     (hlz : ∀ x ∈ xz.getLast?, x.1 = true) (hlw : ∀ x ∈ xw.getLast?, x.1 = true)
     (rows : List (Kimchi.Verifier.PointEvaluations F))
     (hrz : keptEvals xz = rows.map (·.zeta)) (hrw : keptEvals xw = rows.map (·.zetaOmega)) :
-    ⦃⌜True⌝⦄ combinedInnerProduct (c := Builder V c) ξ r evalsZeta evalsZetaw
-    ⦃⇓ a _ => ⌜a.val V = Bulletproof.combinedInnerProduct (ξ.val V) (r.val V)
-      (fun (i : Fin rows.length) (j : Fin evalPts) => ((rows.get i).toVector)[j])⌝⦄ := by
+    ⦃fun _ => True⦄ combinedInnerProduct (c := Builder V c) ξ r evalsZeta evalsZetaw
+    ⦃fun a _ => a.val V = Bulletproof.combinedInnerProduct (ξ.val V) (r.val V)
+      (fun (i : Fin rows.length) (j : Fin evalPts) => ((rows.get i).toVector)[j])⦄ := by
   have h := combinedInnerProduct_spec (c := c) (V := V) ξ r evalsZeta evalsZetaw xz xw hz hw
     hlz hlw
   rw [hrz, hrw, alphaCombo_rows_eq_combinedInnerProduct] at h

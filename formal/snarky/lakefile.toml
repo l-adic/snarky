@@ -9,6 +9,10 @@ defaultTargets = ["Snarky"]
 # scripts/check-style.sh is its only style gate.
 lintDriver = "batteries/runLinter"
 lintDriverArgs = ["Snarky"]
+# `vcgen` is opt-in on this toolchain; acknowledging it once here silences the warning each
+# call reports. `weak.` so builds survive the option's removal.
+[leanOptions]
+weak.experimental.vcgen = true
 
 # The kimchi formalization: the `Snarky.Kimchi.*` bridge modules interpret the DSL's
 # reified circuits against the verified `Kimchi.Gate.Generic` checker. The core

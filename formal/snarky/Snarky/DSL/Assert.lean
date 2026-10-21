@@ -24,18 +24,18 @@ def assertEqual [DecidableEq F] [BasicSystem F c] (x y : FVar F) : CircuitM F c 
     if f = g then pure PUnit.unit else addConstraint (BasicSystem.equal x y)
   | _, _ => addConstraint (BasicSystem.equal x y)
 
-open Std.Do in
+open Std.WP in
 /-- `assertEqual x y` forces `x` and `y` to read equal. -/
 @[spec] theorem assertEqual_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertEqual (c := Builder V c) x y
-    ⦃⇓ _ _ => ⌜x.val V = y.val V⌝⦄ := by
+    ⦃fun _ _ => x.val V = y.val V⦄ := by
   simp only [assertEqual]
-  mvcgen
-  all_goals
-    intro h
-    exact (LawfulBasicSystem.holds_equal V _ _).mp h
+  vcgen
+  all_goals first
+    | exact (LawfulBasicSystem.holds_equal V _ _).mp ‹_›
+    | (subst_vars; rfl)
 
 open Std.Do in
 /-- `assertEqual`'s state-relative completeness: where the operands are in scope and read equal,
@@ -71,18 +71,19 @@ def assertNonZero [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F
     let _ ← inv v
     pure PUnit.unit
 
-open Std.Do in
+open Std.WP in
 /-- `assertNonZero v` forces `v` to read nonzero. -/
 @[spec] theorem assertNonZero_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertNonZero (c := Builder V c) v
-    ⦃⇓ _ _ => ⌜v.val V ≠ 0⌝⦄ := by
+    ⦃fun _ _ => v.val V ≠ 0⦄ := by
   simp only [assertNonZero]
-  mvcgen
+  vcgen
   all_goals first
-    | (intro h; exact absurd ((LawfulBasicSystem.holds_equal V _ _).mp h) (by simp))
+    | (rename_i h; exact absurd ((LawfulBasicSystem.holds_equal V _ _).mp h) (by simp))
     | (rename_i h; exact left_ne_zero_of_mul_eq_one h)
+    | (rename_i h; subst_vars; exact h)
 
 attribute [irreducible] assertNonZero
 
@@ -111,16 +112,16 @@ def assertNotEqual [Field F] [DecidableEq F] [BasicSystem F c]
     CircuitM F c PUnit :=
   assertNonZero (CVar.sub_ x y)
 
-open Std.Do in
+open Std.WP in
 /-- `assertNotEqual x y` forces `x` and `y` to read unequal. -/
 @[spec] theorem assertNotEqual_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertNotEqual (c := Builder V c) x y
-    ⦃⇓ _ _ => ⌜x.val V ≠ y.val V⌝⦄ := by
+    ⦃fun _ _ => x.val V ≠ y.val V⦄ := by
   simp only [assertNotEqual]
-  mvcgen
-  intro h
+  vcgen
+  rename_i h
   simpa [sub_eq_zero] using h
 
 attribute [irreducible] assertNotEqual
@@ -148,16 +149,16 @@ theorem Prover.assertNotEqual_spec [Field F] [DecidableEq F] [BasicSystem F c]
 def assertSquare [BasicSystem F c] (x y : FVar F) : CircuitM F c PUnit :=
   addConstraint (BasicSystem.square x y)
 
-open Std.Do in
+open Std.WP in
 /-- `assertSquare x y` forces `y` to read as the square of `x`. -/
 @[spec] theorem assertSquare_spec {V : Valuation F} [Field F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertSquare (c := Builder V c) x y
-    ⦃⇓ _ _ => ⌜x.val V * x.val V = y.val V⌝⦄ := by
+    ⦃fun _ _ => x.val V * x.val V = y.val V⦄ := by
   simp only [assertSquare]
-  mvcgen
-  intro h
+  vcgen
+  rename_i h
   exact (LawfulBasicSystem.holds_square V _ _).mp h
 
 attribute [irreducible] assertSquare
@@ -186,15 +187,17 @@ theorem Prover.assertSquare_spec [Field F] [BasicSystem F c]
 def assert [One F] [DecidableEq F] [BasicSystem F c] (v : BoolVar F) : CircuitM F c PUnit :=
   assertEqual ↑v (.const 1)
 
-open Std.Do in
+open Std.WP in
 /-- `assert v` forces `v` to read `1`. -/
 @[spec] theorem assert_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (v : BoolVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assert (c := Builder V c) v
-    ⦃⇓ _ _ => ⌜(↑v : CVar F).val V = 1⌝⦄ := by
+    ⦃fun _ _ => (↑v : CVar F).val V = 1⦄ := by
   simp only [assert]
-  mvcgen
+  vcgen
+  rename_i h
+  exact h
 
 attribute [irreducible] assert
 
@@ -223,17 +226,17 @@ def assertAny [Field F] [DecidableEq F] [BasicSystem F c]
     CircuitM F c PUnit :=
   assertNonZero (sum (bs.map BoolVar.toCVar))
 
-open Std.Do in
+open Std.WP in
 /-- `assertAny bs`, on bit operands, forces some operand to read `1`. -/
 @[spec] theorem assertAny_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertAny (c := Builder V c) bs
-    ⦃⇓ _ _ => ⌜(∀ b ∈ bs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
-        ∃ b ∈ bs, (↑b : CVar F).val V = 1⌝⦄ := by
+    ⦃fun _ _ => (∀ b ∈ bs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
+        ∃ b ∈ bs, (↑b : CVar F).val V = 1⦄ := by
   simp only [assertAny]
-  mvcgen
-  intro h hbits
+  vcgen
+  rename_i h hbits
   have hbits' : ∀ x ∈ (bs.map BoolVar.toCVar).map (·.val V), x = 0 ∨ x = 1 := by
     intro x hx
     simp only [List.map_map, List.mem_map, Function.comp] at hx
@@ -282,19 +285,19 @@ def assertExactlyOne [Field F] [DecidableEq F] [BasicSystem F c] (bs : List (Boo
     CircuitM F c PUnit :=
   assertEqual (sum (bs.map BoolVar.toCVar)) (.const 1)
 
-open Std.Do in
+open Std.WP in
 /-- `assertExactlyOne bs`, on bit operands below the characteristic, forces exactly one
 operand to read `1`. -/
 @[spec] theorem assertExactlyOne_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertExactlyOne (c := Builder V c) bs
-    ⦃⇓ _ _ => ⌜(∀ b ∈ bs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
-        (bs.map fun (b : BoolVar F) => (↑b : CVar F).val V).count 1 = 1⌝⦄ := by
+    ⦃fun _ _ => (∀ b ∈ bs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
+        (bs.map fun (b : BoolVar F) => (↑b : CVar F).val V).count 1 = 1⦄ := by
   simp only [assertExactlyOne]
-  mvcgen
-  intro h hbits
+  vcgen
+  rename_i h hbits
   have hbits' : ∀ x ∈ bs.map (fun (b : BoolVar F) => (↑b : CVar F).val V), x = 0 ∨ x = 1 := by
     intro x hx
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
@@ -342,19 +345,19 @@ def assertAll [Field F] [DecidableEq F] [BasicSystem F c] (bs : List (BoolVar F)
     CircuitM F c PUnit :=
   assertEqual (sum (bs.map BoolVar.toCVar)) (.const (bs.length : F))
 
-open Std.Do in
+open Std.WP in
 /-- `assertAll bs`, on bit operands below the characteristic, forces every operand to
 read `1`. -/
 @[spec] theorem assertAll_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ bs.length → k ≤ bs.length → (j : F) = k → j = k) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertAll (c := Builder V c) bs
-    ⦃⇓ _ _ => ⌜(∀ b ∈ bs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
-        ∀ b ∈ bs, (↑b : CVar F).val V = 1⌝⦄ := by
+    ⦃fun _ _ => (∀ b ∈ bs, (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1) →
+        ∀ b ∈ bs, (↑b : CVar F).val V = 1⦄ := by
   simp only [assertAll]
-  mvcgen
-  intro h hbits
+  vcgen
+  rename_i h hbits b hb
   have hbits' : ∀ x ∈ bs.map (fun (b : BoolVar F) => (↑b : CVar F).val V), x = 0 ∨ x = 1 := by
     intro x hx
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
@@ -371,7 +374,6 @@ read `1`. -/
     (show (bs.map fun (b : BoolVar F) => (↑b : CVar F).val V).count 1
         = (bs.map fun (b : BoolVar F) => (↑b : CVar F).val V).length by
       rw [hcount]; simp)
-  intro b hb
   exact (hall _ (List.mem_map.mpr ⟨b, hb, rfl⟩)).symm
 
 attribute [irreducible] assertAll
@@ -415,16 +417,16 @@ def assertEq [DecidableEq F] [BasicSystem F c] {val var : Type}
     (CircuitType.varToFields (val := val) e)
   pure PUnit.unit
 
-open Std.Do in
+open Std.WP in
 /-- `assertEq`'s rows force the two bundles' fields equal, field by field, whether or not
 either reads as a value. -/
 theorem assertEq_fields_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var]
     (t e : var) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertEq (F := F) (c := Builder V c) (val := val) t e
-    ⦃⇓ _ _ => ⌜mapVec (·.val V) (CircuitType.varToFields (val := val) t) =
-      mapVec (·.val V) (CircuitType.varToFields (val := val) e)⌝⦄ := by
+    ⦃fun _ _ => mapVec (·.val V) (CircuitType.varToFields (val := val) t) =
+      mapVec (·.val V) (CircuitType.varToFields (val := val) e)⦄ := by
   have hzip := (builder_spec_iff _ _).mp (zipWithVecM_spec (V := V)
     (assertEqual (c := Builder V c)) (CircuitType.varToFields (val := val) t)
     (CircuitType.varToFields (val := val) e)
@@ -440,16 +442,16 @@ theorem assertEq_fields_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicS
   ext i hi
   simpa using hzip nv hsat ⟨i, hi⟩
 
-open Std.Do in
+open Std.WP in
 /-- `assertEq`'s rows force the two readings equal: the fields are equal
 (`assertEq_fields_spec`), and an encoding determines its value. -/
 @[spec] theorem assertEq_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] {val var : Type} [CircuitType F val var]
     (t e : var) {tv ev : val} (ht : CircuitType.Reads V t tv)
     (he : CircuitType.Reads V e ev) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertEq (F := F) (c := Builder V c) (val := val) t e
-    ⦃⇓ _ _ => ⌜tv = ev⌝⦄ := by
+    ⦃fun _ _ => tv = ev⦄ := by
   refine (builder_spec_iff _ _).mpr fun nv hsat => ?_
   have hfields : CircuitType.valueToFields (F := F) tv = CircuitType.valueToFields (F := F) ev := by
     rw [← ht, ← he]

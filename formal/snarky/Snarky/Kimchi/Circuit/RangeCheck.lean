@@ -20,7 +20,7 @@ it needs.
 
 namespace Snarky.Kimchi
 
-open Snarky Std.Do
+open Snarky
 
 variable {F c : Type}
 
@@ -34,20 +34,22 @@ def rangeCheck128 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Constra
   let _ ← EndoScalar.toField (c := c) 8 v.val endo
   pure ⟨⟩
 
+open Std.WP in
 /-- **Soundness** (`rangeCheck128`): any satisfying valuation reads the operand as a
 natural below `2^128` — the value-level `SizedF` contract. -/
 theorem rangeCheck128_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     rangeCheck128 (c := Builder V (KimchiConstraint F)) endo v
-    ⦃⇓ _ _ => ⌜∃ n : ℕ, n < 2 ^ 128 ∧ v.val.val V = (n : F)⌝⦄ := by
+    ⦃fun _ _ => ∃ n : ℕ, n < 2 ^ 128 ∧ v.val.val V = (n : F)⦄ := by
   have htf := EndoScalar.toField_spec (V := V) h2 h3 v.val endo
   simp only [rangeCheck128]
-  mvcgen [htf]
+  vcgen [htf]
   rename_i _ _ hr
   obtain ⟨n, hlt, hval, -⟩ := hr
   exact ⟨n, hlt, hval⟩
 
+open Std.Do in
 /-- `rangeCheck128`'s state-relative completeness: on an operand whose reading fits the tagged
 width, the honest run accepts. -/
 theorem Prover.rangeCheck128_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
@@ -119,16 +121,18 @@ def lowest128Bits' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Constr
     CircuitM F c (SizedF 128 (FVar F)) :=
   split128Below constrainLowBits endo (fieldModulus F) x
 
-/-- The limb comparison with a trivial postcondition, for callers' `mvcgen` to step over. -/
+open Std.WP in
+/-- The limb comparison with a trivial postcondition, for callers' `vcgen` to step over. -/
 private theorem assertSplitBelow_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo lo hi : FVar F) (bound : ℕ) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertSplitBelow (c := Builder V (KimchiConstraint F)) endo lo hi bound
-    ⦃⇓ _ _ => ⌜True⌝⦄ := by
+    ⦃fun _ _ => True⦄ := by
   have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 y endo
   simp only [assertSplitBelow]
-  mvcgen [htf]
+  vcgen [htf]
 
+open Std.WP in
 /-- **Soundness** (`assertSplitBelow`, the comparison): where naturals below `2^130` cast
 injectively and the bound fits in 256 bits, any satisfying valuation reading the limbs as
 128-bit naturals reads them below the bound. -/
@@ -136,15 +140,14 @@ private theorem assertSplitBelow_below {V : Valuation F} [Field F] [DecidableEq 
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hinj : ∀ a b : ℕ, a < 2 ^ 130 → b < 2 ^ 130 → (a : F) = b → a = b)
     (endo lo hi : FVar F) (bound : ℕ) (hbound : bound < 2 ^ 256) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     assertSplitBelow (c := Builder V (KimchiConstraint F)) endo lo hi bound
-    ⦃⇓ _ _ => ⌜∀ l h : ℕ, l < 2 ^ 128 → h < 2 ^ 128 → lo.val V = l → hi.val V = h →
-      l + 2 ^ 128 * h < bound⌝⦄ := by
+    ⦃fun _ _ => ∀ l h : ℕ, l < 2 ^ 128 → h < 2 ^ 128 → lo.val V = l → hi.val V = h →
+      l + 2 ^ 128 * h < bound⦄ := by
   have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 y endo
   simp only [assertSplitBelow]
-  mvcgen [htf]
-  rename_i top _ htop _ _ hsel _ _ hd
-  intro l h hl hh hlo hhi
+  vcgen [htf]
+  rename_i htop _ hsel _ _ hd l h hl hh hlo hhi
   have hdm := Nat.mod_add_div bound (2 ^ 128)
   have hbh : bound / 2 ^ 128 < 2 ^ 128 := by
     rw [Nat.div_lt_iff_lt_mul (by positivity)]
@@ -154,7 +157,7 @@ private theorem assertSplitBelow_below {V : Valuation F} [Field F] [DecidableEq 
   obtain ⟨n, hn, hv, -⟩ := hd
   by_cases hheq : h = bound / 2 ^ 128
   · -- equal high limbs: the selected difference pins the low limb below the bound's
-    have htop1 : (↑top : CVar F).val V = bit true := by
+    have htop1 : (↑hiIsTop : CVar F).val V = bit true := by
       rw [htop]
       simp [CVar.val, hhi, hheq, bit]
     have hd := hsel true htop1
@@ -167,7 +170,7 @@ private theorem assertSplitBelow_below {V : Valuation F} [Field F] [DecidableEq 
   · -- a smaller high limb leaves room for any low limb
     have hne : (h : F) ≠ ((bound / 2 ^ 128 : ℕ) : F) :=
       fun hc => hheq (hinj _ _ (by omega) (by omega) hc)
-    have htop0 : (↑top : CVar F).val V = bit false := by
+    have htop0 : (↑hiIsTop : CVar F).val V = bit false := by
       rw [htop]
       simpa [CVar.val, hhi, bit] using hne
     have hd := hsel false htop0
@@ -203,6 +206,7 @@ theorem fieldModulus_eq_card [Field F] [ToNat F] [LawfulToNat F] :
   rw [Nat.cast_zero] at hz
   omega
 
+open Std.Do in
 /-- `assertSplitBelow`'s state-relative completeness: on limbs whose canonical recombination
 lies below the bound, where the bound is below `2^256` and at most the field's cardinality, the
 honest run accepts. -/
@@ -283,35 +287,37 @@ private theorem Prover.assertSplitBelow_spec [Field F] [DecidableEq F] [ToNat F]
 
 attribute [irreducible] assertSplitBelow
 
+open Std.WP in
 /-- **Soundness** (`split128Below`): the operand reads as `lo + 2^128·hi` for the returned low
 half and some high half below `2^128`; under `constrainLowBits` the low half is below `2^128`
 too. -/
 theorem split128Below_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (constrainLowBits : Bool) (endo : FVar F)
     (bound : ℕ) (x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     split128Below (c := Builder V (KimchiConstraint F)) constrainLowBits endo bound x
-    ⦃⇓ r _ => ⌜∃ hiv : F,
+    ⦃fun r _ => ∃ hiv : F,
       x.val V = r.val.val V + 2 ^ 128 * hiv ∧
       (∃ n : ℕ, n < 2 ^ 128 ∧ hiv = (n : F)) ∧
       (constrainLowBits = true →
-        ∃ n : ℕ, n < 2 ^ 128 ∧ r.val.val V = (n : F))⌝⦄ := by
+        ∃ n : ℕ, n < 2 ^ 128 ∧ r.val.val V = (n : F))⦄ := by
   have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 y endo
   have hcmp := fun (lo hi : FVar F) => assertSplitBelow_spec (V := V) h2 h3 endo lo hi bound
   simp only [split128Below]
-  mvcgen [htf, hcmp]
+  vcgen [htf, hcmp]
   · -- the low half is checked too
-    rename_i lohi _ _ _ _ _ hhi _ _ hlo _ _ heq _ _
+    rename_i hhi _ _ _ hlo _ _ heq _ _
     obtain ⟨nh, hnhlt, hnh, -⟩ := hhi
     obtain ⟨nl, hnllt, hnl, -⟩ := hlo
     exact ⟨lohi.val.2.val V, by rw [heq, CVar.val_add_, CVar.val_scale_],
       ⟨nh, hnhlt, hnh⟩, fun _ => ⟨nl, hnllt, hnl⟩⟩
   · -- only the high half is checked
-    rename_i lohi _ _ _ hfalse _ hhi _ _ heq _ _
+    rename_i hhi hfalse _ _ heq _ _
     obtain ⟨nh, hnhlt, hnh, -⟩ := hhi
     exact ⟨lohi.val.2.val V, by rw [heq, CVar.val_add_, CVar.val_scale_],
       ⟨nh, hnhlt, hnh⟩, fun hc => absurd hc hfalse⟩
 
+open Std.WP in
 /-- **Soundness, below the bound** (`split128Below`): where naturals below `2^130` cast
 injectively and the bound is below `2^256`, a low half reading as a 128-bit natural `l` gives
 `x = l + 2^128·h` with `h < 2^128` and `l + 2^128·h < bound`. -/
@@ -320,52 +326,53 @@ theorem split128Below_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat F
     (hinj : ∀ a b : ℕ, a < 2 ^ 130 → b < 2 ^ 130 → (a : F) = b → a = b)
     (constrainLowBits : Bool) (endo : FVar F) (bound : ℕ) (hbound : bound < 2 ^ 256)
     (x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     split128Below (c := Builder V (KimchiConstraint F)) constrainLowBits endo bound x
-    ⦃⇓ r _ => ⌜∀ l : ℕ, l < 2 ^ 128 → r.val.val V = l →
+    ⦃fun (r : SizedF 128 (FVar F)) _ => ∀ l : ℕ, l < 2 ^ 128 → r.val.val V = l →
       ∃ h : ℕ, h < 2 ^ 128 ∧ x.val V = (l : F) + 2 ^ 128 * (h : F) ∧
-        l + 2 ^ 128 * h < bound⌝⦄ := by
+        l + 2 ^ 128 * h < bound⦄ := by
   have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 y endo
   have hcmp := fun (lo hi : FVar F) =>
     assertSplitBelow_below (V := V) h2 h3 hinj endo lo hi bound hbound
   simp only [split128Below]
-  mvcgen [htf, hcmp]
-  · rename_i lohi _ _ _ _ _ hhi _ _ _ _ _ heq _ _ hb
-    intro l hl hr
+  vcgen [htf, hcmp]
+  · rename_i hhi _ _ _ _ _ _ heq _ _ hb l hl hr
     obtain ⟨nh, hnhlt, hnh, -⟩ := hhi
     exact ⟨nh, hnhlt, by rw [heq, CVar.val_add_, CVar.val_scale_, ← hnh]; exact congrArg (· + _) hr,
       hb l nh hl hnhlt hr hnh⟩
-  · rename_i lohi _ _ _ _ _ hhi _ _ heq _ _ hb
-    intro l hl hr
+  · rename_i hhi _ _ _ heq _ _ hb l hl hr
     obtain ⟨nh, hnhlt, hnh, -⟩ := hhi
     exact ⟨nh, hnhlt, by rw [heq, CVar.val_add_, CVar.val_scale_, ← hnh]; exact congrArg (· + _) hr,
       hb l nh hl hnhlt hr hnh⟩
 
+open Std.WP in
 /-- **Soundness** (`lowest128Bits'`): `split128Below_spec` at the field's modulus. -/
 theorem lowest128Bits'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (constrainLowBits : Bool) (endo x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     lowest128Bits' (c := Builder V (KimchiConstraint F)) constrainLowBits endo x
-    ⦃⇓ r _ => ⌜∃ hiv : F,
+    ⦃fun r _ => ∃ hiv : F,
       x.val V = r.val.val V + 2 ^ 128 * hiv ∧
       (∃ n : ℕ, n < 2 ^ 128 ∧ hiv = (n : F)) ∧
       (constrainLowBits = true →
-        ∃ n : ℕ, n < 2 ^ 128 ∧ r.val.val V = (n : F))⌝⦄ :=
+        ∃ n : ℕ, n < 2 ^ 128 ∧ r.val.val V = (n : F))⦄ :=
   split128Below_spec h2 h3 constrainLowBits endo (fieldModulus F) x
 
+open Std.WP in
 /-- **Soundness, canonical** (`lowest128Bits'`): `split128Below_below` at the field's
 modulus, so a low half reading as a 128-bit natural is the canonical representative's. -/
 theorem lowest128Bits'_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hinj : ∀ a b : ℕ, a < 2 ^ 130 → b < 2 ^ 130 → (a : F) = b → a = b)
     (hmod : fieldModulus F < 2 ^ 256) (constrainLowBits : Bool) (endo x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     lowest128Bits' (c := Builder V (KimchiConstraint F)) constrainLowBits endo x
-    ⦃⇓ r _ => ⌜∀ l : ℕ, l < 2 ^ 128 → r.val.val V = l →
+    ⦃fun (r : SizedF 128 (FVar F)) _ => ∀ l : ℕ, l < 2 ^ 128 → r.val.val V = l →
       ∃ h : ℕ, h < 2 ^ 128 ∧ x.val V = (l : F) + 2 ^ 128 * (h : F) ∧
-        l + 2 ^ 128 * h < fieldModulus F⌝⦄ :=
+        l + 2 ^ 128 * h < fieldModulus F⦄ :=
   split128Below_below h2 h3 hinj constrainLowBits endo (fieldModulus F) hmod x
 
+open Std.Do in
 /-- `lowest128Bits'`'s state-relative completeness: the result reads the pure split's low half.
 The field is below `2^256`, and both halves of the operand's canonical representative survive
 the cast. -/

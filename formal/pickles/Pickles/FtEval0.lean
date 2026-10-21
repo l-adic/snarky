@@ -1,8 +1,6 @@
 import Pickles.Reflect.Soundness
 import Kimchi.Columns
 
-set_option mvcgen.warning false
-
 /-!
 # The circuit computes `ftEval0`
 
@@ -43,7 +41,7 @@ unsatisfiable), as `boundaryEval` does, so no `ζ ∉ {1, ω^{n − zkRows}}` hy
 
 namespace Pickles
 
-open Std.Do Snarky Pickles.Linearization Pickles.Reflect Kimchi.Protocol.Linearization
+open Std.WP Snarky Pickles.Linearization Pickles.Reflect Kimchi.Protocol.Linearization
 open scoped Kimchi
 
 /-- The variables the permutation half of `ftEval0` reads beyond the interpreter's
@@ -156,10 +154,10 @@ private theorem ftEval0Circuit_spec [ConstraintHolds F c] [LawfulBasicSystem F c
     (hzk : ext.zkPoly.val V = zkpmEval n zkRows ω ζ)
     (hz1 : ext.zetaToNMinus1.val V = ζ ^ n - 1)
     (hω : ext.omegaZk.val V = ω ^ (n - zkRows)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     ftEval0Circuit (c := Builder V c) endo mds toks feat ulb inp ext
-    ⦃⇓ a _ => ⌜a.val V = ftEval0 n zkRows ω ext.shifts endo mds α (inp.beta.val V)
-      (inp.gamma.val V) ζ (ext.pubEval.val V) (inp.evals.map (·.val V))⌝⦄ := by
+    ⦃fun a _ => a.val V = ftEval0 n zkRows ω ext.shifts endo mds α (inp.beta.val V)
+      (inp.gamma.val V) ζ (ext.pubEval.val V) (inp.evals.map (·.val V))⦄ := by
   have hlin := circuit_gateLinearization (c := c) (V := V) endo mds toks feat bound hcert
     hreads ulb inp α htab
   have h21 := htab 21 (by omega)
@@ -167,10 +165,10 @@ private theorem ftEval0Circuit_spec [ConstraintHolds F c] [LawfulBasicSystem F c
   have h23 := htab 23 (by omega)
   clear htab hcert hreads
   simp only [ftEval0Circuit]
-  -- the interpreter call is a black box to `mvcgen`: `hlin` is its only specification
+  -- the interpreter call is a black box to `vcgen`: `hlin` is its only specification
   generalize evaluate (inp.toEnv (c := Builder V c) endo mds lookupZero feat ulb) toks = E
     at hlin ⊢
-  mvcgen [hlin]
+  vcgen [hlin]
   simp only [CVar.val_add_, CVar.val_sub_, CVar.val, hζ, hzk, hz1, hω, h21, h22, h23] at *
   rw [ftEval0_eq]
   simp only [sigmaSideEval, shiftSideEval, boundaryEval, Fin.prod_univ_six,
@@ -197,12 +195,12 @@ theorem ftEval0Circuit_spec_fp {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp
     (hzk : ext.zkPoly.val V = zkpmEval n zkRows ω ζ)
     (hz1 : ext.zetaToNMinus1.val V = ζ ^ n - 1)
     (hω : ext.omegaZk.val V = ω ^ (n - zkRows)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     ftEval0Circuit (c := Builder V c) Pasta.pallasEndo symMds fpTokens (fun _ => false) ulb
       inp ext
-    ⦃⇓ a _ => ⌜a.val V = ftEval0 n zkRows ω ext.shifts Pasta.pallasEndo symMds α
+    ⦃fun a _ => a.val V = ftEval0 n zkRows ω ext.shifts Pasta.pallasEndo symMds α
       (inp.beta.val V) (inp.gamma.val V) ζ (ext.pubEval.val V)
-      (inp.evals.map (·.val V))⌝⦄ :=
+      (inp.evals.map (·.val V))⦄ :=
   ftEval0Circuit_spec Pasta.pallasEndo symMds fpTokens (fun _ => false) alphaBound
     (fun α β γ jc van e => evaluate_fpTokens α β γ jc van _ e) fpTokens_reads (by decide)
     ulb inp ext n zkRows ω ζ α htab hζ hzk hz1 hω
@@ -217,12 +215,12 @@ theorem ftEval0Circuit_spec_fq {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq
     (hzk : ext.zkPoly.val V = zkpmEval n zkRows ω ζ)
     (hz1 : ext.zetaToNMinus1.val V = ζ ^ n - 1)
     (hω : ext.omegaZk.val V = ω ^ (n - zkRows)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     ftEval0Circuit (c := Builder V c) Pasta.vestaEndo symMdsQ fqTokens (fun _ => false) ulb
       inp ext
-    ⦃⇓ a _ => ⌜a.val V = ftEval0 n zkRows ω ext.shifts Pasta.vestaEndo symMdsQ α
+    ⦃fun a _ => a.val V = ftEval0 n zkRows ω ext.shifts Pasta.vestaEndo symMdsQ α
       (inp.beta.val V) (inp.gamma.val V) ζ (ext.pubEval.val V)
-      (inp.evals.map (·.val V))⌝⦄ :=
+      (inp.evals.map (·.val V))⦄ :=
   ftEval0Circuit_spec Pasta.vestaEndo symMdsQ fqTokens (fun _ => false) alphaBound
     (fun α β γ jc van e => evaluate_fqTokens α β γ jc van _ e) fqTokens_reads (by decide)
     ulb inp ext n zkRows ω ζ α htab hζ hzk hz1 hω

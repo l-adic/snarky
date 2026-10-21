@@ -33,7 +33,7 @@ and completeness, that the honest prover run succeeds, is not proved here.
 
 namespace Pickles.Reflect
 
-open Std.Do Snarky Pickles.Linearization Kimchi.Protocol.Linearization
+open Std.WP Snarky Pickles.Linearization Kimchi.Protocol.Linearization
 
 /-- Any valuation satisfying the constraints the in-circuit interpreter emits reads its
 output as `gateLinearization` at the readings of the circuit's inputs, for any stream with
@@ -51,12 +51,12 @@ theorem circuit_gateLinearization {F c : Type} [Field F] [DecidableEq F]
     (hreads : ∀ i ∈ visitedAll toks feat, readsWithin toks bound i = true)
     (ulb : Bool → Int → CircuitM F (Builder V c) (FVar F)) (inp : Inputs F) (α : F)
     (htab : ∀ n ≤ bound, (inp.alphaPows n).val V = α ^ n) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     evaluate (inp.toEnv (c := Builder V c) endo mds lookupZero feat ulb) toks
-    ⦃⇓ a _ => ⌜a.val V = gateLinearization endo mds α (inp.evals.map (·.val V))⌝⦄ := by
+    ⦃fun a _ => a.val V = gateLinearization endo mds α (inp.evals.map (·.val V))⦄ := by
   -- the compatibility, at the constant-zero gadget and the table's own readings
   have h := inputs_circuitCompatible (c := c) (V := V) endo mds lookupZero feat
-    (fun _ _ => pure (.const 0)) (fun _ _ => 0) (fun _ _ => by mvcgen) inp
+    (fun _ _ => pure (.const 0)) (fun _ _ => 0) (fun _ _ => by vcgen; rfl) inp
   rw [lookupZero_map] at h
   have hs := evaluate_spec h feat (fun _ _ _ => rfl) (fun _ _ _ => rfl) toks
   -- the pure side: the table's readings are the powers of `α` where the stream looks
@@ -95,11 +95,11 @@ theorem circuit_gateLinearization_fp {c : Type} [BasicSystem Fp c] [ConstraintHo
     [LawfulBasicSystem Fp c] {V : Valuation Fp}
     (ulb : Bool → Int → CircuitM Fp (Builder V c) (FVar Fp)) (inp : Inputs Fp) (α : Fp)
     (htab : ∀ n ≤ alphaBound, (inp.alphaPows n).val V = α ^ n) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     evaluate (inp.toEnv (c := Builder V c) Pasta.pallasEndo symMds lookupZero
       (fun _ => false) ulb) fpTokens
-    ⦃⇓ a _ => ⌜a.val V = gateLinearization Pasta.pallasEndo symMds α
-      (inp.evals.map (·.val V))⌝⦄ :=
+    ⦃fun a _ => a.val V = gateLinearization Pasta.pallasEndo symMds α
+      (inp.evals.map (·.val V))⦄ :=
   circuit_gateLinearization Pasta.pallasEndo symMds fpTokens (fun _ => false) alphaBound
     (fun α β γ jc van e => evaluate_fpTokens α β γ jc van _ e) fpTokens_reads ulb inp α
     htab
@@ -109,11 +109,11 @@ theorem circuit_gateLinearization_fq {c : Type} [BasicSystem Fq c] [ConstraintHo
     [LawfulBasicSystem Fq c] {V : Valuation Fq}
     (ulb : Bool → Int → CircuitM Fq (Builder V c) (FVar Fq)) (inp : Inputs Fq) (α : Fq)
     (htab : ∀ n ≤ alphaBound, (inp.alphaPows n).val V = α ^ n) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     evaluate (inp.toEnv (c := Builder V c) Pasta.vestaEndo symMdsQ lookupZero
       (fun _ => false) ulb) fqTokens
-    ⦃⇓ a _ => ⌜a.val V = gateLinearization Pasta.vestaEndo symMdsQ α
-      (inp.evals.map (·.val V))⌝⦄ :=
+    ⦃fun a _ => a.val V = gateLinearization Pasta.vestaEndo symMdsQ α
+      (inp.evals.map (·.val V))⦄ :=
   circuit_gateLinearization Pasta.vestaEndo symMdsQ fqTokens (fun _ => false) alphaBound
     (fun α β γ jc van e => evaluate_fqTokens α β γ jc van _ e) fqTokens_reads ulb inp α
     htab

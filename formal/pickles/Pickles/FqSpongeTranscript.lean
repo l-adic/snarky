@@ -6,8 +6,6 @@ import Kimchi.Verifier.Kimchi
 import Pickles.OptSponge
 import Pickles.Prechallenge
 
-set_option mvcgen.warning false
-
 /-!
 # The fq-sponge transcript in circuit
 
@@ -41,7 +39,7 @@ under its mask bit.
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
+open Std.WP Snarky Snarky.Kimchi Kimchi.Verifier
 open scoped Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
@@ -222,58 +220,53 @@ private theorem coords_of_reads_cols :
 theorem absorbPoint_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
     (P : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄ absorbPoint (c := Builder V (KimchiConstraint F)) p sv P
-    ⦃⇓ r _ => ⌜∀ s, SpongeVar.ReadsAt V sv s →
-      SpongeVar.ReadsAt V r (Poseidon.absorb p s [P.x.val V, P.y.val V])⌝⦄ := by
+    ⦃fun _ => True⦄ absorbPoint (c := Builder V (KimchiConstraint F)) p sv P
+    ⦃fun r _ => ∀ s, SpongeVar.ReadsAt V sv s →
+      SpongeVar.ReadsAt V r (Poseidon.absorb p s [P.x.val V, P.y.val V])⦄ := by
   simp only [absorbPoint]
   have hx := fun sv x => SpongeVar.absorb_spec (V := V) p hsize sv x
-  mvcgen [hx]
-  · rename_i _ _ _ h1 _ _
-    intro h2 s hs
-    simpa [Poseidon.absorb] using h2 _ (h1 s hs)
-  · intros
-    exact hsize
+  vcgen [hx]
+  rename_i h1 _ _ h2 s hs
+  simpa [Poseidon.absorb] using h2 _ (h1 s hs)
 
 /-- Absorbing points reads as the coordinate fold. -/
 private theorem absorbPoints_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) :
     ∀ (sv : SpongeVar F) (Ps : List (AffinePoint (FVar F))),
-      ⦃⌜True⌝⦄ absorbPoints (c := Builder V (KimchiConstraint F)) p sv Ps
-      ⦃⇓ r _ => ⌜∀ s, SpongeVar.ReadsAt V sv s →
+      ⦃fun _ => True⦄ absorbPoints (c := Builder V (KimchiConstraint F)) p sv Ps
+      ⦃fun r _ => ∀ s, SpongeVar.ReadsAt V sv s →
         SpongeVar.ReadsAt V r ((Ps.map fun P => (P.x.val V, P.y.val V)).foldl
-          (fun s q => Poseidon.absorb p s [q.1, q.2]) s)⌝⦄
+          (fun s q => Poseidon.absorb p s [q.1, q.2]) s)⦄
   | sv, [] => by
     simp only [absorbPoints]
-    mvcgen
-    simp
+    vcgen
+    simp_all
   | sv, P :: Ps => by
     simp only [absorbPoints]
     have hq := absorbPoint_spec (V := V) p hsize sv P
     have ih := fun sv' => absorbPoints_spec p hsize sv' Ps
-    mvcgen [hq, ih]
-    rename_i _ _ _ hstep _ _
-    intro hrest s hs
+    vcgen [hq, ih]
+    rename_i hstep _ _ hrest s hs
     simpa using hrest _ (hstep s hs)
 
 /-- Absorbing columns reads as the column fold. -/
 private theorem absorbColumns_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) :
     ∀ (sv : SpongeVar F) (cols : List (List (AffinePoint (FVar F)))),
-      ⦃⌜True⌝⦄ absorbColumns (c := Builder V (KimchiConstraint F)) p sv cols
-      ⦃⇓ r _ => ⌜∀ s, SpongeVar.ReadsAt V sv s →
+      ⦃fun _ => True⦄ absorbColumns (c := Builder V (KimchiConstraint F)) p sv cols
+      ⦃fun r _ => ∀ s, SpongeVar.ReadsAt V sv s →
         SpongeVar.ReadsAt V r ((cols.map (·.map fun P => (P.x.val V, P.y.val V))).foldl
-          (fun s l => l.foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s) s)⌝⦄
+          (fun s l => l.foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s) s)⦄
   | sv, [] => by
     simp only [absorbColumns]
-    mvcgen
-    simp
+    vcgen
+    simp_all
   | sv, col :: cols => by
     simp only [absorbColumns]
     have hc := absorbPoints_spec (V := V) p hsize sv col
     have ih := fun sv' => absorbColumns_spec p hsize sv' cols
-    mvcgen [hc, ih]
-    rename_i _ _ _ hstep _ _
-    intro hrest s hs
+    vcgen [hc, ih]
+    rename_i hstep _ _ hrest s hs
     simpa using hrest _ (hstep s hs)
 
 /-- A prechallenge squeeze reads as the low half of the value squeeze (`Low128`), as a
@@ -282,19 +275,19 @@ theorem squeezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) �
     (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (constrainLowBits : Bool) (endo : FVar F) (sv : SpongeVar F) :
-    ⦃⌜True⌝⦄ squeezePrechallenge (c := Builder V (KimchiConstraint F)) p constrainLowBits endo sv
-    ⦃⇓ r _ => ⌜∀ s, SpongeVar.ReadsAt V sv s →
+    ⦃fun _ => True⦄
+    squeezePrechallenge (c := Builder V (KimchiConstraint F)) p constrainLowBits endo sv
+    ⦃fun r _ => ∀ s, SpongeVar.ReadsAt V sv s →
       Low128 V (Poseidon.squeeze p s).1 r.1 ∧
       (constrainLowBits = true → ∃ m : Prechallenge, Reads128 V r.1 m) ∧
-      SpongeVar.ReadsAt V r.2 (Poseidon.squeeze p s).2⌝⦄ := by
+      SpongeVar.ReadsAt V r.2 (Poseidon.squeeze p s).2⦄ := by
   simp only [squeezePrechallenge]
   have hsq := SpongeVar.squeeze_spec (V := V) p hsize sv
   have hlo := fun x => builder_spec_and _ _ _
     (lowest128Bits'_spec (V := V) h2 h3 constrainLowBits endo x)
     (lowest128Bits'_below (V := V) h2 h3 hsw.inj hsw.modulus_lt constrainLowBits endo x)
-  mvcgen [hsq, hlo]
-  rename_i _ x _ hx chal _ hchal
-  intro s hs
+  vcgen [hsq, hlo]
+  rename_i hx _ hchal s hs
   obtain ⟨hxv, hst⟩ := hx s hs
   obtain ⟨⟨-, -, -, hlow⟩, hbelow⟩ := hchal
   exact ⟨fun lo hlo hr => hxv ▸ hbelow lo hlo hr, fun h => reads128_of_nat (hlow h), hst⟩
@@ -327,25 +320,26 @@ theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠
     {nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (xv : List (AffinePoint F))
-    (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜List.Forall₂ (CircuitType.Reads V) pts.toList xv⌝⦄)
+    (hx : ⦃fun _ => True⦄ computeXHat
+      ⦃fun pts _ => List.Forall₂ (CircuitType.Reads V) pts.toList xv⦄)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols) (wv : List (List (AffinePoint F)))
     (hw : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) (wComm.toList.map Vector.toList) wv)
     (zComm : Vector (AffinePoint (FVar F)) nc)
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc)) (zv tv : List (AffinePoint F))
     (hz : List.Forall₂ (CircuitType.Reads V) zComm.toList zv)
     (ht : List.Forall₂ (CircuitType.Reads V) tComm.toList tv) :
-    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+    ⦃fun _ => True⦄
+    fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
       computeXHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜FqTranscriptReads p (indexDigest.val V) sgv xv wv zv tv V o⌝⦄ := by
+    ⦃fun o _ => FqTranscriptReads p (indexDigest.val V) sgv xv wv zv tv V o⦄ := by
   simp only [fqSpongeTranscript]
   have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init indexDigest
   have hpts := fun sv qs => absorbPoints_spec (V := V) p hsize sv qs
   have hcols := fun sv cols => absorbColumns_spec (V := V) p hsize sv cols
   have hpre := fun b sv => squeezePrechallenge_spec (V := V) h2 h3 hsw p hsize b endo sv
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
-  mvcgen [h0, hpts, hx, hpts, hcols, hpre, hsq]
-  rename_i _ svA _ hA svB _ hB xh _ hxh svC _ hC svD _ hD pβ _ pγ _ svE _ hE pα _ hα svF _ hF
-    pζ _ hζ pd _ hdig hβ hγ
+  vcgen [h0, hpts, hx, hpts, hcols, hpre, hsq]
+  rename_i hA _ _ hB _ hxh _ _ hC _ _ hD _ _ _ hβ _ _ _ hγ _ _ hE _ _ _ hα _ hF _ _ _ hζ _ _ _ hdig
   have s1 := hA _ SpongeVar.ReadsAt.init
   have s2 := hB _ s1
   have s3 := hC _ s2
@@ -361,7 +355,7 @@ theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠
     coords_of_reads hxh, coords_of_reads hz, coords_of_reads ht, coords_of_reads_cols hw]
     at eβ eγ eα eζ hdv s10
   unfold FqTranscriptReads fqSqueezes
-  exact ⟨eβ, eγ, eα, eζ, hbetaLo, hgammaLo, hxh, hdv, s10⟩
+  exact ⟨eβ, eγ, eα, eζ, hbetaLo rfl, hgammaLo rfl, hxh, hdv, s10⟩
 
 /-- The plain transcript's `xHat` is `computeXHat`'s: any property `P` of the latter's
 result holds of the former. -/
@@ -370,13 +364,14 @@ theorem fqSpongeTranscript_xHat [ToNat F] (p : Poseidon.Params F)
     {np : ℕ} (sgOld : Vector (AffinePoint (FVar F)) np) {nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (P : Vector (AffinePoint (FVar F)) nc → Prop)
-    (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜P pts⌝⦄)
+    (hx : ⦃fun _ => True⦄ computeXHat ⦃fun pts _ => P pts⦄)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols)
     (zComm : Vector (AffinePoint (FVar F)) nc)
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc)) :
-    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+    ⦃fun _ => True⦄
+    fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
       computeXHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜P o.xHat⌝⦄ := by
+    ⦃fun o _ => P o.xHat⦄ := by
   simp only [fqSpongeTranscript]
   have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init indexDigest
   have hpts := fun sv qs => absorbPoints_spec (V := V) p hsize sv qs
@@ -385,20 +380,20 @@ theorem fqSpongeTranscript_xHat [ToNat F] (p : Poseidon.Params F)
     (squeezePrechallenge (c := Builder V (KimchiConstraint F)) p b endo sv)
   have hsq := fun sv => builder_spec_true
     (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
-  mvcgen -trivial [h0, hpts, hx, hcols, hpre, hsq]
+  vcgen [h0, hpts, hx, hcols, hpre, hsq]
   all_goals first | exact hsize | assumption
 
 /-- Under any valuation satisfying the emitted constraints, each claim reads as the
 corresponding squeezed prechallenge. -/
 theorem assertPlonkChallenges_spec {nc : ℕ} (o : FqTranscriptOutput F nc)
     (claims : PlonkClaims (FVar F)) :
-    ⦃⌜True⌝⦄ assertPlonkChallenges (c := Builder V (KimchiConstraint F)) o claims
-    ⦃⇓ _ _ => ⌜claims.beta.val.val V = o.beta.val.val V ∧
+    ⦃fun _ => True⦄ assertPlonkChallenges (c := Builder V (KimchiConstraint F)) o claims
+    ⦃fun _ _ => claims.beta.val.val V = o.beta.val.val V ∧
       claims.gamma.val.val V = o.gamma.val.val V ∧
-      claims.alpha.val.val V = o.alpha.val.val V ∧ claims.zeta.val.val V = o.zeta.val.val V⌝⦄ := by
+      claims.alpha.val.val V = o.alpha.val.val V ∧ claims.zeta.val.val V = o.zeta.val.val V⦄ := by
   simp only [assertPlonkChallenges]
-  mvcgen
-  intro hζ
+  vcgen
+  rename_i hζ
   exact ⟨‹o.beta.val.val V = claims.beta.val.val V›.symm,
     ‹o.gamma.val.val V = claims.gamma.val.val V›.symm,
     ‹o.alpha.val.val V = claims.alpha.val.val V›.symm, hζ.symm⟩
@@ -603,9 +598,10 @@ theorem optSqueezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
     (constrainLowBits : Bool) (endo : FVar F) (ov : OptSpongeVar F) :
-    ⦃⌜True⌝⦄ optSqueezePrechallenge (c := Builder V (KimchiConstraint F)) p constrainLowBits endo
+    ⦃fun _ => True⦄
+    optSqueezePrechallenge (c := Builder V (KimchiConstraint F)) p constrainLowBits endo
       ov
-    ⦃⇓ r _ => ⌜(∀ ps : Poseidon.State F, SqueezedReads V ov ps →
+    ⦃fun r _ => (∀ ps : Poseidon.State F, SqueezedReads V ov ps →
         Low128 V (Poseidon.squeeze p ps).1 r.1 ∧
         (constrainLowBits = true → ∃ m : Prechallenge, Reads128 V r.1 m) ∧
         SqueezedReads V r.2 (Poseidon.squeeze p ps).2) ∧
@@ -617,14 +613,14 @@ theorem optSqueezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
           r.1 ∧
         (constrainLowBits = true → ∃ m : Prechallenge, Reads128 V r.1 m) ∧
         SqueezedReads V r.2
-          (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2)⌝⦄ := by
+          (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2)⦄ := by
   simp only [optSqueezePrechallenge]
   have hsq := optSqueeze_spec (V := V) p hsize hall ov
   have hlo := fun x => builder_spec_and _ _ _
     (lowest128Bits'_spec (V := V) h2 h3 constrainLowBits endo x)
     (lowest128Bits'_below (V := V) h2 h3 hsw.inj hsw.modulus_lt constrainLowBits endo x)
-  mvcgen [hsq, hlo]
-  rename_i _ x _ hx chal _ hchal
+  vcgen [hsq, hlo]
+  rename_i hx _ hchal
   obtain ⟨⟨-, -, -, hlow⟩, hbelow⟩ := hchal
   refine ⟨fun ps hs => ?_, fun ib ps₀ pend h hne hchar => ?_⟩
   · obtain ⟨hxv, hst⟩ := hx.1 ps hs
@@ -652,10 +648,11 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
     (ht : List.Forall₂ (CircuitType.Reads V) tComm.toList tv)
     (hchar : ∀ j : ℕ, j ≤ 1 + 2 * (np + nc + wCols * nc + nc + quotChunks * nc) →
       (j : F) = 0 → j = 0) :
-    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+    ⦃fun _ => True⦄
+    fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
       xHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜FqTranscriptReads p (indexDigest.val V) ((sgv.filter (·.1)).map (·.2)) xv wv zv tv
-      V o⌝⦄ := by
+    ⦃fun o _ => FqTranscriptReads p (indexDigest.val V) ((sgv.filter (·.1)).map (·.2)) xv wv zv tv
+      V o⦄ := by
   -- the readings count as the cells do
   replace hchar : ∀ k : ℕ,
       k ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + zv.length + tv.length) →
@@ -696,8 +693,8 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
     (foldl_optAbsorbPoint_reads hx (foldl_optAbsorbMasked_reads hsg r0))
   have hpre := fun b ov => optSqueezePrechallenge_spec (V := V) h2 h3 hsw p hsize hall b endo ov
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
-  mvcgen [hpre, hsq]
-  rename_i _ pβ _ pγ _ pα _ hα pζ _ hζ pd _ hdig hβ hγ
+  vcgen [hpre, hsq]
+  rename_i hβ _ _ _ hγ _ _ _ hα _ _ _ hζ _ _ _ hdig
   -- β: the block of everything absorbed so far
   have hlen0 : ([] ++ [(true, indexDigest.val V)] ++ maskedFlat sgv ++ pointsFlat xv
       ++ wv.flatMap pointsFlat).length
@@ -752,31 +749,30 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
   simp only [hkept, hkz, hkt] at eβ eγ eα eζ hdv s11
   unfold FqTranscriptReads fqSqueezes
   simp only [foldl_pts_eq, foldl_cols_eq, ← absorb_append]
-  exact ⟨eβ, eγ, eα, eζ, hbetaLo, hgammaLo, hx, hdv, s11⟩
+  exact ⟨eβ, eγ, eα, eζ, hbetaLo rfl, hgammaLo rfl, hx, hdv, s11⟩
 
 /-- The conditional transcript returns the `xHat` it was given. -/
-theorem fqSpongeTranscriptOpt_xHat [ToNat F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar F)
+theorem fqSpongeTranscriptOpt_xHat [ToNat F] (p : Poseidon.Params F) (endo indexDigest : FVar F)
     {np : ℕ} (sgOld : Vector (BoolVar F × AffinePoint (FVar F)) np) {nc : ℕ}
     (xHat : Vector (AffinePoint (FVar F)) nc)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols)
     (zComm : Vector (AffinePoint (FVar F)) nc)
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc)) :
-    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+    ⦃fun _ => True⦄
+    fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
       xHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜o.xHat = xHat⌝⦄ := by
+    ⦃fun o _ => o.xHat = xHat⦄ := by
   simp only [fqSpongeTranscriptOpt]
   have h1 := fun (b : Bool) ov => builder_spec_true
     (optSqueezePrechallenge (c := Builder V (KimchiConstraint F)) p b endo ov)
   have h2 := fun sv => builder_spec_true
     (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
-  mvcgen -trivial [h1, h2]
-  case vc1.hsize => exact hsize
+  vcgen [h1, h2]
 
 /-! ### The `∀`-forms
 
 The specs above are families indexed by the readings of the absorbed cells. An assembly runs
-`mvcgen` over the whole gadget before those readings are in hand, so it takes the same
+`vcgen` over the whole gadget before those readings are in hand, so it takes the same
 specs with the readings quantified in the postcondition — stated here, once, beside the
 family forms, and never restated by a consumer (the spec-locality check enforces this). -/
 
@@ -788,21 +784,22 @@ theorem fqSpongeTranscript_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) �
     (endo indexDigest : FVar F) {np : ℕ} (sgOld : Vector (AffinePoint (FVar F)) np) {nc : ℕ}
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (Vector (AffinePoint (FVar F)) nc))
     (P : Vector (AffinePoint (FVar F)) nc → Prop) (xv : List (AffinePoint F))
-    (hx : ⦃⌜True⌝⦄ computeXHat
-      ⦃⇓ pts _ => ⌜P pts ∧ List.Forall₂ (CircuitType.Reads V) pts.toList xv⌝⦄)
+    (hx : ⦃fun _ => True⦄ computeXHat
+      ⦃fun pts _ => P pts ∧ List.Forall₂ (CircuitType.Reads V) pts.toList xv⦄)
     (wComm : Vector (Vector (AffinePoint (FVar F)) nc) wCols)
     (zComm : Vector (AffinePoint (FVar F)) nc)
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc)) :
-    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+    ⦃fun _ => True⦄
+    fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
       computeXHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜P o.xHat ∧
+    ⦃fun o _ => P o.xHat ∧
       ∀ (sgv : List (AffinePoint F)) (wv : List (List (AffinePoint F)))
       (zv tv : List (AffinePoint F)),
       List.Forall₂ (CircuitType.Reads V) sgOld.toList sgv →
       List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) (wComm.toList.map Vector.toList) wv →
       List.Forall₂ (CircuitType.Reads V) zComm.toList zv →
       List.Forall₂ (CircuitType.Reads V) tComm.toList tv →
-      FqTranscriptReads p (indexDigest.val V) sgv xv wv zv tv V o⌝⦄ := by
+      FqTranscriptReads p (indexDigest.val V) sgv xv wv zv tv V o⦄ := by
   refine builder_spec_and _ _ _ (fqSpongeTranscript_xHat p hsize endo indexDigest sgOld
     computeXHat P (builder_spec_imp _ _ _ hx fun _ h => h.1) wComm zComm tComm) ?_
   rw [builder_spec_iff]
@@ -824,9 +821,10 @@ theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
     (tComm : Vector (AffinePoint (FVar F)) (quotChunks * nc))
     (hchar : ∀ j : ℕ, j ≤ 1 + 2 * (np + nc + wCols * nc + nc + quotChunks * nc) →
       (j : F) = 0 → j = 0) :
-    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+    ⦃fun _ => True⦄
+    fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
       xHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜o.xHat = xHat ∧
+    ⦃fun o _ => o.xHat = xHat ∧
       ∀ (sgv : List (Bool × AffinePoint F)) (xv : List (AffinePoint F))
       (wv : List (List (AffinePoint F))) (zv tv : List (AffinePoint F)),
       List.Forall₂ (CircuitType.Reads V) sgOld.toList sgv →
@@ -834,9 +832,9 @@ theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
       List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) (wComm.toList.map Vector.toList) wv →
       List.Forall₂ (CircuitType.Reads V) zComm.toList zv →
       List.Forall₂ (CircuitType.Reads V) tComm.toList tv →
-      FqTranscriptReads p (indexDigest.val V) ((sgv.filter (·.1)).map (·.2)) xv wv zv tv V o⌝⦄ := by
+      FqTranscriptReads p (indexDigest.val V) ((sgv.filter (·.1)).map (·.2)) xv wv zv tv V o⦄ := by
   refine builder_spec_and _ _ _
-    (fqSpongeTranscriptOpt_xHat p hsize endo indexDigest sgOld xHat wComm zComm tComm) ?_
+    (fqSpongeTranscriptOpt_xHat p endo indexDigest sgOld xHat wComm zComm tComm) ?_
   rw [builder_spec_iff]
   intro nv hsat sgv xv wv zv tv hsg hx hw hz ht
   exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec h2 h3 hsw p hsize hall endo

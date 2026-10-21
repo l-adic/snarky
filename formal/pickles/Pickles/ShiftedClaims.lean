@@ -18,7 +18,7 @@ gets from the split type's allocation check.
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Bulletproof Bulletproof.Ipa
+open Snarky Snarky.Kimchi Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta
 
 /-- A pinned ladder input's top `2z + 2^255 + 1` is below `4·order − 4` at either Pasta order. -/

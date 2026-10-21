@@ -48,7 +48,7 @@ branch `b` the masked commitment reads as the `publicCommitment` of branch `b`'s
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
+open Std.WP Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 
 /-- A size-tagged public-input leaf, the flat interface the commitment gadget folds over.
 The three scalar cases fix the `scaleFast2'` ladder width `(n, chunks, sDiv2Bits)` and carry
@@ -459,8 +459,8 @@ omit [DecidableEq F] in
 /-- `chunkwise f` reads at chunk `ci` as `f ci` alone does; the other chunks say nothing. -/
 private theorem chunkwise_at {V : Valuation F} {β : Type}
     (f : Fin nc → CircuitM F (Builder V (KimchiConstraint F)) β) (ci : Fin nc) (Q : β → Prop)
-    (h : ⦃⌜True⌝⦄ f ci ⦃⇓ r _ => ⌜Q r⌝⦄) :
-    ⦃⌜True⌝⦄ chunkwise f ⦃⇓ rs _ => ⌜Q rs[ci]⌝⦄ := by
+    (h : ⦃fun _ => True⦄ f ci ⦃fun r _ => Q r⦄) :
+    ⦃fun _ => True⦄ chunkwise f ⦃fun rs _ => Q rs[ci]⦄ := by
   unfold chunkwise
   refine builder_spec_imp _ _ _
     (builder_spec_vector_mapM_get f (fun c r => c = ci → Q r) (fun c => ?_) _) fun rs h => ?_
@@ -473,28 +473,28 @@ private theorem chunkwise_at {V : Valuation F} {β : Type}
 omit [ToNat F] in
 /-- An `addFast`'s point reads as the sum. -/
 private theorem addFastP_spec {V : Valuation F} (p q : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄ Functor.map (·.p) (addFast (c := Builder V (KimchiConstraint F)) .checkFinite p q)
-    ⦃⇓ r _ => ⌜∀ P Q : d.W.Point, OnCurveAt d.W V p P → OnCurveAt d.W V q Q →
-      OnCurveAt d.W V r (P + Q)⌝⦄ := by
+    ⦃fun _ => True⦄
+    Functor.map (·.p) (addFast (c := Builder V (KimchiConstraint F)) .checkFinite p q)
+    ⦃fun r _ => ∀ P Q : d.W.Point, OnCurveAt d.W V p P → OnCurveAt d.W V q Q →
+      OnCurveAt d.W V r (P + Q)⦄ := by
   have h := addFast_checkFinite_spec (V := V) d.W d.short d.two_ne d.two_torsion_free p q
-  mvcgen [-Snarky.Kimchi.addFast_spec, h]
+  vcgen [-Snarky.Kimchi.addFast_spec, h]
 
 /-- **One leaf at one chunk reads as the accumulator plus its delta.** The ladder's shift is
 still present in the delta; the top-level's `init = Σ corrections` cancels it. -/
 private theorem leafStep_spec (ci : Fin nc) {V : Valuation F} (acc : AffinePoint (FVar F)) :
     ∀ (leaf : Leaf F nc) (T : d.W.Point), LeafPre ci V leaf T →
-      ⦃⌜True⌝⦄ leafStep (S := Builder V (KimchiConstraint F)) ci acc leaf
-      ⦃⇓ r _ => ⌜∃ info : LeafInfo F d, LeafReads ci V leaf info ∧
+      ⦃fun _ => True⦄ leafStep (S := Builder V (KimchiConstraint F)) ci acc leaf
+      ⦃fun r _ => ∃ info : LeafInfo F d, LeafReads ci V leaf info ∧
         ∀ accv : d.W.Point, OnCurveAt d.W V acc accv → info.regimeOK →
-          OnCurveAt d.W V r (accv + info.delta)⌝⦄
+          OnCurveAt d.W V r (accv + info.delta)⦄
   | .full scalar base _, T, hT => by
       simp only [leafStep]
       have hsf := scaleFast2'_spec (V := V) d 255 51 254 (by norm_num) base[ci] scalar
       have hadd := fun l => addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
         d.two_torsion_free acc l
-      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
-      rename_i _ _ _ hsf' _ _
-      intro hadd'
+      vcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i hsf' _ _ hadd'
       obtain ⟨z, bb, h0, -, hlt, hval, hladder⟩ := hsf' T hT
       refine ⟨.scalar 255 z bb T, ⟨rfl, hT, h0, hlt (by norm_num), hval⟩, fun accv hacc hreg => ?_⟩
       have hstep := hadd' accv _ hacc (hladder hreg)
@@ -505,9 +505,8 @@ private theorem leafStep_spec (ci : Fin nc) {V : Valuation F} (acc : AffinePoint
       have hsf := scaleFast2'_spec (V := V) d 255 26 127 (by norm_num) base[ci] scalar
       have hadd := fun l => addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
         d.two_torsion_free acc l
-      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
-      rename_i _ _ _ hsf' _ _
-      intro hadd'
+      vcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i hsf' _ _ hadd'
       obtain ⟨z, bb, h0, hlt, -, hval, hladder⟩ := hsf' T hT
       refine ⟨.scalar 130 z bb T, ⟨rfl, hT, h0, hlt, hval⟩, fun accv hacc hreg => ?_⟩
       have hstep := hadd' accv _ hacc (hladder hreg)
@@ -518,9 +517,8 @@ private theorem leafStep_spec (ci : Fin nc) {V : Valuation F} (acc : AffinePoint
       have hsf := scaleFast2'_spec (V := V) d 255 2 9 (by norm_num) base[ci] scalar
       have hadd := fun l => addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
         d.two_torsion_free acc l
-      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
-      rename_i _ _ _ hsf' _ _
-      intro hadd'
+      vcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i hsf' _ _ hadd'
       obtain ⟨z, bb, h0, hlt, -, hval, hladder⟩ := hsf' T hT
       refine ⟨.scalar 10 z bb T, ⟨rfl, hT, h0, hlt, hval⟩, fun accv hacc hreg => ?_⟩
       have hstep := hadd' accv _ hacc (hladder hreg)
@@ -531,9 +529,8 @@ private theorem leafStep_spec (ci : Fin nc) {V : Valuation F} (acc : AffinePoint
       have haddc := addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
         d.two_torsion_free base[ci] acc
       have hsel := fun t => select_affinePoint_spec (V := V) (c := KimchiConstraint F) b t acc
-      mvcgen [-Snarky.Kimchi.addFast_spec, haddc, hsel]
-      rename_i _ _ _ haddc' _ _
-      intro hsel'
+      vcgen [-Snarky.Kimchi.addFast_spec, haddc, hsel]
+      rename_i haddc' _ _ hsel'
       obtain ⟨hToc, bb, hbb⟩ := hT
       refine ⟨.cond bb T, ⟨hToc, hbb⟩, fun accv hacc _ => ?_⟩
       have hsc := hsel' bb hbb (T + accv) accv (haddc' T accv hToc hacc) hacc
@@ -548,13 +545,13 @@ leaf's ladder regime holds (`regimeOK`). -/
 private theorem foldChunks_spec (ci : Fin nc) {V : Valuation F} :
     ∀ (leaves : List (Leaf F nc)) (Ts : List d.W.Point) (acc : Vector (AffinePoint (FVar F)) nc),
       List.Forall₂ (LeafPre ci V) leaves Ts →
-      ⦃⌜True⌝⦄ foldChunks (S := Builder V (KimchiConstraint F)) acc leaves
-      ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+      ⦃fun _ => True⦄ foldChunks (S := Builder V (KimchiConstraint F)) acc leaves
+      ⦃fun r _ => ∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
         ∀ accv : d.W.Point, OnCurveAt d.W V acc[ci] accv → (∀ i ∈ infos, i.regimeOK) →
-          OnCurveAt d.W V r[ci] (accv + (infos.map LeafInfo.delta).sum)⌝⦄
+          OnCurveAt d.W V r[ci] (accv + (infos.map LeafInfo.delta).sum)⦄
   | [], [], acc, .nil => by
       simp only [foldChunks]
-      mvcgen
+      vcgen
       exact ⟨[], .nil, fun accv hacc _ => by simpa using hacc⟩
   | leaf :: rest, T :: Ts, acc, .cons hT hrest => by
       simp only [foldChunks]
@@ -562,9 +559,9 @@ private theorem foldChunks_spec (ci : Fin nc) {V : Valuation F} :
         (fun c => leafStep (S := Builder V (KimchiConstraint F)) c acc[c] leaf) ci _
         (leafStep_spec (d := d) ci acc[ci] leaf T hT)
       have ih := fun acc' => foldChunks_spec ci rest Ts acc' hrest
-      mvcgen [hstep, ih]
-      rename_i _ _ hstep' _ _
-      rintro ⟨rest_infos, hrf, hrest_oc⟩
+      vcgen [hstep, ih]
+      rename_i hstep' _ _ hrest
+      obtain ⟨rest_infos, hrf, hrest_oc⟩ := hrest
       obtain ⟨info, hinfo, hoc⟩ := hstep'
       refine ⟨info :: rest_infos, .cons hinfo hrf, fun accv hacc hregs => ?_⟩
       have h1 := hoc accv hacc (hregs _ List.mem_cons_self)
@@ -580,20 +577,19 @@ private theorem publicInputCommitChunks_spec (ci : Fin nc) {V : Valuation F}
     (leaves : List (Leaf F nc)) (Ts : List d.W.Point)
     (Iv Hv : d.W.Point) (hI : OnCurveAt d.W V init[ci] Iv) (hH : OnCurveAt d.W V blindingH Hv)
     (hpre : List.Forall₂ (LeafPre ci V) leaves Ts) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitChunks (S := Builder V (KimchiConstraint F)) init blindingH leaves
-    ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+    ⦃fun r _ => ∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
       ((∀ i ∈ infos, i.regimeOK) →
-        OnCurveAt d.W V r[ci] (-(Iv + (infos.map LeafInfo.delta).sum) + Hv))⌝⦄ := by
+        OnCurveAt d.W V r[ci] (-(Iv + (infos.map LeafInfo.delta).sum) + Hv))⦄ := by
   simp only [publicInputCommitChunks]
   have hfold := foldChunks_spec (d := d) ci leaves Ts init hpre
   have hfin := fun acc : Vector (AffinePoint (FVar F)) nc => chunkwise_at
     (fun c => (·.p) <$> addFast (c := Builder V (KimchiConstraint F)) .checkFinite
       ⟨acc[c].x, CVar.negate_ acc[c].y⟩ blindingH) ci _
     (addFastP_spec (d := d) ⟨acc[ci].x, CVar.negate_ acc[ci].y⟩ blindingH)
-  mvcgen [hfold, hfin]
-  rename_i _ _ hfold' _ _
-  intro haddpost
+  vcgen [hfold, hfin]
+  rename_i hfold' _ _ haddpost
   obtain ⟨infos, hrf, hoc⟩ := hfold'
   refine ⟨infos, hrf, fun hregs => ?_⟩
   have hacc := hoc Iv hI hregs
@@ -608,11 +604,11 @@ private theorem publicInputCommitChunks_net_spec (ci : Fin nc) {V : Valuation F}
     (leaves : List (Leaf F nc)) (Ts : List d.W.Point)
     (Iv Hv : d.W.Point) (hI : OnCurveAt d.W V init[ci] Iv) (hH : OnCurveAt d.W V blindingH Hv)
     (hpre : List.Forall₂ (LeafPre ci V) leaves Ts) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitChunks (S := Builder V (KimchiConstraint F)) init blindingH leaves
-    ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+    ⦃fun r _ => ∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
       (Iv = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
-        OnCurveAt d.W V r[ci] (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
+        OnCurveAt d.W V r[ci] (-(infos.map LeafInfo.netDelta).sum + Hv))⦄ := by
   refine builder_spec_imp _ _ _
     (publicInputCommitChunks_spec ci init blindingH leaves Ts Iv Hv hI hH hpre) fun r hr => ?_
   obtain ⟨infos, hrf, hoc⟩ := hr
@@ -633,19 +629,18 @@ opening move, so the commitment's read assumes this of its leaves rather than as
 consumer for it (`builder_spec_bind_of`). -/
 private theorem constrainBits_boolean {V : Valuation F} :
     ∀ leaves : List (Leaf F nc),
-      ⦃⌜True⌝⦄ constrainBits (S := Builder V (KimchiConstraint F)) leaves
-      ⦃⇓ _ _ => ⌜∀ leaf ∈ leaves, leaf.bitBoolean V⌝⦄
+      ⦃fun _ => True⦄ constrainBits (S := Builder V (KimchiConstraint F)) leaves
+      ⦃fun _ _ => ∀ leaf ∈ leaves, leaf.bitBoolean V⦄
   | [] => by
       simp only [constrainBits]
-      mvcgen
-      intro leaf hl
+      vcgen
+      rename_i leaf hl
       exact absurd hl List.not_mem_nil
   | .condAdd b base :: rest => by
       simp only [constrainBits]
       have ih := constrainBits_boolean (V := V) rest
-      mvcgen [ih]
-      rename_i hb _ _
-      intro hrest leaf hl
+      vcgen [ih]
+      rename_i hb _ _ hrest leaf hl
       rcases List.mem_cons.1 hl with rfl | hl
       · rcases (LawfulBasicSystem.holds_boolean V (↑b : CVar F)).mp hb with h | h
         · exact ⟨false, by simpa [bit] using h⟩
@@ -677,13 +672,13 @@ reads at `ci` as `accv + Σ cps`. -/
 private theorem sumCorrections_spec (ci : Fin nc) {V : Valuation F} :
     ∀ (leaves : List (Leaf F nc)) (cps : List d.W.Point) (acc : Vector (AffinePoint (FVar F)) nc),
       List.Forall₂ (CorrPre ci V) leaves cps →
-      ⦃⌜True⌝⦄ sumCorrections (S := Builder V (KimchiConstraint F)) acc leaves
-      ⦃⇓ r _ => ⌜∀ accv : d.W.Point, OnCurveAt d.W V acc[ci] accv →
-        OnCurveAt d.W V r[ci] (accv + cps.sum)⌝⦄
+      ⦃fun _ => True⦄ sumCorrections (S := Builder V (KimchiConstraint F)) acc leaves
+      ⦃fun r _ => ∀ accv : d.W.Point, OnCurveAt d.W V acc[ci] accv →
+        OnCurveAt d.W V r[ci] (accv + cps.sum)⦄
   | [], [], acc, .nil => by
       simp only [sumCorrections]
-      mvcgen
-      intro accv hacc
+      vcgen
+      rename_i accv hacc
       simpa using hacc
   | .full _ _ corr :: rest, cp :: cps, acc, .cons hcp hrest => by
       simp only [sumCorrections, addChunks]
@@ -691,9 +686,8 @@ private theorem sumCorrections_spec (ci : Fin nc) {V : Valuation F} :
         (c := Builder V (KimchiConstraint F)) .checkFinite acc[c] corr[c]) ci _
         (addFastP_spec (d := d) acc[ci] corr[ci])
       have ih := fun acc' => sumCorrections_spec ci rest cps acc' hrest
-      mvcgen [hadd, ih]
-      rename_i _ _ hadd' _ _
-      intro ihpost accv hacc
+      vcgen [hadd, ih]
+      rename_i hadd' _ _ ihpost accv hacc
       simp only [List.sum_cons]
       rw [← add_assoc]
       exact ihpost _ (hadd' accv cp hacc hcp)
@@ -703,9 +697,8 @@ private theorem sumCorrections_spec (ci : Fin nc) {V : Valuation F} :
         (c := Builder V (KimchiConstraint F)) .checkFinite acc[c] corr[c]) ci _
         (addFastP_spec (d := d) acc[ci] corr[ci])
       have ih := fun acc' => sumCorrections_spec ci rest cps acc' hrest
-      mvcgen [hadd, ih]
-      rename_i _ _ hadd' _ _
-      intro ihpost accv hacc
+      vcgen [hadd, ih]
+      rename_i hadd' _ _ ihpost accv hacc
       simp only [List.sum_cons]
       rw [← add_assoc]
       exact ihpost _ (hadd' accv cp hacc hcp)
@@ -715,9 +708,8 @@ private theorem sumCorrections_spec (ci : Fin nc) {V : Valuation F} :
         (c := Builder V (KimchiConstraint F)) .checkFinite acc[c] corr[c]) ci _
         (addFastP_spec (d := d) acc[ci] corr[ci])
       have ih := fun acc' => sumCorrections_spec ci rest cps acc' hrest
-      mvcgen [hadd, ih]
-      rename_i _ _ hadd' _ _
-      intro ihpost accv hacc
+      vcgen [hadd, ih]
+      rename_i hadd' _ _ ihpost accv hacc
       simp only [List.sum_cons]
       rw [← add_assoc]
       exact ihpost _ (hadd' accv cp hacc hcp)
@@ -736,8 +728,8 @@ leaf's correction seeds the fold; the rest add via `sumCorrections_spec`; `condA
 private theorem sumCorrectionsHead_spec (ci : Fin nc) {V : Valuation F} :
     ∀ (leaves : List (Leaf F nc)) (cps : List d.W.Point),
       List.Forall₂ (CorrPre ci V) leaves cps → leafHasScalar leaves →
-      ⦃⌜True⌝⦄ sumCorrectionsHead (S := Builder V (KimchiConstraint F)) leaves
-      ⦃⇓ r _ => ⌜OnCurveAt d.W V r[ci] cps.sum⌝⦄
+      ⦃fun _ => True⦄ sumCorrectionsHead (S := Builder V (KimchiConstraint F)) leaves
+      ⦃fun r _ => OnCurveAt d.W V r[ci] cps.sum⦄
   | [], [], .nil, hne => by simp only [leafHasScalar] at hne
   | .full _ _ corr :: rest, cp :: cps, .cons hcp hrest, _ => by
       simp only [sumCorrectionsHead]
@@ -772,18 +764,17 @@ private theorem publicInputCommitFold_spec (ci : Fin nc) {V : Valuation F}
     (hpre : List.Forall₂ (LeafPre ci V) leaves Ts)
     (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
     (hscalar : leafHasScalar leaves) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
-    ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+    ⦃fun r _ => ∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
       (cps.sum = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
-        OnCurveAt d.W V r[ci] (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
+        OnCurveAt d.W V r[ci] (-(infos.map LeafInfo.netDelta).sum + Hv))⦄ := by
   simp only [publicInputCommitFold]
   have hsum := sumCorrectionsHead_spec ci leaves cps hcorr hscalar
-  mvcgen [hsum]
-  rename_i rinit
-  intro s hpost
-  exact publicInputCommitChunks_net_spec ci rinit blindingH leaves Ts cps.sum Hv
-    hpost hH hpre s trivial
+  vcgen (errorOnMissingSpec := false) [hsum]
+  rename_i hpost
+  exact (publicInputCommitChunks_net_spec ci init blindingH leaves Ts cps.sum Hv
+    hpost hH hpre).le_wp _ trivial
 
 /-- **The net read, premises discharged.** `publicInputCommitFold_spec` with its seed
 (`corrSum_eq`, from honest corrections) and regime (`leafReads_regimeOK_all`, from the width
@@ -802,10 +793,10 @@ private theorem publicInputCommitFold_net (ci : Fin nc) {V : Valuation F}
     (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
     (hscalar : leafHasScalar leaves)
     (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
-    ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
-      OnCurveAt d.W V r[ci] (-(infos.map LeafInfo.netDelta).sum + Hv)⌝⦄ := by
+    ⦃fun r _ => ∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+      OnCurveAt d.W V r[ci] (-(infos.map LeafInfo.netDelta).sum + Hv)⦄ := by
   refine builder_spec_imp _ _ _
     (publicInputCommitFold_spec ci blindingH leaves Ts cps Hv hH hpre hcorr hscalar)
     fun r hr => ?_
@@ -831,9 +822,9 @@ private theorem publicInputCommitFold_msm (ci : Fin nc) {V : Valuation F}
     (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf)
     (hmsm : ∀ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos →
         (infos.map LeafInfo.netDelta).sum = msm) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
-    ⦃⇓ r _ => ⌜OnCurveAt d.W V r[ci] (-msm + Hv)⌝⦄ := by
+    ⦃fun r _ => OnCurveAt d.W V r[ci] (-msm + Hv)⦄ := by
   refine builder_spec_imp _ _ _
     (publicInputCommitFold_net ci blindingH leaves Ts cps Hv h130 h10 hfull hH hpre hcorr
       hscalar hhon) fun r hr => ?_
@@ -992,9 +983,9 @@ private theorem publicInputCommitFold_reads (ci : Fin nc) {V : Valuation F}
     (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
     (hscalar : leafHasScalar leaves)
     (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
-    ⦃⇓ r _ => ⌜OnCurveAt d.W V r[ci] (-(publicMsm V leaves Ts) + Hv)⌝⦄ :=
+    ⦃fun r _ => OnCurveAt d.W V r[ci] (-(publicMsm V leaves Ts) + Hv)⦄ :=
   publicInputCommitFold_msm ci blindingH leaves Ts cps Hv (publicMsm V leaves Ts) h130 h10
     (fun _infos hr z bb T hmem => regimeFull_hfull hregime hr z bb T hmem)
     hH hpre hcorr hscalar hhon
@@ -1086,20 +1077,20 @@ private def ItemReads (V : Valuation F) :
 private theorem ladders_spec (ci : Fin nc) {V : Valuation F} :
     ∀ (leaves : List (Leaf F nc)) (Ts : List d.W.Point),
       List.Forall₂ (LeafPre ci V) leaves Ts →
-      ⦃⌜True⌝⦄ ladders (S := Builder V (KimchiConstraint F)) ci leaves
-      ⦃⇓ rs _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
-        List.Forall₂ (ItemReads V) rs infos⌝⦄
+      ⦃fun _ => True⦄ ladders (S := Builder V (KimchiConstraint F)) ci leaves
+      ⦃fun rs _ => ∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+        List.Forall₂ (ItemReads V) rs infos⦄
   | [], [], .nil => by
       simp only [ladders]
-      mvcgen
+      vcgen
       exact ⟨[], .nil, .nil⟩
   | .full scalar base _ :: rest, T :: Ts, .cons hT hrest => by
       simp only [ladders]
       have hsf := scaleFast2'_spec (V := V) d 255 51 254 (by norm_num) base[ci] scalar
       have ih := ladders_spec (V := V) ci rest Ts hrest
-      mvcgen [hsf, ih]
-      rename_i _ _ _ hsf' _ _
-      rintro ⟨rest_infos, hrf, hir⟩
+      vcgen [hsf, ih]
+      rename_i hsf' _ _ hrest
+      obtain ⟨rest_infos, hrf, hir⟩ := hrest
       obtain ⟨z, bb, h0, -, hlt, hval, hladder⟩ := hsf' T hT
       refine ⟨.scalar 255 z bb T :: rest_infos,
         .cons ⟨rfl, hT, h0, hlt (by norm_num), hval⟩ hrf, .cons ?_ hir⟩
@@ -1109,9 +1100,9 @@ private theorem ladders_spec (ci : Fin nc) {V : Valuation F} :
       simp only [ladders]
       have hsf := scaleFast2'_spec (V := V) d 255 26 127 (by norm_num) base[ci] scalar
       have ih := ladders_spec (V := V) ci rest Ts hrest
-      mvcgen [hsf, ih]
-      rename_i _ _ _ hsf' _ _
-      rintro ⟨rest_infos, hrf, hir⟩
+      vcgen [hsf, ih]
+      rename_i hsf' _ _ hrest
+      obtain ⟨rest_infos, hrf, hir⟩ := hrest
       obtain ⟨z, bb, h0, hlt, -, hval, hladder⟩ := hsf' T hT
       refine ⟨.scalar 130 z bb T :: rest_infos, .cons ⟨rfl, hT, h0, hlt, hval⟩ hrf, .cons ?_ hir⟩
       intro hreg
@@ -1120,9 +1111,9 @@ private theorem ladders_spec (ci : Fin nc) {V : Valuation F} :
       simp only [ladders]
       have hsf := scaleFast2'_spec (V := V) d 255 2 9 (by norm_num) base[ci] scalar
       have ih := ladders_spec (V := V) ci rest Ts hrest
-      mvcgen [hsf, ih]
-      rename_i _ _ _ hsf' _ _
-      rintro ⟨rest_infos, hrf, hir⟩
+      vcgen [hsf, ih]
+      rename_i hsf' _ _ hrest
+      obtain ⟨rest_infos, hrf, hir⟩ := hrest
       obtain ⟨z, bb, h0, hlt, -, hval, hladder⟩ := hsf' T hT
       refine ⟨.scalar 10 z bb T :: rest_infos, .cons ⟨rfl, hT, h0, hlt, hval⟩ hrf, .cons ?_ hir⟩
       intro hreg
@@ -1130,8 +1121,9 @@ private theorem ladders_spec (ci : Fin nc) {V : Valuation F} :
   | .condAdd b base :: rest, T :: Ts, .cons hT hrest => by
       simp only [ladders]
       have ih := ladders_spec (V := V) ci rest Ts hrest
-      mvcgen [ih]
-      rintro ⟨rest_infos, hrf, hir⟩
+      vcgen [ih]
+      rename_i hrest
+      obtain ⟨rest_infos, hrf, hir⟩ := hrest
       obtain ⟨hToc, bb, hbb⟩ := hT
       exact ⟨.cond bb T :: rest_infos, .cons ⟨hToc, hbb⟩ hrf, .cons ⟨hToc, hbb⟩ hir⟩
 
@@ -1142,13 +1134,13 @@ private theorem foldKnown_spec {V : Valuation F} :
     ∀ (rs : List (AffinePoint (FVar F) ⊕ (BoolVar F × AffinePoint (FVar F))))
       (infos : List (LeafInfo F d)) (acc : AffinePoint (FVar F)),
       List.Forall₂ (ItemReads V) rs infos → (∀ i ∈ infos, i.regimeOK) →
-      ⦃⌜True⌝⦄ foldKnown (S := Builder V (KimchiConstraint F)) acc rs
-      ⦃⇓ r _ => ⌜∀ accv : d.W.Point, OnCurveAt d.W V acc accv →
-        OnCurveAt d.W V r (accv + (infos.map LeafInfo.delta).sum)⌝⦄
+      ⦃fun _ => True⦄ foldKnown (S := Builder V (KimchiConstraint F)) acc rs
+      ⦃fun r _ => ∀ accv : d.W.Point, OnCurveAt d.W V acc accv →
+        OnCurveAt d.W V r (accv + (infos.map LeafInfo.delta).sum)⦄
   | [], [], acc, .nil, _ => by
       simp only [foldKnown]
-      mvcgen
-      intro accv hacc
+      vcgen
+      rename_i accv hacc
       simpa using hacc
   | .inl pt :: rest, i :: is, acc, .cons hi hrest, hregs => by
       simp only [foldKnown]
@@ -1163,9 +1155,8 @@ private theorem foldKnown_spec {V : Valuation F} :
           d.two_torsion_free acc pt
         have ih := fun acc' => foldKnown_spec rest is acc' hrest
           (fun i hi => hregs i (List.mem_cons_of_mem _ hi))
-        mvcgen [-Snarky.Kimchi.addFast_spec, hadd, ih]
-        rename_i _ _ _ hadd' _ _
-        intro ihpost accv hacc
+        vcgen [-Snarky.Kimchi.addFast_spec, hadd, ih]
+        rename_i hadd' _ _ ihpost accv hacc
         simp only [List.map_cons, List.sum_cons]
         rw [← add_assoc]
         exact ihpost _ (hadd' accv _ hacc hpt)
@@ -1181,9 +1172,8 @@ private theorem foldKnown_spec {V : Valuation F} :
         have hsel := fun t => select_affinePoint_spec (V := V) (c := KimchiConstraint F) b t acc
         have ih := fun acc' => foldKnown_spec rest is acc' hrest
           (fun i hi => hregs i (List.mem_cons_of_mem _ hi))
-        mvcgen [-Snarky.Kimchi.addFast_spec, haddc, hsel, ih]
-        rename_i _ _ _ haddc' _ _ hsel' _ _
-        intro ihpost accv hacc
+        vcgen [-Snarky.Kimchi.addFast_spec, haddc, hsel, ih]
+        rename_i haddc' _ hsel' _ _ ihpost accv hacc
         have hr := haddc' T accv hlp hacc
         have hsc := hsel' bb hbb (T + accv) accv hr hacc
         have hfinal := ihpost _ hsc
@@ -1206,19 +1196,18 @@ private theorem commitKnownTail_inl_spec {V : Valuation F}
     (rest : List (AffinePoint (FVar F) ⊕ (BoolVar F × AffinePoint (FVar F))))
     (i₀ : LeafInfo F d) (is : List (LeafInfo F d)) (hr₀ : OnCurveAt d.W V r₀ i₀.delta)
     (hrest : List.Forall₂ (ItemReads V) rest is) (hregs : ∀ i ∈ is, i.regimeOK) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     commitKnownTail (S := Builder V (KimchiConstraint F)) blindingH corrHead corrSum
       (.inl r₀ :: rest)
-    ⦃⇓ r _ => ⌜OnCurveAt d.W V r (-(Cv + ((i₀ :: is).map LeafInfo.delta).sum) + Hv)⌝⦄ := by
+    ⦃fun r _ => OnCurveAt d.W V r (-(Cv + ((i₀ :: is).map LeafInfo.delta).sum) + Hv)⦄ := by
   simp only [commitKnownTail]
   have hfold := foldKnown_spec rest is r₀ hrest hregs
   have hadd1 := fun a => addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
     d.two_torsion_free a corrSum
   have hadd2 := fun p => addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
     d.two_torsion_free p blindingH
-  mvcgen [-Snarky.Kimchi.addFast_spec, hfold, hadd1, hadd2]
-  rename_i _ _ _ hfold' _ _ hadd1' _ _
-  intro hadd2'
+  vcgen [-Snarky.Kimchi.addFast_spec, hfold, hadd1, hadd2]
+  rename_i hfold' _ hadd1' _ _ hadd2'
   have hacc := hfold' _ hr₀
   have hacc' := hadd1' _ _ hacc hC
   have hneg := OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ hacc'
@@ -1229,15 +1218,16 @@ private theorem commitKnownTail_inl_spec {V : Valuation F}
 omit [ToNat F] in
 /-- **Phases 2 and 3 read**, for results headed by a ladder: `-(C + Σ deltas) + h`, with `C`
 the correction sum's reading. Stated with the readings in the postcondition, the shape the
-assembly's `mvcgen` takes; results not headed by a ladder are outside the read. -/
+assembly's `vcgen` takes; results not headed by a ladder are outside the read. -/
 private theorem commitKnownTail_reads {V : Valuation F}
     (blindingH corrHead corrSum : AffinePoint (FVar F)) (Hv Cv : d.W.Point)
     (hH : OnCurveAt d.W V blindingH Hv) (hC : OnCurveAt d.W V corrSum Cv) :
     ∀ rs : List (AffinePoint (FVar F) ⊕ (BoolVar F × AffinePoint (FVar F))),
-      ⦃⌜True⌝⦄ commitKnownTail (S := Builder V (KimchiConstraint F)) blindingH corrHead corrSum rs
-      ⦃⇓ r _ => ⌜∀ infos : List (LeafInfo F d), List.Forall₂ (ItemReads V) rs infos →
+      ⦃fun _ => True⦄
+      commitKnownTail (S := Builder V (KimchiConstraint F)) blindingH corrHead corrSum rs
+      ⦃fun r _ => ∀ infos : List (LeafInfo F d), List.Forall₂ (ItemReads V) rs infos →
         (∀ i ∈ infos, i.regimeOK) → (∃ r₀ rest, rs = .inl r₀ :: rest) →
-        OnCurveAt d.W V r (-(Cv + (infos.map LeafInfo.delta).sum) + Hv)⌝⦄
+        OnCurveAt d.W V r (-(Cv + (infos.map LeafInfo.delta).sum) + Hv)⦄
   | [] => by
       rw [builder_spec_iff]
       intro _ _ _ _ _ ⟨_, _, h⟩
@@ -1272,18 +1262,17 @@ theorem publicInputCommitKnown_spec (ci : Fin nc) {V : Valuation F}
     (Ts : List d.W.Point) (Hv Cv : d.W.Point)
     (hH : OnCurveAt d.W V blindingH Hv) (hC : OnCurveAt d.W V corrSum Cv)
     (hpre : List.Forall₂ (LeafPre ci V) leaves Ts) (hhead : leafHeadScalar leaves) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitKnown (S := Builder V (KimchiConstraint F)) ci blindingH corrHead corrSum
       leaves
-    ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+    ⦃fun r _ => ∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
       (Cv = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
-        OnCurveAt d.W V r (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
+        OnCurveAt d.W V r (-(infos.map LeafInfo.netDelta).sum + Hv))⦄ := by
   simp only [publicInputCommitKnown]
   have hl := ladders_spec (V := V) ci leaves Ts hpre
   have ht := commitKnownTail_reads (V := V) blindingH corrHead corrSum Hv Cv hH hC
-  mvcgen [hl, ht]
-  rename_i _ rs _ hl' _ _
-  intro ht'
+  vcgen [hl, ht]
+  rename_i rs _ hl' _ _ ht'
   obtain ⟨infos, hrf, hir⟩ := hl'
   refine ⟨infos, hrf, fun hCeq hregs => ?_⟩
   -- a scalar head reads to a scalar info, whose result is a ladder
@@ -1330,10 +1319,10 @@ theorem publicInputCommitKnown_reads (ci : Fin nc) {V : Valuation F}
     (hC : OnCurveAt d.W V corrSum cps.sum)
     (hhead : leafHeadScalar leaves)
     (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitKnown (S := Builder V (KimchiConstraint F)) ci blindingH corrHead corrSum
       leaves
-    ⦃⇓ r _ => ⌜OnCurveAt d.W V r (-(publicMsm V leaves Ts) + Hv)⌝⦄ := by
+    ⦃fun r _ => OnCurveAt d.W V r (-(publicMsm V leaves Ts) + Hv)⦄ := by
   refine builder_spec_imp _ _ _
     (publicInputCommitKnown_spec ci blindingH corrHead corrSum leaves Ts Hv cps.sum hH hC hpre
       hhead) fun r hr => ?_
@@ -1352,18 +1341,18 @@ def Leaf.Bound (V : Valuation F) : Leaf F nc → Prop
   | .b10 s _ _ => CellBound V 9 s
   | .condAdd _ _ => True
 
-open Std.Do in
+open Std.WP in
 /-- One leaf's ladder bounds its scalar, whatever its base reads as. -/
 private theorem leafStep_bound (ci : Fin nc) {V : Valuation F} (acc : AffinePoint (FVar F)) :
-    ∀ leaf : Leaf F nc, ⦃⌜True⌝⦄ leafStep (S := Builder V (KimchiConstraint F)) ci acc leaf
-      ⦃⇓ _ _ => ⌜leaf.Bound V⌝⦄
+    ∀ leaf : Leaf F nc, ⦃fun _ => True⦄ leafStep (S := Builder V (KimchiConstraint F)) ci acc leaf
+      ⦃fun _ _ => leaf.Bound V⦄
   | .full scalar base _ => by
       simp only [leafStep]
       have hsf := scaleFast2'_spec_scalar (V := V) 255 51 254 (by norm_num) base[ci] scalar
       have hadd := fun l => builder_spec_true
         (addFast (c := Builder V (KimchiConstraint F)) .checkFinite acc l)
-      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
-      rename_i _ _ _ hsf' _ _
+      vcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i hsf' _ _
       obtain ⟨z, bb, h0, -, hlt, hval⟩ := hsf'
       exact ⟨z, bb, h0, hlt (by norm_num), hval⟩
   | .b128 scalar base _ => by
@@ -1371,8 +1360,8 @@ private theorem leafStep_bound (ci : Fin nc) {V : Valuation F} (acc : AffinePoin
       have hsf := scaleFast2'_spec_scalar (V := V) 255 26 127 (by norm_num) base[ci] scalar
       have hadd := fun l => builder_spec_true
         (addFast (c := Builder V (KimchiConstraint F)) .checkFinite acc l)
-      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
-      rename_i _ _ _ hsf' _ _
+      vcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i hsf' _ _
       obtain ⟨z, bb, h0, hlt, -, hval⟩ := hsf'
       exact ⟨z, bb, h0, hlt, hval⟩
   | .b10 scalar base _ => by
@@ -1380,41 +1369,41 @@ private theorem leafStep_bound (ci : Fin nc) {V : Valuation F} (acc : AffinePoin
       have hsf := scaleFast2'_spec_scalar (V := V) 255 2 9 (by norm_num) base[ci] scalar
       have hadd := fun l => builder_spec_true
         (addFast (c := Builder V (KimchiConstraint F)) .checkFinite acc l)
-      mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
-      rename_i _ _ _ hsf' _ _
+      vcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd]
+      rename_i hsf' _ _
       obtain ⟨z, bb, h0, hlt, -, hval⟩ := hsf'
       exact ⟨z, bb, h0, hlt, hval⟩
   | .condAdd b base => by
       exact builder_spec_true _
 
-open Std.Do in
+open Std.WP in
 /-- The fold's ladders bound every leaf's scalar, at a first chunk. -/
 private theorem foldChunks_bound (hnc : 0 < nc) {V : Valuation F} :
     ∀ (acc : Vector (AffinePoint (FVar F)) nc) (leaves : List (Leaf F nc)),
-      ⦃⌜True⌝⦄ foldChunks (S := Builder V (KimchiConstraint F)) acc leaves
-      ⦃⇓ _ _ => ⌜∀ l ∈ leaves, l.Bound V⌝⦄
+      ⦃fun _ => True⦄ foldChunks (S := Builder V (KimchiConstraint F)) acc leaves
+      ⦃fun _ _ => ∀ l ∈ leaves, l.Bound V⦄
   | acc, [] => by
       simp only [foldChunks]
-      mvcgen
-      simp
+      vcgen
+      rename_i h
+      simp at h
   | acc, leaf :: rest => by
       simp only [foldChunks]
       have hc := chunkwise_at (V := V) (fun c => leafStep c acc[c] leaf) ⟨0, hnc⟩
         (fun _ => leaf.Bound V) (leafStep_bound ⟨0, hnc⟩ acc[0] leaf)
       have ih := fun acc' => foldChunks_bound hnc (V := V) acc' rest
-      mvcgen [hc, ih]
-      rename_i _ _ hl _ _
-      intro hr l hl'
+      vcgen [hc, ih]
+      rename_i hl _ _ hr l hl'
       rcases List.mem_cons.mp hl' with rfl | hm
       · exact hl
       · exact hr l hm
 
-open Std.Do in
+open Std.WP in
 /-- The fold, from any corrections' sum, bounds every leaf's scalar. -/
 private theorem publicInputCommitFold_bound (hnc : 0 < nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
-    ⦃⌜True⌝⦄ publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
-    ⦃⇓ _ _ => ⌜∀ l ∈ leaves, l.Bound V⌝⦄ := by
+    ⦃fun _ => True⦄ publicInputCommitFold (S := Builder V (KimchiConstraint F)) blindingH leaves
+    ⦃fun _ _ => ∀ l ∈ leaves, l.Bound V⦄ := by
   simp only [publicInputCommitFold, publicInputCommitChunks]
   have hs := builder_spec_true
     (sumCorrectionsHead (S := Builder V (KimchiConstraint F)) leaves)
@@ -1422,21 +1411,23 @@ private theorem publicInputCommitFold_bound (hnc : 0 < nc) {V : Valuation F}
   have hc := fun (acc : Vector (AffinePoint (FVar F)) nc) => builder_spec_true
     (chunkwise (S := Builder V (KimchiConstraint F)) fun c =>
       (·.p) <$> addFast .checkFinite ⟨acc[c].x, CVar.negate_ acc[c].y⟩ blindingH)
-  mvcgen [hs, hf, hc]
+  vcgen [hs, hf, hc]
+  rename_i h _ _ l hl
+  exact h l hl
 
-open Std.Do in
+open Std.WP in
 /-- `publicInputCommitFull` bounds every leaf's scalar and makes every bit boolean, whatever
 the bases read as. -/
 theorem publicInputCommitFull_bound (hnc : 0 < nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
-    ⦃⌜True⌝⦄ publicInputCommitFull (S := Builder V (KimchiConstraint F)) blindingH leaves
-    ⦃⇓ _ _ => ⌜∀ l ∈ leaves, l.Bound V ∧ l.bitBoolean V⌝⦄ := by
+    ⦃fun _ => True⦄ publicInputCommitFull (S := Builder V (KimchiConstraint F)) blindingH leaves
+    ⦃fun _ _ => ∀ l ∈ leaves, l.Bound V ∧ l.bitBoolean V⦄ := by
   simp only [publicInputCommitFull]
   have hb := constrainBits_boolean (V := V) leaves
   have hf := publicInputCommitFold_bound hnc (V := V) blindingH leaves
-  mvcgen [hb, hf]
-  rename_i _ _ hb' _ _
-  exact fun hf' l hl => ⟨hf' l hl, hb' l hl⟩
+  vcgen [hb, hf]
+  rename_i hb' _ _ hf' l hl
+  exact ⟨hf' l hl, hb' l hl⟩
 
 end Fold
 
@@ -1557,15 +1548,15 @@ omit [ToNat F] in
 /-- The sealing walk reads each leaf as its sealed copy, and makes a boolean leaf's bit
 boolean. -/
 private theorem sealLeaf_spec {V : Valuation F} (leaf : Leaf F nc) :
-    ⦃⌜True⌝⦄ sealLeaf (S := Builder V (KimchiConstraint F)) leaf
-    ⦃⇓ r _ => ⌜Leaf.SameReads V leaf r ∧ leaf.bitBoolean V⌝⦄ := by
+    ⦃fun _ => True⦄ sealLeaf (S := Builder V (KimchiConstraint F)) leaf
+    ⦃fun r _ => Leaf.SameReads V leaf r ∧ leaf.bitBoolean V⦄ := by
   have hm := fun v : Vector (AffinePoint (FVar F)) nc =>
     builder_spec_vector_mapM_get (sealPoint (c := Builder V (KimchiConstraint F)))
       (fun q r => r.x.val V = q.x.val V ∧ r.y.val V = q.y.val V) sealPoint_spec v
   cases leaf with
   | condAdd b base =>
       simp only [sealLeaf]
-      mvcgen
+      vcgen
       rename_i hb
       refine ⟨⟨rfl, fun _ => ⟨rfl, rfl⟩⟩, ?_⟩
       rcases (LawfulBasicSystem.holds_boolean V (↑b : CVar F)).mp hb with h | h
@@ -1575,17 +1566,23 @@ private theorem sealLeaf_spec {V : Valuation F} (leaf : Leaf F nc) :
       simp only [sealLeaf]
       have hc := hm corr
       have hb := hm base
-      mvcgen [hc, hb]
+      vcgen [hc, hb]
+      rename_i hc' _ hb'
+      exact ⟨⟨rfl, hb', hc'⟩, trivial⟩
   | b128 s base corr =>
       simp only [sealLeaf]
       have hc := hm corr
       have hb := hm base
-      mvcgen [hc, hb]
+      vcgen [hc, hb]
+      rename_i hc' _ hb'
+      exact ⟨⟨rfl, hb', hc'⟩, trivial⟩
   | b10 s base corr =>
       simp only [sealLeaf]
       have hc := hm corr
       have hb := hm base
-      mvcgen [hc, hb]
+      vcgen [hc, hb]
+      rename_i hc' _ hb'
+      exact ⟨⟨rfl, hb', hc'⟩, trivial⟩
 
 omit [DecidableEq F] [ToNat F] in
 private theorem Leaf.SameReads.scalarVar {V : Valuation F} :
@@ -1668,21 +1665,20 @@ private theorem Leaf.SameReads.forall {V : Valuation F} {P : Leaf F nc → Prop}
       · exact hP hl (h _ (List.mem_cons_self ..))
       · exact ih (fun l hl' => h l (List.mem_cons_of_mem _ hl')) l hmem
 
-open Std.Do in
+open Std.WP in
 /-- `publicInputCommitSealed` bounds every leaf's scalar and makes every bit boolean, whatever
 the bases read as. -/
 theorem publicInputCommitSealed_bound (hnc : 0 < nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) :
-    ⦃⌜True⌝⦄ publicInputCommitSealed (S := Builder V (KimchiConstraint F)) blindingH leaves
-    ⦃⇓ _ _ => ⌜∀ l ∈ leaves, l.Bound V ∧ l.bitBoolean V⌝⦄ := by
+    ⦃fun _ => True⦄ publicInputCommitSealed (S := Builder V (KimchiConstraint F)) blindingH leaves
+    ⦃fun _ _ => ∀ l ∈ leaves, l.Bound V ∧ l.bitBoolean V⦄ := by
   simp only [publicInputCommitSealed]
   have hs := builder_spec_mapM (V := V) (c := KimchiConstraint F)
     (sealLeaf (S := Builder V (KimchiConstraint F)))
     (fun r l => Leaf.SameReads V l r ∧ l.bitBoolean V) id sealLeaf_spec leaves
   have hf := fun rs => publicInputCommitFold_bound hnc (V := V) blindingH rs
-  mvcgen [hs, hf]
-  rename_i rs _ hrs _ _
-  intro hb l hl
+  vcgen [hs, hf]
+  rename_i rs _ hrs _ _ hb l hl
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hl
   have hlen : rs.length = leaves.length := by simpa using hrs.length_eq
   have h := (List.forall₂_iff_get.mp hrs).2 i (by omega) (by simpa using hi)
@@ -1849,11 +1845,11 @@ private theorem xHatFold_reads (s : PastaShape C) (ci : Fin nc) {V : Valuation C
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hscalar : leafHasScalar leaves) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitFold (S := Builder V (KimchiConstraint C.BaseField)) blindingH leaves
-    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
+    ⦃fun r _ => OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄ := by
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⦄ := by
   have hne : leaves ≠ [] := by
     rintro rfl; simp [leafHasScalar] at hscalar
   refine builder_spec_imp _ _ _
@@ -1879,18 +1875,18 @@ theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuat
     (hbind : (∀ leaf ∈ leaves, leaf.bitBoolean V) →
       XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hscalar : leafHasScalar leaves) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitFull (S := Builder V (KimchiConstraint C.BaseField)) blindingH leaves
-    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
+    ⦃fun r _ => OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄ := by
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⦄ := by
   -- the gadget opens with the bit pre-pass, so its own rows give the leaves' booleanity
-  show ⦃⌜True⌝⦄
+  show ⦃fun _ => True⦄
     (constrainBits (S := Builder V (KimchiConstraint C.BaseField)) leaves >>= fun _ =>
       publicInputCommitFold blindingH leaves)
-    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
+    ⦃fun r _ => OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⦄
   exact builder_spec_bind_of _ _ _ _ (constrainBits_boolean (V := V) leaves) fun hb _ =>
     xHatFold_reads s ci σ lagrange blindingH leaves Ts cps (hbind hb) hscalar
 
@@ -1932,24 +1928,23 @@ theorem xHatSealed_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
     (hbind : (∀ leaf ∈ leaves, leaf.bitBoolean V) →
       XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hscalar : leafHasScalar leaves) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitSealed (S := Builder V (KimchiConstraint C.BaseField)) blindingH leaves
-    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci]
+    ⦃fun r _ => OnCurveAt s.d.W V r[ci]
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄ := by
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⦄ := by
   have hmap := builder_spec_mapM (sealLeaf (S := Builder V (KimchiConstraint C.BaseField)))
     (fun r a => Leaf.SameReads V a r ∧ a.bitBoolean V) id sealLeaf_spec leaves
   simp only [publicInputCommitSealed]
-  mvcgen [hmap]
-  rename_i _ rs
-  intro st hrel
+  vcgen (errorOnMissingSpec := false) [hmap]
+  rename_i rs _ hrel
   rw [List.map_id] at hrel
   obtain ⟨hb, hs⟩ := (List.forall₂_and_left leaves rs).mp
     (hrel.flip.imp fun _ _ h => ⟨h.2, h.1⟩ : List.Forall₂ (fun a r => a.bitBoolean V ∧
       Leaf.SameReads V a r) leaves rs)
   rw [← Leaf.SameReads.pubOf hs]
-  exact xHatFold_reads s ci σ lagrange blindingH rs Ts cps ((hbind hb).ofSameReads hs)
-    (Leaf.SameReads.hasScalar hs hscalar) st trivial
+  exact (xHatFold_reads s ci σ lagrange blindingH rs Ts cps ((hbind hb).ofSameReads hs)
+    (Leaf.SameReads.hasScalar hs hscalar)).le_wp _ trivial
 
 /-- **The step-side gadget reads as the wire verifier's `publicCommitment`.** The
 known-domain shape (`publicInputCommitKnown`): the corrections are constants, so their sum
@@ -1962,12 +1957,12 @@ theorem xHatKnown_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
     (leaves : List (Leaf C.BaseField nc))
     (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ lagrange blindingH leaves Ts cps)
     (hhead : leafHeadScalar leaves) (hC : OnCurveAt s.d.W V corrSum cps.sum) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitKnown (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH corrHead
       corrSum leaves
-    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r
+    ⦃fun r _ => OnCurveAt s.d.W V r
       (SWPoint.equivPoint C.E
-        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⌝⦄ := by
+        (Kimchi.Verifier.publicCommitment C σ lagrange (pubOf C V leaves))[ci])⦄ := by
   have hne : leaves ≠ [] := by
     rintro rfl; exact hhead.elim
   refine builder_spec_imp _ _ _
@@ -2490,18 +2485,18 @@ def publicInputCommitMasked [ConstraintHolds C.BaseField S] [LawfulBasicSystem C
 variable [ConstraintHolds C.BaseField S] [LawfulBasicSystem C.BaseField S]
   {V : Valuation C.BaseField}
 
-open Std.Do in
+open Std.WP in
 /-- Masking a packed scalar's leaf keeps its scalar cell. -/
 private theorem maskLeaf_bound (shared : Bool) {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
     (k : PackedScalar C.BaseField) (Pss : Vector (Vector C.Point nc) n) (P0 : Vector C.Point nc) :
-    ⦃⌜True⌝⦄ maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits k Pss P0
-    ⦃⇓ r _ => ⌜r.Bound V ∧ r.bitBoolean V → k.Bound V⌝⦄ := by
+    ⦃fun _ => True⦄ maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits k Pss P0
+    ⦃fun r _ => r.Bound V ∧ r.bitBoolean V → k.Bound V⦄ := by
   have hm := fun (ps : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) n) => builder_spec_true
     (maskCells (S := Builder V (KimchiConstraint C.BaseField)) bits ps)
   cases k <;> cases shared <;> simp only [maskLeaf, Bool.false_eq_true, ite_false, ite_true] <;>
-    mvcgen [hm] <;> simp_all [Leaf.Bound, Leaf.bitBoolean, PackedScalar.Bound, constLeaf]
+    vcgen [hm] <;> simp_all [Leaf.Bound, Leaf.bitBoolean, PackedScalar.Bound, constLeaf]
 
-open Std.Do in
+open Std.WP in
 /-- **The public-input ladders bound the packed scalars, whatever the bases.** Under any
 valuation satisfying the emitted constraints, every packed scalar's cell reads as its ladder
 bounds it (`PackedScalar.Bound`): the ladders' decomposition rows never read the bases, so no
@@ -2509,10 +2504,10 @@ branch bits, table or key enter. -/
 theorem publicInputCommitMasked_bound (hnc : 0 < nc) (shared : Bool) {n m : ℕ} [NeZero n]
     (blindingH : AffinePoint (FVar C.BaseField)) (bits : Vector (BoolVar C.BaseField) n)
     (ks : Vector (PackedScalar C.BaseField) m) (tables : Vector (Vector (Vector C.Point nc) m) n) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitMasked (S := Builder V (KimchiConstraint C.BaseField)) shared blindingH
       bits ks tables
-    ⦃⇓ _ _ => ⌜∀ k ∈ ks.toList, k.Bound V⌝⦄ := by
+    ⦃fun _ _ => ∀ k ∈ ks.toList, k.Bound V⦄ := by
   have hml := builder_spec_vector_mapM_get (V := V) (c := KimchiConstraint C.BaseField)
     (fun i : Fin m =>
       maskLeaf (S := Builder V (KimchiConstraint C.BaseField)) shared bits ks[i]
@@ -2530,21 +2525,21 @@ theorem publicInputCommitMasked_bound (hnc : 0 < nc) (shared : Bool) {n m : ℕ}
     simp only [Vector.length_toList] at hi
     simpa using hrs ⟨i, hi⟩ (hb _ (by simp))
   unfold publicInputCommitMasked maskLeaves
-  cases shared <;> simp only [Bool.false_eq_true, ite_false, ite_true] <;> mvcgen [hml, hF, hS] <;>
-    rename_i _ rs _ _ _ hrs <;> exact hall rs fun i => by simpa using hrs i
+  cases shared <;> simp only [Bool.false_eq_true, ite_false, ite_true] <;> vcgen [hml, hF, hS] <;>
+    rename_i hrs _ _ hb k hk <;> exact hall ls (fun i => by simpa using hrs i) hb k hk
 
 /-- Under the branch bits reading as the indicator of `b`, the masked point reads as the
 `b`-th. -/
 theorem maskPoint_spec {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
     (ps : Vector (AffinePoint (FVar C.BaseField)) n) (b : Fin n)
     (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b))) :
-    ⦃⌜True⌝⦄ maskPoint (S := Builder V S) bits ps
-    ⦃⇓ r _ => ⌜r.x.val V = ps[b].x.val V ∧ r.y.val V = ps[b].y.val V⌝⦄ := by
+    ⦃fun _ => True⦄ maskPoint (S := Builder V S) bits ps
+    ⦃fun r _ => r.x.val V = ps[b].x.val V ∧ r.y.val V = ps[b].y.val V⦄ := by
   simp only [maskPoint]
   have hx := Pseudo.choose_spec (c := S) (V := V) bits.toList ps.toList (·.x)
   have hy := Pseudo.choose_spec (c := S) (V := V) bits.toList ps.toList (·.y)
-  mvcgen [hx, hy]
-  rename_i _ _ hrx _ _ hry
+  vcgen [hx, hy]
+  rename_i hrx _ hry
   rw [hrx, hry, sum_oneHot (fun p : AffinePoint (FVar C.BaseField) => p.x.val V) bits ps.toList
       (by simp) b hbits,
     sum_oneHot (fun p : AffinePoint (FVar C.BaseField) => p.y.val V) bits ps.toList
@@ -2555,7 +2550,7 @@ theorem maskPoint_spec {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
 private theorem maskCells_spec {n : ℕ} (bits : Vector (BoolVar C.BaseField) n)
     (vs : Vector (Vector (AffinePoint (FVar C.BaseField)) nc) n) (b : Fin n)
     (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b))) :
-    ⦃⌜True⌝⦄ maskCells (S := Builder V S) bits vs ⦃⇓ r _ => ⌜SameCells V r vs[b]⌝⦄ := by
+    ⦃fun _ => True⦄ maskCells (S := Builder V S) bits vs ⦃fun r _ => SameCells V r vs[b]⦄ := by
   unfold maskCells
   have hm := builder_spec_vector_mapM_get (maskPoint (S := Builder V S) bits ∘ fun ci : Fin nc =>
       vs.map (·[ci]))
@@ -2573,49 +2568,55 @@ private theorem maskLeaf_spec (shared : Bool) {n : ℕ} (bits : Vector (BoolVar 
     (k : PackedScalar C.BaseField) (Pss : Vector (Vector C.Point nc) n) (P0 : Vector C.Point nc)
     (b : Fin n) (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b)))
     (hshared : shared = true → P0 = Pss[b]) :
-    ⦃⌜True⌝⦄ maskLeaf (S := Builder V S) shared bits k Pss P0
-    ⦃⇓ r _ => ⌜Leaf.SameReads V (constLeaf k Pss[b]) r⌝⦄ := by
+    ⦃fun _ => True⦄ maskLeaf (S := Builder V S) shared bits k Pss P0
+    ⦃fun r _ => Leaf.SameReads V (constLeaf k Pss[b]) r⦄ := by
   have hB := maskCells_spec (V := V) (S := S) bits (Pss.map (·.map constPt)) b hbits
   have hC := fun L => maskCells_spec (V := V) (S := S) bits
     (Pss.map (·.map fun P => constPt (negShift C L P))) b hbits
   cases k with
   | bit x =>
       simp only [maskLeaf]
-      mvcgen [hB]
-      rename_i r _ hr
+      vcgen [hB]
+      rename_i hr
       exact ⟨rfl, by simpa [constLeaf] using hr⟩
   | full x =>
       simp only [maskLeaf]
       cases shared with
       | true =>
-          mvcgen
-          rw [hshared]; exact Leaf.SameReads.refl _
+          simp only [Bool.false_eq_true, ite_false, ite_true]
+          vcgen
+          rw [hshared rfl]; exact Leaf.SameReads.refl _
       | false =>
           have hC' := hC 255
-          mvcgen [hB, hC']
-          rename_i rb _ hrb rc _ hrc
+          simp only [Bool.false_eq_true, ite_false, ite_true]
+          vcgen [hB, hC']
+          rename_i hrb _ hrc
           exact ⟨rfl, by simpa [constLeaf] using hrb, by simpa [constLeaf] using hrc⟩
   | b128 x =>
       simp only [maskLeaf]
       cases shared with
       | true =>
-          mvcgen
-          rw [hshared]; exact Leaf.SameReads.refl _
+          simp only [Bool.false_eq_true, ite_false, ite_true]
+          vcgen
+          rw [hshared rfl]; exact Leaf.SameReads.refl _
       | false =>
           have hC' := hC 130
-          mvcgen [hB, hC']
-          rename_i rb _ hrb rc _ hrc
+          simp only [Bool.false_eq_true, ite_false, ite_true]
+          vcgen [hB, hC']
+          rename_i hrb _ hrc
           exact ⟨rfl, by simpa [constLeaf] using hrb, by simpa [constLeaf] using hrc⟩
   | b10 x =>
       simp only [maskLeaf]
       cases shared with
       | true =>
-          mvcgen
-          rw [hshared]; exact Leaf.SameReads.refl _
+          simp only [Bool.false_eq_true, ite_false, ite_true]
+          vcgen
+          rw [hshared rfl]; exact Leaf.SameReads.refl _
       | false =>
           have hC' := hC 10
-          mvcgen [hB, hC']
-          rename_i rb _ hrb rc _ hrc
+          simp only [Bool.false_eq_true, ite_false, ite_true]
+          vcgen [hB, hC']
+          rename_i hrb _ hrc
           exact ⟨rfl, by simpa [constLeaf] using hrb, by simpa [constLeaf] using hrc⟩
 
 /-- Under the branch bits reading as the indicator of `b`, the masked leaves read as branch
@@ -2625,9 +2626,9 @@ private theorem maskLeaves_spec (shared : Bool) {n m : ℕ} [NeZero n]
     (tables : Vector (Vector (Vector C.Point nc) m) n) (b : Fin n)
     (hbits : CircuitType.Reads V bits (Vector.ofFn fun l => decide (l = b)))
     (hshared : shared = true → tables[(0 : Fin n)] = tables[b]) :
-    ⦃⌜True⌝⦄ maskLeaves (S := Builder V S) shared bits ks tables
-    ⦃⇓ ls _ => ⌜List.Forall₂ (Leaf.SameReads V)
-      (List.zipWith constLeaf ks.toList tables[b].toList) ls⌝⦄ := by
+    ⦃fun _ => True⦄ maskLeaves (S := Builder V S) shared bits ks tables
+    ⦃fun ls _ => List.Forall₂ (Leaf.SameReads V)
+      (List.zipWith constLeaf ks.toList tables[b].toList) ls⦄ := by
   unfold maskLeaves
   have hm := builder_spec_vector_mapM_get (V := V) (c := S) (fun i : Fin m =>
       maskLeaf (S := Builder V S) shared bits ks[i] (tables.map (·[i])) tables[(0 : Fin n)][i])
@@ -2636,8 +2637,8 @@ private theorem maskLeaves_spec (shared : Bool) {n m : ℕ} [NeZero n]
       (maskLeaf_spec (V := V) (S := S) shared bits ks[i] _ _ b hbits fun h => by
         rw [hshared h]; simp)
       fun r h => by simpa using h) (Vector.finRange m)
-  mvcgen [hm]
-  rename_i rs _ hrs
+  vcgen [hm]
+  rename_i hrs
   rw [← Vector.toList_zipWith]
   exact forall₂_toList_iff.mpr fun i => by simpa using hrs i
 
@@ -2665,27 +2666,26 @@ theorem xHatMasked_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) (σ :
     (htab : tables[b] = lagrange) (hshared : shared = true → tables[(0 : Fin n)] = tables[b])
     (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ lagrange.toList, Ps[ci] ≠ 0)
     (hscalar : leafHasScalar (List.zipWith constLeaf ks.toList lagrange.toList)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     publicInputCommitMasked (S := Builder V (KimchiConstraint C.BaseField)) shared (constPt σ.h)
       bits ks tables
-    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r[ci] (SWPoint.equivPoint C.E (publicCommitment C σ
-      lagrange.toArray (pubOf C V (List.zipWith constLeaf ks.toList lagrange.toList)))[ci])⌝⦄ := by
+    ⦃fun r _ => OnCurveAt s.d.W V r[ci] (SWPoint.equivPoint C.E (publicCommitment C σ
+      lagrange.toArray (pubOf C V (List.zipWith constLeaf ks.toList lagrange.toList)))[ci])⦄ := by
   have hm := maskLeaves_spec (V := V) (S := KimchiConstraint C.BaseField) shared bits ks tables b
     hbits hshared
   rw [htab] at hm
   unfold publicInputCommitMasked
-  mvcgen [hm]
+  vcgen (errorOnMissingSpec := false) [hm]
   all_goals
-    rename_i _ rs _
-    intro st hrs
-    have hbind := fun hb' : (∀ l ∈ rs, Leaf.bitBoolean V l) =>
+    rename_i hrs _
+    have hbind := fun hb' : (∀ l ∈ leaves, Leaf.bitBoolean V l) =>
       (xhatBinding_const (V := V) s ci σ lagrange ks hh hL
         (Leaf.SameReads.bitBoolean_of hrs hb')).ofSameReads hrs
     rw [← Leaf.SameReads.pubOf hrs]
-  · exact xHat_reads_publicCommitment s ci σ lagrange.toArray (constPt σ.h) rs _ _ hbind
-      (Leaf.SameReads.hasScalar hrs hscalar) st trivial
-  · exact xHatSealed_reads_publicCommitment s ci σ lagrange.toArray (constPt σ.h) rs _ _ hbind
-      (Leaf.SameReads.hasScalar hrs hscalar) st trivial
+  · exact (xHat_reads_publicCommitment s ci σ lagrange.toArray (constPt σ.h) leaves _ _ hbind
+      (Leaf.SameReads.hasScalar hrs hscalar)).le_wp _ trivial
+  · exact (xHatSealed_reads_publicCommitment s ci σ lagrange.toArray (constPt σ.h) leaves _ _
+      hbind (Leaf.SameReads.hasScalar hrs hscalar)).le_wp _ trivial
 
 end Masked
 

@@ -30,7 +30,7 @@ are stated against the pure model; the wire section restates them against `toGro
 
 namespace Snarky.Kimchi
 
-open Snarky Std.Do
+open Snarky
 
 variable {F c : Type}
 
@@ -114,19 +114,19 @@ private def sqrtFlagged [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintH
   assertSquare sqrtVal xOrMx
   pure (sqrtVal, isQR)
 
-open Std.Do in
+open Std.WP in
 /-- The flagged root's contract: the flag is a bit, and the root squares to the operand
 where the flag is set, to its non-residue twist where it is clear. -/
 @[spec] private theorem sqrtFlagged_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (sqrtF : F → Option F) (nonResidue : F) (x : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     sqrtFlagged (c := Builder V c) sqrtF nonResidue x
-    ⦃⇓ r _ => ⌜∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
-      r.1.val V * r.1.val V = if bb then x.val V else nonResidue * x.val V⌝⦄ := by
+    ⦃fun r _ => ∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
+      r.1.val V * r.1.val V = if bb then x.val V else nonResidue * x.val V⦄ := by
   simp only [sqrtFlagged, select_fvar]
-  mvcgen
-  rename_i _ isQR _ hbool _ _ hsel _ _ _ _ _ hsq
+  vcgen
+  rename_i hbool _ hsel _ _ _ _ hsq
   obtain ⟨bb, hbb⟩ := hbool
   refine ⟨bb, hbb, ?_⟩
   rw [hsq, hsel bb hbb, CVar.val_scale_]
@@ -176,7 +176,7 @@ def groupMapCircuit [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds
   let xResult := CVar.add_ (CVar.add_ t1x t2x) t3x
   pure ⟨xResult, yResult⟩
 
-open Std.Do in
+open Std.WP in
 /-- **Soundness.** Any satisfying valuation reads the result as an on-curve pair
 (`y² = x³ + b`) whose abscissa is one of the three `potentialXs` candidates: a flag is
 forced set, the selectors pick one branch, and that branch's root is the ordinate. The
@@ -184,19 +184,17 @@ advice is universally quantified. -/
 theorem groupMapCircuit_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     groupMapCircuit (c := Builder V c) sqrtF params t
-    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs params (t.val V)).1 ∨
+    ⦃fun r _ => (r.x.val V = (potentialXs params (t.val V)).1 ∨
         r.x.val V = (potentialXs params (t.val V)).2.1 ∨
         r.x.val V = (potentialXs params (t.val V)).2.2) ∧
-      r.y.val V * r.y.val V = ySquared params (r.x.val V)⌝⦄ := by
+      r.y.val V * r.y.val V = ySquared params (r.x.val V)⦄ := by
   simp only [groupMapCircuit]
-  mvcgen
-  rename_i _ t2 _ ht2 alphaInv _ halphaInv alpha _ halpha t4 _ ht4 t4Alpha _ ht4Alpha temp1 _
-    htemp1 t2Inv _ ht2Inv t2PlusFuSq _ ht2PlusFuSq temp2a _ htemp2a temp2 _ htemp2 xSq1 _ hxSq1
-    xCu1 _ hxCu1 sf1 _ hsf1 xSq2 _ hxSq2 xCu2 _ hxCu2 sf2 _ hsf2 xSq3 _ hxSq3 xCu3 _ hxCu3 sf3 _
-    hsf3 _ _ hnz x2First _ hx2First nb2AndB3 _ hnb2AndB3 x3First _ hx3First t3y _ ht3y t2y _
-    ht2y t1y _ ht1y t3x _ ht3x t2x _ ht2x t1x _ ht1x
+  vcgen
+  rename_i ht2 _ halphaInv _ halpha _ ht4 _ ht4Alpha _ htemp1 _ ht2Inv _ ht2PlusFuSq _ htemp2a _
+    htemp2 _ _ hxSq1 _ _ hxCu1 _ _ _ hsf1 _ _ hxSq2 _ _ hxCu2 _ _ _ hsf2 _ hxSq3 _ hxCu3 _ _ _ hsf3
+    _ _ hnz _ hx2First _ hnb2AndB3 _ hx3First _ ht3y _ ht2y _ ht1y _ ht3x _ ht2x _ ht1x
   obtain ⟨bb1, hb1, hy1⟩ := hsf1
   obtain ⟨bb2, hb2, hy2⟩ := hsf2
   obtain ⟨bb3, hb3, hy3⟩ := hsf3
@@ -240,16 +238,16 @@ theorem groupMapCircuit_spec {V : Valuation F} [Field F] [DecidableEq F]
     · simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
         hs2, hs3, bit, hxCu1, hxSq1] using hy1
 
-open Std.Do in
+open Std.WP in
 /-- **Soundness, first-flagged.** The selected candidate is the first whose flag is set, and
 every earlier candidate's flag is clear with its clearance certified: a root of the
 non-residue twist of its ordinate square. The advice is universally quantified. -/
 theorem groupMapCircuit_first_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     groupMapCircuit (c := Builder V c) sqrtF params t
-    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs params (t.val V)).1 ∧
+    ⦃fun r _ => (r.x.val V = (potentialXs params (t.val V)).1 ∧
         r.y.val V * r.y.val V = ySquared params (potentialXs params (t.val V)).1) ∨
       ((∃ y : F, y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).1) ∧
         r.x.val V = (potentialXs params (t.val V)).2.1 ∧
@@ -257,14 +255,12 @@ theorem groupMapCircuit_first_spec {V : Valuation F} [Field F] [DecidableEq F]
       ((∃ y : F, y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).1) ∧
         (∃ y : F, y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).2.1) ∧
         r.x.val V = (potentialXs params (t.val V)).2.2 ∧
-        r.y.val V * r.y.val V = ySquared params (potentialXs params (t.val V)).2.2)⌝⦄ := by
+        r.y.val V * r.y.val V = ySquared params (potentialXs params (t.val V)).2.2)⦄ := by
   simp only [groupMapCircuit]
-  mvcgen
-  rename_i _ t2 _ ht2 alphaInv _ halphaInv alpha _ halpha t4 _ ht4 t4Alpha _ ht4Alpha temp1 _
-    htemp1 t2Inv _ ht2Inv t2PlusFuSq _ ht2PlusFuSq temp2a _ htemp2a temp2 _ htemp2 xSq1 _ hxSq1
-    xCu1 _ hxCu1 sf1 _ hsf1 xSq2 _ hxSq2 xCu2 _ hxCu2 sf2 _ hsf2 xSq3 _ hxSq3 xCu3 _ hxCu3 sf3 _
-    hsf3 _ _ hnz x2First _ hx2First nb2AndB3 _ hnb2AndB3 x3First _ hx3First t3y _ ht3y t2y _
-    ht2y t1y _ ht1y t3x _ ht3x t2x _ ht2x t1x _ ht1x
+  vcgen
+  rename_i ht2 _ halphaInv _ halpha _ ht4 _ ht4Alpha _ htemp1 _ ht2Inv _ ht2PlusFuSq _ htemp2a _
+    htemp2 _ _ hxSq1 _ _ hxCu1 y1 _ _ hsf1 _ _ hxSq2 _ _ hxCu2 y2 _ _ hsf2 _ hxSq3 _ hxCu3 _ _ _
+    hsf3 _ _ hnz _ hx2First _ hnb2AndB3 _ hx3First _ ht3y _ ht2y _ ht1y _ ht3x _ ht2x _ ht1x
   obtain ⟨bb1, hb1, hy1⟩ := hsf1
   obtain ⟨bb2, hb2, hy2⟩ := hsf2
   obtain ⟨bb3, hb3, hy3⟩ := hsf3
@@ -289,11 +285,11 @@ theorem groupMapCircuit_first_spec {V : Valuation F} [Field F] [DecidableEq F]
   have htw1 : bb1 = false → ∃ y : F,
       y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).1 := by
     rintro rfl
-    exact ⟨sf1.1.val V, by simpa [ySquared, CVar.val_add_, hxCu1, hxSq1, hx1v] using hy1⟩
+    exact ⟨y1.val V, by simpa [ySquared, CVar.val_add_, hxCu1, hxSq1, hx1v] using hy1⟩
   have htw2 : bb2 = false → ∃ y : F,
       y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).2.1 := by
     rintro rfl
-    exact ⟨sf2.1.val V, by simpa [ySquared, CVar.val_add_, hxCu2, hxSq2, hx2v] using hy2⟩
+    exact ⟨y2.val V, by simpa [ySquared, CVar.val_add_, hxCu2, hxSq2, hx2v] using hy2⟩
   rcases bb1 with _ | _
   · rcases bb2 with _ | _
     · rcases bb3 with _ | _
@@ -323,6 +319,10 @@ theorem groupMapCircuit_first_spec {V : Valuation F} [Field F] [DecidableEq F]
 
 The honest run at the prover's reading (`Snarky.Prover.WP`): the flagged root's advice
 registered, then the map's law over its stages. -/
+
+section ProverReading
+
+open Std.Do
 
 /-- `isQRWit` returns whether the operand's reading has a root. -/
 @[spec] private def Prover.isQRWit_reg [Field F] [DecidableEq F] [BasicSystem F c]
@@ -663,6 +663,8 @@ theorem Prover.groupMapCircuit_spec [Field F] [DecidableEq F] [BasicSystem F c]
   all_goals (try simp only [Prover.Reg.iff] at *)
   all_goals grind (ematch := 40) (gen := 40) only [CVar.Scoped.of_le]
 
+end ProverReading
+
 /-! ## The wire-protocol spec
 
 `Poseidon.GroupMap.toGroup` is the wire map-to-curve: the wire verifier's `U` base is its
@@ -752,7 +754,7 @@ private theorem sqrt?_twist {F : Type} [Field F] [Fintype F] [DecidableEq F]
   rw [hr]
   rfl
 
-open Std.Do in
+open Std.WP in
 /-- **Wire-level soundness.** Any satisfying valuation reads the result as a point of the
 wire spec's curve (`CompElliptic.CurveForms.ShortWeierstrass.OnCurve`) at one of the
 candidate abscissae. The advice is universally quantified. -/
@@ -760,15 +762,16 @@ theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} {c : Type}
     [BasicSystem (ZMod q) c] [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
     (spec : _root_.Poseidon.GroupMap.Spec q)
     (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec) t
-    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs (.ofSpec spec) (t.val V)).1 ∨
+    ⦃fun r _ => (r.x.val V = (potentialXs (.ofSpec spec) (t.val V)).1 ∨
         r.x.val V = (potentialXs (.ofSpec spec) (t.val V)).2.1 ∨
         r.x.val V = (potentialXs (.ofSpec spec) (t.val V)).2.2) ∧
-      OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)⌝⦄ := by
+      OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)⦄ := by
+  constructor
   intro nv h hsat
-  obtain ⟨hx, hy⟩ := groupMapCircuit_spec (c := c) (V := V) sqrtF
-    (.ofSpec spec) t nv h hsat
+  obtain ⟨hx, hy⟩ := (groupMapCircuit_spec (c := c) (V := V) sqrtF
+    (.ofSpec spec) t).le_wp nv h hsat
   refine ⟨hx, ?_⟩
   show _ ^ 2 = _ ^ 3 + spec.E.A * _ + spec.E.B
   rw [spec.hA]
@@ -776,6 +779,7 @@ theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} {c : Type}
   rw [show ((GroupMapParams.ofSpec spec).b : ZMod q) = spec.E.B from rfl] at hy
   linear_combination hy
 
+open Std.Do in
 /-- **Wire-level completeness.** The honest run's result reads
 `Poseidon.GroupMap.toGroup`'s point: `Prover.groupMapCircuit_spec` with the spec's own
 Tonelli–Shanks root as advice, its root and twist hypotheses discharged
@@ -847,7 +851,7 @@ private theorem getY_eq_none_iff (spec : _root_.Poseidon.GroupMap.Spec q) (x : Z
     · rfl
     · exact absurd ⟨y, (TonelliShanks.sqrt?_mul_self spec.sqrt hy).symm⟩ hnsq
 
-open Std.Do in
+open Std.WP in
 /-- **Wire-level soundness, up to sign.** When no ordinate square vanishes (`hnz`), any
 satisfying valuation reads the result as `toGroup`'s point up to the ordinate's sign: the
 constraints pin the root's square, not its sign. The advice is universally quantified. -/
@@ -856,11 +860,11 @@ theorem groupMapCircuit_toGroup_spec {V : Valuation (ZMod q)} {c : Type}
     (spec : _root_.Poseidon.GroupMap.Spec q)
     (hnz : ∀ x : ZMod q, _root_.Poseidon.GroupMap.curveEqn spec x ≠ 0)
     (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec) t
-    ⦃⇓ r _ => ⌜r.x.val V = (_root_.Poseidon.GroupMap.toGroup spec (t.val V)).x ∧
+    ⦃fun r _ => r.x.val V = (_root_.Poseidon.GroupMap.toGroup spec (t.val V)).x ∧
       (r.y.val V = (_root_.Poseidon.GroupMap.toGroup spec (t.val V)).y ∨
-        r.y.val V = -(_root_.Poseidon.GroupMap.toGroup spec (t.val V)).y)⌝⦄ := by
+        r.y.val V = -(_root_.Poseidon.GroupMap.toGroup spec (t.val V)).y)⦄ := by
   refine builder_spec_imp _ _ _
     (groupMapCircuit_first_spec (c := c) sqrtF (.ofSpec spec) t) fun r h => ?_
   simp only [potentialXs_ofSpec, ySquared_ofSpec] at h

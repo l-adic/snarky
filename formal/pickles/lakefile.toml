@@ -6,6 +6,10 @@ defaultTargets = ["Pickles"]
 # `lake lint` (standalone): Batteries' env-linter suite over this package's root.
 lintDriver = "batteries/runLinter"
 lintDriverArgs = ["Pickles"]
+# `vcgen` is opt-in on this toolchain; acknowledging it once here silences the warning each
+# call reports. `weak.` so builds survive the option's removal.
+[leanOptions]
+weak.experimental.vcgen = true
 
 # The in-circuit kimchi verifier: PureScript `packages/pickles`' verification gadgets,
 # ported to the snarky DSL and proved faithful to the DEPLOYED verifier —

@@ -326,20 +326,19 @@ run_cmd do
 
 -- The soundness-tag invariant (`WP.lean`): a program enters the soundness reading by
 -- NAMING the tag. `Builder V c` is `c` under a name instance search will not unfold, so
--- `WP (CircuitM F (Builder V c))` must resolve and `WP (CircuitM F c)` must not — a
+-- `WP (CircuitM F (Builder V c) α)` must resolve and `WP (CircuitM F c α)` must not — a
 -- generic instance at the untagged carrier would make the reading ambiguous. Checked at
 -- a concrete carrier; a violating instance would be declared generically and land here.
 run_cmd liftTermElabM do
   let resolves (ty : Lean.TSyntax `term) : Lean.Elab.TermElabM Bool := do
     let e ← Lean.instantiateMVars (← Lean.Elab.Term.elabType ty)
     return (← Lean.Meta.synthInstance? e).isSome
-  unless ← resolves (← `(Std.Do.WP
-      (Snarky.CircuitM Nat (Snarky.Builder (fun _ => (0 : Nat)) (Snarky.Basic Nat)))
-      (Std.Do.PostShape.arg Nat Std.Do.PostShape.pure))) do
+  unless ← resolves (← `(Std.WP.WP
+      (Snarky.CircuitM Nat (Snarky.Builder (fun _ => (0 : Nat)) (Snarky.Basic Nat)) Unit)
+      _ _ _)) do
     throwError "no WP instance at the soundness tag — the tagged reading (WP.lean) is broken"
   IO.println "✓ WP resolves at the soundness tag"
-  if ← resolves (← `(Std.Do.WP (Snarky.CircuitM Nat (Snarky.Basic Nat))
-      (Std.Do.PostShape.arg Nat Std.Do.PostShape.pure))) then
+  if ← resolves (← `(Std.WP.WP (Snarky.CircuitM Nat (Snarky.Basic Nat) Unit) _ _ _)) then
     throwError "WP instance found at the untagged carrier — the soundness-tag \
       resolution invariant (WP.lean) is broken"
   IO.println "✓ no WP instance at the untagged carrier"

@@ -208,16 +208,17 @@ where
 
 /-! ## Soundness -/
 
-open Std.Do in
+open Std.WP in
 /-- Sealing a point preserves both coordinates' readings — `sealVar_spec` at each. -/
 @[spec] theorem sealPoint_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (q : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     sealPoint (c := Builder V c) q
-    ⦃⇓ r _ => ⌜r.x.val V = q.x.val V ∧ r.y.val V = q.y.val V⌝⦄ := by
+    ⦃fun r _ => r.x.val V = q.x.val V ∧ r.y.val V = q.y.val V⦄ := by
   simp only [sealPoint]
-  mvcgen
+  vcgen
+  exact ⟨‹_›, ‹_›⟩
 
 open WeierstrassCurve.Affine in
 /-- A circuit point reads, under `V`, as the curve point `P`: its coordinates are a
@@ -294,20 +295,20 @@ private theorem two_torsion_of_y_eq_zero [Field F] [DecidableEq F]
   rw [WeierstrassCurve.Affine.negY, ha.1, ha.2.2.1, hy]
   ring
 
-open Std.Do in
+open Std.WP in
 /-- Under `checkFinite` the infinity column reads `0`, which rules out the infinite branch;
 a witnessed flag is pinned only by the gate's row. -/
 @[spec] private theorem infColumn_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
     (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     addFast.infColumn (c := Builder V c) fin p1 p2 sameX
-    ⦃⇓ b _ => ⌜fin = .checkFinite → (↑b : CVar F).val V = 0⌝⦄ := by
-  cases fin <;> simp only [addFast.infColumn] <;> mvcgen
+    ⦃fun (b : BoolVar F) _ => fin = .checkFinite → (↑b : CVar F).val V = 0⦄ := by
+  cases fin <;> simp only [addFast.infColumn] <;> vcgen
   · simp [false_, CVar.val]
-  · simp
+  · simp_all
 
-open Std.Do WeierstrassCurve.Affine in
+open Std.WP WeierstrassCurve.Affine in
 /-- **`addFast`'s soundness.** Any valuation satisfying the emitted row reads the result
 as the group sum, for operands with `P + P ≠ 0`: either the flag is `1` and `P + Q = 0`,
 or the flag is `0` and the output point reads as `P + Q`. Under `checkFinite` the flag
@@ -317,15 +318,15 @@ operands' readings. -/
     (fin : Finiteness) (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
     (p1' p2' : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄
+    ⦃fun _ => True⦄
     addFast (c := Builder V (KimchiConstraint F)) fin p1' p2'
-    ⦃⇓ r _ => ⌜(fin = .checkFinite → (↑r.isInfinity : CVar F).val V = 0) ∧
+    ⦃fun (r : AddResult F) _ => (fin = .checkFinite → (↑r.isInfinity : CVar F).val V = 0) ∧
         ∀ P Q : W.Point, OnCurveAt W V p1' P → OnCurveAt W V p2' Q → P + P ≠ 0 →
           ((↑r.isInfinity : CVar F).val V = 1 ∧ P + Q = 0) ∨
-            ((↑r.isInfinity : CVar F).val V = 0 ∧ OnCurveAt W V r.p (P + Q))⌝⦄ := by
+            ((↑r.isInfinity : CVar F).val V = 0 ∧ OnCurveAt W V r.p (P + Q))⦄ := by
   simp only [addFast]
-  mvcgen
-  rename_i _ q1 _ hs1 q2 _ hs2 _ _ _ inf _ hinf aux _ _ p3 _ _ _ _ hgate
+  vcgen
+  rename_i hs1 _ hs2 _ _ _ hinf _ _ _ _ hgate
   refine ⟨hinf, ?_⟩
   intro P Q hP hQ hPP
   have hy1ne : p1'.y.val V ≠ 0 := fun hy => hPP (two_torsion_of_y_eq_zero ha hP hy)

@@ -27,7 +27,7 @@ gadgets read, with every point checked on the curve.
 
 namespace Pickles
 
-open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
+open Snarky Snarky.Kimchi Kimchi.Verifier
 open CompElliptic.Fields.Pasta
 open scoped Kimchi
 
@@ -60,22 +60,23 @@ def AllocBranchData.check {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
   CheckedType.check (c := c) (val := Vector Bool MaxProofsVerified × Fp) (d.mask, d.domainLog2)
   let _ ← EndoScalar.toField 1 d.domainLog2 (.const Pasta.pallasEndo)
 
+open Std.WP in
 /-- Under any valuation satisfying the emitted constraints, the mask cells read as bits and
 the `log2` cell as a number below `2 ^ 16`. -/
 theorem AllocBranchData.check_spec {V : Valuation Fp}
     (d : AllocBranchData (FVar Fp) (BoolVar Fp)) :
-    ⦃⌜True⌝⦄ AllocBranchData.check (c := Builder V (KimchiConstraint Fp)) d
-    ⦃⇓ _ _ => ⌜(∀ m ∈ d.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
-      ∃ n : ℕ, n < 2 ^ 16 ∧ d.domainLog2.val V = (n : Fp)⌝⦄ := by
-  have hck : ⦃⌜True⌝⦄ CheckedType.check (F := Fp) (c := Builder V (KimchiConstraint Fp))
+    ⦃fun _ => True⦄ AllocBranchData.check (c := Builder V (KimchiConstraint Fp)) d
+    ⦃fun _ _ => (∀ m ∈ d.mask.toList, ∃ b : Bool, (↑m : CVar Fp).val V = bit b) ∧
+      ∃ n : ℕ, n < 2 ^ 16 ∧ d.domainLog2.val V = (n : Fp)⦄ := by
+  have hck : ⦃fun _ => True⦄ CheckedType.check (F := Fp) (c := Builder V (KimchiConstraint Fp))
       (val := Vector Bool MaxProofsVerified × Fp) (d.mask, d.domainLog2)
-      ⦃⇓ _ _ => ⌜CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
-        (val := Vector Bool MaxProofsVerified × Fp) V (d.mask, d.domainLog2)⌝⦄ :=
+      ⦃fun _ _ => CheckedType.post (F := Fp) (c := Builder V (KimchiConstraint Fp))
+        (val := Vector Bool MaxProofsVerified × Fp) V (d.mask, d.domainLog2)⦄ :=
     (builder_spec_iff _ _).mpr fun nv h => CheckedType.check_sound V _ nv h
   have htf := EndoScalar.toField_spec_rows (V := V) (by decide) (by decide) 1 d.domainLog2
     (.const Pasta.pallasEndo)
   simp only [AllocBranchData.check]
-  mvcgen [hck, htf]
+  vcgen [hck, htf]
   rename_i _ _ hp _ _ hn
   obtain ⟨n, hlt, hv, -⟩ := hn
   exact ⟨hp.1, n, hlt, hv⟩
@@ -102,6 +103,7 @@ instance instAllocBranchDataCheckedTypeProver :
       (AllocBranchData (FVar Fp) (BoolVar Fp)) :=
   instAllocBranchDataCheckedType
 
+open Std.Do in
 /-- The branch data's check at the prover's reading: from data reading a `log2` below
 `2 ^ 16`, the run succeeds and the state only grows. -/
 private theorem AllocBranchData.check_prover_spec (d : AllocBranchData (FVar Fp) (BoolVar Fp))
