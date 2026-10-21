@@ -41,13 +41,22 @@ seam law `solve_spec` (a successful solve satisfies every compiled constraint an
 decodes the public slots as declared; `solve_complete` names the same theorem), and the
 Lean-only laws beside their subjects: interpreter laws in `Snarky/{Builder,Prover}`
 (the bind-composition laws, builder/prover allocation agreement);
-a circuit's two readings as weakest preconditions, soundness at the `Builder V c` tag
-(`Std.WP`, `Snarky/WP.lean`) and completeness at the `Prover c` tag (`Std.Do`,
-`Snarky/Prover/WP.lean`), where an emitted row is an obligation at its table with its cells in
-scope and the adequacy theorem `proverWP_prove` makes a triple a fact about `prove`; and
-per-gadget soundness/completeness triples beside each gadget in
-`Snarky/DSL/{Field,Boolean,Assert,Bits}` and `Snarky/Kimchi/Circuit/`, composed by `vcgen`
-at the soundness reading and by `mvcgen` at the completeness reading.
+a circuit's two readings as weakest preconditions, both `Std.WP` instances composed by `vcgen`:
+soundness at the `Builder V c` tag (`Snarky/WP.lean`) and completeness at the `Prover c` tag
+(`Snarky/Prover/StableWP.lean`, over the operational transformer of `Snarky/Prover/WP.lean`),
+where assertions are upward-closed predicates on prover states (`Reads r v`: a bundle reads a
+value, with its scope), an emitted row is an obligation at its table with its cells in scope,
+the frame rule retains every assertion across a call, and the adequacy theorem `adequate` makes
+a triple a fact about `prove`; the prover automation, witness and checked-type contracts and the
+generic traversal contracts are in `Snarky/Prover/VCGen.lean`; and per-gadget
+soundness/completeness triples beside each gadget in `Snarky/DSL/{Field,Boolean,Assert,Bits}`
+and `Snarky/Kimchi/Circuit/`.
+`vcgen` picks a callee's contract by the call's program pattern, trying the contracts listed in
+`vcgen [...]` before those in the context, so a contract quantified over a program intermediate
+can capture an earlier call that unifies with it. Instantiate every argument the statement
+names; list only contracts with distinct patterns and leave a colliding quantified one in the
+context as a fallback; where two calls share a pattern with different values, split the program
+with `Triple.bind` between them (`gmCandidates_stages` in `Snarky/Kimchi/Circuit/GroupMap.lean`).
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
 `Mathlib.Algebra.Ring.Defs` in `Snarky/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete

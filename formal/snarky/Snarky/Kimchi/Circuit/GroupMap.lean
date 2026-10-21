@@ -317,90 +317,73 @@ theorem groupMapCircuit_first_spec {V : Valuation F} [Field F] [DecidableEq F]
 
 /-! ## Completeness
 
-The honest run at the prover's reading (`Snarky.Prover.WP`): the flagged root's advice
-registered, then the map's law over its stages. -/
+The honest run at the prover's reading (`Snarky.Prover.VCGen`): the flagged root's law, then the
+map's law over its stages. -/
 
 section ProverReading
 
-open Std.Do
+open Snarky.Prover Std.WP
 
-/-- `isQRWit` returns whether the operand's reading has a root. -/
-@[spec] private def Prover.isQRWit_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (sqrtF : F → Option F) (x : FVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (isQRWit sqrtF x) (fun st => x.Scoped st)
-    (fun st => (sqrtF (st.read x)).isSome)
-    (fun _ h => by simp [isQRWit, AsProver.readCVar_run h]) fun _ _ => by simp)
+/-! The advices' runs: each returns its value wherever its operand is in scope. -/
 
-/-- `sqrtWit` returns the advice's root of the operand's reading. -/
-@[spec] private def Prover.sqrtWit_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (sqrtF : F → Option F) (x : FVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (sqrtWit sqrtF x) (fun st => x.Scoped st)
-    (fun st => (sqrtF (st.read x)).getD 0)
-    (fun _ h => by simp [sqrtWit, AsProver.readCVar_run h]) fun _ _ => by simp)
+/-- `isQRWit` returns whether `sqrtF` finds a root of the operand's reading. -/
+private theorem Prover.isQRWit_run [Field F] {sqrtF : F → Option F} {x : FVar F}
+    {s : ProverState F} (hx : x.Scoped s) :
+    (isQRWit sqrtF x).run s.env = .ok (sqrtF (x.val s.env.get)).isSome := by
+  simp [isQRWit, AsProver.readCVar_run hx]
 
-/-- The flagged root's state-relative completeness: with genuine roots, and every rootless
-value's non-residue twist rooted, the flag reads the operand's residuosity and the root reads
-the advice's root of the flag-selected operand. -/
+/-- `sqrtWit` returns `sqrtF`'s root of the operand's reading, `0` when there is none. -/
+private theorem Prover.sqrtWit_run [Field F] {sqrtF : F → Option F} {x : FVar F}
+    {s : ProverState F} (hx : x.Scoped s) :
+    (sqrtWit sqrtF x).run s.env = .ok ((sqrtF (x.val s.env.get)).getD 0) := by
+  simp [sqrtWit, AsProver.readCVar_run hx]
+
+/-- The flagged root's value: `sqrtF`'s root of the operand where it finds one, of the operand's
+non-residue twist where it does not. -/
+private def flaggedRoot [Mul F] [Zero F] (sqrtF : F → Option F) (nonResidue a : F) : F :=
+  (sqrtF (if (sqrtF a).isSome then a else nonResidue * a)).getD 0
+
+/-- The flagged root's completeness: with genuine roots, and every rootless value's non-residue
+twist rooted, the root reads `flaggedRoot` and the flag reads whether `sqrtF` finds a root. -/
 private theorem Prover.sqrtFlagged_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (sqrtF : F → Option F) (nonResidue : F)
     (hroot : ∀ a y, sqrtF a = some y → y * y = a)
     (htwist : ∀ a, sqrtF a = none → (sqrtF (nonResidue * a)).isSome)
-    (x : FVar F) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀⌝⦄
-    sqrtFlagged (c := Prover c) sqrtF nonResidue x
-    ⦃⇓ r s' => ⌜r.1.Scoped s' ∧ (↑r.2 : CVar F).Scoped s' ∧
-      s'.read r.2 = (if (sqrtF (st₀.read x)).isSome then 1 else 0) ∧
-      s'.read r.1 = (sqrtF (if (sqrtF (st₀.read x)).isSome then st₀.read x
-        else nonResidue * st₀.read x)).getD 0 ∧
-      st₀ ≤ s'⌝⦄ := by
+    (x : FVar F) (a : F) :
+    ⦃Reads x a⦄ sqrtFlagged (c := Prover c) sqrtF nonResidue x
+    ⦃fun r ↦ Reads r (flaggedRoot sqrtF nonResidue a, (sqrtF a).isSome)⦄ := by
   -- the advice's root squares to the selected operand
-  have hsq : ∀ v : F, (sqrtF (if (sqrtF v).isSome then v else nonResidue * v)).getD 0
-      * (sqrtF (if (sqrtF v).isSome then v else nonResidue * v)).getD 0
-      = if (sqrtF v).isSome then v else nonResidue * v := by
-    intro v
-    have hsome : (sqrtF (if (sqrtF v).isSome then v else nonResidue * v)).isSome := by
-      rcases hcase : sqrtF v with _ | y
-      · simpa [hcase] using htwist v hcase
+  have hsq : flaggedRoot sqrtF nonResidue a * flaggedRoot sqrtF nonResidue a
+      = if (sqrtF a).isSome then a else nonResidue * a := by
+    have hsome : (sqrtF (if (sqrtF a).isSome then a else nonResidue * a)).isSome := by
+      rcases hcase : sqrtF a with _ | y
+      · simpa [hcase] using htwist a hcase
       · simp [hcase]
     obtain ⟨y, hy⟩ := Option.isSome_iff_exists.mp hsome
-    rw [hy]
+    rw [flaggedRoot, hy]
     exact hroot _ y hy
+  have hq := fun x' : FVar F ↦
+    Spec.witness (c := c) (isQRWit sqrtF x') (sqrtF a).isSome valid_bool
+  have hs := fun (b' : BoolVar F) (m : FVar F) ↦
+    Prover.selectField_spec (c := c) b' x m (sqrtF a).isSome a (nonResidue * a)
+  have hw := fun x' : FVar F ↦
+    Spec.witness (c := c) (sqrtWit sqrtF x') (flaggedRoot sqrtF nonResidue a) valid_fvar
+  have ha := fun y m : FVar F ↦
+    hsq ▸ Prover.assertSquare_spec (c := c) y m (flaggedRoot sqrtF nonResidue a)
   unfold sqrtFlagged
   simp only [select_fvar]
-  mvcgen
-  -- the result: the select resolves through the flag's field value
-  case vc5.post.success.post.success.post.success.post.success =>
-    rename_i s₀ h₀ q s₁ h₁ m s₂ h₂ y s₃ h₃ u s h
-    obtain ⟨rfl, hx⟩ := h₀
-    obtain ⟨⟨hqsc, hqrd⟩, hle₁⟩ := Prover.Reg.iff.mp h₁
-    obtain ⟨hmsc, hm, hle₂⟩ := Prover.Reg.iff.mp h₂
-    obtain ⟨⟨hysc, hyrd⟩, hle₃⟩ := Prover.Reg.iff.mp h₃
-    have hle := Prover.Reg.iff.mp h
-    rw [CircuitType.scoped_boolVar] at hqsc
-    rw [CircuitType.scoped_fvar] at hysc
-    have hq : s₁.read q = if (sqrtF (s₀.read x)).isSome then 1 else 0 := by
-      rw [ProverState.read, CircuitType.reads_boolVar.mp hqrd, bit]
-    have hsel : s₂.read m
-        = if (sqrtF (s₀.read x)).isSome then s₀.read x else nonResidue * s₀.read x := by
-      rw [hm, hq, ProverState.read_of_le hle₁ hx]
-      split <;> simp only [zero_ne_one, ↓reduceIte, ProverState.read, CVar.val_scale_]
-      rw [CVar.val_of_le hle₁ hx]
-    refine ⟨hysc.of_le hle, hqsc.of_le (hle₂.trans (hle₃.trans hle)), ?_, ?_,
-      hle₁.trans (hle₂.trans (hle₃.trans hle))⟩
-    · rw [ProverState.read_of_le (hle₂.trans (hle₃.trans hle)) hqsc, hq]
-    · rw [ProverState.read_of_le hle hysc, ProverState.read, CircuitType.reads_fvar.mp hyrd,
-        hsel]
-  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-    CircuitType.reads_fvar, CircuitType.scoped_boolVar, CircuitType.reads_boolVar, bit,
-    ProverState.read_of_le, CVar.Scoped.of_le, CVar.Scoped.scale_, CVar.val_scale_]
+  vcgen [hq, hs, hw, ha]
+  all_goals prover_assert with
+    (intros; simp_all [Reads.fvar_apply, Reads.boolVar_apply, Reads.prod_apply,
+      Prover.isQRWit_run, Prover.sqrtWit_run, flaggedRoot])
 
 /-! ### The map, by stages
 
-The law is stated per stage, over the same program regrouped, each stage's result in closed
-form of its entry readings: the candidate abscissae, one candidate's ordinate square and
-flagged root, and the flag-weighted selection. `groupMapCircuit_stages` is the regrouping.
-Within a stage the readings are unwound by `simp` with `ProverState.read_of_le` as a
-conditional rewrite, whose order side conditions `le_chain` discharges. -/
+The law is stated per stage, over the same program regrouped, each stage's result read in closed
+form of its operands' values: the candidate abscissae, one candidate's ordinate square and flagged
+root, and the flag-weighted selection. `groupMapCircuit_stages` is the regrouping; the candidates
+are split once more after their `α` stage (`gmCandidates_stages`), where the products that follow
+would otherwise share one contract pattern. -/
 
 /-- The candidate abscissae of `groupMapCircuit`. -/
 private def gmCandidates [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
@@ -460,208 +443,194 @@ private theorem groupMapCircuit_stages [Field F] [DecidableEq F] [BasicSystem F 
       gmSelect x1 x2 x3 y1 y2 y3 b1 b2 b3) := by
   simp only [groupMapCircuit, gmCandidates, gmRoot, gmSelect, bind_assoc, pure_bind]
 
-/-- The candidates' state-relative completeness: with the divisor reading nonzero, the abscissae
-read the pure candidates. -/
+/-! #### The candidates -/
+
+/-- `gmCandidates` is its `α` stage followed by the two abscissa terms. -/
+private theorem gmCandidates_stages [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] (params : GroupMapParams F) (t : FVar F) :
+    gmCandidates (c := c) params t = (do
+      let (t2, alpha) ← (do
+        let t2 ← mul t t
+        let alphaInv ← mul (CVar.add_ t2 (.const params.fu)) t2
+        let alpha ← div (.const 1) alphaInv
+        pure (t2, alpha) : CircuitM F c (FVar F × FVar F))
+      let t4 ← mul t2 t2
+      let t4Alpha ← mul t4 alpha
+      let temp1 ← mul t4Alpha (.const params.sqrtNeg3U2)
+      let t2Inv ← mul alpha (CVar.add_ t2 (.const params.fu))
+      let t2PlusFuSq ← mul (CVar.add_ t2 (.const params.fu)) (CVar.add_ t2 (.const params.fu))
+      let temp2a ← mul t2PlusFuSq t2Inv
+      let temp2 ← mul temp2a (.const params.inv3U2)
+      pure (CVar.sub_ (.const params.sqrtNeg3U2MinusUOver2) temp1,
+        CVar.sub_ (.const (-params.u)) (CVar.sub_ (.const params.sqrtNeg3U2MinusUOver2) temp1),
+        CVar.sub_ (.const params.u) temp2)) := by
+  simp only [gmCandidates, bind_assoc, pure_bind]
+
+/-- The candidates' completeness: with the divisor's reading nonzero, the abscissae read the pure
+candidates. -/
 private theorem Prover.gmCandidates_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (params : GroupMapParams F) (t : FVar F)
-    (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ t.Scoped st₀ ∧
-      (st₀.read t * st₀.read t + params.fu) * (st₀.read t * st₀.read t) ≠ 0⌝⦄
-    gmCandidates (c := Prover c) params t
-    ⦃⇓ r s' => ⌜r.1.Scoped s' ∧ r.2.1.Scoped s' ∧ r.2.2.Scoped s' ∧
-      s'.read r.1 = (potentialXs params (st₀.read t)).1 ∧
-      s'.read r.2.1 = (potentialXs params (st₀.read t)).2.1 ∧
-      s'.read r.2.2 = (potentialXs params (st₀.read t)).2.2 ∧ st₀ ≤ s'⌝⦄ := by
-  unfold gmCandidates
-  dsimp only
-  mvcgen
-  -- the abscissae: every reading unwound to the cell's own table by conditional rewriting
-  case vc11 =>
-    rename_i s₀ h₀ r1 s1 h1 r2 s2 h2 r3 s3 h3 r4 s4 h4 r5 s5 h5 r6 s6 h6 r7 s7 h7 r8 s8 h8
-      r9 s9 h9 r10 s10 h10
-    simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6 h7 h8 h9 h10
-    obtain ⟨rfl, -, -⟩ := h₀
-    obtain ⟨c1, v1, l1⟩ := h1
-    obtain ⟨c2, v2, l2⟩ := h2
-    obtain ⟨c3, v3, l3⟩ := h3
-    obtain ⟨c4, v4, l4⟩ := h4
-    obtain ⟨c5, v5, l5⟩ := h5
-    obtain ⟨c6, v6, l6⟩ := h6
-    obtain ⟨c7, v7, l7⟩ := h7
-    obtain ⟨c8, v8, l8⟩ := h8
-    obtain ⟨c9, v9, l9⟩ := h9
-    obtain ⟨c10, v10, l10⟩ := h10
-    refine ⟨CVar.Scoped.sub_ trivial (c6.of_le (by le_chain)),
-      CVar.Scoped.sub_ trivial (CVar.Scoped.sub_ trivial (c6.of_le (by le_chain))),
-      CVar.Scoped.sub_ trivial c10, ?_, ?_, ?_, by le_chain⟩
-    all_goals
-      simp (disch := le_chain) only [ProverState.read_of_le _ c1, ProverState.read_of_le _ c3,
-        ProverState.read_of_le _ c6, ProverState.read_of_le _ c7, ProverState.read_of_le _ c10,
-        v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, CVar.val_add_, CVar.val_sub_, CVar.val]
-      simp [potentialXs]
-  all_goals (try simp only [Prover.Reg.iff] at *)
-  all_goals (try grind (ematch := 40) (gen := 40) only [CVar.Scoped.of_le, CVar.Scoped.add_,
-    CVar.Scoped.sub_, CVar.scoped_const])
-  -- the divisor's reading, from the precondition
-  all_goals grind (ematch := 40) (gen := 40) [ProverState.read_of_le, CVar.Scoped.of_le,
-    CVar.Scoped.add_, CVar.scoped_const, CVar.val_add_, CVar.val]
+    (v : F) (hne : (v * v + params.fu) * (v * v) ≠ 0) :
+    ⦃Reads t v⦄ gmCandidates (c := Prover c) params t
+    ⦃fun r ↦ Reads r (potentialXs params v)⦄ := by
+  rw [gmCandidates_stages]
+  -- the `α` stage: the square and the inverse
+  refine Triple.bind _ _ (fun r : FVar F × FVar F ↦
+    Reads r (v * v, 1 / ((v * v + params.fu) * (v * v)))) ?_ ?_
+  · have h1 := Prover.mul_spec (c := c) t t v v
+    have h2 := fun t2 : FVar F ↦
+      Prover.mul_spec (c := c) (CVar.add_ t2 (.const params.fu)) t2 (v * v + params.fu) (v * v)
+    have h3 := fun y : FVar F ↦
+      Prover.div_spec (c := c) (.const 1) y 1 ((v * v + params.fu) * (v * v)) hne
+    vcgen [h1, h2, h3]
+    all_goals prover_assert with
+      (intros; simp_all [Reads.fvar_apply, Reads.prod_apply, CVar.val])
+  -- the abscissa terms at the stage's readings
+  · rintro ⟨t2, alpha⟩
+    dsimp only
+    have h4 := Prover.mul_spec (c := c) t2 t2 (v * v) (v * v)
+    have h5 := fun t4 : FVar F ↦
+      Prover.mul_spec (c := c) t4 alpha (v * v * (v * v)) (1 / ((v * v + params.fu) * (v * v)))
+    have h6 := fun r : FVar F ↦ Prover.mul_spec (c := c) r (.const params.sqrtNeg3U2)
+      (v * v * (v * v) * (1 / ((v * v + params.fu) * (v * v)))) params.sqrtNeg3U2
+    have h7 := Prover.mul_spec (c := c) alpha (CVar.add_ t2 (.const params.fu))
+      (1 / ((v * v + params.fu) * (v * v))) (v * v + params.fu)
+    have h8 := Prover.mul_spec (c := c) (CVar.add_ t2 (.const params.fu))
+      (CVar.add_ t2 (.const params.fu)) (v * v + params.fu) (v * v + params.fu)
+    have h10 := fun r : FVar F ↦ Prover.mul_spec (c := c) r (.const params.inv3U2)
+      ((v * v + params.fu) * (v * v + params.fu) *
+        (1 / ((v * v + params.fu) * (v * v)) * (v * v + params.fu))) params.inv3U2
+    -- the remaining product's law stays in the context: listed, it would be taken for every
+    -- product
+    have h9 := fun x y : FVar F ↦ Prover.mul_spec (c := c) x y
+      ((v * v + params.fu) * (v * v + params.fu))
+      (1 / ((v * v + params.fu) * (v * v)) * (v * v + params.fu))
+    vcgen [h4, h5, h6, h7, h8, h10]
+    all_goals prover_assert with
+      (intros; simp_all [Reads.fvar_apply, Reads.prod_apply, CVar.val, potentialXs])
 
-/-- One candidate's state-relative completeness: the flag reads the residuosity of the
-candidate's ordinate square, and the root the advice's root of the flag-selected value. -/
+
+/-! #### One root -/
+
+/-- One candidate's completeness: the flag reads whether `sqrtF` finds a root of the candidate's
+ordinate square, and the root reads that square's `flaggedRoot`. -/
 private theorem Prover.gmRoot_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (sqrtF : F → Option F)
     (params : GroupMapParams F) (hroot : ∀ a y, sqrtF a = some y → y * y = a)
     (htwist : ∀ a, sqrtF a = none → (sqrtF (params.nonResidue * a)).isSome)
-    (x : FVar F) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ x.Scoped st₀⌝⦄
-    gmRoot (c := Prover c) sqrtF params x
-    ⦃⇓ r s' => ⌜r.1.Scoped s' ∧ (↑r.2 : CVar F).Scoped s' ∧
-      s'.read r.2 = (if (sqrtF (ySquared params (st₀.read x))).isSome then 1 else 0) ∧
-      s'.read r.1 = (sqrtF (if (sqrtF (ySquared params (st₀.read x))).isSome
-        then ySquared params (st₀.read x)
-        else params.nonResidue * ySquared params (st₀.read x))).getD 0 ∧
-      st₀ ≤ s'⌝⦄ := by
-  have hsf := fun y => Prover.register
-    (Prover.sqrtFlagged_spec (c := c) sqrtF params.nonResidue hroot htwist y)
+    (x : FVar F) (a : F) :
+    ⦃Reads x a⦄ gmRoot (c := Prover c) sqrtF params x
+    ⦃fun r ↦ Reads r (flaggedRoot sqrtF params.nonResidue (ySquared params a),
+      (sqrtF (ySquared params a)).isSome)⦄ := by
+  have h1 := Prover.mul_spec (c := c) x x a a
+  -- the cube's law is left in the context: listed, it would also be taken for the square
+  have h2 := fun y : FVar F ↦ Prover.mul_spec (c := c) y x (a * a) a
+  have hsf := fun y : FVar F ↦
+    Prover.sqrtFlagged_spec (c := c) sqrtF params.nonResidue hroot htwist y (ySquared params a)
   unfold gmRoot
-  mvcgen [hsf]
-  all_goals grind [Prover.Reg.iff, ProverState.read_of_le, CVar.Scoped.of_le,
-    CVar.Scoped.add_, CVar.scoped_const, CVar.val_add_, CVar.val, ySquared]
+  vcgen [h1, hsf]
+  all_goals prover_assert with
+    (intros; simp_all [Reads.fvar_apply, ySquared])
+
+/-! #### The selection -/
 
 /-- Bits with one set sum to nonzero, given `2 ≠ 0` and `3 ≠ 0`. -/
-private theorem flagSum_ne_zero [Field F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {a b c : F}
-    (ha : a = 0 ∨ a = 1) (hb : b = 0 ∨ b = 1) (hc : c = 0 ∨ c = 1)
-    (hone : a = 1 ∨ b = 1 ∨ c = 1) : a + b + c ≠ 0 := by
-  rcases ha with rfl | rfl <;> rcases hb with rfl | rfl <;> rcases hc with rfl | rfl <;>
-    simp_all
-  all_goals
-    first
-      | (rw [show (1 : F) + 1 = 2 from by norm_num]; exact h2)
-      | (rw [show (1 : F) + 1 + 1 = 3 from by norm_num]; exact h3)
+private theorem flagSum_ne_zero [Field F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    {b1 b2 b3 : Bool} (hone : b1 = true ∨ b2 = true ∨ b3 = true) :
+    (bit b1 + bit b2 + bit b3 : F) ≠ 0 := by
+  have h3' : (1 : F) + 1 + 1 ≠ 0 := by rwa [show (1 : F) + 1 + 1 = 3 by norm_num]
+  rcases b1 <;> rcases b2 <;> rcases b3 <;>
+    simp_all [bit, one_add_one_eq_two]
 
-/-- The selection's state-relative completeness: on bit flags with one set, the result reads
-the first-flagged candidate's coordinates. -/
+/-- The selection's completeness: on bits with one set, the result reads the first-flagged
+candidate's coordinates. -/
 private theorem Prover.gmSelect_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (x1 x2 x3 y1 y2 y3 : FVar F) (b1 b2 b3 : BoolVar F) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ x1.Scoped st₀ ∧ x2.Scoped st₀ ∧ x3.Scoped st₀ ∧
-      y1.Scoped st₀ ∧ y2.Scoped st₀ ∧ y3.Scoped st₀ ∧
-      (↑b1 : CVar F).Scoped st₀ ∧ (↑b2 : CVar F).Scoped st₀ ∧ (↑b3 : CVar F).Scoped st₀ ∧
-      (st₀.read b1 = 0 ∨ st₀.read b1 = 1) ∧ (st₀.read b2 = 0 ∨ st₀.read b2 = 1) ∧
-      (st₀.read b3 = 0 ∨ st₀.read b3 = 1) ∧
-      (st₀.read b1 = 1 ∨ st₀.read b2 = 1 ∨ st₀.read b3 = 1)⌝⦄
+    (x1 x2 x3 y1 y2 y3 : FVar F) (b1 b2 b3 : BoolVar F) (a1 a2 a3 w1 w2 w3 : F)
+    (bb1 bb2 bb3 : Bool) (hone : bb1 = true ∨ bb2 = true ∨ bb3 = true) :
+    ⦃Reads x1 a1 ⊓ Reads x2 a2 ⊓ Reads x3 a3 ⊓ Reads y1 w1 ⊓ Reads y2 w2 ⊓ Reads y3 w3 ⊓
+      Reads b1 bb1 ⊓ Reads b2 bb2 ⊓ Reads b3 bb3⦄
     gmSelect (c := Prover c) x1 x2 x3 y1 y2 y3 b1 b2 b3
-    ⦃⇓ r s' => ⌜r.x.Scoped s' ∧ r.y.Scoped s' ∧
-      s'.read r.x = (if st₀.read b1 = 1 then st₀.read x1
-        else if st₀.read b2 = 1 then st₀.read x2 else st₀.read x3) ∧
-      s'.read r.y = (if st₀.read b1 = 1 then st₀.read y1
-        else if st₀.read b2 = 1 then st₀.read y2 else st₀.read y3) ∧
-      st₀ ≤ s'⌝⦄ := by
-  have hsum := fun (a b c : F) => @flagSum_ne_zero F _ h2 h3 a b c
+    ⦃fun r ↦ Reads r.x (if bb1 then a1 else if bb2 then a2 else a3) ⊓
+      Reads r.y (if bb1 then w1 else if bb2 then w2 else w3)⦄ := by
+  have hn := Prover.assertNonZero_spec (c := c) (CVar.add_ (CVar.add_ (↑b1) (↑b2)) (↑b3))
+    (bit bb1 + bit bb2 + bit bb3) (flagSum_ne_zero h2 h3 hone)
+  have ha1 := Prover.and_spec (c := c) (Snarky.not b1) b2 (!bb1) bb2
+  have ha2 := Prover.and_spec (c := c) (Snarky.not b2) b3 (!bb2) bb3
+  have hy3 := fun s : BoolVar F ↦
+    Prover.mul_spec (c := c) (↑s) y3 (bit (!bb1 && (!bb2 && bb3))) w3
+  have hy2 := fun s : BoolVar F ↦ Prover.mul_spec (c := c) (↑s) y2 (bit (!bb1 && bb2)) w2
+  have hy1 := Prover.mul_spec (c := c) (↑b1) y1 (bit bb1) w1
+  have hx3 := fun s : BoolVar F ↦
+    Prover.mul_spec (c := c) (↑s) x3 (bit (!bb1 && (!bb2 && bb3))) a3
+  have hx2 := fun s : BoolVar F ↦ Prover.mul_spec (c := c) (↑s) x2 (bit (!bb1 && bb2)) a2
+  have hx1 := Prover.mul_spec (c := c) (↑b1) x1 (bit bb1) a1
+  -- the third conjunction's law stays in the context: listed, it would also be taken for the
+  -- first
+  have ha3 := fun r : BoolVar F ↦
+    Prover.and_spec (c := c) (Snarky.not b1) r (!bb1) (!bb2 && bb3)
   unfold gmSelect
   dsimp only
-  mvcgen
-  -- the sums: every reading unwound by conditional rewriting, then the flags case by case
-  case vc11 =>
-    rename_i s₀ h₀ _ s9 k9 n1 s8 k8 n2 s7 k7 n3 s6 k6 p5 s5 k5 p4 s4 k4 p3 s3 k3 p2 s2 k2
-      p1 s1 k1 p0 s k0
-    simp only [Prover.Reg.iff] at k9 k8 k7 k6 k5 k4 k3 k2 k1 k0
-    obtain ⟨rfl, hx1, hx2, hx3, hy1, hy2, hy3, hb1, hb2, hb3, bb1, bb2, bb3, hone⟩ := h₀
-    obtain ⟨c8, v8, l8⟩ := k8
-    obtain ⟨c7, v7, l7⟩ := k7
-    obtain ⟨c6, v6, l6⟩ := k6
-    obtain ⟨c5, v5, l5⟩ := k5
-    obtain ⟨c4, v4, l4⟩ := k4
-    obtain ⟨c3, v3, l3⟩ := k3
-    obtain ⟨c2, v2, l2⟩ := k2
-    obtain ⟨c1, v1, l1⟩ := k1
-    obtain ⟨c0, v0, l0⟩ := k0
-    refine ⟨CVar.Scoped.add_ (CVar.Scoped.add_ c0 (c1.of_le (by le_chain)))
-        (c2.of_le (by le_chain)),
-      CVar.Scoped.add_ (CVar.Scoped.add_ (c3.of_le (by le_chain)) (c4.of_le (by le_chain)))
-        (c5.of_le (by le_chain)), ?_, ?_, by le_chain⟩
-    all_goals
-      simp (disch := le_chain) only [ProverState.read_of_le _ hx1, ProverState.read_of_le _ hx2,
-        ProverState.read_of_le _ hx3, ProverState.read_of_le _ hy1, ProverState.read_of_le _ hy2,
-        ProverState.read_of_le _ hy3, ProverState.read_of_le _ hb1, ProverState.read_of_le _ hb2,
-        ProverState.read_of_le _ hb3, ProverState.read_of_le _ c8, ProverState.read_of_le _ c6,
-        ProverState.read_of_le _ c5, ProverState.read_of_le _ c4, ProverState.read_of_le _ c3,
-        ProverState.read_of_le _ c2, ProverState.read_of_le _ c1, ProverState.read_of_le _ c0,
-        v8, v7, v6, v5, v4, v3, v2, v1, v0, CVar.val_add_, CVar.val_sub_, CVar.val, Snarky.not,
-        BoolVar.coe_unchecked]
-      rcases bb1 with e1 | e1 <;> rcases bb2 with e2 | e2 <;> rcases bb3 with e3 | e3 <;>
-        simp [e1, e2, e3] at hone ⊢
-  all_goals (try simp only [Prover.Reg.iff] at *)
-  all_goals (try grind (ematch := 40) (gen := 40) only [CVar.Scoped.of_le, CVar.Scoped.add_,
-    CVar.Scoped.sub_, CVar.scoped_const, Snarky.not_scoped])
-  -- the flag sum and the conjunctions' bits, from the precondition
-  all_goals grind (ematch := 40) (gen := 40) [ProverState.read_of_le, CVar.Scoped.of_le,
-    CVar.Scoped.add_, CVar.Scoped.sub_, CVar.scoped_const, CVar.val_add_, CVar.val_sub_,
-    CVar.val, Snarky.not, BoolVar.coe_unchecked, Snarky.not_scoped]
+  vcgen [hn, ha1, ha2, hy3, hy2, hy1, hx3, hx2, hx1]
+  all_goals prover_assert with
+    (intros; first
+      | (simp_all [Reads.fvar_apply, Reads.boolVar_apply]; done)
+      | (simp_all [Reads.fvar_apply, Reads.boolVar_apply, Snarky.not, CVar.val_sub_, CVar.val,
+          bit]; (try (split_ifs <;> simp_all))))
 
-/-- **Completeness.** The honest run's result reads the pure map's point. Conditions: the
-`div` divisor `(t² + f(u))·t²` is nonzero and some candidate's ordinate square has a root
-(Shallue–van de Woestijne); hypotheses: `sqrtF`'s roots are genuine, a rootless value's
+
+/-! #### The map -/
+
+/-- **Completeness.** The honest run's result reads the pure map's point at the input's value
+`v`. Hypotheses: the `div` divisor `(v² + f(u))·v²` is nonzero, some candidate's ordinate square
+has a root (Shallue–van de Woestijne), `sqrtF`'s roots are genuine, a rootless value's
 non-residue twist has a root, and `2, 3 ≠ 0` keep the flag sum nonzero. -/
 theorem Prover.groupMapCircuit_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (sqrtF : F → Option F)
     (params : GroupMapParams F) (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hroot : ∀ a y, sqrtF a = some y → y * y = a)
     (htwist : ∀ a, sqrtF a = none → (sqrtF (params.nonResidue * a)).isSome)
-    (t : FVar F) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ t.Scoped st₀ ∧
-      (st₀.read t * st₀.read t + params.fu) * (st₀.read t * st₀.read t) ≠ 0 ∧
-      ((sqrtF (ySquared params (potentialXs params (st₀.read t)).1)).isSome ∨
-        (sqrtF (ySquared params (potentialXs params (st₀.read t)).2.1)).isSome ∨
-        (sqrtF (ySquared params (potentialXs params (st₀.read t)).2.2)).isSome)⌝⦄
-    groupMapCircuit (c := Prover c) sqrtF params t
-    ⦃⇓ r s' => ⌜r.x.Scoped s' ∧ r.y.Scoped s' ∧
-      s'.read r.x = (groupMapPure sqrtF params (st₀.read t)).1 ∧
-      s'.read r.y = (groupMapPure sqrtF params (st₀.read t)).2 ∧ st₀ ≤ s'⌝⦄ := by
-  have hc := Prover.register (Prover.gmCandidates_spec (c := c) params t)
-  have hr := fun x => Prover.register (Prover.gmRoot_spec (c := c) sqrtF params hroot htwist x)
-  have hs := fun x1 x2 x3 y1 y2 y3 b1 b2 b3 => Prover.register
-    (Prover.gmSelect_spec (c := c) h2 h3 x1 x2 x3 y1 y2 y3 b1 b2 b3)
+    (t : FVar F) (v : F) (hne : (v * v + params.fu) * (v * v) ≠ 0)
+    (hsome : (sqrtF (ySquared params (potentialXs params v).1)).isSome ∨
+      (sqrtF (ySquared params (potentialXs params v).2.1)).isSome ∨
+      (sqrtF (ySquared params (potentialXs params v).2.2)).isSome) :
+    ⦃Reads t v⦄ groupMapCircuit (c := Prover c) sqrtF params t
+    ⦃fun r ↦ Reads r.x (groupMapPure sqrtF params v).1 ⊓
+      Reads r.y (groupMapPure sqrtF params v).2⦄ := by
   rw [groupMapCircuit_stages]
-  mvcgen [hc, hr, hs]
-  -- the selection's condition and the map's post: the candidates' and the roots' readings,
-  -- unwound by conditional rewriting
-  case' vc6 => rename_i rs ss; intro ks
-  case' vc5 | vc6 =>
-    rename_i s₀ h₀ rc sc kc r1 s1 k1 r2 s2 k2 r3 s3 k3
-    obtain ⟨rfl, -, -, hsome⟩ := h₀
-    obtain ⟨cx1, cx2, cx3, vx1, vx2, vx3, lc⟩ := Prover.Reg.iff.mp kc
-    obtain ⟨cy1, cb1, vb1, vy1, l1⟩ := Prover.Reg.iff.mp k1
-    obtain ⟨cy2, cb2, vb2, vy2, l2⟩ := Prover.Reg.iff.mp k2
-    obtain ⟨cy3, cb3, vb3, vy3, l3⟩ := Prover.Reg.iff.mp k3
-  case vc5 =>
-    refine ⟨trivial, cx1.of_le (by le_chain), cx2.of_le (by le_chain), cx3.of_le (by le_chain),
-      cy1.of_le (by le_chain), cy2.of_le (by le_chain), cy3, cb1.of_le (by le_chain),
-      cb2.of_le (by le_chain), cb3, ?_, ?_, ?_, ?_⟩
-    all_goals simp (disch := le_chain) only [ProverState.read_of_le _ cx2,
-      ProverState.read_of_le _ cx3, ProverState.read_of_le _ cb1, ProverState.read_of_le _ cb2,
-      vx1, vx2, vx3, vb1, vb2, vb3]
-    · split <;> simp
-    · split <;> simp
-    · split <;> simp
-    · rcases hsome with h | h | h <;> simp [h]
-  case vc6 =>
-    obtain ⟨csx, csy, vsx, vsy, ls⟩ := Prover.Reg.iff.mp ks
-    refine ⟨csx, csy, ?_, ?_, by le_chain⟩
-    all_goals
-      simp (disch := le_chain) only [ProverState.read_of_le _ cx1, ProverState.read_of_le _ cx2,
-        ProverState.read_of_le _ cx3, ProverState.read_of_le _ cy1, ProverState.read_of_le _ cy2,
-        ProverState.read_of_le _ cb1, ProverState.read_of_le _ cb2, vsx, vsy, vx1, vx2, vx3,
-        vb1, vb2, vy1, vy2, vy3]
-      rcases e1 : sqrtF (ySquared params (potentialXs params (s₀.read t)).1) with _ | v1
-      · rcases e2 : sqrtF (ySquared params (potentialXs params (s₀.read t)).2.1) with _ | v2
-        · rcases e3 : sqrtF (ySquared params (potentialXs params (s₀.read t)).2.2) with _ | v3
-          · simp [e1, e2, e3] at hsome
-          · simp [groupMapPure, e1, e2, e3]
-        · simp [groupMapPure, e1, e2]
-      · simp [groupMapPure, e1]
-  all_goals (try simp only [Prover.Reg.iff] at *)
-  all_goals grind (ematch := 40) (gen := 40) only [CVar.Scoped.of_le]
+  refine Triple.bind _ _ _ (Prover.gmCandidates_spec (c := c) params t v hne) fun xs ↦ ?_
+  obtain ⟨x1, x2, x3⟩ := xs
+  -- the candidates as named values; the pure map is the first-flagged one's flagged root
+  obtain ⟨⟨X1, X2, X3⟩, hX⟩ : ∃ X, potentialXs params v = X := ⟨_, rfl⟩
+  rw [hX] at hsome ⊢
+  dsimp only at hsome ⊢
+  have hpure : groupMapPure sqrtF params v =
+      (if (sqrtF (ySquared params X1)).isSome then X1
+        else if (sqrtF (ySquared params X2)).isSome then X2 else X3,
+       if (sqrtF (ySquared params X1)).isSome then flaggedRoot sqrtF params.nonResidue
+          (ySquared params X1)
+        else if (sqrtF (ySquared params X2)).isSome then flaggedRoot sqrtF params.nonResidue
+          (ySquared params X2)
+        else flaggedRoot sqrtF params.nonResidue (ySquared params X3)) := by
+    simp only [groupMapPure, hX, flaggedRoot]
+    rcases e1 : sqrtF (ySquared params X1) with _ | w1
+    · rcases e2 : sqrtF (ySquared params X2) with _ | w2
+      · rcases e3 : sqrtF (ySquared params X3) with _ | w3
+        · simp [e1, e2, e3] at hsome
+        · simp [e3]
+      · simp [e2]
+    · simp [e1]
+  rw [hpure]
+  have hr1 := Prover.gmRoot_spec (c := c) sqrtF params hroot htwist x1 X1
+  have hr2 := Prover.gmRoot_spec (c := c) sqrtF params hroot htwist x2 X2
+  have hr3 := Prover.gmRoot_spec (c := c) sqrtF params hroot htwist x3 X3
+  have hs := fun (y1 y2 y3 : FVar F) (b1 b2 b3 : BoolVar F) ↦
+    Prover.gmSelect_spec (c := c) h2 h3 x1 x2 x3 y1 y2 y3 b1 b2 b3 X1 X2 X3
+      (flaggedRoot sqrtF params.nonResidue (ySquared params X1))
+      (flaggedRoot sqrtF params.nonResidue (ySquared params X2))
+      (flaggedRoot sqrtF params.nonResidue (ySquared params X3)) _ _ _ hsome
+  vcgen [hr1, hr2, hr3, hs]
+  all_goals prover_assert with (intros; simp_all [Reads.prod_apply])
 
 end ProverReading
 
@@ -779,26 +748,23 @@ theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} {c : Type}
   rw [show ((GroupMapParams.ofSpec spec).b : ZMod q) = spec.E.B from rfl] at hy
   linear_combination hy
 
-open Std.Do in
+open Snarky.Prover Std.WP in
 /-- **Wire-level completeness.** The honest run's result reads
 `Poseidon.GroupMap.toGroup`'s point: `Prover.groupMapCircuit_spec` with the spec's own
 Tonelli–Shanks root as advice, its root and twist hypotheses discharged
 (`CompElliptic.Fields.TonelliShanks.sqrt?_mul_self`, `sqrt?_twist`), `2 ≠ 0` from `q ≠ 2`
 and `3 ≠ 0` from `q ≠ 3`. The nonzero `div` divisor and the candidate disjunction (as
-`IsSquare`) remain conditions. -/
+`IsSquare`) remain hypotheses. -/
 theorem Prover.groupMapCircuit_toGroup_spec {c : Type} [BasicSystem (ZMod q) c]
     [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
     (spec : _root_.Poseidon.GroupMap.Spec q) (hq2 : q ≠ 2) (hq3 : q ≠ 3)
-    (t : FVar (ZMod q)) (st₀ : ProverState (ZMod q)) :
-    ⦃fun s => ⌜s = st₀ ∧ t.Scoped st₀ ∧
-      (st₀.read t * st₀.read t + spec.fu) * (st₀.read t * st₀.read t) ≠ 0 ∧
-      (IsSquare (ySquared (.ofSpec spec) (potentialXs (.ofSpec spec) (st₀.read t)).1) ∨
-        IsSquare (ySquared (.ofSpec spec) (potentialXs (.ofSpec spec) (st₀.read t)).2.1) ∨
-        IsSquare (ySquared (.ofSpec spec) (potentialXs (.ofSpec spec) (st₀.read t)).2.2))⌝⦄
-    groupMapCircuit (c := Prover c) spec.sqrt.sqrt? (.ofSpec spec) t
-    ⦃⇓ r s' => ⌜r.x.Scoped s' ∧ r.y.Scoped s' ∧
-      s'.read r.x = (_root_.Poseidon.GroupMap.toGroup spec (st₀.read t)).x ∧
-      s'.read r.y = (_root_.Poseidon.GroupMap.toGroup spec (st₀.read t)).y ∧ st₀ ≤ s'⌝⦄ := by
+    (t : FVar (ZMod q)) (v : ZMod q) (hne : (v * v + spec.fu) * (v * v) ≠ 0)
+    (hsq : IsSquare (ySquared (.ofSpec spec) (potentialXs (.ofSpec spec) v).1) ∨
+      IsSquare (ySquared (.ofSpec spec) (potentialXs (.ofSpec spec) v).2.1) ∨
+      IsSquare (ySquared (.ofSpec spec) (potentialXs (.ofSpec spec) v).2.2)) :
+    ⦃Reads t v⦄ groupMapCircuit (c := Prover c) spec.sqrt.sqrt? (.ofSpec spec) t
+    ⦃fun r ↦ Reads r.x (_root_.Poseidon.GroupMap.toGroup spec v).x ⊓
+      Reads r.y (_root_.Poseidon.GroupMap.toGroup spec v).y⦄ := by
   have hchar : ringChar (ZMod q) ≠ 2 := by
     rw [ZMod.ringChar_zmod_n]
     exact hq2
@@ -810,23 +776,14 @@ theorem Prover.groupMapCircuit_toGroup_spec {c : Type} [BasicSystem (ZMod q) c]
     obtain ⟨r, hr⟩ := spec.sqrt.sqrt?_isSome_of_isSquare hv
     rw [hr]
     rfl
-  have hgm := Prover.register (Prover.groupMapCircuit_spec (c := c) spec.sqrt.sqrt?
-    (.ofSpec spec) (Ring.two_ne_zero hchar) hthree
-    (fun _ _ h => TonelliShanks.sqrt?_mul_self spec.sqrt h)
+  have hgm := Prover.groupMapCircuit_spec (c := c) spec.sqrt.sqrt? (.ofSpec spec)
+    (Ring.two_ne_zero hchar) hthree (fun _ _ h => TonelliShanks.sqrt?_mul_self spec.sqrt h)
     (sqrt?_twist spec.sqrt hchar
       (fun h => spec.nonResidue_spec
         (by rw [show spec.nonResidue = 0 from h]; exact ⟨0, by ring⟩))
-      spec.nonResidue_spec) t)
-  mvcgen [hgm]
-  case vc1 =>
-    rename_i _ h
-    obtain ⟨rfl, ht, hne, hsq⟩ := h
-    exact ⟨trivial, ht, hne, hsq.imp (hsome _) (Or.imp (hsome _) (hsome _))⟩
-  case vc2 =>
-    rename_i _ h _ _
-    obtain ⟨rfl, -⟩ := h
-    intro hr
-    simpa only [groupMapPure_toGroup] using Prover.Reg.iff.mp hr
+      spec.nonResidue_spec) t v hne
+    (hsq.imp (hsome _) (Or.imp (hsome _) (hsome _)))
+  rwa [groupMapPure_toGroup] at hgm
 
 /-- A twist root certifies a non-square: if `y² = nr·a` with `a = s²` nonzero, then
 `nr = (y/s)²`. -/

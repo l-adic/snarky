@@ -11,7 +11,7 @@ import Snarky.WP
 Interpret a `CircuitM` tree by running the witness computations against the accumulating
 assignment, in lockstep with `build`. Constraints are not consulted: the run fills the
 table, and whether the table satisfies the built rows is the completeness reading's statement
-(`Snarky.Prover.WP`).
+(`Snarky.Prover.WP`, `Snarky.Prover.StableWP`).
 -/
 
 namespace Snarky
@@ -378,28 +378,6 @@ theorem CircuitType.monotone_readsAs [Add F] [Mul F] [Zero F] [CircuitType F val
   · intro h
     show (#v[(↑b : CVar F).val V] : Vector F 1) = #v[bit bb]
     rw [h]
-
-/-- `UnChecked` is invisible to scope. -/
-@[simp] theorem CircuitType.scoped_unchecked [CircuitType F val var] {st : ProverState F}
-    {v : var} : CircuitType.Scoped (val := UnChecked val) st ⟨v⟩ ↔
-      CircuitType.Scoped (val := val) st v := Iff.rfl
-
-/-- `UnChecked` is invisible to the reading. -/
-@[simp] theorem CircuitType.reads_unchecked [Add F] [Mul F] [CircuitType F val var]
-    {V : Valuation F} {v : var} {x : val} :
-    CircuitType.Reads V (UnChecked.mk v) (UnChecked.mk x) ↔ CircuitType.Reads V v x := Iff.rfl
-
-/-- An unchecked bundle is in scope when its payload is, in projection form: the shape of a
-bundle a run returns, which `scoped_unchecked` states at the constructor. -/
-theorem CircuitType.scoped_unchecked' [CircuitType F val var] {st : ProverState F}
-    {u : UnChecked var} :
-    CircuitType.Scoped (val := UnChecked val) st u ↔ CircuitType.Scoped (val := val) st u.val :=
-  Iff.rfl
-
-/-- An unchecked bundle reads as its payload, in projection form. -/
-theorem CircuitType.reads_unchecked' [Add F] [Mul F] [CircuitType F val var]
-    {V : Valuation F} {u : UnChecked var} {x : UnChecked val} :
-    CircuitType.Reads V u x ↔ CircuitType.Reads V u.val x.val := Iff.rfl
 
 /-! The readings, at the formers. -/
 

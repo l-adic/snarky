@@ -19,9 +19,9 @@ over the carrier through `KimchiSystem`, so one definition serves the soundness 
 
 * `addFast_spec`: any satisfying valuation reads the output as the group sum, through the
   verified gate's `Kimchi.Gate.AddComplete.sound`.
-* `Prover.addFast_spec`: at the prover's reading, the honest run accepts on-curve operands
-  and reads the finite sum: the operands' curve points at the entry state, the sum's at the
-  exit. Its advice fills the gate's canonical row, `Kimchi.Gate.AddComplete.build`.
+* `Prover.addFast_spec`: at the prover's reading, operands reading on-curve values with a
+  finite sum give an output point reading the sum's coordinates and an infinity flag reading
+  `false`. Its advice fills the gate's canonical row, `Kimchi.Gate.AddComplete.build`.
 -/
 
 namespace Snarky.Kimchi
@@ -51,9 +51,14 @@ instance [Field F] [BasicSystem F c] [ConstraintHolds F c] :
   post _ _ := True
   check_sound _ _ _ _ := trivial
 
-instance instWPCheckedTypeAffinePoint [Field F] [BasicSystem F c] [ConstraintHolds F c] :
-    WPCheckedType F c (AffinePoint F) (AffinePoint (FVar F)) :=
-  ⟨fun _ _ _ _ _ => le_rfl⟩
+open Std.WP in
+/-- A point's check emits nothing, so it keeps the point's reading. -/
+instance instCheckSpecAffinePoint [Field F] [BasicSystem F c] [ConstraintHolds F c] :
+    Prover.CheckSpec F c (AffinePoint F) (AffinePoint (FVar F)) where
+  check r v _ := by
+    show ⦃Prover.Reads r v⦄ (pure PUnit.unit : CircuitM F (Prover c) PUnit)
+      ⦃fun _ ↦ Prover.Reads r v⦄
+    vcgen
 
 /-- A point's coordinates carry no admissibility condition: what a witness of a point owes
 `CheckedType.Valid`, discharged by `simp`. -/
@@ -228,13 +233,6 @@ def OnCurveAt [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (V : Val
   Kimchi.Gate.AddComplete.IsPoint W (p.x.val V) (p.y.val V) P
 
 open WeierstrassCurve.Affine in
-/-- `OnCurveAt` at the table's valuation, with the point in scope, so the same curve point
-is read at every later table (`monotone_onCurveAs`). -/
-def OnCurveAs [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : ProverState F)
-    (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
-  CircuitType.Scoped (val := AffinePoint F) st p ∧ OnCurveAt W st.env.get p P
-
-open WeierstrassCurve.Affine in
 /-- Cells reading as a nonsingular pair `(x, y)` read as that curve point, so a consumer
 never names `Point.some` at the cells' own coordinates. -/
 theorem OnCurveAt.of_reads [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
@@ -271,15 +269,6 @@ theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
   · rw [Point.neg_some]
     simp only [Point.some.injEq]
     exact ⟨trivial, by rw [CVar.val_negate_]; exact hneg⟩
-
-/-- A curve read survives the table's growth, with the same curve point. -/
-theorem monotone_onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
-    {p : AffinePoint (FVar F)} {P : W.Point} :
-    Monotone fun st : ProverState F => OnCurveAs W st p P := by
-  rintro st st' hle ⟨hsc, hon⟩
-  refine ⟨hsc.mono (ProverState.nv_le_of_le hle), ?_⟩
-  rw [scoped_affinePoint] at hsc
-  rwa [OnCurveAt, CVar.val_of_le hle hsc.1, CVar.val_of_le hle hsc.2]
 
 open WeierstrassCurve.Affine in
 /-- On a short curve a point with `y = 0` is 2-torsion. The gate's slope divides by `2y₁`;
@@ -341,33 +330,53 @@ operands' readings. -/
 
 /-! ## Completeness
 
-The honest run at the prover's reading (`Snarky.Prover.WP`): the seal and the infinity column
-registered, each advice's witness registered at a named value of the entry readings, and
-`addFast`'s law cited by hand at its curve. The named values keep the gate's case structure
-out of the transport: a bundle moves to a later state as one fact, and the row equation
-unfolds the values at one state. -/
+The honest run at the prover's reading (`Snarky.Prover.VCGen`): the operands' readings in, the
+result's reading out, the values as parameters. Each advice's value is a named function of the
+operand values, and the emitted row reads as the gate's canonical row,
+`Kimchi.Gate.AddComplete.build`, at them. -/
 
 section ProverReading
 
-open Std.Do WeierstrassCurve.Affine
+open Snarky.Prover Std.WP WeierstrassCurve.Affine
 
-/-- Sealing a point: the result reads the operand's entry readings. -/
-private theorem Prover.sealPoint_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (p : AffinePoint (FVar F)) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ p.x.Scoped st₀ ∧ p.y.Scoped st₀⌝⦄
-    sealPoint (c := Prover c) p
-    ⦃⇓ r s' => ⌜CircuitType.ReadsAs (val := AffinePoint F) s' r ⟨st₀.read p.x, st₀.read p.y⟩ ∧
-      st₀ ≤ s'⌝⦄ := by
+/-- A point bundle reads a value when its coordinates are in scope and read the value's. -/
+theorem Prover.reads_affinePoint_apply [Field F] (p : AffinePoint (FVar F))
+    (pv : AffinePoint F) (s : ProverState F) :
+    Reads p pv s ↔ p.x.Scoped s ∧ p.y.Scoped s ∧ p.x.val s.env.get = pv.x ∧
+      p.y.val s.env.get = pv.y := by
+  change CircuitType.ReadsAs s p pv ↔ _
+  simp only [CircuitType.ReadsAs, scoped_affinePoint, reads_affinePoint, and_assoc]
+
+/-- An auxiliary bundle reads a value when its columns are in scope and read the value's. -/
+private theorem Prover.reads_addAux_apply [Field F] (a : AddAux (FVar F)) (v : AddAux F)
+    (s : ProverState F) :
+    Reads a v s ↔ a.infZ.Scoped s ∧ a.x21Inv.Scoped s ∧ a.s.Scoped s ∧
+      a.infZ.val s.env.get = v.infZ ∧ a.x21Inv.val s.env.get = v.x21Inv ∧
+        a.s.val s.env.get = v.s := by
+  change CircuitType.ReadsAs s a v ↔ _
+  simp only [CircuitType.ReadsAs, scoped_addAux, reads_addAux, and_assoc]
+
+/-- An unchecked bundle reads an unchecked value when its payload reads the value's payload. -/
+private theorem Prover.reads_unchecked_apply [Field F] {val var : Type} [CircuitType F val var]
+    (u : UnChecked var) (v : UnChecked val) (s : ProverState F) :
+    Reads u v s ↔ Reads u.val v.val s := Iff.rfl
+
+/-- A bit bundle's decoded value, as a test of its cell's reading. -/
+private theorem Prover.readVal_boolVar [Field F] [DecidableEq F] (V : Valuation F)
+    (b : BoolVar F) :
+    CircuitType.readVal (val := Bool) V b = decide ((↑b : CVar F).val V ≠ 0) := rfl
+
+/-- Sealing a point: the result reads the operand's value. -/
+theorem Prover.sealPoint_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F))
+    (pv : AffinePoint F) :
+    ⦃Reads p pv⦄ sealPoint (c := Prover c) p ⦃fun r ↦ Reads r pv⦄ := by
+  have hy := Prover.sealVar_spec (c := c) p.y pv.y
+  have hx := Prover.sealVar_spec (c := c) p.x pv.x
   unfold sealPoint
-  mvcgen
-  all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, scoped_affinePoint, reads_affinePoint,
-    ProverState.read_of_le, CVar.Scoped.of_le]
-
-/-- Registered. -/
-@[spec] private def Prover.sealPoint_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F)) :=
-  Prover.register (Prover.sealPoint_spec (c := c) p)
+  vcgen [hy, hx]
+  all_goals prover_assert with
+    (intros; simp_all [Prover.reads_affinePoint_apply, Reads.fvar_apply])
 
 /-- The same-x flag from the operands' x-coordinates. -/
 private def addFast.sameXVal [DecidableEq F] (x1 x2 : F) : UnChecked Bool := ⟨decide (x1 = x2)⟩
@@ -390,12 +399,14 @@ private def addFast.auxVal [Field F] [DecidableEq F] (sx : Bool) (x1 y1 x2 y2 : 
 private def addFast.sumVal [Field F] (sv x1 x2 y1 : F) : AffinePoint F :=
   ⟨sv * sv - (x1 + x2), sv * (x1 - (sv * sv - (x1 + x2))) - y1⟩
 
+/-- `addFast.sameXAdvice` returns the same-x flag. -/
 private theorem addFast.sameXAdvice_run [Field F] [DecidableEq F] {s : ProverState F}
     {q1 q2 : AffinePoint (FVar F)} (h1 : q1.x.Scoped s) (h2 : q2.x.Scoped s) :
     (addFast.sameXAdvice q1 q2).run s.env =
       .ok (addFast.sameXVal (q1.x.val s.env.get) (q2.x.val s.env.get)) := by
   simp [addFast.sameXAdvice, addFast.sameXVal, AsProver.readCVar_run h1, AsProver.readCVar_run h2]
 
+/-- `addFast.infAdvice` returns the infinity flag. -/
 private theorem addFast.infAdvice_run [Field F] [DecidableEq F] {s : ProverState F}
     {q1 q2 : AffinePoint (FVar F)} {sameX : BoolVar F} (hs : (↑sameX : CVar F).Scoped s)
     (h1 : q1.y.Scoped s) (h2 : q2.y.Scoped s) :
@@ -405,6 +416,7 @@ private theorem addFast.infAdvice_run [Field F] [DecidableEq F] {s : ProverState
   simp [addFast.infAdvice, addFast.infVal, readVar_run (CircuitType.scoped_boolVar.mpr hs),
     AsProver.readCVar_run h1, AsProver.readCVar_run h2]
 
+/-- `addFast.auxAdvice` returns the auxiliary columns. -/
 private theorem addFast.auxAdvice_run [Field F] [DecidableEq F] {s : ProverState F}
     {q1 q2 : AffinePoint (FVar F)} {sameX : BoolVar F} (hs : (↑sameX : CVar F).Scoped s)
     (h1x : q1.x.Scoped s) (h1y : q1.y.Scoped s) (h2x : q2.x.Scoped s) (h2y : q2.y.Scoped s) :
@@ -415,6 +427,7 @@ private theorem addFast.auxAdvice_run [Field F] [DecidableEq F] {s : ProverState
     AsProver.readCVar_run h1x, AsProver.readCVar_run h1y, AsProver.readCVar_run h2x,
     AsProver.readCVar_run h2y]
 
+/-- `addFast.sumAdvice` returns the sum from the slope. -/
 private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState F}
     {q1 q2 : AffinePoint (FVar F)} {sl : FVar F} (hsl : sl.Scoped s) (h1x : q1.x.Scoped s)
     (h2x : q2.x.Scoped s) (h1y : q1.y.Scoped s) :
@@ -424,220 +437,219 @@ private theorem addFast.sumAdvice_run [Field F] [DecidableEq F] {s : ProverState
   simp [addFast.sumAdvice, addFast.sumVal, AsProver.readCVar_run hsl, AsProver.readCVar_run h1x,
     AsProver.readCVar_run h2x, AsProver.readCVar_run h1y]
 
-/-- `addFast.sameXAdvice` returns the same-x flag. -/
-@[spec] private def Prover.addFast_sameXAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (q1 q2 : AffinePoint (FVar F)) :=
-  Prover.register (Prover.witness_of_run (c := c) (addFast.sameXAdvice q1 q2)
-    (fun st => q1.x.Scoped st ∧ q2.x.Scoped st)
-    (fun st => addFast.sameXVal (st.read q1.x) (st.read q2.x))
-    (fun _ h => addFast.sameXAdvice_run h.1 h.2) fun _ _ => by simp)
-
-/-- `addFast.infAdvice` returns the infinity flag. -/
-@[spec] private def Prover.addFast_infAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (addFast.infAdvice q1 q2 sameX)
-    (fun st => (↑sameX : CVar F).Scoped st ∧ q1.y.Scoped st ∧ q2.y.Scoped st)
-    (fun st => addFast.infVal (CircuitType.readVal (val := Bool) st.env.get sameX) (st.read q1.y)
-      (st.read q2.y))
-    (fun _ h => addFast.infAdvice_run h.1 h.2.1 h.2.2) fun _ _ => by simp)
-
-/-- `addFast.auxAdvice` returns the auxiliary columns. -/
-@[spec] private def Prover.addFast_auxAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (addFast.auxAdvice q1 q2 sameX)
-    (fun st => (↑sameX : CVar F).Scoped st ∧ q1.x.Scoped st ∧ q1.y.Scoped st ∧
-      q2.x.Scoped st ∧ q2.y.Scoped st)
-    (fun st => addFast.auxVal (CircuitType.readVal (val := Bool) st.env.get sameX) (st.read q1.x)
-      (st.read q1.y) (st.read q2.x) (st.read q2.y))
-    (fun _ h => addFast.auxAdvice_run h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2)
-    fun _ _ => by simp)
-
-/-- `addFast.sumAdvice` returns the sum. -/
-@[spec] private def Prover.addFast_sumAdvice_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] (q1 q2 : AffinePoint (FVar F)) (sl : FVar F) :=
-  Prover.register (Prover.witness_of_run (c := c) (addFast.sumAdvice q1 q2 sl)
-    (fun st => sl.Scoped st ∧ q1.x.Scoped st ∧ q2.x.Scoped st ∧ q1.y.Scoped st)
-    (fun st => addFast.sumVal (st.read sl) (st.read q1.x) (st.read q2.x) (st.read q1.y))
-    (fun _ h => addFast.sumAdvice_run h.1 h.2.1 h.2.2.1 h.2.2.2) fun _ _ => by simp)
-
-/-- The infinity column: under `checkFinite` the constant `false`, otherwise the witnessed flag;
-the reading named by `addFast.infFlag`. -/
+/-- The infinity column reads `addFast.infFlag`: under `checkFinite` the constant `false`,
+otherwise the witnessed flag. -/
 private theorem Prover.infColumn_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (fin : Finiteness) (q1 q2 : AffinePoint (FVar F))
-    (sameX : BoolVar F) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ (↑sameX : CVar F).Scoped st₀ ∧ q1.y.Scoped st₀ ∧ q2.y.Scoped st₀⌝⦄
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
+    (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) (sx : Bool) (y1 y2 : F) :
+    ⦃Reads sameX sx ⊓ Reads q1.y y1 ⊓ Reads q2.y y2⦄
     addFast.infColumn (c := Prover c) fin q1 q2 sameX
-    ⦃⇓ r s' => ⌜CircuitType.ReadsAs (val := Bool) s' r
-      (addFast.infFlag fin (CircuitType.readVal (val := Bool) st₀.env.get sameX) (st₀.read q1.y)
-        (st₀.read q2.y)) ∧ st₀ ≤ s'⌝⦄ := by
+    ⦃fun r ↦ Reads r (addFast.infFlag fin sx y1 y2)⦄ := by
   cases fin with
   | checkFinite =>
     simp only [addFast.infColumn]
-    mvcgen
-    rename_i s h
-    obtain ⟨rfl, -⟩ := h
-    exact ⟨⟨by simp, by simp [addFast.infFlag, bit]⟩, le_rfl⟩
+    vcgen
+    all_goals prover_assert with
+      (intros; simp [Reads.boolVar_apply, addFast.infFlag, false_, bit])
   | dontCheckFinite =>
+    have hw := Spec.witness (c := c) (addFast.infAdvice q1 q2 sameX) (addFast.infVal sx y1 y2)
+      valid_unchecked
     simp only [addFast.infColumn]
-    mvcgen
-    all_goals grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_unchecked',
-      CircuitType.reads_unchecked', addFast.infVal, addFast.infFlag, CVar.Scoped.of_le]
+    vcgen [hw]
+    all_goals prover_assert with
+      (intros; simp_all [Reads.boolVar_apply, Reads.fvar_apply, Prover.reads_unchecked_apply,
+        Prover.readVal_boolVar, addFast.infAdvice_run, addFast.infVal, addFast.infFlag, bit])
 
-/-- Registered. -/
-@[spec] private def Prover.infColumn_reg [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
-    (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) :=
-  Prover.register (Prover.infColumn_spec (c := c) fin q1 q2 sameX)
-
-/-- The row of a complete addition, read at its emission state, is the gate's canonical row at
-the entry readings: the six bundles are moved to that state once, their cells read off, and the
-named values unfolded there. -/
-private theorem addFast_row_read [Field F] [DecidableEq F] (fin : Finiteness)
-    {st₀ s₅ s₄ s₃ s₂ s₁ s : ProverState F} {p1' p2' q1 q2 p3 : AffinePoint (FVar F)}
-    {sxU : UnChecked (BoolVar F)} {inf : BoolVar F} {aux : AddAux (FVar F)}
-    (h1 : CircuitType.ReadsAs (val := AffinePoint F) s₅ q1 ⟨st₀.read p1'.x, st₀.read p1'.y⟩)
-    (h2 : CircuitType.ReadsAs (val := AffinePoint F) s₄ q2 ⟨s₅.read p2'.x, s₅.read p2'.y⟩)
-    (hp2 : CircuitType.Scoped (val := AffinePoint F) st₀ p2') (hle1 : st₀ ≤ s₅) (hle2 : s₅ ≤ s₄)
-    (h3 : CircuitType.ReadsAs (val := UnChecked Bool) s₃ sxU
-      (addFast.sameXVal (s₄.read q1.x) (s₄.read q2.x))) (hle3 : s₄ ≤ s₃)
-    (h4 : CircuitType.ReadsAs (val := Bool) s₂ inf
-      (addFast.infFlag fin (CircuitType.readVal (val := Bool) s₃.env.get sxU.val)
-        (s₃.read q1.y) (s₃.read q2.y))) (hle4 : s₃ ≤ s₂)
-    (h5 : CircuitType.ReadsAs (val := AddAux F) s₁ aux
-      (addFast.auxVal (CircuitType.readVal (val := Bool) s₂.env.get sxU.val) (s₂.read q1.x)
-        (s₂.read q1.y) (s₂.read q2.x) (s₂.read q2.y))) (hle5 : s₂ ≤ s₁)
-    (h6 : CircuitType.ReadsAs (val := AffinePoint F) s p3
-      (addFast.sumVal (s₁.read aux.s) (s₁.read q1.x) (s₁.read q2.x) (s₁.read q1.y)))
-    (hle6 : s₁ ≤ s) :
-    AddComplete.read (F := F) s.env.get
+/-- At a state where the sealed operands read on-curve values `pv`, `qv` naming `P`, `Q`, and
+the witnessed bundles read the advice values, the emitted row reads as
+`Kimchi.Gate.AddComplete.build` at the operand values, which
+`Kimchi.Gate.AddComplete.complete_build` satisfies. -/
+private theorem Prover.addFast_row_checked [Field F] [DecidableEq F] (fin : Finiteness)
+    {W : WeierstrassCurve.Affine F} (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
+    (htwo : (2 : F) ≠ 0) {pv qv : AffinePoint F} {P Q : W.Point}
+    (hP : Kimchi.Gate.AddComplete.IsPoint W pv.x pv.y P)
+    (hQ : Kimchi.Gate.AddComplete.IsPoint W qv.x qv.y Q) (hy1 : pv.y ≠ 0)
+    (hfin : fin = .checkFinite → P + Q ≠ 0) {s : ProverState F}
+    {q1 q2 p3 : AffinePoint (FVar F)} {sxU : UnChecked (BoolVar F)} {inf : BoolVar F}
+    {aux : AddAux (FVar F)} (h1 : Reads q1 pv s) (h2 : Reads q2 qv s)
+    (h3 : Reads sxU (addFast.sameXVal pv.x qv.x) s)
+    (h4 : Reads inf (addFast.infFlag fin (decide (pv.x = qv.x)) pv.y qv.y) s)
+    (h5 : Reads aux (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y) s)
+    (h6 : Reads p3 (addFast.sumVal (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y).s
+      pv.x qv.x pv.y) s) :
+    Checked (F := F) (KimchiConstraint.addComplete
       { p1 := q1, p2 := q2, p3 := p3, inf := (↑inf : CVar F), sameX := (↑sxU.val : CVar F),
-        s := aux.s, infZ := aux.infZ, x21Inv := aux.x21Inv }
-      = Kimchi.Gate.AddComplete.build (decide (fin = .checkFinite)) (p1'.x.val st₀.env.get)
-          (p1'.y.val st₀.env.get) (p2'.x.val st₀.env.get) (p2'.y.val st₀.env.get) := by
-  -- the bundles at the emission state, and the bundles each later advice read
-  have b1 := h1.of_le (hle2.trans (hle3.trans (hle4.trans (hle5.trans hle6))))
-  have b2 := h2.of_le (hle3.trans (hle4.trans (hle5.trans hle6)))
-  have b3 := h3.of_le (hle4.trans (hle5.trans hle6))
-  have b4 := h4.of_le (hle5.trans hle6)
-  have b5 := h5.of_le hle6
-  have h1₄ := h1.of_le hle2
-  have h1₃ := h1.of_le (hle2.trans hle3)
-  have h2₃ := h2.of_le hle3
-  have h1₂ := h1.of_le (hle2.trans (hle3.trans hle4))
-  have h2₂ := h2.of_le (hle3.trans hle4)
-  have h3₂ := h3.of_le hle4
-  have h1₁ := h1.of_le (hle2.trans (hle3.trans (hle4.trans hle5)))
-  have h2₁ := h2.of_le (hle3.trans (hle4.trans hle5))
-  -- cells, from the bundles, and the second seal's reading carried to the entry
-  have hp2x : p2'.x.val s₅.env.get = p2'.x.val st₀.env.get :=
-    CVar.val_of_le hle1 (scoped_affinePoint.mp hp2).1
-  have hp2y : p2'.y.val s₅.env.get = p2'.y.val st₀.env.get :=
-    CVar.val_of_le hle1 (scoped_affinePoint.mp hp2).2
-  have hsx₃ := (CircuitType.reads_iff.mp (CircuitType.reads_unchecked'.mp h3.2)).2
-  have hsx₂ := (CircuitType.reads_iff.mp (CircuitType.reads_unchecked'.mp h3₂.2)).2
-  simp only [AddComplete.read, Kimchi.Gate.AddComplete.build, ProverState.read] at *
-  simp only [(reads_affinePoint.mp b1.2).1, (reads_affinePoint.mp b1.2).2,
-    (reads_affinePoint.mp b2.2).1, (reads_affinePoint.mp b2.2).2,
-    CircuitType.reads_boolVar.mp (CircuitType.reads_unchecked'.mp b3.2),
-    CircuitType.reads_boolVar.mp b4.2, (reads_addAux.mp b5.2).1, (reads_addAux.mp b5.2).2.1,
-    (reads_addAux.mp b5.2).2.2, (reads_affinePoint.mp h6.2).1, (reads_affinePoint.mp h6.2).2,
-    (reads_addAux.mp h5.2).2.2, (reads_affinePoint.mp h1₄.2).1, (reads_affinePoint.mp h2.2).1,
-    (reads_affinePoint.mp h1₃.2).2, (reads_affinePoint.mp h2₃.2).2,
-    (reads_affinePoint.mp h1₂.2).1, (reads_affinePoint.mp h1₂.2).2,
-    (reads_affinePoint.mp h2₂.2).1, (reads_affinePoint.mp h2₂.2).2,
-    (reads_affinePoint.mp h1₁.2).1, (reads_affinePoint.mp h1₁.2).2,
-    (reads_affinePoint.mp h2₁.2).1, hsx₃, hsx₂, hp2x, hp2y, addFast.sameXVal, addFast.infFlag,
-    addFast.auxVal, addFast.sumVal]
-  cases fin <;> simp [bit]
-
-/-- **`addFast`'s state-relative completeness.** For on-curve operands with `P + P ≠ 0` (and,
-under `checkFinite`, `P + Q ≠ 0`), the run succeeds, the result is in scope, and a finite sum
-reads as `P + Q`. The curve and its points are not determined by the program, so the law is
-cited by hand at its instance rather than registered. -/
-theorem Prover.addFast_spec [Field F] [DecidableEq F] (fin : Finiteness)
-    (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
-    (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (P Q : W.Point)
-    (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ OnCurveAs W st₀ p1' P ∧ OnCurveAs W st₀ p2' Q ∧ P + P ≠ 0 ∧
-      (fin = .checkFinite → P + Q ≠ 0)⌝⦄
-    addFast (c := Prover (KimchiConstraint F)) fin p1' p2'
-    ⦃⇓ r s' => ⌜CircuitType.Scoped (val := AffinePoint F) s' r.p ∧
-      (↑r.isInfinity : CVar F).Scoped s' ∧ (P + Q ≠ 0 → OnCurveAs W s' r.p (P + Q)) ∧
-      st₀ ≤ s'⌝⦄ := by
-  unfold addFast
-  mvcgen
-  all_goals (try grind [Prover.Reg.iff, CircuitType.ReadsAs, CircuitType.scoped_fvar,
-    CircuitType.scoped_unchecked', CircuitType.scoped_boolVar, scoped_affinePoint,
-    scoped_addAux, CVar.Scoped.of_le, OnCurveAs])
-  -- the row: it reads as the gate's canonical one
-  · rename_i s₆ h₀ q1 s₅ h1 q2 s₄ h2 sxU sameX s₃ h3 inf s₂ h4 aux s₁ h5 p3 s h6
-    simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6
-    obtain ⟨rfl, ⟨hsc1, hP⟩, ⟨hsc2, hQ⟩, hPP, hfinP⟩ := h₀
-    refine ⟨trivial, ?_, ?_⟩
-    -- the row's cells: the sealed points', the flags', the auxiliaries' and the sum's
-    on_goal 2 =>
-      obtain ⟨hq1, l1⟩ := h1
-      obtain ⟨hq2, l2⟩ := h2
-      obtain ⟨hsx, l3⟩ := h3
-      obtain ⟨hinf, l4⟩ := h4
-      obtain ⟨haux, l5⟩ := h5
-      obtain ⟨hp3, l6⟩ := h6
-      obtain ⟨q1x, q1y⟩ := scoped_affinePoint.mp hq1.1
-      obtain ⟨q2x, q2y⟩ := scoped_affinePoint.mp hq2.1
-      obtain ⟨p3x, p3y⟩ := scoped_affinePoint.mp hp3.1
-      obtain ⟨ai, ax, as⟩ := scoped_addAux.mp haux.1
-      have hinf' := CircuitType.scoped_boolVar.mp hinf.1
-      have hsx' := CircuitType.scoped_boolVar.mp (CircuitType.scoped_unchecked'.mp hsx.1)
-      intro y hy
-      change y ∈ (AddComplete.operands _).toList at hy
-      simp only [AddComplete.operands, Vector.toList_mk, List.mem_cons, List.mem_nil_iff,
-        or_false] at hy
-      rcases hy with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-      · exact q1x.of_le (by le_chain)
-      · exact q1y.of_le (by le_chain)
-      · exact q2x.of_le (by le_chain)
-      · exact q2y.of_le (by le_chain)
-      · exact p3x
-      · exact p3y
-      · exact hinf'.of_le (by le_chain)
-      · exact hsx'.of_le (by le_chain)
-      · exact as.of_le (by le_chain)
-      · exact ai.of_le (by le_chain)
-      · exact ax.of_le (by le_chain)
-    show Kimchi.Gate.AddComplete.Holds (AddComplete.read s.env.get _)
-    rw [addFast_row_read fin h1.1 h2.1 hsc2 h1.2 h2.2 h3.1 h3.2 h4.1 h4.2 h5.1 h5.2 h6.1 h6.2]
-    have hy1ne : p1'.y.val s₆.env.get ≠ 0 := fun hy => hPP (two_torsion_of_y_eq_zero ha hP hy)
+        s := aux.s, infZ := aux.infZ, x21Inv := aux.x21Inv }) s := by
+  rw [Prover.reads_affinePoint_apply] at h1 h2 h6
+  rw [Prover.reads_unchecked_apply, Reads.boolVar_apply] at h3
+  rw [Reads.boolVar_apply] at h4
+  rw [Prover.reads_addAux_apply] at h5
+  obtain ⟨q1x, q1y, e1x, e1y⟩ := h1
+  obtain ⟨q2x, q2y, e2x, e2y⟩ := h2
+  obtain ⟨p3x, p3y, e3x, e3y⟩ := h6
+  obtain ⟨sxs, esx⟩ := h3
+  obtain ⟨infs, einf⟩ := h4
+  obtain ⟨ai, ax, as, eai, eax, eas⟩ := h5
+  rw [Checked.apply]
+  refine ⟨?_, ?_⟩
+  · show Kimchi.Gate.AddComplete.Holds (AddComplete.read s.env.get _)
+    have hread : AddComplete.read s.env.get
+        { p1 := q1, p2 := q2, p3 := p3, inf := (↑inf : CVar F), sameX := (↑sxU.val : CVar F),
+          s := aux.s, infZ := aux.infZ, x21Inv := aux.x21Inv }
+        = Kimchi.Gate.AddComplete.build (decide (fin = .checkFinite)) pv.x pv.y qv.x qv.y := by
+      simp only [AddComplete.read, Kimchi.Gate.AddComplete.build, e1x, e1y, e2x, e2y, e3x, e3y,
+        esx, einf, eai, eax, eas, addFast.sameXVal, addFast.infFlag, addFast.auxVal,
+        addFast.sumVal]
+      cases fin <;> simp [bit]
+    rw [hread]
     obtain ⟨n1, rfl⟩ := hP
     obtain ⟨n2, rfl⟩ := hQ
-    refine Kimchi.Gate.AddComplete.complete_build W ha n1.1 n2.1 hy1ne htwo ?_
+    refine Kimchi.Gate.AddComplete.complete_build W ha n1.1 n2.1 hy1 htwo ?_
     rintro hf ⟨hx, hy⟩
-    refine hfinP (by simpa using hf) ?_
+    refine hfin (by simpa using hf) ?_
     rw [add_eq_zero_iff_eq_neg, Point.neg_some]
     congr 1
-  -- the final post: the sum from the row, by the gate's soundness
-  · rename_i s₇ h₀ q1 s₆ h1 q2 s₅ h2 sxU sameX s₄ h3 inf s₃ h4 aux s₂ h5 p3 s₁ h6 u s h7
-    simp only [Prover.Reg.iff] at h1 h2 h3 h4 h5 h6
-    obtain ⟨rfl, hgate⟩ := h7
-    obtain ⟨rfl, ⟨hsc1, hP⟩, ⟨hsc2, hQ⟩, hPP, hfinP⟩ := h₀
-    refine ⟨by grind [CircuitType.ReadsAs, CVar.Scoped.of_le],
-      by grind [CircuitType.ReadsAs, CircuitType.scoped_boolVar, CVar.Scoped.of_le],
-      fun hPQ => ?_, by grind⟩
-    have hread := addFast_row_read fin h1.1 h2.1 hsc2 h1.2 h2.2 h3.1 h3.2 h4.1 h4.2 h5.1 h5.2
-      h6.1 h6.2
-    have hy1ne : p1'.y.val s₇.env.get ≠ 0 := fun hy => hPP (two_torsion_of_y_eq_zero ha hP hy)
-    obtain ⟨n1, rfl⟩ := hP
-    obtain ⟨n2, rfl⟩ := hQ
-    have hgate' : Kimchi.Gate.AddComplete.Holds (AddComplete.read s.env.get _) := hgate
-    rw [hread] at hgate'
-    rcases Kimchi.Gate.AddComplete.sound W ha _ n1 n2 hgate' hy1ne htwo with
-      ⟨-, hzero⟩ | ⟨-, h3, hsum⟩
-    · exact absurd hzero hPQ
-    · refine ⟨by grind [CircuitType.ReadsAs, CVar.Scoped.of_le], ?_⟩
-      show Kimchi.Gate.AddComplete.IsPoint W (p3.x.val s.env.get) (p3.y.val s.env.get) _
-      rw [show p3.x.val s.env.get = _ from congrArg Kimchi.Gate.AddComplete.Witness.x3 hread,
-        show p3.y.val s.env.get = _ from congrArg Kimchi.Gate.AddComplete.Witness.y3 hread]
-      exact ⟨h3, hsum⟩
+  · intro y hy
+    change y ∈ (AddComplete.operands _).toList at hy
+    simp only [AddComplete.operands, Vector.toList_mk, List.mem_cons, List.mem_nil_iff,
+      or_false] at hy
+    rcases hy with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      assumption
+
+/-- For on-curve values `pv`, `qv` naming `P`, `Q` with `pv.y ≠ 0`, and `rv` naming the finite
+sum `P + Q`, the sum advice's value is `rv` and the infinity column reads `false`: the gate's
+soundness at `Kimchi.Gate.AddComplete.build`'s row. -/
+private theorem addFast_sum_values [Field F] [DecidableEq F] (fin : Finiteness)
+    {W : WeierstrassCurve.Affine F} (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
+    (htwo : (2 : F) ≠ 0) {pv qv rv : AffinePoint F} {P Q : W.Point}
+    (hP : Kimchi.Gate.AddComplete.IsPoint W pv.x pv.y P)
+    (hQ : Kimchi.Gate.AddComplete.IsPoint W qv.x qv.y Q) (hy1 : pv.y ≠ 0)
+    (hPQ : Kimchi.Gate.AddComplete.IsPoint W rv.x rv.y (P + Q)) :
+    addFast.sumVal (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y).s pv.x qv.x pv.y
+      = rv ∧ addFast.infFlag fin (decide (pv.x = qv.x)) pv.y qv.y = false := by
+  have hPQ0 : P + Q ≠ 0 := by
+    obtain ⟨h, heq⟩ := hPQ
+    rw [heq]
+    exact Point.some_ne_zero h
+  obtain ⟨n1, rfl⟩ := hP
+  obtain ⟨n2, rfl⟩ := hQ
+  have hw : Kimchi.Gate.AddComplete.Holds
+      (Kimchi.Gate.AddComplete.build (decide (fin = .checkFinite)) pv.x pv.y qv.x qv.y) := by
+    refine Kimchi.Gate.AddComplete.complete_build W ha n1.1 n2.1 hy1 htwo ?_
+    rintro - ⟨hx, hy⟩
+    refine hPQ0 ?_
+    rw [add_eq_zero_iff_eq_neg, Point.neg_some]
+    congr 1
+  rcases Kimchi.Gate.AddComplete.sound W ha _ n1 n2 hw hy1 htwo with
+    ⟨-, hzero⟩ | ⟨hinf, h3, hsum⟩
+  · exact absurd hzero hPQ0
+  · obtain ⟨hx, hy⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq ⟨h3, hsum⟩ hPQ
+    refine ⟨?_, ?_⟩
+    · obtain ⟨rx, ry⟩ := rv
+      simp only [Kimchi.Gate.AddComplete.build] at hx hy
+      simp only [addFast.sumVal, addFast.auxVal, decide_eq_true_eq, ← hx, ← hy]
+    · cases fin <;> simp_all [Kimchi.Gate.AddComplete.build, addFast.infFlag]
+
+/-- **`addFast`'s completeness.** For operands reading on-curve values `pv`, `qv` that name
+`P`, `Q` with `P + P ≠ 0`, and `rv` naming the finite sum `P + Q`, the output point reads `rv`
+and the infinity flag reads `false`. -/
+theorem Prover.addFast_spec [Field F] [DecidableEq F] (fin : Finiteness)
+    (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
+    (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (pv qv rv : AffinePoint F)
+    (P Q : W.Point) (hP : Kimchi.Gate.AddComplete.IsPoint W pv.x pv.y P)
+    (hQ : Kimchi.Gate.AddComplete.IsPoint W qv.x qv.y Q) (hPP : P + P ≠ 0)
+    (hPQ : Kimchi.Gate.AddComplete.IsPoint W rv.x rv.y (P + Q)) :
+    ⦃Reads p1' pv ⊓ Reads p2' qv⦄
+    addFast (c := Prover (KimchiConstraint F)) fin p1' p2'
+    ⦃fun r ↦ Reads r.p rv ⊓ Reads r.isInfinity false⦄ := by
+  -- `two_torsion_of_y_eq_zero` at constant cells reading `pv`
+  have hy1 : pv.y ≠ 0 := fun hy ↦
+    hPP (two_torsion_of_y_eq_zero ha (V := fun _ ↦ 0) (p := ⟨.const pv.x, .const pv.y⟩) hP hy)
+  have hPQ0 : P + Q ≠ 0 := by
+    obtain ⟨h, heq⟩ := hPQ
+    rw [heq]
+    exact Point.some_ne_zero h
+  obtain ⟨hsumv, hflag⟩ := addFast_sum_values fin ha htwo hP hQ hy1 hPQ
+  have h1 := Prover.sealPoint_spec (c := KimchiConstraint F) p1' pv
+  have h2 := Prover.sealPoint_spec (c := KimchiConstraint F) p2' qv
+  have hsx := fun q1 q2 : AffinePoint (FVar F) ↦ Spec.witness (c := KimchiConstraint F)
+    (addFast.sameXAdvice q1 q2) (addFast.sameXVal pv.x qv.x) valid_unchecked
+  have hinf := fun (q1 q2 : AffinePoint (FVar F)) (b : BoolVar F) ↦
+    Prover.infColumn_spec (c := KimchiConstraint F) fin q1 q2 b (decide (pv.x = qv.x)) pv.y qv.y
+  have haux := fun (q1 q2 : AffinePoint (FVar F)) (b : BoolVar F) ↦
+    Spec.witness (c := KimchiConstraint F) (addFast.auxAdvice q1 q2 b)
+      (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y) (by simp)
+  have hsum := fun (q1 q2 : AffinePoint (FVar F)) (sl : FVar F) ↦
+    Spec.witness (c := KimchiConstraint F) (addFast.sumAdvice q1 q2 sl)
+      (addFast.sumVal (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y).s pv.x qv.x
+        pv.y) valid_affinePoint
+  unfold addFast
+  vcgen [h1, h2, hsx, hinf, haux, hsum]
+  -- the call contracts are spent; `simp_all` would rewrite with them
+  all_goals clear hPQ hPP
+  all_goals prover_assert with
+    (intros; first
+      | (simp_all +zetaDelta [Prover.reads_affinePoint_apply, Prover.reads_addAux_apply,
+          Prover.reads_unchecked_apply, Reads.fvar_apply, Reads.boolVar_apply,
+          Prover.readVal_boolVar, addFast.sameXAdvice_run, addFast.auxAdvice_run,
+          addFast.sumAdvice_run, addFast.sameXVal, bit]; done)
+      | exact Prover.addFast_row_checked fin ha htwo hP hQ hy1 (fun _ ↦ hPQ0) ‹_› ‹_› ‹_› ‹_›
+          ‹_› ‹_›)
+
+/-- **`addFast`'s completeness at infinity.** Under `dontCheckFinite`, for operands reading
+on-curve values `pv`, `qv` that name `P`, `Q` with `P + P ≠ 0` and `P + Q = 0`, the infinity
+flag reads `true` and the output point reads some value. -/
+theorem Prover.addFast_inf_spec [Field F] [DecidableEq F]
+    (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
+    (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (pv qv : AffinePoint F)
+    (P Q : W.Point) (hP : Kimchi.Gate.AddComplete.IsPoint W pv.x pv.y P)
+    (hQ : Kimchi.Gate.AddComplete.IsPoint W qv.x qv.y Q) (hPP : P + P ≠ 0) (hPQ : P + Q = 0) :
+    ⦃Reads p1' pv ⊓ Reads p2' qv⦄
+    addFast (c := Prover (KimchiConstraint F)) .dontCheckFinite p1' p2'
+    ⦃fun r ↦ Reads r.isInfinity true ⊓ ⨆ w : AffinePoint F, Reads r.p w⦄ := by
+  have hy1 : pv.y ≠ 0 := fun hy ↦
+    hPP (two_torsion_of_y_eq_zero ha (V := fun _ ↦ 0) (p := ⟨.const pv.x, .const pv.y⟩) hP hy)
+  -- `Q = -P`: the same abscissa, the opposite ordinate
+  have hcoords : qv.x = pv.x ∧ qv.y = -pv.y := by
+    obtain ⟨n1, hn1⟩ := hP
+    have hQ' : Kimchi.Gate.AddComplete.IsPoint W pv.x (W.negY pv.x pv.y) Q :=
+      ⟨(W.nonsingular_neg pv.x pv.y).mpr n1,
+        by rw [eq_neg_of_add_eq_zero_right hPQ, hn1, Point.neg_some]⟩
+    obtain ⟨hx, hy⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq hQ hQ'
+    refine ⟨hx, ?_⟩
+    rw [hy, WeierstrassCurve.Affine.negY, ha.1, ha.2.2.1]
+    ring
+  have hflag : addFast.infFlag .dontCheckFinite (decide (pv.x = qv.x)) pv.y qv.y = true := by
+    have hne : pv.y ≠ -pv.y := fun h ↦ hy1 <|
+      (mul_eq_zero.mp (by rw [two_mul]; exact eq_neg_iff_add_eq_zero.mp h)).resolve_left htwo
+    simp [addFast.infFlag, hcoords.1, hcoords.2, hne]
+  have h1 := Prover.sealPoint_spec (c := KimchiConstraint F) p1' pv
+  have h2 := Prover.sealPoint_spec (c := KimchiConstraint F) p2' qv
+  have hsx := fun q1 q2 : AffinePoint (FVar F) ↦ Spec.witness (c := KimchiConstraint F)
+    (addFast.sameXAdvice q1 q2) (addFast.sameXVal pv.x qv.x) valid_unchecked
+  have hinf := fun (q1 q2 : AffinePoint (FVar F)) (b : BoolVar F) ↦
+    Prover.infColumn_spec (c := KimchiConstraint F) .dontCheckFinite q1 q2 b
+      (decide (pv.x = qv.x)) pv.y qv.y
+  have haux := fun (q1 q2 : AffinePoint (FVar F)) (b : BoolVar F) ↦
+    Spec.witness (c := KimchiConstraint F) (addFast.auxAdvice q1 q2 b)
+      (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y) (by simp)
+  have hsum := fun (q1 q2 : AffinePoint (FVar F)) (sl : FVar F) ↦
+    Spec.witness (c := KimchiConstraint F) (addFast.sumAdvice q1 q2 sl)
+      (addFast.sumVal (addFast.auxVal (decide (pv.x = qv.x)) pv.x pv.y qv.x qv.y).s pv.x qv.x
+        pv.y) valid_affinePoint
+  unfold addFast
+  vcgen [h1, h2, hsx, hinf, haux, hsum]
+  -- the value facts are spent; `simp_all` would rewrite with them
+  all_goals clear hPQ hPP hcoords
+  all_goals prover_assert with
+    (intros; first
+      | (refine ⟨?_, _, ‹_›⟩; simp only [hflag] at *; assumption)
+      | (simp_all +zetaDelta [Prover.reads_affinePoint_apply, Prover.reads_addAux_apply,
+          Prover.reads_unchecked_apply, Reads.fvar_apply, Reads.boolVar_apply,
+          Prover.readVal_boolVar, addFast.sameXAdvice_run, addFast.auxAdvice_run,
+          addFast.sumAdvice_run, addFast.sameXVal, bit]; done)
+      | exact Prover.addFast_row_checked .dontCheckFinite ha htwo hP hQ hy1 (fun h ↦ nomatch h)
+          ‹_› ‹_› ‹_› ‹_› ‹_› ‹_›)
 
 end ProverReading
 

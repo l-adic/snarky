@@ -222,8 +222,7 @@ def nameLiterals (src : String) : Array String := Id.run do
     match l.splitOn "--" with | first :: _ => first | [] => l)
   let cs := src.toList.toArray
   let idChar (c : Char) : Bool :=
-    c.isAlphanum || c == '.' || c == '_' || c == '?' || c == '!' || c == '\'' || c == '«'
-      || c == '»'
+    Lean.isIdRest c || c == '.' || c == '«' || c == '»'
   let mut out := #[]
   let mut i := 0
   while i < cs.size do
@@ -241,6 +240,10 @@ def nameLiterals (src : String) : Array String := Id.run do
   return out
 
 end Kimchi.DeadCode
+
+#guard Kimchi.DeadCode.nameLiterals "[ `Snarky.Prover.All₂.mono, `Snarky.«check?» ]" ==
+  #["Snarky.Prover.All₂.mono", "Snarky.check?"]
+#guard Kimchi.DeadCode.nameLiterals "A closed `Snarky.Prover.All₂.mono` quotation" == #[]
 
 run_cmd do
   let env ← getEnv
@@ -270,13 +273,20 @@ run_cmd do
         else missing := missing.push nameStr
         if inSurface then surface := surface.push (n, note.startsWith "synthesis")
   -- the axiom gates' lists: a literal naming a module or a namespace is not a root
+  let privateRoots := env.constants.fold (init := ({} : Std.HashMap Name (Array Name)))
+    fun acc n _ => match privateToUserName? n with
+      | some u => acc.insert u ((acc[u]?.getD #[]).push n)
+      | none => acc
   let mut auditCount := 0
   for f in ["snarky/scripts/check_axioms.lean", "pickles/scripts/check_axioms.lean"] do
     for s in Kimchi.DeadCode.nameLiterals (← IO.FS.readFile f) do
       let n := s.toName
-      if env.contains n then
-        roots := roots.push n
+      let candidates := if env.contains n then #[n] else privateRoots[n]?.getD #[]
+      if let #[root] := candidates then
+        roots := roots.push root
         auditCount := auditCount + 1
+      else if !candidates.isEmpty then
+        throwError "ambiguous private axiom-check root: {n} ({f})"
       else if env.header.moduleNames.contains n || env.isNamespace n then continue
       else missing := missing.push s!"{s} ({f})"
   -- the CI drivers' frontiers
@@ -305,10 +315,17 @@ run_cmd do
     | none => false
   let fromTable {γ} (st : KeyedDeclsAttribute.ExtensionState γ) : Array Name :=
     st.table.toList.foldl (init := #[]) fun acc (_, es) => acc ++ (es.map (·.declName)).toArray
+  -- Registered frame procedures are elaborators too: their names are stored in the extension,
+  -- while their generated proofs mention only the frame law.
+  let mut frameRoots : Array Name := #[]
+  for i in [:env.header.moduleNames.size] do
+    for entry in Elab.Tactic.VCGen.frameProcExt.ext.getModuleEntries env i do
+      match entry with
+      | .global n | .scoped _ n => frameRoots := frameRoots.push n
   let elabRoots := (fromTable (Elab.Tactic.tacticElabAttribute.ext.getState env)
     ++ fromTable (Elab.macroAttribute.ext.getState env)
     ++ fromTable (Elab.Term.termElabAttribute.ext.getState env)
-    ++ fromTable (Elab.Command.commandElabAttribute.ext.getState env)).filter
+    ++ fromTable (Elab.Command.commandElabAttribute.ext.getState env) ++ frameRoots).filter
       Kimchi.DeadCode.isAudited
   -- the script corpus: every file under the packages' scripts/ dirs (this analyzer excluded)
   let scriptDirs := ["scripts", "pasta/scripts", "poseidon/scripts",

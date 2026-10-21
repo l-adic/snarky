@@ -58,9 +58,6 @@ def roots : List Name :=
     `Snarky.builder_spec_iff,
     `Snarky.addConstraint_spec,
 
-    -- The reading that survives a later run.
-    `Snarky.CVar.val_of_le,
-    `Snarky.CircuitType.Reads.of_le,
     `Snarky.CircuitType.Scoped.mono,
     `Snarky.CircuitType.monotone_readsAs,
 
@@ -235,44 +232,44 @@ def roots : List Name :=
     `Snarky.Kimchi.vesta_varBaseMul_read, `Snarky.Kimchi.EndoMul.vesta_endoMul_read,
     -- The completeness laws at the prover's reading, pure core Lean.
     `Snarky.Prover.inv_spec, `Snarky.Prover.mul_spec, `Snarky.Prover.div_spec,
-    `Snarky.Prover.isZero_spec, `Snarky.Prover.assertEqual_spec,
-    `Snarky.Prover.vector_mapM_spec, `Snarky.Prover.zipWithVecM_spec, `Snarky.Prover.forM_spec,
-    `Snarky.Prover.mapAccumM_spec, `Snarky.Prover.mapAccumM_scan_spec,
-    `Snarky.Prover.div_reg, `Snarky.Prover.sealVar_spec,
-    `Snarky.Kimchi.Prover.addFast_spec, `Snarky.Kimchi.Prover.varBaseMul_spec,
+    `Snarky.Prover.isZero_spec, `Snarky.Prover.assertEqual_spec, `Snarky.Prover.sealVar_spec,
+    `Snarky.Kimchi.Prover.addFast_spec, `Snarky.Kimchi.Prover.addFast_inf_spec,
+    `Snarky.Kimchi.Prover.varBaseMul_spec,
     `Snarky.Kimchi.Prover.endoMul_spec, `Snarky.Kimchi.EndoScalar.Prover.endoScalar_spec,
     `Snarky.Prover.square_spec, `Snarky.Prover.assertSquare_spec,
-    `Snarky.Prover.unpack_spec, `Snarky.Prover.unpack_reg,
-    `Snarky.Prover.selectField_spec, `Snarky.Prover.selectField_reg,
+    `Snarky.Prover.unpack_spec,
+    `Snarky.Prover.selectField_spec,
     `Snarky.Prover.and_spec, `Snarky.Prover.or_spec,
-    `Snarky.Prover.xor_spec, `Snarky.Prover.xor_reg,
-    `Snarky.Prover.any_spec, `Snarky.Prover.any_reg,
-    `Snarky.Prover.all_spec, `Snarky.Prover.all_reg,
+    `Snarky.Prover.xor_spec,
+    `Snarky.Prover.any_spec,
+    `Snarky.Prover.all_spec,
     `Snarky.Prover.equals_spec, `Snarky.Prover.neq_spec,
-    `Snarky.Prover.pow_spec, `Snarky.Prover.pow_reg,
+    `Snarky.Prover.pow_spec,
     `Snarky.Prover.assertNonZero_spec,
-    `Snarky.Prover.assertNotEqual_spec, `Snarky.Prover.assertNotEqual_reg,
-    `Snarky.Prover.assert_spec, `Snarky.Prover.assert_reg,
-    `Snarky.Prover.assertAny_spec, `Snarky.Prover.assertAny_reg,
-    `Snarky.Prover.assertExactlyOne_spec, `Snarky.Prover.assertExactlyOne_reg,
-    `Snarky.Prover.assertAll_spec, `Snarky.Prover.assertAll_reg,
-    `Snarky.Prover.assertEq_spec, `Snarky.Prover.assertEq_reg,
+    `Snarky.Prover.assertNotEqual_spec,
+    `Snarky.Prover.assert_spec,
+    `Snarky.Prover.assertAny_spec,
+    `Snarky.Prover.assertExactlyOne_spec,
+    `Snarky.Prover.assertAll_spec,
+    `Snarky.Prover.assertEq_spec, `Snarky.Prover.assertEq_fields_spec,
     `Snarky.Kimchi.Prover.scaleFast1_spec, `Snarky.Kimchi.Prover.scaleFast2_spec,
     `Snarky.Kimchi.Prover.scaleFast2'_spec, `Snarky.Kimchi.Prover.splitFieldVar_spec,
     `Snarky.Kimchi.Prover.endoInv_spec,
     `Snarky.Kimchi.EndoScalar.Prover.toField_spec_rows,
-    `Snarky.Kimchi.EndoScalar.Prover.toField_spec, `Snarky.Kimchi.EndoScalar.Prover.toField_reg,
+    `Snarky.Kimchi.EndoScalar.Prover.toField_spec,
     `Snarky.Kimchi.Prover.groupMapCircuit_spec,
     `Snarky.Kimchi.Prover.groupMapCircuit_toGroup_spec,
-    `Snarky.Kimchi.Poseidon.Prover.poseidon_spec, `Snarky.Kimchi.Poseidon.Prover.poseidon_reg,
+    `Snarky.Kimchi.Poseidon.Prover.poseidon_spec,
     `Snarky.Kimchi.SpongeVar.Prover.absorb_spec, `Snarky.Kimchi.SpongeVar.Prover.squeeze_spec,
     `Snarky.Kimchi.RandomOracle.Prover.update_spec, `Snarky.Kimchi.RandomOracle.Prover.hash2_spec,
     `Snarky.Kimchi.RandomOracle.Prover.hashVec_spec,
     `Snarky.Kimchi.Prover.rangeCheck128_spec, `Snarky.Kimchi.Prover.lowest128Bits'_spec,
-    -- The checks' laws at that reading in instance form, for the types nothing witnesses
-    -- at it yet.
-    `Snarky.Kimchi.instWPCheckedTypeSpongeState,
-    `Snarky.Kimchi.instWPCheckedTypeCheckedPoint,
+    -- The checked types' contracts at that reading, in instance form.
+    `Snarky.Prover.instCheckSpecFVar, `Snarky.Prover.instCheckSpecBool,
+    `Snarky.Prover.instCheckSpecUnChecked, `Snarky.Prover.instCheckSpecProd,
+    `Snarky.Prover.instCheckSpecVector, `Snarky.Prover.instCheckSpecOfEquiv,
+    `Snarky.Kimchi.instCheckSpecAffinePoint, `Snarky.Kimchi.instCheckSpecSpongeState,
+    `Snarky.Kimchi.instCheckSpecCheckedPoint,
 
     -- The deployed dictionaries.
     `Snarky.Kimchi.HasEndo.pallas,
@@ -307,11 +304,18 @@ end Snarky.CheckAxioms
 
 run_cmd do
   let env ← getEnv
+  let privateRoots := env.constants.fold (init := ({} : Std.HashMap Name (Array Name)))
+    fun acc n _ => match privateToUserName? n with
+      | some u => acc.insert u ((acc[u]?.getD #[]).push n)
+      | none => acc
   let mut bad : Array (Name × Name) := #[]
   for root in Snarky.CheckAxioms.roots do
-    unless env.contains root do
-      throwError "axiom-check root not in environment: {root}"
-    for ax in (← liftCoreM <| Lean.collectAxioms root) do
+    let candidates := if env.contains root then #[root] else privateRoots[root]?.getD #[]
+    let actualRoot ← match candidates with
+      | #[n] => pure n
+      | #[] => throwError "axiom-check root not in environment: {root}"
+      | _ => throwError "ambiguous private axiom-check root: {root}"
+    for ax in (← liftCoreM <| Lean.collectAxioms actualRoot) do
       unless Snarky.CheckAxioms.allowed.contains ax ||
           (Snarky.CheckAxioms.deployedRoots.contains root &&
             Snarky.CheckAxioms.isTrustedNativeDecide env ax) do
@@ -338,6 +342,16 @@ run_cmd liftTermElabM do
       _ _ _)) do
     throwError "no WP instance at the soundness tag — the tagged reading (WP.lean) is broken"
   IO.println "✓ WP resolves at the soundness tag"
+  unless ← resolves (← `(Std.WP.WP
+      (Snarky.CircuitM Nat (Snarky.Prover (Snarky.Basic Nat)) Unit) _ _ _)) do
+    throwError "no WP instance at the Prover tag"
+  unless ← resolves (← `(Std.WP.Assertion
+      (Snarky.EvalError → OrderDual (UpperSet (Snarky.ProverState Nat))))) do
+    throwError "no error assertion instance for the unfolded Prover assertion carrier"
+  IO.println "✓ WP resolves at the Prover tag, including its error assertions"
+  if ← resolves (← `(Std.WP.Assertion (OrderDual (UpperSet Nat)))) then
+    throwError "the Prover lattice adapter leaked to an unrelated Mathlib carrier"
+  IO.println "✓ the Mathlib assertion adapter is restricted to Prover states"
   if ← resolves (← `(Std.WP.WP (Snarky.CircuitM Nat (Snarky.Basic Nat) Unit) _ _ _)) then
     throwError "WP instance found at the untagged carrier — the soundness-tag \
       resolution invariant (WP.lean) is broken"

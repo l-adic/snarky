@@ -9,16 +9,12 @@ Two loops. `zipWithVecM` runs a circuit at every index of two equal-length vecto
 collects the results; `mapAccumM` walks a list threading an accumulator. Both visit their
 entries in order, which is the order the rows are emitted in.
 
-Each carries its laws, so a gadget that loops writes the step and inherits the loop: a
-soundness spec carrying a per-step relation along the whole trace, and a completeness law at
-the prover's reading (`Snarky.Prover.WP`) that takes the step's law and the transports of its
-conditions as hypotheses in place of a loop invariant. The accumulating loop's reading form
-returns the loop as a scan of the step functions over the entries' readings.
+Each carries its soundness law, so a gadget that loops writes the step and inherits the loop: a
+spec carrying a per-step relation along the whole trace. The completeness laws at the prover's
+reading are the generic traversal contracts in `Snarky.Prover.VCGen`.
 -/
 
 namespace Snarky
-
-set_option mvcgen.warning false
 
 variable {F c : Type}
 
@@ -162,260 +158,19 @@ theorem forM_spec {V : Valuation F} {α : Type} [ConstraintHolds F c]
     · exact hR
     · exact hrest' y hy'
 
-/-! ## The prover reading
+/-- The empty paired traversal has no results. -/
+theorem zipWithVecM_zero {α β γ : Type} (f : α → β → CircuitM F c γ)
+    (xs : Vector α 0) (ys : Vector β 0) : zipWithVecM f xs ys = pure #v[] := rfl
 
-The state-relative completeness laws of the loops, generic in the per-element conditions as the
-`Vector.mapM` law is: `P` at an element's entry state, `Q` of its entry, result and exit, the
-transports as hypotheses, and every element's condition at the loop's entry and every result's
-fact there, per index. -/
-
-section ProverReading
-
-open Std.Do
-
-variable [Zero F] [ConstraintHolds F c] {α β γ : Type}
-
-/-- `zipGo`'s law, by induction on the length. -/
-private theorem Prover.zipGo_spec (f : α → β → CircuitM F (Prover c) γ)
-    (P : ProverState F → α → β → Prop)
-    (Q : ProverState F → α → β → γ → ProverState F → Prop)
-    (hP : ∀ st st' x y, st ≤ st' → P st x y → P st' x y)
-    (hQ : ∀ st st' x y r s', st ≤ st' → P st x y → Q st' x y r s' → Q st x y r s')
-    (hQ' : ∀ st x y r s' s'', s' ≤ s'' → Q st x y r s' → Q st x y r s'')
-    (hle : ∀ st x y r s', Q st x y r s' → st ≤ s')
-    (hf : ∀ st x y, ⦃fun s => ⌜s = st ∧ P st x y⌝⦄ f x y ⦃⇓ r s' => ⌜Q st x y r s'⌝⦄) :
-    ∀ (n : Nat) (xs : Fin n → α) (ys : Fin n → β) (st₀ : ProverState F),
-      ⦃fun s => ⌜s = st₀ ∧ ∀ i, P st₀ (xs i) (ys i)⌝⦄
-      zipGo f n xs ys
-      ⦃⇓ rs s' => ⌜(∀ i, Q st₀ (xs i) (ys i) rs[i] s') ∧ st₀ ≤ s'⌝⦄
-  | 0, _, _, st₀ => by
-    simp only [zipGo]
-    mvcgen
-    rename_i s h
-    exact ⟨fun i => i.elim0, le_of_eq h.1.symm⟩
-  | n + 1, xs, ys, st₀ => by
-    have hinit := Prover.zipGo_spec f P Q hP hQ hQ' hle hf n (fun i => xs i.castSucc)
-      (fun i => ys i.castSucc)
-    simp only [zipGo]
-    mvcgen [hinit, hf]
-    case pre =>
-      rename_i s h
-      obtain ⟨rfl, hall⟩ := h
-      exact ⟨trivial, fun i => hall i.castSucc⟩
-    case post.success.pre =>
-      rename_i s h init s₁ hinit'
-      obtain ⟨rfl, hall⟩ := h
-      exact ⟨trivial, hP _ _ _ _ hinit'.2 (hall (Fin.last n))⟩
-    case post.success.post.success =>
-      rename_i s h init s₁ hinit' last s₂ hlast'
-      obtain ⟨rfl, hall⟩ := h
-      refine ⟨fun i => ?_, hinit'.2.trans (hle _ _ _ _ _ hlast')⟩
-      refine Fin.lastCases ?_ (fun j => ?_) i
-      · simpa using hQ _ _ _ _ _ _ hinit'.2 (hall (Fin.last n)) hlast'
-      · simpa using hQ' _ _ _ _ _ _ (hle _ _ _ _ _ hlast') (hinit'.1 j)
-
-/-- `zipWithVecM`'s state-relative completeness: every entry's condition at the loop's entry,
-every result's fact there. -/
-theorem Prover.zipWithVecM_spec {n : Nat} (f : α → β → CircuitM F (Prover c) γ)
-    (P : ProverState F → α → β → Prop)
-    (Q : ProverState F → α → β → γ → ProverState F → Prop)
-    (hP : ∀ st st' x y, st ≤ st' → P st x y → P st' x y)
-    (hQ : ∀ st st' x y r s', st ≤ st' → P st x y → Q st' x y r s' → Q st x y r s')
-    (hQ' : ∀ st x y r s' s'', s' ≤ s'' → Q st x y r s' → Q st x y r s'')
-    (hle : ∀ st x y r s', Q st x y r s' → st ≤ s')
-    (hf : ∀ st x y, ⦃fun s => ⌜s = st ∧ P st x y⌝⦄ f x y ⦃⇓ r s' => ⌜Q st x y r s'⌝⦄)
-    (xs : Vector α n) (ys : Vector β n) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ ∀ i : Fin n, P st₀ xs[i] ys[i]⌝⦄
-    zipWithVecM f xs ys
-    ⦃⇓ rs s' => ⌜(∀ i : Fin n, Q st₀ xs[i] ys[i] rs[i] s') ∧ st₀ ≤ s'⌝⦄ :=
-  Prover.zipGo_spec f P Q hP hQ hQ' hle hf n _ _ st₀
-
-/-- `List.forM`'s state-relative completeness: a unit result, so every entry's condition at the
-loop's entry is the whole content; the induction hypothesis is passed registered. -/
-theorem Prover.forM_spec (f : α → CircuitM F (Prover c) PUnit) (P : ProverState F → α → Prop)
-    (hP : ∀ st st' x, st ≤ st' → P st x → P st' x)
-    (hf : ∀ st x, ⦃fun s => ⌜s = st ∧ P st x⌝⦄ f x ⦃⇓ _ s' => ⌜st ≤ s'⌝⦄) :
-    ∀ (l : List α) (st₀ : ProverState F),
-      ⦃fun s => ⌜s = st₀ ∧ ∀ x ∈ l, P st₀ x⌝⦄ l.forM f ⦃⇓ _ s' => ⌜st₀ ≤ s'⌝⦄
-  | [], st₀ => by
-    rw [show ([] : List α).forM f = pure PUnit.unit from rfl]
-    mvcgen
-    rename_i s h
-    exact le_of_eq h.1.symm
-  | x :: l, st₀ => by
-    have hf' := Prover.register (fun st => hf st x)
-    have hrest := Prover.register (Prover.forM_spec f P hP hf l)
-    rw [show (x :: l).forM f = (do f x; l.forM f) from rfl]
-    mvcgen [hf', hrest]
-    all_goals grind [Prover.Reg.iff, List.mem_cons_self, List.mem_cons_of_mem]
-
-end ProverReading
-
-/-! ## The prover reading of the accumulating loop
-
-The generic law chains the step's fact with the state threaded beside the accumulator, so no
-fact is re-read at the loop's entry inside the law. The reading form is its corollary: the
-readings are parameters, the step fact is one named shape, and the loop's result is a scan. -/
-
-section MapAccum
-
-open Std.Do
-
-/-- `mapAccumM`'s state-relative completeness: the element condition carries forward, the step
-establishes the next accumulator's condition and advances the state, and the per-step facts
-chain from the initial accumulator at the entry to the final one at the exit. -/
-theorem Prover.mapAccumM_spec [Zero F] [ConstraintHolds F c] {s α β : Type}
-    (f : s → α → CircuitM F (Prover c) (β × s))
-    (A : ProverState F → s → Prop) (E : ProverState F → α → Prop)
-    (Q : ProverState F → s → α → β → s → ProverState F → Prop)
-    (hE : ∀ st st' x, st ≤ st' → E st x → E st' x)
-    (hQA : ∀ st acc x y acc' s', Q st acc x y acc' s' → A s' acc')
-    (hle : ∀ st acc x y acc' s', Q st acc x y acc' s' → st ≤ s')
-    (hf : ∀ st acc x, ⦃fun s => ⌜s = st ∧ A st acc ∧ E st x⌝⦄ f acc x
-      ⦃⇓ p s' => ⌜Q st acc x p.1 p.2 s'⌝⦄) :
-    ∀ (init : s) (xs : List α) (st₀ : ProverState F),
-      ⦃fun s => ⌜s = st₀ ∧ A st₀ init ∧ ∀ x ∈ xs, E st₀ x⌝⦄
-      mapAccumM f init xs
-      ⦃⇓ p s' => ⌜Chain (fun a x y b => Q a.2 a.1 x y b.1 b.2) (init, st₀) xs p.1 (p.2, s') ∧
-        st₀ ≤ s'⌝⦄
-  | init, [], st₀ => by
-    simp only [mapAccumM]
-    mvcgen
-    rename_i s h
-    obtain ⟨rfl, -⟩ := h
-    exact ⟨⟨rfl, rfl⟩, le_rfl⟩
-  | init, x :: xs, st₀ => by
-    have ih := fun (acc : s) (st : ProverState F) =>
-      Prover.mapAccumM_spec f A E Q hE hQA hle hf acc xs st
-    simp only [mapAccumM]
-    mvcgen [hf, ih]
-    case pre =>
-      rename_i s h
-      obtain ⟨rfl, hA, hE'⟩ := h
-      exact ⟨trivial, hA, hE' x (List.mem_cons_self ..)⟩
-    case post.success.pre =>
-      rename_i s h p s₁ hp
-      obtain ⟨rfl, hA, hE'⟩ := h
-      exact ⟨trivial, hQA _ _ _ _ _ _ hp,
-        fun y hy => hE _ _ y (hle _ _ _ _ _ _ hp) (hE' y (List.mem_cons_of_mem _ hy))⟩
-    case post.success.post.success =>
-      rename_i s h p s₁ hp q s₂ hq
-      obtain ⟨rfl, hA, hE'⟩ := h
-      exact ⟨⟨p.1, q.1, (p.2, s₁), rfl, hp, hq.1⟩, (hle _ _ _ _ _ _ hp).trans hq.2⟩
-
-section Scan
-
-variable {s α β A X Y : Type}
-  (Ss : ProverState F → s → Prop) (Sx : ProverState F → α → Prop) (Sy : ProverState F → β → Prop)
-  (reads : ProverState F → s → A) (readx : ProverState F → α → X) (ready : ProverState F → β → Y)
-  (g : A → X → A) (h : A → X → Y)
-
-/-- The step fact of a reading-shaped step: the output and the next accumulator are in scope at
-the exit and read the step functions of the entry readings, and the state advanced. One
-definition, so the corollary, the chain lemma and every ladder's step spec share one shape;
-reducible, so `grind` sees the conjuncts. -/
-abbrev Prover.ScanStep (st : ProverState F) (acc : s) (x : α) (y : β) (acc' : s)
-    (s' : ProverState F) : Prop :=
-  Sy s' y ∧ Ss s' acc' ∧ ready s' y = h (reads st acc) (readx st x) ∧
-    reads s' acc' = g (reads st acc) (readx st x) ∧ st ≤ s'
-
-/-- In range, the default of `List.getD` is immaterial. -/
-private theorem getD_congr_of_lt {l : List A} {i : ℕ} (hi : i < l.length) (d d' : A) :
-    l.getD i d = l.getD i d' := by
-  simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]
-
-/-- The chain of reading-shaped steps, read at the loop's entry and the final state: the
-accumulator folds, each output is the step function at the prefix fold before it. -/
-private theorem Prover.chain_scan
-    (hSx : ∀ st st' x, st ≤ st' → Sx st x → Sx st' x)
-    (hSy : ∀ st st' y, st ≤ st' → Sy st y → Sy st' y)
-    (hreadx : ∀ st st' x, st ≤ st' → Sx st x → readx st' x = readx st x)
-    (hready : ∀ st st' y, st ≤ st' → Sy st y → ready st' y = ready st y) :
-    ∀ {xs : List α} {init : s} {st₀ : ProverState F} {ys : List β} {fin : s}
-      {s' : ProverState F},
-      Chain (fun a x y b => Prover.ScanStep Ss Sy reads readx ready g h a.2 a.1 x y b.1 b.2)
-        (init, st₀) xs ys (fin, s') →
-      Ss st₀ init → (∀ x ∈ xs, Sx st₀ x) →
-      Ss s' fin ∧ reads s' fin = (xs.map (readx st₀)).foldl g (reads st₀ init) ∧
-        ys.length = xs.length ∧
-        (∀ (i : ℕ) (hi : i < xs.length) (hi' : i < ys.length), Sy s' ys[i] ∧
-          ready s' ys[i] =
-            h (((xs.map (readx st₀)).scanl g (reads st₀ init)).getD i (reads st₀ init))
-              (readx st₀ xs[i])) ∧
-        st₀ ≤ s'
-  | [], init, st₀, ys, fin, s', hch, hinit, _ => by
-    obtain ⟨rfl, hend⟩ := hch
-    obtain ⟨rfl, rfl⟩ := Prod.mk.inj hend
-    exact ⟨hinit, rfl, rfl, fun i hi => absurd hi (Nat.not_lt_zero _), le_rfl⟩
-  | x :: xs, init, st₀, ys, fin, s', hch, hinit, hxs => by
-    obtain ⟨y, ys', ⟨acc₁, s₁⟩, rfl, hq, hrest⟩ := hch
-    dsimp only at hq
-    obtain ⟨hy, hacc, hready₁, hreads₁, hle₁⟩ := hq
-    have hxs' : ∀ z ∈ xs, Sx st₀ z := fun z hz => hxs z (List.mem_cons_of_mem _ hz)
-    obtain ⟨hfin, hfold, hlen, hidx, hle₂⟩ :=
-      Prover.chain_scan hSx hSy hreadx hready hrest hacc
-        fun z hz => hSx _ _ z hle₁ (hxs' z hz)
-    have hmap : xs.map (readx s₁) = xs.map (readx st₀) :=
-      List.map_congr_left fun z hz => hreadx _ _ z hle₁ (hxs' z hz)
-    refine ⟨hfin, ?_, by simp [hlen], ?_, hle₁.trans hle₂⟩
-    · rw [hfold, hmap, hreads₁, List.map_cons, List.foldl_cons]
-    · intro i hi hi'
-      cases i with
-      | zero =>
-        refine ⟨hSy _ _ y hle₂ hy, ?_⟩
-        simp only [List.getElem_cons_zero, List.map_cons, List.scanl_cons, List.getD_cons_zero]
-        rw [hready _ _ y hle₂ hy, hready₁]
-      | succ j =>
-        have hj : j < xs.length := by simpa using hi
-        have hj' : j < ys'.length := by simpa using hi'
-        obtain ⟨hyj, hreadj⟩ := hidx j hj hj'
-        refine ⟨by simpa using hyj, ?_⟩
-        have hxj : readx st₀ xs[j] = readx s₁ xs[j] :=
-          (hreadx _ _ _ hle₁ (hxs' _ (List.getElem_mem hj))).symm
-        rw [hreads₁] at hreadj
-        simp only [List.getElem_cons_succ, List.map_cons, List.scanl_cons, List.getD_cons_succ,
-          ← hmap, hxj]
-        rw [getD_congr_of_lt (by simp; omega) _ (g (reads st₀ init) (readx st₀ x))]
-        exact hreadj
-
-/-- `mapAccumM`'s reading form: the accumulator folds the elements' entry readings, each output
-is the step function at the prefix fold before it, all in scope at the final state. The four
-transports are grind lines at a ladder. -/
-theorem Prover.mapAccumM_scan_spec [Zero F] [ConstraintHolds F c]
-    (f : s → α → CircuitM F (Prover c) (β × s)) (px : X → Prop)
-    (hSx : ∀ st st' x, st ≤ st' → Sx st x → Sx st' x)
-    (hSy : ∀ st st' y, st ≤ st' → Sy st y → Sy st' y)
-    (hreadx : ∀ st st' x, st ≤ st' → Sx st x → readx st' x = readx st x)
-    (hready : ∀ st st' y, st ≤ st' → Sy st y → ready st' y = ready st y)
-    (hf : ∀ st acc x, ⦃fun s => ⌜s = st ∧ Ss st acc ∧ Sx st x ∧ px (readx st x)⌝⦄ f acc x
-      ⦃⇓ p s' => ⌜Prover.ScanStep Ss Sy reads readx ready g h st acc x p.1 p.2 s'⌝⦄)
-    (init : s) (xs : List α) (st₀ : ProverState F) :
-    ⦃fun s => ⌜s = st₀ ∧ Ss st₀ init ∧ ∀ x ∈ xs, Sx st₀ x ∧ px (readx st₀ x)⌝⦄
-    mapAccumM f init xs
-    ⦃⇓ p s' => ⌜Ss s' p.2 ∧ reads s' p.2 = (xs.map (readx st₀)).foldl g (reads st₀ init) ∧
-      p.1.length = xs.length ∧
-      (∀ (i : ℕ) (hi : i < xs.length) (hi' : i < p.1.length), Sy s' p.1[i] ∧
-        ready s' p.1[i] =
-          h (((xs.map (readx st₀)).scanl g (reads st₀ init)).getD i (reads st₀ init))
-            (readx st₀ xs[i])) ∧
-      st₀ ≤ s'⌝⦄ := by
-  have hgen := Prover.mapAccumM_spec f Ss (fun st x => Sx st x ∧ px (readx st x))
-    (Prover.ScanStep Ss Sy reads readx ready g h)
-    (fun st st' x hle hx => ⟨hSx _ _ x hle hx.1, by rw [hreadx _ _ x hle hx.1]; exact hx.2⟩)
-    (fun _ _ _ _ _ _ hq => hq.2.1) (fun _ _ _ _ _ _ hq => hq.2.2.2.2) hf init xs st₀
-  intro s hs
-  obtain ⟨rfl, hinit, hxs⟩ := hs
-  have hrun := hgen s ⟨rfl, hinit, hxs⟩
-  refine (wp (mapAccumM f init xs)).mono _ _ ?_ s hrun
-  refine ⟨fun p s' hpost => ?_, .rfl⟩
-  obtain ⟨hch, hle⟩ := hpost
-  obtain ⟨hfin, hfold, hlen, hidx, -⟩ := Prover.chain_scan Ss Sx Sy reads readx ready g h hSx hSy
-    hreadx hready hch hinit fun x hx => (hxs x hx).1
-  exact ⟨hfin, hfold, hlen, hidx, hle⟩
-
-end Scan
-
-end MapAccum
+/-- A paired traversal runs the prefix before appending the final entry's result. -/
+theorem zipWithVecM_succ {α β γ : Type} {n : Nat} (f : α → β → CircuitM F c γ)
+    (xs : Vector α (n + 1)) (ys : Vector β (n + 1)) :
+    zipWithVecM f xs ys = (do
+      let init ← zipWithVecM f (Vector.ofFn fun i : Fin n ↦ xs[i.castSucc])
+        (Vector.ofFn fun i : Fin n ↦ ys[i.castSucc])
+      let last ← f xs[Fin.last n] ys[Fin.last n]
+      pure (init.push last)) := by
+  simp only [zipWithVecM, zipGo, Fin.getElem_fin, Vector.getElem_ofFn]
 
 attribute [irreducible] zipWithVecM
 
